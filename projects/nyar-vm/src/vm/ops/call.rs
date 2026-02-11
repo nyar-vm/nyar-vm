@@ -135,16 +135,16 @@ impl NyarVM {
             self.frames.push(new_frame);
             Ok(Some(0))
         } else {
-            // Check in FFI registry
+            // Check in Runtime registry
             let name_str = name.to_string();
-            if let Some(func) = self.ffi.get(&name_str) {
+            if let Some(func) = self.runtime.resolve(&name_str) {
                 let mut args = Vec::with_capacity(argc as usize);
                 for _ in 0..argc {
                     args.push(self.pop()?);
                 }
                 args.reverse();
 
-                let result = func.call(self, args)?;
+                let result = func(self, &args)?;
                 self.push(result)?;
                 return Ok(None);
             }
@@ -1126,41 +1126,15 @@ impl NyarVM {
         }
         args.reverse();
 
-        // Check in FFI registry
-        if let Some(func) = self.ffi.get(&name) {
-            // Validate signature if present
-            if let Some(sig) = func.signature() {
-                if sig.params.len() != args.len() {
-                    return Err(self.error(nyar_types::VmErrorKind::LimitExceeded));
-                }
-                for (arg, ty) in args.iter().zip(sig.params.iter()) {
-                    let matches = match ty {
-                        crate::vm::ffi::FFIType::Null => arg.is_null(),
-                        crate::vm::ffi::FFIType::Int => arg.is_int(),
-                        crate::vm::ffi::FFIType::F32 => arg.is_f32(),
-                        crate::vm::ffi::FFIType::F64 => arg.is_f64(),
-                        crate::vm::ffi::FFIType::Bool => arg.is_bool(),
-                        crate::vm::ffi::FFIType::String => arg.is_string(),
-                        crate::vm::ffi::FFIType::List => arg.is_list(),
-                        crate::vm::ffi::FFIType::Object => arg.is_object(),
-                        crate::vm::ffi::FFIType::Any => true,
-                    };
-                    if !matches {
-                        return Err(self.error(nyar_types::VmErrorKind::TypeMismatch {
-                            expected: format!("{:?}", ty),
-                            found: format!("{:?}", arg.tag()),
-                        }));
-                    }
-                }
-            }
-
-            let result = func.call(self, args)?;
+        // Check in Runtime registry
+        if let Some(func) = self.runtime.resolve(&name) {
+            let result = func(self, &args)?;
             self.push(result)?;
         } else if name.starts_with("$intrinsic:") {
             // Check if it's an encoded intrinsic call
             if let Ok(id) = name.trim_start_matches("$intrinsic:").parse::<u32>() {
-                if let Some(func) = self.ffi.get_intrinsic(id) {
-                    let result = func.call(self, args)?;
+                if let Some(func) = self.runtime.get_intrinsic(id) {
+                    let result = func(self, &args)?;
                     self.push(result)?;
                 } else {
                     return Err(self.error(nyar_types::VmErrorKind::RuntimeError(format!(

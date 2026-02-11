@@ -22,7 +22,7 @@ pub enum FFIType {
     Any,
 }
 
-pub type ExternFunc = fn(&mut NyarVM, &[Value]) -> Value;
+pub type ExternFunc = fn(&mut NyarVM, &[Value]) -> Result<Value, VmError>;
 
 pub trait RuntimeProvider: Send + Sync + Debug + Any {
     fn resolve(&self, name: &str) -> Option<ExternFunc>;

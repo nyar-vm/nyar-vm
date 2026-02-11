@@ -1,6 +1,6 @@
 #[cfg(feature = "wasi")]
 use wasi;
-use crate::vm::platform::NyarPlatform;
+use nyar_vm::vm::platform::NyarPlatform;
 use nyar_types::NyarError;
 
 /// 原生平台实现，直接调用 Rust 标准库

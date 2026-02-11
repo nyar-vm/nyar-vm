@@ -65,6 +65,7 @@ impl Trace for TracebackLink {
     }
 }
 
+/// Nyar 虚拟机核心
 pub struct NyarVM {
     pub gc: Arc<NyarGc>,
     pub env: Arc<NyarEnv>,
@@ -79,6 +80,7 @@ pub struct NyarVM {
     pub last_gc_count: u64,
     pub current_waker: Option<std::task::Waker>,
     pub platform: Arc<dyn crate::vm::platform::NyarPlatform>,
+    pub runtime: Arc<dyn crate::vm::traits::RuntimeProvider>,
     pub effect_handler: Option<Arc<dyn crate::vm::effects::EffectHandler>>,
     pub parent_traceback: Option<Arc<TracebackLink>>,
 }
@@ -116,6 +118,7 @@ impl NyarVM {
             last_gc_count: 0,
             current_waker: None,
             platform: Arc::new(crate::vm::platform::NoopPlatform),
+            runtime: Arc::new(crate::vm::traits::NoopRuntime::default()),
             effect_handler: None,
             parent_traceback: None,
         };
@@ -137,6 +140,7 @@ impl NyarVM {
             last_gc_count: 0,
             current_waker: None,
             platform,
+            runtime: Arc::new(crate::vm::traits::NoopRuntime::default()),
             effect_handler: None,
             parent_traceback: None,
         };
@@ -164,6 +168,7 @@ impl NyarVM {
             last_gc_count: self.last_gc_count,
             current_waker: self.current_waker.clone(),
             platform: self.platform.clone(),
+            runtime: self.runtime.clone(),
             effect_handler: self.effect_handler.clone(),
             parent_traceback,
         }

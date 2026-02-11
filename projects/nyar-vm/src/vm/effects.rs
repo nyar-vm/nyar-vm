@@ -91,10 +91,10 @@ pub fn perform_effect_internal(
         }
     }
 
-    // 3. FFI Fallback (Mechanism for standard libraries)
+    // 3. Runtime Fallback (Mechanism for standard libraries)
     let effect_name = effect.name.to_string();
-    if let Some(func) = vm.ffi.get(&effect_name) {
-        let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+    if let Some(func) = vm.runtime.resolve(&effect_name) {
+        let res = func(vm, &args)?;
         return Ok(Some(res));
     }
 
