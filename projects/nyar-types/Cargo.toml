@@ -8,15 +8,6 @@ authors.workspace = true
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
-oak-core = { workspace = true }
-oak-vfs = { workspace = true }
-chomsky-extract = { workspace = true }
-chomsky-emit = { workspace = true }
-chomsky-uir = { workspace = true }
-chomsky-types = { workspace = true }
-chomsky-cost = { workspace = true }
-nyar-gc = { workspace = true }
 
 [features]
-default = ["gc"]
-gc = []
+default = []

@@ -1,0 +1,20 @@
+[package]
+name = "nyar-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nyar-vm = { workspace = true }
+nyar-types = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+oak-vfs = { workspace = true }
+oak-core = { workspace = true }
+indexmap = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+rand = { workspace = true }
+tracing = { workspace = true }

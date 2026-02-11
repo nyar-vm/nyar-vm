@@ -1,6 +1,5 @@
 
 use crate::vm::effects::HandlerFrame;
-use crate::vm::ffi::FFIRegistry;
 use crate::vm::value::{Value, Frame};
 use crate::vm::NyarError;
 use nyar_gc::{MarkContext, NyarGc, Trace};
@@ -74,13 +73,11 @@ pub struct NyarVM {
     pub frames: Vec<Frame>,
     pub handler_stack: Vec<HandlerFrame>,
     pub trace_log: Arc<std::sync::Mutex<Vec<String>>>,
-    pub ffi: FFIRegistry,
     pub jit: Option<std::sync::Arc<dyn JitProvider>>,
     pub local_hotness: u8,
     pub step_count: u16,
     pub last_gc_count: u64,
     pub current_waker: Option<std::task::Waker>,
-    pub network: crate::vm::net::NetworkContext,
     pub platform: Arc<dyn crate::vm::platform::NyarPlatform>,
     pub effect_handler: Option<Arc<dyn crate::vm::effects::EffectHandler>>,
     pub parent_traceback: Option<Arc<TracebackLink>>,
