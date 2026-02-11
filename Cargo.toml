@@ -60,6 +60,7 @@ oak-bat = { path = "../oaks/examples/oak-bat" }
 oak-cmd = { path = "../oaks/examples/oak-cmd" }
 oak-bash = { path = "../oaks/examples/oak-bash" }
 oak-scheme = { path = "../oaks/examples/oak-scheme" }
+oak-wolfram = { path = "../oaks/examples/oak-wolfram" }
 oak-scala = { path = "../oaks/examples/oak-scala" }
 oak-groovy = { path = "../oaks/examples/oak-groovy" }
 oak-clojure = { path = "../oaks/examples/oak-clojure" }
@@ -98,6 +99,7 @@ rusty-ruby = { path = "examples/rusty-ruby" }
 rusty-r = { path = "examples/rusty-r" }
 rusty-dart = { path = "examples/rusty-dart" }
 rusty-nim = { path = "examples/rusty-nim" }
+rusty-wolfram = { path = "examples/rusty-wolfram" }
 rusty-mojo = { path = "examples/rusty-mojo" }
 rusty-fortran = { path = "examples/rusty-fortran" }
 rusty-kotlin = { path = "examples/rusty-kotlin" }

@@ -231,7 +231,8 @@ impl NyarTranslator {
                             current = ctx.builder.extension("index", args, loc);
                         }
                         VariableSelector::Component(name) => {
-                            current = ctx.builder.extension(".", vec![current, ctx.builder.symbol(name, loc)], loc);
+                            let member_id = ctx.builder.symbol(name, loc);
+                            current = ctx.builder.extension(".", vec![current, member_id], loc);
                         }
                         _ => {}
                     }
