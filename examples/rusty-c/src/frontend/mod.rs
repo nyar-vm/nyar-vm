@@ -37,7 +37,9 @@ impl RustyCFrontend {
     }
 }
 
-impl NyarFrontend for RustyCFrontend {
+impl<'a, V: Vfs, A: Analysis<IKun> + 'static> NyarFrontend<A> for RustyCFrontend 
+where A::Data: HasDebugInfo
+{
     type Language = CLanguage;
 
     fn parse(&self, source: &str) -> Result<CRoot, NyarError> {
@@ -59,20 +61,20 @@ impl NyarFrontend for RustyCFrontend {
         output.result.map_err(|e| NyarError::from(CError::from(e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &CRoot, ctx: &mut NyarContext<V>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &CRoot, ctx: &mut NyarContext<V, A>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }
 }
 
-struct UirConverter<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
+struct UirConverter<'a, 'b, V: Vfs, A: Analysis<IKun>> {
     ctx: &'a mut NyarContext<'b, V, A>,
     typedefs: HashMap<String, Vec<ast::DeclarationSpecifier>>,
     structs: HashMap<String, Vec<ast::StructDeclaration>>,
     enums: HashMap<String, Vec<ast::Enumerator>>,
 }
 
-impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, V, A> {
+impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
     fn new(ctx: &'a mut NyarContext<'b, V, A>) -> Self {
         Self {
             ctx,
@@ -83,7 +85,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
     }
 
     fn to_loc(&self, range: Range<usize>) -> Loc {
-        self.ctx.loc(range.start as u32, range.end as u32)
+        Loc::default() // TODO: Fix location mapping
     }
 
     fn convert_root(&mut self, root: &CRoot) -> Id {
@@ -116,17 +118,15 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             for param in &parameter_list.parameter_declarations {
                 if let Some(decl) = &param.declarator {
                     let original_name = self.get_declarator_name(decl);
-                    params.push(self.ctx.scopes.declare_variable(&original_name));
+                    params.push(original_name);
                 }
             }
         }
 
         let mut body_ids = Vec::new();
-        self.ctx.scopes.push_scope();
         for item in &func.compound_statement.block_items {
             body_ids.push(self.convert_block_item(item));
         }
-        self.ctx.scopes.pop_scope();
 
         let body_block = self.ctx.builder().block(body_ids, loc.clone());
         let lambda = self.ctx.builder().lambda(params, body_block, loc.clone());
@@ -184,13 +184,12 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 continue;
             }
 
-            let name = self.ctx.scopes.declare_variable(&original_name);
             let value = if let Some(init_val) = &init.initializer {
                 self.convert_initializer(init_val)
             } else {
                 self.ctx.builder().constant(0, loc.clone())
             };
-            ids.push(self.ctx.builder().assign(&name, value, loc.clone()));
+            ids.push(self.ctx.builder().assign(&original_name, value, loc.clone()));
         }
         if ids.is_empty() {
             self.ctx.builder().constant(0, loc)
@@ -213,11 +212,9 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
         match stmt {
             ast::Statement::Compound(comp) => {
                 let mut ids = Vec::new();
-                self.ctx.scopes.push_scope();
                 for item in &comp.block_items {
                     ids.push(self.convert_block_item(item));
                 }
-                self.ctx.scopes.pop_scope();
                 self.ctx.builder().block(ids, loc)
             }
             ast::Statement::Expression(expr_stmt) => {
@@ -299,32 +296,33 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     } else {
                         self.ctx.builder().constant(0, loc.clone())
                     };
-                    let b = self.convert_statement(statement);
+                    let body = self.convert_statement(statement);
                     let loc = self.to_loc(span.clone().into());
-                    self.ctx.builder().extension("for", vec![i, c, u, b], loc)
+                    self.ctx.builder().extension("for", vec![i, c, u, body], loc)
                 }
             },
             ast::Statement::Jump(jump) => match jump {
-                ast::JumpStatement::Return(expression, _) => {
+                ast::JumpStatement::Goto { identifier, span } => {
+                    let loc = self.to_loc(span.clone().into());
+                    let id = self.ctx.builder().symbol(identifier, loc.clone());
+                    self.ctx.builder().extension("goto", vec![id], loc)
+                }
+                ast::JumpStatement::Continue { span } => {
+                    let loc = self.to_loc(span.clone().into());
+                    self.ctx.builder().continue_(loc)
+                }
+                ast::JumpStatement::Break { span } => {
+                    let loc = self.to_loc(span.clone().into());
+                    self.ctx.builder().break_(loc)
+                }
+                ast::JumpStatement::Return { expression, span } => {
+                    let loc = self.to_loc(span.clone().into());
                     let val = if let Some(e) = expression {
                         self.convert_expression(e)
                     } else {
                         self.ctx.builder().constant(0, loc.clone())
                     };
                     self.ctx.builder().return_(val, loc)
-                }
-                ast::JumpStatement::Break(span) => {
-                    let loc = self.to_loc(span.clone().into());
-                    self.ctx.builder().extension("break", vec![], loc)
-                }
-                ast::JumpStatement::Continue(span) => {
-                    let loc = self.to_loc(span.clone().into());
-                    self.ctx.builder().extension("continue", vec![], loc)
-                }
-                ast::JumpStatement::Goto(identifier, span) => {
-                    let loc = self.to_loc(span.clone().into());
-                    let label_name = self.ctx.builder().string(identifier.clone().as_str(), loc.clone());
-                    self.ctx.builder().extension("goto", vec![label_name], loc)
                 }
             },
             _ => self.ctx.builder().constant(0, loc),

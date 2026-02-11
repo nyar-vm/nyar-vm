@@ -2,17 +2,15 @@
 //!
 //! 这个库提供了 Rusty Python 语言的词法分析、语法分析和 Gaia 翻译功能。
 
-use oak_core::Parser;
-use oak_vfs::Vfs;
-use nyar_types::{NyarContext, NyarError, NyarFrontend};
+use nyar_aot::{NyarContext, NyarFrontend};
+use nyar_types::NyarError;
 use oak_python::ast::{Expression, Literal, PythonRoot, Statement};
-use chomsky_uir::Id;
+use chomsky_uir::{Id, Analysis, IKun};
 use chomsky_types::Loc;
+use chomsky_uir::HasDebugInfo;
 
 pub mod codegen;
 pub mod pyc_codegen;
-
-use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty Python 前端
 #[derive(Default)]
@@ -25,7 +23,9 @@ impl RustyPythonFrontend {
     }
 }
 
-impl NyarFrontend<ConstraintAnalysis> for RustyPythonFrontend {
+impl<A: Analysis<IKun> + 'static> NyarFrontend<A> for RustyPythonFrontend 
+where A::Data: HasDebugInfo
+{
     type Language = oak_python::PythonLanguage;
 
     fn parse(&self, source: &str) -> Result<PythonRoot, NyarError> {
@@ -47,17 +47,17 @@ impl NyarFrontend<ConstraintAnalysis> for RustyPythonFrontend {
         Ok(ast)
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &PythonRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &PythonRoot, ctx: &mut NyarContext<V, A>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }
 }
 
-struct UirConverter<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
+struct UirConverter<'a, 'b, V: Vfs, A: Analysis<IKun>> {
     ctx: &'a mut NyarContext<'b, V, A>,
 }
 
-impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, V, A> {
+impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
     fn new(ctx: &'a mut NyarContext<'b, V, A>) -> Self {
         Self { ctx }
     }
@@ -79,8 +79,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let val = self.convert_expression(value);
                 match target {
                     Expression::Name(name) => {
-                        let name = self.ctx.scopes.declare_variable(name);
-                        Some(self.ctx.builder().assign(&name, val, loc))
+                        Some(self.ctx.builder().assign(name, val, loc))
                     }
                     Expression::Attribute { value: obj, attr } => {
                         let obj_node = self.convert_expression(obj);
@@ -118,7 +117,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 Some(self.ctx.builder().assign_to_id(target_node, result_node, loc))
             }
             Statement::Expression(expr) => Some(self.convert_expression(expr)),
-            Statement::FunctionDef {
+        Statement::FunctionDef {
             decorators,
             name,
             parameters,
@@ -126,86 +125,14 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             ..
         } => {
             let actual_name = if name == "__init__" { "initiate" } else { name };
-            // 在外层作用域查找是否已经声明过（例如在 ClassDef 中）
-            let mangled_func_name = self.ctx.scopes.resolve_variable(actual_name);
             
-            self.ctx.scopes.push_scope();
-            let mut params = Vec::new();
-            let mut defaults = Vec::new();
-            let mut vararg = None;
-            let mut kwarg = None;
-
-            eprintln!("DEBUG: Function {} (as {}) has {} parameters", name, actual_name, parameters.len());
-            for (i, p) in parameters.iter().enumerate() {
-                let mangled = self.ctx.scopes.declare_variable(&p.name);
-                eprintln!("DEBUG: Declared parameter {} : {} -> {}", i, p.name, mangled);
-                params.push(mangled.clone());
-                if let Some(default) = &p.default {
-                    defaults.push(self.convert_expression(default));
-                }
-                if p.is_vararg {
-                    vararg = Some(self.ctx.builder().string(&p.name, loc.clone()));
-                }
-                if p.is_kwarg {
-                    kwarg = Some(self.ctx.builder().string(&p.name, loc.clone()));
-                }
-            }
-            eprintln!("DEBUG: After parameter declaration, scopes: {:?}", self.ctx.scopes);
-
-            let mut body_items = Vec::new();
-            eprintln!("DEBUG: Converting body for function {}, {} statements", name, body.len());
-            for (i, s) in body.iter().enumerate() {
-                eprintln!("DEBUG: Converting statement {} for function {}: {:?}", i, name, s);
-                if let Some(node) = self.convert_statement(s) {
-                    body_items.push(node);
-                }
-            }
-            let body_id = self.ctx.builder().block(body_items, loc.clone());
-            
-            // 重要：在 pop_scope 之前保留 params
-            let params_cloned = params.clone();
-            let lam = self.ctx.builder().lambda(params_cloned, body_id, loc.clone());
-            
-            self.ctx.scopes.pop_scope();
-            eprintln!("DEBUG: Popped scope for function {}", name);
-
-            let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
-            let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
-            let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
-
-            let name_node = self.ctx.builder().string(actual_name, loc.clone());
-            let func_node = self.ctx.builder().extension(
-                "python_function",
-                vec![
-                    name_node,
-                    lam,
-                    defaults_id,
-                    vararg_id,
-                    kwarg_id,
-                ],
-                loc.clone(),
-            );
-            Some(self.ctx.builder().assign(&mangled_func_name, func_node, loc))
-        }
-        Statement::AsyncFunctionDef {
-            decorators,
-            name,
-            parameters,
-            body,
-            ..
-        } => {
-            // 在外层作用域声明函数名
-            let mangled_func_name = self.ctx.scopes.declare_variable(name);
-            
-            self.ctx.scopes.push_scope();
             let mut params = Vec::new();
             let mut defaults = Vec::new();
             let mut vararg = None;
             let mut kwarg = None;
 
             for p in parameters {
-                let mangled = self.ctx.scopes.declare_variable(&p.name);
-                params.push(mangled);
+                params.push(p.name.clone());
                 if let Some(default) = &p.default {
                     defaults.push(self.convert_expression(default));
                 }
@@ -224,17 +151,14 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 }
             }
             let body_id = self.ctx.builder().block(body_items, loc.clone());
+            let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
             
-            let params_cloned = params.clone();
-            let lam = self.ctx.builder().lambda(params_cloned, body_id, loc.clone());
-            
-            self.ctx.scopes.pop_scope();
             let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
             let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
             let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
 
-            let name_node = self.ctx.builder().string(name, loc.clone());
-            let mut func_node = self.ctx.builder().extension(
+            let name_node = self.ctx.builder().string(actual_name, loc.clone());
+            let func_node = self.ctx.builder().extension(
                 "python_function",
                 vec![
                     name_node,
@@ -245,14 +169,39 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 ],
                 loc.clone(),
             );
-            func_node = self.ctx.builder().extension("async", vec![func_node], loc.clone());
-
-            for dec in decorators.iter().rev() {
-                let dec_node = self.convert_expression(dec);
-                func_node = self.ctx.builder().call(dec_node, vec![func_node], loc.clone());
+            Some(self.ctx.builder().assign(actual_name, func_node, loc))
+        }
+        Statement::AsyncFunctionDef {
+            decorators,
+            name,
+            parameters,
+            body,
+            ..
+        } => {
+            let mut params = Vec::new();
+            for p in parameters {
+                params.push(p.name.clone());
             }
 
-            Some(self.ctx.builder().assign(&mangled_func_name, func_node, loc))
+            let mut body_items = Vec::new();
+            for s in body {
+                if let Some(node) = self.convert_statement(s) {
+                    body_items.push(node);
+                }
+            }
+            let body_id = self.ctx.builder().block(body_items, loc.clone());
+            let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
+            
+            let name_node = self.ctx.builder().string(name, loc.clone());
+            let func_node = self.ctx.builder().extension(
+                "python_async_function",
+                vec![
+                    name_node,
+                    lam,
+                ],
+                loc.clone(),
+            );
+            Some(self.ctx.builder().assign(name, func_node, loc))
         }
             Statement::Return(expr) => {
                 let val = expr
@@ -386,10 +335,8 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
 
                 let mut handler_nodes = Vec::new();
                 for handler in handlers {
-                    self.ctx.scopes.push_scope();
                     let name_node = if let Some(name) = &handler.name {
-                        let var = self.ctx.scopes.declare_variable(name);
-                        self.ctx.builder().symbol(&var, loc.clone())
+                        self.ctx.builder().symbol(name, loc.clone())
                     } else {
                         self.ctx.builder().constant(0, loc.clone())
                     };
