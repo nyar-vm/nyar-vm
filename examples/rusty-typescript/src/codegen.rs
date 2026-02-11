@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id};
-use nyar_types::FormatError;
+use nyar_types::NyarError;
 use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, ImportInfo, NyarModule};
 use nyar_vm::bytecode::opcode::{I32Ext, Opcode};
 
@@ -138,7 +138,7 @@ impl NyarTranslator {
         &mut self,
         egraph: &EGraph<IKun, ConstraintAnalysis>,
         root: Id,
-    ) -> Result<NyarModule, FormatError> {
+    ) -> Result<NyarModule, NyarError> {
         let mut functions_info = Vec::new();
         let mut imports_info = Vec::new();
         let mut exports_info = Vec::new();
@@ -324,7 +324,7 @@ impl NyarTranslator {
         &mut self,
         egraph: &EGraph<IKun, ConstraintAnalysis>,
         statements: &[Id],
-    ) -> Result<(), FormatError> {
+    ) -> Result<(), NyarError> {
         self.reset_for_function();
 
         for &stmt in statements {
@@ -359,7 +359,7 @@ impl NyarTranslator {
         _name: &str,
         parameters: &[String],
         body: Id,
-    ) -> Result<(), FormatError> {
+    ) -> Result<(), NyarError> {
         self.reset_for_function();
 
         // 处理参数
@@ -401,7 +401,7 @@ impl NyarTranslator {
         egraph: &EGraph<IKun, ConstraintAnalysis>,
         id: Id,
         is_statement: bool,
-    ) -> Result<(), FormatError> {
+    ) -> Result<(), NyarError> {
         let node_class = egraph.get_class(id);
 
         // Try to find a node we can handle

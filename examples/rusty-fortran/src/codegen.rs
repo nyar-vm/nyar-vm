@@ -84,10 +84,199 @@ impl NyarTranslator {
         main: &MainProgramNode,
         ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
-        let items = Vec::new();
-        // TODO: 翻译 specification_part, execution_part, internal_subprograms
+        let mut items = Vec::new();
+        // 翻译 specification_part
+        for spec in &main.specification_part {
+            if let Some(id) = self.translate_specification_stmt(spec, ctx)? {
+                items.push(id);
+            }
+        }
+        // 翻译 execution_part
+        for exec in &main.execution_part {
+            items.push(self.translate_executable_stmt(exec, ctx)?);
+        }
+        // 翻译 internal_subprograms
+        for sub in &main.internal_subprograms {
+            if let Some(id) = self.translate_program_unit(sub, ctx)? {
+                items.push(id);
+            }
+        }
         let name = main.name.as_deref().unwrap_or("main");
-        Ok(ctx.builder.module(name, items, Loc::default()))
+        Ok(ctx.builder.function(name, Vec::new(), items, Loc::default()))
+    }
+
+    fn translate_specification_stmt<A: chomsky_uir::Analysis<IKun>>(
+        &self,
+        spec: &SpecificationStmt,
+        _ctx: &mut TranslatorContext<'_, A>,
+    ) -> Result<Option<chomsky_uir::egraph::Id>, NyarError> {
+        match spec {
+            SpecificationStmt::TypeDeclaration(_node) => {
+                // TODO: 实现变量声明
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn translate_executable_stmt<A: chomsky_uir::Analysis<IKun>>(
+        &self,
+        exec: &ExecutableStmt,
+        ctx: &mut TranslatorContext<'_, A>,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::default();
+        match exec {
+            ExecutableStmt::Assignment(node) => {
+                let var = self.translate_expr(&node.variable, ctx)?;
+                let expr = self.translate_expr(&node.expression, ctx)?;
+                Ok(ctx.builder.extension("=", vec![var, expr], loc))
+            }
+            ExecutableStmt::Call(node) => {
+                let args = node.arguments.iter()
+                    .map(|arg| self.translate_expr(arg, ctx))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let callee = ctx.builder.symbol(&node.procedure_name, loc);
+                Ok(ctx.builder.call(callee, args, loc))
+            }
+            ExecutableStmt::Print(node) => {
+                let args = node.output_items.iter()
+                    .map(|arg| self.translate_expr(arg, ctx))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(ctx.builder.cross_lang_call("nyar", "io", "println", args, loc))
+            }
+            ExecutableStmt::IfConstruct(node) => {
+                let cond = self.translate_expr(&node.condition, ctx)?;
+                let then_body = node.then_part.iter()
+                    .map(|s| self.translate_executable_stmt(s, ctx))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let then_id = ctx.builder.seq(then_body);
+                
+                let mut current_else = if let Some(else_part) = &node.else_part {
+                    let else_body = else_part.iter()
+                        .map(|s| self.translate_executable_stmt(s, ctx))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    ctx.builder.seq(else_body)
+                } else {
+                    ctx.builder.seq(vec![])
+                };
+
+                for (else_cond, else_body) in node.else_if_parts.iter().rev() {
+                    let cond_id = self.translate_expr(else_cond, ctx)?;
+                    let body_ids = else_body.iter()
+                        .map(|s| self.translate_executable_stmt(s, ctx))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let body_id = ctx.builder.seq(body_ids);
+                    current_else = ctx.builder.branch(cond_id, body_id, current_else, loc);
+                }
+
+                Ok(ctx.builder.branch(cond, then_id, current_else, loc))
+            }
+            ExecutableStmt::DoConstruct(node) => {
+                if let Some(DoControl::Iterative { variable, start, end, step }) = &node.control {
+                    let start_id = self.translate_expr(start, ctx)?;
+                    let end_id = self.translate_expr(end, ctx)?;
+                    let step_id = if let Some(s) = step {
+                        self.translate_expr(s, ctx)?
+                    } else {
+                        ctx.builder.int(1, loc)
+                    };
+                    
+                    let body = node.body.iter()
+                        .map(|s| self.translate_executable_stmt(s, ctx))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let body_id = ctx.builder.seq(body);
+                    
+                    // 这里简化为 extension 调用，实际可能需要更复杂的循环结构
+                    Ok(ctx.builder.extension("do_loop", vec![
+                        ctx.builder.symbol(variable, loc),
+                        start_id, end_id, step_id, body_id
+                    ], loc))
+                } else {
+                    // TODO: 其他类型的循环
+                    Ok(ctx.builder.seq(vec![]))
+                }
+            }
+            _ => Ok(ctx.builder.seq(vec![])),
+        }
+    }
+
+    fn translate_expr<A: chomsky_uir::Analysis<IKun>>(
+        &self,
+        expr: &ExprNode,
+        ctx: &mut TranslatorContext<'_, A>,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::default();
+        match expr {
+            ExprNode::Literal(lit) => match lit {
+                Literal::Integer(v) => Ok(ctx.builder.int(v.parse().unwrap_or(0), loc)),
+                Literal::Real(v) => Ok(ctx.builder.float(v.parse().unwrap_or(0.0), loc)),
+                Literal::Character(v) => Ok(ctx.builder.string(v, loc)),
+                Literal::Logical(v) => Ok(ctx.builder.bool(*v, loc)),
+                Literal::Complex(r, i) => {
+                    let rv = ctx.builder.float(r.parse().unwrap_or(0.0), loc);
+                    let iv = ctx.builder.float(i.parse().unwrap_or(0.0), loc);
+                    Ok(ctx.builder.extension("complex", vec![rv, iv], loc))
+                }
+            },
+            ExprNode::Variable(var) => {
+                let mut current = ctx.builder.symbol(&var.name, loc);
+                for selector in &var.selectors {
+                    match selector {
+                        VariableSelector::ArraySubscript(indices) => {
+                            let mut args = vec![current];
+                            for idx in indices {
+                                args.push(self.translate_expr(idx, ctx)?);
+                            }
+                            current = ctx.builder.extension("index", args, loc);
+                        }
+                        VariableSelector::Component(name) => {
+                            current = ctx.builder.extension(".", vec![current, ctx.builder.symbol(name, loc)], loc);
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(current)
+            }
+            ExprNode::Unary(op, expr) => {
+                let e = self.translate_expr(expr, ctx)?;
+                let op_str = match op {
+                    UnaryOp::Plus => "+",
+                    UnaryOp::Minus => "-",
+                    UnaryOp::Not => "!",
+                };
+                Ok(ctx.builder.extension(op_str, vec![e], loc))
+            }
+            ExprNode::Binary(lhs, op, rhs) => {
+                let l = self.translate_expr(lhs, ctx)?;
+                let r = self.translate_expr(rhs, ctx)?;
+                let op_str = match op {
+                    BinaryOp::Add => "+",
+                    BinaryOp::Sub => "-",
+                    BinaryOp::Mul => "*",
+                    BinaryOp::Div => "/",
+                    BinaryOp::Pow => "**",
+                    BinaryOp::Eq => "==",
+                    BinaryOp::Ne => "!=",
+                    BinaryOp::Lt => "<",
+                    BinaryOp::Le => "<=",
+                    BinaryOp::Gt => ">",
+                    BinaryOp::Ge => ">=",
+                    BinaryOp::And => "&&",
+                    BinaryOp::Or => "||",
+                    _ => "unknown",
+                };
+                Ok(ctx.builder.extension(op_str, vec![l, r], loc))
+            }
+            ExprNode::Call(name, args) => {
+                let arg_ids = args.iter()
+                    .map(|arg| self.translate_expr(arg, ctx))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let callee = ctx.builder.symbol(name, loc);
+                Ok(ctx.builder.call(callee, arg_ids, loc))
+            }
+            ExprNode::Paren(expr) => self.translate_expr(expr, ctx),
+            _ => Ok(ctx.builder.seq(vec![])),
+        }
     }
 
     fn translate_subroutine<A: chomsky_uir::Analysis<IKun>>(
@@ -95,9 +284,24 @@ impl NyarTranslator {
         sub: &SubroutineNode,
         ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
-        let items = Vec::new();
-        // TODO
-        Ok(ctx.builder.module(&sub.name, items, Loc::default()))
+        let mut items = Vec::new();
+        // 翻译 specification_part
+        for spec in &sub.specification_part {
+            if let Some(id) = self.translate_specification_stmt(spec, ctx)? {
+                items.push(id);
+            }
+        }
+        // 翻译 execution_part
+        for exec in &sub.execution_part {
+            items.push(self.translate_executable_stmt(exec, ctx)?);
+        }
+        // 翻译 internal_subprograms
+        for internal in &sub.internal_subprograms {
+            if let Some(id) = self.translate_program_unit(internal, ctx)? {
+                items.push(id);
+            }
+        }
+        Ok(ctx.builder.function(&sub.name, sub.parameters.clone(), items, Loc::default()))
     }
 
     fn translate_function<A: chomsky_uir::Analysis<IKun>>(
@@ -105,9 +309,24 @@ impl NyarTranslator {
         func: &FunctionNode,
         ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
-        let items = Vec::new();
-        // TODO
-        Ok(ctx.builder.module(&func.name, items, Loc::default()))
+        let mut items = Vec::new();
+        // 翻译 specification_part
+        for spec in &func.specification_part {
+            if let Some(id) = self.translate_specification_stmt(spec, ctx)? {
+                items.push(id);
+            }
+        }
+        // 翻译 execution_part
+        for exec in &func.execution_part {
+            items.push(self.translate_executable_stmt(exec, ctx)?);
+        }
+        // 翻译 internal_subprograms
+        for internal in &func.internal_subprograms {
+            if let Some(id) = self.translate_program_unit(internal, ctx)? {
+                items.push(id);
+            }
+        }
+        Ok(ctx.builder.function(&func.name, func.parameters.clone(), items, Loc::default()))
     }
 
     fn translate_module<A: chomsky_uir::Analysis<IKun>>(
@@ -115,8 +334,19 @@ impl NyarTranslator {
         module: &ModuleNode,
         ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
-        let items = Vec::new();
-        // TODO
+        let mut items = Vec::new();
+        // 翻译 specification_part
+        for spec in &module.specification_part {
+            if let Some(id) = self.translate_specification_stmt(spec, ctx)? {
+                items.push(id);
+            }
+        }
+        // 翻译 module_subprograms
+        for sub in &module.module_subprograms {
+            if let Some(id) = self.translate_program_unit(sub, ctx)? {
+                items.push(id);
+            }
+        }
         Ok(ctx.builder.module(&module.name, items, Loc::default()))
     }
 

@@ -48,6 +48,7 @@ oak-elixir = { path = "../oaks/examples/oak-elixir" }
 oak-ruby = { path = "../oaks/examples/oak-ruby" }
 oak-julia = { path = "../oaks/examples/oak-julia" }
 oak-fsharp = { path = "../oaks/examples/oak-fsharp" }
+oak-haskell = { path = "../oaks/examples/oak-haskell" }
 oak-fortran = { path = "../oaks/examples/oak-fortran" }
 oak-nim = { path = "../oaks/examples/oak-nim" }
 oak-mojo = { path = "../oaks/examples/oak-mojo" }
@@ -55,7 +56,11 @@ oak-prolog = { path = "../oaks/examples/oak-prolog" }
 oak-json = { path = "../oaks/examples/oak-json" }
 oak-php = { path = "../oaks/examples/oak-php" }
 oak-tcl = { path = "../oaks/examples/oak-tcl" }
+oak-bat = { path = "../oaks/examples/oak-bat" }
+oak-cmd = { path = "../oaks/examples/oak-cmd" }
+oak-bash = { path = "../oaks/examples/oak-bash" }
 oak-scheme = { path = "../oaks/examples/oak-scheme" }
+oak-scala = { path = "../oaks/examples/oak-scala" }
 oak-swift = { path = "../oaks/examples/oak-swift" }
 oak-zig = { path = "../oaks/examples/oak-zig" }
 oak-r = { path = "../oaks/examples/oak-r" }
@@ -78,6 +83,9 @@ rusty-typescript = { path = "examples/rusty-typescript" }
 rusty-go = { path = "examples/rusty-go" }
 rusty-csharp = { path = "examples/rusty-csharp" }
 rusty-tcl = { path = "examples/rusty-tcl" }
+rusty-bat = { path = "examples/rusty-bat" }
+rusty-cmd = { path = "examples/rusty-cmd" }
+rusty-bash = { path = "examples/rusty-bash" }
 rusty-swift = { path = "examples/rusty-swift" }
 rusty-julia = { path = "examples/rusty-julia" }
 rusty-lua = { path = "examples/rusty-lua" }
@@ -89,7 +97,11 @@ rusty-r = { path = "examples/rusty-r" }
 rusty-dart = { path = "examples/rusty-dart" }
 rusty-nim = { path = "examples/rusty-nim" }
 rusty-mojo = { path = "examples/rusty-mojo" }
+rusty-fortran = { path = "examples/rusty-fortran" }
 rusty-kotlin = { path = "examples/rusty-kotlin" }
+rusty-scala = { path = "examples/rusty-scala" }
+rusty-fsharp = { path = "examples/rusty-fsharp" }
+rusty-haskell = { path = "examples/rusty-haskell" }
 
 criterion = "0.5"
 serde = { version = "1.0", features = ["derive"] }

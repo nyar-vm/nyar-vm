@@ -29,16 +29,6 @@ impl std::fmt::Display for FormatError {
 
 impl std::error::Error for FormatError {}
 
-impl From<FormatError> for NyarError {
-    fn from(e: FormatError) -> Self {
-        match e {
-            FormatError::InvalidHeader => Self::new(0x4001, NyarErrorKind::Format(FormatErrorKind::InvalidHeader), SourceLocation::default()),
-            FormatError::Truncated => Self::new(0x4002, NyarErrorKind::Format(FormatErrorKind::Truncated), SourceLocation::default()),
-            FormatError::Text(msg) => Self::new(0x4003, NyarErrorKind::Format(FormatErrorKind::Text(msg)), SourceLocation::default()),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct NyarError {
     pub code: u32,
@@ -160,8 +150,38 @@ impl NyarError {
 impl From<DecodeError> for NyarError {
     fn from(e: DecodeError) -> Self {
         match e {
-            DecodeError::Truncated => Self::new(0x5001, NyarErrorKind::Decode(DecodeErrorKind::Truncated), SourceLocation::default()),
-            DecodeError::InvalidOpcode(op) => Self::new(0x5002, NyarErrorKind::Decode(DecodeErrorKind::InvalidOpcode(op)), SourceLocation::default()),
+            DecodeError::Truncated => Self::new(
+                0x5001,
+                NyarErrorKind::Decode(DecodeErrorKind::Truncated),
+                SourceLocation::default(),
+            ),
+            DecodeError::InvalidOpcode(op) => Self::new(
+                0x5002,
+                NyarErrorKind::Decode(DecodeErrorKind::InvalidOpcode(op)),
+                SourceLocation::default(),
+            ),
+        }
+    }
+}
+
+impl From<FormatError> for NyarError {
+    fn from(e: FormatError) -> Self {
+        match e {
+            FormatError::InvalidHeader => Self::new(
+                0x4001,
+                NyarErrorKind::Format(FormatErrorKind::InvalidHeader),
+                SourceLocation::default(),
+            ),
+            FormatError::Truncated => Self::new(
+                0x4002,
+                NyarErrorKind::Format(FormatErrorKind::Truncated),
+                SourceLocation::default(),
+            ),
+            FormatError::Text(msg) => Self::new(
+                0x4003,
+                NyarErrorKind::Format(FormatErrorKind::Text(msg)),
+                SourceLocation::default(),
+            ),
         }
     }
 }

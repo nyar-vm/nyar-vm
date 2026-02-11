@@ -2,45 +2,13 @@ use chomsky::cost::DefaultCostModel;
 use chomsky::extract::IKunExtractor;
 use chomsky::optimizer::UniversalOptimizer;
 use chomsky_uir::{EGraph, IKun, IKunTree, Id};
+use nyar_types::NyarError;
 use nyar_vm::bytecode::instruction::Instruction;
 use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, NyarcModule};
 use nyar_vm::vm::NyarVM;
 use nyar_vm::runtime::NyarBuiltin;
 use std::collections::HashMap;
 use std::cell::RefCell;
-use std::error::Error;
-use std::fmt::{Display, Formatter};
-
-#[derive(Debug)]
-pub enum RuntimeError {
-    NyarVm(String),
-    EntryPointNotFound,
-    Other(String),
-}
-
-impl Display for RuntimeError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RuntimeError::NyarVm(msg) => write!(f, "Nyar VM execution failed: {}", msg),
-            RuntimeError::EntryPointNotFound => write!(f, "No entry point found in module"),
-            RuntimeError::Other(msg) => write!(f, "Runtime error: {}", msg),
-        }
-    }
-}
-
-impl Error for RuntimeError {}
-
-impl From<String> for RuntimeError {
-    fn from(s: String) -> Self {
-        RuntimeError::Other(s)
-    }
-}
-
-impl From<&str> for RuntimeError {
-    fn from(s: &str) -> Self {
-        RuntimeError::Other(s.to_string())
-    }
-}
 
 pub struct RustyCRuntime {
     _optimizer: UniversalOptimizer<()>,
@@ -63,7 +31,7 @@ impl RustyCRuntime {
         }
     }
 
-    pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<(), RuntimeError> {
+    pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<(), NyarError> {
         let (egraph, root_id) = intent_graph;
 
         // 1. Extract the best tree using the default cost model
@@ -81,7 +49,7 @@ impl RustyCRuntime {
 
         // Find main or first export
         let export = {
-            let module = self.vm.env.modules.get(&module_idx).ok_or(RuntimeError::EntryPointNotFound)?;
+            let module = self.vm.env.modules.get(&module_idx).ok_or_else(|| NyarError::RuntimeError("Module not found".to_string()))?;
             module.exports
                 .iter()
                 .find(|e| e.symbol == "main".into())
@@ -96,17 +64,17 @@ impl RustyCRuntime {
                 }
                 Err(e) => {
                     println!("Nyar VM execution failed: {:?}", e);
-                    return Err(RuntimeError::NyarVm(format!("{:?}", e)));
+                    return Err(e);
                 }
             }
         } else {
-            return Err(RuntimeError::EntryPointNotFound);
+            return Err(NyarError::RuntimeError("No entry point found in module".to_string()));
         }
 
         Ok(())
     }
 
-    fn translate_to_nyar(&self, tree: &IKunTree) -> Result<NyarcModule, RuntimeError> {
+    fn translate_to_nyar(&self, tree: &IKunTree) -> Result<NyarcModule, NyarError> {
         let mut module = NyarcModule::default();
 
         match tree {
@@ -160,7 +128,7 @@ impl RustyCRuntime {
         params: &[String],
         body: &IKunTree,
         module: &mut NyarcModule,
-    ) -> Result<Chunk, RuntimeError> {
+    ) -> Result<Chunk, NyarError> {
         let mut instructions = vec![];
         let mut symbols = HashMap::new();
         let mut labels = HashMap::new();
@@ -190,7 +158,7 @@ impl RustyCRuntime {
                 let jump_pos = self.calculate_code_size(&instructions[..jump_idx + 1]);
                 instructions[jump_idx] = Instruction::Jump(target_pos as i16 - jump_pos as i16);
             } else {
-                return Err(RuntimeError::Other(format!("Label '{}' not found", label_name)));
+                return Err(NyarError::RuntimeError(format!("Label '{}' not found", label_name)));
             }
         }
 
@@ -227,7 +195,7 @@ impl RustyCRuntime {
         pending_gotos: &mut Vec<(String, usize)>,
         mut switch_info: Option<&mut SwitchInfo>,
         module: &mut NyarcModule,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<(), NyarError> {
         match tree {
             IKunTree::Constant(v) => {
                 insts.push(Instruction::I32Const(*v as i32));

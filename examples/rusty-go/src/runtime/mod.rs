@@ -2,42 +2,10 @@ use chomsky::optimizer::UniversalOptimizer;
 use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
 use chomsky_uir::{EGraph, IKun, IKunTree, Id};
+use nyar_types::NyarError;
 use nyar_vm::bytecode::instruction::Instruction;
 use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, NyarcModule};
 use nyar_vm::vm::NyarVM;
-use std::error::Error;
-use std::fmt::{Display, Formatter};
-
-#[derive(Debug)]
-pub enum RuntimeError {
-    NyarVm(String),
-    EntryPointNotFound,
-    Other(String),
-}
-
-impl Display for RuntimeError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RuntimeError::NyarVm(msg) => write!(f, "Nyar VM execution failed: {}", msg),
-            RuntimeError::EntryPointNotFound => write!(f, "No entry point found in module"),
-            RuntimeError::Other(msg) => write!(f, "Runtime error: {}", msg),
-        }
-    }
-}
-
-impl Error for RuntimeError {}
-
-impl From<String> for RuntimeError {
-    fn from(s: String) -> Self {
-        RuntimeError::Other(s)
-    }
-}
-
-impl From<&str> for RuntimeError {
-    fn from(s: &str) -> Self {
-        RuntimeError::Other(s.to_string())
-    }
-}
 
 pub struct RustyGoRuntime {
     _optimizer: UniversalOptimizer<()>,
@@ -54,7 +22,7 @@ impl RustyGoRuntime {
         }
     }
 
-    pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<(), RuntimeError> {
+    pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<(), NyarError> {
         let (egraph, root_id) = intent_graph;
 
         // 1. Extract the best tree using the default cost model
@@ -90,15 +58,15 @@ impl RustyGoRuntime {
                 }
                 Err(e) => {
                     println!("Nyar VM execution failed: {:?}", e);
-                    Err(RuntimeError::NyarVm(format!("{:?}", e)))
+                    Err(e)
                 }
             }
         } else {
-            Err(RuntimeError::EntryPointNotFound)
+            Err(NyarError::RuntimeError("No entry point found in module".to_string()))
         }
     }
 
-    fn translate_to_nyar(&self, tree: &IKunTree) -> Result<NyarcModule, RuntimeError> {
+    fn translate_to_nyar(&self, tree: &IKunTree) -> Result<NyarcModule, NyarError> {
         let mut module = NyarcModule::default();
 
         match tree {
@@ -117,7 +85,7 @@ impl RustyGoRuntime {
                     }
                 }
             }
-            _ => return Err(RuntimeError::Other("Root must be a module".to_string())),
+            _ => return Err(NyarError::RuntimeError("Root must be a module".to_string())),
         }
 
         Ok(module)
@@ -128,7 +96,7 @@ impl RustyGoRuntime {
         _params: &[String],
         body: &IKunTree,
         module: &mut NyarcModule,
-    ) -> Result<Chunk, RuntimeError> {
+    ) -> Result<Chunk, NyarError> {
         let mut code = Vec::new();
         self.emit_tree(body, &mut code, module)?;
 
@@ -154,7 +122,7 @@ impl RustyGoRuntime {
         tree: &IKunTree,
         code: &mut Vec<u8>,
         module: &mut NyarcModule,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<(), NyarError> {
         match tree {
             IKunTree::Seq(items) => {
                 for item in items {
@@ -181,7 +149,7 @@ impl RustyGoRuntime {
                     module.constants.push(Constant::String(name.clone()));
                     code.extend_from_slice(&Instruction::StoreGlobal(name_idx).encode());
                 } else {
-                    return Err(RuntimeError::Other("Assignment target must be a symbol".to_string()));
+                    return Err(NyarError::RuntimeError("Assignment target must be a symbol".to_string()));
                 }
             }
             IKunTree::Choice(condition, then_body, else_body) => {

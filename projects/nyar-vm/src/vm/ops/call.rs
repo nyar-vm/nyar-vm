@@ -376,12 +376,34 @@ impl NyarVM {
                         self.push(Value::int(l + r))?;
                     } else if receiver.is_f32() && rhs.is_f32() {
                         self.push(Value::f32(receiver.as_f32() + rhs.as_f32()))?;
-                    } else if receiver.is_f64() && rhs.is_f64() {
-                        self.push(Value::float(receiver.as_f64() + rhs.as_f64()))?;
-                    } else if let (Some(l), Some(r)) = (receiver.try_as_str(), rhs.try_as_str()) {
-                        let mut s = l.to_string();
-                        s.push_str(r);
-                        self.push(Value::string(s, &self.gc))?;
+                    } else if (receiver.is_f64() || receiver.is_int() || receiver.is_f32())
+                        && (rhs.is_f64() || rhs.is_int() || rhs.is_f32())
+                    {
+                        self.push(Value::float(receiver.to_f64() + rhs.to_f64()))?;
+                    } else if receiver.is_string() && rhs.is_string() {
+                        if let (Some(l), Some(r)) = (receiver.try_as_str(), rhs.try_as_str()) {
+                            let mut s = l.to_string();
+                            s.push_str(r);
+                            self.push(Value::string(s, self.gc()))?;
+                        } else {
+                            self.push(Value::null())?;
+                        }
+                    } else if (receiver.is_bigint() || receiver.is_int()) && (rhs.is_bigint() || rhs.is_int()) {
+                        let l = if receiver.is_bigint() {
+                            receiver.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(receiver.as_int()))
+                        };
+                        let r = if rhs.is_bigint() {
+                            rhs.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(rhs.as_int()))
+                        };
+                        if let (Some(l), Some(r)) = (l, r) {
+                            self.push(Value::bigint(BigInt(l + &r), self.gc()))?;
+                        } else {
+                            self.push(Value::null())?;
+                        }
                     } else {
                         self.push(Value::null())?;
                     }
@@ -396,8 +418,26 @@ impl NyarVM {
                         self.push(Value::int(l - r))?;
                     } else if receiver.is_f32() && rhs.is_f32() {
                         self.push(Value::f32(receiver.as_f32() - rhs.as_f32()))?;
-                    } else if receiver.is_f64() && rhs.is_f64() {
-                        self.push(Value::float(receiver.as_f64() - rhs.as_f64()))?;
+                    } else if (receiver.is_f64() || receiver.is_int() || receiver.is_f32())
+                        && (rhs.is_f64() || rhs.is_int() || rhs.is_f32())
+                    {
+                        self.push(Value::float(receiver.to_f64() - rhs.to_f64()))?;
+                    } else if (receiver.is_bigint() || receiver.is_int()) && (rhs.is_bigint() || rhs.is_int()) {
+                        let l = if receiver.is_bigint() {
+                            receiver.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(receiver.as_int()))
+                        };
+                        let r = if rhs.is_bigint() {
+                            rhs.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(rhs.as_int()))
+                        };
+                        if let (Some(l), Some(r)) = (l, r) {
+                            self.push(Value::bigint(BigInt(l - &r), self.gc()))?;
+                        } else {
+                            self.push(Value::null())?;
+                        }
                     } else {
                         self.push(Value::null())?;
                     }
@@ -412,8 +452,26 @@ impl NyarVM {
                         self.push(Value::int(l * r))?;
                     } else if receiver.is_f32() && rhs.is_f32() {
                         self.push(Value::f32(receiver.as_f32() * rhs.as_f32()))?;
-                    } else if receiver.is_f64() && rhs.is_f64() {
-                        self.push(Value::float(receiver.as_f64() * rhs.as_f64()))?;
+                    } else if (receiver.is_f64() || receiver.is_int() || receiver.is_f32())
+                        && (rhs.is_f64() || rhs.is_int() || rhs.is_f32())
+                    {
+                        self.push(Value::float(receiver.to_f64() * rhs.to_f64()))?;
+                    } else if (receiver.is_bigint() || receiver.is_int()) && (rhs.is_bigint() || rhs.is_int()) {
+                        let l = if receiver.is_bigint() {
+                            receiver.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(receiver.as_int()))
+                        };
+                        let r = if rhs.is_bigint() {
+                            rhs.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(rhs.as_int()))
+                        };
+                        if let (Some(l), Some(r)) = (l, r) {
+                            self.push(Value::bigint(BigInt(l * &r), self.gc()))?;
+                        } else {
+                            self.push(Value::null())?;
+                        }
                     } else {
                         self.push(Value::null())?;
                     }
@@ -432,8 +490,30 @@ impl NyarVM {
                         }
                     } else if receiver.is_f32() && rhs.is_f32() {
                         self.push(Value::f32(receiver.as_f32() / rhs.as_f32()))?;
-                    } else if receiver.is_f64() && rhs.is_f64() {
-                        self.push(Value::float(receiver.as_f64() / rhs.as_f64()))?;
+                    } else if (receiver.is_f64() || receiver.is_int() || receiver.is_f32())
+                        && (rhs.is_f64() || rhs.is_int() || rhs.is_f32())
+                    {
+                        self.push(Value::float(receiver.to_f64() / rhs.to_f64()))?;
+                    } else if (receiver.is_bigint() || receiver.is_int()) && (rhs.is_bigint() || rhs.is_int()) {
+                        let l = if receiver.is_bigint() {
+                            receiver.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(receiver.as_int()))
+                        };
+                        let r = if rhs.is_bigint() {
+                            rhs.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(rhs.as_int()))
+                        };
+                        if let (Some(l), Some(r)) = (l, r) {
+                            if r != NativeBigInt::from(0) {
+                                self.push(Value::bigint(BigInt(l / &r), self.gc()))?;
+                            } else {
+                                self.push(Value::null())?;
+                            }
+                        } else {
+                            self.push(Value::null())?;
+                        }
                     } else {
                         self.push(Value::null())?;
                     }
@@ -452,10 +532,185 @@ impl NyarVM {
                         }
                     } else if receiver.is_f32() && rhs.is_f32() {
                         self.push(Value::f32(receiver.as_f32() % rhs.as_f32()))?;
-                    } else if receiver.is_f64() && rhs.is_f64() {
-                        self.push(Value::float(receiver.as_f64() % rhs.as_f64()))?;
+                    } else if (receiver.is_f64() || receiver.is_int() || receiver.is_f32())
+                        && (rhs.is_f64() || rhs.is_int() || rhs.is_f32())
+                    {
+                        self.push(Value::float(receiver.to_f64() % rhs.to_f64()))?;
+                    } else if (receiver.is_bigint() || receiver.is_int()) && (rhs.is_bigint() || rhs.is_int()) {
+                        let l = if receiver.is_bigint() {
+                            receiver.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(receiver.as_int()))
+                        };
+                        let r = if rhs.is_bigint() {
+                            rhs.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(rhs.as_int()))
+                        };
+                        if let (Some(l), Some(r)) = (l, r) {
+                            if r != NativeBigInt::from(0) {
+                                self.push(Value::bigint(BigInt(l % &r), self.gc()))?;
+                            } else {
+                                self.push(Value::null())?;
+                            }
+                        } else {
+                            self.push(Value::null())?;
+                        }
                     } else {
                         self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
+            "bit_and" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
+                        self.push(Value::int(l & r))?;
+                    } else if (receiver.is_bigint() || receiver.is_int()) && (rhs.is_bigint() || rhs.is_int()) {
+                        let l = if receiver.is_bigint() {
+                            receiver.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(receiver.as_int()))
+                        };
+                        let r = if rhs.is_bigint() {
+                            rhs.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(rhs.as_int()))
+                        };
+                        if let (Some(l), Some(r)) = (l, r) {
+                            self.push(Value::bigint(BigInt(l & &r), self.gc()))?;
+                        } else {
+                            self.push(Value::null())?;
+                        }
+                    } else {
+                        self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
+            "bit_or" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
+                        self.push(Value::int(l | r))?;
+                    } else if (receiver.is_bigint() || receiver.is_int()) && (rhs.is_bigint() || rhs.is_int()) {
+                        let l = if receiver.is_bigint() {
+                            receiver.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(receiver.as_int()))
+                        };
+                        let r = if rhs.is_bigint() {
+                            rhs.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(rhs.as_int()))
+                        };
+                        if let (Some(l), Some(r)) = (l, r) {
+                            self.push(Value::bigint(BigInt(l | &r), self.gc()))?;
+                        } else {
+                            self.push(Value::null())?;
+                        }
+                    } else {
+                        self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
+            "bit_xor" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
+                        self.push(Value::int(l ^ r))?;
+                    } else if (receiver.is_bigint() || receiver.is_int()) && (rhs.is_bigint() || rhs.is_int()) {
+                        let l = if receiver.is_bigint() {
+                            receiver.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(receiver.as_int()))
+                        };
+                        let r = if rhs.is_bigint() {
+                            rhs.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(rhs.as_int()))
+                        };
+                        if let (Some(l), Some(r)) = (l, r) {
+                            self.push(Value::bigint(BigInt(l ^ &r), self.gc()))?;
+                        } else {
+                            self.push(Value::null())?;
+                        }
+                    } else {
+                        self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
+            "bit_not" => {
+                if args.is_empty() {
+                    if let Some(l) = receiver.try_as_int() {
+                        self.push(Value::int(!l))?;
+                    } else if let Some(l) = receiver.try_as_bigint() {
+                        self.push(Value::bigint(BigInt(!l.0.clone()), self.gc()))?;
+                    } else {
+                        self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
+            "bit_shl" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
+                        self.push(Value::int(l << r))?;
+                    } else {
+                        self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
+            "bit_shr" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
+                        self.push(Value::int(l >> r))?;
+                    } else {
+                        self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
+            "neg" => {
+                if args.is_empty() {
+                    if let Some(l) = receiver.try_as_int() {
+                        self.push(Value::int(-l))?;
+                    } else if receiver.is_f32() {
+                        self.push(Value::f32(-receiver.as_f32()))?;
+                    } else if receiver.is_f64() {
+                        self.push(Value::float(-receiver.as_f64()))?;
+                    } else if receiver.is_bigint() {
+                        if let Some(l) = receiver.try_as_bigint() {
+                            self.push(Value::bigint(BigInt(-l.0.clone()), self.gc()))?;
+                        } else {
+                            self.push(Value::null())?;
+                        }
+                    } else {
+                        self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
+            "not" => {
+                if args.is_empty() {
+                    if let Some(l) = receiver.try_as_int() {
+                        self.push(Value::bool(l == 0))?;
+                    } else {
+                        self.push(Value::bool(receiver.is_null()))?;
                     }
                 } else {
                     self.push(Value::null())?;
@@ -472,7 +727,7 @@ impl NyarVM {
             "ne" => {
                 if args.len() == 1 {
                     let rhs = args[0];
-                    self.push(Value::bool(!self.compare_values(receiver, rhs, "eq")))?;
+                    self.push(Value::bool(self.compare_values(receiver, rhs, "ne")))?;
                 } else {
                     self.push(Value::bool(true))?;
                 }
@@ -517,11 +772,12 @@ impl NyarVM {
     }
 
     fn compare_values(&self, lhs: Value, rhs: Value, op: &str) -> bool {
-        let (l_f, r_f) = if lhs.is_int() && rhs.is_int() {
+        if lhs.is_int() && rhs.is_int() {
             let l = lhs.as_int();
             let r = rhs.as_int();
             return match op {
                 "eq" => l == r,
+                "ne" => l != r,
                 "lt" => l < r,
                 "le" => l <= r,
                 "gt" => l > r,
@@ -545,11 +801,20 @@ impl NyarVM {
             } else {
                 rhs.as_f64()
             };
-            (l, r)
+            return match op {
+                "eq" => l == r,
+                "ne" => l != r,
+                "lt" => l < r,
+                "le" => l <= r,
+                "gt" => l > r,
+                "ge" => l >= r,
+                _ => false,
+            };
         } else if lhs.is_string() && rhs.is_string() {
             if let (Some(l), Some(r)) = (lhs.try_as_str(), rhs.try_as_str()) {
                 return match op {
                     "eq" => l == r,
+                    "ne" => l != r,
                     "lt" => l < r,
                     "le" => l <= r,
                     "gt" => l > r,
@@ -558,20 +823,47 @@ impl NyarVM {
                 };
             }
             return false;
-        } else {
+        } else if lhs.is_bigint() || rhs.is_bigint() {
+            // BigInt vs BigInt, or BigInt vs Int
+            let l = if lhs.is_bigint() {
+                lhs.try_as_bigint().map(|b| b.0.clone())
+            } else if lhs.is_int() {
+                Some(NativeBigInt::from(lhs.as_int()))
+            } else {
+                None
+            };
+            
+            let r = if rhs.is_bigint() {
+                rhs.try_as_bigint().map(|b| b.0.clone())
+            } else if rhs.is_int() {
+                Some(NativeBigInt::from(rhs.as_int()))
+            } else {
+                None
+            };
+
+            if let (Some(l), Some(r)) = (l, r) {
+                return match op {
+                    "eq" => l == r,
+                    "ne" => l != r,
+                    "lt" => l < r,
+                    "le" => l <= r,
+                    "gt" => l > r,
+                    "ge" => l >= r,
+                    _ => false,
+                };
+            }
+            // If one side is float and other is bigint, we don't handle it yet (fall through to default)
             return match op {
-                "eq" => false, // Different types are not equal
+                "eq" => false,
+                "ne" => true,
                 _ => false,
             };
-        };
-
-        match op {
-            "eq" => l_f == r_f,
-            "lt" => l_f < r_f,
-            "le" => l_f <= r_f,
-            "gt" => l_f > r_f,
-            "ge" => l_f >= r_f,
-            _ => false,
+        } else {
+            return match op {
+                "eq" => false,
+                "ne" => true,
+                _ => false,
+            };
         }
     }
 

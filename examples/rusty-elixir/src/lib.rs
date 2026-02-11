@@ -32,13 +32,13 @@ impl RustyElixirFrontend {
 impl NyarFrontend for RustyElixirFrontend {
     type Language = ElixirLanguage;
 
-    fn parse(&self, _source: &str) -> Result<(), NyarError> {
+    fn parse(&self, _source: &str) -> Result<ElixirRoot, NyarError> {
         // TODO: 实现真正的解析逻辑
-        Err(NyarError::Parse("Elixir parser not yet integrated".to_string()))
+        // 目前返回一个空的根节点
+        Ok(ElixirRoot { items: Vec::new() })
     }
 
-    fn lower_unified<V: Vfs>(&self, _ast: &ElixirRoot, ctx: &mut NyarContext<V>) -> Id {
-        // TODO: 实现真正的从 ElixirRoot 到 IKunTree 的转换
-        ctx.builder.module("rusty-elixir-program", Vec::new(), nyar_types::Loc::default())
+    fn lower_unified<V: Vfs>(&self, ast: &ElixirRoot, ctx: &mut NyarContext<V>) -> Id {
+        codegen::lower_elixir_root(ast, ctx)
     }
 }

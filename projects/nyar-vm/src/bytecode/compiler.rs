@@ -85,6 +85,15 @@ impl NyarBackend {
         self.module.classes.iter().position(|c| c.name == qn).map(|i| i as u16)
     }
 
+    fn try_fold_const(&self, tree: &IKunTree) -> Option<Constant> {
+        match tree {
+            IKunTree::Constant(i) => Some(Constant::Int(*i)),
+            IKunTree::FloatConstant(f) => Some(Constant::Float(f64::from_bits(*f))),
+            IKunTree::StringConstant(s) => Some(Constant::String(s.clone())),
+            _ => None,
+        }
+    }
+
     fn scan_fields(&mut self, tree: &IKunTree, fields: &mut Vec<String>) {
         match tree {
             IKunTree::Seq(items) => {
@@ -991,140 +1000,124 @@ impl NyarBackend {
                             }
                         }
                     }
-                    "add" => {
-                        let left = &args[0];
-                        let right = &args[1];
-                        if let (IKunTree::Constant(l), IKunTree::Constant(r)) = (left, right) {
-                            self.emit(Instruction::I64Const(*l + *r), &mut code);
-                        } else if let (IKunTree::FloatConstant(l), IKunTree::FloatConstant(r)) = (left, right) {
-                            self.emit(Instruction::F64Const(f64::from_bits(*l) + f64::from_bits(*r)), &mut code);
-                        } else {
-                            code.extend(self.lower_tree(left)?);
-                            code.extend(self.lower_tree(right)?);
-                            
-                            match (left, right) {
-                                (IKunTree::Constant(_), IKunTree::Constant(_)) => {
-                                    self.emit(Instruction::I64Add, &mut code);
+                    "add" | "sub" | "mul" | "div" | "rem" => {
+                        if let (Some(l), Some(r)) =
+                            (self.try_fold_const(&args[0]), self.try_fold_const(&args[1]))
+                        {
+                            match (l, r) {
+                                (Constant::Int(l), Constant::Int(r)) => {
+                                    let result = match name.as_str() {
+                                        "add" => l.checked_add(r),
+                                        "sub" => l.checked_sub(r),
+                                        "mul" => l.checked_mul(r),
+                                        "div" => if r != 0 { l.checked_div(r) } else { None },
+                                        "rem" => if r != 0 { l.checked_rem(r) } else { None },
+                                        _ => unreachable!(),
+                                    };
+                                    if let Some(res) = result {
+                                        self.emit(Instruction::I64Const(res), &mut code);
+                                    } else {
+                                        code.extend(self.lower_tree(&args[0])?);
+                                        code.extend(self.lower_tree(&args[1])?);
+                                        let name_idx = self.add_constant(Constant::String(name.clone()));
+                                        self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
+                                    }
                                 }
-                                (IKunTree::FloatConstant(_), IKunTree::FloatConstant(_)) => {
-                                    self.emit(Instruction::F64Add, &mut code);
+                                (Constant::Float(l), Constant::Float(r)) => {
+                                    let result = match name.as_str() {
+                                        "add" => l + r,
+                                        "sub" => l - r,
+                                        "mul" => l * r,
+                                        "div" => l / r,
+                                        "rem" => l % r,
+                                        _ => unreachable!(),
+                                    };
+                                    self.emit(Instruction::F64Const(result), &mut code);
                                 }
                                 _ => {
-                                    let name_idx = self.add_constant(Constant::String("add".to_string()));
+                                    code.extend(self.lower_tree(&args[0])?);
+                                    code.extend(self.lower_tree(&args[1])?);
+                                    let name_idx = self.add_constant(Constant::String(name.clone()));
                                     self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
                                 }
                             }
-                        }
-                    }
-                    "sub" => {
-                        let left = &args[0];
-                        let right = &args[1];
-                        if let (IKunTree::Constant(l), IKunTree::Constant(r)) = (left, right) {
-                            self.emit(Instruction::I64Const(*l - *r), &mut code);
-                        } else if let (IKunTree::FloatConstant(l), IKunTree::FloatConstant(r)) = (left, right) {
-                            self.emit(Instruction::F64Const(f64::from_bits(*l) - f64::from_bits(*r)), &mut code);
                         } else {
-                            code.extend(self.lower_tree(left)?);
-                            code.extend(self.lower_tree(right)?);
-                            match (left, right) {
-                                (IKunTree::Constant(_), IKunTree::Constant(_)) => {
-                                    self.emit(Instruction::I64Sub, &mut code);
-                                }
-                                (IKunTree::FloatConstant(_), IKunTree::FloatConstant(_)) => {
-                                    self.emit(Instruction::F64Sub, &mut code);
-                                }
-                                _ => {
-                                    let name_idx = self.add_constant(Constant::String("sub".to_string()));
-                                    self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
-                                }
-                            }
+                            code.extend(self.lower_tree(&args[0])?);
+                            code.extend(self.lower_tree(&args[1])?);
+                            let name_idx = self.add_constant(Constant::String(name.clone()));
+                            self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
                         }
                     }
-                    "mul" => {
-                        let left = &args[0];
-                        let right = &args[1];
-                        if let (IKunTree::Constant(l), IKunTree::Constant(r)) = (left, right) {
-                            self.emit(Instruction::I64Const(*l * *r), &mut code);
-                        } else if let (IKunTree::FloatConstant(l), IKunTree::FloatConstant(r)) = (left, right) {
-                            self.emit(Instruction::F64Const(f64::from_bits(*l) * f64::from_bits(*r)), &mut code);
-                        } else {
-                            code.extend(self.lower_tree(left)?);
-                            code.extend(self.lower_tree(right)?);
-                            match (left, right) {
-                                (IKunTree::Constant(_), IKunTree::Constant(_)) => {
-                                    self.emit(Instruction::I64Mul, &mut code);
-                                }
-                                (IKunTree::FloatConstant(_), IKunTree::FloatConstant(_)) => {
-                                    self.emit(Instruction::F64Mul, &mut code);
-                                }
-                                _ => {
-                                    let name_idx = self.add_constant(Constant::String("mul".to_string()));
-                                    self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
-                                }
-                            }
-                        }
-                    }
-                    "div" => {
-                        let left = &args[0];
-                        let right = &args[1];
-                        code.extend(self.lower_tree(left)?);
-                        code.extend(self.lower_tree(right)?);
-                        match (left, right) {
-                            (IKunTree::Constant(_), IKunTree::Constant(_)) => {
-                                self.emit(Instruction::I64DivS, &mut code);
-                            }
-                            (IKunTree::FloatConstant(_), IKunTree::FloatConstant(_)) => {
-                                self.emit(Instruction::F64Div, &mut code);
-                            }
-                            _ => {
-                                let name_idx = self.add_constant(Constant::String("div".to_string()));
+                    "bit_and" | "bit_or" | "bit_xor" | "bit_shl" | "bit_shr" => {
+                        if let (Some(l), Some(r)) =
+                            (self.try_fold_const(&args[0]), self.try_fold_const(&args[1]))
+                        {
+                            if let (Constant::Int(l), Constant::Int(r)) = (l, r) {
+                                let result = match name.as_str() {
+                                    "bit_and" => l & r,
+                                    "bit_or" => l | r,
+                                    "bit_xor" => l ^ r,
+                                    "bit_shl" => l << r,
+                                    "bit_shr" => l >> r,
+                                    _ => unreachable!(),
+                                };
+                                self.emit(Instruction::I64Const(result), &mut code);
+                            } else {
+                                code.extend(self.lower_tree(&args[0])?);
+                                code.extend(self.lower_tree(&args[1])?);
+                                let name_idx = self.add_constant(Constant::String(name.clone()));
                                 self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
                             }
+                        } else {
+                            code.extend(self.lower_tree(&args[0])?);
+                            code.extend(self.lower_tree(&args[1])?);
+                            let name_idx = self.add_constant(Constant::String(name.clone()));
+                            self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
                         }
-                    }
-                    "rem" => {
-                        let left = &args[0];
-                        let right = &args[1];
-                        code.extend(self.lower_tree(left)?);
-                        code.extend(self.lower_tree(right)?);
-                        match (left, right) {
-                            (IKunTree::Constant(_), IKunTree::Constant(_)) => {
-                                self.emit(Instruction::I64RemS, &mut code);
-                            }
-                            _ => {
-                                let name_idx = self.add_constant(Constant::String("rem".to_string()));
-                                self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
-                            }
-                        }
-                    }
-                    "bit_and" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64And, &mut code);
-                    }
-                    "bit_or" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64Or, &mut code);
-                    }
-                    "bit_xor" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64Xor, &mut code);
                     }
                     "bit_not" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        self.emit(Instruction::I64Not, &mut code);
+                        if let Some(Constant::Int(l)) = self.try_fold_const(&args[0]) {
+                            self.emit(Instruction::I64Const(!l), &mut code);
+                        } else {
+                            code.extend(self.lower_tree(&args[0])?);
+                            let name_idx = self.add_constant(Constant::String("bit_not".to_string()));
+                            self.emit(Instruction::InvokeMethod(name_idx, 0), &mut code);
+                        }
                     }
-                    "bit_shl" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64Shl, &mut code);
+                    "neg" => {
+                        if let Some(c) = self.try_fold_const(&args[0]) {
+                            match c {
+                                Constant::Int(l) => self.emit(Instruction::I64Const(-l), &mut code),
+                                Constant::Float(l) => self.emit(Instruction::F64Const(-l), &mut code),
+                                _ => {
+                                    code.extend(self.lower_tree(&args[0])?);
+                                    let name_idx = self.add_constant(Constant::String("neg".to_string()));
+                                    self.emit(Instruction::InvokeMethod(name_idx, 0), &mut code);
+                                }
+                            }
+                        } else {
+                            code.extend(self.lower_tree(&args[0])?);
+                            let name_idx = self.add_constant(Constant::String("neg".to_string()));
+                            self.emit(Instruction::InvokeMethod(name_idx, 0), &mut code);
+                        }
                     }
-                    "bit_shr" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64ShrS, &mut code);
+                    "not" => {
+                        if let Some(c) = self.try_fold_const(&args[0]) {
+                            match c {
+                                Constant::Int(l) => {
+                                    self.emit(Instruction::I64Const(if l == 0 { 1 } else { 0 }), &mut code)
+                                }
+                                _ => {
+                                    code.extend(self.lower_tree(&args[0])?);
+                                    let name_idx = self.add_constant(Constant::String("not".to_string()));
+                                    self.emit(Instruction::InvokeMethod(name_idx, 0), &mut code);
+                                }
+                            }
+                        } else {
+                            code.extend(self.lower_tree(&args[0])?);
+                            let name_idx = self.add_constant(Constant::String("not".to_string()));
+                            self.emit(Instruction::InvokeMethod(name_idx, 0), &mut code);
+                        }
                     }
                     "and" => {
                         // a && b
@@ -1405,46 +1398,31 @@ impl NyarBackend {
                             self.emit(Instruction::Cast(idx), &mut code);
                         }
                     }
-                    "inc_pre" => {
+                    "inc_pre" | "inc_post" | "dec_pre" | "dec_post" => {
                         if let IKunTree::Symbol(name) = &args[0] {
                             let idx = self.add_constant(Constant::String(name.clone()));
                             self.emit(Instruction::LoadGlobal(idx), &mut code);
+                            
+                            // Determine method and stack behavior
+                            let method = match name.as_str() {
+                                "inc_pre" | "inc_post" => "add",
+                                "dec_pre" | "dec_post" => "sub",
+                                _ => unreachable!(),
+                            };
+                            let is_pre = name.starts_with("inc_pre") || name.starts_with("dec_pre");
+                            
+                            if !is_pre {
+                                self.emit(Instruction::Dup(0), &mut code);
+                            }
+                            
                             self.emit(Instruction::I64Const(1), &mut code);
-                            self.emit(Instruction::I64Add, &mut code);
-                            self.emit(Instruction::Dup(0), &mut code);
-                            self.emit(Instruction::StoreGlobal(idx), &mut code);
-                            self.emit(Instruction::Pop, &mut code);
-                        }
-                    }
-                    "inc_post" => {
-                        if let IKunTree::Symbol(name) = &args[0] {
-                            let idx = self.add_constant(Constant::String(name.clone()));
-                            self.emit(Instruction::LoadGlobal(idx), &mut code);
-                            self.emit(Instruction::Dup(0), &mut code);
-                            self.emit(Instruction::I64Const(1), &mut code);
-                            self.emit(Instruction::I64Add, &mut code);
-                            self.emit(Instruction::StoreGlobal(idx), &mut code);
-                            self.emit(Instruction::Pop, &mut code);
-                        }
-                    }
-                    "dec_pre" => {
-                        if let IKunTree::Symbol(name) = &args[0] {
-                            let idx = self.add_constant(Constant::String(name.clone()));
-                            self.emit(Instruction::LoadGlobal(idx), &mut code);
-                            self.emit(Instruction::I64Const(1), &mut code);
-                            self.emit(Instruction::I64Sub, &mut code);
-                            self.emit(Instruction::Dup(0), &mut code);
-                            self.emit(Instruction::StoreGlobal(idx), &mut code);
-                            self.emit(Instruction::Pop, &mut code);
-                        }
-                    }
-                    "dec_post" => {
-                        if let IKunTree::Symbol(name) = &args[0] {
-                            let idx = self.add_constant(Constant::String(name.clone()));
-                            self.emit(Instruction::LoadGlobal(idx), &mut code);
-                            self.emit(Instruction::Dup(0), &mut code);
-                            self.emit(Instruction::I64Const(1), &mut code);
-                            self.emit(Instruction::I64Sub, &mut code);
+                            let method_idx = self.add_constant(Constant::String(method.to_string()));
+                            self.emit(Instruction::InvokeMethod(method_idx, 1), &mut code);
+                            
+                            if is_pre {
+                                self.emit(Instruction::Dup(0), &mut code);
+                            }
+                            
                             self.emit(Instruction::StoreGlobal(idx), &mut code);
                             self.emit(Instruction::Pop, &mut code);
                         }
@@ -1484,7 +1462,8 @@ impl NyarBackend {
                                 _ => {
                                     code.extend(self.lower_tree(&args[0])?);
                                     code.extend(self.lower_tree(&args[1])?);
-                                    self.emit(Instruction::InvokeMethod(name.clone().into(), 1), &mut code);
+                                    let name_idx = self.add_constant(Constant::String(name.clone()));
+                                    self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
                                     return Ok(code);
                                 }
                             };
@@ -1492,7 +1471,8 @@ impl NyarBackend {
                         } else {
                             code.extend(self.lower_tree(&args[0])?);
                             code.extend(self.lower_tree(&args[1])?);
-                            self.emit(Instruction::InvokeMethod(name.clone().into(), 1), &mut code);
+                            let name_idx = self.add_constant(Constant::String(name.clone()));
+                            self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
                         }
                     }
                     _ => {}
