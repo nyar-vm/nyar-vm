@@ -108,12 +108,35 @@ impl NyarTranslator {
     fn translate_specification_stmt<A: chomsky_uir::Analysis<IKun>>(
         &self,
         spec: &SpecificationStmt,
-        _ctx: &mut TranslatorContext<'_, A>,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<Option<chomsky_uir::egraph::Id>, NyarError> {
+        let loc = Loc::default();
         match spec {
-            SpecificationStmt::TypeDeclaration(_node) => {
-                // TODO: 实现变量声明
-                Ok(None)
+            SpecificationStmt::TypeDeclaration(node) => {
+                let mut decls = Vec::new();
+                for entity in &node.entities {
+                    if let Some(init) = &entity.initialization {
+                        let target = ctx.builder.symbol(&entity.name, loc);
+                        let value = self.translate_expr(init, ctx)?;
+                        decls.push(ctx.builder.extension("assign", vec![target, value], loc));
+                    }
+                }
+                if decls.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(ctx.builder.seq(decls, loc)))
+                }
+            }
+            SpecificationStmt::Parameter(node) => {
+                let mut decls = Vec::new();
+                for entity in &node.entities {
+                    if let Some(init) = &entity.initialization {
+                        let target = ctx.builder.symbol(&entity.name, loc);
+                        let value = self.translate_expr(init, ctx)?;
+                        decls.push(ctx.builder.extension("assign", vec![target, value], loc));
+                    }
+                }
+                Ok(Some(ctx.builder.seq(decls, loc)))
             }
             _ => Ok(None),
         }
@@ -129,7 +152,7 @@ impl NyarTranslator {
             ExecutableStmt::Assignment(node) => {
                 let var = self.translate_expr(&node.variable, ctx)?;
                 let expr = self.translate_expr(&node.expression, ctx)?;
-                Ok(ctx.builder.extension("=", vec![var, expr], loc))
+                Ok(ctx.builder.extension("assign", vec![var, expr], loc))
             }
             ExecutableStmt::Call(node) => {
                 let args = node.arguments.iter()
@@ -137,6 +160,23 @@ impl NyarTranslator {
                     .collect::<Result<Vec<_>, _>>()?;
                 let callee = ctx.builder.symbol(&node.procedure_name, loc);
                 Ok(ctx.builder.call(callee, args, loc))
+            }
+            ExecutableStmt::Stop(_) => {
+                Ok(ctx.builder.extension("stop", vec![], loc))
+            }
+            ExecutableStmt::Return(_) => {
+                Ok(ctx.builder.extension("return", vec![], loc))
+            }
+            ExecutableStmt::Continue => {
+                Ok(ctx.builder.seq(vec![], loc))
+            }
+            ExecutableStmt::Cycle(label) => {
+                let args = label.as_ref().map(|l| vec![ctx.builder.string(l, loc)]).unwrap_or_default();
+                Ok(ctx.builder.extension("continue", args, loc))
+            }
+            ExecutableStmt::Exit(label) => {
+                let args = label.as_ref().map(|l| vec![ctx.builder.string(l, loc)]).unwrap_or_default();
+                Ok(ctx.builder.extension("break", args, loc))
             }
             ExecutableStmt::Print(node) => {
                 let args = node.output_items.iter()
@@ -172,30 +212,81 @@ impl NyarTranslator {
                 Ok(ctx.builder.branch(cond, then_id, current_else, loc))
             }
             ExecutableStmt::DoConstruct(node) => {
-                if let Some(DoControl::Iterative { variable, start, end, step }) = &node.control {
-                    let start_id = self.translate_expr(start, ctx)?;
-                    let end_id = self.translate_expr(end, ctx)?;
-                    let step_id = if let Some(s) = step {
-                        self.translate_expr(s, ctx)?
-                    } else {
-                        ctx.builder.int(1, loc)
-                    };
-                    
-                    let body = node.body.iter()
+                let body = node.body.iter()
+                    .map(|s| self.translate_executable_stmt(s, ctx))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let body_id = ctx.builder.seq(body, loc);
+
+                match &node.control {
+                    Some(DoControl::Iterative { variable, start, end, step }) => {
+                        let start_id = self.translate_expr(start, ctx)?;
+                        let end_id = self.translate_expr(end, ctx)?;
+                        let step_id = if let Some(s) = step {
+                            self.translate_expr(s, ctx)?
+                        } else {
+                            ctx.builder.int(1, loc)
+                        };
+                        let var_id = ctx.builder.symbol(variable, loc);
+                        Ok(ctx.builder.extension("do_loop", vec![
+                            var_id,
+                            start_id, end_id, step_id, body_id
+                        ], loc))
+                    }
+                    Some(DoControl::While(cond)) => {
+                        let cond_id = self.translate_expr(cond, ctx)?;
+                        Ok(ctx.builder.while_loop(cond_id, body_id, loc))
+                    }
+                    _ => {
+                        // TODO: Concurrent do
+                        Ok(body_id)
+                    }
+                }
+            }
+            ExecutableStmt::SelectCase(node) => {
+                let expr_id = self.translate_expr(&node.expression, ctx)?;
+                let mut current_node = ctx.builder.seq(vec![], loc);
+                
+                for case in node.cases.iter().rev() {
+                    let body = case.body.iter()
                         .map(|s| self.translate_executable_stmt(s, ctx))
                         .collect::<Result<Vec<_>, _>>()?;
                     let body_id = ctx.builder.seq(body, loc);
-                    let var_id = ctx.builder.symbol(variable, loc);
                     
-                    // 这里简化为 extension 调用，实际可能需要更复杂的循环结构
-                    Ok(ctx.builder.extension("do_loop", vec![
-                        var_id,
-                        start_id, end_id, step_id, body_id
-                    ], loc))
-                } else {
-                    // TODO: 其他类型的循环
-                    Ok(ctx.builder.seq(vec![], loc))
+                    match &case.selector {
+                        CaseSelector::Case(values) => {
+                            for val in values {
+                                match val {
+                                    CaseValue::Single(v) => {
+                                        let v_id = self.translate_expr(v, ctx)?;
+                                        let cond = ctx.builder.binary_op("eq", expr_id, v_id, loc);
+                                        current_node = ctx.builder.branch(cond, body_id, current_node, loc);
+                                    }
+                                    CaseValue::Range(low, high) => {
+                                        let mut conds = Vec::new();
+                                        if let Some(l) = low {
+                                            let l_id = self.translate_expr(l, ctx)?;
+                                            conds.push(ctx.builder.binary_op("ge", expr_id, l_id, loc));
+                                        }
+                                        if let Some(h) = high {
+                                            let h_id = self.translate_expr(h, ctx)?;
+                                            conds.push(ctx.builder.binary_op("le", expr_id, h_id, loc));
+                                        }
+                                        let cond = if conds.len() == 2 {
+                                            ctx.builder.binary_op("and", conds[0], conds[1], loc)
+                                        } else {
+                                            conds[0]
+                                        };
+                                        current_node = ctx.builder.branch(cond, body_id, current_node, loc);
+                                    }
+                                }
+                            }
+                        }
+                        CaseSelector::Default => {
+                            current_node = body_id;
+                        }
+                    }
                 }
+                Ok(current_node)
             }
             _ => Ok(ctx.builder.seq(vec![], loc)),
         }

@@ -34,11 +34,21 @@ impl RustyElixirFrontend {
 impl NyarFrontend for RustyElixirFrontend {
     type Language = ElixirLanguage;
 
-    fn parse(&self, _source: &str) -> Result<ElixirRoot, NyarError> {
-        // TODO: 实现真正的解析逻辑
-        // 目前返回一个空的根节点
-        Ok(ElixirRoot { items: Vec::new() })
-    }
+    fn parse(&self, source: &str) -> Result<ElixirRoot, NyarError> {
+         use oak_core::builder::Builder;
+         use oak_elixir::builder::ElixirBuilder;
+         
+         let builder = ElixirBuilder::new(&self.language);
+         let mut cache = oak_core::ParseSession::default();
+         
+         // ElixirBuilder expects a Source + TextEdit
+         let result = builder.build(source, &[], &mut cache);
+         
+         match result.result {
+             Ok(root) => Ok(root),
+             Err(e) => Err(NyarError::Compile(format!("{:?}", e))),
+         }
+     }
 
     fn lower_unified<V: Vfs>(&self, ast: &ElixirRoot, ctx: &mut NyarContext<V>) -> Id {
         codegen::lower_elixir_root(ast, ctx)

@@ -41,6 +41,23 @@ impl<'a, 'b, V: Vfs> UirConverter<'a, 'b, V> {
                 let func_id = self.ctx.builder().function(&func.name, Vec::new(), body, Loc::default());
                 Some(func_id)
             }
+            JuliaStatement::If { condition, then_body, else_body } => {
+                let cond_id = self.convert_expression(condition);
+                let then_ids = then_body.iter().filter_map(|s| self.convert_statement(s)).collect::<Vec<_>>();
+                let then_id = self.ctx.builder().block(then_ids, Loc::default());
+                let else_id = else_body.as_ref().map(|body| {
+                    let ids = body.iter().filter_map(|s| self.convert_statement(s)).collect::<Vec<_>>();
+                    self.ctx.builder().block(ids, Loc::default())
+                });
+                Some(self.ctx.builder().if_(cond_id, then_id, else_id, Loc::default()))
+            }
+            JuliaStatement::For { variable, iterable, body } => {
+                let var_id = self.ctx.builder().symbol(variable, Loc::default());
+                let iter_id = self.convert_expression(iterable);
+                let body_ids = body.iter().filter_map(|s| self.convert_statement(s)).collect::<Vec<_>>();
+                let body_id = self.ctx.builder().block(body_ids, Loc::default());
+                Some(self.ctx.builder().extension("for", vec![var_id, iter_id, body_id], Loc::default()))
+            }
             JuliaStatement::Expression(expr) => Some(self.convert_expression(expr)),
             JuliaStatement::Error => None,
         }

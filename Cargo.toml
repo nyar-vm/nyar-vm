@@ -60,10 +60,10 @@ oak-bat = { path = "../oaks/examples/oak-bat" }
 oak-cmd = { path = "../oaks/examples/oak-cmd" }
 oak-bash = { path = "../oaks/examples/oak-bash" }
 oak-scheme = { path = "../oaks/examples/oak-scheme" }
-oak-wolfram = { path = "../oaks/examples/oak-wolfram" }
 oak-scala = { path = "../oaks/examples/oak-scala" }
 oak-groovy = { path = "../oaks/examples/oak-groovy" }
 oak-clojure = { path = "../oaks/examples/oak-clojure" }
+oak-wolfram = { path = "../oaks/examples/oak-wolfram" }
 oak-swift = { path = "../oaks/examples/oak-swift" }
 oak-zig = { path = "../oaks/examples/oak-zig" }
 oak-r = { path = "../oaks/examples/oak-r" }

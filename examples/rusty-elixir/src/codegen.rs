@@ -1,8 +1,8 @@
 //! Elixir 代码生成实现
 
 use nyar_types::{Id, Loc, NyarContext, Vfs};
-use oak_elixir::ast::{ElixirRoot, Item, Expr, Statement, Module, Function, Block, Param, Identifier};
-use chomsky_uir::IKun;
+use oak_elixir::ast::{ElixirRoot, Item, Expr, Statement, Module, Function, Block};
+// use chomsky_uir::IKun;
 
 /// 将 Elixir AST 根节点转换为 Nyar IR
 pub fn lower_elixir_root<V: Vfs>(ast: &ElixirRoot, ctx: &mut NyarContext<V>) -> Id {
@@ -57,7 +57,7 @@ fn lower_statement<V: Vfs>(stmt: &Statement, ctx: &mut NyarContext<V>) -> Id {
             let loc = range_to_loc(span.clone(), ctx.source_id);
             ctx.builder().assign(&name.name, val, loc)
         }
-        Statement::ExprStmt { expr, span } => {
+        Statement::ExprStmt { expr, .. } => {
             lower_expr(expr, ctx)
         }
     }
@@ -111,6 +111,18 @@ fn lower_expr<V: Vfs>(expr: &Expr, ctx: &mut NyarContext<V>) -> Id {
                 _ => ctx.builder().binary_op(&format!("bin_{:?}", op), l, r, loc),
             }
         }
+        Expr::Match { left, right, span } => {
+            let l = lower_expr(left, ctx);
+            let r = lower_expr(right, ctx);
+            let loc = range_to_loc(span.clone(), ctx.source_id);
+            // Elixir match = is often an assignment or pattern match
+            // Here we treat it as an assign if left is Ident
+            if let Expr::Ident(id) = &**left {
+                ctx.builder().assign(&id.name, r, loc)
+            } else {
+                ctx.builder().extension("match", vec![l, r], loc)
+            }
+        }
         Expr::Call { callee, args, span } => {
             let func = lower_expr(callee, ctx);
             let arguments: Vec<Id> = args.iter().map(|a| lower_expr(a, ctx)).collect();
@@ -124,6 +136,12 @@ fn lower_expr<V: Vfs>(expr: &Expr, ctx: &mut NyarContext<V>) -> Id {
             let field_sym = ctx.builder().symbol(&field.name, loc);
             ctx.builder().extension("get_field", vec![obj, field_sym], loc)
         }
+        Expr::Attribute { name, span } => {
+            let loc = range_to_loc(span.clone(), ctx.source_id);
+            // 模块属性可以用 extension "get_attribute"
+            let attr_sym = ctx.builder().symbol(&name.name, loc);
+            ctx.builder().extension("get_attribute", vec![attr_sym], loc)
+        }
         Expr::Index { receiver, index, span } => {
             let obj = lower_expr(receiver, ctx);
             let idx = lower_expr(index, ctx);
@@ -131,6 +149,21 @@ fn lower_expr<V: Vfs>(expr: &Expr, ctx: &mut NyarContext<V>) -> Id {
             ctx.builder().extension("get_index", vec![obj, idx], loc)
         }
         Expr::Paren { expr, .. } => lower_expr(expr, ctx),
+        Expr::List { items, span } => {
+            let elements: Vec<Id> = items.iter().map(|i| lower_expr(i, ctx)).collect();
+            let loc = range_to_loc(span.clone(), ctx.source_id);
+            ctx.builder().extension("list", elements, loc)
+        }
+        Expr::Tuple { items, span } => {
+            let elements: Vec<Id> = items.iter().map(|i| lower_expr(i, ctx)).collect();
+            let loc = range_to_loc(span.clone(), ctx.source_id);
+            ctx.builder().extension("tuple", elements, loc)
+        }
+        Expr::Map { items, span } => {
+            let elements: Vec<Id> = items.iter().map(|i| lower_expr(i, ctx)).collect();
+            let loc = range_to_loc(span.clone(), ctx.source_id);
+            ctx.builder().extension("map", elements, loc)
+        }
         Expr::Block(b) => lower_block(b, ctx),
     }
 }

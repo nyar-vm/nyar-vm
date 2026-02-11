@@ -2,37 +2,13 @@
 //!
 //! 这个库提供了 Rusty Mojo 语言的词法分析、语法分析和 Gaia 翻译功能。
 
+use crate::codegen::MojoCodegen;
 pub mod codegen;
 
 use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
-use oak_core::{Language, TokenType, ElementType, UniversalTokenRole, UniversalElementRole};
+use oak_mojo::ast::MojoStatement;
+pub use oak_mojo::MojoLanguage;
 use chomsky_uir::ConstraintAnalysis;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct MojoLanguage;
-
-impl Language for MojoLanguage {
-    const NAME: &'static str = "mojo";
-    type TokenType = MojoSyntaxKind;
-    type ElementType = MojoSyntaxKind;
-    type TypedRoot = ();
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MojoSyntaxKind {
-    EndOfStream,
-}
-
-impl TokenType for MojoSyntaxKind {
-    const END_OF_STREAM: Self = MojoSyntaxKind::EndOfStream;
-    type Role = UniversalTokenRole;
-    fn role(&self) -> Self::Role { UniversalTokenRole::None }
-}
-
-impl ElementType for MojoSyntaxKind {
-    type Role = UniversalElementRole;
-    fn role(&self) -> Self::Role { UniversalElementRole::None }
-}
 
 /// Rusty Mojo 前端
 pub struct RustyMojoFrontend {
@@ -57,11 +33,27 @@ impl RustyMojoFrontend {
 impl NyarFrontend<ConstraintAnalysis> for RustyMojoFrontend {
     type Language = MojoLanguage;
 
-    fn parse(&self, _source: &str) -> Result<(), NyarError> {
-        Err(NyarError::Parse("Mojo parser not yet implemented".to_string()))
+    fn parse(&self, source: &str) -> Result<Vec<MojoStatement>, NyarError> {
+        use oak_mojo::parser::MojoParser;
+        use oak_mojo::builder::MojoBuilder;
+        use oak_core::{
+            parser::{Parser, session::ParseSession},
+            source::SourceText,
+        };
+        
+        let parser = MojoParser::new();
+        let mut session = ParseSession::<MojoLanguage>::default();
+        let output = parser.parse(source, &[], &mut session);
+        
+        let green = output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+        
+        let source_text = SourceText::new(source.to_string());
+        let builder = MojoBuilder::new(&source_text);
+        builder.build_root(green).map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, _ast: &(), ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
-        ctx.egraph.add(chomsky_uir::IKun::Seq(vec![]))
+    fn lower_unified<V: Vfs>(&self, ast: &Vec<MojoStatement>, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
+        let mut codegen = MojoCodegen::new(ctx);
+        codegen.lower_statements(ast)
     }
 }

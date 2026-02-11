@@ -10,5 +10,6 @@ nyar-vm = { workspace = true }
 nyar-types = { workspace = true }
 oak-core = { workspace = true }
 oak-mojo = { workspace = true }
+oak-vfs = { workspace = true }
 chomsky = { workspace = true }
 chomsky-uir = { workspace = true }
