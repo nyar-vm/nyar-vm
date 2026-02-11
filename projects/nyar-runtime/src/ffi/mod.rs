@@ -165,13 +165,13 @@ pub fn native_add(_vm: &mut NyarVM, args: &[Value]) -> FFIResult {
 }
 
 pub fn native_get_time(vm: &mut NyarVM, _args: &[Value]) -> FFIResult {
-    let now = vm.platform.clock_now();
+    let now = vm.platform.now_ms();
     Ok(Value::int(now as i64))
 }
 
 pub fn native_sleep(vm: &mut NyarVM, args: &[Value]) -> FFIResult {
     let ms = args[0].as_int() as u64;
-    vm.platform.sleep(ms);
+    vm.platform.sleep_ms(ms);
     Ok(Value::null())
 }
 

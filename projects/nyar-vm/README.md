@@ -29,6 +29,17 @@ The core execution engine for the Nyar virtual machine ecosystem.
   - Extensible registry for bridging with native Rust code and system libraries.
   - Support for both synchronous and asynchronous foreign function calls.
 
+## Philosophy: Runtime-Agnostic Design
+
+`nyar-vm` is intentionally designed as a **pure execution engine** that does not include a built-in standard library or a fixed runtime environment. This modular approach provides several key advantages:
+
+- **Customizability**: Developers can tailor the runtime to meet the specific needs of their application.
+- **Versatility**: Easily adapted for diverse environments, including:
+  - **Game Scripting**: Minimal overhead and tight integration with game engines (e.g., Cocos Creator, Unity).
+  - **Web Services**: Optimized for high-concurrency and cloud-native environments.
+  - **Edge Computing**: Extremely small footprint for resource-constrained IoT and edge devices.
+- **Security**: Hardened isolation by providing only the necessary capabilities to the VM instance.
+
 ## Architecture
 
 The VM is composed of several high-level modules:
@@ -36,7 +47,7 @@ The VM is composed of several high-level modules:
 - **`vm::value`**: Implements the NaN-boxed value system and GC integration.
 - **`vm::ops`**: Contains implementation of the Gaia IR instruction set, categorized by functionality (arithmetic, control, effects, etc.).
 - **`bytecode`**: Handles loading, decoding, and encoding of the Gaia IR binary format.
-- **`runtime`**: Provides platform-specific abstractions for I/O, networking, and filesystem access.
+- **`vm::runtime`**: Defines the traits and interfaces required for a runtime, allowing external implementations like `nyar-runtime` to be plugged in.
 
 ## Instruction Set Highlights
 

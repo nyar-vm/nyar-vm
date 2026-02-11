@@ -6,7 +6,7 @@ use oak_vfs::{DiskVfs, Vfs};
 use std::io::Write;
 
 pub fn dump(path: &str) -> Result<(), CliError> {
-    let vfs = DiskVfs::new();
+    let vfs = DiskVfs::new(std::env::current_dir().unwrap());
     let source = vfs.get_source(path)
         .ok_or_else(|| CliError::Format(FormatError::Text(format!("File not found: {}", path))))?;
 

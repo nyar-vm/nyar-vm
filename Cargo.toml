@@ -73,58 +73,22 @@ gaia-jit = { path = "../project-gaia/projects/gaia-jit" }
 gaia-types = { path = "../project-gaia/projects/gaia-types" }
 gaia-assembler = { path = "../project-gaia/projects/gaia-assembler" }
 python-assembler = { path = "../project-gaia/examples/pyc-assembler" }
-pe-assembler = { path = "../project-gaia/examples/pe-assembler" }
-x86_64-assembler = { path = "../project-gaia/examples/x86_64-assembler" }
 nyar-vm = { path = "projects/nyar-vm" }
 nyar-runtime = { path = "projects/nyar-runtime" }
 nyar-types = { path = "projects/nyar-types" }
 nyar-aot = { path = "projects/nyar-aot" }
 nyar-macros = { path = "projects/nyar-macros" }
 nyar-gc = { path = "projects/nyar-gc" }
-rusty-c = { path = "examples/rusty-c" }
-rusty-java = { path = "examples/rusty-java" }
-rusty-python = { path = "examples/rusty-python" }
-rusty-typescript = { path = "examples/rusty-typescript" }
-rusty-go = { path = "examples/rusty-go" }
-rusty-csharp = { path = "examples/rusty-csharp" }
-rusty-tcl = { path = "examples/rusty-tcl" }
-rusty-bat = { path = "examples/rusty-bat" }
-rusty-cmd = { path = "examples/rusty-cmd" }
-rusty-bash = { path = "examples/rusty-bash" }
-rusty-swift = { path = "examples/rusty-swift" }
-rusty-julia = { path = "examples/rusty-julia" }
-rusty-lua = { path = "examples/rusty-lua" }
-rusty-rust = { path = "examples/rusty-rust" }
-rusty-zig = { path = "examples/rusty-zig" }
-rusty-php = { path = "examples/rusty-php" }
-rusty-ruby = { path = "examples/rusty-ruby" }
-rusty-r = { path = "examples/rusty-r" }
-rusty-dart = { path = "examples/rusty-dart" }
-rusty-nim = { path = "examples/rusty-nim" }
-rusty-wolfram = { path = "examples/rusty-wolfram" }
-rusty-mojo = { path = "examples/rusty-mojo" }
-rusty-fortran = { path = "examples/rusty-fortran" }
-rusty-kotlin = { path = "examples/rusty-kotlin" }
-rusty-scala = { path = "examples/rusty-scala" }
-rusty-groovy = { path = "examples/rusty-groovy" }
-rusty-clojure = { path = "examples/rusty-clojure" }
-rusty-fsharp = { path = "examples/rusty-fsharp" }
-rusty-haskell = { path = "examples/rusty-haskell" }
-
-criterion = "0.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
 clap = { version = "4.5", features = ["derive"] }
 byteorder = "1.5"
-url = "2.5"
 tempfile = "3.10"
 num-bigint = "0.4"
 num-traits = "0.2"
 rand = "0.8"
 reqwest = { version = "0.12", features = ["json"] }
-nipper = "0.1"
-scraper = "0.19"
 thiserror = "1.0"
 dashmap = "5.5"
 parking_lot = "0.12"

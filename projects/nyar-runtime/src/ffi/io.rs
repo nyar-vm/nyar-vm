@@ -17,6 +17,8 @@ pub fn std_io_print(vm: &mut NyarVM, args: &[Value]) -> FFIResult {
 }
 
 pub fn std_io_read_line(vm: &mut NyarVM, _args: &[Value]) -> FFIResult {
-    let input = vm.platform.stdin_read_line();
+    let mut input = String::new();
+    let _ = std::io::stdin().read_line(&mut input);
+    let input = input.trim_end().to_string();
     Ok(Value::string(input, &vm.gc))
 }

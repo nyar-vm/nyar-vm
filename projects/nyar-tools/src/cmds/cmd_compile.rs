@@ -4,7 +4,7 @@ use oak_core::source::Source;
 use oak_vfs::{DiskVfs, Vfs};
 
 pub fn compile(target: &str, input: &str, _output: Option<String>) -> Result<(), CliError> {
-    let vfs = DiskVfs::new();
+    let vfs = DiskVfs::new(std::env::current_dir().unwrap());
     
     let source = vfs.get_source(input)
         .ok_or_else(|| CliError::Format(FormatError::Text(format!("File not found: {}", input))))?;

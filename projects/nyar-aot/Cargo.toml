@@ -14,6 +14,7 @@ chomsky-extract = { workspace = true }
 chomsky-emit = { workspace = true }
 nyar-types = { workspace = true }
 oak-core = { workspace = true }
+oak-vfs = { workspace = true }
 
 [features]
 default = ["native"]

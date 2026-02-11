@@ -1,7 +1,8 @@
 use nyar_types::CliError;
-use nyar_vm::bytecode::format::Chunk;
-use nyar_vm::vm::NyarVM;
-use std::io::{BufRead, Write};
+use nyar_vm::bytecode::format::{Chunk, NyarModule};
+use nyar_vm::vm::core::NyarVM;
+use std::io::{Write, BufRead};
+use std::sync::Arc;
 
 fn decode_hex(s: &str) -> Option<Vec<u8>> {
     let t = s.as_bytes();
@@ -36,6 +37,7 @@ pub fn repl() -> Result<(), CliError> {
     loop {
         buf.clear();
         std::io::stdout().write_all(b"> ")?;
+        std::io::stdout().flush()?;
         let n = handle.read_line(&mut buf)?;
         if n == 0 {
             break;
@@ -56,12 +58,18 @@ pub fn repl() -> Result<(), CliError> {
                 code,
                 ..Default::default()
             };
-            let module = nyar_vm::bytecode::format::NyarcModule {
+            let module = NyarModule {
                 chunks: vec![chunk],
                 ..Default::default()
             };
             let mut vm = NyarVM::new();
-            vm.platform = std::sync::Arc::new(nyar_vm::runtime::platform::NativePlatform);
+            
+            // Set up platform and runtime
+            vm.platform = Arc::new(nyar_runtime::runtime::platform::NativePlatform);
+            let registry = nyar_runtime::ffi::FFIRegistry::new();
+            registry.register_std();
+            vm.runtime = Arc::new(registry);
+            
             let module_idx = vm.load_module(module);
             let _ = vm.execute(module_idx, 0);
         }

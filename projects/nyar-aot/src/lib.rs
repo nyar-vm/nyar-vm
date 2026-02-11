@@ -1,12 +1,26 @@
 use chomsky::optimizer::UniversalOptimizer;
 use chomsky_extract::{Backend, BackendArtifact};
-use chomsky_uir::{IKun, IKunTree, EGraph, Id, IntentBuilder, HasDebugInfo};
-use nyar_types::{NyarError, NyarContext, Vfs};
+use chomsky_uir::egraph::{Analysis, HasDebugInfo};
+use chomsky_uir::{EGraph, IKun, IKunTree, Id, IntentBuilder};
+use nyar_types::NyarError;
 use oak_core::Language;
+use oak_vfs::Vfs;
+
+pub struct NyarContext<'a, V: Vfs, A: Analysis<IKun>> {
+    pub egraph: &'a mut EGraph<IKun, A>,
+    pub vfs: &'a V,
+    pub scope: usize,
+}
+
+impl<'a, V: Vfs, A: Analysis<IKun>> NyarContext<'a, V, A> {
+    pub fn new(egraph: &'a mut EGraph<IKun, A>, vfs: &'a V, scope: usize) -> Self {
+        Self { egraph, vfs, scope }
+    }
+}
 
 /// Nyar 前端接口 trait
 /// 所有语言前端必须实现此接口，以便接入 Nyar 编译体系
-pub trait NyarFrontend<A: chomsky_uir::Analysis<IKun> = ()>: Default
+pub trait NyarFrontend<A: Analysis<IKun> = ()>: Default
 where
     A::Data: HasDebugInfo,
 {
@@ -53,16 +67,16 @@ where
     }
 }
 
-pub struct NyarAot<A: chomsky_uir::egraph::Analysis<IKun> + 'static = ()>
+pub struct NyarAot<A: Analysis<IKun> + 'static = ()>
 where
-    A::Data: chomsky_uir::egraph::HasDebugInfo,
+    A::Data: HasDebugInfo,
 {
     pub optimizer: UniversalOptimizer<A>,
 }
 
-impl<A: chomsky_uir::egraph::Analysis<IKun> + 'static> NyarAot<A>
+impl<A: Analysis<IKun> + 'static> NyarAot<A>
 where
-    A::Data: chomsky_uir::egraph::HasDebugInfo,
+    A::Data: HasDebugInfo,
 {
     pub fn new() -> Self
     where
@@ -93,7 +107,7 @@ where
     }
 
     /// Adds an intent to the internal EGraph.
-    pub fn add_intent(&mut self, ikun: &IKun) -> chomsky_uir::egraph::Id {
+    pub fn add_intent(&mut self, ikun: &IKun) -> Id {
         self.optimizer.add_intent(ikun)
     }
 
@@ -105,16 +119,16 @@ where
     /// Extracts the best candidate from the internal EGraph using a cost model.
     pub fn extract(
         &self,
-        root_id: chomsky_uir::egraph::Id,
+        root_id: Id,
         cost_model: &dyn chomsky::cost::CostModel,
     ) -> chomsky_uir::IKunTree {
         self.optimizer.extract(root_id, cost_model)
     }
 }
 
-impl<A: chomsky_uir::egraph::Analysis<IKun> + 'static + Default> Default for NyarAot<A>
+impl<A: Analysis<IKun> + 'static + Default> Default for NyarAot<A>
 where
-    A::Data: chomsky_uir::egraph::HasDebugInfo,
+    A::Data: HasDebugInfo,
 {
     fn default() -> Self {
         Self::new()

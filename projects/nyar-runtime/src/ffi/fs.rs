@@ -1,15 +1,15 @@
 use nyar_vm::vm::core::NyarVM;
 use nyar_vm::vm::value::{Value, FutureStatus};
-use nyar_vm::vm::platform::NyarPlatform;
 use crate::ffi::FFIResult;
 use nyar_gc::{Root, Trace};
 use nyar_types::NyarError;
+use std::path::Path;
 
 pub fn std_fs_read_to_string(vm: &mut NyarVM, args: &[Value]) -> FFIResult {
     let path_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing path argument".to_string()))?;
     let path_str = path_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Path must be a string".to_string()))?;
     
-    let content = vm.platform.fs_read_to_string(path_str)?;
+    let content = std::fs::read_to_string(path_str).map_err(|e| NyarError::RuntimeError(e.to_string()))?;
     Ok(Value::string(content, &vm.gc))
 }
 
@@ -50,13 +50,13 @@ pub fn async_fs_read_to_string(vm: &mut NyarVM, args: &[Value]) -> FFIResult {
     Ok(future_val)
 }
 
-pub fn std_fs_write(vm: &mut NyarVM, args: &[Value]) -> FFIResult {
+pub fn std_fs_write(_vm: &mut NyarVM, args: &[Value]) -> FFIResult {
     let path_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing path argument".to_string()))?;
     let path_str = path_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Path must be a string".to_string()))?;
     let content_val = args.get(1).ok_or_else(|| NyarError::RuntimeError("Missing content argument".to_string()))?;
     let content_str = content_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Content must be a string".to_string()))?;
     
-    vm.platform.fs_write(path_str, content_str)?;
+    std::fs::write(path_str, content_str).map_err(|e| NyarError::RuntimeError(e.to_string()))?;
     Ok(Value::null())
 }
 
@@ -94,17 +94,17 @@ pub fn async_fs_write(vm: &mut NyarVM, args: &[Value]) -> FFIResult {
     Ok(future_val)
 }
 
-pub fn std_fs_exists(vm: &mut NyarVM, args: &[Value]) -> FFIResult {
+pub fn std_fs_exists(_vm: &mut NyarVM, args: &[Value]) -> FFIResult {
     let path_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing path argument".to_string()))?;
     let path_str = path_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Path must be a string".to_string()))?;
     
-    Ok(Value::bool(vm.platform.fs_exists(path_str)))
+    Ok(Value::bool(Path::new(path_str).exists()))
 }
 
-pub fn std_fs_remove_file(vm: &mut NyarVM, args: &[Value]) -> FFIResult {
+pub fn std_fs_remove_file(_vm: &mut NyarVM, args: &[Value]) -> FFIResult {
     let path_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing path argument".to_string()))?;
     let path_str = path_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Path must be a string".to_string()))?;
     
-    vm.platform.fs_remove_file(path_str)?;
+    std::fs::remove_file(path_str).map_err(|e| NyarError::RuntimeError(e.to_string()))?;
     Ok(Value::null())
 }
