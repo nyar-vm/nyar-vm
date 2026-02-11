@@ -11,9 +11,9 @@ chomsky = { workspace = true }
 chomsky-uir = { workspace = true }
 chomsky-cost = { workspace = true }
 chomsky-extract = { workspace = true }
+chomsky-emit = { workspace = true }
 nyar-types = { workspace = true }
-pe-assembler = { workspace = true }
-gaia-types = { workspace = true }
+oak-core = { workspace = true }
 
 [features]
 default = ["native"]

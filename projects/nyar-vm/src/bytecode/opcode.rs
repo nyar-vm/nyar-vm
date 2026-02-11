@@ -79,6 +79,37 @@ pub enum Opcode {
     Halt = 0xFF,
 }
 
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NyarBuiltin {
+    Print = 1,
+    Println = 2,
+    Exit = 3,
+    GetTime = 4,
+    Sleep = 5,
+    NativeAdd = 6,
+    Panic = 7,
+    MathSin = 8,
+    MathSqrt = 9,
+    MemAlloc = 10,
+    MathAbs = 11,
+    MathCos = 12,
+    MathTan = 13,
+    BitAnd = 14,
+    BitOr = 15,
+    BitXor = 16,
+    BitNot = 17,
+    BitShl = 18,
+    BitShr = 19,
+    MemFree = 20,
+    MemRealloc = 21,
+    MemSet = 22,
+    MemCopy = 23,
+    StrLen = 24,
+    StrCmp = 25,
+    MathRand = 26,
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum I32Ext {

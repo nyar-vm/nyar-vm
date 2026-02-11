@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "gc")]
+use nyar_gc::Trace;
+
 pub mod errors;
 pub use crate::errors::*;
 
@@ -45,6 +48,11 @@ impl std::fmt::Display for QualifiedName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.parts.join("::"))
     }
+}
+
+#[cfg(feature = "gc")]
+impl Trace for QualifiedName {
+    fn trace(&self, _ctx: &mut nyar_gc::MarkContext<'_>) {}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]

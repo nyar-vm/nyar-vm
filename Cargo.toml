@@ -14,6 +14,7 @@ authors = ["The Nyar Project Developers"]
 default-members = [
     "projects/nyar-types",
     "projects/nyar-vm",
+    "projects/nyar-runtime",
 ]
 exclude = ["examples/valkyrie-bootstrap"]
 
@@ -75,6 +76,7 @@ python-assembler = { path = "../project-gaia/examples/pyc-assembler" }
 pe-assembler = { path = "../project-gaia/examples/pe-assembler" }
 x86_64-assembler = { path = "../project-gaia/examples/x86_64-assembler" }
 nyar-vm = { path = "projects/nyar-vm" }
+nyar-runtime = { path = "projects/nyar-runtime" }
 nyar-types = { path = "projects/nyar-types" }
 nyar-aot = { path = "projects/nyar-aot" }
 nyar-macros = { path = "projects/nyar-macros" }

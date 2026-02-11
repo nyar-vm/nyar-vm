@@ -110,18 +110,15 @@ impl NyarVM {
             frames: Vec::new(),
             handler_stack: Vec::new(),
             trace_log: Arc::new(std::sync::Mutex::new(Vec::new())),
-            ffi: FFIRegistry::new(),
             jit: None,
             local_hotness: 0,
             step_count: 0,
             last_gc_count: 0,
             current_waker: None,
-            network: crate::vm::net::NetworkContext::new(),
-            platform: Arc::new(crate::runtime::platform::NativePlatform),
+            platform: Arc::new(crate::vm::platform::NoopPlatform),
             effect_handler: None,
             parent_traceback: None,
         };
-        vm.ffi.register_std();
         vm
     }
 
@@ -134,18 +131,15 @@ impl NyarVM {
             frames: Vec::new(),
             handler_stack: Vec::new(),
             trace_log: Arc::new(std::sync::Mutex::new(Vec::new())),
-            ffi: FFIRegistry::new(),
             jit: None,
             local_hotness: 0,
             step_count: 0,
             last_gc_count: 0,
             current_waker: None,
-            network: crate::vm::net::NetworkContext::new(),
             platform,
             effect_handler: None,
             parent_traceback: None,
         };
-        vm.ffi.register_std();
         vm
     }
 
@@ -164,13 +158,11 @@ impl NyarVM {
             frames: Vec::new(),
             handler_stack: Vec::new(),
             trace_log: self.trace_log.clone(),
-            ffi: self.ffi.clone(),
             jit: self.jit.clone(),
             local_hotness: 0,
             step_count: 0,
             last_gc_count: self.last_gc_count,
             current_waker: self.current_waker.clone(),
-            network: self.network.clone(),
             platform: self.platform.clone(),
             effect_handler: self.effect_handler.clone(),
             parent_traceback,

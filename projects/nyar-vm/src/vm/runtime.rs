@@ -575,7 +575,8 @@ pub unsafe extern "win64" fn nyar_vm_bigint_bytes(vm_ptr: *mut NyarVM, bytes_len
     }
     bytes.reverse();
     use num_bigint::BigInt as NativeBigInt;
-    let bi = NativeBigInt::from_bytes_be(num_bigint::Sign::Plus, &bytes);
+    use num_bigint::Sign;
+    let bi = NativeBigInt::from_bytes_be(Sign::Plus, &bytes);
     Value::bigint(BigInt(bi), &vm.gc)
 }
 

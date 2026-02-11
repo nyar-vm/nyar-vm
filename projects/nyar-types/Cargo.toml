@@ -8,6 +8,8 @@ authors.workspace = true
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
+nyar-gc = { workspace = true, optional = true }
 
 [features]
-default = []
+default = ["gc"]
+gc = ["dep:nyar-gc"]

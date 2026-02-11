@@ -6,7 +6,9 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-nyar-gc = { workspace = true, features = ["tokio"] }
+nyar-gc = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
 nyar-types = { workspace = true }
 oak-core = { workspace = true }
 oak-vfs = { workspace = true }
@@ -28,8 +30,7 @@ tokio = { workspace = true, optional = true }
 wasi = { workspace = true, optional = true }
 
 [features]
-default = ["clap", "tokio"]
-clap = ["dep:clap"]
+default = ["tokio"]
 tokio = ["dep:tokio", "nyar-gc/tokio"]
 native = []
 jvm = []

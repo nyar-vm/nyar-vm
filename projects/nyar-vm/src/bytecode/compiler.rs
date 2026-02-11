@@ -1,7 +1,6 @@
 use crate::bytecode::instruction::Instruction;
-use crate::runtime::NyarBuiltin;
+use crate::bytecode::opcode::{NyarBuiltin, Opcode};
 use crate::bytecode::format::{Chunk, ClassInfo, Constant, ExportInfo, NyarcModule};
-use crate::bytecode::opcode::Opcode;
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
 use chomsky_types::LineMap;
 use nyar_types::{NyarError, QualifiedName, SourceLocation};
