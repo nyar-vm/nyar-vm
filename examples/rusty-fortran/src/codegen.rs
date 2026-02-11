@@ -149,15 +149,15 @@ impl NyarTranslator {
                 let then_body = node.then_part.iter()
                     .map(|s| self.translate_executable_stmt(s, ctx))
                     .collect::<Result<Vec<_>, _>>()?;
-                let then_id = ctx.builder.seq(then_body);
+                let then_id = ctx.builder.seq(then_body, loc);
                 
                 let mut current_else = if let Some(else_part) = &node.else_part {
                     let else_body = else_part.iter()
                         .map(|s| self.translate_executable_stmt(s, ctx))
                         .collect::<Result<Vec<_>, _>>()?;
-                    ctx.builder.seq(else_body)
+                    ctx.builder.seq(else_body, loc)
                 } else {
-                    ctx.builder.seq(vec![])
+                    ctx.builder.seq(vec![], loc)
                 };
 
                 for (else_cond, else_body) in node.else_if_parts.iter().rev() {
@@ -165,7 +165,7 @@ impl NyarTranslator {
                     let body_ids = else_body.iter()
                         .map(|s| self.translate_executable_stmt(s, ctx))
                         .collect::<Result<Vec<_>, _>>()?;
-                    let body_id = ctx.builder.seq(body_ids);
+                    let body_id = ctx.builder.seq(body_ids, loc);
                     current_else = ctx.builder.branch(cond_id, body_id, current_else, loc);
                 }
 
@@ -184,19 +184,20 @@ impl NyarTranslator {
                     let body = node.body.iter()
                         .map(|s| self.translate_executable_stmt(s, ctx))
                         .collect::<Result<Vec<_>, _>>()?;
-                    let body_id = ctx.builder.seq(body);
+                    let body_id = ctx.builder.seq(body, loc);
+                    let var_id = ctx.builder.symbol(variable, loc);
                     
                     // 这里简化为 extension 调用，实际可能需要更复杂的循环结构
                     Ok(ctx.builder.extension("do_loop", vec![
-                        ctx.builder.symbol(variable, loc),
+                        var_id,
                         start_id, end_id, step_id, body_id
                     ], loc))
                 } else {
                     // TODO: 其他类型的循环
-                    Ok(ctx.builder.seq(vec![]))
+                    Ok(ctx.builder.seq(vec![], loc))
                 }
             }
-            _ => Ok(ctx.builder.seq(vec![])),
+            _ => Ok(ctx.builder.seq(vec![], loc)),
         }
     }
 
@@ -275,7 +276,7 @@ impl NyarTranslator {
                 Ok(ctx.builder.call(callee, arg_ids, loc))
             }
             ExprNode::Paren(expr) => self.translate_expr(expr, ctx),
-            _ => Ok(ctx.builder.seq(vec![])),
+            _ => Ok(ctx.builder.seq(vec![], loc)),
         }
     }
 

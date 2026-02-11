@@ -607,6 +607,10 @@ impl Value {
                 .try_as_dyn_object()
                 .map(|d| !d.entries.is_empty())
                 .unwrap_or(true),
+            ValueTag::BigInt => self
+                .try_as_bigint()
+                .map(|b| b.0 != NativeBigInt::from(0))
+                .unwrap_or(true),
             _ => true,
         }
     }

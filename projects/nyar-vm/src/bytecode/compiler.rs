@@ -59,7 +59,7 @@ impl NyarBackend {
         idx
     }
 
-    fn emit(&mut self, instr: Instruction, code: &mut Vec<u8>) {
+    pub fn emit(&mut self, instr: Instruction, code: &mut Vec<u8>) {
         let offset = code.len() as u32;
         let line = self.current_location.offset;
         if self.current_lines.is_empty() || self.current_lines.last().unwrap().1 != line {
@@ -1054,14 +1054,21 @@ impl NyarBackend {
                         {
                             if let (Constant::Int(l), Constant::Int(r)) = (l, r) {
                                 let result = match name.as_str() {
-                                    "bit_and" => l & r,
-                                    "bit_or" => l | r,
-                                    "bit_xor" => l ^ r,
-                                    "bit_shl" => l << r,
-                                    "bit_shr" => l >> r,
+                                    "bit_and" => Some(l & r),
+                                    "bit_or" => Some(l | r),
+                                    "bit_xor" => Some(l ^ r),
+                                    "bit_shl" => l.checked_shl(r as u32),
+                                    "bit_shr" => l.checked_shr(r as u32),
                                     _ => unreachable!(),
                                 };
-                                self.emit(Instruction::I64Const(result), &mut code);
+                                if let Some(res) = result {
+                                    self.emit(Instruction::I64Const(res), &mut code);
+                                } else {
+                                    code.extend(self.lower_tree(&args[0])?);
+                                    code.extend(self.lower_tree(&args[1])?);
+                                    let name_idx = self.add_constant(Constant::String(name.clone()));
+                                    self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
+                                }
                             } else {
                                 code.extend(self.lower_tree(&args[0])?);
                                 code.extend(self.lower_tree(&args[1])?);

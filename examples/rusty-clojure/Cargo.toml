@@ -1,5 +1,5 @@
 [package]
-name = "rusty-elixir"
+name = "rusty-clojure"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,11 @@ authors.workspace = true
 nyar-vm = { workspace = true }
 nyar-types = { workspace = true }
 oak-core = { workspace = true }
-oak-vfs = { workspace = true }
-oak-elixir = { workspace = true }
-chomsky = { workspace = true }
+oak-clojure = { workspace = true }
 chomsky-uir = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }
+serde = { workspace = true }
+
+[lib]
+path = "src/lib.rs"

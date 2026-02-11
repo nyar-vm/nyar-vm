@@ -2,6 +2,8 @@
 //!
 //! 这个库提供了 Rusty Elixir 语言的词法分析、语法分析和 Gaia 翻译功能。
 
+#![feature(new_range_api)]
+
 pub mod codegen;
 
 use nyar_types::{NyarContext, NyarError, NyarFrontend};

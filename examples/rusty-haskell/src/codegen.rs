@@ -80,7 +80,7 @@ impl NyarTranslator {
         }
     }
 
-    fn translate_function<A: chomsky_uir::Analysis<IKun>>(
+    pub fn translate_function<A: chomsky_uir::Analysis<IKun>>(
         &self,
         f: &Function,
         ctx: &mut TranslatorContext<'_, A>,
@@ -105,11 +105,12 @@ impl NyarTranslator {
             Ok(ctx.builder.function(&f.name.name, params, vec![body], loc))
         } else {
             // Multiple equations - simplified as a sequence of anonymous functions for now
-            Ok(ctx.builder.assign(&f.name.name, ctx.builder.seq(equations, loc), loc))
+            let seq = ctx.builder.seq(equations, loc);
+            Ok(ctx.builder.assign(&f.name.name, seq, loc))
         }
     }
 
-    fn translate_equation<A: chomsky_uir::Analysis<IKun>>(
+    pub fn translate_equation<A: chomsky_uir::Analysis<IKun>>(
         &self,
         eq: &Equation,
         ctx: &mut TranslatorContext<'_, A>,
@@ -126,7 +127,7 @@ impl NyarTranslator {
         Ok(ctx.builder.lambda(params, body, loc))
     }
 
-    fn translate_expression<A: chomsky_uir::Analysis<IKun>>(
+    pub fn translate_expression<A: chomsky_uir::Analysis<IKun>>(
         &self,
         expr: &Expression,
         ctx: &mut TranslatorContext<'_, A>,

@@ -121,7 +121,8 @@ fn lower_expr<V: Vfs>(expr: &Expr, ctx: &mut NyarContext<V>) -> Id {
             let obj = lower_expr(receiver, ctx);
             let loc = range_to_loc(span.clone(), ctx.source_id);
             // 字段访问可以用 extension 或者特定的 get_field
-            ctx.builder().extension("get_field", vec![obj, ctx.builder().symbol(&field.name, loc)], loc)
+            let field_sym = ctx.builder().symbol(&field.name, loc);
+            ctx.builder().extension("get_field", vec![obj, field_sym], loc)
         }
         Expr::Index { receiver, index, span } => {
             let obj = lower_expr(receiver, ctx);

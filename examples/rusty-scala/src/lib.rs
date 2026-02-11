@@ -45,8 +45,8 @@ impl NyarFrontend<ConstraintAnalysis> for RustyScalaFrontend {
         let mut session = oak_core::parser::ParseSession::<ScalaLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
-        if let Ok(root) = &output.result {
-            println!("Parsed {} declarations", root.declarations.len());
+        if let Ok(_root) = &output.result {
+            println!("Parsed Scala root");
         }
         output
             .result

@@ -1,6 +1,7 @@
 use crate::bytecode::format::Constant;
 use crate::vm::core::NyarVM;
-use crate::vm::value::{Value, Frame};
+use crate::vm::value::{Value, Frame, BigInt};
+use num_bigint::BigInt as NativeBigInt;
 use nyar_types::{NyarError, QualifiedName};
 
 impl NyarVM {
@@ -373,7 +374,11 @@ impl NyarVM {
                 if args.len() == 1 {
                     let rhs = args[0];
                     if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
-                        self.push(Value::int(l + r))?;
+                        if let Some(res) = l.checked_add(r) {
+                            self.push(Value::int(res))?;
+                        } else {
+                            self.push(Value::bigint(BigInt(NativeBigInt::from(l) + NativeBigInt::from(r)), &self.gc))?;
+                        }
                     } else if receiver.is_f32() && rhs.is_f32() {
                         self.push(Value::f32(receiver.as_f32() + rhs.as_f32()))?;
                     } else if (receiver.is_f64() || receiver.is_int() || receiver.is_f32())
@@ -384,7 +389,7 @@ impl NyarVM {
                         if let (Some(l), Some(r)) = (receiver.try_as_str(), rhs.try_as_str()) {
                             let mut s = l.to_string();
                             s.push_str(r);
-                            self.push(Value::string(s, self.gc()))?;
+                            self.push(Value::string(s, &self.gc))?;
                         } else {
                             self.push(Value::null())?;
                         }
@@ -400,7 +405,7 @@ impl NyarVM {
                             Some(NativeBigInt::from(rhs.as_int()))
                         };
                         if let (Some(l), Some(r)) = (l, r) {
-                            self.push(Value::bigint(BigInt(l + &r), self.gc()))?;
+                            self.push(Value::bigint(BigInt(l + &r), &self.gc))?;
                         } else {
                             self.push(Value::null())?;
                         }
@@ -434,7 +439,7 @@ impl NyarVM {
                             Some(NativeBigInt::from(rhs.as_int()))
                         };
                         if let (Some(l), Some(r)) = (l, r) {
-                            self.push(Value::bigint(BigInt(l - &r), self.gc()))?;
+                            self.push(Value::bigint(BigInt(l - &r), &self.gc))?;
                         } else {
                             self.push(Value::null())?;
                         }
@@ -468,7 +473,7 @@ impl NyarVM {
                             Some(NativeBigInt::from(rhs.as_int()))
                         };
                         if let (Some(l), Some(r)) = (l, r) {
-                            self.push(Value::bigint(BigInt(l * &r), self.gc()))?;
+                            self.push(Value::bigint(BigInt(l * &r), &self.gc))?;
                         } else {
                             self.push(Value::null())?;
                         }
@@ -507,7 +512,7 @@ impl NyarVM {
                         };
                         if let (Some(l), Some(r)) = (l, r) {
                             if r != NativeBigInt::from(0) {
-                                self.push(Value::bigint(BigInt(l / &r), self.gc()))?;
+                                self.push(Value::bigint(BigInt(l / &r), &self.gc))?;
                             } else {
                                 self.push(Value::null())?;
                             }
@@ -549,7 +554,7 @@ impl NyarVM {
                         };
                         if let (Some(l), Some(r)) = (l, r) {
                             if r != NativeBigInt::from(0) {
-                                self.push(Value::bigint(BigInt(l % &r), self.gc()))?;
+                                self.push(Value::bigint(BigInt(l % &r), &self.gc))?;
                             } else {
                                 self.push(Value::null())?;
                             }
@@ -580,7 +585,7 @@ impl NyarVM {
                             Some(NativeBigInt::from(rhs.as_int()))
                         };
                         if let (Some(l), Some(r)) = (l, r) {
-                            self.push(Value::bigint(BigInt(l & &r), self.gc()))?;
+                            self.push(Value::bigint(BigInt(l & &r), &self.gc))?;
                         } else {
                             self.push(Value::null())?;
                         }
@@ -608,7 +613,7 @@ impl NyarVM {
                             Some(NativeBigInt::from(rhs.as_int()))
                         };
                         if let (Some(l), Some(r)) = (l, r) {
-                            self.push(Value::bigint(BigInt(l | &r), self.gc()))?;
+                            self.push(Value::bigint(BigInt(l | &r), &self.gc))?;
                         } else {
                             self.push(Value::null())?;
                         }
@@ -636,7 +641,7 @@ impl NyarVM {
                             Some(NativeBigInt::from(rhs.as_int()))
                         };
                         if let (Some(l), Some(r)) = (l, r) {
-                            self.push(Value::bigint(BigInt(l ^ &r), self.gc()))?;
+                            self.push(Value::bigint(BigInt(l ^ &r), &self.gc))?;
                         } else {
                             self.push(Value::null())?;
                         }
@@ -652,7 +657,7 @@ impl NyarVM {
                     if let Some(l) = receiver.try_as_int() {
                         self.push(Value::int(!l))?;
                     } else if let Some(l) = receiver.try_as_bigint() {
-                        self.push(Value::bigint(BigInt(!l.0.clone()), self.gc()))?;
+                        self.push(Value::bigint(BigInt(!l.0.clone()), &self.gc))?;
                     } else {
                         self.push(Value::null())?;
                     }
@@ -665,6 +670,22 @@ impl NyarVM {
                     let rhs = args[0];
                     if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
                         self.push(Value::int(l << r))?;
+                    } else if (receiver.is_bigint() || receiver.is_int()) && rhs.is_int() {
+                        let l = if receiver.is_bigint() {
+                            receiver.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(receiver.as_int()))
+                        };
+                        if let Some(l) = l {
+                            let shift = rhs.as_int();
+                            if shift >= 0 {
+                                self.push(Value::bigint(BigInt(l << (shift as usize)), &self.gc))?;
+                            } else {
+                                self.push(Value::bigint(BigInt(l >> ((-shift) as usize)), &self.gc))?;
+                            }
+                        } else {
+                            self.push(Value::null())?;
+                        }
                     } else {
                         self.push(Value::null())?;
                     }
@@ -677,6 +698,22 @@ impl NyarVM {
                     let rhs = args[0];
                     if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
                         self.push(Value::int(l >> r))?;
+                    } else if (receiver.is_bigint() || receiver.is_int()) && rhs.is_int() {
+                        let l = if receiver.is_bigint() {
+                            receiver.try_as_bigint().map(|b| b.0.clone())
+                        } else {
+                            Some(NativeBigInt::from(receiver.as_int()))
+                        };
+                        if let Some(l) = l {
+                            let shift = rhs.as_int();
+                            if shift >= 0 {
+                                self.push(Value::bigint(BigInt(l >> (shift as usize)), &self.gc))?;
+                            } else {
+                                self.push(Value::bigint(BigInt(l << ((-shift) as usize)), &self.gc))?;
+                            }
+                        } else {
+                            self.push(Value::null())?;
+                        }
                     } else {
                         self.push(Value::null())?;
                     }
@@ -694,7 +731,7 @@ impl NyarVM {
                         self.push(Value::float(-receiver.as_f64()))?;
                     } else if receiver.is_bigint() {
                         if let Some(l) = receiver.try_as_bigint() {
-                            self.push(Value::bigint(BigInt(-l.0.clone()), self.gc()))?;
+                            self.push(Value::bigint(BigInt(-l.0.clone()), &self.gc))?;
                         } else {
                             self.push(Value::null())?;
                         }
