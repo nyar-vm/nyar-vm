@@ -42,6 +42,88 @@ impl GaiaTranslator {
                 Ok(builder.block(ids, loc))
             }
             LuaStatement::Expression(expr) => self.translate_expression(expr, builder),
+            LuaStatement::Assignment(s) => {
+                let mut ids = Vec::new();
+                for (i, target) in s.targets.iter().enumerate() {
+                    let val = if let Some(expr) = s.values.get(i) {
+                        self.translate_expression(expr, builder)?
+                    } else {
+                        builder.symbol("nil", loc)
+                    };
+                    match target {
+                        LuaExpression::Identifier(name) => {
+                            ids.push(builder.assign(name, val, loc));
+                        }
+                        LuaExpression::Index(idx) => {
+                            let obj = self.translate_expression(&idx.table, builder)?;
+                            let key = self.translate_expression(&idx.index, builder)?;
+                            ids.push(builder.set_index(obj, key, val, loc));
+                        }
+                        LuaExpression::Member(mem) => {
+                            let obj = self.translate_expression(&mem.table, builder)?;
+                            let key = builder.string(&mem.member, loc);
+                            ids.push(builder.set_index(obj, key, val, loc));
+                        }
+                        _ => {
+                            // TODO: 更多赋值目标支持
+                        }
+                    }
+                }
+                Ok(builder.block(ids, loc))
+            }
+            LuaStatement::If(s) => {
+                let cond = self.translate_expression(&s.condition, builder)?;
+                let then_id = self.translate_statements(&s.then_block, builder)?;
+                let mut else_id = if let Some(else_block) = &s.else_block {
+                    self.translate_statements(else_block, builder)?
+                } else {
+                    builder.block(vec![], loc)
+                };
+
+                for (else_if_cond, else_if_block) in s.else_ifs.iter().rev() {
+                    let cond_id = self.translate_expression(else_if_cond, builder)?;
+                    let block_id = self.translate_statements(else_if_block, builder)?;
+                    else_id = builder.if_(cond_id, block_id, Some(else_id), loc);
+                }
+
+                Ok(builder.if_(cond, then_id, Some(else_id), loc))
+            }
+            LuaStatement::While(s) => {
+                let cond = self.translate_expression(&s.condition, builder)?;
+                let body = self.translate_statements(&s.block, builder)?;
+                Ok(builder.while_(cond, body, loc))
+            }
+            LuaStatement::Function(s) => {
+                let func_id = self.translate_function_body(&s.parameters, s.is_vararg, &s.block, builder)?;
+                if let Some(receiver) = &s.receiver {
+                    // obj:method(args) -> obj.method = function(self, args)
+                    let mut name_parts = s.name.clone();
+                    let last_name = name_parts.pop().unwrap();
+                    let mut obj = builder.symbol(&name_parts[0], loc);
+                    for part in &name_parts[1..] {
+                        let key = builder.string(part, loc);
+                        obj = builder.get_index(obj, key, loc);
+                    }
+                    let key = builder.string(&last_name, loc);
+                    let method_obj = builder.get_index(obj, key, loc);
+                    let key = builder.string(receiver, loc);
+                    Ok(builder.set_index(method_obj, key, func_id, loc))
+                } else {
+                    let mut name_parts = s.name.clone();
+                    let last_name = name_parts.pop().unwrap();
+                    if name_parts.is_empty() {
+                        Ok(builder.assign(&last_name, func_id, loc))
+                    } else {
+                        let mut obj = builder.symbol(&name_parts[0], loc);
+                        for part in &name_parts[1..] {
+                            let key = builder.string(part, loc);
+                            obj = builder.get_index(obj, key, loc);
+                        }
+                        let key = builder.string(&last_name, loc);
+                        Ok(builder.set_index(obj, key, func_id, loc))
+                    }
+                }
+            }
             LuaStatement::Return(s) => {
                 let mut vals = Vec::new();
                 for expr in &s.values {
@@ -88,10 +170,80 @@ impl GaiaTranslator {
                 }
                 Ok(builder.call(func, args, loc))
             }
+            LuaExpression::Unary(un) => {
+                let operand = self.translate_expression(&un.operand, builder)?;
+                match un.op.as_str() {
+                    "-" => Ok(builder.neg_op(operand, loc)),
+                    "not" => Ok(builder.not_op(operand, loc)),
+                    "#" => Ok(builder.len_op(operand, loc)),
+                    "~" => Ok(builder.bit_not_op(operand, loc)),
+                    _ => Ok(builder.symbol("nil", loc)),
+                }
+            }
+            LuaExpression::Table(table) => {
+                let mut fields = Vec::new();
+                for (i, field) in table.fields.iter().enumerate() {
+                    match field {
+                        LuaTableField::Keyed { key, value } => {
+                            let k = self.translate_expression(key, builder)?;
+                            let v = self.translate_expression(value, builder)?;
+                            fields.push((k, v));
+                        }
+                        LuaTableField::Named { name, value } => {
+                            let k = builder.string(name, loc);
+                            let v = self.translate_expression(value, builder)?;
+                            fields.push((k, v));
+                        }
+                        LuaTableField::List { value } => {
+                            let k = builder.int((i + 1) as i64, loc);
+                            let v = self.translate_expression(value, builder)?;
+                            fields.push((k, v));
+                        }
+                    }
+                }
+                Ok(builder.extension("table", fields.into_iter().map(|(k, v)| builder.extension("pair", vec![k, v], loc)).collect(), loc))
+            }
+            LuaExpression::Function(func) => {
+                self.translate_function_body(&func.parameters, func.is_vararg, &func.block, builder)
+            }
+            LuaExpression::Index(idx) => {
+                let obj = self.translate_expression(&idx.table, builder)?;
+                let key = self.translate_expression(&idx.index, builder)?;
+                Ok(builder.get_index(obj, key, loc))
+            }
+            LuaExpression::Member(mem) => {
+                let obj = self.translate_expression(&mem.table, builder)?;
+                let key = builder.string(&mem.member, loc);
+                Ok(builder.get_index(obj, key, loc))
+            }
             _ => {
                 // TODO: 更多表达式支持
                 Ok(builder.symbol("nil", loc))
             }
         }
+    }
+
+    fn translate_statements(&self, stmts: &[LuaStatement], builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+        let loc = Loc::default();
+        let mut ids = Vec::new();
+        for stmt in stmts {
+            if let Ok(id) = self.translate_statement(stmt, builder) {
+                ids.push(id);
+            }
+        }
+        Ok(builder.block(ids, loc))
+    }
+
+    fn translate_function_body(&self, params: &[String], is_vararg: bool, body: &[LuaStatement], builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+        let loc = Loc::default();
+        let mut parameters = Vec::new();
+        for p in params {
+            parameters.push(builder.parameter(p, loc));
+        }
+        if is_vararg {
+            parameters.push(builder.parameter("...", loc));
+        }
+        let body_id = self.translate_statements(body, builder)?;
+        Ok(builder.function("anonymous", parameters, body_id, loc))
     }
 }
