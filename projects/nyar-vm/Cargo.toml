@@ -10,8 +10,7 @@ nyar-gc = { workspace = true, features = ["tokio"] }
 nyar-types = { workspace = true }
 oak-core = { workspace = true }
 oak-vfs = { workspace = true }
-nyar-aot = { workspace = true, default-features = false }
-chomsky = { workspace = true, features = ["pe", "x86", "jvm"] }
+chomsky = { workspace = true }
 chomsky-uir = { workspace = true }
 chomsky-cost = { workspace = true }
 chomsky-extract = { workspace = true }
@@ -26,10 +25,8 @@ rand = { workspace = true }
 thiserror = { workspace = true }
 dashmap = { workspace = true }
 indexmap = { workspace = true }
-pe-assembler = { workspace = true }
 oak-json = { workspace = true }
 reqwest = { workspace = true }
-x86_64-assembler = { workspace = true }
 clap = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 wasi = { workspace = true, optional = true }
@@ -39,5 +36,5 @@ default = ["clap", "tokio"]
 clap = ["dep:clap"]
 tokio = ["dep:tokio", "nyar-gc/tokio"]
 native = []
-jvm = ["chomsky/jvm"]
+jvm = []
 wasi = ["dep:wasi"]

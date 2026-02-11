@@ -583,7 +583,8 @@ impl NyarBackend {
                                                 if let IKunTree::Lambda(_, _) = &**value {
                                                     method_lambda = Some(&**value);
                                                 } else if let IKunTree::Extension(ext_name, ext_args) = &**value {
-                                                    if ext_name == "python_function" {
+                                                    // Remove python_function support
+                                                    if ext_name == "function_decl" {
                                                         method_lambda = Some(&ext_args[1]);
                                                     }
                                                 }
@@ -641,7 +642,7 @@ impl NyarBackend {
                                                 if let IKunTree::Lambda(_, _) = value {
                                                     method_lambda = Some(value);
                                                 } else if let IKunTree::Extension(inner_ext_name, inner_ext_args) = value {
-                                                    if inner_ext_name == "python_function" {
+                                                    if inner_ext_name == "function_decl" {
                                                         method_lambda = Some(&inner_ext_args[1]);
                                                     }
                                                 }
@@ -709,9 +710,8 @@ impl NyarBackend {
                             self.emit(Instruction::StringConst(class_name.clone()), &mut code);
                         }
                     }
-                    "python_function" => {
-                        // args: [name, lambda, decorators, returns, comment]
-                        // Just generate the closure and leave it on stack
+                    "function_decl" => {
+                        // args: [name, lambda, ...]
                         code.extend(self.lower_tree(&args[1])?);
                     }
                     "invoke_method" => {
@@ -1229,7 +1229,7 @@ impl NyarBackend {
                         // 2. Wrap body in except handler
                         let mut except_handler_code = Vec::new();
                         let prev_lines = std::mem::take(&mut self.current_lines);
-                        let raise_name_idx = self.add_constant(Constant::String("python:raise".to_string()));
+                        let raise_name_idx = self.add_constant(Constant::String("vm:throw".to_string()));
                         self.emit(Instruction::MatchEffect(raise_name_idx), &mut except_handler_code);
                         
                         let next_handler_placeholder = except_handler_code.len();
@@ -1239,7 +1239,7 @@ impl NyarBackend {
                         except_handler_code.extend(self.lower_tree(handlers)?);
                         
                         // If no except matched, re-raise
-                        let re_perform_idx = self.add_constant(Constant::String("python:raise".to_string()));
+                        let re_perform_idx = self.add_constant(Constant::String("vm:throw".to_string()));
                         self.emit(Instruction::Perform(re_perform_idx, 2), &mut except_handler_code);
 
                         let handler_end = except_handler_code.len();

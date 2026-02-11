@@ -1,4 +1,3 @@
-pub mod aot;
 pub mod bytecode;
 pub mod driver;
 pub mod runtime;
