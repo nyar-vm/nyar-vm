@@ -29,9 +29,6 @@ indexmap = { workspace = true }
 pe-assembler = { workspace = true }
 oak-json = { workspace = true }
 reqwest = { workspace = true }
-gaia-assembler = { workspace = true }
-gaia-types = { workspace = true }
-rusty-lua = { workspace = true }
 x86_64-assembler = { workspace = true }
 clap = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }

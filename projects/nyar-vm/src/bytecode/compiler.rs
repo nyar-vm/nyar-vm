@@ -112,9 +112,6 @@ impl NyarBackend {
                             fields.push(field_name.clone());
                         }
                     }
-                } else if name == "python_function" {
-                    // args: [name, lambda, defaults, vararg, kwarg]
-                    self.scan_fields(&args[1], fields);
                 } else if name == "assign" {
                     // args: [target, value]
                     self.scan_fields(&args[1], fields);
@@ -1167,7 +1164,7 @@ impl NyarBackend {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
                         let name_idx =
-                            self.add_constant(Constant::String("python:raise".to_string()));
+                            self.add_constant(Constant::String("vm:throw".to_string()));
                         self.emit(Instruction::Perform(name_idx, 2), &mut code);
                     }
                     "assert" => {
@@ -1177,7 +1174,7 @@ impl NyarBackend {
                         self.emit(Instruction::JumpIfTrue(0), &mut code);
                         code.extend(self.lower_tree(&args[1])?);
                         let name_idx = self
-                            .add_constant(Constant::String("python:AssertionError".to_string()));
+                            .add_constant(Constant::String("std:AssertionError".to_string()));
                         self.emit(Instruction::Perform(name_idx, 1), &mut code);
                         let end_pos = code.len();
                         let off = (end_pos as isize - placeholder as isize) as i16;
@@ -1209,8 +1206,8 @@ impl NyarBackend {
                             
                             // Re-raise
                             // We need an instruction that can raise with dynamic name and args list
-                            // Nyar VM might need a dynamic raise. For now, let's assume it's python:raise
-                            let re_perform_idx = self.add_constant(Constant::String("python:raise".to_string()));
+                            // Nyar VM might need a dynamic raise. For now, let's assume it's vm:throw
+                            let re_perform_idx = self.add_constant(Constant::String("vm:throw".to_string()));
                             self.emit(Instruction::Perform(re_perform_idx, 2), &mut finally_handler_code);
                             self.emit(Instruction::Return, &mut finally_handler_code);
 

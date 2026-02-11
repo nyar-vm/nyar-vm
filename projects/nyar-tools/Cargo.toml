@@ -17,3 +17,4 @@ oak-core = { workspace = true }
 oak-vfs = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+rusty-lua = { workspace = true }
