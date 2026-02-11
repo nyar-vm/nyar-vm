@@ -1,7 +1,8 @@
 pub mod preprocessor;
 
 use crate::errors::CError;
-use nyar_types::{NyarContext, NyarError, NyarFrontend};
+use nyar_aot::{NyarContext, NyarFrontend};
+use nyar_types::NyarError;
 use oak_vfs::Vfs;
 use chomsky_uir::Id;
 use oak_c::ast::{self, CRoot};

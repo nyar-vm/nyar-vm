@@ -1,11 +1,11 @@
 pub mod io;
 pub mod fs;
-// pub mod http;
-// pub mod json;
-// pub mod toml;
-// pub mod von;
-// pub mod net;
-// pub mod async_ffi;
+pub mod http;
+pub mod json;
+pub mod toml;
+pub mod von;
+pub mod net;
+pub mod async_ffi;
 
 use nyar_vm::vm::core::NyarVM;
 use nyar_vm::vm::value::Value;

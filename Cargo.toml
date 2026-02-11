@@ -35,6 +35,8 @@ oak-core = { path = "../oaks/projects/oak-core" }
 oak-vfs = { path = "../oaks/projects/oak-vfs" }
 oak-repl = { path = "../oaks/projects/oak-repl" }
 oak-rust = { path = "../oaks/examples/oak-rust" }
+oak-valkyrie = { path = "../oaks/examples/oak-valkyrie" }
+oak-voc = { path = "../oaks/examples/oak-voc" }
 oak-c = { path = "../oaks/examples/oak-c" }
 oak-typescript = { path = "../oaks/examples/oak-typescript" }
 oak-go = { path = "../oaks/examples/oak-go" }

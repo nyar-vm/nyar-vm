@@ -16,6 +16,10 @@ impl<'a, V: Vfs, A: Analysis<IKun>> NyarContext<'a, V, A> {
     pub fn new(egraph: &'a mut EGraph<IKun, A>, vfs: &'a V, scope: usize) -> Self {
         Self { egraph, vfs, scope }
     }
+
+    pub fn builder(&mut self) -> IntentBuilder<A> {
+        IntentBuilder::new(self.egraph)
+    }
 }
 
 /// Nyar 前端接口 trait
