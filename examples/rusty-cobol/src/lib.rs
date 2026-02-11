@@ -23,7 +23,7 @@ impl Default for RustyCobolFrontend {
 impl NyarFrontend for RustyCobolFrontend {
     type Language = CobolLanguage;
 
-    fn parse(&self, source: &str) -> Result<CobolRoot<'static>, NyarError> {
+    fn parse(&self, source: &str) -> Result<CobolRoot, NyarError> {
         let builder = CobolBuilder::new(&self.language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<CobolLanguage>::default();
@@ -34,7 +34,7 @@ impl NyarFrontend for RustyCobolFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &CobolRoot<'static>, ctx: &mut NyarContext<V>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &CobolRoot, ctx: &mut NyarContext<V>) -> Id {
         let mut lowerer = CobolLowerer::new(ctx);
         lowerer.lower_root(ast)
     }
@@ -49,79 +49,38 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> CobolLowerer<'
         Self { ctx }
     }
 
-    fn lower_root(&mut self, root: &CobolRoot<'static>) -> Id {
+    fn lower_root(&mut self, root: &CobolRoot) -> Id {
         let mut items = Vec::new();
-        // Traverse the red tree and generate IKun
-        self.lower_node(root.syntax, &mut items);
+        
+        if let Some(proc_div) = &root.program.procedure_division {
+            self.lower_procedure_division(proc_div, &mut items);
+        }
         
         self.ctx.builder.module("rusty-cobol-program", items, Loc::default())
     }
 
-    fn lower_node(&mut self, node: oak_cobol::ast::CobolNode<'static>, items: &mut Vec<Id>) {
-        use oak_cobol::parser::CobolElementType;
-        use oak_core::RedTree;
-
-        for child in node.children() {
-            if let RedTree::Node(n) = child {
-                match n.green.kind {
-                    CobolElementType::ProcedureDivision => {
-                        self.lower_procedure_division(n, items);
-                    }
-                    _ => {
-                        // Recurse for other divisions for now
-                        self.lower_node(n, items);
-                    }
-                }
-            }
-        }
-    }
-
-    fn lower_procedure_division(&mut self, node: oak_cobol::ast::CobolNode<'static>, items: &mut Vec<Id>) {
-        use oak_cobol::parser::CobolElementType;
-        use oak_core::RedTree;
-
+    fn lower_procedure_division(&mut self, proc_div: &oak_cobol::ast::ProcedureDivision, items: &mut Vec<Id>) {
         let mut stmts = Vec::new();
-        for child in node.children() {
-            if let RedTree::Node(n) = child {
-                match n.green.kind {
-                    CobolElementType::DisplayStatement => {
-                        stmts.push(self.lower_display_statement(n));
-                    }
-                    CobolElementType::StopStatement => {
-                        stmts.push(self.lower_stop_statement(n));
-                    }
-                    _ => {}
-                }
-            }
-        }
         
-        let main_func = self.ctx.builder.function("main", Vec::new(), stmts, Loc::default());
-        items.push(main_func);
-    }
-
-    fn lower_display_statement(&mut self, node: oak_cobol::ast::CobolNode<'static>) -> Id {
-        // Simplified: just collect all literals/identifiers and call a "display" extension
-        let mut args = Vec::new();
-        for child in node.children() {
-            match child {
-                oak_core::RedTree::Leaf(t) => {
-                    match t.kind {
-                        oak_cobol::lexer::CobolTokenType::StringLiteral => {
-                            // Extract text and create IKun string
-                            // This requires access to source text which we don't have easily here
-                            // For now use a placeholder
-                            args.push(self.ctx.builder.string("TODO: string", Loc::default()));
-                        }
-                        _ => {}
+        for stmt in &proc_div.statements {
+            match stmt {
+                oak_cobol::ast::Statement::Display(display) => {
+                    let mut args = Vec::new();
+                    for arg in &display.items {
+                        args.push(self.ctx.builder.string(arg, Loc::default()));
+                    }
+                    stmts.push(self.ctx.builder.extension("display", args, Loc::default()));
+                }
+                oak_cobol::ast::Statement::Stop(stop) => {
+                    if stop.run {
+                        stmts.push(self.ctx.builder.extension("stop", Vec::new(), Loc::default()));
                     }
                 }
                 _ => {}
             }
         }
-        self.ctx.builder.extension("display", args, Loc::default())
-    }
-
-    fn lower_stop_statement(&mut self, _node: oak_cobol::ast::CobolNode<'static>) -> Id {
-        self.ctx.builder.extension("stop", Vec::new(), Loc::default())
+        
+        let main_func = self.ctx.builder.function("main", Vec::new(), stmts, Loc::default());
+        items.push(main_func);
     }
 }

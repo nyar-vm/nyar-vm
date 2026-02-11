@@ -238,12 +238,12 @@ impl GaiaTranslator {
         let loc = Loc::default();
         let mut parameters = Vec::new();
         for p in params {
-            parameters.push(builder.parameter(p, loc));
+            parameters.push(p.clone());
         }
         if is_vararg {
-            parameters.push(builder.parameter("...", loc));
+            parameters.push("...".to_string());
         }
         let body_id = self.translate_statements(body, builder)?;
-        Ok(builder.function("anonymous", parameters, body_id, loc))
+        Ok(builder.lambda(parameters, body_id, loc))
     }
 }
