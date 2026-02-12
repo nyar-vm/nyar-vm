@@ -2,9 +2,11 @@
 //!
 //! 这个库提供了 Rusty Zig 语言的词法分析、语法分析和 Gaia 翻译功能。
 
+#![warn(missing_docs)]
+
 pub mod codegen;
 
-use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
+use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_zig::ZigLanguage;
 use chomsky_uir::ConstraintAnalysis;
 

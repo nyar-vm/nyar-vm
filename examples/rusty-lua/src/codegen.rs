@@ -1,10 +1,7 @@
 //! Gaia 指令生成器 (已重构为意图树生成器)
 
-use chomsky_uir::{IntentBuilder, Id, Analysis, IKun};
-use chomsky_types::Loc;
-use nyar_aot::NyarContext;
-use nyar_types::NyarError;
-use oak_vfs::Vfs;
+use chomsky_uir::{Analysis, IKun, IntentBuilder};
+use nyar_types::{Id, Loc, NyarContext, NyarError, Vfs};
 use oak_lua::ast::*;
 
 /// Gaia 翻译器，将 Lua AST 转换为意图树

@@ -1,4 +1,6 @@
-use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
+#![warn(missing_docs)]
+
+use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_prolog::{PrologBuilder, PrologLanguage, PrologRoot};
 use oak_core::{Builder, SourceText};
 
@@ -36,6 +38,7 @@ impl NyarFrontend for RustyPrologFrontend {
 
     fn lower_unified<V: Vfs>(&self, _ast: &PrologRoot, _ctx: &mut NyarContext<V>) -> Id {
         // TODO: 实现从 PrologRoot 到 IKunTree 的转换
-        _ctx.builder.module("rusty-prolog-program", Vec::new(), nyar_types::Loc::default())
+        // _ctx.builder.module("rusty-prolog-program", Vec::new(), Loc::default())
+        0
     }
 }

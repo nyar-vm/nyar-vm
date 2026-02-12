@@ -43,11 +43,11 @@ impl NyarFrontend for RustyHaskellFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: nyar_types::Vfs>(
+    fn lower_unified<V: Vfs>(
         &self,
         ast: &oak_haskell::ast::HaskellRoot,
-        ctx: &mut nyar_types::NyarContext<'_, V>,
-    ) -> chomsky_uir::Id {
+        ctx: &mut NyarContext<V>,
+    ) -> Id {
         let translator = crate::codegen::NyarTranslator::new();
         let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
         translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))

@@ -1,5 +1,5 @@
-use nyar_types::{NyarContext, Id, Vfs, Loc};
-use oak_mojo::ast::{MojoStatement, MojoExpression, MojoLiteral};
+use nyar_types::{Id, Loc, NyarContext, Vfs};
+use oak_mojo::ast::{MojoExpression, MojoLiteral, MojoStatement};
 use chomsky_uir::ConstraintAnalysis;
 
 /// Mojo 代码生成器
