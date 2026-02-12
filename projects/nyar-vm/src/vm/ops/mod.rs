@@ -315,112 +315,1084 @@ impl NyarVM {
             Instruction::Nop => Ok(None),
             // I32 operations
             Instruction::I32Const(v) => self.execute_i32_const(v),
-            Instruction::I32Add => self.execute_i32_add(),
-            Instruction::I32Sub => self.execute_i32_sub(),
-            Instruction::I32Mul => self.execute_i32_mul(),
-            Instruction::I32DivS => self.execute_i32_div_s(),
-            Instruction::I32DivU => self.execute_i32_div_u(),
-            Instruction::I32RemS => self.execute_i32_rem_s(),
-            Instruction::I32RemU => self.execute_i32_rem_u(),
-            Instruction::I32And => self.execute_i32_and(),
-            Instruction::I32Or => self.execute_i32_or(),
-            Instruction::I32Xor => self.execute_i32_xor(),
-            Instruction::I32Shl => self.execute_i32_shl(),
-            Instruction::I32ShrS => self.execute_i32_shr_s(),
-            Instruction::I32ShrU => self.execute_i32_shr_u(),
-            Instruction::I32Not => self.execute_i32_not(),
-            Instruction::I32Neg => self.execute_i32_neg(),
-            Instruction::I32Eq => self.execute_i32_eq(),
-            Instruction::I32Ne => self.execute_i32_ne(),
-            Instruction::I32LtS => self.execute_i32_lt_s(),
-            Instruction::I32LtU => self.execute_i32_lt_u(),
-            Instruction::I32LeS => self.execute_i32_le_s(),
-            Instruction::I32LeU => self.execute_i32_le_u(),
-            Instruction::I32GtS => self.execute_i32_gt_s(),
-            Instruction::I32GtU => self.execute_i32_gt_u(),
-            Instruction::I32GeS => self.execute_i32_ge_s(),
-            Instruction::I32GeU => self.execute_i32_ge_u(),
-            Instruction::I32ToF32S => self.execute_i32_to_f32_s(),
-            Instruction::I32ToF32U => self.execute_i32_to_f32_u(),
-            Instruction::I32ToF64S => self.execute_i32_to_f64_s(),
-            Instruction::I32ToF64U => self.execute_i32_to_f64_u(),
-            Instruction::I32AddSatS => self.execute_i32_add_sat_s(),
-            Instruction::I32AddSatU => self.execute_i32_add_sat_u(),
-            Instruction::I32SubSatS => self.execute_i32_sub_sat_s(),
-            Instruction::I32SubSatU => self.execute_i32_sub_sat_u(),
-            Instruction::I32Extend64S => self.execute_i32_extend64_s(),
-            Instruction::I32Extend64U => self.execute_i32_extend64_u(),
+            Instruction::I32Add => {
+                if let Some(func) = self.runtime.get_intrinsic(200) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_add()
+                }
+            }
+            Instruction::I32Sub => {
+                if let Some(func) = self.runtime.get_intrinsic(201) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_sub()
+                }
+            }
+            Instruction::I32Mul => {
+                if let Some(func) = self.runtime.get_intrinsic(202) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_mul()
+                }
+            }
+            Instruction::I32DivS => {
+                if let Some(func) = self.runtime.get_intrinsic(203) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_div_s()
+                }
+            }
+            Instruction::I32DivU => {
+                if let Some(func) = self.runtime.get_intrinsic(204) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_div_u()
+                }
+            }
+            Instruction::I32RemS => {
+                if let Some(func) = self.runtime.get_intrinsic(205) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_rem_s()
+                }
+            }
+            Instruction::I32RemU => {
+                if let Some(func) = self.runtime.get_intrinsic(206) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_rem_u()
+                }
+            }
+            Instruction::I32And => {
+                if let Some(func) = self.runtime.get_intrinsic(207) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_and()
+                }
+            }
+            Instruction::I32Or => {
+                if let Some(func) = self.runtime.get_intrinsic(208) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_or()
+                }
+            }
+            Instruction::I32Xor => {
+                if let Some(func) = self.runtime.get_intrinsic(209) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_xor()
+                }
+            }
+            Instruction::I32Shl => {
+                if let Some(func) = self.runtime.get_intrinsic(210) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_shl()
+                }
+            }
+            Instruction::I32ShrS => {
+                if let Some(func) = self.runtime.get_intrinsic(211) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_shr_s()
+                }
+            }
+            Instruction::I32ShrU => {
+                if let Some(func) = self.runtime.get_intrinsic(212) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_shr_u()
+                }
+            }
+            Instruction::I32Not => {
+                if let Some(func) = self.runtime.get_intrinsic(213) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_not()
+                }
+            }
+            Instruction::I32Neg => {
+                if let Some(func) = self.runtime.get_intrinsic(214) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_neg()
+                }
+            }
+            Instruction::I32Eq => {
+                if let Some(func) = self.runtime.get_intrinsic(215) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_eq()
+                }
+            }
+            Instruction::I32Ne => {
+                if let Some(func) = self.runtime.get_intrinsic(216) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_ne()
+                }
+            }
+            Instruction::I32LtS => {
+                if let Some(func) = self.runtime.get_intrinsic(217) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_lt_s()
+                }
+            }
+            Instruction::I32LtU => {
+                if let Some(func) = self.runtime.get_intrinsic(218) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_lt_u()
+                }
+            }
+            Instruction::I32LeS => {
+                if let Some(func) = self.runtime.get_intrinsic(219) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_le_s()
+                }
+            }
+            Instruction::I32LeU => {
+                if let Some(func) = self.runtime.get_intrinsic(220) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_le_u()
+                }
+            }
+            Instruction::I32GtS => {
+                if let Some(func) = self.runtime.get_intrinsic(221) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_gt_s()
+                }
+            }
+            Instruction::I32GtU => {
+                if let Some(func) = self.runtime.get_intrinsic(222) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_gt_u()
+                }
+            }
+            Instruction::I32GeS => {
+                if let Some(func) = self.runtime.get_intrinsic(223) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_ge_s()
+                }
+            }
+            Instruction::I32GeU => {
+                if let Some(func) = self.runtime.get_intrinsic(224) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_ge_u()
+                }
+            }
+            Instruction::I32ToF32S => {
+                if let Some(func) = self.runtime.get_intrinsic(225) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_to_f32_s()
+                }
+            }
+            Instruction::I32ToF32U => {
+                if let Some(func) = self.runtime.get_intrinsic(226) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_to_f32_u()
+                }
+            }
+            Instruction::I32ToF64S => {
+                if let Some(func) = self.runtime.get_intrinsic(227) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_to_f64_s()
+                }
+            }
+            Instruction::I32ToF64U => {
+                if let Some(func) = self.runtime.get_intrinsic(228) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_to_f64_u()
+                }
+            }
+            Instruction::I32AddSatS => {
+                if let Some(func) = self.runtime.get_intrinsic(233) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_add_sat_s()
+                }
+            }
+            Instruction::I32AddSatU => {
+                if let Some(func) = self.runtime.get_intrinsic(234) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_add_sat_u()
+                }
+            }
+            Instruction::I32SubSatS => {
+                if let Some(func) = self.runtime.get_intrinsic(235) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_sub_sat_s()
+                }
+            }
+            Instruction::I32SubSatU => {
+                if let Some(func) = self.runtime.get_intrinsic(236) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_sub_sat_u()
+                }
+            }
+            Instruction::I32Extend64S => {
+                if let Some(func) = self.runtime.get_intrinsic(229) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_extend64_s()
+                }
+            }
+            Instruction::I32Extend64U => {
+                if let Some(func) = self.runtime.get_intrinsic(230) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_extend64_u()
+                }
+            }
             Instruction::I32Trunc64SLow => self.execute_i32_trunc64_s_low(),
-            Instruction::I32Trunc64S => self.execute_i32_trunc64_s(),
-            Instruction::I32Trunc64U => self.execute_i32_trunc64_u(),
+            Instruction::I32Trunc64S => {
+                if let Some(func) = self.runtime.get_intrinsic(231) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_trunc64_s()
+                }
+            }
+            Instruction::I32Trunc64U => {
+                if let Some(func) = self.runtime.get_intrinsic(232) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i32_trunc64_u()
+                }
+            }
             // I64 operations
             Instruction::I64Const(v) => self.execute_i64_const(v),
-            Instruction::I64Add => self.execute_i64_add(),
-            Instruction::I64Sub => self.execute_i64_sub(),
-            Instruction::I64Mul => self.execute_i64_mul(),
-            Instruction::I64DivS => self.execute_i64_div_s(),
-            Instruction::I64DivU => self.execute_i64_div_u(),
-            Instruction::I64RemS => self.execute_i64_rem_s(),
-            Instruction::I64RemU => self.execute_i64_rem_u(),
-            Instruction::I64And => self.execute_i64_and(),
-            Instruction::I64Or => self.execute_i64_or(),
-            Instruction::I64Xor => self.execute_i64_xor(),
-            Instruction::I64Shl => self.execute_i64_shl(),
-            Instruction::I64ShrS => self.execute_i64_shr_s(),
-            Instruction::I64ShrU => self.execute_i64_shr_u(),
-            Instruction::I64Not => self.execute_i64_not(),
-            Instruction::I64Neg => self.execute_i64_neg(),
-            Instruction::I64Eq => self.execute_i64_eq(),
-            Instruction::I64Ne => self.execute_i64_ne(),
-            Instruction::I64LtS => self.execute_i64_lt_s(),
-            Instruction::I64LtU => self.execute_i64_lt_u(),
-            Instruction::I64LeS => self.execute_i64_le_s(),
-            Instruction::I64LeU => self.execute_i64_le_u(),
-            Instruction::I64GtS => self.execute_i64_gt_s(),
-            Instruction::I64GtU => self.execute_i64_gt_u(),
-            Instruction::I64GeS => self.execute_i64_ge_s(),
-            Instruction::I64GeU => self.execute_i64_ge_u(),
-            Instruction::I64ToF32S => self.execute_i64_to_f32_s(),
-            Instruction::I64ToF32U => self.execute_i64_to_f32_u(),
-            Instruction::I64ToF64S => self.execute_i64_to_f64_s(),
-            Instruction::I64ToF64U => self.execute_i64_to_f64_u(),
-            Instruction::I64AddSatS => self.execute_i64_add_sat_s(),
-            Instruction::I64AddSatU => self.execute_i64_add_sat_u(),
+            Instruction::I64Add => {
+                if let Some(func) = self.runtime.get_intrinsic(260) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_add()
+                }
+            }
+            Instruction::I64Sub => {
+                if let Some(func) = self.runtime.get_intrinsic(261) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_sub()
+                }
+            }
+            Instruction::I64Mul => {
+                if let Some(func) = self.runtime.get_intrinsic(262) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_mul()
+                }
+            }
+            Instruction::I64DivS => {
+                if let Some(func) = self.runtime.get_intrinsic(263) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_div_s()
+                }
+            }
+            Instruction::I64DivU => {
+                if let Some(func) = self.runtime.get_intrinsic(264) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_div_u()
+                }
+            }
+            Instruction::I64RemS => {
+                if let Some(func) = self.runtime.get_intrinsic(265) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_rem_s()
+                }
+            }
+            Instruction::I64RemU => {
+                if let Some(func) = self.runtime.get_intrinsic(266) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_rem_u()
+                }
+            }
+            Instruction::I64And => {
+                if let Some(func) = self.runtime.get_intrinsic(267) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_and()
+                }
+            }
+            Instruction::I64Or => {
+                if let Some(func) = self.runtime.get_intrinsic(268) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_or()
+                }
+            }
+            Instruction::I64Xor => {
+                if let Some(func) = self.runtime.get_intrinsic(269) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_xor()
+                }
+            }
+            Instruction::I64Shl => {
+                if let Some(func) = self.runtime.get_intrinsic(270) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_shl()
+                }
+            }
+            Instruction::I64ShrS => {
+                if let Some(func) = self.runtime.get_intrinsic(271) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_shr_s()
+                }
+            }
+            Instruction::I64ShrU => {
+                if let Some(func) = self.runtime.get_intrinsic(272) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_shr_u()
+                }
+            }
+            Instruction::I64Not => {
+                if let Some(func) = self.runtime.get_intrinsic(273) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_not()
+                }
+            }
+            Instruction::I64Neg => {
+                if let Some(func) = self.runtime.get_intrinsic(274) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_neg()
+                }
+            }
+            Instruction::I64Eq => {
+                if let Some(func) = self.runtime.get_intrinsic(275) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_eq()
+                }
+            }
+            Instruction::I64Ne => {
+                if let Some(func) = self.runtime.get_intrinsic(276) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_ne()
+                }
+            }
+            Instruction::I64LtS => {
+                if let Some(func) = self.runtime.get_intrinsic(277) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_lt_s()
+                }
+            }
+            Instruction::I64LtU => {
+                if let Some(func) = self.runtime.get_intrinsic(278) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_lt_u()
+                }
+            }
+            Instruction::I64LeS => {
+                if let Some(func) = self.runtime.get_intrinsic(279) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_le_s()
+                }
+            }
+            Instruction::I64LeU => {
+                if let Some(func) = self.runtime.get_intrinsic(280) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_le_u()
+                }
+            }
+            Instruction::I64GtS => {
+                if let Some(func) = self.runtime.get_intrinsic(281) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_gt_s()
+                }
+            }
+            Instruction::I64GtU => {
+                if let Some(func) = self.runtime.get_intrinsic(282) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_gt_u()
+                }
+            }
+            Instruction::I64GeS => {
+                if let Some(func) = self.runtime.get_intrinsic(283) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_ge_s()
+                }
+            }
+            Instruction::I64GeU => {
+                if let Some(func) = self.runtime.get_intrinsic(284) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_ge_u()
+                }
+            }
+            Instruction::I64ToF32S => {
+                if let Some(func) = self.runtime.get_intrinsic(285) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_to_f32_s()
+                }
+            }
+            Instruction::I64ToF32U => {
+                if let Some(func) = self.runtime.get_intrinsic(286) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_to_f32_u()
+                }
+            }
+            Instruction::I64ToF64S => {
+                if let Some(func) = self.runtime.get_intrinsic(287) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_to_f64_s()
+                }
+            }
+            Instruction::I64ToF64U => {
+                if let Some(func) = self.runtime.get_intrinsic(288) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_to_f64_u()
+                }
+            }
+            Instruction::I64AddSatS => {
+                if let Some(func) = self.runtime.get_intrinsic(289) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_add_sat_s()
+                }
+            }
+            Instruction::I64AddSatU => {
+                if let Some(func) = self.runtime.get_intrinsic(290) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_i64_add_sat_u()
+                }
+            }
             // Float operations
             Instruction::F32Const(v) => self.execute_f32_const(v),
-            Instruction::F32Add => self.execute_f32_add(),
-            Instruction::F32Sub => self.execute_f32_sub(),
-            Instruction::F32Mul => self.execute_f32_mul(),
-            Instruction::F32Div => self.execute_f32_div(),
-            Instruction::F32Neg => self.execute_f32_neg(),
-            Instruction::F32Eq => self.execute_f32_eq(),
-            Instruction::F32Ne => self.execute_f32_ne(),
-            Instruction::F32Lt => self.execute_f32_lt(),
-            Instruction::F32Le => self.execute_f32_le(),
-            Instruction::F32Gt => self.execute_f32_gt(),
-            Instruction::F32Ge => self.execute_f32_ge(),
-            Instruction::F32ToI32S => self.execute_f32_to_i32_s(),
-            Instruction::F32ToI32U => self.execute_f32_to_i32_u(),
-            Instruction::F32ToI64S => self.execute_f32_to_i64_s(),
-            Instruction::F32ToI64U => self.execute_f32_to_i64_u(),
-            Instruction::F32ToF64 => self.execute_f32_to_f64(),
+            Instruction::F32Add => {
+                if let Some(func) = self.runtime.get_intrinsic(140) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_add()
+                }
+            }
+            Instruction::F32Sub => {
+                if let Some(func) = self.runtime.get_intrinsic(141) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_sub()
+                }
+            }
+            Instruction::F32Mul => {
+                if let Some(func) = self.runtime.get_intrinsic(142) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_mul()
+                }
+            }
+            Instruction::F32Div => {
+                if let Some(func) = self.runtime.get_intrinsic(143) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_div()
+                }
+            }
+            Instruction::F32Neg => {
+                if let Some(func) = self.runtime.get_intrinsic(144) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_neg()
+                }
+            }
+            Instruction::F32Eq => {
+                if let Some(func) = self.runtime.get_intrinsic(145) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_eq()
+                }
+            }
+            Instruction::F32Ne => {
+                if let Some(func) = self.runtime.get_intrinsic(146) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_ne()
+                }
+            }
+            Instruction::F32Lt => {
+                if let Some(func) = self.runtime.get_intrinsic(147) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_lt()
+                }
+            }
+            Instruction::F32Le => {
+                if let Some(func) = self.runtime.get_intrinsic(148) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_le()
+                }
+            }
+            Instruction::F32Gt => {
+                if let Some(func) = self.runtime.get_intrinsic(149) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_gt()
+                }
+            }
+            Instruction::F32Ge => {
+                if let Some(func) = self.runtime.get_intrinsic(150) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_ge()
+                }
+            }
+            Instruction::F32ToI32S => {
+                if let Some(func) = self.runtime.get_intrinsic(151) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_to_i32_s()
+                }
+            }
+            Instruction::F32ToI32U => {
+                if let Some(func) = self.runtime.get_intrinsic(152) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_to_i32_u()
+                }
+            }
+            Instruction::F32ToI64S => {
+                if let Some(func) = self.runtime.get_intrinsic(153) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_to_i64_s()
+                }
+            }
+            Instruction::F32ToI64U => {
+                if let Some(func) = self.runtime.get_intrinsic(154) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_to_i64_u()
+                }
+            }
+            Instruction::F32ToF64 => {
+                if let Some(func) = self.runtime.get_intrinsic(155) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f32_to_f64()
+                }
+            }
             Instruction::F64Const(v) => self.execute_f64_const(v),
-            Instruction::F64Add => self.execute_f64_add(),
-            Instruction::F64Sub => self.execute_f64_sub(),
-            Instruction::F64Mul => self.execute_f64_mul(),
-            Instruction::F64Div => self.execute_f64_div(),
-            Instruction::F64Neg => self.execute_f64_neg(),
-            Instruction::F64Eq => self.execute_f64_eq(),
-            Instruction::F64Ne => self.execute_f64_ne(),
-            Instruction::F64Lt => self.execute_f64_lt(),
-            Instruction::F64Le => self.execute_f64_le(),
-            Instruction::F64Gt => self.execute_f64_gt(),
-            Instruction::F64Ge => self.execute_f64_ge(),
-            Instruction::F64ToI32S => self.execute_f64_to_i32_s(),
-            Instruction::F64ToI32U => self.execute_f64_to_i32_u(),
-            Instruction::F64ToI64S => self.execute_f64_to_i64_s(),
-            Instruction::F64ToI64U => self.execute_f64_to_i64_u(),
-            Instruction::F64ToF32 => self.execute_f64_to_f32(),
+            Instruction::F64Add => {
+                if let Some(func) = self.runtime.get_intrinsic(160) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_add()
+                }
+            }
+            Instruction::F64Sub => {
+                if let Some(func) = self.runtime.get_intrinsic(161) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_sub()
+                }
+            }
+            Instruction::F64Mul => {
+                if let Some(func) = self.runtime.get_intrinsic(162) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_mul()
+                }
+            }
+            Instruction::F64Div => {
+                if let Some(func) = self.runtime.get_intrinsic(163) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_div()
+                }
+            }
+            Instruction::F64Neg => {
+                if let Some(func) = self.runtime.get_intrinsic(164) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_neg()
+                }
+            }
+            Instruction::F64Eq => {
+                if let Some(func) = self.runtime.get_intrinsic(165) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_eq()
+                }
+            }
+            Instruction::F64Ne => {
+                if let Some(func) = self.runtime.get_intrinsic(166) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_ne()
+                }
+            }
+            Instruction::F64Lt => {
+                if let Some(func) = self.runtime.get_intrinsic(167) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_lt()
+                }
+            }
+            Instruction::F64Le => {
+                if let Some(func) = self.runtime.get_intrinsic(168) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_le()
+                }
+            }
+            Instruction::F64Gt => {
+                if let Some(func) = self.runtime.get_intrinsic(169) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_gt()
+                }
+            }
+            Instruction::F64Ge => {
+                if let Some(func) = self.runtime.get_intrinsic(170) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_ge()
+                }
+            }
+            Instruction::F64ToI32S => {
+                if let Some(func) = self.runtime.get_intrinsic(171) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_to_i32_s()
+                }
+            }
+            Instruction::F64ToI32U => {
+                if let Some(func) = self.runtime.get_intrinsic(172) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_to_i32_u()
+                }
+            }
+            Instruction::F64ToI64S => {
+                if let Some(func) = self.runtime.get_intrinsic(173) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_to_i64_s()
+                }
+            }
+            Instruction::F64ToI64U => {
+                if let Some(func) = self.runtime.get_intrinsic(174) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_to_i64_u()
+                }
+            }
+            Instruction::F64ToF32 => {
+                if let Some(func) = self.runtime.get_intrinsic(175) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_f64_to_f32()
+                }
+            }
             // BigInt operations
             Instruction::BigIntConst { sign, bytes } => {
                 if let Some(func) = self.runtime.get_intrinsic(100) {
@@ -594,16 +1566,115 @@ impl NyarVM {
             }
             // String operations
             Instruction::StringConst(s) => self.execute_string_const(s),
-            Instruction::StringConcat => self.execute_string_concat(),
-            Instruction::StringLenBytes => self.execute_string_len_bytes(),
-            Instruction::StringLenChars => self.execute_string_len_chars(),
-            Instruction::StringEq => self.execute_string_eq(),
-            Instruction::StringNe => self.execute_string_ne(),
-            Instruction::StringLt => self.execute_string_lt(),
-            Instruction::StringLe => self.execute_string_le(),
-            Instruction::StringGt => self.execute_string_gt(),
-            Instruction::StringGe => self.execute_string_ge(),
-            Instruction::StringSubstr => self.execute_string_substr(),
+            Instruction::StringConcat => {
+                if let Some(func) = self.runtime.get_intrinsic(120) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_string_concat()
+                }
+            }
+            Instruction::StringLenBytes => {
+                if let Some(func) = self.runtime.get_intrinsic(121) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_string_len_bytes()
+                }
+            }
+            Instruction::StringLenChars => {
+                if let Some(func) = self.runtime.get_intrinsic(122) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_string_len_chars()
+                }
+            }
+            Instruction::StringEq => {
+                if let Some(func) = self.runtime.get_intrinsic(123) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_string_eq()
+                }
+            }
+            Instruction::StringNe => {
+                if let Some(func) = self.runtime.get_intrinsic(124) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_string_ne()
+                }
+            }
+            Instruction::StringLt => {
+                if let Some(func) = self.runtime.get_intrinsic(125) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_string_lt()
+                }
+            }
+            Instruction::StringLe => {
+                if let Some(func) = self.runtime.get_intrinsic(126) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_string_le()
+                }
+            }
+            Instruction::StringGt => {
+                if let Some(func) = self.runtime.get_intrinsic(127) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_string_gt()
+                }
+            }
+            Instruction::StringGe => {
+                if let Some(func) = self.runtime.get_intrinsic(128) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_string_ge()
+                }
+            }
+            Instruction::StringSubstr => {
+                if let Some(func) = self.runtime.get_intrinsic(129) {
+                    let len = self.pop()?;
+                    let start = self.pop()?;
+                    let s = self.pop()?;
+                    let res = func(self, &[s, start, len])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_string_substr()
+                }
+            }
             // Stack operations
             Instruction::Push(idx) => self.execute_push(idx, module_idx),
             Instruction::Pop => self.execute_pop_stack(),

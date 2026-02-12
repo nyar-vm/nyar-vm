@@ -9,19 +9,6 @@ pub trait NyarObject {
     fn set_field(&mut self, name: &str, value: Value) -> Result<(), VmError>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FFIType {
-    Null,
-    Int,
-    F32,
-    F64,
-    Bool,
-    String,
-    List,
-    Object,
-    Any,
-}
-
 pub type ExternFunc = fn(&mut NyarVM, &[Value]) -> Result<Value, VmError>;
 
 pub trait RuntimeProvider: Send + Sync + Debug + Any {

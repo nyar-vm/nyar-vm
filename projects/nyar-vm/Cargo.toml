@@ -27,9 +27,6 @@ dashmap = { workspace = true }
 indexmap = { workspace = true }
 oak-json = { workspace = true }
 tokio = { workspace = true }
-wasi = { workspace = true, optional = true }
-
 [features]
 default = []
-wasi = ["dep:wasi"]
 native = []
