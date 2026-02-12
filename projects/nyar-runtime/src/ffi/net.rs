@@ -1,7 +1,7 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::{Value, Future, FutureStatus};
 use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
-use crate::vm::net::NetworkHandle;
+use crate::net::NetworkHandle;
 use nyar_gc::Root;
 use nyar_types::NyarError;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

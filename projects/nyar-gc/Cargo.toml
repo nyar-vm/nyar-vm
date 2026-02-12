@@ -7,11 +7,10 @@ authors.workspace = true
 
 [dependencies]
 nyar-macros = { workspace = true }
-tokio = { workspace = true, optional = true }
+tokio = { workspace = true }
 once_cell = { workspace = true }
 dashmap = { workspace = true }
 parking_lot = { workspace = true }
 
 [features]
 default = []
-tokio = ["dep:tokio"]

@@ -26,12 +26,9 @@ thiserror = { workspace = true }
 dashmap = { workspace = true }
 indexmap = { workspace = true }
 oak-json = { workspace = true }
-tokio = { workspace = true, optional = true }
+tokio = { workspace = true }
 wasi = { workspace = true, optional = true }
 
 [features]
-default = ["tokio"]
-tokio = ["dep:tokio", "nyar-gc/tokio"]
-native = []
-jvm = []
+default = []
 wasi = ["dep:wasi"]

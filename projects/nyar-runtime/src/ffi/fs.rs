@@ -9,7 +9,11 @@ pub fn std_fs_read_to_string(vm: &mut NyarVM, args: &[Value]) -> FFIResult {
     let path_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing path argument".to_string()))?;
     let path_str = path_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Path must be a string".to_string()))?;
     
-    let content = std::fs::read_to_string(path_str).map_err(|e| NyarError::RuntimeError(e.to_string()))?;
+    let content = if tokio::runtime::Handle::try_current().is_ok() {
+        tokio::task::block_in_place(|| std::fs::read_to_string(path_str))
+    } else {
+        std::fs::read_to_string(path_str)
+    }.map_err(|e| NyarError::RuntimeError(e.to_string()))?;
     Ok(Value::string(content, &vm.gc))
 }
 
@@ -56,7 +60,11 @@ pub fn std_fs_write(_vm: &mut NyarVM, args: &[Value]) -> FFIResult {
     let content_val = args.get(1).ok_or_else(|| NyarError::RuntimeError("Missing content argument".to_string()))?;
     let content_str = content_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Content must be a string".to_string()))?;
     
-    std::fs::write(path_str, content_str).map_err(|e| NyarError::RuntimeError(e.to_string()))?;
+    if tokio::runtime::Handle::try_current().is_ok() {
+        tokio::task::block_in_place(|| std::fs::write(path_str, content_str))
+    } else {
+        std::fs::write(path_str, content_str)
+    }.map_err(|e| NyarError::RuntimeError(e.to_string()))?;
     Ok(Value::null())
 }
 
@@ -98,13 +106,23 @@ pub fn std_fs_exists(_vm: &mut NyarVM, args: &[Value]) -> FFIResult {
     let path_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing path argument".to_string()))?;
     let path_str = path_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Path must be a string".to_string()))?;
     
-    Ok(Value::bool(Path::new(path_str).exists()))
+    let exists = if tokio::runtime::Handle::try_current().is_ok() {
+        tokio::task::block_in_place(|| Path::new(path_str).exists())
+    } else {
+        Path::new(path_str).exists()
+    };
+    
+    Ok(Value::bool(exists))
 }
 
 pub fn std_fs_remove_file(_vm: &mut NyarVM, args: &[Value]) -> FFIResult {
     let path_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing path argument".to_string()))?;
     let path_str = path_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Path must be a string".to_string()))?;
     
-    std::fs::remove_file(path_str).map_err(|e| NyarError::RuntimeError(e.to_string()))?;
+    if tokio::runtime::Handle::try_current().is_ok() {
+        tokio::task::block_in_place(|| std::fs::remove_file(path_str))
+    } else {
+        std::fs::remove_file(path_str)
+    }.map_err(|e| NyarError::RuntimeError(e.to_string()))?;
     Ok(Value::null())
 }

@@ -7,11 +7,19 @@ pub struct NativePlatform;
 
 impl NyarPlatform for NativePlatform {
     fn stdout_write(&self, msg: &str) {
-        print!("{}", msg);
+        if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::task::block_in_place(|| print!("{}", msg));
+        } else {
+            print!("{}", msg);
+        }
     }
 
     fn stderr_write(&self, msg: &str) {
-        eprint!("{}", msg);
+        if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::task::block_in_place(|| eprint!("{}", msg));
+        } else {
+            eprint!("{}", msg);
+        }
     }
 
     fn now_ms(&self) -> u64 {
@@ -22,6 +30,10 @@ impl NyarPlatform for NativePlatform {
     }
 
     fn sleep_ms(&self, ms: u64) {
-        std::thread::sleep(std::time::Duration::from_millis(ms));
+        if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::task::block_in_place(|| std::thread::sleep(std::time::Duration::from_millis(ms)));
+        } else {
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+        }
     }
 }

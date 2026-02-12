@@ -5,19 +5,16 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-#[cfg(feature = "tokio")]
 tokio::task_local! {
     /// Task-local storage for the current VM's traceback.
     /// This allows async tasks to report their VM-level call stack.
     pub static VM_TRACEBACK: String;
 }
 
-#[cfg(feature = "tokio")]
 pub struct NyarRuntime {
     handle: tokio::runtime::Handle,
 }
 
-#[cfg(feature = "tokio")]
 impl NyarRuntime {
     pub fn new() -> Self {
         Self {
@@ -67,15 +64,9 @@ impl<'a> Future for VmFuture<'a> {
     type Output = Result<crate::vm::value::Value, NyarError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        #[cfg(feature = "tokio")]
-        {
-            // If we are in a tokio task, update the traceback summary
-            let summary = self.vm.get_traceback_summary();
-            return VM_TRACEBACK.sync_scope(summary, || self.poll_internal(cx));
-        }
-
-        #[cfg(not(feature = "tokio"))]
-        self.poll_internal(cx)
+        // If we are in a tokio task, update the traceback summary
+        let summary = self.vm.get_traceback_summary();
+        VM_TRACEBACK.sync_scope(summary, || self.poll_internal(cx))
     }
 }
 

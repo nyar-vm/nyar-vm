@@ -18,7 +18,13 @@ pub fn std_io_print(vm: &mut NyarVM, args: &[Value]) -> FFIResult {
 
 pub fn std_io_read_line(vm: &mut NyarVM, _args: &[Value]) -> FFIResult {
     let mut input = String::new();
-    let _ = std::io::stdin().read_line(&mut input);
+    if tokio::runtime::Handle::try_current().is_ok() {
+        tokio::task::block_in_place(|| {
+            let _ = std::io::stdin().read_line(&mut input);
+        });
+    } else {
+        let _ = std::io::stdin().read_line(&mut input);
+    }
     let input = input.trim_end().to_string();
     Ok(Value::string(input, &vm.gc))
 }
