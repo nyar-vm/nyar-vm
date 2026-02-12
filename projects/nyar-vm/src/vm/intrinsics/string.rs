@@ -102,11 +102,23 @@ impl NyarVM {
         let start_v = self.pop()?;
         let s_v = self.pop()?;
         let s = s_v.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", s_v.tag()) }))?;
-        let start = start_v.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", start_v.tag()) }))? as usize;
-        let len = len_v.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", len_v.tag()) }))? as usize;
-        let end = start.saturating_add(len);
-        let end = end.min(s.len());
-        let sub = if start <= end { s[start..end].to_string() } else { String::new() };
+        let start_i = start_v.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", start_v.tag()) }))?;
+        let len_i = len_v.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", len_v.tag()) }))?;
+        if start_i < 0 || len_i < 0 {
+            return Err(self.error(nyar_types::VmErrorKind::RuntimeError(
+                "string_substr expects non-negative start and len".to_string(),
+            )));
+        }
+        let start = start_i as usize;
+        let len = len_i as usize;
+        let mut end = start.saturating_add(len);
+        end = end.min(s.len());
+        if !s.is_char_boundary(start) || !s.is_char_boundary(end) {
+            return Err(self.error(nyar_types::VmErrorKind::RuntimeError(
+                "string_substr expects UTF-8 boundary indices".to_string(),
+            )));
+        }
+        let sub = s.get(start..end).unwrap_or("").to_string();
         self.push(Value::string(sub, &self.gc))?;
         Ok(None)
     }

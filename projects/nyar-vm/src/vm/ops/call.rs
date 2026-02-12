@@ -1,5 +1,6 @@
 use crate::bytecode::format::Constant;
 use crate::vm::core::NyarVM;
+use crate::vm::intrinsics::id::Intrinsic;
 use crate::vm::value::{Value, Frame, BigInt};
 use num_bigint::BigInt as NativeBigInt;
 use nyar_types::{NyarError, QualifiedName};
@@ -1133,14 +1134,28 @@ impl NyarVM {
         } else if name.starts_with("$intrinsic:") {
             // Check if it's an encoded intrinsic call
             if let Ok(id) = name.trim_start_matches("$intrinsic:").parse::<u32>() {
-                if let Some(func) = self.runtime.get_intrinsic(id) {
-                    let result = func(self, &args)?;
-                    self.push(result)?;
-                } else {
-                    return Err(self.error(nyar_types::VmErrorKind::RuntimeError(format!(
+                let intrinsic = Intrinsic::try_from_u32(id).ok_or_else(|| {
+                    self.error(nyar_types::VmErrorKind::RuntimeError(format!(
                         "Intrinsic not found: ID={}",
                         id
-                    ))));
+                    )))
+                })?;
+                match intrinsic {
+                    Intrinsic::Builtin(_) => {
+                        if let Some(func) = self.runtime.get_intrinsic(intrinsic.id()) {
+                            let result = func(self, &args)?;
+                            self.push(result)?;
+                        } else {
+                            return Err(self.error(nyar_types::VmErrorKind::RuntimeError(format!(
+                                "Intrinsic not provided by runtime: ID={}",
+                                id
+                            ))));
+                        }
+                    }
+                    _ => {
+                        let result = intrinsic.execute_vm(self, &args)?;
+                        self.push(result)?;
+                    }
                 }
             } else {
                 return Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name_qn)));

@@ -30,3 +30,6 @@ tokio = { workspace = true }
 [features]
 default = []
 native = []
+
+[dev-dependencies]
+criterion = "0.5"
