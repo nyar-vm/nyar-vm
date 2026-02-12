@@ -3,7 +3,7 @@
 use chomsky_uir::IKun;
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend};
 use oak_bat::ast::{BatRoot, Element};
-use oak_bat::{BatBuilder, BatLanguage};
+use oak_bat::{Builder as BatBuilder, Language as BatLanguage};
 use oak_core::{Builder, SourceText};
 use oak_vfs::Vfs;
 

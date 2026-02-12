@@ -3,7 +3,7 @@
 use chomsky_uir::IKun;
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend};
 use oak_cmd::ast::{CmdRoot, Element};
-use oak_cmd::{CmdBuilder, CmdLanguage};
+use oak_cmd::{Builder as CmdBuilder, Language as CmdLanguage};
 use oak_core::{Builder, SourceText};
 use oak_vfs::Vfs;
 

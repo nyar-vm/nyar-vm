@@ -3,7 +3,7 @@
 use chomsky_uir::IKun;
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend};
 use oak_bash::ast::{BashRoot, Element};
-use oak_bash::{BashBuilder, BashLanguage};
+use oak_bash::{Builder as BashBuilder, Language as BashLanguage};
 use oak_core::{Builder, SourceText};
 use oak_vfs::Vfs;
 
@@ -18,9 +18,9 @@ impl RustyBashFrontend {
         }
     }
 
-    fn lower_element<V: Vfs>(&self, element: &Element, ctx: &mut NyarContext<V>) -> Id {
+    fn lower_element<V: Vfs>(&self, element: &Element, ctx: &mut NyarContext<'_, V>) -> Id {
         match element {
-            Element::Command(cmd) => {
+            Element::Command(_cmd) => {
                 // let callee = ctx.egraph.add(IKun::Symbol(cmd.clone()));
                 // ctx.egraph.add(IKun::Apply(callee, vec![]))
                 0
@@ -39,7 +39,7 @@ impl Default for RustyBashFrontend {
     }
 }
 
-impl NyarFrontend for RustyBashFrontend {
+impl NyarFrontend<(), BashRoot> for RustyBashFrontend {
     type Language = BashLanguage;
 
     fn parse(&self, source: &str) -> Result<BashRoot, NyarError> {
@@ -53,7 +53,7 @@ impl NyarFrontend for RustyBashFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &BashRoot, ctx: &mut NyarContext<V>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &BashRoot, ctx: &mut NyarContext<'_, V>) -> Id {
         let mut _ids = vec![];
         for element in &ast.elements {
             _ids.push(self.lower_element(element, ctx));

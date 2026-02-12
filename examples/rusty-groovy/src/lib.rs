@@ -42,7 +42,7 @@ impl NyarFrontend<ConstraintAnalysis> for RustyGroovyFrontend {
     fn parse(&self, source: &str) -> Result<(), NyarError> {
         let parser = GroovyParser::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut cache = oak_core::parser::SimpleParseCache::default();
+        let mut cache = oak_core::parser::ParseSession::<GroovyLanguage>::default();
         let output = parser.parse(&source_text, &[], &mut cache);
         if output.result.is_ok() {
             println!("Parsed Groovy source");

@@ -103,19 +103,42 @@ pub trait Vfs {}
 impl Vfs for () {}
 
 /// 编译器上下文占位符
-pub struct NyarContext<V: Vfs, A = ()> {
+pub struct NyarContext<'a, V: Vfs, A = ()> {
     /// 虚拟文件系统
-    pub vfs: V,
+    pub vfs: &'a V,
     /// 分析数据
     pub analysis: A,
+    /// 作用域层级
+    pub scope: usize,
+}
+
+impl<'a, V: Vfs, A> NyarContext<'a, V, A> {
+    /// 创建新的上下文
+    pub fn new(vfs: &'a V, analysis: A) -> Self {
+        Self { vfs, analysis, scope: 0 }
+    }
 }
 
 /// 编译器前端接口
-pub trait NyarFrontend<A = ()> {
+pub trait NyarFrontend<A = (), T = ()> {
     /// 前端语言类型
     type Language;
+
+    /// 解析源代码
+    fn parse(&self, source: &str) -> Result<T, crate::NyarError>;
+
+    /// 转换 IR
+    fn lower_unified<V: Vfs>(&self, ast: &T, ctx: &mut NyarContext<'_, V, A>) -> Id;
 }
 
-impl<A> NyarFrontend<A> for () {
+impl<A> NyarFrontend<A, ()> for () {
     type Language = ();
+
+    fn parse(&self, _source: &str) -> Result<(), crate::NyarError> {
+        Ok(())
+    }
+
+    fn lower_unified<V: Vfs>(&self, _ast: &(), _ctx: &mut NyarContext<'_, V, A>) -> Id {
+        0
+    }
 }

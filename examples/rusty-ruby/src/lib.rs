@@ -31,7 +31,7 @@ impl RustyRubyFrontend {
     }
 }
 
-impl NyarFrontend<ConstraintAnalysis> for RustyRubyFrontend {
+impl NyarFrontend<ConstraintAnalysis, RubyAst> for RustyRubyFrontend {
     type Language = RubyLanguage;
 
     fn parse(&self, source: &str) -> Result<RubyAst, NyarError> {
@@ -45,7 +45,7 @@ impl NyarFrontend<ConstraintAnalysis> for RustyRubyFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, _ast: &RubyAst, _ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
+    fn lower_unified<V: Vfs>(&self, _ast: &RubyAst, _ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {
         // ctx.egraph.add(chomsky_uir::IKun::Seq(vec![]))
         0
     }
