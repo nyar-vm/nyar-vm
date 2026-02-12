@@ -2,9 +2,11 @@
 //!
 //! 这个库提供了 Rusty FSharp 语言的词法分析、语法分析和 Nyar 翻译功能。
 
+#![warn(missing_docs)]
+
 pub mod codegen;
 
-use nyar_types::{NyarError, NyarFrontend};
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::{source::SourceText, Builder};
 use oak_fsharp::{FSharpLanguage};
 
@@ -41,11 +43,11 @@ impl NyarFrontend for RustyFSharpFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: nyar_types::Vfs>(
+    fn lower_unified<V: Vfs>(
         &self,
         ast: &oak_fsharp::ast::FSharpRoot,
-        ctx: &mut nyar_types::NyarContext<'_, V>,
-    ) -> chomsky_uir::Id {
+        ctx: &mut NyarContext<V>,
+    ) -> Id {
         let translator = crate::codegen::NyarTranslator::new();
         let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
         translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))

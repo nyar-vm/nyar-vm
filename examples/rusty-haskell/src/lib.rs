@@ -2,9 +2,11 @@
 //!
 //! 这个库提供了 Rusty Haskell 语言的词法分析、语法分析和 Nyar 翻译功能。
 
+#![warn(missing_docs)]
+
 pub mod codegen;
 
-use nyar_types::{NyarError, NyarFrontend};
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::{source::SourceText, Builder};
 use oak_haskell::{HaskellLanguage};
 
