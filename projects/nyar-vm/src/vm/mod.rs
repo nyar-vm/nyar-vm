@@ -1,7 +1,7 @@
 pub mod core;
 pub mod effects;
 pub mod intrinsics;
-pub mod ops;
+pub mod operations;
 pub mod platform;
 pub mod runtime;
 pub mod safety;
