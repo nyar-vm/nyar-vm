@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 pub mod bytecode;
 pub mod driver;
 pub mod vm;

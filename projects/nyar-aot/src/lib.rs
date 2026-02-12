@@ -1,14 +1,22 @@
+#![warn(missing_docs)]
+
 use chomsky::optimizer::UniversalOptimizer;
 use chomsky_extract::{Backend, BackendArtifact};
 use chomsky_uir::egraph::{Analysis, HasDebugInfo};
-use chomsky_uir::{EGraph, IKun, IKunTree, Id, IntentBuilder};
-use nyar_types::NyarError;
+use chomsky_uir::{EGraph, IKun, IKunTree, IntentBuilder};
+use nyar_types::{Id, NyarError};
 use oak_core::Language;
 use oak_vfs::Vfs;
 
+pub use nyar_types::NyarContext as NyarContextBase;
+
+/// AOT 编译器上下文
 pub struct NyarContext<'a, V: Vfs, A: Analysis<IKun>> {
+    /// EGraph 实例
     pub egraph: &'a mut EGraph<IKun, A>,
+    /// 虚拟文件系统
     pub vfs: &'a V,
+    /// 作用域层级
     pub scope: usize,
 }
 
@@ -22,23 +30,26 @@ impl<'a, V: Vfs, A: Analysis<IKun>> NyarContext<'a, V, A> {
     }
 }
 
+pub use nyar_types::NyarFrontend as NyarFrontendBase;
+
 /// Nyar 前端接口 trait
 /// 所有语言前端必须实现此接口，以便接入 Nyar 编译体系
-pub trait NyarFrontend<A: Analysis<IKun> = ()>: Default
+pub trait NyarFrontend<A: Analysis<IKun> = ()>: Default + NyarFrontendBase<A>
 where
     A::Data: HasDebugInfo,
 {
+    /// 绑定的语言类型
     type Language: Language;
 
     /// 解析源代码为 AST
-    fn parse(&self, source: &str) -> Result<<Self::Language as Language>::TypedRoot, NyarError>;
+    fn parse(&self, source: &str) -> Result<Self::Language::TypedRoot, NyarError>;
 
     /// 将 AST 转换为 IR 并注入 EGraph
     /// 统一的接入接口，支持 EGraph 优化流
-    fn lower_unified<V: Vfs>(&self, ast: &<Self::Language as Language>::TypedRoot, ctx: &mut NyarContext<V, A>) -> Id;
+    fn lower_unified<V: Vfs>(&self, ast: &Self::Language::TypedRoot, ctx: &mut NyarContext<'_, V, A>) -> Id;
 
     /// 默认实现：利用 lower_unified 生成 IKunTree
-    fn lower<V: Vfs>(&self, ast: &<Self::Language as Language>::TypedRoot, vfs: &V) -> Result<IKunTree, NyarError>
+    fn lower<V: Vfs>(&self, ast: &Self::Language::TypedRoot, vfs: &V) -> Result<IKunTree, NyarError>
     where
         A::Data: HasDebugInfo,
     {
@@ -56,7 +67,7 @@ where
     /// 利用 Gaia 编译到特定目标
     fn compile_to_gaia<V: Vfs>(
         &self,
-        ast: &<Self::Language as Language>::TypedRoot,
+        ast: &Self::Language::TypedRoot,
         vfs: &V,
         target: &str,
     ) -> Result<chomsky_extract::BackendArtifact, NyarError>
@@ -69,6 +80,13 @@ where
         let emitter = chomsky_emit::GaiaEmitter::new(target).standalone();
         emitter.generate(&tree).map_err(|e| NyarError::Compile(format!("Gaia error: {:?}", e)))
     }
+}
+
+impl<A: Analysis<IKun>> NyarFrontendBase<A> for dyn NyarFrontend<A, Language = ()>
+where
+    A::Data: HasDebugInfo,
+{
+    type Language = ();
 }
 
 pub struct NyarAot<A: Analysis<IKun> + 'static = ()>

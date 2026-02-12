@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 #![feature(new_range_api)]
 //! Groovy 语言前端
 //!
@@ -9,7 +10,7 @@ pub mod row_type;
 pub mod tagless;
 pub mod visitor;
 
-use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
+use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_groovy::language::GroovyLanguage;
 use oak_groovy::parser::GroovyParser;

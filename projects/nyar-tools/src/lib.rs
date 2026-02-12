@@ -1,7 +1,9 @@
 use clap::{Parser, Subcommand};
 use nyar_types::CliError;
 
-mod cmds;
+#![warn(missing_docs)]
+
+pub mod cmds;
 
 #[derive(Parser)]
 #[command(name = "nyar-vm", version, about = "NYAR VM CLI")]

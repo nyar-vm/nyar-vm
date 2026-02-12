@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 pub mod compiler;
 pub mod ic;
 pub mod rules;

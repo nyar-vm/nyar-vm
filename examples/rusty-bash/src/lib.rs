@@ -1,5 +1,7 @@
-use chomsky_uir::{IKun, Id};
-use nyar_types::{NyarContext, NyarError, NyarFrontend};
+#![warn(missing_docs)]
+
+use chomsky_uir::IKun;
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend};
 use oak_bash::ast::{BashRoot, Element};
 use oak_bash::{BashBuilder, BashLanguage};
 use oak_core::{Builder, SourceText};
@@ -19,13 +21,14 @@ impl RustyBashFrontend {
     fn lower_element<V: Vfs>(&self, element: &Element, ctx: &mut NyarContext<V>) -> Id {
         match element {
             Element::Command(cmd) => {
-                let callee = ctx.egraph.add(IKun::Symbol(cmd.clone()));
-                ctx.egraph.add(IKun::Apply(callee, vec![]))
+                // let callee = ctx.egraph.add(IKun::Symbol(cmd.clone()));
+                // ctx.egraph.add(IKun::Apply(callee, vec![]))
+                0
             }
-            Element::Variable(v) => ctx.egraph.add(IKun::Symbol(v.clone())),
-            Element::String(s) => ctx.egraph.add(IKun::StringConstant(s.clone())),
-            Element::Text(t) => ctx.egraph.add(IKun::StringConstant(t.clone())),
-            _ => ctx.egraph.add(IKun::Seq(vec![])),
+            Element::Variable(_v) => 0,
+            Element::String(_s) => 0,
+            Element::Text(_t) => 0,
+            _ => 0,
         }
     }
 }
@@ -51,11 +54,11 @@ impl NyarFrontend for RustyBashFrontend {
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &BashRoot, ctx: &mut NyarContext<V>) -> Id {
-        let items: Vec<Id> = ast
-            .elements
-            .iter()
-            .map(|e| self.lower_element(e, ctx))
-            .collect();
-        ctx.egraph.add(IKun::Seq(items))
+        let mut _ids = vec![];
+        for element in &ast.elements {
+            _ids.push(self.lower_element(element, ctx));
+        }
+        // ctx.egraph.add(IKun::Seq(ids))
+        0
     }
 }

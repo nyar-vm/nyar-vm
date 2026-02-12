@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 pub mod block;
 pub mod collector;
 pub mod ffi;

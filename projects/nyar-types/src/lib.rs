@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "gc")]
@@ -5,6 +7,12 @@ use nyar_gc::Trace;
 
 pub mod errors;
 pub use crate::errors::*;
+
+/// 符号 ID
+pub type Id = usize;
+
+/// 源码位置
+pub type Loc = SourceLocation;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct QualifiedName {
@@ -88,3 +96,26 @@ pub struct Module {
 }
 
 pub type ModuleId = usize;
+
+/// VFS 接口占位符
+pub trait Vfs {}
+
+impl Vfs for () {}
+
+/// 编译器上下文占位符
+pub struct NyarContext<V: Vfs, A = ()> {
+    /// 虚拟文件系统
+    pub vfs: V,
+    /// 分析数据
+    pub analysis: A,
+}
+
+/// 编译器前端接口
+pub trait NyarFrontend<A = ()> {
+    /// 前端语言类型
+    type Language;
+}
+
+impl<A> NyarFrontend<A> for () {
+    type Language = ();
+}

@@ -12,7 +12,6 @@ path = "src/lib.rs"
 [dependencies]
 nyar-vm = { workspace = true }
 nyar-types = { workspace = true }
-nyar-aot = { workspace = true }
 oak-core = { workspace = true }
 oak-vfs = { workspace = true }
 oak-c = { workspace = true }

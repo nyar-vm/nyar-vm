@@ -36,12 +36,4 @@ impl NyarPlatform for NativePlatform {
             std::thread::sleep(std::time::Duration::from_millis(ms));
         }
     }
-
-    fn yield_now(&self) {
-        if tokio::runtime::Handle::try_current().is_ok() {
-            tokio::task::block_in_place(|| std::thread::yield_now());
-        } else {
-            std::thread::yield_now();
-        }
-    }
 }
