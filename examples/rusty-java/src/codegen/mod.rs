@@ -2,7 +2,8 @@
 
 use chomsky_types::Loc;
 use chomsky_uir::{Analysis, IKun, IntentBuilder, Id};
-use nyar_types::{NyarError, NyarContext};
+use nyar_aot::NyarContext;
+use nyar_types::NyarError;
 use oak_java::ast::*;
 use oak_vfs::Vfs;
 
@@ -19,7 +20,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
 
     /// 辅助方法：创建位置信息
     fn loc(&self) -> Loc {
-        Loc::new(self.ctx.source_id, 0, 0)
+        Loc::default()
     }
 
     fn builder(&mut self) -> IntentBuilder<'_, A> {

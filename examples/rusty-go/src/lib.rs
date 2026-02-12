@@ -6,3 +6,4 @@ pub mod optimizer;
 pub mod runtime;
 
 pub use crate::frontend::RustyGoFrontend;
+pub use crate::runtime::RustyGoRuntime;

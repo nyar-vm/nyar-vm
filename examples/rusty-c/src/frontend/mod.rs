@@ -4,7 +4,7 @@ use crate::errors::CError;
 use nyar_aot::{NyarContext, NyarFrontend};
 use nyar_types::NyarError;
 use oak_vfs::Vfs;
-use chomsky_uir::Id;
+use chomsky_uir::{Id, Analysis, IKun, egraph::HasDebugInfo};
 use oak_c::ast::{self, CRoot};
 use oak_c::builder::CBuilder;
 use oak_c::language::CLanguage;
@@ -37,7 +37,7 @@ impl RustyCFrontend {
     }
 }
 
-impl<'a, V: Vfs, A: Analysis<IKun> + 'static> NyarFrontend<A> for RustyCFrontend 
+impl<A: Analysis<IKun> + 'static> NyarFrontend<A> for RustyCFrontend 
 where A::Data: HasDebugInfo
 {
     type Language = CLanguage;
@@ -84,7 +84,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
         }
     }
 
-    fn to_loc(&self, range: Range<usize>) -> Loc {
+    fn to_loc(&self, _range: Range<usize>) -> Loc {
         Loc::default() // TODO: Fix location mapping
     }
 
@@ -302,23 +302,23 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 }
             },
             ast::Statement::Jump(jump) => match jump {
-                ast::JumpStatement::Goto { identifier, span } => {
+                ast::JumpStatement::Goto(identifier, span) => {
                     let loc = self.to_loc(span.clone().into());
-                    let id = self.ctx.builder().symbol(identifier, loc.clone());
-                    self.ctx.builder().extension("goto", vec![id], loc)
+                    let name = self.ctx.builder().string(identifier, loc.clone());
+                    self.ctx.builder().extension("goto", vec![name], loc)
                 }
-                ast::JumpStatement::Continue { span } => {
+                ast::JumpStatement::Continue(span) => {
                     let loc = self.to_loc(span.clone().into());
-                    self.ctx.builder().continue_(loc)
+                    self.ctx.builder().extension("continue", vec![], loc)
                 }
-                ast::JumpStatement::Break { span } => {
+                ast::JumpStatement::Break(span) => {
                     let loc = self.to_loc(span.clone().into());
                     self.ctx.builder().break_(loc)
                 }
-                ast::JumpStatement::Return { expression, span } => {
+                ast::JumpStatement::Return(expression, span) => {
                     let loc = self.to_loc(span.clone().into());
-                    let val = if let Some(e) = expression {
-                        self.convert_expression(e)
+                    let val = if let Some(expr) = expression {
+                        self.convert_expression(expr)
                     } else {
                         self.ctx.builder().constant(0, loc.clone())
                     };
@@ -339,8 +339,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
             },
             ast::ExpressionKind::StringLiteral(val, _) => self.ctx.builder().string(val.as_str(), loc),
             ast::ExpressionKind::Identifier(name, _) => {
-                let resolved = self.ctx.scopes.resolve_variable(name);
-                self.ctx.builder().symbol(&resolved, loc)
+                self.ctx.builder().symbol(name, loc)
             }
             ast::ExpressionKind::ArraySubscript { array, index, .. } => {
                 let a = self.convert_expression(array);

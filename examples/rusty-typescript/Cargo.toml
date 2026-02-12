@@ -26,7 +26,6 @@ oak-vfs = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
-clap = { workspace = true }
 tempfile = { workspace = true }
 wit-bindgen = { workspace = true }
 

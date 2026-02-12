@@ -15,13 +15,13 @@ chomsky-uir = { workspace = true }
 chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }
 chomsky-emit = { workspace = true }
+chomsky-types = { workspace = true }
 oak-core = { workspace = true }
 oak-java = { workspace = true }
 oak-csharp = { workspace = true }
+oak-vfs = { workspace = true }
 nyar-types = { workspace = true }
+nyar-aot = { workspace = true }
 nyar-vm = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
-toml = { workspace = true }
-clap = { workspace = true }
 tempfile = { workspace = true }

@@ -11,18 +11,15 @@ path = "src/lib.rs"
 
 [dependencies]
 chomsky-uir = { workspace = true }
-chomsky = { workspace = true }
 oak-core = { workspace = true }
 oak-vfs = { workspace = true }
 oak-python = { workspace = true }
 nyar-types = { workspace = true }
 nyar-vm = { workspace = true }
+nyar-aot = { workspace = true }
 chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }
 chomsky-types = { workspace = true }
-python-assembler = { workspace = true }
-gaia-assembler = { workspace = true }
-gaia-types = { workspace = true }
-clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }

@@ -17,8 +17,6 @@ chomsky-uir = { workspace = true }
 chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }
 chomsky-types = { workspace = true }
-gaia-assembler = { workspace = true }
-clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

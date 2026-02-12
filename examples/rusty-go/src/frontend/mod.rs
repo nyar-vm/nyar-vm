@@ -1,4 +1,5 @@
-use nyar_types::{NyarContext, NyarError, NyarFrontend};
+use nyar_aot::{NyarContext, NyarFrontend};
+use nyar_types::NyarError;
 use oak_go::{ast, GoBuilder, GoLanguage, GoRoot};
 use oak_core::source::SourceText;
 use oak_core::parser::session::ParseSession;
@@ -21,7 +22,7 @@ impl RustyGoFrontend {
     }
 }
 
-impl NyarFrontend for RustyGoFrontend {
+impl NyarFrontend<()> for RustyGoFrontend {
     type Language = GoLanguage;
 
     fn parse(&self, source: &str) -> Result<GoRoot, NyarError> {
@@ -34,7 +35,7 @@ impl NyarFrontend for RustyGoFrontend {
         output.result.map_err(|e| NyarError::Compile(format!("Build error: {:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &GoRoot, ctx: &mut NyarContext<V>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &GoRoot, ctx: &mut NyarContext<V, ()>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }
@@ -50,7 +51,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
     }
 
     fn to_loc(&self, range: Range<usize>) -> Loc {
-        self.ctx.loc(range.start as u32, range.end as u32)
+        Loc::new(0, range.start as u32, range.end as u32)
     }
 
     fn convert_root(&mut self, root: &GoRoot) -> Id {
@@ -58,7 +59,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
         for decl in &root.declarations {
             items.push(self.convert_declaration(decl));
         }
-        self.ctx.builder().module("main", items, Loc::default())
+        let loc = Loc::default();
+        self.ctx.builder().module("main", items, loc)
     }
 
     fn convert_declaration(&mut self, decl: &ast::Declaration) -> Id {
@@ -73,12 +75,10 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
     fn convert_function(&mut self, func: &ast::Function) -> Id {
         let loc = self.to_loc(func.span.clone().into());
         let mut params = Vec::new();
-        self.ctx.scopes.push_scope();
         for p in &func.params {
-            params.push(self.ctx.scopes.declare_variable(&p.name));
+            params.push(p.name.clone());
         }
         let body = self.convert_block(&func.body);
-        self.ctx.scopes.pop_scope();
 
         let lambda = self.ctx.builder().lambda(params, body, loc.clone());
         self.ctx.builder().export(&func.name, lambda, loc)
@@ -94,30 +94,28 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
 
     fn convert_variable(&mut self, var: &ast::Variable) -> Id {
         let loc = self.to_loc(var.span.clone().into());
-        let name = self.ctx.scopes.declare_variable(&var.name);
+        let name_node = self.ctx.builder().symbol(&var.name, loc.clone());
         let val = if let Some(v) = &var.value {
             self.convert_expression(v)
         } else {
-            self.ctx.builder().constant(0, loc.clone())
+            self.ctx.builder().extension("default_value", vec![], loc.clone())
         };
-        self.ctx.builder().assign(&name, val, loc)
+        self.ctx.builder().extension("let", vec![name_node, val], loc)
     }
 
     fn convert_const(&mut self, c: &ast::Const) -> Id {
         let loc = self.to_loc(c.span.clone().into());
-        let name = self.ctx.scopes.declare_variable(&c.name);
+        let name_node = self.ctx.builder().symbol(&c.name, loc.clone());
         let val = self.convert_expression(&c.value);
-        self.ctx.builder().assign(&name, val, loc)
+        self.ctx.builder().extension("const", vec![name_node, val], loc)
     }
 
     fn convert_block(&mut self, block: &ast::Block) -> Id {
         let loc = self.to_loc(block.span.clone().into());
         let mut ids = Vec::new();
-        self.ctx.scopes.push_scope();
         for stmt in &block.statements {
             ids.push(self.convert_statement(stmt));
         }
-        self.ctx.scopes.pop_scope();
         self.ctx.builder().block(ids, loc)
     }
 
@@ -140,8 +138,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 
                 let mut target_ids = Vec::new();
                 for t in targets {
-                    let name = self.ctx.scopes.resolve_variable(t);
-                    target_ids.push(self.ctx.builder().symbol(&name, loc.clone()));
+                    target_ids.push(self.ctx.builder().symbol(t, loc.clone()));
                 }
                 
                 if target_ids.len() == 1 && val_ids.len() == 1 {
@@ -188,7 +185,6 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 body,
                 ..
             } => {
-                self.ctx.scopes.push_scope();
                 let mut init_id = self.ctx.builder().constant(0, loc.clone());
                 if let Some(i) = init {
                     init_id = self.convert_statement(i);
@@ -203,7 +199,6 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     post_id = self.convert_statement(p);
                 }
                 let body_id = self.convert_block(body);
-                self.ctx.scopes.pop_scope();
                 self.ctx.builder().extension("for", vec![init_id, cond, post_id, body_id], loc)
             }
         }
@@ -223,8 +218,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
         let loc = self.to_loc(span);
         match expr {
             ast::Expression::Identifier { name, .. } => {
-                let resolved = self.ctx.scopes.resolve_variable(name);
-                self.ctx.builder().symbol(&resolved, loc)
+                self.ctx.builder().symbol(name, loc)
             }
             ast::Expression::Literal { value, .. } => {
                 if (value.starts_with('"') && value.ends_with('"')) || (value.starts_with('`') && value.ends_with('`')) {

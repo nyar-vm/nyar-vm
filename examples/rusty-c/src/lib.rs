@@ -9,3 +9,4 @@ pub mod optimizer;
 pub mod runtime;
 
 pub use crate::frontend::RustyCFrontend;
+pub use crate::runtime::RustyCRuntime;

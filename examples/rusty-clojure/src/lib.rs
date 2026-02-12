@@ -8,6 +8,9 @@ pub mod errors;
 pub mod row_type;
 pub mod tagless;
 pub mod visitor;
+pub mod runtime;
+
+pub use crate::runtime::RustyClojureRuntime;
 
 use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
 use oak_core::source::SourceText;

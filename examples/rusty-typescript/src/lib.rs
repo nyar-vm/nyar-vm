@@ -9,6 +9,9 @@ pub mod codegen;
 pub mod errors;
 pub mod project;
 pub mod type_system;
+pub mod runtime;
+
+pub use crate::runtime::RustyTypeScriptRuntime;
 
 use chomsky_cost;
 use chomsky_emit::GaiaEmitter;
@@ -16,7 +19,8 @@ use chomsky_extract::{Backend, IKunExtractor};
 use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder, IKunTree, Analysis};
 use nyar_aot::NyarAot;
-use nyar_types::{NyarError, NyarFrontend, NyarContext};
+use nyar_aot::{NyarContext, NyarFrontend};
+use nyar_types::NyarError;
 use nyar_vm::bytecode::format::NyarcModule;
 use oak_core::{ParseSession, SourceText};
 use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
@@ -125,7 +129,7 @@ impl RustyTypescriptFrontend {
     }
 }
 
-impl NyarFrontend for RustyTypescriptFrontend {
+impl NyarFrontend<()> for RustyTypescriptFrontend {
     type Language = TypeScriptLanguage;
 
     fn parse(&self, source: &str) -> Result<TypeScriptRoot, NyarError> {
@@ -139,8 +143,8 @@ impl NyarFrontend for RustyTypescriptFrontend {
             .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &TypeScriptRoot, ctx: &mut NyarContext<V>) -> Id {
-        let source_id = ctx.source_id;
+    fn lower_unified<V: Vfs>(&self, ast: &TypeScriptRoot, ctx: &mut NyarContext<V, ()>) -> Id {
+        let source_id = self.source_id;
         let mut builder = ctx.builder();
         let mut converter = UirConverter::new(&mut builder, source_id);
         converter.convert_root(ast.clone())
@@ -268,15 +272,29 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
             ast::Statement::ImportDeclaration(import) => {
                 let loc = self.to_loc(import.span);
                 let mut args = vec![self.builder.string(&import.module_specifier, loc.clone())];
-                for s in import.imports {
-                    args.push(self.builder.symbol(&s, loc.clone()));
+                for s in import.specifiers {
+                    match s {
+                        ast::ImportSpecifier::Default(local) => {
+                            args.push(self.builder.symbol(&local, loc.clone()));
+                        }
+                        ast::ImportSpecifier::Namespace(local) => {
+                            args.push(self.builder.symbol(&local, loc.clone()));
+                        }
+                        ast::ImportSpecifier::Named { local, .. } => {
+                            args.push(self.builder.symbol(&local, loc.clone()));
+                        }
+                    }
                 }
                 self.builder.extension("import", args, loc)
             }
             ast::Statement::ExportDeclaration(export) => {
                 let loc = self.to_loc(export.span);
-                let inner = self.convert_statement(*export.declaration);
-                self.builder.extension("export", vec![inner], loc)
+                if let Some(decl) = export.declaration {
+                    let inner = self.convert_statement(*decl);
+                    self.builder.extension("export", vec![inner], loc)
+                } else {
+                    self.builder.constant(0, loc)
+                }
             }
             ast::Statement::ReturnStatement(stmt) => {
                 let loc = self.to_loc(stmt.span);

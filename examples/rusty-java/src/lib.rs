@@ -3,16 +3,21 @@
 //!
 //! 提供 Mini Java 的词法分析、语法分析和 Nyar 翻译功能。
 
-pub use nyar_types::{IKunTree, NyarError, NyarFrontend, NyarContext};
+use nyar_aot::{NyarContext, NyarFrontend};
+use nyar_types::NyarError;
 use oak_core::{builder::Builder, source::SourceText};
 use oak_java::{JavaBuilder, JavaLanguage, JavaRoot};
 use oak_vfs::Vfs;
-use chomsky_uir::Id;
+use chomsky_types::Loc;
+use chomsky_uir::{Analysis, IKun, Id, egraph::HasDebugInfo};
 
 pub mod codegen;
 pub mod row_type;
 pub mod tagless;
 pub mod visitor;
+pub mod runtime;
+
+pub use crate::runtime::MiniJavaRuntime;
 
 /// Mini Java 前端
 pub struct MiniJavaFrontend<'a> {
@@ -38,7 +43,9 @@ impl<'a> MiniJavaFrontend<'a> {
     }
 }
 
-impl<'a> NyarFrontend for MiniJavaFrontend<'a> {
+impl<'a, A: Analysis<IKun> + 'static> NyarFrontend<A> for MiniJavaFrontend<'a> 
+where A::Data: HasDebugInfo
+{
     type Language = JavaLanguage;
 
     /// 解析 Java 源代码
@@ -52,10 +59,10 @@ impl<'a> NyarFrontend for MiniJavaFrontend<'a> {
     }
 
     /// 统一的接入接口，支持 EGraph 优化流
-    fn lower_unified<V: Vfs>(&self, ast: &JavaRoot, ctx: &mut NyarContext<V>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &JavaRoot, ctx: &mut NyarContext<V, A>) -> Id {
         let mut converter = codegen::JavaUirConverter::new(ctx);
         converter.convert_root(ast).unwrap_or_else(|_| {
-            let loc = ctx.loc(0, 0);
+            let loc = Loc::default();
             ctx.builder().constant(0, loc)
         })
     }

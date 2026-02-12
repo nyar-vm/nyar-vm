@@ -3,6 +3,9 @@
 //! 这个库提供了 Rusty Lua 语言的词法分析、语法分析和 Gaia 翻译功能。
 
 pub mod codegen;
+pub mod runtime;
+
+pub use crate::runtime::RustyLuaRuntime;
 
 use nyar_aot::{NyarContext, NyarFrontend};
 use nyar_types::NyarError;

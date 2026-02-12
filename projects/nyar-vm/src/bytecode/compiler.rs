@@ -95,13 +95,66 @@ impl NyarBackend {
 
     fn scan_fields(&mut self, tree: &IKunTree, fields: &mut Vec<String>) {
         match tree {
-            IKunTree::Seq(items) => {
+            IKunTree::Source(_, body) => self.scan_fields(body, fields),
+            IKunTree::Seq(items) | IKunTree::Module(_, items) => {
                 for item in items {
                     self.scan_fields(item, fields);
                 }
             }
-            IKunTree::Lambda(_, body) => {
+            IKunTree::Lambda(_, body)
+            | IKunTree::Export(_, body)
+            | IKunTree::Return(body)
+            | IKunTree::Meta(body)
+            | IKunTree::Trap(body)
+            | IKunTree::SoALayout(body)
+            | IKunTree::AoSLayout(body)
+            | IKunTree::Tiled(_, body)
+            | IKunTree::Unrolled(_, body)
+            | IKunTree::Vectorized(_, body)
+            | IKunTree::Reg(body)
+            | IKunTree::ResourceClone(body)
+            | IKunTree::ResourceDrop(body) => {
                 self.scan_fields(body, fields);
+            }
+            IKunTree::StateUpdate(_, value)
+            | IKunTree::Map(_, value)
+            | IKunTree::Filter(_, value)
+            | IKunTree::Repeat(_, value)
+            | IKunTree::Compose(_, value)
+            | IKunTree::WithContext(_, value)
+            | IKunTree::WithConstraint(_, value)
+            | IKunTree::Pipe(_, value)
+            | IKunTree::GpuMap(_, value)
+            | IKunTree::CpuMap(_, value)
+            | IKunTree::SoAMap(_, value) => {
+                self.scan_fields(value, fields);
+            }
+            IKunTree::Choice(cond, t, f) | IKunTree::Reduce(cond, t, f) => {
+                self.scan_fields(cond, fields);
+                self.scan_fields(t, fields);
+                self.scan_fields(f, fields);
+            }
+            IKunTree::LifeCycle(setup, cleanup) => {
+                self.scan_fields(setup, fields);
+                self.scan_fields(cleanup, fields);
+            }
+            IKunTree::TiledMap(_, f, x)
+            | IKunTree::VectorizedMap(_, f, x)
+            | IKunTree::UnrolledMap(_, f, x) => {
+                self.scan_fields(f, fields);
+                self.scan_fields(x, fields);
+            }
+            IKunTree::Apply(callee, args) => {
+                self.scan_fields(callee, fields);
+                for arg in args {
+                    self.scan_fields(arg, fields);
+                }
+            }
+            IKunTree::Closure(body, captured) => {
+                self.scan_fields(body, fields);
+                for item in captured {
+                    self.scan_fields(item, fields);
+                }
             }
             IKunTree::Extension(name, args) => {
                 if name == "set_field" {
@@ -111,26 +164,24 @@ impl NyarBackend {
                             fields.push(field_name.clone());
                         }
                     }
+                    if args.len() > 2 {
+                        self.scan_fields(&args[2], fields);
+                    }
                 } else if name == "assign" {
                     // args: [target, value]
-                    self.scan_fields(&args[1], fields);
+                    if args.len() > 1 {
+                        self.scan_fields(&args[1], fields);
+                    }
                 } else {
                     for arg in args {
                         self.scan_fields(arg, fields);
                     }
                 }
             }
-            IKunTree::Apply(callee, args) => {
-                self.scan_fields(callee, fields);
-                for arg in args {
+            IKunTree::CrossLangCall { arguments, .. } => {
+                for arg in arguments {
                     self.scan_fields(arg, fields);
                 }
-            }
-            IKunTree::StateUpdate(_, value) => {
-                self.scan_fields(value, fields);
-            }
-            IKunTree::Export(_, value) => {
-                self.scan_fields(value, fields);
             }
             _ => {}
         }

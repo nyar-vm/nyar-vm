@@ -1,33 +1,19 @@
-use chomsky::cost::DefaultCostModel;
-use chomsky::extract::IKunExtractor;
-use chomsky::optimizer::UniversalOptimizer;
 use chomsky_uir::{EGraph, IKun, Id};
+use chomsky_cost::DefaultCostModel;
+use chomsky_extract::IKunExtractor;
 use nyar_types::NyarError;
 use nyar_vm::vm::NyarVM;
-use std::cell::RefCell;
+use nyar_vm::vm::traits::RuntimeProvider;
 
 #[derive(Debug)]
-pub struct RustyCRuntime {
-    _optimizer: UniversalOptimizer<()>,
+pub struct MiniJavaRuntime {
     vm: NyarVM,
-    _switch_counter: RefCell<usize>,
 }
 
-impl nyar_vm::vm::traits::RuntimeProvider for RustyCRuntime {
-    fn resolve(&self, _name: &str) -> Option<nyar_vm::vm::traits::ExternFunc> {
-        None
-    }
-    fn get_intrinsic(&self, _id: u32) -> Option<nyar_vm::vm::traits::ExternFunc> {
-        None
-    }
-}
-
-impl RustyCRuntime {
+impl MiniJavaRuntime {
     pub fn new() -> Self {
         Self {
-            _optimizer: UniversalOptimizer::new(),
             vm: NyarVM::new(),
-            _switch_counter: RefCell::new(0),
         }
     }
 
@@ -75,5 +61,15 @@ impl RustyCRuntime {
         } else {
             Err(NyarError::RuntimeError("No entry point found in module".to_string()))
         }
+    }
+}
+
+impl RuntimeProvider for MiniJavaRuntime {
+    fn resolve(&self, _name: &str) -> Option<nyar_vm::vm::traits::ExternFunc> {
+        None
+    }
+
+    fn get_intrinsic(&self, _id: u32) -> Option<nyar_vm::vm::traits::ExternFunc> {
+        None
     }
 }

@@ -1,6 +1,5 @@
 //! Mini Rust 抽象语法树定义
 
-use gaia_assembler::{program::GaiaConstant, types::GaiaType};
 use serde::{Deserialize, Serialize};
 
 /// 程序主结构
@@ -203,35 +202,4 @@ pub enum Type {
     Custom(String),
     /// 数组类型: [T; N] 或 [T] (目前简单实现为 [T])
     Array(Box<Type>),
-}
-
-impl Type {
-    /// 转换为 Gaia 类型
-    pub fn to_gaia_type(&self) -> GaiaType {
-        match self {
-            Type::I32 => GaiaType::I32,
-            Type::I64 => GaiaType::I64,
-            Type::F32 => GaiaType::F32,
-            Type::F64 => GaiaType::F64,
-            Type::String => GaiaType::String,
-            Type::Bool => GaiaType::Bool,
-            Type::Char => GaiaType::I32,
-            Type::Unit => GaiaType::Void,
-            Type::Custom(name) => GaiaType::Struct(name.clone()),
-            Type::Array(inner) => GaiaType::Array(Box::new(inner.to_gaia_type()), 0),
-        }
-    }
-}
-
-impl Literal {
-    /// 转换为 Gaia 常量
-    pub fn to_gaia_constant(&self) -> GaiaConstant {
-        match self {
-            Literal::Integer(i) => GaiaConstant::I32(*i as i32),
-            Literal::Float(f) => GaiaConstant::F64(*f),
-            Literal::String(s) => GaiaConstant::String(s.clone()),
-            Literal::Char(c) => GaiaConstant::I32(*c as i32),
-            Literal::Boolean(b) => GaiaConstant::Bool(*b),
-        }
-    }
 }

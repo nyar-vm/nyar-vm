@@ -17,8 +17,8 @@ impl<'a, V: Vfs, A: Analysis<IKun>> NyarContext<'a, V, A> {
         Self { egraph, vfs, scope }
     }
 
-    pub fn builder(&mut self) -> IntentBuilder<A> {
-        IntentBuilder::new(self.egraph)
+    pub fn builder(&mut self) -> IntentBuilder<'_, A> {
+        IntentBuilder::new(&mut self.egraph)
     }
 }
 

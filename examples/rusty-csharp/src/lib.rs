@@ -3,15 +3,20 @@
 //!
 //! 提供 Rusty CSharp 的词法分析、语法分析和 Nyar 翻译功能。
 
-use nyar_types::{NyarError, NyarFrontend};
+use nyar_aot::{NyarContext, NyarFrontend};
+use nyar_types::NyarError;
 use oak_core::{builder::Builder, source::SourceText};
-use oak_csharp::{CSharpBuilder, CSharpLanguage, ast::CSharpRoot};
+use oak_csharp::{ast::CSharpRoot, CSharpBuilder, CSharpLanguage};
+use oak_vfs::Vfs;
 
 pub mod codegen;
 pub mod errors;
 pub mod row_type;
 pub mod tagless;
 pub mod visitor;
+pub mod runtime;
+
+pub use crate::runtime::RustyCSharpRuntime;
 
 /// Rusty CSharp 前端
 #[derive(Default)]
@@ -28,7 +33,7 @@ impl RustyCSharpFrontend {
     }
 }
 
-impl NyarFrontend for RustyCSharpFrontend {
+impl NyarFrontend<()> for RustyCSharpFrontend {
     type Language = CSharpLanguage;
 
     /// 解析 CSharp 源代码
@@ -42,10 +47,10 @@ impl NyarFrontend for RustyCSharpFrontend {
             .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: nyar_types::Vfs>(
+    fn lower_unified<V: Vfs>(
         &self,
         ast: &CSharpRoot,
-        ctx: &mut nyar_types::NyarContext<'_, V>,
+        ctx: &mut NyarContext<'_, V, ()>,
     ) -> chomsky_uir::Id {
         let translator = crate::codegen::NyarTranslator::new();
         let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
