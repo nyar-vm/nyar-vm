@@ -9,7 +9,8 @@
         "build:native": "npx tsx scripts/build.ts",
         "format": "biome format --write .",
         "lint": "biome check --apply .",
-        "check-large-files": "npx tsx scripts/large-files.ts"
+        "check": "cargo cry",
+        "check:doc": "cargo-cry doc"
     },
     "devDependencies": {
         "@biomejs/biome": "^1.0.0",
