@@ -1,15 +1,10 @@
-pub mod bigint;
 pub mod call;
 pub mod closure;
 pub mod control;
 pub mod effects;
-pub mod float;
-pub mod i32;
-pub mod i64;
 pub mod metaprogramming;
 pub mod object;
 pub mod stack;
-pub mod string;
 pub mod traits;
 
 use crate::bytecode::instruction::Instruction;
@@ -1765,4 +1760,3 @@ impl NyarVM {
     }
     
 }
-
