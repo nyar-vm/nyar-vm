@@ -29,6 +29,7 @@ thread_local! {
     pub static CURRENT_GC: std::cell::RefCell<Option<Arc<NyarGc>>> = std::cell::RefCell::new(None);
 }
 
+#[derive(Debug)]
 pub struct NyarEnv {
     pub modules: DashMap<usize, NyarcModule>,
     pub module_names: DashMap<usize, String>,
@@ -49,6 +50,7 @@ impl NyarEnv {
     }
 }
 
+#[derive(Debug)]
 pub struct TracebackLink {
     pub parent: Option<Arc<TracebackLink>>,
     pub frames: Vec<Frame>,
@@ -85,6 +87,16 @@ pub struct NyarVM {
     pub parent_traceback: Option<Arc<TracebackLink>>,
 }
 
+impl std::fmt::Debug for NyarVM {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NyarVM")
+            .field("sp", &self.sp)
+            .field("local_hotness", &self.local_hotness)
+            .field("step_count", &self.step_count)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Trace for NyarVM {
     fn trace(&self, ctx: &mut MarkContext) {
         for i in 0..self.sp {
@@ -104,7 +116,7 @@ impl Trace for NyarVM {
 
 impl NyarVM {
     pub fn new() -> Self {
-        let mut vm = Self {
+        Self {
             gc: Arc::new(NyarGc::new()),
             env: Arc::new(NyarEnv::new()),
             stack: Vec::with_capacity(64),
@@ -121,12 +133,11 @@ impl NyarVM {
             runtime: Arc::new(crate::vm::traits::NoopRuntime::default()),
             effect_handler: None,
             parent_traceback: None,
-        };
-        vm
+        }
     }
 
     pub fn with_platform(platform: Arc<dyn crate::vm::platform::NyarPlatform>) -> Self {
-        let mut vm = Self {
+        Self {
             gc: Arc::new(NyarGc::new()),
             env: Arc::new(NyarEnv::new()),
             stack: Vec::with_capacity(64),
@@ -143,8 +154,7 @@ impl NyarVM {
             runtime: Arc::new(crate::vm::traits::NoopRuntime::default()),
             effect_handler: None,
             parent_traceback: None,
-        };
-        vm
+        }
     }
 
     pub fn spawn_child(&self) -> Self {

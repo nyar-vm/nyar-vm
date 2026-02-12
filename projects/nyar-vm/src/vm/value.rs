@@ -974,6 +974,12 @@ pub struct TraitObject {
 #[derive(Clone)]
 pub struct Upvalue(pub std::sync::Arc<std::sync::atomic::AtomicU64>);
 
+impl fmt::Debug for Upvalue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Upvalue({:?})", self.get())
+    }
+}
+
 impl Upvalue {
     pub fn new(val: Value) -> Self {
         Self(std::sync::Arc::new(std::sync::atomic::AtomicU64::new(val.0)))
@@ -1016,6 +1022,7 @@ pub struct Continuation {
 }
 
 #[derive(Clone)]
+#[derive(Debug)]
 pub struct Frame {
     pub instrs: std::sync::Arc<Vec<(Instruction, u32)>>,
     pub ip: usize,

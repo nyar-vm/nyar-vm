@@ -19,13 +19,13 @@ pub struct Fish {
 ///
 /// Obviously, this is very large.
 pub trait AnyDowncast {
-    fn downcast_dog(&mut self, dog: &Dog) {
+    fn downcast_dog(&mut self, _dog: &Dog) {
         self.otherwise()
     }
-    fn downcast_cat(&mut self, cat: &Cat) {
+    fn downcast_cat(&mut self, _cat: &Cat) {
         self.otherwise()
     }
-    fn downcast_fish(&mut self, fish: &Fish) {
+    fn downcast_fish(&mut self, _fish: &Fish) {
         self.otherwise()
     }
     fn otherwise(&mut self) {}

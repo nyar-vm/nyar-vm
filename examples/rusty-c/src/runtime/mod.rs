@@ -6,11 +6,12 @@ use nyar_types::NyarError;
 use nyar_vm::vm::NyarVM;
 use std::cell::RefCell;
 
+use std::sync::Mutex;
+
 #[derive(Debug)]
 pub struct RustyCRuntime {
-    _optimizer: UniversalOptimizer<()>,
     vm: NyarVM,
-    _switch_counter: RefCell<usize>,
+    _switch_counter: Mutex<usize>,
 }
 
 impl nyar_vm::vm::traits::RuntimeProvider for RustyCRuntime {
@@ -25,9 +26,8 @@ impl nyar_vm::vm::traits::RuntimeProvider for RustyCRuntime {
 impl RustyCRuntime {
     pub fn new() -> Self {
         Self {
-            _optimizer: UniversalOptimizer::new(),
             vm: NyarVM::new(),
-            _switch_counter: RefCell::new(0),
+            _switch_counter: Mutex::new(0),
         }
     }
 
@@ -40,8 +40,7 @@ impl RustyCRuntime {
         let tree = extractor.extract(root_id);
 
         // 2. Translate IKunTree to Nyar Module
-        let mut backend = nyar_vm::bytecode::compiler::NyarBackend::new();
-        use chomsky_extract::Backend;
+        let mut backend = nyar_vm::NyarBackend::new();
         let module = backend.compile(&tree)?;
 
         // 3. Execute using Nyar VM

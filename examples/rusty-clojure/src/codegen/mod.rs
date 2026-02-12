@@ -3,7 +3,8 @@
 use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, Id, IntentBuilder};
-use nyar_types::{NyarError, Loc};
+use chomsky_types::Loc;
+use nyar_types::NyarError;
 
 pub struct NyarTranslator;
 

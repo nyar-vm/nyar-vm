@@ -1557,6 +1557,26 @@ impl NyarBackend {
         }
     }
 
+    pub fn compile(&mut self, tree: &IKunTree) -> Result<NyarcModule, NyarError> {
+        let code = self.lower_tree(tree)?;
+        let mut final_code = code;
+        if final_code.last() != Some(&(Opcode::Return as u8)) {
+            self.emit(Instruction::Return, &mut final_code);
+        }
+        let lines = std::mem::take(&mut self.current_lines);
+        self.module.chunks.push(Chunk {
+            locals: 32,
+            upvalues: 0,
+            max_stack: 64,
+            code: final_code,
+            handlers: vec![],
+            lines,
+            decoded: Default::default(),
+            hotness: std::sync::atomic::AtomicU32::new(0),
+        });
+        Ok(self.module.clone())
+    }
+
     pub fn finish(mut self) -> NyarcModule {
         if self.module.chunks.is_empty() {
             println!("DEBUG: No chunks in module, adding an empty return chunk");

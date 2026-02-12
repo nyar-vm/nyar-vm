@@ -8,11 +8,14 @@ authors.workspace = true
 [dependencies]
 nyar-vm = { workspace = true }
 nyar-types = { workspace = true }
+nyar-aot = { workspace = true }
 oak-core = { workspace = true }
+oak-vfs = { workspace = true }
 oak-clojure = { workspace = true }
 chomsky-uir = { workspace = true }
 chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }
+chomsky-types = { workspace = true }
 serde = { workspace = true }
 
 [lib]
