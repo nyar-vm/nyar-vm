@@ -23,64 +23,123 @@ lto = true
 opt-level = "s"
 
 [workspace.dependencies]
-chomsky = { path = "../ProjectChomsky/packages/chomsky", default-features = false }
-chomsky-uir = { path = "../ProjectChomsky/packages/chomsky-uir" }
-chomsky-cost = { path = "../ProjectChomsky/packages/chomsky-cost" }
-chomsky-types = { path = "../ProjectChomsky/packages/chomsky-types" }
-chomsky-extract = { path = "../ProjectChomsky/packages/chomsky-extract" }
-chomsky-emit = { path = "../ProjectChomsky/packages/chomsky-emit" }
-chomsky-rules = { path = "../ProjectChomsky/packages/chomsky-rules" }
-chomsky-rule-engine = { path = "../ProjectChomsky/packages/chomsky-rule-engine" }
-oak-core = { path = "../oaks/projects/oak-core" }
-oak-vfs = { path = "../oaks/projects/oak-vfs" }
-oak-repl = { path = "../oaks/projects/oak-repl" }
-oak-rust = { path = "../oaks/examples/oak-rust" }
-oak-valkyrie = { path = "../oaks/examples/oak-valkyrie" }
-oak-voc = { path = "../oaks/examples/oak-voc" }
-oak-c = { path = "../oaks/examples/oak-c" }
-oak-typescript = { path = "../oaks/examples/oak-typescript" }
-oak-go = { path = "../oaks/examples/oak-go" }
-oak-kotlin = { path = "../oaks/examples/oak-kotlin" }
-oak-python = { path = "../oaks/examples/oak-python" }
-oak-java = { path = "../oaks/examples/oak-java" }
-oak-lua = { path = "../oaks/examples/oak-lua" }
-oak-cobol = { path = "../oaks/examples/oak-cobol" }
-oak-csharp = { path = "../oaks/examples/oak-csharp" }
-oak-dart = { path = "../oaks/examples/oak-dart" }
-oak-elixir = { path = "../oaks/examples/oak-elixir" }
-oak-ruby = { path = "../oaks/examples/oak-ruby" }
-oak-julia = { path = "../oaks/examples/oak-julia" }
-oak-fsharp = { path = "../oaks/examples/oak-fsharp" }
-oak-haskell = { path = "../oaks/examples/oak-haskell" }
-oak-fortran = { path = "../oaks/examples/oak-fortran" }
-oak-nim = { path = "../oaks/examples/oak-nim" }
-oak-mojo = { path = "../oaks/examples/oak-mojo" }
-oak-prolog = { path = "../oaks/examples/oak-prolog" }
-oak-json = { path = "../oaks/examples/oak-json" }
-oak-php = { path = "../oaks/examples/oak-php" }
-oak-tcl = { path = "../oaks/examples/oak-tcl" }
-oak-bat = { path = "../oaks/examples/oak-bat" }
-oak-cmd = { path = "../oaks/examples/oak-cmd" }
-oak-bash = { path = "../oaks/examples/oak-bash" }
-oak-scheme = { path = "../oaks/examples/oak-scheme" }
-oak-scala = { path = "../oaks/examples/oak-scala" }
-oak-groovy = { path = "../oaks/examples/oak-groovy" }
-oak-clojure = { path = "../oaks/examples/oak-clojure" }
-oak-wolfram = { path = "../oaks/examples/oak-wolfram" }
-oak-swift = { path = "../oaks/examples/oak-swift" }
-oak-zig = { path = "../oaks/examples/oak-zig" }
-oak-r = { path = "../oaks/examples/oak-r" }
-oak-nix = { path = "../oaks/examples/oak-nix" }
-gaia-jit = { path = "../project-gaia/projects/gaia-jit" }
-gaia-types = { path = "../project-gaia/projects/gaia-types" }
-gaia-assembler = { path = "../project-gaia/projects/gaia-assembler" }
-python-assembler = { path = "../project-gaia/examples/pyc-assembler" }
+# Internal projects
 nyar-vm = { path = "projects/nyar-vm" }
 nyar-runtime = { path = "projects/nyar-runtime" }
 nyar-types = { path = "projects/nyar-types" }
 nyar-aot = { path = "projects/nyar-aot" }
 nyar-macros = { path = "projects/nyar-macros" }
 nyar-gc = { path = "projects/nyar-gc" }
+
+# External projects for Local
+# chomsky = { version = "0.0.0", path = "../ProjectChomsky/packages/chomsky", default-features = false }
+# chomsky-uir = { version = "0.0.0", path = "../ProjectChomsky/packages/chomsky-uir" }
+# chomsky-cost = { version = "0.0.0", path = "../ProjectChomsky/packages/chomsky-cost" }
+# chomsky-types = { version = "0.0.0", path = "../ProjectChomsky/packages/chomsky-types" }
+# chomsky-extract = { version = "0.0.0", path = "../ProjectChomsky/packages/chomsky-extract" }
+# chomsky-emit = { version = "0.0.0", path = "../ProjectChomsky/packages/chomsky-emit" }
+# chomsky-rules = { version = "0.0.0", path = "../ProjectChomsky/packages/chomsky-rules" }
+# chomsky-rule-engine = { version = "0.0.0", path = "../ProjectChomsky/packages/chomsky-rule-engine" }
+# oak-core = { version = "0.0.3", path = "../oaks/projects/oak-core" }
+# oak-vfs = { version = "0.0.3", path = "../oaks/projects/oak-vfs" }
+# oak-repl = { version = "0.0.3", path = "../oaks/projects/oak-repl" }
+# oak-rust = { version = "0.0.3", path = "../oaks/examples/oak-rust" }
+# oak-valkyrie = { version = "0.0.3", path = "../oaks/examples/oak-valkyrie" }
+# oak-voc = { version = "0.0.3", path = "../oaks/examples/oak-voc" }
+# oak-c = { version = "0.0.3", path = "../oaks/examples/oak-c" }
+# oak-typescript = { version = "0.0.3", path = "../oaks/examples/oak-typescript" }
+# oak-go = { version = "0.0.3", path = "../oaks/examples/oak-go" }
+# oak-kotlin = { version = "0.0.3", path = "../oaks/examples/oak-kotlin" }
+# oak-python = { version = "0.0.3", path = "../oaks/examples/oak-python" }
+# oak-java = { version = "0.0.3", path = "../oaks/examples/oak-java" }
+# oak-lua = { version = "0.0.3", path = "../oaks/examples/oak-lua" }
+# oak-cobol = { version = "0.0.3", path = "../oaks/examples/oak-cobol" }
+# oak-csharp = { version = "0.0.3", path = "../oaks/examples/oak-csharp" }
+# oak-dart = { version = "0.0.3", path = "../oaks/examples/oak-dart" }
+# oak-elixir = { version = "0.0.3", path = "../oaks/examples/oak-elixir" }
+# oak-ruby = { version = "0.0.3", path = "../oaks/examples/oak-ruby" }
+# oak-julia = { version = "0.0.3", path = "../oaks/examples/oak-julia" }
+# oak-fsharp = { version = "0.0.3", path = "../oaks/examples/oak-fsharp" }
+# oak-haskell = { version = "0.0.3", path = "../oaks/examples/oak-haskell" }
+# oak-fortran = { version = "0.0.3", path = "../oaks/examples/oak-fortran" }
+# oak-nim = { version = "0.0.3", path = "../oaks/examples/oak-nim" }
+# oak-mojo = { version = "0.0.3", path = "../oaks/examples/oak-mojo" }
+# oak-prolog = { version = "0.0.3", path = "../oaks/examples/oak-prolog" }
+# oak-json = { version = "0.0.3", path = "../oaks/examples/oak-json" }
+# oak-php = { version = "0.0.3", path = "../oaks/examples/oak-php" }
+# oak-tcl = { version = "0.0.3", path = "../oaks/examples/oak-tcl" }
+# oak-bat = { version = "0.0.3", path = "../oaks/examples/oak-bat" }
+# oak-cmd = { version = "0.0.3", path = "../oaks/examples/oak-cmd" }
+# oak-bash = { version = "0.0.3", path = "../oaks/examples/oak-bash" }
+# oak-scheme = { version = "0.0.3", path = "../oaks/examples/oak-scheme" }
+# oak-scala = { version = "0.0.3", path = "../oaks/examples/oak-scala" }
+# oak-groovy = { version = "0.0.3", path = "../oaks/examples/oak-groovy" }
+# oak-clojure = { version = "0.0.3", path = "../oaks/examples/oak-clojure" }
+# oak-wolfram = { version = "0.0.3", path = "../oaks/examples/oak-wolfram" }
+# oak-swift = { version = "0.0.3", path = "../oaks/examples/oak-swift" }
+# oak-zig = { version = "0.0.3", path = "../oaks/examples/oak-zig" }
+# oak-r = { version = "0.0.3", path = "../oaks/examples/oak-r" }
+# oak-nix = { version = "0.0.3", path = "../oaks/examples/oak-nix" }
+# gaia-jit = { version = "0.0.4", path = "../project-gaia/projects/gaia-jit" }
+# gaia-types = { version = "0.0.4", path = "../project-gaia/projects/gaia-types" }
+# gaia-assembler = { version = "0.0.4", path = "../project-gaia/projects/gaia-assembler" }
+# python-assembler = { version = "0.0.4", path = "../project-gaia/examples/pyc-assembler" }
+
+# External projects for CI
+chomsky = { version = "0.0.0", default-features = false }
+chomsky-uir = "0.0.0"
+chomsky-cost = "0.0.0"
+chomsky-types = "0.0.0"
+chomsky-extract = "0.0.0"
+chomsky-emit = "0.0.0"
+chomsky-rules = "0.0.0"
+chomsky-rule-engine = "0.0.0"
+oak-core = "0.0.3"
+oak-vfs = "0.0.3"
+oak-repl = "0.0.3"
+oak-rust = "0.0.3"
+oak-valkyrie = "0.0.3"
+oak-voc = "0.0.3"
+oak-c = "0.0.3"
+oak-typescript = "0.0.3"
+oak-go = "0.0.3"
+oak-kotlin = "0.0.3"
+oak-python = "0.0.3"
+oak-java = "0.0.3"
+oak-lua = "0.0.3"
+oak-cobol = "0.0.3"
+oak-csharp = "0.0.3"
+oak-dart = "0.0.3"
+oak-elixir = "0.0.3"
+oak-ruby = "0.0.3"
+oak-julia = "0.0.3"
+oak-fsharp = "0.0.3"
+oak-haskell = "0.0.3"
+oak-fortran = "0.0.3"
+oak-nim = "0.0.3"
+oak-mojo = "0.0.3"
+oak-prolog = "0.0.3"
+oak-json = "0.0.3"
+oak-php = "0.0.3"
+oak-tcl = "0.0.3"
+oak-bat = "0.0.3"
+oak-cmd = "0.0.3"
+oak-bash = "0.0.3"
+oak-scheme = "0.0.3"
+oak-scala = "0.0.3"
+oak-groovy = "0.0.3"
+oak-clojure = "0.0.3"
+oak-wolfram = "0.0.3"
+oak-swift = "0.0.3"
+oak-zig = "0.0.3"
+oak-r = "0.0.3"
+oak-nix = "0.0.3"
+gaia-jit = "0.0.4"
+gaia-types = "0.0.4"
+gaia-assembler = "0.0.4"
+python-assembler = "0.0.4"
+
+# Others
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
