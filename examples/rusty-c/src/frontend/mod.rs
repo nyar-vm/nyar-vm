@@ -1,14 +1,14 @@
 pub mod preprocessor;
 
-use crate::errors::CError;
 use nyar_aot::{NyarContext, NyarFrontend};
-use nyar_types::NyarError;
+use nyar_types::{NyarError, SourceLocation};
 use oak_vfs::Vfs;
 use chomsky_uir::{Id, Analysis, IKun, egraph::HasDebugInfo};
 use oak_c::ast::{self, CRoot};
 use oak_c::builder::CBuilder;
 use oak_c::language::CLanguage;
 use oak_core::source::SourceText;
+use oak_core::errors::OakErrorKind;
 use std::collections::HashMap;
 use std::ops::Range;
 use chomsky_types::Loc;
@@ -58,7 +58,10 @@ where A::Data: HasDebugInfo
         let mut session = oak_core::parser::session::ParseSession::<CLanguage>::default();
         let source_text = SourceText::new(preprocessed);
         let output = builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::from(CError::from(e)))
+        output.result.map_err(|e| match e.kind() {
+            OakErrorKind::SyntaxError { message, .. } => NyarError::Parse(message.clone()),
+            _ => NyarError::Compile(format!("{:?}", e)),
+        })
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &CRoot, ctx: &mut NyarContext<V, A>) -> Id {
