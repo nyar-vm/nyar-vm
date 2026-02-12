@@ -32,3 +32,4 @@ wasi = { workspace = true, optional = true }
 [features]
 default = []
 wasi = ["dep:wasi"]
+native = []

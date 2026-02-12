@@ -6,6 +6,8 @@ pub mod toml;
 pub mod von;
 pub mod net;
 pub mod async_ffi;
+pub mod bigint;
+pub mod string;
 
 use nyar_vm::vm::core::NyarVM;
 use nyar_vm::vm::value::Value;
@@ -121,6 +123,36 @@ impl FFIRegistry {
 
         self.register("std::gc::collect".to_string(), native_gc_collect);
         self.register("std::gc::stats".to_string(), native_gc_stats);
+
+        // BigInt
+        self.register_intrinsic(100, bigint::bigint_const);
+        self.register_intrinsic(101, bigint::bigint_add);
+        self.register_intrinsic(102, bigint::bigint_sub);
+        self.register_intrinsic(103, bigint::bigint_mul);
+        self.register_intrinsic(104, bigint::bigint_div);
+        self.register_intrinsic(105, bigint::bigint_mod);
+        self.register_intrinsic(106, bigint::bigint_neg);
+        self.register_intrinsic(107, bigint::bigint_eq);
+        self.register_intrinsic(108, bigint::bigint_ne);
+        self.register_intrinsic(109, bigint::bigint_lt);
+        self.register_intrinsic(110, bigint::bigint_le);
+        self.register_intrinsic(111, bigint::bigint_gt);
+        self.register_intrinsic(112, bigint::bigint_ge);
+        self.register_intrinsic(113, bigint::bigint_to_i64);
+        self.register_intrinsic(114, bigint::bigint_from_i64);
+        self.register_intrinsic(115, bigint::bigint_to_string);
+
+        // String
+        self.register_intrinsic(120, string::string_concat);
+        self.register_intrinsic(121, string::string_len_bytes);
+        self.register_intrinsic(122, string::string_len_chars);
+        self.register_intrinsic(123, string::string_eq);
+        self.register_intrinsic(124, string::string_ne);
+        self.register_intrinsic(125, string::string_lt);
+        self.register_intrinsic(126, string::string_le);
+        self.register_intrinsic(127, string::string_gt);
+        self.register_intrinsic(128, string::string_ge);
+        self.register_intrinsic(129, string::string_substr);
     }
 }
 

@@ -1,6 +1,6 @@
-use crate::vm::core::NyarVM;
-use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
-use crate::vm::value::Value;
+use nyar_vm::vm::core::NyarVM;
+use nyar_vm::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
+use nyar_vm::vm::value::Value;
 use nyar_types::NyarError;
 
 pub struct StdTomlParse;

@@ -261,16 +261,7 @@ unsafe fn drive_until(vm: &mut NyarVM, target_depth: usize) -> Value {
             Ok(Some(())) => continue,
             Ok(None) => break,
             Err(e) if matches!(*e.kind, nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::YieldAsync)) => {
-                // If we are in a tokio runtime, we must not block the thread directly.
-                if tokio::runtime::Handle::try_current().is_ok() {
-                    // We are in a runtime. Use block_in_place to allow other tasks to run.
-                    tokio::task::block_in_place(|| {
-                        std::thread::yield_now();
-                    });
-                } else {
-                    // We are not in a runtime. It's safe to yield the thread.
-                    std::thread::yield_now();
-                }
+                vm.platform.yield_now();
                 continue;
             }
             Err(e) => {

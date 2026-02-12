@@ -1,6 +1,7 @@
-use crate::vm::core::NyarVM;
+use nyar_vm::vm::core::NyarVM;
+use nyar_vm::vm::value::{Value, Frame};
 use nyar_gc::Trace;
-use nyar_types::NyarError;
+use nyar_types::{NyarError, NyarErrorKind, VmErrorKind};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -30,7 +31,7 @@ impl NyarRuntime {
         self.handle.spawn(future)
     }
 
-    pub fn spawn_vm(&self, mut vm: NyarVM, module_idx: usize, chunk_idx: usize) -> tokio::task::JoinHandle<Result<crate::vm::value::Value, NyarError>> {
+    pub fn spawn_vm(&self, mut vm: NyarVM, module_idx: usize, chunk_idx: usize) -> tokio::task::JoinHandle<Result<Value, NyarError>> {
         let gc = vm.gc.clone();
         self.handle.spawn(async move {
             // Register VM as a global root while it's running in an async task
@@ -61,7 +62,7 @@ pub struct VmFuture<'a> {
 }
 
 impl<'a> Future for VmFuture<'a> {
-    type Output = Result<crate::vm::value::Value, NyarError>;
+    type Output = Result<Value, NyarError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // If we are in a tokio task, update the traceback summary
@@ -71,7 +72,7 @@ impl<'a> Future for VmFuture<'a> {
 }
 
 impl<'a> VmFuture<'a> {
-    fn poll_internal(&mut self, cx: &mut Context<'_>) -> Poll<Result<crate::vm::value::Value, NyarError>> {
+    fn poll_internal(&mut self, cx: &mut Context<'_>) -> Poll<Result<Value, NyarError>> {
         // 0. Update current waker
         self.vm.current_waker = Some(cx.waker().clone());
 
@@ -88,7 +89,7 @@ impl<'a> VmFuture<'a> {
         let _vm_root = unsafe { StackRootGuard::<'static, NyarVM>::from_raw(self.vm as *const NyarVM) };
 
         // Set current GC for write barriers
-        let _gc_guard = crate::vm::core::CURRENT_GC.with(|curr| {
+        let _gc_guard = nyar_vm::vm::core::CURRENT_GC.with(|curr| {
             let mut curr = curr.borrow_mut();
             let old = curr.take();
             *curr = Some(self.vm.gc.clone());
@@ -117,15 +118,15 @@ impl<'a> VmFuture<'a> {
                         break Poll::Ready(Err(e));
                     }
                 };
-                self.vm.frames.push(crate::vm::value::Frame {
+                self.vm.frames.push(Frame {
                     instrs,
                     upvalues: vec![None; 32],
                     module_idx: self.module_idx,
                     chunk_idx: Some(self.chunk_idx),
                     ip: 0,
-                    locals: vec![crate::vm::value::Value::null(); 32],
+                    locals: vec![Value::null(); 32],
                     location: Default::default(),
-                    closure: crate::vm::value::Value::null(),
+                    closure: Value::null(),
                 });
             }
 
@@ -133,9 +134,9 @@ impl<'a> VmFuture<'a> {
                 Ok(Some(())) => {}
                 Ok(None) => {
                     self.vm.gc.flush_thread_local();
-                    break Poll::Ready(Ok(self.vm.pop().unwrap_or(crate::vm::value::Value::null())));
+                    break Poll::Ready(Ok(self.vm.pop().unwrap_or(Value::null())));
                 }
-                Err(e) if matches!(*e.kind, nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::YieldAsync)) => {
+                Err(e) if matches!(*e.kind, NyarErrorKind::Vm(VmErrorKind::YieldAsync)) => {
                     // Await on a pending future. The waker has been registered in execute_await.
                     // We don't wake_by_ref here because we wait for the IO/future to wake us.
                     self.vm.gc.flush_thread_local();
@@ -149,7 +150,7 @@ impl<'a> VmFuture<'a> {
         };
 
         // Restore old GC
-        crate::vm::core::CURRENT_GC.with(|curr| {
+        nyar_vm::vm::core::CURRENT_GC.with(|curr| {
             *curr.borrow_mut() = _gc_guard;
         });
 

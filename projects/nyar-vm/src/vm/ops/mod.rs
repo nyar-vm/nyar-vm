@@ -422,22 +422,176 @@ impl NyarVM {
             Instruction::F64ToI64U => self.execute_f64_to_i64_u(),
             Instruction::F64ToF32 => self.execute_f64_to_f32(),
             // BigInt operations
-            Instruction::BigIntConst { sign, bytes } => self.execute_bigint_const(sign, bytes),
-            Instruction::BigIntAdd => self.execute_bigint_add(),
-            Instruction::BigIntSub => self.execute_bigint_sub(),
-            Instruction::BigIntMul => self.execute_bigint_mul(),
-            Instruction::BigIntDiv => self.execute_bigint_div(),
-            Instruction::BigIntMod => self.execute_bigint_mod(),
-            Instruction::BigIntNeg => self.execute_bigint_neg(),
-            Instruction::BigIntEq => self.execute_bigint_eq(),
-            Instruction::BigIntNe => self.execute_bigint_ne(),
-            Instruction::BigIntLt => self.execute_bigint_lt(),
-            Instruction::BigIntLe => self.execute_bigint_le(),
-            Instruction::BigIntGt => self.execute_bigint_gt(),
-            Instruction::BigIntGe => self.execute_bigint_ge(),
-            Instruction::BigIntToI64 => self.execute_bigint_to_i64(),
-            Instruction::BigIntFromI64 => self.execute_bigint_from_i64(),
-            Instruction::BigIntToString => self.execute_bigint_to_string(),
+            Instruction::BigIntConst { sign, bytes } => {
+                if let Some(func) = self.runtime.get_intrinsic(100) {
+                    let res = func(self, &[Value::int(sign as i64), Value::bytes(bytes, &self.gc)])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_const(sign, bytes)
+                }
+            }
+            Instruction::BigIntAdd => {
+                if let Some(func) = self.runtime.get_intrinsic(101) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_add()
+                }
+            }
+            Instruction::BigIntSub => {
+                if let Some(func) = self.runtime.get_intrinsic(102) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_sub()
+                }
+            }
+            Instruction::BigIntMul => {
+                if let Some(func) = self.runtime.get_intrinsic(103) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_mul()
+                }
+            }
+            Instruction::BigIntDiv => {
+                if let Some(func) = self.runtime.get_intrinsic(104) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_div()
+                }
+            }
+            Instruction::BigIntMod => {
+                if let Some(func) = self.runtime.get_intrinsic(105) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_mod()
+                }
+            }
+            Instruction::BigIntNeg => {
+                if let Some(func) = self.runtime.get_intrinsic(106) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_neg()
+                }
+            }
+            Instruction::BigIntEq => {
+                if let Some(func) = self.runtime.get_intrinsic(107) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_eq()
+                }
+            }
+            Instruction::BigIntNe => {
+                if let Some(func) = self.runtime.get_intrinsic(108) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_ne()
+                }
+            }
+            Instruction::BigIntLt => {
+                if let Some(func) = self.runtime.get_intrinsic(109) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_lt()
+                }
+            }
+            Instruction::BigIntLe => {
+                if let Some(func) = self.runtime.get_intrinsic(110) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_le()
+                }
+            }
+            Instruction::BigIntGt => {
+                if let Some(func) = self.runtime.get_intrinsic(111) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_gt()
+                }
+            }
+            Instruction::BigIntGe => {
+                if let Some(func) = self.runtime.get_intrinsic(112) {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let res = func(self, &[lhs, rhs])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_ge()
+                }
+            }
+            Instruction::BigIntToI64 => {
+                if let Some(func) = self.runtime.get_intrinsic(113) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_to_i64()
+                }
+            }
+            Instruction::BigIntFromI64 => {
+                if let Some(func) = self.runtime.get_intrinsic(114) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_from_i64()
+                }
+            }
+            Instruction::BigIntToString => {
+                if let Some(func) = self.runtime.get_intrinsic(115) {
+                    let v = self.pop()?;
+                    let res = func(self, &[v])?;
+                    self.push(res)?;
+                    Ok(None)
+                } else {
+                    self.execute_bigint_to_string()
+                }
+            }
             // String operations
             Instruction::StringConst(s) => self.execute_string_const(s),
             Instruction::StringConcat => self.execute_string_concat(),

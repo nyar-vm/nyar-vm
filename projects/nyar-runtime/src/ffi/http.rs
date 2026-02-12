@@ -1,6 +1,6 @@
-use crate::vm::core::NyarVM;
-use crate::vm::value::{Value, Future, FutureStatus};
-use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
+use nyar_vm::vm::core::NyarVM;
+use nyar_vm::vm::value::{Value, Future, FutureStatus};
+use nyar_vm::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
 use nyar_gc::Root;
 use nyar_types::NyarError;
 use std::sync::{Arc, RwLock, OnceLock};
