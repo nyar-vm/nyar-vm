@@ -18,7 +18,6 @@ use chomsky_emit::GaiaEmitter;
 use chomsky_extract::{Backend, IKunExtractor};
 use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder, IKunTree, Analysis};
-use nyar_aot::NyarAot;
 use nyar_aot::{NyarContext, NyarFrontend};
 use nyar_types::NyarError;
 use nyar_vm::bytecode::format::NyarcModule;

@@ -1,11 +1,8 @@
 use chomsky::cost::DefaultCostModel;
 use chomsky::extract::IKunExtractor;
-use chomsky::optimizer::UniversalOptimizer;
 use chomsky_uir::{EGraph, IKun, Id};
 use nyar_types::NyarError;
 use nyar_vm::vm::NyarVM;
-use std::cell::RefCell;
-
 use std::sync::Mutex;
 
 #[derive(Debug)]

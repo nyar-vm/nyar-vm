@@ -26,8 +26,8 @@ impl RustyPythonRuntime {
         let tree = extractor.extract(root_id);
 
         // 2. Translate IKunTree to Nyar Module
-        let mut backend = nyar_vm::bytecode::compiler::NyarBackend::new();
-        use chomsky_extract::Backend;
+        use nyar_vm::NyarBackend;
+        let mut backend = NyarBackend::new();
         let module = backend.compile(&tree)?;
 
         // 3. Execute using Nyar VM
