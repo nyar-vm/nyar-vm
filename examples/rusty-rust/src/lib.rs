@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 //! Mini Rust 语言实现
 #![feature(new_range_api)]
 
@@ -7,10 +8,8 @@ pub mod runtime;
 
 pub use crate::runtime::RustyRustRuntime;
 
-use chomsky_uir::{Analysis, Id, IKun, egraph::HasDebugInfo};
-use nyar_aot::{NyarContext, NyarFrontend};
-use nyar_types::NyarError;
-use oak_vfs::Vfs;
+use chomsky_uir::{Analysis, IKun, egraph::HasDebugInfo};
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_rust::{RustBuilder, RustLanguage, RustRoot};
 
@@ -29,7 +28,7 @@ impl MiniRustFrontend {
     }
 }
 
-impl<A: Analysis<IKun> + 'static> NyarFrontend<A> for MiniRustFrontend 
+impl<A: Analysis<IKun> + 'static> NyarFrontend<A, RustRoot> for MiniRustFrontend 
 where A::Data: HasDebugInfo
 {
     type Language = RustLanguage;
@@ -45,7 +44,7 @@ where A::Data: HasDebugInfo
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &RustRoot, ctx: &mut NyarContext<V, A>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &RustRoot, ctx: &mut NyarContext<'_, V, A>) -> Id {
         let mut builder = ctx.builder();
         converter::convert_root(ast, &mut builder)
     }

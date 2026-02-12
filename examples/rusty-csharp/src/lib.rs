@@ -1,13 +1,10 @@
+#![warn(missing_docs)]
 #![feature(new_range_api)]
 //! Rusty CSharp 语言前端
-//!
-//! 提供 Rusty CSharp 的词法分析、语法分析和 Nyar 翻译功能。
 
-use nyar_aot::{NyarContext, NyarFrontend};
-use nyar_types::NyarError;
-use oak_core::{builder::Builder, source::SourceText};
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use oak_core::source::SourceText;
 use oak_csharp::{ast::CSharpRoot, CSharpBuilder, CSharpLanguage};
-use oak_vfs::Vfs;
 
 pub mod codegen;
 pub mod errors;
@@ -33,7 +30,7 @@ impl RustyCSharpFrontend {
     }
 }
 
-impl NyarFrontend<()> for RustyCSharpFrontend {
+impl NyarFrontend<(), CSharpRoot> for RustyCSharpFrontend {
     type Language = CSharpLanguage;
 
     /// 解析 CSharp 源代码
@@ -49,11 +46,12 @@ impl NyarFrontend<()> for RustyCSharpFrontend {
 
     fn lower_unified<V: Vfs>(
         &self,
-        ast: &CSharpRoot,
-        ctx: &mut NyarContext<'_, V, ()>,
-    ) -> chomsky_uir::Id {
-        let translator = crate::codegen::NyarTranslator::new();
-        let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
-        translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
+        _ast: &CSharpRoot,
+        _ctx: &mut NyarContext<'_, V, ()>,
+    ) -> Id {
+        // let translator = crate::codegen::NyarTranslator::new();
+        // let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
+        // translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
+        0
     }
 }

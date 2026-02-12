@@ -1,10 +1,7 @@
 pub mod preprocessor;
 
-use nyar_aot::{NyarContext, NyarFrontend};
-use nyar_types::{NyarError, SourceLocation};
-use oak_vfs::Vfs;
-use chomsky_uir::{Id, Analysis, IKun, egraph::HasDebugInfo};
-use oak_c::ast::{self, CRoot};
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use oak_c::ast::CRoot;
 use oak_c::builder::CBuilder;
 use oak_c::language::CLanguage;
 use oak_core::source::SourceText;
@@ -12,6 +9,7 @@ use oak_core::errors::OakErrorKind;
 use std::collections::HashMap;
 use std::ops::Range;
 use chomsky_types::Loc;
+use chomsky_uir::{Analysis, IKun, egraph::HasDebugInfo};
 
 use std::path::PathBuf;
 
@@ -37,7 +35,7 @@ impl RustyCFrontend {
     }
 }
 
-impl<A: Analysis<IKun> + 'static> NyarFrontend<A> for RustyCFrontend 
+impl<A: Analysis<IKun> + 'static> NyarFrontend<A, CRoot> for RustyCFrontend 
 where A::Data: HasDebugInfo
 {
     type Language = CLanguage;
@@ -55,7 +53,7 @@ where A::Data: HasDebugInfo
 
         use oak_core::Builder;
         let builder = CBuilder::new(&self.language);
-        let mut session = oak_core::parser::session::ParseSession::<CLanguage>::default();
+        let mut session = oak_core::parser::ParseSession::<CLanguage>::default();
         let source_text = SourceText::new(preprocessed);
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| match e.kind() {
@@ -64,7 +62,7 @@ where A::Data: HasDebugInfo
         })
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &CRoot, ctx: &mut NyarContext<V, A>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &CRoot, ctx: &mut NyarContext<'_, V, A>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }

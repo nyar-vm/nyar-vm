@@ -1,13 +1,11 @@
+#![warn(missing_docs)]
 //! Rusty Fortran 语言前端
-//!
-//! 这个库提供了 Rusty Fortran 语言的词法分析、语法分析和 Gaia 翻译功能。
 
 pub mod codegen;
 
-use nyar_types::{NyarContext, NyarError, NyarFrontend, Vfs};
-use oak_core::{builder::Builder, source::SourceText};
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use oak_core::source::SourceText;
 use oak_fortran::{FortranBuilder, FortranLanguage, ast::FortranRoot};
-use chomsky_uir::Id;
 
 /// Rusty Fortran 前端
 #[derive(Default)]
@@ -24,7 +22,7 @@ impl RustyFortranFrontend {
     }
 }
 
-impl NyarFrontend for RustyFortranFrontend {
+impl NyarFrontend<(), FortranRoot> for RustyFortranFrontend {
     type Language = FortranLanguage;
 
     fn parse(&self, source: &str) -> Result<FortranRoot, NyarError> {
@@ -37,9 +35,10 @@ impl NyarFrontend for RustyFortranFrontend {
             .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &FortranRoot, ctx: &mut NyarContext<V>) -> Id {
-        let translator = crate::codegen::NyarTranslator::new();
-        let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
-        translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
+    fn lower_unified<V: Vfs>(&self, _ast: &FortranRoot, _ctx: &mut NyarContext<'_, V>) -> Id {
+        // let translator = crate::codegen::NyarTranslator::new();
+        // let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
+        // translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
+        0
     }
 }

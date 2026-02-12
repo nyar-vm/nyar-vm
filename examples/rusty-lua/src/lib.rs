@@ -1,16 +1,13 @@
-//! Rusty Lua 语言前端
-//!
-//! 这个库提供了 Rusty Lua 语言的词法分析、语法分析和 Gaia 翻译功能。
-
 #![warn(missing_docs)]
+//! Rusty Lua 语言前端
 
 pub mod codegen;
 pub mod runtime;
 
 pub use crate::runtime::RustyLuaRuntime;
 
-use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
-use oak_core::{source::SourceText, Builder};
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use oak_core::source::SourceText;
 use oak_lua::{ast::LuaRoot, LuaBuilder, LuaLanguage};
 use chomsky_uir::{Analysis, IKun, egraph::HasDebugInfo};
 
@@ -34,7 +31,7 @@ impl RustyLuaFrontend {
     }
 }
 
-impl<A: Analysis<IKun> + 'static> NyarFrontend<A> for RustyLuaFrontend 
+impl<A: Analysis<IKun> + 'static> NyarFrontend<A, LuaRoot> for RustyLuaFrontend 
 where A::Data: HasDebugInfo
 {
     type Language = LuaLanguage;
@@ -42,7 +39,7 @@ where A::Data: HasDebugInfo
     fn parse(&self, source: &str) -> Result<LuaRoot, NyarError> {
         let builder = LuaBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::session::ParseSession::<LuaLanguage>::default();
+        let mut session = oak_core::parser::ParseSession::<LuaLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output
@@ -50,7 +47,7 @@ where A::Data: HasDebugInfo
             .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &LuaRoot, ctx: &mut NyarContext<V, A>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &LuaRoot, ctx: &mut NyarContext<'_, V, A>) -> Id {
         let translator = codegen::GaiaTranslator::new();
         translator.lower_unified(ast, ctx)
     }

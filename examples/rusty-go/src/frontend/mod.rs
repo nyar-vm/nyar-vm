@@ -1,10 +1,7 @@
-use nyar_aot::{NyarContext, NyarFrontend};
-use nyar_types::NyarError;
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_go::{ast, GoBuilder, GoLanguage, GoRoot};
 use oak_core::source::SourceText;
-use oak_core::parser::session::ParseSession;
-use oak_vfs::Vfs;
-use chomsky_uir::{Id, IKun, Analysis};
+use chomsky_uir::{IKun, Analysis};
 use chomsky_types::Loc;
 use std::ops::Range;
 
@@ -15,6 +12,7 @@ pub struct RustyGoFrontend {
 }
 
 impl RustyGoFrontend {
+    /// 创建新的前端实例
     pub fn new() -> Self {
         Self {
             language: GoLanguage::default(),
@@ -22,20 +20,20 @@ impl RustyGoFrontend {
     }
 }
 
-impl NyarFrontend<()> for RustyGoFrontend {
+impl NyarFrontend<(), GoRoot> for RustyGoFrontend {
     type Language = GoLanguage;
 
     fn parse(&self, source: &str) -> Result<GoRoot, NyarError> {
         use oak_core::Builder;
         let builder = GoBuilder::new(&self.language);
         let source_text = SourceText::new(source.to_string());
-        let mut session = ParseSession::<GoLanguage>::default();
+        let mut session = oak_core::parser::ParseSession::<GoLanguage>::default();
         let output = builder.build(&source_text, &[], &mut session);
 
         output.result.map_err(|e| NyarError::Compile(format!("Build error: {:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &GoRoot, ctx: &mut NyarContext<V, ()>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &GoRoot, ctx: &mut NyarContext<'_, V, ()>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }

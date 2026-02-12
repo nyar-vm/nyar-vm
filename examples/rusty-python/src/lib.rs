@@ -1,22 +1,15 @@
+#![warn(missing_docs)]
 //! Rusty Python 语言前端
-//!
-//! 这个库提供了 Rusty Python 语言的词法分析、语法分析和 Gaia 翻译功能。
 
 pub mod runtime;
 
 pub use crate::runtime::RustyPythonRuntime;
 
-use nyar_aot::{NyarContext, NyarFrontend};
-use nyar_types::NyarError;
-use oak_core::Parser;
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_python::ast::{Expression, Literal, PythonRoot, Statement};
-use chomsky_uir::{Id, Analysis, IKun};
+use chomsky_uir::{Analysis, IKun};
 use chomsky_types::Loc;
 use chomsky_uir::egraph::HasDebugInfo;
-use oak_vfs::Vfs;
-
-// pub mod codegen;
-// pub mod pyc_codegen;
 
 /// Rusty Python 前端
 #[derive(Default)]
@@ -29,16 +22,17 @@ impl RustyPythonFrontend {
     }
 }
 
-impl<A: Analysis<IKun> + 'static> NyarFrontend<A> for RustyPythonFrontend 
+impl<A: Analysis<IKun> + 'static> NyarFrontend<A, PythonRoot> for RustyPythonFrontend 
 where A::Data: HasDebugInfo
 {
     type Language = oak_python::PythonLanguage;
 
     fn parse(&self, source: &str) -> Result<PythonRoot, NyarError> {
+        use oak_core::Parser;
         let config = oak_python::PythonLanguage {};
         let parser = oak_python::PythonParser::new(&config);
         let mut cache =
-            oak_core::parser::session::ParseSession::<oak_python::PythonLanguage>::default();
+            oak_core::parser::ParseSession::<oak_python::PythonLanguage>::default();
         let parse_result = parser.parse(source, &[], &mut cache);
 
         let green_node = parse_result
@@ -53,7 +47,7 @@ where A::Data: HasDebugInfo
         Ok(ast)
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &PythonRoot, ctx: &mut NyarContext<V, A>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &PythonRoot, ctx: &mut NyarContext<'_, V, A>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }

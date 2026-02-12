@@ -1,11 +1,9 @@
+#![warn(missing_docs)]
 //! Rusty Swift 语言前端
-//!
-//! 这个库提供了 Rusty Swift 语言的词法分析、语法分析和 Gaia 翻译功能。
 
 pub mod codegen;
 
-use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Loc, Vfs};
-use oak_core::Builder;
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_swift::ast::{Expression, Literal, Statement, SwiftRoot};
 use oak_swift::{SwiftBuilder, SwiftLanguage};
@@ -31,7 +29,7 @@ impl RustySwiftFrontend {
     }
 }
 
-impl NyarFrontend<ConstraintAnalysis> for RustySwiftFrontend {
+impl NyarFrontend<ConstraintAnalysis, SwiftRoot> for RustySwiftFrontend {
     type Language = SwiftLanguage;
 
     fn parse(&self, source: &str) -> Result<SwiftRoot, NyarError> {
@@ -43,7 +41,7 @@ impl NyarFrontend<ConstraintAnalysis> for RustySwiftFrontend {
         output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &SwiftRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &SwiftRoot, ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }
