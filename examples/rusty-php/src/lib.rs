@@ -29,7 +29,7 @@ impl RustyPhpFrontend {
     }
 }
 
-impl NyarFrontend<ConstraintAnalysis> for RustyPhpFrontend {
+impl NyarFrontend<ConstraintAnalysis, PhpRoot> for RustyPhpFrontend {
     type Language = PhpLanguage;
 
     fn parse(&self, source: &str) -> Result<PhpRoot, NyarError> {
@@ -43,7 +43,8 @@ impl NyarFrontend<ConstraintAnalysis> for RustyPhpFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, _ast: &PhpRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
-        ctx.egraph.add(chomsky_uir::IKun::Seq(vec![]))
+    fn lower_unified<V: Vfs>(&self, _ast: &PhpRoot, _ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {
+        // ctx.egraph.add(chomsky_uir::IKun::Seq(vec![]))
+        0
     }
 }

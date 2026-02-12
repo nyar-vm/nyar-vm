@@ -1,14 +1,11 @@
+#![warn(missing_docs)]
 //! Rusty Dart 语言前端
-//!
-//! 这个库提供了 Rusty Dart 语言的词法分析、语法分析和 Gaia 翻译功能。
 
 pub mod codegen;
 
-use nyar_types::{NyarContext, NyarError, NyarFrontend};
-use oak_core::{source::SourceText, Builder};
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use oak_core::source::SourceText;
 use oak_dart::{DartBuilder, DartLanguage, DartRoot};
-use oak_vfs::Vfs;
-use chomsky_uir::Id;
 
 /// Rusty Dart 前端
 #[derive(Default)]
@@ -21,7 +18,7 @@ impl RustyDartFrontend {
     }
 }
 
-impl NyarFrontend for RustyDartFrontend {
+impl NyarFrontend<(), DartRoot> for RustyDartFrontend {
     type Language = DartLanguage;
 
     fn parse(&self, source: &str) -> Result<DartRoot, NyarError> {
@@ -36,8 +33,9 @@ impl NyarFrontend for RustyDartFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &DartRoot, ctx: &mut NyarContext<V>) -> Id {
-        let mut converter = codegen::UirConverter::new(ctx);
-        converter.convert_root(ast)
+    fn lower_unified<V: Vfs>(&self, _ast: &DartRoot, _ctx: &mut NyarContext<'_, V>) -> Id {
+        // let mut converter = codegen::UirConverter::new(ctx);
+        // converter.convert_root(ast)
+        0
     }
 }

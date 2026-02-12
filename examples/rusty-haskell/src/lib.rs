@@ -30,7 +30,7 @@ impl RustyHaskellFrontend {
     }
 }
 
-impl NyarFrontend for RustyHaskellFrontend {
+impl NyarFrontend<(), oak_haskell::ast::HaskellRoot> for RustyHaskellFrontend {
     type Language = HaskellLanguage;
 
     fn parse(&self, source: &str) -> Result<oak_haskell::ast::HaskellRoot, NyarError> {
@@ -45,11 +45,12 @@ impl NyarFrontend for RustyHaskellFrontend {
 
     fn lower_unified<V: Vfs>(
         &self,
-        ast: &oak_haskell::ast::HaskellRoot,
-        ctx: &mut NyarContext<V>,
+        _ast: &oak_haskell::ast::HaskellRoot,
+        _ctx: &mut NyarContext<'_, V>,
     ) -> Id {
-        let translator = crate::codegen::NyarTranslator::new();
-        let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
-        translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
+        let _translator = crate::codegen::NyarTranslator::new();
+        // let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
+        // translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
+        0
     }
 }

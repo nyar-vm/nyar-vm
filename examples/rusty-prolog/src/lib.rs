@@ -22,7 +22,7 @@ impl Default for RustyPrologFrontend {
     }
 }
 
-impl NyarFrontend for RustyPrologFrontend {
+impl NyarFrontend<(), PrologRoot> for RustyPrologFrontend {
     type Language = PrologLanguage;
 
     fn parse(&self, source: &str) -> Result<PrologRoot, NyarError> {
@@ -36,7 +36,7 @@ impl NyarFrontend for RustyPrologFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, _ast: &PrologRoot, _ctx: &mut NyarContext<V>) -> Id {
+    fn lower_unified<V: Vfs>(&self, _ast: &PrologRoot, _ctx: &mut NyarContext<'_, V>) -> Id {
         // TODO: 实现从 PrologRoot 到 IKunTree 的转换
         // _ctx.builder.module("rusty-prolog-program", Vec::new(), Loc::default())
         0

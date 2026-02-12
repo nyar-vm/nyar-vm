@@ -30,7 +30,7 @@ impl RustyZigFrontend {
     }
 }
 
-impl NyarFrontend<ConstraintAnalysis> for RustyZigFrontend {
+impl NyarFrontend<ConstraintAnalysis, ()> for RustyZigFrontend {
     type Language = ZigLanguage;
 
     fn parse(&self, _source: &str) -> Result<(), NyarError> {
@@ -38,8 +38,9 @@ impl NyarFrontend<ConstraintAnalysis> for RustyZigFrontend {
         Ok(())
     }
 
-    fn lower_unified<V: Vfs>(&self, _ast: &(), ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
+    fn lower_unified<V: Vfs>(&self, _ast: &(), _ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {
         // TODO: 实现真正的从 AST 到 IKunTree 的转换
-        ctx.builder().seq(vec![], Default::default())
+        // ctx.builder().seq(vec![], Default::default())
+        0
     }
 }

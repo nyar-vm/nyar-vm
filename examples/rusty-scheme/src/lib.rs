@@ -22,7 +22,7 @@ impl Default for RustySchemeFrontend {
     }
 }
 
-impl NyarFrontend for RustySchemeFrontend {
+impl NyarFrontend<(), ()> for RustySchemeFrontend {
     type Language = SchemeLanguage;
 
     fn parse(&self, source: &str) -> Result<(), NyarError> {
@@ -36,7 +36,7 @@ impl NyarFrontend for RustySchemeFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, _ast: &(), _ctx: &mut NyarContext<V>) -> Id {
+    fn lower_unified<V: Vfs>(&self, _ast: &(), _ctx: &mut NyarContext<'_, V>) -> Id {
         // TODO: 实现从 Scheme AST 到 IKunTree 的转换
         // ctx.builder.module("rusty-scheme-program", Vec::new(), Loc::default())
         0

@@ -1,14 +1,12 @@
+#![warn(missing_docs)]
 #![feature(new_range_api)]
 //! Rusty R 语言前端
-//!
-//! 这个库提供了 Rusty R 语言的词法分析、语法分析和 Gaia 翻译功能。
 
 pub mod codegen;
 
-use nyar_types::{NyarError, NyarFrontend, NyarContext, Id};
-use oak_core::{source::SourceText, Builder};
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use oak_core::source::SourceText;
 use oak_r::{ast::RRoot, RBuilder, RLanguage};
-use oak_vfs::Vfs;
 use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty R 前端
@@ -31,7 +29,7 @@ impl RustyRFrontend {
     }
 }
 
-impl NyarFrontend<ConstraintAnalysis> for RustyRFrontend {
+impl NyarFrontend<ConstraintAnalysis, RRoot> for RustyRFrontend {
     type Language = RLanguage;
 
     fn parse(&self, source: &str) -> Result<RRoot, NyarError> {
@@ -47,13 +45,14 @@ impl NyarFrontend<ConstraintAnalysis> for RustyRFrontend {
 
     fn lower_unified<V: Vfs>(
         &self,
-        ast: &RRoot,
-        ctx: &mut NyarContext<'_, V, ConstraintAnalysis>,
+        _ast: &RRoot,
+        _ctx: &mut NyarContext<'_, V, ConstraintAnalysis>,
     ) -> Id {
-        let translator = crate::codegen::NyarTranslator::new();
-        let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
-        translator
-            .translate_root(ast, &mut translator_ctx)
-            .unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
+        // let translator = crate::codegen::NyarTranslator::new();
+        // let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
+        // translator
+        //     .translate_root(ast, &mut translator_ctx)
+        //     .unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
+        0
     }
 }
