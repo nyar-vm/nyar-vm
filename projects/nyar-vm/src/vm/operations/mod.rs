@@ -1,3 +1,5 @@
+#![doc = include_str!("readme.md")]
+
 pub mod call;
 pub mod closure;
 pub mod control;
