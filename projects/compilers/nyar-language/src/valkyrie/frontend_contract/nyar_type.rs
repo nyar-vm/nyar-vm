@@ -76,6 +76,10 @@ pub fn concretize_type(ty: &ValkyrieType) -> Result<NyarType, ConcretizeError> {
             Err(ConcretizeError::new("Named(\"Self\") must be substituted before platform lowering"))
         }
         ValkyrieType::Named(name) => Ok(concretize_primitive_named_alias(name.as_str()).unwrap_or_else(|| NyarType::Named(name.clone()))),
+        // 平台层尚未携带 ItemId 名义形状：成功路径不得把 declaration 压成短名 Named。
+        ValkyrieType::Nominal { declaration, .. } => {
+            Err(ConcretizeError::new(format!("Nominal declaration `{declaration:?}` 需要平台 NyarType::Nominal，禁止降级为 Named 短名")))
+        }
         ValkyrieType::Apply(base, args) => {
             // 迁移残留：`Apply(Named("Array"), [T])` 与 `[T]` 同一平台身份。
             if args.len() == 1 && matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == "Array") {
@@ -198,10 +202,8 @@ mod tests {
 
     #[test]
     fn concretizes_nominal_array_apply_like_bracket_sugar() {
-        let ty = ValkyrieType::Apply(
-            Box::new(ValkyrieType::Named(nyar::Identifier::new("Array"))),
-            vec![ValkyrieType::Integer32 { signed: true }],
-        );
+        let ty =
+            ValkyrieType::Apply(Box::new(ValkyrieType::Named(nyar::Identifier::new("Array"))), vec![ValkyrieType::Integer32 { signed: true }]);
         assert_eq!(concretize_type(&ty).unwrap(), NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
         assert_eq!(concretize_type_lossy(&ty), NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
     }
@@ -225,10 +227,7 @@ mod tests {
     fn lossy_erases_row_and_self() {
         // lossy 仍保留迁移污点形状；严格路径见 `rejects_named_self_as_unsubstituted_stain`。
         assert_eq!(concretize_type_lossy(&ValkyrieType::SelfType), NyarType::Named(nyar::Identifier::new("Self")));
-        assert_eq!(
-            concretize_type_lossy(&ValkyrieType::Named(nyar::Identifier::new("Self"))),
-            NyarType::Named(nyar::Identifier::new("Self"))
-        );
+        assert_eq!(concretize_type_lossy(&ValkyrieType::Named(nyar::Identifier::new("Self"))), NyarType::Named(nyar::Identifier::new("Self")));
         assert_eq!(
             concretize_type_lossy(&ValkyrieType::Row(crate::types::hir::RowType { methods: Vec::new() })),
             NyarType::Named(nyar::Identifier::new("__row"))

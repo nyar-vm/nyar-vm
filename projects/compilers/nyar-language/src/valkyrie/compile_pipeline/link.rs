@@ -4,16 +4,20 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::valkyrie::mir::{MirFunction, MirModule, MirOperand, MirOperation, MirStruct, MirSumDeclaration};
-use nyar_types::layout::{AggregateLayout, AggregateLayoutPlan};
-use nyar_types::{FieldId, NominalInstanceId};
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::{
+    frontend::ParseError,
+    mir::{MirFunction, MirModule, MirOperand, MirOperation, MirStruct, MirSumDeclaration},
+};
+use nyar_types::{
+    FieldId, NominalInstanceId,
+    layout::{AggregateLayout, AggregateLayoutPlan},
+};
 
 /// 合并已由 Compiler 统一注册的依赖实例闭包。
 pub(crate) fn link_reachable_dependency_mir(
     consumer: &mut MirModule,
     dependency_mirs: &[MirModule],
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     if dependency_mirs.is_empty() {
         return Ok(());
     }
@@ -38,7 +42,8 @@ pub(crate) fn link_reachable_dependency_mir(
                 return Err(ParseError::invalid("外部导入缺少 ItemId"));
             }
             if let Some(previous) = imports.insert(instance, contract)
-                && previous != contract {
+                && previous != contract
+            {
                 return Err(ParseError::invalid(format!("导入实例 `{instance}` 合同冲突")));
             }
         }
@@ -76,15 +81,18 @@ pub(crate) fn link_reachable_dependency_mir(
                 remap_function_aggregates(&mut function, &remaps[module_index])?;
                 linked.functions.push(function);
             }
-        } else if let Some(contract) = imports.get(&instance) {
+        }
+        else if let Some(contract) = imports.get(&instance) {
             if !linked.external_calls.contains(contract) {
                 linked.external_calls.push((*contract).clone());
                 if let Some(previous) = linked.callable_identities.insert(contract.symbol.to_string(), instance)
-                    && previous != instance {
+                    && previous != instance
+                {
                     return Err(ParseError::invalid("外部导入 ABI 标签冲突"));
                 }
             }
-        } else {
+        }
+        else {
             return Err(ParseError::invalid(format!("调用实例 `{instance}` 没有定义或显式导入合同")));
         }
     }
@@ -110,10 +118,23 @@ fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> 
                 }
                 continue;
             }
+            let qualified = qualified_layout_name(layout);
+            if let Some(&existing_id) = merged.type_name_to_layout.get(&qualified) {
+                let existing = merged.layouts.iter().find(|candidate| candidate.id == existing_id);
+                if let Some(existing) = existing {
+                    if existing.storage == layout.storage
+                        && existing.size == layout.size
+                        && existing.align == layout.align
+                        && existing.fields == layout.fields
+                    {
+                        continue;
+                    }
+                    return Err(ParseError::invalid(format!("布局 `{}` 合同冲突", qualified)));
+                }
+            }
             let new_id = merged.layouts.iter().map(|candidate| candidate.id).max().unwrap_or(0).saturating_add(1);
             let mut copied = layout.clone();
             copied.id = new_id;
-            let qualified = qualified_layout_name(&copied);
             if merged.type_name_to_layout.insert(qualified.clone(), new_id).is_some() {
                 return Err(ParseError::invalid(format!("布局键 `{qualified}` 重复")));
             }
@@ -132,8 +153,7 @@ fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> 
 }
 
 fn declaration_for_layout(module: &MirModule, layout: &AggregateLayout) -> Option<nyar_types::ItemId> {
-    module.aggregate_layouts.declaration_to_layout.iter()
-        .find_map(|(item, id)| (*id == layout.id).then_some(*item))
+    module.aggregate_layouts.declaration_to_layout.iter().find_map(|(item, id)| (*id == layout.id).then_some(*item))
 }
 
 fn qualified_layout_name(layout: &AggregateLayout) -> String {
@@ -162,8 +182,25 @@ fn same_sum_contract(left: &MirSumDeclaration, right: &MirSumDeclaration) -> boo
         && left.name == right.name
         && left.is_unite == right.is_unite
         && left.generics == right.generics
-        && left.variants.iter().map(|variant| (&variant.name, variant.tag, &variant.result_type, variant.fields.iter().map(|field| (&field.name, &field.ty)).collect::<Vec<_>>()))
-            .eq(right.variants.iter().map(|variant| (&variant.name, variant.tag, &variant.result_type, variant.fields.iter().map(|field| (&field.name, &field.ty)).collect::<Vec<_>>())))
+        && left
+            .variants
+            .iter()
+            .map(|variant| {
+                (
+                    &variant.name,
+                    variant.tag,
+                    &variant.result_type,
+                    variant.fields.iter().map(|field| (&field.name, &field.ty)).collect::<Vec<_>>(),
+                )
+            })
+            .eq(right.variants.iter().map(|variant| {
+                (
+                    &variant.name,
+                    variant.tag,
+                    &variant.result_type,
+                    variant.fields.iter().map(|field| (&field.name, &field.ty)).collect::<Vec<_>>(),
+                )
+            }))
 }
 
 fn freeze_aggregate_identities(
@@ -177,9 +214,9 @@ fn freeze_aggregate_identities(
     for module in modules {
         let mut remap = AggregateRemap::default();
         for declaration in &module.structs {
-            if let Some(existing) = global_structs.iter().find(|existing| {
-                existing.declaration.is_some() && existing.declaration == declaration.declaration
-            }) {
+            if let Some(existing) =
+                global_structs.iter().find(|existing| existing.declaration.is_some() && existing.declaration == declaration.declaration)
+            {
                 if !same_struct_contract(existing, declaration) {
                     return Err(ParseError::invalid(format!("聚合声明 `{}` 合同冲突", declaration.qualified_name())));
                 }
@@ -189,8 +226,10 @@ fn freeze_aggregate_identities(
                         return Err(ParseError::invalid(format!("字段身份 `{}` 在模块 `{}` 中重复", local.id, module.name)));
                     }
                 }
-            } else {
-                let nominal = NominalInstanceId::from_index(global_structs.len() as u32).ok_or_else(|| ParseError::invalid("NominalInstanceId 溢出"))?;
+            }
+            else {
+                let nominal =
+                    NominalInstanceId::from_index(global_structs.len() as u32).ok_or_else(|| ParseError::invalid("NominalInstanceId 溢出"))?;
                 let mut frozen = declaration.clone();
                 frozen.nominal = nominal;
                 remap.nominals.insert(declaration.nominal, nominal);
@@ -204,9 +243,9 @@ fn freeze_aggregate_identities(
             }
         }
         for declaration in &module.sum_types {
-            if let Some(existing) = global_sums.iter().find(|existing| {
-                existing.declaration.is_some() && existing.declaration == declaration.declaration
-            }) {
+            if let Some(existing) =
+                global_sums.iter().find(|existing| existing.declaration.is_some() && existing.declaration == declaration.declaration)
+            {
                 if !same_sum_contract(existing, declaration) {
                     return Err(ParseError::invalid(format!("sum 声明 `{}` 合同冲突", declaration.name)));
                 }
@@ -219,7 +258,8 @@ fn freeze_aggregate_identities(
                         }
                     }
                 }
-            } else {
+            }
+            else {
                 let mut frozen = declaration.clone();
                 let global_nominal = NominalInstanceId::from_index((global_structs.len() + global_sums.len()) as u32)
                     .ok_or_else(|| ParseError::invalid("NominalInstanceId 溢出"))?;
@@ -229,7 +269,8 @@ fn freeze_aggregate_identities(
                 for (variant_index, variant) in frozen.variants.iter_mut().enumerate() {
                     let global_variant = nyar_types::VariantId::from_index(
                         global_sums.iter().flat_map(|sum| sum.variants.iter()).count() as u32 + variant_index as u32,
-                    ).ok_or_else(|| ParseError::invalid("VariantId 溢出"))?;
+                    )
+                    .ok_or_else(|| ParseError::invalid("VariantId 溢出"))?;
                     remap.variants.insert(variant.id, global_variant);
                     variant.id = global_variant;
                     for field in &mut variant.fields {

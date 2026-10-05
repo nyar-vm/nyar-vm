@@ -1,19 +1,16 @@
 //! 将已完成语义解析的 MIR 生产为 CanonicalProgram。
 
-#[cfg(test)]
-#[path = "canonical_fragment_tests.rs"]
-mod fragment_contract_tests;
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_types::{
-    CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallEdge, CanonicalConstant, CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
-    CanonicalCallee, CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
-    ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NominalInstanceId, NominalInstanceRecord, NominalValueSemantics,
-    FieldId, FieldRecord, Identifier, ImportCapability, ImportIndex, ImportRecord, QualifiedName, StructuredDiagnosticSet, SubstitutionId, TypeId,
+    CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallEdge, CanonicalCallee, CanonicalConstant,
+    CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperation,
+    CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind, FieldId, FieldRecord, Identifier,
+    ImportCapability, ImportIndex, ImportRecord, ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId,
+    NominalInstanceId, NominalInstanceRecord, NominalValueSemantics, QualifiedName, StructuredDiagnosticSet, SubstitutionId, TypeId,
     TypeRecord,
+    canonical_program::{CanonicalEffectKind, EntryRecord, ExportRecord},
 };
-use nyar_types::canonical_program::{CanonicalEffectKind, EntryRecord, ExportRecord};
 
 use nyar::SemanticFragment;
 
@@ -31,7 +28,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     }
     let type_values = collect_types(module)?;
     validate_callable_identities(module)?;
-    let (nominals, field_records) = collect_aggregate_identities(module, &type_values)?;
+    let (mut nominals, field_records) = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
     linked.aggregate_layouts = module.aggregate_layouts.clone();
     for (ty, type_id) in &type_values {
@@ -40,14 +37,17 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         }
     }
     for aggregate in &module.structs {
-        let Some(declaration) = aggregate.declaration else {
+        let Some(declaration) = aggregate.declaration
+        else {
             return Err(error_without_module("CAN023", format!("聚合 `{}` 缺少 declaration identity", aggregate.qualified_name())));
         };
-        let Some(layout_id) = linked.aggregate_layouts.declaration_to_layout.get(&declaration).copied() else {
+        let Some(layout_id) = linked.aggregate_layouts.declaration_to_layout.get(&declaration).copied()
+        else {
             return Err(error_without_module("CAN023", format!("聚合 `{}` 缺少布局绑定", aggregate.qualified_name())));
         };
         linked.aggregate_layout_by_nominal.insert(aggregate.nominal, layout_id);
-        let Some(layout) = linked.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id) else {
+        let Some(layout) = linked.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id)
+        else {
             return Err(error_without_module("CAN023", format!("聚合 `{}` 的布局记录缺失", aggregate.qualified_name())));
         };
         if layout.fields.len() != aggregate.fields.len() {
@@ -65,13 +65,12 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         .map_err(|failure| error(module, "CAN054", format!("sum 物理 payload 类型未完成实例化: {failure}")))?;
     linked.flags_types = module.flags_types.clone();
     linked.singleton_instances = module.singleton_instances.clone();
-    for (symbol, instance) in module.functions.iter().filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance)))
-        .chain(module.external_calls.iter().filter_map(|contract| contract.instance.map(|instance| (contract.symbol.to_string(), instance)))) {
-        let parts = symbol
-            .split("::")
-            .filter(|part| !part.is_empty())
-            .map(Identifier::new)
-            .collect::<Vec<_>>();
+    for (symbol, instance) in
+        module.functions.iter().filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance))).chain(
+            module.external_calls.iter().filter_map(|contract| contract.instance.map(|instance| (contract.symbol.to_string(), instance))),
+        )
+    {
+        let parts = symbol.split("::").filter(|part| !part.is_empty()).map(Identifier::new).collect::<Vec<_>>();
         if parts.is_empty() {
             return Err(error(module, "CAN040", format!("callable `{symbol}` 没有完整限定 identity")));
         }
@@ -87,31 +86,34 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     }
     for (nominal, (declaration, semantics)) in &nominals {
         let nominal_fields = field_records.iter().filter_map(|(field, record)| (record.owner == *nominal).then_some(*field)).collect();
-        linked.nominal_instances.insert(*nominal, NominalInstanceRecord { declaration: *declaration, ty: *declaration, substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"), semantics: *semantics, fields: nominal_fields });
+        linked.nominal_instances.insert(
+            *nominal,
+            NominalInstanceRecord {
+                declaration: *declaration,
+                ty: *declaration,
+                substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
+                semantics: *semantics,
+                fields: nominal_fields,
+            },
+        );
     }
-    for sum in &module.sum_types {
-        let declaration = type_id(&type_values, &ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&sum.name)))?;
-        linked.nominal_instances.entry(sum.nominal).or_insert(NominalInstanceRecord {
-            declaration,
-            ty: declaration,
-            substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
-            semantics: NominalValueSemantics::Reference,
-            fields: Vec::new(),
-        });
-        for variant in &sum.variants {
-            let payload_type = variant.payload_type().map(|ty| type_id(&type_values, &ty)).transpose()?;
-            linked.variants.insert((sum.nominal, variant.id), nyar_types::VariantRecord { payload_type });
-        }
-    }
+    let sum_instance_by_type = register_sum_nominal_instances(module, &type_values, &mut linked, &mut nominals)?;
+    backfill_nominal_semantics_for_linked_types(&mut linked);
     linked.fields = field_records.clone();
     for function in &module.functions {
-        let instance = function.instance.ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
-        linked.item_instances.insert(instance, ItemInstanceRecord {
-            declaration: function.declaration.ok_or_else(|| error(module, "CAN053", format!("函数 `{}` 缺少声明 identity", function.symbol)))?,
-            substitution: monomorphic_substitution(function)?,
-            parameter_types: function.param_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
-            return_type: type_id(&type_values, &function.return_type)?,
-        });
+        let instance =
+            function.instance.ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
+        linked.item_instances.insert(
+            instance,
+            ItemInstanceRecord {
+                declaration: function
+                    .declaration
+                    .ok_or_else(|| error(module, "CAN053", format!("函数 `{}` 缺少声明 identity", function.symbol)))?,
+                substitution: monomorphic_substitution(function)?,
+                parameter_types: function.param_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
+                return_type: type_id(&type_values, &function.return_type)?,
+            },
+        );
     }
     for export in &module.exports {
         let symbol = export.symbol.to_string();
@@ -128,28 +130,46 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         }
     }
     for (offset, contract) in module.external_calls.iter().enumerate() {
-        let instance = contract.instance.ok_or_else(|| error(module, "CAN034", format!("导入 `{}` 缺少 Compiler callable identity", contract.symbol)))?;
-        linked.item_instances.insert(instance, ItemInstanceRecord {
-            declaration: contract.declaration.ok_or_else(|| error(module, "CAN053", format!("导入 `{}` 缺少声明 identity", contract.symbol)))?,
-            substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
-            parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
-            return_type: type_id(&type_values, &contract.return_type)?,
-        });
+        let instance =
+            contract.instance.ok_or_else(|| error(module, "CAN034", format!("导入 `{}` 缺少 Compiler callable identity", contract.symbol)))?;
+        linked.item_instances.insert(
+            instance,
+            ItemInstanceRecord {
+                declaration: contract
+                    .declaration
+                    .ok_or_else(|| error(module, "CAN053", format!("导入 `{}` 缺少声明 identity", contract.symbol)))?,
+                substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
+                parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
+                return_type: type_id(&type_values, &contract.return_type)?,
+            },
+        );
         let import = ImportIndex::from_index(offset as u32).ok_or_else(|| error_without_module("CAN031", "import identity 溢出"))?;
         let capability = ImportCapability::new(module.name.clone(), contract.symbol.to_string());
-        linked.imports.insert(import, ImportRecord {
-            link: contract.link.clone(),
-            capability,
-            callee: instance,
-            parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
-            return_type: type_id(&type_values, &contract.return_type)?,
-        });
+        linked.imports.insert(
+            import,
+            ImportRecord {
+                link: contract.link.clone(),
+                capability,
+                callee: instance,
+                parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
+                return_type: type_id(&type_values, &contract.return_type)?,
+            },
+        );
     }
     let mut next_instruction = 0u32;
-    let functions = module.functions.iter().map(|function| {
-        let instance = function.instance.ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
-        Ok((instance, lower_function(function, instance, &type_values, &nominals, &field_records, &mut next_instruction)?))
-    }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
+    let functions = module
+        .functions
+        .iter()
+        .map(|function| {
+            let instance = function
+                .instance
+                .ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
+            Ok((
+                instance,
+                lower_function(function, instance, &type_values, &nominals, &field_records, &sum_instance_by_type, &mut next_instruction)?,
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     linked.fragments = canonical_fragments(module, &linked, &functions, &module.semantic_fragments)?;
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
     program.validate().map_err(|error| canonical_error(module, error))?;
@@ -189,7 +209,9 @@ fn canonical_fragments(
         let mut pending = exported_operations.clone();
         let mut visited = BTreeSet::new();
         while let Some(caller) = pending.pop() {
-            if !visited.insert(caller) { continue; }
+            if !visited.insert(caller) {
+                continue;
+            }
             if let Some((_, record)) = imports_by_instance.get(&caller) {
                 if functions.contains_key(&caller) {
                     return Err(error(module, "CAN049", "同一实例同时绑定导入与函数体"));
@@ -197,15 +219,27 @@ fn canonical_fragments(
                 external_imports.insert(caller, record.link.clone());
                 continue;
             }
-            let function = functions.get(&caller)
+            let function = functions
+                .get(&caller)
                 .ok_or_else(|| error(module, "CAN045", format!("片段 {} 的实例 {caller:?} 没有函数体或导入", fragment.id)))?;
-            let literals = function.blocks.values().flat_map(|block| &block.instructions).filter_map(|instruction| {
-                if let CanonicalOperation::LoadConstant { constant: CanonicalConstant::Utf8(text) } = &instruction.operation {
-                    instruction.results.first().map(|value| (*value, text.clone()))
-                } else { None }
-            }).collect::<BTreeMap<_, _>>();
+            let literals = function
+                .blocks
+                .values()
+                .flat_map(|block| &block.instructions)
+                .filter_map(|instruction| {
+                    if let CanonicalOperation::LoadConstant { constant: CanonicalConstant::Utf8(text) } = &instruction.operation {
+                        instruction.results.first().map(|value| (*value, text.clone()))
+                    }
+                    else {
+                        None
+                    }
+                })
+                .collect::<BTreeMap<_, _>>();
             for instruction in function.blocks.values().flat_map(|block| &block.instructions) {
-                let CanonicalOperation::Invoke { callee: CanonicalCallee::Item(callee), arguments } = &instruction.operation else { continue };
+                let CanonicalOperation::Invoke { callee: CanonicalCallee::Item(callee), arguments } = &instruction.operation
+                else {
+                    continue;
+                };
                 if let Some((import, record)) = imports_by_instance.get(callee) {
                     if functions.contains_key(callee) {
                         return Err(error(module, "CAN049", "同一实例同时绑定导入与函数体"));
@@ -214,22 +248,40 @@ fn canonical_fragments(
                     external_call_edges.push(CanonicalExternalCallEdge {
                         caller,
                         import: *import,
-                        arguments: arguments.iter().filter_map(|value| literals.get(value).cloned().map(nyar_types::ExternalCallArgument::StringLiteral)).collect(),
+                        arguments: arguments
+                            .iter()
+                            .filter_map(|value| literals.get(value).cloned().map(nyar_types::ExternalCallArgument::StringLiteral))
+                            .collect(),
                     });
-                } else {
+                }
+                else {
                     if !functions.contains_key(callee) {
                         return Err(error(module, "CAN046", format!("调用实例 {callee:?} 没有函数体或显式导入")));
                     }
                     internal_call_edges.push(CanonicalCallEdge { caller, callee: *callee });
                     pending.push(*callee);
-                    if !exported_operations.contains(callee) { exported_operations.push(*callee); }
+                    if !exported_operations.contains(callee) {
+                        exported_operations.push(*callee);
+                    }
                 }
             }
         }
-        if result.insert(fragment.id.clone(), CanonicalFragment {
-            id: fragment.id.clone(), exported_operations, required_capabilities: fragment.required_capabilities.clone(), entry_operation,
-            external_imports, external_call_edges, internal_call_edges, wasm_export_names,
-        }).is_some() {
+        if result
+            .insert(
+                fragment.id.clone(),
+                CanonicalFragment {
+                    id: fragment.id.clone(),
+                    exported_operations,
+                    required_capabilities: fragment.required_capabilities.clone(),
+                    entry_operation,
+                    external_imports,
+                    external_call_edges,
+                    internal_call_edges,
+                    wasm_export_names,
+                },
+            )
+            .is_some()
+        {
             return Err(error(module, "CAN051", format!("片段 identity `{}` 重复", fragment.id)));
         }
     }
@@ -238,12 +290,18 @@ fn canonical_fragments(
 
 type AggregateIdentity = (TypeId, NominalValueSemantics);
 
-fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieType, TypeId>) -> Result<(BTreeMap<NominalInstanceId, AggregateIdentity>, BTreeMap<FieldId, FieldRecord>), StructuredDiagnosticSet> {
+fn collect_aggregate_identities(
+    module: &MirModule,
+    types: &BTreeMap<ValkyrieType, TypeId>,
+) -> Result<(BTreeMap<NominalInstanceId, AggregateIdentity>, BTreeMap<FieldId, FieldRecord>), StructuredDiagnosticSet> {
     let mut nominals = BTreeMap::new();
     let mut field_records = BTreeMap::new();
     for aggregate in &module.structs {
-        let qualified = if aggregate.namespace.is_empty() { aggregate.name.clone() } else { format!("{}.{}", aggregate.namespace, aggregate.name) };
-        let ty = ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&qualified));
+        let qualified =
+            if aggregate.namespace.is_empty() { aggregate.name.clone() } else { format!("{}.{}", aggregate.namespace, aggregate.name) };
+        let item =
+            aggregate.declaration.ok_or_else(|| error_without_module("CAN018", format!("聚合 `{qualified}` 缺少 declaration ItemId")))?;
+        let ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
         let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("聚合 `{qualified}` 缺少类型事实")))?;
         let nominal = aggregate.nominal;
         let semantics = if aggregate.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
@@ -257,7 +315,8 @@ fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieTyp
         }
     }
     for sum in &module.sum_types {
-        let ty = ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&sum.name));
+        let item = sum.declaration.ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少 declaration ItemId", sum.name)))?;
+        let ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
         let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少类型事实", sum.name)))?;
         if nominals.insert(sum.nominal, (declaration, NominalValueSemantics::Reference)).is_some() {
             return Err(error_without_module("CAN020", format!("sum identity 重复: {}", sum.name)));
@@ -269,7 +328,8 @@ fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieTyp
 fn validate_callable_identities(module: &MirModule) -> Result<(), StructuredDiagnosticSet> {
     let mut instances = BTreeMap::new();
     for function in &module.functions {
-        let Some(identity) = function.instance else {
+        let Some(identity) = function.instance
+        else {
             return Err(error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)));
         };
         if instances.insert(identity, function.symbol.clone()).is_some() {
@@ -278,7 +338,8 @@ fn validate_callable_identities(module: &MirModule) -> Result<(), StructuredDiag
     }
     for contract in &module.external_calls {
         let symbol = contract.symbol.to_string();
-        let Some(identity) = contract.instance else {
+        let Some(identity) = contract.instance
+        else {
             return Err(error(module, "CAN034", format!("导入 `{symbol}` 缺少 Compiler callable identity")));
         };
         if instances.insert(identity, symbol.clone()).is_some() {
@@ -311,8 +372,15 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
         ValkyrieType::Character => CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Character),
         ValkyrieType::Utf8 => CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Utf8),
         ValkyrieType::Utf16 => CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Utf16),
+        ValkyrieType::Nominal { declaration: item, arguments } => {
+            let declaration_ty = ValkyrieType::Nominal { declaration: *item, arguments: Vec::new() };
+            let declaration = type_id(ids, &declaration_ty)?;
+            CanonicalTypeKind::Nominal { declaration, arguments: arguments.iter().map(id).collect::<Result<_, _>>()? }
+        }
         ValkyrieType::Named(_) => CanonicalTypeKind::Nominal { declaration: ids[ty], arguments: Vec::new() },
-        ValkyrieType::Apply(base, args) => CanonicalTypeKind::Nominal { declaration: id(base)?, arguments: args.iter().map(id).collect::<Result<_, _>>()? },
+        ValkyrieType::Apply(base, args) => {
+            CanonicalTypeKind::Nominal { declaration: id(base)?, arguments: args.iter().map(id).collect::<Result<_, _>>()? }
+        }
         ValkyrieType::Tuple(items) => CanonicalTypeKind::Tuple(items.iter().map(id).collect::<Result<_, _>>()?),
         ValkyrieType::Array(element) => CanonicalTypeKind::Array { element: id(element)?, length: None },
         ValkyrieType::FixedArray { element, length } => CanonicalTypeKind::Array { element: id(element)?, length: Some(*length as u64) },
@@ -323,30 +391,174 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
             parameters: function.params.iter().map(id).collect::<Result<_, _>>()?,
             return_type: id(&function.return_type)?,
         },
-        _ => return Err(error_without_module("CAN003", "类型没有无损 canonical 形状")),
+        _ => {
+            return Err(error_without_module("CAN003", format!("类型没有无损 canonical 形状: {ty:?}")));
+        }
     })
 }
 
-fn lower_function(function: &MirFunction, instance: ItemInstanceId, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<NominalInstanceId, AggregateIdentity>, fields: &BTreeMap<FieldId, FieldRecord>, next_instruction: &mut u32) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
-    let value_types = function.value_types.iter().map(|(value, ty)| Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
-    let parameters = canonical_entry_parameters(function, ids)?;
-    let blocks = function.blocks.iter().map(|block| {
-        let id = CanonicalBlockId(block.id.0);
-        let parameters = block.parameters.iter().map(|value| {
-            let value = MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?;
-            Ok((value, *value_types.get(&value).ok_or_else(|| error_without_module("CAN005", "块参数缺少类型事实"))?))
-        }).collect::<Result<_, StructuredDiagnosticSet>>()?;
-        let instructions = block.instructions.iter().map(|instruction| {
-            let id = nyar_types::InstructionId::from_index(*next_instruction).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
-            *next_instruction = (*next_instruction).checked_add(1).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
-            Ok(CanonicalInstruction { id, results: instruction.results.iter().map(|value| MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))).collect::<Result<_, _>>()?, operation: lower_operation(&instruction.kind, &instruction.results, &function.value_types, ids, nominals, fields)? })
-        }).collect::<Result<_, StructuredDiagnosticSet>>()?;
-        Ok((id, CanonicalBlock { id, parameters, instructions, terminator: lower_terminator(&block.terminator)? }))
-    }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
-    Ok(CanonicalFunction { instance, parameters, return_type: type_id(ids, &function.return_type)?, value_types, entry: CanonicalBlockId(function.entry.0), blocks })
+/// 为每个具体 `Nominal{ItemId, args}` 注册 sum 实例与已代入 payload；SumNew 按结果类型选取实例。
+fn register_sum_nominal_instances(
+    module: &MirModule,
+    type_values: &BTreeMap<ValkyrieType, TypeId>,
+    linked: &mut LinkedSemanticProgram,
+    nominals: &mut BTreeMap<NominalInstanceId, AggregateIdentity>,
+) -> Result<BTreeMap<TypeId, NominalInstanceId>, StructuredDiagnosticSet> {
+    let mut by_type = BTreeMap::new();
+    let mut next_nominal = nominals.keys().map(|id| id.index()).max().map(|index| index + 1).unwrap_or(0);
+    for sum in &module.sum_types {
+        let item = sum.declaration.ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少 declaration ItemId", sum.name)))?;
+        let declaration_ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
+        let declaration = type_id(type_values, &declaration_ty)?;
+        linked.nominal_instances.entry(sum.nominal).or_insert(NominalInstanceRecord {
+            declaration,
+            ty: declaration,
+            substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
+            semantics: NominalValueSemantics::Reference,
+            fields: Vec::new(),
+        });
+        // 开放/泛型声明侧不登记未代入 payload；具体实例下方补齐。
+        for variant in &sum.variants {
+            let payload_type =
+                if sum.generics.is_empty() { variant.payload_type().map(|ty| type_id(type_values, &ty)).transpose()? } else { None };
+            linked.variants.insert((sum.nominal, variant.id), nyar_types::VariantRecord { payload_type });
+        }
+        by_type.insert(declaration, sum.nominal);
+    }
+    for (ty, concrete_ty) in type_values {
+        let ValkyrieType::Nominal { declaration: item, arguments } = ty
+        else {
+            continue;
+        };
+        if arguments.is_empty() || by_type.contains_key(concrete_ty) {
+            continue;
+        }
+        let Some(sum) = module.sum_types.iter().find(|sum| sum.declaration == Some(*item))
+        else {
+            continue;
+        };
+        let declaration = type_id(type_values, &ValkyrieType::Nominal { declaration: *item, arguments: Vec::new() })?;
+        let nominal =
+            NominalInstanceId::from_index(next_nominal).ok_or_else(|| error_without_module("CAN020", "sum instance identity 溢出"))?;
+        next_nominal = next_nominal.checked_add(1).ok_or_else(|| error_without_module("CAN020", "sum instance identity 溢出"))?;
+        if nominals.insert(nominal, (declaration, NominalValueSemantics::Reference)).is_some() {
+            return Err(error_without_module("CAN020", format!("sum instance identity 重复: {nominal:?}")));
+        }
+        linked.nominal_instances.insert(
+            nominal,
+            NominalInstanceRecord {
+                declaration,
+                ty: *concrete_ty,
+                substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
+                semantics: NominalValueSemantics::Reference,
+                fields: Vec::new(),
+            },
+        );
+        let mut layout_variants = Vec::with_capacity(sum.variants.len());
+        for variant in &sum.variants {
+            let instantiated = sum
+                .instantiate_payload(variant, arguments)
+                .ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 实例化 payload 失败", sum.name)))?;
+            let payload_type = instantiated.as_ref().map(|ty| type_id(type_values, ty)).transpose()?;
+            linked.variants.insert((nominal, variant.id), nyar_types::VariantRecord { payload_type });
+            let payload_nyar = instantiated.as_ref().map(crate::frontend_contract::concretize_type).transpose().map_err(|failure| {
+                error_without_module("CAN054", format!("sum `{}` 具体实例 payload 未完成 concretize: {failure}", sum.name))
+            })?;
+            layout_variants.push(nyar_types::SumVariantLayout {
+                id: variant.id,
+                name: variant.name.clone(),
+                tag: variant.tag,
+                payload_type: payload_nyar,
+            });
+        }
+        linked.sum_types.push(nyar_types::SumTypeLayout {
+            nominal,
+            name: sum.name.clone(),
+            is_unite: sum.is_unite,
+            tag_width: 4,
+            variants: layout_variants,
+        });
+        by_type.insert(*concrete_ty, nominal);
+    }
+    Ok(by_type)
 }
 
-fn canonical_entry_parameters(function: &MirFunction, ids: &BTreeMap<ValkyrieType, TypeId>) -> Result<Vec<(MirValueId, TypeId)>, StructuredDiagnosticSet> {
+fn lower_function(
+    function: &MirFunction,
+    instance: ItemInstanceId,
+    ids: &BTreeMap<ValkyrieType, TypeId>,
+    nominals: &BTreeMap<NominalInstanceId, AggregateIdentity>,
+    fields: &BTreeMap<FieldId, FieldRecord>,
+    sum_instance_by_type: &BTreeMap<TypeId, NominalInstanceId>,
+    next_instruction: &mut u32,
+) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
+    let value_types = function
+        .value_types
+        .iter()
+        .map(|(value, ty)| {
+            Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))
+        })
+        .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
+    let parameters = canonical_entry_parameters(function, ids)?;
+    let blocks = function
+        .blocks
+        .iter()
+        .map(|block| {
+            let id = CanonicalBlockId(block.id.0);
+            let parameters = block
+                .parameters
+                .iter()
+                .map(|value| {
+                    let value = MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?;
+                    Ok((value, *value_types.get(&value).ok_or_else(|| error_without_module("CAN005", "块参数缺少类型事实"))?))
+                })
+                .collect::<Result<_, StructuredDiagnosticSet>>()?;
+            let instructions = block
+                .instructions
+                .iter()
+                .map(|instruction| {
+                    let id = nyar_types::InstructionId::from_index(*next_instruction)
+                        .ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
+                    *next_instruction =
+                        (*next_instruction).checked_add(1).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
+                    Ok(CanonicalInstruction {
+                        id,
+                        results: instruction
+                            .results
+                            .iter()
+                            .map(|value| {
+                                MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))
+                            })
+                            .collect::<Result<_, _>>()?,
+                        operation: lower_operation(
+                            &instruction.kind,
+                            &instruction.results,
+                            &function.value_types,
+                            ids,
+                            nominals,
+                            fields,
+                            sum_instance_by_type,
+                        )?,
+                    })
+                })
+                .collect::<Result<_, StructuredDiagnosticSet>>()?;
+            Ok((id, CanonicalBlock { id, parameters, instructions, terminator: lower_terminator(&block.terminator)? }))
+        })
+        .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
+    Ok(CanonicalFunction {
+        instance,
+        parameters,
+        return_type: type_id(ids, &function.return_type)?,
+        value_types,
+        entry: CanonicalBlockId(function.entry.0),
+        blocks,
+    })
+}
+
+fn canonical_entry_parameters(
+    function: &MirFunction,
+    ids: &BTreeMap<ValkyrieType, TypeId>,
+) -> Result<Vec<(MirValueId, TypeId)>, StructuredDiagnosticSet> {
     let invalid = || error_without_module("CAN032", format!("函数 `{}` 的声明参数、SSA 参数来源与入口块参数不一致", function.symbol));
     let entry = function.blocks.iter().find(|block| block.id == function.entry).ok_or_else(invalid)?;
     let mut origins = BTreeMap::new();
@@ -360,30 +572,79 @@ fn canonical_entry_parameters(function: &MirFunction, ids: &BTreeMap<ValkyrieTyp
     if origins.len() != function.param_types.len() || entry.parameters.len() != function.param_types.len() {
         return Err(invalid());
     }
-    function.param_types.iter().enumerate().map(|(index, ty)| {
-        let value = origins.get(&index).ok_or_else(invalid)?;
-        if entry.parameters.get(index) != Some(value) || function.value_types.get(value) != Some(ty) {
-            return Err(invalid());
-        }
-        Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))
-    }).collect()
+    function
+        .param_types
+        .iter()
+        .enumerate()
+        .map(|(index, ty)| {
+            let value = origins.get(&index).ok_or_else(invalid)?;
+            if entry.parameters.get(index) != Some(value) || function.value_types.get(value) != Some(ty) {
+                return Err(invalid());
+            }
+            Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))
+        })
+        .collect()
 }
 
-fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::MirValueRef], value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<NominalInstanceId, AggregateIdentity>, fields: &BTreeMap<FieldId, FieldRecord>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
-    let value = |operand: &MirOperand| match operand { MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")), _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")) };
+fn resolve_sum_nominal(
+    mir_nominal: NominalInstanceId,
+    shape: Option<&ValkyrieType>,
+    ids: &BTreeMap<ValkyrieType, TypeId>,
+    sum_instance_by_type: &BTreeMap<TypeId, NominalInstanceId>,
+) -> Result<NominalInstanceId, StructuredDiagnosticSet> {
+    let Some(ty) = shape
+    else {
+        return Ok(mir_nominal);
+    };
+    let concrete = type_id(ids, ty)?;
+    Ok(sum_instance_by_type.get(&concrete).copied().unwrap_or(mir_nominal))
+}
+
+fn lower_operation(
+    operation: &MirOperation,
+    results: &[crate::valkyrie::mir::MirValueRef],
+    value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>,
+    ids: &BTreeMap<ValkyrieType, TypeId>,
+    nominals: &BTreeMap<NominalInstanceId, AggregateIdentity>,
+    fields: &BTreeMap<FieldId, FieldRecord>,
+    sum_instance_by_type: &BTreeMap<TypeId, NominalInstanceId>,
+) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
+    let value = |operand: &MirOperand| match operand {
+        MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")),
+        _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")),
+    };
     match operation {
-        MirOperation::Call { callee: MirOperand::Callable(identity), arguments } => Ok(CanonicalOperation::Invoke { callee: CanonicalCallee::Item(*identity), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
-        MirOperation::Call { callee: MirOperand::Symbol(_), .. } => Err(error_without_module("CAN007", "Semantic MIR 仍包含未冻结的 callable 名称")),
-        MirOperation::Call { callee: MirOperand::Value(callee), arguments } => Ok(CanonicalOperation::Invoke { callee: CanonicalCallee::Value(MirValueId::from_index(callee.0).ok_or_else(|| error_without_module("CAN008", "函数值 callee identity 溢出"))?), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
-        MirOperation::Copy { source } => Ok(CanonicalOperation::Copy { source: value(source)? }),
-        MirOperation::AggregateCopy { source, dest } => Ok(CanonicalOperation::AggregateCopy {
-            source: value(source)?,
-            destination: value(dest)?,
+        MirOperation::Call { callee: MirOperand::Callable(identity), arguments } => Ok(CanonicalOperation::Invoke {
+            callee: CanonicalCallee::Item(*identity),
+            arguments: arguments.iter().map(value).collect::<Result<_, _>>()?,
         }),
+        MirOperation::Call { callee: MirOperand::Symbol(_), .. } => {
+            Err(error_without_module("CAN007", "Semantic MIR 仍包含未冻结的 callable 名称"))
+        }
+        MirOperation::Call { callee: MirOperand::Value(callee), arguments } => Ok(CanonicalOperation::Invoke {
+            callee: CanonicalCallee::Value(
+                MirValueId::from_index(callee.0).ok_or_else(|| error_without_module("CAN008", "函数值 callee identity 溢出"))?,
+            ),
+            arguments: arguments.iter().map(value).collect::<Result<_, _>>()?,
+        }),
+        MirOperation::StoreVar { name, value: stored, ty } => Ok(CanonicalOperation::StoreVar {
+            name: name.clone(),
+            value: value(stored)?,
+            ty: ty.as_ref().map(|ty| type_id(ids, ty)).transpose()?,
+        }),
+        MirOperation::Copy { source } => Ok(CanonicalOperation::Copy { source: value(source)? }),
+        MirOperation::AggregateCopy { source, dest } => {
+            Ok(CanonicalOperation::AggregateCopy { source: value(source)?, destination: value(dest)? })
+        }
         MirOperation::LoadConstant { constant, .. } => Ok(CanonicalOperation::LoadConstant { constant: lower_constant(constant)? }),
         MirOperation::ArrayGet { array, index } => Ok(CanonicalOperation::ArrayGet { array: value(array)?, index: value(index)? }),
-        MirOperation::ArraySet { array, index, value: stored } => Ok(CanonicalOperation::ArraySet { array: value(array)?, index: value(index)?, value: value(stored)? }),
+        MirOperation::ArraySet { array, index, value: stored } => {
+            Ok(CanonicalOperation::ArraySet { array: value(array)?, index: value(index)?, value: value(stored)? })
+        }
         MirOperation::ArrayLength { array } => Ok(CanonicalOperation::ArrayLength { array: value(array)? }),
+        MirOperation::ArrayPush { array, value: pushed } => Ok(CanonicalOperation::ArrayPush { array: value(array)?, value: value(pushed)? }),
+        MirOperation::NullIsNull { value: operand } => Ok(CanonicalOperation::NullIsNull { value: value(operand)? }),
+        MirOperation::NullUnwrap { value: operand } => Ok(CanonicalOperation::NullUnwrap { value: value(operand)? }),
         MirOperation::ArrayNew { array_type, length, initialization } => Ok(CanonicalOperation::ArrayNew {
             array_type: type_id(ids, array_type)?,
             length: value(length)?,
@@ -399,46 +660,71 @@ fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::Mi
         MirOperation::TupleNew { fields } => Ok(CanonicalOperation::TupleNew {
             element_types: match results.first().and_then(|result| value_types.get(result)) {
                 Some(ValkyrieType::Tuple(types)) => types.iter().map(|ty| type_id(ids, ty)).collect::<Result<_, _>>()?,
-                _ => return Err(error_without_module("CAN017", "元组构造结果缺少完整 Tuple 类型")),
+                _ => {
+                    return Err(error_without_module("CAN017", "元组构造结果缺少完整 Tuple 类型"));
+                }
             },
             fields: fields.iter().map(value).collect::<Result<_, _>>()?,
         }),
         MirOperation::SumNew { nominal, variant, payload_type, payload, .. } => {
-            let Some(sum) = nominals.get(nominal) else {
-                return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {nominal:?}")));
-            };
-            let _ = (sum, payload_type);
-            Ok(CanonicalOperation::SumNew { nominal: *nominal, variant: *variant, payload: payload.as_ref().map(value).transpose()? })
+            let result_ty = results.first().and_then(|result| value_types.get(result));
+            let concrete = resolve_sum_nominal(*nominal, result_ty, ids, sum_instance_by_type)?;
+            if !nominals.contains_key(&concrete) {
+                return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {concrete:?}")));
+            }
+            let _ = payload_type;
+            Ok(CanonicalOperation::SumNew { nominal: concrete, variant: *variant, payload: payload.as_ref().map(value).transpose()? })
         }
         MirOperation::SumPayloadGet { nominal, variant, object, .. } => {
-            if !nominals.contains_key(nominal) { return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {nominal:?}"))); }
-            Ok(CanonicalOperation::SumPayloadGet { nominal: *nominal, variant: *variant, object: value(object)? })
+            let object_ty = match object {
+                MirOperand::Value(value) => value_types.get(value),
+                _ => None,
+            };
+            let concrete = resolve_sum_nominal(*nominal, object_ty, ids, sum_instance_by_type)?;
+            if !nominals.contains_key(&concrete) {
+                return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {concrete:?}")));
+            }
+            Ok(CanonicalOperation::SumPayloadGet { nominal: concrete, variant: *variant, object: value(object)? })
         }
         MirOperation::SumVariantIs { nominal, variant, object, .. } => {
-            if !nominals.contains_key(nominal) { return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {nominal:?}"))); }
-            Ok(CanonicalOperation::SumVariantIs { nominal: *nominal, variant: *variant, object: value(object)? })
+            let object_ty = match object {
+                MirOperand::Value(value) => value_types.get(value),
+                _ => None,
+            };
+            let concrete = resolve_sum_nominal(*nominal, object_ty, ids, sum_instance_by_type)?;
+            if !nominals.contains_key(&concrete) {
+                return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {concrete:?}")));
+            }
+            Ok(CanonicalOperation::SumVariantIs { nominal: concrete, variant: *variant, object: value(object)? })
         }
         MirOperation::StructNew { nominal, fields: values } => {
             if !nominals.contains_key(nominal) {
                 return Err(error_without_module("CAN023", format!("未解析聚合 identity: {nominal:?}")));
             }
-            let fields = values.iter().map(|(field, operand)| {
-                if !fields.contains_key(field) {
-                    return Err(error_without_module("CAN024", format!("未解析字段 identity: {field:?}")));
-                }
-                Ok((*field, value(operand)?))
-            }).collect::<Result<_, StructuredDiagnosticSet>>()?;
+            let fields = values
+                .iter()
+                .map(|(field, operand)| {
+                    if !fields.contains_key(field) {
+                        return Err(error_without_module("CAN024", format!("未解析字段 identity: {field:?}")));
+                    }
+                    Ok((*field, value(operand)?))
+                })
+                .collect::<Result<_, StructuredDiagnosticSet>>()?;
             Ok(CanonicalOperation::StructNew { nominal: *nominal, fields })
         }
         MirOperation::FieldGet { object, field } => {
-            if !fields.contains_key(field) { return Err(error_without_module("CAN027", format!("未解析字段 identity: {field:?}"))); }
+            if !fields.contains_key(field) {
+                return Err(error_without_module("CAN027", format!("未解析字段 identity: {field:?}")));
+            }
             Ok(CanonicalOperation::FieldGet { object: value(object)?, field: *field })
         }
         MirOperation::FieldSet { object, field, value: stored } => {
-            if !fields.contains_key(field) { return Err(error_without_module("CAN030", format!("未解析字段 identity: {field:?}"))); }
+            if !fields.contains_key(field) {
+                return Err(error_without_module("CAN030", format!("未解析字段 identity: {field:?}")));
+            }
             Ok(CanonicalOperation::FieldSet { object: value(object)?, field: *field, value: value(stored)? })
         }
-        _ => Err(error_without_module("CAN009", "操作没有无损 canonical 形状")),
+        _ => Err(error_without_module("CAN009", format!("操作没有无损 canonical 形状: {operation:?}"))),
     }
 }
 
@@ -451,14 +737,26 @@ fn aggregate_owner(ty: &ValkyrieType) -> Option<String> {
 }
 
 fn lower_terminator(terminator: &MirTerminator) -> Result<CanonicalTerminator, StructuredDiagnosticSet> {
-    let value = |operand: &MirOperand| match operand { MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")), _ => Err(error_without_module("CAN010", "终结符操作数不是 SSA 值")) };
+    let value = |operand: &MirOperand| match operand {
+        MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")),
+        _ => Err(error_without_module("CAN010", "终结符操作数不是 SSA 值")),
+    };
     match terminator {
         MirTerminator::Return { value: Some(value_operand) } => Ok(CanonicalTerminator::Return { value: Some(value(value_operand)?) }),
         MirTerminator::Return { value: None } => Ok(CanonicalTerminator::Return { value: None }),
-        MirTerminator::Jump { target, arguments } => Ok(CanonicalTerminator::Jump { target: CanonicalBlockId(target.0), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
-        MirTerminator::Branch { condition, then_target, else_target } => Ok(CanonicalTerminator::Branch { condition: value(condition)?, then_target: CanonicalBlockId(then_target.0), else_target: CanonicalBlockId(else_target.0) }),
+        MirTerminator::Jump { target, arguments } => Ok(CanonicalTerminator::Jump {
+            target: CanonicalBlockId(target.0),
+            arguments: arguments.iter().map(value).collect::<Result<_, _>>()?,
+        }),
+        MirTerminator::Branch { condition, then_target, else_target } => Ok(CanonicalTerminator::Branch {
+            condition: value(condition)?,
+            then_target: CanonicalBlockId(then_target.0),
+            else_target: CanonicalBlockId(else_target.0),
+        }),
         MirTerminator::PerformEffect { effect, payload, resume_target } => Ok(CanonicalTerminator::PerformEffect {
-            effect: lower_effect(*effect), payload: payload.as_ref().map(value).transpose()?, resume_target: CanonicalBlockId(resume_target.0),
+            effect: lower_effect(*effect),
+            payload: payload.as_ref().map(value).transpose()?,
+            resume_target: CanonicalBlockId(resume_target.0),
         }),
         MirTerminator::StateDispatch { state, cases, default_target } => Ok(CanonicalTerminator::StateDispatch {
             state: MirValueId::from_index(state.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?,
@@ -466,7 +764,9 @@ fn lower_terminator(terminator: &MirTerminator) -> Result<CanonicalTerminator, S
             default_target: CanonicalBlockId(default_target.0),
         }),
         MirTerminator::YieldToRuntime { effect, payload, resume_state } => Ok(CanonicalTerminator::YieldToRuntime {
-            effect: lower_effect(*effect), payload: payload.as_ref().map(value).transpose()?, resume_state: *resume_state,
+            effect: lower_effect(*effect),
+            payload: payload.as_ref().map(value).transpose()?,
+            resume_state: *resume_state,
         }),
         MirTerminator::Unreachable => Ok(CanonicalTerminator::Unreachable),
     }
@@ -485,28 +785,83 @@ fn lower_effect(effect: crate::valkyrie::mir::MirEffectKind) -> CanonicalEffectK
 }
 
 fn lower_constant(constant: &MirConstant) -> Result<CanonicalConstant, StructuredDiagnosticSet> {
-    match constant { MirConstant::Int(value) => Ok(CanonicalConstant::Int(*value)), MirConstant::Bool(value) => Ok(CanonicalConstant::Bool(*value)), MirConstant::Utf8(value) => Ok(CanonicalConstant::Utf8(value.clone())), MirConstant::Utf16(value) => Ok(CanonicalConstant::Utf16(value.clone())), MirConstant::Unit => Ok(CanonicalConstant::Unit), MirConstant::Float64(_) => Err(error_without_module("CAN012", "浮点常量没有 canonical 形状")) }
+    match constant {
+        MirConstant::Int(value) => Ok(CanonicalConstant::Int(*value)),
+        MirConstant::Bool(value) => Ok(CanonicalConstant::Bool(*value)),
+        MirConstant::Utf8(value) => Ok(CanonicalConstant::Utf8(value.clone())),
+        MirConstant::Utf16(value) => Ok(CanonicalConstant::Utf16(value.clone())),
+        MirConstant::Unit => Ok(CanonicalConstant::Unit),
+        MirConstant::Float64(_) => Err(error_without_module("CAN012", "浮点常量没有 canonical 形状")),
+    }
 }
 
-fn monomorphic_substitution(function: &MirFunction) -> Result<SubstitutionId, StructuredDiagnosticSet> { if function.param_types.iter().chain(std::iter::once(&function.return_type)).any(contains_unresolved_type) { Err(error_without_module("CAN013", "函数仍包含未代入类型参数")) } else { Ok(SubstitutionId::from_index(0).expect("monomorphic substitution")) } }
-fn contains_unresolved_type(ty: &ValkyrieType) -> bool { matches!(ty, ValkyrieType::Generic(_) | ValkyrieType::SelfType | ValkyrieType::Associated(_) | ValkyrieType::AutoType) }
-fn type_id(ids: &BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType) -> Result<TypeId, StructuredDiagnosticSet> { ids.get(ty).copied().ok_or_else(|| error_without_module("CAN014", "类型事实未进入 canonical table")) }
-fn item_id(index: u32) -> ItemId { ItemId::from_index(index).expect("item identity overflow") }
-fn error_without_module(code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet { fail_stage::<()>(nyar_types::CompileStage::SemanticMir, code, "", message).err().unwrap() }
-fn error(module: &MirModule, code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet { fail_stage::<()>(nyar_types::CompileStage::SemanticMir, code, &module.name, message).err().unwrap() }
-fn canonical_error(module: &MirModule, error: CanonicalMirError) -> StructuredDiagnosticSet { fail_stage::<()>(nyar_types::CompileStage::ValidateMir, "CAN015", &module.name, format!("canonical MIR 校验失败: {error:?}")).err().unwrap() }
+fn backfill_nominal_semantics_for_linked_types(linked: &mut LinkedSemanticProgram) {
+    let mut pending = Vec::new();
+    for (type_id, record) in &linked.types {
+        if let CanonicalTypeKind::Nominal { declaration, .. } = &record.kind {
+            if linked.nominal_instances.values().any(|instance| instance.ty == *type_id) {
+                continue;
+            }
+            pending.push((*type_id, *declaration));
+        }
+    }
+    for (type_id, declaration) in pending {
+        let nominal = NominalInstanceId::from_index(linked.nominal_instances.len() as u32).expect("nominal identity overflow");
+        linked.nominal_instances.insert(
+            nominal,
+            NominalInstanceRecord {
+                declaration,
+                ty: type_id,
+                substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
+                semantics: NominalValueSemantics::Reference,
+                fields: Vec::new(),
+            },
+        );
+    }
+}
+
+fn monomorphic_substitution(function: &MirFunction) -> Result<SubstitutionId, StructuredDiagnosticSet> {
+    if function
+        .param_types
+        .iter()
+        .chain(std::iter::once(&function.return_type))
+        .any(crate::valkyrie::mir::ssa::type_contains_non_monomorphic_signature_reference)
+    {
+        Err(error_without_module("CAN013", format!("函数 `{}` 仍包含未代入类型参数", function.symbol)))
+    }
+    else {
+        Ok(SubstitutionId::from_index(0).expect("monomorphic substitution"))
+    }
+}
+fn type_id(ids: &BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType) -> Result<TypeId, StructuredDiagnosticSet> {
+    ids.get(ty).copied().ok_or_else(|| error_without_module("CAN014", "类型事实未进入 canonical table"))
+}
+fn item_id(index: u32) -> ItemId {
+    ItemId::from_index(index).expect("item identity overflow")
+}
+fn error_without_module(code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet {
+    fail_stage::<()>(nyar_types::CompileStage::SemanticMir, code, "", message).err().unwrap()
+}
+fn error(module: &MirModule, code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet {
+    fail_stage::<()>(nyar_types::CompileStage::SemanticMir, code, &module.name, message).err().unwrap()
+}
+fn canonical_error(module: &MirModule, error: CanonicalMirError) -> StructuredDiagnosticSet {
+    fail_stage::<()>(nyar_types::CompileStage::ValidateMir, "CAN015", &module.name, format!("canonical MIR 校验失败: {error:?}")).err().unwrap()
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::valkyrie::mir::{AggregateLayoutPlan, MirBlock, MirBlockRef, MirExternalCallContract, MirInstruction, MirModule, MirValue, MirValueRef};
-    use crate::valkyrie::types::{Identifier, NamePath};
+    use crate::valkyrie::{
+        mir::{AggregateLayoutPlan, MirBlock, MirBlockRef, MirExternalCallContract, MirInstruction, MirModule, MirValue, MirValueRef},
+        types::{Identifier, NamePath},
+    };
     use std::collections::BTreeMap;
 
     fn source_surface_module() -> MirModule {
-        let hir = crate::ValkyrieCompiler::default().compile_source(
-            "[export(name: \"answer\")] [main] micro answer() -> i32 { return 23 }",
-        ).expect("源码导出及入口合同");
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source("[export(name: \"answer\")] [main] micro answer() -> i32 { return 23 }")
+            .expect("源码导出及入口合同");
         crate::MirLowerer::lower_module_semantic(&hir)
     }
 
@@ -542,35 +897,54 @@ mod tests {
     }
 
     fn module_with(operation: MirOperation, return_value: Option<MirValueRef>, value_types: BTreeMap<MirValueRef, ValkyrieType>) -> MirModule {
+        let return_type = return_value.and_then(|value| value_types.get(&value).cloned()).unwrap_or(ValkyrieType::Unit);
+        let values = value_types.keys().map(|id| MirValue { id: *id, origin: MirValueOrigin::Temporary }).collect();
         let mut module = MirModule {
             name: "demo".into(),
             functions: vec![MirFunction {
                 symbol: "demo::main".into(),
                 declaration: Some(ItemId::from_index(0).unwrap()),
                 instance: Some(ItemInstanceId::from_index(0).unwrap()),
-                return_type: return_value.map(|_| ValkyrieType::Boolean).unwrap_or(ValkyrieType::Unit),
+                return_type,
                 param_types: Vec::new(),
                 value_types,
                 entry: MirBlockRef(0),
-                values: return_value.into_iter().map(|id| MirValue { id, origin: MirValueOrigin::Temporary }).collect(),
+                values,
                 blocks: vec![MirBlock {
-                    id: MirBlockRef(0), label: "entry".into(), parameters: Vec::new(),
+                    id: MirBlockRef(0),
+                    label: "entry".into(),
+                    parameters: Vec::new(),
                     instructions: vec![MirInstruction::from_operation_with_results(operation, return_value.into_iter().collect())],
                     terminator: MirTerminator::Return { value: return_value.map(MirOperand::Value) },
                 }],
             }],
-            structs: Vec::new(), imports: Vec::new(), external_calls: Vec::new(), exports: Vec::new(), entries: Vec::new(), callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]), type_identities: BTreeMap::new(), aggregate_layouts: AggregateLayoutPlan::default(),
-            sum_types: Vec::new(), flags_types: Vec::new(),
+            structs: Vec::new(),
+            imports: Vec::new(),
+            external_calls: Vec::new(),
+            exports: Vec::new(),
+            entries: Vec::new(),
+            callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+            type_identities: BTreeMap::new(),
+            aggregate_layouts: AggregateLayoutPlan::default(),
+            sum_types: Vec::new(),
+            flags_types: Vec::new(),
             singleton_instances: Vec::new(),
-            semantic_fragments: Vec::new(), diagnostics: Vec::new(),
+            semantic_fragments: Vec::new(),
+            diagnostics: Vec::new(),
         };
+        module.type_identities =
+            crate::valkyrie::mir::ssa::type_identity_table(&module.functions, &module.external_calls, &module.structs, &module.sum_types);
         module
     }
 
     #[test]
     fn producer_preserves_exact_function_identity_and_type_shape() {
         let value = MirValueRef(0);
-        let module = module_with(MirOperation::LoadConstant { constant: MirConstant::Bool(true), ty: Some(ValkyrieType::Boolean) }, Some(value), BTreeMap::from([(value, ValkyrieType::Boolean)]));
+        let module = module_with(
+            MirOperation::LoadConstant { constant: MirConstant::Bool(true), ty: Some(ValkyrieType::Boolean) },
+            Some(value),
+            BTreeMap::from([(value, ValkyrieType::Boolean)]),
+        );
         let program = canonical_program_from_semantic_mir(&module).expect("精确单态函数应进入 canonical");
         assert_eq!(program.linked.item_instances.len(), 1);
         assert_eq!(program.mir.functions.len(), 1);
@@ -581,11 +955,13 @@ mod tests {
     #[test]
     fn producer_carries_export_and_entry_contracts_by_callable_identity() {
         let output = crate::ValkyrieCompiler::default()
-            .compile_source_to_program(
-                "[export(name: \"public_main\")] [main] micro main() -> unit { return }",
-            )
+            .compile_source_to_program("[export(name: \"public_main\")] [main] micro main() -> unit { return }")
             .expect("源码必须完成前端分析");
-        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&crate::ValkyrieCompiler::default().compile_source("[export(name: \"public_main\")] [main] micro main() -> unit { return }").expect("source for canonical test"));
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(
+            &crate::ValkyrieCompiler::default()
+                .compile_source("[export(name: \"public_main\")] [main] micro main() -> unit { return }")
+                .expect("source for canonical test"),
+        );
         let program = canonical_program_from_semantic_mir(&semantic_mir).expect("公开合同必须进入 canonical");
         assert_eq!(program.linked.exports.len(), 1);
         assert_eq!(program.linked.entries.len(), 1);
@@ -599,7 +975,11 @@ mod tests {
         let output = crate::ValkyrieCompiler::default()
             .compile_source_to_program("micro select(value: bool, other: i32) -> bool { return value }")
             .expect("源码必须完成前端分析");
-        let module = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&crate::ValkyrieCompiler::default().compile_source("micro select(value: bool, other: i32) -> bool { return value }").expect("source for canonical test"));
+        let module = crate::valkyrie::mir::MirLowerer::lower_module_semantic(
+            &crate::ValkyrieCompiler::default()
+                .compile_source("micro select(value: bool, other: i32) -> bool { return value }")
+                .expect("source for canonical test"),
+        );
         canonical_program_from_semantic_mir(&module).expect("合法入口必须产生 CanonicalProgram");
 
         let mut missing = module.clone();
@@ -632,11 +1012,8 @@ mod tests {
 
     #[test]
     fn producer_rejects_missing_compiler_callable_identity() {
-        let mut module = module_with(
-            MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },
-            None,
-            BTreeMap::new(),
-        );
+        let mut module =
+            module_with(MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) }, None, BTreeMap::new());
         module.callable_identities.clear();
         let error = canonical_program_from_semantic_mir(&module).expect_err("缺失 Compiler callable identity 必须失败");
         assert_eq!(error.records[0].code, "CAN034");
@@ -644,11 +1021,8 @@ mod tests {
 
     #[test]
     fn producer_rejects_missing_compiler_type_identity() {
-        let mut module = module_with(
-            MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },
-            None,
-            BTreeMap::new(),
-        );
+        let mut module =
+            module_with(MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) }, None, BTreeMap::new());
         module.type_identities.clear();
         let error = canonical_program_from_semantic_mir(&module).expect_err("缺失 Compiler type identity 必须失败");
         assert_eq!(error.records[0].code, "CAN035");
@@ -656,15 +1030,11 @@ mod tests {
 
     #[test]
     fn producer_rejects_semantic_mir_lowering_diagnostics() {
-        let mut module = module_with(
-            MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },
-            None,
-            BTreeMap::new(),
-        );
-        module.diagnostics.push(crate::valkyrie::mir::MirDiagnostic::UnresolvedVariantIdentity {
-            sum_type: "Option".into(),
-            variant: "Missing".into(),
-        });
+        let mut module =
+            module_with(MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) }, None, BTreeMap::new());
+        module
+            .diagnostics
+            .push(crate::valkyrie::mir::MirDiagnostic::UnresolvedVariantIdentity { sum_type: "Option".into(), variant: "Missing".into() });
         let error = canonical_program_from_semantic_mir(&module).expect_err("lowering diagnostic must not enter canonical success");
         assert_eq!(error.records[0].code, "CAN033");
     }
@@ -687,11 +1057,8 @@ mod tests {
 
     #[test]
     fn producer_binds_external_callable_to_import_index_and_signature() {
-        let mut module = module_with(
-            MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },
-            None,
-            BTreeMap::new(),
-        );
+        let mut module =
+            module_with(MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) }, None, BTreeMap::new());
         module.external_calls.push(MirExternalCallContract {
             declaration: Some(ItemId::from_index(1).unwrap()),
             instance: Some(ItemInstanceId::from_index(1).unwrap()),
@@ -705,7 +1072,405 @@ mod tests {
         let import = ImportIndex::from_index(0).unwrap();
         let record = program.linked.imports.get(&import).expect("import index");
         assert_eq!(record.callee.index(), 1);
-        assert_eq!(record.parameter_types, vec![program.linked.types.iter().find_map(|(id, record)| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool)).then_some(*id)).unwrap()]);
-        assert_eq!(record.return_type, program.linked.types.iter().find_map(|(id, record)| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit)).then_some(*id)).unwrap());
+        assert_eq!(
+            record.parameter_types,
+            vec![
+                program
+                    .linked
+                    .types
+                    .iter()
+                    .find_map(|(id, record)| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool)).then_some(*id))
+                    .unwrap()
+            ]
+        );
+        assert_eq!(
+            record.return_type,
+            program
+                .linked
+                .types
+                .iter()
+                .find_map(|(id, record)| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit)).then_some(*id))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn array_push_operation_canonicalizes_without_symbol_call() {
+        let array_ty = ValkyrieType::Array(Box::new(ValkyrieType::Utf8));
+        let array = MirValueRef(0);
+        let element = MirValueRef(1);
+        let result = MirValueRef(2);
+        let value_types = BTreeMap::from([(array, array_ty.clone()), (element, ValkyrieType::Utf8), (result, array_ty.clone())]);
+        let module = MirModule {
+            name: "demo".into(),
+            functions: vec![MirFunction {
+                symbol: "demo::main".into(),
+                declaration: Some(ItemId::from_index(0).unwrap()),
+                instance: Some(ItemInstanceId::from_index(0).unwrap()),
+                return_type: array_ty.clone(),
+                param_types: vec![array_ty.clone(), ValkyrieType::Utf8],
+                value_types,
+                entry: MirBlockRef(0),
+                values: vec![
+                    MirValue { id: array, origin: MirValueOrigin::Parameter { index: 0, name: "array".into() } },
+                    MirValue { id: element, origin: MirValueOrigin::Parameter { index: 1, name: "element".into() } },
+                    MirValue { id: result, origin: MirValueOrigin::CallResult },
+                ],
+                blocks: vec![MirBlock {
+                    id: MirBlockRef(0),
+                    label: "entry".into(),
+                    parameters: vec![array, element],
+                    instructions: vec![MirInstruction::from_operation_with_results(
+                        MirOperation::ArrayPush { array: MirOperand::Value(array), value: MirOperand::Value(element) },
+                        vec![result],
+                    )],
+                    terminator: MirTerminator::Return { value: Some(MirOperand::Value(result)) },
+                }],
+            }],
+            structs: Vec::new(),
+            imports: Vec::new(),
+            external_calls: Vec::new(),
+            exports: Vec::new(),
+            entries: Vec::new(),
+            callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+            type_identities: BTreeMap::new(),
+            aggregate_layouts: AggregateLayoutPlan::default(),
+            sum_types: Vec::new(),
+            flags_types: Vec::new(),
+            singleton_instances: Vec::new(),
+            semantic_fragments: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        let mut module = module;
+        module.type_identities =
+            crate::valkyrie::mir::ssa::type_identity_table(&module.functions, &module.external_calls, &module.structs, &module.sum_types);
+        let program = canonical_program_from_semantic_mir(&module).expect("ArrayPush must canonicalize");
+        let has_push = program
+            .mir
+            .functions
+            .values()
+            .flat_map(|function| function.blocks.values())
+            .flat_map(|block| block.instructions.iter())
+            .any(|instruction| matches!(instruction.operation, CanonicalOperation::ArrayPush { .. }));
+        assert!(has_push, "expected CanonicalOperation::ArrayPush");
+        assert!(
+            !program
+                .mir
+                .functions
+                .values()
+                .flat_map(|function| function.blocks.values())
+                .flat_map(|block| block.instructions.iter())
+                .any(|instruction| matches!(instruction.operation, CanonicalOperation::Invoke { .. })),
+            "ArrayPush must not remain as unresolved Invoke"
+        );
+    }
+
+    #[test]
+    fn array_set_operation_canonicalizes_without_symbol_call() {
+        let array_ty = ValkyrieType::Array(Box::new(ValkyrieType::Utf8));
+        let array = MirValueRef(0);
+        let index = MirValueRef(1);
+        let element = MirValueRef(2);
+        let index_ty = ValkyrieType::Integer32 { signed: true };
+        let value_types = BTreeMap::from([(array, array_ty.clone()), (index, index_ty.clone()), (element, ValkyrieType::Utf8)]);
+        let module = MirModule {
+            name: "demo".into(),
+            functions: vec![MirFunction {
+                symbol: "demo::main".into(),
+                declaration: Some(ItemId::from_index(0).unwrap()),
+                instance: Some(ItemInstanceId::from_index(0).unwrap()),
+                return_type: ValkyrieType::Unit,
+                param_types: vec![array_ty.clone(), index_ty.clone(), ValkyrieType::Utf8],
+                value_types,
+                entry: MirBlockRef(0),
+                values: vec![
+                    MirValue { id: array, origin: MirValueOrigin::Parameter { index: 0, name: "array".into() } },
+                    MirValue { id: index, origin: MirValueOrigin::Parameter { index: 1, name: "index".into() } },
+                    MirValue { id: element, origin: MirValueOrigin::Parameter { index: 2, name: "element".into() } },
+                ],
+                blocks: vec![MirBlock {
+                    id: MirBlockRef(0),
+                    label: "entry".into(),
+                    parameters: vec![array, index, element],
+                    instructions: vec![MirInstruction::from_operation(MirOperation::ArraySet {
+                        array: MirOperand::Value(array),
+                        index: MirOperand::Value(index),
+                        value: MirOperand::Value(element),
+                    })],
+                    terminator: MirTerminator::Return { value: None },
+                }],
+            }],
+            structs: Vec::new(),
+            imports: Vec::new(),
+            external_calls: Vec::new(),
+            exports: Vec::new(),
+            entries: Vec::new(),
+            callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+            type_identities: BTreeMap::new(),
+            aggregate_layouts: AggregateLayoutPlan::default(),
+            sum_types: Vec::new(),
+            flags_types: Vec::new(),
+            singleton_instances: Vec::new(),
+            semantic_fragments: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        let mut module = module;
+        module.type_identities =
+            crate::valkyrie::mir::ssa::type_identity_table(&module.functions, &module.external_calls, &module.structs, &module.sum_types);
+        let program = canonical_program_from_semantic_mir(&module).expect("ArraySet must canonicalize");
+        let has_set = program
+            .mir
+            .functions
+            .values()
+            .flat_map(|function| function.blocks.values())
+            .flat_map(|block| block.instructions.iter())
+            .any(|instruction| matches!(instruction.operation, CanonicalOperation::ArraySet { .. }));
+        assert!(has_set, "expected CanonicalOperation::ArraySet");
+        assert!(
+            !program
+                .mir
+                .functions
+                .values()
+                .flat_map(|function| function.blocks.values())
+                .flat_map(|block| block.instructions.iter())
+                .any(|instruction| matches!(instruction.operation, CanonicalOperation::Invoke { .. })),
+            "ArraySet must not remain as unresolved Invoke"
+        );
+    }
+
+    #[test]
+    fn array_length_operation_canonicalizes_without_symbol_call() {
+        let array_ty = ValkyrieType::Array(Box::new(ValkyrieType::Utf8));
+        let array = MirValueRef(0);
+        let result = MirValueRef(1);
+        let usize_ty = ValkyrieType::Integer32 { signed: false };
+        let value_types = BTreeMap::from([(array, array_ty.clone()), (result, usize_ty.clone())]);
+        let module = MirModule {
+            name: "demo".into(),
+            functions: vec![MirFunction {
+                symbol: "demo::main".into(),
+                declaration: Some(ItemId::from_index(0).unwrap()),
+                instance: Some(ItemInstanceId::from_index(0).unwrap()),
+                return_type: usize_ty.clone(),
+                param_types: vec![array_ty.clone()],
+                value_types,
+                entry: MirBlockRef(0),
+                values: vec![
+                    MirValue { id: array, origin: MirValueOrigin::Parameter { index: 0, name: "array".into() } },
+                    MirValue { id: result, origin: MirValueOrigin::CallResult },
+                ],
+                blocks: vec![MirBlock {
+                    id: MirBlockRef(0),
+                    label: "entry".into(),
+                    parameters: vec![array],
+                    instructions: vec![MirInstruction::from_operation_with_results(
+                        MirOperation::ArrayLength { array: MirOperand::Value(array) },
+                        vec![result],
+                    )],
+                    terminator: MirTerminator::Return { value: Some(MirOperand::Value(result)) },
+                }],
+            }],
+            structs: Vec::new(),
+            imports: Vec::new(),
+            external_calls: Vec::new(),
+            exports: Vec::new(),
+            entries: Vec::new(),
+            callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+            type_identities: BTreeMap::new(),
+            aggregate_layouts: AggregateLayoutPlan::default(),
+            sum_types: Vec::new(),
+            flags_types: Vec::new(),
+            singleton_instances: Vec::new(),
+            semantic_fragments: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        let mut module = module;
+        module.type_identities =
+            crate::valkyrie::mir::ssa::type_identity_table(&module.functions, &module.external_calls, &module.structs, &module.sum_types);
+        let program = canonical_program_from_semantic_mir(&module).expect("ArrayLength must canonicalize");
+        let has_len = program
+            .mir
+            .functions
+            .values()
+            .flat_map(|function| function.blocks.values())
+            .flat_map(|block| block.instructions.iter())
+            .any(|instruction| matches!(instruction.operation, CanonicalOperation::ArrayLength { .. }));
+        assert!(has_len, "expected CanonicalOperation::ArrayLength");
+        assert!(
+            !program
+                .mir
+                .functions
+                .values()
+                .flat_map(|function| function.blocks.values())
+                .flat_map(|block| block.instructions.iter())
+                .any(|instruction| matches!(instruction.operation, CanonicalOperation::Invoke { .. })),
+            "ArrayLength must not remain as unresolved Invoke"
+        );
+    }
+
+    #[test]
+    fn array_get_operation_canonicalizes_without_symbol_call() {
+        let array_ty = ValkyrieType::Array(Box::new(ValkyrieType::Utf8));
+        let array = MirValueRef(0);
+        let index = MirValueRef(1);
+        let result = MirValueRef(2);
+        let index_ty = ValkyrieType::Integer32 { signed: true };
+        let value_types = BTreeMap::from([(array, array_ty.clone()), (index, index_ty.clone()), (result, ValkyrieType::Utf8)]);
+        let module = MirModule {
+            name: "demo".into(),
+            functions: vec![MirFunction {
+                symbol: "demo::main".into(),
+                declaration: Some(ItemId::from_index(0).unwrap()),
+                instance: Some(ItemInstanceId::from_index(0).unwrap()),
+                return_type: ValkyrieType::Utf8,
+                param_types: vec![array_ty.clone(), index_ty.clone()],
+                value_types,
+                entry: MirBlockRef(0),
+                values: vec![
+                    MirValue { id: array, origin: MirValueOrigin::Parameter { index: 0, name: "array".into() } },
+                    MirValue { id: index, origin: MirValueOrigin::Parameter { index: 1, name: "index".into() } },
+                    MirValue { id: result, origin: MirValueOrigin::CallResult },
+                ],
+                blocks: vec![MirBlock {
+                    id: MirBlockRef(0),
+                    label: "entry".into(),
+                    parameters: vec![array, index],
+                    instructions: vec![MirInstruction::from_operation_with_results(
+                        MirOperation::ArrayGet { array: MirOperand::Value(array), index: MirOperand::Value(index) },
+                        vec![result],
+                    )],
+                    terminator: MirTerminator::Return { value: Some(MirOperand::Value(result)) },
+                }],
+            }],
+            structs: Vec::new(),
+            imports: Vec::new(),
+            external_calls: Vec::new(),
+            exports: Vec::new(),
+            entries: Vec::new(),
+            callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+            type_identities: BTreeMap::new(),
+            aggregate_layouts: AggregateLayoutPlan::default(),
+            sum_types: Vec::new(),
+            flags_types: Vec::new(),
+            singleton_instances: Vec::new(),
+            semantic_fragments: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        let mut module = module;
+        module.type_identities =
+            crate::valkyrie::mir::ssa::type_identity_table(&module.functions, &module.external_calls, &module.structs, &module.sum_types);
+        let program = canonical_program_from_semantic_mir(&module).expect("ArrayGet must canonicalize");
+        let has_get = program
+            .mir
+            .functions
+            .values()
+            .flat_map(|function| function.blocks.values())
+            .flat_map(|block| block.instructions.iter())
+            .any(|instruction| matches!(instruction.operation, CanonicalOperation::ArrayGet { .. }));
+        assert!(has_get, "expected CanonicalOperation::ArrayGet");
+        assert!(
+            !program
+                .mir
+                .functions
+                .values()
+                .flat_map(|function| function.blocks.values())
+                .flat_map(|block| block.instructions.iter())
+                .any(|instruction| matches!(instruction.operation, CanonicalOperation::Invoke { .. })),
+            "ArrayGet must not remain as unresolved Invoke"
+        );
+    }
+
+    #[test]
+    fn null_intrinsic_operations_canonicalize_without_symbol_call() {
+        let payload_ty = ValkyrieType::Integer32 { signed: true };
+        let nullable_ty = ValkyrieType::Nullable(Box::new(payload_ty.clone()));
+        let value = MirValueRef(0);
+        let is_null_result = MirValueRef(1);
+        let unwrap_result = MirValueRef(2);
+        let value_types =
+            BTreeMap::from([(value, nullable_ty.clone()), (is_null_result, ValkyrieType::Boolean), (unwrap_result, payload_ty.clone())]);
+        let module = MirModule {
+            name: "demo".into(),
+            functions: vec![MirFunction {
+                symbol: "demo::main".into(),
+                declaration: Some(ItemId::from_index(0).unwrap()),
+                instance: Some(ItemInstanceId::from_index(0).unwrap()),
+                return_type: payload_ty.clone(),
+                param_types: vec![nullable_ty.clone()],
+                value_types,
+                entry: MirBlockRef(0),
+                values: vec![
+                    MirValue { id: value, origin: MirValueOrigin::Parameter { index: 0, name: "value".into() } },
+                    MirValue { id: is_null_result, origin: MirValueOrigin::CallResult },
+                    MirValue { id: unwrap_result, origin: MirValueOrigin::CallResult },
+                ],
+                blocks: vec![MirBlock {
+                    id: MirBlockRef(0),
+                    label: "entry".into(),
+                    parameters: vec![value],
+                    instructions: vec![
+                        MirInstruction::from_operation_with_results(
+                            MirOperation::NullIsNull { value: MirOperand::Value(value) },
+                            vec![is_null_result],
+                        ),
+                        MirInstruction::from_operation_with_results(
+                            MirOperation::NullUnwrap { value: MirOperand::Value(value) },
+                            vec![unwrap_result],
+                        ),
+                    ],
+                    terminator: MirTerminator::Return { value: Some(MirOperand::Value(unwrap_result)) },
+                }],
+            }],
+            structs: Vec::new(),
+            imports: Vec::new(),
+            external_calls: Vec::new(),
+            exports: Vec::new(),
+            entries: Vec::new(),
+            callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+            type_identities: BTreeMap::new(),
+            aggregate_layouts: AggregateLayoutPlan::default(),
+            sum_types: Vec::new(),
+            flags_types: Vec::new(),
+            singleton_instances: Vec::new(),
+            semantic_fragments: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        let mut module = module;
+        module.type_identities =
+            crate::valkyrie::mir::ssa::type_identity_table(&module.functions, &module.external_calls, &module.structs, &module.sum_types);
+        let program = canonical_program_from_semantic_mir(&module).expect("nullable intrinsics must canonicalize");
+        let ops = program
+            .mir
+            .functions
+            .values()
+            .flat_map(|function| function.blocks.values())
+            .flat_map(|block| block.instructions.iter())
+            .map(|instruction| instruction.operation.clone())
+            .collect::<Vec<_>>();
+        assert!(ops.iter().any(|op| matches!(op, CanonicalOperation::NullIsNull { .. })));
+        assert!(ops.iter().any(|op| matches!(op, CanonicalOperation::NullUnwrap { .. })));
+        assert!(!ops.iter().any(|op| matches!(op, CanonicalOperation::Invoke { .. })));
+    }
+
+    #[test]
+    fn i32_pow_while_loop_canonicalizes_with_mutable_locals() {
+        crate::ValkyrieCompiler::default()
+            .compile_source_to_program(
+                r#"
+micro __i32_pow(lhs: i32, rhs: i32): i32 {
+    let mut base: i32 = lhs
+    let mut exp: i32 = rhs
+    let mut acc: i32 = 1
+    while exp > 0 {
+        if exp % 2 == 1 {
+            acc = acc * base
+        }
+        base = base * base
+        exp = exp / 2
+    }
+    return acc
+}"#,
+            )
+            .expect("__i32_pow must reach canonical with mutable loop locals");
     }
 }

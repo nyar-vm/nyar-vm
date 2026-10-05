@@ -74,7 +74,6 @@ impl TypeRelationContext {
             return ParameterMatchResult::NominalExact;
         }
 
-
         // Nominal applications retain their type arguments at the semantic
         // boundary.  Match the constructor nominally and each argument using
         // the same parameter relation, so exported `Choice<T, E>` can accept
@@ -182,11 +181,7 @@ impl TypeRelationContext {
     }
 
     /// 在泛型实参完成代入后验证 callable 的声明级 where 合同。
-    pub fn satisfies_where_constraints(
-        &self,
-        constraints: &[HirWhereConstraint],
-        substitutions: &BTreeMap<Identifier, ValkyrieType>,
-    ) -> bool {
+    pub fn satisfies_where_constraints(&self, constraints: &[HirWhereConstraint], substitutions: &BTreeMap<Identifier, ValkyrieType>) -> bool {
         constraints.iter().all(|constraint| {
             let target = substitute_relation_type(&constraint.target, substitutions);
             let Some(target_name) = named_type_name(&target)
@@ -244,13 +239,9 @@ fn bound_is_satisfied_by_context(
     context.bounds.iter().any(|provided| {
         provided.trait_path == required.trait_path
             && provided.type_arguments.len() == required.type_arguments.len()
-            && provided
-                .type_arguments
-                .iter()
-                .zip(&required.type_arguments)
-                .all(|(provided, required)| {
-                    normalize_context_type(provided, all_contexts, substitutions) == normalize_context_type(required, all_contexts, substitutions)
-                })
+            && provided.type_arguments.iter().zip(&required.type_arguments).all(|(provided, required)| {
+                normalize_context_type(provided, all_contexts, substitutions) == normalize_context_type(required, all_contexts, substitutions)
+            })
             && required.associated_types.iter().all(|required_equation| {
                 let expected = normalize_context_type(&required_equation.ty, all_contexts, substitutions);
                 provided.associated_types.iter().any(|provided_equation| {
@@ -267,10 +258,12 @@ fn normalize_context_type(
     substitutions: &BTreeMap<Identifier, ValkyrieType>,
 ) -> ValkyrieType {
     let ty = substitute_relation_type(ty, substitutions);
-    let ValkyrieType::Associated(associated) = &ty else {
+    let ValkyrieType::Associated(associated) = &ty
+    else {
         return ty;
     };
-    let Some(base) = named_type_name(&associated.base) else {
+    let Some(base) = named_type_name(&associated.base)
+    else {
         return ty;
     };
     contexts
@@ -351,46 +344,11 @@ fn trivially_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool 
             actual.iter().zip(expected).all(|(actual, expected)| trivially_compatible(actual, expected))
         }
         _ => {
-            collection_facade_compatible(actual, expected)
-                || primitive_types_compatible(actual, expected)
+            primitive_types_compatible(actual, expected)
                 || actual == expected
                 || matches!(actual, ValkyrieType::AutoType)
                 || matches!(expected, ValkyrieType::AutoType)
         }
-    }
-}
-
-/// `List<T>` is the collection facade for `ArrayList` / `LinkedList`.
-/// - Method dispatch: a `List`-typed receiver may bind concrete list methods.
-/// - Assignment: a concrete list value may satisfy a `List` parameter.
-/// Never equates `List` with `[T]` / `Array` — those stay ArrayPush-only.
-fn collection_facade_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
-    let Some(act_name) = named_type_name(actual)
-    else {
-        return false;
-    };
-    let Some(exp_name) = named_type_name(expected)
-    else {
-        return false;
-    };
-    let list_receiver_to_concrete = act_name.as_str() == "List" && matches!(exp_name.as_str(), "ArrayList" | "LinkedList");
-    let concrete_value_to_list = exp_name.as_str() == "List" && matches!(act_name.as_str(), "ArrayList" | "LinkedList");
-    if !(list_receiver_to_concrete || concrete_value_to_list) {
-        return false;
-    }
-    match (actual, expected) {
-        (ValkyrieType::Apply(_, actual_args), ValkyrieType::Apply(_, expected_args)) if actual_args.len() == expected_args.len() => {
-            actual_args.iter().zip(expected_args.iter()).all(|(actual_arg, expected_arg)| {
-                trivially_compatible(actual_arg, expected_arg)
-                    || actual_arg == expected_arg
-                    || matches!(actual_arg, ValkyrieType::Named(_))
-                    || matches!(expected_arg, ValkyrieType::Named(_))
-            })
-        }
-        (ValkyrieType::Apply(_, _), ValkyrieType::Named(_))
-        | (ValkyrieType::Named(_), ValkyrieType::Apply(_, _))
-        | (ValkyrieType::Named(_), ValkyrieType::Named(_)) => true,
-        _ => false,
     }
 }
 

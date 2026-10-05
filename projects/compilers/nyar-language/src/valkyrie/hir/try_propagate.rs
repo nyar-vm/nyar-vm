@@ -2,11 +2,13 @@
 
 use std::collections::BTreeMap;
 
-use crate::types::{
-    Identifier, NamePath,
-    hir::{HirBlock, HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind, HirStruct, ValkyrieType},
+use crate::{
+    types::{
+        Identifier, NamePath,
+        hir::{HirBlock, HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind, HirStruct, ValkyrieType},
+    },
+    valkyrie::frontend::ParseError,
 };
-use std_data::text::valkyrie::ParseError;
 
 /// `?` 操作数形态。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,7 +89,7 @@ fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> O
         HirExprKind::Variable(identifier) => locals.get(identifier.name.as_str()).cloned(),
         HirExprKind::Call { resolved, .. } => resolved.as_ref().map(|call| call.return_type.clone()),
         HirExprKind::Construct { name, .. } => Some(ValkyrieType::Named(name.clone())),
-        HirExprKind::TryPropagate(inner) => infer_expr_type(inner, locals).and_then(|ty| try_propagate_result_type(&ty)),
+        HirExprKind::TryPropagate { inner, .. } => infer_expr_type(inner, locals).and_then(|ty| try_propagate_result_type(&ty)),
         HirExprKind::Block(block) => block.expr.as_ref().and_then(|expr| infer_expr_type(expr, locals)),
         _ => None,
     }
@@ -117,7 +119,7 @@ fn validate_try_propagate_expr(
     locals: &BTreeMap<String, ValkyrieType>,
     try_scope_depth: usize,
 ) -> Result<(), ParseError> {
-    let HirExprKind::TryPropagate(inner) = &expr.kind
+    let HirExprKind::TryPropagate { inner, .. } = &expr.kind
     else {
         return Ok(());
     };
@@ -195,7 +197,7 @@ fn validate_expr_try_propagate(
     try_scope_depth: usize,
 ) -> Result<(), ParseError> {
     match &expr.kind {
-        HirExprKind::TryPropagate(_) => validate_try_propagate_expr(expr, enclosing_return, module, locals, try_scope_depth)?,
+        HirExprKind::TryPropagate { .. } => validate_try_propagate_expr(expr, enclosing_return, module, locals, try_scope_depth)?,
         HirExprKind::TryScope { body, .. } => validate_block_try_propagate(body, enclosing_return, module, locals, try_scope_depth + 1)?,
         HirExprKind::Call { callee, args, .. } => {
             validate_expr_try_propagate(callee, enclosing_return, module, locals, try_scope_depth)?;
@@ -339,6 +341,32 @@ pub fn is_option_apply_type(ty: &ValkyrieType) -> bool {
         ty,
         ValkyrieType::Apply(base, arguments) if arguments.len() == 1 && matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == "Option")
     )
+}
+
+/// `Option<T>` 的 `T`；`Option` 裸名（impl 目标）时返回 `None`。
+pub fn option_apply_payload_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
+    match ty {
+        ValkyrieType::Apply(base, arguments)
+            if arguments.len() == 1 && matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == "Option") =>
+        {
+            Some(arguments[0].clone())
+        }
+        _ => None,
+    }
+}
+
+/// `Result<T, E>` 变体字段类型：`Fine` → `T`，`Fail` → `E`。
+pub fn result_variant_payload_type(ty: &ValkyrieType, variant: &str) -> Option<ValkyrieType> {
+    match ty {
+        ValkyrieType::Apply(base, arguments) if matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == "Result") => {
+            match variant {
+                "Fine" if !arguments.is_empty() => Some(arguments[0].clone()),
+                "Fail" if arguments.len() >= 2 => Some(arguments[1].clone()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 /// 占位：供 MIR 判断 Result 形态时复用。

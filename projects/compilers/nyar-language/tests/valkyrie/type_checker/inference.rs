@@ -225,7 +225,10 @@ fn infers_try_propagate_as_payload_type() {
     let mut inf = TypeInference::new();
     let inner = HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(1)), span: test_span() };
     let expr = HirExpr {
-        kind: HirExprKind::TryPropagate(Box::new(HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(1)), span: test_span() })),
+        kind: HirExprKind::TryPropagate {
+            inner: Box::new(HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(1)), span: test_span() }),
+            resolved_ok_variant: None,
+        },
         span: test_span(),
     };
     let _ = inner;

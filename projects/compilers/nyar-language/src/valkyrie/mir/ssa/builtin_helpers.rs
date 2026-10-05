@@ -30,6 +30,10 @@ mod tests {
         assert_eq!(resolve_intrinsic_id(&push), Some(IntrinsicId::ArrayPush));
         let len = NamePath::new(vec![Identifier::new("__array_len")]);
         assert_eq!(resolve_intrinsic_id(&len), Some(IntrinsicId::ArrayLen));
+        let get = NamePath::new(vec![Identifier::new("__array_get")]);
+        assert_eq!(resolve_intrinsic_id(&get), Some(IntrinsicId::ArrayGet));
+        let set = NamePath::new(vec![Identifier::new("__array_set")]);
+        assert_eq!(resolve_intrinsic_id(&set), Some(IntrinsicId::ArraySet));
         let qualified_deref = NamePath::new(vec![Identifier::new("marker"), Identifier::new("__ref_deref")]);
         assert_eq!(resolve_intrinsic_id(&qualified_deref), Some(IntrinsicId::RefDeref));
         // 禁止按类型名末段猜

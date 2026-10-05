@@ -10,8 +10,7 @@ use super::{
     MirValueRef, callee_name_matches, infer_builder_operand_type, lower_literal, lower_resolved_callee, named_type_name,
     plain_type_pattern_matches,
     value_semantics::{
-        LayoutId, ensure_layout_for_type, ensure_unite_tagged_layout, layout_id_for_type,
-        storage_kind_for_named_type, storage_kind_for_type,
+        LayoutId, ensure_layout_for_type, ensure_unite_tagged_layout, layout_id_for_type, storage_kind_for_named_type, storage_kind_for_type,
     },
 };
 use crate::hir::nullable_payload_type;
@@ -101,21 +100,14 @@ impl MirBuilder {
                     let value_names = self.aggregate_layouts.value_type_names.iter().map(|item| Identifier::new(item)).collect();
                     if storage_kind_for_type(inferred_type, &value_names) == MirStorageKind::Value {
                         if let Some(layout_id) = ensure_layout_for_type(&mut self.aggregate_layouts, inferred_type) {
-                            self.push_instruction(MirOperation::AggregateCopy {
-                                source: operand,
-                                dest: MirOperand::Value(value),
-                            }, vec![value]);
+                            self.push_instruction(MirOperation::AggregateCopy { source: operand, dest: MirOperand::Value(value) }, vec![value]);
                             self.value_types.insert(value, inferred_type.clone());
                             self.bindings.insert(name, MirOperand::Value(value));
                             return;
                         }
                     }
                 }
-                self.push_instruction(MirOperation::StoreVar {
-                    name: name.clone(),
-                    value: operand,
-                    ty: inferred_type.clone(),
-                }, vec![value]);
+                self.push_instruction(MirOperation::StoreVar { name: name.clone(), value: operand, ty: inferred_type.clone() }, vec![value]);
                 if let Some(inferred_type) = inferred_type {
                     self.value_types.insert(value, inferred_type);
                 }
@@ -249,15 +241,6 @@ impl MirBuilder {
                 let condition = self.lower_extractor_nested_pattern_match_operand(extractor, nullable.clone(), matched, resolved);
                 (condition, Some(nullable))
             }
-            // `case Include { value }:` 解析为 Object（花括号）。对 unite scrutinee 必须
-            // tag 比较 + payload 提取，否则 `type_pattern_matches(WitDefinition, Include)`
-            // → Bool(false)，绑定落到 unsupported_pattern → JVM `iconst_0; getfield`。
-            HirPattern::Object { name: Some(name), fields, rest: None } => {
-                if let Some((condition, payload)) = self.try_lower_sum_object_tag_match(name, fields, value.clone(), None) {
-                    return (condition, payload);
-                }
-                (self.lower_pattern_match_operand(pattern, value), None)
-            }
             _ => (self.lower_pattern_match_operand(pattern, value), None),
         }
     }
@@ -277,18 +260,11 @@ impl MirBuilder {
             return self.lower_fallback_pattern_match(HirPattern::Name(name.clone()), value);
         };
 
-        // Nullary unite/enum arm (`case StringLiteral:`): runtime `tag` compare from
-        // `sum_types` — never `plain_type_pattern_matches` → Bool(false).
-        if let Some(condition) = self.try_lower_sum_variant_tag_match(&actual_type, name, value.clone(), None) {
-            return condition;
-        }
-
         MirOperand::Constant(MirConstant::Bool(plain_type_pattern_matches(&actual_type, name)))
     }
 
-    /// Match `case Variant:` against a sum scrutinee by loading `tag` and comparing it to the
-    /// variant discriminant from [`Self::sum_types`]. Disambiguates shared names (`EndOfFile`)
-    /// via the scrutinee's concrete sum type — no cross-sum guessing.
+    /// Match a sum scrutinee by `SumVariantIs`. Requires HIR `sum_owner` + `sum_variant` on the
+    /// extractor — MIR must not rediscover variant identity from spellings.
     fn try_lower_sum_variant_tag_match(
         &mut self,
         actual_type: &ValkyrieType,
@@ -296,18 +272,81 @@ impl MirBuilder {
         value: MirOperand,
         resolved: Option<&HirResolvedCall>,
     ) -> Option<MirOperand> {
-        let _ = (actual_type, pattern_name);
-        let resolved = resolved.as_ref()?;
-        let (owner, variant) = resolved.sum_owner.zip(resolved.sum_variant)?;
-        let (nominal, variant_id) = self.sum_identity_by_declarations(owner, variant)?;
-        let type_args = super::expr_lowering::type_args_from_sum_shaped(actual_type);
+        let pattern_variant = pattern_name.name();
+        let variant_name = pattern_variant.as_str();
+        let (nominal, variant_id) = self.resolve_sum_variant_identity(actual_type, variant_name, resolved)?;
+        let type_args = self.sum_type_args_for_scrutinee(actual_type);
         let condition = self.next_value(MirValueOrigin::Temporary);
-        self.push_instruction(
-            MirOperation::SumVariantIs { nominal, type_args, variant: variant_id, object: value },
-            vec![condition],
-        );
+        self.push_instruction(MirOperation::SumVariantIs { nominal, type_args, variant: variant_id, object: value }, vec![condition]);
         self.value_types.insert(condition, ValkyrieType::Boolean);
         Some(MirOperand::Value(condition))
+    }
+
+    fn sum_type_args_for_scrutinee(&self, actual_type: &ValkyrieType) -> Vec<ValkyrieType> {
+        let from_scrutinee = super::expr_lowering::type_args_from_sum_shaped(actual_type);
+        if !from_scrutinee.is_empty() {
+            return from_scrutinee;
+        }
+        let Some(scrutinee_owner) = named_type_name(actual_type)
+        else {
+            return from_scrutinee;
+        };
+        let Some(impl_owner) = self.impl_owner_type.as_ref()
+        else {
+            return from_scrutinee;
+        };
+        let Some(owner_name) = named_type_name(impl_owner)
+        else {
+            return from_scrutinee;
+        };
+        if sum_type_name_matches(scrutinee_owner, owner_name) {
+            let from_owner = super::expr_lowering::type_args_from_sum_shaped(impl_owner);
+            if !from_owner.is_empty() {
+                return from_owner;
+            }
+        }
+        if let Some(sum) = self.sum_types.iter().find(|sum| sum_type_name_matches(&sum.name, scrutinee_owner)) {
+            if sum.generics.len() == self.impl_type_arguments.len() && !self.impl_type_arguments.is_empty() {
+                return self.impl_type_arguments.clone();
+            }
+            if !sum.generics.is_empty() {
+                return sum.generics.iter().map(|generic| ValkyrieType::Named(generic.name.clone())).collect();
+            }
+        }
+        from_scrutinee
+    }
+
+    fn resolve_sum_variant_identity(
+        &mut self,
+        _actual_type: &ValkyrieType,
+        _variant_name: &str,
+        resolved: Option<&HirResolvedCall>,
+    ) -> Option<(nyar_types::NominalInstanceId, nyar_types::VariantId)> {
+        let resolved = resolved?;
+        let (owner, variant) = resolved.sum_owner.zip(resolved.sum_variant)?;
+        self.sum_identity_by_declarations(owner, variant)
+    }
+
+    fn resolve_sum_variant_payload_type(
+        &self,
+        actual_type: &ValkyrieType,
+        variant_name: &str,
+        resolved: Option<&HirResolvedCall>,
+    ) -> Option<ValkyrieType> {
+        if let Some(resolved) = resolved {
+            let object_ty = actual_type.clone();
+            let from_apply = match (&object_ty, variant_name) {
+                (ValkyrieType::Apply(_, args), "Fine" | "Some" | "Ok") => args.first().cloned(),
+                (ValkyrieType::Apply(_, args), "Fail" | "Err") => args.get(1).cloned(),
+                (ValkyrieType::Nullable(inner), "Some") => Some((**inner).clone()),
+                _ => None,
+            };
+            if let Some(payload_ty) = from_apply.filter(|ty| !looks_like_unbound_type_parameter(ty)) {
+                return Some(payload_ty);
+            }
+            return resolved.extractor_payload_type.clone().filter(|ty| !looks_like_unbound_type_parameter(ty));
+        }
+        None
     }
 
     pub(super) fn lower_tuple_pattern_match_operand(&mut self, items: &[HirPattern], value: MirOperand) -> MirOperand {
@@ -354,57 +393,48 @@ impl MirBuilder {
             return None;
         };
         let actual_type = infer_builder_operand_type(&value, &self.value_types)?;
-        let resolved = resolved.as_ref()?;
-        let condition = self.try_lower_sum_variant_tag_match(&actual_type, name, value.clone(), Some(resolved))?;
+        let resolved_ref = resolved.as_ref();
+        let condition = self.try_lower_sum_variant_tag_match(&actual_type, name, value.clone(), resolved_ref)?;
         if fields.is_empty() {
             return Some((condition, None));
         }
         // Prefer sum-layout payload typing (substitutes Result Apply args). HIR-resolved
         // extractor metadata often still carries unbound `T`/`E` and must not win.
         // Never fall through to FieldGet `payload` against a payload-struct layout.
-        let payload = if let Some(payload) = self.lower_sum_payload_operand(&actual_type, name, value.clone(), Some(resolved)) {
+        let payload = if let Some(payload) = self.lower_sum_payload_operand(&actual_type, name, value.clone(), resolved_ref) {
             payload
         }
-        else {
+        else if let Some(resolved) = resolved_ref {
             self.try_lower_result_option_extractor(resolved, value.clone())
                 .or_else(|| self.lower_sum_payload_operand(&actual_type, name, value.clone(), Some(resolved)))?
+        }
+        else {
+            return None;
         };
         Some((condition, Some(payload)))
     }
 
-    /// Object pattern `Variant { field }` on a sum scrutinee → same tag + payload lowering.
-    fn try_lower_sum_object_tag_match(
+    /// Emit `SumPayloadGet` for a sum scrutinee and register the variant payload type.
+    fn lower_sum_payload_operand(
         &mut self,
-        name: &NamePath,
-        fields: &[(Identifier, HirPattern)],
+        actual_type: &ValkyrieType,
+        variant_name: &NamePath,
         value: MirOperand,
         resolved: Option<&HirResolvedCall>,
-    ) -> Option<(MirOperand, Option<MirOperand>)> {
-        let actual_type = infer_builder_operand_type(&value, &self.value_types)?;
-        let condition = self.try_lower_sum_variant_tag_match(&actual_type, name, value.clone(), resolved)?;
-        if fields.is_empty() {
-            return Some((condition, None));
-        }
-        let payload = self.lower_sum_payload_operand(&actual_type, name, value, resolved)?;
-        Some((condition, Some(payload)))
-    }
-
-    /// Emit `SumPayloadGet` for a sum scrutinee and register the variant payload type.
-    fn lower_sum_payload_operand(&mut self, actual_type: &ValkyrieType, variant_name: &NamePath, value: MirOperand, resolved: Option<&HirResolvedCall>) -> Option<MirOperand> {
-        let _ = variant_name;
-        let resolved = resolved?;
-        let (owner, variant) = resolved.sum_owner.zip(resolved.sum_variant)?;
-        let (nominal, variant_id) = self.sum_identity_by_declarations(owner, variant)?;
-        let payload_ty = resolved.extractor_payload_type.clone()?;
+    ) -> Option<MirOperand> {
+        let pattern_variant = variant_name.name();
+        let variant = pattern_variant.as_str();
+        let (nominal, variant_id) = self.resolve_sum_variant_identity(actual_type, variant, resolved)?;
+        let payload_ty = self.resolve_sum_variant_payload_type(actual_type, variant, resolved)?;
         let output = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(
             MirOperation::SumPayloadGet {
-            // Alias scrutinees (`VonParseResult`) must still name the declared unite (`Result`).
-            nominal,
-            type_args: super::expr_lowering::type_args_from_sum_shaped(actual_type),
-            variant: variant_id,
-            payload_type: payload_ty.clone(),
-            object: value,
+                // Alias scrutinees (`VonParseResult`) must still name the declared unite (`Result`).
+                nominal,
+                type_args: self.sum_type_args_for_scrutinee(actual_type),
+                variant: variant_id,
+                payload_type: payload_ty.clone(),
+                object: value,
             },
             vec![output],
         );
@@ -429,7 +459,7 @@ impl MirBuilder {
                     args.get(1).cloned()
                 }
                 else {
-                    Some(ValkyrieType::Named(Identifier::new("VonDiagnostic")))
+                    None
                 }
             }
             (ValkyrieType::Nullable(inner), "Some") => Some((**inner).clone()),
@@ -679,50 +709,23 @@ impl MirBuilder {
             if let Some(payload) = self.try_lower_result_option_extractor(resolved, value.clone()) {
                 return payload;
             }
-            let object_ty = infer_builder_operand_type(&value, &self.value_types);
-            // If the scrutinee is still a Result/Option-shaped Apply/Named, prefer
-            // SumPayloadGet even when the dedicated helper returned None (e.g. odd
-            // extractor metadata). Never FieldGet `payload` on the Fine payload struct.
-            if let Some(ref ty) = object_ty {
-                if let Some(type_name) = named_type_name(ty) {
-                    if self.sum_types.iter().any(|sum| sum_type_name_matches(&sum.name, type_name))
-                        || type_name == "Result"
-                        || type_name.ends_with("Result")
-                        || matches!(type_name, "Option" | "Nullable")
-                    {
-                        let variant = resolved.symbol.parts().last().map(|part| part.as_str()).unwrap_or("");
-                        if let Some(payload) = self.lower_sum_payload_operand(ty, &NamePath::new(vec![Identifier::new(variant)]), value.clone(), Some(resolved))
-                        {
-                            return payload;
-                        }
-                    }
-                }
-            }
             self.diagnostics.push(MirDiagnostic::UnresolvedFieldIdentity { field: "sum extractor payload".to_string() });
             return MirOperand::Constant(MirConstant::Unit);
         }
-        let Some(callee) = lower_resolved_callee(resolved) else {
-            self.diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity {
-                symbol: resolved.symbol.to_string(),
-            });
+        let Some(callee) = lower_resolved_callee(resolved)
+        else {
+            self.diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity { symbol: resolved.symbol.to_string() });
             return MirOperand::Constant(MirConstant::Unit);
         };
         let output = self.next_value(MirValueOrigin::Temporary);
-        self.push_instruction(
-            MirOperation::Call {
-                callee,
-                arguments: vec![value.clone()],
-            },
-            vec![output],
-        );
+        self.push_instruction(MirOperation::Call { callee, arguments: vec![value.clone()] }, vec![output]);
         self.value_types.insert(output, resolved.return_type.clone());
         MirOperand::Value(output)
     }
 
     fn lower_nullable_some_operand(&mut self, nullable: MirOperand) -> MirOperand {
-        let is_null = self.reject_unmodeled_static_operation("nullable check", MirValueOrigin::Temporary);
-        self.value_types.insert(is_null, ValkyrieType::Boolean);
-        self.lower_logical_not_operand(MirOperand::Value(is_null))
+        let is_null_operand = self.emit_null_is_null_operand(nullable);
+        self.lower_logical_not_operand(is_null_operand)
     }
 
     fn lower_extractor_matched_operand(&mut self, nullable: MirOperand) -> MirOperand {
@@ -769,7 +772,8 @@ impl MirBuilder {
 
     pub(super) fn lower_object_field_operand(&mut self, object: MirOperand, field_name: &Identifier) -> MirOperand {
         let field_type = self.field_type_for_object_operand(&object, field_name);
-        let Some(field) = self.field_identity_for_object(&object, field_name) else {
+        let Some(field) = self.field_identity_for_object(&object, field_name)
+        else {
             self.diagnostics.push(MirDiagnostic::UnresolvedFieldIdentity { field: field_name.to_string() });
             return MirOperand::Constant(MirConstant::Unit);
         };
@@ -1177,38 +1181,15 @@ fn tuple_literal_exprs(expr: &HirExpr) -> Option<Vec<HirExpr>> {
     }
 }
 
-/// Exact or dotted/underscored suffix match (`std.data.text.von.VonTokenKind` ↔ `VonTokenKind`).
-/// Also maps type aliases such as `VonParseResult` onto the `Result` unite layout.
+/// Match the already linked nominal owner.  Source spelling aliases must be
+/// resolved by HIR/linker identity before pattern lowering; this function must
+/// not infer a sum declaration from a name suffix.
 fn sum_type_name_matches(a: &str, b: &str) -> bool {
-    if a == b {
-        return true;
-    }
-    let boundary_suffix = |hay: &str, needle: &str| -> bool {
-        if !hay.ends_with(needle) || hay.len() <= needle.len() {
-            return false;
-        }
-        matches!(hay.as_bytes().get(hay.len() - needle.len() - 1).copied(), Some(b'.' | b'_'))
-    };
-    if boundary_suffix(a, b) || boundary_suffix(b, a) {
-        return true;
-    }
-    // `type VonParseResult<T> = Result<T, E>` keeps the alias name on Apply; Fine/Fail
-    // must still resolve against the Result unite in `sum_types`.
-    let result_alias = |name: &str| name == "Result" || (name.ends_with("Result") && name != "Result");
-    (a == "Result" && result_alias(b)) || (b == "Result" && result_alias(a))
+    a == b
 }
 
-/// HIR extractor metadata often retains unite type parameters (`T` / `E`) instead of the
-/// concrete Apply substitution. Those names must not win over an already-concrete SSA type.
+/// HIR extractor metadata can retain a generic parameter when no concrete substitution is
+/// available. It must not win over an already-concrete SSA type.
 fn looks_like_unbound_type_parameter(ty: &ValkyrieType) -> bool {
-    match ty {
-        ValkyrieType::Named(name) => {
-            let text = name.as_str();
-            !text.is_empty()
-                && text.chars().all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
-                && text.chars().next().is_some_and(|ch| ch.is_ascii_uppercase())
-                && text.len() <= 3
-        }
-        _ => false,
-    }
+    matches!(ty, ValkyrieType::Generic(_))
 }

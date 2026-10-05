@@ -294,6 +294,19 @@ pub enum InstructionKind {
     ArrayLength {
         array: Operand,
     },
+    /// Append one element to a growable array; returns the array reference.
+    ArrayPush {
+        array: Operand,
+        value: Operand,
+    },
+    /// Test whether a nullable value is null.
+    NullIsNull {
+        value: Operand,
+    },
+    /// Unwrap a non-null nullable payload.
+    NullUnwrap {
+        value: Operand,
+    },
 }
 
 /// Array slot initialization for [`InstructionKind::ArrayNew`].

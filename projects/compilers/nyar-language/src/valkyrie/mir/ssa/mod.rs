@@ -1,8 +1,8 @@
 #![allow(missing_docs)]
 
-use std::collections::{BTreeMap, BTreeSet};
-use nyar_types::builtin_attribute;
 use nyar::{CapabilityTag, RewriteTheory, SemanticFragment};
+use nyar_types::builtin_attribute;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     symbols::stable_hir_function_symbol,
@@ -22,6 +22,7 @@ mod effect_lowering;
 mod exit_lowering;
 mod expr_helpers;
 mod expr_lowering;
+mod null_intrinsic_lowering;
 // 已删除：mod frame_planning;
 mod match_lowering;
 mod pattern_lowering;
@@ -34,32 +35,31 @@ mod try_scope_lowering;
 mod value_semantics;
 
 #[cfg(test)]
-mod singleton_tests;
-#[cfg(test)]
 mod call_type_contract_tests;
 #[cfg(test)]
 mod declaration_contract_tests;
 #[cfg(test)]
 mod field_contract_tests;
 #[cfg(test)]
+mod singleton_tests;
+#[cfg(test)]
 mod workload_phase_tests;
 
 // IntrinsicOpcode 权威已删除 — 不得 `pub use` opcode 枚举。
 pub use value_semantics::{
     AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, MirStorageKind, SumTypeLayout, SumVariantLayout,
-    compute_aggregate_layout_plan, ensure_layout_for_type, layout_id_for_type,
-    layout_key_for_nyar_type, layout_key_for_type, merge_aggregate_layout_plan, storage_kind_for_named_type, storage_kind_for_type,
-    value_type_names_from_module,
+    compute_aggregate_layout_plan, ensure_layout_for_type, layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type,
+    merge_aggregate_layout_plan, storage_kind_for_named_type, storage_kind_for_type, value_type_names_from_module,
 };
 
+use super::MirSumDeclaration;
 use builtin_helpers::plain_type_pattern_matches;
-use nyar_types::{ItemInstanceId, OperatorId, VariantId};
 use control_flow_context::{MirBuilderControlFlow, MirHandlerDispatchContext, MirResumeContinuationContext};
 use expr_helpers::{
     callee_name_matches, future_resume_type, infer_builder_operand_type, lower_callee_operand, lower_resolved_callee, named_type_name,
 };
 use expr_lowering::lower_literal;
-use super::MirSumDeclaration;
+use nyar_types::{ItemInstanceId, OperatorId, VariantId};
 
 /// `MIR` lowering 阶段产生的编译期诊断。
 ///
@@ -223,22 +223,30 @@ impl MirStruct {
         if self.namespace.is_empty() { self.name.clone() } else { format!("{}.{}", self.namespace, self.name) }
     }
 
+    /// 按 HIR 冻结的 `ItemId` 查找唯一聚合声明。禁止短名/限定名字符串回查。
+    pub fn find_by_declaration<'a>(declarations: &'a [MirStruct], declaration: nyar_types::ItemId) -> Option<&'a MirStruct> {
+        let matches: Vec<&MirStruct> = declarations.iter().filter(|item| item.declaration == Some(declaration)).collect();
+        if matches.len() == 1 { Some(matches[0]) } else { None }
+    }
+
     pub fn instantiate_field(&self, owner: &ValkyrieType, field: &str) -> Option<ValkyrieType> {
-        let (base, arguments) = match owner {
-            ValkyrieType::Named(_) => (owner, &[][..]),
-            ValkyrieType::Apply(base, arguments) => (base.as_ref(), arguments.as_slice()),
+        let (declaration, arguments) = match owner {
+            ValkyrieType::Nominal { declaration, arguments } => (*declaration, arguments.as_slice()),
             _ => return None,
         };
-        let ValkyrieType::Named(name) = base else { return None; };
-        if name.as_str() != self.qualified_name() || arguments.len() != self.generics.len() {
+        if self.declaration != Some(declaration) || arguments.len() != self.generics.len() {
             return None;
         }
-        let substitutions = self.generics.iter().zip(arguments)
-            .map(|(generic, argument)| (generic.name.clone(), argument.clone())).collect::<BTreeMap<_, _>>();
-        if substitutions.len() != self.generics.len() { return None; }
+        let substitutions =
+            self.generics.iter().zip(arguments).map(|(generic, argument)| (generic.name.clone(), argument.clone())).collect::<BTreeMap<_, _>>();
+        if substitutions.len() != self.generics.len() {
+            return None;
+        }
         let mut matching = self.fields.iter().filter(|candidate| candidate.name == field);
         let declared = matching.next()?;
-        if matching.next().is_some() { return None; }
+        if matching.next().is_some() {
+            return None;
+        }
         let ty = crate::valkyrie::hir::overload::substitute_type_vars(&declared.ty, &substitutions);
         Some(resolve_self_type_with_owner(&ty, Some(owner)))
     }
@@ -644,6 +652,19 @@ pub enum MirOperation {
     ArrayLength {
         array: MirOperand,
     },
+    /// 向可增长数组末尾追加元素；返回数组引用（语言 `push` intrinsic）。
+    ArrayPush {
+        array: MirOperand,
+        value: MirOperand,
+    },
+    /// 检测可空值为 null（`builtin.null.is_null`）。
+    NullIsNull {
+        value: MirOperand,
+    },
+    /// 解包非 null 可空载荷（`builtin.null.unwrap`）。
+    NullUnwrap {
+        value: MirOperand,
+    },
 }
 
 /// How [`MirOperation::ArrayNew`] initializes slots (must be defined by valkyrie-2020).
@@ -718,9 +739,16 @@ pub(super) fn collect_effectful_resume_map(module: &HirModule) -> BTreeMap<Strin
 
 /// 提取 `ValkyrieType` 的 nominal 名（用于匹配 effect 载体与 `Effectful` impl 的 target）。
 pub(super) fn nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
+    // 与 overload 侧 `impl_nominal_type_name` 对齐：`imply bool` / `imply f64` 等目标常为内置
+    // `ValkyrieType` 而非 `Named`，否则 impl 方法不会进入 Semantic MIR。
     match ty {
+        ValkyrieType::Array(_) => Some("Array"),
         ValkyrieType::Named(name) => Some(name.as_str()),
         ValkyrieType::Apply(base, _) => nominal_type_name(base),
+        ValkyrieType::Float32 => Some("f32"),
+        ValkyrieType::Float64 => Some("f64"),
+        ValkyrieType::Boolean => Some("bool"),
+        ValkyrieType::Character => Some("char"),
         ValkyrieType::Integer8 { signed: true } => Some("i8"),
         ValkyrieType::Integer8 { signed: false } => Some("u8"),
         ValkyrieType::Integer16 { signed: true } => Some("i16"),
@@ -748,10 +776,11 @@ impl MirLowerer {
         merge_imported_struct_is_value_type(module, &mut struct_is_value_type);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
         let mut diagnostics = Vec::new();
-        let (mut sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module);
+        let structs = collect_field_declarations(module);
+        let nominal_offset = u32::try_from(structs.len()).expect("aggregate nominal identity overflow");
+        let (mut sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module, nominal_offset);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let effectful_resume_map = collect_effectful_resume_map(module);
-        let structs = collect_field_declarations(module);
         let mut next_field = structs.iter().map(|declaration| declaration.fields.len()).sum::<usize>();
         for sum in &mut sum_types {
             for variant in &mut sum.variants {
@@ -764,6 +793,7 @@ impl MirLowerer {
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let external_calls = collect_external_call_contracts(module);
         let (exports, entries) = collect_surface_contracts(module);
+        let callable_returns = collect_callable_return_types(module);
         let mut functions = Vec::new();
         for function in module.functions.iter().filter(|function| !function.is_abstract) {
             functions.push(lower_function_semantic(
@@ -775,7 +805,9 @@ impl MirLowerer {
                 &mut aggregate_layouts,
                 &singleton_accessors,
                 &effectful_resume_map,
+                &callable_returns,
                 None,
+                Vec::new(),
                 &mut diagnostics,
             ));
         }
@@ -787,6 +819,7 @@ impl MirLowerer {
             &mut aggregate_layouts,
             &singleton_accessors,
             &effectful_resume_map,
+            &callable_returns,
             &mut diagnostics,
         ));
         functions.extend(lower_impl_method_functions(
@@ -797,11 +830,14 @@ impl MirLowerer {
             &mut aggregate_layouts,
             &singleton_accessors,
             &effectful_resume_map,
+            &callable_returns,
             &mut diagnostics,
         ));
         // MirFunction 不再携带 per-function diagnostics。
+        // TypeId 只消费已冻结的 Nominal{ItemId} / 其他结构化形状；禁止短名 Named 别名收束。
         let type_identities = type_identity_table(&functions, &external_calls, &structs, &sum_types);
-        let callable_identities = functions.iter()
+        let callable_identities = functions
+            .iter()
             .filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance)))
             .chain(external_calls.iter().filter_map(|contract| contract.instance.map(|instance| (contract.symbol.to_string(), instance))))
             .collect();
@@ -825,95 +861,182 @@ impl MirLowerer {
         };
         result
     }
-
 }
 
-pub(crate) fn type_identity_table(functions: &[MirFunction], external_calls: &[MirExternalCallContract], structs: &[MirStruct], sums: &[MirSumDeclaration]) -> BTreeMap<ValkyrieType, nyar_types::TypeId> {
+fn type_contains_placeholder(ty: &ValkyrieType, include_generic_binders: bool) -> bool {
+    match ty {
+        ValkyrieType::SelfType | ValkyrieType::Associated(_) | ValkyrieType::AutoType => true,
+        ValkyrieType::Generic(_) if include_generic_binders => true,
+        ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(|arg| type_contains_placeholder(arg, include_generic_binders)),
+        ValkyrieType::Apply(base, args) => {
+            type_contains_placeholder(base, include_generic_binders)
+                || args.iter().any(|arg| type_contains_placeholder(arg, include_generic_binders))
+        }
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+            items.iter().any(|item| type_contains_placeholder(item, include_generic_binders))
+        }
+        ValkyrieType::Function(function) => {
+            function.params.iter().any(|param| type_contains_placeholder(param, include_generic_binders))
+                || type_contains_placeholder(&function.return_type, include_generic_binders)
+        }
+        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => type_contains_placeholder(element, include_generic_binders),
+        ValkyrieType::FixedArray { element, .. } => type_contains_placeholder(element, include_generic_binders),
+        _ => false,
+    }
+}
+
+/// Canonical 类型表只收录可无损 lower 的形状；泛型形参与 `Self`/关联类型保留在 MIR 局部语义中。
+pub(crate) fn type_contains_unresolved_reference(ty: &ValkyrieType) -> bool {
+    type_contains_placeholder(ty, true)
+}
+
+/// 函数签名允许携带泛型形参，但不允许 `Self`/关联类型占位。
+pub(crate) fn type_contains_non_monomorphic_signature_reference(ty: &ValkyrieType) -> bool {
+    type_contains_placeholder(ty, false)
+}
+
+pub(crate) fn type_identity_table(
+    functions: &[MirFunction],
+    external_calls: &[MirExternalCallContract],
+    structs: &[MirStruct],
+    sums: &[MirSumDeclaration],
+) -> BTreeMap<ValkyrieType, nyar_types::TypeId> {
     fn collect(set: &mut BTreeSet<ValkyrieType>, ty: &ValkyrieType) {
         match ty {
-            ValkyrieType::Apply(base, args) => { collect(set, base); for arg in args { collect(set, arg); } }
+            ValkyrieType::Nominal { arguments, .. } => {
+                for arg in arguments {
+                    collect(set, arg);
+                }
+            }
+            ValkyrieType::Apply(base, args) => {
+                collect(set, base);
+                for arg in args {
+                    collect(set, arg);
+                }
+            }
             ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
-                for item in items { collect(set, item); }
+                for item in items {
+                    collect(set, item);
+                }
             }
             ValkyrieType::Function(function) => {
-                for param in &function.params { collect(set, param); }
+                for param in &function.params {
+                    collect(set, param);
+                }
                 collect(set, &function.return_type);
             }
             ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => collect(set, element),
             ValkyrieType::FixedArray { element, .. } => collect(set, element),
+            ValkyrieType::Associated(associated) => {
+                collect(set, &associated.base);
+                for argument in &associated.type_arguments {
+                    collect(set, argument);
+                }
+            }
             _ => {}
         }
-        set.insert(ty.clone());
+        if !type_contains_unresolved_reference(ty) {
+            set.insert(ty.clone());
+        }
+    }
+
+    /// 聚合声明的规范类型键：已绑定 ItemId 的无参 Nominal。
+    fn aggregate_type_key(structure: &MirStruct) -> Option<ValkyrieType> {
+        structure.declaration.map(|declaration| ValkyrieType::Nominal { declaration, arguments: Vec::new() })
     }
 
     let mut types = BTreeSet::new();
     for function in functions {
         collect(&mut types, &function.return_type);
-        for ty in &function.param_types { collect(&mut types, ty); }
-        for ty in function.value_types.values() { collect(&mut types, ty); }
+        for ty in &function.param_types {
+            collect(&mut types, ty);
+        }
+        for ty in function.value_types.values() {
+            collect(&mut types, ty);
+        }
     }
     for contract in external_calls {
-        for ty in &contract.parameter_types { collect(&mut types, ty); }
+        for ty in &contract.parameter_types {
+            collect(&mut types, ty);
+        }
         collect(&mut types, &contract.return_type);
     }
     for structure in structs {
-        collect(&mut types, &ValkyrieType::Named(Identifier::new(&structure.qualified_name())));
-        for field in &structure.fields { collect(&mut types, &field.ty); }
+        if let Some(key) = aggregate_type_key(structure) {
+            collect(&mut types, &key);
+        }
+        for field in &structure.fields {
+            collect(&mut types, &field.ty);
+        }
     }
     for sum in sums {
-        collect(&mut types, &ValkyrieType::Named(Identifier::new(&sum.name)));
-        for variant in &sum.variants {
-            for field in &variant.fields { collect(&mut types, &field.ty); }
-            if let Some(result) = &variant.result_type { collect(&mut types, result); }
+        if let Some(declaration) = sum.declaration {
+            collect(&mut types, &ValkyrieType::Nominal { declaration, arguments: Vec::new() });
         }
-        for generic in &sum.generics { collect(&mut types, &ValkyrieType::Named(generic.name.clone())); }
+        for variant in &sum.variants {
+            for field in &variant.fields {
+                collect(&mut types, &field.ty);
+            }
+            if let Some(result) = &variant.result_type {
+                collect(&mut types, result);
+            }
+        }
     }
-    types.into_iter().enumerate().map(|(index, ty)| (ty, nyar_types::TypeId::from_index(index as u32).expect("type identity overflow"))).collect()
+
+    types
+        .into_iter()
+        .enumerate()
+        .map(|(index, ty)| (ty, nyar_types::TypeId::from_index(index as u32).expect("type identity overflow")))
+        .collect()
 }
 
 fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallContract> {
     fn collect_abstract_functions(module: &HirModule, out: &mut Vec<MirExternalCallContract>) {
-        out.extend(module.functions
-        .iter()
-        .filter(|function| {
-            function.is_abstract
-                && crate::valkyrie::backend_contract::interop::function_interop_contract(function).is_some()
-        })
-        .filter_map(|function| {
-            let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
-            Some(MirExternalCallContract {
-                declaration: function.declaration,
-                instance: function.instance,
-                symbol: crate::valkyrie::symbols::stable_hir_function_name_path(&module.name, function),
-                link,
-                parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
-                return_type: function.return_type.clone(),
-            })
-        }));
+        out.extend(
+            module
+                .functions
+                .iter()
+                .filter(|function| {
+                    function.is_abstract && crate::valkyrie::backend_contract::interop::function_interop_contract(function).is_some()
+                })
+                .filter_map(|function| {
+                    let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
+                    Some(MirExternalCallContract {
+                        declaration: function.declaration,
+                        instance: function.instance,
+                        symbol: crate::valkyrie::symbols::stable_hir_function_name_path(&module.name, function),
+                        link,
+                        parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
+                        return_type: function.return_type.clone(),
+                    })
+                }),
+        );
         for submodule in &module.submodules {
             collect_abstract_functions(submodule, out);
         }
     }
     let mut contracts = Vec::new();
     collect_abstract_functions(module, &mut contracts);
-    contracts.extend(module
-        .imported_semantic_exports
-        .iter()
-        .flat_map(|export| {
-            export.functions.iter().filter_map(move |function| {
-                let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
-                let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(&export.module, function);
-                Some(MirExternalCallContract {
-                    declaration: function.declaration,
-                    instance: function.instance,
-                    symbol,
-                    link,
-                    parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
-                    return_type: function.return_type.clone(),
+    contracts.extend(
+        module
+            .imported_semantic_exports
+            .iter()
+            .flat_map(|export| {
+                export.functions.iter().filter_map(move |function| {
+                    let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
+                    let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(&export.module, function);
+                    Some(MirExternalCallContract {
+                        declaration: function.declaration,
+                        instance: function.instance,
+                        symbol,
+                        link,
+                        parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
+                        return_type: function.return_type.clone(),
+                    })
                 })
             })
-        })
-        .collect::<Vec<_>>());
+            .collect::<Vec<_>>(),
+    );
     contracts
 }
 
@@ -947,16 +1070,24 @@ fn collect_surface_contracts(module: &HirModule) -> (Vec<MirExportContract>, Vec
 fn collect_semantic_fragments(module: &HirModule, exports: &[MirExportContract], entries: &[MirEntryContract]) -> Vec<SemanticFragment> {
     let mut fragments = BTreeMap::<Identifier, SemanticFragment>::new();
     for function in &module.functions {
-        let Some(instance) = function.instance else { continue };
+        let Some(instance) = function.instance
+        else {
+            continue;
+        };
         let export = exports.iter().find(|export| export.instance == Some(instance));
         let is_entry = entries.iter().any(|entry| entry.instance == Some(instance));
-        if export.is_none() && !is_entry { continue; }
+        if export.is_none() && !is_entry {
+            continue;
+        }
         let id = if let Some(export) = export {
             Identifier::new(&format!("export__{}", export.partition.replace('.', "_")))
-        } else if entries.len() > 1 {
-            let name = function.name.as_str().chars().map(|ch| if ch.is_ascii_alphanumeric() || ch == '_' { ch } else { '_' }).collect::<String>();
+        }
+        else if entries.len() > 1 {
+            let name =
+                function.name.as_str().chars().map(|ch| if ch.is_ascii_alphanumeric() || ch == '_' { ch } else { '_' }).collect::<String>();
             Identifier::new(&format!("main_{name}"))
-        } else {
+        }
+        else {
             Identifier::new("functions")
         };
         let fragment = fragments.entry(id.clone()).or_insert_with(|| SemanticFragment {
@@ -968,9 +1099,15 @@ fn collect_semantic_fragments(module: &HirModule, exports: &[MirExportContract],
             rewrite_theory: RewriteTheory::default(),
             wasm_export_names: BTreeMap::new(),
         });
-        if !fragment.exported_operations.contains(&instance) { fragment.exported_operations.push(instance); }
-        if is_entry { fragment.entry_operation = Some(instance); }
-        if let Some(export) = export { fragment.wasm_export_names.insert(instance, export.exported_name.clone()); }
+        if !fragment.exported_operations.contains(&instance) {
+            fragment.exported_operations.push(instance);
+        }
+        if is_entry {
+            fragment.entry_operation = Some(instance);
+        }
+        if let Some(export) = export {
+            fragment.wasm_export_names.insert(instance, export.exported_name.clone());
+        }
         if crate::valkyrie::hir::control_flow_validation::function_needs_suspend_fragment(&function.body)
             && !fragment.required_capabilities.iter().any(|capability| capability.as_str() == "suspend")
         {
@@ -978,15 +1115,18 @@ fn collect_semantic_fragments(module: &HirModule, exports: &[MirExportContract],
         }
     }
     if fragments.is_empty() {
-        fragments.insert(Identifier::new("functions"), SemanticFragment {
-            id: Identifier::new("functions"),
-            exported_operations: Vec::new(),
-            required_capabilities: Vec::new(),
-            reference_management_hint: None,
-            entry_operation: None,
-            rewrite_theory: RewriteTheory::default(),
-            wasm_export_names: BTreeMap::new(),
-        });
+        fragments.insert(
+            Identifier::new("functions"),
+            SemanticFragment {
+                id: Identifier::new("functions"),
+                exported_operations: Vec::new(),
+                required_capabilities: Vec::new(),
+                reference_management_hint: None,
+                entry_operation: None,
+                rewrite_theory: RewriteTheory::default(),
+                wasm_export_names: BTreeMap::new(),
+            },
+        );
     }
     fragments.into_values().collect()
 }
@@ -999,6 +1139,7 @@ fn lower_singleton_method_functions(
     aggregate_layouts: &mut AggregateLayoutPlan,
     singleton_accessors: &BTreeMap<String, String>,
     effectful_resume_map: &BTreeMap<String, ValkyrieType>,
+    callable_returns: &CallableReturnTypes,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
@@ -1013,7 +1154,9 @@ fn lower_singleton_method_functions(
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,
+                callable_returns,
                 Some(ValkyrieType::Named(singleton.name.clone())),
+                impl_type_arguments_from_generics(&singleton.generics),
                 diagnostics,
             );
             mir_function.symbol = format!("{}.{}", singleton.name, method.name);
@@ -1029,7 +1172,9 @@ fn lower_singleton_method_functions(
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,
+                callable_returns,
                 Some(ValkyrieType::Named(singleton.name.clone())),
+                impl_type_arguments_from_generics(&singleton.generics),
                 diagnostics,
             );
             mir_function.symbol = format!("{}.{}", singleton.name, constructor.name);
@@ -1045,7 +1190,9 @@ fn lower_singleton_method_functions(
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,
+                callable_returns,
                 Some(ValkyrieType::Named(singleton.name.clone())),
+                impl_type_arguments_from_generics(&singleton.generics),
                 diagnostics,
             );
             mir_function.symbol = format!("{}.{}", singleton.name, finalizer.name);
@@ -1063,6 +1210,7 @@ fn lower_impl_method_functions(
     aggregate_layouts: &mut AggregateLayoutPlan,
     singleton_accessors: &BTreeMap<String, String>,
     effectful_resume_map: &BTreeMap<String, ValkyrieType>,
+    callable_returns: &CallableReturnTypes,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
@@ -1081,7 +1229,9 @@ fn lower_impl_method_functions(
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,
+                callable_returns,
                 Some(impl_block.target.clone()),
+                impl_type_arguments_from_generics(&impl_block.generics),
                 diagnostics,
             );
             mir_function.symbol = format!("{type_name}.{}", method.name);
@@ -1099,7 +1249,9 @@ fn lower_impl_method_functions(
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,
+                callable_returns,
                 Some(ValkyrieType::Named(item.name.clone())),
+                impl_type_arguments_from_generics(&item.generics),
                 diagnostics,
             );
             mir_function.symbol = format!("{}.{}", item.name, method.name);
@@ -1117,7 +1269,9 @@ fn lower_impl_method_functions(
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,
+                callable_returns,
                 Some(ValkyrieType::Named(trait_def.name.clone())),
+                impl_type_arguments_from_generics(&trait_def.generics),
                 diagnostics,
             );
             mir_function.symbol = format!("{}.{}", trait_def.name, method.name);
@@ -1129,11 +1283,16 @@ fn lower_impl_method_functions(
 
 /// 将 `HirStruct` 降级为 `MirStruct`，保留字段类型供后端生成 `TypeDef` / `Field`。
 fn lower_struct(hir_struct: &crate::types::hir::HirStruct, nominal: usize, field_start: usize) -> MirStruct {
-    let fields = hir_struct.fields.iter().enumerate().map(|(index, field)| MirField {
-        id: nyar_types::FieldId::from_index((field_start + index) as u32).expect("field identity overflow"),
-        name: field.name.to_string(),
-        ty: field.ty.clone(),
-    }).collect();
+    let fields = hir_struct
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| MirField {
+            id: nyar_types::FieldId::from_index((field_start + index) as u32).expect("field identity overflow"),
+            name: field.name.to_string(),
+            ty: field.ty.clone(),
+        })
+        .collect();
     let namespace = hir_struct.namespace.iter().map(|part| part.as_str().to_string()).collect::<Vec<_>>().join(".");
     MirStruct {
         nominal: nyar_types::NominalInstanceId::from_index(nominal as u32).expect("nominal identity overflow"),
@@ -1161,11 +1320,16 @@ fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
             }
         }
         for singleton in &module.singletons {
-            let fields = singleton.fields.iter().enumerate().map(|(index, field)| MirField {
-                id: nyar_types::FieldId::from_index((*next_field + index) as u32).expect("field identity overflow"),
-                name: field.name.to_string(),
-                ty: field.ty.clone(),
-            }).collect();
+            let fields = singleton
+                .fields
+                .iter()
+                .enumerate()
+                .map(|(index, field)| MirField {
+                    id: nyar_types::FieldId::from_index((*next_field + index) as u32).expect("field identity overflow"),
+                    name: field.name.to_string(),
+                    ty: field.ty.clone(),
+                })
+                .collect();
             declarations.push(MirStruct {
                 name: singleton.name.to_string(),
                 namespace: singleton.namespace.iter().map(|part| part.as_str()).collect::<Vec<_>>().join("."),
@@ -1200,8 +1364,14 @@ fn resolve_self_type_with_owner(ty: &ValkyrieType, owner: Option<&ValkyrieType>)
     match (ty, owner) {
         (ValkyrieType::SelfType, Some(owner)) => owner.clone(),
         (ValkyrieType::Named(name), Some(owner)) if name.as_str() == "Self" => owner.clone(),
+        (ValkyrieType::Nominal { declaration, arguments }, _) => ValkyrieType::Nominal {
+            declaration: *declaration,
+            arguments: arguments.iter().map(|arg| resolve_self_type_with_owner(arg, owner)).collect(),
+        },
         (ValkyrieType::Array(inner), _) => ValkyrieType::Array(Box::new(resolve_self_type_with_owner(inner, owner))),
-        (ValkyrieType::FixedArray { element, length }, _) => ValkyrieType::FixedArray { element: Box::new(resolve_self_type_with_owner(element, owner)), length: *length },
+        (ValkyrieType::FixedArray { element, length }, _) => {
+            ValkyrieType::FixedArray { element: Box::new(resolve_self_type_with_owner(element, owner)), length: *length }
+        }
         (ValkyrieType::Nullable(inner), _) => ValkyrieType::Nullable(Box::new(resolve_self_type_with_owner(inner, owner))),
         (ValkyrieType::Apply(base, args), _) => ValkyrieType::Apply(
             Box::new(resolve_self_type_with_owner(base, owner)),
@@ -1209,7 +1379,9 @@ fn resolve_self_type_with_owner(ty: &ValkyrieType, owner: Option<&ValkyrieType>)
         ),
         (ValkyrieType::Tuple(items), _) => ValkyrieType::Tuple(items.iter().map(|item| resolve_self_type_with_owner(item, owner)).collect()),
         (ValkyrieType::Union(items), _) => ValkyrieType::Union(items.iter().map(|item| resolve_self_type_with_owner(item, owner)).collect()),
-        (ValkyrieType::Intersection(items), _) => ValkyrieType::Intersection(items.iter().map(|item| resolve_self_type_with_owner(item, owner)).collect()),
+        (ValkyrieType::Intersection(items), _) => {
+            ValkyrieType::Intersection(items.iter().map(|item| resolve_self_type_with_owner(item, owner)).collect())
+        }
         (ValkyrieType::Function(func), _) => ValkyrieType::Function(Box::new(crate::types::hir::FunctionType {
             params: func.params.iter().map(|param| resolve_self_type_with_owner(param, owner)).collect(),
             return_type: resolve_self_type_with_owner(&func.return_type, owner),
@@ -1267,6 +1439,185 @@ fn merge_imported_struct_is_value_type(module: &HirModule, is_value_type: &mut B
     }
 }
 
+#[derive(Clone)]
+pub(super) struct CallableReturnTypes {
+    by_symbol: BTreeMap<String, ValkyrieType>,
+    by_instance: BTreeMap<ItemInstanceId, ValkyrieType>,
+}
+
+fn register_callable_return(index: &mut CallableReturnTypes, symbol: String, function: &HirFunction, return_type: ValkyrieType) {
+    index.by_symbol.insert(symbol, return_type.clone());
+    if let Some(instance) = function.instance {
+        index.by_instance.insert(instance, return_type);
+    }
+}
+
+fn collect_callable_return_types(module: &HirModule) -> CallableReturnTypes {
+    let mut index = CallableReturnTypes { by_symbol: BTreeMap::new(), by_instance: BTreeMap::new() };
+    for function in &module.functions {
+        register_callable_return(&mut index, stable_hir_function_symbol(&module.name, function), function, function.return_type.clone());
+    }
+    for impl_block in &module.impls {
+        let Some(type_name) = nominal_type_name(&impl_block.target)
+        else {
+            continue;
+        };
+        for method in &impl_block.methods {
+            register_callable_return(
+                &mut index,
+                format!("{type_name}.{}", method.name),
+                method,
+                resolve_self_type_with_owner(&method.return_type, Some(&impl_block.target)),
+            );
+        }
+    }
+    for item in &module.structs {
+        let owner = ValkyrieType::Named(item.name.clone());
+        for method in &item.methods {
+            register_callable_return(
+                &mut index,
+                format!("{}.{}", item.name, method.name),
+                method,
+                resolve_self_type_with_owner(&method.return_type, Some(&owner)),
+            );
+        }
+    }
+    for trait_def in &module.traits {
+        for method in &trait_def.default_methods {
+            register_callable_return(
+                &mut index,
+                format!("{}.{}", trait_def.name, method.name),
+                method,
+                resolve_self_type_with_owner(&method.return_type, None),
+            );
+        }
+    }
+    index
+}
+
+fn impl_type_arguments_from_generics(generics: &[crate::types::hir::GenericType]) -> Vec<ValkyrieType> {
+    generics.iter().map(|generic| ValkyrieType::Named(generic.name.clone())).collect()
+}
+
+/// `imply Option<T>` 在 HIR 里常把 owner 收成 `Named(Option)`；为 sum 判别与 payload 代入补齐 Apply 实参。
+fn impl_receiver_type(owner: &ValkyrieType, impl_type_arguments: &[ValkyrieType], sum_types: &[super::MirSumDeclaration]) -> ValkyrieType {
+    if matches!(owner, ValkyrieType::Nominal { arguments, .. } if !arguments.is_empty())
+        || matches!(owner, ValkyrieType::Apply(_, args) if !args.is_empty())
+    {
+        return owner.clone();
+    }
+    let Some(declaration) = owner.nominal_declaration()
+    else {
+        // 未绑定 declaration 的短名 owner 不得在 MIR 猜成 sum 身份。
+        return owner.clone();
+    };
+    let type_args: Vec<ValkyrieType> = if !impl_type_arguments.is_empty() {
+        impl_type_arguments.to_vec()
+    }
+    else {
+        MirSumDeclaration::find_by_declaration(sum_types, declaration)
+            .map(|sum| sum.generics.iter().map(|generic| ValkyrieType::Named(generic.name.clone())).collect())
+            .unwrap_or_default()
+    };
+    if type_args.is_empty() {
+        return ValkyrieType::Nominal { declaration, arguments: Vec::new() };
+    }
+    ValkyrieType::Nominal { declaration, arguments: type_args }
+}
+
+/// imply 方法返回类型：只消费已冻结的 `Nominal{ItemId}` / Self 代入。
+/// 禁止按 `Named("Option"|"Result")` 短名在 MIR 补 declaration。
+fn impl_method_return_type(
+    ty: &ValkyrieType,
+    function_generics: &[crate::types::hir::GenericType],
+    impl_owner_type: Option<&ValkyrieType>,
+    impl_type_arguments: &[ValkyrieType],
+    sum_types: &[super::MirSumDeclaration],
+) -> ValkyrieType {
+    let resolved = resolve_self_type_with_owner(ty, impl_owner_type);
+    let Some(owner_declaration) = impl_owner_type.and_then(|owner| owner.nominal_declaration())
+    else {
+        return resolved;
+    };
+    let Some(owner_sum) = MirSumDeclaration::find_by_declaration(sum_types, owner_declaration)
+    else {
+        return resolved;
+    };
+    // 返回类型已是 owner 自身的无参 Nominal 时，按 imply 实参补齐 binder（仍不查短名）。
+    match resolved {
+        ValkyrieType::Nominal { declaration, arguments } if declaration == owner_declaration && arguments.is_empty() => {
+            let type_args = if owner_sum.generics.len() == 2 {
+                result_method_return_type_args(function_generics, impl_type_arguments, owner_sum)
+            }
+            else {
+                sum_method_return_type_args(function_generics, impl_type_arguments, owner_sum)
+            };
+            if type_args.is_empty() {
+                ValkyrieType::Nominal { declaration, arguments: Vec::new() }
+            }
+            else {
+                ValkyrieType::Nominal { declaration, arguments: type_args }
+            }
+        }
+        other => other,
+    }
+}
+
+fn result_method_return_type_args(
+    function_generics: &[crate::types::hir::GenericType],
+    impl_type_arguments: &[ValkyrieType],
+    owner_sum: &MirSumDeclaration,
+) -> Vec<ValkyrieType> {
+    if let Some(generic) = function_generics.last() {
+        let mut args = vec![ValkyrieType::Named(generic.name.clone())];
+        if let Some(error) = impl_type_arguments.get(1) {
+            args.push(error.clone());
+        }
+        else if let Some(error_generic) = owner_sum.generics.get(1) {
+            args.push(ValkyrieType::Named(error_generic.name.clone()));
+        }
+        return args;
+    }
+    sum_method_return_type_args(function_generics, impl_type_arguments, owner_sum)
+}
+
+fn sum_method_return_type_args(
+    function_generics: &[crate::types::hir::GenericType],
+    impl_type_arguments: &[ValkyrieType],
+    owner_sum: &MirSumDeclaration,
+) -> Vec<ValkyrieType> {
+    if let Some(generic) = function_generics.last() {
+        vec![ValkyrieType::Named(generic.name.clone())]
+    }
+    else if !impl_type_arguments.is_empty() {
+        impl_type_arguments.to_vec()
+    }
+    else {
+        owner_sum.generics.iter().map(|generic| ValkyrieType::Named(generic.name.clone())).collect()
+    }
+}
+
+/// 接收者/`Self` 参数：只认 Auto/Self → owner 的已冻结 Nominal；禁止按 `Named("Option")` 补身份。
+fn impl_method_param_type(
+    ty: &ValkyrieType,
+    param_index: usize,
+    impl_owner_type: Option<&ValkyrieType>,
+    impl_type_arguments: &[ValkyrieType],
+    sum_types: &[super::MirSumDeclaration],
+) -> ValkyrieType {
+    let _ = param_index;
+    match (ty, impl_owner_type) {
+        (ValkyrieType::AutoType | ValkyrieType::SelfType, Some(owner)) => impl_receiver_type(owner, impl_type_arguments, sum_types),
+        // 已绑定为 owner 声明的无参 Nominal 时补齐 imply 实参。
+        (ValkyrieType::Nominal { declaration, arguments }, Some(owner))
+            if arguments.is_empty() && owner.nominal_declaration() == Some(*declaration) =>
+        {
+            impl_receiver_type(owner, impl_type_arguments, sum_types)
+        }
+        (ty, owner) => resolve_self_type_with_owner(ty, owner),
+    }
+}
+
 fn lower_function_semantic(
     module: &HirModule,
     function: &HirFunction,
@@ -1276,11 +1627,15 @@ fn lower_function_semantic(
     aggregate_layouts: &mut AggregateLayoutPlan,
     singleton_accessors: &BTreeMap<String, String>,
     effectful_resume_map: &BTreeMap<String, ValkyrieType>,
+    callable_returns: &CallableReturnTypes,
     impl_owner_type: Option<ValkyrieType>,
+    impl_type_arguments: Vec<ValkyrieType>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> MirFunction {
     let effectful_inline_targets = effect_lowering::collect_effectful_inline_targets(module);
-    let (sum_types, _) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module);
+    let field_declarations = collect_field_declarations(module);
+    let nominal_offset = u32::try_from(field_declarations.len()).expect("aggregate nominal identity overflow");
+    let (sum_types, _) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module, nominal_offset);
     value_semantics::ensure_unite_layouts_for_sums(aggregate_layouts, &sum_types);
     let mut builder = MirBuilder::new(
         struct_field_layouts.clone(),
@@ -1290,13 +1645,24 @@ fn lower_function_semantic(
         singleton_accessors.clone(),
         effectful_resume_map.clone(),
         effectful_inline_targets,
+        callable_returns.clone(),
         impl_owner_type.clone(),
     );
+    // Option/Result 身份只来自 HIR 已冻结的 call.sum_owner / Nominal{ItemId}，禁止按短名缓存。
+    builder.option_declaration = None;
+    builder.result_declaration = None;
     builder.sum_types = sum_types;
-    builder.field_declarations = collect_field_declarations(module);
+    builder.impl_type_arguments = impl_type_arguments;
+    builder.field_declarations = field_declarations;
     // Imply/struct methods declare `: Self`; keep MIR return/params on the owner
     // so SMIR007 compares against `isize`/`i32` (etc.), not unsubstituted `Self`.
-    let resolved_return_type = resolve_self_type_with_owner(&function.return_type, impl_owner_type.as_ref());
+    let resolved_return_type = impl_method_return_type(
+        &function.return_type,
+        &function.generics,
+        impl_owner_type.as_ref(),
+        &builder.impl_type_arguments,
+        &builder.sum_types,
+    );
     builder.current_return_type = resolved_return_type.clone();
 
     // 为函数参数分配 SSA 值，并登记到绑定表与入口块 `parameters`。
@@ -1306,10 +1672,7 @@ fn lower_function_semantic(
     for (index, param) in function.params.iter().enumerate() {
         let value = builder.next_value(MirValueOrigin::Parameter { index, name: param.name.name.to_string() });
         builder.bindings.insert(param.name.name.to_string(), MirOperand::Value(value));
-        let resolved_ty = match (&param.ty, impl_owner_type.as_ref()) {
-            (ValkyrieType::AutoType, Some(owner)) => owner.clone(),
-            (ty, owner) => resolve_self_type_with_owner(ty, owner),
-        };
+        let resolved_ty = impl_method_param_type(&param.ty, index, impl_owner_type.as_ref(), &builder.impl_type_arguments, &builder.sum_types);
         builder.value_types.insert(value, resolved_ty);
         param_values.push(value);
     }
@@ -1344,7 +1707,7 @@ fn lower_function_semantic(
             // yields a non-Unit value (`push(self._items, value) -> [T]`). Evaluate the
             // trailing expr for effects, then return Unit — do not promote the call
             // result into Return (SMIR007: actual=Array(T) expected=Unit).
-            if matches!(return_ty, ValkyrieType::Unit) {
+            if matches!(return_ty, ValkyrieType::Unit | ValkyrieType::Void) {
                 let _ = builder.lower_expr_to_operand(expr);
                 if builder.terminator.is_none() {
                     builder.terminate(MirTerminator::Return { value: None });
@@ -1370,9 +1733,9 @@ fn lower_function_semantic(
     let param_types = function
         .params
         .iter()
-        .map(|p| match (&p.ty, impl_owner_type.as_ref()) {
-            (ValkyrieType::AutoType, Some(owner)) => owner.clone(),
-            (ty, owner) => resolve_self_type_with_owner(ty, owner),
+        .enumerate()
+        .map(|(index, param)| {
+            impl_method_param_type(&param.ty, index, impl_owner_type.as_ref(), &builder.impl_type_arguments, &builder.sum_types)
         })
         .collect();
     diagnostics.append(&mut builder.diagnostics);
@@ -1411,6 +1774,10 @@ struct MirBuilder {
     aggregate_layouts: AggregateLayoutPlan,
     /// sum 的语义声明；实例化使用声明 binder，不以布局恢复类型。
     sum_types: Vec<MirSumDeclaration>,
+    /// 模块内唯一可解析的 Option sum 声明；歧义或缺失则为 `None`（fail-closed）。
+    option_declaration: Option<nyar_types::ItemId>,
+    /// 模块内唯一可解析的 Result sum 声明；歧义或缺失则为 `None`（fail-closed）。
+    result_declaration: Option<nyar_types::ItemId>,
     singleton_accessors: BTreeMap<String, String>,
     static_bindings: BTreeMap<String, HirExpr>,
     terminator: Option<MirTerminator>,
@@ -1440,23 +1807,22 @@ struct MirBuilder {
     /// 仅包含含 `raise`、无 `return`、非递归的模块级函数。`lower_catch_expr` 在调用点
     /// 检查被调用函数是否在此映射中，若是则内联其函数体以实现跨函数 `raise` 传播。
     effectful_inline_targets: BTreeMap<String, HirFunction>,
+    /// HIR 冻结的 callable 返回类型；`Call` SSA 结果须与 MIR 定义签名一致。
+    callable_returns: CallableReturnTypes,
     /// 当前 impl 方法的 owner 类型名（如 `FilterIterator`）。
     ///
     /// 用于把 `self` 参数的 `AutoType`/`SelfType` 解析为具体命名类型，
     /// 使 `field_type_for_object_operand` 能查到泛型结构体字段类型。
     /// 自由函数为 `None`。
     impl_owner_type: Option<ValkyrieType>,
+    /// 当前 impl 块声明的泛型实参占位（如 `imply Option<T>` → `[T]`）。
+    impl_type_arguments: Vec<ValkyrieType>,
     /// `[workload_phase]` 解析出的阶段名；函数离开路径插入 `end_phase`。
     workload_phase: Option<String>,
 }
 
+/// 模块内按简单名唯一解析 sum 声明 ItemId；歧义/缺失返回 `None`（不得猜测）。
 impl MirBuilder {
-    pub(super) fn sum_identity(&mut self, sum_type: &str, variant: &str) -> Option<(nyar_types::NominalInstanceId, VariantId)> {
-        let _ = (sum_type, variant);
-        self.diagnostics.push(MirDiagnostic::UnresolvedVariantIdentity { sum_type: sum_type.to_owned(), variant: variant.to_owned() });
-        None
-    }
-
     pub(super) fn sum_identity_by_declarations(
         &mut self,
         owner: nyar_types::ItemId,
@@ -1473,10 +1839,6 @@ impl MirBuilder {
         None
     }
 
-    pub(super) fn variant_id(&mut self, sum_type: &str, variant: &str) -> Option<VariantId> {
-        self.sum_identity(sum_type, variant).map(|(_, variant)| variant)
-    }
-
     fn new(
         struct_field_layouts: BTreeMap<String, Vec<(String, ValkyrieType)>>,
         struct_parent_index: BTreeMap<String, Vec<String>>,
@@ -1485,6 +1847,7 @@ impl MirBuilder {
         singleton_accessors: BTreeMap<String, String>,
         effectful_resume_map: BTreeMap<String, ValkyrieType>,
         effectful_inline_targets: BTreeMap<String, HirFunction>,
+        callable_returns: CallableReturnTypes,
         impl_owner_type: Option<ValkyrieType>,
     ) -> Self {
         let entry = MirBlockRef(0);
@@ -1512,6 +1875,8 @@ impl MirBuilder {
             struct_is_value_type,
             aggregate_layouts,
             sum_types: Vec::new(),
+            option_declaration: None,
+            result_declaration: None,
             singleton_accessors,
             static_bindings: BTreeMap::new(),
             terminator: None,
@@ -1525,8 +1890,48 @@ impl MirBuilder {
             diagnostics: Vec::new(),
             effectful_resume_map,
             effectful_inline_targets,
+            callable_returns,
             impl_owner_type,
+            impl_type_arguments: Vec::new(),
             workload_phase: None,
+        }
+    }
+
+    pub(super) fn declared_return_type_for_call(
+        &self,
+        callee: &MirOperand,
+        resolved: Option<&crate::types::hir::HirResolvedCall>,
+    ) -> Option<ValkyrieType> {
+        if let MirOperand::Callable(instance) = callee {
+            if let Some(return_type) = self.callable_returns.by_instance.get(instance) {
+                return Some(return_type.clone());
+            }
+        }
+        if let MirOperand::Symbol(path) = callee {
+            let symbol = path.to_string();
+            if let Some(return_type) = self.callable_returns.by_symbol.get(&symbol) {
+                return Some(return_type.clone());
+            }
+            if let Some(simple) = path.parts().last() {
+                if let Some(return_type) = self.callable_returns.by_symbol.get(simple.as_str()) {
+                    return Some(return_type.clone());
+                }
+            }
+        }
+        resolved.and_then(|call| {
+            let symbol = call.symbol.to_string();
+            self.callable_returns
+                .by_symbol
+                .get(&symbol)
+                .or_else(|| call.symbol.parts().last().and_then(|simple| self.callable_returns.by_symbol.get(simple.as_str())))
+                .cloned()
+        })
+    }
+
+    pub(super) fn return_type_for_resolved_call(&self, callee: &MirOperand, resolved: &crate::types::hir::HirResolvedCall) -> ValkyrieType {
+        match &resolved.return_type {
+            ValkyrieType::AutoType => self.declared_return_type_for_call(callee, Some(resolved)).unwrap_or(ValkyrieType::Unit),
+            return_type => return_type.clone(),
         }
     }
 
@@ -1592,7 +1997,12 @@ impl MirBuilder {
             MirTerminator::Return { .. } | MirTerminator::Unreachable => true,
             MirTerminator::YieldToRuntime { effect: MirEffectKind::Raise, .. } => true,
             MirTerminator::YieldToRuntime {
-                effect: MirEffectKind::Yield | MirEffectKind::DelegateYield | MirEffectKind::Await | MirEffectKind::AsyncSpawn | MirEffectKind::AsyncBlock,
+                effect:
+                    MirEffectKind::Yield
+                    | MirEffectKind::DelegateYield
+                    | MirEffectKind::Await
+                    | MirEffectKind::AsyncSpawn
+                    | MirEffectKind::AsyncBlock,
                 ..
             } => false,
             MirTerminator::PerformEffect { .. }
@@ -1607,16 +2017,10 @@ impl MirBuilder {
         let constant = self.next_value(MirValueOrigin::Literal);
         self.value_types.insert(constant, ValkyrieType::Utf8);
         self.push_instruction(
-            MirOperation::LoadConstant {
-                constant: MirConstant::Utf8(phase.to_string()),
-                ty: Some(ValkyrieType::Utf8),
-            },
+            MirOperation::LoadConstant { constant: MirConstant::Utf8(phase.to_string()), ty: Some(ValkyrieType::Utf8) },
             vec![constant],
         );
-        let _ = self.push_call(
-            MirOperand::Symbol(NamePath::new(vec![Identifier::new(host_symbol)])),
-            vec![MirOperand::Value(constant)],
-        );
+        let _ = self.push_call(MirOperand::Symbol(NamePath::new(vec![Identifier::new(host_symbol)])), vec![MirOperand::Value(constant)]);
     }
 
     fn new_block(&mut self, label: &str) -> MirBlockRef {

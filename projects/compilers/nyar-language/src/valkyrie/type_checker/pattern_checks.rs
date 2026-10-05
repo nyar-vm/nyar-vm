@@ -3,9 +3,8 @@ use crate::{
         Identifier, SourceSpan,
         hir::{HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind},
     },
-    valkyrie::hir::PatternRefutability,
+    valkyrie::{frontend::ParseError, hir::PatternRefutability},
 };
-use std_data::text::valkyrie::ParseError;
 
 pub fn check_pattern_refutability(module: &HirModule) -> Result<(), ParseError> {
     for function in &module.functions {
@@ -180,7 +179,7 @@ impl PatternRefutabilityChecker {
             | HirExprKind::Awake(value)
             | HirExprKind::BlockOn(value)
             | HirExprKind::YieldFrom(value)
-            | HirExprKind::TryPropagate(value)
+            | HirExprKind::TryPropagate { inner: value, .. }
             | HirExprKind::Raise(value)
             | HirExprKind::Resume(value)
             | HirExprKind::ArrayNew { length: value, .. }

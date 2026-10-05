@@ -287,7 +287,14 @@ pub enum ValkyrieType {
     Character,
     Utf8,
     Utf16,
+    /// 未绑定声明的表面名（泛型形参、尚未解析符号）。不得单独充当名义身份。
     Named(Identifier),
+    /// 已绑定 `ItemId` 的名义类型；`arguments` 为完成代入的类型实参。
+    /// Resolver/HIR 成功路径必须使用本变体，禁止把短名改写成限定名再塞回 [`Self::Named`]。
+    Nominal {
+        declaration: nyar_types::ItemId,
+        arguments: Vec<ValkyrieType>,
+    },
     Apply(Box<ValkyrieType>, Vec<ValkyrieType>),
     /// `T<X>`
     Generic(GenericType),
@@ -321,6 +328,26 @@ pub enum ValkyrieType {
 impl Default for ValkyrieType {
     fn default() -> Self {
         ValkyrieType::Unit
+    }
+}
+
+impl ValkyrieType {
+    /// 名义声明身份；仅 [`Self::Nominal`]（及历史上仍包在 `Apply` 里的名义基）携带。
+    pub fn nominal_declaration(&self) -> Option<nyar_types::ItemId> {
+        match self {
+            Self::Nominal { declaration, .. } => Some(*declaration),
+            Self::Apply(base, _) => base.nominal_declaration(),
+            _ => None,
+        }
+    }
+
+    /// 名义类型实参；非名义形状返回空切片。
+    pub fn nominal_arguments(&self) -> &[ValkyrieType] {
+        match self {
+            Self::Nominal { arguments, .. } => arguments.as_slice(),
+            Self::Apply(_, arguments) => arguments.as_slice(),
+            _ => &[],
+        }
     }
 }
 

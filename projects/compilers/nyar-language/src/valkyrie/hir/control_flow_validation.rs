@@ -10,10 +10,10 @@ use crate::{
     },
     valkyrie::{
         control_flow::{ControlFlowContext, TryScopeData},
+        frontend::ParseError,
         hir::{is_nullable_type, is_option_apply_type, is_result_apply_type, nullable_payload_type},
     },
 };
-use std_data::text::valkyrie::ParseError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct HirValidationState {
@@ -155,7 +155,7 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
         | HirExprKind::Awake(value)
         | HirExprKind::BlockOn(value)
         | HirExprKind::YieldFrom(value)
-        | HirExprKind::TryPropagate(value)
+        | HirExprKind::TryPropagate { inner: value, .. }
         | HirExprKind::Raise(value)
         | HirExprKind::Resume(value) => {
             if matches!(expr.kind, HirExprKind::Resume(_))
@@ -170,7 +170,7 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
                     HirExprKind::BlockOn(_) => "`block`",
                     HirExprKind::YieldFrom(_) => "`yield from`",
                     HirExprKind::Resume(_) => "`resume`",
-                    HirExprKind::TryPropagate(_) => "`?`",
+                    HirExprKind::TryPropagate { .. } => "`?`",
                     _ => "",
                 };
                 if !control_flow_name.is_empty() {
@@ -186,7 +186,7 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
             if matches!(expr.kind, HirExprKind::YieldFrom(_)) {
                 validate_yield_context(expr, state)?;
             }
-            if matches!(expr.kind, HirExprKind::TryPropagate(_)) {
+            if matches!(expr.kind, HirExprKind::TryPropagate { .. }) {
                 validate_try_propagate_context(expr, state)?;
             }
             validate_hir_expr(value, state, true)?;
@@ -452,6 +452,7 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
             }
             state.control_flow.pop_catch();
         }
+        HirExprKind::Cast { expr, .. } => validate_hir_expr(expr, state, true)?,
         HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) => {}
     }
     Ok(())
@@ -508,7 +509,7 @@ fn infer_static_expr_type(expr: &HirExpr, state: &HirValidationState) -> Option<
         HirExprKind::Construct { name, resolved, .. } => {
             resolved.as_ref().map(|call| call.return_type.clone()).or_else(|| Some(ValkyrieType::Named(name.clone())))
         }
-        HirExprKind::TryPropagate(inner) => infer_static_expr_type(inner, state).and_then(|ty| {
+        HirExprKind::TryPropagate { inner, .. } => infer_static_expr_type(inner, state).and_then(|ty| {
             nullable_payload_type(&ty).or_else(|| {
                 if is_option_apply_type(&ty) {
                     match ty {
@@ -555,7 +556,7 @@ fn infer_try_scope_type(
 }
 
 fn validate_try_propagate_context(expr: &HirExpr, state: &HirValidationState) -> Result<(), ParseError> {
-    let HirExprKind::TryPropagate(inner) = &expr.kind
+    let HirExprKind::TryPropagate { inner, .. } = &expr.kind
     else {
         return Ok(());
     };
@@ -958,9 +959,10 @@ fn shallow_expr_contains_yield(expr: &HirExpr) -> bool {
         | HirExprKind::BlockOn(length)
         | HirExprKind::Raise(length)
         | HirExprKind::Resume(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => shallow_expr_contains_yield(length),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => shallow_expr_contains_yield(length),
         HirExprKind::Fallthrough | HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
             false
         }
@@ -1016,9 +1018,10 @@ fn shallow_expr_contains_await(expr: &HirExpr) -> bool {
         | HirExprKind::BlockOn(length)
         | HirExprKind::Raise(length)
         | HirExprKind::Resume(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => shallow_expr_contains_await(length),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => shallow_expr_contains_await(length),
         HirExprKind::Yield(_) | HirExprKind::YieldFrom(_) => false,
         HirExprKind::Fallthrough | HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
             false
@@ -1075,9 +1078,10 @@ fn shallow_expr_contains_block_on(expr: &HirExpr) -> bool {
         | HirExprKind::Awake(length)
         | HirExprKind::Raise(length)
         | HirExprKind::Resume(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => shallow_expr_contains_block_on(length),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => shallow_expr_contains_block_on(length),
         HirExprKind::Yield(_) | HirExprKind::YieldFrom(_) => false,
         HirExprKind::Fallthrough | HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
             false
@@ -1144,9 +1148,10 @@ fn expr_contains_yield(expr: &HirExpr) -> bool {
         | HirExprKind::BlockOn(length)
         | HirExprKind::Raise(length)
         | HirExprKind::Resume(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => expr_contains_yield(length),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => expr_contains_yield(length),
         HirExprKind::Fallthrough | HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
             false
         }
@@ -1238,9 +1243,10 @@ fn expr_contains_raise(expr: &HirExpr) -> bool {
         | HirExprKind::Awake(length)
         | HirExprKind::BlockOn(length)
         | HirExprKind::Resume(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => expr_contains_raise(length),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => expr_contains_raise(length),
         HirExprKind::With { base, updates } => expr_contains_raise(base) || updates.iter().any(|(_, value)| expr_contains_raise(value)),
         HirExprKind::TryScope { body, .. } => block_contains_raise(body),
         HirExprKind::SuperCall { args, .. } => args.iter().any(expr_contains_raise),
@@ -1287,9 +1293,10 @@ fn expr_contains_catch(expr: &HirExpr) -> bool {
         | HirExprKind::BlockOn(length)
         | HirExprKind::Raise(length)
         | HirExprKind::Resume(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => expr_contains_catch(length),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => expr_contains_catch(length),
         HirExprKind::With { base, updates } => expr_contains_catch(base) || updates.iter().any(|(_, value)| expr_contains_catch(value)),
         HirExprKind::TryScope { body, .. } => block_contains_catch(body),
         HirExprKind::SuperCall { args, .. } => args.iter().any(expr_contains_catch),
@@ -1332,9 +1339,10 @@ fn expr_contains_resume(expr: &HirExpr) -> bool {
         | HirExprKind::Awake(length)
         | HirExprKind::BlockOn(length)
         | HirExprKind::Raise(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => expr_contains_resume(length),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => expr_contains_resume(length),
         HirExprKind::With { base, updates } => expr_contains_resume(base) || updates.iter().any(|(_, value)| expr_contains_resume(value)),
         HirExprKind::TryScope { body, .. } => block_contains_resume(body),
         HirExprKind::SuperCall { args, .. } => args.iter().any(expr_contains_resume),
@@ -1404,9 +1412,10 @@ fn expr_contains_await(expr: &HirExpr) -> bool {
         | HirExprKind::YieldFrom(length)
         | HirExprKind::Raise(length)
         | HirExprKind::Resume(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => expr_contains_await(length),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => expr_contains_await(length),
         HirExprKind::Yield(None)
         | HirExprKind::Fallthrough
         | HirExprKind::Literal(_)
@@ -1459,9 +1468,10 @@ fn expr_contains_block_on(expr: &HirExpr) -> bool {
         | HirExprKind::YieldFrom(length)
         | HirExprKind::Raise(length)
         | HirExprKind::Resume(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => expr_contains_block_on(length),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => expr_contains_block_on(length),
         HirExprKind::Yield(None)
         | HirExprKind::Fallthrough
         | HirExprKind::Literal(_)
@@ -1518,9 +1528,10 @@ fn expr_contains_awake(expr: &HirExpr) -> bool {
         | HirExprKind::YieldFrom(length)
         | HirExprKind::Raise(length)
         | HirExprKind::Resume(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => expr_contains_awake(length),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => expr_contains_awake(length),
         HirExprKind::Yield(None)
         | HirExprKind::Fallthrough
         | HirExprKind::Literal(_)
@@ -1831,9 +1842,10 @@ fn collect_expr_variable_names(expr: &HirExpr, names: &mut BTreeSet<String>) {
         | HirExprKind::YieldFrom(length)
         | HirExprKind::Raise(length)
         | HirExprKind::Resume(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => collect_expr_variable_names(length, names),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => collect_expr_variable_names(length, names),
         HirExprKind::Yield(None) | HirExprKind::Fallthrough | HirExprKind::Literal(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
         }
         HirExprKind::With { base, updates } => {
@@ -1961,9 +1973,10 @@ fn expr_contains_fallthrough(expr: &HirExpr) -> bool {
         | HirExprKind::YieldFrom(length)
         | HirExprKind::Raise(length)
         | HirExprKind::Resume(length)
-        | HirExprKind::TryPropagate(length)
+        | HirExprKind::TryPropagate { inner: length, .. }
         | HirExprKind::Assign { value: length, .. }
-        | HirExprKind::GenericApply { callee: length, .. } => expr_contains_fallthrough(length),
+        | HirExprKind::GenericApply { callee: length, .. }
+        | HirExprKind::Cast { expr: length, .. } => expr_contains_fallthrough(length),
         HirExprKind::Yield(None) | HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
             false
         }
@@ -2042,39 +2055,14 @@ fn control_flow_value_type_compatible(expected: &ValkyrieType, actual: &Valkyrie
         || nullable_return_compatible(&expected, &actual)
         || generic_apply_types_compatible(&expected, &actual)
         || bare_named_matches_generic_apply(&expected, &actual)
-        || collection_facade_compatible(&expected, &actual)
         || (is_uninstantiated_type_param(&actual) && !is_uninstantiated_type_param(&expected) && !matches!(expected, ValkyrieType::AutoType))
-}
-
-fn collection_facade_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
-    let (ValkyrieType::Apply(exp_base, exp_args), ValkyrieType::Apply(act_base, act_args)) = (expected, actual)
-    else {
-        return false;
-    };
-    if exp_args.len() != act_args.len() {
-        return false;
-    }
-    if !exp_args.iter().zip(act_args.iter()).all(|(expected_arg, actual_arg)| {
-        expected_arg == actual_arg
-            || (is_uninstantiated_type_param(expected_arg) && is_uninstantiated_type_param(actual_arg))
-            || control_flow_value_type_compatible(expected_arg, actual_arg)
-    }) {
-        return false;
-    }
-    let Some(exp_name) = named_type_name(exp_base)
-    else {
-        return false;
-    };
-    let Some(act_name) = named_type_name(act_base)
-    else {
-        return false;
-    };
-    exp_name == "List" && matches!(act_name, "ArrayList" | "LinkedList")
 }
 
 fn bare_named_matches_generic_apply(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
     match (expected, actual) {
-        (ValkyrieType::Apply(base, _), ValkyrieType::Named(name)) => named_type_name(base).is_some_and(|base_name| base_name == name.as_str()),
+        (ValkyrieType::Apply(base, _), ValkyrieType::Named(name)) | (ValkyrieType::Named(name), ValkyrieType::Apply(base, _)) => {
+            named_type_name(base).is_some_and(|base_name| base_name == name.as_str())
+        }
         _ => false,
     }
 }
@@ -2258,6 +2246,14 @@ fn display_type(ty: &ValkyrieType) -> String {
         ValkyrieType::Utf8 => "utf8".to_string(),
         ValkyrieType::Utf16 => "utf16".to_string(),
         ValkyrieType::Named(name) => name.to_string(),
+        ValkyrieType::Nominal { declaration, arguments } => {
+            if arguments.is_empty() {
+                format!("Nominal({declaration:?})")
+            }
+            else {
+                format!("Nominal({declaration:?})<{}>", arguments.iter().map(display_type).collect::<Vec<_>>().join(", "))
+            }
+        }
         ValkyrieType::Apply(base, arguments) => {
             format!("{}<{}>", display_type(base), arguments.iter().map(display_type).collect::<Vec<_>>().join(", "))
         }
@@ -2284,7 +2280,9 @@ fn display_type(ty: &ValkyrieType) -> String {
                 .join(", ")
         ),
         ValkyrieType::Array(item) => format!("[{}]", display_type(item)),
-        ValkyrieType::FixedArray { element, length } => format!("[{}; {}]", display_type(element), length),
+        ValkyrieType::FixedArray { element, length } => {
+            format!("[{}; {}]", display_type(element), length)
+        }
         ValkyrieType::TypeLambda(lambda) => format!(
             "type lambda({}) -> {}",
             lambda.params.iter().map(|item| item.name.to_string()).collect::<Vec<_>>().join(", "),
@@ -2293,7 +2291,9 @@ fn display_type(ty: &ValkyrieType) -> String {
         ValkyrieType::TraitObject(object) => {
             format!("{}<{}>", object.trait_path, object.type_arguments.iter().map(display_type).collect::<Vec<_>>().join(", "))
         }
-        ValkyrieType::Associated(associated) => format!("{}::{}", display_type(&associated.base), associated.name),
+        ValkyrieType::Associated(associated) => {
+            format!("{}::{}", display_type(&associated.base), associated.name)
+        }
         ValkyrieType::AutoType => "auto".to_string(),
         ValkyrieType::SelfType => "Self".to_string(),
         ValkyrieType::Nullable(payload) => format!("{}?", display_type(payload)),

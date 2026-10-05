@@ -18,6 +18,7 @@ fn hir_expr_contains_raise(expr: &HirExpr) -> bool {
         HirExprKind::FieldAccess { object, .. } => hir_expr_contains_raise(object),
         HirExprKind::StoreField { object, value, .. } => hir_expr_contains_raise(object) || hir_expr_contains_raise(value),
         HirExprKind::GenericApply { callee, .. } => hir_expr_contains_raise(callee),
+        HirExprKind::Cast { expr, .. } => hir_expr_contains_raise(expr),
         HirExprKind::Block(block) => hir_block_contains_raise(block),
         HirExprKind::If { condition, then_branch, else_branch } => {
             hir_expr_contains_raise(condition)
@@ -43,7 +44,7 @@ fn hir_expr_contains_raise(expr: &HirExpr) -> bool {
         HirExprKind::YieldFrom(inner) | HirExprKind::Await(inner) | HirExprKind::Awake(inner) | HirExprKind::BlockOn(inner) => {
             hir_expr_contains_raise(inner)
         }
-        HirExprKind::Resume(inner) | HirExprKind::TryPropagate(inner) => hir_expr_contains_raise(inner),
+        HirExprKind::Resume(inner) | HirExprKind::TryPropagate { inner, .. } => hir_expr_contains_raise(inner),
         HirExprKind::Catch { expr, arms } => hir_expr_contains_raise(expr) || arms.iter().any(|arm| hir_expr_contains_raise(&arm.body)),
         HirExprKind::TryScope { body, .. } => hir_block_contains_raise(body),
         HirExprKind::With { base, updates } => hir_expr_contains_raise(base) || updates.iter().any(|(_, expr)| hir_expr_contains_raise(expr)),
@@ -105,11 +106,12 @@ fn hir_expr_contains_return(expr: &HirExpr) -> bool {
         HirExprKind::YieldFrom(inner) | HirExprKind::Await(inner) | HirExprKind::Awake(inner) | HirExprKind::BlockOn(inner) => {
             hir_expr_contains_return(inner)
         }
-        HirExprKind::Raise(inner) | HirExprKind::Resume(inner) | HirExprKind::TryPropagate(inner) => hir_expr_contains_return(inner),
+        HirExprKind::Raise(inner) | HirExprKind::Resume(inner) | HirExprKind::TryPropagate { inner, .. } => hir_expr_contains_return(inner),
         HirExprKind::Catch { expr, arms } => hir_expr_contains_return(expr) || arms.iter().any(|arm| hir_expr_contains_return(&arm.body)),
         HirExprKind::TryScope { body, .. } => hir_block_contains_return(body),
         HirExprKind::With { base, updates } => hir_expr_contains_return(base) || updates.iter().any(|(_, expr)| hir_expr_contains_return(expr)),
         HirExprKind::SuperCall { args, .. } => args.iter().any(hir_expr_contains_return),
+        HirExprKind::Cast { expr, .. } => hir_expr_contains_return(expr),
         HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } | HirExprKind::Fallthrough => {
             false
         }
@@ -145,6 +147,7 @@ fn hir_expr_calls_name(expr: &HirExpr, name: &str) -> bool {
         HirExprKind::FieldAccess { object, .. } => hir_expr_calls_name(object, name),
         HirExprKind::StoreField { object, value, .. } => hir_expr_calls_name(object, name) || hir_expr_calls_name(value, name),
         HirExprKind::GenericApply { callee, .. } => hir_expr_calls_name(callee, name),
+        HirExprKind::Cast { expr, .. } => hir_expr_calls_name(expr, name),
         HirExprKind::Block(block) => hir_block_calls_name(block, name),
         HirExprKind::If { condition, then_branch, else_branch } => {
             hir_expr_calls_name(condition, name)
@@ -171,7 +174,7 @@ fn hir_expr_calls_name(expr: &HirExpr, name: &str) -> bool {
         HirExprKind::YieldFrom(inner) | HirExprKind::Await(inner) | HirExprKind::Awake(inner) | HirExprKind::BlockOn(inner) => {
             hir_expr_calls_name(inner, name)
         }
-        HirExprKind::Raise(inner) | HirExprKind::Resume(inner) | HirExprKind::TryPropagate(inner) => hir_expr_calls_name(inner, name),
+        HirExprKind::Raise(inner) | HirExprKind::Resume(inner) | HirExprKind::TryPropagate { inner, .. } => hir_expr_calls_name(inner, name),
         HirExprKind::Catch { expr, arms } => hir_expr_calls_name(expr, name) || arms.iter().any(|arm| hir_expr_calls_name(&arm.body, name)),
         HirExprKind::TryScope { body, .. } => hir_block_calls_name(body, name),
         HirExprKind::With { base, updates } => {
@@ -571,7 +574,12 @@ impl MirBuilder {
             self.lower_handler_raise(handler_index, payload)
         }
         else {
-            self.lower_uncaught_raise(payload)
+            self.lower_uncaught_raise(payload);
+            // An uncaught raise has no language-level result. The generated
+            // resume block is a runtime continuation carrying `Never`; keep
+            // the enclosing Unit function from returning that carrier as a
+            // normal value.
+            MirOperand::Constant(MirConstant::Unit)
         }
     }
 

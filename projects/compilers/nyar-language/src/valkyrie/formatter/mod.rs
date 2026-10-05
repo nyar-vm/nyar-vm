@@ -1,12 +1,16 @@
-//! 语言侧源码格式化实现（平台契约见 `nyar_analyzer::format`）。
+//! LSP / CLI **格式化注册表**（契约见 `nyar_analyzer::format::SourceFormatterRegistry`）。
 //!
-//! - **SourceFormatter**：源码 → 正规格式化（CST，保留 trivia）
-//! - **Printer**：数据模型 → 文本（序列化，不保证 trivia）
+//! **实现不在此 crate**：合法 formatter 只能由上游 `oak-<language>/src/formatter/` 提供
+//!（见 `oak-typescript::formatter`）。Valkyrie / VON / AWSL 已转发至对应 Oak formatter；
+//! 不得在此新增 CST token-gap 排版规则。
+//!
+//! 与 [`crate::printer`]（AST pretty print）严格分离，对齐 Oak 的 `formatter/` vs `printer/`。
+//!
+//! - **SourceFormatter**：源码 → CST token-gap → 文本（保留 trivia）
 //! - **配置**：默认从各文件路径的 `.editorconfig` 解析（[`FormatBatchOptions::use_editorconfig`]）
 
 mod batch;
 mod cli;
-mod printer;
 mod surface;
 
 use std::{
@@ -14,6 +18,11 @@ use std::{
     sync::OnceLock,
 };
 
+#[deprecated(note = "use `nyar_language::printer` — AST pretty print is not part of the CST formatter")]
+pub use crate::printer::{print_document, print_msil_module, print_von, print_wat, print_wit_package, printer_registry};
+#[cfg(feature = "serde")]
+#[deprecated(note = "use `nyar_language::printer`")]
+pub use crate::printer::{to_string, to_string_indented};
 pub use crate::text::{FormatSyntax, ToDocument};
 pub use batch::{FormatBatchOptions, FormatBatchReport, format_paths};
 pub use cli::{
@@ -24,9 +33,6 @@ pub use nyar_analyzer::format::{
     ByteRange, Document, FormatConfigLoader, FormatConfigResolution, FormatError, FormatOptions, FormattedOutput, PrintStyle, Printer,
     PrinterProvider, PrinterRegistry, SourceFormatter, SourceFormatterProvider, SourceFormatterRegistry, SourceMap,
 };
-pub use printer::{print_document, print_msil_module, print_von, print_wat, print_wit_package, printer_registry};
-#[cfg(feature = "serde")]
-pub use printer::{to_string, to_string_indented};
 pub use surface::{
     AWSL_EXTENSIONS, V_EXTENSIONS, VON_EXTENSIONS, VX_EXTENSIONS, is_valkyrie_family_extension, source_kind_from_extension,
     valkyrie_family_extensions,
@@ -38,13 +44,13 @@ pub use nyar_analyzer::format::FormatBuffer;
 /// 可格式化的源码种类（语言侧便利枚举）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
-    /// 核心 Valkyrie：`.v` / `.valkyrie`（std-data `text::valkyrie`，无 X-Grammar）。
+    /// 核心 Valkyrie：`.v` / `.valkyrie`（`oak-valkyrie::formatter`）。
     V,
-    /// Valkyrie + X-Grammar：`.vx`（widget / markup，仍走 valkyrie CST，独立 `.editorconfig` 段）。
+    /// Valkyrie + X-Grammar：`.vx`（`oak-valkyrie::formatter`）。
     Vx,
-    /// VON 数据：`.von`（std-data `text::von`）。
+    /// VON 数据：`.von`（`oak-von::formatter`）。
     Von,
-    /// Asgard AWSL 模板：`.awsl`（std-data `text::awsl`，与 V/Vx 不同引擎）。
+    /// Asgard AWSL 模板：`.awsl`（`oak-awsl::formatter`）。
     Awsl,
 }
 

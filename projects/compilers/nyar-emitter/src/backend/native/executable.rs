@@ -1,6 +1,6 @@
 use std::fmt;
 
-use std_data::binary::{
+use crate::transitional::binary::{
     elf::{Elf64ParseError, parse_elf64},
     pe::{Pe64ParseError, parse_pe64},
 };
@@ -41,7 +41,9 @@ impl fmt::Display for NativeExecutableError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::TooShort => write!(f, "native executable 过短"),
-            Self::Unrecognized { pe, elf } => write!(f, "不是受支持的 native PE ({pe}) 或 ELF ({elf})"),
+            Self::Unrecognized { pe, elf } => {
+                write!(f, "不是受支持的 native PE ({pe}) 或 ELF ({elf})")
+            }
         }
     }
 }

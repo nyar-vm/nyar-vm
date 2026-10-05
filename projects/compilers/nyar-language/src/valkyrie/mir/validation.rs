@@ -2,13 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     mir::ssa::builtin_helpers::resolve_intrinsic_id,
-    types::{
-        NamePath,
-        hir::ValkyrieType,
-    },
+    types::{Identifier, NamePath, hir::ValkyrieType},
+    valkyrie::frontend::ParseError,
 };
 use nyar_types::builtin_operator;
-use std_data::text::valkyrie::ParseError;
 
 use crate::mir::{
     MirBlock, MirBlockRef, MirConstant, MirDiagnostic, MirEffectKind, MirFunction, MirModule, MirOperand, MirOperation, MirTerminator,
@@ -92,22 +89,29 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
             if let Some((object, field, stored)) = field_operation {
                 let location = format!("block {} instruction {index}", block.id.0);
                 let failure = |detail: &str| SemanticMirContractError {
-                    code: "SMIR006", function: function.symbol.clone(), location: location.clone(), detail: detail.to_string(),
+                    code: "SMIR006",
+                    function: function.symbol.clone(),
+                    location: location.clone(),
+                    detail: detail.to_string(),
                 };
                 let owner = infer_operand_static_type(function, object).ok_or_else(|| failure("字段对象缺少完整语义类型"))?;
-                let base = match &owner { ValkyrieType::Apply(base, _) => base.as_ref(), other => other };
-                let ValkyrieType::Named(name) = base else { return Err(failure("字段对象不是已解析名义实例")); };
-                let declaration = module.structs.iter().find(|declaration| declaration.qualified_name() == name.as_str())
+                let declaration_id = owner.nominal_declaration().ok_or_else(|| failure("字段对象不是已绑定 declaration 的名义实例"))?;
+                let declaration = crate::mir::ssa::MirStruct::find_by_declaration(&module.structs, declaration_id)
                     .ok_or_else(|| failure("字段对象没有声明合同"))?;
-                let declared_field = declaration.fields.iter().find(|candidate| candidate.id == *field)
+                let declared_field = declaration
+                    .fields
+                    .iter()
+                    .find(|candidate| candidate.id == *field)
                     .ok_or_else(|| failure("字段 identity 不属于对象声明"))?;
-                let expected = declaration.instantiate_field(&owner, declared_field.name.as_str())
+                let expected = declaration
+                    .instantiate_field(&owner, declared_field.name.as_str())
                     .ok_or_else(|| failure("字段身份或完整类型代入与声明不一致"))?;
                 if let Some(stored) = stored {
                     if !instruction.results.is_empty() || infer_operand_static_type(function, stored).as_ref() != Some(&expected) {
                         return Err(failure("字段写入值或结果数量与声明不一致"));
                     }
-                } else if instruction.results.len() != 1 || function.value_types.get(&instruction.results[0]) != Some(&expected) {
+                }
+                else if instruction.results.len() != 1 || function.value_types.get(&instruction.results[0]) != Some(&expected) {
                     return Err(failure("字段读取结果与完整实例声明不一致"));
                 }
                 continue;
@@ -133,7 +137,9 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                     });
                 };
                 let expected_payload = sum.instantiate_payload(declared, type_args).ok_or_else(|| SemanticMirContractError {
-                    code: "SMIR006", function: function.symbol.clone(), location: location.clone(),
+                    code: "SMIR006",
+                    function: function.symbol.clone(),
+                    location: location.clone(),
                     detail: "sum 实例的类型实参数量与声明不一致".to_string(),
                 })?;
                 let expected_result = sum.instantiate_result(declared, type_args);
@@ -211,7 +217,8 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                         detail: "SumVariantIs references undeclared nominal identity".to_string(),
                     });
                 };
-                let Some(declared) = declared_variant(&module.sum_types, *nominal, *variant) else {
+                let Some(declared) = declared_variant(&module.sum_types, *nominal, *variant)
+                else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
@@ -225,11 +232,12 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                 };
                 let output_type = instruction.results.first().and_then(|output| function.value_types.get(output));
                 let expected_receiver = sum.instantiate_result(declared, type_args).ok_or_else(|| SemanticMirContractError {
-                    code: "SMIR006", function: function.symbol.clone(), location: location.clone(),
+                    code: "SMIR006",
+                    function: function.symbol.clone(),
+                    location: location.clone(),
                     detail: "sum 判别的类型实参数量与声明不一致".to_string(),
                 })?;
-                if output_type != Some(&ValkyrieType::Boolean) || receiver_type != Some(&expected_receiver)
-                {
+                if output_type != Some(&ValkyrieType::Boolean) || receiver_type != Some(&expected_receiver) {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
@@ -247,11 +255,21 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
 fn validate_nominal_structs(module: &MirModule) -> Result<(), SemanticMirContractError> {
     for (index, declaration) in module.structs.iter().enumerate() {
         let duplicate_owner = module.structs[..index].iter().any(|prior| prior.qualified_name() == declaration.qualified_name());
-        let duplicate_binder = declaration.generics.iter().enumerate().any(|(index, generic)| declaration.generics[..index].iter().any(|prior| prior.name == generic.name));
-        let invalid_field = declaration.fields.iter().enumerate().any(|(index, field)| field.name.is_empty() || declaration.fields[..index].iter().any(|prior| prior.name == field.name));
+        let duplicate_binder = declaration
+            .generics
+            .iter()
+            .enumerate()
+            .any(|(index, generic)| declaration.generics[..index].iter().any(|prior| prior.name == generic.name));
+        let invalid_field = declaration
+            .fields
+            .iter()
+            .enumerate()
+            .any(|(index, field)| field.name.is_empty() || declaration.fields[..index].iter().any(|prior| prior.name == field.name));
         if declaration.name.is_empty() || duplicate_owner || duplicate_binder || invalid_field {
             return Err(SemanticMirContractError {
-                code: "SMIR006", function: declaration.qualified_name(), location: "struct declaration".to_string(),
+                code: "SMIR006",
+                function: declaration.qualified_name(),
+                location: "struct declaration".to_string(),
                 detail: "结构声明、泛型 binder 与字段身份必须完整且唯一".to_string(),
             });
         }
@@ -259,19 +277,23 @@ fn validate_nominal_structs(module: &MirModule) -> Result<(), SemanticMirContrac
     Ok(())
 }
 
-fn declared_variant<'a>(sum_types: &'a [crate::mir::MirSumDeclaration], nominal: nyar_types::NominalInstanceId, variant: nyar_types::VariantId) -> Option<&'a crate::mir::MirSumVariant> {
+fn declared_variant<'a>(
+    sum_types: &'a [crate::mir::MirSumDeclaration],
+    nominal: nyar_types::NominalInstanceId,
+    variant: nyar_types::VariantId,
+) -> Option<&'a crate::mir::MirSumVariant> {
     sum_types.iter().find(|sum| sum.nominal == nominal)?.variants.iter().find(|declared| declared.id == variant)
 }
 
 fn validate_nominal_sums(module: &MirModule) -> Result<(), SemanticMirContractError> {
     for (sum_index, sum) in module.sum_types.iter().enumerate() {
         if module.sum_types[..sum_index].iter().any(|prior| prior.name == sum.name)
-            || sum.generics.iter().enumerate().any(|(index, generic)| {
-                sum.generics[..index].iter().any(|prior| prior.name == generic.name)
-            })
+            || sum.generics.iter().enumerate().any(|(index, generic)| sum.generics[..index].iter().any(|prior| prior.name == generic.name))
         {
             return Err(SemanticMirContractError {
-                code: "SMIR006", function: sum.name.clone(), location: "sum declaration".to_string(),
+                code: "SMIR006",
+                function: sum.name.clone(),
+                location: "sum declaration".to_string(),
                 detail: "sum 声明或泛型 binder 重复".to_string(),
             });
         }
@@ -284,11 +306,16 @@ fn validate_nominal_sums(module: &MirModule) -> Result<(), SemanticMirContractEr
             });
         }
         for (index, variant) in sum.variants.iter().enumerate() {
-            if variant.fields.iter().enumerate().any(|(index, field)| {
-                field.name.is_empty() || variant.fields[..index].iter().any(|prior| prior.name == field.name)
-            }) {
+            if variant
+                .fields
+                .iter()
+                .enumerate()
+                .any(|(index, field)| field.name.is_empty() || variant.fields[..index].iter().any(|prior| prior.name == field.name))
+            {
                 return Err(SemanticMirContractError {
-                    code: "SMIR006", function: sum.name.clone(), location: "sum variant".to_string(),
+                    code: "SMIR006",
+                    function: sum.name.clone(),
+                    location: "sum variant".to_string(),
                     detail: "variant 字段身份必须非空且唯一".to_string(),
                 });
             }
@@ -369,7 +396,9 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                 validate_static_call_resolution(module, function, &instruction.kind, location.clone())?;
                 let target_symbol = match callee {
                     MirOperand::Symbol(symbol) => Some(symbol.to_string()),
-                    MirOperand::Callable(identity) => module.callable_identities.iter().find_map(|(symbol, candidate)| (candidate == identity).then_some(symbol.clone())),
+                    MirOperand::Callable(identity) => {
+                        module.callable_identities.iter().find_map(|(symbol, candidate)| (candidate == identity).then_some(symbol.clone()))
+                    }
                     _ => None,
                 };
                 if let Some(target_symbol) = target_symbol {
@@ -377,29 +406,37 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                     if candidates.len() > 1 {
                         return Err(error("SMIR003", location.clone(), "local callable identity is ambiguous".to_owned()));
                     }
-                    let external: Vec<_> = module.external_calls.iter().filter(|candidate| candidate.symbol.to_string() == target_symbol).collect();
+                    let external: Vec<_> =
+                        module.external_calls.iter().filter(|candidate| candidate.symbol.to_string() == target_symbol).collect();
                     if external.len() > 1 {
                         return Err(error("SMIR003", location.clone(), "callable identity has multiple contracts".to_owned()));
                     }
                     if let (Some(definition), Some(declaration)) = (candidates.first(), external.first()) {
                         if definition.param_types != declaration.parameter_types || definition.return_type != declaration.return_type {
-                            return Err(error("SMIR007", location.clone(), "linked definition disagrees with external declaration signature".to_owned()));
+                            return Err(error(
+                                "SMIR007",
+                                location.clone(),
+                                "linked definition disagrees with external declaration signature".to_owned(),
+                            ));
                         }
                     }
-                    let signature = candidates.first().map(|target| (&target.param_types, &target.return_type))
+                    let signature = candidates
+                        .first()
+                        .map(|target| (&target.param_types, &target.return_type))
                         .or_else(|| external.first().map(|target| (&target.parameter_types, &target.return_type)));
                     if let Some((parameter_types, return_type)) = signature {
                         if arguments.len() != parameter_types.len() {
                             return Err(error("SMIR007", location.clone(), "call arguments differ from declared signature arity".to_owned()));
                         }
                         for (argument, expected) in arguments.iter().zip(parameter_types) {
-                            let actual = value_type(argument).ok_or_else(|| error(
-                                "SMIR001", location.clone(), "call argument has no semantic type".to_owned()
-                            ))?;
-                            if actual != *expected {
-                                return Err(error("SMIR007", location.clone(), format!(
-                                    "call argument type differs from declared signature (actual={actual:?}, expected={expected:?})"
-                                )));
+                            let actual = value_type(argument)
+                                .ok_or_else(|| error("SMIR001", location.clone(), "call argument has no semantic type".to_owned()))?;
+                            if !call_site_type_compatible(expected, &actual) {
+                                return Err(error(
+                                    "SMIR007",
+                                    location.clone(),
+                                    format!("call argument type differs from declared signature (actual={actual:?}, expected={expected:?})"),
+                                ));
                             }
                         }
                         let expected_results = usize::from(*return_type != ValkyrieType::Unit);
@@ -407,7 +444,8 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                             return Err(error("SMIR007", location.clone(), "call result count differs from declared signature".to_owned()));
                         }
                         if let Some(result) = instruction.results.first() {
-                            if function.value_types.get(result) != Some(return_type) {
+                            let actual = function.value_types.get(result);
+                            if !actual.is_some_and(|actual| call_site_type_compatible(return_type, actual)) {
                                 return Err(error("SMIR007", location.clone(), "call result type differs from declared signature".to_owned()));
                             }
                         }
@@ -422,7 +460,7 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                 else {
                     return Err(error("SMIR001", location, "return operand has no SSA type".to_string()));
                 };
-                if actual != function.return_type {
+                if !mir_return_operand_type_compatible(&actual, &function.return_type) {
                     return Err(error(
                         "SMIR007",
                         location,
@@ -442,19 +480,19 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                     return Err(error("SMIR007", location, "jump arity differs from target block parameters".to_string()));
                 }
                 for (argument, parameter) in arguments.iter().zip(&destination.parameters) {
-                    let Some(actual) = value_type(argument) else {
+                    let Some(actual) = value_type(argument)
+                    else {
                         return Err(error("SMIR001", location.clone(), "jump argument has no SSA type".to_string()));
                     };
-                    let Some(expected) = function.value_types.get(parameter) else {
+                    let Some(expected) = function.value_types.get(parameter)
+                    else {
                         return Err(error("SMIR001", location.clone(), "jump target block parameter has no SSA type".to_string()));
                     };
-                    if actual != *expected {
+                    if actual != *expected && !bare_named_matches_generic_apply_return(expected, &actual) {
                         return Err(error(
                             "SMIR007",
                             location,
-                            format!(
-                                "jump argument type differs from target block parameter (actual={actual:?}, expected={expected:?})"
-                            ),
+                            format!("jump argument type differs from target block parameter (actual={actual:?}, expected={expected:?})"),
                         ));
                     }
                 }
@@ -503,11 +541,32 @@ fn validate_static_call_resolution(
         if module.callable_identities.values().any(|candidate| candidate == identity) {
             return Ok(());
         }
-        return Err(SemanticMirContractError { code: "SMIR003", function: function.symbol.clone(), location, detail: "callable identity is absent from the Compiler identity table".to_string() });
+        return Err(SemanticMirContractError {
+            code: "SMIR003",
+            function: function.symbol.clone(),
+            location,
+            detail: "callable identity is absent from the Compiler identity table".to_string(),
+        });
+    }
+    if let MirOperand::Value(value) = callee {
+        if function.value_types.get(value).is_some_and(|ty| matches!(ty, ValkyrieType::Function(_))) {
+            return Ok(());
+        }
+        return Err(SemanticMirContractError {
+            code: "SMIR003",
+            function: function.symbol.clone(),
+            location,
+            detail: "indirect call requires a function-typed callee SSA value".to_string(),
+        });
     }
     let MirOperand::Symbol(symbol) = callee
     else {
-        return Err(SemanticMirContractError { code: "SMIR003", function: function.symbol.clone(), location, detail: "static call requires a frozen callable identity".to_string() });
+        return Err(SemanticMirContractError {
+            code: "SMIR003",
+            function: function.symbol.clone(),
+            location,
+            detail: "static call requires a frozen callable identity".to_string(),
+        });
     };
     if is_language_operator_symbol(symbol) || is_language_builtin_symbol(symbol) {
         return Ok(());
@@ -865,6 +924,79 @@ fn generator_source_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
     }
 }
 
+fn is_never_type(ty: &ValkyrieType) -> bool {
+    matches!(ty, ValkyrieType::Named(name) if name.as_str() == "Never")
+}
+
+/// `raise`/`throw` 在 MIR 上产出 `Never`；Valkyrie 源码 `void` 为底类型（`ValkyrieType::Void`）。
+fn mir_return_operand_type_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
+    actual == expected
+        || (is_never_type(actual) && matches!(expected, ValkyrieType::Void))
+        || (is_never_type(expected) && matches!(actual, ValkyrieType::Void))
+        || bare_named_matches_generic_apply_return(expected, actual)
+}
+
+/// Seed callable signatures stay generic in `MirFunction`, while HIR call sites carry instantiated types.
+fn call_site_type_compatible(declared: &ValkyrieType, actual: &ValkyrieType) -> bool {
+    declared == actual || type_instantiates_generic_signature(declared, actual)
+}
+
+fn type_instantiates_generic_signature(template: &ValkyrieType, concrete: &ValkyrieType) -> bool {
+    let mut substitutions = BTreeMap::new();
+    unify_generic_instantiation(template, concrete, &mut substitutions)
+}
+
+fn unify_generic_instantiation(
+    template: &ValkyrieType,
+    concrete: &ValkyrieType,
+    substitutions: &mut BTreeMap<Identifier, ValkyrieType>,
+) -> bool {
+    match (template, concrete) {
+        (left, right) if left == right => true,
+        (ValkyrieType::Apply(template_base, template_args), ValkyrieType::Apply(concrete_base, concrete_args)) => {
+            template_args.len() == concrete_args.len()
+                && unify_generic_instantiation(template_base, concrete_base, substitutions)
+                && template_args
+                    .iter()
+                    .zip(concrete_args)
+                    .all(|(template_arg, concrete_arg)| unify_generic_instantiation(template_arg, concrete_arg, substitutions))
+        }
+        (ValkyrieType::Named(template_name), concrete) => match substitutions.get(template_name) {
+            Some(bound) => bound == concrete,
+            None => {
+                substitutions.insert(template_name.clone(), concrete.clone());
+                true
+            }
+        },
+        (ValkyrieType::Array(template_element), ValkyrieType::Array(concrete_element)) => {
+            unify_generic_instantiation(template_element, concrete_element, substitutions)
+        }
+        (
+            ValkyrieType::FixedArray { element: template_element, length: template_length },
+            ValkyrieType::FixedArray { element: concrete_element, length: concrete_length },
+        ) => template_length == concrete_length && unify_generic_instantiation(template_element, concrete_element, substitutions),
+        (ValkyrieType::Function(template_fn), ValkyrieType::Function(concrete_fn)) => {
+            template_fn.params.len() == concrete_fn.params.len()
+                && template_fn
+                    .params
+                    .iter()
+                    .zip(&concrete_fn.params)
+                    .all(|(template_param, concrete_param)| unify_generic_instantiation(template_param, concrete_param, substitutions))
+                && unify_generic_instantiation(&template_fn.return_type, &concrete_fn.return_type, substitutions)
+        }
+        _ => false,
+    }
+}
+
+fn bare_named_matches_generic_apply_return(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
+    match (expected, actual) {
+        (ValkyrieType::Apply(base, _), ValkyrieType::Named(name)) | (ValkyrieType::Named(name), ValkyrieType::Apply(base, _)) => {
+            named_type_name(base).is_some_and(|base_name| base_name == name.as_str())
+        }
+        _ => false,
+    }
+}
+
 fn named_type_name(ty: &ValkyrieType) -> Option<&str> {
     match ty {
         ValkyrieType::Named(name) => Some(name.as_str()),
@@ -889,6 +1021,14 @@ fn display_type(ty: &ValkyrieType) -> String {
         ValkyrieType::Utf8 => "utf8".to_string(),
         ValkyrieType::Utf16 => "utf16".to_string(),
         ValkyrieType::Named(name) => name.to_string(),
+        ValkyrieType::Nominal { declaration, arguments } => {
+            if arguments.is_empty() {
+                format!("Nominal({declaration:?})")
+            }
+            else {
+                format!("Nominal({declaration:?})<{}>", arguments.iter().map(display_type).collect::<Vec<_>>().join(", "))
+            }
+        }
         ValkyrieType::Apply(base, arguments) => {
             format!("{}<{}>", display_type(base), arguments.iter().map(display_type).collect::<Vec<_>>().join(", "))
         }
@@ -915,7 +1055,9 @@ fn display_type(ty: &ValkyrieType) -> String {
                 .join(", ")
         ),
         ValkyrieType::Array(item) => format!("[{}]", display_type(item)),
-        ValkyrieType::FixedArray { element, length } => format!("[{}; {}]", display_type(element), length),
+        ValkyrieType::FixedArray { element, length } => {
+            format!("[{}; {}]", display_type(element), length)
+        }
         ValkyrieType::TypeLambda(lambda) => format!(
             "type lambda({}) -> {}",
             lambda.params.iter().map(|item| item.name.to_string()).collect::<Vec<_>>().join(", "),
@@ -924,7 +1066,9 @@ fn display_type(ty: &ValkyrieType) -> String {
         ValkyrieType::TraitObject(object) => {
             format!("{}<{}>", object.trait_path, object.type_arguments.iter().map(display_type).collect::<Vec<_>>().join(", "))
         }
-        ValkyrieType::Associated(associated) => format!("{}::{}", display_type(&associated.base), associated.name),
+        ValkyrieType::Associated(associated) => {
+            format!("{}::{}", display_type(&associated.base), associated.name)
+        }
         ValkyrieType::AutoType => "auto".to_string(),
         ValkyrieType::SelfType => "Self".to_string(),
         ValkyrieType::Nullable(payload) => format!("{}?", display_type(payload)),
@@ -995,9 +1139,9 @@ mod semantic_contract_tests {
     }
 
     fn source_identity_module(actual: &ValkyrieType, expected: &ValkyrieType) -> MirModule {
-        let hir = crate::ValkyrieCompiler::default().compile_source(
-            "micro identity(value: bool) -> bool { return value }",
-        ).expect("当前源码解析后构造类型合同负向输入");
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source("micro identity(value: bool) -> bool { return value }")
+            .expect("当前源码解析后构造类型合同负向输入");
         let mut module = crate::MirLowerer::lower_module_semantic(&hir);
         let function = &mut module.functions[0];
         function.param_types = vec![actual.clone()];
@@ -1009,17 +1153,463 @@ mod semantic_contract_tests {
     }
 
     fn mismatched_nominal_contracts() -> Vec<(ValkyrieType, ValkyrieType)> {
-        let applied = |name, arguments| ValkyrieType::Apply(
-            Box::new(ValkyrieType::Named(Identifier::new(name))), arguments,
-        );
+        let applied = |name, arguments| ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new(name))), arguments);
         vec![
             (applied("FirstResult", vec![ValkyrieType::Boolean]), applied("SecondResult", vec![ValkyrieType::Boolean])),
-            (applied("Result", vec![ValkyrieType::Boolean, ValkyrieType::Utf8]),
-             applied("Result", vec![ValkyrieType::Boolean, ValkyrieType::Utf16])),
+            (
+                applied("Result", vec![ValkyrieType::Boolean, ValkyrieType::Utf8]),
+                applied("Result", vec![ValkyrieType::Boolean, ValkyrieType::Utf16]),
+            ),
             (applied("Option", vec![ValkyrieType::Boolean]), applied("Nullable", vec![ValkyrieType::Boolean])),
             (ValkyrieType::Integer32 { signed: true }, ValkyrieType::Named(Identifier::new("usize"))),
             (ValkyrieType::Utf16, ValkyrieType::Named(Identifier::new("Utf16Text"))),
         ]
+    }
+
+    #[test]
+    fn option_none_generic_call_lowers_in_return_context() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace test;
+unite Option<T> {
+    Some { value: T },
+    None,
+}
+micro option_none<T>() -> Option<T> {
+    let empty: Option<T> = None
+    return empty
+}
+micro take(flag: bool) -> Option<i64> {
+    if flag {
+        return option_none::<i64>()
+    }
+    let value: i64 = 1
+    return Some(value)
+}
+"#,
+            )
+            .expect("option_none return shape must parse");
+        let take_hir = hir.functions.iter().find(|function| function.name.as_str() == "take").expect("take hir");
+        fn walk_option_none(expr: &crate::hir::HirExpr, out: &mut Option<String>) {
+            match &expr.kind {
+                crate::hir::HirExprKind::Call { callee, resolved, .. } => {
+                    let name = match &callee.kind {
+                        crate::hir::HirExprKind::GenericApply { callee, .. } => match &callee.kind {
+                            crate::hir::HirExprKind::Variable(ident) => ident.name.to_string(),
+                            _ => "?".to_string(),
+                        },
+                        crate::hir::HirExprKind::Variable(ident) => ident.name.to_string(),
+                        _ => "?".to_string(),
+                    };
+                    if name == "option_none" {
+                        *out = resolved
+                            .as_ref()
+                            .map(|call| format!("{:?} sum={}/{}", call.domain, call.sum_owner.is_some(), call.sum_variant.is_some()));
+                    }
+                }
+                crate::hir::HirExprKind::Return(Some(inner)) => walk_option_none(inner, out),
+                crate::hir::HirExprKind::If { condition, then_branch, else_branch, .. } => {
+                    walk_option_none(condition, out);
+                    if let Some(expr) = &then_branch.expr {
+                        walk_option_none(expr, out);
+                    }
+                    for statement in &then_branch.statements {
+                        if let crate::hir::HirStatementKind::Expr(expr) = &statement.kind {
+                            walk_option_none(expr, out);
+                        }
+                    }
+                    if let Some(else_branch) = else_branch {
+                        if let Some(expr) = &else_branch.expr {
+                            walk_option_none(expr, out);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut option_none_resolved = None;
+        for statement in &take_hir.body.statements {
+            if let crate::hir::HirStatementKind::Expr(expr) = &statement.kind {
+                walk_option_none(expr, &mut option_none_resolved);
+            }
+        }
+        assert!(
+            option_none_resolved.as_ref().is_some_and(|line| line.contains("Function") && !line.contains("sum=true/true")),
+            "option_none in take must resolve as callable function, got {:?}",
+            option_none_resolved
+        );
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        assert!(mir.diagnostics.is_empty(), "mir diagnostics: {:?}", mir.diagnostics);
+        validate_semantic_module(&mir).expect("option_none return must satisfy function return contract");
+    }
+
+    #[test]
+    fn i32_pow_while_if_loop_lowers_without_smir007() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+micro __i32_pow(lhs: i32, rhs: i32): i32 {
+    let mut base: i32 = lhs
+    let mut exp: i32 = rhs
+    let mut acc: i32 = 1
+    while true {
+        if true {
+            acc = acc
+        }
+        base = base
+        exp = exp
+    }
+    return acc
+}"#,
+            )
+            .expect("parse i32_pow fixture");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("__i32_pow while/if loop must satisfy SMIR contract");
+    }
+
+    #[test]
+    fn ascii_alnum_key_option_none_lowers_in_early_return() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::types;
+unite Option<T> {
+    Some { value: T },
+    None,
+}
+micro option_none<T>() -> Option<T> {
+    let empty: Option<T> = None
+    return empty
+}
+namespace core::text;
+[primitive("core::text::char")]
+structure char { }
+imply char {
+    micro is_ascii_alphanumeric(self): bool { return false }
+    micro ascii_alnum_key(self) -> Option<i64> {
+        if self.is_ascii_alphanumeric() {
+            return Some(1 as i64)
+        }
+        return option_none::<i64>()
+    }
+}
+"#,
+            )
+            .expect("ascii_alnum_key shape must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("ascii_alnum_key must lower option_none early return");
+    }
+
+    #[test]
+    fn lowercase_ascii_index_shape_validates_with_intrinsic_u32_sub() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::types;
+unite Option<T> { Some { value: T }, None }
+micro option_none<T>() -> Option<T> {
+    let empty: Option<T> = None
+    return empty
+}
+namespace core::primitive;
+structure u32 { }
+imply u32 {
+    infix `-`(self, rhs: u32): u32 { __u32_sub(self, rhs) }
+    infix `<`(self, rhs: u32): bool { __u32_lt(self, rhs) }
+    infix `>`(self, rhs: u32): bool { __u32_gt(self, rhs) }
+}
+[intrinsic("u32.sub")]
+micro __u32_sub(lhs: u32, rhs: u32): u32 { }
+[intrinsic("u32.lt")]
+micro __u32_lt(lhs: u32, rhs: u32): bool { }
+[intrinsic("u32.gt")]
+micro __u32_gt(lhs: u32, rhs: u32): bool { }
+namespace core::text;
+[primitive("core::text::char")]
+structure char { }
+imply char {
+    micro lowercase_ascii_index(self) -> Option<i64> {
+        let code: u32 = self as u32
+        if code < 97 {
+            return option_none::<i64>()
+        }
+        if code > 122 {
+            return option_none::<i64>()
+        }
+        return Some((code - 97) as i64)
+    }
+}
+"#,
+            )
+            .expect("lowercase_ascii_index intrinsic shape must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("lowercase_ascii_index intrinsic shape must validate");
+    }
+
+    #[test]
+    fn option_is_some_match_lowers_to_boolean_merge() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::types;
+unite Option<T> {
+    Some { value: T },
+    None,
+}
+imply Option<T> {
+    micro is_some(self): bool {
+        match self {
+            case Some(value):
+                true
+            case None:
+                false
+        }
+    }
+}
+"#,
+            )
+            .expect("Option.is_some match shape must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("Option.is_some must merge bool arms without Unit phi");
+    }
+
+    #[test]
+    fn option_unwrap_match_returns_payload_or_panics() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::types;
+unite Option<T> {
+    Some { value: T },
+    None,
+}
+micro panic<T>(message: text): Never {
+    raise message
+}
+imply Option<T> {
+    micro unwrap(self): T {
+        match self {
+            case Some(value):
+                value
+            case None:
+                panic("unwrap on `None` value")
+        }
+    }
+}
+"#,
+            )
+            .expect("Option.unwrap match shape must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("Option.unwrap must bind Some payload and merge T arms");
+    }
+
+    #[test]
+    fn option_unwrap_or_else_indirect_call_lowers_function_parameter() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::types;
+unite Option<T> {
+    Some { value: T },
+    None,
+}
+imply Option<T> {
+    micro unwrap_or_else(self, f: micro() -> T): T {
+        match self {
+            case Some(value):
+                value
+            case None:
+                f()
+        }
+    }
+}
+"#,
+            )
+            .expect("Option.unwrap_or_else indirect call shape must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("Option.unwrap_or_else must indirect-call the function parameter");
+    }
+
+    #[test]
+    fn builtin_panic_call_lowers_to_uncaught_raise() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::types;
+unite Option<T> {
+    Some { value: T },
+    None,
+}
+micro panic<T>(message: text): Never {
+    raise message
+}
+imply Option<T> {
+    micro unwrap(self): T {
+        match self {
+            case Some(value):
+                value
+            case None:
+                panic("unwrap on `None` value")
+        }
+    }
+}
+"#,
+            )
+            .expect("Option.unwrap panic arm must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        let function = mir.functions.iter().find(|function| function.symbol.contains("unwrap")).expect("unwrap mir");
+        let has_raise_effect = function.blocks.iter().any(|block| {
+            matches!(
+                block.terminator,
+                crate::valkyrie::mir::ssa::MirTerminator::PerformEffect { effect: crate::valkyrie::mir::ssa::MirEffectKind::Raise, .. }
+            )
+        });
+        assert!(has_raise_effect, "panic must lower to an uncaught raise effect");
+        validate_module(&mir).expect("builtin panic lowering must not leave unresolved callable diagnostics");
+    }
+
+    #[test]
+    fn result_map_method_generic_return_uses_u_and_keeps_e() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::types;
+unite Result<T, E> {
+    Fine { value: T },
+    Fail { error: E },
+}
+imply Result<T, E> {
+    micro map<U>(self, f: micro(T) -> U): Result<U, E> {
+        match self {
+            case Fine(value):
+                Fine(f(value))
+            case Fail(error):
+                Fail(error)
+        }
+    }
+}
+"#,
+            )
+            .expect("Result.map generic return must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("Result.map must lower Fine/Fail arms to Apply<Result<U, E>>");
+    }
+
+    #[test]
+    fn option_map_method_generic_return_uses_u_not_impl_t() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::types;
+unite Option<T> {
+    Some { value: T },
+    None,
+}
+micro option_none<T>() -> Option<T> {
+    let empty: Option<T> = None
+    return empty
+}
+imply Option<T> {
+    micro map<U>(self, f: micro(T) -> U): Option<U> {
+        match self {
+            case Some(value):
+                Some(f(value))
+            case None:
+                option_none::<U>()
+        }
+    }
+}
+"#,
+            )
+            .expect("Option.map generic return must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("Option.map must return Apply<Option<U>>");
+    }
+
+    #[test]
+    fn option_flatten_nested_match_returns_inner_option() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::types;
+unite Option<T> {
+    Some { value: T },
+    None,
+}
+imply Option<T> {
+    micro flatten(self: Option<Option<T>>): Option<T> {
+        match self {
+            case Some(value):
+                value
+            case None:
+                None
+        }
+    }
+}
+"#,
+            )
+            .expect("Option.flatten nested match must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("Option.flatten must return Option<T> from nested Some arm");
+    }
+
+    #[test]
+    fn option_filter_guarded_match_returns_option() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::types;
+unite Option<T> {
+    Some { value: T },
+    None,
+}
+imply Option<T> {
+    micro filter(self, predicate: micro(T) -> bool): Option<T> {
+        match self {
+            case Some(value) if predicate(value):
+                Some(value)
+            else:
+                None
+        }
+    }
+}
+"#,
+            )
+            .expect("Option.filter guarded match must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("Option.filter must return Option<T>");
+    }
+
+    #[test]
+    fn option_or_else_indirect_call_merges_apply_option() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::types;
+unite Option<T> {
+    Some { value: T },
+    None,
+}
+micro option_none<T>() -> Option<T> {
+    let empty: Option<T> = None
+    return empty
+}
+imply Option<T> {
+    micro or_else(self, f: micro() -> Option<T>): Option<T> {
+        match self {
+            case Some(value):
+                Some(value)
+            case None:
+                f()
+        }
+    }
+}
+"#,
+            )
+            .expect("Option.or_else indirect call shape must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("Option.or_else must merge Apply<Option<T>> arms");
     }
 
     #[test]
@@ -1043,11 +1633,12 @@ mod semantic_contract_tests {
             let parameter = MirValueRef(function.value_types.keys().map(|value| value.0).max().unwrap() + 1);
             function.return_type = ValkyrieType::Unit;
             function.value_types.insert(parameter, expected);
-            function.blocks[0].terminator = MirTerminator::Jump {
-                target: MirBlockRef(1), arguments: vec![MirOperand::Value(source)],
-            };
+            function.blocks[0].terminator = MirTerminator::Jump { target: MirBlockRef(1), arguments: vec![MirOperand::Value(source)] };
             function.blocks.push(MirBlock {
-                id: MirBlockRef(1), label: "destination".into(), parameters: vec![parameter], instructions: Vec::new(),
+                id: MirBlockRef(1),
+                label: "destination".into(),
+                parameters: vec![parameter],
+                instructions: Vec::new(),
                 terminator: MirTerminator::Return { value: None },
             });
             let error = validate_semantic_module(&module).expect_err("块参数不能按名称或物理类型恢复");
@@ -1081,8 +1672,22 @@ mod semantic_contract_tests {
             is_unite: false,
             generics: Vec::new(),
             variants: vec![
-                MirSumVariant { id: nyar_types::VariantId::from_index(0).expect("测试 variant identity"), declaration: None, name: "First".to_string(), tag: 0, fields: Vec::new(), result_type: None },
-                MirSumVariant { id: nyar_types::VariantId::from_index(1).expect("测试 variant identity"), declaration: None, name: "Second".to_string(), tag: 0, fields: Vec::new(), result_type: None },
+                MirSumVariant {
+                    id: nyar_types::VariantId::from_index(0).expect("测试 variant identity"),
+                    declaration: None,
+                    name: "First".to_string(),
+                    tag: 0,
+                    fields: Vec::new(),
+                    result_type: None,
+                },
+                MirSumVariant {
+                    id: nyar_types::VariantId::from_index(1).expect("测试 variant identity"),
+                    declaration: None,
+                    name: "Second".to_string(),
+                    tag: 0,
+                    fields: Vec::new(),
+                    result_type: None,
+                },
             ],
         });
 
@@ -1158,7 +1763,8 @@ mod semantic_contract_tests {
             instance: None,
             symbol,
             link: nyar_types::ExternalImportLink::host(None, vec!["dependency".to_owned(), "run".to_owned()]),
-            parameter_types: Vec::new(), return_type: ValkyrieType::Unit,
+            parameter_types: Vec::new(),
+            return_type: ValkyrieType::Unit,
         });
 
         validate_semantic_module(&module).unwrap();

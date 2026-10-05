@@ -16,11 +16,6 @@ pub struct NotedownHtmlOptions {
 impl NotedownHtmlOptions {
     /// legion doc 默认选项。
     pub fn legion_doc(current_dir: impl Into<String>) -> Self {
-        Self {
-            generate_heading_ids: true,
-            highlight_code: true,
-            rewrite_md_links: true,
-            current_dir: current_dir.into(),
-        }
+        Self { generate_heading_ids: true, highlight_code: true, rewrite_md_links: true, current_dir: current_dir.into() }
     }
 }

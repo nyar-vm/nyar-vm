@@ -9,20 +9,24 @@ repository = "https://github.com/valkyrie-language/valkyrie.rs"
 
 [features]
 default = []
-serde = ["dep:serde", "nyar-types/serde", "ordered-float/serde"]
+serde = ["nyar-types/serde", "ordered-float/serde"]
 # NyarVM bytecode 车道（CallImport / imports 表）；Node/Wasm seed 默认不启用。
-nyar-vm-lane = ["emitter/nyar-vm-lane"]
+nyar-vm-lane = ["nyar-emitter/nyar-vm-lane"]
 
 [dependencies]
-# Layering: language → driver → std-data (language is the upper layer).
+# 分层：Oak 文本前端 → language 语义层；guest/tgrammar 等待 Oak 接管。
+acorn-pe = { workspace = true }
+oak-valkyrie = { workspace = true }
+oak-core = { workspace = true }
+oak-von = { workspace = true, features = ["serde"] }
+oak-awsl = { workspace = true }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
-emitter = { workspace = true }
+nyar-emitter = { workspace = true }
 nyar-types = { workspace = true }
-std-data = { workspace = true }
 ordered-float = { workspace = true }
 miette = { workspace = true }
-serde = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 syntect = { workspace = true }
 katex-rs = { workspace = true }
@@ -39,6 +43,11 @@ harness = true
 [[test]]
 name = "valkyrie"
 path = "tests/valkyrie/mod.rs"
+harness = true
+
+[[test]]
+name = "valkyrie_lsp"
+path = "tests/valkyrie-lsp/diagnostics.rs"
 harness = true
 
 [[test]]

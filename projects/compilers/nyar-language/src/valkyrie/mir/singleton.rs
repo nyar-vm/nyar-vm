@@ -25,12 +25,13 @@
 //!   and storage strategy remain target-side decisions.
 
 use std::collections::BTreeMap;
+use std::ops::Deref;
 
 use crate::{
     hir::trait_system::{build_witness_method_entries, satisfy_named_trait},
     types::{
         Identifier,
-        hir::{HirField, HirModule, HirSingleton, HirStruct, HirTrait},
+        hir::{HirField, HirModule, HirSingleton, HirStruct, HirTrait, ValkyrieType},
         witness::{MethodEntry, ModuleId, TypeId},
     },
 };
@@ -40,13 +41,61 @@ pub use nyar_types::{
     SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan,
 };
 
-/// Collect struct + singleton field layouts for overload resolution and type inference.
-pub fn collect_aggregate_field_map(module: &HirModule) -> BTreeMap<Identifier, Vec<HirField>> {
-    let mut fields = module.structs.iter().map(|item| (item.name.clone(), item.fields.clone())).collect::<BTreeMap<_, _>>();
-    for singleton in &module.singletons {
-        fields.insert(singleton.name.clone(), singleton.fields.clone());
+/// 聚合字段索引：短名视图供诊断/未绑定路径；declaration 视图供 `Nominal{ItemId}` 字段推断。
+#[derive(Debug, Clone, Default)]
+pub struct AggregateFieldIndex {
+    by_name: BTreeMap<Identifier, Vec<HirField>>,
+    by_declaration: BTreeMap<nyar_types::ItemId, Vec<HirField>>,
+}
+
+impl Deref for AggregateFieldIndex {
+    type Target = BTreeMap<Identifier, Vec<HirField>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.by_name
     }
-    fields
+}
+
+impl AggregateFieldIndex {
+    /// 按对象类型取字段表；`Nominal` 只认 declaration，禁止再按短名回查。
+    pub fn fields_of(&self, object_type: &ValkyrieType) -> Option<&[HirField]> {
+        match object_type {
+            ValkyrieType::Named(type_name) => self.by_name.get(type_name).map(Vec::as_slice),
+            ValkyrieType::Nominal { declaration, .. } => self.by_declaration.get(declaration).map(Vec::as_slice),
+            ValkyrieType::Apply(base, _) => self.fields_of(base),
+            _ => None,
+        }
+    }
+}
+
+/// Collect struct + singleton field layouts for overload resolution and type inference.
+pub fn collect_aggregate_field_map(module: &HirModule) -> AggregateFieldIndex {
+    let mut index = AggregateFieldIndex::default();
+    collect_aggregate_field_map_into(module, &mut index);
+    index
+}
+
+fn collect_aggregate_field_map_into(module: &HirModule, index: &mut AggregateFieldIndex) {
+    for item in &module.structs {
+        index.by_name.insert(item.name.clone(), item.fields.clone());
+        if let Some(declaration) = item.constructor_declaration {
+            index.by_declaration.insert(declaration, item.fields.clone());
+        }
+    }
+    for singleton in &module.singletons {
+        index.by_name.insert(singleton.name.clone(), singleton.fields.clone());
+    }
+    for export in &module.imported_semantic_exports {
+        for item in &export.structs {
+            index.by_name.entry(item.name.clone()).or_insert_with(|| item.fields.clone());
+            if let Some(declaration) = item.constructor_declaration {
+                index.by_declaration.entry(declaration).or_insert_with(|| item.fields.clone());
+            }
+        }
+    }
+    for submodule in &module.submodules {
+        collect_aggregate_field_map_into(submodule, index);
+    }
 }
 
 /// Collect singleton instance plans from a HIR module.

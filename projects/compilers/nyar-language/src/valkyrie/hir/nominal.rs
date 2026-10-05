@@ -429,6 +429,11 @@ fn collect_generic_names(ty: &ValkyrieType, names: &mut BTreeSet<Identifier>) {
                 collect_generic_names(arg, names);
             }
         }
+        ValkyrieType::Nominal { arguments, .. } => {
+            for arg in arguments {
+                collect_generic_names(arg, names);
+            }
+        }
         ValkyrieType::Integer8 { .. }
         | ValkyrieType::Integer16 { .. }
         | ValkyrieType::Integer32 { .. }

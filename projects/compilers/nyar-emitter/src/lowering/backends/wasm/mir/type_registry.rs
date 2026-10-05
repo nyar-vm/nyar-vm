@@ -11,10 +11,12 @@ use super::{
     ExecutableLoweringContext, LayoutId, MirInstructionKind, MirOperand, NyarType, StorageKind,
     representation::{is_js_glue_host_string_type, mir_storage_for_type, wasm_gc_field_type_byte_for_glue},
 };
-use crate::lowering::backends::wasm::gc::{wasm_gc_array_type, wasm_gc_struct_type};
-use crate::lowering::features::semantic_mir_contract::is_option_shaped;
+use crate::lowering::{
+    backends::wasm::gc::{wasm_gc_array_type, wasm_gc_struct_type},
+    features::semantic_mir_contract::is_option_shaped,
+};
+use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_I32};
 use std::collections::{BTreeMap, BTreeSet};
-use std_data::binary::wasm::{VALTYPE_ANYREF, VALTYPE_I32};
 
 /// 扫描 MIR：登记 wasm-gc structtype 所需的 layout_id。
 ///
@@ -156,7 +158,8 @@ pub(super) fn register_gc_array_types(
                         }
                         MirInstructionKind::ArrayGet { array, .. }
                         | MirInstructionKind::ArraySet { array, .. }
-                        | MirInstructionKind::ArrayLength { array } => {
+                        | MirInstructionKind::ArrayLength { array }
+                        | MirInstructionKind::ArrayPush { array, .. } => {
                             if let MirOperand::Value(receiver) = array {
                                 if let Some(NyarType::Array(element) | NyarType::FixedArray { element, .. }) =
                                     view.function.value_types.get(receiver)

@@ -12,15 +12,17 @@ default = []
 nyar-vm-lane = []
 
 [dependencies]
-# Layering: language → emitter → std-data (wasm/pe/…) + nyar-bytecode (外码).
+# Layering: language → emitter → acorn-wasm (Wasm) + acorn-jvm (class/jar) + acorn-pe (coff/elf/PE/msil) + nyar-bytecode.
 # Emitter must not depend on nyar-language.
+acorn-jvm = { workspace = true }
+acorn-pe = { workspace = true }
+acorn-wasm = { workspace = true }
 miette = { workspace = true }
 nyar = { workspace = true }
 nyar-bytecode = { workspace = true }
 nyar-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-std-data = { workspace = true, features = ["serde"] }
 zip = { workspace = true }
 
 [dev-dependencies]

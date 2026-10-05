@@ -13,8 +13,8 @@ use crate::{
         Identifier,
         hir::{HirModule, ValkyrieType},
     },
+    valkyrie::frontend::ParseError,
 };
-use std_data::text::valkyrie::ParseError;
 
 /// 语义层校验：sealed match 穷尽性、值类型 copy 纪律、字面量穷尽性等，并复用控制流校验。
 ///

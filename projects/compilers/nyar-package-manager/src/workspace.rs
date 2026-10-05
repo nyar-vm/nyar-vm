@@ -3,8 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use oak_von::from_str;
 use serde::{Deserialize, Serialize};
-use std_data::text::von::from_str;
 
 use crate::{PackageManagerError, PackageManifest, ProjectLayout, Result};
 

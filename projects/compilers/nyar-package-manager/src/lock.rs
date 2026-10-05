@@ -3,10 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nyar_language::formatter::to_string_indented;
+use nyar_language::printer::to_string_indented;
 use nyar_package_registry::Package;
+use oak_von::from_str;
 use serde::{Deserialize, Serialize};
-use std_data::text::von::from_str;
 
 use crate::{ProjectLayout, Result};
 

@@ -52,7 +52,7 @@ micro main() -> Result<utf8, utf8> {
     let main_fn = hir.functions.iter().find(|f| f.name.as_str() == "main").expect("main");
     assert!(main_fn.body.statements.iter().any(|stmt| {
         if let nyar_language::types::hir::HirStatementKind::Let { initializer: Some(init), .. } = &stmt.kind {
-            matches!(init.kind, HirExprKind::TryPropagate(_))
+            matches!(init.kind, HirExprKind::TryPropagate { .. })
         }
         else {
             false
@@ -127,7 +127,7 @@ micro main() -> Option<utf8> {
     let main_fn = hir.functions.iter().find(|f| f.name.as_str() == "main").expect("main");
     assert!(main_fn.body.statements.iter().any(|stmt| {
         if let nyar_language::types::hir::HirStatementKind::Let { initializer: Some(init), .. } = &stmt.kind {
-            matches!(init.kind, HirExprKind::TryPropagate(_))
+            matches!(init.kind, HirExprKind::TryPropagate { .. })
         }
         else {
             false
