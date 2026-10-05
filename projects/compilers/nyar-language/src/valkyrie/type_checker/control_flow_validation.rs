@@ -70,7 +70,7 @@ impl TypeInference {
                 self.unify(&then_ty, &else_ty)?;
                 Ok(then_ty)
             }
-            HirExprKind::TryPropagate(inner) => {
+            HirExprKind::TryPropagate { inner, .. } => {
                 let inner_ty = self.infer(inner)?;
                 Ok(nullable_payload_type(&inner_ty).unwrap_or(inner_ty))
             }
@@ -154,7 +154,13 @@ fn infer_block_type(inference: &mut TypeInference, block: &crate::types::hir::Hi
 #[cfg(test)]
 mod tests {
     use super::{TypeError, TypeInference};
-    use crate::{types::{Identifier, NamePath, SourceID, SourceSpan, hir::{HirExpr, HirExprKind}}, valkyrie::hir::HirResolvedCall};
+    use crate::{
+        types::{
+            Identifier, NamePath, SourceID, SourceSpan,
+            hir::{HirExpr, HirExprKind},
+        },
+        valkyrie::hir::HirResolvedCall,
+    };
 
     fn span() -> SourceSpan {
         SourceSpan::new(SourceID::default(), 0, 0)

@@ -1,6 +1,6 @@
 use nyar_language::{
-    MirLowerer, MirOperand, MirOperation, MirStorageKind, ValkyrieCompiler, compute_aggregate_layout_plan,
-    concretize_type_lossy, layout_key_for_type, storage_kind_for_type,
+    MirLowerer, MirOperand, MirOperation, MirStorageKind, ValkyrieCompiler, compute_aggregate_layout_plan, concretize_type,
+    layout_key_for_type, storage_kind_for_type,
     types::{Identifier, SourceID, hir::ValkyrieType},
 };
 
@@ -24,9 +24,7 @@ micro main() {
     assert!(mir.structs.iter().any(|item| item.name == "Point" && item.is_value_type));
     assert!(mir.functions.iter().any(|function| {
         function.blocks.iter().any(|block| {
-            block.instructions.iter().any(|ins| {
-                matches!(ins.kind, MirOperation::StructNew { ref type_name, .. } if type_name == "Point")
-            })
+            block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::StructNew { ref type_name, .. } if type_name == "Point"))
         })
     }));
 }
@@ -50,31 +48,44 @@ micro main() {
     assert!(mir.structs.iter().any(|item| item.name == "Node" && !item.is_value_type));
     assert!(mir.functions.iter().any(|function| {
         function.blocks.iter().any(|block| {
-            block.instructions.iter().any(|ins| {
-                matches!(ins.kind, MirOperation::StructNew { ref type_name, .. } if type_name == "Node")
-            })
+            block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::StructNew { ref type_name, .. } if type_name == "Node"))
         })
     }));
 }
 
 #[test]
 fn tuple_and_fixed_array_types_are_value_semantic() {
-    let mut value_names = std::collections::BTreeSet::new();
-    value_names.insert(Identifier::new("Point"));
-    assert_eq!(storage_kind_for_type(&ValkyrieType::Tuple(vec![ValkyrieType::Boolean]), &value_names), MirStorageKind::Value);
+    let point = nyar_types::ItemId::from_index(1);
+    let mut value_declarations = std::collections::BTreeSet::new();
+    value_declarations.insert(point);
+    assert_eq!(storage_kind_for_type(&ValkyrieType::Tuple(vec![ValkyrieType::Boolean]), &value_declarations), MirStorageKind::Value);
     assert_eq!(
         storage_kind_for_type(
             &ValkyrieType::FixedArray { element: Box::new(ValkyrieType::Integer32 { signed: true }), length: 4 },
-            &value_names
+            &value_declarations
         ),
         MirStorageKind::Value
     );
     assert_eq!(
-        storage_kind_for_type(&ValkyrieType::Array(Box::new(ValkyrieType::Integer32 { signed: true })), &value_names),
+        storage_kind_for_type(&ValkyrieType::Array(Box::new(ValkyrieType::Integer32 { signed: true })), &value_declarations),
         MirStorageKind::Reference
     );
-    assert_eq!(storage_kind_for_type(&ValkyrieType::Named(Identifier::new("Point")), &value_names), MirStorageKind::Value);
-    assert_eq!(storage_kind_for_type(&ValkyrieType::Named(Identifier::new("Node")), &value_names), MirStorageKind::Reference);
+    assert_eq!(
+        storage_kind_for_type(&ValkyrieType::Nominal { declaration: point, arguments: Vec::new() }, &value_declarations),
+        MirStorageKind::Value
+    );
+    assert_eq!(
+        storage_kind_for_type(
+            &ValkyrieType::Nominal { declaration: nyar_types::ItemId::from_index(2), arguments: Vec::new() },
+            &value_declarations
+        ),
+        MirStorageKind::Reference
+    );
+    // Named 短名不得再认亲为 value 存储。
+    assert_eq!(
+        storage_kind_for_type(&ValkyrieType::Named(Identifier::new("Point")), &value_declarations),
+        MirStorageKind::Reference
+    );
 }
 
 #[test]
@@ -90,9 +101,7 @@ micro main() {
         .expect("compile");
     let mir = MirLowerer::lower_module_semantic(&hir);
     assert!(mir.functions.iter().any(|function| {
-        function.blocks.iter().any(|block| {
-            block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::StructNew { .. }))
-        })
+        function.blocks.iter().any(|block| block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::StructNew { .. })))
     }));
 }
 
@@ -143,13 +152,13 @@ micro main() {
         .expect("compile");
     let mir = MirLowerer::lower_module_semantic(&hir);
     let has_aggregate_copy = mir.functions.iter().any(|function| {
-        function.blocks.iter().any(|block| block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::AggregateCopy { .. })))
+        function
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::AggregateCopy { .. })))
     });
     assert!(has_aggregate_copy, "expected value assignment to lower to AggregateCopy");
-    assert!(
-        !mir.aggregate_layouts.layouts.is_empty(),
-        "expected Point layout to be registered in mir.aggregate_layouts"
-    );
+    assert!(!mir.aggregate_layouts.layouts.is_empty(), "expected Point layout to be registered in mir.aggregate_layouts");
 }
 
 /// Build a CLR bundled `BackendRegistry` mirroring `nyar_emitter::bundled_backend_registry`.
@@ -217,8 +226,7 @@ micro main() {
         &target_profile,
         &projection_policy,
     );
-    let artifact_plan = plan_artifacts_from_build_output(&build_output, target, ClrSuspendStrategy::default())
-            .expect("artifact plan");
+    let artifact_plan = plan_artifacts_from_build_output(&build_output, target, ClrSuspendStrategy::default()).expect("artifact plan");
     let fragment = assemble_fragment(&build_output, &artifact_plan, 0).expect("backend fragment");
     assert_eq!(
         fragment.aggregate_layouts, mir.aggregate_layouts,
@@ -245,11 +253,10 @@ micro main() -> f64 {
         .expect("compile");
     let mir = MirLowerer::lower_module_semantic(&hir);
     assert!(mir.functions.iter().any(|function| {
-        function.blocks.iter().any(|block| {
-            block.instructions.iter().any(|ins| {
-                matches!(ins.kind, MirOperation::FieldGet { ref field, .. } if field == "x")
-            })
-        })
+        function
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::FieldGet { ref field, .. } if field == "x")))
     }));
 }
 
@@ -267,17 +274,9 @@ micro main() {
         .expect("compile");
     let mir = MirLowerer::lower_module_semantic(&hir);
     assert!(mir.functions.iter().any(|function| {
-        function.blocks.iter().any(|block| {
-            block
-                .instructions
-                .iter()
-                .any(|ins| matches!(ins.kind, MirOperation::TupleNew { .. }))
-        })
+        function.blocks.iter().any(|block| block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::TupleNew { .. })))
     }));
-    assert!(
-        !mir.aggregate_layouts.layouts.is_empty(),
-        "expected tuple layout to be registered in mir.aggregate_layouts"
-    );
+    assert!(!mir.aggregate_layouts.layouts.is_empty(), "expected tuple layout to be registered in mir.aggregate_layouts");
 }
 
 #[test]
@@ -333,12 +332,7 @@ micro main() -> f64 {
         .expect("compile");
     let mir = MirLowerer::lower_module_semantic(&hir);
     assert!(mir.functions.iter().any(|function| {
-        function.blocks.iter().any(|block| {
-            block
-                .instructions
-                .iter()
-                .any(|ins| matches!(ins.kind, MirOperation::Call { .. }))
-        })
+        function.blocks.iter().any(|block| block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::Call { .. })))
     }));
 }
 
@@ -361,11 +355,7 @@ imply Box<T> {
         )
         .expect("compile");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let new_fn = mir
-        .functions
-        .iter()
-        .find(|function| function.symbol.ends_with("new"))
-        .expect("Box.new should lower");
+    let new_fn = mir.functions.iter().find(|function| function.symbol.ends_with("new")).expect("Box.new should lower");
     let struct_new = new_fn
         .blocks
         .iter()
@@ -375,25 +365,16 @@ imply Box<T> {
             _ => None,
         })
         .expect("Box.new should emit StructNew");
-    let layout = mir
-        .aggregate_layouts
-        .layouts
-        .iter()
-        .find(|layout| layout.name == "Box")
-        .expect("Box layout");
+    let layout = mir.aggregate_layouts.layouts.iter().find(|layout| layout.name == "Box").expect("Box layout");
     for (field_name, operand) in struct_new {
-        let layout_ty = layout
-            .fields
-            .iter()
-            .find(|field| field.name == field_name)
-            .map(|field| field.ty.clone())
-            .expect("layout field");
-        let MirOperand::Value(value_ref) = operand else {
+        let layout_ty = layout.fields.iter().find(|field| field.name == field_name).map(|field| field.ty.clone()).expect("layout field");
+        let MirOperand::Value(value_ref) = operand
+        else {
             panic!("StructNew field operand should be a value");
         };
         let mir_ty = new_fn.value_types.get(&value_ref).expect("field value type");
         assert_eq!(
-            concretize_type_lossy(mir_ty),
+            concretize_type(mir_ty).expect("field MIR type must concretize"),
             layout_ty,
             "field `{field_name}` should carry declared struct field type through StructNew"
         );

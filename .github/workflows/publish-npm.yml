@@ -1,0 +1,47 @@
+name: Publish npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "pnpm publish --dry-run instead of publishing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+      - name: Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build Wasm collect
+        run: node scripts/build.mjs wasm
+      - name: Prepare package readmes
+        run: node scripts/prepare-npm-publish.mjs
+      - name: Publish workspace packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            pnpm -r --filter "@nyar-vm/*" publish --access public --no-git-checks --dry-run
+          else
+            pnpm -r --filter "@nyar-vm/*" publish --access public --no-git-checks
+          fi

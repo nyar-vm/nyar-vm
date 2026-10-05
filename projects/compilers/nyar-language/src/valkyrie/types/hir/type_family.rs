@@ -16,6 +16,8 @@ pub struct HirTypeFunction {
     pub documents: HirDocumentation,
     /// Generic parameters for the type function.
     pub generics: Vec<GenericType>,
+    /// 由 Oak 结构化语法保留的类型函数约束。
+    pub where_constraints: Vec<super::HirWhereConstraint>,
     /// Parameters of the type function.
     pub params: Vec<HirParam>,
     /// The return type of the type function.

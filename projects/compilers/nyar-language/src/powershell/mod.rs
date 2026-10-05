@@ -6,7 +6,7 @@ pub mod interpret;
 pub mod module;
 pub mod semantic_bridge;
 
+pub use crate::transitional::guest_scripts::powershell::{PowerShellError, PowerShellScript, PsExpr, PsStmt};
 pub use interpret::{PowerShellValue, evaluate_powershell_script, evaluate_powershell_source};
 pub use module::PowerShellModule;
 pub use semantic_bridge::PowerShellSemanticBridge;
-pub use std_data::text::powershell::{PowerShellError, PowerShellScript, PsExpr, PsStmt};

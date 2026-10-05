@@ -19,6 +19,8 @@ pub struct HirWhereConstraint {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirTraitBound {
+    /// Resolver 绑定的 trait 声明身份；成功 evidence 不接受空身份。
+    pub declaration: Option<nyar_types::ItemId>,
     /// trait 的声明路径。
     pub trait_path: NamePath,
     /// 有序的位置类型参数。
@@ -71,6 +73,12 @@ pub struct HirAssociatedTypeBinding {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirImpl {
+    /// Resolver 绑定的 trait 声明身份；inherent imply 为空。
+    pub trait_declaration: Option<nyar_types::ItemId>,
+    /// 当前声明的 namespace，仅供前置名称绑定。
+    pub declaring_namespace: crate::NamePath,
+    /// trait 应用的有序类型实参。
+    pub trait_arguments: Vec<ValkyrieType>,
     /// Generic parameters for the impl block.
     ///
     /// For example, in `impl<T: Clone> Clone for Box<T>`, this would contain

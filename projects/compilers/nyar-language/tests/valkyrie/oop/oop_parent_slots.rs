@@ -23,6 +23,8 @@ fn field(name: &str) -> HirField {
 
 fn class_with_members(parents: Vec<HirParent>, fields: Vec<HirField>) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Child"),
         namespace: vec![],
         doc: HirDocumentation::default(),

@@ -4,9 +4,9 @@ use nyar_language::{
     BashModule, BashSemanticBridge, CModule, CSemanticBridge, LuaModule, LuaSemanticBridge, PowerShellModule, PowerShellSemanticBridge,
     TclModule, TclSemanticBridge, evaluate_bash_source, evaluate_c_source, evaluate_lua_source, evaluate_powershell_source,
     evaluate_tcl_source,
+    transitional::guest_scripts::{bash::BashScript, c::CScript, lua::LuaScript, powershell::PowerShellScript, tcl::TclScript},
 };
 use std::collections::HashMap;
-use std_data::text::{bash::BashScript, c::CScript, lua::LuaScript, powershell::PowerShellScript, tcl::TclScript};
 
 #[test]
 fn lua_adapter_builds_from_script_without_mir() {

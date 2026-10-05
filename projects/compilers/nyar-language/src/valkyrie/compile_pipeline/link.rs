@@ -4,16 +4,20 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::valkyrie::mir::{MirFunction, MirModule, MirOperand, MirOperation, MirStruct, MirSumDeclaration};
-use nyar_types::layout::{AggregateLayout, AggregateLayoutPlan};
-use nyar_types::{FieldId, NominalInstanceId};
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::{
+    frontend::ParseError,
+    mir::{MirFunction, MirModule, MirOperand, MirOperation, MirStruct, MirSumDeclaration},
+};
+use nyar_types::{
+    FieldId, NominalInstanceId,
+    layout::{AggregateLayout, AggregateLayoutPlan},
+};
 
 /// 合并已由 Compiler 统一注册的依赖实例闭包。
 pub(crate) fn link_reachable_dependency_mir(
     consumer: &mut MirModule,
     dependency_mirs: &[MirModule],
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     if dependency_mirs.is_empty() {
         return Ok(());
     }
@@ -27,8 +31,17 @@ pub(crate) fn link_reachable_dependency_mir(
         }
         for function in &module.functions {
             if let Some(instance) = function.instance {
-                if function.declaration.is_none() || definitions.insert(instance, (module, function)).is_some() {
-                    return Err(ParseError::invalid(format!("ItemInstanceId `{instance}` 的声明缺失或定义重复")));
+                if function.declaration.is_none() {
+                    return Err(ParseError::invalid(format!(
+                        "ItemInstanceId `{instance}` 缺少声明 ItemId；symbol=`{}`; module=`{}`",
+                        function.symbol, module.name
+                    )));
+                }
+                if let Some((previous_module, previous)) = definitions.insert(instance, (module, function)) {
+                    return Err(ParseError::invalid(format!(
+                        "ItemInstanceId `{instance}` 定义重复；first=`{}`@`{}`; second=`{}`@`{}`",
+                        previous.symbol, previous_module.name, function.symbol, module.name
+                    )));
                 }
             }
         }
@@ -38,7 +51,8 @@ pub(crate) fn link_reachable_dependency_mir(
                 return Err(ParseError::invalid("外部导入缺少 ItemId"));
             }
             if let Some(previous) = imports.insert(instance, contract)
-                && previous != contract {
+                && previous != contract
+            {
                 return Err(ParseError::invalid(format!("导入实例 `{instance}` 合同冲突")));
             }
         }
@@ -76,16 +90,38 @@ pub(crate) fn link_reachable_dependency_mir(
                 remap_function_aggregates(&mut function, &remaps[module_index])?;
                 linked.functions.push(function);
             }
-        } else if let Some(contract) = imports.get(&instance) {
+        }
+        else if let Some(contract) = imports.get(&instance) {
             if !linked.external_calls.contains(contract) {
                 linked.external_calls.push((*contract).clone());
                 if let Some(previous) = linked.callable_identities.insert(contract.symbol.to_string(), instance)
-                    && previous != instance {
+                    && previous != instance
+                {
                     return Err(ParseError::invalid("外部导入 ABI 标签冲突"));
                 }
             }
-        } else {
-            return Err(ParseError::invalid(format!("调用实例 `{instance}` 没有定义或显式导入合同")));
+        }
+        else {
+            let callers = consumer
+                .functions
+                .iter()
+                .chain(dependency_mirs.iter().flat_map(|module| module.functions.iter()))
+                .filter(|function| {
+                    function.blocks.iter().any(|block| {
+                        block.instructions.iter().any(|instruction| {
+                            matches!(
+                                &instruction.kind,
+                                MirOperation::Call { callee: MirOperand::Callable(callee), .. } if *callee == instance
+                            )
+                        })
+                    })
+                })
+                .map(|function| function.symbol.clone())
+                .collect::<Vec<_>>();
+            let local_imports = consumer.external_calls.iter().map(|c| c.symbol.to_string()).take(12).collect::<Vec<_>>();
+            return Err(ParseError::invalid(format!(
+                "调用实例 `{instance}` 没有定义或显式导入合同；callers={callers:?}; consumer_imports={local_imports:?}"
+            )));
         }
     }
     *consumer = linked;
@@ -110,20 +146,28 @@ fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> 
                 }
                 continue;
             }
+            let qualified = qualified_layout_name(layout);
+            // 只按声明身份合并；名称或物理形状相同不能补出语义身份。
             let new_id = merged.layouts.iter().map(|candidate| candidate.id).max().unwrap_or(0).saturating_add(1);
             let mut copied = layout.clone();
             copied.id = new_id;
-            let qualified = qualified_layout_name(&copied);
-            if merged.type_name_to_layout.insert(qualified.clone(), new_id).is_some() {
-                return Err(ParseError::invalid(format!("布局键 `{qualified}` 重复")));
-            }
-            if copied.storage == nyar_types::layout::StorageKind::Value {
-                merged.value_type_names.insert(qualified);
-            }
             if let Some(item) = owner {
                 if merged.declaration_to_layout.insert(item, new_id).is_some() {
                     return Err(ParseError::invalid(format!("布局 `{}` declaration identity 重复", qualified_layout_name(layout))));
                 }
+                if copied.storage == nyar_types::layout::StorageKind::Value {
+                    merged.value_type_declarations.insert(item);
+                }
+            }
+            else if is_synthetic_layout_key(&qualified) {
+                // 仅合成 tuple/fixedarray 保留名称键；名义布局不得进 type_name_to_layout。
+                // 存储类以 layout.storage 为准，不写 value_type_names。
+                if merged.type_name_to_layout.insert(qualified.clone(), new_id).is_some() {
+                    return Err(ParseError::invalid(format!("布局键 `{qualified}` 重复")));
+                }
+            }
+            else {
+                return Err(ParseError::invalid(format!("布局 `{}` 缺少 declaration identity，禁止按名合并", qualified_layout_name(layout))));
             }
             merged.layouts.push(copied);
         }
@@ -132,12 +176,15 @@ fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> 
 }
 
 fn declaration_for_layout(module: &MirModule, layout: &AggregateLayout) -> Option<nyar_types::ItemId> {
-    module.aggregate_layouts.declaration_to_layout.iter()
-        .find_map(|(item, id)| (*id == layout.id).then_some(*item))
+    module.aggregate_layouts.declaration_to_layout.iter().find_map(|(item, id)| (*id == layout.id).then_some(*item))
 }
 
 fn qualified_layout_name(layout: &AggregateLayout) -> String {
     if layout.namespace.is_empty() { layout.name.clone() } else { format!("{}.{}", layout.namespace, layout.name) }
+}
+
+fn is_synthetic_layout_key(key: &str) -> bool {
+    key.starts_with("__tuple_") || key.starts_with("__fixedarray_")
 }
 
 #[derive(Default)]
@@ -162,8 +209,25 @@ fn same_sum_contract(left: &MirSumDeclaration, right: &MirSumDeclaration) -> boo
         && left.name == right.name
         && left.is_unite == right.is_unite
         && left.generics == right.generics
-        && left.variants.iter().map(|variant| (&variant.name, variant.tag, &variant.result_type, variant.fields.iter().map(|field| (&field.name, &field.ty)).collect::<Vec<_>>()))
-            .eq(right.variants.iter().map(|variant| (&variant.name, variant.tag, &variant.result_type, variant.fields.iter().map(|field| (&field.name, &field.ty)).collect::<Vec<_>>())))
+        && left
+            .variants
+            .iter()
+            .map(|variant| {
+                (
+                    &variant.name,
+                    variant.tag,
+                    &variant.result_type,
+                    variant.fields.iter().map(|field| (&field.name, &field.ty)).collect::<Vec<_>>(),
+                )
+            })
+            .eq(right.variants.iter().map(|variant| {
+                (
+                    &variant.name,
+                    variant.tag,
+                    &variant.result_type,
+                    variant.fields.iter().map(|field| (&field.name, &field.ty)).collect::<Vec<_>>(),
+                )
+            }))
 }
 
 fn freeze_aggregate_identities(
@@ -177,9 +241,9 @@ fn freeze_aggregate_identities(
     for module in modules {
         let mut remap = AggregateRemap::default();
         for declaration in &module.structs {
-            if let Some(existing) = global_structs.iter().find(|existing| {
-                existing.declaration.is_some() && existing.declaration == declaration.declaration
-            }) {
+            if let Some(existing) =
+                global_structs.iter().find(|existing| existing.declaration.is_some() && existing.declaration == declaration.declaration)
+            {
                 if !same_struct_contract(existing, declaration) {
                     return Err(ParseError::invalid(format!("聚合声明 `{}` 合同冲突", declaration.qualified_name())));
                 }
@@ -189,8 +253,10 @@ fn freeze_aggregate_identities(
                         return Err(ParseError::invalid(format!("字段身份 `{}` 在模块 `{}` 中重复", local.id, module.name)));
                     }
                 }
-            } else {
-                let nominal = NominalInstanceId::from_index(global_structs.len() as u32).ok_or_else(|| ParseError::invalid("NominalInstanceId 溢出"))?;
+            }
+            else {
+                let nominal =
+                    NominalInstanceId::from_index(global_structs.len() as u32).ok_or_else(|| ParseError::invalid("NominalInstanceId 溢出"))?;
                 let mut frozen = declaration.clone();
                 frozen.nominal = nominal;
                 remap.nominals.insert(declaration.nominal, nominal);
@@ -204,9 +270,9 @@ fn freeze_aggregate_identities(
             }
         }
         for declaration in &module.sum_types {
-            if let Some(existing) = global_sums.iter().find(|existing| {
-                existing.declaration.is_some() && existing.declaration == declaration.declaration
-            }) {
+            if let Some(existing) =
+                global_sums.iter().find(|existing| existing.declaration.is_some() && existing.declaration == declaration.declaration)
+            {
                 if !same_sum_contract(existing, declaration) {
                     return Err(ParseError::invalid(format!("sum 声明 `{}` 合同冲突", declaration.name)));
                 }
@@ -219,7 +285,8 @@ fn freeze_aggregate_identities(
                         }
                     }
                 }
-            } else {
+            }
+            else {
                 let mut frozen = declaration.clone();
                 let global_nominal = NominalInstanceId::from_index((global_structs.len() + global_sums.len()) as u32)
                     .ok_or_else(|| ParseError::invalid("NominalInstanceId 溢出"))?;
@@ -229,7 +296,8 @@ fn freeze_aggregate_identities(
                 for (variant_index, variant) in frozen.variants.iter_mut().enumerate() {
                     let global_variant = nyar_types::VariantId::from_index(
                         global_sums.iter().flat_map(|sum| sum.variants.iter()).count() as u32 + variant_index as u32,
-                    ).ok_or_else(|| ParseError::invalid("VariantId 溢出"))?;
+                    )
+                    .ok_or_else(|| ParseError::invalid("VariantId 溢出"))?;
                     remap.variants.insert(variant.id, global_variant);
                     variant.id = global_variant;
                     for field in &mut variant.fields {
@@ -283,6 +351,52 @@ mod tests {
     use super::*;
     use crate::{ValkyrieCompiler, mir::MirLowerer};
 
+    /// 同名、同形状不能证明是同一个类型；缺身份的重复布局必须失败。
+    #[test]
+    fn identical_layout_names_without_identity_do_not_merge() {
+        let compiler = ValkyrieCompiler::default();
+        let hir = compiler.compile_source("micro entry() -> unit { return }").expect("源码解析");
+        let mut consumer = MirLowerer::lower_module_semantic(&hir);
+        let layout = AggregateLayout {
+            id: 1,
+            name: "Record".into(),
+            namespace: "example".into(),
+            storage: nyar_types::layout::StorageKind::Value,
+            size: 0,
+            align: 1,
+            fields: vec![],
+        };
+        consumer.aggregate_layouts = AggregateLayoutPlan::default();
+        consumer.aggregate_layouts.layouts.push(layout.clone());
+        consumer.aggregate_layouts.type_name_to_layout.insert("example.Record".into(), 1);
+        let dependency = consumer.clone();
+        let original = consumer.clone();
+        assert!(merge_aggregate_layouts(&consumer, &[dependency]).is_err());
+        assert_eq!(consumer, original);
+    }
+
+    /// 已冻结的同一声明合同允许重复引用，不能靠名称建立等价关系。
+    #[test]
+    fn repeated_layout_declaration_merges_by_identity() {
+        let compiler = ValkyrieCompiler::default();
+        let hir = compiler.compile_source("micro entry() -> unit { return }").expect("源码解析");
+        let mut consumer = MirLowerer::lower_module_semantic(&hir);
+        consumer.aggregate_layouts = AggregateLayoutPlan::default();
+        consumer.aggregate_layouts.layouts.push(AggregateLayout {
+            id: 1,
+            name: "Record".into(),
+            namespace: "example".into(),
+            storage: nyar_types::layout::StorageKind::Value,
+            size: 0,
+            align: 1,
+            fields: vec![],
+        });
+        consumer.aggregate_layouts.declaration_to_layout.insert(nyar_types::ItemId::from_index(1).unwrap(), 1);
+        let dependency = consumer.clone();
+        let merged = merge_aggregate_layouts(&consumer, &[dependency]).expect("同一声明合同");
+        assert_eq!(merged.layouts.len(), 1);
+    }
+
     #[test]
     fn dependency_linking_without_shared_instances_fails_without_mutation() {
         let compiler = ValkyrieCompiler::default();
@@ -292,7 +406,7 @@ mod tests {
         let dependency = MirLowerer::lower_module_semantic(&dependency_hir);
         let original = consumer.clone();
         let error = link_reachable_dependency_mir(&mut consumer, &[dependency]).expect_err("缺少统一实例表不能链接");
-        assert!(error.to_string().contains("ItemInstanceId"));
+        assert!(error.to_string().contains("ItemInstanceId"), "实际链接失败：{error}");
         assert_eq!(consumer, original);
     }
 }

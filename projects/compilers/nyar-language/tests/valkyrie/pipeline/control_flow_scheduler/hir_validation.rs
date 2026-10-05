@@ -26,6 +26,8 @@ fn empty_module() -> HirModule {
 
 fn empty_function(name: &str, return_type: ValkyrieType, body_expr: HirExpr) -> HirFunction {
     HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: NamePath::default(),
@@ -53,6 +55,8 @@ fn rejects_resume_inside_catch_guard_at_hir_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
@@ -114,6 +118,8 @@ fn rejects_resume_inside_catch_guard_at_hir_validation() {
 fn validates_struct_methods_in_hir_module() {
     let mut module = empty_module();
     module.structs.push(nyar_language::types::hir::HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Worker"),
         methods: vec![empty_function(
             "poll",
@@ -137,6 +143,8 @@ fn validates_property_accessors_in_hir_module() {
         expr(HirExprKind::BlockOn(Box::new(expr(HirExprKind::Literal(nyar_language::types::hir::HirLiteral::Bool(true)))))),
     );
     module.structs.push(nyar_language::types::hir::HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Service"),
         properties: vec![nyar_language::types::hir::HirProperty::new(Identifier::new("ready"), ValkyrieType::Boolean).with_getter(getter)],
         ..nyar_language::types::hir::HirStruct::new(Identifier::new("Service"))
@@ -216,6 +224,8 @@ fn rejects_block_inside_catch_guard_at_hir_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
@@ -278,6 +288,8 @@ fn rejects_break_expr_without_value_loop_context_at_hir_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
@@ -952,6 +964,8 @@ fn rejects_incompatible_return_expr_type_at_hir_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
@@ -1004,6 +1018,8 @@ fn infers_typed_variable_for_return_expr_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
@@ -1069,6 +1085,8 @@ fn infers_await_result_type_for_return_expr_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
@@ -1137,6 +1155,8 @@ fn infers_match_arm_pattern_variable_for_return_expr_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
@@ -1210,6 +1230,8 @@ fn infers_nested_tuple_match_arm_pattern_variable_for_return_expr_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
@@ -1292,6 +1314,8 @@ fn rejects_case_fallthrough_when_next_arm_tries_to_reuse_previous_pattern_bindin
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
@@ -1371,6 +1395,8 @@ fn rejects_empty_return_for_non_unit_function() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),

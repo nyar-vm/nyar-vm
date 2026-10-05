@@ -42,10 +42,8 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_call(import_index);
                 }
                 else if let Some(function_index) = self.resolve_callee_function_index(callee) {
-                    callee_return = *self.return_types_by_function_index.get(&function_index)
-                        .expect("WASM 函数下标缺少返回签名");
-                    let param_types = self.param_types_by_function_index.get(&function_index)
-                        .expect("WASM 函数下标缺少参数签名").clone();
+                    callee_return = *self.return_types_by_function_index.get(&function_index).expect("WASM 函数下标缺少返回签名");
+                    let param_types = self.param_types_by_function_index.get(&function_index).expect("WASM 函数下标缺少参数签名").clone();
                     self.emit_call_arguments(arguments, &param_types);
                     self.emit_call(function_index);
                 }
@@ -97,13 +95,12 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_set(local);
     }
 
-
-
     pub(super) fn resolve_callee_param_types(&self, callee: &MirOperand, import_index: Option<u32>) -> Vec<u8> {
         if let Some(index) = import_index {
             return self.import_param_types.get(index as usize).expect("WASM 导入缺少参数签名").clone();
         }
-        let MirOperand::Item(instance) = callee else {
+        let MirOperand::Item(instance) = callee
+        else {
             panic!("WASM 普通调用缺少实例身份");
         };
         self.param_types_by_instance.get(instance).expect("WASM 实例缺少参数签名").clone()
@@ -113,7 +110,8 @@ impl<'a> WasmMirLowerer<'a> {
         if let Some(index) = import_index {
             return *self.import_return_types.get(index as usize).expect("WASM 导入缺少返回签名");
         }
-        let MirOperand::Item(instance) = callee else {
+        let MirOperand::Item(instance) = callee
+        else {
             panic!("WASM 普通调用缺少实例身份");
         };
         *self.return_types_by_instance.get(instance).expect("WASM 实例缺少返回签名")
@@ -124,13 +122,17 @@ impl<'a> WasmMirLowerer<'a> {
             MirOperand::Value(value) => self.wasm_local_value_type(self.planned_value_local(*value)),
             MirOperand::Constant(constant) => match constant {
                 MirConstant::Utf8(_) => VALTYPE_I32,
-                MirConstant::Utf16(_) => panic!("WASM lowering requires an explicit UTF-16 ABI contract"),
+                MirConstant::Utf16(_) => {
+                    panic!("WASM lowering requires an explicit UTF-16 ABI contract")
+                }
                 MirConstant::Unit => WASM_GC_ANYREF,
                 MirConstant::Float64(_) => VALTYPE_F64,
                 MirConstant::Int(_) | MirConstant::Bool(_) => VALTYPE_I32,
             },
             MirOperand::Symbol(_) => panic!("WASM 值操作数缺少 SSA 身份"),
-            MirOperand::Item(_) => panic!("WASM callable identity cannot be used as a value operand"),
+            MirOperand::Item(_) => {
+                panic!("WASM callable identity cannot be used as a value operand")
+            }
         }
     }
 
@@ -140,23 +142,13 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_operand(operand);
             return;
         }
-        // Reference-local metadata is authoritative for GC aggregates. The
-        // semantic classifier can still report an i32 fallback for a named
-        // value; replacing that value with ref.null loses the object and only
-        // surfaces later as an array/struct illegal cast.
+        // Reference-local metadata is authoritative for GC aggregates：槽位已是引用，
+        // 即便表面分类成 i32 也不得用 ref.null 顶替。
         if expected == WASM_GC_ANYREF && self.operand_reference_local(operand).is_some() {
             self.emit_operand(operand);
             return;
         }
-        if expected == WASM_GC_ANYREF && actual == VALTYPE_I32 {
-            self.emit_ref_null_anyref();
-            return;
-        }
-        if expected == VALTYPE_I32 && actual == WASM_GC_ANYREF {
-            self.emit_i32_const(0);
-            return;
-        }
-        // i64 形参：anyref 经 `[i64]` box 解箱；i32 走 extend。
+        // 仅允许 BackendPrivatePlan 已承诺的显式宽度转换；禁止用 0 / null 掩盖 carrier 失配。
         if expected == VALTYPE_I64 && (actual == WASM_GC_ANYREF || actual == WASM_GC_EXTERNREF) {
             self.emit_operand(operand);
             self.emit_unbox_i64_payload();
@@ -164,8 +156,7 @@ impl<'a> WasmMirLowerer<'a> {
         }
         if expected == VALTYPE_I64 && actual == VALTYPE_I32 {
             self.emit_operand(operand);
-            // i64.extend_i32_s (0xAC) -?WasmOpcode 枚举尚未收录该变体?
-            self.code.push(0xAC);
+            WasmOpcode::I64ExtendI32S.encode(&mut self.code);
             return;
         }
         if expected == VALTYPE_I32 && actual == VALTYPE_I64 {
@@ -177,42 +168,24 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_box_i64_payload(operand);
             return;
         }
-        if expected == VALTYPE_F64
-            && (actual == WASM_GC_ANYREF || actual == WASM_GC_EXTERNREF || actual == VALTYPE_I32 || actual == VALTYPE_I64)
-        {
-            self.emit_f64_const(0.0);
-            return;
-        }
-        if expected == WASM_GC_ANYREF && actual == VALTYPE_F64 {
-            self.emit_ref_null_anyref();
-            return;
-        }
-        // host import 签名使用 externref；MIR 操作数默认为 anyref?
-        // 不能?ref.func/ref.is_null 做转换——以 null 占位保持栈类型一致?
         if expected == WASM_GC_EXTERNREF && actual == WASM_GC_ANYREF {
             self.emit_operand(operand);
             return;
         }
-        if expected == WASM_GC_EXTERNREF && actual == VALTYPE_I32 {
-            self.emit_ref_null_extern();
-            return;
-        }
-        if expected == WASM_GC_EXTERNREF && actual == VALTYPE_I64 {
-            self.emit_ref_null_extern();
-            return;
-        }
-        if expected == WASM_GC_ANYREF && actual == WASM_GC_EXTERNREF {
-            self.emit_ref_null_anyref();
-            return;
-        }
-        self.emit_operand(operand);
+        panic!(
+            "WASM ABI carrier mismatch in `{}`: expected={expected:#x} actual={actual:#x}; \
+             BackendPrivatePlan must provide an explicit conversion — refusing null/0 placeholders",
+            self.mir_fn.symbol
+        );
     }
 
     pub(super) fn resolve_callee_import_index(&self, callee: &MirOperand, _arguments: &[MirOperand]) -> Option<u32> {
-        let MirOperand::Item(instance) = callee else { return None; };
+        let MirOperand::Item(instance) = callee
+        else {
+            return None;
+        };
         self.callee_import_index.get(instance).copied()
     }
-
 
     /// `i64` → wasm-gc struct `[i64]`（anyref），供泛型 `T` 数组槽使用。
     fn emit_box_i64_payload(&mut self, operand: &MirOperand) {
@@ -233,14 +206,14 @@ impl<'a> WasmMirLowerer<'a> {
         let tmp = self.alloc_anyref_local();
         self.emit_local_tee(tmp);
         WasmOpcode::RefIsNull.encode(&mut self.code);
-        self.code.push(0x04);
+        WasmOpcode::If.encode(&mut self.code);
         self.code.push(VALTYPE_I64);
         self.emit_i64_const(0);
-        self.code.push(0x05);
+        WasmOpcode::Else.encode(&mut self.code);
         self.emit_local_get(tmp);
         self.emit_ref_cast_struct(box_ty);
         self.emit_struct_get(box_ty, 0);
-        self.code.push(0x0B);
+        WasmOpcode::End.encode(&mut self.code);
     }
 
     /// p3 `write-via-stream`：utf8 线性句?→?`stream.new` / write / drop →?宿主?
@@ -316,7 +289,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_get(pair);
         WasmOpcode::I64Const.encode(&mut self.code);
         encode_sleb128_i64(32, &mut self.code);
-        self.code.push(0x88); // i64.shr_u（std-data opcode 枚举暂未收录?
+        WasmOpcode::I64ShrU.encode(&mut self.code);
         WasmOpcode::I32WrapI64.encode(&mut self.code);
         self.emit_local_set(writer);
 
@@ -373,5 +346,4 @@ impl<'a> WasmMirLowerer<'a> {
         let simple = path.parts().last().map(|part| part.as_str()).unwrap_or("");
         simple.contains("write_line") || simple.contains("error_line")
     }
-
 }

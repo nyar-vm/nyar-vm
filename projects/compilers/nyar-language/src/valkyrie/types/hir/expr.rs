@@ -103,7 +103,6 @@ pub enum HirCallableDomain {
     Extractor,
 }
 
-
 /// Resolved call metadata attached to canonical HIR calls.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -375,7 +374,13 @@ pub enum HirExprKind {
         arms: Vec<HirMatchArm>,
     },
     /// `expr?` nullable early-return propagation.
-    TryPropagate(Box<HirExpr>),
+    TryPropagate {
+        /// Operand expression.
+        inner: Box<HirExpr>,
+        /// HIR-resolved ok-branch unite variant for `Option`/`Result` operands.
+        #[cfg_attr(feature = "serde", serde(default))]
+        resolved_ok_variant: Option<HirResolvedCall>,
+    },
     /// `try { ... }` / `try? { ... }` / `try! { ... }` scope.
     TryScope {
         /// Optional mode (`try?`).
@@ -386,6 +391,13 @@ pub enum HirExprKind {
         result_type: Option<ValkyrieType>,
         /// Body executed under try-scope semantics.
         body: Box<HirBlock>,
+    },
+    /// `expr as T` 显式类型转换。
+    Cast {
+        /// 被转换的表达式。
+        expr: Box<HirExpr>,
+        /// 目标类型。
+        ty: ValkyrieType,
     },
     /// A case fallthrough control-flow marker.
     ///

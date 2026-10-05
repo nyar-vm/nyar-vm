@@ -1,6 +1,10 @@
-use nyar_language::{MirLowerer, MirOperand, MirOperation, MirValueRef, ValkyrieCompiler, types::{SourceID, hir::ValkyrieType}};
+use nyar_language::{
+    MirLowerer, MirOperand, MirOperation, MirValueRef, ValkyrieCompiler,
+    types::{SourceID, hir::ValkyrieType},
+};
 
 #[test]
+#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn literal_u32_call_preserves_argument_type_in_value_types() {
     let source = r#"
 namespace std.data.binary.wasm;

@@ -344,7 +344,12 @@ fn lower_variant(
 }
 
 fn lower_unite_generic_argument(generic: &GenericType) -> ValkyrieType {
-    ValkyrieType::Generic(GenericType { name: generic.name.clone(), kind: lower_unite_kind(&generic.kind), bounds: generic.bounds.clone() })
+    ValkyrieType::Generic(GenericType {
+        binder: generic.binder,
+        name: generic.name.clone(),
+        kind: lower_unite_kind(&generic.kind),
+        bounds: generic.bounds.clone(),
+    })
 }
 
 fn lower_unite_kind(kind: &HirKind) -> HirKind {
@@ -429,6 +434,11 @@ fn collect_generic_names(ty: &ValkyrieType, names: &mut BTreeSet<Identifier>) {
                 collect_generic_names(arg, names);
             }
         }
+        ValkyrieType::Nominal { arguments, .. } => {
+            for arg in arguments {
+                collect_generic_names(arg, names);
+            }
+        }
         ValkyrieType::Integer8 { .. }
         | ValkyrieType::Integer16 { .. }
         | ValkyrieType::Integer32 { .. }
@@ -499,7 +509,7 @@ mod nominal_contract_tests {
     fn gadt_unite() -> HirEnum {
         let mut enum_def = HirEnum::new_unity(Identifier::new("Expr"));
         enum_def.visibility = HirVisibility::public();
-        enum_def.generics = vec![GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }];
+        enum_def.generics = vec![GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }];
         enum_def.variants = vec![
             HirVariant {
                 name: Identifier::new("Literal"),
@@ -531,7 +541,12 @@ mod nominal_contract_tests {
                         doc: HirDocumentation::default(),
                         ty: ValkyrieType::Apply(
                             Box::new(ValkyrieType::Named(Identifier::new("Expr"))),
-                            vec![ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
+                            vec![ValkyrieType::Generic(GenericType {
+                                binder: None,
+                                name: Identifier::new("T"),
+                                kind: HirKind::Type,
+                                bounds: vec![],
+                            })],
                         ),
                         visibility: HirVisibility::public(),
                         is_mutable: false,
@@ -539,7 +554,7 @@ mod nominal_contract_tests {
                 ],
                 result_type: Some(ValkyrieType::Apply(
                     Box::new(ValkyrieType::Named(Identifier::new("Expr"))),
-                    vec![ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
+                    vec![ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
                 )),
                 discriminator: None,
                 ..Default::default()
@@ -589,10 +604,10 @@ mod nominal_contract_tests {
         assert_eq!(literal.parents[0].generics, vec![ValkyrieType::Float64]);
 
         let branch = &lowered.variants[1];
-        assert_eq!(branch.generics, vec![GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }]);
+        assert_eq!(branch.generics, vec![GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }]);
         assert_eq!(
             branch.parents[0].generics,
-            vec![ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })]
+            vec![ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })]
         );
     }
 

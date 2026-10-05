@@ -18,7 +18,7 @@ use crate::{
     },
     types::{
         Identifier,
-        hir::{HirModule, HirStruct, HirWhereConstraint, RowType, TraitObject, ValkyrieType},
+        hir::{GenericBinderId, HirModule, HirStruct, HirWhereConstraint, RowType, TraitObject, ValkyrieType},
     },
 };
 
@@ -46,16 +46,37 @@ pub struct TypeRelationContext {
     nominal: NominalModuleView,
     traits: TraitModuleView,
     structs: BTreeMap<Identifier, HirStruct>,
+    structs_by_declaration: BTreeMap<nyar_types::ItemId, HirStruct>,
     callable_constraints: Vec<HirWhereConstraint>,
 }
 
 impl TypeRelationContext {
     pub fn from_module(module: &HirModule) -> Self {
+        let mut structs = BTreeMap::new();
+        let mut structs_by_declaration = BTreeMap::new();
+        collect_relation_structs(module, &mut structs, &mut structs_by_declaration);
         Self {
             nominal: NominalModuleView::from_module(module),
             traits: TraitModuleView::from_module(module),
-            structs: module.structs.iter().map(|item| (item.name.clone(), item.clone())).collect(),
+            structs,
+            structs_by_declaration,
             callable_constraints: Vec::new(),
+        }
+    }
+
+    /// 短名 → 已冻结的 `Nominal{ItemId}`（有 declaration 时）；供 Self/AutoType 回收，禁止只写回 Named。
+    pub fn nominal_type_for_name(&self, name: &Identifier) -> Option<ValkyrieType> {
+        let item = self.structs.get(name)?;
+        Some(ValkyrieType::Nominal { declaration: item.constructor_declaration?, arguments: Vec::new() })
+    }
+
+    /// 字面量特化用：`Named("usize")` 与对应 `Nominal{ItemId}` 都算数值类型。
+    pub fn is_numeric_type(&self, ty: &ValkyrieType) -> bool {
+        match ty {
+            ValkyrieType::Nominal { declaration, .. } => {
+                self.structs_by_declaration.get(declaration).is_some_and(|item| is_numeric_type_name(item.name.as_str()))
+            }
+            other => is_numeric_type_name_of(other),
         }
     }
 
@@ -74,6 +95,25 @@ impl TypeRelationContext {
             return ParameterMatchResult::NominalExact;
         }
 
+        // `Nominal{ItemId}` 只认 declaration；同 declaration + 实参相容即为 exact。
+        if let (
+            ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args },
+            ValkyrieType::Nominal { declaration: expected_decl, arguments: expected_args },
+        ) = (actual, expected)
+        {
+            if actual_decl == expected_decl
+                && actual_args.len() == expected_args.len()
+                && actual_args.iter().zip(expected_args.iter()).all(|(left, right)| self.matches_non_error(left, right))
+            {
+                return ParameterMatchResult::NominalExact;
+            }
+        }
+
+        if let (ValkyrieType::Generic(actual), ValkyrieType::Generic(expected)) = (actual, expected) {
+            if actual.binder.is_some() && actual.binder == expected.binder {
+                return ParameterMatchResult::NominalExact;
+            }
+        }
 
         // Nominal applications retain their type arguments at the semantic
         // boundary.  Match the constructor nominally and each argument using
@@ -185,26 +225,18 @@ impl TypeRelationContext {
     pub fn satisfies_where_constraints(
         &self,
         constraints: &[HirWhereConstraint],
-        substitutions: &BTreeMap<Identifier, ValkyrieType>,
+        substitutions: &BTreeMap<GenericBinderId, ValkyrieType>,
     ) -> bool {
         constraints.iter().all(|constraint| {
             let target = substitute_relation_type(&constraint.target, substitutions);
-            let Some(target_name) = named_type_name(&target)
-            else {
-                return false;
-            };
             constraint.bounds.iter().all(|bound| {
                 if let Some(context) = self.callable_constraints.iter().find(|context| {
                     let context_target = substitute_relation_type(&context.target, substitutions);
-                    named_type_name(&context_target).is_some_and(|name| name == target_name)
+                    context_target == target
                 }) {
                     return bound_is_satisfied_by_context(bound, context, &self.callable_constraints, substitutions);
                 }
-                let Some(trait_name) = bound.trait_path.parts().last()
-                else {
-                    return false;
-                };
-                let Ok(witness) = self.traits.satisfy_named_trait(&target_name, trait_name)
+                let Ok(witness) = self.traits.satisfy_explicit_type(&target, bound)
                 else {
                     return false;
                 };
@@ -235,22 +267,84 @@ impl TypeRelationContext {
     }
 }
 
+fn collect_relation_structs(
+    module: &HirModule,
+    by_name: &mut BTreeMap<Identifier, HirStruct>,
+    by_declaration: &mut BTreeMap<nyar_types::ItemId, HirStruct>,
+) {
+    for item in &module.structs {
+        by_name.entry(item.name.clone()).or_insert_with(|| item.clone());
+        if let Some(declaration) = item.constructor_declaration {
+            by_declaration.entry(declaration).or_insert_with(|| item.clone());
+        }
+    }
+    for export in &module.imported_semantic_exports {
+        for item in &export.structs {
+            by_name.entry(item.name.clone()).or_insert_with(|| item.clone());
+            if let Some(declaration) = item.constructor_declaration {
+                by_declaration.entry(declaration).or_insert_with(|| item.clone());
+            }
+        }
+    }
+    for submodule in &module.submodules {
+        collect_relation_structs(submodule, by_name, by_declaration);
+    }
+}
+
+fn is_numeric_type_name(name: &str) -> bool {
+    matches!(
+        name,
+        "byte"
+            | "sbyte"
+            | "usize"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "f32"
+            | "f64"
+            | "f128"
+            | "core.primitive.usize"
+            | "core.primitive.isize"
+            | "core::primitive::usize"
+            | "core::primitive::isize"
+    )
+}
+
+fn is_numeric_type_name_of(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Integer8 { .. }
+        | ValkyrieType::Integer16 { .. }
+        | ValkyrieType::Integer32 { .. }
+        | ValkyrieType::Integer64 { .. }
+        | ValkyrieType::Integer128 { .. }
+        | ValkyrieType::Float32
+        | ValkyrieType::Float64 => true,
+        ValkyrieType::Named(name) => is_numeric_type_name(name.as_str()),
+        _ => false,
+    }
+}
+
 fn bound_is_satisfied_by_context(
     required: &crate::types::hir::HirTraitBound,
     context: &HirWhereConstraint,
     all_contexts: &[HirWhereConstraint],
-    substitutions: &BTreeMap<Identifier, ValkyrieType>,
+    substitutions: &BTreeMap<GenericBinderId, ValkyrieType>,
 ) -> bool {
     context.bounds.iter().any(|provided| {
-        provided.trait_path == required.trait_path
+        provided.declaration.is_some()
+            && provided.declaration == required.declaration
             && provided.type_arguments.len() == required.type_arguments.len()
-            && provided
-                .type_arguments
-                .iter()
-                .zip(&required.type_arguments)
-                .all(|(provided, required)| {
-                    normalize_context_type(provided, all_contexts, substitutions) == normalize_context_type(required, all_contexts, substitutions)
-                })
+            && provided.type_arguments.iter().zip(&required.type_arguments).all(|(provided, required)| {
+                normalize_context_type(provided, all_contexts, substitutions) == normalize_context_type(required, all_contexts, substitutions)
+            })
             && required.associated_types.iter().all(|required_equation| {
                 let expected = normalize_context_type(&required_equation.ty, all_contexts, substitutions);
                 provided.associated_types.iter().any(|provided_equation| {
@@ -264,18 +358,17 @@ fn bound_is_satisfied_by_context(
 fn normalize_context_type(
     ty: &ValkyrieType,
     contexts: &[HirWhereConstraint],
-    substitutions: &BTreeMap<Identifier, ValkyrieType>,
+    substitutions: &BTreeMap<GenericBinderId, ValkyrieType>,
 ) -> ValkyrieType {
     let ty = substitute_relation_type(ty, substitutions);
-    let ValkyrieType::Associated(associated) = &ty else {
+    let ValkyrieType::Associated(associated) = &ty
+    else {
         return ty;
     };
-    let Some(base) = named_type_name(&associated.base) else {
-        return ty;
-    };
+    let base = &associated.base;
     contexts
         .iter()
-        .filter(|context| named_type_name(&substitute_relation_type(&context.target, substitutions)).is_some_and(|target| target == base))
+        .filter(|context| substitute_relation_type(&context.target, substitutions) == *base)
         .flat_map(|context| &context.bounds)
         .flat_map(|bound| &bound.associated_types)
         .find(|equation| equation.name == associated.name)
@@ -283,19 +376,8 @@ fn normalize_context_type(
         .unwrap_or(ty)
 }
 
-fn substitute_relation_type(ty: &ValkyrieType, substitutions: &BTreeMap<Identifier, ValkyrieType>) -> ValkyrieType {
-    match ty {
-        ValkyrieType::Named(name) => substitutions.get(name).cloned().unwrap_or_else(|| ty.clone()),
-        ValkyrieType::Generic(generic) => substitutions.get(&generic.name).cloned().unwrap_or_else(|| ty.clone()),
-        ValkyrieType::Apply(base, args) => ValkyrieType::Apply(
-            Box::new(substitute_relation_type(base, substitutions)),
-            args.iter().map(|arg| substitute_relation_type(arg, substitutions)).collect(),
-        ),
-        ValkyrieType::Array(inner) => ValkyrieType::Array(Box::new(substitute_relation_type(inner, substitutions))),
-        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| substitute_relation_type(item, substitutions)).collect()),
-        ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| substitute_relation_type(item, substitutions)).collect()),
-        other => other.clone(),
-    }
+fn substitute_relation_type(ty: &ValkyrieType, substitutions: &BTreeMap<GenericBinderId, ValkyrieType>) -> ValkyrieType {
+    super::overload::substitute_type_vars(ty, substitutions)
 }
 
 fn row_type_to_requirement(row: &RowType) -> RowRequirement {
@@ -314,7 +396,7 @@ fn row_type_to_requirement(row: &RowType) -> RowRequirement {
 fn named_type_name(ty: &ValkyrieType) -> Option<Identifier> {
     match ty {
         ValkyrieType::Named(name) => Some(name.clone()),
-        ValkyrieType::Generic(generic) => Some(generic.name.clone()),
+
         ValkyrieType::Apply(base, _) => named_type_name(base),
         _ => None,
     }
@@ -322,124 +404,51 @@ fn named_type_name(ty: &ValkyrieType) -> Option<Identifier> {
 
 fn trivially_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
     match (actual, expected) {
+        (ValkyrieType::Generic(actual), ValkyrieType::Generic(expected)) if actual.binder.is_some() && actual.binder == expected.binder => true,
         // `Self` is only a placeholder inside an imply body; overload matching must
         // substitute it with the owner before calling this (see `substitute_self_type`).
         // Keep identity for unresolved Self-vs-Self only — never "Self matches anything".
         (ValkyrieType::r#SelfType, ValkyrieType::r#SelfType) => true,
         (ValkyrieType::Array(actual), ValkyrieType::Array(expected)) => trivially_compatible(actual, expected),
-        // `[T]` sugar and bare `Array` owner (after Self→Named(Array)) are the same shape.
-        (ValkyrieType::Array(_), ValkyrieType::Named(name)) | (ValkyrieType::Named(name), ValkyrieType::Array(_))
-            if name.as_str() == "Array" =>
-        {
-            true
-        }
-        // `[T]` sugar and `Array<T>` / `Apply(Array, [T])` are the same array shape for dispatch.
-        (ValkyrieType::Array(actual_elem), ValkyrieType::Apply(base, args))
-            if args.len() == 1 && matches!(named_type_name(base), Some(name) if name.as_str() == "Array") =>
-        {
-            trivially_compatible(actual_elem, &args[0])
-        }
-        (ValkyrieType::Apply(base, args), ValkyrieType::Array(expected_elem))
-            if args.len() == 1 && matches!(named_type_name(base), Some(name) if name.as_str() == "Array") =>
-        {
-            trivially_compatible(&args[0], expected_elem)
-        }
         (ValkyrieType::Tuple(actual), ValkyrieType::Tuple(expected)) if actual.len() == expected.len() => {
             actual.iter().zip(expected).all(|(actual, expected)| trivially_compatible(actual, expected))
         }
         (ValkyrieType::Intersection(actual), ValkyrieType::Intersection(expected)) if actual.len() == expected.len() => {
             actual.iter().zip(expected).all(|(actual, expected)| trivially_compatible(actual, expected))
         }
-        _ => {
-            collection_facade_compatible(actual, expected)
-                || primitive_types_compatible(actual, expected)
-                || actual == expected
-                || matches!(actual, ValkyrieType::AutoType)
-                || matches!(expected, ValkyrieType::AutoType)
+        _ => actual == expected || matches!(actual, ValkyrieType::AutoType) || matches!(expected, ValkyrieType::AutoType),
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn unresolved_primitive_and_array_spellings_do_not_create_type_equivalence() {
+        let context = TypeRelationContext::from_module(&HirModule::default());
+        for (spelling, actual) in [
+            ("f64", ValkyrieType::Float64),
+            ("core::primitive::f64", ValkyrieType::Float64),
+            ("Utf8Text", ValkyrieType::Utf8),
+            ("Array", ValkyrieType::Array(Box::new(ValkyrieType::Float64))),
+        ] {
+            let unresolved = ValkyrieType::Named(Identifier::new(spelling));
+            assert!(matches!(context.match_parameter(&actual, &unresolved), ParameterMatchResult::NoMatch { .. }));
+            assert!(matches!(context.match_parameter(&unresolved, &actual), ParameterMatchResult::NoMatch { .. }));
+            assert_eq!(context.match_parameter(&actual, &actual), ParameterMatchResult::NominalExact);
         }
     }
-}
 
-/// `List<T>` is the collection facade for `ArrayList` / `LinkedList`.
-/// - Method dispatch: a `List`-typed receiver may bind concrete list methods.
-/// - Assignment: a concrete list value may satisfy a `List` parameter.
-/// Never equates `List` with `[T]` / `Array` — those stay ArrayPush-only.
-fn collection_facade_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
-    let Some(act_name) = named_type_name(actual)
-    else {
-        return false;
-    };
-    let Some(exp_name) = named_type_name(expected)
-    else {
-        return false;
-    };
-    let list_receiver_to_concrete = act_name.as_str() == "List" && matches!(exp_name.as_str(), "ArrayList" | "LinkedList");
-    let concrete_value_to_list = exp_name.as_str() == "List" && matches!(act_name.as_str(), "ArrayList" | "LinkedList");
-    if !(list_receiver_to_concrete || concrete_value_to_list) {
-        return false;
-    }
-    match (actual, expected) {
-        (ValkyrieType::Apply(_, actual_args), ValkyrieType::Apply(_, expected_args)) if actual_args.len() == expected_args.len() => {
-            actual_args.iter().zip(expected_args.iter()).all(|(actual_arg, expected_arg)| {
-                trivially_compatible(actual_arg, expected_arg)
-                    || actual_arg == expected_arg
-                    || matches!(actual_arg, ValkyrieType::Named(_))
-                    || matches!(expected_arg, ValkyrieType::Named(_))
-            })
-        }
-        (ValkyrieType::Apply(_, _), ValkyrieType::Named(_))
-        | (ValkyrieType::Named(_), ValkyrieType::Apply(_, _))
-        | (ValkyrieType::Named(_), ValkyrieType::Named(_)) => true,
-        _ => false,
-    }
-}
-
-/// Primitive spellings may be introduced by a source declaration (`f64`), a
-/// qualified core export (`core::primitive::f64`), or the typed HIR scalar
-/// variant (`Float64`).  They denote the same language type; this relation is
-/// resolved here, before overload selection, so no backend or intrinsic name
-/// needs to infer a type width.
-fn primitive_types_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
-    primitive_type_key(actual).is_some_and(|left| primitive_type_key(expected) == Some(left))
-}
-
-fn primitive_type_key(ty: &ValkyrieType) -> Option<&'static str> {
-    match ty {
-        ValkyrieType::Boolean => Some("bool"),
-        ValkyrieType::Character => Some("char"),
-        ValkyrieType::Integer8 { signed: true } => Some("i8"),
-        ValkyrieType::Integer8 { signed: false } => Some("u8"),
-        ValkyrieType::Integer16 { signed: true } => Some("i16"),
-        ValkyrieType::Integer16 { signed: false } => Some("u16"),
-        ValkyrieType::Integer32 { signed: true } => Some("i32"),
-        ValkyrieType::Integer32 { signed: false } => Some("u32"),
-        ValkyrieType::Integer64 { signed: true } => Some("i64"),
-        ValkyrieType::Integer64 { signed: false } => Some("u64"),
-        ValkyrieType::Integer128 { signed: true } => Some("i128"),
-        ValkyrieType::Integer128 { signed: false } => Some("u128"),
-        ValkyrieType::Float32 => Some("f32"),
-        ValkyrieType::Float64 => Some("f64"),
-        ValkyrieType::Utf8 => Some("utf8"),
-        ValkyrieType::Utf16 => Some("utf16"),
-        ValkyrieType::Named(name) => match name.as_str() {
-            "bool" | "core.primitive.bool" | "core::primitive::bool" => Some("bool"),
-            "char" | "core.primitive.char" | "core::primitive::char" => Some("char"),
-            "i8" | "core.primitive.i8" | "core::primitive::i8" => Some("i8"),
-            "u8" | "core.primitive.u8" | "core::primitive::u8" => Some("u8"),
-            "i16" | "core.primitive.i16" | "core::primitive::i16" => Some("i16"),
-            "u16" | "core.primitive.u16" | "core::primitive::u16" => Some("u16"),
-            "i32" | "core.primitive.i32" | "core::primitive::i32" => Some("i32"),
-            "u32" | "core.primitive.u32" | "core::primitive::u32" => Some("u32"),
-            "i64" | "core.primitive.i64" | "core::primitive::i64" => Some("i64"),
-            "u64" | "core.primitive.u64" | "core::primitive::u64" => Some("u64"),
-            "i128" | "core.primitive.i128" | "core::primitive::i128" => Some("i128"),
-            "u128" | "core.primitive.u128" | "core::primitive::u128" => Some("u128"),
-            "f32" | "core.primitive.f32" | "core::primitive::f32" => Some("f32"),
-            "f64" | "core.primitive.f64" | "core::primitive::f64" => Some("f64"),
-            "utf8" | "Utf8Text" | "core.primitive.utf8" | "core::primitive::utf8" => Some("utf8"),
-            "utf16" | "Utf16Text" | "core.primitive.utf16" | "core::primitive::utf16" => Some("utf16"),
-            _ => None,
-        },
-        _ => None,
+    #[test]
+    fn unresolved_name_cannot_match_a_bound_nominal_declaration() {
+        let hir = crate::ValkyrieCompiler::default().compile_source("structure Record { value: i32 }").expect("结构声明解析");
+        let context = TypeRelationContext::from_module(&hir);
+        let item = hir.structs.first().expect("结构声明");
+        let nominal = ValkyrieType::Nominal { declaration: item.constructor_declaration.expect("冻结声明身份"), arguments: vec![] };
+        let unresolved = ValkyrieType::Named(item.name.clone());
+        assert!(matches!(context.match_parameter(&nominal, &unresolved), ParameterMatchResult::NoMatch { .. }));
+        assert!(matches!(context.match_parameter(&unresolved, &nominal), ParameterMatchResult::NoMatch { .. }));
+        assert_eq!(context.match_parameter(&nominal, &nominal), ParameterMatchResult::NominalExact);
     }
 }

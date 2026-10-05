@@ -539,7 +539,15 @@ impl PackageManager {
 
     fn workspace_version(&self) -> Option<String> {
         match &self.mode {
-            ProjectMode::Workspace { workspace, .. } => workspace.version.clone().filter(|value| !value.is_empty() && value != "workspace"),
+            ProjectMode::Workspace { workspace, .. } => {
+                let version = workspace.version.trim();
+                if version.is_empty() || version == "workspace" {
+                    None
+                }
+                else {
+                    Some(workspace.version.clone())
+                }
+            }
             _ => None,
         }
     }
@@ -675,7 +683,9 @@ impl PackageManager {
                     else {
                         let mut chars = part.chars();
                         match chars.next() {
-                            Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                            Some(first) => {
+                                format!("{}{}", first.to_uppercase(), chars.as_str())
+                            }
                             None => String::new(),
                         }
                     }
@@ -862,8 +872,8 @@ impl PackageManager {
             return name.to_string();
         }
         if let Some(manifest) = self.mode.package_manifest() {
-            if let Some(registry) = manifest.publish_config.registry.as_deref().filter(|value| !value.is_empty()) {
-                return registry.to_string();
+            if !manifest.publish_config.registry.is_empty() {
+                return manifest.publish_config.registry.clone();
             }
         }
         String::new()
@@ -888,7 +898,11 @@ fn resolve_legacy_registry(options: &PublishOptions, manifest: &PackageManifest)
     if !options.registry_name.is_empty() {
         return options.registry_name.clone();
     }
-    manifest.publish_config.registry.clone().filter(|value| !value.is_empty()).unwrap_or_else(|| options.registry_name.clone())
+    if manifest.publish_config.registry.is_empty() {
+        options.registry_name.clone()
+    } else {
+        manifest.publish_config.registry.clone()
+    }
 }
 
 fn resolve_publish_version(target_version: &str, manifest_version: &str, workspace_version: Option<&str>) -> Result<String> {

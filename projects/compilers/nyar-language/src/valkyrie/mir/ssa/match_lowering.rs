@@ -1,20 +1,63 @@
-use crate::types::hir::HirMatchArm;
+use crate::types::hir::{HirMatchArm, ValkyrieType};
 
 use super::{
     MirBlockRef, MirBuilder, MirCaseArm, MirCaseChain, MirConstant, MirOperand, MirTerminator, control_flow_context::MirFallthroughContext,
     infer_builder_operand_type,
 };
 
+fn is_never_type(ty: &ValkyrieType) -> bool {
+    matches!(ty, ValkyrieType::Void)
+}
+
+fn arm_contributes_to_match_merge(arm_result: &MirOperand, actual_type: Option<&ValkyrieType>, expected_type: Option<&ValkyrieType>) -> bool {
+    if actual_type.is_some_and(is_never_type) {
+        return false;
+    }
+    if matches!(arm_result, MirOperand::Constant(MirConstant::Unit)) {
+        return expected_type.is_none_or(|expected| matches!(expected, ValkyrieType::Unit));
+    }
+    true
+}
+
+#[cfg(test)]
+mod bottom_type_tests {
+    use super::*;
+
+    #[test]
+    fn only_structured_bottom_excludes_an_arm_from_merge() {
+        let result = MirOperand::Constant(MirConstant::Int(1));
+        assert!(!arm_contributes_to_match_merge(&result, Some(&ValkyrieType::Void), None));
+        let ordinary_named_type = ValkyrieType::Named(crate::types::Identifier::new("Never"));
+        assert!(arm_contributes_to_match_merge(&result, Some(&ordinary_named_type), None));
+    }
+}
+
 impl MirBuilder {
-    pub(super) fn lower_match_expr(&mut self, scrutinee: &crate::hir::HirExpr, arms: &[HirMatchArm]) -> MirOperand {
-        self.lower_case_like_expr(scrutinee, arms, true)
+    pub(super) fn lower_match_expr(
+        &mut self,
+        scrutinee: &crate::hir::HirExpr,
+        arms: &[HirMatchArm],
+        expected_type: Option<&crate::hir::ValkyrieType>,
+    ) -> MirOperand {
+        self.lower_case_like_expr(scrutinee, arms, true, expected_type)
     }
 
-    pub(super) fn lower_case_expr(&mut self, scrutinee: &crate::hir::HirExpr, arms: &[HirMatchArm]) -> MirOperand {
-        self.lower_case_like_expr(scrutinee, arms, false)
+    pub(super) fn lower_case_expr(
+        &mut self,
+        scrutinee: &crate::hir::HirExpr,
+        arms: &[HirMatchArm],
+        expected_type: Option<&crate::hir::ValkyrieType>,
+    ) -> MirOperand {
+        self.lower_case_like_expr(scrutinee, arms, false, expected_type)
     }
 
-    fn lower_case_like_expr(&mut self, scrutinee: &crate::hir::HirExpr, arms: &[HirMatchArm], produce_value: bool) -> MirOperand {
+    fn lower_case_like_expr(
+        &mut self,
+        scrutinee: &crate::hir::HirExpr,
+        arms: &[HirMatchArm],
+        produce_value: bool,
+        expected_type: Option<&crate::hir::ValkyrieType>,
+    ) -> MirOperand {
         let scrutinee_operand = self.lower_expr_to_operand(scrutinee);
         if arms.is_empty() {
             return MirOperand::Constant(MirConstant::Unit);
@@ -106,14 +149,24 @@ impl MirBuilder {
             let body_block = self.current_block;
             self.bind_pattern_from_operand_with_payload(&arm.pattern, scrutinee_operand.clone(), None, extractor_payload.clone());
             self.control_flow.push_fallthrough(MirFallthroughContext { target: next_target });
-            let arm_result = self.lower_expr_to_operand(&arm.body);
+            let arm_result = self.lower_expr_to_operand_with_hint(&arm.body, expected_type);
             let _ = self.control_flow.pop_fallthrough();
             if self.terminator.is_none() {
                 if produce_value {
-                    let ty = infer_builder_operand_type(&arm_result, &self.value_types);
-                    let exit_parameter = self.ensure_match_exit_parameter(exit_block, &mut exit_value, ty);
-                    debug_assert_eq!(self.blocks[exit_block.0 as usize].parameters.first().copied(), Some(exit_parameter));
-                    self.terminate(MirTerminator::Jump { target: exit_block, arguments: vec![arm_result] });
+                    let ty = infer_builder_operand_type(&arm_result, &self.value_types).or_else(|| expected_type.cloned());
+                    if arm_contributes_to_match_merge(&arm_result, ty.as_ref(), expected_type) {
+                        if let (Some(merge_ty), MirOperand::Value(value)) = (ty.as_ref(), &arm_result) {
+                            self.value_types.entry(*value).or_insert(merge_ty.clone());
+                        }
+                        let exit_parameter = self.ensure_match_exit_parameter(exit_block, &mut exit_value, ty);
+                        debug_assert_eq!(self.blocks[exit_block.0 as usize].parameters.first().copied(), Some(exit_parameter));
+                        self.terminate(MirTerminator::Jump { target: exit_block, arguments: vec![arm_result] });
+                    }
+                    else {
+                        // `panic` / `raise` arms resume on `Never` or lower to `Unit` placeholders.
+                        // They must not feed the typed match merge (`T`, `bool`, …).
+                        self.terminate(MirTerminator::Unreachable);
+                    }
                 }
                 else {
                     self.terminate(MirTerminator::Jump { target: exit_block, arguments: Vec::new() });
@@ -143,8 +196,13 @@ impl MirBuilder {
             // never take this edge at runtime.
             if exit_value.is_none() {
                 self.ensure_match_exit_parameter(exit_block, &mut exit_value, Some(crate::hir::ValkyrieType::Unit));
+                self.terminate(MirTerminator::Jump { target: exit_block, arguments: vec![MirOperand::Constant(MirConstant::Unit)] });
             }
-            self.terminate(MirTerminator::Jump { target: exit_block, arguments: vec![MirOperand::Constant(MirConstant::Unit)] });
+            else {
+                // Prior arms already fixed the merge slot type (`bool`, `Option<T>`, …).
+                // Feeding `Unit` into that phi triggers SMIR007 on the no_match edge.
+                self.terminate(MirTerminator::Unreachable);
+            }
         }
         else {
             self.terminate(MirTerminator::Jump { target: exit_block, arguments: Vec::new() });
@@ -164,7 +222,14 @@ impl MirBuilder {
             arms: chain_arms,
         });
         if produce_value {
-            exit_value.map(MirOperand::Value).unwrap_or(MirOperand::Constant(MirConstant::Unit))
+            exit_value
+                .map(|value| {
+                    if let Some(expected) = expected_type {
+                        self.value_types.entry(value).or_insert(expected.clone());
+                    }
+                    MirOperand::Value(value)
+                })
+                .unwrap_or(MirOperand::Constant(MirConstant::Unit))
         }
         else {
             MirOperand::Constant(MirConstant::Unit)

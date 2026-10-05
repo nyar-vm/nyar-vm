@@ -10,11 +10,16 @@
         "preview": "vitepress preview .",
         "test": "echo \"Error: no test specified\" && exit 1"
     },
-    "keywords": ["valkyrie", "documentation", "functional-programming", "algebraic-effects"],
+    "keywords": [
+        "valkyrie",
+        "documentation",
+        "functional-programming",
+        "algebraic-effects"
+    ],
     "author": "Valkyrie Team",
     "license": "MIT",
     "devDependencies": {
-        "mermaid": "^11.11.0",
+        "mermaid": "^12.1.0",
         "vitepress": "^1.0.0",
         "vitepress-plugin-mermaid": "^2.0.17"
     }

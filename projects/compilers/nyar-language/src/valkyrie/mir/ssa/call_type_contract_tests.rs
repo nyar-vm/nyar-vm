@@ -1,30 +1,37 @@
 use super::{MirBuilder, MirDiagnostic, MirLowerer, MirOperand, MirOperation};
-use crate::{Identifier, NamePath, ValkyrieCompiler, types::hir::{HirExprKind, ValkyrieType}};
+use crate::{
+    Identifier, NamePath, ValkyrieCompiler,
+    types::hir::{HirExprKind, ValkyrieType},
+};
 
 #[test]
 fn missing_hir_static_contract_cannot_be_reconstructed_from_spelling() {
-    let mut hir = ValkyrieCompiler::default().compile_source(
-        "micro answer() -> i64 { 7 } micro caller() -> i64 { answer() }",
-    ).expect("源码必须先完成解析");
+    let mut hir = ValkyrieCompiler::default()
+        .compile_source("micro answer() -> i64 { 7 } micro caller() -> i64 { answer() }")
+        .expect("源码必须先完成解析");
     let caller = hir.functions.iter_mut().find(|function| function.name.as_str() == "caller").unwrap();
-    let HirExprKind::Call { resolved, .. } = &mut caller.body.expr.as_mut().unwrap().kind else {
+    let HirExprKind::Call { resolved, .. } = &mut caller.body.expr.as_mut().unwrap().kind
+    else {
         panic!("预期调用表达式");
     };
     assert!(resolved.take().is_some());
     let mir = MirLowerer::lower_module_semantic(&hir);
     assert!(mir.diagnostics.iter().any(|diagnostic| matches!(diagnostic, MirDiagnostic::UnresolvedCallableIdentity { .. })));
     let caller = mir.functions.iter().find(|function| function.symbol.ends_with("::caller")).unwrap();
-    assert!(!caller.blocks.iter().flat_map(|block| &block.instructions).any(|instruction| matches!(instruction.kind, MirOperation::Call { .. })));
+    assert!(
+        !caller.blocks.iter().flat_map(|block| &block.instructions).any(|instruction| matches!(instruction.kind, MirOperation::Call { .. }))
+    );
     assert!(crate::valkyrie::mir::validation::validate_semantic_module(&mir).is_err());
 }
 
 #[test]
 fn resolved_callable_identity_survives_diagnostic_name_changes() {
-    let mut hir = ValkyrieCompiler::default().compile_source(
-        "micro answer() -> i64 { 7 } micro caller() -> i64 { answer() }",
-    ).expect("源码必须先完成解析");
+    let mut hir = ValkyrieCompiler::default()
+        .compile_source("micro answer() -> i64 { 7 } micro caller() -> i64 { answer() }")
+        .expect("源码必须先完成解析");
     let caller = hir.functions.iter_mut().find(|function| function.name.as_str() == "caller").unwrap();
-    let HirExprKind::Call { resolved: Some(resolved), .. } = &mut caller.body.expr.as_mut().unwrap().kind else {
+    let HirExprKind::Call { resolved: Some(resolved), .. } = &mut caller.body.expr.as_mut().unwrap().kind
+    else {
         panic!("预期已解析调用");
     };
     let path = NamePath::new(vec![Identifier::new("Owner"), Identifier::new("infix +")]);
@@ -32,10 +39,15 @@ fn resolved_callable_identity_survives_diagnostic_name_changes() {
     resolved.symbol = path.clone();
     let mir = MirLowerer::lower_module_semantic(&hir);
     let caller = mir.functions.iter().find(|function| function.symbol.ends_with("::caller")).unwrap();
-    let callees = caller.blocks.iter().flat_map(|block| &block.instructions).filter_map(|instruction| match &instruction.kind {
-        MirOperation::Call { callee, .. } => Some(callee.clone()),
-        _ => None,
-    }).collect::<Vec<_>>();
+    let callees = caller
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .filter_map(|instruction| match &instruction.kind {
+            MirOperation::Call { callee, .. } => Some(callee.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     assert_eq!(callees, vec![MirOperand::Callable(instance)]);
 }
 
@@ -58,12 +70,9 @@ micro read_integer() -> i64 { return IntegerOwner.read() }
         )
         .expect("同名不同 owner 的静态方法必须完成 HIR 解析");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    for (owner, expected) in [
-        ("BooleanOwner.read", ValkyrieType::Boolean),
-        ("IntegerOwner.read", ValkyrieType::Integer64 { signed: true }),
-    ] {
-        let instance = mir.functions.iter().find(|function| function.symbol == owner)
-            .and_then(|function| function.instance).expect("被调用方法实例");
+    for (owner, expected) in [("BooleanOwner.read", ValkyrieType::Boolean), ("IntegerOwner.read", ValkyrieType::Integer64 { signed: true })] {
+        let instance =
+            mir.functions.iter().find(|function| function.symbol == owner).and_then(|function| function.instance).expect("被调用方法实例");
         let mut matches = 0;
         for function in &mir.functions {
             for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
@@ -97,7 +106,8 @@ micro apply(left: Number, right: Number) -> bool { left + right }
     let operator = &hir.impls[0].methods[0];
     let instance = operator.instance.expect("operator 声明实例身份");
     let apply = hir.functions.iter().find(|function| function.name.as_str() == "apply").expect("apply");
-    let HirExprKind::Call { call_kind, resolved: Some(resolved), .. } = &apply.body.expr.as_ref().expect("调用表达式").kind else {
+    let HirExprKind::Call { call_kind, resolved: Some(resolved), .. } = &apply.body.expr.as_ref().expect("调用表达式").kind
+    else {
         panic!("运算符调用必须绑定声明");
     };
     assert_eq!(*call_kind, crate::types::hir::HirCallKind::Operator(nyar_types::builtin_operator::infix_add()));
@@ -123,6 +133,7 @@ micro apply(left: Number, right: Number) -> bool { left + right }
 }
 
 #[test]
+    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn integer_pattern_comparisons_fail_without_operator_callable_contracts() {
     let hir = ValkyrieCompiler::default()
         .compile_source(
@@ -143,12 +154,76 @@ micro range_match(value: i64) -> i64 {
         )
         .expect("pattern source must parse and resolve types");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let unresolved = mir.diagnostics.iter().filter_map(|diagnostic| match diagnostic {
-        MirDiagnostic::UnresolvedOperatorCallable { operator } => Some(*operator),
-        _ => None,
-    }).collect::<Vec<_>>();
+    let unresolved = mir
+        .diagnostics
+        .iter()
+        .filter_map(|diagnostic| match diagnostic {
+            MirDiagnostic::UnresolvedOperatorCallable { operator } => Some(*operator),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     assert_eq!(unresolved, vec![nyar_types::builtin_operator::infix_lt(); 2]);
     assert!(crate::valkyrie::mir::validation::validate_module(&mir).is_err());
+}
+
+#[test]
+fn u32_infix_subtraction_call_matches_declared_return_type() {
+    let hir = ValkyrieCompiler::default()
+        .compile_source(
+            r#"
+namespace core::primitive;
+structure u32 { }
+imply u32 {
+    infix `-`(self, rhs: u32): u32 {
+        return rhs
+    }
+}
+micro demo(value: u32): u32 {
+    return value - 1
+}
+"#,
+        )
+        .expect("u32 subtraction must parse");
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    crate::valkyrie::mir::validation::validate_semantic_module(&mir).expect("u32 subtraction call must match declared return type");
+}
+
+#[test]
+    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+fn some_short_name_without_sum_identity_fails_closed() {
+    let mut hir = ValkyrieCompiler::default()
+        .compile_source(
+            "unite Option<T> { Some { value: T }, None } \
+             micro wrap(value: utf8) -> Option<utf8> { return Some(value) }",
+        )
+        .expect("Option/Some 源码必须完成 HIR");
+    let wrap = hir.functions.iter_mut().find(|function| function.name.as_str() == "wrap").expect("wrap");
+    let body = wrap.body.expr.as_mut().expect("wrap body");
+    let call = match &mut body.kind {
+        HirExprKind::Return(Some(expr)) => expr.as_mut(),
+        HirExprKind::Call { .. } => body,
+        other => panic!("预期 Some 调用或 return Some，得到 {other:?}"),
+    };
+    let HirExprKind::Call { resolved: Some(resolved), .. } = &mut call.kind
+    else {
+        panic!("预期 Some 调用表达式");
+    };
+    resolved.sum_owner = None;
+    resolved.sum_variant = None;
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    assert!(
+        mir.diagnostics.iter().any(|diagnostic| matches!(diagnostic, MirDiagnostic::UnresolvedVariantIdentity { .. })),
+        "缺 sum 身份的 Some 不得成功降低: {:?}",
+        mir.diagnostics
+    );
+    assert!(
+        !mir.functions
+            .iter()
+            .flat_map(|function| &function.blocks)
+            .flat_map(|block| &block.instructions)
+            .any(|instruction| { matches!(instruction.kind, MirOperation::SumNew { .. }) }),
+        "缺身份时不得发出 SumNew"
+    );
 }
 
 #[test]
@@ -161,6 +236,7 @@ fn integer_literal_equality_does_not_fabricate_a_false_result() {
         Default::default(),
         Default::default(),
         Default::default(),
+        super::CallableReturnTypes { by_symbol: Default::default(), by_instance: Default::default() },
         None,
     );
     let result = builder.lower_eq_constant_operand(

@@ -1,4 +1,6 @@
-use std_data::text::msil::{MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilModule, MsilTypeDef};
+use crate::transitional::msil::{
+    MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilModule, MsilTypeDef,
+};
 
 pub struct MsilTextWriter {
     indent: usize,

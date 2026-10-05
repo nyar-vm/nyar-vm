@@ -1,6 +1,7 @@
 //! Nyar package manager core library.
 
 mod auth;
+mod von_format;
 mod cache;
 mod credentials;
 mod error;

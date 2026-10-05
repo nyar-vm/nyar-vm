@@ -114,6 +114,8 @@ fn trait_with_methods(name: &str, methods: Vec<HirFunction>) -> HirTrait {
 
 fn class(name: &str) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -135,12 +137,16 @@ fn class(name: &str) -> HirStruct {
 }
 
 fn subclass(name: &str, parent: &str) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     let mut item = class(name);
     item.parents = vec![nyar_language::types::hir::HirParent::new(NamePath::new(vec![Identifier::new(parent)]))];
     item
 }
 
 fn struct_with_methods(name: &str, methods: Vec<HirFunction>) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     let mut item = class(name);
     item.methods = methods;
     item
@@ -172,6 +178,8 @@ fn module_with_traits(traits: Vec<HirTrait>, structs: Vec<HirStruct>, impls: Vec
 
 fn method(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType) -> HirFunction {
     HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: NamePath::default(),

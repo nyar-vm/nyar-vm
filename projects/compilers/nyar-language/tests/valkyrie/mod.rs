@@ -1,3 +1,5 @@
+pub use nyar_language::valkyrie;
+
 mod control_flow;
 mod derive;
 mod frontend_contract;
@@ -9,5 +11,6 @@ mod optimizer;
 mod pipeline;
 mod smoke;
 mod spec;
+mod support;
 mod type_checker;
 mod typing;

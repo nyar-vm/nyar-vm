@@ -11,8 +11,10 @@ use crate::{Identifier, NamePath, SourceSpan};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirFunction {
     /// Compiler 在源码闭包内分配的声明身份；物化阶段尚未注册时为空。
+    #[cfg_attr(feature = "serde", serde(default))]
     pub declaration: Option<nyar_types::ItemId>,
     /// Compiler 为已经完成类型代入的声明分配的实例身份。
+    #[cfg_attr(feature = "serde", serde(default))]
     pub instance: Option<nyar_types::ItemInstanceId>,
     /// The name of the function.
     pub name: Identifier,

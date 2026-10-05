@@ -26,7 +26,7 @@ impl PackageCache {
         let index_path = root.join("cache-index.von");
         let index = if index_path.is_file() {
             let source = std::fs::read_to_string(&index_path)?;
-            std_data::text::von::from_str(&source).unwrap_or_default()
+            oak_von::from_str(&source).unwrap_or_default()
         }
         else {
             CacheIndex::default()
@@ -69,7 +69,7 @@ impl PackageCache {
 
     fn save_index(&self) -> Result<()> {
         let path = self.root.join("cache-index.von");
-        let content = nyar_language::formatter::to_string_indented(&self.index)?;
+        let content = nyar_language::printer::to_string_indented(&self.index)?;
         std::fs::write(path, content)?;
         Ok(())
     }

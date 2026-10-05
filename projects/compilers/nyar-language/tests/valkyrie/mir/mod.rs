@@ -1,8 +1,8 @@
 mod call_parameter_types;
 // DELETED-GOD: mod continuation_runtime;
 mod control_flow_unification_mir;
-mod option_unwrap_lowering;
 mod early_return;
+mod option_unwrap_lowering;
 // DELETED-GOD: mod state_machine_cfg_rewrite;
 mod value_semantics;
 
@@ -183,6 +183,8 @@ fn lowers_constant_string_literal_pattern_without_fallback() {
 #[test]
 fn returns_constant_false_for_anonymous_object_pattern_on_known_scalar_without_fallback() {
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -248,6 +250,8 @@ fn lowers_type_pattern_into_static_bool_when_operand_type_is_known() {
 #[test]
 fn lowers_qualified_name_pattern_into_static_bool_when_operand_type_is_known() {
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -300,6 +304,8 @@ fn lowers_qualified_name_pattern_into_static_bool_when_operand_type_is_known() {
 #[test]
 fn lowers_object_pattern_into_field_get_and_compare_for_single_field() {
     let point_struct = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Point"),
         fields: vec![HirField {
             name: Identifier::new("x"),
@@ -311,6 +317,8 @@ fn lowers_object_pattern_into_field_get_and_compare_for_single_field() {
         ..HirStruct::new(Identifier::new("Point"))
     };
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -363,15 +371,14 @@ fn lowers_object_pattern_into_field_get_and_compare_for_single_field() {
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
         matches!(instruction.kind, MirOperation::FieldGet { .. }) || matches!(&instruction.kind, MirOperation::Call { .. })
     }));
-    assert!(
-        !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
-    );
+    assert!(!mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
 }
 
 #[test]
 fn lowers_named_object_pattern_for_subtype_into_field_get_and_compare() {
     let base_struct = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Base"),
         fields: vec![HirField {
             name: Identifier::new("flag"),
@@ -383,11 +390,15 @@ fn lowers_named_object_pattern_for_subtype_into_field_get_and_compare() {
         ..HirStruct::new(Identifier::new("Base"))
     };
     let child_struct = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Child"),
         parents: vec![nyar_language::types::hir::HirParent::new(NamePath::new(vec![Identifier::new("Base")]))],
         ..HirStruct::new(Identifier::new("Child"))
     };
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -440,15 +451,14 @@ fn lowers_named_object_pattern_for_subtype_into_field_get_and_compare() {
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
         matches!(instruction.kind, MirOperation::FieldGet { .. }) || matches!(&instruction.kind, MirOperation::Call { .. })
     }));
-    assert!(
-        !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
-    );
+    assert!(!mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
 }
 
 #[test]
 fn lowers_anonymous_object_pattern_for_inherited_field_into_field_get_and_compare() {
     let base_struct = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Base"),
         fields: vec![HirField {
             name: Identifier::new("flag"),
@@ -460,11 +470,15 @@ fn lowers_anonymous_object_pattern_for_inherited_field_into_field_get_and_compar
         ..HirStruct::new(Identifier::new("Base"))
     };
     let child_struct = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Child"),
         parents: vec![nyar_language::types::hir::HirParent::new(NamePath::new(vec![Identifier::new("Base")]))],
         ..HirStruct::new(Identifier::new("Child"))
     };
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -517,15 +531,14 @@ fn lowers_anonymous_object_pattern_for_inherited_field_into_field_get_and_compar
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
         matches!(instruction.kind, MirOperation::FieldGet { .. }) || matches!(&instruction.kind, MirOperation::Call { .. })
     }));
-    assert!(
-        !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
-    );
+    assert!(!mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
 }
 
 #[test]
 fn lowers_constructor_pattern_into_extractor_call_and_payload_compare() {
     let point_struct = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Point"),
         fields: vec![HirField {
             name: Identifier::new("x"),
@@ -537,6 +550,8 @@ fn lowers_constructor_pattern_into_extractor_call_and_payload_compare() {
         ..HirStruct::new(Identifier::new("Point"))
     };
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -605,18 +620,15 @@ fn lowers_constructor_pattern_into_extractor_call_and_payload_compare() {
         )
     }));
     // Bool `true` payload pattern is the payload value itself ? no Compare / `.eq` intrinsic.
-    assert!(
-        !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
-    );
-    assert!(
-        !mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::FieldGet { .. }))
-    );
+    assert!(!mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
+    assert!(!mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::FieldGet { .. })));
 }
 
 #[test]
 fn binds_constructor_pattern_field_from_extractor_payload_before_resume() {
     let point_struct = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Point"),
         fields: vec![HirField {
             name: Identifier::new("x"),
@@ -628,6 +640,8 @@ fn binds_constructor_pattern_field_from_extractor_payload_before_resume() {
         ..HirStruct::new(Identifier::new("Point"))
     };
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -685,10 +699,7 @@ fn binds_constructor_pattern_field_from_extractor_payload_before_resume() {
         )
     }));
     assert!(
-        body_block
-            .instructions
-            .iter()
-            .any(|instruction| { matches!(&instruction.kind, MirOperation::StoreVar { name, .. } if name == "x") })
+        body_block.instructions.iter().any(|instruction| { matches!(&instruction.kind, MirOperation::StoreVar { name, .. } if name == "x") })
     );
     assert!(!body_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::FieldGet { .. })));
 }
@@ -696,6 +707,8 @@ fn binds_constructor_pattern_field_from_extractor_payload_before_resume() {
 #[test]
 fn does_not_bind_unknown_layout_constructor_field_as_whole_payload() {
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -763,15 +776,14 @@ fn does_not_bind_unknown_layout_constructor_field_as_whole_payload() {
             .iter()
             .any(|instruction| { matches!(instruction.kind, MirOperation::StoreVar { ref name, .. } if name == "x") })
     );
-    assert!(
-        !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
-    );
+    assert!(!mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
 }
 
 #[test]
 fn does_not_bind_unknown_layout_object_field_as_generic_field_get() {
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -1038,17 +1050,18 @@ fn lowers_awake_into_async_spawn_with_empty_resume_parameters() {
     use nyar_language::lir::{LirEffectKind, LirLowerer};
 
     let compiler = ValkyrieCompiler::default();
-    let hir = compiler.compile_source(
-        r#"micro main() {
+    let hir = compiler
+        .compile_source(
+            r#"micro main() {
     future.awake
     return
 }
 "#,
-    ).expect("hir ok");
+        )
+        .expect("hir ok");
     let semantic_mir = MirLowerer::lower_module_semantic(&hir);
     let lir = LirLowerer::lower_mir_module(&hir, &semantic_mir);
-    let awake_state = lir
-        .functions[0]
+    let awake_state = lir.functions[0]
         .state_machine
         .as_ref()
         .expect("state machine")
@@ -1058,11 +1071,8 @@ fn lowers_awake_into_async_spawn_with_empty_resume_parameters() {
         .expect("expected awake async-spawn state");
     assert_eq!(awake_state.resume_parameter_count, 0);
 
-    let resume_block = semantic_mir.functions[0]
-        .blocks
-        .iter()
-        .find(|block| block.id == awake_state.resume_target)
-        .expect("expected awake resume block");
+    let resume_block =
+        semantic_mir.functions[0].blocks.iter().find(|block| block.id == awake_state.resume_target).expect("expected awake resume block");
     assert!(resume_block.parameters.is_empty());
 }
 
@@ -1096,6 +1106,8 @@ fn lowers_awake_as_unit_without_creating_resume_parameter() {
 #[test]
 fn lowers_multi_field_object_pattern_into_logical_and() {
     let pair_struct = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Pair"),
         fields: vec![
             HirField {
@@ -1116,6 +1128,8 @@ fn lowers_multi_field_object_pattern_into_logical_and() {
         ..HirStruct::new(Identifier::new("Pair"))
     };
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -1177,15 +1191,14 @@ fn lowers_multi_field_object_pattern_into_logical_and() {
             >= 2
     );
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::Call { .. })));
-    assert!(
-        !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
-    );
+    assert!(!mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
 }
 
 #[test]
 fn lowers_multi_field_constructor_pattern_into_extractor_call_and_payload_compare() {
     let pair_struct = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Pair"),
         fields: vec![
             HirField {
@@ -1206,6 +1219,8 @@ fn lowers_multi_field_constructor_pattern_into_extractor_call_and_payload_compar
         ..HirStruct::new(Identifier::new("Pair"))
     };
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -1279,18 +1294,15 @@ fn lowers_multi_field_constructor_pattern_into_extractor_call_and_payload_compar
             >= 2
     );
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::Call { .. })));
-    assert!(
-        !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
-    );
-    assert!(
-        !mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::FieldGet { .. }))
-    );
+    assert!(!mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
+    assert!(!mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::FieldGet { .. })));
 }
 
 #[test]
 fn lowers_tuple_pattern_into_tuple_get_and_compare_without_fallback() {
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -1352,15 +1364,14 @@ fn lowers_tuple_pattern_into_tuple_get_and_compare_without_fallback() {
         matches!(instruction.kind, MirOperation::FieldGet { .. }) || matches!(&instruction.kind, MirOperation::Call { .. })
     }));
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::Call { .. })));
-    assert!(
-        !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
-    );
+    assert!(!mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
 }
 
 #[test]
 fn lowers_or_pattern_into_logical_or_without_fallback() {
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -1417,6 +1428,8 @@ fn lowers_or_pattern_into_logical_or_without_fallback() {
 #[test]
 fn lowers_range_pattern_into_compare_chain_without_fallback() {
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -1484,6 +1497,8 @@ fn lowers_range_pattern_into_compare_chain_without_fallback() {
 #[test]
 fn lowers_array_rest_pattern_into_extractor_call_and_payload_bindings() {
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
@@ -1576,6 +1591,8 @@ fn lowers_array_rest_pattern_into_extractor_call_and_payload_bindings() {
 #[test]
 fn lowers_nested_object_pattern_with_array_extractor_call() {
     let container_struct = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Container"),
         fields: vec![HirField {
             name: Identifier::new("items"),
@@ -1587,6 +1604,8 @@ fn lowers_nested_object_pattern_with_array_extractor_call() {
         ..HirStruct::new(Identifier::new("Container"))
     };
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),

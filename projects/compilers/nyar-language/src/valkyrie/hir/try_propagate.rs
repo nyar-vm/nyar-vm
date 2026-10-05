@@ -2,11 +2,13 @@
 
 use std::collections::BTreeMap;
 
-use crate::types::{
-    Identifier, NamePath,
-    hir::{HirBlock, HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind, HirStruct, ValkyrieType},
+use crate::{
+    types::{
+        Identifier, NamePath,
+        hir::{HirBlock, HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind, HirStruct, ValkyrieType},
+    },
+    valkyrie::frontend::ParseError,
 };
-use std_data::text::valkyrie::ParseError;
 
 /// `?` 操作数形态。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,9 +35,29 @@ pub fn nullable_payload_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
     }
 }
 
-/// 判断模块是否声明了 unity `Result`。
+/// 按 declaration ItemId 查找 unity 枚举（本模块 / 子模块 / 导入导出）。
+fn unity_enum_by_declaration(module: &HirModule, declaration: nyar_types::ItemId) -> Option<&crate::types::hir::HirEnum> {
+    module
+        .enums
+        .iter()
+        .chain(module.submodules.iter().flat_map(|child| child.enums.iter()))
+        .chain(module.imported_semantic_exports.iter().flat_map(|export| export.enums.iter()))
+        .find(|enum_def| enum_def.is_unity && enum_def.declaration == Some(declaration))
+}
+
+/// 用已冻结 Nominal declaration + binder 元数分类 `?` 操作数；禁止 Named("Option"|"Result") 短名。
+fn classify_unity_try_operand(declaration: nyar_types::ItemId, arguments: &[ValkyrieType], module: &HirModule) -> Option<TryPropagateKind> {
+    let enum_def = unity_enum_by_declaration(module, declaration)?;
+    match (arguments.len(), enum_def.generics.len()) {
+        (1, 1) => Some(TryPropagateKind::Option(arguments[0].clone())),
+        (2, 2) => Some(TryPropagateKind::Result { ok: arguments[0].clone(), err: arguments[1].clone() }),
+        _ => None,
+    }
+}
+
+/// 判断模块是否声明了二元 unity（Result 形态）；按 generics 元数，不按短名。
 pub fn module_declares_result(module: &HirModule) -> bool {
-    module.enums.iter().any(|enum_def| enum_def.is_unity && enum_def.name.as_str() == "Result")
+    module.enums.iter().any(|enum_def| enum_def.is_unity && enum_def.generics.len() == 2)
 }
 
 /// 分类 `?` 的操作数类型。
@@ -43,33 +65,21 @@ pub fn classify_try_operand(operand_type: &ValkyrieType, module: &HirModule) -> 
     if let Some(payload) = nullable_payload_type(operand_type) {
         return Some(TryPropagateKind::Nullable(payload));
     }
-    if let ValkyrieType::Apply(base, arguments) = operand_type {
-        if let ValkyrieType::Named(name) = base.as_ref() {
-            // `Option<T>` 是核心 unite；按类型形态识别，不要求本文件再声明一遍。
-            if name.as_str() == "Option" && arguments.len() == 1 {
-                return Some(TryPropagateKind::Option(arguments[0].clone()));
-            }
-            if name.as_str() == "Result" && arguments.len() == 2 && module_declares_result(module) {
-                return Some(TryPropagateKind::Result { ok: arguments[0].clone(), err: arguments[1].clone() });
-            }
-        }
+    match operand_type {
+        ValkyrieType::Nominal { declaration, arguments } => classify_unity_try_operand(*declaration, arguments, module),
+        ValkyrieType::Apply(base, arguments) => match base.as_ref() {
+            ValkyrieType::Nominal { declaration, .. } => classify_unity_try_operand(*declaration, arguments, module),
+            _ => None,
+        },
+        _ => None,
     }
-    None
-}
-
-fn result_type(ok: &ValkyrieType, err: &ValkyrieType) -> ValkyrieType {
-    ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Result"))), vec![ok.clone(), err.clone()])
 }
 
 fn result_err_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
     match ty {
-        ValkyrieType::Apply(base, arguments) if arguments.len() == 2 => {
-            if let ValkyrieType::Named(name) = base.as_ref() {
-                if name.as_str() == "Result" {
-                    return Some(arguments[1].clone());
-                }
-            }
-            None
+        ValkyrieType::Nominal { arguments, .. } if arguments.len() == 2 => arguments.get(1).cloned(),
+        ValkyrieType::Apply(base, arguments) if arguments.len() == 2 && matches!(base.as_ref(), ValkyrieType::Nominal { .. }) => {
+            arguments.get(1).cloned()
         }
         _ => None,
     }
@@ -87,7 +97,7 @@ fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> O
         HirExprKind::Variable(identifier) => locals.get(identifier.name.as_str()).cloned(),
         HirExprKind::Call { resolved, .. } => resolved.as_ref().map(|call| call.return_type.clone()),
         HirExprKind::Construct { name, .. } => Some(ValkyrieType::Named(name.clone())),
-        HirExprKind::TryPropagate(inner) => infer_expr_type(inner, locals).and_then(|ty| try_propagate_result_type(&ty)),
+        HirExprKind::TryPropagate { inner, .. } => infer_expr_type(inner, locals).and_then(|ty| try_propagate_result_type(&ty)),
         HirExprKind::Block(block) => block.expr.as_ref().and_then(|expr| infer_expr_type(expr, locals)),
         _ => None,
     }
@@ -95,17 +105,11 @@ fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> O
 
 fn try_propagate_result_type(operand_type: &ValkyrieType) -> Option<ValkyrieType> {
     nullable_payload_type(operand_type).or_else(|| match operand_type {
-        ValkyrieType::Apply(base, arguments) => {
-            if let ValkyrieType::Named(name) = base.as_ref() {
-                if name.as_str() == "Option" && arguments.len() == 1 {
-                    return Some(arguments[0].clone());
-                }
-                if name.as_str() == "Result" && arguments.len() == 2 {
-                    return Some(arguments[0].clone());
-                }
-            }
-            None
-        }
+        ValkyrieType::Nominal { arguments, .. } if arguments.len() == 1 || arguments.len() == 2 => arguments.first().cloned(),
+        ValkyrieType::Apply(base, arguments) => match base.as_ref() {
+            ValkyrieType::Nominal { .. } if arguments.len() == 1 || arguments.len() == 2 => arguments.first().cloned(),
+            _ => None,
+        },
         _ => None,
     })
 }
@@ -117,7 +121,7 @@ fn validate_try_propagate_expr(
     locals: &BTreeMap<String, ValkyrieType>,
     try_scope_depth: usize,
 ) -> Result<(), ParseError> {
-    let HirExprKind::TryPropagate(inner) = &expr.kind
+    let HirExprKind::TryPropagate { inner, .. } = &expr.kind
     else {
         return Ok(());
     };
@@ -149,12 +153,10 @@ fn validate_try_propagate_expr(
             }
         }
         TryPropagateKind::Result { ok, err } => {
-            let expected = result_type(&ok, &err);
-            if !result_types_compatible(enclosing_return, &expected) {
+            if !is_result_apply_type(enclosing_return) {
                 return Err(ParseError::invalid(format!(
-                    "`?` on `Result<{}, {}>` requires enclosing return `Result<_, {}>`; got `{}`",
+                    "`?` on `Result<{}, {}>` requires enclosing binary unity return; got `{}`",
                     render_type_name(&ok),
-                    render_type_name(&err),
                     render_type_name(&err),
                     render_type_name(enclosing_return)
                 )));
@@ -173,20 +175,6 @@ fn validate_try_propagate_expr(
     validate_expr_try_propagate(inner, enclosing_return, module, locals, try_scope_depth)
 }
 
-fn result_types_compatible(enclosing: &ValkyrieType, expected: &ValkyrieType) -> bool {
-    enclosing == expected
-        || matches!(
-            (enclosing, expected),
-            (
-                ValkyrieType::Apply(base_a, args_a),
-                ValkyrieType::Apply(base_b, args_b)
-            ) if base_a == base_b
-                && args_a.len() == 2
-                && args_b.len() == 2
-                && args_a[1] == args_b[1]
-        )
-}
-
 fn validate_expr_try_propagate(
     expr: &HirExpr,
     enclosing_return: &ValkyrieType,
@@ -195,7 +183,7 @@ fn validate_expr_try_propagate(
     try_scope_depth: usize,
 ) -> Result<(), ParseError> {
     match &expr.kind {
-        HirExprKind::TryPropagate(_) => validate_try_propagate_expr(expr, enclosing_return, module, locals, try_scope_depth)?,
+        HirExprKind::TryPropagate { .. } => validate_try_propagate_expr(expr, enclosing_return, module, locals, try_scope_depth)?,
         HirExprKind::TryScope { body, .. } => validate_block_try_propagate(body, enclosing_return, module, locals, try_scope_depth + 1)?,
         HirExprKind::Call { callee, args, .. } => {
             validate_expr_try_propagate(callee, enclosing_return, module, locals, try_scope_depth)?;
@@ -333,18 +321,48 @@ pub fn variant_field_type(module: &HirModule, variant: &str, field: &str) -> Opt
     })
 }
 
-/// 供校验 / MIR 判断 `Option<T>` 形态时复用。
+/// 供校验 / MIR 判断一元 unity 应用形态（冻结后的 `Nominal{…, [T]}`）。
+/// 禁止再按 `Named("Option")` 短名认亲。
 pub fn is_option_apply_type(ty: &ValkyrieType) -> bool {
-    matches!(
-        ty,
-        ValkyrieType::Apply(base, arguments) if arguments.len() == 1 && matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == "Option")
-    )
+    match ty {
+        ValkyrieType::Nominal { arguments, .. } if arguments.len() == 1 => true,
+        ValkyrieType::Apply(base, arguments) if arguments.len() == 1 => matches!(base.as_ref(), ValkyrieType::Nominal { .. }),
+        _ => false,
+    }
 }
 
-/// 占位：供 MIR 判断 Result 形态时复用。
+/// 一元 unity 的 payload；裸 Nominal 无参时返回 `None`。
+pub fn option_apply_payload_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
+    match ty {
+        ValkyrieType::Nominal { arguments, .. } if arguments.len() == 1 => arguments.first().cloned(),
+        ValkyrieType::Apply(base, arguments) if arguments.len() == 1 && matches!(base.as_ref(), ValkyrieType::Nominal { .. }) => {
+            arguments.first().cloned()
+        }
+        _ => None,
+    }
+}
+
+/// 二元 unity 变体字段：`Fine` → 第 0 槽，`Fail` → 第 1 槽；按 binder 槽位，不按短名选类型。
+pub fn result_variant_payload_type(ty: &ValkyrieType, variant: &str) -> Option<ValkyrieType> {
+    let arguments = match ty {
+        ValkyrieType::Nominal { arguments, .. } if arguments.len() == 2 => arguments.as_slice(),
+        ValkyrieType::Apply(base, arguments) if arguments.len() == 2 && matches!(base.as_ref(), ValkyrieType::Nominal { .. }) => {
+            arguments.as_slice()
+        }
+        _ => return None,
+    };
+    match variant {
+        "Fine" => arguments.first().cloned(),
+        "Fail" => arguments.get(1).cloned(),
+        _ => None,
+    }
+}
+
+/// 二元 unity 应用形态（冻结后的 `Nominal{…, [T, E]}`）；禁止 `Named("Result")`。
 pub fn is_result_apply_type(ty: &ValkyrieType) -> bool {
-    matches!(
-        ty,
-        ValkyrieType::Apply(base, arguments) if arguments.len() == 2 && matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == "Result")
-    )
+    match ty {
+        ValkyrieType::Nominal { arguments, .. } if arguments.len() == 2 => true,
+        ValkyrieType::Apply(base, arguments) if arguments.len() == 2 => matches!(base.as_ref(), ValkyrieType::Nominal { .. }),
+        _ => false,
+    }
 }

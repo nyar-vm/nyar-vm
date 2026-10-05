@@ -3,17 +3,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nyar_language::formatter::to_string_indented;
+use oak_von::from_str;
 use serde::{Deserialize, Serialize};
-use std_data::text::von::from_str;
 
 use crate::{ProjectLayout, Result};
 
 /// Registry publish configuration from a package manifest (`publishConfig`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublishConfig {
+    /// Registry id; empty means inherit from CLI / workspace defaults.
     #[serde(default)]
-    pub registry: Option<String>,
+    pub registry: String,
     #[serde(default = "default_access")]
     pub access: String,
     #[serde(default = "default_tag")]
@@ -22,7 +22,7 @@ pub struct PublishConfig {
 
 impl Default for PublishConfig {
     fn default() -> Self {
-        Self { registry: None, access: default_access(), tag: default_tag() }
+        Self { registry: String::new(), access: default_access(), tag: default_tag() }
     }
 }
 
@@ -210,7 +210,7 @@ impl PackageManifest {
     /// `write_manifest=false` on PM mutators and save through their own bridges instead.
     pub fn save(&self, directory: impl AsRef<Path>, layout: ProjectLayout) -> Result<()> {
         let path = Self::path_in(directory, layout);
-        let content = to_string_indented(self)?;
+        let content = crate::von_format::render_package_manifest(self);
         std::fs::write(path, content)?;
         Ok(())
     }
@@ -266,5 +266,23 @@ impl PackageManifest {
 
     pub fn remove_dependency(&mut self, name: &str) -> bool {
         self.dependencies.remove(name).is_some() || self.dev_dependencies.remove(name).is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ProjectLayout;
+
+    #[test]
+    fn save_roundtrip_dev_dependencies() {
+        let manifest = PackageManifest::parse(
+            "{\n    name: \"smoke.root\",\n    version: \"0.1.0\",\n    dev_dependencies: {\n        \"smoke.dev\": \"1.5.0\",\n    },\n}\n",
+        )
+        .expect("parse");
+        let dir = tempfile::tempdir().expect("tempdir");
+        manifest.save(dir.path(), ProjectLayout::neutral()).expect("save");
+        let loaded = PackageManifest::load(dir.path(), ProjectLayout::neutral()).expect("load");
+        assert_eq!(loaded.dev_dependencies.get("smoke.dev").and_then(|s| s.version_constraint()), Some("1.5.0"));
     }
 }

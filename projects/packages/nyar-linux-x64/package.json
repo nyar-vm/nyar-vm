@@ -3,17 +3,34 @@
     "version": "0.0.0",
     "description": "Nyar native collect — Linux x64 (Node-API host)",
     "license": "MIT",
-    "os": ["linux"],
-    "cpu": ["x64"],
-    "files": ["libnyar_napi.so",
-      "README.md"
+    "os": [
+        "linux"
     ],
-    "engines": { "node": ">=20" },
-    "keywords": ["nyar", "nyar-vm", "native", "node-api", "linux", "x64"],
+    "cpu": [
+        "x64"
+    ],
+    "files": [
+        "libnyar_napi.so",
+        "readme.md",
+        "README.md"
+    ],
+    "engines": {
+        "node": ">=20"
+    },
+    "keywords": [
+        "nyar",
+        "nyar-vm",
+        "native",
+        "node-api",
+        "linux",
+        "x64"
+    ],
     "repository": {
         "type": "git",
         "url": "git+https://github.com/nyar-vm/nyar-vm.rs.git",
-        "directory": "packages/nyar-linux-x64"
+        "directory": "projects/packages/nyar-linux-x64"
     },
-    "publishConfig": { "access": "public" }
+    "publishConfig": {
+        "access": "public"
+    }
 }

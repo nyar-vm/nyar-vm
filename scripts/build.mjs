@@ -187,12 +187,12 @@ function buildNapi(opts) {
     console.log(`build:napi → nyar-napi cdylib (${release ? "release" : "debug"}, ${targets.length} target(s))`);
 
     for (const target of targets) {
-        console.log(`\n→ ${target.triple} → packages/${target.packageDir}`);
+        console.log(`\n→ ${target.triple} → projects/packages/${target.packageDir}`);
         cargoBuildTarget(target.triple, release, target.tool, "nyar-napi");
 
         const src = resolveArtifact(nativeLibCandidates(target.triple, release, "nyar_napi"));
         const destName = nativeCollectDestName(target.triple, "nyar_napi");
-        const dest = join(ROOT, "packages", target.packageDir, destName);
+        const dest = join(ROOT, "projects", "packages", target.packageDir, destName);
         copyArtifact(src, dest);
         console.log(`  copied ${destName}`);
     }
@@ -207,11 +207,11 @@ function buildWasm(opts) {
     console.log(`build:wasm → nyar-wasm cdylib (${release ? "release" : "debug"}, ${targets.length} target(s))`);
 
     for (const target of targets) {
-        console.log(`\n→ ${target.triple} → packages/${target.packageDir}`);
+        console.log(`\n→ ${target.triple} → projects/packages/${target.packageDir}`);
         cargoBuildTarget(target.triple, release, "cargo", "nyar-wasm");
 
         const src = resolveArtifact(wasmLibCandidates(target.triple, release, target.libName));
-        const dest = join(ROOT, "packages", target.packageDir, target.destName);
+        const dest = join(ROOT, "projects", "packages", target.packageDir, target.destName);
         copyArtifact(src, dest);
         console.log(`  copied ${target.destName}`);
     }

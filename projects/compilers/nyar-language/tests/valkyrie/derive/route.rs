@@ -56,10 +56,14 @@ fn route_attr(method: &str, path: &str) -> nyar_language::types::hir::HirAttribu
 
 fn health_controller() -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("HealthController"),
         doc: HirDocumentation::from_lines(vec!["@route_prefix(\"/api\")".to_string()]),
         methods: vec![
             HirFunction {
+        declaration: None,
+        instance: None,
                 where_constraints: Vec::new(),
                 name: Identifier::new("get_health"),
                 doc: HirDocumentation::default(),
@@ -79,6 +83,8 @@ fn health_controller() -> HirStruct {
         export_spec: None,
             },
             HirFunction {
+        declaration: None,
+        instance: None,
                 where_constraints: Vec::new(),
                 name: Identifier::new("get_live"),
                 doc: HirDocumentation::default(),

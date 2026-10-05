@@ -3,10 +3,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nyar_language::formatter::to_string_indented;
 use nyar_package_registry::Package;
+use oak_von::from_str;
 use serde::{Deserialize, Serialize};
-use std_data::text::von::from_str;
 
 use crate::{ProjectLayout, Result};
 
@@ -76,7 +75,7 @@ impl LockFile {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let content = to_string_indented(self)?;
+        let content = crate::von_format::render_lock_file(&self.version, &self.packages);
         std::fs::write(&self.path, content)?;
         Ok(())
     }

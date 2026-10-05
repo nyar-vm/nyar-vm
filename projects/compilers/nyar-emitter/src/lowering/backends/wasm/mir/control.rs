@@ -2,7 +2,7 @@
 
 use super::{MirBlock, MirBlockRef, MirOperand, MirTerminator, MirValueRef, WasmMirLowerer};
 use crate::lowering::backends::wasm::sections::encode_uleb128;
-use std_data::binary::wasm::{BLOCKTYPE_EMPTY, VALTYPE_I32, WasmOpcode, encode_return, encode_unreachable};
+use acorn_wasm::{BLOCKTYPE_EMPTY, VALTYPE_I32, WasmOpcode, encode_return, encode_unreachable};
 
 impl<'a> WasmMirLowerer<'a> {
     pub(super) fn emit_function_body(&mut self) {
@@ -83,9 +83,11 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     pub(super) fn planned_value_local(&self, value: MirValueRef) -> u32 {
-        self.reference_locals.get(&value)
+        self.reference_locals
+            .get(&value)
             .or_else(|| self.value_locals.get(&value))
-            .copied().unwrap_or_else(|| panic!("WASM SSA 值缺少预规划槽: %{} in {}", value.0, self.mir_fn.symbol))
+            .copied()
+            .unwrap_or_else(|| panic!("WASM SSA 值缺少预规划槽: %{} in {}", value.0, self.mir_fn.symbol))
     }
 
     pub(super) fn emit_contract_operand(&mut self, operand: &MirOperand, expected: u8) {

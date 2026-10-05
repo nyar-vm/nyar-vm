@@ -8,6 +8,8 @@ use nyar_language::{
 
 fn create_property_class(name: &str, properties: Vec<HirProperty>, parents: Vec<HirParent>, is_abstract: bool) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -36,6 +38,8 @@ fn create_property_class(name: &str, properties: Vec<HirProperty>, parents: Vec<
 
 fn create_getter(name: &str, ty: ValkyrieType, is_abstract: bool) -> HirFunction {
     HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: NamePath::default(),

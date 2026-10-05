@@ -1,8 +1,4 @@
 //! Static guards for the Canonical Semantic MIR boundary.
-//!
-//! These files are the only code allowed to decide whether submitted MIR is
-//! semantically complete. Backend implementations remain intentionally out of
-//! this scan: they are physical mappings and currently diagnostic-only.
 
 use std::{fs, path::PathBuf};
 
@@ -27,8 +23,7 @@ fn formal_semantic_path_forbids_semantic_reconstruction_patterns() {
     let sources = [
         ("SMIR-G001", "name-based semantic dispatch", production_source(read("src/lowering/features/semantic_mir_contract.rs"))),
         ("SMIR-G001", "name-based semantic dispatch", semantic_validator_source()),
-        ("SMIR-G002", "descriptor semantic fallback", read("../nyar-language/src/valkyrie/frontend_contract/executable.rs")),
-        ("SMIR-G005", "host carrier to source encoding inference", read("../nyar-language/src/valkyrie/frontend_contract/executable.rs")),
+        ("SMIR-G002", "descriptor semantic fallback", production_source(read("../nyar-language/src/valkyrie/compile_pipeline/canonical.rs"))),
     ];
     let forbidden = [
         ("SMIR-G001", ".symbol.contains("),
@@ -65,19 +60,12 @@ fn formal_semantic_path_forbids_semantic_reconstruction_patterns() {
 }
 
 #[test]
-fn managed_backend_entries_gate_before_preparation() {
-    for (path, gate, first_preparation) in [
-        ("src/lowering/backends/clr/mod.rs", "validate_submission(submission)", "let mut submission = submission.clone()"),
-        ("src/lowering/backends/jvm/mod.rs", "validate_submission(submission)", "validate_jvm_call_contracts(submission)"),
-        (
-            "src/lowering/backends/wasm/mod.rs",
-            "validate_submission(submission)",
-            "validate_text_encoding_projection(submission, host_boundary)",
-        ),
-    ] {
-        let source = read(path);
-        let gate_at = source.find(gate).unwrap_or_else(|| panic!("{path} has no shared Semantic MIR gate"));
-        let preparation_at = source.find(first_preparation).unwrap_or_else(|| panic!("{path} has no preparation marker"));
-        assert!(gate_at < preparation_at, "{path} must validate Semantic MIR before backend preparation");
-    }
+fn wasm_backend_entries_gate_before_preparation() {
+    let path = "src/lowering/backends/wasm/mod.rs";
+    let source = read(path);
+    let gate = "validate_submission(submission)";
+    let first_preparation = "validate_text_encoding_projection(submission, host_boundary)";
+    let gate_at = source.find(gate).unwrap_or_else(|| panic!("{path} has no shared Semantic MIR gate"));
+    let preparation_at = source.find(first_preparation).unwrap_or_else(|| panic!("{path} has no preparation marker"));
+    assert!(gate_at < preparation_at, "{path} must validate Semantic MIR before backend preparation");
 }

@@ -54,8 +54,35 @@ impl<'a> ExecutableLoweringContext<'a> {
         self.layout_by_id(layout_id).and_then(|layout| layout.fields.iter().find(|item| item.name == field))
     }
 
-    pub fn is_value_type_name(&self, name: &str) -> bool {
-        self.layouts.value_type_names.contains(name)
+    /// 已登记 layout 的存储类；禁止读 `value_type_names` 旁路表。
+    fn registered_layout_storage(&self, name: &str) -> Option<ExecutableStorageKind> {
+        if let Some(&id) = self.layouts.type_name_to_layout.get(name) {
+            return self.layout_by_id(id).map(|layout| layout.storage);
+        }
+        let mut matched = None;
+        for layout in &self.layouts.layouts {
+            let hits = if layout.namespace.is_empty() {
+                layout.name == name
+            }
+            else if layout.name == name {
+                true
+            }
+            else {
+                let mut qualified = String::with_capacity(layout.namespace.len() + 1 + layout.name.len());
+                qualified.push_str(&layout.namespace);
+                qualified.push('.');
+                qualified.push_str(&layout.name);
+                qualified == name
+            };
+            if !hits {
+                continue;
+            }
+            if matched.is_some() {
+                return None;
+            }
+            matched = Some(layout.storage);
+        }
+        matched
     }
 
     pub fn storage_for_type(&self, ty: &NyarType) -> ExecutableStorageKind {
@@ -73,8 +100,9 @@ impl<'a> ExecutableLoweringContext<'a> {
             | NyarType::Character
             | NyarType::Utf8
             | NyarType::Utf16 => ExecutableStorageKind::Value,
-            NyarType::Named(name) if self.is_value_type_name(name.as_str()) => ExecutableStorageKind::Value,
             NyarType::Tuple(_) | NyarType::FixedArray { .. } => ExecutableStorageKind::Value,
+            // Named 残差只认已登记 layout.storage；未命中不得靠 value_type_names 认亲为 Value。
+            NyarType::Named(name) => self.registered_layout_storage(name.as_str()).unwrap_or(ExecutableStorageKind::Reference),
             _ => ExecutableStorageKind::Reference,
         }
     }
@@ -136,4 +164,3 @@ pub fn executable_has_state_machine(function: &ExecutableFunction) -> bool {
         )
     })
 }
-
