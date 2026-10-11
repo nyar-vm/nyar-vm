@@ -953,6 +953,19 @@ fn unify_generic_instantiation(
 ) -> bool {
     match (template, concrete) {
         (left, right) if left == right => true,
+        // 泛型种子签名已冻结为 Nominal{declaration,[T,…]}；调用点 SSA 为同一 declaration 的具体实参。
+        // 只按 ItemId + 实参 unify，禁止再按 Option/Result 短名认亲。
+        (
+            ValkyrieType::Nominal { declaration: template_decl, arguments: template_args },
+            ValkyrieType::Nominal { declaration: concrete_decl, arguments: concrete_args },
+        ) => {
+            template_decl == concrete_decl
+                && template_args.len() == concrete_args.len()
+                && template_args
+                    .iter()
+                    .zip(concrete_args)
+                    .all(|(template_arg, concrete_arg)| unify_generic_instantiation(template_arg, concrete_arg, substitutions))
+        }
         (ValkyrieType::Apply(template_base, template_args), ValkyrieType::Apply(concrete_base, concrete_args)) => {
             template_args.len() == concrete_args.len()
                 && unify_generic_instantiation(template_base, concrete_base, substitutions)
