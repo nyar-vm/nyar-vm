@@ -2829,14 +2829,8 @@ fn infer_scrutinee_type(
     }
 }
 
-fn lookup_struct_field_type(
-    object_type: &ValkyrieType,
-    field: &Identifier,
-    struct_fields: &AggregateFieldIndex,
-) -> Option<ValkyrieType> {
-    struct_fields
-        .fields_of(object_type)
-        .and_then(|fields| fields.iter().find(|item| item.name == *field).map(|item| item.ty.clone()))
+fn lookup_struct_field_type(object_type: &ValkyrieType, field: &Identifier, struct_fields: &AggregateFieldIndex) -> Option<ValkyrieType> {
+    struct_fields.fields_of(object_type).and_then(|fields| fields.iter().find(|item| item.name == *field).map(|item| item.ty.clone()))
 }
 
 fn payload_field_scrutinee_types(payload: &ValkyrieType, struct_fields: &AggregateFieldIndex) -> Vec<Option<ValkyrieType>> {

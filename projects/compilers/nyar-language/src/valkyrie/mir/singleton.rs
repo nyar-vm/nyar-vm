@@ -24,8 +24,7 @@
 //! - This shared contract only fixes naming plus activation/deactivation boundaries; synchronization
 //!   and storage strategy remain target-side decisions.
 
-use std::collections::BTreeMap;
-use std::ops::Deref;
+use std::{collections::BTreeMap, ops::Deref};
 
 use crate::{
     hir::trait_system::{build_witness_method_entries, satisfy_named_trait},
