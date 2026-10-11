@@ -46,16 +46,41 @@ pub struct TypeRelationContext {
     nominal: NominalModuleView,
     traits: TraitModuleView,
     structs: BTreeMap<Identifier, HirStruct>,
+    structs_by_declaration: BTreeMap<nyar_types::ItemId, HirStruct>,
     callable_constraints: Vec<HirWhereConstraint>,
 }
 
 impl TypeRelationContext {
     pub fn from_module(module: &HirModule) -> Self {
+        let mut structs = BTreeMap::new();
+        let mut structs_by_declaration = BTreeMap::new();
+        collect_relation_structs(module, &mut structs, &mut structs_by_declaration);
         Self {
             nominal: NominalModuleView::from_module(module),
             traits: TraitModuleView::from_module(module),
-            structs: module.structs.iter().map(|item| (item.name.clone(), item.clone())).collect(),
+            structs,
+            structs_by_declaration,
             callable_constraints: Vec::new(),
+        }
+    }
+
+    /// 短名 → 已冻结的 `Nominal{ItemId}`（有 declaration 时）；供 Self/AutoType 回收，禁止只写回 Named。
+    pub fn nominal_type_for_name(&self, name: &Identifier) -> Option<ValkyrieType> {
+        let item = self.structs.get(name)?;
+        match item.constructor_declaration {
+            Some(declaration) => Some(ValkyrieType::Nominal { declaration, arguments: Vec::new() }),
+            None => Some(ValkyrieType::Named(name.clone())),
+        }
+    }
+
+    /// 字面量特化用：`Named("usize")` 与对应 `Nominal{ItemId}` 都算数值类型。
+    pub fn is_numeric_type(&self, ty: &ValkyrieType) -> bool {
+        match ty {
+            ValkyrieType::Nominal { declaration, .. } => self
+                .structs_by_declaration
+                .get(declaration)
+                .is_some_and(|item| is_numeric_type_name(item.name.as_str())),
+            other => is_numeric_type_name_of(other),
         }
     }
 
@@ -72,6 +97,26 @@ impl TypeRelationContext {
     pub fn match_parameter(&self, actual: &ValkyrieType, expected: &ValkyrieType) -> ParameterMatchResult {
         if trivially_compatible(actual, expected) {
             return ParameterMatchResult::NominalExact;
+        }
+
+        // `Nominal{ItemId}` 只认 declaration；同 declaration + 实参相容即为 exact。
+        if let (
+            ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args },
+            ValkyrieType::Nominal { declaration: expected_decl, arguments: expected_args },
+        ) = (actual, expected)
+        {
+            if actual_decl == expected_decl
+                && actual_args.len() == expected_args.len()
+                && actual_args.iter().zip(expected_args.iter()).all(|(left, right)| self.matches_non_error(left, right))
+            {
+                return ParameterMatchResult::NominalExact;
+            }
+        }
+
+        // 绑定前残留的 `Named(短名)` 与已冻结 `Nominal{ItemId}` 在同一声明上可对齐；
+        // 不得把 Nominal 再改回更长 Named，只在匹配时按 declaration 认亲。
+        if let Some(result) = self.match_nominal_against_named(actual, expected) {
+            return result;
         }
 
         // Nominal applications retain their type arguments at the semantic
@@ -227,6 +272,90 @@ impl TypeRelationContext {
 
     fn matches_non_error(&self, actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
         !matches!(self.match_parameter(actual, expected), ParameterMatchResult::NoMatch { .. })
+    }
+
+    fn match_nominal_against_named(&self, actual: &ValkyrieType, expected: &ValkyrieType) -> Option<ParameterMatchResult> {
+        match (actual, expected) {
+            (ValkyrieType::Nominal { declaration, arguments }, ValkyrieType::Named(name))
+            | (ValkyrieType::Named(name), ValkyrieType::Nominal { declaration, arguments }) => {
+                if !arguments.is_empty() {
+                    return None;
+                }
+                let item = self.structs.get(name)?;
+                if item.constructor_declaration == Some(*declaration) {
+                    Some(ParameterMatchResult::NominalExact)
+                }
+                else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
+fn collect_relation_structs(
+    module: &HirModule,
+    by_name: &mut BTreeMap<Identifier, HirStruct>,
+    by_declaration: &mut BTreeMap<nyar_types::ItemId, HirStruct>,
+) {
+    for item in &module.structs {
+        by_name.entry(item.name.clone()).or_insert_with(|| item.clone());
+        if let Some(declaration) = item.constructor_declaration {
+            by_declaration.entry(declaration).or_insert_with(|| item.clone());
+        }
+    }
+    for export in &module.imported_semantic_exports {
+        for item in &export.structs {
+            by_name.entry(item.name.clone()).or_insert_with(|| item.clone());
+            if let Some(declaration) = item.constructor_declaration {
+                by_declaration.entry(declaration).or_insert_with(|| item.clone());
+            }
+        }
+    }
+    for submodule in &module.submodules {
+        collect_relation_structs(submodule, by_name, by_declaration);
+    }
+}
+
+fn is_numeric_type_name(name: &str) -> bool {
+    matches!(
+        name,
+        "byte"
+            | "sbyte"
+            | "usize"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "f32"
+            | "f64"
+            | "f128"
+            | "core.primitive.usize"
+            | "core.primitive.isize"
+            | "core::primitive::usize"
+            | "core::primitive::isize"
+    )
+}
+
+fn is_numeric_type_name_of(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Integer8 { .. }
+        | ValkyrieType::Integer16 { .. }
+        | ValkyrieType::Integer32 { .. }
+        | ValkyrieType::Integer64 { .. }
+        | ValkyrieType::Integer128 { .. }
+        | ValkyrieType::Float32
+        | ValkyrieType::Float64 => true,
+        ValkyrieType::Named(name) => is_numeric_type_name(name.as_str()),
+        _ => false,
     }
 }
 

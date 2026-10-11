@@ -21,8 +21,9 @@ use crate::{
         Identifier, NamePath, QualifiedName,
         hir::{
             GenericType, HirAttribute, HirBlock, HirCallArgument, HirCallKind, HirCallableDomain, HirEnum, HirExpr, HirExprKind,
-            HirExtractorPattern, HirField, HirFunction, HirIdentifier, HirMatchArm, HirModule, HirParam, HirPattern, HirResolvedCall,
-            HirSingleton, HirStatement, HirStatementKind, HirStruct, HirVariadicKind, HirVariant, HirWhereConstraint, ValkyrieType,
+            HirDependencySemanticExport, HirExtractorPattern, HirField, HirFunction, HirIdentifier, HirMatchArm, HirModule, HirParam,
+            HirPattern, HirResolvedCall, HirSingleton, HirStatement, HirStatementKind, HirStruct, HirVariadicKind, HirVariant,
+            HirWhereConstraint, ValkyrieType,
         },
     },
     valkyrie::{
@@ -262,7 +263,8 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
         candidates.extend(item.default_methods.iter().map(|method| build_method_candidate(method, None, Some(item.name.clone()))));
     }
     for item in &module.impls {
-        let owner = impl_nominal_type_name(&item.target).map(Identifier::new);
+        // owner 必须从 declaration 反查短名；`Nominal{ItemId}` 不能丢进 `impl_nominal_type_name` 的 Named 分支。
+        let owner = impl_owner_identifier(module, &item.target);
         candidates.extend(
             item.methods
                 .iter()
@@ -306,7 +308,8 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
             candidates.extend(item.default_methods.iter().map(|method| build_method_candidate(method, None, Some(item.name.clone()))));
         }
         for item in &export.impls {
-            let owner = impl_nominal_type_name(&item.target).map(Identifier::new);
+            let owner = impl_owner_identifier(module, &item.target)
+                .or_else(|| impl_owner_identifier_from_export(export, &item.target));
             candidates.extend(
                 item.methods.iter().map(|method| {
                     specialize_method_candidate(build_method_candidate(method, owner.clone(), None), &item.target, &item.generics)
@@ -808,14 +811,21 @@ fn specialize_method_candidate(
     owner_type: &ValkyrieType,
     owner_generics: &[GenericType],
 ) -> OverloadCandidate {
-    candidate.signature.params = candidate.signature.params.iter().map(|ty| substitute_type_self(ty, owner_type)).collect();
+    candidate.signature.params = candidate
+        .signature
+        .params
+        .iter()
+        .enumerate()
+        .map(|(index, ty)| specialize_method_param_type(ty, index, &candidate.param_specs, owner_type))
+        .collect();
     candidate.signature.return_type = substitute_type_self(&candidate.signature.return_type, owner_type);
     candidate.param_specs = candidate
         .param_specs
         .iter()
-        .map(|param| {
+        .enumerate()
+        .map(|(index, param)| {
             let mut param = param.clone();
-            param.ty = substitute_type_self(&param.ty, owner_type);
+            param.ty = specialize_method_param_type(&param.ty, index, &candidate.param_specs, owner_type);
             param
         })
         .collect();
@@ -826,6 +836,21 @@ fn specialize_method_candidate(
         candidate = candidate.with_generic_binder(generic);
     }
     candidate
+}
+
+/// `self` 上的 `AutoType`/`Self` 必须在候选阶段换成完整 owner（可为 `Nominal{ItemId}`）。
+/// 禁止留给 `match_call_candidate` 再收成 `Named(短名)`，否则与已绑定字段类型对不上。
+fn specialize_method_param_type(
+    ty: &ValkyrieType,
+    index: usize,
+    param_specs: &[HirParam],
+    owner_type: &ValkyrieType,
+) -> ValkyrieType {
+    let is_self_slot = index == 0 && param_specs.first().is_some_and(|param| param.name.name.as_str() == "self");
+    if is_self_slot && matches!(ty, ValkyrieType::AutoType | ValkyrieType::r#SelfType) {
+        return owner_type.clone();
+    }
+    substitute_type_self(ty, owner_type)
 }
 
 fn owner_type_generic_binders(ty: &ValkyrieType) -> BTreeSet<Identifier> {
@@ -1029,7 +1054,7 @@ fn resolve_expr_calls(
             for arg in args.iter_mut() {
                 let field_context = match &arg.kind {
                     HirExprKind::FieldInit { name: field_name, .. } => struct_fields
-                        .get(name)
+                        .fields_of(&ValkyrieType::Named(name.clone()))
                         .and_then(|fields| fields.iter().find(|field| field.name == *field_name).map(|field| &field.ty))
                         .or_else(|| {
                             candidates
@@ -1344,27 +1369,27 @@ fn match_call_candidate(
         let bound = bind_call_arguments(&candidate.param_specs, args).ok()?;
         bound.iter().map(|arg| infer_scrutinee_type(arg, locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
     };
-    // `self: Self` / untyped `self` must mean the method owner, not "any receiver".
-    // Otherwise `Array.get` and `HashMap.get` both see `AutoType` self and
-    // `usize`→`K` type-var acceptance, so HashMap.get can steal Array.suffix [].
-    // Same rule as pattern extractors: AutoType self + owner ⇒ Named(owner).
+    // `self: Self` / untyped `self` 必须是 owner 的完整类型（优先 `Nominal{ItemId}`）。
+    // 禁止再收成 `Named(短名)`：字段/参数在 bind 后已是 declaration identity。
+    let owner_type = candidate.owner.as_ref().and_then(|owner| type_relations.nominal_type_for_name(owner));
     let expected_params = candidate
         .signature
         .params
         .iter()
         .enumerate()
         .map(|(index, ty)| {
-            let effective = if index == 0
-                && matches!(ty, ValkyrieType::AutoType)
+            let is_self_slot = index == 0
                 && candidate.owner.is_some()
-                && candidate.param_specs.first().is_some_and(|param| param.name.name.as_str() == "self")
-            {
-                &ValkyrieType::r#SelfType
+                && candidate.param_specs.first().is_some_and(|param| param.name.name.as_str() == "self");
+            if is_self_slot && matches!(ty, ValkyrieType::AutoType | ValkyrieType::r#SelfType) {
+                if let Some(owner_type) = &owner_type {
+                    return owner_type.clone();
+                }
             }
-            else {
-                ty
-            };
-            substitute_self_type(effective, candidate.owner.as_ref())
+            match &owner_type {
+                Some(owner_type) => substitute_type_self(ty, owner_type),
+                None => substitute_self_type(ty, candidate.owner.as_ref()),
+            }
         })
         .collect::<Vec<_>>();
     let mut substitutions = BTreeMap::new();
@@ -1389,7 +1414,7 @@ fn match_call_candidate(
     // constrains it. This is semantic call binding, not backend inference.
     // If every operand is an unconstrained literal, overload resolution still
     // remains ambiguous and fails closed.
-    let actual_types = specialize_call_literals(args, &actual_types, &expected_params);
+    let actual_types = specialize_call_literals(args, &actual_types, &expected_params, type_relations);
     let match_kind = compute_call_match_kind(type_relations, &actual_types, &expected_params)?;
     Some(OverloadCandidate {
         declaration: candidate.declaration,
@@ -1456,17 +1481,38 @@ fn unify_call_type_binders(
             }
             Some(())
         }
+        ValkyrieType::Nominal { declaration: expected_decl, arguments: expected_args } => {
+            let ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args } = actual
+            else {
+                return None;
+            };
+            if expected_decl != actual_decl || expected_args.len() != actual_args.len() {
+                return None;
+            }
+            for (expected, actual) in expected_args.iter().zip(actual_args) {
+                unify_call_type_binders(expected, actual, binders, substitutions)?;
+            }
+            Some(())
+        }
         _ => Some(()),
     }
 }
 
-fn specialize_call_literals(args: &[HirCallArgument], actual: &[ValkyrieType], expected: &[ValkyrieType]) -> Vec<ValkyrieType> {
+fn specialize_call_literals(
+    args: &[HirCallArgument],
+    actual: &[ValkyrieType],
+    expected: &[ValkyrieType],
+    type_relations: &TypeRelationContext,
+) -> Vec<ValkyrieType> {
     args.iter()
         .zip(actual.iter().zip(expected.iter()))
         .map(|(arg, (actual, expected))| match &arg.value.kind {
             // Integer literals are representation-polymorphic: bind to the formal
             // numeric type (`usize`, `i32`, …), same as constructor literals.
-            HirExprKind::Literal(crate::types::hir::HirLiteral::Integer64(_)) if is_numeric_type(expected) => expected.clone(),
+            // `Nominal{ItemId}` 的 primitive 也必须认，不能只认 `Named("usize")`。
+            HirExprKind::Literal(crate::types::hir::HirLiteral::Integer64(_)) if type_relations.is_numeric_type(expected) => {
+                expected.clone()
+            }
             // String literals infer as `Utf8` but core APIs take `text`.
             HirExprKind::Literal(crate::types::hir::HirLiteral::String(_)) if is_text_type(expected) => expected.clone(),
             _ => actual.clone(),
@@ -2178,8 +2224,82 @@ fn impl_nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
         ValkyrieType::Integer64 { signed: false } => Some("u64"),
         ValkyrieType::Integer128 { signed: true } => Some("i128"),
         ValkyrieType::Integer128 { signed: false } => Some("u128"),
+        // Nominal 无表面名；必须经 `impl_owner_identifier` 按 declaration 反查。
+        ValkyrieType::Nominal { .. } => None,
         _ => None,
     }
+}
+
+/// imply owner 短名：优先 declaration → 结构/sum 名；禁止把 Nominal 当无名丢弃。
+fn impl_owner_identifier(module: &HirModule, ty: &ValkyrieType) -> Option<Identifier> {
+    match ty {
+        ValkyrieType::Nominal { declaration, .. } => {
+            find_struct_name_by_declaration(module, *declaration).or_else(|| find_enum_name_by_declaration(module, *declaration))
+        }
+        ValkyrieType::Apply(base, _) => impl_owner_identifier(module, base),
+        other => impl_nominal_type_name(other).map(Identifier::new),
+    }
+}
+
+fn impl_owner_identifier_from_export(export: &HirDependencySemanticExport, ty: &ValkyrieType) -> Option<Identifier> {
+    match ty {
+        ValkyrieType::Nominal { declaration, .. } => export
+            .structs
+            .iter()
+            .find(|item| item.constructor_declaration == Some(*declaration))
+            .map(|item| item.name.clone())
+            .or_else(|| {
+                export
+                    .enums
+                    .iter()
+                    .find(|item| item.declaration == Some(*declaration))
+                    .map(|item| item.name.clone())
+            }),
+        ValkyrieType::Apply(base, _) => impl_owner_identifier_from_export(export, base),
+        other => impl_nominal_type_name(other).map(Identifier::new),
+    }
+}
+
+fn find_struct_name_by_declaration(module: &HirModule, declaration: nyar_types::ItemId) -> Option<Identifier> {
+    for item in &module.structs {
+        if item.constructor_declaration == Some(declaration) {
+            return Some(item.name.clone());
+        }
+    }
+    for export in &module.imported_semantic_exports {
+        for item in &export.structs {
+            if item.constructor_declaration == Some(declaration) {
+                return Some(item.name.clone());
+            }
+        }
+    }
+    for submodule in &module.submodules {
+        if let Some(name) = find_struct_name_by_declaration(submodule, declaration) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn find_enum_name_by_declaration(module: &HirModule, declaration: nyar_types::ItemId) -> Option<Identifier> {
+    for item in &module.enums {
+        if item.declaration == Some(declaration) {
+            return Some(item.name.clone());
+        }
+    }
+    for export in &module.imported_semantic_exports {
+        for item in &export.enums {
+            if item.declaration == Some(declaration) {
+                return Some(item.name.clone());
+            }
+        }
+    }
+    for submodule in &module.submodules {
+        if let Some(name) = find_enum_name_by_declaration(submodule, declaration) {
+            return Some(name);
+        }
+    }
+    None
 }
 
 fn overload_symbol_path(candidate: &OverloadCandidate) -> NamePath {
@@ -2480,7 +2600,7 @@ fn try_resolve_constructor(
         return None;
     }
     let bound_values = if args.iter().all(|arg| matches!(arg.kind, HirExprKind::FieldInit { .. })) {
-        if let Some(fields) = struct_fields.get(&name) {
+        if let Some(fields) = struct_fields.fields_of(&ValkyrieType::Named(name.clone())) {
             bind_construct_fields(fields, args).ok()?
         }
         else {
@@ -2526,15 +2646,25 @@ fn try_resolve_constructor(
 }
 
 fn substitute_type_parameters(ty: &ValkyrieType, receiver: &ValkyrieType, actual: &ValkyrieType) -> ValkyrieType {
-    let (ValkyrieType::Apply(_, receiver_args), ValkyrieType::Apply(_, actual_args)) = (receiver, actual)
-    else {
-        return ty.clone();
+    // Apply 与 Nominal 的类型参数槽同位：按槽位把声明 binder 代入实际参数。
+    // 不得再要求表面名为 Option/Result；declaration identity 已由候选 sum_owner 携带。
+    let (receiver_args, actual_args) = match (receiver, actual) {
+        (ValkyrieType::Apply(_, receiver_args), ValkyrieType::Apply(_, actual_args)) => (receiver_args.as_slice(), actual_args.as_slice()),
+        (
+            ValkyrieType::Nominal { declaration: receiver_decl, arguments: receiver_args },
+            ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args },
+        ) if receiver_decl == actual_decl => (receiver_args.as_slice(), actual_args.as_slice()),
+        _ => return ty.clone(),
     };
+    if receiver_args.len() != actual_args.len() {
+        return ty.clone();
+    }
     let substitutions = receiver_args
         .iter()
         .zip(actual_args.iter())
         .filter_map(|(param, arg)| match param {
             ValkyrieType::Named(name) => Some((name.clone(), arg.clone())),
+            ValkyrieType::Generic(generic) => Some((generic.name.clone(), arg.clone())),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -2591,26 +2721,39 @@ fn matches_extractor_receiver_type(
 }
 
 fn generic_apply_receiver_matches(actual: &ValkyrieType, receiver: &ValkyrieType, type_relations: &TypeRelationContext) -> bool {
-    let (ValkyrieType::Apply(actual_base, actual_args), ValkyrieType::Apply(receiver_base, receiver_args)) = (actual, receiver)
-    else {
-        return false;
-    };
-    if actual_args.len() != receiver_args.len() {
-        return false;
+    match (actual, receiver) {
+        (ValkyrieType::Apply(actual_base, actual_args), ValkyrieType::Apply(receiver_base, receiver_args)) => {
+            if actual_args.len() != receiver_args.len() {
+                return false;
+            }
+            if !matches!(
+                type_relations.match_parameter(actual_base.as_ref(), receiver_base.as_ref()),
+                ParameterMatchResult::NominalExact | ParameterMatchResult::NominalSubtype { .. }
+            ) {
+                return false;
+            }
+            receiver_args.iter().zip(actual_args.iter()).all(|(expected, actual_arg)| match expected {
+                ValkyrieType::Named(_) | ValkyrieType::Generic(_) => true,
+                other => matches!(
+                    type_relations.match_parameter(actual_arg, other),
+                    ParameterMatchResult::NominalExact | ParameterMatchResult::NominalSubtype { .. }
+                ),
+            })
+        }
+        (
+            ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args },
+            ValkyrieType::Nominal { declaration: receiver_decl, arguments: receiver_args },
+        ) if actual_decl == receiver_decl && actual_args.len() == receiver_args.len() => {
+            receiver_args.iter().zip(actual_args.iter()).all(|(expected, actual_arg)| match expected {
+                ValkyrieType::Named(_) | ValkyrieType::Generic(_) => true,
+                other => matches!(
+                    type_relations.match_parameter(actual_arg, other),
+                    ParameterMatchResult::NominalExact | ParameterMatchResult::NominalSubtype { .. }
+                ),
+            })
+        }
+        _ => false,
     }
-    if !matches!(
-        type_relations.match_parameter(actual_base.as_ref(), receiver_base.as_ref()),
-        ParameterMatchResult::NominalExact | ParameterMatchResult::NominalSubtype { .. }
-    ) {
-        return false;
-    }
-    receiver_args.iter().zip(actual_args.iter()).all(|(expected, actual_arg)| match expected {
-        ValkyrieType::Named(_) => true,
-        other => matches!(
-            type_relations.match_parameter(actual_arg, other),
-            ParameterMatchResult::NominalExact | ParameterMatchResult::NominalSubtype { .. }
-        ),
-    })
 }
 
 fn try_resolve_pattern_extractor(
@@ -2856,7 +2999,11 @@ fn object_field_scrutinee_type<'a>(
     struct_fields: &'a AggregateFieldIndex,
 ) -> Option<&'a ValkyrieType> {
     let type_name = object_name.and_then(|path| path.parts().last())?;
-    struct_fields.get(type_name)?.iter().find(|field| &field.name == field_name).map(|field| &field.ty)
+    struct_fields
+        .fields_of(&ValkyrieType::Named(type_name.clone()))?
+        .iter()
+        .find(|field| &field.name == field_name)
+        .map(|field| &field.ty)
 }
 
 fn bind_pattern_type(pattern: &HirPattern, ty: &ValkyrieType, locals: &mut BTreeMap<String, ValkyrieType>) {
@@ -2915,7 +3062,8 @@ fn bind_pattern_type(pattern: &HirPattern, ty: &ValkyrieType, locals: &mut BTree
 pub fn validate_extractor_patterns(module: &HirModule) -> Result<(), crate::valkyrie::frontend::ParseError> {
     let candidates = collect_module_candidates(module);
     let type_relations = TypeRelationContext::from_module(module);
-    let struct_fields = module.structs.iter().map(|item| (item.name.clone(), item.fields.clone())).collect::<BTreeMap<_, _>>();
+    // 与 resolve_hir_calls 共用唯一生产者；禁止再拼一份短名 BTreeMap。
+    let struct_fields = collect_aggregate_field_map(module);
     for function in &module.functions {
         validate_function_extractor_patterns(function, &candidates, &type_relations, &struct_fields)?;
     }
@@ -3408,7 +3556,14 @@ fn matching_extractor_candidates<'a>(
 
 fn is_extractor_receiver_param(param: &HirParam) -> bool {
     param.name.name.as_str() == "self"
-        && matches!(param.ty, ValkyrieType::r#SelfType | ValkyrieType::AutoType | ValkyrieType::Named(_) | ValkyrieType::Apply(_, _))
+        && matches!(
+            param.ty,
+            ValkyrieType::r#SelfType
+                | ValkyrieType::AutoType
+                | ValkyrieType::Named(_)
+                | ValkyrieType::Nominal { .. }
+                | ValkyrieType::Apply(_, _)
+        )
 }
 
 fn pattern_extractor_receiver_type(candidate: &OverloadCandidate) -> Option<ValkyrieType> {
@@ -3480,14 +3635,14 @@ mod identity_tests {
         let nested = &mut args[0].value;
         let expected = Some(ValkyrieType::Integer64 { signed: true });
         assert_eq!(infer_expr_type(nested, &BTreeMap::new()), expected);
-        assert_eq!(infer_scrutinee_type(nested, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), expected);
+        assert_eq!(infer_scrutinee_type(nested, &BTreeMap::new(), &AggregateFieldIndex::default(), &BTreeSet::new()), expected);
         let HirExprKind::Call { resolved, .. } = &mut nested.kind
         else {
             panic!("预期嵌套调用");
         };
         assert!(resolved.take().is_some());
         assert_eq!(infer_expr_type(nested, &BTreeMap::new()), None);
-        assert_eq!(infer_scrutinee_type(nested, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), None);
+        assert_eq!(infer_scrutinee_type(nested, &BTreeMap::new(), &AggregateFieldIndex::default(), &BTreeSet::new()), None);
         assert!(compiler.validate_hir_semantic_contract(&hir).is_err());
     }
 
@@ -3527,14 +3682,14 @@ micro caller(value: i64) -> i64 { panic(value) }
         let construction = create.body.expr.as_mut().unwrap();
         let expected = Some(ValkyrieType::Named(Identifier::new("Parcel")));
         assert_eq!(infer_expr_type(construction, &BTreeMap::new()), expected);
-        assert_eq!(infer_scrutinee_type(construction, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), expected);
+        assert_eq!(infer_scrutinee_type(construction, &BTreeMap::new(), &AggregateFieldIndex::default(), &BTreeSet::new()), expected);
         let HirExprKind::Construct { resolved, .. } = &mut construction.kind
         else {
             panic!("预期结构构造");
         };
         assert!(resolved.take().is_some());
         assert_eq!(infer_expr_type(construction, &BTreeMap::new()), None);
-        assert_eq!(infer_scrutinee_type(construction, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), None);
+        assert_eq!(infer_scrutinee_type(construction, &BTreeMap::new(), &AggregateFieldIndex::default(), &BTreeSet::new()), None);
         assert!(compiler.validate_hir_semantic_contract(&hir).is_err());
     }
 
@@ -3604,8 +3759,7 @@ micro caller(value: i64) -> i64 { panic(value) }
             &[],
             &TypeRelationContext::from_module(&HirModule::default()),
             &BTreeMap::new(),
-            &BTreeMap::new(),
-            &BTreeSet::new(),
+            &AggregateFieldIndex::default(), &BTreeSet::new(),
             true,
         )
         .expect("singleton 匹配不得擦除 self 或声明合同");
@@ -3626,8 +3780,7 @@ micro caller(value: i64) -> i64 { panic(value) }
                 &[unknown],
                 &TypeRelationContext::from_module(&HirModule::default()),
                 &BTreeMap::new(),
-                &BTreeMap::new(),
-                &BTreeSet::new(),
+                &AggregateFieldIndex::default(), &BTreeSet::new(),
                 true,
             )
             .is_none()
@@ -3680,8 +3833,7 @@ micro caller(value: i64) -> i64 { panic(value) }
             candidates,
             &TypeRelationContext::from_module(&HirModule::default()),
             &locals,
-            &BTreeMap::new(),
-            &BTreeSet::new(),
+            &AggregateFieldIndex::default(), &BTreeSet::new(),
         )
     }
 
@@ -3996,8 +4148,7 @@ micro pick(flag: bool) -> Option<i64> {
             &[option_none, other_none],
             &TypeRelationContext::from_module(&HirModule::default()),
             &BTreeMap::new(),
-            &BTreeMap::new(),
-            &BTreeSet::new(),
+            &AggregateFieldIndex::default(), &BTreeSet::new(),
         )
         .expect("return Option<i32> should close Option::None");
         assert!(resolved.sum_owner.is_some());
@@ -4784,8 +4935,7 @@ micro negate_flag(flag: bool) -> bool {
             &[],
             &TypeRelationContext::from_module(&HirModule::default()),
             &locals,
-            &BTreeMap::new(),
-            &BTreeSet::new(),
+            &AggregateFieldIndex::default(), &BTreeSet::new(),
         )
         .expect("ArrayLen intrinsic must match array receiver");
         assert_eq!(matched.signature.params, vec![items_ty]);
@@ -4815,8 +4965,7 @@ micro negate_flag(flag: bool) -> bool {
                 &[],
                 &TypeRelationContext::from_module(&HirModule::default()),
                 &locals,
-                &BTreeMap::new(),
-                &BTreeSet::new(),
+                &AggregateFieldIndex::default(), &BTreeSet::new(),
             )
             .is_none(),
             "ArrayLen must not match non-array receivers"
@@ -4842,7 +4991,7 @@ micro negate_flag(flag: bool) -> bool {
             ValkyrieType::Boolean,
             OverloadMatchKind::NominalExact,
         );
-        let matched_is_null = match_call_candidate(&is_null, &args, &[], &relations, &locals, &BTreeMap::new(), &BTreeSet::new())
+        let matched_is_null = match_call_candidate(&is_null, &args, &[], &relations, &locals, &AggregateFieldIndex::default(), &BTreeSet::new())
             .expect("IsNull intrinsic must match nullable receiver");
         assert_eq!(matched_is_null.signature.return_type, ValkyrieType::Boolean);
 
@@ -4853,7 +5002,7 @@ micro negate_flag(flag: bool) -> bool {
             payload.clone(),
             OverloadMatchKind::NominalExact,
         );
-        let matched_unwrap = match_call_candidate(&unwrap_null, &args, &[], &relations, &locals, &BTreeMap::new(), &BTreeSet::new())
+        let matched_unwrap = match_call_candidate(&unwrap_null, &args, &[], &relations, &locals, &AggregateFieldIndex::default(), &BTreeSet::new())
             .expect("UnwrapNull intrinsic must match nullable receiver");
         assert_eq!(matched_unwrap.signature.return_type, payload);
 
@@ -4864,7 +5013,7 @@ micro negate_flag(flag: bool) -> bool {
             payload.clone(),
             OverloadMatchKind::NominalExact,
         );
-        let matched_deref = match_call_candidate(&ref_deref, &args, &[], &relations, &locals, &BTreeMap::new(), &BTreeSet::new())
+        let matched_deref = match_call_candidate(&ref_deref, &args, &[], &relations, &locals, &AggregateFieldIndex::default(), &BTreeSet::new())
             .expect("RefDeref intrinsic must match nullable receiver");
         assert_eq!(matched_deref.signature.return_type, payload);
     }
@@ -4886,7 +5035,7 @@ micro negate_flag(flag: bool) -> bool {
             OverloadMatchKind::NominalExact,
         );
         assert!(
-            match_call_candidate(&is_null, &args, &[], &relations, &locals, &BTreeMap::new(), &BTreeSet::new()).is_none(),
+            match_call_candidate(&is_null, &args, &[], &relations, &locals, &AggregateFieldIndex::default(), &BTreeSet::new()).is_none(),
             "IsNull must not match non-nullable receivers"
         );
         let unwrap_null = OverloadCandidate::new(
@@ -4897,7 +5046,7 @@ micro negate_flag(flag: bool) -> bool {
             OverloadMatchKind::NominalExact,
         );
         assert!(
-            match_call_candidate(&unwrap_null, &args, &[], &relations, &locals, &BTreeMap::new(), &BTreeSet::new()).is_none(),
+            match_call_candidate(&unwrap_null, &args, &[], &relations, &locals, &AggregateFieldIndex::default(), &BTreeSet::new()).is_none(),
             "UnwrapNull must not match non-nullable receivers"
         );
     }

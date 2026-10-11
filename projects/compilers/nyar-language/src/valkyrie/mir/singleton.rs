@@ -24,7 +24,7 @@
 //! - This shared contract only fixes naming plus activation/deactivation boundaries; synchronization
 //!   and storage strategy remain target-side decisions.
 
-use std::{collections::BTreeMap, ops::Deref};
+use std::collections::BTreeMap;
 
 use crate::{
     hir::trait_system::{build_witness_method_entries, satisfy_named_trait},
@@ -40,19 +40,14 @@ pub use nyar_types::{
     SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan,
 };
 
-/// 聚合字段索引：短名视图供诊断/未绑定路径；declaration 视图供 `Nominal{ItemId}` 字段推断。
+/// 聚合字段索引：唯一查询入口是 [`AggregateFieldIndex::fields_of`]。
+///
+/// - `Nominal{declaration}` → `by_declaration`（生产路径）
+/// - 仍残留的 `Named` / `Apply(Named, …)` → `by_name`（仅诊断与未绑定阶段；不得再 `Deref` 成 `BTreeMap`）
 #[derive(Debug, Clone, Default)]
 pub struct AggregateFieldIndex {
     by_name: BTreeMap<Identifier, Vec<HirField>>,
     by_declaration: BTreeMap<nyar_types::ItemId, Vec<HirField>>,
-}
-
-impl Deref for AggregateFieldIndex {
-    type Target = BTreeMap<Identifier, Vec<HirField>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.by_name
-    }
 }
 
 impl AggregateFieldIndex {

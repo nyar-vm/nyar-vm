@@ -1131,11 +1131,134 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         }
         Ok(())
     }
+    fn bind_expr(expr: &mut HirExpr, namespace: &NamePath, structs: &[HirStruct], enums: &[HirEnum]) -> Result<(), ParseError> {
+        match &mut expr.kind {
+            HirExprKind::Call { callee, args, resolved, .. } => {
+                bind_expr(callee, namespace, structs, enums)?;
+                for arg in args {
+                    bind_expr(&mut arg.value, namespace, structs, enums)?;
+                }
+                if let Some(contract) = resolved {
+                    for param in &mut contract.parameter_types {
+                        bind_type(param, namespace, structs, enums)?;
+                    }
+                    bind_type(&mut contract.return_type, namespace, structs, enums)?;
+                    if let Some(payload) = &mut contract.extractor_payload_type {
+                        bind_type(payload, namespace, structs, enums)?;
+                    }
+                }
+            }
+            HirExprKind::Construct { args, resolved, .. } => {
+                for arg in args {
+                    bind_expr(arg, namespace, structs, enums)?;
+                }
+                if let Some(contract) = resolved {
+                    for param in &mut contract.parameter_types {
+                        bind_type(param, namespace, structs, enums)?;
+                    }
+                    bind_type(&mut contract.return_type, namespace, structs, enums)?;
+                }
+            }
+            HirExprKind::Cast { expr: inner, ty, .. } => {
+                bind_expr(inner, namespace, structs, enums)?;
+                bind_type(ty, namespace, structs, enums)?;
+            }
+            HirExprKind::Lambda { params, return_type, body, .. } => {
+                for param in params {
+                    bind_type(&mut param.ty, namespace, structs, enums)?;
+                }
+                bind_type(return_type, namespace, structs, enums)?;
+                bind_block(body, namespace, structs, enums)?;
+            }
+            HirExprKind::TryScope { result_type, body, .. } => {
+                if let Some(ty) = result_type {
+                    bind_type(ty, namespace, structs, enums)?;
+                }
+                bind_block(body, namespace, structs, enums)?;
+            }
+            HirExprKind::FieldInit { value, .. }
+            | HirExprKind::Await(value)
+            | HirExprKind::Awake(value)
+            | HirExprKind::BlockOn(value)
+            | HirExprKind::YieldFrom(value)
+            | HirExprKind::TryPropagate { inner: value, .. }
+            | HirExprKind::Raise(value)
+            | HirExprKind::Resume(value)
+            | HirExprKind::Return(Some(value))
+            | HirExprKind::Yield(Some(value))
+            | HirExprKind::Break { expr: Some(value), .. }
+            | HirExprKind::Assign { value, .. }
+            | HirExprKind::FieldAccess { object: value, .. }
+            | HirExprKind::GenericApply { callee: value, .. } => bind_expr(value, namespace, structs, enums)?,
+            HirExprKind::StoreField { object, value, .. } => {
+                bind_expr(object, namespace, structs, enums)?;
+                bind_expr(value, namespace, structs, enums)?;
+            }
+            HirExprKind::ArrayNew { length, .. } => bind_expr(length, namespace, structs, enums)?,
+            HirExprKind::ArrayLiteral { items } => {
+                for item in items {
+                    bind_expr(item, namespace, structs, enums)?;
+                }
+            }
+            HirExprKind::Block(block) => bind_block(block, namespace, structs, enums)?,
+            HirExprKind::If { condition, then_branch, else_branch, .. } => {
+                bind_expr(condition, namespace, structs, enums)?;
+                bind_block(then_branch, namespace, structs, enums)?;
+                if let Some(else_branch) = else_branch {
+                    bind_block(else_branch, namespace, structs, enums)?;
+                }
+            }
+            HirExprKind::IfLet { pattern: _, scrutinee, then_branch, else_branch, .. } => {
+                bind_expr(scrutinee, namespace, structs, enums)?;
+                bind_block(then_branch, namespace, structs, enums)?;
+                if let Some(else_branch) = else_branch {
+                    bind_block(else_branch, namespace, structs, enums)?;
+                }
+            }
+            HirExprKind::Match { scrutinee, arms, .. } | HirExprKind::Case { scrutinee, arms, .. } => {
+                bind_expr(scrutinee, namespace, structs, enums)?;
+                for arm in arms {
+                    bind_expr(&mut arm.body, namespace, structs, enums)?;
+                }
+            }
+            HirExprKind::AnonymousClass { fields, methods, .. } => {
+                for (_, value) in fields {
+                    bind_expr(value, namespace, structs, enums)?;
+                }
+                for method in methods {
+                    bind_function(method, structs, enums)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    fn bind_block(block: &mut HirBlock, namespace: &NamePath, structs: &[HirStruct], enums: &[HirEnum]) -> Result<(), ParseError> {
+        for statement in &mut block.statements {
+            match &mut statement.kind {
+                HirStatementKind::Let { ty, initializer, .. } => {
+                    if let Some(annotation) = ty {
+                        bind_type(annotation, namespace, structs, enums)?;
+                    }
+                    if let Some(initializer) = initializer {
+                        bind_expr(initializer, namespace, structs, enums)?;
+                    }
+                }
+                HirStatementKind::Expr(expr) => bind_expr(expr, namespace, structs, enums)?,
+            }
+        }
+        if let Some(expr) = &mut block.expr {
+            bind_expr(expr, namespace, structs, enums)?;
+        }
+        Ok(())
+    }
     fn bind_function(function: &mut HirFunction, structs: &[HirStruct], enums: &[HirEnum]) -> Result<(), ParseError> {
         for param in &mut function.params {
             bind_type(&mut param.ty, &function.declaring_namespace, structs, enums)?;
         }
-        bind_type(&mut function.return_type, &function.declaring_namespace, structs, enums)
+        bind_type(&mut function.return_type, &function.declaring_namespace, structs, enums)?;
+        // 函数体注解（let/cast/lambda 等）必须同步冻结；否则 return 校验会把残留 Named 与已绑定 Nominal 当成不兼容。
+        bind_block(&mut function.body, &function.declaring_namespace, structs, enums)
     }
     let mut structs = Vec::new();
     let mut enums = Vec::new();
@@ -2677,78 +2800,291 @@ union Limb {
 
 #[cfg(test)]
 mod range_call_repro {
+    //! 对齐 `valkyrie.v` core：`Range`/`TextSpan` 字段为 `usize`，跨 namespace 构造须冻结 Nominal。
+    //! 禁止用 `i32` 规避或只 `eprintln` 打印 HIR 冒充通过。
     use super::*;
     use crate::types::SourceID;
+    use crate::types::hir::{HirExprKind, HirStatementKind};
 
     fn compile(source: &str) -> Result<HirModule, ParseError> {
         ValkyrieCompiler::new(SourceID::default()).compile_source(source)
     }
 
+    fn find_struct<'a>(hir: &'a HirModule, name: &str) -> &'a HirStruct {
+        hir.structs
+            .iter()
+            .find(|item| item.name.as_str() == name)
+            .or_else(|| hir.submodules.iter().flat_map(|module| &module.structs).find(|item| item.name.as_str() == name))
+            .unwrap_or_else(|| panic!("缺少结构 `{name}`"))
+    }
+
+    fn assert_nominal_return(hir: &HirModule, function_name: &str, owner_name: &str) {
+        let owner = find_struct(hir, owner_name);
+        let declaration = owner.constructor_declaration.expect("结构须已分配 constructor_declaration");
+        let function = hir
+            .functions
+            .iter()
+            .chain(hir.impls.iter().flat_map(|item| item.methods.iter()))
+            .find(|item| item.name.as_str() == function_name)
+            .unwrap_or_else(|| panic!("缺少函数 `{function_name}`"));
+        assert_eq!(
+            function.return_type,
+            ValkyrieType::Nominal { declaration, arguments: Vec::new() },
+            "`{function_name}` 返回类型须是 Nominal{{ItemId}}，不得残留 Named/限定名字符串"
+        );
+    }
+
+    fn assert_resolved_range_construct(hir: &HirModule, function_name: &str) {
+        let function = hir
+            .functions
+            .iter()
+            .chain(hir.impls.iter().flat_map(|item| item.methods.iter()))
+            .find(|item| item.name.as_str() == function_name)
+            .unwrap_or_else(|| panic!("缺少函数 `{function_name}`"));
+        let return_expr = match function.body.statements.first().map(|statement| &statement.kind) {
+            Some(HirStatementKind::Expr(statement)) => statement.as_ref(),
+            _ => function.body.expr.as_deref().expect("函数体须有 return"),
+        };
+        let HirExprKind::Return(Some(expression)) = &return_expr.kind
+        else {
+            panic!("期望 return 表达式");
+        };
+        match &expression.kind {
+            HirExprKind::Call { resolved: Some(contract), .. } | HirExprKind::Construct { resolved: Some(contract), .. } => {
+                assert!(
+                    contract.symbol.to_string().contains("Range"),
+                    "构造合同符号须指向 Range，got {}",
+                    contract.symbol
+                );
+                assert!(
+                    matches!(contract.return_type, ValkyrieType::Nominal { .. }),
+                    "Range 构造返回须是 Nominal，got {:?}",
+                    contract.return_type
+                );
+            }
+            other => panic!("期望已解析的 Range 构造/调用，got {other:?}"),
+        }
+    }
+
     #[test]
-    fn range_i32_literals_resolve() {
+    fn range_usize_literals_bind_nominal_and_resolve() {
         let source = r#"
 structure Range {
-    start: i32,
-    end: i32,
+    start: usize,
+    end: usize,
 }
 micro make() -> Range {
     return Range(1, 2)
 }
 "#;
-        let hir = compile(source).unwrap_or_else(|e| panic!("i32: {e}"));
-        let r = hir
-            .structs
-            .iter()
-            .find(|s| s.name.as_str() == "Range")
-            .or_else(|| hir.submodules.iter().flat_map(|m| &m.structs).find(|s| s.name.as_str() == "Range"))
-            .expect("Range");
-        eprintln!(
-            "Range is_value_type={} fields={:?} ctor={:?}",
-            r.is_value_type,
-            r.fields.iter().map(|f| format!("{}:{:?}", f.name, f.ty)).collect::<Vec<_>>(),
-            r.constructor_declaration
+        let hir = compile(source).unwrap_or_else(|error| panic!("usize Range 构造必须通过 Compiler contract: {error}"));
+        assert_nominal_return(&hir, "make", "Range");
+        assert_resolved_range_construct(&hir, "make");
+    }
+
+    #[test]
+    fn textspan_as_range_same_namespace_binds_nominal() {
+        // 先验收字段投影入参（无 `+`）；加法是独立 overload 合同。
+        let source = r#"
+structure Range {
+    start: usize,
+    end: usize,
+}
+structure TextSpan {
+    offset: usize,
+    length: usize
+}
+imply TextSpan {
+    micro as_range(self) -> Range {
+        return Range(self.offset, self.length)
+    }
+}
+"#;
+        let hir = compile(source).unwrap_or_else(|error| panic!("同 namespace TextSpan.as_range 必须通过: {error}"));
+        assert_nominal_return(&hir, "as_range", "Range");
+        assert_resolved_range_construct(&hir, "as_range");
+    }
+
+    #[test]
+    fn textspan_as_range_with_usize_add_binds_nominal() {
+        // 对齐生产 core：`structure usize` + `infix +` + `Range(self.offset, self.offset + self.length)`。
+        // 禁止省略 usize 运算符声明后仍期望 `+` 魔法通过。
+        let source = r#"
+[primitive("core::primitive::usize")]
+structure usize { }
+
+imply usize {
+    infix `+`(self, rhs: Self): Self {
+        return self
+    }
+}
+
+structure Range {
+    start: usize,
+    end: usize,
+}
+structure TextSpan {
+    offset: usize,
+    length: usize
+}
+imply TextSpan {
+    micro as_range(self) -> Range {
+        return Range(self.offset, self.offset + self.length)
+    }
+}
+"#;
+        let hir = compile(source).unwrap_or_else(|error| panic!("usize 加法 + Range 构造必须通过: {error}"));
+        assert_nominal_return(&hir, "as_range", "Range");
+        assert_resolved_range_construct(&hir, "as_range");
+        let usize_decl = find_struct(&hir, "usize").constructor_declaration.expect("usize declaration");
+        let add = hir.impls.iter().flat_map(|item| item.methods.iter()).find(|method| method.name.as_str() == "+").expect("infix +");
+        assert!(
+            matches!(add.params[0].ty, ValkyrieType::Nominal { declaration, .. } if declaration == usize_decl)
+                || matches!(&hir.impls.iter().find(|item| matches!(&item.target, ValkyrieType::Nominal { declaration, .. } if *declaration == usize_decl)), Some(_)),
+            "usize imply / Self 须冻结为 Nominal{{ItemId}}，不得残留 Named(\"usize\")"
         );
     }
 
     #[test]
-    fn textspan_self_field_with_nominal() {
+    fn textspan_as_range_cross_namespace_binds_nominal() {
         let source = r#"
-structure Range {
-    start: i32,
-    end: i32,
-}
-structure TextSpan {
-    offset: i32,
-    length: i32
-}
-imply TextSpan {
-    micro as_range(self) -> Range {
-        return Range(self.offset, self.length)
-    }
-}
-"#;
-        compile(source).unwrap_or_else(|e| panic!("same-ns fields: {e}"));
-    }
+[primitive("core::primitive::usize")]
+structure usize { }
 
-    #[test]
-    fn textspan_cross_ns_fields() {
-        let source = r#"
+imply usize {
+    infix `+`(self, rhs: Self): Self {
+        return self
+    }
+}
+
 namespace core.types
 structure Range {
-    start: i32,
-    end: i32,
+    start: usize,
+    end: usize,
 }
 namespace core.text
 structure TextSpan {
-    offset: i32,
-    length: i32
+    offset: usize,
+    length: usize
 }
 imply TextSpan {
     micro as_range(self) -> Range {
-        return Range(self.offset, self.length)
+        return Range(self.offset, self.offset + self.length)
     }
 }
 "#;
-        compile(source).unwrap_or_else(|e| panic!("cross-ns: {e}"));
+        let hir = compile(source).unwrap_or_else(|error| panic!("跨 namespace TextSpan.as_range 必须通过: {error}"));
+        assert_nominal_return(&hir, "as_range", "Range");
+        assert_resolved_range_construct(&hir, "as_range");
+    }
+
+    #[test]
+    fn option_or_else_some_construct_binds_nominal_without_short_name() {
+        // 对齐生产 `core/source/types/Option.v`：`unite` 变体 + 自由函数 `Some` 同名并存时，
+        // `or_else` 臂内 `Some(value)` 必须冻结 Constructor 合同，不得 SMIR003。
+        let source = r#"
+namespace core::types;
+unite Option<T> {
+    Some { value: T },
+    None,
+}
+micro Some<T>(value: T) -> Option<T> {
+    let wrapped: Option<T> = Some(value)
+    return wrapped
+}
+imply Option<T> {
+    micro or_else(self, f: micro() -> Option<T>): Option<T> {
+        match self {
+            case Some(value):
+                Some(value)
+            case None:
+                f()
+        }
+    }
+}
+"#;
+        let hir = compile(source).unwrap_or_else(|error| panic!("Option.or_else 中 Some(value) 必须通过 Compiler contract: {error}"));
+        let option = hir
+            .enums
+            .iter()
+            .find(|item| item.name.as_str() == "Option")
+            .or_else(|| hir.submodules.iter().flat_map(|module| &module.enums).find(|item| item.name.as_str() == "Option"))
+            .expect("Option");
+        let declaration = option.declaration.expect("Option declaration");
+        let or_else = hir
+            .impls
+            .iter()
+            .flat_map(|item| item.methods.iter())
+            .find(|item| item.name.as_str() == "or_else")
+            .expect("or_else");
+        assert!(
+            matches!(&or_else.return_type, ValkyrieType::Nominal { declaration: id, .. } if *id == declaration),
+            "or_else 返回须是 Nominal{{Option ItemId}}，got {:?}",
+            or_else.return_type
+        );
+        let mut saw_resolved_some = false;
+        fn walk_expr(expr: &crate::types::hir::HirExpr, saw: &mut bool) {
+            match &expr.kind {
+                HirExprKind::Call { resolved, args, .. } => {
+                    if let Some(contract) = resolved {
+                        if contract.symbol.to_string().contains("Some") {
+                            *saw = true;
+                            assert!(
+                                matches!(contract.return_type, ValkyrieType::Nominal { .. }),
+                                "Some 构造返回须是 Nominal，got {:?}",
+                                contract.return_type
+                            );
+                            assert!(contract.sum_owner.is_some() && contract.sum_variant.is_some(), "Some 须携带 sum_owner/sum_variant");
+                        }
+                    }
+                    for arg in args {
+                        walk_expr(&arg.value, saw);
+                    }
+                }
+                HirExprKind::Construct { resolved, args, .. } => {
+                    if let Some(contract) = resolved {
+                        if contract.symbol.to_string().contains("Some") {
+                            *saw = true;
+                            assert!(
+                                matches!(contract.return_type, ValkyrieType::Nominal { .. }),
+                                "Some 构造返回须是 Nominal，got {:?}",
+                                contract.return_type
+                            );
+                            assert!(contract.sum_owner.is_some() && contract.sum_variant.is_some(), "Some 须携带 sum_owner/sum_variant");
+                        }
+                    }
+                    for arg in args {
+                        walk_expr(arg, saw);
+                    }
+                }
+                HirExprKind::Match { scrutinee, arms, .. } => {
+                    walk_expr(scrutinee, saw);
+                    for arm in arms {
+                        walk_expr(&arm.body, saw);
+                    }
+                }
+                HirExprKind::Return(Some(inner)) => walk_expr(inner, saw),
+                HirExprKind::Block(block) => {
+                    for statement in &block.statements {
+                        if let HirStatementKind::Expr(inner) = &statement.kind {
+                            walk_expr(inner, saw);
+                        }
+                    }
+                    if let Some(inner) = &block.expr {
+                        walk_expr(inner, saw);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for statement in &or_else.body.statements {
+            if let HirStatementKind::Expr(expr) = &statement.kind {
+                walk_expr(expr, &mut saw_resolved_some);
+            }
+        }
+        if let Some(expr) = &or_else.body.expr {
+            walk_expr(expr, &mut saw_resolved_some);
+        }
+        assert!(saw_resolved_some, "or_else 臂内须有已解析的 Some 构造合同");
     }
 }

@@ -2,32 +2,55 @@
 
 use crate::valkyrie::frontend::{
     ParseError, ValkyrieRoot,
-    ast::{EnumsKind, StatementNode},
+    ast::{EnumsKind, NamePath, StatementNode},
 };
 use std::collections::BTreeMap;
 
 /// 校验 Oak `AST` 根节点是否满足进入 `HIR` lowering 的前提。
 pub(crate) fn validate_ast_root(root: &ValkyrieRoot) -> Result<(), ParseError> {
-    validate_duplicate_type_names(&root.items)
+    validate_duplicate_type_names(&root.items, "")
 }
 
-fn validate_duplicate_type_names(items: &[StatementNode]) -> Result<(), ParseError> {
+/// 重复定义键必须带当前 namespace 前缀。
+///
+/// `namespace first;` 是空 items 指令，后续顶层声明落在该作用域；
+/// 不得只按短名判重，否则跨 namespace 同名结构会被误杀。
+fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &str) -> Result<(), ParseError> {
     let mut seen: BTreeMap<String, &'static str> = BTreeMap::new();
+    let mut current_namespace = namespace_prefix.to_string();
     for item in items {
         match item {
-            StatementNode::Namespace(namespace) if !namespace.items.is_empty() => {
-                validate_duplicate_type_names(&namespace.items)?;
+            StatementNode::Namespace(namespace) if namespace.items.is_empty() => {
+                current_namespace = name_path_text(&namespace.name);
+            }
+            StatementNode::Namespace(namespace) => {
+                let nested = qualify_name(&current_namespace, &name_path_text(&namespace.name));
+                validate_duplicate_type_names(&namespace.items, &nested)?;
             }
             other => {
                 if let Some((name, kind)) = type_declaration_identity(other) {
-                    if let Some(prior) = seen.insert(name.clone(), kind) {
-                        return Err(ParseError::invalid(format!("duplicate definition of `{name}`: {prior} and {kind}")));
+                    let key = qualify_name(&current_namespace, &name);
+                    if let Some(prior) = seen.insert(key.clone(), kind) {
+                        return Err(ParseError::invalid(format!("duplicate definition of `{key}`: {prior} and {kind}")));
                     }
                 }
             }
         }
     }
     Ok(())
+}
+
+fn name_path_text(path: &NamePath) -> String {
+    path.parts.iter().map(|part| part.name.as_str()).collect::<Vec<_>>().join(".")
+}
+
+fn qualify_name(namespace: &str, name: &str) -> String {
+    if namespace.is_empty() {
+        name.to_string()
+    }
+    else {
+        format!("{namespace}.{name}")
+    }
 }
 
 fn type_declaration_identity(item: &StatementNode) -> Option<(String, &'static str)> {
