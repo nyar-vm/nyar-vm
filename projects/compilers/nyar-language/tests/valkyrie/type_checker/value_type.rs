@@ -13,6 +13,8 @@ use nyar_language::{
 
 fn create_value_type_struct(name: &str, parents: Vec<nyar_language::types::hir::HirParent>) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -41,6 +43,8 @@ fn create_value_type_struct(name: &str, parents: Vec<nyar_language::types::hir::
 
 fn create_reference_type_struct(name: &str, parents: Vec<nyar_language::types::hir::HirParent>) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -330,6 +334,8 @@ fn self_field_assignment(field: &str) -> HirExpr {
 
 fn make_value_type_struct_with_method(name: &str, method: HirFunction) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -382,6 +388,8 @@ fn make_test_module(struct_def: HirStruct) -> HirModule {
 
 fn make_self_method(body: HirBlock) -> HirFunction {
     HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("mutate"),
         declaring_namespace: NamePath::default(),
@@ -479,6 +487,8 @@ micro main() {
 #[test]
 fn test_copy_semantics_validator_rejects_violation() {
     let bad_struct = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("BadPoint"),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -504,6 +514,8 @@ fn test_copy_semantics_validator_rejects_violation() {
         derives: vec![],
     };
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("take_bad"),
         declaring_namespace: NamePath::default(),
@@ -568,6 +580,8 @@ fn test_validate_semantic_module_collects_multiple_errors() {
         None,
     ));
     let struct_def = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new("Point"),
         namespace: vec![],
         doc: HirDocumentation::default(),

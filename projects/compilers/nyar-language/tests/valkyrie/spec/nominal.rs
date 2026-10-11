@@ -284,6 +284,8 @@ fn nominal_module_view_surfaces_invalid_unite_definition() {
 
 fn class(name: &str) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -305,6 +307,8 @@ fn class(name: &str) -> HirStruct {
 }
 
 fn subclass(name: &str, parent: &str) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     let mut class = class(name);
     class.parents = vec![nyar_language::types::hir::HirParent::new(NamePath::new(vec![Identifier::new(parent)]))];
     class

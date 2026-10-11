@@ -8,6 +8,8 @@ use nyar_language::{
 
 fn create_abstract_class(name: &str, abstract_methods: Vec<Identifier>) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -35,9 +37,13 @@ fn create_abstract_class(name: &str, abstract_methods: Vec<Identifier>) -> HirSt
 }
 
 fn create_concrete_class(name: &str, parents: Vec<HirParent>, methods: Vec<Identifier>) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     let hir_methods: Vec<HirFunction> = methods
         .into_iter()
         .map(|m| HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: m,
             declaring_namespace: NamePath::default(),
@@ -57,6 +63,8 @@ fn create_concrete_class(name: &str, parents: Vec<HirParent>, methods: Vec<Ident
         .collect();
 
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -159,6 +167,8 @@ fn test_abstract_method_with_body_error() {
     let mut checker = AbstractClassChecker::new();
     let mut abstract_class = create_abstract_class("Base", vec![Identifier::new("do_something")]);
     abstract_class.methods = vec![HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("do_something"),
         declaring_namespace: NamePath::default(),

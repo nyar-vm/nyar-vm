@@ -136,6 +136,8 @@ fn iterator_trait() -> HirTrait {
 
 fn struct_with_methods(name: &str, methods: Vec<HirFunction>) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -185,6 +187,8 @@ fn where_constraint(target: ValkyrieType, bounds: Vec<&str>) -> HirWhereConstrai
 
 fn method(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType) -> HirFunction {
     HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: NamePath::default(),

@@ -203,6 +203,8 @@ fn method_sig(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType) 
 }
 
 fn struct_with_field(name: &str, field_name: &str, field_type: ValkyrieType) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     struct_with_field_with_visibility(name, field_name, field_type, HirVisibility::public(), true)
 }
 
@@ -214,6 +216,8 @@ fn struct_with_field_with_visibility(
     is_mutable: bool,
 ) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -235,19 +239,27 @@ fn struct_with_field_with_visibility(
 }
 
 fn struct_with_methods(name: &str, methods: Vec<HirFunction>) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     struct_with_members(name, vec![], methods, vec![])
 }
 
 fn struct_with_methods_and_visibility(name: &str, methods: Vec<HirFunction>) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     struct_with_members(name, vec![], methods, vec![])
 }
 
 fn struct_with_properties(name: &str, properties: Vec<HirProperty>) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     struct_with_members(name, vec![], vec![], properties)
 }
 
 fn struct_with_members(name: &str, fields: Vec<HirField>, methods: Vec<HirFunction>, properties: Vec<HirProperty>) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -269,11 +281,15 @@ fn struct_with_members(name: &str, fields: Vec<HirField>, methods: Vec<HirFuncti
 }
 
 fn method(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType) -> HirFunction {
+        declaration: None,
+        instance: None,
     method_with_visibility(name, params, return_type, HirVisibility::public())
 }
 
 fn method_with_visibility(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType, visibility: HirVisibility) -> HirFunction {
     HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: nyar_language::types::NamePath::default(),
