@@ -1315,6 +1315,37 @@ imply char {
     }
 
     #[test]
+    fn char_as_u32_cast_reaches_canonical_without_copy_type_theft() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+namespace core::primitive;
+[primitive("core::primitive::u32")]
+structure u32 { }
+namespace core::text;
+[primitive("core::text::char")]
+structure char { }
+imply char {
+    micro to_u32(self): u32 {
+        return self as u32
+    }
+}
+"#,
+            )
+            .expect("char as u32 fixture must parse");
+        let mir = crate::MirLowerer::lower_module_semantic(&hir);
+        validate_semantic_module(&mir).expect("char as u32 must satisfy SMIR");
+        let has_cast = mir.functions.iter().any(|function| {
+            function.blocks.iter().any(|block| {
+                block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::Cast { .. }))
+            })
+        });
+        assert!(has_cast, "self as u32 必须降低为 MirOperation::Cast，不得伪装 Copy");
+        crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&mir)
+            .expect("char as u32 Cast 必须通过 Canonical CAN015");
+    }
+
+    #[test]
     fn lowercase_ascii_index_shape_validates_with_intrinsic_u32_sub() {
         let hir = crate::ValkyrieCompiler::default()
             .compile_source(

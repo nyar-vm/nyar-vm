@@ -537,6 +537,8 @@ pub enum CanonicalOperation {
     Invoke { callee: CanonicalCallee, arguments: Vec<MirValueId> },
     /// SSA 值复制。
     Copy { source: MirValueId },
+    /// 语言层类型转换；结果 TypeId 必须等于 `ty`。
+    Cast { source: MirValueId, ty: TypeId },
     /// 将 SSA 值绑定到命名局部（`let`）。
     StoreVar { name: String, value: MirValueId, ty: Option<TypeId> },
     /// 按已解析聚合类型复制值。
@@ -1026,6 +1028,29 @@ impl CanonicalSemanticMir {
                             if instruction.results.len() != 1
                                 || instruction.results.first().and_then(|value| function.value_types.get(value))
                                     != function.value_types.get(source)
+                            {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            vec![*source]
+                        }
+                        CanonicalOperation::Cast { source, ty } => {
+                            if !linked.types.contains_key(ty) {
+                                return Err(CanonicalMirError::UnknownType { function: *key, ty: *ty });
+                            }
+                            if function.value_types.get(source).is_none() {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *source,
+                                });
+                            }
+                            if instruction.results.len() != 1
+                                || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(ty)
                             {
                                 return Err(if instruction.results.len() == 1 {
                                     CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }

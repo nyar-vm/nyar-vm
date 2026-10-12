@@ -6,9 +6,9 @@ use nyar_types::{
     CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallEdge, CanonicalCallee, CanonicalConstant,
     CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperation,
     CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind, FieldId, FieldRecord, Identifier,
-    ImportCapability, ImportIndex, ImportRecord, ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId,
-    NominalInstanceId, NominalInstanceRecord, NominalValueSemantics, QualifiedName, StructuredDiagnosticSet, SubstitutionId, TypeId,
-    TypeRecord,
+    ImportCapability, ImportIndex, ImportRecord, InstructionId, ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram,
+    MirValueId, NominalInstanceId, NominalInstanceRecord, NominalValueSemantics, QualifiedName, StructuredDiagnosticSet, SubstitutionId,
+    TypeId, TypeRecord,
     canonical_program::{CanonicalEffectKind, EntryRecord, ExportRecord},
 };
 
@@ -172,7 +172,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     linked.fragments = canonical_fragments(module, &linked, &functions, &module.semantic_fragments)?;
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
-    program.validate().map_err(|error| canonical_error(module, error))?;
+    program.validate().map_err(|error| canonical_error(module, &program, error))?;
     Ok(program)
 }
 
@@ -633,6 +633,10 @@ fn lower_operation(
             ty: ty.as_ref().map(|ty| type_id(ids, ty)).transpose()?,
         }),
         MirOperation::Copy { source } => Ok(CanonicalOperation::Copy { source: value(source)? }),
+        MirOperation::Cast { source, ty } => Ok(CanonicalOperation::Cast {
+            source: value(source)?,
+            ty: type_id(ids, ty)?,
+        }),
         MirOperation::AggregateCopy { source, dest } => {
             Ok(CanonicalOperation::AggregateCopy { source: value(source)?, destination: value(dest)? })
         }
@@ -845,8 +849,98 @@ fn error_without_module(code: &'static str, message: impl Into<String>) -> Struc
 fn error(module: &MirModule, code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet {
     fail_stage::<()>(nyar_types::CompileStage::SemanticMir, code, &module.name, message).err().unwrap()
 }
-fn canonical_error(module: &MirModule, error: CanonicalMirError) -> StructuredDiagnosticSet {
-    fail_stage::<()>(nyar_types::CompileStage::ValidateMir, "CAN015", &module.name, format!("canonical MIR 校验失败: {error:?}")).err().unwrap()
+fn canonical_error(module: &MirModule, program: &CanonicalProgram, error: CanonicalMirError) -> StructuredDiagnosticSet {
+    let detail = match &error {
+        CanonicalMirError::OperationResultTypeMismatch { function, instruction } => {
+            format!(
+                "canonical MIR 校验失败: {error:?}{}",
+                describe_operation_result_mismatch(module, program, *function, *instruction)
+            )
+        }
+        CanonicalMirError::CallResultTypeMismatch { function, callee, value } => {
+            format!(
+                "canonical MIR 校验失败: {error:?}{}",
+                describe_call_result_mismatch(module, program, *function, *callee, *value)
+            )
+        }
+        _ => format!("canonical MIR 校验失败: {error:?}"),
+    };
+    fail_stage::<()>(nyar_types::CompileStage::ValidateMir, "CAN015", &module.name, detail).err().unwrap()
+}
+
+fn describe_call_result_mismatch(
+    module: &MirModule,
+    program: &CanonicalProgram,
+    function: ItemInstanceId,
+    callee: ItemInstanceId,
+    value: MirValueId,
+) -> String {
+    let caller = module
+        .functions
+        .iter()
+        .find(|item| item.instance == Some(function))
+        .map(|item| item.symbol.as_str())
+        .unwrap_or("<unknown>");
+    let callee_symbol = module
+        .functions
+        .iter()
+        .find(|item| item.instance == Some(callee))
+        .map(|item| item.symbol.clone())
+        .or_else(|| program.linked.callable_names.get(&callee).map(|name| name.to_string()))
+        .unwrap_or_else(|| "<unknown>".to_string());
+    let actual = program
+        .mir
+        .functions
+        .get(&function)
+        .and_then(|func| func.value_types.get(&value))
+        .and_then(|ty| program.linked.types.get(ty).map(|row| (&row.kind, *ty)));
+    let expected = program.linked.item_instances.get(&callee).map(|record| {
+        let kind = program.linked.types.get(&record.return_type).map(|row| &row.kind);
+        (kind, record.return_type)
+    });
+    format!(" (caller=`{caller}` callee=`{callee_symbol}` actual={actual:?} expected_return={expected:?})")
+}
+
+fn describe_operation_result_mismatch(
+    module: &MirModule,
+    program: &CanonicalProgram,
+    function: ItemInstanceId,
+    instruction: InstructionId,
+) -> String {
+    let symbol = module
+        .functions
+        .iter()
+        .find(|item| item.instance == Some(function))
+        .map(|item| item.symbol.clone())
+        .or_else(|| program.linked.callable_names.get(&function).map(|name| name.to_string()))
+        .unwrap_or_else(|| "<unknown>".to_string());
+    let Some(func) = program.mir.functions.get(&function)
+    else {
+        return format!(" (function_symbol=`{symbol}`)");
+    };
+    for block in func.blocks.values() {
+        for instr in &block.instructions {
+            if instr.id != instruction {
+                continue;
+            }
+    let describe = |value: &MirValueId| -> String {
+                let ty = func.value_types.get(value);
+                let kind = ty.and_then(|id| program.linked.types.get(id)).map(|row| &row.kind);
+                format!("{value:?}->{ty:?}/{kind:?}")
+            };
+            let result_types: Vec<_> = instr.results.iter().map(describe).collect();
+            let operand_hint = match &instr.operation {
+                CanonicalOperation::Copy { source } => format!(" source={}", describe(source)),
+                _ => String::new(),
+            };
+            return format!(
+                " (function_symbol=`{symbol}` op={:?}{operand_hint} results=[{}])",
+                instr.operation,
+                result_types.join(", ")
+            );
+        }
+    }
+    format!(" (function_symbol=`{symbol}`)")
 }
 
 #[cfg(test)]

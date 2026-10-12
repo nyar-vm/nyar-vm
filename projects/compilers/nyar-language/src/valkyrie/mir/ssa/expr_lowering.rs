@@ -1161,10 +1161,12 @@ impl MirBuilder {
                     if self.value_types.get(&value_ref) == Some(ty) {
                         return MirOperand::Value(value_ref);
                     }
-                    // ?????? `Call` ????`value_types`????SMIR007 ??
-                    // `u32.-` ??SSA ??????cast ?????? `i64`???
+                    // `expr as T` 必须保留为 Cast：Copy 要求源/结果同 TypeId，不能用来偷换类型。
                     let casted = self.next_value(MirValueOrigin::Temporary);
-                    self.push_instruction(MirOperation::Copy { source: MirOperand::Value(value_ref) }, vec![casted]);
+                    self.push_instruction(
+                        MirOperation::Cast { source: MirOperand::Value(value_ref), ty: ty.clone() },
+                        vec![casted],
+                    );
                     self.value_types.insert(casted, ty.clone());
                     MirOperand::Value(casted)
                 }

@@ -544,6 +544,11 @@ pub enum MirOperation {
     Copy {
         source: MirOperand,
     },
+    /// 语言层类型转换（`expr as T`）。结果 SSA 类型必须是 `ty`，不得伪装成 [`Self::Copy`]。
+    Cast {
+        source: MirOperand,
+        ty: ValkyrieType,
+    },
     /// 将值写入具名局部变量（`let` 绑定）。
     ///
     /// `name` 为变量名，`value` 为待写入的操作数。
