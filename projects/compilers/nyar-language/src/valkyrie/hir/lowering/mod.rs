@@ -2,7 +2,7 @@ use std::{cell::RefCell, ops::Range, path::Path};
 
 use crate::{
     hir::{
-        BuiltinTypeAliasScope, ModuleTypeAliasScope, hoist_anonymous_classes, lower_type_expression,
+        BuiltinTypeAliasScope, ModuleTypeAliasScope, TypeSourceScope, hoist_anonymous_classes, lower_type_expression,
         overload::{resolve_hir_calls, validate_extractor_patterns},
         render_type_expression, validate_ast_root,
     },
@@ -813,6 +813,7 @@ impl ValkyrieCompiler {
         let mut root = frontend::parse_source(source)?;
         expand_macros_in_root(&mut root);
         expand_templates_in_root(&mut root, source, DEFAULT_COMPILE_ARCH)?;
+        let _type_source = TypeSourceScope::enter(source);
         let hir = self.lower_root_with_semantic_exports_and_name(&root, imported_semantic_exports, module_name)?;
         self.validate_hir_semantic_contract(&hir)?;
         Ok(hir)
@@ -832,6 +833,7 @@ impl ValkyrieCompiler {
         let mut root = frontend::parse_source(source)?;
         expand_macros_in_root(&mut root);
         expand_templates_in_root(&mut root, source, arch)?;
+        let _type_source = TypeSourceScope::enter(source);
         let hir = AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name)?;
         validate_interop_surface(&hir)?;
         Ok(hir)
@@ -958,6 +960,7 @@ impl ValkyrieCompiler {
             let mut root = frontend::parse_source(&file.source)?;
             expand_macros_in_root(&mut root);
             expand_templates_in_root(&mut root, &file.source, arch)?;
+            let _type_source = TypeSourceScope::enter(&file.source);
             let module = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name.clone())
             }))
@@ -3190,6 +3193,37 @@ micro wrap<T>(value: T): Option<T> {
         ValkyrieCompiler::default()
             .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
             .unwrap_or_else(|error| panic!("跨包 Some(value) 必须解析: {error}"));
+    }
+
+    #[test]
+    fn same_module_private_wasm_host_call_resolves() {
+        let source = r#"
+namespace demo.text;
+micro host_length(value: utf16): isize {
+    return __host_utf16_length(value)
+}
+[wasm("env", "utf16_length")]
+private micro __host_utf16_length(s: utf16): isize
+"#;
+        ValkyrieCompiler::default()
+            .compile_source(source)
+            .unwrap_or_else(|error| panic!("同模块 private wasm host 调用必须解析: {error}"));
+    }
+
+    #[test]
+    fn same_module_private_wasm_host_call_with_std_text_path_resolves() {
+        // Oak parse_type 截断点号路径；TypeSourceScope 按 span 恢复后须得到 Utf16。
+        let source = r#"
+namespace demo.text;
+micro host_length(value: std.text.utf16): isize {
+    return __host_utf16_length(value)
+}
+[wasm("env", "utf16_length")]
+private micro __host_utf16_length(s: utf16): isize
+"#;
+        ValkyrieCompiler::default()
+            .compile_source(source)
+            .unwrap_or_else(|error| panic!("std.text.utf16 与 utf16 必须可调用同一 host: {error}"));
     }
 
     #[test]

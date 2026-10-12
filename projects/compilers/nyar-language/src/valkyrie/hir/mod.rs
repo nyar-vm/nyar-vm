@@ -51,6 +51,6 @@ pub use try_propagate::{
     validate_try_propagate_module,
 };
 pub(crate) use type_lowering::{
-    BuiltinTypeAliasScope, ModuleTypeAliasScope, lower_type_expression, numeric_builtin_cast_type, render_type_expression,
-    validate_type_expression,
+    BuiltinTypeAliasScope, ModuleTypeAliasScope, TypeSourceScope, lower_type_expression, numeric_builtin_cast_type,
+    render_type_expression, validate_type_expression,
 };

@@ -19,6 +19,31 @@ use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 thread_local! {
     static SHADOWED_BUILTIN_TYPE_ALIASES: RefCell<Vec<BTreeSet<String>>> = RefCell::new(Vec::new());
     static MODULE_TYPE_ALIASES: RefCell<Vec<BTreeMap<String, ModuleTypeAliasEntry>>> = RefCell::new(Vec::new());
+    /// 当前 lowering 源码；用于从 NamePath.span 恢复 Oak 截断的点号类型路径。
+    static ACTIVE_TYPE_SOURCE: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// Oak `parse_type` 目前只 bump 一个 Identifier，不吃 `.` / 完整 `::` 链；
+/// NamePath.parts 常只剩首段，但 span 仍覆盖 `std.text.utf16` 全文。
+/// 在 Compiler 持有源码时按 span 切片恢复路径段，避免 builtin / 名义类型变成 `Named("std")`。
+#[derive(Debug)]
+pub(crate) struct TypeSourceScope;
+
+impl TypeSourceScope {
+    pub(crate) fn enter(source: &str) -> Self {
+        ACTIVE_TYPE_SOURCE.with(|slot| {
+            *slot.borrow_mut() = Some(source.to_string());
+        });
+        Self
+    }
+}
+
+impl Drop for TypeSourceScope {
+    fn drop(&mut self) {
+        ACTIVE_TYPE_SOURCE.with(|slot| {
+            *slot.borrow_mut() = None;
+        });
+    }
 }
 
 use std::collections::BTreeMap;
@@ -425,8 +450,9 @@ fn expand_type_aliases(ty: &ValkyrieType, visiting: &mut BTreeSet<String>) -> Va
 }
 
 fn lower_type_namepath(path: &AstNamePath) -> ValkyrieType {
-    let parts = path.parts.iter().map(|part| part.name.as_str()).collect::<Vec<_>>();
-    let last = parts.last().cloned().unwrap_or_default();
+    let owned_parts = recover_namepath_parts(path);
+    let parts = owned_parts.iter().map(|part| part.as_str()).collect::<Vec<_>>();
+    let last = parts.last().copied().unwrap_or_default();
     if parts.len() == 1 && last == "Self" {
         return ValkyrieType::SelfType;
     }
@@ -456,6 +482,36 @@ fn lower_type_namepath(path: &AstNamePath) -> ValkyrieType {
         return ValkyrieType::Array(Box::new(ValkyrieType::AutoType));
     }
     base
+}
+
+fn recover_namepath_parts(path: &AstNamePath) -> Vec<String> {
+    let ast_parts = path.parts.iter().map(|part| part.name.clone()).collect::<Vec<_>>();
+    let Some(source) = ACTIVE_TYPE_SOURCE.with(|slot| slot.borrow().clone())
+    else {
+        return ast_parts;
+    };
+    let start = path.span.start;
+    let end = path.span.end;
+    if start >= end || end > source.len() {
+        return ast_parts;
+    }
+    let slice = source[start..end].trim();
+    if slice.is_empty() {
+        return ast_parts;
+    }
+    let recovered = slice
+        .split("::")
+        .flat_map(|segment| segment.split('.'))
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty() && segment.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_'))
+        .map(|segment| segment.to_string())
+        .collect::<Vec<_>>();
+    if recovered.len() > ast_parts.len() {
+        recovered
+    }
+    else {
+        ast_parts
+    }
 }
 
 fn is_known_builtin_type_namespace(parts: &[&str], last: &str) -> bool {
@@ -507,6 +563,19 @@ mod tests {
         assert_eq!(canonical_builtin_type("utf16"), Some(ValkyrieType::Utf16));
         assert_eq!(canonical_builtin_type("c_str"), Some(ValkyrieType::Named(HirIdentifier::new("c_str"))));
         assert!(canonical_builtin_type("string").is_none());
+    }
+
+    #[test]
+    fn std_text_utf16_path_lowers_to_utf16_builtin() {
+        let path = TypeExpression::Namepath(Box::new(NamePath {
+            parts: vec![
+                Identifier { name: "std".into(), span: oak_span(3) },
+                Identifier { name: "text".into(), span: oak_span(4) },
+                Identifier { name: "utf16".into(), span: oak_span(5) },
+            ],
+            span: oak_span(14),
+        }));
+        assert_eq!(lower_type_expression(&path), ValkyrieType::Utf16);
     }
 
     #[test]
