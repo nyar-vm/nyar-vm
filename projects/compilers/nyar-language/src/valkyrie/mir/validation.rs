@@ -394,60 +394,70 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
             }
             if let MirOperation::Call { callee, arguments } = &instruction.kind {
                 validate_static_call_resolution(module, function, &instruction.kind, location.clone())?;
-                let target_symbol = match callee {
-                    MirOperand::Symbol(symbol) => Some(symbol.to_string()),
-                    MirOperand::Callable(identity) => {
-                        module.callable_identities.iter().find_map(|(symbol, candidate)| (candidate == identity).then_some(symbol.clone()))
-                    }
-                    _ => None,
-                };
-                if let Some(target_symbol) = target_symbol {
-                    let candidates: Vec<_> = module.functions.iter().filter(|candidate| candidate.symbol == target_symbol).collect();
-                    if candidates.len() > 1 {
-                        return Err(error("SMIR003", location.clone(), "local callable identity is ambiguous".to_owned()));
-                    }
-                    let external: Vec<_> =
-                        module.external_calls.iter().filter(|candidate| candidate.symbol.to_string() == target_symbol).collect();
-                    if external.len() > 1 {
-                        return Err(error("SMIR003", location.clone(), "callable identity has multiple contracts".to_owned()));
-                    }
-                    if let (Some(definition), Some(declaration)) = (candidates.first(), external.first()) {
-                        if definition.param_types != declaration.parameter_types || definition.return_type != declaration.return_type {
-                            return Err(error(
-                                "SMIR007",
-                                location.clone(),
-                                "linked definition disagrees with external declaration signature".to_owned(),
-                            ));
-                        }
-                    }
-                    let signature = candidates
-                        .first()
+                // Callable 必须按 ItemInstanceId 取签名；禁止再按短名聚合多个实例后判歧义。
+                let signature = match callee {
+                    MirOperand::Callable(identity) => module
+                        .functions
+                        .iter()
+                        .find(|candidate| candidate.instance == Some(*identity))
                         .map(|target| (&target.param_types, &target.return_type))
-                        .or_else(|| external.first().map(|target| (&target.parameter_types, &target.return_type)));
-                    if let Some((parameter_types, return_type)) = signature {
-                        if arguments.len() != parameter_types.len() {
-                            return Err(error("SMIR007", location.clone(), "call arguments differ from declared signature arity".to_owned()));
+                        .or_else(|| {
+                            module
+                                .external_calls
+                                .iter()
+                                .find(|candidate| candidate.instance == Some(*identity))
+                                .map(|target| (&target.parameter_types, &target.return_type))
+                        }),
+                    MirOperand::Symbol(symbol) => {
+                        let target_symbol = symbol.to_string();
+                        let candidates: Vec<_> = module.functions.iter().filter(|candidate| candidate.symbol == target_symbol).collect();
+                        if candidates.len() > 1 {
+                            return Err(error("SMIR003", location.clone(), "local callable identity is ambiguous".to_owned()));
                         }
-                        for (argument, expected) in arguments.iter().zip(parameter_types) {
-                            let actual = value_type(argument)
-                                .ok_or_else(|| error("SMIR001", location.clone(), "call argument has no semantic type".to_owned()))?;
-                            if !call_site_type_compatible(expected, &actual) {
+                        let external: Vec<_> =
+                            module.external_calls.iter().filter(|candidate| candidate.symbol.to_string() == target_symbol).collect();
+                        if external.len() > 1 {
+                            return Err(error("SMIR003", location.clone(), "callable identity has multiple contracts".to_owned()));
+                        }
+                        if let (Some(definition), Some(declaration)) = (candidates.first(), external.first()) {
+                            if definition.param_types != declaration.parameter_types || definition.return_type != declaration.return_type {
                                 return Err(error(
                                     "SMIR007",
                                     location.clone(),
-                                    format!("call argument type differs from declared signature (actual={actual:?}, expected={expected:?})"),
+                                    "linked definition disagrees with external declaration signature".to_owned(),
                                 ));
                             }
                         }
-                        let expected_results = usize::from(*return_type != ValkyrieType::Unit);
-                        if instruction.results.len() != expected_results {
-                            return Err(error("SMIR007", location.clone(), "call result count differs from declared signature".to_owned()));
+                        candidates
+                            .first()
+                            .map(|target| (&target.param_types, &target.return_type))
+                            .or_else(|| external.first().map(|target| (&target.parameter_types, &target.return_type)))
+                    }
+                    _ => None,
+                };
+                if let Some((parameter_types, return_type)) = signature {
+                    if arguments.len() != parameter_types.len() {
+                        return Err(error("SMIR007", location.clone(), "call arguments differ from declared signature arity".to_owned()));
+                    }
+                    for (argument, expected) in arguments.iter().zip(parameter_types) {
+                        let actual = value_type(argument)
+                            .ok_or_else(|| error("SMIR001", location.clone(), "call argument has no semantic type".to_owned()))?;
+                        if !call_site_type_compatible(expected, &actual) {
+                            return Err(error(
+                                "SMIR007",
+                                location.clone(),
+                                format!("call argument type differs from declared signature (actual={actual:?}, expected={expected:?})"),
+                            ));
                         }
-                        if let Some(result) = instruction.results.first() {
-                            let actual = function.value_types.get(result);
-                            if !actual.is_some_and(|actual| call_site_type_compatible(return_type, actual)) {
-                                return Err(error("SMIR007", location.clone(), "call result type differs from declared signature".to_owned()));
-                            }
+                    }
+                    let expected_results = usize::from(*return_type != ValkyrieType::Unit);
+                    if instruction.results.len() != expected_results {
+                        return Err(error("SMIR007", location.clone(), "call result count differs from declared signature".to_owned()));
+                    }
+                    if let Some(result) = instruction.results.first() {
+                        let actual = function.value_types.get(result);
+                        if !actual.is_some_and(|actual| call_site_type_compatible(return_type, actual)) {
+                            return Err(error("SMIR007", location.clone(), "call result type differs from declared signature".to_owned()));
                         }
                     }
                 }
@@ -938,67 +948,7 @@ fn mir_return_operand_type_compatible(actual: &ValkyrieType, expected: &Valkyrie
 
 /// Seed callable signatures stay generic in `MirFunction`, while HIR call sites carry instantiated types.
 fn call_site_type_compatible(declared: &ValkyrieType, actual: &ValkyrieType) -> bool {
-    declared == actual || type_instantiates_generic_signature(declared, actual)
-}
-
-fn type_instantiates_generic_signature(template: &ValkyrieType, concrete: &ValkyrieType) -> bool {
-    let mut substitutions = BTreeMap::new();
-    unify_generic_instantiation(template, concrete, &mut substitutions)
-}
-
-fn unify_generic_instantiation(
-    template: &ValkyrieType,
-    concrete: &ValkyrieType,
-    substitutions: &mut BTreeMap<Identifier, ValkyrieType>,
-) -> bool {
-    match (template, concrete) {
-        (left, right) if left == right => true,
-        // 泛型种子签名已冻结为 Nominal{declaration,[T,…]}；调用点 SSA 为同一 declaration 的具体实参。
-        // 只按 ItemId + 实参 unify，禁止再按 Option/Result 短名认亲。
-        (
-            ValkyrieType::Nominal { declaration: template_decl, arguments: template_args },
-            ValkyrieType::Nominal { declaration: concrete_decl, arguments: concrete_args },
-        ) => {
-            template_decl == concrete_decl
-                && template_args.len() == concrete_args.len()
-                && template_args
-                    .iter()
-                    .zip(concrete_args)
-                    .all(|(template_arg, concrete_arg)| unify_generic_instantiation(template_arg, concrete_arg, substitutions))
-        }
-        (ValkyrieType::Apply(template_base, template_args), ValkyrieType::Apply(concrete_base, concrete_args)) => {
-            template_args.len() == concrete_args.len()
-                && unify_generic_instantiation(template_base, concrete_base, substitutions)
-                && template_args
-                    .iter()
-                    .zip(concrete_args)
-                    .all(|(template_arg, concrete_arg)| unify_generic_instantiation(template_arg, concrete_arg, substitutions))
-        }
-        (ValkyrieType::Named(template_name), concrete) => match substitutions.get(template_name) {
-            Some(bound) => bound == concrete,
-            None => {
-                substitutions.insert(template_name.clone(), concrete.clone());
-                true
-            }
-        },
-        (ValkyrieType::Array(template_element), ValkyrieType::Array(concrete_element)) => {
-            unify_generic_instantiation(template_element, concrete_element, substitutions)
-        }
-        (
-            ValkyrieType::FixedArray { element: template_element, length: template_length },
-            ValkyrieType::FixedArray { element: concrete_element, length: concrete_length },
-        ) => template_length == concrete_length && unify_generic_instantiation(template_element, concrete_element, substitutions),
-        (ValkyrieType::Function(template_fn), ValkyrieType::Function(concrete_fn)) => {
-            template_fn.params.len() == concrete_fn.params.len()
-                && template_fn
-                    .params
-                    .iter()
-                    .zip(&concrete_fn.params)
-                    .all(|(template_param, concrete_param)| unify_generic_instantiation(template_param, concrete_param, substitutions))
-                && unify_generic_instantiation(&template_fn.return_type, &concrete_fn.return_type, substitutions)
-        }
-        _ => false,
-    }
+    declared == actual || crate::mir::ssa::generic_call_instantiation::type_instantiates_generic_signature(declared, actual)
 }
 
 fn bare_named_matches_generic_apply_return(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
@@ -1312,6 +1262,12 @@ imply char {
             .expect("ascii_alnum_key shape must parse");
         let mir = crate::MirLowerer::lower_module_semantic(&hir);
         validate_semantic_module(&mir).expect("ascii_alnum_key must lower option_none early return");
+        assert!(
+            mir.functions.iter().any(|function| function.symbol.contains("option_none#")),
+            "option_none::<i64> 必须物化为独立 ItemInstanceId（符号带 #）"
+        );
+        crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&mir)
+            .expect("ascii_alnum_key option_none monomorph 必须通过 Canonical CAN015");
     }
 
     #[test]

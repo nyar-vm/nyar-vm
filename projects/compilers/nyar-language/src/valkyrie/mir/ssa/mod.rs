@@ -22,6 +22,7 @@ mod effect_lowering;
 mod exit_lowering;
 mod expr_helpers;
 mod expr_lowering;
+pub(crate) mod generic_call_instantiation;
 mod null_intrinsic_lowering;
 // 已删除：mod frame_planning;
 mod match_lowering;
@@ -838,6 +839,8 @@ impl MirLowerer {
             &callable_returns,
             &mut diagnostics,
         ));
+        // 泛型种子调用点：为具体代入分配 ItemInstanceId，供 Canonical Invoke 精确匹配返回 TypeId。
+        generic_call_instantiation::materialize_generic_call_instances(&mut functions);
         // MirFunction 不再携带 per-function diagnostics。
         // TypeId 只消费已冻结的 Nominal{ItemId} / 其他结构化形状；禁止短名 Named 别名收束。
         let type_identities = type_identity_table(&functions, &external_calls, &structs, &sum_types);
