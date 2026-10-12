@@ -1362,13 +1362,16 @@ fn match_call_candidate(
     if let Some(matched) = match_intrinsic_builtin_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names) {
         return Some(matched);
     }
-    let actual_types = if candidate.param_specs.is_empty() {
-        args.iter().map(|arg| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
+    let bound_exprs: Vec<HirExpr> = if candidate.param_specs.is_empty() {
+        args.iter().map(|arg| arg.value.clone()).collect()
     }
     else {
-        let bound = bind_call_arguments(&candidate.param_specs, args).ok()?;
-        bound.iter().map(|arg| infer_scrutinee_type(arg, locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
+        bind_call_arguments(&candidate.param_specs, args).ok()?
     };
+    let actual_types = bound_exprs
+        .iter()
+        .map(|expr| infer_scrutinee_type(expr, locals, struct_fields, singleton_names))
+        .collect::<Option<Vec<_>>>()?;
     // `self: Self` / untyped `self` 必须是 owner 的完整类型（优先 `Nominal{ItemId}`）。
     // 禁止再收成 `Named(短名)`：字段/参数在 bind 后已是 declaration identity。
     let owner_type = candidate.owner.as_ref().and_then(|owner| type_relations.nominal_type_for_name(owner));
@@ -1392,6 +1395,9 @@ fn match_call_candidate(
             }
         })
         .collect::<Vec<_>>();
+    // 整数/字符串字面量特化必须在 unify 之前完成：`Nominal{usize}` vs 未特化的
+    // `Integer32` 会在 unify 的 Nominal 臂直接失败，导致 `usize == 0` 永远选不中。
+    let actual_types = specialize_call_literal_exprs(&bound_exprs, &actual_types, &expected_params, type_relations);
     let mut substitutions = BTreeMap::new();
     if !explicit_generic_arguments.is_empty() {
         let binders = candidate.generic_binders.iter().cloned().collect::<Vec<_>>();
@@ -1409,12 +1415,6 @@ fn match_call_candidate(
     if !type_relations.satisfies_where_constraints(&candidate.where_constraints, &substitutions) {
         return None;
     }
-    // Integer syntax is representation-polymorphic. It becomes a concrete
-    // integer type only when an independently resolved formal parameter
-    // constrains it. This is semantic call binding, not backend inference.
-    // If every operand is an unconstrained literal, overload resolution still
-    // remains ambiguous and fails closed.
-    let actual_types = specialize_call_literals(args, &actual_types, &expected_params, type_relations);
     let match_kind = compute_call_match_kind(type_relations, &actual_types, &expected_params)?;
     Some(OverloadCandidate {
         declaration: candidate.declaration,
@@ -1504,9 +1504,20 @@ fn specialize_call_literals(
     expected: &[ValkyrieType],
     type_relations: &TypeRelationContext,
 ) -> Vec<ValkyrieType> {
-    args.iter()
+    let exprs = args.iter().map(|arg| arg.value.clone()).collect::<Vec<_>>();
+    specialize_call_literal_exprs(&exprs, actual, expected, type_relations)
+}
+
+fn specialize_call_literal_exprs(
+    exprs: &[HirExpr],
+    actual: &[ValkyrieType],
+    expected: &[ValkyrieType],
+    type_relations: &TypeRelationContext,
+) -> Vec<ValkyrieType> {
+    exprs
+        .iter()
         .zip(actual.iter().zip(expected.iter()))
-        .map(|(arg, (actual, expected))| match &arg.value.kind {
+        .map(|(expr, (actual, expected))| match &expr.kind {
             // Integer literals are representation-polymorphic: bind to the formal
             // numeric type (`usize`, `i32`, …), same as constructor literals.
             // `Nominal{ItemId}` 的 primitive 也必须认，不能只认 `Named("usize")`。

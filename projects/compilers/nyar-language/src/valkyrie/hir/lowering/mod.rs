@@ -3087,4 +3087,67 @@ imply Option<T> {
         }
         assert!(saw_resolved_some, "or_else 臂内须有已解析的 Some 构造合同");
     }
+
+    #[test]
+    fn same_module_usize_eq_literal_resolves_operator_contract() {
+        // 字面量 `0` 默认推断为 i32；必须在 unify 前按 formal `usize` 特化。
+        let source = r#"
+[primitive("core::primitive::usize")]
+structure usize { }
+imply usize {
+    infix `==`(self, rhs: Self): bool { return true }
+}
+micro check(ordinal: usize): bool {
+    return ordinal == 0
+}
+"#;
+        ValkyrieCompiler::default()
+            .compile_source(source)
+            .unwrap_or_else(|error| panic!("同模块 usize==0 必须解析: {error}"));
+    }
+
+    #[test]
+    fn cross_package_array_host_get_usize_ops_resolve() {
+        // 对齐 std.adaptor.wasm `array_host_get`：`ordinal == 0` / `ordinal > item_count`。
+        let groups = vec![
+            CompilerSourceGroup {
+                dependency_key: "core".into(),
+                name: "core".into(),
+                source: r#"
+namespace core::primitive;
+[primitive("core::primitive::usize")]
+structure usize { }
+imply usize {
+    infix `==`(self, rhs: Self): bool { return true }
+    infix `>`(self, rhs: Self): bool { return true }
+}
+namespace core::types;
+unite Option<T> { Some { value: T }, None }
+"#
+                .into(),
+                sources: Vec::new(),
+                direct_dependencies: Vec::new(),
+            },
+            CompilerSourceGroup {
+                dependency_key: "std.adaptor.wasm".into(),
+                name: "std.adaptor.wasm".into(),
+                source: r#"
+namespace std.adaptor.wasm.collection;
+micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
+    let item_count: usize = 1
+    if ordinal == 0 || ordinal > item_count {
+        return None
+    }
+    return None
+}
+"#
+                .into(),
+                sources: Vec::new(),
+                direct_dependencies: vec!["core".into()],
+            },
+        ];
+        ValkyrieCompiler::default()
+            .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
+            .unwrap_or_else(|error| panic!("跨包 array_host_get usize 运算必须解析: {error}"));
+    }
 }
