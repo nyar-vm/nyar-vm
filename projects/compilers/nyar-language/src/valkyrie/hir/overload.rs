@@ -339,24 +339,44 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
     let element = Identifier::new("T");
     let element_type = ValkyrieType::Named(element.clone());
     let array_type = ValkyrieType::Array(Box::new(element_type.clone()));
-    vec![
-        OverloadCandidate::new(
-            NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("length")]),
-            OverloadDomain::Function,
-            vec![array_type.clone()],
-            ValkyrieType::Named(Identifier::new("usize")),
-            OverloadMatchKind::NominalExact,
-        )
-        .with_generic_binder(element.clone()),
-        OverloadCandidate::new(
-            NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("push")]),
-            OverloadDomain::Function,
-            vec![array_type.clone(), element_type],
-            array_type,
-            OverloadMatchKind::NominalExact,
-        )
-        .with_generic_binder(element),
-    ]
+    let index_type = ValkyrieType::Named(Identifier::new("usize"));
+    let length = OverloadCandidate::new(
+        NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("length")]),
+        OverloadDomain::Function,
+        vec![array_type.clone()],
+        index_type.clone(),
+        OverloadMatchKind::NominalExact,
+    )
+    .with_generic_binder(element.clone());
+    let push = OverloadCandidate::new(
+        NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("push")]),
+        OverloadDomain::Function,
+        vec![array_type.clone(), element_type.clone()],
+        array_type.clone(),
+        OverloadMatchKind::NominalExact,
+    )
+    .with_generic_binder(element.clone());
+    // `array::[i]` / `array::[i] = v` 降低为 postfix `[]` / `[]=`；必须挂 operator_id，
+    // 否则 Operator 调用点找不到候选（不能按 Array.get 短名猜）。
+    let mut get = OverloadCandidate::new(
+        NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("get")]),
+        OverloadDomain::Operator,
+        vec![array_type.clone(), index_type.clone()],
+        element_type.clone(),
+        OverloadMatchKind::NominalExact,
+    )
+    .with_generic_binder(element.clone());
+    get.operator_id = builtin_operator::lookup(OperatorFixity::Postfix, "[]");
+    let mut set = OverloadCandidate::new(
+        NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("set")]),
+        OverloadDomain::Operator,
+        vec![array_type, index_type, element_type],
+        ValkyrieType::Unit,
+        OverloadMatchKind::NominalExact,
+    )
+    .with_generic_binder(element);
+    set.operator_id = builtin_operator::lookup(OperatorFixity::Postfix, "[]=");
+    vec![length, push, get, set]
 }
 
 /// 按候选符号的 [`IntrinsicId`] 做形实参合同（非调用点拼写）。
@@ -513,15 +533,8 @@ fn match_intrinsic_builtin_candidate(
             };
             let element = element.as_ref().clone();
             let index_ty = infer_scrutinee_type(&args[1].value, locals, struct_fields, singleton_names)?;
-            if !matches!(
-                index_ty,
-                ValkyrieType::Integer8 { .. }
-                    | ValkyrieType::Integer16 { .. }
-                    | ValkyrieType::Integer32 { .. }
-                    | ValkyrieType::Integer64 { .. }
-                    | ValkyrieType::Integer128 { .. }
-                    | ValkyrieType::Named(_)
-            ) {
+            // 绑定后索引常为 `Nominal{usize}`；不得只认 Integer* / Named。
+            if !type_relations.is_numeric_type(&index_ty) {
                 return None;
             }
             let return_type = match &candidate.signature.return_type {
@@ -535,7 +548,7 @@ fn match_intrinsic_builtin_candidate(
                 instance: candidate.instance,
                 sum_owner: None,
                 sum_variant: None,
-                operator_id: None,
+                operator_id: candidate.operator_id,
                 symbol: candidate.symbol.clone(),
                 owner: None,
                 trait_owner: candidate.trait_owner.clone(),
@@ -558,6 +571,10 @@ fn match_intrinsic_builtin_candidate(
             };
             let element = element.as_ref().clone();
             let index_ty = infer_scrutinee_type(&args[1].value, locals, struct_fields, singleton_names)?;
+            // 与 ArrayGet 相同：绑定后索引常为 `Nominal{usize}`。
+            if !type_relations.is_numeric_type(&index_ty) {
+                return None;
+            }
             let value_ty = infer_scrutinee_type(&args[2].value, locals, struct_fields, singleton_names)?;
             if matches!(value_ty, ValkyrieType::AutoType | ValkyrieType::r#SelfType)
                 || matches!(type_relations.match_parameter(&value_ty, &element), ParameterMatchResult::NoMatch { .. })
@@ -569,7 +586,7 @@ fn match_intrinsic_builtin_candidate(
                 instance: candidate.instance,
                 sum_owner: None,
                 sum_variant: None,
-                operator_id: None,
+                operator_id: candidate.operator_id,
                 symbol: candidate.symbol.clone(),
                 owner: None,
                 trait_owner: candidate.trait_owner.clone(),

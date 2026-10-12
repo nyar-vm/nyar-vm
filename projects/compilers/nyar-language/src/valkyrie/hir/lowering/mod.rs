@@ -3120,9 +3120,14 @@ structure usize { }
 imply usize {
     infix `==`(self, rhs: Self): bool { return true }
     infix `>`(self, rhs: Self): bool { return true }
+    infix `-`(self, rhs: Self): Self { return self }
 }
 namespace core::types;
 unite Option<T> { Some { value: T }, None }
+micro Some<T>(value: T) -> Option<T> {
+    let wrapped: Option<T> = Some(value)
+    return wrapped
+}
 "#
                 .into(),
                 sources: Vec::new(),
@@ -3138,7 +3143,7 @@ micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
     if ordinal == 0 || ordinal > item_count {
         return None
     }
-    return None
+    return Some(array::[ordinal - 1])
 }
 "#
                 .into(),
@@ -3148,6 +3153,82 @@ micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
         ];
         ValkyrieCompiler::default()
             .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
-            .unwrap_or_else(|error| panic!("跨包 array_host_get usize 运算必须解析: {error}"));
+            .unwrap_or_else(|error| panic!("跨包 array_host_get Some/下标必须解析: {error}"));
+    }
+
+    #[test]
+    fn cross_package_some_with_local_value_resolves() {
+        let groups = vec![
+            CompilerSourceGroup {
+                dependency_key: "core".into(),
+                name: "core".into(),
+                source: r#"
+namespace core::types;
+unite Option<T> { Some { value: T }, None }
+micro Some<T>(value: T) -> Option<T> {
+    let wrapped: Option<T> = Some(value)
+    return wrapped
+}
+"#
+                .into(),
+                sources: Vec::new(),
+                direct_dependencies: Vec::new(),
+            },
+            CompilerSourceGroup {
+                dependency_key: "app".into(),
+                name: "app".into(),
+                source: r#"
+micro wrap<T>(value: T): Option<T> {
+    return Some(value)
+}
+"#
+                .into(),
+                sources: Vec::new(),
+                direct_dependencies: vec!["core".into()],
+            },
+        ];
+        ValkyrieCompiler::default()
+            .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
+            .unwrap_or_else(|error| panic!("跨包 Some(value) 必须解析: {error}"));
+    }
+
+    #[test]
+    fn same_module_array_subscript_resolves() {
+        let source = r#"
+[primitive("core::primitive::usize")]
+structure usize { }
+imply usize {
+    infix `-`(self, rhs: Self): Self { return self }
+}
+micro get<T>(array: [T], ordinal: usize): T {
+    return array::[ordinal - 1]
+}
+"#;
+        ValkyrieCompiler::default()
+            .compile_source(source)
+            .unwrap_or_else(|error| panic!("同模块 array::[i] 必须解析: {error}"));
+    }
+
+    #[test]
+    fn same_module_some_after_let_subscript_resolves() {
+        let source = r#"
+[primitive("core::primitive::usize")]
+structure usize { }
+imply usize {
+    infix `-`(self, rhs: Self): Self { return self }
+}
+unite Option<T> { Some { value: T }, None }
+micro Some<T>(value: T) -> Option<T> {
+    let wrapped: Option<T> = Some(value)
+    return wrapped
+}
+micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
+    let item: T = array::[ordinal - 1]
+    return Some(item)
+}
+"#;
+        ValkyrieCompiler::default()
+            .compile_source(source)
+            .unwrap_or_else(|error| panic!("同模块 let + Some(item) 必须解析: {error}"));
     }
 }
