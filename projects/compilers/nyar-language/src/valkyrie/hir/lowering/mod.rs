@@ -3193,6 +3193,33 @@ micro wrap<T>(value: T): Option<T> {
     }
 
     #[test]
+    fn numeric_type_name_call_lowers_as_cast() {
+        // 对齐 std.adaptor.wasm `time_ms`：`i64(perf_now())` 不得走未解析函数调用。
+        let source = r#"
+micro time_ms(value: f64): i64 {
+    return i64(value)
+}
+"#;
+        let module = ValkyrieCompiler::default()
+            .compile_source(source)
+            .unwrap_or_else(|error| panic!("数值类型名调用必须降为 Cast: {error}"));
+        let function = module.functions.iter().find(|item| item.name.as_str() == "time_ms").expect("time_ms");
+        let Some(expr) = function.body.expr.as_ref()
+        else {
+            panic!("expected return expr");
+        };
+        let HirExprKind::Return(Some(inner)) = &expr.kind
+        else {
+            panic!("expected return: {:?}", expr.kind);
+        };
+        assert!(
+            matches!(inner.kind, HirExprKind::Cast { ty: ValkyrieType::Integer64 { signed: true }, .. }),
+            "i64(x) must lower to Cast, got {:?}",
+            inner.kind
+        );
+    }
+
+    #[test]
     fn same_module_array_subscript_resolves() {
         let source = r#"
 [primitive("core::primitive::usize")]

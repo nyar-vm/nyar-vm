@@ -303,7 +303,7 @@ fn legacy_builtin_type_alias(name: &str) -> Option<&'static str> {
     }
 }
 
-fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
+pub(crate) fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
     match name {
         "i8" => Some(ValkyrieType::Integer8 { signed: true }),
         "i16" => Some(ValkyrieType::Integer16 { signed: true }),
@@ -322,6 +322,19 @@ fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
         "c_str" => Some(ValkyrieType::Named(Identifier::new("c_str"))),
         "unit" => Some(ValkyrieType::Unit),
         "void" => Some(ValkyrieType::Void),
+        _ => None,
+    }
+}
+
+/// `i64(x)` / `f64(x)` 等单实参类型名调用：仅数值 builtin，不含 utf8/bool 等（那些走显式转换函数）。
+pub(crate) fn numeric_builtin_cast_type(name: &str) -> Option<ValkyrieType> {
+    match canonical_builtin_type(name)? {
+        ty @ (ValkyrieType::Integer8 { .. }
+        | ValkyrieType::Integer16 { .. }
+        | ValkyrieType::Integer32 { .. }
+        | ValkyrieType::Integer64 { .. }
+        | ValkyrieType::Float32
+        | ValkyrieType::Float64) => Some(ty),
         _ => None,
     }
 }

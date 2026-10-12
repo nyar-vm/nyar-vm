@@ -472,15 +472,22 @@ fn lower_call_expression(
     fallback_span: Range<usize>,
     span: SourceSpan,
 ) -> HirExprKind {
-    let lowered_args = args
+    let mut lowered_args = args
         .iter()
         .map(|arg| HirCallArgument::positional(lower_term_expression_with_context(arg, source_id, fallback_span.clone(), false)))
-        .collect();
+        .collect::<Vec<_>>();
     // Preserve a syntactic name path as a path all the way to overload
     // resolution. Whether it denotes a namespace function, a static method,
     // or a local receiver is semantic information owned by the resolver; it
     // cannot be inferred from capitalization or another spelling convention.
     if let Some(path) = extract_name_path(callee) {
+        // `i64(x)` / `f64(x)`：数值 builtin 单实参类型名调用即 Cast，不是待解析函数。
+        if path.parts().len() == 1 && lowered_args.len() == 1 {
+            if let Some(ty) = crate::hir::numeric_builtin_cast_type(path.parts()[0].as_str()) {
+                let expr = lowered_args.pop().expect("one arg").value;
+                return HirExprKind::Cast { expr: Box::new(expr), ty };
+            }
+        }
         let callee_expr = HirExpr { kind: HirExprKind::Path(path), span: span.clone() };
         return lower_canonical_call_arguments(callee_expr, lowered_args);
     }
