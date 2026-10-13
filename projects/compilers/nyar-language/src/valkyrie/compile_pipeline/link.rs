@@ -395,10 +395,7 @@ mod tests {
         let dependency = MirLowerer::lower_module_semantic(&dependency_hir);
         let original = consumer.clone();
         let error = link_reachable_dependency_mir(&mut consumer, &[dependency]).expect_err("缺少统一实例表不能链接");
-        assert!(
-            error.to_string().contains("ItemInstanceId") || error.to_string().contains("布局键"),
-            "实际链接失败：{error}"
-        );
+        assert!(error.to_string().contains("ItemInstanceId"), "实际链接失败：{error}");
         assert_eq!(consumer, original);
     }
 }

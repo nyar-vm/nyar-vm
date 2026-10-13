@@ -113,7 +113,6 @@ pub fn layout_id_for_type(ty: &ValkyrieType, plan: &AggregateLayoutPlan) -> Opti
 
 pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan {
     let mut plan = AggregateLayoutPlan::default();
-    register_builtin_value_types(&mut plan);
     let mut structs = Vec::new();
     collect_module_structs(module, &mut structs);
     for hir_struct in structs {
@@ -153,16 +152,6 @@ fn collect_module_structs<'a>(module: &'a HirModule, output: &mut Vec<&'a HirStr
     for child in &module.submodules {
         collect_module_structs(child, output);
     }
-}
-
-/// 注册语言内置的值类型，使后端将其按值（inline）而非引用（heap）处理。
-///
-/// 这些类型在 HIR 中没有对应的 `struct` 声明，但运行时表现为标量包装：
-/// - `ExitCode`：进程退出码，等价于 `i32`，layout 与 `i32` 一致。
-fn register_builtin_value_types(plan: &mut AggregateLayoutPlan) {
-    let exit_code_fields = vec![FieldSpec { name: "value".to_string(), ty: ValkyrieType::Integer32 { signed: true }, size: 4, align: 4 }];
-    let exit_code_layout = build_aggregate_layout(next_layout_id(plan), "ExitCode", String::new(), MirStorageKind::Value, exit_code_fields);
-    register_layout(plan, exit_code_layout);
 }
 
 pub fn ensure_layout_for_type(plan: &mut AggregateLayoutPlan, ty: &ValkyrieType) -> Option<LayoutId> {

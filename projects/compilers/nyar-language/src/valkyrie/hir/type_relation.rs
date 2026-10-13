@@ -67,10 +67,7 @@ impl TypeRelationContext {
     /// 短名 → 已冻结的 `Nominal{ItemId}`（有 declaration 时）；供 Self/AutoType 回收，禁止只写回 Named。
     pub fn nominal_type_for_name(&self, name: &Identifier) -> Option<ValkyrieType> {
         let item = self.structs.get(name)?;
-        match item.constructor_declaration {
-            Some(declaration) => Some(ValkyrieType::Nominal { declaration, arguments: Vec::new() }),
-            None => Some(ValkyrieType::Named(name.clone())),
-        }
+        Some(ValkyrieType::Nominal { declaration: item.constructor_declaration?, arguments: Vec::new() })
     }
 
     /// 字面量特化用：`Named("usize")` 与对应 `Nominal{ItemId}` 都算数值类型。
@@ -111,12 +108,6 @@ impl TypeRelationContext {
             {
                 return ParameterMatchResult::NominalExact;
             }
-        }
-
-        // 绑定前残留的 `Named(短名)` 与已冻结 `Nominal{ItemId}` 在同一声明上可对齐；
-        // 不得把 Nominal 再改回更长 Named，只在匹配时按 declaration 认亲。
-        if let Some(result) = self.match_nominal_against_named(actual, expected) {
-            return result;
         }
 
         // Nominal applications retain their type arguments at the semantic
@@ -274,24 +265,6 @@ impl TypeRelationContext {
         !matches!(self.match_parameter(actual, expected), ParameterMatchResult::NoMatch { .. })
     }
 
-    fn match_nominal_against_named(&self, actual: &ValkyrieType, expected: &ValkyrieType) -> Option<ParameterMatchResult> {
-        match (actual, expected) {
-            (ValkyrieType::Nominal { declaration, arguments }, ValkyrieType::Named(name))
-            | (ValkyrieType::Named(name), ValkyrieType::Nominal { declaration, arguments }) => {
-                if !arguments.is_empty() {
-                    return None;
-                }
-                let item = self.structs.get(name)?;
-                if item.constructor_declaration == Some(*declaration) {
-                    Some(ParameterMatchResult::NominalExact)
-                }
-                else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
 }
 
 fn collect_relation_structs(
@@ -528,5 +501,27 @@ fn primitive_type_key(ty: &ValkyrieType) -> Option<&'static str> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn unresolved_name_cannot_match_a_bound_nominal_declaration() {
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source("structure Record { value: i32 }")
+            .expect("结构声明解析");
+        let context = TypeRelationContext::from_module(&hir);
+        let item = hir.structs.first().expect("结构声明");
+        let nominal = ValkyrieType::Nominal {
+            declaration: item.constructor_declaration.expect("冻结声明身份"),
+            arguments: vec![],
+        };
+        let unresolved = ValkyrieType::Named(item.name.clone());
+        assert!(matches!(context.match_parameter(&nominal, &unresolved), ParameterMatchResult::NoMatch { .. }));
+        assert!(matches!(context.match_parameter(&unresolved, &nominal), ParameterMatchResult::NoMatch { .. }));
+        assert_eq!(context.match_parameter(&nominal, &nominal), ParameterMatchResult::NominalExact);
     }
 }

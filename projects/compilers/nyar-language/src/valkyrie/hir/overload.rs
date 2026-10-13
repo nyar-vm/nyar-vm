@@ -3706,9 +3706,10 @@ micro caller(value: i64) -> i64 { panic(value) }
             .compile_source("structure Parcel { value: i64 } micro create() -> Parcel { Parcel { value: 7 } }")
             .expect("构造必须从源码完成字段绑定与声明选择");
         compiler.validate_hir_semantic_contract(&hir).expect("完整构造合同必须通过");
+        let parcel_declaration = hir.structs[0].constructor_declaration.expect("结构声明身份");
         let create = hir.functions.iter_mut().find(|function| function.name.as_str() == "create").unwrap();
         let construction = create.body.expr.as_mut().unwrap();
-        let expected = Some(ValkyrieType::Named(Identifier::new("Parcel")));
+        let expected = Some(ValkyrieType::Nominal { declaration: parcel_declaration, arguments: vec![] });
         assert_eq!(infer_expr_type(construction, &BTreeMap::new()), expected);
         assert_eq!(infer_scrutinee_type(construction, &BTreeMap::new(), &AggregateFieldIndex::default(), &BTreeSet::new()), expected);
         let HirExprKind::Construct { resolved, .. } = &mut construction.kind
@@ -4160,7 +4161,10 @@ micro pick(flag: bool) -> Option<i64> {
         assert!(resolved.sum_variant.is_none(), "option_none must not be rewritten into None constructor");
         assert_eq!(
             resolved.return_type,
-            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![ValkyrieType::Integer64 { signed: true }])
+            ValkyrieType::Nominal {
+                declaration: hir.enums[0].declaration.expect("sum 声明身份"),
+                arguments: vec![ValkyrieType::Integer64 { signed: true }],
+            }
         );
     }
 
@@ -4407,7 +4411,10 @@ micro main(counter: Counter) {
 
         assert_eq!(resolved.len(), 2);
         assert_eq!(resolved[0].symbol.to_string(), "Counter.read");
-        assert_eq!(resolved[0].parameter_types, vec![ValkyrieType::Named(Identifier::new("Counter"))]);
+        assert_eq!(resolved[0].parameter_types, vec![ValkyrieType::Nominal {
+            declaration: hir.structs[0].constructor_declaration.expect("receiver 声明身份"),
+            arguments: vec![],
+        }]);
         assert!(resolved[0].has_receiver);
         assert_eq!(resolved[1].symbol.to_string(), "Counter.make");
         assert_eq!(resolved[1].parameter_types, vec![ValkyrieType::Integer64 { signed: true }]);
