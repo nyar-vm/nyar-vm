@@ -478,9 +478,6 @@ fn lower_type_namepath(path: &AstNamePath) -> ValkyrieType {
             return expanded;
         }
     }
-    if last == "Array" {
-        return ValkyrieType::Array(Box::new(ValkyrieType::AutoType));
-    }
     base
 }
 
@@ -589,6 +586,18 @@ mod tests {
             lowered,
             ValkyrieType::Apply(Box::new(ValkyrieType::Named(HirIdentifier::new("Option"))), vec![ValkyrieType::Integer32 { signed: true }],),
         );
+    }
+
+    #[test]
+    fn named_array_is_not_structural_bracket_sugar() {
+        use crate::valkyrie::frontend::ast::type_nodes::ApplyType;
+        let named = TypeExpression::Apply(Box::new(ApplyType {
+            base: path_type("Array"), arguments: vec![path_type("i32")], span: oak_span(0),
+        }));
+        assert_eq!(lower_type_expression(&named), ValkyrieType::Apply(
+            Box::new(ValkyrieType::Named(HirIdentifier::new("Array"))),
+            vec![ValkyrieType::Integer32 { signed: true }],
+        ));
     }
 
     #[test]
