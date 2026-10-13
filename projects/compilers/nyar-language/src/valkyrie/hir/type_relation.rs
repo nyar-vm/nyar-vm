@@ -422,23 +422,6 @@ fn trivially_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool 
         // Keep identity for unresolved Self-vs-Self only — never "Self matches anything".
         (ValkyrieType::r#SelfType, ValkyrieType::r#SelfType) => true,
         (ValkyrieType::Array(actual), ValkyrieType::Array(expected)) => trivially_compatible(actual, expected),
-        // `[T]` sugar and bare `Array` owner (after Self→Named(Array)) are the same shape.
-        (ValkyrieType::Array(_), ValkyrieType::Named(name)) | (ValkyrieType::Named(name), ValkyrieType::Array(_))
-            if name.as_str() == "Array" =>
-        {
-            true
-        }
-        // `[T]` sugar and `Array<T>` / `Apply(Array, [T])` are the same array shape for dispatch.
-        (ValkyrieType::Array(actual_elem), ValkyrieType::Apply(base, args))
-            if args.len() == 1 && matches!(named_type_name(base), Some(name) if name.as_str() == "Array") =>
-        {
-            trivially_compatible(actual_elem, &args[0])
-        }
-        (ValkyrieType::Apply(base, args), ValkyrieType::Array(expected_elem))
-            if args.len() == 1 && matches!(named_type_name(base), Some(name) if name.as_str() == "Array") =>
-        {
-            trivially_compatible(&args[0], expected_elem)
-        }
         (ValkyrieType::Tuple(actual), ValkyrieType::Tuple(expected)) if actual.len() == expected.len() => {
             actual.iter().zip(expected).all(|(actual, expected)| trivially_compatible(actual, expected))
         }
@@ -446,67 +429,32 @@ fn trivially_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool 
             actual.iter().zip(expected).all(|(actual, expected)| trivially_compatible(actual, expected))
         }
         _ => {
-            primitive_types_compatible(actual, expected)
-                || actual == expected
+            actual == expected
                 || matches!(actual, ValkyrieType::AutoType)
                 || matches!(expected, ValkyrieType::AutoType)
         }
     }
 }
 
-/// Primitive spellings may be introduced by a source declaration (`f64`), a
-/// qualified core export (`core::primitive::f64`), or the typed HIR scalar
-/// variant (`Float64`).  They denote the same language type; this relation is
-/// resolved here, before overload selection, so no backend or intrinsic name
-/// needs to infer a type width.
-fn primitive_types_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
-    primitive_type_key(actual).is_some_and(|left| primitive_type_key(expected) == Some(left))
-}
-
-fn primitive_type_key(ty: &ValkyrieType) -> Option<&'static str> {
-    match ty {
-        ValkyrieType::Boolean => Some("bool"),
-        ValkyrieType::Character => Some("char"),
-        ValkyrieType::Integer8 { signed: true } => Some("i8"),
-        ValkyrieType::Integer8 { signed: false } => Some("u8"),
-        ValkyrieType::Integer16 { signed: true } => Some("i16"),
-        ValkyrieType::Integer16 { signed: false } => Some("u16"),
-        ValkyrieType::Integer32 { signed: true } => Some("i32"),
-        ValkyrieType::Integer32 { signed: false } => Some("u32"),
-        ValkyrieType::Integer64 { signed: true } => Some("i64"),
-        ValkyrieType::Integer64 { signed: false } => Some("u64"),
-        ValkyrieType::Integer128 { signed: true } => Some("i128"),
-        ValkyrieType::Integer128 { signed: false } => Some("u128"),
-        ValkyrieType::Float32 => Some("f32"),
-        ValkyrieType::Float64 => Some("f64"),
-        ValkyrieType::Utf8 => Some("utf8"),
-        ValkyrieType::Utf16 => Some("utf16"),
-        ValkyrieType::Named(name) => match name.as_str() {
-            "bool" | "core.primitive.bool" | "core::primitive::bool" => Some("bool"),
-            "char" | "core.primitive.char" | "core::primitive::char" => Some("char"),
-            "i8" | "core.primitive.i8" | "core::primitive::i8" => Some("i8"),
-            "u8" | "core.primitive.u8" | "core::primitive::u8" => Some("u8"),
-            "i16" | "core.primitive.i16" | "core::primitive::i16" => Some("i16"),
-            "u16" | "core.primitive.u16" | "core::primitive::u16" => Some("u16"),
-            "i32" | "core.primitive.i32" | "core::primitive::i32" => Some("i32"),
-            "u32" | "core.primitive.u32" | "core::primitive::u32" => Some("u32"),
-            "i64" | "core.primitive.i64" | "core::primitive::i64" => Some("i64"),
-            "u64" | "core.primitive.u64" | "core::primitive::u64" => Some("u64"),
-            "i128" | "core.primitive.i128" | "core::primitive::i128" => Some("i128"),
-            "u128" | "core.primitive.u128" | "core::primitive::u128" => Some("u128"),
-            "f32" | "core.primitive.f32" | "core::primitive::f32" => Some("f32"),
-            "f64" | "core.primitive.f64" | "core::primitive::f64" => Some("f64"),
-            "utf8" | "Utf8Text" | "core.primitive.utf8" | "core::primitive::utf8" => Some("utf8"),
-            "utf16" | "Utf16Text" | "core.primitive.utf16" | "core::primitive::utf16" => Some("utf16"),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod identity_tests {
     use super::*;
+
+    #[test]
+    fn unresolved_primitive_and_array_spellings_do_not_create_type_equivalence() {
+        let context = TypeRelationContext::from_module(&HirModule::default());
+        for (spelling, actual) in [
+            ("f64", ValkyrieType::Float64),
+            ("core::primitive::f64", ValkyrieType::Float64),
+            ("Utf8Text", ValkyrieType::Utf8),
+            ("Array", ValkyrieType::Array(Box::new(ValkyrieType::Float64))),
+        ] {
+            let unresolved = ValkyrieType::Named(Identifier::new(spelling));
+            assert!(matches!(context.match_parameter(&actual, &unresolved), ParameterMatchResult::NoMatch { .. }));
+            assert!(matches!(context.match_parameter(&unresolved, &actual), ParameterMatchResult::NoMatch { .. }));
+            assert_eq!(context.match_parameter(&actual, &actual), ParameterMatchResult::NominalExact);
+        }
+    }
 
     #[test]
     fn unresolved_name_cannot_match_a_bound_nominal_declaration() {
