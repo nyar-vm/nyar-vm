@@ -50,7 +50,7 @@ mod workload_phase_tests;
 pub use value_semantics::{
     AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, MirStorageKind, SumTypeLayout, SumVariantLayout,
     compute_aggregate_layout_plan, ensure_layout_for_type, layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type,
-    merge_aggregate_layout_plan, storage_kind_for_named_type, storage_kind_for_type, value_type_names_from_module,
+    storage_kind_for_named_type, storage_kind_for_type, value_type_names_from_module,
 };
 
 use super::MirSumDeclaration;
@@ -723,6 +723,7 @@ pub struct MirLowerer;
 ///
 /// 仅匹配 `trait_path` 最后一段为 `Effectful` 的 impl 块。载体类型按其 nominal 名提取：
 /// - `ValkyrieType::Named(name)` → 直接使用 `name`
+/// - `ValkyrieType::Nominal{ItemId}` → 按 declaration 反查结构/sum 名
 /// - `ValkyrieType::Apply(base, _)` → 取 `base` 的 nominal 名
 ///
 /// 若同一载体存在多个 impl，后注册者覆盖前者。`Resume` 关联类型未声明的 impl 不产生条目。
@@ -732,18 +733,20 @@ pub(super) fn collect_effectful_resume_map(module: &HirModule) -> BTreeMap<Strin
         if !impl_block.trait_path.as_ref().is_some_and(|path| path.name().as_str() == "Effectful") {
             continue;
         }
-        let Some(carrier_name) = nominal_type_name(&impl_block.target)
+        let Some(carrier_name) = impl_owner_type_name(module, &impl_block.target)
         else {
             continue;
         };
         if let Some(resume_impl) = impl_block.associated_type_impls.iter().find(|item| item.name.as_str() == "Resume") {
-            map.insert(carrier_name.to_string(), resume_impl.concrete_type.clone());
+            map.insert(carrier_name, resume_impl.concrete_type.clone());
         }
     }
     map
 }
 
-/// 提取 `ValkyrieType` 的 nominal 名（用于匹配 effect 载体与 `Effectful` impl 的 target）。
+/// 提取 `ValkyrieType` 的表面 nominal 名（Named / 内置形状）。
+///
+/// `Nominal{ItemId}` 无表面名，须走 [`impl_owner_type_name`] 按 declaration 反查。
 pub(super) fn nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
     // 与 overload 侧 `impl_nominal_type_name` 对齐：`imply bool` / `imply f64` 等目标常为内置
     // `ValkyrieType` 而非 `Named`，否则 impl 方法不会进入 Semantic MIR。
@@ -765,13 +768,80 @@ pub(super) fn nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
         ValkyrieType::Integer64 { signed: false } => Some("u64"),
         ValkyrieType::Integer128 { signed: true } => Some("i128"),
         ValkyrieType::Integer128 { signed: false } => Some("u128"),
+        // Nominal 无表面名；禁止当无名丢弃 — 见 `impl_owner_type_name`。
+        ValkyrieType::Nominal { .. } => None,
         _ => None,
     }
 }
 
+/// imply owner 表面名：Named/内置走 [`nominal_type_name`]；`Nominal{ItemId}` 按 declaration 反查。
+///
+/// `bind_declared_nominal_types` 之后 `imply usize` 目标已是 `Nominal{ItemId}`；若只认 Named，
+/// imply 方法不会进入 Semantic MIR，调用点却已持有其 `ItemInstanceId`，链接报无合同。
+fn impl_owner_type_name(module: &HirModule, ty: &ValkyrieType) -> Option<String> {
+    match ty {
+        ValkyrieType::Nominal { declaration, .. } => find_hir_struct_name_by_declaration(module, *declaration)
+            .or_else(|| find_hir_enum_name_by_declaration(module, *declaration))
+            .map(|name| name.to_string()),
+        ValkyrieType::Apply(base, _) => impl_owner_type_name(module, base),
+        other => nominal_type_name(other).map(str::to_string),
+    }
+}
+
+fn find_hir_struct_name_by_declaration(module: &HirModule, declaration: nyar_types::ItemId) -> Option<Identifier> {
+    for item in &module.structs {
+        if item.constructor_declaration == Some(declaration) {
+            return Some(item.name.clone());
+        }
+    }
+    for export in &module.imported_semantic_exports {
+        for item in &export.structs {
+            if item.constructor_declaration == Some(declaration) {
+                return Some(item.name.clone());
+            }
+        }
+    }
+    for submodule in &module.submodules {
+        if let Some(name) = find_hir_struct_name_by_declaration(submodule, declaration) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn find_hir_enum_name_by_declaration(module: &HirModule, declaration: nyar_types::ItemId) -> Option<Identifier> {
+    for item in &module.enums {
+        if item.declaration == Some(declaration) {
+            return Some(item.name.clone());
+        }
+    }
+    for export in &module.imported_semantic_exports {
+        for item in &export.enums {
+            if item.declaration == Some(declaration) {
+                return Some(item.name.clone());
+            }
+        }
+    }
+    for submodule in &module.submodules {
+        if let Some(name) = find_hir_enum_name_by_declaration(submodule, declaration) {
+            return Some(name);
+        }
+    }
+    None
+}
+
 impl MirLowerer {
     /// Lowers HIR to semantic MIR (PerformEffect intact, no state-machine rewrite).
+    ///
+    /// 单模块路径：monomorph `ItemInstanceId` 从本模块已有实例之后分配。
+    /// 跨包闭包须用 [`Self::lower_module_semantic_with_mono_counter`]。
     pub fn lower_module_semantic(module: &HirModule) -> MirModule {
+        let mut next_mono = None;
+        Self::lower_module_semantic_with_mono_counter(module, &mut next_mono)
+    }
+
+    /// 跨包闭包：`mono_counter` 为全局实例游标；`None` 时回退为本模块 `max+1`。
+    pub fn lower_module_semantic_with_mono_counter(module: &HirModule, mono_counter: &mut Option<u32>) -> MirModule {
         let mut struct_field_layouts = collect_struct_field_layouts(&module.structs);
         crate::valkyrie::mir::merge_singleton_field_layouts(module, &mut struct_field_layouts);
         merge_imported_struct_field_layouts(module, &mut struct_field_layouts);
@@ -840,7 +910,19 @@ impl MirLowerer {
             &mut diagnostics,
         ));
         // 泛型种子调用点：为具体代入分配 ItemInstanceId，供 Canonical Invoke 精确匹配返回 TypeId。
-        generic_call_instantiation::materialize_generic_call_instances(&mut functions);
+        let local_floor = functions
+            .iter()
+            .filter_map(|function| function.instance)
+            .chain(external_calls.iter().filter_map(|contract| contract.instance))
+            .map(|instance| instance.index())
+            .max()
+            .map(|index| index.saturating_add(1))
+            .unwrap_or(0);
+        let next_mono = mono_counter.get_or_insert(local_floor);
+        if *next_mono < local_floor {
+            *next_mono = local_floor;
+        }
+        generic_call_instantiation::materialize_generic_call_instances(&mut functions, next_mono);
         // MirFunction 不再携带 per-function diagnostics。
         // TypeId 只消费已冻结的 Nominal{ItemId} / 其他结构化形状；禁止短名 Named 别名收束。
         let type_identities = type_identity_table(&functions, &external_calls, &structs, &sum_types);
@@ -1223,7 +1305,7 @@ fn lower_impl_method_functions(
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
     for impl_block in &module.impls {
-        let Some(type_name) = nominal_type_name(&impl_block.target)
+        let Some(type_name) = impl_owner_type_name(module, &impl_block.target)
         else {
             continue;
         };
@@ -1466,7 +1548,7 @@ fn collect_callable_return_types(module: &HirModule) -> CallableReturnTypes {
         register_callable_return(&mut index, stable_hir_function_symbol(&module.name, function), function, function.return_type.clone());
     }
     for impl_block in &module.impls {
-        let Some(type_name) = nominal_type_name(&impl_block.target)
+        let Some(type_name) = impl_owner_type_name(module, &impl_block.target)
         else {
             continue;
         };
@@ -1736,7 +1818,8 @@ fn lower_function_semantic(
     // 刷新当前块指令到 `blocks`。
     let current_label = builder.current_label.clone();
     builder.flush_block(&current_label);
-    value_semantics::merge_aggregate_layout_plan(aggregate_layouts, &builder.aggregate_layouts);
+    // builder 从当前计划克隆并追加布局，直接交还同一身份表；禁止按名称重合并。
+    *aggregate_layouts = builder.aggregate_layouts;
 
     let param_types = function
         .params

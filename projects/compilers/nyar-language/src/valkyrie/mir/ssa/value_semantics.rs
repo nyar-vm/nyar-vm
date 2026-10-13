@@ -277,29 +277,6 @@ fn register_layout(plan: &mut AggregateLayoutPlan, layout: AggregateLayout) {
     plan.layouts.push(layout);
 }
 
-/// Merge dynamically discovered layouts from MIR lowering (or dependency MIR) into `dst`.
-///
-/// Layout ids are **module-local**. Crossing a module boundary (dependency link)
-/// must reassign colliding ids and return `old_id → new_id` so instruction
-/// `layout_id` fields can be rewritten. Same `(namespace, name)` reuses the
-/// existing destination id (no duplicate layout row).
-pub fn merge_aggregate_layout_plan(dst: &mut AggregateLayoutPlan, src: &AggregateLayoutPlan) -> BTreeMap<LayoutId, LayoutId> {
-    let mut remap = BTreeMap::new();
-    for layout in &src.layouts {
-        let old_id = layout.id;
-        if let Some(existing) = dst.layouts.iter().find(|candidate| candidate.name == layout.name && candidate.namespace == layout.namespace) {
-            remap.insert(old_id, existing.id);
-            continue;
-        }
-        let new_id = next_layout_id(dst);
-        remap.insert(old_id, new_id);
-        let mut layout = layout.clone();
-        layout.id = new_id;
-        register_layout(dst, layout);
-    }
-    remap
-}
-
 fn next_layout_id(plan: &AggregateLayoutPlan) -> LayoutId {
     plan.layouts.iter().map(|layout| layout.id).max().unwrap_or(0) + 1
 }
