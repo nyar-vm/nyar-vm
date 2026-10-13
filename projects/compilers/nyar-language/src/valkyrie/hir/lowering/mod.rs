@@ -45,6 +45,21 @@ thread_local! {
 mod source_group_tests {
     use super::{CompilerSourceGroup, ValkyrieCompiler, template_expand::DEFAULT_COMPILE_ARCH};
 
+    #[test]
+    fn source_parse_error_identifies_file_and_preserves_local_offset() {
+        let source = "micro broken() { value = }";
+        let direct = crate::valkyrie::frontend::parse_source(source).expect_err("语法必须失败");
+        let super::ParseError::Invalid { span: expected_span, .. } = direct else { panic!("缺少语法诊断") };
+        let groups = vec![CompilerSourceGroup {
+            dependency_key: "broken.package".into(), name: "broken.package".into(), source: String::new(),
+            sources: vec![super::CompilerSourceFile { path: "source/broken.v".into(), source: source.into() }], direct_dependencies: vec![],
+        }];
+        let error = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect_err("不能生成残缺 HIR");
+        let super::ParseError::Invalid { message, span } = error else { panic!("缺少语法诊断") };
+        assert_eq!(span, expected_span);
+        assert!(message.contains("broken.package") && message.contains("source/broken.v"), "{message}");
+    }
+
     fn first_call(function: &super::HirFunction) -> &crate::types::hir::HirResolvedCall {
         let super::HirStatementKind::Let { initializer: Some(expression), .. } = &function.body.statements[0].kind
         else {
@@ -969,7 +984,12 @@ impl ValkyrieCompiler {
         }
         let mut merged: Option<HirModule> = None;
         for file in &group.sources {
-            let mut root = frontend::parse_source(&file.source)?;
+            let mut root = frontend::parse_source(&file.source).map_err(|error| match error {
+                ParseError::Invalid { message, span } => ParseError::Invalid {
+                    message: format!("源码组 `{}` 文件 `{}`: {message}", group.dependency_key, file.path), span,
+                },
+                other => other,
+            })?;
             expand_macros_in_root(&mut root);
             expand_templates_in_root(&mut root, &file.source, arch)?;
             let module = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
