@@ -1333,7 +1333,7 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         }
     }
     for trait_def in &mut module.traits {
-        for function in &mut trait_def.default_methods {
+        for function in trait_def.methods.iter_mut().chain(trait_def.default_methods.iter_mut()) {
             bind_function(function, &structs, &enums)?;
         }
     }

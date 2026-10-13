@@ -1961,6 +1961,10 @@ fn substitute_associated_equations(
     equations: &BTreeMap<Identifier, ValkyrieType>,
 ) -> ValkyrieType {
     match ty {
+        ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
+            declaration: *declaration,
+            arguments: arguments.iter().map(|argument| substitute_associated_equations(argument, constrained_type, equations)).collect(),
+        },
         ValkyrieType::Associated(associated) if generic_type_parameter_name(&associated.base).as_ref() == Some(constrained_type) => {
             equations.get(&associated.name).cloned().unwrap_or_else(|| {
                 ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
@@ -2121,6 +2125,10 @@ fn substitute_trait_self(candidate: &OverloadCandidate, owner_type: &ValkyrieTyp
 fn substitute_type_self(ty: &ValkyrieType, replacement: &ValkyrieType) -> ValkyrieType {
     match ty {
         ValkyrieType::SelfType => replacement.clone(),
+        ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
+            declaration: *declaration,
+            arguments: arguments.iter().map(|argument| substitute_type_self(argument, replacement)).collect(),
+        },
         ValkyrieType::Array(inner) => ValkyrieType::Array(Box::new(substitute_type_self(inner, replacement))),
         ValkyrieType::Apply(base, args) => ValkyrieType::Apply(
             Box::new(substitute_type_self(base, replacement)),
@@ -3646,6 +3654,43 @@ mod identity_tests {
         ValkyrieCompiler,
         types::{SourceID, hir::HirTraitBound},
     };
+
+    #[test]
+    fn nominal_arguments_preserve_identity_and_substitute_associated_self() {
+        let declaration = nyar_types::ItemId::from_index(41).unwrap();
+        let subject = Identifier::new("I");
+        let item = Identifier::new("Item");
+        let original = ValkyrieType::Nominal {
+            declaration,
+            arguments: vec![ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+                base: ValkyrieType::SelfType, name: item.clone(), type_arguments: vec![],
+            }))],
+        };
+        let bound = substitute_type_self(&original, &ValkyrieType::Named(subject.clone()));
+        let equations = BTreeMap::from([(item, ValkyrieType::Utf8)]);
+        assert_eq!(substitute_associated_equations(&bound, &subject, &equations), ValkyrieType::Nominal {
+            declaration, arguments: vec![ValkyrieType::Utf8],
+        });
+    }
+
+    #[test]
+    fn chained_generic_trait_result_resolves_declared_member() {
+        let compiler = ValkyrieCompiler::default();
+        let root = crate::valkyrie::frontend::parse_source(r#"
+class Parcel<T> { value: T }
+imply Parcel<T> { micro take(self): T { return self.value } }
+trait Cursor { type Item; micro next(self): Parcel<Item> }
+micro collect<I, T>(iter: I): T where I: Cursor<Item = T> { return iter.next().take() }
+"#).expect("解析链式调用");
+        let hir = compiler.lower_root(&root).expect("绑定链式调用");
+        compiler.validate_hir_semantic_contract(&hir).expect("链式调用必须绑定完整声明合同");
+        let function = hir.functions.iter().find(|function| function.name.as_str() == "collect").unwrap();
+        let HirExprKind::Return(Some(result)) = &function.body.expr.as_ref().unwrap().kind else { panic!("返回调用") };
+        let HirExprKind::Call { callee, resolved: Some(call), .. } = &result.kind else { panic!("一次成员调用") };
+        assert!(matches!(callee.kind, HirExprKind::FieldAccess { .. }));
+        assert!(call.declaration.is_some());
+        assert_eq!(call.return_type, ValkyrieType::Named(Identifier::new("T")));
+    }
 
     #[test]
     fn nested_call_type_requires_the_selected_contract() {

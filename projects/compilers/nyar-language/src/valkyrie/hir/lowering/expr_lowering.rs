@@ -162,10 +162,7 @@ fn lower_term_expression_with_context(
         TermExpression::DotCall { receiver, field, .. } => {
             let object = lower_term_expression_with_context(receiver, source_id, span_range.clone(), false);
             let member = field.name.as_str();
-            if preserve_member_access {
-                lower_method_call_kind(member, vec![HirCallArgument::positional(object)], span.clone())
-            }
-            else if let Some(kind) = lower_postfix_effect_member(member, object.clone()) {
+            if let Some(kind) = lower_postfix_effect_member(member, object.clone()) {
                 kind
             }
             else {
