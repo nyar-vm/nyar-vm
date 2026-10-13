@@ -4,14 +4,12 @@
 //! does not choose JVM, WASM, CLR, or WASI representations; those decisions
 //! belong to backend-local preparation after this gate succeeds.
 
-use std::collections::BTreeMap;
-
 use crate::{
     FragmentSubmission,
     backend_plan_views::{ExecutableFunction, ExecutableInstructionKind, ExecutableOperand},
 };
 use nyar::QualifiedName;
-use nyar_types::{AggregateLayout, Constant, NyarFunctionType, NyarType, ValueOrigin};
+use nyar_types::{Constant, NyarType, ValueOrigin};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SemanticMirContractError {
@@ -120,11 +118,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                         detail: "aggregate construction references an unknown layout identity".to_string(),
                     });
                 };
-                let output_type = crate::contracts::instruction_primary_result(instruction)
-                    .and_then(|output| function.value_types.get(&output))
-                    .or(Some(&function.return_type));
-                // 字段在「输出类型给出的同一 substitution」下比较，
-                // 禁止依赖 Named("Self") / 类型名单字母特判放行。
+                // 实例字段类型已由上游冻结；backend 不再推导 substitution 或平台别名。
                 let fields_match = fields.len() == layout.fields.len()
                     && fields.iter().all(|(field_id, value)| {
                         submission.backend_plan.aggregate_layout_by_field().get(field_id).is_some_and(|(owner_layout, slot)| {
@@ -137,7 +131,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                                             if function
                                                 .value_types
                                                 .get(value)
-                                                .is_some_and(|actual| aggregate_field_types_compatible(actual, &declared))
+                                                .is_some_and(|actual| actual == declared)
                                     )
                                 })
                         })
@@ -210,7 +204,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 });
             };
             if let Some(output) = crate::contracts::instruction_primary_result(instruction) {
-                if function.value_types.get(&output).is_none_or(|actual| !aggregate_field_types_compatible(actual, &declared.ty)) {
+                if function.value_types.get(&output).is_none_or(|actual| actual != &declared.ty) {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),
@@ -220,7 +214,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 }
             }
             if let Some(ExecutableOperand::Value(value)) = value {
-                if function.value_types.get(value).is_none_or(|actual| !aggregate_field_types_compatible(actual, &declared.ty)) {
+                if function.value_types.get(value).is_none_or(|actual| actual != &declared.ty) {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),
@@ -232,206 +226,6 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
         }
     }
     Ok(())
-}
-
-/// 由 `Apply(Owner, [A, B, …])` 与 layout 字段中出现的类型形参名建立 substitution。
-fn type_args_substitution(output_type: &NyarType, layout: &AggregateLayout) -> BTreeMap<String, NyarType> {
-    let mut formals = Vec::new();
-    for field in &layout.fields {
-        collect_type_parameter_names(&field.ty, &mut formals);
-    }
-    let args = match output_type {
-        NyarType::Apply(base, args) if aggregate_owner_name(base.as_ref()) == Some(layout.name.as_str()) => args.as_slice(),
-        _ => return BTreeMap::new(),
-    };
-    formals.into_iter().zip(args.iter().cloned()).collect()
-}
-
-fn collect_type_parameter_names(ty: &NyarType, out: &mut Vec<String>) {
-    match ty {
-        NyarType::Named(name) if is_type_parameter(ty) => {
-            let text = name.as_str().to_string();
-            if !out.iter().any(|existing| existing == &text) {
-                out.push(text);
-            }
-        }
-        NyarType::Array(element) | NyarType::Nullable(element) => collect_type_parameter_names(element, out),
-        NyarType::FixedArray { element, .. } => collect_type_parameter_names(element, out),
-        NyarType::Apply(base, args) => {
-            collect_type_parameter_names(base, out);
-            for arg in args {
-                collect_type_parameter_names(arg, out);
-            }
-        }
-        NyarType::Tuple(elems) | NyarType::Union(elems) => {
-            for elem in elems {
-                collect_type_parameter_names(elem, out);
-            }
-        }
-        NyarType::Function(func) => {
-            for param in &func.params {
-                collect_type_parameter_names(param, out);
-            }
-            collect_type_parameter_names(&func.return_type, out);
-        }
-        _ => {}
-    }
-}
-
-fn substitute_nyar_type(ty: &NyarType, substitution: &BTreeMap<String, NyarType>) -> NyarType {
-    if substitution.is_empty() {
-        return ty.clone();
-    }
-    match ty {
-        NyarType::Named(name) => substitution.get(name.as_str()).cloned().unwrap_or_else(|| ty.clone()),
-        NyarType::Array(element) => NyarType::Array(Box::new(substitute_nyar_type(element, substitution))),
-        NyarType::Nullable(element) => NyarType::Nullable(Box::new(substitute_nyar_type(element, substitution))),
-        NyarType::FixedArray { element, length } => {
-            NyarType::FixedArray { element: Box::new(substitute_nyar_type(element, substitution)), length: *length }
-        }
-        NyarType::Apply(base, args) => NyarType::Apply(
-            Box::new(substitute_nyar_type(base, substitution)),
-            args.iter().map(|arg| substitute_nyar_type(arg, substitution)).collect(),
-        ),
-        NyarType::Tuple(elems) => NyarType::Tuple(elems.iter().map(|elem| substitute_nyar_type(elem, substitution)).collect()),
-        NyarType::Union(elems) => NyarType::Union(elems.iter().map(|elem| substitute_nyar_type(elem, substitution)).collect()),
-        NyarType::Function(func) => NyarType::Function(Box::new(NyarFunctionType {
-            params: func.params.iter().map(|param| substitute_nyar_type(param, substitution)).collect(),
-            return_type: substitute_nyar_type(&func.return_type, substitution),
-        })),
-        other => other.clone(),
-    }
-}
-
-/// Align emitter StructNew / FieldGet / FieldSet checks with language MIR validation:
-/// generic field slots and platform aliases must not require bitwise `NyarType` equality.
-fn aggregate_field_types_compatible(actual: &NyarType, declared: &NyarType) -> bool {
-    if actual == declared {
-        return true;
-    }
-    if mir_return_types_compatible(actual, declared) {
-        return true;
-    }
-    if is_type_parameter(declared) || is_erased_generic_placeholder(declared) {
-        return true;
-    }
-    if is_erased_generic_placeholder(actual) && is_erased_generic_placeholder(declared) {
-        return true;
-    }
-    match (actual, declared) {
-        (NyarType::Array(actual_element), NyarType::Array(declared_element)) => {
-            aggregate_field_types_compatible(actual_element, declared_element)
-        }
-        (
-            NyarType::FixedArray { element: actual_element, length: actual_length },
-            NyarType::FixedArray { element: declared_element, length: declared_length },
-        ) if actual_length == declared_length => aggregate_field_types_compatible(actual_element, declared_element),
-        (NyarType::Apply(actual_base, actual_args), NyarType::Apply(declared_base, declared_args)) => {
-            aggregate_field_types_compatible(actual_base, declared_base)
-                && actual_args.len() == declared_args.len()
-                && actual_args
-                    .iter()
-                    .zip(declared_args.iter())
-                    .all(|(actual_arg, declared_arg)| aggregate_field_types_compatible(actual_arg, declared_arg))
-        }
-        _ => false,
-    }
-}
-
-fn is_erased_generic_placeholder(ty: &NyarType) -> bool {
-    match ty {
-        NyarType::TraitObject(object) if object.trait_path.as_str() == "__generic" && object.type_arguments.is_empty() => true,
-        NyarType::Named(_) => false,
-        _ => false,
-    }
-}
-
-fn type_matches_sum_owner_nyar(ty: &NyarType, sum_type: &str) -> bool {
-    match ty {
-        NyarType::Named(name) => name.as_str() == sum_type || (sum_type == "Option" && matches!(name.as_str(), "Option" | "Nullable")),
-        NyarType::Apply(base, _) => type_matches_sum_owner_nyar(base, sum_type),
-        NyarType::Nullable(_) => sum_type == "Option",
-        _ => false,
-    }
-}
-
-fn payload_type_compatible_nyar(actual: Option<&NyarType>, declared: Option<&NyarType>) -> bool {
-    match (actual, declared) {
-        (None, None) => true,
-        (Some(actual), Some(declared)) => aggregate_field_types_compatible(actual, declared) || is_type_parameter(declared),
-        _ => false,
-    }
-}
-
-fn mir_return_types_compatible(actual: &NyarType, expected: &NyarType) -> bool {
-    if actual == expected {
-        return true;
-    }
-    result_or_option_alias_compatible(actual, expected)
-}
-
-fn normalize_platform_alias(ty: &NyarType) -> NyarType {
-    match ty {
-        NyarType::Named(name) => match name.as_str() {
-            "usize" | "isize" => NyarType::Integer32 { signed: name.as_str() == "isize" },
-            "bool" => NyarType::Boolean,
-            "utf8" | "Utf8Text" => NyarType::Utf8,
-            "utf16" | "Utf16Text" => NyarType::Utf16,
-            _ => ty.clone(),
-        },
-        NyarType::Apply(base, args) => {
-            NyarType::Apply(Box::new(normalize_platform_alias(base)), args.iter().map(normalize_platform_alias).collect())
-        }
-        NyarType::Array(element) => NyarType::Array(Box::new(normalize_platform_alias(element))),
-        NyarType::FixedArray { element, length } => {
-            NyarType::FixedArray { element: Box::new(normalize_platform_alias(element)), length: *length }
-        }
-        NyarType::Nullable(inner) => NyarType::Nullable(Box::new(normalize_platform_alias(inner))),
-        NyarType::Union(arms) => NyarType::Union(arms.iter().map(normalize_platform_alias).collect()),
-        NyarType::Tuple(elems) => NyarType::Tuple(elems.iter().map(normalize_platform_alias).collect()),
-        _ => ty.clone(),
-    }
-}
-
-fn sum_owner_name(ty: &NyarType) -> Option<&str> {
-    match ty {
-        NyarType::Named(name) => Some(name.as_str()),
-        NyarType::Apply(base, _) => sum_owner_name(base),
-        _ => None,
-    }
-}
-
-fn aggregate_owner_name(ty: &NyarType) -> Option<&str> {
-    sum_owner_name(ty)
-}
-
-pub(crate) fn is_option_shaped(ty: &NyarType) -> bool {
-    matches!(ty, NyarType::Nullable(_)) || sum_owner_name(ty).is_some_and(|name| matches!(name, "Option" | "Nullable"))
-}
-
-fn is_type_parameter(ty: &NyarType) -> bool {
-    // NyarType 没有泛型参数变体；未实例化泛型只能以显式 `__generic` 污点进入迁移边界。
-    matches!(ty, NyarType::TraitObject(object) if object.trait_path.as_str() == "__generic" && object.type_arguments.is_empty())
-}
-
-fn result_or_option_alias_compatible(actual: &NyarType, expected: &NyarType) -> bool {
-    let payload = |ty: &NyarType| -> Option<NyarType> {
-        match ty {
-            NyarType::Apply(_, args) => args.first().cloned(),
-            NyarType::Nullable(inner) => Some(*inner.clone()),
-            _ => None,
-        }
-    };
-    if !is_option_shaped(actual) || !is_option_shaped(expected) {
-        return false;
-    }
-    match (payload(actual), payload(expected)) {
-        (Some(left), Some(right)) => {
-            normalize_platform_alias(&left) == normalize_platform_alias(&right) || (is_type_parameter(&left) && is_type_parameter(&right))
-        }
-        (None, None) => true,
-        _ => false,
-    }
 }
 
 fn validate_static_call_resolution(submission: &FragmentSubmission, function: &ExecutableFunction) -> Result<(), SemanticMirContractError> {
@@ -688,7 +482,7 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                     detail: "return operand has no SSA type".to_string(),
                 });
             };
-            if !mir_return_types_compatible(&actual, &function.return_type) {
+            if actual != function.return_type {
                 return Err(SemanticMirContractError {
                     code: "SMIR007",
                     function: function.symbol.clone(),
@@ -737,7 +531,7 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                         detail: "jump target block parameter has no SSA type".to_string(),
                     });
                 };
-                if !mir_return_types_compatible(&actual, expected) {
+                if &actual != expected {
                     return Err(SemanticMirContractError {
                         code: "SMIR007",
                         function: function.symbol.clone(),
@@ -830,6 +624,32 @@ mod tests {
         let mut instruction = Instruction::from_kind(kind);
         instruction.results = results;
         instruction
+    }
+
+    #[test]
+    fn rejects_named_option_return_alias() {
+        let value = ValueRef(1);
+        let actual = NyarType::Nullable(Box::new(NyarType::Integer32 { signed: true }));
+        let mut fixture = function(Vec::new(), Terminator::Return { value: Some(Operand::Value(value)) }, BTreeMap::from([(value, actual)]));
+        fixture.return_type = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("Option"))), vec![NyarType::Integer32 { signed: true }]);
+        assert_eq!(validate_function(&fixture).unwrap_err().code, "SMIR007");
+    }
+
+    #[test]
+    fn rejects_platform_alias_inside_nullable_return() {
+        let value = ValueRef(1);
+        let actual = NyarType::Nullable(Box::new(NyarType::Named(Identifier::new("usize"))));
+        let mut fixture = function(Vec::new(), Terminator::Return { value: Some(Operand::Value(value)) }, BTreeMap::from([(value, actual)]));
+        fixture.return_type = NyarType::Nullable(Box::new(NyarType::Integer32 { signed: false }));
+        assert_eq!(validate_function(&fixture).unwrap_err().code, "SMIR007");
+    }
+
+    #[test]
+    fn accepts_exact_structured_nullable_return() {
+        let value = ValueRef(1);
+        let actual = NyarType::Nullable(Box::new(NyarType::Integer32 { signed: true }));
+        let fixture = function(Vec::new(), Terminator::Return { value: Some(Operand::Value(value)) }, BTreeMap::from([(value, actual)]));
+        assert!(validate_function(&fixture).is_ok());
     }
 
     #[test]
