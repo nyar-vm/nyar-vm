@@ -6,7 +6,7 @@ use super::{
 };
 
 fn is_never_type(ty: &ValkyrieType) -> bool {
-    matches!(ty, ValkyrieType::Named(name) if name.as_str() == "Never")
+    matches!(ty, ValkyrieType::Void)
 }
 
 fn arm_contributes_to_match_merge(arm_result: &MirOperand, actual_type: Option<&ValkyrieType>, expected_type: Option<&ValkyrieType>) -> bool {
@@ -17,6 +17,19 @@ fn arm_contributes_to_match_merge(arm_result: &MirOperand, actual_type: Option<&
         return expected_type.is_none_or(|expected| matches!(expected, ValkyrieType::Unit));
     }
     true
+}
+
+#[cfg(test)]
+mod bottom_type_tests {
+    use super::*;
+
+    #[test]
+    fn only_structured_bottom_excludes_an_arm_from_merge() {
+        let result = MirOperand::Constant(MirConstant::Int(1));
+        assert!(!arm_contributes_to_match_merge(&result, Some(&ValkyrieType::Void), None));
+        let ordinary_named_type = ValkyrieType::Named(crate::types::Identifier::new("Never"));
+        assert!(arm_contributes_to_match_merge(&result, Some(&ordinary_named_type), None));
+    }
 }
 
 impl MirBuilder {

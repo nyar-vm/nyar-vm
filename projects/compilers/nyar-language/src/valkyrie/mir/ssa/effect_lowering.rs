@@ -342,8 +342,8 @@ impl MirBuilder {
             return Some(resume_type.clone());
         }
         // 载体未声明 Effectful：按约定 Resume = !（Never）。
-        // 使用 Named("Never") 表示，与文档 `throw(): Never` 与 spec/nominal.rs 的约定一致。
-        Some(ValkyrieType::Named(crate::types::Identifier::new("Never")))
+        // 不返回的控制流使用语言底类型，不通过类型名称补语义。
+        Some(ValkyrieType::Void)
     }
 
     /// 与 [`lower_perform_effect`] 同构，但允许携带用户 effect 载体类型。

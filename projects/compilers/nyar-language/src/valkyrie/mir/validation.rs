@@ -889,7 +889,7 @@ fn infer_effect_resume_static_type(
         MirEffectKind::Yield | MirEffectKind::DelegateYield => Some(ValkyrieType::Unit),
         MirEffectKind::Await | MirEffectKind::AsyncBlock => payload_type.and_then(future_resume_type),
         MirEffectKind::AsyncSpawn => None,
-        MirEffectKind::Raise => carrier_type.map(|_ty| ValkyrieType::Named(crate::types::Identifier::new("Never"))),
+        MirEffectKind::Raise => carrier_type.map(|_ty| ValkyrieType::Void),
     }
 }
 
@@ -934,16 +934,9 @@ fn generator_source_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
     }
 }
 
-fn is_never_type(ty: &ValkyrieType) -> bool {
-    matches!(ty, ValkyrieType::Named(name) if name.as_str() == "Never")
-}
-
-/// `raise`/`throw` 在 MIR 上产出 `Never`；Valkyrie 源码 `void` 为底类型（`ValkyrieType::Void`）。
+/// MIR 与源码均使用 `Void` 表达底类型，不保留名称别名。
 fn mir_return_operand_type_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
-    actual == expected
-        || (is_never_type(actual) && matches!(expected, ValkyrieType::Void))
-        || (is_never_type(expected) && matches!(actual, ValkyrieType::Void))
-        || bare_named_matches_generic_apply_return(expected, actual)
+    actual == expected || bare_named_matches_generic_apply_return(expected, actual)
 }
 
 /// Seed callable signatures stay generic in `MirFunction`, while HIR call sites carry instantiated types.
