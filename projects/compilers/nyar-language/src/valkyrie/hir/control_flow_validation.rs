@@ -597,10 +597,6 @@ fn validate_try_propagate_context(expr: &HirExpr, state: &HirValidationState) ->
 fn resolve_contextual_type(ty: &ValkyrieType, state: &HirValidationState) -> ValkyrieType {
     match ty {
         ValkyrieType::SelfType => current_self_type(state).cloned().unwrap_or(ValkyrieType::SelfType),
-        // HIR 中 `Self` 有时以命名类型形式保留，优先回填当前实现者类型。
-        ValkyrieType::Named(name) if name.as_str() == "Self" => {
-            current_self_type(state).cloned().unwrap_or_else(|| ValkyrieType::Named(name.clone()))
-        }
         ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(
             Box::new(resolve_contextual_type(base, state)),
             arguments.iter().map(|arg| resolve_contextual_type(arg, state)).collect(),
@@ -719,10 +715,6 @@ fn validate_return_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirVal
     };
     let actual_type = resolve_contextual_type(&actual_raw, state);
     if control_flow_value_type_compatible(&expected_type, &actual_type) {
-        return Ok(());
-    }
-    // 自举阶段：比较/相等调用在 overload 回填前可能暂时推成文本类型。
-    if matches!(&expected_type, ValkyrieType::Boolean) && is_text_like_type(&actual_type) && matches!(value.kind, HirExprKind::Call { .. }) {
         return Ok(());
     }
 
@@ -2039,53 +2031,14 @@ fn lookup_local_type(state: &HirValidationState, name: &str) -> Option<ValkyrieT
     state.local_scopes.iter().rev().find_map(|scope| scope.get(name).cloned())
 }
 
+// 控制流校验消费已绑定类型，不能按名字补 builtin、泛型或 Self。
 fn control_flow_value_type_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
-    let expected = normalize_control_flow_type(expected);
-    let actual = normalize_control_flow_type(actual);
     expected == actual
         || matches!(expected, ValkyrieType::AutoType)
         || matches!(actual, ValkyrieType::AutoType)
-        // 整数字面量默认同为 i64；在 return / break 处允许与目标整数宽度互转（自举阶段宽化检测）。
-        || (is_integer_type(&expected) && is_integer_type(&actual))
-        // 自举阶段：未回填的 `Self` 与具体返回值暂不硬拦（trait 默认方法等无 self 上下文）。
-        || is_unresolved_self_type(&expected)
-        || is_unresolved_self_type(&actual)
-        || array_types_compatible(&expected, &actual)
-        || type_param_names_equal(&expected, &actual)
-        || nullable_return_compatible(&expected, &actual)
-        || generic_apply_types_compatible(&expected, &actual)
-        || bare_named_matches_generic_apply(&expected, &actual)
-        || (is_uninstantiated_type_param(&actual) && !is_uninstantiated_type_param(&expected) && !matches!(expected, ValkyrieType::AutoType))
-}
-
-fn bare_named_matches_generic_apply(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
-    match (expected, actual) {
-        (ValkyrieType::Apply(base, _), ValkyrieType::Named(name)) | (ValkyrieType::Named(name), ValkyrieType::Apply(base, _)) => {
-            named_type_name(base).is_some_and(|base_name| base_name == name.as_str())
-        }
-        _ => false,
-    }
-}
-
-fn generic_apply_types_compatible(left: &ValkyrieType, right: &ValkyrieType) -> bool {
-    generic_apply_type_matches(left, right) || generic_apply_type_matches(right, left)
-}
-
-fn generic_apply_type_matches(actual: &ValkyrieType, receiver: &ValkyrieType) -> bool {
-    let (ValkyrieType::Apply(actual_base, actual_args), ValkyrieType::Apply(receiver_base, receiver_args)) = (actual, receiver)
-    else {
-        return false;
-    };
-    if actual_args.len() != receiver_args.len() {
-        return false;
-    }
-    if actual_base != receiver_base {
-        return false;
-    }
-    receiver_args.iter().zip(actual_args.iter()).all(|(expected, actual_arg)| match expected {
-        ValkyrieType::Named(_) => true,
-        other => *other == *actual_arg,
-    })
+        || (is_integer_type(expected) && is_integer_type(actual))
+        || array_types_compatible(expected, actual)
+        || nullable_return_compatible(expected, actual)
 }
 
 fn nullable_return_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
@@ -2097,100 +2050,24 @@ fn nullable_return_compatible(expected: &ValkyrieType, actual: &ValkyrieType) ->
     }
 }
 
-fn normalize_control_flow_type(ty: &ValkyrieType) -> ValkyrieType {
-    match ty {
-        ValkyrieType::Named(name) if name.as_str() == "bool" => ValkyrieType::Boolean,
-        ValkyrieType::Named(name) if name.as_str() == "Self" => ValkyrieType::SelfType,
-        // `Array<T>` 与语法糖 `[T]` 统一为 Array 形态，便于 return 校验。
-        ValkyrieType::Apply(base, arguments) if arguments.len() == 1 && matches!(named_type_name(base), Some("Array")) => {
-            ValkyrieType::Array(Box::new(normalize_control_flow_type(&arguments[0])))
-        }
-        ValkyrieType::Array(item) => ValkyrieType::Array(Box::new(normalize_control_flow_type(item))),
-        ValkyrieType::FixedArray { element, length } => {
-            ValkyrieType::FixedArray { element: Box::new(normalize_control_flow_type(element)), length: *length }
-        }
-        other => other.clone(),
-    }
-}
-
-fn is_uninstantiated_type_param(ty: &ValkyrieType) -> bool {
-    matches!(ty, ValkyrieType::Named(name) if {
-        let text = name.as_str();
-        text.len() == 1 && text.chars().next().is_some_and(|ch| ch.is_ascii_uppercase())
-    })
-}
-
-fn text_like_types_compatible(left: &ValkyrieType, right: &ValkyrieType) -> bool {
-    is_text_like_type(left) && is_text_like_type(right)
-}
-
-fn is_text_like_type(ty: &ValkyrieType) -> bool {
-    matches!(ty, ValkyrieType::Utf8 | ValkyrieType::Utf16)
-        || matches!(ty, ValkyrieType::Named(name) if matches!(name.as_str(), "utf8" | "Utf8Text" | "utf16" | "Utf16Text"))
-}
-
 fn array_types_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
-    match (array_element_type(expected), array_element_type(actual)) {
-        (Some(a), Some(b)) => {
-            let a = normalize_control_flow_type(a);
-            let b = normalize_control_flow_type(b);
-            a == b
-                || matches!(a, ValkyrieType::AutoType)
-                || matches!(b, ValkyrieType::AutoType)
-                || is_unresolved_self_type(&a)
-                || is_unresolved_self_type(&b)
-                || type_param_names_equal(&a, &b)
-                || generic_apply_types_compatible(&a, &b)
-                || text_like_types_compatible(&a, &b)
-                || is_uninstantiated_type_param(&a)
-                || is_uninstantiated_type_param(&b)
+    match (expected, actual) {
+        (ValkyrieType::Array(expected), ValkyrieType::Array(actual)) => {
+            expected == actual || matches!(expected.as_ref(), ValkyrieType::AutoType) || matches!(actual.as_ref(), ValkyrieType::AutoType)
         }
         _ => false,
     }
-}
-
-fn array_element_type(ty: &ValkyrieType) -> Option<&ValkyrieType> {
-    match ty {
-        ValkyrieType::Array(item) => Some(item.as_ref()),
-        ValkyrieType::Apply(base, arguments) if arguments.len() == 1 && matches!(named_type_name(base), Some("Array")) => arguments.first(),
-        _ => None,
-    }
-}
-
-fn type_param_name(ty: &ValkyrieType) -> Option<&str> {
-    match ty {
-        ValkyrieType::Generic(generic) => Some(generic.name.as_str()),
-        ValkyrieType::Named(name) => Some(name.as_str()),
-        _ => None,
-    }
-}
-
-fn type_param_names_equal(left: &ValkyrieType, right: &ValkyrieType) -> bool {
-    let left_generic = matches!(left, ValkyrieType::Generic(_));
-    let right_generic = matches!(right, ValkyrieType::Generic(_));
-    if !left_generic && !right_generic {
-        return false;
-    }
-    match (type_param_name(left), type_param_name(right)) {
-        (Some(a), Some(b)) => a == b,
-        _ => false,
-    }
-}
-
-fn is_unresolved_self_type(ty: &ValkyrieType) -> bool {
-    matches!(ty, ValkyrieType::SelfType)
 }
 
 fn is_integer_type(ty: &ValkyrieType) -> bool {
-    match ty {
+    matches!(
+        ty,
         ValkyrieType::Integer8 { .. }
-        | ValkyrieType::Integer16 { .. }
-        | ValkyrieType::Integer32 { .. }
-        | ValkyrieType::Integer64 { .. }
-        | ValkyrieType::Integer128 { .. } => true,
-        ValkyrieType::Named(name) => matches!(name.as_str(), "usize" | "isize" | "byte" | "sbyte"),
-        _ => false,
-    }
+            | ValkyrieType::Integer16 { .. }
+            | ValkyrieType::Integer32 { .. }
+            | ValkyrieType::Integer64 { .. }
+            | ValkyrieType::Integer128 { .. }
+    )
 }
 
 fn return_without_value_compatible(expected: &ValkyrieType) -> bool {
@@ -2304,4 +2181,47 @@ fn display_type(ty: &ValkyrieType) -> String {
 
 fn integer_type_name(signed: bool, bits: u16) -> String {
     if signed { format!("i{bits}") } else { format!("u{bits}") }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    use crate::types::hir::{GenericType, HirKind};
+
+    #[test]
+    fn rejects_unbound_names_as_builtin_or_generic_types() {
+        for (name, builtin) in [
+            ("bool", ValkyrieType::Boolean),
+            ("usize", ValkyrieType::Integer32 { signed: true }),
+            ("T", ValkyrieType::Utf8),
+            ("Self", ValkyrieType::SelfType),
+        ] {
+            let named = ValkyrieType::Named(Identifier::new(name));
+            assert!(!control_flow_value_type_compatible(&builtin, &named));
+            assert!(!control_flow_value_type_compatible(&named, &builtin));
+        }
+        let generic = ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: Vec::new() });
+        assert!(!control_flow_value_type_compatible(&generic, &ValkyrieType::Named(Identifier::new("T"))));
+    }
+
+    #[test]
+    fn rejects_named_array_and_generic_argument_wildcards() {
+        let array = ValkyrieType::Array(Box::new(ValkyrieType::Utf8));
+        let named = ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Array"))), vec![ValkyrieType::Utf8]);
+        assert!(!control_flow_value_type_compatible(&array, &named));
+        let named_owner = ValkyrieType::Named(Identifier::new("Box"));
+        let applied = ValkyrieType::Apply(Box::new(named_owner.clone()), vec![ValkyrieType::Utf8]);
+        assert!(!control_flow_value_type_compatible(&named_owner, &applied));
+        let fake_generic = ValkyrieType::Apply(Box::new(named_owner), vec![ValkyrieType::Named(Identifier::new("T"))]);
+        assert!(!control_flow_value_type_compatible(&fake_generic, &applied));
+    }
+
+    #[test]
+    fn keeps_array_text_encodings_distinct() {
+        let utf8 = ValkyrieType::Array(Box::new(ValkyrieType::Utf8));
+        let utf16 = ValkyrieType::Array(Box::new(ValkyrieType::Utf16));
+        assert!(control_flow_value_type_compatible(&utf8, &utf8));
+        assert!(!control_flow_value_type_compatible(&utf8, &utf16));
+        assert!(!control_flow_value_type_compatible(&utf16, &utf8));
+    }
 }
