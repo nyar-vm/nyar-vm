@@ -137,6 +137,9 @@ fn lower_term_expression_with_context(
     };
     let span = with_source(&span_range, source_id);
     let kind = match expression {
+        TermExpression::ArrayLiteral { items, .. } => HirExprKind::ArrayLiteral {
+            items: items.iter().map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false)).collect(),
+        },
         TermExpression::NamePath(path) => lower_name_expression(path, span.clone()),
         TermExpression::StringLiteral(literal) => lower_string_literal_kind(literal, source_id, span_range.clone()),
         TermExpression::IntegerLiteral { value, .. } => parse_integer_literal(value)
@@ -178,7 +181,7 @@ fn lower_term_expression_with_context(
             span.clone(),
         ),
         TermExpression::Offset { receiver, offset, .. } => lower_operator_call_kind(
-            registered_operator(OperatorFixity::Infix, "+"),
+            registered_operator(OperatorFixity::Postfix, "⁅⁆"),
             vec![
                 HirCallArgument::positional(lower_term_expression_with_context(receiver, source_id, span_range.clone(), false)),
                 HirCallArgument::positional(lower_term_expression_with_context(offset, source_id, span_range.clone(), false)),
@@ -322,6 +325,25 @@ fn lower_binary_expression(node: &TermBinaryNode, source_id: SourceID, fallback_
     let lhs = &node.lhs;
     let rhs = &node.rhs;
     match node.operator {
+        ValkyrieTokenType::Eq => {
+            if let TermExpression::Index { receiver, index, .. } | TermExpression::Offset { receiver, offset: index, .. } = lhs {
+                return lower_operator_call_kind(
+                    registered_operator(OperatorFixity::Postfix, if matches!(lhs, TermExpression::Index { .. }) { "[]=" } else { "⁅⁆=" }),
+                    vec![
+                        HirCallArgument::positional(lower_term_expression_with_context(receiver, source_id, fallback_span.clone(), false)),
+                        HirCallArgument::positional(lower_term_expression_with_context(index, source_id, fallback_span.clone(), false)),
+                        HirCallArgument::positional(lower_term_expression_with_context(rhs, source_id, fallback_span, false)),
+                    ], span,
+                );
+            }
+            let target = lower_term_expression_with_context(lhs, source_id, fallback_span.clone(), true);
+            let value = Box::new(lower_term_expression_with_context(rhs, source_id, fallback_span, false));
+            match target.kind {
+                HirExprKind::Variable(identifier) => HirExprKind::Assign { target: identifier.name, value },
+                HirExprKind::FieldAccess { object, field } => HirExprKind::StoreField { object, field, value },
+                _ => panic!("Oak 已验证的赋值位置不能降低为其他表达式"),
+            }
+        }
         ValkyrieTokenType::AndAnd => lower_short_circuit_and(lhs, rhs, source_id, fallback_span, span),
         ValkyrieTokenType::OrOr => lower_short_circuit_or(lhs, rhs, source_id, fallback_span, span),
         ValkyrieTokenType::Pipe => lower_pipe_expression(lhs, rhs, source_id, fallback_span, span),
@@ -687,5 +709,38 @@ fn plain_string_literal_text(literal: &StringLiteral) -> Option<&str> {
     match &literal.segments[0] {
         StringSegment::Text(text) => Some(text.content.as_str()),
         StringSegment::Interpolation(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod assignment_lowering_tests {
+    use super::*;
+
+    fn lower(source: &str) -> HirExpr {
+        let root = frontend::parse_source(source).expect("完整 AST");
+        let frontend::ast::StatementNode::Micro(function) = &root.items[0] else { panic!("缺少函数") };
+        let Statement::Expression(statement) = &function.body.statements[0] else { panic!("缺少表达式") };
+        lower_term_expression(&statement.expr, SourceID::default(), 0..source.len())
+    }
+
+    #[test]
+    fn assignment_and_field_write_keep_structured_targets() {
+        assert!(matches!(lower("micro update() { value = 7 }").kind, HirExprKind::Assign { .. }));
+        assert!(matches!(lower("micro update() { object.field = 7 }").kind, HirExprKind::StoreField { .. }));
+    }
+
+    #[test]
+    fn ordinal_and_cardinal_access_bind_distinct_operators() {
+        for (source, lexeme, arity) in [
+            ("micro read() { values[1] }", "[]", 2),
+            ("micro read() { values⁅0⁆ }", "⁅⁆", 2),
+            ("micro read() { values::[0] }", "⁅⁆", 2),
+            ("micro write() { values[1] = 7 }", "[]=", 3),
+            ("micro write() { values⁅0⁆ = 7 }", "⁅⁆=", 3),
+        ] {
+            let HirExprKind::Call { call_kind: HirCallKind::Operator(operator), args, .. } = lower(source).kind else { panic!("下标缺少运算符合同") };
+            assert_eq!(operator, registered_operator(OperatorFixity::Postfix, lexeme));
+            assert_eq!(args.len(), arity);
+        }
     }
 }
