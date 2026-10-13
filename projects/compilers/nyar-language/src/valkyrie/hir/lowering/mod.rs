@@ -15,7 +15,7 @@ use crate::{
             HirExprKind, HirField, HirFlagMember, HirFlags, HirFunction, HirIdentifier, HirImpl, HirImport, HirImportBinding, HirKind,
             HirLiteral, HirMatchArm, HirModule, HirParam, HirParameterBindingKind, HirParent, HirPattern, HirProperty, HirSingleton,
             HirStatement, HirStatementKind, HirStruct, HirTrait, HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant, HirVisibility,
-            HirWhereConstraint, HirWidget, HirWidgetLifecycle, ValkyrieType,
+            HirAssociatedTypeBinding, HirTraitBound, HirWhereConstraint, HirWidget, HirWidgetLifecycle, ValkyrieType,
         },
     },
     validation::{ControlFlowScheduler, validate_semantic_module},
@@ -1260,6 +1260,17 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
             bind_type(&mut param.ty, &function.declaring_namespace, structs, enums)?;
         }
         bind_type(&mut function.return_type, &function.declaring_namespace, structs, enums)?;
+        for constraint in &mut function.where_constraints {
+            bind_type(&mut constraint.target, &function.declaring_namespace, structs, enums)?;
+            for bound in &mut constraint.bounds {
+                for argument in &mut bound.type_arguments {
+                    bind_type(argument, &function.declaring_namespace, structs, enums)?;
+                }
+                for equation in &mut bound.associated_types {
+                    bind_type(&mut equation.ty, &function.declaring_namespace, structs, enums)?;
+                }
+            }
+        }
         // 函数体注解（let/cast/lambda 等）必须同步冻结；否则 return 校验会把残留 Named 与已绑定 Nominal 当成不兼容。
         bind_block(&mut function.body, &function.declaring_namespace, structs, enums)
     }
@@ -1760,7 +1771,7 @@ impl AstToHir {
             doc: lower_documentation(&function.annotations),
             annotations: function.annotations.iter().map(|attribute| lower_attribute(attribute, self.source_id, span.clone())).collect(),
             generics: lower_generic_parameters(&function.generics),
-            where_constraints: Vec::new(),
+            where_constraints: lower_where_constraints(&function.where_constraints, self.source_id),
             params: function.params.iter().map(|param| lower_param(param, self.source_id, span.clone())).collect(),
             return_type: function.return_type.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::Unit),
             body: lower_block(&function.body, self.source_id, span.clone()),
@@ -1781,6 +1792,7 @@ impl AstToHir {
             name: Identifier::new(&function.name.name),
             documents: lower_documentation(&function.annotations),
             generics: lower_generic_parameters(&function.generics),
+            where_constraints: lower_where_constraints(&function.where_constraints, self.source_id),
             params: function.params.iter().map(|param| lower_param(param, self.source_id, span.clone())).collect(),
             return_type: function.return_type.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::Unit),
             body: lower_block(&function.body, self.source_id, span),
@@ -2028,7 +2040,7 @@ impl AstToHir {
             doc: lower_documentation(&method.annotations),
             annotations: method.annotations.iter().map(|attribute| lower_attribute(attribute, self.source_id, span.clone())).collect(),
             generics: lower_generic_parameters(&method.generics),
-            where_constraints: Vec::new(),
+            where_constraints: lower_where_constraints(&method.where_constraints, self.source_id),
             params: method.parameters.iter().map(|param| lower_param(param, self.source_id, span.clone())).collect(),
             return_type: method.return_type.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::Unit),
             body: method.body.as_ref().map(|block| lower_block(block, self.source_id, span.clone())).unwrap_or_else(|| HirBlock {
@@ -3293,3 +3305,19 @@ micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
             .unwrap_or_else(|error| panic!("同模块 let + Some(item) 必须解析: {error}"));
     }
 }
+
+/// Oak 已区分返回类型与约束；这里只转换结构化语法事实。
+fn lower_where_constraints(constraints: &[oak_valkyrie::ast::type_nodes::WhereConstraint], source_id: SourceID) -> Vec<HirWhereConstraint> {
+    constraints.iter().map(|constraint| HirWhereConstraint {
+        target: lower_type_expression(&constraint.target),
+        bounds: constraint.bounds.iter().map(|bound| HirTraitBound {
+            trait_path: NamePath::new(bound.trait_path.parts.iter().map(oak_identifier).collect()),
+            type_arguments: bound.type_arguments.iter().map(lower_type_expression).collect(),
+            associated_types: bound.associated_types.iter().map(|equation| HirAssociatedTypeBinding { name: oak_identifier(&equation.name), ty: lower_type_expression(&equation.ty) }).collect(),
+        }).collect(),
+        span: with_source(&frontend::std_range(&constraint.span), source_id),
+    }).collect()
+}
+
+#[cfg(test)]
+mod where_contract_tests;
