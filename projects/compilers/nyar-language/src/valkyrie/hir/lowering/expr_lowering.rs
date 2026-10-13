@@ -346,7 +346,6 @@ fn lower_binary_expression(node: &TermBinaryNode, source_id: SourceID, fallback_
         }
         ValkyrieTokenType::AndAnd => lower_short_circuit_and(lhs, rhs, source_id, fallback_span, span),
         ValkyrieTokenType::OrOr => lower_short_circuit_or(lhs, rhs, source_id, fallback_span, span),
-        ValkyrieTokenType::Pipe => lower_pipe_expression(lhs, rhs, source_id, fallback_span, span),
         _ => lower_operator_call_kind(
             binary_operator_id(&node.operator),
             vec![
@@ -524,27 +523,6 @@ fn lower_operator_call_kind(operator: OperatorId, args: Vec<HirCallArgument>, sp
         args,
         resolved: None,
     }
-}
-
-fn lower_pipe_expression(
-    lhs: &TermExpression,
-    rhs: &TermExpression,
-    source_id: SourceID,
-    fallback_span: Range<usize>,
-    _span: SourceSpan,
-) -> HirExprKind {
-    let arg = lower_term_expression_with_context(lhs, source_id, fallback_span.clone(), false);
-    if let TermExpression::ApplyCall { callee, args, .. } = rhs {
-        let callee = lower_term_expression_with_context(callee, source_id, fallback_span.clone(), false);
-        let mut all_args = vec![HirCallArgument::positional(arg)];
-        all_args.extend(
-            args.iter()
-                .map(|value| HirCallArgument::positional(lower_term_expression_with_context(value, source_id, fallback_span.clone(), false))),
-        );
-        return lower_canonical_call_arguments(callee, all_args);
-    }
-    let callee = lower_term_expression_with_context(rhs, source_id, fallback_span, false);
-    lower_canonical_call_arguments(callee, vec![HirCallArgument::positional(arg)])
 }
 
 fn lower_canonical_call_arguments(callee: HirExpr, args: Vec<HirCallArgument>) -> HirExprKind {
@@ -735,6 +713,20 @@ mod assignment_lowering_tests {
             HirExprKind::Loop { pattern: Some(_), iterator: Some(_), condition: None, .. }));
         assert!(matches!(lower("micro visit() { while ready { consume() } }").kind,
             HirExprKind::Loop { pattern: None, iterator: None, condition: Some(_), .. }));
+    }
+
+    #[test]
+    fn bitwise_or_is_an_operator_call_not_a_pipeline() {
+        for (source, lexeme) in [
+            ("micro bits() { left | right }", "|"),
+            ("micro bits() { left & right }", "&"),
+            ("micro bits() { left << right }", "<<"),
+            ("micro bits() { left >> right }", ">>"),
+        ] {
+            let HirExprKind::Call { call_kind: HirCallKind::Operator(operator), args, .. } = lower(source).kind else { panic!("按位表达式缺少运算符身份") };
+            assert_eq!(operator, registered_operator(OperatorFixity::Infix, lexeme));
+            assert_eq!(args.len(), 2);
+        }
     }
 
     #[test]
