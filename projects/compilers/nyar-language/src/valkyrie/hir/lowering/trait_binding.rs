@@ -1,0 +1,83 @@
+//! 在调用解析前将 trait 路径冻结到 Compiler 的声明身份。
+use super::*;
+use std::collections::BTreeMap;
+use nyar_types::ItemId;
+
+pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), ParseError> {
+    let mut declarations = BTreeMap::<NamePath, Vec<(ItemId, usize)>>::new();
+    fn collect_trait(item: &HirTrait, declarations: &mut BTreeMap<NamePath, Vec<(ItemId, usize)>>) -> Result<(), ParseError> {
+        let identity = item.declaration.ok_or_else(|| ParseError::invalid("trait export 缺少声明身份"))?;
+        let mut path = item.declaring_namespace.parts().to_vec();
+        path.push(item.name.clone());
+        let entries = declarations.entry(NamePath::new(path)).or_default();
+        if !entries.iter().any(|entry| entry.0 == identity) { entries.push((identity, item.generics.len())); }
+        Ok(())
+    }
+    fn collect(module: &HirModule, declarations: &mut BTreeMap<NamePath, Vec<(ItemId, usize)>>) -> Result<(), ParseError> {
+        for item in &module.traits { collect_trait(item, declarations)?; }
+        for export in &module.imported_semantic_exports {
+            for item in &export.traits { collect_trait(item, declarations)?; }
+        }
+        for child in &module.submodules { collect(child, declarations)?; }
+        Ok(())
+    }
+    collect(module, &mut declarations)?;
+    fn lookup(path: &NamePath, namespace: &NamePath, declarations: &BTreeMap<NamePath, Vec<(ItemId, usize)>>) -> Result<(ItemId, usize), ParseError> {
+        // 限定路径按整段绑定；裸名只按声明作用域逐级查找，禁止全局唯一短名回退。
+        let mut candidates = Vec::new();
+        if path.parts().len() > 1 { candidates.push(path.clone()); }
+        else {
+            for depth in (0..=namespace.parts().len()).rev() {
+                let mut full = namespace.parts()[..depth].to_vec();
+                full.extend_from_slice(path.parts());
+                candidates.push(NamePath::new(full));
+            }
+        }
+        for candidate in candidates {
+            if let Some(entries) = declarations.get(&candidate) {
+                if entries.len() != 1 { return Err(ParseError::invalid(format!("trait 声明歧义：{path}"))); }
+                return Ok(entries[0]);
+            }
+        }
+        Err(ParseError::invalid(format!("trait 约束未解析：{path}")))
+    }
+    fn bounds(constraints: &mut [HirWhereConstraint], namespace: &NamePath, declarations: &BTreeMap<NamePath, Vec<(ItemId, usize)>>) -> Result<(), ParseError> {
+        for constraint in constraints {
+            for bound in &mut constraint.bounds {
+                let (identity, arity) = lookup(&bound.trait_path, namespace, declarations)?;
+                if bound.type_arguments.len() != arity { return Err(ParseError::invalid(format!("trait 类型实参数量不符：{}", bound.trait_path))); }
+                bound.declaration = Some(identity);
+            }
+        }
+        Ok(())
+    }
+    fn function(item: &mut HirFunction, namespace: &NamePath, declarations: &BTreeMap<NamePath, Vec<(ItemId, usize)>>) -> Result<(), ParseError> {
+        bounds(&mut item.where_constraints, namespace, declarations)
+    }
+    fn bind(module: &mut HirModule, declarations: &BTreeMap<NamePath, Vec<(ItemId, usize)>>) -> Result<(), ParseError> {
+        for item in &mut module.functions { let namespace = item.declaring_namespace.clone(); function(item, &namespace, declarations)?; }
+        for item in &mut module.structs {
+            let namespace = NamePath::new(item.namespace.clone());
+            for method in &mut item.methods { function(method, &namespace, declarations)?; }
+        }
+        for item in &mut module.traits {
+            for method in item.methods.iter_mut().chain(item.default_methods.iter_mut()) { function(method, &item.declaring_namespace, declarations)?; }
+        }
+        for item in &mut module.impls {
+            if let Some(path) = &item.trait_path {
+                let (identity, arity) = lookup(path, &item.declaring_namespace, declarations)?;
+                if arity != item.trait_arguments.len() { return Err(ParseError::invalid(format!("imply trait 类型实参数量不符：{path}"))); }
+                item.trait_declaration = Some(identity);
+            }
+            bounds(&mut item.where_constraints, &item.declaring_namespace, declarations)?;
+            for method in &mut item.methods { function(method, &item.declaring_namespace, declarations)?; }
+        }
+        for item in &mut module.singletons {
+            let namespace = NamePath::new(item.namespace.clone());
+            for method in item.methods.iter_mut().chain(item.constructor.iter_mut().map(Box::as_mut)).chain(item.finalizer.iter_mut().map(Box::as_mut)) { function(method, &namespace, declarations)?; }
+        }
+        for child in &mut module.submodules { bind(child, declarations)?; }
+        Ok(())
+    }
+    bind(module, &declarations)
+}

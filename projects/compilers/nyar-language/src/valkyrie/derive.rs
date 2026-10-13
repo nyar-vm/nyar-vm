@@ -412,6 +412,9 @@ impl DeriveInjector {
 
 fn make_impl(target: &HirStruct, trait_name: &str, methods: Vec<HirFunction>) -> HirImpl {
     HirImpl {
+        trait_declaration: None,
+        declaring_namespace: NamePath::default(),
+        trait_arguments: Vec::new(),
         generics: vec![],
         where_constraints: vec![],
         target: ValkyrieType::Named(target.name.clone()),

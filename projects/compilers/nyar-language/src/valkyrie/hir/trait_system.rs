@@ -12,7 +12,7 @@ use crate::{
     hir::row::{RowMethodSignature, RowRequirement, RowRequirementError},
     types::{
         Identifier, NamePath,
-        hir::{HirImpl, HirModule, HirStruct, HirTrait, ValkyrieType as HirType},
+        hir::{HirImpl, HirModule, HirStruct, HirTrait, HirTraitBound, ValkyrieType, ValkyrieType as HirType},
         witness::{MethodEntry, MethodId, MethodPath, ModuleId, TraitId, TypeId, TypeMetadata, WitnessTable, WitnessTableBuilder},
     },
 };
@@ -102,6 +102,41 @@ impl TraitModuleView {
         satisfy_named_trait_with_traits(candidate, trait_def, &self.impls, Some(&self.traits))
             .map_err(|error| TraitModuleError::Satisfaction { error })
     }
+
+    /// 按已解析的目标类型与 trait 声明身份检查显式实现；允许 primitive 等非结构类型参与 evidence。
+    pub fn satisfy_explicit_type(&self, candidate: &ValkyrieType, bound: &HirTraitBound) -> Result<NamedTraitWitness, TraitModuleError> {
+        let declaration = bound.declaration.ok_or_else(|| TraitModuleError::UnknownTrait { name: bound.trait_path.parts().last().cloned().unwrap_or_default() })?;
+        let trait_def = self.traits.values().find(|item| item.declaration == Some(declaration)).ok_or_else(|| TraitModuleError::UnknownTrait { name: bound.trait_path.parts().last().cloned().unwrap_or_default() })?;
+        let matches = self.impls.iter().filter(|item| item.trait_declaration == Some(declaration) && item.target == *candidate && item.trait_arguments == bound.type_arguments).collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return Err(TraitModuleError::Satisfaction { error: if matches.is_empty() {
+                TraitSatisfactionError::MissingExplicitImplForSuperTraits { trait_path: bound.trait_path.clone() }
+            } else {
+                TraitSatisfactionError::AmbiguousExplicitImpls { trait_path: bound.trait_path.clone(), target: HirType::from(candidate.clone()) }
+            } });
+        }
+        let implementation = matches[0];
+        for method in trait_def.methods.iter().chain(trait_def.default_methods.iter().filter(|method| method.is_abstract)) {
+            let Some(candidate_method) = implementation.methods.iter().find(|candidate| candidate.name == method.name) else {
+                return Err(TraitModuleError::Satisfaction { error: TraitSatisfactionError::MissingMethodBinding { trait_path: bound.trait_path.clone(), name: method.name.clone() } });
+            };
+            let actual_params = candidate_method.params.iter().map(|param| param.ty.clone()).collect::<Vec<_>>();
+            let expected_params = method.params.iter().map(|param| param.ty.clone()).collect::<Vec<_>>();
+            if actual_params != expected_params || candidate_method.return_type != method.return_type {
+                return Err(TraitModuleError::Satisfaction { error: TraitSatisfactionError::MissingMethodBinding { trait_path: bound.trait_path.clone(), name: method.name.clone() } });
+            }
+        }
+        let associated_types = collect_associated_types(implementation, trait_def, &bound.trait_path)
+            .map_err(|error| TraitModuleError::Satisfaction { error })?;
+        for equation in &bound.associated_types {
+            if associated_types.get(&equation.name) != Some(&HirType::from(equation.ty.clone())) {
+                return Err(TraitModuleError::Satisfaction { error: TraitSatisfactionError::MissingAssociatedTypeBinding { trait_path: bound.trait_path.clone(), name: equation.name.clone() } });
+            }
+        }
+        Ok(NamedTraitWitness { trait_path: bound.trait_path.clone(), target: HirType::from(candidate.clone()), source: TraitWitnessSource::ExplicitImpl, method_bindings: Vec::new(), associated_types })
+    }
+
+
 }
 
 pub fn satisfy_named_trait(

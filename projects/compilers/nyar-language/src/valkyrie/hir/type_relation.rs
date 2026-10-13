@@ -220,25 +220,14 @@ impl TypeRelationContext {
     pub fn satisfies_where_constraints(&self, constraints: &[HirWhereConstraint], substitutions: &BTreeMap<Identifier, ValkyrieType>) -> bool {
         constraints.iter().all(|constraint| {
             let target = substitute_relation_type(&constraint.target, substitutions);
-            let Some(target_name) = named_type_name(&target)
-            else {
-                return false;
-            };
             constraint.bounds.iter().all(|bound| {
                 if let Some(context) = self.callable_constraints.iter().find(|context| {
                     let context_target = substitute_relation_type(&context.target, substitutions);
-                    named_type_name(&context_target).is_some_and(|name| name == target_name)
+                    context_target == target
                 }) {
                     return bound_is_satisfied_by_context(bound, context, &self.callable_constraints, substitutions);
                 }
-                let Some(trait_name) = bound.trait_path.parts().last()
-                else {
-                    return false;
-                };
-                let Ok(witness) = self.traits.satisfy_named_trait(&target_name, trait_name)
-                else {
-                    return false;
-                };
+                let Ok(witness) = self.traits.satisfy_explicit_type(&target, bound) else { return false };
                 bound.associated_types.iter().all(|equation| {
                     let expected = substitute_relation_type(&equation.ty, substitutions);
                     witness.associated_types.get(&equation.name).is_some_and(|actual| actual == &expected)

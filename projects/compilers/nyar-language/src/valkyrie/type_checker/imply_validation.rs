@@ -383,6 +383,7 @@ mod constraint_identity_tests {
             where_constraints: vec![HirWhereConstraint {
                 target: HirType::Named(Identifier::new("T")),
                 bounds: vec![HirTraitBound {
+                    declaration: None,
                     trait_path,
                     type_arguments: Vec::new(),
                     associated_types: vec![HirAssociatedTypeBinding { name: Identifier::new("Item"), ty: HirType::Integer32 { signed: true } }],
@@ -403,6 +404,7 @@ mod constraint_identity_tests {
             where_constraints: vec![HirWhereConstraint {
                 target: HirType::Named(Identifier::new("T")),
                 bounds: vec![HirTraitBound {
+                    declaration: None,
                     trait_path: NamePath::new(vec![Identifier::new("Mapper")]),
                     type_arguments: vec![HirType::Boolean],
                     associated_types: Vec::new(),

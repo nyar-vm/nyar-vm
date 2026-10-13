@@ -2099,6 +2099,7 @@ fn substitute_trait_self(candidate: &OverloadCandidate, owner_type: &ValkyrieTyp
                 .bounds
                 .iter()
                 .map(|bound| crate::types::hir::HirTraitBound {
+                    declaration: bound.declaration,
                     trait_path: bound.trait_path.clone(),
                     type_arguments: bound.type_arguments.iter().map(|ty| substitute_type_self(ty, owner_type)).collect(),
                     associated_types: bound
@@ -3826,7 +3827,7 @@ micro caller(value: i64) -> i64 { panic(value) }
         declaration.signature.params = vec![receiver.ty.clone()];
         declaration.where_constraints.push(HirWhereConstraint {
             target: ValkyrieType::Named(Identifier::new("Element")),
-            bounds: vec![HirTraitBound { trait_path: path("Bound"), type_arguments: vec![], associated_types: vec![] }],
+            bounds: vec![HirTraitBound { declaration: None, trait_path: path("Bound"), type_arguments: vec![], associated_types: vec![] }],
             span: receiver.name.span.clone(),
         });
         declaration.param_specs = vec![receiver];
@@ -5183,3 +5184,4 @@ imply Utf8Text {
         assert_eq!(push_calls, 2, "both calls must bind the declared ArrayPush identity");
     }
 }
+

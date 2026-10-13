@@ -2,7 +2,7 @@ use std::{cell::RefCell, ops::Range, path::Path};
 
 use crate::{
     hir::{
-        BuiltinTypeAliasScope, ModuleTypeAliasScope, TypeSourceScope, hoist_anonymous_classes, lower_type_expression,
+        BuiltinTypeAliasScope, ModuleTypeAliasScope, hoist_anonymous_classes, lower_type_expression,
         overload::{resolve_hir_calls, validate_extractor_patterns},
         render_type_expression, validate_ast_root,
     },
@@ -33,6 +33,7 @@ use crate::{
         mir::{SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZER_NAME},
     },
 };
+mod trait_binding;
 use nyar_types::NyarType;
 use ordered_float::OrderedFloat;
 
@@ -813,7 +814,6 @@ impl ValkyrieCompiler {
         let mut root = frontend::parse_source(source)?;
         expand_macros_in_root(&mut root);
         expand_templates_in_root(&mut root, source, DEFAULT_COMPILE_ARCH)?;
-        let _type_source = TypeSourceScope::enter(source);
         let hir = self.lower_root_with_semantic_exports_and_name(&root, imported_semantic_exports, module_name)?;
         self.validate_hir_semantic_contract(&hir)?;
         Ok(hir)
@@ -833,7 +833,6 @@ impl ValkyrieCompiler {
         let mut root = frontend::parse_source(source)?;
         expand_macros_in_root(&mut root);
         expand_templates_in_root(&mut root, source, arch)?;
-        let _type_source = TypeSourceScope::enter(source);
         let hir = AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name)?;
         validate_interop_surface(&hir)?;
         Ok(hir)
@@ -880,8 +879,20 @@ impl ValkyrieCompiler {
     ) -> Result<nyar_types::CompiledProgram, ParseError> {
         let mut hir_groups = self.resolve_source_groups(groups, arch)?;
         let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
-        let mut mir_groups = hir_groups.iter().map(crate::valkyrie::mir::MirLowerer::lower_module_semantic).collect::<Vec<_>>();
-        let mut final_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&final_hir);
+        // monomorph 必须接在整份闭包 HIR 实例号之后，避免与后包声明实例撞号。
+        let mut mono_counter = Some(
+            std::iter::once(&final_hir)
+                .chain(hir_groups.iter())
+                .filter_map(max_hir_callable_instance_index)
+                .max()
+                .map(|index| index.saturating_add(1))
+                .unwrap_or(0),
+        );
+        let mut mir_groups = hir_groups
+            .iter()
+            .map(|hir| crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_mono_counter(hir, &mut mono_counter))
+            .collect::<Vec<_>>();
+        let mut final_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_mono_counter(&final_hir, &mut mono_counter);
         let modules = std::iter::once(&final_mir).chain(mir_groups.iter()).collect::<Vec<_>>();
         let functions = modules.iter().flat_map(|module| module.functions.iter().cloned()).collect::<Vec<_>>();
         let imports = modules.iter().flat_map(|module| module.external_calls.iter().cloned()).collect::<Vec<_>>();
@@ -923,6 +934,7 @@ impl ValkyrieCompiler {
             )?;
             register_function_declarations(&mut hir_module, &mut next_declaration, &mut next_instance)?;
             bind_declared_nominal_types(&mut hir_module)?;
+            trait_binding::bind_trait_declarations(&mut hir_module)?;
             let export = HirDependencySemanticExport {
                 module: NamePath::new(vec![Identifier::new(&group.name)]),
                 functions: exportable_dependency_functions(&hir_module.functions),
@@ -960,7 +972,6 @@ impl ValkyrieCompiler {
             let mut root = frontend::parse_source(&file.source)?;
             expand_macros_in_root(&mut root);
             expand_templates_in_root(&mut root, &file.source, arch)?;
-            let _type_source = TypeSourceScope::enter(&file.source);
             let module = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name.clone())
             }))
@@ -1332,6 +1343,68 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
     Ok(())
 }
 
+/// 整份 HIR 模块（含子模块）已冻结 callable `ItemInstanceId` 的最大下标。
+fn max_hir_callable_instance_index(module: &HirModule) -> Option<u32> {
+    fn consider(instance: Option<nyar_types::ItemInstanceId>, max: &mut Option<u32>) {
+        if let Some(instance) = instance {
+            let index = instance.index();
+            *max = Some(max.map_or(index, |current| current.max(index)));
+        }
+    }
+    fn walk(module: &HirModule, max: &mut Option<u32>) {
+        for function in &module.functions {
+            consider(function.instance, max);
+        }
+        for structure in &module.structs {
+            consider(structure.constructor_instance, max);
+            for method in &structure.methods {
+                consider(method.instance, max);
+            }
+            for property in &structure.properties {
+                for accessor in property.getter.iter().chain(property.setter.iter()) {
+                    consider(accessor.instance, max);
+                }
+            }
+        }
+        for enum_definition in &module.enums {
+            for variant in &enum_definition.variants {
+                consider(variant.instance, max);
+            }
+        }
+        for singleton in &module.singletons {
+            for method in singleton
+                .methods
+                .iter()
+                .chain(singleton.constructor.iter().map(Box::as_ref))
+                .chain(singleton.finalizer.iter().map(Box::as_ref))
+            {
+                consider(method.instance, max);
+            }
+        }
+        for trait_definition in &module.traits {
+            for method in trait_definition.methods.iter().chain(trait_definition.default_methods.iter()) {
+                consider(method.instance, max);
+            }
+        }
+        for implementation in &module.impls {
+            for method in &implementation.methods {
+                consider(method.instance, max);
+            }
+        }
+        for widget in &module.widgets {
+            for method in &widget.methods {
+                consider(method.instance, max);
+            }
+        }
+        for submodule in &module.submodules {
+            walk(submodule, max);
+        }
+    }
+    let mut max = None;
+    walk(module, &mut max);
+    max
+}
+
 fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_instance: &mut u32) -> Result<(), ParseError> {
     fn register(function: &mut HirFunction, next: &mut u32, next_instance: &mut u32, owner_monomorphic: bool) -> Result<(), ParseError> {
         if function.declaration.is_some() || function.instance.is_some() {
@@ -1402,6 +1475,11 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
         }
     }
     for trait_definition in &mut module.traits {
+        if trait_definition.declaration.is_some() {
+            return Err(ParseError::invalid("trait 声明不能重复注册"));
+        }
+        trait_definition.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| ParseError::invalid("无效 ItemId"))?);
+        *next = next.checked_add(1).ok_or_else(|| ParseError::invalid("ItemId 声明空间耗尽"))?;
         for method in trait_definition.methods.iter_mut() {
             register(method, next, next_instance, false)?;
         }
@@ -1553,6 +1631,7 @@ impl AstToHir {
         }
         register_function_declarations(&mut hir, &mut 0, &mut 0)?;
         bind_declared_nominal_types(&mut hir)?;
+        trait_binding::bind_trait_declarations(&mut hir)?;
         resolve_hir_calls(&mut hir);
         validate_extractor_patterns(&hir)?;
         Ok(hir)
@@ -1731,7 +1810,9 @@ impl AstToHir {
                 Ok(())
             }
             StatementNode::Trait(trait_decl) => {
-                traits.push(self.lower_trait(trait_decl));
+                let mut lowered = self.lower_trait(trait_decl);
+                lowered.declaring_namespace = namespace.clone();
+                traits.push(lowered);
                 Ok(())
             }
             StatementNode::Enums(enum_decl) => {
@@ -1747,7 +1828,7 @@ impl AstToHir {
                 Ok(())
             }
             StatementNode::Imply(imply) => {
-                impls.push(self.lower_imply(imply));
+                impls.push(self.lower_imply(imply, namespace));
                 Ok(())
             }
             StatementNode::Union(union_decl) => Err(ParseError::invalid(format!("named union `{}` is not yet lowered", union_decl.name.name))),
@@ -1966,7 +2047,7 @@ impl AstToHir {
             }
         }
 
-        HirTrait {
+        HirTrait { declaration: None, declaring_namespace: Default::default(),
             name: oak_identifier(&trait_decl.name),
             doc: lower_documentation(&trait_decl.annotations),
             generics: lower_generic_parameters(&trait_decl.generics),
@@ -2018,8 +2099,12 @@ impl AstToHir {
         enum_def
     }
 
-    fn lower_imply(&self, imply: &ImplyDeclaration) -> HirImpl {
-        HirImpl {
+    fn lower_imply(&self, imply: &ImplyDeclaration, declaring_namespace: &NamePath) -> HirImpl {
+        let trait_arguments = imply.trait_type.as_ref().and_then(|ty| match ty {
+            TypeExpression::Apply(node) => Some(node.arguments.iter().map(lower_type_expression).collect()),
+            _ => None,
+        }).unwrap_or_default();
+        HirImpl { trait_declaration: None, declaring_namespace: declaring_namespace.clone(), trait_arguments,
             generics: lower_generic_parameters(&imply.generics),
             where_constraints: Vec::new(),
             target: lower_type_expression(&imply.target_type),
@@ -2371,6 +2456,7 @@ fn lower_using(using: &UsingDeclaration) -> HirImport {
 fn lower_trait_path_from_type(ty: &TypeExpression) -> NamePath {
     match ty {
         TypeExpression::Namepath(path) => lower_name_path(path),
+        TypeExpression::Apply(node) => lower_trait_path_from_type(&node.base),
         other => NamePath::new(vec![Identifier::new(&render_type_expression(other))]),
     }
 }
@@ -3208,6 +3294,121 @@ micro wrap<T>(value: T): Option<T> {
     }
 
     #[test]
+    fn cross_package_array_host_get_links_without_orphan_callable() {
+        // 对齐 std.adaptor.wasm Array.v：`array.length` / `array::[i]` / Some/None 不得留下无合同 Call。
+        let groups = vec![
+            CompilerSourceGroup {
+                dependency_key: "core".into(),
+                name: "core".into(),
+                source: r#"
+namespace core::primitive;
+[primitive("core::primitive::usize")]
+structure usize { }
+imply usize {
+    infix `==`(self, rhs: Self): bool { return true }
+    infix `>`(self, rhs: Self): bool { return true }
+    infix `-`(self, rhs: Self): Self { return self }
+}
+namespace core::types;
+unite Option<T> { Some { value: T }, None }
+micro Some<T>(value: T) -> Option<T> {
+    let wrapped: Option<T> = Some(value)
+    return wrapped
+}
+"#
+                .into(),
+                sources: Vec::new(),
+                direct_dependencies: Vec::new(),
+            },
+            CompilerSourceGroup {
+                dependency_key: "std.adaptor.wasm".into(),
+                name: "std.adaptor.wasm".into(),
+                source: r#"
+namespace std.adaptor.wasm.collection;
+micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
+    let item_count: usize = array.length
+    if ordinal == 0 || ordinal > item_count {
+        return None
+    }
+    return Some(array::[ordinal - 1])
+}
+micro array_host_set<T>(mut array: [T], ordinal: usize, value: T): unit {
+    let item_count: usize = array.length
+    if ordinal == 0 || ordinal > item_count {
+        return
+    }
+    array::[ordinal - 1] = value
+}
+"#
+                .into(),
+                sources: Vec::new(),
+                direct_dependencies: vec!["core".into()],
+            },
+        ];
+        let compiler = ValkyrieCompiler::default();
+        let mut hir_groups = compiler.resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("HIR");
+        let final_hir = hir_groups.pop().expect("adaptor");
+        let mir_groups = hir_groups.iter().map(crate::valkyrie::mir::MirLowerer::lower_module_semantic).collect::<Vec<_>>();
+        let mut final_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&final_hir);
+        let mut defined = std::collections::BTreeSet::new();
+        for module in std::iter::once(&final_mir).chain(mir_groups.iter()) {
+            eprintln!("-- mir module functions --");
+            for function in &module.functions {
+                eprintln!("  {:?} decl={:?} inst={:?}", function.symbol, function.declaration, function.instance);
+                if let Some(instance) = function.instance {
+                    defined.insert(instance);
+                }
+            }
+            for contract in &module.external_calls {
+                eprintln!("  import {:?} inst={:?}", contract.symbol, contract.instance);
+                if let Some(instance) = contract.instance {
+                    defined.insert(instance);
+                }
+            }
+        }
+        eprintln!("defined instances: {defined:?}");
+        for function in &final_mir.functions {
+            for block in &function.blocks {
+                for instruction in &block.instructions {
+                    if let crate::valkyrie::mir::ssa::MirOperation::Call {
+                        callee: crate::valkyrie::mir::ssa::MirOperand::Callable(callee),
+                        ..
+                    } = &instruction.kind
+                    {
+                        if !defined.contains(callee) {
+                            panic!(
+                                "orphan Callable {callee:?} in {}; ops={:?}",
+                                function.symbol,
+                                function
+                                    .blocks
+                                    .iter()
+                                    .flat_map(|block| block.instructions.iter().map(|item| format!("{:?}", item.kind)))
+                                    .collect::<Vec<_>>()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        let modules = std::iter::once(&final_mir).chain(mir_groups.iter()).collect::<Vec<_>>();
+        let functions = modules.iter().flat_map(|module| module.functions.iter().cloned()).collect::<Vec<_>>();
+        let imports = modules.iter().flat_map(|module| module.external_calls.iter().cloned()).collect::<Vec<_>>();
+        let structures = modules.iter().flat_map(|module| module.structs.iter().cloned()).collect::<Vec<_>>();
+        let type_identities = crate::valkyrie::mir::ssa::type_identity_table(&functions, &imports, &structures, &final_mir.sum_types);
+        final_mir.type_identities = type_identities.clone();
+        let mut deps = mir_groups;
+        for module in &mut deps {
+            module.type_identities = type_identities.clone();
+        }
+        crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &deps)
+            .unwrap_or_else(|error| panic!("array_host 跨包链接必须成功: {error}"));
+        // 完整 Compiler 载荷路径：字面量须特化为 Nominal{usize}，不得 SMIR007 Integer32。
+        ValkyrieCompiler::default()
+            .compile_source_groups_to_program(&groups)
+            .unwrap_or_else(|error| panic!("array_host_get 完整 Compiler 载荷不得留下孤儿实例: {error}"));
+    }
+
+    #[test]
     fn same_module_private_wasm_host_call_resolves() {
         let source = r#"
 namespace demo.text;
@@ -3224,7 +3425,7 @@ private micro __host_utf16_length(s: utf16): isize
 
     #[test]
     fn same_module_private_wasm_host_call_with_std_text_path_resolves() {
-        // Oak parse_type 截断点号路径；TypeSourceScope 按 span 恢复后须得到 Utf16。
+        // Oak parse_type 必须产出完整 NamePath（`.` / `::`）；禁止前端再按 span 切片重解析。
         let source = r#"
 namespace demo.text;
 micro host_length(value: std.text.utf16): isize {
@@ -3235,7 +3436,7 @@ private micro __host_utf16_length(s: utf16): isize
 "#;
         ValkyrieCompiler::default()
             .compile_source(source)
-            .unwrap_or_else(|error| panic!("std.text.utf16 与 utf16 必须可调用同一 host: {error}"));
+            .unwrap_or_else(|error| panic!("Oak NamePath 须保留 std.text.utf16: {error}"));
     }
 
     #[test]
@@ -3310,7 +3511,7 @@ micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
 fn lower_where_constraints(constraints: &[oak_valkyrie::ast::type_nodes::WhereConstraint], source_id: SourceID) -> Vec<HirWhereConstraint> {
     constraints.iter().map(|constraint| HirWhereConstraint {
         target: lower_type_expression(&constraint.target),
-        bounds: constraint.bounds.iter().map(|bound| HirTraitBound {
+        bounds: constraint.bounds.iter().map(|bound| HirTraitBound { declaration: None,
             trait_path: NamePath::new(bound.trait_path.parts.iter().map(oak_identifier).collect()),
             type_arguments: bound.type_arguments.iter().map(lower_type_expression).collect(),
             associated_types: bound.associated_types.iter().map(|equation| HirAssociatedTypeBinding { name: oak_identifier(&equation.name), ty: lower_type_expression(&equation.ty) }).collect(),
