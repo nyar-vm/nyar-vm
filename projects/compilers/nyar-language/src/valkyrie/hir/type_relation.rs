@@ -328,7 +328,7 @@ fn bound_is_satisfied_by_context(
     substitutions: &BTreeMap<Identifier, ValkyrieType>,
 ) -> bool {
     context.bounds.iter().any(|provided| {
-        provided.trait_path == required.trait_path
+        provided.declaration.is_some() && provided.declaration == required.declaration
             && provided.type_arguments.len() == required.type_arguments.len()
             && provided.type_arguments.iter().zip(&required.type_arguments).all(|(provided, required)| {
                 normalize_context_type(provided, all_contexts, substitutions) == normalize_context_type(required, all_contexts, substitutions)
