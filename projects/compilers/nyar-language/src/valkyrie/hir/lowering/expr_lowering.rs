@@ -225,8 +225,8 @@ fn lower_term_expression_with_context(
         TermExpression::Loop { label, pattern, condition, body, .. } => HirExprKind::Loop {
             label: label.as_ref().map(|value| Identifier::new(value)),
             pattern: pattern.as_ref().map(|pat| lower_pattern(pat, source_id, span.clone())),
-            iterator: None,
-            condition: condition.as_ref().map(|expr| Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false))),
+            iterator: if pattern.is_some() { condition.as_ref().map(|expr| Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false))) } else { None },
+            condition: if pattern.is_none() { condition.as_ref().map(|expr| Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false))) } else { None },
             body: Box::new(lower_block(body, source_id, span_range.clone())),
         },
         TermExpression::Return(node) => HirExprKind::Return(
@@ -727,6 +727,14 @@ mod assignment_lowering_tests {
     fn assignment_and_field_write_keep_structured_targets() {
         assert!(matches!(lower("micro update() { value = 7 }").kind, HirExprKind::Assign { .. }));
         assert!(matches!(lower("micro update() { object.field = 7 }").kind, HirExprKind::StoreField { .. }));
+    }
+
+    #[test]
+    fn iteration_source_is_not_a_boolean_condition() {
+        assert!(matches!(lower("micro visit() { loop item in values { consume(item) } }").kind,
+            HirExprKind::Loop { pattern: Some(_), iterator: Some(_), condition: None, .. }));
+        assert!(matches!(lower("micro visit() { while ready { consume() } }").kind,
+            HirExprKind::Loop { pattern: None, iterator: None, condition: Some(_), .. }));
     }
 
     #[test]
