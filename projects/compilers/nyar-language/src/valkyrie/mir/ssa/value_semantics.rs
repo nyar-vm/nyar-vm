@@ -116,6 +116,10 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
     let mut structs = Vec::new();
     collect_module_structs(module, &mut structs);
     for hir_struct in structs {
+        // 开放泛型声明不得生成平台布局（字段仍是 binder）；与 SumTypeLayout 同口径。
+        if !hir_struct.generics.is_empty() {
+            continue;
+        }
         let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
         let layout = layout_for_struct(hir_struct, &mut plan, storage);
         register_declared_layout(&mut plan, hir_struct, layout);
@@ -127,7 +131,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
     // so TextSpan{start,stop} is not erased by core.text TextSpan{offset,length}.
     for export in &module.imported_semantic_exports {
         for hir_struct in &export.structs {
-            if hir_struct.fields.is_empty() {
+            if hir_struct.fields.is_empty() || !hir_struct.generics.is_empty() {
                 continue;
             }
             let simple = hir_struct.name.as_str();
@@ -141,6 +145,9 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
     }
     for singleton in &module.singletons {
         let hir_struct = crate::valkyrie::mir::singleton::singleton_as_struct(singleton);
+        if !hir_struct.generics.is_empty() {
+            continue;
+        }
         let layout = layout_for_struct(&hir_struct, &mut plan, MirStorageKind::Reference);
         register_declared_layout(&mut plan, &hir_struct, layout);
     }

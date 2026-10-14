@@ -74,6 +74,18 @@ fn semantic_field_contract_rejects_wrong_result_and_missing_owner_despite_layout
     let module = source_module();
     let mut missing = module.clone();
     missing.structs.clear();
+    // 开放泛型不再登记平台布局；注入伪布局，证明物理侧表仍不能代替语义声明。
+    if missing.aggregate_layouts.layouts.is_empty() {
+        missing.aggregate_layouts.layouts.push(crate::mir::AggregateLayout {
+            id: 1,
+            name: "Parcel".into(),
+            namespace: String::new(),
+            storage: crate::mir::MirStorageKind::Reference,
+            size: 8,
+            align: 8,
+            fields: Vec::new(),
+        });
+    }
     assert!(!missing.aggregate_layouts.layouts.is_empty());
     assert_eq!(validate_semantic_module(&missing).expect_err("物理布局不能代替语义声明").code, "SMIR006");
     let mut wrong = module;
