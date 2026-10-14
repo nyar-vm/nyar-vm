@@ -48,6 +48,18 @@ impl MirBuilder {
         }
     }
 
+    /// Some/Fine/Fail 短名命中但缺少 sum 身份时失败关闭，禁止回落 Invoke。
+    fn fail_unresolved_sum_variant_call(&mut self, resolved: Option<&HirResolvedCall>, fallback_variant: &str) -> MirOperand {
+        let variant = resolved
+            .and_then(|call| call.symbol.parts().last().map(|part| part.to_string()))
+            .unwrap_or_else(|| fallback_variant.to_string());
+        let sum_type = resolved
+            .and_then(|call| sum_owner_name(&call.return_type).map(|owner| owner.to_string()))
+            .unwrap_or_else(|| variant.clone());
+        self.diagnostics.push(super::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
+        MirOperand::Constant(MirConstant::Unit)
+    }
+
     fn option_payload_type(actual_type: &ValkyrieType) -> Option<ValkyrieType> {
         match actual_type {
             ValkyrieType::Nullable(inner) => Some(*inner.clone()),
@@ -662,20 +674,21 @@ impl MirBuilder {
                         return operand;
                     }
                 }
+                // Some/Fine/Fail 短名入口：必须已有 sum_owner/sum_variant；失败不得回落普通调用补语义。
                 if super::expr_helpers::callee_matches_name(callee, resolved.as_ref(), "Some") && args.len() == 1 {
-                    if let Some(operand) = self.try_lower_option_some_constructor(&args[0].value, resolved.as_ref(), expected_type) {
-                        return operand;
-                    }
+                    return self.try_lower_option_some_constructor(&args[0].value, resolved.as_ref(), expected_type).unwrap_or_else(|| {
+                        self.fail_unresolved_sum_variant_call(resolved.as_ref(), "Some")
+                    });
                 }
                 if super::expr_helpers::callee_matches_name(callee, resolved.as_ref(), "Fine") && args.len() == 1 {
-                    if let Some(operand) = self.try_lower_result_variant_constructor("Fine", &args[0].value, resolved.as_ref(), expected_type) {
-                        return operand;
-                    }
+                    return self
+                        .try_lower_result_variant_constructor("Fine", &args[0].value, resolved.as_ref(), expected_type)
+                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref(), "Fine"));
                 }
                 if super::expr_helpers::callee_matches_name(callee, resolved.as_ref(), "Fail") && args.len() == 1 {
-                    if let Some(operand) = self.try_lower_result_variant_constructor("Fail", &args[0].value, resolved.as_ref(), expected_type) {
-                        return operand;
-                    }
+                    return self
+                        .try_lower_result_variant_constructor("Fail", &args[0].value, resolved.as_ref(), expected_type)
+                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref(), "Fail"));
                 }
                 // 禁止按 callee 名 `tuple` 补结构语义；须等真实 Tuple AST/HIR/类型身份落地。
                 if callee_name_matches(&callee.kind, "tuple") {
@@ -1237,10 +1250,8 @@ fn render_interpolation_expr(expr: &HirExpr) -> String {
     }
 }
 
-/// Prefer the contextual Result/Option apply (`Result<Plan, E>`) over the
-/// constructor's still-generic `Result<T, E>` so SMIR007 return checks match.
-/// Fine/Fail also accept alias returns (`VonParseResult<T>`) that expand to the
-/// same Result unite ??do not require identical owner spelling.
+/// Prefer the contextual sum apply when both sides already share Nominal declaration identity.
+/// 禁止按 Fine/Fail/Some/None 短名 + 形状启发式认亲别名返回类型。
 fn concretize_variant_constructor_types(
     ctor_return: &ValkyrieType,
     payload_type: Option<ValkyrieType>,
@@ -1250,7 +1261,7 @@ fn concretize_variant_constructor_types(
     value_types: &std::collections::BTreeMap<super::MirValueRef, ValkyrieType>,
 ) -> (ValkyrieType, Option<ValkyrieType>) {
     let return_type = match expected_type {
-        Some(expected) if should_prefer_expected_sum_return(variant, ctor_return, expected) => expected.clone(),
+        Some(expected) if same_sum_owner(ctor_return, expected) => expected.clone(),
         _ => ctor_return.clone(),
     };
     let from_expected = payload_type_for_variant(&return_type, variant)
@@ -1258,42 +1269,6 @@ fn concretize_variant_constructor_types(
     let from_argument = arguments.first().and_then(|argument| infer_builder_operand_type(argument, value_types));
     let payload_type = from_expected.or(from_argument).or(payload_type);
     (return_type, payload_type)
-}
-
-fn should_prefer_expected_sum_return(variant: &str, ctor_return: &ValkyrieType, expected: &ValkyrieType) -> bool {
-    if same_sum_owner(ctor_return, expected) {
-        return true;
-    }
-    // Built-in Result/Option arms: constructor may still say `Result<T, E>` while
-    // the function is typed as a Result alias (`VonParseResult<T>`).
-    matches!(variant, "Fine" | "Fail" | "Some" | "None" | "Ok" | "Err")
-        && (is_result_shaped(expected) || is_result_shaped(ctor_return) || is_option_shaped(expected) || is_option_shaped(ctor_return))
-}
-
-fn is_result_shaped(ty: &ValkyrieType) -> bool {
-    crate::hir::try_propagate::is_result_apply_type(ty) || matches!(ty, ValkyrieType::Nominal { arguments, .. } if arguments.len() == 2)
-}
-
-fn is_option_shaped(ty: &ValkyrieType) -> bool {
-    match ty {
-        ValkyrieType::Nullable(_) => true,
-        ValkyrieType::Nominal { arguments, .. } => arguments.len() <= 1,
-        ValkyrieType::Apply(base, _) => is_option_shaped(base),
-        _ => false,
-    }
-}
-
-/// Preserve the linked contextual sum type when both sides are already known
-/// to be the same language-level sum.  Alias spelling is resolved upstream.
-fn prefer_contextual_sum_alias(ty: ValkyrieType, expected: Option<&ValkyrieType>) -> ValkyrieType {
-    let Some(expected) = expected
-    else {
-        return ty;
-    };
-    if (is_result_shaped(&ty) && is_result_shaped(expected)) || (is_option_shaped(&ty) && is_option_shaped(expected)) {
-        return expected.clone();
-    }
-    ty
 }
 
 fn same_sum_owner(left: &ValkyrieType, right: &ValkyrieType) -> bool {

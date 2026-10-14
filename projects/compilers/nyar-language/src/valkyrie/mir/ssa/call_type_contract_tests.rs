@@ -188,6 +188,41 @@ micro demo(value: u32): u32 {
 }
 
 #[test]
+fn some_short_name_without_sum_identity_fails_closed() {
+    let mut hir = ValkyrieCompiler::default()
+        .compile_source(
+            "unite Option<T> { Some { value: T }, None } \
+             micro wrap(value: utf8) -> Option<utf8> { return Some(value) }",
+        )
+        .expect("Option/Some 源码必须完成 HIR");
+    let wrap = hir.functions.iter_mut().find(|function| function.name.as_str() == "wrap").expect("wrap");
+    let body = wrap.body.expr.as_mut().expect("wrap body");
+    let call = match &mut body.kind {
+        HirExprKind::Return(Some(expr)) => expr.as_mut(),
+        HirExprKind::Call { .. } => body,
+        other => panic!("预期 Some 调用或 return Some，得到 {other:?}"),
+    };
+    let HirExprKind::Call { resolved: Some(resolved), .. } = &mut call.kind
+    else {
+        panic!("预期 Some 调用表达式");
+    };
+    resolved.sum_owner = None;
+    resolved.sum_variant = None;
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    assert!(
+        mir.diagnostics.iter().any(|diagnostic| matches!(diagnostic, MirDiagnostic::UnresolvedVariantIdentity { .. })),
+        "缺 sum 身份的 Some 不得成功降低: {:?}",
+        mir.diagnostics
+    );
+    assert!(
+        !mir.functions.iter().flat_map(|function| &function.blocks).flat_map(|block| &block.instructions).any(|instruction| {
+            matches!(instruction.kind, MirOperation::SumNew { .. })
+        }),
+        "缺身份时不得发出 SumNew"
+    );
+}
+
+#[test]
 fn integer_literal_equality_does_not_fabricate_a_false_result() {
     let mut builder = MirBuilder::new(
         Default::default(),
