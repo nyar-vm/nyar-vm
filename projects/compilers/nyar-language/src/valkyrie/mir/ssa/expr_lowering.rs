@@ -237,7 +237,7 @@ impl MirBuilder {
 
     fn try_lower_result_variant_constructor(
         &mut self,
-        variant: &str,
+        _variant: &str,
         payload_expr: &HirExpr,
         resolved: Option<&HirResolvedCall>,
         expected_type: Option<&ValkyrieType>,
@@ -248,36 +248,22 @@ impl MirBuilder {
         }
         let (owner, variant_declaration) = call.sum_owner.zip(call.sum_variant)?;
         let (nominal, variant_id) = self.sum_identity_by_declarations(owner, variant_declaration)?;
-        let variant_name = call.symbol.parts().last().map(|part| part.as_str()).unwrap_or(variant);
-        let payload_hint =
-            call.parameter_types.first().cloned().or_else(|| expected_type.and_then(|ty| payload_type_for_variant(ty, variant_name)));
+        // 调用方短名仅供诊断；payload/实参位置只认 sum_owner + binder。
+        let contextual = expected_type.cloned().unwrap_or_else(|| call.return_type.clone());
+        let payload_hint = call
+            .parameter_types
+            .first()
+            .cloned()
+            .or_else(|| instantiated_payload_for_call(&self.sum_types, call, &contextual));
         let payload_operand = self.lower_expr_to_operand_with_hint(payload_expr, payload_hint.as_ref());
         let payload_type = infer_builder_operand_type(&payload_operand, &self.value_types).or(payload_hint);
-        let contextual = expected_type.cloned().unwrap_or_else(|| call.return_type.clone());
-        let type_args = self.pad_result_type_args(self.sum_instantiation_args(owner, &contextual, &[]));
-        let mut emitted_type_args = type_args;
-        match variant_name {
-            "Fine" => {
-                if let Some(payload) = payload_type.clone() {
-                    if emitted_type_args.is_empty() && self.impl_type_arguments.len() >= 2 {
-                        emitted_type_args = vec![payload, self.impl_type_arguments[1].clone()];
-                    }
-                    else if !emitted_type_args.is_empty() {
-                        emitted_type_args[0] = payload;
-                    }
+        let mut emitted_type_args = self.pad_result_type_args(self.sum_instantiation_args(owner, &contextual, &[]));
+        if let Some(payload) = payload_type.as_ref() {
+            if let Some(sum) = super::MirSumDeclaration::find_by_declaration(&self.sum_types, owner) {
+                if let Some(variant_decl) = sum.variants.iter().find(|item| item.declaration == Some(variant_declaration)) {
+                    apply_payload_to_sum_type_args(sum, variant_decl, &mut emitted_type_args, payload);
                 }
             }
-            "Fail" => {
-                if let Some(payload) = payload_type.clone() {
-                    if emitted_type_args.len() >= 2 {
-                        emitted_type_args[1] = payload;
-                    }
-                    else if self.impl_type_arguments.len() >= 2 {
-                        emitted_type_args = vec![self.impl_type_arguments[0].clone(), payload];
-                    }
-                }
-            }
-            _ => {}
         }
         let return_type = if type_args_from_sum_shaped(&contextual).is_empty() && !emitted_type_args.is_empty() {
             self.sum_apply_type(owner, &emitted_type_args).unwrap_or_else(|| contextual.clone())
@@ -288,7 +274,6 @@ impl MirBuilder {
         let (return_type, payload_type) = concretize_variant_constructor_types(
             &return_type,
             payload_type,
-            variant_name,
             expected_type,
             &[payload_operand.clone()],
             &self.value_types,
@@ -858,7 +843,6 @@ impl MirBuilder {
                             let (return_type, payload_type) = concretize_variant_constructor_types(
                                 &call.return_type,
                                 payload_type,
-                                &variant,
                                 expected_type,
                                 &arguments,
                                 &self.value_types,
@@ -1016,7 +1000,6 @@ impl MirBuilder {
                             let (return_type, payload_type) = concretize_variant_constructor_types(
                                 &ctor_return,
                                 payload_type,
-                                &variant,
                                 expected_type,
                                 &field_values,
                                 &self.value_types,
@@ -1251,11 +1234,10 @@ fn render_interpolation_expr(expr: &HirExpr) -> String {
 }
 
 /// Prefer the contextual sum apply when both sides already share Nominal declaration identity.
-/// 禁止按 Fine/Fail/Some/None 短名 + 形状启发式认亲别名返回类型。
+/// payload 须由调用方经 `parameter_types` / `instantiate_payload` 提供，禁止变体短名认亲。
 fn concretize_variant_constructor_types(
     ctor_return: &ValkyrieType,
     payload_type: Option<ValkyrieType>,
-    variant: &str,
     expected_type: Option<&ValkyrieType>,
     arguments: &[MirOperand],
     value_types: &std::collections::BTreeMap<super::MirValueRef, ValkyrieType>,
@@ -1264,10 +1246,8 @@ fn concretize_variant_constructor_types(
         Some(expected) if same_sum_owner(ctor_return, expected) => expected.clone(),
         _ => ctor_return.clone(),
     };
-    let from_expected = payload_type_for_variant(&return_type, variant)
-        .or_else(|| expected_type.and_then(|expected| payload_type_for_variant(expected, variant)));
     let from_argument = arguments.first().and_then(|argument| infer_builder_operand_type(argument, value_types));
-    let payload_type = from_expected.or(from_argument).or(payload_type);
+    let payload_type = payload_type.or(from_argument);
     (return_type, payload_type)
 }
 
@@ -1285,31 +1265,57 @@ fn sum_owner_name(ty: &ValkyrieType) -> Option<&str> {
             ValkyrieType::Named(name) => Some(name.as_str()),
             _ => None,
         },
-        // Nominal ?????????????? nominal_declaration??
+        // Nominal 诊断名应走 declaration；此处不回退短名。
         ValkyrieType::Nominal { .. } => None,
         _ => None,
     }
 }
 
-fn payload_type_for_variant(sum_type: &ValkyrieType, variant: &str) -> Option<ValkyrieType> {
-    let args = match sum_type {
-        ValkyrieType::Nominal { arguments, .. } => arguments.as_slice(),
-        ValkyrieType::Apply(_, arguments) => arguments.as_slice(),
-        _ => return None,
+/// 按 sum_owner + sum_variant + 已冻结实参代入 payload；禁止 Fine/Some/Fail 拼写选槽。
+fn instantiated_payload_for_call(
+    sum_types: &[super::MirSumDeclaration],
+    call: &HirResolvedCall,
+    sum_type: &ValkyrieType,
+) -> Option<ValkyrieType> {
+    let owner = call.sum_owner?;
+    let variant_declaration = call.sum_variant?;
+    let sum = super::MirSumDeclaration::find_by_declaration(sum_types, owner)?;
+    let variant = sum.variants.iter().find(|item| item.declaration == Some(variant_declaration))?;
+    let args = type_args_from_sum_shaped(sum_type);
+    if args.is_empty() {
+        return call.parameter_types.first().cloned().or_else(|| variant.payload_type());
+    }
+    match sum.instantiate_payload(variant, &args) {
+        Some(payload) => payload.or_else(|| call.parameter_types.first().cloned()),
+        None => call.parameter_types.first().cloned(),
+    }
+}
+
+/// 将构造器 payload 写回其声明 binder 对应的 type arg 槽位。
+fn apply_payload_to_sum_type_args(
+    sum: &super::MirSumDeclaration,
+    variant: &crate::mir::MirSumVariant,
+    type_args: &mut Vec<ValkyrieType>,
+    payload: &ValkyrieType,
+) {
+    let Some(declared_payload) = variant.payload_type()
+    else {
+        return;
     };
-    match variant {
-        "Fine" | "Some" | "Left" | "Ok" => args.first().cloned(),
-        "Fail" | "Right" | "Err" => {
-            if args.len() >= 2 {
-                args.get(1).cloned()
-            }
-            else {
-                // One-arg Result aliases (`VonParseResult<T>`) keep Fail payload
-                // as VonDiagnostic by convention at the call site; prefer argument.
-                None
-            }
-        }
-        _ => None,
+    let ValkyrieType::Generic(generic) = declared_payload
+    else {
+        return;
+    };
+    let Some(binder) = generic.binder
+    else {
+        return;
+    };
+    let Some(index) = sum.generics.iter().position(|item| item.binder == Some(binder))
+    else {
+        return;
+    };
+    if index < type_args.len() {
+        type_args[index] = payload.clone();
     }
 }
 

@@ -107,6 +107,18 @@ impl MirBuilder {
                         }
                     }
                 }
+                // 绑定注解为 `Nominal{usize}` 而 RHS（如 ArrayLength）仍为另一整数 TypeId 时，
+                // 以注解为准改写源值类型，避免 StoreVar result≠value（CAN015）。
+                if let (Some(hint), MirOperand::Value(source)) = (&inferred_type, &operand) {
+                    if let Some(concrete) = self.value_types.get(source).cloned() {
+                        if &concrete != hint
+                            && super::expr_helpers::is_integer_literal_formal_type(hint, &self.field_declarations)
+                            && super::expr_helpers::is_integer_literal_formal_type(&concrete, &self.field_declarations)
+                        {
+                            self.value_types.insert(*source, hint.clone());
+                        }
+                    }
+                }
                 self.push_instruction(MirOperation::StoreVar { name: name.clone(), value: operand, ty: inferred_type.clone() }, vec![value]);
                 if let Some(inferred_type) = inferred_type {
                     self.value_types.insert(value, inferred_type);
@@ -330,23 +342,28 @@ impl MirBuilder {
     fn resolve_sum_variant_payload_type(
         &self,
         actual_type: &ValkyrieType,
-        variant_name: &str,
+        _variant_name: &str,
         resolved: Option<&HirResolvedCall>,
     ) -> Option<ValkyrieType> {
-        if let Some(resolved) = resolved {
-            let object_ty = actual_type.clone();
-            let from_apply = match (&object_ty, variant_name) {
-                (ValkyrieType::Apply(_, args), "Fine" | "Some" | "Ok") => args.first().cloned(),
-                (ValkyrieType::Apply(_, args), "Fail" | "Err") => args.get(1).cloned(),
-                (ValkyrieType::Nullable(inner), "Some") => Some((**inner).clone()),
-                _ => None,
-            };
-            if let Some(payload_ty) = from_apply.filter(|ty| !looks_like_unbound_type_parameter(ty)) {
-                return Some(payload_ty);
+        let resolved = resolved?;
+        let owner = resolved.sum_owner?;
+        let variant_declaration = resolved.sum_variant?;
+        let sum = super::MirSumDeclaration::find_by_declaration(&self.sum_types, owner)?;
+        let variant = sum.variants.iter().find(|item| item.declaration == Some(variant_declaration))?;
+        let args = super::expr_lowering::type_args_from_sum_shaped(actual_type);
+        if !args.is_empty() {
+            if let Some(Some(payload_ty)) = sum.instantiate_payload(variant, &args) {
+                if !looks_like_unbound_type_parameter(&payload_ty) {
+                    return Some(payload_ty);
+                }
             }
-            return resolved.extractor_payload_type.clone().filter(|ty| !looks_like_unbound_type_parameter(ty));
         }
-        None
+        if let ValkyrieType::Nullable(inner) = actual_type {
+            if !looks_like_unbound_type_parameter(inner) {
+                return Some((**inner).clone());
+            }
+        }
+        resolved.extractor_payload_type.clone().filter(|ty| !looks_like_unbound_type_parameter(ty))
     }
 
     pub(super) fn lower_tuple_pattern_match_operand(&mut self, items: &[HirPattern], value: MirOperand) -> MirOperand {
@@ -448,23 +465,8 @@ impl MirBuilder {
         let (owner, variant_declaration) = resolved.sum_owner.zip(resolved.sum_variant)?;
         let (nominal, variant_id) = self.sum_identity_by_declarations(owner, variant_declaration)?;
         let object_ty = infer_builder_operand_type(&value, &self.value_types)?;
-        let variant = resolved.symbol.parts().last()?.as_str();
-        // Prefer the concrete Apply substitution on the scrutinee. HIR often keeps
-        // `extractor_payload_type = Named("T"|"E")` from the generic unite definition,
-        // which must not override `Result<i32, VonDiagnostic>` → VonDiagnostic.
-        let payload_ty = match (&object_ty, variant) {
-            (ValkyrieType::Apply(_, args), "Fine" | "Some" | "Ok") => args.first().cloned(),
-            (ValkyrieType::Apply(_, args), "Fail" | "Err") => {
-                if args.len() >= 2 {
-                    args.get(1).cloned()
-                }
-                else {
-                    None
-                }
-            }
-            (ValkyrieType::Nullable(inner), "Some") => Some((**inner).clone()),
-            _ => resolved.extractor_payload_type.clone(),
-        }?;
+        // 具体实参代入优先于 HIR 上残留的 Named("T"|"E")；禁止 Fine/Fail/Some 拼写选槽。
+        let payload_ty = self.resolve_sum_variant_payload_type(&object_ty, "", Some(resolved))?;
         let output = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(
             MirOperation::SumPayloadGet {

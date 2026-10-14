@@ -13,8 +13,9 @@ impl MirBuilder {
         let value = self.lower_expr_to_operand(inner);
         if let Some(resolved) = resolved_ok_variant {
             if let Some((owner, variant)) = resolved.sum_owner.zip(resolved.sum_variant) {
-                let apply_owner = if resolved.symbol.parts().last().is_some_and(|name| name.as_str() == "Fine") { "Result" } else { "Option" };
-                return self.lower_sum_try_propagate(value, owner, variant, apply_owner);
+                // 标签仅供块命名；身份与 payload 只认 sum_owner / sum_variant。
+                let is_result = self.result_declaration == Some(owner);
+                return self.lower_sum_try_propagate(value, owner, variant, is_result);
             }
         }
         let operand_type = infer_builder_operand_type(&value, &self.value_types);
@@ -61,7 +62,7 @@ impl MirBuilder {
         value: MirOperand,
         owner: nyar_types::ItemId,
         variant: nyar_types::ItemId,
-        apply_owner: &str,
+        is_result: bool,
     ) -> MirOperand {
         let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
         else {
@@ -72,7 +73,7 @@ impl MirBuilder {
             return MirOperand::Constant(MirConstant::Unit);
         };
         let (early_exit_label, continue_label) =
-            if apply_owner == "Result" { ("try_propagate_fail", "try_propagate_fine") } else { ("try_propagate_none", "try_propagate_some") };
+            if is_result { ("try_propagate_fail", "try_propagate_fine") } else { ("try_propagate_none", "try_propagate_some") };
         let branch_block = self.current_block;
         let branch_label = self.current_label.clone();
         let return_block = self.new_block(early_exit_label);
@@ -93,7 +94,7 @@ impl MirBuilder {
         self.current_label = continue_label.to_string();
         self.instructions.clear();
         self.terminator = None;
-        self.lower_sum_payload_by_declarations(value, owner, variant, apply_owner)
+        self.lower_sum_payload_by_declarations(value, owner, variant)
     }
 
     fn lower_nullable_payload_operand(&mut self, nullable: MirOperand, payload_type: &ValkyrieType) -> MirOperand {
@@ -129,18 +130,20 @@ impl MirBuilder {
         value: MirOperand,
         owner: nyar_types::ItemId,
         variant: nyar_types::ItemId,
-        apply_owner: &str,
     ) -> MirOperand {
         let object_ty = infer_builder_operand_type(&value, &self.value_types);
-        let payload_type = object_ty.as_ref().and_then(|ty| match ty {
-            ValkyrieType::Apply(base, args) if matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == apply_owner) => {
-                args.first().cloned()
+        let sum = super::MirSumDeclaration::find_by_declaration(&self.sum_types, owner);
+        let variant_decl = sum.and_then(|sum| sum.variants.iter().find(|item| item.declaration == Some(variant)));
+        let payload_type = match (sum, variant_decl, object_ty.as_ref()) {
+            (Some(sum), Some(variant_decl), Some(ty)) => {
+                let args = super::expr_lowering::type_args_from_sum_shaped(ty);
+                sum.instantiate_payload(variant_decl, &args).flatten()
             }
             _ => None,
-        });
+        };
         let Some(payload_type) = payload_type
         else {
-            panic!("try-propagate sum payload has no resolved payload type");
+            panic!("try-propagate sum payload 缺少 sum_owner/sum_variant 代入结果");
         };
         let type_args = object_ty.as_ref().map(super::expr_lowering::type_args_from_sum_shaped).unwrap_or_default();
         let Some((nominal, variant_id)) = self.sum_identity_by_declarations(owner, variant)
