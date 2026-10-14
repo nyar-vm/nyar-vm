@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use nyar_types::StorageKind;
 
 use crate::{
-    frontend_contract::concretize_type_lossy,
+    frontend_contract::concretize_type,
     types::{
         Identifier,
         hir::{HirModule, HirStruct, ValkyrieType},
@@ -305,7 +305,14 @@ fn build_aggregate_layout(id: LayoutId, name: &str, namespace: String, storage: 
     let mut fields = Vec::with_capacity(specs.len());
     for spec in specs {
         offset = align_offset(offset, spec.align);
-        fields.push(FieldLayout { name: spec.name, ty: concretize_type_lossy(&spec.ty), offset, size: spec.size, align: spec.align });
+        // 布局字段类型必须严格 concretize；禁止 lossy 把 Self/Generic/Nominal 擦成伪 Named。
+        let ty = concretize_type(&spec.ty).unwrap_or_else(|err| {
+            panic!(
+                "aggregate layout `{namespace}::{name}` field `{}` 无法严格 concretize: {err}",
+                spec.name
+            )
+        });
+        fields.push(FieldLayout { name: spec.name, ty, offset, size: spec.size, align: spec.align });
         offset += spec.size;
         max_align = max_align.max(spec.align);
     }
@@ -381,5 +388,32 @@ fn type_layout_key_component(ty: &ValkyrieType) -> String {
         }
         ValkyrieType::Array(inner) => format!("heaparr_{}", type_layout_key_component(inner)),
         _ => "ref".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod strict_layout_tests {
+    use super::*;
+    use nyar::NyarType;
+
+    #[test]
+    fn unite_tagged_layout_uses_strict_concretize() {
+        let mut plan = AggregateLayoutPlan::default();
+        let id = ensure_unite_tagged_layout(&mut plan, "Option");
+        let layout = plan.layouts.iter().find(|layout| layout.id == id).expect("layout");
+        assert_eq!(layout.fields[0].ty, NyarType::Integer32 { signed: true });
+        assert_eq!(layout.fields[1].ty, NyarType::Utf8);
+    }
+
+    #[test]
+    #[should_panic(expected = "无法严格 concretize")]
+    fn layout_panics_on_unsubstituted_self_field() {
+        let _ = build_aggregate_layout(
+            1,
+            "Bad",
+            String::new(),
+            MirStorageKind::Value,
+            vec![FieldSpec { name: "x".to_string(), ty: ValkyrieType::SelfType, size: 8, align: 8 }],
+        );
     }
 }

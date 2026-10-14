@@ -1,5 +1,5 @@
 use nyar_language::{
-    MirLowerer, MirOperand, MirOperation, MirStorageKind, ValkyrieCompiler, compute_aggregate_layout_plan, concretize_type_lossy,
+    MirLowerer, MirOperand, MirOperation, MirStorageKind, ValkyrieCompiler, compute_aggregate_layout_plan, concretize_type,
     layout_key_for_type, storage_kind_for_type,
     types::{Identifier, SourceID, hir::ValkyrieType},
 };
@@ -358,6 +358,10 @@ imply Box<T> {
             panic!("StructNew field operand should be a value");
         };
         let mir_ty = new_fn.value_types.get(&value_ref).expect("field value type");
-        assert_eq!(concretize_type_lossy(mir_ty), layout_ty, "field `{field_name}` should carry declared struct field type through StructNew");
+        assert_eq!(
+            concretize_type(mir_ty).expect("field MIR type must concretize"),
+            layout_ty,
+            "field `{field_name}` should carry declared struct field type through StructNew"
+        );
     }
 }

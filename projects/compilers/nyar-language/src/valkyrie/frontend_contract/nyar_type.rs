@@ -199,11 +199,15 @@ mod tests {
     }
 
     #[test]
-    fn concretizes_nominal_array_apply_like_bracket_sugar() {
+    fn rejects_named_array_apply_short_name() {
         let ty =
             ValkyrieType::Apply(Box::new(ValkyrieType::Named(nyar::Identifier::new("Array"))), vec![ValkyrieType::Integer32 { signed: true }]);
-        assert_eq!(concretize_type(&ty).unwrap(), NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
-        assert_eq!(concretize_type_lossy(&ty), NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
+        assert!(concretize_type(&ty).is_err(), "Apply(Named(\"Array\"), …) 不得降为平台 Array");
+        // lossy 也不得发明结构 Array；最多保留 Apply 形状供迁移诊断。
+        assert!(
+            matches!(concretize_type_lossy(&ty), NyarType::Apply(_, _)),
+            "lossy must not invent structural Array from Named(\"Array\")"
+        );
     }
 
     #[test]
