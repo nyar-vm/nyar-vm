@@ -116,56 +116,6 @@ pub fn concretize_type(ty: &ValkyrieType) -> Result<NyarType, ConcretizeError> {
     }
 }
 
-/// Lossy concretize for migration boundaries: always produces a [`NyarType`].
-///
-/// Frontend-only constructs are erased to platform-neutral shapes backends already
-/// map to object-like ABI (CLR `Object`, JVM `Ljava/lang/Object;`). Uninstantiated
-/// generics must **not** become `Named("T")` — that leaks type-parameter names into
-/// PE TypeRef owners without an `[assembly]` prefix and fails fail-closed writers.
-pub fn concretize_type_lossy(ty: &ValkyrieType) -> NyarType {
-    match concretize_type(ty) {
-        Ok(nyar) => nyar,
-        Err(_) => match ty {
-            ValkyrieType::SelfType => NyarType::Named(nyar::Identifier::new("Self")),
-            ValkyrieType::Named(name) if name.as_str() == "Self" => NyarType::Named(nyar::Identifier::new("Self")),
-            ValkyrieType::AutoType => NyarType::Named(nyar::Identifier::new("__auto")),
-            // Type erasure: same CLR/JVM mapping as `NyarType::Apply` / `TraitObject`.
-            ValkyrieType::Generic(_) => {
-                NyarType::TraitObject(WitnessObject { trait_path: nyar::Identifier::new("__generic"), type_arguments: Vec::new() })
-            }
-            ValkyrieType::TypeLambda(_) => NyarType::Named(nyar::Identifier::new("__type_lambda")),
-            ValkyrieType::Associated(_) => NyarType::Named(nyar::Identifier::new("__associated")),
-            ValkyrieType::Row(_) => NyarType::Named(nyar::Identifier::new("__row")),
-            ValkyrieType::Intersection(_) => NyarType::Named(nyar::Identifier::new("__intersection")),
-            other => {
-                // Nested failures (e.g. Apply with Auto arg): recurse lossy.
-                match other {
-                    ValkyrieType::Apply(base, args) => {
-                        // 与严格路径一致：禁止短名 Array 成功降级。
-                        NyarType::Apply(Box::new(concretize_type_lossy(base)), args.iter().map(concretize_type_lossy).collect())
-                    }
-                    ValkyrieType::Function(func) => NyarType::Function(Box::new(NyarFunctionType {
-                        params: func.params.iter().map(concretize_type_lossy).collect(),
-                        return_type: concretize_type_lossy(&func.return_type),
-                    })),
-                    ValkyrieType::Tuple(elems) => NyarType::Tuple(elems.iter().map(concretize_type_lossy).collect()),
-                    ValkyrieType::Array(elem) => NyarType::Array(Box::new(concretize_type_lossy(elem))),
-                    ValkyrieType::FixedArray { element, length } => {
-                        NyarType::FixedArray { element: Box::new(concretize_type_lossy(element)), length: *length }
-                    }
-                    ValkyrieType::TraitObject(object) => NyarType::TraitObject(WitnessObject {
-                        trait_path: object.trait_path.clone(),
-                        type_arguments: object.type_arguments.iter().map(concretize_type_lossy).collect(),
-                    }),
-                    ValkyrieType::Nullable(payload) => NyarType::Nullable(Box::new(concretize_type_lossy(payload))),
-                    ValkyrieType::Union(arms) => NyarType::Union(arms.iter().map(concretize_type_lossy).collect()),
-                    _ => NyarType::Named(nyar::Identifier::new("__opaque")),
-                }
-            }
-        },
-    }
-}
-
 /// Concretize MIR function type maps into platform types.
 pub fn concretize_mir_function_types(
     function: &MirFunction,
@@ -177,14 +127,6 @@ pub fn concretize_mir_function_types(
         value_types.insert(*key, concretize_type(ty)?);
     }
     Ok((return_type, param_types, value_types))
-}
-
-/// Lossy variant of [`concretize_mir_function_types`] for `From` boundaries.
-pub fn concretize_mir_function_types_lossy(function: &MirFunction) -> (NyarType, Vec<NyarType>, BTreeMap<MirValueRef, NyarType>) {
-    let return_type = concretize_type_lossy(&function.return_type);
-    let param_types = function.param_types.iter().map(concretize_type_lossy).collect();
-    let value_types = function.value_types.iter().map(|(k, v)| (*k, concretize_type_lossy(v))).collect();
-    (return_type, param_types, value_types)
 }
 
 #[cfg(test)]
@@ -203,11 +145,6 @@ mod tests {
         let ty =
             ValkyrieType::Apply(Box::new(ValkyrieType::Named(nyar::Identifier::new("Array"))), vec![ValkyrieType::Integer32 { signed: true }]);
         assert!(concretize_type(&ty).is_err(), "Apply(Named(\"Array\"), …) 不得降为平台 Array");
-        // lossy 也不得发明结构 Array；最多保留 Apply 形状供迁移诊断。
-        assert!(
-            matches!(concretize_type_lossy(&ty), NyarType::Apply(_, _)),
-            "lossy must not invent structural Array from Named(\"Array\")"
-        );
     }
 
     #[test]
@@ -226,27 +163,9 @@ mod tests {
     }
 
     #[test]
-    fn lossy_erases_row_and_self() {
-        // lossy 仍保留迁移污点形状；严格路径见 `rejects_named_self_as_unsubstituted_stain`。
-        assert_eq!(concretize_type_lossy(&ValkyrieType::SelfType), NyarType::Named(nyar::Identifier::new("Self")));
-        assert_eq!(concretize_type_lossy(&ValkyrieType::Named(nyar::Identifier::new("Self"))), NyarType::Named(nyar::Identifier::new("Self")));
-        assert_eq!(
-            concretize_type_lossy(&ValkyrieType::Row(crate::types::hir::RowType { methods: Vec::new() })),
-            NyarType::Named(nyar::Identifier::new("__row"))
-        );
-    }
-
-    #[test]
-    fn lossy_erases_generic_param_not_named_t() {
-        let erased = concretize_type_lossy(&ValkyrieType::Generic(GenericType {
-            binder: None, name: nyar::Identifier::new("T"),
-            kind: HirKind::Type,
-            bounds: Vec::new(),
-        }));
-        assert!(
-            matches!(erased, NyarType::TraitObject(ref object) if object.trait_path.as_str() == "__generic"),
-            "uninstantiated generics must erase, not become Named(T); got {erased:?}"
-        );
+    fn rejects_row_and_frontend_only_constructs() {
+        assert!(concretize_type(&ValkyrieType::Row(crate::types::hir::RowType { methods: Vec::new() })).is_err());
+        assert!(concretize_type(&ValkyrieType::Intersection(Vec::new())).is_err());
     }
 
     #[test]

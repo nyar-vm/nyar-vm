@@ -41,9 +41,7 @@ pub use valkyrie::{
         host_provider_binding_hash_for_bindings, semantic_closure_hash_for_groups,
     },
     derive,
-    frontend_contract::{
-        ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy, concretize_type, concretize_type_lossy,
-    },
+    frontend_contract::{ConcretizeError, concretize_mir_function_types, concretize_type},
     hir::{AstToHir, CaptureAnalyzer, CompilerSourceFile, CompilerSourceGroup, ValkyrieCompiler},
     lint::{lint_valkyrie_source, lint_valkyrie_vx_source},
     mir,

@@ -35,9 +35,7 @@ pub mod typing;
 pub mod validation;
 
 pub(crate) use assembly::{AssembledFragment, assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program};
-pub use frontend_contract::{
-    ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy, concretize_type, concretize_type_lossy,
-};
+pub use frontend_contract::{ConcretizeError, concretize_mir_function_types, concretize_type};
 pub use hir::{CaptureAnalyzer, function_body_contains_yield, *};
 pub use mir::{
     ArrayInitialization, MirBlock, MirBlockRef, MirConstant, MirEffectKind, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand,
