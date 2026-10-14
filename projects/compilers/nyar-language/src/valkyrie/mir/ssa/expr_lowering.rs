@@ -344,31 +344,30 @@ impl MirBuilder {
         Some(MirOperand::Value(value))
     }
 
-    fn emit_array_length_operand(&mut self, array: MirOperand) -> MirOperand {
+    fn emit_array_length_operand(&mut self, array: MirOperand, expected_type: Option<&ValkyrieType>) -> MirOperand {
         let value = self.next_value(MirValueOrigin::CallResult);
-        // ???? results?`from_operation` ??results ?? wasm ??`array.len` ?????? 0??
+        // results 必须挂在指令上，否则 wasm `array.len` 结果槽为空。
         self.push_instruction(MirOperation::ArrayLength { array }, vec![value]);
-        self.value_types.insert(value, ValkyrieType::Named(Identifier::new("usize")));
+        // 语言合同是 `usize`：优先消费调用点/绑定注解的 Nominal，其次声明表中的 usize ItemId，
+        // 禁止默认写出 `Named("usize")` 再与 `Nominal{ItemId}` 形成双 TypeId（CAN015 StoreVar）。
+        let length_ty = expected_type
+            .filter(|ty| super::expr_helpers::is_integer_literal_formal_type(ty, &self.field_declarations))
+            .cloned()
+            .or_else(|| self.resolved_usize_nominal_type())
+            .unwrap_or_else(|| ValkyrieType::Named(Identifier::new("usize")));
+        self.value_types.insert(value, length_ty);
         MirOperand::Value(value)
     }
 
-    /// `receiver._items.length` and similar: SSA types may be erased on the `_items`
-    /// temp while HIR still knows the field is array-shaped (`ArrayList.length` body).
-    fn try_emit_array_length_field_access(&mut self, object: &HirExpr, object_operand: &MirOperand) -> Option<MirOperand> {
-        if let Some(ty) = infer_builder_operand_type(object_operand, &self.value_types) {
-            if is_array_shaped_valkyrie_type(&ty) {
-                return Some(self.emit_array_length_operand(object_operand.clone()));
+    /// 从已收集的聚合声明取 `usize` 的 `Nominal{ItemId}`；跨包导入后应可命中。
+    fn resolved_usize_nominal_type(&self) -> Option<ValkyrieType> {
+        self.field_declarations.iter().find_map(|item| {
+            let declaration = item.declaration?;
+            if item.name.as_str() != "usize" {
+                return None;
             }
-        }
-        if let HirExprKind::FieldAccess { object: receiver, field } = &object.kind {
-            let receiver_operand = self.lower_expr_to_operand(receiver);
-            if let Some(items_ty) = self.field_type_for_object_operand(&receiver_operand, field) {
-                if is_array_shaped_valkyrie_type(&items_ty) {
-                    return Some(self.emit_array_length_operand(object_operand.clone()));
-                }
-            }
-        }
-        None
+            Some(ValkyrieType::Nominal { declaration, arguments: Vec::new() })
+        })
     }
 
     fn try_lower_array_len_intrinsic(
@@ -382,14 +381,11 @@ impl MirBuilder {
             return None;
         }
         let array = arguments.first().cloned()?;
-        let value = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(MirOperation::ArrayLength { array }, vec![value]);
-        let return_type = resolved
-            .map(|call| call.return_type.clone())
-            .or_else(|| expected_type.cloned())
-            .unwrap_or_else(|| ValkyrieType::Named(Identifier::new("usize")));
-        self.value_types.insert(value, return_type);
-        Some(MirOperand::Value(value))
+        let hint = resolved
+            .map(|call| &call.return_type)
+            .filter(|ty| super::expr_helpers::is_integer_literal_formal_type(ty, &self.field_declarations))
+            .or(expected_type);
+        Some(self.emit_array_length_operand(array, hint))
     }
 
     fn try_lower_array_get_on_array(
@@ -606,6 +602,16 @@ impl MirBuilder {
         match &expr.kind {
             HirExprKind::Literal(literal) => {
                 let (constant, ty) = lower_literal(literal, expected_type);
+                // 调用点形参为 `Nominal{usize}` 时，overload 已特化字面量；MIR 必须写出同一类型，
+                // 否则 SMIR007 仍见 Integer32 vs Nominal。
+                let ty = match (literal, expected_type) {
+                    (HirLiteral::Integer64(_), Some(expected))
+                        if super::expr_helpers::is_integer_literal_formal_type(expected, &self.field_declarations) =>
+                    {
+                        Some(expected.clone())
+                    }
+                    _ => ty,
+                };
                 let value = self.next_value(MirValueOrigin::Literal);
                 self.push_instruction(MirOperation::LoadConstant { constant, ty: ty.clone() }, vec![value]);
                 if let Some(ty) = ty {
@@ -671,33 +677,12 @@ impl MirBuilder {
                         return operand;
                     }
                 }
+                // 禁止按 callee 名 `tuple` 补结构语义；须等真实 Tuple AST/HIR/类型身份落地。
                 if callee_name_matches(&callee.kind, "tuple") {
-                    let fields = args.iter().map(|arg| self.lower_expr_to_operand(&arg.value)).collect::<Vec<_>>();
-                    let element_types = if let Some(types) = resolved.as_ref().and_then(|call| match &call.return_type {
-                        ValkyrieType::Tuple(types) => Some(types.clone()),
-                        _ => None,
-                    }) {
-                        types
-                    }
-                    else {
-                        let Some(types) =
-                            fields.iter().map(|operand| infer_builder_operand_type(operand, &self.value_types)).collect::<Option<Vec<_>>>()
-                        else {
-                            self.diagnostics.push(super::MirDiagnostic::UnresolvedValueType {
-                                context: "tuple element missing complete semantic type".to_string(),
-                            });
-                            return MirOperand::Constant(MirConstant::Unit);
-                        };
-                        types
-                    };
-                    let tuple_type =
-                        resolved.as_ref().map(|call| call.return_type.clone()).unwrap_or_else(|| ValkyrieType::Tuple(element_types.clone()));
-                    let storage = MirStorageKind::Value;
-                    let layout_id = self.layout_id_for_type(&tuple_type);
-                    let value = self.next_value(MirValueOrigin::Temporary);
-                    self.instructions.push(MirInstruction::from_operation(MirOperation::TupleNew { fields }));
-                    self.value_types.insert(value, tuple_type);
-                    return MirOperand::Value(value);
+                    self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
+                        symbol: "tuple".to_string(),
+                    });
+                    return MirOperand::Constant(MirConstant::Unit);
                 }
                 if let Some((receiver_operand, _method_name)) =
                     self.extract_method_call(callee).filter(|_| resolved.as_ref().is_some_and(|call| call.has_receiver))
@@ -1065,14 +1050,8 @@ impl MirBuilder {
             }
             HirExprKind::FieldAccess { object, field } => {
                 let object_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
-                // ????????????? array-shaped ???? ArrayLength????????
-                // ?? `length` ?????????????? IntrinsicId::ArrayLen / FieldId??
-                // ???????????? ArrayLen??
-                if field.as_str() == "length" {
-                    if let Some(operand) = self.try_emit_array_length_field_access(object, &object_operand) {
-                        return operand;
-                    }
-                }
+                // 禁止按字段名 `length` 改写成 ArrayLength；数组长度只能来自
+                // 已在 HIR 解析的 IntrinsicId::ArrayLen Call / 明确 ArrayLength 节点。
                 self.lower_object_field_operand(object_operand, field)
             }
             HirExprKind::StoreField { object, field, value } => {
@@ -1207,8 +1186,13 @@ pub(super) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
         HirLiteral::Integer64(value) => (
             MirConstant::Int(*value),
             Some(match expected_type {
-                Some(ValkyrieType::Integer32 { signed }) => ValkyrieType::Integer32 { signed: *signed },
-                Some(ValkyrieType::Integer64 { signed }) => ValkyrieType::Integer64 { signed: *signed },
+                Some(ty @ (ValkyrieType::Integer8 { .. }
+                | ValkyrieType::Integer16 { .. }
+                | ValkyrieType::Integer32 { .. }
+                | ValkyrieType::Integer64 { .. }
+                | ValkyrieType::Integer128 { .. })) => ty.clone(),
+                // Named 数值形参（如 `usize`）在无 MirStruct 表时也可直接特化；Nominal 由调用方用声明表覆盖。
+                Some(ty @ ValkyrieType::Named(_)) if super::expr_helpers::is_integer_literal_formal_type(ty, &[]) => ty.clone(),
                 _ if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 => ValkyrieType::Integer32 { signed: true },
                 _ => ValkyrieType::Integer64 { signed: true },
             }),

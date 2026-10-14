@@ -142,23 +142,13 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_operand(operand);
             return;
         }
-        // Reference-local metadata is authoritative for GC aggregates. The
-        // semantic classifier can still report an i32 fallback for a named
-        // value; replacing that value with ref.null loses the object and only
-        // surfaces later as an array/struct illegal cast.
+        // Reference-local metadata is authoritative for GC aggregates：槽位已是引用，
+        // 即便表面分类成 i32 也不得用 ref.null 顶替。
         if expected == WASM_GC_ANYREF && self.operand_reference_local(operand).is_some() {
             self.emit_operand(operand);
             return;
         }
-        if expected == WASM_GC_ANYREF && actual == VALTYPE_I32 {
-            self.emit_ref_null_anyref();
-            return;
-        }
-        if expected == VALTYPE_I32 && actual == WASM_GC_ANYREF {
-            self.emit_i32_const(0);
-            return;
-        }
-        // i64 形参：anyref 经 `[i64]` box 解箱；i32 走 extend。
+        // 仅允许 BackendPrivatePlan 已承诺的显式宽度转换；禁止用 0 / null 掩盖 carrier 失配。
         if expected == VALTYPE_I64 && (actual == WASM_GC_ANYREF || actual == WASM_GC_EXTERNREF) {
             self.emit_operand(operand);
             self.emit_unbox_i64_payload();
@@ -178,35 +168,15 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_box_i64_payload(operand);
             return;
         }
-        if expected == VALTYPE_F64
-            && (actual == WASM_GC_ANYREF || actual == WASM_GC_EXTERNREF || actual == VALTYPE_I32 || actual == VALTYPE_I64)
-        {
-            self.emit_f64_const(0.0);
-            return;
-        }
-        if expected == WASM_GC_ANYREF && actual == VALTYPE_F64 {
-            self.emit_ref_null_anyref();
-            return;
-        }
-        // host import 签名使用 externref；MIR 操作数默认为 anyref?
-        // 不能?ref.func/ref.is_null 做转换——以 null 占位保持栈类型一致?
         if expected == WASM_GC_EXTERNREF && actual == WASM_GC_ANYREF {
             self.emit_operand(operand);
             return;
         }
-        if expected == WASM_GC_EXTERNREF && actual == VALTYPE_I32 {
-            self.emit_ref_null_extern();
-            return;
-        }
-        if expected == WASM_GC_EXTERNREF && actual == VALTYPE_I64 {
-            self.emit_ref_null_extern();
-            return;
-        }
-        if expected == WASM_GC_ANYREF && actual == WASM_GC_EXTERNREF {
-            self.emit_ref_null_anyref();
-            return;
-        }
-        self.emit_operand(operand);
+        panic!(
+            "WASM ABI carrier mismatch in `{}`: expected={expected:#x} actual={actual:#x}; \
+             BackendPrivatePlan must provide an explicit conversion — refusing null/0 placeholders",
+            self.mir_fn.symbol
+        );
     }
 
     pub(super) fn resolve_callee_import_index(&self, callee: &MirOperand, _arguments: &[MirOperand]) -> Option<u32> {

@@ -142,14 +142,19 @@ fn lower_term_expression_with_context(
         },
         TermExpression::NamePath(path) => lower_name_expression(path, span.clone()),
         TermExpression::StringLiteral(literal) => lower_string_literal_kind(literal, source_id, span_range.clone()),
-        TermExpression::IntegerLiteral { value, .. } => parse_integer_literal(value)
-            .map(HirLiteral::Integer64)
-            .map(HirExprKind::Literal)
-            .unwrap_or_else(|_| HirExprKind::Literal(HirLiteral::Integer64(0))),
-        TermExpression::FloatLiteral { value, .. } => value
-            .parse::<f64>()
-            .map(|v| HirExprKind::Literal(HirLiteral::Float64(OrderedFloat(v))))
-            .unwrap_or_else(|_| HirExprKind::Literal(HirLiteral::Float64(OrderedFloat(0.0)))),
+        TermExpression::IntegerLiteral { value, .. } => {
+            // 溢出 / 非法 radix 必须拒绝；禁止伪装成 Integer64(0) 改变语义。
+            let parsed = parse_integer_literal(value).unwrap_or_else(|error| {
+                panic!("illegal integer literal `{value}`: {error}");
+            });
+            HirExprKind::Literal(HirLiteral::Integer64(parsed))
+        }
+        TermExpression::FloatLiteral { value, .. } => {
+            let parsed = value.parse::<f64>().unwrap_or_else(|error| {
+                panic!("illegal float literal `{value}`: {error}");
+            });
+            HirExprKind::Literal(HirLiteral::Float64(OrderedFloat(parsed)))
+        }
         TermExpression::BooleanLiteral { value, .. } => HirExprKind::Literal(HirLiteral::Bool(*value)),
         TermExpression::Unary(node) => lower_unary_expression(node, source_id, span_range.clone(), span.clone()),
         TermExpression::Binary(node) => lower_binary_expression(node, source_id, span_range.clone(), span.clone()),

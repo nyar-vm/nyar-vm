@@ -1566,15 +1566,18 @@ impl<'a> WasmMirLowerer<'a> {
                 };
                 let Some(element_type) = array_element_type(array_type)
                 else {
-                    eprintln!("[wasm::mir] ArrayNew expects Array/FixedArray type in `{}`", self.mir_fn.symbol);
-                    encode_unreachable(&mut self.code);
-                    return;
+                    panic!(
+                        "WASM ArrayNew expects Array/FixedArray in `{}` (got {array_type:?}); refusing runtime trap placeholders",
+                        self.mir_fn.symbol
+                    );
                 };
                 let Some(type_index) = self.resolve_gc_array_type_index(element_type)
                 else {
-                    eprintln!("[wasm::mir] missing gc arraytype for element `{element_type:?}` at ArrayNew in `{}`", self.mir_fn.symbol);
-                    encode_unreachable(&mut self.code);
-                    return;
+                    panic!(
+                        "WASM ArrayNew missing gc arraytype in `{}` (element={element_type:?}); \
+                         RepresentationPlan must register arraytype — refusing runtime trap placeholders",
+                        self.mir_fn.symbol
+                    );
                 };
                 match initialization {
                     ArrayInitialization::Default => {
@@ -1598,9 +1601,10 @@ impl<'a> WasmMirLowerer<'a> {
                 };
                 let Some(element_type) = array_element_type(array_type)
                 else {
-                    eprintln!("[wasm::mir] ArrayFromElements expects Array/FixedArray type in `{}`", self.mir_fn.symbol);
-                    encode_unreachable(&mut self.code);
-                    return;
+                    panic!(
+                        "WASM ArrayFromElements expects Array/FixedArray in `{}` (got {array_type:?}); refusing runtime trap placeholders",
+                        self.mir_fn.symbol
+                    );
                 };
                 if matches!(array_type, NyarType::FixedArray { .. }) {
                     // Fixed value aggregate: linear layout when available.
@@ -1631,12 +1635,11 @@ impl<'a> WasmMirLowerer<'a> {
                 };
                 let Some(type_index) = self.resolve_gc_array_type_index(element_type)
                 else {
-                    eprintln!(
-                        "[wasm::mir] missing gc arraytype for element `{element_type:?}` at ArrayFromElements in `{}`",
+                    panic!(
+                        "WASM ArrayFromElements missing gc arraytype in `{}` (element={element_type:?}); \
+                         RepresentationPlan must register arraytype — refusing runtime trap placeholders",
                         self.mir_fn.symbol
                     );
-                    encode_unreachable(&mut self.code);
-                    return;
                 };
                 let element_stack_ty = wasm_gc_field_type_byte_for_glue(element_type, self.js_glue_utf8_as_anyref);
                 for value in elements {
@@ -1926,9 +1929,11 @@ impl<'a> WasmMirLowerer<'a> {
         // 会触?`expected anyref, found i32`（func564 嵌套 ArrayGet）?
         let Some(type_index) = type_index
         else {
-            eprintln!("[wasm::mir] missing gc arraytype for ArrayGet in `{}` (element={element_type:?})", self.mir_fn.symbol);
-            encode_unreachable(&mut self.code);
-            return;
+            panic!(
+                "WASM ArrayGet missing gc arraytype in `{}` (element={element_type:?}); \
+                 RepresentationPlan must register arraytype — refusing runtime trap placeholders",
+                self.mir_fn.symbol
+            );
         };
         self.emit_operand_coerced(&arguments[0], WASM_GC_ANYREF);
         self.emit_ref_cast_array_type(type_index);
@@ -1959,9 +1964,11 @@ impl<'a> WasmMirLowerer<'a> {
         let type_index = element_type.as_ref().and_then(|ty| self.resolve_gc_array_type_index(ty));
         let Some(type_index) = type_index
         else {
-            eprintln!("[wasm::mir] missing gc arraytype for ArraySet in `{}` (element={element_type:?})", self.mir_fn.symbol);
-            encode_unreachable(&mut self.code);
-            return;
+            panic!(
+                "WASM ArraySet missing gc arraytype in `{}` (element={element_type:?}); \
+                 RepresentationPlan must register arraytype — refusing runtime trap placeholders",
+                self.mir_fn.symbol
+            );
         };
         let element_stack_ty =
             element_type.as_ref().map(|ty| wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref)).unwrap_or(VALTYPE_I32);
@@ -1983,8 +1990,11 @@ impl<'a> WasmMirLowerer<'a> {
         };
         let Some(type_index) = self.resolve_gc_array_type_index(&element_type)
         else {
-            encode_unreachable(&mut self.code);
-            return;
+            panic!(
+                "WASM ArrayPush missing gc arraytype in `{}` (element={element_type:?}); \
+                 RepresentationPlan must register arraytype — refusing runtime trap placeholders",
+                self.mir_fn.symbol
+            );
         };
         let element_stack_ty = wasm_gc_field_type_byte_for_glue(&element_type, self.js_glue_utf8_as_anyref);
         if let MirOperand::Value(value) = &arguments[1] {

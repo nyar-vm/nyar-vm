@@ -81,9 +81,11 @@ pub fn concretize_type(ty: &ValkyrieType) -> Result<NyarType, ConcretizeError> {
             Err(ConcretizeError::new(format!("Nominal declaration `{declaration:?}` 需要平台 NyarType::Nominal，禁止降级为 Named 短名")))
         }
         ValkyrieType::Apply(base, args) => {
-            // 迁移残留：`Apply(Named("Array"), [T])` 与 `[T]` 同一平台身份。
+            // 禁止 `Named("Array")` 短名转结构数组；须已是 `ValkyrieType::Array` 或 Nominal 身份。
             if args.len() == 1 && matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == "Array") {
-                return Ok(NyarType::Array(Box::new(concretize_type(&args[0])?)));
+                return Err(ConcretizeError::new(
+                    "Apply(Named(\"Array\"), …) 不得降为平台 Array；须使用结构化 Array 类型或 Nominal declaration",
+                ));
             }
             Ok(NyarType::Apply(Box::new(concretize_type(base)?), args.iter().map(concretize_type).collect::<Result<Vec<_>, _>>()?))
         }
@@ -139,12 +141,8 @@ pub fn concretize_type_lossy(ty: &ValkyrieType) -> NyarType {
                 // Nested failures (e.g. Apply with Auto arg): recurse lossy.
                 match other {
                     ValkyrieType::Apply(base, args) => {
-                        if args.len() == 1 && matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == "Array") {
-                            NyarType::Array(Box::new(concretize_type_lossy(&args[0])))
-                        }
-                        else {
-                            NyarType::Apply(Box::new(concretize_type_lossy(base)), args.iter().map(concretize_type_lossy).collect())
-                        }
+                        // 与严格路径一致：禁止短名 Array 成功降级。
+                        NyarType::Apply(Box::new(concretize_type_lossy(base)), args.iter().map(concretize_type_lossy).collect())
                     }
                     ValkyrieType::Function(func) => NyarType::Function(Box::new(NyarFunctionType {
                         params: func.params.iter().map(concretize_type_lossy).collect(),
@@ -212,7 +210,7 @@ mod tests {
     fn rejects_auto_and_generic() {
         assert!(concretize_type(&ValkyrieType::AutoType).is_err());
         assert!(
-            concretize_type(&ValkyrieType::Generic(GenericType { name: nyar::Identifier::new("T"), kind: HirKind::Type, bounds: Vec::new() }))
+            concretize_type(&ValkyrieType::Generic(GenericType { binder: None, name: nyar::Identifier::new("T"), kind: HirKind::Type, bounds: Vec::new() }))
                 .is_err()
         );
     }
@@ -237,7 +235,7 @@ mod tests {
     #[test]
     fn lossy_erases_generic_param_not_named_t() {
         let erased = concretize_type_lossy(&ValkyrieType::Generic(GenericType {
-            name: nyar::Identifier::new("T"),
+            binder: None, name: nyar::Identifier::new("T"),
             kind: HirKind::Type,
             bounds: Vec::new(),
         }));
