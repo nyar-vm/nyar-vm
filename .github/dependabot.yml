@@ -1,27 +1,33 @@
 version: 2
-# 只自动开 patch / minor；major 须人工评估，禁止 Dependabot 直接提。
+# 只开 major PR；patch / minor 不提 PR。major 须人工审阅后 rebase 线性合入。
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     target-branch: "dev"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     ignore:
       - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
+        update-types:
+          - "version-update:semver-patch"
+          - "version-update:semver-minor"
   - package-ecosystem: "cargo"
     directory: "/"
     target-branch: "dev"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     ignore:
       - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
+        update-types:
+          - "version-update:semver-patch"
+          - "version-update:semver-minor"
   - package-ecosystem: "npm"
     directory: "/"
     target-branch: "dev"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     ignore:
       - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
+        update-types:
+          - "version-update:semver-patch"
+          - "version-update:semver-minor"
