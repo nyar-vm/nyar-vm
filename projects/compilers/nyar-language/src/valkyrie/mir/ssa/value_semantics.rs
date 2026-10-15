@@ -48,8 +48,8 @@ pub fn value_type_names_from_module(structs: &[HirStruct]) -> BTreeSet<Identifie
 }
 
 pub fn layout_key_for_type(ty: &ValkyrieType) -> Option<String> {
+    // 仅合成 tuple / fixedarray 键；名义类型必须走 declaration_to_layout，禁止 Named 短名键。
     match ty {
-        ValkyrieType::Named(name) => Some(name.to_string()),
         ValkyrieType::Tuple(types) => Some(format!("__tuple_{}", types.iter().map(type_layout_key_component).collect::<Vec<_>>().join("_"))),
         ValkyrieType::FixedArray { element, length } => Some(format!("__fixedarray_{length}_{}", type_layout_key_component(element))),
         _ => None,
@@ -90,23 +90,11 @@ pub fn layout_id_for_type(ty: &ValkyrieType, plan: &AggregateLayoutPlan) -> Opti
             }
         }
     }
-    // Only layout-transparent wrappers may reuse the argument's aggregate layout.
-    // Blindly unwrapping every one-arg Apply made `VonParseResult<Plan>` /
-    // `Result<Plan>` resolve to `Plan`, so Fine/Fail `FieldGet payload` failed SMIR010
-    // against the payload struct (no `payload` field). Match Future/Promise only —
-    // same rule as validation / expr_helpers.
-    if let ValkyrieType::Apply(base, arguments) = ty {
-        if arguments.len() == 1
-            && matches!(
-                base.as_ref(),
-                ValkyrieType::Named(name) if matches!(name.as_str(), "Future" | "Promise")
-            )
-        {
-            if let Some(id) = layout_id_for_type(&arguments[0], plan) {
-                return Some(id);
-            }
-        }
+    // 生产查询只认 declaration → layout；名义缺布局不得回落 Named/限定名字符串。
+    if let Some(declaration) = ty.nominal_declaration() {
+        return plan.declaration_to_layout.get(&declaration).copied();
     }
+    // 合成 tuple / fixedarray 键；禁止 Future/Promise 等短名透明解包。
     let key = layout_key_for_type(ty)?;
     plan.type_name_to_layout.get(&key).copied()
 }
@@ -175,15 +163,18 @@ pub fn ensure_layout_for_type(plan: &mut AggregateLayoutPlan, ty: &ValkyrieType)
     Some(id)
 }
 
-/// Register a named aggregate layout discovered during StructNew when the
-/// declaring HIR struct was not present in this module's layout plan (imports).
-/// Unite/Result/Option runtime shape for MIR `FieldGet tag` / `FieldGet payload`.
+/// Unite/Result/Option 运行时 `tag`/`payload` 载体布局，按 sum declaration ItemId 登记。
 ///
 /// Matches CLR/Wasm GC convention: reference aggregate with `tag: i32` + opaque payload.
 /// Payload uses utf8 as a stand-in ABI carrier (reference-sized); typed Fine/Fail
 /// extraction goes through `SumPayloadGet`, not this field's declared type.
-pub fn ensure_unite_tagged_layout(plan: &mut AggregateLayoutPlan, sum_name: &str) -> LayoutId {
-    if let Some(id) = plan.type_name_to_layout.get(sum_name).copied() {
+/// `display_name` 仅诊断/调试；禁止用名称合并或反查布局。
+pub fn ensure_unite_tagged_layout(
+    plan: &mut AggregateLayoutPlan,
+    declaration: nyar_types::ItemId,
+    display_name: &str,
+) -> LayoutId {
+    if let Some(id) = plan.declaration_to_layout.get(&declaration).copied() {
         if plan.layouts.iter().find(|layout| layout.id == id).is_some_and(|layout| {
             layout.fields.iter().any(|field| field.name == "tag") && layout.fields.iter().any(|field| field.name == "payload")
         }) {
@@ -192,7 +183,7 @@ pub fn ensure_unite_tagged_layout(plan: &mut AggregateLayoutPlan, sum_name: &str
     }
     let layout = build_aggregate_layout(
         next_layout_id(plan),
-        sum_name,
+        display_name,
         String::new(),
         MirStorageKind::Reference,
         vec![
@@ -201,7 +192,8 @@ pub fn ensure_unite_tagged_layout(plan: &mut AggregateLayoutPlan, sum_name: &str
         ],
     );
     let id = layout.id;
-    register_layout(plan, layout);
+    plan.declaration_to_layout.insert(declaration, id);
+    plan.layouts.push(layout);
     id
 }
 
@@ -209,7 +201,12 @@ pub fn ensure_unite_tagged_layout(plan: &mut AggregateLayoutPlan, sum_name: &str
 pub fn ensure_unite_layouts_for_sums(plan: &mut AggregateLayoutPlan, sum_types: &[super::MirSumDeclaration]) {
     for sum in sum_types {
         if sum.is_unite {
-            ensure_unite_tagged_layout(plan, &sum.name);
+            let Some(declaration) = sum.declaration
+            else {
+                // 缺 declaration 不得按 sum.name 伪登记布局。
+                continue;
+            };
+            ensure_unite_tagged_layout(plan, declaration, &sum.name);
         }
     }
 }
@@ -249,32 +246,27 @@ fn layout_qualified_key(layout: &AggregateLayout) -> String {
 }
 
 fn register_declared_layout(plan: &mut AggregateLayoutPlan, declaration: &HirStruct, layout: AggregateLayout) {
-    if let Some(item) = declaration.constructor_declaration {
-        if plan.declaration_to_layout.contains_key(&item) {
-            return;
-        }
-        plan.declaration_to_layout.insert(item, layout.id);
-        let qualified = layout_qualified_key(&layout);
-        if layout.storage == MirStorageKind::Value {
-            plan.value_type_names.insert(qualified.clone());
-        }
-        plan.type_name_to_layout.insert(qualified, layout.id);
-        plan.layouts.push(layout);
-    }
+    let Some(item) = declaration.constructor_declaration
     else {
-        register_layout(plan, layout);
+        // 缺 declaration 不得按 struct 名伪登记布局旁路。
+        return;
+    };
+    if plan.declaration_to_layout.contains_key(&item) {
+        return;
     }
+    plan.declaration_to_layout.insert(item, layout.id);
+    if layout.storage == MirStorageKind::Value {
+        // value_type_names 仍供诊断/过渡存储分类；查询生产布局只认 declaration_to_layout。
+        plan.value_type_names.insert(layout_qualified_key(&layout));
+    }
+    // 禁止把名义结构体写入 type_name_to_layout；该表仅服务合成 tuple/fixedarray 键。
+    plan.layouts.push(layout);
 }
 
+/// 仅登记合成 tuple / fixedarray 布局；键为 `layout_key_for_type` 产物。
 fn register_layout(plan: &mut AggregateLayoutPlan, layout: AggregateLayout) {
-    // Same simple name may appear in multiple namespaces with different shapes
-    // (e.g. `core.text.TextSpan`={offset,length} vs `std.data.text.von.TextSpan`={start,stop}).
-    // Dropping the second entry made StructNew field_slot_index miss `start`/`stop` (both
-    // wrote local+0) and JVM VerifyError: "Register N contains wrong type".
-    // Keep every distinct (namespace, name) in `layouts` and expose only the qualified
-    // key. A bare name is not a layout identity and must never become a first-wins alias.
     let qualified = layout_qualified_key(&layout);
-    if plan.layouts.iter().any(|existing| existing.name == layout.name && existing.namespace == layout.namespace) {
+    if plan.type_name_to_layout.contains_key(&qualified) {
         return;
     }
     if layout.storage == MirStorageKind::Value {
@@ -334,9 +326,9 @@ fn scalar_layout(ty: &ValkyrieType, plan: &AggregateLayoutPlan) -> (u32, u32) {
         ValkyrieType::Boolean | ValkyrieType::Character => (4, 4),
         ValkyrieType::Integer8 { .. } | ValkyrieType::Integer16 { .. } | ValkyrieType::Integer32 { .. } | ValkyrieType::Float32 => (4, 4),
         ValkyrieType::Integer64 { .. } | ValkyrieType::Float64 => (8, 8),
-        ValkyrieType::Named(name) if plan.value_type_names.contains(name.as_str()) => plan
-            .type_name_to_layout
-            .get(name.as_str())
+        ValkyrieType::Nominal { declaration, .. } => plan
+            .declaration_to_layout
+            .get(declaration)
             .and_then(|id| plan.layouts.iter().find(|layout| layout.id == *id))
             .map(|layout| (layout.size, layout.align))
             .unwrap_or((8, 8)),
@@ -406,7 +398,10 @@ mod strict_layout_tests {
     #[test]
     fn unite_tagged_layout_uses_strict_concretize() {
         let mut plan = AggregateLayoutPlan::default();
-        let id = ensure_unite_tagged_layout(&mut plan, "Option");
+        let declaration = nyar_types::ItemId::from_index(7).expect("test ItemId");
+        let id = ensure_unite_tagged_layout(&mut plan, declaration, "Option");
+        assert_eq!(plan.declaration_to_layout.get(&declaration).copied(), Some(id));
+        assert!(!plan.type_name_to_layout.contains_key("Option"), "unite 布局不得按短名键合并");
         let layout = plan.layouts.iter().find(|layout| layout.id == id).expect("layout");
         assert_eq!(layout.fields[0].ty, NyarType::Integer32 { signed: true });
         assert_eq!(layout.fields[1].ty, NyarType::Utf8);

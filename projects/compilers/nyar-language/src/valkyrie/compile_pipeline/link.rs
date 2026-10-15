@@ -151,16 +151,28 @@ fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> 
             let new_id = merged.layouts.iter().map(|candidate| candidate.id).max().unwrap_or(0).saturating_add(1);
             let mut copied = layout.clone();
             copied.id = new_id;
-            if merged.type_name_to_layout.insert(qualified.clone(), new_id).is_some() {
-                return Err(ParseError::invalid(format!("布局键 `{qualified}` 重复")));
-            }
-            if copied.storage == nyar_types::layout::StorageKind::Value {
-                merged.value_type_names.insert(qualified);
-            }
             if let Some(item) = owner {
                 if merged.declaration_to_layout.insert(item, new_id).is_some() {
                     return Err(ParseError::invalid(format!("布局 `{}` declaration identity 重复", qualified_layout_name(layout))));
                 }
+                if copied.storage == nyar_types::layout::StorageKind::Value {
+                    merged.value_type_names.insert(qualified);
+                }
+            }
+            else if is_synthetic_layout_key(&qualified) {
+                // 仅合成 tuple/fixedarray 保留名称键；名义布局不得进 type_name_to_layout。
+                if merged.type_name_to_layout.insert(qualified.clone(), new_id).is_some() {
+                    return Err(ParseError::invalid(format!("布局键 `{qualified}` 重复")));
+                }
+                if copied.storage == nyar_types::layout::StorageKind::Value {
+                    merged.value_type_names.insert(qualified);
+                }
+            }
+            else {
+                return Err(ParseError::invalid(format!(
+                    "布局 `{}` 缺少 declaration identity，禁止按名合并",
+                    qualified_layout_name(layout)
+                )));
             }
             merged.layouts.push(copied);
         }
@@ -174,6 +186,10 @@ fn declaration_for_layout(module: &MirModule, layout: &AggregateLayout) -> Optio
 
 fn qualified_layout_name(layout: &AggregateLayout) -> String {
     if layout.namespace.is_empty() { layout.name.clone() } else { format!("{}.{}", layout.namespace, layout.name) }
+}
+
+fn is_synthetic_layout_key(key: &str) -> bool {
+    key.starts_with("__tuple_") || key.starts_with("__fixedarray_")
 }
 
 #[derive(Default)]
