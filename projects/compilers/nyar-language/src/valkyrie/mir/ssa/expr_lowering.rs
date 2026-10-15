@@ -659,21 +659,24 @@ impl MirBuilder {
                         return operand;
                     }
                 }
-                // Some/Fine/Fail 短名入口：必须已有 sum_owner/sum_variant；失败不得回落普通调用补语义。
-                if super::expr_helpers::callee_matches_name(callee, resolved.as_ref(), "Some") && args.len() == 1 {
-                    return self.try_lower_option_some_constructor(&args[0].value, resolved.as_ref(), expected_type).unwrap_or_else(|| {
-                        self.fail_unresolved_sum_variant_call(resolved.as_ref(), "Some")
-                    });
-                }
-                if super::expr_helpers::callee_matches_name(callee, resolved.as_ref(), "Fine") && args.len() == 1 {
-                    return self
-                        .try_lower_result_variant_constructor("Fine", &args[0].value, resolved.as_ref(), expected_type)
-                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref(), "Fine"));
-                }
-                if super::expr_helpers::callee_matches_name(callee, resolved.as_ref(), "Fail") && args.len() == 1 {
-                    return self
-                        .try_lower_result_variant_constructor("Fail", &args[0].value, resolved.as_ref(), expected_type)
-                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref(), "Fail"));
+                // 一元 payload 变体构造：只认已冻结 sum_owner/sum_variant；按 owner binder 元数分流，禁止 Some/Fine/Fail 短名入口。
+                if args.len() == 1 {
+                    if let Some(call) = resolved.as_ref() {
+                        if call.domain == crate::types::hir::HirCallableDomain::Constructor {
+                            if let Some(owner) = call.sum_owner.filter(|_| call.sum_variant.is_some()) {
+                                let binary = super::MirSumDeclaration::find_by_declaration(&self.sum_types, owner)
+                                    .is_some_and(|sum| sum.generics.len() == 2);
+                                return if binary {
+                                    self.try_lower_result_variant_constructor("", &args[0].value, resolved.as_ref(), expected_type)
+                                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref(), "variant"))
+                                }
+                                else {
+                                    self.try_lower_option_some_constructor(&args[0].value, resolved.as_ref(), expected_type)
+                                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref(), "variant"))
+                                };
+                            }
+                        }
+                    }
                 }
                 // 禁止按 callee 名 `tuple` 补结构语义；须等真实 Tuple AST/HIR/类型身份落地。
                 if callee_name_matches(&callee.kind, "tuple") {
