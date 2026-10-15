@@ -20,10 +20,10 @@ use crate::{
     types::{
         Identifier, NamePath, QualifiedName,
         hir::{
-            GenericType, HirAttribute, HirBlock, HirCallArgument, HirCallKind, HirCallableDomain, HirEnum, HirExpr, HirExprKind,
+            GenericBinderId, GenericType, HirAttribute, HirBlock, HirCallArgument, HirCallKind, HirCallableDomain, HirEnum, HirExpr, HirExprKind,
             HirDependencySemanticExport, HirExtractorPattern, HirField, HirFunction, HirIdentifier, HirMatchArm, HirModule, HirParam,
             HirPattern, HirResolvedCall, HirSingleton, HirStatement, HirStatementKind, HirStruct, HirVariadicKind, HirVariant,
-            HirWhereConstraint, ValkyrieType,
+            HirTrait, HirTraitBound, HirWhereConstraint, ValkyrieType,
         },
     },
     valkyrie::{
@@ -56,13 +56,13 @@ pub struct OverloadCandidate {
     pub operator_id: Option<OperatorId>,
     pub symbol: NamePath,
     pub owner: Option<Identifier>,
-    pub trait_owner: Option<Identifier>,
+    pub trait_owner: Option<nyar_types::ItemId>,
     pub domain: OverloadDomain,
     pub signature: OverloadSignature,
     pub match_kind: OverloadMatchKind,
     pub param_specs: Vec<HirParam>,
     /// Formal type variables which must be bound from actual arguments.
-    pub generic_binders: BTreeSet<Identifier>,
+    pub generic_binders: BTreeSet<GenericBinderId>,
     /// 声明级 where 合同；实参代入后必须取得对应 witness。
     pub where_constraints: Vec<HirWhereConstraint>,
 }
@@ -98,7 +98,7 @@ impl OverloadCandidate {
         self
     }
 
-    pub fn with_generic_binder(mut self, binder: Identifier) -> Self {
+    pub fn with_generic_binder(mut self, binder: GenericBinderId) -> Self {
         self.generic_binders.insert(binder);
         self
     }
@@ -259,8 +259,8 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
         );
     }
     for item in &module.traits {
-        candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, None, Some(item.name.clone()))));
-        candidates.extend(item.default_methods.iter().map(|method| build_method_candidate(method, None, Some(item.name.clone()))));
+        candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, None, Some(item))));
+        candidates.extend(item.default_methods.iter().map(|method| build_method_candidate(method, None, Some(item))));
     }
     for item in &module.impls {
         // owner 必须从 declaration 反查短名；`Nominal{ItemId}` 不能丢进 `impl_nominal_type_name` 的 Named 分支。
@@ -304,8 +304,8 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
             }
         }
         for item in &export.traits {
-            candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, None, Some(item.name.clone()))));
-            candidates.extend(item.default_methods.iter().map(|method| build_method_candidate(method, None, Some(item.name.clone()))));
+            candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, None, Some(item))));
+            candidates.extend(item.default_methods.iter().map(|method| build_method_candidate(method, None, Some(item))));
         }
         for item in &export.impls {
             let owner = impl_owner_identifier(module, &item.target)
@@ -347,7 +347,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
         index_type.clone(),
         OverloadMatchKind::NominalExact,
     )
-    .with_generic_binder(element.clone());
+    ;
     let push = OverloadCandidate::new(
         NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("push")]),
         OverloadDomain::Function,
@@ -355,7 +355,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
         array_type.clone(),
         OverloadMatchKind::NominalExact,
     )
-    .with_generic_binder(element.clone());
+    ;
     // `array::[i]` / `array::[i] = v` 降低为 postfix `[]` / `[]=`；必须挂 operator_id，
     // 否则 Operator 调用点找不到候选（不能按 Array.get 短名猜）。
     let mut get = OverloadCandidate::new(
@@ -365,7 +365,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
         element_type.clone(),
         OverloadMatchKind::NominalExact,
     )
-    .with_generic_binder(element.clone());
+    ;
     get.operator_id = builtin_operator::lookup(OperatorFixity::Postfix, "[]");
     let mut set = OverloadCandidate::new(
         NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("set")]),
@@ -374,7 +374,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
         ValkyrieType::Unit,
         OverloadMatchKind::NominalExact,
     )
-    .with_generic_binder(element);
+    ;
     set.operator_id = builtin_operator::lookup(OperatorFixity::Postfix, "[]=");
     vec![length, push, get, set]
 }
@@ -428,7 +428,8 @@ fn match_intrinsic_builtin_candidate(
                 return None;
             }
             let array_ty = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
-            if !matches!(array_ty, ValkyrieType::Array(_)) {
+            // 只认结构化数组形状；不得按接收者字段名 `length` 猜。
+            if !matches!(array_ty, ValkyrieType::Array(_) | ValkyrieType::FixedArray { .. }) {
                 return None;
             }
             Some(OverloadCandidate {
@@ -537,10 +538,9 @@ fn match_intrinsic_builtin_candidate(
             if !type_relations.is_numeric_type(&index_ty) {
                 return None;
             }
+            // 保留候选已冻结的一元 unity / Nullable 返回；禁止按 Named("Option") 短名认亲。
             let return_type = match &candidate.signature.return_type {
-                ValkyrieType::Apply(base, _) if base.as_ref() == &ValkyrieType::Named(Identifier::new("Option")) => {
-                    candidate.signature.return_type.clone()
-                }
+                ty if is_option_apply_type(ty) || matches!(ty, ValkyrieType::Nullable(_)) => candidate.signature.return_type.clone(),
                 _ => element.clone(),
             };
             Some(OverloadCandidate {
@@ -604,7 +604,7 @@ fn match_intrinsic_builtin_candidate(
 }
 
 fn enum_apply_type(enum_def: &HirEnum) -> ValkyrieType {
-    let arguments = enum_def.generics.iter().map(|generic| ValkyrieType::Named(generic.name.clone())).collect::<Vec<_>>();
+    let arguments = enum_def.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect::<Vec<_>>();
     if let Some(declaration) = enum_def.declaration {
         return ValkyrieType::Nominal { declaration, arguments };
     }
@@ -618,7 +618,7 @@ fn enum_apply_type(enum_def: &HirEnum) -> ValkyrieType {
 }
 
 fn struct_apply_type(struct_def: &HirStruct) -> ValkyrieType {
-    let arguments = struct_def.generics.iter().map(|generic| ValkyrieType::Named(generic.name.clone())).collect::<Vec<_>>();
+    let arguments = struct_def.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect::<Vec<_>>();
     if let Some(declaration) = struct_def.constructor_declaration {
         return ValkyrieType::Nominal { declaration, arguments };
     }
@@ -690,7 +690,7 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> O
     candidate.instance = function.instance;
     candidate.operator_id = operator_id;
     for generic in &function.generics {
-        candidate = candidate.with_generic_binder(generic.name.clone());
+        if let Some(binder) = generic.binder { candidate = candidate.with_generic_binder(binder); }
     }
     candidate.with_where_constraints(function.where_constraints.clone())
 }
@@ -719,7 +719,7 @@ fn build_struct_constructor_candidate(item: &HirStruct) -> OverloadCandidate {
     )
     .with_param_specs(param_specs);
     for generic in &item.generics {
-        candidate = candidate.with_generic_binder(generic.name.clone());
+        if let Some(binder) = generic.binder { candidate = candidate.with_generic_binder(binder); }
     }
     candidate.declaration = item.constructor_declaration;
     candidate.instance = item.constructor_instance;
@@ -775,7 +775,7 @@ fn build_variant_constructor_candidate(variant: &HirVariant, enum_def: &HirEnum)
         OverloadMatchKind::Row,
     );
     for generic in &enum_def.generics {
-        candidate = candidate.with_generic_binder(generic.name.clone());
+        if let Some(binder) = generic.binder { candidate = candidate.with_generic_binder(binder); }
     }
     candidate.declaration = variant.declaration;
     candidate.instance = variant.instance;
@@ -784,7 +784,7 @@ fn build_variant_constructor_candidate(variant: &HirVariant, enum_def: &HirEnum)
     candidate
 }
 
-fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, trait_owner: Option<Identifier>) -> OverloadCandidate {
+fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, trait_owner: Option<&HirTrait>) -> OverloadCandidate {
     let operator_id = declared_operator_id_from_function(function);
     let candidate = if let Some(owner) = owner {
         OverloadCandidate::new_method(
@@ -800,7 +800,7 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, tra
         OverloadCandidate::new(
             trait_owner
                 .as_ref()
-                .map(|owner| NamePath::new(vec![owner.clone(), function.name.clone()]))
+                .map(|owner| NamePath::new(vec![owner.name.clone(), function.name.clone()]))
                 .unwrap_or_else(|| NamePath::new(vec![function.name.clone()])),
             callable_domain(operator_id),
             function.params.iter().map(|param| param.ty.clone()).collect(),
@@ -813,10 +813,15 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, tra
     candidate.instance = function.instance;
     candidate.operator_id = operator_id;
     for generic in &function.generics {
-        candidate = candidate.with_generic_binder(generic.name.clone());
+        if let Some(binder) = generic.binder { candidate = candidate.with_generic_binder(binder); }
     }
     let mut candidate = candidate.with_where_constraints(function.where_constraints.clone());
-    candidate.trait_owner = trait_owner;
+    candidate.trait_owner = trait_owner.and_then(|owner| owner.declaration);
+    if let Some(owner) = trait_owner {
+        for generic in &owner.generics {
+            if let Some(binder) = generic.binder { candidate.generic_binders.insert(binder); }
+        }
+    }
     candidate
 }
 
@@ -847,7 +852,7 @@ fn specialize_method_candidate(
         })
         .collect();
     for generic in owner_generics {
-        candidate = candidate.with_generic_binder(generic.name.clone());
+        if let Some(binder) = generic.binder { candidate = candidate.with_generic_binder(binder); }
     }
     for generic in owner_type_generic_binders(owner_type) {
         candidate = candidate.with_generic_binder(generic);
@@ -870,23 +875,16 @@ fn specialize_method_param_type(
     substitute_type_self(ty, owner_type)
 }
 
-fn owner_type_generic_binders(ty: &ValkyrieType) -> BTreeSet<Identifier> {
-    fn collect(ty: &ValkyrieType, binders: &mut BTreeSet<Identifier>) {
+fn owner_type_generic_binders(ty: &ValkyrieType) -> BTreeSet<GenericBinderId> {
+    fn collect(ty: &ValkyrieType, binders: &mut BTreeSet<GenericBinderId>) {
         match ty {
-            ValkyrieType::Generic(generic) => {
-                binders.insert(generic.name.clone());
-            }
+            ValkyrieType::Generic(generic) => { if let Some(binder) = generic.binder { binders.insert(binder); } }
+            ValkyrieType::Nominal { arguments, .. } | ValkyrieType::Tuple(arguments) => for argument in arguments { collect(argument, binders); },
             ValkyrieType::Apply(base, arguments) => {
                 collect(base, binders);
-                for argument in arguments {
-                    match argument {
-                        ValkyrieType::Named(name) => {
-                            binders.insert(name.clone());
-                        }
-                        _ => collect(argument, binders),
-                    }
-                }
+                for argument in arguments { collect(argument, binders); }
             }
+            ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => collect(element, binders),
             _ => {}
         }
     }
@@ -1036,6 +1034,42 @@ fn resolve_expr_calls(
                 );
             }
         }
+        HirExprKind::FieldAccess { object, field } => {
+            resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
+            // 裸 `array.length`（非 `length()` 调用）在 HIR 冻结为 ArrayLen Invoke；
+            // MIR 不得再按字段名改写。名义类型上已有 `length` FieldId 时保持字段访问。
+            if field.as_str() == "length" {
+                let receiver_ty = infer_scrutinee_type(object, locals, struct_fields, singleton_names);
+                let is_array = receiver_ty
+                    .as_ref()
+                    .is_some_and(|ty| matches!(ty, ValkyrieType::Array(_) | ValkyrieType::FixedArray { .. }));
+                let has_nominal_length_field = receiver_ty.as_ref().is_some_and(|ty| {
+                    struct_fields
+                        .fields_of(ty)
+                        .is_some_and(|fields| fields.iter().any(|item| item.name.as_str() == "length"))
+                });
+                if is_array && !has_nominal_length_field {
+                    let span = expr.span.clone();
+                    let args = vec![HirCallArgument::positional(object.as_ref().clone())];
+                    let callee = HirExpr {
+                        kind: HirExprKind::Path(NamePath::new(vec![
+                            Identifier::new("builtin"),
+                            Identifier::new("array"),
+                            Identifier::new("length"),
+                        ])),
+                        span: span.clone(),
+                    };
+                    let resolved =
+                        try_resolve_call(HirCallKind::Function, &callee, &args, candidates, type_relations, locals, struct_fields, singleton_names);
+                    expr.kind = HirExprKind::Call {
+                        call_kind: HirCallKind::Function,
+                        callee: Box::new(callee),
+                        args,
+                        resolved,
+                    };
+                }
+            }
+        }
         HirExprKind::GenericApply { callee, .. }
         | HirExprKind::FieldInit { value: callee, .. }
         | HirExprKind::Await(callee)
@@ -1044,8 +1078,7 @@ fn resolve_expr_calls(
         | HirExprKind::YieldFrom(callee)
         | HirExprKind::Raise(callee)
         | HirExprKind::Resume(callee)
-        | HirExprKind::Assign { value: callee, .. }
-        | HirExprKind::FieldAccess { object: callee, .. } => {
+        | HirExprKind::Assign { value: callee, .. } => {
             resolve_expr_calls(callee, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
         }
         HirExprKind::StoreField { object, value, .. } => {
@@ -1457,26 +1490,19 @@ fn match_call_candidate(
 fn unify_call_type_binders(
     expected: &ValkyrieType,
     actual: &ValkyrieType,
-    binders: &BTreeSet<Identifier>,
-    substitutions: &mut BTreeMap<Identifier, ValkyrieType>,
+    binders: &BTreeSet<GenericBinderId>,
+    substitutions: &mut BTreeMap<GenericBinderId, ValkyrieType>,
 ) -> Option<()> {
     match expected {
-        ValkyrieType::Named(name) if binders.contains(name) => match substitutions.get(name) {
-            Some(bound) if bound != actual => None,
-            Some(_) => Some(()),
-            None => {
-                substitutions.insert(name.clone(), actual.clone());
-                Some(())
+        ValkyrieType::Generic(generic) => {
+            let binder = generic.binder?;
+            if !binders.contains(&binder) { return (expected == actual).then_some(()); }
+            match substitutions.get(&binder) {
+                Some(bound) if bound != actual => None,
+                Some(_) => Some(()),
+                None => { substitutions.insert(binder, actual.clone()); Some(()) }
             }
-        },
-        ValkyrieType::Generic(generic) if binders.contains(&generic.name) => match substitutions.get(&generic.name) {
-            Some(bound) if bound != actual => None,
-            Some(_) => Some(()),
-            None => {
-                substitutions.insert(generic.name.clone(), actual.clone());
-                Some(())
-            }
-        },
+        }
         ValkyrieType::Array(expected_element) => {
             let ValkyrieType::Array(actual_element) = actual
             else {
@@ -1633,18 +1659,26 @@ fn try_resolve_call(
         if path.parts().len() == 2 {
             let owner = &path.parts()[0];
             let method_name = &path.parts()[1];
-            if let Some(trait_name) = constrained_trait_owner(owner, type_relations.callable_constraints()) {
-                return try_resolve_type_static_method(
-                    owner,
-                    method_name,
-                    args,
-                    candidates,
-                    type_relations,
-                    locals,
-                    struct_fields,
-                    singleton_names,
-                    Some(&trait_name),
-                );
+            let subjects = type_relations.callable_constraints().iter().filter(|constraint| {
+                matches!(&constraint.target, ValkyrieType::Generic(generic) if generic.binder.is_some() && generic.name == *owner)
+            }).collect::<Vec<_>>();
+            if let [subject] = subjects.as_slice() {
+                let mut matches = Vec::new();
+                for bound in &subject.bounds {
+                    for candidate in candidates.iter().filter(|candidate| !candidate_has_receiver_parameter(candidate))
+                        .filter(|candidate| candidate.symbol.parts().last() == Some(method_name))
+                        .filter(|candidate| bound.declaration.is_some() && candidate.trait_owner == bound.declaration)
+                    {
+                        let candidate = instantiate_trait_bound_candidate(candidate, &subject.target, bound)?;
+                        if let Some(matched) = match_call_candidate(&candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names) { matches.push(matched); }
+                    }
+                }
+                let matched = resolve_overload(&matches).ok()?;
+                return Some(HirResolvedCall {
+                    declaration: matched.declaration, instance: matched.instance, sum_owner: matched.sum_owner, sum_variant: matched.sum_variant,
+                    symbol: matched.symbol, domain: HirCallableDomain::Function, return_type: matched.signature.return_type,
+                    parameter_types: matched.signature.params, has_receiver: false, extractor_payload_type: None,
+                });
             }
             if singleton_names.contains(owner) {
                 return try_resolve_singleton_method(
@@ -1721,7 +1755,6 @@ fn try_resolve_call(
                     locals,
                     struct_fields,
                     singleton_names,
-                    None,
                 );
             }
             return try_resolve_qualified_free_function(path, args, candidates, type_relations, locals, struct_fields, singleton_names);
@@ -1889,33 +1922,30 @@ fn try_resolve_instance_method(
     full_args.extend_from_slice(args);
 
     let receiver_type = infer_expr_type(receiver, locals).or_else(|| infer_scrutinee_type(receiver, locals, struct_fields, singleton_names));
-    let generic_trait_owner = receiver_type.as_ref().and_then(|ty| match ty {
-        ValkyrieType::Generic(generic) => constrained_trait_owner(&generic.name, type_relations.callable_constraints()),
-        ValkyrieType::Named(name) => constrained_trait_owner(name, type_relations.callable_constraints()),
-        _ => None,
-    });
-
-    let filtered = candidates
-        .iter()
+    let mut filtered = Vec::new();
+    for candidate in candidates.iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Operator))
         .filter(|candidate| candidate_has_receiver_parameter(candidate))
-        .filter(|candidate| generic_trait_owner.as_ref().is_none_or(|owner| candidate.trait_owner.as_ref() == Some(owner)))
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
-        .filter_map(|candidate| {
-            let candidate = generic_trait_owner
-                .as_ref()
-                .map(|_| substitute_trait_self(candidate, receiver_type.as_ref().expect("generic receiver type")))
-                .unwrap_or_else(|| candidate.clone());
-            let matched = match_call_candidate(&candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names)?;
-            match generic_trait_owner.as_ref() {
-                Some(trait_owner) => {
-                    let generic_subject = receiver_type.as_ref().and_then(generic_type_parameter_name)?;
-                    Some(substitute_context_associated_types(&matched, type_relations.callable_constraints(), &generic_subject, trait_owner))
+    {
+        if let Some(ValkyrieType::Generic(generic)) = &receiver_type {
+            if generic.binder.is_none() { continue; }
+            for bound in type_relations.callable_constraints().iter()
+                .filter(|constraint| Some(&constraint.target) == receiver_type.as_ref())
+                .flat_map(|constraint| &constraint.bounds)
+                .filter(|bound| bound.declaration.is_some() && bound.declaration == candidate.trait_owner)
+            {
+                let candidate = instantiate_trait_bound_candidate(candidate, receiver_type.as_ref().unwrap(), bound)?;
+                if let Some(matched) = match_call_candidate(&candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names) {
+                    filtered.push(matched);
                 }
-                None => Some(matched),
             }
-        })
-        .collect::<Vec<_>>();
+        } else if candidate.trait_owner.is_none() {
+            if let Some(matched) = match_call_candidate(candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names) {
+                filtered.push(matched);
+            }
+        }
+    }
     let resolved = resolve_overload(&filtered).ok()?;
     let has_receiver = candidate_has_receiver_parameter(&resolved);
     let mut call = HirResolvedCall {
@@ -1934,30 +1964,28 @@ fn try_resolve_instance_method(
     Some(call)
 }
 
-fn substitute_context_associated_types(
-    candidate: &OverloadCandidate,
-    constraints: &[HirWhereConstraint],
-    constrained_type: &Identifier,
-    trait_owner: &Identifier,
-) -> OverloadCandidate {
-    let mut candidate = candidate.clone();
-    let substitutions = constraints
-        .iter()
-        .filter(|constraint| generic_type_parameter_name(&constraint.target).as_ref() == Some(constrained_type))
-        .flat_map(|constraint| &constraint.bounds)
-        .filter(|bound| bound.trait_path.parts().last() == Some(trait_owner))
-        .flat_map(|bound| &bound.associated_types)
-        .map(|equation| (equation.name.clone(), equation.ty.clone()))
-        .collect::<BTreeMap<_, _>>();
-    candidate.signature.return_type = substitute_associated_equations(&candidate.signature.return_type, constrained_type, &substitutions);
-    candidate.signature.params =
-        candidate.signature.params.iter().map(|ty| substitute_associated_equations(ty, constrained_type, &substitutions)).collect();
-    candidate
+/// 用 bound 的 trait 声明、实参与关联等式实例化成员签名，不能按 trait 短名筛选。
+fn instantiate_trait_bound_candidate(candidate: &OverloadCandidate, subject: &ValkyrieType, bound: &HirTraitBound) -> Option<OverloadCandidate> {
+    let trait_id = bound.declaration?;
+    if candidate.trait_owner != Some(trait_id) { return None; }
+    let binders = candidate.generic_binders.iter().filter(|binder| binder.owner == trait_id).copied().collect::<Vec<_>>();
+    if binders.len() != bound.type_arguments.len() { return None; }
+    let substitution = binders.into_iter().zip(bound.type_arguments.iter().cloned()).collect();
+    let mut candidate = substitute_trait_self(candidate, subject);
+    let equations = bound.associated_types.iter().map(|equation| (equation.name.clone(), equation.ty.clone())).collect();
+    candidate.signature.params = candidate.signature.params.iter().map(|ty| substitute_associated_equations(&substitute_type_vars(ty, &substitution), subject, &equations)).collect();
+    candidate.signature.return_type = substitute_associated_equations(&substitute_type_vars(&candidate.signature.return_type, &substitution), subject, &equations);
+    candidate.generic_binders.retain(|binder| binder.owner != trait_id);
+    // 未标注 self 仍是声明接收者槽，bound 已提供精确类型。
+    if candidate_has_receiver_parameter(&candidate) && matches!(candidate.signature.params.first(), Some(ValkyrieType::AutoType | ValkyrieType::SelfType)) {
+        candidate.signature.params[0] = subject.clone();
+    }
+    Some(candidate)
 }
 
 fn substitute_associated_equations(
     ty: &ValkyrieType,
-    constrained_type: &Identifier,
+    constrained_type: &ValkyrieType,
     equations: &BTreeMap<Identifier, ValkyrieType>,
 ) -> ValkyrieType {
     match ty {
@@ -1965,7 +1993,7 @@ fn substitute_associated_equations(
             declaration: *declaration,
             arguments: arguments.iter().map(|argument| substitute_associated_equations(argument, constrained_type, equations)).collect(),
         },
-        ValkyrieType::Associated(associated) if generic_type_parameter_name(&associated.base).as_ref() == Some(constrained_type) => {
+        ValkyrieType::Associated(associated) if &associated.base == constrained_type => {
             equations.get(&associated.name).cloned().unwrap_or_else(|| {
                 ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
                     base: substitute_associated_equations(&associated.base, constrained_type, equations),
@@ -2014,14 +2042,6 @@ fn substitute_associated_equations(
     }
 }
 
-fn generic_type_parameter_name(ty: &ValkyrieType) -> Option<Identifier> {
-    match ty {
-        ValkyrieType::Generic(generic) => Some(generic.name.clone()),
-        ValkyrieType::Named(name) => Some(name.clone()),
-        _ => None,
-    }
-}
-
 fn extract_singleton_type_name(
     expr: &HirExpr,
     locals: &BTreeMap<String, ValkyrieType>,
@@ -2047,26 +2067,15 @@ fn try_resolve_type_static_method(
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &AggregateFieldIndex,
     singleton_names: &BTreeSet<Identifier>,
-    trait_owner: Option<&Identifier>,
 ) -> Option<HirResolvedCall> {
     let filtered = candidates
         .iter()
-        .filter(|candidate| match trait_owner {
-            Some(trait_owner) => candidate.trait_owner.as_ref() == Some(trait_owner),
-            None => candidate.owner.as_ref() == Some(type_owner),
-        })
+        .filter(|candidate| candidate.owner.as_ref() == Some(type_owner))
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Constructor))
         .filter(|candidate| !candidate_has_receiver_parameter(candidate))
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
         .filter_map(|candidate| {
-            let candidate = trait_owner
-                .map(|trait_owner| {
-                    let owner_type = ValkyrieType::Named(type_owner.clone());
-                    let candidate = substitute_trait_self(candidate, &owner_type);
-                    substitute_context_associated_types(&candidate, type_relations.callable_constraints(), type_owner, trait_owner)
-                })
-                .unwrap_or_else(|| candidate.clone());
-            match_call_candidate(&candidate, args, &[], type_relations, locals, struct_fields, singleton_names)
+            match_call_candidate(candidate, args, &[], type_relations, locals, struct_fields, singleton_names)
         })
         .collect::<Vec<_>>();
     if filtered.is_empty() {
@@ -2144,21 +2153,6 @@ fn substitute_type_self(ty: &ValkyrieType, replacement: &ValkyrieType) -> Valkyr
         })),
         other => other.clone(),
     }
-}
-
-fn constrained_trait_owner(owner: &Identifier, constraints: &[HirWhereConstraint]) -> Option<Identifier> {
-    constraints.iter().find_map(|constraint| {
-        let matches_owner = match &constraint.target {
-            ValkyrieType::Generic(generic) => generic.name == *owner,
-            ValkyrieType::Named(name) => name == owner,
-            _ => false,
-        };
-        if !matches_owner {
-            return None;
-        }
-        let bounds = constraint.bounds.iter().filter_map(|bound| bound.trait_path.parts().last().cloned()).collect::<Vec<_>>();
-        (bounds.len() == 1).then(|| bounds[0].clone())
-    })
 }
 
 fn try_resolve_singleton_method(
@@ -2356,24 +2350,12 @@ fn overload_symbol_path(candidate: &OverloadCandidate) -> NamePath {
     }
 }
 
-fn sum_type_owner_name(ty: &ValkyrieType) -> Option<&str> {
+fn sum_declaration_of_type(ty: &ValkyrieType) -> Option<nyar_types::ItemId> {
     match ty {
-        ValkyrieType::Named(name) => Some(name.as_str()),
-        ValkyrieType::Apply(base, _) => sum_type_owner_name(base.as_ref()),
+        ValkyrieType::Nominal { declaration, .. } => Some(*declaration),
+        ValkyrieType::Apply(base, _) => sum_declaration_of_type(base),
         _ => None,
     }
-}
-
-fn nullary_constructor_matches_contextual_type(candidate: &OverloadCandidate, contextual_type: Option<&ValkyrieType>) -> bool {
-    let Some(contextual_type) = contextual_type
-    else {
-        return true;
-    };
-    let Some(owner) = sum_type_owner_name(contextual_type)
-    else {
-        return true;
-    };
-    candidate.owner.as_ref().is_some_and(|candidate_owner| candidate_owner.as_str() == owner)
 }
 
 fn try_resolve_nullary_constructor(
@@ -2393,8 +2375,18 @@ fn try_resolve_nullary_constructor(
         .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
         .filter(|candidate| candidate.signature.params.is_empty())
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|variant| variant == name))
-        .filter(|candidate| nullary_constructor_matches_contextual_type(candidate, contextual_type))
-        .cloned()
+        .filter_map(|candidate| {
+            let Some(context) = contextual_type else { return Some(candidate.clone()) };
+            let mut substitutions = BTreeMap::new();
+            unify_call_type_binders(&candidate.signature.return_type, context, &candidate.generic_binders, &mut substitutions)?;
+            let instantiated = substitute_type_vars(&candidate.signature.return_type, &substitutions);
+            if matches!(type_relations.match_parameter(&instantiated, context), ParameterMatchResult::NoMatch { .. }) {
+                return None;
+            }
+            let mut candidate = candidate.clone();
+            candidate.signature.return_type = instantiated;
+            Some(candidate)
+        })
         .collect::<Vec<_>>();
     if narrowed.is_empty() {
         return None;
@@ -2465,10 +2457,9 @@ fn option_apply_hint(
     call_return_type: &ValkyrieType,
     explicit_generic_arguments: &[ValkyrieType],
 ) -> Option<ValkyrieType> {
-    contextual_type.and_then(sum_apply_context).or_else(|| sum_apply_context(call_return_type)).or_else(|| {
-        (explicit_generic_arguments.len() == 1)
-            .then(|| ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), explicit_generic_arguments.to_vec()))
-    })
+    // 只消费已冻结的 Nominal unity 上下文；禁止用实参拼出 Named("Option")。
+    let _ = explicit_generic_arguments;
+    contextual_type.and_then(sum_apply_context).or_else(|| sum_apply_context(call_return_type))
 }
 
 fn enrich_unite_variant_constructor_facts(
@@ -2496,16 +2487,18 @@ fn enrich_unite_variant_constructor_facts(
             if args.len() != 1 {
                 return None;
             }
-            let payload = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
+            let _payload = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
             candidates
                 .iter()
                 .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
                 .filter(|candidate| candidate.symbol.parts().last() == Some(&variant_name))
                 .find_map(|candidate| candidate.signature.return_type.clone().into())
         });
-    let owner_name = hint.as_ref().and_then(|ty| sum_type_owner_name(ty));
-    let Some((owner, variant)) =
-        owner_name.and_then(|owner| variant_constructor_facts_from_candidates(candidates, owner, variant_name.as_str()))
+    let Some(declaration) = hint.as_ref().and_then(|ty| sum_declaration_of_type(ty))
+    else {
+        return;
+    };
+    let Some((owner, variant)) = variant_constructor_facts_from_declaration(candidates, declaration, variant_name.as_str())
     else {
         return;
     };
@@ -2534,8 +2527,11 @@ fn enrich_construct_unite_variant_facts(
         .and_then(sum_apply_context)
         .or_else(|| sum_apply_context(&call.return_type))
         .or_else(|| option_apply_hint(contextual_type, &call.return_type, &[]));
-    let owner_name = hint.as_ref().and_then(|ty| sum_type_owner_name(ty));
-    let Some((owner, variant)) = owner_name.and_then(|owner| variant_constructor_facts_from_candidates(candidates, owner, name.as_str()))
+    let Some(declaration) = hint.as_ref().and_then(|ty| sum_declaration_of_type(ty))
+    else {
+        return;
+    };
+    let Some((owner, variant)) = variant_constructor_facts_from_declaration(candidates, declaration, name.as_str())
     else {
         return;
     };
@@ -2550,31 +2546,31 @@ fn enrich_construct_unite_variant_facts(
     }
 }
 
-fn variant_constructor_facts_from_candidates(
+fn variant_constructor_facts_from_declaration(
     candidates: &[OverloadCandidate],
-    owner_name: &str,
+    sum_owner: nyar_types::ItemId,
     variant_name: &str,
 ) -> Option<(nyar_types::ItemId, nyar_types::ItemId)> {
     candidates
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
-        .filter(|candidate| candidate.owner.as_ref().is_some_and(|owner| owner.as_str() == owner_name))
+        .filter(|candidate| candidate.sum_owner == Some(sum_owner))
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|variant| variant.as_str() == variant_name))
         .find_map(|candidate| candidate.sum_owner.zip(candidate.sum_variant))
 }
 
 fn try_resolve_try_propagate_ok_variant(operand_type: &ValkyrieType, candidates: &[OverloadCandidate]) -> Option<HirResolvedCall> {
-    let (owner_name, variant_name, payload_type) =
-        if is_result_apply_type(operand_type) || matches!(operand_type, ValkyrieType::Named(name) if name.as_str() == "Result") {
-            ("Result", "Fine", result_variant_payload_type(operand_type, "Fine"))
-        }
-        else if is_option_apply_type(operand_type) || matches!(operand_type, ValkyrieType::Named(name) if name.as_str() == "Option") {
-            ("Option", "Some", option_apply_payload_type(operand_type))
-        }
-        else {
-            return None;
-        };
-    let Some((owner, variant)) = variant_constructor_facts_from_candidates(candidates, owner_name, variant_name)
+    let declaration = sum_declaration_of_type(operand_type)?;
+    let (variant_name, payload_type) = if is_result_apply_type(operand_type) {
+        ("Fine", result_variant_payload_type(operand_type, "Fine"))
+    }
+    else if is_option_apply_type(operand_type) {
+        ("Some", option_apply_payload_type(operand_type))
+    }
+    else {
+        return None;
+    };
+    let Some((owner, variant)) = variant_constructor_facts_from_declaration(candidates, declaration, variant_name)
     else {
         return None;
     };
@@ -2601,15 +2597,15 @@ fn enrich_sum_variant_operation_facts(call: &mut HirResolvedCall, receiver_type:
         return;
     };
     let method_name = call.symbol.parts().last().map(|part| part.as_str());
-    let (owner_name, variant_name) = match method_name {
-        Some("unwrap") | Some("is_some")
-            if is_option_apply_type(receiver_type) || matches!(receiver_type, ValkyrieType::Named(name) if name.as_str() == "Option") =>
-        {
-            ("Option", "Some")
-        }
+    let variant_name = match method_name {
+        Some("unwrap") | Some("is_some") if is_option_apply_type(receiver_type) => "Some",
         _ => return,
     };
-    let Some((owner, variant)) = variant_constructor_facts_from_candidates(candidates, owner_name, variant_name)
+    let Some(declaration) = sum_declaration_of_type(receiver_type)
+    else {
+        return;
+    };
+    let Some((owner, variant)) = variant_constructor_facts_from_declaration(candidates, declaration, variant_name)
     else {
         return;
     };
@@ -2700,18 +2696,16 @@ fn substitute_type_parameters(ty: &ValkyrieType, receiver: &ValkyrieType, actual
         .iter()
         .zip(actual_args.iter())
         .filter_map(|(param, arg)| match param {
-            ValkyrieType::Named(name) => Some((name.clone(), arg.clone())),
-            ValkyrieType::Generic(generic) => Some((generic.name.clone(), arg.clone())),
+            ValkyrieType::Generic(generic) => generic.binder.map(|binder| (binder, arg.clone())),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
     substitute_type_vars(ty, &substitutions)
 }
 
-pub(crate) fn substitute_type_vars(ty: &ValkyrieType, substitutions: &BTreeMap<Identifier, ValkyrieType>) -> ValkyrieType {
+pub(crate) fn substitute_type_vars(ty: &ValkyrieType, substitutions: &BTreeMap<GenericBinderId, ValkyrieType>) -> ValkyrieType {
     match ty {
-        ValkyrieType::Named(name) => substitutions.get(name).cloned().unwrap_or_else(|| ty.clone()),
-        ValkyrieType::Generic(generic) => substitutions.get(&generic.name).cloned().unwrap_or_else(|| ty.clone()),
+        ValkyrieType::Generic(generic) => generic.binder.and_then(|binder| substitutions.get(&binder)).cloned().unwrap_or_else(|| ty.clone()),
         ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
             declaration: *declaration,
             arguments: arguments.iter().map(|arg| substitute_type_vars(arg, substitutions)).collect(),
@@ -3376,11 +3370,11 @@ fn is_builtin_pattern_extractor(canonical_callee: &NamePath) -> bool {
 }
 
 fn is_option_owner_type(ty: &ValkyrieType) -> bool {
-    crate::hir::try_propagate::is_option_apply_type(ty) || matches!(ty, ValkyrieType::Named(name) if name.as_str() == "Option")
+    crate::hir::try_propagate::is_option_apply_type(ty)
 }
 
 fn is_result_owner_type(ty: &ValkyrieType) -> bool {
-    crate::hir::try_propagate::is_result_apply_type(ty) || matches!(ty, ValkyrieType::Named(name) if name.as_str() == "Result")
+    crate::hir::try_propagate::is_result_apply_type(ty)
 }
 
 fn bind_unite_extractor_fields(fields: &[HirPattern], ty: &ValkyrieType, variant: Option<&str>, locals: &mut BTreeMap<String, ValkyrieType>) {
@@ -3648,17 +3642,24 @@ fn render_valkyrie_type_name(ty: &ValkyrieType) -> String {
 }
 
 #[cfg(test)]
+fn test_binder(owner: u32, ordinal: u32) -> GenericBinderId {
+        GenericBinderId { owner: nyar_types::ItemId::from_index(owner).unwrap(), ordinal }
+    }
+#[cfg(test)]
+fn test_generic(name: &str) -> ValkyrieType {
+        ValkyrieType::Generic(GenericType { binder: Some(test_binder(900, 0)), name: Identifier::new(name), kind: crate::types::hir::HirKind::Type, bounds: vec![] })
+    }
+
+
+
+#[cfg(test)]
 mod identity_tests {
     use super::*;
-    use crate::{
-        ValkyrieCompiler,
-        types::{SourceID, hir::HirTraitBound},
-    };
-
+    use crate::{ValkyrieCompiler, types::SourceID};
     #[test]
     fn nominal_arguments_preserve_identity_and_substitute_associated_self() {
         let declaration = nyar_types::ItemId::from_index(41).unwrap();
-        let subject = Identifier::new("I");
+        let subject = test_generic("I");
         let item = Identifier::new("Item");
         let original = ValkyrieType::Nominal {
             declaration,
@@ -3666,7 +3667,7 @@ mod identity_tests {
                 base: ValkyrieType::SelfType, name: item.clone(), type_arguments: vec![],
             }))],
         };
-        let bound = substitute_type_self(&original, &ValkyrieType::Named(subject.clone()));
+        let bound = substitute_type_self(&original, &subject);
         let equations = BTreeMap::from([(item, ValkyrieType::Utf8)]);
         assert_eq!(substitute_associated_equations(&bound, &subject, &equations), ValkyrieType::Nominal {
             declaration, arguments: vec![ValkyrieType::Utf8],
@@ -3689,7 +3690,7 @@ micro collect<I, T>(iter: I): T where I: Cursor<Item = T> { return iter.next().t
         let HirExprKind::Call { callee, resolved: Some(call), .. } = &result.kind else { panic!("一次成员调用") };
         assert!(matches!(callee.kind, HirExprKind::FieldAccess { .. }));
         assert!(call.declaration.is_some());
-        assert_eq!(call.return_type, ValkyrieType::Named(Identifier::new("T")));
+        assert_eq!(call.return_type, function.return_type);
     }
 
     #[test]
@@ -3773,7 +3774,7 @@ micro caller(value: i64) -> i64 { panic(value) }
         let selected = declaration_candidate();
         let mut other = selected.clone();
         other.owner = Some(Identifier::new("OtherOwner"));
-        other.trait_owner = Some(Identifier::new("OtherTrait"));
+        other.trait_owner = Some(nyar_types::ItemId::from_index(910).unwrap());
         other.param_specs.clear();
         other.generic_binders.clear();
         other.where_constraints.clear();
@@ -3790,11 +3791,11 @@ micro caller(value: i64) -> i64 { panic(value) }
         let mut different_owner = declaration.clone();
         different_owner.owner = Some(Identifier::new("OtherOwner"));
         let mut different_trait = declaration.clone();
-        different_trait.trait_owner = Some(Identifier::new("OtherTrait"));
+        different_trait.trait_owner = Some(nyar_types::ItemId::from_index(910).unwrap());
         let mut different_receiver = declaration.clone();
         different_receiver.param_specs[0].name.name = Identifier::new("value");
         let mut different_binders = declaration.clone();
-        different_binders.generic_binders.insert(Identifier::new("OtherType"));
+        different_binders.generic_binders.insert(test_binder(901, 0));
         let mut different_constraints = declaration.clone();
         different_constraints.where_constraints[0].bounds[0].trait_path = path("OtherBound");
 
@@ -3865,7 +3866,7 @@ micro caller(value: i64) -> i64 { panic(value) }
     fn declaration_candidate() -> OverloadCandidate {
         let mut declaration = candidate("apply", OverloadMatchKind::NominalExact);
         declaration.owner = Some(Identifier::new("Owner"));
-        declaration.trait_owner = Some(Identifier::new("Trait"));
+        declaration.trait_owner = Some(nyar_types::ItemId::from_index(911).unwrap());
         let mut receiver = HirParam::default();
         receiver.name.name = Identifier::new("self");
         receiver.ty = ValkyrieType::Named(Identifier::new("Owner"));
@@ -3876,7 +3877,7 @@ micro caller(value: i64) -> i64 { panic(value) }
             span: receiver.name.span.clone(),
         });
         declaration.param_specs = vec![receiver];
-        declaration.generic_binders.insert(Identifier::new("Element"));
+        declaration.generic_binders.insert(test_binder(900, 0));
         declaration
     }
 
@@ -3918,15 +3919,15 @@ micro caller(value: i64) -> i64 { panic(value) }
             NamePath::new(vec![Identifier::new("Present")]),
             OverloadDomain::Constructor,
             parameters,
-            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new(owner))), vec![ValkyrieType::Named(Identifier::new("T"))]),
+            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new(owner))), vec![test_generic("T")]),
             OverloadMatchKind::Row,
         )
-        .with_generic_binder(Identifier::new("T"))
+        .with_generic_binder(test_binder(900, 0))
     }
 
     #[test]
     fn constructor_contract_instantiates_parameters_and_return_with_declared_owner() {
-        let candidate = generic_constructor("Envelope", vec![ValkyrieType::Named(Identifier::new("T"))]);
+        let candidate = generic_constructor("Envelope", vec![test_generic("T")]);
         let resolved = resolve_constructor_contract(&[candidate], &[Some(ValkyrieType::Utf8)]).expect("声明 binder 应完成代入");
         assert_eq!(resolved.symbol, NamePath::new(vec![Identifier::new("Envelope"), Identifier::new("Present")]));
         assert_eq!(resolved.parameter_types, vec![ValkyrieType::Utf8]);
@@ -3939,14 +3940,14 @@ micro caller(value: i64) -> i64 { panic(value) }
 
     #[test]
     fn constructor_contract_rejects_conflicting_repeated_binder() {
-        let parameter = ValkyrieType::Named(Identifier::new("T"));
+        let parameter = test_generic("T");
         let candidate = generic_constructor("Envelope", vec![parameter.clone(), parameter]);
         assert!(resolve_constructor_contract(&[candidate], &[Some(ValkyrieType::Utf8), Some(ValkyrieType::Boolean)]).is_none());
     }
 
     #[test]
     fn constructor_contract_rejects_missing_argument_type_and_ambiguous_owner() {
-        let parameter = ValkyrieType::Named(Identifier::new("T"));
+        let parameter = test_generic("T");
         let candidates = vec![generic_constructor("Alpha", vec![parameter.clone()]), generic_constructor("Beta", vec![parameter])];
         assert!(resolve_constructor_contract(&candidates[..1], &[None]).is_none());
         assert!(resolve_constructor_contract(&candidates, &[None]).is_none());
@@ -3955,7 +3956,7 @@ micro caller(value: i64) -> i64 { panic(value) }
 
     #[test]
     fn constructor_contract_rejects_partial_sum_identity_facts() {
-        let mut candidate = generic_constructor("Envelope", vec![ValkyrieType::Named(Identifier::new("T"))]);
+        let mut candidate = generic_constructor("Envelope", vec![test_generic("T")]);
         candidate.sum_owner = nyar_types::ItemId::from_index(1);
         candidate.sum_variant = None;
         assert!(resolve_constructor_contract(&[candidate], &[Some(ValkyrieType::Utf8)]).is_none());
@@ -4214,12 +4215,18 @@ micro pick(flag: bool) -> Option<i64> {
         );
     }
 
+    fn test_sum_nominal(declaration_index: u32, arguments: Vec<ValkyrieType>) -> ValkyrieType {
+        ValkyrieType::Nominal {
+            declaration: nyar_types::ItemId::from_index(declaration_index).expect("test ItemId"),
+            arguments,
+        }
+    }
+
     #[test]
     fn nullary_none_resolution_uses_return_type_owner_context() {
-        let option_none = nullary_variant_constructor("Option", "None");
-        let other_none = nullary_variant_constructor("Other", "None");
-        let contextual =
-            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![ValkyrieType::Integer32 { signed: true }]);
+        let option_none = nullary_variant_constructor("Option", "None", 1);
+        let other_none = nullary_variant_constructor("Other", "None", 99);
+        let contextual = test_sum_nominal(1, vec![ValkyrieType::Integer32 { signed: true }]);
         let resolved = try_resolve_nullary_constructor(
             &Identifier::new("None"),
             Some(&contextual),
@@ -4228,15 +4235,16 @@ micro pick(flag: bool) -> Option<i64> {
             &BTreeMap::new(),
             &AggregateFieldIndex::default(), &BTreeSet::new(),
         )
-        .expect("return Option<i32> should close Option::None");
-        assert!(resolved.sum_owner.is_some());
+        .expect("return Nominal Option<i32> should close Option::None");
+        assert_eq!(resolved.sum_owner, nyar_types::ItemId::from_index(1));
         assert!(resolved.sum_variant.is_some());
         assert_eq!(resolved.domain, HirCallableDomain::Constructor);
     }
 
     #[test]
     fn enrich_sum_variant_operation_facts_attaches_option_some_for_unwrap() {
-        let option_some = nullary_variant_constructor("Option", "Some");
+        let option_some = nullary_variant_constructor("Option", "Some", 1);
+        let option_ty = test_sum_nominal(1, vec![ValkyrieType::Integer32 { signed: true }]);
         let mut call = HirResolvedCall {
             declaration: None,
             instance: None,
@@ -4245,34 +4253,30 @@ micro pick(flag: bool) -> Option<i64> {
             symbol: NamePath::new(vec![Identifier::new("unwrap")]),
             domain: HirCallableDomain::Function,
             return_type: ValkyrieType::Integer32 { signed: true },
-            parameter_types: vec![ValkyrieType::Apply(
-                Box::new(ValkyrieType::Named(Identifier::new("Option"))),
-                vec![ValkyrieType::Integer32 { signed: true }],
-            )],
+            parameter_types: vec![option_ty.clone()],
             has_receiver: true,
             extractor_payload_type: None,
         };
-        let receiver =
-            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![ValkyrieType::Integer32 { signed: true }]);
-        enrich_sum_variant_operation_facts(&mut call, Some(&receiver), &[option_some]);
+        enrich_sum_variant_operation_facts(&mut call, Some(&option_ty), &[option_some]);
         assert!(call.sum_owner.is_some());
         assert!(call.sum_variant.is_some());
         assert_eq!(call.domain, HirCallableDomain::Extractor);
         assert_eq!(call.extractor_payload_type, Some(ValkyrieType::Integer32 { signed: true }));
     }
 
-    fn nullary_variant_constructor(owner: &str, variant: &str) -> OverloadCandidate {
+    fn nullary_variant_constructor(owner: &str, variant: &str, sum_owner_index: u32) -> OverloadCandidate {
+        let sum_owner = nyar_types::ItemId::from_index(sum_owner_index).expect("test sum_owner");
         let mut candidate = OverloadCandidate::new_method(
             Identifier::new(owner),
             NamePath::new(vec![Identifier::new(variant)]),
             OverloadDomain::Constructor,
             Vec::new(),
-            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new(owner))), vec![ValkyrieType::Named(Identifier::new("T"))]),
+            test_sum_nominal(sum_owner_index, vec![test_generic("T")]),
             OverloadMatchKind::Row,
         )
-        .with_generic_binder(Identifier::new("T"));
-        candidate.sum_owner = nyar_types::ItemId::from_index(1);
-        candidate.sum_variant = nyar_types::ItemId::from_index(2);
+        .with_generic_binder(test_binder(900, 0));
+        candidate.sum_owner = Some(sum_owner);
+        candidate.sum_variant = nyar_types::ItemId::from_index(sum_owner_index + 1);
         candidate
     }
 
@@ -4826,7 +4830,7 @@ micro identity<T>(value: T) -> T { return value; }
             .expect("nominal and scoped generic declarations");
         let relations = TypeRelationContext::from_module(&hir);
         assert!(matches!(
-            relations.match_parameter(&ValkyrieType::Boolean, &ValkyrieType::Named(Identifier::new("T"))),
+            relations.match_parameter(&ValkyrieType::Boolean, &test_generic("T")),
             ParameterMatchResult::NoMatch { .. }
         ));
     }
@@ -4999,11 +5003,11 @@ micro negate_flag(flag: bool) -> bool {
         let candidate = OverloadCandidate::new(
             NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("length")]),
             OverloadDomain::Function,
-            vec![ValkyrieType::Array(Box::new(ValkyrieType::Named(Identifier::new("T"))))],
+            vec![ValkyrieType::Array(Box::new(test_generic("T")))],
             ValkyrieType::Named(Identifier::new("usize")),
             OverloadMatchKind::NominalExact,
         )
-        .with_generic_binder(Identifier::new("T"));
+        .with_generic_binder(test_binder(900, 0));
         let items_ty = ValkyrieType::Array(Box::new(ValkyrieType::Integer32 { signed: true }));
         let locals = BTreeMap::from([("items".to_string(), items_ty.clone())]);
         let args = vec![HirCallArgument::positional(HirExpr {
@@ -5029,11 +5033,11 @@ micro negate_flag(flag: bool) -> bool {
         let candidate = OverloadCandidate::new(
             NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("length")]),
             OverloadDomain::Function,
-            vec![ValkyrieType::Array(Box::new(ValkyrieType::Named(Identifier::new("T"))))],
+            vec![ValkyrieType::Array(Box::new(test_generic("T")))],
             ValkyrieType::Named(Identifier::new("usize")),
             OverloadMatchKind::NominalExact,
         )
-        .with_generic_binder(Identifier::new("T"));
+        .with_generic_binder(test_binder(900, 0));
         let locals = BTreeMap::from([("text".to_string(), ValkyrieType::Utf8)]);
         let args = vec![HirCallArgument::positional(HirExpr {
             kind: HirExprKind::Variable(HirIdentifier { name: Identifier::new("text"), shadow_index: 0, span: span.clone() }),
