@@ -1917,23 +1917,15 @@ impl MirBuilder {
             }
         }
         if let MirOperand::Symbol(path) = callee {
+            // 只认完整稳定符号；禁止 parts().last() 短名回落（同短名跨 owner 会串返回类型）。
             let symbol = path.to_string();
             if let Some(return_type) = self.callable_returns.by_symbol.get(&symbol) {
                 return Some(return_type.clone());
             }
-            if let Some(simple) = path.parts().last() {
-                if let Some(return_type) = self.callable_returns.by_symbol.get(simple.as_str()) {
-                    return Some(return_type.clone());
-                }
-            }
         }
         resolved.and_then(|call| {
             let symbol = call.symbol.to_string();
-            self.callable_returns
-                .by_symbol
-                .get(&symbol)
-                .or_else(|| call.symbol.parts().last().and_then(|simple| self.callable_returns.by_symbol.get(simple.as_str())))
-                .cloned()
+            self.callable_returns.by_symbol.get(&symbol).cloned()
         })
     }
 
