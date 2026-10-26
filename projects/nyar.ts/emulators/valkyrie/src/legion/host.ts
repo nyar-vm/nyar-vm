@@ -98,3 +98,15 @@ export function formatLegionSpawnError(label: string, outcome: LegionSpawnResult
     const detail = outcome.stderr || outcome.stdout || `exit ${outcome.status}`;
     return `${label} failed (${outcome.route}): ${detail}`;
 }
+
+/** Legion 内嵌 OVM：列出 `.nyar` 导出。 */
+export function legionListOvmExports(nyarPath: string): string[] {
+    return loadNative().legionListOvmExports(nyarPath);
+}
+
+/** Legion 内嵌 OVM：调用导出（`metadata.tests` / 矩阵 reference 用）。 */
+export function legionInvokeOvmExport(nyarPath: string, exportName: string, args: Record<string, unknown>): unknown {
+    const argsJson = JSON.stringify(Object.values(args));
+    const text = loadNative().legionInvokeOvmExport(nyarPath, exportName, argsJson);
+    return JSON.parse(text) as unknown;
+}

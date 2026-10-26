@@ -69,6 +69,8 @@ type ValkyrieNativeAddon = {
     legionTest(projectDir: string, target?: string): LegionTestOutcome;
     legionCheckArtifactFresh(outputDir: string, expectedTarget: string): LegionArtifactFreshness;
     legionReadExecutionManifest(outputDir: string): LegionExecutionManifestView | null;
+    legionListOvmExports(module: string): string[];
+    legionInvokeOvmExport(module: string, entry: string, argsJson: string): string;
 };
 
 const pkgRoot = path.dirname(fileURLToPath(import.meta.url));
