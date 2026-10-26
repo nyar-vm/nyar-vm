@@ -6,7 +6,10 @@
     "license": "MIT",
     "main": "./dist/index.js",
     "exports": {
-        ".": "./dist/index.js"
+        ".": "./dist/index.js",
+        "./legion": "./dist/legion/index.js",
+        "./legion/testing": "./dist/legion/testing.js",
+        "./legion/benchmark": "./dist/legion/benchmark.js"
     },
     "bin": {
         "legion": "bin/legion.mjs",

@@ -4,12 +4,71 @@ import {arch, platform} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-/** Valkyrie 编译器 CLI 产品名。 */
+/** Asgard argv 透传（LeetCode 不用）。 */
 export type ValkyrieProduct = 'legion' | 'asgard';
+
+export type LegionExecutionManifestView = {
+    schemaVersion: number;
+    target: string;
+    semanticClosureHash: string | null;
+    canonicalSurfaceHash: string | null;
+    hostProviderBindingHash: string | null;
+    primaryPhysicalEntry: string | null;
+    primaryLogicalEntry: string | null;
+};
+
+export type LegionArtifactFreshness = {fresh: boolean; reason: string | null};
+
+export type LegionTestOutcome = {
+    ok: boolean;
+    error: string | null;
+    passed: number;
+    failed: number;
+    skipped: number;
+};
+
+export type LegionPlanOptions = {
+    projectDir: string;
+    target?: string;
+};
+
+export type LegionPlanOutcome = {
+    ok: boolean;
+    error?: string;
+    project?: string;
+    target?: string;
+    workspaceRoot?: string;
+    outputDir?: string;
+    sourceCount: number;
+    semanticGroupCount: number;
+    dependencyCount: number;
+    groups: {dependencyKey: string; fileCount: number}[];
+};
+
+export type LegionBuildOptions = {
+    projectDir: string;
+    target?: string;
+    outputDir?: string;
+};
+
+export type LegionBuildOutcome = {
+    ok: boolean;
+    error?: string;
+    project?: string;
+    target?: string;
+    outputDir?: string;
+    artifacts: string[];
+    entrySymbol?: string;
+};
 
 /** `valkyrie-napi` 导出的产品面。 */
 type ValkyrieNativeAddon = {
     runValkyrieCli(product: string, argv: string[]): number;
+    legionPlan(options: LegionPlanOptions): LegionPlanOutcome;
+    legionBuild(options: LegionBuildOptions): LegionBuildOutcome;
+    legionTest(projectDir: string, target?: string): LegionTestOutcome;
+    legionCheckArtifactFresh(outputDir: string, expectedTarget: string): LegionArtifactFreshness;
+    legionReadExecutionManifest(outputDir: string): LegionExecutionManifestView | null;
 };
 
 const pkgRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -90,10 +149,23 @@ export function loadNative(): ValkyrieNativeAddon {
 }
 
 /**
- * 通过 valkyrie-napi 执行 Valkyrie CLI，原样返回退出码。
- *
- * argv 不解析、不改写；`--help` / `--version` 等语义全部由 Rust CLI 承担。
+ * 通过 valkyrie-napi 执行 Asgard argv CLI（Legion 已移除 Rust argv 路径）。
  */
 export async function runValkyrieCli(product: ValkyrieProduct, argv: string[]): Promise<number> {
     return loadNative().runValkyrieCli(product, argv);
+}
+
+/** Legion `plan`（结构化 API，不经 argv）。 */
+export function legionPlan(options: LegionPlanOptions): LegionPlanOutcome {
+    return loadNative().legionPlan(options);
+}
+
+/** Legion `build`（结构化 API，不经 argv）。 */
+export function legionBuild(options: LegionBuildOptions): LegionBuildOutcome {
+    return loadNative().legionBuild(options);
+}
+
+/** Legion `test`（结构化 API）。 */
+export function legionTest(projectDir: string, target?: string): LegionTestOutcome {
+    return loadNative().legionTest(projectDir, target);
 }
