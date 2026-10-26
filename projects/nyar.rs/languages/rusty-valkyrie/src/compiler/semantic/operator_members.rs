@@ -45,7 +45,7 @@ pub(crate) fn infix_member_name(operator: &ValkyrieTokenType) -> String {
         ValkyrieTokenType::EqEq => "==",
         ValkyrieTokenType::EqEqEq => "===",
         ValkyrieTokenType::NotEq => "!=",
-        ValkyrieTokenType::NotEqEq => "!==",
+        ValkyrieTokenType::NotEqEq => "=!=",
         ValkyrieTokenType::LessThan => "<",
         ValkyrieTokenType::LessEq => "<=",
         ValkyrieTokenType::GreaterThan => ">",
