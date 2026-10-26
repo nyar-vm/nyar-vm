@@ -25,14 +25,12 @@ fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &[St
     let mut current_namespace = namespace_prefix.to_vec();
     for item in items {
         match item {
-            StatementNode::Namespace(namespace) if !namespace.has_body() => {
+            StatementNode::Namespace(namespace) if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) => {
                 current_namespace = name_path_parts(&namespace.name);
             }
             StatementNode::Namespace(namespace) => {
-                if let Some(body) = &namespace.body {
-                    let nested = append_namespace_path(&current_namespace, &name_path_parts(&namespace.name));
-                    validate_duplicate_type_names(&body.items, &nested)?;
-                }
+                let nested = append_namespace_path(&current_namespace, &name_path_parts(&namespace.name));
+                validate_duplicate_type_names(crate::compiler::syntax::oak::namespace_items(namespace), &nested)?;
             }
             other => {
                 if let Some((name, kind, span)) = type_declaration_identity(other) {

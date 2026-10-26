@@ -562,10 +562,10 @@ fn same_module_private_wasm_host_call_resolves() {
     let source = r#"
 namespace demo.text;
 micro host_length(value: utf16): isize {
-    return __host_utf16_length(value)
+    return __js_utf16_length(value)
 }
 [wasm("env", "utf16_length")]
-private micro __host_utf16_length(s: utf16): isize
+private micro __js_utf16_length(s: utf16): isize
 "#;
     ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("同模块 private wasm host 调用必须解析: {error}"));
 }
@@ -576,10 +576,10 @@ fn same_module_private_wasm_host_call_with_std_text_path_resolves() {
     let source = r#"
 namespace demo.text;
 micro host_length(value: std.text.utf16): isize {
-    return __host_utf16_length(value)
+    return __js_utf16_length(value)
 }
 [wasm("env", "utf16_length")]
-private micro __host_utf16_length(s: utf16): isize
+private micro __js_utf16_length(s: utf16): isize
 "#;
     ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("Oak NamePath 须保留 std.text.utf16: {error}"));
 }

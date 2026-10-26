@@ -17,9 +17,10 @@ use crate::compiler::{
     types::{
         Identifier, NamePath, SourceID,
         hir::{
-            HirBlock, HirCompileWarning, HirDependencySemanticExport, HirDocumentation, HirEnum, HirExpr, HirExprKind, HirField, HirFlagMember,
-            HirFlags, HirFunction, HirImpl, HirImport, HirImportBinding, HirKind, HirLiteral, HirModule, HirParam, HirParameterBindingKind,
-            HirProperty, HirSingleton, HirStatement, HirStatementKind, HirStruct, HirTrait, HirTraitBound, HirTypeAlias, HirTypeFunction,
+            HirAssociatedTypeImpl, HirBlock, HirCompileWarning, HirDependencySemanticExport, HirDocumentation, HirEnum, HirExpr, HirExprKind,
+            HirField, HirFlagMember, HirFlags, HirFunction, HirImpl, HirImport, HirImportBinding, HirKind, HirLiteral, HirModule, HirParam,
+            HirParameterBindingKind, HirProperty, HirSingleton, HirStatement, HirStatementKind, HirStruct, HirTrait, HirTraitBound, HirTypeAlias,
+            HirTypeFunction,
             HirVariadicKind, HirVariant, HirVisibility, HirWhereConstraint, HirWidget, HirWidgetLifecycle, ValkyrieType,
         },
     },
@@ -120,7 +121,10 @@ impl AstToHir {
             root.items
                 .iter()
                 .find_map(|item| match item {
-                    StatementNode::Namespace(namespace) if !namespace.has_body() => Some(lower_name_path(&namespace.name)),
+                    StatementNode::Namespace(namespace) if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) =>
+                    {
+                        Some(lower_name_path(&namespace.name))
+                    }
                     _ => None,
                 })
                 .unwrap_or_else(default_module_name)
@@ -151,13 +155,13 @@ impl AstToHir {
         for item in &root.items {
             match item {
                 StatementNode::Namespace(namespace) => {
-                    if !namespace.has_body() {
+                    if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
                         current_namespace = lower_name_path(&namespace.name);
                     }
-                    else if let Some(body) = &namespace.body {
+                    else {
                         let namespace_path = lower_name_path(&namespace.name);
                         self.lower_items(
-                            &body.items,
+                            crate::compiler::syntax::oak::namespace_items(namespace),
                             &namespace_path,
                             &mut functions,
                             &mut type_functions,
@@ -655,7 +659,20 @@ impl AstToHir {
     }
 
     fn lower_imply(&self, imply: &ImplyDeclaration, declaring_namespace: &NamePath) -> Result<HirImpl, HirError> {
-        let _generic_scope = GenericBinderScope::enter(&imply_generic_parameter_names(imply), &[]);
+        let associated_names =
+            imply.associated_types.iter().map(|item| oak_identifier(&item.name)).collect::<std::collections::BTreeSet<_>>();
+        let associated = associated_names.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let _generic_scope = GenericBinderScope::enter(&imply_generic_parameter_names(imply), &associated);
+        let mut associated_type_impls = Vec::new();
+        for item in &imply.associated_types {
+            if let Some(default) = &item.default {
+                associated_type_impls.push(HirAssociatedTypeImpl::new(
+                    oak_identifier(&item.name),
+                    crate::compiler::hir::lower_type_expression(default)?,
+                    with_source(&frontend::std_range(&item.span), self.source_id),
+                ));
+            }
+        }
         let trait_arguments = if let Some(ty) = imply.trait_type.as_ref() {
             if let TypeExpression::Apply(node) = ty {
                 node.arguments.iter().map(crate::compiler::hir::lower_type_expression).collect::<Result<Vec<_>, _>>()?
@@ -676,7 +693,7 @@ impl AstToHir {
             target: crate::compiler::hir::lower_type_expression(&imply.target_type)?,
             trait_path: imply.trait_type.as_ref().map(lower_trait_path_from_type),
             methods: imply.methods.iter().map(|method| self.lower_method(method)).collect::<Result<Vec<_>, _>>()?,
-            associated_type_impls: Vec::new(),
+            associated_type_impls,
             associated_const_impls: Vec::new(),
         })
     }

@@ -27,6 +27,14 @@ use crate::compiler::hir::control_flow_validation::state::HirValidationState;
 
 /// 判断控制流校验中期望类型与实参类型是否兼容（不按名字回退 builtin / 泛型 / Self）。
 pub fn control_flow_value_type_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
+    control_flow_value_type_compatible_with_primitives(expected, actual, None)
+}
+
+pub fn control_flow_value_type_compatible_with_primitives(
+    expected: &ValkyrieType,
+    actual: &ValkyrieType,
+    state: Option<&HirValidationState>,
+) -> bool {
     expected == actual
         || matches!(expected, ValkyrieType::AutoType)
         || matches!(actual, ValkyrieType::AutoType)
@@ -34,6 +42,15 @@ pub fn control_flow_value_type_compatible(expected: &ValkyrieType, actual: &Valk
         || array_types_compatible(expected, actual)
         || nullable_return_compatible(expected, actual)
         || nominal_apply_types_compatible(expected, actual)
+        || state.is_some_and(|state| primitive_boolean_compatible(expected, actual, state))
+}
+
+pub fn primitive_boolean_compatible(expected: &ValkyrieType, actual: &ValkyrieType, state: &HirValidationState) -> bool {
+    let is_bool_nominal = |ty: &ValkyrieType| {
+        matches!(ty, ValkyrieType::Nominal { declaration, .. } if state.boolean_declarations.contains(declaration))
+    };
+    (is_bool_nominal(expected) && matches!(actual, ValkyrieType::Boolean))
+        || (is_bool_nominal(actual) && matches!(expected, ValkyrieType::Boolean))
 }
 
 pub fn nominal_apply_types_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {

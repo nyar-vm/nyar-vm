@@ -68,11 +68,11 @@ fn bitwise_sugar_lowers_to_plain_member_calls() {
 #[test]
 fn subscript_sugar_lowers_to_plain_member_calls() {
     for (source, member, arity) in [
-        ("micro read() { values[1] }", "suffix []", 2),
-        ("micro read() { values⁅0⁆ }", "suffix ⁅⁆", 2),
-        ("micro read() { values::[0] }", "suffix ⁅⁆", 2),
-        ("micro write() { values[1] = 7 }", "suffix []=", 3),
-        ("micro write() { values⁅0⁆ = 7 }", "suffix ⁅⁆=", 3),
+        ("micro read() { values[1] }", "suffix [ ]", 2),
+        ("micro read() { values⁅0⁆ }", "suffix ⁅ ⁆", 2),
+        ("micro read() { values::[0] }", "suffix ⁅ ⁆", 2),
+        ("micro write() { values[1] = 7 }", "suffix [ ]=", 3),
+        ("micro write() { values⁅0⁆ = 7 }", "suffix ⁅ ⁆=", 3),
     ] {
         let HirExprKind::Call { callee, args, resolved } = lower(source).kind
         else {

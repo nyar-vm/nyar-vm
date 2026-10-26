@@ -349,7 +349,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
     let array_type = ValkyrieType::Array(Box::new(element_type.clone()));
     let index_type = ValkyrieType::Named(Identifier::new("usize"));
     let mut get = OverloadCandidate::new(
-        NamePath::new(vec![Identifier::new("suffix []")]),
+        NamePath::new(vec![Identifier::new("suffix [ ]")]),
         OverloadDomain::Function,
         vec![array_type.clone(), index_type.clone()],
         element_type.clone(),
@@ -357,7 +357,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
     );
     get.intrinsic = Some(nyar_types::IntrinsicId::ArrayGet);
     let mut set = OverloadCandidate::new(
-        NamePath::new(vec![Identifier::new("suffix []=")]),
+        NamePath::new(vec![Identifier::new("suffix [ ]=")]),
         OverloadDomain::Function,
         vec![array_type.clone(), index_type.clone(), element_type.clone()],
         ValkyrieType::Unit,
@@ -365,7 +365,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
     );
     set.intrinsic = Some(nyar_types::IntrinsicId::ArraySet);
     let mut cardinal_get = OverloadCandidate::new(
-        NamePath::new(vec![Identifier::new("suffix ⁅⁆")]),
+        NamePath::new(vec![Identifier::new("suffix ⁅ ⁆")]),
         OverloadDomain::Function,
         vec![array_type.clone(), index_type.clone()],
         element_type.clone(),
@@ -373,7 +373,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
     );
     cardinal_get.intrinsic = Some(nyar_types::IntrinsicId::ArrayGet);
     let mut cardinal_set = OverloadCandidate::new(
-        NamePath::new(vec![Identifier::new("suffix ⁅⁆=")]),
+        NamePath::new(vec![Identifier::new("suffix ⁅ ⁆=")]),
         OverloadDomain::Function,
         vec![array_type, index_type, element_type],
         ValkyrieType::Unit,

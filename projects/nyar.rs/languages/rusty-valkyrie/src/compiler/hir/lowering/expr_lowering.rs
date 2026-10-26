@@ -58,12 +58,7 @@ fn lower_statement(statement: &Statement, source_id: SourceID, fallback_span: Ra
                 kind: HirStatementKind::Let {
                     is_mutable: has_modifier(&binding.annotations, "mut"),
                     pattern: lower_pattern(&binding.pattern, source_id, span.clone()),
-                    initializer: binding
-                        .expr
-                        .as_ref()
-                        .map(|expr| lower_term_expression(expr, source_id, span_range.clone()))
-                        .transpose()?
-                        .map(Box::new),
+                    initializer: Some(Box::new(lower_term_expression(&binding.expr, source_id, span_range.clone())?)),
                     ty: binding.ty.as_ref().map(lower_type_expression).transpose()?,
                 },
                 span,
@@ -168,12 +163,6 @@ fn lower_term_expression_with_context(
     let span = with_source(&span_range, source_id);
     let kind = match expression {
         TermExpression::ArrayLiteral { items, .. } => HirExprKind::ArrayLiteral {
-            items: items
-                .iter()
-                .map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false))
-                .collect::<Result<Vec<_>, _>>()?,
-        },
-        TermExpression::TupleLiteral { items, .. } => HirExprKind::TupleLiteral {
             items: items
                 .iter()
                 .map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false))
@@ -626,7 +615,7 @@ fn lower_method_call_kind(member: &str, args: Vec<HirCallArgument>, span: Source
 /// AST 运算符语法糖在 HIR 早期展开为接收者的普通成员调用。
 ///
 /// 成员名与运算符声明的 HIR 成员名同为 `{fixity} {lexeme}`（见 `operator_member_name`）：
-/// `a + b` 展开为接收者 `a` 的 `infix +` 调用，`a[i]` 展开为 `a` 的 `suffix []` 调用。
+/// `a + b` 展开为接收者 `a` 的 `infix +` 调用，`a[i]` 展开为 `a` 的 `suffix [ ]` 调用。
 /// HIR/MIR/LIR 不再持有 unary/binary/operator 语义类别，也不存在运算符身份表。
 fn lower_operator_member_call(member: &str, args: Vec<HirCallArgument>, span: SourceSpan) -> HirExprKind {
     lower_canonical_call_arguments(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new(member)])), span }, args)

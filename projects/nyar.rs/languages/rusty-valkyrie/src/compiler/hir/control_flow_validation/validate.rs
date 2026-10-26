@@ -25,7 +25,8 @@ use super::{control_flow_source, expr_diagnostic_span};
 
 use crate::compiler::hir::control_flow_validation::{
     compatibility::{
-        control_flow_value_type_compatible, display_type, future_resume_type, generator_yield_type, integer_literal_binds_to,
+        control_flow_value_type_compatible, control_flow_value_type_compatible_with_primitives, display_type, future_resume_type,
+        generator_yield_type, integer_literal_binds_to,
         return_without_value_compatible,
     },
     pattern::{
@@ -239,7 +240,7 @@ pub fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_c
                 validate_hir_expr(value, state, true)?;
             }
             for method in methods {
-                validate_hir_function(method, &mut validation_state(&state.numeric_declarations))?;
+                validate_hir_function(method, &mut validation_state(&state.numeric_declarations, &state.boolean_declarations))?;
             }
         }
         HirExprKind::If { condition, then_branch, else_branch } => {
@@ -472,6 +473,7 @@ pub fn lambda_validation_state(parent: &HirValidationState, _body: &HirBlock) ->
         control_flow: parent.control_flow.clone_for_function_boundary(),
         current_function: parent.current_function.clone(),
         numeric_declarations: parent.numeric_declarations.clone(),
+        boolean_declarations: parent.boolean_declarations.clone(),
     }
 }
 
@@ -723,7 +725,9 @@ pub fn validate_return_value(expr: &HirExpr, value: Option<&HirExpr>, state: &Hi
         return Ok(());
     };
     let actual_type = resolve_contextual_type(&actual_raw, state);
-    if control_flow_value_type_compatible(&expected_type, &actual_type) || integer_literal_binds_to(&expected_type, Some(value), state) {
+    if control_flow_value_type_compatible_with_primitives(&expected_type, &actual_type, Some(state))
+        || integer_literal_binds_to(&expected_type, Some(value), state)
+    {
         return Ok(());
     }
 

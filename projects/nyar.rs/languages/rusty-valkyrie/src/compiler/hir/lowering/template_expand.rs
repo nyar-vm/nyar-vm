@@ -57,8 +57,8 @@ fn expand_declaration_bodies(items: &mut [StatementNode], source: &str, arch: &s
             }
 
             StatementNode::Namespace(namespace) => {
-                if let Some(body) = &mut namespace.body {
-                    expand_declaration_bodies(&mut body.items, source, arch)?;
+                if !crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
+                    expand_declaration_bodies(crate::compiler::syntax::oak::namespace_items_mut(namespace), source, arch)?;
                 }
             }
 
@@ -123,8 +123,8 @@ fn expand_statement_nodes(items: &mut Vec<StatementNode>, source: &str, arch: &s
             index += expanded_len;
         }
         else if let StatementNode::Namespace(namespace) = &mut items[index] {
-            if let Some(body) = &mut namespace.body {
-                expand_statement_nodes(&mut body.items, source, arch)?;
+            if !crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
+                expand_statement_nodes(crate::compiler::syntax::oak::namespace_items_mut(namespace), source, arch)?;
             }
 
             index += 1;
