@@ -40,7 +40,7 @@ fn retain_items(
     let mut current = namespace.to_vec();
     items.retain_mut(|item| {
         if let ast::StatementNode::Namespace(declaration) = item {
-            if !declaration.has_body() {
+            if crate::compiler::syntax::oak::namespace_is_declaration_only(declaration) {
                 current = name_path_segments(&declaration.name);
                 return true;
             }
@@ -59,9 +59,9 @@ fn keep_declaration(
     match item {
         // `namespace` 是作用域语句：带 body 时其条目以声明路径为 namespace 递归裁剪。
         ast::StatementNode::Namespace(decl) => {
-            if let Some(body) = &mut decl.body {
+            if !crate::compiler::syntax::oak::namespace_is_declaration_only(decl) {
                 let declared = name_path_segments(&decl.name);
-                retain_items(&mut body.items, &declared, demanded, key_of);
+                retain_items(crate::compiler::syntax::oak::namespace_items_mut(decl), &declared, demanded, key_of);
             }
             true
         }

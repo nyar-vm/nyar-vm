@@ -49,11 +49,12 @@ acorn-aarch64 = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = 
 acorn-dex = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
 acorn-mach-o = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
 acorn-host = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
-oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
-oak-testing = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
-oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684", features = ["serde"] }
-oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
-oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
+# Oak parser frontend (`examples/oak-voc` publishes crate `oak-awsl`). Bump `rev` with oak.rs releases.
+oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "7596fd16f19998ac29508c19fb41f836b1cda2d5" }
+oak-testing = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "7596fd16f19998ac29508c19fb41f836b1cda2d5" }
+oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "7596fd16f19998ac29508c19fb41f836b1cda2d5", features = ["serde"] }
+oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "7596fd16f19998ac29508c19fb41f836b1cda2d5" }
+oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "7596fd16f19998ac29508c19fb41f836b1cda2d5" }
 # Legion corpora (`valkyrie.rs`). Bump `rev` after corpus changes land on that repo.
 legion-fixtures = { git = "https://github.com/valkyrie-language/valkyrie.rs", rev = "bb09bbc6c2f011262bb0330a0c874a42a9b05985" }
 # Nyar Compiler 编译期组件
