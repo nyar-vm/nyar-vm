@@ -22,4 +22,19 @@ export const COMMANDS = ['legion', 'asgard'] as const;
 /** 命令名。 */
 export type Command = (typeof COMMANDS)[number];
 
-export {runValkyrieCli, type ValkyrieProduct} from './native.ts';
+export {
+    legionBuild,
+    legionPlan,
+    legionTest,
+    runValkyrieCli,
+    type LegionArtifactFreshness,
+    type LegionBuildOptions,
+    type LegionBuildOutcome,
+    type LegionExecutionManifestView,
+    type LegionPlanOptions,
+    type LegionPlanOutcome,
+    type LegionTestOutcome,
+    type ValkyrieProduct,
+} from './native.ts';
+
+export * from './legion/index.ts';
