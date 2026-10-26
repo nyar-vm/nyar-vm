@@ -1,9 +1,16 @@
-//! 程序化 N-API 产品面（`legionPlan` / `legionBuild`），不经 CLI argv。
+//! 程序化 N-API 产品面（`legionPlan` / `legionBuild` / `legionTest`），不经 argv CLI。
 
-use std::{path::PathBuf, thread};
+use std::{path::PathBuf, process::ExitCode, thread};
 
 use napi_derive::napi;
-use rusty_valkyrie::legion::{CanonicalTarget, build_project, plan_project};
+use rusty_valkyrie::legion::{
+    CanonicalTarget, CompileOptions, PlanRequest,
+    cmds::{
+        run::ExecutionManifest,
+        test::{TestArgs, run as run_legion_test},
+    },
+    compile_project, plan,
+};
 
 /// N-API 暴露的单个语义源码组摘要。
 #[napi(object)]
@@ -82,23 +89,43 @@ pub struct LegionBuildOutcome {
 #[napi]
 pub fn legion_plan(options: LegionPlanOptions) -> LegionPlanOutcome {
     match parse_target(options.target) {
-        Ok(target) => match plan_project(&options.project_dir, target) {
-            Ok(summary) => LegionPlanOutcome {
-                ok: true,
-                error: None,
-                project: Some(summary.project),
-                target: Some(summary.target),
-                workspace_root: Some(summary.workspace_root),
-                output_dir: Some(summary.output_dir),
-                source_count: summary.source_count as u32,
-                semantic_group_count: summary.semantic_group_count as u32,
-                dependency_count: summary.dependency_count as u32,
-                groups: summary
-                    .groups
-                    .into_iter()
-                    .map(|group| LegionSemanticGroupItem { dependency_key: group.dependency_key, file_count: group.file_count as u32 })
-                    .collect(),
-            },
+        Ok(target) => match plan(PlanRequest { project_dir: PathBuf::from(&options.project_dir), target, output_dir: None }) {
+            Ok(build_plan) => {
+                if !build_plan.is_compilable() {
+                    return LegionPlanOutcome {
+                        ok: false,
+                        error: Some("no source files or plan diagnostics contain errors".into()),
+                        project: Some(build_plan.project),
+                        target: Some(build_plan.target),
+                        workspace_root: Some(build_plan.workspace_root),
+                        output_dir: Some(build_plan.output_dir),
+                        source_count: build_plan.source_count as u32,
+                        semantic_group_count: build_plan.semantic_group_count as u32,
+                        dependency_count: build_plan.dependency_count as u32,
+                        groups: build_plan
+                            .groups
+                            .into_iter()
+                            .map(|group| LegionSemanticGroupItem { dependency_key: group.dependency_key, file_count: group.file_count as u32 })
+                            .collect(),
+                    };
+                }
+                LegionPlanOutcome {
+                    ok: true,
+                    error: None,
+                    project: Some(build_plan.project),
+                    target: Some(build_plan.target),
+                    workspace_root: Some(build_plan.workspace_root),
+                    output_dir: Some(build_plan.output_dir),
+                    source_count: build_plan.source_count as u32,
+                    semantic_group_count: build_plan.semantic_group_count as u32,
+                    dependency_count: build_plan.dependency_count as u32,
+                    groups: build_plan
+                        .groups
+                        .into_iter()
+                        .map(|group| LegionSemanticGroupItem { dependency_key: group.dependency_key, file_count: group.file_count as u32 })
+                        .collect(),
+                }
+            }
             Err(report) => LegionPlanOutcome {
                 ok: false,
                 error: Some(format!("{report:?}")),
@@ -127,7 +154,7 @@ pub fn legion_plan(options: LegionPlanOptions) -> LegionPlanOutcome {
     }
 }
 
-/// 编译项目并落盘产物（结构化结果，不经 CLI）。
+/// 编译项目并落盘产物（结构化结果）。
 #[napi]
 pub fn legion_build(options: LegionBuildOptions) -> LegionBuildOutcome {
     let target = match parse_target(options.target) {
@@ -149,18 +176,32 @@ pub fn legion_build(options: LegionBuildOptions) -> LegionBuildOutcome {
     let worker = thread::Builder::new()
         .name("legion-build".into())
         .stack_size(64 * 1024 * 1024)
-        .spawn(move || build_project(&project_dir, target, output_dir))
+        .spawn(move || compile_project(&project_dir, target, output_dir, CompileOptions::default()))
         .expect("failed to spawn legion build thread");
     match worker.join().expect("legion build thread panicked") {
-        Ok(summary) => LegionBuildOutcome {
-            ok: true,
-            error: None,
-            project: Some(summary.project),
-            target: Some(summary.target),
-            output_dir: Some(summary.output_dir),
-            artifacts: summary.artifacts,
-            entry_symbol: summary.entry_symbol,
-        },
+        Ok(report) => {
+            if !report.success {
+                let message = report.diagnostics.first().map(|d| d.message.clone()).unwrap_or_else(|| "compile failed".into());
+                return LegionBuildOutcome {
+                    ok: false,
+                    error: Some(message),
+                    project: Some(report.project),
+                    target: Some(report.target),
+                    output_dir: Some(report.output_dir),
+                    artifacts: report.artifacts,
+                    entry_symbol: report.entry_symbol,
+                };
+            }
+            LegionBuildOutcome {
+                ok: true,
+                error: None,
+                project: Some(report.project),
+                target: Some(report.target),
+                output_dir: Some(report.output_dir),
+                artifacts: report.artifacts,
+                entry_symbol: report.entry_symbol,
+            }
+        }
         Err(report) => LegionBuildOutcome {
             ok: false,
             error: Some(format!("{report:?}")),
