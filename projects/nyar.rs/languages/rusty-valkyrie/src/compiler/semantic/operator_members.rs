@@ -1,7 +1,7 @@
 //! 运算符成员名的唯一所有者。
 //!
 //! Valkyrie 2020 不把运算符当作语义类别：`a + b` 就是 `a.infix +(b)` 的普通成员调用，
-//! `!a` 就是 `a.prefix !()`，`a[i]` 就是 `a.suffix [](i)`。HIR/MIR/LIR 只保留普通成员名与
+//! `!a` 就是 `a.prefix !()`，`a[i]` 就是 `a.suffix [ ](i)`。HIR/MIR/LIR 只保留普通成员名与
 //! 普通 `Invoke`，不存在 operator/unary/binary 类别、`OperatorId` 或运算符身份表。
 //!
 //! 声明侧（`[infix] micro \`+\``）与调用侧（AST 运算符语法糖）必须得到同一个成员名，否则
@@ -16,13 +16,13 @@ use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 use crate::compiler::syntax::oak::ast::Attribute;
 
 /// 序数下标 `receiver[i]` 的成员名。
-pub(crate) const SUBSCRIPT_MEMBER: &str = "suffix []";
+pub(crate) const SUBSCRIPT_MEMBER: &str = "suffix [ ]";
 /// 序数下标赋值 `receiver[i] = value` 的成员名。
-pub(crate) const SUBSCRIPT_ASSIGN_MEMBER: &str = "suffix []=";
+pub(crate) const SUBSCRIPT_ASSIGN_MEMBER: &str = "suffix [ ]=";
 /// 基数下标 `receiver::[i]` 的成员名。
-pub(crate) const CARDINAL_SUBSCRIPT_MEMBER: &str = "suffix ⁅⁆";
+pub(crate) const CARDINAL_SUBSCRIPT_MEMBER: &str = "suffix ⁅ ⁆";
 /// 基数下标赋值 `receiver::[i] = value` 的成员名。
-pub(crate) const CARDINAL_SUBSCRIPT_ASSIGN_MEMBER: &str = "suffix ⁅⁆=";
+pub(crate) const CARDINAL_SUBSCRIPT_ASSIGN_MEMBER: &str = "suffix ⁅ ⁆=";
 /// 解引用读取 `*receiver` 的成员名。
 pub(crate) const DEREF_READ_MEMBER: &str = "deref_read";
 
@@ -43,7 +43,9 @@ pub(crate) fn infix_member_name(operator: &ValkyrieTokenType) -> String {
         ValkyrieTokenType::Slash => "/",
         ValkyrieTokenType::Percent => "%",
         ValkyrieTokenType::EqEq => "==",
+        ValkyrieTokenType::EqEqEq => "===",
         ValkyrieTokenType::NotEq => "!=",
+        ValkyrieTokenType::NotEqEq => "!==",
         ValkyrieTokenType::LessThan => "<",
         ValkyrieTokenType::LessEq => "<=",
         ValkyrieTokenType::GreaterThan => ">",

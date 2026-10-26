@@ -4,8 +4,11 @@
 //! 不得再经 `vcc-data::AstParser` 或任何 legacy AST 桥接层。
 
 mod error;
+mod namespace;
 mod naming;
 mod staging;
+
+pub(crate) use namespace::{namespace_is_declaration_only, namespace_items, namespace_items_mut};
 
 use oak_core::{Builder, ParseSession, SourceText};
 use oak_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};

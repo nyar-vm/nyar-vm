@@ -17,12 +17,11 @@ pub(crate) fn collect_items(builder: &mut FileBuilder, current_namespace: &[Stri
         match item {
             ast::StatementNode::Namespace(namespace_decl) => {
                 let declared = name_path_segments(&namespace_decl.name);
-                if !namespace_decl.has_body() {
+                if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace_decl) {
                     namespace = declared;
                 }
-                else if let Some(body) = &namespace_decl.body {
-                    // 带 body 的 `namespace` 以自身路径作为条目 namespace（与 HIR lowering 一致）。
-                    collect_items(builder, &declared, &body.items);
+                else {
+                    collect_items(builder, &declared, crate::compiler::syntax::oak::namespace_items(namespace_decl));
                 }
             }
             other => collect_item(builder, &namespace, other),
@@ -248,9 +247,7 @@ fn collect_let(let_stmt: &ast::Let, references: &mut References) {
     if let Some(ty) = &let_stmt.ty {
         collect_type_expression(ty, references);
     }
-    if let Some(expr) = &let_stmt.expr {
-        collect_term(expr, references);
-    }
+    collect_term(&let_stmt.expr, references);
 }
 
 fn collect_block(block: &ast::Block, references: &mut References) {
@@ -269,7 +266,7 @@ fn collect_statement(statement: &ast::Statement, references: &mut References) {
 
 fn collect_term(term: &ast::TermExpression, references: &mut References) {
     match term {
-        ast::TermExpression::ArrayLiteral { items, .. } | ast::TermExpression::TupleLiteral { items, .. } => {
+        ast::TermExpression::ArrayLiteral { items, .. } => {
             for item in items {
                 collect_term(item, references);
             }
@@ -291,7 +288,7 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
             collect_term(&node.lhs, references);
             collect_term(&node.rhs, references);
             match node.operator {
-                // 赋值不是成员调用；对下标左值赋值降低为 `suffix []=` / `suffix ⁅⁆=`。
+                // 赋值不是成员调用；对下标左值赋值降低为 `suffix [ ]=` / `suffix ⁅ ⁆=`。
                 ValkyrieTokenType::Eq => match &node.lhs {
                     ast::TermExpression::Index { .. } => {
                         references.selectors.insert(operator_members::SUBSCRIPT_ASSIGN_MEMBER.to_string());
@@ -448,22 +445,22 @@ fn collect_type_expression(ty: &ast::TypeExpression, references: &mut References
         }
         ast::TypeExpression::Tuple(tuple) => {
             for element in &tuple.elements {
-                collect_type_expression(&element.ty, references);
+                collect_type_expression(element, references);
             }
         }
         ast::TypeExpression::Function(function) => {
             for param in &function.params {
                 collect_type_expression(param, references);
             }
-            collect_type_expression(&function.return_type, references);
+            collect_type_expression(function.return_type.as_ref(), references);
         }
-        ast::TypeExpression::Optional(optional) => collect_type_expression(&optional.inner, references),
+        ast::TypeExpression::Optional(optional) => collect_type_expression(optional.inner.as_ref(), references),
         ast::TypeExpression::AssociatedType(associated) => {
             references.paths.insert(vec![associated.base.name.clone()]);
             references.paths.insert(vec![associated.name.name.clone()]);
         }
         ast::TypeExpression::QualifiedAssociatedType(qualified) => {
-            collect_type_expression(&qualified.ty, references);
+            collect_type_expression(qualified.ty.as_ref(), references);
             collect_name_path(&qualified.trait_path, references);
             references.paths.insert(vec![qualified.name.name.clone()]);
         }
