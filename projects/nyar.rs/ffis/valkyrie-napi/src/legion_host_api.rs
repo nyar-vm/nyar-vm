@@ -1,8 +1,10 @@
-//! LeetCode / harness：execution manifest 与 `legion test`（不经 argv）。
+//! LeetCode / harness：execution manifest、`legion test` 与内嵌 OVM 调用（不经 argv、不定位外部 CLI）。
 
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
+use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use odin_vm::{OdinVm, json_bridge};
 use rusty_valkyrie::legion::{
     CanonicalTarget,
     cmds::test::{TestArgs, run as run_test},
@@ -138,4 +140,32 @@ pub fn legion_test(project_dir: String, target: Option<String>) -> LegionTestOut
         }
         Err(error) => LegionTestOutcome { ok: false, error: Some(error.to_string()), passed: 0, failed: 1, skipped: 0 },
     }
+}
+
+/// Legion 内嵌 OVM：列出 `.nyar` 导出（与 `legion test` / 元编程执行同栈）。
+#[napi]
+pub fn legion_list_ovm_exports(module: String) -> Result<Vec<String>> {
+    let bytes = fs::read(&module).map_err(|error| Error::from_reason(format!("read module: {error}")))?;
+    let loaded = OdinVm::new()
+        .load(&bytes)
+        .map_err(|error| Error::from_reason(format!("load module: {error}")))?;
+    Ok(loaded.exports.iter().map(|export| export.symbol_name.clone()).collect())
+}
+
+/// Legion 内嵌 OVM：调用导出并返回 JSON（`args_json` 为 JSON 数组）。
+#[napi]
+pub fn legion_invoke_ovm_export(module: String, entry: String, args_json: String) -> Result<String> {
+    let bytes = fs::read(&module).map_err(|error| Error::from_reason(format!("read module: {error}")))?;
+    let mut vm = OdinVm::new();
+    let loaded = vm
+        .load(&bytes)
+        .map_err(|error| Error::from_reason(format!("load module: {error}")))?;
+    let args = json_bridge::parse_call_args_json_with_heap(&args_json, vm.heap_mut())
+        .map_err(|error| Error::from_reason(format!("parse args-json: {error}")))?;
+    let result = vm
+        .run(&loaded, &entry, args)
+        .map_err(|error| Error::from_reason(format!("run entry `{entry}`: {error}")))?;
+    let json = json_bridge::value_to_json_with_heap(&result, Some(vm.heap()))
+        .map_err(|error| Error::from_reason(format!("serialize result: {error}")))?;
+    serde_json::to_string(&json).map_err(|error| Error::from_reason(format!("encode result json: {error}")))
 }

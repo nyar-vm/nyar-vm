@@ -15,8 +15,8 @@ mod product_api;
 mod stdio_capture;
 
 pub use legion_host_api::{
-    LegionArtifactFreshness, LegionExecutionManifestView, LegionTestOutcome, legion_check_artifact_fresh, legion_read_execution_manifest,
-    legion_test,
+    LegionArtifactFreshness, LegionExecutionManifestView, LegionTestOutcome, legion_check_artifact_fresh, legion_invoke_ovm_export,
+    legion_list_ovm_exports, legion_read_execution_manifest, legion_test,
 };
 pub use product_api::{LegionBuildOptions, LegionBuildOutcome, LegionPlanOptions, LegionPlanOutcome, LegionSemanticGroupItem};
 pub use rusty_valkyrie::{asgard, legion};
