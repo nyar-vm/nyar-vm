@@ -1,9 +1,9 @@
 use rusty_valkyrie::{
-    stable_hir_function_name_path, stable_hir_function_symbol,
-    types::{
+    compiler::types::{
         Identifier, NamePath, SourceID, SourceSpan,
         hir::{HirBlock, HirDocumentation, HirFunction, HirVisibility, ValkyrieType},
     },
+    stable_hir_function_name_path, stable_hir_function_symbol,
 };
 
 #[test]
