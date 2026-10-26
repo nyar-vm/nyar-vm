@@ -549,7 +549,7 @@ impl CanonicalTarget {
             _ => {}
         }
         match self.specification {
-            CanonicalSpecification::Browser => TargetHostKind::Browser,
+            CanonicalSpecification::Browser | CanonicalSpecification::Miniprogram => TargetHostKind::Browser,
             CanonicalSpecification::Wasi => TargetHostKind::Wasi,
             CanonicalSpecification::Windows
             | CanonicalSpecification::Linux
@@ -579,6 +579,7 @@ impl CanonicalTarget {
                 CanonicalVendor::Bun => "bun",
                 _ => match self.specification {
                     CanonicalSpecification::Browser => "web-standard",
+                    CanonicalSpecification::Miniprogram => "wechat-miniprogram",
                     CanonicalSpecification::Wasi => match abi {
                         CanonicalAbi::WasiP3 => "wasi-component-model-p3",
                         _ => "wasi-component-model",
@@ -608,7 +609,7 @@ impl CanonicalTarget {
             _ => {}
         }
         match self.specification {
-            CanonicalSpecification::Browser => HostProjectionBoundary::WasmJsGlue,
+            CanonicalSpecification::Browser | CanonicalSpecification::Miniprogram => HostProjectionBoundary::WasmJsGlue,
             CanonicalSpecification::Wasi => HostProjectionBoundary::WasiComponent,
             CanonicalSpecification::Windows
             | CanonicalSpecification::Linux
@@ -645,6 +646,7 @@ impl CanonicalTarget {
                 }
                 _ => match self.specification {
                     CanonicalSpecification::Browser => &["javascript", "dom", "canvas", "fetch", "esmodule", "precise-gc"],
+                    CanonicalSpecification::Miniprogram => &["javascript", "wx-miniprogram", "esmodule", "precise-gc"],
                     CanonicalSpecification::Wasi => match self.resolved_abi() {
                         CanonicalAbi::WasiP3 => &["wasi", "wasip3", "filesystem", "cli", "component-model", "precise-gc"],
                         _ => &["wasi", "wasip2", "filesystem", "cli", "component-model", "precise-gc"],
@@ -672,7 +674,7 @@ impl CanonicalTarget {
             CanonicalArch::Jvm => {
                 EntryPolicy { default_entry: "main".to_string(), wrap_strategy: WrapStrategy::Wrapper, generate_wrapper: true }
             }
-            _ if self.specification == CanonicalSpecification::Browser => {
+            _ if matches!(self.specification, CanonicalSpecification::Browser | CanonicalSpecification::Miniprogram) => {
                 EntryPolicy { default_entry: "main".to_string(), wrap_strategy: WrapStrategy::Hosted, generate_wrapper: false }
             }
             _ if matches!(self.vendor, CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun) => {
