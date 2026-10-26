@@ -382,6 +382,29 @@ fn member_owner_identity_is_resolved_through_type_alias() {
 }
 
 #[test]
+fn split_type_alias_entry_pulls_nominal_definition_file() {
+    let groups = [
+        (
+            "stdlib",
+            false,
+            vec![
+                file("text/Utf8Text.v", "namespace std.text;\nclass Utf8Text { _repr: [u8] }"),
+                file("text/_.v", "namespace! std.text;\ntype utf8 = Utf8Text;"),
+            ],
+        ),
+        (
+            "app",
+            true,
+            vec![file("solution.v", "namespace std.text;\n[export] micro run(value: utf8) -> i32 { return 0 }")],
+        ),
+    ];
+    let closure = plan_with_visibility(&groups, &[&[], &["stdlib"]]);
+    let std_paths = &closure.groups[0].body_lowering_source_paths;
+    assert!(std_paths.contains("text/_.v"), "alias entry file must lower");
+    assert!(std_paths.contains("text/Utf8Text.v"), "alias target nominal must enter body lowering");
+}
+
+#[test]
 fn member_owner_link_is_gated_by_owner_group_visibility() {
     let groups = [
         ("core", false, vec![file("source/primitive/i64.v", "namespace core.primitive;\nstructure i64 { }")]),

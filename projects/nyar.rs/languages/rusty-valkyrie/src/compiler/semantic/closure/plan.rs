@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use nyar_types::{
     combined_content_hash,
-    compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind},
+    compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink},
 };
 
 use crate::compiler::input::CompilerSourceGroup;
@@ -183,6 +183,11 @@ pub fn plan_semantic_closure_with_host_bindings(
                 }
             }
             selectors.extend(entry.selectors.iter().cloned());
+            if let Some(DeclarationLink::AliasTarget(target)) = &entry.link {
+                for resolved in indexes.resolve(target, &key.namespace, visible) {
+                    queue.push_back(resolved);
+                }
+            }
             for reference in &entry.references {
                 for resolved in indexes.resolve(reference, &key.namespace, visible) {
                     queue.push_back(resolved);
@@ -293,4 +298,41 @@ fn compute_closure_digest(groups: &[GroupSemanticClosure], files: &BTreeMap<(Str
     }
     let borrowed = parts.iter().map(String::as_str).collect::<Vec<_>>();
     combined_content_hash(&borrowed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn type_alias_target_enters_closure_with_split_entry_file() {
+        let groups = [
+            ClosureGroupInput {
+                dependency_key: "stdlib",
+                module_name: "stdlib",
+                direct_dependencies: &[],
+                is_entry: false,
+                files: &[
+                    ("text/Utf8Text.v".into(), "namespace std.text;\nclass Utf8Text { _repr: [u8] }".into()),
+                    ("text/_.v".into(), "namespace! std.text;\ntype utf8 = Utf8Text;".into()),
+                ],
+            },
+            ClosureGroupInput {
+                dependency_key: "app",
+                module_name: "app",
+                direct_dependencies: &["stdlib"],
+                is_entry: true,
+                files: &[(
+                    "solution.v".into(),
+                    "namespace std.text;\n[export] micro run(value: utf8) -> i32 { return 0 }".into(),
+                )],
+            },
+        ];
+        let closure = plan_semantic_closure(&groups, "wasm32").expect("closure");
+        let std_paths = &closure.groups[0].body_lowering_source_paths;
+        assert!(std_paths.contains("text/_.v"), "paths: {std_paths:?}");
+        assert!(std_paths.contains("text/Utf8Text.v"), "paths: {std_paths:?}");
+    }
+
 }

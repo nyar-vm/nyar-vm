@@ -428,12 +428,23 @@ impl ValkyrieCompiler {
         file: &CompilerSourceFile,
         arch: &str,
     ) -> Result<ValkyrieRoot, HirError> {
+        let mut root = self.prepare_nominal_inventory_root(group, file, arch)?;
+        retain_demanded_declarations(&mut root.items, &group.dependency_key, &file.path, &selection.body_lowering_declarations);
+        Ok(root)
+    }
+
+    /// 解析组内单个文件并展开宏/模板，供名义类型 inventory 与 body lowering 共用。
+    fn prepare_nominal_inventory_root(
+        &self,
+        group: &CompilerSourceGroup,
+        file: &CompilerSourceFile,
+        arch: &str,
+    ) -> Result<ValkyrieRoot, HirError> {
         let mut root = frontend::parse_source(&file.source).map_err(|parse_err| HirError::SourceFileRejected {
             dependency_key: group.dependency_key.clone(),
             path: file.path.clone(),
             error: parse_err,
         })?;
-        retain_demanded_declarations(&mut root.items, &group.dependency_key, &file.path, &selection.body_lowering_declarations);
         expand_macros_in_root(&mut root);
         expand_templates_in_root(&mut root, &file.source, arch)?;
         Ok(root)
