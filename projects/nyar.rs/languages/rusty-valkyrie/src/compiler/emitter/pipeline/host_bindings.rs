@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use nyar_types::ItemInstanceId;
 
 use crate::compiler::{
+    emitter::backend_contract::interop::function_host_provider_target,
     mir::{MirExternalCallContract, MirFunction, MirModule, MirOperand, MirOperation},
     semantic::closure::{DeclarationKey, DeclarationKind},
     syntax::oak::ParseError,
@@ -15,6 +16,52 @@ use crate::compiler::{
 };
 
 use super::context::CompilerHostProviderBinding;
+
+/// 从依赖 MIR 中移除未选 `[host_provider]` 的外部导入合同（同文件多 provider 时仍只链入选中项）。
+#[doc(hidden)]
+pub fn prune_unselected_host_provider_external_calls(
+    dependency_mirs: &mut [MirModule],
+    consumer: &mut MirModule,
+    hirs: &[&HirModule],
+    host_bindings: &[CompilerHostProviderBinding],
+) -> Result<(), ParseError> {
+    let selected_providers = host_bindings.iter().map(|binding| binding.provider.clone()).collect::<BTreeSet<_>>();
+    let prune_instances = unselected_host_provider_instances(hirs, &selected_providers)?;
+    if prune_instances.is_empty() {
+        return Ok(());
+    }
+    for module in dependency_mirs.iter_mut().chain(std::iter::once(consumer)) {
+        module.external_calls.retain(|contract| match contract.instance {
+            Some(instance) => !prune_instances.contains(&instance),
+            None => true,
+        });
+    }
+    Ok(())
+}
+
+fn unselected_host_provider_instances(
+    hirs: &[&HirModule],
+    selected_providers: &BTreeSet<DeclarationKey>,
+) -> Result<BTreeSet<ItemInstanceId>, ParseError> {
+    let mut prune = BTreeSet::new();
+    for module in hirs {
+        for function in &module.functions {
+            if function_host_provider_target(function).is_none() {
+                continue;
+            }
+            let key = declaration_key(module, DeclarationKind::Micro, &namespace_parts(&function.declaring_namespace), None, function.name.as_str());
+            if selected_providers.contains(&key) {
+                continue;
+            }
+            let Some(instance) = function.instance
+            else {
+                continue;
+            };
+            prune.insert(instance);
+        }
+    }
+    Ok(prune)
+}
 
 /// Resolver 选定且已映射为 Compiler 实例身份的 host provider 绑定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,10 +269,12 @@ pub fn apply_host_provider_bindings(
     // provider 的外部导入合同：无体 provider 由目标指令实现，其链接事实在依赖模块的
     // external_calls 里。重映射会移除原合同导入，必须把 provider 自己的导入合同
     // 一并迁入消费模块，否则调用既无定义也无导入。
+    let selected_provider_instances = plans.iter().map(|plan| plan.provider_instance).collect::<BTreeSet<_>>();
     let provider_imports = modules
         .iter()
         .flat_map(|dependency| dependency.external_calls.iter())
         .filter(|contract| contract.instance.is_some())
+        .filter(|contract| selected_provider_instances.contains(&contract.instance.expect("provider import instance")))
         .map(|contract| (contract.instance.expect("provider import instance"), contract.clone()))
         .collect::<BTreeMap<ItemInstanceId, MirExternalCallContract>>();
 

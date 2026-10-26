@@ -15,6 +15,10 @@ pub struct CompilerHostProviderBinding {
     pub contract: DeclarationKey,
     /// 选定 `[host_provider]` 实现的冻结声明身份。
     pub provider: DeclarationKey,
+    /// 由外部绑定 attribute 推导的 capability 需求（规划事实，供证据与诊断）。
+    pub required_capabilities: Vec<String>,
+    /// 声明上的 `[js]` / `[wasm]` 等 attribute 原文。
+    pub foreign_bindings: Vec<String>,
 }
 
 /// Legion 交给 Compiler 的完整构建上下文。

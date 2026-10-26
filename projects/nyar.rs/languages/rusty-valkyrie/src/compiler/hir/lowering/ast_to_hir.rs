@@ -376,7 +376,6 @@ impl AstToHir {
             visibility: lower_visibility(&function.annotations),
             is_abstract: function.is_abstract
                 || has_modifier(&function.annotations, "abstract")
-                || has_modifier(&function.annotations, "host_contract")
                 || declares_external_import,
             is_final: has_modifier(&function.annotations, "final"),
             is_virtual: false,

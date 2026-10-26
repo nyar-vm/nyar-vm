@@ -1,7 +1,11 @@
-use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
-
 use nyar_types::{CanonicalCallee, CanonicalOperation, ItemInstanceId};
-use rusty_valkyrie::{compile_pipeline::CompilerHostProviderBinding, compiler::semantic::closure::micro_declaration_key};
+use rusty_valkyrie::{
+    compiler::{
+        emitter::pipeline::CompilerHostProviderBinding,
+        hir::lowering::{CompilerSourceGroup, ValkyrieCompiler},
+        semantic::closure::micro_declaration_key,
+    },
+};
 
 const TEST_ARCH: &str = "native";
 
@@ -56,6 +60,8 @@ fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
     let bindings = vec![CompilerHostProviderBinding {
         contract: micro_declaration_key("app", "demo.v", &[], "write"),
         provider: micro_declaration_key("adaptor", "adaptor.v", &[], "write"),
+        required_capabilities: vec![],
+        foreign_bindings: vec![],
     }];
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
@@ -93,6 +99,8 @@ fn bodyless_target_bound_provider_carries_its_own_import_contract() {
     let bindings = vec![CompilerHostProviderBinding {
         contract: micro_declaration_key("app", "demo.v", &[], "add"),
         provider: micro_declaration_key("adaptor", "adaptor.v", &[], "i32_add"),
+        required_capabilities: vec![],
+        foreign_bindings: vec![],
     }];
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
@@ -113,6 +121,141 @@ fn bodyless_target_bound_provider_carries_its_own_import_contract() {
     let main_instance = *canonical.linked.entries.keys().next().expect("main entry");
     let call = invoke_callee(canonical, main_instance).expect("main must call add");
     assert_eq!(call, CanonicalCallee::Item(imports[0].callee));
+}
+
+#[test]
+fn bodyless_js_provider_carries_js_import_contract() {
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "[host_provider(demo::rand)] [js(\"random\")] micro js_rand(seed: i32): i32",
+        )
+        .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "[host_contract] micro rand(seed: i32): i32 [main] micro main() -> i32 { return rand(1) }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
+    ];
+    let bindings = vec![CompilerHostProviderBinding {
+        contract: micro_declaration_key("app", "demo.v", &[], "rand"),
+        provider: micro_declaration_key("adaptor", "adaptor.v", &[], "js_rand"),
+        required_capabilities: vec!["js.random".into()],
+        foreign_bindings: vec![r#"js("random")"#.into()],
+    }];
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .expect("bodyless [js] provider must close binding chain");
+    let canonical = program.canonical();
+    let imports = canonical
+        .linked
+        .imports
+        .values()
+        .filter(|import| {
+            let label = import.capability.to_string();
+            !label.ends_with("::begin_phase") && !label.ends_with("::end_phase")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(imports.len(), 1, "provider js binding must become external import");
+    assert!(imports[0].link.matches_platform_tag("js"), "link={:?}", imports[0].link);
+    assert_eq!(imports[0].link.locator_segments(), &["random"]);
+    let main_instance = *canonical.linked.entries.keys().next().expect("main entry");
+    let call = invoke_callee(canonical, main_instance).expect("main must call rand");
+    assert_eq!(call, CanonicalCallee::Item(imports[0].callee));
+}
+
+#[test]
+fn same_source_file_unselected_js_provider_is_pruned_from_linked_imports() {
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "namespace std.adaptor.js;\n\
+             [host_provider(demo::fetch)] [js(\"fetch\")] micro js_fetch(x: i32): i32\n\
+             [host_provider(demo::random)] [js(\"random\")] micro js_random(x: i32): i32",
+        )
+        .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "[host_contract] micro fetch(x: i32): i32\n\
+             [host_contract] micro random(x: i32): i32\n\
+             [main] micro main() -> i32 { return random(1) }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
+    ];
+    let js_ns = ["std".to_string(), "adaptor".to_string(), "js".to_string()];
+    let bindings = vec![CompilerHostProviderBinding {
+        contract: micro_declaration_key("app", "demo.v", &[], "random"),
+        provider: micro_declaration_key("adaptor", "adaptor.v", &js_ns, "js_random"),
+        required_capabilities: vec!["js.random".into()],
+        foreign_bindings: vec![r#"js("random")"#.into()],
+    }];
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .expect("unselected sibling provider in same file must not link");
+    let canonical = program.canonical();
+    let imports = canonical
+        .linked
+        .imports
+        .values()
+        .filter(|import| {
+            let label = import.capability.to_string();
+            !label.ends_with("::begin_phase") && !label.ends_with("::end_phase")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(imports.len(), 1);
+    assert_eq!(imports[0].link.locator_segments(), &["random"]);
+}
+
+#[test]
+fn selected_host_binding_does_not_link_sibling_provider_import() {
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "[host_provider(demo::fetch)] [wasm_operator(\"i32.sub\")] micro wasm_fetch(x: i32): i32\n\
+             [host_provider(demo::random)] [wasm_operator(\"i32.mul\")] micro wasm_random(x: i32): i32",
+        )
+        .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "[host_contract] micro fetch(x: i32): i32\n\
+             [host_contract] micro random(x: i32): i32\n\
+             [main] micro main() -> i32 { return random(1) }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
+    ];
+    let bindings = vec![CompilerHostProviderBinding {
+        contract: micro_declaration_key("app", "demo.v", &[], "random"),
+        provider: micro_declaration_key("adaptor", "adaptor.v", &[], "wasm_random"),
+        required_capabilities: vec![],
+        foreign_bindings: vec![],
+    }];
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .expect("only selected provider import must link");
+    let canonical = program.canonical();
+    let imports = canonical
+        .linked
+        .imports
+        .values()
+        .filter(|import| {
+            let label = import.capability.to_string();
+            !label.ends_with("::begin_phase") && !label.ends_with("::end_phase")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(imports.len(), 1, "sibling provider import must not enter canonical surface");
+    assert_eq!(imports[0].link.locator_segments(), &["i32.mul"]);
 }
 
 #[test]
