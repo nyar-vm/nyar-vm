@@ -1,7 +1,7 @@
 use crate::support::create_smoke_project_with_manifest;
-use rusty_valkyrie::{
+use rusty_valkyrie::legion::{
     CanonicalTarget,
-    legion::cmds::bootstrap::{BootstrapArgs, BootstrapStage, run},
+    cmds::bootstrap::{BootstrapArgs, BootstrapStage, run},
 };
 use std::{panic::AssertUnwindSafe, path::PathBuf};
 

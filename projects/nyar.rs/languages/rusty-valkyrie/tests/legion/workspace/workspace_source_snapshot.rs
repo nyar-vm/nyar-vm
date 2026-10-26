@@ -1,7 +1,15 @@
 //! Migrated from `src/source_snapshot.rs` (`tests`).
-use crate::utilities::report::{IntoReport, Report, Result, WrapReport, report_msg};
 use nyar_types::compiler_input::CompilerSourceGroup;
-use rusty_valkyrie::legion::workspace::{planner::PlannedSemanticSourceGroup, source_snapshot::*};
+use rusty_valkyrie::{
+    compiler::{
+        emitter::pipeline::{
+            CompilerArtifactReport, CompilerBuildContext, CompilerHostProviderBinding, PipelineResult, compile_source_groups_to_artifacts,
+        },
+        hir::lowering::ValkyrieCompiler,
+        semantic::closure::{DeclarationKey, DeclarationKind},
+    },
+    legion::workspace::{planner::PlannedSemanticSourceGroup, source_snapshot::*},
+};
 use std::{fs, path::Path};
 use tempfile::tempdir;
 
@@ -46,35 +54,35 @@ fn source_group(root: &Path, name: &str, source: &str, dependencies: &[&str], is
     }
 }
 
-fn micro_declaration(dependency_key: &str, source_path: &str, name: &str) -> rusty_valkyrie::DeclarationKey {
-    rusty_valkyrie::DeclarationKey {
+fn micro_declaration(dependency_key: &str, source_path: &str, name: &str) -> DeclarationKey {
+    DeclarationKey {
         dependency_key: dependency_key.to_owned(),
         source_path: source_path.to_owned(),
         namespace: Vec::new(),
-        kind: rusty_valkyrie::DeclarationKind::Micro,
+        kind: DeclarationKind::Micro,
         owner: None,
         name: name.to_owned(),
     }
 }
 
-fn compile_snapshot(groups: &[CompilerSourceGroup], output_dir: &Path) -> Result<rusty_valkyrie::CompilerArtifactReport> {
+fn compile_snapshot(groups: &[CompilerSourceGroup], output_dir: &Path) -> PipelineResult<CompilerArtifactReport> {
     compile_snapshot_with_bindings(groups, output_dir, &[])
 }
 
 fn compile_snapshot_with_bindings(
     groups: &[CompilerSourceGroup],
     output_dir: &Path,
-    host_bindings: &[rusty_valkyrie::CompilerHostProviderBinding],
-) -> Result<rusty_valkyrie::CompilerArtifactReport> {
-    let build_context = rusty_valkyrie::CompilerBuildContext::new(
+    host_bindings: &[CompilerHostProviderBinding],
+) -> PipelineResult<CompilerArtifactReport> {
+    let build_context = CompilerBuildContext::new(
         "wasm32",
         rusty_valkyrie::legion::CanonicalTarget::parse("node").expect("正式 Node 目标"),
         nyar::ClrSuspendStrategy::default(),
         nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .with_selected_host_providers(host_bindings.to_vec());
-    rusty_valkyrie::compile_source_groups_to_artifacts(
-        &rusty_valkyrie::ValkyrieCompiler::default(),
+    compile_source_groups_to_artifacts(
+        &ValkyrieCompiler::default(),
         &nyar_types::compiler_input::CompilerSourceInput::application(groups.to_vec()),
         &build_context,
         output_dir,
@@ -172,7 +180,7 @@ fn selected_host_provider_rewrites_contract_calls_in_snapshot_closure() {
     let report = compile_snapshot_with_bindings(
         &groups,
         &output,
-        &[rusty_valkyrie::CompilerHostProviderBinding {
+        &[CompilerHostProviderBinding {
             contract: micro_declaration("demo", "demo.v", "write"),
             provider: micro_declaration("adaptor", "adaptor.v", "write"),
         }],

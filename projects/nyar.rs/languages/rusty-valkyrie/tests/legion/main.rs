@@ -1,8 +1,8 @@
 //! legion integration tests.
 
 // TODO: mod cache; mod cmds; mod forward; mod unity_export; — 私有实现测试，待公开 API 后再在 main 里 `mod` 接线
+mod legion_api_plan;
 mod legion_artifact_formats;
-mod legion_cli_capture;
 mod legion_cmds_bench;
 mod legion_cmds_bootstrap;
 mod legion_cmds_build;

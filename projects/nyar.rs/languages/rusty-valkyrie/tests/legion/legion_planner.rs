@@ -1,4 +1,3 @@
-use crate::utilities::report::{IntoReport, Report, Result, WrapReport, report_msg};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -100,10 +99,7 @@ fn discovers_temp_workspace_build_plan() {
 fn renders_pretty_report_for_missing_workspace() {
     let temp_dir = Builder::new().prefix("legion-miette").tempdir().unwrap();
     let error = WorkspaceResolver::discover(temp_dir.path()).unwrap_err();
-    let report = Report::new(error);
-    let mut rendered = String::new();
-
-    GraphicalReportHandler::new().with_links(false).with_urls(false).render_report(&mut rendered, report.as_ref()).unwrap();
+    let rendered = error.to_string();
 
     assert!(rendered.contains("legion::planner::missing_workspace"));
     assert!(rendered.contains("cannot locate `legions.von`"));
@@ -367,9 +363,7 @@ fn reports_registry_dependency_without_version() {
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let error =
         workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None }).unwrap_err();
-    let report = Report::new(error);
-    let mut rendered = String::new();
-    GraphicalReportHandler::new().with_links(false).with_urls(false).render_report(&mut rendered, report.as_ref()).unwrap();
+    let rendered = error.to_string();
     assert!(rendered.contains("legion::planner::registry_dependency_missing_version"));
 }
 
@@ -412,9 +406,7 @@ fn reports_forced_workspace_dependency_missing() {
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let error =
         workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None }).unwrap_err();
-    let report = Report::new(error);
-    let mut rendered = String::new();
-    GraphicalReportHandler::new().with_links(false).with_urls(false).render_report(&mut rendered, report.as_ref()).unwrap();
+    let rendered = error.to_string();
     assert!(rendered.contains("legion::planner::forced_workspace_dependency_missing"));
 }
 

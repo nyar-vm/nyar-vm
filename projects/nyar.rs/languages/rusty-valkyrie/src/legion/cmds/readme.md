@@ -1,27 +1,7 @@
-# `legion bootstrap`
+# Legion 工程操作
 
-`legion bootstrap` 在已有可运行编译器二进制上执行多代构建验证（`seed → v1 → v2`），支持 `clr`、`jvm`、`wasm` 等目标。
+本目录实现构建、检查、运行、测试、文档、产物分析和包管理操作。操作入口将项目、目标和配置传入 workspace 规划与编译流程，并组织执行结果。
 
-## 用法
+`build` 包含构建计划与编译器的连接；`test` 和 `test_engine` 处理测试发现及执行；`run` 选择产物与 runner；[spy](spy/readme.md) 检查目标产物；`bootstrap` 组织多代构建。
 
-```bash
-legion bootstrap --project <project-dir> --target clr
-legion bootstrap --project <project-dir> --target jvm
-legion bootstrap --project <project-dir> --target wasm
-```
-
-- `--project`：含 `legion.von` 与源码树的工程目录。
-- 各代产物须由编译器读取真实源文件生成。
-
-## 调试
-
-```bash
-legion spy jvm <artifact.jar> --list
-legion spy jvm <artifact.jar> --func demo/Main --method main
-```
-
-## 测试
-
-```bash
-cargo test -p rusty-valkyrie --test legion_cmds_bootstrap
-```
+阅读某项操作时，可从对应的参数类型和 `run` 入口开始，追踪到 workspace、Compiler、缓存与报告层。工程库入口见 [Legion](../readme.md)。

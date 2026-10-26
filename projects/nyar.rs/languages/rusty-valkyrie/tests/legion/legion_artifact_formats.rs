@@ -1,8 +1,5 @@
 use nyar::abstractions::ArtifactFormat;
-use rusty_valkyrie::{
-    PublishFormat,
-    legion::{artifact_format_from_extension, artifact_format_slug, artifact_formats_for_publish_format},
-};
+use rusty_valkyrie::legion::{PublishFormat, artifact_format_from_extension, artifact_format_slug, artifact_formats_for_publish_format};
 
 #[test]
 fn shader_module_publish_format_maps_to_spirv_and_dxil() {
