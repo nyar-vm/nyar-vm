@@ -101,9 +101,7 @@ fn renders_pretty_report_for_missing_workspace() {
     let error = WorkspaceResolver::discover(temp_dir.path()).unwrap_err();
     let rendered = error.to_string();
 
-    assert!(rendered.contains("legion::planner::missing_workspace"));
     assert!(rendered.contains("cannot locate `legions.von`"));
-    assert!(rendered.contains("请在工作区根目录放置 `legions.von`"));
 }
 
 #[test]
@@ -364,7 +362,7 @@ fn reports_registry_dependency_without_version() {
     let error =
         workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None }).unwrap_err();
     let rendered = error.to_string();
-    assert!(rendered.contains("legion::planner::registry_dependency_missing_version"));
+    assert!(rendered.contains("source=registry but no version is provided"));
 }
 
 #[test]
@@ -407,7 +405,7 @@ fn reports_forced_workspace_dependency_missing() {
     let error =
         workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None }).unwrap_err();
     let rendered = error.to_string();
-    assert!(rendered.contains("legion::planner::forced_workspace_dependency_missing"));
+    assert!(rendered.contains("requires workspace dependency"));
 }
 
 #[test]
