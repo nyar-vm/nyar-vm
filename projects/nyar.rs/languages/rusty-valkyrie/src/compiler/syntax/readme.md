@@ -18,8 +18,8 @@
 
 ## 下游消费者
 
-- `expansion`：在结构化节点上展开模板/宏，**禁止** 为补语义而全文重扫。
-- `semantic` / `hir`：只消费 Oak AST + span，不得再经 legacy AST 桥。
+- `expansion`：在结构化节点上展开模板和宏。
+- `semantic` / `hir`：消费 Oak AST 与源位置，直接生成 Valkyrie 语义模型。
 
 ```mermaid
 flowchart LR

@@ -1,7 +1,6 @@
 //! `algebra::CoreEvaluator` integration tests.
 
-use legend_vm::algebra::CoreEvaluator;
-use legend_vm::LegacyValue;
+use legend_vm::{LegacyValue, algebra::CoreEvaluator};
 
 #[test]
 fn arithmetic_and_loops() {

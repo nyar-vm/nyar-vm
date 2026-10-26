@@ -1,4 +1,4 @@
-//! Observable compile facts for Legion spy (no dump binaries).
+#![doc = include_str!("readme.md")]
 
 /// A compile observation session (placeholder).
 #[derive(Debug, Default)]

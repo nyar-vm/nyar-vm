@@ -1,4 +1,4 @@
-//! Language services (completion, navigation, …) — share compiler queries.
+#![doc = include_str!("readme.md")]
 
 pub mod format_provider;
 pub mod highlight;

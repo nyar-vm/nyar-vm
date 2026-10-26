@@ -1,6 +1,4 @@
-//! `valkyrie-compiler` 的 `HIR` 入口。
-//! 语义归属仍然在编译器主链中，这里只把实际承载类型
-//! 收口到一个稳定入口，避免上层直接散落依赖 `crate::compiler::types::hir::*`。
+#![doc = include_str!("readme.md")]
 
 /// 匿名 class 提升。
 pub mod anonymous_class_hoist;

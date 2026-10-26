@@ -1,26 +1,13 @@
-# mir ssa
+# MIR SSA
 
-MIR 的 SSA 结构与算法：块参数、值引用、控制流约定集中在此子树。
+SSA 子模块提供 Semantic MIR 的函数、基本块、值引用、指令和终结指令，并实现 HIR 到这些结构的转换。块参数描述控制流合流时传入的值，调用合同携带已解析声明与实例信息。
 
-## Responsibilities
-
-- 承载 SSA 专用的数据结构与变换。
-- 为优化与下游 Canonical / 分区提供稳定、目标中立的中间表示。
-
-## Boundaries
-
-- 不混入 `TargetExecutionPlan` 或各目标运行时逻辑。
-- 不把 `ssa` 子树做成第二条「万能编译入口」。
-
-## Call 事实从哪来
-
-调用契约来自**已解析的声明**，不由 MIR 或后端重新猜名字：
-
-```text
-source → declaration resolve → typed HIR → Semantic MIR → verify → Canonical → representation plan → target-private plan
+```mermaid
+flowchart LR
+  hir[HIR 函数] --> lowering[语句与表达式 lowering]
+  lowering --> blocks[基本块与 SSA 值]
+  blocks --> validation[MIR validation]
+  validation --> emitter[编译适配]
 ```
 
-- 声明解析拥有 callable、owner、泛型替换与完整签名。
-- 重载选择保留「选中的声明 + 实例身份」，不能用候选名或实例化签名顶替声明身份。
-- 静/实例由声明的 `self` 形参决定；Semantic MIR 的普通调用、运算符与集合方法都引用同一套解析结果。
-- Canonical 与目标私有计划消费同一身份；公开 ABI 名只在互操作边界出现。
+阅读 lowering 时，可沿函数上下文、语句转换、表达式转换和 terminator 构造追踪值的产生与流向。类型、聚合字段和调用身份随 MIR 进入模块验证与后续编译适配。

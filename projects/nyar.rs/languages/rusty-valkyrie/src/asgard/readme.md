@@ -1,43 +1,22 @@
-# asgard
+# Asgard
 
-**Voa / 多端 UI 交付**：AWSL 与配置解析、RenderIR、按平台生成逻辑/UI 二进制、dist 打包与门禁。用户面向命令为 **`asgard build`** / **`asgard pack`** 等（Rust 侧无独立 asgard binary crate，实现本树 + 包内 `asgard` bin）。
-
-## 与 compiler / legion 的关系
-
-Asgard **没有** 独立语言前端：需要完整语义编译时，直接调用 `crate::compiler::…`（含 `driver`、`emitter`、内部 HIR/MIR）。工程路径与清单约定与 Legion 对齐时可走 `legion::workspace`。
+Asgard 将 Voa 工程配置、AWSL 页面和 Valkyrie 逻辑组织成平台交付物。页面首先形成组件与 RenderIR，代码生成器据此生成界面和宿主桥接，构建管线汇总编译结果与交付资源。
 
 ```mermaid
 flowchart LR
-  voa[Voa 工程]
-  asgard[asgard]
-  compiler[compiler]
-  dist[dist 产物]
-
-  voa --> asgard
-  asgard --> compiler
-  asgard --> dist
+  project[Voa 工程] --> pipeline[构建管线]
+  pages[AWSL 页面] --> render[组件与 RenderIR]
+  pipeline --> render
+  pipeline --> compiler[Valkyrie Compiler]
+  render --> codegen[平台代码生成]
+  compiler --> delivery[交付组装]
+  codegen --> delivery
 ```
 
-## `codegen` 与 `compiler::emitter` 的区别
+## 模块协作
 
-| 名称 | 含义 |
-|------|------|
-| **`asgard/codegen`** | 各 **平台 UI 与壳** 的生成（HTML、小程序、终端、Compose/SwiftUI 桥等） |
-| **`compiler/emitter`** | **Nyar / nyar-emitter** 路径：CanonicalProgram、执行计划、字节码或目标 artifact |
+`awsl` 处理页面与组件结构；`compile`、`pipeline` 连接逻辑编译和页面生成；`codegen` 包含 Web、小程序、终端及原生 UI 的生成器；`delivery` 汇总资源和平台文件。
 
-二者都叫「生成」，但所有者不同：前者是 **产品交付**，后者是 **语言编译后端适配**。
+`config` 与 `host` 描述工程配置及宿主能力，`platform_contract` 检查产物结构，`deploy` 和 `publish` 提供部署与发布操作。
 
-## 主要子区域（概念）
-
-| 区域 | 作用 |
-|------|------|
-| `awsl` | AWSL 解析与 RenderIR 降级 |
-| `compile` / `pipeline` | 驱动 Asgard 构建管线 |
-| `codegen` | 平台相关 UI/运行时胶水 |
-| `delivery` / `package` / `deploy` | 打包、发布与部署计划 |
-| `platform_contract` | 平台门禁与占位检测 |
-| `config` / `host` | Voa 配置与宿主能力 |
-
-## 错误
-
-操作失败使用 `AsgardError` 等领域枚举；用户可见汇总经 `utilities::report`，见 [`utilities/readme.md`](../utilities/readme.md)。
+Asgard 使用 Compiler 分析 Valkyrie 源码，通过 Legion 的工程设施定位依赖。平台 UI 和宿主胶水在 `asgard/codegen` 中生成，语言产物的 Nyar 适配在 `compiler/emitter` 中完成。操作错误使用 `AsgardError` 表达。

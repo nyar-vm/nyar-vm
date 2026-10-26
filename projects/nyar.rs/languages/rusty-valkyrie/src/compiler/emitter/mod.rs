@@ -1,5 +1,4 @@
-//! Nyar / emitter adaptation: canonical program, representation plan, artifact emit.
-//! Name is `emitter` to match nyar-emitter ownership — not a parallel "codegen" product layer.
+#![doc = include_str!("readme.md")]
 
 pub mod assembly;
 pub mod backend_contract;

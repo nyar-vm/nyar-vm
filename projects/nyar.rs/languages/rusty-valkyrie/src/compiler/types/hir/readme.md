@@ -1,13 +1,5 @@
-﻿# hir
+# HIR 数据模型
 
-HIR structure definitions.
+本模块定义高层程序结构，包括模块、声明、函数、表达式、语句和语言类型。它是 AST lowering 的输出载体，也是语义检查与 MIR 构造的输入。
 
-## Responsibilities
-
-- Represent high-level program shape after basic semantic organization.
-- Provide stable input for MIR (SSA) lowering and type-related analysis.
-
-## Boundaries
-
-- 不含目标专用编码。
-- HIR 不作为跨所有编译阶段的万能载体。
+模型保留源位置、声明身份、泛型参数和调用相关信息，帮助下游将分析结果关联回源码。构造和检查算法见 [compiler/hir](../../hir/readme.md)，低层控制流表示见 [compiler/mir](../../mir/readme.md)。

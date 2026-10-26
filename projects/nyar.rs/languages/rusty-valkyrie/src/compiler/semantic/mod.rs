@@ -1,4 +1,4 @@
-//! Semantic facts: declarations, binding, inference, evidence, requirements fixpoint collaborators.
+#![doc = include_str!("readme.md")]
 
 pub mod closure;
 pub mod control_flow;

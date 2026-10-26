@@ -1,28 +1,7 @@
-# compiler / driver
+# 编译协调
 
-**编译调度与查询**：决定「当前请求要跑哪些阶段」，不把语义算法塞满本目录。
+Driver 集中放置编译阶段之间的协调设施，包括 HIR/MIR 验证编排，以及输入修订和失效关系的数据接口。
 
-## 职责
+`validation` 连接 HIR、控制流与 MIR 的一致性检查；`incremental` 定义 `InputRevision` 和 `InvalidationGraph`，表达输入版本及查询间的依赖关系。
 
-- 组装 `compile` job：入口闭包 → HIR → MIR → emitter 路径。
-- 支持 **按需求查询**（语言服务）：hover、references、diagnostics 等不必每次都降到 MIR（与 `services` 协同）。
-- `validation` 子模块：跨 HIR/MIR 的一致性编排（算法仍在 `hir`/`mir`）。
-
-## 非职责
-
-- 不实现类型推断、overload 选择、MIR 指令选择。
-- 不把 `hir/lowering/mod.rs` 整文件迁来改名；应把 **编排** 留在此处，把 **生产者** 留在 `semantic`/`hir`/`mir`。
-
-## 增量编译（骨架）
-
-[`incremental.rs`](incremental.rs) 仅定义 `InputRevision` 与 `InvalidationGraph` 占位 API：后续按「事实层依赖」填充失效规则，不在此目录做缓存策略产品化。
-
-```mermaid
-flowchart TB
-  Q[Query / Job 请求]
-  D[driver]
-  S[syntax / semantic / hir / mir / emitter]
-
-  Q --> D
-  D --> S
-```
+项目编译的 pipeline 入口位于 [emitter](../emitter/readme.md)，HIR 构造入口位于 [hir](../hir/readme.md)。理解一条编译请求时，可从产品调用的 pipeline 入口向下追踪，再查看这里协调的验证步骤及各阶段的具体算法。

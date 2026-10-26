@@ -1,4 +1,4 @@
-//! 封闭类静态化与见证消除优化。
+#![doc = include_str!("readme.md")]
 
 mod closed_class;
 

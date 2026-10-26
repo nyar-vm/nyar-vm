@@ -1,3 +1,3 @@
-//! Unified diagnostic attachment across compiler layers (presentation helpers land here).
+#![doc = include_str!("readme.md")]
 
 pub use crate::compiler::types::{ReportKind, ValkyrieError};

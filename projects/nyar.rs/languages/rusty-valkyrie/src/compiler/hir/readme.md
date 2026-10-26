@@ -1,32 +1,15 @@
-# compiler / hir
+# 高层中间表示
 
-**已解析高层 IR（HIR）**：语言语句、表达式、名义类型在语义固定点之后的 **模型与合同**。
+HIR 将 Oak AST 转成编译器使用的高层程序模型，保留声明、类型、函数、表达式和控制流信息。这里包含模型构造、名称与调用解析，以及进入 MIR 之前的语义检查。
 
-## 内部分层
-
-| 区域 | 职责 |
-|------|------|
-| `types`（经 `compiler/types/hir` 载体） | HIR 数据结构定义（向 `hir/model` 单一化收敛） |
-| `lowering` | AST→HIR 片段、**历史上** 的编译 façade（`ValkyrieCompiler` 正在迁往 `compiler/api` + `driver`） |
-| `overload`、`type_relation`、`trait_system` 等 | 算法实现；长期归 `semantic`，HIR 只保留模型与验证 |
-| `validation` 合同 | 跨模块 HIR 合同（与 `driver/validation` 区分：后者编排多阶段） |
-
-## 不变量
-
-- 进入 MIR 的 HIR 必须通过语义合同校验；缓存反序列化后仍须 `validate_hir_semantic_contract` 类检查。
-- HIR 表达式/语句 **不** 与 `semantic` 层类型身份混放：通用类型身份归 `semantic`，HIR 节点归本树。
+`lowering` 提供 `ValkyrieCompiler` 和 AST 到 HIR 的构造流程；`call_binding`、`construct_binding`、`overload` 处理参数、构造与重载选择；`nominal_registry`、`trait_system`、`type_relation` 支持类型及 trait 分析；控制流、捕获和传播表达式由对应模块处理。
 
 ```mermaid
 flowchart LR
-  sem[semantic 固定点]
-  hir[HirModule]
-  v[hir validation]
-  mir[mir lowering]
-
-  sem --> hir --> v --> mir
+  ast[Oak AST] --> lower[HIR lowering 与解析]
+  lower --> model[HirModule]
+  model --> validation[语义合同校验]
+  validation --> mir[Semantic MIR]
 ```
 
-## 相关文档
-
-- MIR：[`../mir/readme.md`](../mir/readme.md)
-- 共享 span/诊断壳：[`../types/readme.md`](../types/readme.md)
+模型定义由 [types/hir](../types/hir/readme.md) 提供，并在本模块再导出。跨源码组的需求闭包见 [semantic](../semantic/readme.md)，SSA 构造见 [mir](../mir/readme.md)。
