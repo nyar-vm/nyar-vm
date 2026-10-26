@@ -1,4 +1,4 @@
-//! Stage scheduling, queries, and compile jobs. Does not own semantic algorithms.
+#![doc = include_str!("readme.md")]
 
 pub mod incremental;
 pub mod validation;

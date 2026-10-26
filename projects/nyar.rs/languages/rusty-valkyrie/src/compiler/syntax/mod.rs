@@ -1,5 +1,4 @@
-//! Oak syntax surface: parse sessions, source kinds, and Valkyrie-specific naming rules.
-//! AST types are `oak_valkyrie::ast`; this tree only bridges Oak into the compiler.
+#![doc = include_str!("readme.md")]
 
 pub mod oak;
 pub mod parser;

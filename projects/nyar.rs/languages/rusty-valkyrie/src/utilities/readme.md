@@ -2,12 +2,7 @@
 
 与 **Compiler / Legion / Asgard 业务决策无关** 的横切能力：结构化诊断出口、命令行短句、无领域语义的文本辅助。
 
-## 准入条件（四则）
-
-1. 已有 **跨树** 真实调用方。
-2. **不** 拥有任何一方的业务决策（类型、闭包、cache key、平台模型等）。
-3. **不** 依赖上层模块（仅下层或外部 crate）。
-4. 名称能说明 **具体用途**，禁止 `helpers` / `manager` 垃圾场。
+Utilities 只包含被 Compiler、Legion、Asgard 共同使用的基础服务，不保存类型、闭包、缓存键或平台模型等领域状态。
 
 ## 子模块
 
@@ -30,9 +25,9 @@ flowchart TB
   domain --> report
 ```
 
-- 编译期语义在 `compiler` 用 `ValkyrieError` 等表达；渲染前可投影为 `boost_diagnostic::Diagnostic`。
-- Legion/Asgard 库函数返回 `LegionError` / `AsgardError` 等，在 `main` 或 N-API 层 `display_failure`。
-- `report` **不** 参与库内 `Result<T, String>` 别名。
+- 编译期语义在 `compiler` 用 `ValkyrieError` 等表达；宿主展示前可投影为 `boost_diagnostic::Diagnostic`。
+- Legion/Asgard 库函数返回各自领域错误，在 CLI 或 N-API 层由 `display_failure` 生成展示文本。
+- `report` 只负责展示，不参与领域错误的产生。
 
 格式化、lint、语义着色归属 **`compiler::services`**；Oak 提供语法事实与 edits。`utilities` 至多提供中性文本机制。
 

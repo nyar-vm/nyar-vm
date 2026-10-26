@@ -1,13 +1,5 @@
-# compiler / diagnostics
+# 编译器诊断
 
-**跨编译阶段的诊断关联与展示辅助**：把各层生产者给出的错误种类、span 与 related 信息挂到统一呈现模型。
+本模块提供 `ReportKind` 与 `ValkyrieError` 的公共访问入口。调用方使用这些类型表达诊断级别、源码范围、标签和关联信息。
 
-## 原则
-
-- **错误种类** 由产生该事实的模块定义（HIR、semantic、emitter 等），不在此目录堆积巨型 `enum` 收容全编译器。
-- 本目录负责：severity 映射、标签合并、与 `utilities::diagnostic`（boost 投影）的衔接点。
-
-## 与 utilities 的分工
-
-- `compiler`：编译期事实（`ValkyrieError`、`DiagnosticRow` 等）。
-- `utilities::report`：CLI/N-API **出口** 一行用户可见文案，不参与库内 `Result` 别名设计。
+具体错误在语法、HIR、MIR 等阶段产生，共享诊断载体定义在 [types](../types/readme.md)。面向宿主的诊断投影与文本展示位于 [utilities](../../utilities/readme.md)。沿这条链路可以从诊断追踪到产生它的编译阶段。

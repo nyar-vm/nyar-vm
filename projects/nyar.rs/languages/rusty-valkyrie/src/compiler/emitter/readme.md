@@ -33,5 +33,5 @@ flowchart LR
 
 ## 依赖方向
 
-- 允许依赖：`compiler::{hir,mir,semantic,types}`、`nyar`、`nyar-emitter`（workspace）。
-- 禁止：`emitter` 内实现名称解析或 evidence 选择（应查询 `semantic` 结果）。
+- 依赖：`compiler::{hir,mir,semantic,types}`、`nyar` 和 `nyar-emitter`。
+- 名称解析和 evidence 选择由 `semantic` 产生，本模块消费已解析的结果。

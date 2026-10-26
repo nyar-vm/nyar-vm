@@ -1,7 +1,3 @@
-//! Valkyrie language compiler: syntax through emitter adaptation.
-//!
-//! Maintainer map: [`readme.md`](readme.md). Orchestration: `driver`; Nyar path: `emitter` (not Asgard UI `codegen`).
-
 #![doc = include_str!("readme.md")]
 
 pub mod api;

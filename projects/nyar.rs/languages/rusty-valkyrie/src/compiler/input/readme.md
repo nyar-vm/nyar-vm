@@ -5,7 +5,7 @@
 ## 内容
 
 - 再导出 `nyar_types::compiler_input` 中的 `CompilerSourceFile`、`CompilerSourceGroup`、`CompilerSourceInput`、`GeneratedSourceGroup` 等。
-- 准入规则（修订身份、依赖可见性、配置哈希）将在此扩展；**不** 解析 `legion.von`（那是 `legion::workspace`）。
+- 输入类型记录修订身份、依赖可见性和配置摘要；`legion.von` 的解析由 `legion::workspace` 完成。
 
 ## 数据流
 
@@ -18,4 +18,4 @@ flowchart LR
   legion --> input --> compiler
 ```
 
-Legion 负责「工程上提交了哪些文件与依赖」；Compiler 从 `input` 起只处理已准入的输入视图。
+Legion 负责工程文件与依赖的发现，Compiler 从 `input` 接收结构化的源码视图。

@@ -1,5 +1,5 @@
-# Pending emitter integration tests
+# Emitter 测试样本
 
-这些用例仍引用迁移前的 `FragmentSubmission` / `executable_provider` 合同，暂不参与 `cargo test`。
+本目录保存使用 `FragmentSubmission` 和 `executable_provider` 接口的后端测试样本。这些文件位于正式测试模块树之外，用于查阅编译载荷与装配行为的历史用法。
 
-修复方向：改为通过 `TargetExecutionPlan` + `nyar_emitter::testing::empty_fragment_submission()` 构造载荷，再移回 `tests/` 并在 `nyar-emitter/Cargo.toml` 注册 `[[test]]`。
+执行范围和接口迁移安排记录在工作区的内部决策文档中。

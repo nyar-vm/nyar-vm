@@ -1,4 +1,4 @@
-//! Structured expansion (templates, derives, reactive metadata).
+#![doc = include_str!("readme.md")]
 
 pub mod atlas_injector;
 pub mod derive;

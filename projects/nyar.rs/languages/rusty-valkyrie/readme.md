@@ -1,34 +1,41 @@
 # rusty-valkyrie
 
-Valkyrie 语言的**产品包**：语言前端、`legion` 工程 CLI、`asgard` 多端交付 CLI，以及供宿主嵌入的编译 API。
+`rusty-valkyrie` 是 Valkyrie 的 Rust 产品包，提供语言编译、工程构建和多端交付能力。它支持命令行使用和进程内嵌入，Valkyrie 的 Node-API 产品包也由这里提供实现。
 
-## 能做什么
+## 能力
 
-- **`legion`**：工作区与清单、多目标编译、测试、文档与包管理相关命令。
-- **`asgard`**：从 Voa 工程构建 Web、小程序、终端与原生壳等可发布产物。
-- **库**（`rusty_valkyrie::api`）：在进程内使用编译器前端，不把整个 `nyar` 栈 re-export 到 crate 根。
-
-## 编译主链（语义侧）
-
-目标相关的执行计划与编码在 workspace 的 `nyar-emitter` 中完成；本包负责语义闭合与产品入口。
+- **编译器**：将 Valkyrie 源码解析为语义模型，生成面向 Nyar 平台的编译输入。
+- **Legion**：管理工程清单、依赖、构建、测试、缓存和产物。
+- **Asgard**：处理 AWSL/Voa 工程，生成 Web、小程序、终端和原生平台交付物。
+- **库 API**：为 Rust、Node-API 和测试 harness 提供可复用的编译与工程服务。
 
 ```mermaid
 flowchart LR
-  src[源码] --> hir[HIR]
-  hir --> mir[Semantic MIR]
-  mir --> canon[CanonicalProgram]
-  canon --> plan[RepresentationPlan]
-  plan --> emit[nyar-emitter]
+  source[Valkyrie / AWSL source]
+  compiler[Compiler]
+  legion[Legion]
+  asgard[Asgard]
+  artifact[Build artifacts]
+  host[Runtime / platform host]
+
+  source --> compiler
+  legion --> compiler
+  asgard --> compiler
+  compiler --> artifact
+  legion --> artifact
+  asgard --> artifact
+  artifact --> host
 ```
 
-## 构建与测试
+## 使用方式
+
+命令行入口适合工程构建和发布流程：
 
 ```powershell
-cargo build -p rusty-valkyrie --bin legion
-cargo build -p rusty-valkyrie --bin asgard
-cargo test -p rusty-valkyrie --lib
+cargo run -p rusty-valkyrie --bin legion -- build --help
+cargo run -p rusty-valkyrie --bin asgard -- build --help
 ```
 
-可选 feature（诊断 `format-spy`、自举 `bootstrap-lane` 等）见 `Cargo.toml`；默认正式链不依赖它们。
+Rust 应用或测试可以使用 `rusty_valkyrie::api` 和 `rusty_valkyrie::legion` 中的库入口。Node.js 应用通过 `@nyar/valkyrie` 使用对应的原生绑定。
 
-维护者阅读各层说明请打开 crate 内 `src/readme.md` 与对应子目录的 `readme.md`。
+编译器实现位于 [`src/compiler`](src/compiler/)，工程能力位于 [`src/legion`](src/legion/)，多端交付位于 [`src/asgard`](src/asgard/)。

@@ -1,24 +1,7 @@
-﻿# compiler / types
+# 编译器共享类型
 
-跨阶段共享的 **源位置、诊断壳、标识符路径**，以及 **暂存** 的 HIR 数据结构载体（`types/hir`）。
+本模块提供源位置、名称路径、诊断和 HIR 数据结构，供语法接入、语义分析、HIR lowering 和 MIR 构造共享。
 
-## 目标所有权（收敛方向）
+`SourceID`、`SourceSpan`、`Identifier` 和 `NamePath` 从 `nyar-types` 导入。诊断数据包含报告级别、源码标签及帮助信息；`hir` 描述函数、表达式、声明和语言类型；`witness` 描述 trait 动态分派的方法与关联类型；`advanced` 提供高级类型相关的数据结构。
 
-| 事实 | 最终单一位置 |
-|------|----------------|
-| 语言类型/声明 **身份** | `semantic` |
-| HIR 表达式/语句 **节点** | `hir/model`（自 `types/hir` 迁入） |
-| MIR 指令/值 | `mir` |
-| `SourceID` / `SourceSpan` | 本目录或 `compiler/input` 元数据 |
-
-当前 `hir/mod.rs` 仍 `pub use crate::compiler::types::hir::*` 是为了过渡；新代码应明确依赖目标模块，避免再扩根级 `types` 行为。
-
-## 边界
-
-- 本层 **不** 编排编译阶段。
-- 不把控制流、推断、evidence 算法塞进共享类型模块。
-
-## 相关
-
-- HIR 模型说明：[`../hir/readme.md`](../hir/readme.md)
-- witness 子目录：[`witness/readme.md`](witness/readme.md)
+HIR 模型定义在 [types/hir](hir/readme.md)，分析与构造算法在 [compiler/hir](../hir/readme.md)。MIR 使用独立的模型，详见 [compiler/mir](../mir/readme.md)。

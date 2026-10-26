@@ -382,7 +382,7 @@ pub fn run_from_env() -> AsgardResult<ExitCode> {
 
 /// 使用显式 `argv` 运行 Asgard CLI（首项通常为 `"asgard"`）。
 ///
-/// 在独立大栈线程上执行，与 `legion::cli::run_with_argv` 行为一致：
+/// 在独立大栈线程上执行（大栈用于 Asgard 编译链）：
 /// `--help` / `--version` 视为成功，解析或执行失败返回退出码 1。
 pub fn run_with_argv(argv: Vec<OsString>) -> i32 {
     let result = std::thread::Builder::new()
