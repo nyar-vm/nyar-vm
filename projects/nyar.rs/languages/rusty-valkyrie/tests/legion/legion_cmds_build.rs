@@ -1,4 +1,7 @@
-use crate::support::create_smoke_project_with_build;
+use crate::support::{
+    create_browser_wasm_dual_host_prune_workspace, create_browser_wasm_host_random_workspace, create_smoke_project_with_build,
+    create_valkyrie_fallback_random_workspace, create_wasi_host_random_workspace,
+};
 use rusty_valkyrie::legion::{
     CanonicalTarget,
     cmds::{
@@ -483,6 +486,150 @@ fn multi_lane_suspend_manifest() -> String {
 }
 "#
     .to_string()
+}
+
+#[test]
+fn builds_browser_wasm_js_random_host_binding_evidence() {
+    let fixture = create_browser_wasm_host_random_workspace("legion-build-browser-random");
+    let output_dir = fixture.project_dir.join("dist").join("browser-random");
+    let status = run(&BuildArgs {
+        project_dir: fixture.project_dir.clone(),
+        target: CanonicalTarget::wasm(),
+        output_dir: Some(output_dir.clone()),
+        workspace: false,
+        debug_artifacts: true,
+    })
+    .unwrap();
+    assert_eq!(status, ExitCode::SUCCESS);
+
+    let evidence_path = output_dir.join("compile-evidence.txt");
+    let evidence_source = fs::read_to_string(&evidence_path).expect("compile-evidence sidecar");
+    let evidence = parse_von::<rusty_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&evidence_source)
+        .expect("parse compile evidence");
+    assert_eq!(evidence.host_provider_bindings.len(), 1);
+    assert_eq!(evidence.host_provider_bindings[0].required_capabilities, vec!["js.random".to_string()]);
+
+    let host_selection_path = output_dir.join("host-selection.txt");
+    let host_selection_source = fs::read_to_string(&host_selection_path).expect("host-selection sidecar");
+    let host_selection = parse_von::<Vec<HostSelectionEntryForTest>>(&host_selection_source).expect("parse host-selection");
+    assert_eq!(host_selection.len(), 1);
+    assert_eq!(host_selection[0].required_capabilities, vec!["js.random".to_string()]);
+    assert!(
+        host_selection[0].foreign_bindings.iter().any(|binding| binding.contains("random")),
+        "expected js random binding, got {:?}",
+        host_selection[0].foreign_bindings
+    );
+    assert!(evidence.host_provider_bindings[0].foreign_bindings.iter().any(|binding| binding.contains("random")));
+
+    assert!(output_dir.join("main.wasm").exists(), "expected main.wasm under {}", output_dir.display());
+    assert!(output_dir.join("main.mjs").exists());
+}
+
+#[test]
+fn builds_wasi_wasm_random_host_binding_evidence() {
+    let fixture = create_wasi_host_random_workspace("legion-build-wasi-random");
+    let output_dir = fixture.project_dir.join("dist").join("wasi-random");
+    let build_result = run(&BuildArgs {
+        project_dir: fixture.project_dir.clone(),
+        target: CanonicalTarget::wasi(),
+        output_dir: Some(output_dir.clone()),
+        workspace: false,
+        debug_artifacts: true,
+    });
+
+    match build_result {
+        Ok(status) => {
+            assert_eq!(status, ExitCode::SUCCESS);
+            assert!(output_dir.join("main.wasi").exists());
+        }
+        Err(error) => {
+            // Guest `env::*` imports are not yet adapted into the WASI component world.
+            assert!(
+                error.to_string().contains("component"),
+                "unexpected build failure: {error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn builds_valkyrie_fallback_random_without_host_bindings() {
+    let fixture = create_valkyrie_fallback_random_workspace("legion-build-fallback-random");
+    let output_dir = fixture.project_dir.join("dist").join("fallback-random");
+    let status = run(&BuildArgs {
+        project_dir: fixture.project_dir.clone(),
+        target: CanonicalTarget::wasm(),
+        output_dir: Some(output_dir.clone()),
+        workspace: false,
+        debug_artifacts: true,
+    })
+    .unwrap();
+    assert_eq!(status, ExitCode::SUCCESS);
+
+    let evidence_source = fs::read_to_string(output_dir.join("compile-evidence.txt")).expect("compile-evidence");
+    let evidence = parse_von::<rusty_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&evidence_source)
+        .expect("parse compile evidence");
+    assert!(evidence.host_provider_bindings.is_empty());
+    assert!(output_dir.join("main.wasm").exists());
+}
+
+#[test]
+fn builds_browser_wasm_prunes_unselected_host_bindings_from_evidence() {
+    let fixture = create_browser_wasm_dual_host_prune_workspace("legion-build-browser-prune");
+    let output_dir = fixture.project_dir.join("dist").join("browser-prune");
+    let status = run(&BuildArgs {
+        project_dir: fixture.project_dir.clone(),
+        target: CanonicalTarget::wasm(),
+        output_dir: Some(output_dir.clone()),
+        workspace: false,
+        debug_artifacts: false,
+    })
+    .unwrap();
+    assert_eq!(status, ExitCode::SUCCESS);
+
+    let evidence_source = fs::read_to_string(output_dir.join("compile-evidence.txt")).expect("compile-evidence");
+    let evidence = parse_von::<rusty_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&evidence_source)
+        .expect("parse compile evidence");
+    assert_eq!(evidence.host_provider_bindings.len(), 1);
+    assert!(
+        evidence.host_provider_bindings[0].contract.contains("random"),
+        "binding={:?}",
+        evidence.host_provider_bindings[0].contract
+    );
+    assert!(
+        !evidence
+            .host_provider_bindings
+            .iter()
+            .any(|binding| binding.contract.contains("fetch_i32_stub")),
+        "unreferenced host contract must not produce a binding"
+    );
+    assert!(
+        evidence.host_provider_bindings[0]
+            .foreign_bindings
+            .iter()
+            .any(|binding| binding.contains("random")),
+        "selected binding must remain js.random"
+    );
+
+    let mjs = fs::read_to_string(output_dir.join("main.mjs")).expect("main.mjs glue");
+    assert!(mjs.contains("random"), "glue must expose selected random import");
+    assert!(!mjs.contains("fetch"), "unselected js.fetch provider must not appear in glue");
+
+    let wasm = fs::read(output_dir.join("main.wasm")).expect("main.wasm");
+    assert!(
+        !wasm.windows(b"fetch".len()).any(|window| window == b"fetch"),
+        "wasm must not import env::fetch when provider is pruned"
+    );
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct HostSelectionEntryForTest {
+    contract: String,
+    provider: String,
+    source_file: String,
+    line: usize,
+    required_capabilities: Vec<String>,
+    foreign_bindings: Vec<String>,
 }
 
 fn command_exists(command: &str) -> bool {

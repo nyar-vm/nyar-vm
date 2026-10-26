@@ -77,6 +77,8 @@ fn is_fresh_rejects_stale_host_provider_compile_evidence() {
                 key: micro_declaration("std", "std.v", "write"),
                 source_file: manifest_path.clone(),
                 line: 1,
+                required_capabilities: Vec::new(),
+                foreign_bindings: Vec::new(),
             }],
             build_target: rusty_valkyrie::legion::workspace::manifest::BuildTargetSpec { target, ..Default::default() },
             artifact_kind: ProjectArtifactKind::Binary,
@@ -254,10 +256,14 @@ fn resolver_compile_evidence_host_provider_hash_is_binding_sensitive() {
     let first = rusty_valkyrie::CompilerHostProviderBinding {
         contract: micro_declaration("demo", "demo.v", "write"),
         provider: micro_declaration("std", "std.v", "write"),
+        required_capabilities: vec!["js.fetch".into()],
+        foreign_bindings: vec![r#"js("fetch")"#.into()],
     };
     let second = rusty_valkyrie::CompilerHostProviderBinding {
         contract: micro_declaration("demo", "demo.v", "write"),
         provider: micro_declaration("std", "std.v", "print"),
+        required_capabilities: vec![],
+        foreign_bindings: vec![],
     };
     let without = expected_resolver_compile_evidence_from_groups(&groups, &[], "ovm");
     let with_first = expected_resolver_compile_evidence_from_groups(&groups, &[first.clone()], "ovm");
