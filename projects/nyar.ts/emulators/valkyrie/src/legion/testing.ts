@@ -109,3 +109,4 @@ export function resolveNyarEntry(artifactDir: string): {
         logicalEntry: view?.primaryLogicalEntry ?? 'main',
     };
 }
+

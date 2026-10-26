@@ -1,0 +1,12 @@
+{
+    "cli.intro": "Legion 构建驱动 — 解析、编译与测试 Valkyrie 工程",
+    "cli.cmd.version": "打印 @nyar/valkyrie 版本",
+    "cli.cmd.plan": "解析 workspace 依赖并输出 build plan",
+    "cli.cmd.build": "按 target 编译 Legion 工程",
+    "cli.cmd.test": "运行 Legion 测试（结构化 N-API）",
+    "cli.opt.target": "Canonical target（node、ovm 等）",
+    "cli.opt.output": "构建输出目录",
+    "cli.arg.project": "工程目录（默认当前工作目录）",
+    "asgard.cli.intro": "Asgard VOA 工具链 — build/dev/pack（其余参数透传 valkyrie-napi）",
+    "asgard.cli.cmd.version": "打印 @nyar/valkyrie 版本"
+}

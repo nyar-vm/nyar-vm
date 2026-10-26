@@ -38,3 +38,6 @@ export {
 } from './native.ts';
 
 export * from './legion/index.ts';
+
+export {runLegionCli} from './cli/legion-cli.ts';
+export {runAsgardCli} from './cli/asgard-cli.ts';

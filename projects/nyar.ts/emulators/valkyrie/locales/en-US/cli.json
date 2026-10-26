@@ -1,0 +1,12 @@
+{
+    "cli.intro": "Legion build driver — plan, build, and test Valkyrie projects",
+    "cli.cmd.version": "Print @nyar/valkyrie version",
+    "cli.cmd.plan": "Resolve workspace dependencies and print a build plan",
+    "cli.cmd.build": "Compile a Legion project for a target",
+    "cli.cmd.test": "Run Legion tests for a target (structured N-API)",
+    "cli.opt.target": "Canonical target (node, ovm, …)",
+    "cli.opt.output": "Build output directory",
+    "cli.arg.project": "Project directory (default: cwd)",
+    "asgard.cli.intro": "Asgard VOA toolchain — build, dev, pack (argv forwarded to valkyrie-napi)",
+    "asgard.cli.cmd.version": "Print @nyar/valkyrie version"
+}
