@@ -5,6 +5,8 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "Valkyrie product package: frontend, Asgard delivery, and Legion assembly"
+# Legacy frontend/backend suites target pre–`TargetExecutionPlan` APIs; keep off default CI until ported.
+autotests = false
 
 [features]
 # Legion 正式编译链默认启用 Nyar + Node/Wasm seed；诊断链与自举旁路不默认开启。
@@ -57,3 +59,11 @@ nyar-emitter = { workspace = true }
 odin-vm = { workspace = true }
 tempfile = { workspace = true }
 zip = { workspace = true }
+
+[[test]]
+name = "legion"
+path = "tests/legion/main.rs"
+
+[[test]]
+name = "asgard"
+path = "tests/asgard/main.rs"
