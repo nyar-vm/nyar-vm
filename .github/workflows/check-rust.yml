@@ -83,3 +83,22 @@ jobs:
           workspaces: projects/nyar.rs
       - name: Integration tests
         run: cargo test --workspace --tests --no-fail-fast
+      - name: Host capability smoke (planner + browser-wasm build fixtures)
+        run: |
+          cargo test -p rusty-valkyrie hir_lowering_host_binding_pipeline_tests::bodyless_js_provider_carries_js_import_contract --no-fail-fast
+          cargo test -p rusty-valkyrie hir_lowering_host_binding_pipeline_tests::same_source_file_unselected_js_provider_is_pruned_from_linked_imports --no-fail-fast
+          cargo test -p rusty-valkyrie legion_planner::selects_js_get_provider_for_valkyrie_std_net_contract --no-fail-fast
+          cargo test -p rusty-valkyrie legion_planner::selects_js_fetch_provider_by_target_capability_not_file_path --no-fail-fast
+          cargo test -p rusty-valkyrie legion_planner::selects_js_random_provider_over_wasm_fallback_on_browser --no-fail-fast
+          cargo test -p rusty-valkyrie legion_planner::selects_wasm_random_provider_on_wasi_target --no-fail-fast
+          cargo test -p rusty-valkyrie legion_planner::selects_no_host_provider_when_std_contract_has_fallback_body --no-fail-fast
+          cargo test -p rusty-valkyrie legion_planner::prunes_host_providers_not_referenced_by_entry_closure --no-fail-fast
+          cargo test -p rusty-valkyrie legion_planner::reports_conflicting_js_providers_for_same_contract_on_browser --no-fail-fast
+          cargo test -p rusty-valkyrie legion_planner::wasi_target_rejects_js_only_host_provider --no-fail-fast
+          cargo test -p rusty-valkyrie builds_browser_wasm_js_random_host_binding_evidence --no-fail-fast
+          cargo test -p rusty-valkyrie builds_wasi_wasm_random_host_binding_evidence --no-fail-fast
+          cargo test -p rusty-valkyrie builds_valkyrie_fallback_random_without_host_bindings --no-fail-fast
+          cargo test -p rusty-valkyrie builds_browser_wasm_prunes_unselected_host_bindings_from_evidence --no-fail-fast
+          cargo test -p rusty-valkyrie legion_api_plan:: --no-fail-fast
+          cargo test -p nyar-emitter --test lowering_features_physical_contract external_import_call_plans_with_import_parameter_types --no-fail-fast
+          cargo test -p nyar-emitter --lib wasm_import_type_uses_backend_import_when_field_not_frozen --no-fail-fast
