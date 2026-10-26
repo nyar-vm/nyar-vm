@@ -1,6 +1,6 @@
 {
     "name": "@nyar/valkyrie-linux-x64",
-    "version": "0.0.14",
+    "version": "0.0.15",
     "description": "Valkyrie product native binding  - Linux x64 (Node-API host)",
     "type": "module",
     "license": "MIT",
