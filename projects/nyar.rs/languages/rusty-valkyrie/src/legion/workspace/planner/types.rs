@@ -1,5 +1,6 @@
 use crate::compiler::semantic::closure::DeclarationKey;
 use nyar::CanonicalTarget;
+
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -8,6 +9,15 @@ use std::{
 };
 
 use crate::legion::workspace::manifest::{BuildTargetSpec, ManifestError, ProjectManifest, WorkspaceManifest};
+
+/// Oak `cfg` attribute 上的一个键值条件（`cfg(key = "value")`）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CfgPredicate {
+    /// 条件键（如 `target_vendor`）。
+    pub key: String,
+    /// 条件值（字符串字面量求值结果）。
+    pub value: String,
+}
 
 /// 单次构建请求：工程目录、目标平台与可选输出目录。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +69,9 @@ pub struct PlannedHostContract {
     pub source_file: PathBuf,
     /// 声明所在行号。
     pub line: usize,
+    /// 契约在源码中带 Valkyrie 实现体；无 provider 时可本地降级，不要求宿主绑定。
+    #[serde(default)]
+    pub has_local_fallback_body: bool,
 }
 
 /// 计划中的宿主契约提供者候选：把契约绑定到宿主符号。
@@ -76,6 +89,15 @@ pub struct PlannedHostProvider {
     pub source_file: PathBuf,
     /// 声明所在行号。
     pub line: usize,
+    /// 由 `[js]` / `[js_builtin]` / `[wasm]` 等推导出的 capability 需求。
+    #[serde(default)]
+    pub required_capabilities: Vec<String>,
+    /// 声明上的外部绑定 attribute 原文（规划与诊断用）。
+    #[serde(default)]
+    pub foreign_bindings: Vec<String>,
+    /// 附着于该 provider 的 `cfg` 条件（Planner 求值；前端 cfg lowering 未落地前用于消歧）。
+    #[serde(default)]
+    pub cfg_predicates: Vec<CfgPredicate>,
 }
 
 /// 单个工程的构建计划：清单位置、源码闭包、语义源码组与宿主契约。
@@ -273,6 +295,15 @@ pub enum PlannerError {
         /// 冲突的提供者名称列表。
         providers: Vec<String>,
     },
+    /// 契约在闭包内被需求，但没有任何 provider 满足当前 target capability 集合。
+    HostProviderCapabilityMissing {
+        /// 宿主契约标识。
+        contract: String,
+        /// 可见 provider 及其所需 capability。
+        providers: Vec<String>,
+        /// 当前 target 可用 capability。
+        available_capabilities: Vec<String>,
+    },
     /// 单脚本模式错误。
     Script(crate::legion::workspace::script::ScriptError),
     /// 防止依赖图或源码闭包失控（死循环 / 指数膨胀 / OOM）。
@@ -345,6 +376,15 @@ impl Display for PlannerError {
             }
             Self::ConflictingHostProviders { contract, providers } => {
                 write!(f, "host contract '{}' has multiple visible providers: {}", contract, providers.join(", "))
+            }
+            Self::HostProviderCapabilityMissing { contract, providers, available_capabilities } => {
+                write!(
+                    f,
+                    "host contract '{}' has no provider compatible with target capabilities [{}]; candidates: {}",
+                    contract,
+                    available_capabilities.join(", "),
+                    providers.join(", ")
+                )
             }
             Self::Script(error) => Display::fmt(error, f),
             Self::ResourceLimitExceeded { kind, limit, actual } => {
