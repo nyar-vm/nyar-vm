@@ -1,7 +1,6 @@
-//! Valkyrie 产品 Node-API 原生绑定：`legion` / `asgard` CLI 与程序化编译入口。
+//! Valkyrie 产品 Node-API 原生绑定：Legion `plan` / `compile` 与 Asgard 宿主面。
 //!
-//! 正交产品 API（`legionPlan` / `legionBuild` 等）由此 crate 导出；argv 巨型 CLI 由 TypeScript 重组。
-//! `legionRun` / `runValkyrieCli` 仅为过渡透传，不再在 `rusty-valkyrie` 内使用 clap。
+//! Legion 不经 argv；TypeScript 调用 `legionPlan` / `legionBuild` 等正交 N-API。
 
 #![deny(missing_docs)]
 
@@ -9,11 +8,16 @@ use std::{ffi::OsString, process::ExitCode, thread};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use rusty_valkyrie::legion::{SpyMode, SpyOptions, SpyTargetOptions, SpyTargetPlatform, cli, run_spy};
+use rusty_valkyrie::legion::{SpyMode, SpyOptions, SpyTargetOptions, SpyTargetPlatform, run_spy};
 
+mod legion_host_api;
 mod product_api;
 mod stdio_capture;
 
+pub use legion_host_api::{
+    LegionArtifactFreshness, LegionExecutionManifestView, LegionTestOutcome, legion_check_artifact_fresh, legion_read_execution_manifest,
+    legion_test,
+};
 pub use product_api::{LegionBuildOptions, LegionBuildOutcome, LegionPlanOptions, LegionPlanOutcome, LegionSemanticGroupItem};
 pub use rusty_valkyrie::{asgard, legion};
 
@@ -57,28 +61,16 @@ pub struct SpyTargetRunOptions {
     pub glue_audit: Option<bool>,
 }
 
-/// 运行 Legion CLI（stdout/stderr 写入 Node 进程终端，不捕获）。
-///
-/// 新宿主请优先使用 [`legion_plan`] / [`legion_build`]；本函数保留给旧脚本。
+/// 已移除：Legion 不再提供 argv CLI。请使用 [`legion_plan`] / [`legion_build`]。
 #[napi]
-pub fn legion_run(argv: Vec<String>) -> i32 {
-    cli::run_with_argv(argv.into_iter().map(OsString::from).collect())
+pub fn legion_run(_argv: Vec<String>) -> Result<i32> {
+    Err(Error::from_reason("legionRun 已移除：请使用 legionPlan / legionBuild 等正交 N-API，勿再拼 argv。"))
 }
 
-/// 运行 Legion CLI 并捕获 stdout/stderr。
-///
-/// 新宿主请优先使用 [`legion_plan`] / [`legion_build`]；本函数保留给旧脚本。
+/// 已移除：Legion 不再提供 argv CLI。请使用 [`legion_plan`] / [`legion_build`]。
 #[napi]
-pub fn legion_run_captured(argv: Vec<String>) -> LegionRunOutcome {
-    let os_argv: Vec<OsString> = argv.into_iter().map(OsString::from).collect();
-    let (status, stdout, stderr) = thread::Builder::new()
-        .name("legion-captured".into())
-        .stack_size(64 * 1024 * 1024)
-        .spawn(move || stdio_capture::capture(|| cli::run_with_argv_in_current_thread(os_argv)))
-        .expect("failed to spawn legion captured thread")
-        .join()
-        .expect("legion captured thread panicked");
-    LegionRunOutcome { status: status as u32, stdout, stderr }
+pub fn legion_run_captured(_argv: Vec<String>) -> Result<LegionRunOutcome> {
+    Err(Error::from_reason("legionRunCaptured 已移除：请使用 legionPlan / legionBuild 等正交 N-API，勿再拼 argv。"))
 }
 
 /// 运行 `legion spy <mode>` 并捕获输出。
@@ -109,19 +101,18 @@ pub fn legion_parse(_argv: Vec<String>) -> Result<String> {
     Err(Error::from_reason("legionParse 已废弃：请在 TypeScript 侧解析 argv，并调用 legionPlan / legionBuild 等正交 N-API。"))
 }
 
-/// 运行 Valkyrie 编译器 CLI（`legion` / `asgard`），返回进程退出码。
-///
-/// `product` 仅接受 `"legion"` 与 `"asgard"`，调用时补入程序名后把 `argv` 原样
-/// 转交 Rust CLI；不在此处解析或补全命令语义。
+/// 运行 Valkyrie 宿主 CLI（仅 `asgard` 仍经 argv 透传；Legion 已移除 CLI）。
 #[napi]
 pub fn run_valkyrie_cli(product: String, argv: Vec<String>) -> Result<i32> {
+    if product == "legion" {
+        return Err(Error::from_reason("runValkyrieCli(legion) 已移除：请使用 legionPlan / legionBuild 等正交 N-API。"));
+    }
     let mut os_argv: Vec<OsString> = Vec::with_capacity(argv.len() + 1);
     os_argv.push(OsString::from(product.as_str()));
     os_argv.extend(argv.into_iter().map(OsString::from));
     match product.as_str() {
-        "legion" => Ok(rusty_valkyrie::legion::cli::run_with_argv(os_argv)),
         "asgard" => Ok(rusty_valkyrie::asgard::cli::run_with_argv(os_argv)),
-        other => Err(Error::from_reason(format!("unsupported valkyrie product '{other}' (expected legion/asgard)"))),
+        other => Err(Error::from_reason(format!("unsupported valkyrie product '{other}' (expected asgard)"))),
     }
 }
 
