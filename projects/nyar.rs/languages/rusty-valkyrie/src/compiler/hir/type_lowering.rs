@@ -226,7 +226,7 @@ pub fn validate_type_expression(ty: &TypeExpression) -> Result<(), HirError> {
         }
         TypeExpression::Tuple(tuple) => {
             for element in &tuple.elements {
-                validate_type_expression(&element.ty)?;
+                validate_type_expression(element)?;
             }
         }
         TypeExpression::Function(function) => {
@@ -235,13 +235,13 @@ pub fn validate_type_expression(ty: &TypeExpression) -> Result<(), HirError> {
             }
             validate_type_expression(&function.return_type)?;
         }
-        TypeExpression::Optional(optional) => validate_type_expression(&optional.inner)?,
+        TypeExpression::Optional(optional) => validate_type_expression(optional.inner.as_ref())?,
         TypeExpression::AssociatedType(associated) => {
             validate_source_text_type_name(&associated.name.name)?;
             validate_source_text_type_name(&associated.base.name)?;
         }
         TypeExpression::QualifiedAssociatedType(qualified) => {
-            validate_type_expression(&qualified.ty)?;
+            validate_type_expression(qualified.ty.as_ref())?;
             validate_source_text_type_name(&qualified.name.name)?;
         }
         TypeExpression::Binary(node) => {
@@ -286,14 +286,14 @@ pub fn lower_type_expression(ty: &TypeExpression) -> Result<ValkyrieType, HirErr
                 ValkyrieType::Unit
             }
             else {
-                ValkyrieType::Tuple(tuple.elements.iter().map(|element| lower_type_expression(&element.ty)).collect::<Result<Vec<_>, _>>()?)
+                ValkyrieType::Tuple(tuple.elements.iter().map(lower_type_expression).collect::<Result<Vec<_>, _>>()?)
             }
         }
         TypeExpression::Function(function) => ValkyrieType::Function(Box::new(FunctionType {
             params: function.params.iter().map(lower_type_expression).collect::<Result<Vec<_>, _>>()?,
-            return_type: lower_type_expression(&function.return_type)?,
+            return_type: lower_type_expression(function.return_type.as_ref())?,
         })),
-        TypeExpression::Optional(optional) => flatten_nullable_type(lower_type_expression(&optional.inner)?),
+        TypeExpression::Optional(optional) => flatten_nullable_type(lower_type_expression(optional.inner.as_ref())?),
         TypeExpression::AssociatedType(associated) => ValkyrieType::Associated(Box::new(crate::compiler::types::hir::AssociatedType {
             base: if associated.base.name == "Self" {
                 ValkyrieType::SelfType
@@ -305,7 +305,7 @@ pub fn lower_type_expression(ty: &TypeExpression) -> Result<ValkyrieType, HirErr
             type_arguments: Vec::new(),
         })),
         TypeExpression::QualifiedAssociatedType(qualified) => {
-            let base = lower_type_expression(&qualified.ty)?;
+            let base = lower_type_expression(qualified.ty.as_ref())?;
             ValkyrieType::Associated(Box::new(crate::compiler::types::hir::AssociatedType {
                 base,
                 name: Identifier::new(&qualified.name.name),
@@ -359,23 +359,15 @@ pub(crate) fn render_type_expression(ty: &TypeExpression) -> String {
             if tuple.elements.is_empty() {
                 return "()".to_string();
             }
-            let inner = tuple
-                .elements
-                .iter()
-                .map(|element| match &element.name {
-                    Some(name) => format!("{}: {}", name.name, render_type_expression(&element.ty)),
-                    None => render_type_expression(&element.ty),
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
+            let inner = tuple.elements.iter().map(render_type_expression).collect::<Vec<_>>().join(", ");
             format!("({inner})")
         }
         TypeExpression::Function(function) => {
             let params_str = function.params.iter().map(render_type_expression).collect::<Vec<_>>().join(", ");
-            format!("micro({params_str}) -> {}", render_type_expression(&function.return_type))
+            format!("micro({params_str}) -> {}", render_type_expression(function.return_type.as_ref()))
         }
         TypeExpression::Optional(optional) => {
-            format!("{}?", render_type_expression(&optional.inner))
+            format!("{}?", render_type_expression(optional.inner.as_ref()))
         }
         TypeExpression::AssociatedType(associated) => {
             format!("{}::{}", associated.base.name, associated.name.name)
@@ -383,7 +375,7 @@ pub(crate) fn render_type_expression(ty: &TypeExpression) -> String {
         TypeExpression::QualifiedAssociatedType(qualified) => {
             format!(
                 "<{} as {}>::{}",
-                render_type_expression(&qualified.ty),
+                render_type_expression(qualified.ty.as_ref()),
                 render_type_expression(&TypeExpression::Namepath(Box::new(qualified.trait_path.clone()))),
                 qualified.name.name
             )

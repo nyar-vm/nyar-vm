@@ -204,10 +204,10 @@ pub(crate) fn visible_nominal_type_names(
                     out.push(VisibleNominalType { namespace: namespace.to_vec(), name: variant.name.name.clone() })
                 }
                 StatementNode::Namespace(inner) => {
-                    if let Some(body) = &inner.body {
+                    if !crate::compiler::syntax::oak::namespace_is_declaration_only(inner) {
                         let mut nested = namespace.to_vec();
                         nested.extend(lower_name_path(&inner.name).parts().iter().map(ToString::to_string));
-                        walk(&body.items, &nested, out);
+                        walk(crate::compiler::syntax::oak::namespace_items(inner), &nested, out);
                     }
                 }
                 StatementNode::Statement(inner) => walk(std::slice::from_ref(inner.as_ref()), namespace, out),
@@ -228,7 +228,7 @@ pub(crate) fn visible_nominal_type_names(
         let mut prefix = Vec::new();
         for item in &root.items {
             if let StatementNode::Namespace(namespace) = item {
-                if !namespace.has_body() {
+                if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
                     prefix = lower_name_path(&namespace.name).parts().iter().map(ToString::to_string).collect();
                 }
             }
@@ -245,10 +245,10 @@ pub(crate) fn root_type_alias_declarations(root: &crate::compiler::syntax::oak::
             match item {
                 StatementNode::TypeAlias(alias) => out.push((namespace.to_vec(), alias)),
                 StatementNode::Namespace(inner) => {
-                    if let Some(body) = &inner.body {
+                    if !crate::compiler::syntax::oak::namespace_is_declaration_only(inner) {
                         let mut nested = namespace.to_vec();
                         nested.extend(lower_name_path(&inner.name).parts().iter().map(ToString::to_string));
-                        walk(&body.items, &nested, out);
+                        walk(crate::compiler::syntax::oak::namespace_items(inner), &nested, out);
                     }
                 }
                 StatementNode::Statement(inner) => walk(std::slice::from_ref(inner.as_ref()), namespace, out),
@@ -259,7 +259,7 @@ pub(crate) fn root_type_alias_declarations(root: &crate::compiler::syntax::oak::
     let mut prefix = Vec::new();
     for item in &root.items {
         if let StatementNode::Namespace(namespace) = item {
-            if !namespace.has_body() {
+            if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
                 prefix = lower_name_path(&namespace.name).parts().iter().map(ToString::to_string).collect();
             }
         }

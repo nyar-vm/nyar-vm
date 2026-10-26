@@ -35,6 +35,8 @@ pub struct HirValidationState {
     /// 本模块内已冻结为声明身份的数值 primitive（`core/primitive` 的 `structure`）。
     /// 只有这份声明事实能判定「期望类型是数值」；不得改成对调用点写的类型名做特判。
     pub(crate) numeric_declarations: BTreeSet<nyar_types::ItemId>,
+    /// `core::primitive::bool` 的声明身份；字面量与注解 `bool` 的 `Boolean` 形态与之等价。
+    pub(crate) boolean_declarations: BTreeSet<nyar_types::ItemId>,
 }
 
 pub type LoopValidationContext = crate::compiler::semantic::control_flow::LoopScopeData;
@@ -62,6 +64,33 @@ pub fn numeric_declarations_in_module(module: &HirModule) -> BTreeSet<nyar_types
     declarations
 }
 
-pub fn validation_state(numeric_declarations: &BTreeSet<nyar_types::ItemId>) -> HirValidationState {
-    HirValidationState { numeric_declarations: numeric_declarations.clone(), ..Default::default() }
+/// 模块内 `bool` primitive 的声明身份集合。
+pub fn boolean_declarations_in_module(module: &HirModule) -> BTreeSet<nyar_types::ItemId> {
+    fn collect(module: &HirModule, out: &mut BTreeSet<nyar_types::ItemId>) {
+        let structs = module.structs.iter().chain(module.imported_semantic_exports.iter().flat_map(|export| export.structs.iter()));
+        for item in structs {
+            if item.name.as_str() == "bool" {
+                if let Some(declaration) = item.constructor_declaration {
+                    out.insert(declaration);
+                }
+            }
+        }
+        for submodule in &module.submodules {
+            collect(submodule, out);
+        }
+    }
+    let mut declarations = BTreeSet::new();
+    collect(module, &mut declarations);
+    declarations
+}
+
+pub fn validation_state(
+    numeric_declarations: &BTreeSet<nyar_types::ItemId>,
+    boolean_declarations: &BTreeSet<nyar_types::ItemId>,
+) -> HirValidationState {
+    HirValidationState {
+        numeric_declarations: numeric_declarations.clone(),
+        boolean_declarations: boolean_declarations.clone(),
+        ..Default::default()
+    }
 }
