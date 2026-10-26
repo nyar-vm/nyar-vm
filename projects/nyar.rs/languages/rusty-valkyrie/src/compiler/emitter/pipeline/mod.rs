@@ -32,7 +32,9 @@ pub use driver::compile_linked_semantic_mir;
 pub use envelope_checks::{check_function_envelopes, check_instruction_envelope, expected_result_count};
 pub use error::{PipelineError, PipelineResult};
 pub use evidence::{CompilerCompileEvidence, generated_source_hash, host_provider_binding_hash_for_bindings, semantic_closure_hash_for_groups};
-pub use host_bindings::{ResolvedHostProviderBinding, apply_host_provider_bindings, resolve_host_provider_bindings};
+pub use host_bindings::{
+    ResolvedHostProviderBinding, apply_host_provider_bindings, prune_unselected_host_provider_external_calls, resolve_host_provider_bindings,
+};
 pub use link::{link_reachable_dependency_mir, merge_aggregate_layouts, merge_entry_group_surface};
 pub use representation::CanonicalRepresentationPlanner;
 

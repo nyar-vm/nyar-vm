@@ -119,10 +119,14 @@ pub(crate) fn annotations_declare_external_import(annotations: &[HirAttribute]) 
 /// 从函数声明杝坖语言中性的外部导入链接。
 #[doc(hidden)]
 pub fn function_interop_contract(function: &HirFunction) -> Option<ExternalImportLink> {
-    function.annotations.iter().find_map(attribute_to_interop_contract).or_else(|| {
-        function.annotations.iter().find_map(|attribute| {
-            (attribute_name(attribute).as_deref() == Some("host_contract")).then(|| ExternalImportLink::host(None, Vec::new()))
-        })
+    if let Some(link) = function.annotations.iter().find_map(attribute_to_interop_contract) {
+        return Some(link);
+    }
+    if !function.is_abstract {
+        return None;
+    }
+    function.annotations.iter().find_map(|attribute| {
+        (attribute_name(attribute).as_deref() == Some("host_contract")).then(|| ExternalImportLink::host(None, Vec::new()))
     })
 }
 
@@ -266,9 +270,9 @@ fn c_binding_platform(library: &str) -> Option<&'static str> {
 }
 
 fn is_host_import_surface_tag(name: &str) -> bool {
-    // `js_builtin` / `ovm`：抽象宿主绑定，须进入 external import 合同，
+    // `js` / `js_builtin` / `ovm`：抽象宿主绑定，须进入 external import 合同，
     // 否则 Invoke(ItemInstanceId) 在 link 阶段报「没有定义或显式导入合同」。
-    matches!(name, "clr" | "wasm" | "wasi" | "jvm" | "com" | "js_builtin" | "ovm")
+    matches!(name, "clr" | "wasm" | "wasi" | "jvm" | "com" | "js" | "js_builtin" | "ovm")
 }
 
 fn attribute_name(attribute: &HirAttribute) -> Option<&str> {

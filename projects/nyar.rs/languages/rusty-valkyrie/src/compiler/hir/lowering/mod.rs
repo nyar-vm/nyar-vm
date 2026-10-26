@@ -275,6 +275,12 @@ impl ValkyrieCompiler {
         for module in &mut mir_groups {
             module.type_identities = type_identities.clone();
         }
+        crate::compiler::emitter::pipeline::prune_unselected_host_provider_external_calls(
+            &mut mir_groups,
+            &mut final_mir,
+            &all_hirs,
+            host_bindings,
+        )?;
         if !mir_groups.is_empty() {
             crate::compiler::emitter::pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
