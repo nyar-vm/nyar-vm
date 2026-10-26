@@ -14,6 +14,7 @@ use super::{
         resolve_dependency_source, select_build_target,
     },
     host::collect_host_inventory,
+    source_file_cfg::{filter_semantic_source_groups_for_target, filter_source_files_for_target},
     sources::{
         MAX_SEMANTIC_GROUP_DEPTH, MAX_SEMANTIC_GROUPS, MAX_SOURCE_CLOSURE_FILES, add_distribution_default_dependencies, canonicalize_lossy,
         collect_source_files, collect_test_v_files, dependency_supports_source_context, find_workspace_root, implicit_sdk_dependencies,
@@ -200,8 +201,12 @@ impl WorkspaceResolver {
         // 这是模块系统的核心：让编译器能看到依赖项目定义的 struct/function/type。
         let mut visited = BTreeSet::new();
         let source_files = self.collect_source_closure(&project_dir, manifest, &build_target, &mut visited, true)?;
-        let semantic_source_groups = self.collect_semantic_source_groups(&project_dir, manifest, &build_target)?;
-        let host_inventory = collect_host_inventory(&semantic_source_groups, &build_target.publish)?;
+        let semantic_source_groups = filter_semantic_source_groups_for_target(
+            self.collect_semantic_source_groups(&project_dir, manifest, &build_target)?,
+            request.target,
+        )?;
+        let source_files = filter_source_files_for_target(source_files, request.target)?;
+        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target)?;
 
         Ok(BuildPlan {
             workspace_root: self.root_dir.clone(),
@@ -264,8 +269,12 @@ impl WorkspaceResolver {
         source_files.sort();
         source_files.dedup();
 
-        let semantic_source_groups = self.collect_semantic_source_groups(&project_dir, &manifest, &build_target)?;
-        let host_inventory = collect_host_inventory(&semantic_source_groups, &build_target.publish)?;
+        let semantic_source_groups = filter_semantic_source_groups_for_target(
+            self.collect_semantic_source_groups(&project_dir, &manifest, &build_target)?,
+            request.target,
+        )?;
+        let source_files = filter_source_files_for_target(source_files, request.target)?;
+        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target)?;
 
         Ok((
             BuildPlan {
@@ -471,8 +480,12 @@ impl WorkspaceResolver {
 
         let mut visited = BTreeSet::new();
         let source_files = self.collect_source_closure(&project_dir, manifest, &build_target, &mut visited, true)?;
-        let semantic_source_groups = self.collect_semantic_source_groups(&project_dir, manifest, &build_target)?;
-        let host_inventory = collect_host_inventory(&semantic_source_groups, &build_target.publish)?;
+        let semantic_source_groups = filter_semantic_source_groups_for_target(
+            self.collect_semantic_source_groups(&project_dir, manifest, &build_target)?,
+            request.target,
+        )?;
+        let source_files = filter_source_files_for_target(source_files, request.target)?;
+        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target)?;
 
         Ok(BuildPlan {
             workspace_root: self.root_dir.clone(),
@@ -617,4 +630,14 @@ impl WorkspaceResolver {
             reason: "missing install path".to_string(),
         })
     }
+}
+
+fn host_inventory_for_groups(
+    semantic_source_groups: &[PlannedSemanticSourceGroup],
+    target: nyar::CanonicalTarget,
+    build_target: &BuildTargetSpec,
+) -> PlannerResult<super::host::HostInventory> {
+    let arch = super::compile_arch_key(&build_target.target);
+    let demanded = super::demanded_declaration_keys(semantic_source_groups, arch)?;
+    collect_host_inventory(semantic_source_groups, target, demanded.as_ref())
 }

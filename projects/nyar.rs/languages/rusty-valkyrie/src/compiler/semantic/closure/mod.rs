@@ -120,6 +120,7 @@ mod indexes;
 mod plan;
 mod retain;
 
+pub(crate) use collect::imply_owner_name;
 pub(crate) use index_file::name_path_segments;
 pub(crate) type ScopedReference = (Vec<String>, ReferencePath);
 
