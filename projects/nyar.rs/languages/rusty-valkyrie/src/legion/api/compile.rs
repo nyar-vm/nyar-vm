@@ -52,9 +52,22 @@ pub struct LegionCompileReport {
     pub entry_symbol: Option<String>,
     /// 编译证据 sidecar（若已写出）。
     pub evidence: Option<CompilerCompileEvidence>,
+    /// 本次构建物化所需的宿主 capability id（来自 compile evidence 中的 provider 绑定）。
+    pub host_required_capabilities: Vec<String>,
     /// 驱动层原始报告（供 CLI / unity export）；不参与序列化。
     #[serde(skip)]
     pub driver: Option<nyar_emitter::DriverCompileReport>,
+}
+
+fn host_required_capabilities_from_evidence(evidence: &CompilerCompileEvidence) -> Vec<String> {
+    let mut capabilities: Vec<String> = evidence
+        .host_provider_bindings
+        .iter()
+        .flat_map(|binding| binding.required_capabilities.iter().cloned())
+        .collect();
+    capabilities.sort();
+    capabilities.dedup();
+    capabilities
 }
 
 /// 在已有 plan 上执行编译。
@@ -87,6 +100,7 @@ pub fn compile(plan: &LegionBuildPlan, options: CompileOptions) -> LegionResult<
                 artifacts: Vec::new(),
                 entry_symbol: None,
                 evidence: None,
+                host_required_capabilities: Vec::new(),
                 driver: None,
             });
         }
@@ -102,6 +116,7 @@ pub fn compile(plan: &LegionBuildPlan, options: CompileOptions) -> LegionResult<
     });
 
     let evidence = read_compile_evidence(&plan.inner.output_dir);
+    let host_required_capabilities = evidence.as_ref().map(host_required_capabilities_from_evidence).unwrap_or_default();
 
     Ok(LegionCompileReport {
         project: plan.project.clone(),
@@ -113,6 +128,7 @@ pub fn compile(plan: &LegionBuildPlan, options: CompileOptions) -> LegionResult<
         artifacts,
         entry_symbol: driver.entry_symbol.clone(),
         evidence,
+        host_required_capabilities,
         driver: Some(driver),
     })
 }

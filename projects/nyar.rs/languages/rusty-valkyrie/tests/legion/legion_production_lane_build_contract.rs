@@ -68,6 +68,7 @@ fn build_must_apply_resolver_host_provider_selection() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/legion/cmds/build/mod.rs");
     let production = read_production_rs(&path);
     assert!(production.contains("selected_host_providers"));
-    assert!(production.contains("CompilerHostProviderBinding"));
+    assert!(production.contains("compiler_host_provider_bindings"));
+    assert!(production.contains("with_selected_host_providers"));
     assert!(production.contains("CompilerBuildContext"));
 }

@@ -28,6 +28,10 @@ pub struct LegionHostProviderSummary {
     pub key: String,
     /// 契约声明身份（若有）。
     pub contract_key: Option<String>,
+    /// 由外部绑定推导的 capability 需求。
+    pub required_capabilities: Vec<String>,
+    /// 声明上的外部绑定 attribute 原文。
+    pub foreign_bindings: Vec<String>,
 }
 
 /// 完整 build plan（API 合同）；内含 planner 的 `BuildPlan` 供 `compile()` 消费。
@@ -55,6 +59,8 @@ pub struct LegionBuildPlan {
     pub groups: Vec<LegionSemanticGroupSummary>,
     /// 已选 host provider 列表。
     pub selected_host_providers: Vec<LegionHostProviderSummary>,
+    /// 已选 provider 推导的 capability 需求（去重排序）。
+    pub host_required_capabilities: Vec<String>,
     /// 与缓存键一致的源码+清单摘要。
     pub source_bundle_hash: String,
     /// 模板展开架构键（含 wasi 伪键）。
@@ -109,6 +115,18 @@ impl LegionBuildPlan {
             });
         }
 
+        let host_required_capabilities = {
+            let mut capabilities = inner
+                .project
+                .selected_host_providers
+                .iter()
+                .flat_map(|provider| provider.required_capabilities.iter().cloned())
+                .collect::<Vec<_>>();
+            capabilities.sort();
+            capabilities.dedup();
+            capabilities
+        };
+
         Self {
             project: inner.project.name.clone(),
             target: inner.project.build_target.target.to_string(),
@@ -133,8 +151,11 @@ impl LegionBuildPlan {
                     symbol: provider.symbol.clone(),
                     key: format!("{:?}", provider.key),
                     contract_key: provider.contract_key.as_ref().map(|key| format!("{:?}", key)),
+                    required_capabilities: provider.required_capabilities.clone(),
+                    foreign_bindings: provider.foreign_bindings.clone(),
                 })
                 .collect(),
+            host_required_capabilities,
             source_bundle_hash,
             compile_arch_key,
             diagnostics,

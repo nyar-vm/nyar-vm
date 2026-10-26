@@ -36,4 +36,14 @@ impl CompilerSession {
         let inner = self.resolver.build_plan(&build_request)?;
         Ok(super::plan::LegionBuildPlan::from_build_plan(inner))
     }
+
+    /// 在同一会话内规划并编译（LeetCode 等场景：一次 open、多次 plan/compile）。
+    pub fn compile(
+        &self,
+        request: PlanRequest,
+        options: super::request::CompileOptions,
+    ) -> Result<super::compile::LegionCompileReport, crate::legion::cmds::error::LegionError> {
+        let plan = self.plan(request).map_err(crate::legion::cmds::error::LegionError::Planner)?;
+        super::compile::compile(&plan, options)
+    }
 }

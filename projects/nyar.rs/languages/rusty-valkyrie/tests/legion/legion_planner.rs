@@ -1066,7 +1066,6 @@ fn unity_player_injects_sdk_and_prefers_unity_host_providers() {
     members: [
         "app.unity",
         "unity.engine.sdk",
-        "std.adaptor.clr",
         "std"
     ]
 }
@@ -1804,17 +1803,12 @@ micro write(message: utf8): unit {
     .unwrap();
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
-    let plan = workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None }).unwrap();
-
-    assert_eq!(plan.project.host_contracts.len(), 1);
-    assert_eq!(plan.project.host_contracts[0].id, "demo::write");
-    assert_eq!(plan.project.host_provider_candidates.len(), 2);
-    assert_eq!(plan.project.selected_host_providers.len(), 1);
-    assert_eq!(plan.project.selected_host_providers[0].contract, "demo::write");
+    let error = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None })
+        .unwrap_err();
     assert!(
-        ["sdk::left::write", "sdk::right::write"].contains(&plan.project.selected_host_providers[0].symbol.as_str()),
-        "expected deterministic host-provider tie-break, got {}",
-        plan.project.selected_host_providers[0].symbol
+        error.to_string().contains("multiple visible providers"),
+        "expected conflicting CLR providers, got: {error}"
     );
 }
 
@@ -1951,6 +1945,1008 @@ fn resolves_path_dependency_outside_workspace() {
 
     assert!(plan.project.dependencies.iter().any(|dep| dep.name == "std"));
     assert!(plan.project.source_files.iter().any(|path| path.ends_with("stdlib/source/lib.v")));
+}
+
+#[test]
+fn selects_js_fetch_provider_by_target_capability_not_file_path() {
+    let temp_dir = Builder::new().prefix("legion-capability-fetch").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let wasm_dir = root.join("std.adaptor.wasm");
+    let std_dir = root.join("std");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(wasm_dir.join("source")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-capability-fetch",
+    members: ["app", "std.adaptor.wasm", "std"]
+}
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("net.v"),
+        r#"namespace std.net;
+[host_contract]
+micro fetch(url: utf8): utf8
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "std.adaptor.wasm": "workspace"
+    },
+    build: [{ target: "wasm32-unknown-browser-wasm", publish: ["web-app"] }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.net;
+[main]
+micro main() {
+    let _ = fetch("")
+}
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        wasm_dir.join("legion.von"),
+        r#"{
+    name: "std.adaptor.wasm",
+    dependencies: { "std": "workspace" },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("source").join("fetch.browser.v"),
+        r#"[cfg(target_vendor = "browser")]
+namespace std.adaptor.wasm.fetch;
+
+[host_provider(std::net::fetch)]
+[js("fetch")]
+micro browser_fetch(url: utf8): utf8 {
+    return ""
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("source").join("fetch.wechat.v"),
+        r#"[cfg(target_vendor = "wechat")]
+namespace std.adaptor.wasm.fetch;
+
+[host_provider(std::net::fetch)]
+[js("wx.request")]
+micro wechat_fetch(url: utf8): utf8 {
+    return ""
+}
+"#,
+    )
+    .unwrap();
+
+    let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
+    let browser_plan = workspace
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::wasm(),
+            output_dir: None,
+        })
+        .unwrap();
+    let browser_provider = browser_plan
+        .project
+        .selected_host_providers
+        .iter()
+        .find(|provider| provider.contract.contains("fetch"))
+        .expect("fetch provider");
+    assert_eq!(browser_provider.symbol, "std::adaptor::wasm::fetch::browser_fetch");
+    assert_eq!(browser_provider.required_capabilities, vec!["js.fetch".to_string()]);
+
+    let miniprogram_target: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().unwrap();
+    let mut mp_manifest = fs::read_to_string(app_dir.join("legion.von")).unwrap();
+    mp_manifest = mp_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    fs::write(app_dir.join("legion.von"), mp_manifest).unwrap();
+    let mut wasm_manifest = fs::read_to_string(wasm_dir.join("legion.von")).unwrap();
+    wasm_manifest = wasm_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    fs::write(wasm_dir.join("legion.von"), wasm_manifest).unwrap();
+    let mut std_manifest = fs::read_to_string(std_dir.join("legion.von")).unwrap();
+    std_manifest = std_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    fs::write(std_dir.join("legion.von"), std_manifest).unwrap();
+
+    let mp_workspace = WorkspaceResolver::discover(&app_dir).unwrap();
+    let mp_plan = mp_workspace
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: miniprogram_target,
+            output_dir: None,
+        })
+        .unwrap();
+    let wx_provider = mp_plan
+        .project
+        .selected_host_providers
+        .iter()
+        .find(|provider| provider.contract.contains("fetch"))
+        .expect("wx fetch provider");
+    assert_eq!(wx_provider.symbol, "std::adaptor::wasm::fetch::wechat_fetch");
+    assert_eq!(wx_provider.required_capabilities, vec!["js.wx.request".to_string()]);
+}
+
+#[test]
+fn selects_js_get_provider_for_valkyrie_std_net_contract() {
+    let temp_dir = Builder::new().prefix("legion-capability-net-get").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let wasm_dir = root.join("std.adaptor.wasm");
+    let std_dir = root.join("std");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(wasm_dir.join("source")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-capability-net-get",
+    members: ["app", "std.adaptor.wasm", "std"]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("http.v"),
+        r#"namespace std.net;
+[host_contract]
+micro get(url: utf8): utf8
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "std.adaptor.wasm": "workspace"
+    },
+    build: [{ target: "wasm32-unknown-browser-wasm", publish: ["web-app"] }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.net;
+[main]
+micro main() {
+    let _ = get("")
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("legion.von"),
+        r#"{
+    name: "std.adaptor.wasm",
+    dependencies: { "std": "workspace" },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("source").join("http.v"),
+        r#"namespace std.adaptor.wasm.net;
+
+[cfg(target_vendor = "browser")]
+[host_provider(std::net::get)]
+[js("fetch")]
+micro browser_get(url: utf8): utf8 {
+    return ""
+}
+
+[cfg(target_vendor = "wechat")]
+[host_provider(std::net::get)]
+[js("wx.request")]
+micro miniprogram_get(url: utf8): utf8 {
+    return ""
+}
+"#,
+    )
+    .unwrap();
+
+    let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
+    let browser_plan = workspace
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::wasm(),
+            output_dir: None,
+        })
+        .unwrap();
+    let browser_get = browser_plan
+        .project
+        .selected_host_providers
+        .iter()
+        .find(|provider| provider.contract.contains("get"))
+        .expect("get provider");
+    assert_eq!(browser_get.symbol, "std::adaptor::wasm::net::browser_get");
+    assert_eq!(browser_get.required_capabilities, vec!["js.fetch".to_string()]);
+
+    let miniprogram_target: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().unwrap();
+    let mut mp_manifest = fs::read_to_string(app_dir.join("legion.von")).unwrap();
+    mp_manifest = mp_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    fs::write(app_dir.join("legion.von"), mp_manifest).unwrap();
+    let mut wasm_manifest = fs::read_to_string(wasm_dir.join("legion.von")).unwrap();
+    wasm_manifest = wasm_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    fs::write(wasm_dir.join("legion.von"), wasm_manifest).unwrap();
+    let mut std_manifest = fs::read_to_string(std_dir.join("legion.von")).unwrap();
+    std_manifest = std_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    fs::write(std_dir.join("legion.von"), std_manifest).unwrap();
+
+    let mp_plan = WorkspaceResolver::discover(&app_dir)
+        .unwrap()
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: miniprogram_target,
+            output_dir: None,
+        })
+        .unwrap();
+    let wx_get = mp_plan
+        .project
+        .selected_host_providers
+        .iter()
+        .find(|provider| provider.contract.contains("get"))
+        .expect("wx get provider");
+    assert_eq!(wx_get.symbol, "std::adaptor::wasm::net::miniprogram_get");
+    assert_eq!(wx_get.required_capabilities, vec!["js.wx.request".to_string()]);
+}
+
+#[test]
+fn selects_js_random_provider_over_wasm_fallback_on_browser() {
+    let temp_dir = Builder::new().prefix("legion-capability-random").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let wasm_dir = root.join("std.adaptor.wasm");
+    let std_dir = root.join("std");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(wasm_dir.join("source")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-capability-random",
+    members: ["app", "std.adaptor.wasm", "std"]
+}
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("random.v"),
+        r#"namespace std.math;
+[host_contract]
+micro random_next_i32(seed: i32): i32
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "std.adaptor.wasm": "workspace"
+    },
+    build: [{ target: "wasm32-unknown-browser-wasm", publish: ["web-app"] }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.math;
+[main]
+micro main() -> i32 {
+    return random_next_i32(1)
+}
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        wasm_dir.join("legion.von"),
+        r#"{
+    name: "std.adaptor.wasm",
+    dependencies: { "std": "workspace" },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::create_dir_all(wasm_dir.join("source").join("math").join("random")).unwrap();
+    fs::write(
+        wasm_dir.join("source").join("math").join("random").join("Random.browser.v"),
+        r#"[cfg(target_vendor = "browser")]
+namespace std.adaptor.wasm;
+
+[host_provider(std::math::random_next_i32)]
+[js("random")]
+micro js_random_next_i32(seed: i32): i32 {
+    return 0
+}
+"#,
+    )
+    .unwrap();
+    let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::wasm(),
+            output_dir: None,
+        })
+        .unwrap();
+    let wasm_group = plan
+        .project
+        .semantic_source_groups
+        .iter()
+        .find(|group| group.name == "std.adaptor.wasm")
+        .expect("wasm adaptor group");
+    assert_eq!(wasm_group.source_files.len(), 1);
+    let selected = plan
+        .project
+        .selected_host_providers
+        .iter()
+        .find(|provider| provider.contract.contains("random_next_i32"))
+        .expect("random provider");
+    assert_eq!(selected.symbol, "std::adaptor::wasm::js_random_next_i32");
+    assert_eq!(selected.required_capabilities, vec!["js.random".to_string()]);
+    assert_eq!(selected.foreign_bindings, vec![r#"js("random")"#.to_string()]);
+}
+
+#[test]
+fn selects_wasm_random_provider_on_wasi_target() {
+    let temp_dir = Builder::new().prefix("legion-capability-random-wasi").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let wasi_dir = root.join("std.adaptor.wasi");
+    let std_dir = root.join("std");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(wasi_dir.join("source").join("math").join("random")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-capability-random-wasi",
+    members: ["app", "std.adaptor.wasi", "std"]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    build: [{ target: "wasi" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("random.v"),
+        r#"namespace std.math;
+[host_contract]
+micro random_next_i32(seed: i32): i32
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "std.adaptor.wasi": "workspace"
+    },
+    build: [{ target: "wasi" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.math;
+[main]
+micro main() -> i32 {
+    return random_next_i32(1)
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasi_dir.join("legion.von"),
+        r#"{
+    name: "std.adaptor.wasi",
+    dependencies: { "std": "workspace" },
+    sdk_vendor: {
+        organization: "valkyrie",
+        host: "wasi",
+        kind: "distribution-default",
+        targets: ["wasi", "wasip3"]
+    },
+    build: [{ target: "wasi" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasi_dir.join("source").join("math").join("random").join("Random.wasi.v"),
+        r#"[when(target.specification == "wasi")]
+namespace std.adaptor.wasi;
+
+[host_provider(std::math::random_next_i32)]
+micro wasi_random_next_i32(seed: i32): i32
+"#,
+    )
+    .unwrap();
+
+    let plan = WorkspaceResolver::discover(&app_dir)
+        .unwrap()
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::wasi(),
+            output_dir: None,
+        })
+        .unwrap();
+    assert!(
+        !plan
+            .project
+            .semantic_source_groups
+            .iter()
+            .any(|group| group.name == "std.adaptor.wasm"),
+        "wasi build must not include std.adaptor.wasm"
+    );
+    let wasi_group = plan
+        .project
+        .semantic_source_groups
+        .iter()
+        .find(|group| group.name == "std.adaptor.wasi")
+        .expect("wasi adaptor group");
+    assert_eq!(wasi_group.source_files.len(), 1);
+    let selected = plan
+        .project
+        .selected_host_providers
+        .iter()
+        .find(|provider| provider.contract.contains("random_next_i32"))
+        .expect("wasi random provider");
+    assert_eq!(selected.symbol, "std::adaptor::wasi::wasi_random_next_i32");
+    assert!(selected.foreign_bindings.is_empty());
+    assert!(selected.required_capabilities.is_empty());
+}
+
+#[test]
+fn selects_no_host_provider_when_std_contract_has_fallback_body() {
+    let temp_dir = Builder::new().prefix("legion-capability-fallback").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let std_dir = root.join("std");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-capability-fallback",
+    members: ["app", "std"]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("random.v"),
+        r#"namespace std.math;
+[host_contract]
+micro random_next_i32(seed: i32): i32 {
+    return seed
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: { "std": "workspace" },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.math;
+[main]
+micro main() -> i32 {
+    return random_next_i32(1)
+}
+"#,
+    )
+    .unwrap();
+
+    let plan = WorkspaceResolver::discover(&app_dir)
+        .unwrap()
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::wasm(),
+            output_dir: None,
+        })
+        .unwrap();
+    assert!(
+        plan.project.selected_host_providers.is_empty(),
+        "fallback contract body must not require a host provider: {:?}",
+        plan.project.selected_host_providers
+    );
+}
+
+#[test]
+fn prunes_host_providers_not_referenced_by_entry_closure() {
+    let temp_dir = Builder::new().prefix("legion-capability-prune").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let wasm_dir = root.join("std.adaptor.wasm");
+    let std_dir = root.join("std");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(wasm_dir.join("source")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-capability-prune",
+    members: ["app", "std.adaptor.wasm", "std"]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("api.v"),
+        r#"namespace std.math;
+[host_contract]
+micro random_next_i32(seed: i32): i32
+
+namespace std.net;
+[host_contract]
+micro fetch(url: utf8): utf8
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "std.adaptor.wasm": "workspace"
+    },
+    build: [{ target: "wasm32-unknown-browser-wasm", publish: ["web-app"] }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.math;
+[main]
+micro main() -> i32 {
+    return random_next_i32(0)
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("legion.von"),
+        r#"{
+    name: "std.adaptor.wasm",
+    dependencies: { "std": "workspace" },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("source").join("_.v"),
+        r#"namespace std.adaptor.wasm;
+
+[host_provider(std::math::random_next_i32)]
+[js("random")]
+micro js_random_next_i32(seed: i32): i32 { return 0 }
+
+[host_provider(std::net::fetch)]
+[js("fetch")]
+micro browser_fetch(url: utf8): utf8 { return "" }
+"#,
+    )
+    .unwrap();
+
+    let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::wasm(),
+            output_dir: None,
+        })
+        .unwrap();
+
+    assert_eq!(plan.project.selected_host_providers.len(), 1);
+    assert!(plan.project.selected_host_providers[0].contract.contains("random_next_i32"));
+    assert!(
+        !plan
+            .project
+            .selected_host_providers
+            .iter()
+            .any(|provider| provider.contract.contains("fetch")),
+        "fetch must be pruned when entry closure does not reference it"
+    );
+}
+
+#[test]
+fn reports_conflicting_js_providers_for_same_contract_on_browser() {
+    let temp_dir = Builder::new().prefix("legion-capability-conflict").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let wasm_dir = root.join("std.adaptor.wasm");
+    let std_dir = root.join("std");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(wasm_dir.join("source")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-capability-conflict",
+    members: ["app", "std.adaptor.wasm", "std"]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("net.v"),
+        r#"namespace std.net;
+[host_contract]
+micro fetch(url: utf8): utf8
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "std.adaptor.wasm": "workspace"
+    },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.net;
+[main]
+micro main() {
+    let _ = fetch("")
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("legion.von"),
+        r#"{
+    name: "std.adaptor.wasm",
+    dependencies: { "std": "workspace" },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("source").join("fetch.v"),
+        r#"namespace std.adaptor.wasm;
+
+[host_provider(std::net::fetch)]
+[js("fetch")]
+micro fetch_a(url: utf8): utf8 { return "" }
+
+[host_provider(std::net::fetch)]
+[js("fetch")]
+micro fetch_b(url: utf8): utf8 { return "" }
+"#,
+    )
+    .unwrap();
+
+    let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
+    let error = workspace
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::wasm(),
+            output_dir: None,
+        })
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("multiple visible providers"),
+        "expected conflicting providers, got: {error}"
+    );
+}
+
+#[test]
+fn wasi_target_rejects_js_only_host_provider() {
+    let temp_dir = Builder::new().prefix("legion-capability-wasi").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let wasm_dir = root.join("std.adaptor.wasm");
+    let std_dir = root.join("std");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(wasm_dir.join("source")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-capability-wasi",
+    members: ["app", "std.adaptor.wasm", "std"]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    build: [{ target: "wasi" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("random.v"),
+        r#"namespace std.math;
+[host_contract]
+micro random_next_i32(seed: i32): i32
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "std.adaptor.wasm": "workspace"
+    },
+    build: [{ target: "wasi" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.math;
+[main]
+micro main() -> i32 {
+    return random_next_i32(1)
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("legion.von"),
+        r#"{
+    name: "std.adaptor.wasm",
+    dependencies: { "std": "workspace" },
+    build: [{ target: "wasi" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("source").join("random.v"),
+        r#"namespace std.adaptor.wasm;
+
+[host_provider(std::math::random_next_i32)]
+[js("random")]
+micro js_random_next_i32(seed: i32): i32 { return 0 }
+"#,
+    )
+    .unwrap();
+
+    let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
+    let error = workspace
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::wasi(),
+            output_dir: None,
+        })
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("no provider compatible with target capabilities"),
+        "expected capability mismatch, got: {error}"
+    );
+}
+
+#[test]
+fn reports_conflicting_providers_when_cfg_and_uncfg_both_match_browser() {
+    let temp_dir = Builder::new().prefix("legion-capability-cfg-overlap").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let wasm_dir = root.join("std.adaptor.wasm");
+    let std_dir = root.join("std");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(wasm_dir.join("source")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-capability-cfg-overlap",
+    members: ["app", "std.adaptor.wasm", "std"]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("net.v"),
+        r#"namespace std.net;
+[host_contract]
+micro fetch(url: utf8): utf8
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "std.adaptor.wasm": "workspace"
+    },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.net;
+[main]
+micro main() {
+    let _ = fetch("")
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("legion.von"),
+        r#"{
+    name: "std.adaptor.wasm",
+    dependencies: { "std": "workspace" },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("source").join("fetch.v"),
+        r#"namespace std.adaptor.wasm.fetch;
+
+[host_provider(std::net::fetch)]
+[js("fetch")]
+micro fetch_uncfg(url: utf8): utf8 { return "" }
+
+[cfg(target_vendor = "browser")]
+[host_provider(std::net::fetch)]
+[js("fetch")]
+micro fetch_browser(url: utf8): utf8 { return "" }
+"#,
+    )
+    .unwrap();
+
+    let error = WorkspaceResolver::discover(&app_dir)
+        .unwrap()
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::wasm(),
+            output_dir: None,
+        })
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("multiple visible providers"),
+        "cfg must not silently lose to an un-cfg sibling on the same target: {error}"
+    );
 }
 
 #[test]

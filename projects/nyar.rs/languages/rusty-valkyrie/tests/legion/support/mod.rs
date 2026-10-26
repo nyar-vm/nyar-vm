@@ -42,7 +42,339 @@ const CORE_PRIMITIVE_DECLARATIONS: &str = concat!(
 /// 写入夹具入口源码，并同时提供源级 primitive 声明。
 fn write_main_source(source_dir: &Path, source: &str) {
     fs::write(source_dir.join("main.v"), source).unwrap();
+    write_core_primitives(source_dir);
+}
+
+fn write_core_primitives(source_dir: &Path) {
     fs::write(source_dir.join("core_primitive.v"), CORE_PRIMITIVE_DECLARATIONS).unwrap();
+}
+
+/// Workspace：`app` + `std` + `std.adaptor.wasm`，入口经 `[main]` 调用 `std.math::random_next_i32`（browser wasm + JS glue）。
+pub fn create_browser_wasm_host_random_workspace(prefix: &str) -> SmokeProject {
+    let temp_dir = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let wasm_adaptor_dir = root.join("std.adaptor.wasm");
+    let std_dir = root.join("std");
+    let core_dir = root.join("core");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(wasm_adaptor_dir.join("source")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+    fs::create_dir_all(core_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "browser-wasm-host-random",
+    members: ["app", "std.adaptor.wasm", "std", "core"]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        core_dir.join("legion.von"),
+        r#"{
+    name: "core",
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    write_core_primitives(&core_dir.join("source"));
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    dependencies: { "core": "workspace" },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("random.v"),
+        r#"namespace std.math;
+[host_contract]
+micro random_next_i32(seed: i32): i32
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        wasm_adaptor_dir.join("legion.von"),
+        r#"{
+    name: "std.adaptor.wasm",
+    dependencies: { "std": "workspace", "core": "workspace" },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::create_dir_all(wasm_adaptor_dir.join("source").join("math").join("random")).unwrap();
+    fs::write(
+        wasm_adaptor_dir.join("source").join("math").join("random").join("Random.browser.v"),
+        r#"[cfg(target_vendor = "browser")]
+namespace std.adaptor.wasm;
+
+[host_provider(std::math::random_next_i32)]
+[js("random")]
+micro js_random_next_i32(seed: i32): i32
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "std.adaptor.wasm": "workspace",
+        "core": "workspace"
+    },
+    build: [{ target: "wasm32-unknown-browser-wasm", publish: ["web-app"] }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.math;
+[main]
+micro main() -> i32 {
+    return random_next_i32(1)
+}
+"#,
+    )
+    .unwrap();
+
+    SmokeProject { _temp_dir: temp_dir, project_dir: canonicalize_lossy(&app_dir) }
+}
+
+/// Workspace：`app` + `std` + `std.adaptor.wasi`，WASI 目标下由 WASI adaptor 绑定 random 合同（无 `env` guest import）。
+pub fn create_wasi_host_random_workspace(prefix: &str) -> SmokeProject {
+    let temp_dir = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let wasi_dir = root.join("std.adaptor.wasi");
+    let std_dir = root.join("std");
+    let core_dir = root.join("core");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(wasi_dir.join("source").join("math").join("random")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+    fs::create_dir_all(core_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "wasi-host-random",
+    members: ["app", "std.adaptor.wasi", "std", "core"]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        core_dir.join("legion.von"),
+        r#"{
+    name: "core",
+    build: [{ target: "wasi" }]
+}
+"#,
+    )
+    .unwrap();
+    write_core_primitives(&core_dir.join("source"));
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    dependencies: { "core": "workspace" },
+    build: [{ target: "wasi" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("random.v"),
+        r#"namespace std.math;
+[host_contract]
+micro random_next_i32(seed: i32): i32
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasi_dir.join("legion.von"),
+        r#"{
+    name: "std.adaptor.wasi",
+    dependencies: { "std": "workspace", "core": "workspace" },
+    sdk_vendor: {
+        organization: "valkyrie",
+        host: "wasi",
+        kind: "distribution-default",
+        targets: ["wasi", "wasip3"]
+    },
+    build: [{ target: "wasi" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasi_dir.join("source").join("math").join("random").join("Random.wasi.v"),
+        r#"[when(target.specification == "wasi")]
+namespace std.adaptor.wasi;
+
+[host_provider(std::math::random_next_i32)]
+micro wasi_random_next_i32(seed: i32): i32 {
+    return 0
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "std.adaptor.wasi": "workspace",
+        "core": "workspace"
+    },
+    build: [{ target: "wasi" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.math;
+[main]
+micro main() -> i32 {
+    return random_next_i32(1)
+}
+"#,
+    )
+    .unwrap();
+
+    SmokeProject { _temp_dir: temp_dir, project_dir: canonicalize_lossy(&app_dir) }
+}
+
+/// `std` 自带 `[host_contract]` 函数体作 Valkyrie fallback；不依赖任何 adaptor。
+pub fn create_valkyrie_fallback_random_workspace(prefix: &str) -> SmokeProject {
+    let temp_dir = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let std_dir = root.join("std");
+    let core_dir = root.join("core");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+    fs::create_dir_all(core_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "valkyrie-fallback-random",
+    members: ["app", "std", "core"]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        core_dir.join("legion.von"),
+        r#"{
+    name: "core",
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    write_core_primitives(&core_dir.join("source"));
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    dependencies: { "core": "workspace" },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("random.v"),
+        r#"namespace std.math;
+[host_contract]
+micro random_next_i32(seed: i32): i32 {
+    return seed
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "core": "workspace"
+    },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.math;
+[main]
+micro main() -> i32 {
+    return random_next_i32(1)
+}
+"#,
+    )
+    .unwrap();
+
+    SmokeProject { _temp_dir: temp_dir, project_dir: canonicalize_lossy(&app_dir) }
+}
+
+/// 与 [`create_browser_wasm_host_random_workspace`] 相同，但 `std` 有未引用的 `fetch_i32_stub` 合同，adaptor **`providers.v` 同文件** 含 fetch+random 两个 bodyless `[js]`；
+/// 入口只调用 random（planner + `prune_unselected_host_provider_external_calls`）。
+pub fn create_browser_wasm_dual_host_prune_workspace(prefix: &str) -> SmokeProject {
+    let fixture = create_browser_wasm_host_random_workspace(prefix);
+    let root = fixture.project_dir.parent().expect("workspace root");
+    let std_dir = root.join("std");
+    let wasm_adaptor_dir = root.join("std.adaptor.wasm");
+
+    fs::write(
+        std_dir.join("source").join("z_fetch_stub.v"),
+        r#"namespace std.hooks;
+[host_contract]
+micro fetch_i32_stub(path: i32): i32
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_adaptor_dir.join("source").join("providers.v"),
+        r#"namespace std.adaptor.wasm;
+
+[host_provider(std::hooks::fetch_i32_stub)]
+[js("fetch")]
+micro js_fetch_i32_stub(path: i32): i32
+
+[host_provider(std::math::random_next_i32)]
+[js("random")]
+micro js_random_next_i32(seed: i32): i32
+"#,
+    )
+    .unwrap();
+    let _ = fs::remove_file(
+        wasm_adaptor_dir
+            .join("source")
+            .join("math")
+            .join("random")
+            .join("Random.browser.v"),
+    );
+    fixture
 }
 
 pub fn create_smoke_project(prefix: &str) -> SmokeProject {

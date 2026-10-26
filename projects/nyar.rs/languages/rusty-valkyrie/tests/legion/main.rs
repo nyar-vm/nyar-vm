@@ -2,6 +2,7 @@
 
 // TODO: mod cache; mod cmds; mod forward; mod unity_export; — 私有实现测试，待公开 API 后再在 main 里 `mod` 接线
 mod legion_api_plan;
+mod legion_valkyrie_v_leetcode_plan;
 mod legion_artifact_formats;
 mod legion_cmds_bench;
 mod legion_cmds_bootstrap;
@@ -17,6 +18,8 @@ mod legion_cmds_test;
 mod legion_manifest;
 mod legion_pack_bootstrap_aliases;
 mod legion_planner;
+#[path = "../frontend/hir/hir_lowering_host_binding_pipeline_tests.rs"]
+mod hir_lowering_host_binding_pipeline_tests;
 mod legion_production_lane_build_contract;
 mod legion_production_lane_contract;
 mod legion_vcc_data_consumer_inventory;

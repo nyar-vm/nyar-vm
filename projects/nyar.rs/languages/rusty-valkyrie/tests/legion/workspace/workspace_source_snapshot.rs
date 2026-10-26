@@ -183,6 +183,8 @@ fn selected_host_provider_rewrites_contract_calls_in_snapshot_closure() {
         &[CompilerHostProviderBinding {
             contract: micro_declaration("demo", "demo.v", "write"),
             provider: micro_declaration("adaptor", "adaptor.v", "write"),
+            required_capabilities: vec![],
+            foreign_bindings: vec![],
         }],
     )
     .expect("Resolver 选定的 host provider 必须进入 Compiler 合同");

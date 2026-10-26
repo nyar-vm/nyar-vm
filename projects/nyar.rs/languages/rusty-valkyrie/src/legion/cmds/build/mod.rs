@@ -2,18 +2,18 @@
 //
 // 这里只负责装配与落盘；目标解释、后端注册和 lowering 均交给 `emitter`。
 use crate::{
-    compiler::emitter::pipeline::{CompilerBuildContext, CompilerHostProviderBinding, compile_source_groups_to_artifacts},
+    compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts},
     legion::{
         cmds::error::{LegionError, LegionResult},
         workspace::{
             labeled_report_with_context,
             manifest::{ProjectArtifactKind, ProjectManifest},
-            planner::{BuildPlan, BuildRequest, WorkspaceResolver},
+            planner::{BuildPlan, BuildRequest, WorkspaceResolver, compiler_host_provider_bindings},
             source_snapshot::compile_source_snapshot,
         },
     },
 };
-use nyar::{ArtifactSet, CanonicalSpecification, CanonicalTarget, ClrSuspendStrategy};
+use nyar::{ArtifactSet, CanonicalTarget, ClrSuspendStrategy};
 use nyar_emitter::DriverRunContract;
 use nyar_types::compiler_input::CompilerSourceInput;
 use serde::Serialize;
@@ -72,6 +72,20 @@ pub fn run(args: &BuildArgs) -> LegionResult<ExitCode> {
     println!("sources: {}", plan.project.source_files.len());
     println!("host contracts: {}", plan.project.host_contracts.len());
     println!("selected host providers: {}", plan.project.selected_host_providers.len());
+    let host_capabilities = {
+        let mut capabilities = plan
+            .project
+            .selected_host_providers
+            .iter()
+            .flat_map(|provider| provider.required_capabilities.iter().cloned())
+            .collect::<Vec<_>>();
+        capabilities.sort();
+        capabilities.dedup();
+        capabilities
+    };
+    if !host_capabilities.is_empty() {
+        println!("host capabilities: {}", host_capabilities.join(", "));
+    }
 
     if plan.project.source_files.is_empty() {
         return Err(LegionError::msg(report!("没有找到任何源码文件")));
@@ -254,18 +268,8 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     let clr_suspend_strategy = ClrSuspendStrategy::from_runtime_async_flag(plan.project.build_target.runtime_async);
     let wasm_package_kind = wasm_package_kind_for_manifest(plan.project.artifact_kind);
     fs::create_dir_all(&plan.output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", plan.output_dir.display())))?;
-    let host_bindings = plan
-        .project
-        .selected_host_providers
-        .iter()
-        .map(|provider| {
-            let contract = provider
-                .contract_key
-                .clone()
-                .ok_or_else(|| LegionError::msg(report!("选中的 host provider `{}` 缺少契约声明身份", provider.symbol)))?;
-            Ok(CompilerHostProviderBinding { contract, provider: provider.key.clone() })
-        })
-        .collect::<LegionResult<Vec<_>>>()?;
+    let host_bindings = compiler_host_provider_bindings(&plan.project.selected_host_providers)
+        .map_err(|error| LegionError::msg(report!("{error}")))?;
     let build_context = CompilerBuildContext::new(arch, plan.project.build_target.target.clone(), clr_suspend_strategy, wasm_package_kind)
         .with_selected_host_providers(host_bindings);
     let artifact = compile_source_groups_to_artifacts(
@@ -302,12 +306,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
 
 /// 编译期架构键：WASI 与 Node 同为 wasm32，但宿主不同，因此使用伪架构键 `"wasi"`。
 pub(crate) fn compile_arch(plan: &BuildPlan) -> &'static str {
-    if plan.project.build_target.target.specification == CanonicalSpecification::Wasi {
-        "wasi"
-    }
-    else {
-        plan.project.build_target.target.arch.as_str()
-    }
+    crate::legion::workspace::planner::compile_arch_key(&plan.project.build_target.target)
 }
 
 fn write_compile_evidence(output_dir: &Path, evidence: &crate::compiler::emitter::pipeline::CompilerCompileEvidence) -> LegionResult<()> {
@@ -361,6 +360,8 @@ struct HostSelectionEntry {
     provider: String,
     source_file: String,
     line: usize,
+    required_capabilities: Vec<String>,
+    foreign_bindings: Vec<String>,
 }
 
 fn write_host_selection_spec(output_dir: &Path, providers: &[crate::legion::workspace::planner::PlannedHostProvider]) -> LegionResult<()> {
@@ -372,6 +373,8 @@ fn write_host_selection_spec(output_dir: &Path, providers: &[crate::legion::work
             provider: item.symbol.clone(),
             source_file: item.source_file.display().to_string(),
             line: item.line,
+            required_capabilities: item.required_capabilities.clone(),
+            foreign_bindings: item.foreign_bindings.clone(),
         })
         .collect();
     let content = write_von_indented(&entries).map_err(|error| {
