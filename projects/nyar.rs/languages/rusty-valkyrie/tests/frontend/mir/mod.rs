@@ -1,0 +1,12 @@
+//! mir modules.
+
+mod mir_ssa_builtin_helpers_tests;
+mod mir_ssa_match_lowering_bottom_type_tests;
+mod mir_ssa_value_semantics_strict_layout_tests;
+mod valkyrie_mir_analysis_contract_tests;
+mod valkyrie_mir_ssa_call_type_contract_tests;
+mod valkyrie_mir_ssa_declaration_contract_tests;
+mod valkyrie_mir_ssa_field_contract_tests;
+mod valkyrie_mir_ssa_singleton_tests;
+mod valkyrie_mir_ssa_workload_phase_tests;
+mod valkyrie_mir_sum;

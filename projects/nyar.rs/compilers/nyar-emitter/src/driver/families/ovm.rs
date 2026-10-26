@@ -1,7 +1,6 @@
 use std::fs;
 
-use crate::nyar_backend_vm::emit_nyar_module;
-use miette::{IntoDiagnostic, Result, WrapErr, miette};
+use crate::{Result, nyar_backend_vm::emit_nyar_module};
 use nyar::{ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane};
 use odin_bytecode::{NyarExportKind, NyarModuleData};
 
@@ -18,16 +17,14 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
     fn compile(&self, request: DriverCompileRequest<'_>) -> Result<DriverCompileReport> {
         let DriverBackendInput::Ovm(input) = request.input
         else {
-            return Err(miette!("`ovm` 家族请求必须携带 `OvmBackendInput`"));
+            return Err("`ovm` 家族请求必须携带 `OvmBackendInput`".to_string());
         };
 
         let mut artifacts = ArtifactSet::default();
         let mut entry_symbol = None;
         let mut run_contracts = Vec::new();
 
-        fs::create_dir_all(&input.output_dir)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("创建输出目录失败：{}", input.output_dir.display()))?;
+        fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
         if let Some(module) = input.nyar_module.as_ref() {
             let entries = resolve_entry_symbols(module, &input.library_public_exports)?;
@@ -60,11 +57,11 @@ pub fn resolve_entry_symbols(module: &NyarModuleData, library_public_exports: &[
         let matches: Vec<_> =
             module.exports.iter().filter(|export| export.kind == NyarExportKind::Function && export.symbol_name == *entry).collect();
         if matches.len() != 1 {
-            return Err(miette!("Nyar 入口 `{entry}` 必须对应唯一明确函数导出"));
+            return Err(format!("Nyar 入口 `{entry}` 必须对应唯一明确函数导出"));
         }
-        let index = usize::try_from(matches[0].function_index).map_err(|_| miette!("Nyar 入口 `{entry}` 的函数索引无效"))?;
+        let index = usize::try_from(matches[0].function_index).map_err(|_| format!("Nyar 入口 `{entry}` 的函数索引无效"))?;
         if module.functions.get(index).is_none() {
-            return Err(miette!("Nyar 入口 `{entry}` 的函数索引越界"));
+            return Err(format!("Nyar 入口 `{entry}` 的函数索引越界"));
         }
     }
     Ok(entries)

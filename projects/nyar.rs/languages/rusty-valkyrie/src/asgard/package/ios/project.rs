@@ -98,4 +98,3 @@ fn info_plist(bundle_id: &str, display_name: &str) -> String {
 "#
     )
 }
-

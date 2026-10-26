@@ -12,7 +12,6 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-clap = { workspace = true }
 napi.workspace = true
 napi-derive.workspace = true
 rusty-valkyrie = { workspace = true }

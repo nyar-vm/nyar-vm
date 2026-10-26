@@ -1,2 +1,0 @@
-let x = 10
-let result = if x > 0 { "positive" } else { "non-positive" }

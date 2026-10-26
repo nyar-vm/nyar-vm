@@ -1,23 +1,19 @@
+use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{fs, path::PathBuf, process::ExitCode};
 
-use clap::Args;
-use miette::{IntoDiagnostic, Result};
-
-use crate::workspace::planner::WorkspaceResolver;
+use crate::legion::workspace::planner::WorkspaceResolver;
 
 /// `legion clean` arguments.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct CleanArgs {
     /// Project directory.
-    #[arg(value_name = "project-dir", default_value = ".")]
     pub project_dir: PathBuf,
     /// Clean all workspace members.
-    #[arg(long, default_value_t = false)]
     pub workspace: bool,
 }
 
 /// Run `legion clean`.
-pub fn run(args: &CleanArgs) -> Result<ExitCode> {
+pub fn run(args: &CleanArgs) -> LegionResult<ExitCode> {
     if args.workspace {
         let workspace = WorkspaceResolver::discover(&args.project_dir)?;
         let mut cleaned = 0usize;
@@ -33,17 +29,15 @@ pub fn run(args: &CleanArgs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn clean_project_dirs(project_dir: &PathBuf) -> Result<usize> {
+fn clean_project_dirs(project_dir: &PathBuf) -> LegionResult<usize> {
     let mut cleaned = 0usize;
     for relative in ["dist", ".cache"] {
         let path = project_dir.join(relative);
         if path.is_dir() {
-            fs::remove_dir_all(&path).into_diagnostic()?;
+            fs::remove_dir_all(&path)?;
             println!("clean: {}", path.display());
             cleaned += 1;
         }
     }
     Ok(cleaned)
 }
-
-

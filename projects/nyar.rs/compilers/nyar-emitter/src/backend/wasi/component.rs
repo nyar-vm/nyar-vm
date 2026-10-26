@@ -5,7 +5,7 @@ use std::{
     process::Command,
 };
 
-use miette::{IntoDiagnostic, Result, WrapErr};
+use crate::{EmitterError, Result};
 use nyar::{
     abstractions::ArtifactFormat,
     packaging::{ArtifactDescriptor, TargetLane},
@@ -81,23 +81,17 @@ pub(crate) fn write_component_wit_package_for(
 ) -> Result<PathBuf> {
     let package_dir = output_dir.join(format!("{}.component-wit", artifact_name));
     if package_dir.exists() {
-        fs::remove_dir_all(&package_dir)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("清理旧的 WIT package 目录失败：{}", package_dir.display()))?;
+        fs::remove_dir_all(&package_dir).map_err(|e| format!("清理旧的 WIT package 目录失败：{}: {e}", package_dir.display()))?;
     }
-    fs::create_dir_all(package_dir.join("deps"))
-        .into_diagnostic()
-        .wrap_err_with(|| format!("创建 WIT package 目录失败：{}", package_dir.display()))?;
+    fs::create_dir_all(package_dir.join("deps")).map_err(|e| format!("创建 WIT package 目录失败：{}: {e}", package_dir.display()))?;
 
     let wit_path = package_dir.join("component.wit");
     let wit_text = build_component_wit_document_for(artifact_name, imports, preview);
-    fs::write(&wit_path, wit_text).into_diagnostic().wrap_err_with(|| format!("写入 `WIT` 接口描述失败：{}", wit_path.display()))?;
+    fs::write(&wit_path, wit_text).map_err(|e| format!("写入 `WIT` 接口描述失败：{}: {e}", wit_path.display()))?;
 
     for (file_name, dependency_text) in build_dependency_documents_for(imports, preview) {
         let dependency_path = package_dir.join("deps").join(file_name);
-        fs::write(&dependency_path, dependency_text)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("写入 `WIT` 依赖失败：{}", dependency_path.display()))?;
+        fs::write(&dependency_path, dependency_text).map_err(|e| format!("写入 `WIT` 依赖失败：{}: {e}", dependency_path.display()))?;
     }
 
     Ok(package_dir)
@@ -108,13 +102,11 @@ pub(crate) fn package_core_wasm_as_component(core_wasm_path: &Path, wit_package_
     // compiler can hand us relative paths, so normalize all paths before
     // passing them to avoid resolving `tmp/foo/tmp/foo/...`.
     let output_parent = output_path.parent().unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(output_parent)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("无法创建 WASI component 输出目录: {}", output_parent.display()))?;
-    let output_parent = fs::canonicalize(output_parent).into_diagnostic().wrap_err("无法解析 WASI component 输出目录")?;
+    fs::create_dir_all(output_parent).map_err(|e| format!("无法创建 WASI component 输出目录: {}: {e}", output_parent.display()))?;
+    let output_parent = fs::canonicalize(output_parent).map_err(|e| format!("无法解析 WASI component 输出目录: {e}"))?;
     let output_path = output_parent.join(output_path.file_name().unwrap_or_default());
-    let core_wasm_path = fs::canonicalize(core_wasm_path).into_diagnostic().wrap_err("无法解析 WASI core wasm 路径")?;
-    let wit_package_path = fs::canonicalize(wit_package_path).into_diagnostic().wrap_err("无法解析 WASI WIT package 路径")?;
+    let core_wasm_path = fs::canonicalize(core_wasm_path).map_err(|e| format!("无法解析 WASI core wasm 路径: {e}"))?;
+    let wit_package_path = fs::canonicalize(wit_package_path).map_err(|e| format!("无法解析 WASI WIT package 路径: {e}"))?;
     let embedded_path = output_path.with_extension("embedded.core.wasm");
 
     run_wasm_tools(
@@ -148,14 +140,14 @@ fn run_wasm_tools<const N: usize>(args: [&str; N], cwd: Option<&Path>, failure_m
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
-    let output = command.output().into_diagnostic().wrap_err("调用 `wasm-tools` 失败")?;
+    let output = command.output().map_err(|e| format!("调用 `wasm-tools` 失败: {e}"))?;
     if output.status.success() {
         return Ok(());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(miette::miette!("{failure_message}\ncommand: wasm-tools {}\nstdout:\n{}\nstderr:\n{}", args.join(" "), stdout, stderr,))
+    Err(format!("{failure_message}\ncommand: wasm-tools {}\nstdout:\n{}\nstderr:\n{}", args.join(" "), stdout, stderr,))
 }
 
 #[doc(hidden)]

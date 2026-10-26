@@ -1,7 +1,6 @@
 //! `PublishFormat` / 文件扩展名与 `ArtifactFormat` 的登记映射（与 `legion` GPU lane 对齐）。
 
-use nyar::abstractions::ArtifactFormat;
-use rusty_valkyrie::PublishFormat;
+use nyar::{PublishFormat, abstractions::ArtifactFormat};
 
 /// 返回标准 slug（`spirv-module`、`dxil-container` 等）。
 pub fn artifact_format_slug(format: ArtifactFormat) -> &'static str {
@@ -32,4 +31,3 @@ pub fn artifact_formats_for_publish_format(format: PublishFormat) -> &'static [A
         _ => &[],
     }
 }
-

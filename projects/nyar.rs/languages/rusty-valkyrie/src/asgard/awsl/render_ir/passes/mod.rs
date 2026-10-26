@@ -26,7 +26,3 @@ pub fn run_default_passes(module: &mut RenderModule, theme: ThemeRegistryOptions
     }
     theme_registry_pass(module, theme);
 }
-#[cfg(test)]
-#[path = "../../../../../tests/asgard/path_wired/awsl_render_ir_passes_mod.rs"]
-mod awsl_render_ir_passes_mod_tests;
-

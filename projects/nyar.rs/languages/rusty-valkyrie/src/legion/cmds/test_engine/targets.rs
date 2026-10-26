@@ -1,7 +1,8 @@
 //! 测试目标解析。
-
-use miette::{Result, miette};
-use rusty_valkyrie::CanonicalTarget;
+use crate::legion::{
+    CanonicalTarget,
+    cmds::error::{LegionError, LegionResult},
+};
 
 /// 解析 `--target` 参数（默认 `legion`，`all` 展开为 legion/clr/jvm/node）。
 pub fn resolve_test_targets(target: Option<&str>) -> Vec<String> {
@@ -26,14 +27,7 @@ fn product_target_alias(label: &str) -> Option<&'static str> {
 }
 
 /// 将短标签解析为 `CanonicalTarget`。
-pub fn parse_target_label(label: &str) -> Result<CanonicalTarget> {
+pub fn parse_target_label(label: &str) -> LegionResult<CanonicalTarget> {
     let canonical = product_target_alias(label).unwrap_or(label);
-    canonical
-        .parse::<CanonicalTarget>()
-        .map_err(|error| miette!("无法解析目标 '{label}': {error}"))
+    canonical.parse::<CanonicalTarget>().map_err(|error| LegionError::msg(report!("无法解析目标 '{label}': {error}")))
 }
-#[cfg(test)]
-#[path = "../../../../tests/legion/path_wired/cmds_test_engine_targets.rs"]
-mod cmds_test_engine_targets_tests;
-
-

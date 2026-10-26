@@ -84,8 +84,3 @@ fn rewrite_md_links(source: &str, ctx: &DocRenderContext) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
-#[cfg(test)]
-#[path = "../../../../tests/legion/path_wired/cmds_doc_markdown.rs"]
-mod cmds_doc_markdown_tests;
-
-

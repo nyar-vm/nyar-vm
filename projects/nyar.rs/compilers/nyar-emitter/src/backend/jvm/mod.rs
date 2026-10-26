@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use miette::{IntoDiagnostic, Result, WrapErr};
+use crate::{EmitterError, Result};
 use nyar::{
     abstractions::{ArtifactFormat, BackendInputKind, BinaryArch, BinaryFlavor, BinaryTarget, TargetFamily},
     backends::{BackendDescriptor, CompilationOptions, TargetCodeGenBackend},
@@ -71,57 +71,50 @@ impl TargetCodeGenBackend for JvmBinaryBackend {
 
     fn validate(&self, input: &Self::Input) -> Result<()> {
         if input.class_file.internal_name.trim().is_empty() {
-            return Err(miette::miette!("JVM 后端需要有效的主类内部名"));
+            return Err(format!("JVM 后端需要有效的主类内部名"));
         }
         if input.class_file.methods.is_empty() {
-            return Err(miette::miette!("JVM 后端至少需要一个方法"));
+            return Err(format!("JVM 后端至少需要一个方法"));
         }
         Ok(())
     }
 
     fn compile(&self, input: Self::Input, options: &CompilationOptions) -> Result<ArtifactSet> {
-        std::fs::create_dir_all(&input.output_dir)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("创建输出目录失败：{}", input.output_dir.display()))?;
+        std::fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
         let mut class_file = input.class_file;
         ensure_java_launcher_entry(&mut class_file);
 
-        let class_bytes = class_file.to_bytes().map_err(|error| miette::miette!("JVM class 编码失败：{error}"))?;
+        let class_bytes = class_file.to_bytes().map_err(|error| format!("JVM class 编码失败：{error}"))?;
 
         if input.emit_class_file {
             let relative = format!("{}.class", class_file.internal_name.trim_end_matches(".class"));
             let class_path = input.output_dir.join(&relative);
             if let Some(parent) = class_path.parent() {
-                std::fs::create_dir_all(parent).into_diagnostic().wrap_err_with(|| format!("创建 class 输出目录失败：{}", parent.display()))?;
+                std::fs::create_dir_all(parent).map_err(|e| format!("创建 class 输出目录失败：{}: {e}", parent.display()))?;
             }
-            std::fs::write(&class_path, &class_bytes)
-                .into_diagnostic()
-                .wrap_err_with(|| format!("写入 class 文件失败：{}", class_path.display()))?;
+            std::fs::write(&class_path, &class_bytes).map_err(|e| format!("写入 class 文件失败：{}: {e}", class_path.display()))?;
             for companion in &input.companion_classes {
                 let companion_relative = format!("{}.class", companion.internal_name.trim_end_matches(".class"));
                 let companion_path = input.output_dir.join(&companion_relative);
                 if let Some(parent) = companion_path.parent() {
-                    std::fs::create_dir_all(parent)
-                        .into_diagnostic()
-                        .wrap_err_with(|| format!("创建 companion class 输出目录失败：{}", parent.display()))?;
+                    std::fs::create_dir_all(parent).map_err(|e| format!("创建 companion class 输出目录失败：{}: {e}", parent.display()))?;
                 }
-                let companion_bytes = companion.to_bytes().map_err(|error| miette::miette!("JVM companion class 编码失败：{error}"))?;
+                let companion_bytes = companion.to_bytes().map_err(|error| format!("JVM companion class 编码失败：{error}"))?;
                 std::fs::write(&companion_path, companion_bytes)
-                    .into_diagnostic()
-                    .wrap_err_with(|| format!("写入 companion class 失败：{}", companion_path.display()))?;
+                    .map_err(|e| format!("写入 companion class 失败：{}: {e}", companion_path.display()))?;
             }
         }
 
         let jar_path = input.output_dir.join(format!("{}.jar", options.artifact_name));
         let mut package = JvmJarPackage::new(format!("{}.jar", options.artifact_name));
         package.main_class = Some(internal_name_to_binary_name(&class_file.internal_name));
-        package.push_class(&class_file).map_err(|error| miette::miette!("JAR 打包失败：{error}"))?;
+        package.push_class(&class_file).map_err(|error| format!("JAR 打包失败：{error}"))?;
         for companion in &input.companion_classes {
-            package.push_class(companion).map_err(|error| miette::miette!("JAR 打包 singleton 类失败：{error}"))?;
+            package.push_class(companion).map_err(|error| format!("JAR 打包 singleton 类失败：{error}"))?;
         }
-        let jar_bytes = package.to_bytes().map_err(|error| miette::miette!("JAR 编码失败：{error}"))?;
-        std::fs::write(&jar_path, jar_bytes).into_diagnostic().wrap_err_with(|| format!("写入 JAR 文件失败：{}", jar_path.display()))?;
+        let jar_bytes = package.to_bytes().map_err(|error| format!("JAR 编码失败：{error}"))?;
+        std::fs::write(&jar_path, jar_bytes).map_err(|e| format!("写入 JAR 文件失败：{}: {e}", jar_path.display()))?;
 
         let mut artifacts = ArtifactSet::default();
         artifacts.push(ArtifactDescriptor {

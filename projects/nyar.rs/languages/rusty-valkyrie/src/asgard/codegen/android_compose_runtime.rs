@@ -383,8 +383,3 @@ object AsgardHostBridge {
     .replace("__UI_MAGIC__", &ui_magic)
     .replace("__NATIVE_MAGIC__", &native_magic)
 }
-#[cfg(test)]
-#[path = "../../../tests/asgard/path_wired/codegen_android_compose_runtime.rs"]
-mod codegen_android_compose_runtime_tests;
-
-

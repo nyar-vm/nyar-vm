@@ -16,6 +16,9 @@ mod nullable_profiles;
 mod target_execution_plan;
 pub mod target_operator;
 
+mod error;
+pub use error::{EmitterError, Result};
+
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -29,7 +32,6 @@ pub use backend::{
     clr as nyar_backend_clr, jvm as nyar_backend_jvm, native as nyar_backend_native, vm as nyar_backend_vm, wasi as nyar_backend_wasi,
     wasm_js_glue as nyar_backend_wasm_js_glue,
 };
-use miette::{Result, miette};
 use nyar::{
     BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget, CapabilityTag, ClrSuspendStrategy,
     ExternalCallEdge, ExternalImportLink, HostProjectionBoundary, Identifier, InternalCallEdge, PartitionBackendRequirement, ProjectionPolicy,
@@ -59,7 +61,7 @@ pub use nyar::ArtifactPartition;
 /// Integration-test support wrappers for crate-internal lowering and compile flows.
 #[doc(hidden)]
 pub mod testing {
-    use miette::Result;
+    use crate::Result;
     use nyar::{PartitionBackendRequirement, backends::CompilationOptions};
 
     use super::{
@@ -116,7 +118,7 @@ pub mod testing {
 
     /// Lower a fragment submission to a Nyar VM module.
     #[cfg(feature = "ovm-lane")]
-    pub fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData, miette::Report> {
+    pub fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData> {
         super::lowering::testing_lower_fragment_to_nyar_module(submission)
     }
 
@@ -129,8 +131,8 @@ pub mod testing {
     pub fn lower_fragment_to_wasm_module(
         submission: &FragmentSubmission,
         host_boundary: nyar::HostProjectionBoundary,
-    ) -> Result<(WasmBinaryModule, Vec<(String, String)>), miette::Report> {
-        super::lowering::testing_lower_fragment_to_wasm_module(submission, host_boundary).map_err(|error| miette::miette!("{error}"))
+    ) -> Result<(WasmBinaryModule, Vec<(String, String)>)> {
+        super::lowering::testing_lower_fragment_to_wasm_module(submission, host_boundary).map_err(|error| format!("{error}"))
     }
 
     /// Append singleton metadata custom sections to an existing WASM module.
@@ -171,10 +173,7 @@ pub mod testing {
 
     /// Re-export Nyar VM entry resolution for driver-family contract tests.
     #[cfg(feature = "ovm-lane")]
-    pub fn resolve_nyar_entry_symbols(
-        module: &odin_bytecode::NyarModuleData,
-        library_public_exports: &[String],
-    ) -> miette::Result<Vec<String>> {
+    pub fn resolve_nyar_entry_symbols(module: &odin_bytecode::NyarModuleData, library_public_exports: &[String]) -> crate::Result<Vec<String>> {
         super::driver::families::ovm::resolve_entry_symbols(module, library_public_exports)
     }
 
@@ -390,7 +389,7 @@ pub enum BackendBoundaryError {
 }
 
 /// 校验 backend 输入形状是否已经满足后端边界。
-pub fn validate_backend_input(shape: BackendInputShape) -> Result<(), BackendBoundaryError> {
+pub fn validate_backend_input(shape: BackendInputShape) -> std::result::Result<(), BackendBoundaryError> {
     if shape.contains_open_row_evidence {
         return Err(BackendBoundaryError::OpenRowEvidence);
     }
@@ -401,7 +400,7 @@ pub fn validate_backend_input(shape: BackendInputShape) -> Result<(), BackendBou
 }
 
 /// 校验指定路由是否支持当前分发形态。
-pub fn validate_dispatch_for_route(route: BackendRoute, dispatch: BackendDispatchKind) -> Result<(), BackendBoundaryError> {
+pub fn validate_dispatch_for_route(route: BackendRoute, dispatch: BackendDispatchKind) -> std::result::Result<(), BackendBoundaryError> {
     match (route, dispatch) {
         (_, BackendDispatchKind::Static) => Ok(()),
         (BackendRoute::WitnessCapable | BackendRoute::Full, BackendDispatchKind::Witness) => Ok(()),
@@ -547,12 +546,12 @@ impl LoweredBackendInput {
         host_flavor: &str,
         wasm_package_kind: nyar_backend_wasi::WasmPackageKind,
     ) -> Result<Self> {
-        validate_backend_input(BackendInputShape::default()).map_err(|error| miette!("backend boundary 输入形状不合法: {error:?}"))?;
+        validate_backend_input(BackendInputShape::default()).map_err(|error| format!("backend boundary 输入形状不合法: {error:?}"))?;
         let backend_route = bundled_backend_capability_descriptor(backend_family)
             .map(|descriptor| descriptor.backend_route)
             .unwrap_or(BackendRoute::StaticOnly);
         validate_dispatch_for_route(backend_route, BackendDispatchKind::Static)
-            .map_err(|error| miette!("backend boundary 分发形态不合法: {error:?}"))?;
+            .map_err(|error| format!("backend boundary 分发形态不合法: {error:?}"))?;
         Ok(Self {
             input: lower_fragment_to_driver_input(
                 submission,
@@ -581,7 +580,7 @@ impl LoweredBackendInput {
         wasm_package_kind: nyar_backend_wasi::WasmPackageKind,
     ) -> Result<Self> {
         let submission =
-            crate::assembly::fragment_submission_from_assembled(payload).map_err(|error| miette!("后端私有计划生产失败: {error}"))?;
+            crate::assembly::fragment_submission_from_assembled(payload).map_err(|error| format!("后端私有计划生产失败: {error}"))?;
         Self::from_fragment_submission(&submission, backend_family, host_boundary, output_dir, host_flavor, wasm_package_kind)
     }
 
@@ -684,7 +683,7 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
     for partition_index in 0..partition_count {
         let partition_started_at = std::time::Instant::now();
         let partition =
-            request.planned_partitions.partition(partition_index).ok_or_else(|| miette!("分区索引 `{partition_index}` 超出范围"))?;
+            request.planned_partitions.partition(partition_index).ok_or_else(|| format!("分区索引 `{partition_index}` 超出范围"))?;
         eprintln!(
             "[seed-debug] compiling partition {}/{} name={} backend={:?}",
             partition_index + 1,
@@ -694,7 +693,7 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         );
         let lowering_started_at = std::time::Instant::now();
         let fragment = request.bundle.assemble_fragment_for_partition(partition_index)?;
-        let host_flavor = request.bundle.target_host_flavor().ok_or_else(|| miette!("分区计划缺少目标 host flavor"))?;
+        let host_flavor = request.bundle.target_host_flavor().ok_or_else(|| format!("分区计划缺少目标 host flavor"))?;
         let lowered_input = LoweredBackendInput::from_assembled_fragment(
             fragment,
             backend_family_for_partition(partition),
@@ -725,7 +724,7 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         }
 
         let requirement =
-            request.planned_partitions.backend_requirement(partition_index).ok_or_else(|| miette!("分区 `{}` 缺少后端需求", partition.name))?;
+            request.planned_partitions.backend_requirement(partition_index).ok_or_else(|| format!("分区 `{}` 缺少后端需求", partition.name))?;
         let backend_started_at = std::time::Instant::now();
         let report = compile_with_bundled_backends(DriverCompileRequest {
             artifact_name: &artifact_name,

@@ -2,7 +2,7 @@ use super::{
     AstTraverser, ClassInfo, DocumentState, GlobalSymbol, IdentifierFinder, MemberInfo, ParameterInfo, ServerState, SymbolFinder, SymbolInfo,
     TypeSignature, VisitorContext,
 };
-use crate::types::Position;
+use crate::compiler::types::Position;
 use oak_lsp::types::LocationRange;
 use std::sync::Arc;
 

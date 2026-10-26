@@ -1,29 +1,24 @@
+use crate::legion::cmds::{
+    build::{BuildArgs, run as run_build},
+    error::{LegionError, LegionResult},
+};
 use std::process::ExitCode;
 
-use clap::Args;
-use miette::Result;
-
-use crate::legion::cmds::build::{BuildArgs, run as run_build};
-
 /// `legion check` arguments (compile / plan validation, currently reuses build).
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct CheckArgs {
     /// Project directory.
-    #[arg(value_name = "project-dir", default_value = ".")]
     pub project_dir: std::path::PathBuf,
     /// Target platform.
-    #[arg(long, default_value = "clr")]
-    pub target: rusty_valkyrie::CanonicalTarget,
+    pub target: crate::legion::CanonicalTarget,
     /// Force workspace resolution.
-    #[arg(long, default_value_t = false)]
     pub workspace: bool,
     /// Verbose progress (maps to build debug artifacts currently unused).
-    #[arg(long, default_value_t = false)]
     pub verbose: bool,
 }
 
 /// Run `legion check`.
-pub fn run(args: &CheckArgs) -> Result<ExitCode> {
+pub fn run(args: &CheckArgs) -> LegionResult<ExitCode> {
     println!("check：验证项目可编译性（复用 build）");
     let build_args = BuildArgs {
         project_dir: args.project_dir.clone(),
@@ -34,5 +29,3 @@ pub fn run(args: &CheckArgs) -> Result<ExitCode> {
     };
     run_build(&build_args)
 }
-
-

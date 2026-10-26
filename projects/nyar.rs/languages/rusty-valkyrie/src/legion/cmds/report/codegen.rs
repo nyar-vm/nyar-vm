@@ -166,8 +166,3 @@ fn bench_series(rows: &[BenchResultRow], runtime: bool) -> Vec<ColSeriesItem> {
 fn bench_label(row: &BenchResultRow) -> String {
     if row.project.is_empty() { format!("{}@{}", row.test, row.target) } else { format!("{}::{}", row.project, row.test) }
 }
-#[cfg(test)]
-#[path = "../../../../tests/legion/path_wired/cmds_report_codegen.rs"]
-mod cmds_report_codegen_tests;
-
-

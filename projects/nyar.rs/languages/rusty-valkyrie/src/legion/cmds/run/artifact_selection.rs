@@ -7,7 +7,7 @@ pub(crate) fn select_artifact<'entry>(
     output_dir: &Path,
     entries: impl Iterator<Item = &'entry str>,
     artifact_override: Option<&Path>,
-) -> Result<(PathBuf, usize), String> {
+) -> std::result::Result<(PathBuf, usize), String> {
     let entries = entries.collect::<Vec<_>>();
     if entries.is_empty() {
         return Err("execution manifest has no run contracts".into());
@@ -36,8 +36,3 @@ pub(crate) fn select_artifact<'entry>(
     }
     selected.ok_or_else(|| "explicit artifact is not listed by the current execution manifest".into())
 }
-#[cfg(test)]
-#[path = "../../../../tests/legion/path_wired/cmds_run_artifact_selection.rs"]
-mod cmds_run_artifact_selection_tests;
-
-

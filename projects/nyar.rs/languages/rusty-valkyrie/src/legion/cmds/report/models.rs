@@ -64,4 +64,3 @@ pub struct BenchReport {
     /// 结果列表。
     pub rows: Vec<BenchResultRow>,
 }
-

@@ -11,7 +11,7 @@ mod witness_dispatch;
 
 use std::{collections::BTreeSet, path::PathBuf};
 
-use miette::{IntoDiagnostic, Result, WrapErr};
+use crate::{EmitterError, Result};
 use nyar::{
     HostProjectionBoundary,
     abstractions::{ArtifactFormat, BackendInputKind, BinaryTarget},
@@ -111,24 +111,20 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
         match input.host_boundary {
             HostProjectionBoundary::WasmJsGlue | HostProjectionBoundary::WasiComponent => {}
             other => {
-                return Err(miette::miette!("`WASM` 后端只支持 `WasmJsGlue/WasiComponent`，实际得到 {:?}", other));
+                return Err(format!("`WASM` 后端只支持 `WasmJsGlue/WasiComponent`，实际得到 {:?}", other));
             }
         };
 
         // This is intentionally a physical gate, separate from Semantic MIR
         // validation: malformed section bytes or a stale glue-import list must
         // be rejected before any artifact is written.
-        let bytes = input.module.to_bytes().map_err(|error| miette::miette!("WASM 预发射编码失败：{error}"))?;
-        let decoded = WasmBinaryModule::from_bytes(&bytes).map_err(|error| miette::miette!("WASM 预发射结构验证失败：{error}"))?;
+        let bytes = input.module.to_bytes().map_err(|error| format!("WASM 预发射编码失败：{error}"))?;
+        let decoded = WasmBinaryModule::from_bytes(&bytes).map_err(|error| format!("WASM 预发射结构验证失败：{error}"))?;
         let actual_imports: BTreeSet<_> = parse_import_section(&decoded).into_iter().map(|item| (item.module, item.field)).collect();
         for expected in &input.imports {
             let physical = wasi_core_import_name(expected, input.wasi_preview);
             if !actual_imports.contains(&physical) {
-                return Err(miette::miette!(
-                    "WASM glue import metadata declares `{}.{}`, but core module does not import it",
-                    expected.0,
-                    expected.1
-                ));
+                return Err(format!("WASM glue import metadata declares `{}.{}`, but core module does not import it", expected.0, expected.1));
             }
         }
         let exports: BTreeSet<_> = parse_export_section(&decoded).into_iter().map(|item| item.name).collect();
@@ -142,30 +138,25 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
             if !input.library_wasm_exports.is_empty() && input.library_wasm_exports.iter().all(|name| exports.contains(name)) {
                 return Ok(());
             }
-            return Err(miette::miette!("WASM pre-emission verifier: required `{required_entry}` function export is absent"));
+            return Err(format!("WASM pre-emission verifier: required `{required_entry}` function export is absent"));
         }
         Ok(())
     }
 
     fn compile(&self, input: Self::Input, options: &CompilationOptions) -> Result<ArtifactSet> {
-        std::fs::create_dir_all(&input.output_dir)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("创建输出目录失败：{}", input.output_dir.display()))?;
+        std::fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
         let artifact_stem = canonical_wasm_artifact_stem(&options.artifact_name);
-        let wasm_bytes = input.module.to_bytes().map_err(|error| miette::miette!("WASM 写入失败：{error}"))?;
+        let wasm_bytes = input.module.to_bytes().map_err(|error| format!("WASM 写入失败：{error}"))?;
         match input.host_boundary {
             HostProjectionBoundary::WasmJsGlue => {
                 let wasm_path = input.output_dir.join(format!("{artifact_stem}.wasm"));
-                std::fs::write(&wasm_path, wasm_bytes)
-                    .into_diagnostic()
-                    .wrap_err_with(|| format!("写入 WASM 文件失败：{}", wasm_path.display()))?;
+                std::fs::write(&wasm_path, wasm_bytes).map_err(|e| format!("写入 WASM 文件失败：{}: {e}", wasm_path.display()))?;
             }
             HostProjectionBoundary::WasiComponent => {
                 let core_wasm_path = input.output_dir.join(format!("{artifact_stem}.core.wasm"));
                 std::fs::write(&core_wasm_path, wasm_bytes)
-                    .into_diagnostic()
-                    .wrap_err_with(|| format!("写入 core WASM 文件失败：{}", core_wasm_path.display()))?;
+                    .map_err(|e| format!("写入 core WASM 文件失败：{}: {e}", core_wasm_path.display()))?;
                 // WASI command world requires nullary `run`. Param-taking entries
                 // emit core only; a separate nullary entry that reads wasi:cli argv
                 // becomes the `.wasi` command component.
@@ -177,7 +168,7 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
                 }
             }
             other => {
-                return Err(miette::miette!("`WASM` 后端不支持的 host boundary：{:?}", other));
+                return Err(format!("`WASM` 后端不支持的 host boundary：{:?}", other));
             }
         }
 

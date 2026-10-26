@@ -1,7 +1,7 @@
 use super::utils::span_to_range_usize;
 use crate::{
     state::{DocumentState, ServerState},
-    types::Position,
+    compiler::types::Position,
 };
 use oak_lsp::types::LocationRange;
 use oak_valkyrie::ast::*;

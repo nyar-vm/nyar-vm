@@ -1,7 +1,7 @@
 /// 诊断信息管理。
 ///
 /// 将编译器诊断转换为 LSP 诊断格式。
-use crate::types::{HelpMessage, LabeledSpan, ReportKind, ValkyrieError, ValkyrieErrorKind};
+use crate::compiler::types::{HelpMessage, LabeledSpan, ReportKind, ValkyrieError, ValkyrieErrorKind};
 use core::range::Range;
 use oak_lsp::types::{Diagnostic, DiagnosticSeverity};
 
@@ -324,7 +324,7 @@ impl DiagnosticFilterConfig {
 /// 错误码工具。
 pub mod error_code_utils {
     use super::ERROR_CODE_PREFIX;
-    use crate::types::ValkyrieErrorKind;
+    use crate::compiler::types::ValkyrieErrorKind;
 
     /// 解析错误码字符串。
     pub fn parse_error_code(code: &str) -> Option<u32> {

@@ -69,4 +69,3 @@ pub fn generate_index_html(config: &VoaConfig, components: &[LoweredComponent], 
 
     HtmlOutput { content, relative_path: "index.html".into() }
 }
-

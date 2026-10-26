@@ -24,11 +24,10 @@ pub(crate) use sections::{
 };
 
 use crate::{
-    FragmentSubmission,
+    EmitterError, FragmentSubmission, Result,
     backend_plan_views::ExecutableConstant,
     nyar_backend_wasi::{WasiPreview, WasmBinaryModule, WasmPackageKind, WasmSection},
 };
-use miette::{Result, miette};
 use nyar::{HostProjectionBoundary, NyarType};
 
 /// 将片段降低为指定宿主边界的 wasm 模块（默认 WASI Preview2 打包链，集成测试专用）。
@@ -57,35 +56,33 @@ pub fn lower_fragment_to_wasm_module_for(
     let boundary_entry_name = match host_boundary {
         HostProjectionBoundary::WasmJsGlue => "main",
         HostProjectionBoundary::WasiComponent => "_start",
-        other => return Err(miette!("WASM host boundary is not supported: {other:?}")),
+        other => return Err(format!("WASM host boundary is not supported: {other:?}")),
     };
-    crate::lowering::features::semantic_mir_contract::validate_submission(submission).map_err(|error| {
-        miette::miette!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail)
-    })?;
+    crate::lowering::features::semantic_mir_contract::validate_submission(submission)
+        .map_err(|error| format!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
     let physical_backend = match host_boundary {
         HostProjectionBoundary::WasmJsGlue => crate::lowering::features::physical_contract::PhysicalBackend::WasmJsGlue,
         HostProjectionBoundary::WasiComponent => crate::lowering::features::physical_contract::PhysicalBackend::WasiComponent,
         _ => crate::lowering::features::physical_contract::PhysicalBackend::WasmCore,
     };
-    crate::lowering::features::physical_contract::validate_physical_submission(submission, physical_backend).map_err(|error| {
-        miette::miette!("physical contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail)
-    })?;
+    crate::lowering::features::physical_contract::validate_physical_submission(submission, physical_backend)
+        .map_err(|error| format!("physical contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
     validate_text_encoding_projection(submission, host_boundary)?;
     let has_executable = !submission.backend_plan.instances().is_empty();
     if !has_executable {
-        return Err(miette!(
+        return Err(format!(
             "WASM requires Compiler-owned executable functions; call-edge replay and empty entry synthesis are not valid inputs"
         ));
     }
     let executable = &submission.backend_plan;
     for operation in submission.backend_plan.wasm_export_names().keys().chain(submission.backend_plan.entry_operation().iter()) {
         if executable.get_function(operation).is_none() {
-            return Err(miette!("WASM callable `{operation}` has no Compiler-owned executable body"));
+            return Err(format!("WASM callable `{operation}` has no Compiler-owned executable body"));
         }
     }
     if wasm_package_kind == WasmPackageKind::Library {
         if submission.backend_plan.wasm_export_names().is_empty() {
-            return Err(miette::miette!("library wasm package requires at least one `[export]` symbol"));
+            return Err(format!("library wasm package requires at least one `[export]` symbol"));
         }
     }
     let export_name = if let Some(name) = submission.backend_plan.wasm_export_names().values().next() {
@@ -93,7 +90,7 @@ pub fn lower_fragment_to_wasm_module_for(
     }
     else {
         if submission.backend_plan.entry_operation().is_none() {
-            return Err(miette!("WASM binary package requires a Compiler-resolved entry"));
+            return Err(format!("WASM binary package requires a Compiler-resolved entry"));
         }
         boundary_entry_name
     };
@@ -101,9 +98,8 @@ pub fn lower_fragment_to_wasm_module_for(
 
     prepend_nyar_custom_sections(&mut module, submission);
     super::singleton::append_singleton_metadata_sections(&mut module, submission);
-    super::singleton::augment_wasm_with_singleton_accessors(&mut module, submission).map_err(|error| {
-        miette::miette!("singleton contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail)
-    })?;
+    super::singleton::augment_wasm_with_singleton_accessors(&mut module, submission)
+        .map_err(|error| format!("singleton contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
     mir::augment_wasm_with_value_aggregate_metadata(&mut module, submission);
     Ok((module, imports))
 }
@@ -126,7 +122,7 @@ pub fn validate_text_encoding_projection(submission: &FragmentSubmission, host_b
         sites.extend(function.value_types.iter().map(|(value, ty)| (format!("SSA value {}", value.0), ty)));
         for (site, ty) in sites {
             if type_contains_utf16(ty) {
-                return Err(miette!(
+                return Err(format!(
                     "WASM pre-emission verifier: {} function `{}` {site} requires an explicit UTF-16 ABI contract; {:?} must not use the UTF-8 carrier",
                     boundary_name(host_boundary),
                     function.symbol,
@@ -137,7 +133,7 @@ pub fn validate_text_encoding_projection(submission: &FragmentSubmission, host_b
         for block in &function.blocks {
             for (index, instruction) in block.instructions.iter().enumerate() {
                 if let crate::contracts::InstructionKind::LoadConstant { constant: ExecutableConstant::Utf16(_), .. } = &instruction.kind {
-                    return Err(miette!(
+                    return Err(format!(
                         "WASM pre-emission verifier: {} function `{}` block {} instruction {index} contains a UTF-16 literal without an explicit UTF-16 ABI contract",
                         boundary_name(host_boundary),
                         function.symbol,

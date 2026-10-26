@@ -8,7 +8,7 @@ pub fn is_awsl_uri(uri: &str) -> bool {
 }
 
 /// 解析 AWSL 源文件
-pub fn parse_awsl(text: &str) -> Result<AwslRoot, String> {
+pub fn parse_awsl(text: &str) -> std::result::Result<AwslRoot, String> {
     parse_root(text).map_err(|error| error.message)
 }
 

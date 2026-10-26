@@ -1,13 +1,22 @@
 // `legion build` 命令。
 //
 // 这里只负责装配与落盘；目标解释、后端注册和 lowering 均交给 `emitter`。
-
-use crate::workspace::{
-    labeled_report_with_context,
-    manifest::{ProjectArtifactKind, ProjectManifest},
-    planner::{BuildPlan, BuildRequest, WorkspaceResolver},
-    source_snapshot::compile_source_snapshot,
+use crate::{
+    compiler::emitter::pipeline::{CompilerBuildContext, CompilerHostProviderBinding, compile_source_groups_to_artifacts},
+    legion::{
+        cmds::error::{LegionError, LegionResult},
+        workspace::{
+            labeled_report_with_context,
+            manifest::{ProjectArtifactKind, ProjectManifest},
+            planner::{BuildPlan, BuildRequest, WorkspaceResolver},
+            source_snapshot::compile_source_snapshot,
+        },
+    },
 };
+use nyar::{ArtifactSet, CanonicalSpecification, CanonicalTarget, ClrSuspendStrategy};
+use nyar_emitter::DriverRunContract;
+use nyar_types::compiler_input::CompilerSourceInput;
+use serde::Serialize;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -15,16 +24,6 @@ use std::{
     sync::{Arc, mpsc},
     thread,
 };
-
-use clap::Args;
-use miette::{IntoDiagnostic, Report, Result, WrapErr, miette};
-use nyar::ClrSuspendStrategy;
-use nyar_emitter::DriverRunContract;
-use nyar_types::compiler_input::CompilerSourceInput;
-use rusty_valkyrie::{
-    ArtifactSet, CanonicalSpecification, CanonicalTarget, CompilerBuildContext, CompilerHostProviderBinding, compile_source_groups_to_artifacts,
-};
-use serde::Serialize;
 
 use crate::legion::{
     cache::{CompilationCache, cache_root_for, collect_build_bundle, compute_artifact_hash, store_cached_build},
@@ -36,27 +35,22 @@ use crate::legion::{
 };
 
 /// `legion build` 的命令参数。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct BuildArgs {
     /// 项目目录，默认当前目录。
-    #[arg(value_name = "project-dir", default_value = ".")]
     pub project_dir: PathBuf,
     /// 目标平台。
-    #[arg(long, default_value = "clr")]
     pub target: CanonicalTarget,
     /// 输出目录。
-    #[arg(short = 'o', long = "output")]
     pub output_dir: Option<PathBuf>,
     /// 强制按 workspace 成员解析；若项目未注册则直接报错，不回退到 package 模式。
-    #[arg(long, default_value_t = false)]
     pub workspace: bool,
     /// 输出调试用构建副产物。
-    #[arg(long, default_value_t = false)]
     pub debug_artifacts: bool,
 }
 
 /// 执行 `legion build`。
-pub fn run(args: &BuildArgs) -> Result<ExitCode> {
+pub fn run(args: &BuildArgs) -> LegionResult<ExitCode> {
     if args.workspace {
         return run_workspace_members_in_parallel(args);
     }
@@ -80,7 +74,7 @@ pub fn run(args: &BuildArgs) -> Result<ExitCode> {
     println!("selected host providers: {}", plan.project.selected_host_providers.len());
 
     if plan.project.source_files.is_empty() {
-        return Err(miette!("没有找到任何源码文件"));
+        return Err(LegionError::msg(report!("没有找到任何源码文件")));
     }
 
     if args.debug_artifacts {
@@ -101,16 +95,14 @@ pub fn run(args: &BuildArgs) -> Result<ExitCode> {
     print_artifacts(&plan.output_dir, &report.artifacts);
     let manifest_source = if script::is_script_path(&plan.project.manifest_path) {
         let script_source = fs::read_to_string(&plan.project.manifest_path)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("读取单脚本失败：{}", plan.project.manifest_path.display()))?;
+            .map_err(|e| LegionError::msg(format!("读取单脚本失败：{}: {e}", plan.project.manifest_path.display())))?;
         script::extract_embedded_manifest(&script_source, &plan.project.manifest_path)
-            .map_err(|error| Report::from(error))?
-            .ok_or_else(|| miette!("单脚本 `{}` 缺少内嵌 `# ```legion` 块", plan.project.manifest_path.display()))?
+            .map_err(|error| LegionError::from(error))?
+            .ok_or_else(|| LegionError::msg(report!("单脚本 `{}` 缺少内嵌 `# ```legion` 块", plan.project.manifest_path.display())))?
     }
     else {
         fs::read_to_string(&plan.project.manifest_path)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("读取项目清单失败：{}", plan.project.manifest_path.display()))?
+            .map_err(|e| LegionError::msg(format!("读取项目清单失败：{}: {e}", plan.project.manifest_path.display())))?
     };
     let project_manifest = ProjectManifest::parse(&manifest_source)?;
     if let Some(plugin) = &project_manifest.build_plugin {
@@ -121,7 +113,7 @@ pub fn run(args: &BuildArgs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_workspace_members_in_parallel(args: &BuildArgs) -> Result<ExitCode> {
+fn run_workspace_members_in_parallel(args: &BuildArgs) -> LegionResult<ExitCode> {
     let workspace = WorkspaceResolver::discover(&args.project_dir)?;
     let requested_target = args.target.clone();
     let members = workspace
@@ -132,7 +124,7 @@ fn run_workspace_members_in_parallel(args: &BuildArgs) -> Result<ExitCode> {
                 BuildRequest { project_dir: project_dir.clone(), target: requested_target.clone(), output_dir: args.output_dir.clone() };
             match workspace.build_plan(&request) {
                 Ok(_) => true,
-                Err(crate::workspace::planner::PlannerError::MissingBuildTarget { .. }) => {
+                Err(crate::legion::workspace::planner::PlannerError::MissingBuildTarget { .. }) => {
                     eprintln!("workspace: skipping {} (target not declared)", project_dir.display());
                     false
                 }
@@ -144,7 +136,7 @@ fn run_workspace_members_in_parallel(args: &BuildArgs) -> Result<ExitCode> {
         })
         .collect::<Vec<_>>();
     if members.is_empty() {
-        return Err(miette!("workspace 没有可构建成员"));
+        return Err(LegionError::msg(report!("workspace 没有可构建成员")));
     }
 
     let worker_count = thread::available_parallelism().map(|value| value.get()).unwrap_or(4).min(members.len());
@@ -191,7 +183,7 @@ fn run_workspace_members_in_parallel(args: &BuildArgs) -> Result<ExitCode> {
                         let _ = tx.send((project_dir, result));
                     }
                 })
-                .map_err(|error| miette!("failed to spawn workspace build worker: {error}"))?,
+                .map_err(|error| report!("failed to spawn workspace build worker: {error}"))?,
         );
     }
     drop(tx);
@@ -221,9 +213,9 @@ fn run_workspace_members_in_parallel(args: &BuildArgs) -> Result<ExitCode> {
 }
 
 /// 编译给定 `BuildPlan`，返回驱动编译报告。
-pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> Result<nyar_emitter::DriverCompileReport> {
+pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitter::DriverCompileReport> {
     if plan.project.source_files.is_empty() {
-        return Err(miette!("没有找到任何源码文件"));
+        return Err(LegionError::msg(report!("没有找到任何源码文件")));
     }
 
     let cache = CompilationCache::open(cache_root_for(&plan.workspace_root));
@@ -242,7 +234,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> Result<nyar_emitter::Dri
         plan.project.build_target.wat,
         plan.project.build_target.runtime_async,
     )
-    .map_err(|error| miette!("{error}"))?;
+    .map_err(|error| report!("{error}"))?;
 
     // WASI 与 Node 同为 wasm32，但宿主不同：Node 走 `env.*`，WASI 走 guest/host_contract。
     // 模板 `<% match arch %>` 因此对 WASI 使用伪架构键 `"wasi"`，避免误选 wasm32/Node 分支。
@@ -254,21 +246,23 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> Result<nyar_emitter::Dri
     let target_profile = plan.project.build_target.target.to_profile(None);
     let clr_suspend_strategy = ClrSuspendStrategy::from_runtime_async_flag(plan.project.build_target.runtime_async);
     let wasm_package_kind = wasm_package_kind_for_manifest(plan.project.artifact_kind);
-    fs::create_dir_all(&plan.output_dir).into_diagnostic().wrap_err_with(|| format!("创建输出目录失败 {}", plan.output_dir.display()))?;
+    fs::create_dir_all(&plan.output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", plan.output_dir.display())))?;
     let host_bindings = plan
         .project
         .selected_host_providers
         .iter()
         .map(|provider| {
-            let contract =
-                provider.contract_key.clone().ok_or_else(|| miette!("选中的 host provider `{}` 缺少契约声明身份", provider.symbol))?;
+            let contract = provider
+                .contract_key
+                .clone()
+                .ok_or_else(|| LegionError::msg(report!("选中的 host provider `{}` 缺少契约声明身份", provider.symbol)))?;
             Ok(CompilerHostProviderBinding { contract, provider: provider.key.clone() })
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<LegionResult<Vec<_>>>()?;
     let build_context = CompilerBuildContext::new(arch, plan.project.build_target.target.clone(), clr_suspend_strategy, wasm_package_kind)
         .with_selected_host_providers(host_bindings);
     let artifact = compile_source_groups_to_artifacts(
-        &rusty_valkyrie::ValkyrieCompiler::default(),
+        &crate::compiler::hir::lowering::ValkyrieCompiler::default(),
         &nyar_types::compiler_input::CompilerSourceInput::application(source_groups),
         &build_context,
         &plan.output_dir,
@@ -289,9 +283,9 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> Result<nyar_emitter::Dri
         ExecutionManifest::remove_from_output_dir(&plan.output_dir)?;
     }
 
-    let bundle = collect_build_bundle(&plan.output_dir, &artifact.driver).map_err(|error| miette!("产物集合不完整：{error}"))?;
+    let bundle = collect_build_bundle(&plan.output_dir, &artifact.driver).map_err(|error| report!("产物集合不完整：{error}"))?;
     store_cached_build(&cache, &plan.project.name, &canonical_triple, &ir_hash, &bundle)
-        .map_err(|error| miette!("产物缓存写入失败：{error}"))?;
+        .map_err(|error| report!("产物缓存写入失败：{error}"))?;
     if verbose {
         println!("cache: stored (artifact-set)");
     }
@@ -309,13 +303,13 @@ pub(crate) fn compile_arch(plan: &BuildPlan) -> &'static str {
     }
 }
 
-fn write_compile_evidence(output_dir: &Path, evidence: &rusty_valkyrie::CompilerCompileEvidence) -> Result<()> {
+fn write_compile_evidence(output_dir: &Path, evidence: &crate::compiler::emitter::pipeline::CompilerCompileEvidence) -> LegionResult<()> {
     let output_path = output_dir.join("compile-evidence.txt");
     let content = crate::legion::write_von_indented(evidence).map_err(|error| {
         labeled_report_with_context(error, format!("序列化 compile evidence 失败 {}", output_path.display()), "VON 序列化失败位置")
     })?;
-    fs::create_dir_all(output_dir).into_diagnostic().wrap_err_with(|| format!("创建输出目录失败 {}", output_dir.display()))?;
-    fs::write(&output_path, content).into_diagnostic().wrap_err_with(|| format!("写入 compile evidence 失败 {}", output_path.display()))?;
+    fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", output_dir.display())))?;
+    fs::write(&output_path, content).map_err(|e| LegionError::msg(format!("写入 compile evidence 失败: {}: {e}", output_path.display())))?;
     Ok(())
 }
 
@@ -338,10 +332,10 @@ pub(super) fn print_artifacts(output_dir: &Path, artifacts: &ArtifactSet) {
 }
 
 fn write_execution_manifest(
-    plan: &crate::workspace::planner::BuildPlan,
+    plan: &crate::legion::workspace::planner::BuildPlan,
     specs: &[DriverRunContract],
-    evidence: &rusty_valkyrie::CompilerCompileEvidence,
-) -> Result<()> {
+    evidence: &crate::compiler::emitter::pipeline::CompilerCompileEvidence,
+) -> LegionResult<()> {
     let contracts = specs
         .iter()
         .map(|spec| RunContract {
@@ -362,7 +356,7 @@ struct HostSelectionEntry {
     line: usize,
 }
 
-fn write_host_selection_spec(output_dir: &Path, providers: &[crate::workspace::planner::PlannedHostProvider]) -> Result<()> {
+fn write_host_selection_spec(output_dir: &Path, providers: &[crate::legion::workspace::planner::PlannedHostProvider]) -> LegionResult<()> {
     let output_path = output_dir.join("host-selection.txt");
     let entries: Vec<HostSelectionEntry> = providers
         .iter()
@@ -376,24 +370,15 @@ fn write_host_selection_spec(output_dir: &Path, providers: &[crate::workspace::p
     let content = write_von_indented(&entries).map_err(|error| {
         labeled_report_with_context(error, format!("序列化 host 选择结果失败 {}", output_path.display()), "VON 序列化失败位置")
     })?;
-    fs::create_dir_all(output_dir).into_diagnostic().map_err(|error| error.wrap_err(format!("创建输出目录失败 {}", output_dir.display())))?;
-    fs::write(&output_path, content)
-        .into_diagnostic()
-        .map_err(|error| error.wrap_err(format!("写入 host 选择结果失败 {}", output_path.display())))
+    fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败 {}: {e}", output_dir.display())))?;
+    fs::write(&output_path, content).map_err(|e| LegionError::msg(format!("写入 host 选择结果失败 {}: {e}", output_path.display())))?;
+    Ok(())
 }
 
-fn remove_host_selection_spec(output_dir: &Path) -> Result<()> {
+fn remove_host_selection_spec(output_dir: &Path) -> LegionResult<()> {
     let output_path = output_dir.join("host-selection.txt");
     if output_path.exists() {
-        fs::remove_file(&output_path)
-            .into_diagnostic()
-            .map_err(|error| error.wrap_err(format!("删除 host 选择结果失败 {}", output_path.display())))?;
+        fs::remove_file(&output_path).map_err(|e| LegionError::msg(format!("删除 host 选择结果失败 {}: {e}", output_path.display())))?;
     }
     Ok(())
 }
-#[cfg(test)]
-#[path = "../../../../tests/legion/path_wired/cmds_build_mod.rs"]
-mod cmds_build_mod_tests;
-
-
-

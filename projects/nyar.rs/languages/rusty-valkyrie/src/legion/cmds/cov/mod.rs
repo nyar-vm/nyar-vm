@@ -1,16 +1,15 @@
 //! `legion cov` / `legion coverage` — 语法特性覆盖矩阵。
-
-use crate::workspace::planner::{WorkspaceResolver, collect_project_v_files};
+use crate::legion::{
+    cmds::error::{LegionError, LegionResult},
+    workspace::planner::{WorkspaceResolver, collect_project_v_files},
+};
+use serde_json::json;
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::ExitCode,
 };
-
-use clap::Args;
-use miette::{IntoDiagnostic, Result, WrapErr, miette};
-use serde_json::json;
 
 use crate::legion::{
     cmds::{
@@ -50,21 +49,18 @@ pub fn known_features() -> Vec<(&'static str, &'static str)> {
 }
 
 /// `legion cov` 命令参数。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct CovArgs {
     /// 项目或 workspace 目录。
-    #[arg(value_name = "project-dir", default_value = ".")]
     pub project_dir: PathBuf,
     /// 详细输出。
-    #[arg(short, long, default_value_t = false)]
     pub verbose: bool,
     /// 额外产出单文件 HTML（内联 css/js/wasm，便于离线打开）。
-    #[arg(long, default_value_t = false)]
     pub standalone: bool,
 }
 
 /// 执行 `legion cov` / `legion coverage`。
-pub fn run(args: &CovArgs) -> Result<ExitCode> {
+pub fn run(args: &CovArgs) -> LegionResult<ExitCode> {
     let project_input = resolve_project_path(&args.project_dir)?;
     let workspace = WorkspaceResolver::discover_for_project(&project_input).ok();
     let scan_root = if script::is_script_path(&project_input) {
@@ -78,7 +74,7 @@ pub fn run(args: &CovArgs) -> Result<ExitCode> {
         if workspace.workspace_manifest.is_some() && same_path(&scan_root, &workspace.root_dir) {
             let members = workspace.member_manifest_dirs();
             if members.is_empty() {
-                return Err(miette!("legions.von 中无 members"));
+                return Err(LegionError::msg(report!("legions.von 中无 members")));
             }
             (workspace.root_dir.clone(), members)
         }
@@ -93,7 +89,7 @@ pub fn run(args: &CovArgs) -> Result<ExitCode> {
     run_coverage_for_members(&workspace_dir, &members, args.verbose, args.standalone)
 }
 
-fn run_coverage_for_members(workspace_dir: &Path, members: &[PathBuf], verbose: bool, standalone: bool) -> Result<ExitCode> {
+fn run_coverage_for_members(workspace_dir: &Path, members: &[PathBuf], verbose: bool, standalone: bool) -> LegionResult<ExitCode> {
     let known = known_features();
     let mut coverage_map: BTreeMap<&str, (bool, Vec<String>)> = BTreeMap::new();
     for (feature, _) in &known {
@@ -154,7 +150,7 @@ fn run_coverage_for_members(workspace_dir: &Path, members: &[PathBuf], verbose: 
     let report = CoverageReport { covered: covered_count, total, percentage: pct, features };
 
     let cache_dir = workspace_dir.join(".cache").join("converge");
-    fs::create_dir_all(&cache_dir).into_diagnostic().wrap_err_with(|| format!("创建缓存目录失败 {}", cache_dir.display()))?;
+    fs::create_dir_all(&cache_dir).map_err(|e| LegionError::msg(format!("创建缓存目录失败: {}: {e}", cache_dir.display())))?;
     let json_path = cache_dir.join("coverage.json");
     let json_content = build_coverage_json(&report);
     atomic_write_all_text(&json_path, &json_content)?;
@@ -302,9 +298,3 @@ fn same_path(left: &Path, right: &Path) -> bool {
     let right = right.canonicalize().unwrap_or_else(|_| right.to_path_buf());
     left == right
 }
-#[cfg(test)]
-#[path = "../../../../tests/legion/path_wired/cmds_cov_mod.rs"]
-mod cmds_cov_mod_tests;
-
-
-

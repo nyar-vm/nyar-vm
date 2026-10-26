@@ -1,35 +1,33 @@
+use crate::{
+    compiler::{
+        hir::lowering::ValkyrieCompiler,
+        services::lint::{lint_valkyrie_source, lint_valkyrie_vx_source},
+    },
+    legion::cmds::error::{LegionError, LegionResult},
+};
 use std::{
     fs,
     path::{Path, PathBuf},
     process::ExitCode,
 };
 
-use clap::Args;
-use miette::{IntoDiagnostic, Result, miette};
-use rusty_valkyrie::{ValkyrieCompiler, lint_valkyrie_source, lint_valkyrie_vx_source};
-
-use crate::legion::cmds::source_hygiene;
-use crate::workspace::planner::WorkspaceResolver;
+use crate::legion::{cmds::source_hygiene, workspace::planner::WorkspaceResolver};
 
 /// `legion lint` arguments.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct LintArgs {
     /// Project directory.
-    #[arg(value_name = "project-dir", default_value = ".")]
     pub project_dir: PathBuf,
     /// Lint all workspace members.
-    #[arg(long, default_value_t = false)]
     pub workspace: bool,
     /// Lint target format (`awsl` for AWSL style rules; default: Valkyrie `.v`/`.vx` compile lint).
-    #[arg(long, value_name = "FORMAT")]
     pub format: Option<String>,
     /// Apply auto-fixes for the selected format.
-    #[arg(long, default_value_t = false)]
     pub fix: bool,
 }
 
 /// Run `legion lint`.
-pub fn run(args: &LintArgs) -> Result<ExitCode> {
+pub fn run(args: &LintArgs) -> LegionResult<ExitCode> {
     let lint_awsl = args.format.as_deref().is_some_and(|f| f.eq_ignore_ascii_case("awsl"));
 
     let mut files = Vec::new();
@@ -52,7 +50,7 @@ pub fn run(args: &LintArgs) -> Result<ExitCode> {
         else {
             "没有找到可 lint 的源码文件（source/test/script 下 *.v|*.vx；AWSL 请使用 --format awsl）"
         };
-        return Err(miette!("{hint}"));
+        return Err(LegionError::msg(report!("{hint}")));
     }
 
     let compiler = ValkyrieCompiler::default();
@@ -62,7 +60,7 @@ pub fn run(args: &LintArgs) -> Result<ExitCode> {
     let mut hygiene_warnings = 0usize;
 
     for file in files {
-        let bytes = fs::read(&file).into_diagnostic().map_err(|e| e.wrap_err(format!("读取源码失败 {}", file.display())))?;
+        let bytes = fs::read(&file).map_err(|e| LegionError::msg(format!("读取源码失败 {}: {e}", file.display())))?;
 
         let source = match std::str::from_utf8(&bytes) {
             Ok(text) => text.to_owned(),
@@ -74,7 +72,7 @@ pub fn run(args: &LintArgs) -> Result<ExitCode> {
                 continue;
             }
             Err(error) => {
-                return Err(miette!("{}: invalid UTF-8 at byte {}", file.display(), error.valid_up_to()));
+                return Err(LegionError::msg(report!("{}: invalid UTF-8 at byte {}", file.display(), error.valid_up_to())));
             }
         };
 
@@ -91,7 +89,7 @@ pub fn run(args: &LintArgs) -> Result<ExitCode> {
                 if issues > 0 {
                     awsl_issues += issues;
                     if args.fix {
-                        fs::write(&file, fixed).into_diagnostic().map_err(|e| e.wrap_err(format!("写入修复结果失败 {}", file.display())))?;
+                        fs::write(&file, fixed).map_err(|e| LegionError::msg(format!("写入修复结果失败 {}: {e}", file.display())))?;
                         println!("fixed: {} ({issues})", file.display());
                     }
                     else {
@@ -129,17 +127,19 @@ pub fn run(args: &LintArgs) -> Result<ExitCode> {
         Ok(ExitCode::SUCCESS)
     }
     else if lint_awsl {
-        Err(miette!("lint failed: awsl style issues: {awsl_issues} (run with --fix to apply)"))
+        Err(LegionError::msg(report!("lint failed: awsl style issues: {awsl_issues} (run with --fix to apply)")))
     }
     else if awsl_issues == 0 {
-        Err(miette!("lint failed: {failed} file(s)/issue(s) (hygiene errors: {hygiene_errors}, warnings: {hygiene_warnings})"))
+        Err(LegionError::msg(report!(
+            "lint failed: {failed} file(s)/issue(s) (hygiene errors: {hygiene_errors}, warnings: {hygiene_warnings})"
+        )))
     }
     else {
-        Err(miette!("lint failed: {failed} file(s), awsl style issues: {awsl_issues}"))
+        Err(LegionError::msg(report!("lint failed: {failed} file(s), awsl style issues: {awsl_issues}")))
     }
 }
 
-fn collect_lint_files(project_dir: &Path, awsl_only: bool, files: &mut Vec<PathBuf>) -> Result<()> {
+fn collect_lint_files(project_dir: &Path, awsl_only: bool, files: &mut Vec<PathBuf>) -> LegionResult<()> {
     if project_dir.is_file() {
         let Some(ext) = project_dir.extension().and_then(|v| v.to_str())
         else {
@@ -167,9 +167,9 @@ fn collect_lint_files(project_dir: &Path, awsl_only: bool, files: &mut Vec<PathB
     Ok(())
 }
 
-fn collect_files_recursive(root: &Path, awsl_only: bool, files: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(root).into_diagnostic().map_err(|e| e.wrap_err(format!("读取目录失败 {}", root.display())))? {
-        let entry = entry.into_diagnostic()?;
+fn collect_files_recursive(root: &Path, awsl_only: bool, files: &mut Vec<PathBuf>) -> LegionResult<()> {
+    for entry in fs::read_dir(root).map_err(|e| LegionError::msg(format!("读取目录失败 {}: {e}", root.display())))? {
+        let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
             collect_files_recursive(&path, awsl_only, files)?;
@@ -314,5 +314,3 @@ fn find_matching_paren(s: &str) -> Option<usize> {
     }
     None
 }
-
-

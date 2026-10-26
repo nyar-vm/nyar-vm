@@ -1,0 +1,15 @@
+//! compile_pipeline modules.
+
+mod backend_contract_interop_tests;
+mod compile_pipeline_backend_bundle_tests;
+mod compile_pipeline_canonical_tests;
+mod compile_pipeline_driver_tests;
+mod compile_pipeline_host_bindings_tests;
+mod compile_pipeline_link_tests;
+mod compiler_input_ownership;
+mod stage_contract_guards;
+mod valkyrie_compile_pipeline;
+mod valkyrie_compile_pipeline_envelope_checks;
+mod valkyrie_compile_pipeline_evidence;
+mod valkyrie_compile_pipeline_fragment_contract_tests;
+mod valkyrie_compile_pipeline_representation;

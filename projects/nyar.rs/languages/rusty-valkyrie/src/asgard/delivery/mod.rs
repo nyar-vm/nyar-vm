@@ -5,15 +5,12 @@ mod ipa;
 mod minigame;
 mod miniprogram;
 mod util;
-
-use std::path::PathBuf;
-
-use miette::Result;
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 pub use apk::pack_apk;
 pub use ipa::pack_ipa;
 pub use minigame::pack_mini_game;
 pub use miniprogram::pack_mini_program;
+use std::path::PathBuf;
 
 /// 交付目标。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,7 +63,7 @@ pub struct PackReport {
 }
 
 /// 按目标组装交付物。
-pub fn pack_voa_delivery(options: &PackOptions) -> Result<PackReport> {
+pub fn pack_voa_delivery(options: &PackOptions) -> AsgardResult<PackReport> {
     match options.target {
         PackTarget::Apk => pack_apk(&options.input, options.output.as_deref()),
         PackTarget::Ipa => pack_ipa(&options.input, options.output.as_deref()),

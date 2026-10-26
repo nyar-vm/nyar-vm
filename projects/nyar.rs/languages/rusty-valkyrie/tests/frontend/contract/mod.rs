@@ -1,0 +1,13 @@
+//! contract modules.
+
+mod array_length_intrinsic_declaration_tests;
+mod array_push_intrinsic_declaration_tests;
+mod case_chain_validation;
+mod frontend_contract_control_flow_payload_witness_identity_tests;
+mod generic_struct_new_contract;
+mod singleton_contracts;
+mod valkyrie_assembly_import_contract_tests;
+mod valkyrie_control_flow_context;
+mod valkyrie_highlight;
+mod valkyrie_lint;
+mod valkyrie_types_hir_export_spec;

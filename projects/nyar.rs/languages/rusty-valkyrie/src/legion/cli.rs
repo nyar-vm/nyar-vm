@@ -1,51 +1,47 @@
-//! Legion CLI 解析与分发（库内入口）。
-//!
-//! 原生宿主仅经 `valkyrie-napi` platform `.node`（`legionRun*` N-API）或 wasm collect 调用；
-//! npm 用户入口在 `projects/nyar.ts/emulators/valkyrie`（`bin/legion.mjs` → `@nyar/nyar` → `valkyrie-napi`）。
+//! Legion 命令分发（库内入口）。**不在此 crate 解析 argv**；由 `valkyrie-napi` / TypeScript 组装正交 API 后调用 [`dispatch`]。
 
 use std::{ffi::OsString, io::Read, process::ExitCode};
 
-use clap::{Parser, Subcommand, error::ErrorKind};
-use miette::Report;
-
-use crate::legion::{
-    SpyOptions,
-    cmds::{
-        audit::{AuditArgs, run as run_audit},
-        bench::{BenchArgs, run as run_bench},
-        bootstrap::{BootstrapArgs, run as run_bootstrap},
-        build::{BuildArgs, run as run_build},
-        check::{CheckArgs, run as run_check},
-        clean::{CleanArgs, run as run_clean},
-        cov::{CovArgs, run as run_cov},
-        doc::{DocArgs, run as run_doc},
-        fmt::{FmtArgs, run as run_fmt},
-        install::{AddArgs, InstallArgs, RemoveArgs, UpdateArgs, run as run_install, run_add, run_remove, run_update},
-        lint::{LintArgs, run as run_lint},
-        login::{LoginArgs, LogoutArgs, WhoamiArgs, run_login, run_logout, run_whoami},
-        plan::{PlanArgs, run as run_plan},
-        publish::{PublishArgs, run as run_publish},
-        registry::{RegistryArgs, run as run_registry},
-        run::{RunArgs, run as run_run},
-        search::{InfoArgs, SearchArgs, run as run_search, run_info},
-        test::{TestArgs, run as run_test},
-        vendor::{VendorArgs, run as run_vendor},
+use crate::{
+    legion::{
+        SpyOptions,
+        cmds::{
+            audit::{AuditArgs, run as run_audit},
+            bench::{BenchArgs, run as run_bench},
+            bootstrap::{BootstrapArgs, run as run_bootstrap},
+            build::{BuildArgs, run as run_build},
+            check::{CheckArgs, run as run_check},
+            clean::{CleanArgs, run as run_clean},
+            cov::{CovArgs, run as run_cov},
+            doc::{DocArgs, run as run_doc},
+            error::{LegionError, LegionResult},
+            fmt::{FmtArgs, run as run_fmt},
+            install::{AddArgs, InstallArgs, RemoveArgs, UpdateArgs, run as run_install, run_add, run_remove, run_update},
+            lint::{LintArgs, run as run_lint},
+            login::{LoginArgs, LogoutArgs, WhoamiArgs, run_login, run_logout, run_whoami},
+            plan::{PlanArgs, run as run_plan},
+            publish::{PublishArgs, run as run_publish},
+            registry::{RegistryArgs, run as run_registry},
+            run::{RunArgs, run as run_run},
+            search::{InfoArgs, SearchArgs, run as run_search, run_info},
+            test::{TestArgs, run as run_test},
+            vendor::{VendorArgs, run as run_vendor},
+        },
+        forward::try_forward_companion,
+        run_spy,
     },
-    forward::try_forward_companion,
-    run_spy,
+    utilities::report::{display_failure, report_msg},
 };
 
-/// VCC / Legion 根命令（seed 二进制名 `vcc`；npm 包装仍可称 `legion`）。
-#[derive(Debug, Parser)]
-#[command(name = "vcc", version, about = "Valkyrie 工作区命令行入口")]
+/// VCC / Legion 根命令（由宿主构造，不经 clap）。
+#[derive(Debug)]
 pub struct LegionCli {
     /// 已解析的 Legion 子命令。
-    #[command(subcommand)]
     pub command: LegionCommands,
 }
 
 /// Legion 子命令。
-#[derive(Debug, Subcommand)]
+#[derive(Debug)]
 pub enum LegionCommands {
     /// 构建项目。
     Build(BuildArgs),
@@ -66,19 +62,16 @@ pub enum LegionCommands {
     /// 运行测试并生成 HTML 报告。
     Test(TestArgs),
     /// 收集语法覆盖率并生成 HTML 报告。
-    #[command(visible_alias = "coverage")]
     Cov(CovArgs),
     /// 运行基准测试并生成 HTML 报告。
-    #[command(visible_alias = "benchmark")]
     Bench(BenchArgs),
     /// 格式化代码。
-    #[command(visible_alias = "format")]
     Fmt(FmtArgs),
     /// 运行前端语义 lint（不生成后端产物）。
     Lint(LintArgs),
     /// 发布包到注册表。
     Publish(PublishArgs),
-    /// 登录注册表（与 npm / deno 等官方 CLI 凭据互通）。
+    /// 登录注册表。
     Login(LoginArgs),
     /// 退出注册表登录。
     Logout(LogoutArgs),
@@ -104,7 +97,7 @@ pub enum LegionCommands {
     Registry(RegistryArgs),
 }
 
-/// 在独立大栈线程上解析 `argv` 并运行 Legion CLI（供 `valkyrie-napi` 原生宿主调用）。
+/// 在独立大栈线程上运行 Legion CLI（供 `valkyrie-napi` 原生宿主调用）。
 pub fn run_from_env() -> i32 {
     run_with_argv(std::env::args_os().collect())
 }
@@ -120,14 +113,11 @@ pub fn run_with_argv_in_current_thread(argv: Vec<OsString>) -> i32 {
     exit_code_from_result(run_with_argv_inner(argv))
 }
 
-/// 与 [`run_with_argv_captured`] 相同，但不在独立线程中运行（供 N-API 宿主避免 Windows 线程+stdio 死锁）。
+/// 与 [`run_with_argv_captured`] 相同，但不在独立线程中运行。
 pub fn run_with_argv_captured_on_current_thread(argv: Vec<OsString>) -> (i32, String, String) {
     match capture_cli_run(argv, run_with_argv_inner) {
         Ok(CapturedCliRun { code, stdout, stderr }) => (exit_code_from_exit_code(code), stdout, stderr),
-        Err(report) => {
-            let message = format!("{report:?}");
-            (1, String::new(), message)
-        }
+        Err(error) => (1, String::new(), display_failure(error)),
     }
 }
 
@@ -137,19 +127,16 @@ pub fn run_with_argv_captured(argv: Vec<OsString>) -> (i32, String, String) {
 
     match result {
         Ok(CapturedCliRun { code, stdout, stderr }) => (exit_code_from_exit_code(code), stdout, stderr),
-        Err(report) => {
-            let message = format!("{report:?}");
-            (1, String::new(), message)
-        }
+        Err(error) => (1, String::new(), display_failure(error)),
     }
 }
 
-fn capture_cli_run<F>(argv: Vec<OsString>, run: F) -> Result<CapturedCliRun, Report>
+fn capture_cli_run<F>(argv: Vec<OsString>, run: F) -> LegionResult<CapturedCliRun>
 where
-    F: FnOnce(Vec<OsString>) -> Result<ExitCode, Report>,
+    F: FnOnce(Vec<OsString>) -> LegionResult<ExitCode>,
 {
-    let mut stdout_redirect = gag::BufferRedirect::stdout().map_err(|error| Report::msg(error.to_string()))?;
-    let mut stderr_redirect = gag::BufferRedirect::stderr().map_err(|error| Report::msg(error.to_string()))?;
+    let mut stdout_redirect = gag::BufferRedirect::stdout().map_err(|error| LegionError::msg(error.to_string()))?;
+    let mut stderr_redirect = gag::BufferRedirect::stderr().map_err(|error| LegionError::msg(error.to_string()))?;
     let code = run(argv)?;
     let mut stdout = String::new();
     let mut stderr = String::new();
@@ -164,10 +151,10 @@ struct CapturedCliRun {
     stderr: String,
 }
 
-fn spawn_cli_thread<T, F>(argv: Vec<OsString>, run: F) -> Result<T, Report>
+fn spawn_cli_thread<T, F>(argv: Vec<OsString>, run: F) -> LegionResult<T>
 where
     T: Send + 'static,
-    F: FnOnce(Vec<OsString>) -> Result<T, Report> + Send + 'static,
+    F: FnOnce(Vec<OsString>) -> LegionResult<T> + Send + 'static,
 {
     std::thread::Builder::new()
         .name("legion-main".into())
@@ -182,39 +169,33 @@ fn exit_code_from_exit_code(code: ExitCode) -> i32 {
     if code == ExitCode::SUCCESS { 0 } else { 1 }
 }
 
-fn run_with_argv_inner(argv: Vec<OsString>) -> Result<ExitCode, Report> {
-    // 格式化是平台能力：Valkyrie formatter / printer 由前端在入口注册。
-    rusty_valkyrie::register_format_providers();
+fn run_with_argv_inner(argv: Vec<OsString>) -> LegionResult<ExitCode> {
+    crate::compiler::services::format_provider::register_format_providers();
     if let Some(code) = try_forward_companion(&argv) {
         return Ok(code);
     }
-    let cli = match LegionCli::try_parse_from(&argv) {
-        Ok(cli) => cli,
-        Err(error) => {
-            let _ = error.print();
-            match error.kind() {
-                ErrorKind::DisplayHelp | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand | ErrorKind::DisplayVersion => {
-                    return Ok(ExitCode::SUCCESS);
-                }
-                _ => return Err(Report::msg(error.to_string())),
-            }
-        }
-    };
-    dispatch(cli)
+    if argv.iter().any(|arg| arg == "--version" || arg == "-V") {
+        println!("vcc {}", env!("CARGO_PKG_VERSION"));
+        return Ok(ExitCode::SUCCESS);
+    }
+    Err(LegionError::msg(report_msg(
+        "Legion 不再在 Rust 库内解析 argv（已移除 clap）。请在 TypeScript 侧组装命令并调用 \
+         `valkyrie-napi` 的 `legionPlan` / `legionBuild` 或后续正交 N-API；库内请直接使用 `legion::dispatch`。",
+    )))
 }
 
-fn exit_code_from_result(result: Result<ExitCode, Report>) -> i32 {
+fn exit_code_from_result(result: LegionResult<ExitCode>) -> i32 {
     match result {
         Ok(code) => exit_code_from_exit_code(code),
-        Err(report) => {
-            eprintln!("{report:?}");
+        Err(error) => {
+            eprintln!("{}", display_failure(error));
             1
         }
     }
 }
 
 /// 分发已解析的 Legion 子命令。
-pub fn dispatch(cli: LegionCli) -> Result<ExitCode, Report> {
+pub fn dispatch(cli: LegionCli) -> LegionResult<ExitCode> {
     match cli.command {
         LegionCommands::Build(args) => run_build(&args),
         LegionCommands::Plan(args) => run_plan(&args),
@@ -229,7 +210,7 @@ pub fn dispatch(cli: LegionCli) -> Result<ExitCode, Report> {
                 return Ok(ExitCode::SUCCESS);
             }
             if let Some((stage, report)) = result.failed_stage {
-                return Err(report.wrap_err(format!("自举失败于阶段 [{}]", stage)));
+                return Err(LegionError::msg(format!("自举失败于阶段 [{}]: {report}", stage)));
             }
             Ok(ExitCode::FAILURE)
         }
@@ -254,5 +235,3 @@ pub fn dispatch(cli: LegionCli) -> Result<ExitCode, Report> {
         LegionCommands::Registry(args) => run_registry(&args),
     }
 }
-
-

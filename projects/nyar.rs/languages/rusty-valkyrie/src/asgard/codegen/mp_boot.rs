@@ -52,4 +52,3 @@ pub fn generate_mp_boot(components: &[LoweredComponent], host_stem: &str, event_
 
     MpBootOutput { app_js, page_js, page_relative_path: format!("pages/{route}/{route}.js") }
 }
-

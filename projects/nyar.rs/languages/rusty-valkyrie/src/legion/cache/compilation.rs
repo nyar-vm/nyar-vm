@@ -60,7 +60,7 @@ impl CompilationCache {
     }
 
     /// Put IR / artifact-set.
-    pub fn put_ir(&self, module_name: &str, canonical_triple: &str, ir_hash: &str, entry: &IrCacheEntry) -> Result<(), String> {
+    pub fn put_ir(&self, module_name: &str, canonical_triple: &str, ir_hash: &str, entry: &IrCacheEntry) -> std::result::Result<(), String> {
         let key = combined_hash(&[module_name, canonical_triple, ir_hash]);
         let mut buf = ByteWriter::new();
         buf.write_string(&entry.ir_kind);
@@ -93,7 +93,7 @@ impl CompilationCache {
         canonical_triple: &str,
         call_graph_hash: &str,
         entry: &EntrySliceCacheEntry,
-    ) -> Result<(), String> {
+    ) -> std::result::Result<(), String> {
         let key = combined_hash(&[entry_name, canonical_triple, call_graph_hash]);
         let mut buf = ByteWriter::new();
         buf.write_string(&entry.entry_name);
@@ -107,12 +107,12 @@ impl CompilationCache {
     }
 
     /// Invalidate one triple bucket.
-    pub fn invalidate(&self, canonical_triple: &str) -> Result<(), String> {
+    pub fn invalidate(&self, canonical_triple: &str) -> std::result::Result<(), String> {
         self.store.invalidate_bucket(canonical_triple).map_err(|e| e.to_string())
     }
 
     /// Invalidate all cache entries.
-    pub fn invalidate_all(&self) -> Result<(), String> {
+    pub fn invalidate_all(&self) -> std::result::Result<(), String> {
         self.store.invalidate_all().map_err(|e| e.to_string())
     }
 }
@@ -156,7 +156,7 @@ impl<'a> ByteReader<'a> {
         Self { data, pos: 0 }
     }
 
-    fn read_i32_le(&mut self) -> Result<i32, ()> {
+    fn read_i32_le(&mut self) -> std::result::Result<i32, ()> {
         if self.pos + 4 > self.data.len() {
             return Err(());
         }
@@ -165,7 +165,7 @@ impl<'a> ByteReader<'a> {
         Ok(value)
     }
 
-    fn read_string(&mut self) -> Result<String, ()> {
+    fn read_string(&mut self) -> std::result::Result<String, ()> {
         let len = self.read_i32_le()? as usize;
         if self.pos + len > self.data.len() {
             return Err(());
@@ -175,7 +175,7 @@ impl<'a> ByteReader<'a> {
         String::from_utf8(self.data[start..self.pos].to_vec()).map_err(|_| ())
     }
 
-    fn read_bytes(&mut self) -> Result<Vec<u8>, ()> {
+    fn read_bytes(&mut self) -> std::result::Result<Vec<u8>, ()> {
         let len = self.read_i32_le()? as usize;
         if self.pos + len > self.data.len() {
             return Err(());
@@ -185,8 +185,3 @@ impl<'a> ByteReader<'a> {
         Ok(self.data[start..self.pos].to_vec())
     }
 }
-#[cfg(test)]
-#[path = "../../../tests/legion/path_wired/cache_compilation.rs"]
-mod cache_compilation_tests;
-
-

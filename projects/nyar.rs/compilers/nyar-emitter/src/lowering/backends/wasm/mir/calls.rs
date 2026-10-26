@@ -35,7 +35,7 @@ impl<'a> WasmMirLowerer<'a> {
         witness: Option<&MirOperand>,
         receiver_kind: Option<ReceiverPassingKind>,
         output: Option<MirValueRef>,
-    ) -> miette::Result<()> {
+    ) -> crate::Result<()> {
         if let Some(ReceiverPassingKind::ByAddress) = receiver_kind {
             // Confirm the receiver exists as the first argument; it is emitted below.
         }
@@ -206,7 +206,7 @@ impl<'a> WasmMirLowerer<'a> {
         callee: &MirOperand,
         arguments: &[MirOperand],
         output: Option<MirValueRef>,
-    ) -> miette::Result<bool> {
+    ) -> crate::Result<bool> {
         let MirOperand::Item(instance) = callee
         else {
             return Ok(false);
@@ -217,17 +217,17 @@ impl<'a> WasmMirLowerer<'a> {
         };
         let TargetOperatorBinding::Frozen(plan) = binding
         else {
-            return Err(miette!("WASM `wasm_operator` 绑定缺少可编码助记符 `{mnemonic}`: callee={instance:?} function={}", self.mir_fn.symbol));
+            return Err(format!("WASM `wasm_operator` 绑定缺少可编码助记符 `{mnemonic}`: callee={instance:?} function={}", self.mir_fn.symbol));
         };
         let TargetOperatorEncoding::Wasm(opcode) = plan.encoding
         else {
-            return Err(miette!(
+            return Err(format!(
                 "WASM `wasm_operator` 绑定 `{mnemonic}` 冻结了非 wasm 编码: callee={instance:?} function={}",
                 self.mir_fn.symbol
             ));
         };
         if arguments.len() != plan.arity {
-            return Err(miette!(
+            return Err(format!(
                 "WASM `wasm_operator` 绑定 `{mnemonic}` 实参数量与冻结 arity 不符: callee={instance:?} function={} expected={} actual={}",
                 self.mir_fn.symbol,
                 plan.arity,
@@ -261,14 +261,14 @@ impl<'a> WasmMirLowerer<'a> {
         expected: u8,
         steps: &'static [TargetOperandStep],
         arguments: &[MirOperand],
-    ) -> miette::Result<()> {
+    ) -> crate::Result<()> {
         for step in steps {
             match step {
                 TargetOperandStep::Arguments => self.emit_wasm_operator_operands(mnemonic, expected, arguments),
                 TargetOperandStep::IntegerConstant { operand_type, value } => {
                     let carrier = wasm_stack_type(*operand_type);
                     if carrier != expected {
-                        return Err(miette!(
+                        return Err(format!(
                             "WASM `wasm_operator` 绑定 `{mnemonic}` 的常量配方载体与冻结操作数载体不符: function={} expected={expected:#x} actual={carrier:#x}",
                             self.mir_fn.symbol
                         ));
@@ -277,7 +277,7 @@ impl<'a> WasmMirLowerer<'a> {
                         TargetOperandType::I32 => self.emit_i32_const(*value),
                         TargetOperandType::I64 => self.emit_i64_const(i64::from(*value)),
                         TargetOperandType::F64 => {
-                            return Err(miette!(
+                            return Err(format!(
                                 "WASM `wasm_operator` 绑定 `{mnemonic}` 冻结了浮点常量配方，但配方只支持整数常量: function={}",
                                 self.mir_fn.symbol
                             ));

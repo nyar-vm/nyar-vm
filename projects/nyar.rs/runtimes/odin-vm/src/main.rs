@@ -97,7 +97,8 @@ fn main() -> Result<()> {
         }
         Commands::List { module } => {
             let bytes = fs::read(&module).into_diagnostic().wrap_err_with(|| format!("failed to read module file: {}", module.display()))?;
-            let loaded = OdinVm::new().load(&bytes).map_err(|error| miette::miette!("failed to load module `{}`: {error}", module.display()))?;
+            let loaded =
+                OdinVm::new().load(&bytes).map_err(|error| miette::miette!("failed to load module `{}`: {error}", module.display()))?;
             for export in &loaded.exports {
                 println!("{}\t{:?}", export.symbol_name, export.kind);
             }

@@ -1,12 +1,10 @@
 //! 可选 Tailwind CLI 构建与 CSS 合并。
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
 };
-
-use miette::{IntoDiagnostic, Result, WrapErr};
 
 use crate::asgard::{config::TailwindConfig, tailwind::StyleCollector};
 
@@ -51,13 +49,13 @@ fn build_tailwind_css(
     config: &TailwindConfig,
     collector: &StyleCollector,
     entry_path: &Path,
-) -> Result<TailwindBuildOutput> {
+) -> AsgardResult<TailwindBuildOutput> {
     let work_dir = output_dir.join(".asgard").join("tailwind-build");
-    fs::create_dir_all(&work_dir).into_diagnostic().wrap_err("创建 tailwind-build 目录失败")?;
+    fs::create_dir_all(&work_dir).map_err(|e| AsgardError::msg(format!("{e}: {}", "创建 tailwind-build 目录失败")))?;
 
     let content_path = work_dir.join("content.txt");
     let content = collector.utilities().collect::<Vec<_>>().join("\n");
-    fs::write(&content_path, content).into_diagnostic().wrap_err("写入 Tailwind content 失败")?;
+    fs::write(&content_path, content).map_err(|e| AsgardError::msg(format!("{e}: {}", "写入 Tailwind content 失败")))?;
 
     let out_css = work_dir.join("tailwind.out.css");
     let mut command = Command::new(if cfg!(windows) { "npx.cmd" } else { "npx" });
@@ -73,11 +71,11 @@ fn build_tailwind_css(
     command.arg("--content").arg(&content_path);
     command.current_dir(project_dir);
 
-    let status = command.status().into_diagnostic().wrap_err("执行 tailwindcss 失败")?;
+    let status = command.status().map_err(|e| AsgardError::msg(format!("{e}: {}", "执行 tailwindcss 失败")))?;
     if !status.success() {
-        return Err(miette::miette!("tailwindcss 退出码非零"));
+        return Err(AsgardError::msg(report!("tailwindcss 退出码非零")));
     }
-    let css = fs::read_to_string(&out_css).into_diagnostic().wrap_err("读取 Tailwind 输出 CSS 失败")?;
+    let css = fs::read_to_string(&out_css).map_err(|e| AsgardError::msg(format!("{e}: {}", "读取 Tailwind 输出 CSS 失败")))?;
     Ok(TailwindBuildOutput { css })
 }
 
@@ -95,4 +93,3 @@ pub fn append_tailwind_css(merged_css: &mut String, tailwind_css: &str) {
         merged_css.push('\n');
     }
 }
-

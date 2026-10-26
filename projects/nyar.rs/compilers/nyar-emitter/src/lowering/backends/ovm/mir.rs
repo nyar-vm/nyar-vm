@@ -18,12 +18,11 @@ use odin_bytecode::{
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
 use crate::{
-    FragmentSubmission, TargetExecutionPlan,
+    FragmentSubmission, Result, TargetExecutionPlan,
     target_operator::{
         TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
     },
 };
-use miette::Result;
 
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
@@ -166,9 +165,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 MirInstructionKind::SumNew { .. } | MirInstructionKind::SumPayloadGet { .. } | MirInstructionKind::SumVariantIs { .. }
             )
         }) {
-            return Err(miette::miette!(
-                "Nyar backend requires a typed sum representation plan; semantic sum operation has no target contract"
-            ));
+            return Err(format!("Nyar backend requires a typed sum representation plan; semantic sum operation has no target contract"));
         }
     }
     let mut module = NyarModuleData {
@@ -323,7 +320,7 @@ fn lower_mir_function_to_bytecode(
     emitter: &mut BytecodeEmitter<'_>,
     layouts: &mut Vec<NyarLayout>,
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
-) -> miette::Result<()> {
+) -> crate::Result<()> {
     let ctx = ExecutableLoweringContext::new(submission);
     let slots = ExecutableSlotPlan::plan_nyar(mir_fn);
     let block_order = collect_reachable_blocks(mir_fn);
@@ -366,7 +363,7 @@ struct NyarMirLowerer<'a, 'e> {
 }
 
 impl<'a, 'e> NyarMirLowerer<'a, 'e> {
-    fn emit_block(&mut self, block: &MirBlock) -> miette::Result<()> {
+    fn emit_block(&mut self, block: &MirBlock) -> crate::Result<()> {
         let _ = block_label(block.id);
         for instruction in &block.instructions {
             self.emit_instruction(instruction)?;
@@ -375,7 +372,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         Ok(())
     }
 
-    fn emit_instruction(&mut self, instruction: &MirInstruction) -> miette::Result<()> {
+    fn emit_instruction(&mut self, instruction: &MirInstruction) -> crate::Result<()> {
         let output = self.slots.instruction_output(instruction);
         match &instruction.kind {
             MirInstructionKind::LoadConstant { constant, .. } => {
@@ -699,7 +696,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         opcode: Option<&(String, TargetOperatorBinding)>,
         arguments: &[MirOperand],
         output: Option<MirValueRef>,
-    ) -> miette::Result<()> {
+    ) -> crate::Result<()> {
         let callee_name = self
             .submission
             .backend_plan
@@ -710,20 +707,20 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         if let Some((mnemonic, binding)) = opcode {
             let TargetOperatorBinding::Frozen(plan) = binding
             else {
-                return Err(miette::miette!(
+                return Err(format!(
                     "Nyar 目标 `ovm_operator` 绑定缺少可编码助记符 `{mnemonic}`: callee=`{callee_name}` function=`{}`",
                     self.mir_fn.symbol
                 ));
             };
             let TargetOperatorEncoding::Ovm(code) = plan.encoding
             else {
-                return Err(miette::miette!(
+                return Err(format!(
                     "Nyar 目标 `ovm_operator` 绑定 `{mnemonic}` 冻结了非 OVM 编码: callee=`{callee_name}` function=`{}`",
                     self.mir_fn.symbol
                 ));
             };
             if arguments.len() != plan.arity {
-                return Err(miette::miette!(
+                return Err(format!(
                     "Nyar 目标外部数值调用 `{callee_name}` 实参数量与 `{mnemonic}` 冻结 arity 不符: function=`{}` expected={} actual={}",
                     self.mir_fn.symbol,
                     plan.arity,
@@ -744,7 +741,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                                 self.emitter.emit_imm1(NyarHeadCode::Constant, index);
                             }
                             TargetOperandStep::IntegerConstant { operand_type, .. } => {
-                                return Err(miette::miette!(
+                                return Err(format!(
                                     "Nyar 目标 `ovm_operator` 绑定 `{mnemonic}` 冻结了非 i32 常量配方 {operand_type:?}，OVM 没有该常量载体: callee=`{callee_name}` function=`{}`",
                                     self.mir_fn.symbol
                                 ));

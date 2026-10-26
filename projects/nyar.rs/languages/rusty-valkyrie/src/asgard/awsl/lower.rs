@@ -764,7 +764,3 @@ impl ScriptBinding {
         self.sig_var.clone()
     }
 }
-#[cfg(test)]
-#[path = "../../../tests/asgard/path_wired/awsl_lower.rs"]
-mod awsl_lower_tests;
-

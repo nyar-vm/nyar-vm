@@ -46,10 +46,7 @@ fn nyar_jit_must_not_depend_on_frontend_crates_or_odin_vm() {
     let has_dep = manifest.lines().any(|line| {
         let trimmed = line.trim_start();
         !trimmed.starts_with('#')
-            && (trimmed.starts_with("rusty-")
-                || trimmed.starts_with("odin-vm")
-                || trimmed.contains("rusty_")
-                || trimmed.contains("odin_vm"))
+            && (trimmed.starts_with("rusty-") || trimmed.starts_with("odin-vm") || trimmed.contains("rusty_") || trimmed.contains("odin_vm"))
     });
     assert!(!has_dep, "nyar-jit Cargo.toml must not depend on a rusty-<lang> frontend crate or odin-vm");
 }

@@ -1,23 +1,21 @@
 //! 微信小游戏工程组装。
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
-use miette::{IntoDiagnostic, Result, WrapErr};
-
 use crate::asgard::delivery::PackReport;
 
 /// 将 legion build 产物打包为微信小游戏工程。
-pub fn pack_mini_game(input: &Path, output: Option<&Path>, wasm_name: Option<&str>) -> Result<PackReport> {
+pub fn pack_mini_game(input: &Path, output: Option<&Path>, wasm_name: Option<&str>) -> AsgardResult<PackReport> {
     let out = output.map(PathBuf::from).unwrap_or_else(|| input.join("wechat-game"));
-    fs::create_dir_all(&out).into_diagnostic().wrap_err("create output dir")?;
+    fs::create_dir_all(&out).map_err(|e| AsgardError::msg(format!("{e}: {}", "create output dir")))?;
     let wasm_path = find_wasm(input, wasm_name)?;
     let wasm_file_name = wasm_path.file_name().unwrap().to_string_lossy().into_owned();
     let dest_wasm = out.join(&wasm_file_name);
     if wasm_path != dest_wasm {
-        fs::copy(&wasm_path, &dest_wasm).into_diagnostic().wrap_err("copy wasm")?;
+        fs::copy(&wasm_path, &dest_wasm).map_err(|e| AsgardError::msg(format!("{e}: {}", "copy wasm")))?;
     }
 
     let game_js = format!(
@@ -39,8 +37,8 @@ if (typeof WXWebAssembly !== 'undefined') {{
 }}
 "#
     );
-    fs::write(out.join("game.js"), game_js).into_diagnostic()?;
-    fs::write(out.join("game.json"), "{\n  \"deviceOrientation\": \"portrait\"\n}\n").into_diagnostic()?;
+    fs::write(out.join("game.js"), game_js)?;
+    fs::write(out.join("game.json"), "{\n  \"deviceOrientation\": \"portrait\"\n}\n")?;
     fs::write(
         out.join("project.config.json"),
         r#"{
@@ -55,8 +53,7 @@ if (typeof WXWebAssembly !== 'undefined') {{
   "projectname": "asgard-mini-game"
 }
 "#,
-    )
-    .into_diagnostic()?;
+    )?;
 
     if let Some(parent) = wasm_path.parent() {
         if let Ok(entries) = fs::read_dir(parent) {
@@ -64,7 +61,7 @@ if (typeof WXWebAssembly !== 'undefined') {{
                 let path = entry.path();
                 if path.extension().and_then(|e| e.to_str()) == Some("mjs") {
                     let name = path.file_name().unwrap();
-                    fs::copy(&path, out.join(name)).into_diagnostic()?;
+                    fs::copy(&path, out.join(name))?;
                 }
             }
         }
@@ -72,7 +69,7 @@ if (typeof WXWebAssembly !== 'undefined') {{
     Ok(PackReport { artifact_path: out.clone(), message: format!("mini-game project {}", out.display()) })
 }
 
-fn find_wasm(input: &Path, preferred: Option<&str>) -> Result<PathBuf> {
+fn find_wasm(input: &Path, preferred: Option<&str>) -> AsgardResult<PathBuf> {
     if let Some(name) = preferred {
         let direct = input.join(name);
         if direct.exists() {
@@ -97,6 +94,5 @@ fn find_wasm(input: &Path, preferred: Option<&str>) -> Result<PathBuf> {
             }
         }
     }
-    Err(miette::miette!("未找到 .wasm；请先 `legion build` 或用 --wasm 指定"))
+    Err(AsgardError::msg(report!("未找到 .wasm；请先 `legion build` 或用 --wasm 指定")))
 }
-

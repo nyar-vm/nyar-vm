@@ -2,10 +2,10 @@
 
 use std::ops::Range;
 
-use crate::frontend::{DIAG_ABI_BINDING_NOT_SNAKE_CASE, NamingViolation};
+use crate::compiler::syntax::oak::{DIAG_ABI_BINDING_NOT_SNAKE_CASE, NamingViolation};
 use oak_awsl::{AbiIssue, AbiIssueKind, AbiSeverity};
 
-use crate::types::{SourceID, SourceSpan, ValkyrieError};
+use crate::compiler::types::{SourceID, SourceSpan, ValkyrieError};
 
 /// Convert a semantic naming violation into a compiler diagnostic.
 pub fn violation_to_diagnostic(violation: NamingViolation, source: SourceID, offset: usize) -> ValkyrieError {
@@ -41,7 +41,7 @@ fn generic_abi_issue_to_diagnostic(issue: &AbiIssue, source: SourceID, offset: u
     if let Some(span) = &issue.span {
         let start = offset + span.start;
         let end = offset + span.end;
-        diag.labels.push(crate::types::LabeledSpan {
+        diag.labels.push(crate::compiler::types::LabeledSpan {
             primary: true,
             span: SourceSpan::new(source, start as u32, end as u32),
             key: Some("AWSL ABI".into()),
@@ -52,7 +52,7 @@ fn generic_abi_issue_to_diagnostic(issue: &AbiIssue, source: SourceID, offset: u
         let _ = source;
     }
     if issue.severity == AbiSeverity::Warning {
-        diag.level = crate::types::ReportKind::Warning;
+        diag.level = crate::compiler::types::ReportKind::Warning;
     }
     diag
 }
@@ -76,7 +76,7 @@ fn extract_name_from_abi_message(message: &str) -> Option<String> {
 
 /// Collect naming diagnostics from parsed vx/v source.
 pub fn collect_naming_diagnostics(source_text: &str, _is_vx: bool, source: SourceID, offset: usize) -> Vec<ValkyrieError> {
-    use crate::frontend::{parse_source, validate_snake_case};
+    use crate::compiler::syntax::oak::{parse_source, validate_snake_case};
 
     let Ok(root) = parse_source(source_text)
     else {

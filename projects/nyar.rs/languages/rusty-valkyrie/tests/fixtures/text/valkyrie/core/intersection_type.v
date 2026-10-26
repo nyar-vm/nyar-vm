@@ -1,3 +1,0 @@
-
-type Composite = Display & Clone;
-

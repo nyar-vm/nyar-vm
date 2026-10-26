@@ -1,9 +1,16 @@
-use crate::workspace::{
-    labeled_report_with_context,
-    manifest::RunnerBinding,
-    planner::{BuildPlan, BuildRequest, WorkspaceResolver},
-    source_snapshot::compile_source_snapshot,
+use crate::legion::{
+    cmds::error::{LegionError, LegionResult},
+    workspace::{
+        labeled_report_with_context,
+        manifest::RunnerBinding,
+        planner::{BuildPlan, BuildRequest, WorkspaceResolver},
+        source_snapshot::compile_source_snapshot,
+    },
 };
+use nyar::{CanonicalAbi, CanonicalTarget, RunnerFamily};
+use nyar_runner::{RuntimeContract as InterpreterRuntimeContract, RuntimeFamily as InterpreterRuntimeFamily};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     ffi::OsString,
@@ -12,13 +19,6 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, ExitCode},
 };
-
-use clap::Args;
-use miette::{IntoDiagnostic, Result, miette};
-use nyar_runner::{RuntimeContract as InterpreterRuntimeContract, RuntimeFamily as InterpreterRuntimeFamily};
-use rusty_valkyrie::{CanonicalAbi, CanonicalTarget, RunnerFamily};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use crate::legion::cmds::build::{BuildArgs, compile_arch, run as run_build};
 
@@ -39,37 +39,27 @@ const COMPILE_EVIDENCE_FILE_NAME: &str = "compile-evidence.txt";
 const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 0;
 
 /// `legion run` 的命令参数。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct RunArgs {
     /// 项目目录，默认当前目录。
-    #[arg(value_name = "project-dir", default_value = ".")]
     pub project_dir: PathBuf,
     /// 目标平台。
-    #[arg(long, default_value = "clr")]
     pub target: CanonicalTarget,
     /// 输出目录。
-    #[arg(short = 'o', long = "output")]
     pub output_dir: Option<PathBuf>,
     /// 强制按 workspace 成员解析；若项目未注册则直接报错，不回退到 package 模式。
-    #[arg(long, default_value_t = false)]
     pub workspace: bool,
     /// 覆盖 runner 命令，例如 `clr=C:\dotnet\dotnet.exe`。
-    #[arg(long = "runner", value_name = "target=command")]
     pub runner: Vec<String>,
     /// 直接指定产物路径，跳过默认探测。
-    #[arg(long, value_name = "artifact")]
     pub artifact: Option<PathBuf>,
     /// 只打印即将执行的命令，不真正启动。
-    #[arg(long)]
     pub dry_run: bool,
     /// 输出调试用构建副产物。
-    #[arg(long, default_value_t = false)]
     pub debug_artifacts: bool,
     /// 进程级工作负载意图 JSON（仅 `ovm`：转发给 `odin-vm --workload-json`）。
-    #[arg(long = "workload-json", value_name = "json")]
     pub workload_json: Option<String>,
     /// 工作负载意图 JSON 文件路径（仅 `ovm`：转发给 `odin-vm --workload-file`）。
-    #[arg(long = "workload-file", value_name = "path")]
     pub workload_file: Option<PathBuf>,
 }
 
@@ -100,8 +90,8 @@ pub struct CompileEvidenceDigest {
     pub generated_source_hash: String,
 }
 
-impl From<&rusty_valkyrie::CompilerCompileEvidence> for CompileEvidenceDigest {
-    fn from(evidence: &rusty_valkyrie::CompilerCompileEvidence) -> Self {
+impl From<&crate::compiler::emitter::pipeline::CompilerCompileEvidence> for CompileEvidenceDigest {
+    fn from(evidence: &crate::compiler::emitter::pipeline::CompilerCompileEvidence) -> Self {
         Self {
             semantic_closure_hash: evidence.semantic_closure_hash.clone(),
             canonical_surface_hash: evidence.canonical_surface_hash.clone(),
@@ -160,49 +150,50 @@ pub struct ExecutionArtifactDigest {
 
 impl ExecutionManifest {
     /// 将 execution manifest 写入输出目录中的 `run-contracts.txt`。
-    pub fn write_to_output_dir(&self, output_dir: &Path) -> Result<()> {
+    pub fn write_to_output_dir(&self, output_dir: &Path) -> LegionResult<()> {
         let manifest_path = output_dir.join(EXECUTION_MANIFEST_FILE_NAME);
         let content = crate::legion::write_von_indented(self).map_err(|error| {
             labeled_report_with_context(error, format!("序列化 execution manifest 失败 {}", manifest_path.display()), "VON 序列化失败位置")
         })?;
         fs::write(&manifest_path, content)
-            .into_diagnostic()
-            .map_err(|error| error.wrap_err(format!("写入 execution manifest 失败 {}", manifest_path.display())))?;
+            .map_err(|e| LegionError::msg(format!("写入 execution manifest 失败 {}: {e}", manifest_path.display())))?;
 
         Ok(())
     }
 
     /// 从输出目录读取 execution manifest。
-    pub fn read_from_output_dir(output_dir: &Path) -> Result<Option<Self>> {
+    pub fn read_from_output_dir(output_dir: &Path) -> LegionResult<Option<Self>> {
         Self::read_from_path(&output_dir.join(EXECUTION_MANIFEST_FILE_NAME))
     }
 
     /// 从指定路径读取 execution manifest。
-    pub fn read_from_path(path: &Path) -> Result<Option<Self>> {
+    pub fn read_from_path(path: &Path) -> LegionResult<Option<Self>> {
         if !path.exists() {
             return Ok(None);
         }
-        let source = fs::read_to_string(path)
-            .into_diagnostic()
-            .map_err(|error| error.wrap_err(format!("failed to read execution manifest '{}'", path.display())))?;
+        let source =
+            fs::read_to_string(path).map_err(|e| LegionError::msg(format!("failed to read execution manifest '{}': {e}", path.display())))?;
         crate::legion::parse_von::<Self>(&source).map(Some).map_err(|error| {
             labeled_report_with_context(error, format!("failed to parse execution manifest '{}'", path.display()), "VON 解析失败位置")
         })
     }
 
     /// 删除输出目录中的 execution manifest。
-    pub fn remove_from_output_dir(output_dir: &Path) -> Result<()> {
+    pub fn remove_from_output_dir(output_dir: &Path) -> LegionResult<()> {
         let manifest_path = output_dir.join(EXECUTION_MANIFEST_FILE_NAME);
         if manifest_path.exists() {
             fs::remove_file(&manifest_path)
-                .into_diagnostic()
-                .map_err(|error| error.wrap_err(format!("删除 execution manifest 失败 {}", manifest_path.display())))?;
+                .map_err(|e| LegionError::msg(format!("删除 execution manifest 失败 {}: {e}", manifest_path.display())))?;
         }
         Ok(())
     }
 
     /// 基于当前 `BuildPlan`、运行契约与编译证据生成 execution manifest。
-    pub fn from_build_plan(plan: &BuildPlan, contracts: &[RunContract], evidence: &rusty_valkyrie::CompilerCompileEvidence) -> Result<Self> {
+    pub fn from_build_plan(
+        plan: &BuildPlan,
+        contracts: &[RunContract],
+        evidence: &crate::compiler::emitter::pipeline::CompilerCompileEvidence,
+    ) -> LegionResult<Self> {
         Ok(Self {
             schema_version: EXECUTION_MANIFEST_SCHEMA_VERSION,
             identity_schema_version: nyar_types::IDENTITY_SCHEMA_VERSION,
@@ -219,7 +210,7 @@ impl ExecutionManifest {
     }
 
     /// 校验当前 execution manifest 是否仍与 `BuildPlan` 及产物目录匹配。
-    pub fn is_fresh_for_plan(&self, plan: &BuildPlan) -> Result<bool> {
+    pub fn is_fresh_for_plan(&self, plan: &BuildPlan) -> LegionResult<bool> {
         if self.schema_version != EXECUTION_MANIFEST_SCHEMA_VERSION {
             return Ok(false);
         }
@@ -277,56 +268,56 @@ impl ExecutionManifest {
     }
 }
 
-fn read_compile_evidence_digest(output_dir: &Path) -> Result<Option<CompileEvidenceDigest>> {
+fn read_compile_evidence_digest(output_dir: &Path) -> LegionResult<Option<CompileEvidenceDigest>> {
     let path = output_dir.join(COMPILE_EVIDENCE_FILE_NAME);
     if !path.exists() {
         return Ok(None);
     }
-    let source = fs::read_to_string(&path)
-        .into_diagnostic()
-        .map_err(|error| error.wrap_err(format!("读取 compile evidence 失败 {}", path.display())))?;
-    let evidence = crate::legion::parse_von::<rusty_valkyrie::CompilerCompileEvidence>(&source)
+    let source = fs::read_to_string(&path).map_err(|e| LegionError::msg(format!("读取 compile evidence 失败 {}: {e}", path.display())))?;
+    let evidence = crate::legion::parse_von::<crate::compiler::emitter::pipeline::CompilerCompileEvidence>(&source)
         .map_err(|error| labeled_report_with_context(error, format!("解析 compile evidence 失败 {}", path.display()), "VON 解析失败位置"))?;
     Ok(Some(CompileEvidenceDigest::from(&evidence)))
 }
 
-fn expected_resolver_compile_evidence(plan: &BuildPlan) -> Result<CompileEvidenceDigest> {
+fn expected_resolver_compile_evidence(plan: &BuildPlan) -> LegionResult<CompileEvidenceDigest> {
     let groups = compile_source_snapshot(&plan.project.semantic_source_groups)?;
     let host_bindings = plan
         .project
         .selected_host_providers
         .iter()
         .map(|provider| {
-            let contract =
-                provider.contract_key.clone().ok_or_else(|| miette!("选中的 host provider `{}` 缺少契约声明身份", provider.symbol))?;
-            Ok(rusty_valkyrie::CompilerHostProviderBinding { contract, provider: provider.key.clone() })
+            let contract = provider
+                .contract_key
+                .clone()
+                .ok_or_else(|| LegionError::msg(report!("选中的 host provider `{}` 缺少契约声明身份", provider.symbol)))?;
+            Ok(crate::compiler::emitter::pipeline::CompilerHostProviderBinding { contract, provider: provider.key.clone() })
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<LegionResult<Vec<_>>>()?;
     Ok(expected_resolver_compile_evidence_from_groups(&groups, &host_bindings, compile_arch(plan)))
 }
 
 /// 与 build 阶段共用同一架构键，保证 compile evidence 可比较。
 fn expected_resolver_compile_evidence_from_groups(
     groups: &[nyar_types::compiler_input::CompilerSourceGroup],
-    host_bindings: &[rusty_valkyrie::CompilerHostProviderBinding],
+    host_bindings: &[crate::compiler::emitter::pipeline::CompilerHostProviderBinding],
     arch: &str,
 ) -> CompileEvidenceDigest {
     CompileEvidenceDigest {
-        semantic_closure_hash: rusty_valkyrie::semantic_closure_hash_for_groups(groups, arch),
+        semantic_closure_hash: crate::compiler::emitter::pipeline::semantic_closure_hash_for_groups(groups, arch),
         canonical_surface_hash: String::new(),
-        host_provider_binding_hash: rusty_valkyrie::host_provider_binding_hash_for_bindings(host_bindings),
+        host_provider_binding_hash: crate::compiler::emitter::pipeline::host_provider_binding_hash_for_bindings(host_bindings),
         generated_source_hash: String::new(),
     }
 }
 
 impl RunContract {
     /// 从输出目录读取主运行契约。
-    pub fn read_from_output_dir(output_dir: &Path) -> Result<Option<Self>> {
+    pub fn read_from_output_dir(output_dir: &Path) -> LegionResult<Option<Self>> {
         Ok(Self::read_all_from_output_dir(output_dir)?.into_iter().next())
     }
 
     /// 从输出目录读取运行契约列表。
-    pub fn read_all_from_output_dir(output_dir: &Path) -> Result<Vec<Self>> {
+    pub fn read_all_from_output_dir(output_dir: &Path) -> LegionResult<Vec<Self>> {
         Ok(ExecutionManifest::read_from_output_dir(output_dir)?.map_or_else(Vec::new, |manifest| manifest.run_contracts))
     }
 }
@@ -347,7 +338,7 @@ struct RunCommand {
 }
 
 /// 执行 `legion run`。
-pub fn run(args: &RunArgs) -> Result<ExitCode> {
+pub fn run(args: &RunArgs) -> LegionResult<ExitCode> {
     let workspace = if args.workspace {
         WorkspaceResolver::discover(&args.project_dir)?
     }
@@ -385,19 +376,18 @@ pub fn run(args: &RunArgs) -> Result<ExitCode> {
         .args(command.args.iter().map(OsString::from))
         .current_dir(&plan.project.manifest_dir)
         .status()
-        .into_diagnostic()
-        .map_err(|error| error.wrap_err(format!("failed to start runner '{}'", command.command)))?;
+        .map_err(|e| LegionError::msg(format!("failed to start runner '{}': {e}", command.command)))?;
 
     Ok(exit_code_from_status(status.code()))
 }
 
 /// 将 legion 侧工作负载意图参数转发给 `odin-vm` runner。
-fn append_ovm_workload_args(command: &mut RunCommand, args: &RunArgs) -> Result<()> {
+fn append_ovm_workload_args(command: &mut RunCommand, args: &RunArgs) -> LegionResult<()> {
     if args.workload_json.is_none() && args.workload_file.is_none() {
         return Ok(());
     }
     if command.target != RunnerFamily::Ovm {
-        return Err(miette!("--workload-json/--workload-file are only supported for target ovm"));
+        return Err(LegionError::msg(report!("--workload-json/--workload-file are only supported for target ovm")));
     }
     if let Some(json) = &args.workload_json {
         command.args.push("--workload-json".to_string());
@@ -417,11 +407,11 @@ fn plan_run_command(
     cli_runner_overrides: &[String],
     run_contracts: &[RunContract],
     artifact_override: Option<&Path>,
-) -> Result<RunCommand> {
+) -> LegionResult<RunCommand> {
     let runner_target = runner_target_for(canonical_target);
     let (artifact, contract_index) =
         select_artifact(output_dir, run_contracts.iter().map(|contract| contract.physical_entry.as_str()), artifact_override)
-            .map_err(|error| miette!("{error}"))?;
+            .map_err(|error| report!("{error}"))?;
     let run_contract = &run_contracts[contract_index];
     let runner = resolve_runner(workspace, canonical_target, runner_target, cli_runner_overrides, Some(run_contract))?;
     let placeholders = build_placeholders(output_dir, &artifact, runner_target, Some(run_contract))?;
@@ -431,7 +421,7 @@ fn plan_run_command(
     Ok(RunCommand { target: runner_target, artifact, command, args })
 }
 
-fn ensure_execution_manifest(args: &RunArgs, plan: &BuildPlan) -> Result<ExecutionManifest> {
+fn ensure_execution_manifest(args: &RunArgs, plan: &BuildPlan) -> LegionResult<ExecutionManifest> {
     if let Some(manifest) = ExecutionManifest::read_from_output_dir(&plan.output_dir)? {
         if manifest.is_fresh_for_plan(plan)? {
             println!("build status: reused");
@@ -451,13 +441,14 @@ fn ensure_execution_manifest(args: &RunArgs, plan: &BuildPlan) -> Result<Executi
         debug_artifacts: args.debug_artifacts,
     })?;
     if build_status != ExitCode::SUCCESS {
-        return Err(miette!("build returned non-zero status"));
+        return Err(LegionError::msg(report!("build returned non-zero status")));
     }
 
-    let manifest = ExecutionManifest::read_from_output_dir(&plan.output_dir)?
-        .ok_or_else(|| miette!("missing execution manifest after build: {}", plan.output_dir.join(EXECUTION_MANIFEST_FILE_NAME).display()))?;
+    let manifest = ExecutionManifest::read_from_output_dir(&plan.output_dir)?.ok_or_else(|| {
+        LegionError::msg(report!("missing execution manifest after build: {}", plan.output_dir.join(EXECUTION_MANIFEST_FILE_NAME).display()))
+    })?;
     if !manifest.is_fresh_for_plan(plan)? {
-        return Err(miette!("execution manifest is still stale after build"));
+        return Err(LegionError::msg(report!("execution manifest is still stale after build")));
     }
 
     Ok(manifest)
@@ -469,7 +460,7 @@ fn resolve_runner(
     runner_target: RunnerFamily,
     cli_runner_overrides: &[String],
     run_contract: Option<&RunContract>,
-) -> Result<RunnerTemplate> {
+) -> LegionResult<RunnerTemplate> {
     let mut default_template = default_runner_template(runner_target, run_contract);
     if runner_target == RunnerFamily::Wasi && is_wasip3_target(canonical_target) {
         inject_wasmtime_p3_flag(&mut default_template.args);
@@ -518,14 +509,14 @@ fn inject_wasmtime_p3_flag(args: &mut Vec<String>) {
     args.insert(insert_at + 1, "p3".to_string());
 }
 
-fn parse_runner_overrides(values: &[String]) -> Result<BTreeMap<RunnerFamily, String>> {
+fn parse_runner_overrides(values: &[String]) -> LegionResult<BTreeMap<RunnerFamily, String>> {
     let mut overrides = BTreeMap::new();
     for item in values {
         let Some((target, command)) = item.split_once('=')
         else {
-            return Err(miette!("invalid runner override '{}': expected target=command", item));
+            return Err(LegionError::msg(report!("invalid runner override '{}': expected target=command", item)));
         };
-        let family = target.trim().parse::<RunnerFamily>().map_err(|error| miette!("invalid runner override '{}': {}", item, error))?;
+        let family = target.trim().parse::<RunnerFamily>().map_err(|error| report!("invalid runner override '{}': {}", item, error))?;
         overrides.insert(family, command.trim().to_string());
     }
     Ok(overrides)
@@ -568,7 +559,7 @@ fn build_placeholders(
     artifact: &Path,
     runner_target: RunnerFamily,
     run_contract: Option<&RunContract>,
-) -> Result<BTreeMap<&'static str, String>> {
+) -> LegionResult<BTreeMap<&'static str, String>> {
     let mut values = BTreeMap::new();
     let artifact_text = strip_verbatim_prefix(artifact.to_string_lossy().as_ref()).to_owned();
     values.insert("artifact", artifact_text.clone());
@@ -593,7 +584,7 @@ fn build_placeholders(
             .file_stem()
             .and_then(|stem| stem.to_str())
             .map(ToOwned::to_owned)
-            .ok_or_else(|| miette!("cannot infer JVM entry from {}", artifact.display()))?,
+            .ok_or_else(|| LegionError::msg(report!("cannot infer JVM entry from {}", artifact.display())))?,
         _ => artifact.file_stem().and_then(|stem| stem.to_str()).unwrap_or_default().to_string(),
     };
     values.insert("entry", entry);
@@ -608,14 +599,14 @@ fn expand_placeholders(template: &str, placeholders: &BTreeMap<&'static str, Str
     placeholders.iter().fold(template.to_string(), |current, (key, value)| current.replace(&format!("{{{}}}", key), value))
 }
 
-fn collect_files(dir: &Path) -> Result<Vec<PathBuf>> {
+fn collect_files(dir: &Path) -> LegionResult<Vec<PathBuf>> {
     if !dir.exists() {
-        return Err(miette!("output directory does not exist: {}", dir.display()));
+        return Err(LegionError::msg(report!("output directory does not exist: {}", dir.display())));
     }
 
     let mut files = Vec::new();
-    for entry in fs::read_dir(dir).into_diagnostic().map_err(|error| error.wrap_err(format!("failed to list '{}'", dir.display())))? {
-        let entry = entry.into_diagnostic().map_err(|error| error.wrap_err(format!("failed to read '{}'", dir.display())))?;
+    for entry in fs::read_dir(dir).map_err(|e| LegionError::msg(format!("failed to list '{}': {e}", dir.display())))? {
+        let entry = entry.map_err(|e| LegionError::msg(format!("failed to read '{}': {e}", dir.display())))?;
         let path = entry.path();
         if path.is_file() {
             files.push(path);
@@ -645,7 +636,7 @@ fn strip_verbatim_prefix(path: &str) -> &str {
     path.strip_prefix(r"\\?\").unwrap_or(path)
 }
 
-fn collect_execution_input_digests(plan: &BuildPlan) -> Result<Vec<ExecutionInputDigest>> {
+fn collect_execution_input_digests(plan: &BuildPlan) -> LegionResult<Vec<ExecutionInputDigest>> {
     let mut inputs = Vec::new();
     for source_path in &plan.project.source_files {
         inputs.push(ExecutionInputDigest {
@@ -674,7 +665,7 @@ fn collect_execution_input_digests(plan: &BuildPlan) -> Result<Vec<ExecutionInpu
     Ok(inputs)
 }
 
-fn collect_execution_artifact_digests(output_dir: &Path) -> Result<Vec<ExecutionArtifactDigest>> {
+fn collect_execution_artifact_digests(output_dir: &Path) -> LegionResult<Vec<ExecutionArtifactDigest>> {
     let mut files = collect_files(output_dir)?;
     files.retain(|path| !is_execution_metadata_file(path));
     files.sort();
@@ -725,8 +716,8 @@ fn workspace_relative_path_text(workspace_root: &Path, path: &Path) -> String {
     path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_else(|| normalized_path_text(path))
 }
 
-fn hash_file_sha256(path: &Path) -> Result<String> {
-    let bytes = fs::read(path).into_diagnostic().map_err(|error| error.wrap_err(format!("failed to read '{}'", path.display())))?;
+fn hash_file_sha256(path: &Path) -> LegionResult<String> {
+    let bytes = fs::read(path).map_err(|e| LegionError::msg(format!("failed to read '{}': {e}", path.display())))?;
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     Ok(hex_encode(&hasher.finalize()))
@@ -739,9 +730,3 @@ fn hex_encode(bytes: &[u8]) -> String {
     }
     text
 }
-#[cfg(test)]
-#[path = "../../../../tests/legion/path_wired/cmds_run_mod_workload_forward_tests.rs"]
-mod cmds_run_mod_workload_forward_tests_tests;
-
-
-

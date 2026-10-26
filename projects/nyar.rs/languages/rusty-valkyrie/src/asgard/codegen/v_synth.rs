@@ -11,4 +11,3 @@ pub fn collect_synthetic_v(components: &[LoweredComponent]) -> String {
     }
     out
 }
-

@@ -66,8 +66,6 @@ impl std::fmt::Display for PlanningError {
 
 impl std::error::Error for PlanningError {}
 
-impl miette::Diagnostic for PlanningError {}
-
 /// 进入 `nyar` 规划层的中性输入。
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OptimizerInput {

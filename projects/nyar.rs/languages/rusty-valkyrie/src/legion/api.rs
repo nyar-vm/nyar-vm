@@ -1,13 +1,15 @@
 //! Legion 程序化宿主 API（N-API / 内嵌调用）；**不是** CLI argv 封装。
-
-use std::path::{Path, PathBuf};
-
-use miette::{Result, miette};
-use rusty_valkyrie::CanonicalTarget;
+use crate::legion::{
+    CanonicalTarget,
+    cmds::{
+        build::compile_plan,
+        error::{LegionError, LegionResult},
+        project_input::resolve_project_path,
+    },
+    workspace::planner::{BuildRequest, PlannerError, PlannerResult, WorkspaceResolver},
+};
 use serde::Serialize;
-
-use crate::legion::cmds::{build::compile_plan, project_input::resolve_project_path};
-use crate::workspace::planner::{BuildRequest, WorkspaceResolver};
+use std::path::{Path, PathBuf};
 
 /// `legion plan` 结构化摘要。
 #[derive(Debug, Clone, Serialize)]
@@ -55,13 +57,13 @@ pub struct LegionBuildSummary {
 }
 
 /// 解析项目并生成 build plan，不进入 Compiler。
-pub fn plan_project(project_dir: impl AsRef<Path>, target: CanonicalTarget) -> Result<LegionPlanSummary> {
+pub fn plan_project(project_dir: impl AsRef<Path>, target: CanonicalTarget) -> PlannerResult<LegionPlanSummary> {
     let project_input = resolve_project_path(project_dir.as_ref())?;
     let workspace = WorkspaceResolver::discover_for_project(&project_input)?;
     let request = BuildRequest { project_dir: project_input, target, output_dir: None };
     let plan = workspace.build_plan(&request)?;
     if plan.project.source_files.is_empty() {
-        return Err(miette!("没有找到任何源码文件"));
+        return Err(PlannerError::NoSourceFiles);
     }
     Ok(LegionPlanSummary {
         project: plan.project.name.clone(),
@@ -81,13 +83,13 @@ pub fn plan_project(project_dir: impl AsRef<Path>, target: CanonicalTarget) -> R
 }
 
 /// 解析、编译并落盘产物。
-pub fn build_project(project_dir: impl AsRef<Path>, target: CanonicalTarget, output_dir: Option<PathBuf>) -> Result<LegionBuildSummary> {
+pub fn build_project(project_dir: impl AsRef<Path>, target: CanonicalTarget, output_dir: Option<PathBuf>) -> LegionResult<LegionBuildSummary> {
     let project_input = resolve_project_path(project_dir.as_ref())?;
     let workspace = WorkspaceResolver::discover_for_project(&project_input)?;
     let request = BuildRequest { project_dir: project_input, target, output_dir };
     let plan = workspace.build_plan(&request)?;
     if plan.project.source_files.is_empty() {
-        return Err(miette!("没有找到任何源码文件"));
+        return Err(LegionError::Planner(PlannerError::NoSourceFiles));
     }
     let report = compile_plan(&plan, false)?;
     let artifacts = report.artifacts.artifacts.iter().map(|artifact| plan.output_dir.join(&artifact.path).display().to_string()).collect();
@@ -99,5 +101,3 @@ pub fn build_project(project_dir: impl AsRef<Path>, target: CanonicalTarget, out
         entry_symbol: report.entry_symbol.clone(),
     })
 }
-
-

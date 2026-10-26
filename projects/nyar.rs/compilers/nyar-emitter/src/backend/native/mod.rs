@@ -5,11 +5,13 @@ mod executable;
 
 use std::path::PathBuf;
 
-use crate::transitional::binary::{
-    coff::{CoffMachine, CoffObjectWriter, CoffSection, CoffSymbol, coff_object_from_sections},
-    pe::extract_pe_section,
+use crate::{
+    EmitterError, Result,
+    transitional::binary::{
+        coff::{CoffMachine, CoffObjectWriter, CoffSection, CoffSymbol, coff_object_from_sections},
+        pe::extract_pe_section,
+    },
 };
-use miette::{IntoDiagnostic, Result, WrapErr, miette};
 use nyar::{
     abstractions::{ArtifactFormat, BackendInputKind, BinaryArch, BinaryFlavor, BinaryTarget, TargetFamily},
     backends::{BackendDescriptor, CompilationOptions, TargetCodeGenBackend},
@@ -65,16 +67,14 @@ impl TargetCodeGenBackend for NativeBinaryBackend {
     }
 
     fn validate(&self, input: &Self::Input) -> Result<()> {
-        classify_native_executable(&input.executable).map_err(|error| miette!("Native 后端 executable 格式无效: {error}"))?;
+        classify_native_executable(&input.executable).map_err(|error| format!("Native 后端 executable 格式无效: {error}"))?;
         Ok(())
     }
 
     fn compile(&self, input: Self::Input, options: &CompilationOptions) -> Result<ArtifactSet> {
-        std::fs::create_dir_all(&input.output_dir)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("创建输出目录失败：{}", input.output_dir.display()))?;
+        std::fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
-        match classify_native_executable(&input.executable).map_err(|error| miette!("Native 后端 executable 格式无效: {error}"))? {
+        match classify_native_executable(&input.executable).map_err(|error| format!("Native 后端 executable 格式无效: {error}"))? {
             NativeExecutableKind::Elf | NativeExecutableKind::ElfShared => compile_elf(input, options),
             NativeExecutableKind::Pe => compile_pe(input, options),
         }
@@ -83,9 +83,7 @@ impl TargetCodeGenBackend for NativeBinaryBackend {
 
 fn compile_pe(input: NativeBinaryBackendInput, options: &CompilationOptions) -> Result<ArtifactSet> {
     let executable_path = input.output_dir.join(format!("{}.exe", options.artifact_name));
-    std::fs::write(&executable_path, &input.executable)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("写入 PE 可执行文件失败：{}", executable_path.display()))?;
+    std::fs::write(&executable_path, &input.executable).map_err(|e| format!("写入 PE 可执行文件失败：{}: {e}", executable_path.display()))?;
 
     let object_path = input.output_dir.join(format!("{}.obj", options.artifact_name));
     let object = coff_object_from_sections(
@@ -98,10 +96,8 @@ fn compile_pe(input: NativeBinaryBackendInput, options: &CompilationOptions) -> 
         }],
         vec![CoffSymbol { name: input.entry_symbol.clone(), section_index: 1, value: 0, storage_class: 2 }],
     );
-    let object_bytes = CoffObjectWriter::write(&object).map_err(|error| miette::miette!("`COFF` sidecar 编码失败：{error}"))?;
-    std::fs::write(&object_path, object_bytes)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("写入 `COFF` sidecar 失败：{}", object_path.display()))?;
+    let object_bytes = CoffObjectWriter::write(&object).map_err(|error| format!("`COFF` sidecar 编码失败：{error}"))?;
+    std::fs::write(&object_path, object_bytes).map_err(|e| format!("写入 `COFF` sidecar 失败：{}: {e}", object_path.display()))?;
 
     let mut artifacts = ArtifactSet::default();
     artifacts.push(ArtifactDescriptor {
@@ -114,7 +110,7 @@ fn compile_pe(input: NativeBinaryBackendInput, options: &CompilationOptions) -> 
     });
     artifacts.push(ArtifactDescriptor {
         name: options.artifact_name.clone(),
-        path: object_path.file_name().and_then(|name| name.to_str()).ok_or_else(|| miette::miette!("COFF sidecar 文件名无效"))?.to_owned(),
+        path: object_path.file_name().and_then(|name| name.to_str()).ok_or_else(|| format!("COFF sidecar 文件名无效"))?.to_owned(),
         kind: nyar::ArtifactKind::Object,
         format: ArtifactFormat::Coff,
         target: options.target.clone(),
@@ -124,20 +120,18 @@ fn compile_pe(input: NativeBinaryBackendInput, options: &CompilationOptions) -> 
 }
 
 fn compile_elf(input: NativeBinaryBackendInput, options: &CompilationOptions) -> Result<ArtifactSet> {
-    let kind = classify_native_executable(&input.executable).map_err(|error| miette!("Native 后端 executable 格式无效: {error}"))?;
+    let kind = classify_native_executable(&input.executable).map_err(|error| format!("Native 后端 executable 格式无效: {error}"))?;
     let extension = if matches!(kind, NativeExecutableKind::ElfShared) { "so" } else { "" };
     let file_name = if extension.is_empty() { options.artifact_name.clone() } else { format!("{}.{}", options.artifact_name, extension) };
     let executable_path = input.output_dir.join(&file_name);
-    std::fs::write(&executable_path, &input.executable)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("写入 ELF 可执行文件失败：{}", executable_path.display()))?;
+    std::fs::write(&executable_path, &input.executable).map_err(|e| format!("写入 ELF 可执行文件失败：{}: {e}", executable_path.display()))?;
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&executable_path).into_diagnostic()?.permissions();
+        let mut perms = std::fs::metadata(&executable_path).map_err(|e| e.to_string())?.permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(&executable_path, perms).into_diagnostic()?;
+        std::fs::set_permissions(&executable_path, perms).map_err(|e| e.to_string())?;
     }
 
     let mut artifacts = ArtifactSet::default();

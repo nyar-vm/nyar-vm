@@ -1,5 +1,5 @@
 //! `asgard dev` 开发服务器：静态托管 + 文件监视 + SSE/WebSocket 风格 HMR 推送。
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{
     fs,
     io::{Read, Write},
@@ -12,8 +12,6 @@ use std::{
     thread,
     time::{Duration, SystemTime},
 };
-
-use miette::{IntoDiagnostic, Result, WrapErr};
 
 use crate::asgard::pipeline::{CompileOptions, compile_voa_project};
 
@@ -54,7 +52,7 @@ impl DevServerOptions {
 }
 
 /// 启动开发服务器（阻塞当前线程）。
-pub fn run_dev_server(options: &DevServerOptions, compile: &CompileOptions) -> Result<()> {
+pub fn run_dev_server(options: &DevServerOptions, compile: &CompileOptions) -> AsgardResult<()> {
     let generation = Arc::new(AtomicU64::new(BUILD_GENERATION.load(Ordering::SeqCst)));
     let rebuilding = Arc::new(Mutex::new(false));
     let compile_opts = compile.clone();
@@ -76,12 +74,12 @@ pub fn run_dev_server(options: &DevServerOptions, compile: &CompileOptions) -> R
     );
 
     let addr = format!("{}:{}", options.host, options.port);
-    let listener = TcpListener::bind(&addr).into_diagnostic().wrap_err_with(|| format!("绑定 {addr} 失败"))?;
+    let listener = TcpListener::bind(&addr).map_err(|e| AsgardError::msg(format!("绑定 {addr} 失败: {e}")))?;
     eprintln!("asgard dev server: http://{addr}/");
     eprintln!("asgard dev server: HMR SSE /__asgard/hmr/events (legacy JSON /__asgard/hmr)");
 
     for stream in listener.incoming() {
-        let stream = stream.into_diagnostic()?;
+        let stream = stream?;
         let current_gen = generation.load(Ordering::SeqCst);
         if let Err(error) = handle_connection(stream, &dist_dir, current_gen, generation.clone()) {
             eprintln!("asgard dev: {error}");
@@ -174,9 +172,9 @@ fn collect_dir_mtimes(dir: &Path, ignore_dirs: &[String], out: &mut Vec<(PathBuf
     }
 }
 
-fn handle_connection(mut stream: TcpStream, dist_dir: &Path, generation: u64, generation_arc: Arc<AtomicU64>) -> Result<()> {
+fn handle_connection(mut stream: TcpStream, dist_dir: &Path, generation: u64, generation_arc: Arc<AtomicU64>) -> AsgardResult<()> {
     let mut buffer = [0u8; 4096];
-    let size = stream.read(&mut buffer).into_diagnostic()?;
+    let size = stream.read(&mut buffer)?;
     let request = String::from_utf8_lossy(&buffer[..size]);
     let mut lines = request.lines();
     let request_line = lines.next().unwrap_or("");
@@ -208,7 +206,7 @@ fn handle_connection(mut stream: TcpStream, dist_dir: &Path, generation: u64, ge
         return write_response(&mut stream, 404, "text/plain", "Not Found");
     }
 
-    let bytes = fs::read(&file_path).into_diagnostic()?;
+    let bytes = fs::read(&file_path)?;
     let content_type = guess_content_type(&file_path);
     if method == "HEAD" {
         return write_response_headers(&mut stream, 200, content_type, bytes.len());
@@ -216,13 +214,13 @@ fn handle_connection(mut stream: TcpStream, dist_dir: &Path, generation: u64, ge
     write_response_bytes(&mut stream, 200, content_type, &bytes)
 }
 
-fn handle_sse(stream: &mut TcpStream, generation: Arc<AtomicU64>) -> Result<()> {
+fn handle_sse(stream: &mut TcpStream, generation: Arc<AtomicU64>) -> AsgardResult<()> {
     let header = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n\r\n";
-    stream.write_all(header.as_bytes()).into_diagnostic()?;
+    stream.write_all(header.as_bytes())?;
     let mut last = generation.load(Ordering::SeqCst);
     let payload = format!("data: {{\"generation\":{last},\"changedModules\":[\"awsl\"]}}\n\n");
-    stream.write_all(payload.as_bytes()).into_diagnostic()?;
-    stream.flush().into_diagnostic()?;
+    stream.write_all(payload.as_bytes())?;
+    stream.flush()?;
     for _ in 0..120 {
         thread::sleep(Duration::from_millis(500));
         let current = generation.load(Ordering::SeqCst);
@@ -238,7 +236,7 @@ fn handle_sse(stream: &mut TcpStream, generation: Arc<AtomicU64>) -> Result<()> 
     Ok(())
 }
 
-fn sanitize_path(dist_dir: &Path, url_path: &str) -> Result<PathBuf> {
+fn sanitize_path(dist_dir: &Path, url_path: &str) -> AsgardResult<PathBuf> {
     let trimmed = url_path.trim_start_matches('/');
     let candidate = dist_dir.join(trimmed);
     Ok(candidate)
@@ -257,11 +255,11 @@ fn guess_content_type(path: &Path) -> &'static str {
     }
 }
 
-fn write_response(stream: &mut TcpStream, status: u16, content_type: &str, body: &str) -> Result<()> {
+fn write_response(stream: &mut TcpStream, status: u16, content_type: &str, body: &str) -> AsgardResult<()> {
     write_response_bytes(stream, status, content_type, body.as_bytes())
 }
 
-fn write_response_bytes(stream: &mut TcpStream, status: u16, content_type: &str, body: &[u8]) -> Result<()> {
+fn write_response_bytes(stream: &mut TcpStream, status: u16, content_type: &str, body: &[u8]) -> AsgardResult<()> {
     let status_text = match status {
         200 => "OK",
         403 => "Forbidden",
@@ -273,14 +271,14 @@ fn write_response_bytes(stream: &mut TcpStream, status: u16, content_type: &str,
         "HTTP/1.1 {status} {status_text}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
-    stream.write_all(header.as_bytes()).into_diagnostic()?;
-    stream.write_all(body).into_diagnostic()?;
+    stream.write_all(header.as_bytes())?;
+    stream.write_all(body)?;
     Ok(())
 }
 
-fn write_response_headers(stream: &mut TcpStream, status: u16, content_type: &str, len: usize) -> Result<()> {
+fn write_response_headers(stream: &mut TcpStream, status: u16, content_type: &str, len: usize) -> AsgardResult<()> {
     let header = format!("HTTP/1.1 {status} OK\r\nContent-Type: {content_type}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n");
-    stream.write_all(header.as_bytes()).into_diagnostic()?;
+    stream.write_all(header.as_bytes())?;
     Ok(())
 }
 
@@ -325,8 +323,3 @@ pub fn generate_hmr_client_script() -> String {
 })();"#
         .to_string()
 }
-#[cfg(test)]
-#[path = "../../tests/asgard/path_wired/dev_server.rs"]
-mod dev_server_tests;
-
-

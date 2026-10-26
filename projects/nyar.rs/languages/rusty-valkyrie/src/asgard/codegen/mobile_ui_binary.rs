@@ -539,24 +539,3 @@ fn write_string(out: &mut Vec<u8>, value: &str) {
     out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
     out.extend_from_slice(bytes);
 }
-
-#[cfg(test)]
-#[doc(hidden)]
-pub fn host_logic_placeholder(platform: &str) -> Vec<u8> {
-    let mut out = Vec::from(b"ASGDHOST\x01");
-    write_string(&mut out, platform);
-    out
-}
-
-#[cfg(test)]
-#[doc(hidden)]
-pub fn dex_placeholder() -> Vec<u8> {
-    let mut dex = vec![0u8; 112];
-    dex[..8].copy_from_slice(b"dex\n035\0");
-    dex
-}
-#[cfg(test)]
-#[path = "../../../tests/asgard/path_wired/codegen_mobile_ui_binary.rs"]
-mod codegen_mobile_ui_binary_tests;
-
-

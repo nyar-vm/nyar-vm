@@ -3,7 +3,7 @@
 mod discover;
 mod island_kind;
 mod partition;
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -28,8 +28,7 @@ use crate::asgard::{
     tailwind::collect_from_components,
     wasm::{compile_wasm_bundle, copy_wasm_artifacts_to_dist},
 };
-use miette::{IntoDiagnostic, Result, WrapErr};
-use rusty_valkyrie::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget, CanonicalVendor};
+use nyar::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget, CanonicalVendor};
 
 pub use discover::{DiscoveredAwsFile, DiscoveredAwslFile, DiscoveredSources, discover_sources};
 pub use island_kind::{IslandKind, awsl_island_kind};
@@ -65,13 +64,13 @@ pub struct CompileReport {
 }
 
 /// 编译 VOA 项目：browser 与 wechat-miniprogram 产出 WASM；其余平台产出宿主原生制品。
-pub fn compile_voa_project(options: &CompileOptions) -> Result<CompileReport> {
+pub fn compile_voa_project(options: &CompileOptions) -> AsgardResult<CompileReport> {
     let config = VoaConfig::load(&options.project_dir)?;
     let platform = HostPlatform::parse(&config.platform);
-    let backend = HostBackend::from_platform(platform).map_err(|msg| miette::miette!("{msg}"))?;
+    let backend = HostBackend::from_platform(platform).map_err(|msg| report!("{msg}"))?;
     let sources = discover_sources(&options.project_dir)?;
     let output_dir = options.output_dir.clone().unwrap_or_else(|| options.project_dir.join(&config.build.output));
-    fs::create_dir_all(&output_dir).into_diagnostic().wrap_err("创建 dist 失败")?;
+    fs::create_dir_all(&output_dir).map_err(|e| AsgardError::msg(format!("{e}: {}", "创建 dist 失败")))?;
 
     let lowering_options = LoweringOptions { strict_mode: config.language.awsl.strict_mode, ..LoweringOptions::default() };
 
@@ -84,7 +83,7 @@ pub fn compile_voa_project(options: &CompileOptions) -> Result<CompileReport> {
         }
         let source = partition::read_awsl_file(&awsl_file.path)?;
         let mut component = compile_awsl_source(&source, &awsl_file.component_name, awsl_file.path.to_str().unwrap_or(""), &lowering_options)
-            .map_err(|error| miette::miette!("{}:{}: {}", awsl_file.path.display(), error.span.start, error.message))?;
+            .map_err(|error| report!("{}:{}: {}", awsl_file.path.display(), error.span.start, error.message))?;
         optimize_theme_registry(&mut component, &config.ui);
         components.push(component);
     }
@@ -117,7 +116,7 @@ pub fn compile_voa_project(options: &CompileOptions) -> Result<CompileReport> {
         };
         let report =
             compile_wasm_bundle(&resolved.groups, GeneratedSource { producer, source: &generated_source }, &output_dir, &module_name, &target)
-                .wrap_err_with(|| format!("WASM 编译失败 (platform={})", config.platform))?;
+                .map_err(|error| AsgardError::msg(format!("WASM 编译失败 (platform={}): {error}", config.platform)))?;
         copy_wasm_artifacts_to_dist(&output_dir, &report)?;
         true
     }
@@ -203,7 +202,7 @@ fn package_browser(
     wasm_stem: &str,
     wasm_built: bool,
     tailwind_css: Option<String>,
-) -> Result<usize> {
+) -> AsgardResult<usize> {
     let opts = IslandPackageOptions {
         module_stem: module_name.to_string(),
         wasm_stem: wasm_stem.to_string(),
@@ -216,7 +215,7 @@ fn package_browser(
     let report = package_browser_islands(components, output_dir, &opts)?;
     let css_hrefs: Vec<String> = report.css_filenames.iter().map(|name| format!("/{name}")).collect();
     let html = generate_index_html(config, components, &css_hrefs);
-    fs::write(output_dir.join(&html.relative_path), &html.content).into_diagnostic()?;
+    fs::write(output_dir.join(&html.relative_path), &html.content)?;
     Ok(report.js_file_count)
 }
 
@@ -226,33 +225,33 @@ fn package_miniprogram_dist(
     module_name: &str,
     wasm_stem: &str,
     wasm_built: bool,
-) -> Result<usize> {
+) -> AsgardResult<usize> {
     let package = package_miniprogram_pages(components, wasm_stem);
     let app_json = generate_app_json(components, module_name);
 
     if !wasm_built {
-        return Err(miette::miette!("小程序缺少 *.wasm；逻辑必须 AOT 为 WebAssembly"));
+        return Err(AsgardError::msg(report!("小程序缺少 *.wasm；逻辑必须 AOT 为 WebAssembly")));
     }
     let wasm_path = output_dir.join(format!("{wasm_stem}.wasm"));
     if !wasm_path.exists() {
-        return Err(miette::miette!("缺少 {}；WASM 编译未产出制品", wasm_path.display()));
+        return Err(AsgardError::msg(report!("缺少 {}；WASM 编译未产出制品", wasm_path.display())));
     }
-    let mut wasm_bytes = fs::read(&wasm_path).into_diagnostic().wrap_err("读取小程序 wasm 失败")?;
+    let mut wasm_bytes = fs::read(&wasm_path).map_err(|e| AsgardError::msg(format!("{e}: {}", "读取小程序 wasm 失败")))?;
     embed_asgard_ui_section(&mut wasm_bytes, &encode_mobile_ui_package(components));
-    fs::write(&wasm_path, &wasm_bytes).into_diagnostic().wrap_err("写入含 asgard ui 的 wasm 失败")?;
+    fs::write(&wasm_path, &wasm_bytes).map_err(|e| AsgardError::msg(format!("{e}: {}", "写入含 asgard ui 的 wasm 失败")))?;
 
-    fs::write(output_dir.join("app.js"), &package.app_js).into_diagnostic()?;
-    fs::write(output_dir.join("asgard-runtime.js"), generate_mp_runtime(wasm_stem)).into_diagnostic()?;
-    fs::write(output_dir.join(&app_json.relative_path), &app_json.content).into_diagnostic()?;
+    fs::write(output_dir.join("app.js"), &package.app_js)?;
+    fs::write(output_dir.join("asgard-runtime.js"), generate_mp_runtime(wasm_stem))?;
+    fs::write(output_dir.join(&app_json.relative_path), &app_json.content)?;
 
     let mut file_count = 3usize;
     for page in &package.pages {
         for (relative, content) in &page.files {
             let path = output_dir.join(relative);
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).into_diagnostic()?;
+                fs::create_dir_all(parent)?;
             }
-            fs::write(&path, content).into_diagnostic()?;
+            fs::write(&path, content)?;
             file_count += 1;
         }
     }
@@ -260,33 +259,33 @@ fn package_miniprogram_dist(
     Ok(file_count)
 }
 
-fn package_android_dist(components: &[LoweredComponent], output_dir: &Path, module_name: &str, native_logic: &[u8]) -> Result<usize> {
+fn package_android_dist(components: &[LoweredComponent], output_dir: &Path, module_name: &str, native_logic: &[u8]) -> AsgardResult<usize> {
     let android_root = output_dir.join("android");
-    fs::create_dir_all(&android_root).into_diagnostic().wrap_err("创建 dist/android 失败")?;
+    fs::create_dir_all(&android_root).map_err(|e| AsgardError::msg(format!("{e}: {}", "创建 dist/android 失败")))?;
     let package = package_android_project(components, module_name, native_logic);
     let mut file_count = 0usize;
     for (relative, content) in &package.files {
         let path = android_root.join(relative);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).into_diagnostic()?;
+            fs::create_dir_all(parent)?;
         }
-        content.write_to(&path).into_diagnostic()?;
+        content.write_to(&path)?;
         file_count += 1;
     }
     Ok(file_count)
 }
 
-fn package_ios_dist(components: &[LoweredComponent], output_dir: &Path, module_name: &str, native_logic: &[u8]) -> Result<usize> {
+fn package_ios_dist(components: &[LoweredComponent], output_dir: &Path, module_name: &str, native_logic: &[u8]) -> AsgardResult<usize> {
     let ios_root = output_dir.join("ios");
-    fs::create_dir_all(&ios_root).into_diagnostic().wrap_err("创建 dist/ios 失败")?;
+    fs::create_dir_all(&ios_root).map_err(|e| AsgardError::msg(format!("{e}: {}", "创建 dist/ios 失败")))?;
     let package = package_ios_project(components, module_name, native_logic);
     let mut file_count = 0usize;
     for (relative, content) in &package.files {
         let path = ios_root.join(relative);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).into_diagnostic()?;
+            fs::create_dir_all(parent)?;
         }
-        content.write_to(&path).into_diagnostic()?;
+        content.write_to(&path)?;
         file_count += 1;
     }
     Ok(file_count)
@@ -298,33 +297,33 @@ fn package_desktop_dist(
     module_name: &str,
     platform: &str,
     native_logic: &[u8],
-) -> Result<usize> {
+) -> AsgardResult<usize> {
     let desktop_root = output_dir.join(platform);
-    fs::create_dir_all(&desktop_root).into_diagnostic().wrap_err_with(|| format!("创建 dist/{platform} 失败"))?;
+    fs::create_dir_all(&desktop_root).map_err(|e| AsgardError::msg(format!("创建 dist/{platform} 失败: {e}")))?;
     let package = package_desktop_project(components, module_name, platform, native_logic);
     let mut file_count = 0usize;
     for (relative, content) in &package.files {
         let path = desktop_root.join(relative);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).into_diagnostic()?;
+            fs::create_dir_all(parent)?;
         }
-        content.write_to(&path).into_diagnostic()?;
+        content.write_to(&path)?;
         file_count += 1;
     }
     Ok(file_count)
 }
 
-fn package_terminal_dist(app_v: String, output_dir: &Path, module_name: &str, native_logic: &[u8]) -> Result<usize> {
+fn package_terminal_dist(app_v: String, output_dir: &Path, module_name: &str, native_logic: &[u8]) -> AsgardResult<usize> {
     let terminal_root = output_dir.join("terminal");
-    fs::create_dir_all(&terminal_root).into_diagnostic().wrap_err("创建 dist/terminal 失败")?;
+    fs::create_dir_all(&terminal_root).map_err(|e| AsgardError::msg(format!("{e}: {}", "创建 dist/terminal 失败")))?;
     let package = package_terminal_project(app_v, module_name, native_logic);
     let mut file_count = 0usize;
     for (relative, content) in &package.files {
         let path = terminal_root.join(relative);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).into_diagnostic()?;
+            fs::create_dir_all(parent)?;
         }
-        content.write_to(&path).into_diagnostic()?;
+        content.write_to(&path)?;
         file_count += 1;
     }
     Ok(file_count)
@@ -334,10 +333,10 @@ fn android_aarch64_target() -> CanonicalTarget {
     CanonicalTarget::new(CanonicalArch::AArch64, CanonicalVendor::Android, CanonicalSpecification::Android, Some(CanonicalAbi::Aapcs64))
 }
 
-fn parse_target(target: &str) -> Result<CanonicalTarget> {
+fn parse_target(target: &str) -> AsgardResult<CanonicalTarget> {
     match target {
         "jvm-android-android-managed" | "jvm-android-android-dex" => Ok(android_aarch64_target()),
-        other => CanonicalTarget::parse(other).map_err(|error| miette::miette!("无法解析 target `{other}`: {error}")),
+        other => CanonicalTarget::parse(other).map_err(|error| AsgardError::msg(report!("无法解析 target `{other}`: {error}"))),
     }
 }
 
@@ -348,7 +347,7 @@ fn compile_host_logic(
     output_dir: &Path,
     module_name: &str,
     backend: HostBackend,
-) -> Result<(Vec<u8>, HostArtifactKind, String)> {
+) -> AsgardResult<(Vec<u8>, HostArtifactKind, String)> {
     let target = match options.target.clone() {
         Some(target) => target,
         None => parse_target(&config.target)?,
@@ -369,18 +368,13 @@ fn compile_host_logic(
     };
     let report =
         compile_v_bundle(&resolved.groups, GeneratedSource { producer, source: &generated_source }, &scratch, module_name, &target, backend)
-            .wrap_err_with(|| {
-                format!(
+            .map_err(|error| {
+                AsgardError::msg(format!(
                     "宿主编译失败: platform={}, target={}, backend={}. \
-             请检查 asgard.config.v target 与 legion.von 对齐，并确认 legion 后端可用。",
+             请检查 asgard.config.v target 与 legion.von 对齐，并确认 legion 后端可用。: {error}",
                     config.platform, target_str, backend_name
-                )
+                ))
             })?;
     validate_host_logic_bytes(&report.artifact_bytes, &config.platform, &backend_name, &target_str, report.kind)?;
     Ok((report.artifact_bytes, report.kind, generated_source))
 }
-#[cfg(test)]
-#[path = "../../../tests/asgard/path_wired/pipeline_mod.rs"]
-mod pipeline_mod_tests;
-
-

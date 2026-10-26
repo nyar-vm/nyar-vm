@@ -127,4 +127,3 @@ struct ManifestComponent {
     strategy: String,
     island: String,
 }
-

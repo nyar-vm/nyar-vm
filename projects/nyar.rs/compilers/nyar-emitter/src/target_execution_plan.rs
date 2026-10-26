@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use miette::{Result, miette};
+use crate::{EmitterError, Result};
 use nyar::{ExternalImportLink, QualifiedName};
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalOperation, CanonicalProgram, CanonicalTerminator,
@@ -158,14 +158,14 @@ impl TargetExecutionPlan {
         roots: &[ItemInstanceId],
     ) -> Result<Self> {
         let canonical = program.canonical();
-        let fragment = canonical.linked.fragments.get(fragment_id).ok_or_else(|| miette!("Canonical 片段 `{fragment_id}` 不存在"))?;
+        let fragment = canonical.linked.fragments.get(fragment_id).ok_or_else(|| format!("Canonical 片段 `{fragment_id}` 不存在"))?;
         let mut declared_imports = BTreeMap::new();
         for (index, import) in &canonical.linked.imports {
             if canonical.mir.functions.contains_key(&import.callee) {
-                return Err(miette!("callable 实例 `{:?}` 同时绑定函数体与导入", import.callee));
+                return Err(format!("callable 实例 `{:?}` 同时绑定函数体与导入", import.callee));
             }
             if declared_imports.insert(import.callee, (*index, import)).is_some() {
-                return Err(miette!("callable 实例 `{:?}` 绑定多个 ImportIndex", import.callee));
+                return Err(format!("callable 实例 `{:?}` 绑定多个 ImportIndex", import.callee));
             }
         }
         let mut pending = roots
@@ -173,7 +173,7 @@ impl TargetExecutionPlan {
             .copied()
             .map(|instance| {
                 if !canonical.mir.functions.contains_key(&instance) {
-                    return Err(miette!("Compiler callable 实例 `{instance:?}` 缺少 canonical 函数体"));
+                    return Err(format!("Compiler callable 实例 `{instance:?}` 缺少 canonical 函数体"));
                 }
                 Ok(instance)
             })
@@ -200,9 +200,9 @@ impl TargetExecutionPlan {
                 );
                 continue;
             }
-            let name = canonical.linked.callable_names.get(&instance).ok_or_else(|| miette!("callable 实例 `{instance:?}` 缺少 ABI 名称"))?;
+            let name = canonical.linked.callable_names.get(&instance).ok_or_else(|| format!("callable 实例 `{instance:?}` 缺少 ABI 名称"))?;
             abi_names.insert(instance, name.clone());
-            let function = canonical.mir.functions.get(&instance).ok_or_else(|| miette!("callable `{name}` 缺少 canonical 函数体"))?;
+            let function = canonical.mir.functions.get(&instance).ok_or_else(|| format!("callable `{name}` 缺少 canonical 函数体"))?;
             let (lowered, callees) = lower_function(program, function)?;
             pending.extend(callees);
             functions.insert(instance, lowered);
@@ -389,7 +389,7 @@ fn validate_frozen_operator(
         .unwrap_or("<unknown>");
     let function = symbol.unwrap_or("<unknown>");
     if parameter_types.len() != plan.arity {
-        return Err(miette!(
+        return Err(format!(
             "目标 operator 绑定 `{mnemonic}` 的声明 arity 与冻结计划不符: function={function} expected={} actual={} instance={instance:?} link={link}",
             plan.arity,
             parameter_types.len()
@@ -398,39 +398,36 @@ fn validate_frozen_operator(
     for (index, ty) in parameter_types.iter().enumerate() {
         let Some(carrier) = operand_carrier(ty)
         else {
-            return Err(miette!(
+            return Err(format!(
                 "目标 operator 绑定 `{mnemonic}` 的参数 {index} 类型没有目标载体: function={function} type={ty:?} instance={instance:?} link={link}"
             ));
         };
         if carrier != plan.operand_type {
-            return Err(miette!(
+            return Err(format!(
                 "目标 operator 绑定 `{mnemonic}` 的参数 {index} 操作数载体与冻结计划不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
-                plan.operand_type,
-                carrier
+                plan.operand_type, carrier
             ));
         }
     }
     let Some(result_carrier) = result_carrier(return_type)
     else {
-        return Err(miette!(
+        return Err(format!(
             "目标 operator 绑定 `{mnemonic}` 的返回类型没有结果槽载体: function={function} type={return_type:?} instance={instance:?} link={link}"
         ));
     };
     if result_carrier != plan.result_type {
-        return Err(miette!(
+        return Err(format!(
             "目标 operator 绑定 `{mnemonic}` 的结果槽载体与冻结计划不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
-            plan.result_type,
-            result_carrier
+            plan.result_type, result_carrier
         ));
     }
     if let TargetOperatorRecipe::Steps(steps) = plan.recipe {
         for step in steps {
             if let TargetOperandStep::IntegerConstant { operand_type: constant_type, .. } = step {
                 if *constant_type != plan.operand_type {
-                    return Err(miette!(
+                    return Err(format!(
                         "目标 operator 绑定 `{mnemonic}` 的常量配方载体与冻结操作数载体不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
-                        plan.operand_type,
-                        constant_type
+                        plan.operand_type, constant_type
                     ));
                 }
             }
@@ -462,10 +459,10 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
         match program.representation().value_reps.get(&identity) {
             Some(ValueRepresentation::Specialized) => {}
             Some(representation) => {
-                return Err(miette!("值 `{identity:?}` 的表示 `{representation:?}` 尚无目标私有载体合同，拒绝按语义类型重新选择表示"));
+                return Err(format!("值 `{identity:?}` 的表示 `{representation:?}` 尚无目标私有载体合同，拒绝按语义类型重新选择表示"));
             }
             None => {
-                return Err(miette!("值 `{identity:?}` 缺少 RepresentationPlan 载体合同"));
+                return Err(format!("值 `{identity:?}` 缺少 RepresentationPlan 载体合同"));
             }
         }
     }
@@ -474,20 +471,20 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
             for (nominal, variant) in canonical_sum_operations(instruction) {
                 let Some(sum) = program.representation().sum_reps.get(&nominal)
                 else {
-                    return Err(miette!("sum `{nominal:?}` 缺少 RepresentationPlan 布局合同"));
+                    return Err(format!("sum `{nominal:?}` 缺少 RepresentationPlan 布局合同"));
                 };
                 if !sum.variants.contains_key(&variant) {
-                    return Err(miette!("sum variant `{nominal:?}/{variant:?}` 缺少 RepresentationPlan 布局合同"));
+                    return Err(format!("sum variant `{nominal:?}/{variant:?}` 缺少 RepresentationPlan 布局合同"));
                 }
             }
             if let CanonicalOperation::Invoke { callee, .. } = &instruction.operation {
                 match (callee, program.representation().invoke_lowerings.get(&instruction.id)) {
                     (CanonicalCallee::Item(_), Some(InvokeLowering::Direct)) => {}
                     (_, None) => {
-                        return Err(miette!("调用指令 `{}` 缺少 RepresentationPlan 降低合同", instruction.id.index()));
+                        return Err(format!("调用指令 `{}` 缺少 RepresentationPlan 降低合同", instruction.id.index()));
                     }
                     (_, Some(lowering)) => {
-                        return Err(miette!(
+                        return Err(format!(
                             "调用指令 `{}` 的表示 `{lowering:?}` 与 callee `{callee:?}` 尚无目标私有调用合同，拒绝改用普通调用",
                             instruction.id.index()
                         ));
@@ -499,7 +496,7 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
     let mut values =
         function.value_types.keys().map(|value| Value { id: ValueRef(value.index()), origin: ValueOrigin::Temporary }).collect::<Vec<_>>();
     for (index, (value, _)) in function.parameters.iter().enumerate() {
-        let row = values.iter_mut().find(|row| row.id.0 == value.index()).ok_or_else(|| miette!("入口参数缺少 SSA 值合同"))?;
+        let row = values.iter_mut().find(|row| row.id.0 == value.index()).ok_or_else(|| format!("入口参数缺少 SSA 值合同"))?;
         row.origin = ValueOrigin::Parameter { index, name: format!("arg{index}") };
     }
     let mut callees = Vec::new();
@@ -513,7 +510,7 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
                     id: instruction.id,
                     results: instruction.results.iter().map(|value| ValueRef(value.index())).collect(),
                     kind: lower_operation(canonical, function, instruction, &mut callees)?,
-                    provenance: nyar_types::ProvenanceId::from_index(instruction.id.index()).ok_or_else(|| miette!("指令 identity 溢出"))?,
+                    provenance: nyar_types::ProvenanceId::from_index(instruction.id.index()).ok_or_else(|| format!("指令 identity 溢出"))?,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -525,7 +522,7 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
             terminator: lower_terminator(block.terminator.clone())?,
         });
     }
-    let symbol = canonical.linked.callable_names.get(&function.instance).ok_or_else(|| miette!("函数实例缺少 ABI 名称"))?.to_string();
+    let symbol = canonical.linked.callable_names.get(&function.instance).ok_or_else(|| format!("函数实例缺少 ABI 名称"))?.to_string();
     let type_of = |id| lower_type(canonical, id);
     let value_layouts = function
         .value_types
@@ -581,15 +578,15 @@ fn lower_operation(
             .aggregate_layout_by_type
             .get(&type_id)
             .copied()
-            .ok_or_else(|| miette!("{operation} 缺少编译器绑定的布局身份: {type_id:?}"))
+            .ok_or_else(|| format!("{operation} 缺少编译器绑定的布局身份: {type_id:?}"))
     };
     let value_type = |value: nyar_types::MirValueId| {
-        function.value_types.get(&value).copied().ok_or_else(|| miette!("聚合值 `{value:?}` 缺少 Semantic MIR 类型事实"))
+        function.value_types.get(&value).copied().ok_or_else(|| format!("聚合值 `{value:?}` 缺少 Semantic MIR 类型事实"))
     };
     Ok(match &instruction.operation {
         CanonicalOperation::Invoke { callee: CanonicalCallee::Item(instance), arguments } => {
             if !program.linked.item_instances.contains_key(instance) {
-                return Err(miette!("调用 identity `{instance:?}` 未解析"));
+                return Err(format!("调用 identity `{instance:?}` 未解析"));
             }
             callees.push(*instance);
             InstructionKind::Call { callee: Operand::Item(*instance), arguments: arguments.iter().map(|id| value(*id)).collect() }
@@ -605,7 +602,7 @@ fn lower_operation(
             let source_type = value_type(*source)?;
             let destination_type = value_type(*destination)?;
             if source_type != destination_type {
-                return Err(miette!("AggregateCopy 源与目标类型不一致: {source_type:?} != {destination_type:?}"));
+                return Err(format!("AggregateCopy 源与目标类型不一致: {source_type:?} != {destination_type:?}"));
             }
             InstructionKind::AggregateCopy {
                 layout_id: layout_for_type(source_type, "AggregateCopy")?,
@@ -617,22 +614,22 @@ fn lower_operation(
         // Intrinsic 专用 opcode 必须在 lowering 阶段降级为 Call { callee: Callable(instance) }
         // 让 linker adaptor / backend TargetExecutionPlan 链路消费。到达这里说明 lowering 没收紧。
         CanonicalOperation::ArrayGet { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayGet`；lowering 应降级为普通 Call"));
+            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayGet`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::ArraySet { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArraySet`；lowering 应降级为普通 Call"));
+            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArraySet`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::ArrayLength { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayLength`；lowering 应降级为普通 Call"));
+            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayLength`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::ArrayPush { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayPush`；lowering 应降级为普通 Call"));
+            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayPush`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::NullIsNull { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullIsNull`；lowering 应降级为普通 Call"));
+            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullIsNull`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::NullUnwrap { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullUnwrap`；lowering 应降级为普通 Call"));
+            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullUnwrap`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::ArrayNew { array_type, length, initialization } => InstructionKind::ArrayNew {
             array_type: lower_type(program, *array_type)?,
@@ -648,13 +645,13 @@ fn lower_operation(
             elements: elements.iter().map(|id| value(*id)).collect(),
         },
         CanonicalOperation::TupleNew { fields, element_types } => {
-            let result = instruction.results.first().copied().ok_or_else(|| miette!("TupleNew 缺少结果值"))?;
+            let result = instruction.results.first().copied().ok_or_else(|| format!("TupleNew 缺少结果值"))?;
             let result_type = value_type(result)?;
             if !matches!(program.linked.types.get(&result_type).map(|row| &row.kind), Some(nyar_types::CanonicalTypeKind::Tuple(_))) {
-                return Err(miette!("TupleNew 结果不是 tuple 类型: {result_type:?}"));
+                return Err(format!("TupleNew 结果不是 tuple 类型: {result_type:?}"));
             }
             if fields.len() != element_types.len() {
-                return Err(miette!("TupleNew 元素合同长度不一致"));
+                return Err(format!("TupleNew 元素合同长度不一致"));
             }
             InstructionKind::TupleNew {
                 layout_id: layout_for_type(result_type, "TupleNew")?,
@@ -677,7 +674,7 @@ fn lower_operation(
         CanonicalOperation::SumVariantIs { nominal, variant, object } => {
             InstructionKind::SumVariantIs { nominal: *nominal, variant: *variant, object: value(*object) }
         }
-        unsupported => return Err(miette!("canonical 操作尚无目标私有合同: {unsupported:?}")),
+        unsupported => return Err(format!("canonical 操作尚无目标私有合同: {unsupported:?}")),
     })
 }
 
@@ -692,7 +689,7 @@ fn lower_constant(constant: &CanonicalConstant) -> Constant {
 }
 
 fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<NyarType> {
-    let kind = &program.linked.types.get(&id).ok_or_else(|| miette!("canonical 类型事实缺失"))?.kind;
+    let kind = &program.linked.types.get(&id).ok_or_else(|| format!("canonical 类型事实缺失"))?.kind;
     match kind {
         CanonicalTypeKind::Primitive(kind) => match kind {
             nyar_types::CanonicalPrimitiveType::Void => Ok(NyarType::Bottom),
@@ -702,13 +699,13 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
             nyar_types::CanonicalPrimitiveType::Integer { bits: 64, signed } => Ok(NyarType::Integer64 { signed: *signed }),
             nyar_types::CanonicalPrimitiveType::Utf8 => Ok(NyarType::Utf8),
             nyar_types::CanonicalPrimitiveType::Utf16 => Ok(NyarType::Utf16),
-            unsupported => Err(miette!("primitive 尚无目标合同: {unsupported:?}")),
+            unsupported => Err(format!("primitive 尚无目标合同: {unsupported:?}")),
         },
         CanonicalTypeKind::Tuple(items) => Ok(NyarType::Tuple(items.iter().map(|id| lower_type(program, *id)).collect::<Result<_>>()?)),
         CanonicalTypeKind::Array { element, length: None } => Ok(NyarType::Array(Box::new(lower_type(program, *element)?))),
         CanonicalTypeKind::Array { element, length: Some(length) } => Ok(NyarType::FixedArray {
             element: Box::new(lower_type(program, *element)?),
-            length: usize::try_from(*length).map_err(|_| miette!("固定数组长度溢出"))?,
+            length: usize::try_from(*length).map_err(|_| format!("固定数组长度溢出"))?,
         }),
         CanonicalTypeKind::Nullable(element) => Ok(NyarType::Nullable(Box::new(lower_type(program, *element)?))),
         CanonicalTypeKind::Nominal { declaration, arguments } => {
@@ -732,12 +729,12 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
                 {
                     return Ok(NyarType::Named(name.clone()));
                 }
-                return Err(miette!("nominal type `{name}` 缺少目标 layout 或 carrier 合同"));
+                return Err(format!("nominal type `{name}` 缺少目标 layout 或 carrier 合同"));
             }
             if *declaration != id {
                 return lower_type(program, *declaration);
             }
-            Err(miette!("canonical 类型尚无目标合同: Nominal {{ declaration: {declaration:?}, arguments: [] }}"))
+            Err(format!("canonical 类型尚无目标合同: Nominal {{ declaration: {declaration:?}, arguments: [] }}"))
         }
         CanonicalTypeKind::Function { parameters, return_type } => Ok(NyarType::Function(Box::new(NyarFunctionType {
             params: parameters.iter().map(|parameter| lower_type(program, *parameter)).collect::<Result<Vec<_>>>()?,
@@ -749,7 +746,7 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
         CanonicalTypeKind::Intersection(items) => {
             Ok(NyarType::Union(items.iter().map(|item| lower_type(program, *item)).collect::<Result<Vec<_>>>()?))
         }
-        unsupported => Err(miette!("canonical 类型尚无目标合同: {unsupported:?}")),
+        unsupported => Err(format!("canonical 类型尚无目标合同: {unsupported:?}")),
     }
 }
 
@@ -765,7 +762,7 @@ fn lower_terminator(terminator: CanonicalTerminator) -> Result<Terminator> {
         }
         CanonicalTerminator::Unreachable => Terminator::Unreachable,
         unsupported => {
-            return Err(miette!("canonical effect terminator 尚无目标合同: {unsupported:?}"));
+            return Err(format!("canonical effect terminator 尚无目标合同: {unsupported:?}"));
         }
     })
 }

@@ -7,21 +7,21 @@ use std::{
 
 use super::FormatOptions;
 
-/// 解析结果：含最终选项�?editorconfig 显式声明的键（LSP 不得覆盖后者）�?
+/// 解析结果：含最终选项与 editorconfig 显式声明的键（LSP 不得覆盖后者）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormatConfigResolution {
-    /// 合并后的格式化选项�?
+    /// 合并后的格式化选项。
     pub options: FormatOptions,
-    /// `.editorconfig` 中显式出现的属性名（如 `indent_size`）�?
+    /// `.editorconfig` 中显式出现的属性名（如 `indent_size`）。
     pub editorconfig_keys: HashSet<String>,
 }
 
-/// �?`.editorconfig` 加载 [`FormatOptions`]�?
+/// 从 `.editorconfig` 加载 [`FormatOptions`]。
 #[derive(Debug, Clone, Default)]
 pub struct FormatConfigLoader;
 
 impl FormatConfigLoader {
-    /// 按文件路径解析（自文件所在目录向上查�?`.editorconfig`）�?
+    /// 按文件路径解析（自文件所在目录向上查找 `.editorconfig`）。
     pub fn for_path(path: &Path) -> FormatConfigResolution {
         let mut options = FormatOptions::default();
         let mut keys = HashSet::new();
@@ -58,7 +58,7 @@ impl FormatConfigLoader {
         FormatConfigResolution { options, editorconfig_keys: keys }
     }
 
-    /// �?LSP `FormattingOptions` 合并进解析结果（仅填�?editorconfig 未声明的项）�?
+    /// 将 LSP `FormattingOptions` 合并进解析结果（仅填充 editorconfig 未声明的项）。
     pub fn merge_lsp(
         mut resolution: FormatConfigResolution,
         tab_size: u32,
@@ -80,7 +80,7 @@ impl FormatConfigLoader {
         resolution.options
     }
 
-    /// �?`file://` URI 解析本地路径并加载配置�?
+    /// 从 `file://` URI 解析本地路径并加载配置。
     pub fn for_uri(uri: &str) -> FormatConfigResolution {
         let path = uri_to_path(uri);
         Self::for_path(&path)

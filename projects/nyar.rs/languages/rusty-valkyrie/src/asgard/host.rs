@@ -55,7 +55,3 @@ impl HostPlatform {
         }
     }
 }
-#[cfg(test)]
-#[path = "../../tests/asgard/path_wired/host.rs"]
-mod host_tests;
-

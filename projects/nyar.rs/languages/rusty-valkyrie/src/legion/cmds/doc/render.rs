@@ -1,9 +1,8 @@
 //! 文档页面渲染（Asgard static renderer）。
-
+use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{fs, path::Path};
 
 use crate::asgard::ssg::{generate_static_page, render_awsl_static};
-use miette::{Context, IntoDiagnostic, Result};
 use serde_json::json;
 
 use super::{
@@ -14,8 +13,8 @@ use super::{
 };
 
 /// 渲染所有分区并返回合并的组件 CSS。
-pub fn render_sections(sections: &mut [DocSection], doc_output_dir: &Path, verbose: bool) -> Result<String> {
-    fs::create_dir_all(doc_output_dir).into_diagnostic()?;
+pub fn render_sections(sections: &mut [DocSection], doc_output_dir: &Path, verbose: bool) -> LegionResult<String> {
+    fs::create_dir_all(doc_output_dir)?;
     let mut merged_component_css = String::new();
 
     for section in sections.iter_mut() {
@@ -29,11 +28,11 @@ pub fn render_sections(sections: &mut [DocSection], doc_output_dir: &Path, verbo
 
         let nav_tree = build_nav_tree(&md_files, &section.source_dir, &section.name);
         let section_output = doc_output_dir.join(sanitize_dir_name(&section.name));
-        fs::create_dir_all(&section_output).into_diagnostic()?;
+        fs::create_dir_all(&section_output)?;
 
         for md_file in &md_files {
-            let source = fs::read_to_string(md_file).into_diagnostic()?;
-            let relative = md_file.strip_prefix(&section.source_dir).into_diagnostic()?.to_string_lossy().replace('\\', "/");
+            let source = fs::read_to_string(md_file)?;
+            let relative = md_file.strip_prefix(&section.source_dir)?.to_string_lossy().replace('\\', "/");
             let title =
                 extract_title(&source).unwrap_or_else(|| md_file.file_stem().and_then(|s| s.to_str()).unwrap_or("untitled").to_string());
             let render_ctx = super::markdown::DocRenderContext::from_relative_md(&relative);
@@ -74,9 +73,9 @@ pub fn render_sections(sections: &mut [DocSection], doc_output_dir: &Path, verbo
             let html_rel = Path::new(&relative).with_extension("html");
             let html_path = section_output.join(&html_rel);
             if let Some(parent) = html_path.parent() {
-                fs::create_dir_all(parent).into_diagnostic()?;
+                fs::create_dir_all(parent)?;
             }
-            fs::write(&html_path, html).into_diagnostic()?;
+            fs::write(&html_path, html)?;
 
             let doc_rel = format!("doc/{}/{}", sanitize_dir_name(&section.name), html_rel.to_string_lossy().replace('\\', "/"));
             section.pages.push(DocPage { title, relative_path: doc_rel, section_name: section.name.clone() });
@@ -87,7 +86,7 @@ pub fn render_sections(sections: &mut [DocSection], doc_output_dir: &Path, verbo
 }
 
 /// 渲染 `doc/index.html` 文档目录页。
-pub fn render_doc_index(sections: &[DocSection], doc_output_dir: &Path) -> Result<()> {
+pub fn render_doc_index(sections: &[DocSection], doc_output_dir: &Path) -> LegionResult<()> {
     let mut body = String::from("<div class=\"vp-page\"><main class=\"vp-content\"><article class=\"vp-article\">");
     body.push_str("<h1 id=\"用户文档\">用户文档</h1>");
     body.push_str("<p>欢迎查阅用户文档，以下为各分区的文档目录。</p>");
@@ -114,12 +113,12 @@ pub fn render_doc_index(sections: &[DocSection], doc_output_dir: &Path) -> Resul
     let page_result = crate::asgard::codegen::StaticRenderResult { html: fragment_html, css: rendered.css, scope: rendered.scope };
     let mut html = generate_static_page("用户文档", &[page_result], embedded_base_css());
     inject_stylesheet_link(&mut html, "../legion-document.css");
-    fs::write(doc_output_dir.join("index.html"), html).into_diagnostic()?;
+    fs::write(doc_output_dir.join("index.html"), html)?;
     Ok(())
 }
 
 /// 渲染根 hub `index.html`。
-pub fn render_root_hub(output_dir: &Path, has_doc: bool) -> Result<()> {
+pub fn render_root_hub(output_dir: &Path, has_doc: bool) -> LegionResult<()> {
     let data = json!({
         "title": "文档",
         "doc_href": if has_doc { "doc/index.html" } else { "#" },
@@ -128,7 +127,7 @@ pub fn render_root_hub(output_dir: &Path, has_doc: bool) -> Result<()> {
     let rendered = render_awsl_static(embedded_hub_awsl(), "hub", "hub.awsl", &data);
     let mut html = generate_static_page("文档", &[rendered], "");
     inject_stylesheet_link(&mut html, "legion-document.css");
-    fs::write(output_dir.join("index.html"), html).into_diagnostic()?;
+    fs::write(output_dir.join("index.html"), html)?;
     Ok(())
 }
 
@@ -142,5 +141,3 @@ fn inject_stylesheet_link(html: &mut String, href: &str) {
 fn escape_html(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
-
-

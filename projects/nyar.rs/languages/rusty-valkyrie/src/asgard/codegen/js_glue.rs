@@ -61,4 +61,3 @@ pub fn generate_component_glue(component: &LoweredComponent, _wasm_module: &str)
 
     JsGlueOutput { component_name: component.name.clone(), content: out, relative_path: format!("c/{route}.js") }
 }
-

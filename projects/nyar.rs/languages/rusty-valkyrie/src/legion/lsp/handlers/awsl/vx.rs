@@ -2,11 +2,11 @@
 
 use crate::{
     types::{LabeledSpan, SourceID, SourceSpan, ValkyrieError},
-    frontend::{ParseError, parse_source},
+    compiler::syntax::oak::{ParseError, parse_source},
 };
 
 /// 将 AWSL `<script>` 正文作为 `.vx` 源解析（Oak 前端）。
-pub fn parse_awsl_script_vx(source: &str) -> Result<(), ValkyrieError> {
+pub fn parse_awsl_script_vx(source: &str) -> std::result::Result<(), ValkyrieError> {
     parse_source(source).map_err(parse_error_to_valkyrie)
 }
 

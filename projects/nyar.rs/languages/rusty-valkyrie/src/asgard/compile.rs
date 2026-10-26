@@ -1,15 +1,16 @@
 //! Compile V sources to host bytecode for a target family.
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{fs, path::Path};
 
-use crate::workspace::{
-    compile_source_snapshot,
-    planner::{BuildRequest, WorkspaceResolver},
+use crate::{
+    compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts},
+    legion::workspace::{
+        compile_source_snapshot,
+        planner::{BuildRequest, WorkspaceResolver},
+    },
 };
-use miette::{IntoDiagnostic, Result, WrapErr};
-use nyar::ArtifactKind;
+use nyar::{ArtifactKind, CanonicalTarget};
 use nyar_types::compiler_input::{CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup};
-use rusty_valkyrie::{CanonicalTarget, CompilerBuildContext, compile_source_groups_to_artifacts};
 
 use crate::asgard::{
     host_backend::HostBackend,
@@ -47,14 +48,13 @@ pub struct ResolvedCompilerSources {
 }
 
 /// 从 manifest 与当前源码闭包形成 Compiler 输入。
-pub fn resolve_project_source_groups(project_dir: &Path, target: &CanonicalTarget) -> Result<ResolvedCompilerSources> {
-    let resolver = WorkspaceResolver::discover_for_project(project_dir).map_err(|error| miette::miette!("解析项目工作区失败: {error}"))?;
+pub fn resolve_project_source_groups(project_dir: &Path, target: &CanonicalTarget) -> AsgardResult<ResolvedCompilerSources> {
+    let resolver = WorkspaceResolver::discover_for_project(project_dir).map_err(|error| report!("解析项目工作区失败: {error}"))?;
     let plan = resolver
         .build_plan(&BuildRequest { project_dir: project_dir.to_path_buf(), target: target.clone(), output_dir: None })
-        .map_err(|error| miette::miette!("解析项目构建计划失败: {error}"))?;
+        .map_err(|error| report!("解析项目构建计划失败: {error}"))?;
     let project_name = plan.project.name.clone();
-    let groups =
-        compile_source_snapshot(&plan.project.semantic_source_groups).map_err(|error| miette::miette!("读取项目源码快照失败: {error}"))?;
+    let groups = compile_source_snapshot(&plan.project.semantic_source_groups).map_err(|error| report!("读取项目源码快照失败: {error}"))?;
     Ok(ResolvedCompilerSources { project_name, groups })
 }
 
@@ -62,13 +62,13 @@ pub fn resolve_project_source_groups(project_dir: &Path, target: &CanonicalTarge
 ///
 /// asgard 不携带标准库源码。终端 `app.v` 的运行时前导必须从已解析的源码组读取；
 /// 缺失时返回结构化失败，由 package graph 补齐依赖，而不是在 CLI 内嵌一份副本。
-pub fn terminal_runtime_source(groups: &[CompilerSourceGroup]) -> Result<&str> {
+pub fn terminal_runtime_source(groups: &[CompilerSourceGroup]) -> AsgardResult<&str> {
     groups
         .iter()
         .flat_map(|group| group.sources.iter())
         .find(|file| file.path.replace('\\', "/").ends_with("terminal/tui.v"))
         .map(|file| file.source.as_str())
-        .ok_or_else(|| miette::miette!("项目依赖闭包缺少 std.terminal 运行时源码 terminal/tui.v"))
+        .ok_or_else(|| AsgardError::msg(report!("项目依赖闭包缺少 std.terminal 运行时源码 terminal/tui.v")))
 }
 
 /// 独立生成源码：唯一生成器身份与生成文本。
@@ -87,10 +87,10 @@ pub struct GeneratedSource<'a> {
 ///
 /// 生成组显式入口，并只依赖本工程的入口组：生成代码可以看到应用源码的声明，
 /// 但不会获得依赖包的额外可见性。
-fn compiler_input_for(source_groups: &[CompilerSourceGroup], generated: GeneratedSource<'_>) -> Result<CompilerSourceInput> {
+fn compiler_input_for(source_groups: &[CompilerSourceGroup], generated: GeneratedSource<'_>) -> AsgardResult<CompilerSourceInput> {
     let entry_keys = source_groups.iter().filter(|group| group.is_entry).map(|group| group.dependency_key.clone()).collect::<Vec<_>>();
     if entry_keys.is_empty() {
-        return Err(miette::miette!("源码快照缺少应用入口组，无法挂接生成源码"));
+        return Err(AsgardError::msg(report!("源码快照缺少应用入口组，无法挂接生成源码")));
     }
     let group = CompilerSourceGroup {
         dependency_key: "asgard.generated".into(),
@@ -111,10 +111,10 @@ pub fn compile_v_bundle(
     module_name: &str,
     target: &CanonicalTarget,
     backend: HostBackend,
-) -> Result<HostCompileReport> {
-    let compiler = rusty_valkyrie::ValkyrieCompiler::default();
+) -> AsgardResult<HostCompileReport> {
+    let compiler = crate::compiler::hir::lowering::ValkyrieCompiler::default();
     let target_profile = target.to_profile(None);
-    fs::create_dir_all(output_dir).into_diagnostic().wrap_err("failed to create output directory")?;
+    fs::create_dir_all(output_dir).map_err(|e| AsgardError::msg(format!("{e}: {}", "failed to create output directory")))?;
     let build_context = CompilerBuildContext::new(
         target.arch.as_str(),
         target.clone(),
@@ -140,20 +140,20 @@ pub fn compile_v_bundle(
             let wasm_report = WasmCompileReport { wasm_filename: format!("{safe_name}.wasm"), glue_filename: format!("{safe_name}.mjs") };
             copy_wasm_artifacts_to_dist(output_dir, &wasm_report)?;
             let wasm_path = output_dir.join(&wasm_report.wasm_filename);
-            let bytes = fs::read(&wasm_path).into_diagnostic().wrap_err("failed to read wasm")?;
+            let bytes = fs::read(&wasm_path).map_err(|e| AsgardError::msg(format!("{e}: {}", "failed to read wasm")))?;
             Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::Wasm, wasm: Some(wasm_report) })
         }
         HostBackend::AndroidCompose => {
             let artifact_name = primary_artifact_name(&report, ArtifactKind::Executable)?;
             let native_path = output_dir.join(format!("{artifact_name}.so"));
-            let bytes = fs::read(&native_path).into_diagnostic().wrap_err("Android .so artifact not found")?;
+            let bytes = fs::read(&native_path).map_err(|e| AsgardError::msg(format!("{e}: {}", "Android .so artifact not found")))?;
             validate_elf_shared_object(&bytes)?;
             Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::NativeExecutable, wasm: None })
         }
         HostBackend::IosSwiftUi => {
             let artifact_name = primary_artifact_name(&report, ArtifactKind::Executable)?;
             let native_path = output_dir.join(artifact_name);
-            let bytes = fs::read(&native_path).into_diagnostic()?;
+            let bytes = fs::read(&native_path)?;
             Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::NativeExecutable, wasm: None })
         }
         HostBackend::WindowsNative | HostBackend::LinuxNative | HostBackend::MacOsNative => {
@@ -164,7 +164,7 @@ pub fn compile_v_bundle(
             else {
                 output_dir.join(artifact_name)
             };
-            let bytes = fs::read(&native_path).into_diagnostic()?;
+            let bytes = fs::read(&native_path)?;
             Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::NativeExecutable, wasm: None })
         }
         HostBackend::WechatMiniProgram => {
@@ -173,47 +173,46 @@ pub fn compile_v_bundle(
             let wasm_report = WasmCompileReport { wasm_filename: format!("{safe_name}.wasm"), glue_filename: format!("{safe_name}.mjs") };
             copy_wasm_artifacts_to_dist(output_dir, &wasm_report)?;
             let wasm_path = output_dir.join(&wasm_report.wasm_filename);
-            let bytes = fs::read(&wasm_path).into_diagnostic().wrap_err("failed to read miniprogram wasm")?;
+            let bytes = fs::read(&wasm_path).map_err(|e| AsgardError::msg(format!("{e}: {}", "failed to read miniprogram wasm")))?;
             Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::Wasm, wasm: Some(wasm_report) })
         }
         HostBackend::Terminal => {
             let artifact_name = primary_artifact_name(&report, ArtifactKind::Executable)?;
             let native_path = output_dir.join(artifact_name);
-            let bytes = fs::read(&native_path).into_diagnostic()?;
+            let bytes = fs::read(&native_path)?;
             Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::NativeExecutable, wasm: None })
         }
     }
 }
 
-fn primary_artifact_name(report: &nyar_emitter::DriverCompileReport, kind: ArtifactKind) -> Result<String> {
+fn primary_artifact_name(report: &nyar_emitter::DriverCompileReport, kind: ArtifactKind) -> AsgardResult<String> {
     report
         .artifacts
         .artifacts
         .iter()
         .find(|artifact| artifact.kind == kind)
         .map(|artifact| artifact.name.clone())
-        .ok_or_else(|| miette::miette!("编译报告缺少主产物 `{kind:?}`"))
+        .ok_or_else(|| AsgardError::msg(report!("编译报告缺少主产物 `{kind:?}`")))
 }
 
 /// 校验 Android 宿主产物为 AArch64 共享库 ELF 且含必需 JNI 符号。
-pub fn validate_elf_shared_object(bytes: &[u8]) -> Result<()> {
+pub fn validate_elf_shared_object(bytes: &[u8]) -> AsgardResult<()> {
     if bytes.len() < 20 || &bytes[0..4] != b"\x7fELF" {
-        return Err(miette::miette!("Android host artifact is not ELF (need .so)"));
+        return Err(AsgardError::msg(report!("Android host artifact is not ELF (need .so)")));
     }
     let e_type = u16::from_le_bytes([bytes[16], bytes[17]]);
     if e_type != 3 {
-        return Err(miette::miette!("Android host must be ET_DYN shared library (.so), e_type={e_type}"));
+        return Err(AsgardError::msg(report!("Android host must be ET_DYN shared library (.so), e_type={e_type}")));
     }
     let e_machine = u16::from_le_bytes([bytes[18], bytes[19]]);
     if e_machine != 183 {
-        return Err(miette::miette!("Android host must be AArch64 (EM_AARCH64=183), e_machine={e_machine}"));
+        return Err(AsgardError::msg(report!("Android host must be AArch64 (EM_AARCH64=183), e_machine={e_machine}")));
     }
     let haystack = String::from_utf8_lossy(bytes);
     for sym in ["JNI_OnLoad", "asgard_invoke_export", "asgard_patch_native"] {
         if !haystack.contains(sym) {
-            return Err(miette::miette!("Android .so missing export `{sym}` (JNI must be linked into ASGARDNT)"));
+            return Err(AsgardError::msg(report!("Android .so missing export `{sym}` (JNI must be linked into ASGARDNT)")));
         }
     }
     Ok(())
 }
-

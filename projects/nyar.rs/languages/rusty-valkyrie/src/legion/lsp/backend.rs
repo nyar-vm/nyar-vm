@@ -4,7 +4,8 @@
 
 use core::range::Range;
 use oak_core::source::Source;
-use oak_lsp::{service::LanguageService, types::*};
+use oak_lsp::service::LanguageService;
+use crate::compiler::types::*;
 use oak_vfs::{MemoryVfs, Vfs, WritableVfs};
 use serde_json::Value;
 use std::sync::Arc;
@@ -15,8 +16,8 @@ use crate::{
     errors::{LspError, LspResult},
     handlers::{self, formatting::FormattingOptions},
     state::ServerState,
-    types::Position,
 };
+use crate::compiler::types::Position;
 
 /// Valkyrie LSP 语言服务
 ///

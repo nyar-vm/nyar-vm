@@ -1,11 +1,11 @@
 //! 报告混合岛构建：hydrated 图表走 WASM + asgard glue（模板来自 VOA 工程 AWSL）。
-
-use std::{fs, path::Path};
-
-use miette::{IntoDiagnostic, Result, WrapErr};
+use crate::{
+    asgard::error::{AsgardError, AsgardResult},
+    legion::CanonicalTarget,
+};
 use nyar_analyzer::report::{HydratedChartSpec, series_to_init_literal};
 use oak_awsl::widget_name_from_stem;
-use rusty_valkyrie::CanonicalTarget;
+use std::{fs, path::Path};
 
 use crate::asgard::{
     awsl::{LoweringOptions, compile_awsl_source},
@@ -21,7 +21,7 @@ pub fn emit_report_chart_islands(
     output_dir: &Path,
     module_stem: &str,
     charts: &[HydratedChartSpec],
-) -> Result<Vec<(String, String)>> {
+) -> AsgardResult<Vec<(String, String)>> {
     if charts.is_empty() {
         return Ok(Vec::new());
     }
@@ -29,7 +29,7 @@ pub fn emit_report_chart_islands(
     let roots = valkyrie_v_roots()?;
     let icp_awsl = load_interactive_col_plot(&roots)?;
 
-    fs::create_dir_all(output_dir).into_diagnostic()?;
+    fs::create_dir_all(output_dir)?;
 
     let mut components = Vec::new();
     let mut slots = Vec::new();
@@ -41,7 +41,7 @@ pub fn emit_report_chart_islands(
         let filled = fill_chart_placeholders(&wrapper, &title_lit, &series_lit);
         let awsl = expand_interactive_col_plot(&filled, &icp_awsl, &chart.route)?;
         let component = compile_awsl_source(&awsl, &chart.route, &format!("{}.awsl", chart.route), &LoweringOptions::default())
-            .map_err(|error| miette::miette!("compile chart AWSL {}: {}", chart.route, error.message))?;
+            .map_err(|error| AsgardError::msg(report!("compile chart AWSL {}: {}", chart.route, error.message)))?;
         let mount = format!(
             r#"<div data-island="hydrated" data-component="{route}" data-module="{module}"></div>"#,
             route = chart.route,
@@ -61,14 +61,15 @@ pub fn emit_report_chart_islands(
     let generated = GeneratedSource { producer: "asgard.awsl.report-island", source: &awsl_v };
     let wasm_built = match compile_wasm_bundle(&resolved.groups, generated, output_dir, module_stem, &CanonicalTarget::wasm()) {
         Ok(report) => {
-            copy_wasm_artifacts_to_dist(output_dir, &report).wrap_err("报告图表岛 WASM 产物复制失败")?;
+            copy_wasm_artifacts_to_dist(output_dir, &report)
+                .map_err(|e| AsgardError::msg(format!("{e}: {}", "报告图表岛 WASM 产物复制失败")))?;
             true
         }
         Err(error) if cfg!(debug_assertions) => {
             eprintln!("warning: report chart wasm skipped in debug build: {error}");
             false
         }
-        Err(error) => Err(error).wrap_err("报告图表岛 WASM 编译失败")?,
+        Err(error) => Err(AsgardError::msg(format!("报告图表岛 WASM 编译失败: {error}")))?,
     };
 
     let opts = IslandPackageOptions {
@@ -80,7 +81,7 @@ pub fn emit_report_chart_islands(
         mode: "report".into(),
         tailwind_css: None,
     };
-    package_browser_islands(&components, output_dir, &opts).wrap_err("package chart islands")?;
+    package_browser_islands(&components, output_dir, &opts).map_err(|e| AsgardError::msg(format!("{e}: {}", "package chart islands")))?;
 
     Ok(slots)
 }
@@ -95,18 +96,18 @@ pub fn asgard_start_snippet() -> &'static str {
     asgard_boot_script_tag(true)
 }
 
-fn load_interactive_col_plot(roots: &[std::path::PathBuf]) -> Result<String> {
+fn load_interactive_col_plot(roots: &[std::path::PathBuf]) -> AsgardResult<String> {
     let rel = "source/components/interactive-col-plot.awsl";
     let candidates = ["projects/asgard.plotter", "projects/.asgard/projects/asgard.plotter", "projects/asgard._/projects/asgard.plotter"];
     for root in roots {
         for project in candidates {
             let path = root.join(project).join(rel);
             if path.is_file() {
-                return fs::read_to_string(&path).into_diagnostic().wrap_err_with(|| format!("read {}", path.display()));
+                return fs::read_to_string(&path).map_err(|e| AsgardError::msg(format!("read {}: {e}", path.display())));
             }
         }
     }
-    Err(miette::miette!("missing asgard.plotter InteractiveColPlot.awsl"))
+    Err(AsgardError::msg(report!("missing asgard.plotter InteractiveColPlot.awsl")))
 }
 
 fn fill_chart_placeholders(wrapper: &str, title_lit: &str, series_lit: &str) -> String {
@@ -128,19 +129,19 @@ fn utf8_literal(text: &str) -> String {
     out
 }
 
-fn expand_interactive_col_plot(wrapper: &str, icp_awsl: &str, route: &str) -> Result<String> {
+fn expand_interactive_col_plot(wrapper: &str, icp_awsl: &str, route: &str) -> AsgardResult<String> {
     let (title_line, series_line) = extract_title_series_lets(wrapper)?;
     let widget_name = widget_name_from_stem(route);
     let mut out = icp_awsl.replacen("<widget interactive_col_plot>", &format!("<widget {widget_name}>"), 1);
     if !out.contains(&format!("<widget {widget_name}>")) {
-        return Err(miette::miette!("InteractiveColPlot template missing widget tag"));
+        return Err(AsgardError::msg(report!("InteractiveColPlot template missing widget tag")));
     }
     out = replace_let_line(&out, "title", &title_line)?;
     out = replace_let_line(&out, "series", &series_line)?;
     Ok(out)
 }
 
-fn extract_title_series_lets(wrapper: &str) -> Result<(String, String)> {
+fn extract_title_series_lets(wrapper: &str) -> AsgardResult<(String, String)> {
     let mut title = None;
     let mut series = None;
     for line in wrapper.lines() {
@@ -154,11 +155,11 @@ fn extract_title_series_lets(wrapper: &str) -> Result<(String, String)> {
     }
     match (title, series) {
         (Some(t), Some(s)) => Ok((t, s)),
-        _ => Err(miette::miette!("chart wrapper missing let title / let series")),
+        _ => Err(AsgardError::msg(report!("chart wrapper missing let title / let series"))),
     }
 }
 
-fn replace_let_line(source: &str, name: &str, replacement: &str) -> Result<String> {
+fn replace_let_line(source: &str, name: &str, replacement: &str) -> AsgardResult<String> {
     let prefix = format!("let {name}");
     let mut found = false;
     let mut out = String::new();
@@ -176,8 +177,7 @@ fn replace_let_line(source: &str, name: &str, replacement: &str) -> Result<Strin
         }
     }
     if !found {
-        return Err(miette::miette!("InteractiveColPlot missing `{prefix}` binding"));
+        return Err(AsgardError::msg(report!("InteractiveColPlot missing `{prefix}` binding")));
     }
     Ok(out)
 }
-

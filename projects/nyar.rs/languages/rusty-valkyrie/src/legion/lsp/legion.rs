@@ -459,7 +459,7 @@ impl LegionManager {
     }
 
     fn collect_valkyrie_source_files(&self, dir: &Path, sources: &mut Vec<PathBuf>) {
-        use crate::source_surface::valkyrie_family_extensions;
+        use crate::compiler::syntax::source_surface::valkyrie_family_extensions;
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -565,7 +565,7 @@ impl LegionManager {
     }
 
     /// 获取拓扑排序后的构建顺序
-    pub fn get_build_order(&self) -> Result<Vec<String>, CycleDetectionResult> {
+    pub fn get_build_order(&self) -> LegionResult<Vec<String>, CycleDetectionResult> {
         let cycle_result = self.detect_cycles();
         if cycle_result.has_cycle {
             return Err(cycle_result);

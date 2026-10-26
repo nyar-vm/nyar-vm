@@ -1,4 +1,4 @@
-use crate::types::{Position, SourceID, ValkyrieError, hir::HirModule};
+use crate::compiler::types::{Position, SourceID, ValkyrieError, hir::HirModule};
 use oak_awsl::AwslRoot;
 use oak_valkyrie::ast::ValkyrieRoot;
 

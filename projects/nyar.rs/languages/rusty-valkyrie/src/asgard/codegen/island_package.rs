@@ -1,8 +1,6 @@
 //! Browser hydrate island packaging: auto glue + boot + CSS + manifest（无手写业务 JS）。
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{fs, path::Path};
-
-use miette::{IntoDiagnostic, Result, WrapErr};
 
 use crate::asgard::{
     awsl::LoweredComponent,
@@ -57,8 +55,12 @@ pub struct IslandPackageReport {
 /// Write auto glue, boot.js, CSS, and manifest for hydrate islands.
 ///
 /// Does **not** compile WASM — callers run `compile_wasm_bundle` first and pass `wasm_built`.
-pub fn package_browser_islands(components: &[LoweredComponent], output_dir: &Path, opts: &IslandPackageOptions) -> Result<IslandPackageReport> {
-    fs::create_dir_all(output_dir.join("c")).into_diagnostic().wrap_err("创建 dist/c 失败")?;
+pub fn package_browser_islands(
+    components: &[LoweredComponent],
+    output_dir: &Path,
+    opts: &IslandPackageOptions,
+) -> AsgardResult<IslandPackageReport> {
+    fs::create_dir_all(output_dir.join("c")).map_err(|e| AsgardError::msg(format!("{e}: {}", "创建 dist/c 失败")))?;
 
     let mut js_outputs = Vec::new();
     let mut routes = Vec::new();
@@ -66,9 +68,9 @@ pub fn package_browser_islands(components: &[LoweredComponent], output_dir: &Pat
         let js = generate_component_glue(component, &opts.wasm_stem);
         let js_path = output_dir.join(&js.relative_path);
         if let Some(parent) = js_path.parent() {
-            fs::create_dir_all(parent).into_diagnostic()?;
+            fs::create_dir_all(parent)?;
         }
-        fs::write(&js_path, &js.content).into_diagnostic().wrap_err("写入 JS 胶水失败")?;
+        fs::write(&js_path, &js.content).map_err(|e| AsgardError::msg(format!("{e}: {}", "写入 JS 胶水失败")))?;
         routes.push(component.route_name.clone());
         js_outputs.push(js);
     }
@@ -77,18 +79,17 @@ pub fn package_browser_islands(components: &[LoweredComponent], output_dir: &Pat
     let css_filenames: Vec<String> = css_outputs.iter().map(|css| css.filename.clone()).collect();
     for css in &css_outputs {
         let css_path = output_dir.join(&css.filename);
-        fs::write(&css_path, &css.content).into_diagnostic().wrap_err("写入 CSS 失败")?;
+        fs::write(&css_path, &css.content).map_err(|e| AsgardError::msg(format!("{e}: {}", "写入 CSS 失败")))?;
     }
 
     let url_mode = if opts.relative_urls { ManifestUrlMode::Relative } else { ManifestUrlMode::Absolute };
     let manifest =
         generate_manifest_with_urls(&opts.module_stem, &opts.mode, components, &js_outputs, &opts.wasm_stem, opts.wasm_built, url_mode);
-    fs::write(output_dir.join(&manifest.relative_path), &manifest.content).into_diagnostic()?;
+    fs::write(output_dir.join(&manifest.relative_path), &manifest.content)?;
 
     let boot_js = generate_boot_script(&opts.wasm_stem, manifest_url_for_mode(opts.relative_urls));
-    fs::write(output_dir.join("boot.js"), &boot_js).into_diagnostic().wrap_err("写入 boot.js 失败")?;
+    fs::write(output_dir.join("boot.js"), &boot_js).map_err(|e| AsgardError::msg(format!("{e}: {}", "写入 boot.js 失败")))?;
     let _ = fs::remove_file(output_dir.join("asgard-runtime.js"));
 
     Ok(IslandPackageReport { js_file_count: js_outputs.len(), css_filenames, routes })
 }
-

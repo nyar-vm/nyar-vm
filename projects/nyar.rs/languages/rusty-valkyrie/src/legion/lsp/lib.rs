@@ -91,7 +91,7 @@ pub struct LspOptions {
 }
 
 /// 初始化日志订阅器
-fn init_logging(options: &LspOptions) -> Result<(), Box<dyn std::error::Error>> {
+fn init_logging(options: &LspOptions) -> std::result::Result<(), Box<dyn std::error::Error>> {
     if options.log_level == LogLevel::Off {
         return Ok(());
     }
@@ -114,7 +114,7 @@ fn init_logging(options: &LspOptions) -> Result<(), Box<dyn std::error::Error>> 
 }
 
 /// 启动 LSP 服务器
-pub async fn start_lsp_server(options: LspOptions) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_lsp_server(options: LspOptions) -> std::result::Result<(), Box<dyn std::error::Error>> {
     init_logging(&options)?;
 
     info!("Starting Valkyrie LSP Server (log level: {})", options.log_level);
@@ -123,7 +123,7 @@ pub async fn start_lsp_server(options: LspOptions) -> Result<(), Box<dyn std::er
 }
 
 /// 启动基于标准输入输出的 LSP 服务器
-pub async fn start_stdio_server() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_stdio_server() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
@@ -137,7 +137,7 @@ pub async fn start_stdio_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// 启动基于 TCP 的 LSP 服务器（用于调试）
-pub async fn start_tcp_server(port: u16) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_tcp_server(port: u16) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
     info!("Valkyrie LSP Server listening on 127.0.0.1:{}", port);
 

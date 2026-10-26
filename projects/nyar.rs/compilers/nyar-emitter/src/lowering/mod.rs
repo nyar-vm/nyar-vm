@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use crate::nyar_backend_wasi::{WasmBinaryBackendInput, WasmBinaryModule};
-use miette::{IntoDiagnostic, Result, WrapErr, miette};
+use crate::{
+    EmitterError, Result,
+    nyar_backend_wasi::{WasmBinaryBackendInput, WasmBinaryModule},
+};
 use nyar::{HostProjectionBoundary, TargetBackendFamily};
 #[cfg(feature = "ovm-lane")]
 use odin_bytecode::NyarModuleData;
@@ -74,7 +76,7 @@ pub fn lower_fragment_to_driver_input(
     wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
 ) -> Result<DriverBackendInput> {
     features::semantic_mir_contract::validate_submission(submission)
-        .map_err(|error| miette!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
+        .map_err(|error| format!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
     match backend_family {
         TargetBackendFamily::Wasm => {
             let wasi_preview = crate::nyar_backend_wasi::WasiPreview::from_host_flavor(host_flavor);
@@ -104,7 +106,7 @@ pub fn lower_fragment_to_driver_input(
                 output_dir,
             }))
         }
-        other => Err(miette!("目标 `{other:?}` 在当前构建中没有已启用的正式 lowering；拒绝切换目标或补造产物")),
+        other => Err(format!("目标 `{other:?}` 在当前构建中没有已启用的正式 lowering；拒绝切换目标或补造产物")),
     }
 }
 
@@ -114,15 +116,11 @@ pub(crate) fn write_wasm_wat_sidecar(output_dir: &Path, artifact_name: &str, inp
         return Ok(None);
     };
 
-    std::fs::create_dir_all(output_dir)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("failed to create WAT sidecar directory: {}", output_dir.display()))?;
+    std::fs::create_dir_all(output_dir).map_err(|e| format!("failed to create WAT sidecar directory: {}: {e}", output_dir.display()))?;
 
     let sidecar_path = output_dir.join(format!("{artifact_name}.wat"));
     let wat_text = render_wasm_module_as_wat(&input.module);
-    std::fs::write(&sidecar_path, wat_text)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("failed to write WAT sidecar: {}", sidecar_path.display()))?;
+    std::fs::write(&sidecar_path, wat_text).map_err(|e| format!("failed to write WAT sidecar: {}: {e}", sidecar_path.display()))?;
     Ok(Some(sidecar_path))
 }
 

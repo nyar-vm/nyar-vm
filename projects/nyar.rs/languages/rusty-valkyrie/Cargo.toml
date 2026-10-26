@@ -6,24 +6,12 @@ authors.workspace = true
 license.workspace = true
 description = "Valkyrie product package: frontend, Asgard delivery, and Legion assembly"
 
-[[bin]]
-name = "legion"
-path = "src/bin/legion.rs"
-
-[[bin]]
-name = "asgard"
-path = "src/bin/asgard.rs"
-
-[[example]]
-name = "legion_dump_sources"
-path = "examples/legion_dump_sources/main.rs"
-
 [features]
 # Legion 正式编译链默认启用 Nyar + Node/Wasm seed；诊断链与自举旁路不默认开启。
 default = ["ovm-lane", "serde"]
 serde = ["nyar-types/serde", "ordered-float/serde"]
+# Nyar/OVM 代码生成后端（`nyar-emitter`）；默认开启，与 Node/Wasm 正式交付链并存。
 ovm-lane = ["nyar-emitter/ovm-lane"]
-legacy-lanes = ["ovm-lane"]
 # `legion spy *` 诊断（Wasm/JVM/CLR/Native 格式解码），不属于 build/run 生产链。
 format-spy = []
 # `legion bootstrap` 自举验收，不属于 LeetCode 双 target 正式链。
@@ -38,10 +26,9 @@ acorn-pe = { workspace = true }
 acorn-wasm = { workspace = true }
 acorn-x64 = { workspace = true, features = ["serde"] }
 base64 = { workspace = true }
-clap = { workspace = true }
+boost-diagnostic = { workspace = true }
 gag = { workspace = true }
 katex-rs = { workspace = true }
-miette = { workspace = true, features = ["fancy"] }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }

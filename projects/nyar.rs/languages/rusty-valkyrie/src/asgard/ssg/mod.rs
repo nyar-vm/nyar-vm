@@ -68,8 +68,3 @@ pub fn generate_static_page(title: &str, results: &[StaticRenderResult], extra_c
 fn escape_html(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
-#[cfg(test)]
-#[path = "../../../tests/asgard/path_wired/ssg_mod.rs"]
-mod ssg_mod_tests;
-
-

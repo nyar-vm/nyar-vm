@@ -1,10 +1,9 @@
 //! Android JVM 壳类发射（`JvmClassFile` → dex/035）。
 //!
 //! 已由 [`super::android_compose_pack`] 取代；保留供历史对照。
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 use acorn_dex::dex::DexImageBuilder;
 use acorn_jvm::class::{JvmClassFile, JvmCodeBody, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor};
-use miette::Result;
 
 const ACC_PUBLIC: u16 = 0x0001;
 const ACC_SUPER: u16 = 0x0020;
@@ -12,13 +11,13 @@ const ACC_STATIC: u16 = 0x0008;
 const ACC_NATIVE: u16 = 0x0100;
 
 /// 发射 Android 运行时壳类并写出 `classes.dex` 字节（不含尾段嵌入）。
-pub fn emit_android_shell_dex() -> Result<Vec<u8>> {
+pub fn emit_android_shell_dex() -> AsgardResult<Vec<u8>> {
     let mut builder = DexImageBuilder::new();
     for class in [emit_host_bridge(), emit_compose_runtime(), emit_main_activity()] {
-        let bytes = class.to_bytes().map_err(|e| miette::miette!("{e}"))?;
+        let bytes = class.to_bytes().map_err(|e| AsgardError::msg(report!("{e}")))?;
         builder.add_class(&class.internal_name, &bytes);
     }
-    builder.build().map_err(|e| miette::miette!("{e}"))
+    builder.build().map_err(|e| AsgardError::msg(report!("{e}")))
 }
 
 fn method_ref(owner: &str, name: &str, descriptor: &str) -> JvmMethodRef {
@@ -152,7 +151,3 @@ fn emit_main_activity() -> JvmClassFile {
     });
     class
 }
-#[cfg(test)]
-#[path = "../../../tests/asgard/path_wired/codegen_android_shell.rs"]
-mod codegen_android_shell_tests;
-

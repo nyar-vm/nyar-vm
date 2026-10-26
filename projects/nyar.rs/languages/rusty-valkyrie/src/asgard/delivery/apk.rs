@@ -1,22 +1,20 @@
 //! APK 组装。
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
 };
-
-use miette::{IntoDiagnostic, Result, WrapErr};
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 use super::util::{copy_dir_recursive, read_optional_file};
 use crate::asgard::{delivery::PackReport, platform_contract::validate_android_dist_bytes};
 
 /// 从 VOA android dist 组装 APK。
-pub fn pack_apk(input: &Path, output: Option<&Path>) -> Result<PackReport> {
+pub fn pack_apk(input: &Path, output: Option<&Path>) -> AsgardResult<PackReport> {
     let android_src = resolve_android_dist(input)?;
     let out = output.map(PathBuf::from).unwrap_or_else(|| input.join("apk-out"));
-    fs::create_dir_all(&out).into_diagnostic().wrap_err("create output dir")?;
+    fs::create_dir_all(&out).map_err(|e| AsgardError::msg(format!("{e}: {}", "create output dir")))?;
     copy_dir_recursive(&android_src, &out)?;
 
     let manifest = read_optional_file(&out.join("AndroidManifest.xml"))?;
@@ -37,33 +35,33 @@ pub fn pack_apk(input: &Path, output: Option<&Path>) -> Result<PackReport> {
     validate_android_dist(dex.as_ref().unwrap())?;
 
     let apk_path = out.join("app-debug.apk");
-    let file = File::create(&apk_path).into_diagnostic()?;
+    let file = File::create(&apk_path)?;
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
-    zip.start_file("AndroidManifest.xml", options).into_diagnostic()?;
-    zip.write_all(manifest.as_ref().unwrap()).into_diagnostic()?;
-    zip.start_file("classes.dex", options).into_diagnostic()?;
-    zip.write_all(dex.as_ref().unwrap()).into_diagnostic()?;
-    zip.start_file("resources.arsc", options).into_diagnostic()?;
-    zip.write_all(MINIMAL_RESOURCES_ARSC).into_diagnostic()?;
-    zip.start_file("assets/asgard/classes.dex", options).into_diagnostic()?;
-    zip.write_all(dex.as_ref().unwrap()).into_diagnostic()?;
+    zip.start_file("AndroidManifest.xml", options)?;
+    zip.write_all(manifest.as_ref().unwrap())?;
+    zip.start_file("classes.dex", options)?;
+    zip.write_all(dex.as_ref().unwrap())?;
+    zip.start_file("resources.arsc", options)?;
+    zip.write_all(MINIMAL_RESOURCES_ARSC)?;
+    zip.start_file("assets/asgard/classes.dex", options)?;
+    zip.write_all(dex.as_ref().unwrap())?;
     write_debug_apk_signature(&mut zip, options)?;
-    zip.finish().into_diagnostic()?;
+    zip.finish()?;
     Ok(PackReport { artifact_path: apk_path.clone(), message: format!("APK {}", apk_path.display()) })
 }
 
-fn resolve_android_dist(input: &Path) -> Result<PathBuf> {
+fn resolve_android_dist(input: &Path) -> AsgardResult<PathBuf> {
     for candidate in [input.join("android"), input.join("dist/android"), input.to_path_buf()] {
         if candidate.join("classes.dex").exists() {
             return Ok(candidate);
         }
     }
-    Err(miette::miette!("未找到 Android 二进制 dist（需 classes.dex）。请先 `asgard build`（platform: android）"))
+    Err(AsgardError::msg(report!("未找到 Android 二进制 dist（需 classes.dex）。请先 `asgard build`（platform: android）")))
 }
 
-fn validate_android_dist(dex: &[u8]) -> Result<()> {
+fn validate_android_dist(dex: &[u8]) -> AsgardResult<()> {
     validate_android_dist_bytes(dex)
 }
 
@@ -76,14 +74,13 @@ const MINIMAL_RESOURCES_ARSC: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
 ];
 
-fn write_debug_apk_signature(zip: &mut ZipWriter<File>, options: SimpleFileOptions) -> Result<()> {
+fn write_debug_apk_signature(zip: &mut ZipWriter<File>, options: SimpleFileOptions) -> AsgardResult<()> {
     const MANIFEST: &str = "Manifest-Version: 1.0\nCreated-By: asgard pack\n\n";
-    zip.start_file("META-INF/MANIFEST.MF", options).into_diagnostic()?;
-    zip.write_all(MANIFEST.as_bytes()).into_diagnostic()?;
-    zip.start_file("META-INF/CERT.SF", options).into_diagnostic()?;
-    zip.write_all(b"Signature-Version: 1.0\nCreated-By: asgard pack\n\n").into_diagnostic()?;
-    zip.start_file("META-INF/CERT.RSA", options).into_diagnostic()?;
-    zip.write_all(b"\x00").into_diagnostic()?;
+    zip.start_file("META-INF/MANIFEST.MF", options)?;
+    zip.write_all(MANIFEST.as_bytes())?;
+    zip.start_file("META-INF/CERT.SF", options)?;
+    zip.write_all(b"Signature-Version: 1.0\nCreated-By: asgard pack\n\n")?;
+    zip.start_file("META-INF/CERT.RSA", options)?;
+    zip.write_all(b"\x00")?;
     Ok(())
 }
-

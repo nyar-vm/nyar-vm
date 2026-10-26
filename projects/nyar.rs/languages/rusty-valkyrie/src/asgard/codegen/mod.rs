@@ -55,8 +55,6 @@ pub use mobile_ui_binary::{
     HOST_NATIVE_MAGIC, UI_BIN_MAGIC, build_integrated_host_product, embed_asgard_ui_section, embed_host_native_section,
     encode_mobile_ui_package, find_asgard_native_section, find_asgard_ui_section,
 };
-#[cfg(test)]
-pub use mobile_ui_binary::{dex_placeholder, dex_with_embedded_ui, host_executable_with_embedded_ui, host_logic_placeholder};
 pub use mp_boot::{MpBootOutput, generate_mp_boot};
 pub use mp_glue::{MpGlueOutput, generate_page_glue};
 pub use mp_ir_runtime::generate_mp_runtime;

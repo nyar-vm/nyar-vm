@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use miette::Result;
+use crate::Result;
 use nyar::{BinaryTarget, HostProjectionBoundary, packaging::ArtifactDescriptor};
 
 use crate::nyar_backend_wasi::{WasiPreview, WasmPackageKind};
@@ -40,6 +40,6 @@ pub(crate) fn generate_host_binding_artifacts(
     match boundary {
         HostProjectionBoundary::WasmJsGlue => crate::nyar_backend_wasm_js_glue::JsGlueBindingBuilder.build(&context),
         HostProjectionBoundary::WasiComponent => crate::nyar_backend_wasi::WitBindingBuilder.build(&context),
-        other => Err(miette::miette!("`WASM` 绑定生成不支持宿主边界 {:?}", other)),
+        other => Err(format!("`WASM` 绑定生成不支持宿主边界 {:?}", other)),
     }
 }

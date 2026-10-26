@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     state::{AwslAbiEntry, ServerState},
-    types::Position,
+    compiler::types::Position,
 };
 
 pub struct AwslReferencesHandler;

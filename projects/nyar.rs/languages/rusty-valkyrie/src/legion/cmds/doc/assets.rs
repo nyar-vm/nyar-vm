@@ -35,5 +35,3 @@ pub fn embedded_doc_page_awsl() -> &'static str {
 pub fn embedded_hub_awsl() -> &'static str {
     include_str!("../../../../assets/doc/hub.awsl")
 }
-
-

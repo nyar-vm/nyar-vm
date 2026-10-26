@@ -23,7 +23,7 @@ pub use msil_text_writer::MsilTextWriter;
 
 use std::path::PathBuf;
 
-use miette::{Result, miette};
+use crate::{EmitterError, Result};
 use nyar::{
     abstractions::BackendInputKind,
     backends::{BackendDescriptor, CompilationOptions, TargetCodeGenBackend, clr::ClrImageKind},
@@ -76,10 +76,10 @@ impl TargetCodeGenBackend for ClrBinaryBackend {
     }
 
     fn validate(&self, _input: &Self::Input) -> Result<()> {
-        Err(miette!(code = "nyar::clr::backend::unsupported", "CLR 尚无正式 TargetExecutionPlan 编码器，拒绝编译"))
+        Err("nyar::clr::backend::unsupported: CLR 尚无正式 TargetExecutionPlan 编码器，拒绝编译".to_owned())
     }
 
     fn compile(&self, _input: Self::Input, _options: &CompilationOptions) -> Result<ArtifactSet> {
-        Err(miette!(code = "nyar::clr::backend::unsupported", "CLR 尚无正式 TargetExecutionPlan 编码器，拒绝编译"))
+        Err("nyar::clr::backend::unsupported: CLR 尚无正式 TargetExecutionPlan 编码器，拒绝编译".to_owned())
     }
 }

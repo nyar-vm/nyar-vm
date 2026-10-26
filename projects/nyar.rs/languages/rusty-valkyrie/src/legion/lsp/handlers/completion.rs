@@ -1,4 +1,5 @@
-use crate::{errors::LspResult, handlers, state::ServerState, types::Position};
+use crate::{errors::LspResult, handlers, state::ServerState};
+use crate::compiler::types::Position;
 use oak_lsp::types::{CompletionItem, CompletionItemKind};
 use oak_valkyrie::ast::{Block, Expr, Item, Pattern, Statement};
 

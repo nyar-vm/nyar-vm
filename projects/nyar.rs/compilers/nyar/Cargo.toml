@@ -7,7 +7,6 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-miette = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-optimizer = { workspace = true }
 nyar-types = { workspace = true, features = ["serde"] }

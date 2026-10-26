@@ -1,19 +1,16 @@
+use crate::legion::cmds::error::{LegionError, LegionResult};
+use nyar_package_manager::PackageManager;
 use std::process::ExitCode;
 
-use clap::{Args, Subcommand};
-use miette::{IntoDiagnostic, Result, WrapErr};
-use nyar_package_manager::PackageManager;
-
 /// `legion registry` arguments.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct RegistryArgs {
     /// registry 子命令。
-    #[command(subcommand)]
     pub command: RegistryCommand,
 }
 
 /// Registry source subcommands.
-#[derive(Debug, Clone, Subcommand)]
+#[derive(Debug, Clone)]
 pub enum RegistryCommand {
     /// List configured registry endpoints.
     List,
@@ -26,7 +23,7 @@ pub enum RegistryCommand {
 }
 
 /// `legion registry add` arguments.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct RegistryAddArgs {
     /// Registry name (`npm`, `jsr`, `nuget`, `maven`, `conda`, `valhalla`).
     pub name: String,
@@ -35,22 +32,23 @@ pub struct RegistryAddArgs {
 }
 
 /// `legion registry remove` arguments.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct RegistryRemoveArgs {
     /// Registry name.
     pub name: String,
 }
 
 /// `legion registry info` arguments.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct RegistryInfoArgs {
     /// Registry name.
     pub name: String,
 }
 
 /// Run `legion registry`.
-pub fn run(args: &RegistryArgs) -> Result<ExitCode> {
-    let mut legion = PackageManager::open(".", crate::legion::LEGION_PROJECT_LAYOUT).into_diagnostic().wrap_err("打开包管理器上下文失败")?;
+pub fn run(args: &RegistryArgs) -> LegionResult<ExitCode> {
+    let mut legion = PackageManager::open(".", crate::legion::LEGION_PROJECT_LAYOUT)
+        .map_err(|e| LegionError::msg(format!("{e}: {}", "打开包管理器上下文失败")))?;
     match &args.command {
         RegistryCommand::List => {
             let sources = legion.registry_list();
@@ -66,12 +64,12 @@ pub fn run(args: &RegistryArgs) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         RegistryCommand::Add(add) => {
-            legion.registry_add(&add.name, &add.endpoint).into_diagnostic()?;
+            legion.registry_add(&add.name, &add.endpoint)?;
             println!("已设置 {} -> {}", add.name.to_ascii_lowercase(), add.endpoint.trim_end_matches('/'));
             Ok(ExitCode::SUCCESS)
         }
         RegistryCommand::Remove(remove) => {
-            if legion.registry_remove(&remove.name).into_diagnostic()? {
+            if legion.registry_remove(&remove.name)? {
                 println!("已重置/移除 {}", remove.name.to_ascii_lowercase());
                 Ok(ExitCode::SUCCESS)
             }
@@ -81,7 +79,7 @@ pub fn run(args: &RegistryArgs) -> Result<ExitCode> {
             }
         }
         RegistryCommand::Info(info) => {
-            let (name, endpoint, is_default) = legion.registry_info(&info.name).into_diagnostic()?;
+            let (name, endpoint, is_default) = legion.registry_info(&info.name)?;
             println!("name:     {name}");
             println!("endpoint: {endpoint}");
             println!("default:  {is_default}");
@@ -90,5 +88,3 @@ pub fn run(args: &RegistryArgs) -> Result<ExitCode> {
         }
     }
 }
-
-

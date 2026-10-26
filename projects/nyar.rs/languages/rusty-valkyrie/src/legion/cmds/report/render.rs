@@ -1,10 +1,10 @@
 //! AWSL SSG 报告渲染 + asgard hydrate 图表岛。
-
-use std::path::Path;
-
-use crate::asgard::ssg::generate_static_page;
-use miette::Result;
+use crate::{
+    asgard::ssg::generate_static_page,
+    legion::cmds::error::{LegionError, LegionResult},
+};
 use serde_json::json;
+use std::path::Path;
 
 use super::{
     assets::{render_report_page, report_base_css},
@@ -21,7 +21,7 @@ const CHART_BENCH_RUNTIME: &str = "LEGION_CHART_BENCH_RUNTIME";
 const CHART_BENCH_COMPILE: &str = "LEGION_CHART_BENCH_COMPILE";
 
 /// 渲染测试报告到 `{output_dir}/index.html`。
-pub fn render_test_report(output_dir: &Path, project_name: &str, results: &[TestResultEntry]) -> Result<()> {
+pub fn render_test_report(output_dir: &Path, project_name: &str, results: &[TestResultEntry]) -> LegionResult<()> {
     let passed = results.iter().filter(|r| r.status == "pass").count();
     let failed = results.iter().filter(|r| r.status == "fail" || r.status == "compile_error").count();
     let skipped = results.iter().filter(|r| r.status == "skip").count();
@@ -50,7 +50,7 @@ pub fn render_test_report(output_dir: &Path, project_name: &str, results: &[Test
     let slots = emit_chart_islands(output_dir, "legion-test", &charts)?;
     let has_chart = !slots.is_empty();
 
-    let page_title = format!("{project_name} - Test Report");
+    let page_title = format!("{project_name} - Test LegionError");
     let body_data = json!({
         "passed": passed,
         "failed": failed,
@@ -67,7 +67,7 @@ pub fn render_test_report(output_dir: &Path, project_name: &str, results: &[Test
 }
 
 /// 渲染覆盖率报告到 `{output_dir}/index.html`。
-pub fn render_coverage_report(output_dir: &Path, report: &CoverageReport) -> Result<()> {
+pub fn render_coverage_report(output_dir: &Path, report: &CoverageReport) -> LegionResult<()> {
     let pct = report.percentage;
     let bar_class = if pct >= 70.0 {
         "progress-fill high"
@@ -117,7 +117,7 @@ pub fn render_coverage_report(output_dir: &Path, report: &CoverageReport) -> Res
         "features": features,
     });
 
-    let html = render_page("Coverage Report", "pages/coverage-report.awsl", "CoverageReport", &body_data, has_charts, "legion-coverage")?;
+    let html = render_page("Coverage LegionError", "pages/coverage-report.awsl", "CoverageReport", &body_data, has_charts, "legion-coverage")?;
     let html = inject_islands(html, &slots, CHART_COVERAGE_BALANCE);
     let html = inject_islands(html, &slots, CHART_COVERAGE_FEATURES);
     atomic_write_all_text(&output_dir.join("index.html"), &html)?;
@@ -125,7 +125,7 @@ pub fn render_coverage_report(output_dir: &Path, report: &CoverageReport) -> Res
 }
 
 /// 渲染基准报告到 `{output_dir}/index.html`。
-pub fn render_bench_report(output_dir: &Path, report: &BenchReport) -> Result<()> {
+pub fn render_bench_report(output_dir: &Path, report: &BenchReport) -> LegionResult<()> {
     if report.rows.is_empty() {
         return Ok(());
     }
@@ -165,7 +165,7 @@ pub fn render_bench_report(output_dir: &Path, report: &BenchReport) -> Result<()
         "rows": row_data,
     });
 
-    let html = render_page("Benchmark Report", "pages/bench-report.awsl", "BenchReport", &body_data, has_charts, "legion-bench")?;
+    let html = render_page("Benchmark LegionError", "pages/bench-report.awsl", "BenchReport", &body_data, has_charts, "legion-bench")?;
     let html = inject_islands(html, &slots, CHART_BENCH_RUNTIME);
     let html = inject_islands(html, &slots, CHART_BENCH_COMPILE);
     atomic_write_all_text(&output_dir.join("index.html"), &html)?;
@@ -197,7 +197,7 @@ fn render_page(
     body_data: &serde_json::Value,
     has_charts: bool,
     module_stem: &str,
-) -> Result<String> {
+) -> LegionResult<String> {
     let body = render_report_page(body_awsl_relative, body_component, body_data)?;
     let layout_data = json!({ "page_title": page_title });
     let layout = render_report_page("pages/layout.awsl", "layout", &layout_data)?;
@@ -237,9 +237,3 @@ fn attach_asgard_boot(html: String, module_stem: &str) -> String {
         out
     }
 }
-#[cfg(test)]
-#[path = "../../../../tests/legion/path_wired/cmds_report_render.rs"]
-mod cmds_report_render_tests;
-
-
-

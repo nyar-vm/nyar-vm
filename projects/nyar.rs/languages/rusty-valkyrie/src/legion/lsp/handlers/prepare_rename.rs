@@ -1,6 +1,7 @@
 //! Prepare-rename: resolve whether the position is on a renamable symbol.
 
-use crate::{handlers, state::ServerState, types::Position};
+use crate::{handlers, state::ServerState};
+use crate::compiler::types::Position;
 use oak_lsp::types::Range;
 
 /// Result of a prepare-rename request.

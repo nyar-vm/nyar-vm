@@ -179,4 +179,3 @@ fn sanitize_route(name: &str) -> String {
 fn script_lets_prelude(component: &LoweredComponent) -> String {
     component.script_bindings.iter().map(ScriptBinding::as_v_let_line).collect::<Vec<_>>().join("\n    ")
 }
-

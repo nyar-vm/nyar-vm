@@ -3,8 +3,8 @@
 use crate::nyar_backend_wasi::WasmBinaryModule;
 use nyar_types::{AggregateLayout, SingletonInstancePlan};
 
-use crate::{FragmentSubmission, lowering::backends::wasm};
 use super::semantic_mir_contract::SemanticMirContractError;
+use crate::{FragmentSubmission, lowering::backends::wasm};
 
 pub(crate) fn singleton_metadata_line(plan: &SingletonInstancePlan) -> String {
     let mode = if plan.is_lazy { "lazy" } else { "static" };

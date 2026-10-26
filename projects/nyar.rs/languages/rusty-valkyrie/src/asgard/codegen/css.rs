@@ -55,4 +55,3 @@ pub fn extract_and_merge_styles(
         }
     }
 }
-

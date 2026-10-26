@@ -14,9 +14,11 @@ fn production_source(source: String) -> String {
 
 #[test]
 fn formal_semantic_path_forbids_semantic_reconstruction_patterns() {
-    let sources = vec![
-        ("SMIR-G001", "name-based semantic dispatch".to_string(), production_source(read("src/lowering/features/semantic_mir_contract.rs"))),
-    ];
+    let sources = vec![(
+        "SMIR-G001",
+        "name-based semantic dispatch".to_string(),
+        production_source(read("src/lowering/features/semantic_mir_contract.rs")),
+    )];
     let forbidden = [
         ("SMIR-G001", ".symbol.contains("),
         ("SMIR-G001", ".symbol.starts_with("),

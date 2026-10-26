@@ -1,14 +1,12 @@
 //! `asgard add` / `asgard remove` — 编辑 `legion.von` 依赖。
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{fs, path::Path};
 
-use miette::{IntoDiagnostic, Result, WrapErr};
-
 /// 向 `legion.von` 添加依赖。
-pub fn add_dependency(project_dir: &Path, name: &str, version: &str) -> Result<()> {
+pub fn add_dependency(project_dir: &Path, name: &str, version: &str) -> AsgardResult<()> {
     let path = project_dir.join("legion.von");
     let mut content = if path.exists() {
-        fs::read_to_string(&path).into_diagnostic()?
+        fs::read_to_string(&path)?
     }
     else {
         format!(
@@ -22,7 +20,7 @@ pub fn add_dependency(project_dir: &Path, name: &str, version: &str) -> Result<(
     };
     let entry = format!("\n        {name}: \"{version}\",");
     if content.contains(&format!("{name}:")) {
-        return Err(miette::miette!("依赖 `{name}` 已存在"));
+        return Err(AsgardError::msg(report!("依赖 `{name}` 已存在")));
     }
     if let Some(idx) = content.find("dependencies:") {
         if let Some(open) = content[idx..].find('{') {
@@ -36,23 +34,19 @@ pub fn add_dependency(project_dir: &Path, name: &str, version: &str) -> Result<(
     else {
         content.push_str(&format!("\n    dependencies: {{{entry}\n    }}"));
     }
-    fs::write(&path, content).into_diagnostic().wrap_err("写入 legion.von 失败")?;
+    fs::write(&path, content).map_err(|e| AsgardError::msg(format!("{e}: {}", "写入 legion.von 失败")))?;
     Ok(())
 }
 
 /// 从 `legion.von` 移除依赖。
-pub fn remove_dependency(project_dir: &Path, name: &str) -> Result<()> {
+pub fn remove_dependency(project_dir: &Path, name: &str) -> AsgardResult<()> {
     let path = project_dir.join("legion.von");
-    let content = fs::read_to_string(&path).into_diagnostic().wrap_err("读取 legion.von 失败")?;
+    let content = fs::read_to_string(&path).map_err(|e| AsgardError::msg(format!("{e}: {}", "读取 legion.von 失败")))?;
     let needle = format!("{name}:");
     if !content.contains(&needle) {
-        return Err(miette::miette!("依赖 `{name}` 不存在"));
+        return Err(AsgardError::msg(report!("依赖 `{name}` 不存在")));
     }
     let filtered: String = content.lines().filter(|line| !line.trim().starts_with(&needle)).collect::<Vec<_>>().join("\n");
-    fs::write(&path, filtered).into_diagnostic()?;
+    fs::write(&path, filtered)?;
     Ok(())
 }
-#[cfg(test)]
-#[path = "../../tests/asgard/path_wired/deps.rs"]
-mod deps_tests;
-

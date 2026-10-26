@@ -1,6 +1,5 @@
 #![doc = include_str!("readme.md")]
 
-use miette::{Diagnostic, Severity};
 use std::{
     fmt::{Display, Formatter},
     str::FromStr,
@@ -404,20 +403,6 @@ impl Display for CanonicalTargetParseError {
 }
 
 impl std::error::Error for CanonicalTargetParseError {}
-
-impl Diagnostic for CanonicalTargetParseError {
-    fn code<'a>(&'a self) -> Option<Box<dyn Display + 'a>> {
-        Some(Box::new("nyar::canonical_target::parse"))
-    }
-
-    fn severity(&self) -> Option<Severity> {
-        Some(Severity::Error)
-    }
-
-    fn help<'a>(&'a self) -> Option<Box<dyn Display + 'a>> {
-        Some(Box::new("请使用 `<arch>-<vendor>-<specification>[-<abi>]` 格式，例如 `clr-microsoft-unknown-managed`"))
-    }
-}
 
 /// 规范化目标四元组。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

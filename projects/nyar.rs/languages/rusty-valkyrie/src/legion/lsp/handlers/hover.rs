@@ -1,7 +1,7 @@
 use crate::{
     handlers,
     state::{ClassInfo, ServerState, SymbolInfo, TypeSignature},
-    types::Position,
+    compiler::types::Position,
 };
 use oak_lsp::types::Hover;
 

@@ -1,4 +1,0 @@
-[main]
-micro main(): ExitCode {
-    return ExitCode(0)
-}

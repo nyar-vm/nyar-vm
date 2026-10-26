@@ -1,7 +1,7 @@
 //! Valkyrie 产品 Node-API 原生绑定：`legion` / `asgard` CLI 与程序化编译入口。
 //!
-//! CLI argv 解析与命令分发由 Rust 侧 `legion::cli` / `asgard::cli` 承担；
-//! 本 crate 只透传 argv 与退出码，不复制 CLI 语义。
+//! 正交产品 API（`legionPlan` / `legionBuild` 等）由此 crate 导出；argv 巨型 CLI 由 TypeScript 重组。
+//! `legionRun` / `runValkyrieCli` 仅为过渡透传，不再在 `rusty-valkyrie` 内使用 clap。
 
 #![deny(missing_docs)]
 
@@ -105,16 +105,8 @@ pub fn legion_spy_run(mode: String, options: SpyTargetRunOptions) -> Result<Legi
 
 /// 解析 argv 但不执行（仅供旧脚本；新宿主请用 [`legion_plan`] / [`legion_build`]）。
 #[napi]
-pub fn legion_parse(argv: Vec<String>) -> Result<String> {
-    use clap::Parser;
-    use rusty_valkyrie::legion::cli::LegionCli;
-
-    let os_argv: Vec<OsString> = argv.into_iter().map(OsString::from).collect();
-    if rusty_valkyrie::legion::forward::try_forward_companion(&os_argv).is_some() {
-        return Ok("forward".to_string());
-    }
-    let cli = LegionCli::try_parse_from(&os_argv).map_err(|error| Error::from_reason(error.to_string()))?;
-    Ok(format!("{cli:?}"))
+pub fn legion_parse(_argv: Vec<String>) -> Result<String> {
+    Err(Error::from_reason("legionParse 已废弃：请在 TypeScript 侧解析 argv，并调用 legionPlan / legionBuild 等正交 N-API。"))
 }
 
 /// 运行 Valkyrie 编译器 CLI（`legion` / `asgard`），返回进程退出码。

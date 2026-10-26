@@ -70,4 +70,3 @@ fn android_manifest(application_id: &str, label: &str) -> String {
 "#
     )
 }
-

@@ -39,7 +39,8 @@ license = "MIT"
 repository = "https://github.com/nyar-vm/nyar-vm"
 
 [workspace.dependencies]
-# Oak / Acorn：CI 从 git 解析。本机兄弟仓路径写在 `.cargo/config.toml`（见 `config.toml.example`）。
+# Boost 库，已使用本地 `.cargo/config.toml` 覆盖
+boost-diagnostic = { git = "https://github.com/oovm/rust-boost", rev = "9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86", default-features = false, features = ["std", "serde"] }
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
 acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
@@ -53,7 +54,9 @@ oak-testing = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6a
 oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684", features = ["serde"] }
 oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
 oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
-# Nyar Compiler
+# Legion corpora (`valkyrie.rs`). Bump `rev` after corpus changes land on that repo.
+legion-fixtures = { git = "https://github.com/valkyrie-language/valkyrie.rs", rev = "bb09bbc6c2f011262bb0330a0c874a42a9b05985" }
+# Nyar Compiler 编译期组件
 nyar = { path = "compilers/nyar" }
 nyar-analyzer = { path = "compilers/nyar-analyzer" }
 nyar-optimizer = { path = "compilers/nyar-optimizer" }
@@ -67,20 +70,19 @@ nyar-napi = { path = "ffis/nyar-napi" }
 nyar-wasm = { path = "ffis/nyar-wasm" }
 valkyrie-napi = { path = "ffis/valkyrie-napi" }
 nyar-emitter = { path = "compilers/nyar-emitter" }
-# Valkyrie frontend（语言语义与 frontend-owned Semantic MIR）
-rusty-valkyrie = { path = "languages/rusty-valkyrie" }
-# Guest 语言前端（各自独立 crate）
-rusty-bash = { path = "languages/rusty-bash" }
-rusty-c = { path = "languages/rusty-c" }
-rusty-lua = { path = "languages/rusty-lua" }
-rusty-powershell = { path = "languages/rusty-powershell" }
-rusty-tcl = { path = "languages/rusty-tcl" }
-# Nyar Runtime（Nyar 平台的私有运行时）
+# Nyar Runtime 运行时组件
 legend-vm = { path = "runtimes/legend-vm" }
 odin-vm = { path = "runtimes/odin-vm" }
 odin-bytecode = { path = "formats/odin-bytecode" }
 nyar-gc = { path = "runtimes/nyar-gc" }
 nyar-jit = { path = "runtimes/nyar-jit" }
+# Guest 语言前端（各自独立 crate）
+rusty-valkyrie = { path = "languages/rusty-valkyrie" }
+rusty-bash = { path = "languages/rusty-bash" }
+rusty-c = { path = "languages/rusty-c" }
+rusty-lua = { path = "languages/rusty-lua" }
+rusty-powershell = { path = "languages/rusty-powershell" }
+rusty-tcl = { path = "languages/rusty-tcl" }
 # 外部依赖
 miette = "7.6.0"
 ordered-float = "5.5.0"

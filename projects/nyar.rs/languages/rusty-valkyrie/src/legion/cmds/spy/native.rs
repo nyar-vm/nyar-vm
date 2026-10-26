@@ -11,11 +11,10 @@
 //! `-1073741819`），开发者可通过设置 `VALKYRIE_NATIVE_DUMP` 环境变量重新
 //! 编译，再用 `legion spy native <dump.json>` 查看 lowering 阶段实际发射的
 //! 指令序列，精确定位崩溃点。
-
+use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{fs, path::Path, process::ExitCode};
 
 use acorn_x64::x86_64::{ConditionCode, Reg64, X64Instruction};
-use miette::{IntoDiagnostic, Result, miette};
 
 use super::SpyOptions;
 
@@ -39,25 +38,25 @@ pub struct NativeDump {
 /// 执行 native x86-64 反汇编。
 ///
 /// 支持的文件扩展名：`.json`（`X64Instruction` JSON dump）。
-pub fn run(options: &SpyOptions) -> Result<ExitCode> {
+pub fn run(options: &SpyOptions) -> LegionResult<ExitCode> {
     let (_, opts) = options.split();
     let Some(input) = &opts.input
     else {
-        return Err(miette!(
+        return Err(LegionError::msg(report!(
             r#"用法：legion spy native <file.json> [--func <name>] [--list] [--json]
   file               X64Instruction JSON dump 路径
   --func <name>      仅输出包含指定名称的 label 区段
   --list             列出所有 label 及其偏移
   --json             以 JSON 格式输出"#
-        ));
+        )));
     };
 
     if !Path::exists(Path::new(input)) {
-        return Err(miette!("文件不存在：{}", input));
+        return Err(LegionError::msg(report!("文件不存在：{}", input)));
     }
 
-    let content = fs::read_to_string(input).into_diagnostic()?;
-    let dump: NativeDump = serde_json::from_str(&content).map_err(|e| miette!("JSON 解析失败：{e}"))?;
+    let content = fs::read_to_string(input)?;
+    let dump: NativeDump = serde_json::from_str(&content).map_err(|e| report!("JSON 解析失败：{e}"))?;
 
     if opts.list {
         list_labels(&dump);
@@ -65,7 +64,7 @@ pub fn run(options: &SpyOptions) -> Result<ExitCode> {
     }
 
     if opts.json {
-        let json = serde_json::to_string_pretty(&dump).map_err(|e| miette!("JSON 序列化失败：{e}"))?;
+        let json = serde_json::to_string_pretty(&dump).map_err(|e| report!("JSON 序列化失败：{e}"))?;
         println!("{json}");
         return Ok(ExitCode::SUCCESS);
     }
@@ -268,4 +267,3 @@ fn estimate_instruction_size(ins: &X64Instruction) -> u32 {
 fn rex_prefix_len(a: &Reg64, b: &Reg64) -> u32 {
     if a.is_extended() || b.is_extended() { 1 } else { 0 }
 }
-

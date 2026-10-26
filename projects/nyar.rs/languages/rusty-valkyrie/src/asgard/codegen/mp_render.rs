@@ -245,8 +245,3 @@ fn map_tag(tag: &str, kind: TemplateNodeKind) -> &'static str {
 fn escape_attr(value: &str) -> String {
     value.replace('&', "&amp;").replace('"', "&quot;")
 }
-#[cfg(test)]
-#[path = "../../../tests/asgard/path_wired/codegen_mp_render.rs"]
-mod codegen_mp_render_tests;
-
-

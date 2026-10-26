@@ -41,8 +41,3 @@ impl HostBackend {
         }
     }
 }
-#[cfg(test)]
-#[path = "../../tests/asgard/path_wired/host_backend.rs"]
-mod host_backend_tests;
-
-

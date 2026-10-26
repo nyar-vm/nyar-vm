@@ -1,8 +1,4 @@
-//! VOA（crate 名）— Asgard GUI 编译与 dist 打包实现（用户 CLI：`asgard build`）。
-//!
-//! **框架名是 Asgard**（`valkyrie.v/projects/asgard`）；本 crate 负责 AWSL 解析、RenderIR 降级、
-//! 按 platform 编译逻辑/UI 二进制并写入 dist。交付组装见 `asgard pack`。
-
+#![doc = include_str!("readme.md")]
 #![deny(missing_docs)]
 
 pub mod awsl;
@@ -15,6 +11,7 @@ pub mod delivery;
 pub mod deploy;
 pub mod deps;
 pub mod dev_server;
+pub mod error;
 pub mod host;
 pub mod host_backend;
 pub mod host_validation;

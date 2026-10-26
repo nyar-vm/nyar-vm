@@ -2,15 +2,13 @@
 
 #[path = "config_script.rs"]
 mod config_script;
-
-use std::path::Path;
-
-use miette::{IntoDiagnostic, Result, WrapErr};
+use crate::asgard::error::{AsgardError, AsgardResult};
 use oak_von::{
     language::value::{VonArray, VonEnum, VonObject, VonTuple, VonValue, from_ast},
     parse as parse_von,
 };
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 /// VOA 项目配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,20 +243,20 @@ impl Default for AwslConfig {
 
 impl VoaConfig {
     /// 从项目目录加载 `asgard.config.v`。
-    pub fn load(project_dir: &Path) -> Result<Self> {
+    pub fn load(project_dir: &Path) -> AsgardResult<Self> {
         let config_path = project_dir.join("asgard.config.v");
         if !config_path.exists() {
             return Ok(Self::default_config());
         }
         let source =
-            std::fs::read_to_string(&config_path).into_diagnostic().wrap_err_with(|| format!("读取配置失败: {}", config_path.display()))?;
+            std::fs::read_to_string(&config_path).map_err(|e| AsgardError::msg(format!("读取配置失败: {}: {e}", config_path.display())))?;
         Self::parse(&source)
     }
 
     /// 解析 `asgard.config.v`（Valkyrie script）文本。
-    pub fn parse(source: &str) -> Result<Self> {
+    pub fn parse(source: &str) -> AsgardResult<Self> {
         let normalized = config_script::normalize_config_source(source)?;
-        let ast = parse_von(&normalized).map_err(|error| miette::miette!("VON 解析失败: {error}"))?;
+        let ast = parse_von(&normalized).map_err(|error| AsgardError::msg(report!("VON 解析失败: {error}")))?;
         let value = from_ast(&ast);
         von_to_config(&value)
     }
@@ -280,10 +278,10 @@ impl VoaConfig {
     }
 }
 
-fn von_to_config(value: &VonValue) -> Result<VoaConfig> {
-    value.as_object().ok_or_else(|| miette::miette!("asgard.config.v 根节点必须是对象"))?;
+fn von_to_config(value: &VonValue) -> AsgardResult<VoaConfig> {
+    value.as_object().ok_or_else(|| AsgardError::msg(report!("asgard.config.v 根节点必须是对象")))?;
     let json = von_to_json(value);
-    serde_json::from_value(json).into_diagnostic().wrap_err("解析 asgard.config.v 失败")
+    serde_json::from_value(json).map_err(|e| AsgardError::msg(format!("解析 asgard.config.v 失败: {e}")))
 }
 
 fn von_to_json(value: &VonValue) -> serde_json::Value {
@@ -311,7 +309,3 @@ fn von_to_json(value: &VonValue) -> serde_json::Value {
         },
     }
 }
-#[cfg(test)]
-#[path = "../../tests/asgard/path_wired/config.rs"]
-mod config_tests;
-

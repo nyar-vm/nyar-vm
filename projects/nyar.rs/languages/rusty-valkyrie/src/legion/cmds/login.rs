@@ -1,41 +1,36 @@
+use crate::legion::cmds::error::{LegionError, LegionResult};
+use nyar_package_manager::PackageManager;
 use std::process::ExitCode;
 
-use clap::Args;
-use miette::{IntoDiagnostic, Result, WrapErr};
-use nyar_package_manager::PackageManager;
-
 /// `legion login` arguments.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct LoginArgs {
     /// Registry name (`npm`, `jsr`, …). Defaults to `publishConfig.registry` or `npm`.
-    #[arg(value_name = "registry")]
     pub registry: Option<String>,
     /// Auth token. When omitted, discovers from official CLI stores (`~/.npmrc`, Deno config, …).
-    #[arg(long)]
     pub token: Option<String>,
 }
 
 /// `legion logout` arguments.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct LogoutArgs {
     /// Registry name. Defaults to `publishConfig.registry` or `npm`.
-    #[arg(value_name = "registry")]
     pub registry: Option<String>,
 }
 
 /// `legion whoami` arguments.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct WhoamiArgs {
     /// Registry name. Defaults to `publishConfig.registry` or `npm`.
-    #[arg(value_name = "registry")]
     pub registry: Option<String>,
 }
 
 /// Run `legion login`.
-pub fn run_login(args: &LoginArgs) -> Result<ExitCode> {
-    let mut legion = PackageManager::open(".", crate::legion::LEGION_PROJECT_LAYOUT).into_diagnostic().wrap_err("打开包管理器上下文失败")?;
+pub fn run_login(args: &LoginArgs) -> LegionResult<ExitCode> {
+    let mut legion = PackageManager::open(".", crate::legion::LEGION_PROJECT_LAYOUT)
+        .map_err(|e| LegionError::msg(format!("{e}: {}", "打开包管理器上下文失败")))?;
     let registry = args.registry.as_deref();
-    let result = legion.login(registry, args.token.as_deref()).into_diagnostic().wrap_err("登录失败")?;
+    let result = legion.login(registry, args.token.as_deref()).map_err(|e| LegionError::msg(format!("{e}: {}", "登录失败")))?;
 
     if result.verify.valid {
         let username = result.verify.username.unwrap_or_else(|| "unknown".to_string());
@@ -58,10 +53,11 @@ pub fn run_login(args: &LoginArgs) -> Result<ExitCode> {
 }
 
 /// Run `legion logout`.
-pub fn run_logout(args: &LogoutArgs) -> Result<ExitCode> {
-    let mut legion = PackageManager::open(".", crate::legion::LEGION_PROJECT_LAYOUT).into_diagnostic().wrap_err("打开包管理器上下文失败")?;
+pub fn run_logout(args: &LogoutArgs) -> LegionResult<ExitCode> {
+    let mut legion = PackageManager::open(".", crate::legion::LEGION_PROJECT_LAYOUT)
+        .map_err(|e| LegionError::msg(format!("{e}: {}", "打开包管理器上下文失败")))?;
     let registry = args.registry.as_deref();
-    if legion.logout(registry).into_diagnostic()? {
+    if legion.logout(registry)? {
         println!("已登出 {}", registry_label(registry, &legion));
     }
     else {
@@ -71,10 +67,11 @@ pub fn run_logout(args: &LogoutArgs) -> Result<ExitCode> {
 }
 
 /// Run `legion whoami`.
-pub fn run_whoami(args: &WhoamiArgs) -> Result<ExitCode> {
-    let legion = PackageManager::open(".", crate::legion::LEGION_PROJECT_LAYOUT).into_diagnostic().wrap_err("打开包管理器上下文失败")?;
+pub fn run_whoami(args: &WhoamiArgs) -> LegionResult<ExitCode> {
+    let legion = PackageManager::open(".", crate::legion::LEGION_PROJECT_LAYOUT)
+        .map_err(|e| LegionError::msg(format!("{e}: {}", "打开包管理器上下文失败")))?;
     let registry = args.registry.as_deref();
-    let result = legion.whoami(registry).into_diagnostic()?;
+    let result = legion.whoami(registry)?;
     if result.valid {
         println!("{}", result.username.unwrap_or_else(|| "unknown".to_string()));
         Ok(ExitCode::SUCCESS)
@@ -88,5 +85,3 @@ pub fn run_whoami(args: &WhoamiArgs) -> Result<ExitCode> {
 fn registry_label(registry: Option<&str>, legion: &PackageManager) -> String {
     registry.map(str::trim).filter(|value| !value.is_empty()).map(str::to_string).unwrap_or_else(|| legion.login_registry_name(None))
 }
-
-

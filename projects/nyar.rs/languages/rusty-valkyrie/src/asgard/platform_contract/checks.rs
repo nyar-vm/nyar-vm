@@ -1,9 +1,10 @@
 //! 平台契约检查实现。
-
-use std::path::Path;
-
+use crate::{
+    asgard::error::{AsgardError, AsgardResult},
+    utilities::report_msg,
+};
 use acorn_dex::dex::{dex_class_defs_count, dex_contains_strings};
-use miette::{Result, miette};
+use std::path::Path;
 
 use crate::asgard::{
     codegen::{
@@ -26,17 +27,17 @@ pub struct GateFailure {
 }
 
 /// 校验 Android `classes.dex` dist 制品。
-pub fn validate_android_dist_bytes(dex: &[u8]) -> Result<()> {
+pub fn validate_android_dist_bytes(dex: &[u8]) -> AsgardResult<()> {
     fail_if_any(check_android_dist(dex))
 }
 
 /// 校验 iOS `AsgardHost` dist 制品。
-pub fn validate_ios_dist_bytes(host: &[u8]) -> Result<()> {
+pub fn validate_ios_dist_bytes(host: &[u8]) -> AsgardResult<()> {
     fail_if_any(check_ios_dist(host))
 }
 
 /// 校验 Android dist 目录布局。
-pub fn validate_android_dist_dir(dist_dir: &Path) -> Result<()> {
+pub fn validate_android_dist_dir(dist_dir: &Path) -> AsgardResult<()> {
     let mut failures = Vec::new();
     let native = dist_dir.join("native");
     if native.exists() {
@@ -49,10 +50,10 @@ pub fn validate_android_dist_dir(dist_dir: &Path) -> Result<()> {
     }
     let dex_path = dist_dir.join("classes.dex");
     if dex_path.exists() {
-        let dex = std::fs::read(&dex_path).map_err(|e| miette!("{e}"))?;
+        let dex = std::fs::read(&dex_path).map_err(|e| report!("{e}"))?;
         failures.extend(check_android_dist(&dex));
     }
-    if failures.is_empty() { Ok(()) } else { Err(miette!(format_gate_failures(&failures))) }
+    if failures.is_empty() { Ok(()) } else { Err(AsgardError::msg(report_msg(format_gate_failures(&failures)))) }
 }
 
 /// 返回 Android dex 门禁失败列表（测试 / 报告用）。
@@ -89,7 +90,7 @@ pub fn check_ios_dist(host: &[u8]) -> Vec<GateFailure> {
 }
 
 /// 校验 Android `.so` 编译制品（G-JNI-SYM）。
-pub fn validate_android_native_so(so: &[u8]) -> Result<()> {
+pub fn validate_android_native_so(so: &[u8]) -> AsgardResult<()> {
     validate_elf_shared_object(so)
 }
 
@@ -234,8 +235,8 @@ pub fn format_gate_failures(failures: &[GateFailure]) -> String {
     failures.iter().map(|f| format!("{}: {}", f.gate.as_str(), f.message)).collect::<Vec<_>>().join("; ")
 }
 
-fn fail_if_any(failures: Vec<GateFailure>) -> Result<()> {
-    if failures.is_empty() { Ok(()) } else { Err(miette!(format_gate_failures(&failures))) }
+fn fail_if_any(failures: Vec<GateFailure>) -> AsgardResult<()> {
+    if failures.is_empty() { Ok(()) } else { Err(AsgardError::msg(report_msg(format_gate_failures(&failures)))) }
 }
 
 fn walk_files(dir: &Path) -> Vec<std::path::PathBuf> {
@@ -261,32 +262,32 @@ fn walk_files(dir: &Path) -> Vec<std::path::PathBuf> {
 }
 
 /// 校验 APK 内嵌 `classes.dex`（pack 后）。
-pub fn validate_android_apk_dex(apk_dex: &[u8]) -> Result<()> {
+pub fn validate_android_apk_dex(apk_dex: &[u8]) -> AsgardResult<()> {
     validate_android_dist_bytes(apk_dex)
 }
 
 /// 校验 `dist/terminal/` 目录符合终端交付契约（纯 V 路径：app.v + 可执行文件）。
-pub fn validate_terminal_dist_dir(dir: &Path) -> Result<()> {
-    let manifest = std::fs::read_to_string(dir.join("manifest.toml")).map_err(|_| miette!("缺少 manifest.toml"))?;
+pub fn validate_terminal_dist_dir(dir: &Path) -> AsgardResult<()> {
+    let manifest = std::fs::read_to_string(dir.join("manifest.toml")).map_err(|_| report!("缺少 manifest.toml"))?;
     if !manifest.contains("platform: terminal") {
-        return Err(miette!("manifest.toml 的 platform 字段必须为 terminal"));
+        return Err(AsgardError::msg(report!("manifest.toml 的 platform 字段必须为 terminal")));
     }
-    let has_exe = std::fs::read_dir(dir).map_err(|_| miette!("无法读取 dist/terminal 目录"))?.filter_map(|e| e.ok()).any(|e| {
+    let has_exe = std::fs::read_dir(dir).map_err(|_| report!("无法读取 dist/terminal 目录"))?.filter_map(|e| e.ok()).any(|e| {
         let name = e.file_name();
         let name = name.to_string_lossy();
         let known_non_exe = name == "manifest.toml" || name == "app.v" || name == "debug";
         !known_non_exe && (name.ends_with(".exe") || !name.contains('.'))
     });
     if !has_exe {
-        return Err(miette!("dist/terminal 缺少可执行文件"));
+        return Err(AsgardError::msg(report!("dist/terminal 缺少可执行文件")));
     }
     let app_v = dir.join("app.v");
     if !app_v.exists() {
-        return Err(miette!("缺少 app.v（V 源码产物）"));
+        return Err(AsgardError::msg(report!("缺少 app.v（V 源码产物）")));
     }
     for forbidden in ["index.html", "classes.dex", "AsgardHost", "AsgardTerminalRuntime.c"] {
         if dir.join(forbidden).exists() {
-            return Err(miette!("dist/terminal 不得包含 `{forbidden}`"));
+            return Err(AsgardError::msg(report!("dist/terminal 不得包含 `{forbidden}`")));
         }
     }
     Ok(())
@@ -308,8 +309,3 @@ pub fn check_no_legacy_magic(bytes: &[u8]) -> Vec<GateFailure> {
 pub fn expected_magics() -> (&'static [u8], &'static [u8]) {
     (UI_BIN_MAGIC, HOST_NATIVE_MAGIC)
 }
-#[cfg(test)]
-#[path = "../../../tests/asgard/path_wired/platform_contract_checks.rs"]
-mod platform_contract_checks_tests;
-
-

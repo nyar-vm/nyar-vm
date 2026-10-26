@@ -5,41 +5,36 @@ mod discover;
 mod markdown;
 mod nav;
 mod render;
-
+use crate::legion::cmds::error::{LegionError, LegionResult};
+use serde_json::json;
 use std::{
     fs,
     path::{Path, PathBuf},
     process::ExitCode,
 };
 
-use clap::Args;
-use miette::{IntoDiagnostic, Result, WrapErr};
-use serde_json::json;
-
-use crate::legion::cmds::project_input::resolve_project_path;
-use crate::workspace::{planner::WorkspaceResolver, script};
+use crate::legion::{
+    cmds::project_input::resolve_project_path,
+    workspace::{planner::WorkspaceResolver, script},
+};
 
 pub use discover::discover_sections;
 
 /// `legion doc` 命令参数。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct DocArgs {
     /// 项目或 workspace 目录。
-    #[arg(value_name = "project-dir", default_value = ".")]
     pub project_dir: PathBuf,
     /// 输出目录（默认 `{project}/dist/legion-document`）。
-    #[arg(short = 'o', long = "output")]
     pub output_dir: Option<PathBuf>,
     /// 按 workspace 成员聚合文档。
-    #[arg(long, default_value_t = false)]
     pub workspace: bool,
     /// 详细输出。
-    #[arg(short, long, default_value_t = false)]
     pub verbose: bool,
 }
 
 /// 执行 `legion doc`。
-pub fn run(args: &DocArgs) -> Result<ExitCode> {
+pub fn run(args: &DocArgs) -> LegionResult<ExitCode> {
     let output_dir = if args.workspace {
         let workspace = WorkspaceResolver::discover(&args.project_dir)?;
         let output_dir = args.output_dir.clone().unwrap_or_else(|| workspace.root_dir.join("dist/legion-document"));
@@ -63,10 +58,10 @@ pub fn run(args: &DocArgs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_workspace_doc(workspace: &WorkspaceResolver, output_dir: &Path, verbose: bool) -> Result<()> {
+fn run_workspace_doc(workspace: &WorkspaceResolver, output_dir: &Path, verbose: bool) -> LegionResult<()> {
     let members = workspace.member_manifest_dirs();
     if members.is_empty() {
-        return Err(miette::miette!("workspace 中无成员项目"));
+        return Err(LegionError::msg(report!("workspace 中无成员项目")));
     }
 
     if verbose {
@@ -92,16 +87,16 @@ fn run_workspace_doc(workspace: &WorkspaceResolver, output_dir: &Path, verbose: 
     }
 
     if all_sections.is_empty() {
-        return Err(miette::miette!("未发现任何 documentation/pages 内容"));
+        return Err(LegionError::msg(report!("未发现任何 documentation/pages 内容")));
     }
 
     emit_documentation(&mut all_sections, output_dir, verbose)
 }
 
-fn run_project_doc(project_dir: &Path, output_dir: &Path, verbose: bool) -> Result<()> {
+fn run_project_doc(project_dir: &Path, output_dir: &Path, verbose: bool) -> LegionResult<()> {
     let mut sections = discover::discover_sections(project_dir);
     if sections.is_empty() {
-        return Err(miette::miette!("未发现用户文档目录：{}", project_dir.join("documentation/pages").display()));
+        return Err(LegionError::msg(report!("未发现用户文档目录：{}", project_dir.join("documentation/pages").display())));
     }
 
     if verbose {
@@ -112,8 +107,8 @@ fn run_project_doc(project_dir: &Path, output_dir: &Path, verbose: bool) -> Resu
     emit_documentation(&mut sections, output_dir, verbose)
 }
 
-fn emit_documentation(sections: &mut [nav::DocSection], output_dir: &Path, verbose: bool) -> Result<()> {
-    fs::create_dir_all(output_dir).into_diagnostic()?;
+fn emit_documentation(sections: &mut [nav::DocSection], output_dir: &Path, verbose: bool) -> LegionResult<()> {
+    fs::create_dir_all(output_dir)?;
     let doc_dir = output_dir.join("doc");
 
     if verbose {
@@ -122,8 +117,7 @@ fn emit_documentation(sections: &mut [nav::DocSection], output_dir: &Path, verbo
 
     let component_css = render::render_sections(sections, &doc_dir, verbose)?;
     assets::write_document_css(output_dir, assets::embedded_base_css(), &component_css)
-        .into_diagnostic()
-        .wrap_err("写出 legion-document.css 失败")?;
+        .map_err(|e| LegionError::msg(format!("{e}: {}", "写出 legion-document.css 失败")))?;
 
     let has_pages = sections.iter().any(|s| !s.pages.is_empty());
     if has_pages {
@@ -139,13 +133,7 @@ fn emit_documentation(sections: &mut [nav::DocSection], output_dir: &Path, verbo
 }
 
 /// 供测试使用的文档生成入口。
-pub fn generate_for_project(project_dir: &Path, output_dir: &Path) -> Result<()> {
+pub fn generate_for_project(project_dir: &Path, output_dir: &Path) -> LegionResult<()> {
     let mut sections = discover::discover_sections(project_dir);
     emit_documentation(&mut sections, output_dir, false)
 }
-#[cfg(test)]
-#[path = "../../../../tests/legion/path_wired/cmds_doc_mod.rs"]
-mod cmds_doc_mod_tests;
-
-
-

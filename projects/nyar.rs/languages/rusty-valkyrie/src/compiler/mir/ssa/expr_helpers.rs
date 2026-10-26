@@ -1,0 +1,419 @@
+use std::collections::BTreeMap;
+
+use crate::compiler::types::{
+    Identifier, NamePath,
+    hir::{HirExpr, HirExprKind, HirResolvedCall},
+};
+
+use super::{MirBuilder, MirConstant, MirOperand, MirValueRef, ValkyrieType};
+
+impl MirBuilder {
+    pub(super) fn nominal_identity_for_declaration(&mut self, declaration: nyar_types::ItemId) -> Option<nyar_types::NominalInstanceId> {
+        super::MirStruct::find_by_declaration(&self.field_declarations, declaration).map(|structure| structure.nominal)
+    }
+
+    pub(super) fn resolve_static_expr(&self, expr: &HirExpr) -> Option<HirExpr> {
+        match &expr.kind {
+            HirExprKind::Variable(identifier) => self.static_bindings.get(identifier.name.as_str()).cloned().or_else(|| Some(expr.clone())),
+            _ => Some(expr.clone()),
+        }
+    }
+
+    pub(super) fn resolve_static_iterable_items(&self, expr: &HirExpr) -> Option<Vec<HirExpr>> {
+        let resolved = self.resolve_static_expr(expr)?;
+        match resolved.kind {
+            HirExprKind::ArrayLiteral { items } => Some(items),
+            HirExprKind::Call { callee, args, .. } if callee_name_matches(&callee.kind, "array") => {
+                Some(args.iter().map(|arg| arg.value.clone()).collect())
+            }
+            HirExprKind::TupleLiteral { items } => Some(items.clone()),
+            _ => None,
+        }
+    }
+
+    pub(super) fn extract_method_call(&mut self, callee: &HirExpr) -> Option<(MirOperand, Identifier)> {
+        match &callee.kind {
+            HirExprKind::FieldAccess { object, field, .. } => {
+                // Always lower FieldAccess callees as method calls (receiver + method name).
+                // Requiring a root binding incorrectly collapsed nested field chains like
+                // `plan.source_closure.package_names.length()` into a dotted Symbol with no args.
+                let receiver_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
+                Some((receiver_operand, field.clone()))
+            }
+            // Typechecker may flatten `plan.source_closure.package_names.length` into a Path.
+            // Only rewrite when the root is a local/param binding — otherwise keep qualified
+            // free-function Paths like `std.io.print_line` intact.
+            HirExprKind::Path(path) if path.parts().len() >= 2 => {
+                let parts = path.parts();
+                let root = parts[0].as_str();
+                if self.singleton_accessor_instances.contains_key(root) {
+                    let method_name = parts.last()?.clone();
+                    let receiver_operand = self.emit_singleton_instance_operand(root);
+                    return Some((receiver_operand, method_name));
+                }
+                if !self.bindings.contains_key(root) {
+                    return None;
+                }
+                let method_name = parts.last()?.clone();
+                let span = callee.span.clone();
+                let mut receiver_hir = HirExpr {
+                    kind: HirExprKind::Variable(crate::compiler::types::hir::HirIdentifier {
+                        name: parts[0].clone(),
+                        shadow_index: 0,
+                        span: span.clone(),
+                    }),
+                    span: span.clone(),
+                };
+                for field in &parts[1..parts.len() - 1] {
+                    receiver_hir = HirExpr {
+                        kind: HirExprKind::FieldAccess { object: Box::new(receiver_hir), field: field.clone(), field_id: None },
+                        span: span.clone(),
+                    };
+                }
+                let receiver_operand = self.lower_expr_to_operand(&receiver_hir);
+                Some((receiver_operand, method_name))
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn emit_singleton_instance_operand(&mut self, singleton_name: &str) -> MirOperand {
+        let Some(instance) = self.singleton_accessor_instances.get(singleton_name)
+        else {
+            self.diagnostics
+                .push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: format!("singleton accessor `{singleton_name}`") });
+            return MirOperand::Constant(MirConstant::Unit);
+        };
+        let value = self.push_call(MirOperand::Callable(*instance), Vec::new());
+        self.value_types.insert(value, ValkyrieType::Named(Identifier::new(singleton_name)));
+        MirOperand::Value(value)
+    }
+
+    pub(super) fn struct_construct_result_type(
+        &self,
+        name: &crate::compiler::types::Identifier,
+        resolved: Option<&crate::compiler::types::hir::HirResolvedCall>,
+    ) -> crate::compiler::types::hir::ValkyrieType {
+        use crate::compiler::types::hir::ValkyrieType;
+        if name.as_str() == "Self" {
+            if let Some(owner) = self.impl_owner_type.as_ref() {
+                return owner.clone();
+            }
+        }
+        if let Some(owner) = self.impl_owner_type.as_ref() {
+            if owner.nominal_declaration().is_some()
+                && resolved.as_ref().and_then(|call| call.return_type.nominal_declaration()) == owner.nominal_declaration()
+            {
+                return owner.clone();
+            }
+        }
+        if let Some(call) = resolved {
+            return super::resolve_self_type_with_owner(&call.return_type, self.impl_owner_type.as_ref());
+        }
+        // 未解析构造不得伪造 Named 身份；留给上层 UnresolvedNominalIdentity。
+        ValkyrieType::Named(name.clone())
+    }
+
+    /// Map `Self { ... }` surface syntax to the declaring nominal owner for StructNew metadata.
+    pub(super) fn struct_new_owner_name(&self, name: &Identifier) -> String {
+        if name.as_str() == "Self" {
+            if let Some(owner) = self.impl_owner_type.as_ref() {
+                if let Some(simple) = super::nominal_type_name(owner) {
+                    return simple.to_string();
+                }
+            }
+        }
+        name.to_string()
+    }
+
+    pub(super) fn lower_singleton_field_object(&mut self, object: &HirExpr) -> Option<MirOperand> {
+        match &object.kind {
+            HirExprKind::Variable(identifier) if self.singleton_accessor_instances.contains_key(identifier.name.as_str()) => {
+                Some(self.emit_singleton_instance_operand(identifier.name.as_str()))
+            }
+            HirExprKind::Path(path) if path.parts().len() == 1 && self.singleton_accessor_instances.contains_key(path.parts()[0].as_str()) => {
+                Some(self.emit_singleton_instance_operand(path.parts()[0].as_str()))
+            }
+            _ => None,
+        }
+    }
+}
+
+// 已清除：mint_receiver_call_evidence / receiver_uses_witness_dispatch /
+// generic_call_facts — 那些把 EvidenceId/GenericFunctionId 塞进 LegacyCall。
+
+pub(super) fn peel_generic_apply(callee: &HirExpr) -> (Vec<ValkyrieType>, &HirExpr) {
+    match &callee.kind {
+        HirExprKind::GenericApply { callee, arguments } => (arguments.clone(), callee.as_ref()),
+        _ => (Vec::new(), callee),
+    }
+}
+
+pub(super) fn infer_builder_operand_type(operand: &MirOperand, value_types: &BTreeMap<MirValueRef, ValkyrieType>) -> Option<ValkyrieType> {
+    match operand {
+        MirOperand::Value(value_ref) => value_types.get(value_ref).cloned(),
+        MirOperand::Constant(constant) => infer_builder_constant_type(constant),
+        MirOperand::Callable(_) => None,
+    }
+}
+
+fn valkyrie_type_is_numeric(ty: &ValkyrieType) -> bool {
+    matches!(
+        ty,
+        ValkyrieType::Boolean
+            | ValkyrieType::Character
+            | ValkyrieType::Integer8 { .. }
+            | ValkyrieType::Integer16 { .. }
+            | ValkyrieType::Integer32 { .. }
+            | ValkyrieType::Integer64 { .. }
+            | ValkyrieType::Float32
+            | ValkyrieType::Float64
+    ) || matches!(
+        ty,
+        ValkyrieType::Named(name) if matches!(
+            name.as_str(),
+            "bool" | "char"
+                | "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64"
+                | "i128" | "u128" | "f32" | "f64" | "f128" | "usize" | "isize"
+        )
+    )
+}
+
+/// 整数字面量可特化到的形参类型：原生整数、`Named(usize/…)`、以及无参 `Nominal{ItemId}`。
+///
+/// 无参 `Nominal` 在声明表可解析时按表面名确认数值；表中缺失时仍接受——调用点形参已是
+/// overload 特化后的合同（`specialize_call_literal_exprs` + `is_numeric_type`），MIR 必须写出
+/// 同一 `Nominal`，不得因跨包 `field_declarations` 不完整退回 `Integer32`（SMIR007）。
+pub(super) fn is_integer_literal_formal_type(ty: &ValkyrieType, structs: &[super::MirStruct]) -> bool {
+    match ty {
+        ValkyrieType::Integer8 { .. }
+        | ValkyrieType::Integer16 { .. }
+        | ValkyrieType::Integer32 { .. }
+        | ValkyrieType::Integer64 { .. }
+        | ValkyrieType::Integer128 { .. }
+        | ValkyrieType::Float32
+        | ValkyrieType::Float64 => true,
+        ValkyrieType::Named(name) => is_integer_literal_surface_name(name.as_str()),
+        ValkyrieType::Nominal { declaration, arguments } if arguments.is_empty() => {
+            match super::MirStruct::find_by_declaration(structs, *declaration) {
+                Some(item) => is_integer_literal_surface_name(item.name.as_str()),
+                None => true,
+            }
+        }
+        _ => false,
+    }
+}
+
+fn is_integer_literal_surface_name(name: &str) -> bool {
+    matches!(
+        name,
+        "byte"
+            | "sbyte"
+            | "usize"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "f32"
+            | "f64"
+            | "f128"
+            | "core.primitive.usize"
+            | "core.primitive.isize"
+            | "core::primitive::usize"
+            | "core::primitive::isize"
+    )
+}
+
+pub(super) fn named_type_name(ty: &ValkyrieType) -> Option<&str> {
+    match ty {
+        ValkyrieType::Named(name) => Some(name.as_str()),
+        ValkyrieType::Apply(base, _) => named_type_name(base),
+        _ => None,
+    }
+}
+
+pub(super) fn option_owner_name(ty: &ValkyrieType) -> Option<&str> {
+    // 诊断/迁移视图：仅 Nullable 可映射到语言 Option 表面名；Nominal 不得再靠短名认亲。
+    match ty {
+        ValkyrieType::Nullable(_) => Some("Option"),
+        _ => None,
+    }
+}
+
+/// Map surface text primitives to the std class that owns instance methods (`length`, `char_at`, …).
+pub(super) fn text_method_owner(ty: &ValkyrieType) -> Option<&'static str> {
+    match ty {
+        ValkyrieType::Utf8 => Some("Utf8Text"),
+        ValkyrieType::Utf16 => Some("Utf16Text"),
+        ValkyrieType::Named(name) => match name.as_str() {
+            "utf8" | "Utf8Text" | "core.primitive.utf8" | "core::primitive::utf8" => Some("Utf8Text"),
+            "utf16" | "Utf16Text" | "core.primitive.utf16" | "core::primitive::utf16" => Some("Utf16Text"),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+pub(super) fn receiver_method_owner_name(receiver: &MirOperand, value_types: &BTreeMap<MirValueRef, ValkyrieType>) -> Option<String> {
+    infer_builder_operand_type(receiver, value_types).and_then(|ty| {
+        text_method_owner(&ty).map(str::to_string).or_else(|| named_type_name(&ty).or_else(|| option_owner_name(&ty)).map(str::to_string))
+    })
+}
+
+pub(super) fn is_array_shaped_valkyrie_type(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Array(_) | ValkyrieType::FixedArray { .. } => true,
+        ValkyrieType::Apply(base, _) => named_type_name(base).is_some_and(|name| name == "Array"),
+        _ => false,
+    }
+}
+
+/// Lower instance calls to `Owner.method` when HIR only supplies a bare method name.
+pub(super) fn qualify_instance_method_symbol(resolved: Option<&HirResolvedCall>) -> (NamePath, Option<ValkyrieType>) {
+    let call = resolved.expect("validated HIR must provide the instance callable contract");
+    (call.symbol.clone(), Some(call.return_type.clone()))
+}
+
+pub(super) fn future_resume_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
+    match ty {
+        ValkyrieType::Apply(base, arguments) if arguments.len() == 1 && matches!(named_type_name(base), Some("Future" | "Promise")) => {
+            arguments.first().cloned()
+        }
+        _ => None,
+    }
+}
+
+fn callee_surface_simple_name(kind: &HirExprKind) -> Option<&str> {
+    match kind {
+        HirExprKind::Variable(ident) => Some(ident.name.as_str()),
+        HirExprKind::Path(path) => path.parts().last().map(|identifier| identifier.as_str()),
+        _ => None,
+    }
+}
+
+/// 判断 callee 名称是否匹配预期。
+/// 同时支持 `HirExprKind::Path`（多部分路径）和 `HirExprKind::Variable`（单部分名称），
+/// 因为 `lower_name_expression` 会将单部分名称降级为 `Variable`。
+pub(super) fn callee_name_matches(kind: &HirExprKind, expected: &str) -> bool {
+    callee_surface_simple_name(kind).is_some_and(|name| name == expected)
+}
+
+/// 结合 overload 合同与单段符号，匹配 `option_none` / `Some` 等全局解析结果。
+pub(super) fn callee_matches_name(callee: &HirExpr, resolved: Option<&crate::compiler::types::hir::HirResolvedCall>, expected: &str) -> bool {
+    callee_name_matches(&callee.kind, expected)
+        || resolved.is_some_and(|call| matches!(call.symbol.parts(), [name] if name.as_str() == expected))
+}
+
+fn callee_binding_name(kind: &HirExprKind) -> Option<&str> {
+    match kind {
+        HirExprKind::Variable(identifier) => Some(identifier.name.as_str()),
+        HirExprKind::Path(path) if path.parts().len() == 1 => Some(path.parts()[0].as_str()),
+        _ => None,
+    }
+}
+
+/// When overload leaves `Option` unapplied but the call site already has `Option<T>`, keep the Apply shape.
+pub(super) fn refine_call_return_type(actual: ValkyrieType, hint: Option<&ValkyrieType>) -> ValkyrieType {
+    match hint {
+        Some(expected @ ValkyrieType::Apply(base, _)) if matches!(base.as_ref(), ValkyrieType::Named(_)) => {
+            if matches!(&actual, ValkyrieType::Named(name) if super::nominal_type_name(expected) == Some(name.as_str())) {
+                return expected.clone();
+            }
+        }
+        _ => {}
+    }
+    actual
+}
+
+pub(super) fn lower_callee_operand(
+    expr: &HirExpr,
+    resolved: Option<&crate::compiler::types::hir::HirResolvedCall>,
+    builder: &mut MirBuilder,
+) -> Option<MirOperand> {
+    // Locals / parameters (including function-typed `f`) must stay SSA Values so CLR can
+    // emit an indirect invoke. Prefer bindings over any free-function `resolved` symbol.
+    if let Some(name) = callee_binding_name(&expr.kind) {
+        if let Some(bound) = builder.bindings.get(name) {
+            return Some(bound.clone());
+        }
+    }
+    // Free-function / operator calls only. Instance/method callees must go through
+    // `extract_method_call` so MIR keeps the receiver argument for virtual dispatch.
+    if let Some(resolved) = resolved {
+        if resolved.domain == crate::compiler::types::hir::HirCallableDomain::Constructor {
+            return None;
+        }
+        if let Some(instance) = resolved.instance {
+            return Some(MirOperand::Callable(instance));
+        }
+        if resolved.declaration.is_some() {
+            return None;
+        }
+        builder.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: resolved.symbol.to_string() });
+        return None;
+    }
+    match &expr.kind {
+        HirExprKind::Path(_) | HirExprKind::Variable(_) | HirExprKind::FieldAccess { .. } => None,
+        HirExprKind::GenericApply { callee, .. } => lower_callee_operand(callee, None, builder),
+        _ => Some(builder.lower_expr_to_operand(expr)),
+    }
+}
+
+/// 将已解析调用合同投影到 Semantic MIR 的唯一 callee 形式。
+///
+/// 源码声明已有实例身份时只能使用 `Callable`；声明存在但实例缺失是合同错误，
+/// 不能退回名称。只有明确没有源码声明的外部合同才保留 ABI 符号。
+pub(super) fn lower_resolved_callee(resolved: &crate::compiler::types::hir::HirResolvedCall) -> Option<MirOperand> {
+    resolved.instance.map(MirOperand::Callable)
+}
+
+/// 尝试将表达式解析为 `NamePath`。
+///
+/// 递归处理 `Variable` 与 `FieldAccess` 链，将其组合为完整路径。
+/// 例如 `std.iterator.collect_array` 会被解析为
+/// `NamePath(["std", "iterator", "collect_array"])`。
+/// 若表达式不是纯路径形式（如对象是复杂表达式），返回 `None`。
+pub(super) fn try_resolve_as_path(expr: &HirExpr) -> Option<NamePath> {
+    match &expr.kind {
+        HirExprKind::Variable(identifier) => Some(NamePath::new(vec![identifier.name.clone()])),
+        HirExprKind::Path(path) => Some(path.clone()),
+        HirExprKind::FieldAccess { object, field, .. } => {
+            let mut path = try_resolve_as_path(object)?;
+            path.append(field.clone());
+            Some(path)
+        }
+        _ => None,
+    }
+}
+
+/// 递归提取 `FieldAccess` 链的根变量名。
+///
+/// 例如 `request.target.length` 的根变量是 `request`。
+/// 若表达式不是 `Variable` 与 `FieldAccess` 链，返回 `None`。
+/// 用于区分实例方法调用（`obj.method()`）和静态路径调用（`module.function()`）。
+pub(super) fn root_variable_name(expr: &HirExpr) -> Option<&str> {
+    match &expr.kind {
+        HirExprKind::Variable(identifier) => Some(identifier.name.as_str()),
+        HirExprKind::FieldAccess { object, .. } => root_variable_name(object),
+        _ => None,
+    }
+}
+
+fn infer_builder_constant_type(constant: &MirConstant) -> Option<ValkyrieType> {
+    Some(match constant {
+        MirConstant::Int(value) if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 => ValkyrieType::Integer32 { signed: true },
+        MirConstant::Int(_) => ValkyrieType::Integer64 { signed: true },
+        MirConstant::Float64(_) => ValkyrieType::Float64,
+        MirConstant::Bool(_) => ValkyrieType::Boolean,
+        MirConstant::Utf8(_) => ValkyrieType::Utf8,
+        MirConstant::Utf16(_) => ValkyrieType::Utf16,
+        MirConstant::Unit => ValkyrieType::Unit,
+    })
+}

@@ -1,26 +1,24 @@
 //! 交付工具函数。
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{
     fs::{self, File},
     io::Read,
     path::Path,
 };
 
-use miette::{IntoDiagnostic, Result};
-
-pub(crate) fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
+pub(crate) fn read_optional_file(path: &Path) -> AsgardResult<Option<Vec<u8>>> {
     if !path.is_file() {
         return Ok(None);
     }
     let mut bytes = Vec::new();
-    File::open(path).into_diagnostic()?.read_to_end(&mut bytes).into_diagnostic()?;
+    File::open(path)?.read_to_end(&mut bytes)?;
     Ok(Some(bytes))
 }
 
-pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
-    fs::create_dir_all(dst).into_diagnostic()?;
-    for entry in fs::read_dir(src).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
+pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> AsgardResult<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
         let path = entry.path();
         let dest = dst.join(entry.file_name());
         if path.is_dir() {
@@ -28,9 +26,9 @@ pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         }
         else {
             if let Some(parent) = dest.parent() {
-                fs::create_dir_all(parent).into_diagnostic()?;
+                fs::create_dir_all(parent)?;
             }
-            fs::copy(&path, &dest).into_diagnostic()?;
+            fs::copy(&path, &dest)?;
         }
     }
     Ok(())

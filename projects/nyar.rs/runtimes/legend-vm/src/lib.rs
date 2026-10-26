@@ -5,6 +5,8 @@
 //! adapters that implement the [`guest`] seam. See crate `readme.md` and
 //! `projects/host-script-languages.md`.
 
+#![warn(missing_docs)]
+
 pub mod algebra;
 pub mod compiler;
 pub mod evaluator;

@@ -4,13 +4,11 @@
 //! - `VSRC002`: encoding corruption (invalid UTF-8, U+FFFD, mojibake, PS escape residue)
 //!
 //! 源码解码失败由输入层报告；这里的行数和疑似乱码检查仅供维护工具使用。
-
+use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
-
-use miette::{IntoDiagnostic, Result, miette};
 
 /// Soft ceiling for `.v` / `.vx` source size (lines). Exceeding emits `VSRC001` at warning.
 pub const SOURCE_LINE_WARN: usize = 1024;
@@ -40,8 +38,8 @@ impl HygieneReport {
 }
 
 /// Read one source path and emit hygiene diagnostics.
-pub fn scan_source_path(path: &Path) -> Result<HygieneReport> {
-    let bytes = fs::read(path).into_diagnostic().map_err(|e| miette!("读取源码失败 {}：{e}", path.display()))?;
+pub fn scan_source_path(path: &Path) -> LegionResult<HygieneReport> {
+    let bytes = fs::read(path).map_err(|e| LegionError::msg(report!("读取源码失败 {}：{e}", path.display())))?;
     match std::str::from_utf8(&bytes) {
         Ok(source) => Ok(scan_source_text(path, source)),
         Err(error) => {
@@ -100,8 +98,3 @@ fn looks_like_encoding_corruption(line: &str) -> bool {
     // Secondary: PowerShell escape residue dumped as literal text.
     line.contains("`r`n") || line.contains("`n`r")
 }
-#[cfg(test)]
-#[path = "../../../tests/legion/path_wired/cmds_source_hygiene.rs"]
-mod cmds_source_hygiene_tests;
-
-

@@ -2,11 +2,13 @@
 #![allow(deprecated)]
 
 #[allow(deprecated)]
+use super::super::{cabi::CABI_HEAP_GLOBAL_INDEX, sections::encode_uleb128};
+#[allow(deprecated)]
 use super::*;
 
 #[allow(deprecated)]
 impl<'a> WasmMirLowerer<'a> {
-    pub(crate) fn bump_allocate(&mut self, size: u32, align: u32) {
+    pub(super) fn bump_allocate(&mut self, size: u32, align: u32) {
         let align = align.max(1);
         let align_mask = (align - 1) as i32;
         // aligned = (heap + align - 1) & ~(align - 1)
@@ -70,60 +72,60 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_get(self.stack_ptr_local);
     }
 
-    pub(crate) fn emit_i32_const(&mut self, value: i32) {
+    pub(super) fn emit_i32_const(&mut self, value: i32) {
         encode_i32_const(value, &mut self.code);
     }
 
     /// 发射 `ref.null anyref`：产?null anyref 引用值?
-    pub(crate) fn emit_ref_null_anyref(&mut self) {
+    pub(super) fn emit_ref_null_anyref(&mut self) {
         encode_ref_null_anyref(&mut self.code);
     }
 
-    pub(crate) fn emit_ref_null_extern(&mut self) {
+    pub(super) fn emit_ref_null_extern(&mut self) {
         encode_ref_null_externref(&mut self.code);
     }
 
-    pub(crate) fn emit_i64_const(&mut self, value: i64) {
+    pub(super) fn emit_i64_const(&mut self, value: i64) {
         encode_i64_const(value, &mut self.code);
     }
 
-    pub(crate) fn emit_f64_const(&mut self, value: f64) {
+    pub(super) fn emit_f64_const(&mut self, value: f64) {
         encode_f64_const(value, &mut self.code);
     }
 
-    pub(crate) fn emit_local_get(&mut self, local: u32) {
+    pub(super) fn emit_local_get(&mut self, local: u32) {
         encode_local_get(local, &mut self.code);
     }
 
-    pub(crate) fn emit_local_set(&mut self, local: u32) {
+    pub(super) fn emit_local_set(&mut self, local: u32) {
         encode_local_set(local, &mut self.code);
     }
 
-    pub(crate) fn emit_local_tee(&mut self, local: u32) {
+    pub(super) fn emit_local_tee(&mut self, local: u32) {
         encode_local_tee(local, &mut self.code);
     }
 
-    pub(crate) fn emit_i32_add(&mut self) {
+    pub(super) fn emit_i32_add(&mut self) {
         encode_i32_add(&mut self.code);
     }
 
-    pub(crate) fn emit_i32_and(&mut self) {
+    pub(super) fn emit_i32_and(&mut self) {
         encode_i32_and(&mut self.code);
     }
 
-    pub(crate) fn emit_memory_copy(&mut self) {
+    pub(super) fn emit_memory_copy(&mut self) {
         encode_memory_copy(&mut self.code);
     }
 
     // ── wasm-gc 辅助方法 ──────────────────────────────────────────
 
     /// 查找引用类型 struct 对应?wasm-gc structtype ?type_index?
-    pub(crate) fn resolve_gc_struct_type_index(&self, layout_id: LayoutId, _type_name: &str) -> Option<u32> {
+    pub(super) fn resolve_gc_struct_type_index(&self, layout_id: LayoutId, _type_name: &str) -> Option<u32> {
         self.gc_struct_type_indices.get(&layout_id).copied()
     }
 
     /// 查找 heap `[T]` ?element_type 对应?wasm-gc arraytype ?type_index?
-    pub(crate) fn resolve_gc_array_type_index(&self, element_type: &NyarType) -> Option<u32> {
+    pub(super) fn resolve_gc_array_type_index(&self, element_type: &NyarType) -> Option<u32> {
         let key = wasm_array_element_type_key(element_type);
         let resolved = self.gc_array_type_indices.get(&key).copied();
         if resolved.is_none() {
@@ -132,13 +134,13 @@ impl<'a> WasmMirLowerer<'a> {
         resolved
     }
 
-    pub(crate) fn trap_missing_gc_struct(&mut self, layout_id: LayoutId, type_name: &str, site: &str) {
+    pub(super) fn trap_missing_gc_struct(&mut self, layout_id: LayoutId, type_name: &str, site: &str) {
         eprintln!("[wasm::mir] missing gc structtype for layout_id={layout_id:?} type `{type_name}` at `{site}` in `{}`", self.mir_fn.symbol);
         encode_unreachable(&mut self.code);
     }
 
     /// 将栈?anyref 转为 typed struct ref，供 `struct.get` / `struct.set` 使用?
-    pub(crate) fn emit_ref_cast_struct(&mut self, type_index: u32) {
+    pub(super) fn emit_ref_cast_struct(&mut self, type_index: u32) {
         encode_ref_cast_type_index(type_index, &mut self.code);
     }
 
@@ -147,32 +149,32 @@ impl<'a> WasmMirLowerer<'a> {
     /// heap array local ?`reference_locals` 中声明为 anyref（`VALTYPE_ANYREF`），
     /// ?`array.len` 期望 arrayref。从 anyref local 读取后必?`ref.cast array`
     /// 收窄类型，否则触?`array.len expected type arrayref, found anyref` 验证错误?
-    pub(crate) fn emit_ref_cast_array(&mut self) {
+    pub(super) fn emit_ref_cast_array(&mut self) {
         encode_ref_cast_array(&mut self.code);
     }
 
-    pub(crate) fn emit_ref_cast_array_type(&mut self, type_index: u32) {
+    pub(super) fn emit_ref_cast_array_type(&mut self, type_index: u32) {
         encode_ref_cast_type_index(type_index, &mut self.code);
     }
 
     /// 发射 `struct.new_default` <type_index>：分配并初始化所有字段为默认值?
-    pub(crate) fn emit_struct_new_default(&mut self, type_index: u32) {
+    pub(super) fn emit_struct_new_default(&mut self, type_index: u32) {
         encode_struct_new_default(type_index, &mut self.code);
     }
 
     /// 发射 `struct.get` <type_index> <field_index>：从结构体引用读取字段值?
-    pub(crate) fn emit_struct_get(&mut self, type_index: u32, field_index: u32) {
+    pub(super) fn emit_struct_get(&mut self, type_index: u32, field_index: u32) {
         encode_struct_get(type_index, field_index, &mut self.code);
     }
 
     /// 发射 `struct.set` <type_index> <field_index>；栈顺序?`[field_value, struct_ref]`?
-    pub(crate) fn emit_struct_set(&mut self, type_index: u32, field_index: u32) {
+    pub(super) fn emit_struct_set(&mut self, type_index: u32, field_index: u32) {
         encode_struct_set(type_index, field_index, &mut self.code);
     }
 
     /// 发射 `array.new_default` <type_index>：分配指定长度的默认值数组?
     /// 栈：[length: i32] →?[arrayref]?
-    pub(crate) fn emit_array_new_default(&mut self, type_index: u32) {
+    pub(super) fn emit_array_new_default(&mut self, type_index: u32) {
         assert!(
             !self.gc_array_type_indices.is_empty(),
             "heap array.new_default requires wasm-gc arraytype (mandatory GC; arraytype map empty)"
@@ -181,28 +183,28 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// 发射 `array.new_fixed` <type_index> <count>：从栈上 count 个值构造定长数组?
-    pub(crate) fn emit_array_new_fixed(&mut self, type_index: u32, count: u32) {
+    pub(super) fn emit_array_new_fixed(&mut self, type_index: u32, count: u32) {
         assert!(!self.gc_array_type_indices.is_empty(), "heap array.new_fixed requires wasm-gc arraytype (mandatory GC; arraytype map empty)");
         encode_array_new_fixed(type_index, count, &mut self.code);
     }
 
     /// 发射 `array.get` <type_index>：读取数组指定索引的元素?
     /// 栈：[arrayref, i32_index] →?[value]?
-    pub(crate) fn emit_array_get(&mut self, type_index: u32) {
+    pub(super) fn emit_array_get(&mut self, type_index: u32) {
         assert!(!self.gc_array_type_indices.is_empty(), "heap array.get requires wasm-gc arraytype (mandatory GC; arraytype map empty)");
         encode_array_get(type_index, &mut self.code);
     }
 
     /// 发射 `array.set` <type_index>：写入数组指定索引的元素?
     /// 栈：[arrayref, i32_index, value] →?[]?
-    pub(crate) fn emit_array_set(&mut self, type_index: u32) {
+    pub(super) fn emit_array_set(&mut self, type_index: u32) {
         assert!(!self.gc_array_type_indices.is_empty(), "heap array.set requires wasm-gc arraytype (mandatory GC; arraytype map empty)");
         encode_array_set(type_index, &mut self.code);
     }
 
     /// 发射 `array.len`：获取数组长度?
     /// 栈：[arrayref] →?[i32]?
-    pub(crate) fn emit_array_len(&mut self) {
+    pub(super) fn emit_array_len(&mut self) {
         assert!(!self.gc_array_type_indices.is_empty(), "heap array.len requires wasm-gc arraytype (mandatory GC; arraytype map empty)");
         encode_array_len(&mut self.code);
     }

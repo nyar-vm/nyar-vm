@@ -1,5 +1,7 @@
 #![doc = include_str!("readme.md")]
 
+pub mod error;
+
 /// 审计依赖漏洞与许可证。
 pub mod audit;
 pub mod bench;
@@ -61,4 +63,3 @@ pub(crate) fn path_for_cli_log(path: &Path) -> String {
     }
     path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_else(|| normalized)
 }
-

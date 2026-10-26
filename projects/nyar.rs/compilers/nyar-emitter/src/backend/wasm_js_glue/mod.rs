@@ -6,8 +6,8 @@
 
 use std::{fs, path::Path};
 
+use crate::{EmitterError, Result};
 use acorn_wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
-use miette::{IntoDiagnostic, Result, WrapErr};
 use nyar::{
     abstractions::ArtifactFormat,
     packaging::{ArtifactDescriptor, TargetLane},
@@ -33,7 +33,7 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
         };
         let library_invoke = if library_mode { read_library_invoke_spec(&wasm_path) } else { None };
         let launcher = build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode, library_invoke.as_deref());
-        fs::write(&launcher_path, launcher).into_diagnostic().wrap_err_with(|| format!("写入 Node 启动壳失败：{}", launcher_path.display()))?;
+        fs::write(&launcher_path, launcher).map_err(|e| format!("写入 Node 启动壳失败：{}: {e}", launcher_path.display()))?;
 
         Ok(vec![ArtifactDescriptor {
             name: format!("{}.launcher", context.artifact_name),
@@ -606,12 +606,12 @@ if (typeof entry === "function") {{
 /// 读取名为 `nyar.strings` 的自定义段（由 `lowering` 后端写入），
 /// 使用发射器命名空间而非产品名，作为跨后端的线格式契约。
 fn read_wasm_utf8_literals(wasm_path: &Path) -> Result<Vec<String>> {
-    let bytes = fs::read(wasm_path).into_diagnostic().wrap_err_with(|| format!("读取 WASM 失败：{}", wasm_path.display()))?;
-    let module = WasmBinaryModule::from_bytes(&bytes).map_err(|error| miette::miette!("WASM 解析失败：{error}"))?;
+    let bytes = fs::read(wasm_path).map_err(|e| format!("读取 WASM 失败：{}: {e}", wasm_path.display()))?;
+    let module = WasmBinaryModule::from_bytes(&bytes).map_err(|error| format!("WASM 解析失败：{error}"))?;
     for section in &module.sections {
         if section.name.as_deref() == Some("nyar.strings") {
             let payload: serde_json::Value =
-                serde_json::from_slice(&section.bytes).into_diagnostic().wrap_err("解析 nyar.strings 自定义段失败")?;
+                serde_json::from_slice(&section.bytes).map_err(|e| format!("解析 nyar.strings 自定义段失败: {e}"))?;
             if let Some(values) = payload.get("strings").and_then(|value| value.as_array()) {
                 return Ok(values.iter().filter_map(|value| value.as_str().map(str::to_string)).collect());
             }

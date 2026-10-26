@@ -1,10 +1,8 @@
 //! GPU lane backend placeholders（SPIR-V / DXIL emit 待 Acorn GPU 格式 crate）。
 
-use miette::Result;
-
 use crate::{
     abstractions::{ArtifactFormat, BackendInputKind},
-    backends::{BackendDescriptor, CompilationOptions},
+    backends::{BackendDescriptor, BackendResult, CompilationOptions},
     packaging::{ArtifactSet, TargetLane},
 };
 
@@ -35,7 +33,7 @@ impl GpuSpirvBackend {
     }
 
     /// 占位 compile：验证输入种类后返回空产物集。
-    pub fn compile_placeholder(&self, _options: &CompilationOptions) -> Result<ArtifactSet> {
+    pub fn compile_placeholder(&self, _options: &CompilationOptions) -> BackendResult<ArtifactSet> {
         Ok(ArtifactSet::default())
     }
 }
@@ -67,7 +65,7 @@ impl GpuDxilBackend {
     }
 
     /// 占位 compile。
-    pub fn compile_placeholder(&self, _options: &CompilationOptions) -> Result<ArtifactSet> {
+    pub fn compile_placeholder(&self, _options: &CompilationOptions) -> BackendResult<ArtifactSet> {
         Ok(ArtifactSet::default())
     }
 }

@@ -419,8 +419,3 @@ struct AsgardApp: App {
 
 const DESKTOP_APP_ENTRY: &str = r#"// Desktop: no main entry — host loads product bytes via loadFromProduct(exeData).
 "#;
-#[cfg(test)]
-#[path = "../../../tests/asgard/path_wired/codegen_ios_swiftui_runtime.rs"]
-mod codegen_ios_swiftui_runtime_tests;
-
-

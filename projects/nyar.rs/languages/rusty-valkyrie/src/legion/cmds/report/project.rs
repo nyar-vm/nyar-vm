@@ -1,12 +1,12 @@
 //! Legion 报告工程路径（`valkyrie.v/projects/legion._/projects/legion.report`）。
-
+use crate::{
+    asgard::ssg::project::valkyrie_v_roots,
+    legion::cmds::error::{LegionError, LegionResult},
+};
 use std::path::PathBuf;
 
-use crate::asgard::ssg::project::valkyrie_v_roots;
-use miette::Result;
-
 /// `valkyrie.v/projects/legion._/projects/legion.report` 工程目录。
-pub fn legion_report_project_dir() -> Result<PathBuf> {
+pub fn legion_report_project_dir() -> LegionResult<PathBuf> {
     let roots = valkyrie_v_roots()?;
     for root in &roots {
         let nested = root.join("projects/legion._/projects/legion.report");
@@ -14,7 +14,5 @@ pub fn legion_report_project_dir() -> Result<PathBuf> {
             return Ok(nested);
         }
     }
-    Err(miette::miette!("missing Valyrie project: projects/legion._/projects/legion.report"))
+    Err(LegionError::msg(report!("missing Valyrie project: projects/legion._/projects/legion.report")))
 }
-
-

@@ -250,4 +250,3 @@ fn is_likely_pure(source: &str) -> bool {
 pub fn canonicalize_surface(surface: SurfaceIr, script_bindings: &[ScriptBinding]) -> RenderModule {
     Canonicalizer::new(script_bindings).finish(surface)
 }
-

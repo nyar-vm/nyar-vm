@@ -56,4 +56,3 @@ pub fn package_miniprogram_pages(components: &[LoweredComponent], host_stem: &st
     }
     MpPackageOutput { pages, app_js: boot.app_js, runtime_js }
 }
-

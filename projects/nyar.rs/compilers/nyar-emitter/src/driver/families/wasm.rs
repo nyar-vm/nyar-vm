@@ -1,5 +1,4 @@
-use crate::nyar_backend_wasi::WasmBinaryBackend;
-use miette::Result;
+use crate::{Result, nyar_backend_wasi::WasmBinaryBackend};
 use nyar::{HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, backends::TargetCodeGenBackend};
 
 use super::BundledBackendCompiler;
@@ -17,14 +16,13 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
     fn compile(&self, request: DriverCompileRequest<'_>) -> Result<DriverCompileReport> {
         let DriverBackendInput::Wasm(input) = request.input
         else {
-            return Err(miette::miette!("`WASM` 家族请求必须携带 `WasmBinaryBackendInput`"));
+            return Err(format!("`WASM` 家族请求必须携带 `WasmBinaryBackendInput`"));
         };
         let expected_boundary = input.host_boundary;
         if request.requirement.host_boundary != expected_boundary {
-            return Err(miette::miette!(
+            return Err(format!(
                 "`WASM` 后端输入宿主与规划需求不一致：input={:?}, requirement={:?}",
-                expected_boundary,
-                request.requirement.host_boundary
+                expected_boundary, request.requirement.host_boundary
             ));
         }
         let backend = WasmBinaryBackend::new();

@@ -17,7 +17,6 @@ ovm-lane = []
 acorn-jvm = { workspace = true }
 acorn-pe = { workspace = true }
 acorn-wasm = { workspace = true }
-miette = { workspace = true }
 nyar = { workspace = true }
 odin-bytecode = { workspace = true }
 nyar-types = { workspace = true }

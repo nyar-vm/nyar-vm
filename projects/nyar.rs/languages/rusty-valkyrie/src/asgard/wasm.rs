@@ -1,10 +1,10 @@
 //! WASM 编译：复用 `compile_v_bundle`（仅 browser）。
-
-use std::path::Path;
-
-use miette::Result;
+use crate::{
+    asgard::error::{AsgardError, AsgardResult},
+    legion::CanonicalTarget,
+};
 use nyar_types::compiler_input::CompilerSourceGroup;
-use rusty_valkyrie::CanonicalTarget;
+use std::path::Path;
 
 use crate::asgard::{
     compile::{GeneratedSource, HostArtifactKind, compile_v_bundle},
@@ -27,32 +27,30 @@ pub fn compile_wasm_bundle(
     output_dir: &Path,
     module_name: &str,
     target: &CanonicalTarget,
-) -> Result<WasmCompileReport> {
+) -> AsgardResult<WasmCompileReport> {
     let report = compile_v_bundle(source_groups, generated, output_dir, module_name, target, HostBackend::BrowserDom)?;
     if report.kind != HostArtifactKind::Wasm {
-        return Err(miette::miette!("预期 WASM 制品"));
+        return Err(AsgardError::msg(report!("预期 WASM 制品")));
     }
-    report.wasm.ok_or_else(|| miette::miette!("缺少 WASM 报告"))
+    report.wasm.ok_or_else(|| AsgardError::msg(report!("缺少 WASM 报告")))
 }
 
 /// 将 WASM 产物复制/提升到 dist 根目录（供 manifest 引用）。
-pub fn copy_wasm_artifacts_to_dist(output_dir: &Path, report: &WasmCompileReport) -> Result<()> {
-    use miette::{IntoDiagnostic, WrapErr};
+pub fn copy_wasm_artifacts_to_dist(output_dir: &Path, report: &WasmCompileReport) -> AsgardResult<()> {
     use std::fs;
 
     let wasm_name = &report.wasm_filename;
     let glue_name = &report.glue_filename;
     let wasm_path = output_dir.join(wasm_name);
     if !wasm_path.is_file() {
-        return Err(miette::miette!("WASM 编译报告指定的产物不存在: {}", wasm_name));
+        return Err(AsgardError::msg(report!("WASM 编译报告指定的产物不存在: {}", wasm_name)));
     }
     write_browser_wasm_glue(output_dir, glue_name)?;
     Ok(())
 }
 
 /// 写入浏览器 `boot.js` 可 `import()` 的 WASM glue（`instantiate` / `run`）。
-pub fn write_browser_wasm_glue(output_dir: &Path, glue_filename: &str) -> Result<()> {
-    use miette::IntoDiagnostic;
+pub fn write_browser_wasm_glue(output_dir: &Path, glue_filename: &str) -> AsgardResult<()> {
     use std::fs;
 
     let content = r#"export async function instantiate(wasmUrl, imports) {
@@ -69,7 +67,6 @@ export async function run(wasmUrl, imports) {
   return instantiate(wasmUrl, imports);
 }
 "#;
-    fs::write(output_dir.join(glue_filename), content).into_diagnostic()?;
+    fs::write(output_dir.join(glue_filename), content)?;
     Ok(())
 }
-

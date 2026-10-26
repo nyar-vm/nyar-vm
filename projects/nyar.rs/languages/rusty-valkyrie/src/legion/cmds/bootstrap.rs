@@ -1,35 +1,29 @@
 #![doc = include_str!("readme.md")]
-
+use crate::legion::{
+    CanonicalTarget,
+    cmds::error::{LegionError, LegionResult},
+};
 use std::{
     env, fs,
     path::{Path, PathBuf},
     process::{Command, ExitStatus},
 };
 
-use clap::Args;
-use miette::{IntoDiagnostic, Report, Result, miette};
-use rusty_valkyrie::CanonicalTarget;
-
 use crate::legion::cmds::run::{ExecutionManifest, select_artifact};
 
 /// `legion bootstrap` 的命令参数。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct BootstrapArgs {
     /// 项目目录，默认当前目录。
-    #[arg(value_name = "project-dir", default_value = ".")]
     pub project_dir: PathBuf,
     /// 自举目标项目目录；若指定则覆盖 `project-dir`。
     /// 统一验收默认指向 `valkyrie.v/projects/legion._/projects/legion.tools`。
-    #[arg(long = "project", value_name = "PATH")]
     pub bootstrap_project: Option<PathBuf>,
     /// seed 路径，用于自举的已有可运行二进制。
-    #[arg(long = "seed")]
     pub seed_path: Option<PathBuf>,
     /// 是否跳过 v1/v2 比对。
-    #[arg(long)]
     pub skip_compare: bool,
     /// 目标平台，默认 `clr`。
-    #[arg(long, default_value = "clr")]
     pub target: CanonicalTarget,
 }
 
@@ -66,7 +60,7 @@ pub struct BootstrapResult {
     /// 成功的阶段。
     pub stages_completed: Vec<BootstrapStage>,
     /// 失败的阶段（如果有）。
-    pub failed_stage: Option<(BootstrapStage, Report)>,
+    pub failed_stage: Option<(BootstrapStage, LegionError)>,
     /// v1 产物路径。
     pub v1_path: Option<PathBuf>,
     /// v2 产物路径。
@@ -80,18 +74,18 @@ impl BootstrapResult {
     }
 
     /// 获取错误信息。
-    pub fn error(&self) -> Option<&Report> {
+    pub fn error(&self) -> Option<&LegionError> {
         self.failed_stage.as_ref().map(|(_, report)| report)
     }
 }
 
 /// 执行自举流程。
-pub fn run(args: &BootstrapArgs) -> Result<BootstrapResult> {
+pub fn run(args: &BootstrapArgs) -> LegionResult<BootstrapResult> {
     #[cfg(not(feature = "bootstrap-lane"))]
     {
-        return Err(miette!(
+        return Err(LegionError::msg(report!(
             "legion bootstrap 不属于 LeetCode 正式编译链；请使用 `legion build` / `legion run`（或显式启用 `bootstrap-lane` feature 构建）"
-        ));
+        )));
     }
     let project_dir = args.bootstrap_project.clone().unwrap_or_else(|| args.project_dir.clone());
     let mut result = BootstrapResult { stages_completed: Vec::new(), failed_stage: None, v1_path: None, v2_path: None };
@@ -214,17 +208,17 @@ pub fn run(args: &BootstrapArgs) -> Result<BootstrapResult> {
 /// 2. 使用当前二进制作为 seed（self-seed）
 ///
 /// 注意：seed 始终是可运行的 `legion` 二进制；后续阶段必须由产物自身完成编译。
-fn resolve_seed(seed_path: &Option<PathBuf>, _project_dir: &Path) -> Result<PathBuf> {
+fn resolve_seed(seed_path: &Option<PathBuf>, _project_dir: &Path) -> LegionResult<PathBuf> {
     if let Some(path) = seed_path {
         if !path.exists() {
-            return Err(miette!("seed 文件不存在: {}", path.display()));
+            return Err(LegionError::msg(report!("seed 文件不存在: {}", path.display())));
         }
         return Ok(strip_verbatim_prefix(path));
     }
 
     // 使用当前二进制 self-seed。
-    let current_exe = std::env::current_exe().into_diagnostic().map_err(|error| error.wrap_err("获取当前可执行文件路径失败"))?;
-    let current_exe = fs::canonicalize(current_exe).into_diagnostic().map_err(|error| error.wrap_err("解析 seed 路径失败"))?;
+    let current_exe = std::env::current_exe().map_err(|e| LegionError::msg(format!("获取当前可执行文件路径失败: {e}")))?;
+    let current_exe = fs::canonicalize(current_exe).map_err(|e| LegionError::msg(format!("解析 seed 路径失败: {e}")))?;
 
     // 移除 `\\?\` 前缀，否则 `Command::new` 在 Windows 上会 panic。
     Ok(strip_verbatim_prefix(&current_exe))
@@ -233,8 +227,8 @@ fn resolve_seed(seed_path: &Option<PathBuf>, _project_dir: &Path) -> Result<Path
 /// 查找本机 `wasmtime` CLI。
 ///
 /// `WASI` 目标不生成 `.mjs` 启动壳，而是直接通过本机 `wasmtime` 运行 `WASM` 模块。
-fn find_wasmtime_cli() -> Result<PathBuf> {
-    let path = env::var_os("PATH").ok_or_else(|| miette!("未设置 PATH，无法查找本机 `wasmtime`"))?;
+fn find_wasmtime_cli() -> LegionResult<PathBuf> {
+    let path = env::var_os("PATH").ok_or_else(|| LegionError::msg(report!("未设置 PATH，无法查找本机 `wasmtime`")))?;
     let extensions = executable_extensions();
     for dir in env::split_paths(&path) {
         for candidate in candidate_command_paths(&dir, "wasmtime", &extensions) {
@@ -244,7 +238,7 @@ fn find_wasmtime_cli() -> Result<PathBuf> {
         }
     }
 
-    Err(miette!("未在 PATH 中找到本机 `wasmtime`，请先安装并确保可直接执行"))
+    Err(LegionError::msg(report!("未在 PATH 中找到本机 `wasmtime`，请先安装并确保可直接执行")))
 }
 
 /// 移除 Windows extended-length path 前缀 `\\?\`。
@@ -257,12 +251,11 @@ fn strip_verbatim_prefix(path: &Path) -> PathBuf {
 ///
 /// 对齐 `bootstrap-wasi.mjs` / `compileV2`：
 /// `wasmtime run -W gc [-S p3] --dir … <seed>.wasi -- build <project> --target <target> -o <out>`
-fn compile_wasi_seed_with_wasmtime(seed: &Path, project_dir: &Path, output_dir: &Path, stage_name: &str, target: &str) -> Result<()> {
+fn compile_wasi_seed_with_wasmtime(seed: &Path, project_dir: &Path, output_dir: &Path, stage_name: &str, target: &str) -> LegionResult<()> {
     let wasmtime = find_wasmtime_cli()?;
     let stderr_path = output_dir.join(format!("{stage_name}_stderr.log"));
     let stderr_file = std::fs::File::create(&stderr_path)
-        .into_diagnostic()
-        .map_err(|error| error.wrap_err(format!("创建 stderr 日志文件失败 {}", stderr_path.display())))?;
+        .map_err(|e| LegionError::msg(format!("创建 stderr 日志文件失败 {}: {e}", stderr_path.display())))?;
 
     // Guest 需读写工程与依赖；挂载项目、输出，以及可见的 workspace 根（若可推断）。
     let mut preopens = vec![project_dir.to_path_buf(), output_dir.to_path_buf()];
@@ -311,19 +304,19 @@ fn compile_wasi_seed_with_wasmtime(seed: &Path, project_dir: &Path, output_dir: 
 
     println!("{}: executing {:?}", stage_name, cmd);
 
-    let output = cmd.output().into_diagnostic().map_err(|error| error.wrap_err(format!("{stage_name} wasmtime 运行失败")))?;
+    let output = cmd.output().map_err(|e| LegionError::msg(format!("{stage_name} wasmtime 运行失败: {e}")))?;
 
     if !output.status.success() {
         let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
         let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(miette!(
+        return Err(LegionError::msg(report!(
             r#"{stage_name} WASI seed 再编译失败
 stdout: {stdout}
 stderr: {stderr}"#,
             stage_name = stage_name,
             stdout = stdout.trim(),
             stderr = stderr.trim(),
-        ));
+        )));
     }
 
     match resolve_manifest_artifact(output_dir) {
@@ -334,7 +327,7 @@ stderr: {stderr}"#,
         Err(_) => {
             let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
             let stdout = String::from_utf8_lossy(&output.stdout);
-            Err(miette!(
+            Err(LegionError::msg(report!(
                 r#"{stage_name} WASI seed 退出码为 0 但未产出 `.wasi`
 seed（{seed}）可能尚不具备 `legion build` 能力，或 FS/argv cabi 未打通。
 stdout: {stdout}
@@ -343,7 +336,7 @@ stderr: {stderr}"#,
                 seed = seed.display(),
                 stdout = stdout.trim(),
                 stderr = stderr.trim(),
-            ))
+            )))
         }
     }
 }
@@ -354,8 +347,15 @@ stderr: {stderr}"#,
 /// 对于 Wasm 家族 seed（`.wasm` / `.wasi` 文件）：
 ///   - `wasm` 目标：通过 `node <seed>.mjs` 运行（**非 CLR 发布门**，`micro_compiler` 已废弃）
 ///   - `wasi` / `wasip3` 目标：通过本机 `wasmtime run … <seed>.wasi -- build …` 再编译
-fn compile_with_seed(seed: &Path, project_dir: &Path, output_dir: &Path, stage_name: &str, target: &str, source_file: &Path) -> Result<()> {
-    fs::create_dir_all(output_dir).into_diagnostic().map_err(|error| error.wrap_err(format!("创建输出目录失败 {}", output_dir.display())))?;
+fn compile_with_seed(
+    seed: &Path,
+    project_dir: &Path,
+    output_dir: &Path,
+    stage_name: &str,
+    target: &str,
+    source_file: &Path,
+) -> LegionResult<()> {
+    fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败 {}: {e}", output_dir.display())))?;
 
     let normalized_seed = strip_verbatim_prefix(seed);
     let normalized_project_dir = strip_verbatim_prefix(project_dir);
@@ -368,12 +368,12 @@ fn compile_with_seed(seed: &Path, project_dir: &Path, output_dir: &Path, stage_n
 
     if is_wasm_seed {
         if !source_file.exists() {
-            return Err(miette!(
+            return Err(LegionError::msg(report!(
                 r#"{stage_name} 源文件不存在: {source_file}
 诚实自举要求 v1 实际读取源文件内容"#,
                 stage_name = stage_name,
                 source_file = source_file.display()
-            ));
+            )));
         }
 
         if is_wasi_target {
@@ -390,38 +390,38 @@ fn compile_with_seed(seed: &Path, project_dir: &Path, output_dir: &Path, stage_n
         // WASM 目标：通过 node 运行 .mjs 启动壳。
         let launcher_path = normalized_seed.with_extension("mjs");
         if !launcher_path.exists() {
-            return Err(miette!(
+            return Err(LegionError::msg(report!(
                 "{stage_name} WASM seed 缺少启动壳: {launcher_path}\n\
                  请确认 seed 编译时已生成 .mjs 启动壳",
                 stage_name = stage_name,
                 launcher_path = launcher_path.display()
-            ));
+            )));
         }
         let mut cmd = Command::new("node");
         cmd.arg(&launcher_path).arg(source_file).arg(&output_file);
 
         println!("{}: executing {:?}", stage_name, cmd);
 
-        let output = cmd.output().into_diagnostic().map_err(|error| error.wrap_err(format!("{stage_name} WASM 运行失败")))?;
+        let output = cmd.output().map_err(|e| LegionError::msg(format!("{stage_name} WASM 运行失败: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            return Err(miette!(
+            return Err(LegionError::msg(report!(
                 r#"{} WASM 运行失败
 stdout: {}
 stderr: {}"#,
                 stage_name,
                 stdout.trim(),
                 stderr.trim()
-            ));
+            )));
         }
 
         // 验证产物确实被生成了。
         if !output_file.exists() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            return Err(miette!(
+            return Err(LegionError::msg(report!(
                 r#"{stage_name} WASM 运行退出码为 0 但未产出产物 {path}
 seed（{seed}）可能未正确实现输出逻辑。
 stdout: {stdout}
@@ -431,7 +431,7 @@ stderr: {stderr}"#,
                 seed = seed.display(),
                 stdout = stdout.trim(),
                 stderr = stderr.trim(),
-            ));
+            )));
         }
 
         println!("  {} 输出: {} ({} 字节)", stage_name, output_file.display(), fs::metadata(&output_file).map(|m| m.len()).unwrap_or(0));
@@ -445,8 +445,7 @@ stderr: {stderr}"#,
     // 因子进程写入 stderr 管道而 panic（Windows pipe 读取的已知问题）。
     let stderr_path = output_dir.join(format!("{stage_name}_stderr.log"));
     let stderr_file = std::fs::File::create(&stderr_path)
-        .into_diagnostic()
-        .map_err(|error| error.wrap_err(format!("创建 stderr 日志文件失败 {}", stderr_path.display())))?;
+        .map_err(|e| LegionError::msg(format!("创建 stderr 日志文件失败 {}: {e}", stderr_path.display())))?;
 
     let mut cmd = compiler_command(&normalized_seed);
     cmd.arg("build").arg(&normalized_project_dir).arg("--target").arg(target).arg("--output").arg(&normalized_output_dir);
@@ -455,19 +454,19 @@ stderr: {stderr}"#,
 
     println!("{}: executing {:?}", stage_name, cmd);
 
-    let output = cmd.output().into_diagnostic().map_err(|error| error.wrap_err(format!("{stage_name} 编译失败")))?;
+    let output = cmd.output().map_err(|e| LegionError::msg(format!("{stage_name} 编译失败: {e}")))?;
 
     if !output.status.success() {
         let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
         let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(miette!(
+        return Err(LegionError::msg(report!(
             r#"{} 编译失败
 stdout: {}
 stderr: {}"#,
             stage_name,
             stdout.trim(),
             stderr.trim()
-        ));
+        )));
     }
 
     // 验证产物确实被生成了。
@@ -479,7 +478,7 @@ stderr: {}"#,
         Err(_) => {
             let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
             let stdout = String::from_utf8_lossy(&output.stdout);
-            Err(miette!(
+            Err(LegionError::msg(report!(
                 r#"{stage_name} 编译退出码为 0 但未产出 execution manifest 声明的产物
 seed（{seed}）可能不具备 `legion build` 命令行能力。
 stdout: {stdout}
@@ -488,7 +487,7 @@ stderr: {stderr}"#,
                 seed = seed.display(),
                 stdout = stdout.trim(),
                 stderr = stderr.trim(),
-            ))
+            )))
         }
     }
 }
@@ -500,9 +499,9 @@ stderr: {stderr}"#,
 /// 对于 `WASM` 目标，通过 `node <artifact>.mjs <source_file> <output>` 运行，
 ///   微编译器读取源文件内容，产生输出文件用于后续比对。
 /// 对于 `WASI` 目标，通过本机 `wasmtime run -W gc -W wmemcheck -W max-memory-size=...` 运行。
-fn run_and_verify(artifact_path: &Path, target: &str, output_path: Option<&Path>, source_file: &Path) -> Result<()> {
+fn run_and_verify(artifact_path: &Path, target: &str, output_path: Option<&Path>, source_file: &Path) -> LegionResult<()> {
     if !artifact_path.exists() {
-        return Err(miette!("产物文件不存在: {}", artifact_path.display()));
+        return Err(LegionError::msg(report!("产物文件不存在: {}", artifact_path.display())));
     }
 
     let normalized_artifact = strip_verbatim_prefix(artifact_path);
@@ -523,11 +522,11 @@ fn run_and_verify(artifact_path: &Path, target: &str, output_path: Option<&Path>
         // WASM 目标（非 WASI）：通过 node 运行 .mjs 启动壳。
         let launcher_path = normalized_artifact.with_extension("mjs");
         if !launcher_path.exists() {
-            return Err(miette!("WASM 产物缺少启动壳: {}", launcher_path.display()));
+            return Err(LegionError::msg(report!("WASM 产物缺少启动壳: {}", launcher_path.display())));
         }
 
         if !source_file.exists() {
-            return Err(miette!("源文件不存在: {}", source_file.display()));
+            return Err(LegionError::msg(report!("源文件不存在: {}", source_file.display())));
         }
 
         let mut cmd = Command::new("node");
@@ -541,23 +540,23 @@ fn run_and_verify(artifact_path: &Path, target: &str, output_path: Option<&Path>
         }
 
         println!("verify: executing {:?}", cmd);
-        let output = cmd.output().into_diagnostic().map_err(|error| error.wrap_err("执行 node 启动壳失败"))?;
+        let output = cmd.output().map_err(|e| LegionError::msg(format!("执行 node 启动壳失败: {e}")))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            return Err(miette!(
+            return Err(LegionError::msg(report!(
                 r#"WASM 产物运行失败
 stdout: {}
 stderr: {}"#,
                 stdout.trim(),
                 stderr.trim()
-            ));
+            )));
         }
 
         // 如果有输出路径，验证输出文件已生成。
         if let Some(output) = output_path {
             if !output.exists() {
-                return Err(miette!("WASM 运行成功但未产出输出文件: {}", output.display()));
+                return Err(LegionError::msg(report!("WASM 运行成功但未产出输出文件: {}", output.display())));
             }
             println!("  WASM 输出: {} ({} 字节)", output.display(), fs::metadata(output).map(|m| m.len()).unwrap_or(0));
         }
@@ -571,53 +570,58 @@ stderr: {}"#,
 }
 
 /// 校验 CLR 产物可响应最小 CLI 契约。
-fn verify_clr_cli_runtime(artifact_path: &Path) -> Result<()> {
-    let path_str = artifact_path.to_str().ok_or_else(|| miette!("路径包含非 UTF-8 字符"))?;
+fn verify_clr_cli_runtime(artifact_path: &Path) -> LegionResult<()> {
+    let path_str = artifact_path.to_str().ok_or_else(|| LegionError::msg(report!("路径包含非 UTF-8 字符")))?;
     let artifact_dir = artifact_path.parent().unwrap_or_else(|| Path::new("."));
 
-    let version_status = run_dotnet_cli(path_str, &["--version"], artifact_dir).map_err(|error| error.wrap_err("执行 v1 --version 失败"))?;
+    let version_status =
+        run_dotnet_cli(path_str, &["--version"], artifact_dir).map_err(|e| LegionError::msg(format!("执行 v1 --version 失败: {e}")))?;
     if !version_status.success() {
-        return Err(miette!("v1 --version 返回非零退出码: {} (code={})", version_status, version_status.code().unwrap_or(-1)));
+        return Err(LegionError::msg(report!(
+            "v1 --version 返回非零退出码: {} (code={})",
+            version_status,
+            version_status.code().unwrap_or(-1)
+        )));
     }
 
-    let help_status = run_dotnet_cli(path_str, &["--help"], artifact_dir).map_err(|error| error.wrap_err("执行 v1 --help 失败"))?;
+    let help_status = run_dotnet_cli(path_str, &["--help"], artifact_dir).map_err(|e| LegionError::msg(format!("执行 v1 --help 失败: {e}")))?;
     if !help_status.success() {
-        return Err(miette!("v1 --help 返回非零退出码: {} (code={})", help_status, help_status.code().unwrap_or(-1)));
+        return Err(LegionError::msg(report!("v1 --help 返回非零退出码: {} (code={})", help_status, help_status.code().unwrap_or(-1))));
     }
 
     Ok(())
 }
 
 /// 校验 WASI 产物经 wasmtime 可响应最小 CLI 契约（`--version` / `--help`）。
-fn verify_wasi_cli_runtime(artifact_path: &Path, target: &str) -> Result<()> {
+fn verify_wasi_cli_runtime(artifact_path: &Path, target: &str) -> LegionResult<()> {
     let version = run_wasmtime_cli(artifact_path, target, &["--version"])?;
     if !version.status.success() {
-        return Err(miette!(
+        return Err(LegionError::msg(report!(
             r#"v1 --version 失败
 stdout: {}
 stderr: {}"#,
             String::from_utf8_lossy(&version.stdout).trim(),
             String::from_utf8_lossy(&version.stderr).trim()
-        ));
+        )));
     }
     println!("  v1 --version: {}", String::from_utf8_lossy(&version.stdout).trim());
 
     let help = run_wasmtime_cli(artifact_path, target, &["--help"])?;
     if !help.status.success() {
-        return Err(miette!(
+        return Err(LegionError::msg(report!(
             r#"v1 --help 失败
 stdout: {}
 stderr: {}"#,
             String::from_utf8_lossy(&help.stdout).trim(),
             String::from_utf8_lossy(&help.stderr).trim()
-        ));
+        )));
     }
     println!("  v1 --help: ok");
     Ok(())
 }
 
 /// 运行 `wasmtime run -W gc [-S p3] <artifact> -- <args…>`；若本机未启用 wmemcheck 则不再强求。
-fn run_wasmtime_cli(artifact_path: &Path, target: &str, guest_args: &[&str]) -> Result<std::process::Output> {
+fn run_wasmtime_cli(artifact_path: &Path, target: &str, guest_args: &[&str]) -> LegionResult<std::process::Output> {
     let wasmtime = find_wasmtime_cli()?;
     let mut cmd = Command::new(&wasmtime);
     cmd.arg("run");
@@ -637,58 +641,61 @@ fn run_wasmtime_cli(artifact_path: &Path, target: &str, guest_args: &[&str]) -> 
         }
     }
     println!("verify: executing {:?}", cmd);
-    cmd.output().into_diagnostic().map_err(|error| error.wrap_err("执行本机 wasmtime 失败"))
+    Ok(cmd.output().map_err(|e| LegionError::msg(format!("执行本机 wasmtime 失败: {e}")))?)
 }
 
 /// 校验 JVM 产物可被本机 `java -jar` 加载并响应最小 CLI 契约。
-fn verify_jvm_cli_runtime(artifact_path: &Path) -> Result<()> {
-    let path_str = artifact_path.to_str().ok_or_else(|| miette!("路径包含非 UTF-8 字符"))?;
+fn verify_jvm_cli_runtime(artifact_path: &Path) -> LegionResult<()> {
+    let path_str = artifact_path.to_str().ok_or_else(|| LegionError::msg(report!("路径包含非 UTF-8 字符")))?;
     let artifact_dir = artifact_path.parent().unwrap_or_else(|| Path::new("."));
 
-    let version_status = run_java_jar_cli(path_str, &["--version"], artifact_dir).map_err(|error| error.wrap_err("执行 v1 --version 失败"))?;
+    let version_status =
+        run_java_jar_cli(path_str, &["--version"], artifact_dir).map_err(|e| LegionError::msg(format!("执行 v1 --version 失败: {e}")))?;
     if !version_status.success() {
-        return Err(miette!("v1 --version 返回非零退出码: {} (code={})", version_status, version_status.code().unwrap_or(-1)));
+        return Err(LegionError::msg(report!(
+            "v1 --version 返回非零退出码: {} (code={})",
+            version_status,
+            version_status.code().unwrap_or(-1)
+        )));
     }
 
-    let help_status = run_java_jar_cli(path_str, &["--help"], artifact_dir).map_err(|error| error.wrap_err("执行 v1 --help 失败"))?;
+    let help_status =
+        run_java_jar_cli(path_str, &["--help"], artifact_dir).map_err(|e| LegionError::msg(format!("执行 v1 --help 失败: {e}")))?;
     if !help_status.success() {
-        return Err(miette!("v1 --help 返回非零退出码: {} (code={})", help_status, help_status.code().unwrap_or(-1)));
+        return Err(LegionError::msg(report!("v1 --help 返回非零退出码: {} (code={})", help_status, help_status.code().unwrap_or(-1))));
     }
 
     Ok(())
 }
 
 /// 通过 `dotnet exec` 运行 CLR 产物。
-fn run_dotnet_cli(artifact: &str, args: &[&str], cwd: &Path) -> Result<ExitStatus> {
+fn run_dotnet_cli(artifact: &str, args: &[&str], cwd: &Path) -> LegionResult<ExitStatus> {
     let output = Command::new("dotnet")
         .arg("exec")
         .arg(artifact)
         .args(args)
         .current_dir(cwd)
         .output()
-        .into_diagnostic()
-        .map_err(|error| error.wrap_err("无法执行 dotnet"))?;
+        .map_err(|e| LegionError::msg(format!("无法执行 dotnet: {e}")))?;
     Ok(output.status)
 }
 
 /// 通过本机 `java -jar` 运行 JVM 产物。
-fn run_java_jar_cli(artifact: &str, args: &[&str], cwd: &Path) -> Result<ExitStatus> {
+fn run_java_jar_cli(artifact: &str, args: &[&str], cwd: &Path) -> LegionResult<ExitStatus> {
     let output = Command::new("java")
         .arg("-jar")
         .arg(artifact)
         .args(args)
         .current_dir(cwd)
         .output()
-        .into_diagnostic()
-        .map_err(|error| error.wrap_err("无法执行 java"))?;
+        .map_err(|e| LegionError::msg(format!("无法执行 java: {e}")))?;
     Ok(output.status)
 }
 
 /// 运行 CLI 程序并返回退出状态。
 #[allow(dead_code)]
-fn run_cli_program(program: &str, args: &[&str]) -> Result<ExitStatus> {
-    let output =
-        Command::new(program).args(args).output().into_diagnostic().map_err(|error| error.wrap_err(format!("无法执行 {}", program)))?;
+fn run_cli_program(program: &str, args: &[&str]) -> LegionResult<ExitStatus> {
+    let output = Command::new(program).args(args).output().map_err(|e| LegionError::msg(format!("无法执行 {}: {e}", program)))?;
 
     Ok(output.status)
 }
@@ -728,22 +735,22 @@ fn is_managed_clr_artifact(path: &Path) -> bool {
     path.parent().map(|p| p.join(&alt).exists()).unwrap_or(false)
 }
 
-fn resolve_manifest_artifact(output_dir: &Path) -> Result<PathBuf> {
+fn resolve_manifest_artifact(output_dir: &Path) -> LegionResult<PathBuf> {
     let manifest = ExecutionManifest::read_from_output_dir(output_dir)?
-        .ok_or_else(|| miette!("缺少 execution manifest：{}", output_dir.join("run-contracts.txt").display()))?;
+        .ok_or_else(|| LegionError::msg(report!("缺少 execution manifest：{}", output_dir.join("run-contracts.txt").display())))?;
     let entries = manifest.run_contracts.iter().map(|contract| contract.physical_entry.as_str()).collect::<Vec<_>>();
-    let (artifact, _) =
-        select_artifact(output_dir, entries.into_iter(), None).map_err(|error| miette!("execution manifest 产物合同无效：{error}"))?;
+    let (artifact, _) = select_artifact(output_dir, entries.into_iter(), None)
+        .map_err(|error| LegionError::msg(report!("execution manifest 产物合同无效：{error}")))?;
     Ok(artifact)
 }
 
-fn compare_clr_contracts(v1_dir: &Path, v2_dir: &Path) -> Result<()> {
+fn compare_clr_contracts(v1_dir: &Path, v2_dir: &Path) -> LegionResult<()> {
     let v1 = resolve_manifest_artifact(v1_dir)?;
     let v2 = resolve_manifest_artifact(v2_dir)?;
     compare_artifacts(&v1, &v2)
 }
 
-fn compare_jvm_contracts(v1_dir: &Path, v2_dir: &Path) -> Result<()> {
+fn compare_jvm_contracts(v1_dir: &Path, v2_dir: &Path) -> LegionResult<()> {
     let v1 = resolve_manifest_artifact(v1_dir)?;
     let v2 = resolve_manifest_artifact(v2_dir)?;
     compare_artifacts(&v1, &v2)
@@ -778,16 +785,16 @@ fn executable_extensions() -> Vec<String> {
 ///
 /// 诚实自举要求 v1 和 v2 是同一份源码两次编译的产物，应字节一致。
 /// 若不一致，输出首个差异位置和上下文。
-fn compare_artifacts(v1_path: &Path, v2_path: &Path) -> Result<()> {
+fn compare_artifacts(v1_path: &Path, v2_path: &Path) -> LegionResult<()> {
     if !v1_path.exists() {
-        return Err(miette!("v1 产物不存在: {}", v1_path.display()));
+        return Err(LegionError::msg(report!("v1 产物不存在: {}", v1_path.display())));
     }
     if !v2_path.exists() {
-        return Err(miette!("v2 产物不存在: {}", v2_path.display()));
+        return Err(LegionError::msg(report!("v2 产物不存在: {}", v2_path.display())));
     }
 
-    let v1_bytes = fs::read(v1_path).into_diagnostic().map_err(|error| error.wrap_err("读取 v1 失败"))?;
-    let v2_bytes = fs::read(v2_path).into_diagnostic().map_err(|error| error.wrap_err("读取 v2 失败"))?;
+    let v1_bytes = fs::read(v1_path).map_err(|e| LegionError::msg(format!("读取 v1 失败: {e}")))?;
+    let v2_bytes = fs::read(v2_path).map_err(|e| LegionError::msg(format!("读取 v2 失败: {e}")))?;
 
     if v1_bytes == v2_bytes {
         println!("  v1/v2 字节一致 ({} bytes)", v1_bytes.len());
@@ -805,7 +812,7 @@ fn compare_artifacts(v1_path: &Path, v2_path: &Path) -> Result<()> {
     }
 
     match diff_pos {
-        Some(pos) => Err(miette!(
+        Some(pos) => Err(LegionError::msg(report!(
             r#"v1/v2 比对失败: 二进制不一致
 首次差异位置: 0x{pos:X} (v1=0x{v1:02X}, v2=0x{v2:02X})
 v1 长度: {v1_len}, v2 长度: {v2_len}"#,
@@ -814,8 +821,8 @@ v1 长度: {v1_len}, v2 长度: {v2_len}"#,
             v2 = v2_bytes[pos],
             v1_len = v1_bytes.len(),
             v2_len = v2_bytes.len()
-        )),
-        None => Err(miette!("v1/v2 比对失败: 长度不一致 (v1: {}, v2: {})", v1_bytes.len(), v2_bytes.len())),
+        ))),
+        None => Err(LegionError::msg(report!("v1/v2 比对失败: 长度不一致 (v1: {}, v2: {})", v1_bytes.len(), v2_bytes.len()))),
     }
 }
 
@@ -831,5 +838,3 @@ fn wasm_family_extension(target: &str) -> &'static str {
 fn get_compiler_source_path(project_dir: &Path) -> PathBuf {
     project_dir.join("source").join("main.v")
 }
-
-

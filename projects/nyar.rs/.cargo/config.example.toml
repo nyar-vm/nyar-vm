@@ -10,7 +10,14 @@ oak-valkyrie = { path = "<your-path>/oaks/examples/oak-valkyrie" }
 oak-von = { path = "<your-path>/oaks/examples/oak-von" }
 oak-awsl = { path = "<your-path>/oaks/examples/oak-awsl" }
 
+[patch."https://github.com/valkyrie-language/valkyrie.rs"]
+legion-fixtures = { path = "<your-path>/valkyrie.rs/projects/fixtures/legion-fixtures" }
+
 [patch."https://github.com/yggdrasil-language/acorn.rs"]
 acorn-wasm = { path = "<your-path>/acorn.rs/examples/acorn-wasm" }
 acorn-jvm = { path = "<your-path>/acorn.rs/examples/acorn-jvm" }
 acorn-pe = { path = "<your-path>/acorn.rs/examples/acorn-pe" }
+
+[patch."https://github.com/oovm/rust-boost"]
+boost-diagnostic = { path = "<your-path>/rust-boost/projects/boost-diagnostic" }
+boost-source = { path = "<your-path>/rust-boost/projects/boost-source" }

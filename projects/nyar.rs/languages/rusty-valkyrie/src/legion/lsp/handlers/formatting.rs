@@ -73,7 +73,7 @@ impl FormattingHandler {
 
 /// 由 URI 扩展名决定源码种类（扩展名事实归 [`crate::source_surface`]）。
 fn source_kind_from_uri(uri: &str) -> Option<SourceKind> {
-    uri.to_ascii_lowercase().rsplit('.').next().and_then(crate::source_surface::source_kind_from_extension)
+    uri.to_ascii_lowercase().rsplit('.').next().and_then(crate::compiler::syntax::source_surface::source_kind_from_extension)
 }
 
 /// 语言文件格式化器：只注册 Valkyrie family 与同仓格式协议。
@@ -97,10 +97,10 @@ impl SourceFormatter for LanguageFormatter {
         self.language_id
     }
 
-    fn format_document(&self, source: &str, options: &FormatOptions) -> Result<FormattedOutput, FormatError> {
+    fn format_document(&self, source: &str, options: &FormatOptions) -> std::result::Result<FormattedOutput, FormatError> {
         match self.language_id {
-            "v" => crate::source_format::format_valkyrie(source, options, false),
-            "vx" => crate::source_format::format_valkyrie(source, options, true),
+            "v" => crate::compiler::syntax::source_format::format_valkyrie(source, options, false),
+            "vx" => crate::compiler::syntax::source_format::format_valkyrie(source, options, true),
             "von" => format_with_oak(
                 oak_von::formatter::format_source(
                     source,
@@ -120,11 +120,11 @@ impl SourceFormatter for LanguageFormatter {
     }
 }
 
-fn format_source(kind: SourceKind, source: &str, options: &FormatOptions) -> Result<String, FormatError> {
+fn format_source(kind: SourceKind, source: &str, options: &FormatOptions) -> std::result::Result<String, FormatError> {
     formatter_for(kind).format(source, options)
 }
 
-fn format_with_oak<T>(result: Result<T, impl ToString>, options: &FormatOptions) -> Result<FormattedOutput, FormatError> {
+fn format_with_oak<T>(result: Result<T, impl ToString>, options: &FormatOptions) -> std::result::Result<FormattedOutput, FormatError> {
     let text = result.map_err(|error| FormatError::Parse { path: None, message: error.to_string() })?;
     let mut out = text.to_string();
     if options.ensure_trailing_newline && !out.is_empty() && !out.ends_with('\n') {

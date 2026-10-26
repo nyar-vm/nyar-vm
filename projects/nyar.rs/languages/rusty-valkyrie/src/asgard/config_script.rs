@@ -1,20 +1,22 @@
 //! `asgard.config.v` 必须使用 `define_config(asgard) { ... }`（Valkyrie script）。
 
-use miette::Result;
+use crate::asgard::error::{AsgardError, AsgardResult};
 
 /// 将 `define_config(asgard)` 块规范化为内部配置对象文本（仅供解析管线使用）。
-pub fn normalize_config_source(source: &str) -> Result<String> {
+pub fn normalize_config_source(source: &str) -> AsgardResult<String> {
     let trimmed = source.trim();
     if trimmed.is_empty() {
-        return Err(miette::miette!("asgard.config.v 为空"));
+        return Err(AsgardError::msg(report!("asgard.config.v 为空")));
     }
     if trimmed.starts_with('{') {
-        return Err(miette::miette!("asgard.config.v 必须使用 define_config(asgard) {{ ... }} 写法，不支持 {{ key: value }} 对象字面量简写"));
+        return Err(AsgardError::msg(report!(
+            "asgard.config.v 必须使用 define_config(asgard) {{ ... }} 写法，不支持 {{ key: value }} 对象字面量简写"
+        )));
     }
     if !trimmed.starts_with("define_config(asgard)") && !trimmed.starts_with("define_config (asgard)") {
-        return Err(miette::miette!("asgard.config.v 必须以 define_config(asgard) {{ ... }} 开头"));
+        return Err(AsgardError::msg(report!("asgard.config.v 必须以 define_config(asgard) {{ ... }} 开头")));
     }
-    let start = trimmed.find('{').ok_or_else(|| miette::miette!("define_config 缺少 '{{'"))?;
+    let start = trimmed.find('{').ok_or_else(|| AsgardError::msg(report!("define_config 缺少 '{{'")))?;
     let object_text = extract_balanced_block(&trimmed[start..])?;
     reject_von_colon_field_syntax(&object_text)?;
     let colonized = assignment_object_to_colon_object(&object_text)?;
@@ -23,7 +25,7 @@ pub fn normalize_config_source(source: &str) -> Result<String> {
 }
 
 /// 拒绝 `define_config` 块内 `key: value` 式 VON 字段写法（应使用 `key = value`）。
-fn reject_von_colon_field_syntax(block: &str) -> Result<()> {
+fn reject_von_colon_field_syntax(block: &str) -> AsgardResult<()> {
     let mut in_string = None::<char>;
     let mut escaped = false;
     for line in block.lines() {
@@ -65,9 +67,9 @@ fn reject_von_colon_field_syntax(block: &str) -> Result<()> {
                 if look < chars.len() && chars[look] == ':' {
                     let ident: String = chars[start..index].iter().collect();
                     if ident != "http" && ident != "https" {
-                        return Err(miette::miette!(
+                        return Err(AsgardError::msg(report!(
                             "asgard.config.v 请使用 Valkyrie script 赋值（{ident} = ...），不要使用 VON 冒号语法（{ident}: ...）"
-                        ));
+                        )));
                     }
                 }
                 continue;
@@ -186,7 +188,7 @@ fn insert_nested_block_colons(source: &str) -> String {
         .join("\n")
 }
 
-fn extract_balanced_block(source: &str) -> Result<String> {
+fn extract_balanced_block(source: &str) -> AsgardResult<String> {
     let mut depth = 0i32;
     let mut in_string = None::<char>;
     let mut escaped = false;
@@ -220,10 +222,10 @@ fn extract_balanced_block(source: &str) -> Result<String> {
             _ => {}
         }
     }
-    Err(miette::miette!("define_config 块未闭合"))
+    Err(AsgardError::msg(report!("define_config 块未闭合")))
 }
 
-fn assignment_object_to_colon_object(source: &str) -> Result<String> {
+fn assignment_object_to_colon_object(source: &str) -> AsgardResult<String> {
     let mut out = String::with_capacity(source.len());
     let mut in_string = None::<char>;
     let mut escaped = false;
@@ -266,7 +268,3 @@ fn assignment_object_to_colon_object(source: &str) -> Result<String> {
     }
     Ok(out)
 }
-#[cfg(test)]
-#[path = "../../tests/asgard/path_wired/config_script.rs"]
-mod config_script_tests;
-

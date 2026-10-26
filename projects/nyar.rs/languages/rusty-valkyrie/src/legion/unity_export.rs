@@ -1,14 +1,13 @@
 //! Unity `build_plugin` 导出：将 MSIL 产物复制到 `build/unity/msil` 并写入 `valkyrie-export.json`。
-
-use crate::workspace::{
-    manifest::{BuildPluginSpec, ProjectManifest},
-    planner::BuildPlan,
+use crate::legion::{
+    cmds::error::{LegionError, LegionResult},
+    workspace::{
+        manifest::{BuildPluginSpec, ProjectManifest},
+        planner::BuildPlan,
+    },
 };
-use std::{fs, path::Path};
-
-use miette::{IntoDiagnostic, Result, WrapErr, miette};
 use nyar_emitter::DriverCompileReport;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fs, path::Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -56,7 +55,7 @@ fn is_version_one(version: &u32) -> bool {
 }
 
 /// 在 `legion build` 成功后执行 Unity 工程导出。
-pub fn export_unity_project(plan: &BuildPlan, report: &DriverCompileReport, plugin: &BuildPluginSpec) -> Result<()> {
+pub fn export_unity_project(plan: &BuildPlan, report: &DriverCompileReport, plugin: &BuildPluginSpec) -> LegionResult<()> {
     if plugin.kind != "unity-project-export" {
         return Ok(());
     }
@@ -68,21 +67,21 @@ pub fn export_unity_project(plan: &BuildPlan, report: &DriverCompileReport, plug
         .unwrap_or_else(|| plan.project.manifest_dir.join("build").join("unity").join("msil"));
 
     let deps_dir = input_dir.join("deps");
-    fs::create_dir_all(&input_dir).into_diagnostic().wrap_err_with(|| format!("创建 Unity MSIL 目录失败：{}", input_dir.display()))?;
-    fs::create_dir_all(&deps_dir).into_diagnostic().wrap_err_with(|| format!("创建 Unity 依赖目录失败：{}", deps_dir.display()))?;
+    fs::create_dir_all(&input_dir).map_err(|e| LegionError::msg(format!("创建 Unity MSIL 目录失败：{}: {e}", input_dir.display())))?;
+    fs::create_dir_all(&deps_dir).map_err(|e| LegionError::msg(format!("创建 Unity 依赖目录失败：{}: {e}", deps_dir.display())))?;
 
     let entry_assembly = format!("{}.dll", plan.project.name);
     let main_dll = plan.output_dir.join(&entry_assembly);
     if !main_dll.is_file() {
-        return Err(miette!("Unity 导出未找到主程序集 {}，请先确认 `legion build` 已成功生成 MSIL DLL", main_dll.display()));
+        return Err(LegionError::msg(report!("Unity 导出未找到主程序集 {}，请先确认 `legion build` 已成功生成 MSIL DLL", main_dll.display())));
     }
 
     copy_dll(&main_dll, &input_dir.join(&entry_assembly))?;
 
     let mut dependency_names = Vec::new();
     let mut partition_artifacts = Vec::new();
-    for entry in fs::read_dir(&plan.output_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
+    for entry in fs::read_dir(&plan.output_dir)? {
+        let entry = entry?;
         let path = entry.path();
         if path.extension().and_then(|ext| ext.to_str()) != Some("dll") {
             continue;
@@ -103,8 +102,7 @@ pub fn export_unity_project(plan: &BuildPlan, report: &DriverCompileReport, plug
     partition_artifacts.sort_by(|left, right| left.assembly.cmp(&right.assembly));
 
     let manifest_source = fs::read_to_string(&plan.project.manifest_path)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("读取项目清单失败：{}", plan.project.manifest_path.display()))?;
+        .map_err(|e| LegionError::msg(format!("读取项目清单失败：{}: {e}", plan.project.manifest_path.display())))?;
     let project_manifest = ProjectManifest::parse(&manifest_source)?;
 
     let entry_method = report.entry_symbol.clone().unwrap_or_else(|| "main".to_string());
@@ -121,32 +119,30 @@ pub fn export_unity_project(plan: &BuildPlan, report: &DriverCompileReport, plug
     };
 
     let export_path = input_dir.join("valkyrie-export.json");
-    let export_json = serde_json::to_string_pretty(&export).into_diagnostic().wrap_err("序列化 valkyrie-export.json 失败")?;
-    fs::write(&export_path, export_json).into_diagnostic().wrap_err_with(|| format!("写入导出清单失败：{}", export_path.display()))?;
+    let export_json =
+        serde_json::to_string_pretty(&export).map_err(|e| LegionError::msg(format!("{e}: {}", "序列化 valkyrie-export.json 失败")))?;
+    fs::write(&export_path, export_json).map_err(|e| LegionError::msg(format!("写入导出清单失败：{}: {e}", export_path.display())))?;
 
     if let Some(output_directory) = &plugin.output_directory {
         let project_export_dir = plan.project.manifest_dir.join(output_directory);
         fs::create_dir_all(&project_export_dir)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("创建 Unity 工程导出目录失败：{}", project_export_dir.display()))?;
+            .map_err(|e| LegionError::msg(format!("创建 Unity 工程导出目录失败：{}: {e}", project_export_dir.display())))?;
         let pointer_path = project_export_dir.join("valkyrie-msil-pointer.json");
         let pointer = serde_json::json!({
             "msil_directory": relative_path(&plan.project.manifest_dir, &input_dir),
             "export_manifest": relative_path(&plan.project.manifest_dir, &export_path),
             "dependency_assemblies": dependency_names,
         });
-        fs::write(&pointer_path, serde_json::to_string_pretty(&pointer).into_diagnostic()?)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("写入 Unity 工程指针文件失败：{}", pointer_path.display()))?;
+        fs::write(&pointer_path, serde_json::to_string_pretty(&pointer)?)
+            .map_err(|e| LegionError::msg(format!("写入 Unity 工程指针文件失败：{}: {e}", pointer_path.display())))?;
     }
 
     Ok(())
 }
 
-fn copy_dll(source: &Path, destination: &Path) -> Result<()> {
+fn copy_dll(source: &Path, destination: &Path) -> LegionResult<()> {
     fs::copy(source, destination)
-        .into_diagnostic()
-        .wrap_err_with(|| format!("复制 DLL 失败：{} -> {}", source.display(), destination.display()))?;
+        .map_err(|e| LegionError::msg(format!("复制 DLL 失败：{} -> {}: {e}", source.display(), destination.display())))?;
     Ok(())
 }
 
@@ -160,12 +156,12 @@ fn relative_path(base: &Path, target: &Path) -> String {
 }
 
 /// 将 `build/unity/msil` 中的 DLL 同步到 Unity 工程插件目录。
-pub fn sync_msil_to_unity_plugins(msil_dir: &Path, plugins_dir: &Path) -> Result<()> {
+pub fn sync_msil_to_unity_plugins(msil_dir: &Path, plugins_dir: &Path) -> LegionResult<()> {
     if !msil_dir.is_dir() {
-        return Err(miette!("MSIL 目录不存在：{}", msil_dir.display()));
+        return Err(LegionError::msg(report!("MSIL 目录不存在：{}", msil_dir.display())));
     }
 
-    fs::create_dir_all(plugins_dir).into_diagnostic().wrap_err_with(|| format!("创建 Unity Plugins 目录失败：{}", plugins_dir.display()))?;
+    fs::create_dir_all(plugins_dir).map_err(|e| LegionError::msg(format!("创建 Unity Plugins 目录失败：{}: {e}", plugins_dir.display())))?;
 
     let export_path = msil_dir.join("valkyrie-export.json");
     if export_path.is_file() {
@@ -178,8 +174,8 @@ pub fn sync_msil_to_unity_plugins(msil_dir: &Path, plugins_dir: &Path) -> Result
         }
     }
 
-    for entry in fs::read_dir(msil_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
+    for entry in fs::read_dir(msil_dir)? {
+        let entry = entry?;
         let path = entry.path();
         if path.extension().and_then(|ext| ext.to_str()) == Some("dll") {
             let file_name = path.file_name().unwrap();
@@ -189,8 +185,8 @@ pub fn sync_msil_to_unity_plugins(msil_dir: &Path, plugins_dir: &Path) -> Result
 
     let deps_dir = msil_dir.join("deps");
     if deps_dir.is_dir() {
-        for entry in fs::read_dir(&deps_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
+        for entry in fs::read_dir(&deps_dir)? {
+            let entry = entry?;
             let path = entry.path();
             if path.extension().and_then(|ext| ext.to_str()) == Some("dll") {
                 let file_name = path.file_name().unwrap();
@@ -203,9 +199,9 @@ pub fn sync_msil_to_unity_plugins(msil_dir: &Path, plugins_dir: &Path) -> Result
 }
 
 /// 按 `export_routes` 将 MSIL 分区产物同步到 Unity 工程。
-pub fn sync_msil_with_routes(msil_dir: &Path, unity_project_root: &Path, export_routes: &BTreeMap<String, String>) -> Result<()> {
+pub fn sync_msil_with_routes(msil_dir: &Path, unity_project_root: &Path, export_routes: &BTreeMap<String, String>) -> LegionResult<()> {
     if !msil_dir.is_dir() {
-        return Err(miette!("MSIL 目录不存在：{}", msil_dir.display()));
+        return Err(LegionError::msg(report!("MSIL 目录不存在：{}", msil_dir.display())));
     }
 
     let export_path = msil_dir.join("valkyrie-export.json");
@@ -221,8 +217,7 @@ pub fn sync_msil_with_routes(msil_dir: &Path, unity_project_root: &Path, export_
                     .unwrap_or("Assets/Valkyrie/Plugins");
                 let destination_dir = unity_project_root.join(route);
                 fs::create_dir_all(&destination_dir)
-                    .into_diagnostic()
-                    .wrap_err_with(|| format!("创建 Unity 导出目录失败：{}", destination_dir.display()))?;
+                    .map_err(|e| LegionError::msg(format!("创建 Unity 导出目录失败：{}: {e}", destination_dir.display())))?;
                 let destination_name = artifact_destination_name(artifact);
                 copy_dll(&msil_dir.join(&artifact.assembly), &destination_dir.join(&destination_name))?;
             }
@@ -230,8 +225,7 @@ pub fn sync_msil_with_routes(msil_dir: &Path, unity_project_root: &Path, export_
                 let route = export_routes.get("default").map(String::as_str).unwrap_or("Assets/Valkyrie/Plugins");
                 let destination_dir = unity_project_root.join(route);
                 fs::create_dir_all(&destination_dir)
-                    .into_diagnostic()
-                    .wrap_err_with(|| format!("创建 Unity 导出目录失败：{}", destination_dir.display()))?;
+                    .map_err(|e| LegionError::msg(format!("创建 Unity 导出目录失败：{}: {e}", destination_dir.display())))?;
                 copy_dll(&msil_dir.join(&entry.assembly), &destination_dir.join(&entry.assembly))?;
             }
             return Ok(());
@@ -266,13 +260,13 @@ pub struct ParsedExportEntry {
     pub assembly: String,
 }
 
-fn read_export_manifest(path: &Path) -> Result<ParsedExportManifest> {
-    let text = fs::read_to_string(path).into_diagnostic()?;
-    serde_json::from_str(&text).into_diagnostic().wrap_err("解析 valkyrie-export.json 失败")
+fn read_export_manifest(path: &Path) -> LegionResult<ParsedExportManifest> {
+    let text = fs::read_to_string(path)?;
+    serde_json::from_str(&text).map_err(|e| LegionError::msg(format!("{e}: {}", "解析 valkyrie-export.json 失败")))
 }
 
 /// 读取导出清单供 `legion-unknown-wasm32 status` 展示。
-pub fn read_export_manifest_for_status(path: &Path) -> Result<ParsedExportManifest> {
+pub fn read_export_manifest_for_status(path: &Path) -> LegionResult<ParsedExportManifest> {
     read_export_manifest(path)
 }
 
@@ -305,9 +299,3 @@ fn read_json_string_field(json: &str, key: &str) -> Option<String> {
     let end = json[start..].find('"')? + start;
     Some(json[start..end].to_string())
 }
-#[cfg(test)]
-#[path = "../../tests/legion/path_wired/unity_export.rs"]
-mod unity_export_tests;
-
-
-

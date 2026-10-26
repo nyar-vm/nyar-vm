@@ -32,4 +32,3 @@ pub fn generate_app_json(components: &[LoweredComponent], project_name: &str) ->
     writeln!(content, "}}").unwrap();
     MpAppJsonOutput { relative_path: "app.json".into(), content }
 }
-

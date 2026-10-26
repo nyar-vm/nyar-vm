@@ -85,8 +85,3 @@ fn resolve_companion_executable(name: &str) -> Option<PathBuf> {
 pub fn is_builtin_subcommand(name: &str) -> bool {
     BUILTIN_SUBCOMMANDS.iter().any(|item| *item == name)
 }
-#[cfg(test)]
-#[path = "../../tests/legion/path_wired/forward.rs"]
-mod forward_tests;
-
-

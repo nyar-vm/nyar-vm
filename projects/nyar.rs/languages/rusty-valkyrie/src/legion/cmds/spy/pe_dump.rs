@@ -566,4 +566,3 @@ fn format_element_type(ty: &ElementType) -> String {
         ElementType::Unknown(et) => format!("Unknown_0x{:02X}", et),
     }
 }
-

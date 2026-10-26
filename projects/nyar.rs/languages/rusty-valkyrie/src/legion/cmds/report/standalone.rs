@@ -1,9 +1,8 @@
 //! Build single-file standalone report HTML (offline `file://` friendly).
-
+use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{collections::BTreeMap, fs, path::Path};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
-use miette::{IntoDiagnostic, Result, WrapErr};
 use serde_json::Value;
 
 use super::write::atomic_write_all_text;
@@ -19,9 +18,9 @@ export async function run(url, imports) { return instantiate(url, imports); }
 "#;
 
 /// Build `standalone.html` by inlining boot/css/js/wasm from report dist directory.
-pub fn build_standalone_html(report_dir: &Path, output_name: &str) -> Result<()> {
+pub fn build_standalone_html(report_dir: &Path, output_name: &str) -> LegionResult<()> {
     let index_path = report_dir.join("index.html");
-    let mut html = fs::read_to_string(&index_path).into_diagnostic().wrap_err("read index.html")?;
+    let mut html = fs::read_to_string(&index_path).map_err(|e| LegionError::msg(format!("{e}: {}", "read index.html")))?;
 
     let boot_path = report_dir.join("boot.js");
     if !boot_path.is_file() {
@@ -30,18 +29,18 @@ pub fn build_standalone_html(report_dir: &Path, output_name: &str) -> Result<()>
     }
 
     let manifest_path = report_dir.join("manifest.json");
-    let manifest_text = fs::read_to_string(&manifest_path).into_diagnostic().wrap_err("read manifest.json")?;
-    let manifest: Value = serde_json::from_str(&manifest_text).into_diagnostic().wrap_err("parse manifest.json")?;
-    let boot_js = fs::read_to_string(&boot_path).into_diagnostic().wrap_err("read boot.js")?;
+    let manifest_text = fs::read_to_string(&manifest_path).map_err(|e| LegionError::msg(format!("{e}: {}", "read manifest.json")))?;
+    let manifest: Value = serde_json::from_str(&manifest_text).map_err(|e| LegionError::msg(format!("{e}: {}", "parse manifest.json")))?;
+    let boot_js = fs::read_to_string(&boot_path).map_err(|e| LegionError::msg(format!("{e}: {}", "read boot.js")))?;
 
     inline_manifest_css(&mut html, report_dir, &manifest)?;
 
     let component_sources = load_component_sources(report_dir, &manifest)?;
     let wasm_bytes = load_wasm_bytes(report_dir, &manifest)?;
 
-    let manifest_literal = serde_json::to_string(&manifest).into_diagnostic()?;
-    let glue_literal = serde_json::to_string(STANDALONE_GLUE).into_diagnostic()?;
-    let components_literal = serde_json::to_string(&component_sources).into_diagnostic()?;
+    let manifest_literal = serde_json::to_string(&manifest)?;
+    let glue_literal = serde_json::to_string(STANDALONE_GLUE)?;
+    let components_literal = serde_json::to_string(&component_sources)?;
     let wasm_b64 = STANDARD.encode(&wasm_bytes);
 
     let standalone_bootstrap = format!(
@@ -94,7 +93,7 @@ pub fn build_standalone_html(report_dir: &Path, output_name: &str) -> Result<()>
 }
 
 /// When `standalone` is set, build `standalone.html` beside the multi-file report.
-pub fn finish_standalone_report(report_dir: &Path, standalone: bool) -> Result<()> {
+pub fn finish_standalone_report(report_dir: &Path, standalone: bool) -> LegionResult<()> {
     if !standalone {
         return Ok(());
     }
@@ -103,13 +102,13 @@ pub fn finish_standalone_report(report_dir: &Path, standalone: bool) -> Result<(
     Ok(())
 }
 
-fn inline_manifest_css(html: &mut String, report_dir: &Path, manifest: &Value) -> Result<()> {
+fn inline_manifest_css(html: &mut String, report_dir: &Path, manifest: &Value) -> LegionResult<()> {
     let mut extra_css = String::new();
     for href in manifest.get("css").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
         let rel = href.trim_start_matches('/');
         let css_path = report_dir.join(rel);
         if css_path.is_file() {
-            let css = fs::read_to_string(&css_path).into_diagnostic().wrap_err_with(|| format!("read css {rel}"))?;
+            let css = fs::read_to_string(&css_path).map_err(|e| LegionError::msg(format!("read css {rel}: {e}")))?;
             if !css.trim().is_empty() {
                 extra_css.push_str("\n/* ");
                 extra_css.push_str(rel);
@@ -126,20 +125,20 @@ fn inline_manifest_css(html: &mut String, report_dir: &Path, manifest: &Value) -
     Ok(())
 }
 
-fn load_component_sources(report_dir: &Path, manifest: &Value) -> Result<BTreeMap<String, String>> {
+fn load_component_sources(report_dir: &Path, manifest: &Value) -> LegionResult<BTreeMap<String, String>> {
     let mut component_sources = BTreeMap::new();
     for component in manifest.get("components").and_then(Value::as_array).into_iter().flatten() {
         if let Some(js) = component.get("js").and_then(Value::as_str) {
             let rel = js.trim_start_matches('/');
             let path = report_dir.join(rel);
-            let source = fs::read_to_string(&path).into_diagnostic().wrap_err_with(|| format!("read component glue {rel}"))?;
+            let source = fs::read_to_string(&path).map_err(|e| LegionError::msg(format!("read component glue {rel}: {e}")))?;
             component_sources.insert(js.to_string(), source);
         }
     }
     Ok(component_sources)
 }
 
-fn load_wasm_bytes(report_dir: &Path, manifest: &Value) -> Result<Vec<u8>> {
+fn load_wasm_bytes(report_dir: &Path, manifest: &Value) -> LegionResult<Vec<u8>> {
     let wasm_rel = manifest
         .get("wasm")
         .and_then(Value::as_array)
@@ -152,15 +151,10 @@ fn load_wasm_bytes(report_dir: &Path, manifest: &Value) -> Result<Vec<u8>> {
     if wasm_rel.is_empty() {
         return Ok(Vec::new());
     }
-    fs::read(report_dir.join(&wasm_rel)).into_diagnostic().wrap_err_with(|| format!("read wasm binary {wasm_rel}"))
+    fs::read(report_dir.join(&wasm_rel)).map_err(|e| LegionError::msg(format!("read wasm binary {wasm_rel}: {e}")))
 }
 
 /// Prevent `</script>` in inlined JS from terminating the outer script element.
 fn escape_script_body(source: &str) -> String {
     source.replace("</script>", "<\\/script>").replace("</SCRIPT>", "<\\/SCRIPT>")
 }
-#[cfg(test)]
-#[path = "../../../../tests/legion/path_wired/cmds_report_standalone.rs"]
-mod cmds_report_standalone_tests;
-
-

@@ -5,7 +5,7 @@ use crate::lowering::backends::wasm::sections::encode_uleb128;
 use acorn_wasm::{BLOCKTYPE_EMPTY, VALTYPE_I32, WasmOpcode, encode_return, encode_unreachable};
 
 impl<'a> WasmMirLowerer<'a> {
-    pub(super) fn emit_function_body(&mut self) -> miette::Result<()> {
+    pub(super) fn emit_function_body(&mut self) -> crate::Result<()> {
         assert!(!self.block_order.is_empty(), "WASM 函数缺少可执行入口块");
         let entry_index = self.block_index[&self.mir_fn.entry];
         self.emit_i32_const(i32::try_from(entry_index).expect("WASM 入口块索引溢出"));
@@ -35,7 +35,7 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(())
     }
 
-    fn emit_cfg_case(&mut self, case_index: usize, case_count: usize) -> miette::Result<()> {
+    fn emit_cfg_case(&mut self, case_index: usize, case_count: usize) -> crate::Result<()> {
         let block_id = self.block_order[case_index];
         let block = self.mir_fn.blocks.iter().find(|block| block.id == block_id).expect("WASM 调度块必须存在");
         for instruction in &block.instructions {

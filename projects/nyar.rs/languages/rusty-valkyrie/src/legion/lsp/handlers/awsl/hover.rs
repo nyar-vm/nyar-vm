@@ -1,6 +1,7 @@
 //! AWSL Hover 支持
 
-use crate::{handlers::HoverHandler, state::ServerState, types::Position};
+use crate::{handlers::HoverHandler, state::ServerState};
+use crate::compiler::types::Position;
 use oak_lsp::types::Hover;
 
 const DIRECTIVE_DOCS: &[(&str, &str)] = &[

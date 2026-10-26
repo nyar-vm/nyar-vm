@@ -1,13 +1,12 @@
 //! `legion test` — 运行项目测试并生成 HTML 报告。
-
-use crate::workspace::planner::WorkspaceResolver;
+use crate::legion::{
+    cmds::error::{LegionError, LegionResult},
+    workspace::planner::WorkspaceResolver,
+};
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
 };
-
-use clap::Args;
-use miette::{Result, miette};
 
 use crate::legion::cmds::{
     project_input::resolve_project_path,
@@ -16,30 +15,24 @@ use crate::legion::cmds::{
 };
 
 /// `legion test` 命令参数。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct TestArgs {
     /// 项目或 workspace 目录。
-    #[arg(value_name = "project-dir", default_value = ".")]
     pub project_dir: PathBuf,
     /// 测试名称过滤器。
-    #[arg(short = 'f', long = "filter")]
     pub filter: Option<String>,
     /// 编译目标（逗号分隔，或 `all`）。
-    #[arg(short = 't', long = "target")]
     pub target: Option<String>,
     /// 显式运行器，格式 `target=command`。
-    #[arg(short = 'r', long = "runner", value_name = "target=command")]
     pub runner: Vec<String>,
     /// 详细输出。
-    #[arg(short, long, default_value_t = false)]
     pub verbose: bool,
     /// 额外产出单文件 HTML（内联 css/js/wasm，便于离线打开）。
-    #[arg(long, default_value_t = false)]
     pub standalone: bool,
 }
 
 /// 执行 `legion test`。
-pub fn run(args: &TestArgs) -> Result<ExitCode> {
+pub fn run(args: &TestArgs) -> LegionResult<ExitCode> {
     let project_dir = resolve_project_path(&args.project_dir)?;
     let targets = resolve_test_targets(args.target.as_deref());
     let workspace = WorkspaceResolver::discover_for_project(&project_dir)?;
@@ -120,5 +113,3 @@ fn same_path(left: &Path, right: &Path) -> bool {
     let right = right.canonicalize().unwrap_or_else(|_| right.to_path_buf());
     left == right
 }
-
-

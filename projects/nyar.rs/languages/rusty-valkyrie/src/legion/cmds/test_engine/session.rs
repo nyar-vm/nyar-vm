@@ -1,19 +1,19 @@
 //! 测试构建与执行会话。
-
-use crate::workspace::{
-    manifest::RunnerBinding,
-    planner::{BuildRequest, WorkspaceResolver},
+use crate::legion::{
+    cmds::error::{LegionError, LegionResult},
+    workspace::{
+        manifest::RunnerBinding,
+        planner::{BuildRequest, WorkspaceResolver},
+    },
 };
+use nyar::{CanonicalTarget, RunnerFamily};
+use nyar_runner::{RuntimeContract as InterpreterRuntimeContract, RuntimeFamily as InterpreterRuntimeFamily};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::Instant,
 };
-
-use miette::{Result, miette};
-use nyar_runner::{RuntimeContract as InterpreterRuntimeContract, RuntimeFamily as InterpreterRuntimeFamily};
-use rusty_valkyrie::{CanonicalTarget, RunnerFamily};
 
 use crate::legion::cmds::{
     build::compile_plan,
@@ -46,7 +46,7 @@ pub fn compile_external_test_session(
     workspace: &WorkspaceResolver,
     project_dir: &Path,
     target_label: &str,
-) -> Result<ExternalTestSession, String> {
+) -> std::result::Result<ExternalTestSession, String> {
     let target = parse_target_label(target_label).map_err(|e| e.to_string())?;
     let output_dir = project_dir.join(".cache").join("test").join(target_label);
     let request = BuildRequest { project_dir: project_dir.to_path_buf(), target, output_dir: Some(output_dir.clone()) };
@@ -339,7 +339,7 @@ fn resolve_runner_template(
     runner_target: RunnerFamily,
     cli_runner_overrides: &[String],
     function_name: &str,
-) -> Result<RunnerTemplate> {
+) -> LegionResult<RunnerTemplate> {
     let default = default_runner_template(runner_target, function_name);
 
     if let Some(command) = parse_runner_overrides(cli_runner_overrides)?.remove(&runner_target) {
@@ -366,14 +366,14 @@ fn runner_binding_matches(binding: &RunnerBinding, runner_target: RunnerFamily, 
     binding.target.matches(runner_target, canonical_target)
 }
 
-fn parse_runner_overrides(values: &[String]) -> Result<BTreeMap<RunnerFamily, String>> {
+fn parse_runner_overrides(values: &[String]) -> LegionResult<BTreeMap<RunnerFamily, String>> {
     let mut overrides = BTreeMap::new();
     for item in values {
         let Some((target, command)) = item.split_once('=')
         else {
-            return Err(miette!("invalid runner override '{item}': expected target=command"));
+            return Err(LegionError::msg(report!("invalid runner override '{item}': expected target=command")));
         };
-        let family = target.trim().parse::<RunnerFamily>().map_err(|error| miette!("invalid runner override '{item}': {error}"))?;
+        let family = target.trim().parse::<RunnerFamily>().map_err(|error| report!("invalid runner override '{item}': {error}"))?;
         overrides.insert(family, command.trim().to_string());
     }
     Ok(overrides)
@@ -416,5 +416,3 @@ fn strip_verbatim_prefix(path: &str) -> &str {
 fn expand_placeholders(template: &str, placeholders: &BTreeMap<&'static str, String>) -> String {
     placeholders.iter().fold(template.to_string(), |current, (key, value)| current.replace(&format!("{{{key}}}"), value))
 }
-
-

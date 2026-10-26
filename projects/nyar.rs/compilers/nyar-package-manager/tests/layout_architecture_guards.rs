@@ -109,11 +109,7 @@ fn package_manager_src_does_not_hardcode_layout_defaults() {
         let source = scan_source(&path);
         for token in &needles {
             let quoted = format!("\"{token}\"");
-            assert!(
-                !source.contains(&quoted),
-                "{} must not hard-code layout identity {quoted}; read it from `ProjectLayout`",
-                path.display()
-            );
+            assert!(!source.contains(&quoted), "{} must not hard-code layout identity {quoted}; read it from `ProjectLayout`", path.display());
         }
     }
 }

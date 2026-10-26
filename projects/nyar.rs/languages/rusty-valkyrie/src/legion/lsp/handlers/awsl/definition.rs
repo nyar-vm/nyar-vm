@@ -1,6 +1,7 @@
 //! AWSL 定义跳转
 
-use crate::{state::ServerState, types::Position};
+use crate::{state::ServerState};
+use crate::compiler::types::Position;
 use oak_awsl::{
     AbiSymbolKind, TemplateBindingKind, abi_declaration_span, awsl_stem_from_component_tag, classify_abi_cursor, find_template_binding_at,
 };

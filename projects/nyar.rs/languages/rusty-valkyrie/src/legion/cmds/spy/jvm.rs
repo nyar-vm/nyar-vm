@@ -4,36 +4,35 @@
 //! 用于定位 JVM 字节码验证错误。
 //!
 //! 二进制解析与反汇编能力由 `acorn-jvm` 提供，本模块仅负责命令行入口与纯文本渲染。
-
+use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{fs, path::Path, process::ExitCode};
 
 use acorn_jvm::{
     class::{ConstantPool, DecodedJvmOperand, JvmClassFile, JvmFieldRef, JvmMethodRef, decode_instructions},
     jar::JvmJarPackage,
 };
-use miette::{IntoDiagnostic, Result, miette};
 
 use super::{SpyOptions, SpyTargetOptions};
 
 /// 执行 JVM 字节码 dump。
 ///
 /// 支持的文件扩展名：`.class` / `.jar`。
-pub fn run(options: &SpyOptions) -> Result<ExitCode> {
+pub fn run(options: &SpyOptions) -> LegionResult<ExitCode> {
     let (_, options) = options.split();
     let Some(target) = &options.input
     else {
-        return Err(miette!(
+        return Err(LegionError::msg(report!(
             r#"用法：legion spy jvm <file> [--method <name>] [--func <class>] [--list] [--json]
   file               目标文件（.class / .jar）
   --method <name>    输出包含指定名称的方法体
   --func <class>     仅输出 JAR 中匹配的 class（内部名或二进制名片段）
   --list             列出所有方法签名（JAR 时先列类名）
   --json             以 JSON 格式输出"#
-        ));
+        )));
     };
 
     if !Path::exists(Path::new(target)) {
-        return Err(miette!("文件不存在：{}", target));
+        return Err(LegionError::msg(report!("文件不存在：{}", target)));
     }
 
     let extension = Path::new(target).extension().and_then(|ext| ext.to_str()).map(|ext| ext.to_ascii_lowercase()).unwrap_or_default();
@@ -41,22 +40,22 @@ pub fn run(options: &SpyOptions) -> Result<ExitCode> {
     match extension.as_str() {
         "class" => run_class_file(target, options),
         "jar" => run_jar_file(target, options),
-        other => Err(miette!("不支持的文件扩展名 '{}'，支持 .class / .jar", other)),
+        other => Err(LegionError::msg(report!("不支持的文件扩展名 '{}'，支持 .class / .jar", other))),
     }
 }
 
 /// 分析单个 `.class` 文件。
-fn run_class_file(target: &str, options: &SpyTargetOptions) -> Result<ExitCode> {
-    let data = fs::read(target).into_diagnostic().map_err(|error| error.wrap_err(format!("无法读取文件 {}", target)))?;
-    let class = JvmClassFile::from_bytes(&data).map_err(|error| miette!("class 解析失败：{}", error))?;
+fn run_class_file(target: &str, options: &SpyTargetOptions) -> LegionResult<ExitCode> {
+    let data = fs::read(target).map_err(|e| LegionError::msg(format!("无法读取文件 {}: {e}", target)))?;
+    let class = JvmClassFile::from_bytes(&data).map_err(|error| report!("class 解析失败：{}", error))?;
     output_class(&class, options);
     Ok(ExitCode::SUCCESS)
 }
 
 /// 分析 `.jar` 文件，遍历其中所有 `.class` 条目。
-fn run_jar_file(target: &str, options: &SpyTargetOptions) -> Result<ExitCode> {
-    let data = fs::read(target).into_diagnostic().map_err(|error| error.wrap_err(format!("无法读取文件 {}", target)))?;
-    let package = JvmJarPackage::from_bytes(target, &data).map_err(|error| miette!("JAR 解析失败：{}", error))?;
+fn run_jar_file(target: &str, options: &SpyTargetOptions) -> LegionResult<ExitCode> {
+    let data = fs::read(target).map_err(|e| LegionError::msg(format!("无法读取文件 {}: {e}", target)))?;
+    let package = JvmJarPackage::from_bytes(target, &data).map_err(|error| report!("JAR 解析失败：{}", error))?;
 
     println!("jar: {}", target);
     match &package.main_class {
@@ -273,4 +272,3 @@ fn format_method_ref(method_ref: &JvmMethodRef) -> String {
 fn format_field_ref(field_ref: &JvmFieldRef) -> String {
     format!("{}.{} {}", field_ref.owner, field_ref.name, field_ref.descriptor)
 }
-

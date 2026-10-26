@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use miette::{IntoDiagnostic, Result, WrapErr};
+use crate::{EmitterError, Result};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -51,12 +51,10 @@ impl Default for DotNetRuntimeConfig {
 pub fn write_dotnet_runtime_config(output_dir: &Path, artifact_name: &str) -> Result<()> {
     let runtime_config_path = output_dir.join(format!("{}.runtimeconfig.json", artifact_name));
     let runtime_config = serde_json::to_string_pretty(&DotNetRuntimeConfig::default())
-        .into_diagnostic()
-        .wrap_err_with(|| format!("序列化运行时配置失败：{}", runtime_config_path.display()))?;
+        .map_err(|e| format!("序列化运行时配置失败：{}: {e}", runtime_config_path.display()))?;
 
     std::fs::write(&runtime_config_path, format!("{}\n", runtime_config))
-        .into_diagnostic()
-        .wrap_err_with(|| format!("写入运行时配置失败：{}", runtime_config_path.display()))
+        .map_err(|e| format!("写入运行时配置失败：{}: {e}", runtime_config_path.display()))
 }
 
 /// Framework assemblies resolved by the host without a local app-directory DLL.
@@ -135,8 +133,6 @@ pub fn write_dotnet_deps_json(output_dir: &Path, artifact_name: &str, assembly_e
     root.insert("libraries".into(), Value::Object(libraries));
 
     let deps_path = output_dir.join(format!("{artifact_name}.deps.json"));
-    let text = serde_json::to_string_pretty(&Value::Object(root))
-        .into_diagnostic()
-        .wrap_err_with(|| format!("序列化依赖配置失败：{}", deps_path.display()))?;
-    std::fs::write(&deps_path, format!("{text}\n")).into_diagnostic().wrap_err_with(|| format!("写入依赖配置失败：{}", deps_path.display()))
+    let text = serde_json::to_string_pretty(&Value::Object(root)).map_err(|e| format!("序列化依赖配置失败：{}: {e}", deps_path.display()))?;
+    std::fs::write(&deps_path, format!("{text}\n")).map_err(|e| format!("写入依赖配置失败：{}: {e}", deps_path.display()))
 }

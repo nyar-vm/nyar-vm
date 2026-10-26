@@ -1,4 +1,4 @@
-use miette::{Result, miette};
+use crate::{EmitterError, Result};
 use nyar::{BackendCandidate, BackendSelector, PartitionBackendRequirement};
 
 use crate::{DriverCompileReport, DriverCompileRequest};
@@ -61,11 +61,11 @@ pub(crate) fn compile(request: DriverCompileRequest<'_>) -> Result<DriverCompile
 
     let Some(selected) = selector.select(&request.requirement)
     else {
-        return Err(miette!("`emitter` 找不到满足需求的 backend 编译器：{:?}", request.requirement));
+        return Err(format!("`emitter` 找不到满足需求的 backend 编译器：{:?}", request.requirement));
     };
     let Some((_, compiler)) = matched_compilers.into_iter().find(|(name, _)| *name == selected.name)
     else {
-        return Err(miette!("选中的 backend `{}` 没有关联 driver compiler", selected.name));
+        return Err(format!("选中的 backend `{}` 没有关联 driver compiler", selected.name));
     };
     compiler.compile(request)
 }

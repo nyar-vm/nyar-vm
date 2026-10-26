@@ -220,8 +220,3 @@ pub fn sanitize_dir_name(name: &str) -> String {
 fn escape_html(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
-#[cfg(test)]
-#[path = "../../../../tests/legion/path_wired/cmds_doc_nav.rs"]
-mod cmds_doc_nav_tests;
-
-

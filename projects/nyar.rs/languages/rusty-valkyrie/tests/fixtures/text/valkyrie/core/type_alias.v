@@ -1,3 +1,0 @@
-
-type UserId = i64;
-

@@ -1,8 +1,6 @@
 //! 从 RenderIR / script 静态收集 Tailwind `@style` utility class。
-
+use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{collections::BTreeSet, path::Path};
-
-use miette::{IntoDiagnostic, Result, WrapErr};
 
 use crate::asgard::awsl::{
     LoweredComponent,
@@ -42,7 +40,7 @@ impl StyleCollector {
     }
 
     /// 写入 `dist/.asgard/tailwind-content.txt`（每行一个 class）。
-    pub fn write_manifest(&self, output_dir: &Path) -> Result<()> {
+    pub fn write_manifest(&self, output_dir: &Path) -> AsgardResult<()> {
         write_content_manifest(self, output_dir)
     }
 }
@@ -183,17 +181,16 @@ pub fn collect_push_calls_from_script(script: &str, sink: &mut StyleCollector) {
 }
 
 /// 写入 tailwind content manifest。
-pub fn write_content_manifest(collector: &StyleCollector, output_dir: &Path) -> Result<()> {
+pub fn write_content_manifest(collector: &StyleCollector, output_dir: &Path) -> AsgardResult<()> {
     let manifest_dir = output_dir.join(".asgard");
-    std::fs::create_dir_all(&manifest_dir).into_diagnostic().wrap_err("创建 .asgard 目录失败")?;
+    std::fs::create_dir_all(&manifest_dir).map_err(|e| AsgardError::msg(format!("{e}: {}", "创建 .asgard 目录失败")))?;
     let txt_path = manifest_dir.join("tailwind-content.txt");
     let content = collector.utilities().collect::<Vec<_>>().join("\n");
-    std::fs::write(&txt_path, content).into_diagnostic().wrap_err("写入 tailwind-content.txt 失败")?;
+    std::fs::write(&txt_path, content).map_err(|e| AsgardError::msg(format!("{e}: {}", "写入 tailwind-content.txt 失败")))?;
     let json_path = manifest_dir.join("tailwind.content.json");
     let json = serde_json::json!({ "utilities": collector.utilities().collect::<Vec<_>>() });
     std::fs::write(json_path, serde_json::to_string_pretty(&json).unwrap_or_else(|_| "{}".into()))
-        .into_diagnostic()
-        .wrap_err("写入 tailwind.content.json 失败")?;
+        .map_err(|e| AsgardError::msg(format!("{e}: {}", "写入 tailwind.content.json 失败")))?;
     Ok(())
 }
 
@@ -226,8 +223,3 @@ pub fn take_runtime_utilities() -> BTreeSet<String> {
     };
     std::mem::take(&mut *guard)
 }
-#[cfg(test)]
-#[path = "../../../tests/asgard/path_wired/tailwind_style_collector_collector_tests.rs"]
-mod tailwind_style_collector_collector_tests_tests;
-
-

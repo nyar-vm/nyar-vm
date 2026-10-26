@@ -1,7 +1,8 @@
 //! AWSL 补全
 
 use super::script::resolve_script_view;
-use crate::{handlers::completion::CompletionHandler, state::ServerState, types::Position};
+use crate::{handlers::completion::CompletionHandler, state::ServerState};
+use crate::compiler::types::Position;
 use oak_lsp::types::{CompletionItem, CompletionItemKind};
 
 const DIRECTIVES: &[&str] = &["@if", "@for", "@bind", "@ref", "@class", "@click", "@on:click"];

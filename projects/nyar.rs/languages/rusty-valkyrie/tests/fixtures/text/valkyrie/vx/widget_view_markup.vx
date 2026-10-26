@@ -1,7 +1,0 @@
-
-widget Counter {
-    micro view() {
-        <button :on_click="increment">{count}</button>
-    }
-}
-

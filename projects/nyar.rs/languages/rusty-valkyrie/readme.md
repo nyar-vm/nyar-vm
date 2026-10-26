@@ -1,28 +1,34 @@
-# compiler src
+# rusty-valkyrie
 
-Valkyrie compiler main-chain source.
+Valkyrie 语言的**产品包**：语言前端、`legion` 工程 CLI、`asgard` 多端交付 CLI，以及供宿主嵌入的编译 API。
 
-## Responsibilities
+## 能做什么
 
-- Maintain `HIR → Semantic MIR (SSA) → CanonicalProgram → RepresentationPlan`; target-private plans and encoding belong
-  in `nyar-emitter`.
-- Close semantics before targets so backends never patch language meaning.
-- Supply the same frontend facts for the CLR mainline and JVM / WASM / native smoke guards.
-- With `tests/spec`, enforce boundaries for `row`, `trait`, `class`, `sealed class`, `unite`, and `effect`.
+- **`legion`**：工作区与清单、多目标编译、测试、文档与包管理相关命令。
+- **`asgard`**：从 Voa 工程构建 Web、小程序、终端与原生壳等可发布产物。
+- **库**（`rusty_valkyrie::api`）：在进程内使用编译器前端，不把整个 `nyar` 栈 re-export 到 crate 根。
 
-## Forbidden
+## 编译主链（语义侧）
 
-- No unified cross-target `god IR`.
-- Do not grow lightweight planners into semantic buses.
-- Target-agnostic layers must not hold target host implementation details.
+目标相关的执行计划与编码在 workspace 的 `nyar-emitter` 中完成；本包负责语义闭合与产品入口。
 
-## Single executable payload boundary
+```mermaid
+flowchart LR
+  src[源码] --> hir[HIR]
+  hir --> mir[Semantic MIR]
+  mir --> canon[CanonicalProgram]
+  canon --> plan[RepresentationPlan]
+  plan --> emit[nyar-emitter]
+```
 
-The frontend no longer exposes `mir_function_to_executable` or `mir_functions_to_executable_map`. Direct MIR→executable
-converters and standalone reachable-closure helpers were removed because they bypassed canonical validation and
-representation planning and could produce a second success payload for the emitter.
+## 构建与测试
 
-Value-storage tests that depended on old provider injection were removed with those entry points. That does **not**
-prove value storage, loops, runtime, or self-hosting are complete; coverage must be rebuilt from current sources through
-`CompiledProgram` and target-private preparation boundaries. Assembly summaries and internal callable name lookup still
-need convergence—deleting the old public API is not the same as finishing the single compile flow.
+```powershell
+cargo build -p rusty-valkyrie --bin legion
+cargo build -p rusty-valkyrie --bin asgard
+cargo test -p rusty-valkyrie --lib
+```
+
+可选 feature（诊断 `format-spy`、自举 `bootstrap-lane` 等）见 `Cargo.toml`；默认正式链不依赖它们。
+
+维护者阅读各层说明请打开 crate 内 `src/readme.md` 与对应子目录的 `readme.md`。

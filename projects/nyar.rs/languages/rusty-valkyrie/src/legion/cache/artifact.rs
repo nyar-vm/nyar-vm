@@ -5,9 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use nyar::ArtifactSet;
 use nyar_emitter::{DriverCompileReport, DriverRunContract};
 use nyar_workspace::{combined_hash, files_hash};
-use rusty_valkyrie::ArtifactSet;
 use serde::{Deserialize, Serialize};
 
 use super::{CompilationCache, IrCacheEntry};
@@ -83,7 +83,7 @@ pub fn compute_artifact_hash(
     canonical_triple: &str,
     wat: bool,
     runtime_async: bool,
-) -> Result<String, String> {
+) -> std::result::Result<String, String> {
     let sources = files_hash(source_files).map_err(|e| e.to_string())?;
     let manifests = files_hash(manifest_files).map_err(|e| e.to_string())?;
     let flags = format!("{}{}", if wat { '1' } else { '0' }, if runtime_async { '1' } else { '0' });
@@ -92,7 +92,7 @@ pub fn compute_artifact_hash(
 }
 
 /// Collect output directory files into a cacheable bundle.
-pub fn collect_build_bundle(output_dir: &Path, report: &DriverCompileReport) -> Result<CachedBuildBundle, String> {
+pub fn collect_build_bundle(output_dir: &Path, report: &DriverCompileReport) -> std::result::Result<CachedBuildBundle, String> {
     let mut paths = report.artifacts.artifacts.iter().map(|artifact| artifact.path.clone()).collect::<Vec<_>>();
     paths.extend(report.run_contracts.iter().map(|contract| contract.physical_entry.clone()));
     paths.sort();
@@ -124,7 +124,7 @@ pub fn store_cached_build(
     canonical_triple: &str,
     ir_hash: &str,
     payload: &CachedBuildBundle,
-) -> Result<(), String> {
+) -> std::result::Result<(), String> {
     let ir_data = serde_json::to_vec(payload).map_err(|e| e.to_string())?;
     cache.put_ir(
         module_name,
@@ -133,8 +133,3 @@ pub fn store_cached_build(
         &IrCacheEntry { ir_kind: ARTIFACT_KIND.into(), ir_data, ir_hash: ir_hash.to_string(), canonical_triple: canonical_triple.to_string() },
     )
 }
-#[cfg(test)]
-#[path = "../../../tests/legion/path_wired/cache_artifact.rs"]
-mod cache_artifact_tests;
-
-

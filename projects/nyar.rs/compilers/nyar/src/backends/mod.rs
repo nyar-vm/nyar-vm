@@ -4,8 +4,12 @@ pub mod clr;
 pub mod gpu;
 pub mod vm;
 
-use miette::{Result, miette};
 use serde::{Deserialize, Serialize};
+
+/// 后端/规划层操作错误（纯文本）。
+pub type BackendError = String;
+/// 后端 `Result` 别名。
+pub type BackendResult<T> = std::result::Result<T, BackendError>;
 
 use crate::{
     CapabilityTag, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, ProjectionPolicy, ReferenceManagement,
@@ -146,7 +150,7 @@ impl BackendRegistry {
 }
 
 /// 基于目标 profile 生成 bundled projection policy。
-pub fn projection_policy_for_target_profile(profile: &TargetProfile) -> Result<ProjectionPolicy> {
+pub fn projection_policy_for_target_profile(profile: &TargetProfile) -> BackendResult<ProjectionPolicy> {
     Ok(ProjectionPolicy {
         family: projection_family_for_backend(profile.backend_family)?,
         host_boundary: profile.host_boundary,
@@ -157,7 +161,7 @@ pub fn projection_policy_for_target_profile(profile: &TargetProfile) -> Result<P
 }
 
 /// 将 backend family 解释为对应的投影家族。
-pub fn projection_family_for_backend(backend_family: TargetBackendFamily) -> Result<FutamuraProjectionFamily> {
+pub fn projection_family_for_backend(backend_family: TargetBackendFamily) -> BackendResult<FutamuraProjectionFamily> {
     match backend_family {
         TargetBackendFamily::Clr => Ok(FutamuraProjectionFamily::Clr),
         TargetBackendFamily::Jvm => Ok(FutamuraProjectionFamily::Jvm),
@@ -165,7 +169,7 @@ pub fn projection_family_for_backend(backend_family: TargetBackendFamily) -> Res
         TargetBackendFamily::Native => Ok(FutamuraProjectionFamily::Native),
         TargetBackendFamily::Gpu => Ok(FutamuraProjectionFamily::Gpu),
         TargetBackendFamily::Ovm => Ok(FutamuraProjectionFamily::Ovm),
-        TargetBackendFamily::Unknown => Err(miette!("未解析的后端家族不能进入 projection 装配")),
+        TargetBackendFamily::Unknown => Err("未解析的后端家族不能进入 projection 装配".to_owned()),
     }
 }
 
@@ -180,8 +184,8 @@ pub trait TargetCodeGenBackend {
     fn descriptor(&self) -> &BackendDescriptor;
 
     /// 验证输入是否满足本后端路线约束。
-    fn validate(&self, input: &Self::Input) -> miette::Result<()>;
+    fn validate(&self, input: &Self::Input) -> BackendResult<()>;
 
     /// 只对通过验证的输入执行目标相关编码与产物生成。
-    fn compile(&self, input: Self::Input, options: &CompilationOptions) -> miette::Result<ArtifactSet>;
+    fn compile(&self, input: Self::Input, options: &CompilationOptions) -> BackendResult<ArtifactSet>;
 }

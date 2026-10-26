@@ -8,7 +8,7 @@
 //!
 //! `PE/CLR` 二进制解析与 `MSIL` 文本解析模型统一由 `acorn-pe` 提供，
 //! 本模块仅负责命令行入口与纯文本渲染。
-
+use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{
     fs,
     path::Path,
@@ -22,7 +22,6 @@ use acorn_pe::{
         rva_to_offset, table_data_offset,
     },
 };
-use miette::{IntoDiagnostic, Result, miette};
 
 use super::{SpyOptions, SpyTargetOptions, pe_dump};
 
@@ -30,21 +29,21 @@ use super::{SpyOptions, SpyTargetOptions, pe_dump};
 ///
 /// 支持的文件扩展名：`.msil` / `.il` / `.exe` / `.dll`。
 /// 对于 `.exe` / `.dll`，默认使用直接 `PE` 解析（跨平台）。
-pub fn run(options: &SpyOptions) -> Result<ExitCode> {
+pub fn run(options: &SpyOptions) -> LegionResult<ExitCode> {
     let (_, options) = options.split();
     let Some(target) = &options.input
     else {
-        return Err(miette!(
+        return Err(LegionError::msg(report!(
             r#"用法：legion spy clr <file> [--method <name>] [--list] [--json]
   file               目标文件（.msil / .il / .exe / .dll）
   --method <name>    输出包含指定名称的方法体
   --list             列出所有方法签名
   --json             以 JSON 格式输出"#
-        ));
+        )));
     };
 
     if !Path::exists(Path::new(target)) {
-        return Err(miette!("文件不存在：{}", target));
+        return Err(LegionError::msg(report!("文件不存在：{}", target)));
     }
 
     let extension = Path::new(target).extension().and_then(|ext| ext.to_str()).map(|ext| ext.to_ascii_lowercase()).unwrap_or_default();
@@ -52,15 +51,15 @@ pub fn run(options: &SpyOptions) -> Result<ExitCode> {
     match extension.as_str() {
         "msil" | "il" => run_msil_text(target, options),
         "exe" | "dll" => run_pe_binary(target, options),
-        other => Err(miette!("不支持的文件扩展名 '{}'，支持 .msil / .il / .exe / .dll", other)),
+        other => Err(LegionError::msg(report!("不支持的文件扩展名 '{}'，支持 .msil / .il / .exe / .dll", other))),
     }
 }
 
 /// 分析 `PE` 二进制（`.exe` / `.dll`）。
 ///
 /// 默认使用直接 `PE` 解析；若 `ILDASM_PATH` 设置且 `--ildasm` 标志启用，则使用 `ildasm`。
-fn run_pe_binary(target: &str, options: &SpyTargetOptions) -> Result<ExitCode> {
-    let data = fs::read(target).into_diagnostic().map_err(|error| error.wrap_err(format!("无法读取文件 {}", target)))?;
+fn run_pe_binary(target: &str, options: &SpyTargetOptions) -> LegionResult<ExitCode> {
+    let data = fs::read(target).map_err(|e| LegionError::msg(format!("无法读取文件 {}: {e}", target)))?;
 
     match parse_pe(&data) {
         Ok(image) => {
@@ -80,7 +79,7 @@ fn run_pe_binary(target: &str, options: &SpyTargetOptions) -> Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
-        Err(error) => Err(miette!("PE 解析失败：{}\n提示：若需使用 ildasm 文本路径，请设置 ILDASM_PATH 环境变量", error)),
+        Err(error) => Err(LegionError::msg(report!("PE 解析失败：{}\n提示：若需使用 ildasm 文本路径，请设置 ILDASM_PATH 环境变量", error))),
     }
 }
 
@@ -213,8 +212,8 @@ fn format_il_operand(operand: &IlOperand) -> String {
 }
 
 /// 分析 `MSIL` 文本（`.msil` / `.il`）。
-fn run_msil_text(target: &str, options: &SpyTargetOptions) -> Result<ExitCode> {
-    let content = fs::read_to_string(target).into_diagnostic().map_err(|error| error.wrap_err(format!("无法读取文件 {}", target)))?;
+fn run_msil_text(target: &str, options: &SpyTargetOptions) -> LegionResult<ExitCode> {
+    let content = fs::read_to_string(target).map_err(|e| LegionError::msg(format!("无法读取文件 {}: {e}", target)))?;
 
     let methods = MsilParser::parse_methods(&content);
 
@@ -234,9 +233,9 @@ fn run_msil_text(target: &str, options: &SpyTargetOptions) -> Result<ExitCode> {
 ///
 /// 成功时返回临时 MSIL 文件路径。失败时返回结构化诊断。
 #[allow(dead_code)]
-fn convert_with_ildasm(file: &str) -> Result<String> {
+fn convert_with_ildasm(file: &str) -> LegionResult<String> {
     let ildasm = resolve_ildasm().ok_or_else(|| {
-        miette!(
+        report!(
             r#"ildasm 不可用。
 请先转换为文本格式：ildasm "{}" /text > "{}.msil"
 然后运行：legion spy clr "{}.msil" --method <name>"#,
@@ -246,29 +245,24 @@ fn convert_with_ildasm(file: &str) -> Result<String> {
         )
     })?;
 
-    let output = Command::new(&ildasm)
-        .arg(file)
-        .arg("/text")
-        .arg("/utf8")
-        .output()
-        .into_diagnostic()
-        .map_err(|error| error.wrap_err("无法启动 ildasm"))?;
+    let output =
+        Command::new(&ildasm).arg(file).arg("/text").arg("/utf8").output().map_err(|e| LegionError::msg(format!("无法启动 ildasm: {e}")))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(miette!(
+        return Err(LegionError::msg(report!(
             r#"ildasm 退出码 {}。
 {}"#,
             output.status.code().unwrap_or(-1),
             stderr
-        ));
+        )));
     }
 
     let temp_dir = std::env::temp_dir();
     let temp_name = format!("{}_{}.msil", Path::new(file).file_stem().and_then(|s| s.to_str()).unwrap_or("output"), uuid_like());
     let temp_path = temp_dir.join(temp_name);
 
-    fs::write(&temp_path, &output.stdout).into_diagnostic().map_err(|error| error.wrap_err("无法写入临时文件"))?;
+    fs::write(&temp_path, &output.stdout).map_err(|e| LegionError::msg(format!("无法写入临时文件: {e}")))?;
 
     Ok(temp_path.to_string_lossy().into_owned())
 }
@@ -329,7 +323,7 @@ fn print_list(methods: &[MsilTextMethod], json: bool) {
 }
 
 /// 输出匹配指定名称的方法体。
-fn print_method_block(methods: &[MsilTextMethod], method: &str, json: bool) -> Result<ExitCode> {
+fn print_method_block(methods: &[MsilTextMethod], method: &str, json: bool) -> LegionResult<ExitCode> {
     let matches: Vec<&MsilTextMethod> = methods
         .iter()
         .filter(|m| {
@@ -341,7 +335,7 @@ fn print_method_block(methods: &[MsilTextMethod], method: &str, json: bool) -> R
         .collect();
 
     if matches.is_empty() {
-        return Err(miette!("未找到匹配 '{}' 的方法", method));
+        return Err(LegionError::msg(report!("未找到匹配 '{}' 的方法", method)));
     }
 
     if json {
@@ -425,4 +419,3 @@ fn json_string(value: &str) -> String {
     result.push('"');
     result
 }
-

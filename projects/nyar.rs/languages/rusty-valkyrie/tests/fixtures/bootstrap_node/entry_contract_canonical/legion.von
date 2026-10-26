@@ -1,7 +1,0 @@
-{
-    name: "legion",
-    version: "0.1.0",
-    build: [
-        { "target": "node" }
-    ]
-}

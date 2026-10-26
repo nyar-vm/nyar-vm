@@ -1,8 +1,0 @@
-micro main() {
-    try {
-        risky_operation()
-    }
-    .catch {
-        case Fail(error): print("Error occurred")
-    }
-}

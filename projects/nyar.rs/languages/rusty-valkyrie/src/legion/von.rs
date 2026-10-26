@@ -1,5 +1,7 @@
 //! VON facade — 直连 [`oak_von`]，不经 `vcc-data::text::von`。
 
+use std::result::Result;
+
 /// VON 解析/序列化错误类型，复用 `oak_core::OakError`。
 pub type VonError = oak_core::OakError;
 pub use oak_von::{language::value::VonValue, to_string, to_string_indented};

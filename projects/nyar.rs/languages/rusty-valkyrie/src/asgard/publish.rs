@@ -1,10 +1,9 @@
 //! `asgard publish` — 统一发布入口（对接各商店 CLI 占位）。
-
+use crate::asgard::{
+    delivery::{PackOptions, PackTarget, pack_voa_delivery},
+    error::{AsgardError, AsgardResult},
+};
 use std::path::Path;
-
-use miette::Result;
-
-use crate::asgard::delivery::{PackOptions, PackTarget, pack_voa_delivery};
 
 /// 发布目标。
 #[derive(Debug, Clone, Copy)]
@@ -42,16 +41,13 @@ pub struct PublishReport {
 }
 
 /// 执行发布流程：先 `pack` 再调用平台 CLI（若可用）。
-pub fn publish_voa(input: &Path, target: PublishTarget, output: Option<&Path>) -> Result<PublishReport> {
+pub fn publish_voa(input: &Path, target: PublishTarget, output: Option<&Path>) -> AsgardResult<PublishReport> {
     let pack_target = match target {
         PublishTarget::Apk => PackTarget::Apk,
         PublishTarget::Ipa => PackTarget::Ipa,
         PublishTarget::MiniProgram => PackTarget::MiniProgram,
         PublishTarget::Web => {
-            return Ok(PublishReport {
-                artifact_path: input.to_path_buf(),
-                message: "Web 发布：将 dist/ 同步至 CDN".into(),
-            });
+            return Ok(PublishReport { artifact_path: input.to_path_buf(), message: "Web 发布：将 dist/ 同步至 CDN".into() });
         }
     };
     let pack = pack_voa_delivery(&PackOptions {
@@ -69,4 +65,3 @@ pub fn publish_voa(input: &Path, target: PublishTarget, output: Option<&Path>) -
     };
     Ok(PublishReport { artifact_path: pack.artifact_path, message: format!("{}\n{hint}", pack.message) })
 }
-

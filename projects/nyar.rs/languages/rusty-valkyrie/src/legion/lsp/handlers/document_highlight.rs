@@ -1,7 +1,7 @@
 use super::utils::span_to_lsp_range;
 use crate::{
     state::{DocumentState, ServerState},
-    types::Position,
+    compiler::types::Position,
 };
 use oak_lsp::types::*;
 use oak_valkyrie::ast::*;

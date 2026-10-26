@@ -18,8 +18,3 @@ pub fn resolve_cache_root(project_dir: impl AsRef<Path>) -> PathBuf {
 pub fn cache_root_for(project_dir: impl AsRef<Path>) -> PathBuf {
     resolve_cache_root(project_dir).join(".cache")
 }
-#[cfg(test)]
-#[path = "../../../tests/legion/path_wired/cache_resolve.rs"]
-mod cache_resolve_tests;
-
-

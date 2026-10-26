@@ -1,11 +1,11 @@
 //! `asgard` CLI：`asgard build` / `asgard dev` / `asgard pack`。
-
-use std::{ffi::OsString, path::PathBuf, process::ExitCode};
-
-use clap::{Args, Parser, Subcommand, ValueEnum, error::ErrorKind};
-use miette::{Result, miette};
+use crate::{
+    asgard::error::{AsgardError, AsgardResult},
+    legion::CanonicalTarget,
+    utilities::report::{display_failure, report_msg},
+};
 use nyar_format::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
-use rusty_valkyrie::CanonicalTarget;
+use std::{ffi::OsString, path::PathBuf, process::ExitCode};
 
 use crate::asgard::{
     CompileOptions, HostArtifactKind, HostPlatform, PackOptions, PackTarget, compile_voa_project,
@@ -15,51 +15,41 @@ use crate::asgard::{
 };
 
 /// `asgard build` / `asgard dev` 共用参数。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct AsgardBuildArgs {
     /// 项目目录。
-    #[arg(value_name = "project-dir", default_value = ".")]
     pub project_dir: PathBuf,
     /// 输出目录。
-    #[arg(short = 'o', long = "output")]
     pub output_dir: Option<PathBuf>,
     /// 覆盖 `asgard.config.v` 中的 `target`（默认使用配置值）。
-    #[arg(long)]
     pub target: Option<String>,
 }
 
 /// `asgard pack` 参数。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct AsgardPackArgs {
     /// 交付目标。
-    #[arg(long, value_enum)]
     pub target: AsgardPackTargetArg,
     /// 项目目录或 dist。
-    #[arg(long, default_value = ".")]
     pub input: PathBuf,
     /// 输出目录。
-    #[arg(long)]
     pub output: Option<PathBuf>,
     /// 小程序/小游戏项目名。
-    #[arg(long)]
     pub project_name: Option<String>,
     /// 小游戏 WASM 文件名。
-    #[arg(long)]
     pub wasm: Option<String>,
 }
 
 /// `asgard pack` 的打包目标参数。
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy)]
 pub enum AsgardPackTargetArg {
     /// Android APK。
     Apk,
     /// iOS IPA。
     Ipa,
-    /// 小程序。
-    #[value(name = "mini-program")]
+    /// 小程序（`mini-program`）。
     MiniProgram,
-    /// 小游戏。
-    #[value(name = "mini-game")]
+    /// 小游戏（`mini-game`）。
     MiniGame,
 }
 
@@ -75,41 +65,35 @@ impl From<AsgardPackTargetArg> for PackTarget {
 }
 
 /// `asgard add` / `asgard remove` 参数。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct AsgardDepArgs {
     /// 依赖包名。
     pub name: String,
     /// 版本（add 时使用）。
-    #[arg(default_value = "0.1.0")]
     pub version: String,
     /// 项目目录。
-    #[arg(value_name = "project-dir", default_value = ".")]
     pub project_dir: PathBuf,
 }
 
 /// `asgard publish` 参数。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct AsgardPublishArgs {
     /// 发布目标。
-    #[arg(long, value_enum)]
     pub target: AsgardPublishTargetArg,
     /// 项目目录或 dist。
-    #[arg(long, default_value = ".")]
     pub input: PathBuf,
     /// 输出目录。
-    #[arg(long)]
     pub output: Option<PathBuf>,
 }
 
 /// `asgard publish` 的发布目标参数。
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy)]
 pub enum AsgardPublishTargetArg {
     /// Android APK。
     Apk,
     /// iOS IPA。
     Ipa,
-    /// 小程序。
-    #[value(name = "mini-program")]
+    /// 小程序（`mini-program`）。
     MiniProgram,
     /// Web 产物。
     Web,
@@ -127,34 +111,25 @@ impl From<AsgardPublishTargetArg> for crate::asgard::PublishTarget {
 }
 
 /// `asgard fmt` / `asgard format` 参数。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct AsgardFmtArgs {
     /// 要格式化的文件或目录（默认当前目录）。
-    #[arg(value_name = "PATH")]
     pub paths: Vec<PathBuf>,
     /// 仅检查是否已格式化，不写盘；有差异时退出码非 0。
-    #[arg(long)]
     pub check: bool,
     /// 忽略 `.editorconfig`，使用 CLI 指定的缩进/行宽。
-    #[arg(long)]
     pub no_editorconfig: bool,
     /// 打印每个被改写的文件。
-    #[arg(short, long)]
     pub verbose: bool,
     /// 有文件因解析错误被跳过时以非 0 退出。
-    #[arg(long)]
     pub fail_on_skip: bool,
     /// 缩进宽度（空格数）；仅在与 `--no-editorconfig` 联用时生效。
-    #[arg(long = "indent-width")]
     pub indent_width: Option<usize>,
     /// 折行行宽；仅在与 `--no-editorconfig` 联用时生效。
-    #[arg(long = "max-width")]
     pub max_width: Option<usize>,
     /// 仅处理指定扩展名（可重复，如 `--ext awsl --ext v`）。
-    #[arg(long = "ext", value_name = "EXT")]
     pub extensions: Vec<String>,
     /// 仅格式化 AWSL（`.awsl`）；等价于 `--ext awsl`。
-    #[arg(long)]
     pub awsl_only: bool,
 }
 
@@ -177,18 +152,16 @@ impl AsgardFmtArgs {
 }
 
 /// `asgard plan`：校验 deploy profile 并打印制品矩阵；或列出 profiles 目录。
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone)]
 pub struct AsgardPlanArgs {
     /// Deploy profile 路径（`.von`）。与 `--list` 互斥其一必填。
-    #[arg(long = "profile", value_name = "PROFILE")]
     pub profile: Option<PathBuf>,
     /// 列出目录下的 `*.von` profile（只列名，不校验内容）。
-    #[arg(long = "list", value_name = "DIR")]
     pub list: Option<PathBuf>,
 }
 
 /// `asgard` 子命令。
-#[derive(Debug, Subcommand)]
+#[derive(Debug)]
 pub enum AsgardCommands {
     /// 构建 Asgard 项目（Release / 配置中的 `build.mode`）。
     Build(AsgardBuildArgs),
@@ -205,13 +178,12 @@ pub enum AsgardCommands {
     /// 发布到商店 / CDN（先 pack 再对接平台 CLI）。
     Publish(AsgardPublishArgs),
     /// 格式化 `.v` / `.vx` / `.von` / `.awsl`（与 `legion fmt` 同引擎）。
-    #[command(visible_alias = "format")]
     Fmt(AsgardFmtArgs),
 }
 
-fn compile_with_args(args: &AsgardBuildArgs) -> Result<crate::asgard::CompileReport> {
+fn compile_with_args(args: &AsgardBuildArgs) -> AsgardResult<crate::asgard::CompileReport> {
     let target = match &args.target {
-        Some(value) => Some(CanonicalTarget::parse(value).map_err(|error| miette::miette!("{error}"))?),
+        Some(value) => Some(CanonicalTarget::parse(value).map_err(|error| AsgardError::msg(report!("{error}")))?),
         None => None,
     };
     compile_voa_project(&CompileOptions { project_dir: args.project_dir.clone(), output_dir: args.output_dir.clone(), target })
@@ -240,14 +212,14 @@ fn print_build_report(report: &crate::asgard::CompileReport, label: &str) {
 }
 
 /// 执行 `asgard build`。
-pub fn run_build(args: &AsgardBuildArgs) -> Result<ExitCode> {
+pub fn run_build(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
     let report = compile_with_args(args)?;
     print_build_report(&report, "asgard build");
     Ok(ExitCode::SUCCESS)
 }
 
 /// 执行 `asgard dev`。
-pub fn run_dev(args: &AsgardBuildArgs) -> Result<ExitCode> {
+pub fn run_dev(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
     let config = VoaConfig::load(&args.project_dir)?;
     let report = compile_with_args(args)?;
     print_build_report(&report, "asgard dev");
@@ -268,7 +240,7 @@ pub fn run_dev(args: &AsgardBuildArgs) -> Result<ExitCode> {
                 project_dir: args.project_dir.clone(),
                 output_dir: Some(report.output_dir.clone()),
                 target: match &args.target {
-                    Some(value) => Some(CanonicalTarget::parse(value).map_err(|error| miette::miette!("{error}"))?),
+                    Some(value) => Some(CanonicalTarget::parse(value).map_err(|error| AsgardError::msg(report!("{error}")))?),
                     None => None,
                 },
             };
@@ -293,7 +265,7 @@ pub fn run_dev(args: &AsgardBuildArgs) -> Result<ExitCode> {
             project_dir: args.project_dir.clone(),
             output_dir: Some(report.output_dir.clone()),
             target: match &args.target {
-                Some(value) => Some(CanonicalTarget::parse(value).map_err(|error| miette::miette!("{error}"))?),
+                Some(value) => Some(CanonicalTarget::parse(value).map_err(|error| AsgardError::msg(report!("{error}")))?),
                 None => None,
             },
         };
@@ -305,14 +277,13 @@ pub fn run_dev(args: &AsgardBuildArgs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn inject_hmr_client(dist_dir: &std::path::Path) -> Result<()> {
-    use miette::IntoDiagnostic;
+fn inject_hmr_client(dist_dir: &std::path::Path) -> AsgardResult<()> {
     use std::fs;
     let index_path = dist_dir.join("index.html");
     if !index_path.exists() {
         return Ok(());
     }
-    let mut html = fs::read_to_string(&index_path).into_diagnostic()?;
+    let mut html = fs::read_to_string(&index_path)?;
     let script = generate_hmr_client_script();
     let tag = format!("<script>{script}</script>");
     if !html.contains("/__asgard/hmr") {
@@ -322,13 +293,13 @@ fn inject_hmr_client(dist_dir: &std::path::Path) -> Result<()> {
         else {
             html.push_str(&tag);
         }
-        fs::write(&index_path, html).into_diagnostic()?;
+        fs::write(&index_path, html)?;
     }
     Ok(())
 }
 
 /// 执行 `asgard pack`。
-pub fn run_pack(args: &AsgardPackArgs) -> Result<ExitCode> {
+pub fn run_pack(args: &AsgardPackArgs) -> AsgardResult<ExitCode> {
     let report = pack_voa_delivery(&PackOptions {
         input: args.input.clone(),
         output: args.output.clone(),
@@ -343,7 +314,7 @@ pub fn run_pack(args: &AsgardPackArgs) -> Result<ExitCode> {
 }
 
 /// 执行 `asgard plan`（deploy profile 校验 + 矩阵打印，或列出 profiles）。
-pub fn run_plan(args: &AsgardPlanArgs) -> Result<ExitCode> {
+pub fn run_plan(args: &AsgardPlanArgs) -> AsgardResult<ExitCode> {
     match (&args.list, &args.profile) {
         (Some(dir), None) => {
             let names = crate::asgard::deploy::list_deploy_profiles(dir)?;
@@ -363,22 +334,22 @@ pub fn run_plan(args: &AsgardPlanArgs) -> Result<ExitCode> {
             crate::asgard::deploy::print_deploy_plan(&plan);
             Ok(ExitCode::SUCCESS)
         }
-        (Some(_), Some(_)) => Err(miette!("asgard plan: 请只指定 --profile 或 --list 之一")),
-        (None, None) => Err(miette!("asgard plan: 需要 --profile <PATH> 或 --list <DIR>")),
+        (Some(_), Some(_)) => Err(AsgardError::msg(report!("asgard plan: 请只指定 --profile 或 --list 之一"))),
+        (None, None) => Err(AsgardError::msg(report!("asgard plan: 需要 --profile <PATH> 或 --list <DIR>"))),
     }
 }
 
 /// 执行 `asgard fmt` / `asgard format`（与 `legion fmt` 共用 `nyar_format::formatter`）。
-pub fn run_fmt(args: &AsgardFmtArgs) -> Result<ExitCode> {
+pub fn run_fmt(args: &AsgardFmtArgs) -> AsgardResult<ExitCode> {
     let options = args.to_cli_options();
-    let report = run_format_cli_with(&options).map_err(|error| miette!("{error}"))?;
+    let report = run_format_cli_with(&options).map_err(|error| AsgardError::msg(report!("{error}")))?;
     if report_format_cli_with(&report, &options) { Ok(ExitCode::FAILURE) } else { Ok(ExitCode::SUCCESS) }
 }
 
 /// 分发 `asgard` 子命令。
-pub fn run(command: &AsgardCommands) -> Result<ExitCode> {
+pub fn run(command: &AsgardCommands) -> AsgardResult<ExitCode> {
     // 格式化是平台能力：Valkyrie formatter / printer 由前端在入口注册。
-    rusty_valkyrie::register_format_providers();
+    crate::compiler::services::format_provider::register_format_providers();
     match command {
         AsgardCommands::Build(args) => run_build(args),
         AsgardCommands::Dev(args) => run_dev(args),
@@ -404,17 +375,9 @@ pub fn run(command: &AsgardCommands) -> Result<ExitCode> {
     }
 }
 
-#[derive(Debug, Parser)]
-#[command(name = "asgard", version, about = "Asgard — 跨平台 GUI 应用框架 CLI")]
-struct AsgardCli {
-    #[command(subcommand)]
-    command: AsgardCommands,
-}
-
 /// 解析当前进程 `argv` 并运行 Asgard CLI（供 `valkyrie-napi` 宿主调用）。
-pub fn run_from_env() -> Result<ExitCode> {
-    let cli = AsgardCli::parse();
-    run(&cli.command)
+pub fn run_from_env() -> AsgardResult<ExitCode> {
+    run_with_argv_inner(std::env::args_os().collect())
 }
 
 /// 使用显式 `argv` 运行 Asgard CLI（首项通常为 `"asgard"`）。
@@ -432,30 +395,20 @@ pub fn run_with_argv(argv: Vec<OsString>) -> i32 {
     exit_code_from_result(result)
 }
 
-fn run_with_argv_inner(argv: Vec<OsString>) -> Result<ExitCode> {
-    let cli = match AsgardCli::try_parse_from(&argv) {
-        Ok(cli) => cli,
-        Err(error) => {
-            let _ = error.print();
-            match error.kind() {
-                ErrorKind::DisplayHelp | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand | ErrorKind::DisplayVersion => {
-                    return Ok(ExitCode::SUCCESS);
-                }
-                _ => return Err(miette!(error.to_string())),
-            }
-        }
-    };
-    run(&cli.command)
+fn run_with_argv_inner(_argv: Vec<OsString>) -> AsgardResult<ExitCode> {
+    Err(AsgardError::msg(report!(
+        "Asgard 不再在 Rust 库内解析 argv（已移除 clap）。请在 TypeScript 侧组装命令并调用 \
+         `valkyrie-napi` 正交 API；库内请直接使用 `asgard::cli::run` 与 `AsgardCommands`。"
+    )))
 }
 
-fn exit_code_from_result(result: Result<ExitCode>) -> i32 {
+fn exit_code_from_result(result: AsgardResult<ExitCode>) -> i32 {
     match result {
         Ok(code) if code == ExitCode::SUCCESS => 0,
         Ok(_) => 1,
-        Err(report) => {
-            eprintln!("{report:?}");
+        Err(error) => {
+            eprintln!("{}", display_failure(error));
             1
         }
     }
 }
-

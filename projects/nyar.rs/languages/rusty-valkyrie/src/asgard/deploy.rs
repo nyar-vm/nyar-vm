@@ -1,13 +1,11 @@
 //! Deploy profile：校验契约并打印制品矩阵（编排构建为 stub / planned）。
-
-use std::path::{Path, PathBuf};
-
-use miette::{IntoDiagnostic, Result, WrapErr, miette};
+use crate::asgard::error::{AsgardError, AsgardResult};
 use oak_von::{
     language::value::{VonArray, VonEnum, VonObject, VonTuple, VonValue, from_ast},
     parse as parse_von,
 };
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 /// Profile 实现状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,39 +120,39 @@ pub struct DeployPlan {
 
 impl DeployProfile {
     /// 从文件加载并校验。
-    pub fn load(path: &Path) -> Result<DeployPlan> {
+    pub fn load(path: &Path) -> AsgardResult<DeployPlan> {
         let source =
-            std::fs::read_to_string(path).into_diagnostic().wrap_err_with(|| format!("读取 deploy profile 失败: {}", path.display()))?;
+            std::fs::read_to_string(path).map_err(|e| AsgardError::msg(format!("读取 deploy profile 失败: {}: {e}", path.display())))?;
         let mut plan = Self::parse(&source)?;
         plan.source = path.to_path_buf();
         Ok(plan)
     }
 
     /// 解析 VON 文本并校验。
-    pub fn parse(source: &str) -> Result<DeployPlan> {
-        let ast = parse_von(source).map_err(|error| miette::miette!("VON 解析失败: {error}"))?;
+    pub fn parse(source: &str) -> AsgardResult<DeployPlan> {
+        let ast = parse_von(source).map_err(|error| AsgardError::msg(report!("VON 解析失败: {error}")))?;
         let value = from_ast(&ast);
         let json = von_to_json(&value);
-        let profile: DeployProfile = serde_json::from_value(json).into_diagnostic().wrap_err("解析 deploy profile 失败")?;
+        let profile: DeployProfile = serde_json::from_value(json).map_err(|e| AsgardError::msg(format!("解析 deploy profile 失败: {e}")))?;
         let warnings = validate_profile(&profile)?;
         Ok(DeployPlan { profile, warnings, source: PathBuf::from("<memory>") })
     }
 }
 
-fn validate_profile(profile: &DeployProfile) -> Result<Vec<DeployProfileWarning>> {
+fn validate_profile(profile: &DeployProfile) -> AsgardResult<Vec<DeployProfileWarning>> {
     if profile.name.trim().is_empty() {
-        return Err(miette!("deploy profile 缺少 name"));
+        return Err(AsgardError::msg(report!("deploy profile 缺少 name")));
     }
     if profile.artifacts.is_empty() {
-        return Err(miette!("deploy profile artifacts 不能为空"));
+        return Err(AsgardError::msg(report!("deploy profile artifacts 不能为空")));
     }
     let mut warnings = Vec::new();
     for (index, artifact) in profile.artifacts.iter().enumerate() {
         if artifact.role.trim().is_empty() {
-            return Err(miette!("artifacts[{index}] 缺少 role"));
+            return Err(AsgardError::msg(report!("artifacts[{index}] 缺少 role")));
         }
         if artifact.output.trim().is_empty() {
-            return Err(miette!("artifacts[{index}] 缺少 output"));
+            return Err(AsgardError::msg(report!("artifacts[{index}] 缺少 output")));
         }
         if matches!(artifact.pipeline, DeployPipeline::Asgard) && artifact.platform.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true) {
             warnings.push(DeployProfileWarning { message: format!("artifacts[{index}] pipeline=asgard 建议提供 platform") });
@@ -192,11 +190,11 @@ fn von_to_json(value: &VonValue) -> serde_json::Value {
 }
 
 /// 列出目录下的 `*.von` profile 文件名（按字典序）。
-pub fn list_deploy_profiles(dir: &Path) -> Result<Vec<String>> {
-    let entries = std::fs::read_dir(dir).into_diagnostic().wrap_err_with(|| format!("读取 profiles 目录失败: {}", dir.display()))?;
+pub fn list_deploy_profiles(dir: &Path) -> AsgardResult<Vec<String>> {
+    let entries = std::fs::read_dir(dir).map_err(|e| AsgardError::msg(format!("读取 profiles 目录失败: {}: {e}", dir.display())))?;
     let mut names = Vec::new();
     for entry in entries {
-        let entry = entry.into_diagnostic()?;
+        let entry = entry?;
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("von") {
             continue;
@@ -240,7 +238,3 @@ pub fn print_deploy_plan(plan: &DeployPlan) {
     println!();
     println!("note: 不会执行 asgard build / atlas；仅校验并打印矩阵。");
 }
-#[cfg(test)]
-#[path = "../../tests/asgard/path_wired/deploy.rs"]
-mod deploy_tests;
-

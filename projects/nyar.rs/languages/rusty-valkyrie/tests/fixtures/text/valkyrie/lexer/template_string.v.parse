@@ -1,3 +1,0 @@
-Root span=0..24
-  Error span=0..23 message="expected declaration near 't\"<% if x %>a<% end %>\"'" text="t\"<% if x %>a<% end %>\""
-  Trivia span=23..24 text="\n"

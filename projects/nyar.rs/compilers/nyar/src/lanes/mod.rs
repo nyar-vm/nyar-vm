@@ -43,5 +43,5 @@ pub trait TargetLoweringLane {
     fn descriptor(&self) -> &TargetLoweringLaneDescriptor;
 
     /// 把分区输入降到本路线的后端输入。
-    fn lower_partition(&self, partition: Self::PartitionInput) -> miette::Result<LaneLoweringResult<Self::BackendInput>>;
+    fn lower_partition(&self, partition: Self::PartitionInput) -> crate::backends::BackendResult<LaneLoweringResult<Self::BackendInput>>;
 }

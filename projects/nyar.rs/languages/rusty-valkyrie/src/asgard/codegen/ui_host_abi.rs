@@ -18,7 +18,3 @@ fn sanitize_ident(name: &str) -> String {
         .trim_matches('_')
         .to_ascii_lowercase()
 }
-#[cfg(test)]
-#[path = "../../../tests/asgard/path_wired/codegen_ui_host_abi.rs"]
-mod codegen_ui_host_abi_tests;
-

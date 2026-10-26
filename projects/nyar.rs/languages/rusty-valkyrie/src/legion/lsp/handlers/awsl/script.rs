@@ -1,8 +1,9 @@
 //! AWSL `<script>` 块偏移映射与 **vx** 解析视图
 
 use super::{document::script_offset_at, vx::parse_awsl_script_vx};
-use crate::{state::DocumentState, types::Position};
-use crate::hir::ValkyrieCompiler;
+use crate::{state::DocumentState};
+use crate::compiler::types::Position;
+use crate::compiler::hir::ValkyrieCompiler;
 use oak_valkyrie::ast::ValkyrieRoot;
 
 /// `<script>` 块解析后的 vx 视图（光标已映射到 script 内坐标）

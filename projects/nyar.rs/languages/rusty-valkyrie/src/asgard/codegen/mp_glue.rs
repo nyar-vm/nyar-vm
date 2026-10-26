@@ -80,4 +80,3 @@ fn collect_event_handlers_node(module: &RenderModule, node_id: RenderNodeId, han
         RenderNode::Fragment(fragment) => collect_event_handlers_region(module, fragment.children, handlers),
     }
 }
-
