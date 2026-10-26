@@ -281,18 +281,7 @@ fn read_compile_evidence_digest(output_dir: &Path) -> LegionResult<Option<Compil
 
 fn expected_resolver_compile_evidence(plan: &BuildPlan) -> LegionResult<CompileEvidenceDigest> {
     let groups = compile_source_snapshot(&plan.project.semantic_source_groups)?;
-    let host_bindings = plan
-        .project
-        .selected_host_providers
-        .iter()
-        .map(|provider| {
-            let contract = provider
-                .contract_key
-                .clone()
-                .ok_or_else(|| LegionError::msg(report!("选中的 host provider `{}` 缺少契约声明身份", provider.symbol)))?;
-            Ok(crate::compiler::emitter::pipeline::CompilerHostProviderBinding { contract, provider: provider.key.clone() })
-        })
-        .collect::<LegionResult<Vec<_>>>()?;
+    let host_bindings = crate::legion::workspace::planner::compiler_host_provider_bindings(&plan.project.selected_host_providers)?;
     Ok(expected_resolver_compile_evidence_from_groups(&groups, &host_bindings, compile_arch(plan)))
 }
 
