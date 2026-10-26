@@ -6,6 +6,21 @@ use crate::compiler::hir::lowering::{CompilerSourceGroup, GeneratedSourceGroup};
 
 use super::context::CompilerHostProviderBinding;
 
+/// 可序列化的 host provider 绑定明细（写入 compile evidence）。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CompilerHostProviderBindingEvidence {
+    /// 契约声明身份编码。
+    pub contract: String,
+    /// 提供者声明身份编码。
+    pub provider: String,
+    /// capability 需求。
+    #[serde(default)]
+    pub required_capabilities: Vec<String>,
+    /// 外部绑定 attribute 原文。
+    #[serde(default)]
+    pub foreign_bindings: Vec<String>,
+}
+
 /// 从源码闭包到 Canonical 表面的稳定编译证据。
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompilerCompileEvidence {
@@ -15,6 +30,9 @@ pub struct CompilerCompileEvidence {
     pub canonical_surface_hash: String,
     /// Resolver 选定的 host provider 绑定摘要。
     pub host_provider_binding_hash: String,
+    /// Resolver 选定的 host provider 绑定明细（含 capability / 外部绑定）。
+    #[serde(default)]
+    pub host_provider_bindings: Vec<CompilerHostProviderBindingEvidence>,
     /// 独立生成源码的 producer / 源码摘要；无生成输入时为空串。
     #[serde(default)]
     pub generated_source_hash: String,
@@ -48,6 +66,7 @@ impl CompilerCompileEvidence {
             semantic_closure_hash: semantic_closure_hash(groups, arch),
             canonical_surface_hash: program.surface_digest(),
             host_provider_binding_hash: host_provider_binding_hash(host_bindings),
+            host_provider_bindings: host_provider_binding_evidence(host_bindings),
             generated_source_hash: generated_source_hash(generated),
         }
     }
@@ -108,7 +127,25 @@ fn host_provider_binding_hash(host_bindings: &[CompilerHostProviderBinding]) -> 
     for binding in host_bindings {
         parts.push(binding.contract.encoded());
         parts.push(binding.provider.encoded());
+        for capability in &binding.required_capabilities {
+            parts.push(format!("capability:{capability}"));
+        }
+        for foreign in &binding.foreign_bindings {
+            parts.push(format!("foreign:{foreign}"));
+        }
     }
     let borrowed = parts.iter().map(String::as_str).collect::<Vec<_>>();
     combined_content_hash(&borrowed)
+}
+
+fn host_provider_binding_evidence(host_bindings: &[CompilerHostProviderBinding]) -> Vec<CompilerHostProviderBindingEvidence> {
+    host_bindings
+        .iter()
+        .map(|binding| CompilerHostProviderBindingEvidence {
+            contract: binding.contract.encoded(),
+            provider: binding.provider.encoded(),
+            required_capabilities: binding.required_capabilities.clone(),
+            foreign_bindings: binding.foreign_bindings.clone(),
+        })
+        .collect()
 }
