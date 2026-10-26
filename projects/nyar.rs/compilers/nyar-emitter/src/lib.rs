@@ -43,7 +43,7 @@ pub use nyar_types::CompiledProgram;
 use nyar_types::{AggregateLayoutPlan, FlagsLayout, SingletonInstancePlan};
 use std::collections::{BTreeMap, BTreeSet};
 #[doc(hidden)]
-pub use target_execution_plan::TargetExecutionPlan;
+pub use target_execution_plan::{BackendImport, TargetExecutionPlan};
 
 use crate::{
     backend_plan_views::ExecutableFunction,

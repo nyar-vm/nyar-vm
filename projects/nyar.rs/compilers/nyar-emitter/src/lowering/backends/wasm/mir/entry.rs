@@ -18,7 +18,10 @@ use super::{
     imports::{
         build_callee_import_index, build_callee_wasm_operator_index, build_string_literal_index, build_wasi_callee_import_index,
         collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index,
-        validate_string_literal_payloads, wasi_core_import_name, wasm_import_type_bytes,
+        host_import_signature_index,
+        validate_string_literal_payloads,
+        wasi_core_import_name,
+        wasm_import_type_bytes_for_host,
     },
     library_glue,
     lowerer::lower_mir_function_to_wasm_bytes,
@@ -135,6 +138,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 被降?`ref.null`，丢?`cli_get_*` 返回的句柄（自举 `exports.build` 会静默失败）?
     // WASI 轨同样以线性内?i32 偏移传字符串?
     let js_glue_utf8_as_anyref = false;
+    let ctx = ExecutableLoweringContext::new(submission);
+    let host_import_signatures = host_import_signature_index(submission);
     let mut module = WasmBinaryModule::new();
     // main_type ?type 段的?0 ?() -> i32，供 `build` 桩函数使用?
     // ?MIR 函数的类型从?1 项开始追加，各自携带独立的返回类型?
@@ -143,15 +148,21 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut import_type_entries = Vec::new();
     for (module, field) in &host_imports {
         let import_type_index = u32::try_from(type_indices.len()).expect("type index overflow");
-        let type_bytes = wasm_import_type_bytes(wasi_mode, module, field)?;
+        let type_bytes = wasm_import_type_bytes_for_host(
+            submission,
+            &ctx,
+            wasi_mode,
+            module,
+            field,
+            js_glue_utf8_as_anyref,
+            &host_import_signatures,
+        )?;
         type_indices.push(type_bytes);
         import_type_entries.push(import_type_index);
     }
     let mut function_indices = Vec::new();
     let mut code_bodies = Vec::new();
     let mut exports = Vec::new();
-
-    let ctx = ExecutableLoweringContext::new(submission);
     eprintln!("[wasm::module-lower-start] export={export_name} operations={} host_imports={}", operations.len(), host_imports.len());
     // 语言规范：wasm/wasi 强制 wasm-gc。始终为引用 layout 注册 structtype?
     let gc_struct_type_indices = register_gc_struct_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref);
@@ -211,14 +222,30 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let import_param_types: Vec<Vec<u8>> = host_imports
         .iter()
         .map(|(module, field)| -> crate::Result<Vec<u8>> {
-            let type_bytes = wasm_import_type_bytes(wasi_mode, module, field)?;
+            let type_bytes = wasm_import_type_bytes_for_host(
+                submission,
+                &ctx,
+                wasi_mode,
+                module,
+                field,
+                js_glue_utf8_as_anyref,
+                &host_import_signatures,
+            )?;
             Ok(wasm_function_type_param_bytes(&type_bytes))
         })
         .collect::<crate::Result<Vec<_>>>()?;
     let import_return_types: Vec<Option<u8>> = host_imports
         .iter()
         .map(|(module, field)| -> crate::Result<Option<u8>> {
-            let type_bytes = wasm_import_type_bytes(wasi_mode, module, field)?;
+            let type_bytes = wasm_import_type_bytes_for_host(
+                submission,
+                &ctx,
+                wasi_mode,
+                module,
+                field,
+                js_glue_utf8_as_anyref,
+                &host_import_signatures,
+            )?;
             Ok(wasm_function_type_result_byte(&type_bytes))
         })
         .collect::<crate::Result<Vec<_>>>()?;
