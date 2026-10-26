@@ -205,16 +205,7 @@ fn build_function_plan(
                 }
                 ExecutableOperand::Value(_) | ExecutableOperand::Constant(_) => continue,
             };
-            let Some(callee_view) = executable.get_function(&callee)
-            else {
-                return Err(PhysicalPlanError::new(
-                    "BPHYS004",
-                    function,
-                    location.clone(),
-                    "call identity is not an exact local semantic function",
-                ));
-            };
-            let callee_param_types = callee_view.function.param_types;
+            let callee_param_types = resolve_callee_parameter_types(executable, callee, function, &location)?;
             let parameters = arguments
                 .iter()
                 .enumerate()
@@ -257,6 +248,26 @@ fn build_function_plan(
         }
     }
     Ok(PhysicalFunctionPlan { symbol: function.symbol.clone(), parameters, result, values, calls, text_projections })
+}
+
+fn resolve_callee_parameter_types(
+    executable: &TargetExecutionPlan,
+    callee: ItemInstanceId,
+    function: &ExecutableFunction,
+    location: &str,
+) -> Result<Vec<NyarType>, PhysicalPlanError> {
+    if let Some(view) = executable.get_function(&callee) {
+        return Ok(view.function.param_types.clone());
+    }
+    if let Some(import) = executable.imports().get(&callee) {
+        return Ok(import.parameter_types.clone());
+    }
+    Err(PhysicalPlanError::new(
+        "BPHYS004",
+        function,
+        location.clone(),
+        "call identity is not an exact local semantic function or declared import",
+    ))
 }
 
 /// Map an executable immediate to its Semantic MIR type for physical planning.

@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    FragmentSubmission,
+    BackendImport, FragmentSubmission,
     backend_plan_views::{
         ExecutableConstant as MirConstant, ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind,
     },
@@ -11,10 +11,12 @@ use crate::{
     target_operator::TargetOperatorBinding,
 };
 use acorn_wasm::{VALTYPE_I32, VALTYPE_I64};
-use nyar_types::ItemInstanceId;
+use nyar_types::{ItemInstanceId, NyarType};
 
+use super::representation::wasm_param_value_type;
 use super::super::{
-    super::interop::{wasi_host_import_target, wasm_host_import_target, wasm_operator_target},
+    super::executable::ExecutableLoweringContext,
+    super::interop::{wasi_host_import_target, wasm_host_import_target, wasm_operator_target, wasm_or_js_glue_host_import_target},
     sections::wasm_function_type,
 };
 
@@ -22,7 +24,7 @@ pub(super) fn collect_wasm_host_imports(submission: &FragmentSubmission, synthes
     let mut imports = Vec::new();
     let mut seen = BTreeSet::new();
     for link in submission.backend_plan.external_import_links().values() {
-        let Some(target) = wasm_host_import_target(link)
+        let Some(target) = wasm_or_js_glue_host_import_target(link)
         else {
             continue;
         };
@@ -75,6 +77,16 @@ pub(super) fn collect_wasi_host_imports(submission: &FragmentSubmission, preview
             continue;
         };
         let key = (crate::nyar_backend_wasi::wasi_versioned_import_module_for(&module, preview), field);
+        if seen.insert(key.clone()) {
+            imports.push(key);
+        }
+    }
+    for link in submission.backend_plan.external_import_links().values() {
+        let Some(target) = wasm_host_import_target(link)
+        else {
+            continue;
+        };
+        let key = (target.module.to_string(), target.field.to_string());
         if seen.insert(key.clone()) {
             imports.push(key);
         }
@@ -225,6 +237,62 @@ pub(super) fn wasi_import_type_for_field(_module: &str, field: &str) -> Option<V
     Some(signature)
 }
 
+/// `(module, field)` → 已在 `TargetExecutionPlan` 绑定的导入签名（`[js]` / `[wasm]` 等）。
+pub(super) fn host_import_signature_index(submission: &FragmentSubmission) -> BTreeMap<(String, String), BackendImport> {
+    let mut index = BTreeMap::new();
+    for import in submission.backend_plan.imports().values() {
+        let target = wasm_or_js_glue_host_import_target(&import.link).or_else(|| wasm_host_import_target(&import.link));
+        let Some(target) = target
+        else {
+            continue;
+        };
+        let key = (target.module.to_string(), target.field.to_string());
+        index.entry(key).or_insert_with(|| import.clone());
+    }
+    index
+}
+
+pub(super) fn wasm_import_type_from_backend_import(
+    ctx: &ExecutableLoweringContext,
+    import: &BackendImport,
+    js_glue_utf8_as_anyref: bool,
+) -> Vec<u8> {
+    let params = import
+        .parameter_types
+        .iter()
+        .map(|ty| wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref))
+        .collect::<Vec<_>>();
+    let results = match &import.return_type {
+        NyarType::Unit | NyarType::Bottom => Vec::new(),
+        ty => vec![wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)],
+    };
+    wasm_function_type(&params, &results)
+}
+
+pub(super) fn wasm_import_type_bytes_for_host(
+    submission: &FragmentSubmission,
+    ctx: &ExecutableLoweringContext,
+    wasi_mode: bool,
+    module: &str,
+    field: &str,
+    js_glue_utf8_as_anyref: bool,
+    signature_index: &BTreeMap<(String, String), BackendImport>,
+) -> crate::Result<Vec<u8>> {
+    if let Some(frozen) = if wasi_mode {
+        wasi_import_type_for_field(module, field)
+    }
+    else {
+        wasm_import_type_for_field(field)
+    } {
+        return Ok(frozen);
+    }
+    let key = (module.to_string(), field.to_string());
+    if let Some(import) = signature_index.get(&key) {
+        return Ok(wasm_import_type_from_backend_import(ctx, import, js_glue_utf8_as_anyref));
+    }
+    Err(format!("host import `{module}::{field}` has no frozen ABI signature"))
+}
+
 pub(super) fn wasm_import_type_bytes(wasi_mode: bool, module: &str, field: &str) -> crate::Result<Vec<u8>> {
     let resolved = if wasi_mode { wasi_import_type_for_field(module, field) } else { wasm_import_type_for_field(field) };
     resolved.ok_or_else(|| format!("host import `{module}::{field}` has no frozen ABI signature"))
@@ -251,7 +319,7 @@ pub(super) fn build_callee_import_index(submission: &FragmentSubmission, imports
     let mut callee_import_index = BTreeMap::new();
     for (callee, import) in submission.backend_plan.imports() {
         let link = &import.link;
-        let Some(target) = wasm_host_import_target(link)
+        let Some(target) = wasm_or_js_glue_host_import_target(link)
         else {
             continue;
         };
@@ -302,5 +370,53 @@ pub(super) fn build_wasi_callee_import_index(
         };
         callee_import_index.insert(*callee, index);
     }
+    for (callee, import) in submission.backend_plan.imports() {
+        let link = &import.link;
+        let Some(target) = wasm_host_import_target(link)
+        else {
+            continue;
+        };
+        let Some(&index) = import_index_by_key.get(&(target.module.to_string(), target.field.to_string()))
+        else {
+            continue;
+        };
+        callee_import_index.insert(*callee, index);
+    }
     callee_import_index
+}
+
+#[cfg(test)]
+mod host_import_signature_tests {
+    use nyar::{ExternalImportLink, Identifier};
+
+    use super::*;
+    use crate::{FragmentSubmission, TargetExecutionPlan};
+    use nyar_types::ImportIndex;
+
+    #[test]
+    fn wasm_import_type_uses_backend_import_when_field_not_frozen() {
+        let import_id = ItemInstanceId::from_index(1).expect("import");
+        let mut plan = TargetExecutionPlan::default();
+        plan.testing_register_import(
+            import_id,
+            BackendImport {
+                index: ImportIndex::from_index(0).expect("import index"),
+                link: ExternalImportLink::host(Some(Identifier::new("js")), vec!["fetch".into()]),
+                parameter_types: vec![NyarType::Integer32 { signed: true }, NyarType::Integer32 { signed: true }],
+                return_type: NyarType::Integer32 { signed: true },
+                target_operator: None,
+            },
+        );
+        let submission = FragmentSubmission::from_backend_plan(plan);
+        let ctx = ExecutableLoweringContext::new(&submission);
+        let signatures = host_import_signature_index(&submission);
+        let type_bytes = wasm_import_type_bytes_for_host(&submission, &ctx, false, "env", "fetch", false, &signatures)
+            .expect("js fetch must derive wasm signature from BackendImport");
+        let params = super::super::strings::wasm_function_type_param_bytes(&type_bytes);
+        assert_eq!(params, vec![VALTYPE_I32, VALTYPE_I32]);
+        assert_eq!(
+            super::super::strings::wasm_function_type_result_byte(&type_bytes),
+            Some(VALTYPE_I32)
+        );
+    }
 }

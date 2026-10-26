@@ -278,6 +278,8 @@ pub enum CanonicalSpecification {
     Unknown,
     /// 浏览器宿主。
     Browser,
+    /// 微信小程序等嵌入式 `WASM` + `JS` 宿主（能力集与浏览器不同，不由 `publish` 注入）。
+    Miniprogram,
     /// `WASI`
     Wasi,
     /// `Windows`
@@ -297,6 +299,7 @@ impl CanonicalSpecification {
         match value.to_ascii_lowercase().as_str() {
             "unknown" => Some(Self::Unknown),
             "browser" | "web" => Some(Self::Browser),
+            "miniprogram" | "mini-program" => Some(Self::Miniprogram),
             "wasi" => Some(Self::Wasi),
             "windows" | "win32" => Some(Self::Windows),
             "linux" => Some(Self::Linux),
@@ -311,6 +314,7 @@ impl CanonicalSpecification {
         match self {
             Self::Unknown => "unknown",
             Self::Browser => "browser",
+            Self::Miniprogram => "miniprogram",
             Self::Wasi => "wasi",
             Self::Windows => "windows",
             Self::Linux => "linux",

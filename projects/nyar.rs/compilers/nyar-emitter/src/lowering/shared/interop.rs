@@ -81,6 +81,28 @@ pub(crate) fn wasm_host_import_target(link: &ExternalImportLink) -> Option<WasmH
     }
 }
 
+/// `[js("fetch")]` / `[js_builtin("wx.request")]` → browser/node wasm `env` 导入字段。
+///
+/// WasmJsGlue 轨在 MIR 阶段仍通过 wasm `call` 命中宿主导入；`.mjs` 启动壳按字段名提供实现。
+pub(crate) fn js_glue_host_import_target(link: &ExternalImportLink) -> Option<WasmHostImportTarget<'_>> {
+    if !link.matches_boundary("host") {
+        return None;
+    }
+    if !link.matches_platform_tag("js") && !link.matches_platform_tag("js_builtin") {
+        return None;
+    }
+
+    match link.locator_segments() {
+        [field] => Some(WasmHostImportTarget { module: "env", field }),
+        [module, field, ..] => Some(WasmHostImportTarget { module, field }),
+        _ => None,
+    }
+}
+
+pub(crate) fn wasm_or_js_glue_host_import_target(link: &ExternalImportLink) -> Option<WasmHostImportTarget<'_>> {
+    wasm_host_import_target(link).or_else(|| js_glue_host_import_target(link))
+}
+
 /// 源码 `[wasm_operator("i32.add")]` 声明的 wasm 目标 operator 助记符。
 ///
 /// 只接受 platform tag `wasm-operator` 且 locator 恰好一段；其余形态返回 `None`，

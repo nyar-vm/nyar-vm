@@ -76,6 +76,8 @@ fn js_import_impl(field: &str) -> String {
         "read_file_text" => "(path) => hostReadFileText(path)".to_string(),
         "write_file_text" => "(path, content) => hostWriteFileText(path, content)".to_string(),
         "get_files" => "(path, pattern, recursive) => hostGetFiles(path, pattern, recursive)".to_string(),
+        "random" => "(seed) => (Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) >>> 0) | 0".to_string(),
+        "fetch" => "(path) => (path ^ 0x5f3759df) | 0".to_string(),
         "const_utf8" => "(index) => hostIntern(hostConstUtf8(index))".to_string(),
         "utf8_concat" => "(a, b) => hostUtf8Concat(a, b)".to_string(),
         "utf8_length" => "(s) => hostUtf8Length(s)".to_string(),

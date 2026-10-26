@@ -150,6 +150,13 @@ impl TargetExecutionPlan {
         self
     }
 
+    /// 登记外部导入 callable（集成测试专用）。
+    #[doc(hidden)]
+    pub fn testing_register_import(&mut self, instance: ItemInstanceId, import: BackendImport) -> &mut Self {
+        self.imports.insert(instance, import);
+        self
+    }
+
     /// 从完整 `CompiledProgram` 生成闭包；任何无法无损投影的语义都失败。
     pub fn from_compiled_program(
         program: &CompiledProgram,

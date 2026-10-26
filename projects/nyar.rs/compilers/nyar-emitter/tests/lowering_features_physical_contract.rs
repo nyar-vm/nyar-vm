@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use nyar::{Identifier, QualifiedName};
+use nyar::{ExternalImportLink, Identifier, QualifiedName};
 use nyar_emitter::{
-    FragmentSubmission, TargetExecutionPlan,
+    BackendImport, FragmentSubmission, TargetExecutionPlan,
     lowering::features::physical_contract::{PhysicalBackend, PhysicalValueCategory, build_physical_plan},
 };
-use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef};
+use nyar_types::{Block, BlockRef, ExecutableFunction, ImportIndex, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef};
 
 fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
     let values = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
@@ -217,6 +217,33 @@ fn utf8_and_utf16_map_to_reference_without_text_projection() {
         assert_eq!(plans.iter().find(|plan| plan.symbol == "neutral.text8").expect("utf8").result, PhysicalValueCategory::Reference);
         assert_eq!(plans.iter().find(|plan| plan.symbol == "neutral.text16").expect("utf16").result, PhysicalValueCategory::Reference);
     }
+}
+
+#[test]
+fn external_import_call_plans_with_import_parameter_types() {
+    let caller = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("caller")]);
+    let import_id = ItemInstanceId::from_index(1).expect("import id");
+    let mut caller_function = function("neutral.caller", NyarType::Integer32 { signed: true }, vec![NyarType::Integer32 { signed: true }]);
+    caller_function.blocks[0].instructions.push(instr(
+        InstructionKind::Call { callee: Operand::Item(import_id), arguments: vec![Operand::Value(ValueRef(0))] },
+        Vec::new(),
+    ));
+    let mut plan = TargetExecutionPlan::from_functions([(caller, caller_function)].into_iter().collect());
+    plan.testing_register_import(
+        import_id,
+        BackendImport {
+            index: ImportIndex::from_index(0).expect("import index"),
+            link: ExternalImportLink::host(Some(Identifier::new("js")), vec!["random".into()]),
+            parameter_types: vec![NyarType::Integer32 { signed: true }],
+            return_type: NyarType::Integer32 { signed: true },
+            target_operator: None,
+        },
+    );
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect("import callee must plan");
+    let caller_plan = plans.iter().find(|plan| plan.symbol == "neutral.caller").expect("caller plan");
+    assert_eq!(caller_plan.calls.len(), 1);
+    assert_eq!(caller_plan.calls.values().next().expect("call").parameters, vec![PhysicalValueCategory::I32]);
 }
 
 #[test]
