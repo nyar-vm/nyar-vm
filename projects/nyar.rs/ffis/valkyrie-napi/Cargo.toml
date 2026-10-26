@@ -15,6 +15,8 @@ crate-type = ["cdylib", "rlib"]
 napi.workspace = true
 napi-derive.workspace = true
 rusty-valkyrie = { workspace = true }
+odin-vm = { workspace = true }
+serde_json = { workspace = true }
 windows-sys = { workspace = true }
 
 [build-dependencies]
