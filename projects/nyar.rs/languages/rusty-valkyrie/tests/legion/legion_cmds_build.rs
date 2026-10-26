@@ -17,7 +17,8 @@ fn assert_compile_evidence_sidecar_matches_manifest(output_dir: &std::path::Path
     assert!(sidecar_path.is_file(), "compile-evidence sidecar must exist at {}", sidecar_path.display());
     let stored = manifest.compile_evidence.as_ref().expect("execution manifest compile evidence");
     let source = fs::read_to_string(&sidecar_path).expect("read compile-evidence sidecar");
-    let file = parse_von::<rusty_valkyrie::CompilerCompileEvidence>(&source).expect("parse compile-evidence sidecar");
+    let file =
+        parse_von::<rusty_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&source).expect("parse compile-evidence sidecar");
     let digest = CompileEvidenceDigest::from(&file);
     assert_eq!(digest, *stored, "compile-evidence sidecar must match execution manifest");
 }

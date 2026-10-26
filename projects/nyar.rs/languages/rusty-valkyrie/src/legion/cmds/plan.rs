@@ -5,7 +5,10 @@ use crate::legion::{
 };
 use std::{path::Path, process::ExitCode};
 
-use crate::legion::{api::plan_project, cmds::project_input::resolve_project_path};
+use crate::legion::{
+    api::{PlanRequest, plan},
+    cmds::project_input::resolve_project_path,
+};
 
 /// `legion plan` 参数。
 #[derive(Debug, Clone)]
@@ -19,16 +22,18 @@ pub struct PlanArgs {
 /// 执行 `legion plan`（安全：不调用 `compile_plan`）。
 pub fn run(args: &PlanArgs) -> LegionResult<ExitCode> {
     let project_input = resolve_project_path(&args.project_dir)?;
-    let summary = plan_project(&project_input, args.target.clone())?;
+    let build_plan = plan(PlanRequest { project_dir: project_input, target: args.target.clone(), output_dir: None })?;
+    if !build_plan.is_compilable() {
+        return Err(LegionError::Planner(crate::legion::workspace::planner::PlannerError::NoSourceFiles));
+    }
+    println!("workspace: {}", crate::legion::cmds::path_for_cli_log(Path::new(&build_plan.workspace_root)));
+    println!("project: {}", build_plan.project);
+    println!("target: {}", build_plan.target);
+    println!("sources: {}", build_plan.source_count);
+    println!("semantic groups: {}", build_plan.semantic_group_count);
+    println!("dependencies: {}", build_plan.dependency_count);
 
-    println!("workspace: {}", crate::legion::cmds::path_for_cli_log(Path::new(&summary.workspace_root)));
-    println!("project: {}", summary.project);
-    println!("target: {}", summary.target);
-    println!("sources: {}", summary.source_count);
-    println!("semantic groups: {}", summary.semantic_group_count);
-    println!("dependencies: {}", summary.dependency_count);
-
-    for group in &summary.groups {
+    for group in &build_plan.groups {
         println!("  group {}: {} file(s)", group.dependency_key, group.file_count);
     }
 

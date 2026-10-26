@@ -31,10 +31,19 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match rusty_valkyrie::legion::api::build_project(&project, target, Some(output)) {
-        Ok(summary) => {
-            println!("构建成功：{} 个产物", summary.artifacts.len());
+    match rusty_valkyrie::legion::compile_project(
+        &project,
+        target,
+        Some(output),
+        rusty_valkyrie::legion::CompileOptions::default(),
+    ) {
+        Ok(report) if report.success => {
+            println!("构建成功：{} 个产物", report.artifacts.len());
             ExitCode::SUCCESS
+        }
+        Ok(report) => {
+            eprintln!("构建失败：{:?}", report.diagnostics);
+            ExitCode::FAILURE
         }
         Err(error) => {
             eprintln!("构建失败：{error:?}");

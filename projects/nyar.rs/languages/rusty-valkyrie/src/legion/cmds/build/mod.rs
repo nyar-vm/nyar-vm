@@ -84,12 +84,19 @@ pub fn run(args: &BuildArgs) -> LegionResult<ExitCode> {
         remove_host_selection_spec(&plan.output_dir)?;
     }
 
-    let report = compile_plan(&plan, true)?;
+    let api_plan = crate::legion::api::LegionBuildPlan::from_build_plan(plan.clone());
+    let compile_report =
+        crate::legion::api::compile(&api_plan, crate::legion::api::CompileOptions { verbose: true, debug_artifacts: args.debug_artifacts })?;
+    if !compile_report.success {
+        let message = compile_report.diagnostics.first().map(|d| d.message.clone()).unwrap_or_else(|| "compile failed".into());
+        return Err(LegionError::msg(message));
+    }
+    let report = compile_report.driver.as_ref().ok_or_else(|| LegionError::msg(report!("编译成功但缺少驱动报告")))?;
     println!("backend status: compiled");
     let target_profile = plan.project.build_target.target.to_profile(None);
     println!("host kind: {:?}", target_profile.host_kind);
     println!("publish format: {}", target_profile.artifact_policy.default_publish_format);
-    if let Some(entry_symbol) = &report.entry_symbol {
+    if let Some(entry_symbol) = &compile_report.entry_symbol {
         println!("entry: {}", entry_symbol);
     }
     print_artifacts(&plan.output_dir, &report.artifacts);

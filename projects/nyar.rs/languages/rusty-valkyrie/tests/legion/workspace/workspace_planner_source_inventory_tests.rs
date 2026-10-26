@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use rusty_valkyrie::{CanonicalTarget, legion::workspace::planner::*};
+use rusty_valkyrie::legion::{CanonicalTarget, workspace::planner::*};
 use tempfile::tempdir;
 
 #[test]
