@@ -9,8 +9,10 @@
 //! `TargetOperatorBinding::Unfrozen`，由 emit 结构化失败，禁止猜默认指令。
 //!
 //! pin 的 `acorn_wasm`（e7ed84a）只导出部分 I32 / F64 变体与 `VALTYPE_I32/I64/F64`，
-//! 没有 `VALTYPE_F32`；wasm 后端的 `Float32` 也归一到 `f64` 载体（见
-//! `representation.rs`），因此本表不提供 f32 绑定，也不发明 f32 载体。
+//! 没有 `VALTYPE_F32` 绑定。这是**当前 acorn_wasm 库的实现限制**，不是 Wasm 原生
+//! 缺少 f32 类型——Wasm 有完整的 f32 参数和指令集。ABI schema 层（`abi_schema.rs`）
+//! 仍正确声明 `F32` variant；发射层在 acorn_wasm 补齐前暂时用 f64 降级。
+//! 等 acorn_wasm 暴露 F32 变体后补齐本表。
 //!
 //! 有 `WasmOpcode` 变体的字节走变体；其余按标准 WASM opcode 字节发射。
 //! acorn 补齐这些变体后删除本地字节发射。

@@ -41,7 +41,11 @@ pub enum WasmAbiType {
     /// 64-bit integer（有符号或无符号统一映射为 I64 carrier）。
     I64,
 
-    /// 32-bit float。Wasm physical carrier 仍用 F64（Wasm 参数位置无 f32）。
+    /// 32-bit float。Wasm physical carrier: f32。
+    ///
+    /// Wasm 原生支持 `f32` 参数和返回值（有独立的 `valtype F32` 和
+    /// 完整的 f32 指令集）。当前某些底层发射库可能只暴露了 F64 变体，
+    /// 那是实现细节；ABI schema 层必须按 Wasm 原生能力声明 carrier。
     F32,
 
     /// 64-bit float。
@@ -103,6 +107,12 @@ pub enum WasmAbiType {
     /// 用于承载 `Apply(Named("ArrayList"), [Integer64])`、用户自定义 struct、
     /// 或任何 NyarType 层无法内联展开的命名类型。
     ///
+    /// # 稳定 nominal identity
+    ///
+    /// `name` 只是简单名；`module_path` 提供完整命名空间（例如
+    /// `"std.collections"`）。下游宿主（JS glue / CLR / JVM）在 marshal
+    /// 注册表中**必须同时检查两者**，才能区分同名但不同来源包的 aggregate。
+    ///
     /// # 禁止硬编码
     ///
     /// 本变体**不**在 schema 生成阶段判断 `name` 是否等于 `"ArrayList"` /
@@ -111,6 +121,14 @@ pub enum WasmAbiType {
     NamedAggregate {
         /// 名义类型的简单名（不含模块路径）。
         name: String,
+        /// 类型所属的完整命名空间路径（例如 `"std::collections"`）。
+        ///
+        /// # 当前上游限制
+        ///
+        /// NyarType 的 `Identifier` 目前不总是携带完整路径——当上游
+        /// `rusty-valkyrie` 只传了简单名时，这里会是空字符串。
+        /// TODO(valkyrie): 等上游把完整 QualifiedName 传进 NyarType 后替换。
+        module_path: String,
         /// 实例化的泛型参数（无泛型时为空 vec）。
         generic_args: Vec<WasmAbiType>,
     },
@@ -186,8 +204,8 @@ impl WasmAbiType {
 /// | `FixedArray { element, n }`  | `FixedArray { element: schema(element), n }`   |                                                |
 /// | `Nullable(T)`                | `Option { inner: schema(T) }`                  |                                                |
 /// | `Tuple([...])`               | `Tuple { fields: [...] }`                      |                                                |
-/// | `Named(id)`                  | `NamedAggregate { name, generic_args: [] }`    |                                                |
-/// | `Apply(Base, args)`          | `NamedAggregate { name_of(Base), schema(args)}`|                                                |
+/// | `Named(id)`                  | `NamedAggregate { name, module_path, generic_args: [] }` |                       |
+/// | `Apply(Base, args)`          | `NamedAggregate { name, module_path, schema(args)}`|                                        |
 /// | `Function` / `TraitObject`   | `Unsupported`                                  | 不能跨 ABI 边界                                |
 /// | `Union([...])`               | `Unsupported`                                  | ABI 合同未定义                                 |
 pub fn abi_schema_for_type(ty: &NyarType) -> WasmAbiType {
@@ -234,20 +252,21 @@ pub fn abi_schema_for_type(ty: &NyarType) -> WasmAbiType {
             fields: fields.iter().map(abi_schema_for_type).collect(),
         },
 
-        // 名义类型：把 Identifier 展开成简单名字；generic_args 为空。
+        // 名义类型：把 Identifier 展开成简单名字 + 模块路径；generic_args 为空。
         NyarType::Named(id) => WasmAbiType::NamedAggregate {
             name: simple_name_of(id),
+            module_path: module_path_of(id),
             generic_args: Vec::new(),
         },
 
         // 泛型应用：`Apply(Base, [T1, T2, ...])`
-        // 把 Base（通常是 Named）的语义名字提取出来，递归映射泛型参数。
+        // 把 Base（通常是 Named）的语义名字和模块路径提取出来，递归映射泛型参数。
         NyarType::Apply(base, args) => {
-            let (name, base_generic_args) = match base.as_ref() {
-                NyarType::Named(id) => (simple_name_of(id), Vec::new()),
+            let (name, module_path, base_generic_args) = match base.as_ref() {
+                NyarType::Named(id) => (simple_name_of(id), module_path_of(id), Vec::new()),
                 NyarType::Apply(_, _) => {
                     // 嵌套 Apply：展平到最顶层 Named
-                    flatten_apply_name(base.as_ref())
+                    flatten_apply_identity(base.as_ref())
                 }
                 other => {
                     return WasmAbiType::Unsupported {
@@ -260,7 +279,7 @@ pub fn abi_schema_for_type(ty: &NyarType) -> WasmAbiType {
             let mut generic_args: Vec<WasmAbiType> =
                 base_generic_args.iter().map(|t| abi_schema_for_type(t)).collect();
             generic_args.extend(args.iter().map(abi_schema_for_type));
-            WasmAbiType::NamedAggregate { name, generic_args }
+            WasmAbiType::NamedAggregate { name, module_path, generic_args }
         }
 
         // 函数类型不能跨 ABI 边界（宿主和 Wasm 的函数指针合同尚未定义）。
@@ -282,8 +301,6 @@ pub fn abi_schema_for_type(ty: &NyarType) -> WasmAbiType {
 
 /// 从 `Identifier` 提取简单名（丢掉模块路径前缀）。
 fn simple_name_of(id: &Identifier) -> String {
-    // Identifier 自身就是一个简单名（不含 `::` 或 `.` 路径分隔）。
-    // Display 直接输出文本，没有额外引号。
     let full = id.as_str();
     full.rsplit_once("::")
         .map(|(_, last)| last.to_string())
@@ -291,13 +308,33 @@ fn simple_name_of(id: &Identifier) -> String {
         .unwrap_or_else(|| full.to_string())
 }
 
+/// 从 `Identifier` 提取模块路径（丢掉最终简单名）。
+///
+/// - `"std::collections::ArrayList"` → `"std::collections"`
+/// - `"std.collections.ArrayList"` → `"std.collections"`
+/// - `"ArrayList"` → `""`（简单名无路径前缀）
+///
+/// 当前上游 NyarType::Identifier 经常只有简单名——空返回值是合法场景，
+/// 不是错误。TODO(valkyrie): 等上游把 QualifiedName 完整传递下来后
+/// 可以把空值视为"未知"而不是"无"。
+fn module_path_of(id: &Identifier) -> String {
+    let full = id.as_str();
+    if let Some((prefix, _)) = full.rsplit_once("::") {
+        prefix.to_string()
+    } else if let Some((prefix, _)) = full.rsplit_once('.') {
+        prefix.to_string()
+    } else {
+        String::new()
+    }
+}
+
 /// 把嵌套的 `Apply(Apply(Named("A"), ...), ...)` 展平，提取最顶层
-/// 语义名和最底层的 generic_args 残留（极罕见场景）。
-fn flatten_apply_name(mut ty: &NyarType) -> (String, Vec<NyarType>) {
+/// 语义名、模块路径和最底层的 generic_args 残留（极罕见场景）。
+fn flatten_apply_identity(mut ty: &NyarType) -> (String, String, Vec<NyarType>) {
     let mut accumulated: Vec<NyarType> = Vec::new();
     loop {
         match ty {
-            NyarType::Named(id) => return (simple_name_of(id), accumulated),
+            NyarType::Named(id) => return (simple_name_of(id), module_path_of(id), accumulated),
             NyarType::Apply(base, args) => {
                 accumulated.extend(args.iter().cloned());
                 ty = base.as_ref();
@@ -305,6 +342,7 @@ fn flatten_apply_name(mut ty: &NyarType) -> (String, Vec<NyarType>) {
             other => {
                 return (
                     format!("<unexpected:{other:?}>"),
+                    String::new(),
                     accumulated,
                 );
             }
@@ -360,9 +398,28 @@ mod tests {
         );
         let schema = abi_schema_for_type(&arraylist_i64);
         match schema {
-            WasmAbiType::NamedAggregate { name, generic_args } => {
+            WasmAbiType::NamedAggregate { name, module_path, generic_args } => {
                 assert_eq!(name, "ArrayList");
+                // 上游 Identifier 只有简单名，当前 module_path 为空
+                assert_eq!(module_path, "");
                 assert_eq!(generic_args, vec![WasmAbiType::I64]);
+            }
+            other => panic!("Expected NamedAggregate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn module_path_extracted_from_qualified_identifier() {
+        // 如果上游给了完整路径 "std::collections::ArrayList"
+        let qualified = NyarType::Apply(
+            Box::new(NyarType::Named(Identifier::new("std::collections::ArrayList"))),
+            vec![nyar("i64")],
+        );
+        let schema = abi_schema_for_type(&qualified);
+        match schema {
+            WasmAbiType::NamedAggregate { name, module_path, .. } => {
+                assert_eq!(name, "ArrayList");
+                assert_eq!(module_path, "std::collections");
             }
             other => panic!("Expected NamedAggregate, got {other:?}"),
         }
@@ -398,6 +455,7 @@ mod tests {
     fn serde_roundtrip_named_aggregate() {
         let schema = WasmAbiType::NamedAggregate {
             name: "ArrayList".to_string(),
+            module_path: "std::collections".to_string(),
             generic_args: vec![WasmAbiType::I64],
         };
         let json = serde_json::to_string(&schema).unwrap();
