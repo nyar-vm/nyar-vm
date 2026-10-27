@@ -44,6 +44,21 @@ pub struct BuildRequest {
     pub target: CanonicalTarget,
     /// 自定义输出目录；缺省时按目标推导默认 dist 目录。
     pub output_dir: Option<PathBuf>,
+    /// 构建时启用的 feature set；供 `[gate(feature = "...")]` 求值。
+    /// 空集 = 所有 feature gate 视为未启用。
+    #[serde(default)]
+    pub enabled_features: std::collections::BTreeSet<String>,
+}
+
+impl Default for BuildRequest {
+    fn default() -> Self {
+        Self {
+            project_dir: PathBuf::default(),
+            target: CanonicalTarget::wasm(),
+            output_dir: None,
+            enabled_features: std::collections::BTreeSet::new(),
+        }
+    }
 }
 
 /// 构建计划中记录的一项已解析依赖。

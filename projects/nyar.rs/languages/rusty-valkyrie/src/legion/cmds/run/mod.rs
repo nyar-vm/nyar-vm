@@ -327,7 +327,11 @@ struct RunCommand {
 /// 执行 `legion run`。
 pub fn run(args: &RunArgs) -> LegionResult<ExitCode> {
     let workspace = WorkspaceResolver::discover_for_project(&args.project_dir)?;
-    let request = BuildRequest { project_dir: args.project_dir.clone(), target: args.target.clone(), output_dir: args.output_dir.clone() };
+    let request = BuildRequest {
+        project_dir: args.project_dir.clone(),
+        target: args.target.clone(),
+        output_dir: args.output_dir.clone(),
+        ..Default::default() };
     let plan = workspace.build_plan(&request)?;
 
     let execution_manifest = ensure_execution_manifest(args, &plan)?;

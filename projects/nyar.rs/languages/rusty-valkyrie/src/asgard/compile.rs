@@ -51,7 +51,11 @@ pub struct ResolvedCompilerSources {
 pub fn resolve_project_source_groups(project_dir: &Path, target: &CanonicalTarget) -> AsgardResult<ResolvedCompilerSources> {
     let resolver = WorkspaceResolver::discover_for_project(project_dir).map_err(|error| report!("解析项目工作区失败: {error}"))?;
     let plan = resolver
-        .build_plan(&BuildRequest { project_dir: project_dir.to_path_buf(), target: target.clone(), output_dir: None })
+        .build_plan(&BuildRequest {
+            project_dir: project_dir.to_path_buf(),
+            target: target.clone(),
+            output_dir: None,
+            ..Default::default() })
         .map_err(|error| report!("解析项目构建计划失败: {error}"))?;
     let project_name = plan.project.name.clone();
     let groups = compile_source_snapshot(&plan.project.semantic_source_groups).map_err(|error| report!("读取项目源码快照失败: {error}"))?;

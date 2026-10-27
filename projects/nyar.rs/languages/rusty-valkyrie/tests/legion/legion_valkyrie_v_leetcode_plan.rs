@@ -36,6 +36,7 @@ fn leetcode_browser_wasm_plan_injects_wasm_adaptor_js_random_providers() {
             project_dir: project_dir.clone(),
             target: CanonicalTarget::wasm(),
             output_dir: None,
+        ..Default::default()
         })
         .expect("leetcode browser wasm plan");
 
@@ -135,7 +136,9 @@ fn leetcode_miniprogram_wasm_plan_selects_wechat_when_files() {
     let target: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().expect("wechat wasm");
     let workspace = WorkspaceResolver::discover_for_project(&project_dir).expect("discover miniprogram leetcode");
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: project_dir.clone(), target, output_dir: None })
+        .build_plan(&BuildRequest { project_dir: project_dir.clone(), target, output_dir: None,
+        ..Default::default()
+        })
         .expect("leetcode miniprogram wasm plan");
 
     let wasm_group = plan

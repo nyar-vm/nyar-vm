@@ -228,9 +228,10 @@ impl WorkspaceResolver {
         let semantic_source_groups = filter_semantic_source_groups_for_target(
             self.collect_semantic_source_groups(&project_dir, manifest, &build_target)?,
             request.target,
+            Some(&request.enabled_features),
         )?;
-        let source_files = filter_source_files_for_target(source_files, request.target)?;
-        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target)?;
+        let source_files = filter_source_files_for_target(source_files, request.target, Some(&request.enabled_features))?;
+        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
 
         Ok(BuildPlan {
             workspace_root: self.root_dir.clone(),
@@ -296,9 +297,10 @@ impl WorkspaceResolver {
         let semantic_source_groups = filter_semantic_source_groups_for_target(
             self.collect_semantic_source_groups(&project_dir, &manifest, &build_target)?,
             request.target,
+            Some(&request.enabled_features),
         )?;
-        let source_files = filter_source_files_for_target(source_files, request.target)?;
-        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target)?;
+        let source_files = filter_source_files_for_target(source_files, request.target, Some(&request.enabled_features))?;
+        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
 
         Ok((
             BuildPlan {
@@ -507,9 +509,10 @@ impl WorkspaceResolver {
         let semantic_source_groups = filter_semantic_source_groups_for_target(
             self.collect_semantic_source_groups(&project_dir, manifest, &build_target)?,
             request.target,
+            Some(&request.enabled_features),
         )?;
-        let source_files = filter_source_files_for_target(source_files, request.target)?;
-        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target)?;
+        let source_files = filter_source_files_for_target(source_files, request.target, Some(&request.enabled_features))?;
+        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
 
         Ok(BuildPlan {
             workspace_root: self.root_dir.clone(),
@@ -660,8 +663,9 @@ fn host_inventory_for_groups(
     semantic_source_groups: &[PlannedSemanticSourceGroup],
     target: nyar::CanonicalTarget,
     build_target: &BuildTargetSpec,
+    enabled_features: Option<&std::collections::BTreeSet<String>>,
 ) -> PlannerResult<super::host::HostInventory> {
     let arch = super::compile_arch_key(&build_target.target);
     let demanded = super::demanded_declaration_keys(semantic_source_groups, arch)?;
-    collect_host_inventory(semantic_source_groups, target, demanded.as_ref())
+    collect_host_inventory(semantic_source_groups, target, demanded.as_ref(), enabled_features)
 }
