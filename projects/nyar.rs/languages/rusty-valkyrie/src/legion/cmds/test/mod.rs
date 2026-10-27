@@ -1,17 +1,23 @@
-//! `legion test` — 运行项目测试并生成 HTML 报告。
+//! `legion test` —— 运行项目测试并生成 HTML 报告。
+//!
+//! 编译与执行委托给 `api::test::test_project_at`；CLI 只负责：
+//! - argv → `LegionTestSelector`
+//! - workspace / 单项目两种入口分发
+//! - 控制台汇总打印
+//! - HTML 报告渲染（`cmds::report` 负责）
 use crate::legion::{
-    cmds::error::{LegionError, LegionResult},
+    api::{test::test_project_at, LegionTestSelector},
+    cmds::{
+        error::{LegionError, LegionResult},
+        project_input::resolve_project_path,
+        report::{TestResultEntry, finish_standalone_report, render_test_report},
+        test_engine::resolve_test_targets,
+    },
     workspace::planner::WorkspaceResolver,
 };
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
-};
-
-use crate::legion::cmds::{
-    project_input::resolve_project_path,
-    report::{TestResultEntry, finish_standalone_report, render_test_report},
-    test_engine::{resolve_test_targets, run_tests_for_project},
 };
 
 /// `legion test` 命令参数。
@@ -37,24 +43,28 @@ pub fn run(args: &TestArgs) -> LegionResult<ExitCode> {
     let targets = resolve_test_targets(args.target.as_deref());
     let workspace = WorkspaceResolver::discover_for_project(&project_dir)?;
 
+    let selector = LegionTestSelector {
+        targets: Some(targets.clone()),
+        filter: args.filter.clone(),
+        runner_overrides: args.runner.clone(),
+        verbose: args.verbose,
+    };
+
     let (passed, failed, skipped, results) = if is_workspace_root(&project_dir, &workspace) {
-        run_workspace_tests(&workspace, &project_dir, args.filter.as_deref(), &targets, &args.runner, args.verbose)
+        run_workspace_tests_via_api(&workspace, &project_dir, &selector)?
     }
     else {
         let member_name = project_dir.file_name().and_then(|n| n.to_str()).unwrap_or("project").to_string();
         println!("--- {member_name} ---");
-        run_tests_for_project(&workspace, &project_dir, args.filter.as_deref(), &targets, &args.runner, args.verbose)
+        let report = test_project_at(&project_dir, &member_name, &selector)?;
+        // report 自己已经按 target 汇总过，CLI 直接用 totals + flatten。
+        (report.total_passed, report.total_failed, report.total_skipped, report.flatten_entries())
     };
 
     println!();
     println!("测试报告：{passed} 通过, {failed} 失败, {skipped} 跳过");
 
-    let report_dir = if args.project_dir.extension().and_then(|e| e.to_str()) == Some("v") {
-        args.project_dir.parent().unwrap_or(&args.project_dir).join("dist").join("legion-test")
-    }
-    else {
-        project_dir.join("dist").join("legion-test")
-    };
+    let report_dir = report_output_dir(&args.project_dir, &project_dir);
     let project_name = project_dir.file_stem().or_else(|| project_dir.file_name()).and_then(|n| n.to_str()).unwrap_or("project");
     render_test_report(&report_dir, project_name, &results)?;
     println!("HTML 测试报告已生成：{}", report_dir.join("index.html").display());
@@ -63,18 +73,15 @@ pub fn run(args: &TestArgs) -> LegionResult<ExitCode> {
     Ok(if failed > 0 { ExitCode::FAILURE } else { ExitCode::SUCCESS })
 }
 
-fn run_workspace_tests(
+fn run_workspace_tests_via_api(
     workspace: &WorkspaceResolver,
     workspace_dir: &Path,
-    filter: Option<&str>,
-    targets: &[String],
-    runners: &[String],
-    verbose: bool,
-) -> (usize, usize, usize, Vec<TestResultEntry>) {
+    selector: &LegionTestSelector,
+) -> LegionResult<(usize, usize, usize, Vec<TestResultEntry>)> {
     let members = workspace.member_manifest_dirs();
     if members.is_empty() {
         println!("错误：legions.von 中无 members");
-        return (0, 0, 0, Vec::new());
+        return Ok((0, 0, 0, Vec::new()));
     }
 
     let mut total_passed = 0usize;
@@ -85,31 +92,32 @@ fn run_workspace_tests(
     for member_dir in members {
         let member_name = member_dir.file_name().and_then(|n| n.to_str()).unwrap_or("member").to_string();
         println!("--- {member_name} ---");
-        let (passed, failed, skipped, results) = run_tests_for_project(workspace, &member_dir, filter, targets, runners, verbose);
-        total_passed += passed;
-        total_failed += failed;
-        total_skipped += skipped;
-        for result in results {
-            all_results.push(TestResultEntry {
-                name: format!("{member_name}::{}", result.name),
-                status: result.status,
-                error: result.error,
-                target: result.target,
-            });
+        let member_report = test_project_at(&member_dir, &member_name, selector)?;
+
+        total_passed += member_report.total_passed;
+        total_failed += member_report.total_failed;
+        total_skipped += member_report.total_skipped;
+
+        for mut entry in member_report.flatten_entries() {
+            entry.name = format!("{member_name}::{}", entry.name);
+            all_results.push(entry);
         }
         println!();
     }
 
     let _ = workspace_dir;
-    (total_passed, total_failed, total_skipped, all_results)
+    Ok((total_passed, total_failed, total_skipped, all_results))
+}
+
+fn report_output_dir(arg_project_dir: &Path, resolved_project_dir: &Path) -> PathBuf {
+    if arg_project_dir.extension().and_then(|e| e.to_str()) == Some("v") {
+        arg_project_dir.parent().unwrap_or(arg_project_dir).join("dist").join("legion-test")
+    }
+    else {
+        resolved_project_dir.join("dist").join("legion-test")
+    }
 }
 
 fn is_workspace_root(project_dir: &Path, workspace: &WorkspaceResolver) -> bool {
     workspace.is_at_workspace_root(project_dir)
-}
-
-fn same_path(left: &Path, right: &Path) -> bool {
-    let left = left.canonicalize().unwrap_or_else(|_| left.to_path_buf());
-    let right = right.canonicalize().unwrap_or_else(|_| right.to_path_buf());
-    left == right
 }

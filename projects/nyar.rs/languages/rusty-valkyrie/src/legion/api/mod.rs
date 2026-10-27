@@ -5,7 +5,7 @@ mod diagnostic;
 mod plan;
 mod request;
 mod session;
-mod test;
+pub mod test;
 
 pub use compile::{LegionCompileReport, LegionStageStatus, compile, compile_project};
 pub use diagnostic::{LegionDiagnostic, LegionSeverity, LegionSpan, LegionStage};
