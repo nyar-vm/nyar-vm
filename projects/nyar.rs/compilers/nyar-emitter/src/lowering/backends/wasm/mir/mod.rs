@@ -60,6 +60,7 @@ pub(super) use type_registry::*;
 
 // ── Submodules ────────────────────────────────────────────────────────────
 
+mod abi_schema;
 mod calls;
 mod control;
 mod encode;
