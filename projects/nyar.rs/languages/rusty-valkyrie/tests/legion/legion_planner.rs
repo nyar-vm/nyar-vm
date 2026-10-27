@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -9,6 +10,7 @@ use crate::support::{
 };
 use rusty_valkyrie::legion::{
     CanonicalTarget,
+    cache::compute_artifact_hash,
     workspace::planner::{BuildRequest, ProjectResolutionMode, WorkspaceResolver, canonical_target},
 };
 use tempfile::{Builder, TempDir};
@@ -25,6 +27,25 @@ fn canonicalizes_short_targets() {
     assert_eq!(canonical_target("jvm").unwrap().to_string(), "jvm-openjdk-unknown-managed");
     assert_eq!(canonical_target("wasm").unwrap().to_string(), "wasm32-unknown-browser-wasm");
     assert_eq!(canonical_target("node").unwrap().to_string(), "wasm32-node-unknown-wasm");
+}
+
+#[test]
+fn artifact_cache_identity_tracks_enabled_features() {
+    let directory = Builder::new().prefix("legion-cache-features").tempdir().unwrap();
+    let source = directory.path().join("main.v");
+    let manifest = directory.path().join("legion.von");
+    fs::write(&source, "micro main() -> i64 { return 0 }\n").unwrap();
+    fs::write(&manifest, "target: clr\n").unwrap();
+    let hash_for = |features: &[&str]| {
+        let enabled = features.iter().map(|feature| feature.to_string()).collect::<BTreeSet<_>>();
+        compute_artifact_hash(&[source.clone()], &[manifest.clone()], "clr", false, false, &enabled).unwrap()
+    };
+
+    let empty = hash_for(&[]);
+    let fetch = hash_for(&["fetch"]);
+    assert_ne!(empty, fetch, "same sources with a different feature set must not share cache identity");
+    assert_ne!(fetch, hash_for(&["fetch", "tls"]));
+    assert_eq!(fetch, hash_for(&["fetch"]), "feature identity must be stable across equivalent sets");
 }
 
 #[test]
@@ -46,7 +67,7 @@ micro main() -> i64 {
             project_dir: fixture.project_dir.clone(),
             target: CanonicalTarget::parse("node").unwrap(),
             output_dir: None,
-        ..Default::default()
+            ..Default::default()
         })
         .unwrap();
     assert_eq!(plan.output_dir, fixture.project_dir.join("dist").join("wasm32-node-unknown-wasm"));
@@ -70,9 +91,9 @@ fn synthesizes_cli_build_target_for_library_without_manifest_entry() {
     );
     let workspace = WorkspaceResolver::discover(&fixture.project_dir).unwrap();
     let nyar = CanonicalTarget::parse("ovm").unwrap();
-    let plan = workspace.build_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target: nyar, output_dir: None,
-    ..Default::default()
-    }).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target: nyar, output_dir: None, ..Default::default() })
+        .unwrap();
     assert_eq!(plan.project.build_target.target, nyar);
 }
 
@@ -90,8 +111,11 @@ fn discovers_temp_workspace_build_plan() {
     );
     let workspace = WorkspaceResolver::discover(&fixture.project_dir).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-        ..Default::default()
+        .build_plan(&BuildRequest {
+            project_dir: fixture.project_dir.clone(),
+            target: CanonicalTarget::clr(),
+            output_dir: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -139,8 +163,11 @@ fn resolves_root_manifest_without_workspace_as_script_mode() {
     assert!(workspace.workspace_manifest.is_none());
 
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: temp_dir.path().to_path_buf(), target: CanonicalTarget::clr(), output_dir: None,
-        ..Default::default()
+        .build_plan(&BuildRequest {
+            project_dir: temp_dir.path().to_path_buf(),
+            target: CanonicalTarget::clr(),
+            output_dir: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -170,8 +197,11 @@ fn resolves_workspace_member_from_nested_source_directory() {
 
     let workspace = WorkspaceResolver::discover_for_project(fixture.project_dir.join("source")).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: fixture.project_dir.join("source"), target: CanonicalTarget::clr(), output_dir: None,
-        ..Default::default()
+        .build_plan(&BuildRequest {
+            project_dir: fixture.project_dir.join("source"),
+            target: CanonicalTarget::clr(),
+            output_dir: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -200,8 +230,11 @@ fn resolves_local_package_from_nested_source_directory() {
 
     let workspace = WorkspaceResolver::discover_for_project(fixture.project_dir.join("source")).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: fixture.project_dir.join("source"), target: CanonicalTarget::clr(), output_dir: None,
-        ..Default::default()
+        .build_plan(&BuildRequest {
+            project_dir: fixture.project_dir.join("source"),
+            target: CanonicalTarget::clr(),
+            output_dir: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -230,8 +263,11 @@ fn keeps_nested_workspace_member_layout_in_workspace_mode() {
 
     let workspace = WorkspaceResolver::discover_for_project(fixture.project_dir.join("source")).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: fixture.project_dir.join("source"), target: CanonicalTarget::clr(), output_dir: None,
-        ..Default::default()
+        .build_plan(&BuildRequest {
+            project_dir: fixture.project_dir.join("source"),
+            target: CanonicalTarget::clr(),
+            output_dir: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -262,8 +298,11 @@ fn discovers_nested_workspace_members_from_parent_workspace() {
 
     let workspace = WorkspaceResolver::discover(&outer_workspace_root).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-        ..Default::default()
+        .build_plan(&BuildRequest {
+            project_dir: fixture.project_dir.clone(),
+            target: CanonicalTarget::clr(),
+            output_dir: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -284,9 +323,7 @@ fn nested_legion_tools_resolves_outer_core_via_outermost_workspace() {
 
     for target in [CanonicalTarget::clr(), CanonicalTarget::jvm(), CanonicalTarget::parse("node").unwrap()] {
         let plan = workspace
-            .build_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target, output_dir: None,
-            ..Default::default()
-            })
+            .build_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target, output_dir: None, ..Default::default() })
             .unwrap_or_else(|error| panic!("expected plan for {target}: {error}"));
         assert_eq!(plan.project.name, "legion.tools");
         assert!(
@@ -302,8 +339,11 @@ fn builds_legion_tools_like_plan_with_explicit_dependency_closure() {
     let fixture = create_legion_tools_workspace_fixture();
     let workspace = WorkspaceResolver::discover(&fixture.project_dir).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-        ..Default::default()
+        .build_plan(&BuildRequest {
+            project_dir: fixture.project_dir.clone(),
+            target: CanonicalTarget::clr(),
+            output_dir: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -335,8 +375,11 @@ fn prefers_workspace_dependency_under_auto_source() {
     let fixture = create_legion_tools_workspace_fixture();
     let workspace = WorkspaceResolver::discover(&fixture.project_dir).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-        ..Default::default()
+        .build_plan(&BuildRequest {
+            project_dir: fixture.project_dir.clone(),
+            target: CanonicalTarget::clr(),
+            output_dir: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -380,10 +423,9 @@ fn reports_registry_dependency_without_version() {
     .unwrap();
     fs::write(app_dir.join("source").join("main.v"), "micro main() -> i64 { return 0; }\n").unwrap();
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
-    let error =
-        workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-        ..Default::default()
-        }).unwrap_err();
+    let error = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None, ..Default::default() })
+        .unwrap_err();
     let rendered = error.to_string();
     assert!(rendered.contains("source=registry but no version is provided"));
 }
@@ -425,10 +467,9 @@ fn reports_forced_workspace_dependency_missing() {
     .unwrap();
     fs::write(app_dir.join("source").join("main.v"), "micro main() -> i64 { return 0; }\n").unwrap();
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
-    let error =
-        workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-        ..Default::default()
-        }).unwrap_err();
+    let error = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None, ..Default::default() })
+        .unwrap_err();
     let rendered = error.to_string();
     assert!(rendered.contains("requires workspace dependency"));
 }
@@ -510,9 +551,9 @@ fn collects_transitive_registry_dependency_sources() {
     fs::write(app_dir.join("source").join("main.v"), "micro main() -> i64 { return 0; }\n").unwrap();
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
-    let plan = workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-    ..Default::default()
-    }).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None, ..Default::default() })
+        .unwrap();
 
     assert!(plan.project.dependencies.iter().any(|dep| dep.name == "parent.lib"));
     assert!(plan.project.source_files.iter().any(|path| path.ends_with("parent.v")));
@@ -915,27 +956,29 @@ fn filters_and_injects_sdk_vendor_by_publish_format() {
 
     let workspace = WorkspaceResolver::discover(&app_game_dir).unwrap();
 
-    let game_plan =
-        workspace.build_plan(&BuildRequest { project_dir: app_game_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None,
-        ..Default::default()
-        }).unwrap();
+    let game_plan = workspace
+        .build_plan(&BuildRequest {
+            project_dir: app_game_dir.clone(),
+            target: CanonicalTarget::wasm(),
+            output_dir: None,
+            ..Default::default()
+        })
+        .unwrap();
     let game_deps: Vec<&str> = game_plan.project.dependencies.iter().map(|d| d.name.as_str()).collect();
     assert!(game_deps.contains(&"tencent.wechat.sdk"), "mini-game should inject wechat sdk: {game_deps:?}");
     assert!(!game_deps.contains(&"tencent.wechat.miniprogram.sdk"));
     assert_eq!(game_plan.project.build_target.publish, vec!["mini-game".to_string()]);
 
-    let web_plan =
-        workspace.build_plan(&BuildRequest { project_dir: app_web_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None,
-        ..Default::default()
-        }).unwrap();
+    let web_plan = workspace
+        .build_plan(&BuildRequest { project_dir: app_web_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None, ..Default::default() })
+        .unwrap();
     let web_deps: Vec<&str> = web_plan.project.dependencies.iter().map(|d| d.name.as_str()).collect();
     assert!(!web_deps.contains(&"tencent.wechat.sdk"), "web-app must not see mini-game sdk: {web_deps:?}");
     assert!(!web_deps.contains(&"tencent.wechat.miniprogram.sdk"));
 
-    let mp_plan =
-        workspace.build_plan(&BuildRequest { project_dir: app_mp_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None,
-        ..Default::default()
-        }).unwrap();
+    let mp_plan = workspace
+        .build_plan(&BuildRequest { project_dir: app_mp_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None, ..Default::default() })
+        .unwrap();
     let mp_deps: Vec<&str> = mp_plan.project.dependencies.iter().map(|d| d.name.as_str()).collect();
     assert!(mp_deps.contains(&"tencent.wechat.miniprogram.sdk"), "mini-program injects mp sdk: {mp_deps:?}");
     assert!(!mp_deps.contains(&"tencent.wechat.sdk"));
@@ -1049,8 +1092,11 @@ fn injects_distribution_default_adaptors_at_root_without_reverse_std_edge() {
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::parse("ovm").unwrap(), output_dir: None,
-        ..Default::default()
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::parse("ovm").unwrap(),
+            output_dir: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -1226,7 +1272,7 @@ micro get(url: utf8): utf8 { return ""; }
             project_dir: app_dir.clone(),
             target: CanonicalTarget::parse("clr-microsoft-unknown-managed").unwrap(),
             output_dir: None,
-        ..Default::default()
+            ..Default::default()
         })
         .unwrap();
 
@@ -1363,9 +1409,9 @@ micro write(message: utf8): unit {
     .unwrap();
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
-    let plan = workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-    ..Default::default()
-    }).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None, ..Default::default() })
+        .unwrap();
 
     let dependency_names: Vec<&str> = plan.project.dependencies.iter().map(|item| item.name.as_str()).collect();
     assert_eq!(dependency_names, vec!["std.adaptor.clr"]);
@@ -1425,9 +1471,9 @@ micro write(message: utf8): unit {
     .unwrap();
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
-    let plan = workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-    ..Default::default()
-    }).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None, ..Default::default() })
+        .unwrap();
 
     assert_eq!(plan.project.host_contracts.len(), 1);
     assert_eq!(plan.project.host_contracts[0].id, "demo::write");
@@ -1523,9 +1569,9 @@ imply demo.Writer {
     .unwrap();
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
-    let plan = workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-    ..Default::default()
-    }).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None, ..Default::default() })
+        .unwrap();
 
     assert_eq!(plan.project.host_contracts.len(), 1);
     assert_eq!(plan.project.host_contracts[0].id, "demo::Writer::write");
@@ -1613,9 +1659,9 @@ micro clear(): unit {
     .unwrap();
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
-    let plan = workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-    ..Default::default()
-    }).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None, ..Default::default() })
+        .unwrap();
 
     assert_eq!(plan.project.host_contracts.len(), 1);
     assert_eq!(plan.project.host_contracts[0].id, "demo::clear");
@@ -1703,9 +1749,9 @@ micro clear(): unit {
     .unwrap();
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
-    let plan = workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-    ..Default::default()
-    }).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None, ..Default::default() })
+        .unwrap();
 
     assert_eq!(plan.project.host_contracts.len(), 1);
     assert_eq!(plan.project.host_contracts[0].id, "demo::clear");
@@ -1851,14 +1897,9 @@ micro write(message: utf8): unit {
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let error = workspace
-        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None, ..Default::default() })
         .unwrap_err();
-    assert!(
-        error.to_string().contains("ambiguous host provider"),
-        "expected conflicting CLR providers, got: {error}"
-    );
+    assert!(error.to_string().contains("ambiguous host provider"), "expected conflicting CLR providers, got: {error}");
 }
 
 #[test]
@@ -1939,9 +1980,9 @@ micro write(message: utf8): unit {
     .unwrap();
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
-    let plan = workspace.build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None,
-    ..Default::default()
-    }).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None, ..Default::default() })
+        .unwrap();
 
     assert_eq!(plan.project.host_contracts.len(), 1);
     assert_eq!(plan.project.host_contracts[0].id, "demo::write");
@@ -1991,8 +2032,11 @@ fn resolves_path_dependency_outside_workspace() {
 
     let workspace = WorkspaceResolver::discover_for_project(&app_dir).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::parse("node").unwrap(), output_dir: None,
-        ..Default::default()
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::parse("node").unwrap(),
+            output_dir: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -2103,19 +2147,10 @@ micro wechat_fetch(url: utf8): utf8 {
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let browser_plan = workspace
-        .build_plan(&BuildRequest {
-            project_dir: app_dir.clone(),
-            target: CanonicalTarget::wasm(),
-            output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None, ..Default::default() })
         .unwrap();
-    let browser_provider = browser_plan
-        .project
-        .selected_host_providers
-        .iter()
-        .find(|provider| provider.contract.contains("fetch"))
-        .expect("fetch provider");
+    let browser_provider =
+        browser_plan.project.selected_host_providers.iter().find(|provider| provider.contract.contains("fetch")).expect("fetch provider");
     assert_eq!(browser_provider.symbol, "std::adaptor::wasm::fetch::browser_fetch");
     assert_eq!(browser_provider.required_capabilities, vec!["js.fetch".to_string()]);
 
@@ -2132,19 +2167,10 @@ micro wechat_fetch(url: utf8): utf8 {
 
     let mp_workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let mp_plan = mp_workspace
-        .build_plan(&BuildRequest {
-            project_dir: app_dir.clone(),
-            target: miniprogram_target,
-            output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: miniprogram_target, output_dir: None, ..Default::default() })
         .unwrap();
-    let wx_provider = mp_plan
-        .project
-        .selected_host_providers
-        .iter()
-        .find(|provider| provider.contract.contains("fetch"))
-        .expect("wx fetch provider");
+    let wx_provider =
+        mp_plan.project.selected_host_providers.iter().find(|provider| provider.contract.contains("fetch")).expect("wx fetch provider");
     assert_eq!(wx_provider.symbol, "std::adaptor::wasm::fetch::wechat_fetch");
     assert_eq!(wx_provider.required_capabilities, vec!["js.wx.request".to_string()]);
 }
@@ -2243,19 +2269,10 @@ micro miniprogram_get(url: utf8): utf8 {
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let browser_plan = workspace
-        .build_plan(&BuildRequest {
-            project_dir: app_dir.clone(),
-            target: CanonicalTarget::wasm(),
-            output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None, ..Default::default() })
         .unwrap();
-    let browser_get = browser_plan
-        .project
-        .selected_host_providers
-        .iter()
-        .find(|provider| provider.contract.contains("get"))
-        .expect("get provider");
+    let browser_get =
+        browser_plan.project.selected_host_providers.iter().find(|provider| provider.contract.contains("get")).expect("get provider");
     assert_eq!(browser_get.symbol, "std::adaptor::wasm::net::browser_get");
     assert_eq!(browser_get.required_capabilities, vec!["js.fetch".to_string()]);
 
@@ -2272,19 +2289,9 @@ micro miniprogram_get(url: utf8): utf8 {
 
     let mp_plan = WorkspaceResolver::discover(&app_dir)
         .unwrap()
-        .build_plan(&BuildRequest {
-            project_dir: app_dir.clone(),
-            target: miniprogram_target,
-            output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: miniprogram_target, output_dir: None, ..Default::default() })
         .unwrap();
-    let wx_get = mp_plan
-        .project
-        .selected_host_providers
-        .iter()
-        .find(|provider| provider.contract.contains("get"))
-        .expect("wx get provider");
+    let wx_get = mp_plan.project.selected_host_providers.iter().find(|provider| provider.contract.contains("get")).expect("wx get provider");
     assert_eq!(wx_get.symbol, "std::adaptor::wasm::net::miniprogram_get");
     assert_eq!(wx_get.required_capabilities, vec!["js.wx.request".to_string()]);
 }
@@ -2379,26 +2386,12 @@ micro js_random_next_i32(seed: i32): i32 {
     .unwrap();
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest {
-            project_dir: app_dir.clone(),
-            target: CanonicalTarget::wasm(),
-            output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None, ..Default::default() })
         .unwrap();
-    let wasm_group = plan
-        .project
-        .semantic_source_groups
-        .iter()
-        .find(|group| group.name == "std.adaptor.wasm")
-        .expect("wasm adaptor group");
+    let wasm_group = plan.project.semantic_source_groups.iter().find(|group| group.name == "std.adaptor.wasm").expect("wasm adaptor group");
     assert_eq!(wasm_group.source_files.len(), 1);
-    let selected = plan
-        .project
-        .selected_host_providers
-        .iter()
-        .find(|provider| provider.contract.contains("random_next_i32"))
-        .expect("random provider");
+    let selected =
+        plan.project.selected_host_providers.iter().find(|provider| provider.contract.contains("random_next_i32")).expect("random provider");
     assert_eq!(selected.symbol, "std::adaptor::wasm::js_random_next_i32");
     assert_eq!(selected.required_capabilities, vec!["js.random".to_string()]);
     assert_eq!(selected.foreign_bindings, vec![r#"js("random")"#.to_string()]);
@@ -2494,27 +2487,13 @@ micro wasi_random_next_i32(seed: i32): i32
 
     let plan = WorkspaceResolver::discover(&app_dir)
         .unwrap()
-        .build_plan(&BuildRequest {
-            project_dir: app_dir.clone(),
-            target: CanonicalTarget::wasi(),
-            output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::wasi(), output_dir: None, ..Default::default() })
         .unwrap();
     assert!(
-        !plan
-            .project
-            .semantic_source_groups
-            .iter()
-            .any(|group| group.name == "std.adaptor.wasm"),
+        !plan.project.semantic_source_groups.iter().any(|group| group.name == "std.adaptor.wasm"),
         "wasi build must not include std.adaptor.wasm"
     );
-    let wasi_group = plan
-        .project
-        .semantic_source_groups
-        .iter()
-        .find(|group| group.name == "std.adaptor.wasi")
-        .expect("wasi adaptor group");
+    let wasi_group = plan.project.semantic_source_groups.iter().find(|group| group.name == "std.adaptor.wasi").expect("wasi adaptor group");
     assert_eq!(wasi_group.source_files.len(), 1);
     let selected = plan
         .project
@@ -2587,12 +2566,7 @@ micro main() -> i32 {
 
     let plan = WorkspaceResolver::discover(&app_dir)
         .unwrap()
-        .build_plan(&BuildRequest {
-            project_dir: app_dir.clone(),
-            target: CanonicalTarget::wasm(),
-            output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None, ..Default::default() })
         .unwrap();
     assert!(
         plan.project.selected_host_providers.is_empty(),
@@ -2693,22 +2667,13 @@ micro browser_fetch(url: utf8): utf8 { return "" }
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest {
-            project_dir: app_dir.clone(),
-            target: CanonicalTarget::wasm(),
-            output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None, ..Default::default() })
         .unwrap();
 
     assert_eq!(plan.project.selected_host_providers.len(), 1);
     assert!(plan.project.selected_host_providers[0].contract.contains("random_next_i32"));
     assert!(
-        !plan
-            .project
-            .selected_host_providers
-            .iter()
-            .any(|provider| provider.contract.contains("fetch")),
+        !plan.project.selected_host_providers.iter().any(|provider| provider.contract.contains("fetch")),
         "fetch must be pruned when entry closure does not reference it"
     );
 }
@@ -2801,17 +2766,9 @@ micro fetch_b(url: utf8): utf8 { return "" }
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let error = workspace
-        .build_plan(&BuildRequest {
-            project_dir: app_dir.clone(),
-            target: CanonicalTarget::wasm(),
-            output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None, ..Default::default() })
         .unwrap_err();
-    assert!(
-        error.to_string().contains("ambiguous host provider"),
-        "expected conflicting providers, got: {error}"
-    );
+    assert!(error.to_string().contains("ambiguous host provider"), "expected conflicting providers, got: {error}");
 }
 
 #[test]
@@ -2898,17 +2855,9 @@ micro js_random_next_i32(seed: i32): i32 { return 0 }
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let error = workspace
-        .build_plan(&BuildRequest {
-            project_dir: app_dir.clone(),
-            target: CanonicalTarget::wasi(),
-            output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::wasi(), output_dir: None, ..Default::default() })
         .unwrap_err();
-    assert!(
-        error.to_string().contains("no provider compatible with target capabilities"),
-        "expected capability mismatch, got: {error}"
-    );
+    assert!(error.to_string().contains("no provider compatible with target capabilities"), "expected capability mismatch, got: {error}");
 }
 
 #[test]
@@ -3000,12 +2949,7 @@ micro fetch_browser(url: utf8): utf8 { return "" }
 
     let error = WorkspaceResolver::discover(&app_dir)
         .unwrap()
-        .build_plan(&BuildRequest {
-            project_dir: app_dir.clone(),
-            target: CanonicalTarget::wasm(),
-            output_dir: None,
-        ..Default::default()
-        })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::wasm(), output_dir: None, ..Default::default() })
         .unwrap_err();
     assert!(
         error.to_string().contains("ambiguous host provider"),
@@ -3071,8 +3015,11 @@ fn local_config_overrides_git_dependency_with_path() {
 
     let workspace = WorkspaceResolver::discover_for_project(&app_dir).unwrap();
     let plan = workspace
-        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::parse("node").unwrap(), output_dir: None,
-        ..Default::default()
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::parse("node").unwrap(),
+            output_dir: None,
+            ..Default::default()
         })
         .unwrap();
 

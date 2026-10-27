@@ -7,11 +7,13 @@ use std::{collections::BTreeSet, fs, path::PathBuf};
 
 use nyar::CanonicalTarget;
 
-use crate::compiler::syntax::oak::{ast::StatementNode, namespace_is_declaration_only, parse_source, ValkyrieRoot};
+use crate::compiler::syntax::oak::{ValkyrieRoot, ast::StatementNode, namespace_is_declaration_only, parse_source};
 
-use super::ast_attributes::{gate_attributes_from_items, when_attributes_from_items};
-use super::condition_eval::{gate_axis_passes, target_axis_passes};
-use super::types::{FileLevelConditionItems, PlannedSemanticSourceGroup, PlannerError, PlannerResult};
+use super::{
+    ast_attributes::{gate_attributes_from_items, when_attributes_from_items},
+    condition_eval::{gate_axis_passes, target_axis_passes},
+    types::{FileLevelConditionItems, PlannedSemanticSourceGroup, PlannerError, PlannerResult},
+};
 
 /// 读取源码并判断该文件是否参与当前 target + feature set 的语义图。
 ///
@@ -32,15 +34,14 @@ pub(crate) fn source_file_active_for_target_and_features(
     match parse_source(&source) {
         Ok(root) => match file_level_condition_items_from_root(&root) {
             None => true,
-            Some(items) => {
-                target_axis_passes(&items.whens, target) && gate_axis_passes(&items.gates, enabled_features)
-            }
+            Some(items) => target_axis_passes(&items.whens, target) && gate_axis_passes(&items.gates, enabled_features),
         },
         Err(_) => false,
     }
 }
 
-/// 兼容旧签名：不传 feature 时 gate 轴视为空 gate 恒通过。
+/// 兼容旧签名：不传 feature 上下文时，无 gate 的文件照常通过；带 gate 的文件得到
+/// `Unknown`，按 fail-closed 不参与构建。
 #[allow(dead_code)]
 pub(crate) fn source_file_active_for_target(source: &str, target: CanonicalTarget) -> bool {
     source_file_active_for_target_and_features(source, target, None)
@@ -114,9 +115,15 @@ fn filter_paths_for_target(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+
     use nyar::CanonicalTarget;
 
     use super::super::target_when::when_item_matches_target;
+
+    fn feature_set(values: &[&str]) -> BTreeSet<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
 
     #[test]
     fn file_when_browser_file_inactive_on_wasi() {
@@ -178,8 +185,33 @@ namespace std.adaptor.wasm.fetch;
         assert_eq!(items.gates[0].key, "feature");
         assert_eq!(items.gates[0].value, "fetch");
         assert_eq!(items.whens.len(), 1);
-        assert!(source_file_active_for_target(source, CanonicalTarget::wasm()));
-        assert!(!source_file_active_for_target(source, CanonicalTarget::wasi()));
+        let enabled = feature_set(&["fetch"]);
+        assert!(source_file_active_for_target_and_features(source, CanonicalTarget::wasm(), Some(&enabled)));
+        assert!(!source_file_active_for_target_and_features(source, CanonicalTarget::wasi(), Some(&enabled)));
+        // 未提供 feature 上下文 → Unknown → fail-closed 不参与构建。
+        assert!(!source_file_active_for_target(source, CanonicalTarget::wasm()));
+    }
+
+    #[test]
+    fn file_level_gate_requires_explicit_feature_context() {
+        let source = r#"[gate(feature = "fetch")]
+namespace std.adaptor.wasm.fetch;
+"#;
+        let enabled = feature_set(&["fetch"]);
+        let disabled = feature_set(&[]);
+        assert!(source_file_active_for_target_and_features(source, CanonicalTarget::wasm(), Some(&enabled)));
+        assert!(!source_file_active_for_target_and_features(source, CanonicalTarget::wasm(), Some(&disabled)));
+        assert!(!source_file_active_for_target(source, CanonicalTarget::wasm()));
+    }
+
+    #[test]
+    fn file_level_unknown_gate_key_fails_closed() {
+        let source = r#"[gate(vendor = "browser")]
+namespace std.adaptor.wasm;
+"#;
+        let enabled = feature_set(&["fetch"]);
+        assert!(!source_file_active_for_target_and_features(source, CanonicalTarget::wasm(), Some(&enabled)));
+        assert!(!source_file_active_for_target(source, CanonicalTarget::wasm()));
     }
 
     #[test]
@@ -198,8 +230,8 @@ namespace x;
     fn valkyrie_corpus_fetch_when_files_track_target() {
         use std::path::PathBuf;
 
-        let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../../../valkyrie.v/projects/std.adaptors._/std.adaptor.wasm/source");
+        let corpus =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../../valkyrie.v/projects/std.adaptors._/std.adaptor.wasm/source");
         if !corpus.is_dir() {
             eprintln!("skip: valkyrie.v adaptor source not beside nyar-vm.rs");
             return;

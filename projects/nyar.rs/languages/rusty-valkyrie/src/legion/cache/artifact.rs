@@ -1,6 +1,7 @@
 //! Artifact-set bundle serialization for `legion build` IR cache.
 
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -76,19 +77,24 @@ pub fn toolchain_fingerprint() -> String {
     )
 }
 
-/// Compute artifact cache hash from sources + target + build flags + toolchain.
+/// Compute artifact cache hash from sources + target + build flags + enabled features + toolchain.
+///
+/// `enabled_features` is a `BTreeSet`, so its encoded form is stable regardless of insertion
+/// order: identical source trees with different feature sets never share a cache identity.
 pub fn compute_artifact_hash(
     source_files: &[PathBuf],
     manifest_files: &[PathBuf],
     canonical_triple: &str,
     wat: bool,
     runtime_async: bool,
+    enabled_features: &BTreeSet<String>,
 ) -> std::result::Result<String, String> {
     let sources = files_hash(source_files).map_err(|e| e.to_string())?;
     let manifests = files_hash(manifest_files).map_err(|e| e.to_string())?;
     let flags = format!("{}{}", if wat { '1' } else { '0' }, if runtime_async { '1' } else { '0' });
+    let features = enabled_features.iter().map(|feature| format!("{}:{}", feature.len(), feature)).collect::<Vec<_>>().join(",");
     let toolchain = toolchain_fingerprint();
-    Ok(combined_hash(&[&sources, &manifests, canonical_triple, &flags, &toolchain]))
+    Ok(combined_hash(&[&sources, &manifests, canonical_triple, &flags, &features, &toolchain]))
 }
 
 /// Collect output directory files into a cacheable bundle.

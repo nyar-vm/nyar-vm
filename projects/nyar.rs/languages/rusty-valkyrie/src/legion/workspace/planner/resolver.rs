@@ -115,7 +115,8 @@ impl WorkspaceResolver {
     ///
     /// 存在 `legions.von` 时，批量构建只遍历这些成员（例如 `leetcode.v`），不含 `discover_for_project` 临时注入的包。
     pub fn legions_member_dirs(&self) -> Vec<PathBuf> {
-        let Some(workspace_manifest) = &self.workspace_manifest else {
+        let Some(workspace_manifest) = &self.workspace_manifest
+        else {
             return self.projects.keys().cloned().collect();
         };
         let mut dirs = Vec::new();
@@ -231,11 +232,13 @@ impl WorkspaceResolver {
             Some(&request.enabled_features),
         )?;
         let source_files = filter_source_files_for_target(source_files, request.target, Some(&request.enabled_features))?;
-        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
+        let host_inventory =
+            host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
 
         Ok(BuildPlan {
             workspace_root: self.root_dir.clone(),
             output_dir,
+            enabled_features: request.enabled_features.clone(),
             project: PlannedProject {
                 name: manifest.name.clone(),
                 manifest_dir: project_dir.clone(),
@@ -300,12 +303,14 @@ impl WorkspaceResolver {
             Some(&request.enabled_features),
         )?;
         let source_files = filter_source_files_for_target(source_files, request.target, Some(&request.enabled_features))?;
-        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
+        let host_inventory =
+            host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
 
         Ok((
             BuildPlan {
                 workspace_root: self.root_dir.clone(),
                 output_dir,
+                enabled_features: request.enabled_features.clone(),
                 project: PlannedProject {
                     name: manifest.name.clone(),
                     manifest_dir: project_dir.clone(),
@@ -512,11 +517,13 @@ impl WorkspaceResolver {
             Some(&request.enabled_features),
         )?;
         let source_files = filter_source_files_for_target(source_files, request.target, Some(&request.enabled_features))?;
-        let host_inventory = host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
+        let host_inventory =
+            host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
 
         Ok(BuildPlan {
             workspace_root: self.root_dir.clone(),
             output_dir,
+            enabled_features: request.enabled_features.clone(),
             project: PlannedProject {
                 name: manifest.name.clone(),
                 manifest_dir: project_dir.clone(),

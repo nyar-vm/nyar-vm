@@ -53,11 +53,8 @@ pub fn run(args: &BuildArgs) -> LegionResult<ExitCode> {
         return run_all_workspace_members(args);
     }
 
-    let request = BuildRequest {
-        project_dir: project_input,
-        target: args.target.clone(),
-        output_dir: args.output_dir.clone(),
-        ..Default::default() };
+    let request =
+        BuildRequest { project_dir: project_input, target: args.target.clone(), output_dir: args.output_dir.clone(), ..Default::default() };
     let plan = workspace.build_plan(&request)?;
 
     println!("workspace: {}", crate::legion::cmds::path_for_cli_log(&plan.workspace_root));
@@ -69,12 +66,8 @@ pub fn run(args: &BuildArgs) -> LegionResult<ExitCode> {
     println!("host contracts: {}", plan.project.host_contracts.len());
     println!("selected host providers: {}", plan.project.selected_host_providers.len());
     let host_capabilities = {
-        let mut capabilities = plan
-            .project
-            .selected_host_providers
-            .iter()
-            .flat_map(|provider| provider.required_capabilities.iter().cloned())
-            .collect::<Vec<_>>();
+        let mut capabilities =
+            plan.project.selected_host_providers.iter().flat_map(|provider| provider.required_capabilities.iter().cloned()).collect::<Vec<_>>();
         capabilities.sort();
         capabilities.dedup();
         capabilities
@@ -141,7 +134,8 @@ fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
                 project_dir: project_dir.clone(),
                 target: requested_target.clone(),
                 output_dir: args.output_dir.clone(),
-                ..Default::default() };
+                ..Default::default()
+            };
             match workspace.build_plan(&request) {
                 Ok(_) => true,
                 Err(crate::legion::workspace::planner::PlannerError::MissingBuildTarget { .. }) => {
@@ -159,11 +153,7 @@ fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
         return Err(LegionError::msg(report!("workspace 没有可构建成员")));
     }
 
-    println!(
-        "workspace mode: 顺序构建 {} 个成员（{}）",
-        members.len(),
-        crate::legion::cmds::path_for_cli_log(&workspace.root_dir)
-    );
+    println!("workspace mode: 顺序构建 {} 个成员（{}）", members.len(), crate::legion::cmds::path_for_cli_log(&workspace.root_dir));
 
     let mut failures = Vec::new();
     for project_dir in members {
@@ -213,6 +203,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
         &canonical_triple,
         plan.project.build_target.wat,
         plan.project.build_target.runtime_async,
+        &plan.enabled_features,
     )
     .map_err(|error| report!("{error}"))?;
 
@@ -227,8 +218,8 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     let clr_suspend_strategy = ClrSuspendStrategy::from_runtime_async_flag(plan.project.build_target.runtime_async);
     let wasm_package_kind = wasm_package_kind_for_manifest(plan.project.artifact_kind);
     fs::create_dir_all(&plan.output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", plan.output_dir.display())))?;
-    let host_bindings = compiler_host_provider_bindings(&plan.project.selected_host_providers)
-        .map_err(|error| LegionError::msg(report!("{error}")))?;
+    let host_bindings =
+        compiler_host_provider_bindings(&plan.project.selected_host_providers).map_err(|error| LegionError::msg(report!("{error}")))?;
     let build_context = CompilerBuildContext::new(arch, plan.project.build_target.target.clone(), clr_suspend_strategy, wasm_package_kind)
         .with_selected_host_providers(host_bindings);
     let artifact = compile_source_groups_to_artifacts(
