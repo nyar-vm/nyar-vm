@@ -69,10 +69,42 @@ fn build_node_launcher_library_mode_exposes_call_export_without_main_dispatch() 
 
 #[test]
 fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
-    let spec = r#"{"exports":{"twoSum":{"params":["list_i64","i64"],"returns":"list_i64"}},"glue":{"list_i64":{"new":"__nyar_glue.ArrayList.new","push":"__nyar_glue.ArrayList.push","length":"__nyar_glue.ArrayList.length","at":"__nyar_glue_list_i64_at"}}}"#;
+    // `nyar.library_invoke` v5 合同：结构化 WasmAbiType schema + glue_entries + abi_digest。
+    // abi_digest 在启动壳里只做携带，不参与校验，因此这里用固定占位值；真实值由
+    // `library_glue::abi_contract_digest` 在编译期计算。
+    let spec = r#"{
+        "exports": {
+            "twoSum": {
+                "params": [
+                    {"kind":"NamedAggregate","name":"ArrayList","module_path":"std::collections","generic_args":[{"kind":"I64"}]},
+                    {"kind":"I64"}
+                ],
+                "returns": {"kind":"NamedAggregate","name":"ArrayList","module_path":"std::collections","generic_args":[{"kind":"I64"}]}
+            }
+        },
+        "glue_entries": [
+            {
+                "kind": "NamedAggregate",
+                "name": "ArrayList",
+                "module_path": "std::collections",
+                "generic_args": [{"kind":"I64"}],
+                "operations": [
+                    {"operation":"construct","export_name":"$ArrayList_i64_new","param_carriers":["i64"],"return_carrier":"i32","export_source":"backend_synthetic"},
+                    {"operation":"push","export_name":"$ArrayList_i64_push","param_carriers":["i32","i64"],"return_carrier":"void","export_source":"backend_synthetic"},
+                    {"operation":"length","export_name":"$ArrayList_i64_len","param_carriers":["i32"],"return_carrier":"i32","export_source":"backend_synthetic"},
+                    {"operation":"at","export_name":"$ArrayList_i64_at","param_carriers":["i32","i32"],"return_carrier":"i64","export_source":"backend_synthetic"}
+                ],
+                "source": "backend_synthetic",
+                "status": "ready"
+            }
+        ],
+        "abi_digest": "sha256-fixture"
+    }"#;
     let launcher = build_node_launcher("demo", &[], &[], true, Some(spec));
     assert!(launcher.contains("marshalLibraryArg"), "library glue must marshal args from invoke spec");
     assert!(launcher.contains("demarshalLibraryReturn"), "library glue must demarshal returns from invoke spec");
+    assert!(launcher.contains("glue_entries"), "launcher must carry the glue_entries contract verbatim");
+    assert!(launcher.contains("abi_digest"), "launcher must carry the ABI digest verbatim");
 }
 
 #[test]
