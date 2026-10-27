@@ -530,6 +530,8 @@ pub enum HirError {
         codes: Vec<String>,
         /// owning module 符号。
         module: String,
+        /// 下游 `DiagnosticRecord::message`（供 Legion / 矩阵排障；catalog 仍以 code 为准）。
+        messages: Vec<String>,
     },
     /// 源码使用了已移除的旧内建类型别名。
     ///
