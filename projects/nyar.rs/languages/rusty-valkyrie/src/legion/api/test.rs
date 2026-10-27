@@ -26,12 +26,26 @@ use std::{
 /// `test_project` 输入（无 argv 解析）。
 #[derive(Debug, Clone, Default)]
 pub struct LegionTestSelector {
+    /// 目标标签列表；`None` 时 API 层用默认（= `legion`）。
+    ///
+    /// CLI 在传入前会先做 `--target all` / `clr,jvm` 展开。
+    pub targets: Option<Vec<String>>,
     /// 测试名过滤器（大小写不敏感子串匹配）。
     pub filter: Option<String>,
     /// 显式 runner 覆盖列表，格式 `target=command`。
     pub runner_overrides: Vec<String>,
     /// 详细输出（CLI 用）。
     pub verbose: bool,
+}
+
+impl LegionTestSelector {
+    /// 得到实际要跑的 target 列表。
+    pub fn resolved_targets(&self) -> Vec<String> {
+        match &self.targets {
+            Some(list) if !list.is_empty() => list.clone(),
+            _ => resolve_test_targets(None),
+        }
+    }
 }
 
 /// 单条测试用例结果（API 合同）。
@@ -80,6 +94,27 @@ pub struct LegionTestReport {
     pub exit_code: ExitCode,
 }
 
+impl LegionTestReport {
+    /// 把所有 target / 所有用例展平成 `TestResultEntry` 列表。
+    ///
+    /// CLI HTML 报告需要 `TestResultEntry`，API 层自己不直接依赖它做
+    /// 结构，只在 CLI 渲染层做一次薄转换。
+    pub fn flatten_entries(&self) -> Vec<TestResultEntry> {
+        let mut out = Vec::new();
+        for t in &self.targets {
+            for case in &t.cases {
+                out.push(TestResultEntry {
+                    name: case.name.clone(),
+                    status: case.status.clone(),
+                    error: case.error.clone(),
+                    target: case.target.clone(),
+                });
+            }
+        }
+        out
+    }
+}
+
 /// 在已规划好的工程上运行测试。
 ///
 /// `plan` 仅用于反查工程目录与工程名；测试构建计划由
@@ -108,19 +143,38 @@ pub fn test_project_at(
 ) -> LegionResult<LegionTestReport> {
     let resolved = resolve_project_path(project_dir)?;
     let workspace = WorkspaceResolver::discover_for_project(&resolved)?;
-    let targets = resolve_test_targets(None); // 下一阶段把 target 展开做成 selector 字段
+    let targets = selector.resolved_targets();
 
-    let (passed, failed, skipped, entries) =
-        run_tests_for_project(&workspace, &resolved, selector.filter.as_deref(), &targets, &selector.runner_overrides, selector.verbose);
+    let (passed, failed, skipped, entries) = run_tests_for_project(
+        &workspace,
+        &resolved,
+        selector.filter.as_deref(),
+        &targets,
+        &selector.runner_overrides,
+        selector.verbose,
+    );
 
-    let mut grouped: Vec<LegionTargetTestResults> = Vec::new();
-    // 先收集所有 target 标签。
+    let grouped = group_entries_by_target(&entries);
+    let exit_code = if failed > 0 { ExitCode::FAILURE } else { ExitCode::SUCCESS };
+
+    Ok(LegionTestReport {
+        project: project_name.to_string(),
+        targets: grouped,
+        total_passed: passed,
+        total_failed: failed,
+        total_skipped: skipped,
+        exit_code,
+    })
+}
+
+fn group_entries_by_target(entries: &[TestResultEntry]) -> Vec<LegionTargetTestResults> {
     let mut seen_targets: Vec<String> = Vec::new();
-    for entry in &entries {
+    for entry in entries {
         if !seen_targets.iter().any(|t| t == &entry.target) {
             seen_targets.push(entry.target.clone());
         }
     }
+    let mut out = Vec::new();
     for target in seen_targets {
         let cases: Vec<LegionTestCaseResult> = entries
             .iter()
@@ -137,19 +191,9 @@ pub fn test_project_at(
                 _ => t_failed += 1, // fail / compile_error
             }
         }
-        grouped.push(LegionTargetTestResults { target, cases, passed: t_passed, failed: t_failed, skipped: t_skipped });
+        out.push(LegionTargetTestResults { target, cases, passed: t_passed, failed: t_failed, skipped: t_skipped });
     }
-
-    let exit_code = if failed > 0 { ExitCode::FAILURE } else { ExitCode::SUCCESS };
-
-    Ok(LegionTestReport {
-        project: project_name.to_string(),
-        targets: grouped,
-        total_passed: passed,
-        total_failed: failed,
-        total_skipped: skipped,
-        exit_code,
-    })
+    out
 }
 
 fn test_result_entry_to_api(entry: &TestResultEntry) -> LegionTestCaseResult {
