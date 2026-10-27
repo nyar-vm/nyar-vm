@@ -38,6 +38,7 @@ fn semantic_source_groups_do_not_depend_on_target() {
             project_dir: directory.path().to_path_buf(),
             target: CanonicalTarget::parse(target).expect("target"),
             output_dir: None,
+        ..Default::default()
         };
         workspace
             .build_plan(&request)

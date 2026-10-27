@@ -10,7 +10,7 @@ use nyar::CanonicalTarget;
 
 use super::capability::{provider_matches_target, provider_required_capabilities, target_capability_set};
 use super::host_inventory_ast::collect_host_inventory_from_root;
-use super::condition_eval::provider_passes_target_axis;
+use super::condition_eval::{provider_passes_gate_axis, provider_passes_target_axis};
 use super::types::{PlannedHostContract, PlannedHostProvider, PlannedSemanticSourceGroup, PlannerError, PlannerResult};
 
 #[derive(Debug, Default)]
@@ -24,6 +24,7 @@ pub(crate) fn collect_host_inventory(
     groups: &[PlannedSemanticSourceGroup],
     target: CanonicalTarget,
     demanded_declaration_keys: Option<&BTreeSet<DeclarationKey>>,
+    enabled_features: Option<&std::collections::BTreeSet<String>>,
 ) -> PlannerResult<HostInventory> {
     let mut inventory = HostInventory::default();
     for group in groups {
@@ -59,7 +60,7 @@ pub(crate) fn collect_host_inventory(
     });
     inventory.providers.dedup_by(|left, right| left.key == right.key && left.contract == right.contract);
     inventory.selected_providers =
-        select_host_providers(&inventory.contracts, &inventory.providers, demanded_declaration_keys, target)?;
+        select_host_providers(&inventory.contracts, &inventory.providers, demanded_declaration_keys, target, enabled_features)?;
     Ok(inventory)
 }
 
@@ -68,6 +69,7 @@ fn select_host_providers(
     providers: &[PlannedHostProvider],
     demanded_declaration_keys: Option<&BTreeSet<DeclarationKey>>,
     target: CanonicalTarget,
+    enabled_features: Option<&std::collections::BTreeSet<String>>,
 ) -> PlannerResult<Vec<PlannedHostProvider>> {
     let available_capabilities = target_capability_set(target);
     let available_list: Vec<String> = available_capabilities.iter().cloned().collect();
@@ -106,6 +108,7 @@ fn select_host_providers(
             .iter()
             .copied()
             .filter(|provider| provider_passes_target_axis(provider, target))
+            .filter(|provider| provider_passes_gate_axis(provider, enabled_features))
             .filter(|provider| provider_matches_target(provider, &available_capabilities, target))
             .collect();
 

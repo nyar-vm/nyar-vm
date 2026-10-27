@@ -3,25 +3,40 @@
 //! Oak 将文件前导 attribute 挂在紧随其后的 `namespace …;` 的 `annotations` 上。
 //! 仅当首个根项为分号式 namespace，且 annotations **仅含** `gate` / `when` 时视为文件级条件附着点。
 
-use std::{fs, path::PathBuf};
+use std::{collections::BTreeSet, fs, path::PathBuf};
 
 use nyar::CanonicalTarget;
 
 use crate::compiler::syntax::oak::{ast::StatementNode, namespace_is_declaration_only, parse_source, ValkyrieRoot};
 
 use super::ast_attributes::{gate_attributes_from_items, when_attributes_from_items};
-use super::condition_eval::target_axis_passes;
+use super::condition_eval::{gate_axis_passes, target_axis_passes};
 use super::types::{FileLevelConditionItems, PlannedSemanticSourceGroup, PlannerError, PlannerResult};
 
-/// 读取源码并判断该文件是否参与当前 target 的语义图（仅 target 轴临时策略，见 `condition_eval`）。
-pub(crate) fn source_file_active_for_target(source: &str, target: CanonicalTarget) -> bool {
+/// 读取源码并判断该文件是否参与当前 target + feature set 的语义图。
+///
+/// gate 轴：有 gate 声明时必须全部 Enabled（空 gate 恒通过）。
+/// when 轴：0 条恒通过；恰好 1 条按 target 求值；2+ 条视为未规定语义 → 不通过。
+pub(crate) fn source_file_active_for_target_and_features(
+    source: &str,
+    target: CanonicalTarget,
+    enabled_features: Option<&BTreeSet<String>>,
+) -> bool {
     match parse_source(source) {
         Ok(root) => match file_level_condition_items_from_root(&root) {
             None => true,
-            Some(items) => target_axis_passes(&items.whens, target),
+            Some(items) => {
+                target_axis_passes(&items.whens, target) && gate_axis_passes(&items.gates, enabled_features)
+            }
         },
         Err(_) => false,
     }
+}
+
+/// 兼容旧签名：不传 feature 时 gate 轴视为空 gate 恒通过。
+#[allow(dead_code)]
+pub(crate) fn source_file_active_for_target(source: &str, target: CanonicalTarget) -> bool {
+    source_file_active_for_target_and_features(source, target, None)
 }
 
 pub(crate) fn file_level_condition_items(source: &str) -> Option<FileLevelConditionItems> {
@@ -54,25 +69,34 @@ pub(crate) fn file_level_condition_items_from_root(root: &ValkyrieRoot) -> Optio
 pub(crate) fn filter_semantic_source_groups_for_target(
     groups: Vec<PlannedSemanticSourceGroup>,
     target: CanonicalTarget,
+    enabled_features: Option<&BTreeSet<String>>,
 ) -> PlannerResult<Vec<PlannedSemanticSourceGroup>> {
     groups
         .into_iter()
         .map(|mut group| {
-            group.source_files = filter_paths_for_target(group.source_files, target)?;
+            group.source_files = filter_paths_for_target(group.source_files, target, enabled_features)?;
             Ok(group)
         })
         .collect()
 }
 
-pub(crate) fn filter_source_files_for_target(paths: Vec<PathBuf>, target: CanonicalTarget) -> PlannerResult<Vec<PathBuf>> {
-    filter_paths_for_target(paths, target)
+pub(crate) fn filter_source_files_for_target(
+    paths: Vec<PathBuf>,
+    target: CanonicalTarget,
+    enabled_features: Option<&BTreeSet<String>>,
+) -> PlannerResult<Vec<PathBuf>> {
+    filter_paths_for_target(paths, target, enabled_features)
 }
 
-fn filter_paths_for_target(paths: Vec<PathBuf>, target: CanonicalTarget) -> PlannerResult<Vec<PathBuf>> {
+fn filter_paths_for_target(
+    paths: Vec<PathBuf>,
+    target: CanonicalTarget,
+    enabled_features: Option<&BTreeSet<String>>,
+) -> PlannerResult<Vec<PathBuf>> {
     let mut filtered = Vec::with_capacity(paths.len());
     for path in paths {
         let content = fs::read_to_string(&path).map_err(PlannerError::Io)?;
-        if source_file_active_for_target(&content, target) {
+        if source_file_active_for_target_and_features(&content, target, enabled_features) {
             filtered.push(path);
         }
     }

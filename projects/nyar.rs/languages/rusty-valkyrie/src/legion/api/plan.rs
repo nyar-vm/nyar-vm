@@ -76,7 +76,11 @@ pub struct LegionBuildPlan {
 pub fn plan(request: PlanRequest) -> PlannerResult<LegionBuildPlan> {
     let project_input = resolve_project_path(&request.project_dir)?;
     let workspace = WorkspaceResolver::discover_for_project(&project_input)?;
-    let build_request = BuildRequest { project_dir: project_input, target: request.target, output_dir: request.output_dir };
+    let build_request = BuildRequest {
+        project_dir: project_input,
+        target: request.target,
+        output_dir: request.output_dir,
+        ..Default::default() };
     let inner = workspace.build_plan(&build_request)?;
     Ok(LegionBuildPlan::from_build_plan(inner))
 }
