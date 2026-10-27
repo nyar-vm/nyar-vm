@@ -189,12 +189,14 @@ function genericKinds(schema) {{
     return schema.generic_args.map(a => abiKind(a)).filter(Boolean);
 }}
 
-// 在 LIBRARY_INVOKE.glue_entries 里按 kind + name + genericKinds 查找匹配 entry。
-// 匹配 key = `${{kind}}:${{name}}:${{genericKinds.join(',')}}`。
-function findGlueEntry(kind, name, genericKindsList) {{
+// 在 LIBRARY_INVOKE.glue_entries 里按 kind + module_path + name + genericKinds 查找匹配 entry。
+// 匹配 key = `${{kind}}:${{modulePath}}:${{name}}:${{genericKinds.join(',')}}`。
+// module_path 可能是空字符串（synthetic primitive helper），用 `e.module_path || ''` 安全访问。
+function findGlueEntry(kind, modulePath, name, genericKindsList) {{
     const entries = LIBRARY_INVOKE?.glue_entries ?? [];
     for (const e of entries) {{
         if (e.kind !== kind) continue;
+        if ((e.module_path || '') !== (modulePath || '')) continue;
         if (name !== undefined && e.name !== name) continue;
         if (genericKindsList && genericKindsList.length > 0) {{
             const ek = (e.generic_args ?? []).map(a => abiKind(a));
@@ -244,20 +246,27 @@ function marshalLibraryArg(schema, value) {{
     // 不硬编码名称，完全消费 Stage A 生成的 glue_entries JSON 数组。
     if (kind === "NamedAggregate") {{
         const gk = genericKinds(schema);
-        const entry = findGlueEntry("NamedAggregate", schema.name, gk);
-        if (!entry || !entryHasExportNames(entry)) {{
-            console.warn(
-                `[wasm-js-glue] NamedAggregate ${{schema.name}}<${{gk.join(',')}}> 缺少 glue_entries 注册或 export_name，fallback passthrough`
+        const modPath = schema.module_path || '';
+        const entry = findGlueEntry("NamedAggregate", modPath, schema.name, gk);
+        if (!entry) {{
+            throw new Error(
+                `[wasm-js-glue] Cannot marshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry not found in LIBRARY_INVOKE.glue_entries. Compiler must emit glue_entries with this schema identity.`
             );
-            return value;
+        }}
+        if (!entryHasExportNames(entry)) {{
+            const missingOps = (entry.operations || []).filter(o => !o.export_name).map(o => o.operation).join(',') || '(no operations with export_name)';
+            throw new Error(
+                `[wasm-js-glue] Cannot marshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry found but missing export_name on operations: ${{missingOps}}. Compiler (Stage A/B/C) must fill export_name for all operations before JS glue can call them.`
+            );
         }}
         const constructName = operationExportName(entry, "construct");
         const pushName = operationExportName(entry, "push");
         const construct = constructName ? exports[constructName] : null;
         const push = pushName ? exports[pushName] : null;
         if (!construct || !push) {{
-            console.warn(`[wasm-js-glue] glue entry 缺少 construct/push 导出: ${{schema.name}}`);
-            return value;
+            throw new Error(
+                `[wasm-js-glue] Cannot marshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry missing construct/push export. construct=${{constructName}}, push=${{pushName}}.`
+            );
         }}
         // 元素 carrier 从 construct 或 push 的 param_carriers 推断（通常 push 的第二个参数是元素）
         const pushOp = entry.operations.find(o => o.operation === "push");
@@ -275,9 +284,29 @@ function marshalLibraryArg(schema, value) {{
         return handle;
     }}
 
-    // ── Fallback ────────────────────────────────────────────────────────
-    // 其他未声明的 NamedAggregate / Array / Option / Tuple：passthrough。
-    return value;
+    // ── 复合类型必须有 glue 合同，禁止 passthrough ──────────────────
+    if (kind === "Array") {{
+        const gk = genericKinds(schema);
+        throw new Error(
+            `[wasm-js-glue] Cannot marshal Array<${{gk.join(',')}}>: Array requires glue_entries contract. Please add a NamedAggregate-based glue entry.`
+        );
+    }}
+    if (kind === "Option") {{
+        const gk = genericKinds(schema);
+        throw new Error(
+            `[wasm-js-glue] Cannot marshal Option<${{gk.join(',')}}>: Option requires glue_entries contract. Optional<T> ABI bridge not implemented yet.`
+        );
+    }}
+    if (kind === "Tuple") {{
+        throw new Error(
+            `[wasm-js-glue] Cannot marshal Tuple: heterogeneous tuples require glue_entries contract with per-element carriers. Tuple ABI bridge not implemented yet.`
+        );
+    }}
+
+    // ── 未知 schema kind ────────────────────────────────────────────────
+    throw new Error(
+        `[wasm-js-glue] Cannot marshal schema kind "${{kind}}": no ABI bridge implemented. Schema: ${{JSON.stringify(schema)}}`
+    );
 }}
 
 function demarshalLibraryReturn(schema, raw) {{
@@ -299,20 +328,27 @@ function demarshalLibraryReturn(schema, raw) {{
     if (kind === "NamedAggregate") {{
         if (raw == null) return null;
         const gk = genericKinds(schema);
-        const entry = findGlueEntry("NamedAggregate", schema.name, gk);
-        if (!entry || !entryHasExportNames(entry)) {{
-            console.warn(
-                `[wasm-js-glue] NamedAggregate ${{schema.name}}<${{gk.join(',')}}> 缺少 glue_entries 注册或 export_name，fallback passthrough`
+        const modPath = schema.module_path || '';
+        const entry = findGlueEntry("NamedAggregate", modPath, schema.name, gk);
+        if (!entry) {{
+            throw new Error(
+                `[wasm-js-glue] Cannot demarshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry not found in LIBRARY_INVOKE.glue_entries. Compiler must emit glue_entries with this schema identity.`
             );
-            return raw;
+        }}
+        if (!entryHasExportNames(entry)) {{
+            const missingOps = (entry.operations || []).filter(o => !o.export_name).map(o => o.operation).join(',') || '(no operations with export_name)';
+            throw new Error(
+                `[wasm-js-glue] Cannot demarshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry found but missing export_name on operations: ${{missingOps}}. Compiler (Stage A/B/C) must fill export_name for all operations before JS glue can call them.`
+            );
         }}
         const lengthName = operationExportName(entry, "length");
         const atName = operationExportName(entry, "at");
         const lengthFn = lengthName ? exports[lengthName] : null;
         const atFn = atName ? exports[atName] : null;
         if (!lengthFn || !atFn) {{
-            console.warn(`[wasm-js-glue] glue entry 缺少 length/at 导出: ${{schema.name}}`);
-            return raw;
+            throw new Error(
+                `[wasm-js-glue] Cannot demarshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry missing length/at export. length=${{lengthName}}, at=${{atName}}.`
+            );
         }}
         const len = Number(lengthFn(raw));
         if (len === 0) return [];
@@ -330,8 +366,29 @@ function demarshalLibraryReturn(schema, raw) {{
         return out;
     }}
 
-    // ── Fallback ────────────────────────────────────────────────────────
-    return raw;
+    // ── 复合类型必须有 glue 合同，禁止 passthrough ──────────────────
+    if (kind === "Array") {{
+        const gk = genericKinds(schema);
+        throw new Error(
+            `[wasm-js-glue] Cannot demarshal Array<${{gk.join(',')}}>: Array requires glue_entries contract. Please add a NamedAggregate-based glue entry.`
+        );
+    }}
+    if (kind === "Option") {{
+        const gk = genericKinds(schema);
+        throw new Error(
+            `[wasm-js-glue] Cannot demarshal Option<${{gk.join(',')}}>: Option requires glue_entries contract. Optional<T> ABI bridge not implemented yet.`
+        );
+    }}
+    if (kind === "Tuple") {{
+        throw new Error(
+            `[wasm-js-glue] Cannot demarshal Tuple: heterogeneous tuples require glue_entries contract with per-element carriers. Tuple ABI bridge not implemented yet.`
+        );
+    }}
+
+    // ── 未知 schema kind ────────────────────────────────────────────────
+    throw new Error(
+        `[wasm-js-glue] Cannot demarshal schema kind "${{kind}}": no ABI bridge implemented. Schema: ${{JSON.stringify(schema)}}`
+    );
 }}
 "#,
         spec_json = spec_json
