@@ -38,6 +38,7 @@ pub struct TargetExecutionPlan {
     flags_types: Vec<nyar_types::FlagsLayout>,
     singleton_instances: Vec<nyar_types::SingletonInstancePlan>,
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
+    library_export_abis: BTreeMap<ItemInstanceId, LibraryExportAbi>,
     abi_names: BTreeMap<ItemInstanceId, QualifiedName>,
     imports: BTreeMap<ItemInstanceId, BackendImport>,
     sum_reps: BTreeMap<nyar_types::NominalInstanceId, nyar_types::layout_choice::SumRepresentation>,
@@ -150,19 +151,68 @@ pub struct AggregateOperationPlan {
     pub producer: AggregateOperationProducer,
 }
 
+/// 库导出参数或返回值的 Wasm 物理载体。
+///
+/// 载体是目标执行计划的冻结事实；backend 只能序列化这里的值，不得再从
+/// `WasmAbiType` schema 现场推导载体。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AbiCarrier {
+    /// `i32` 槽位。
+    I32,
+    /// `i64` 槽位。
+    I64,
+    /// `f32` 槽位。
+    F32,
+    /// `f64` 槽位。
+    F64,
+    /// 宿主句柄（数组 / Option / Tuple / 具名聚合）。
+    Handle,
+    /// 无返回值。
+    Void,
+}
+
+impl AbiCarrier {
+    /// 返回载体名称（lowercase）。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+            Self::Handle => "handle",
+            Self::Void => "void",
+        }
+    }
+}
+
+/// 一个库导出实例的冻结 ABI 载体合同。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryExportAbi {
+    /// 按声明顺序排列的参数载体。
+    pub params: Vec<AbiCarrier>,
+    /// 返回值载体；无返回值时为 [`AbiCarrier::Void`]。
+    pub returns: AbiCarrier,
+}
+
 impl TargetExecutionPlan {
-    pub(crate) fn from_entry_function(function: ExecutableFunction) -> Self {
+    pub(crate) fn from_entry_function(function: ExecutableFunction) -> Result<Self> {
         let entry = ItemInstanceId::from_index(0).expect("测试入口身份");
         let name = QualifiedName::new(vec![nyar::Identifier::new("main")]);
-        Self {
+        let abi = freeze_library_export_abi(&function)?;
+        Ok(Self {
             entry_operation: Some(entry),
             functions: BTreeMap::from([(entry, function)]),
+            library_export_abis: BTreeMap::from([(entry, abi)]),
             abi_names: BTreeMap::from([(entry, name)]),
             ..Self::default()
-        }
+        })
     }
 
     /// 从 ABI 名称表构造测试用目标私有计划。
+    ///
+    /// 导出名尚未登记，因此库导出 ABI 载体合同也尚未冻结；测试在
+    /// [`Self::testing_wasm_export_names_mut`] 登记导出名后必须调用
+    /// [`Self::testing_freeze_library_export_abis`] 补齐冻结，不能依赖后端猜测载体。
     #[doc(hidden)]
     pub fn from_functions(functions: BTreeMap<QualifiedName, ExecutableFunction>) -> Self {
         let mut plan = Self::default();
@@ -314,7 +364,7 @@ impl TargetExecutionPlan {
             pending.extend(callees);
             functions.insert(instance, lowered);
         }
-        let plan = Self {
+        let mut plan = Self {
             module_name: canonical.linked.module_name.clone(),
             fragment_id: fragment.id.clone(),
             exported_operations: fragment.exported_operations.clone(),
@@ -333,12 +383,44 @@ impl TargetExecutionPlan {
             flags_types: canonical.linked.flags_types.clone(),
             singleton_instances: canonical.linked.singleton_instances.clone(),
             functions,
+            library_export_abis: BTreeMap::new(),
             abi_names,
             imports,
             sum_reps: program.representation().sum_reps.clone(),
         };
+        plan.freeze_library_export_abis()?;
         plan.validate_aggregate_operations()?;
         Ok(plan)
+    }
+
+    /// 按实例查询已冻结的库导出 ABI 载体合同。
+    pub fn library_export_abi(&self, instance: &ItemInstanceId) -> Option<&LibraryExportAbi> {
+        self.library_export_abis.get(instance)
+    }
+
+    /// 在测试登记导出名后补齐库导出 ABI 载体冻结（集成测试专用）。
+    #[doc(hidden)]
+    pub fn testing_freeze_library_export_abis(&mut self) -> Result<()> {
+        self.freeze_library_export_abis()
+    }
+
+    /// 为所有已声明导出名的实例冻结参数/返回载体。
+    ///
+    /// 聚合 helper 的 producer 也在 `wasm_export_names` 中，因此同样被冻结；缺少
+    /// 函数体或类型没有稳定载体时结构化失败。
+    fn freeze_library_export_abis(&mut self) -> Result<()> {
+        let mut abis = BTreeMap::new();
+        for (instance, export_name) in &self.wasm_export_names {
+            let function = self
+                .functions
+                .get(instance)
+                .ok_or_else(|| format!("库导出 `{instance}`（export_name={export_name}）缺少 Compiler 函数体，无法冻结 ABI 载体合同"))?;
+            let abi = freeze_library_export_abi(function)
+                .map_err(|reason| format!("库导出 `{instance}`（export_name={export_name}）冻结 ABI 载体合同失败: {reason}"))?;
+            abis.insert(*instance, abi);
+        }
+        self.library_export_abis = abis;
+        Ok(())
     }
 
     /// 返回模块名。
@@ -513,6 +595,51 @@ impl TargetExecutionPlan {
     pub fn sum_representations(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::layout_choice::SumRepresentation> {
         &self.sum_reps
     }
+}
+
+/// 冻结一个库导出函数的参数与返回载体。
+///
+/// 参数按 `param_types` 声明顺序逐个映射；返回值按 `return_type` 映射。映射语义
+/// 必须与 `library_glue` 消费的 `WasmAbiType` 载体保持一一对应。没有稳定 Wasm
+/// 载体的类型（`Integer128` / `Utf16` / `Bottom` / `Function` / `TraitObject` /
+/// `Union`）在此结构化失败，不得回落为默认载体。
+fn freeze_library_export_abi(function: &ExecutableFunction) -> Result<LibraryExportAbi> {
+    let mut params = Vec::with_capacity(function.param_types.len());
+    for (index, ty) in function.param_types.iter().enumerate() {
+        let carrier = freeze_abi_carrier(ty)
+            .map_err(|reason| format!("函数 `{}` 参数 {index} 类型 `{ty}` 没有库导出 ABI 载体: {reason}", function.symbol))?;
+        if carrier == AbiCarrier::Void {
+            return Err(format!("函数 `{}` 参数 {index} 类型 `{ty}` 映射为 Void 载体，Void 只允许出现在返回位", function.symbol));
+        }
+        params.push(carrier);
+    }
+    let returns = freeze_abi_carrier(&function.return_type)
+        .map_err(|reason| format!("函数 `{}` 返回类型 `{}` 没有库导出 ABI 载体: {reason}", function.symbol, function.return_type))?;
+    Ok(LibraryExportAbi { params, returns })
+}
+
+/// 把单个 `NyarType` 映射为 Wasm 物理载体。
+///
+/// 语义与 `abi_schema_for_type` + `abi_carrier_name` 的组合结果一致：标量按 Wasm
+/// 原生槽位，容器与具名聚合统一为宿主句柄。
+fn freeze_abi_carrier(ty: &NyarType) -> Result<AbiCarrier> {
+    Ok(match ty {
+        NyarType::Unit => AbiCarrier::Void,
+        NyarType::Boolean | NyarType::Character => AbiCarrier::I32,
+        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } => AbiCarrier::I32,
+        NyarType::Integer64 { .. } => AbiCarrier::I64,
+        NyarType::Float32 => AbiCarrier::F32,
+        NyarType::Float64 => AbiCarrier::F64,
+        NyarType::Utf8 => AbiCarrier::I32,
+        NyarType::Array(_) | NyarType::FixedArray { .. } | NyarType::Nullable(_) | NyarType::Tuple(_) => AbiCarrier::Handle,
+        NyarType::Named(_) | NyarType::Apply(_, _) => AbiCarrier::Handle,
+        NyarType::Integer128 { .. } => return Err("Integer128 没有原生 Wasm 载体，需要显式拆分合同".to_string()),
+        NyarType::Utf16 => return Err("Utf16 在当前 JS glue 轨没有稳定的宿主 ABI 合同".to_string()),
+        NyarType::Bottom => return Err("`void` / bottom 类型不能出现在库导出 ABI 位置".to_string()),
+        NyarType::Function(_) => return Err("函数类型不能出现在库导出 ABI 位置".to_string()),
+        NyarType::TraitObject(_) => return Err("TraitObject（dynamic dispatch）没有稳定的 Wasm 载体".to_string()),
+        NyarType::Union(_) => return Err("匿名 union 的 Wasm ABI 合同尚未定义".to_string()),
+    })
 }
 
 /// 校验聚合 helper operation 的载体形状。
