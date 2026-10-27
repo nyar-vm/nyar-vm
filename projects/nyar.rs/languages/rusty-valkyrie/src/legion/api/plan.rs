@@ -111,6 +111,7 @@ impl LegionBuildPlan {
                 severity: LegionSeverity::Error,
                 message: "构建计划下没有任何源码文件".into(),
                 source: Some(inner.project.manifest_path.display().to_string()),
+                span: None,
                 owner: "legion::workspace::planner".into(),
             });
         }
