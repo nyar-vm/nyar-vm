@@ -243,9 +243,13 @@ impl From<HirError> for DiagnosticRow {
             HirError::UnsupportedRootItem { item_kind, .. } => {
                 row = row.with_arg("item_kind", DiagnosticArg::String(item_kind.clone()));
             }
-            HirError::PipelineRejected { codes, module } => {
-                row =
-                    row.with_arg("module", DiagnosticArg::String(module.clone())).with_arg("codes", DiagnosticArg::Aggregate(codes.join(",")));
+            HirError::PipelineRejected { codes, module, messages } => {
+                row = row
+                    .with_arg("module", DiagnosticArg::String(module.clone()))
+                    .with_arg("codes", DiagnosticArg::Aggregate(codes.join(",")));
+                if let Some(message) = messages.first() {
+                    row = row.with_internal_message(message.clone());
+                }
             }
             HirError::FallthroughWithoutNextArm { .. } | HirError::FallthroughOutsideCaseChain { .. } | HirError::BreakValueRejected { .. } => {
             }
