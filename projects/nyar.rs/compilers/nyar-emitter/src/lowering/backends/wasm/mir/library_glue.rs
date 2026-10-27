@@ -1,48 +1,20 @@
 //! 库模式 JSON ABI：消费 `WasmAbiType` 结构化合同，序列化到
 //! `nyar.library_invoke` 自定义段。
 //!
-//! # 历史
+//! 合同版本固定为 `0`。本模块只描述当前合同，不保留版本迁移叙述，也不提供
+//! 旧形状的兼容路径。
 //!
-//! v1（本阶段之前）：`abi_kind_for_type` 只认 `Integer64 → Some("i64")`，
-//! 其余全部 None。任何带 `ArrayList<T>` / `Option<T>` / `utf8` 的导出
-//! 都会被拒绝。
-//!
-//! v2：消费 `super::abi_schema::WasmAbiType`，完整序列化
-//! NyarType 变体到 JSON。禁止硬编码、禁止缺 layout 时默认布局。
-//!
-//! v3：增加 `glue_entries` 数组，为下游 JS glue consumer
-//! 提供 aggregate 的语义身份 skeleton。`export_name` 暂留占位，
-//! 等 Stream C 确认 valkyrie.v 的具体 Wasm 导出后补全。
-//!
-//! v5：`nyar.library_invoke` 顶层新增 `abi_digest`——对 `exports` 与
-//! `glue_entries` 的规范化序列化（对象键排序）做 SHA-256；同一 ABI 事实恒得
-//! 同一 digest。sequence helper 合成不再按类型名特判，改为消费 plan 冻结的
-//! aggregate layout 结构事实（数组字段 + 元素 schema）。
-//!
-//! v6：顶层新增 `version`（当前为 `1`）供跨仓消费者校验协议版本，
-//! 并把 `version` 纳入 `abi_digest` 的规范化输入；`construct` 的物理签名改为
-//! 容量/长度语义（`["i32"] → "i32"`），与 JS glue 的 `construct(arr.length)`
-//! 一致；`validate_glue_entry_exports` 要求所有 operation 的 `export_name`
-//! 都真实存在于 Wasm export section。
-//!
-//! v7：`glue_entries` 的 operation 只能来自
-//! `TargetExecutionPlan::aggregate_operations()`。backend 不再按结构事实合成
-//! helper 名：结构事实只用于判定「该 aggregate 需要哪些 operation」，plan 未
-//! 声明对应 producer 时在此阶段结构化失败（含 aggregate identity、缺失
-//! operation 与所需 carriers），不再产出无生产者的 `backend_synthetic` 条目。
-//!
-//! v8（当前阶段）：`version` 升到 `2`，`exports[*].params` 从裸类型数组改为
-//! **参数身份对象数组**：`index`（声明顺序，0 起连续）、`name`（来自 compiler
-//! schema 的 canonical 参数名，禁止按 metadata / 类型名猜测）、`type`（原
-//! `WasmAbiType` JSON）与 `carrier`（物理载体：`i32` / `i64` / `f32` / `f64` /
-//! `void` / `handle`）。参数名缺失、重复，或参数身份数量与类型数量不一致都会
-//! 在此结构化失败。`returns` 与 `glue_entries` 形状不变。
+//! `exports[*].params` 是**参数身份对象数组**：`index`（声明顺序，0 起连续）、
+//! `name`（来自 compiler schema 的 canonical 参数名，禁止按 metadata / 类型名
+//! 猜测）、`type`（`WasmAbiType` JSON）与 `carrier`（物理载体：`i32` / `i64` /
+//! `f32` / `f64` / `void` / `handle`）。参数名缺失、重复，或参数身份数量与类型
+//! 数量不一致都会在此结构化失败。
 //!
 //! # JSON 格式
 //!
 //! ```json
 //! {
-//!   "version": 2,
+//!   "version": 0,
 //!   "exports": {
 //!     "twoSum": {
 //!       "params": [
@@ -93,14 +65,12 @@ use crate::{
 
 use super::abi_schema::{WasmAbiType, abi_schema_for_type};
 
-/// `nyar.library_invoke` JSON schema 版本。
+/// `nyar.library_invoke` JSON schema 版本（`/v0`）。
 ///
 /// 跨仓消费者（如 `leetcode.v` 的 `abi.ts`）据此校验协议版本；版本变化同时会
-/// 改变 [`abi_contract_digest`]。
-///
-/// v2：`exports[*].params` 从裸类型数组改为参数身份对象数组
-/// （`index` + compiler 声明名 + `type` + 物理 `carrier`），消除下游按键序对齐。
-const LIBRARY_INVOKE_SCHEMA_VERSION: u64 = 2;
+/// 改变 [`abi_contract_digest`]。参数身份为 `{index, name, type, carrier}`，
+/// 不提供旧形状的兼容路径。
+const LIBRARY_INVOKE_SCHEMA_VERSION: u64 = 0;
 
 /// 参数的物理载体名称。
 ///

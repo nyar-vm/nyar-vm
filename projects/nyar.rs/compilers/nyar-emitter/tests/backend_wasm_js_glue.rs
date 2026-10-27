@@ -69,11 +69,11 @@ fn build_node_launcher_library_mode_exposes_call_export_without_main_dispatch() 
 
 #[test]
 fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
-    // `nyar.library_invoke` v8 合同：version 2 + 带参数身份的 params + glue_entries + abi_digest。
+    // `nyar.library_invoke` v0 合同：version 0 + 带参数身份的 params + glue_entries + abi_digest。
     // abi_digest 在启动壳里只做携带，不参与校验，因此这里用固定占位值；真实值由
     // `library_glue::abi_contract_digest` 在编译期计算。
     let spec = r#"{
-        "version": 2,
+        "version": 0,
         "exports": {
             "twoSum": {
                 "params": [
@@ -105,7 +105,7 @@ fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
     assert!(launcher.contains("marshalLibraryArg"), "library glue must marshal args from invoke spec");
     assert!(launcher.contains("demarshalLibraryReturn"), "library glue must demarshal returns from invoke spec");
     assert!(launcher.contains("glue_entries"), "launcher must carry the glue_entries contract verbatim");
-    assert!(launcher.contains("\"version\": 2"), "launcher must carry the schema version verbatim");
+    assert!(launcher.contains("\"version\": 0"), "launcher must carry the schema version verbatim");
     assert!(launcher.contains("abi_digest"), "launcher must carry the ABI digest verbatim");
 }
 
