@@ -144,6 +144,7 @@ fn scalar_library_exports_do_not_require_collection_name_or_layout_glue() {
     let mut plan = prepare(&program).expect("标量导出有完整实例合同");
     *plan.testing_wasm_export_names_mut() =
         exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect();
+    plan.testing_freeze_library_export_abis().expect("登记导出名后必须补齐 ABI 载体冻结");
     let submission = FragmentSubmission::from_backend_plan(plan);
     let (module, _) = nyar_emitter::lowering::backends::wasm::lower_fragment_to_wasm_module_for(
         &submission,

@@ -44,7 +44,8 @@ use nyar_types::{AggregateLayoutPlan, FlagsLayout, SingletonInstancePlan};
 use std::collections::{BTreeMap, BTreeSet};
 #[doc(hidden)]
 pub use target_execution_plan::{
-    AggregateOperation, AggregateOperationCarrier, AggregateOperationPlan, AggregateOperationProducer, BackendImport, TargetExecutionPlan,
+    AbiCarrier, AggregateOperation, AggregateOperationCarrier, AggregateOperationPlan, AggregateOperationProducer, BackendImport,
+    LibraryExportAbi, TargetExecutionPlan,
 };
 
 use crate::{

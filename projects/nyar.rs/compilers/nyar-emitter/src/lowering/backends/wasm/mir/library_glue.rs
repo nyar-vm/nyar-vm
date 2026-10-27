@@ -58,7 +58,7 @@ use std::collections::BTreeSet;
 use nyar_types::{AggregateLayout, AggregateLayoutPlan, NyarType, ValueOrigin, combined_content_hash};
 
 use crate::{
-    AggregateOperation, AggregateOperationPlan, FragmentSubmission, Result,
+    AggregateOperation, AggregateOperationPlan, FragmentSubmission, LibraryExportAbi, Result,
     backend_plan_views::ExecutableFunction,
     nyar_backend_wasi::{WasmBinaryModule, WasmPackageKind, WasmSection},
 };
@@ -72,10 +72,12 @@ use super::abi_schema::{WasmAbiType, abi_schema_for_type};
 /// 不提供旧形状的兼容路径。
 const LIBRARY_INVOKE_SCHEMA_VERSION: u64 = 0;
 
-/// 参数的物理载体名称。
+/// 从 `WasmAbiType` schema 推导物理载体名称。
 ///
-/// 标量按 Wasm 原生槽位映射；化简为宿主句柄的容器（数组 / Option / Tuple /
-/// 具名聚合）统一走 `handle`。`Unsupported` 不应出现在参数位，出现即失败。
+/// 本函数**只用于与 plan 冻结载体交叉核对**，不是载体事实源；`carrier` 字段
+/// 只能取 [`LibraryExportAbi`] 的冻结值。标量按 Wasm 原生槽位，容器（数组 /
+/// Option / Tuple / 具名聚合）统一走 `handle`。`Unsupported` 不应出现在参数位，
+/// 出现即失败。
 fn abi_carrier_name(schema: &WasmAbiType) -> Result<&'static str> {
     Ok(match schema {
         WasmAbiType::I32 => "i32",
@@ -136,7 +138,9 @@ fn parameter_identities<'a>(instance_label: &str, function: &'a ExecutableFuncti
 /// 把函数的参数/返回类型提升为 `WasmAbiType` schema，并同时产出带参数身份的
 /// `params` JSON 条目。
 ///
-/// 任何 `Unsupported` 变体会立刻返回可读错误，**禁止**静默降级。
+/// `carrier` 字段只取 `abi` 中 plan 冻结的载体值；`abi_carrier_name` 仅用来做
+/// 交叉核对，冻结值与 schema 不一致即结构化失败。任何 `Unsupported` 变体会
+/// 立刻返回可读错误，**禁止**静默降级。
 /// `instance_label` 仅用于错误信息（可以是 instance ID 的 Display 或公开名）。
 ///
 /// 返回 `(参数 schema 列表, params JSON 条目, 返回 schema)`：前者供聚合 identity
@@ -144,8 +148,16 @@ fn parameter_identities<'a>(instance_label: &str, function: &'a ExecutableFuncti
 fn schematize_function_abi(
     instance_label: &str,
     function: &ExecutableFunction,
+    abi: &LibraryExportAbi,
 ) -> Result<(Vec<WasmAbiType>, Vec<serde_json::Value>, WasmAbiType)> {
     let identities = parameter_identities(instance_label, function)?;
+    if abi.params.len() != function.param_types.len() {
+        return Err(format!(
+            "库导出 `{instance_label}` 的冻结 ABI 参数载体数量与参数类型数量不一致: plan_params={} param_types={}",
+            abi.params.len(),
+            function.param_types.len()
+        ));
+    }
     let mut params = Vec::with_capacity(function.param_types.len());
     let mut params_json = Vec::with_capacity(function.param_types.len());
     for (position, ty) in function.param_types.iter().enumerate() {
@@ -154,12 +166,21 @@ fn schematize_function_abi(
             return Err(format!("库导出 `{instance_label}` 参数 {position} 类型 `{ty}` 没有 Wasm ABI 合同: {reason}"));
         }
         let (index, name) = identities[position];
-        let carrier = abi_carrier_name(&schema).map_err(|reason| format!("库导出 `{instance_label}` 参数 {index} `{name}` 的 {reason}"))?;
+        let carrier = abi.params[position];
+        let schema_carrier =
+            abi_carrier_name(&schema).map_err(|reason| format!("库导出 `{instance_label}` 参数 {index} `{name}` 的 {reason}"))?;
+        if schema_carrier != carrier.as_str() {
+            return Err(format!(
+                "库导出 `{instance_label}` 参数 {index} `{name}` 的冻结载体与 Wasm ABI schema 不一致: \
+                 plan_carrier={} schema_carrier={schema_carrier}",
+                carrier.as_str()
+            ));
+        }
         params_json.push(serde_json::json!({
             "index": index,
             "name": name,
             "type": schema,
-            "carrier": carrier,
+            "carrier": carrier.as_str(),
         }));
         params.push(schema);
     }
@@ -167,6 +188,14 @@ fn schematize_function_abi(
     let ret_schema = abi_schema_for_type(&function.return_type);
     if let Some(reason) = ret_schema.unsupported_reason() {
         return Err(format!("库导出 `{instance_label}` 返回类型 `{}` 没有 Wasm ABI 合同: {reason}", function.return_type));
+    }
+    let schema_carrier =
+        abi_carrier_name(&ret_schema).map_err(|reason| format!("库导出 `{instance_label}` 返回类型 `{}` 的 {reason}", function.return_type))?;
+    if schema_carrier != abi.returns.as_str() {
+        return Err(format!(
+            "库导出 `{instance_label}` 返回值的冻结载体与 Wasm ABI schema 不一致: plan_carrier={} schema_carrier={schema_carrier}",
+            abi.returns.as_str()
+        ));
     }
     Ok((params, params_json, ret_schema))
 }
@@ -424,9 +453,12 @@ pub(super) fn append_library_mode_glue(
             continue;
         }
         let function = plan.get_function(instance).ok_or_else(|| format!("库导出 `{instance}` 缺少 Compiler 函数体"))?.function;
+        let abi = plan
+            .library_export_abi(instance)
+            .ok_or_else(|| format!("库导出 `{instance}`（公开名 `{public_name}`）没有冻结的 ABI 载体合同；backend 不得自行推导 carrier"))?;
 
         let instance_label = format!("{instance}");
-        let (params_schema, params_json, returns_schema) = schematize_function_abi(&instance_label, &function)?;
+        let (params_schema, params_json, returns_schema) = schematize_function_abi(&instance_label, &function, abi)?;
 
         // 收集所有 param/return schema 里出现的 NamedAggregate identity
         for param in &params_schema {
@@ -548,7 +580,7 @@ pub(crate) fn validate_glue_entry_exports(glue_entries: &[serde_json::Value], wa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AggregateOperationCarrier, AggregateOperationProducer};
+    use crate::{AbiCarrier, AggregateOperationCarrier, AggregateOperationProducer, TargetExecutionPlan};
     use nyar_types::{
         ItemInstanceId,
         layout::{FieldLayout, StorageKind},
@@ -986,11 +1018,16 @@ mod tests {
         NyarType::Apply(Box::new(NyarType::Named(nyar_types::Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")])
     }
 
+    fn frozen_abi(params: Vec<AbiCarrier>, returns: AbiCarrier) -> LibraryExportAbi {
+        LibraryExportAbi { params, returns }
+    }
+
     #[test]
     fn schematize_renders_parameter_identity_carrier_and_type() {
         let list = arraylist_i64();
         let function = abi_function(&[(0, "nums", list.clone()), (1, "target", nyar("i64"))], list.clone());
-        let (schemas, params_json, returns) = schematize_function_abi("twoSum", &function).expect("参数身份完整");
+        let abi = frozen_abi(vec![AbiCarrier::Handle, AbiCarrier::I64], AbiCarrier::Handle);
+        let (schemas, params_json, returns) = schematize_function_abi("twoSum", &function, &abi).expect("参数身份完整");
         assert_eq!(schemas, vec![abi_schema_for_type(&list), WasmAbiType::I64]);
         assert_eq!(
             params_json,
@@ -1010,7 +1047,8 @@ mod tests {
     #[test]
     fn schematize_rejects_duplicate_parameter_names() {
         let function = abi_function(&[(0, "value", nyar("i64")), (1, "value", nyar("i64"))], nyar("i64"));
-        let error = schematize_function_abi("identity", &function).expect_err("参数名重复必须失败");
+        let abi = frozen_abi(vec![AbiCarrier::I64, AbiCarrier::I64], AbiCarrier::I64);
+        let error = schematize_function_abi("identity", &function, &abi).expect_err("参数名重复必须失败");
         assert!(error.contains("identity"), "error must carry the export name: {error}");
         assert!(error.contains("index=1") || error.contains("参数 1"), "error must carry the parameter index: {error}");
         assert!(error.contains("重复"), "error must explain the duplicate name: {error}");
@@ -1019,7 +1057,8 @@ mod tests {
     #[test]
     fn schematize_rejects_missing_parameter_name() {
         let function = abi_function(&[(0, "", nyar("i64"))], nyar("i64"));
-        let error = schematize_function_abi("identity", &function).expect_err("参数名缺失必须失败");
+        let abi = frozen_abi(vec![AbiCarrier::I64], AbiCarrier::I64);
+        let error = schematize_function_abi("identity", &function, &abi).expect_err("参数名缺失必须失败");
         assert!(error.contains("identity"), "error must carry the export name: {error}");
         assert!(error.contains("缺少 canonical 参数名"), "error must explain the missing name: {error}");
     }
@@ -1028,8 +1067,36 @@ mod tests {
     fn schematize_rejects_identity_count_mismatch() {
         let mut function = abi_function(&[(0, "value", nyar("i64"))], nyar("i64"));
         function.param_types.push(nyar("i32"));
-        let error = schematize_function_abi("identity", &function).expect_err("身份数量不一致必须失败");
+        let abi = frozen_abi(vec![AbiCarrier::I64, AbiCarrier::I32], AbiCarrier::I64);
+        let error = schematize_function_abi("identity", &function, &abi).expect_err("身份数量不一致必须失败");
         assert!(error.contains("数量不一致"), "error must explain the count mismatch: {error}");
+    }
+
+    #[test]
+    fn schematize_rejects_carrier_disagreement_with_plan() {
+        // plan 冻结参数为 Handle，但实际类型是标量 i32：交叉核对必须失败，
+        // backend 不得以 schema 推导结果覆盖 plan 事实。
+        let function = abi_function(&[(0, "value", nyar("i32"))], nyar("i32"));
+        let abi = frozen_abi(vec![AbiCarrier::Handle], AbiCarrier::I32);
+        let error = schematize_function_abi("identity", &function, &abi).expect_err("冻结核对不一致必须失败");
+        assert!(error.contains("identity"), "error must carry the instance label: {error}");
+        assert!(error.contains("参数 0"), "error must carry the parameter index: {error}");
+        assert!(error.contains("plan_carrier=handle"), "error must carry the plan carrier: {error}");
+        assert!(error.contains("schema_carrier=i32"), "error must carry the schema carrier: {error}");
+    }
+
+    #[test]
+    fn plan_freezes_library_export_abi_carriers() {
+        let list = arraylist_i64();
+        let function = abi_function(&[(0, "nums", list.clone()), (1, "target", nyar("i64"))], list);
+        let name = nyar::QualifiedName::new(vec![nyar::Identifier::new("twoSum")]);
+        let mut plan = TargetExecutionPlan::from_functions(std::collections::BTreeMap::from([(name, function)]));
+        let instance = *plan.instances().first().expect("测试函数实例");
+        plan.testing_wasm_export_names_mut().insert(instance, "twoSum".to_string());
+        plan.testing_freeze_library_export_abis().expect("冻结 ABI 必须成功");
+        let abi = plan.library_export_abi(&instance).expect("导出实例必须有冻结 ABI");
+        assert_eq!(abi.params, vec![AbiCarrier::Handle, AbiCarrier::I64]);
+        assert_eq!(abi.returns, AbiCarrier::Handle);
     }
 
     #[test]
