@@ -434,7 +434,15 @@ impl MirBuilder {
                         if let (Some(declared_ty), MirOperand::Value(value_ref)) = (&field_ty, &value_operand) {
                             self.value_types.insert(*value_ref, declared_ty.clone());
                         }
-                        let Some(field_id) = *field_id
+                        // 字段身份：优先用 HIR 已分配的 field_id；缺失时 fallback
+                        // 到 field_declarations 按字段名查找（generic class 内部
+                        // Construct 的 FieldInit 在 HIR 阶段不会分配 field_id）。
+                        let field_id = field_id.or_else(|| {
+                            let decl_id = owner.nominal_declaration()?;
+                            let struct_decl = self.field_declarations.iter().find(|s| s.declaration == Some(decl_id))?;
+                            struct_decl.fields.iter().find(|f| f.name == field_name.as_str()).map(|f| f.id)
+                        });
+                        let Some(field_id) = field_id
                         else {
                             self.diagnostics
                                 .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity { field: field_name.to_string() });
