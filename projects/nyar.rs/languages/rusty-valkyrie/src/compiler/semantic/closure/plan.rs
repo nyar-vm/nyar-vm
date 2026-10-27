@@ -335,4 +335,116 @@ mod tests {
         assert!(std_paths.contains("text/Utf8Text.v"), "paths: {std_paths:?}");
     }
 
+    #[test]
+    fn imply_body_free_function_reference_pulls_same_file_top_level_micro() {
+        // 复现 `std.collection.hash_utf8 unresolved`：imply body 里调用的同文件顶层 micro
+        // 必须通过 demand graph 被拉进闭包，而不是靠源码顺序或 workaround。
+        let groups = [
+            ClosureGroupInput {
+                dependency_key: "std",
+                module_name: "std",
+                direct_dependencies: &[],
+                is_entry: false,
+                files: &[(
+                    "source/collection/HashPrimitives.v".into(),
+                    r#"namespace std.collection;
+
+micro hash_utf8(s: utf8) -> usize {
+    return 0
+}
+
+structure utf8 {
+    _repr: [u8]
+}
+
+imply utf8: Hash {
+    micro hash(self) -> usize {
+        return hash_utf8(self)
+    }
+}
+"#
+                    .into(),
+                )],
+            },
+            ClosureGroupInput {
+                dependency_key: "app",
+                module_name: "app",
+                direct_dependencies: &["std"],
+                is_entry: true,
+                files: &[(
+                    "solution.v".into(),
+                    r#"namespace std.text;
+[export] micro run(s: std::collection::utf8) -> usize { return s.hash() }
+"#
+                    .into(),
+                )],
+            },
+        ];
+        let closure = plan_semantic_closure(&groups, "wasm32").expect("closure");
+        let std_group = &closure.groups[0];
+        let demanded = &std_group.body_lowering_declarations;
+        // 顶层 `hash_utf8` 必须进入 demanded；否则 retain 会把它从 AST 里裁掉，
+        // lowering 自然找不到它，HIR 就会报 unresolved。
+        assert!(
+            demanded.iter().any(|key| key.kind == DeclarationKind::Micro && key.name == "hash_utf8"),
+            "hash_utf8 must be demanded; actual demanded: {demanded:#?}"
+        );
+    }
+
+    #[test]
+    fn same_file_imply_free_func_refs_resolve_even_when_free_func_after_imply() {
+        // 额外验证：即使 free function 声明在 imply 之后，demand graph 仍能正确拉它进来。
+        // 这就是账本里说的 workaround（把 hash_utf8 移到 imply 之前）要证明不必要。
+        let groups = [
+            ClosureGroupInput {
+                dependency_key: "std",
+                module_name: "std",
+                direct_dependencies: &[],
+                is_entry: false,
+                files: &[(
+                    "source/collection/HashPrimitives.v".into(),
+                    r#"namespace std.collection;
+
+structure utf8 {
+    _repr: [u8]
+}
+
+# imply 在顶层 micro 之前声明
+imply utf8: Hash {
+    micro hash(self) -> usize {
+        return hash_utf8(self)
+    }
+}
+
+# 顶层 micro 在 imply 之后声明
+micro hash_utf8(s: utf8) -> usize {
+    return 0
+}
+"#
+                    .into(),
+                )],
+            },
+            ClosureGroupInput {
+                dependency_key: "app",
+                module_name: "app",
+                direct_dependencies: &["std"],
+                is_entry: true,
+                files: &[(
+                    "solution.v".into(),
+                    r#"namespace std.text;
+[export] micro run(s: std::collection::utf8) -> usize { return s.hash() }
+"#
+                    .into(),
+                )],
+            },
+        ];
+        let closure = plan_semantic_closure(&groups, "wasm32").expect("closure");
+        let std_group = &closure.groups[0];
+        let demanded = &std_group.body_lowering_declarations;
+        assert!(
+            demanded.iter().any(|key| key.kind == DeclarationKind::Micro && key.name == "hash_utf8"),
+            "hash_utf8 must be demanded even when declared after imply; actual demanded: {demanded:#?}"
+        );
+    }
+
 }
