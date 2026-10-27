@@ -14,7 +14,7 @@ use super::{
         resolve_dependency_source, select_build_target,
     },
     host::collect_host_inventory,
-    source_file_cfg::{filter_semantic_source_groups_for_target, filter_source_files_for_target},
+    source_file_conditions::{filter_semantic_source_groups_for_target, filter_source_files_for_target},
     sources::{
         MAX_SEMANTIC_GROUP_DEPTH, MAX_SEMANTIC_GROUPS, MAX_SOURCE_CLOSURE_FILES, add_distribution_default_dependencies, canonicalize_lossy,
         collect_source_files, collect_test_v_files, dependency_supports_source_context, find_workspace_root, implicit_sdk_dependencies,
@@ -111,6 +111,25 @@ impl WorkspaceResolver {
         self.projects.keys().cloned().collect()
     }
 
+    /// `legions.von` 的 `members` 列表对应的包目录（不含 `discover_for_project` 为依赖解析临时注入的包）。
+    ///
+    /// 存在 `legions.von` 时，批量构建只遍历这些成员（例如 `leetcode.v`），不含 `discover_for_project` 临时注入的包。
+    pub fn legions_member_dirs(&self) -> Vec<PathBuf> {
+        let Some(workspace_manifest) = &self.workspace_manifest else {
+            return self.projects.keys().cloned().collect();
+        };
+        let mut dirs = Vec::new();
+        for member in &workspace_manifest.members {
+            let member_dir = canonicalize_lossy(&self.root_dir.join(member));
+            if self.projects.iter().any(|(path, _)| same_path(path, &member_dir)) {
+                dirs.push(member_dir);
+            }
+        }
+        dirs.sort();
+        dirs.dedup_by(|left, right| same_path(left, right));
+        dirs
+    }
+
     /// 发行版默认携带的 SDK：由 planner 注入当前构建的有效依赖闭包。
     ///
     /// 只识别 `sdk_vendor.kind == "distribution-default"` 元数据；不按包名、
@@ -168,9 +187,14 @@ impl WorkspaceResolver {
         false
     }
 
-    /// 当前路径是否为仅有 `legions.von`、没有 `legion.von` 的 workspace 根目录。
+    /// 构建起始目录是否就是带 `legions.von` 的 workspace 根（在根上 `legion build` → 顺序构建全部 members）。
+    pub fn is_at_workspace_root(&self, project_dir: &Path) -> bool {
+        self.workspace_manifest.is_some() && same_path(&search_start_dir(project_dir), &self.root_dir)
+    }
+
+    /// 仅有 `legions.von`、根目录没有 `legion.von`（纯 workspace 根，无根包）。
     pub fn is_workspace_only_root(&self, project_dir: &Path) -> bool {
-        self.workspace_manifest.is_some() && same_path(project_dir, &self.root_dir) && !self.root_dir.join("legion.von").exists()
+        self.is_at_workspace_root(project_dir) && !self.root_dir.join("legion.von").exists()
     }
 
     /// 按请求生成构建计划：解析构建目标、依赖与源码闭包。

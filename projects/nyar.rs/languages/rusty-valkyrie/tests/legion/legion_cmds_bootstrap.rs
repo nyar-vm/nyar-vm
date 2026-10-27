@@ -149,7 +149,6 @@ micro main(): i64 {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::parse("node").expect("node target"),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: false,
     })
     .unwrap();
