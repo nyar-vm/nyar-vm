@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use nyar::{CanonicalAbi, CanonicalSpecification, CanonicalTarget, CanonicalVendor, TargetBackendFamily, TargetHostKind};
+use nyar::{CanonicalSpecification, CanonicalTarget, CanonicalVendor, TargetBackendFamily, TargetHostKind};
 use serde::{Deserialize, Serialize};
 
 use super::types::PlannedHostProvider;
@@ -113,6 +113,7 @@ pub(crate) fn target_capability_set(target: CanonicalTarget) -> BTreeSet<String>
 
     if target.specification == CanonicalSpecification::Miniprogram {
         available.insert("js.wx.request".to_string());
+        available.insert("js.random".to_string());
         available.remove("js.fetch");
         available.remove("fetch");
     }
@@ -140,8 +141,11 @@ pub(crate) fn provider_required_capabilities(provider: &PlannedHostProvider, tar
 pub(crate) fn provider_matches_target(provider: &PlannedHostProvider, available: &BTreeSet<String>, target: CanonicalTarget) -> bool {
     let required = provider_required_capabilities(provider, target);
     if required.is_empty() {
-        // WASI adaptor provider：无 `[js]` / `[wasm]` 时由 target 规格门控（正式 WASI binding 未落地前）。
-        return matches!(target.abi, Some(CanonicalAbi::Wasi) | Some(CanonicalAbi::WasiP3));
+        // `[wasm_operator]` / `[vm_opcode]` 等无宿主导入的 adaptor：由 backend family 门控，不靠 `js.*` capability。
+        return matches!(
+            target.to_profile(None).backend_family,
+            TargetBackendFamily::Wasm | TargetBackendFamily::Ovm | TargetBackendFamily::Native
+        );
     }
     required.iter().all(|capability| capability_available(capability, available))
 }
@@ -170,6 +174,7 @@ mod tests {
         let target: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().unwrap();
         let available = target_capability_set(target);
         assert!(available.contains("js.wx.request"));
+        assert!(available.contains("js.random"));
         assert!(!available.contains("js.fetch"));
     }
 
@@ -180,6 +185,33 @@ mod tests {
         assert!(!available.contains("js.random"));
         assert!(available.contains("wasm.wasi"));
         assert!(available.contains("wasm.env"));
+    }
+
+    #[test]
+    fn wasm_opcode_provider_matches_browser_wasm_without_js_binding() {
+        use crate::compiler::semantic::closure::{DeclarationKey, DeclarationKind};
+        let target = CanonicalTarget::wasm();
+        let available = target_capability_set(target);
+        let provider = PlannedHostProvider {
+            contract: "core::primitive::__f64_add".into(),
+            contract_key: None,
+            symbol: "std::adaptor::wasm::math::f64_add".into(),
+            key: DeclarationKey {
+                dependency_key: "std.adaptor.wasm".into(),
+                source_path: "math/arithmetic.v".into(),
+                namespace: vec!["std".into(), "adaptor".into(), "wasm".into(), "math".into()],
+                kind: DeclarationKind::Micro,
+                owner: None,
+                name: "f64_add".into(),
+            },
+            source_file: std::path::PathBuf::from("arithmetic.v"),
+            line: 1,
+            required_capabilities: Vec::new(),
+            foreign_bindings: Vec::new(),
+            when_attributes: Vec::new(),
+            gate_attributes: Vec::new(),
+        };
+        assert!(provider_matches_target(&provider, &available, target));
     }
 
     #[test]

@@ -8,7 +8,8 @@ use crate::compiler::syntax::oak::ast::{Block, ImplyDeclaration, MethodDeclarati
 use crate::compiler::syntax::oak::{namespace_is_declaration_only, namespace_items, ValkyrieRoot};
 
 use super::ast_attributes::{
-    cfg_predicates_from_attributes, foreign_bindings_from_attributes, has_host_contract_attribute, host_provider_contract_targets,
+    foreign_bindings_from_attributes, gate_attributes_from_items, has_host_contract_attribute, host_provider_contract_targets,
+    when_attributes_from_items,
 };
 use super::capability::required_capabilities_from_foreign_bindings;
 use super::host::HostInventory;
@@ -235,7 +236,8 @@ fn register_providers_for_declaration(
 ) {
     let foreign_binding_nodes = foreign_bindings_from_attributes(annotations);
     let foreign_bindings: Vec<String> = foreign_binding_nodes.iter().map(|binding| binding.display()).collect();
-    let cfg_predicates = cfg_predicates_from_attributes(annotations);
+    let when_attributes = when_attributes_from_items(annotations);
+    let gate_attributes = gate_attributes_from_items(annotations);
     let required_capabilities = required_capabilities_from_foreign_bindings(&foreign_binding_nodes);
 
     for contract in host_provider_contract_targets(annotations, source) {
@@ -248,7 +250,8 @@ fn register_providers_for_declaration(
             line,
             required_capabilities: required_capabilities.clone(),
             foreign_bindings: foreign_bindings.clone(),
-            cfg_predicates: cfg_predicates.clone(),
+            when_attributes: when_attributes.clone(),
+            gate_attributes: gate_attributes.clone(),
         });
     }
 }

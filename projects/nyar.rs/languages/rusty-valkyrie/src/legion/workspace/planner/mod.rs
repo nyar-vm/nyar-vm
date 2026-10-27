@@ -1,8 +1,10 @@
 mod ast_attributes;
 mod bindings;
 mod capability;
-mod source_file_cfg;
-mod target_cfg;
+mod condition_eval;
+mod source_file_conditions;
+mod target_gate;
+mod target_when;
 mod closure_demand;
 mod dependencies;
 mod host;

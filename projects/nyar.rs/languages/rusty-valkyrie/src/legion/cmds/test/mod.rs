@@ -105,7 +105,7 @@ fn run_workspace_tests(
 }
 
 fn is_workspace_root(project_dir: &Path, workspace: &WorkspaceResolver) -> bool {
-    workspace.workspace_manifest.is_some() && same_path(project_dir, &workspace.root_dir)
+    workspace.is_at_workspace_root(project_dir)
 }
 
 fn same_path(left: &Path, right: &Path) -> bool {

@@ -11,8 +11,6 @@ pub struct CheckArgs {
     pub project_dir: std::path::PathBuf,
     /// Target platform.
     pub target: crate::legion::CanonicalTarget,
-    /// Force workspace resolution.
-    pub workspace: bool,
     /// Verbose progress (maps to build debug artifacts currently unused).
     pub verbose: bool,
 }
@@ -24,7 +22,6 @@ pub fn run(args: &CheckArgs) -> LegionResult<ExitCode> {
         project_dir: args.project_dir.clone(),
         target: args.target.clone(),
         output_dir: None,
-        workspace: args.workspace,
         debug_artifacts: args.verbose,
     };
     run_build(&build_args)

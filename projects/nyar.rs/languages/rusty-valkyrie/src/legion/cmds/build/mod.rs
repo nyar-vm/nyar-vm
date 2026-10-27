@@ -21,8 +21,6 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::ExitCode,
-    sync::{Arc, mpsc},
-    thread,
 };
 
 use crate::legion::{
@@ -43,22 +41,16 @@ pub struct BuildArgs {
     pub target: CanonicalTarget,
     /// 输出目录。
     pub output_dir: Option<PathBuf>,
-    /// 强制按 workspace 成员解析；若项目未注册则直接报错，不回退到 package 模式。
-    pub workspace: bool,
     /// 输出调试用构建副产物。
     pub debug_artifacts: bool,
 }
 
 /// 执行 `legion build`。
 pub fn run(args: &BuildArgs) -> LegionResult<ExitCode> {
-    if args.workspace {
-        return run_workspace_members_in_parallel(args);
-    }
-
     let project_input = resolve_project_path(&args.project_dir)?;
     let workspace = WorkspaceResolver::discover_for_project(&project_input)?;
-    if workspace.is_workspace_only_root(&project_input) {
-        return run_workspace_members_in_parallel(args);
+    if workspace.is_at_workspace_root(&project_input) {
+        return run_all_workspace_members(args);
     }
 
     let request = BuildRequest { project_dir: project_input, target: args.target.clone(), output_dir: args.output_dir.clone() };
@@ -134,11 +126,11 @@ pub fn run(args: &BuildArgs) -> LegionResult<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_workspace_members_in_parallel(args: &BuildArgs) -> LegionResult<ExitCode> {
-    let workspace = WorkspaceResolver::discover(&args.project_dir)?;
+fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
+    let workspace = WorkspaceResolver::discover_for_project(&args.project_dir)?;
     let requested_target = args.target.clone();
     let members = workspace
-        .member_manifest_dirs()
+        .legions_member_dirs()
         .into_iter()
         .filter(|project_dir| {
             let request =
@@ -150,8 +142,8 @@ fn run_workspace_members_in_parallel(args: &BuildArgs) -> LegionResult<ExitCode>
                     false
                 }
                 Err(error) => {
-                    eprintln!("workspace: retaining {} after planner error: {}", project_dir.display(), error);
-                    true
+                    eprintln!("workspace: skipping {} (planner error: {})", project_dir.display(), error);
+                    false
                 }
             }
         })
@@ -160,65 +152,25 @@ fn run_workspace_members_in_parallel(args: &BuildArgs) -> LegionResult<ExitCode>
         return Err(LegionError::msg(report!("workspace 没有可构建成员")));
     }
 
-    let worker_count = thread::available_parallelism().map(|value| value.get()).unwrap_or(4).min(members.len());
-    println!("workspace mode: 并行构建 {} 个成员 (workers={worker_count})", members.len());
-
-    let queue = Arc::new(std::sync::Mutex::new(members));
-    let (tx, rx) = mpsc::channel::<(PathBuf, std::result::Result<ExitCode, String>)>();
-    let mut handles = Vec::new();
-
-    for _ in 0..worker_count {
-        let queue = Arc::clone(&queue);
-        let tx = tx.clone();
-        let target = args.target.clone();
-        let output = args.output_dir.clone();
-        let debug_artifacts = args.debug_artifacts;
-        // Backend lowering can recurse deeply over large workspaces. Keep the
-        // debug seed usable without relying on a release build's larger stack.
-        handles.push(
-            thread::Builder::new()
-                .name("legion-build-worker".into())
-                .stack_size(64 * 1024 * 1024)
-                .spawn(move || {
-                    loop {
-                        let next = {
-                            let mut guard = queue.lock().expect("workspace queue poisoned");
-                            guard.pop()
-                        };
-                        let Some(project_dir) = next
-                        else {
-                            break;
-                        };
-
-                        let member_args = BuildArgs {
-                            project_dir: project_dir.clone(),
-                            target: target.clone(),
-                            output_dir: output.clone(),
-                            workspace: false,
-                            debug_artifacts,
-                        };
-                        let result = match run(&member_args) {
-                            Ok(code) => Ok(code),
-                            Err(error) => Err(error.to_string()),
-                        };
-                        let _ = tx.send((project_dir, result));
-                    }
-                })
-                .map_err(|error| report!("failed to spawn workspace build worker: {error}"))?,
-        );
-    }
-    drop(tx);
+    println!(
+        "workspace mode: 顺序构建 {} 个成员（{}）",
+        members.len(),
+        crate::legion::cmds::path_for_cli_log(&workspace.root_dir)
+    );
 
     let mut failures = Vec::new();
-    for (project_dir, result) in rx {
-        match result {
+    for project_dir in members {
+        let member_args = BuildArgs {
+            project_dir: project_dir.clone(),
+            target: args.target.clone(),
+            output_dir: args.output_dir.clone(),
+            debug_artifacts: args.debug_artifacts,
+        };
+        match run(&member_args) {
             Ok(code) if code == ExitCode::SUCCESS => {}
             Ok(_) => failures.push(format!("{}: exited with failure code", project_dir.display())),
             Err(error) => failures.push(format!("{}: {}", project_dir.display(), error)),
         }
-    }
-    for handle in handles {
-        let _ = handle.join();
     }
 
     if failures.is_empty() {

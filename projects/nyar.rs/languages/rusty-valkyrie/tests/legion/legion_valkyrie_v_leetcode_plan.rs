@@ -1,4 +1,4 @@
-//! `valkyrie.v` 语料：leetcode_browser_wasm + `std.adaptor.wasm` Random 文件级 `when`。
+//! `valkyrie.v` 语料：leetcode_browser_wasm + `std.adaptor.wasm` 文件级 `when`（Random / Fetch）。
 
 use std::path::PathBuf;
 
@@ -16,6 +16,10 @@ fn valkyrie_v_root() -> Option<PathBuf> {
         return Some(sibling);
     }
     None
+}
+
+fn source_paths_contain(paths: &[PathBuf], fragment: &str) -> bool {
+    paths.iter().any(|path| path.to_string_lossy().contains(fragment))
 }
 
 #[test]
@@ -46,7 +50,17 @@ fn leetcode_browser_wasm_plan_injects_wasm_adaptor_js_random_providers() {
             .source_files
             .iter()
             .any(|path| path.to_string_lossy().contains("Random.browser.v")),
-        "browser cfg file must be active: {:?}",
+        "browser when file must be active: {:?}",
+        wasm_group.source_files
+    );
+    assert!(
+        source_paths_contain(&wasm_group.source_files, "fetch.browser.v"),
+        "browser fetch when file in adaptor group: {:?}",
+        wasm_group.source_files
+    );
+    assert!(
+        !source_paths_contain(&wasm_group.source_files, "fetch.wechat.v"),
+        "wechat fetch must not appear on browser target: {:?}",
         wasm_group.source_files
     );
     assert!(
@@ -105,4 +119,53 @@ fn leetcode_browser_wasm_plan_injects_wasm_adaptor_js_random_providers() {
     .expect("api plan");
     assert!(api_plan.selected_host_provider_count >= 2);
     assert!(api_plan.host_required_capabilities.iter().any(|cap| cap == "js.random"));
+}
+
+#[test]
+fn leetcode_miniprogram_wasm_plan_selects_wechat_when_files() {
+    let Some(valkyrie_v) = valkyrie_v_root() else {
+        eprintln!("skip: valkyrie.v not found");
+        return;
+    };
+    let project_dir = valkyrie_v.join("examples").join("leetcode_miniprogram_wasm");
+    if !project_dir.join("legion.von").is_file() {
+        eprintln!("skip: leetcode_miniprogram_wasm example missing");
+        return;
+    }
+    let target: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().expect("wechat wasm");
+    let workspace = WorkspaceResolver::discover_for_project(&project_dir).expect("discover miniprogram leetcode");
+    let plan = workspace
+        .build_plan(&BuildRequest { project_dir: project_dir.clone(), target, output_dir: None })
+        .expect("leetcode miniprogram wasm plan");
+
+    let wasm_group = plan
+        .project
+        .semantic_source_groups
+        .iter()
+        .find(|group| group.name == "std.adaptor.wasm")
+        .expect("std.adaptor.wasm group");
+    assert!(
+        source_paths_contain(&wasm_group.source_files, "Random.wechat.v"),
+        "wechat random when file: {:?}",
+        wasm_group.source_files
+    );
+    assert!(
+        !wasm_group.source_files.iter().any(|p| p.to_string_lossy().contains("Random.browser.v")),
+        "browser random must be filtered: {:?}",
+        wasm_group.source_files
+    );
+    assert!(source_paths_contain(&wasm_group.source_files, "fetch.wechat.v"));
+    assert!(!source_paths_contain(&wasm_group.source_files, "fetch.browser.v"));
+
+    let selected_random = plan
+        .project
+        .selected_host_providers
+        .iter()
+        .filter(|p| p.contract.contains("random::Random::"))
+        .collect::<Vec<_>>();
+    assert!(
+        selected_random.iter().all(|p| p.required_capabilities.iter().any(|c| c == "js.random")),
+        "miniprogram Random providers: {:?}",
+        selected_random
+    );
 }

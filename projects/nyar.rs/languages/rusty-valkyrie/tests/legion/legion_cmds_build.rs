@@ -44,7 +44,6 @@ micro main() -> i64 {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::parse("ovm").expect("nyar-vm target"),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: false,
     })
     .unwrap();
@@ -92,7 +91,6 @@ micro identity(x: bool) -> bool {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::parse("ovm").expect("nyar-vm target"),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: false,
     })
     .unwrap();
@@ -142,7 +140,6 @@ micro beta_entry() -> i64 {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::parse("node").unwrap(),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: false,
     })
     .unwrap();
@@ -174,7 +171,6 @@ micro main() -> i64 {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::parse("node").unwrap(),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: false,
     })
     .unwrap();
@@ -210,7 +206,6 @@ micro main() -> i64 {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::parse("wasi").unwrap(),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: false,
     })
     .unwrap();
@@ -275,7 +270,6 @@ micro main() -> i64 {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::parse("wasm32-unknown-web-webassembly").unwrap(),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: false,
     })
     .unwrap();
@@ -305,7 +299,6 @@ micro main() -> i64 {
         project_dir: node_fixture.project_dir.clone(),
         target: CanonicalTarget::parse("node").unwrap(),
         output_dir: Some(node_output_dir.clone()),
-        workspace: false,
         debug_artifacts: false,
     })
     .unwrap();
@@ -326,7 +319,6 @@ micro main() -> i64 {
         project_dir: wasi_fixture.project_dir.clone(),
         target: CanonicalTarget::parse("wasi").unwrap(),
         output_dir: Some(wasi_output_dir.clone()),
-        workspace: false,
         debug_artifacts: false,
     })
     .unwrap();
@@ -369,7 +361,6 @@ fn builds_wasm_wasi_witness_dispatch() {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::parse("wasi").unwrap(),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: false,
     })
     .unwrap();
@@ -496,7 +487,6 @@ fn builds_browser_wasm_js_random_host_binding_evidence() {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::wasm(),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: true,
     })
     .unwrap();
@@ -533,7 +523,6 @@ fn builds_wasi_wasm_random_host_binding_evidence() {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::wasi(),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: true,
     });
 
@@ -560,7 +549,6 @@ fn builds_valkyrie_fallback_random_without_host_bindings() {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::wasm(),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: true,
     })
     .unwrap();
@@ -581,7 +569,6 @@ fn builds_browser_wasm_prunes_unselected_host_bindings_from_evidence() {
         project_dir: fixture.project_dir.clone(),
         target: CanonicalTarget::wasm(),
         output_dir: Some(output_dir.clone()),
-        workspace: false,
         debug_artifacts: false,
     })
     .unwrap();
@@ -630,6 +617,44 @@ struct HostSelectionEntryForTest {
     line: usize,
     required_capabilities: Vec<String>,
     foreign_bindings: Vec<String>,
+}
+
+fn valkyrie_v_leetcode_browser_dir() -> Option<std::path::PathBuf> {
+    if let Ok(root) = std::env::var("VALKYRIE_V_ROOT") {
+        let path = std::path::PathBuf::from(root).join("examples").join("leetcode_browser_wasm");
+        if path.join("legion.von").is_file() {
+            return Some(path);
+        }
+    }
+    let sibling = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../../valkyrie.v/examples/leetcode_browser_wasm");
+    if sibling.join("legion.von").is_file() {
+        return Some(sibling);
+    }
+    None
+}
+
+/// 从例题目录构建单包（起始路径不是 `legions.von` workspace 根）。
+#[test]
+fn builds_valkyrie_v_leetcode_browser_wasm_smoke() {
+    if std::env::var("LEGION_BUILD_VALKYRIE_V").as_deref() != Ok("1") {
+        eprintln!("skip: set LEGION_BUILD_VALKYRIE_V=1 to run valkyrie.v leetcode legion build");
+        return;
+    }
+    let Some(project_dir) = valkyrie_v_leetcode_browser_dir() else {
+        eprintln!("skip: valkyrie.v leetcode_browser_wasm not found");
+        return;
+    };
+    let output_dir = project_dir.join("dist").join("legion-ci-browser-wasm");
+    let _ = fs::remove_dir_all(&output_dir);
+    let status = run(&BuildArgs {
+        project_dir: project_dir.clone(),
+        target: CanonicalTarget::wasm(),
+        output_dir: Some(output_dir.clone()),
+        debug_artifacts: true,
+    })
+    .expect("legion build");
+    assert_eq!(status, ExitCode::SUCCESS);
+    assert!(output_dir.join("main.wasm").is_file(), "expected wasm artifact");
 }
 
 fn command_exists(command: &str) -> bool {

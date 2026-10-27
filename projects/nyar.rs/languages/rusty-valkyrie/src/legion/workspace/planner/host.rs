@@ -10,7 +10,7 @@ use nyar::CanonicalTarget;
 
 use super::capability::{provider_matches_target, provider_required_capabilities, target_capability_set};
 use super::host_inventory_ast::collect_host_inventory_from_root;
-use super::target_cfg::provider_cfg_matches_target;
+use super::condition_eval::provider_passes_target_axis;
 use super::types::{PlannedHostContract, PlannedHostProvider, PlannedSemanticSourceGroup, PlannerError, PlannerResult};
 
 #[derive(Debug, Default)]
@@ -105,7 +105,7 @@ fn select_host_providers(
         let compatible: Vec<&PlannedHostProvider> = candidates
             .iter()
             .copied()
-            .filter(|provider| provider_cfg_matches_target(provider, target))
+            .filter(|provider| provider_passes_target_axis(provider, target))
             .filter(|provider| provider_matches_target(provider, &available_capabilities, target))
             .collect();
 
