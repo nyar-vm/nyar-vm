@@ -1,12 +1,12 @@
 //! Compiler 成功载荷到目标私有执行计划的唯一边界。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{EmitterError, Result};
 use nyar::{ExternalImportLink, QualifiedName};
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalOperation, CanonicalProgram, CanonicalTerminator,
-    CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarFunctionType, NyarType, Operand,
+    CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, LayoutId, NyarFunctionType, NyarType, Operand,
     Terminator, Value, ValueOrigin,
     layout_choice::{InvokeLowering, ValueRepresentation},
 };
@@ -34,6 +34,7 @@ pub struct TargetExecutionPlan {
     aggregate_layout_by_nominal: BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId>,
     aggregate_layout_by_field: BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)>,
     aggregate_layout_by_type: BTreeMap<nyar_types::TypeId, nyar_types::LayoutId>,
+    aggregate_operations: Vec<AggregateOperationPlan>,
     flags_types: Vec<nyar_types::FlagsLayout>,
     singleton_instances: Vec<nyar_types::SingletonInstancePlan>,
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
@@ -55,6 +56,98 @@ pub struct BackendImport {
     pub return_type: NyarType,
     /// 计划冻结的目标 operator 绑定；`None` 表示该导入不是目标 operator 绑定。
     pub target_operator: Option<TargetOperatorBinding>,
+}
+
+/// 聚合 helper operation 的物理种类。
+///
+/// 只描述 glue 合同的 operation 身份；具体参数的语义由聚合布局与 ABI 结构事实决定，
+/// 名称字符串仅用于产物合同序列化。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AggregateOperation {
+    /// 以长度构造聚合句柄。
+    Construct,
+    /// 向聚合句柄追加元素。
+    Push,
+    /// 读取聚合长度。
+    Length,
+    /// 按下标读取元素。
+    At,
+}
+
+impl AggregateOperation {
+    /// 返回 glue 合同中的 operation 名称。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Construct => "construct",
+            Self::Push => "push",
+            Self::Length => "length",
+            Self::At => "at",
+        }
+    }
+}
+
+/// 聚合 helper operation 在 Wasm 层的参数或返回载体。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AggregateOperationCarrier {
+    /// `i32` 载体。
+    I32,
+    /// `i64` 载体。
+    I64,
+    /// `f32` 载体。
+    F32,
+    /// `f64` 载体。
+    F64,
+    /// 无返回值。
+    Void,
+}
+
+impl AggregateOperationCarrier {
+    /// 返回 Wasm 载体名称（lowercase）。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+            Self::Void => "void",
+        }
+    }
+}
+
+/// 聚合 helper operation 的物理生产者。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AggregateOperationProducer {
+    /// plan 中真实函数体实例；其 plan 导出名必须等于 operation 的 `export_name`。
+    FunctionBody(ItemInstanceId),
+}
+
+impl AggregateOperationProducer {
+    /// 返回承载该 operation 的函数体实例。
+    pub fn instance(self) -> ItemInstanceId {
+        match self {
+            Self::FunctionBody(instance) => instance,
+        }
+    }
+}
+
+/// plan 冻结的聚合 helper operation。
+///
+/// 一个 operation 绑定聚合布局身份、operation 种类、参数/返回载体、真实 Wasm 导出名
+/// 与唯一物理生产者。`glue_entries` 只能消费这里的 operation，backend 不得自行合成。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AggregateOperationPlan {
+    /// 目标聚合布局身份。
+    pub layout_id: LayoutId,
+    /// operation 种类。
+    pub operation: AggregateOperation,
+    /// 按顺序排列的参数载体。
+    pub param_carriers: Vec<AggregateOperationCarrier>,
+    /// 返回载体；无返回值时为 [`AggregateOperationCarrier::Void`]。
+    pub return_carrier: AggregateOperationCarrier,
+    /// 真实 Wasm 导出名；必须与生产者在 plan 中的导出名一致。
+    pub export_name: String,
+    /// 物理生产者。
+    pub producer: AggregateOperationProducer,
 }
 
 impl TargetExecutionPlan {
@@ -125,6 +218,13 @@ impl TargetExecutionPlan {
     #[doc(hidden)]
     pub fn testing_aggregate_layouts(&mut self, layouts: nyar_types::AggregateLayoutPlan) -> &mut Self {
         self.aggregate_layouts = layouts;
+        self
+    }
+
+    /// 登记 plan 冻结的聚合 helper operation（集成测试专用）。
+    #[doc(hidden)]
+    pub fn testing_register_aggregate_operation(&mut self, operation: AggregateOperationPlan) -> &mut Self {
+        self.aggregate_operations.push(operation);
         self
     }
 
@@ -214,7 +314,7 @@ impl TargetExecutionPlan {
             pending.extend(callees);
             functions.insert(instance, lowered);
         }
-        Ok(Self {
+        let plan = Self {
             module_name: canonical.linked.module_name.clone(),
             fragment_id: fragment.id.clone(),
             exported_operations: fragment.exported_operations.clone(),
@@ -229,13 +329,16 @@ impl TargetExecutionPlan {
             aggregate_layout_by_nominal: canonical.linked.aggregate_layout_by_nominal.clone(),
             aggregate_layout_by_field: canonical.linked.aggregate_layout_by_field.clone(),
             aggregate_layout_by_type: canonical.linked.aggregate_layout_by_type.clone(),
+            aggregate_operations: Vec::new(),
             flags_types: canonical.linked.flags_types.clone(),
             singleton_instances: canonical.linked.singleton_instances.clone(),
             functions,
             abi_names,
             imports,
             sum_reps: program.representation().sum_reps.clone(),
-        })
+        };
+        plan.validate_aggregate_operations()?;
+        Ok(plan)
     }
 
     /// 返回模块名。
@@ -293,6 +396,69 @@ impl TargetExecutionPlan {
         &self.aggregate_layouts
     }
 
+    /// 返回 plan 冻结的聚合 helper operation。
+    ///
+    /// `glue_entries` 只能消费这里的 operation；backend 不得在 emit 阶段自行合成。
+    pub fn aggregate_operations(&self) -> &[AggregateOperationPlan] {
+        &self.aggregate_operations
+    }
+
+    /// 校验聚合 helper operation 的布局身份、载体形状与真实生产者。
+    ///
+    /// 任何缺失事实（未登记布局、producer 缺少函数体或导出名、operation 载体与
+    /// operation 形状不符、同一布局/operation 重复）都在此结构化失败。
+    pub fn validate_aggregate_operations(&self) -> Result<()> {
+        let mut seen = BTreeSet::new();
+        for operation in &self.aggregate_operations {
+            let layout = self.aggregate_layouts.layouts.iter().find(|layout| layout.id == operation.layout_id).ok_or_else(|| {
+                format!(
+                    "聚合 helper operation 缺少布局事实: layout_id={} operation={} export_name={}",
+                    operation.layout_id,
+                    operation.operation.as_str(),
+                    operation.export_name
+                )
+            })?;
+            let identity = format!("{}.{}<layout_id={}>", layout.namespace, layout.name, layout.id);
+            if !seen.insert((operation.layout_id, operation.operation)) {
+                return Err(format!(
+                    "聚合 helper operation 重复: aggregate={identity} operation={} export_name={}",
+                    operation.operation.as_str(),
+                    operation.export_name
+                ));
+            }
+            let producer = operation.producer.instance();
+            let Some(declared_export) = self.wasm_export_names.get(&producer)
+            else {
+                return Err(format!(
+                    "聚合 helper operation 的 producer 未声明 plan 导出: aggregate={identity} operation={} producer={producer:?} \
+                     export_name={} param_carriers={:?} return_carrier={}",
+                    operation.operation.as_str(),
+                    operation.export_name,
+                    operation.param_carriers.iter().map(|carrier| carrier.as_str()).collect::<Vec<_>>(),
+                    operation.return_carrier.as_str()
+                ));
+            };
+            if declared_export != &operation.export_name {
+                return Err(format!(
+                    "聚合 helper operation 的 export 身份与 producer 不一致: aggregate={identity} operation={} \
+                     export_name={} producer_export_name={declared_export} producer={producer:?}",
+                    operation.operation.as_str(),
+                    operation.export_name
+                ));
+            }
+            if !self.functions.contains_key(&producer) {
+                return Err(format!(
+                    "聚合 helper operation 的 producer 缺少 Compiler 函数体: aggregate={identity} operation={} producer={producer:?} \
+                     export_name={}",
+                    operation.operation.as_str(),
+                    operation.export_name
+                ));
+            }
+            validate_aggregate_operation_shape(operation, &identity)?;
+        }
+        Ok(())
+    }
+
     /// 返回 nominal 实例到布局 ID 的映射。
     pub fn aggregate_layout_by_nominal(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId> {
         &self.aggregate_layout_by_nominal
@@ -347,6 +513,45 @@ impl TargetExecutionPlan {
     pub fn sum_representations(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::layout_choice::SumRepresentation> {
         &self.sum_reps
     }
+}
+
+/// 校验聚合 helper operation 的载体形状。
+///
+/// `construct` / `length` 是 `[i32] -> i32`；`push` 是 `[i32, E] -> void`；
+/// `at` 是 `[i32, i32] -> E`。任何偏离都在计划的物理解释层失败。
+fn validate_aggregate_operation_shape(operation: &AggregateOperationPlan, identity: &str) -> Result<()> {
+    use AggregateOperationCarrier::{I32, Void};
+    let fail = |expected: &str| {
+        Err(format!(
+            "聚合 helper operation 载体形状不合法: aggregate={identity} operation={} expected={expected} actual_param_carriers={:?} \
+             actual_return_carrier={}",
+            operation.operation.as_str(),
+            operation.param_carriers.iter().map(|carrier| carrier.as_str()).collect::<Vec<_>>(),
+            operation.return_carrier.as_str()
+        ))
+    };
+    match operation.operation {
+        AggregateOperation::Construct | AggregateOperation::Length => {
+            if operation.param_carriers.as_slice() != [I32] || operation.return_carrier != I32 {
+                return fail("[i32] -> i32");
+            }
+        }
+        AggregateOperation::Push => {
+            if operation.param_carriers.len() != 2
+                || operation.param_carriers[0] != I32
+                || operation.param_carriers[1] == Void
+                || operation.return_carrier != Void
+            {
+                return fail("[i32, E] -> void");
+            }
+        }
+        AggregateOperation::At => {
+            if operation.param_carriers.as_slice() != [I32, I32] || operation.return_carrier == Void {
+                return fail("[i32, i32] -> E");
+            }
+        }
+    }
+    Ok(())
 }
 
 /// 计划构造时冻结 `[wasm_operator]` / `[ovm_operator]` 的完整 operator 计划。
