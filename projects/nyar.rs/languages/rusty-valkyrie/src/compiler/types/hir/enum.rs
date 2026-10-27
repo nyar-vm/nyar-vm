@@ -43,6 +43,10 @@ pub struct HirEnum {
     /// Unity types allow each variant to be implicitly converted to the base type.
     /// This enables patterns like `Some<T> <: Option<T>` and `None <: Option<T>`.
     pub is_unity: bool,
+    /// 值语义：enum/unite 默认就是值类型（`Value`），与 `structure` 相同。
+    ///
+    /// sum variant 是值构造，不共享对象身份；后端不得默认 Reference 回填。
+    pub is_value_type: bool,
 }
 
 /// A variant in an enum.
@@ -148,6 +152,7 @@ impl Default for HirEnum {
             variants: Vec::new(),
             visibility: HirVisibility::default(),
             is_unity: false,
+            is_value_type: true,
         }
     }
 }

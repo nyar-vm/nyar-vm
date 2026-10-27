@@ -15,6 +15,8 @@ pub struct MirSumDeclaration {
     pub name: String,
     /// 语言声明是否允许 variant 子类型。
     pub is_unite: bool,
+    /// 值语义事实：enum/unite 声明决定，不是目标推断。
+    pub is_value_type: bool,
     /// 声明 binder、kind 与 bounds。
     pub generics: Vec<GenericType>,
     /// 声明顺序中的 variant。
