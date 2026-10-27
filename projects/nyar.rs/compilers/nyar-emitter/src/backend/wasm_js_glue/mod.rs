@@ -183,20 +183,42 @@ function abiKind(schema) {{
     return null;
 }}
 
-// 判断 schema 是否是 NamedAggregate 且语义身份匹配指定名称和泛型参数 kind。
-// 用于识别 ArrayList<i64> / HashMap<K,V> 等在下游宿主有专用 marshal 规则的类型。
-// （注意：此函数是下游 glue 消费逻辑，不参与 schema 生成——schema 生成阶段已在 library_glue.rs 禁止硬编码）
-function matchesNamedAggregate(schema, expectedName, expectedGenericKinds) {{
-    if (!schema) return false;
-    const kind = abiKind(schema);
-    if (kind !== "NamedAggregate") return false;
-    if (schema.name !== expectedName) return false;
-    const args = schema.generic_args ?? [];
-    if (args.length !== expectedGenericKinds.length) return false;
-    for (let i = 0; i < args.length; i++) {{
-        if (abiKind(args[i]) !== expectedGenericKinds[i]) return false;
+// 从 schema 提取 generic_args 的 kind 字符串数组（如 ArrayList<I64> → ["I64"]）。
+function genericKinds(schema) {{
+    if (!schema || !Array.isArray(schema.generic_args)) return [];
+    return schema.generic_args.map(a => abiKind(a)).filter(Boolean);
+}}
+
+// 在 LIBRARY_INVOKE.glue_entries 里按 kind + name + genericKinds 查找匹配 entry。
+// 匹配 key = `${{kind}}:${{name}}:${{genericKinds.join(',')}}`。
+function findGlueEntry(kind, name, genericKindsList) {{
+    const entries = LIBRARY_INVOKE?.glue_entries ?? [];
+    for (const e of entries) {{
+        if (e.kind !== kind) continue;
+        if (name !== undefined && e.name !== name) continue;
+        if (genericKindsList && genericKindsList.length > 0) {{
+            const ek = (e.generic_args ?? []).map(a => abiKind(a));
+            if (ek.join(',') !== genericKindsList.join(',')) continue;
+        }}
+        return e;
+    }}
+    return null;
+}}
+
+// 检查 glue entry 的每个 operation 都有非空 export_name。
+// Stage A 产出的 export_name 当前是空字符串，只有 Stage C 填了 valkyrie.v 侧真实导出名才算可用。
+function entryHasExportNames(entry) {{
+    if (!entry || !Array.isArray(entry.operations)) return false;
+    for (const op of entry.operations) {{
+        if (typeof op.export_name !== 'string' || op.export_name.length === 0) return false;
     }}
     return true;
+}}
+
+// 从 entry.operations 里按 operation 名查找 export_name。
+function operationExportName(entry, operation) {{
+    const op = (entry?.operations ?? []).find(o => o.operation === operation);
+    return op ? op.export_name : null;
 }}
 
 function marshalLibraryArg(schema, value) {{
