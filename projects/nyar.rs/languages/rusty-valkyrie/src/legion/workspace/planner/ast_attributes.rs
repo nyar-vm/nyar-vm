@@ -3,14 +3,18 @@
 use crate::compiler::syntax::oak::ast::{Attribute, StringLiteral, StringSegment, TermExpression};
 
 use super::capability::ForeignBinding;
-use super::types::CfgPredicate;
+use super::types::{GatePredicate, WhenPredicate};
 
 pub(crate) fn has_host_contract_attribute(attributes: &[Attribute]) -> bool {
     attributes.iter().any(|attribute| attribute.name.name == "host_contract")
 }
 
-pub(crate) fn cfg_predicates_from_attributes(attributes: &[Attribute]) -> Vec<CfgPredicate> {
-    attributes.iter().filter_map(CfgPredicate::from_compile_condition_attribute).collect()
+pub(crate) fn when_attributes_from_items(attributes: &[Attribute]) -> Vec<WhenPredicate> {
+    attributes.iter().filter_map(WhenPredicate::from_when_attribute).collect()
+}
+
+pub(crate) fn gate_attributes_from_items(attributes: &[Attribute]) -> Vec<GatePredicate> {
+    attributes.iter().filter_map(GatePredicate::from_gate_attribute).collect()
 }
 
 pub(crate) fn foreign_bindings_from_attributes(attributes: &[Attribute]) -> Vec<ForeignBinding> {

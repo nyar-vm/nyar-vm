@@ -7,7 +7,6 @@ fn bare_run_args() -> RunArgs {
         project_dir: PathBuf::from("."),
         target: CanonicalTarget::parse("ovm").expect("ovm"),
         output_dir: None,
-        workspace: false,
         runner: Vec::new(),
         artifact: None,
         dry_run: true,

@@ -47,8 +47,6 @@ pub struct RunArgs {
     pub target: CanonicalTarget,
     /// 输出目录。
     pub output_dir: Option<PathBuf>,
-    /// 强制按 workspace 成员解析；若项目未注册则直接报错，不回退到 package 模式。
-    pub workspace: bool,
     /// 覆盖 runner 命令，例如 `clr=C:\dotnet\dotnet.exe`。
     pub runner: Vec<String>,
     /// 直接指定产物路径，跳过默认探测。
@@ -328,12 +326,7 @@ struct RunCommand {
 
 /// 执行 `legion run`。
 pub fn run(args: &RunArgs) -> LegionResult<ExitCode> {
-    let workspace = if args.workspace {
-        WorkspaceResolver::discover(&args.project_dir)?
-    }
-    else {
-        WorkspaceResolver::discover_for_project(&args.project_dir)?
-    };
+    let workspace = WorkspaceResolver::discover_for_project(&args.project_dir)?;
     let request = BuildRequest { project_dir: args.project_dir.clone(), target: args.target.clone(), output_dir: args.output_dir.clone() };
     let plan = workspace.build_plan(&request)?;
 
@@ -426,7 +419,6 @@ fn ensure_execution_manifest(args: &RunArgs, plan: &BuildPlan) -> LegionResult<E
         project_dir: args.project_dir.clone(),
         target: args.target.clone(),
         output_dir: args.output_dir.clone(),
-        workspace: args.workspace,
         debug_artifacts: args.debug_artifacts,
     })?;
     if build_status != ExitCode::SUCCESS {

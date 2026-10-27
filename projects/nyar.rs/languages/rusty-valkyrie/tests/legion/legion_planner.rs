@@ -525,6 +525,7 @@ fn workspace_root_without_legion_manifest_is_detected() {
     fs::write(app_dir.join("source").join("main.v"), "micro main() -> i64 { return 0; }\n").unwrap();
 
     let workspace = WorkspaceResolver::discover(root).unwrap();
+    assert!(workspace.is_at_workspace_root(root));
     assert!(workspace.is_workspace_only_root(root));
     assert_eq!(workspace.member_manifest_dirs().len(), 1);
 }
@@ -1807,7 +1808,7 @@ micro write(message: utf8): unit {
         .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::clr(), output_dir: None })
         .unwrap_err();
     assert!(
-        error.to_string().contains("multiple visible providers"),
+        error.to_string().contains("ambiguous host provider"),
         "expected conflicting CLR providers, got: {error}"
     );
 }
@@ -2023,7 +2024,7 @@ micro main() {
     .unwrap();
     fs::write(
         wasm_dir.join("source").join("fetch.browser.v"),
-        r#"[cfg(target_vendor = "browser")]
+        r#"[when(target.vendor == "browser")]
 namespace std.adaptor.wasm.fetch;
 
 [host_provider(std::net::fetch)]
@@ -2036,7 +2037,7 @@ micro browser_fetch(url: utf8): utf8 {
     .unwrap();
     fs::write(
         wasm_dir.join("source").join("fetch.wechat.v"),
-        r#"[cfg(target_vendor = "wechat")]
+        r#"[when(target.vendor == "wechat")]
 namespace std.adaptor.wasm.fetch;
 
 [host_provider(std::net::fetch)]
@@ -2169,14 +2170,14 @@ micro main() {
         wasm_dir.join("source").join("http.v"),
         r#"namespace std.adaptor.wasm.net;
 
-[cfg(target_vendor = "browser")]
+[when(target.vendor == "browser")]
 [host_provider(std::net::get)]
 [js("fetch")]
 micro browser_get(url: utf8): utf8 {
     return ""
 }
 
-[cfg(target_vendor = "wechat")]
+[when(target.vendor == "wechat")]
 [host_provider(std::net::get)]
 [js("wx.request")]
 micro miniprogram_get(url: utf8): utf8 {
@@ -2309,7 +2310,7 @@ micro main() -> i32 {
     fs::create_dir_all(wasm_dir.join("source").join("math").join("random")).unwrap();
     fs::write(
         wasm_dir.join("source").join("math").join("random").join("Random.browser.v"),
-        r#"[cfg(target_vendor = "browser")]
+        r#"[when(target.vendor == "browser")]
 namespace std.adaptor.wasm;
 
 [host_provider(std::math::random_next_i32)]
@@ -2747,7 +2748,7 @@ micro fetch_b(url: utf8): utf8 { return "" }
         })
         .unwrap_err();
     assert!(
-        error.to_string().contains("multiple visible providers"),
+        error.to_string().contains("ambiguous host provider"),
         "expected conflicting providers, got: {error}"
     );
 }
@@ -2927,7 +2928,7 @@ micro main() {
 [js("fetch")]
 micro fetch_uncfg(url: utf8): utf8 { return "" }
 
-[cfg(target_vendor = "browser")]
+[when(target.vendor == "browser")]
 [host_provider(std::net::fetch)]
 [js("fetch")]
 micro fetch_browser(url: utf8): utf8 { return "" }
@@ -2944,8 +2945,8 @@ micro fetch_browser(url: utf8): utf8 { return "" }
         })
         .unwrap_err();
     assert!(
-        error.to_string().contains("multiple visible providers"),
-        "cfg must not silently lose to an un-cfg sibling on the same target: {error}"
+        error.to_string().contains("ambiguous host provider"),
+        "unconditional provider must not coexist with active when-gated sibling: {error}"
     );
 }
 
