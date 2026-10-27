@@ -240,36 +240,43 @@ function marshalLibraryArg(schema, value) {{
     }}
     if (kind === "Unit") return undefined;
 
-    // ── Named aggregates with glue registry entries ─────────────────────
-    // ArrayList<i64>：下游 glue 注册表查找 ArrayList 导出函数
-    if (matchesNamedAggregate(schema, "ArrayList", ["I64"])) {{
-        const glue = LIBRARY_INVOKE?.glue?.ArrayList?.i64;
-        if (glue) {{
-            const nums = Array.isArray(value) ? value : [];
-            const list = exports[glue.new](BigInt(nums.length));
-            const push = exports[glue.push];
-            for (const item of nums) {{
-                push(list, BigInt(item));
-            }}
-            return list;
+    // ── NamedAggregate：从 glue_entries registry 查找 marshal 规则 ────
+    // 不硬编码名称，完全消费 Stage A 生成的 glue_entries JSON 数组。
+    if (kind === "NamedAggregate") {{
+        const gk = genericKinds(schema);
+        const entry = findGlueEntry("NamedAggregate", schema.name, gk);
+        if (!entry || !entryHasExportNames(entry)) {{
+            console.warn(
+                `[wasm-js-glue] NamedAggregate ${{schema.name}}<${{gk.join(',')}}> 缺少 glue_entries 注册或 export_name，fallback passthrough`
+            );
+            return value;
         }}
-        // 回退路径：兼容旧版 list_i64 glue key（向后兼容过渡期）
-        const legacy = LIBRARY_INVOKE?.glue?.list_i64;
-        if (legacy) {{
-            const nums = Array.isArray(value) ? value : [];
-            const list = exports[legacy.new](BigInt(nums.length));
-            const push = exports[legacy.push];
-            for (const item of nums) {{
-                push(list, BigInt(item));
-            }}
-            return list;
+        const constructName = operationExportName(entry, "construct");
+        const pushName = operationExportName(entry, "push");
+        const construct = constructName ? exports[constructName] : null;
+        const push = pushName ? exports[pushName] : null;
+        if (!construct || !push) {{
+            console.warn(`[wasm-js-glue] glue entry 缺少 construct/push 导出: ${{schema.name}}`);
+            return value;
         }}
-        throw new Error("ArrayList<i64> 参数缺少 glue 注册表项");
+        // 元素 carrier 从 construct 或 push 的 param_carriers 推断（通常 push 的第二个参数是元素）
+        const pushOp = entry.operations.find(o => o.operation === "push");
+        const elementCarrier = (pushOp?.param_carriers ?? []).at(-1) ?? "i32";
+        const arr = Array.isArray(value) ? value : [];
+        const handle = construct(BigInt(arr.length));
+        for (const item of arr) {{
+            let wasmItem = item;
+            if (elementCarrier === "i64") wasmItem = BigInt(item ?? 0);
+            else if (elementCarrier === "i32") wasmItem = Number(item ?? 0) | 0;
+            else if (elementCarrier === "f64") wasmItem = Number(item ?? 0);
+            else if (elementCarrier === "f32") wasmItem = Number(item ?? 0);
+            push(handle, wasmItem);
+        }}
+        return handle;
     }}
 
     // ── Fallback ────────────────────────────────────────────────────────
-    // Array / Option / Tuple / 其他 NamedAggregate：阶段 C 实现完整 marshal
-    // 当前直接透传 value，宿主若不兼容会在 Wasm 调用点 trap。
+    // 其他未声明的 NamedAggregate / Array / Option / Tuple：passthrough。
     return value;
 }}
 
@@ -288,18 +295,37 @@ function demarshalLibraryReturn(schema, raw) {{
     if (kind === "Utf8") return raw == null ? "" : Number(raw);
     if (kind === "Utf16") return raw == null ? "" : Number(raw);
 
-    // ── Named aggregates with glue registry entries ─────────────────────
-    if (matchesNamedAggregate(schema, "ArrayList", ["I64"])) {{
+    // ── NamedAggregate：从 glue_entries registry 查找 demarshal 规则 ────
+    if (kind === "NamedAggregate") {{
         if (raw == null) return null;
-        const glue = LIBRARY_INVOKE?.glue?.ArrayList?.i64 ?? LIBRARY_INVOKE?.glue?.list_i64;
-        if (!glue) throw new Error("ArrayList<i64> 返回值缺少 glue 注册表项");
-        const len = Number(exports[glue.length](raw));
+        const gk = genericKinds(schema);
+        const entry = findGlueEntry("NamedAggregate", schema.name, gk);
+        if (!entry || !entryHasExportNames(entry)) {{
+            console.warn(
+                `[wasm-js-glue] NamedAggregate ${{schema.name}}<${{gk.join(',')}}> 缺少 glue_entries 注册或 export_name，fallback passthrough`
+            );
+            return raw;
+        }}
+        const lengthName = operationExportName(entry, "length");
+        const atName = operationExportName(entry, "at");
+        const lengthFn = lengthName ? exports[lengthName] : null;
+        const atFn = atName ? exports[atName] : null;
+        if (!lengthFn || !atFn) {{
+            console.warn(`[wasm-js-glue] glue entry 缺少 length/at 导出: ${{schema.name}}`);
+            return raw;
+        }}
+        const len = Number(lengthFn(raw));
         if (len === 0) return [];
         const out = [];
-        const at = exports[glue.at];
+        // 返回值 carrier 推断自 at 操作的 return_carrier
+        const atOp = entry.operations.find(o => o.operation === "at");
+        const returnCarrier = atOp?.return_carrier ?? "i32";
         for (let i = 0; i < len; i++) {{
             // V `ArrayList.at` 使用序数索引（1-based）；JS 循环 `i` 是基数（0-based），故传 `i + 1`。
-            out.push(Number(at(raw, i + 1)));
+            let v = atFn(raw, i + 1);
+            if (returnCarrier === "i64") v = Number(v);
+            else v = Number(v);
+            out.push(v);
         }}
         return out;
     }}
