@@ -709,7 +709,9 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
         function.value_types.keys().map(|value| Value { id: ValueRef(value.index()), origin: ValueOrigin::Temporary }).collect::<Vec<_>>();
     for (index, (value, _)) in function.parameters.iter().enumerate() {
         let row = values.iter_mut().find(|row| row.id.0 == value.index()).ok_or_else(|| format!("入口参数缺少 SSA 值合同"))?;
-        row.origin = ValueOrigin::Parameter { index, name: format!("arg{index}") };
+        // canonical 已保留 compiler schema 的声明参数名；缺失只是防御性回落。
+        let name = function.parameter_names.get(index).cloned().unwrap_or_else(|| format!("arg{index}"));
+        row.origin = ValueOrigin::Parameter { index, name };
     }
     let mut callees = Vec::new();
     let mut blocks = Vec::new();

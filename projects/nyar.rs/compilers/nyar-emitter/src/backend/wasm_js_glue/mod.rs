@@ -197,8 +197,10 @@ fn validate_library_invoke_exports(wasm_path: &Path) -> Result<()> {
 }
 
 fn library_invoke_marshaler_js(spec_json: &str) -> String {
-    // LIBRARY_INVOKE 现在消费结构化的 WasmAbiType JSON schema。
-    // 每个 param/return 要么是 string (旧格式 "i64")，要么是 object (新格式 {"kind": "I64", ...})。
+    // LIBRARY_INVOKE 的 `returns` 与 marshal 目标消费结构化的 WasmAbiType JSON schema：
+    // 要么是 string (旧格式 "i64")，要么是 object (新格式 {"kind": "I64", ...})。
+    // `exports[*].params` 自 v2 起是参数身份对象 {index, name, type, carrier}，
+    // 通过 `paramType` 取其中的 `type` 后再 marshal。
     format!(
         r#"const LIBRARY_INVOKE = {spec_json};
 
@@ -249,6 +251,13 @@ function entryHasExportNames(entry) {{
 function operationExportName(entry, operation) {{
     const op = (entry?.operations ?? []).find(o => o.operation === operation);
     return op ? op.export_name : null;
+}}
+
+// 从 param 条目提取 marshal 用的类型 schema。
+// v2 合同是 {{index, name, type, carrier}}；兼容旧的裸 schema / 字符串条目。
+function paramType(param) {{
+    if (param && typeof param === "object" && param.type !== undefined) return param.type;
+    return param;
 }}
 
 function marshalLibraryArg(schema, value) {{
@@ -776,7 +785,7 @@ const wasmBytes = readFileSync(new URL("./{name}.wasm", import.meta.url));
     }}
     const spec = LIBRARY_INVOKE?.exports?.[name];
     if (spec?.params) {{
-        const marshaled = spec.params.map((kind, index) => marshalLibraryArg(kind, args[index]));
+        const marshaled = spec.params.map((param, index) => marshalLibraryArg(paramType(param), args[index]));
         const raw = fn(...marshaled);
         return demarshalLibraryReturn(spec.returns, raw);
     }}

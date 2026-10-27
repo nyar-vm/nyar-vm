@@ -21,6 +21,7 @@ fn canonical_program_is_success_only() {
     let function = CanonicalFunction {
         instance,
         parameters: Vec::new(),
+        parameter_names: Vec::new(),
         return_type: ty,
         value_types: BTreeMap::new(),
         entry: CanonicalBlockId(0),
@@ -55,6 +56,7 @@ fn canonical_mir_rejects_unknown_callee_before_planning() {
     let function = CanonicalFunction {
         instance,
         parameters: Vec::new(),
+        parameter_names: Vec::new(),
         return_type: ty,
         value_types: BTreeMap::new(),
         entry: CanonicalBlockId(0),
@@ -108,6 +110,7 @@ fn canonical_array_contract_checks_inputs_and_results_before_planning() {
     let function = CanonicalFunction {
         instance,
         parameters: vec![(array, array_type), (index, integer)],
+        parameter_names: vec!["array".to_string(), "index".to_string()],
         return_type: integer,
         value_types: BTreeMap::from([(array, array_type), (index, integer), (result, integer)]),
         entry: CanonicalBlockId(0),
@@ -156,6 +159,7 @@ fn canonical_effect_terminator_preserves_payload_and_resume_contract() {
     let function = CanonicalFunction {
         instance,
         parameters: vec![(payload, ty)],
+        parameter_names: vec!["payload".to_string()],
         return_type: ty,
         value_types: BTreeMap::from([(payload, ty), (resume_value, ty)]),
         entry: CanonicalBlockId(0),
@@ -200,6 +204,7 @@ fn canonical_effect_terminator_rejects_missing_payload() {
     let function = CanonicalFunction {
         instance,
         parameters: Vec::new(),
+        parameter_names: Vec::new(),
         return_type: ty,
         value_types: BTreeMap::new(),
         entry: CanonicalBlockId(0),
@@ -238,6 +243,7 @@ fn typed_call_program() -> CanonicalProgram {
     let function = CanonicalFunction {
         instance: caller,
         parameters: vec![(argument, ty)],
+        parameter_names: vec!["argument".to_string()],
         return_type: ty,
         value_types: BTreeMap::from([(argument, ty), (result, ty)]),
         entry: CanonicalBlockId(0),
@@ -388,6 +394,7 @@ fn instantiated_nominal_operation_program(operation: CanonicalOperation, result_
         CanonicalFunction {
             instance,
             parameters: vec![(object, first_type), (payload, boolean)],
+            parameter_names: vec!["object".to_string(), "payload".to_string()],
             return_type,
             value_types,
             entry,
@@ -739,6 +746,7 @@ fn typed_function_value_program() -> CanonicalProgram {
     let function = CanonicalFunction {
         instance: caller,
         parameters: vec![(function_value, function_type), (argument, value_type)],
+        parameter_names: vec!["function_value".to_string(), "argument".to_string()],
         return_type: value_type,
         value_types: BTreeMap::from([(function_value, function_type), (argument, value_type), (result, value_type)]),
         entry: CanonicalBlockId(0),

@@ -32,7 +32,7 @@ pub(crate) fn lower_function(
             Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))
         })
         .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
-    let parameters = canonical_entry_parameters(function, ids)?;
+    let (parameters, parameter_names) = canonical_entry_parameters(function, ids)?;
     let blocks = function
         .blocks
         .iter()
@@ -81,6 +81,7 @@ pub(crate) fn lower_function(
     Ok(CanonicalFunction {
         instance,
         parameters,
+        parameter_names,
         return_type: type_id(ids, &function.return_type)?,
         value_types,
         entry: CanonicalBlockId(function.entry.0),
@@ -88,16 +89,21 @@ pub(crate) fn lower_function(
     })
 }
 
+/// 收集入口参数的 SSA 值与 canonical 参数名。
+///
+/// 参数名必须来自 MIR 的 `MirValueOrigin::Parameter { index, name }`（compiler
+/// schema 的声明名），并按 index 排成声明顺序；index 重复、越界、数量不一致
+/// 都在此按 `CAN032` 失败。
 fn canonical_entry_parameters(
     function: &MirFunction,
     ids: &BTreeMap<ValkyrieType, TypeId>,
-) -> Result<Vec<(MirValueId, TypeId)>, StructuredDiagnosticSet> {
+) -> Result<(Vec<(MirValueId, TypeId)>, Vec<String>), StructuredDiagnosticSet> {
     let invalid = || error_without_module("CAN032", format!("函数 `{}` 的声明参数、SSA 参数来源与入口块参数不一致", function.display_symbol));
     let entry = function.blocks.iter().find(|block| block.id == function.entry).ok_or_else(invalid)?;
     let mut origins = BTreeMap::new();
     for value in &function.values {
-        if let MirValueOrigin::Parameter { index, .. } = value.origin {
-            if function.param_types.get(index).is_none() || origins.insert(index, value.id).is_some() {
+        if let MirValueOrigin::Parameter { index, name } = &value.origin {
+            if function.param_types.get(*index).is_none() || origins.insert(*index, (value.id, name.clone())).is_some() {
                 return Err(invalid());
             }
         }
@@ -105,18 +111,20 @@ fn canonical_entry_parameters(
     if origins.len() != function.param_types.len() || entry.parameters.len() != function.param_types.len() {
         return Err(invalid());
     }
-    function
-        .param_types
-        .iter()
-        .enumerate()
-        .map(|(index, ty)| {
-            let value = origins.get(&index).ok_or_else(invalid)?;
-            if entry.parameters.get(index) != Some(value) || function.value_types.get(value) != Some(ty) {
-                return Err(invalid());
-            }
-            Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))
-        })
-        .collect()
+    let mut parameters = Vec::with_capacity(function.param_types.len());
+    let mut parameter_names = Vec::with_capacity(function.param_types.len());
+    for (index, ty) in function.param_types.iter().enumerate() {
+        let (value, name) = origins.get(&index).ok_or_else(invalid)?;
+        if entry.parameters.get(index) != Some(value) || function.value_types.get(value) != Some(ty) {
+            return Err(invalid());
+        }
+        parameters.push((
+            MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?,
+            type_id(ids, ty)?,
+        ));
+        parameter_names.push(name.clone());
+    }
+    Ok((parameters, parameter_names))
 }
 
 fn resolve_sum_nominal(
