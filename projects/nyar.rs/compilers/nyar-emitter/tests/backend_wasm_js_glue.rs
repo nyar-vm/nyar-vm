@@ -69,10 +69,11 @@ fn build_node_launcher_library_mode_exposes_call_export_without_main_dispatch() 
 
 #[test]
 fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
-    // `nyar.library_invoke` v5 合同：结构化 WasmAbiType schema + glue_entries + abi_digest。
+    // `nyar.library_invoke` v6 合同：version + 结构化 WasmAbiType schema + glue_entries + abi_digest。
     // abi_digest 在启动壳里只做携带，不参与校验，因此这里用固定占位值；真实值由
     // `library_glue::abi_contract_digest` 在编译期计算。
     let spec = r#"{
+        "version": 1,
         "exports": {
             "twoSum": {
                 "params": [
@@ -89,10 +90,10 @@ fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
                 "module_path": "std::collections",
                 "generic_args": [{"kind":"I64"}],
                 "operations": [
-                    {"operation":"construct","export_name":"$ArrayList_i64_new","param_carriers":["i64"],"return_carrier":"i32","export_source":"backend_synthetic"},
-                    {"operation":"push","export_name":"$ArrayList_i64_push","param_carriers":["i32","i64"],"return_carrier":"void","export_source":"backend_synthetic"},
-                    {"operation":"length","export_name":"$ArrayList_i64_len","param_carriers":["i32"],"return_carrier":"i32","export_source":"backend_synthetic"},
-                    {"operation":"at","export_name":"$ArrayList_i64_at","param_carriers":["i32","i32"],"return_carrier":"i64","export_source":"backend_synthetic"}
+                    {"operation":"construct","export_name":"$seq_std_collections_ArrayList_i64_new","param_carriers":["i32"],"return_carrier":"i32","export_source":"backend_synthetic"},
+                    {"operation":"push","export_name":"$seq_std_collections_ArrayList_i64_push","param_carriers":["i32","i64"],"return_carrier":"void","export_source":"backend_synthetic"},
+                    {"operation":"length","export_name":"$seq_std_collections_ArrayList_i64_len","param_carriers":["i32"],"return_carrier":"i32","export_source":"backend_synthetic"},
+                    {"operation":"at","export_name":"$seq_std_collections_ArrayList_i64_at","param_carriers":["i32","i32"],"return_carrier":"i64","export_source":"backend_synthetic"}
                 ],
                 "source": "backend_synthetic",
                 "status": "ready"
@@ -104,6 +105,7 @@ fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
     assert!(launcher.contains("marshalLibraryArg"), "library glue must marshal args from invoke spec");
     assert!(launcher.contains("demarshalLibraryReturn"), "library glue must demarshal returns from invoke spec");
     assert!(launcher.contains("glue_entries"), "launcher must carry the glue_entries contract verbatim");
+    assert!(launcher.contains("\"version\": 1"), "launcher must carry the schema version verbatim");
     assert!(launcher.contains("abi_digest"), "launcher must carry the ABI digest verbatim");
 }
 

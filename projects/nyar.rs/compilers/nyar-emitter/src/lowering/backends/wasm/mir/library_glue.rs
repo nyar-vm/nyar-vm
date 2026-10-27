@@ -14,15 +14,22 @@
 //! 提供 aggregate 的语义身份 skeleton。`export_name` 暂留占位，
 //! 等 Stream C 确认 valkyrie.v 的具体 Wasm 导出后补全。
 //!
-//! v5（当前阶段）：`nyar.library_invoke` 顶层新增 `abi_digest`——对
-//! `exports` 与 `glue_entries` 的规范化序列化（对象键排序）做 SHA-256；
-//! 同一 ABI 事实恒得同一 digest。sequence helper 合成不再按类型名特判，
-//! 改为消费 plan 冻结的 aggregate layout 结构事实（数组字段 + 元素 schema）。
+//! v5：`nyar.library_invoke` 顶层新增 `abi_digest`——对 `exports` 与
+//! `glue_entries` 的规范化序列化（对象键排序）做 SHA-256；同一 ABI 事实恒得
+//! 同一 digest。sequence helper 合成不再按类型名特判，改为消费 plan 冻结的
+//! aggregate layout 结构事实（数组字段 + 元素 schema）。
+//!
+//! v6（当前阶段）：顶层新增 `version`（当前为 `1`）供跨仓消费者校验协议版本，
+//! 并把 `version` 纳入 `abi_digest` 的规范化输入；`construct` 的物理签名改为
+//! 容量/长度语义（`["i32"] → "i32"`），与 JS glue 的 `construct(arr.length)`
+//! 一致；`validate_glue_entry_exports` 要求所有 operation 的 `export_name`
+//! （含 `backend_synthetic`）都真实存在于 Wasm export section。
 //!
 //! # JSON 格式
 //!
 //! ```json
 //! {
+//!   "version": 1,
 //!   "exports": {
 //!     "solve": {
 //!       "params": [
@@ -52,8 +59,8 @@
 //! - **只**声明 `NamedAggregate` 的语义身份（name + module_path + generic_args）
 //! - **不**硬编码任何特定 aggregate 有哪些 operations（那是 valkyrie.v stdlib 的事）
 //! - 结构事实成立时由 backend 合成 sequence helper operations，`export_source`
-//!   区分 `declared`（plan 已声明导出，编译期强校验真实存在）与
-//!   `backend_synthetic`（helper 尚无生产端，JS glue 运行时校验）
+//!   区分 `declared`（plan 已声明导出）与 `backend_synthetic`（backend 合成名）；
+//!   两者都必须在 artifact 校验阶段真实存在于 Wasm export section，缺失即失败
 
 use std::collections::BTreeSet;
 
@@ -65,6 +72,12 @@ use crate::{
 };
 
 use super::abi_schema::{WasmAbiType, abi_schema_for_type};
+
+/// `nyar.library_invoke` JSON schema 版本。
+///
+/// 跨仓消费者（如 `leetcode.v` 的 `abi.ts`）据此校验协议版本；版本变化同时会
+/// 改变 [`abi_contract_digest`]。
+const LIBRARY_INVOKE_SCHEMA_VERSION: u64 = 1;
 
 /// 把函数的参数/返回类型提升为 `WasmAbiType` schema。
 ///
@@ -219,6 +232,32 @@ fn array_field_element<'a>(layouts: &'a AggregateLayoutPlan, name: &str, module_
     exact.or_else(|| if loose.len() == 1 { Some(loose[0]) } else { None })
 }
 
+/// 合成 sequence helper export 名称的固定前缀。
+const SEQUENCE_HELPER_PREFIX: &str = "$seq_";
+
+/// 由 aggregate 的 module_path + name + element tag 派生稳定的 helper 名 stem。
+///
+/// 名称是 aggregate 实例的身份投影：不同 namespace 或不同元素类型不会得到同一个
+/// helper 名，也不会让任意序列型结构自称 `ArrayList`。只保留字母数字与 `_`，其余
+/// 字符（`::`、`.` 等）归一为 `_`。
+fn sequence_helper_stem(module_path: &str, name: &str, tag: &str) -> String {
+    let mut stem = String::from(SEQUENCE_HELPER_PREFIX);
+    let normalized_module = normalize_module_path(module_path);
+    if !normalized_module.is_empty() {
+        push_identifier_fragment(&mut stem, &normalized_module);
+        stem.push('_');
+    }
+    push_identifier_fragment(&mut stem, name);
+    stem.push('_');
+    push_identifier_fragment(&mut stem, tag);
+    stem
+}
+
+/// 把输入中的非标识符字符替换为 `_`，追加到 `out`。
+fn push_identifier_fragment(out: &mut String, input: &str) {
+    out.extend(input.chars().map(|ch| if ch.is_alphanumeric() || ch == '_' { ch } else { '_' }));
+}
+
 /// 为结构事实成立的序列型 NamedAggregate 合成 intrinsic lowering 的 helper
 /// export operations。
 ///
@@ -231,18 +270,18 @@ fn array_field_element<'a>(layouts: &'a AggregateLayoutPlan, name: &str, module_
 ///
 /// # 合成 pattern
 ///
-/// 设 element type 的 carrier 为 `E`（如 `"i64"`）、export tag 为 `T`（如 `"i64"`）：
+/// 设 element type 的 carrier 为 `E`（如 `"i64"`）、export tag 为 `T`（如 `"i64"`），
+/// `{id}` 由 aggregate 的 module_path + name + `T` 派生（见 [`sequence_helper_stem`]）：
 ///
-/// | operation | export_name            | param_carriers    | return_carrier |
-/// |-----------|------------------------|-------------------|----------------|
-/// | construct | `$ArrayList_{T}_new`   | `[E]`             | `i32`          |
-/// | push      | `$ArrayList_{T}_push`  | `["i32", E]`      | `void`         |
-/// | length    | `$ArrayList_{T}_len`   | `["i32"]`         | `i32`          |
-/// | at        | `$ArrayList_{T}_at`    | `["i32", "i32"]`  | `E`            |
+/// | operation | export_name         | param_carriers    | return_carrier |
+/// |-----------|---------------------|-------------------|----------------|
+/// | construct | `$seq_{id}_new`     | `["i32"]`         | `i32`          |
+/// | push      | `$seq_{id}_push`    | `["i32", E]`      | `void`         |
+/// | length    | `$seq_{id}_len`     | `["i32"]`         | `i32`          |
+/// | at        | `$seq_{id}_at`      | `["i32", "i32"]`  | `E`            |
 ///
-/// construct 的第一个参数是 element type carrier——当前 intrinsic lowering 里
-/// ArrayList 构造时会按 element size 预分配，这个 carrier 用于标识具体哪个
-/// 合成函数。后续如果 construct 签名有变化，只改本表即可。
+/// construct 的第一个参数是容量/长度（与 JS glue 的 `construct(arr.length)` 一致），
+/// 返回 `i32` 句柄；push 的第一个参数是句柄，第二个参数是元素。
 ///
 /// `export_source` 按 plan 已声明导出派生：命中 `declared_exports` 记为
 /// `declared`，否则记为 `backend_synthetic`。
@@ -262,16 +301,17 @@ fn synthesize_sequence_helper_operations(
         if declared_exports.contains(export_name) { EXPORT_SOURCE_DECLARED } else { EXPORT_SOURCE_BACKEND_SYNTHETIC }
     };
 
-    let new_export = format!("$ArrayList_{tag}_new");
-    let push_export = format!("$ArrayList_{tag}_push");
-    let len_export = format!("$ArrayList_{tag}_len");
-    let at_export = format!("$ArrayList_{tag}_at");
+    let stem = sequence_helper_stem(module_path, name, tag);
+    let new_export = format!("{stem}_new");
+    let push_export = format!("{stem}_push");
+    let len_export = format!("{stem}_len");
+    let at_export = format!("{stem}_at");
 
     Some(vec![
         serde_json::json!({
             "operation": "construct",
             "export_name": new_export,
-            "param_carriers": [carrier],
+            "param_carriers": ["i32"],
             "return_carrier": "i32",
             "export_source": export_source(&new_export)
         }),
@@ -396,8 +436,9 @@ pub(super) fn append_library_mode_glue(
     let declared_exports: BTreeSet<String> = submission.backend_plan.wasm_export_names().values().cloned().collect();
     let layouts = submission.backend_plan.aggregate_layouts();
     let glue_entries = render_glue_entries(&aggregate_keys, layouts, &declared_exports);
-    let abi_digest = abi_contract_digest(&serde_json::Value::Object(invoke_exports.clone()), &glue_entries);
+    let abi_digest = abi_contract_digest(LIBRARY_INVOKE_SCHEMA_VERSION, &serde_json::Value::Object(invoke_exports.clone()), &glue_entries);
     let payload = serde_json::json!({
+        "version": LIBRARY_INVOKE_SCHEMA_VERSION,
         "exports": invoke_exports,
         "glue_entries": glue_entries,
         "abi_digest": abi_digest,
@@ -432,10 +473,12 @@ fn canonical_json(value: &serde_json::Value) -> String {
 
 /// 计算 `nyar.library_invoke` 的稳定 ABI digest。
 ///
-/// 对 `exports` 与 `glue_entries` 的规范化 JSON 做 SHA-256：同一 ABI 事实恒得
-/// 同一 digest，任一导出签名或 glue operation 变化都会改变 digest。
-fn abi_contract_digest(exports: &serde_json::Value, glue_entries: &[serde_json::Value]) -> String {
+/// 对 `version`、`exports` 与 `glue_entries` 的规范化 JSON 做 SHA-256：同一 ABI
+/// 事实恒得同一 digest，协议版本、任一导出签名或 glue operation 变化都会改变
+/// digest。
+fn abi_contract_digest(version: u64, exports: &serde_json::Value, glue_entries: &[serde_json::Value]) -> String {
     let facts = serde_json::json!({
+        "version": version,
         "exports": exports,
         "glue_entries": glue_entries,
     });
@@ -457,13 +500,13 @@ fn aggregate_identity_label(entry: &serde_json::Value) -> String {
 
 /// 校验 `glue_entries` 引用的 Wasm export 是否真实存在于本次模块的 export section。
 ///
-/// 强校验只覆盖 `export_source == "declared"` 的 operation：这类名字来自
-/// `TargetExecutionPlan::wasm_export_names()`，emit 阶段必须真实导出。缺失时返回
-/// 含 aggregate identity、operation、export_name 的结构化错误。
+/// 校验覆盖**所有** operation，不区分 `export_source`：`declared` 名来自
+/// `TargetExecutionPlan::wasm_export_names()`，`backend_synthetic` 名由 backend
+/// 合成，二者都必须在 artifact 校验阶段真实导出。缺失时返回含 aggregate identity、
+/// operation、export_name 的结构化错误。
 ///
-/// `backend_synthetic` helper 目前没有生产端（`$ArrayList_*` 无任何发射路径），
-/// 因此不在编译期强校验；JS glue 的 `entryHasExportNames` + `exports[name]` 检查
-/// 会在运行时拒绝缺失导出，不会静默 passthrough。
+/// 因此 `backend_synthetic` helper 若没有真实 producer，库构建会在此处诚实失败，
+/// 而不是拖到 JS glue 运行时才失败。
 pub(crate) fn validate_glue_entry_exports(glue_entries: &[serde_json::Value], wasm_exports: &BTreeSet<String>) -> Result<()> {
     for entry in glue_entries {
         let identity = aggregate_identity_label(entry);
@@ -472,13 +515,10 @@ pub(crate) fn validate_glue_entry_exports(glue_entries: &[serde_json::Value], wa
             continue;
         };
         for operation in operations {
-            if operation.get("export_source").and_then(|value| value.as_str()) != Some(EXPORT_SOURCE_DECLARED) {
-                continue;
-            }
             let operation_name = operation.get("operation").and_then(|value| value.as_str()).unwrap_or("<unknown>");
             let export_name = operation.get("export_name").and_then(|value| value.as_str()).unwrap_or("");
             if export_name.is_empty() {
-                return Err(format!("glue 合同的 declared operation 缺少 export_name: aggregate={identity} operation={operation_name}"));
+                return Err(format!("glue 合同的 operation 缺少 export_name: aggregate={identity} operation={operation_name}"));
             }
             if !wasm_exports.contains(export_name) {
                 return Err(format!(
@@ -545,20 +585,20 @@ mod tests {
         let ops = entries[0]["operations"].as_array().expect("operations array");
         assert_eq!(ops.len(), 4, "ArrayList<i64> 应有 construct/push/length/at 四个 operation");
         assert_eq!(ops[0]["operation"], "construct");
-        assert_eq!(ops[0]["export_name"], "$ArrayList_i64_new");
-        assert_eq!(ops[0]["param_carriers"], serde_json::json!(["i64"]));
+        assert_eq!(ops[0]["export_name"], "$seq_std_collections_ArrayList_i64_new");
+        assert_eq!(ops[0]["param_carriers"], serde_json::json!(["i32"]));
         assert_eq!(ops[0]["return_carrier"], "i32");
         assert_eq!(ops[0]["export_source"], "backend_synthetic");
         assert_eq!(ops[1]["operation"], "push");
-        assert_eq!(ops[1]["export_name"], "$ArrayList_i64_push");
+        assert_eq!(ops[1]["export_name"], "$seq_std_collections_ArrayList_i64_push");
         assert_eq!(ops[1]["param_carriers"], serde_json::json!(["i32", "i64"]));
         assert_eq!(ops[1]["return_carrier"], "void");
         assert_eq!(ops[2]["operation"], "length");
-        assert_eq!(ops[2]["export_name"], "$ArrayList_i64_len");
+        assert_eq!(ops[2]["export_name"], "$seq_std_collections_ArrayList_i64_len");
         assert_eq!(ops[2]["param_carriers"], serde_json::json!(["i32"]));
         assert_eq!(ops[2]["return_carrier"], "i32");
         assert_eq!(ops[3]["operation"], "at");
-        assert_eq!(ops[3]["export_name"], "$ArrayList_i64_at");
+        assert_eq!(ops[3]["export_name"], "$seq_std_collections_ArrayList_i64_at");
         assert_eq!(ops[3]["param_carriers"], serde_json::json!(["i32", "i32"]));
         assert_eq!(ops[3]["return_carrier"], "i64");
     }
@@ -612,7 +652,7 @@ mod tests {
         let ops = synthesize_sequence_helper_operations(&layouts, "Deque", "", &[WasmAbiType::I32], &BTreeSet::new())
             .expect("structure fact should synthesize sequence helpers");
         assert_eq!(ops.len(), 4);
-        assert_eq!(ops[0]["export_name"], "$ArrayList_i32_new");
+        assert_eq!(ops[0]["export_name"], "$seq_Deque_i32_new");
     }
 
     #[test]
@@ -621,9 +661,9 @@ mod tests {
         let ops = synthesize_sequence_helper_operations(&layouts, "ArrayList", "", &[WasmAbiType::I32], &BTreeSet::new())
             .expect("ArrayList<i32> should synthesize");
         assert_eq!(ops.len(), 4);
-        assert_eq!(ops[0]["export_name"], "$ArrayList_i32_new");
+        assert_eq!(ops[0]["export_name"], "$seq_ArrayList_i32_new");
         assert_eq!(ops[0]["param_carriers"], serde_json::json!(["i32"]));
-        assert_eq!(ops[1]["export_name"], "$ArrayList_i32_push");
+        assert_eq!(ops[1]["export_name"], "$seq_ArrayList_i32_push");
         assert_eq!(ops[3]["return_carrier"], "i32");
     }
 
@@ -632,7 +672,7 @@ mod tests {
         let layouts = sequence_layout("ArrayList", "", nyar("f64"));
         let ops = synthesize_sequence_helper_operations(&layouts, "ArrayList", "", &[WasmAbiType::F64], &BTreeSet::new())
             .expect("ArrayList<f64> should synthesize");
-        assert_eq!(ops[0]["export_name"], "$ArrayList_f64_new");
+        assert_eq!(ops[0]["export_name"], "$seq_ArrayList_f64_new");
         assert_eq!(ops[1]["param_carriers"], serde_json::json!(["i32", "f64"]));
         assert_eq!(ops[3]["return_carrier"], "f64");
     }
@@ -643,9 +683,19 @@ mod tests {
         let ops = synthesize_sequence_helper_operations(&layouts, "ArrayList", "", &[WasmAbiType::Bool], &BTreeSet::new())
             .expect("ArrayList<bool> should synthesize");
         // carrier 是 i32（Wasm 层），但 export tag 保留 bool
-        assert_eq!(ops[0]["export_name"], "$ArrayList_bool_new");
+        assert_eq!(ops[0]["export_name"], "$seq_ArrayList_bool_new");
         assert_eq!(ops[0]["param_carriers"], serde_json::json!(["i32"]));
         assert_eq!(ops[3]["return_carrier"], "i32");
+    }
+
+    #[test]
+    fn sequence_helper_names_follow_aggregate_identity() {
+        let list_i64 = sequence_helper_stem("std::collections", "ArrayList", "i64");
+        let list_f64 = sequence_helper_stem("std::collections", "ArrayList", "f64");
+        let other_namespace = sequence_helper_stem("user::lib", "ArrayList", "i64");
+        assert_eq!(list_i64, "$seq_std_collections_ArrayList_i64");
+        assert_ne!(list_i64, list_f64, "不同元素类型必须得到不同 helper 名");
+        assert_ne!(list_i64, other_namespace, "不同 namespace 必须得到不同 helper 名");
     }
 
     #[test]
@@ -683,7 +733,7 @@ mod tests {
     fn declared_export_marks_operation_source_declared() {
         let layouts = sequence_layout("ArrayList", "", nyar("i64"));
         let mut declared = BTreeSet::new();
-        declared.insert("$ArrayList_i64_new".to_string());
+        declared.insert("$seq_ArrayList_i64_new".to_string());
         let ops = synthesize_sequence_helper_operations(&layouts, "ArrayList", "", &[WasmAbiType::I64], &declared)
             .expect("structure fact should synthesize");
         assert_eq!(ops[0]["export_source"], "declared");
@@ -702,8 +752,8 @@ mod tests {
             r#"{"build":{"returns":{"kind":"I32"},"params":[]},"solve":{"returns":{"kind":"Unit"},"params":[{"kind":"I64"}]}}"#,
         )
         .unwrap();
-        let digest_a = abi_contract_digest(&exports_a, &[]);
-        let digest_b = abi_contract_digest(&exports_b, &[]);
+        let digest_a = abi_contract_digest(LIBRARY_INVOKE_SCHEMA_VERSION, &exports_a, &[]);
+        let digest_b = abi_contract_digest(LIBRARY_INVOKE_SCHEMA_VERSION, &exports_b, &[]);
         assert!(digest_a.starts_with("sha256-"), "digest should be prefixed: {digest_a}");
         assert_eq!(digest_a, digest_b, "同一 ABI 事实必须得到同一 digest");
     }
@@ -711,18 +761,26 @@ mod tests {
     #[test]
     fn abi_digest_changes_with_glue_operations() {
         let exports: serde_json::Value = serde_json::from_str(r#"{"solve":{"params":[],"returns":{"kind":"I64"}}}"#).unwrap();
-        let empty_digest = abi_contract_digest(&exports, &[]);
+        let empty_digest = abi_contract_digest(LIBRARY_INVOKE_SCHEMA_VERSION, &exports, &[]);
         let with_glue = vec![serde_json::json!({
             "kind": "NamedAggregate",
             "name": "ArrayList",
             "module_path": "",
             "generic_args": [{"kind": "I64"}],
-            "operations": [{"operation": "construct", "export_name": "$ArrayList_i64_new"}],
+            "operations": [{"operation": "construct", "export_name": "$seq_ArrayList_i64_new"}],
             "source": "backend_synthetic",
             "status": "ready"
         })];
-        let glue_digest = abi_contract_digest(&exports, &with_glue);
+        let glue_digest = abi_contract_digest(LIBRARY_INVOKE_SCHEMA_VERSION, &exports, &with_glue);
         assert_ne!(empty_digest, glue_digest, "glue 合同变化必须改变 digest");
+    }
+
+    #[test]
+    fn abi_digest_changes_with_schema_version() {
+        let exports: serde_json::Value = serde_json::from_str(r#"{"solve":{"params":[],"returns":{"kind":"I64"}}}"#).unwrap();
+        let version_one = abi_contract_digest(1, &exports, &[]);
+        let version_two = abi_contract_digest(2, &exports, &[]);
+        assert_ne!(version_one, version_two, "schema 版本必须参与 digest 规范化输入");
     }
 
     #[test]
@@ -744,7 +802,7 @@ mod tests {
             "operations": [{
                 "operation": "construct",
                 "export_name": "solve",
-                "param_carriers": ["i64"],
+                "param_carriers": ["i32"],
                 "return_carrier": "i32",
                 "export_source": export_source
             }],
@@ -771,11 +829,23 @@ mod tests {
     }
 
     #[test]
-    fn validate_glue_entry_exports_skips_backend_synthetic_without_producer() {
-        // `$ArrayList_*` helper 当前没有真实发射路径；编译期强校验只覆盖
-        // plan 已声明的 export，synthetic helper 由 JS glue 运行时检查拒绝。
-        let entries = vec![glue_entry_with_operation(EXPORT_SOURCE_BACKEND_SYNTHETIC)];
-        validate_glue_entry_exports(&entries, &BTreeSet::new()).expect("synthetic helpers are runtime-checked");
+    fn validate_glue_entry_exports_rejects_backend_synthetic_without_producer() {
+        // 合成 helper 没有真实 producer 时必须在 artifact 校验阶段失败，
+        // 不能留到 JS glue 运行时才报错。
+        let mut entry = glue_entry_with_operation(EXPORT_SOURCE_BACKEND_SYNTHETIC);
+        entry["operations"][0]["export_name"] = serde_json::json!("$seq_std_collections_ArrayList_i64_new");
+        let error = validate_glue_entry_exports(&[entry], &BTreeSet::new()).expect_err("missing synthetic export must fail");
+        assert!(error.contains("export_name=$seq_std_collections_ArrayList_i64_new"), "error must name the missing export: {error}");
+        assert!(error.contains("ArrayList<I64>"), "error must carry aggregate identity: {error}");
+        assert!(error.contains("construct"), "error must carry the operation: {error}");
+    }
+
+    #[test]
+    fn validate_glue_entry_exports_accepts_backend_synthetic_with_real_export() {
+        let mut entry = glue_entry_with_operation(EXPORT_SOURCE_BACKEND_SYNTHETIC);
+        entry["operations"][0]["export_name"] = serde_json::json!("$seq_std_collections_ArrayList_i64_new");
+        let wasm_exports: BTreeSet<String> = ["$seq_std_collections_ArrayList_i64_new".to_string()].into_iter().collect();
+        validate_glue_entry_exports(&[entry], &wasm_exports).expect("present synthetic export must pass");
     }
 
     #[test]
