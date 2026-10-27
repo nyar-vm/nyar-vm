@@ -389,9 +389,12 @@ mod tests {
     }
 
     #[test]
-    fn two_sum_expected_signature() {
-        // two-sum 参数 ArrayList<i64>, i64 返回 ArrayList<i64>
-        // ArrayList<i64> 在 NyarType 层是 Apply(Named("ArrayList"), [Integer64])
+    fn two_sum_generic_application_without_spelling_keeps_empty_module_path() {
+        // two-sum 参数 ArrayList<i64>, i64 返回 ArrayList<i64>。
+        // ArrayList<i64> 在 NyarType 层是 Apply(Named(...), [Integer64])。
+        // 上游 `type_surface_spellings` 只为无参 Nominal 的声明登记拼写，带泛型实参的
+        // 实例 TypeId 本身没有 spelling；这里直接构造只有简单名的基类型，module_path
+        // 如实为空——这是待补的上游 identity 缺口，不是伪造的路径。
         let arraylist_i64 = NyarType::Apply(
             Box::new(NyarType::Named(Identifier::new("ArrayList"))),
             vec![nyar("i64")],
@@ -400,7 +403,6 @@ mod tests {
         match schema {
             WasmAbiType::NamedAggregate { name, module_path, generic_args } => {
                 assert_eq!(name, "ArrayList");
-                // 上游 Identifier 只有简单名，当前 module_path 为空
                 assert_eq!(module_path, "");
                 assert_eq!(generic_args, vec![WasmAbiType::I64]);
             }

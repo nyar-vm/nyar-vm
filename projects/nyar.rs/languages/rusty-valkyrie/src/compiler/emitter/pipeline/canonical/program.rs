@@ -89,7 +89,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         match ty {
             ValkyrieType::Nominal { declaration, arguments } if arguments.is_empty() => {
                 if let Some(aggregate) = module.structs.iter().find(|item| item.declaration == Some(*declaration)) {
-                    linked.type_surface_spellings.insert(*id, Identifier::new(&aggregate.name));
+                    linked.type_surface_spellings.insert(*id, Identifier::new(&canonical_surface_spelling(&aggregate.qualified_name())));
                 }
                 else if let Some(sum) = module.sum_types.iter().find(|item| item.declaration == Some(*declaration)) {
                     linked.type_surface_spellings.insert(*id, Identifier::new(&sum.name));
@@ -187,4 +187,12 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
     program.validate().map_err(|error| canonical_error(module, &program, error))?;
     Ok(program)
+}
+
+/// 把 `MirStruct::qualified_name` 的点分 namespace 规范成 `QualifiedName` 的 `::` 分隔形式。
+///
+/// `type_surface_spellings` 是宿主 ABI identity 的上游事实；`module_path_of`
+/// 依赖该分隔符拆出完整 module path，避免不同模块的同名 aggregate 在 JS glue 中混淆。
+fn canonical_surface_spelling(qualified_name: &str) -> String {
+    qualified_name.replace('.', "::")
 }
