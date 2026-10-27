@@ -9,7 +9,7 @@ use crate::compiler::mir::{MirModule, validation::validate_semantic_module};
 #[doc(hidden)]
 pub fn compile_linked_semantic_mir(module: &MirModule) -> StageResult<CompiledProgram> {
     if let Err(error) = validate_semantic_module(module) {
-        return fail_stage(CompileStage::ValidateMir, "PIPE004", &module.name, format!("Semantic MIR 合同失败: {error:?}"));
+        return fail_stage(CompileStage::ValidateMir, "PIPE004", &module.name, format!("Semantic MIR 合同失败: {error:#?}"));
     }
     let canonical = canonical_program_from_semantic_mir(module)?;
     let representation = CanonicalRepresentationPlanner.plan(&canonical)?;
@@ -19,7 +19,7 @@ pub fn compile_linked_semantic_mir(module: &MirModule) -> StageResult<CompiledPr
             CompileStage::RepresentationPlan,
             "PIPE005",
             &module.name,
-            format!("CanonicalProgram 与 RepresentationPlan 合同不一致: {error:?}"),
+            format!("CanonicalProgram 与 RepresentationPlan 合同不一致: {error:#?}"),
         ),
     }
 }
