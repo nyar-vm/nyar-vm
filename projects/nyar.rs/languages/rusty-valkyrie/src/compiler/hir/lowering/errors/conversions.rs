@@ -227,10 +227,13 @@ impl std::fmt::Display for HirError {
             Self::UnsupportedRootItem { item_kind, .. } => {
                 write!(f, "root item kind `{item_kind}` is not supported by HIR lowering")
             }
-            Self::PipelineRejected { codes, module } => {
+            Self::PipelineRejected { codes, module, messages } => {
                 write!(f, "compile pipeline rejected module `{module}`")?;
                 if !codes.is_empty() {
                     write!(f, " ({})", codes.join(","))?;
+                }
+                if let Some(message) = messages.first() {
+                    write!(f, ": {message}")?;
                 }
                 Ok(())
             }

@@ -53,5 +53,6 @@ pub(crate) fn pipeline_rejected(diagnostics: nyar_types::StructuredDiagnosticSet
     HirError::PipelineRejected {
         codes: diagnostics.records.iter().map(|record| record.code.clone()).collect(),
         module: diagnostics.records.first().map(|record| record.module.clone()).unwrap_or_default(),
+        messages: diagnostics.records.iter().map(|record| record.message.clone()).collect(),
     }
 }
