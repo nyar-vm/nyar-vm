@@ -11,9 +11,9 @@ fn artifact_hash_changes_when_manifest_changes() {
     let manifest = dir.path().join("legion.von");
     fs::write(&source, "micro main() -> i64 { return 0 }\n").unwrap();
     fs::write(&manifest, "target: clr\n").unwrap();
-    let first = compute_artifact_hash(&[source.clone()], &[manifest.clone()], "clr", false, false).unwrap();
+    let first = compute_artifact_hash(&[source.clone()], &[manifest.clone()], "clr", false, false, &Default::default()).unwrap();
     fs::write(&manifest, "target: wasm\n").unwrap();
-    let second = compute_artifact_hash(&[source], &[manifest], "clr", false, false).unwrap();
+    let second = compute_artifact_hash(&[source], &[manifest], "clr", false, false, &Default::default()).unwrap();
     assert_ne!(first, second);
 }
 

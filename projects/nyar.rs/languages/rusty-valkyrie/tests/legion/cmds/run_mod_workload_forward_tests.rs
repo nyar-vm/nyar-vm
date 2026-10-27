@@ -61,6 +61,7 @@ fn is_fresh_rejects_stale_host_provider_compile_evidence() {
     let plan = BuildPlan {
         workspace_root: root.to_path_buf(),
         output_dir: root.join("dist"),
+        enabled_features: Default::default(),
         project: PlannedProject {
             name: "demo".into(),
             manifest_dir: root.to_path_buf(),
@@ -154,6 +155,7 @@ fn sample_freshness_plan() -> (tempfile::TempDir, BuildPlan, PathBuf) {
     let plan = BuildPlan {
         workspace_root: root.to_path_buf(),
         output_dir: root.join("dist"),
+        enabled_features: Default::default(),
         project: PlannedProject {
             name: "demo".into(),
             manifest_dir: root.to_path_buf(),
