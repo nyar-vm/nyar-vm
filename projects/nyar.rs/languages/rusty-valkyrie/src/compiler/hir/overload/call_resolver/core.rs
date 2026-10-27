@@ -199,10 +199,10 @@ pub(crate) fn match_intrinsic_builtin_candidate(
             if !type_relations.is_numeric_type(&index_ty) {
                 return None;
             }
-            let return_type = match &candidate.signature.return_type {
-                ty if is_option_apply_type(ty) || matches!(ty, ValkyrieType::Nullable(_)) => candidate.signature.return_type.clone(),
-                _ => element.clone(),
-            };
+            // ArrayGet intrinsic 语义上始终返回裸元素类型 T。
+            // Option 由调用方通过 Some() 包裹（如 Array.get: `return Some(__array_get(...))`）。
+            // 禁止 intrinsic 签名自身携带 Option，避免 Some() 包裹时产生 Option<Option<T>>。
+            let return_type = element.clone();
             Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature { params: vec![array_ty, index_ty], return_type }))
         }
         nyar_types::IntrinsicId::ArraySet => {
