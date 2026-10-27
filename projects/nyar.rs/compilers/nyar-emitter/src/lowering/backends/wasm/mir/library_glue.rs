@@ -19,11 +19,17 @@
 //! 同一 digest。sequence helper 合成不再按类型名特判，改为消费 plan 冻结的
 //! aggregate layout 结构事实（数组字段 + 元素 schema）。
 //!
-//! v6（当前阶段）：顶层新增 `version`（当前为 `1`）供跨仓消费者校验协议版本，
+//! v6：顶层新增 `version`（当前为 `1`）供跨仓消费者校验协议版本，
 //! 并把 `version` 纳入 `abi_digest` 的规范化输入；`construct` 的物理签名改为
 //! 容量/长度语义（`["i32"] → "i32"`），与 JS glue 的 `construct(arr.length)`
 //! 一致；`validate_glue_entry_exports` 要求所有 operation 的 `export_name`
-//! （含 `backend_synthetic`）都真实存在于 Wasm export section。
+//! 都真实存在于 Wasm export section。
+//!
+//! v7（当前阶段）：`glue_entries` 的 operation 只能来自
+//! `TargetExecutionPlan::aggregate_operations()`。backend 不再按结构事实合成
+//! helper 名：结构事实只用于判定「该 aggregate 需要哪些 operation」，plan 未
+//! 声明对应 producer 时在此阶段结构化失败（含 aggregate identity、缺失
+//! operation 与所需 carriers），不再产出无生产者的 `backend_synthetic` 条目。
 //!
 //! # JSON 格式
 //!
@@ -58,16 +64,17 @@
 //!
 //! - **只**声明 `NamedAggregate` 的语义身份（name + module_path + generic_args）
 //! - **不**硬编码任何特定 aggregate 有哪些 operations（那是 valkyrie.v stdlib 的事）
-//! - 结构事实成立时由 backend 合成 sequence helper operations，`export_source`
-//!   区分 `declared`（plan 已声明导出）与 `backend_synthetic`（backend 合成名）；
-//!   两者都必须在 artifact 校验阶段真实存在于 Wasm export section，缺失即失败
+//! - 结构事实成立时，`operations` 逐项来自 `TargetExecutionPlan` 冻结的
+//!   [`AggregateOperationPlan`]；`export_source` 恒为 `declared`（plan 已声明导出）
+//! - plan 缺少结构事实要求的 operation 时，库构建在此阶段结构化失败；缺失导出
+//!   同样在 artifact 校验阶段失败
 
 use std::collections::BTreeSet;
 
-use nyar_types::{AggregateLayoutPlan, NyarType, combined_content_hash};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, NyarType, combined_content_hash};
 
 use crate::{
-    FragmentSubmission, Result,
+    AggregateOperation, AggregateOperationPlan, FragmentSubmission, Result,
     nyar_backend_wasi::{WasmBinaryModule, WasmPackageKind, WasmSection},
 };
 
@@ -164,32 +171,12 @@ fn scalar_carrier_name(ty: &WasmAbiType) -> Option<&'static str> {
     }
 }
 
-/// 把 `WasmAbiType` 标量映射到 export_name 短名（lowercase，用于合成函数名）。
-///
-/// 与 `scalar_carrier_name` 不同——Bool/Char/Utf8 虽然 carrier 是 i32，但
-/// export_name 的类型标识保留语义身份（bool / char / utf8），让下游消费者
-/// 能区分同 carrier 不同语义的 element type。
-fn scalar_export_tag(ty: &WasmAbiType) -> Option<&'static str> {
-    match ty {
-        WasmAbiType::I32 => Some("i32"),
-        WasmAbiType::I64 => Some("i64"),
-        WasmAbiType::F32 => Some("f32"),
-        WasmAbiType::F64 => Some("f64"),
-        WasmAbiType::Bool => Some("bool"),
-        WasmAbiType::Char => Some("char"),
-        WasmAbiType::Utf8 => Some("utf8"),
-        _ => None,
-    }
-}
-
 /// glue operation 的 export 来源标记。
 ///
-/// - `declared`：`export_name` 由 `TargetExecutionPlan::wasm_export_names()`
-///   显式声明，emit 阶段必须真实出现在 Wasm export section。
-/// - `backend_synthetic`：backend 合成的 helper 名，plan 未声明。
+/// operation 只能来自 `TargetExecutionPlan::aggregate_operations()`；其
+/// `export_name` 由 plan 显式声明，必须在 artifact 校验阶段真实出现在 Wasm
+/// export section。
 const EXPORT_SOURCE_DECLARED: &str = "declared";
-/// backend 合成、plan 未声明的 glue operation 来源标记。
-const EXPORT_SOURCE_BACKEND_SYNTHETIC: &str = "backend_synthetic";
 
 /// 规范化模块路径，抹平 `::` 与 `.` 的分隔差异。
 fn normalize_module_path(path: &str) -> String {
@@ -203,7 +190,12 @@ fn normalize_module_path(path: &str) -> String {
 ///
 /// 身份匹配优先用 `name` + `namespace`（`::` / `.` 归一）；当 ABI 侧没有
 /// module_path 且多个同名布局都满足结构事实（歧义）时返回 `None`，不做猜测。
-fn array_field_element<'a>(layouts: &'a AggregateLayoutPlan, name: &str, module_path: &str, element: &WasmAbiType) -> Option<&'a NyarType> {
+fn array_field_element<'a>(
+    layouts: &'a AggregateLayoutPlan,
+    name: &str,
+    module_path: &str,
+    element: &WasmAbiType,
+) -> Option<(&'a AggregateLayout, &'a NyarType)> {
     let normalized_module = normalize_module_path(module_path);
     let mut exact = None;
     let mut loose = Vec::new();
@@ -220,140 +212,63 @@ fn array_field_element<'a>(layouts: &'a AggregateLayoutPlan, name: &str, module_
                 continue;
             }
             if !normalized_module.is_empty() && normalize_module_path(&layout.namespace) == normalized_module {
-                exact = Some(field_element.as_ref());
+                exact = Some((layout, field_element.as_ref()));
                 break;
             }
-            loose.push(field_element.as_ref());
+            loose.push((layout, field_element.as_ref()));
         }
         if exact.is_some() {
             break;
         }
     }
-    exact.or_else(|| if loose.len() == 1 { Some(loose[0]) } else { None })
+    exact.or_else(|| if loose.len() == 1 { loose.pop() } else { None })
 }
 
-/// 合成 sequence helper export 名称的固定前缀。
-const SEQUENCE_HELPER_PREFIX: &str = "$seq_";
-
-/// 由 aggregate 的 module_path + name + element tag 派生稳定的 helper 名 stem。
-///
-/// 名称是 aggregate 实例的身份投影：不同 namespace 或不同元素类型不会得到同一个
-/// helper 名，也不会让任意序列型结构自称 `ArrayList`。只保留字母数字与 `_`，其余
-/// 字符（`::`、`.` 等）归一为 `_`。
-fn sequence_helper_stem(module_path: &str, name: &str, tag: &str) -> String {
-    let mut stem = String::from(SEQUENCE_HELPER_PREFIX);
-    let normalized_module = normalize_module_path(module_path);
-    if !normalized_module.is_empty() {
-        push_identifier_fragment(&mut stem, &normalized_module);
-        stem.push('_');
-    }
-    push_identifier_fragment(&mut stem, name);
-    stem.push('_');
-    push_identifier_fragment(&mut stem, tag);
-    stem
+/// 结构事实要求、但必须由 plan 提供 producer 的 glue operation。
+struct RequiredGlueOperation {
+    /// operation 种类。
+    operation: AggregateOperation,
+    /// 结构事实要求的参数载体名称。
+    param_carriers: Vec<&'static str>,
+    /// 结构事实要求的返回载体名称。
+    return_carrier: &'static str,
 }
 
-/// 把输入中的非标识符字符替换为 `_`，追加到 `out`。
-fn push_identifier_fragment(out: &mut String, input: &str) {
-    out.extend(input.chars().map(|ch| if ch.is_alphanumeric() || ch == '_' { ch } else { '_' }));
-}
-
-/// 为结构事实成立的序列型 NamedAggregate 合成 intrinsic lowering 的 helper
-/// export operations。
+/// 从 aggregate 布局结构事实推导该实例需要的 glue operation。
 ///
-/// # 约束
-///
-/// - 是否合成只由 [`array_field_element`] 的结构事实决定：plan 的 aggregate
-///   layout 必须声明 `[T]` 字段且 `T` 等于 `generic_args[0]` 的 ABI schema
-/// - `generic_args[0]` 必须是标量（有 `scalar_carrier_name`）；容器类型跳过
-/// - 按 Wasm backend lowering intrinsic 的 pattern 合成：construct / push / length / at
-///
-/// # 合成 pattern
-///
-/// 设 element type 的 carrier 为 `E`（如 `"i64"`）、export tag 为 `T`（如 `"i64"`），
-/// `{id}` 由 aggregate 的 module_path + name + `T` 派生（见 [`sequence_helper_stem`]）：
-///
-/// | operation | export_name         | param_carriers    | return_carrier |
-/// |-----------|---------------------|-------------------|----------------|
-/// | construct | `$seq_{id}_new`     | `["i32"]`         | `i32`          |
-/// | push      | `$seq_{id}_push`    | `["i32", E]`      | `void`         |
-/// | length    | `$seq_{id}_len`     | `["i32"]`         | `i32`          |
-/// | at        | `$seq_{id}_at`      | `["i32", "i32"]`  | `E`            |
-///
-/// construct 的第一个参数是容量/长度（与 JS glue 的 `construct(arr.length)` 一致），
-/// 返回 `i32` 句柄；push 的第一个参数是句柄，第二个参数是元素。
-///
-/// `export_source` 按 plan 已声明导出派生：命中 `declared_exports` 记为
-/// `declared`，否则记为 `backend_synthetic`。
-fn synthesize_sequence_helper_operations(
-    layouts: &AggregateLayoutPlan,
+/// 只推导「需要哪些 operation」与所需 carriers，**不**生成任何 export 名；
+/// 真实 export 与 producer 必须来自 plan。generic args 缺失、无匹配 `[T]`
+/// 字段或元素非标量时返回 `None`（该实例不被判定为序列型）。
+fn required_sequence_operations<'a>(
+    layouts: &'a AggregateLayoutPlan,
     name: &str,
     module_path: &str,
     generic_args: &[WasmAbiType],
-    declared_exports: &BTreeSet<String>,
-) -> Option<Vec<serde_json::Value>> {
+) -> Option<(&'a AggregateLayout, Vec<RequiredGlueOperation>)> {
     let element = generic_args.first()?;
-    array_field_element(layouts, name, module_path, element)?;
+    let (layout, _) = array_field_element(layouts, name, module_path, element)?;
     let carrier = scalar_carrier_name(element)?;
-    let tag = scalar_export_tag(element)?;
-
-    let export_source = |export_name: &str| {
-        if declared_exports.contains(export_name) { EXPORT_SOURCE_DECLARED } else { EXPORT_SOURCE_BACKEND_SYNTHETIC }
-    };
-
-    let stem = sequence_helper_stem(module_path, name, tag);
-    let new_export = format!("{stem}_new");
-    let push_export = format!("{stem}_push");
-    let len_export = format!("{stem}_len");
-    let at_export = format!("{stem}_at");
-
-    Some(vec![
-        serde_json::json!({
-            "operation": "construct",
-            "export_name": new_export,
-            "param_carriers": ["i32"],
-            "return_carrier": "i32",
-            "export_source": export_source(&new_export)
-        }),
-        serde_json::json!({
-            "operation": "push",
-            "export_name": push_export,
-            "param_carriers": ["i32", carrier],
-            "return_carrier": "void",
-            "export_source": export_source(&push_export)
-        }),
-        serde_json::json!({
-            "operation": "length",
-            "export_name": len_export,
-            "param_carriers": ["i32"],
-            "return_carrier": "i32",
-            "export_source": export_source(&len_export)
-        }),
-        serde_json::json!({
-            "operation": "at",
-            "export_name": at_export,
-            "param_carriers": ["i32", "i32"],
-            "return_carrier": carrier,
-            "export_source": export_source(&at_export)
-        }),
-    ])
+    Some((
+        layout,
+        vec![
+            RequiredGlueOperation { operation: AggregateOperation::Construct, param_carriers: vec!["i32"], return_carrier: "i32" },
+            RequiredGlueOperation { operation: AggregateOperation::Push, param_carriers: vec!["i32", carrier], return_carrier: "void" },
+            RequiredGlueOperation { operation: AggregateOperation::Length, param_carriers: vec!["i32"], return_carrier: "i32" },
+            RequiredGlueOperation { operation: AggregateOperation::At, param_carriers: vec!["i32", "i32"], return_carrier: carrier },
+        ],
+    ))
 }
 
 /// 把收集到的 NamedAggregate identity keys 渲染为 `glue_entries` JSON 数组。
 ///
-/// # v3 → v4 变化
-///
-/// v3 版本 `operations` 永远是空数组，source/status 标记为
-/// `"declaration_identity"` / `"pending_export_name"`——等 Stream C 回填。
-///
-/// v4：由于 intrinsic lowering 直接降低成 Wasm GC 指令（不是 Wasm 顶层 export），
-/// wasm backend 自己为序列型 aggregate 合成 helper export operations：
-/// - `source: "backend_synthetic"` 标记 operations 来自 backend lowering 合成
-/// - `status: "ready"` 标记 export_name 已可被 JS glue 消费
-/// - 结构事实不成立或 element 非标量的 aggregate 保持 v3 旧行为（operations 空）
-///
-/// v5：合成判定改为消费 plan 的 aggregate layout 结构事实，不再按类型名特判。
-fn render_glue_entries(keys: &BTreeSet<String>, layouts: &AggregateLayoutPlan, declared_exports: &BTreeSet<String>) -> Vec<serde_json::Value> {
+/// operations 逐项来自 plan 冻结的 [`AggregateOperationPlan`]。结构事实要求的
+/// operation 在 plan 中缺失时返回结构化错误（aggregate identity、缺失 operation、
+/// 所需 carriers），不再由 backend 合成 export 名。
+fn render_glue_entries(
+    keys: &BTreeSet<String>,
+    layouts: &AggregateLayoutPlan,
+    operations: &[AggregateOperationPlan],
+) -> Result<Vec<serde_json::Value>> {
     let mut entries = Vec::with_capacity(keys.len());
     for key in keys {
         let Some((module_path, name, generic_json)) = split_aggregate_key(key)
@@ -361,33 +276,70 @@ fn render_glue_entries(keys: &BTreeSet<String>, layouts: &AggregateLayoutPlan, d
             continue;
         };
         let generic_args_json: serde_json::Value = serde_json::from_str(generic_json).unwrap_or_else(|_| serde_json::json!([]));
-        // 同时解析结构化的 generic_args 供合成函数使用
         let generic_args_typed: Vec<WasmAbiType> = serde_json::from_str(generic_json).unwrap_or_default();
+        let identity = format!("NamedAggregate:{module_path}.{name}<{generic_json}>");
 
-        if let Some(operations) = synthesize_sequence_helper_operations(layouts, name, module_path, &generic_args_typed, declared_exports) {
-            entries.push(serde_json::json!({
-                "kind": "NamedAggregate",
-                "name": name,
-                "module_path": module_path,
-                "generic_args": generic_args_json,
-                "operations": operations,
-                "source": "backend_synthetic",
-                "status": "ready"
-            }));
-        }
-        else {
-            entries.push(serde_json::json!({
-                "kind": "NamedAggregate",
-                "name": name,
-                "module_path": module_path,
-                "generic_args": generic_args_json,
-                "operations": [],
-                "source": "declaration_identity",
-                "status": "pending_export_name"
-            }));
-        }
+        let rendered = match required_sequence_operations(layouts, name, module_path, &generic_args_typed) {
+            Some((layout, required)) => {
+                let available = operations.iter().filter(|operation| operation.layout_id == layout.id).collect::<Vec<_>>();
+                let mut rendered = Vec::with_capacity(required.len());
+                for required in required {
+                    let Some(operation) = available.iter().find(|operation| operation.operation == required.operation)
+                    else {
+                        return Err(format!(
+                            "库导出 aggregate 缺少 glue operation producer: aggregate={identity} layout_id={} layout={}.{} \
+                             operation={} required_param_carriers={:?} required_return_carrier={} available_operations={:?}; \
+                             TargetExecutionPlan 未声明该 operation，backend 不得合成",
+                            layout.id,
+                            layout.namespace,
+                            layout.name,
+                            required.operation.as_str(),
+                            required.param_carriers,
+                            required.return_carrier,
+                            available.iter().map(|operation| operation.operation.as_str()).collect::<Vec<_>>(),
+                        ));
+                    };
+                    let actual_param_carriers = operation.param_carriers.iter().map(|carrier| carrier.as_str()).collect::<Vec<_>>();
+                    if actual_param_carriers != required.param_carriers || operation.return_carrier.as_str() != required.return_carrier {
+                        return Err(format!(
+                            "glue operation 载体与 aggregate 结构事实不符: aggregate={identity} layout_id={} layout={}.{} \
+                             operation={} expected_param_carriers={:?} actual_param_carriers={:?} expected_return_carrier={} \
+                             actual_return_carrier={}",
+                            layout.id,
+                            layout.namespace,
+                            layout.name,
+                            required.operation.as_str(),
+                            required.param_carriers,
+                            actual_param_carriers,
+                            required.return_carrier,
+                            operation.return_carrier.as_str(),
+                        ));
+                    }
+                    rendered.push(serde_json::json!({
+                        "operation": required.operation.as_str(),
+                        "export_name": operation.export_name,
+                        "param_carriers": actual_param_carriers,
+                        "return_carrier": operation.return_carrier.as_str(),
+                        "export_source": EXPORT_SOURCE_DECLARED
+                    }));
+                }
+                rendered
+            }
+            None => Vec::new(),
+        };
+
+        let ready = !rendered.is_empty();
+        entries.push(serde_json::json!({
+            "kind": "NamedAggregate",
+            "name": name,
+            "module_path": module_path,
+            "generic_args": generic_args_json,
+            "operations": rendered,
+            "source": if ready { "plan" } else { "declaration_identity" },
+            "status": if ready { "ready" } else { "pending_export_name" }
+        }));
     }
-    entries
+    Ok(entries)
 }
 
 pub(super) fn append_library_mode_glue(
@@ -398,12 +350,19 @@ pub(super) fn append_library_mode_glue(
     if wasm_package_kind != WasmPackageKind::Library {
         return Ok(());
     }
+    let plan = &submission.backend_plan;
+    plan.validate_aggregate_operations()?;
+    let aggregate_operation_producers: BTreeSet<_> =
+        plan.aggregate_operations().iter().map(|operation| operation.producer.instance()).collect();
     let mut invoke_exports = serde_json::Map::new();
     let mut aggregate_keys: BTreeSet<String> = BTreeSet::new();
 
-    for (instance, public_name) in submission.backend_plan.wasm_export_names() {
-        let function =
-            submission.backend_plan.get_function(instance).ok_or_else(|| format!("库导出 `{instance}` 缺少 Compiler 函数体"))?.function;
+    for (instance, public_name) in plan.wasm_export_names() {
+        // aggregate helper 的 producer 是 glue 导出，不是语言层公开导出。
+        if aggregate_operation_producers.contains(instance) {
+            continue;
+        }
+        let function = plan.get_function(instance).ok_or_else(|| format!("库导出 `{instance}` 缺少 Compiler 函数体"))?.function;
 
         let instance_label = format!("{instance}");
         let (params_schema, returns_schema) = schematize_function_abi(&instance_label, &function)?;
@@ -433,9 +392,7 @@ pub(super) fn append_library_mode_glue(
         return Err(format!("库 Wasm 产物没有可表达的导出合同"));
     }
 
-    let declared_exports: BTreeSet<String> = submission.backend_plan.wasm_export_names().values().cloned().collect();
-    let layouts = submission.backend_plan.aggregate_layouts();
-    let glue_entries = render_glue_entries(&aggregate_keys, layouts, &declared_exports);
+    let glue_entries = render_glue_entries(&aggregate_keys, plan.aggregate_layouts(), plan.aggregate_operations())?;
     let abi_digest = abi_contract_digest(LIBRARY_INVOKE_SCHEMA_VERSION, &serde_json::Value::Object(invoke_exports.clone()), &glue_entries);
     let payload = serde_json::json!({
         "version": LIBRARY_INVOKE_SCHEMA_VERSION,
@@ -500,13 +457,9 @@ fn aggregate_identity_label(entry: &serde_json::Value) -> String {
 
 /// 校验 `glue_entries` 引用的 Wasm export 是否真实存在于本次模块的 export section。
 ///
-/// 校验覆盖**所有** operation，不区分 `export_source`：`declared` 名来自
-/// `TargetExecutionPlan::wasm_export_names()`，`backend_synthetic` 名由 backend
-/// 合成，二者都必须在 artifact 校验阶段真实导出。缺失时返回含 aggregate identity、
+/// `glue_entries` 的 operation 均来自 `TargetExecutionPlan::aggregate_operations()`，
+/// 其 `export_name` 必须由 plan 声明且真实导出。缺失时返回含 aggregate identity、
 /// operation、export_name 的结构化错误。
-///
-/// 因此 `backend_synthetic` helper 若没有真实 producer，库构建会在此处诚实失败，
-/// 而不是拖到 JS glue 运行时才失败。
 pub(crate) fn validate_glue_entry_exports(glue_entries: &[serde_json::Value], wasm_exports: &BTreeSet<String>) -> Result<()> {
     for entry in glue_entries {
         let identity = aggregate_identity_label(entry);
@@ -534,14 +487,18 @@ pub(crate) fn validate_glue_entry_exports(glue_entries: &[serde_json::Value], wa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nyar_types::layout::{AggregateLayout, FieldLayout, StorageKind};
+    use crate::{AggregateOperationCarrier, AggregateOperationProducer};
+    use nyar_types::{
+        ItemInstanceId,
+        layout::{FieldLayout, StorageKind},
+    };
 
     fn nyar(s: &str) -> NyarType {
         NyarType::from_surface_primitive(s).expect("surface primitive")
     }
 
     /// 构造「带一个 `[T]` 字段 + 一个容量字段」的聚合布局，模拟真实
-    /// `ArrayList<T>`（`_items: [T]` / `_capacity: usize`）。
+    /// 序列型聚合（`_items: [T]` / `_capacity: usize`）。
     fn sequence_layout(name: &str, namespace: &str, element: NyarType) -> AggregateLayoutPlan {
         AggregateLayoutPlan {
             layouts: vec![AggregateLayout {
@@ -561,6 +518,38 @@ mod tests {
         }
     }
 
+    fn plan_operation(
+        layout_id: nyar_types::LayoutId,
+        operation: AggregateOperation,
+        param_carriers: &[AggregateOperationCarrier],
+        return_carrier: AggregateOperationCarrier,
+        export_name: &str,
+    ) -> AggregateOperationPlan {
+        AggregateOperationPlan {
+            layout_id,
+            operation,
+            param_carriers: param_carriers.to_vec(),
+            return_carrier,
+            export_name: export_name.to_string(),
+            producer: AggregateOperationProducer::FunctionBody(ItemInstanceId::from_index(0).expect("测试实例")),
+        }
+    }
+
+    /// 由 plan 提供的完整 sequence operation 集合（export 名由 plan 决定）。
+    fn sequence_operations(
+        layout_id: nyar_types::LayoutId,
+        carrier: AggregateOperationCarrier,
+        export_prefix: &str,
+    ) -> Vec<AggregateOperationPlan> {
+        use AggregateOperationCarrier::{I32, Void};
+        vec![
+            plan_operation(layout_id, AggregateOperation::Construct, &[I32], I32, &format!("{export_prefix}_new")),
+            plan_operation(layout_id, AggregateOperation::Push, &[I32, carrier], Void, &format!("{export_prefix}_push")),
+            plan_operation(layout_id, AggregateOperation::Length, &[I32], I32, &format!("{export_prefix}_len")),
+            plan_operation(layout_id, AggregateOperation::At, &[I32, I32], carrier, &format!("{export_prefix}_at")),
+        ]
+    }
+
     #[test]
     fn collect_named_aggregates_from_params_and_return() {
         // 模拟 two-sum: ArrayList<i64>, i64 → ArrayList<i64>
@@ -574,21 +563,21 @@ mod tests {
         collect_named_aggregate_keys(&WasmAbiType::I64, &mut keys);
 
         let layouts = sequence_layout("ArrayList", "std.collections", nyar("i64"));
+        let operations = sequence_operations(0, AggregateOperationCarrier::I64, "$seq_std_collections_ArrayList_i64");
         // 两个 list_i64 应该被去重成一个 key
-        let entries = render_glue_entries(&keys, &layouts, &BTreeSet::new());
+        let entries = render_glue_entries(&keys, &layouts, &operations).expect("plan 提供完整 operation");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0]["name"], "ArrayList");
         assert_eq!(entries[0]["module_path"], "std::collections");
-        // 结构事实成立且 element 是标量 → backend synthetic 合成 operations
         assert_eq!(entries[0]["status"], "ready");
-        assert_eq!(entries[0]["source"], "backend_synthetic");
+        assert_eq!(entries[0]["source"], "plan");
         let ops = entries[0]["operations"].as_array().expect("operations array");
-        assert_eq!(ops.len(), 4, "ArrayList<i64> 应有 construct/push/length/at 四个 operation");
+        assert_eq!(ops.len(), 4, "sequence 聚合应有 construct/push/length/at 四个 operation");
         assert_eq!(ops[0]["operation"], "construct");
         assert_eq!(ops[0]["export_name"], "$seq_std_collections_ArrayList_i64_new");
         assert_eq!(ops[0]["param_carriers"], serde_json::json!(["i32"]));
         assert_eq!(ops[0]["return_carrier"], "i32");
-        assert_eq!(ops[0]["export_source"], "backend_synthetic");
+        assert_eq!(ops[0]["export_source"], "declared");
         assert_eq!(ops[1]["operation"], "push");
         assert_eq!(ops[1]["export_name"], "$seq_std_collections_ArrayList_i64_push");
         assert_eq!(ops[1]["param_carriers"], serde_json::json!(["i32", "i64"]));
@@ -605,7 +594,7 @@ mod tests {
 
     #[test]
     fn collect_nested_aggregate_in_option() {
-        // Option<ArrayList<i64>> 应该被递归收集，内部 ArrayList<i64> 应被合成
+        // Option<ArrayList<i64>> 应该被递归收集
         let opt = WasmAbiType::Option {
             inner: Box::new(WasmAbiType::NamedAggregate {
                 name: "ArrayList".to_string(),
@@ -616,26 +605,25 @@ mod tests {
         let mut keys = BTreeSet::new();
         collect_named_aggregate_keys(&opt, &mut keys);
         let layouts = sequence_layout("ArrayList", "", nyar("i64"));
-        let entries = render_glue_entries(&keys, &layouts, &BTreeSet::new());
+        let operations = sequence_operations(0, AggregateOperationCarrier::I64, "$seq_ArrayList_i64");
+        let entries = render_glue_entries(&keys, &layouts, &operations).expect("plan 提供完整 operation");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0]["status"], "ready");
-        assert_eq!(entries[0]["source"], "backend_synthetic");
+        assert_eq!(entries[0]["source"], "plan");
         assert_eq!(entries[0]["operations"].as_array().unwrap().len(), 4);
     }
 
     #[test]
     fn collect_distinguishes_by_module_path() {
         // 两个同名但不同 module_path 的 aggregate 应视为不同
-        // 注意：没有 generic_args 的 ArrayList 不参与合成（无 element 类型），保持旧行为
         let a =
             WasmAbiType::NamedAggregate { name: "ArrayList".to_string(), module_path: "std::collections".to_string(), generic_args: vec![] };
         let b = WasmAbiType::NamedAggregate { name: "ArrayList".to_string(), module_path: "user::lib".to_string(), generic_args: vec![] };
         let mut keys = BTreeSet::new();
         collect_named_aggregate_keys(&a, &mut keys);
         collect_named_aggregate_keys(&b, &mut keys);
-        let entries = render_glue_entries(&keys, &AggregateLayoutPlan::default(), &BTreeSet::new());
+        let entries = render_glue_entries(&keys, &AggregateLayoutPlan::default(), &[]).expect("无 generic_args 不要求 operation");
         assert_eq!(entries.len(), 2);
-        // 无 generic_args → 合成失败 → 旧行为
         for entry in &entries {
             assert_eq!(entry["status"], "pending_export_name");
             assert_eq!(entry["source"], "declaration_identity");
@@ -643,101 +631,141 @@ mod tests {
         }
     }
 
-    // ---- 结构事实判定（不再按类型名特判） ----
+    // ---- 结构事实只决定「需要哪些 operation」，不生成 export 名 ----
 
     #[test]
-    fn synthesize_uses_structure_not_type_name() {
-        // 名字不是 ArrayList，但布局声明了 `[i32]` 字段 → 仍按结构事实合成
+    fn render_uses_structure_not_type_name() {
+        // 名字不是 ArrayList，但布局声明了 `[i32]` 字段 → 仍按结构事实要求 operation
         let layouts = sequence_layout("Deque", "", nyar("i32"));
-        let ops = synthesize_sequence_helper_operations(&layouts, "Deque", "", &[WasmAbiType::I32], &BTreeSet::new())
-            .expect("structure fact should synthesize sequence helpers");
-        assert_eq!(ops.len(), 4);
-        assert_eq!(ops[0]["export_name"], "$seq_Deque_i32_new");
-    }
-
-    #[test]
-    fn synthesize_array_list_i32() {
-        let layouts = sequence_layout("ArrayList", "", nyar("i32"));
-        let ops = synthesize_sequence_helper_operations(&layouts, "ArrayList", "", &[WasmAbiType::I32], &BTreeSet::new())
-            .expect("ArrayList<i32> should synthesize");
-        assert_eq!(ops.len(), 4);
-        assert_eq!(ops[0]["export_name"], "$seq_ArrayList_i32_new");
-        assert_eq!(ops[0]["param_carriers"], serde_json::json!(["i32"]));
-        assert_eq!(ops[1]["export_name"], "$seq_ArrayList_i32_push");
-        assert_eq!(ops[3]["return_carrier"], "i32");
-    }
-
-    #[test]
-    fn synthesize_array_list_f64() {
-        let layouts = sequence_layout("ArrayList", "", nyar("f64"));
-        let ops = synthesize_sequence_helper_operations(&layouts, "ArrayList", "", &[WasmAbiType::F64], &BTreeSet::new())
-            .expect("ArrayList<f64> should synthesize");
-        assert_eq!(ops[0]["export_name"], "$seq_ArrayList_f64_new");
-        assert_eq!(ops[1]["param_carriers"], serde_json::json!(["i32", "f64"]));
-        assert_eq!(ops[3]["return_carrier"], "f64");
-    }
-
-    #[test]
-    fn synthesize_array_list_bool_uses_i32_carrier_but_bool_tag() {
-        let layouts = sequence_layout("ArrayList", "", nyar("bool"));
-        let ops = synthesize_sequence_helper_operations(&layouts, "ArrayList", "", &[WasmAbiType::Bool], &BTreeSet::new())
-            .expect("ArrayList<bool> should synthesize");
-        // carrier 是 i32（Wasm 层），但 export tag 保留 bool
-        assert_eq!(ops[0]["export_name"], "$seq_ArrayList_bool_new");
-        assert_eq!(ops[0]["param_carriers"], serde_json::json!(["i32"]));
-        assert_eq!(ops[3]["return_carrier"], "i32");
-    }
-
-    #[test]
-    fn sequence_helper_names_follow_aggregate_identity() {
-        let list_i64 = sequence_helper_stem("std::collections", "ArrayList", "i64");
-        let list_f64 = sequence_helper_stem("std::collections", "ArrayList", "f64");
-        let other_namespace = sequence_helper_stem("user::lib", "ArrayList", "i64");
-        assert_eq!(list_i64, "$seq_std_collections_ArrayList_i64");
-        assert_ne!(list_i64, list_f64, "不同元素类型必须得到不同 helper 名");
-        assert_ne!(list_i64, other_namespace, "不同 namespace 必须得到不同 helper 名");
-    }
-
-    #[test]
-    fn synthesize_skips_without_layout_structure_fact() {
-        // plan 没有该 aggregate 的布局 → 不伪造 operations
-        assert!(
-            synthesize_sequence_helper_operations(&AggregateLayoutPlan::default(), "ArrayList", "", &[WasmAbiType::I64], &BTreeSet::new())
-                .is_none()
+        let operations = sequence_operations(0, AggregateOperationCarrier::I32, "$seq_Deque_i32");
+        let mut keys = BTreeSet::new();
+        collect_named_aggregate_keys(
+            &WasmAbiType::NamedAggregate { name: "Deque".to_string(), module_path: String::new(), generic_args: vec![WasmAbiType::I32] },
+            &mut keys,
         );
+        let entries = render_glue_entries(&keys, &layouts, &operations).expect("结构事实成立且 plan 齐全");
+        assert_eq!(entries[0]["operations"].as_array().unwrap().len(), 4);
+        assert_eq!(entries[0]["operations"][0]["export_name"], "$seq_Deque_i32_new");
     }
 
     #[test]
-    fn synthesize_skips_when_element_differs_from_generic_arg() {
+    fn required_operation_carriers_follow_element_schema() {
+        let f64_layouts = sequence_layout("ArrayList", "", nyar("f64"));
+        let (_, required) = required_sequence_operations(&f64_layouts, "ArrayList", "", &[WasmAbiType::F64]).expect("f64 sequence fact");
+        assert_eq!(required[1].operation, AggregateOperation::Push);
+        assert_eq!(required[1].param_carriers, vec!["i32", "f64"]);
+        assert_eq!(required[3].operation, AggregateOperation::At);
+        assert_eq!(required[3].return_carrier, "f64");
+
+        let bool_layouts = sequence_layout("ArrayList", "", nyar("bool"));
+        let (_, required) = required_sequence_operations(&bool_layouts, "ArrayList", "", &[WasmAbiType::Bool]).expect("bool sequence fact");
+        // Bool 在 Wasm 层用 i32 carrier；export 名由 plan 决定。
+        assert_eq!(required[1].param_carriers, vec!["i32", "i32"]);
+        assert_eq!(required[3].return_carrier, "i32");
+    }
+
+    #[test]
+    fn render_reports_missing_sequence_operation() {
+        let layouts = sequence_layout("ArrayList", "std.collections", nyar("i64"));
+        let mut operations = sequence_operations(0, AggregateOperationCarrier::I64, "$seq_std_collections_ArrayList_i64");
+        operations.retain(|operation| operation.operation != AggregateOperation::At);
+        let mut keys = BTreeSet::new();
+        collect_named_aggregate_keys(
+            &WasmAbiType::NamedAggregate {
+                name: "ArrayList".to_string(),
+                module_path: "std::collections".to_string(),
+                generic_args: vec![WasmAbiType::I64],
+            },
+            &mut keys,
+        );
+        let error = render_glue_entries(&keys, &layouts, &operations).expect_err("缺少 producer 必须失败");
+        assert!(error.contains("缺少 glue operation producer"), "error must explain the missing producer: {error}");
+        assert!(error.contains("ArrayList"), "error must carry aggregate identity: {error}");
+        assert!(error.contains("operation=at"), "error must name the missing operation: {error}");
+        assert!(error.contains("required_param_carriers=[\"i32\", \"i32\"]"), "error must list required carriers: {error}");
+    }
+
+    #[test]
+    fn render_reports_operation_carrier_mismatch() {
+        let layouts = sequence_layout("ArrayList", "", nyar("i64"));
+        let mut operations = sequence_operations(0, AggregateOperationCarrier::I64, "$seq_ArrayList_i64");
+        operations[3].return_carrier = AggregateOperationCarrier::I32;
+        let mut keys = BTreeSet::new();
+        collect_named_aggregate_keys(
+            &WasmAbiType::NamedAggregate { name: "ArrayList".to_string(), module_path: String::new(), generic_args: vec![WasmAbiType::I64] },
+            &mut keys,
+        );
+        let error = render_glue_entries(&keys, &layouts, &operations).expect_err("载体不符必须失败");
+        assert!(error.contains("载体与 aggregate 结构事实不符"), "error must explain carrier mismatch: {error}");
+        assert!(error.contains("operation=at"), "error must name the mismatched operation: {error}");
+    }
+
+    #[test]
+    fn render_skips_without_layout_structure_fact() {
+        // plan 没有该 aggregate 的布局 → 不被判定为序列型，不伪造 operations
+        let mut keys = BTreeSet::new();
+        collect_named_aggregate_keys(
+            &WasmAbiType::NamedAggregate { name: "ArrayList".to_string(), module_path: String::new(), generic_args: vec![WasmAbiType::I64] },
+            &mut keys,
+        );
+        let entries = render_glue_entries(&keys, &AggregateLayoutPlan::default(), &[]).expect("无结构事实不要求 operation");
+        assert!(entries[0]["operations"].as_array().is_some_and(|operations| operations.is_empty()));
+        assert_eq!(entries[0]["status"], "pending_export_name");
+    }
+
+    #[test]
+    fn render_skips_when_element_differs_from_generic_arg() {
         // 布局的 `[f64]` 字段与实例实参 I64 不一致 → 不是该实例的序列结构
         let layouts = sequence_layout("ArrayList", "", nyar("f64"));
-        assert!(synthesize_sequence_helper_operations(&layouts, "ArrayList", "", &[WasmAbiType::I64], &BTreeSet::new()).is_none());
+        let mut keys = BTreeSet::new();
+        collect_named_aggregate_keys(
+            &WasmAbiType::NamedAggregate { name: "ArrayList".to_string(), module_path: String::new(), generic_args: vec![WasmAbiType::I64] },
+            &mut keys,
+        );
+        let entries = render_glue_entries(&keys, &layouts, &[]).expect("结构不匹配不要求 operation");
+        assert!(entries[0]["operations"].as_array().is_some_and(|operations| operations.is_empty()));
     }
 
     #[test]
-    fn synthesize_skips_non_scalar_element() {
+    fn render_skips_non_scalar_element() {
         // ArrayList<ArrayList<i64>>：结构事实成立，但 element 是容器 → 跳过
         let nested = NyarType::Array(Box::new(nyar("i64")));
         let layouts = sequence_layout("ArrayList", "", nested);
         let schema = WasmAbiType::Array { element: Box::new(WasmAbiType::I64) };
-        assert!(synthesize_sequence_helper_operations(&layouts, "ArrayList", "", &[schema], &BTreeSet::new()).is_none());
+        let mut keys = BTreeSet::new();
+        collect_named_aggregate_keys(
+            &WasmAbiType::NamedAggregate { name: "ArrayList".to_string(), module_path: String::new(), generic_args: vec![schema] },
+            &mut keys,
+        );
+        let entries = render_glue_entries(&keys, &layouts, &[]).expect("容器元素不要求 operation");
+        assert!(entries[0]["operations"].as_array().is_some_and(|operations| operations.is_empty()));
     }
 
     #[test]
-    fn synthesize_skips_no_generic_args() {
+    fn render_skips_no_generic_args() {
         let layouts = sequence_layout("ArrayList", "", nyar("i64"));
-        assert!(synthesize_sequence_helper_operations(&layouts, "ArrayList", "", &[], &BTreeSet::new()).is_none());
+        let mut keys = BTreeSet::new();
+        collect_named_aggregate_keys(
+            &WasmAbiType::NamedAggregate { name: "ArrayList".to_string(), module_path: String::new(), generic_args: vec![] },
+            &mut keys,
+        );
+        let entries = render_glue_entries(&keys, &layouts, &[]).expect("无泛型实参不要求 operation");
+        assert!(entries[0]["operations"].as_array().is_some_and(|operations| operations.is_empty()));
     }
 
     #[test]
-    fn declared_export_marks_operation_source_declared() {
+    fn plan_operations_render_as_declared_exports() {
         let layouts = sequence_layout("ArrayList", "", nyar("i64"));
-        let mut declared = BTreeSet::new();
-        declared.insert("$seq_ArrayList_i64_new".to_string());
-        let ops = synthesize_sequence_helper_operations(&layouts, "ArrayList", "", &[WasmAbiType::I64], &declared)
-            .expect("structure fact should synthesize");
-        assert_eq!(ops[0]["export_source"], "declared");
-        assert_eq!(ops[1]["export_source"], "backend_synthetic");
+        let operations = sequence_operations(0, AggregateOperationCarrier::I64, "$seq_ArrayList_i64");
+        let mut keys = BTreeSet::new();
+        collect_named_aggregate_keys(
+            &WasmAbiType::NamedAggregate { name: "ArrayList".to_string(), module_path: String::new(), generic_args: vec![WasmAbiType::I64] },
+            &mut keys,
+        );
+        let entries = render_glue_entries(&keys, &layouts, &operations).expect("plan 提供完整 operation");
+        for operation in entries[0]["operations"].as_array().unwrap() {
+            assert_eq!(operation["export_source"], "declared");
+        }
     }
 
     // ---- ABI digest ----
@@ -768,7 +796,7 @@ mod tests {
             "module_path": "",
             "generic_args": [{"kind": "I64"}],
             "operations": [{"operation": "construct", "export_name": "$seq_ArrayList_i64_new"}],
-            "source": "backend_synthetic",
+            "source": "plan",
             "status": "ready"
         })];
         let glue_digest = abi_contract_digest(LIBRARY_INVOKE_SCHEMA_VERSION, &exports, &with_glue);
@@ -793,7 +821,7 @@ mod tests {
 
     // ---- glue export 真实性校验 ----
 
-    fn glue_entry_with_operation(export_source: &str) -> serde_json::Value {
+    fn glue_entry_with_operation() -> serde_json::Value {
         serde_json::json!({
             "kind": "NamedAggregate",
             "name": "ArrayList",
@@ -804,16 +832,16 @@ mod tests {
                 "export_name": "solve",
                 "param_carriers": ["i32"],
                 "return_carrier": "i32",
-                "export_source": export_source
+                "export_source": EXPORT_SOURCE_DECLARED
             }],
-            "source": "backend_synthetic",
+            "source": "plan",
             "status": "ready"
         })
     }
 
     #[test]
     fn validate_glue_entry_exports_rejects_missing_declared_export() {
-        let entries = vec![glue_entry_with_operation(EXPORT_SOURCE_DECLARED)];
+        let entries = vec![glue_entry_with_operation()];
         let wasm_exports: BTreeSet<String> = ["memory".to_string()].into_iter().collect();
         let error = validate_glue_entry_exports(&entries, &wasm_exports).expect_err("missing export must fail");
         assert!(error.contains("export_name=solve"), "error must name the missing export: {error}");
@@ -823,34 +851,34 @@ mod tests {
 
     #[test]
     fn validate_glue_entry_exports_accepts_present_declared_export() {
-        let entries = vec![glue_entry_with_operation(EXPORT_SOURCE_DECLARED)];
+        let entries = vec![glue_entry_with_operation()];
         let wasm_exports: BTreeSet<String> = ["solve".to_string()].into_iter().collect();
         validate_glue_entry_exports(&entries, &wasm_exports).expect("present export must pass");
     }
 
     #[test]
-    fn validate_glue_entry_exports_rejects_backend_synthetic_without_producer() {
-        // 合成 helper 没有真实 producer 时必须在 artifact 校验阶段失败，
+    fn validate_glue_entry_exports_rejects_plan_operation_without_export() {
+        // plan operation 没有真实 export 时必须在 artifact 校验阶段失败，
         // 不能留到 JS glue 运行时才报错。
-        let mut entry = glue_entry_with_operation(EXPORT_SOURCE_BACKEND_SYNTHETIC);
+        let mut entry = glue_entry_with_operation();
         entry["operations"][0]["export_name"] = serde_json::json!("$seq_std_collections_ArrayList_i64_new");
-        let error = validate_glue_entry_exports(&[entry], &BTreeSet::new()).expect_err("missing synthetic export must fail");
+        let error = validate_glue_entry_exports(&[entry], &BTreeSet::new()).expect_err("missing plan export must fail");
         assert!(error.contains("export_name=$seq_std_collections_ArrayList_i64_new"), "error must name the missing export: {error}");
         assert!(error.contains("ArrayList<I64>"), "error must carry aggregate identity: {error}");
         assert!(error.contains("construct"), "error must carry the operation: {error}");
     }
 
     #[test]
-    fn validate_glue_entry_exports_accepts_backend_synthetic_with_real_export() {
-        let mut entry = glue_entry_with_operation(EXPORT_SOURCE_BACKEND_SYNTHETIC);
+    fn validate_glue_entry_exports_accepts_plan_operation_with_real_export() {
+        let mut entry = glue_entry_with_operation();
         entry["operations"][0]["export_name"] = serde_json::json!("$seq_std_collections_ArrayList_i64_new");
         let wasm_exports: BTreeSet<String> = ["$seq_std_collections_ArrayList_i64_new".to_string()].into_iter().collect();
-        validate_glue_entry_exports(&[entry], &wasm_exports).expect("present synthetic export must pass");
+        validate_glue_entry_exports(&[entry], &wasm_exports).expect("present plan export must pass");
     }
 
     #[test]
     fn validate_glue_entry_exports_rejects_empty_declared_export_name() {
-        let mut entry = glue_entry_with_operation(EXPORT_SOURCE_DECLARED);
+        let mut entry = glue_entry_with_operation();
         entry["operations"][0]["export_name"] = serde_json::json!("");
         let error = validate_glue_entry_exports(&[entry], &BTreeSet::new()).expect_err("empty export_name must fail");
         assert!(error.contains("缺少 export_name"), "error must explain the missing name: {error}");
