@@ -171,6 +171,12 @@ pub struct BuildPlan {
     pub project: PlannedProject,
     /// 产物输出目录。
     pub output_dir: PathBuf,
+    /// 生成本计划时启用的 feature 集合（`[gate]` 的求值输入）。
+    ///
+    /// 已按 `BTreeSet` 顺序稳定排序；参与产物缓存身份，确保同源码、不同 feature set
+    /// 不会命中同一缓存条目。
+    #[serde(default)]
+    pub enabled_features: std::collections::BTreeSet<String>,
 }
 
 /// 工程解析模式：workspace 成员、独立包或单脚本。
