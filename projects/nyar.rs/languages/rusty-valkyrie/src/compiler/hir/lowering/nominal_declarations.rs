@@ -64,6 +64,7 @@ pub(crate) fn collect_sum_declarations(
                 declaration: enum_def.declaration,
                 name: enum_def.name.to_string(),
                 is_unite: enum_def.is_unity,
+                is_value_type: enum_def.is_value_type,
                 generics: enum_def.generics.clone(),
                 variants,
             }
@@ -112,6 +113,7 @@ pub(crate) fn collect_sum_declarations(
                 declaration: enum_def.declaration,
                 name: enum_def.name.to_string(),
                 is_unite: enum_def.is_unity,
+                is_value_type: enum_def.is_value_type,
                 generics: enum_def.generics.clone(),
                 variants,
             };

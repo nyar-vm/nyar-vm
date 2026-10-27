@@ -169,47 +169,121 @@ fn read_library_invoke_spec(wasm_path: &Path) -> Option<String> {
 }
 
 fn library_invoke_marshaler_js(spec_json: &str) -> String {
+    // LIBRARY_INVOKE 现在消费结构化的 WasmAbiType JSON schema。
+    // 每个 param/return 要么是 string (旧格式 "i64")，要么是 object (新格式 {"kind": "I64", ...})。
     format!(
         r#"const LIBRARY_INVOKE = {spec_json};
-const GLUE_LIST_I64 = LIBRARY_INVOKE.glue?.list_i64 ?? null;
 
-function marshalLibraryArg(kind, value) {{
-    if (kind === "i64") {{
-        return BigInt(value ?? 0);
+// ── Schema helpers ────────────────────────────────────────────────────────
+// 从 param/return schema 提取 ABI kind 字符串。
+// 同时兼容旧格式（直接是 "i64"）和新结构化格式（{{"kind": "I64"}}）。
+function abiKind(schema) {{
+    if (typeof schema === "string") return schema;
+    if (schema && typeof schema.kind === "string") return schema.kind;
+    return null;
+}}
+
+// 判断 schema 是否是 NamedAggregate 且语义身份匹配指定名称和泛型参数 kind。
+// 用于识别 ArrayList<i64> / HashMap<K,V> 等在下游宿主有专用 marshal 规则的类型。
+// （注意：此函数是下游 glue 消费逻辑，不参与 schema 生成——schema 生成阶段已在 library_glue.rs 禁止硬编码）
+function matchesNamedAggregate(schema, expectedName, expectedGenericKinds) {{
+    if (!schema) return false;
+    const kind = abiKind(schema);
+    if (kind !== "NamedAggregate") return false;
+    if (schema.name !== expectedName) return false;
+    const args = schema.generic_args ?? [];
+    if (args.length !== expectedGenericKinds.length) return false;
+    for (let i = 0; i < args.length; i++) {{
+        if (abiKind(args[i]) !== expectedGenericKinds[i]) return false;
     }}
-    if (kind === "list_i64" && GLUE_LIST_I64) {{
-        const nums = Array.isArray(value) ? value : [];
-        const list = exports[GLUE_LIST_I64.new](BigInt(nums.length));
-        const push = exports[GLUE_LIST_I64.push];
-        for (const item of nums) {{
-            push(list, BigInt(item));
+    return true;
+}}
+
+function marshalLibraryArg(schema, value) {{
+    const kind = abiKind(schema);
+    if (kind == null) return value;
+
+    // ── Primitive carriers ──────────────────────────────────────────────
+    if (kind === "I64") return BigInt(value ?? 0);
+    if (kind === "I32" || kind === "F32" || kind === "F64") return Number(value ?? 0);
+    if (kind === "Bool") return value ? 1 : 0;
+    if (kind === "Char") return Number(value ?? 0);
+    if (kind === "Utf8" || kind === "Utf16") {{
+        // Utf8 在 JS glue 轨是 i32 host-intern 句柄；调用方应已提供句柄值。
+        // 如果传入的是 JS 字符串而非句柄，宿主 glue 层需要一个 Utf8-to-handle 桥（阶段 C 实现）。
+        if (typeof value === "string") {{
+            throw new Error("Utf8 参数需要预转换为 host-intern 句柄；JS 字符串到句柄的桥尚未建立");
         }}
-        return list;
+        return Number(value ?? 0);
     }}
+    if (kind === "Unit") return undefined;
+
+    // ── Named aggregates with glue registry entries ─────────────────────
+    // ArrayList<i64>：下游 glue 注册表查找 ArrayList 导出函数
+    if (matchesNamedAggregate(schema, "ArrayList", ["I64"])) {{
+        const glue = LIBRARY_INVOKE?.glue?.ArrayList?.i64;
+        if (glue) {{
+            const nums = Array.isArray(value) ? value : [];
+            const list = exports[glue.new](BigInt(nums.length));
+            const push = exports[glue.push];
+            for (const item of nums) {{
+                push(list, BigInt(item));
+            }}
+            return list;
+        }}
+        // 回退路径：兼容旧版 list_i64 glue key（向后兼容过渡期）
+        const legacy = LIBRARY_INVOKE?.glue?.list_i64;
+        if (legacy) {{
+            const nums = Array.isArray(value) ? value : [];
+            const list = exports[legacy.new](BigInt(nums.length));
+            const push = exports[legacy.push];
+            for (const item of nums) {{
+                push(list, BigInt(item));
+            }}
+            return list;
+        }}
+        throw new Error("ArrayList<i64> 参数缺少 glue 注册表项");
+    }}
+
+    // ── Fallback ────────────────────────────────────────────────────────
+    // Array / Option / Tuple / 其他 NamedAggregate：阶段 C 实现完整 marshal
+    // 当前直接透传 value，宿主若不兼容会在 Wasm 调用点 trap。
     return value;
 }}
 
-function demarshalLibraryReturn(kind, value) {{
-    if (kind === "list_i64" && GLUE_LIST_I64) {{
-        if (value == null) {{
-            return null;
-        }}
-        const len = Number(exports[GLUE_LIST_I64.length](value));
-        if (len === 0) {{
-            return null;
-        }}
+function demarshalLibraryReturn(schema, raw) {{
+    const kind = abiKind(schema);
+    if (kind == null) return raw;
+
+    // ── Unit：无返回值 ──────────────────────────────────────────────────
+    if (kind === "Unit") return undefined;
+
+    // ── Primitive carriers ──────────────────────────────────────────────
+    if (kind === "I64") return raw == null ? null : Number(raw);
+    if (kind === "I32" || kind === "F32" || kind === "F64") return Number(raw);
+    if (kind === "Bool") return raw !== 0 && raw !== null;
+    if (kind === "Char") return Number(raw);
+    if (kind === "Utf8") return raw == null ? "" : Number(raw);
+    if (kind === "Utf16") return raw == null ? "" : Number(raw);
+
+    // ── Named aggregates with glue registry entries ─────────────────────
+    if (matchesNamedAggregate(schema, "ArrayList", ["I64"])) {{
+        if (raw == null) return null;
+        const glue = LIBRARY_INVOKE?.glue?.ArrayList?.i64 ?? LIBRARY_INVOKE?.glue?.list_i64;
+        if (!glue) throw new Error("ArrayList<i64> 返回值缺少 glue 注册表项");
+        const len = Number(exports[glue.length](raw));
+        if (len === 0) return [];
         const out = [];
-        const at = exports[GLUE_LIST_I64.at];
+        const at = exports[glue.at];
         for (let i = 0; i < len; i++) {{
             // V `ArrayList.at` 使用序数索引（1-based）；JS 循环 `i` 是基数（0-based），故传 `i + 1`。
-            out.push(Number(at(value, i + 1)));
+            out.push(Number(at(raw, i + 1)));
         }}
         return out;
     }}
-    if (kind === "i64") {{
-        return Number(value);
-    }}
-    return value;
+
+    // ── Fallback ────────────────────────────────────────────────────────
+    return raw;
 }}
 "#,
         spec_json = spec_json

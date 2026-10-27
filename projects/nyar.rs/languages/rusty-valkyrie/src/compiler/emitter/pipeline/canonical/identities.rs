@@ -40,8 +40,11 @@ pub(crate) fn collect_aggregate_identities(
         let item = sum.declaration.ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少 declaration ItemId", sum.name)))?;
         let ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
         let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少类型事实", sum.name)))?;
-        // NominalValueSemantics 只能来自语言声明或已冻结的表示事实；canonical 不得默认 Reference 回填。
-        return Err(error_without_module("CAN056", format!("sum `{}` 缺少冻结的值语义事实，无法登记 NominalValueSemantics", sum.name)));
+        // 值语义事实由前端声明冻结：enum/unite 默认就是值类型（Value），与 structure 相同。
+        let semantics = if sum.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
+        if nominals.insert(sum.nominal, (declaration, semantics)).is_some() {
+            return Err(error_without_module("CAN020", format!("sum identity 重复: {}", sum.name)));
+        }
     }
     Ok((nominals, field_records))
 }
@@ -185,7 +188,7 @@ pub(crate) fn register_sum_nominal_instances(
         let item = sum.declaration.ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少 declaration ItemId", sum.name)))?;
         let declaration_ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
         let declaration = type_id(type_values, &declaration_ty)?;
-        // 不得用 Reference 默认值回填 sum 的 nominal_instances；collect_aggregate_identities 已拒绝 sum。
+        // 值语义事实已由 collect_aggregate_identities 从 sum 声明登记进 nominals map。
         let existing_semantics = nominals
             .get(&sum.nominal)
             .map(|(_, semantics)| *semantics)
@@ -220,8 +223,10 @@ pub(crate) fn register_sum_nominal_instances(
         let nominal =
             NominalInstanceId::from_index(next_nominal).ok_or_else(|| error_without_module("CAN020", "sum instance identity 溢出"))?;
         next_nominal = next_nominal.checked_add(1).ok_or_else(|| error_without_module("CAN020", "sum instance identity 溢出"))?;
-        // 泛型 sum 实例不得默认 Reference；必须从语言声明或冻结表示事实取得值语义。
-        return Err(error_without_module("CAN056", format!("泛型 sum 实例缺少冻结的 NominalValueSemantics，无法登记: {nominal:?}")));
+        // 值语义事实从 sum 声明继承；enum/unite 默认就是值类型。
+        let semantics = if sum.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
+        nominals.insert(nominal, (declaration, semantics));
+        linked.nominal_instances.insert(nominal, NominalInstanceRecord { declaration, ty: *concrete_ty, semantics, fields: Vec::new() });
         let mut layout_variants = Vec::with_capacity(sum.variants.len());
         for variant in &sum.variants {
             let instantiated = sum
