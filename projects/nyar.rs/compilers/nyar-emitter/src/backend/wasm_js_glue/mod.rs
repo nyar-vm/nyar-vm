@@ -4,7 +4,7 @@
 //! 不承载 `.wasi` / `wasmtime` / 任何 WASI preview 模块语义，
 //! 也不依赖 `backend::wasi` 子树的任何符号。
 
-use std::{fs, path::Path};
+use std::{collections::BTreeSet, fs, path::Path};
 
 use crate::{EmitterError, Result};
 use acorn_wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
@@ -31,7 +31,13 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
             WasmPackageKind::Library => true,
             WasmPackageKind::Binary => false,
         };
-        let library_invoke = if library_mode { read_library_invoke_spec(&wasm_path) } else { None };
+        let library_invoke = if library_mode {
+            validate_library_invoke_exports(&wasm_path)?;
+            read_library_invoke_spec(&wasm_path)
+        }
+        else {
+            None
+        };
         let launcher = build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode, library_invoke.as_deref());
         fs::write(&launcher_path, launcher).map_err(|e| format!("写入 Node 启动壳失败：{}: {e}", launcher_path.display()))?;
 
@@ -166,6 +172,28 @@ fn read_library_invoke_spec(wasm_path: &Path) -> Option<String> {
         }
     }
     None
+}
+
+/// 校验 `nyar.library_invoke` 的 glue 合同引用真实存在的 Wasm export。
+///
+/// 选择在生成 JS glue 的最早位置校验：lowering 阶段的
+/// `append_library_mode_glue` 只有 plan 的 `wasm_export_names()`，看不到最终
+/// export section；而这里已经读取到落盘 Wasm 模块的真实导出列表。缺失导出
+/// 会直接返回 `Err`，不会生成只在运行时才失败的启动壳。
+fn validate_library_invoke_exports(wasm_path: &Path) -> Result<()> {
+    let Some(spec) = read_library_invoke_spec(wasm_path)
+    else {
+        return Ok(());
+    };
+    let payload: serde_json::Value = serde_json::from_str(&spec).map_err(|error| format!("解析 nyar.library_invoke 自定义段失败: {error}"))?;
+    let Some(glue_entries) = payload.get("glue_entries").and_then(|value| value.as_array())
+    else {
+        return Ok(());
+    };
+    let bytes = fs::read(wasm_path).map_err(|error| format!("读取 WASM 失败：{}: {error}", wasm_path.display()))?;
+    let module = WasmBinaryModule::from_bytes(&bytes).map_err(|error| format!("WASM 解析失败：{error}"))?;
+    let wasm_exports: BTreeSet<String> = parse_export_section(&module).into_iter().map(|item| item.name).collect();
+    crate::lowering::backends::wasm::mir::library_glue::validate_glue_entry_exports(glue_entries, &wasm_exports)
 }
 
 fn library_invoke_marshaler_js(spec_json: &str) -> String {
