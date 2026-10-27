@@ -278,19 +278,16 @@ pub(super) fn wasm_import_type_bytes_for_host(
     js_glue_utf8_as_anyref: bool,
     signature_index: &BTreeMap<(String, String), BackendImport>,
 ) -> crate::Result<Vec<u8>> {
-    if let Some(frozen) = if wasi_mode {
-        wasi_import_type_for_field(module, field)
-    }
-    else {
-        wasm_import_type_for_field(field)
-    } {
-        return Ok(frozen);
-    }
+    // 单一事实源：`TargetExecutionPlan` 已冻结的 `BackendImport` 声明优先。
+    // 字段名表只是历史快照，不得越过 plan 改写已声明的导入签名。
     let key = (module.to_string(), field.to_string());
     if let Some(import) = signature_index.get(&key) {
         return Ok(wasm_import_type_from_backend_import(ctx, import, js_glue_utf8_as_anyref));
     }
-    Err(format!("host import `{module}::{field}` has no frozen ABI signature"))
+    // fallback 只服务 plan 不存在的合成宿主导入（`env::const_utf8`、`NODE_UTF8_HOST_IMPORT_FIELDS`
+    // 里的 utf8_* 辅助、WASI 预演化的 stream 内建等）；它不得覆盖 plan 已声明的事实。
+    let fallback = if wasi_mode { wasi_import_type_for_field(module, field) } else { wasm_import_type_for_field(field) };
+    fallback.ok_or_else(|| format!("host import `{module}::{field}` has no frozen ABI signature"))
 }
 
 pub(super) fn wasm_import_type_bytes(wasi_mode: bool, module: &str, field: &str) -> crate::Result<Vec<u8>> {
@@ -418,5 +415,36 @@ mod host_import_signature_tests {
             super::super::strings::wasm_function_type_result_byte(&type_bytes),
             Some(VALTYPE_I32)
         );
+    }
+
+    #[test]
+    fn wasm_import_type_prefers_backend_import_over_field_name_table() {
+        let import_id = ItemInstanceId::from_index(1).expect("import");
+        let mut plan = TargetExecutionPlan::default();
+        plan.testing_register_import(
+            import_id,
+            BackendImport {
+                index: ImportIndex::from_index(0).expect("import index"),
+                // `env::utf8_length` 同时存在于字段名表（`[i32] -> [i32]`），
+                // 这里由 plan 声明一个不同的签名，验证 plan 胜出。
+                link: ExternalImportLink::host(Some(Identifier::new("js")), vec!["utf8_length".into()]),
+                parameter_types: vec![NyarType::Integer32 { signed: true }, NyarType::Integer32 { signed: true }],
+                return_type: NyarType::Integer64 { signed: true },
+                target_operator: None,
+            },
+        );
+        let submission = FragmentSubmission::from_backend_plan(plan);
+        let ctx = ExecutableLoweringContext::new(&submission);
+        let signatures = host_import_signature_index(&submission);
+        assert!(signatures.contains_key(&("env".to_string(), "utf8_length".to_string())), "plan import 必须解析到 env::utf8_length");
+        assert_eq!(
+            wasm_import_type_for_field("utf8_length"),
+            Some(wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32])),
+            "字段名表快照应保持 `[i32] -> [i32]`"
+        );
+        let type_bytes = wasm_import_type_bytes_for_host(&submission, &ctx, false, "env", "utf8_length", false, &signatures)
+            .expect("plan 声明的签名必须胜出");
+        assert_eq!(super::super::strings::wasm_function_type_param_bytes(&type_bytes), vec![VALTYPE_I32, VALTYPE_I32]);
+        assert_eq!(super::super::strings::wasm_function_type_result_byte(&type_bytes), Some(VALTYPE_I64));
     }
 }
