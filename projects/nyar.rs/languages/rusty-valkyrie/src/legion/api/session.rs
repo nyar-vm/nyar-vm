@@ -1,7 +1,11 @@
 //! 批次内复用状态的 session 骨架（增量缓存后续填充）。
 
 use crate::legion::{
-    api::request::PlanRequest,
+    api::{
+        plan::LegionBuildPlan,
+        request::PlanRequest,
+        test::{LegionTestReport, LegionTestSelector},
+    },
     workspace::planner::{PlannerError, WorkspaceResolver},
 };
 use nyar::CanonicalTarget;
@@ -26,7 +30,7 @@ impl CompilerSession {
     }
 
     /// 复用已发现的 resolver 生成 plan。
-    pub fn plan(&self, request: PlanRequest) -> Result<super::plan::LegionBuildPlan, PlannerError> {
+    pub fn plan(&self, request: PlanRequest) -> Result<LegionBuildPlan, PlannerError> {
         let project_input = crate::legion::cmds::project_input::resolve_project_path(&request.project_dir)?;
         let build_request = crate::legion::workspace::planner::BuildRequest {
             project_dir: project_input,
@@ -34,7 +38,7 @@ impl CompilerSession {
             output_dir: request.output_dir,
         };
         let inner = self.resolver.build_plan(&build_request)?;
-        Ok(super::plan::LegionBuildPlan::from_build_plan(inner))
+        Ok(LegionBuildPlan::from_build_plan(inner))
     }
 
     /// 在同一会话内规划并编译（LeetCode 等场景：一次 open、多次 plan/compile）。
@@ -45,5 +49,15 @@ impl CompilerSession {
     ) -> Result<super::compile::LegionCompileReport, crate::legion::cmds::error::LegionError> {
         let plan = self.plan(request).map_err(crate::legion::cmds::error::LegionError::Planner)?;
         super::compile::compile(&plan, options)
+    }
+
+    /// 在同一会话内规划并运行测试。
+    pub fn test(
+        &self,
+        request: PlanRequest,
+        selector: LegionTestSelector,
+    ) -> Result<LegionTestReport, crate::legion::cmds::error::LegionError> {
+        let plan = self.plan(request).map_err(crate::legion::cmds::error::LegionError::Planner)?;
+        super::test::test_project(&plan, selector)
     }
 }
