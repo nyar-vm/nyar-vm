@@ -53,7 +53,11 @@ pub fn run(args: &BuildArgs) -> LegionResult<ExitCode> {
         return run_all_workspace_members(args);
     }
 
-    let request = BuildRequest { project_dir: project_input, target: args.target.clone(), output_dir: args.output_dir.clone() };
+    let request = BuildRequest {
+        project_dir: project_input,
+        target: args.target.clone(),
+        output_dir: args.output_dir.clone(),
+        ..Default::default() };
     let plan = workspace.build_plan(&request)?;
 
     println!("workspace: {}", crate::legion::cmds::path_for_cli_log(&plan.workspace_root));
@@ -133,8 +137,11 @@ fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
         .legions_member_dirs()
         .into_iter()
         .filter(|project_dir| {
-            let request =
-                BuildRequest { project_dir: project_dir.clone(), target: requested_target.clone(), output_dir: args.output_dir.clone() };
+            let request = BuildRequest {
+                project_dir: project_dir.clone(),
+                target: requested_target.clone(),
+                output_dir: args.output_dir.clone(),
+                ..Default::default() };
             match workspace.build_plan(&request) {
                 Ok(_) => true,
                 Err(crate::legion::workspace::planner::PlannerError::MissingBuildTarget { .. }) => {

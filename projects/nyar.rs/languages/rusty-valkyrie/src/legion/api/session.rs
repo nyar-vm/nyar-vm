@@ -36,7 +36,7 @@ impl CompilerSession {
             project_dir: project_input,
             target: request.target,
             output_dir: request.output_dir,
-        };
+            ..Default::default() };
         let inner = self.resolver.build_plan(&build_request)?;
         Ok(LegionBuildPlan::from_build_plan(inner))
     }
