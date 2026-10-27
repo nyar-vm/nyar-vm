@@ -25,22 +25,34 @@
 //! 一致；`validate_glue_entry_exports` 要求所有 operation 的 `export_name`
 //! 都真实存在于 Wasm export section。
 //!
-//! v7（当前阶段）：`glue_entries` 的 operation 只能来自
+//! v7：`glue_entries` 的 operation 只能来自
 //! `TargetExecutionPlan::aggregate_operations()`。backend 不再按结构事实合成
 //! helper 名：结构事实只用于判定「该 aggregate 需要哪些 operation」，plan 未
 //! 声明对应 producer 时在此阶段结构化失败（含 aggregate identity、缺失
 //! operation 与所需 carriers），不再产出无生产者的 `backend_synthetic` 条目。
 //!
+//! v8（当前阶段）：`version` 升到 `2`，`exports[*].params` 从裸类型数组改为
+//! **参数身份对象数组**：`index`（声明顺序，0 起连续）、`name`（来自 compiler
+//! schema 的 canonical 参数名，禁止按 metadata / 类型名猜测）、`type`（原
+//! `WasmAbiType` JSON）与 `carrier`（物理载体：`i32` / `i64` / `f32` / `f64` /
+//! `void` / `handle`）。参数名缺失、重复，或参数身份数量与类型数量不一致都会
+//! 在此结构化失败。`returns` 与 `glue_entries` 形状不变。
+//!
 //! # JSON 格式
 //!
 //! ```json
 //! {
-//!   "version": 1,
+//!   "version": 2,
 //!   "exports": {
-//!     "solve": {
+//!     "twoSum": {
 //!       "params": [
-//!         {"kind": "NamedAggregate", "name": "ArrayList", "module_path": "std::collections", "generic_args": [{"kind": "I64"}]},
-//!         {"kind": "I64"}
+//!         {
+//!           "index": 0,
+//!           "name": "nums",
+//!           "type": {"kind": "NamedAggregate", "name": "ArrayList", "module_path": "std::collections", "generic_args": [{"kind": "I64"}]},
+//!           "carrier": "handle"
+//!         },
+//!         {"index": 1, "name": "target", "type": {"kind": "I64"}, "carrier": "i64"}
 //!       ],
 //!       "returns": {"kind": "NamedAggregate", "name": "ArrayList", "module_path": "std::collections", "generic_args": [{"kind": "I64"}]}
 //!     }
@@ -71,10 +83,11 @@
 
 use std::collections::BTreeSet;
 
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, NyarType, combined_content_hash};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, NyarType, ValueOrigin, combined_content_hash};
 
 use crate::{
     AggregateOperation, AggregateOperationPlan, FragmentSubmission, Result,
+    backend_plan_views::ExecutableFunction,
     nyar_backend_wasi::{WasmBinaryModule, WasmPackageKind, WasmSection},
 };
 
@@ -84,22 +97,100 @@ use super::abi_schema::{WasmAbiType, abi_schema_for_type};
 ///
 /// 跨仓消费者（如 `leetcode.v` 的 `abi.ts`）据此校验协议版本；版本变化同时会
 /// 改变 [`abi_contract_digest`]。
-const LIBRARY_INVOKE_SCHEMA_VERSION: u64 = 1;
+///
+/// v2：`exports[*].params` 从裸类型数组改为参数身份对象数组
+/// （`index` + compiler 声明名 + `type` + 物理 `carrier`），消除下游按键序对齐。
+const LIBRARY_INVOKE_SCHEMA_VERSION: u64 = 2;
 
-/// 把函数的参数/返回类型提升为 `WasmAbiType` schema。
+/// 参数的物理载体名称。
+///
+/// 标量按 Wasm 原生槽位映射；化简为宿主句柄的容器（数组 / Option / Tuple /
+/// 具名聚合）统一走 `handle`。`Unsupported` 不应出现在参数位，出现即失败。
+fn abi_carrier_name(schema: &WasmAbiType) -> Result<&'static str> {
+    Ok(match schema {
+        WasmAbiType::I32 => "i32",
+        WasmAbiType::I64 => "i64",
+        WasmAbiType::F32 => "f32",
+        WasmAbiType::F64 => "f64",
+        // Bool / Char 在 Wasm 层统一用 i32 槽位。
+        WasmAbiType::Bool | WasmAbiType::Char => "i32",
+        // Utf8 在 JS glue 轨是 host-intern i32 句柄。
+        WasmAbiType::Utf8 => "i32",
+        WasmAbiType::Unit => "void",
+        WasmAbiType::Array { .. }
+        | WasmAbiType::FixedArray { .. }
+        | WasmAbiType::Option { .. }
+        | WasmAbiType::Tuple { .. }
+        | WasmAbiType::NamedAggregate { .. } => "handle",
+        WasmAbiType::Utf16 => return Err("Utf16 没有稳定的宿主 ABI 载体".to_string()),
+        WasmAbiType::Unsupported { reason } => return Err(format!("类型没有 Wasm ABI 载体: {reason}")),
+    })
+}
+
+/// 从函数 SSA 值提取入口参数身份 `(声明下标, canonical 参数名)`。
+///
+/// 身份必须来自 `ValueOrigin::Parameter`，数量必须与 `param_types` 一致，
+/// 下标必须连续且从 0 开始，参数名必须非空且不重复；任何偏离都在此结构化失败。
+fn parameter_identities<'a>(instance_label: &str, function: &'a ExecutableFunction) -> Result<Vec<(usize, &'a str)>> {
+    let mut identities = function
+        .values
+        .iter()
+        .filter_map(|value| match &value.origin {
+            ValueOrigin::Parameter { index, name } => Some((*index, name.as_str())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if identities.len() != function.param_types.len() {
+        return Err(format!(
+            "库导出 `{instance_label}` 的入口参数身份数量与参数类型数量不一致: parameter_origins={} param_types={}",
+            identities.len(),
+            function.param_types.len()
+        ));
+    }
+    identities.sort_by_key(|(index, _)| *index);
+    let mut names = BTreeSet::new();
+    for (position, (index, name)) in identities.iter().enumerate() {
+        if *index != position {
+            return Err(format!("库导出 `{instance_label}` 参数下标不连续: position={position} index={index}"));
+        }
+        if name.trim().is_empty() {
+            return Err(format!("库导出 `{instance_label}` 参数 {index} 缺少 canonical 参数名"));
+        }
+        if !names.insert(*name) {
+            return Err(format!("库导出 `{instance_label}` 参数 {index} 的参数名 `{name}` 重复"));
+        }
+    }
+    Ok(identities)
+}
+
+/// 把函数的参数/返回类型提升为 `WasmAbiType` schema，并同时产出带参数身份的
+/// `params` JSON 条目。
 ///
 /// 任何 `Unsupported` 变体会立刻返回可读错误，**禁止**静默降级。
 /// `instance_label` 仅用于错误信息（可以是 instance ID 的 Display 或公开名）。
+///
+/// 返回 `(参数 schema 列表, params JSON 条目, 返回 schema)`：前者供聚合 identity
+/// 收集复用，后者是新版 `exports[*].params` 合同。
 fn schematize_function_abi(
     instance_label: &str,
-    function: &crate::backend_plan_views::ExecutableFunction,
-) -> Result<(Vec<WasmAbiType>, WasmAbiType)> {
+    function: &ExecutableFunction,
+) -> Result<(Vec<WasmAbiType>, Vec<serde_json::Value>, WasmAbiType)> {
+    let identities = parameter_identities(instance_label, function)?;
     let mut params = Vec::with_capacity(function.param_types.len());
-    for ty in &function.param_types {
+    let mut params_json = Vec::with_capacity(function.param_types.len());
+    for (position, ty) in function.param_types.iter().enumerate() {
         let schema = abi_schema_for_type(ty);
         if let Some(reason) = schema.unsupported_reason() {
-            return Err(format!("库导出 `{instance_label}` 参数类型 `{ty}` 没有 Wasm ABI 合同: {reason}"));
+            return Err(format!("库导出 `{instance_label}` 参数 {position} 类型 `{ty}` 没有 Wasm ABI 合同: {reason}"));
         }
+        let (index, name) = identities[position];
+        let carrier = abi_carrier_name(&schema).map_err(|reason| format!("库导出 `{instance_label}` 参数 {index} `{name}` 的 {reason}"))?;
+        params_json.push(serde_json::json!({
+            "index": index,
+            "name": name,
+            "type": schema,
+            "carrier": carrier,
+        }));
         params.push(schema);
     }
 
@@ -107,7 +198,7 @@ fn schematize_function_abi(
     if let Some(reason) = ret_schema.unsupported_reason() {
         return Err(format!("库导出 `{instance_label}` 返回类型 `{}` 没有 Wasm ABI 合同: {reason}", function.return_type));
     }
-    Ok((params, ret_schema))
+    Ok((params, params_json, ret_schema))
 }
 
 /// 递归扫描一个 `WasmAbiType` schema，收集所有（可能嵌套的）`NamedAggregate` 的
@@ -365,7 +456,7 @@ pub(super) fn append_library_mode_glue(
         let function = plan.get_function(instance).ok_or_else(|| format!("库导出 `{instance}` 缺少 Compiler 函数体"))?.function;
 
         let instance_label = format!("{instance}");
-        let (params_schema, returns_schema) = schematize_function_abi(&instance_label, &function)?;
+        let (params_schema, params_json, returns_schema) = schematize_function_abi(&instance_label, &function)?;
 
         // 收集所有 param/return schema 里出现的 NamedAggregate identity
         for param in &params_schema {
@@ -379,7 +470,7 @@ pub(super) fn append_library_mode_glue(
             .insert(
                 public_name.clone(),
                 serde_json::json!({
-                    "params": params_schema,
+                    "params": params_json,
                     "returns": returns_schema,
                 }),
             )
@@ -882,5 +973,113 @@ mod tests {
         entry["operations"][0]["export_name"] = serde_json::json!("");
         let error = validate_glue_entry_exports(&[entry], &BTreeSet::new()).expect_err("empty export_name must fail");
         assert!(error.contains("缺少 export_name"), "error must explain the missing name: {error}");
+    }
+
+    // ---- 参数身份合同 ----
+
+    /// 构造带 `ValueOrigin::Parameter` 身份的测试函数。
+    fn abi_function(parameters: &[(usize, &str, NyarType)], return_type: NyarType) -> ExecutableFunction {
+        ExecutableFunction {
+            symbol: "identity".to_string(),
+            return_type,
+            param_types: parameters.iter().map(|(_, _, ty)| ty.clone()).collect(),
+            value_types: std::collections::BTreeMap::new(),
+            value_layouts: std::collections::BTreeMap::new(),
+            return_layout: None,
+            entry: crate::contracts::BlockRef(0),
+            values: parameters
+                .iter()
+                .map(|(index, name, _)| crate::contracts::Value {
+                    id: crate::contracts::ValueRef(u32::try_from(*index).expect("测试参数下标")),
+                    origin: ValueOrigin::Parameter { index: *index, name: (*name).to_string() },
+                })
+                .collect(),
+            suspend_points: Vec::new(),
+            frame_layouts: Vec::new(),
+            continuations: Vec::new(),
+            case_chains: Vec::new(),
+            #[allow(deprecated)]
+            state_machine: None,
+            suspend_plan: None,
+            blocks: vec![crate::contracts::Block {
+                id: crate::contracts::BlockRef(0),
+                label: "entry".to_string(),
+                parameters: Vec::new(),
+                instructions: Vec::new(),
+                terminator: crate::contracts::Terminator::Return { value: None },
+            }],
+            diagnostics: Vec::new(),
+        }
+    }
+
+    fn arraylist_i64() -> NyarType {
+        NyarType::Apply(Box::new(NyarType::Named(nyar_types::Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")])
+    }
+
+    #[test]
+    fn schematize_renders_parameter_identity_carrier_and_type() {
+        let list = arraylist_i64();
+        let function = abi_function(&[(0, "nums", list.clone()), (1, "target", nyar("i64"))], list.clone());
+        let (schemas, params_json, returns) = schematize_function_abi("twoSum", &function).expect("参数身份完整");
+        assert_eq!(schemas, vec![abi_schema_for_type(&list), WasmAbiType::I64]);
+        assert_eq!(
+            params_json,
+            vec![
+                serde_json::json!({
+                    "index": 0,
+                    "name": "nums",
+                    "type": {"kind": "NamedAggregate", "name": "ArrayList", "module_path": "std::collections", "generic_args": [{"kind": "I64"}]},
+                    "carrier": "handle"
+                }),
+                serde_json::json!({"index": 1, "name": "target", "type": {"kind": "I64"}, "carrier": "i64"}),
+            ]
+        );
+        assert_eq!(returns, abi_schema_for_type(&list));
+    }
+
+    #[test]
+    fn schematize_rejects_duplicate_parameter_names() {
+        let function = abi_function(&[(0, "value", nyar("i64")), (1, "value", nyar("i64"))], nyar("i64"));
+        let error = schematize_function_abi("identity", &function).expect_err("参数名重复必须失败");
+        assert!(error.contains("identity"), "error must carry the export name: {error}");
+        assert!(error.contains("index=1") || error.contains("参数 1"), "error must carry the parameter index: {error}");
+        assert!(error.contains("重复"), "error must explain the duplicate name: {error}");
+    }
+
+    #[test]
+    fn schematize_rejects_missing_parameter_name() {
+        let function = abi_function(&[(0, "", nyar("i64"))], nyar("i64"));
+        let error = schematize_function_abi("identity", &function).expect_err("参数名缺失必须失败");
+        assert!(error.contains("identity"), "error must carry the export name: {error}");
+        assert!(error.contains("缺少 canonical 参数名"), "error must explain the missing name: {error}");
+    }
+
+    #[test]
+    fn schematize_rejects_identity_count_mismatch() {
+        let mut function = abi_function(&[(0, "value", nyar("i64"))], nyar("i64"));
+        function.param_types.push(nyar("i32"));
+        let error = schematize_function_abi("identity", &function).expect_err("身份数量不一致必须失败");
+        assert!(error.contains("数量不一致"), "error must explain the count mismatch: {error}");
+    }
+
+    #[test]
+    fn carrier_mapping_covers_scalars_and_handles() {
+        assert_eq!(abi_carrier_name(&WasmAbiType::I32).expect("i32"), "i32");
+        assert_eq!(abi_carrier_name(&WasmAbiType::I64).expect("i64"), "i64");
+        assert_eq!(abi_carrier_name(&WasmAbiType::F32).expect("f32"), "f32");
+        assert_eq!(abi_carrier_name(&WasmAbiType::F64).expect("f64"), "f64");
+        assert_eq!(abi_carrier_name(&WasmAbiType::Bool).expect("bool"), "i32");
+        assert_eq!(abi_carrier_name(&WasmAbiType::Char).expect("char"), "i32");
+        assert_eq!(abi_carrier_name(&WasmAbiType::Utf8).expect("utf8"), "i32");
+        assert_eq!(abi_carrier_name(&WasmAbiType::Unit).expect("unit"), "void");
+        for schema in [
+            WasmAbiType::Array { element: Box::new(WasmAbiType::I64) },
+            WasmAbiType::FixedArray { element: Box::new(WasmAbiType::I64), length: 2 },
+            WasmAbiType::Option { inner: Box::new(WasmAbiType::I64) },
+            WasmAbiType::Tuple { fields: vec![WasmAbiType::I64] },
+            WasmAbiType::NamedAggregate { name: "ArrayList".to_string(), module_path: String::new(), generic_args: vec![WasmAbiType::I64] },
+        ] {
+            assert_eq!(abi_carrier_name(&schema).expect("handle"), "handle");
+        }
     }
 }

@@ -311,6 +311,8 @@ pub struct CanonicalFunction {
     pub instance: ItemInstanceId,
     /// 入口参数的 SSA 值与类型身份。
     pub parameters: Vec<(MirValueId, TypeId)>,
+    /// 入口参数的 canonical 参数名（声明顺序，与 `parameters` 等长）。
+    pub parameter_names: Vec<String>,
     /// 返回类型身份。
     pub return_type: TypeId,
     /// 函数内所有 SSA 值的稳定类型身份。

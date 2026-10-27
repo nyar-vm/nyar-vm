@@ -154,9 +154,19 @@ fn scalar_library_exports_do_not_require_collection_name_or_layout_glue() {
     .expect("标量库不得要求 ArrayList 函数或字段布局");
     let section = module.sections.iter().find(|section| section.name.as_deref() == Some("nyar.library_invoke")).expect("必须提供明确导出 ABI");
     let metadata: serde_json::Value = serde_json::from_slice(&section.bytes).expect("ABI JSON 有效");
-    assert_eq!(metadata["exports"]["identity"]["params"], serde_json::json!(["i64"]));
-    assert_eq!(metadata["exports"]["identity"]["returns"], "i64");
-    assert_eq!(metadata["glue"], serde_json::json!({}));
+    assert_eq!(
+        metadata["exports"]["identity"]["params"],
+        serde_json::json!([{
+            "index": 0,
+            "name": "value",
+            "type": {"kind": "I64"},
+            "carrier": "i64"
+        }])
+    );
+    assert_eq!(metadata["exports"]["identity"]["returns"], serde_json::json!({"kind": "I64"}));
+    assert_eq!(metadata["version"], serde_json::json!(2));
+    // 标量导出不要求任何 NamedAggregate glue 条目。
+    assert_eq!(metadata["glue_entries"], serde_json::json!([]));
 }
 
 #[cfg(feature = "ovm-lane")]

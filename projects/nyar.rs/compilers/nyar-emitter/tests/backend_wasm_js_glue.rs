@@ -69,16 +69,16 @@ fn build_node_launcher_library_mode_exposes_call_export_without_main_dispatch() 
 
 #[test]
 fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
-    // `nyar.library_invoke` v6 合同：version + 结构化 WasmAbiType schema + glue_entries + abi_digest。
+    // `nyar.library_invoke` v8 合同：version 2 + 带参数身份的 params + glue_entries + abi_digest。
     // abi_digest 在启动壳里只做携带，不参与校验，因此这里用固定占位值；真实值由
     // `library_glue::abi_contract_digest` 在编译期计算。
     let spec = r#"{
-        "version": 1,
+        "version": 2,
         "exports": {
             "twoSum": {
                 "params": [
-                    {"kind":"NamedAggregate","name":"ArrayList","module_path":"std::collections","generic_args":[{"kind":"I64"}]},
-                    {"kind":"I64"}
+                    {"index":0,"name":"nums","type":{"kind":"NamedAggregate","name":"ArrayList","module_path":"std::collections","generic_args":[{"kind":"I64"}]},"carrier":"handle"},
+                    {"index":1,"name":"target","type":{"kind":"I64"},"carrier":"i64"}
                 ],
                 "returns": {"kind":"NamedAggregate","name":"ArrayList","module_path":"std::collections","generic_args":[{"kind":"I64"}]}
             }
@@ -105,7 +105,7 @@ fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
     assert!(launcher.contains("marshalLibraryArg"), "library glue must marshal args from invoke spec");
     assert!(launcher.contains("demarshalLibraryReturn"), "library glue must demarshal returns from invoke spec");
     assert!(launcher.contains("glue_entries"), "launcher must carry the glue_entries contract verbatim");
-    assert!(launcher.contains("\"version\": 1"), "launcher must carry the schema version verbatim");
+    assert!(launcher.contains("\"version\": 2"), "launcher must carry the schema version verbatim");
     assert!(launcher.contains("abi_digest"), "launcher must carry the ABI digest verbatim");
 }
 
