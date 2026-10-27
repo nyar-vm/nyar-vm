@@ -508,6 +508,9 @@ impl CanonicalTarget {
                 Some(Self::new(CanonicalArch::Ovm, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::Managed)))
             }
             "native" => Some(Self::host_native()),
+            "wechat-miniprogram-host" => {
+                Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Miniprogram, Some(CanonicalAbi::WebAssembly)))
+            }
             _ => None,
         }
     }
