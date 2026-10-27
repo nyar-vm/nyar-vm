@@ -44,6 +44,30 @@ pub fn type_identity_table(
     structs: &[MirStruct],
     sums: &[MirSumDeclaration],
 ) -> BTreeMap<ValkyrieType, nyar_types::TypeId> {
+    /// 把 primitive numeric 的 Named surface name 归一到底层 primitive 变体。
+    /// 其他类型原样返回。
+    fn normalize_named_primitive(ty: ValkyrieType) -> ValkyrieType {
+        match &ty {
+            ValkyrieType::Named(name) => match name.as_str() {
+                "boolean" | "Bool" | "bool" => ValkyrieType::Boolean,
+                "i8" => ValkyrieType::Integer8 { signed: true },
+                "u8" | "byte" => ValkyrieType::Integer8 { signed: false },
+                "i16" => ValkyrieType::Integer16 { signed: true },
+                "u16" => ValkyrieType::Integer16 { signed: false },
+                "i32" | "int" | "Int" => ValkyrieType::Integer32 { signed: true },
+                "u32" | "uint" | "UInt" => ValkyrieType::Integer32 { signed: false },
+                "i64" | "long" | "Long" => ValkyrieType::Integer64 { signed: true },
+                "u64" | "ulong" => ValkyrieType::Integer64 { signed: false },
+                "i128" => ValkyrieType::Integer128 { signed: true },
+                "u128" => ValkyrieType::Integer128 { signed: false },
+                "f32" | "float32" => ValkyrieType::Float32,
+                "f64" | "float" | "Float" | "double" | "Double" => ValkyrieType::Float64,
+                _ => ty,
+            },
+            _ => ty,
+        }
+    }
+
     fn collect(set: &mut BTreeSet<ValkyrieType>, ty: &ValkyrieType) {
         match ty {
             ValkyrieType::Nominal { arguments, .. } => {
@@ -79,7 +103,7 @@ pub fn type_identity_table(
             _ => {}
         }
         if !type_contains_unresolved_reference(ty) {
-            set.insert(ty.clone());
+            set.insert(normalize_named_primitive(ty.clone()));
         }
     }
 

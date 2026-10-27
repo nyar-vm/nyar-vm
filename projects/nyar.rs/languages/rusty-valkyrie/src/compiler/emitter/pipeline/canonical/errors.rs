@@ -25,7 +25,36 @@ pub(crate) fn ensure_instantiated_signature(function: &MirFunction) -> Result<()
     }
 }
 pub(crate) fn type_id(ids: &BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType) -> Result<TypeId, StructuredDiagnosticSet> {
-    ids.get(ty).copied().ok_or_else(|| error_without_module("CAN014", "类型事实未进入 canonical table"))
+    ids.get(ty).copied().or_else(|| {
+        // Named primitive 可能已经在 type_identity_table 里被归一到底层变体；
+        // 这里做 fallback normalize 查找。
+        let normalized = canonical_normalize_named_primitive(ty);
+        if &normalized != ty { ids.get(&normalized).copied() } else { None }
+    }).ok_or_else(|| error_without_module("CAN014", format!("类型事实未进入 canonical table: {ty:?}")))
+}
+
+/// 把 primitive numeric 的 Named surface name 归一到底层 primitive 变体。
+/// 其他类型原样返回。
+fn canonical_normalize_named_primitive(ty: &ValkyrieType) -> ValkyrieType {
+    match ty {
+        ValkyrieType::Named(name) => match name.as_str() {
+            "boolean" | "Bool" | "bool" => ValkyrieType::Boolean,
+            "i8" => ValkyrieType::Integer8 { signed: true },
+            "u8" | "byte" => ValkyrieType::Integer8 { signed: false },
+            "i16" => ValkyrieType::Integer16 { signed: true },
+            "u16" => ValkyrieType::Integer16 { signed: false },
+            "i32" | "int" | "Int" => ValkyrieType::Integer32 { signed: true },
+            "u32" | "uint" | "UInt" => ValkyrieType::Integer32 { signed: false },
+            "i64" | "long" | "Long" => ValkyrieType::Integer64 { signed: true },
+            "u64" | "ulong" => ValkyrieType::Integer64 { signed: false },
+            "i128" => ValkyrieType::Integer128 { signed: true },
+            "u128" => ValkyrieType::Integer128 { signed: false },
+            "f32" | "float32" => ValkyrieType::Float32,
+            "f64" | "float" | "Float" | "double" | "Double" => ValkyrieType::Float64,
+            _ => ty.clone(),
+        },
+        _ => ty.clone(),
+    }
 }
 fn item_id(index: u32) -> ItemId {
     ItemId::from_index(index).expect("item identity overflow")

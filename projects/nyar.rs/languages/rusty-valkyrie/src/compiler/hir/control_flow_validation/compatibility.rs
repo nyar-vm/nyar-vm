@@ -39,10 +39,41 @@ pub fn control_flow_value_type_compatible_with_primitives(
         || matches!(expected, ValkyrieType::AutoType)
         || matches!(actual, ValkyrieType::AutoType)
         || (is_integer_type(expected) && is_integer_type(actual))
+        || primitive_named_equivalent(expected, actual)
         || array_types_compatible(expected, actual)
         || nullable_return_compatible(expected, actual)
         || nominal_apply_types_compatible(expected, actual)
         || state.is_some_and(|state| primitive_boolean_compatible(expected, actual, state))
+}
+
+/// 检查两个类型是否是同一个 primitive numeric 的不同表示形式：
+/// `Named("i32")` ↔ `Integer32 { .. }`、`Named("f64")` ↔ `Float64` 等。
+fn primitive_named_equivalent(a: &ValkyrieType, b: &ValkyrieType) -> bool {
+    fn offset_of(ty: &ValkyrieType) -> Option<u32> {
+        Some(match ty {
+            ValkyrieType::Boolean => 0,
+            ValkyrieType::Integer8 { .. } => 1,
+            ValkyrieType::Integer16 { .. } => 2,
+            ValkyrieType::Integer32 { .. } => 3,
+            ValkyrieType::Integer64 { .. } => 4,
+            ValkyrieType::Integer128 { .. } => 5,
+            ValkyrieType::Float32 => 6,
+            ValkyrieType::Float64 => 7,
+            ValkyrieType::Named(name) => match name.as_str() {
+                "boolean" | "Bool" | "bool" => 0,
+                "i8" => 1,
+                "i16" => 2,
+                "i32" | "int" | "Int" => 3,
+                "i64" | "long" | "Long" => 4,
+                "i128" => 5,
+                "f32" | "float" | "Float" => 6,
+                "f64" | "double" | "Double" => 7,
+                _ => return None,
+            },
+            _ => return None,
+        })
+    }
+    offset_of(a).is_some_and(|off_a| offset_of(b).is_some_and(|off_b| off_a == off_b))
 }
 
 pub fn primitive_boolean_compatible(expected: &ValkyrieType, actual: &ValkyrieType, state: &HirValidationState) -> bool {

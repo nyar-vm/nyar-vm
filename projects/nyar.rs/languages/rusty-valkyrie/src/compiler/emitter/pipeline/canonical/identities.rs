@@ -124,6 +124,27 @@ fn is_array_index_surface_name(name: &str) -> bool {
     )
 }
 
+/// 把 primitive numeric 的 Named surface name 映射到 canonical primitive kind。
+/// 返回 `None` 表示不是 primitive numeric，应继续走 CAN003 报错路径。
+pub(crate) fn canonical_primitive_from_named(name: &str) -> Option<CanonicalPrimitiveType> {
+    Some(match name {
+        "boolean" | "Bool" | "bool" => CanonicalPrimitiveType::Bool,
+        "i8" => CanonicalPrimitiveType::Integer { bits: 8, signed: true },
+        "u8" | "byte" => CanonicalPrimitiveType::Integer { bits: 8, signed: false },
+        "i16" => CanonicalPrimitiveType::Integer { bits: 16, signed: true },
+        "u16" => CanonicalPrimitiveType::Integer { bits: 16, signed: false },
+        "i32" | "int" | "Int" => CanonicalPrimitiveType::Integer { bits: 32, signed: true },
+        "u32" | "uint" | "UInt" => CanonicalPrimitiveType::Integer { bits: 32, signed: false },
+        "i64" | "long" | "Long" => CanonicalPrimitiveType::Integer { bits: 64, signed: true },
+        "u64" | "ulong" => CanonicalPrimitiveType::Integer { bits: 64, signed: false },
+        "i128" => CanonicalPrimitiveType::Integer { bits: 128, signed: true },
+        "u128" => CanonicalPrimitiveType::Integer { bits: 128, signed: false },
+        "f32" | "float32" => CanonicalPrimitiveType::Float { bits: 32 },
+        "f64" | "float" | "Float" | "double" | "Double" => CanonicalPrimitiveType::Float { bits: 64 },
+        _ => return None,
+    })
+}
+
 pub(crate) fn canonical_type_kind(
     ty: &ValkyrieType,
     ids: &BTreeMap<ValkyrieType, TypeId>,
@@ -148,12 +169,15 @@ pub(crate) fn canonical_type_kind(
             let declaration = type_id(ids, &declaration_ty)?;
             CanonicalTypeKind::Nominal { declaration, arguments: arguments.iter().map(id).collect::<Result<_, _>>()? }
         }
-        ValkyrieType::Named(name) => {
-            return Err(error_without_module(
-                "CAN003",
-                format!("未绑定的类型名 `{name}` 进入 canonical 类型表；必须在 HIR 绑定阶段冻结为 Nominal 或返回前端 TypeError"),
-            ));
-        }
+        ValkyrieType::Named(name) => match canonical_primitive_from_named(name.as_str()) {
+            Some(kind) => CanonicalTypeKind::Primitive(kind),
+            None => {
+                return Err(error_without_module(
+                    "CAN003",
+                    format!("未绑定的类型名 `{name}` 进入 canonical 类型表；必须在 HIR 绑定阶段冻结为 Nominal 或返回前端 TypeError"),
+                ));
+            }
+        },
         // 停线清理：QualifiedPath 不得进入 canonical。若到达这里说明前端生成/绑定
         // 阶段未切断该路径，直接走通配错误（CAN003 "类型没有无损 canonical 形状"）。
         ValkyrieType::Apply(base, args) => {

@@ -83,6 +83,50 @@ fn unknown_wasm_operator_mnemonic_fails_structurally() {
     assert!(message.contains("function="), "错误必须带函数符号: {message}");
 }
 
+/// BPHYS004 repro：primitive i32 无显式 `imply { infix + }` 时，
+/// wasm backend 必须能 lowering 简单 `a + b`。
+#[test]
+fn primitive_i32_infix_add_lowers_without_explicit_imply() {
+    let source = r#"
+[primitive("core::primitive::i32")]
+structure i32 { }
+
+micro add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+"#;
+    let groups = [CompilerSourceGroup::single_source("demo", "demo", source).as_entry()];
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], "wasm");
+    match program {
+        Ok(program) => {
+            let fragment = program.canonical().linked.fragments.keys().next().cloned().expect("目标程序必须保留片段身份");
+            let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
+            eprintln!("=== Semantic MIR roots={roots:?} ===");
+            eprintln!("=== Semantic MIR functions={:?} ===", program.canonical().mir.functions.keys().collect::<Vec<_>>());
+            eprintln!("=== Semantic MIR linked callable_names={:?} ===", program.canonical().linked.callable_names);
+            let plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots);
+            match plan {
+                Ok(plan) => {
+                    eprintln!("=== TargetExecutionPlan OK ===");
+                    eprintln!("=== imports={:?} ===", plan.imports());
+                    let submission = nyar_emitter::testing::fragment_submission_from_plan(plan);
+                    match nyar_emitter::testing::lower_fragment_to_wasm_mir_module(&submission, "main") {
+                        Ok(module) => {
+                            let bytes = module.to_bytes().expect("encode");
+                            eprintln!("=== WASM lowering OK: {} bytes ===", bytes.len());
+                        }
+                        Err(e) => eprintln!("=== WASM lowering FAILED: {e} ==="),
+                    }
+                }
+                Err(e) => eprintln!("=== TargetExecutionPlan FAILED: {e} ==="),
+            }
+        }
+        Err(e) => eprintln!("=== Compilation FAILED: {e} ==="),
+    }
+    // 目前预期失败；等修复后改成 expect(ok)
+}
+
 /// 助记符 arity 与实参数量不符时不得发射指令，必须返回结构化 backend error。
 #[test]
 fn wasm_operator_arity_mismatch_fails_structurally() {
