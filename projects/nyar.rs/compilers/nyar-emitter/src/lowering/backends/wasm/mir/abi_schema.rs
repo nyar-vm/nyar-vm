@@ -123,11 +123,15 @@ pub enum WasmAbiType {
         name: String,
         /// 类型所属的完整命名空间路径（例如 `"std::collections"`）。
         ///
-        /// # 当前上游限制
+        /// # 上游拼写来源
         ///
-        /// NyarType 的 `Identifier` 目前不总是携带完整路径——当上游
-        /// `rusty-valkyrie` 只传了简单名时，这里会是空字符串。
-        /// TODO(valkyrie): 等上游把完整 QualifiedName 传进 NyarType 后替换。
+        /// `rusty-valkyrie` 的 canonical 阶段在**声明** TypeId 上登记
+        /// `MirStruct::qualified_name()`（`namespace.name` 规范为 `::`）。泛型实例
+        /// `ArrayList<i64>` 在 `lower_type` 中回落到声明 TypeId 取基类型拼写，因此
+        /// `Apply` 的 `module_path` 与声明一致。
+        ///
+        /// 仍为空字符串的场景只是**如实**的缺口：sum 声明目前没有 namespace 事实，
+        /// 只有简单名；无名空间（顶层）声明本身也没有路径可拆。
         module_path: String,
         /// 实例化的泛型参数（无泛型时为空 vec）。
         generic_args: Vec<WasmAbiType>,
@@ -210,9 +214,7 @@ impl WasmAbiType {
 /// | `Union([...])`               | `Unsupported`                                  | ABI 合同未定义                                 |
 pub fn abi_schema_for_type(ty: &NyarType) -> WasmAbiType {
     match ty {
-        NyarType::Bottom => WasmAbiType::Unsupported {
-            reason: "`void` / bottom type 不能出现在库导出 ABI 位置".to_string(),
-        },
+        NyarType::Bottom => WasmAbiType::Unsupported { reason: "`void` / bottom type 不能出现在库导出 ABI 位置".to_string() },
         NyarType::Unit => WasmAbiType::Unit,
 
         NyarType::Boolean => WasmAbiType::Bool,
@@ -220,44 +222,31 @@ pub fn abi_schema_for_type(ty: &NyarType) -> WasmAbiType {
 
         // 所有 <= 32-bit 整数统一映射到 I32 carrier；signedness 在 Wasm 层通过
         // 有符号/无符号指令区分，ABI carrier 本身无符号属性。
-        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } => {
-            WasmAbiType::I32
-        }
+        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } => WasmAbiType::I32,
         NyarType::Integer64 { .. } => WasmAbiType::I64,
-        NyarType::Integer128 { .. } => WasmAbiType::Unsupported {
-            reason: "Integer128 没有原生 Wasm carrier，需要显式拆分合同".to_string(),
-        },
+        NyarType::Integer128 { .. } => {
+            WasmAbiType::Unsupported { reason: "Integer128 没有原生 Wasm carrier，需要显式拆分合同".to_string() }
+        }
 
         NyarType::Float32 => WasmAbiType::F32,
         NyarType::Float64 => WasmAbiType::F64,
 
         NyarType::Utf8 => WasmAbiType::Utf8,
-        NyarType::Utf16 => WasmAbiType::Unsupported {
-            reason: "Utf16 在当前 JS glue 轨没有稳定的宿主 ABI 合同".to_string(),
-        },
+        NyarType::Utf16 => WasmAbiType::Unsupported { reason: "Utf16 在当前 JS glue 轨没有稳定的宿主 ABI 合同".to_string() },
 
-        NyarType::Array(element) => WasmAbiType::Array {
-            element: Box::new(abi_schema_for_type(element)),
-        },
-        NyarType::FixedArray { element, length } => WasmAbiType::FixedArray {
-            element: Box::new(abi_schema_for_type(element)),
-            length: *length,
-        },
+        NyarType::Array(element) => WasmAbiType::Array { element: Box::new(abi_schema_for_type(element)) },
+        NyarType::FixedArray { element, length } => {
+            WasmAbiType::FixedArray { element: Box::new(abi_schema_for_type(element)), length: *length }
+        }
 
-        NyarType::Nullable(inner) => WasmAbiType::Option {
-            inner: Box::new(abi_schema_for_type(inner)),
-        },
+        NyarType::Nullable(inner) => WasmAbiType::Option { inner: Box::new(abi_schema_for_type(inner)) },
 
-        NyarType::Tuple(fields) => WasmAbiType::Tuple {
-            fields: fields.iter().map(abi_schema_for_type).collect(),
-        },
+        NyarType::Tuple(fields) => WasmAbiType::Tuple { fields: fields.iter().map(abi_schema_for_type).collect() },
 
         // 名义类型：把 Identifier 展开成简单名字 + 模块路径；generic_args 为空。
-        NyarType::Named(id) => WasmAbiType::NamedAggregate {
-            name: simple_name_of(id),
-            module_path: module_path_of(id),
-            generic_args: Vec::new(),
-        },
+        NyarType::Named(id) => {
+            WasmAbiType::NamedAggregate { name: simple_name_of(id), module_path: module_path_of(id), generic_args: Vec::new() }
+        }
 
         // 泛型应用：`Apply(Base, [T1, T2, ...])`
         // 把 Base（通常是 Named）的语义名字和模块路径提取出来，递归映射泛型参数。
@@ -270,32 +259,25 @@ pub fn abi_schema_for_type(ty: &NyarType) -> WasmAbiType {
                 }
                 other => {
                     return WasmAbiType::Unsupported {
-                        reason: format!(
-                            "Apply 的 Base 必须是 Named 或 Apply，实际是 {other:?}——无法提取语义 identity"
-                        ),
+                        reason: format!("Apply 的 Base 必须是 Named 或 Apply，实际是 {other:?}——无法提取语义 identity"),
                     };
                 }
             };
-            let mut generic_args: Vec<WasmAbiType> =
-                base_generic_args.iter().map(|t| abi_schema_for_type(t)).collect();
+            let mut generic_args: Vec<WasmAbiType> = base_generic_args.iter().map(|t| abi_schema_for_type(t)).collect();
             generic_args.extend(args.iter().map(abi_schema_for_type));
             WasmAbiType::NamedAggregate { name, module_path, generic_args }
         }
 
         // 函数类型不能跨 ABI 边界（宿主和 Wasm 的函数指针合同尚未定义）。
-        NyarType::Function(_) => WasmAbiType::Unsupported {
-            reason: "函数类型不能出现在库导出 ABI 位置".to_string(),
-        },
+        NyarType::Function(_) => WasmAbiType::Unsupported { reason: "函数类型不能出现在库导出 ABI 位置".to_string() },
 
         // 动态分发的 trait object 没有稳定的 Wasm carrier。
-        NyarType::TraitObject(_) => WasmAbiType::Unsupported {
-            reason: "TraitObject（dynamic dispatch）没有稳定的 Wasm carrier".to_string(),
-        },
+        NyarType::TraitObject(_) => {
+            WasmAbiType::Unsupported { reason: "TraitObject（dynamic dispatch）没有稳定的 Wasm carrier".to_string() }
+        }
 
         // 匿名 tagged union 的 ABI 合同（tag 放在哪？payload 如何对齐？）未定义。
-        NyarType::Union(_) => WasmAbiType::Unsupported {
-            reason: "匿名 union 的 Wasm ABI 合同尚未定义".to_string(),
-        },
+        NyarType::Union(_) => WasmAbiType::Unsupported { reason: "匿名 union 的 Wasm ABI 合同尚未定义".to_string() },
     }
 }
 
@@ -314,16 +296,18 @@ fn simple_name_of(id: &Identifier) -> String {
 /// - `"std.collections.ArrayList"` → `"std.collections"`
 /// - `"ArrayList"` → `""`（简单名无路径前缀）
 ///
-/// 当前上游 NyarType::Identifier 经常只有简单名——空返回值是合法场景，
-/// 不是错误。TODO(valkyrie): 等上游把 QualifiedName 完整传递下来后
-/// 可以把空值视为"未知"而不是"无"。
+/// 空返回值只在**上游如实无路径事实**时出现：canonical 已为每个 struct 声明
+/// 登记 `MirStruct::qualified_name()`；没有路径的只剩无 namespace 的 sum 声明
+/// 和顶层（无名空间）声明。不要用简单名拼 package path 来填补空值。
 fn module_path_of(id: &Identifier) -> String {
     let full = id.as_str();
     if let Some((prefix, _)) = full.rsplit_once("::") {
         prefix.to_string()
-    } else if let Some((prefix, _)) = full.rsplit_once('.') {
+    }
+    else if let Some((prefix, _)) = full.rsplit_once('.') {
         prefix.to_string()
-    } else {
+    }
+    else {
         String::new()
     }
 }
@@ -340,11 +324,7 @@ fn flatten_apply_identity(mut ty: &NyarType) -> (String, String, Vec<NyarType>) 
                 ty = base.as_ref();
             }
             other => {
-                return (
-                    format!("<unexpected:{other:?}>"),
-                    String::new(),
-                    accumulated,
-                );
+                return (format!("<unexpected:{other:?}>"), String::new(), accumulated);
             }
         }
     }
@@ -373,37 +353,28 @@ mod tests {
     #[test]
     fn array_element_preserved() {
         let arr = NyarType::Array(Box::new(nyar("i64")));
-        assert_eq!(
-            abi_schema_for_type(&arr),
-            WasmAbiType::Array { element: Box::new(WasmAbiType::I64) }
-        );
+        assert_eq!(abi_schema_for_type(&arr), WasmAbiType::Array { element: Box::new(WasmAbiType::I64) });
     }
 
     #[test]
     fn nullable_becomes_option() {
         let opt = NyarType::Nullable(Box::new(nyar("i32")));
-        assert_eq!(
-            abi_schema_for_type(&opt),
-            WasmAbiType::Option { inner: Box::new(WasmAbiType::I32) }
-        );
+        assert_eq!(abi_schema_for_type(&opt), WasmAbiType::Option { inner: Box::new(WasmAbiType::I32) });
     }
 
     #[test]
-    fn two_sum_generic_application_without_spelling_keeps_empty_module_path() {
-        // two-sum 参数 ArrayList<i64>, i64 返回 ArrayList<i64>。
+    fn two_sum_generic_application_uses_declaration_qualified_base() {
+        // two-sum 参数 ArrayList<i64>，i64 返回 ArrayList<i64>。
         // ArrayList<i64> 在 NyarType 层是 Apply(Named(...), [Integer64])。
-        // 上游 `type_surface_spellings` 只为无参 Nominal 的声明登记拼写，带泛型实参的
-        // 实例 TypeId 本身没有 spelling；这里直接构造只有简单名的基类型，module_path
-        // 如实为空——这是待补的上游 identity 缺口，不是伪造的路径。
-        let arraylist_i64 = NyarType::Apply(
-            Box::new(NyarType::Named(Identifier::new("ArrayList"))),
-            vec![nyar("i64")],
-        );
+        // 上游 `type_surface_spellings` 只在**声明** TypeId 上登记拼写；实例 TypeId 自身
+        // 没有单独 spelling，`lower_type` 回落到声明取 qualified 基类型，因此这里必须
+        // 用真实拼写 `std::collections::ArrayList`，不能再用裸简单名。
+        let arraylist_i64 = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")]);
         let schema = abi_schema_for_type(&arraylist_i64);
         match schema {
             WasmAbiType::NamedAggregate { name, module_path, generic_args } => {
                 assert_eq!(name, "ArrayList");
-                assert_eq!(module_path, "");
+                assert_eq!(module_path, "std::collections");
                 assert_eq!(generic_args, vec![WasmAbiType::I64]);
             }
             other => panic!("Expected NamedAggregate, got {other:?}"),
@@ -411,12 +382,32 @@ mod tests {
     }
 
     #[test]
+    fn same_named_aggregates_in_different_namespaces_stay_distinct() {
+        // 同名、同泛型实参但不同 namespace 的两个 aggregate 必须产生不同
+        // NamedAggregate：宿主注册表按 module_path + name + generic_args 区分，
+        // module_path 相同会把两者错误地命中同一条 marshal 合同。
+        let alpha = abi_schema_for_type(&NyarType::Apply(Box::new(NyarType::Named(Identifier::new("alpha::Box"))), vec![nyar("i64")]));
+        let beta = abi_schema_for_type(&NyarType::Apply(Box::new(NyarType::Named(Identifier::new("beta::Box"))), vec![nyar("i64")]));
+        match (&alpha, &beta) {
+            (
+                WasmAbiType::NamedAggregate { name: left_name, module_path: left_path, generic_args: left_args },
+                WasmAbiType::NamedAggregate { name: right_name, module_path: right_path, generic_args: right_args },
+            ) => {
+                assert_eq!(left_name, right_name);
+                assert_eq!(left_args, right_args);
+                assert_eq!(left_path, "alpha");
+                assert_eq!(right_path, "beta");
+                assert_ne!(left_path, right_path);
+            }
+            other => panic!("Expected two NamedAggregate, got {other:?}"),
+        }
+        assert_ne!(alpha, beta);
+    }
+
+    #[test]
     fn module_path_extracted_from_qualified_identifier() {
         // 如果上游给了完整路径 "std::collections::ArrayList"
-        let qualified = NyarType::Apply(
-            Box::new(NyarType::Named(Identifier::new("std::collections::ArrayList"))),
-            vec![nyar("i64")],
-        );
+        let qualified = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")]);
         let schema = abi_schema_for_type(&qualified);
         match schema {
             WasmAbiType::NamedAggregate { name, module_path, .. } => {
@@ -467,9 +458,6 @@ mod tests {
     }
 
     fn nyar_fn() -> nyar_types::NyarFunctionType {
-        nyar_types::NyarFunctionType {
-            params: vec![nyar("i32")],
-            return_type: nyar("i32"),
-        }
+        nyar_types::NyarFunctionType { params: vec![nyar("i32")], return_type: nyar("i32") }
     }
 }

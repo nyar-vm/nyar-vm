@@ -84,18 +84,12 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             return Err(error(module, "CAN041", format!("callable identity `{instance}` 对应多个限定名称")));
         }
     }
+    let mut declaration_spellings = BTreeMap::new();
+    register_declaration_spellings(module, &type_values, &mut declaration_spellings)?;
     for (ty, id) in &type_values {
         linked.types.insert(*id, TypeRecord { declaration: *id, kind: canonical_type_kind(ty, &type_values)? });
-        match ty {
-            ValkyrieType::Nominal { declaration, arguments } if arguments.is_empty() => {
-                if let Some(aggregate) = module.structs.iter().find(|item| item.declaration == Some(*declaration)) {
-                    linked.type_surface_spellings.insert(*id, Identifier::new(&canonical_surface_spelling(&aggregate.qualified_name())));
-                }
-                else if let Some(sum) = module.sum_types.iter().find(|item| item.declaration == Some(*declaration)) {
-                    linked.type_surface_spellings.insert(*id, Identifier::new(&sum.name));
-                }
-            }
-            _ => {}
+        if let Some(spelling) = declaration_spellings.get(id) {
+            linked.type_surface_spellings.insert(*id, spelling.clone());
         }
         // `Nominal{usize}` / `Named("usize")` 保持名义 TypeId，不得改写成 Primitive；登记后供
         // ArrayGet/ArrayLength/ArrayNew 合同认整数形状（见 LinkedSemanticProgram::array_index_types）。
@@ -187,6 +181,38 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
     program.validate().map_err(|error| canonical_error(module, &program, error))?;
     Ok(program)
+}
+
+/// 为每个聚合**声明** TypeId 登记 qualified surface spelling。
+///
+/// `type_surface_spellings` 的键是声明身份，而不是具体实例：泛型实例
+/// `Nominal{declaration, arguments}` 在目标降低时先回落取声明 TypeId 的拼写，
+/// 再与实参组成 `Apply`；因此这里不能、也不应为实例 TypeId 伪造拼写。
+///
+/// struct 用 `MirStruct::qualified_name`（`namespace.name`）规范成 `::`；sum
+/// 声明当前没有 namespace 事实，如实保留简单名，空 `module_path` 由下游解释。
+fn register_declaration_spellings(
+    module: &MirModule,
+    type_values: &BTreeMap<ValkyrieType, nyar_types::TypeId>,
+    spellings: &mut BTreeMap<nyar_types::TypeId, Identifier>,
+) -> Result<(), StructuredDiagnosticSet> {
+    for aggregate in &module.structs {
+        let Some(declaration) = aggregate.declaration
+        else {
+            continue;
+        };
+        let id = type_id(type_values, &ValkyrieType::Nominal { declaration, arguments: Vec::new() })?;
+        spellings.insert(id, Identifier::new(&canonical_surface_spelling(&aggregate.qualified_name())));
+    }
+    for sum in &module.sum_types {
+        let Some(declaration) = sum.declaration
+        else {
+            continue;
+        };
+        let id = type_id(type_values, &ValkyrieType::Nominal { declaration, arguments: Vec::new() })?;
+        spellings.insert(id, Identifier::new(&sum.name));
+    }
+    Ok(())
 }
 
 /// 把 `MirStruct::qualified_name` 的点分 namespace 规范成 `QualifiedName` 的 `::` 分隔形式。
