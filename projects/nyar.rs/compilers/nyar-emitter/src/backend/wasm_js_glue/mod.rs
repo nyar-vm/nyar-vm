@@ -300,7 +300,7 @@ function marshalLibraryArg(schema, value) {{
         const pushOp = entry.operations.find(o => o.operation === "push");
         const elementCarrier = (pushOp?.param_carriers ?? []).at(-1) ?? "i32";
         const arr = Array.isArray(value) ? value : [];
-        const handle = construct(BigInt(arr.length));
+        const handle = construct(arr.length);
         for (const item of arr) {{
             let wasmItem = item;
             if (elementCarrier === "i64") wasmItem = BigInt(item ?? 0);
