@@ -564,6 +564,19 @@ pub(crate) fn try_resolve_call(
         ) {
             return Some(resolved);
         }
+        // Fallback：primitive numeric / boolean 类型没有显式 imply 时，
+        // 注入 built-in operator intrinsic synthetic callable。
+        let fb = crate::compiler::hir::overload::call_resolver::primitive_operator::try_resolve_primitive_numeric_operator(
+            &first.value,
+            callee_name.as_str(),
+            method_args,
+            locals,
+            struct_fields,
+            singleton_names,
+        );
+        if let Some(resolved) = fb {
+            return Some(resolved);
+        }
     }
 
     let enclosing_module = type_relations.enclosing_module();

@@ -4,6 +4,7 @@ mod constructors;
 mod core;
 mod helpers;
 mod patterns;
+pub(crate) mod primitive_operator;
 
 pub use constructors::{match_singleton_method_candidate, try_resolve_nullary_constructor};
 pub use core::match_call_candidate;
