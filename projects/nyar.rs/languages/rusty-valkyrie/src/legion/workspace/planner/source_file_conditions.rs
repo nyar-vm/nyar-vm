@@ -17,12 +17,19 @@ use super::types::{FileLevelConditionItems, PlannedSemanticSourceGroup, PlannerE
 ///
 /// gate 轴：有 gate 声明时必须全部 Enabled（空 gate 恒通过）。
 /// when 轴：0 条恒通过；恰好 1 条按 target 求值；2+ 条视为未规定语义 → 不通过。
+/// Oak parser assumes LF line endings. Normalize CRLF→LF before parsing so
+/// Windows CI checkout (auto CRLF) and local (LF) behave identically.
+fn normalize_line_endings(source: &str) -> String {
+    source.replace("\r\n", "\n").replace('\r', "\n")
+}
+
 pub(crate) fn source_file_active_for_target_and_features(
     source: &str,
     target: CanonicalTarget,
     enabled_features: Option<&BTreeSet<String>>,
 ) -> bool {
-    match parse_source(source) {
+    let source = normalize_line_endings(source);
+    match parse_source(&source) {
         Ok(root) => match file_level_condition_items_from_root(&root) {
             None => true,
             Some(items) => {
@@ -40,7 +47,8 @@ pub(crate) fn source_file_active_for_target(source: &str, target: CanonicalTarge
 }
 
 pub(crate) fn file_level_condition_items(source: &str) -> Option<FileLevelConditionItems> {
-    parse_source(source).ok().and_then(|root| file_level_condition_items_from_root(&root))
+    let source = normalize_line_endings(source);
+    parse_source(&source).ok().and_then(|root| file_level_condition_items_from_root(&root))
 }
 
 pub(crate) fn file_level_condition_items_from_root(root: &ValkyrieRoot) -> Option<FileLevelConditionItems> {
