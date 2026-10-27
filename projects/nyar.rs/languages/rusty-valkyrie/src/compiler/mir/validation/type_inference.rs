@@ -63,13 +63,52 @@ pub(super) fn generator_source_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
 }
 
 /// MIR 与源码均使用 `Void` 表达底类型，不保留名称别名。
+///
+/// 同时允许 primitive numeric 的两种表示形式等价：
+/// `Named("i32")`（前端声明）↔ `Integer32 { signed: true }`（底层 canonical 变体）。
 pub(super) fn mir_return_operand_type_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
-    actual == expected || bare_named_matches_generic_apply_return(expected, actual)
+    actual == expected
+        || primitive_named_equivalent(actual, expected)
+        || primitive_named_equivalent(expected, actual)
+        || bare_named_matches_generic_apply_return(expected, actual)
 }
 
 /// Seed callable signatures stay generic in `MirFunction`, while HIR call sites carry instantiated types.
 pub(super) fn call_site_type_compatible(declared: &ValkyrieType, actual: &ValkyrieType) -> bool {
-    declared == actual || crate::compiler::mir::ssa::generic_call_instantiation::type_instantiates_generic_signature(declared, actual)
+    declared == actual
+        || primitive_named_equivalent(declared, actual)
+        || primitive_named_equivalent(actual, declared)
+        || crate::compiler::mir::ssa::generic_call_instantiation::type_instantiates_generic_signature(declared, actual)
+}
+
+/// 检查两个类型是否是同一个 primitive numeric 的不同表示形式：
+/// `Named("i32")` ↔ `Integer32 { .. }`、`Named("f64")` ↔ `Float64` 等。
+fn primitive_named_equivalent(a: &ValkyrieType, b: &ValkyrieType) -> bool {
+    fn offset_of(ty: &ValkyrieType) -> Option<u32> {
+        Some(match ty {
+            ValkyrieType::Boolean => 0,
+            ValkyrieType::Integer8 { .. } => 1,
+            ValkyrieType::Integer16 { .. } => 2,
+            ValkyrieType::Integer32 { .. } => 3,
+            ValkyrieType::Integer64 { .. } => 4,
+            ValkyrieType::Integer128 { .. } => 5,
+            ValkyrieType::Float32 => 6,
+            ValkyrieType::Float64 => 7,
+            ValkyrieType::Named(name) => match name.as_str() {
+                "boolean" | "Bool" | "bool" => 0,
+                "i8" => 1,
+                "i16" => 2,
+                "i32" | "int" | "Int" => 3,
+                "i64" | "long" | "Long" => 4,
+                "i128" => 5,
+                "f32" | "float" | "Float" => 6,
+                "f64" | "double" | "Double" => 7,
+                _ => return None,
+            },
+            _ => return None,
+        })
+    }
+    offset_of(a).is_some_and(|off_a| offset_of(b).is_some_and(|off_b| off_a == off_b))
 }
 
 pub(super) fn bare_named_matches_generic_apply_return(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {

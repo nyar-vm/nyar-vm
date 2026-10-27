@@ -14,7 +14,8 @@ use super::{
     type_analysis::type_identity_table,
     value_semantics,
 };
-use crate::compiler::types::hir::HirModule;
+use crate::compiler::types::hir::{HirModule, ValkyrieType};
+use nyar_types::NamePath;
 use std::collections::BTreeMap;
 
 /// Semantic MIR lowering 阶段入口：把 `HirModule` 编排为 `MirModule`。
@@ -114,6 +115,69 @@ impl MirLowerer {
             Some(instance) if host_runtime_callables.values().any(|host| *host == instance) => used_callable_instances.contains(&instance),
             _ => true,
         });
+        // 为 primitive numeric operator synthetic instance 自动登记 external call contract。
+        // 这些 instance 由 overload resolution 层在 operator member call 找不到显式 imply 时注入。
+        {
+            use crate::compiler::hir::overload::call_resolver::primitive_operator::{
+                decode_synthetic_operator_instance, primitive_numeric_type_offset,
+            };
+            let already_registered: std::collections::BTreeSet<_> = external_calls
+                .iter()
+                .filter_map(|c| c.instance)
+                .collect();
+            let mut synthetic_registrations = Vec::new();
+            for instance in &used_callable_instances {
+                if already_registered.contains(instance) {
+                    continue;
+                }
+                let Some((type_offset, _op_name, wasm_opcode)) = decode_synthetic_operator_instance(*instance) else {
+                    continue;
+                };
+                // 构造参数和返回类型 —— 用底层 primitive 变体（canonical 层不接受 Named）
+                let (receiver_type, _type_name) = match type_offset {
+                    0 => (ValkyrieType::Boolean, "boolean"),
+                    1 => (ValkyrieType::Integer8 { signed: true }, "i8"),
+                    2 => (ValkyrieType::Integer16 { signed: true }, "i16"),
+                    3 => (ValkyrieType::Integer32 { signed: true }, "i32"),
+                    4 => (ValkyrieType::Integer64 { signed: true }, "i64"),
+                    5 => (ValkyrieType::Integer128 { signed: true }, "i128"),
+                    6 => (ValkyrieType::Float32, "f32"),
+                    7 => (ValkyrieType::Float64, "f64"),
+                    _ => continue,
+                };
+                let (_, _, _, is_cmp) = crate::compiler::hir::overload::call_resolver::primitive_operator::operator_info(
+                    _op_name, type_offset,
+                )
+                .unwrap_or((0, "", 2, false));
+                let return_type = if is_cmp { ValkyrieType::Boolean } else { receiver_type.clone() };
+                // 二元 op: [self, arg]; 一元 op: [self]
+                let is_prefix = _op_name.starts_with("prefix ");
+                let parameter_types = if is_prefix {
+                    vec![receiver_type.clone()]
+                } else {
+                    vec![receiver_type.clone(), receiver_type.clone()]
+                };
+                let link = nyar_types::ExternalImportLink {
+                    boundary: nyar_types::Identifier::new("host"),
+                    platform_tag: Some(nyar_types::Identifier::new("wasm-operator")),
+                    locator_segments: vec![wasm_opcode.to_string()],
+                };
+                let symbol = NamePath::new(vec![
+                    nyar_types::Identifier::new("__builtin__"),
+                    nyar_types::Identifier::new("primitive"),
+                    nyar_types::Identifier::new(_op_name),
+                ]);
+                synthetic_registrations.push(super::model::MirExternalCallContract {
+                    declaration: nyar_types::ItemId::from_index(instance.index()),
+                    instance: Some(*instance),
+                    symbol,
+                    link,
+                    parameter_types,
+                    return_type,
+                });
+            }
+            external_calls.extend(synthetic_registrations);
+        }
         // MirFunction 不再携带 per-function diagnostics。
         // TypeId 只消费已冻结的 Nominal{ItemId} / 其他结构化形状；禁止短名 Named 别名收束。
         let type_identities = type_identity_table(&functions, &external_calls, &structs, &sum_types);
