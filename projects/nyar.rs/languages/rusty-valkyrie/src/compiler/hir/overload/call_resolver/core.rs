@@ -195,8 +195,12 @@ pub(crate) fn match_intrinsic_builtin_candidate(
                 ValkyrieType::FixedArray { element, .. } => element.as_ref().clone(),
                 _ => return None,
             };
-            let index_ty = infer(&args[1].value, locals, struct_fields, singleton_names)?;
-            if !type_relations.is_numeric_type(&index_ty) {
+            // 下标表达式的静态类型可能尚未可知（如未解析的 `ordinal - 1`）：此时沿用
+            // 声明的形参类型占位，而不是让候选整体失配——否则同一处下标会退回另一个
+            // 返回类型不同的声明候选，静默改变语义。
+            let index_ty = infer(&args[1].value, locals, struct_fields, singleton_names)
+                .unwrap_or_else(|| candidate.signature.params.get(1).cloned().unwrap_or(ValkyrieType::AutoType));
+            if !matches!(index_ty, ValkyrieType::AutoType) && !type_relations.is_numeric_type(&index_ty) {
                 return None;
             }
             // ArrayGet intrinsic 语义上始终返回裸元素类型 T。
@@ -215,8 +219,9 @@ pub(crate) fn match_intrinsic_builtin_candidate(
                 ValkyrieType::FixedArray { element, .. } => element.as_ref().clone(),
                 _ => return None,
             };
-            let index_ty = infer(&args[1].value, locals, struct_fields, singleton_names)?;
-            if !type_relations.is_numeric_type(&index_ty) {
+            let index_ty = infer(&args[1].value, locals, struct_fields, singleton_names)
+                .unwrap_or_else(|| candidate.signature.params.get(1).cloned().unwrap_or(ValkyrieType::AutoType));
+            if !matches!(index_ty, ValkyrieType::AutoType) && !type_relations.is_numeric_type(&index_ty) {
                 return None;
             }
             let value_ty = infer(&args[2].value, locals, struct_fields, singleton_names)?;
