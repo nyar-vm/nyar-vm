@@ -131,6 +131,34 @@ impl WorkspaceResolver {
         dirs
     }
 
+    /// workspace 成员所属的源码库根目录。
+    ///
+    /// 成员可能位于另一个源码库（例如 `leetcode.v` 的 `legions.von` 通过
+    /// `../valkyrie.v/projects/core` 引用 `valkyrie.v`）。这里只沿 `legions.von`
+    /// 的成员路径向上找最近的 `legions.von`，不按目录名猜测，也不写死仓库位置。
+    /// 未加载 workspace 清单时返回空（调用方回退到显式配置）。
+    pub fn source_library_roots(&self) -> Vec<PathBuf> {
+        if self.workspace_manifest.is_none() {
+            return Vec::new();
+        }
+        let mut roots: Vec<PathBuf> = Vec::new();
+        for member_dir in self.legions_member_dirs() {
+            let mut cursor = Some(member_dir.as_path());
+            while let Some(dir) = cursor {
+                if dir.join("legions.von").is_file() {
+                    let root = canonicalize_lossy(dir);
+                    if !roots.iter().any(|candidate| same_path(candidate, &root)) {
+                        roots.push(root);
+                    }
+                    break;
+                }
+                cursor = dir.parent();
+            }
+        }
+        roots.sort();
+        roots
+    }
+
     /// 发行版默认携带的 SDK：由 planner 注入当前构建的有效依赖闭包。
     ///
     /// 只识别 `sdk_vendor.kind == "distribution-default"` 元数据；不按包名、

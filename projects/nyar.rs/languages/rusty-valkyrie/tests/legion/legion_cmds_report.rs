@@ -5,14 +5,16 @@ use rusty_valkyrie::legion::cmds::report::{
     render_coverage_report, render_test_report,
 };
 
+use std::path::PathBuf;
+
 /// 报告渲染依赖 `valkyrie.v` 的 asgard.plotter 资产；未配置 `VALKYRIE_V_ROOT` 时跳过，
 /// 与 `tests/legion/cmds/report_render.rs` 保持同一约定。
-fn valkyrie_v_root_configured() -> bool {
-    match std::env::var_os("VALKYRIE_V_ROOT") {
-        Some(root) if !root.is_empty() => true,
-        _ => {
+fn report_roots() -> Option<Vec<PathBuf>> {
+    match rusty_valkyrie::asgard::valkyrie_v_roots() {
+        Ok(roots) => Some(roots),
+        Err(_) => {
             eprintln!("skip: VALKYRIE_V_ROOT 未配置，报告渲染需要 valkyrie.v 资产");
-            false
+            None
         }
     }
 }
@@ -31,15 +33,16 @@ fn assert_no_inline_scripts(html: &str) {
 
 #[test]
 fn test_report_html_structure() {
-    if !valkyrie_v_root_configured() {
+    let Some(roots) = report_roots()
+    else {
         return;
-    }
+    };
     let dir = tempfile::tempdir().unwrap();
     let results = vec![
         TestResultEntry { name: "add".into(), status: "pass".into(), error: None, target: "legion".into() },
         TestResultEntry { name: "sub".into(), status: "compile_error".into(), error: Some("compile failed".into()), target: "clr".into() },
     ];
-    render_test_report(dir.path(), "fixture", &results).unwrap();
+    render_test_report(dir.path(), "fixture", &results, &roots).unwrap();
     let html = std::fs::read_to_string(dir.path().join("index.html")).unwrap();
     assert!(html.contains("<!DOCTYPE html>"));
     assert!(html.contains("fixture - Test Report"));
@@ -76,9 +79,10 @@ fn test_report_html_structure() {
 
 #[test]
 fn coverage_report_html_structure() {
-    if !valkyrie_v_root_configured() {
+    let Some(roots) = report_roots()
+    else {
         return;
-    }
+    };
     let dir = tempfile::tempdir().unwrap();
     let report = CoverageReport {
         covered: 2,
@@ -89,7 +93,7 @@ fn coverage_report_html_structure() {
             CoverageFeatureEntry { feature: "match".into(), display: "模式匹配".into(), covered: false, projects: vec![] },
         ],
     };
-    render_coverage_report(dir.path(), &report).unwrap();
+    render_coverage_report(dir.path(), &report, &roots).unwrap();
     let html = std::fs::read_to_string(dir.path().join("index.html")).unwrap();
     assert!(html.contains("Coverage Report"));
     assert!(html.contains("progress-fill"));
@@ -106,9 +110,10 @@ fn coverage_report_html_structure() {
 
 #[test]
 fn bench_report_html_structure() {
-    if !valkyrie_v_root_configured() {
+    let Some(roots) = report_roots()
+    else {
         return;
-    }
+    };
     let dir = tempfile::tempdir().unwrap();
     let report = BenchReport {
         runs: 3,
@@ -117,7 +122,7 @@ fn bench_report_html_structure() {
             BenchResultRow { project: "lib".into(), test: "sort".into(), target: "clr".into(), compile_ms: 20.0, runtime_ms: 5.0 },
         ],
     };
-    render_bench_report(dir.path(), &report).unwrap();
+    render_bench_report(dir.path(), &report, &roots).unwrap();
     let html = std::fs::read_to_string(dir.path().join("index.html")).unwrap();
     assert!(html.contains("Benchmark Report"));
     assert!(html.contains("2 项基准测试"));
@@ -134,15 +139,16 @@ fn bench_report_html_structure() {
 
 #[test]
 fn test_report_standalone_html_is_self_contained() {
-    if !valkyrie_v_root_configured() {
+    let Some(roots) = report_roots()
+    else {
         return;
-    }
+    };
     let dir = tempfile::tempdir().unwrap();
     let results = vec![
         TestResultEntry { name: "add".into(), status: "pass".into(), error: None, target: "legion".into() },
         TestResultEntry { name: "sub".into(), status: "fail".into(), error: Some("boom".into()), target: "legion".into() },
     ];
-    render_test_report(dir.path(), "fixture", &results).unwrap();
+    render_test_report(dir.path(), "fixture", &results, &roots).unwrap();
     build_standalone_html(dir.path(), "standalone.html").unwrap();
 
     let html = std::fs::read_to_string(dir.path().join("standalone.html")).unwrap();
@@ -159,9 +165,10 @@ fn test_report_standalone_html_is_self_contained() {
 
 #[test]
 fn coverage_report_standalone_html_is_self_contained() {
-    if !valkyrie_v_root_configured() {
+    let Some(roots) = report_roots()
+    else {
         return;
-    }
+    };
     let dir = tempfile::tempdir().unwrap();
     let report = CoverageReport {
         covered: 2,
@@ -172,7 +179,7 @@ fn coverage_report_standalone_html_is_self_contained() {
             CoverageFeatureEntry { feature: "match".into(), display: "模式匹配".into(), covered: false, projects: vec![] },
         ],
     };
-    render_coverage_report(dir.path(), &report).unwrap();
+    render_coverage_report(dir.path(), &report, &roots).unwrap();
     build_standalone_html(dir.path(), "standalone.html").unwrap();
     let html = std::fs::read_to_string(dir.path().join("standalone.html")).unwrap();
     assert!(!html.contains(r#"src="boot.js""#));
@@ -181,15 +188,16 @@ fn coverage_report_standalone_html_is_self_contained() {
 
 #[test]
 fn bench_report_standalone_html_is_self_contained() {
-    if !valkyrie_v_root_configured() {
+    let Some(roots) = report_roots()
+    else {
         return;
-    }
+    };
     let dir = tempfile::tempdir().unwrap();
     let report = BenchReport {
         runs: 3,
         rows: vec![BenchResultRow { project: "app".into(), test: "fib".into(), target: "legion".into(), compile_ms: 12.5, runtime_ms: 1.2 }],
     };
-    render_bench_report(dir.path(), &report).unwrap();
+    render_bench_report(dir.path(), &report, &roots).unwrap();
     build_standalone_html(dir.path(), "standalone.html").unwrap();
     let html = std::fs::read_to_string(dir.path().join("standalone.html")).unwrap();
     assert!(!html.contains(r#"src="boot.js""#));

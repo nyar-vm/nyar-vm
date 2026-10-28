@@ -14,7 +14,7 @@ use std::{
 use crate::legion::{
     cmds::{
         project_input::resolve_project_path,
-        report::{CoverageFeatureEntry, CoverageReport, atomic_write_all_text, finish_standalone_report, render_coverage_report},
+        report::{CoverageFeatureEntry, CoverageReport, atomic_write_all_text, finish_standalone_report, render_coverage_report, report_roots},
     },
     script,
 };
@@ -63,6 +63,7 @@ pub struct CovArgs {
 pub fn run(args: &CovArgs) -> LegionResult<ExitCode> {
     let project_input = resolve_project_path(&args.project_dir)?;
     let workspace = WorkspaceResolver::discover_for_project(&project_input).ok();
+    let roots = report_roots(workspace.as_ref(), &project_input)?;
     let scan_root = if script::is_script_path(&project_input) {
         project_input.parent().map(Path::to_path_buf).unwrap_or_else(|| project_input.clone())
     }
@@ -86,10 +87,16 @@ pub fn run(args: &CovArgs) -> LegionResult<ExitCode> {
         (scan_root.clone(), vec![scan_root.clone()])
     };
 
-    run_coverage_for_members(&workspace_dir, &members, args.verbose, args.standalone)
+    run_coverage_for_members(&workspace_dir, &members, args.verbose, args.standalone, &roots)
 }
 
-fn run_coverage_for_members(workspace_dir: &Path, members: &[PathBuf], verbose: bool, standalone: bool) -> LegionResult<ExitCode> {
+fn run_coverage_for_members(
+    workspace_dir: &Path,
+    members: &[PathBuf],
+    verbose: bool,
+    standalone: bool,
+    roots: &[PathBuf],
+) -> LegionResult<ExitCode> {
     let known = known_features();
     let mut coverage_map: BTreeMap<&str, (bool, Vec<String>)> = BTreeMap::new();
     for (feature, _) in &known {
@@ -156,7 +163,7 @@ fn run_coverage_for_members(workspace_dir: &Path, members: &[PathBuf], verbose: 
     atomic_write_all_text(&json_path, &json_content)?;
 
     let report_dir = workspace_dir.join("dist").join("legion-converge");
-    render_coverage_report(&report_dir, &report)?;
+    render_coverage_report(&report_dir, &report, roots)?;
     println!("HTML 覆盖率报告已生成：{}", report_dir.join("index.html").display());
     finish_standalone_report(&report_dir, standalone)?;
 

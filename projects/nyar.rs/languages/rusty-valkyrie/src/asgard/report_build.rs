@@ -5,29 +5,35 @@ use crate::{
 };
 use nyar_analyzer::report::{HydratedChartSpec, series_to_init_literal};
 use oak_awsl::widget_name_from_stem;
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use crate::asgard::{
     awsl::{LoweringOptions, compile_awsl_source},
     codegen::{IslandPackageOptions, asgard_boot_script_tag, asgard_boot_stylesheet_tag, build_awsl_wasm_source, package_browser_islands},
     compile::{GeneratedSource, resolve_project_source_groups},
-    ssg::project::{read_project_source, valkyrie_v_roots},
+    ssg::project::read_project_source,
     wasm::{compile_wasm_bundle, copy_wasm_artifacts_to_dist},
 };
 
 /// 构建 hydrated 图表岛，返回 `(route, mount_html)`。
+///
+/// `roots` 是调用方已解析的源码库根目录（workspace 事实或显式配置），
+/// Asgard 不再自行推断。
 pub fn emit_report_chart_islands(
     project_dir: &Path,
     output_dir: &Path,
     module_stem: &str,
     charts: &[HydratedChartSpec],
+    roots: &[PathBuf],
 ) -> AsgardResult<Vec<(String, String)>> {
     if charts.is_empty() {
         return Ok(Vec::new());
     }
 
-    let roots = valkyrie_v_roots()?;
-    let icp_awsl = load_interactive_col_plot(&roots)?;
+    let icp_awsl = load_interactive_col_plot(roots)?;
 
     fs::create_dir_all(output_dir)?;
 

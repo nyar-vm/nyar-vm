@@ -4,20 +4,17 @@ use crate::{
         codegen::StaticRenderResult,
         ssg::project::{read_project_source, render_project_awsl_static},
     },
-    legion::cmds::error::{LegionError, LegionResult},
+    legion::cmds::error::LegionResult,
 };
 use serde_json::Value;
-
-use super::project::legion_report_project_dir;
+use std::path::Path;
 
 /// 报告基础样式。
-pub fn report_base_css() -> LegionResult<String> {
-    let project = legion_report_project_dir()?;
-    Ok(read_project_source(&project, "assets/base.css")?)
+pub fn report_base_css(project_dir: &Path) -> LegionResult<String> {
+    Ok(read_project_source(project_dir, "assets/base.css")?)
 }
 
 /// 静态渲染报告页面 AWSL（`pages/*.awsl`）。
-pub fn render_report_page(relative: &str, component_name: &str, data: &Value) -> LegionResult<StaticRenderResult> {
-    let project = legion_report_project_dir()?;
-    Ok(render_project_awsl_static(&project, relative, component_name, data)?)
+pub fn render_report_page(project_dir: &Path, relative: &str, component_name: &str, data: &Value) -> LegionResult<StaticRenderResult> {
+    Ok(render_project_awsl_static(project_dir, relative, component_name, data)?)
 }
