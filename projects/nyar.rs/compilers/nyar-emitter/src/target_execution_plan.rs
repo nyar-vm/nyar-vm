@@ -793,10 +793,13 @@ fn result_carrier(ty: &NyarType) -> Option<TargetOperandType> {
 
 fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFunction) -> Result<(ExecutableFunction, Vec<ItemInstanceId>)> {
     let canonical = program.canonical();
-    for value in function.value_types.keys() {
+    for (value, type_id) in &function.value_types {
         let identity = nyar_types::ValueIdentity::new(function.instance, *value);
         match program.representation().value_reps.get(&identity) {
             Some(ValueRepresentation::Specialized) => {}
+            // 实例级布局已由 canonical 冻结为 Reference 时，GC struct 就是该值的
+            // 目标私有载体；没有实例级 Reference 布局仍失败关闭。
+            Some(ValueRepresentation::Reified) if has_reference_instance_layout(canonical, *type_id) => {}
             Some(representation) => {
                 return Err(format!("值 `{identity:?}` 的表示 `{representation:?}` 尚无目标私有载体合同，拒绝按语义类型重新选择表示"));
             }
@@ -901,6 +904,17 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
         },
         callees,
     ))
+}
+
+/// 该类型是否有 canonical 冻结的实例级 Reference 布局（GC struct 载体）。
+fn has_reference_instance_layout(program: &CanonicalProgram, type_id: nyar_types::TypeId) -> bool {
+    let Some(layout_id) = program.linked.aggregate_layout_by_type.get(&type_id).copied()
+    else {
+        return false;
+    };
+    program.linked.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id).is_some_and(|layout| {
+        layout.storage == nyar_types::StorageKind::Reference
+    })
 }
 
 fn canonical_sum_operations(instruction: &nyar_types::CanonicalInstruction) -> Vec<(nyar_types::NominalInstanceId, nyar_types::VariantId)> {
