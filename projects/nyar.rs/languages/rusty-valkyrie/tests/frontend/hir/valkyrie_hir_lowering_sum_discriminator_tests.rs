@@ -56,7 +56,12 @@ fn unresolved_call_contract_is_rejected_before_mir() {
         },
         span: test_span(),
     };
-    let error = validate_expr_call_contracts(&expression, "contract_test").expect_err("unresolved call must fail");
+    let error = validate_expr_call_contracts(
+        &expression,
+        "contract_test",
+        &nyar_types::DiagnosticSource { id: "contract_test.v".into(), revision: None },
+    )
+    .expect_err("unresolved call must fail");
     assert!(error.to_string().contains("unresolved call"), "{error}");
     assert!(error.to_string().contains("missing"), "{error}");
 }
