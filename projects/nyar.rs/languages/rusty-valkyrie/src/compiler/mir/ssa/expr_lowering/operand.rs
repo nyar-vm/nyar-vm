@@ -436,11 +436,29 @@ impl MirBuilder {
                         }
                         // 字段身份：优先用 HIR 已分配的 field_id；缺失时 fallback
                         // 到 field_declarations 按字段名查找（generic class 内部
-                        // Construct 的 FieldInit 在 HIR 阶段不会分配 field_id）。
+                        // Construct 的 FieldInit 在 HIR 阶段不会分配 field_id），
+                        // 同时也检查 sum variant fields（unite/enum 构造器）。
                         let field_id = field_id.or_else(|| {
                             let decl_id = owner.nominal_declaration()?;
-                            let struct_decl = self.field_declarations.iter().find(|s| s.declaration == Some(decl_id))?;
-                            struct_decl.fields.iter().find(|f| f.name == field_name.as_str()).map(|f| f.id)
+                            // 先查 struct declarations
+                            if let Some(struct_decl) = self.field_declarations.iter().find(|s| s.declaration == Some(decl_id)) {
+                                if let Some(f) = struct_decl.fields.iter().find(|f| f.name == field_name.as_str()) {
+                                    return Some(f.id);
+                                }
+                            }
+                            // 再查 sum variant fields —— unite/enum 构造器的字段身份在 sum_types 里
+                            if let Some(call) = resolved.as_ref() {
+                                if let (Some(sum_decl), Some(variant_decl)) = (call.sum_owner, call.sum_variant) {
+                                    if let Some(sum) = self.sum_types.iter().find(|s| s.declaration == Some(sum_decl)) {
+                                        if let Some(variant) = sum.variants.iter().find(|v| v.declaration == Some(variant_decl)) {
+                                            if let Some(f) = variant.fields.iter().find(|f| f.name == field_name.as_str()) {
+                                                return Some(f.id);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            None
                         });
                         let Some(field_id) = field_id
                         else {

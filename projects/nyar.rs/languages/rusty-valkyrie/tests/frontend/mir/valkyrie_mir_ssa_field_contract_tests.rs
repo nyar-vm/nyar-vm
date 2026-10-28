@@ -41,7 +41,6 @@ fn field_id(module: &MirModule, name: &str) -> nyar_types::FieldId {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn source_generic_field_reads_preserve_all_binders_without_class_dereference() {
     let module = source_module();
     let expected =
@@ -73,7 +72,6 @@ fn source_generic_field_reads_preserve_all_binders_without_class_dereference() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn semantic_field_contract_rejects_wrong_result_and_missing_owner_despite_layout() {
     let module = source_module();
     let mut missing = module.clone();
@@ -107,7 +105,6 @@ fn semantic_field_contract_rejects_wrong_result_and_missing_owner_despite_layout
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn semantic_field_contract_rejects_missing_arguments_and_tuple_wrapping() {
     let module = source_module();
     for owner in [
@@ -123,7 +120,6 @@ fn semantic_field_contract_rejects_missing_arguments_and_tuple_wrapping() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn declared_fields_instantiate_function_fixed_array_and_self_without_layout() {
     let mut declaration = source_module().structs.remove(0);
     let first = declaration.fields[0].ty.clone();
@@ -192,7 +188,6 @@ fn source_field_declaration_reaches_canonical_without_a_construction_seed() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn sum_param_binds_declaration_identity_through_canonical() {
     // 避免 match 穷尽性噪声；只验收 sum 参数已冻结 Nominal{ItemId}。
     let source = "unite Envelope<T> { Present { value: T }, Absent } \
@@ -213,7 +208,6 @@ fn sum_param_binds_declaration_identity_through_canonical() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn option_sum_construct_binds_declaration_identity_without_short_name() {
     // 不依赖 unwrap 方法 imply；验收 Option 构造与参数已冻结 Nominal{ItemId}，且 SumNew payload 合同闭合。
     let source = "unite Option<T> { Some { value: T }, None } \
@@ -255,7 +249,6 @@ fn namespaced_struct_param_binds_declaration_identity_through_canonical() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn semantic_fields_reject_duplicate_declarations_binders_and_fields() {
     let module = source_module();
     let mut owner = module.clone();
@@ -270,7 +263,6 @@ fn semantic_fields_reject_duplicate_declarations_binders_and_fields() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn semantic_field_write_rejects_owner_value_masquerading_as_field_type() {
     // Oak 尚未稳定产出 StoreField（`obj.field = x`）；此处直接构造 FieldSet，
     // 验收 Semantic MIR 合同：写入值类型必须匹配字段声明代入，不得用 owner 对象冒充。
