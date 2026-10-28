@@ -121,16 +121,14 @@ impl MirLowerer {
             use crate::compiler::hir::overload::call_resolver::primitive_operator::{
                 decode_synthetic_operator_instance, primitive_numeric_type_offset,
             };
-            let already_registered: std::collections::BTreeSet<_> = external_calls
-                .iter()
-                .filter_map(|c| c.instance)
-                .collect();
+            let already_registered: std::collections::BTreeSet<_> = external_calls.iter().filter_map(|c| c.instance).collect();
             let mut synthetic_registrations = Vec::new();
             for instance in &used_callable_instances {
                 if already_registered.contains(instance) {
                     continue;
                 }
-                let Some((type_offset, _op_name, wasm_opcode)) = decode_synthetic_operator_instance(*instance) else {
+                let Some((type_offset, _op_name, wasm_opcode)) = decode_synthetic_operator_instance(*instance)
+                else {
                     continue;
                 };
                 // 构造参数和返回类型 —— 用底层 primitive 变体（canonical 层不接受 Named）
@@ -145,18 +143,12 @@ impl MirLowerer {
                     7 => (ValkyrieType::Float64, "f64"),
                     _ => continue,
                 };
-                let (_, _, _, is_cmp) = crate::compiler::hir::overload::call_resolver::primitive_operator::operator_info(
-                    _op_name, type_offset,
-                )
-                .unwrap_or((0, "", 2, false));
+                let (_, _, _, is_cmp) = crate::compiler::hir::overload::call_resolver::primitive_operator::operator_info(_op_name, type_offset)
+                    .unwrap_or((0, "", 2, false));
                 let return_type = if is_cmp { ValkyrieType::Boolean } else { receiver_type.clone() };
                 // 二元 op: [self, arg]; 一元 op: [self]
                 let is_prefix = _op_name.starts_with("prefix ");
-                let parameter_types = if is_prefix {
-                    vec![receiver_type.clone()]
-                } else {
-                    vec![receiver_type.clone(), receiver_type.clone()]
-                };
+                let parameter_types = if is_prefix { vec![receiver_type.clone()] } else { vec![receiver_type.clone(), receiver_type.clone()] };
                 let link = nyar_types::ExternalImportLink {
                     boundary: nyar_types::Identifier::new("host"),
                     platform_tag: Some(nyar_types::Identifier::new("wasm-operator")),

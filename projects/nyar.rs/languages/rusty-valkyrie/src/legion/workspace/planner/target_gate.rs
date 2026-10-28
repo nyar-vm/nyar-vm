@@ -4,8 +4,7 @@
 
 use crate::compiler::syntax::oak::ast::Attribute;
 
-use super::ast_attributes::term_string_literal;
-use super::types::GatePredicate;
+use super::{ast_attributes::term_string_literal, types::GatePredicate};
 
 impl GatePredicate {
     pub(crate) fn from_gate_attribute(attribute: &Attribute) -> Option<Self> {

@@ -1,16 +1,16 @@
 mod ast_attributes;
 mod bindings;
 mod capability;
-mod condition_eval;
-mod source_file_conditions;
-mod target_gate;
-mod target_when;
 mod closure_demand;
+mod condition_eval;
 mod dependencies;
 mod host;
 mod host_inventory_ast;
 mod resolver;
+mod source_file_conditions;
 mod sources;
+mod target_gate;
+mod target_when;
 mod types;
 
 pub(crate) use bindings::compiler_host_provider_bindings;
@@ -46,32 +46,11 @@ pub fn provider_set_digest(providers: &[PlannedHostProvider]) -> String {
         // required_capabilities（已在 capability.rs 排序 + dedup）
         parts.push(format!("RC:{}", p.required_capabilities.join("|")));
         // foreign_bindings
-        parts.push(format!(
-            "FB:{}",
-            p.foreign_bindings
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("|")
-        ));
+        parts.push(format!("FB:{}", p.foreign_bindings.iter().cloned().collect::<Vec<_>>().join("|")));
         // when_attributes：每个 (key=value) 用逗号分隔
-        parts.push(format!(
-            "W:{}",
-            p.when_attributes
-                .iter()
-                .map(|w| format!("{}={}", w.key, w.value))
-                .collect::<Vec<_>>()
-                .join(",")
-        ));
+        parts.push(format!("W:{}", p.when_attributes.iter().map(|w| format!("{}={}", w.key, w.value)).collect::<Vec<_>>().join(",")));
         // gate_attributes：每个 (key=value) 用逗号分隔
-        parts.push(format!(
-            "G:{}",
-            p.gate_attributes
-                .iter()
-                .map(|g| format!("{}={}", g.key, g.value))
-                .collect::<Vec<_>>()
-                .join(",")
-        ));
+        parts.push(format!("G:{}", p.gate_attributes.iter().map(|g| format!("{}={}", g.key, g.value)).collect::<Vec<_>>().join(",")));
     }
     let ref_parts: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
     combined_hash(&ref_parts)

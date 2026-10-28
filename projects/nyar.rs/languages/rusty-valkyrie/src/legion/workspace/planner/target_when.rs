@@ -14,8 +14,7 @@ use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 use nyar::{CanonicalAbi, CanonicalSpecification, CanonicalTarget, CanonicalVendor};
 
-use super::ast_attributes::term_string_literal;
-use super::types::WhenPredicate;
+use super::{ast_attributes::term_string_literal, types::WhenPredicate};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WhenConditionKey {
@@ -60,9 +59,7 @@ fn target_matches_specification_token(target: CanonicalTarget, token: &str) -> b
             target.specification == CanonicalSpecification::Browser && target.abi == Some(CanonicalAbi::WebAssembly)
         }
         "wasip3" | "wasi-p3" => target.abi == Some(CanonicalAbi::WasiP3),
-        "wasi" | "wasip2" | "wasi-p2" => {
-            target.specification == CanonicalSpecification::Wasi && target.abi != Some(CanonicalAbi::WasiP3)
-        }
+        "wasi" | "wasip2" | "wasi-p2" => target.specification == CanonicalSpecification::Wasi && target.abi != Some(CanonicalAbi::WasiP3),
         _ => false,
     }
 }
@@ -86,7 +83,10 @@ fn condition_atom_matches(target: CanonicalTarget, key: WhenConditionKey, value:
 }
 
 fn parse_target_equality_expression(expr: &TermExpression) -> Option<(String, String)> {
-    let TermExpression::Binary(binary) = expr else { return None };
+    let TermExpression::Binary(binary) = expr
+    else {
+        return None;
+    };
     if binary.operator != ValkyrieTokenType::EqEq {
         return None;
     }
@@ -108,10 +108,7 @@ fn is_target_receiver(expr: &TermExpression) -> bool {
 
 /// 单个 `when` attribute item 是否匹配当前 target。
 pub(crate) fn when_item_matches_target(predicate: &WhenPredicate, target: CanonicalTarget) -> bool {
-    predicate
-        .condition_key()
-        .map(|key| condition_atom_matches(target, key, &predicate.value))
-        .unwrap_or(false)
+    predicate.condition_key().map(|key| condition_atom_matches(target, key, &predicate.value)).unwrap_or(false)
 }
 
 #[cfg(test)]

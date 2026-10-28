@@ -19,9 +19,9 @@ use crate::compiler::{
         hir::{
             HirAssociatedTypeImpl, HirBlock, HirCompileWarning, HirDependencySemanticExport, HirDocumentation, HirEnum, HirExpr, HirExprKind,
             HirField, HirFlagMember, HirFlags, HirFunction, HirImpl, HirImport, HirImportBinding, HirKind, HirLiteral, HirModule, HirParam,
-            HirParameterBindingKind, HirProperty, HirSingleton, HirStatement, HirStatementKind, HirStruct, HirTrait, HirTraitBound, HirTypeAlias,
-            HirTypeFunction,
-            HirVariadicKind, HirVariant, HirVisibility, HirWhereConstraint, HirWidget, HirWidgetLifecycle, ValkyrieType,
+            HirParameterBindingKind, HirProperty, HirSingleton, HirStatement, HirStatementKind, HirStruct, HirTrait, HirTraitBound,
+            HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant, HirVisibility, HirWhereConstraint, HirWidget, HirWidgetLifecycle,
+            ValkyrieType,
         },
     },
 };
@@ -121,8 +121,7 @@ impl AstToHir {
             root.items
                 .iter()
                 .find_map(|item| match item {
-                    StatementNode::Namespace(namespace) if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) =>
-                    {
+                    StatementNode::Namespace(namespace) if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) => {
                         Some(lower_name_path(&namespace.name))
                     }
                     _ => None,
@@ -374,9 +373,7 @@ impl AstToHir {
             body,
             span: with_source(&span, self.source_id),
             visibility: lower_visibility(&function.annotations),
-            is_abstract: function.is_abstract
-                || has_modifier(&function.annotations, "abstract")
-                || declares_external_import,
+            is_abstract: function.is_abstract || has_modifier(&function.annotations, "abstract") || declares_external_import,
             is_final: has_modifier(&function.annotations, "final"),
             is_virtual: false,
             is_override: false,

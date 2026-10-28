@@ -323,10 +323,7 @@ mod tests {
                 module_name: "app",
                 direct_dependencies: &["stdlib"],
                 is_entry: true,
-                files: &[(
-                    "solution.v".into(),
-                    "namespace std.text;\n[export] micro run(value: utf8) -> i32 { return 0 }".into(),
-                )],
+                files: &[("solution.v".into(), "namespace std.text;\n[export] micro run(value: utf8) -> i32 { return 0 }".into())],
             },
         ];
         let closure = plan_semantic_closure(&groups, "wasm32").expect("closure");
@@ -446,5 +443,4 @@ micro hash_utf8(s: utf8) -> usize {
             "hash_utf8 must be demanded even when declared after imply; actual demanded: {demanded:#?}"
         );
     }
-
 }

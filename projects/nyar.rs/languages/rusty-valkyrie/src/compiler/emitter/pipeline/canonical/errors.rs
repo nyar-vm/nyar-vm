@@ -25,12 +25,15 @@ pub(crate) fn ensure_instantiated_signature(function: &MirFunction) -> Result<()
     }
 }
 pub(crate) fn type_id(ids: &BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType) -> Result<TypeId, StructuredDiagnosticSet> {
-    ids.get(ty).copied().or_else(|| {
-        // Named primitive 可能已经在 type_identity_table 里被归一到底层变体；
-        // 这里做 fallback normalize 查找。
-        let normalized = canonical_normalize_named_primitive(ty);
-        if &normalized != ty { ids.get(&normalized).copied() } else { None }
-    }).ok_or_else(|| error_without_module("CAN014", format!("类型事实未进入 canonical table: {ty:?}")))
+    ids.get(ty)
+        .copied()
+        .or_else(|| {
+            // Named primitive 可能已经在 type_identity_table 里被归一到底层变体；
+            // 这里做 fallback normalize 查找。
+            let normalized = canonical_normalize_named_primitive(ty);
+            if &normalized != ty { ids.get(&normalized).copied() } else { None }
+        })
+        .ok_or_else(|| error_without_module("CAN014", format!("类型事实未进入 canonical table: {ty:?}")))
 }
 
 /// 把 primitive numeric 的 Named surface name 归一到底层 primitive 变体。

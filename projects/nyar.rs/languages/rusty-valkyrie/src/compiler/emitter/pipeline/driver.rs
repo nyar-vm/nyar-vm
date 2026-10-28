@@ -27,8 +27,7 @@ pub fn compile_linked_semantic_mir(module: &MirModule) -> StageResult<CompiledPr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::hir::lowering::ValkyrieCompiler;
-    use crate::compiler::mir::ssa::MirLowerer;
+    use crate::compiler::{hir::lowering::ValkyrieCompiler, mir::ssa::MirLowerer};
 
     /// 复现 ArrayList<i64> 泛型实例化 PIPE004 错误码。
     #[test]
@@ -51,40 +50,43 @@ micro add(nums: ArrayList<i64>, target: i64): ArrayList<i64> {
     return ArrayList::new()
 }
 "#;
-        let hir = ValkyrieCompiler::default()
-            .compile_source(source)
-            .expect("源码必须通过 HIR 分析");
+        let hir = ValkyrieCompiler::default().compile_source(source).expect("源码必须通过 HIR 分析");
         // HIR 诊断
         for func in &hir.functions {
-            eprintln!("  HIR func: {} ret={:?} generics={:?}",
-                func.name, func.return_type, func.generics);
+            eprintln!("  HIR func: {} ret={:?} generics={:?}", func.name, func.return_type, func.generics);
         }
         for imp in &hir.impls {
-            eprintln!("  HIR impl: target={:?} generics={:?} methods={}",
-                imp.target, imp.generics, imp.methods.len());
+            eprintln!("  HIR impl: target={:?} generics={:?} methods={}", imp.target, imp.generics, imp.methods.len());
             for m in &imp.methods {
-                eprintln!("    method: {} ret={:?} generics={:?}",
-                    m.name, m.return_type, m.generics);
+                eprintln!("    method: {} ret={:?} generics={:?}", m.name, m.return_type, m.generics);
             }
         }
         for s in &hir.structs {
-            eprintln!("  HIR struct/class: {} generics={:?} methods={}",
-                s.name, s.generics, s.methods.len());
+            eprintln!("  HIR struct/class: {} generics={:?} methods={}", s.name, s.generics, s.methods.len());
             for m in &s.methods {
                 eprintln!("    struct method: {} ret={:?}", m.name, m.return_type);
             }
         }
         let mir = MirLowerer::lower_module_semantic(&hir);
-        eprintln!("=== MirModule name={} functions={} structs={} sum_types={} ===",
-            mir.name, mir.functions.len(), mir.structs.len(), mir.sum_types.len());
+        eprintln!(
+            "=== MirModule name={} functions={} structs={} sum_types={} ===",
+            mir.name,
+            mir.functions.len(),
+            mir.structs.len(),
+            mir.sum_types.len()
+        );
         for decl in &mir.structs {
-            eprintln!("  struct: {} decl={:?} nom={:?} generics={:?} fields={:?}",
-                decl.name, decl.declaration, decl.nominal, decl.generics,
-                decl.fields.iter().map(|f| format!("{:?}:{:?}:{:?}", f.name, f.id, f.ty)).collect::<Vec<_>>());
+            eprintln!(
+                "  struct: {} decl={:?} nom={:?} generics={:?} fields={:?}",
+                decl.name,
+                decl.declaration,
+                decl.nominal,
+                decl.generics,
+                decl.fields.iter().map(|f| format!("{:?}:{:?}:{:?}", f.name, f.id, f.ty)).collect::<Vec<_>>()
+            );
         }
         for func in &mir.functions {
-            eprintln!("  func: {} params={:?} ret={:?}",
-                func.display_symbol, func.param_types, func.return_type);
+            eprintln!("  func: {} params={:?} ret={:?}", func.display_symbol, func.param_types, func.return_type);
             for (vref, vtype) in &func.value_types {
                 eprintln!("    vref={:?} vtype={:?}", vref, vtype);
             }
@@ -98,8 +100,7 @@ micro add(nums: ArrayList<i64>, target: i64): ArrayList<i64> {
         // 单独跑 SMIR 合同校验拿具体错误码
         match validate_semantic_module(&mir) {
             Ok(_) => eprintln!("=== SMIR validate OK ==="),
-            Err(err) => eprintln!("=== SMIR ERROR code={} func={} loc={} detail={} ===",
-                err.code, err.function, err.location, err.detail),
+            Err(err) => eprintln!("=== SMIR ERROR code={} func={} loc={} detail={} ===", err.code, err.function, err.location, err.detail),
         }
         // 完整 pipeline
         match compile_linked_semantic_mir(&mir) {
@@ -121,9 +122,7 @@ micro add(a: i32, b: i32): i32 {
     return a + b
 }
 "#;
-        let hir = ValkyrieCompiler::default()
-            .compile_source(source)
-            .expect("i32 add 源码必须通过 HIR 分析");
+        let hir = ValkyrieCompiler::default().compile_source(source).expect("i32 add 源码必须通过 HIR 分析");
         let mir = MirLowerer::lower_module_semantic(&hir);
         eprintln!("=== simple i32 add: functions={} ===", mir.functions.len());
         for func in &mir.functions {
@@ -131,8 +130,7 @@ micro add(a: i32, b: i32): i32 {
         }
         match validate_semantic_module(&mir) {
             Ok(_) => eprintln!("=== simple i32 add: SMIR OK ==="),
-            Err(err) => eprintln!("=== simple i32 add SMIR ERROR code={} func={} detail={} ===",
-                err.code, err.function, err.detail),
+            Err(err) => eprintln!("=== simple i32 add SMIR ERROR code={} func={} detail={} ===", err.code, err.function, err.detail),
         }
     }
 }

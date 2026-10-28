@@ -49,11 +49,7 @@ pub fn compile_external_test_session(
 ) -> std::result::Result<ExternalTestSession, String> {
     let target = parse_target_label(target_label).map_err(|e| e.to_string())?;
     let output_dir = project_dir.join(".cache").join("test").join(target_label);
-    let request = BuildRequest {
-        project_dir: project_dir.to_path_buf(),
-        target,
-        output_dir: Some(output_dir.clone()),
-        ..Default::default() };
+    let request = BuildRequest { project_dir: project_dir.to_path_buf(), target, output_dir: Some(output_dir.clone()), ..Default::default() };
     let (plan, _) = workspace.build_test_plan(&request).map_err(|e| e.to_string())?;
     compile_plan(&plan, false).map_err(|e| e.to_string())?;
     let manifest = ExecutionManifest::read_from_output_dir(&output_dir)

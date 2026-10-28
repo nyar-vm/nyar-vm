@@ -331,7 +331,8 @@ pub fn run(args: &RunArgs) -> LegionResult<ExitCode> {
         project_dir: args.project_dir.clone(),
         target: args.target.clone(),
         output_dir: args.output_dir.clone(),
-        ..Default::default() };
+        ..Default::default()
+    };
     let plan = workspace.build_plan(&request)?;
 
     let execution_manifest = ensure_execution_manifest(args, &plan)?;
