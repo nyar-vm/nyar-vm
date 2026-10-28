@@ -88,7 +88,7 @@ pub(super) fn lower_impl_method_functions(
         else {
             continue;
         };
-        for method in impl_block.methods.iter().filter(|method| !method.is_abstract) {
+        for method in impl_block.methods.iter().filter(|method| !method.is_abstract && method.instance.is_some()) {
             let mut mir_function = lower_function_semantic(
                 module,
                 method,
@@ -104,6 +104,27 @@ pub(super) fn lower_impl_method_functions(
             mir_function.display_symbol = format!("{type_name}.{}", method.name);
             functions.push(mir_function);
         }
+    }
+    for callable in &module.instantiated_callables {
+        let Some(instance) = callable.function.instance
+        else {
+            continue;
+        };
+        let mut mir_function = lower_function_semantic(
+            module,
+            &callable.function,
+            aggregate_layouts,
+            singleton_accessor_instances,
+            callable_returns,
+            member_dispatch,
+            callable.owner_type.clone(),
+            Vec::new(),
+            host_runtime_callables,
+            diagnostics,
+        );
+        // 同一声明的不同代入必须有不同的 ABI 标签。
+        mir_function.display_symbol = format!("{}#{}", mir_function.display_symbol, instance.index());
+        functions.push(mir_function);
     }
     for item in &module.structs {
         for method in item.methods.iter().filter(|method| !method.is_abstract) {

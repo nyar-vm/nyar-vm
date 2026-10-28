@@ -82,6 +82,14 @@ fn collect_callable_return_types_into(module: &HirModule, index: &mut CallableRe
             index.by_instance.insert(instance, owner);
         }
     }
+    for callable in &module.instantiated_callables {
+        register_callable_return(
+            index,
+            stable_hir_function_symbol(&module.name, &callable.function),
+            &callable.function,
+            resolve_self_type_with_owner(&callable.function.return_type, callable.owner_type.as_ref()),
+        );
+    }
     for submodule in &module.submodules {
         collect_callable_return_types_into(submodule, index);
     }

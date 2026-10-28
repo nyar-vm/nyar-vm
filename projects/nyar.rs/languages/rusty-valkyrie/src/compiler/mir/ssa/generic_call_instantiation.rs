@@ -76,6 +76,18 @@ fn collect_module_dispatch(module: &HirModule, entries: &mut Vec<MirDispatchEntr
             entries.push(MirDispatchEntry { trait_declaration: None, target: target.clone(), member: method.name.clone(), instance });
         }
     }
+    for callable in &module.instantiated_callables {
+        let (Some(instance), Some(target)) = (callable.function.instance, callable.owner_type.clone())
+        else {
+            continue;
+        };
+        entries.push(MirDispatchEntry {
+            trait_declaration: callable.trait_declaration,
+            target,
+            member: callable.function.name.clone(),
+            instance,
+        });
+    }
     for submodule in &module.submodules {
         collect_module_dispatch(submodule, entries);
     }
