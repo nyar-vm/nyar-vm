@@ -308,6 +308,12 @@ impl TypeRelationContext {
     }
 
     /// 在泛型实参完成代入后验证 callable 的声明级 where 合同。
+    ///
+    /// 约束按 `where` 目标分三类处理：
+    /// - 调用方上下文已有同一目标的约束：必须由该约束提供 evidence（不足即拒绝）；
+    /// - 目标已代入为具体类型：必须存在显式 impl evidence，否则拒绝；
+    /// - 目标仍含调用方的刚性泛型参数（未代入）：这是调用方**尚未履行**的义务，
+    ///   只能在该实例按具体类型实例化时结算，解析阶段不得据此把调用降成未解析。
     pub fn satisfies_where_constraints(
         &self,
         constraints: &[HirWhereConstraint],
@@ -324,7 +330,7 @@ impl TypeRelationContext {
                 }
                 let Ok(witness) = self.traits.satisfy_explicit_type(&target, bound)
                 else {
-                    return false;
+                    return relation_type_is_open_obligation(&target);
                 };
                 bound.associated_types.iter().all(|equation| {
                     let expected = substitute_relation_type(&equation.ty, substitutions);
@@ -501,6 +507,40 @@ fn normalize_context_type(
 
 fn substitute_relation_type(ty: &ValkyrieType, substitutions: &BTreeMap<GenericBinderId, ValkyrieType>) -> ValkyrieType {
     super::overload::substitute_type_vars(ty, substitutions)
+}
+
+/// 目标类型是否仍然“开放”：代入后仍含调用方尚未结算的刚性泛型参数。
+///
+/// 这类目标上的 `where` 约束属于调用方**尚未履行**的义务：解析阶段没有 evidence 可查，
+/// 只能在该实例按具体类型结算，因此不得据此把调用降成未解析。
+/// 注意 `binder` 为空的 [`ValkyrieType::Generic`] 只是 lowering 未冻结的残留名字，
+/// 不属于开放义务——那是 producer 缺陷，必须继续报错。
+fn relation_type_is_open_obligation(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Generic(generic) => generic.binder.is_some(),
+        ValkyrieType::Nominal { arguments, .. }
+        | ValkyrieType::Tuple(arguments)
+        | ValkyrieType::Union(arguments)
+        | ValkyrieType::Intersection(arguments) => arguments.iter().any(relation_type_is_open_obligation),
+        ValkyrieType::Apply(base, arguments) => {
+            relation_type_is_open_obligation(base) || arguments.iter().any(relation_type_is_open_obligation)
+        }
+        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => relation_type_is_open_obligation(element),
+        ValkyrieType::FixedArray { element, .. } => relation_type_is_open_obligation(element),
+        ValkyrieType::Function(function) => {
+            function.params.iter().any(relation_type_is_open_obligation) || relation_type_is_open_obligation(&function.return_type)
+        }
+        ValkyrieType::TypeLambda(lambda) => relation_type_is_open_obligation(&lambda.body),
+        ValkyrieType::TraitObject(object) => object.type_arguments.iter().any(relation_type_is_open_obligation),
+        ValkyrieType::Associated(associated) => {
+            relation_type_is_open_obligation(&associated.base) || associated.type_arguments.iter().any(relation_type_is_open_obligation)
+        }
+        ValkyrieType::Row(row) => row
+            .methods
+            .iter()
+            .any(|method| method.params.iter().any(relation_type_is_open_obligation) || relation_type_is_open_obligation(&method.return_type)),
+        _ => false,
+    }
 }
 
 fn row_type_to_requirement(row: &RowType) -> RowRequirement {
