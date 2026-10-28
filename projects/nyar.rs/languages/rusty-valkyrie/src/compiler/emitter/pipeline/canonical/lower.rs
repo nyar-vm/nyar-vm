@@ -7,7 +7,7 @@ use nyar_types::{
 };
 
 use crate::compiler::{
-    mir::{MirConstant, MirFunction, MirOperand, MirOperation, MirTerminator, MirValueOrigin},
+    mir::{MirConstant, MirFunction, MirModule, MirOperand, MirOperation, MirTerminator, MirTraitWitness, MirValueOrigin},
     types::hir::ValkyrieType,
 };
 
@@ -89,6 +89,30 @@ pub(crate) fn lower_function(
     })
 }
 
+/// witness 分派在 canonical 没有形状：在解析任何类型身份之前显式失败。
+///
+/// 这样真实原因（trait witness 表示未实现）不会被无关的开放泛型类型身份诊断掩盖，
+/// 也不会被通用兜底分支吞成「操作没有无损 canonical 形状」。
+pub(super) fn reject_trait_witness(module: &MirModule) -> Result<(), StructuredDiagnosticSet> {
+    for function in &module.functions {
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                if let MirOperation::Call { callee: MirOperand::Witness(witness), .. } = &instruction.kind {
+                    return Err(error_without_module("CAN057", trait_witness_detail(witness)));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn trait_witness_detail(witness: &MirTraitWitness) -> String {
+    format!(
+        "trait witness 分派表示未实现（trait={:?}, method={:?}, self_type={:?}）",
+        witness.trait_declaration, witness.method_declaration, witness.self_type
+    )
+}
+
 /// 收集入口参数的 SSA 值与 canonical 参数名。
 ///
 /// 参数名必须来自 MIR 的 `MirValueOrigin::Parameter { index, name }`（compiler
@@ -166,6 +190,13 @@ fn lower_operation(
             ),
             arguments: arguments.iter().map(value).collect::<Result<_, _>>()?,
         }),
+        // witness 分派没有 canonical `Invoke` 形状：不得退回 `Unit`、不得按名字猜测
+        // 关联函数，也不得伪造 callable identity。`reject_trait_witness` 已在 lowering
+        // 前给出 `CAN057`，这里只是不让它掉进通用兜底分支。
+        MirOperation::Call { callee: MirOperand::Witness(witness), .. } => Err(error_without_module(
+            "CAN057",
+            trait_witness_detail(witness),
+        )),
         MirOperation::StoreVar { name, value: stored, ty } => Ok(CanonicalOperation::StoreVar {
             name: name.clone(),
             value: value(stored)?,
