@@ -29,10 +29,20 @@ pub mod frontend {
     pub mod ast {
         pub use oak_valkyrie::ast::*;
     }
+    /// 兼容旧测试：通过 frontend 模块访问 parser。
+    pub fn parse_source(
+        source: &str,
+    ) -> Result<crate::compiler::syntax::oak::ValkyrieRoot, crate::compiler::syntax::oak::ParseError> {
+        crate::compiler::syntax::oak::parse_source(source)
+    }
 }
 #[doc(hidden)]
 pub mod parser {
     pub use crate::compiler::syntax::oak::parse_source;
+    /// 兼容旧测试。
+    pub mod frontend {
+        pub use crate::compiler::syntax::oak::parse_source;
+    }
 }
 
 /// Re-export common test-facing types at crate root.
@@ -45,11 +55,64 @@ pub use nyar_types::Identifier;
 #[doc(hidden)]
 pub use nyar_types::NamePath;
 #[doc(hidden)]
+pub use nyar_types::SourceSpan;
+#[doc(hidden)]
 pub use crate::compiler::hir::HirError;
 #[doc(hidden)]
 pub use crate::compiler::mir::MirLowerer;
 #[doc(hidden)]
 pub use crate::compiler::mir::validation::validate_semantic_module;
+
+// MIR 类型（测试通过 glob 从 crate root 访问）
+#[doc(hidden)]
+pub use crate::compiler::mir::{
+    AggregateFieldIndex, AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, LayoutKey, MirBlock, MirBlockRef, MirConstant,
+    MirDiagnostic, MirEffectKind, MirEntryContract, MirExportContract, MirExternalCallContract, MirField, MirFunction, MirInstruction,
+    MirOperand, MirOperation, MirStorageKind, MirStruct, MirTerminator, MirValue, MirValueOrigin, MirValueRef, SingletonInstancePlan,
+    SumTypeLayout, SumVariantLayout, compute_aggregate_layout_plan, layout_id_for_type, storage_kind_for_type,
+};
+#[doc(hidden)]
+pub use crate::compiler::mir::ssa::{FieldSpec, build_aggregate_layout, ensure_unite_tagged_layout};
+
+// Semantic closure 类型（测试通过 glob 从 crate root 访问）
+#[doc(hidden)]
+pub use crate::compiler::semantic::closure::{
+    ClosureGroupInput, DeclarationKind, SemanticClosure, SemanticClosureError, plan_semantic_closure,
+};
+
+// Compiler input 类型（测试通过 glob 从 crate root 访问）
+#[doc(hidden)]
+pub use nyar_types::compiler_input::{CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup};
+
+// Services：格式化 / lint / source_surface（旧测试通过 crate root 访问）
+#[doc(hidden)]
+pub use crate::compiler::services::format_provider::register_format_providers;
+#[doc(hidden)]
+pub use crate::compiler::services::lint::lint_valkyrie_source;
+#[doc(hidden)]
+pub use crate::compiler::emitter::frontend_contract::nyar_type::concretize_type;
+#[doc(hidden)]
+pub use crate::compiler::emitter::pipeline::{
+    generated_source_hash, host_provider_binding_hash_for_bindings, semantic_closure_hash_for_groups,
+};
+
+// 旧测试遗留模块重导出（#[doc(hidden)]，非正式 API）
+#[doc(hidden)]
+pub mod source_surface {
+    pub use crate::compiler::syntax::source_surface::*;
+}
+#[doc(hidden)]
+pub mod text {
+    pub use crate::utilities::text::*;
+}
+#[doc(hidden)]
+pub mod highlight {
+    pub use crate::compiler::services::highlight::*;
+}
+#[doc(hidden)]
+pub mod format_provider {
+    pub use crate::compiler::services::format_provider::*;
+}
 
 /// Stable compiler façade (no `nyar` re-export at crate root).
 pub mod api {
