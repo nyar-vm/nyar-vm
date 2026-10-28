@@ -7,7 +7,7 @@ use nyar_types::{
 
 use crate::compiler::{
     emitter::frontend_contract::concretize_type,
-    mir::{instance_layout_for_type, MirModule},
+    mir::{instance_layout_for_type, instantiate_fields, MirModule},
     types::hir::ValkyrieType,
 };
 
@@ -78,8 +78,9 @@ pub(crate) struct AggregateInstanceBindings {
 /// 为具体泛型聚合实例登记实例级布局与实例级字段身份。
 ///
 /// 声明级布局只服务单态声明；泛型实例的字段类型必须先按 binder 代入，
-/// 再冻结为独立 `FieldId` 与 `FieldRecord`。任一实参仍含开放形参、
-/// 或代入后的字段类型没有类型事实时失败关闭，禁止复用声明布局。
+/// 再冻结为独立 `FieldId` 与 `FieldRecord`。已闭合的实例额外登记实例级物理布局；
+/// 仍含开放形参的实例只有语义身份与字段身份，禁止复用声明布局来伪造偏移。
+/// 代入后的字段类型没有类型事实时失败关闭。
 pub(crate) fn register_aggregate_nominal_instances(
     module: &MirModule,
     type_values: &BTreeMap<ValkyrieType, TypeId>,
@@ -122,38 +123,58 @@ pub(crate) fn register_aggregate_nominal_instances(
         if structure.generics.is_empty() {
             continue;
         }
-        let Some(semantics) = nominals.get(&nominal).map(|(_, semantics)| *semantics)
-        else {
-            return Err(error_without_module(
-                "CAN056",
-                format!("聚合 `{}` 缺少冻结的 NominalValueSemantics", structure.qualified_name()),
-            ));
+        let semantics = {
+            let Some(semantics) = nominals.get(&nominal).map(|(_, semantics)| *semantics)
+            else {
+                return Err(error_without_module(
+                    "CAN056",
+                    format!("聚合 `{}` 缺少冻结的 NominalValueSemantics", structure.qualified_name()),
+                ));
+            };
+            semantics
         };
         for (concrete, concrete_type) in type_values {
             let ValkyrieType::Nominal { declaration: instance_declaration, arguments } = concrete
             else {
                 continue;
             };
-            if *instance_declaration != declaration || arguments.is_empty() || contains_open_generic(concrete) {
+            if *instance_declaration != declaration {
                 continue;
             }
-            // 已登记过的实例不重复铸造身份。
-            if bindings.by_type.contains_key(concrete_type) {
+            // 声明本身（零实参）不重复铸造身份。
+            if arguments.is_empty() {
                 continue;
             }
-            let Some(layout) = instance_layout_for_type(&mut linked.aggregate_layouts, structure, concrete, item_spellings)
+            // 物理布局只对完全闭合的实例成立。仍含开放形参的实例（泛型声明体内对
+            // 自身的引用、或由别的声明 binder 参数化的引用）只有语义身份与实例级
+            // 字段身份；目标层真要布局时仍失败关闭，不在此猜偏移。
+            let layout = if contains_open_generic(concrete) {
+                None
+            }
             else {
-                return Err(error_without_module(
-                    "CAN058",
-                    format!("聚合实例 `{}` 无法按已冻结声明生成实例级布局", structure.qualified_name()),
-                ));
+                Some(instance_layout_for_type(&mut linked.aggregate_layouts, structure, concrete, item_spellings).ok_or_else(|| {
+                    error_without_module(
+                        "CAN058",
+                        format!("聚合实例 `{}` 无法按已冻结声明生成实例级布局", structure.qualified_name()),
+                    )
+                })?)
             };
+            let field_types = match &layout {
+                Some(layout) => layout.field_types.clone(),
+                None => instantiate_fields(structure, concrete).ok_or_else(|| {
+                    error_without_module(
+                        "CAN058",
+                        format!("聚合实例 `{}` 无法按已冻结声明代入字段类型", structure.qualified_name()),
+                    )
+                })?,
+            };
+            let layout_id = layout.as_ref().map(|layout| layout.id);
             let instance = NominalInstanceId::from_index(next_nominal)
                 .ok_or_else(|| error_without_module("CAN020", "聚合 instance identity 溢出"))?;
             next_nominal = next_nominal.checked_add(1).ok_or_else(|| error_without_module("CAN020", "聚合 instance identity 溢出"))?;
             nominals.insert(instance, (declaration_type, semantics));
             let mut instance_fields = Vec::with_capacity(structure.fields.len());
-            for (index, (declared, field)) in structure.fields.iter().zip(layout.field_types.iter()).enumerate() {
+            for (index, (declared, field)) in structure.fields.iter().zip(field_types.iter()).enumerate() {
                 let id = FieldId::from_index(next_field).ok_or_else(|| error_without_module("CAN022", "实例字段 identity 溢出"))?;
                 next_field = next_field.checked_add(1).ok_or_else(|| error_without_module("CAN022", "实例字段 identity 溢出"))?;
                 let record = FieldRecord { owner: instance, ty: type_id(type_values, field)? };
@@ -165,17 +186,111 @@ pub(crate) fn register_aggregate_nominal_instances(
                 }
                 instance_fields.push(id);
                 bindings.field_by_owner.insert((instance, declared.id), id);
-                linked.aggregate_layout_by_field.insert(id, (layout.id, index as u32));
+                if let Some(layout_id) = layout_id {
+                    linked.aggregate_layout_by_field.insert(id, (layout_id, index as u32));
+                }
             }
             linked
                 .nominal_instances
                 .insert(instance, NominalInstanceRecord { declaration: declaration_type, ty: *concrete_type, semantics, fields: instance_fields });
-            linked.aggregate_layout_by_type.insert(*concrete_type, layout.id);
-            linked.aggregate_layout_by_nominal.insert(instance, layout.id);
+            if let Some(layout_id) = layout_id {
+                linked.aggregate_layout_by_type.insert(*concrete_type, layout_id);
+                linked.aggregate_layout_by_nominal.insert(instance, layout_id);
+            }
             bindings.by_type.insert(*concrete_type, instance);
         }
     }
     Ok(bindings)
+}
+
+/// 为实例级字段类型补齐 canonical 类型身份。
+///
+/// 实例字段类型是「声明字段 × binder 代入」的派生事实，可能从未作为 SSA 值出现，
+/// 因此不在前端 `type_identities` 里。这里按既有子类型递归登记，新 `TypeId` 稠密
+/// 追加在末尾，不改写任何前端已给出的身份；嵌套实例会引出新的实例类型，故循环到
+/// 不再产出新类型为止。无法无损投影到 canonical 的派生类型仍失败关闭。
+pub(crate) fn intern_instance_field_types(
+    module: &MirModule,
+    type_values: &mut BTreeMap<ValkyrieType, TypeId>,
+) -> Result<(), StructuredDiagnosticSet> {
+    let mut next = type_values.values().map(|id| id.index()).max().map(|index| index + 1).unwrap_or(0);
+    loop {
+        let before = type_values.len();
+        let snapshot: Vec<ValkyrieType> = type_values.keys().cloned().collect();
+        for structure in &module.structs {
+            let Some(declaration) = structure.declaration
+            else {
+                continue;
+            };
+            if structure.generics.is_empty() {
+                continue;
+            }
+            for concrete in &snapshot {
+                let ValkyrieType::Nominal { declaration: instance_declaration, arguments } = concrete
+                else {
+                    continue;
+                };
+                if *instance_declaration != declaration || arguments.is_empty() {
+                    continue;
+                }
+                let Some(fields) = instantiate_fields(structure, concrete)
+                else {
+                    return Err(error_without_module(
+                        "CAN058",
+                        format!("聚合实例 `{}` 无法按已冻结声明代入字段类型", structure.qualified_name()),
+                    ));
+                };
+                for field in &fields {
+                    intern_type(type_values, field, &mut next)?;
+                }
+            }
+        }
+        if type_values.len() == before {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// 递归登记缺失的派生类型；子类型先登记，保证新 id 的 canonical kind 引用完整。
+fn intern_type(
+    ids: &mut BTreeMap<ValkyrieType, TypeId>,
+    ty: &ValkyrieType,
+    next: &mut u32,
+) -> Result<(), StructuredDiagnosticSet> {
+    if type_id(ids, ty).is_ok() {
+        return Ok(());
+    }
+    match ty {
+        ValkyrieType::Nominal { arguments, .. }
+        | ValkyrieType::Tuple(arguments)
+        | ValkyrieType::Union(arguments)
+        | ValkyrieType::Intersection(arguments) => {
+            for argument in arguments {
+                intern_type(ids, argument, next)?;
+            }
+        }
+        ValkyrieType::Apply(base, arguments) => {
+            intern_type(ids, base, next)?;
+            for argument in arguments {
+                intern_type(ids, argument, next)?;
+            }
+        }
+        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => intern_type(ids, element, next)?,
+        ValkyrieType::FixedArray { element, .. } => intern_type(ids, element, next)?,
+        ValkyrieType::Function(function) => {
+            for parameter in &function.params {
+                intern_type(ids, parameter, next)?;
+            }
+            intern_type(ids, &function.return_type, next)?;
+        }
+        _ => {}
+    }
+    canonical_type_kind(ty, ids)?;
+    let id = TypeId::from_index(*next).ok_or_else(|| error_without_module("CAN014", format!("实例字段类型 identity 溢出: {ty:?}")))?;
+    *next = (*next).checked_add(1).ok_or_else(|| error_without_module("CAN014", format!("实例字段类型 identity 溢出: {ty:?}")))?;
+    ids.insert(ty.clone(), id);
+    Ok(())
 }
 
 pub(crate) fn validate_callable_identities(module: &MirModule) -> Result<(), StructuredDiagnosticSet> {

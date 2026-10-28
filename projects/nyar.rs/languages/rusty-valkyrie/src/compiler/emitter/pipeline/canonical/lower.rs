@@ -152,7 +152,7 @@ fn resolve_aggregate_nominal(
     nominal_by_type
         .get(&concrete)
         .copied()
-        .ok_or_else(|| error_without_module("CAN058", format!("聚合具体类型 {concrete:?} 缺少实例级 nominal 身份")))
+        .ok_or_else(|| error_without_module("CAN058", format!("聚合具体类型 {concrete:?}（{ty:?}）缺少实例级 nominal 身份")))
 }
 
 /// 把声明级字段身份改写成 owner 实例的字段身份；缺登记直接失败关闭。
