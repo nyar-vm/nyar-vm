@@ -819,6 +819,12 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
             if let CanonicalOperation::Invoke { callee, .. } = &instruction.operation {
                 match (callee, program.representation().invoke_lowerings.get(&instruction.id)) {
                     (CanonicalCallee::Item(_), Some(InvokeLowering::Direct)) => {}
+                    (CanonicalCallee::Witness(witness), Some(InvokeLowering::TypedWitness)) => {
+                        return Err(format!(
+                            "trait witness 分派尚无目标私有调用合同：字典 ABI 未实现（trait={:?}, method={:?}, self_type={:?}）",
+                            witness.trait_declaration, witness.method_declaration, witness.self_type
+                        ));
+                    }
                     (_, None) => {
                         return Err(format!("调用指令 `{}` 缺少 RepresentationPlan 降低合同", instruction.id.index()));
                     }
@@ -931,6 +937,9 @@ fn lower_operation(
             }
             callees.push(*instance);
             InstructionKind::Call { callee: Operand::Item(*instance), arguments: arguments.iter().map(|id| value(*id)).collect() }
+        }
+        CanonicalOperation::Invoke { callee: CanonicalCallee::Witness(witness), .. } => {
+            return Err(format!("trait witness 分派缺少目标私有调用合同（字典 ABI 未实现）: {witness:?}"));
         }
         CanonicalOperation::Invoke { callee: CanonicalCallee::Value(callee), arguments } => {
             InstructionKind::Call { callee: value(*callee), arguments: arguments.iter().map(|id| value(*id)).collect() }

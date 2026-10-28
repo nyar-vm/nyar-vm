@@ -3,7 +3,7 @@
 //! 本模块拥有已解析、已类型化的 Semantic MIR：块、指令、操作、终结符与
 //! effect 类别，以及验证失败的确定性原因。这里不引入 AST 运算符类别。
 
-use crate::semantic_ids::{FieldId, InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, TypeId, VariantId};
+use crate::semantic_ids::{FieldId, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId, TypeId, VariantId};
 use std::collections::BTreeMap;
 
 /// Semantic MIR 中的稳定基本块身份。
@@ -197,6 +197,23 @@ pub enum CanonicalCallee {
     Item(ItemInstanceId),
     /// 当前 SSA 中的函数值。
     Value(MirValueId),
+    /// 尚未消去的 trait 方法槽分派义务。
+    Witness(CanonicalWitness),
+}
+
+/// 未在 canonical 之前消去的 trait 方法槽分派义务。
+///
+/// 这里只保存稳定身份：trait 声明、方法声明和（可能已具体化的）self 类型实参。
+/// `self_type` 为 `None` 表示 self 仍是开放泛型（前端不做单态化）；表示层必须先按
+/// target 合同实例化或提供显式字典，不得按名字/短名猜测实现。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanonicalWitness {
+    /// trait 声明身份。
+    pub trait_declaration: ItemId,
+    /// trait 方法槽声明身份。
+    pub method_declaration: ItemId,
+    /// 已具体化的 self 类型实参；`None` 表示仍是开放泛型。
+    pub self_type: Option<TypeId>,
 }
 
 /// 数组的语言初始化合同。
