@@ -8,7 +8,7 @@ use crate::compiler::semantic::closure::DeclarationKey;
 use crate::compiler::syntax::oak::parse_source;
 use nyar::CanonicalTarget;
 
-use super::capability::{provider_matches_target, provider_required_capabilities, target_capability_set};
+use super::capability::{provider_matches_target, provider_required_capabilities, target_host_capability_space};
 use super::host_inventory_ast::collect_host_inventory_from_root;
 use super::condition_eval::{provider_passes_gate_axis, provider_passes_target_axis};
 use super::types::{PlannedHostContract, PlannedHostProvider, PlannedSemanticSourceGroup, PlannerError, PlannerResult};
@@ -71,7 +71,7 @@ fn select_host_providers(
     target: CanonicalTarget,
     enabled_features: Option<&std::collections::BTreeSet<String>>,
 ) -> PlannerResult<Vec<PlannedHostProvider>> {
-    let available_capabilities = target_capability_set(target);
+    let available_capabilities = target_host_capability_space(target);
     let available_list: Vec<String> = available_capabilities.iter().cloned().collect();
     let contracts_by_id: BTreeMap<&str, &PlannedHostContract> = contracts.iter().map(|item| (item.id.as_str(), item)).collect();
     let mut providers_by_contract: BTreeMap<String, Vec<&PlannedHostProvider>> = BTreeMap::new();
