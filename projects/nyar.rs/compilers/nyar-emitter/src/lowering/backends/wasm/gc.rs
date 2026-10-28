@@ -20,7 +20,9 @@ pub(crate) fn wasm_gc_field_type_byte(ty: &NyarType) -> u8 {
     match ty {
         NyarType::Float64 | NyarType::Float32 => VALTYPE_F64,
         NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => VALTYPE_I64,
-        NyarType::Named(_) | NyarType::Array(_) | NyarType::TraitObject(_) | NyarType::Union(_) => VALTYPE_ANYREF,
+        // `Apply` 是已代入的泛型实例（Reference 语义）的实例级布局，字段槽必须是
+        // GC 引用；若退回 i32 会把 `ArrayList<i64>` 等实例字段错写成句柄。
+        NyarType::Named(_) | NyarType::Array(_) | NyarType::TraitObject(_) | NyarType::Union(_) | NyarType::Apply(_, _) => VALTYPE_ANYREF,
         _ => VALTYPE_I32,
     }
 }
