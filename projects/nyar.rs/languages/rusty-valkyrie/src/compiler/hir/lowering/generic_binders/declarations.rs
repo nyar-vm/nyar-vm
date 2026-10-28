@@ -599,6 +599,9 @@ pub(crate) fn propagate_impl_owner_type_generics(module: &mut HirModule) {
             for param in &mut method.params {
                 propagate_declared_generic_binders(&mut param.ty, &generics);
             }
+            // `imply Foo<K>` 的成员 `where K: Trait` 与形参 `K` 是同一个参数：
+            // 约束目标必须带上 owner 的 binder，否则调用点的代入与 evidence 查找永远对不上。
+            propagate_generic_binders_in_where_constraints(&mut method.where_constraints, &generics);
             propagate_generic_binders_in_block(&mut method.body, &generics);
         }
     }
