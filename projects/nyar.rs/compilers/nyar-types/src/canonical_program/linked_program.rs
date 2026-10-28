@@ -227,6 +227,16 @@ pub enum CanonicalTypeKind {
         /// 返回类型。
         return_type: TypeId,
     },
+    /// 泛型形参：`binder` 声明身份 + 声明内序号。
+    ///
+    /// 形参是前端冻结的参数化 item 事实，不是按名字查表的占位符。canonical 只保留
+    /// 该稳定身份；形参如何被代入、字典/vtable 如何传递由 target 合同决定。
+    Generic {
+        /// 形参所属声明身份（函数、名义类型、trait、imply 等）。
+        owner: ItemId,
+        /// 形参在所属声明内的源码顺序。
+        ordinal: u32,
+    },
 }
 
 /// Canonical 原生类型种类。
@@ -325,6 +335,10 @@ pub(crate) fn canonical_types_compatible(linked: &LinkedSemanticProgram, actual:
         (CanonicalTypeKind::Tuple(actual), CanonicalTypeKind::Tuple(expected)) if actual.len() == expected.len() => {
             actual.iter().zip(expected).all(|(actual, expected)| canonical_types_compatible(linked, *actual, *expected))
         }
+        // 形参身份由 `binder`(owner, ordinal) 决定：同一 binder 才是同一形参。
+        (CanonicalTypeKind::Generic { owner: actual_owner, ordinal: actual_ordinal }, CanonicalTypeKind::Generic { owner: expected_owner, ordinal: expected_ordinal }) => {
+            actual_owner == expected_owner && actual_ordinal == expected_ordinal
+        }
         _ => false,
     }
 }
@@ -367,6 +381,8 @@ impl LinkedSemanticProgram {
                 CanonicalTypeKind::Function { parameters, return_type } => {
                     parameters.iter().copied().chain(std::iter::once(*return_type)).collect()
                 }
+                // 形参不引用其他类型身份：binder(owner, ordinal) 本身就是稳定身份。
+                CanonicalTypeKind::Generic { .. } => Vec::new(),
             };
             for referenced in references {
                 if !self.types.contains_key(&referenced) {
@@ -432,6 +448,8 @@ impl LinkedSemanticProgram {
                     parameters.iter().copied().chain(std::iter::once(*return_type)).collect()
                 }
                 CanonicalTypeKind::Primitive(_) => Vec::new(),
+                // 形参身份即 binder(owner, ordinal)，不引用其他类型身份。
+                CanonicalTypeKind::Generic { .. } => Vec::new(),
             };
             for referenced in references {
                 self.validate_nominal_value_type(referenced, &nominal_types)?;

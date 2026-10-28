@@ -1,6 +1,6 @@
 //! 泛型接收者的 trait 方法调用在 Semantic MIR 必须表示为 witness 分派义务，不得退回 `Unit`。
 
-use nyar_types::{ItemId, ItemInstanceId};
+use nyar_types::{CanonicalCallee, CanonicalOperation, CanonicalTypeKind, ItemId, ItemInstanceId};
 use rusty_valkyrie::{
     ValkyrieCompiler,
     compiler::types::hir::ValkyrieType,
@@ -206,14 +206,41 @@ fn operator_trait_call_keeps_witness_dispatch() {
 }
 
 #[test]
-fn generic_witness_identity_is_not_concretized_before_canonical() {
-    // 开放泛型的 self 类型身份尚未具体化：canonical 不猜 TypeId，也不退回 `Unit`；
-    // 泛型中间表示进入 canonical 之前仍需闭合签名（当前边界）。
+fn generic_signature_enters_canonical_as_binder_identity() {
+    // 泛型形参是前端冻结的 binder 身份：canonical 接受参数化签名，不再整体拒绝；
+    // witness 的 self 类型实参落在同一形参身份上，也不按名字猜实现。
     let hir = ValkyrieCompiler::default().compile_source(SOURCE).expect("源码必须通过 HIR 分析");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let error = rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&mir)
-        .expect_err("开放泛型签名尚未闭合时 canonical 必须显式失败");
-    let codes: Vec<_> = error.records.iter().map(|record| record.code.clone()).collect();
-    assert!(codes.iter().any(|code| code == "CAN014"), "unexpected canonical diagnostics: {codes:?}");
-    assert!(!codes.iter().any(|code| code == "CAN057"), "witness 不得再被整体拒绝: {codes:?}");
+    let program = rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&mir)
+        .expect("带 binder 的泛型签名必须进入 canonical");
+
+    let (generic, binder) = mir
+        .type_identities
+        .keys()
+        .find_map(|ty| match ty {
+            ValkyrieType::Generic(generic) if generic.name.as_str() == "T" => Some((ty.clone(), generic.binder)),
+            _ => None,
+        })
+        .expect("形参 T 必须进入 Compiler 类型身份表");
+    let binder = binder.expect("形参 T 必须携带 binder 身份");
+    let type_id = mir.type_identities[&generic];
+    match &program.linked.types[&type_id].kind {
+        CanonicalTypeKind::Generic { owner, ordinal } => {
+            assert_eq!((*owner, *ordinal), (binder.owner, binder.ordinal), "canonical 形参身份必须来自 binder，不得按名字重建");
+        }
+        other => panic!("expected CanonicalTypeKind::Generic, got {other:?}"),
+    }
+
+    let mut witnesses = 0;
+    for function in program.mir.functions.values() {
+        for block in function.blocks.values() {
+            for instruction in &block.instructions {
+                if let CanonicalOperation::Invoke { callee: CanonicalCallee::Witness(witness), .. } = &instruction.operation {
+                    assert_eq!(witness.self_type, Some(type_id), "witness self 类型实参必须落在形参身份上");
+                    witnesses += 1;
+                }
+            }
+        }
+    }
+    assert!(witnesses >= 1, "`use_echo` 的 `value.echo()` 必须保留 witness 调用");
 }

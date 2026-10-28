@@ -396,7 +396,7 @@ impl MirBuilder {
                 for (slot, field_pattern) in fields.iter().enumerate() {
                     let mut slot_type = resolved.and_then(|resolved| self.infer_extractor_slot_type(resolved, slot));
                     let payload_ty = infer_builder_operand_type(&payload, &self.value_types);
-                    if slot_type.as_ref().is_some_and(looks_like_unbound_type_parameter) {
+                    if slot_type.as_ref().is_some_and(is_generic_parameter) {
                         slot_type = payload_ty.clone();
                     }
                     else if slot_type.is_none() {

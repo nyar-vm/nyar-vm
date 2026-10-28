@@ -7,7 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) fn type_contains_placeholder(ty: &ValkyrieType, include_generic_binders: bool) -> bool {
     match ty {
         ValkyrieType::SelfType | ValkyrieType::Associated(_) | ValkyrieType::AutoType => true,
-        ValkyrieType::Generic(_) if include_generic_binders => true,
+        // 已带 `binder` 的泛型形参是前端冻结的声明身份，可以写入 canonical 类型表；
+        // 只有缺少 binder 的形参才是未解析占位。
+        ValkyrieType::Generic(generic) => include_generic_binders && generic.binder.is_none(),
         ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(|arg| type_contains_placeholder(arg, include_generic_binders)),
         ValkyrieType::Apply(base, args) => {
             type_contains_placeholder(base, include_generic_binders)

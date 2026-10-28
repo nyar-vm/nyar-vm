@@ -76,7 +76,7 @@ impl MirBuilder {
                 // Prefer a concrete SSA type on the operand over a generic unite parameter
                 // hint such as `Named("E")` from HIR extractor_payload_type.
                 let inferred_type = match (ty.clone(), operand_ty) {
-                    (Some(hint), Some(concrete)) if looks_like_unbound_type_parameter(&hint) => Some(concrete),
+                    (Some(hint), Some(concrete)) if is_generic_parameter(&hint) => Some(concrete),
                     (hint, concrete) => hint.or(concrete),
                 };
                 if let Some(ref inferred_type) = inferred_type {
