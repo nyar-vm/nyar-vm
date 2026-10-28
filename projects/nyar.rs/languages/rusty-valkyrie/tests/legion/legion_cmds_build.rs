@@ -485,7 +485,7 @@ fn builds_browser_wasm_js_random_host_binding_evidence() {
     let output_dir = fixture.project_dir.join("dist").join("browser-random");
     let status = run(&BuildArgs {
         project_dir: fixture.project_dir.clone(),
-        target: CanonicalTarget::wasm(),
+        target: CanonicalTarget::browser(),
         output_dir: Some(output_dir.clone()),
         debug_artifacts: true,
     })
@@ -547,7 +547,7 @@ fn builds_valkyrie_fallback_random_without_host_bindings() {
     let output_dir = fixture.project_dir.join("dist").join("fallback-random");
     let status = run(&BuildArgs {
         project_dir: fixture.project_dir.clone(),
-        target: CanonicalTarget::wasm(),
+        target: CanonicalTarget::browser(),
         output_dir: Some(output_dir.clone()),
         debug_artifacts: true,
     })
@@ -567,7 +567,7 @@ fn builds_browser_wasm_prunes_unselected_host_bindings_from_evidence() {
     let output_dir = fixture.project_dir.join("dist").join("browser-prune");
     let status = run(&BuildArgs {
         project_dir: fixture.project_dir.clone(),
-        target: CanonicalTarget::wasm(),
+        target: CanonicalTarget::browser(),
         output_dir: Some(output_dir.clone()),
         debug_artifacts: false,
     })
@@ -648,7 +648,7 @@ fn builds_valkyrie_v_leetcode_browser_wasm_smoke() {
     let _ = fs::remove_dir_all(&output_dir);
     let status = run(&BuildArgs {
         project_dir: project_dir.clone(),
-        target: CanonicalTarget::wasm(),
+        target: CanonicalTarget::browser(),
         output_dir: Some(output_dir.clone()),
         debug_artifacts: true,
     })

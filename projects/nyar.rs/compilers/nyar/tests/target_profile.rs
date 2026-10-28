@@ -16,7 +16,7 @@ fn derives_profile_for_clr() {
 #[test]
 fn parses_runner_selector_from_family_and_canonical_target() {
     assert_eq!("clr".parse::<RunnerSelector>().unwrap(), RunnerSelector::Family(RunnerFamily::Clr));
-    assert_eq!("wasm32-unknown-browser-wasm".parse::<RunnerSelector>().unwrap(), RunnerSelector::Canonical(CanonicalTarget::wasm()));
+    assert_eq!("wasm32-unknown-browser-wasm".parse::<RunnerSelector>().unwrap(), RunnerSelector::Canonical(CanonicalTarget::browser()));
 }
 
 #[test]

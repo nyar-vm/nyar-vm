@@ -104,7 +104,7 @@ mod tests {
             WhenPredicate { key: "vendor".into(), value: "browser".into() },
             WhenPredicate { key: "vendor".into(), value: "wechat".into() },
         ];
-        assert!(!target_axis_passes(&whens, CanonicalTarget::wasm()));
+        assert!(!target_axis_passes(&whens, CanonicalTarget::browser()));
     }
 
     #[test]

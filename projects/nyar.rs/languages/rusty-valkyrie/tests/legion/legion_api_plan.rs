@@ -39,7 +39,7 @@ fn plan_api_reports_js_random_host_provider_for_entry_closure() {
     let fixture = create_browser_wasm_host_random_workspace("legion-api-random");
     let build_plan = plan(PlanRequest {
         project_dir: fixture.project_dir.clone(),
-        target: CanonicalTarget::wasm(),
+        target: CanonicalTarget::browser(),
         output_dir: None,
     })
     .expect("plan");
@@ -56,7 +56,7 @@ fn compile_api_emits_single_pruned_host_binding_evidence() {
     let output_dir = fixture.project_dir.join("dist").join("api-prune");
     let build_plan = plan(PlanRequest {
         project_dir: fixture.project_dir.clone(),
-        target: CanonicalTarget::wasm(),
+        target: CanonicalTarget::browser(),
         output_dir: Some(output_dir.clone()),
     })
     .expect("plan");

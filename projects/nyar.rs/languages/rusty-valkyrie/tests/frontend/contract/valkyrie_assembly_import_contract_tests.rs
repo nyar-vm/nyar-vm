@@ -15,7 +15,7 @@ fn source_entry_survives_canonical_partition_planning() {
         )
         .expect("当前源码必须形成完整成功载荷");
     let program = &output;
-    let plan = plan_artifacts_from_compiled_program(program, CanonicalTarget::wasm(), ClrSuspendStrategy::default())
+    let plan = plan_artifacts_from_compiled_program(program, CanonicalTarget::browser(), ClrSuspendStrategy::default())
         .expect("Compiler 必须从 Canonical 身份产生分区");
     assert!(plan.partitions.iter().any(|partition| partition.entry_operation.is_some()));
 }
@@ -25,7 +25,7 @@ fn function_without_entry_remains_a_non_entry_partition() {
     let output = rusty_valkyrie::ValkyrieCompiler::default()
         .compile_source_to_program("[primitive(\"core::primitive::i32\")] structure i32 { } micro answer() -> i32 { return 23 }")
         .expect("当前源码必须编译");
-    let plan = plan_artifacts_from_compiled_program(&output, CanonicalTarget::wasm(), ClrSuspendStrategy::default())
+    let plan = plan_artifacts_from_compiled_program(&output, CanonicalTarget::browser(), ClrSuspendStrategy::default())
         .expect("无入口函数仍可形成明确的非入口分区");
     assert!(plan.partitions.iter().all(|partition| partition.entry_operation.is_none()));
 }
@@ -61,7 +61,7 @@ fn source_partition_contract() -> (CompiledProgram, ArtifactPartitionPlan) {
              [export(name: \"second\")] micro second() -> unit { return }",
         )
         .expect("当前多导出源码必须形成完整成功载荷");
-    let plan = plan_artifacts_from_compiled_program(&program, CanonicalTarget::wasm(), ClrSuspendStrategy::default())
+    let plan = plan_artifacts_from_compiled_program(&program, CanonicalTarget::browser(), ClrSuspendStrategy::default())
         .expect("分区必须消费已验证的 Canonical 合同");
     (program, plan)
 }
