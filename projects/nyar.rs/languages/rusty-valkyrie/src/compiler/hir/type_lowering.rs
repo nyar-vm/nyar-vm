@@ -226,7 +226,7 @@ pub fn validate_type_expression(ty: &TypeExpression) -> Result<(), HirError> {
         }
         TypeExpression::Tuple(tuple) => {
             for element in &tuple.elements {
-                validate_type_expression(element)?;
+                validate_type_expression(&element.ty)?;
             }
         }
         TypeExpression::Function(function) => {
@@ -286,7 +286,7 @@ pub fn lower_type_expression(ty: &TypeExpression) -> Result<ValkyrieType, HirErr
                 ValkyrieType::Unit
             }
             else {
-                ValkyrieType::Tuple(tuple.elements.iter().map(lower_type_expression).collect::<Result<Vec<_>, _>>()?)
+                ValkyrieType::Tuple(tuple.elements.iter().map(|e| lower_type_expression(&e.ty)).collect::<Result<Vec<_>, _>>()?)
             }
         }
         TypeExpression::Function(function) => ValkyrieType::Function(Box::new(FunctionType {
@@ -359,7 +359,7 @@ pub(crate) fn render_type_expression(ty: &TypeExpression) -> String {
             if tuple.elements.is_empty() {
                 return "()".to_string();
             }
-            let inner = tuple.elements.iter().map(render_type_expression).collect::<Vec<_>>().join(", ");
+            let inner = tuple.elements.iter().map(|e| render_type_expression(&e.ty)).collect::<Vec<_>>().join(", ");
             format!("({inner})")
         }
         TypeExpression::Function(function) => {

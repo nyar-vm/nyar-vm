@@ -54,11 +54,15 @@ fn lower_statement(statement: &Statement, source_id: SourceID, fallback_span: Ra
         Statement::Let(binding) => {
             let span_range = if binding.span.is_empty() { fallback_span } else { frontend::std_range(&binding.span) };
             let span = with_source(&span_range, source_id);
+            let initializer = match &binding.expr {
+                Some(expr) => Some(Box::new(lower_term_expression(expr, source_id, span_range.clone())?)),
+                None => None,
+            };
             Ok(HirStatement {
                 kind: HirStatementKind::Let {
                     is_mutable: has_modifier(&binding.annotations, "mut"),
                     pattern: lower_pattern(&binding.pattern, source_id, span.clone()),
-                    initializer: Some(Box::new(lower_term_expression(&binding.expr, source_id, span_range.clone())?)),
+                    initializer,
                     ty: binding.ty.as_ref().map(lower_type_expression).transpose()?,
                 },
                 span,
@@ -163,6 +167,12 @@ fn lower_term_expression_with_context(
     let span = with_source(&span_range, source_id);
     let kind = match expression {
         TermExpression::ArrayLiteral { items, .. } => HirExprKind::ArrayLiteral {
+            items: items
+                .iter()
+                .map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false))
+                .collect::<Result<Vec<_>, _>>()?,
+        },
+        TermExpression::TupleLiteral { items, .. } => HirExprKind::TupleLiteral {
             items: items
                 .iter()
                 .map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false))
