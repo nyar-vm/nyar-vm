@@ -5,18 +5,31 @@ use nyar_types::{
     NominalInstanceRecord, NominalValueSemantics, StructuredDiagnosticSet, TypeId,
 };
 
-use crate::compiler::{emitter::frontend_contract::concretize_type, mir::MirModule, types::hir::ValkyrieType};
+use crate::compiler::{
+    emitter::frontend_contract::concretize_type,
+    mir::{instance_layout_for_type, MirModule},
+    types::hir::ValkyrieType,
+};
 
 use super::errors::{error, error_without_module, type_id};
 
 pub(crate) type AggregateIdentity = (TypeId, NominalValueSemantics);
 
+/// 聚合声明登记结果：声明 nominal、声明字段，以及 declaration TypeId → 声明 nominal 的映射。
+pub(crate) struct AggregateDeclarations {
+    pub nominals: BTreeMap<NominalInstanceId, AggregateIdentity>,
+    pub field_records: BTreeMap<FieldId, FieldRecord>,
+    /// 声明 TypeId → 声明 `NominalInstanceId`；禁止按名称反查 owner。
+    pub declaration_nominals: BTreeMap<TypeId, NominalInstanceId>,
+}
+
 pub(crate) fn collect_aggregate_identities(
     module: &MirModule,
     types: &BTreeMap<ValkyrieType, TypeId>,
-) -> Result<(BTreeMap<NominalInstanceId, AggregateIdentity>, BTreeMap<FieldId, FieldRecord>), StructuredDiagnosticSet> {
+) -> Result<AggregateDeclarations, StructuredDiagnosticSet> {
     let mut nominals = BTreeMap::new();
     let mut field_records = BTreeMap::new();
+    let mut declaration_nominals = BTreeMap::new();
     for aggregate in &module.structs {
         let qualified =
             if aggregate.namespace.is_empty() { aggregate.name.clone() } else { format!("{}.{}", aggregate.namespace, aggregate.name) };
@@ -29,6 +42,9 @@ pub(crate) fn collect_aggregate_identities(
         let semantics = if aggregate.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
         if nominals.insert(nominal, (declaration, semantics)).is_some() {
             return Err(error_without_module("CAN020", format!("聚合 identity 重复: {qualified}")));
+        }
+        if declaration_nominals.insert(declaration, nominal).is_some() {
+            return Err(error_without_module("CAN020", format!("聚合声明 identity 重复: {qualified}")));
         }
         for field in &aggregate.fields {
             if field_records.insert(field.id, FieldRecord { owner: nominal, ty: type_id(types, &field.ty)? }).is_some() {
@@ -45,8 +61,121 @@ pub(crate) fn collect_aggregate_identities(
         if nominals.insert(sum.nominal, (declaration, semantics)).is_some() {
             return Err(error_without_module("CAN020", format!("sum identity 重复: {}", sum.name)));
         }
+        declaration_nominals.insert(declaration, sum.nominal);
     }
-    Ok((nominals, field_records))
+    Ok(AggregateDeclarations { nominals, field_records, declaration_nominals })
+}
+
+/// 具体泛型聚合实例的登记结果。
+#[derive(Debug, Default)]
+pub(crate) struct AggregateInstanceBindings {
+    /// 实例类型 TypeId（含声明 TypeId）→ nominal 实例。
+    pub by_type: BTreeMap<TypeId, NominalInstanceId>,
+    /// (nominal 实例, 声明字段) → 实例字段；声明侧保留恒等映射。
+    pub field_by_owner: BTreeMap<(NominalInstanceId, FieldId), FieldId>,
+}
+
+/// 为具体泛型聚合实例登记实例级布局与实例级字段身份。
+///
+/// 声明级布局只服务单态声明；泛型实例的字段类型必须先按 binder 代入，
+/// 再冻结为独立 `FieldId` 与 `FieldRecord`。任一实参仍含开放形参、
+/// 或代入后的字段类型没有类型事实时失败关闭，禁止复用声明布局。
+pub(crate) fn register_aggregate_nominal_instances(
+    module: &MirModule,
+    type_values: &BTreeMap<ValkyrieType, TypeId>,
+    declaration_nominals: &BTreeMap<TypeId, NominalInstanceId>,
+    item_spellings: &BTreeMap<nyar_types::ItemId, String>,
+    linked: &mut LinkedSemanticProgram,
+    nominals: &mut BTreeMap<NominalInstanceId, AggregateIdentity>,
+    field_records: &mut BTreeMap<FieldId, FieldRecord>,
+) -> Result<AggregateInstanceBindings, StructuredDiagnosticSet> {
+    let mut bindings = AggregateInstanceBindings::default();
+    let mut next_nominal = nominals.keys().map(|id| id.index()).max().map(|index| index + 1).unwrap_or(0);
+    // 实例字段身份必须在全部声明字段之后稠密分配，避免与 HIR 已有身份冲突。
+    let mut next_field = field_records
+        .keys()
+        .map(|field| field.index())
+        .chain(module.structs.iter().flat_map(|structure| structure.fields.iter().map(|field| field.id.index())))
+        .chain(module.sum_types.iter().flat_map(|sum| sum.variants.iter().flat_map(|variant| variant.fields.iter().map(|field| field.id.index()))))
+        .max()
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    for structure in &module.structs {
+        let Some(declaration) = structure.declaration
+        else {
+            continue;
+        };
+        let declared = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
+        let declaration_type = type_id(type_values, &declared)?;
+        let Some(nominal) = declaration_nominals.get(&declaration_type).copied()
+        else {
+            return Err(error_without_module(
+                "CAN058",
+                format!("聚合 `{}` 缺少声明级 nominal 身份", structure.qualified_name()),
+            ));
+        };
+        // 声明侧字段身份恒等保留：单态聚合与未实例化路径继续使用声明字段。
+        for field in &structure.fields {
+            bindings.field_by_owner.insert((nominal, field.id), field.id);
+        }
+        bindings.by_type.insert(declaration_type, nominal);
+        if structure.generics.is_empty() {
+            continue;
+        }
+        let Some(semantics) = nominals.get(&nominal).map(|(_, semantics)| *semantics)
+        else {
+            return Err(error_without_module(
+                "CAN056",
+                format!("聚合 `{}` 缺少冻结的 NominalValueSemantics", structure.qualified_name()),
+            ));
+        };
+        for (concrete, concrete_type) in type_values {
+            let ValkyrieType::Nominal { declaration: instance_declaration, arguments } = concrete
+            else {
+                continue;
+            };
+            if *instance_declaration != declaration || arguments.is_empty() || contains_open_generic(concrete) {
+                continue;
+            }
+            // 已登记过的实例不重复铸造身份。
+            if bindings.by_type.contains_key(concrete_type) {
+                continue;
+            }
+            let Some(layout) = instance_layout_for_type(&mut linked.aggregate_layouts, structure, concrete, item_spellings)
+            else {
+                return Err(error_without_module(
+                    "CAN058",
+                    format!("聚合实例 `{}` 无法按已冻结声明生成实例级布局", structure.qualified_name()),
+                ));
+            };
+            let instance = NominalInstanceId::from_index(next_nominal)
+                .ok_or_else(|| error_without_module("CAN020", "聚合 instance identity 溢出"))?;
+            next_nominal = next_nominal.checked_add(1).ok_or_else(|| error_without_module("CAN020", "聚合 instance identity 溢出"))?;
+            nominals.insert(instance, (declaration_type, semantics));
+            let mut instance_fields = Vec::with_capacity(structure.fields.len());
+            for (index, (declared, field)) in structure.fields.iter().zip(layout.field_types.iter()).enumerate() {
+                let id = FieldId::from_index(next_field).ok_or_else(|| error_without_module("CAN022", "实例字段 identity 溢出"))?;
+                next_field = next_field.checked_add(1).ok_or_else(|| error_without_module("CAN022", "实例字段 identity 溢出"))?;
+                let record = FieldRecord { owner: instance, ty: type_id(type_values, field)? };
+                if field_records.insert(id, record).is_some() {
+                    return Err(error_without_module(
+                        "CAN022",
+                        format!("实例字段 identity 冲突: {}.{}", structure.qualified_name(), declared.name),
+                    ));
+                }
+                instance_fields.push(id);
+                bindings.field_by_owner.insert((instance, declared.id), id);
+                linked.aggregate_layout_by_field.insert(id, (layout.id, index as u32));
+            }
+            linked
+                .nominal_instances
+                .insert(instance, NominalInstanceRecord { declaration: declaration_type, ty: *concrete_type, semantics, fields: instance_fields });
+            linked.aggregate_layout_by_type.insert(*concrete_type, layout.id);
+            linked.aggregate_layout_by_nominal.insert(instance, layout.id);
+            bindings.by_type.insert(*concrete_type, instance);
+        }
+    }
+    Ok(bindings)
 }
 
 pub(crate) fn validate_callable_identities(module: &MirModule) -> Result<(), StructuredDiagnosticSet> {
@@ -254,20 +383,8 @@ pub(crate) fn register_sum_nominal_instances(
         }
         let Some(sum) = module.sum_types.iter().find(|sum| sum.declaration == Some(*item))
         else {
-            // 聚合（`structure`/`class`）的实例只有语义身份：字段布局绑定在声明上，
-            // 开放形参与具体实例都不需要、也不得在这里伪造第二份布局。
-            let declaration =
-                type_id(type_values, &ValkyrieType::Nominal { declaration: *item, arguments: Vec::new() })?;
-            let Some((_, (_, semantics))) = nominals.iter().find(|(_, (registered, _))| *registered == declaration)
-            else {
-                return Err(error_without_module("CAN056", format!("聚合实例 `{ty:?}` 缺少声明级 nominal 身份")));
-            };
-            let nominal =
-                NominalInstanceId::from_index(next_nominal).ok_or_else(|| error_without_module("CAN020", "聚合 instance identity 溢出"))?;
-            next_nominal = next_nominal.checked_add(1).ok_or_else(|| error_without_module("CAN020", "聚合 instance identity 溢出"))?;
-            let semantics = *semantics;
-            nominals.insert(nominal, (declaration, semantics));
-            linked.nominal_instances.insert(nominal, NominalInstanceRecord { declaration, ty: *concrete_ty, semantics, fields: Vec::new() });
+            // 聚合（`structure`/`class`）实例的布局与字段身份由
+            // `register_aggregate_nominal_instances` 单独登记；这里不复制第二份事实。
             continue;
         };
         let declaration = type_id(type_values, &ValkyrieType::Nominal { declaration: *item, arguments: Vec::new() })?;
