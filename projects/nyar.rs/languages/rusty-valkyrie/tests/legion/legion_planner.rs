@@ -38,7 +38,7 @@ fn artifact_cache_identity_tracks_enabled_features() {
     fs::write(&manifest, "target: clr\n").unwrap();
     let hash_for = |features: &[&str]| {
         let enabled = features.iter().map(|feature| feature.to_string()).collect::<BTreeSet<_>>();
-        compute_artifact_hash(&[source.clone()], &[manifest.clone()], "clr", false, false, &enabled).unwrap()
+        compute_artifact_hash(&[source.clone()], &[manifest.clone()], "clr", false, false, &enabled, None).unwrap()
     };
 
     let empty = hash_for(&[]);
