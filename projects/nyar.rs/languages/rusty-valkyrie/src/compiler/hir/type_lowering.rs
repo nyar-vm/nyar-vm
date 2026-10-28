@@ -451,6 +451,32 @@ pub fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
     }
 }
 
+/// 该名字是否为**语言编码型内建**：语言层已有固定 carrier，源码里的同名
+/// `[primitive(…)] structure` 只是编码声明的载体，**不建立名义身份**。
+///
+/// 当前有两个成员，理由不同但结论一致：
+/// - `unit` / `void`：语义是「没有值」，`return;` 不带操作数、调用点不产生结果；
+///   源码里没有任何可判别的实例状态，冻结成零字段名义类型只会让返回类型是否携带值
+///   依赖于「本编译单元是否看得见该声明」。
+/// - `bool`：语言层以 `ValkyrieType::Boolean` 承载（字面量、比较内建、分支条件都按它对齐），
+///   而 `imply bool` 的成员派发走短名桥接（`hir::overload::trait::impl_nominal_type_name`
+///   与 `mir::ssa::hir_identity::nominal_type_name` 都把 `Boolean` 映射为 `bool`），
+///   不依赖声明身份；因此冻结成 `Nominal{bool}` 会让同一份 `: bool` 在声明侧与使用侧
+///   得到两种 identity，分支条件在 `Semantic MIR` 合同处被拒。
+///
+/// 数值原始类型（`i8`…`f64`、`usize`、`isize`）**不在**此列：`imply usize` 之类按
+/// 声明名派发，而 carrier 会把 `usize` 折叠成 `u64`，抹掉同名原始类型之间的区分；
+/// 它们的名义身份必须保留，由 `bind_declared_nominal_types` 冻结。
+///
+/// 名字解析必须让编码形态优先于同名声明，否则同一类型在「依赖 core 的编译单元」
+/// 与「看不到该声明的编译单元」里得到互相矛盾的身份。
+fn encoding_builtin_type(name: &str) -> Option<ValkyrieType> {
+    match canonical_builtin_type(name) {
+        builtin @ Some(ValkyrieType::Boolean | ValkyrieType::Unit | ValkyrieType::Void) => builtin,
+        _ => None,
+    }
+}
+
 /// `i64(x)` / `f64(x)` 等单实参类型名调用：仅数值 builtin，不含 utf8/bool 等（那些走显式转换函数）。
 ///
 /// 这里是**显式转换**的目标形态，与类型名的声明身份无关：源码写出 `i32` 仍指
@@ -520,6 +546,12 @@ fn resolve_named_type(name: &str, single_segment: bool) -> Result<ValkyrieType, 
                 type_arguments: Vec::new(),
             })));
         }
+    }
+    // 语言编码型内建优先于同名声明：`unit` / `void` / `bool` 的
+    // `[primitive] structure` 只是编码载体，不建立名义身份（详见
+    // [`encoding_builtin_type`]）。别名仍然优先，别名是声明身份。
+    if let Some(builtin) = encoding_builtin_type(name) {
+        return Ok(builtin);
     }
     // 已声明名义类型的短名保留为待冻结的 `Named`；声明身份由 `bind_declared_nominal_types`
     // 按实际结构/枚举冻结，未知名字仍走结构化失败。多段路径的末段同名不构成可见性，
@@ -672,6 +704,13 @@ fn lower_type_namepath(path: &AstNamePath) -> Result<ValkyrieType, HirError> {
     if parts.len() > 1 {
         if let Some(expanded) = expand_qualified_module_type_alias(&parts, &[], &mut BTreeSet::new()) {
             return Ok(expanded);
+        }
+        // `core::primitive::unit` / `core::primitive::bool` 等编码形态的限定名，
+        // 与短名同规则：声明可见也不建立名义身份。
+        if is_known_builtin_type_namespace(&parts, last) {
+            if let Some(builtin) = encoding_builtin_type(last) {
+                return Ok(builtin);
+            }
         }
         if is_declared_qualified_nominal_type(&parts) {
             return Ok(ValkyrieType::Named(Identifier::new(last)));
