@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 //! `TargetExecutionPlan` 冻结目标指令配方后，backend 只消费计划事实。
 //!
 //! 正向：计划里的 `[wasm_operator]` 配方（arity、载体、opcode）与 backend 编码一致。

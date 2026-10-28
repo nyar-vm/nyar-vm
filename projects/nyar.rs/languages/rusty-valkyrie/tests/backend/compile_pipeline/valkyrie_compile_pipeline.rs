@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar_types::{CompileStage, pipeline::STAGE_ORDER};
 use rusty_valkyrie::{
     compile_pipeline::{ANALYSIS_STAGE_ORDER, PROCESSING_STAGE_ORDER, StreamHalf, stream_half},

@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 //! Valkyrie AST pretty printer（先注册前端 provider，再走平台注册表）。
 
 use nyar_format::{

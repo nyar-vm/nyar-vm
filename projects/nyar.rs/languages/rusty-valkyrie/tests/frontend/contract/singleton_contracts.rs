@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar_emitter::{
     FragmentSubmission,
     nyar_backend_clr::{

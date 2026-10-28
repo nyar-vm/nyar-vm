@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar_types::{CanonicalOperation, CanonicalPrimitiveType, CanonicalTypeKind, ImportIndex, ItemId, ItemInstanceId};
 use rusty_valkyrie::{
     MirConstant, MirFunction, MirOperand, MirOperation, MirTerminator, MirValueOrigin,

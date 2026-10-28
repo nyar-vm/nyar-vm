@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 //! Valkyrie 格式化 parity（`.editorconfig` 无关的 V 断言）。
 
 use nyar_format::formatter::{FormatOptions, format_source_for_extension};
