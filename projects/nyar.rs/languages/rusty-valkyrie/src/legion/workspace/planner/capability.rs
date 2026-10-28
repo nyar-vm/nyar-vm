@@ -40,11 +40,16 @@ fn wasm_capability_id(module: &str, field: &str) -> String {
     format!("wasm.{module}.{field}")
 }
 
-/// 判断单个 capability 是否被 target 集合满足（`wasm.env.*` 可由 `wasm.env` 模块级授权覆盖）。
+/// 判断单个 capability 是否被 target 集合满足。
+///
+/// 精确匹配优先；`wasm.env.*` 可由 `wasm.env` 模块级授权覆盖；此外，
+/// 如果 available 里存在**capability 空间标记**（如 `js`、`wasi`、`node`），
+/// 则该空间下的具体 capability（`js.fetch`、`js.random` …）视为可用。
 pub(crate) fn capability_available(capability: &str, available: &BTreeSet<String>) -> bool {
     if available.contains(capability) {
         return true;
     }
+    // wasm.env.* → wasm.env 空间
     if let Some(rest) = capability.strip_prefix("wasm.") {
         let segments: Vec<_> = rest.split('.').collect();
         if segments.len() >= 2 {
@@ -52,6 +57,12 @@ pub(crate) fn capability_available(capability: &str, available: &BTreeSet<String
             if available.contains(&module_grant) {
                 return true;
             }
+        }
+    }
+    // 通用 capability 空间匹配：`prefix.*` 能在 available 含 `prefix` 时通过
+    if let Some(space) = capability.split_once('.').map(|(prefix, _)| prefix) {
+        if !space.is_empty() && available.contains(space) {
+            return true;
         }
     }
     false
@@ -73,56 +84,78 @@ pub(crate) fn required_capabilities_from_foreign_bindings(bindings: &[ForeignBin
     required
 }
 
-/// 由规范化目标四元组（`CanonicalTarget::to_profile`）推导当前构建可用的 host capability 集合。
+/// 由规范化目标四元组推导**宿主原生 capability 空间**——
+/// 返回"这个 target 能提供什么类型的能力空间"（如 `js`、`node`、`wasi`），
+/// **不**列出 `js.fetch` / `js.random` 等具体 capability contract。
 ///
-/// 不读取 `publish`、源码路径或 namespace。`js.*` 仅出现在 **Wasm + JS glue** 目标（browser / miniprogram / node wasm），
-/// 不出现在 WASI（WASI 走 `wasm.env` / component import，与 browser JS 无关）。
-pub(crate) fn target_capability_set(target: CanonicalTarget) -> BTreeSet<String> {
+/// 具体 capability（如 `js.fetch`）必须由 provider 的 `[js("fetch")]` 声明，
+/// planner 根据 provider 声明填进可用集。本函数只负责声明宿主具备哪些能力类型，
+/// 避免 target 的默认 capability 集合变成隐式宿主功能白名单。
+///
+/// # 过渡说明
+///
+/// 当前 provider 系统尚未完整接入"capability 空间 → 具体 capability"的显式映射：
+/// 暂时通过 `capability_available` 的通用前缀规则（`js` 空间包含所有 `js.*`）
+/// 来满足具体 capability 匹配。未来 provider registry 细化后应移除前缀规则，
+/// 让每个具体 capability 都有明确的 provider 声明。
+pub(crate) fn target_host_capability_space(target: CanonicalTarget) -> BTreeSet<String> {
     let profile = target.to_profile(None);
-    let mut available = BTreeSet::new();
+    let mut space = BTreeSet::new();
 
-    for tag in profile.capability_tags {
-        available.insert(tag);
-    }
-
+    // backend 基础空间：Wasm backend 自身的能力载体
     match profile.backend_family {
-        TargetBackendFamily::Wasm => match profile.host_kind {
-            TargetHostKind::Browser => {
-                available.insert("js.fetch".to_string());
-                available.insert("js.random".to_string());
-            }
-            TargetHostKind::JavaScript => {
-                available.insert("js.fetch".to_string());
-                available.insert("js.random".to_string());
-                available.insert("node.fs".to_string());
-            }
-            TargetHostKind::Wasi => {
-                available.insert("wasm.wasi".to_string());
-                available.insert("wasm.env".to_string());
-            }
-            _ => {}
-        },
+        TargetBackendFamily::Wasm => {
+            space.insert("wasm".to_string());
+        }
         TargetBackendFamily::Clr => {
-            available.insert("clr.host".to_string());
+            space.insert("clr".to_string());
         }
         TargetBackendFamily::Jvm => {
-            available.insert("jvm.host".to_string());
+            space.insert("jvm".to_string());
+        }
+        TargetBackendFamily::Native => {
+            space.insert("native".to_string());
+        }
+        TargetBackendFamily::Ovm => {
+            space.insert("ovm".to_string());
         }
         _ => {}
     }
 
-    if target.specification == CanonicalSpecification::Miniprogram {
-        available.insert("js.wx.request".to_string());
-        available.insert("js.random".to_string());
-        available.remove("js.fetch");
-        available.remove("fetch");
+    // host 提供的 capability 空间（这才是核心）
+    match profile.backend_family {
+        TargetBackendFamily::Wasm => match profile.host_kind {
+            // 浏览器宿主（含 Miniprogram，它的 host_kind 也被派生为 Browser）
+            TargetHostKind::Browser => {
+                space.insert("js".to_string());
+                if target.specification == CanonicalSpecification::Miniprogram {
+                    space.insert("wx".to_string());
+                }
+            }
+            // JS 宿主（Node / Deno / Bun）：JS + Node 能力空间
+            TargetHostKind::JavaScript => {
+                space.insert("js".to_string());
+                space.insert("node".to_string());
+            }
+            // WASI 宿主：WASI + wasm.env 能力空间
+            TargetHostKind::Wasi => {
+                space.insert("wasi".to_string());
+                space.insert("wasm.env".to_string());
+            }
+            // Neutral Wasm / Unknown host：只有 backend 空间，无宿主
+            _ => {}
+        },
+        // 托管后端：host 自身就是能力空间
+        TargetBackendFamily::Clr => {
+            space.insert("clr.host".to_string());
+        }
+        TargetBackendFamily::Jvm => {
+            space.insert("jvm.host".to_string());
+        }
+        _ => {}
     }
 
-    if matches!(target.vendor, CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun) {
-        available.insert("node.fs".to_string());
-    }
-
-    available
+    space
 }
 
 /// 解析 provider 在指定 target 下声明的能力需求（显式 attribute 优先；托管后端可缺省为 `clr.host` / `jvm.host`）。
@@ -162,36 +195,71 @@ mod tests {
     }
 
     #[test]
-    fn browser_wasm_includes_fetch_not_wx() {
-        let available = target_capability_set(CanonicalTarget::browser());
-        assert!(available.contains("js.fetch"));
-        assert!(available.contains("js.random"));
-        assert!(!available.contains("js.wx.request"));
+    fn browser_wasm_has_js_capability_space_not_wx() {
+        // Browser host 提供 JS capability 空间，但不声明任何具体 fetch/random。
+        // 具体 capability 由 provider 的 [js("fetch")] / [js("random")] 声明。
+        let space = target_host_capability_space(CanonicalTarget::browser());
+        assert!(space.contains("js"));
+        assert!(space.contains("wasm"));
+        assert!(!space.contains("wx"));
+        // 具体 capability 不应被 target 隐式注入
+        assert!(!space.contains("js.fetch"));
+        assert!(!space.contains("js.random"));
     }
 
     #[test]
-    fn miniprogram_quadruple_enables_wx_request_not_fetch() {
+    fn miniprogram_quadruple_has_js_and_wx_space() {
+        // Miniprogram：JS 空间 + WeChat 空间（微信小程序特有的宿主能力）。
         let target: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().unwrap();
-        let available = target_capability_set(target);
-        assert!(available.contains("js.wx.request"));
-        assert!(available.contains("js.random"));
-        assert!(!available.contains("js.fetch"));
+        let space = target_host_capability_space(target);
+        assert!(space.contains("js"));
+        assert!(space.contains("wx"));
+        assert!(space.contains("wasm"));
+        assert!(!space.contains("node"));
     }
 
     #[test]
-    fn wasi_target_excludes_js_capabilities() {
-        let available = target_capability_set(CanonicalTarget::wasi());
-        assert!(!available.contains("js.fetch"));
-        assert!(!available.contains("js.random"));
-        assert!(available.contains("wasm.wasi"));
-        assert!(available.contains("wasm.env"));
+    fn wasi_target_has_wasi_and_wasm_env_space() {
+        // WASI：WASI component model 空间 + wasm.env（canonical import）空间。
+        let space = target_host_capability_space(CanonicalTarget::wasi());
+        assert!(space.contains("wasi"));
+        assert!(space.contains("wasm.env"));
+        assert!(space.contains("wasm"));
+        assert!(!space.contains("js"));
+        // 具体的 wasi.* / wasm.env.* 应由 provider 声明
+        assert!(!space.contains("wasm.wasi"));
+    }
+
+    #[test]
+    fn neutral_wasm_has_only_backend_space_no_host() {
+        // Neutral wasm：只有 WASM backend 载体，没有任何宿主 capability 空间。
+        // 这是 wasm() 别名的新语义——不注入任何 JS/Node/WASI 宿主。
+        let space = target_host_capability_space(CanonicalTarget::neutral_wasm());
+        assert!(space.contains("wasm"));
+        assert!(!space.contains("js"));
+        assert!(!space.contains("wasi"));
+        assert!(!space.contains("node"));
+    }
+
+    #[test]
+    fn capability_available_resolves_through_host_capability_space() {
+        // 过渡机制：有 "js" 空间 → 所有 js.* capability 可用。
+        // 这让 provider 声明的 [js("fetch")] 在 browser target 下能匹配成功。
+        let browser_space = target_host_capability_space(CanonicalTarget::browser());
+        assert!(capability_available("js.fetch", &browser_space));
+        assert!(capability_available("js.random", &browser_space));
+        assert!(capability_available("js.wx.request", &browser_space)); // 通用前缀匹配
+
+        let wasi_space = target_host_capability_space(CanonicalTarget::wasi());
+        assert!(!capability_available("js.fetch", &wasi_space));
+        assert!(capability_available("wasm.env.random_next_i32", &wasi_space));
     }
 
     #[test]
     fn wasm_opcode_provider_matches_browser_wasm_without_js_binding() {
         use crate::compiler::semantic::closure::{DeclarationKey, DeclarationKind};
         let target = CanonicalTarget::browser();
-        let available = target_capability_set(target);
+        let space = target_host_capability_space(target);
         let provider = PlannedHostProvider {
             contract: "core::primitive::__f64_add".into(),
             contract_key: None,
@@ -211,7 +279,7 @@ mod tests {
             when_attributes: Vec::new(),
             gate_attributes: Vec::new(),
         };
-        assert!(provider_matches_target(&provider, &available, target));
+        assert!(provider_matches_target(&provider, &space, target));
     }
 
     #[test]
@@ -221,7 +289,8 @@ mod tests {
             field: "random_next_i32".into(),
         }]);
         assert_eq!(caps, vec!["wasm.env.random_next_i32".to_string()]);
-        let available = target_capability_set(CanonicalTarget::wasi());
-        assert!(capability_available("wasm.env.random_next_i32", &available));
+        let space = target_host_capability_space(CanonicalTarget::wasi());
+        // wasm.env capability 空间通过 wasm.env 模块前缀匹配
+        assert!(capability_available("wasm.env.random_next_i32", &space));
     }
 }
