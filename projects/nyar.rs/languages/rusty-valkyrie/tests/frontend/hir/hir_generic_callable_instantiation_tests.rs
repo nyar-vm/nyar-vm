@@ -133,6 +133,46 @@ fn instantiated_bodies_carry_concrete_types() {
 }
 
 #[test]
+fn mir_emits_only_closed_callable_instances() {
+    use rusty_valkyrie::compiler::mir::MirLowerer;
+
+    let hir = compile(BOX_SOURCE);
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    assert!(mir.diagnostics.is_empty(), "闭合实例不得再产生 callable 身份诊断: {:?}", mir.diagnostics);
+
+    for callable in &hir.instantiated_callables {
+        let instance = callable.function.instance.expect("实例身份");
+        let function = mir.functions.iter().find(|function| function.instance == Some(instance)).expect("实例必须发射到 MIR");
+        for ty in function.param_types.iter().chain(std::iter::once(&function.return_type)) {
+            assert_closed(ty, "MIR 实例签名");
+        }
+        assert!(
+            function.display_symbol.contains(&format!("#{}", instance.index())),
+            "同一声明的不同代入必须有不同的 ABI 标签: {}",
+            function.display_symbol
+        );
+    }
+    // 开放声明自身只允许以「调用点代入铸造的实例」进入 MIR，不得再有声明期种子。
+    let open_declarations = hir
+        .impls
+        .iter()
+        .flat_map(|implementation| implementation.methods.iter().filter_map(|method| method.declaration))
+        .collect::<std::collections::BTreeSet<_>>();
+    let known = hir.instantiated_callables.iter().filter_map(|callable| callable.function.instance).collect::<std::collections::BTreeSet<_>>();
+    for function in &mir.functions {
+        let Some(instance) = function.instance
+        else {
+            continue;
+        };
+        if known.contains(&instance) {
+            continue;
+        }
+        let is_open_member = function.declaration.is_some_and(|declaration| open_declarations.contains(&declaration));
+        assert!(!is_open_member, "开放声明不得以声明期种子实例进入 MIR: {}", function.display_symbol);
+    }
+}
+
+#[test]
 fn instantiation_is_deterministic_across_compilations() {
     let first = compile(BOX_SOURCE);
     let second = compile(BOX_SOURCE);
