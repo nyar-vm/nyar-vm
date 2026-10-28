@@ -546,10 +546,13 @@ impl CanonicalTarget {
             CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun => {
                 return TargetHostKind::JavaScript;
             }
+            CanonicalVendor::Wechat => {
+                return TargetHostKind::JavaScript;
+            }
             _ => {}
         }
         match self.specification {
-            CanonicalSpecification::Browser | CanonicalSpecification::Miniprogram => TargetHostKind::Browser,
+            CanonicalSpecification::Browser => TargetHostKind::Browser,
             CanonicalSpecification::Wasi => TargetHostKind::Wasi,
             CanonicalSpecification::Windows
             | CanonicalSpecification::Linux
@@ -577,9 +580,9 @@ impl CanonicalTarget {
                 CanonicalVendor::Node => "node",
                 CanonicalVendor::Deno => "deno",
                 CanonicalVendor::Bun => "bun",
+                CanonicalVendor::Wechat => "wechat-runtime",
                 _ => match self.specification {
                     CanonicalSpecification::Browser => "web-standard",
-                    CanonicalSpecification::Miniprogram => "wechat-miniprogram",
                     CanonicalSpecification::Wasi => match abi {
                         CanonicalAbi::WasiP3 => "wasi-component-model-p3",
                         _ => "wasi-component-model",
@@ -603,13 +606,13 @@ impl CanonicalTarget {
             _ => {}
         }
         match self.vendor {
-            CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun => {
+            CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun | CanonicalVendor::Wechat => {
                 return HostProjectionBoundary::WasmJsGlue;
             }
             _ => {}
         }
         match self.specification {
-            CanonicalSpecification::Browser | CanonicalSpecification::Miniprogram => HostProjectionBoundary::WasmJsGlue,
+            CanonicalSpecification::Browser => HostProjectionBoundary::WasmJsGlue,
             CanonicalSpecification::Wasi => HostProjectionBoundary::WasiComponent,
             CanonicalSpecification::Windows
             | CanonicalSpecification::Linux
@@ -644,9 +647,9 @@ impl CanonicalTarget {
                 CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun => {
                     &["javascript", "esmodule", "filesystem", "timers", "precise-gc"]
                 }
+                CanonicalVendor::Wechat => &["javascript", "esmodule", "precise-gc"],
                 _ => match self.specification {
                     CanonicalSpecification::Browser => &["javascript", "dom", "canvas", "fetch", "esmodule", "precise-gc"],
-                    CanonicalSpecification::Miniprogram => &["javascript", "wx-miniprogram", "esmodule", "precise-gc"],
                     CanonicalSpecification::Wasi => match self.resolved_abi() {
                         CanonicalAbi::WasiP3 => &["wasi", "wasip3", "filesystem", "cli", "component-model", "precise-gc"],
                         _ => &["wasi", "wasip2", "filesystem", "cli", "component-model", "precise-gc"],
@@ -674,10 +677,10 @@ impl CanonicalTarget {
             CanonicalArch::Jvm => {
                 EntryPolicy { default_entry: "main".to_string(), wrap_strategy: WrapStrategy::Wrapper, generate_wrapper: true }
             }
-            _ if matches!(self.specification, CanonicalSpecification::Browser | CanonicalSpecification::Miniprogram) => {
+            _ if matches!(self.specification, CanonicalSpecification::Browser) => {
                 EntryPolicy { default_entry: "main".to_string(), wrap_strategy: WrapStrategy::Hosted, generate_wrapper: false }
             }
-            _ if matches!(self.vendor, CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun) => {
+            _ if matches!(self.vendor, CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun | CanonicalVendor::Wechat) => {
                 EntryPolicy { default_entry: "main".to_string(), wrap_strategy: WrapStrategy::Hosted, generate_wrapper: false }
             }
             _ => EntryPolicy::default(),

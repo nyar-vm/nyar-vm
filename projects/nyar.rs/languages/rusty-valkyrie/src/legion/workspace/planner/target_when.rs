@@ -1,11 +1,11 @@
 //! `[when(expression)]`：目标/环境条件（与 `gate` 独立；多个 `when` item 不在此层 AND/OR）。
 //!
 //! `target.vendor` / `target.specification` 由 target registry 投影到四元组，不引入独立 platform 轴：
-//! - `target.vendor == "browser"` → Browser 规格
-//! - `target.vendor == "wechat"` → Miniprogram 规格
+//! - `target.specification == "browser"` → Browser 规格（DOM / Web API）
+//! - `target.vendor == "wechat"` → Wechat vendor（小程序 / 小游戏 runtime）
+//! - `target.vendor == "node"` / `"deno"` / `"bun"` → 对应 JS runtime vendor
+//! - 两者**不**互相兼容：vendor="wechat" 不会匹配 specification="browser"，反之亦然
 //! - `target.specification == "wasip3"` / `"wasi"` → ABI / Wasi 规格
-//!
-//! 不替代 Compiler 前端的条件 lowering（HIR 仍待对齐）。
 
 use crate::compiler::syntax::oak::ast::{Attribute, TermExpression};
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
@@ -50,12 +50,13 @@ impl WhenPredicate {
     }
 }
 
+/// `target.specification == "..."` 条件匹配。
+/// 只匹配 CanonicalSpecification 字段，不再跨轴映射 vendor。
 fn target_matches_specification_token(target: CanonicalTarget, token: &str) -> bool {
     match token.to_ascii_lowercase().as_str() {
         "browser-wasm" | "browser" | "web" => {
             target.specification == CanonicalSpecification::Browser && target.abi == Some(CanonicalAbi::WebAssembly)
         }
-        "wechat-wasm" | "miniprogram" | "mini-program" | "wechat" => target.specification == CanonicalSpecification::Miniprogram,
         "wasip3" | "wasi-p3" => target.abi == Some(CanonicalAbi::WasiP3),
         "wasi" | "wasip2" | "wasi-p2" => {
             target.specification == CanonicalSpecification::Wasi && target.abi != Some(CanonicalAbi::WasiP3)
@@ -64,10 +65,11 @@ fn target_matches_specification_token(target: CanonicalTarget, token: &str) -> b
     }
 }
 
+/// `target.vendor == "..."` 条件匹配。
+/// 只匹配 CanonicalVendor 字段，不再把 vendor 值映射到 specification（那是历史错误）。
 fn vendor_matches_token(target: CanonicalTarget, token: &str) -> bool {
     match token.to_ascii_lowercase().as_str() {
-        "browser" => target.specification == CanonicalSpecification::Browser,
-        "wechat" => target.specification == CanonicalSpecification::Miniprogram,
+        "wechat" => target.vendor == CanonicalVendor::Wechat,
         "node" => matches!(target.vendor, CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun),
         "unknown" => target.vendor == CanonicalVendor::Unknown,
         _ => false,
@@ -116,14 +118,31 @@ mod tests {
     use nyar::CanonicalTarget;
 
     #[test]
-    fn when_vendor_browser_and_wechat_map_to_specifications() {
+    fn specification_browser_matches_only_browser_spec() {
         let browser = CanonicalTarget::browser();
-        let mp: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().unwrap();
-        let browser_pred = WhenPredicate { key: "vendor".into(), value: "browser".into() };
-        let wechat_pred = WhenPredicate { key: "vendor".into(), value: "wechat".into() };
-        assert!(when_item_matches_target(&browser_pred, browser));
-        assert!(!when_item_matches_target(&wechat_pred, browser));
-        assert!(when_item_matches_target(&wechat_pred, mp));
-        assert!(!when_item_matches_target(&browser_pred, mp));
+        let wechat = CanonicalTarget::wechat();
+        let spec_browser = WhenPredicate { key: "specification".into(), value: "browser".into() };
+        assert!(when_item_matches_target(&spec_browser, browser));
+        assert!(!when_item_matches_target(&spec_browser, wechat));
+    }
+
+    #[test]
+    fn vendor_wechat_matches_only_wechat_vendor() {
+        let browser = CanonicalTarget::browser();
+        let wechat = CanonicalTarget::wechat();
+        let vendor_wechat = WhenPredicate { key: "vendor".into(), value: "wechat".into() };
+        assert!(when_item_matches_target(&vendor_wechat, wechat));
+        assert!(!when_item_matches_target(&vendor_wechat, browser));
+    }
+
+    #[test]
+    fn vendor_node_matches_js_runtimes() {
+        let node = CanonicalTarget::node();
+        let deno: CanonicalTarget = "wasm32-deno-unknown-wasm".parse().unwrap();
+        let browser = CanonicalTarget::browser();
+        let vendor_node = WhenPredicate { key: "vendor".into(), value: "node".into() };
+        assert!(when_item_matches_target(&vendor_node, node));
+        assert!(when_item_matches_target(&vendor_node, deno));
+        assert!(!when_item_matches_target(&vendor_node, browser));
     }
 }

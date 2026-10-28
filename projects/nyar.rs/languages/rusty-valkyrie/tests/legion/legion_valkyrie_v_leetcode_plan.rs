@@ -133,7 +133,7 @@ fn leetcode_miniprogram_wasm_plan_selects_wechat_when_files() {
         eprintln!("skip: leetcode_miniprogram_wasm example missing");
         return;
     }
-    let target: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().expect("wechat wasm");
+    let target = CanonicalTarget::wechat();
     let workspace = WorkspaceResolver::discover_for_project(&project_dir).expect("discover miniprogram leetcode");
     let plan = workspace
         .build_plan(&BuildRequest { project_dir: project_dir.clone(), target, output_dir: None,
