@@ -91,6 +91,7 @@ impl AstToHir {
         crate::compiler::hir::lowering::generic_binders::bind_declared_nominal_types(&mut hir)?;
         bind_trait_declarations(&mut hir)?;
         resolve_hir_calls(&mut hir);
+        crate::compiler::hir::lowering::instantiate_generic_callables(std::slice::from_mut(&mut hir));
         validate_extractor_patterns(&hir)?;
         Ok(hir)
     }
@@ -214,6 +215,7 @@ impl AstToHir {
             singletons,
             statements: Vec::new(),
             type_aliases,
+            instantiated_callables: Vec::new(),
         };
         hoist_anonymous_classes(&mut hir);
         let mut injector = crate::compiler::expansion::derive::DeriveInjector::new();

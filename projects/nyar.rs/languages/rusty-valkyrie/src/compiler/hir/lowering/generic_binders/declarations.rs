@@ -509,7 +509,30 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
         bind_declared_nominal_types(submodule)?;
     }
     propagate_impl_owner_type_generics(module);
+    revoke_open_impl_seed_instances(module);
     Ok(())
+}
+
+/// 名义绑定完成后撤销开放 impl 成员的声明期种子实例。
+///
+/// `register_function_declarations` 执行时 target 仍是 `Named`，无法判断 owner 是否开放；
+/// `bind_declared_nominal_types` 与 `propagate_impl_owner_type_generics` 之后，
+/// `combined_impl_generic_context` 才是结构化事实。开放成员的实例只能由调用点代入
+/// 在 frontend 单态化阶段铸造，声明本身保持 `instance` 为空。
+fn revoke_open_impl_seed_instances(module: &mut HirModule) {
+    let monomorphic =
+        module.impls.iter().map(|implementation| combined_impl_generic_context(module, implementation).is_empty()).collect::<Vec<_>>();
+    for (implementation, monomorphic) in module.impls.iter_mut().zip(monomorphic) {
+        if monomorphic {
+            continue;
+        }
+        for method in &mut implementation.methods {
+            method.instance = None;
+        }
+    }
+    for submodule in &mut module.submodules {
+        revoke_open_impl_seed_instances(submodule);
+    }
 }
 
 /// 全部承担结构化数组 `[T]` owner 身份的声明：唯一约定是名为 `Array` 且带一个泛型的聚合。
@@ -722,6 +745,11 @@ pub(crate) fn max_hir_callable_instance_index(module: &HirModule) -> Option<u32>
                 consider(method.instance, max);
             }
         }
+        // 单态化铸造的实例与声明期实例共用同一 `ItemInstanceId` 空间，
+        // 后续 MIR 的 host runtime 续号必须越过它们。
+        for callable in &module.instantiated_callables {
+            consider(callable.function.instance, max);
+        }
         for submodule in &module.submodules {
             walk(submodule, max);
         }
@@ -828,9 +856,12 @@ pub(crate) fn register_function_declarations(module: &mut HirModule, next: &mut 
             register(method, next, next_instance, materialized_default)?;
         }
     }
-    for implementation in &mut module.impls {
+    // `imply X<K, V>` 的 `implementation.generics` 为空，owner 泛型只来自 target。
+    // 判据必须是结构化事实（combined context），否则每个成员都会拿到声明期开放实例。
+    let impl_contexts = module.impls.iter().map(|implementation| combined_impl_generic_context(module, implementation)).collect::<Vec<_>>();
+    for (implementation, context) in module.impls.iter_mut().zip(impl_contexts) {
         for method in &mut implementation.methods {
-            register(method, next, next_instance, implementation.generics.is_empty())?;
+            register(method, next, next_instance, context.is_empty())?;
         }
     }
     for widget in &mut module.widgets {

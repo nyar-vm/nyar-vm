@@ -132,6 +132,7 @@ fn module_with_imported_unite(enum_def: HirEnum) -> HirModule {
         type_aliases: Vec::new(),
         singletons: vec![],
         statements: vec![],
+        instantiated_callables: Vec::new(),
     }
 }
 

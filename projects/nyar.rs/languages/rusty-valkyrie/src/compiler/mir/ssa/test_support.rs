@@ -202,6 +202,7 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         singletons: Vec::new(),
         statements: Vec::new(),
         type_aliases: Vec::new(),
+        instantiated_callables: Vec::new(),
     };
     let func = lower_function_semantic(
         &module,
@@ -242,5 +243,6 @@ pub fn lower_test_module(functions: Vec<HirFunction>, structs: Vec<HirStruct>) -
         singletons: Vec::new(),
         statements: Vec::new(),
         type_aliases: Vec::new(),
+        instantiated_callables: Vec::new(),
     })
 }
