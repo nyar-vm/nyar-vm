@@ -11,18 +11,16 @@ use crate::compiler::{
     types::hir::ValkyrieType,
 };
 
-use super::{
-    errors::{error_without_module, type_id},
-    identities::AggregateIdentity,
-};
+use super::errors::{error_without_module, type_id};
 
 pub(crate) fn lower_function(
     function: &MirFunction,
     instance: ItemInstanceId,
     ids: &BTreeMap<ValkyrieType, TypeId>,
-    nominals: &BTreeMap<NominalInstanceId, AggregateIdentity>,
+    nominal_by_type: &BTreeMap<TypeId, NominalInstanceId>,
     fields: &BTreeMap<FieldId, FieldRecord>,
-    sum_instance_by_type: &BTreeMap<TypeId, NominalInstanceId>,
+    field_by_owner: &BTreeMap<(NominalInstanceId, FieldId), FieldId>,
+    field_names: &BTreeMap<FieldId, String>,
     next_instruction: &mut u32,
 ) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
     let value_types = function
@@ -68,9 +66,10 @@ pub(crate) fn lower_function(
                             &instruction.results,
                             &function.value_types,
                             ids,
-                            nominals,
+                            nominal_by_type,
                             fields,
-                            sum_instance_by_type,
+                            field_by_owner,
+                            field_names,
                         )?,
                     })
                 })
@@ -142,14 +141,42 @@ fn resolve_sum_nominal(
         .ok_or_else(|| error_without_module("CAN056", format!("sum 具体类型 {concrete:?} 缺少 NominalInstanceId 映射")))
 }
 
+/// 按静态类型形状解析聚合实例 nominal；不得回落到 MIR 声明 nominal。
+fn resolve_aggregate_nominal(
+    shape: Option<&ValkyrieType>,
+    ids: &BTreeMap<ValkyrieType, TypeId>,
+    nominal_by_type: &BTreeMap<TypeId, NominalInstanceId>,
+) -> Result<NominalInstanceId, StructuredDiagnosticSet> {
+    let ty = shape.ok_or_else(|| error_without_module("CAN058", "聚合操作缺少具体类型形状，无法解析实例 owner"))?;
+    let concrete = type_id(ids, ty)?;
+    nominal_by_type
+        .get(&concrete)
+        .copied()
+        .ok_or_else(|| error_without_module("CAN058", format!("聚合具体类型 {concrete:?} 缺少实例级 nominal 身份")))
+}
+
+/// 把声明级字段身份改写成 owner 实例的字段身份；缺登记直接失败关闭。
+fn resolve_instance_field(
+    owner: NominalInstanceId,
+    field: FieldId,
+    field_by_owner: &BTreeMap<(NominalInstanceId, FieldId), FieldId>,
+    field_names: &BTreeMap<FieldId, String>,
+) -> Result<FieldId, StructuredDiagnosticSet> {
+    field_by_owner.get(&(owner, field)).copied().ok_or_else(|| {
+        let name = field_names.get(&field).map(String::as_str).unwrap_or("<未登记字段>");
+        error_without_module("CAN058", format!("聚合实例 {owner:?} 缺少字段 `{name}` 的实例级字段身份"))
+    })
+}
+
 fn lower_operation(
     operation: &MirOperation,
     results: &[crate::compiler::mir::MirValueRef],
     value_types: &BTreeMap<crate::compiler::mir::MirValueRef, ValkyrieType>,
     ids: &BTreeMap<ValkyrieType, TypeId>,
-    nominals: &BTreeMap<NominalInstanceId, AggregateIdentity>,
+    nominal_by_type: &BTreeMap<TypeId, NominalInstanceId>,
     fields: &BTreeMap<FieldId, FieldRecord>,
-    sum_instance_by_type: &BTreeMap<TypeId, NominalInstanceId>,
+    field_by_owner: &BTreeMap<(NominalInstanceId, FieldId), FieldId>,
+    field_names: &BTreeMap<FieldId, String>,
 ) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
     let value = |operand: &MirOperand| match operand {
         MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")),
@@ -218,10 +245,7 @@ fn lower_operation(
         }),
         MirOperation::SumNew { nominal, variant, payload_type, payload, .. } => {
             let result_ty = results.first().and_then(|result| value_types.get(result));
-            let concrete = resolve_sum_nominal(*nominal, result_ty, ids, sum_instance_by_type)?;
-            if !nominals.contains_key(&concrete) {
-                return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {concrete:?}")));
-            }
+            let concrete = resolve_sum_nominal(*nominal, result_ty, ids, nominal_by_type)?;
             let _ = payload_type;
             Ok(CanonicalOperation::SumNew { nominal: concrete, variant: *variant, payload: payload.as_ref().map(value).transpose()? })
         }
@@ -230,10 +254,7 @@ fn lower_operation(
                 MirOperand::Value(value) => value_types.get(value),
                 _ => None,
             };
-            let concrete = resolve_sum_nominal(*nominal, object_ty, ids, sum_instance_by_type)?;
-            if !nominals.contains_key(&concrete) {
-                return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {concrete:?}")));
-            }
+            let concrete = resolve_sum_nominal(*nominal, object_ty, ids, nominal_by_type)?;
             Ok(CanonicalOperation::SumPayloadGet { nominal: concrete, variant: *variant, object: value(object)? })
         }
         MirOperation::SumVariantIs { nominal, variant, object, .. } => {
@@ -241,38 +262,48 @@ fn lower_operation(
                 MirOperand::Value(value) => value_types.get(value),
                 _ => None,
             };
-            let concrete = resolve_sum_nominal(*nominal, object_ty, ids, sum_instance_by_type)?;
-            if !nominals.contains_key(&concrete) {
-                return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {concrete:?}")));
-            }
+            let concrete = resolve_sum_nominal(*nominal, object_ty, ids, nominal_by_type)?;
             Ok(CanonicalOperation::SumVariantIs { nominal: concrete, variant: *variant, object: value(object)? })
         }
-        MirOperation::StructNew { nominal, fields: values } => {
-            if !nominals.contains_key(nominal) {
-                return Err(error_without_module("CAN023", format!("未解析聚合 identity: {nominal:?}")));
-            }
+        MirOperation::StructNew { nominal: _declaration, fields: values } => {
+            // MIR 构造指令携带声明 nominal；实例身份只能由结果静态类型决定。
+            let result_ty = results.first().and_then(|result| value_types.get(result));
+            let owner = resolve_aggregate_nominal(result_ty, ids, nominal_by_type)?;
             let fields = values
                 .iter()
                 .map(|(field, operand)| {
-                    if !fields.contains_key(field) {
-                        return Err(error_without_module("CAN024", format!("未解析字段 identity: {field:?}")));
+                    let resolved = resolve_instance_field(owner, *field, field_by_owner, field_names)?;
+                    if !fields.contains_key(&resolved) {
+                        return Err(error_without_module("CAN024", format!("未解析字段 identity: {resolved:?}")));
                     }
-                    Ok((*field, value(operand)?))
+                    Ok((resolved, value(operand)?))
                 })
                 .collect::<Result<_, StructuredDiagnosticSet>>()?;
-            Ok(CanonicalOperation::StructNew { nominal: *nominal, fields })
+            Ok(CanonicalOperation::StructNew { nominal: owner, fields })
         }
         MirOperation::FieldGet { object, field } => {
-            if !fields.contains_key(field) {
-                return Err(error_without_module("CAN027", format!("未解析字段 identity: {field:?}")));
+            let object_ty = match object {
+                MirOperand::Value(value) => value_types.get(value),
+                _ => None,
+            };
+            let owner = resolve_aggregate_nominal(object_ty, ids, nominal_by_type)?;
+            let resolved = resolve_instance_field(owner, *field, field_by_owner, field_names)?;
+            if !fields.contains_key(&resolved) {
+                return Err(error_without_module("CAN027", format!("未解析字段 identity: {resolved:?}")));
             }
-            Ok(CanonicalOperation::FieldGet { object: value(object)?, field: *field })
+            Ok(CanonicalOperation::FieldGet { object: value(object)?, field: resolved })
         }
         MirOperation::FieldSet { object, field, value: stored } => {
-            if !fields.contains_key(field) {
-                return Err(error_without_module("CAN030", format!("未解析字段 identity: {field:?}")));
+            let object_ty = match object {
+                MirOperand::Value(value) => value_types.get(value),
+                _ => None,
+            };
+            let owner = resolve_aggregate_nominal(object_ty, ids, nominal_by_type)?;
+            let resolved = resolve_instance_field(owner, *field, field_by_owner, field_names)?;
+            if !fields.contains_key(&resolved) {
+                return Err(error_without_module("CAN030", format!("未解析字段 identity: {resolved:?}")));
             }
-            Ok(CanonicalOperation::FieldSet { object: value(object)?, field: *field, value: value(stored)? })
+            Ok(CanonicalOperation::FieldSet { object: value(object)?, field: resolved, value: value(stored)? })
         }
         _ => Err(error_without_module("CAN009", format!("操作没有无损 canonical 形状: {operation:?}"))),
     }

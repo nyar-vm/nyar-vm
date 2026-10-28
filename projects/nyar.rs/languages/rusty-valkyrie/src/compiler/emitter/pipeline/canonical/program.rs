@@ -12,8 +12,8 @@ use super::{
     errors::{canonical_error, ensure_instantiated_signature, error, error_without_module, type_id},
     fragments::canonical_fragments,
     identities::{
-        canonical_type_kind, collect_aggregate_identities, collect_types, is_array_index_valkyrie_type, register_sum_nominal_instances,
-        validate_callable_identities,
+        AggregateDeclarations, canonical_type_kind, collect_aggregate_identities, collect_types, is_array_index_valkyrie_type,
+        register_aggregate_nominal_instances, register_sum_nominal_instances, validate_callable_identities,
     },
     lower::lower_function,
 };
@@ -28,7 +28,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     // 具体 self 的消去与开放泛型的字典 ABI 由表示/目标层按合同决定。
     let type_values = collect_types(module)?;
     validate_callable_identities(module)?;
-    let (mut nominals, field_records) = collect_aggregate_identities(module, &type_values)?;
+    let AggregateDeclarations { mut nominals, mut field_records, declaration_nominals } = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
     linked.aggregate_layouts = module.aggregate_layouts.clone();
     for (ty, type_id) in &type_values {
@@ -92,7 +92,8 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         }
     }
     let mut declaration_spellings = BTreeMap::new();
-    register_declaration_spellings(module, &type_values, &mut declaration_spellings)?;
+    let mut item_spellings = BTreeMap::new();
+    register_declaration_spellings(module, &type_values, &mut declaration_spellings, &mut item_spellings)?;
     for (ty, id) in &type_values {
         linked.types.insert(*id, TypeRecord { declaration: *id, kind: canonical_type_kind(ty, &type_values)? });
         if let Some(spelling) = declaration_spellings.get(id) {
@@ -111,9 +112,13 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             NominalInstanceRecord { declaration: *declaration, ty: *declaration, semantics: *semantics, fields: nominal_fields },
         );
     }
+    let aggregate_bindings =
+        register_aggregate_nominal_instances(module, &type_values, &declaration_nominals, &item_spellings, &mut linked, &mut nominals, &mut field_records)?;
     let sum_instance_by_type = register_sum_nominal_instances(module, &type_values, &declaration_spellings, &mut linked, &mut nominals)?;
-    // 禁止按类型名字猜测 carrier 或用默认 Reference 回填未登记 nominal；缺值语义事实时应在所属阶段结构化失败。
+    // 实例级字段身份同样只认已冻结的记录；声明级与实例级字段在同一张表内稠密互异。
     linked.fields = field_records.clone();
+    let mut nominal_by_type = aggregate_bindings.by_type.clone();
+    nominal_by_type.extend(sum_instance_by_type.iter().map(|(ty, nominal)| (*ty, *nominal)));
     for function in &module.functions {
         let instance = function
             .instance
@@ -170,6 +175,19 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             },
         );
     }
+    let mut field_names = BTreeMap::new();
+    for structure in &module.structs {
+        for field in &structure.fields {
+            field_names.insert(field.id, field.name.clone());
+        }
+    }
+    for sum in &module.sum_types {
+        for variant in &sum.variants {
+            for field in &variant.fields {
+                field_names.insert(field.id, field.name.clone());
+            }
+        }
+    }
     let mut next_instruction = 0u32;
     let functions = module
         .functions
@@ -180,7 +198,16 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
                 .ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.display_symbol)))?;
             Ok((
                 instance,
-                lower_function(function, instance, &type_values, &nominals, &field_records, &sum_instance_by_type, &mut next_instruction)?,
+                lower_function(
+                    function,
+                    instance,
+                    &type_values,
+                    &nominal_by_type,
+                    &field_records,
+                    &aggregate_bindings.field_by_owner,
+                    &field_names,
+                    &mut next_instruction,
+                )?,
             ))
         })
         .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
@@ -202,6 +229,7 @@ fn register_declaration_spellings(
     module: &MirModule,
     type_values: &BTreeMap<ValkyrieType, nyar_types::TypeId>,
     spellings: &mut BTreeMap<nyar_types::TypeId, Identifier>,
+    item_spellings: &mut BTreeMap<nyar_types::ItemId, String>,
 ) -> Result<(), StructuredDiagnosticSet> {
     for aggregate in &module.structs {
         let Some(declaration) = aggregate.declaration
@@ -209,7 +237,9 @@ fn register_declaration_spellings(
             continue;
         };
         let id = type_id(type_values, &ValkyrieType::Nominal { declaration, arguments: Vec::new() })?;
-        spellings.insert(id, Identifier::new(&canonical_surface_spelling(&aggregate.qualified_name())));
+        let spelling = canonical_surface_spelling(&aggregate.qualified_name());
+        item_spellings.insert(declaration, spelling.clone());
+        spellings.insert(id, Identifier::new(&spelling));
     }
     for sum in &module.sum_types {
         let Some(declaration) = sum.declaration
@@ -217,6 +247,7 @@ fn register_declaration_spellings(
             continue;
         };
         let id = type_id(type_values, &ValkyrieType::Nominal { declaration, arguments: Vec::new() })?;
+        item_spellings.insert(declaration, sum.name.clone());
         spellings.insert(id, Identifier::new(&sum.name));
     }
     Ok(())

@@ -27,7 +27,8 @@ pub use ssa::{
     MirConstant, MirDiagnostic, MirEffectKind, MirEntryContract, MirExportContract, MirExternalCallContract, MirField, MirFunction,
     MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind, MirStruct, MirTerminator, MirTraitWitness, MirValue,
     MirValueOrigin,
-    MirValueRef, SumTypeLayout, SumVariantLayout, compute_aggregate_layout_plan, layout_id_for_type, storage_kind_for_type,
+    MirValueRef, SumTypeLayout, SumVariantLayout, compute_aggregate_layout_plan, instance_layout_for_type, layout_id_for_type,
+    storage_kind_for_type,
 };
 
 impl ValkyrieCompiler {
