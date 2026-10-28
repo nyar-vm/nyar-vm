@@ -619,7 +619,14 @@ impl CanonicalTarget {
             | CanonicalSpecification::MacOs
             | CanonicalSpecification::Android
             | CanonicalSpecification::Ios => HostProjectionBoundary::Native,
+            // WASI component abi 覆盖：arch=Wasm32, spec=Unknown, abi=WasiP3
             CanonicalSpecification::Unknown if abi.is_wasi_component() => HostProjectionBoundary::WasiComponent,
+            // **Neutral Wasm**：arch=Wasm32, spec=Unknown, vendor=Unknown, abi=WebAssembly
+            // 它不是 Native（Native 是指直接跑在操作系统上），而是被 JS 宿主加载的 Wasm 库
+            // 不注入宿主 API（capability space 只有 "wasm"），但需要 WasmJsGlue 作为边界
+            CanonicalSpecification::Unknown if matches!(self.arch, CanonicalArch::Wasm32 | CanonicalArch::Wasm64) => {
+                HostProjectionBoundary::WasmJsGlue
+            }
             _ => HostProjectionBoundary::Native,
         }
     }
