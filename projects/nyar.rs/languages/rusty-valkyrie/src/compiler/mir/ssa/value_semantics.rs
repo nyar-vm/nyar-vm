@@ -159,6 +159,179 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
     plan
 }
 
+/// 具体泛型实例的聚合布局结果：布局身份 + 与声明同序的代入后字段类型。
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstanceLayout {
+    /// 新登记的实例布局身份。
+    pub id: LayoutId,
+    /// 与 `MirStruct::fields` 同序的字段类型（已完成 binder 代入）。
+    pub field_types: Vec<ValkyrieType>,
+}
+
+/// 按实例实参代入声明字段，返回与 `MirStruct::fields` 同序的字段类型。
+///
+/// 只认已冻结的 declaration 与 binder：形参数目不符、缺 binder、或实参仍含
+/// 开放泛型形参时返回 `None`；禁止按字段名或短名猜代入结果。
+pub fn instantiate_fields(
+    structure: &crate::compiler::mir::MirStruct,
+    instance: &ValkyrieType,
+) -> Option<Vec<ValkyrieType>> {
+    let ValkyrieType::Nominal { declaration, arguments } = instance
+    else {
+        return None;
+    };
+    if structure.declaration != Some(*declaration) || arguments.len() != structure.generics.len() {
+        return None;
+    }
+    let substitutions = structure
+        .generics
+        .iter()
+        .zip(arguments)
+        .map(|(generic, argument)| Some((generic.binder?, argument.clone())))
+        .collect::<Option<BTreeMap<_, _>>>()?;
+    if substitutions.len() != structure.generics.len() {
+        return None;
+    }
+    Some(
+        structure
+            .fields
+            .iter()
+            .map(|field| {
+                let ty = crate::compiler::hir::overload::substitute_type_vars(&field.ty, &substitutions);
+                super::struct_facts::resolve_self_type_with_owner(&ty, Some(instance))
+            })
+            .collect(),
+    )
+}
+
+/// 为具体泛型实例构造聚合布局并登记进计划。
+///
+/// 字段类型严格由已冻结声明 spelling + 实参生成平台形状，与 emitter `lower_type`
+/// 同口径；缺拼写、实参仍含开放形参、或声明与实例不匹配时返回 `None`（失败关闭）。
+/// 开放泛型声明本身仍由 [`compute_aggregate_layout_plan`] 跳过，不在此合成布局。
+pub fn instance_layout_for_type(
+    plan: &mut AggregateLayoutPlan,
+    structure: &crate::compiler::mir::MirStruct,
+    instance: &ValkyrieType,
+    declaration_spellings: &BTreeMap<nyar_types::ItemId, String>,
+) -> Option<InstanceLayout> {
+    if type_contains_open_generic(instance) {
+        return None;
+    }
+    let field_types = instantiate_fields(structure, instance)?;
+    let storage = if structure.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
+    let mut offset = 0u32;
+    let mut max_align = 1u32;
+    let mut fields = Vec::with_capacity(field_types.len());
+    for (declared, ty) in structure.fields.iter().zip(field_types.iter()) {
+        let layout_ty = layout_field_type(ty, declaration_spellings)?;
+        let (size, align) = layout_field_extent(&layout_ty);
+        offset = align_offset(offset, align);
+        fields.push(FieldLayout { name: declared.name.clone(), ty: layout_ty, offset, size, align });
+        offset += size;
+        max_align = max_align.max(align);
+    }
+    let size = align_offset(offset, max_align).max(if fields.is_empty() { max_align.max(1) } else { 0 });
+    let id = next_layout_id(plan);
+    plan.layouts.push(AggregateLayout {
+        id,
+        name: structure.name.clone(),
+        namespace: structure.namespace.clone(),
+        key: None,
+        storage,
+        size,
+        align: max_align.max(1),
+        fields,
+    });
+    Some(InstanceLayout { id, field_types })
+}
+
+/// 类型是否仍含开放泛型形参；这类实例只有语义身份，没有单一物理布局。
+fn type_contains_open_generic(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Generic(_) => true,
+        ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(type_contains_open_generic),
+        ValkyrieType::Apply(base, arguments) => type_contains_open_generic(base) || arguments.iter().any(type_contains_open_generic),
+        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => type_contains_open_generic(element),
+        ValkyrieType::FixedArray { element, .. } => type_contains_open_generic(element),
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+            items.iter().any(type_contains_open_generic)
+        }
+        ValkyrieType::Function(function) => {
+            function.params.iter().any(type_contains_open_generic) || type_contains_open_generic(&function.return_type)
+        }
+        _ => false,
+    }
+}
+
+/// 字段的平台布局类型：结构化形状走 [`concretize_type`]，名义形状按已冻结
+/// 声明 spelling 生成 `Named`/primitive，非空实参再包一层 `Apply`。
+///
+/// 与 emitter `lower_type` 同口径（声明 spelling 先查 primitive 别名，否则
+/// `Named`；实参递归）。任一环节缺事实返回 `None`，禁止按短名猜载体。
+fn layout_field_type(
+    ty: &ValkyrieType,
+    declaration_spellings: &BTreeMap<nyar_types::ItemId, String>,
+) -> Option<nyar_types::NyarType> {
+    if let Ok(concrete) = concretize_type(ty) {
+        return Some(concrete);
+    }
+    match ty {
+        ValkyrieType::Nominal { declaration, arguments } => {
+            let spelling = declaration_spellings.get(declaration)?;
+            let base = nyar_types::NyarType::from_surface_primitive(spelling)
+                .unwrap_or_else(|| nyar_types::NyarType::Named(nyar_types::Identifier::new(spelling)));
+            if arguments.is_empty() {
+                return Some(base);
+            }
+            Some(nyar_types::NyarType::Apply(
+                Box::new(base),
+                arguments.iter().map(|argument| layout_field_type(argument, declaration_spellings)).collect::<Option<Vec<_>>>()?,
+            ))
+        }
+        ValkyrieType::Apply(base, arguments) => Some(nyar_types::NyarType::Apply(
+            Box::new(layout_field_type(base, declaration_spellings)?),
+            arguments.iter().map(|argument| layout_field_type(argument, declaration_spellings)).collect::<Option<Vec<_>>>()?,
+        )),
+        ValkyrieType::Array(element) => Some(nyar_types::NyarType::Array(Box::new(layout_field_type(element, declaration_spellings)?))),
+        ValkyrieType::FixedArray { element, length } => Some(nyar_types::NyarType::FixedArray {
+            element: Box::new(layout_field_type(element, declaration_spellings)?),
+            length: *length,
+        }),
+        ValkyrieType::Tuple(items) => Some(nyar_types::NyarType::Tuple(
+            items.iter().map(|item| layout_field_type(item, declaration_spellings)).collect::<Option<Vec<_>>>()?,
+        )),
+        ValkyrieType::Nullable(element) => {
+            Some(nyar_types::NyarType::Nullable(Box::new(layout_field_type(element, declaration_spellings)?)))
+        }
+        ValkyrieType::Union(items) => Some(nyar_types::NyarType::Union(
+            items.iter().map(|item| layout_field_type(item, declaration_spellings)).collect::<Option<Vec<_>>>()?,
+        )),
+        _ => None,
+    }
+}
+
+/// 字段字节大小与对齐：标量按宽度，其余按引用槽。
+fn layout_field_extent(ty: &nyar_types::NyarType) -> (u32, u32) {
+    match ty {
+        nyar_types::NyarType::Integer64 { .. }
+        | nyar_types::NyarType::Integer128 { .. }
+        | nyar_types::NyarType::Float64 => (8, 8),
+        nyar_types::NyarType::Bottom
+        | nyar_types::NyarType::Unit
+        | nyar_types::NyarType::Boolean
+        | nyar_types::NyarType::Integer8 { .. }
+        | nyar_types::NyarType::Integer16 { .. }
+        | nyar_types::NyarType::Integer32 { .. }
+        | nyar_types::NyarType::Float32
+        | nyar_types::NyarType::Character
+        | nyar_types::NyarType::Utf8
+        | nyar_types::NyarType::Utf16 => (4, 4),
+        _ => (8, 8),
+    }
+}
+
 fn collect_module_structs<'a>(module: &'a HirModule, output: &mut Vec<&'a HirStruct>) {
     output.extend(module.structs.iter());
     for child in &module.submodules {
