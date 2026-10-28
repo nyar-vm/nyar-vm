@@ -70,3 +70,14 @@ fn witness_call_satisfies_semantic_mir_contract() {
     });
     assert!(has_witness, "合同校验后 witness 分派必须仍然保留");
 }
+
+#[test]
+fn witness_dispatch_reports_structured_canonical_failure() {
+    // witness 在 canonical 没有对应形状：必须显式失败，不得退回 `Unit`，也不得按名称猜函数。
+    let hir = ValkyrieCompiler::default().compile_source(SOURCE).expect("源码必须通过 HIR 分析");
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    let error =
+        rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&mir).expect_err("witness 分派必须显式失败");
+    let codes: Vec<_> = error.records.iter().map(|record| record.code.clone()).collect();
+    assert!(codes.iter().any(|code| code == "CAN057"), "unexpected canonical diagnostics: {codes:?}");
+}
