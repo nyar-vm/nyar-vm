@@ -17,7 +17,7 @@ use crate::compiler::{
         Identifier, NamePath,
         hir::{
             HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirFunction, HirLiteral, HirParam, HirPattern, HirResolvedCall,
-            HirStringSegment, HirTrait, HirTraitBound, HirVariant, HirWhereConstraint, ValkyrieType,
+            HirStringSegment, HirTrait, HirTraitBound, HirTraitDispatch, HirVariant, HirWhereConstraint, ValkyrieType,
         },
     },
 };
@@ -153,6 +153,7 @@ pub(crate) fn build_constructor_resolved_call(
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
         intrinsic: resolved.intrinsic,
+        trait_dispatch: None,
         symbol,
         domain: HirCallableDomain::Constructor,
         return_type,
@@ -195,6 +196,7 @@ pub(crate) fn try_resolve_qualified_free_function(
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
         intrinsic: resolved.intrinsic,
+        trait_dispatch: None,
         symbol: resolved.symbol,
         domain,
         return_type: resolved.signature.return_type,
@@ -329,6 +331,7 @@ pub(crate) fn try_resolve_singleton_method(
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
         intrinsic: resolved.intrinsic,
+        trait_dispatch: None,
         symbol,
         domain: HirCallableDomain::Function,
         return_type,
@@ -375,6 +378,7 @@ pub(crate) fn try_resolve_type_static_method(
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
         intrinsic: resolved.intrinsic,
+        trait_dispatch: None,
         symbol: overload_symbol_path(&resolved),
         domain: match resolved.domain {
             OverloadDomain::Constructor => HirCallableDomain::Constructor,
@@ -471,6 +475,7 @@ pub(crate) fn try_resolve_instance_method(
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
         intrinsic: resolved.intrinsic,
+        trait_dispatch: None,
         symbol: overload_symbol_path(&resolved),
         domain: HirCallableDomain::Function,
         return_type: resolved.signature.return_type,
@@ -479,5 +484,13 @@ pub(crate) fn try_resolve_instance_method(
         extractor_payload_type: None,
     };
     enrich_sum_variant_operation_facts(&mut call, Some(&receiver_type), candidates);
+    // 泛型接收者上的 trait 方法没有实例身份：把「哪个 trait 的哪个方法槽必须在
+    // 该 self 类型上成立」冻结成 evidence，不在此处单态化，也不伪造实例。
+    if call.instance.is_none()
+        && let Some(trait_declaration) = resolved.trait_owner
+        && let Some(method_declaration) = call.declaration
+    {
+        call.trait_dispatch = Some(HirTraitDispatch { trait_declaration, method_declaration, self_type: receiver_type.clone() });
+    }
     Some(call)
 }

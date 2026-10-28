@@ -101,6 +101,22 @@ pub enum HirCallableDomain {
     Extractor,
 }
 
+/// 泛型接收者上的 trait 方法调用所冻结的分派事实。
+///
+/// frontend 只记录「哪个 trait 的哪个方法槽必须在其 self 类型上成立」这一义务，
+/// 不在 HIR 里做单态化：`self_type` 允许是带 binder 的开放泛型，原样保留 binder，
+/// 具体实现类型、witness 形态与直接/间接调用由 Nyar 表示层按 target 合同决定。
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirTraitDispatch {
+    /// 所属 trait 的声明身份。
+    pub trait_declaration: nyar_types::ItemId,
+    /// 被调用的 trait 方法声明身份（方法槽）。
+    pub method_declaration: nyar_types::ItemId,
+    /// 接收者在调用点的静态类型；开放泛型时仍携带 binder，不做具体化。
+    pub self_type: ValkyrieType,
+}
+
 /// Resolved call metadata attached to canonical HIR calls.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -112,6 +128,9 @@ pub struct HirResolvedCall {
     /// 语言内建调用的结构化身份；只有内建候选持有，源码声明调用恒为 `None`。
     #[cfg_attr(feature = "serde", serde(default))]
     pub intrinsic: Option<nyar_types::IntrinsicId>,
+    /// 泛型接收者的 trait 方法分派义务；只有 trait 方法候选（无实例身份）持有。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub trait_dispatch: Option<HirTraitDispatch>,
     /// Constructor owner declaration identity, when this is a sum variant.
     #[cfg_attr(feature = "serde", serde(default))]
     pub sum_owner: Option<nyar_types::ItemId>,
