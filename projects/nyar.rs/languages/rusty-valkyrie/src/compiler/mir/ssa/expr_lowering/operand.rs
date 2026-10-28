@@ -306,6 +306,26 @@ impl MirBuilder {
                             }
                         }
                     }
+                    // HIR 把运算符成员调用（`a op b` → `infix ==`）展开为单段 Path callee，
+                    // 接收者就是首位实参；`has_receiver` 是 HIR 冻结的接收者合同。callee 不是
+                    // FieldAccess 不代表没有接收者，这里按同一合同投影 callee（含 trait
+                    // witness），不得把调用退化成 Unit。
+                    None if resolved.as_ref().is_some_and(|call| call.has_receiver)
+                        && matches!(&callee.kind, HirExprKind::Path(path) if path.parts().len() == 1) =>
+                    {
+                        let call = resolved.as_ref().expect("receiver-implicit call contract");
+                        let Some(callee) = lower_resolved_callee(call)
+                        else {
+                            self.diagnostics
+                                .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedCallableIdentity { symbol: call.symbol.to_string() });
+                            return MirOperand::Constant(MirConstant::Unit);
+                        };
+                        if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
+                            return operand;
+                        }
+                        let return_type = self.return_type_for_resolved_call(&callee, call);
+                        return self.push_call_returning(callee, arguments, return_type);
+                    }
                     None => {
                         self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedCallableIdentity {
                             symbol: "construct missing HIR callable contract".to_string(),

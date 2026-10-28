@@ -160,6 +160,51 @@ fn concrete_witness_module(self_type: ValkyrieType) -> rusty_valkyrie::mir::MirM
     module
 }
 
+const OPERATOR_SOURCE: &str = r#"
+namespace test.dispatch;
+
+trait Comparer {
+    infix `==`(self, other: Self): bool
+}
+
+micro same<T>(left: T, right: T) -> bool where T: Comparer {
+    return left == right
+}
+"#;
+
+#[test]
+fn operator_trait_call_keeps_witness_dispatch() {
+    // `a == b` 在 HIR 展开为单段 Path callee（`infix ==`）、接收者位于首位实参。
+    // 这条真实路径同样必须产出 witness 分派，并且结果类型取声明返回类型。
+    let hir = ValkyrieCompiler::default().compile_source(OPERATOR_SOURCE).expect("带 where 约束的运算符调用必须可解析");
+    let comparer = hir.traits.iter().find(|item| item.name.as_str() == "Comparer").expect("Comparer 声明");
+    let trait_declaration = comparer.declaration.expect("trait 声明身份");
+    let method_declaration = comparer.methods.first().expect("运算符方法声明").declaration.expect("方法声明身份");
+    let declaration = hir
+        .functions
+        .iter()
+        .find(|function| function.name.as_str() == "same")
+        .and_then(|function| function.declaration)
+        .expect("same 声明身份");
+
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    let function = mir.functions.iter().find(|function| function.declaration == Some(declaration)).expect("same 必须有 Semantic MIR 函数");
+    let (witness, results) = function
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|instruction| match &instruction.kind {
+            MirOperation::Call { callee: MirOperand::Witness(witness), .. } => Some((witness, &instruction.results)),
+            _ => None,
+        })
+        .expect("运算符形式的 trait 方法调用必须是 witness 分派，不得降级为 `Unit`");
+
+    assert_eq!(witness.trait_declaration, trait_declaration);
+    assert_eq!(witness.method_declaration, method_declaration);
+    let result = results.first().expect("声明有返回类型的方法调用必须占用 SSA 结果槽");
+    assert_eq!(function.value_types.get(result), Some(&ValkyrieType::Boolean), "调用结果类型必须是声明返回类型，不得退回 `Unit`");
+}
+
 #[test]
 fn generic_witness_identity_is_not_concretized_before_canonical() {
     // 开放泛型的 self 类型身份尚未具体化：canonical 不猜 TypeId，也不退回 `Unit`；
