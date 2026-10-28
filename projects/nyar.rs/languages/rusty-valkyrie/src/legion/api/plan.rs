@@ -100,6 +100,7 @@ impl LegionBuildPlan {
             inner.project.build_target.wat,
             inner.project.build_target.runtime_async,
             &inner.enabled_features,
+            Some(&crate::legion::workspace::planner::provider_set_digest(&inner.project.selected_host_providers)),
         )
         .unwrap_or_else(|error| format!("hash-error:{error}"));
 

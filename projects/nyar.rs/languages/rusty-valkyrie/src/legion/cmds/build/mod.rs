@@ -204,6 +204,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
         plan.project.build_target.wat,
         plan.project.build_target.runtime_async,
         &plan.enabled_features,
+        Some(&crate::legion::workspace::planner::provider_set_digest(&plan.project.selected_host_providers)),
     )
     .map_err(|error| report!("{error}"))?;
 

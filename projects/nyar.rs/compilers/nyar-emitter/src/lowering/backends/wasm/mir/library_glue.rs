@@ -742,6 +742,39 @@ mod tests {
     }
 
     #[test]
+    fn render_works_with_arbitrary_container_name_myseq() {
+        // 完全虚构的容器名 `MySeq`，不是任何预置 stdlib 名——布局有 `[f64]` 字段
+        // → schema / name / layout 全链路匹配 → operation 完整生成。
+        let layouts = sequence_layout("MySeq", "user::lib", nyar("f64"));
+        let operations = sequence_operations(0, AggregateOperationCarrier::F64, "$seq_user_lib_MySeq_f64");
+        let mut keys = BTreeSet::new();
+        collect_named_aggregate_keys(
+            &WasmAbiType::NamedAggregate {
+                name: "MySeq".to_string(),
+                module_path: "user::lib".to_string(),
+                generic_args: vec![WasmAbiType::F64],
+            },
+            &mut keys,
+        );
+        let entries = render_glue_entries(&keys, &layouts, &operations).expect("MySeq 结构事实成立");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["name"], "MySeq");
+        assert_eq!(entries[0]["module_path"], "user::lib");
+        assert_eq!(entries[0]["status"], "ready");
+        assert_eq!(entries[0]["source"], "plan");
+        let ops = entries[0]["operations"].as_array().expect("operations array");
+        assert_eq!(ops.len(), 4);
+        // element carrier 由 f64 schema 推断，不按容器名。
+        assert_eq!(ops[1]["operation"], "push");
+        assert_eq!(ops[1]["param_carriers"], serde_json::json!(["i32", "f64"]));
+        assert_eq!(ops[3]["operation"], "at");
+        assert_eq!(ops[3]["return_carrier"], "f64");
+        // export 名由 plan 决定，backend 不得自造。
+        assert_eq!(ops[0]["export_name"], "$seq_user_lib_MySeq_f64_new");
+        assert_eq!(ops[2]["export_name"], "$seq_user_lib_MySeq_f64_len");
+    }
+
+    #[test]
     fn required_operation_carriers_follow_element_schema() {
         let f64_layouts = sequence_layout("ArrayList", "", nyar("f64"));
         let (_, required) = required_sequence_operations(&f64_layouts, "ArrayList", "", &[WasmAbiType::F64]).expect("f64 sequence fact");
