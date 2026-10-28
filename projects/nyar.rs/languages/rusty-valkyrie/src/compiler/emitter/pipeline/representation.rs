@@ -112,6 +112,9 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                             let lowering = match callee {
                                 nyar_types::CanonicalCallee::Item(_) => InvokeLowering::Direct,
                                 nyar_types::CanonicalCallee::Value(_) => InvokeLowering::TypedReference,
+                                // witness 分派只登记类型化 witness 降低选择；具体 self 的消去
+                                // 与开放泛型的字典 ABI 留给目标合同，不在此选 adaptor。
+                                nyar_types::CanonicalCallee::Witness(_) => InvokeLowering::TypedWitness,
                             };
                             plan.invoke_lowerings.insert(instruction.id, lowering);
                         }

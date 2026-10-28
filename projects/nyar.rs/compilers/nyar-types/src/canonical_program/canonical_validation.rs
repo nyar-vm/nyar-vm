@@ -205,6 +205,15 @@ impl CanonicalSemanticMir {
                                         });
                                     }
                                 }
+                                CanonicalCallee::Witness(witness) => {
+                                    // witness 没有已解析的静态签名：参数与结果类型义务由 Semantic MIR
+                                    // 合同持有。canonical 只检查已具体化的 self 类型身份存在。
+                                    if let Some(ty) = witness.self_type
+                                        && !linked.types.contains_key(&ty)
+                                    {
+                                        return Err(CanonicalMirError::UnknownType { function: *key, ty });
+                                    }
+                                }
                                 CanonicalCallee::Value(callee) => {
                                     let Some(callee_type) = function.value_types.get(callee)
                                     else {

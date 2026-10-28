@@ -15,7 +15,7 @@ use super::{
         canonical_type_kind, collect_aggregate_identities, collect_types, is_array_index_valkyrie_type, register_sum_nominal_instances,
         validate_callable_identities,
     },
-    lower::{lower_function, reject_trait_witness},
+    lower::lower_function,
 };
 
 /// 从已完成 HIR/Semantic MIR 合同的模块生成 canonical 成功值；集成测试夹具。
@@ -24,8 +24,8 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     if !module.diagnostics.is_empty() {
         return Err(error(module, "CAN033", format!("Semantic MIR lowering 失败: {:?}", module.diagnostics)));
     }
-    // witness 分派必须在类型身份解析之前报告：它是「表示未实现」，不是类型身份缺失。
-    reject_trait_witness(module)?;
+    // witness 分派由 canonical `CanonicalCallee::Witness` 承载稳定身份；
+    // 具体 self 的消去与开放泛型的字典 ABI 由表示/目标层按合同决定。
     let type_values = collect_types(module)?;
     validate_callable_identities(module)?;
     let (mut nominals, field_records) = collect_aggregate_identities(module, &type_values)?;
