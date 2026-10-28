@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
 use nyar_types::{
-    CanonicalPrimitiveType, CanonicalTypeKind, FieldId, FieldRecord, LinkedSemanticProgram, NominalInstanceId, NominalInstanceRecord,
-    NominalValueSemantics, StructuredDiagnosticSet, TypeId,
+    CanonicalPrimitiveType, CanonicalTypeKind, FieldId, FieldRecord, Identifier, LinkedSemanticProgram, NominalInstanceId,
+    NominalInstanceRecord, NominalValueSemantics, StructuredDiagnosticSet, TypeId,
 };
 
-use crate::compiler::{mir::MirModule, types::hir::ValkyrieType};
+use crate::compiler::{emitter::frontend_contract::concretize_type, mir::MirModule, types::hir::ValkyrieType};
 
 use super::errors::{error, error_without_module, type_id};
 
@@ -193,6 +193,18 @@ pub(crate) fn canonical_type_kind(
             parameters: function.params.iter().map(id).collect::<Result<_, _>>()?,
             return_type: id(&function.return_type)?,
         },
+        // 泛型形参：只有带 `binder` 的声明身份才是稳定类型事实；缺失 binder 的形参
+        // 仍是未解析占位。形参不得按名字解析成任何实现。
+        ValkyrieType::Generic(generic) => {
+            let Some(binder) = generic.binder
+            else {
+                return Err(error_without_module(
+                    "CAN003",
+                    format!("泛型形参 `{}` 缺少 binder 身份，不得进入 canonical 类型表", generic.name),
+                ));
+            };
+            CanonicalTypeKind::Generic { owner: binder.owner, ordinal: binder.ordinal }
+        }
         _ => {
             return Err(error_without_module("CAN003", format!("类型没有无损 canonical 形状: {ty:?}")));
         }
@@ -203,6 +215,7 @@ pub(crate) fn canonical_type_kind(
 pub(crate) fn register_sum_nominal_instances(
     module: &MirModule,
     type_values: &BTreeMap<ValkyrieType, TypeId>,
+    declaration_spellings: &BTreeMap<TypeId, Identifier>,
     linked: &mut LinkedSemanticProgram,
     nominals: &mut BTreeMap<NominalInstanceId, AggregateIdentity>,
 ) -> Result<BTreeMap<TypeId, NominalInstanceId>, StructuredDiagnosticSet> {
@@ -241,6 +254,20 @@ pub(crate) fn register_sum_nominal_instances(
         }
         let Some(sum) = module.sum_types.iter().find(|sum| sum.declaration == Some(*item))
         else {
+            // 聚合（`structure`/`class`）的实例只有语义身份：字段布局绑定在声明上，
+            // 开放形参与具体实例都不需要、也不得在这里伪造第二份布局。
+            let declaration =
+                type_id(type_values, &ValkyrieType::Nominal { declaration: *item, arguments: Vec::new() })?;
+            let Some((_, (_, semantics))) = nominals.iter().find(|(_, (registered, _))| *registered == declaration)
+            else {
+                return Err(error_without_module("CAN056", format!("聚合实例 `{ty:?}` 缺少声明级 nominal 身份")));
+            };
+            let nominal =
+                NominalInstanceId::from_index(next_nominal).ok_or_else(|| error_without_module("CAN020", "聚合 instance identity 溢出"))?;
+            next_nominal = next_nominal.checked_add(1).ok_or_else(|| error_without_module("CAN020", "聚合 instance identity 溢出"))?;
+            let semantics = *semantics;
+            nominals.insert(nominal, (declaration, semantics));
+            linked.nominal_instances.insert(nominal, NominalInstanceRecord { declaration, ty: *concrete_ty, semantics, fields: Vec::new() });
             continue;
         };
         let declaration = type_id(type_values, &ValkyrieType::Nominal { declaration: *item, arguments: Vec::new() })?;
@@ -251,6 +278,8 @@ pub(crate) fn register_sum_nominal_instances(
         let semantics = if sum.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
         nominals.insert(nominal, (declaration, semantics));
         linked.nominal_instances.insert(nominal, NominalInstanceRecord { declaration, ty: *concrete_ty, semantics, fields: Vec::new() });
+        // 仍带开放形参的实例只有语义身份，没有单一物理布局（与泛型聚合声明同口径）。
+        let open_generic = arguments.iter().any(contains_open_generic);
         let mut layout_variants = Vec::with_capacity(sum.variants.len());
         for variant in &sum.variants {
             let instantiated = sum
@@ -258,12 +287,15 @@ pub(crate) fn register_sum_nominal_instances(
                 .ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 实例化 payload 失败", sum.name)))?;
             let payload_type = instantiated.as_ref().map(|ty| type_id(type_values, ty)).transpose()?;
             linked.variants.insert((nominal, variant.id), nyar_types::VariantRecord { payload_type });
+            if open_generic {
+                continue;
+            }
             // 布局侧仍写 NyarType；语义身份只认上方 VariantRecord 的 TypeId。
+            // 名义 payload（`usize`、`SwissTableEntry<K, V>` 等）没有结构化目标形状，
+            // 按声明身份已冻结的 surface spelling 表示，与 emitter `lower_type` 同口径。
             let layout_payload = instantiated
                 .as_ref()
-                .map(crate::compiler::emitter::frontend_contract::concretize_type)
-                .transpose()
-                .map_err(|failure| error_without_module("CAN054", format!("sum `{}` 实例 payload 无法 concretize: {failure}", sum.name)))?;
+                .and_then(|ty| sum_payload_layout(ty, type_values, declaration_spellings));
             layout_variants.push(nyar_types::SumVariantLayout {
                 id: variant.id,
                 name: variant.name.clone(),
@@ -271,14 +303,68 @@ pub(crate) fn register_sum_nominal_instances(
                 payload_type: layout_payload,
             });
         }
-        linked.sum_types.push(nyar_types::SumTypeLayout {
-            nominal,
-            name: sum.name.clone(),
-            is_unite: sum.is_unite,
-            tag_width: 4,
-            variants: layout_variants,
-        });
+        if !open_generic {
+            linked.sum_types.push(nyar_types::SumTypeLayout {
+                nominal,
+                name: sum.name.clone(),
+                is_unite: sum.is_unite,
+                tag_width: 4,
+                variants: layout_variants,
+            });
+        }
         by_type.insert(*concrete_ty, nominal);
     }
     Ok(by_type)
+}
+
+/// sum variant payload 的布局侧形状。
+///
+/// 语义身份只认 `VariantRecord::payload_type`；这里只回答 RepresentationPlan 与物理
+/// 布局需要的 `NyarType`。结构化 payload 走严格 `concretize_type`；名义 payload
+/// （`usize`、`SwissTableEntry<K, V>` 等）没有平台 Nominal 形状，按声明 TypeId 已冻结的
+/// surface spelling 表示，与 emitter `lower_type` 同口径，不按名字猜实现。
+fn sum_payload_layout(
+    ty: &ValkyrieType,
+    type_values: &BTreeMap<ValkyrieType, TypeId>,
+    declaration_spellings: &BTreeMap<TypeId, Identifier>,
+) -> Option<nyar_types::NyarType> {
+    if let Ok(concrete) = concretize_type(ty) {
+        return Some(concrete);
+    }
+    let ValkyrieType::Nominal { declaration, arguments } = ty
+    else {
+        return None;
+    };
+    let declaration_id = type_values.get(&ValkyrieType::Nominal { declaration: *declaration, arguments: Vec::new() })?;
+    let spelling = declaration_spellings.get(declaration_id)?;
+    let layout = nyar_types::NyarType::from_surface_primitive(spelling.as_str())
+        .unwrap_or_else(|| nyar_types::NyarType::Named(spelling.clone()));
+    if arguments.is_empty() {
+        return Some(layout);
+    }
+    Some(nyar_types::NyarType::Apply(
+        Box::new(layout),
+        arguments
+            .iter()
+            .map(|argument| sum_payload_layout(argument, type_values, declaration_spellings))
+            .collect::<Option<Vec<_>>>()?,
+    ))
+}
+
+/// 类型是否仍带开放泛型形参；这类类型没有单一物理布局，只有语义身份。
+fn contains_open_generic(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Generic(_) => true,
+        ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_open_generic),
+        ValkyrieType::Apply(base, arguments) => contains_open_generic(base) || arguments.iter().any(contains_open_generic),
+        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_open_generic(element),
+        ValkyrieType::FixedArray { element, .. } => contains_open_generic(element),
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+            items.iter().any(contains_open_generic)
+        }
+        ValkyrieType::Function(function) => {
+            function.params.iter().any(contains_open_generic) || contains_open_generic(&function.return_type)
+        }
+        _ => false,
+    }
 }

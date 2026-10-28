@@ -3,7 +3,7 @@
 //! 本模块只拒绝不合法 MIR：验证 stable-ID 覆盖、SSA 定义与支配关系、
 //! 调用与聚合合同。它不创建、不修正 callable、layout 或类型等语义事实。
 
-use crate::semantic_ids::MirValueId;
+use crate::semantic_ids::{ItemId, MirValueId, TypeId};
 use std::collections::BTreeMap;
 
 use super::{
@@ -176,8 +176,15 @@ impl CanonicalSemanticMir {
                                     if arguments.len() != callee_record.parameter_types.len() {
                                         return Err(CanonicalMirError::CallArityMismatch { function: *key, callee: *callee });
                                     }
+                                    let mut bindings = BTreeMap::new();
                                     for (value, expected) in arguments.iter().zip(&callee_record.parameter_types) {
-                                        if function.value_types.get(value) != Some(expected) {
+                                        let Some(actual) = function.value_types.get(value)
+                                        else {
+                                            return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *value });
+                                        };
+                                        // 泛型 callee 的声明签名带 binder 形参：调用点按结构化匹配代入
+                                        // `(owner, ordinal) → 实参类型身份`，同一 binder 只允许一个绑定。
+                                        if !unify_call_signature(linked, *actual, *expected, &mut bindings, true) {
                                             return Err(CanonicalMirError::CallArgumentTypeMismatch {
                                                 function: *key,
                                                 callee: *callee,
@@ -186,7 +193,14 @@ impl CanonicalSemanticMir {
                                         }
                                     }
                                     if let Some(result) = instruction.results.first() {
-                                        if function.value_types.get(result) != Some(&callee_record.return_type) {
+                                        let Some(actual) = function.value_types.get(result)
+                                        else {
+                                            return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *result });
+                                        };
+                                        // callee 的返回类型可能只由自身 binder 参数化（参数里不出现，如
+                                        // `SwissTable.new(capacity) -> SwissTable<K, V>`），因此结果类型也必须
+                                        // 作为该返回签名的实例来匹配；参数阶段已建立的绑定仍必须一致。
+                                        if !unify_call_signature(linked, *actual, callee_record.return_type, &mut bindings, true) {
                                             return Err(CanonicalMirError::CallResultTypeMismatch {
                                                 function: *key,
                                                 callee: *callee,
@@ -313,7 +327,7 @@ impl CanonicalSemanticMir {
                                 if !linked.types.contains_key(expected_ty) {
                                     return Err(CanonicalMirError::UnknownType { function: *key, ty: *expected_ty });
                                 }
-                                if function.value_types.get(value).is_some_and(|actual| actual != expected_ty) {
+                                if function.value_types.get(value).is_some_and(|actual| !matches_declared_type(&linked, *actual, *expected_ty)) {
                                     return Err(CanonicalMirError::OperationOperandTypeMismatch {
                                         function: *key,
                                         instruction: instruction.id,
@@ -462,7 +476,7 @@ impl CanonicalSemanticMir {
                                 if record.owner != *nominal {
                                     return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: *nominal });
                                 }
-                                if function.value_types.get(value) != Some(&record.ty) {
+                                if !function.value_types.get(value).is_some_and(|actual| matches_declared_type(linked, *actual, record.ty)) {
                                     return Err(CanonicalMirError::FieldTypeMismatch { function: *key, field: *field, value: *value });
                                 }
                             }
@@ -471,9 +485,15 @@ impl CanonicalSemanticMir {
                                     return Err(CanonicalMirError::MissingStructField { function: *key, nominal: *nominal, field: *field });
                                 }
                             }
-                            if instruction.results.len() != 1
-                                || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(&nominal_record.ty)
-                            {
+                            // 结果可以是同一名义声明的参数化实例（开放泛型函数体里构造 `ArrayList<T>`）；
+                            // owner 关系按声明身份判定，与 FieldGet/FieldSet 同口径。
+                            let result_matches_owner = instruction.results.len() == 1
+                                && instruction
+                                    .results
+                                    .first()
+                                    .and_then(|value| function.value_types.get(value))
+                                    .is_some_and(|ty| canonical_nominal_owner_matches(&linked, *ty, nominal_record.ty));
+                            if !result_matches_owner {
                                 return Err(if instruction.results.len() == 1 {
                                     CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
                                 }
@@ -499,7 +519,12 @@ impl CanonicalSemanticMir {
                             if !canonical_nominal_owner_matches(&linked, *object_ty, owner.ty) {
                                 return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
                             }
-                            if instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(&record.ty) {
+                            let field_result_matches = instruction
+                                .results
+                                .first()
+                                .and_then(|value| function.value_types.get(value))
+                                .is_some_and(|actual| matches_declared_type(&linked, *actual, record.ty));
+                            if !field_result_matches {
                                 return Err(CanonicalMirError::FieldTypeMismatch {
                                     function: *key,
                                     field: *field,
@@ -527,7 +552,7 @@ impl CanonicalSemanticMir {
                             if !canonical_nominal_owner_matches(&linked, *object_ty, owner.ty) {
                                 return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
                             }
-                            if function.value_types.get(value) != Some(&record.ty) {
+                            if !function.value_types.get(value).is_some_and(|actual| matches_declared_type(&linked, *actual, record.ty)) {
                                 return Err(CanonicalMirError::FieldTypeMismatch { function: *key, field: *field, value: *value });
                             }
                             vec![*object, *value]
@@ -542,10 +567,9 @@ impl CanonicalSemanticMir {
                                     value: *array,
                                 });
                             };
-                            let index_is_integer =
-                                function.value_types.get(index).and_then(|ty| linked.types.get(ty)).is_some_and(|row| {
-                                    matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. }))
-                                });
+                            // 整数形状由前端冻结进 `array_index_types`（原生 `Integer` 或 `usize` 等名义整数）；
+                            // canonical 只认已登记的 TypeId，不按名字重判。
+                            let index_is_integer = function.value_types.get(index).is_some_and(|ty| linked.is_array_index_type(*ty));
                             if !index_is_integer {
                                 return Err(CanonicalMirError::OperationOperandTypeMismatch {
                                     function: *key,
@@ -554,7 +578,11 @@ impl CanonicalSemanticMir {
                                 });
                             }
                             if instruction.results.len() != 1
-                                || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(element)
+                                || !instruction
+                                    .results
+                                    .first()
+                                    .and_then(|value| function.value_types.get(value))
+                                    .is_some_and(|actual| matches_declared_type(linked, *actual, *element))
                             {
                                 return Err(if instruction.results.len() == 1 {
                                     CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
@@ -570,13 +598,12 @@ impl CanonicalSemanticMir {
                             else {
                                 return Err(CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id });
                             };
-                            let length_is_integer =
-                                function.value_types.get(length).and_then(|ty| linked.types.get(ty)).is_some_and(|row| {
-                                    matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. }))
-                                });
+                            let length_is_integer = function.value_types.get(length).is_some_and(|ty| linked.is_array_index_type(*ty));
                             let fill_is_valid = match initialization {
                                 CanonicalArrayInitialization::Default => true,
-                                CanonicalArrayInitialization::Fill(value) => function.value_types.get(value) == Some(element),
+                                CanonicalArrayInitialization::Fill(value) => {
+                                    function.value_types.get(value).is_some_and(|actual| matches_declared_type(linked, *actual, *element))
+                                }
                             };
                             if !length_is_integer || !fill_is_valid {
                                 return Err(CanonicalMirError::OperationOperandTypeMismatch {
@@ -634,11 +661,8 @@ impl CanonicalSemanticMir {
                                     value: *array,
                                 });
                             };
-                            let index_is_integer =
-                                function.value_types.get(index).and_then(|ty| linked.types.get(ty)).is_some_and(|row| {
-                                    matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. }))
-                                });
-                            if !index_is_integer || function.value_types.get(value) != Some(element) {
+                            let index_is_integer = function.value_types.get(index).is_some_and(|ty| linked.is_array_index_type(*ty));
+                            if !index_is_integer || !function.value_types.get(value).is_some_and(|actual| matches_declared_type(linked, *actual, *element)) {
                                 return Err(CanonicalMirError::OperationOperandTypeMismatch {
                                     function: *key,
                                     instruction: instruction.id,
@@ -666,10 +690,7 @@ impl CanonicalSemanticMir {
                                     .results
                                     .first()
                                     .and_then(|value| function.value_types.get(value))
-                                    .and_then(|ty| linked.types.get(ty))
-                                    .is_some_and(|row| {
-                                        matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. }))
-                                    });
+                                    .is_some_and(|ty| linked.is_array_index_type(*ty));
                             if !result_is_integer {
                                 return Err(if instruction.results.len() == 1 {
                                     CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
@@ -894,5 +915,91 @@ impl CanonicalSemanticMir {
             }
         }
         Ok(())
+    }
+}
+
+/// `actual` 是否为声明侧类型 `declared` 的实例。
+///
+/// 声明侧类型可以带 binder 形参（owner + ordinal）：字段、元素等声明类型与
+/// 开放泛型实例的实际类型按结构逐层匹配，形参叶子绑定到实际子类型。
+fn matches_declared_type(linked: &LinkedSemanticProgram, actual: TypeId, declared: TypeId) -> bool {
+    actual == declared || unify_call_signature(linked, actual, declared, &mut BTreeMap::new(), true)
+}
+
+/// 调用点的泛型签名实例化。
+///
+/// `expected` 是 callee 已冻结的声明签名；其中带 binder 的形参叶子由 binder 身份
+/// `(owner, ordinal)` 表示，不是名字。调用点把每个首次出现的 binder 绑定到
+/// `actual` 的对应子类型身份，同一 binder 在同一调用内必须绑定同一类型；
+/// 结构层（Nominal/Tuple/Array/Nullable/Union/Intersection/Function）必须逐层一致。
+/// `allow_new_bindings = false` 用于返回类型：只能复用参数阶段已建立的绑定。
+fn unify_call_signature(
+    linked: &LinkedSemanticProgram,
+    actual: TypeId,
+    expected: TypeId,
+    bindings: &mut BTreeMap<(ItemId, u32), TypeId>,
+    allow_new_bindings: bool,
+) -> bool {
+    if actual == expected {
+        return true;
+    }
+    let Some(expected_kind) = linked.types.get(&expected).map(|row| &row.kind)
+    else {
+        return false;
+    };
+    if let CanonicalTypeKind::Generic { owner, ordinal } = expected_kind {
+        return match bindings.get(&(*owner, *ordinal)) {
+            Some(bound) => unify_call_signature(linked, actual, *bound, bindings, false),
+            None if allow_new_bindings => {
+                bindings.insert((*owner, *ordinal), actual);
+                true
+            }
+            None => false,
+        };
+    }
+    let Some(actual_kind) = linked.types.get(&actual).map(|row| &row.kind)
+    else {
+        return false;
+    };
+    match (actual_kind, expected_kind) {
+        (
+            CanonicalTypeKind::Nominal { declaration: actual_declaration, arguments: actual_arguments },
+            CanonicalTypeKind::Nominal { declaration: expected_declaration, arguments: expected_arguments },
+        ) => {
+            actual_declaration == expected_declaration
+                && actual_arguments.len() == expected_arguments.len()
+                && actual_arguments
+                    .iter()
+                    .zip(expected_arguments)
+                    .all(|(actual, expected)| unify_call_signature(linked, *actual, *expected, bindings, allow_new_bindings))
+        }
+        (CanonicalTypeKind::Tuple(actual_items), CanonicalTypeKind::Tuple(expected_items))
+        | (CanonicalTypeKind::Union(actual_items), CanonicalTypeKind::Union(expected_items))
+        | (CanonicalTypeKind::Intersection(actual_items), CanonicalTypeKind::Intersection(expected_items)) => {
+            actual_items.len() == expected_items.len()
+                && actual_items
+                    .iter()
+                    .zip(expected_items)
+                    .all(|(actual, expected)| unify_call_signature(linked, *actual, *expected, bindings, allow_new_bindings))
+        }
+        (
+            CanonicalTypeKind::Array { element: actual_element, length: actual_length },
+            CanonicalTypeKind::Array { element: expected_element, length: expected_length },
+        ) => actual_length == expected_length && unify_call_signature(linked, *actual_element, *expected_element, bindings, allow_new_bindings),
+        (CanonicalTypeKind::Nullable(actual_element), CanonicalTypeKind::Nullable(expected_element)) => {
+            unify_call_signature(linked, *actual_element, *expected_element, bindings, allow_new_bindings)
+        }
+        (
+            CanonicalTypeKind::Function { parameters: actual_parameters, return_type: actual_return },
+            CanonicalTypeKind::Function { parameters: expected_parameters, return_type: expected_return },
+        ) => {
+            actual_parameters.len() == expected_parameters.len()
+                && actual_parameters
+                    .iter()
+                    .zip(expected_parameters)
+                    .all(|(actual, expected)| unify_call_signature(linked, *actual, *expected, bindings, allow_new_bindings))
+                && unify_call_signature(linked, *actual_return, *expected_return, bindings, allow_new_bindings)
+        }
+        _ => false,
     }
 }

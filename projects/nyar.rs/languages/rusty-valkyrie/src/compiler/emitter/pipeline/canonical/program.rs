@@ -41,6 +41,11 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         else {
             return Err(error_without_module("CAN023", format!("聚合 `{}` 缺少 declaration identity", aggregate.qualified_name())));
         };
+        // 开放泛型声明没有单一物理布局：布局计划按同口径跳过。这里只为单态声明绑定
+        // 布局与字段槽位；泛型实例的布局由实例化后的具体名义身份决定。
+        if !aggregate.generics.is_empty() {
+            continue;
+        }
         let Some(layout_id) = linked.aggregate_layouts.declaration_to_layout.get(&declaration).copied()
         else {
             return Err(error_without_module("CAN023", format!("聚合 `{}` 缺少布局绑定", aggregate.qualified_name())));
@@ -106,7 +111,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             NominalInstanceRecord { declaration: *declaration, ty: *declaration, semantics: *semantics, fields: nominal_fields },
         );
     }
-    let sum_instance_by_type = register_sum_nominal_instances(module, &type_values, &mut linked, &mut nominals)?;
+    let sum_instance_by_type = register_sum_nominal_instances(module, &type_values, &declaration_spellings, &mut linked, &mut nominals)?;
     // 禁止按类型名字猜测 carrier 或用默认 Reference 回填未登记 nominal；缺值语义事实时应在所属阶段结构化失败。
     linked.fields = field_records.clone();
     for function in &module.functions {
