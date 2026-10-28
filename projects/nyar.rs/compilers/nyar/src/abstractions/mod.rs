@@ -238,6 +238,8 @@ pub enum CanonicalVendor {
     Deno,
     /// `bun`
     Bun,
+    /// 微信运行时（小程序 / 小游戏的 WASM 宿主）。
+    Wechat,
 }
 
 impl CanonicalVendor {
@@ -252,6 +254,7 @@ impl CanonicalVendor {
             "node" => Some(Self::Node),
             "deno" => Some(Self::Deno),
             "bun" => Some(Self::Bun),
+            "wechat" => Some(Self::Wechat),
             _ => None,
         }
     }
@@ -267,6 +270,7 @@ impl CanonicalVendor {
             Self::Node => "node",
             Self::Deno => "deno",
             Self::Bun => "bun",
+            Self::Wechat => "wechat",
         }
     }
 }
@@ -278,8 +282,6 @@ pub enum CanonicalSpecification {
     Unknown,
     /// 浏览器宿主。
     Browser,
-    /// 微信小程序等嵌入式 `WASM` + `JS` 宿主（能力集与浏览器不同，不由 `publish` 注入）。
-    Miniprogram,
     /// `WASI`
     Wasi,
     /// `Windows`
@@ -299,7 +301,6 @@ impl CanonicalSpecification {
         match value.to_ascii_lowercase().as_str() {
             "unknown" => Some(Self::Unknown),
             "browser" | "web" => Some(Self::Browser),
-            "miniprogram" | "mini-program" => Some(Self::Miniprogram),
             "wasi" => Some(Self::Wasi),
             "windows" | "win32" => Some(Self::Windows),
             "linux" => Some(Self::Linux),
@@ -314,7 +315,6 @@ impl CanonicalSpecification {
         match self {
             Self::Unknown => "unknown",
             Self::Browser => "browser",
-            Self::Miniprogram => "miniprogram",
             Self::Wasi => "wasi",
             Self::Windows => "windows",
             Self::Linux => "linux",
@@ -459,6 +459,11 @@ impl CanonicalTarget {
         Self::new(CanonicalArch::Wasm32, CanonicalVendor::Node, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly))
     }
 
+    /// 创建微信 WASM 宿主目标（小程序 / 小游戏等 WeChat runtime；`vendor=Wechat`，`specification=Unknown`）。
+    pub const fn wechat() -> Self {
+        Self::new(CanonicalArch::Wasm32, CanonicalVendor::Wechat, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly))
+    }
+
     /// 创建 `WASI` Preview 2（wasip2）目标。
     pub const fn wasi() -> Self {
         Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Wasi, Some(CanonicalAbi::Wasi))
@@ -522,13 +527,11 @@ impl CanonicalTarget {
             "bun" => {
                 Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Bun, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)))
             }
+            "wechat" => Some(Self::wechat()),
             "ovm" | "odin-vm" => {
                 Some(Self::new(CanonicalArch::Ovm, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::Managed)))
             }
             "native" => Some(Self::host_native()),
-            "wechat-miniprogram-host" => {
-                Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Miniprogram, Some(CanonicalAbi::WebAssembly)))
-            }
             _ => None,
         }
     }

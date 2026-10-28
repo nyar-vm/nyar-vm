@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use nyar::{CanonicalSpecification, CanonicalTarget, CanonicalVendor, TargetBackendFamily, TargetHostKind};
+use nyar::{CanonicalTarget, CanonicalVendor, TargetBackendFamily, TargetHostKind};
 use serde::{Deserialize, Serialize};
 
 use super::types::PlannedHostProvider;
@@ -125,17 +125,22 @@ pub(crate) fn target_host_capability_space(target: CanonicalTarget) -> BTreeSet<
     // host 提供的 capability 空间（这才是核心）
     match profile.backend_family {
         TargetBackendFamily::Wasm => match profile.host_kind {
-            // 浏览器宿主（含 Miniprogram，它的 host_kind 也被派生为 Browser）
+            // 浏览器宿主（specification=Browser）：JS 能力空间
             TargetHostKind::Browser => {
                 space.insert("js".to_string());
-                if target.specification == CanonicalSpecification::Miniprogram {
-                    space.insert("wx".to_string());
-                }
             }
-            // JS 宿主（Node / Deno / Bun）：JS + Node 能力空间
+            // JS 宿主（Node / Deno / Bun / Wechat）：JS + vendor 能力空间
             TargetHostKind::JavaScript => {
                 space.insert("js".to_string());
-                space.insert("node".to_string());
+                match target.vendor {
+                    nyar::CanonicalVendor::Node | nyar::CanonicalVendor::Deno | nyar::CanonicalVendor::Bun => {
+                        space.insert("node".to_string());
+                    }
+                    nyar::CanonicalVendor::Wechat => {
+                        // WeChat runtime：只给 js 空间，不注入额外 "wx" 子空间
+                    }
+                    _ => {}
+                }
             }
             // WASI 宿主：WASI + wasm.env 能力空间
             TargetHostKind::Wasi => {
@@ -208,14 +213,14 @@ mod tests {
     }
 
     #[test]
-    fn miniprogram_quadruple_has_js_and_wx_space() {
-        // Miniprogram：JS 空间 + WeChat 空间（微信小程序特有的宿主能力）。
-        let target: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().unwrap();
+    fn wechat_vendor_has_js_but_no_wx_subspace() {
+        // WeChat vendor（小程序 runtime）：JS 能力空间，不注入额外 "wx" 子空间。
+        let target = CanonicalTarget::wechat();
         let space = target_host_capability_space(target);
         assert!(space.contains("js"));
-        assert!(space.contains("wx"));
         assert!(space.contains("wasm"));
         assert!(!space.contains("node"));
+        assert!(!space.contains("wx"));
     }
 
     #[test]

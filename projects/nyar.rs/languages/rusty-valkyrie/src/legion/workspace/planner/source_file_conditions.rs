@@ -238,15 +238,15 @@ namespace x;
         }
         let shared = std::fs::read_to_string(corpus.join("fetch.v")).expect("fetch.v");
         assert!(source_file_active_for_target(&shared, CanonicalTarget::browser()));
-        let mp: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().unwrap();
-        assert!(source_file_active_for_target(&shared, mp));
+        let wechat_target = CanonicalTarget::wechat();
+        assert!(source_file_active_for_target(&shared, wechat_target));
 
         let browser = std::fs::read_to_string(corpus.join("fetch.browser.v")).expect("fetch.browser.v");
         assert!(source_file_active_for_target(&browser, CanonicalTarget::browser()));
-        assert!(!source_file_active_for_target(&browser, mp));
+        assert!(!source_file_active_for_target(&browser, wechat_target));
 
         let wechat = std::fs::read_to_string(corpus.join("fetch.wechat.v")).expect("fetch.wechat.v");
         assert!(!source_file_active_for_target(&wechat, CanonicalTarget::browser()));
-        assert!(source_file_active_for_target(&wechat, mp));
+        assert!(source_file_active_for_target(&wechat, wechat_target));
     }
 }

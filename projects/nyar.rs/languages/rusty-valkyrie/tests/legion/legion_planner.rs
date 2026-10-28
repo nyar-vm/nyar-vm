@@ -2154,20 +2154,20 @@ micro wechat_fetch(url: utf8): utf8 {
     assert_eq!(browser_provider.symbol, "std::adaptor::wasm::fetch::browser_fetch");
     assert_eq!(browser_provider.required_capabilities, vec!["js.fetch".to_string()]);
 
-    let miniprogram_target: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().unwrap();
+    let wechat_target = CanonicalTarget::wechat();
     let mut mp_manifest = fs::read_to_string(app_dir.join("legion.von")).unwrap();
-    mp_manifest = mp_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    mp_manifest = mp_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-wechat-unknown-wasm");
     fs::write(app_dir.join("legion.von"), mp_manifest).unwrap();
     let mut wasm_manifest = fs::read_to_string(wasm_dir.join("legion.von")).unwrap();
-    wasm_manifest = wasm_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    wasm_manifest = wasm_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-wechat-unknown-wasm");
     fs::write(wasm_dir.join("legion.von"), wasm_manifest).unwrap();
     let mut std_manifest = fs::read_to_string(std_dir.join("legion.von")).unwrap();
-    std_manifest = std_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    std_manifest = std_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-wechat-unknown-wasm");
     fs::write(std_dir.join("legion.von"), std_manifest).unwrap();
 
     let mp_workspace = WorkspaceResolver::discover(&app_dir).unwrap();
     let mp_plan = mp_workspace
-        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: miniprogram_target, output_dir: None, ..Default::default() })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: wechat_target, output_dir: None, ..Default::default() })
         .unwrap();
     let wx_provider =
         mp_plan.project.selected_host_providers.iter().find(|provider| provider.contract.contains("fetch")).expect("wx fetch provider");
@@ -2276,20 +2276,20 @@ micro miniprogram_get(url: utf8): utf8 {
     assert_eq!(browser_get.symbol, "std::adaptor::wasm::net::browser_get");
     assert_eq!(browser_get.required_capabilities, vec!["js.fetch".to_string()]);
 
-    let miniprogram_target: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().unwrap();
+    let wechat_target = CanonicalTarget::wechat();
     let mut mp_manifest = fs::read_to_string(app_dir.join("legion.von")).unwrap();
-    mp_manifest = mp_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    mp_manifest = mp_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-wechat-unknown-wasm");
     fs::write(app_dir.join("legion.von"), mp_manifest).unwrap();
     let mut wasm_manifest = fs::read_to_string(wasm_dir.join("legion.von")).unwrap();
-    wasm_manifest = wasm_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    wasm_manifest = wasm_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-wechat-unknown-wasm");
     fs::write(wasm_dir.join("legion.von"), wasm_manifest).unwrap();
     let mut std_manifest = fs::read_to_string(std_dir.join("legion.von")).unwrap();
-    std_manifest = std_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-unknown-miniprogram-wasm");
+    std_manifest = std_manifest.replace("wasm32-unknown-browser-wasm", "wasm32-wechat-unknown-wasm");
     fs::write(std_dir.join("legion.von"), std_manifest).unwrap();
 
     let mp_plan = WorkspaceResolver::discover(&app_dir)
         .unwrap()
-        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: miniprogram_target, output_dir: None, ..Default::default() })
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: wechat_target, output_dir: None, ..Default::default() })
         .unwrap();
     let wx_get = mp_plan.project.selected_host_providers.iter().find(|provider| provider.contract.contains("get")).expect("wx get provider");
     assert_eq!(wx_get.symbol, "std::adaptor::wasm::net::miniprogram_get");

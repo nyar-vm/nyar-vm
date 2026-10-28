@@ -26,7 +26,7 @@ fn config_target_preserves_the_canonical_architecture() {
 
 #[test]
 fn private_target_spellings_do_not_select_another_backend() {
-    for spelling in ["wechat-miniprogram-host", "wasm32-unknown-miniprogram-wasm", "aarch64-linux-android"] {
+    for spelling in ["wechat", "wasm32-wechat-unknown-wasm", "aarch64-linux-android"] {
         let expected = CanonicalTarget::parse(spelling);
         match expected {
             Ok(target) => assert_eq!(parse_target(spelling).expect("共享解析结果必须保持"), target),
@@ -37,7 +37,7 @@ fn private_target_spellings_do_not_select_another_backend() {
 
 #[test]
 fn package_miniprogram_emits_wxml_not_html() {
-    if !skip_unless_canonical_target("wasm32-unknown-miniprogram-wasm") {
+    if !skip_unless_canonical_target("wasm32-wechat-unknown-wasm") {
         return;
     }
     let temp = tempfile::tempdir().expect("tempdir");
@@ -48,7 +48,7 @@ fn package_miniprogram_emits_wxml_not_html() {
         r#"define_config(asgard) {
 name = "mp-test"
 platform = "wechat-miniprogram"
-target = "wasm32-unknown-miniprogram-wasm"
+target = "wasm32-wechat-unknown-wasm"
 build {
     output = "dist"
 }
