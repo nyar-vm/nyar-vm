@@ -77,10 +77,16 @@ pub fn toolchain_fingerprint() -> String {
     )
 }
 
-/// Compute artifact cache hash from sources + target + build flags + enabled features + toolchain.
+/// Compute artifact cache hash from sources + target + build flags + enabled features
+/// + provider set + toolchain.
 ///
 /// `enabled_features` is a `BTreeSet`, so its encoded form is stable regardless of insertion
 /// order: identical source trees with different feature sets never share a cache identity.
+///
+/// `provider_digest` 是 planner 侧对 **已选定** host provider 集合的排序序列化 digest
+/// （经过 `[when]` target 轴过滤 + `[gate]` feature 轴过滤 + capability 匹配后）。
+/// `Some(digest)` 时不同 provider 选择结果会得到不同缓存身份；`None` 表示调用方
+/// 未提供，向后兼容旧调用点。
 pub fn compute_artifact_hash(
     source_files: &[PathBuf],
     manifest_files: &[PathBuf],
@@ -88,13 +94,19 @@ pub fn compute_artifact_hash(
     wat: bool,
     runtime_async: bool,
     enabled_features: &BTreeSet<String>,
+    provider_digest: Option<&str>,
 ) -> std::result::Result<String, String> {
     let sources = files_hash(source_files).map_err(|e| e.to_string())?;
     let manifests = files_hash(manifest_files).map_err(|e| e.to_string())?;
     let flags = format!("{}{}", if wat { '1' } else { '0' }, if runtime_async { '1' } else { '0' });
     let features = enabled_features.iter().map(|feature| format!("{}:{}", feature.len(), feature)).collect::<Vec<_>>().join(",");
     let toolchain = toolchain_fingerprint();
-    Ok(combined_hash(&[&sources, &manifests, canonical_triple, &flags, &features, &toolchain]))
+
+    let mut parts: Vec<&str> = vec![&sources, &manifests, canonical_triple, &flags, &features, &toolchain];
+    if let Some(provider_digest) = provider_digest {
+        parts.push(provider_digest);
+    }
+    Ok(combined_hash(&parts))
 }
 
 /// Collect output directory files into a cacheable bundle.
