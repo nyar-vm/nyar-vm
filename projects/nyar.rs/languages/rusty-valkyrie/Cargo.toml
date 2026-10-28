@@ -75,3 +75,7 @@ path = "tests/frontend/main.rs"
 [[test]]
 name = "backend"
 path = "tests/backend/main.rs"
+
+[[test]]
+name = "smir003"
+path = "tests/smir003_tests.rs"

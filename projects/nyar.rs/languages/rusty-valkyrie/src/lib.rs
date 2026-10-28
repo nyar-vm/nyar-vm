@@ -9,6 +9,48 @@ pub mod asgard;
 pub mod compiler;
 pub mod legion;
 
+/// Legacy re-exports for pre–TargetExecutionPlan integration suites.
+#[doc(hidden)]
+pub mod types {
+    pub use crate::compiler::types::*;
+}
+#[doc(hidden)]
+pub mod mir {
+    pub use crate::compiler::mir::*;
+    pub use crate::compiler::mir::ssa::*;
+    pub use crate::compiler::mir::validation::*;
+}
+#[doc(hidden)]
+pub mod hir {
+    pub use crate::compiler::hir::*;
+}
+#[doc(hidden)]
+pub mod frontend {
+    pub mod ast {
+        pub use oak_valkyrie::ast::*;
+    }
+}
+#[doc(hidden)]
+pub mod parser {
+    pub use crate::compiler::syntax::oak::parse_source;
+}
+
+/// Re-export common test-facing types at crate root.
+#[doc(hidden)]
+pub use crate::api::ValkyrieCompiler;
+#[doc(hidden)]
+pub use crate::api::SourceID;
+#[doc(hidden)]
+pub use nyar_types::Identifier;
+#[doc(hidden)]
+pub use nyar_types::NamePath;
+#[doc(hidden)]
+pub use crate::compiler::hir::HirError;
+#[doc(hidden)]
+pub use crate::compiler::mir::MirLowerer;
+#[doc(hidden)]
+pub use crate::compiler::mir::validation::validate_semantic_module;
+
 /// Stable compiler façade (no `nyar` re-export at crate root).
 pub mod api {
     pub use crate::compiler::api::*;
