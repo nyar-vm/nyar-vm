@@ -6,6 +6,8 @@
 //! - `target.vendor == "node"` / `"deno"` / `"bun"` → 对应 JS runtime vendor
 //! - 两者**不**互相兼容：vendor="wechat" 不会匹配 specification="browser"，反之亦然
 //! - `target.specification == "wasip3"` / `"wasi"` → ABI / Wasi 规格
+//!
+//! canonical triple 拼写：wechat → `wasm32-wechat-unknown-wasm`（vendor=Wechat，specification=Unknown）。
 
 use crate::compiler::syntax::oak::ast::{Attribute, TermExpression};
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
