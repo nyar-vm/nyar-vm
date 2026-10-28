@@ -25,7 +25,8 @@ struct WorkspaceFixture {
 fn canonicalizes_short_targets() {
     assert_eq!(canonical_target("clr").unwrap().to_string(), "clr-microsoft-unknown-managed");
     assert_eq!(canonical_target("jvm").unwrap().to_string(), "jvm-openjdk-unknown-managed");
-    assert_eq!(canonical_target("wasm").unwrap().to_string(), "wasm32-unknown-browser-wasm");
+    assert_eq!(canonical_target("wasm").unwrap().to_string(), "wasm32-unknown-unknown-wasm");
+    assert_eq!(canonical_target("browser").unwrap().to_string(), "wasm32-unknown-browser-wasm");
     assert_eq!(canonical_target("node").unwrap().to_string(), "wasm32-node-unknown-wasm");
 }
 

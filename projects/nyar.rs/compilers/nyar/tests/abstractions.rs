@@ -6,7 +6,8 @@ use nyar::abstractions::{
 fn parses_short_aliases() {
     assert_eq!(CanonicalTarget::parse("clr").unwrap().to_string(), "clr-microsoft-unknown-managed");
     assert_eq!(CanonicalTarget::parse("jvm").unwrap().to_string(), "jvm-openjdk-unknown-managed");
-    assert_eq!(CanonicalTarget::parse("wasm").unwrap().to_string(), "wasm32-unknown-browser-wasm");
+    assert_eq!(CanonicalTarget::parse("wasm").unwrap().to_string(), "wasm32-unknown-unknown-wasm");
+    assert_eq!(CanonicalTarget::parse("browser").unwrap().to_string(), "wasm32-unknown-browser-wasm");
     assert_eq!(CanonicalTarget::parse("ovm").unwrap().to_string(), "ovm-unknown-unknown-managed");
     assert_eq!(CanonicalTarget::parse("odin-vm").unwrap().to_string(), "ovm-unknown-unknown-managed");
     assert!(CanonicalTarget::parse("nyar").is_err(), "the legacy `nyar` alias must not resolve");
