@@ -24,8 +24,7 @@ pub mod pipeline;
 
 pub use canonical_mir::{
     CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallee, CanonicalConstant, CanonicalEffectKind, CanonicalFunction,
-    CanonicalInstruction, CanonicalMirError, CanonicalOperand, CanonicalOperation, CanonicalSemanticMir, CanonicalTerminator,
-    CanonicalWitness,
+    CanonicalInstruction, CanonicalMirError, CanonicalOperand, CanonicalOperation, CanonicalSemanticMir, CanonicalTerminator, CanonicalWitness,
 };
 pub use compiled_program::{CanonicalProgram, CompiledProgram, CompiledProgramError};
 pub use diagnostics::{

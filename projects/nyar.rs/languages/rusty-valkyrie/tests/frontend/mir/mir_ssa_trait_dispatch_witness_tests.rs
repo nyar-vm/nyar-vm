@@ -1,9 +1,11 @@
 //! 泛型接收者的 trait 方法调用在 Semantic MIR 必须表示为 witness 分派义务，不得退回 `Unit`。
 
 use nyar_types::{ItemId, ItemInstanceId};
-use rusty_valkyrie::compiler::types::hir::ValkyrieType;
-use rusty_valkyrie::mir::{MirLowerer, MirOperand, MirOperation};
-use rusty_valkyrie::ValkyrieCompiler;
+use rusty_valkyrie::{
+    ValkyrieCompiler,
+    compiler::types::hir::ValkyrieType,
+    mir::{MirLowerer, MirOperand, MirOperation},
+};
 
 const SOURCE: &str = r#"
 namespace test.dispatch;
@@ -22,13 +24,8 @@ fn generic_receiver_trait_call_keeps_witness_dispatch() {
     let hir = ValkyrieCompiler::default().compile_source(SOURCE).expect("带 where 约束的泛型调用必须可解析");
     let echo_trait = hir.traits.iter().find(|item| item.name.as_str() == "Echo").expect("Echo 声明");
     let trait_declaration = echo_trait.declaration.expect("trait 声明身份");
-    let method_declaration = echo_trait
-        .methods
-        .iter()
-        .find(|method| method.name.as_str() == "echo")
-        .expect("echo 方法声明")
-        .declaration
-        .expect("方法声明身份");
+    let method_declaration =
+        echo_trait.methods.iter().find(|method| method.name.as_str() == "echo").expect("echo 方法声明").declaration.expect("方法声明身份");
     let declaration = hir
         .functions
         .iter()
@@ -37,8 +34,7 @@ fn generic_receiver_trait_call_keeps_witness_dispatch() {
         .expect("use_echo 声明身份");
 
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let function =
-        mir.functions.iter().find(|function| function.declaration == Some(declaration)).expect("use_echo 必须有 Semantic MIR 函数");
+    let function = mir.functions.iter().find(|function| function.declaration == Some(declaration)).expect("use_echo 必须有 Semantic MIR 函数");
     let (witness, results) = function
         .blocks
         .iter()
@@ -65,9 +61,11 @@ fn witness_call_satisfies_semantic_mir_contract() {
     // 也不能因为缺少静态签名而被拒绝。
     let mir = ValkyrieCompiler::default().compile_source_to_mir(SOURCE).expect("witness 分派必须通过 Semantic MIR 合同校验");
     let has_witness = mir.functions.iter().any(|function| {
-        function.blocks.iter().flat_map(|block| block.instructions.iter()).any(|instruction| {
-            matches!(&instruction.kind, MirOperation::Call { callee: MirOperand::Witness(_), .. })
-        })
+        function
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|instruction| matches!(&instruction.kind, MirOperation::Call { callee: MirOperand::Witness(_), .. }))
     });
     assert!(has_witness, "合同校验后 witness 分派必须仍然保留");
 }
@@ -148,10 +146,7 @@ fn concrete_witness_module(self_type: ValkyrieType) -> rusty_valkyrie::mir::MirM
         external_calls: Vec::new(),
         exports: Vec::new(),
         entries: Vec::new(),
-        callable_symbols: std::collections::BTreeMap::from([(
-            ItemInstanceId::from_index(0).expect("实例身份"),
-            "demo::main".to_owned(),
-        )]),
+        callable_symbols: std::collections::BTreeMap::from([(ItemInstanceId::from_index(0).expect("实例身份"), "demo::main".to_owned())]),
         type_identities: std::collections::BTreeMap::new(),
         aggregate_layouts: AggregateLayoutPlan::default(),
         sum_types: Vec::new(),
@@ -160,12 +155,8 @@ fn concrete_witness_module(self_type: ValkyrieType) -> rusty_valkyrie::mir::MirM
         semantic_fragments: Vec::new(),
         diagnostics: Vec::new(),
     };
-    module.type_identities = rusty_valkyrie::compiler::mir::ssa::type_identity_table(
-        &module.functions,
-        &module.external_calls,
-        &module.structs,
-        &module.sum_types,
-    );
+    module.type_identities =
+        rusty_valkyrie::compiler::mir::ssa::type_identity_table(&module.functions, &module.external_calls, &module.structs, &module.sum_types);
     module
 }
 
