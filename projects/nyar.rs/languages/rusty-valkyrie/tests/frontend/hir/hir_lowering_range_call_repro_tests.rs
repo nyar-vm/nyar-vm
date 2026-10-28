@@ -639,3 +639,32 @@ micro Some<T>(value: T) -> Option<T> {
 "#;
     ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("同模块 let + Some(item) 必须解析: {error}"));
 }
+
+#[test]
+fn unresolved_call_diagnostic_points_at_real_module_source() {
+    // 未解析调用必须携带真实模块 `source_path` 与调用表达式自己的 span，
+    // 不得退化成 `unknown` / `0..0`。
+    const SOURCE: &str = "micro helper() -> i32 { return 1 }\n[export] micro main() -> i32 { return missing() }\n";
+    let groups = vec![CompilerSourceGroup {
+        dependency_key: "app".into(),
+        name: "app".into(),
+        sources: vec![CompilerSourceFile { path: "app.v".into(), source: SOURCE.into() }],
+        direct_dependencies: Vec::new(),
+        is_entry: true,
+    }];
+    let error =
+        ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect_err("未解析调用必须在 HIR 合同边界失败");
+    let HirError::UnresolvedCall { selector, context, source, span } = &error
+    else {
+        panic!("期望 HirError::UnresolvedCall，got {error:?}");
+    };
+    assert_eq!(selector, "missing");
+    assert!(context.contains("main"), "context 必须指向出错函数，got {context}");
+    assert_eq!(source.id, "app.v", "source id 必须来自 HirModule.source_path，got {:?}", source.id);
+    let call_site = SOURCE.find("missing()").expect("call site");
+    assert_ne!((span.start, span.end), (0, 0), "诊断 span 不得是 0..0");
+    assert!(
+        span.start <= call_site && span.end >= call_site + "missing()".len(),
+        "span {span:?} 必须覆盖第 2 行的 `missing()` 调用点（offset {call_site}）"
+    );
+}

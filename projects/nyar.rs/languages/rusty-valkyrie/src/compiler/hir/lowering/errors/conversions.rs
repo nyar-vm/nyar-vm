@@ -29,11 +29,11 @@ impl std::error::Error for HirError {}
 impl std::fmt::Display for HirError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnresolvedCall { selector, context, .. } => {
-                write!(f, "unresolved call `{selector}` in {context}")
+            Self::UnresolvedCall { selector, context, source, span } => {
+                write!(f, "unresolved call `{selector}` in {context} at {}:{}..{}", source.id, span.start, span.end)
             }
-            Self::UnresolvedConstructor { name, context, .. } => {
-                write!(f, "unresolved constructor `{name}` in {context}")
+            Self::UnresolvedConstructor { name, context, source, span } => {
+                write!(f, "unresolved constructor `{name}` in {context} at {}:{}..{}", source.id, span.start, span.end)
             }
             Self::NominalAmbiguous { name, candidate_count, .. } => {
                 write!(f, "nominal `{name}` is ambiguous ({candidate_count} candidates)")
