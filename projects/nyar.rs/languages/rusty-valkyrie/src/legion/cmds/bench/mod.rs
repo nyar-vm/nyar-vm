@@ -10,7 +10,7 @@ use std::{
 
 use crate::legion::cmds::{
     project_input::resolve_project_path,
-    report::{BenchReport, BenchResultRow, finish_standalone_report, render_bench_report},
+    report::{BenchReport, BenchResultRow, finish_standalone_report, render_bench_report, report_roots},
     test_engine::{bench_project, resolve_test_targets},
 };
 
@@ -34,6 +34,7 @@ pub fn run(args: &BenchArgs) -> LegionResult<ExitCode> {
     let project_dir = resolve_project_path(&args.project_dir)?;
     let targets = resolve_test_targets(args.target.as_deref());
     let workspace = WorkspaceResolver::discover_for_project(&project_dir)?;
+    let roots = report_roots(Some(&workspace), &project_dir)?;
 
     let results = if is_workspace_root(&project_dir, &workspace) {
         run_workspace_bench(&workspace, args.runs, &targets, args.verbose)
@@ -53,7 +54,7 @@ pub fn run(args: &BenchArgs) -> LegionResult<ExitCode> {
     else {
         project_dir.join("dist").join("legion-benchmark")
     };
-    render_bench_report(&report_dir, &report)?;
+    render_bench_report(&report_dir, &report, &roots)?;
     if report_dir.join("index.html").exists() {
         println!("  HTML 报告已生成: {}", report_dir.join("index.html").display());
     }

@@ -10,6 +10,7 @@ mod standalone;
 mod write;
 
 pub use models::{BenchReport, BenchResultRow, CoverageFeatureEntry, CoverageReport, TestResultEntry};
+pub use project::{legion_report_project_dir, report_roots};
 pub use render::{render_bench_report, render_coverage_report, render_test_report};
 pub use standalone::{build_standalone_html, finish_standalone_report};
 pub use write::atomic_write_all_text;

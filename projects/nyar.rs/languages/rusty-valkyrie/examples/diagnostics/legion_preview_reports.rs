@@ -9,6 +9,7 @@ use rusty_valkyrie::legion::cmds::report::{
 
 fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/report-preview");
+    let roots = rusty_valkyrie::asgard::valkyrie_v_roots().expect("报告预览需要 `VALKYRIE_V_ROOT` 指向 valkyrie.v 源码库");
 
     render_test_report(
         &root.join("legion-test"),
@@ -38,6 +39,7 @@ fn main() {
                 name: "filtered_case".into(), status: "skip".into(), error: Some("被过滤器排除".into()), target: "node".into()
             },
         ],
+        &roots,
     )
     .expect("test report");
 
@@ -79,7 +81,7 @@ fn main() {
             })
             .collect(),
     };
-    render_coverage_report(&root.join("legion-converge"), &cov).expect("cov report");
+    render_coverage_report(&root.join("legion-converge"), &cov, &roots).expect("cov report");
 
     let bench = BenchReport {
         runs: 3,
@@ -102,7 +104,7 @@ fn main() {
             BenchResultRow { project: "math.lib".into(), test: "matrix_mul".into(), target: "jvm".into(), compile_ms: 210.2, runtime_ms: 8.1 },
         ],
     };
-    render_bench_report(&root.join("legion-benchmark"), &bench).expect("bench report");
+    render_bench_report(&root.join("legion-benchmark"), &bench, &roots).expect("bench report");
 
     println!("reports written to {}", root.display());
     println!("  test:  {}/legion-test/index.html", root.display());

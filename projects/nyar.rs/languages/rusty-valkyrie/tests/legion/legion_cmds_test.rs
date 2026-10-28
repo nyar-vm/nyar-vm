@@ -1,10 +1,14 @@
 //! `legion test` 集成测试。
 
-use std::{fs, process::ExitCode};
+use std::{fs, path::Path, process::ExitCode};
 
-use rusty_valkyrie::legion::cmds::{
-    test::{TestArgs, run},
-    test_engine::{discover_project_tests, resolve_test_targets},
+use rusty_valkyrie::legion::{
+    cmds::{
+        report::{legion_report_project_dir, report_roots},
+        test::{TestArgs, run},
+        test_engine::{discover_project_tests, parse_target_label, resolve_test_targets},
+    },
+    workspace::planner::{BuildRequest, WorkspaceResolver},
 };
 
 use crate::support::create_smoke_project_with_manifest;
@@ -148,4 +152,77 @@ fn test_filter_skips_non_matching() {
 
     let html = fs::read_to_string(fixture.project_dir.join("dist/legion-test/index.html")).unwrap();
     assert!(html.contains("跳过") || html.contains("skip") || html.contains("被过滤器排除") || html.contains("summary-card"));
+}
+
+fn write_fixture_file(path: &Path, contents: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, contents).unwrap();
+}
+
+/// `legion test` 与 `legion build` 共用 workspace 发现事实：`legions.von` 成员
+/// 落在 `valkyrie.v` 时，报告模板根不再依赖 `VALKYRIE_V_ROOT`。
+#[test]
+fn test_entry_reuses_workspace_discovery_without_valkyrie_v_root() {
+    let temp = tempfile::Builder::new().prefix("legion-test-workspace-roots").tempdir().unwrap();
+    let workspace_root = temp.path().join("workspace");
+    let app_dir = workspace_root.join("app");
+    let valkyrie_v = temp.path().join("valkyrie.v");
+
+    write_fixture_file(
+        &workspace_root.join("legions.von"),
+        r#"{
+    name: "leetcode",
+    members: ["app", "../valkyrie.v/projects/core"]
+}
+"#,
+    );
+    write_fixture_file(
+        &app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    auto_link: { core: false, std: false },
+    build: [{ target: "ovm" }]
+}
+"#,
+    );
+    write_fixture_file(
+        &app_dir.join("source").join("main.v"),
+        r#"micro main() -> i64 {
+    return 0
+}
+"#,
+    );
+    write_fixture_file(
+        &valkyrie_v.join("legions.von"),
+        r#"{
+    name: "valkyrie",
+    members: ["projects/core", "projects/legion._"]
+}
+"#,
+    );
+    write_fixture_file(&valkyrie_v.join("projects").join("core").join("legion.von"), r#"{ name: "core" }"#);
+    write_fixture_file(
+        &valkyrie_v.join("projects").join("legion._").join("projects").join("legion.report").join("legion.von"),
+        r#"{ name: "legion.report" }"#,
+    );
+
+    let workspace = WorkspaceResolver::discover_for_project(&app_dir).expect("discover workspace from project dir");
+    let expected_root = fs::canonicalize(&valkyrie_v).unwrap();
+    let discovered = workspace.source_library_roots();
+    assert!(discovered.iter().any(|root| root == &expected_root), "workspace 成员路径必须暴露 valkyrie.v 源码库根: {discovered:?}");
+
+    let roots = report_roots(Some(&workspace), &app_dir).expect("report roots from workspace facts");
+    assert!(roots.iter().any(|root| root == &expected_root), "workspace 事实必须优先于环境变量: {roots:?}");
+    let report_project = legion_report_project_dir(&roots).expect("report project from workspace roots");
+    assert!(
+        report_project.ends_with(Path::new("projects").join("legion._").join("projects").join("legion.report")),
+        "unexpected report project: {}",
+        report_project.display()
+    );
+
+    let target = parse_target_label("legion").unwrap();
+    let (plan, _mode) = workspace
+        .build_test_plan(&BuildRequest { project_dir: app_dir.clone(), target, output_dir: None, enabled_features: Default::default() })
+        .expect("test plan generation");
+    assert!(plan.project.source_files.iter().any(|path| path.ends_with(Path::new("source").join("main.v"))));
 }

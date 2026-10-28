@@ -4,13 +4,14 @@ use crate::{
     legion::cmds::error::{LegionError, LegionResult},
 };
 use serde_json::json;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{
     assets::{render_report_page, report_base_css},
     codegen::{charts_for_bench_report, charts_for_coverage_report, charts_for_test_report},
     islands::{asgard_boot_head_tags, asgard_start_snippet, emit_chart_islands},
     models::{BenchReport, CoverageReport, TestResultEntry},
+    project::legion_report_project_dir,
     write::atomic_write_all_text,
 };
 
@@ -21,7 +22,10 @@ const CHART_BENCH_RUNTIME: &str = "LEGION_CHART_BENCH_RUNTIME";
 const CHART_BENCH_COMPILE: &str = "LEGION_CHART_BENCH_COMPILE";
 
 /// 渲染测试报告到 `{output_dir}/index.html`。
-pub fn render_test_report(output_dir: &Path, project_name: &str, results: &[TestResultEntry]) -> LegionResult<()> {
+///
+/// `roots` 是调用方已解析的源码库根目录（workspace 事实或 `VALKYRIE_V_ROOT`）。
+pub fn render_test_report(output_dir: &Path, project_name: &str, results: &[TestResultEntry], roots: &[PathBuf]) -> LegionResult<()> {
+    let report_project = legion_report_project_dir(roots)?;
     let passed = results.iter().filter(|r| r.status == "pass").count();
     let failed = results.iter().filter(|r| r.status == "fail" || r.status == "compile_error").count();
     let skipped = results.iter().filter(|r| r.status == "skip").count();
@@ -47,7 +51,7 @@ pub fn render_test_report(output_dir: &Path, project_name: &str, results: &[Test
         .collect();
 
     let charts = charts_for_test_report(results);
-    let slots = emit_chart_islands(output_dir, "legion-test", &charts)?;
+    let slots = emit_chart_islands(output_dir, "legion-test", &charts, &report_project, roots)?;
     let has_chart = !slots.is_empty();
 
     let page_title = format!("{project_name} - Test LegionError");
@@ -60,14 +64,15 @@ pub fn render_test_report(output_dir: &Path, project_name: &str, results: &[Test
         "rows": rows,
     });
 
-    let html = render_page(&page_title, "pages/test-report.awsl", "TestReport", &body_data, has_chart, "legion-test")?;
+    let html = render_page(&report_project, &page_title, "pages/test-report.awsl", "TestReport", &body_data, has_chart, "legion-test")?;
     let html = inject_islands(html, &slots, CHART_STATUS);
     atomic_write_all_text(&output_dir.join("index.html"), &html)?;
     Ok(())
 }
 
 /// 渲染覆盖率报告到 `{output_dir}/index.html`。
-pub fn render_coverage_report(output_dir: &Path, report: &CoverageReport) -> LegionResult<()> {
+pub fn render_coverage_report(output_dir: &Path, report: &CoverageReport, roots: &[PathBuf]) -> LegionResult<()> {
+    let report_project = legion_report_project_dir(roots)?;
     let pct = report.percentage;
     let bar_class = if pct >= 70.0 {
         "progress-fill high"
@@ -105,7 +110,7 @@ pub fn render_coverage_report(output_dir: &Path, report: &CoverageReport) -> Leg
         .collect();
 
     let charts = charts_for_coverage_report(report);
-    let slots = emit_chart_islands(output_dir, "legion-coverage", &charts)?;
+    let slots = emit_chart_islands(output_dir, "legion-coverage", &charts, &report_project, roots)?;
     let has_charts = !slots.is_empty();
 
     let body_data = json!({
@@ -117,7 +122,15 @@ pub fn render_coverage_report(output_dir: &Path, report: &CoverageReport) -> Leg
         "features": features,
     });
 
-    let html = render_page("Coverage LegionError", "pages/coverage-report.awsl", "CoverageReport", &body_data, has_charts, "legion-coverage")?;
+    let html = render_page(
+        &report_project,
+        "Coverage LegionError",
+        "pages/coverage-report.awsl",
+        "CoverageReport",
+        &body_data,
+        has_charts,
+        "legion-coverage",
+    )?;
     let html = inject_islands(html, &slots, CHART_COVERAGE_BALANCE);
     let html = inject_islands(html, &slots, CHART_COVERAGE_FEATURES);
     atomic_write_all_text(&output_dir.join("index.html"), &html)?;
@@ -125,10 +138,11 @@ pub fn render_coverage_report(output_dir: &Path, report: &CoverageReport) -> Leg
 }
 
 /// 渲染基准报告到 `{output_dir}/index.html`。
-pub fn render_bench_report(output_dir: &Path, report: &BenchReport) -> LegionResult<()> {
+pub fn render_bench_report(output_dir: &Path, report: &BenchReport, roots: &[PathBuf]) -> LegionResult<()> {
     if report.rows.is_empty() {
         return Ok(());
     }
+    let report_project = legion_report_project_dir(roots)?;
 
     let mut rows = report.rows.clone();
     rows.sort_by(|a, b| a.project.cmp(&b.project).then(a.test.cmp(&b.test)).then(a.target.cmp(&b.target)));
@@ -156,7 +170,7 @@ pub fn render_bench_report(output_dir: &Path, report: &BenchReport) -> LegionRes
         .collect();
 
     let charts = charts_for_bench_report(&rows);
-    let slots = emit_chart_islands(output_dir, "legion-bench", &charts)?;
+    let slots = emit_chart_islands(output_dir, "legion-bench", &charts, &report_project, roots)?;
     let has_charts = !slots.is_empty();
 
     let body_data = json!({
@@ -165,7 +179,15 @@ pub fn render_bench_report(output_dir: &Path, report: &BenchReport) -> LegionRes
         "rows": row_data,
     });
 
-    let html = render_page("Benchmark LegionError", "pages/bench-report.awsl", "BenchReport", &body_data, has_charts, "legion-bench")?;
+    let html = render_page(
+        &report_project,
+        "Benchmark LegionError",
+        "pages/bench-report.awsl",
+        "BenchReport",
+        &body_data,
+        has_charts,
+        "legion-bench",
+    )?;
     let html = inject_islands(html, &slots, CHART_BENCH_RUNTIME);
     let html = inject_islands(html, &slots, CHART_BENCH_COMPILE);
     atomic_write_all_text(&output_dir.join("index.html"), &html)?;
@@ -191,6 +213,7 @@ fn token_matches_route(token: &str, route: &str) -> bool {
 }
 
 fn render_page(
+    report_project: &Path,
     page_title: &str,
     body_awsl_relative: &str,
     body_component: &str,
@@ -198,9 +221,9 @@ fn render_page(
     has_charts: bool,
     module_stem: &str,
 ) -> LegionResult<String> {
-    let body = render_report_page(body_awsl_relative, body_component, body_data)?;
+    let body = render_report_page(report_project, body_awsl_relative, body_component, body_data)?;
     let layout_data = json!({ "page_title": page_title });
-    let layout = render_report_page("pages/layout.awsl", "layout", &layout_data)?;
+    let layout = render_report_page(report_project, "pages/layout.awsl", "layout", &layout_data)?;
     let fragment_html = layout.html.replace("<p>LEGION_REPORT_SLOT</p>", &body.html);
 
     let page_result = crate::asgard::codegen::StaticRenderResult {
@@ -214,7 +237,7 @@ fn render_page(
         scope: layout.scope,
     };
 
-    let base_css = report_base_css()?;
+    let base_css = report_base_css(report_project)?;
     let mut html = generate_static_page(page_title, &[page_result], &base_css);
     if has_charts {
         html = attach_asgard_boot(html, module_stem);

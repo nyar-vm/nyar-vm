@@ -6,11 +6,11 @@
 //! - 控制台汇总打印
 //! - HTML 报告渲染（`cmds::report` 负责）
 use crate::legion::{
-    api::{test::test_project_at, LegionTestSelector},
+    api::{LegionTestSelector, test::test_project_at},
     cmds::{
         error::{LegionError, LegionResult},
         project_input::resolve_project_path,
-        report::{TestResultEntry, finish_standalone_report, render_test_report},
+        report::{TestResultEntry, finish_standalone_report, render_test_report, report_roots},
         test_engine::resolve_test_targets,
     },
     workspace::planner::WorkspaceResolver,
@@ -42,6 +42,8 @@ pub fn run(args: &TestArgs) -> LegionResult<ExitCode> {
     let project_dir = resolve_project_path(&args.project_dir)?;
     let targets = resolve_test_targets(args.target.as_deref());
     let workspace = WorkspaceResolver::discover_for_project(&project_dir)?;
+    // 报告模板与测试共用同一份 workspace 发现事实；`VALKYRIE_V_ROOT` 仅作兜底。
+    let roots = report_roots(Some(&workspace), &project_dir)?;
 
     let selector = LegionTestSelector {
         targets: Some(targets.clone()),
@@ -66,7 +68,7 @@ pub fn run(args: &TestArgs) -> LegionResult<ExitCode> {
 
     let report_dir = report_output_dir(&args.project_dir, &project_dir);
     let project_name = project_dir.file_stem().or_else(|| project_dir.file_name()).and_then(|n| n.to_str()).unwrap_or("project");
-    render_test_report(&report_dir, project_name, &results)?;
+    render_test_report(&report_dir, project_name, &results, &roots)?;
     println!("HTML 测试报告已生成：{}", report_dir.join("index.html").display());
     finish_standalone_report(&report_dir, args.standalone)?;
 

@@ -6,29 +6,31 @@ use tempfile::tempdir;
 
 use rusty_valkyrie::legion::cmds::report::models::{BenchResultRow, CoverageFeatureEntry};
 
+use std::path::PathBuf;
+
 /// 报告渲染依赖 `valkyrie.v` 源码库中的 asgard.plotter 资产；CI 没有该兄弟仓，
 /// 未配置 `VALKYRIE_V_ROOT` 时跳过而不是把外部仓依赖伪装成失败。
-fn valkyrie_v_root_configured() -> bool {
-    match std::env::var_os("VALKYRIE_V_ROOT") {
-        Some(root) if !root.is_empty() => true,
-        _ => {
+fn report_roots() -> Option<Vec<PathBuf>> {
+    match rusty_valkyrie::asgard::valkyrie_v_roots() {
+        Ok(roots) => Some(roots),
+        Err(_) => {
             eprintln!("skip: VALKYRIE_V_ROOT 未配置，报告渲染需要 valkyrie.v 资产");
-            false
+            None
         }
     }
 }
 
 #[test]
 fn render_test_report_uses_asgard_islands_not_handwritten_js() {
-    if !valkyrie_v_root_configured() {
+    let Some(roots) = report_roots() else {
         return;
-    }
+    };
     let dir = tempdir().unwrap();
     let results = vec![
         TestResultEntry { name: "add".into(), status: "pass".into(), error: None, target: "legion".into() },
         TestResultEntry { name: "sub".into(), status: "fail".into(), error: Some("boom".into()), target: "legion".into() },
     ];
-    render_test_report(dir.path(), "demo", &results).unwrap();
+    render_test_report(dir.path(), "demo", &results, &roots).unwrap();
     let html = std::fs::read_to_string(dir.path().join("index.html")).unwrap();
     assert!(html.contains("demo - Test Report"));
     assert!(html.contains("data-island=\"hydrated\""));
@@ -59,9 +61,9 @@ fn render_test_report_uses_asgard_islands_not_handwritten_js() {
 
 #[test]
 fn render_coverage_report_emits_islands() {
-    if !valkyrie_v_root_configured() {
+    let Some(roots) = report_roots() else {
         return;
-    }
+    };
     let dir = tempdir().unwrap();
     let report = CoverageReport {
         covered: 1,
@@ -72,7 +74,7 @@ fn render_coverage_report_emits_islands() {
             CoverageFeatureEntry { feature: "match".into(), display: "模式匹配".into(), covered: false, projects: vec![] },
         ],
     };
-    render_coverage_report(dir.path(), &report).unwrap();
+    render_coverage_report(dir.path(), &report, &roots).unwrap();
     let html = std::fs::read_to_string(dir.path().join("index.html")).unwrap();
     assert!(html.contains("Coverage Report"));
     assert!(html.contains("data-component=\"chart-coverage-balance\""));
@@ -83,15 +85,15 @@ fn render_coverage_report_emits_islands() {
 
 #[test]
 fn render_bench_report_emits_islands() {
-    if !valkyrie_v_root_configured() {
+    let Some(roots) = report_roots() else {
         return;
-    }
+    };
     let dir = tempdir().unwrap();
     let report = BenchReport {
         runs: 3,
         rows: vec![BenchResultRow { project: "app".into(), test: "fib".into(), target: "legion".into(), compile_ms: 12.5, runtime_ms: 1.2 }],
     };
-    render_bench_report(dir.path(), &report).unwrap();
+    render_bench_report(dir.path(), &report, &roots).unwrap();
     let html = std::fs::read_to_string(dir.path().join("index.html")).unwrap();
     assert!(html.contains("Benchmark Report"));
     assert!(html.contains("data-component=\"chart-bench-runtime\""));
