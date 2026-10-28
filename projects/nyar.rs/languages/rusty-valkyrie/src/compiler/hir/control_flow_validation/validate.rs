@@ -26,8 +26,7 @@ use super::{control_flow_source, expr_diagnostic_span};
 use crate::compiler::hir::control_flow_validation::{
     compatibility::{
         control_flow_value_type_compatible, control_flow_value_type_compatible_with_primitives, display_type, future_resume_type,
-        generator_yield_type, integer_literal_binds_to,
-        return_without_value_compatible,
+        generator_yield_type, integer_literal_binds_to, return_without_value_compatible,
     },
     pattern::{
         bind_local_type, bind_pattern_type, collect_pattern_bound_names, current_return_type, current_self_type,

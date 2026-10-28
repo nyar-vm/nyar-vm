@@ -49,7 +49,8 @@ fn unselected_host_provider_instances(
             if function_host_provider_target(function).is_none() {
                 continue;
             }
-            let key = declaration_key(module, DeclarationKind::Micro, &namespace_parts(&function.declaring_namespace), None, function.name.as_str());
+            let key =
+                declaration_key(module, DeclarationKind::Micro, &namespace_parts(&function.declaring_namespace), None, function.name.as_str());
             if selected_providers.contains(&key) {
                 continue;
             }

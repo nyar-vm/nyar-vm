@@ -2,18 +2,27 @@
 
 use std::path::Path;
 
-use crate::compiler::semantic::closure::{imply_owner_name, name_path_segments, DeclarationKey, DeclarationKind};
-use crate::compiler::semantic::operator_members;
-use crate::compiler::syntax::oak::ast::{Block, ImplyDeclaration, MethodDeclaration, MicroDeclaration, StatementNode};
-use crate::compiler::syntax::oak::{namespace_is_declaration_only, namespace_items, ValkyrieRoot};
-
-use super::ast_attributes::{
-    foreign_bindings_from_attributes, gate_attributes_from_items, has_host_contract_attribute, host_provider_contract_targets,
-    when_attributes_from_items,
+use crate::compiler::{
+    semantic::{
+        closure::{DeclarationKey, DeclarationKind, imply_owner_name, name_path_segments},
+        operator_members,
+    },
+    syntax::oak::{
+        ValkyrieRoot,
+        ast::{Block, ImplyDeclaration, MethodDeclaration, MicroDeclaration, StatementNode},
+        namespace_is_declaration_only, namespace_items,
+    },
 };
-use super::capability::required_capabilities_from_foreign_bindings;
-use super::host::HostInventory;
-use super::types::{PlannedHostContract, PlannedHostProvider};
+
+use super::{
+    ast_attributes::{
+        foreign_bindings_from_attributes, gate_attributes_from_items, has_host_contract_attribute, host_provider_contract_targets,
+        when_attributes_from_items,
+    },
+    capability::required_capabilities_from_foreign_bindings,
+    host::HostInventory,
+    types::{PlannedHostContract, PlannedHostProvider},
+};
 
 pub(crate) fn collect_host_inventory_from_root(
     dependency_key: &str,
@@ -56,7 +65,17 @@ fn collect_host_from_items(
                 }
             }
             StatementNode::Class(class) => {
-                collect_type_members(dependency_key, source_path, source_file, source, &current_namespace, &class.name.name, DeclarationKind::Class, &class.body.methods, inventory);
+                collect_type_members(
+                    dependency_key,
+                    source_path,
+                    source_file,
+                    source,
+                    &current_namespace,
+                    &class.name.name,
+                    DeclarationKind::Class,
+                    &class.body.methods,
+                    inventory,
+                );
             }
             StatementNode::Structure(structure) => {
                 collect_type_members(
@@ -72,14 +91,44 @@ fn collect_host_from_items(
                 );
             }
             StatementNode::Trait(trait_decl) => {
-                collect_type_members(dependency_key, source_path, source_file, source, &current_namespace, &trait_decl.name.name, DeclarationKind::Method, &trait_decl.body.methods, inventory);
+                collect_type_members(
+                    dependency_key,
+                    source_path,
+                    source_file,
+                    source,
+                    &current_namespace,
+                    &trait_decl.name.name,
+                    DeclarationKind::Method,
+                    &trait_decl.body.methods,
+                    inventory,
+                );
             }
-            StatementNode::Imply(imply) => collect_imply_hosts(dependency_key, source_path, source_file, source, &current_namespace, imply, inventory),
+            StatementNode::Imply(imply) => {
+                collect_imply_hosts(dependency_key, source_path, source_file, source, &current_namespace, imply, inventory)
+            }
             StatementNode::Micro(micro) => {
-                register_micro_hosts(dependency_key, source_path, source_file, source, &current_namespace, None, DeclarationKind::Micro, micro, inventory);
+                register_micro_hosts(
+                    dependency_key,
+                    source_path,
+                    source_file,
+                    source,
+                    &current_namespace,
+                    None,
+                    DeclarationKind::Micro,
+                    micro,
+                    inventory,
+                );
             }
             StatementNode::Statement(inner) => {
-                collect_host_from_items(dependency_key, source_path, source_file, source, &current_namespace, std::slice::from_ref(inner.as_ref()), inventory);
+                collect_host_from_items(
+                    dependency_key,
+                    source_path,
+                    source_file,
+                    source,
+                    &current_namespace,
+                    std::slice::from_ref(inner.as_ref()),
+                    inventory,
+                );
             }
             _ => {}
         }
@@ -113,7 +162,17 @@ fn collect_imply_hosts(
 ) {
     let owner = imply_owner_name(imply);
     for method in &imply.methods {
-        register_method_hosts(dependency_key, source_path, source_file, source, namespace, owner.as_deref(), DeclarationKind::ImplyMethod, method, inventory);
+        register_method_hosts(
+            dependency_key,
+            source_path,
+            source_file,
+            source,
+            namespace,
+            owner.as_deref(),
+            DeclarationKind::ImplyMethod,
+            method,
+            inventory,
+        );
     }
 }
 
@@ -134,12 +193,7 @@ fn register_method_hosts(
     }
 
     let name = operator_members::declared_member_name(&method.name.name, annotations);
-    let kind = if owner_kind == DeclarationKind::ImplyMethod {
-        DeclarationKind::ImplyMethod
-    }
-    else {
-        DeclarationKind::Method
-    };
+    let kind = if owner_kind == DeclarationKind::ImplyMethod { DeclarationKind::ImplyMethod } else { DeclarationKind::Method };
     let key = declaration_key(dependency_key, source_path, namespace, owner, kind, &name);
     let qualified = qualified_declaration_name(namespace, owner, &name);
     let line = line_number(source, &method.span);

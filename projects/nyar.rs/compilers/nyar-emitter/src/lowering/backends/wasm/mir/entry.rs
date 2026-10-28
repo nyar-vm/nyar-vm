@@ -18,10 +18,7 @@ use super::{
     imports::{
         build_callee_import_index, build_callee_wasm_operator_index, build_string_literal_index, build_wasi_callee_import_index,
         collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index,
-        host_import_signature_index,
-        validate_string_literal_payloads,
-        wasi_core_import_name,
-        wasm_import_type_bytes_for_host,
+        host_import_signature_index, validate_string_literal_payloads, wasi_core_import_name, wasm_import_type_bytes_for_host,
     },
     library_glue,
     lowerer::lower_mir_function_to_wasm_bytes,
@@ -148,15 +145,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut import_type_entries = Vec::new();
     for (module, field) in &host_imports {
         let import_type_index = u32::try_from(type_indices.len()).expect("type index overflow");
-        let type_bytes = wasm_import_type_bytes_for_host(
-            submission,
-            &ctx,
-            wasi_mode,
-            module,
-            field,
-            js_glue_utf8_as_anyref,
-            &host_import_signatures,
-        )?;
+        let type_bytes =
+            wasm_import_type_bytes_for_host(submission, &ctx, wasi_mode, module, field, js_glue_utf8_as_anyref, &host_import_signatures)?;
         type_indices.push(type_bytes);
         import_type_entries.push(import_type_index);
     }
@@ -222,30 +212,16 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let import_param_types: Vec<Vec<u8>> = host_imports
         .iter()
         .map(|(module, field)| -> crate::Result<Vec<u8>> {
-            let type_bytes = wasm_import_type_bytes_for_host(
-                submission,
-                &ctx,
-                wasi_mode,
-                module,
-                field,
-                js_glue_utf8_as_anyref,
-                &host_import_signatures,
-            )?;
+            let type_bytes =
+                wasm_import_type_bytes_for_host(submission, &ctx, wasi_mode, module, field, js_glue_utf8_as_anyref, &host_import_signatures)?;
             Ok(wasm_function_type_param_bytes(&type_bytes))
         })
         .collect::<crate::Result<Vec<_>>>()?;
     let import_return_types: Vec<Option<u8>> = host_imports
         .iter()
         .map(|(module, field)| -> crate::Result<Option<u8>> {
-            let type_bytes = wasm_import_type_bytes_for_host(
-                submission,
-                &ctx,
-                wasi_mode,
-                module,
-                field,
-                js_glue_utf8_as_anyref,
-                &host_import_signatures,
-            )?;
+            let type_bytes =
+                wasm_import_type_bytes_for_host(submission, &ctx, wasi_mode, module, field, js_glue_utf8_as_anyref, &host_import_signatures)?;
             Ok(wasm_function_type_result_byte(&type_bytes))
         })
         .collect::<crate::Result<Vec<_>>>()?;

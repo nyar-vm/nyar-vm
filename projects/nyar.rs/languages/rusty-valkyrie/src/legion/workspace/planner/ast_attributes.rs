@@ -2,8 +2,10 @@
 
 use crate::compiler::syntax::oak::ast::{Attribute, StringLiteral, StringSegment, TermExpression};
 
-use super::capability::ForeignBinding;
-use super::types::{GatePredicate, WhenPredicate};
+use super::{
+    capability::ForeignBinding,
+    types::{GatePredicate, WhenPredicate},
+};
 
 pub(crate) fn has_host_contract_attribute(attributes: &[Attribute]) -> bool {
     attributes.iter().any(|attribute| attribute.name.name == "host_contract")
@@ -64,11 +66,7 @@ pub(crate) fn host_provider_contract_reference(expr: &TermExpression, source: &s
         TermExpression::StringLiteral(literal) => string_literal_value(literal),
         expr => {
             let span = expr.span();
-            source
-                .get(span.start..span.end)
-                .map(str::trim)
-                .filter(|text| !text.is_empty())
-                .map(str::to_string)
+            source.get(span.start..span.end).map(str::trim).filter(|text| !text.is_empty()).map(str::to_string)
         }
     }
 }

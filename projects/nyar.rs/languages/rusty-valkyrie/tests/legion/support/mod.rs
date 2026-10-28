@@ -367,13 +367,7 @@ micro js_random_next_i32(seed: i32): i32
 "#,
     )
     .unwrap();
-    let _ = fs::remove_file(
-        wasm_adaptor_dir
-            .join("source")
-            .join("math")
-            .join("random")
-            .join("Random.browser.v"),
-    );
+    let _ = fs::remove_file(wasm_adaptor_dir.join("source").join("math").join("random").join("Random.browser.v"));
     fixture
 }
 

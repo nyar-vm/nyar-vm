@@ -13,11 +13,15 @@ use crate::{
 use acorn_wasm::{VALTYPE_I32, VALTYPE_I64};
 use nyar_types::{ItemInstanceId, NyarType};
 
-use super::representation::wasm_param_value_type;
-use super::super::{
-    super::executable::ExecutableLoweringContext,
-    super::interop::{wasi_host_import_target, wasm_host_import_target, wasm_operator_target, wasm_or_js_glue_host_import_target},
-    sections::wasm_function_type,
+use super::{
+    super::{
+        super::{
+            executable::ExecutableLoweringContext,
+            interop::{wasi_host_import_target, wasm_host_import_target, wasm_operator_target, wasm_or_js_glue_host_import_target},
+        },
+        sections::wasm_function_type,
+    },
+    representation::wasm_param_value_type,
 };
 
 pub(super) fn collect_wasm_host_imports(submission: &FragmentSubmission, synthesize_const_utf8: bool) -> Vec<(String, String)> {
@@ -257,11 +261,7 @@ pub(super) fn wasm_import_type_from_backend_import(
     import: &BackendImport,
     js_glue_utf8_as_anyref: bool,
 ) -> Vec<u8> {
-    let params = import
-        .parameter_types
-        .iter()
-        .map(|ty| wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref))
-        .collect::<Vec<_>>();
+    let params = import.parameter_types.iter().map(|ty| wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)).collect::<Vec<_>>();
     let results = match &import.return_type {
         NyarType::Unit | NyarType::Bottom => Vec::new(),
         ty => vec![wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)],
@@ -411,10 +411,7 @@ mod host_import_signature_tests {
             .expect("js fetch must derive wasm signature from BackendImport");
         let params = super::super::strings::wasm_function_type_param_bytes(&type_bytes);
         assert_eq!(params, vec![VALTYPE_I32, VALTYPE_I32]);
-        assert_eq!(
-            super::super::strings::wasm_function_type_result_byte(&type_bytes),
-            Some(VALTYPE_I32)
-        );
+        assert_eq!(super::super::strings::wasm_function_type_result_byte(&type_bytes), Some(VALTYPE_I32));
     }
 
     #[test]

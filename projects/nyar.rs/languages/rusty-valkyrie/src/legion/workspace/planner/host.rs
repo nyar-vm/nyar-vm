@@ -1,17 +1,17 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-
 };
 
-use crate::compiler::semantic::closure::DeclarationKey;
-use crate::compiler::syntax::oak::parse_source;
+use crate::compiler::{semantic::closure::DeclarationKey, syntax::oak::parse_source};
 use nyar::CanonicalTarget;
 
-use super::capability::{provider_matches_target, provider_required_capabilities, target_host_capability_space};
-use super::host_inventory_ast::collect_host_inventory_from_root;
-use super::condition_eval::{provider_passes_gate_axis, provider_passes_target_axis};
-use super::types::{PlannedHostContract, PlannedHostProvider, PlannedSemanticSourceGroup, PlannerError, PlannerResult};
+use super::{
+    capability::{provider_matches_target, provider_required_capabilities, target_host_capability_space},
+    condition_eval::{provider_passes_gate_axis, provider_passes_target_axis},
+    host_inventory_ast::collect_host_inventory_from_root,
+    types::{PlannedHostContract, PlannedHostProvider, PlannedSemanticSourceGroup, PlannerError, PlannerResult},
+};
 
 #[derive(Debug, Default)]
 pub(crate) struct HostInventory {
@@ -92,8 +92,7 @@ fn select_host_providers(
         }
         let Some(candidates) = providers_by_contract.get(&contract.id)
         else {
-            if demanded_declaration_keys.map(|demanded| demanded.contains(&contract.key)).unwrap_or(false)
-                && !contract.has_local_fallback_body
+            if demanded_declaration_keys.map(|demanded| demanded.contains(&contract.key)).unwrap_or(false) && !contract.has_local_fallback_body
             {
                 return Err(PlannerError::HostProviderCapabilityMissing {
                     contract: contract.id.clone(),
@@ -129,10 +128,7 @@ fn select_host_providers(
         if compatible.len() > 1 {
             return Err(PlannerError::ConflictingHostProviders {
                 contract: contract.id.clone(),
-                providers: compatible
-                    .iter()
-                    .map(|item| format!("{} at {}:{}", item.symbol, item.source_file.display(), item.line))
-                    .collect(),
+                providers: compatible.iter().map(|item| format!("{} at {}:{}", item.symbol, item.source_file.display(), item.line)).collect(),
             });
         }
 
@@ -154,10 +150,5 @@ fn select_host_providers(
 }
 
 fn normalized_contract_reference(reference: &str) -> String {
-    reference
-        .split(['.', ':'])
-        .map(str::trim)
-        .filter(|segment| !segment.is_empty())
-        .collect::<Vec<_>>()
-        .join("::")
+    reference.split(['.', ':']).map(str::trim).filter(|segment| !segment.is_empty()).collect::<Vec<_>>().join("::")
 }

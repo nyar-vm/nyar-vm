@@ -114,16 +114,13 @@ pub fn operator_info(name: &str, type_offset: u32) -> Option<(u32, &'static str,
             "ge_s" => "ge",
             other => other,
         }
-    } else {
+    }
+    else {
         suffix
     };
 
     // 构造完整助记符前缀
-    let prefix = if let Some(fp) = float_prefix {
-        fp
-    } else {
-        wasm_int_prefix(type_offset)
-    };
+    let prefix = if let Some(fp) = float_prefix { fp } else { wasm_int_prefix(type_offset) };
 
     // 把前缀拼接为 'static —— 用 Box::leak
     let opcode_str = format!("{prefix}.{suffix}");
@@ -134,9 +131,7 @@ pub fn operator_info(name: &str, type_offset: u32) -> Option<(u32, &'static str,
 
 /// 构造 synthetic [`ItemInstanceId`]。
 pub fn synthetic_operator_instance(type_offset: u32, op_offset: u32) -> Option<ItemInstanceId> {
-    let index = PRIMITIVE_OPERATOR_INSTANCE_BASE
-        .checked_add(type_offset.checked_mul(100)?)?
-        .checked_add(op_offset)?;
+    let index = PRIMITIVE_OPERATOR_INSTANCE_BASE.checked_add(type_offset.checked_mul(100)?)?.checked_add(op_offset)?;
     ItemInstanceId::from_index(index)
 }
 
@@ -192,11 +187,7 @@ pub fn try_resolve_primitive_numeric_operator(
 
     // 6. 构造返回类型 —— 用底层 primitive 变体（canonical 层不接受 Named）
     let receiver_primitive = primitive_type_from_offset(type_offset)?;
-    let return_type = if is_cmp {
-        ValkyrieType::Boolean
-    } else {
-        receiver_primitive.clone()
-    };
+    let return_type = if is_cmp { ValkyrieType::Boolean } else { receiver_primitive.clone() };
 
     // 7. 构造 symbol
     let symbol = NamePath::new(vec![

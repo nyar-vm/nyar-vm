@@ -77,9 +77,8 @@ fn primitive_named_equivalent(a: &ValkyrieType, b: &ValkyrieType) -> bool {
 }
 
 pub fn primitive_boolean_compatible(expected: &ValkyrieType, actual: &ValkyrieType, state: &HirValidationState) -> bool {
-    let is_bool_nominal = |ty: &ValkyrieType| {
-        matches!(ty, ValkyrieType::Nominal { declaration, .. } if state.boolean_declarations.contains(declaration))
-    };
+    let is_bool_nominal =
+        |ty: &ValkyrieType| matches!(ty, ValkyrieType::Nominal { declaration, .. } if state.boolean_declarations.contains(declaration));
     (is_bool_nominal(expected) && matches!(actual, ValkyrieType::Boolean))
         || (is_bool_nominal(actual) && matches!(expected, ValkyrieType::Boolean))
 }

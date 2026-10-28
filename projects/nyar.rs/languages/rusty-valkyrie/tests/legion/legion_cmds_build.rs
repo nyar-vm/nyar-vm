@@ -494,8 +494,8 @@ fn builds_browser_wasm_js_random_host_binding_evidence() {
 
     let evidence_path = output_dir.join("compile-evidence.txt");
     let evidence_source = fs::read_to_string(&evidence_path).expect("compile-evidence sidecar");
-    let evidence = parse_von::<rusty_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&evidence_source)
-        .expect("parse compile evidence");
+    let evidence =
+        parse_von::<rusty_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&evidence_source).expect("parse compile evidence");
     assert_eq!(evidence.host_provider_bindings.len(), 1);
     assert_eq!(evidence.host_provider_bindings[0].required_capabilities, vec!["js.random".to_string()]);
 
@@ -533,10 +533,7 @@ fn builds_wasi_wasm_random_host_binding_evidence() {
         }
         Err(error) => {
             // Guest `env::*` imports are not yet adapted into the WASI component world.
-            assert!(
-                error.to_string().contains("component"),
-                "unexpected build failure: {error}"
-            );
+            assert!(error.to_string().contains("component"), "unexpected build failure: {error}");
         }
     }
 }
@@ -555,8 +552,8 @@ fn builds_valkyrie_fallback_random_without_host_bindings() {
     assert_eq!(status, ExitCode::SUCCESS);
 
     let evidence_source = fs::read_to_string(output_dir.join("compile-evidence.txt")).expect("compile-evidence");
-    let evidence = parse_von::<rusty_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&evidence_source)
-        .expect("parse compile evidence");
+    let evidence =
+        parse_von::<rusty_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&evidence_source).expect("parse compile evidence");
     assert!(evidence.host_provider_bindings.is_empty());
     assert!(output_dir.join("main.wasm").exists());
 }
@@ -575,26 +572,16 @@ fn builds_browser_wasm_prunes_unselected_host_bindings_from_evidence() {
     assert_eq!(status, ExitCode::SUCCESS);
 
     let evidence_source = fs::read_to_string(output_dir.join("compile-evidence.txt")).expect("compile-evidence");
-    let evidence = parse_von::<rusty_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&evidence_source)
-        .expect("parse compile evidence");
+    let evidence =
+        parse_von::<rusty_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&evidence_source).expect("parse compile evidence");
     assert_eq!(evidence.host_provider_bindings.len(), 1);
+    assert!(evidence.host_provider_bindings[0].contract.contains("random"), "binding={:?}", evidence.host_provider_bindings[0].contract);
     assert!(
-        evidence.host_provider_bindings[0].contract.contains("random"),
-        "binding={:?}",
-        evidence.host_provider_bindings[0].contract
-    );
-    assert!(
-        !evidence
-            .host_provider_bindings
-            .iter()
-            .any(|binding| binding.contract.contains("fetch_i32_stub")),
+        !evidence.host_provider_bindings.iter().any(|binding| binding.contract.contains("fetch_i32_stub")),
         "unreferenced host contract must not produce a binding"
     );
     assert!(
-        evidence.host_provider_bindings[0]
-            .foreign_bindings
-            .iter()
-            .any(|binding| binding.contains("random")),
+        evidence.host_provider_bindings[0].foreign_bindings.iter().any(|binding| binding.contains("random")),
         "selected binding must remain js.random"
     );
 
@@ -603,10 +590,7 @@ fn builds_browser_wasm_prunes_unselected_host_bindings_from_evidence() {
     assert!(!mjs.contains("fetch"), "unselected js.fetch provider must not appear in glue");
 
     let wasm = fs::read(output_dir.join("main.wasm")).expect("main.wasm");
-    assert!(
-        !wasm.windows(b"fetch".len()).any(|window| window == b"fetch"),
-        "wasm must not import env::fetch when provider is pruned"
-    );
+    assert!(!wasm.windows(b"fetch".len()).any(|window| window == b"fetch"), "wasm must not import env::fetch when provider is pruned");
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -640,7 +624,8 @@ fn builds_valkyrie_v_leetcode_browser_wasm_smoke() {
         eprintln!("skip: set LEGION_BUILD_VALKYRIE_V=1 to run valkyrie.v leetcode legion build");
         return;
     }
-    let Some(project_dir) = valkyrie_v_leetcode_browser_dir() else {
+    let Some(project_dir) = valkyrie_v_leetcode_browser_dir()
+    else {
         eprintln!("skip: valkyrie.v leetcode_browser_wasm not found");
         return;
     };
