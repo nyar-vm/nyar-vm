@@ -29,6 +29,7 @@ mod diagnostics;
 pub mod errors;
 mod expr_lowering;
 mod generic_binders;
+mod generic_instantiation;
 mod macro_expand;
 mod match_pattern_recovery;
 mod nominal_declarations;
@@ -74,6 +75,8 @@ pub(crate) use generic_binders::{
     propagate_generic_binders_in_where_constraints, propagate_impl_owner_type_generics, register_field_declarations,
     register_function_declarations,
 };
+
+pub(crate) use generic_instantiation::instantiate_generic_callables;
 
 pub(crate) use attribute_lowering::{
     PropertyMethodKind, default_module_name, generic_parameter_names, has_modifier, imply_generic_parameter_names, is_property_accessor,
@@ -355,6 +358,10 @@ impl ValkyrieCompiler {
         }
         for hir in &mut hir_groups {
             resolve_hir_calls(hir);
+        }
+        // 单态化固定点必须在全部源码组的调用解析之后、语义合同校验与 MIR 之前运行。
+        instantiate_generic_callables(&mut hir_groups);
+        for hir in &hir_groups {
             validate_extractor_patterns(hir)?;
             self.validate_hir_semantic_contract(hir)?;
         }

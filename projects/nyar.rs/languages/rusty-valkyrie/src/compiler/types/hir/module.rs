@@ -64,6 +64,12 @@ pub struct HirModule {
     pub statements: Vec<HirStatement>,
     /// `type Alias = Target` declarations in this module.
     pub type_aliases: Vec<HirTypeAlias>,
+    /// 由调用点代入在 frontend 内铸造的泛型 callable 实例。
+    ///
+    /// 声明本身保持开放（`instance` 为空），实例承载已代入的函数体与签名；
+    /// MIR lowering 只发射本表与声明期已闭合的 callable。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub instantiated_callables: Vec<HirInstantiatedCallable>,
 }
 
 /// A resolved `using` import in HIR.
@@ -147,8 +153,26 @@ impl Default for HirModule {
             singletons: Vec::new(),
             statements: Vec::new(),
             type_aliases: Vec::new(),
+            instantiated_callables: Vec::new(),
         }
     }
+}
+
+/// 一个由调用点代入铸造的泛型 callable 实例。
+///
+/// 唯一事实所有者是 frontend 单态化固定点：实例的签名、局部类型与聚合类型
+/// 都已完成代入，不再含未绑定实参的泛型 binder。
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirInstantiatedCallable {
+    /// 已代入的函数体；其 `instance` 即本实例的 callable 身份。
+    pub function: HirFunction,
+    /// 代入后的 impl owner 类型（如 `Nominal{SwissTable, [i64, i64]}`）；自由函数为空。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub owner_type: Option<ValkyrieType>,
+    /// 该实例所属 impl 块的 trait 声明身份；inherent impl 为空。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub trait_declaration: Option<nyar_types::ItemId>,
 }
 
 /// Structured semantic metadata exported by one resolved dependency module.

@@ -32,7 +32,10 @@ pub use expr::{
 pub use function::HirFunction;
 pub use identifier::HirIdentifier;
 pub use r#impl::{HirAssociatedTypeBinding, HirDerive, HirImpl, HirTraitBound, HirWhereConstraint};
-pub use module::{HirCompileWarning, HirDependencySemanticExport, HirDocumentation, HirImport, HirImportBinding, HirModule, HirTypeAlias};
+pub use module::{
+    HirCompileWarning, HirDependencySemanticExport, HirDocumentation, HirImport, HirImportBinding, HirInstantiatedCallable, HirModule,
+    HirTypeAlias,
+};
 pub use property::HirProperty;
 pub use statement::{HirArgument, HirAttribute, HirBlock, HirMatchArm, HirStatement, HirStatementKind};
 pub use r#struct::{AbstractPropertyRequirement, HirField, HirParent, HirStruct, InheritancePermission};
