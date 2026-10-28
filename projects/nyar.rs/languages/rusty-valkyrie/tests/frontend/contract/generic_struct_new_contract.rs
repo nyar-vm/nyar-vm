@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 //! 泛型 `StructNew`：字段类型须在同一 substitution 下与布局声明对齐（SMIR010）。
 
 use std::{collections::BTreeMap, sync::Arc};

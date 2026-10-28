@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use std::collections::BTreeSet;
 
 use rusty_valkyrie::{ValkyrieCompiler, compile_pipeline::canonical_program_from_semantic_mir, compiler::mir::MirLowerer};

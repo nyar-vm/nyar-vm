@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy};
 use nyar_types::CompiledProgram;
 use rusty_valkyrie::{

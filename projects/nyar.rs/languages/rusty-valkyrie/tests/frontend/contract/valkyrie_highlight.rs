@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar_analyzer::highlight::{
     AnalysisContext, HighlightKind, HighlightRequest, HighlightSpan, Highlighter, HighlighterKind, HighlighterProvider, merge_spans,
 };

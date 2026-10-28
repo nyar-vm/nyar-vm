@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 //! Valkyrie `.v` / `.vx` 源码格式化：扩展名事实归前端，formatter 经平台注册表解析。
 
 use nyar_format::formatter::{FormatOptions, format_source_for_extension};

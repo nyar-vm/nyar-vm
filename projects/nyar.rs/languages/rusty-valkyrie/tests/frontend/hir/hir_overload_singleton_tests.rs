@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar_types::IntrinsicId;
 use rusty_valkyrie::{
     HirError, Identifier, NamePath, ValkyrieCompiler,

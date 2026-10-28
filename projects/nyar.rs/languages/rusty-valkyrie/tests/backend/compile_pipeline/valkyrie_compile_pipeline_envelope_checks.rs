@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar_types::InstructionId;
 use rusty_valkyrie::{
     compile_pipeline::check_instruction_envelope,

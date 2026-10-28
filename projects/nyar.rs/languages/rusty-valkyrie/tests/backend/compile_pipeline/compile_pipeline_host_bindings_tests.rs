@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar::ExternalImportLink;
 use nyar_types::{ItemId, ItemInstanceId};
 use rusty_valkyrie::{

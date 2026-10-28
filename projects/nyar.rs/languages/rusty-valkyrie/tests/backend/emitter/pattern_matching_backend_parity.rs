@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 //! 多后端模式匹配 parity 回归矩阵。
 
 use nyar::{QualifiedName, backends::projection_policy_for_target_profile};

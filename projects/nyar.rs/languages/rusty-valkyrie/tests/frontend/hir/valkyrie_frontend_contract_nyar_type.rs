@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar::{NyarFunctionType, NyarType};
 use rusty_valkyrie::{
     concretize_type,

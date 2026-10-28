@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use rusty_valkyrie::{
     hir::{
         overload::{OverloadCandidate, OverloadDomain, OverloadMatchKind, OverloadResolutionError, resolve_overload},

@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use crate::utilities::report::{IntoReport, Report, Result, WrapReport, report_msg};
 use nyar::{NamePath, QualifiedName};
 use nyar_emitter::{

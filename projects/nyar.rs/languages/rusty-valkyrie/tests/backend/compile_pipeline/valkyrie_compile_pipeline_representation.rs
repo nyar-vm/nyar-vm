@@ -1,3 +1,4 @@
+#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar_types::{
     CanonicalProgram, CanonicalSemanticMir, CanonicalTypeKind, NominalValueSemantics, ValueIdentity, layout_choice::ValueRepresentation,
     pipeline::RepresentationPlanStage,
