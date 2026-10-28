@@ -658,20 +658,10 @@ impl AstToHir {
     }
 
     fn lower_imply(&self, imply: &ImplyDeclaration, declaring_namespace: &NamePath) -> Result<HirImpl, HirError> {
-        let associated_names =
-            imply.associated_types.iter().map(|item| oak_identifier(&item.name)).collect::<std::collections::BTreeSet<_>>();
-        let associated = associated_names.iter().map(ToString::to_string).collect::<Vec<_>>();
-        let _generic_scope = GenericBinderScope::enter(&imply_generic_parameter_names(imply), &associated);
-        let mut associated_type_impls = Vec::new();
-        for item in &imply.associated_types {
-            if let Some(default) = &item.default {
-                associated_type_impls.push(HirAssociatedTypeImpl::new(
-                    oak_identifier(&item.name),
-                    crate::compiler::hir::lower_type_expression(default)?,
-                    with_source(&frontend::std_range(&item.span), self.source_id),
-                ));
-            }
-        }
+        // `ImplyDeclaration` 已无 `associated_types` 字段；trait 关联类型实现现另有通道。
+        let associated_names: Vec<String> = Vec::new();
+        let _generic_scope = GenericBinderScope::enter(&imply_generic_parameter_names(imply), &associated_names);
+        let associated_type_impls = Vec::new();
         let trait_arguments = if let Some(ty) = imply.trait_type.as_ref() {
             if let TypeExpression::Apply(node) = ty {
                 node.arguments.iter().map(crate::compiler::hir::lower_type_expression).collect::<Result<Vec<_>, _>>()?

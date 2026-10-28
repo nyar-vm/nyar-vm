@@ -247,7 +247,9 @@ fn collect_let(let_stmt: &ast::Let, references: &mut References) {
     if let Some(ty) = &let_stmt.ty {
         collect_type_expression(ty, references);
     }
-    collect_term(&let_stmt.expr, references);
+    if let Some(expr) = &let_stmt.expr {
+        collect_term(expr, references);
+    }
 }
 
 fn collect_block(block: &ast::Block, references: &mut References) {
@@ -445,7 +447,7 @@ fn collect_type_expression(ty: &ast::TypeExpression, references: &mut References
         }
         ast::TypeExpression::Tuple(tuple) => {
             for element in &tuple.elements {
-                collect_type_expression(element, references);
+                collect_type_expression(&element.ty, references);
             }
         }
         ast::TypeExpression::Function(function) => {
