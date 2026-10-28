@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn file_when_browser_file_inactive_on_wasi() {
-        let source = r#"[when(target.vendor == "browser")]
+        let source = r#"[when(target.specification == "browser")]
 namespace std.adaptor.wasm;
 
 [host_provider(std::math::random_next_i32)]
@@ -142,7 +142,7 @@ micro js_random_next_i32(seed: i32): i32
     fn file_without_leading_when_stays_active() {
         let source = r#"namespace std.adaptor.wasm;
 
-[when(target.vendor == "browser")]
+[when(target.specification == "browser")]
 [host_provider(std::math::random_next_i32)]
 [js("random")]
 micro js_random_next_i32(seed: i32): i32
@@ -167,7 +167,7 @@ namespace std.adaptor.wasi;
 
     #[test]
     fn multiple_file_when_items_do_not_implicit_and() {
-        let source = r#"[when(target.vendor == "browser")]
+        let source = r#"[when(target.specification == "browser")]
 [when(target.vendor == "wechat")]
 namespace std.adaptor.wasm;
 "#;
@@ -177,7 +177,7 @@ namespace std.adaptor.wasm;
     #[test]
     fn gate_and_when_coexist_without_combining_at_parse_layer() {
         let source = r#"[gate(feature = "fetch")]
-[when(target.vendor == "browser")]
+[when(target.specification == "browser")]
 namespace std.adaptor.wasm.fetch;
 "#;
         let items = file_level_condition_items(source).expect("gate+when file");
@@ -216,7 +216,7 @@ namespace std.adaptor.wasm;
 
     #[test]
     fn unknown_when_predicate_makes_file_inactive() {
-        let source = r#"[when(target.vendor == "browser")]
+        let source = r#"[when(target.specification == "browser")]
 namespace x;
 "#;
         assert!(!source_file_active_for_target(source, CanonicalTarget::wasi()));
