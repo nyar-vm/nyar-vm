@@ -873,7 +873,7 @@ fn filters_and_injects_sdk_vendor_by_publish_format() {
     name: "app.game",
     build: [
         {
-            target: "wasm",
+            target: "browser",
             publish: ["mini-game"]
         }
     ]
@@ -892,7 +892,7 @@ fn filters_and_injects_sdk_vendor_by_publish_format() {
     },
     build: [
         {
-            target: "wasm",
+            target: "browser",
             publish: ["web-app"]
         }
     ]
@@ -908,7 +908,7 @@ fn filters_and_injects_sdk_vendor_by_publish_format() {
     name: "app.mp",
     build: [
         {
-            target: "wasm",
+            target: "browser",
             publish: ["mini-program"]
         }
     ]
@@ -929,7 +929,7 @@ fn filters_and_injects_sdk_vendor_by_publish_format() {
         targets: ["wasm32-unknown-browser-wasm"],
         publish: ["mini-game"]
     },
-    build: [{ target: "wasm" }]
+    build: [{ target: "browser" }]
 }
 "#,
     )
@@ -947,7 +947,7 @@ fn filters_and_injects_sdk_vendor_by_publish_format() {
         targets: ["wasm32-unknown-browser-wasm"],
         publish: ["mini-program"]
     },
-    build: [{ target: "wasm" }]
+    build: [{ target: "browser" }]
 }
 "#,
     )
@@ -1386,11 +1386,11 @@ micro write(message: utf8): unit {
         organization: "valkyrie",
         host: "browser",
         kind: "platform-sdk",
-        targets: ["wasm"]
+        targets: ["browser"]
     },
     build: [
         {
-            target: "wasm"
+            target: "browser"
         }
     ]
 }
