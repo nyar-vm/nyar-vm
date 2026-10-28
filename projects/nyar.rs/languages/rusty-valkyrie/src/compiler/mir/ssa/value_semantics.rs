@@ -101,6 +101,8 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
     let mut plan = AggregateLayoutPlan::default();
     let mut structs = Vec::new();
     collect_module_structs(module, &mut structs);
+    // 纯类型级标记字段（零字段值类型 + 泛型实参）不进入运行时布局，与 MIR 字段事实同口径。
+    let markers = type_level_marker_declarations(module);
     // 核心 primitive（如 `structure i32 { }`）的声明身份在 HIR 保留为 Nominal{ItemId}，
     // 但字段布局必须使用其平台载体形状。
     let mut primitive_carriers = BTreeMap::new();
@@ -124,7 +126,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
             continue;
         }
         let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
-        let layout = layout_for_struct(hir_struct, &mut plan, storage, &primitive_carriers);
+        let layout = layout_for_struct(hir_struct, &mut plan, storage, &primitive_carriers, &markers);
         register_declared_layout(&mut plan, hir_struct, layout);
     }
     // Semantic-group builds keep only consumer HIR; imported structures (e.g.
@@ -142,7 +144,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
                 continue;
             }
             let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
-            let layout = layout_for_struct(hir_struct, &mut plan, storage, &primitive_carriers);
+            let layout = layout_for_struct(hir_struct, &mut plan, storage, &primitive_carriers, &markers);
             register_declared_layout(&mut plan, hir_struct, layout);
         }
     }
@@ -151,7 +153,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
         if !hir_struct.generics.is_empty() {
             continue;
         }
-        let layout = layout_for_struct(&hir_struct, &mut plan, MirStorageKind::Reference, &primitive_carriers);
+        let layout = layout_for_struct(&hir_struct, &mut plan, MirStorageKind::Reference, &primitive_carriers, &markers);
         register_declared_layout(&mut plan, &hir_struct, layout);
     }
     plan
@@ -161,6 +163,41 @@ fn collect_module_structs<'a>(module: &'a HirModule, output: &mut Vec<&'a HirStr
     output.extend(module.structs.iter());
     for child in &module.submodules {
         collect_module_structs(child, output);
+    }
+}
+
+/// 收集「纯类型级标记」声明：值类型（`structure`）、零字段、带泛型形参。
+///
+/// 这类声明没有任何运行时字段，只能通过名义类型实参参与类型身份
+/// （`std.collection.Phantom<T>` 即此形状）。判定只取声明结构事实，不含名称、
+/// 命名空间或字段名；引用类型（`class`）与无泛型空结构不在内。
+pub fn type_level_marker_declarations(module: &HirModule) -> BTreeSet<nyar_types::ItemId> {
+    fn collect(module: &HirModule, output: &mut BTreeSet<nyar_types::ItemId>) {
+        for structure in module.structs.iter().chain(module.imported_semantic_exports.iter().flat_map(|export| export.structs.iter())) {
+            if !structure.is_value_type || !structure.fields.is_empty() || structure.generics.is_empty() {
+                continue;
+            }
+            if let Some(declaration) = structure.constructor_declaration {
+                output.insert(declaration);
+            }
+        }
+        for child in &module.submodules {
+            collect(child, output);
+        }
+    }
+    let mut markers = BTreeSet::new();
+    collect(module, &mut markers);
+    markers
+}
+
+/// 字段声明类型是纯类型级标记时，该字段只绑定类型实参，不承载运行时布局事实。
+///
+/// 只认已冻结的 [`ValkyrieType::Nominal`] declaration 身份；`Named`/限定名字符串
+/// 不参与认亲，避免按名字把普通字段误判为标记。
+pub fn is_type_level_marker_field(ty: &ValkyrieType, markers: &BTreeSet<nyar_types::ItemId>) -> bool {
+    match ty {
+        ValkyrieType::Nominal { declaration, .. } => markers.contains(declaration),
+        _ => false,
     }
 }
 
@@ -247,10 +284,12 @@ fn layout_for_struct(
     plan: &AggregateLayoutPlan,
     storage: MirStorageKind,
     primitive_carriers: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
+    markers: &BTreeSet<nyar_types::ItemId>,
 ) -> AggregateLayout {
     let fields = hir_struct
         .fields
         .iter()
+        .filter(|field| !is_type_level_marker_field(&field.ty, markers))
         .map(|field| {
             // 核心 primitive 声明在 HIR 中冻结为 Nominal{ItemId}；布局必须回到平台载体，
             // 否则字段布局缺少平台 NyarType::Nominal 形状。
