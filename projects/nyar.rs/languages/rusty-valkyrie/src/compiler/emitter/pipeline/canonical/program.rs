@@ -12,8 +12,9 @@ use super::{
     errors::{canonical_error, ensure_instantiated_signature, error, error_without_module, type_id},
     fragments::canonical_fragments,
     identities::{
-        AggregateDeclarations, canonical_type_kind, collect_aggregate_identities, collect_types, is_array_index_valkyrie_type,
-        register_aggregate_nominal_instances, register_sum_nominal_instances, validate_callable_identities,
+        AggregateDeclarations, canonical_type_kind, collect_aggregate_identities, collect_types, intern_instance_field_types,
+        is_array_index_valkyrie_type, register_aggregate_nominal_instances, register_sum_nominal_instances,
+        validate_callable_identities,
     },
     lower::lower_function,
 };
@@ -26,8 +27,11 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     }
     // witness 分派由 canonical `CanonicalCallee::Witness` 承载稳定身份；
     // 具体 self 的消去与开放泛型的字典 ABI 由表示/目标层按合同决定。
-    let type_values = collect_types(module)?;
+    let mut type_values = collect_types(module)?;
     validate_callable_identities(module)?;
+    // 实例级字段类型是 binder 代入的派生事实，前端类型表可能从未见过；先补齐身份，
+    // 实例布局与字段记录才能引用它们。
+    intern_instance_field_types(module, &mut type_values)?;
     let AggregateDeclarations { mut nominals, mut field_records, declaration_nominals } = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
     linked.aggregate_layouts = module.aggregate_layouts.clone();
