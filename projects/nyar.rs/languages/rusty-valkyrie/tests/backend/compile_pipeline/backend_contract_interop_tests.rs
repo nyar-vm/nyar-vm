@@ -40,7 +40,6 @@ micro helper(message: utf8): unit {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn maps_abstract_syscall_binding_and_call_edge() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 902 });
     let module = compiler
@@ -82,7 +81,6 @@ micro main() -> i64 {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn bare_abstract_declaration_has_no_import_contract() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 903 });
     let module = compiler

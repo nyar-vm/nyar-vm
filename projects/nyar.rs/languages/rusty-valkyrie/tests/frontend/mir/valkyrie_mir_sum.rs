@@ -6,7 +6,6 @@ use rusty_valkyrie::{
 };
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn sum_declaration_preserves_generic_fields_and_instantiates_without_variant_spelling() {
     let hir = ValkyrieCompiler::default()
         .compile_source(
@@ -48,7 +47,6 @@ fn sum_declaration_rejects_duplicate_owner_binder_and_field() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn sum_declaration_preserves_variant_result_refinement() {
     let mut hir = ValkyrieCompiler::default().compile_source("unite Parcel<T> { Arbitrary { value: T } }").expect("当前源码声明");
     let item = hir.enums[0].declaration.expect("Parcel declaration");
@@ -61,7 +59,6 @@ fn sum_declaration_preserves_variant_result_refinement() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn sum_operations_from_source_reject_missing_substitution_and_wrong_payload() {
     let mir = ValkyrieCompiler::default()
         .compile_source_to_mir(

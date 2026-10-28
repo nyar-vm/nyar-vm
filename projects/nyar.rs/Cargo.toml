@@ -121,3 +121,6 @@ incremental = false
 
 [profile.test]
 incremental = false
+
+[patch."https://github.com/yggdrasil-language/oak.rs"]
+oak-valkyrie = { path = "E:\\vmz 全栈开发\\oaks\\examples\\oak-valkyrie" }

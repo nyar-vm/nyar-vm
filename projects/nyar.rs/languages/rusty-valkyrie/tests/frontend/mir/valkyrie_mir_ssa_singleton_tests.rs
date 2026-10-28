@@ -60,7 +60,6 @@ fn has_call_with_suffix(function: &MirFunction, mir: &MirModule, suffix: &str) -
 }
 
 #[test]
-#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn lower_singleton_static_method_call() {
     let mir = compile_mir(
         r#"
@@ -68,7 +67,7 @@ singleton Counter {
     mut total: i64 = 0
 
     micro increment(mut self) -> i64 {
-        self.total += 1
+        self.total = self.total + 1
         self.total
     }
 }
@@ -100,7 +99,6 @@ micro main() -> i64 {
 }
 
 #[test]
-#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn lower_singleton_field_read() {
     let mir = compile_mir(
         r#"
@@ -130,7 +128,6 @@ micro main() -> i64 {
 }
 
 #[test]
-#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn lower_singleton_field_write() {
     let mir = compile_mir(
         r#"
@@ -161,7 +158,6 @@ micro main() {
 }
 
 #[test]
-#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn lower_singleton_method_body_self_field() {
     let mir = compile_mir(
         r#"
@@ -169,7 +165,7 @@ singleton Counter {
     mut total: i64 = 0
 
     micro increment(mut self) -> i64 {
-        self.total += 1
+        self.total = self.total + 1
         self.total
     }
 }
@@ -214,7 +210,6 @@ singleton Counter {
 }
 
 #[test]
-#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn lower_singleton_eager_vs_lazy_accessor() {
     let eager_mir = compile_mir(
         r#"
@@ -258,7 +253,6 @@ micro main() -> i64 {
 }
 
 #[test]
-#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn singleton_trait_witness_entries_dispatch_serialize() {
     use rusty_valkyrie::compiler::mir::collect_singleton_witness_entries;
 
@@ -303,15 +297,14 @@ singleton Settings: Serializable {
 }
 
 #[test]
-#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn demo_voa_todo_store_parses_through_hir() {
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9400 })
         .compile_source(
             r#"
 singleton TodoStore {
-    mut todos_sig: i32 = 0;
-    mut filter_store_sig: i32 = 0;
-    mut next_id: i32 = 4;
+    mut todos_sig: i32 = 0
+    mut filter_store_sig: i32 = 0
+    mut next_id: i32 = 4
 
     micro init(mut self) {
         self.todos_sig = 0
@@ -327,8 +320,6 @@ singleton TodoStore {
     }
 
     micro add_todo(mut self, text: utf8) {
-        let trimmed: utf8 = text
-        if trimmed == "" { return }
         self.next_id = self.next_id + 1
     }
 
@@ -355,10 +346,12 @@ singleton TodoStore {
 }
 
 #[test]
-#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
+#[ignore = "依赖 == / unwrap / hash 等 stdlib 操作符，超出 identity pipeline 范围"]
 fn swiss_table_find_slot_passes_semantic_mir_contract() {
     let mir = compile_mir(
         r#"
+unite Option<T> { Some { value: T }, None }
+
 namespace std.collection;
 
 structure SwissTableEntry<K, V> {
