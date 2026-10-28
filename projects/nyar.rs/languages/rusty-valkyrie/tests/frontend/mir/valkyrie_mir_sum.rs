@@ -1,6 +1,6 @@
 use rusty_valkyrie::{
     ValkyrieCompiler,
-    mir::{MirLowerer, MirOperation, compiler::driver::validation::validate_semantic_module},
+    mir::{MirLowerer, MirOperation, validate_semantic_module},
     types::hir::types::ValkyrieType,
     *,
 };
