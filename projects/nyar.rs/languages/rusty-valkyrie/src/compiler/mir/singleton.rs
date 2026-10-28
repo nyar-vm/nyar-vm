@@ -30,7 +30,7 @@ use crate::compiler::{
     hir::trait_system::{build_witness_method_entries, satisfy_named_trait},
     types::{
         Identifier,
-        hir::{HirField, HirModule, HirSingleton, HirStruct, HirTrait, ValkyrieType},
+        hir::{GenericType, HirField, HirModule, HirSingleton, HirStruct, HirTrait, ValkyrieType},
         witness::{MethodEntry, ModuleId, TypeId},
     },
 };
@@ -48,6 +48,8 @@ pub use nyar_types::{
 pub struct AggregateFieldIndex {
     by_name: BTreeMap<Identifier, Vec<HirField>>,
     by_declaration: BTreeMap<nyar_types::ItemId, Vec<HirField>>,
+    generics_by_name: BTreeMap<Identifier, Vec<GenericType>>,
+    generics_by_declaration: BTreeMap<nyar_types::ItemId, Vec<GenericType>>,
 }
 
 impl AggregateFieldIndex {
@@ -57,6 +59,20 @@ impl AggregateFieldIndex {
             ValkyrieType::Named(type_name) => self.by_name.get(type_name).map(Vec::as_slice),
             ValkyrieType::Nominal { declaration, .. } => self.by_declaration.get(declaration).map(Vec::as_slice),
             ValkyrieType::Apply(base, _) => self.fields_of(base),
+            _ => None,
+        }
+    }
+
+    /// 按对象类型取声明泛型形参；身份口径与 [`Self::fields_of`] 一致。
+    ///
+    /// 字段类型是按声明泛型形参写出的，例如 `Entry<K, V>` 的 `key: K`；
+    /// 成员投影必须用实例实参把声明形参代入，否则同名不同 binder 的泛型参数
+    /// 在调用点永远对不上 `where` 约束里的 evidence。
+    pub fn generics_of(&self, object_type: &ValkyrieType) -> Option<&[GenericType]> {
+        match object_type {
+            ValkyrieType::Named(type_name) => self.generics_by_name.get(type_name).map(Vec::as_slice),
+            ValkyrieType::Nominal { declaration, .. } => self.generics_by_declaration.get(declaration).map(Vec::as_slice),
+            ValkyrieType::Apply(base, _) => self.generics_of(base),
             _ => None,
         }
     }
@@ -72,18 +88,23 @@ pub fn collect_aggregate_field_map(module: &HirModule) -> AggregateFieldIndex {
 fn collect_aggregate_field_map_into(module: &HirModule, index: &mut AggregateFieldIndex) {
     for item in &module.structs {
         index.by_name.insert(item.name.clone(), item.fields.clone());
+        index.generics_by_name.insert(item.name.clone(), item.generics.clone());
         if let Some(declaration) = item.constructor_declaration {
             index.by_declaration.insert(declaration, item.fields.clone());
+            index.generics_by_declaration.insert(declaration, item.generics.clone());
         }
     }
     for singleton in &module.singletons {
         index.by_name.insert(singleton.name.clone(), singleton.fields.clone());
+        index.generics_by_name.insert(singleton.name.clone(), singleton.generics.clone());
     }
     for export in &module.imported_semantic_exports {
         for item in &export.structs {
             index.by_name.entry(item.name.clone()).or_insert_with(|| item.fields.clone());
+            index.generics_by_name.entry(item.name.clone()).or_insert_with(|| item.generics.clone());
             if let Some(declaration) = item.constructor_declaration {
                 index.by_declaration.entry(declaration).or_insert_with(|| item.fields.clone());
+                index.generics_by_declaration.entry(declaration).or_insert_with(|| item.generics.clone());
             }
         }
     }
