@@ -357,7 +357,7 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
         MirOperand::Constant(MirConstant::Int(_)) => Some(ValkyrieType::Integer64 { signed: true }),
         MirOperand::Constant(MirConstant::Float64(_)) => Some(ValkyrieType::Float64),
         MirOperand::Constant(MirConstant::Unit) => Some(ValkyrieType::Unit),
-        MirOperand::Callable(_) => None,
+        MirOperand::Callable(_) | MirOperand::Witness(_) => None,
     };
     for block in &function.blocks {
         for (index, parameter) in block.parameters.iter().enumerate() {
@@ -527,6 +527,11 @@ pub(super) fn validate_static_call_resolution(
             location,
             detail: "indirect call requires a function-typed callee SSA value".to_string(),
         });
+    }
+    if let MirOperand::Witness(_) = callee {
+        // trait 方法槽 witness 既没有实例身份也没有静态签名：MIR 只保证分派义务被携带，
+        // 不在此伪造 instance；可执行形态由表示层按 target 合同决定或显式失败。
+        return Ok(());
     }
     Err(SemanticMirContractError {
         code: "SMIR003",
