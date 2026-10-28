@@ -207,6 +207,7 @@ pub fn try_resolve_primitive_numeric_operator(
         declaration: None,
         instance: Some(instance),
         intrinsic: None, // 没有新的 IntrinsicId——通过 instance + type 特判
+        trait_dispatch: None,
         sum_owner: None,
         sum_variant: None,
         symbol,

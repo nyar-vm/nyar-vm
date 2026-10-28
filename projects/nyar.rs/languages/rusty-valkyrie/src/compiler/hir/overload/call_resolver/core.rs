@@ -17,7 +17,7 @@ use crate::compiler::{
         Identifier, NamePath,
         hir::{
             HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirFunction, HirLiteral, HirParam, HirPattern, HirResolvedCall,
-            HirStringSegment, HirTrait, HirTraitBound, HirVariant, HirWhereConstraint, ValkyrieType,
+            HirStringSegment, HirTrait, HirTraitBound, HirTraitDispatch, HirVariant, HirWhereConstraint, ValkyrieType,
         },
     },
 };
@@ -372,6 +372,7 @@ pub(crate) fn try_resolve_call(
                 sum_owner: None,
                 sum_variant: None,
                 intrinsic: None,
+                trait_dispatch: None,
                 symbol: NamePath::new(vec![Identifier::new(local_name)]),
                 domain: HirCallableDomain::Function,
                 return_type: func.return_type.clone(),
@@ -415,19 +416,30 @@ pub(crate) fn try_resolve_call(
                     }
                 }
                 let matched = crate::compiler::hir::overload::diagnostics::resolve_overload(&matches).ok()?;
-                return Some(HirResolvedCall {
+                let mut call = HirResolvedCall {
                     declaration: matched.declaration,
                     instance: matched.instance,
                     sum_owner: matched.sum_owner,
                     sum_variant: matched.sum_variant,
                     intrinsic: None,
+                    trait_dispatch: None,
                     symbol: matched.symbol,
                     domain: HirCallableDomain::Function,
                     return_type: matched.signature.return_type,
                     parameter_types: matched.signature.params,
                     has_receiver: false,
                     extractor_payload_type: None,
-                });
+                };
+                // 泛型静态 trait 调用没有实例身份：把「哪个 trait 的哪个方法槽必须在
+                // subject 上成立」冻结成 evidence，不在此处单态化，也不伪造实例。
+                if call.instance.is_none()
+                    && let Some(trait_declaration) = matched.trait_owner
+                    && let Some(method_declaration) = call.declaration
+                {
+                    call.trait_dispatch =
+                        Some(HirTraitDispatch { trait_declaration, method_declaration, self_type: subject.target.clone() });
+                }
+                return Some(call);
             }
             if singleton_names.contains(owner) {
                 return try_resolve_singleton_method(
@@ -607,6 +619,7 @@ pub(crate) fn try_resolve_call(
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
         intrinsic: resolved.intrinsic,
+        trait_dispatch: None,
         symbol,
         domain: HirCallableDomain::Function,
         return_type,

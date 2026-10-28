@@ -205,6 +205,7 @@ pub fn try_resolve_constructor(
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
         intrinsic: resolved.intrinsic,
+        trait_dispatch: None,
         symbol: overload_symbol_path(&resolved),
         domain: HirCallableDomain::Constructor,
         return_type: resolved.signature.return_type,

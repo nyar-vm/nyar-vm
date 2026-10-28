@@ -14,6 +14,7 @@ mod hir_lowering_vx_tests;
 mod hir_overload_identity_tests;
 #[cfg(false)] // AstToHir 已移除、类型签名变化（架构迁移）
 mod hir_overload_singleton_tests;
+mod hir_trait_dispatch_evidence_tests;
 mod hir_trait_system_impl_identity_tests;
 mod hir_type_lowering_tests;
 mod valkyrie_frontend_contract_nyar_type;
