@@ -34,7 +34,7 @@ fn leetcode_browser_wasm_plan_injects_wasm_adaptor_js_random_providers() {
     let plan = workspace
         .build_plan(&BuildRequest {
             project_dir: project_dir.clone(),
-            target: CanonicalTarget::wasm(),
+            target: CanonicalTarget::browser(),
             output_dir: None,
         ..Default::default()
         })
@@ -114,7 +114,7 @@ fn leetcode_browser_wasm_plan_injects_wasm_adaptor_js_random_providers() {
 
     let api_plan = rusty_valkyrie::legion::plan(PlanRequest {
         project_dir: project_dir.clone(),
-        target: CanonicalTarget::wasm(),
+        target: CanonicalTarget::browser(),
         output_dir: None,
     })
     .expect("api plan");

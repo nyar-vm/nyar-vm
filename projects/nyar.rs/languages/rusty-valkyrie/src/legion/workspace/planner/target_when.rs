@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn when_vendor_browser_and_wechat_map_to_specifications() {
-        let browser = CanonicalTarget::wasm();
+        let browser = CanonicalTarget::browser();
         let mp: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().unwrap();
         let browser_pred = WhenPredicate { key: "vendor".into(), value: "browser".into() };
         let wechat_pred = WhenPredicate { key: "vendor".into(), value: "wechat".into() };

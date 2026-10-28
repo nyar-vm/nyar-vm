@@ -54,7 +54,7 @@ impl Default for BuildRequest {
     fn default() -> Self {
         Self {
             project_dir: PathBuf::default(),
-            target: CanonicalTarget::wasm(),
+            target: CanonicalTarget::browser(),
             output_dir: None,
             enabled_features: std::collections::BTreeSet::new(),
         }

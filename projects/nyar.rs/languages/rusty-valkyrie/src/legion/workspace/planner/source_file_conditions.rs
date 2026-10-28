@@ -134,7 +134,7 @@ namespace std.adaptor.wasm;
 [js("random")]
 micro js_random_next_i32(seed: i32): i32
 "#;
-        assert!(source_file_active_for_target(source, CanonicalTarget::wasm()));
+        assert!(source_file_active_for_target(source, CanonicalTarget::browser()));
         assert!(!source_file_active_for_target(source, CanonicalTarget::wasi()));
     }
 
@@ -159,9 +159,9 @@ namespace std.adaptor.wasi;
         let root = crate::compiler::syntax::oak::parse_source(source).expect("when file gate must parse");
         let items = file_level_condition_items_from_root(&root).expect("file-level when");
         assert_eq!(items.whens.len(), 1);
-        assert!(!when_item_matches_target(&items.whens[0], CanonicalTarget::wasm()));
+        assert!(!when_item_matches_target(&items.whens[0], CanonicalTarget::browser()));
         assert!(when_item_matches_target(&items.whens[0], CanonicalTarget::wasip3()));
-        assert!(!source_file_active_for_target(source, CanonicalTarget::wasm()));
+        assert!(!source_file_active_for_target(source, CanonicalTarget::browser()));
         assert!(source_file_active_for_target(source, CanonicalTarget::wasip3()));
     }
 
@@ -171,7 +171,7 @@ namespace std.adaptor.wasi;
 [when(target.vendor == "wechat")]
 namespace std.adaptor.wasm;
 "#;
-        assert!(!source_file_active_for_target(source, CanonicalTarget::wasm()));
+        assert!(!source_file_active_for_target(source, CanonicalTarget::browser()));
     }
 
     #[test]
@@ -186,10 +186,10 @@ namespace std.adaptor.wasm.fetch;
         assert_eq!(items.gates[0].value, "fetch");
         assert_eq!(items.whens.len(), 1);
         let enabled = feature_set(&["fetch"]);
-        assert!(source_file_active_for_target_and_features(source, CanonicalTarget::wasm(), Some(&enabled)));
+        assert!(source_file_active_for_target_and_features(source, CanonicalTarget::browser(), Some(&enabled)));
         assert!(!source_file_active_for_target_and_features(source, CanonicalTarget::wasi(), Some(&enabled)));
         // 未提供 feature 上下文 → Unknown → fail-closed 不参与构建。
-        assert!(!source_file_active_for_target(source, CanonicalTarget::wasm()));
+        assert!(!source_file_active_for_target(source, CanonicalTarget::browser()));
     }
 
     #[test]
@@ -199,9 +199,9 @@ namespace std.adaptor.wasm.fetch;
 "#;
         let enabled = feature_set(&["fetch"]);
         let disabled = feature_set(&[]);
-        assert!(source_file_active_for_target_and_features(source, CanonicalTarget::wasm(), Some(&enabled)));
-        assert!(!source_file_active_for_target_and_features(source, CanonicalTarget::wasm(), Some(&disabled)));
-        assert!(!source_file_active_for_target(source, CanonicalTarget::wasm()));
+        assert!(source_file_active_for_target_and_features(source, CanonicalTarget::browser(), Some(&enabled)));
+        assert!(!source_file_active_for_target_and_features(source, CanonicalTarget::browser(), Some(&disabled)));
+        assert!(!source_file_active_for_target(source, CanonicalTarget::browser()));
     }
 
     #[test]
@@ -210,8 +210,8 @@ namespace std.adaptor.wasm.fetch;
 namespace std.adaptor.wasm;
 "#;
         let enabled = feature_set(&["fetch"]);
-        assert!(!source_file_active_for_target_and_features(source, CanonicalTarget::wasm(), Some(&enabled)));
-        assert!(!source_file_active_for_target(source, CanonicalTarget::wasm()));
+        assert!(!source_file_active_for_target_and_features(source, CanonicalTarget::browser(), Some(&enabled)));
+        assert!(!source_file_active_for_target(source, CanonicalTarget::browser()));
     }
 
     #[test]
@@ -223,7 +223,7 @@ namespace x;
         let bad = r#"[when(no_such_key = "x")]
 namespace x;
 "#;
-        assert!(!source_file_active_for_target(bad, CanonicalTarget::wasm()));
+        assert!(!source_file_active_for_target(bad, CanonicalTarget::browser()));
     }
 
     #[test]
@@ -237,16 +237,16 @@ namespace x;
             return;
         }
         let shared = std::fs::read_to_string(corpus.join("fetch.v")).expect("fetch.v");
-        assert!(source_file_active_for_target(&shared, CanonicalTarget::wasm()));
+        assert!(source_file_active_for_target(&shared, CanonicalTarget::browser()));
         let mp: CanonicalTarget = "wasm32-unknown-miniprogram-wasm".parse().unwrap();
         assert!(source_file_active_for_target(&shared, mp));
 
         let browser = std::fs::read_to_string(corpus.join("fetch.browser.v")).expect("fetch.browser.v");
-        assert!(source_file_active_for_target(&browser, CanonicalTarget::wasm()));
+        assert!(source_file_active_for_target(&browser, CanonicalTarget::browser()));
         assert!(!source_file_active_for_target(&browser, mp));
 
         let wechat = std::fs::read_to_string(corpus.join("fetch.wechat.v")).expect("fetch.wechat.v");
-        assert!(!source_file_active_for_target(&wechat, CanonicalTarget::wasm()));
+        assert!(!source_file_active_for_target(&wechat, CanonicalTarget::browser()));
         assert!(source_file_active_for_target(&wechat, mp));
     }
 }

@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn browser_wasm_includes_fetch_not_wx() {
-        let available = target_capability_set(CanonicalTarget::wasm());
+        let available = target_capability_set(CanonicalTarget::browser());
         assert!(available.contains("js.fetch"));
         assert!(available.contains("js.random"));
         assert!(!available.contains("js.wx.request"));
@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn wasm_opcode_provider_matches_browser_wasm_without_js_binding() {
         use crate::compiler::semantic::closure::{DeclarationKey, DeclarationKind};
-        let target = CanonicalTarget::wasm();
+        let target = CanonicalTarget::browser();
         let available = target_capability_set(target);
         let provider = PlannedHostProvider {
             contract: "core::primitive::__f64_add".into(),

@@ -437,9 +437,26 @@ impl CanonicalTarget {
         Self::new(CanonicalArch::Jvm, CanonicalVendor::OpenJdk, CanonicalSpecification::Unknown, Some(CanonicalAbi::Jvm))
     }
 
-    /// 创建浏览器 `WASM` 目标。
+    /// 创建**中性** `WASM` 目标（不声明任何 JS / Node / WASI 宿主）。
+    ///
+    /// 这是默认 WASM 目标。宿主配置必须显式使用 [`Self::browser`]、[`Self::node`]、[`Self::wasi`] 等。
     pub const fn wasm() -> Self {
+        Self::neutral_wasm()
+    }
+
+    /// 创建中性 `WASM` 目标（与 [`Self::wasm`] 等价，语义更明确）。
+    pub const fn neutral_wasm() -> Self {
+        Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly))
+    }
+
+    /// 创建浏览器宿主 WASM 目标（显式声明 JS / DOM host）。
+    pub const fn browser() -> Self {
         Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Browser, Some(CanonicalAbi::WebAssembly))
+    }
+
+    /// 创建 Node.js WASM 宿主目标。
+    pub const fn node() -> Self {
+        Self::new(CanonicalArch::Wasm32, CanonicalVendor::Node, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly))
     }
 
     /// 创建 `WASI` Preview 2（wasip2）目标。
@@ -488,16 +505,17 @@ impl CanonicalTarget {
         match value.to_ascii_lowercase().as_str() {
             "clr" => Some(Self::clr()),
             "jvm" => Some(Self::jvm()),
-            "wasm" => Some(Self::wasm()),
+            // 中性 WASM：不声明任何 JS/Node/WASI 宿主
+            "wasm" | "unknown" => Some(Self::neutral_wasm()),
+            // 显式浏览器宿主 alias
+            "browser" | "browser-wasm" | "web-wasm" => Some(Self::browser()),
             "wasi" | "wasip1" | "wasip2" => {
                 Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Wasi, Some(CanonicalAbi::Wasi)))
             }
             "wasip3" => {
                 Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Wasi, Some(CanonicalAbi::WasiP3)))
             }
-            "node" => {
-                Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Node, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)))
-            }
+            "node" => Some(Self::node()),
             "deno" => {
                 Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Deno, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)))
             }

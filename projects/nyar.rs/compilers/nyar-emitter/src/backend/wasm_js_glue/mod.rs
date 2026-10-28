@@ -449,6 +449,13 @@ pub fn build_node_launcher(
     let has_imports = !imports.is_empty();
     let has_read_source = imports.iter().any(|(_, field)| field == "read_source_byte");
     let smoke_import_object_literal = render_import_object_literal(imports);
+    // ── CLI 模式开关：仅基于 import 名存在性 ────────────────────────────
+    // 注意：这里只看 `"cli_get_target"` / `"cli_get_project"` / `"cli_get_output"`
+    // 这三个 import **名**是否同时存在，用来决定启动壳是否生成 CLI 分派代码。
+    //
+    // ❌ 这里**绝不**读取编译目标（`TargetExecutionPlan.target`）或 runner
+    //    默认值 `"node"` —— `cli_target` 的值是 Node 启动壳内部 JS 变量，
+    //    和编译目标事实是两条完全独立的语义线。
     let cli_mode = imports.iter().any(|(_, field)| field == "cli_get_project")
         && imports.iter().any(|(_, field)| field == "cli_get_target")
         && imports.iter().any(|(_, field)| field == "cli_get_output");
@@ -579,6 +586,15 @@ const UTF8_LITERALS = {utf8_literals_json};
 const hostValues = [""];
 const hostValueIds = new Map([["", 0]]);
 let cli_project = "";
+// ── Node runner CLI 默认值，不是编译目标 ────────────────────────────
+// 本变量仅用于 Node 启动壳内部的 `--target` CLI 参数默认值。
+// WASM 模块内部通过 `cli_get_target` import 读取到的就是这个运行时值，
+// 供测试矩阵选择执行宿主（node / deno / bun ...）。
+//
+// ⚠️  它和 `TargetExecutionPlan.target` / planner manifest 里的**编译目标事实**
+//      完全无关。emitter 构建链路在 Rust 侧从不读取本变量的值——
+//      `cli_mode` 开关（决定是否生成 CLI 分派代码）只看 `"cli_get_target"`
+//      这个 import **名**是否存在，与默认值字符串无关。
 let cli_target = "node";
 let cli_output = "";
 let cli_verbose = false;
