@@ -8,7 +8,7 @@ use crate::compiler::{
     types::{
         Identifier,
         hir::{
-            HirExpr, HirExprKind, HirIdentifier, HirLiteral, HirStatement, HirStatementKind, HirStringSegment, PatternRefutability,
+            GenericType, HirExpr, HirExprKind, HirIdentifier, HirLiteral, HirStatement, HirStatementKind, HirStringSegment, PatternRefutability,
             ValkyrieType,
         },
     },
@@ -95,7 +95,21 @@ pub(crate) fn lookup_struct_field_type(
     field: &Identifier,
     struct_fields: &AggregateFieldIndex,
 ) -> Option<ValkyrieType> {
-    struct_fields.fields_of(object_type).and_then(|fields| fields.iter().find(|item| item.name == *field).map(|item| item.ty.clone()))
+    let declared = struct_fields.fields_of(object_type)?.iter().find(|item| item.name == *field)?.ty.clone();
+    let generics = struct_fields.generics_of(object_type).unwrap_or(&[]);
+    Some(instantiate_declared_type(&declared, generics, object_type.nominal_arguments()))
+}
+
+/// 把对象类型的实参代入声明泛型形参，得到字段在该实例上的类型。
+///
+/// 结构体字段按声明形参书写（`Entry<K, V>` 的 `key: K`）；投影到 `Entry<X, Y>`
+/// 上时字段类型必须是 `X`，否则调用点约束里的 `K` 与字段类型里的 `K` 是两个 binder。
+fn instantiate_declared_type(declared: &ValkyrieType, generics: &[GenericType], arguments: &[ValkyrieType]) -> ValkyrieType {
+    let substitutions = generics.iter().filter_map(|generic| generic.binder).zip(arguments.iter().cloned()).collect::<BTreeMap<_, _>>();
+    if substitutions.is_empty() {
+        return declared.clone();
+    }
+    crate::compiler::hir::overload::substitute_type_vars(declared, &substitutions)
 }
 
 pub(crate) fn payload_field_scrutinee_types(payload: &ValkyrieType, struct_fields: &AggregateFieldIndex) -> Vec<Option<ValkyrieType>> {
