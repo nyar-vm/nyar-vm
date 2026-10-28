@@ -1,8 +1,8 @@
 //! 结构体字段布局、继承索引与值类型事实。
 
-use super::model::*;
+use super::{model::*, value_semantics};
 use crate::compiler::types::hir::{HirModule, HirParent, ValkyrieType};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn struct_matches_parent_path(structure: &crate::compiler::types::hir::HirStruct, parent: &HirParent) -> bool {
     let path = parent.name.parts();
@@ -37,15 +37,19 @@ fn resolve_parent_declarations(module: &HirModule, parents: &[HirParent]) -> Vec
 /// 将 `HirStruct` 降级为 `MirStruct`，保留字段身份与类型供后端生成 `TypeDef` / `Field`。
 ///
 /// `FieldId` 只来自 HIR 注册阶段；缺失时记录结构化诊断，不得按顺序补造身份。
+/// 纯类型级标记字段（零字段值类型 + 泛型实参，如 `Phantom<T>`）只绑定类型实参，
+/// 不承载运行时字段事实，因此不进入 `MirStruct::fields`——与运行时布局同口径。
 pub(super) fn lower_struct(
     module: &HirModule,
     hir_struct: &crate::compiler::types::hir::HirStruct,
     nominal: usize,
+    markers: &BTreeSet<nyar_types::ItemId>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> MirStruct {
     let fields = hir_struct
         .fields
         .iter()
+        .filter(|field| !value_semantics::is_type_level_marker_field(&field.ty, markers))
         .filter_map(|field| {
             let Some(id) = field.id
             else {
@@ -69,14 +73,20 @@ pub(super) fn lower_struct(
 }
 
 pub(super) fn collect_field_declarations(module: &HirModule, diagnostics: &mut Vec<MirDiagnostic>) -> Vec<MirStruct> {
-    fn collect(module: &HirModule, declarations: &mut Vec<MirStruct>, next_nominal: &mut usize, diagnostics: &mut Vec<MirDiagnostic>) {
+    fn collect(
+        module: &HirModule,
+        markers: &BTreeSet<nyar_types::ItemId>,
+        declarations: &mut Vec<MirStruct>,
+        next_nominal: &mut usize,
+        diagnostics: &mut Vec<MirDiagnostic>,
+    ) {
         for hir_struct in &module.structs {
-            declarations.push(lower_struct(module, hir_struct, *next_nominal, diagnostics));
+            declarations.push(lower_struct(module, hir_struct, *next_nominal, markers, diagnostics));
             *next_nominal += 1;
         }
         for export in &module.imported_semantic_exports {
             for hir_struct in &export.structs {
-                declarations.push(lower_struct(module, hir_struct, *next_nominal, diagnostics));
+                declarations.push(lower_struct(module, hir_struct, *next_nominal, markers, diagnostics));
                 *next_nominal += 1;
             }
         }
@@ -106,12 +116,13 @@ pub(super) fn collect_field_declarations(module: &HirModule, diagnostics: &mut V
             *next_nominal += 1;
         }
         for submodule in &module.submodules {
-            collect(submodule, declarations, next_nominal, diagnostics);
+            collect(submodule, markers, declarations, next_nominal, diagnostics);
         }
     }
+    let markers = value_semantics::type_level_marker_declarations(module);
     let mut declarations = Vec::new();
     let mut next_nominal = 0usize;
-    collect(module, &mut declarations, &mut next_nominal, diagnostics);
+    collect(module, &markers, &mut declarations, &mut next_nominal, diagnostics);
     let mut unique = Vec::new();
     for declaration in declarations {
         if !declaration.declaration.is_some_and(|identity| unique.iter().any(|existing: &MirStruct| existing.declaration == Some(identity))) {
