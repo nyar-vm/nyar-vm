@@ -432,6 +432,9 @@ imply SwissTable<K, V> {
                     MirOperand::Callable(identity) => {
                         panic!("block {} jump to {} arg {} contains callable identity {:?}", block.id.0, target.0, index, identity);
                     }
+                    MirOperand::Witness(witness) => {
+                        panic!("block {} jump to {} arg {} contains trait witness {:?}", block.id.0, target.0, index, witness);
+                    }
                 };
                 assert!(ty.is_some(), "block {} jump to {} arg {} has no SSA type: {:?}", block.id.0, target.0, index, argument);
             }

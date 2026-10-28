@@ -10,7 +10,7 @@ use crate::compiler::types::{
     hir::{HirPattern, ValkyrieType},
 };
 use nyar::SemanticFragment;
-use nyar_types::{ItemInstanceId, VariantId};
+use nyar_types::{ItemId, ItemInstanceId, VariantId};
 use std::collections::BTreeMap;
 
 /// `MIR` lowering 阶段产生的编译期诊断。
@@ -463,6 +463,26 @@ pub enum MirOperand {
     Constant(MirConstant),
     /// Compiler 在依赖闭包冻结后分配的 callable identity。
     Callable(ItemInstanceId),
+    /// 泛型接收者的 trait 方法分派义务。
+    ///
+    /// 该调用点没有可执行的 callable identity，只有「哪个 trait 的哪个方法槽必须在
+    /// `self_type` 上成立」这一事实。它不是值、不是常量，也不得被降级成 `Unit`；
+    /// 表示层要么按 target 合同接上 witness 分派，要么显式失败。
+    Witness(MirTraitWitness),
+}
+
+/// 泛型接收者上 trait 方法调用的分派义务。
+///
+/// frontend 不在 `MIR` 单态化：`self_type` 允许保持带 binder 的开放泛型，
+/// 具体实现类型、witness 形态与调用形态由表示层按 target 合同决定。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MirTraitWitness {
+    /// 所属 trait 的声明身份。
+    pub trait_declaration: nyar_types::ItemId,
+    /// 被调用的 trait 方法声明身份（方法槽）。
+    pub method_declaration: nyar_types::ItemId,
+    /// 接收者在调用点的静态类型；开放泛型时仍携带 binder。
+    pub self_type: ValkyrieType,
 }
 
 /// `MIR` 常量。

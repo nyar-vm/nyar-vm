@@ -15,7 +15,7 @@ pub(super) fn infer_operand_static_type(function: &MirFunction, operand: &MirOpe
                 _ => None,
             }
         }),
-        MirOperand::Callable(_) => None,
+        MirOperand::Callable(_) | MirOperand::Witness(_) => None,
     }
 }
 

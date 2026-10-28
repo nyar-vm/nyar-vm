@@ -5,7 +5,7 @@ use crate::compiler::types::{
     hir::{HirExpr, HirExprKind, HirResolvedCall},
 };
 
-use super::{MirBuilder, MirConstant, MirOperand, MirValueRef, ValkyrieType};
+use super::{MirBuilder, MirConstant, MirOperand, MirTraitWitness, MirValueRef, ValkyrieType};
 
 impl MirBuilder {
     pub(super) fn nominal_identity_for_declaration(&mut self, declaration: nyar_types::ItemId) -> Option<nyar_types::NominalInstanceId> {
@@ -153,7 +153,7 @@ pub(super) fn infer_builder_operand_type(operand: &MirOperand, value_types: &BTr
     match operand {
         MirOperand::Value(value_ref) => value_types.get(value_ref).cloned(),
         MirOperand::Constant(constant) => infer_builder_constant_type(constant),
-        MirOperand::Callable(_) => None,
+        MirOperand::Callable(_) | MirOperand::Witness(_) => None,
     }
 }
 
@@ -368,10 +368,20 @@ pub(super) fn lower_callee_operand(
 
 /// 将已解析调用合同投影到 Semantic MIR 的唯一 callee 形式。
 ///
-/// 源码声明已有实例身份时只能使用 `Callable`；声明存在但实例缺失是合同错误，
-/// 不能退回名称。只有明确没有源码声明的外部合同才保留 ABI 符号。
+/// 源码声明已有实例身份时只能使用 `Callable`；没有实例身份但冻结了 trait 分派义务时
+/// 使用 `Witness`，原样携带 trait 方法槽与接收者静态类型，不在此处单态化。
+/// 两者都不成立才是合同错误，不能退回名称。
 pub(super) fn lower_resolved_callee(resolved: &crate::compiler::types::hir::HirResolvedCall) -> Option<MirOperand> {
-    resolved.instance.map(MirOperand::Callable)
+    if let Some(instance) = resolved.instance {
+        return Some(MirOperand::Callable(instance));
+    }
+    resolved.trait_dispatch.as_ref().map(|dispatch| {
+        MirOperand::Witness(MirTraitWitness {
+            trait_declaration: dispatch.trait_declaration,
+            method_declaration: dispatch.method_declaration,
+            self_type: dispatch.self_type.clone(),
+        })
+    })
 }
 
 /// 尝试将表达式解析为 `NamePath`。
