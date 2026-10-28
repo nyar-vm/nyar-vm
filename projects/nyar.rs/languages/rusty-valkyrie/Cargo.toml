@@ -67,3 +67,11 @@ path = "tests/legion/main.rs"
 [[test]]
 name = "asgard"
 path = "tests/asgard/main.rs"
+
+[[test]]
+name = "frontend"
+path = "tests/frontend/main.rs"
+
+[[test]]
+name = "backend"
+path = "tests/backend/main.rs"
