@@ -279,6 +279,8 @@ fn constant_nyar_type(constant: &crate::contracts::Constant) -> NyarType {
         crate::contracts::Constant::Utf8(_) => NyarType::Utf8,
         crate::contracts::Constant::Utf16(_) => NyarType::Utf16,
         crate::contracts::Constant::Unit => NyarType::Unit,
+        // 空值没有独立名义类型；它只能经带 `T?` 类型的 LoadConstant 进入计划。
+        crate::contracts::Constant::Null => panic!("bare null constant has no standalone semantic type"),
     }
 }
 

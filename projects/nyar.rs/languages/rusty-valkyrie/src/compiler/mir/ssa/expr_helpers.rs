@@ -425,5 +425,7 @@ fn infer_builder_constant_type(constant: &MirConstant) -> Option<ValkyrieType> {
         MirConstant::Utf8(_) => ValkyrieType::Utf8,
         MirConstant::Utf16(_) => ValkyrieType::Utf16,
         MirConstant::Unit => ValkyrieType::Unit,
+        // 空值 SSA 类型由 `LoadConstant.ty` 的 `T?` 上下文提供；此处只有纯空值身份。
+        MirConstant::Null => ValkyrieType::Named(crate::compiler::types::Identifier::new("null")),
     })
 }

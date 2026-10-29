@@ -507,6 +507,17 @@ impl MirBuilder {
                     MirOperand::Constant(MirConstant::Bool(false))
                 }
             }
+            HirLiteral::Null => {
+                let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
+                else {
+                    return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value);
+                };
+                if !crate::compiler::hir::is_nullable_type(&actual_type) {
+                    return MirOperand::Constant(MirConstant::Bool(false));
+                }
+                // 匹配 `null` 即匹配空引用，语义由 NullIsNull 承载，不比较名义 Option 变体。
+                self.emit_null_is_null_operand(value)
+            }
             HirLiteral::String(_) => {
                 let Some(expected_type) = expected_type
                 else {

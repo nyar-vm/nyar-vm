@@ -674,6 +674,8 @@ pub fn infer_literal_type(literal: &HirLiteral) -> Option<ValkyrieType> {
         HirLiteral::Bool(_) => Some(ValkyrieType::Boolean),
         HirLiteral::Unit => Some(ValkyrieType::Unit),
         HirLiteral::String(_) => None,
+        // 空值没有独立名义类型；其 `T?` 由使用位置的上下文给出。
+        HirLiteral::Null => None,
     }
 }
 

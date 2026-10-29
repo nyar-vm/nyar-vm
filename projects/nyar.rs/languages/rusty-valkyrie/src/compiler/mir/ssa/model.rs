@@ -503,6 +503,9 @@ pub enum MirConstant {
     Utf16(String),
     /// 单元类型常量。
     Unit,
+    /// 可空空值 `null`：`T?` 的空引用。类型由 `LoadConstant.ty` 的上下文决定，
+    /// 不是名义 `Option<T>::None` 变体。
+    Null,
 }
 
 /// `MIR` effect terminator category.

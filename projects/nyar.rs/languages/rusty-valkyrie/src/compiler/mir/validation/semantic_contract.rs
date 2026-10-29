@@ -357,6 +357,7 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
         MirOperand::Constant(MirConstant::Int(_)) => Some(ValkyrieType::Integer64 { signed: true }),
         MirOperand::Constant(MirConstant::Float64(_)) => Some(ValkyrieType::Float64),
         MirOperand::Constant(MirConstant::Unit) => Some(ValkyrieType::Unit),
+        MirOperand::Constant(MirConstant::Null) => Some(ValkyrieType::Named(crate::compiler::types::Identifier::new("null"))),
         MirOperand::Callable(_) | MirOperand::Witness(_) => None,
     };
     for block in &function.blocks {
@@ -392,6 +393,30 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                                 "text constant result SSA type disagrees with the literal encoding".to_string(),
                             ));
                         }
+                    }
+                }
+            }
+            if let MirOperation::LoadConstant { constant: MirConstant::Null, ty } = &instruction.kind {
+                // 空值只能承载 `T?`；没有 nullable 上下文时结构化拒绝，
+                // 禁止退回 Unit 或按题名/变量名猜载体。
+                match ty.as_ref() {
+                    Some(ty) if crate::compiler::hir::is_nullable_type(ty) => {
+                        if let Some(output) = instruction.results.first() {
+                            if function.value_types.get(output) != Some(ty) {
+                                return Err(error(
+                                    "SMIR007",
+                                    location.clone(),
+                                    "null constant result SSA type disagrees with its nullable context type".to_string(),
+                                ));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(error(
+                            "SMIR007",
+                            location.clone(),
+                            "null constant requires a nullable (`T?`) context type".to_string(),
+                        ));
                     }
                 }
             }

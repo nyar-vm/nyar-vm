@@ -1163,6 +1163,7 @@ fn lower_constant(constant: &CanonicalConstant) -> Constant {
         CanonicalConstant::Utf8(v) => Constant::Utf8(v.clone()),
         CanonicalConstant::Utf16(v) => Constant::Utf16(v.clone()),
         CanonicalConstant::Unit => Constant::Unit,
+        CanonicalConstant::Null => Constant::Null,
     }
 }
 

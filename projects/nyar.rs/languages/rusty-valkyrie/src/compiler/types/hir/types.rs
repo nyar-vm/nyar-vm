@@ -755,6 +755,8 @@ pub enum HirLiteral {
     String(HirStringLiteral),
     /// 布尔值。
     Bool(bool),
+    /// 可空空值 `null`（`T?` 的空引用），不是名义 `Option::None` 变体。
+    Null,
     /// 单元值 `()`。
     Unit,
 }

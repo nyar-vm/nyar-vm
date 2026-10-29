@@ -88,6 +88,10 @@ pub enum Constant {
     Utf16(String),
     /// Unit constant.
     Unit,
+    /// Nullable empty value (`T?` has no payload here). The context type on
+    /// `LoadConstant` states which `T?` this empty reference belongs to;
+    /// it is never a nominal `Option::None` variant.
+    Null,
 }
 
 /// Instruction / terminator operand.

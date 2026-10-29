@@ -572,6 +572,11 @@ impl<'a> WasmMirLowerer<'a> {
                 assert_eq!(slot_ty, WASM_GC_ANYREF, "WASM 单元值与已规划槽不一致");
                 self.emit_load_constant(constant);
             }
+            // 可空空值就是 `T?` 的空引用；槽必须已按 Nullable 规划成 anyref。
+            MirConstant::Null => {
+                assert_eq!(slot_ty, WASM_GC_ANYREF, "WASM 空值与已规划的 nullable 槽不一致");
+                self.emit_ref_null_anyref();
+            }
             MirConstant::Utf16(_) => {
                 panic!("WASM lowering requires an explicit UTF-16 ABI contract")
             }
@@ -613,6 +618,8 @@ impl<'a> WasmMirLowerer<'a> {
             }
             // Unit ADT=1（恰有一个值）；用 ref.null any ?GC 占位，勿?void(ADT=0) 混淆?
             MirConstant::Unit => self.emit_ref_null_anyref(),
+            // `T?` 的空引用：直接编码空引用，不构造名义 Option 载体。
+            MirConstant::Null => self.emit_ref_null_anyref(),
         }
     }
 
