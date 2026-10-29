@@ -46,9 +46,14 @@ pub(crate) fn collect_aggregate_identities(
         if declaration_nominals.insert(declaration, nominal).is_some() {
             return Err(error_without_module("CAN020", format!("聚合声明 identity 重复: {qualified}")));
         }
-        for field in &aggregate.fields {
-            if field_records.insert(field.id, FieldRecord { owner: nominal, ty: type_id(types, &field.ty)? }).is_some() {
-                return Err(error_without_module("CAN022", format!("字段 identity 重复: {qualified}.{}", field.name)));
+        // 声明级只登记无开放形参的聚合字段。泛型声明的字段类型含 binder，
+        // 必须等 register_aggregate_nominal_instances 按具体实例代入后再登记 FieldRecord。
+        // 否则 Generic{binder} 会被 intern 进 canonical 类型表，backend 无法处理。
+        if aggregate.generics.is_empty() {
+            for field in &aggregate.fields {
+                if field_records.insert(field.id, FieldRecord { owner: nominal, ty: type_id(types, &field.ty)? }).is_some() {
+                    return Err(error_without_module("CAN022", format!("字段 identity 重复: {qualified}.{}", field.name)));
+                }
             }
         }
     }
@@ -424,8 +429,8 @@ pub(crate) fn canonical_type_kind(
             parameters: function.params.iter().map(id).collect::<Result<_, _>>()?,
             return_type: id(&function.return_type)?,
         },
-        // 泛型形参：只有带 `binder` 的声明身份才是稳定类型事实；缺失 binder 的形参
-        // 仍是未解析占位。形参不得按名字解析成任何实现。
+        // 泛型形参：带 `binder` 的声明身份是稳定的类型事实（泛型函数签名里的形参）。
+        // 无 binder 的形参仍是未解析占位，不得进入 canonical。
         ValkyrieType::Generic(generic) => {
             let Some(binder) = generic.binder
             else {
