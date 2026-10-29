@@ -1,5 +1,6 @@
 #![doc = include_str!("readme.md")]
 
+pub mod builtin_structure;
 pub mod context;
 pub mod r#enum;
 pub mod export_spec;
@@ -20,6 +21,7 @@ pub mod widget;
 
 pub use types::{AccessLevel, *};
 
+pub use builtin_structure::BuiltinStructureOp;
 pub use context::RenameContext;
 pub use r#enum::{HirEnum, HirFlagMember, HirFlags, HirVariant};
 pub use export_spec::{

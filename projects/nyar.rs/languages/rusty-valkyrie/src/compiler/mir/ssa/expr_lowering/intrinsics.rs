@@ -2,7 +2,7 @@ use crate::compiler::{
     hir::is_nullable_type,
     types::{
         Identifier, NamePath,
-        hir::{FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
+        hir::{BuiltinStructureOp, FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
     },
 };
 
@@ -343,7 +343,7 @@ impl MirBuilder {
         arguments: &[MirOperand],
         expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
-        if resolved?.intrinsic? != nyar_types::IntrinsicId::ArrayLen {
+        if resolved?.intrinsic? != BuiltinStructureOp::ArrayLen {
             return None;
         }
         if arguments.is_empty() {
@@ -391,7 +391,7 @@ impl MirBuilder {
         arguments: &[MirOperand],
         expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
-        if resolved?.intrinsic? != nyar_types::IntrinsicId::ArrayGet {
+        if resolved?.intrinsic? != BuiltinStructureOp::ArrayGet {
             return None;
         }
         if arguments.len() < 2 {
@@ -415,7 +415,7 @@ impl MirBuilder {
         resolved: Option<&HirResolvedCall>,
         arguments: &[MirOperand],
     ) -> Option<MirOperand> {
-        if resolved?.intrinsic? != nyar_types::IntrinsicId::ArraySet {
+        if resolved?.intrinsic? != BuiltinStructureOp::ArraySet {
             return None;
         }
         if arguments.len() < 3 {
@@ -435,7 +435,7 @@ impl MirBuilder {
         arguments: &[MirOperand],
         expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
-        if resolved?.intrinsic? != nyar_types::IntrinsicId::ArrayPush {
+        if resolved?.intrinsic? != BuiltinStructureOp::ArrayPush {
             return None;
         }
         if arguments.len() < 2 {

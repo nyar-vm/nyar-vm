@@ -411,11 +411,14 @@ pub(crate) fn try_resolve_instance_method(
     else {
         return None;
     };
-    // 内建数组形态 `[T]` 的运算符成员（`suffix [ ]` / `suffix ⁅ ⁆` 及其赋值形态）是
-    // 语言原语：注册表候选只挂 `intrinsic`，返回裸元素 `T`。源码对 `Array<T>` 类写的
-    // `imply` 运算符声明只服务类值，不得遮蔽内建数组形态的下标语义——源码里 `[T]⁅i⁆`
-    // 一律按裸元素读（`Option<T>` 由 `get` 这类具名方法提供），否则同一份源码在元素
-    // 具体时读内置候选、元素为形参时读声明候选，会得到两种返回类型。
+    // 内建数组形态 `[T]` / 固定数组的运算符成员（`suffix [ ]` / `suffix ⁅ ⁆` 及其赋值形态）
+    // 是语言结构语义：其事实所有者是 frontend 内建下标候选，候选只挂
+    // `BuiltinStructureOp`，返回裸元素 `T`。源码对 `Array<T>` 类写的 `imply` 运算符
+    // 声明只服务类值，不得遮蔽内建数组形态的下标语义——源码里 `[T]⁅i⁆` 一律按裸元素读
+    // （`Option<T>` 由 `get` 这类具名方法提供），否则同一份源码在元素具体时读内置候选、
+    // 元素为形参时读声明候选，会得到两种返回类型。
+    // `List.push` / `ArrayList.push` 这类库行为不是结构语义，仍走普通 callable 与已选
+    // provider，不并入这条路径。
     let prefer_array_intrinsic = matches!(receiver_type, ValkyrieType::Array(_) | ValkyrieType::FixedArray { .. })
         && operator_members::is_operator_member_name(method_name.as_str());
     let mut filtered = Vec::new();

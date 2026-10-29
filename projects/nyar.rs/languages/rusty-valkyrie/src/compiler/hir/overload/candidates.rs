@@ -3,8 +3,8 @@
 use crate::compiler::types::{
     Identifier, NamePath,
     hir::{
-        GenericType, HirDependencySemanticExport, HirEnum, HirExprKind, HirFunction, HirModule, HirParam, HirStringSegment, HirStruct,
-        HirTrait, HirVariadicKind, HirVariant, ValkyrieType,
+        BuiltinStructureOp, GenericType, HirDependencySemanticExport, HirEnum, HirExprKind, HirFunction, HirModule, HirParam, HirStringSegment,
+        HirStruct, HirTrait, HirVariadicKind, HirVariant, ValkyrieType,
     },
 };
 
@@ -12,7 +12,7 @@ use super::{
     diagnostics::{OverloadCandidate, OverloadDomain, OverloadMatchKind},
     types::struct_apply_type,
 };
-pub(crate) fn declaration_intrinsic(function: &HirFunction) -> Option<nyar_types::IntrinsicId> {
+pub(crate) fn declaration_intrinsic(function: &HirFunction) -> Option<BuiltinStructureOp> {
     let attribute =
         function.annotations.iter().find(|attribute| attribute.name.parts().len() == 1 && attribute.name.parts()[0].as_str() == "intrinsic")?;
     let argument = attribute.arguments.first()?;
@@ -28,8 +28,7 @@ pub(crate) fn declaration_intrinsic(function: &HirFunction) -> Option<nyar_types
         };
         rendered.push_str(text);
     }
-    let parts = rendered.split('.').collect::<Vec<_>>();
-    nyar_types::IntrinsicId::resolve_from_segments(&parts)
+    BuiltinStructureOp::from_annotation_path(&rendered)
 }
 
 fn build_function_candidate(module_name: &NamePath, function: &HirFunction, imported_dependency_export: bool) -> OverloadCandidate {
@@ -355,7 +354,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
         element_type.clone(),
         OverloadMatchKind::NominalExact,
     );
-    get.intrinsic = Some(nyar_types::IntrinsicId::ArrayGet);
+    get.intrinsic = Some(BuiltinStructureOp::ArrayGet);
     let mut set = OverloadCandidate::new(
         NamePath::new(vec![Identifier::new("suffix [ ]=")]),
         OverloadDomain::Function,
@@ -363,7 +362,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
         ValkyrieType::Unit,
         OverloadMatchKind::NominalExact,
     );
-    set.intrinsic = Some(nyar_types::IntrinsicId::ArraySet);
+    set.intrinsic = Some(BuiltinStructureOp::ArraySet);
     let mut cardinal_get = OverloadCandidate::new(
         NamePath::new(vec![Identifier::new("suffix ⁅ ⁆")]),
         OverloadDomain::Function,
@@ -371,7 +370,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
         element_type.clone(),
         OverloadMatchKind::NominalExact,
     );
-    cardinal_get.intrinsic = Some(nyar_types::IntrinsicId::ArrayGet);
+    cardinal_get.intrinsic = Some(BuiltinStructureOp::ArrayGet);
     let mut cardinal_set = OverloadCandidate::new(
         NamePath::new(vec![Identifier::new("suffix ⁅ ⁆=")]),
         OverloadDomain::Function,
@@ -379,6 +378,6 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
         ValkyrieType::Unit,
         OverloadMatchKind::NominalExact,
     );
-    cardinal_set.intrinsic = Some(nyar_types::IntrinsicId::ArraySet);
+    cardinal_set.intrinsic = Some(BuiltinStructureOp::ArraySet);
     vec![get, set, cardinal_get, cardinal_set]
 }

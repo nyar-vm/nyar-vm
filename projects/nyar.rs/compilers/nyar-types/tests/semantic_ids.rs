@@ -55,21 +55,10 @@ fn branded_ids_are_distinct_types() {
     assert_eq!(ItemIdKind::NAME, "ItemId");
 }
 
+// 语言内建结构操作身份归 frontend 私有，OVM 指令编号归 `odin_bytecode::IntrinsicOpcode`；
+// `nyar-types` 不再导出跨这两个所有者的 `IntrinsicId`。这里只验证属性身份仍是可扩展的。
 #[test]
-fn intrinsic_and_attribute_ids_are_extensible() {
-    assert_eq!(IntrinsicId::ArrayPush.diagnostic_path(), "builtin.array.push");
-    assert_eq!(IntrinsicId::ArrayPush.bytecode_index(), 0);
-    assert_eq!(IntrinsicId::from_bytecode_index(2), Some(IntrinsicId::ArrayGet));
-    assert_eq!(IntrinsicId::from_bytecode_index(99), None);
-    assert_eq!(IntrinsicId::resolve_from_segments(&["builtin", "array", "push"]), Some(IntrinsicId::ArrayPush));
-    assert_eq!(IntrinsicId::resolve_from_segments(&["__array_len"]), Some(IntrinsicId::ArrayLen));
-    assert_eq!(IntrinsicId::resolve_from_segments(&["marker", "__ref_deref"]), Some(IntrinsicId::RefDeref));
-    // 禁止按类型名末段猜
-    assert_eq!(IntrinsicId::resolve_from_segments(&["Array", "get"]), None);
-    assert_eq!(IntrinsicId::resolve_from_segments(&["HashMap", "get"]), None);
-    assert_eq!(IntrinsicId::resolve_from_segments(&["is_null"]), Some(IntrinsicId::IsNull));
-    assert_eq!(IntrinsicId::resolve_from_segments(&["unwrap_null"]), Some(IntrinsicId::UnwrapNull));
-    assert_eq!(IntrinsicId::resolve_from_segments(&["builtin", "null", "is_null"]), Some(IntrinsicId::IsNull));
+fn attribute_ids_are_extensible() {
     assert_eq!(builtin_attribute::export().index(), 0);
     assert_eq!(builtin_attribute::main().index(), 1);
     let seeds = builtin_attribute::seed_registrations();

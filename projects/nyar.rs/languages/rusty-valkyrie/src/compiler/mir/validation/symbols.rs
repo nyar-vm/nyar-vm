@@ -9,7 +9,7 @@ use crate::compiler::types::NamePath;
 /// 判断路径是否为语言内建 intrinsic。
 ///
 /// **batch 7**：生产代码已不再调用。仅保留为公开 API（validation.rs 对外 re-export），
-/// 实际 lowering 不再依赖名字匹配——intrinsic 必须带结构化 `IntrinsicId` 字段。
+/// 实际 lowering 不再依赖名字匹配——intrinsic 必须带结构化 `BuiltinStructureOp` 字段。
 #[doc(hidden)]
 pub fn is_language_builtin_symbol(symbol: &NamePath) -> bool {
     let head = symbol.parts().first().map(|p| p.as_str()).unwrap_or("");

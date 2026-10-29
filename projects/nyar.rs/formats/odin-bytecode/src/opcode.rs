@@ -3,6 +3,8 @@
 //! 本模块是 opcode 数值、指令编码形、指令解码与写入 helper 的唯一所有者。
 //! 它只描述字节流形状，不解释运行时语义。
 
+use crate::errors::NyarDecodeError;
+
 /// Magic value `NYAR` big-endian (`0x4E594152`).
 pub const NYAR_MAGIC: u32 = 0x4E59_4152;
 
@@ -145,6 +147,52 @@ impl NyarHeadCode {
             0x51 => Some(Self::FieldGet),
             0x52 => Some(Self::FieldSet),
             _ => None,
+        }
+    }
+}
+
+/// OVM 私有 intrinsic 指令身份。
+///
+/// 本枚举是 `NyarHeadCode::CallIntrinsic` 的 `operand1` 编码合同，属于
+/// OVM 字节码格式与执行分派，与任何语言语义枚举无关。语言 builtin 身份
+/// （如 `builtin.array.push`）不得由本枚举推导，本枚举也不得反向充当语言
+/// builtin / 注册表。编号是已冻结的字节码兼容值，不得重排。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(i32)]
+pub enum IntrinsicOpcode {
+    /// 向可增长数组存储 push（`operand2` = argc）。
+    ArrayPush = 0,
+    /// 数组 / 列表长度。
+    ArrayLen = 1,
+    /// 数组存储下标读取。
+    ArrayGet = 2,
+    /// 数组存储下标写入。
+    ArraySet = 3,
+    /// 引用解引用（OVM 当前未实现，执行期返回 `UnsupportedFeature`）。
+    RefDeref = 4,
+    /// 空值检查。
+    IsNull = 5,
+    /// 空值解包。
+    UnwrapNull = 6,
+}
+
+impl IntrinsicOpcode {
+    /// 返回写入 `CallIntrinsic` `operand1` 的编码值。
+    pub const fn raw(self) -> i32 {
+        self as i32
+    }
+
+    /// 由 `CallIntrinsic` `operand1` 还原指令身份；未知编号 fail-closed。
+    pub fn from_operand(value: i32) -> Result<Self, NyarDecodeError> {
+        match value {
+            0 => Ok(Self::ArrayPush),
+            1 => Ok(Self::ArrayLen),
+            2 => Ok(Self::ArrayGet),
+            3 => Ok(Self::ArraySet),
+            4 => Ok(Self::RefDeref),
+            5 => Ok(Self::IsNull),
+            6 => Ok(Self::UnwrapNull),
+            other => Err(NyarDecodeError::UnknownIntrinsicOpcode(other)),
         }
     }
 }

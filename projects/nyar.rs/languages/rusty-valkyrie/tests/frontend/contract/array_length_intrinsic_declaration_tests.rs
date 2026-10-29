@@ -4,10 +4,9 @@
 //! `[intrinsic("builtin.array.length")] micro length<T>(array: [T]): usize { }`
 //! 是唯一前端来源；删除该声明后调用必须结构化失败，前端不得合成候选。
 
-use nyar_types::IntrinsicId;
 use rusty_valkyrie::{
     HirError, MirDiagnostic, MirLowerer, MirOperation, ValkyrieCompiler,
-    types::hir::{HirExpr, HirExprKind, HirFunction, ValkyrieType},
+    types::hir::{BuiltinStructureOp, HirExpr, HirExprKind, HirFunction, ValkyrieType},
 };
 
 /// 数值原始类型名属于 `core/primitive` 的声明族；未声明时 canonical 以 CAN003 拒绝。
@@ -57,7 +56,7 @@ fn declared_array_length_intrinsic_degrades_to_ordinary_call() {
     let resolved = resolved.as_ref().expect("length call must resolve through the declared intrinsic candidate");
     // HIR 层仍然保留 intrinsic identity（由 overload 阶段结构化绑定）——这是正确的，
     // intrinsic 身份是语义事实，不是 lowering 策略。
-    assert_eq!(resolved.intrinsic, Some(IntrinsicId::ArrayLen), "数组长度身份必须来自声明冻结的 intrinsic，而不是调用点名字");
+    assert_eq!(resolved.intrinsic, Some(BuiltinStructureOp::ArrayLen), "数组长度身份必须来自声明冻结的 intrinsic，而不是调用点名字");
     assert!(
         matches!(resolved.return_type, ValkyrieType::Nominal { .. }),
         "声明可见的 usize 必须已冻结为 Nominal identity，got {:?}",

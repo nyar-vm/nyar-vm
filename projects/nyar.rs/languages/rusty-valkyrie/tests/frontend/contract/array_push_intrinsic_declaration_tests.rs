@@ -4,13 +4,12 @@
 //! 是唯一前端来源；frontend 不再合成 `builtin.array.push` 候选。删除该声明后调用必须
 //! 结构化失败，且失败不得靠名字表或默认值兜底。
 
-use nyar_types::IntrinsicId;
 use rusty_valkyrie::{
     HirError, ValkyrieCompiler,
-    types::hir::{HirExprKind, HirFunction, HirStatementKind},
+    types::hir::{BuiltinStructureOp, HirExprKind, HirFunction, HirStatementKind},
 };
 
-/// 与 std 声明同形的唯一前端来源；`builtin.array.push` 是 `IntrinsicId` 注册的冻结拼写。
+/// 与 std 声明同形的唯一前端来源；`builtin.array.push` 是 frontend `BuiltinStructureOp` 冻结的注解拼写。
 const ARRAY_PUSH_INTRINSIC_DECLARATION: &str = "[intrinsic(\"builtin.array.push\")] micro push<T>(array: [T], value: T) -> [T] { } ";
 
 const GROW: &str = "micro grow(text: utf8) -> [utf8] { let mut result: [utf8] = [] push(result, text) return result }";
@@ -39,7 +38,7 @@ fn declared_array_push_intrinsic_binds_array_push_identity() {
 
     let declaration = find_function(&hir, "push").declaration;
     let resolved = push_call(find_function(&hir, "grow"));
-    assert_eq!(resolved.intrinsic, Some(IntrinsicId::ArrayPush), "push 身份必须来自声明冻结的 intrinsic，而不是调用点名字");
+    assert_eq!(resolved.intrinsic, Some(BuiltinStructureOp::ArrayPush), "push 身份必须来自声明冻结的 intrinsic，而不是调用点名字");
     assert_eq!(resolved.declaration, declaration, "调用必须绑定到源码声明的完整身份，而不是前端合成候选");
     assert_eq!(resolved.symbol.parts().last().map(|part| part.as_str()), Some("push"), "符号必须是声明名，而不是合成路径: {}", resolved.symbol);
 }

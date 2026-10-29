@@ -19,6 +19,8 @@ pub enum NyarDecodeError {
     InvalidSectionKind(u8),
     /// 模块内 UTF-8 字符串解码失败。
     InvalidUtf8,
+    /// `CallIntrinsic` 的 `operand1` 不是已知的 OVM intrinsic 指令编号。
+    UnknownIntrinsicOpcode(i32),
 }
 
 impl Display for NyarDecodeError {
@@ -31,6 +33,7 @@ impl Display for NyarDecodeError {
             Self::InvalidExportKind(kind) => write!(f, "invalid export kind: {kind}"),
             Self::InvalidSectionKind(kind) => write!(f, "invalid section kind: {kind}"),
             Self::InvalidUtf8 => write!(f, "invalid UTF-8 in .nyar module"),
+            Self::UnknownIntrinsicOpcode(value) => write!(f, "unknown intrinsic opcode: {value}"),
         }
     }
 }
