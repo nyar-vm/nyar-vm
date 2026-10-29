@@ -55,14 +55,14 @@ impl<'a> WasmMirLowerer<'a> {
                 let source_ty = self.operand_semantic_type(source).ok_or_else(|| {
                     format!("wasm 显式 cast 的源操作数缺少冻结类型: {}", self.mir_fn.symbol)
                 })?;
-                let conversion = scalar_cast_opcode(source_ty, ty)?;
+                let steps = scalar_cast_steps(source_ty, ty)?;
                 let Some(output) = instruction_primary_result(instruction)
                 else {
                     return Err(format!("wasm 显式 cast 缺少结果槽: {}", self.mir_fn.symbol));
                 };
                 self.emit_operand(source);
-                if let Some(opcode) = conversion {
-                    opcode.encode(&mut self.code);
+                for step in &steps {
+                    self.emit_scalar_cast_step(*step);
                 }
                 self.validate_output_slot_type(output, self.output_scalar_slot_type(output));
                 self.assign_output_local(output);
@@ -610,6 +610,15 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_ref_cast_struct(box_ty);
         self.emit_struct_get(box_ty, 0);
     }
+
+    /// 发射一步表示转换编码（见 [scalar_cast_steps] 的载体不变量）。
+    fn emit_scalar_cast_step(&mut self, step: ScalarCastStep) {
+        match step {
+            ScalarCastStep::Opcode(opcode) => opcode.encode(&mut self.code),
+            ScalarCastStep::Byte(byte) => numeric::emit_opcode(byte, &mut self.code),
+            ScalarCastStep::I32Const(value) => self.emit_i32_const(value),
+        }
+    }
 }
 
 /// sum 物理载体 `[i32 tag, anyref payload]` 的字段序；必须与
@@ -617,23 +626,148 @@ impl<'a> WasmMirLowerer<'a> {
 const SUM_TAG_FIELD: u32 = 0;
 const SUM_PAYLOAD_FIELD: u32 = 1;
 
-/// 语言层 `as` 的数值表示转换。
+/// 语言层 `as` 的数值表示转换的单步编码。
+///
+/// 截断必须由显式掩码或显式符号扩展完成，扩展必须按源类型的符号性选择指令；
+/// 都不得依赖宿主隐式回绕，也不得用近似指令冒充。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScalarCastStep {
+    Opcode(WasmOpcode),
+    /// acorn_wasm（pin `e7ed84a`）尚未导出的标准 wasm opcode 字节，直接写码流。
+    Byte(u8),
+    /// 压 `i32.const`，供紧随的 `i32.and` 掩码消费。
+    I32Const(i32),
+}
+
+/// `i64.extend_i32_u` 的标准 opcode 字节。
+const WASM_I64_EXTEND_I32_U: u8 = 0xAD;
+/// `i32.extend8_s`。
+const WASM_I32_EXTEND8_S: u8 = 0xC0;
+/// `i32.extend16_s`。
+const WASM_I32_EXTEND16_S: u8 = 0xC1;
+
+/// 语言层 `as` 的数值表示转换配方。
 ///
 /// 语义由计划冻结的两端 `NyarType` 决定：`i32` 与 `u32` 都占 `VALTYPE_I32`，只有
-/// `signed` 能区分 `i64.extend_i32_s` 与 `i64.extend_i32_u`。任何缺少精确 opcode 的
-/// 组合都必须响亮失败，禁止用近似指令冒充（例如把无符号扩展写成有符号扩展）。
-fn scalar_cast_opcode(source: &NyarType, target: &NyarType) -> crate::Result<Option<WasmOpcode>> {
+/// `signed` 能区分 `i64.extend_i32_s` 与 `i64.extend_i32_u`；窄整数（`Integer8` /
+/// `Integer16`）同样占 `VALTYPE_I32`，因此窄化配方必须显式写出，不能靠载体相同就跳过。
+///
+/// 载体不变量：窄整数与 `Character` 的 i32 载体值是**规范形态**——无符号是掩码后的
+/// 非负值，有符号是符号扩展后的值，`Character` 是码点。于是宽化到 `Integer32` 是恒等，
+/// 宽化到 `Integer64` 只需按源符号性扩展一次。
+///
+/// 任何缺少精确配方的组合都必须响亮失败，禁止用近似指令冒充。
+fn scalar_cast_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<ScalarCastStep>> {
     if source == target {
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    Ok(Some(match (source, target) {
-        (NyarType::Integer32 { signed: true }, NyarType::Integer64 { .. }) => WasmOpcode::I64ExtendI32S,
-        // 位宽收窄：wrap 与符号位无关。
-        (NyarType::Integer64 { .. }, NyarType::Integer32 { .. }) => WasmOpcode::I32WrapI64,
-        _ => {
-            return Err(format!(
-                "wasm 后端缺少 {source} → {target} 的精确表示转换编码（acorn_wasm 未提供对应 opcode），不得退化为近似转换"
-            ));
+    match (source, target) {
+        (NyarType::Integer64 { .. }, NyarType::Integer64 { .. }) => return Ok(Vec::new()),
+        _ => {}
+    }
+    let source_on_i32 = match source {
+        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } | NyarType::Character => true,
+        NyarType::Integer64 { .. } => false,
+        _ => return Err(unsupported_cast(source, target)),
+    };
+    let mut steps = Vec::new();
+    if !source_on_i32 {
+        // 64 位源先 wrap 回 i32 载体，再按目标宽度截断。
+        steps.push(ScalarCastStep::Opcode(WasmOpcode::I32WrapI64));
+    }
+    match target {
+        NyarType::Integer64 { .. } => steps.push(if source_is_signed(source) {
+            ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)
+        } else {
+            ScalarCastStep::Byte(WASM_I64_EXTEND_I32_U)
+        }),
+        // 32 位与 `Character` 就是 i32 载体本身的值。
+        NyarType::Integer32 { .. } | NyarType::Character => {}
+        NyarType::Integer8 { signed: false } => {
+            steps.push(ScalarCastStep::I32Const(0xFF));
+            steps.push(ScalarCastStep::Opcode(WasmOpcode::I32And));
         }
-    }))
+        NyarType::Integer8 { signed: true } => steps.push(ScalarCastStep::Byte(WASM_I32_EXTEND8_S)),
+        NyarType::Integer16 { signed: false } => {
+            steps.push(ScalarCastStep::I32Const(0xFFFF));
+            steps.push(ScalarCastStep::Opcode(WasmOpcode::I32And));
+        }
+        NyarType::Integer16 { signed: true } => steps.push(ScalarCastStep::Byte(WASM_I32_EXTEND16_S)),
+        _ => return Err(unsupported_cast(source, target)),
+    }
+    Ok(steps)
+}
+
+/// 源类型在 i32 载体上的值是否可能为负：决定宽化到 64 位时用符号扩展还是零扩展。
+fn source_is_signed(source: &NyarType) -> bool {
+    match source {
+        NyarType::Integer8 { signed } | NyarType::Integer16 { signed } | NyarType::Integer32 { signed } => *signed,
+        // `Character` 是 Unicode 码点，恒非负。
+        _ => false,
+    }
+}
+
+fn unsupported_cast(source: &NyarType, target: &NyarType) -> String {
+    format!("wasm 后端缺少 {source} → {target} 的精确表示转换编码（acorn_wasm 未提供对应 opcode），不得退化为近似转换")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cast(source: NyarType, target: NyarType) -> Vec<ScalarCastStep> {
+        scalar_cast_steps(&source, &target).expect("表示转换应有精确配方")
+    }
+
+    #[test]
+    fn widening_selects_extension_by_source_signedness() {
+        let i32s = NyarType::Integer32 { signed: true };
+        let u32v = NyarType::Integer32 { signed: false };
+        let i64s = NyarType::Integer64 { signed: true };
+        assert_eq!(cast(i32s.clone(), i64s.clone()), vec![ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)]);
+        assert_eq!(cast(u32v, i64s.clone()), vec![ScalarCastStep::Byte(WASM_I64_EXTEND_I32_U)]);
+        // 窄整数在 i32 载体上已是规范形态：宽化到 32 位不需要任何指令。
+        assert_eq!(cast(NyarType::Integer8 { signed: false }, NyarType::Integer32 { signed: false }), Vec::new());
+        assert_eq!(cast(NyarType::Integer16 { signed: true }, i32s), Vec::new());
+        assert_eq!(cast(NyarType::Integer8 { signed: true }, i64s), vec![ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)]);
+    }
+
+    #[test]
+    fn narrowing_masks_unsigned_and_extends_signed_explicitly() {
+        assert_eq!(
+            cast(NyarType::Integer32 { signed: false }, NyarType::Integer8 { signed: false }),
+            vec![ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And)]
+        );
+        assert_eq!(
+            cast(NyarType::Integer32 { signed: true }, NyarType::Integer16 { signed: false }),
+            vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)]
+        );
+        assert_eq!(
+            cast(NyarType::Integer32 { signed: true }, NyarType::Integer8 { signed: true }),
+            vec![ScalarCastStep::Byte(WASM_I32_EXTEND8_S)]
+        );
+        assert_eq!(
+            cast(NyarType::Integer64 { signed: false }, NyarType::Integer16 { signed: true }),
+            vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64), ScalarCastStep::Byte(WASM_I32_EXTEND16_S)]
+        );
+    }
+
+    #[test]
+    fn character_conversions_use_the_code_point_carrier() {
+        assert_eq!(cast(NyarType::Character, NyarType::Integer32 { signed: false }), Vec::new());
+        // 码点可以超出 16 位，收窄到 `u16` 必须显式掩码。
+        assert_eq!(
+            cast(NyarType::Character, NyarType::Integer16 { signed: false }),
+            vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)]
+        );
+        assert_eq!(cast(NyarType::Character, NyarType::Integer64 { signed: true }), vec![ScalarCastStep::Byte(WASM_I64_EXTEND_I32_U)]);
+        assert_eq!(cast(NyarType::Integer16 { signed: false }, NyarType::Character), Vec::new());
+        assert_eq!(cast(NyarType::Integer64 { signed: true }, NyarType::Character), vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64)]);
+    }
+
+    #[test]
+    fn unrepresentable_widths_fail_loudly() {
+        assert!(scalar_cast_steps(&NyarType::Integer128 { signed: true }, &NyarType::Integer32 { signed: true }).is_err());
+        assert!(scalar_cast_steps(&NyarType::Float64, &NyarType::Integer32 { signed: true }).is_err());
+    }
 }
