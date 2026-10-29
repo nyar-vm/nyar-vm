@@ -328,33 +328,12 @@ impl TargetExecutionPlan {
                 Ok(instance)
             })
             .collect::<Result<Vec<_>>>()?;
-        // 预收集所有签名含 Generic 的函数 ID——它们是 adaptor/std 里的泛型种子函数，
-        // frontend 单态化应为所有调用点铸造闭合实例。backend 无法编码含 Generic 签名。
-        let generic_functions: std::collections::BTreeSet<ItemInstanceId> = canonical
-            .mir
-            .functions
-            .iter()
-            .filter(|(_, func)| {
-                // 检查顶层参数/返回类型是否直接含 Generic（递归嵌套检查）
-                let param_has_generic = func.parameters.iter().any(|(_, tid)| {
-                    type_contains_generic_deep(canonical, *tid)
-                });
-                let ret_has_generic = type_contains_generic_deep(canonical, func.return_type);
-                param_has_generic || ret_has_generic
-            })
-            .map(|(inst, _)| *inst)
-            .collect();
         let mut seen = std::collections::BTreeSet::new();
         let mut functions = BTreeMap::new();
         let mut abi_names = BTreeMap::new();
         let mut imports = BTreeMap::new();
         while let Some(instance) = pending.pop() {
             if !seen.insert(instance) {
-                continue;
-            }
-            // 跳过泛型声明函数
-            if generic_functions.contains(&instance) {
-                eprintln!("[SKIP] 跳过泛型声明函数 instance {instance:?}");
                 continue;
             }
             if let Some((index, import)) = declared_imports.get(&instance) {
@@ -374,14 +353,17 @@ impl TargetExecutionPlan {
             let name = canonical.linked.callable_names.get(&instance).ok_or_else(|| format!("callable 实例 `{instance:?}` 缺少 ABI 名称"))?;
             abi_names.insert(instance, name.clone());
             let function = canonical.mir.functions.get(&instance).ok_or_else(|| format!("callable `{name}` 缺少 canonical 函数体"))?;
-            let (lowered, callees) = lower_function(program, function)?;
-            // 过滤掉指向泛型声明函数的 callees（它们不应该被编码）
-            let original_count = callees.len();
-            let filtered_callees: Vec<_> = callees.into_iter().filter(|c| !generic_functions.contains(c)).collect();
-            if filtered_callees.len() < original_count {
-                eprintln!("[SKIP] 函数 `{name}` 过滤掉 {} 个指向泛型声明的 callee", original_count - filtered_callees.len());
+            // 可达调用的目标必须已有闭合实例。签名仍含 Generic 的声明模板没有被前端证明
+            // 不可达，只是从前端单态化里漏掉；把它从闭包队列里滤掉等于把这处缺口伪装成
+            // 编译成功，因此这里失败闭合，要求前端提供单态化/evidence 合同。
+            if signature_contains_generic(canonical, function) {
+                return Err(format!(
+                    "可达调用的目标缺少闭合实例: instance={instance:?} symbol={name} 的声明签名仍含 Generic 类型参数，\
+                     backend 无法编码；需前端提供单态化/evidence 合同"
+                ));
             }
-            pending.extend(filtered_callees);
+            let (lowered, callees) = lower_function(program, function)?;
+            pending.extend(callees);
             functions.insert(instance, lowered);
         }
         let mut plan = Self {
@@ -1103,7 +1085,7 @@ fn lower_operation(
             }
         }
         CanonicalOperation::LoadConstant { constant } => InstructionKind::LoadConstant { constant: lower_constant(constant), ty: None },
-        // 结构操作已由 lowering 依据 `IntrinsicId` 判定完毕，事实所有权在此结束；
+        // 结构操作已由 frontend 依据自身内建结构操作身份判定完毕，事实所有权在此结束；
         // backend-private 计划只做载体映射，wasm backend 负责编码成 wasm GC 指令。
         // 在此重新拒绝会把已确认的结构语义降级成字符串错误，属禁止的向上推断。
         CanonicalOperation::ArrayGet { array, index } => InstructionKind::ArrayGet { array: value(*array), index: value(*index) },
@@ -1182,6 +1164,15 @@ fn lower_constant(constant: &CanonicalConstant) -> Constant {
         CanonicalConstant::Utf16(v) => Constant::Utf16(v.clone()),
         CanonicalConstant::Unit => Constant::Unit,
     }
+}
+
+/// 函数声明的签名（参数与返回类型）是否仍含未闭合的 Generic。
+///
+/// 签名含 Generic 说明该实例是声明模板而非单态化后的闭合实例；目标层无法编码这种
+/// 签名，因此它只能作为失败原因，不能作为「可以跳过」的判据。
+fn signature_contains_generic(program: &CanonicalProgram, function: &nyar_types::CanonicalFunction) -> bool {
+    function.parameters.iter().any(|(_, ty)| type_contains_generic_deep(program, *ty))
+        || type_contains_generic_deep(program, function.return_type)
 }
 
 /// 递归检查 canonical 类型（含嵌套）是否包含 Generic。
@@ -1287,6 +1278,55 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
             }
             return Err(format!("canonical 类型尚无目标合同: {unsupported:?} (module={}, refs=[{}], generic_types=[{}])", program.mir.module_name, refs_debug, type_debug));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nyar_types::{CanonicalBlockId, CanonicalFunction, CanonicalPrimitiveType, ItemId, TypeRecord};
+
+    fn type_id(index: u32) -> nyar_types::TypeId {
+        nyar_types::TypeId::from_index(index).expect("测试类型身份")
+    }
+
+    fn program_with_types(rows: Vec<(nyar_types::TypeId, CanonicalTypeKind)>) -> CanonicalProgram {
+        let mut program = CanonicalProgram::default();
+        for (id, kind) in rows {
+            program.linked.types.insert(id, TypeRecord { declaration: id, kind });
+        }
+        program
+    }
+
+    fn function_with_signature(parameters: Vec<nyar_types::TypeId>, return_type: nyar_types::TypeId) -> nyar_types::CanonicalFunction {
+        CanonicalFunction {
+            instance: ItemInstanceId::from_index(0).expect("测试实例身份"),
+            parameters: parameters
+                .into_iter()
+                .enumerate()
+                .map(|(index, ty)| (nyar_types::MirValueId::from_index(u32::try_from(index).expect("测试值下标")).expect("测试值身份"), ty))
+                .collect(),
+            parameter_names: Vec::new(),
+            return_type,
+            value_types: BTreeMap::new(),
+            entry: CanonicalBlockId(0),
+            blocks: BTreeMap::new(),
+        }
+    }
+
+    /// 签名含 Generic 的实例只能是失败原因，不能是「可以跳过」的判据。
+    #[test]
+    fn generic_signature_is_detected_in_parameter_and_nested_and_return() {
+        let generic = CanonicalTypeKind::Generic { owner: ItemId::from_index(0).expect("测试声明身份"), ordinal: 0 };
+        let program = program_with_types(vec![
+            (type_id(0), generic.clone()),
+            (type_id(1), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true })),
+            (type_id(2), CanonicalTypeKind::Tuple(vec![type_id(1), type_id(0)])),
+        ]);
+        assert!(signature_contains_generic(&program, &function_with_signature(vec![type_id(0)], type_id(1))), "直接泛型形参必须失败");
+        assert!(signature_contains_generic(&program, &function_with_signature(vec![type_id(2)], type_id(1))), "嵌套泛型形参必须失败");
+        assert!(signature_contains_generic(&program, &function_with_signature(vec![type_id(1)], type_id(0))), "泛型返回类型必须失败");
+        assert!(!signature_contains_generic(&program, &function_with_signature(vec![type_id(1)], type_id(1))), "闭合标量签名不是泛型模板");
     }
 }
 
