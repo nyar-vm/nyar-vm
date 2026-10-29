@@ -93,6 +93,33 @@ export function resolveNodeEntry(artifactDir: string): string | null {
     return findFileRecursive(artifactDir, (name) => name.endsWith('.mjs') || name.endsWith('.js'));
 }
 
+/** 解析 package 产物里的 wasm artifact；与 `resolveNodeEntry` 同属装配层产物布局事实。 */
+export function resolveWasmEntry(artifactDir: string): string | null {
+    return findFileRecursive(artifactDir, (name) => name.endsWith('.wasm'));
+}
+
+/** Node 轨 package 产物入口：node glue 与 wasm artifact 必须同时存在。 */
+export type NodeArtifactEntry = {
+    legionMjs: string;
+    legionWasm: string;
+    physicalEntry: string;
+};
+
+/**
+ * 解析 Node 轨产物入口。wasm 是 ABI schema（`nyar.library_invoke`）的载体，
+ * node glue 是调用宿主；两者缺一即不是可 invoke 的 package 产物，不猜测路径。
+ * physical entry 以执行 manifest 为准，缺失时回退 `main`（与 {@link resolveNyarEntry} 一致）。
+ */
+export function resolveArtifactEntry(artifactDir: string): NodeArtifactEntry | null {
+    const legionMjs = resolveNodeEntry(artifactDir);
+    const legionWasm = resolveWasmEntry(artifactDir);
+    if (!legionMjs || !legionWasm) {
+        return null;
+    }
+    const view = loadNative().legionReadExecutionManifest?.(artifactDir);
+    return {legionMjs, legionWasm, physicalEntry: view?.primaryPhysicalEntry ?? 'main'};
+}
+
 export function resolveNyarEntry(artifactDir: string): {
     nyarPath: string;
     physicalEntry: string;
