@@ -397,6 +397,7 @@ fn instruction_operands(kind: &ExecutableInstructionKind) -> Vec<&ExecutableOper
     match kind {
         LoadConstant { .. } | LoadSymbol { .. } => Vec::new(),
         Copy { source } => vec![source],
+        Cast { source, .. } => vec![source],
         StoreVar { value, .. } => vec![value],
         Call { callee, arguments } => {
             let mut values = vec![callee];

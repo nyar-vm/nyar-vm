@@ -18,6 +18,28 @@ use crate::compiler::types::hir::{HirModule, ValkyrieType};
 use nyar_types::NamePath;
 use std::collections::BTreeMap;
 
+/// 检查类型里是否还有未闭合的泛型 binder（`ValkyrieType::Generic(generic)` 且 `generic.binder.is_some()`）。
+/// 原始函数声明里的 open generic 进不了 MIR，让 instantiated_callables 成为唯一来源。
+fn contains_open_generic(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Generic(generic) => generic.binder.is_some(),
+        ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_open_generic),
+        ValkyrieType::Apply(base, arguments) => contains_open_generic(base) || arguments.iter().any(contains_open_generic),
+        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_open_generic(element),
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+            items.iter().any(contains_open_generic)
+        }
+        ValkyrieType::Function(function) => {
+            function.params.iter().any(|p| contains_open_generic(p)) || contains_open_generic(&function.return_type)
+        }
+        ValkyrieType::FixedArray { element, .. } => contains_open_generic(element),
+        ValkyrieType::Associated(assoc) => {
+            contains_open_generic(&assoc.base) || assoc.type_arguments.iter().any(contains_open_generic)
+        }
+        _ => false,
+    }
+}
+
 /// Semantic MIR lowering 阶段入口：把 `HirModule` 编排为 `MirModule`。
 pub struct MirLowerer;
 
@@ -49,6 +71,8 @@ impl MirLowerer {
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let mut external_calls = collect_external_call_contracts(module);
+
+
         let (host_runtime_callables, host_contracts) = if let Some(shared) = shared_host {
             (shared.by_name.clone(), if attach_host_contracts { shared.contracts.clone() } else { Vec::new() })
         }
@@ -68,7 +92,11 @@ impl MirLowerer {
         let (exports, entries) = collect_surface_contracts(module);
         let callable_returns = collect_callable_return_types(module);
         let mut functions = Vec::new();
-        for function in module.functions.iter().filter(|function| !function.is_abstract) {
+        for function in module.functions.iter().filter(|function| {
+            !function.is_abstract
+                && !function.params.iter().any(|p| contains_open_generic(&p.ty))
+                && !contains_open_generic(&function.return_type)
+        }) {
             functions.push(lower_function_semantic(
                 module,
                 function,
@@ -176,19 +204,22 @@ impl MirLowerer {
         let mut callable_symbols = BTreeMap::new();
         for function in &functions {
             if let Some(instance) = function.instance {
-                super::model::register_callable_symbol_entry(&mut callable_symbols, instance, function.display_symbol.clone())
+                let symbol = format!("{}#{}", function.display_symbol, instance.index());
+                super::model::register_callable_symbol_entry(&mut callable_symbols, instance, symbol)
                     .expect("duplicate callable symbol during lowering");
             }
         }
         for contract in &external_calls {
             if let Some(instance) = contract.instance {
-                let symbol = crate::compiler::hir::symbols::stable_symbol_key(&contract.symbol);
+                let base = crate::compiler::hir::symbols::stable_symbol_key(&contract.symbol);
+                let symbol = format!("{base}#{}", instance.index());
                 super::model::register_callable_symbol_entry(&mut callable_symbols, instance, symbol)
                     .expect("duplicate callable symbol during lowering");
             }
         }
         let accessor_instances = crate::compiler::mir::collect_singleton_accessor_contracts(module);
-        for (instance, symbol) in accessor_instances {
+        for (instance, base) in accessor_instances {
+            let symbol = format!("{base}#{}", instance.index());
             super::model::register_callable_symbol_entry(&mut callable_symbols, instance, symbol)
                 .expect("duplicate singleton accessor symbol during lowering");
         }

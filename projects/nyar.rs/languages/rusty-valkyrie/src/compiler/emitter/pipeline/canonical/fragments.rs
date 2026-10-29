@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_types::{
-    CanonicalCallEdge, CanonicalCallee, CanonicalConstant, CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalOperation,
-    Identifier, ImportIndex, ItemInstanceId, LinkedSemanticProgram, StructuredDiagnosticSet,
+    CanonicalAggregateOperation, CanonicalCallEdge, CanonicalCallee, CanonicalConstant, CanonicalExternalCallEdge, CanonicalFragment,
+    CanonicalFunction, CanonicalOperation, Identifier, ImportIndex, ItemInstanceId, LinkedSemanticProgram, StructuredDiagnosticSet,
 };
 
 use nyar::SemanticFragment;
@@ -20,6 +20,52 @@ pub(crate) fn canonical_fragments(
     let mut result = BTreeMap::new();
     for fragment in fragments {
         let mut exported_operations = fragment.exported_operations.clone();
+        let mut wasm_export_names = fragment.wasm_export_names.clone();
+        // 聚合直通操作按布局身份冻结导出名与 producer；布局缺失即失败闭合，
+        // 不退回声明级布局，也不按类型名或成员名猜载体。
+        let mut aggregate_operations = Vec::with_capacity(fragment.aggregate_operations.len());
+        let mut aggregate_export_names = BTreeSet::new();
+        for operation in &fragment.aggregate_operations {
+            let Some(layout_id) = linked.aggregate_layout_by_type.get(&operation.type_id).copied()
+            else {
+                return Err(error(module, "CAN059", format!("片段 {} 的聚合操作缺少实例级布局: type_id={:?}", fragment.id, operation.type_id)));
+            };
+            let Some(layout) = linked.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id)
+            else {
+                return Err(error(module, "CAN059", format!("片段 {} 的聚合操作布局记录缺失: layout_id={layout_id}", fragment.id)));
+            };
+            // 同一 (layout, operation) 恒同名；跨实例唯一。
+            let export_name = format!("__glue|{}|{}|{}|{}", layout.namespace, layout.name, layout.id, operation.operation.as_str());
+            if !aggregate_export_names.insert(export_name.clone()) {
+                return Err(error(module, "CAN060", format!("片段 {} 的聚合导出名重复: {export_name}", fragment.id)));
+            }
+            if wasm_export_names.iter().any(|(instance, existing)| *instance != operation.instance && existing == &export_name) {
+                return Err(error(module, "CAN060", format!("片段 {} 的聚合导出名与已有 wasm 导出名冲突: {export_name}", fragment.id)));
+            }
+            match wasm_export_names.insert(operation.instance, export_name.clone()) {
+                Some(previous) if previous != export_name => {
+                    return Err(error(
+                        module,
+                        "CAN060",
+                        format!(
+                            "片段 {} 的聚合 producer 已绑定不同导出名: instance={:?}; previous={previous}; next={export_name}",
+                            fragment.id, operation.instance
+                        ),
+                    ));
+                }
+                _ => {}
+            }
+            // producer 必须作为片段根出现，`freeze_library_export_abis` 才会冻结它的 ABI。
+            if !exported_operations.contains(&operation.instance) {
+                exported_operations.push(operation.instance);
+            }
+            aggregate_operations.push(CanonicalAggregateOperation {
+                layout_id,
+                operation: operation.operation,
+                export_name,
+                producer: operation.instance,
+            });
+        }
         for instance in &exported_operations {
             if !linked.item_instances.contains_key(instance) {
                 return Err(error(module, "CAN042", format!("片段 {} 的操作缺少 callable 合同", fragment.id)));
@@ -31,7 +77,6 @@ pub(crate) fn canonical_fragments(
                 return Err(error(module, "CAN043", format!("片段 {} 的入口缺少 callable 合同", fragment.id)));
             }
         }
-        let wasm_export_names = fragment.wasm_export_names.clone();
         let mut external_imports = BTreeMap::new();
         let mut internal_call_edges = Vec::new();
         let mut external_call_edges = Vec::new();
@@ -113,6 +158,7 @@ pub(crate) fn canonical_fragments(
                     external_call_edges,
                     internal_call_edges,
                     wasm_export_names,
+                    aggregate_operations,
                 },
             )
             .is_some()

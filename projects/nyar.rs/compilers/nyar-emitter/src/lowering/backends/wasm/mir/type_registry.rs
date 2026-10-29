@@ -8,20 +8,22 @@
 //! Zero-logic extract from the former monolithic lowerer (B4 seam).
 
 use super::{
-    ExecutableLoweringContext, LayoutId, MirInstructionKind, MirOperand, NyarType, StorageKind,
+    ExecutableLoweringContext, LayoutId, MirInstructionKind, MirOperand, NominalInstanceId, NyarType, StorageKind,
     representation::{is_js_glue_host_string_type, mir_storage_for_type, wasm_gc_field_type_byte_for_glue},
 };
 use crate::lowering::backends::wasm::gc::{wasm_gc_array_type, wasm_gc_struct_type};
+use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_I32};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// 扫描 MIR：登记 wasm-gc structtype 所需的 layout_id。
 ///
 /// - `StructNew`：仅 `storage == Reference`
 /// - `FieldGet` / `FieldSet`：凡带 layout_id 均登记（含 MIR `storage=Value` 但
-///   object 已在 anyref 的路径；emit 用 `force_output_local_for_stack_type`
-///   对齐 i32/i64/f64/anyref，避免误写 i32）
-/// - `AggregateCopy`：一律登记；emit 仅当 source/dest 在 `reference_locals`
-///   或 `layout.storage == Reference` 时深拷贝，否则 `memory.copy`
+///   object 已在 anyref 的路径，如 `SwissTableEntry` 作为 sum payload / 数组元素）
+/// - `AggregateCopy`：仅 `storage == Reference`。`storage=Value` 的聚合拷贝是
+///   `memory.copy` 或 anyref 浅拷贝，不需要也绝不能凭空登记成 structtype：
+///   注册表是物理表示的唯一权威，误登记（如标量 `usize`）会让 ABI 把标量槽
+///   提升成 anyref，常量发射随即失败。
 pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) -> BTreeSet<LayoutId> {
     let mut ids = BTreeSet::new();
     let exec = &ctx.submission.backend_plan;
@@ -47,7 +49,9 @@ pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) 
                     }
                     MirInstructionKind::AggregateCopy { layout_id, .. } => {
                         if let Some(layout) = ctx.layout_by_id(*layout_id) {
-                            ids.insert(layout.id);
+                            if layout.storage == StorageKind::Reference {
+                                ids.insert(layout.id);
+                            }
                         }
                     }
                     _ => {}
@@ -166,6 +170,55 @@ pub(super) fn register_gc_array_types(
                 }
             }
         }
+    }
+    map
+}
+
+/// 为 MIR 中实际出现的 sum nominal 注册 wasm-gc `structtype`。
+///
+/// 物理布局是**后端私有**选择，但必须由计划事实派生，不能按名字特判：
+/// - 字段 0 = tag（`SumRepresentation::tag_width` 决定的整数字段，当前只承诺 1 个字）；
+/// - 字段 1 = payload，一律 `anyref`（标量载荷由调用点装箱成 `[i32]` / `[i64]`）。
+///
+/// 每个 nominal identity 单独注册一个 type，使 `ref.cast` 能把「同一 nominal 的
+/// 构造与消费」闭合起来；不同 nominal 不会被结构相同而误认。
+pub(super) fn register_gc_sum_types(
+    ctx: &ExecutableLoweringContext,
+    type_indices: &mut Vec<Vec<u8>>,
+) -> BTreeMap<NominalInstanceId, u32> {
+    let sums = ctx.submission.backend_plan.sum_representations();
+    let mut nominals = BTreeSet::new();
+    let exec = &ctx.submission.backend_plan;
+    for operation in exec.instances() {
+        let Some(view) = exec.get_function(&operation)
+        else {
+            continue;
+        };
+        for block in &view.function.blocks {
+            for instruction in &block.instructions {
+                let nominal = match &instruction.kind {
+                    MirInstructionKind::SumNew { nominal, .. }
+                    | MirInstructionKind::SumPayloadGet { nominal, .. }
+                    | MirInstructionKind::SumVariantIs { nominal, .. } => *nominal,
+                    _ => continue,
+                };
+                if sums.contains_key(&nominal) {
+                    nominals.insert(nominal);
+                }
+            }
+        }
+    }
+    let mut map = BTreeMap::new();
+    for nominal in nominals {
+        let sum = &sums[&nominal];
+        assert!(
+            sum.tag_width > 0 && sum.tag_width <= 4,
+            "WASM sum 布局只承诺 1..=4 字节 tag（nominal={nominal:?} tag_width={}）",
+            sum.tag_width
+        );
+        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_gc_struct_type(&[VALTYPE_I32, VALTYPE_ANYREF]));
+        map.insert(nominal, type_index);
     }
     map
 }

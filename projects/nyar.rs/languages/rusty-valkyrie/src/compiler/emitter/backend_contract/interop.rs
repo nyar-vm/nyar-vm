@@ -105,18 +105,25 @@ pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), Backend
     Ok(())
 }
 
-/// 标注是否把该可调用声明为外部导入合同。
+/// 标注是否把该可调用声明为「实现不在源码中」的抽象声明。
 ///
-/// 与 [`function_interop_contract`] 使用同一事实来源：任一目标绑定属性，或显式
-/// `[host_contract]`。无体声明携带外部导入合同时是抽象声明，实现由已选 provider
-/// 提供；不得降低成空体函数，否则调用静默落到空实现。
+/// 覆盖三类：目标绑定属性、显式 `[host_contract]`、以及 `[intrinsic(...)]`。
+/// 三者的实现来源不同，因此与 [`function_interop_contract`] 只共享「抽象」判定，
+/// 不共享外部导入合同判定：
+/// - `[host_contract]` 生成空 host 链接，由 adaptor 的 host provider 填充；
+/// - `[intrinsic(...)]` 由 backend intrinsic lowering 直接编码成 MIR 结构操作，
+///   不生成宿主 external_call；漏掉intrinsic分流时必须表现为链接失败，
+///   而不是静默降级成空体函数。
+/// 无体声明被判定为抽象后不得降低成空体函数，否则调用静默落到空实现。
 pub(crate) fn annotations_declare_external_import(annotations: &[HirAttribute]) -> bool {
-    annotations
-        .iter()
-        .any(|attribute| attribute_to_interop_contract(attribute).is_some() || attribute_name(attribute).as_deref() == Some("host_contract"))
+    annotations.iter().any(|attribute| {
+        attribute_to_interop_contract(attribute).is_some()
+            || attribute_name(attribute).as_deref() == Some("host_contract")
+            || attribute_name(attribute).as_deref() == Some("intrinsic")
+    })
 }
 
-/// 从函数声明杝坖语言中性的外部导入链接。
+/// 从函数声明推导语言中性的外部导入链接。
 #[doc(hidden)]
 pub fn function_interop_contract(function: &HirFunction) -> Option<ExternalImportLink> {
     if let Some(link) = function.annotations.iter().find_map(attribute_to_interop_contract) {
@@ -126,8 +133,48 @@ pub fn function_interop_contract(function: &HirFunction) -> Option<ExternalImpor
         return None;
     }
     function.annotations.iter().find_map(|attribute| {
-        (attribute_name(attribute).as_deref() == Some("host_contract")).then(|| ExternalImportLink::host(None, Vec::new()))
+        let name = attribute_name(attribute)?;
+        match name {
+            // host_contract：由 adaptor 的 host_provider 提供 target-conditioned 链接；
+            // 此处返回空链接，等待 host provider resolve 填充具体绑定。
+            "host_contract" => Some(ExternalImportLink::host(None, Vec::new())),
+            // intrinsic：backend intrinsic lowering 或 wasm_operator。
+            // 带参数（如 `[intrinsic("builtin.array.push")]`）的 intrinsic 是 backend intrinsic lowering 类型，
+            // 不生成 external_call 合同——intrinsic lowering 直接编码，不需要宿主导入。
+            // 裸 `[intrinsic]` 才从函数名推导 wasm_operator（兼容旧数值 intrinsic 路径）。
+            "intrinsic" => {
+                let has_param = !attribute.arguments.is_empty();
+                if has_param {
+                    // 带参数：backend intrinsic lowering 类型，不生成 external_call
+                    None
+                } else {
+                    // 无参数：从函数名推导 wasm_operator（兼容旧数值 intrinsic 路径）
+                    derive_intrinsic_wasm_operator_link(function.name.as_str())
+                }
+            }
+            _ => None,
+        }
     })
+}
+
+/// 从 intrinsic 函数名推导 wasm_operator 外部导入链接。
+///
+/// 规则：去掉开头所有 `_`，把剩余的 `_` 替换成 `.`。
+/// - `__i32_eq` → `i32.eq`
+/// - `__i64_add` → `i64.add`
+/// - `__f32_gt` → `f32.gt`
+/// - `__array_len` → `array.len`（非 wasm operator 的 intrinsic 也会生成链接，
+///   wasm backend 识别不了时会正常报「缺少可编码目标绑定」，不会静默失败）
+fn derive_intrinsic_wasm_operator_link(function_name: &str) -> Option<ExternalImportLink> {
+    let stripped = function_name.trim_start_matches('_');
+    if stripped.is_empty() {
+        return None;
+    }
+    let mnemonic = stripped.replace('_', ".");
+    Some(ExternalImportLink::host(
+        Some(Identifier::new("wasm-operator")),
+        vec![mnemonic],
+    ))
 }
 
 /// 从 `[host_provider(X)]` 属性中杝坖目标契约符坷。

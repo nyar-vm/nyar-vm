@@ -9,16 +9,18 @@
 //! 也禁止把开放实例擦成 `anyref`。调用点无法闭合时保持 `instance` 为空，
 //! 由既有 `UnresolvedCallableIdentity` 结构化诊断失败。
 //!
-//! 泛型 trait 分派走 witness（`HirTraitDispatch`），不属于本模块职责：
-//! 带 `trait_dispatch` 的调用恒不参与单态化。
+//! 泛型 trait 分派先以 witness（`HirTraitDispatch`）保留事实；当 `self` 类型在代入后
+//! 完全具体化、且声明确实归属该 trait 时，本模块把它消去为真实实现实例；否则继续
+//! 保留 witness，让后端按冻结的 (声明, self 类型) 精确失败，禁止在那里猜实现。
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::{
-    hir::overload::{has_unresolved_generic_arguments, substitute_type_self},
+    hir::overload::{has_unresolved_generic_arguments, owner_type_generic_binders, substitute_type_self},
     types::hir::{
         AssociatedType, FunctionType, GenericBinderId, HirBlock, HirExpr, HirExprKind, HirFunction, HirInstantiatedCallable, HirModule,
         HirParam, HirResolvedCall, HirStatementKind, HirTraitDispatch, HirWhereConstraint, ValkyrieType,
+        export_spec::parse_library_glue_operation, parse_export_spec_from_annotations,
     },
 };
 
@@ -40,12 +42,51 @@ struct CallableDeclaration {
 /// `GenericBinderId` 到具体类型的代入。`BTreeMap` 保证 `(声明, 代入)` 的稳定序。
 type Substitution = BTreeMap<GenericBinderId, ValkyrieType>;
 
+/// 把仍指向 trait 方法槽的 witness 换成具体 impl 成员的 (声明下标, 代入)。
+///
+/// witness 冻结的是「trait 方法槽 + 接收者静态类型」。`self` 类型具体化后，哪个
+/// impl 提供该成员只能由 (trait 声明, 成员名, 成员签名统一) 共同决定，且候选必须
+/// 唯一。任何一项不成立都保持 witness，让后端按冻结身份失败；不得在后端按签名或
+/// 名字猜一个「看起来合适」的实现（`Hash::hash` 被猜成 `i64.infix -` 就是这么来的）。
+fn discharge_trait_witness(
+    declarations: &BTreeMap<u32, CallableDeclaration>,
+    trait_members: &BTreeMap<u32, String>,
+    call: &HirResolvedCall,
+) -> Option<(u32, Substitution)> {
+    let dispatch = call.trait_dispatch.as_ref()?;
+    if has_unresolved_generic_arguments(&dispatch.self_type) {
+        return None;
+    }
+    let member_name = trait_members.get(&dispatch.method_declaration.index())?;
+    let mut matched: Option<(u32, Substitution)> = None;
+    for declaration in declarations.values() {
+        if declaration.trait_declaration != Some(dispatch.trait_declaration) {
+            continue;
+        }
+        if declaration.function.name.as_str() != member_name.as_str() {
+            continue;
+        }
+        let Some(substitution) = derive_substitution(declaration, call)
+        else {
+            continue;
+        };
+        if substitution.values().any(has_unresolved_generic_arguments) {
+            continue;
+        }
+        if matched.is_some() {
+            return None;
+        }
+        matched = Some((declaration.index, substitution));
+    }
+    matched
+}
+
 /// 从完整源码闭包出发，把开放泛型 impl 成员的调用点闭合成真实 callable 实例。
 ///
 /// 实例下标从闭包内已冻结的最大 `ItemInstanceId` 续号，顺序只取决于
 /// `(声明下标, 代入)` 的字典序，因此同一输入恒产生同一实例空间。
 pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
-    let declarations = collect_impl_declarations(modules);
+    let (declarations, trait_members) = collect_impl_declarations(modules);
     if declarations.is_empty() {
         return;
     }
@@ -56,26 +97,47 @@ pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
         let mut requests: BTreeSet<(u32, Substitution)> = BTreeSet::new();
         for module in modules.iter_mut() {
             visit_module_calls(module, &mut |call| {
-                if call.instance.is_some() || call.trait_dispatch.is_some() {
-                    return;
-                }
                 let Some(index) = call.declaration.map(|declaration| declaration.index())
                 else {
                     return;
                 };
+                // witness 的 declaration 是 trait 方法槽，不在 impl 成员表里；
+                // 必须先换成具体 impl 成员，再按 (声明下标, 代入) 铸造实例。
+                if call.trait_dispatch.is_some() {
+                    let Some((index, substitution)) = discharge_trait_witness(&declarations, &trait_members, call)
+                    else {
+                        return;
+                    };
+                    let Some(declaration) = declarations.get(&index)
+                    else {
+                        return;
+                    };
+                    if !substitution.is_empty() || declaration.function.generics.is_empty() {
+                        requests.insert((index, substitution));
+                    }
+                    return;
+                }
                 let Some(declaration) = declarations.get(&index)
                 else {
                     return;
                 };
                 if let Some(substitution) = derive_substitution(declaration, call) {
-                    requests.insert((index, substitution));
+                    // 有泛型参数的函数：空 substitution 说明调用侧 binder 和声明侧是同一个
+                    // （比如 imply 方法内部自调用），没有替换就不需要铸造实例。
+                    // 无泛型函数：空 substitution 是合法的（所有类型本就具体），照常铸造。
+                    if !substitution.is_empty() || declaration.function.generics.is_empty() {
+                        requests.insert((index, substitution));
+                    }
                 }
             });
         }
+        // 2. 导出面种子：导出函数签名里的具体聚合实例，必须带上该聚合的全部
+        //    `[library_glue]` 成员；这些成员可能没有任何调用点。
+        seed_export_surface_requests(modules, &declarations, &mut requests);
         if requests.is_empty() {
             break;
         }
-        // 2. 按稳定序铸造新实例。
+        // 3. 按稳定序铸造新实例。
         let before = instances.len();
         for (index, substitution) in &requests {
             if instances.contains_key(&(*index, substitution.clone())) {
@@ -94,17 +156,27 @@ pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
             instances.insert((*index, substitution.clone()), instance);
             modules[declaration.module].instantiated_callables.push(callable);
         }
-        // 3. 回填调用点。即使本轮没有新实例也必须回填：克隆体里的重复代入
+        // 4. 回填调用点。即使本轮没有新实例也必须回填：克隆体里的重复代入
         //    只能指向已存在的实例，不能永远悬空。
         for module in modules.iter_mut() {
             visit_module_calls(module, &mut |call| {
-                if call.instance.is_some() || call.trait_dispatch.is_some() {
-                    return;
-                }
                 let Some(index) = call.declaration.map(|declaration| declaration.index())
                 else {
                     return;
                 };
+                if call.trait_dispatch.is_some() {
+                    let Some((index, substitution)) = discharge_trait_witness(&declarations, &trait_members, call)
+                    else {
+                        return;
+                    };
+                    if let Some(instance) = instances.get(&(index, substitution)) {
+                        // witness 义务已由具体 impl 实例偿清：继续把 trait evidence 传到后端
+                        // 只会诱发「按签名挑一个实现」的后置猜测。
+                        call.instance = Some(*instance);
+                        call.trait_dispatch = None;
+                    }
+                    return;
+                }
                 let Some(declaration) = declarations.get(&index)
                 else {
                     return;
@@ -124,16 +196,130 @@ pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
     }
 }
 
-/// 收集所有 `instance` 为空的 impl 成员声明；同一声明只取首次出现。
-fn collect_impl_declarations(modules: &[HirModule]) -> BTreeMap<u32, CallableDeclaration> {
+/// 导出面种子：导出函数签名里出现了哪个具体聚合实例，就必须实例化该聚合声明的
+/// 全部 `[library_glue]` 成员。
+///
+/// 这些成员由宿主 glue 按导出名直通调用，函数体里可能没有任何调用点，只靠调用点
+/// 固定点永远到不了。归属仍只由「声明标注 + owner 类型合一」决定，不按成员名猜。
+/// 幂等：同一 (声明, 代入) 重复插入由 `BTreeSet` 与实例表去重。
+fn seed_export_surface_requests(
+    modules: &[HirModule],
+    declarations: &BTreeMap<u32, CallableDeclaration>,
+    requests: &mut BTreeSet<(u32, Substitution)>,
+) {
+    let mut concretes = BTreeSet::new();
+    for module in modules {
+        collect_exported_concrete_nominals(module, &mut concretes);
+    }
+    if concretes.is_empty() {
+        return;
+    }
+    for declaration in declarations.values() {
+        // 只有声明标注给出角色的成员才是宿主直通操作。
+        if parse_library_glue_operation(&declaration.function.annotations).is_none() {
+            continue;
+        }
+        let Some(owner) = declaration.owner_type.as_ref()
+        else {
+            continue;
+        };
+        // 无泛型的聚合成员由声明本身闭合，不需要按导出面铸造实例。
+        if !has_unresolved_generic_arguments(owner) {
+            continue;
+        }
+        for concrete in &concretes {
+            let mut substitution = Substitution::new();
+            if !unify_instantiation(owner, concrete, &mut substitution) {
+                continue;
+            }
+            // 代入必须闭合：owner 的每个 binder 都要落到具体类型。
+            if owner_type_generic_binders(owner).iter().any(|binder| !substitution.contains_key(binder)) {
+                continue;
+            }
+            if substitution.values().any(has_unresolved_generic_arguments) {
+                continue;
+            }
+            requests.insert((declaration.index, substitution));
+        }
+    }
+}
+
+/// 收集导出函数签名里出现的完全具体名义实例；含嵌套实参（`ArrayList<ArrayList<i64>>` 收两层）。
+fn collect_exported_concrete_nominals(module: &HirModule, out: &mut BTreeSet<ValkyrieType>) {
+    for function in &module.functions {
+        // 只有已实例化的导出函数才代表对外签名。
+        if function.instance.is_none() || parse_export_spec_from_annotations(&function.annotations).is_none() {
+            continue;
+        }
+        for param in &function.params {
+            collect_concrete_nominals(&param.ty, out);
+        }
+        collect_concrete_nominals(&function.return_type, out);
+    }
+    for submodule in &module.submodules {
+        collect_exported_concrete_nominals(submodule, out);
+    }
+}
+
+/// 递归收集类型里所有完全具体的名义实例；仍含开放 binder 的形状一律跳过。
+fn collect_concrete_nominals(ty: &ValkyrieType, out: &mut BTreeSet<ValkyrieType>) {
+    match ty {
+        ValkyrieType::Nominal { arguments, .. } => {
+            if !arguments.is_empty() && !has_unresolved_generic_arguments(ty) {
+                out.insert(ty.clone());
+            }
+            for argument in arguments {
+                collect_concrete_nominals(argument, out);
+            }
+        }
+        ValkyrieType::Apply(base, arguments) => {
+            collect_concrete_nominals(base, out);
+            for argument in arguments {
+                collect_concrete_nominals(argument, out);
+            }
+        }
+        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => collect_concrete_nominals(element, out),
+        ValkyrieType::FixedArray { element, .. } => collect_concrete_nominals(element, out),
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+            for item in items {
+                collect_concrete_nominals(item, out);
+            }
+        }
+        ValkyrieType::Function(function) => {
+            for param in &function.params {
+                collect_concrete_nominals(param, out);
+            }
+            collect_concrete_nominals(&function.return_type, out);
+        }
+        _ => {}
+    }
+}
+
+/// 收集所有有 declaration 的 callable 声明——包含 impl 成员和 module-level free function。
+/// 不再过滤 `instance`：lowering 阶段就给每个声明分配了一个 ItemInstanceId（等于 ItemId），
+/// 但那个 instance 只是"声明身份"，不是特化实例。泛型函数的特化版本需要 generic_instantiation
+/// 在这里铸造新的 ItemInstanceId。因此只要有 declaration 就收集。
+fn collect_impl_declarations(modules: &[HirModule]) -> (BTreeMap<u32, CallableDeclaration>, BTreeMap<u32, String>) {
     let mut declarations = BTreeMap::new();
+    // trait 方法槽声明 -> 成员名：witness 只冻结槽身份，成员名在这里恢复。
+    let mut trait_members = BTreeMap::new();
     for (module_index, module) in modules.iter().enumerate() {
+        for trait_definition in &module.traits {
+            for method in &trait_definition.methods {
+                if let Some(declaration) = method.declaration {
+                    trait_members.entry(declaration.index()).or_insert_with(|| method.name.to_string());
+                }
+            }
+        }
+        // impl 成员方法（owner_type 为 impl 目标类型）
         for implementation in &module.impls {
             for method in &implementation.methods {
-                if method.is_abstract {
+                // is_abstract 的无泛型函数（如 __i32_eq host_contract）不需要实例化。
+                // 但有泛型的 intrinsic（如 __array_get<T>）需要实例化，因为泛型实参由调用点决定。
+                if method.is_abstract && method.generics.is_empty() {
                     continue;
                 }
-                let (Some(declaration), None) = (method.declaration, method.instance)
+                let Some(declaration) = method.declaration
                 else {
                     continue;
                 };
@@ -146,8 +332,27 @@ fn collect_impl_declarations(modules: &[HirModule]) -> BTreeMap<u32, CallableDec
                 });
             }
         }
+        // module-level free function（无 owner_type，无 trait）
+        for function in &module.functions {
+            // is_abstract 的无泛型函数（如 __i32_eq host_contract）不需要实例化。
+            // 但有泛型的 intrinsic（如 __array_get<T>）需要实例化，因为泛型实参由调用点决定。
+            if function.is_abstract && function.generics.is_empty() {
+                continue;
+            }
+            let Some(declaration) = function.declaration
+            else {
+                continue;
+            };
+            declarations.entry(declaration.index()).or_insert_with(|| CallableDeclaration {
+                module: module_index,
+                index: declaration.index(),
+                function: function.clone(),
+                owner_type: None,
+                trait_declaration: None,
+            });
+        }
     }
-    declarations
+    (declarations, trait_members)
 }
 
 /// 声明侧形参类型：`self` 槽的 `AutoType`/`Self` 先落到 owner，再交给调用点统一。
@@ -187,19 +392,11 @@ fn derive_substitution(declaration: &CallableDeclaration, call: &HirResolvedCall
     if !unify_instantiation(&declared_return, &call.return_type, &mut substitution) {
         return None;
     }
-    if substitution.is_empty() {
-        return None;
-    }
-    // 闭合判据是结构化事实：代入后的签名不得再含未代入 binder。
-    if declared_params.iter().any(|param| has_unresolved_generic_arguments(&substitute_type(param, &substitution))) {
-        return None;
-    }
-    if has_unresolved_generic_arguments(&substitute_type(&declared_return, &substitution)) {
-        return None;
-    }
-    if substitution.values().any(has_unresolved_generic_arguments) {
-        return None;
-    }
+    // 不再检查 substitution 是否为空。空 substitution 有两种合法情况：
+    // (a) 声明侧和调用侧共享同一个 binder（同结构泛型调用，不需要跨 binder 替换）；
+    // (b) 声明本身就不是泛型，所有类型完全具体。
+    // 也不再检查 substitution.values() 是否闭合——跨结构委托调用第一次只会把声明侧 binder
+    // 映射到调用方的 binder，后续轮次会继续闭合。只要 unify 全通过，就接受。
     Some(substitution)
 }
 
@@ -214,6 +411,13 @@ fn unify_instantiation(template: &ValkyrieType, concrete: &ValkyrieType, substit
             match substitution.get(&binder) {
                 Some(bound) => bound == concrete,
                 None => {
+                    // 自引用跳过：template binder == concrete binder 时不插入，避免 sub[X]=Generic(X) 循环。
+                    // 同结构泛型调用（如 Array<T> → Array<T>）两边 binder 相同，空 substitution 是合法中间态。
+                    if let ValkyrieType::Generic(other) = concrete {
+                        if other.binder == Some(binder) {
+                            return true;
+                        }
+                    }
                     substitution.insert(binder, concrete.clone());
                     true
                 }
@@ -302,12 +506,35 @@ fn instantiate_callable(
 }
 
 /// 把声明侧类型里的 binder 换成代入结果。
+/// Generic binder 可能指向另一个 Generic binder（如跨结构委托：67 → 109），
+/// 这里用循环 resolve 到底，直到到达具体类型或无进一步代入。
 fn substitute_type(ty: &ValkyrieType, substitution: &Substitution) -> ValkyrieType {
     match ty {
-        ValkyrieType::Generic(generic) => match generic.binder.and_then(|binder| substitution.get(&binder)) {
-            Some(replacement) => replacement.clone(),
-            None => ty.clone(),
-        },
+        ValkyrieType::Generic(generic) => {
+            let Some(mut current) = generic.binder
+            else {
+                return ty.clone();
+            };
+            let mut visited = std::collections::HashSet::new();
+            // 循环传递 resolve：sub[67]=Generic(109), sub[109]=i64 → resolve(67)=i64
+            while let Some(replacement) = substitution.get(&current) {
+                if !visited.insert(current) {
+                    // 循环引用，停在这里
+                    break;
+                }
+                match replacement {
+                    ValkyrieType::Generic(g) => {
+                        if let Some(next) = g.binder {
+                            current = next;
+                        } else {
+                            return replacement.clone();
+                        }
+                    }
+                    _ => return replacement.clone(),
+                }
+            }
+            ty.clone()
+        }
         ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
             declaration: *declaration,
             arguments: arguments.iter().map(|argument| substitute_type(argument, substitution)).collect(),

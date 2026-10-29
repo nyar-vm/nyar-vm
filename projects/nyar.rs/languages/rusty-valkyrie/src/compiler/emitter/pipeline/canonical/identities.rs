@@ -248,6 +248,33 @@ pub(crate) fn intern_instance_field_types(
     Ok(())
 }
 
+/// 为每个聚合声明显式登记零实参 Nominal 类型到 type_values。
+///
+/// 泛型声明（`generics` 非空）的零实参 Nominal 是声明级身份：backend 需要它找到
+/// declaration ItemId 来关联完整声明。`type_identity_table` 在正常路径上已经登记
+/// 这条键，但跨模块引用或外部 std 依赖可能在链接后的合并表里丢失；这里在
+/// `collect_aggregate_identities` 之前做最后一道防线——缺了就按稠密 `TypeId` 追加。
+/// 非泛型声明同理统一处理，不做条件分支。
+pub(crate) fn ensure_declaration_aggregate_types(
+    module: &MirModule,
+    type_values: &mut BTreeMap<ValkyrieType, TypeId>,
+) -> Result<(), StructuredDiagnosticSet> {
+    let mut next = type_values.values().map(|id| id.index()).max().map(|index| index + 1).unwrap_or(0);
+    for aggregate in &module.structs {
+        let Some(declaration) = aggregate.declaration else { continue };
+        let ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
+        if type_values.contains_key(&ty) { continue }
+        intern_type(type_values, &ty, &mut next)?;
+    }
+    for sum in &module.sum_types {
+        let Some(declaration) = sum.declaration else { continue };
+        let ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
+        if type_values.contains_key(&ty) { continue }
+        intern_type(type_values, &ty, &mut next)?;
+    }
+    Ok(())
+}
+
 /// 递归登记缺失的派生类型；子类型先登记，保证新 id 的 canonical kind 引用完整。
 fn intern_type(ids: &mut BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType, next: &mut u32) -> Result<(), StructuredDiagnosticSet> {
     if type_id(ids, ty).is_ok() {

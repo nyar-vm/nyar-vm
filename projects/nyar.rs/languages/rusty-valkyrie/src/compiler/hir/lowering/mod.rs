@@ -285,7 +285,7 @@ impl ValkyrieCompiler {
             host_bindings,
         )?;
         if !mir_groups.is_empty() {
-            crate::compiler::emitter::pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
+            crate::compiler::emitter::pipeline::link_reachable_dependency_mir_with_hir(&mut final_mir, &mir_groups, &all_hirs)?;
         }
         let resolved_host_bindings = crate::compiler::emitter::pipeline::resolve_host_provider_bindings(&all_hirs, host_bindings)?;
         crate::compiler::emitter::pipeline::apply_host_provider_bindings(&mut final_mir, &mir_groups, &resolved_host_bindings)?;

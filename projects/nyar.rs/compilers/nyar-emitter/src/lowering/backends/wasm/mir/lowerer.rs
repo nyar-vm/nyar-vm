@@ -13,6 +13,7 @@ use super::{
         gc::WASM_GC_ANYREF,
         sections::{decode_uleb128, encode_uleb128},
     },
+    NominalInstanceId,
     StorageKind,
     representation::{
         is_js_glue_host_string_type, mir_storage_for_type, wasm_gc_field_type_byte_for_glue, wasm_param_types, wasm_param_value_type,
@@ -66,6 +67,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
     import_return_types: &[Option<u8>],
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     gc_array_type_indices: &BTreeMap<String, u32>,
+    gc_sum_type_indices: &BTreeMap<NominalInstanceId, u32>,
     gc_i32_box_type_index: u32,
     gc_i64_box_type_index: u32,
     callee_import_index: &BTreeMap<ItemInstanceId, u32>,
@@ -95,6 +97,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
         import_return_types,
         gc_struct_type_indices,
         gc_array_type_indices,
+        gc_sum_type_indices,
         gc_i32_box_type_index,
         gc_i64_box_type_index,
         callee_import_index,
@@ -150,8 +153,10 @@ pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
     pub(in crate::lowering::backends::wasm::mir) gc_i32_box_type_index: u32,
     /// 泛型 `T` 数组槽中的 i64 装箱用 structtype `[i64]`。
     pub(in crate::lowering::backends::wasm::mir) gc_i64_box_type_index: u32,
-    /// heap array element_type 字符串键 -> wasm-gc arraytype ?type_index?
+    /// heap array element_type 字符串键 -> wasm-gc arraytype 的 type_index。
     pub(in crate::lowering::backends::wasm::mir) gc_array_type_indices: &'a BTreeMap<String, u32>,
+    /// sum nominal identity -> wasm-gc structtype `[i32 tag, anyref payload]` 的 type_index。
+    pub(in crate::lowering::backends::wasm::mir) gc_sum_type_indices: &'a BTreeMap<NominalInstanceId, u32>,
     pub(in crate::lowering::backends::wasm::mir) callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
     /// `[wasm_operator]` 绑定的 provider 实例 → 计划冻结的目标指令配方。
     pub(in crate::lowering::backends::wasm::mir) callee_wasm_operator: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
@@ -183,6 +188,7 @@ impl<'a> WasmMirLowerer<'a> {
         import_return_types: &'a [Option<u8>],
         gc_struct_type_indices: &'a BTreeMap<LayoutId, u32>,
         gc_array_type_indices: &'a BTreeMap<String, u32>,
+        gc_sum_type_indices: &'a BTreeMap<NominalInstanceId, u32>,
         gc_i32_box_type_index: u32,
         gc_i64_box_type_index: u32,
         callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
@@ -226,6 +232,7 @@ impl<'a> WasmMirLowerer<'a> {
             import_return_types,
             gc_struct_type_indices,
             gc_array_type_indices,
+            gc_sum_type_indices,
             gc_i32_box_type_index,
             gc_i64_box_type_index,
             callee_import_index,
@@ -364,16 +371,10 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     pub(super) fn plan_instruction(&mut self, instruction: &MirInstruction) {
-        assert!(!matches!(instruction.kind, MirInstructionKind::StoreVar { .. }), "WASM 输入必须完成 SSA 降低");
+        // StoreVar 是纯附加操作（let 绑定），wasm 后端不消费其 name/value
+        // 但它的 results 仍要规划 local —— 该 SSA 值会被 Jump/Return 等 terminator 引用。
         for output in &instruction.results {
-            let ty = self.mir_fn.value_types.get(output).expect("WASM SSA 结果缺少已确定类型");
-            let stack_type = wasm_param_value_type_for(
-                self.ctx,
-                ty,
-                self.mir_fn.value_layouts.get(output).copied(),
-                self.gc_struct_type_indices,
-                self.js_glue_utf8_as_anyref,
-            );
+            let stack_type = self.plan_result_stack_type(instruction, output);
             assert!(!self.value_locals.contains_key(output) && !self.reference_locals.contains_key(output), "WASM SSA 结果重复定义");
             let local = self.alloc_value_local(stack_type);
             if matches!(stack_type, WASM_GC_ANYREF | WASM_GC_EXTERNREF) {
@@ -383,6 +384,27 @@ impl<'a> WasmMirLowerer<'a> {
                 self.value_locals.insert(*output, local);
             }
         }
+    }
+
+    /// 为一条指令的某个 output 决定规划槽位的 wasm 栈类型。
+    /// 对 Copy 特判：直接使用 source operand 已规划的物理槽 valtype，
+    /// 确保 plan 与 emit 阶段 `operand_wasm_stack_type(source)` 的权威结果一致。
+    fn plan_result_stack_type(&self, instruction: &MirInstruction, output: &MirValueRef) -> u8 {
+        if let MirInstructionKind::Copy { source } = &instruction.kind {
+            if let MirOperand::Value(vref) = source {
+                if let Some(local) = self.reference_locals.get(vref).or_else(|| self.value_locals.get(vref)).copied() {
+                    return self.wasm_local_value_type(local);
+                }
+            }
+        }
+        let ty = self.mir_fn.value_types.get(output).expect("WASM SSA 结果缺少已确定类型");
+        wasm_param_value_type_for(
+            self.ctx,
+            ty,
+            self.mir_fn.value_layouts.get(output).copied(),
+            self.gc_struct_type_indices,
+            self.js_glue_utf8_as_anyref,
+        )
     }
 
     pub(super) fn alloc_value_local(&mut self, stack_type: u8) -> u32 {
@@ -487,22 +509,17 @@ impl<'a> WasmMirLowerer<'a> {
         encode_uleb128(table_index, &mut self.code);
     }
 
-    pub(super) fn struct_new_uses_gc_struct(&self, layout: &AggregateLayout) -> bool {
-        if !self.gc_struct_type_indices.contains_key(&layout.id) {
-            return false;
-        }
-        if matches!(layout.storage, StorageKind::Reference) {
-            return true;
-        }
-        layout.fields.iter().any(|field| {
-            if self.js_glue_utf8_as_anyref && is_js_glue_host_string_type(&field.ty) {
-                return true;
-            }
-            if wasm_gc_field_type_byte_for_glue(&field.ty, self.js_glue_utf8_as_anyref) == WASM_GC_ANYREF {
-                return true;
-            }
-            self.storage_for_type(&field.ty) == StorageKind::Reference
-        })
+    /// 该 layout 是否以 wasm-gc struct 承载（物理表示的唯一权威）。
+    ///
+    /// 只有 `register_gc_struct_types` 的注册结果有资格回答这个问题。注册条件已覆盖
+    /// `storage == Reference`、含引用字段、以及 MIR 以引用方式使用该 layout 三种来源；
+    /// 创建点（`StructNew`/`TupleNew`）、读写点（`FieldGet`/`FieldSet`）与 ABI 槽位
+    /// （`type_uses_gc_struct_param`）都必须只读这张注册表。
+    ///
+    /// 反面教训：曾在此处按 `layout.storage` / 字段类型二次推导，导致同一 layout 在
+    /// 构造侧走线性内存、消费侧走 gc struct，运行时直接 `illegal cast`。
+    pub(super) fn layout_uses_gc_struct(&self, layout: &AggregateLayout) -> bool {
+        self.gc_struct_type_indices.contains_key(&layout.id)
     }
 
     pub(super) fn resolve_layout(&self, nominal: nyar_types::NominalInstanceId) -> AggregateLayout {

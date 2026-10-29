@@ -341,10 +341,10 @@ fn required_sequence_operations<'a>(
     Some((
         layout,
         vec![
-            RequiredGlueOperation { operation: AggregateOperation::Construct, param_carriers: vec!["i32"], return_carrier: "i32" },
-            RequiredGlueOperation { operation: AggregateOperation::Push, param_carriers: vec!["i32", carrier], return_carrier: "void" },
-            RequiredGlueOperation { operation: AggregateOperation::Length, param_carriers: vec!["i32"], return_carrier: "i32" },
-            RequiredGlueOperation { operation: AggregateOperation::At, param_carriers: vec!["i32", "i32"], return_carrier: carrier },
+            RequiredGlueOperation { operation: AggregateOperation::Construct, param_carriers: vec!["i32"], return_carrier: "handle" },
+            RequiredGlueOperation { operation: AggregateOperation::Push, param_carriers: vec!["handle", carrier], return_carrier: "void" },
+            RequiredGlueOperation { operation: AggregateOperation::Length, param_carriers: vec!["handle"], return_carrier: "i32" },
+            RequiredGlueOperation { operation: AggregateOperation::At, param_carriers: vec!["handle", "i32"], return_carrier: carrier },
         ],
     ))
 }
@@ -634,12 +634,12 @@ mod tests {
         carrier: AggregateOperationCarrier,
         export_prefix: &str,
     ) -> Vec<AggregateOperationPlan> {
-        use AggregateOperationCarrier::{I32, Void};
+        use AggregateOperationCarrier::{Handle, I32, Void};
         vec![
-            plan_operation(layout_id, AggregateOperation::Construct, &[I32], I32, &format!("{export_prefix}_new")),
-            plan_operation(layout_id, AggregateOperation::Push, &[I32, carrier], Void, &format!("{export_prefix}_push")),
-            plan_operation(layout_id, AggregateOperation::Length, &[I32], I32, &format!("{export_prefix}_len")),
-            plan_operation(layout_id, AggregateOperation::At, &[I32, I32], carrier, &format!("{export_prefix}_at")),
+            plan_operation(layout_id, AggregateOperation::Construct, &[I32], Handle, &format!("{export_prefix}_new")),
+            plan_operation(layout_id, AggregateOperation::Push, &[Handle, carrier], Void, &format!("{export_prefix}_push")),
+            plan_operation(layout_id, AggregateOperation::Length, &[Handle], I32, &format!("{export_prefix}_len")),
+            plan_operation(layout_id, AggregateOperation::At, &[Handle, I32], carrier, &format!("{export_prefix}_at")),
         ]
     }
 
@@ -669,19 +669,19 @@ mod tests {
         assert_eq!(ops[0]["operation"], "construct");
         assert_eq!(ops[0]["export_name"], "$seq_std_collections_ArrayList_i64_new");
         assert_eq!(ops[0]["param_carriers"], serde_json::json!(["i32"]));
-        assert_eq!(ops[0]["return_carrier"], "i32");
+        assert_eq!(ops[0]["return_carrier"], "handle");
         assert_eq!(ops[0]["export_source"], "declared");
         assert_eq!(ops[1]["operation"], "push");
         assert_eq!(ops[1]["export_name"], "$seq_std_collections_ArrayList_i64_push");
-        assert_eq!(ops[1]["param_carriers"], serde_json::json!(["i32", "i64"]));
+        assert_eq!(ops[1]["param_carriers"], serde_json::json!(["handle", "i64"]));
         assert_eq!(ops[1]["return_carrier"], "void");
         assert_eq!(ops[2]["operation"], "length");
         assert_eq!(ops[2]["export_name"], "$seq_std_collections_ArrayList_i64_len");
-        assert_eq!(ops[2]["param_carriers"], serde_json::json!(["i32"]));
+        assert_eq!(ops[2]["param_carriers"], serde_json::json!(["handle"]));
         assert_eq!(ops[2]["return_carrier"], "i32");
         assert_eq!(ops[3]["operation"], "at");
         assert_eq!(ops[3]["export_name"], "$seq_std_collections_ArrayList_i64_at");
-        assert_eq!(ops[3]["param_carriers"], serde_json::json!(["i32", "i32"]));
+        assert_eq!(ops[3]["param_carriers"], serde_json::json!(["handle", "i32"]));
         assert_eq!(ops[3]["return_carrier"], "i64");
     }
 
@@ -766,7 +766,7 @@ mod tests {
         assert_eq!(ops.len(), 4);
         // element carrier 由 f64 schema 推断，不按容器名。
         assert_eq!(ops[1]["operation"], "push");
-        assert_eq!(ops[1]["param_carriers"], serde_json::json!(["i32", "f64"]));
+        assert_eq!(ops[1]["param_carriers"], serde_json::json!(["handle", "f64"]));
         assert_eq!(ops[3]["operation"], "at");
         assert_eq!(ops[3]["return_carrier"], "f64");
         // export 名由 plan 决定，backend 不得自造。
@@ -779,14 +779,14 @@ mod tests {
         let f64_layouts = sequence_layout("ArrayList", "", nyar("f64"));
         let (_, required) = required_sequence_operations(&f64_layouts, "ArrayList", "", &[WasmAbiType::F64]).expect("f64 sequence fact");
         assert_eq!(required[1].operation, AggregateOperation::Push);
-        assert_eq!(required[1].param_carriers, vec!["i32", "f64"]);
+        assert_eq!(required[1].param_carriers, vec!["handle", "f64"]);
         assert_eq!(required[3].operation, AggregateOperation::At);
         assert_eq!(required[3].return_carrier, "f64");
 
         let bool_layouts = sequence_layout("ArrayList", "", nyar("bool"));
         let (_, required) = required_sequence_operations(&bool_layouts, "ArrayList", "", &[WasmAbiType::Bool]).expect("bool sequence fact");
         // Bool 在 Wasm 层用 i32 carrier；export 名由 plan 决定。
-        assert_eq!(required[1].param_carriers, vec!["i32", "i32"]);
+        assert_eq!(required[1].param_carriers, vec!["handle", "i32"]);
         assert_eq!(required[3].return_carrier, "i32");
     }
 
@@ -808,7 +808,7 @@ mod tests {
         assert!(error.contains("缺少 glue operation producer"), "error must explain the missing producer: {error}");
         assert!(error.contains("ArrayList"), "error must carry aggregate identity: {error}");
         assert!(error.contains("operation=at"), "error must name the missing operation: {error}");
-        assert!(error.contains("required_param_carriers=[\"i32\", \"i32\"]"), "error must list required carriers: {error}");
+        assert!(error.contains("required_param_carriers=[\"handle\", \"i32\"]"), "error must list required carriers: {error}");
     }
 
     #[test]

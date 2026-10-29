@@ -53,10 +53,10 @@ pub(super) fn type_uses_gc_struct_param(
     else {
         return false;
     };
-    if !gc_struct_type_indices.contains_key(&layout.id) {
-        return false;
-    }
-    layout.storage == StorageKind::Reference || layout.fields.iter().any(|field| ctx.storage_for_type(&field.ty) == StorageKind::Reference)
+    // 注册表即唯一权威。此处若按 `layout.storage` 重新推导，会与
+    // `WasmMirLowerer::layout_uses_gc_struct` 分叉：ABI 槽位判成 i32、
+    // 构造/读取点却按 gc struct 发射，运行时 `illegal cast`。
+    gc_struct_type_indices.contains_key(&layout.id)
 }
 
 pub(super) fn wasm_param_value_type_for(

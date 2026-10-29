@@ -2,7 +2,7 @@
 
 use super::{HirArgument, HirAttribute, HirExpr, HirExprKind, HirLiteral, HirStringSegment};
 use crate::compiler::types::{Identifier, NamePath};
-use nyar_types::{AttributeId, AttributeRegistry, builtin_attribute};
+use nyar_types::{AttributeId, AttributeRegistry, LibraryGlueOperation, builtin_attribute};
 use std::sync::{Mutex, OnceLock};
 
 /// CLR / wasm / Nyar 模块表面上的导出分区与可选重命名。
@@ -86,6 +86,39 @@ pub fn parse_workload_phase_from_annotations(annotations: &[HirAttribute]) -> Op
 
 fn non_empty_phase_name(name: String) -> Option<String> {
     if name.is_empty() { None } else { Some(name) }
+}
+
+/// 解析 `[library_glue(construct)]` / `[library_glue(role: "push")]` 的宿主直通角色。
+///
+/// 角色只由语言声明给出，这是「哪个成员实现哪种宿主直通操作」的唯一事实来源；
+/// 调用方不得按成员名猜映射。未知角色或缺失参数时返回 `None`（失败闭合）。
+pub fn parse_library_glue_operation(annotations: &[HirAttribute]) -> Option<LibraryGlueOperation> {
+    let attribute = annotations.iter().find(|attribute| {
+        attribute.name.parts().last().map(|part| part.as_str()) == Some(LibraryGlueOperation::ATTRIBUTE_NAME)
+    })?;
+
+    for argument in &attribute.arguments {
+        if let Some(key) = argument.key.as_ref() {
+            if matches!(key.as_str(), "role" | "operation") {
+                return LibraryGlueOperation::from_role_name(&annotation_argument_name(argument)?);
+            }
+            continue;
+        }
+        return LibraryGlueOperation::from_role_name(&annotation_argument_name(argument)?);
+    }
+    None
+}
+
+/// 从标注参数取角色名：接受字符串字面量与裸路径（`construct` / `at`）。
+fn annotation_argument_name(argument: &HirArgument) -> Option<String> {
+    if let Some(name) = argument_string_literal(argument) {
+        return Some(name);
+    }
+    let HirExprKind::Path(path) = &argument.value.kind
+    else {
+        return None;
+    };
+    path.parts().last().map(|part| part.as_str().to_string())
 }
 
 /// 解析 `[export]` / `[export(unity.runtime)]` / `[export(name: "twoSum")]` / `[export(case: "camelCase")]`。

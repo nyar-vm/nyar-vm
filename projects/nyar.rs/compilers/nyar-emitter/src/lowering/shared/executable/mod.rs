@@ -153,7 +153,7 @@ pub fn validate_storage_identities(submission: &FragmentSubmission) -> Result<()
 fn named_residual(ty: &NyarType) -> Option<NyarType> {
     match ty {
         NyarType::Named(_) => Some(ty.clone()),
-        NyarType::Apply(base, arguments) => named_residual(base).or_else(|| arguments.iter().find_map(named_residual)),
+        NyarType::Apply(_base, arguments) => arguments.iter().find_map(named_residual),
         NyarType::Function(function) => named_residual(&function.return_type).or_else(|| function.params.iter().find_map(named_residual)),
         NyarType::Tuple(elements) | NyarType::Union(elements) => elements.iter().find_map(named_residual),
         NyarType::Array(element) | NyarType::FixedArray { element, .. } | NyarType::Nullable(element) => named_residual(element),
