@@ -298,6 +298,43 @@ micro i64_add(a: i64, b: i64): i64;
     assert!(function_interop_contract(&module.functions[0]).is_none(), "`[vm]` 必须不再产生宿主绑定，OVM 宿主边界只接受 `[ovm]`");
 }
 
+/// 裸 `[intrinsic]` 抽象声明不得从函数名推导目标：缺显式绑定时必须结构化失败。
+///
+/// 目标语义只能来自声明侧的显式属性。`__i64_add -> i64.add` 这类按名字拼写推导
+/// 曾被当作合法兼容路径，验收已否决：改函数名会改变目标行为。
+#[test]
+fn bare_intrinsic_abstract_declaration_fails_closed() {
+    let compiler = ValkyrieCompiler::new(SourceID { version_id: 921 });
+    let error = compiler
+        .compile_source(
+            r#"
+[intrinsic]
+micro __i64_add(lhs: i64, rhs: i64): i64;
+"#,
+        )
+        .expect_err("裸 `[intrinsic]` 抽象声明缺显式目标绑定，必须失败关闭");
+    let row: nyar_types::DiagnosticRow = error.into();
+    assert!(row.code.contains("backend.contract.rejected"), "expected backend contract rejection, got code={}", row.code);
+}
+
+/// 显式注解路径的 intrinsic 声明仍然成立：身份来自声明，而不是调用点名字。
+#[test]
+fn declared_intrinsic_annotation_path_still_compiles() {
+    let compiler = ValkyrieCompiler::new(SourceID { version_id: 922 });
+    let source = r#"
+[primitive("core::primitive::i64")] structure i64 { }
+[primitive("core::primitive::usize")] structure usize { }
+
+[intrinsic("builtin.array.length")]
+micro frozen_length(xs: [i64]): usize {
+    return frozen_length(xs)
+}
+"#;
+    let module = compiler.compile_source(source).expect("显式注解路径的 intrinsic 声明必须可编译");
+    let declaration = module.functions.iter().find(|function| function.name.as_str() == "frozen_length").expect("frozen_length");
+    assert!(!declaration.is_abstract, "带体声明的 intrinsic 不是抽象导入");
+}
+
 #[test]
 fn rejects_wasi_preview1_surface_imports() {
     for (version_id, source) in [
