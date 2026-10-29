@@ -7,7 +7,7 @@ use nyar_types::{
 
 use crate::compiler::{
     emitter::frontend_contract::concretize_type,
-    mir::{instance_layout_for_type, instantiate_fields, MirModule},
+    mir::{MirModule, instance_layout_for_type, instantiate_fields},
     types::hir::ValkyrieType,
 };
 
@@ -97,7 +97,9 @@ pub(crate) fn register_aggregate_nominal_instances(
         .keys()
         .map(|field| field.index())
         .chain(module.structs.iter().flat_map(|structure| structure.fields.iter().map(|field| field.id.index())))
-        .chain(module.sum_types.iter().flat_map(|sum| sum.variants.iter().flat_map(|variant| variant.fields.iter().map(|field| field.id.index()))))
+        .chain(
+            module.sum_types.iter().flat_map(|sum| sum.variants.iter().flat_map(|variant| variant.fields.iter().map(|field| field.id.index()))),
+        )
         .max()
         .map(|index| index + 1)
         .unwrap_or(0);
@@ -110,10 +112,7 @@ pub(crate) fn register_aggregate_nominal_instances(
         let declaration_type = type_id(type_values, &declared)?;
         let Some(nominal) = declaration_nominals.get(&declaration_type).copied()
         else {
-            return Err(error_without_module(
-                "CAN058",
-                format!("聚合 `{}` 缺少声明级 nominal 身份", structure.qualified_name()),
-            ));
+            return Err(error_without_module("CAN058", format!("聚合 `{}` 缺少声明级 nominal 身份", structure.qualified_name())));
         };
         // 声明侧字段身份恒等保留：单态聚合与未实例化路径继续使用声明字段。
         for field in &structure.fields {
@@ -126,10 +125,7 @@ pub(crate) fn register_aggregate_nominal_instances(
         let semantics = {
             let Some(semantics) = nominals.get(&nominal).map(|(_, semantics)| *semantics)
             else {
-                return Err(error_without_module(
-                    "CAN056",
-                    format!("聚合 `{}` 缺少冻结的 NominalValueSemantics", structure.qualified_name()),
-                ));
+                return Err(error_without_module("CAN056", format!("聚合 `{}` 缺少冻结的 NominalValueSemantics", structure.qualified_name())));
             };
             semantics
         };
@@ -153,24 +149,18 @@ pub(crate) fn register_aggregate_nominal_instances(
             }
             else {
                 Some(instance_layout_for_type(&mut linked.aggregate_layouts, structure, concrete, item_spellings).ok_or_else(|| {
-                    error_without_module(
-                        "CAN058",
-                        format!("聚合实例 `{}` 无法按已冻结声明生成实例级布局", structure.qualified_name()),
-                    )
+                    error_without_module("CAN058", format!("聚合实例 `{}` 无法按已冻结声明生成实例级布局", structure.qualified_name()))
                 })?)
             };
             let field_types = match &layout {
                 Some(layout) => layout.field_types.clone(),
                 None => instantiate_fields(structure, concrete).ok_or_else(|| {
-                    error_without_module(
-                        "CAN058",
-                        format!("聚合实例 `{}` 无法按已冻结声明代入字段类型", structure.qualified_name()),
-                    )
+                    error_without_module("CAN058", format!("聚合实例 `{}` 无法按已冻结声明代入字段类型", structure.qualified_name()))
                 })?,
             };
             let layout_id = layout.as_ref().map(|layout| layout.id);
-            let instance = NominalInstanceId::from_index(next_nominal)
-                .ok_or_else(|| error_without_module("CAN020", "聚合 instance identity 溢出"))?;
+            let instance =
+                NominalInstanceId::from_index(next_nominal).ok_or_else(|| error_without_module("CAN020", "聚合 instance identity 溢出"))?;
             next_nominal = next_nominal.checked_add(1).ok_or_else(|| error_without_module("CAN020", "聚合 instance identity 溢出"))?;
             nominals.insert(instance, (declaration_type, semantics));
             let mut instance_fields = Vec::with_capacity(structure.fields.len());
@@ -190,9 +180,10 @@ pub(crate) fn register_aggregate_nominal_instances(
                     linked.aggregate_layout_by_field.insert(id, (layout_id, index as u32));
                 }
             }
-            linked
-                .nominal_instances
-                .insert(instance, NominalInstanceRecord { declaration: declaration_type, ty: *concrete_type, semantics, fields: instance_fields });
+            linked.nominal_instances.insert(
+                instance,
+                NominalInstanceRecord { declaration: declaration_type, ty: *concrete_type, semantics, fields: instance_fields },
+            );
             if let Some(layout_id) = layout_id {
                 linked.aggregate_layout_by_type.insert(*concrete_type, layout_id);
                 linked.aggregate_layout_by_nominal.insert(instance, layout_id);
@@ -253,11 +244,7 @@ pub(crate) fn intern_instance_field_types(
 }
 
 /// 递归登记缺失的派生类型；子类型先登记，保证新 id 的 canonical kind 引用完整。
-fn intern_type(
-    ids: &mut BTreeMap<ValkyrieType, TypeId>,
-    ty: &ValkyrieType,
-    next: &mut u32,
-) -> Result<(), StructuredDiagnosticSet> {
+fn intern_type(ids: &mut BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType, next: &mut u32) -> Result<(), StructuredDiagnosticSet> {
     if type_id(ids, ty).is_ok() {
         return Ok(());
     }
@@ -442,10 +429,7 @@ pub(crate) fn canonical_type_kind(
         ValkyrieType::Generic(generic) => {
             let Some(binder) = generic.binder
             else {
-                return Err(error_without_module(
-                    "CAN003",
-                    format!("泛型形参 `{}` 缺少 binder 身份，不得进入 canonical 类型表", generic.name),
-                ));
+                return Err(error_without_module("CAN003", format!("泛型形参 `{}` 缺少 binder 身份，不得进入 canonical 类型表", generic.name)));
             };
             CanonicalTypeKind::Generic { owner: binder.owner, ordinal: binder.ordinal }
         }
@@ -525,9 +509,7 @@ pub(crate) fn register_sum_nominal_instances(
             // 布局侧仍写 NyarType；语义身份只认上方 VariantRecord 的 TypeId。
             // 名义 payload（`usize`、`SwissTableEntry<K, V>` 等）没有结构化目标形状，
             // 按声明身份已冻结的 surface spelling 表示，与 emitter `lower_type` 同口径。
-            let layout_payload = instantiated
-                .as_ref()
-                .and_then(|ty| sum_payload_layout(ty, type_values, declaration_spellings));
+            let layout_payload = instantiated.as_ref().and_then(|ty| sum_payload_layout(ty, type_values, declaration_spellings));
             layout_variants.push(nyar_types::SumVariantLayout {
                 id: variant.id,
                 name: variant.name.clone(),
@@ -569,17 +551,14 @@ fn sum_payload_layout(
     };
     let declaration_id = type_values.get(&ValkyrieType::Nominal { declaration: *declaration, arguments: Vec::new() })?;
     let spelling = declaration_spellings.get(declaration_id)?;
-    let layout = nyar_types::NyarType::from_surface_primitive(spelling.as_str())
-        .unwrap_or_else(|| nyar_types::NyarType::Named(spelling.clone()));
+    let layout =
+        nyar_types::NyarType::from_surface_primitive(spelling.as_str()).unwrap_or_else(|| nyar_types::NyarType::Named(spelling.clone()));
     if arguments.is_empty() {
         return Some(layout);
     }
     Some(nyar_types::NyarType::Apply(
         Box::new(layout),
-        arguments
-            .iter()
-            .map(|argument| sum_payload_layout(argument, type_values, declaration_spellings))
-            .collect::<Option<Vec<_>>>()?,
+        arguments.iter().map(|argument| sum_payload_layout(argument, type_values, declaration_spellings)).collect::<Option<Vec<_>>>()?,
     ))
 }
 
@@ -591,12 +570,8 @@ fn contains_open_generic(ty: &ValkyrieType) -> bool {
         ValkyrieType::Apply(base, arguments) => contains_open_generic(base) || arguments.iter().any(contains_open_generic),
         ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_open_generic(element),
         ValkyrieType::FixedArray { element, .. } => contains_open_generic(element),
-        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
-            items.iter().any(contains_open_generic)
-        }
-        ValkyrieType::Function(function) => {
-            function.params.iter().any(contains_open_generic) || contains_open_generic(&function.return_type)
-        }
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => items.iter().any(contains_open_generic),
+        ValkyrieType::Function(function) => function.params.iter().any(contains_open_generic) || contains_open_generic(&function.return_type),
         _ => false,
     }
 }

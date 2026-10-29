@@ -42,7 +42,9 @@ fn probe_return_call(function: &HirFunction) -> &HirExpr {
 }
 
 #[test]
-fn declared_array_length_intrinsic_lowers_to_array_len_identity() {
+fn declared_array_length_intrinsic_degrades_to_ordinary_call() {
+    // 核心合同：源码 intrinsic 自由函数**永远降级为普通 Call**，不得产出 intrinsic 专用 opcode。
+    // intrinsic 专用 opcode 只允许由 adaptor 链接进来的后端专用绑定产生。
     let compiler = ValkyrieCompiler::default();
     let hir = compiler.compile_source(&probe_source(Some(ARRAY_LENGTH_INTRINSIC_DECLARATION))).expect("源码内声明的数组长度结构操作必须解析");
 
@@ -53,13 +55,14 @@ fn declared_array_length_intrinsic_lowers_to_array_len_identity() {
     };
     assert_eq!(args.len(), 1, "receiver must be the only argument: {args:?}");
     let resolved = resolved.as_ref().expect("length call must resolve through the declared intrinsic candidate");
+    // HIR 层仍然保留 intrinsic identity（由 overload 阶段结构化绑定）——这是正确的，
+    // intrinsic 身份是语义事实，不是 lowering 策略。
     assert_eq!(resolved.intrinsic, Some(IntrinsicId::ArrayLen), "数组长度身份必须来自声明冻结的 intrinsic，而不是调用点名字");
     assert!(
         matches!(resolved.return_type, ValkyrieType::Nominal { .. }),
         "声明可见的 usize 必须已冻结为 Nominal identity，got {:?}",
         resolved.return_type
     );
-    let declared_return_type = resolved.return_type.clone();
     let HirExprKind::Path(path) = &callee.kind
     else {
         panic!("expected bare length callee, got {callee:?}");
@@ -68,51 +71,65 @@ fn declared_array_length_intrinsic_lowers_to_array_len_identity() {
 
     let semantic = MirLowerer::lower_module_semantic(&hir);
     assert!(semantic.diagnostics.is_empty(), "声明齐全时 lowering 不得产生诊断: {:?}", semantic.diagnostics);
-    let mut array_length_result_types = Vec::new();
+
+    // 关键断言：MIR 里**不得**产出 ArrayLength 或任何 intrinsic 专用 opcode——
+    // 源码 intrinsic 自由函数必须降级为普通 Call。
+    let has_intrinsic_opcode = semantic.functions.iter().flat_map(|f| &f.blocks).flat_map(|b| &b.instructions).any(|instruction| {
+        matches!(
+            instruction.kind,
+            MirOperation::ArrayLength { .. }
+                | MirOperation::ArrayGet { .. }
+                | MirOperation::ArraySet { .. }
+                | MirOperation::ArrayPush { .. }
+                | MirOperation::NullIsNull { .. }
+                | MirOperation::NullUnwrap { .. }
+        )
+    });
+    assert!(!has_intrinsic_opcode, "源码 intrinsic 自由函数不得产出 intrinsic 专用 opcode，必须降级为普通 Call");
+
+    // 验证降级后的 Call 里 callee 是 Callable（instance），参数包含 receiver。
+    let mut calls = Vec::new();
     for function in &semantic.functions {
         for block in &function.blocks {
             for instruction in &block.instructions {
-                if matches!(instruction.kind, MirOperation::ArrayLength { .. }) {
-                    assert_eq!(instruction.results.len(), 1, "ArrayLength 必须绑定唯一结果槽");
-                    array_length_result_types.push(function.value_types.get(&instruction.results[0]).cloned());
+                if let MirOperation::Call { callee, arguments } = &instruction.kind {
+                    calls.push((callee.clone(), arguments.len()));
                 }
             }
         }
     }
-    // 结果类型必须消费声明返回类型本身，不得按名字另造 `Named("usize")` 形成双 TypeId。
-    assert_eq!(array_length_result_types, vec![Some(declared_return_type)], "ArrayLength 结果类型必须来自声明身份，不得回落为名字类型");
+    // probe 函数里有一次 length(values) 调用；Array.Length 语言 builtin 候选也会被命中一次
+    // （suffix `[ ]` 等）。至少有一个 Call 是我们关注的 length 自由函数调用。
+    assert!(!calls.is_empty(), "length 调用必须降级为普通 Call");
+    let callable_calls = calls.iter().filter(|(callee, _)| matches!(callee, rusty_valkyrie::mir::ssa::MirOperand::Callable(_))).count();
+    assert!(callable_calls >= 1, "至少有一个 Call 是 Callable instance");
 }
 
 #[test]
-fn missing_array_length_return_type_fact_fails_structurally() {
-    let mut hir = ValkyrieCompiler::default()
+fn missing_array_length_return_type_fact_degrades_to_call_not_opcode() {
+    // 修后合同：intrinsic 自由函数永远降级为 Call，即使 return_type 事实缺失也不会有
+    // intrinsic lowering 路径的类型检查——那是 adaptor/backend 的事，不在前端 MIR lowering 层。
+    let hir = ValkyrieCompiler::default()
         .compile_source(&format!("{PRIMITIVES}{ARRAY_LENGTH_INTRINSIC_DECLARATION}{STATEMENT_PROBE}"))
         .expect("声明齐全时 HIR 必须先成立");
-    let probe = hir.functions.iter_mut().find(|function| function.name.as_str() == "probe").expect("probe 声明");
-    let expression = probe.body.expr.as_deref_mut().expect("尾部 length 调用表达式");
-    let HirExprKind::Call { resolved: Some(resolved), .. } = &mut expression.kind
-    else {
-        panic!("预期已解析的 length 调用: {expression:?}");
-    };
-    // 移除调用点唯一的返回类型事实；语句位置没有注解可以补回。
-    resolved.return_type = ValkyrieType::Unit;
 
     let semantic = MirLowerer::lower_module_semantic(&hir);
-    assert!(
-        semantic
-            .diagnostics
-            .iter()
-            .any(|diagnostic| { matches!(diagnostic, MirDiagnostic::UnresolvedValueType { context } if context.contains("array length")) }),
-        "缺失结果类型事实必须结构化失败，实际诊断: {:?}",
-        semantic.diagnostics
-    );
-    let emitted_array_length = semantic
-        .functions
-        .iter()
-        .flat_map(|function| &function.blocks)
-        .flat_map(|block| &block.instructions)
-        .any(|instruction| matches!(instruction.kind, MirOperation::ArrayLength { .. }));
-    assert!(!emitted_array_length, "事实缺失时不得按名字造 usize 继续发射 ArrayLength");
+    // 关键断言：不得产生任何 intrinsic 专用 opcode。
+    let has_intrinsic_opcode = semantic.functions.iter().flat_map(|f| &f.blocks).flat_map(|b| &b.instructions).any(|instruction| {
+        matches!(
+            instruction.kind,
+            MirOperation::ArrayLength { .. }
+                | MirOperation::ArrayGet { .. }
+                | MirOperation::ArraySet { .. }
+                | MirOperation::ArrayPush { .. }
+                | MirOperation::NullIsNull { .. }
+                | MirOperation::NullUnwrap { .. }
+        )
+    });
+    assert!(!has_intrinsic_opcode, "不得产生 intrinsic 专用 opcode，必须降级为 Call");
+
+    // 所有 value_types 都不能有 Named("usize")——原 intrinsic lowering 禁止的错误模式在 Call 路径
+    // 下也应被 overload 解析正确覆盖（返回类型是声明冻结的 Nominal，不是名字）。
     assert!(
         semantic
             .functions

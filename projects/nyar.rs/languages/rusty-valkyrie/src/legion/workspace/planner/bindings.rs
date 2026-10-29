@@ -7,15 +7,12 @@ pub(crate) fn compiler_host_provider_bindings(providers: &[PlannedHostProvider])
     providers
         .iter()
         .map(|provider| {
-            let contract = provider
-                .contract_key
-                .clone()
-                .ok_or_else(|| PlannerError::UnknownHostProviderContract {
-                    provider: provider.symbol.clone(),
-                    contract: provider.contract.clone(),
-                    source_file: provider.source_file.clone(),
-                    line: provider.line,
-                })?;
+            let contract = provider.contract_key.clone().ok_or_else(|| PlannerError::UnknownHostProviderContract {
+                provider: provider.symbol.clone(),
+                contract: provider.contract.clone(),
+                source_file: provider.source_file.clone(),
+                line: provider.line,
+            })?;
             Ok(CompilerHostProviderBinding {
                 contract,
                 provider: provider.key.clone(),

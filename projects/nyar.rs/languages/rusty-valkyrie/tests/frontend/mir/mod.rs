@@ -1,9 +1,9 @@
 //! mir modules.
 
 mod mir_ssa_builtin_helpers_tests;
-mod mir_ssa_type_level_marker_fields_tests;
-mod mir_ssa_trait_dispatch_witness_tests;
 mod mir_ssa_match_lowering_bottom_type_tests;
+mod mir_ssa_trait_dispatch_witness_tests;
+mod mir_ssa_type_level_marker_fields_tests;
 mod mir_ssa_value_semantics_strict_layout_tests;
 mod valkyrie_mir_analysis_contract_tests;
 mod valkyrie_mir_ssa_call_type_contract_tests;

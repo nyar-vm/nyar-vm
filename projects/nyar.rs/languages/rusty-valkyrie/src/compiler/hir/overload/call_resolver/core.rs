@@ -436,8 +436,7 @@ pub(crate) fn try_resolve_call(
                     && let Some(trait_declaration) = matched.trait_owner
                     && let Some(method_declaration) = call.declaration
                 {
-                    call.trait_dispatch =
-                        Some(HirTraitDispatch { trait_declaration, method_declaration, self_type: subject.target.clone() });
+                    call.trait_dispatch = Some(HirTraitDispatch { trait_declaration, method_declaration, self_type: subject.target.clone() });
                 }
                 return Some(call);
             }

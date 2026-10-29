@@ -114,9 +114,5 @@ fn operator_fixity_placeholder(method: &ast::MethodDeclaration) -> Option<ast::A
         "prefix" | "infix" | "postfix" | "suffix" => method.name.name.clone(),
         _ => return None,
     };
-    Some(ast::Attribute {
-        name: ast::Identifier { name: fixity, span: method.name.span.clone() },
-        args: Vec::new(),
-        span: method.span.clone(),
-    })
+    Some(ast::Attribute { name: ast::Identifier { name: fixity, span: method.name.span.clone() }, args: Vec::new(), span: method.span.clone() })
 }

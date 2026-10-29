@@ -17,9 +17,7 @@ use crate::compiler::mir::ssa::{
     value_semantics::{LayoutId, ensure_layout_for_type, ensure_unite_tagged_layout, layout_id_for_type, storage_kind_for_type},
 };
 
-use helpers::{
-    extractor_resolved_call, is_generic_parameter, looks_like_unbound_type_parameter, sum_type_name_matches, tuple_literal_exprs,
-};
+use helpers::{extractor_resolved_call, is_generic_parameter, looks_like_unbound_type_parameter, sum_type_name_matches, tuple_literal_exprs};
 
 include!("bind.rs");
 include!("match_operand.rs");

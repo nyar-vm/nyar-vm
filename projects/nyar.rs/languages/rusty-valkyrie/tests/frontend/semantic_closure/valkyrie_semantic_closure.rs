@@ -392,11 +392,7 @@ fn split_type_alias_entry_pulls_nominal_definition_file() {
                 file("text/_.v", "namespace! std.text;\ntype utf8 = Utf8Text;"),
             ],
         ),
-        (
-            "app",
-            true,
-            vec![file("solution.v", "namespace std.text;\n[export] micro run(value: utf8) -> i32 { return 0 }")],
-        ),
+        ("app", true, vec![file("solution.v", "namespace std.text;\n[export] micro run(value: utf8) -> i32 { return 0 }")]),
     ];
     let closure = plan_with_visibility(&groups, &[&[], &["stdlib"]]);
     let std_paths = &closure.groups[0].body_lowering_source_paths;

@@ -912,9 +912,13 @@ fn has_reference_instance_layout(program: &CanonicalProgram, type_id: nyar_types
     else {
         return false;
     };
-    program.linked.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id).is_some_and(|layout| {
-        layout.storage == nyar_types::StorageKind::Reference
-    })
+    program
+        .linked
+        .aggregate_layouts
+        .layouts
+        .iter()
+        .find(|layout| layout.id == layout_id)
+        .is_some_and(|layout| layout.storage == nyar_types::StorageKind::Reference)
 }
 
 fn canonical_sum_operations(instruction: &nyar_types::CanonicalInstruction) -> Vec<(nyar_types::NominalInstanceId, nyar_types::VariantId)> {

@@ -1,10 +1,8 @@
 use nyar_types::{CanonicalCallee, CanonicalOperation, ItemInstanceId};
-use rusty_valkyrie::{
-    compiler::{
-        emitter::pipeline::CompilerHostProviderBinding,
-        hir::lowering::{CompilerSourceGroup, ValkyrieCompiler},
-        semantic::closure::micro_declaration_key,
-    },
+use rusty_valkyrie::compiler::{
+    emitter::pipeline::CompilerHostProviderBinding,
+    hir::lowering::{CompilerSourceGroup, ValkyrieCompiler},
+    semantic::closure::micro_declaration_key,
 };
 
 const TEST_ARCH: &str = "native";
@@ -127,12 +125,8 @@ fn bodyless_target_bound_provider_carries_its_own_import_contract() {
 fn bodyless_js_provider_carries_js_import_contract() {
     let groups = [
         core_group(),
-        CompilerSourceGroup::single_source(
-            "adaptor",
-            "adaptor",
-            "[host_provider(demo::rand)] [js(\"random\")] micro js_rand(seed: i32): i32",
-        )
-        .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source("adaptor", "adaptor", "[host_provider(demo::rand)] [js(\"random\")] micro js_rand(seed: i32): i32")
+            .with_direct_dependencies(vec!["core".into()]),
         CompilerSourceGroup::single_source(
             "app",
             "demo",

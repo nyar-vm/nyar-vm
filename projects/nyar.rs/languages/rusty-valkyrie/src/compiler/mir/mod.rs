@@ -26,8 +26,7 @@ pub use ssa::{
     AggregateLayout, AggregateLayoutPlan, ArrayInitialization, FieldLayout, FlagsLayout, LayoutId, LayoutKey, MirBlock, MirBlockRef,
     MirConstant, MirDiagnostic, MirEffectKind, MirEntryContract, MirExportContract, MirExternalCallContract, MirField, MirFunction,
     MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind, MirStruct, MirTerminator, MirTraitWitness, MirValue,
-    MirValueOrigin,
-    MirValueRef, SumTypeLayout, SumVariantLayout, compute_aggregate_layout_plan, instance_layout_for_type, instantiate_fields,
+    MirValueOrigin, MirValueRef, SumTypeLayout, SumVariantLayout, compute_aggregate_layout_plan, instance_layout_for_type, instantiate_fields,
     layout_id_for_type, storage_kind_for_type,
 };
 

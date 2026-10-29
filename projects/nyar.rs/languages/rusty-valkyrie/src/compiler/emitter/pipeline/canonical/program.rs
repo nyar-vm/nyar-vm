@@ -13,8 +13,7 @@ use super::{
     fragments::canonical_fragments,
     identities::{
         AggregateDeclarations, canonical_type_kind, collect_aggregate_identities, collect_types, intern_instance_field_types,
-        is_array_index_valkyrie_type, register_aggregate_nominal_instances, register_sum_nominal_instances,
-        validate_callable_identities,
+        is_array_index_valkyrie_type, register_aggregate_nominal_instances, register_sum_nominal_instances, validate_callable_identities,
     },
     lower::lower_function,
 };
@@ -116,8 +115,15 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             NominalInstanceRecord { declaration: *declaration, ty: *declaration, semantics: *semantics, fields: nominal_fields },
         );
     }
-    let aggregate_bindings =
-        register_aggregate_nominal_instances(module, &type_values, &declaration_nominals, &item_spellings, &mut linked, &mut nominals, &mut field_records)?;
+    let aggregate_bindings = register_aggregate_nominal_instances(
+        module,
+        &type_values,
+        &declaration_nominals,
+        &item_spellings,
+        &mut linked,
+        &mut nominals,
+        &mut field_records,
+    )?;
     let sum_instance_by_type = register_sum_nominal_instances(module, &type_values, &declaration_spellings, &mut linked, &mut nominals)?;
     // 实例级字段身份同样只认已冻结的记录；声明级与实例级字段在同一张表内稠密互异。
     linked.fields = field_records.clone();

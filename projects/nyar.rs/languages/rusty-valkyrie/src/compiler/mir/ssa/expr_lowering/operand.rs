@@ -5,7 +5,6 @@ use crate::compiler::{
         hir::{FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
     },
 };
-use nyar_types::IntrinsicId;
 
 use crate::compiler::mir::ssa::{
     MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirValueOrigin, callee_name_matches,

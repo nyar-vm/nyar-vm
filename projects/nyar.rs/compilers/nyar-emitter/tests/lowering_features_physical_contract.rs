@@ -5,7 +5,9 @@ use nyar_emitter::{
     BackendImport, FragmentSubmission, TargetExecutionPlan,
     lowering::features::physical_contract::{PhysicalBackend, PhysicalValueCategory, build_physical_plan},
 };
-use nyar_types::{Block, BlockRef, ExecutableFunction, ImportIndex, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef};
+use nyar_types::{
+    Block, BlockRef, ExecutableFunction, ImportIndex, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef,
+};
 
 fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
     let values = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
@@ -224,10 +226,9 @@ fn external_import_call_plans_with_import_parameter_types() {
     let caller = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("caller")]);
     let import_id = ItemInstanceId::from_index(1).expect("import id");
     let mut caller_function = function("neutral.caller", NyarType::Integer32 { signed: true }, vec![NyarType::Integer32 { signed: true }]);
-    caller_function.blocks[0].instructions.push(instr(
-        InstructionKind::Call { callee: Operand::Item(import_id), arguments: vec![Operand::Value(ValueRef(0))] },
-        Vec::new(),
-    ));
+    caller_function.blocks[0]
+        .instructions
+        .push(instr(InstructionKind::Call { callee: Operand::Item(import_id), arguments: vec![Operand::Value(ValueRef(0))] }, Vec::new()));
     let mut plan = TargetExecutionPlan::from_functions([(caller, caller_function)].into_iter().collect());
     plan.testing_register_import(
         import_id,
