@@ -4,9 +4,16 @@ use crate::compiler::types::{
 };
 
 use super::{
-    MirBuilder, MirConstant, MirOperand, MirOperation, MirTerminator, MirValueOrigin, control_flow_context::MirLoopContext,
-    infer_builder_operand_type,
+    MirBlockRef, MirBuilder, MirConstant, MirOperand, MirOperation, MirTerminator, MirValueOrigin, MirValueRef,
+    control_flow_context::MirLoopContext, infer_builder_operand_type,
 };
+
+/// 分支 arm 的出口事实：arm 结束时所在的块与该处的变量绑定快照。
+///
+/// 两条 arm 都从分支前的绑定出发 lowering，赋值只改各自 arm 的 `bindings`；
+/// 合并时必须把这些差异变成 merge 块的 phi 参数，否则 merge 处恢复分支前绑定，
+/// arm 内的赋值对后继读取不可见。
+type BranchArmExit = (MirBlockRef, std::collections::BTreeMap<String, MirOperand>);
 
 impl MirBuilder {
     /// `loop pat in coll` 的索引 lowering 必须先获得比较与自增的 callable 合同。
@@ -38,6 +45,62 @@ impl MirBuilder {
         if merge_ty.is_some() { vec![result.clone()] } else { Vec::new() }
     }
 
+    /// 为 `if` / `if let` 的 merge 块建立变量 phi，并回填各 arm 入边实参。
+    ///
+    /// 只处理分支前已存在的绑定（arm 内新声明不泄漏到 merge）；某条 arm 改变了
+    /// 绑定就为该名字追加一个 merge 参数，未改变该名字的另一条 arm 传入分支前的值。
+    /// arm 必须以 `Jump { merge }` 结束，`return` / `break` / `continue` 入边不参与合并。
+    fn materialize_branch_bindings(
+        &mut self,
+        merge_block: MirBlockRef,
+        pre_bindings: &std::collections::BTreeMap<String, MirOperand>,
+        arms: &[BranchArmExit],
+    ) {
+        self.bindings = pre_bindings.clone();
+        let joins_merge = |terminator: &MirTerminator| matches!(terminator, MirTerminator::Jump { target, .. } if *target == merge_block);
+        if !arms.iter().any(|(block, _)| joins_merge(&self.blocks[block.0 as usize].terminator)) {
+            // 两侧都提前离开（`return` 等）：merge 不可达，无需 phi。
+            return;
+        }
+
+        let names: Vec<String> = pre_bindings
+            .keys()
+            .filter(|name| arms.iter().any(|(_, bindings)| bindings.get(*name) != pre_bindings.get(*name)))
+            .cloned()
+            .collect();
+        let mut parameters: Vec<MirValueRef> = Vec::with_capacity(names.len());
+        for name in &names {
+            let ty = pre_bindings.get(name).and_then(|operand| infer_builder_operand_type(operand, &self.value_types));
+            let parameter = self.next_value(MirValueOrigin::BlockParameter { block: merge_block, name: name.clone() });
+            if let Some(ty) = ty {
+                self.value_types.insert(parameter, ty);
+            }
+            self.blocks[merge_block.0 as usize].parameters.push(parameter);
+            parameters.push(parameter);
+        }
+
+        for (block, bindings) in arms {
+            let MirTerminator::Jump { target, arguments } = &mut self.blocks[block.0 as usize].terminator
+            else {
+                continue;
+            };
+            if *target != merge_block {
+                continue;
+            }
+            for name in &names {
+                let operand = bindings
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| pre_bindings.get(name).cloned().expect("branch-merged name must exist before the branch"));
+                arguments.push(operand);
+            }
+        }
+
+        for (name, parameter) in names.iter().zip(parameters) {
+            self.bindings.insert(name.clone(), MirOperand::Value(parameter));
+        }
+    }
+
     pub(super) fn lower_if_expr(
         &mut self,
         condition: &HirExpr,
@@ -63,16 +126,12 @@ impl MirBuilder {
         self.bindings = pre_if_bindings.clone();
         let then_result = self.lower_branch_block_value_with_hint(then_branch, expected_type);
         let then_returns = self.terminator.is_some();
+        let then_exit: BranchArmExit = (self.current_block, self.bindings.clone());
         if self.terminator.is_none() {
             // 没有 else 分支的 `if` 在语言层不是值表达式：缺失的 else 一侧没有值
             // 可以与 then 的尾值合并。禁止为它伪造 `Int(0)` / 空文本之类的“默认值”，
             // 那会让任意名义/聚合类型凭空获得一个值，后端只能在不同表示之间猜。
-            let merge_ty = if else_branch.is_some() {
-                Self::branch_merge_type(&then_result, expected_type, &self.value_types)
-            }
-            else {
-                None
-            };
+            let merge_ty = if else_branch.is_some() { Self::branch_merge_type(&then_result, expected_type, &self.value_types) } else { None };
             if merge_ty.is_some() {
                 self.ensure_branch_exit_parameter(merge_block, &mut exit_value, merge_ty.clone());
             }
@@ -85,9 +144,10 @@ impl MirBuilder {
 
         self.current_block = else_block;
         self.bindings = pre_if_bindings.clone();
-        let else_returns = if let Some(else_body) = else_branch {
+        let (else_returns, else_exit): (bool, BranchArmExit) = if let Some(else_body) = else_branch {
             let result = self.lower_branch_block_value_with_hint(else_body, expected_type);
             let returns = self.terminator.is_some();
+            let exit = (self.current_block, self.bindings.clone());
             if self.terminator.is_none() {
                 let merge_ty = Self::branch_merge_type(&result, expected_type, &self.value_types);
                 if merge_ty.is_some() {
@@ -98,19 +158,19 @@ impl MirBuilder {
                     arguments: Self::branch_merge_jump_arguments(&result, merge_ty.as_ref()),
                 });
             }
-            returns
+            (returns, exit)
         }
         else {
             if self.terminator.is_none() {
                 // 无 else 分支：merge 块不携带值参数，跳转也不带参数。
                 self.terminate(MirTerminator::Jump { target: merge_block, arguments: Vec::new() });
             }
-            false
+            (false, (self.current_block, self.bindings.clone()))
         };
         self.flush_block("else");
 
         self.current_block = merge_block;
-        self.bindings = pre_if_bindings;
+        self.materialize_branch_bindings(merge_block, &pre_if_bindings, &[then_exit, else_exit]);
         if then_returns && else_returns {
             self.terminate(MirTerminator::Unreachable);
         }
@@ -143,6 +203,7 @@ impl MirBuilder {
         self.bindings = pre_bindings.clone();
         self.bind_pattern_from_operand_with_payload(pattern, scrutinee_operand, None, payload);
         let then_result = self.lower_branch_block_value(then_branch);
+        let then_exit: BranchArmExit = (self.current_block, self.bindings.clone());
         if self.terminator.is_none() {
             let merge_ty = if else_branch.is_some() {
                 Self::branch_merge_type(&then_result, None, &self.value_types)
@@ -163,8 +224,9 @@ impl MirBuilder {
 
         self.current_block = else_block;
         self.bindings = pre_bindings.clone();
-        if let Some(else_body) = else_branch {
+        let else_exit: BranchArmExit = if let Some(else_body) = else_branch {
             let else_result = self.lower_branch_block_value(else_body);
+            let exit = (self.current_block, self.bindings.clone());
             if self.terminator.is_none() {
                 let merge_ty = Self::branch_merge_type(&else_result, None, &self.value_types);
                 if merge_ty.is_some() {
@@ -175,15 +237,19 @@ impl MirBuilder {
                     arguments: Self::branch_merge_jump_arguments(&else_result, merge_ty.as_ref()),
                 });
             }
+            exit
         }
-        else if self.terminator.is_none() {
-            // 无 else 分支：merge 块不携带值参数，跳转也不带参数。
-            self.terminate(MirTerminator::Jump { target: merge_block, arguments: Vec::new() });
-        }
+        else {
+            if self.terminator.is_none() {
+                // 无 else 分支：merge 块不携带值参数，跳转也不带参数。
+                self.terminate(MirTerminator::Jump { target: merge_block, arguments: Vec::new() });
+            }
+            (self.current_block, self.bindings.clone())
+        };
         self.flush_block("if_let_else");
 
         self.current_block = merge_block;
-        self.bindings = pre_bindings;
+        self.materialize_branch_bindings(merge_block, &pre_bindings, &[then_exit, else_exit]);
         exit_value.map(MirOperand::Value).unwrap_or(MirOperand::Constant(MirConstant::Unit))
     }
 
