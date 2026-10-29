@@ -1199,8 +1199,13 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
             nyar_types::CanonicalPrimitiveType::Void => Ok(NyarType::Bottom),
             nyar_types::CanonicalPrimitiveType::Unit => Ok(NyarType::Unit),
             nyar_types::CanonicalPrimitiveType::Bool => Ok(NyarType::Boolean),
+            // 窄整数保留宽度与符号，不能在计划层提前抹成 i32：表示转换的扩展/截断
+            // 配方由两端语义类型决定，抹平宽度后无法区分 `i32.and 0xFF` 与 `i32.extend8_s`。
+            nyar_types::CanonicalPrimitiveType::Integer { bits: 8, signed } => Ok(NyarType::Integer8 { signed: *signed }),
+            nyar_types::CanonicalPrimitiveType::Integer { bits: 16, signed } => Ok(NyarType::Integer16 { signed: *signed }),
             nyar_types::CanonicalPrimitiveType::Integer { bits: 32, signed } => Ok(NyarType::Integer32 { signed: *signed }),
             nyar_types::CanonicalPrimitiveType::Integer { bits: 64, signed } => Ok(NyarType::Integer64 { signed: *signed }),
+            nyar_types::CanonicalPrimitiveType::Character => Ok(NyarType::Character),
             nyar_types::CanonicalPrimitiveType::Utf8 => Ok(NyarType::Utf8),
             nyar_types::CanonicalPrimitiveType::Utf16 => Ok(NyarType::Utf16),
             unsupported => Err(format!("primitive 尚无目标合同: {unsupported:?}")),
@@ -1328,6 +1333,19 @@ mod tests {
         assert!(signature_contains_generic(&program, &function_with_signature(vec![type_id(2)], type_id(1))), "嵌套泛型形参必须失败");
         assert!(signature_contains_generic(&program, &function_with_signature(vec![type_id(1)], type_id(0))), "泛型返回类型必须失败");
         assert!(!signature_contains_generic(&program, &function_with_signature(vec![type_id(1)], type_id(1))), "闭合标量签名不是泛型模板");
+    }
+
+    /// 窄整数与 `Character` 必须保留宽度与符号性：抹成 i32 后无法再区分掩码与符号扩展。
+    #[test]
+    fn narrow_integer_and_character_primitives_keep_their_identity() {
+        let program = program_with_types(vec![
+            (type_id(0), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 8, signed: false })),
+            (type_id(1), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 16, signed: true })),
+            (type_id(2), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Character)),
+        ]);
+        assert_eq!(lower_type(&program, type_id(0)).expect("u8"), NyarType::Integer8 { signed: false });
+        assert_eq!(lower_type(&program, type_id(1)).expect("i16"), NyarType::Integer16 { signed: true });
+        assert_eq!(lower_type(&program, type_id(2)).expect("Character"), NyarType::Character);
     }
 }
 
