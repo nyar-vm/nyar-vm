@@ -109,6 +109,8 @@ fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> O
             crate::compiler::types::hir::HirLiteral::String(_) => ValkyrieType::Named(Identifier::new("utf8")),
             crate::compiler::types::hir::HirLiteral::Bool(_) => ValkyrieType::Boolean,
             crate::compiler::types::hir::HirLiteral::Unit => ValkyrieType::Unit,
+            // 空值没有独立名义类型；其 `T?` 来自使用位置的上下文。
+            crate::compiler::types::hir::HirLiteral::Null => return None,
         }),
         HirExprKind::Variable(identifier) => locals.get(identifier.name.as_str()).cloned(),
         HirExprKind::Call { resolved, .. } | HirExprKind::Construct { resolved, .. } => resolved.as_ref().map(|call| call.return_type.clone()),

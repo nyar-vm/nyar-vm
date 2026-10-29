@@ -229,6 +229,8 @@ pub fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) 
             crate::compiler::types::hir::HirLiteral::String(_) => ValkyrieType::Utf8,
             crate::compiler::types::hir::HirLiteral::Bool(_) => ValkyrieType::Boolean,
             crate::compiler::types::hir::HirLiteral::Unit => ValkyrieType::Unit,
+            // 空值没有独立名义类型；其 `T?` 来自使用位置的上下文。
+            crate::compiler::types::hir::HirLiteral::Null => return None,
         }),
         HirExprKind::Variable(HirIdentifier { name, .. }) => locals.get(name.as_str()).cloned(),
         // The parser may retain a bare local reference as a single-segment

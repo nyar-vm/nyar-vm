@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 
 use super::{
     canonical_mir::{
-        CanonicalArrayInitialization, CanonicalCallee, CanonicalEffectKind, CanonicalMirError, CanonicalOperation, CanonicalSemanticMir,
-        CanonicalTerminator,
+        CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalEffectKind, CanonicalMirError, CanonicalOperation,
+        CanonicalSemanticMir, CanonicalTerminator,
     },
     linked_program::{
         CanonicalPrimitiveType, CanonicalTypeKind, LinkedSemanticProgram, canonical_nominal_owner_matches, canonical_types_compatible,
@@ -353,9 +353,22 @@ impl CanonicalSemanticMir {
                             }
                             vec![*source]
                         }
-                        CanonicalOperation::LoadConstant { .. } => {
+                        CanonicalOperation::LoadConstant { constant } => {
                             if instruction.results.len() != 1 {
                                 return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
+                            }
+                            // 空值必须承载 `T?` 上下文类型；没有 nullable 结果类型时
+                            // 不得静默降级成 Unit 或名义 Option。
+                            if matches!(constant, CanonicalConstant::Null) {
+                                let result_is_nullable = instruction
+                                    .results
+                                    .first()
+                                    .and_then(|value| function.value_types.get(value))
+                                    .and_then(|ty| linked.types.get(ty))
+                                    .is_some_and(|row| matches!(row.kind, CanonicalTypeKind::Nullable(_)));
+                                if !result_is_nullable {
+                                    return Err(CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id });
+                                }
                             }
                             Vec::new()
                         }

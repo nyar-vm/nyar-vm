@@ -285,6 +285,8 @@ fn infer_simple_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType
             crate::compiler::types::hir::HirLiteral::Bool(_) => ValkyrieType::Boolean,
             crate::compiler::types::hir::HirLiteral::Unit => ValkyrieType::Unit,
             crate::compiler::types::hir::HirLiteral::String(_) => ValkyrieType::Named(Identifier::new("utf8")),
+            // 空值没有独立名义类型；其 `T?` 来自使用位置的上下文。
+            crate::compiler::types::hir::HirLiteral::Null => return None,
         }),
         HirExprKind::Variable(identifier) => locals.get(identifier.name.as_str()).cloned(),
         HirExprKind::AnonymousClass { class_name: Some(name), .. } => Some(ValkyrieType::Named(name.clone())),

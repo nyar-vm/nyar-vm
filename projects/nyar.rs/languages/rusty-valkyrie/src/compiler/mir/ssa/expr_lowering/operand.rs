@@ -53,17 +53,7 @@ impl MirBuilder {
             }
             HirExprKind::Path(path) => {
                 let value = self.next_value(MirValueOrigin::Path);
-                // `null` is a language-level nullable value (`T?`), not the
-                // nominal `Option<T>::None` variant. Preserve the contextual
-                // nullable type on the SSA value so validation and backends
-                // never need to infer it from the symbol spelling.
-                if path.parts().len() == 1 && path.parts()[0].as_str() == "null" {
-                    if let Some(ty) =
-                        expected_type.cloned().or_else(|| is_nullable_type(&self.current_return_type).then(|| self.current_return_type.clone()))
-                    {
-                        self.value_types.insert(value, ty);
-                    }
-                }
+                let _ = path;
                 MirOperand::Value(value)
             }
             HirExprKind::Call { callee, args, resolved, .. } => {

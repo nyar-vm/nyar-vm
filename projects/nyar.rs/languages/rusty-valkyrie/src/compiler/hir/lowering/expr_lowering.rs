@@ -678,6 +678,11 @@ fn lower_short_circuit_or(
 fn lower_name_expression(path: &frontend::ast::NamePath, span: SourceSpan) -> HirExprKind {
     let path = lower_name_path(path);
     if path.parts().len() == 1 {
+        // `null` 是语言的可空空值字面量，不是标识符绑定；身份必须在 HIR 冻结，
+        // 下游不得再按拼写判定。
+        if path.parts()[0].as_str() == "null" {
+            return HirExprKind::Literal(HirLiteral::Null);
+        }
         HirExprKind::Variable(HirIdentifier { name: path.parts()[0].clone(), shadow_index: 0, span })
     }
     else {

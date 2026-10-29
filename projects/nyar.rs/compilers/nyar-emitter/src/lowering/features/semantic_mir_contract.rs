@@ -429,6 +429,11 @@ fn instruction_operands(kind: &ExecutableInstructionKind) -> Vec<&ExecutableOper
     }
 }
 
+/// 目标无关的可赋值判定：`T` 可隐式提升为 `T?`（非空值就是同一引用的 Some 侧）。
+fn executable_types_compatible(actual: &NyarType, expected: &NyarType) -> bool {
+    actual == expected || matches!(expected, NyarType::Nullable(inner) if executable_types_compatible(actual, inner))
+}
+
 fn terminator_operand_type(function: &ExecutableFunction, operand: &ExecutableOperand) -> Option<NyarType> {
     match operand {
         ExecutableOperand::Value(value) => function.value_types.get(value).cloned(),
@@ -438,6 +443,8 @@ fn terminator_operand_type(function: &ExecutableFunction, operand: &ExecutableOp
         ExecutableOperand::Constant(Constant::Utf8(_)) => Some(NyarType::Utf8),
         ExecutableOperand::Constant(Constant::Utf16(_)) => Some(NyarType::Utf16),
         ExecutableOperand::Constant(Constant::Unit) => Some(NyarType::Unit),
+        // 空值没有独立名义类型；裸空值操作数缺少 `T?` 上下文，按未定型失败关闭。
+        ExecutableOperand::Constant(Constant::Null) => None,
         ExecutableOperand::Symbol(_) => None,
         ExecutableOperand::Item(_) => None,
     }
@@ -488,7 +495,7 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                     detail: "return operand has no SSA type".to_string(),
                 });
             };
-            if actual != function.return_type {
+            if !executable_types_compatible(&actual, &function.return_type) {
                 return Err(SemanticMirContractError {
                     code: "SMIR007",
                     function: function.symbol.clone(),
@@ -537,7 +544,7 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                         detail: "jump target block parameter has no SSA type".to_string(),
                     });
                 };
-                if &actual != expected {
+                if !executable_types_compatible(&actual, expected) {
                     return Err(SemanticMirContractError {
                         code: "SMIR007",
                         function: function.symbol.clone(),

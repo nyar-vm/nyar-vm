@@ -38,6 +38,9 @@ pub(super) fn infer_constant_type(constant: &MirConstant) -> ValkyrieType {
         MirConstant::Utf8(_) => ValkyrieType::Utf8,
         MirConstant::Utf16(_) => ValkyrieType::Utf16,
         MirConstant::Unit => ValkyrieType::Unit,
+        // 空值本身没有独立名义类型；其类型由 `LoadConstant.ty` 的 `T?` 上下文给出。
+        // 直接作为常量操作数出现时只保留空值身份，不猜 `Option` 载体。
+        MirConstant::Null => ValkyrieType::Named(crate::compiler::types::Identifier::new("null")),
     }
 }
 
@@ -71,6 +74,8 @@ pub(super) fn mir_return_operand_type_compatible(actual: &ValkyrieType, expected
         || primitive_named_equivalent(actual, expected)
         || primitive_named_equivalent(expected, actual)
         || bare_named_matches_generic_apply_return(expected, actual)
+        // `T` 可隐式提升为 `T?`：非空值就是同一引用的 Some 侧，不构造名义 Option 包装。
+        || matches!(expected, ValkyrieType::Nullable(inner) if mir_return_operand_type_compatible(actual, inner))
 }
 
 /// Seed callable signatures stay generic in `MirFunction`, while HIR call sites carry instantiated types.

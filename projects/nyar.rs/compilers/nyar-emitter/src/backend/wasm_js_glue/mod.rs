@@ -237,6 +237,14 @@ function findGlueEntry(kind, modulePath, name, genericKindsList) {{
     return null;
 }}
 
+// 判断 schema 是否自带 Wasm handle 载体（容器 / 具名聚合 / 可空）。
+// 与后端 `abi_carrier_name` 的容器集合一致：这些类型在 Wasm 里是 GC 引用，
+// JS 侧只能传递、不能构造；标量需要装箱，不存在 box/unbox 合同。
+function hasWasmHandleCarrier(schema) {{
+    const kind = abiKind(schema);
+    return kind === "NamedAggregate" || kind === "Array" || kind === "FixedArray" || kind === "Tuple" || kind === "Option";
+}}
+
 // 检查 glue entry 的每个 operation 都有非空 export_name。
 // Stage A 产出的 export_name 当前是空字符串，只有 Stage C 填了 valkyrie.v 侧真实导出名才算可用。
 function entryHasExportNames(entry) {{
@@ -329,10 +337,16 @@ function marshalLibraryArg(schema, value) {{
         );
     }}
     if (kind === "Option") {{
-        const gk = genericKinds(schema);
-        throw new Error(
-            `[wasm-js-glue] Cannot marshal Option<${{gk.join(',')}}>: Option requires glue_entries contract. Optional<T> ABI bridge not implemented yet.`
-        );
+        // Option 是结构化容器：None 就是 null 引用，Some 就是内层值本身，不另生 glue entry。
+        // 内层必须有 handle 载体（容器 / 具名聚合）；标量内层在 Wasm GC 里是装箱值，
+        // 需要 box/unbox 的 glue 合同，当前未定义，失败关闭而不是把裸标量当引用传。
+        if (!hasWasmHandleCarrier(schema.inner)) {{
+            throw new Error(
+                `[wasm-js-glue] Cannot marshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox glue contract that is not defined.`
+            );
+        }}
+        if (value == null) return null;
+        return marshalLibraryArg(schema.inner, value);
     }}
     if (kind === "Tuple") {{
         throw new Error(
@@ -411,10 +425,14 @@ function demarshalLibraryReturn(schema, raw) {{
         );
     }}
     if (kind === "Option") {{
-        const gk = genericKinds(schema);
-        throw new Error(
-            `[wasm-js-glue] Cannot demarshal Option<${{gk.join(',')}}>: Option requires glue_entries contract. Optional<T> ABI bridge not implemented yet.`
-        );
+        // 与 marshal 对称：null 引用即 None；Some 的内层按自身 schema 反序列化。
+        if (!hasWasmHandleCarrier(schema.inner)) {{
+            throw new Error(
+                `[wasm-js-glue] Cannot demarshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox glue contract that is not defined.`
+            );
+        }}
+        if (raw == null) return null;
+        return demarshalLibraryReturn(schema.inner, raw);
     }}
     if (kind === "Tuple") {{
         throw new Error(

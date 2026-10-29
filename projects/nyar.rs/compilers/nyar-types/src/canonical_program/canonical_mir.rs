@@ -32,6 +32,8 @@ pub enum CanonicalConstant {
     Utf16(String),
     /// 单元值。
     Unit,
+    /// 可空空值：`T?` 的空引用，类型由 `LoadConstant` 的上下文类型给出。
+    Null,
 }
 
 /// 已解析、已类型化的 Semantic MIR 操作。

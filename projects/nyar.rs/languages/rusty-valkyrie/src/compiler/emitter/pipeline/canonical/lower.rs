@@ -364,6 +364,7 @@ fn lower_constant(constant: &MirConstant) -> Result<CanonicalConstant, Structure
         MirConstant::Utf8(value) => Ok(CanonicalConstant::Utf8(value.clone())),
         MirConstant::Utf16(value) => Ok(CanonicalConstant::Utf16(value.clone())),
         MirConstant::Unit => Ok(CanonicalConstant::Unit),
+        MirConstant::Null => Ok(CanonicalConstant::Null),
         MirConstant::Float64(_) => Err(error_without_module("CAN012", "浮点常量没有 canonical 形状")),
     }
 }

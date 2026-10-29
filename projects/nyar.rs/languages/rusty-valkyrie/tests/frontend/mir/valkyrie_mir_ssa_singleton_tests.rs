@@ -454,6 +454,9 @@ imply SwissTable<K, V> {
                     MirOperand::Constant(MirConstant::Utf8(_) | MirConstant::Utf16(_)) => {
                         Some(rusty_valkyrie::compiler::types::hir::ValkyrieType::Utf8)
                     }
+                    MirOperand::Constant(MirConstant::Null) => {
+                        panic!("block {} jump to {} arg {} contains a bare nullable empty value", block.id.0, target.0, index);
+                    }
                     MirOperand::Callable(identity) => {
                         panic!("block {} jump to {} arg {} contains callable identity {:?}", block.id.0, target.0, index, identity);
                     }

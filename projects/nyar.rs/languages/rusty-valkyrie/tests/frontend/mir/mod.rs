@@ -2,6 +2,7 @@
 
 mod mir_branch_binding_merge_tests;
 mod mir_ssa_match_lowering_bottom_type_tests;
+mod mir_ssa_nullable_null_tests;
 mod mir_ssa_trait_dispatch_witness_tests;
 mod mir_ssa_type_level_marker_fields_tests;
 mod mir_ssa_value_semantics_strict_layout_tests;

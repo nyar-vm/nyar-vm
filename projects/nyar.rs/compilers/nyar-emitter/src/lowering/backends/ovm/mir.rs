@@ -868,6 +868,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_imm1(NyarHeadCode::Constant, index);
             }
             MirConstant::Utf16(_) => panic!("ovm lowering has no explicit UTF-16 text ABI"),
+            // OVM 目标没有可空空引用的 ABI 合同；不得用 i32 0 冒充 null。
+            MirConstant::Null => panic!("ovm lowering has no nullable reference ABI"),
             MirConstant::Unit => {
                 self.emitter.emit_const_i32(0);
             }

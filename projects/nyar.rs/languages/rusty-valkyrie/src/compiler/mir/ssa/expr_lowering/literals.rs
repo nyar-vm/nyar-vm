@@ -45,6 +45,12 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
             ),
             Some(ValkyrieType::Utf8),
         ),
+        HirLiteral::Null => (
+            MirConstant::Null,
+            // 空值的 SSA 类型只能来自上下文 `T?`；没有 nullable 上下文时保持未定型，
+            // 由 SSA 校验结构化拒绝，禁止退回 Unit 或猜一个名义 Option。
+            expected_type.filter(|ty| is_nullable_type(ty)).cloned(),
+        ),
         HirLiteral::Unit => (MirConstant::Unit, Some(ValkyrieType::Unit)),
     }
 }

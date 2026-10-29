@@ -394,6 +394,8 @@ pub(crate) fn canonical_types_compatible(linked: &LinkedSemanticProgram, actual:
             CanonicalTypeKind::Array { element: expected, length: expected_length },
         ) => actual_length == expected_length && canonical_types_compatible(linked, *actual, *expected),
         (CanonicalTypeKind::Nullable(actual), CanonicalTypeKind::Nullable(expected)) => canonical_types_compatible(linked, *actual, *expected),
+        // `T` 可隐式提升为 `T?`：非空值就是同一引用的 Some 侧，不是名义 Option 变体。
+        (_, CanonicalTypeKind::Nullable(inner)) => canonical_types_compatible(linked, actual, *inner),
         (CanonicalTypeKind::Tuple(actual), CanonicalTypeKind::Tuple(expected)) if actual.len() == expected.len() => {
             actual.iter().zip(expected).all(|(actual, expected)| canonical_types_compatible(linked, *actual, *expected))
         }

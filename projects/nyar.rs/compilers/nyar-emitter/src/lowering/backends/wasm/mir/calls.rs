@@ -142,6 +142,8 @@ impl<'a> WasmMirLowerer<'a> {
                     panic!("WASM lowering requires an explicit UTF-16 ABI contract")
                 }
                 MirConstant::Unit => WASM_GC_ANYREF,
+                // 可空空值是空引用，与 nullable 槽的 anyref 载体一致。
+                MirConstant::Null => WASM_GC_ANYREF,
                 MirConstant::Float64(_) => VALTYPE_F64,
                 MirConstant::Int(_) | MirConstant::Bool(_) => VALTYPE_I32,
             },
