@@ -211,8 +211,8 @@ fn generic_signature_enters_canonical_as_binder_identity() {
     // witness 的 self 类型实参落在同一形参身份上，也不按名字猜实现。
     let hir = ValkyrieCompiler::default().compile_source(SOURCE).expect("源码必须通过 HIR 分析");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let program = rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&mir)
-        .expect("带 binder 的泛型签名必须进入 canonical");
+    let program =
+        rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&mir).expect("带 binder 的泛型签名必须进入 canonical");
 
     let (generic, binder) = mir
         .type_identities

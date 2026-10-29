@@ -146,9 +146,7 @@ pub fn legion_test(project_dir: String, target: Option<String>) -> LegionTestOut
 #[napi]
 pub fn legion_list_ovm_exports(module: String) -> Result<Vec<String>> {
     let bytes = fs::read(&module).map_err(|error| Error::from_reason(format!("read module: {error}")))?;
-    let loaded = OdinVm::new()
-        .load(&bytes)
-        .map_err(|error| Error::from_reason(format!("load module: {error}")))?;
+    let loaded = OdinVm::new().load(&bytes).map_err(|error| Error::from_reason(format!("load module: {error}")))?;
     Ok(loaded.exports.iter().map(|export| export.symbol_name.clone()).collect())
 }
 
@@ -157,14 +155,10 @@ pub fn legion_list_ovm_exports(module: String) -> Result<Vec<String>> {
 pub fn legion_invoke_ovm_export(module: String, entry: String, args_json: String) -> Result<String> {
     let bytes = fs::read(&module).map_err(|error| Error::from_reason(format!("read module: {error}")))?;
     let mut vm = OdinVm::new();
-    let loaded = vm
-        .load(&bytes)
-        .map_err(|error| Error::from_reason(format!("load module: {error}")))?;
+    let loaded = vm.load(&bytes).map_err(|error| Error::from_reason(format!("load module: {error}")))?;
     let args = json_bridge::parse_call_args_json_with_heap(&args_json, vm.heap_mut())
         .map_err(|error| Error::from_reason(format!("parse args-json: {error}")))?;
-    let result = vm
-        .run(&loaded, &entry, args)
-        .map_err(|error| Error::from_reason(format!("run entry `{entry}`: {error}")))?;
+    let result = vm.run(&loaded, &entry, args).map_err(|error| Error::from_reason(format!("run entry `{entry}`: {error}")))?;
     let json = json_bridge::value_to_json_with_heap(&result, Some(vm.heap()))
         .map_err(|error| Error::from_reason(format!("serialize result: {error}")))?;
     serde_json::to_string(&json).map_err(|error| Error::from_reason(format!("encode result json: {error}")))

@@ -173,10 +173,7 @@ pub struct InstanceLayout {
 ///
 /// 只认已冻结的 declaration 与 binder：形参数目不符、缺 binder、或实参仍含
 /// 开放泛型形参时返回 `None`；禁止按字段名或短名猜代入结果。
-pub fn instantiate_fields(
-    structure: &crate::compiler::mir::MirStruct,
-    instance: &ValkyrieType,
-) -> Option<Vec<ValkyrieType>> {
+pub fn instantiate_fields(structure: &crate::compiler::mir::MirStruct, instance: &ValkyrieType) -> Option<Vec<ValkyrieType>> {
     let ValkyrieType::Nominal { declaration, arguments } = instance
     else {
         return None;
@@ -270,10 +267,7 @@ fn type_contains_open_generic(ty: &ValkyrieType) -> bool {
 ///
 /// 与 emitter `lower_type` 同口径（声明 spelling 先查 primitive 别名，否则
 /// `Named`；实参递归）。任一环节缺事实返回 `None`，禁止按短名猜载体。
-fn layout_field_type(
-    ty: &ValkyrieType,
-    declaration_spellings: &BTreeMap<nyar_types::ItemId, String>,
-) -> Option<nyar_types::NyarType> {
+fn layout_field_type(ty: &ValkyrieType, declaration_spellings: &BTreeMap<nyar_types::ItemId, String>) -> Option<nyar_types::NyarType> {
     if let Ok(concrete) = concretize_type(ty) {
         return Some(concrete);
     }
@@ -295,16 +289,13 @@ fn layout_field_type(
             arguments.iter().map(|argument| layout_field_type(argument, declaration_spellings)).collect::<Option<Vec<_>>>()?,
         )),
         ValkyrieType::Array(element) => Some(nyar_types::NyarType::Array(Box::new(layout_field_type(element, declaration_spellings)?))),
-        ValkyrieType::FixedArray { element, length } => Some(nyar_types::NyarType::FixedArray {
-            element: Box::new(layout_field_type(element, declaration_spellings)?),
-            length: *length,
-        }),
+        ValkyrieType::FixedArray { element, length } => {
+            Some(nyar_types::NyarType::FixedArray { element: Box::new(layout_field_type(element, declaration_spellings)?), length: *length })
+        }
         ValkyrieType::Tuple(items) => Some(nyar_types::NyarType::Tuple(
             items.iter().map(|item| layout_field_type(item, declaration_spellings)).collect::<Option<Vec<_>>>()?,
         )),
-        ValkyrieType::Nullable(element) => {
-            Some(nyar_types::NyarType::Nullable(Box::new(layout_field_type(element, declaration_spellings)?)))
-        }
+        ValkyrieType::Nullable(element) => Some(nyar_types::NyarType::Nullable(Box::new(layout_field_type(element, declaration_spellings)?))),
         ValkyrieType::Union(items) => Some(nyar_types::NyarType::Union(
             items.iter().map(|item| layout_field_type(item, declaration_spellings)).collect::<Option<Vec<_>>>()?,
         )),
@@ -315,9 +306,7 @@ fn layout_field_type(
 /// 字段字节大小与对齐：标量按宽度，其余按引用槽。
 fn layout_field_extent(ty: &nyar_types::NyarType) -> (u32, u32) {
     match ty {
-        nyar_types::NyarType::Integer64 { .. }
-        | nyar_types::NyarType::Integer128 { .. }
-        | nyar_types::NyarType::Float64 => (8, 8),
+        nyar_types::NyarType::Integer64 { .. } | nyar_types::NyarType::Integer128 { .. } | nyar_types::NyarType::Float64 => (8, 8),
         nyar_types::NyarType::Bottom
         | nyar_types::NyarType::Unit
         | nyar_types::NyarType::Boolean

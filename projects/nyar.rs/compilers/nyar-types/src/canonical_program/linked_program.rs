@@ -336,9 +336,10 @@ pub(crate) fn canonical_types_compatible(linked: &LinkedSemanticProgram, actual:
             actual.iter().zip(expected).all(|(actual, expected)| canonical_types_compatible(linked, *actual, *expected))
         }
         // 形参身份由 `binder`(owner, ordinal) 决定：同一 binder 才是同一形参。
-        (CanonicalTypeKind::Generic { owner: actual_owner, ordinal: actual_ordinal }, CanonicalTypeKind::Generic { owner: expected_owner, ordinal: expected_ordinal }) => {
-            actual_owner == expected_owner && actual_ordinal == expected_ordinal
-        }
+        (
+            CanonicalTypeKind::Generic { owner: actual_owner, ordinal: actual_ordinal },
+            CanonicalTypeKind::Generic { owner: expected_owner, ordinal: expected_ordinal },
+        ) => actual_owner == expected_owner && actual_ordinal == expected_ordinal,
         _ => false,
     }
 }

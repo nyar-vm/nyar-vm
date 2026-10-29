@@ -5,7 +5,6 @@ use crate::compiler::{
         hir::{FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
     },
 };
-use nyar_types::IntrinsicId;
 
 use crate::compiler::mir::ssa::{
     MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirValueOrigin, callee_name_matches,
@@ -20,43 +19,20 @@ use super::{
 };
 
 impl MirBuilder {
-    /// 查询调用点的结构化 intrinsic 身份。
+    /// 所有 intrinsic lowering 分支统一降级为普通 Call。
     ///
-    /// 只信任 `HirResolvedCall.intrinsic`（由 overload 阶段给语言内建绑定）；
-    /// **禁止**按符号路径段猜测 intrinsic 身份——那条旁路会绕过 adaptor/import binding，
-    /// 让没有后端实现的 intrinsic 悄悄生成 opcode。
-    ///
-    /// 即使查到 intrinsic 身份，lowering 也不会走专用 opcode 路径：
-    /// intrinsic 调用必须降级为普通 `Call { callee: Callable(instance) }`，
-    /// 让 linker adaptor / backend TargetExecutionPlan 链路消费。
-    pub(crate) fn callee_intrinsic_id(resolved: Option<&HirResolvedCall>, _callee: &MirOperand) -> Option<IntrinsicId> {
-        resolved.and_then(|call| call.intrinsic)
-    }
-
-    /// 检查 intrinsic 调用是否已绑定 adaptor（有 ItemId 或 ItemInstanceId）。
-    ///
-    /// 语言 builtin intrinsic 候选（`language_builtin_candidates`）只挂 intrinsic 身份，
-    /// 没有 declaration/instance；源码 `[intrinsic(...)]` 种子会同时挂 declaration。
-    /// **未绑定 adaptor 的 intrinsic 不能走专用 opcode 路径**，必须降级到普通 Call。
-    pub(crate) fn has_intrinsic_adaptor_binding(resolved: Option<&HirResolvedCall>) -> bool {
-        resolved.is_some_and(|call| call.intrinsic.is_some() && (call.instance.is_some() || call.declaration.is_some()))
-    }
-
+    /// 核心合同：intrinsic 专用 opcode 只允许由 adaptor 链接进来的后端专用绑定产生；
+    /// 源码 `[intrinsic(...)]` 自由函数、语言 builtin intrinsic 候选（只挂 intrinsic 身份）
+    /// 一律走普通 Call 路径，让 planner adaptor / backend TargetExecutionPlan 链路消费。
+    /// 当前没有 adaptor 链接进来的后端绑定，因此所有 intrinsic 调用直接 `return None`
+    /// 让主 lowering 循环走 Call 分支。后续 adaptor 真能链接 opcode 时再在此收敛。
     pub(crate) fn try_lower_ref_deref_intrinsic(
         &mut self,
-        resolved: Option<&HirResolvedCall>,
-        callee: &MirOperand,
-        arguments: &[MirOperand],
+        _resolved: Option<&HirResolvedCall>,
+        _callee: &MirOperand,
+        _arguments: &[MirOperand],
     ) -> Option<MirOperand> {
-        if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::RefDeref) {
-            return None;
-        }
-        // intrinsic 必须绑定 adaptor（有 ItemId 或 ItemInstanceId）才能走专用 opcode；
-        // 否则降级到普通 Call 路径，让下游 adaptor 消费。
-        if !Self::has_intrinsic_adaptor_binding(resolved) {
-            return None;
-        }
-        arguments.first().cloned()
+        None
     }
 
     /// `T?` ???????? sum ??? `Nominal{ItemId}`?
@@ -360,45 +336,15 @@ impl MirBuilder {
         Some(MirOperand::Value(value))
     }
 
-    pub(crate) fn emit_array_length_operand(&mut self, array: MirOperand, expected_type: Option<&ValkyrieType>) -> MirOperand {
-        // 结果类型只消费调用点/声明注解提供的整数事实（`resolved.return_type` 已由
-        // `try_lower_array_len_intrinsic` 合入）。事实缺失时结构化失败；禁止按名字
-        // 造 `Named("usize")` 再与 `Nominal{ItemId}` 形成双 TypeId（CAN015 StoreVar）。
-        let Some(length_ty) = expected_type
-            .filter(|ty| crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(ty, &self.field_declarations))
-            .cloned()
-        else {
-            self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedValueType {
-                context: format!("array length result missing integer type fact: {array:?}"),
-            });
-            return MirOperand::Constant(MirConstant::Unit);
-        };
-        let value = self.next_value(MirValueOrigin::CallResult);
-        // results 必须挂在指令上，否则 wasm `array.len` 结果槽为空。
-        self.push_instruction(MirOperation::ArrayLength { array }, vec![value]);
-        self.value_types.insert(value, length_ty);
-        MirOperand::Value(value)
-    }
-
+    /// 统一降级到普通 Call；见 [`Self::try_lower_ref_deref_intrinsic`] 顶部注释。
     pub(crate) fn try_lower_array_len_intrinsic(
         &mut self,
-        resolved: Option<&HirResolvedCall>,
-        callee: &MirOperand,
-        arguments: &[MirOperand],
-        expected_type: Option<&ValkyrieType>,
+        _resolved: Option<&HirResolvedCall>,
+        _callee: &MirOperand,
+        _arguments: &[MirOperand],
+        _expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
-        if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::ArrayLen) {
-            return None;
-        }
-        if !Self::has_intrinsic_adaptor_binding(resolved) {
-            return None;
-        }
-        let array = arguments.first().cloned()?;
-        let hint = resolved
-            .map(|call| &call.return_type)
-            .filter(|ty| crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(ty, &self.field_declarations))
-            .or(expected_type);
-        Some(self.emit_array_length_operand(array, hint))
+        None
     }
 
     pub(crate) fn try_lower_array_get_on_array(
@@ -425,87 +371,37 @@ impl MirBuilder {
         Some(MirOperand::Value(value))
     }
 
+    /// 统一降级到普通 Call；见 [`Self::try_lower_ref_deref_intrinsic`] 顶部注释。
     pub(crate) fn try_lower_array_get_intrinsic(
         &mut self,
-        resolved: Option<&HirResolvedCall>,
-        callee: &MirOperand,
-        arguments: &[MirOperand],
-        expected_type: Option<&ValkyrieType>,
-    ) -> Option<MirOperand> {
-        if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::ArrayGet) {
-            return None;
-        }
-        if !Self::has_intrinsic_adaptor_binding(resolved) {
-            return None;
-        }
-        // Option 包装不生成 ArrayGet intrinsic；保留为普通 Call 让 adaptor 处理
-        let wraps_option = resolved
-            .map(|call| self.is_option_type(&call.return_type))
-            .unwrap_or_else(|| expected_type.is_some_and(|ty| self.is_option_type(ty)));
-        if wraps_option {
-            return None;
-        }
-        let array = arguments.first().cloned()?;
-        let ordinal = arguments.get(1).cloned()?;
-        self.try_lower_array_get_on_array(array, ordinal, resolved, expected_type)
-    }
-
-    /// intrinsic 必须绑定 adaptor（有 ItemId/ItemInstanceId）才能走专用 opcode
-    pub(crate) fn try_lower_array_set_intrinsic(
-        &mut self,
-        resolved: Option<&HirResolvedCall>,
-        callee: &MirOperand,
-        arguments: &[MirOperand],
+        _resolved: Option<&HirResolvedCall>,
+        _callee: &MirOperand,
+        _arguments: &[MirOperand],
         _expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
-        if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::ArraySet) || arguments.len() != 3 {
-            return None;
-        }
-        if !Self::has_intrinsic_adaptor_binding(resolved) {
-            return None;
-        }
-        let array = arguments[0].clone();
-        let array_ty = infer_builder_operand_type(&array, &self.value_types)
-            .or_else(|| resolved.and_then(|call| call.parameter_types.first()).filter(|ty| is_array_shaped_valkyrie_type(ty)).cloned())?;
-        if !is_array_shaped_valkyrie_type(&array_ty) {
-            return None;
-        }
-        self.push_instruction(
-            MirOperation::ArraySet { array: arguments[0].clone(), index: arguments[1].clone(), value: arguments[2].clone() },
-            Vec::new(),
-        );
-        Some(MirOperand::Constant(MirConstant::Unit))
+        None
     }
 
-    /// intrinsic 必须绑定 adaptor（有 ItemId/ItemInstanceId）才能走专用 opcode
+    /// 统一降级到普通 Call；见 [`Self::try_lower_ref_deref_intrinsic`] 顶部注释。
+    pub(crate) fn try_lower_array_set_intrinsic(
+        &mut self,
+        _resolved: Option<&HirResolvedCall>,
+        _callee: &MirOperand,
+        _arguments: &[MirOperand],
+        _expected_type: Option<&ValkyrieType>,
+    ) -> Option<MirOperand> {
+        None
+    }
+
+    /// 统一降级到普通 Call；见 [`Self::try_lower_ref_deref_intrinsic`] 顶部注释。
     pub(crate) fn try_lower_array_push_intrinsic(
         &mut self,
-        resolved: Option<&HirResolvedCall>,
-        callee: &MirOperand,
-        arguments: &[MirOperand],
-        expected_type: Option<&ValkyrieType>,
+        _resolved: Option<&HirResolvedCall>,
+        _callee: &MirOperand,
+        _arguments: &[MirOperand],
+        _expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
-        if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::ArrayPush) || arguments.len() != 2 {
-            return None;
-        }
-        if !Self::has_intrinsic_adaptor_binding(resolved) {
-            return None;
-        }
-        let array = arguments[0].clone();
-        let array_ty = infer_builder_operand_type(&array, &self.value_types)
-            .or_else(|| expected_type.filter(|ty| is_array_shaped_valkyrie_type(ty)).cloned())?;
-        if !is_array_shaped_valkyrie_type(&array_ty) {
-            return None;
-        }
-        let value = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(MirOperation::ArrayPush { array: arguments[0].clone(), value: arguments[1].clone() }, vec![value]);
-        let return_type = resolved
-            .map(|call| call.return_type.clone())
-            .filter(|ty| is_array_shaped_valkyrie_type(ty))
-            .or_else(|| expected_type.filter(|ty| is_array_shaped_valkyrie_type(ty)).cloned())
-            .unwrap_or(array_ty);
-        self.value_types.insert(value, return_type);
-        Some(MirOperand::Value(value))
+        None
     }
 
     pub(crate) fn try_lower_array_intrinsics(

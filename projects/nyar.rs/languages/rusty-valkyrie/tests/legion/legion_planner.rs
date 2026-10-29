@@ -971,14 +971,24 @@ fn filters_and_injects_sdk_vendor_by_publish_format() {
     assert_eq!(game_plan.project.build_target.publish, vec!["mini-game".to_string()]);
 
     let web_plan = workspace
-        .build_plan(&BuildRequest { project_dir: app_web_dir.clone(), target: CanonicalTarget::browser(), output_dir: None, ..Default::default() })
+        .build_plan(&BuildRequest {
+            project_dir: app_web_dir.clone(),
+            target: CanonicalTarget::browser(),
+            output_dir: None,
+            ..Default::default()
+        })
         .unwrap();
     let web_deps: Vec<&str> = web_plan.project.dependencies.iter().map(|d| d.name.as_str()).collect();
     assert!(!web_deps.contains(&"tencent.wechat.sdk"), "web-app must not see mini-game sdk: {web_deps:?}");
     assert!(!web_deps.contains(&"tencent.wechat.miniprogram.sdk"));
 
     let mp_plan = workspace
-        .build_plan(&BuildRequest { project_dir: app_mp_dir.clone(), target: CanonicalTarget::browser(), output_dir: None, ..Default::default() })
+        .build_plan(&BuildRequest {
+            project_dir: app_mp_dir.clone(),
+            target: CanonicalTarget::browser(),
+            output_dir: None,
+            ..Default::default()
+        })
         .unwrap();
     let mp_deps: Vec<&str> = mp_plan.project.dependencies.iter().map(|d| d.name.as_str()).collect();
     assert!(mp_deps.contains(&"tencent.wechat.miniprogram.sdk"), "mini-program injects mp sdk: {mp_deps:?}");

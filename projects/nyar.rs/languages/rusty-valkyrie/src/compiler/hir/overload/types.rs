@@ -8,8 +8,8 @@ use crate::compiler::{
     types::{
         Identifier,
         hir::{
-            GenericType, HirExpr, HirExprKind, HirIdentifier, HirLiteral, HirStatement, HirStatementKind, HirStringSegment, PatternRefutability,
-            ValkyrieType,
+            GenericType, HirExpr, HirExprKind, HirIdentifier, HirLiteral, HirStatement, HirStatementKind, HirStringSegment,
+            PatternRefutability, ValkyrieType,
         },
     },
 };

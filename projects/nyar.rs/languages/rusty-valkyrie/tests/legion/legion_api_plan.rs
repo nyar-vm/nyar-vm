@@ -37,12 +37,8 @@ micro main() -> i64 {
 #[test]
 fn plan_api_reports_js_random_host_provider_for_entry_closure() {
     let fixture = create_browser_wasm_host_random_workspace("legion-api-random");
-    let build_plan = plan(PlanRequest {
-        project_dir: fixture.project_dir.clone(),
-        target: CanonicalTarget::browser(),
-        output_dir: None,
-    })
-    .expect("plan");
+    let build_plan =
+        plan(PlanRequest { project_dir: fixture.project_dir.clone(), target: CanonicalTarget::browser(), output_dir: None }).expect("plan");
 
     assert_eq!(build_plan.selected_host_provider_count, 1);
     assert_eq!(build_plan.selected_host_providers[0].required_capabilities, vec!["js.random".to_string()]);

@@ -136,23 +136,13 @@ pub fn test_project(plan: &LegionBuildPlan, selector: LegionTestSelector) -> Leg
 /// 在任意工程路径上跑测试；不依赖预先存在的 `LegionBuildPlan`。
 ///
 /// CLI `legion test` 与 N-API `test_project(project_dir, selector)` 都走到这里。
-pub fn test_project_at(
-    project_dir: &Path,
-    project_name: &str,
-    selector: &LegionTestSelector,
-) -> LegionResult<LegionTestReport> {
+pub fn test_project_at(project_dir: &Path, project_name: &str, selector: &LegionTestSelector) -> LegionResult<LegionTestReport> {
     let resolved = resolve_project_path(project_dir)?;
     let workspace = WorkspaceResolver::discover_for_project(&resolved)?;
     let targets = selector.resolved_targets();
 
-    let (passed, failed, skipped, entries) = run_tests_for_project(
-        &workspace,
-        &resolved,
-        selector.filter.as_deref(),
-        &targets,
-        &selector.runner_overrides,
-        selector.verbose,
-    );
+    let (passed, failed, skipped, entries) =
+        run_tests_for_project(&workspace, &resolved, selector.filter.as_deref(), &targets, &selector.runner_overrides, selector.verbose);
 
     let grouped = group_entries_by_target(&entries);
     let exit_code = if failed > 0 { ExitCode::FAILURE } else { ExitCode::SUCCESS };
@@ -176,11 +166,7 @@ fn group_entries_by_target(entries: &[TestResultEntry]) -> Vec<LegionTargetTestR
     }
     let mut out = Vec::new();
     for target in seen_targets {
-        let cases: Vec<LegionTestCaseResult> = entries
-            .iter()
-            .filter(|e| e.target == target)
-            .map(test_result_entry_to_api)
-            .collect();
+        let cases: Vec<LegionTestCaseResult> = entries.iter().filter(|e| e.target == target).map(test_result_entry_to_api).collect();
         let mut t_passed = 0usize;
         let mut t_failed = 0usize;
         let mut t_skipped = 0usize;
@@ -197,10 +183,5 @@ fn group_entries_by_target(entries: &[TestResultEntry]) -> Vec<LegionTargetTestR
 }
 
 fn test_result_entry_to_api(entry: &TestResultEntry) -> LegionTestCaseResult {
-    LegionTestCaseResult {
-        name: entry.name.clone(),
-        status: entry.status.clone(),
-        error: entry.error.clone(),
-        target: entry.target.clone(),
-    }
+    LegionTestCaseResult { name: entry.name.clone(), status: entry.status.clone(), error: entry.error.clone(), target: entry.target.clone() }
 }

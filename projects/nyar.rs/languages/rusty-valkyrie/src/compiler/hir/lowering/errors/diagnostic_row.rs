@@ -244,9 +244,8 @@ impl From<HirError> for DiagnosticRow {
                 row = row.with_arg("item_kind", DiagnosticArg::String(item_kind.clone()));
             }
             HirError::PipelineRejected { codes, module, messages } => {
-                row = row
-                    .with_arg("module", DiagnosticArg::String(module.clone()))
-                    .with_arg("codes", DiagnosticArg::Aggregate(codes.join(",")));
+                row =
+                    row.with_arg("module", DiagnosticArg::String(module.clone())).with_arg("codes", DiagnosticArg::Aggregate(codes.join(",")));
                 if let Some(message) = messages.first() {
                     row = row.with_internal_message(message.clone());
                 }

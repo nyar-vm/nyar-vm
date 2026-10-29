@@ -1,7 +1,9 @@
 //! 泛型接收者上的 trait 方法调用必须在 HIR 冻结分派义务（evidence），且不做单态化。
 
-use rusty_valkyrie::compiler::types::hir::{HirExprKind, ValkyrieType};
-use rusty_valkyrie::ValkyrieCompiler;
+use rusty_valkyrie::{
+    ValkyrieCompiler,
+    compiler::types::hir::{HirExprKind, ValkyrieType},
+};
 
 const SOURCE: &str = r#"
 namespace test.dispatch;

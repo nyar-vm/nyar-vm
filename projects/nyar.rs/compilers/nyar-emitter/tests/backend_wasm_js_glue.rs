@@ -175,33 +175,18 @@ fn cli_target_default_is_runner_concern_not_compile_target() {
     let launcher = build_node_launcher("demo_cli", &imports, &[], false, None);
 
     // 1. JS 硬编码默认值应保留在启动壳里（Node runner 层）
-    assert!(
-        launcher.contains("let cli_target = \"node\""),
-        "启动壳应携带 runner CLI 默认值，供 --target 参数覆写"
-    );
+    assert!(launcher.contains("let cli_target = \"node\""), "启动壳应携带 runner CLI 默认值，供 --target 参数覆写");
 
     // 2. 仅替换默认值为其他字符串不应影响 cli_mode（CLI 分派代码仍在）
     //    —— cli_mode 开关只基于 import 名存在性，和默认值无关
     let alt_launcher = launcher.replace("let cli_target = \"node\"", "let cli_target = \"deno\"");
-    assert!(
-        alt_launcher.contains("command === \"build\""),
-        "cli_mode 不应被 cli_target 默认值影响：换默认值后 CLI 分派仍应存在"
-    );
-    assert!(
-        alt_launcher.contains("cli_target = args[++i]"),
-        "--target 参数覆写逻辑应保持"
-    );
+    assert!(alt_launcher.contains("command === \"build\""), "cli_mode 不应被 cli_target 默认值影响：换默认值后 CLI 分派仍应存在");
+    assert!(alt_launcher.contains("cli_target = args[++i]"), "--target 参数覆写逻辑应保持");
 
     // 3. 非 CLI imports 情况下，启动壳虽然仍声明 cli_target 变量（模板统一生成），
     //    但 **CLI 分派代码**（build 命令解析 + exports.build 调用）不应出现
     //    —— 这证明 cli_mode 开关只基于 import 名存在性，和模板里的默认值无关
     let non_cli_launcher = build_node_launcher("demo", &[("env".to_string(), "emit_byte".to_string())], &[], false, None);
-    assert!(
-        !non_cli_launcher.contains("command === \"build\""),
-        "非 CLI 模式不应生成 build 命令分派——cli_target 默认值存在 ≠ 启用 CLI 模式"
-    );
-    assert!(
-        !non_cli_launcher.contains("cli_target = args[++i]"),
-        "非 CLI 模式不应生成 --target 参数解析逻辑"
-    );
+    assert!(!non_cli_launcher.contains("command === \"build\""), "非 CLI 模式不应生成 build 命令分派——cli_target 默认值存在 ≠ 启用 CLI 模式");
+    assert!(!non_cli_launcher.contains("cli_target = args[++i]"), "非 CLI 模式不应生成 --target 参数解析逻辑");
 }

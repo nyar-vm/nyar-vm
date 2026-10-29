@@ -327,7 +327,8 @@ impl CanonicalSemanticMir {
                                 if !linked.types.contains_key(expected_ty) {
                                     return Err(CanonicalMirError::UnknownType { function: *key, ty: *expected_ty });
                                 }
-                                if function.value_types.get(value).is_some_and(|actual| !matches_declared_type(&linked, *actual, *expected_ty)) {
+                                if function.value_types.get(value).is_some_and(|actual| !matches_declared_type(&linked, *actual, *expected_ty))
+                                {
                                     return Err(CanonicalMirError::OperationOperandTypeMismatch {
                                         function: *key,
                                         instruction: instruction.id,
@@ -662,7 +663,9 @@ impl CanonicalSemanticMir {
                                 });
                             };
                             let index_is_integer = function.value_types.get(index).is_some_and(|ty| linked.is_array_index_type(*ty));
-                            if !index_is_integer || !function.value_types.get(value).is_some_and(|actual| matches_declared_type(linked, *actual, *element)) {
+                            if !index_is_integer
+                                || !function.value_types.get(value).is_some_and(|actual| matches_declared_type(linked, *actual, *element))
+                            {
                                 return Err(CanonicalMirError::OperationOperandTypeMismatch {
                                     function: *key,
                                     instruction: instruction.id,

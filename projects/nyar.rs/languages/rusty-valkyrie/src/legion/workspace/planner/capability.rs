@@ -289,10 +289,8 @@ mod tests {
 
     #[test]
     fn wasm_binding_maps_env_import_to_capability_id() {
-        let caps = required_capabilities_from_foreign_bindings(&[ForeignBinding::Wasm {
-            module: "env".into(),
-            field: "random_next_i32".into(),
-        }]);
+        let caps =
+            required_capabilities_from_foreign_bindings(&[ForeignBinding::Wasm { module: "env".into(), field: "random_next_i32".into() }]);
         assert_eq!(caps, vec!["wasm.env.random_next_i32".to_string()]);
         let space = target_host_capability_space(CanonicalTarget::wasi());
         // wasm.env capability 空间通过 wasm.env 模块前缀匹配

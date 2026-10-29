@@ -60,11 +60,8 @@ pub struct LegionCompileReport {
 }
 
 fn host_required_capabilities_from_evidence(evidence: &CompilerCompileEvidence) -> Vec<String> {
-    let mut capabilities: Vec<String> = evidence
-        .host_provider_bindings
-        .iter()
-        .flat_map(|binding| binding.required_capabilities.iter().cloned())
-        .collect();
+    let mut capabilities: Vec<String> =
+        evidence.host_provider_bindings.iter().flat_map(|binding| binding.required_capabilities.iter().cloned()).collect();
     capabilities.sort();
     capabilities.dedup();
     capabilities

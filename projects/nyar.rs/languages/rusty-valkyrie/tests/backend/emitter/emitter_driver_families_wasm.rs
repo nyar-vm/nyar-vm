@@ -97,8 +97,7 @@ micro add(a: i32, b: i32) -> i32 {
 }
 "#;
     let groups = [CompilerSourceGroup::single_source("demo", "demo", source).as_entry()];
-    let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &[], "wasm");
+    let program = ValkyrieCompiler::default().compile_source_groups_to_program_with_host_bindings(&groups, &[], "wasm");
     match program {
         Ok(program) => {
             let fragment = program.canonical().linked.fragments.keys().next().cloned().expect("目标程序必须保留片段身份");

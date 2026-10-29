@@ -18,11 +18,7 @@ pub struct CheckArgs {
 /// Run `legion check`.
 pub fn run(args: &CheckArgs) -> LegionResult<ExitCode> {
     println!("check：验证项目可编译性（复用 build）");
-    let build_args = BuildArgs {
-        project_dir: args.project_dir.clone(),
-        target: args.target.clone(),
-        output_dir: None,
-        debug_artifacts: args.verbose,
-    };
+    let build_args =
+        BuildArgs { project_dir: args.project_dir.clone(), target: args.target.clone(), output_dir: None, debug_artifacts: args.verbose };
     run_build(&build_args)
 }
