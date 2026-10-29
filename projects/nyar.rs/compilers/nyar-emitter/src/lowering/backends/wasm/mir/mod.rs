@@ -38,7 +38,7 @@ pub(super) use crate::backend_plan_views::{
 };
 
 pub(super) use super::super::executable::ExecutableLoweringContext;
-pub(super) use nyar_types::LayoutId;
+pub(super) use nyar_types::{LayoutId, NominalInstanceId, VariantId};
 
 // 从 crate 顶层模块 re-export
 pub(super) use crate::{

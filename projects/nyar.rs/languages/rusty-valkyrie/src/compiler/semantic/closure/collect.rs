@@ -110,7 +110,10 @@ fn collect_members(builder: &mut FileBuilder, namespace: &[String], owner: &str,
         let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
         // 拥有者引用相对成员自身 namespace：聚合与该成员同文件同 namespace 时按 namespace 链命中。
         let link = Some(DeclarationLink::MemberOwner(vec![owner.to_string()]));
-        builder.register(namespace, DeclarationKind::Method, &name, Some(owner), link, None, references);
+        let key = builder.register(namespace, DeclarationKind::Method, &name, Some(owner), link, None, references);
+        if operator_members::declares_host_abi_role(&method.annotations) {
+            builder.mark_host_abi_role(&key);
+        }
     }
 }
 
@@ -135,7 +138,10 @@ fn collect_imply(builder: &mut FileBuilder, namespace: &[String], imply: &ast::I
         collect_method(method, &mut references);
         let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
         let link = owner_reference.clone().map(DeclarationLink::MemberOwner);
-        builder.register(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref(), link, None, references);
+        let key = builder.register(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref(), link, None, references);
+        if operator_members::declares_host_abi_role(&method.annotations) {
+            builder.mark_host_abi_role(&key);
+        }
     }
 }
 

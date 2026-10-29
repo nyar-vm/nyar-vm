@@ -29,7 +29,7 @@ use super::{
         build_wasi_string_data_section, build_wasi_string_literal_offsets, wasi_string_data_section_size, wasm_function_type_param_bytes,
         wasm_function_type_result_byte,
     },
-    type_registry::{register_gc_array_types, register_gc_struct_types, wasm_array_element_type_key},
+    type_registry::{register_gc_array_types, register_gc_struct_types, register_gc_sum_types, wasm_array_element_type_key},
 };
 use crate::{
     FragmentSubmission,
@@ -161,6 +161,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 必须?glue 感知路径：`[utf8]` →?i32 元，禁止 Named→anyref 误登记?
     let gc_array_type_indices = register_gc_array_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref);
     eprintln!("[wasm::module-stage] arrays={} types={}", gc_array_type_indices.len(), type_indices.len());
+    // sum 的物理布局（tag + anyref payload）是后端私有决定，必须按 nominal identity 单独注册，
+    // 让 `SumNew` 构造的对象与 `SumPayloadGet` / `SumVariantIs` 的 `ref.cast` 指向同一条目。
+    let gc_sum_type_indices = register_gc_sum_types(&ctx, &mut type_indices);
+    eprintln!("[wasm::module-stage] sums={} types={}", gc_sum_type_indices.len(), type_indices.len());
     // Scalar unite payloads such as utf8/bool/i32 handles need boxing into an
     // `[i32]` struct before entering the anyref payload slot.
     let gc_i32_box_type_index = {
@@ -265,6 +269,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &import_return_types,
             &gc_struct_type_indices,
             &gc_array_type_indices,
+            &gc_sum_type_indices,
             gc_i32_box_type_index,
             gc_i64_box_type_index,
             &callee_import_index,

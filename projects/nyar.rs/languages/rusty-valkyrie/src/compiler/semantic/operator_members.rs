@@ -98,3 +98,11 @@ pub(crate) fn is_operator_member_name(name: &str) -> bool {
 fn has_modifier(annotations: &[Attribute], name: &str) -> bool {
     annotations.iter().any(|attribute| attribute.name.name == name)
 }
+
+/// 声明是否带宿主直通角色标注（`[library_glue(...)]`）。
+///
+/// 闭包规划只需要知道「这是宿主 ABI 需要的成员」，具体角色名由 HIR 与目标层按同一
+/// 标注解析；标注名与角色名同源于 `LibraryGlueOperation`，任何一方都不得再复制字符串。
+pub(crate) fn declares_host_abi_role(annotations: &[Attribute]) -> bool {
+    has_modifier(annotations, nyar_types::LibraryGlueOperation::ATTRIBUTE_NAME)
+}

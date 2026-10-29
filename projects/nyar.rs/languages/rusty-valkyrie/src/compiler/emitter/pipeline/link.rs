@@ -5,19 +5,35 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::{
+    hir::overload::has_unresolved_generic_arguments,
     mir::{MirFunction, MirModule, MirOperand, MirOperation, MirStruct, MirSumDeclaration},
     syntax::oak::ParseError,
+    types::hir::{export_spec::parse_library_glue_operation, HirModule, ValkyrieType},
 };
+use nyar::planning::SemanticAggregateOperation;
 use nyar_types::{
-    FieldId, NominalInstanceId,
+    FieldId, ItemId, ItemInstanceId, LibraryGlueOperation, NominalInstanceId,
     layout::{AggregateLayout, AggregateLayoutPlan},
 };
 
 /// 合并已由 Compiler 统一注册的依赖实例闭包。
+///
+/// 不携带 HIR 闭包时无法看到 `[library_glue]` 角色事实，聚合直通操作阶段不运行；
+/// 正常编译路径使用 [`link_reachable_dependency_mir_with_hir`]。
 #[doc(hidden)]
 pub fn link_reachable_dependency_mir(
     consumer: &mut MirModule,
     dependency_mirs: &[MirModule],
+) -> Result<(), crate::compiler::syntax::oak::ParseError> {
+    link_reachable_dependency_mir_with_hir(consumer, dependency_mirs, &[])
+}
+
+/// 合并依赖实例闭包，并把片段根签名所需的聚合直通操作冻结进 Semantic MIR。
+#[doc(hidden)]
+pub fn link_reachable_dependency_mir_with_hir(
+    consumer: &mut MirModule,
+    dependency_mirs: &[MirModule],
+    hirs: &[&HirModule],
 ) -> Result<(), crate::compiler::syntax::oak::ParseError> {
     if dependency_mirs.is_empty() {
         return Ok(());
@@ -85,6 +101,9 @@ pub fn link_reachable_dependency_mir(
     if pending.is_empty() {
         pending = consumer.functions.iter().filter_map(|function| function.instance).collect();
     }
+    // 片段根签名需要的聚合直通操作必须先冻结，并把生产者加入可达根，
+    // 否则这些宿主直通成员既不会进入 linked，也无法在 canonical 找到生产者。
+    freeze_fragment_aggregate_operations(hirs, &definitions, &mut linked, &mut pending)?;
     while let Some(instance) = pending.pop() {
         if !visited.insert(instance) {
             continue;
@@ -98,7 +117,8 @@ pub fn link_reachable_dependency_mir(
                 }
             }
             if !std::ptr::eq(*module, &*consumer) {
-                if let Err(detail) = linked.register_callable_symbol(instance, function.display_symbol.clone()) {
+                let symbol = format!("{}#{}", function.display_symbol, instance.index());
+                if let Err(detail) = linked.register_callable_symbol(instance, symbol) {
                     return Err(ParseError::Invalid { message: detail, span: None });
                 }
                 let module_index = std::iter::once(&*consumer)
@@ -113,7 +133,8 @@ pub fn link_reachable_dependency_mir(
         else if let Some(contract) = imports.get(&instance) {
             if !linked.external_calls.contains(contract) {
                 linked.external_calls.push((*contract).clone());
-                let symbol = crate::compiler::hir::symbols::stable_symbol_key(&contract.symbol);
+                let base = crate::compiler::hir::symbols::stable_symbol_key(&contract.symbol);
+                let symbol = format!("{base}#{}", instance.index());
                 if let Err(detail) = linked.register_callable_symbol(instance, symbol) {
                     return Err(ParseError::Invalid { message: detail, span: None });
                 }
@@ -145,6 +166,196 @@ pub fn link_reachable_dependency_mir(
     }
     *consumer = linked;
     Ok(())
+}
+
+/// 冻结片段根签名需要的聚合直通操作，并把生产者加入可达性根。
+///
+/// 角色只来自 HIR 声明的 `[library_glue]` 标注，生产者只来自已实例化、
+/// 且 owner 类型与片段根签名完全具体名义实例一致的 callable。找不到生产者
+/// 时失败闭合，不按成员名、布局或声明级身份猜映射。
+fn freeze_fragment_aggregate_operations(
+    hirs: &[&HirModule],
+    definitions: &BTreeMap<ItemInstanceId, (&MirModule, &MirFunction)>,
+    linked: &mut MirModule,
+    pending: &mut Vec<ItemInstanceId>,
+) -> Result<(), ParseError> {
+    let (glue_roles, producers) = collect_library_glue_facts(hirs)?;
+    if glue_roles.is_empty() {
+        return Ok(());
+    }
+    for fragment in &mut linked.semantic_fragments {
+        // 无导出根的片段不承载聚合直通操作。
+        if fragment.exported_operations.is_empty() {
+            continue;
+        }
+        let mut concretes = BTreeSet::new();
+        for instance in &fragment.exported_operations {
+            let Some((_, function)) = definitions.get(instance)
+            else {
+                return Err(ParseError::Invalid {
+                    message: format!("片段 `{}` 的片段根实例 `{instance}` 缺少函数体，无法冻结聚合直通操作", fragment.id),
+                    span: None,
+                });
+            };
+            for parameter in &function.param_types {
+                collect_concrete_nominal_types(parameter, &mut concretes);
+            }
+            collect_concrete_nominal_types(&function.return_type, &mut concretes);
+        }
+        let mut required = Vec::new();
+        for concrete in &concretes {
+            let ValkyrieType::Nominal { declaration, .. } = concrete
+            else {
+                continue;
+            };
+            let Some(roles) = glue_roles.get(declaration)
+            else {
+                continue;
+            };
+            let found = producers.get(concrete);
+            for role in roles {
+                let Some(instance) = found.and_then(|operations| operations.get(role)).copied()
+                else {
+                    return Err(ParseError::Invalid {
+                        message: format!(
+                            "片段 `{}` 的根签名需要聚合 `{concrete:?}` 的 `[library_glue({})]` 生产者，但闭包内没有对应的已实例化成员（声明缺 `[library_glue]` 角色成员或未实例化）",
+                            fragment.id,
+                            role.as_str()
+                        ),
+                        span: None,
+                    });
+                };
+                required.push((concrete.clone(), *role, instance));
+            }
+        }
+        let mut seen = BTreeSet::new();
+        for (concrete, operation, instance) in required {
+            let type_id = linked.type_identities.get(&concrete).copied().ok_or_else(|| ParseError::Invalid {
+                message: format!("片段 `{}` 的聚合实例 `{concrete:?}` 不在 Compiler 统一 TypeId 表中", fragment.id),
+                span: None,
+            })?;
+            // 同一 (type_id, operation) 只冻结一条；同一片段内不重复。
+            if !seen.insert((type_id, operation)) {
+                continue;
+            }
+            fragment.aggregate_operations.push(SemanticAggregateOperation { type_id, operation, instance });
+            pending.push(instance);
+        }
+    }
+    Ok(())
+}
+
+/// 收集 HIR 闭包里的 `[library_glue]` 角色集合与已实例化的生产者。
+///
+/// 角色集合以名义声明身份为键，用于判断片段根签名「需要」哪些直通操作；
+/// 生产者以完全具体的 owner 类型为键，值必须是唯一的已实例化 callable。
+fn collect_library_glue_facts(
+    hirs: &[&HirModule],
+) -> Result<
+    (BTreeMap<ItemId, BTreeSet<LibraryGlueOperation>>, BTreeMap<ValkyrieType, BTreeMap<LibraryGlueOperation, ItemInstanceId>>),
+    ParseError,
+> {
+    let mut roles = BTreeMap::new();
+    let mut producers = BTreeMap::new();
+    for hir in hirs {
+        collect_library_glue_facts_from_module(hir, &mut roles, &mut producers)?;
+    }
+    Ok((roles, producers))
+}
+
+fn collect_library_glue_facts_from_module(
+    module: &HirModule,
+    roles: &mut BTreeMap<ItemId, BTreeSet<LibraryGlueOperation>>,
+    producers: &mut BTreeMap<ValkyrieType, BTreeMap<LibraryGlueOperation, ItemInstanceId>>,
+) -> Result<(), ParseError> {
+    for implementation in &module.impls {
+        let declaration = implementation.target.nominal_declaration();
+        for method in &implementation.methods {
+            let Some(operation) = parse_library_glue_operation(&method.annotations)
+            else {
+                continue;
+            };
+            let Some(declaration) = declaration
+            else {
+                return Err(ParseError::Invalid {
+                    message: format!("聚合 `{:?}` 的 `[library_glue({})]` 成员缺少名义声明身份", implementation.target, operation.as_str()),
+                    span: None,
+                });
+            };
+            roles.entry(declaration).or_default().insert(operation);
+        }
+    }
+    for callable in &module.instantiated_callables {
+        let Some(operation) = parse_library_glue_operation(&callable.function.annotations)
+        else {
+            continue;
+        };
+        let Some(instance) = callable.function.instance
+        else {
+            continue;
+        };
+        let Some(owner) = callable.owner_type.as_ref()
+        else {
+            continue;
+        };
+        // 只有完全具体的名义实例才能与片段根签名按类型身份对上。
+        let ValkyrieType::Nominal { arguments, .. } = owner
+        else {
+            continue;
+        };
+        if arguments.is_empty() || has_unresolved_generic_arguments(owner) {
+            continue;
+        }
+        if let Some(previous) = producers.entry(owner.clone()).or_default().insert(operation, instance)
+            && previous != instance
+        {
+            return Err(ParseError::Invalid {
+                message: format!(
+                    "聚合实例 `{owner:?}` 的 `[library_glue({})]` 角色绑定多个生产者: {previous} / {instance}",
+                    operation.as_str()
+                ),
+                span: None,
+            });
+        }
+    }
+    for submodule in &module.submodules {
+        collect_library_glue_facts_from_module(submodule, roles, producers)?;
+    }
+    Ok(())
+}
+
+/// 递归收集类型里完全具体的名义实例（含嵌套实参）；仍含开放 binder 的形状跳过。
+fn collect_concrete_nominal_types(ty: &ValkyrieType, out: &mut BTreeSet<ValkyrieType>) {
+    match ty {
+        ValkyrieType::Nominal { arguments, .. } => {
+            if !arguments.is_empty() && !has_unresolved_generic_arguments(ty) {
+                out.insert(ty.clone());
+            }
+            for argument in arguments {
+                collect_concrete_nominal_types(argument, out);
+            }
+        }
+        ValkyrieType::Apply(base, arguments) => {
+            collect_concrete_nominal_types(base, out);
+            for argument in arguments {
+                collect_concrete_nominal_types(argument, out);
+            }
+        }
+        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => collect_concrete_nominal_types(element, out),
+        ValkyrieType::FixedArray { element, .. } => collect_concrete_nominal_types(element, out),
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+            for item in items {
+                collect_concrete_nominal_types(item, out);
+            }
+        }
+        ValkyrieType::Function(function) => {
+            for parameter in &function.params {
+                collect_concrete_nominal_types(parameter, out);
+            }
+            collect_concrete_nominal_types(&function.return_type, out);
+        }
+        _ => {}
+    }
 }
 
 /// 把入口组的公开表面并入唯一程序模块。

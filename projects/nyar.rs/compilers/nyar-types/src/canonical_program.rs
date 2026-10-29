@@ -32,7 +32,7 @@ pub use diagnostics::{
     DiagnosticSeverity, DiagnosticSource, DiagnosticSpan, StageResult, StructuredDiagnosticSet,
 };
 pub use linked_program::{
-    CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, EntryRecord, EvidenceRecord,
-    ExportRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord, NominalValueSemantics,
-    TypeRecord, VariantRecord,
+    CanonicalAggregateOperation, CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind,
+    EntryRecord, EvidenceRecord, ExportRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LibraryGlueOperation, LinkedSemanticProgram,
+    NominalInstanceRecord, NominalValueSemantics, TypeRecord, VariantRecord,
 };

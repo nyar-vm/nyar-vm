@@ -119,12 +119,46 @@ impl<'a> WasmMirLowerer<'a> {
 
     // ── wasm-gc 辅助方法 ──────────────────────────────────────────
 
-    /// 查找引用类型 struct 对应?wasm-gc structtype ?type_index?
-    pub(super) fn resolve_gc_struct_type_index(&self, layout_id: LayoutId, _type_name: &str) -> Option<u32> {
-        self.gc_struct_type_indices.get(&layout_id).copied()
+    /// 查找引用类型 layout 对应的 wasm-gc structtype 的 `type_index`。
+    ///
+    /// 未注册即计划不一致：调用方只有在 `layout_uses_gc_struct` 为真时才会走到这里，
+    /// 找不到就说明注册条件与使用点分叉，必须失败闭合而不是发 `unreachable` 掩盖。
+    pub(super) fn resolve_gc_struct_type_index(&self, layout_id: LayoutId, type_name: &str) -> u32 {
+        self.gc_struct_type_indices.get(&layout_id).copied().unwrap_or_else(|| {
+            panic!(
+                "WASM gc structtype 未注册: layout_id={layout_id:?} type `{type_name}` in `{}`",
+                self.mir_fn.symbol
+            )
+        })
     }
 
-    /// 查找 heap `[T]` ?element_type 对应?wasm-gc arraytype ?type_index?
+    /// 查找 sum nominal identity 对应的 wasm-gc structtype `[i32 tag, anyref payload]`。
+    ///
+    /// 未注册就说明「计划里有这个 sum，降低却没为它登记类型」，必须失败闭合：
+    /// 回落到别的 struct 会把编译期不一致变成运行期 `illegal cast`。
+    pub(super) fn resolve_gc_sum_type_index(&self, nominal: &NominalInstanceId) -> u32 {
+        self.gc_sum_type_indices.get(nominal).copied().unwrap_or_else(|| {
+            panic!("WASM sum lowering missing gc structtype for nominal {nominal:?} in `{}`", self.mir_fn.symbol)
+        })
+    }
+
+    /// 读取计划冻结的 variant tag 与 payload 类型；缺项即计划不完整，失败闭合。
+    pub(super) fn sum_variant_representation(
+        &self,
+        nominal: &NominalInstanceId,
+        variant: &VariantId,
+    ) -> (u32, Option<nyar_types::TypeId>) {
+        let sums = self.ctx.submission.backend_plan.sum_representations();
+        let sum = sums.get(nominal).unwrap_or_else(|| {
+            panic!("WASM sum lowering missing SumRepresentation for nominal {nominal:?} in `{}`", self.mir_fn.symbol)
+        });
+        let entry = sum.variants.get(variant).unwrap_or_else(|| {
+            panic!("WASM sum lowering missing variant {variant:?} of nominal {nominal:?} in `{}`", self.mir_fn.symbol)
+        });
+        (entry.tag, entry.payload_type)
+    }
+
+    /// 查找 heap `[T]` 的 element_type 对应 wasm-gc arraytype 的 type_index。
     pub(super) fn resolve_gc_array_type_index(&self, element_type: &NyarType) -> Option<u32> {
         let key = wasm_array_element_type_key(element_type);
         let resolved = self.gc_array_type_indices.get(&key).copied();
@@ -134,12 +168,7 @@ impl<'a> WasmMirLowerer<'a> {
         resolved
     }
 
-    pub(super) fn trap_missing_gc_struct(&mut self, layout_id: LayoutId, type_name: &str, site: &str) {
-        eprintln!("[wasm::mir] missing gc structtype for layout_id={layout_id:?} type `{type_name}` at `{site}` in `{}`", self.mir_fn.symbol);
-        encode_unreachable(&mut self.code);
-    }
-
-    /// 将栈?anyref 转为 typed struct ref，供 `struct.get` / `struct.set` 使用?
+    /// 将栈上 anyref 转为 typed struct ref，供 `struct.get` / `struct.set` 使用。
     pub(super) fn emit_ref_cast_struct(&mut self, type_index: u32) {
         encode_ref_cast_type_index(type_index, &mut self.code);
     }

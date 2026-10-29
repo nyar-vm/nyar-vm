@@ -61,31 +61,12 @@ pub struct BackendImport {
 
 /// 聚合 helper operation 的物理种类。
 ///
-/// 只描述 glue 合同的 operation 身份；具体参数的语义由聚合布局与 ABI 结构事实决定，
-/// 名称字符串仅用于产物合同序列化。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AggregateOperation {
-    /// 以长度构造聚合句柄。
-    Construct,
-    /// 向聚合句柄追加元素。
-    Push,
-    /// 读取聚合长度。
-    Length,
-    /// 按下标读取元素。
-    At,
-}
-
-impl AggregateOperation {
-    /// 返回 glue 合同中的 operation 名称。
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Construct => "construct",
-            Self::Push => "push",
-            Self::Length => "length",
-            Self::At => "at",
-        }
-    }
-}
+/// 本类型是 [`nyar_types::LibraryGlueOperation`] 的别名，不保留独立枚举：operation
+/// 身份来自语言声明标注 `[library_glue(construct|push|length|at)]`，由前端冻结进
+/// canonical 片段，属于 canonical 事实而非目标私有事实。目标层只消费它，不得再维护
+/// 第二套枚举与之同步。具体参数的语义由聚合布局与 ABI 结构事实决定，名称字符串
+/// 仅用于产物合同序列化，由别名类型自带的 `as_str` 提供。
+pub use nyar_types::LibraryGlueOperation as AggregateOperation;
 
 /// 聚合 helper operation 在 Wasm 层的参数或返回载体。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -98,6 +79,13 @@ pub enum AggregateOperationCarrier {
     F32,
     /// `f64` 载体。
     F64,
+    /// 宿主持有的聚合句柄。
+    ///
+    /// 与 `AbiCarrier::Handle` 是同一物理载体：库导出 ABI 把具名聚合与容器一律交给
+    /// 宿主作为不透明对象（Wasm GC 引用在 JS 侧就是不可构造、只能传递的对象）。
+    /// glue operation 的聚合槽位必须用它，不能写成 `i32`——`i32` 是线性内存句柄
+    /// 时代的残留，与导出函数形参的真实载体不一致。
+    Handle,
     /// 无返回值。
     Void,
 }
@@ -110,6 +98,7 @@ impl AggregateOperationCarrier {
             Self::I64 => "i64",
             Self::F32 => "f32",
             Self::F64 => "f64",
+            Self::Handle => "handle",
             Self::Void => "void",
         }
     }
@@ -325,6 +314,10 @@ impl TargetExecutionPlan {
                 return Err(format!("callable 实例 `{:?}` 绑定多个 ImportIndex", import.callee));
             }
         }
+        for (callee, (idx, import)) in &declared_imports {
+            let link_str = format!("{:?}", import.link);
+            let symbol = canonical.linked.callable_names.get(callee).cloned().unwrap_or_default();
+        }
         let mut pending = roots
             .iter()
             .copied()
@@ -351,9 +344,6 @@ impl TargetExecutionPlan {
             })
             .map(|(inst, _)| *inst)
             .collect();
-        if !generic_functions.is_empty() {
-            eprintln!("[SKIP] 预收集 {} 个泛型声明函数", generic_functions.len());
-        }
         let mut seen = std::collections::BTreeSet::new();
         let mut functions = BTreeMap::new();
         let mut abi_names = BTreeMap::new();
@@ -409,6 +399,8 @@ impl TargetExecutionPlan {
             aggregate_layout_by_nominal: canonical.linked.aggregate_layout_by_nominal.clone(),
             aggregate_layout_by_field: canonical.linked.aggregate_layout_by_field.clone(),
             aggregate_layout_by_type: canonical.linked.aggregate_layout_by_type.clone(),
+            // 聚合 helper operation 的载体必须先冻结 producer 的库导出 ABI 再派生，
+            // 因此在构造阶段留空，由 `freeze_aggregate_operations` 补齐。
             aggregate_operations: Vec::new(),
             flags_types: canonical.linked.flags_types.clone(),
             singleton_instances: canonical.linked.singleton_instances.clone(),
@@ -419,6 +411,7 @@ impl TargetExecutionPlan {
             sum_reps: program.representation().sum_reps.clone(),
         };
         plan.freeze_library_export_abis()?;
+        plan.freeze_aggregate_operations(&fragment.aggregate_operations)?;
         plan.validate_aggregate_operations()?;
         Ok(plan)
     }
@@ -450,6 +443,41 @@ impl TargetExecutionPlan {
             abis.insert(*instance, abi);
         }
         self.library_export_abis = abis;
+        Ok(())
+    }
+
+    /// 把 canonical 冻结的聚合宿主直通操作映射为 plan 事实。
+    ///
+    /// operation 身份、布局身份、导出名与 producer 全部来自前端；plan 只补充物理载体，
+    /// 且载体必须从 producer 的**真实签名**（已由 [`Self::freeze_library_export_abis`]
+    /// 冻结的 [`LibraryExportAbi`]）逐一映射得到，不得在此写死 `i32` / handle 列表。
+    /// producer 没有已冻结 ABI 说明它不在 `wasm_export_names` 里，合同已坏，失败闭合。
+    /// operation 的形状（如 `construct` 必须是 `[i32] -> handle`）留给
+    /// [`Self::validate_aggregate_operations`] 统一判定，避免两处规则漂移。
+    fn freeze_aggregate_operations(&mut self, declared: &[nyar_types::CanonicalAggregateOperation]) -> Result<()> {
+        let mut operations = Vec::with_capacity(declared.len());
+        for operation in declared {
+            let producer = operation.producer;
+            let Some(abi) = self.library_export_abis.get(&producer)
+            else {
+                return Err(format!(
+                    "聚合 helper operation 的 producer 缺少已冻结库导出 ABI: layout_id={} operation={} producer={producer:?} \
+                     export_name={}",
+                    operation.layout_id,
+                    operation.operation.as_str(),
+                    operation.export_name
+                ));
+            };
+            operations.push(AggregateOperationPlan {
+                layout_id: operation.layout_id,
+                operation: operation.operation,
+                param_carriers: abi.params.iter().copied().map(aggregate_operation_carrier).collect(),
+                return_carrier: aggregate_operation_carrier(abi.returns),
+                export_name: operation.export_name.clone(),
+                producer: AggregateOperationProducer::FunctionBody(producer),
+            });
+        }
+        self.aggregate_operations = operations;
         Ok(())
     }
 
@@ -672,12 +700,28 @@ fn freeze_abi_carrier(ty: &NyarType) -> Result<AbiCarrier> {
     })
 }
 
+/// 把已冻结的库导出 ABI 载体映射为 glue operation 载体。
+///
+/// 两个枚举一一对应且都是全函数；这里的 `match` 必须穷尽，不允许 `_` 兜底猜测载体。
+fn aggregate_operation_carrier(carrier: AbiCarrier) -> AggregateOperationCarrier {
+    match carrier {
+        AbiCarrier::I32 => AggregateOperationCarrier::I32,
+        AbiCarrier::I64 => AggregateOperationCarrier::I64,
+        AbiCarrier::F32 => AggregateOperationCarrier::F32,
+        AbiCarrier::F64 => AggregateOperationCarrier::F64,
+        AbiCarrier::Handle => AggregateOperationCarrier::Handle,
+        AbiCarrier::Void => AggregateOperationCarrier::Void,
+    }
+}
+
 /// 校验聚合 helper operation 的载体形状。
 ///
-/// `construct` / `length` 是 `[i32] -> i32`；`push` 是 `[i32, E] -> void`；
-/// `at` 是 `[i32, i32] -> E`。任何偏离都在计划的物理解释层失败。
+/// `construct` 是 `[i32] -> handle`（宿主用元素数量请求一个空聚合）；
+/// `length` 是 `[handle] -> i32`；`push` 是 `[handle, E] -> void`；
+/// `at` 是 `[handle, i32] -> E`。聚合槽位一律是宿主句柄，与导出函数形参的
+/// 物理载体一致；任何偏离都在计划的物理解释层失败。
 fn validate_aggregate_operation_shape(operation: &AggregateOperationPlan, identity: &str) -> Result<()> {
-    use AggregateOperationCarrier::{I32, Void};
+    use AggregateOperationCarrier::{Handle, I32, Void};
     let fail = |expected: &str| {
         Err(format!(
             "聚合 helper operation 载体形状不合法: aggregate={identity} operation={} expected={expected} actual_param_carriers={:?} \
@@ -688,23 +732,28 @@ fn validate_aggregate_operation_shape(operation: &AggregateOperationPlan, identi
         ))
     };
     match operation.operation {
-        AggregateOperation::Construct | AggregateOperation::Length => {
-            if operation.param_carriers.as_slice() != [I32] || operation.return_carrier != I32 {
-                return fail("[i32] -> i32");
+        AggregateOperation::Construct => {
+            if operation.param_carriers.as_slice() != [I32] || operation.return_carrier != Handle {
+                return fail("[i32] -> handle");
+            }
+        }
+        AggregateOperation::Length => {
+            if operation.param_carriers.as_slice() != [Handle] || operation.return_carrier != I32 {
+                return fail("[handle] -> i32");
             }
         }
         AggregateOperation::Push => {
             if operation.param_carriers.len() != 2
-                || operation.param_carriers[0] != I32
+                || operation.param_carriers[0] != Handle
                 || operation.param_carriers[1] == Void
                 || operation.return_carrier != Void
             {
-                return fail("[i32, E] -> void");
+                return fail("[handle, E] -> void");
             }
         }
         AggregateOperation::At => {
-            if operation.param_carriers.as_slice() != [I32, I32] || operation.return_carrier == Void {
-                return fail("[i32, i32] -> E");
+            if operation.param_carriers.as_slice() != [Handle, I32] || operation.return_carrier == Void {
+                return fail("[handle, i32] -> E");
             }
         }
     }
@@ -852,11 +901,9 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
             if let CanonicalOperation::Invoke { callee, .. } = &instruction.operation {
                 match (callee, program.representation().invoke_lowerings.get(&instruction.id)) {
                     (CanonicalCallee::Item(_), Some(InvokeLowering::Direct)) => {}
-                    (CanonicalCallee::Witness(witness), Some(InvokeLowering::TypedWitness)) => {
-                        return Err(format!(
-                            "trait witness 分派尚无目标私有调用合同：字典 ABI 未实现（trait={:?}, method={:?}, self_type={:?}）",
-                            witness.trait_declaration, witness.method_declaration, witness.self_type
-                        ));
+                    (CanonicalCallee::Witness(_), Some(InvokeLowering::TypedWitness)) => {
+                        // 放行！在 lower_operation 里尝试消去 Witness 为具体 Item 调用。
+                        // self_type 仍开放时（`None`）由 lower_operation 返回结构化失败。
                     }
                     (_, None) => {
                         return Err(format!("调用指令 `{}` 缺少 RepresentationPlan 降低合同", instruction.id.index()));
@@ -960,6 +1007,51 @@ fn canonical_sum_operations(instruction: &nyar_types::CanonicalInstruction) -> V
     }
 }
 
+/// 在 target_execution_plan 边界把 trait Witness 分派降为具体 Item 调用。
+///
+/// 策略（按优先级）：
+/// 1. 直接用 trait 方法槽 ItemId 在 `linked.item_instances` 查 —— 当 impl 方法的
+///    declaration 正好等于 trait 方法槽时命中；
+/// 2. 在 `mir.functions` 里找第一个参数（self）类型等于 witness.self_type 的函数实例；
+///    多个候选时返回结构化失败，避免按名字/短名猜测。
+/// 在 target_execution_plan 边界把 trait Witness 分派降为具体 Item 调用。
+///
+/// witness 的实例身份是前端事实：`self` 类型具体化后，前端本应在
+/// `instantiate_generic_callables` 里换绑成真实实现。能走到这里只剩前端仍判为
+/// 开放的 witness，因此这里只允许按已冻结的 `(method declaration, self 类型)`
+/// 精确匹配唯一实例。不得按名字、候选顺序或「第一个参数看起来一样」猜实现——
+/// 猜错会把 `Hash::hash` 绑到 `i64.infix -` 这种签名不同的算子上。
+fn resolve_witness_to_item(program: &CanonicalProgram, witness: &nyar_types::CanonicalWitness) -> Result<ItemInstanceId> {
+    let Some(self_type) = witness.self_type
+    else {
+        return Err(format!(
+            "trait witness self_type 仍开放泛型，无法在 target_execution_plan 消去: trait={:?} method={:?}",
+            witness.trait_declaration, witness.method_declaration
+        ));
+    };
+    let mut matching = program
+        .linked
+        .item_instances
+        .iter()
+        .filter(|(_, record)| record.declaration == witness.method_declaration)
+        .filter(|(_, record)| record.parameter_types.first() == Some(&self_type));
+    let Some((instance, _)) = matching.next()
+    else {
+        return Err(format!(
+            "trait witness 缺少 declaration={:?} self_type={self_type:?} 的实例: trait={:?}",
+            witness.method_declaration, witness.trait_declaration
+        ));
+    };
+    if matching.next().is_some() {
+        return Err(format!(
+            "trait witness declaration={:?} self_type={self_type:?} 对应多个实例；实例身份必须由前端冻结",
+            witness.method_declaration
+        ));
+    }
+    Ok(*instance)
+}
+
+
 fn lower_operation(
     program: &CanonicalProgram,
     function: &nyar_types::CanonicalFunction,
@@ -986,8 +1078,10 @@ fn lower_operation(
             callees.push(*instance);
             InstructionKind::Call { callee: Operand::Item(*instance), arguments: arguments.iter().map(|id| value(*id)).collect() }
         }
-        CanonicalOperation::Invoke { callee: CanonicalCallee::Witness(witness), .. } => {
-            return Err(format!("trait witness 分派缺少目标私有调用合同（字典 ABI 未实现）: {witness:?}"));
+        CanonicalOperation::Invoke { callee: CanonicalCallee::Witness(witness), arguments } => {
+            let instance = resolve_witness_to_item(program, &witness)?;
+            callees.push(instance);
+            InstructionKind::Call { callee: Operand::Item(instance), arguments: arguments.iter().map(|id| value(*id)).collect() }
         }
         CanonicalOperation::Invoke { callee: CanonicalCallee::Value(callee), arguments } => {
             InstructionKind::Call { callee: value(*callee), arguments: arguments.iter().map(|id| value(*id)).collect() }
@@ -1009,26 +1103,15 @@ fn lower_operation(
             }
         }
         CanonicalOperation::LoadConstant { constant } => InstructionKind::LoadConstant { constant: lower_constant(constant), ty: None },
-        // Intrinsic 专用 opcode 必须在 lowering 阶段降级为 Call { callee: Callable(instance) }
-        // 让 linker adaptor / backend TargetExecutionPlan 链路消费。到达这里说明 lowering 没收紧。
-        CanonicalOperation::ArrayGet { .. } => {
-            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayGet`；lowering 应降级为普通 Call"));
-        }
-        CanonicalOperation::ArraySet { .. } => {
-            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArraySet`；lowering 应降级为普通 Call"));
-        }
-        CanonicalOperation::ArrayLength { .. } => {
-            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayLength`；lowering 应降级为普通 Call"));
-        }
-        CanonicalOperation::ArrayPush { .. } => {
-            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayPush`；lowering 应降级为普通 Call"));
-        }
-        CanonicalOperation::NullIsNull { .. } => {
-            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullIsNull`；lowering 应降级为普通 Call"));
-        }
-        CanonicalOperation::NullUnwrap { .. } => {
-            return Err(format!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullUnwrap`；lowering 应降级为普通 Call"));
-        }
+        // 结构操作已由 lowering 依据 `IntrinsicId` 判定完毕，事实所有权在此结束；
+        // backend-private 计划只做载体映射，wasm backend 负责编码成 wasm GC 指令。
+        // 在此重新拒绝会把已确认的结构语义降级成字符串错误，属禁止的向上推断。
+        CanonicalOperation::ArrayGet { array, index } => InstructionKind::ArrayGet { array: value(*array), index: value(*index) },
+        CanonicalOperation::ArraySet { array, index, value: stored } => InstructionKind::ArraySet { array: value(*array), index: value(*index), value: value(*stored) },
+        CanonicalOperation::ArrayLength { array } => InstructionKind::ArrayLength { array: value(*array) },
+        CanonicalOperation::ArrayPush { array, value: pushed } => InstructionKind::ArrayPush { array: value(*array), value: value(*pushed) },
+        CanonicalOperation::NullIsNull { value: operand } => InstructionKind::NullIsNull { value: value(*operand) },
+        CanonicalOperation::NullUnwrap { value: operand } => InstructionKind::NullUnwrap { value: value(*operand) },
         CanonicalOperation::ArrayNew { array_type, length, initialization } => InstructionKind::ArrayNew {
             array_type: lower_type(program, *array_type)?,
             length: value(*length),
@@ -1085,6 +1168,8 @@ fn lower_operation(
         CanonicalOperation::SumVariantIs { nominal, variant, object } => {
             InstructionKind::SumVariantIs { nominal: *nominal, variant: *variant, object: value(*object) }
         }
+        // 语言层显式 `as`：目标类型是后端必须编码的事实，不能丢成 Copy。
+        CanonicalOperation::Cast { source, ty } => InstructionKind::Cast { source: value(*source), ty: lower_type(program, *ty)? },
         unsupported => return Err(format!("canonical 操作尚无目标私有合同: {unsupported:?}")),
     })
 }

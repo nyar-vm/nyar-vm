@@ -9,6 +9,28 @@ use nyar::{CapabilityTag, RewriteTheory, SemanticFragment};
 use nyar_types::{ExternalImportLink, ItemInstanceId, builtin_attribute};
 use std::collections::BTreeMap;
 
+/// 检查类型里是否还有未闭合的泛型 binder（`ValkyrieType::Generic(generic)` 且 `generic.binder.is_some()`）。
+/// 用于在收集 external_call_contract 时过滤掉 substitution 为空的 instantiated_callable。
+fn contains_open_generic(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Generic(generic) => generic.binder.is_some(),
+        ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_open_generic),
+        ValkyrieType::Apply(base, arguments) => contains_open_generic(base) || arguments.iter().any(contains_open_generic),
+        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_open_generic(element),
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+            items.iter().any(contains_open_generic)
+        }
+        ValkyrieType::Function(function) => {
+            function.params.iter().any(|p| contains_open_generic(p)) || contains_open_generic(&function.return_type)
+        }
+        ValkyrieType::FixedArray { element, .. } => contains_open_generic(element),
+        ValkyrieType::Associated(assoc) => {
+            contains_open_generic(&assoc.base) || assoc.type_arguments.iter().any(contains_open_generic)
+        }
+        _ => false,
+    }
+}
+
 /// 编译器内建的 workload phase 宿主调用；实例身份在 lowering 前冻结。
 pub(crate) struct HostRuntimeCallables {
     pub contracts: Vec<MirExternalCallContract>,
@@ -53,12 +75,15 @@ pub(crate) fn collect_host_runtime_callables(declaration_base: u32, instance_bas
 
 pub(super) fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallContract> {
     fn collect_abstract_functions(module: &HirModule, out: &mut Vec<MirExternalCallContract>) {
+        // 声明期 abstract 函数（host_contract / intrinsic 无泛型）
         out.extend(
             module
                 .functions
                 .iter()
                 .filter(|function| {
-                    function.is_abstract && crate::compiler::emitter::backend_contract::interop::function_interop_contract(function).is_some()
+                    function.is_abstract
+                        && function.generics.is_empty()
+                        && crate::compiler::emitter::backend_contract::interop::function_interop_contract(function).is_some()
                 })
                 .filter_map(|function| {
                     let link = crate::compiler::emitter::backend_contract::interop::function_interop_contract(function)?;
@@ -69,6 +94,33 @@ pub(super) fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExte
                         link,
                         parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
                         return_type: function.return_type.clone(),
+                    })
+                }),
+        );
+        // 泛型实例化产生的 abstract 实例（如 __array_get<i64>）
+        out.extend(
+            module
+                .instantiated_callables
+                .iter()
+                .filter(|callable| {
+                    callable.function.is_abstract
+                        && crate::compiler::emitter::backend_contract::interop::function_interop_contract(&callable.function).is_some()
+                })
+                .filter_map(|callable| {
+                    let link = crate::compiler::emitter::backend_contract::interop::function_interop_contract(&callable.function)?;
+                    let param_types: Vec<_> = callable.function.params.iter().map(|p| p.ty.clone()).collect();
+                    let return_type = callable.function.return_type.clone();
+                    // substitution 未闭合（还有 open generic binder）→ 跳过，避免 canonical 化时 CAN014
+                    if param_types.iter().any(contains_open_generic) || contains_open_generic(&return_type) {
+                        return None;
+                    }
+                    Some(MirExternalCallContract {
+                        declaration: callable.function.declaration,
+                        instance: callable.function.instance,
+                        symbol: crate::compiler::hir::symbols::stable_hir_function_name_path(&module.name, &callable.function),
+                        link,
+                        parameter_types: param_types,
+                        return_type,
                     })
                 }),
         );
@@ -163,6 +215,7 @@ pub(super) fn collect_semantic_fragments(
             entry_operation: None,
             rewrite_theory: RewriteTheory::default(),
             wasm_export_names: BTreeMap::new(),
+            aggregate_operations: Vec::new(),
         });
         if !fragment.exported_operations.contains(&instance) {
             fragment.exported_operations.push(instance);
@@ -190,6 +243,7 @@ pub(super) fn collect_semantic_fragments(
                 entry_operation: None,
                 rewrite_theory: RewriteTheory::default(),
                 wasm_export_names: BTreeMap::new(),
+                aggregate_operations: Vec::new(),
             },
         );
     }

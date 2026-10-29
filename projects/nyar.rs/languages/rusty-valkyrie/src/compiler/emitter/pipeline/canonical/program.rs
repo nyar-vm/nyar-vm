@@ -12,8 +12,9 @@ use super::{
     errors::{canonical_error, ensure_instantiated_signature, error, error_without_module, type_id},
     fragments::canonical_fragments,
     identities::{
-        AggregateDeclarations, canonical_type_kind, collect_aggregate_identities, collect_types, intern_instance_field_types,
-        is_array_index_valkyrie_type, register_aggregate_nominal_instances, register_sum_nominal_instances, validate_callable_identities,
+        AggregateDeclarations, canonical_type_kind, collect_aggregate_identities, collect_types, ensure_declaration_aggregate_types,
+        intern_instance_field_types, is_array_index_valkyrie_type, register_aggregate_nominal_instances,
+        register_sum_nominal_instances, validate_callable_identities,
     },
     lower::lower_function,
 };
@@ -31,6 +32,9 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     // 实例级字段类型是 binder 代入的派生事实，前端类型表可能从未见过；先补齐身份，
     // 实例布局与字段记录才能引用它们。
     intern_instance_field_types(module, &mut type_values)?;
+    // 泛型声明（generics 非空）的零实参 Nominal 是 backend 找到 declaration ItemId 的关键。
+    // 虽然 type_identity_table 已登记，但跨模块合并或 std 依赖可能漏项；这里显式确保。
+    ensure_declaration_aggregate_types(module, &mut type_values)?;
     let AggregateDeclarations { mut nominals, mut field_records, declaration_nominals } = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
     linked.aggregate_layouts = module.aggregate_layouts.clone();

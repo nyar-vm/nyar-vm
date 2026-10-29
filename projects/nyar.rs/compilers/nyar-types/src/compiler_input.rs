@@ -257,4 +257,10 @@ pub struct DeclarationIndexEntry {
     pub selectors: BTreeSet<String>,
     /// 文件级 `using` 路径；当前解析器不消费 import，这里只保留为诊断与后续绑定输入。
     pub import_paths: BTreeSet<String>,
+    /// 该声明是否带宿主直通角色标注（`[library_glue(...)]`）。
+    ///
+    /// 这是**声明级需求事实**，不是结构关联：宿主 ABI 需要这个成员，因此只要其拥有
+    /// 聚合进入闭包，该成员就必须一并进入闭包，与调用点是否出现选择名无关。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub host_abi_role: bool,
 }

@@ -144,6 +144,9 @@ impl MirBuilder {
                             return operand;
                         }
                     }
+                    if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &arguments, expected_type) {
+                        return operand;
+                    }
                     let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved instance call contract");
                     let Some(callee) = lower_resolved_callee(resolved_call)
                     else {
@@ -152,11 +155,8 @@ impl MirBuilder {
                         });
                         return MirOperand::Constant(MirConstant::Unit);
                     };
-                    if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
-                        return operand;
-                    }
                     let return_type = self.return_type_for_resolved_call(&callee, resolved_call);
-                    self.push_call_returning(callee, arguments, return_type);
+                    return self.push_call_returning(callee, arguments, return_type);
                 }
                 // `obj.field(args)` where `obj.field` is a function-typed field (e.g.
                 // `FilterIterator._predicate`). Lower as indirect call: load the field
@@ -207,6 +207,9 @@ impl MirBuilder {
                         .collect::<Vec<_>>();
                     if has_receiver {
                         arguments.insert(0, receiver_operand.clone());
+                    }
+                    if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &arguments, expected_type) {
+                        return operand;
                     }
                     let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved field receiver call contract");
                     let Some(callee) = lower_resolved_callee(resolved_call)
@@ -291,6 +294,9 @@ impl MirBuilder {
                         return MirOperand::Constant(MirConstant::Unit);
                     }
                 }
+                if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &arguments, expected_type) {
+                    return operand;
+                }
                 let callee = match lower_callee_operand(callee, resolved.as_ref(), self) {
                     Some(callee) => callee,
                     None if resolved.as_ref().is_some_and(|call| call.domain == HirCallableDomain::Constructor) => {
@@ -319,9 +325,6 @@ impl MirBuilder {
                                 .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedCallableIdentity { symbol: call.symbol.to_string() });
                             return MirOperand::Constant(MirConstant::Unit);
                         };
-                        if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
-                            return operand;
-                        }
                         let return_type = self.return_type_for_resolved_call(&callee, call);
                         return self.push_call_returning(callee, arguments, return_type);
                     }
@@ -336,9 +339,6 @@ impl MirBuilder {
                     return operand;
                 }
                 if let Some(operand) = self.try_lower_null_intrinsics(resolved.as_ref(), &callee, &arguments) {
-                    return operand;
-                }
-                if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
                     return operand;
                 }
                 let function_ty = self.function_type_of_callee(&callee);

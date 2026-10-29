@@ -111,6 +111,22 @@ pub struct SemanticFragment {
     pub rewrite_theory: RewriteTheory,
     /// 实例到公开 ABI 名称的映射。
     pub wasm_export_names: BTreeMap<nyar_types::ItemInstanceId, String>,
+    /// 片段要求宿主直通的聚合操作。
+    ///
+    /// 由语言声明的 `[library_glue]` 角色标注与片段根的签名共同决定；导出名与
+    /// 实例级布局身份在 canonical 层按布局身份冻结，不在这里猜名字。
+    pub aggregate_operations: Vec<SemanticAggregateOperation>,
+}
+
+/// 片段要求的一条聚合宿主直通操作事实。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SemanticAggregateOperation {
+    /// 具体聚合实例类型身份（canonical 层据此解析实例级布局）。
+    pub type_id: nyar_types::TypeId,
+    /// 操作种类。
+    pub operation: nyar_types::LibraryGlueOperation,
+    /// 实现该操作的 callable 实例。
+    pub instance: nyar_types::ItemInstanceId,
 }
 
 /// 从 Canonical 闭包派生的优化器事实视图，不是前端成功合同。

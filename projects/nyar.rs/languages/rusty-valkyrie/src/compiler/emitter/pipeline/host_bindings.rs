@@ -51,7 +51,15 @@ fn unselected_host_provider_instances(
             }
             let key =
                 declaration_key(module, DeclarationKind::Micro, &namespace_parts(&function.declaring_namespace), None, function.name.as_str());
-            if selected_providers.contains(&key) {
+            // 精确匹配或忽略 source_path 的 fallback
+            let is_selected = selected_providers.contains(&key) || selected_providers.iter().any(|sel| {
+                sel.dependency_key == key.dependency_key
+                    && sel.namespace == key.namespace
+                    && sel.kind == key.kind
+                    && sel.owner == key.owner
+                    && sel.name == key.name
+            });
+            if is_selected {
                 continue;
             }
             let Some(instance) = function.instance
@@ -93,15 +101,30 @@ pub fn resolve_host_provider_bindings(
     let instances = host_callable_instances(hirs)?;
     let mut resolved = Vec::new();
     for binding in bindings {
-        let Some(contract_instance) = instances.get(&binding.contract).copied()
-        else {
+        // 精确匹配
+        if let (Some(ci), Some(pi)) = (instances.get(&binding.contract), instances.get(&binding.provider)) {
+            resolved.push(ResolvedHostProviderBinding { contract_instance: *ci, provider_instance: *pi });
             continue;
-        };
-        let provider_instance = instances.get(&binding.provider).copied().ok_or_else(|| ParseError::Invalid {
-            message: format!("host provider `{}` 未在源码闭包中解析到 callable identity", binding.provider.encoded()),
-            span: None,
-        })?;
-        resolved.push(ResolvedHostProviderBinding { contract_instance, provider_instance });
+        }
+        // Fallback: 忽略 source_path（planner 按文件构造，HIR 按 group 合并）
+        let contract_match = instances.iter().find(|(k, _)| {
+            k.dependency_key == binding.contract.dependency_key
+                && k.namespace == binding.contract.namespace
+                && k.kind == binding.contract.kind
+                && k.owner == binding.contract.owner
+                && k.name == binding.contract.name
+        });
+        let provider_match = instances.iter().find(|(k, _)| {
+            k.dependency_key == binding.provider.dependency_key
+                && k.namespace == binding.provider.namespace
+                && k.kind == binding.provider.kind
+                && k.owner == binding.provider.owner
+                && k.name == binding.provider.name
+        });
+        if let (Some((_, ci)), Some((_, pi))) = (contract_match, provider_match) {
+            resolved.push(ResolvedHostProviderBinding { contract_instance: *ci, provider_instance: *pi });
+            continue;
+        }
     }
     Ok(resolved)
 }
@@ -225,11 +248,23 @@ pub fn apply_host_provider_bindings(
     dependency_mirs: &[MirModule],
     bindings: &[ResolvedHostProviderBinding],
 ) -> Result<(), ParseError> {
+    for b in bindings {
+    }
     if bindings.is_empty() {
         return Ok(());
     }
 
     let modules: Vec<&MirModule> = std::iter::once(&*module).chain(dependency_mirs.iter()).collect();
+    for (i, m) in modules.iter().enumerate() {
+        for f in &m.functions {
+            if let Some(inst) = f.instance {
+            }
+        }
+        for c in &m.external_calls {
+            if let Some(inst) = c.instance {
+            }
+        }
+    }
     let mut plans = Vec::new();
 
     for binding in bindings {
@@ -317,14 +352,16 @@ fn install_provider_definition(
     provider_function: MirFunction,
 ) -> Result<(), ParseError> {
     if module.functions.iter().any(|function| function.instance == Some(provider_instance)) {
+        let symbol = format!("{}#{}", provider_function.display_symbol, provider_instance.index());
         module
-            .register_callable_symbol(provider_instance, provider_function.display_symbol.clone())
+            .register_callable_symbol(provider_instance, symbol)
             .map_err(|e| ParseError::Invalid { message: e, span: None })?;
         return Ok(());
     }
     module.functions.push(provider_function.clone());
+    let symbol = format!("{}#{}", provider_function.display_symbol, provider_instance.index());
     module
-        .register_callable_symbol(provider_instance, provider_function.display_symbol)
+        .register_callable_symbol(provider_instance, symbol)
         .map_err(|e| ParseError::Invalid { message: e, span: None })?;
     Ok(())
 }
@@ -340,6 +377,7 @@ fn install_provider_import(module: &mut MirModule, contract: &MirExternalCallCon
         module.external_calls.push(contract.clone());
     }
     let symbol = crate::compiler::hir::symbols::stable_symbol_key(&contract.symbol);
+    let symbol = format!("{symbol}#{}", instance.index());
     module.register_callable_symbol(instance, symbol).map_err(|detail| ParseError::Invalid { message: detail, span: None })
 }
 

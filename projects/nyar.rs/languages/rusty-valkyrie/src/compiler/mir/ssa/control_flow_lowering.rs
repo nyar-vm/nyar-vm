@@ -38,46 +38,6 @@ impl MirBuilder {
         if merge_ty.is_some() { vec![result.clone()] } else { Vec::new() }
     }
 
-    fn default_constant_for_merge_else(ty: Option<&ValkyrieType>) -> MirConstant {
-        match ty {
-            Some(ValkyrieType::Boolean) => MirConstant::Bool(false),
-            Some(ValkyrieType::Float64) => MirConstant::Float64(ordered_float::OrderedFloat(0.0)),
-            Some(ValkyrieType::Unit) => MirConstant::Unit,
-            Some(ValkyrieType::Utf8) => MirConstant::Utf8(String::new()),
-            Some(ValkyrieType::Utf16) => MirConstant::Utf16(String::new()),
-            _ => MirConstant::Int(0),
-        }
-    }
-
-    fn implicit_else_merge_jump_arguments(
-        &mut self,
-        merge_block: super::MirBlockRef,
-        exit_value: &Option<super::MirValueRef>,
-        expected_type: Option<&ValkyrieType>,
-    ) -> Vec<MirOperand> {
-        let merge_parameters = self.blocks[merge_block.0 as usize].parameters.clone();
-        if merge_parameters.is_empty() {
-            return Vec::new();
-        }
-        let fallback_ty = exit_value.and_then(|value| self.value_types.get(&value).cloned()).or_else(|| expected_type.cloned());
-        merge_parameters
-            .iter()
-            .map(|param| {
-                let ty = self.value_types.get(param).cloned().or(fallback_ty.clone());
-                let constant = Self::default_constant_for_merge_else(ty.as_ref());
-                if let Some(ty) = ty {
-                    let value = self.next_value(MirValueOrigin::Literal);
-                    self.push_instruction(MirOperation::LoadConstant { constant, ty: Some(ty.clone()) }, vec![value]);
-                    self.value_types.insert(value, ty);
-                    MirOperand::Value(value)
-                }
-                else {
-                    MirOperand::Constant(constant)
-                }
-            })
-            .collect()
-    }
-
     pub(super) fn lower_if_expr(
         &mut self,
         condition: &HirExpr,
@@ -104,7 +64,15 @@ impl MirBuilder {
         let then_result = self.lower_branch_block_value_with_hint(then_branch, expected_type);
         let then_returns = self.terminator.is_some();
         if self.terminator.is_none() {
-            let merge_ty = Self::branch_merge_type(&then_result, expected_type, &self.value_types);
+            // 没有 else 分支的 `if` 在语言层不是值表达式：缺失的 else 一侧没有值
+            // 可以与 then 的尾值合并。禁止为它伪造 `Int(0)` / 空文本之类的“默认值”，
+            // 那会让任意名义/聚合类型凭空获得一个值，后端只能在不同表示之间猜。
+            let merge_ty = if else_branch.is_some() {
+                Self::branch_merge_type(&then_result, expected_type, &self.value_types)
+            }
+            else {
+                None
+            };
             if merge_ty.is_some() {
                 self.ensure_branch_exit_parameter(merge_block, &mut exit_value, merge_ty.clone());
             }
@@ -134,8 +102,8 @@ impl MirBuilder {
         }
         else {
             if self.terminator.is_none() {
-                let arguments = self.implicit_else_merge_jump_arguments(merge_block, &exit_value, expected_type);
-                self.terminate(MirTerminator::Jump { target: merge_block, arguments });
+                // 无 else 分支：merge 块不携带值参数，跳转也不带参数。
+                self.terminate(MirTerminator::Jump { target: merge_block, arguments: Vec::new() });
             }
             false
         };
@@ -176,7 +144,13 @@ impl MirBuilder {
         self.bind_pattern_from_operand_with_payload(pattern, scrutinee_operand, None, payload);
         let then_result = self.lower_branch_block_value(then_branch);
         if self.terminator.is_none() {
-            let merge_ty = Self::branch_merge_type(&then_result, None, &self.value_types);
+            let merge_ty = if else_branch.is_some() {
+                Self::branch_merge_type(&then_result, None, &self.value_types)
+            }
+            else {
+                // 无 else 分支：then 的尾值不与任何东西合并，merge 块不携带值参数。
+                None
+            };
             if merge_ty.is_some() {
                 self.ensure_branch_exit_parameter(merge_block, &mut exit_value, merge_ty.clone());
             }
@@ -203,8 +177,8 @@ impl MirBuilder {
             }
         }
         else if self.terminator.is_none() {
-            let arguments = self.implicit_else_merge_jump_arguments(merge_block, &exit_value, None);
-            self.terminate(MirTerminator::Jump { target: merge_block, arguments });
+            // 无 else 分支：merge 块不携带值参数，跳转也不带参数。
+            self.terminate(MirTerminator::Jump { target: merge_block, arguments: Vec::new() });
         }
         self.flush_block("if_let_else");
 

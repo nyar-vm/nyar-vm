@@ -22,6 +22,8 @@ pub(crate) struct DeclarationIndexes {
     alias_targets: BTreeMap<DeclarationKey, (Vec<String>, ReferencePath)>,
     /// 名义聚合声明 → 它的成员声明。
     members: BTreeMap<DeclarationKey, BTreeSet<DeclarationKey>>,
+    /// 名义聚合声明 → 带宿主直通角色标注的成员声明（声明级需求事实）。
+    host_abi_members: BTreeMap<DeclarationKey, BTreeSet<DeclarationKey>>,
 }
 
 /// 一条尚未连接的成员声明：拥有者只以引用路径记录，连接时按声明身份解析。
@@ -31,6 +33,7 @@ struct PendingMember {
     namespace: Vec<String>,
     owner_reference: ReferencePath,
     key: DeclarationKey,
+    host_abi_role: bool,
 }
 
 impl DeclarationIndexes {
@@ -39,7 +42,7 @@ impl DeclarationIndexes {
     /// 成员声明（`method` / `imply_method`）只进入待连接的拥有者关联，不进入任何短名索引；
     /// 类型别名记录目标引用，供成员拥有者解析时穿透别名取到真正的名义聚合。
     pub(crate) fn register(&mut self, entry: DeclarationIndexEntry) {
-        let DeclarationIndexEntry { key, link, .. } = entry;
+        let DeclarationIndexEntry { key, link, host_abi_role, .. } = entry;
         if key.kind.is_member() {
             // 拥有者引用不可解析（例如 imply 目标不是名字路径）时 fail-closed：
             // 该成员既不会被裸名命中，也不会被提升，只作为不可达声明存在。
@@ -49,6 +52,7 @@ impl DeclarationIndexes {
                     namespace: key.namespace.clone(),
                     owner_reference,
                     key,
+                    host_abi_role,
                 });
             }
             return;
@@ -75,9 +79,18 @@ impl DeclarationIndexes {
         for member in std::mem::take(&mut self.pending_members) {
             let visible = visibility.get(&member.group).unwrap_or(&empty);
             for owner in self.resolve_aggregate(&member.owner_reference, &member.namespace, visible) {
-                self.members.entry(owner).or_default().insert(member.key.clone());
+                self.members.entry(owner.clone()).or_default().insert(member.key.clone());
+                if member.host_abi_role {
+                    self.host_abi_members.entry(owner).or_default().insert(member.key.clone());
+                }
             }
         }
+    }
+
+    /// 该聚合上带宿主直通角色标注的成员：角色由语言声明给出，是声明级需求事实，
+    /// 不需要调用点出现同名选择名。
+    pub(crate) fn host_abi_members_of(&self, aggregate: &DeclarationKey) -> BTreeSet<DeclarationKey> {
+        self.host_abi_members.get(aggregate).cloned().unwrap_or_default()
     }
 
     /// 解析一个「必须指向名义聚合」的引用：类型别名不是聚合身份，穿透其目标继续解析。

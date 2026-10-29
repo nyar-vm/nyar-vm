@@ -421,7 +421,7 @@ pub(crate) fn try_resolve_call(
                     instance: matched.instance,
                     sum_owner: matched.sum_owner,
                     sum_variant: matched.sum_variant,
-                    intrinsic: None,
+                    intrinsic: matched.intrinsic,
                     trait_dispatch: None,
                     symbol: matched.symbol,
                     domain: HirCallableDomain::Function,

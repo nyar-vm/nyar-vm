@@ -165,6 +165,16 @@ pub enum InstructionKind {
         /// Source operand.
         source: Operand,
     },
+    /// 按目标类型做表示转换（语言层显式 `as`）。
+    ///
+    /// 与 [`Self::Copy`] 本质不同：结果槽类型由 `ty` 决定；源与目标的物理表示
+    /// 不一致时，后端必须发射真实转换指令，禁止当成布局兼容的 Copy 静默搬运。
+    Cast {
+        /// 源操作数。
+        source: Operand,
+        /// 结果类型（Semantic MIR 已冻结 `TypeId` 的目标投影）。
+        ty: NyarType,
+    },
     /// Store into a named local (`let` binding).
     StoreVar {
         /// Variable name.

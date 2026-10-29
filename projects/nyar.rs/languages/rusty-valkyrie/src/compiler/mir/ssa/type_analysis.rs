@@ -70,66 +70,29 @@ pub fn type_identity_table(
         }
     }
 
-    /// 递归检查类型内部是否含声明期占位（Generic、SelfType、AutoType）。
-    /// 无论 binder 是否存在都算占位。
-    fn contains_deferred_type_param(ty: &ValkyrieType) -> bool {
+    /// 只识别真正"未解析"的类型：open generic（binder=None）、SelfType、AutoType。
+    /// binder=Some 的泛型形参（如 Array<T> 里的 T）是合法声明身份，canonical 需要登记。
+    fn contains_unresolved_type_ref(ty: &ValkyrieType) -> bool {
         match ty {
-            ValkyrieType::Generic(_) | ValkyrieType::SelfType | ValkyrieType::AutoType => true,
-            ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_deferred_type_param),
-            ValkyrieType::Apply(base, args) => {
-                contains_deferred_type_param(base) || args.iter().any(contains_deferred_type_param)
-            }
-            ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
-                items.iter().any(contains_deferred_type_param)
-            }
-            ValkyrieType::Function(function) => {
-                function.params.iter().any(contains_deferred_type_param)
-                    || contains_deferred_type_param(&function.return_type)
-            }
-            ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_deferred_type_param(element),
-            ValkyrieType::FixedArray { element, .. } => contains_deferred_type_param(element),
-            ValkyrieType::Associated(associated) => {
-                contains_deferred_type_param(&associated.base)
-                    || associated.type_arguments.iter().any(contains_deferred_type_param)
-            }
-            _ => false,
-        }
-    }
-
-    /// 递归检查类型内部是否含"开放"的泛型形参（Generic{binder=None}）。
-    /// 带 binder 的泛型形参是声明身份，不算开放。
-    fn contains_open_generic(ty: &ValkyrieType) -> bool {
-        match ty {
-            ValkyrieType::Generic(generic) => generic.binder.is_none(),
-            ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_open_generic),
-            ValkyrieType::Apply(base, args) => contains_open_generic(base) || args.iter().any(contains_open_generic),
-            ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
-                items.iter().any(contains_open_generic)
-            }
-            ValkyrieType::Function(function) => {
-                function.params.iter().any(contains_open_generic) || contains_open_generic(&function.return_type)
-            }
-            ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_open_generic(element),
-            ValkyrieType::FixedArray { element, .. } => contains_open_generic(element),
-            ValkyrieType::Associated(associated) => {
-                contains_open_generic(&associated.base) || associated.type_arguments.iter().any(contains_open_generic)
-            }
+            ValkyrieType::Generic(g) => g.binder.is_none(),
+            ValkyrieType::SelfType | ValkyrieType::AutoType => true,
+            ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_unresolved_type_ref),
+            ValkyrieType::Apply(base, args) => contains_unresolved_type_ref(base) || args.iter().any(contains_unresolved_type_ref),
+            ValkyrieType::Array(e) | ValkyrieType::Nullable(e) => contains_unresolved_type_ref(e),
+            ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => items.iter().any(contains_unresolved_type_ref),
+            ValkyrieType::Function(f) => f.params.iter().any(|p| contains_unresolved_type_ref(p)) || contains_unresolved_type_ref(&f.return_type),
+            ValkyrieType::FixedArray { element, .. } => contains_unresolved_type_ref(element),
+            ValkyrieType::Associated(a) => contains_unresolved_type_ref(&a.base) || a.type_arguments.iter().any(contains_unresolved_type_ref),
             _ => false,
         }
     }
 
     /// 收集类型到 set。
-    /// - `strict=true`：严格模式，禁止任何 deferred param（Generic{binder=Some}、SelfType、AutoType）。
-    ///   用于值位置（value_types）——这些类型必须完全闭合。
-    /// - `strict=false`：宽松模式，允许带 binder 的 Generic（声明身份）。用于函数签名。
+    /// - `strict=true`：严格模式，只禁止真正未解析的类型（open generic、SelfType、AutoType）。
+    ///   带 binder 的 Generic（声明身份）放行，canonical 需要登记它们。
+    ///   用于值位置（value_types）。
+    /// - `strict=false`：宽松模式，同样允许带 binder 的 Generic。用于函数签名。
     fn collect(set: &mut BTreeSet<ValkyrieType>, ty: &ValkyrieType, strict: bool) {
-        // strict 模式下，声明期占位类型不得进入 type_identities。
-        if strict {
-            if contains_deferred_type_param(ty) {
-                // 仍需递归下钻实参，让子类型（如 Nominal 的 arguments 里的具体类型）也能被收集。
-                // 但 ty 本身不 insert。
-            }
-        }
         match ty {
             ValkyrieType::Nominal { arguments, .. } => {
                 for arg in arguments {
@@ -163,12 +126,9 @@ pub fn type_identity_table(
             }
             _ => {}
         }
-        // insert 条件：
-        // 1. 不含未解析引用（Generic{binder=None}）
-        // 2. strict 模式下还不能含任何 deferred param（Generic{binder=Some}、SelfType、AutoType）
-        let no_unresolved = !contains_open_generic(ty) && !matches!(ty, ValkyrieType::SelfType | ValkyrieType::AutoType);
-        let passes_strict = !strict || !contains_deferred_type_param(ty);
-        if no_unresolved && passes_strict {
+        // insert 条件：不含任何真正未解析的类型引用（open generic、SelfType、AutoType）。
+        // binder=Some 的 Generic 是合法声明身份，放行。
+        if !contains_unresolved_type_ref(ty) {
             set.insert(normalize_named_primitive(ty.clone()));
         }
     }
@@ -176,6 +136,33 @@ pub fn type_identity_table(
     /// 聚合声明的规范类型键：已绑定 ItemId 的无参 Nominal。
     fn aggregate_type_key(structure: &MirStruct) -> Option<ValkyrieType> {
         structure.declaration.map(|declaration| ValkyrieType::Nominal { declaration, arguments: Vec::new() })
+    }
+
+    /// 从单条 MIR 指令中提取所有携带的 ValkyrieType 字段，递归收集。
+    fn collect_instruction_types(set: &mut BTreeSet<ValkyrieType>, instruction: &MirInstruction) {
+        match &instruction.kind {
+            MirOperation::LoadConstant { ty, .. } => {
+                if let Some(ty) = ty { collect(set, ty, true); }
+            }
+            MirOperation::Cast { ty, .. } => collect(set, ty, true),
+            MirOperation::StoreVar { ty, .. } => {
+                if let Some(ty) = ty { collect(set, ty, true); }
+            }
+            MirOperation::SumNew { type_args, payload_type, .. } => {
+                for ty in type_args { collect(set, ty, true); }
+                if let Some(ty) = payload_type { collect(set, ty, true); }
+            }
+            MirOperation::SumPayloadGet { type_args, payload_type, .. } => {
+                for ty in type_args { collect(set, ty, true); }
+                collect(set, payload_type, true);
+            }
+            MirOperation::SumVariantIs { type_args, .. } => {
+                for ty in type_args { collect(set, ty, true); }
+            }
+            MirOperation::ArrayNew { array_type, .. } => collect(set, array_type, true),
+            MirOperation::ArrayFromElements { array_type, .. } => collect(set, array_type, true),
+            _ => {}
+        }
     }
 
     let mut types = BTreeSet::new();
@@ -188,6 +175,13 @@ pub fn type_identity_table(
         // 值位置必须完全闭合，严格模式过滤任何 deferred param。
         for ty in function.value_types.values() {
             collect(&mut types, ty, true);
+        }
+        // 函数体里 instruction 操作数的类型也必须扫到——否则 Array(Generic(T))
+        // 之类嵌在指令里的类型会在 canonical 化时触发 CAN014。
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                collect_instruction_types(&mut types, instruction);
+            }
         }
     }
     for contract in external_calls {

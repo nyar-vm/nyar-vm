@@ -152,6 +152,15 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
+    /// 操作数在计划中冻结的语义类型；显式 `as` 的转换语义必须由此决定，
+    /// 不得退回到只携带位宽的栈类型字节。
+    pub(super) fn operand_semantic_type(&self, operand: &MirOperand) -> Option<&NyarType> {
+        match operand {
+            MirOperand::Value(value) => self.mir_fn.value_types.get(value),
+            _ => None,
+        }
+    }
+
     pub(super) fn emit_operand_coerced(&mut self, operand: &MirOperand, expected: u8) {
         let actual = self.operand_wasm_stack_type(operand);
         if actual == expected {
