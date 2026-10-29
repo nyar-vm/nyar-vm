@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) fn type_contains_placeholder(ty: &ValkyrieType, include_generic_binders: bool) -> bool {
     match ty {
         ValkyrieType::SelfType | ValkyrieType::Associated(_) | ValkyrieType::AutoType => true,
-        // 已带 `binder` 的泛型形参是前端冻结的声明身份，可以写入 canonical 类型表；
-        // 只有缺少 binder 的形参才是未解析占位。
+        // 已带 `binder` 的泛型形参是前端冻结的声明身份，可以作为函数签名的一部分
+        // 保留（调用方用 `include_generic_binders=false` 时放行）；但不能进 type_identities。
         ValkyrieType::Generic(generic) => include_generic_binders && generic.binder.is_none(),
         ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(|arg| type_contains_placeholder(arg, include_generic_binders)),
         ValkyrieType::Apply(base, args) => {
@@ -70,41 +70,105 @@ pub fn type_identity_table(
         }
     }
 
-    fn collect(set: &mut BTreeSet<ValkyrieType>, ty: &ValkyrieType) {
+    /// 递归检查类型内部是否含声明期占位（Generic、SelfType、AutoType）。
+    /// 无论 binder 是否存在都算占位。
+    fn contains_deferred_type_param(ty: &ValkyrieType) -> bool {
+        match ty {
+            ValkyrieType::Generic(_) | ValkyrieType::SelfType | ValkyrieType::AutoType => true,
+            ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_deferred_type_param),
+            ValkyrieType::Apply(base, args) => {
+                contains_deferred_type_param(base) || args.iter().any(contains_deferred_type_param)
+            }
+            ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+                items.iter().any(contains_deferred_type_param)
+            }
+            ValkyrieType::Function(function) => {
+                function.params.iter().any(contains_deferred_type_param)
+                    || contains_deferred_type_param(&function.return_type)
+            }
+            ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_deferred_type_param(element),
+            ValkyrieType::FixedArray { element, .. } => contains_deferred_type_param(element),
+            ValkyrieType::Associated(associated) => {
+                contains_deferred_type_param(&associated.base)
+                    || associated.type_arguments.iter().any(contains_deferred_type_param)
+            }
+            _ => false,
+        }
+    }
+
+    /// 递归检查类型内部是否含"开放"的泛型形参（Generic{binder=None}）。
+    /// 带 binder 的泛型形参是声明身份，不算开放。
+    fn contains_open_generic(ty: &ValkyrieType) -> bool {
+        match ty {
+            ValkyrieType::Generic(generic) => generic.binder.is_none(),
+            ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_open_generic),
+            ValkyrieType::Apply(base, args) => contains_open_generic(base) || args.iter().any(contains_open_generic),
+            ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+                items.iter().any(contains_open_generic)
+            }
+            ValkyrieType::Function(function) => {
+                function.params.iter().any(contains_open_generic) || contains_open_generic(&function.return_type)
+            }
+            ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_open_generic(element),
+            ValkyrieType::FixedArray { element, .. } => contains_open_generic(element),
+            ValkyrieType::Associated(associated) => {
+                contains_open_generic(&associated.base) || associated.type_arguments.iter().any(contains_open_generic)
+            }
+            _ => false,
+        }
+    }
+
+    /// 收集类型到 set。
+    /// - `strict=true`：严格模式，禁止任何 deferred param（Generic{binder=Some}、SelfType、AutoType）。
+    ///   用于值位置（value_types）——这些类型必须完全闭合。
+    /// - `strict=false`：宽松模式，允许带 binder 的 Generic（声明身份）。用于函数签名。
+    fn collect(set: &mut BTreeSet<ValkyrieType>, ty: &ValkyrieType, strict: bool) {
+        // strict 模式下，声明期占位类型不得进入 type_identities。
+        if strict {
+            if contains_deferred_type_param(ty) {
+                // 仍需递归下钻实参，让子类型（如 Nominal 的 arguments 里的具体类型）也能被收集。
+                // 但 ty 本身不 insert。
+            }
+        }
         match ty {
             ValkyrieType::Nominal { arguments, .. } => {
                 for arg in arguments {
-                    collect(set, arg);
+                    collect(set, arg, strict);
                 }
             }
             ValkyrieType::Apply(base, args) => {
-                collect(set, base);
+                collect(set, base, strict);
                 for arg in args {
-                    collect(set, arg);
+                    collect(set, arg, strict);
                 }
             }
             ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
                 for item in items {
-                    collect(set, item);
+                    collect(set, item, strict);
                 }
             }
             ValkyrieType::Function(function) => {
                 for param in &function.params {
-                    collect(set, param);
+                    collect(set, param, strict);
                 }
-                collect(set, &function.return_type);
+                collect(set, &function.return_type, strict);
             }
-            ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => collect(set, element),
-            ValkyrieType::FixedArray { element, .. } => collect(set, element),
+            ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => collect(set, element, strict),
+            ValkyrieType::FixedArray { element, .. } => collect(set, element, strict),
             ValkyrieType::Associated(associated) => {
-                collect(set, &associated.base);
+                collect(set, &associated.base, strict);
                 for argument in &associated.type_arguments {
-                    collect(set, argument);
+                    collect(set, argument, strict);
                 }
             }
             _ => {}
         }
-        if !type_contains_unresolved_reference(ty) {
+        // insert 条件：
+        // 1. 不含未解析引用（Generic{binder=None}）
+        // 2. strict 模式下还不能含任何 deferred param（Generic{binder=Some}、SelfType、AutoType）
+        let no_unresolved = !contains_open_generic(ty) && !matches!(ty, ValkyrieType::SelfType | ValkyrieType::AutoType);
+        let passes_strict = !strict || !contains_deferred_type_param(ty);
+        if no_unresolved && passes_strict {
             set.insert(normalize_named_primitive(ty.clone()));
         }
     }
@@ -116,38 +180,44 @@ pub fn type_identity_table(
 
     let mut types = BTreeSet::new();
     for function in functions {
-        collect(&mut types, &function.return_type);
+        // 函数签名允许泛型形参 binder（声明身份），用宽松模式收集。
+        collect(&mut types, &function.return_type, false);
         for ty in &function.param_types {
-            collect(&mut types, ty);
+            collect(&mut types, ty, false);
         }
+        // 值位置必须完全闭合，严格模式过滤任何 deferred param。
         for ty in function.value_types.values() {
-            collect(&mut types, ty);
+            collect(&mut types, ty, true);
         }
     }
     for contract in external_calls {
         for ty in &contract.parameter_types {
-            collect(&mut types, ty);
+            collect(&mut types, ty, true);
         }
-        collect(&mut types, &contract.return_type);
+        collect(&mut types, &contract.return_type, true);
     }
     for structure in structs {
         if let Some(key) = aggregate_type_key(structure) {
-            collect(&mut types, &key);
+            collect(&mut types, &key, true);
         }
-        for field in &structure.fields {
-            collect(&mut types, &field.ty);
+        // 泛型声明的字段类型含 Generic{binder} 占位，只有具体实例（由
+        // register_aggregate_nominal_instances 代入后）才应进入类型事实表。
+        if structure.generics.is_empty() {
+            for field in &structure.fields {
+                collect(&mut types, &field.ty, true);
+            }
         }
     }
     for sum in sums {
         if let Some(declaration) = sum.declaration {
-            collect(&mut types, &ValkyrieType::Nominal { declaration, arguments: Vec::new() });
+            collect(&mut types, &ValkyrieType::Nominal { declaration, arguments: Vec::new() }, true);
         }
         for variant in &sum.variants {
             for field in &variant.fields {
-                collect(&mut types, &field.ty);
+                collect(&mut types, &field.ty, true);
             }
             if let Some(result) = &variant.result_type {
-                collect(&mut types, result);
+                collect(&mut types, result, true);
             }
         }
     }
