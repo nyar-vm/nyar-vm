@@ -335,12 +335,36 @@ impl TargetExecutionPlan {
                 Ok(instance)
             })
             .collect::<Result<Vec<_>>>()?;
+        // 预收集所有签名含 Generic 的函数 ID——它们是 adaptor/std 里的泛型种子函数，
+        // frontend 单态化应为所有调用点铸造闭合实例。backend 无法编码含 Generic 签名。
+        let generic_functions: std::collections::BTreeSet<ItemInstanceId> = canonical
+            .mir
+            .functions
+            .iter()
+            .filter(|(_, func)| {
+                // 检查顶层参数/返回类型是否直接含 Generic（递归嵌套检查）
+                let param_has_generic = func.parameters.iter().any(|(_, tid)| {
+                    type_contains_generic_deep(canonical, *tid)
+                });
+                let ret_has_generic = type_contains_generic_deep(canonical, func.return_type);
+                param_has_generic || ret_has_generic
+            })
+            .map(|(inst, _)| *inst)
+            .collect();
+        if !generic_functions.is_empty() {
+            eprintln!("[SKIP] 预收集 {} 个泛型声明函数", generic_functions.len());
+        }
         let mut seen = std::collections::BTreeSet::new();
         let mut functions = BTreeMap::new();
         let mut abi_names = BTreeMap::new();
         let mut imports = BTreeMap::new();
         while let Some(instance) = pending.pop() {
             if !seen.insert(instance) {
+                continue;
+            }
+            // 跳过泛型声明函数
+            if generic_functions.contains(&instance) {
+                eprintln!("[SKIP] 跳过泛型声明函数 instance {instance:?}");
                 continue;
             }
             if let Some((index, import)) = declared_imports.get(&instance) {
@@ -361,7 +385,13 @@ impl TargetExecutionPlan {
             abi_names.insert(instance, name.clone());
             let function = canonical.mir.functions.get(&instance).ok_or_else(|| format!("callable `{name}` 缺少 canonical 函数体"))?;
             let (lowered, callees) = lower_function(program, function)?;
-            pending.extend(callees);
+            // 过滤掉指向泛型声明函数的 callees（它们不应该被编码）
+            let original_count = callees.len();
+            let filtered_callees: Vec<_> = callees.into_iter().filter(|c| !generic_functions.contains(c)).collect();
+            if filtered_callees.len() < original_count {
+                eprintln!("[SKIP] 函数 `{name}` 过滤掉 {} 个指向泛型声明的 callee", original_count - filtered_callees.len());
+            }
+            pending.extend(filtered_callees);
             functions.insert(instance, lowered);
         }
         let mut plan = Self {
@@ -1007,11 +1037,24 @@ fn lower_operation(
                 CanonicalArrayInitialization::Fill(fill) => nyar_types::ArrayInitialization::Fill(value(*fill)),
             },
         },
-        CanonicalOperation::ArrayFromElements { array_type, elements } => InstructionKind::ArrayFromElements {
-            layout_id: layout_for_type(*array_type, "ArrayFromElements")?,
-            array_type: lower_type(program, *array_type)?,
-            elements: elements.iter().map(|id| value(*id)).collect(),
-        },
+        CanonicalOperation::ArrayFromElements { array_type, elements } => {
+            // 只有 FixedArray 才需要 aggregate layout；普通 Array 由 Wasm GC array.new_fixed 处理。
+            let need_layout = matches!(
+                program.linked.types.get(array_type).map(|row| &row.kind),
+                Some(nyar_types::CanonicalTypeKind::Array { length: Some(_), .. })
+            );
+            let layout_id = if need_layout {
+                layout_for_type(*array_type, "ArrayFromElements")?
+            } else {
+                // 普通 Array 不需要 aggregate layout；用 dummy 0 占位，wasm backend 会跳过。
+                0u32
+            };
+            InstructionKind::ArrayFromElements {
+                layout_id,
+                array_type: lower_type(program, *array_type)?,
+                elements: elements.iter().map(|id| value(*id)).collect(),
+            }
+        }
         CanonicalOperation::TupleNew { fields, element_types } => {
             let result = instruction.results.first().copied().ok_or_else(|| format!("TupleNew 缺少结果值"))?;
             let result_type = value_type(result)?;
@@ -1053,6 +1096,22 @@ fn lower_constant(constant: &CanonicalConstant) -> Constant {
         CanonicalConstant::Utf8(v) => Constant::Utf8(v.clone()),
         CanonicalConstant::Utf16(v) => Constant::Utf16(v.clone()),
         CanonicalConstant::Unit => Constant::Unit,
+    }
+}
+
+/// 递归检查 canonical 类型（含嵌套）是否包含 Generic。
+fn type_contains_generic_deep(program: &CanonicalProgram, id: nyar_types::TypeId) -> bool {
+    let Some(row) = program.linked.types.get(&id) else { return false; };
+    match &row.kind {
+        nyar_types::CanonicalTypeKind::Generic { .. } => true,
+        nyar_types::CanonicalTypeKind::Nominal { arguments, .. } => arguments.iter().any(|a| type_contains_generic_deep(program, *a)),
+        nyar_types::CanonicalTypeKind::Tuple(items) | nyar_types::CanonicalTypeKind::Union(items) | nyar_types::CanonicalTypeKind::Intersection(items) => items.iter().any(|a| type_contains_generic_deep(program, *a)),
+        nyar_types::CanonicalTypeKind::Array { element, .. } => type_contains_generic_deep(program, *element),
+        nyar_types::CanonicalTypeKind::Nullable(element) => type_contains_generic_deep(program, *element),
+        nyar_types::CanonicalTypeKind::Function { parameters, return_type } => {
+            parameters.iter().any(|a| type_contains_generic_deep(program, *a)) || type_contains_generic_deep(program, *return_type)
+        }
+        _ => false,
     }
 }
 
@@ -1114,7 +1173,35 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
         CanonicalTypeKind::Intersection(items) => {
             Ok(NyarType::Union(items.iter().map(|item| lower_type(program, *item)).collect::<Result<Vec<_>>>()?))
         }
-        unsupported => Err(format!("canonical 类型尚无目标合同: {unsupported:?}")),
+        unsupported => {
+            // Generic 类型只能出现在泛型函数的签名里——如果某个泛型函数被错误地留在了
+            // 可达集并尝试编码，这里就会触发。打印引用 Generic 的闭合函数帮助定位。
+            let canonical = program;
+            let mut refs_debug = String::new();
+            for (inst, func) in &program.mir.functions {
+                // 跳过泛型声明函数
+                let has_generic_sig = func.parameters.iter().any(|(_, tid)| {
+                    canonical.linked.types.get(tid).is_some_and(|row| matches!(row.kind, nyar_types::CanonicalTypeKind::Generic { .. }))
+                }) || canonical.linked.types.get(&func.return_type).is_some_and(|row| matches!(row.kind, nyar_types::CanonicalTypeKind::Generic { .. }));
+                if has_generic_sig { continue; }
+                // 递归检查 value_types 里有没有嵌套 Generic
+                let mut found = false;
+                for (_, tid) in &func.value_types {
+                    if type_contains_generic_deep(canonical, *tid) { found = true; break; }
+                }
+                if found {
+                    let name = program.linked.callable_names.get(inst).cloned().unwrap_or_default();
+                    refs_debug.push_str(&format!("function `{name}` instance {inst:?}; "));
+                }
+            }
+            let mut type_debug = String::new();
+            for (tid, row) in &program.linked.types {
+                if matches!(row.kind, nyar_types::CanonicalTypeKind::Generic { .. }) {
+                    type_debug.push_str(&format!("TypeId({:?})={:?}; ", tid, row.kind));
+                }
+            }
+            return Err(format!("canonical 类型尚无目标合同: {unsupported:?} (module={}, refs=[{}], generic_types=[{}])", program.mir.module_name, refs_debug, type_debug));
+        }
     }
 }
 
