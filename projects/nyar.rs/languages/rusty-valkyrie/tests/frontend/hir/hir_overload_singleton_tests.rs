@@ -1,5 +1,4 @@
 #![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
-use nyar_types::IntrinsicId;
 use rusty_valkyrie::{
     HirError, Identifier, NamePath, ValkyrieCompiler,
     hir::{
@@ -10,7 +9,7 @@ use rusty_valkyrie::{
     types::{
         SourceID,
         hir::{
-            HirCallArgument, HirCallableDomain, HirExpr, HirExprKind, HirFunction, HirIdentifier, HirModule, HirStatementKind,
+            BuiltinStructureOp, HirCallArgument, HirCallableDomain, HirExpr, HirExprKind, HirFunction, HirIdentifier, HirModule, HirStatementKind,
             types::ValkyrieType,
         },
     },
@@ -743,9 +742,9 @@ micro grow(text: utf8) -> [utf8] {
     };
     let HirExprKind::Call { resolved: Some(resolved), .. } = &statement.kind
     else {
-        panic!("push must resolve via IntrinsicId builtin candidate: {statement:?}")
+        panic!("push must resolve via BuiltinStructureOp builtin candidate: {statement:?}")
     };
-    assert_eq!(resolved.intrinsic, Some(IntrinsicId::ArrayPush));
+    assert_eq!(resolved.intrinsic, Some(BuiltinStructureOp::ArrayPush));
 }
 
 #[test]
@@ -779,7 +778,7 @@ imply Utf8Text {
             match &expr.kind {
                 HirExprKind::Call { resolved, args, .. } => {
                     if let Some(resolved) = resolved
-                        && resolved.intrinsic == Some(IntrinsicId::ArrayPush)
+                        && resolved.intrinsic == Some(BuiltinStructureOp::ArrayPush)
                     {
                         *push_calls += 1;
                     }

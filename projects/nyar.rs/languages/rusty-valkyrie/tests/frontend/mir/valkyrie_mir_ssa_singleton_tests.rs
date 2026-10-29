@@ -13,10 +13,35 @@ use rusty_valkyrie::compiler::mir::ssa::{
     MirConstant, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirTerminator, MirValueOrigin,
 };
 
+/// 运算符的声明事实来自语言 core：`i32` / `i64` 的 `infix +` 由 `imply` 声明，实现
+/// 由 `[host_contract]` 提供者补出。frontend 不再为 primitive 类型补造无声明实现，
+/// 所以使用运算符的 fixture 必须像真实源码一样携带这些声明。
+const PRIMITIVE_OPERATOR_DECLARATIONS: &str = r#"
+[primitive("core::primitive::i32")] structure i32 { }
+imply i32 {
+    infix `+`(self, rhs: Self): Self { __i32_add(self, rhs) }
+}
+[host_contract]
+private micro __i32_add(lhs: i32, rhs: i32): i32
+
+[primitive("core::primitive::i64")] structure i64 { }
+imply i64 {
+    infix `+`(self, rhs: Self): Self { __i64_add(self, rhs) }
+}
+[host_contract]
+private micro __i64_add(lhs: i64, rhs: i64): i64
+"#;
+
 /// Compiles source text into semantic MIR for singleton lowering inspection.
 fn compile_mir(source: &str) -> MirModule {
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9400 }).compile_source(source).expect("compile");
     MirLowerer::lower_module_semantic(&hir)
+}
+
+/// 与 [`compile_mir`] 相同，但把语言 core 的运算符声明（[`PRIMITIVE_OPERATOR_DECLARATIONS`]）
+/// 前置到 fixture 源码，用于依赖 primitive 运算符的用例。
+fn compile_mir_with_operators(source: &str) -> MirModule {
+    compile_mir(&format!("{PRIMITIVE_OPERATOR_DECLARATIONS}{source}"))
 }
 
 /// Finds a lowered MIR function by trailing symbol segment.
@@ -159,7 +184,7 @@ micro main() {
 
 #[test]
 fn lower_singleton_method_body_self_field() {
-    let mir = compile_mir(
+    let mir = compile_mir_with_operators(
         r#"
 singleton Counter {
     mut total: i64 = 0
@@ -298,9 +323,9 @@ singleton Settings: Serializable {
 
 #[test]
 fn demo_voa_todo_store_parses_through_hir() {
-    let hir = ValkyrieCompiler::new(SourceID { version_id: 9400 })
-        .compile_source(
-            r#"
+    let source = format!(
+        "{PRIMITIVE_OPERATOR_DECLARATIONS}{}",
+        r#"
 singleton TodoStore {
     mut todos_sig: i32 = 0
     mut filter_store_sig: i32 = 0
@@ -328,8 +353,8 @@ singleton TodoStore {
     }
 }
 "#,
-        )
-        .expect("compile");
+    );
+    let hir = ValkyrieCompiler::new(SourceID { version_id: 9400 }).compile_source(&source).expect("compile");
 
     assert_eq!(hir.singletons.len(), 1, "expected exactly one singleton in demo TodoStore module");
     let store = &hir.singletons[0];

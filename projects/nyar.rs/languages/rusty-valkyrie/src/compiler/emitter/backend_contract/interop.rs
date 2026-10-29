@@ -16,6 +16,18 @@ pub enum BackendContractError {
         /// 属性参数 span。
         span: DiagnosticSpan,
     },
+    /// 裸 `[intrinsic]` 抽象声明缺少显式目标绑定。
+    ///
+    /// 目标语义只能由声明侧的显式属性给出；backend contract 不从函数名推导
+    /// 目标 operator 或宿主导入，缺显式绑定时必须失败关闭。
+    IntrinsicMissingExplicitTargetBinding {
+        /// 声明所有者的稳定符号名（module 路径 + 声明名）。
+        owner: String,
+        /// 声明所在源码路径。
+        source: String,
+        /// 声明 span。
+        span: DiagnosticSpan,
+    },
 }
 
 impl BackendContractError {
@@ -23,6 +35,7 @@ impl BackendContractError {
     pub fn span(&self) -> DiagnosticSpan {
         match self {
             Self::WasiPreview1ImportForbidden { span, .. } => span.clone(),
+            Self::IntrinsicMissingExplicitTargetBinding { span, .. } => span.clone(),
         }
     }
 }
@@ -34,6 +47,11 @@ impl std::fmt::Display for BackendContractError {
                 f,
                 "WASI supports Component Model only, `{}` must be replaced with a `wasi:...` component import",
                 segments.join("` / `")
+            ),
+            Self::IntrinsicMissingExplicitTargetBinding { owner, source, .. } => write!(
+                f,
+                "declaration `{owner}` in `{source}` declares a bare `[intrinsic]` without an explicit target binding; \
+                 declare `[wasm_operator(\"...\")]`, `[ovm_operator(\"...\")]` or `[host_contract]` instead of deriving a target from the function name"
             ),
         }
     }
@@ -67,36 +85,38 @@ pub(crate) fn runtime_requirement(_link: &ExternalImportLink) -> RuntimeRequirem
 }
 
 pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), BackendContractError> {
+    let source = module_source_label(module);
+    let scope = module_path_label(module);
     for function in &module.functions {
-        validate_function_interop_surface(function)?;
+        validate_function_interop_surface(function, &scope, &source)?;
     }
     for struct_decl in &module.structs {
         for method in &struct_decl.methods {
-            validate_function_interop_surface(method)?;
+            validate_function_interop_surface(method, &scope, &source)?;
         }
     }
     for trait_decl in &module.traits {
         for method in &trait_decl.methods {
-            validate_function_interop_surface(method)?;
+            validate_function_interop_surface(method, &scope, &source)?;
         }
         for method in &trait_decl.default_methods {
-            validate_function_interop_surface(method)?;
+            validate_function_interop_surface(method, &scope, &source)?;
         }
     }
     for impl_block in &module.impls {
         for method in &impl_block.methods {
-            validate_function_interop_surface(method)?;
+            validate_function_interop_surface(method, &scope, &source)?;
         }
     }
     for singleton in &module.singletons {
         for method in &singleton.methods {
-            validate_function_interop_surface(method)?;
+            validate_function_interop_surface(method, &scope, &source)?;
         }
         if let Some(constructor) = &singleton.constructor {
-            validate_function_interop_surface(constructor)?;
+            validate_function_interop_surface(constructor, &scope, &source)?;
         }
         if let Some(finalizer) = &singleton.finalizer {
-            validate_function_interop_surface(finalizer)?;
+            validate_function_interop_surface(finalizer, &scope, &source)?;
         }
     }
     for submodule in &module.submodules {
@@ -132,49 +152,16 @@ pub fn function_interop_contract(function: &HirFunction) -> Option<ExternalImpor
     if !function.is_abstract {
         return None;
     }
+    // 抽象声明只剩 `[host_contract]` 一种「无显式目标绑定」的合法形态：
+    // 由 adaptor 的 host_provider 提供 target-conditioned 链接，此处返回空链接，
+    // 等待 host provider resolve 填充具体绑定。
+    //
+    // `[intrinsic(...)]` 由 backend intrinsic lowering 直接编码，不生成 external_call，
+    // 因此这里不产链接；裸 `[intrinsic]` 不再从函数名推导 wasm_operator（函数名不是
+    // 语义事实），缺显式绑定时由 [`validate_interop_surface`] 结构化失败关闭。
     function.annotations.iter().find_map(|attribute| {
-        let name = attribute_name(attribute)?;
-        match name {
-            // host_contract：由 adaptor 的 host_provider 提供 target-conditioned 链接；
-            // 此处返回空链接，等待 host provider resolve 填充具体绑定。
-            "host_contract" => Some(ExternalImportLink::host(None, Vec::new())),
-            // intrinsic：backend intrinsic lowering 或 wasm_operator。
-            // 带参数（如 `[intrinsic("builtin.array.push")]`）的 intrinsic 是 backend intrinsic lowering 类型，
-            // 不生成 external_call 合同——intrinsic lowering 直接编码，不需要宿主导入。
-            // 裸 `[intrinsic]` 才从函数名推导 wasm_operator（兼容旧数值 intrinsic 路径）。
-            "intrinsic" => {
-                let has_param = !attribute.arguments.is_empty();
-                if has_param {
-                    // 带参数：backend intrinsic lowering 类型，不生成 external_call
-                    None
-                } else {
-                    // 无参数：从函数名推导 wasm_operator（兼容旧数值 intrinsic 路径）
-                    derive_intrinsic_wasm_operator_link(function.name.as_str())
-                }
-            }
-            _ => None,
-        }
+        (attribute_name(attribute).as_deref() == Some("host_contract")).then(|| ExternalImportLink::host(None, Vec::new()))
     })
-}
-
-/// 从 intrinsic 函数名推导 wasm_operator 外部导入链接。
-///
-/// 规则：去掉开头所有 `_`，把剩余的 `_` 替换成 `.`。
-/// - `__i32_eq` → `i32.eq`
-/// - `__i64_add` → `i64.add`
-/// - `__f32_gt` → `f32.gt`
-/// - `__array_len` → `array.len`（非 wasm operator 的 intrinsic 也会生成链接，
-///   wasm backend 识别不了时会正常报「缺少可编码目标绑定」，不会静默失败）
-fn derive_intrinsic_wasm_operator_link(function_name: &str) -> Option<ExternalImportLink> {
-    let stripped = function_name.trim_start_matches('_');
-    if stripped.is_empty() {
-        return None;
-    }
-    let mnemonic = stripped.replace('_', ".");
-    Some(ExternalImportLink::host(
-        Some(Identifier::new("wasm-operator")),
-        vec![mnemonic],
-    ))
 }
 
 /// 从 `[host_provider(X)]` 属性中杝坖目标契约符坷。
@@ -191,11 +178,56 @@ pub(crate) fn function_host_provider_target(function: &HirFunction) -> Option<Qu
     })
 }
 
-fn validate_function_interop_surface(function: &HirFunction) -> Result<(), BackendContractError> {
+/// 模块名的扁平淡化标签，用于诊断 owner 路径。
+fn module_path_label(module: &HirModule) -> String {
+    module.name.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::")
+}
+
+/// 模块源码路径标签；缺 `source_path` 时退回模块名，避免诊断丢失 owner 定位。
+fn module_source_label(module: &HirModule) -> String {
+    if !module.source_path.is_empty() {
+        return module.source_path.clone();
+    }
+    let path = module_path_label(module);
+    if path.is_empty() { "<unknown>".to_string() } else { path }
+}
+
+fn validate_function_interop_surface(function: &HirFunction, scope: &str, source: &str) -> Result<(), BackendContractError> {
     for attribute in &function.annotations {
         validate_interop_attribute(attribute)?;
     }
-    Ok(())
+    validate_intrinsic_target_binding(function, scope, source)
+}
+
+/// 裸 `[intrinsic]` 抽象声明必须由显式属性声明目标绑定。
+///
+/// 目标语义（Wasm operator / OVM operator / 宿主导入）只能来自声明侧显式属性；
+/// backend contract 不从函数名推导，也不静默返回「无链接」。
+fn validate_intrinsic_target_binding(function: &HirFunction, scope: &str, source: &str) -> Result<(), BackendContractError> {
+    let bare_intrinsic = function
+        .annotations
+        .iter()
+        .any(|attribute| attribute_name(attribute).as_deref() == Some("intrinsic") && attribute.arguments.is_empty());
+    if !bare_intrinsic || !function.is_abstract {
+        return Ok(());
+    }
+
+    let explicit_binding = function.annotations.iter().any(|attribute| {
+        attribute_to_interop_contract(attribute).is_some() || attribute_name(attribute).as_deref() == Some("host_contract")
+    });
+    if explicit_binding {
+        return Ok(());
+    }
+
+    let owner = if scope.is_empty() { function.name.as_str().to_string() } else { format!("{scope}::{}", function.name.as_str()) };
+    Err(BackendContractError::IntrinsicMissingExplicitTargetBinding {
+        owner,
+        source: source.to_string(),
+        span: DiagnosticSpan {
+            start: usize::try_from(function.span.get_start()).unwrap_or(0),
+            end: usize::try_from(function.span.get_end()).unwrap_or(0),
+        },
+    })
 }
 
 fn validate_interop_attribute(attribute: &HirAttribute) -> Result<(), BackendContractError> {

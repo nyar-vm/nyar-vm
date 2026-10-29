@@ -38,8 +38,8 @@ pub struct OverloadCandidate {
     pub sum_owner: Option<nyar_types::ItemId>,
     /// 所属 unity 变体的声明身份。
     pub sum_variant: Option<nyar_types::ItemId>,
-    /// 语言 builtin 的结构化身份；只有语言内建候选持有，源码声明候选恒为 `None`。
-    pub intrinsic: Option<nyar_types::IntrinsicId>,
+    /// 语言内建结构操作身份；只有语言内建候选持有，源码声明候选恒为 `None`。
+    pub intrinsic: Option<crate::compiler::types::hir::BuiltinStructureOp>,
     /// 候选符号的限定路径。
     pub symbol: NamePath,
     /// 拥有该候选的类型名（方法候选）。

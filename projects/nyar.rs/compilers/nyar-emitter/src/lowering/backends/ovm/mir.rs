@@ -11,9 +11,10 @@ use crate::{
     contracts::{EffectKind, ValueOrigin},
 };
 use nyar::{ExternalImportLink, NamePath};
-use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId};
+use nyar_types::{AggregateLayout, ItemInstanceId, LayoutId};
 use odin_bytecode::{
-    NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout, NyarModuleData,
+    IntrinsicOpcode, NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout,
+    NyarModuleData,
 };
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
@@ -126,9 +127,9 @@ impl<'a> BytecodeEmitter<'a> {
         odin_bytecode::emit_imm2(&mut self.code_bytes, NyarHeadCode::CallImport, import_index, arg_count);
     }
 
-    /// 按 [`IntrinsicId`] 稠密下标调用内置；operand1 = bytecode index，operand2 = argc。
-    fn emit_call_intrinsic(&mut self, intrinsic: IntrinsicId, arg_count: i32) {
-        odin_bytecode::emit_imm2(&mut self.code_bytes, NyarHeadCode::CallIntrinsic, intrinsic.bytecode_index() as i32, arg_count);
+    /// 按 [`IntrinsicOpcode`] 编码调用内置；operand1 = 指令编号，operand2 = argc。
+    fn emit_call_intrinsic(&mut self, op: IntrinsicOpcode, arg_count: i32) {
+        odin_bytecode::emit_imm2(&mut self.code_bytes, NyarHeadCode::CallIntrinsic, op.raw(), arg_count);
     }
 
     fn emit_jump_placeholder(&mut self, opcode: NyarHeadCode, target: MirBlockRef) -> usize {
@@ -507,7 +508,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             MirInstructionKind::ArrayGet { array, index } => {
                 self.emit_call_operand(array);
                 self.emit_operand(index);
-                self.emitter.emit_call_intrinsic(IntrinsicId::ArrayGet, 2);
+                self.emitter.emit_call_intrinsic(IntrinsicOpcode::ArrayGet, 2);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
@@ -516,7 +517,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emit_call_operand(array);
                 self.emit_operand(index);
                 self.emit_operand(value);
-                self.emitter.emit_call_intrinsic(IntrinsicId::ArraySet, 3);
+                self.emitter.emit_call_intrinsic(IntrinsicOpcode::ArraySet, 3);
                 self.emitter.emit_plain(NyarHeadCode::Pop);
             }
             MirInstructionKind::ArrayLength { array } => {
@@ -524,7 +525,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 if !self.emit_call_operand(array) {
                     panic!("ovm ArrayLength operand not materializable in `{}`", self.mir_fn.symbol);
                 }
-                self.emitter.emit_call_intrinsic(IntrinsicId::ArrayLen, 1);
+                self.emitter.emit_call_intrinsic(IntrinsicOpcode::ArrayLen, 1);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
@@ -534,7 +535,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     panic!("ovm ArrayPush array operand not materializable in `{}`", self.mir_fn.symbol);
                 }
                 self.emit_operand(value);
-                self.emitter.emit_call_intrinsic(IntrinsicId::ArrayPush, 2);
+                self.emitter.emit_call_intrinsic(IntrinsicOpcode::ArrayPush, 2);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
@@ -543,7 +544,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 if !self.emit_call_operand(value) {
                     panic!("ovm NullIsNull operand not materializable in `{}`", self.mir_fn.symbol);
                 }
-                self.emitter.emit_call_intrinsic(IntrinsicId::IsNull, 1);
+                self.emitter.emit_call_intrinsic(IntrinsicOpcode::IsNull, 1);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
@@ -552,7 +553,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 if !self.emit_call_operand(value) {
                     panic!("ovm NullUnwrap operand not materializable in `{}`", self.mir_fn.symbol);
                 }
-                self.emitter.emit_call_intrinsic(IntrinsicId::UnwrapNull, 1);
+                self.emitter.emit_call_intrinsic(IntrinsicOpcode::UnwrapNull, 1);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }

@@ -1,6 +1,8 @@
 //! Expression, capture, and capture mode definitions for HIR.
 
-use super::{GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent, HirPattern, ValkyrieType};
+use super::{
+    BuiltinStructureOp, GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent, HirPattern, ValkyrieType,
+};
 use crate::compiler::types::{Identifier, NamePath, SourceSpan};
 
 /// A call argument with optional keyword name.
@@ -125,9 +127,9 @@ pub struct HirResolvedCall {
     pub declaration: Option<nyar_types::ItemId>,
     /// 所选声明的已实例化身份；未实例化的泛型调用不能进入成功 MIR。
     pub instance: Option<nyar_types::ItemInstanceId>,
-    /// 语言内建调用的结构化身份；只有内建候选持有，源码声明调用恒为 `None`。
+    /// 语言内建结构操作身份；只有内建候选持有，源码声明调用恒为 `None`。
     #[cfg_attr(feature = "serde", serde(default))]
-    pub intrinsic: Option<nyar_types::IntrinsicId>,
+    pub intrinsic: Option<BuiltinStructureOp>,
     /// 泛型接收者的 trait 方法分派义务；只有 trait 方法候选（无实例身份）持有。
     #[cfg_attr(feature = "serde", serde(default))]
     pub trait_dispatch: Option<HirTraitDispatch>,

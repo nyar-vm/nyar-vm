@@ -16,12 +16,11 @@ use crate::compiler::{
     types::{
         Identifier, NamePath,
         hir::{
-            HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirFunction, HirLiteral, HirParam, HirPattern, HirResolvedCall,
-            HirStringSegment, HirTrait, HirTraitBound, HirTraitDispatch, HirVariant, HirWhereConstraint, ValkyrieType,
+            BuiltinStructureOp, HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirFunction, HirLiteral, HirParam, HirPattern,
+            HirResolvedCall, HirStringSegment, HirTrait, HirTraitBound, HirTraitDispatch, HirVariant, HirWhereConstraint, ValkyrieType,
         },
     },
 };
-
 use crate::compiler::hir::overload::{
     diagnostics::{OverloadCandidate, OverloadDomain, OverloadMatchKind, OverloadResolutionError},
     resolve_call::pattern_extractor_receiver_type,
@@ -83,7 +82,7 @@ pub(crate) fn peel_explicit_generic_arguments(callee: &HirExpr) -> (Vec<Valkyrie
     }
 }
 
-/// 语言 builtin：以候选符号的 IntrinsicId 为准。
+/// 语言内建结构操作：以候选冻结的 [`BuiltinStructureOp`] 为准。
 pub(crate) fn match_intrinsic_builtin_candidate(
     candidate: &OverloadCandidate,
     args: &[HirCallArgument],
@@ -120,7 +119,7 @@ pub(crate) fn match_intrinsic_builtin_candidate(
     }
 
     match intrinsic {
-        nyar_types::IntrinsicId::ArrayPush => {
+        BuiltinStructureOp::ArrayPush => {
             if args.len() != 2 {
                 return None;
             }
@@ -141,7 +140,7 @@ pub(crate) fn match_intrinsic_builtin_candidate(
                 return_type: array_ty,
             }))
         }
-        nyar_types::IntrinsicId::ArrayLen => {
+        BuiltinStructureOp::ArrayLen => {
             if args.len() != 1 {
                 return None;
             }
@@ -153,7 +152,7 @@ pub(crate) fn match_intrinsic_builtin_candidate(
                 type_relations.nominal_type_for_name(&Identifier::new("usize")).unwrap_or_else(|| candidate.signature.return_type.clone());
             Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature { params: vec![array_ty], return_type }))
         }
-        nyar_types::IntrinsicId::RefDeref => {
+        BuiltinStructureOp::RefDeref => {
             if args.len() != 1 {
                 return None;
             }
@@ -161,31 +160,7 @@ pub(crate) fn match_intrinsic_builtin_candidate(
             let return_type = nullable_payload_type(&operand_ty).unwrap_or_else(|| candidate.signature.return_type.clone());
             Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature { params: vec![operand_ty], return_type }))
         }
-        nyar_types::IntrinsicId::IsNull => {
-            if args.len() != 1 {
-                return None;
-            }
-            let operand_ty = infer(&args[0].value, locals, struct_fields, singleton_names)?;
-            if !crate::compiler::hir::is_nullable_type(&operand_ty) {
-                return None;
-            }
-            Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature {
-                params: vec![operand_ty],
-                return_type: ValkyrieType::Boolean,
-            }))
-        }
-        nyar_types::IntrinsicId::UnwrapNull => {
-            if args.len() != 1 {
-                return None;
-            }
-            let operand_ty = infer(&args[0].value, locals, struct_fields, singleton_names)?;
-            let Some(payload) = nullable_payload_type(&operand_ty)
-            else {
-                return None;
-            };
-            Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature { params: vec![operand_ty], return_type: payload }))
-        }
-        nyar_types::IntrinsicId::ArrayGet => {
+        BuiltinStructureOp::ArrayGet => {
             if args.len() != 2 {
                 return None;
             }
@@ -209,7 +184,7 @@ pub(crate) fn match_intrinsic_builtin_candidate(
             let return_type = element.clone();
             Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature { params: vec![array_ty, index_ty], return_type }))
         }
-        nyar_types::IntrinsicId::ArraySet => {
+        BuiltinStructureOp::ArraySet => {
             if args.len() != 3 {
                 return None;
             }
@@ -235,7 +210,6 @@ pub(crate) fn match_intrinsic_builtin_candidate(
                 return_type: ValkyrieType::Unit,
             }))
         }
-        _ => None,
     }
 }
 
@@ -580,19 +554,10 @@ pub(crate) fn try_resolve_call(
         ) {
             return Some(resolved);
         }
-        // Fallback：primitive numeric / boolean 类型没有显式 imply 时，
-        // 注入 built-in operator intrinsic synthetic callable。
-        let fb = crate::compiler::hir::overload::call_resolver::primitive_operator::try_resolve_primitive_numeric_operator(
-            &first.value,
-            callee_name.as_str(),
-            method_args,
-            locals,
-            struct_fields,
-            singleton_names,
-        );
-        if let Some(resolved) = fb {
-            return Some(resolved);
-        }
+        // operator 成员必须由显式声明（`imply` / `trait`）及其已选 provider 驱动。
+        // 此处解析不出候选时保持 `resolved: None`，由 HIR 调用合同验证阶段以
+        // `HirError::UnresolvedCall`（selector / 上下文 / source / span）结构化失败，
+        // 编译器不补造目标实现，也不按类型类别 + 运算符名推导 opcode。
     }
 
     let enclosing_module = type_relations.enclosing_module();

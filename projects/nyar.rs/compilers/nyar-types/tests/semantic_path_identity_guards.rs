@@ -91,13 +91,12 @@ fn ends_with_symbol_heuristics_do_not_grow() {
 #[test]
 fn frozen_identity_types_are_public() {
     use nyar_types::{
-        AttributeId, AttributeRegistration, ImportCapability, ImportIndex, IntrinsicId, ItemId, TypeInstanceId, builtin_attribute,
+        AttributeId, AttributeRegistration, ImportCapability, ImportIndex, ItemId, TypeInstanceId, builtin_attribute,
     };
     assert!(ItemId::from_index(0).is_some());
     assert!(TypeInstanceId::from_index(0).is_some());
     assert!(ImportIndex::from_index(0).is_some());
     assert!(AttributeId::from_index(0).is_some());
-    assert_eq!(IntrinsicId::ArrayLen.diagnostic_path(), "builtin.array.length");
     assert_eq!(builtin_attribute::main().index(), 1);
     assert_eq!(AttributeRegistration { id: builtin_attribute::export(), name: "export".into() }.name, "export");
     assert_eq!(ImportCapability::new("wasi_snapshot_preview1", "fd_write").to_string(), "wasi_snapshot_preview1::fd_write");

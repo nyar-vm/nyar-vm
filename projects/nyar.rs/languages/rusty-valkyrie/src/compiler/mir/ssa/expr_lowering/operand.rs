@@ -551,7 +551,7 @@ impl MirBuilder {
             HirExprKind::FieldAccess { object, field, field_id } => {
                 let object_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
                 // 禁止按字段名 `length` 改写成 ArrayLength；数组长度只能来自
-                // 已在 HIR 解析的 IntrinsicId::ArrayLen Call / 明确 ArrayLength 节点。
+                // 已在 HIR 解析的 BuiltinStructureOp::ArrayLen Call / 明确 ArrayLength 节点。
                 let Some(field_id) = *field_id
                 else {
                     self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });

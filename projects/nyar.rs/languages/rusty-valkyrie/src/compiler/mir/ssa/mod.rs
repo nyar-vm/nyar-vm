@@ -1,7 +1,6 @@
 #![doc = include_str!("readme.md")]
 
 mod builder;
-pub(crate) mod builtin_helpers;
 pub(crate) mod builtin_nominals;
 mod callable_types;
 pub(crate) mod contracts;
@@ -36,8 +35,6 @@ pub use value_semantics::{
 };
 
 // 集成测试入口：仅暴露被迁移的 `tests/` 目标所需的最小内部 item。
-#[doc(hidden)]
-pub use builtin_helpers::resolve_intrinsic_id;
 #[doc(hidden)]
 pub use match_lowering::arm_contributes_to_match_merge;
 #[doc(hidden)]

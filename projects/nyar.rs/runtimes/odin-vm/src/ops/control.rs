@@ -1,4 +1,4 @@
-use odin_bytecode::{NyarHeadCode, NyarInstruction};
+use odin_bytecode::{IntrinsicOpcode, NyarHeadCode, NyarInstruction};
 
 use crate::{
     array_runtime::{array_get, array_len, array_push, array_set},
@@ -93,7 +93,8 @@ pub fn execute_control(
             Ok(StepResult::Continue)
         }
         NyarHeadCode::CallIntrinsic => {
-            // 稠密下标必须与 `nyar_types::IntrinsicId::bytecode_index` 对齐（VM 不依赖 nyar-types）。
+            // 指令身份由 `odin_bytecode::IntrinsicOpcode`（OVM 私有格式合同）给出；
+            // 未知操作数 fail-closed，不得猜测或回落到语言 builtin 表。
             let intrinsic_index = instruction.operand1;
             let arg_count = instruction.operand2.max(0) as usize;
             let mut args = Vec::with_capacity(arg_count);
@@ -102,30 +103,32 @@ pub fn execute_control(
             }
             args.reverse();
 
-            let result = match intrinsic_index {
-                0 => array_push(ctx.heap, args.first().unwrap_or(&Value::Null), args.get(1).unwrap_or(&Value::Null))?,
-                1 => array_len(ctx.heap, args.first().unwrap_or(&Value::Null))?,
-                2 => array_get(ctx.heap, args.first().unwrap_or(&Value::Null), args.get(1).unwrap_or(&Value::Null))?,
-                3 => array_set(
+            let intrinsic = IntrinsicOpcode::from_operand(intrinsic_index)
+                .map_err(|_| NyarRuntimeError::UnknownIntrinsic(intrinsic_index))?;
+
+            let result = match intrinsic {
+                IntrinsicOpcode::ArrayPush => array_push(ctx.heap, args.first().unwrap_or(&Value::Null), args.get(1).unwrap_or(&Value::Null))?,
+                IntrinsicOpcode::ArrayLen => array_len(ctx.heap, args.first().unwrap_or(&Value::Null))?,
+                IntrinsicOpcode::ArrayGet => array_get(ctx.heap, args.first().unwrap_or(&Value::Null), args.get(1).unwrap_or(&Value::Null))?,
+                IntrinsicOpcode::ArraySet => array_set(
                     ctx.heap,
                     args.first().unwrap_or(&Value::Null),
                     args.get(1).unwrap_or(&Value::Null),
                     args.get(2).unwrap_or(&Value::Null),
                 )?,
-                4 => {
+                IntrinsicOpcode::RefDeref => {
                     return Err(NyarRuntimeError::UnsupportedFeature("CallIntrinsic RefDeref"));
                 }
-                5 => {
+                IntrinsicOpcode::IsNull => {
                     let value = args.first().unwrap_or(&Value::Null);
                     Value::Bool(matches!(value, Value::Null))
                 }
-                6 => match args.first().unwrap_or(&Value::Null) {
+                IntrinsicOpcode::UnwrapNull => match args.first().unwrap_or(&Value::Null) {
                     Value::Null => {
                         return Err(NyarRuntimeError::TypeMismatch { expected: "non-null value", actual: "null".to_string() });
                     }
                     other => other.clone(),
                 },
-                other => return Err(NyarRuntimeError::UnknownIntrinsic(other)),
             };
             ctx.stack.push(result);
             frame.ip += instruction.size as usize;
