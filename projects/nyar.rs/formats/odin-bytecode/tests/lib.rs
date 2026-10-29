@@ -45,6 +45,39 @@ fn emit_helpers_round_trip_with_decode_at() {
 }
 
 #[test]
+fn intrinsic_opcode_operand_round_trips() {
+    for opcode in [
+        IntrinsicOpcode::ArrayPush,
+        IntrinsicOpcode::ArrayLen,
+        IntrinsicOpcode::ArrayGet,
+        IntrinsicOpcode::ArraySet,
+        IntrinsicOpcode::RefDeref,
+        IntrinsicOpcode::IsNull,
+        IntrinsicOpcode::UnwrapNull,
+    ] {
+        assert_eq!(IntrinsicOpcode::from_operand(opcode.raw()), Ok(opcode), "编号必须稳定往返：{opcode:?}");
+    }
+    // 编号是 `CallIntrinsic` 操作数编码，属于 VM 私有合同；改动即格式破坏。
+    assert_eq!(IntrinsicOpcode::ArrayPush.raw(), 0);
+    assert_eq!(IntrinsicOpcode::ArrayLen.raw(), 1);
+    assert_eq!(IntrinsicOpcode::ArrayGet.raw(), 2);
+    assert_eq!(IntrinsicOpcode::ArraySet.raw(), 3);
+    assert_eq!(IntrinsicOpcode::RefDeref.raw(), 4);
+    assert_eq!(IntrinsicOpcode::IsNull.raw(), 5);
+    assert_eq!(IntrinsicOpcode::UnwrapNull.raw(), 6);
+}
+
+#[test]
+fn unknown_intrinsic_operand_is_rejected() {
+    for operand in [-1, 7, 99] {
+        assert!(
+            IntrinsicOpcode::from_operand(operand).is_err(),
+            "未知 `CallIntrinsic` 操作数 {operand} 必须在运行前拒绝，不能静默当成某个指令"
+        );
+    }
+}
+
+#[test]
 fn layouts_section_round_trips() {
     let data = NyarModuleData {
         version: NYAR_VERSION,
