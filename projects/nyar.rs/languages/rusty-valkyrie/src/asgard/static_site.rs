@@ -26,8 +26,8 @@ pub struct StaticSiteOptions {
     pub entry: PathBuf,
     /// 输出目录；缺省为 `project_dir/dist`。
     pub output_dir: Option<PathBuf>,
-    /// 页面 `<title>` 文本。
-    pub title: String,
+    /// 页面 `<title>` 文本；`None` 时使用根组件名（入口文件 stem）。
+    pub title: Option<String>,
 }
 
 /// 静态站点构建成功报告。
@@ -71,9 +71,10 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
     let component = compile_awsl_source(&source, file_stem, &relative_path, &LoweringOptions::default())
         .map_err(|error| AsgardError::msg(report!("{}:{}: {}", entry_path.display(), error.span.start, error.message)))?;
 
-    // 静态页面以组件初始状态渲染，外部数据为 Null。
+    // 静态页面以组件初始状态渲染，外部数据为 Null；标题缺省沿用根组件名这一唯一来源。
     let rendered = render_static_ir(&component, &serde_json::Value::Null);
-    let page = generate_static_page(&options.title, std::slice::from_ref(&rendered), "");
+    let title = options.title.as_deref().unwrap_or(file_stem);
+    let page = generate_static_page(title, std::slice::from_ref(&rendered), "");
 
     let output_dir = options.output_dir.clone().unwrap_or_else(|| project_root.join("dist"));
     std::fs::create_dir_all(&output_dir).map_err(|error| AsgardError::msg(report!("创建输出目录失败 {}: {error}", output_dir.display())))?;
