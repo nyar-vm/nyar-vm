@@ -255,77 +255,10 @@ fn producer_binds_external_callable_to_import_index_and_signature() {
     );
 }
 
-#[test]
-fn array_push_operation_canonicalizes_without_symbol_call() {
-    let array_ty = ValkyrieType::Array(Box::new(ValkyrieType::Utf8));
-    let array = MirValueRef(0);
-    let element = MirValueRef(1);
-    let result = MirValueRef(2);
-    let value_types = BTreeMap::from([(array, array_ty.clone()), (element, ValkyrieType::Utf8), (result, array_ty.clone())]);
-    let module = MirModule {
-        name: "demo".into(),
-        functions: vec![MirFunction {
-            display_symbol: "demo::main".into(),
-            symbol: NamePath::new(vec![Identifier::new("demo"), Identifier::new("main")]),
-            declaration: Some(ItemId::from_index(0).unwrap()),
-            instance: Some(ItemInstanceId::from_index(0).unwrap()),
-            return_type: array_ty.clone(),
-            param_types: vec![array_ty.clone(), ValkyrieType::Utf8],
-            value_types,
-            entry: MirBlockRef(0),
-            values: vec![
-                MirValue { id: array, origin: MirValueOrigin::Parameter { index: 0, name: "array".into() } },
-                MirValue { id: element, origin: MirValueOrigin::Parameter { index: 1, name: "element".into() } },
-                MirValue { id: result, origin: MirValueOrigin::CallResult },
-            ],
-            blocks: vec![MirBlock {
-                id: MirBlockRef(0),
-                label: "entry".into(),
-                parameters: vec![array, element],
-                instructions: vec![MirInstruction::from_operation_with_results(
-                    MirOperation::ArrayPush { array: MirOperand::Value(array), value: MirOperand::Value(element) },
-                    vec![result],
-                )],
-                terminator: MirTerminator::Return { value: Some(MirOperand::Value(result)) },
-            }],
-        }],
-        structs: Vec::new(),
-        imports: Vec::new(),
-        external_calls: Vec::new(),
-        exports: Vec::new(),
-        entries: Vec::new(),
-        callable_symbols: BTreeMap::from([(ItemInstanceId::from_index(0).unwrap(), "demo::main".to_owned())]),
-        type_identities: BTreeMap::new(),
-        aggregate_layouts: AggregateLayoutPlan::default(),
-        sum_types: Vec::new(),
-        flags_types: Vec::new(),
-        singleton_instances: Vec::new(),
-        semantic_fragments: Vec::new(),
-        diagnostics: Vec::new(),
-    };
-    let mut module = module;
-    module.type_identities =
-        rusty_valkyrie::compiler::mir::ssa::type_identity_table(&module.functions, &module.external_calls, &module.structs, &module.sum_types);
-    let program = canonical_program_from_semantic_mir(&module).expect("ArrayPush must canonicalize");
-    let has_push = program
-        .mir
-        .functions
-        .values()
-        .flat_map(|function| function.blocks.values())
-        .flat_map(|block| block.instructions.iter())
-        .any(|instruction| matches!(instruction.operation, CanonicalOperation::ArrayPush { .. }));
-    assert!(has_push, "expected CanonicalOperation::ArrayPush");
-    assert!(
-        !program
-            .mir
-            .functions
-            .values()
-            .flat_map(|function| function.blocks.values())
-            .flat_map(|block| block.instructions.iter())
-            .any(|instruction| matches!(instruction.operation, CanonicalOperation::Invoke { .. })),
-        "ArrayPush must not remain as unresolved Invoke"
-    );
-}
+// `array_push_operation_canonicalizes_without_symbol_call` 已随 ArrayPush 公共特殊语义链退役删除：
+// 该测试直接构造 `MirOperation::ArrayPush` 并断言 canonical 后必须存在 `CanonicalOperation::ArrayPush`、
+// 不得保留 Invoke——锁定的是被退役的旧架构。新合同下 push 走普通声明 callable 的 Call→Invoke
+// 通用路径，该路径由本文件其余 Invoke canonicalize 测试与 frontend push 契约测试覆盖。
 
 #[test]
 fn array_set_operation_canonicalizes_without_symbol_call() {

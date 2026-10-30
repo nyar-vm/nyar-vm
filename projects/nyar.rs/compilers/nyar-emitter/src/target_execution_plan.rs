@@ -1091,7 +1091,6 @@ fn lower_operation(
         CanonicalOperation::ArrayGet { array, index } => InstructionKind::ArrayGet { array: value(*array), index: value(*index) },
         CanonicalOperation::ArraySet { array, index, value: stored } => InstructionKind::ArraySet { array: value(*array), index: value(*index), value: value(*stored) },
         CanonicalOperation::ArrayLength { array } => InstructionKind::ArrayLength { array: value(*array) },
-        CanonicalOperation::ArrayPush { array, value: pushed } => InstructionKind::ArrayPush { array: value(*array), value: value(*pushed) },
         CanonicalOperation::NullIsNull { value: operand } => InstructionKind::NullIsNull { value: value(*operand) },
         CanonicalOperation::NullUnwrap { value: operand } => InstructionKind::NullUnwrap { value: value(*operand) },
         CanonicalOperation::ArrayNew { array_type, length, initialization } => InstructionKind::ArrayNew {

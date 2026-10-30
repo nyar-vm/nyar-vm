@@ -166,13 +166,6 @@ pub enum CanonicalOperation {
         /// 数组 SSA 值。
         array: MirValueId,
     },
-    /// 向可增长数组末尾追加元素。
-    ArrayPush {
-        /// 可增长数组 SSA 值。
-        array: MirValueId,
-        /// 要追加的元素值。
-        value: MirValueId,
-    },
     /// 检测可空值为 null。
     NullIsNull {
         /// 可空值 SSA 值。

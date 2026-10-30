@@ -9,7 +9,7 @@ use rusty_valkyrie::{
     types::{
         SourceID,
         hir::{
-            BuiltinStructureOp, HirCallArgument, HirCallableDomain, HirExpr, HirExprKind, HirFunction, HirIdentifier, HirModule, HirStatementKind,
+            HirCallArgument, HirCallableDomain, HirExpr, HirExprKind, HirFunction, HirIdentifier, HirModule, HirStatementKind,
             types::ValkyrieType,
         },
     },
@@ -717,7 +717,7 @@ fn nullable_intrinsic_contracts_reject_non_nullable_operands() {
 }
 
 #[test]
-fn array_push_resolves_to_intrinsic_builtin_symbol() {
+fn array_push_resolves_to_declared_callable() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4210 });
     let hir = compiler
         .compile_source(
@@ -742,9 +742,10 @@ micro grow(text: utf8) -> [utf8] {
     };
     let HirExprKind::Call { resolved: Some(resolved), .. } = &statement.kind
     else {
-        panic!("push must resolve via BuiltinStructureOp builtin candidate: {statement:?}")
+        panic!("push must resolve via the declared push callable: {statement:?}")
     };
-    assert_eq!(resolved.intrinsic, Some(BuiltinStructureOp::ArrayPush));
+    assert_eq!(resolved.intrinsic, None, "builtin.array.push 注解不再产生公共结构身份");
+    assert!(resolved.declaration.is_some(), "push 调用必须绑定源码声明身份");
 }
 
 #[test]
@@ -778,7 +779,9 @@ imply Utf8Text {
             match &expr.kind {
                 HirExprKind::Call { resolved, args, .. } => {
                     if let Some(resolved) = resolved
-                        && resolved.intrinsic == Some(BuiltinStructureOp::ArrayPush)
+                        && resolved.intrinsic.is_none()
+                        && resolved.declaration.is_some()
+                        && resolved.symbol.parts().last().is_some_and(|part| part.as_str() == "push")
                     {
                         *push_calls += 1;
                     }
@@ -814,7 +817,7 @@ imply Utf8Text {
             walk(expr, &mut push_calls);
         }
     }
-    assert_eq!(push_calls, 2, "both calls must bind the declared ArrayPush identity");
+    assert_eq!(push_calls, 2, "both calls must bind the declared push callable");
 }
 
 #[test]

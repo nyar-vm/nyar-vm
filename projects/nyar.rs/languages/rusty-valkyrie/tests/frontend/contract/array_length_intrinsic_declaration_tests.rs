@@ -79,7 +79,6 @@ fn declared_array_length_intrinsic_degrades_to_ordinary_call() {
             MirOperation::ArrayLength { .. }
                 | MirOperation::ArrayGet { .. }
                 | MirOperation::ArraySet { .. }
-                | MirOperation::ArrayPush { .. }
                 | MirOperation::NullIsNull { .. }
                 | MirOperation::NullUnwrap { .. }
         )
@@ -120,7 +119,6 @@ fn missing_array_length_return_type_fact_degrades_to_call_not_opcode() {
             MirOperation::ArrayLength { .. }
                 | MirOperation::ArrayGet { .. }
                 | MirOperation::ArraySet { .. }
-                | MirOperation::ArrayPush { .. }
                 | MirOperation::NullIsNull { .. }
                 | MirOperation::NullUnwrap { .. }
         )
