@@ -251,9 +251,25 @@ fn collect_where_constraints(constraints: &[ast::type_nodes::WhereConstraint], r
     }
 }
 
+/// `std.collection::LiteralSequence` 合同两成员的选择名上界。
+///
+/// 与运算符合成降低成员同一机制：闭包只做上界判定，究竟是否走该合同、走哪个 impl
+/// 由 HIR 构造点按 trait 声明身份与签名形状匹配决定；本层只保证 witness 体可被提升
+/// 进需求闭包。std 侧成员名若漂移，提升落空会在 HIR 构造点结构化拒绝（fail-closed）。
+const LITERAL_SEQUENCE_WITH_LENGTH_MEMBER: &str = "with_length";
+/// 见 [`LITERAL_SEQUENCE_WITH_LENGTH_MEMBER`]。
+const LITERAL_SEQUENCE_APPEND_MEMBER: &str = "append";
+
 fn collect_let(let_stmt: &ast::Let, references: &mut References) {
     if let Some(ty) = &let_stmt.ty {
         collect_type_expression(ty, references);
+        // 集合字面量的合同驱动构造：`let a: ArrayList<u32> = [0, 1, 2]` 这类
+        // 「名义声明 + 数组字面量初始值」由 HIR post-binding pass 降低为
+        // `with_length`/`append` 合成调用，登记两成员选择名作为提升上界。
+        if type_target_reference(ty).is_some() && matches!(&let_stmt.expr, Some(ast::TermExpression::ArrayLiteral { .. })) {
+            references.selectors.insert(LITERAL_SEQUENCE_WITH_LENGTH_MEMBER.to_string());
+            references.selectors.insert(LITERAL_SEQUENCE_APPEND_MEMBER.to_string());
+        }
     }
     if let Some(expr) = &let_stmt.expr {
         collect_term(expr, references);
