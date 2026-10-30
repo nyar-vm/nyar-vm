@@ -86,7 +86,9 @@ pub fn run_external_test_in_session(
         return RunOutcome { success: false, is_compile_error: true, error: Some(format!("未知目标 {}", session.target)) };
     };
 
-    let runner_family = runner_family_for_label(&session.target);
+    // 运行器家族必须由 CanonicalTarget 的 profile 推导；按标签字符串猜测会把
+    // `wasm32-node-unknown-wasm` 这类完整三元组误判为 Ovm，进而静默换成错误的宿主命令。
+    let runner_family = canonical.to_profile(None).runner_family();
     let template = match resolve_runner_template(workspace, &canonical, runner_family, cli_runners, function_name) {
         Ok(t) => t,
         Err(error) => return RunOutcome { success: false, is_compile_error: true, error: Some(error.to_string()) },
@@ -320,17 +322,6 @@ fn describe_runnable_artifacts(session: &ExternalTestSession) -> String {
 struct RunnerTemplate {
     command: String,
     args: Vec<String>,
-}
-
-fn runner_family_for_label(label: &str) -> RunnerFamily {
-    match label.to_ascii_lowercase().as_str() {
-        "clr" => RunnerFamily::Clr,
-        "jvm" => RunnerFamily::Jvm,
-        "node" => RunnerFamily::Node,
-        "legion" => RunnerFamily::Ovm,
-        "wasi" => RunnerFamily::Wasi,
-        _ => RunnerFamily::Ovm,
-    }
 }
 
 fn resolve_runner_template(
