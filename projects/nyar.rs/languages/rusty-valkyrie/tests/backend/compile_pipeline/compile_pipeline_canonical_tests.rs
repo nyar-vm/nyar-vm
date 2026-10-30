@@ -1,10 +1,9 @@
-#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar_types::{CanonicalOperation, CanonicalPrimitiveType, CanonicalTypeKind, ImportIndex, ItemId, ItemInstanceId};
 use rusty_valkyrie::{
     MirConstant, MirFunction, MirOperand, MirOperation, MirTerminator, MirValueOrigin,
-    compile_pipeline::canonical_program_from_semantic_mir,
+    compiler::emitter::pipeline::canonical_program_from_semantic_mir,
     mir::{AggregateLayoutPlan, MirBlock, MirBlockRef, MirExternalCallContract, MirInstruction, MirModule, MirValue, MirValueRef},
-    types::{Identifier, NamePath, compiler::hir::ValkyrieType},
+    types::{Identifier, NamePath, hir::ValkyrieType},
 };
 use std::collections::BTreeMap;
 
@@ -125,7 +124,6 @@ fn producer_carries_export_and_entry_contracts_by_callable_identity() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn source_entry_contract_rejects_missing_reordered_and_invalid_parameters() {
     let output = rusty_valkyrie::ValkyrieCompiler::default()
         .compile_source_to_program("micro select(value: bool, other: i32) -> bool { return value }")
@@ -147,7 +145,8 @@ fn source_entry_contract_rejects_missing_reordered_and_invalid_parameters() {
     duplicate_origin.functions[0].values.push(module.functions[0].values[0].clone());
     let mut wrong_type = module.clone();
     let value = wrong_type.functions[0].blocks[0].parameters[0];
-    wrong_type.functions[0].value_types.insert(value, ValkyrieType::Unit);
+    // 用表内已知的另一声明类型制造参数类型不一致，避免先触发 CAN014 未知类型门禁而绕过入口合同检查。
+    wrong_type.functions[0].value_types.insert(value, ValkyrieType::Integer32 { signed: true });
     for invalid in [missing, reordered, invalid_origin, duplicate_origin, wrong_type] {
         let error = canonical_program_from_semantic_mir(&invalid).expect_err("不一致入口不得通过删除参数修复");
         assert_eq!(error.records[0].code, "CAN032");
@@ -162,11 +161,12 @@ fn producer_rejects_unresolved_callable_without_name_fallback() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn producer_rejects_missing_compiler_callable_identity() {
     let mut module =
         module_with(MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) }, None, BTreeMap::new());
-    module.callable_symbols.clear();
+    // 重构后 callable identity 是节点 `instance`；`callable_symbols` 仅为诊断表，清空它不构成身份缺失
+    // （同文件 `source_instances_reach_canonical_without_a_name_binding_table` 已锁定该方向）。
+    module.functions[0].instance = None;
     let error = canonical_program_from_semantic_mir(&module).expect_err("缺失 Compiler callable identity 必须失败");
     assert_eq!(error.records[0].code, "CAN034");
 }
@@ -192,7 +192,7 @@ fn producer_rejects_semantic_mir_lowering_diagnostics() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: singleton 聚合的 declaration ItemId 由前端 MIR lowering 生产（src/compiler/mir/singleton.rs 未冻结该事实，CAN018）；归属 singleton 生命周期组，canonical 生产者不得代造"]
 fn producer_carries_singleton_lifecycle_contract() {
     let output = rusty_valkyrie::ValkyrieCompiler::default()
         .compile_source_to_program(
@@ -209,10 +209,14 @@ fn producer_carries_singleton_lifecycle_contract() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn producer_binds_external_callable_to_import_index_and_signature() {
-    let mut module =
-        module_with(MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) }, None, BTreeMap::new());
+    // canonical 校验要求 `LoadConstant` 恰好一个结果，夹具函数需带完整结果合同。
+    let result = MirValueRef(0);
+    let mut module = module_with(
+        MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },
+        Some(result),
+        BTreeMap::from([(result, ValkyrieType::Unit)]),
+    );
     module.external_calls.push(MirExternalCallContract {
         declaration: Some(ItemId::from_index(1).unwrap()),
         instance: Some(ItemInstanceId::from_index(1).unwrap()),
@@ -221,6 +225,9 @@ fn producer_binds_external_callable_to_import_index_and_signature() {
         parameter_types: vec![ValkyrieType::Boolean],
         return_type: ValkyrieType::Unit,
     });
+    // 外部导入合同的参数/返回类型也是类型事实来源，必须在建表时收录，canonical 生产者不得代收集。
+    module.type_identities =
+        rusty_valkyrie::compiler::mir::ssa::type_identity_table(&module.functions, &module.external_calls, &module.structs, &module.sum_types);
 
     let program = canonical_program_from_semantic_mir(&module).expect("external declaration has a complete import contract");
     let import = ImportIndex::from_index(0).unwrap();
@@ -612,11 +619,20 @@ fn null_intrinsic_operations_canonicalize_without_symbol_call() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn i32_pow_while_loop_canonicalizes_with_mutable_locals() {
     rusty_valkyrie::ValkyrieCompiler::default()
         .compile_source_to_program(
-            r#"
+            r#"[primitive("core::primitive::i32")]
+structure i32 { }
+
+imply i32 {
+    infix `>`(self, rhs: Self): bool { return true }
+    infix `%`(self, rhs: Self): Self { return rhs }
+    infix `==`(self, rhs: Self): bool { return true }
+    infix `*`(self, rhs: Self): Self { return rhs }
+    infix `/`(self, rhs: Self): Self { return rhs }
+}
+
 micro __i32_pow(lhs: i32, rhs: i32): i32 {
     let mut base: i32 = lhs
     let mut exp: i32 = rhs
