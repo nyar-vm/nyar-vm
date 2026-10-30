@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use nyar_types::{
     combined_content_hash,
-    compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink},
+    compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind},
 };
 
 use crate::compiler::input::CompilerSourceGroup;
@@ -114,11 +114,31 @@ pub fn plan_semantic_closure_with_host_bindings(
     let mut selectors = BTreeSet::<String>::new();
     let mut queue = VecDeque::new();
     let mut touched_files = BTreeSet::<(String, String)>::new();
+    // 测试入口身份就是测试名本身（run contract 的 `logical_entry`）：重名无法归属结果，
+    // 必须在闭包边界结构化失败，而不是让下游择一执行。
+    let mut test_entries = BTreeMap::<String, Vec<String>>::new();
+    let mut test_entry_names = Vec::new();
+    for group in groups.iter() {
+        for (path, _) in group.files.iter() {
+            let Some(indexed) = indexed_files.get(&(group.dependency_key.to_string(), path.clone()))
+            else {
+                continue;
+            };
+            for entry in &indexed.declarations {
+                if entry.entry_point == Some(EntryPointKind::Test) {
+                    test_entries.entry(entry.key.name.clone()).or_default().push(entry.key.encoded());
+                }
+            }
+        }
+    }
+    if let Some((test_name, declarations)) = test_entries.iter().find(|(_, declarations)| declarations.len() > 1) {
+        return Err(SemanticClosureError::DuplicateTestEntry { test_name: test_name.clone(), declarations: declarations.clone() });
+    }
     for group in groups.iter() {
         if !group.is_entry {
             continue;
         }
-        // 入口组只为显式 `[export]` / `[main]` 声明提供 seed。
+        // 入口组只为显式 `[export]` / `[main]` / `[test]` 声明提供 seed。
         // 「文件属于入口组」或「组顺序末项」都不是需求事实，不能提升组内全部声明。
         let mut seeded = false;
         for (path, _) in group.files.iter() {
@@ -132,6 +152,9 @@ pub fn plan_semantic_closure_with_host_bindings(
             }
             for entry in &indexed.declarations {
                 if entry.entry_point.is_some() {
+                    if entry.entry_point == Some(EntryPointKind::Test) {
+                        test_entry_names.push(entry.key.name.clone());
+                    }
                     queue.push_back(entry.key.clone());
                     seeded = true;
                 }
@@ -241,7 +264,14 @@ pub fn plan_semantic_closure_with_host_bindings(
     }
 
     let digest = compute_closure_digest(&closure_groups, &indexed_files, arch);
-    Ok(SemanticClosure { groups: closure_groups, declaration_index, demanded_declarations: demanded, unindexed_source_files, digest })
+    Ok(SemanticClosure {
+        groups: closure_groups,
+        declaration_index,
+        demanded_declarations: demanded,
+        test_entries: test_entry_names,
+        unindexed_source_files,
+        digest,
+    })
 }
 
 fn enqueue_selected_host_providers(

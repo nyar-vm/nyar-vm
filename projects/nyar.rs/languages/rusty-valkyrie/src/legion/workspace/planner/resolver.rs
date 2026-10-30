@@ -14,6 +14,7 @@ use super::{
         resolve_dependency_source, select_build_target,
     },
     host::collect_host_inventory,
+    closure_demand::{compile_arch_key, test_entry_names},
     source_file_conditions::{filter_semantic_source_groups_for_target, filter_source_files_for_target},
     sources::{
         MAX_SEMANTIC_GROUP_DEPTH, MAX_SEMANTIC_GROUPS, MAX_SOURCE_CLOSURE_FILES, add_distribution_default_dependencies, canonicalize_lossy,
@@ -284,6 +285,8 @@ impl WorkspaceResolver {
                 build_target,
                 artifact_kind: manifest.artifact,
                 dependencies,
+                is_test: false,
+                test_entries: Vec::new(),
             },
         })
     }
@@ -320,19 +323,25 @@ impl WorkspaceResolver {
 
         let mut visited = BTreeSet::new();
         let mut source_files = self.collect_source_closure(&project_dir, &manifest, &build_target, &mut visited, true)?;
-        let mut test_files = collect_test_v_files(&project_dir)?;
-        source_files.append(&mut test_files);
-        source_files.sort();
-        source_files.dedup();
+        source_files = filter_source_files_for_target(source_files, request.target, Some(&request.enabled_features))?;
 
         let semantic_source_groups = filter_semantic_source_groups_for_target(
             self.collect_semantic_source_groups(&project_dir, &manifest, &build_target)?,
             request.target,
             Some(&request.enabled_features),
         )?;
-        let source_files = filter_source_files_for_target(source_files, request.target, Some(&request.enabled_features))?;
+        // 测试语义组：入口组纳入该包的 `source/` 与 `test/` 文件。编译只吃这个组，
+        // 测试声明才能进入语义闭包并生成 run contract；`source_files`（哈希输入）
+        // 与语义组文件集合必须一致，否则缓存键与真实编译输入会分叉。
+        let mut semantic_source_groups = semantic_source_groups;
+        let test_files = filter_source_files_for_target(collect_test_v_files(&project_dir)?, request.target, Some(&request.enabled_features))?;
+        append_test_files_to_entry_group(&mut semantic_source_groups, &test_files, &manifest.name)?;
+        source_files.extend(test_files);
+        source_files.sort();
+        source_files.dedup();
         let host_inventory =
             host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
+        let test_entries = test_entry_names(&semantic_source_groups, compile_arch_key(&build_target.target))?;
 
         Ok((
             BuildPlan {
@@ -355,6 +364,8 @@ impl WorkspaceResolver {
                     build_target,
                     artifact_kind: manifest.artifact,
                     dependencies,
+                    is_test: true,
+                    test_entries,
                 },
             },
             mode,
@@ -569,6 +580,8 @@ impl WorkspaceResolver {
                 build_target,
                 artifact_kind: manifest.artifact,
                 dependencies,
+                is_test: false,
+                test_entries: Vec::new(),
             },
         })
     }
@@ -692,6 +705,26 @@ impl WorkspaceResolver {
             reason: "missing install path".to_string(),
         })
     }
+}
+
+/// 把测试源文件并入测试构建的入口语义组；缺入口组是结构化失败而非静默丢弃。
+///
+/// 测试声明只在 `test/` 文件里，装配层若只把测试文件并入哈希输入而不并入语义组，
+/// 闭包永远看不到它们：测试「编译失败」会被误报成 0 通过。
+fn append_test_files_to_entry_group(
+    groups: &mut [PlannedSemanticSourceGroup],
+    test_files: &[PathBuf],
+    project: &str,
+) -> PlannerResult<()> {
+    let Some(group) = groups.iter_mut().find(|group| group.is_entry)
+    else {
+        return Err(PlannerError::MissingTestEntryGroup { project: project.to_string() });
+    };
+    let extra_files = test_files.iter().filter(|path| !group.source_files.contains(path)).cloned().collect::<Vec<_>>();
+    group.source_files.extend(extra_files);
+    group.source_files.sort();
+    group.source_files.dedup();
+    Ok(())
 }
 
 fn host_inventory_for_groups(

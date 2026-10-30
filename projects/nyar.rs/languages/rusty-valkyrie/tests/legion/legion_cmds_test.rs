@@ -117,6 +117,86 @@ fn test_command_writes_html_report() {
 }
 
 #[test]
+fn test_plan_merges_test_files_into_entry_semantic_group() {
+    let fixture = create_smoke_project_with_manifest(
+        "legion-test-group",
+        r#"{
+    name: "group_app",
+    auto_link: { core: false, std: false },
+    build: [ { target: "ovm" } ]
+}
+"#,
+        r#"micro main() -> i64 {
+    return 0
+}
+"#,
+    );
+    write_test_suite(&fixture.project_dir);
+    let workspace = WorkspaceResolver::discover_for_project(&fixture.project_dir).expect("discover workspace");
+    let target = parse_target_label("ovm").unwrap();
+    let (plan, _mode) = workspace
+        .build_test_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target, output_dir: None, enabled_features: Default::default() })
+        .expect("test plan generation");
+
+    assert!(plan.project.is_test, "test plan must be marked as a test build");
+    let entry_group = plan.project.semantic_source_groups.iter().find(|group| group.is_entry).expect("entry semantic group");
+    assert!(
+        entry_group.source_files.iter().any(|path| path.ends_with(std::path::Path::new("test").join("suite.v"))),
+        "entry group must compile the test sources: {:?}",
+        entry_group.source_files
+    );
+    assert!(
+        entry_group.source_files.iter().any(|path| path.ends_with(std::path::Path::new("source").join("main.v"))),
+        "entry group must keep the project sources: {:?}",
+        entry_group.source_files
+    );
+    assert_eq!(plan.project.test_entries, vec!["add_two".to_string(), "always_pass".to_string()]);
+    assert!(plan.project.source_files.iter().any(|path| path.ends_with(std::path::Path::new("test").join("suite.v"))));
+}
+
+#[test]
+fn test_plan_rejects_duplicate_test_entry_names() {
+    let fixture = create_smoke_project_with_manifest(
+        "legion-test-duplicate",
+        r#"{
+    name: "duplicate_app",
+    auto_link: { core: false, std: false },
+    build: [ { target: "ovm" } ]
+}
+"#,
+        r#"micro main() -> i64 {
+    return 0
+}
+"#,
+    );
+    let test_dir = fixture.project_dir.join("test");
+    fs::create_dir_all(&test_dir).unwrap();
+    fs::write(
+        test_dir.join("suite.v"),
+        r#"[test]
+micro repeated_name() -> i64 {
+    return 0
+}
+
+[test]
+micro repeated_name() -> i64 {
+    return 1
+}
+"#,
+    )
+    .unwrap();
+
+    let workspace = WorkspaceResolver::discover_for_project(&fixture.project_dir).expect("discover workspace");
+    let target = parse_target_label("ovm").unwrap();
+    let error = workspace
+        .build_test_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target, output_dir: None, enabled_features: Default::default() })
+        .expect_err("duplicate test names must not enter a build plan");
+    let message = error.to_string();
+    assert!(message.contains("declared more than once"), "unexpected diagnostic: {message}");
+    assert!(message.contains("repeated_name"), "diagnostic must name the duplicated test: {message}");
+}
+
+#[test]
 fn test_filter_skips_non_matching() {
     if !valkyrie_v_root_configured() {
         return;
