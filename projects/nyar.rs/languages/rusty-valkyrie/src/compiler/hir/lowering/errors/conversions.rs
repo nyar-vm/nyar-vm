@@ -142,6 +142,9 @@ impl std::fmt::Display for HirError {
             Self::RefutableLetPattern { pattern, .. } => {
                 write!(f, "refutable pattern `{pattern}` is not allowed in a `let` binding, use `if let` or `case` instead")
             }
+            Self::LetInitializerTypeMismatch { actual, expected, .. } => {
+                write!(f, "`let` initializer type `{actual}` is incompatible with the declared type `{expected}`")
+            }
             Self::SemanticCheckViolations { checks, .. } => {
                 write!(f, "semantic checks rejected the module")?;
                 for check in checks {

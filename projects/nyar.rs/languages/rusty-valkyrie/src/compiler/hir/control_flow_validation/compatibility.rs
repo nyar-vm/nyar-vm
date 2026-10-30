@@ -38,7 +38,7 @@ pub fn control_flow_value_type_compatible_with_primitives(
     expected == actual
         || matches!(expected, ValkyrieType::AutoType)
         || matches!(actual, ValkyrieType::AutoType)
-        || (is_integer_type(expected) && is_integer_type(actual))
+        || integer_carriers_share_identity(expected, actual)
         || primitive_named_equivalent(expected, actual)
         || array_types_compatible(expected, actual)
         || nullable_return_compatible(expected, actual)
@@ -48,32 +48,34 @@ pub fn control_flow_value_type_compatible_with_primitives(
 
 /// 检查两个类型是否是同一个 primitive numeric 的不同表示形式：
 /// `Named("i32")` ↔ `Integer32 { .. }`、`Named("f64")` ↔ `Float64` 等。
+///
+/// 身份键带上有符号性：`i32` 与 `u32` 是同一宽度的不同名义类型，不得因表示形式合并。
 fn primitive_named_equivalent(a: &ValkyrieType, b: &ValkyrieType) -> bool {
-    fn offset_of(ty: &ValkyrieType) -> Option<u32> {
+    fn identity_of(ty: &ValkyrieType) -> Option<(u32, Option<bool>)> {
         Some(match ty {
-            ValkyrieType::Boolean => 0,
-            ValkyrieType::Integer8 { .. } => 1,
-            ValkyrieType::Integer16 { .. } => 2,
-            ValkyrieType::Integer32 { .. } => 3,
-            ValkyrieType::Integer64 { .. } => 4,
-            ValkyrieType::Integer128 { .. } => 5,
-            ValkyrieType::Float32 => 6,
-            ValkyrieType::Float64 => 7,
+            ValkyrieType::Boolean => (0, None),
+            ValkyrieType::Integer8 { signed } => (1, Some(*signed)),
+            ValkyrieType::Integer16 { signed } => (2, Some(*signed)),
+            ValkyrieType::Integer32 { signed } => (3, Some(*signed)),
+            ValkyrieType::Integer64 { signed } => (4, Some(*signed)),
+            ValkyrieType::Integer128 { signed } => (5, Some(*signed)),
+            ValkyrieType::Float32 => (6, None),
+            ValkyrieType::Float64 => (7, None),
             ValkyrieType::Named(name) => match name.as_str() {
-                "boolean" | "Bool" | "bool" => 0,
-                "i8" => 1,
-                "i16" => 2,
-                "i32" | "int" | "Int" => 3,
-                "i64" | "long" | "Long" => 4,
-                "i128" => 5,
-                "f32" | "float" | "Float" => 6,
-                "f64" | "double" | "Double" => 7,
+                "boolean" | "Bool" | "bool" => (0, None),
+                "i8" => (1, Some(true)),
+                "i16" => (2, Some(true)),
+                "i32" | "int" | "Int" => (3, Some(true)),
+                "i64" | "long" | "Long" => (4, Some(true)),
+                "i128" => (5, Some(true)),
+                "f32" | "float" | "Float" => (6, None),
+                "f64" | "double" | "Double" => (7, None),
                 _ => return None,
             },
             _ => return None,
         })
     }
-    offset_of(a).is_some_and(|off_a| offset_of(b).is_some_and(|off_b| off_a == off_b))
+    identity_of(a).is_some_and(|identity_a| identity_of(b).is_some_and(|identity_b| identity_a == identity_b))
 }
 
 pub fn primitive_boolean_compatible(expected: &ValkyrieType, actual: &ValkyrieType, state: &HirValidationState) -> bool {
@@ -142,6 +144,29 @@ pub fn is_integer_type(ty: &ValkyrieType) -> bool {
             | ValkyrieType::Integer64 { .. }
             | ValkyrieType::Integer128 { .. }
     )
+}
+
+/// 整数 carrier 的互容只承认同一名义身份（ADR 0009/0013）：位宽与有符号性都必须相同。
+///
+/// 不同档位（如 `i32` 与 `i64`、`i32` 与 `u32`）不得因「都是整数」互相顶替。
+/// 整数字面量的宽度由期望类型决定，走 `integer_literal_binds_to`，不在这里放宽。
+fn integer_carriers_share_identity(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
+    if !is_integer_type(expected) || !is_integer_type(actual) {
+        return false;
+    }
+    integer_carrier_identity(expected) == integer_carrier_identity(actual)
+}
+
+/// 整数 carrier 名义身份的构成因子：位宽 + 有符号性。
+fn integer_carrier_identity(ty: &ValkyrieType) -> Option<(u16, bool)> {
+    Some(match ty {
+        ValkyrieType::Integer8 { signed } => (8, *signed),
+        ValkyrieType::Integer16 { signed } => (16, *signed),
+        ValkyrieType::Integer32 { signed } => (32, *signed),
+        ValkyrieType::Integer64 { signed } => (64, *signed),
+        ValkyrieType::Integer128 { signed } => (128, *signed),
+        _ => return None,
+    })
 }
 
 pub fn return_without_value_compatible(expected: &ValkyrieType) -> bool {

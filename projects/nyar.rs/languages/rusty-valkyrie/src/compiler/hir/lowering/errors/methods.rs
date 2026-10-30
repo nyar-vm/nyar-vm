@@ -64,6 +64,7 @@ impl HirError {
             Self::YieldFromItemTypeMismatch { .. } => "valkyrie.hir.yield_from_item_type_mismatch",
             Self::AmbiguousBareNamePattern { .. } => "valkyrie.hir.ambiguous_bare_name_pattern",
             Self::RefutableLetPattern { .. } => "valkyrie.hir.refutable_let_pattern",
+            Self::LetInitializerTypeMismatch { .. } => "valkyrie.hir.let_initializer_type_mismatch",
             Self::SemanticCheckViolations { .. } => "valkyrie.hir.semantic_check_violations",
             Self::CopyDisciplineViolations { .. } => "valkyrie.hir.copy_discipline_violations",
             Self::DuplicateTypeDefinition { .. } => "valkyrie.hir.duplicate_type_definition",
