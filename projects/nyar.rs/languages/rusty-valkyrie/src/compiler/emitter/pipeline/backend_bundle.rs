@@ -50,6 +50,7 @@ pub struct CompilerBuildBundle {
     compiled_program: nyar_types::CompiledProgram,
     artifact_plan: ArtifactPartitionPlan,
     wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
+    test_entry_names: Vec<String>,
 }
 
 impl CompilerBuildBundle {
@@ -70,7 +71,12 @@ pub fn compile_source_groups_to_backend_bundle(
     let compiled_program =
         compiler.compile_source_groups_to_program_with_host_bindings(groups, &context.selected_host_providers, &context.arch)?;
     let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, context.target.clone(), context.clr_suspend_strategy)?;
-    let bundle = CompilerBuildBundle { compiled_program, artifact_plan, wasm_package_kind: context.wasm_package_kind };
+    let bundle = CompilerBuildBundle {
+        compiled_program,
+        artifact_plan,
+        wasm_package_kind: context.wasm_package_kind,
+        test_entry_names: context.test_entry_names.clone(),
+    };
     validate_artifact_surface(&bundle, context.wasm_package_kind)?;
     Ok(bundle)
 }
@@ -132,6 +138,10 @@ impl FrontendBuildBundle for CompilerBuildBundle {
 
     fn wasm_package_kind(&self) -> nyar_emitter::nyar_backend_wasi::WasmPackageKind {
         self.wasm_package_kind
+    }
+
+    fn test_entry_names(&self) -> Vec<String> {
+        self.test_entry_names.clone()
     }
 
     fn assemble_fragment_for_partition(

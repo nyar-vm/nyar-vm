@@ -446,6 +446,15 @@ pub trait FrontendBuildBundle {
     fn wasm_package_kind(&self) -> nyar_backend_wasi::WasmPackageKind {
         nyar_backend_wasi::WasmPackageKind::Binary
     }
+
+    /// 测试构建的 `[test]` 入口名；空表示普通构建。
+    ///
+    /// 名字来自前端语义闭包 seed 的显式 `[test]` 声明身份，Emitter 据此为每个测试
+    /// 生成独立 run contract（`logical_entry` 必须等于该名字），runner 按名字 invoke。
+    /// 禁止用函数名猜测或字符串拼接伪造入口身份。
+    fn test_entry_names(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// 前端提交给驱动层的语义片段。
@@ -684,17 +693,8 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
     let mut reports = Vec::new();
 
     for partition_index in 0..partition_count {
-        let partition_started_at = std::time::Instant::now();
         let partition =
             request.planned_partitions.partition(partition_index).ok_or_else(|| format!("分区索引 `{partition_index}` 超出范围"))?;
-        eprintln!(
-            "[seed-debug] compiling partition {}/{} name={} backend={:?}",
-            partition_index + 1,
-            partition_count,
-            partition.name,
-            backend_family_for_partition(partition),
-        );
-        let lowering_started_at = std::time::Instant::now();
         let fragment = request.bundle.assemble_fragment_for_partition(partition_index)?;
         let host_flavor = request.bundle.target_host_flavor().ok_or_else(|| format!("分区计划缺少目标 host flavor"))?;
         let lowered_input = LoweredBackendInput::from_assembled_fragment(
@@ -705,12 +705,6 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
             &host_flavor,
             request.bundle.wasm_package_kind(),
         )?;
-        eprintln!(
-            "[seed-debug] backend input lowered {}/{} elapsed_ms={}",
-            partition_index + 1,
-            partition_count,
-            lowering_started_at.elapsed().as_millis(),
-        );
         let artifact_base_name = lowered_input.entry_artifact_name().unwrap_or(request.project_name);
         let artifact_name = partition_artifact_name(artifact_base_name, partition, partition_count);
         let options = CompilationOptions {
@@ -720,7 +714,6 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
             optimize: false,
         };
         let driver_input = lowered_input.into_driver_backend_input();
-        eprintln!("[seed-debug] backend input ready {}/{} artifact={}", partition_index + 1, partition_count, artifact_name);
 
         if request.emit_wat_sidecar {
             let _ = write_wasm_wat_sidecar(request.output_dir, &artifact_name, &driver_input);
@@ -728,7 +721,6 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
 
         let requirement =
             request.planned_partitions.backend_requirement(partition_index).ok_or_else(|| format!("分区 `{}` 缺少后端需求", partition.name))?;
-        let backend_started_at = std::time::Instant::now();
         let report = compile_with_bundled_backends(DriverCompileRequest {
             artifact_name: &artifact_name,
             requirement,
@@ -736,18 +728,67 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
             generate_runtime_config: request.generate_runtime_config,
             options: &options,
         })?;
-        eprintln!(
-            "[seed-debug] backend emitted {}/{} elapsed_ms={} total_ms={}",
-            partition_index + 1,
-            partition_count,
-            backend_started_at.elapsed().as_millis(),
-            partition_started_at.elapsed().as_millis(),
-        );
-        eprintln!("[seed-debug] completed partition {}/{} name={}", partition_index + 1, partition_count, partition.name,);
         reports.push((partition.name.clone(), report));
     }
 
-    Ok(merge_partition_reports(reports, primary_partition_name.as_deref()))
+    let mut report = merge_partition_reports(reports, primary_partition_name.as_deref());
+    let test_entry_names = request.bundle.test_entry_names();
+    if !test_entry_names.is_empty() {
+        emit_test_run_contracts(&mut report, request.output_dir, &test_entry_names)?;
+    }
+    Ok(report)
+}
+
+/// 为每个 `[test]` 入口生成独立 run contract。
+///
+/// 所有测试共享同一份 library glue，但每个测试必须有各自可执行的物理入口：
+/// `select_artifact` 对同一物理文件的多条 contract 会判成「artifact has multiple
+/// run contracts」，而 library glue 直接 `node` 运行不执行任何导出，会造成静默假通过。
+/// launcher 只按声明名调用导出的测试函数，不拼接入口名或回退 `main`。
+fn emit_test_run_contracts(report: &mut DriverCompileReport, output_dir: &Path, test_entry_names: &[String]) -> Result<()> {
+    let Some(glue) = report.run_contracts.iter().find(|contract| contract.invocation == "node").map(|contract| contract.physical_entry.clone())
+    else {
+        return Err("测试构建没有可调用的 node glue 产物：拒绝静默跳过测试入口".to_string());
+    };
+    let stem = glue.strip_suffix(".mjs").ok_or_else(|| format!("node glue 产物 `{glue}` 不是 `.mjs`"))?;
+    std::fs::create_dir_all(output_dir).map_err(|error| format!("创建测试 launcher 目录失败: {}: {error}", output_dir.display()))?;
+    let mut contracts = Vec::with_capacity(test_entry_names.len());
+    for (index, test_name) in test_entry_names.iter().enumerate() {
+        let launcher_name = format!("{stem}__test{index}.mjs");
+        let launcher_path = output_dir.join(&launcher_name);
+        let content = format!(
+            "import {{ callExport }} from {};\nawait callExport({});\n",
+            js_string_literal(&format!("./{glue}")),
+            js_string_literal(test_name),
+        );
+        std::fs::write(&launcher_path, content).map_err(|error| format!("写入测试 launcher 失败 {}: {error}", launcher_path.display()))?;
+        contracts.push(DriverRunContract {
+            logical_entry: test_name.clone(),
+            physical_entry: launcher_name.clone(),
+            invocation: "node".to_string(),
+            // 校验命令只做语法检查：`validate` 不得执行测试，否则构建期会跑测试并吞掉失败。
+            validate: format!("node --check {launcher_name}"),
+        });
+    }
+    report.run_contracts = contracts;
+    Ok(())
+}
+
+/// JS 字符串字面量：测试名可能包含空格、引号与非 ASCII 字符，必须转义而不是拼接。
+fn js_string_literal(value: &str) -> String {
+    let mut literal = String::with_capacity(value.len() + 2);
+    literal.push('"');
+    for character in value.chars() {
+        match character {
+            '\\' => literal.push_str("\\\\"),
+            '"' => literal.push_str("\\\""),
+            '\n' => literal.push_str("\\n"),
+            '\r' => literal.push_str("\\r"),
+            _ => literal.push(character),
+        }
+    }
+    literal.push('"');
+    literal
 }
 
 fn entry_artifact_name(entry_operation: &QualifiedName) -> Option<String> {
