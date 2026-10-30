@@ -22,6 +22,7 @@ pub mod publish;
 pub mod report_build;
 pub mod sourcemap;
 pub mod ssg;
+pub mod static_site;
 pub mod tailwind;
 pub mod wasm;
 
