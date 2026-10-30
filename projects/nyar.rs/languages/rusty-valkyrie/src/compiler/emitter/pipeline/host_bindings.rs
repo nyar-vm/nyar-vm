@@ -241,30 +241,71 @@ fn target_owner_name(ty: &ValkyrieType) -> Option<&str> {
     }
 }
 
-/// 将 Resolver 选定的 host provider 绑定应用到已链接的 Semantic MIR。
+/// 将 Resolver 选定的 host provider 绑定应用到已链接的 Semantic MIR，
+/// 并在编译边界执行「已解析 callee」的 fail-closed 门禁。
 #[doc(hidden)]
 pub fn apply_host_provider_bindings(
     module: &mut MirModule,
     dependency_mirs: &[MirModule],
     bindings: &[ResolvedHostProviderBinding],
 ) -> Result<(), ParseError> {
-    for b in bindings {
+    if !bindings.is_empty() {
+        remap_bound_host_contracts(module, dependency_mirs, bindings)?;
     }
-    if bindings.is_empty() {
+    enforce_resolved_host_contract_bindings(module)
+}
+
+/// 编译边界门禁：已解析调用指向未绑定 provider 的 `[host_contract]` 即结构化失败。
+///
+/// 判据是 linked consumer 中的真实 callee，而不是源码闭包的保守超集：
+/// 空 host 链接（`boundary == host` 且无平台标签、无定位片段）是无体合同
+/// 降低后的唯一链接形态；provider 重映射完成后仍有 Call 指向该合同实例，
+/// 说明实现来源缺失，禁止静默编码成空体或默认值。
+/// 闭包提升但从未被可达代码调用的合同不在此失败——链接 BFS 不会把
+/// 不可达成员与合同并入 consumer。
+fn enforce_resolved_host_contract_bindings(module: &MirModule) -> Result<(), ParseError> {
+    let unbound: BTreeMap<ItemInstanceId, &MirExternalCallContract> = module
+        .external_calls
+        .iter()
+        .filter(|contract| {
+            contract.link.matches_boundary("host") && contract.link.platform_tag.is_none() && contract.link.locator_segments.is_empty()
+        })
+        .filter_map(|contract| contract.instance.map(|instance| (instance, contract)))
+        .collect();
+    if unbound.is_empty() {
         return Ok(());
     }
-
-    let modules: Vec<&MirModule> = std::iter::once(&*module).chain(dependency_mirs.iter()).collect();
-    for (i, m) in modules.iter().enumerate() {
-        for f in &m.functions {
-            if let Some(inst) = f.instance {
-            }
-        }
-        for c in &m.external_calls {
-            if let Some(inst) = c.instance {
+    for function in &module.functions {
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                if let MirOperation::Call { callee, arguments } = &instruction.kind {
+                    for operand in std::iter::once(callee).chain(arguments.iter()) {
+                        if let MirOperand::Callable(instance) = operand
+                            && let Some(contract) = unbound.get(instance)
+                        {
+                            return Err(ParseError::Invalid {
+                                message: format!(
+                                    "host contract `{}` (instance `{instance}`) has a resolved call but no host provider is bound",
+                                    contract.symbol
+                                ),
+                                span: None,
+                            });
+                        }
+                    }
+                }
             }
         }
     }
+    Ok(())
+}
+
+/// 按 Resolver 绑定把合同调用重映射到 provider，并安装 provider 定义/导入。
+fn remap_bound_host_contracts(
+    module: &mut MirModule,
+    dependency_mirs: &[MirModule],
+    bindings: &[ResolvedHostProviderBinding],
+) -> Result<(), ParseError> {
+    let modules: Vec<&MirModule> = std::iter::once(&*module).chain(dependency_mirs.iter()).collect();
     let mut plans = Vec::new();
 
     for binding in bindings {
