@@ -7,7 +7,7 @@ use crate::compiler::{semantic::closure::DeclarationKey, syntax::oak::parse_sour
 use nyar::CanonicalTarget;
 
 use super::{
-    capability::{provider_matches_target, provider_required_capabilities, target_host_capability_space},
+    capability::{provider_matches_target, target_host_capability_space},
     condition_eval::{provider_passes_gate_axis, provider_passes_target_axis},
     host_inventory_ast::collect_host_inventory_from_root,
     types::{PlannedHostContract, PlannedHostProvider, PlannedSemanticSourceGroup, PlannerError, PlannerResult},
@@ -72,7 +72,6 @@ fn select_host_providers(
     enabled_features: Option<&std::collections::BTreeSet<String>>,
 ) -> PlannerResult<Vec<PlannedHostProvider>> {
     let available_capabilities = target_host_capability_space(target);
-    let available_list: Vec<String> = available_capabilities.iter().cloned().collect();
     let contracts_by_id: BTreeMap<&str, &PlannedHostContract> = contracts.iter().map(|item| (item.id.as_str(), item)).collect();
     let mut providers_by_contract: BTreeMap<String, Vec<&PlannedHostProvider>> = BTreeMap::new();
     for provider in providers {
@@ -90,16 +89,10 @@ fn select_host_providers(
                 continue;
             }
         }
-        let Some(candidates) = providers_by_contract.get(&contract.id)
-        else {
-            if demanded_declaration_keys.map(|demanded| demanded.contains(&contract.key)).unwrap_or(false) && !contract.has_local_fallback_body
-            {
-                return Err(PlannerError::HostProviderCapabilityMissing {
-                    contract: contract.id.clone(),
-                    providers: Vec::new(),
-                    available_capabilities: available_list.clone(),
-                });
-            }
+        // 需求判定属于编译边界的「已解析 callee」事实，不是闭包保守超集：
+        // 无候选 provider 的合同在这里只是「不选中」，缺实现的失败由
+        // Compiler host binding 阶段按真实调用结构化上报。
+        let Some(candidates) = providers_by_contract.get(&contract.id) else {
             continue;
         };
 
@@ -111,18 +104,11 @@ fn select_host_providers(
             .filter(|provider| provider_matches_target(provider, &available_capabilities, target))
             .collect();
 
+        // 候选存在但都不兼容当前 target 时同样只是「不选中」：
+        // 选择语义（target axis / gate axis / capability 匹配）保持不变，
+        // 合同是否真的被调用由编译边界裁决。
         if compatible.is_empty() {
-            return Err(PlannerError::HostProviderCapabilityMissing {
-                contract: contract.id.clone(),
-                providers: candidates
-                    .iter()
-                    .map(|item| {
-                        let required = provider_required_capabilities(item, target);
-                        format!("{} requires [{}] at {}:{}", item.symbol, required.join(", "), item.source_file.display(), item.line)
-                    })
-                    .collect(),
-                available_capabilities: available_list.clone(),
-            });
+            continue;
         }
 
         if compatible.len() > 1 {
