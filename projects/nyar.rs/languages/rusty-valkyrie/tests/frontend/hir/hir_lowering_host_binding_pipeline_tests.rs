@@ -376,6 +376,9 @@ fn imply_method_host_contract_binds_provider_and_retires_contract_body() {
         .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
         .expect("ImplyMethod 合同绑定 provider 后必须完整编译");
     let canonical = program.canonical();
-    assert!(!canonical.mir.functions.contains_key(&resolved[0].contract_instance), "合同体必须随重映射退役，不得留在编译产物");
+    assert!(
+        resolved[0].contract_instances.iter().all(|instance| !canonical.mir.functions.contains_key(instance)),
+        "合同体与其实例化副本必须随重映射退役，不得留在编译产物"
+    );
     assert!(canonical.mir.functions.contains_key(&resolved[0].provider_instance), "provider 实现必须进入编译产物");
 }

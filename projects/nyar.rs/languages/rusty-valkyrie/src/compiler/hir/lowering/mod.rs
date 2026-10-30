@@ -289,6 +289,12 @@ impl ValkyrieCompiler {
         }
         let resolved_host_bindings = crate::compiler::emitter::pipeline::resolve_host_provider_bindings(&all_hirs, host_bindings)?;
         crate::compiler::emitter::pipeline::apply_host_provider_bindings(&mut final_mir, &mir_groups, &resolved_host_bindings)?;
+        // provider 依赖闭包：链接 BFS 在重映射前不可达 provider，其函数体引用的 wasm 导入
+        // 与本地 helper 不会随定义迁入消费模块。绑定安装后由同一 BFS 再走一遍闭合闭包；
+        // 合同调用已全部改写为 provider 身份，退役合同体不会被重新拉入。
+        if !mir_groups.is_empty() && !resolved_host_bindings.is_empty() {
+            crate::compiler::emitter::pipeline::link_reachable_dependency_mir_with_hir(&mut final_mir, &mir_groups, &all_hirs)?;
+        }
         crate::compiler::emitter::pipeline::compile_linked_semantic_mir(&final_mir).map_err(pipeline_rejected)
     }
 
