@@ -400,6 +400,54 @@ fn split_type_alias_entry_pulls_nominal_definition_file() {
     assert!(std_paths.contains("text/Utf8Text.v"), "alias target nominal must enter body lowering");
 }
 
+/// 名义声明 + 数组字面量的 `let` 触发 `LiteralSequence` 合同成员提升：
+/// `with_length`/`append` witness 体进入需求闭包，供 HIR 构造点按声明身份匹配消费。
+#[test]
+fn collection_literal_let_demands_literal_sequence_contract_members() {
+    let library_source = r#"
+namespace std.collection;
+
+trait LiteralSequence<T> {
+    micro with_length(n: usize): Self
+    micro append(mut self, value: T): unit
+}
+
+class ArrayList<T> {
+    _items: [T]
+    _capacity: usize
+}
+
+imply ArrayList<T>: LiteralSequence<T> {
+    micro with_length(n: usize): Self {
+        return ArrayList { _items: [], _capacity: n }
+    }
+
+    micro append(mut self, value: T): unit {
+        self._capacity = 0
+    }
+}
+"#;
+    let groups = [
+        ("library", false, vec![file("source/collection.v", library_source)]),
+        ("app", true, vec![file("solution.v", "[export] micro run() -> i32 {\n    let a: ArrayList<u32> = [0, 1, 2]\n    return 0\n}")]),
+    ];
+    let closure = plan_from_groups(&groups);
+    let demanded = &closure.demanded_declarations;
+    assert!(
+        demanded
+            .iter()
+            .any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "with_length" && key.owner.as_deref() == Some("ArrayList")),
+        "with_length witness 必须进入需求闭包"
+    );
+    assert!(
+        demanded
+            .iter()
+            .any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "append" && key.owner.as_deref() == Some("ArrayList")),
+        "append witness 必须进入需求闭包"
+    );
+    assert!(closure.groups[0].body_lowering_source_paths.contains("source/collection.v"), "合同 impl 所在文件必须下沉 body");
+}
+
 #[test]
 fn member_owner_link_is_gated_by_owner_group_visibility() {
     let groups = [
