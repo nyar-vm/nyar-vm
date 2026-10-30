@@ -238,8 +238,7 @@ fn freeze_fragment_aggregate_operations(
         }
         // 同一 (type_id, operation) 只冻结一条；链接可能因宿主绑定后补闭包而重跑，
         // 已冻结的操作必须视为已存在，不得重复追加。
-        let mut seen =
-            fragment.aggregate_operations.iter().map(|operation| (operation.type_id, operation.operation)).collect::<BTreeSet<_>>();
+        let mut seen = fragment.aggregate_operations.iter().map(|operation| (operation.type_id, operation.operation)).collect::<BTreeSet<_>>();
         for (concrete, operation, instance) in required {
             let type_id = linked.type_identities.get(&concrete).copied().ok_or_else(|| ParseError::Invalid {
                 message: format!("片段 `{}` 的聚合实例 `{concrete:?}` 不在 Compiler 统一 TypeId 表中", fragment.id),
