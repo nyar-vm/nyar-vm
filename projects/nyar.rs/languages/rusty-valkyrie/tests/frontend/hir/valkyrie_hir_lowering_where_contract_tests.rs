@@ -2,7 +2,7 @@ use rusty_valkyrie::{
     ValkyrieCompiler,
     types::{
         Identifier,
-        hir::{HirAssociatedTypeBinding, HirTraitBound, HirWhereConstraint, ValkyrieType},
+        hir::{HirAssociatedTypeBinding, ValkyrieType},
     },
 };
 

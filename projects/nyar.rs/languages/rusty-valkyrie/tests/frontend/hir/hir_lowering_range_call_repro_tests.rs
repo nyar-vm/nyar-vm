@@ -1,7 +1,6 @@
 use rusty_valkyrie::{
     HirError,
     hir::{lowering::DEFAULT_COMPILE_ARCH, *},
-    types::hir::*,
     *,
 };
 
@@ -501,21 +500,17 @@ micro array_host_set<T>(mut array: [T], ordinal: usize, value: T): unit {
     let mut final_mir = rusty_valkyrie::compiler::mir::MirLowerer::lower_module_semantic(&final_hir);
     let mut defined = std::collections::BTreeSet::new();
     for module in std::iter::once(&final_mir).chain(mir_groups.iter()) {
-        eprintln!("-- mir module functions --");
         for function in &module.functions {
-            eprintln!("  {:?} decl={:?} inst={:?}", function.display_symbol, function.declaration, function.instance);
             if let Some(instance) = function.instance {
                 defined.insert(instance);
             }
         }
         for contract in &module.external_calls {
-            eprintln!("  import {:?} inst={:?}", contract.symbol, contract.instance);
             if let Some(instance) = contract.instance {
                 defined.insert(instance);
             }
         }
     }
-    eprintln!("defined instances: {defined:?}");
     for function in &final_mir.functions {
         for block in &function.blocks {
             for instruction in &block.instructions {

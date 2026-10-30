@@ -2,7 +2,7 @@ use oak_core::Token;
 use oak_valkyrie::lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType};
 use rusty_valkyrie::compiler::hir::lowering::{eval_const_condition, parse_const_loop_range, parse_const_range_text};
 
-fn tokens_from(source: &str, kinds: &[(ValkyrieTokenType, std::ops::Range<usize>)]) -> Vec<Token<ValkyrieTokenType>> {
+fn tokens_from(_source: &str, kinds: &[(ValkyrieTokenType, std::ops::Range<usize>)]) -> Vec<Token<ValkyrieTokenType>> {
     kinds.iter().map(|(kind, span)| Token { kind: *kind, span: oak_core::Range { start: span.start, end: span.end } }).collect()
 }
 
