@@ -145,6 +145,9 @@ impl std::fmt::Display for HirError {
             Self::LetInitializerTypeMismatch { actual, expected, .. } => {
                 write!(f, "`let` initializer type `{actual}` is incompatible with the declared type `{expected}`")
             }
+            Self::AssignToImmutable { name, .. } => {
+                write!(f, "cannot assign to immutable binding `{name}`, declare it with `let mut` to allow reassignment")
+            }
             Self::SemanticCheckViolations { checks, .. } => {
                 write!(f, "semantic checks rejected the module")?;
                 for check in checks {

@@ -29,9 +29,9 @@ use crate::compiler::hir::control_flow_validation::{
         generator_yield_type, integer_literal_binds_to, return_without_value_compatible,
     },
     pattern::{
-        bind_local_type, bind_pattern_type, collect_pattern_bound_names, current_return_type, current_self_type,
-        detect_case_fallthrough_binding_leak, expr_contains_fallthrough, lookup_local_type, pop_local_scope, pop_return_type, push_local_scope,
-        push_return_type, validate_pattern_semantics,
+        PatternBindingFacts, bind_parameter_local, bind_pattern_type, bind_pattern_type_with_facts, collect_pattern_bound_names,
+        current_return_type, current_self_type, detect_case_fallthrough_binding_leak, expr_contains_fallthrough, lookup_local,
+        lookup_local_type, pop_local_scope, pop_return_type, push_local_scope, push_return_type, validate_pattern_semantics,
     },
     state::{HirValidationState, LoopValidationContext, validation_state},
     suspend::{block_contains_yield, function_body_contains_await, function_body_contains_yield, function_is_async},
@@ -55,7 +55,7 @@ pub fn validate_hir_function(function: &HirFunction, state: &mut HirValidationSt
     push_return_type(state, resolve_contextual_type(&function.return_type, state));
     push_local_scope(state);
     for param in &function.params {
-        bind_local_type(state, param.name.name.as_str(), resolve_contextual_type(&param.ty, state));
+        bind_parameter_local(state, param.name.name.as_str(), resolve_contextual_type(&param.ty, state), param.is_mutable);
     }
     for statement in &function.body.statements {
         validate_hir_statement(statement, state)?;
@@ -75,7 +75,7 @@ pub fn validate_hir_function(function: &HirFunction, state: &mut HirValidationSt
 
 pub fn validate_hir_statement(statement: &HirStatement, state: &mut HirValidationState) -> Result<(), HirError> {
     match &statement.kind {
-        HirStatementKind::Let { pattern, initializer, ty, .. } => {
+        HirStatementKind::Let { pattern, initializer, ty, is_mutable } => {
             if let Some(initializer) = initializer {
                 validate_hir_expr(initializer, state, true)?;
             }
@@ -85,7 +85,10 @@ pub fn validate_hir_statement(statement: &HirStatement, state: &mut HirValidatio
             }
             let inferred_type = ty.clone().or_else(|| initializer.as_ref().and_then(|value| infer_static_expr_type(value, state)));
             if let Some(inferred_type) = inferred_type {
-                bind_pattern_type(state, pattern, &inferred_type);
+                // 不可变 `let` 且带初始化：体内赋值是对已绑定值的改值，应拒绝（definitions.md `let x = 10; x = 20`）。
+                // 无初始化 `let`：首次赋值是延迟初始化绑定，合法（definitions.md 延迟初始化例），不收紧。
+                let facts = PatternBindingFacts { is_mutable: *is_mutable, rejects_assignment: !is_mutable && initializer.is_some() };
+                bind_pattern_type_with_facts(state, pattern, &inferred_type, facts);
             }
         }
         HirStatementKind::Expr(expr) => validate_hir_expr(expr, state, false)?,
@@ -251,7 +254,7 @@ pub fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_c
             }
             push_local_scope(&mut lambda_state);
             for param in params {
-                bind_local_type(&mut lambda_state, param.name.name.as_str(), param.ty.clone());
+                bind_parameter_local(&mut lambda_state, param.name.name.as_str(), param.ty.clone(), param.is_mutable);
             }
             validate_hir_block(body, &mut lambda_state, true)?;
             pop_local_scope(&mut lambda_state);
@@ -387,7 +390,18 @@ pub fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_c
                 validate_yield_value(expr, value.as_deref(), state)?;
             }
         }
-        HirExprKind::Assign { value, .. } => validate_hir_expr(value, state, true)?,
+        HirExprKind::Assign { target, value } => {
+            // 只消费声明面登记的绑定事实：不可变 `let`（带初始化）的改值按结构化错误拒绝；
+            // 未解析到局部绑定的目标（形参、全局、非 let 声明位）不在本轮收紧范围。
+            if lookup_local(state, target.as_str()).is_some_and(|binding| binding.rejects_assignment) {
+                return Err(HirError::AssignToImmutable {
+                    name: target.to_string(),
+                    source: control_flow_source(),
+                    span: expr_diagnostic_span(expr),
+                });
+            }
+            validate_hir_expr(value, state, true)?;
+        }
         HirExprKind::Break { label, expr: break_value } => {
             if let Some(break_value) = break_value {
                 let label_str = label.as_ref().map(|it| it.as_str());
