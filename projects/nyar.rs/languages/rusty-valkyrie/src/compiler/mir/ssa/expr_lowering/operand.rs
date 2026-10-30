@@ -390,6 +390,39 @@ impl MirBuilder {
                 self.value_types.insert(array_value, array_type);
                 MirOperand::Value(array_value)
             }
+            HirExprKind::CollectionInit { with_length, append, items, .. } => {
+                // 集合字面量展开：消费 HIR post-binding pass 冻结的两槽调用合同，
+                // 先 `Invoke(with_length, [n])` 得容器临时值，再逐项 `Invoke(append, [tmp, e])`。
+                // 两 callee 身份直接取 HIR 冻结的 `ItemInstanceId`，禁止按名回查、禁止新 opcode；
+                // 指令形态与普通方法调用一致（`mut self` 接收者即首位实参，ByAddress 由后端按
+                // 同一接收者合同投影）。空字面量只发 `with_length(0)`。
+                let Some(with_length_callee) = lower_resolved_callee(with_length)
+                else {
+                    self.diagnostics
+                        .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedCallableIdentity { symbol: with_length.symbol.to_string() });
+                    return MirOperand::Constant(MirConstant::Unit);
+                };
+                let Some(append_callee) = lower_resolved_callee(append)
+                else {
+                    self.diagnostics
+                        .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedCallableIdentity { symbol: append.symbol.to_string() });
+                    return MirOperand::Constant(MirConstant::Unit);
+                };
+                // 长度实参类型取冻结合同首形参（`usize`），与普通调用形参 hint 同一口径。
+                let length_hint = with_length.parameter_types.first().cloned();
+                let length_operand = self.lower_expr_to_operand_with_hint(
+                    &HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(items.len() as i64)), span: expr.span.clone() },
+                    length_hint.as_ref(),
+                );
+                let container = self.push_call_returning(with_length_callee, vec![length_operand], with_length.return_type.clone());
+                // 源序单次求值：逐项 lower 元素并追加；元素形参类型取冻结合同次形参。
+                let element_hint = append.parameter_types.get(1);
+                for item in items {
+                    let item_operand = self.lower_expr_to_operand_with_hint(item, element_hint);
+                    self.push_call_returning(append_callee.clone(), vec![container.clone(), item_operand], append.return_type.clone());
+                }
+                container
+            }
             HirExprKind::TupleLiteral { items } => {
                 let fields = items
                     .iter()
