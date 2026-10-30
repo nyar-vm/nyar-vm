@@ -28,8 +28,8 @@ pub struct CompilerSourceFile {
 /// 装配层交给 Compiler 的有序源码语义组。
 ///
 /// 入口身份是显式事实，不由依赖顺序或「最后一组」推断：只有 `is_entry` 组
-/// 能让其 `[export]` / `[main]` 声明成为闭包 seed。依赖组即使位于末尾也
-/// 不产生入口，缺少 `[export]` / `[main]` 的入口组必须由 frontend 结构化失败。
+/// 能让其 `[export]` / `[main]` / `[test]` 声明成为闭包 seed。依赖组即使位于末尾也
+/// 不产生入口，缺少入口声明的入口组必须由 frontend 结构化失败。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CompilerSourceGroup {
@@ -41,7 +41,7 @@ pub struct CompilerSourceGroup {
     pub sources: Vec<CompilerSourceFile>,
     /// 只允许引用已完成链接的直接依赖身份。
     pub direct_dependencies: Vec<String>,
-    /// 是否为显式入口组；入口组的闭包 seed 只来自组内 `[export]` / `[main]`。
+    /// 是否为显式入口组；入口组的闭包 seed 只来自组内 `[export]` / `[main]` / `[test]`。
     pub is_entry: bool,
 }
 
@@ -63,7 +63,7 @@ impl CompilerSourceGroup {
         self
     }
 
-    /// 显式标记本组为入口组；只有入口组的 `[export]` / `[main]` 能产生闭包 seed。
+    /// 显式标记本组为入口组；只有入口组的 `[export]` / `[main]` / `[test]` 能产生闭包 seed。
     pub fn as_entry(mut self) -> Self {
         self.is_entry = true;
         self
@@ -184,6 +184,8 @@ pub enum EntryPointKind {
     Export,
     /// `[main]`：程序入口。
     Main,
+    /// `[test]`：测试入口；测试语义组内每个测试声明都是独立 run contract 的身份来源。
+    Test,
 }
 
 /// 名字引用路径（`std::collection::hash_utf8` → `["std","collection","hash_utf8"]`）。

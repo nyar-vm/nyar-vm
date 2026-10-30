@@ -178,13 +178,15 @@ fn collect_signature_fields(fields: &[ast::FieldDeclaration], references: &mut R
     }
 }
 
-/// 声明的显式入口注解：`[export]` 优先于 `[main]`；二者都只提供 seed，不改变声明身份。
+/// 声明的显式入口注解：`[export]` 优先于 `[main]`，`[main]` 优先于 `[test]`；
+/// 三者都只提供 seed，不改变声明身份。
 fn entry_point_annotation(annotations: &[ast::Attribute]) -> Option<EntryPointKind> {
     let mut entry_point = None;
     for attribute in annotations {
         match attribute.name.name.as_str() {
             "export" => return Some(EntryPointKind::Export),
             "main" => entry_point = Some(EntryPointKind::Main),
+            "test" if entry_point.is_none() => entry_point = Some(EntryPointKind::Test),
             _ => {}
         }
     }

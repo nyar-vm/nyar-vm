@@ -43,6 +43,11 @@ pub struct SemanticClosure {
     pub declaration_index: BTreeMap<DeclarationKey, DeclarationIndexEntry>,
     /// 入口闭包内被引用的声明身份。
     pub demanded_declarations: BTreeSet<DeclarationKey>,
+    /// 入口组内 `[test]` 声明的名字（保持声明顺序）。
+    ///
+    /// 这是测试 run contract 的 `logical_entry` 唯一来源：名字由显式 `[test]` 声明给出，
+    /// 下游不得按文件或函数名重新猜测。
+    pub test_entries: Vec<String>,
     /// 未能建立声明索引的 inventory 文件（`依赖组::路径` → 失败原因）。
     pub unindexed_source_files: BTreeMap<String, String>,
     /// 闭包稳定摘要。
@@ -68,12 +73,19 @@ pub struct ClosureGroupInput<'a> {
 /// 语义闭包规划的结构化失败。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SemanticClosureError {
-    /// 入口组没有提供任何 `[export]` / `[main]` 声明：不得把整组文件当作可执行程序。
+    /// 入口组没有提供任何 `[export]` / `[main]` / `[test]` 声明：不得把整组文件当作可执行程序。
     MissingEntryDeclaration {
         /// 失败入口组身份。
         dependency_key: String,
         /// 入口组内未能建立索引的文件（路径、原因）；为空表示文件可解析但没有入口注解。
         unindexed_source_files: Vec<(String, String)>,
+    },
+    /// 同一编译内出现重名 `[test]` 入口：测试名是 run contract 身份，重名无法归属结果。
+    DuplicateTestEntry {
+        /// 重名的测试名。
+        test_name: String,
+        /// 命中该名字的声明身份（依赖组::路径::种类::namespace::拥有者::名字）。
+        declarations: Vec<String>,
     },
     /// Resolver 选定的 provider 符号没有命中唯一声明身份；被需求合同不得缺实现。
     HostProviderNotResolved {
@@ -93,7 +105,7 @@ impl std::fmt::Display for SemanticClosureError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MissingEntryDeclaration { dependency_key, unindexed_source_files } => {
-                write!(formatter, "entry source group `{dependency_key}` declares no `[export]` or `[main]` entry")?;
+                write!(formatter, "entry source group `{dependency_key}` declares no `[export]`, `[main]` or `[test]` entry")?;
                 if !unindexed_source_files.is_empty() {
                     write!(formatter, "; unindexed sources:")?;
                     for (path, reason) in unindexed_source_files {
@@ -101,6 +113,9 @@ impl std::fmt::Display for SemanticClosureError {
                     }
                 }
                 Ok(())
+            }
+            Self::DuplicateTestEntry { test_name, declarations } => {
+                write!(formatter, "test entry `{test_name}` is declared more than once: {declarations:?}")
             }
             Self::HostProviderNotResolved { symbol } => {
                 write!(formatter, "host provider `{symbol}` 未在语义源码闭包中解析到唯一声明身份")

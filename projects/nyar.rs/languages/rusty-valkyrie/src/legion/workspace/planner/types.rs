@@ -160,6 +160,12 @@ pub struct PlannedProject {
     pub artifact_kind: crate::legion::workspace::manifest::ProjectArtifactKind,
     /// 已解析的依赖列表。
     pub dependencies: Vec<PlannedDependency>,
+    /// 是否为测试构建（`legion test`）：语义组包含 `test/`，产物按可调用 library 打包。
+    #[serde(default)]
+    pub is_test: bool,
+    /// 入口组 `[test]` 声明名；run contract 的 `logical_entry` 唯一来源。
+    #[serde(default)]
+    pub test_entries: Vec<String>,
 }
 
 /// 完整构建计划：workspace 根、目标工程与输出目录。
@@ -224,6 +230,18 @@ pub enum PlannerError {
     },
     /// 构建计划下没有任何源码文件。
     NoSourceFiles,
+    /// 测试构建计划缺少入口语义组：测试文件无法进入编译闭包。
+    MissingTestEntryGroup {
+        /// 工程名称。
+        project: String,
+    },
+    /// 源码文件无法解析，无法判定其 target/feature 条件。
+    UnparsableSource {
+        /// 源码文件路径。
+        path: PathBuf,
+        /// 解析器给出的原因。
+        message: String,
+    },
     /// Compiler / Emitter 失败（待 `nyar-emitter` 去掉 miette 后改为结构化 `E`）。
     CompileFailed {
         /// 驱动层返回的可显示原因。
@@ -357,6 +375,12 @@ impl Display for PlannerError {
                 write!(f, "找不到项目或脚本 `{}`（需要 `legion.von`、内嵌 `# ```legion` 的 `.v`，或 `solution.v`）", path.display())
             }
             Self::NoSourceFiles => f.write_str("没有找到任何源码文件"),
+            Self::MissingTestEntryGroup { project } => {
+                write!(f, "test build plan for project '{}' has no entry semantic source group", project)
+            }
+            Self::UnparsableSource { path, message } => {
+                write!(f, "cannot parse source `{}`: {message}", path.display())
+            }
             Self::CompileFailed { message } => f.write_str(message),
             Self::MissingWorkspace(path) => write!(f, "cannot locate `legions.von` from {}", path.display()),
             Self::MissingProjectManifest(path) => write!(f, "cannot locate `legion.von` in {}", path.display()),
