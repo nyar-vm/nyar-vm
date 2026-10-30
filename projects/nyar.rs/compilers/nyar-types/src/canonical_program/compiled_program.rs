@@ -92,6 +92,30 @@ pub enum CompiledProgramError {
     },
 }
 
+/// 错误的渲染归错误自身所有：消费方只能拿到结构化字段的稳定文本，不得自己
+/// 枚举变体或转储 Debug 结构。`Canonical` 变体在表示规划先行验证下不可达，
+/// 只保留变体名，避免把另一类型的 Debug 结构漏进诊断。
+impl std::fmt::Display for CompiledProgramError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingAdtRepresentation { nominal } => write!(formatter, "MissingAdtRepresentation(nominal={nominal})"),
+            Self::ExtraAdtRepresentation { nominal } => write!(formatter, "ExtraAdtRepresentation(nominal={nominal})"),
+            Self::MissingSumRepresentation { nominal } => write!(formatter, "MissingSumRepresentation(nominal={nominal})"),
+            Self::ExtraSumRepresentation { nominal } => write!(formatter, "ExtraSumRepresentation(nominal={nominal})"),
+            Self::SumVariantRepresentationMismatch { nominal } => write!(formatter, "SumVariantRepresentationMismatch(nominal={nominal})"),
+            Self::Canonical(_) => write!(formatter, "Canonical(unvalidated canonical MIR)"),
+            Self::MissingValueRepresentation { function, value } => {
+                write!(formatter, "MissingValueRepresentation(function={function}, value={value})")
+            }
+            Self::MissingInvokeRepresentation { instruction } => write!(formatter, "MissingInvokeRepresentation(instruction={instruction})"),
+            Self::ExtraValueRepresentation { function, value } => {
+                write!(formatter, "ExtraValueRepresentation(function={function}, value={value})")
+            }
+            Self::ExtraInvokeRepresentation { instruction } => write!(formatter, "ExtraInvokeRepresentation(instruction={instruction})"),
+        }
+    }
+}
+
 impl CompiledProgram {
     /// 只从完整 CanonicalProgram 与同一程序生成的 RepresentationPlan 构造。
     pub fn new(canonical: CanonicalProgram, representation: RepresentationPlan) -> Result<Self, CompiledProgramError> {
