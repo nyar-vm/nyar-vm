@@ -1,24 +1,24 @@
-//! 高级类型系统扩展：HKT、依赖类型、线性类型与所有权语义。
+//! 高级类型系统扩展：HKT、依赖类型与线性类型。
+//!
+//! 绑定可变性（`let` / `let mut`）的唯一事实所有者是 HIR 控制流验证的声明面登记链
+//! （`compiler::hir::control_flow_validation`）；此处不再保留假装检查的空壳所有权骨架。
 
 pub mod dependent;
 pub mod hkt;
 pub mod linear;
-pub mod ownership;
 
 pub use dependent::{DependentTypeChecker, DependentTypeError};
 pub use hkt::{HktChecker, HktError, TypeConstructor};
 pub use linear::{LinearTypeChecker, LinearTypeError, UsageKind};
-pub use ownership::{OwnershipChecker, OwnershipError, OwnershipMode};
 
 use crate::compiler::types::hir::{HirModule, ValkyrieType};
 
-/// 高级类型检查会话，组合 HKT / 依赖 / 线性 / 所有权四类检查器。
+/// 高级类型检查会话，组合 HKT / 依赖 / 线性三类检查器。
 #[derive(Debug, Default)]
 pub struct AdvancedTypeSession {
     hkt: HktChecker,
     dependent: DependentTypeChecker,
     linear: LinearTypeChecker,
-    ownership: OwnershipChecker,
 }
 
 impl AdvancedTypeSession {
@@ -59,6 +59,4 @@ pub enum AdvancedTypeError {
     Dependent(DependentTypeError),
     /// 线性类型检查错误。
     Linear(LinearTypeError),
-    /// 所有权检查错误。
-    Ownership(OwnershipError),
 }
