@@ -18,3 +18,7 @@ serde = ["dep:serde", "url/serde", "ordered-float/serde"]
 
 [dev-dependencies]
 serde_json = { workspace = true }
+# 自引用 dev-dependency：仅为测试构建启用 serde feature，
+# 使 diagnostic_contract 的 JSON round-trip 用例在 `cargo test -p nyar-types` 下真实执行；
+# 不改变 crate 公开 feature 面（serde 派生仍按设计 feature-gated）。
+nyar-types = { path = ".", features = ["serde"] }
