@@ -1,6 +1,6 @@
 {
     "name": "@nyar/valkyrie",
-    "version": "0.0.19",
+    "version": "0.0.20",
     "description": "Valkyrie language package  - Asgard and Legion commands",
     "type": "module",
     "license": "MIT",
