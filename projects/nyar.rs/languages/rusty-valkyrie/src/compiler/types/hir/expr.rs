@@ -1,7 +1,8 @@
 //! Expression, capture, and capture mode definitions for HIR.
 
 use super::{
-    BuiltinStructureOp, GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent, HirPattern, ValkyrieType,
+    BuiltinStructureOp, GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent, HirPattern,
+    ValkyrieType,
 };
 use crate::compiler::types::{Identifier, NamePath, SourceSpan};
 
@@ -224,6 +225,27 @@ pub enum HirExprKind {
     /// 元组字面量表达式：`(a, b, ...)`。
     TupleLiteral {
         /// 元组元素列表。
+        items: Vec<HirExpr>,
+    },
+    /// 集合字面量构造表达式：由声明期望类型驱动的名义容器构造。
+    ///
+    /// `let a: ArrayList<u32> = [0, 1, 2]` 这类「nominal 声明 + 数组字面量初始值」
+    /// 的绑定在 post-binding 转换 pass 中从 `ArrayLiteral` 降级为本节点：
+    /// 构造事实冻结为两个已解析调用槽——先 `with_length(n)`（n 为字面量项数）
+    /// 预留容量，再逐项 `append`。两槽只携带 `imply` 成员的声明身份与调用合同；
+    /// 实例身份由既有单态化固定点（`instantiate_generic_callables`）铸造回填，
+    /// 禁止后置按名字回查。禁止先构造 `Array` 再隐式转换；
+    /// `Array`/`[T]` 不实现本合同，仍走 `ArrayLiteral` 路径。
+    CollectionInit {
+        /// 容器类型：`let` 声明的名义类型。
+        container_type: ValkyrieType,
+        /// 元素类型：`LiteralSequence` 合同 trait 实参经目标代入闭合后的类型。
+        element_type: ValkyrieType,
+        /// `with_length(n)` 构造槽；参数为字面量项数。
+        with_length: Box<HirResolvedCall>,
+        /// `append` 元素槽；逐项作用于累积容器。
+        append: Box<HirResolvedCall>,
+        /// 字面量项列表。
         items: Vec<HirExpr>,
     },
     /// 字段访问表达式：`object.field`。

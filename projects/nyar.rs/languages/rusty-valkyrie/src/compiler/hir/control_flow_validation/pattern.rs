@@ -339,7 +339,10 @@ pub fn collect_expr_variable_names(expr: &HirExpr, names: &mut BTreeSet<String>)
                 collect_expr_variable_names(&arg.value, names);
             }
         }
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => {
+        HirExprKind::Construct { args, .. }
+        | HirExprKind::ArrayLiteral { items: args }
+        | HirExprKind::TupleLiteral { items: args }
+        | HirExprKind::CollectionInit { items: args, .. } => {
             for arg in args {
                 collect_expr_variable_names(arg, names);
             }
@@ -474,9 +477,10 @@ pub fn expr_contains_fallthrough(expr: &HirExpr) -> bool {
         HirExprKind::Call { callee, args, .. } => {
             expr_contains_fallthrough(callee) || args.iter().any(|arg| expr_contains_fallthrough(&arg.value))
         }
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => {
-            args.iter().any(expr_contains_fallthrough)
-        }
+        HirExprKind::Construct { args, .. }
+        | HirExprKind::ArrayLiteral { items: args }
+        | HirExprKind::TupleLiteral { items: args }
+        | HirExprKind::CollectionInit { items: args, .. } => args.iter().any(expr_contains_fallthrough),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }

@@ -320,7 +320,9 @@ fn resolve_expr_calls_at(
         HirExprKind::ArrayNew { length, .. } => {
             resolve_expr_calls(length, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
         }
-        HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => {
+        HirExprKind::ArrayLiteral { items: args }
+        | HirExprKind::TupleLiteral { items: args }
+        | HirExprKind::CollectionInit { items: args, .. } => {
             for arg in args {
                 resolve_expr_calls(arg, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
             }

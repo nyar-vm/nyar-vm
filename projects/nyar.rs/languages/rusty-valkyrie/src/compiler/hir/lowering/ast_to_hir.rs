@@ -90,6 +90,10 @@ impl AstToHir {
         freeze_module_generic_binders(&mut hir);
         crate::compiler::hir::lowering::generic_binders::bind_declared_nominal_types(&mut hir)?;
         bind_trait_declarations(&mut hir)?;
+        // 集合字面量转换跑在 trait 绑定之后、调用解析之前：
+        // 字面量项仍需 `resolve_hir_calls` 解析调用，而 `CollectionInit` 两槽的
+        // 声明身份已冻结、实例留空，交由随后的单态化固定点自然铸造。
+        crate::compiler::hir::lowering::collection_init::transform_collection_literals(&mut hir)?;
         resolve_hir_calls(&mut hir);
         crate::compiler::hir::lowering::instantiate_generic_callables(std::slice::from_mut(&mut hir));
         validate_extractor_patterns(&hir)?;

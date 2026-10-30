@@ -197,7 +197,10 @@ pub fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_c
                 validate_future_control_operand(expr, value, state)?;
             }
         }
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => {
+        HirExprKind::Construct { args, .. }
+        | HirExprKind::ArrayLiteral { items: args }
+        | HirExprKind::TupleLiteral { items: args }
+        | HirExprKind::CollectionInit { items: args, .. } => {
             for arg in args {
                 validate_hir_expr(arg, state, true)?;
             }
@@ -565,6 +568,8 @@ pub fn infer_static_expr_type(expr: &HirExpr, state: &HirValidationState) -> Opt
         HirExprKind::TryScope { is_optional, is_forced, result_type, body } => {
             infer_try_scope_type(*is_optional, *is_forced, result_type.as_ref(), body, state)
         }
+        // 集合字面量构造结果的静态类型即容器类型。
+        HirExprKind::CollectionInit { container_type, .. } => Some(container_type.clone()),
         _ => None,
     }
 }

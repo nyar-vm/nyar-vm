@@ -65,6 +65,7 @@ impl HirError {
             Self::AmbiguousBareNamePattern { .. } => "valkyrie.hir.ambiguous_bare_name_pattern",
             Self::RefutableLetPattern { .. } => "valkyrie.hir.refutable_let_pattern",
             Self::LetInitializerTypeMismatch { .. } => "valkyrie.hir.let_initializer_type_mismatch",
+            Self::CollectionLiteralContractMissing { .. } => "valkyrie.hir.collection_literal_contract_missing",
             Self::AssignToImmutable { .. } => "valkyrie.hir.assign_to_immutable",
             Self::SemanticCheckViolations { .. } => "valkyrie.hir.semantic_check_violations",
             Self::CopyDisciplineViolations { .. } => "valkyrie.hir.copy_discipline_violations",

@@ -24,6 +24,7 @@ use crate::compiler::{
 
 mod ast_to_hir;
 mod attribute_lowering;
+mod collection_init;
 mod contract_validation;
 mod diagnostics;
 pub mod errors;
@@ -293,7 +294,8 @@ impl ValkyrieCompiler {
             )?;
         }
         let resolved_host_bindings = crate::compiler::emitter::pipeline::resolve_host_provider_bindings(&all_hirs, host_bindings)?;
-        let host_binding_remaps = crate::compiler::emitter::pipeline::apply_host_provider_bindings(&mut final_mir, &mir_groups, &resolved_host_bindings)?;
+        let host_binding_remaps =
+            crate::compiler::emitter::pipeline::apply_host_provider_bindings(&mut final_mir, &mir_groups, &resolved_host_bindings)?;
         // provider 依赖闭包：链接 BFS 在重映射前不可达 provider，其函数体引用的 wasm 导入
         // 与本地 helper 不会随定义迁入消费模块。绑定安装后由同一 BFS 再走一遍闭合闭包；
         // 合同调用已全部改写为 provider 身份，退役合同体不会被重新拉入。
@@ -356,6 +358,10 @@ impl ValkyrieCompiler {
             freeze_module_generic_binders(&mut hir_module);
             bind_declared_nominal_types(&mut hir_module)?;
             trait_binding::bind_trait_declarations(&mut hir_module)?;
+            // 集合字面量转换跑在 trait 绑定之后、本组导出快照与调用解析之前：
+            // 依赖组的合同事实已经随 `dependency_exports` 进入 `imported_semantic_exports`，
+            // 而本组 export 尚未构建，转换只改体内表达式、不扰动声明面导出事实。
+            collection_init::transform_collection_literals(&mut hir_module)?;
             let export = HirDependencySemanticExport {
                 module: NamePath::new(vec![Identifier::new(&group.name)]),
                 functions: exportable_dependency_functions(&hir_module.functions),

@@ -28,9 +28,10 @@ mod state;
 mod suspend;
 mod validate;
 
-pub(crate) use state::HirValidationState;
+pub(crate) use state::{HirValidationState, boolean_declarations_in_module, numeric_declarations_in_module};
 
 pub use compatibility::control_flow_value_type_compatible;
+pub(crate) use compatibility::display_type;
 pub use module_walk::validate_control_flow_module;
 pub use suspend::{
     function_body_contains_await, function_body_contains_block_on, function_body_contains_yield, function_can_effect_handle,

@@ -162,6 +162,9 @@ impl From<HirError> for DiagnosticRow {
                 row =
                     row.with_arg("actual", DiagnosticArg::String(actual.clone())).with_arg("expected", DiagnosticArg::String(expected.clone()));
             }
+            HirError::CollectionLiteralContractMissing { type_label, .. } => {
+                row = row.with_arg("type_label", DiagnosticArg::TypeName(type_label.clone()));
+            }
             HirError::AssignToImmutable { name, .. } => {
                 row = row.with_arg("name", DiagnosticArg::String(name.clone()));
             }
@@ -497,6 +500,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::AmbiguousBareNamePattern { source, .. } => source.clone(),
         HirError::RefutableLetPattern { source, .. } => source.clone(),
         HirError::LetInitializerTypeMismatch { source, .. } => source.clone(),
+        HirError::CollectionLiteralContractMissing { source, .. } => source.clone(),
         HirError::AssignToImmutable { source, .. } => source.clone(),
         HirError::SemanticCheckViolations { source, .. } => source.clone(),
         HirError::CopyDisciplineViolations { source, .. } => source.clone(),
@@ -562,6 +566,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::AmbiguousBareNamePattern { span, .. } => span.clone(),
         HirError::RefutableLetPattern { span, .. } => span.clone(),
         HirError::LetInitializerTypeMismatch { span, .. } => span.clone(),
+        HirError::CollectionLiteralContractMissing { span, .. } => span.clone(),
         HirError::AssignToImmutable { span, .. } => span.clone(),
         HirError::SemanticCheckViolations { span, .. } => span.clone(),
         HirError::CopyDisciplineViolations { span, .. } => span.clone(),

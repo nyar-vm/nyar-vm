@@ -247,6 +247,8 @@ pub fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) 
             let element_types = items.iter().map(|item| infer_expr_type(item, locals)).collect::<Option<Vec<_>>>()?;
             Some(ValkyrieType::Tuple(element_types))
         }
+        // 集合字面量构造结果的静态类型即容器类型。
+        HirExprKind::CollectionInit { container_type, .. } => Some(container_type.clone()),
         HirExprKind::Construct { resolved, .. } => resolved.as_ref().map(|call| call.return_type.clone()),
         HirExprKind::If { then_branch, else_branch, .. } | HirExprKind::IfLet { then_branch, else_branch, .. } => {
             let then_type = then_branch.expr.as_ref().and_then(|expr| infer_expr_type(expr, locals))?;

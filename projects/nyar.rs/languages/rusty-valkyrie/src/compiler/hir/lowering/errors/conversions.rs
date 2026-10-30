@@ -145,6 +145,9 @@ impl std::fmt::Display for HirError {
             Self::LetInitializerTypeMismatch { actual, expected, .. } => {
                 write!(f, "`let` initializer type `{actual}` is incompatible with the declared type `{expected}`")
             }
+            Self::CollectionLiteralContractMissing { type_label, .. } => {
+                write!(f, "collection literal requires a `LiteralSequence` contract impl for the declared type `{type_label}`")
+            }
             Self::AssignToImmutable { name, .. } => {
                 write!(f, "cannot assign to immutable binding `{name}`, declare it with `let mut` to allow reassignment")
             }
