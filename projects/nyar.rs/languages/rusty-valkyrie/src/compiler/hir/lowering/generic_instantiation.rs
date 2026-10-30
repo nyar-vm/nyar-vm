@@ -45,9 +45,12 @@ type Substitution = BTreeMap<GenericBinderId, ValkyrieType>;
 /// 把仍指向 trait 方法槽的 witness 换成具体 impl 成员的 (声明下标, 代入)。
 ///
 /// witness 冻结的是「trait 方法槽 + 接收者静态类型」。`self` 类型具体化后，哪个
-/// impl 提供该成员只能由 (trait 声明, 成员名, 成员签名统一) 共同决定，且候选必须
-/// 唯一。任何一项不成立都保持 witness，让后端按冻结身份失败；不得在后端按签名或
-/// 名字猜一个「看起来合适」的实现（`Hash::hash` 被猜成 `i64.infix -` 就是这么来的）。
+/// impl 提供该成员只能由 (trait 声明, 成员名, impl owner 与接收者实例同一, 成员签名
+/// 统一) 共同决定，且候选必须唯一。owner 同一不能省：静态 trait 方法的
+/// `parameter_types` 不含接收者，签名统一本身约束不到 owner，只按成员名 + 签名
+/// 匹配会让同名成员跨 owner 命中。任何一项不成立都保持 witness，让后端按冻结身份
+/// 失败；不得回退首个候选或按名字猜一个「看起来合适」的实现（`Hash::hash` 被猜成
+/// `i64.infix -` 就是这么来的）。
 fn discharge_trait_witness(
     declarations: &BTreeMap<u32, CallableDeclaration>,
     trait_members: &BTreeMap<u32, String>,
@@ -66,19 +69,52 @@ fn discharge_trait_witness(
         if declaration.function.name.as_str() != member_name.as_str() {
             continue;
         }
-        let Some(substitution) = derive_substitution(declaration, call)
+        let Some(substitution) = derive_witness_substitution(declaration, call)
         else {
             continue;
         };
-        if substitution.values().any(has_unresolved_generic_arguments) {
-            continue;
-        }
         if matched.is_some() {
             return None;
         }
         matched = Some((declaration.index, substitution));
     }
     matched
+}
+
+/// witness 候选的精确代入：impl owner 必须与 witness 冻结的接收者实例结构化同一，
+/// 成员签名必须与调用合同逐项等长统一，二者共用一张代入表以避免各自自洽。
+///
+/// 不做等长检查时，形参个数不同的候选会退化成「只按返回类型匹配」，这正是跨 owner
+/// 错选 witness 的来源；因此这里对不等长候选直接判不合格。
+fn derive_witness_substitution(declaration: &CallableDeclaration, call: &HirResolvedCall) -> Option<Substitution> {
+    let dispatch = call.trait_dispatch.as_ref()?;
+    let owner = declaration.owner_type.as_ref()?;
+    let mut substitution = Substitution::new();
+    if !unify_instantiation(owner, &dispatch.self_type, &mut substitution) {
+        return None;
+    }
+    // owner 的每个 binder 都必须被接收者实例固定；否则该 impl 在实例级并不成立。
+    if owner_type_generic_binders(owner).iter().any(|binder| !substitution.contains_key(binder)) {
+        return None;
+    }
+    let declared_params =
+        declaration.function.params.iter().enumerate().map(|(index, param)| declared_param_type(param, index, Some(owner))).collect::<Vec<_>>();
+    if declared_params.len() != call.parameter_types.len() {
+        return None;
+    }
+    for (declared, actual) in declared_params.iter().zip(&call.parameter_types) {
+        if !unify_instantiation(declared, actual, &mut substitution) {
+            return None;
+        }
+    }
+    let declared_return = declared_type(&declaration.function.return_type, Some(owner));
+    if !unify_instantiation(&declared_return, &call.return_type, &mut substitution) {
+        return None;
+    }
+    if substitution.values().any(has_unresolved_generic_arguments) {
+        return None;
+    }
+    Some(substitution)
 }
 
 /// 从完整源码闭包出发，把开放泛型 impl 成员的调用点闭合成真实 callable 实例。
@@ -526,7 +562,8 @@ fn substitute_type(ty: &ValkyrieType, substitution: &Substitution) -> ValkyrieTy
                     ValkyrieType::Generic(g) => {
                         if let Some(next) = g.binder {
                             current = next;
-                        } else {
+                        }
+                        else {
                             return replacement.clone();
                         }
                     }
