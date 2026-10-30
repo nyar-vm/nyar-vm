@@ -40,11 +40,17 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirE
         Ok(())
     }
     collect(module, &mut declarations)?;
+    /// 按声明作用域解析 trait 路径。
+    ///
+    /// 返回 `Ok(None)` 表示当前可见声明集合里没有该路径——这是**声明面事实缺失**，
+    /// 不是约束结构损坏：where bound 保留路径、类型实参与关联等式，`declaration` 维持
+    /// `None`，由 evidence 消费端（`bound.declaration.is_some()` 门禁）在实例面失败闭合。
+    /// 歧义仍是致命错误：多个候选无法在声明面确定唯一身份，推迟只会把错误推得更远。
     fn lookup(
         path: &NamePath,
         namespace: &NamePath,
         declarations: &BTreeMap<NamePath, Vec<(ItemId, usize)>>,
-    ) -> Result<(ItemId, usize), ParseError> {
+    ) -> Result<Option<(ItemId, usize)>, ParseError> {
         // 限定路径按整段绑定；裸名只按声明作用域逐级查找。
         let mut candidates = Vec::new();
         if path.parts().len() > 1 {
@@ -62,7 +68,7 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirE
                 if entries.len() != 1 {
                     return Err(ParseError::Invalid { message: format!("trait 声明歧义：{path}"), span: None });
                 }
-                return Ok(entries[0]);
+                return Ok(Some(entries[0]));
             }
         }
         // 裸名在声明作用域链未命中时，只在本模块可见的声明集合内按唯一短名回退。
@@ -84,10 +90,10 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirE
                 }
             }
             if let Some(entry) = matched {
-                return Ok(entry);
+                return Ok(Some(entry));
             }
         }
-        Err(ParseError::Invalid { message: format!("trait 约束未解析：{path}"), span: None })
+        Ok(None)
     }
     fn bounds(
         constraints: &mut [HirWhereConstraint],
@@ -96,7 +102,12 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirE
     ) -> Result<(), HirError> {
         for constraint in constraints {
             for bound in &mut constraint.bounds {
-                let (identity, arity) = lookup(&bound.trait_path, namespace, declarations)?;
+                // 声明面查不到 trait 时推迟绑定：约束结构（路径/实参/等式）必须原样保留，
+                // evidence 消费端只接受非空 declaration，实例面自然失败闭合。
+                let Some((identity, arity)) = lookup(&bound.trait_path, namespace, declarations)?
+                else {
+                    continue;
+                };
                 if bound.type_arguments.len() != arity {
                     return Err(HirError::from(ParseError::Invalid {
                         message: format!("trait 类型实参数量不符：{}", bound.trait_path),
@@ -129,7 +140,11 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirE
         }
         for item in &mut module.impls {
             if let Some(path) = &item.trait_path {
-                let (identity, arity) = lookup(path, &item.declaring_namespace, declarations)?;
+                // `imply` 是实现事实：trait 身份缺失即实现无主，保持声明面失败闭合。
+                let Some((identity, arity)) = lookup(path, &item.declaring_namespace, declarations)?
+                else {
+                    return Err(HirError::from(ParseError::Invalid { message: format!("trait 约束未解析：{path}"), span: None }));
+                };
                 if arity != item.trait_arguments.len() {
                     return Err(HirError::from(ParseError::Invalid {
                         message: format!("imply trait 类型实参数量不符：{path}"), span: None
