@@ -5,7 +5,7 @@
 //! 是唯一前端来源；删除该声明后调用必须结构化失败，前端不得合成候选。
 
 use rusty_valkyrie::{
-    HirError, MirDiagnostic, MirLowerer, MirOperation, ValkyrieCompiler,
+    HirError, MirLowerer, MirOperation, ValkyrieCompiler,
     types::hir::{BuiltinStructureOp, HirExpr, HirExprKind, HirFunction, ValkyrieType},
 };
 

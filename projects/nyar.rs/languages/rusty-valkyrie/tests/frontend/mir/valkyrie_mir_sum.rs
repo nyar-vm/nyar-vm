@@ -2,7 +2,6 @@ use rusty_valkyrie::{
     ValkyrieCompiler,
     mir::{MirLowerer, MirOperation, validate_semantic_module},
     types::hir::types::ValkyrieType,
-    *,
 };
 
 #[test]
