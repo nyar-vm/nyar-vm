@@ -11,8 +11,11 @@ use crate::compiler::{
 };
 use nyar_types::ItemId;
 
-pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirError> {
-    let mut declarations = BTreeMap::<NamePath, Vec<(ItemId, usize)>>::new();
+/// 收集模块（含依赖导出与子模块）可见的 trait 声明路径索引：`NamePath` → `(ItemId, 泛型元数)`。
+///
+/// `bind_trait_declarations` 与集合字面量合同识别共用同一份声明面事实；
+/// 索引口径（本组声明 + 依赖导出 + 子模块）与语义闭包的可见性合同一致，禁止两处各自索引。
+pub(crate) fn trait_declaration_index(module: &HirModule) -> Result<BTreeMap<NamePath, Vec<(ItemId, usize)>>, HirError> {
     fn collect_trait(item: &HirTrait, declarations: &mut BTreeMap<NamePath, Vec<(ItemId, usize)>>) -> Result<(), HirError> {
         let identity = item
             .declaration
@@ -39,7 +42,13 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirE
         }
         Ok(())
     }
+    let mut declarations = BTreeMap::<NamePath, Vec<(ItemId, usize)>>::new();
     collect(module, &mut declarations)?;
+    Ok(declarations)
+}
+
+pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirError> {
+    let declarations = trait_declaration_index(module)?;
     /// 按声明作用域解析 trait 路径。
     ///
     /// 返回 `Ok(None)` 表示当前可见声明集合里没有该路径——这是**声明面事实缺失**，

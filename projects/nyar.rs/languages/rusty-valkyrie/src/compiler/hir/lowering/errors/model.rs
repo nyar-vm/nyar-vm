@@ -329,6 +329,19 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// nominal 声明 + 数组字面量初始值缺少 `LiteralSequence` 合同实现事实。
+    ///
+    /// 集合字面量必须由声明期望类型经 `imply ...: LiteralSequence<T>` 事实驱动构造；
+    /// 合同 trait 路径解析不到、声明类型无对应 impl、或 impl 槽位形状不齐时，
+    /// 在字面量构造点拒绝失败闭合，禁止先构造 `Array` 再隐式转换。
+    CollectionLiteralContractMissing {
+        /// 未匹配到合同事实的声明类型标签。
+        type_label: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 对不可变 `let`（带初始化）绑定的赋值：赋值是对已绑定值的改值，须声明 `let mut`。
     AssignToImmutable {
         /// 被赋值的绑定名。

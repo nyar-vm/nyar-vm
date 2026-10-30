@@ -437,7 +437,7 @@ fn derive_substitution(declaration: &CallableDeclaration, call: &HirResolvedCall
 }
 
 /// 结构化统一：只认已冻结的 binder 与名义声明身份，不做短名匹配。
-fn unify_instantiation(template: &ValkyrieType, concrete: &ValkyrieType, substitution: &mut Substitution) -> bool {
+pub(crate) fn unify_instantiation(template: &ValkyrieType, concrete: &ValkyrieType, substitution: &mut Substitution) -> bool {
     match template {
         ValkyrieType::Generic(generic) => {
             let Some(binder) = generic.binder
@@ -544,7 +544,7 @@ fn instantiate_callable(
 /// 把声明侧类型里的 binder 换成代入结果。
 /// Generic binder 可能指向另一个 Generic binder（如跨结构委托：67 → 109），
 /// 这里用循环 resolve 到底，直到到达具体类型或无进一步代入。
-fn substitute_type(ty: &ValkyrieType, substitution: &Substitution) -> ValkyrieType {
+pub(crate) fn substitute_type(ty: &ValkyrieType, substitution: &Substitution) -> ValkyrieType {
     match ty {
         ValkyrieType::Generic(generic) => {
             let Some(mut current) = generic.binder
@@ -907,6 +907,15 @@ fn visit_expr(expr: &mut HirExpr, visit: &mut impl FnMut(&mut HirResolvedCall)) 
         HirExprKind::GenericApply { callee, .. } => visit_expr(callee, visit),
         HirExprKind::ArrayNew { length, .. } => visit_expr(length, visit),
         HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
+            for item in items {
+                visit_expr(item, visit);
+            }
+        }
+        // 集合字面量构造槽由 post-binding pass 冻结（声明身份已带、实例待铸造）：
+        // 两槽交给固定点登记，字面量项照常下钻。
+        HirExprKind::CollectionInit { with_length, append, items, .. } => {
+            visit(with_length);
+            visit(append);
             for item in items {
                 visit_expr(item, visit);
             }

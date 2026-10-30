@@ -149,7 +149,7 @@ pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str, source: &Dia
         | HirExprKind::Resume(value) => validate_expr_call_contracts(value, function, source)?,
         HirExprKind::Cast { expr, .. } => validate_expr_call_contracts(expr, function, source)?,
         HirExprKind::ArrayNew { length, .. } => validate_expr_call_contracts(length, function, source)?,
-        HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
+        HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } | HirExprKind::CollectionInit { items, .. } => {
             for item in items {
                 validate_expr_call_contracts(item, function, source)?;
             }

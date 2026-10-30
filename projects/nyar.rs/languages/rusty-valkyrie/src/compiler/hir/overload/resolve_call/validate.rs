@@ -153,7 +153,7 @@ fn validate_expr_extractor_patterns(
             validate_expr_extractor_patterns(value, candidates, type_relations, locals, struct_fields)?;
         }
         HirExprKind::ArrayNew { length, .. } => validate_expr_extractor_patterns(length, candidates, type_relations, locals, struct_fields)?,
-        HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
+        HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } | HirExprKind::CollectionInit { items, .. } => {
             for item in items {
                 validate_expr_extractor_patterns(item, candidates, type_relations, locals, struct_fields)?;
             }
