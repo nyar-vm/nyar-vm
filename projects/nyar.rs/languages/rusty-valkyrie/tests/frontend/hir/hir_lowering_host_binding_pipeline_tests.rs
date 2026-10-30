@@ -253,7 +253,7 @@ fn selected_host_binding_does_not_link_sibling_provider_import() {
 }
 
 #[test]
-fn missing_host_provider_binding_keeps_contract_import() {
+fn resolved_call_to_bodyless_host_contract_without_provider_fails_at_boundary() {
     let groups = [
         core_group(),
         CompilerSourceGroup::single_source(
@@ -271,9 +271,49 @@ fn missing_host_provider_binding_keeps_contract_import() {
         .as_entry()
         .with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
     ];
-    let program = ValkyrieCompiler::default()
+    let error = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(&groups, &[], TEST_ARCH)
-        .expect("unbound contract import remains a valid external contract");
-    let canonical = program.canonical();
-    assert_eq!(user_linked_import_count(canonical), 1);
+        .expect_err("已解析调用指向未绑定 provider 的无体合同必须 fail-closed");
+    let message = error.to_string();
+    assert!(message.contains("no host provider is bound"), "expected compile-boundary gate failure, got: {message}");
+    assert!(message.contains("write"), "failure must name the contract identity, got: {message}");
+}
+
+#[test]
+fn unreferenced_bodyless_host_contract_import_does_not_block_compilation() {
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "[host_contract] micro write(value: i32) -> i32 { } \
+                [main] micro main() -> i32 { return 0 }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into()]),
+    ];
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], TEST_ARCH)
+        .expect("无体合同存在但没有任何已解析调用时不得触发编译边界门禁");
+}
+
+#[test]
+fn unreached_dependency_host_contract_does_not_block_compilation() {
+    // 编译边界门禁只裁决 linked consumer 中的已解析调用：
+    // 依赖组里声明的无体合同（11 题 `core::primitive::__u16_add` 形态）
+    // 若没有被可达入口沿 Call 触达，不得按闭包保守超集判失败。
+    let core = CompilerSourceGroup::single_source(
+        "core",
+        "core",
+        "namespace core::primitive;\n\
+         [primitive(\"core::primitive::i32\")] structure i32 { }\n\
+         [host_contract] micro __u16_add(lhs: i32, rhs: i32): i32\n\
+         micro wrapper(lhs: i32, rhs: i32): i32 { return __u16_add(lhs, rhs) }",
+    );
+    let app = CompilerSourceGroup::single_source("app", "demo", "[main] micro main() -> i32 { return 0 }")
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into()]);
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&[core, app], &[], TEST_ARCH)
+        .expect("依赖组未触达的无体合同不得触发编译边界门禁");
 }
