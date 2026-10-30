@@ -317,13 +317,6 @@ pub enum InstructionKind {
         /// 数组操作数。
         array: Operand,
     },
-    /// Append one element to a growable array; returns the array reference.
-    ArrayPush {
-        /// 可增长数组操作数。
-        array: Operand,
-        /// 要追加的元素值。
-        value: Operand,
-    },
     /// Test whether a nullable value is null.
     NullIsNull {
         /// 可空值操作数。

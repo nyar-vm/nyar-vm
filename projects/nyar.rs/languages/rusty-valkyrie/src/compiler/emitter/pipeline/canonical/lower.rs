@@ -219,7 +219,6 @@ fn lower_operation(
             Ok(CanonicalOperation::ArraySet { array: value(array)?, index: value(index)?, value: value(stored)? })
         }
         MirOperation::ArrayLength { array } => Ok(CanonicalOperation::ArrayLength { array: value(array)? }),
-        MirOperation::ArrayPush { array, value: pushed } => Ok(CanonicalOperation::ArrayPush { array: value(array)?, value: value(pushed)? }),
         MirOperation::NullIsNull { value: operand } => Ok(CanonicalOperation::NullIsNull { value: value(operand)? }),
         MirOperation::NullUnwrap { value: operand } => Ok(CanonicalOperation::NullUnwrap { value: value(operand)? }),
         MirOperation::ArrayNew { array_type, length, initialization } => Ok(CanonicalOperation::ArrayNew {

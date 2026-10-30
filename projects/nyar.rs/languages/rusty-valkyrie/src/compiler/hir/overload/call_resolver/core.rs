@@ -119,27 +119,6 @@ pub(crate) fn match_intrinsic_builtin_candidate(
     }
 
     match intrinsic {
-        BuiltinStructureOp::ArrayPush => {
-            if args.len() != 2 {
-                return None;
-            }
-            let array_ty = infer(&args[0].value, locals, struct_fields, singleton_names)?;
-            let ValkyrieType::Array(element) = &array_ty
-            else {
-                return None;
-            };
-            let element = element.as_ref().clone();
-            let value_ty = infer(&args[1].value, locals, struct_fields, singleton_names)?;
-            if matches!(value_ty, ValkyrieType::AutoType | ValkyrieType::r#SelfType)
-                || matches!(type_relations.match_parameter(&value_ty, &element), ParameterMatchResult::NoMatch { .. })
-            {
-                return None;
-            }
-            Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature {
-                params: vec![array_ty.clone(), element],
-                return_type: array_ty,
-            }))
-        }
         BuiltinStructureOp::ArrayLen => {
             if args.len() != 1 {
                 return None;

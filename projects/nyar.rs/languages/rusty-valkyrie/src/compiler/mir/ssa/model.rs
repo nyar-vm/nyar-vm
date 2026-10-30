@@ -744,13 +744,6 @@ pub enum MirOperation {
         /// 目标数组。
         array: MirOperand,
     },
-    /// 向可增长数组末尾追加元素；返回数组引用（语言 `push` intrinsic）。
-    ArrayPush {
-        /// 目标数组。
-        array: MirOperand,
-        /// 追加的元素值。
-        value: MirOperand,
-    },
     /// 检测可空值为 null（`builtin.null.is_null`）。
     NullIsNull {
         /// 待检测的可空值。

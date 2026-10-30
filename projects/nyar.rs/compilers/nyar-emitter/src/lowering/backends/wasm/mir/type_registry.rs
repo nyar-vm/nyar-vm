@@ -155,8 +155,7 @@ pub(super) fn register_gc_array_types(
                         }
                         MirInstructionKind::ArrayGet { array, .. }
                         | MirInstructionKind::ArraySet { array, .. }
-                        | MirInstructionKind::ArrayLength { array }
-                        | MirInstructionKind::ArrayPush { array, .. } => {
+                        | MirInstructionKind::ArrayLength { array } => {
                             if let MirOperand::Value(receiver) = array {
                                 if let Some(NyarType::Array(element) | NyarType::FixedArray { element, .. }) =
                                     view.function.value_types.get(receiver)

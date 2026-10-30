@@ -136,7 +136,6 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                         | CanonicalOperation::ArrayLength { .. }
                         | CanonicalOperation::NullIsNull { .. }
                         | CanonicalOperation::NullUnwrap { .. }
-                        | CanonicalOperation::ArrayPush { .. }
                         | CanonicalOperation::TupleNew { .. } => {}
                     }
                 }

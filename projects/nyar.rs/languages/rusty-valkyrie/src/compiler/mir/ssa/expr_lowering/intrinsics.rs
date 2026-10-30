@@ -428,31 +428,6 @@ impl MirBuilder {
         Some(MirOperand::Constant(MirConstant::Unit))
     }
 
-    /// 数组 push intrinsic：`[intrinsic("builtin.array.push")] push(array, value)` → `ArrayPush`。
-    pub(crate) fn try_lower_array_push_intrinsic(
-        &mut self,
-        resolved: Option<&HirResolvedCall>,
-        arguments: &[MirOperand],
-        expected_type: Option<&ValkyrieType>,
-    ) -> Option<MirOperand> {
-        if resolved?.intrinsic? != BuiltinStructureOp::ArrayPush {
-            return None;
-        }
-        if arguments.len() < 2 {
-            return None;
-        }
-        let array = arguments[0].clone();
-        let value_arg = arguments[1].clone();
-        let result = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(MirOperation::ArrayPush { array, value: value_arg }, vec![result]);
-        let return_type = resolved
-            .map(|call| call.return_type.clone())
-            .or_else(|| expected_type.cloned())
-            .unwrap_or(ValkyrieType::Unit);
-        self.value_types.insert(result, return_type);
-        Some(MirOperand::Value(result))
-    }
-
     /// 数组结构操作 intrinsic 的唯一分流点。
     ///
     /// 分流只依据 `HirResolvedCall.intrinsic`：内置候选（如 `suffix [ ]=`）没有声明实例，
@@ -466,8 +441,7 @@ impl MirBuilder {
         let result = self
             .try_lower_array_len_intrinsic(resolved, arguments, expected_type)
             .or_else(|| self.try_lower_array_get_intrinsic(resolved, arguments, expected_type))
-            .or_else(|| self.try_lower_array_set_intrinsic(resolved, arguments))
-            .or_else(|| self.try_lower_array_push_intrinsic(resolved, arguments, expected_type));
+            .or_else(|| self.try_lower_array_set_intrinsic(resolved, arguments));
         result
     }
 

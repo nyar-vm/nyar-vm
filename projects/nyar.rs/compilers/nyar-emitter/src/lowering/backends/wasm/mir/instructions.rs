@@ -464,9 +464,6 @@ impl<'a> WasmMirLowerer<'a> {
                     self.store_scalar(output);
                 }
             }
-            MirInstructionKind::ArrayPush { array, value } => {
-                self.emit_intrinsic_array_push(&[array.clone(), value.clone()], instruction_primary_result(instruction));
-            }
             MirInstructionKind::NullIsNull { value } => {
                 self.emit_operand_coerced(value, WASM_GC_ANYREF);
                 WasmOpcode::RefIsNull.encode(&mut self.code);

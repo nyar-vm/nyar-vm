@@ -717,42 +717,6 @@ impl CanonicalSemanticMir {
                             }
                             vec![*array]
                         }
-                        CanonicalOperation::ArrayPush { array, value } => {
-                            let Some(array_type) = function.value_types.get(array)
-                            else {
-                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
-                                    function: *key,
-                                    instruction: instruction.id,
-                                    value: *array,
-                                });
-                            };
-                            let Some(CanonicalTypeKind::Array { element, .. }) = linked.types.get(array_type).map(|row| &row.kind)
-                            else {
-                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
-                                    function: *key,
-                                    instruction: instruction.id,
-                                    value: *array,
-                                });
-                            };
-                            if function.value_types.get(value) != Some(element) {
-                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
-                                    function: *key,
-                                    instruction: instruction.id,
-                                    value: *value,
-                                });
-                            }
-                            if instruction.results.len() != 1
-                                || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(array_type)
-                            {
-                                return Err(if instruction.results.len() == 1 {
-                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
-                                }
-                                else {
-                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
-                                });
-                            }
-                            vec![*array, *value]
-                        }
                         CanonicalOperation::NullIsNull { value: operand } => {
                             if !matches!(
                                 function.value_types.get(operand).and_then(|ty| linked.types.get(ty)).map(|row| &row.kind),
