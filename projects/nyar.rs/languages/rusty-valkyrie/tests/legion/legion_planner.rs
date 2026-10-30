@@ -2865,10 +2865,16 @@ micro js_random_next_i32(seed: i32): i32 { return 0 }
     .unwrap();
 
     let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
-    let error = workspace
+    // planner 不再按闭包保守超集判失败：js-only provider 对 wasi 只是「不选中」，
+    // 「已解析调用缺 provider」的失败由 Compiler host binding 边界裁决。
+    let plan = workspace
         .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::wasi(), output_dir: None, ..Default::default() })
-        .unwrap_err();
-    assert!(error.to_string().contains("no provider compatible with target capabilities"), "expected capability mismatch, got: {error}");
+        .expect("planner must not fail on closure-superset demand; capability selection stays in planner");
+    assert!(
+        plan.project.selected_host_providers.iter().all(|provider| provider.symbol != "js_random_next_i32"),
+        "js-only provider must not be selected for wasi target: {:?}",
+        plan.project.selected_host_providers
+    );
 }
 
 #[test]

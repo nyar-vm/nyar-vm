@@ -335,15 +335,6 @@ pub enum PlannerError {
         /// 冲突的提供者名称列表。
         providers: Vec<String>,
     },
-    /// 契约在闭包内被需求，但没有任何 provider 满足当前 target capability 集合。
-    HostProviderCapabilityMissing {
-        /// 宿主契约标识。
-        contract: String,
-        /// 可见 provider 及其所需 capability。
-        providers: Vec<String>,
-        /// 当前 target 可用 capability。
-        available_capabilities: Vec<String>,
-    },
     /// 单脚本模式错误。
     Script(crate::legion::workspace::script::ScriptError),
     /// 防止依赖图或源码闭包失控（死循环 / 指数膨胀 / OOM）。
@@ -416,15 +407,6 @@ impl Display for PlannerError {
             }
             Self::ConflictingHostProviders { contract, providers } => {
                 write!(f, "ambiguous host provider for {}: {}", contract, providers.join(", "))
-            }
-            Self::HostProviderCapabilityMissing { contract, providers, available_capabilities } => {
-                write!(
-                    f,
-                    "host contract '{}' has no provider compatible with target capabilities [{}]; candidates: {}",
-                    contract,
-                    available_capabilities.join(", "),
-                    providers.join(", ")
-                )
             }
             Self::Script(error) => Display::fmt(error, f),
             Self::ResourceLimitExceeded { kind, limit, actual } => {
