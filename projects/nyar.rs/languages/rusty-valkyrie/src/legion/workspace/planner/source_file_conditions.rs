@@ -30,14 +30,21 @@ pub(crate) fn source_file_active_for_target_and_features(
     target: CanonicalTarget,
     enabled_features: Option<&BTreeSet<String>>,
 ) -> bool {
+    source_file_conditions_pass(source, target, enabled_features).unwrap_or(false)
+}
+
+/// 解析源码并判定其文件级条件；无法解析时返回解析器原因，绝不静默排除。
+pub(crate) fn source_file_conditions_pass(
+    source: &str,
+    target: CanonicalTarget,
+    enabled_features: Option<&BTreeSet<String>>,
+) -> Result<bool, String> {
     let source = normalize_line_endings(source);
-    match parse_source(&source) {
-        Ok(root) => match file_level_condition_items_from_root(&root) {
-            None => true,
-            Some(items) => target_axis_passes(&items.whens, target) && gate_axis_passes(&items.gates, enabled_features),
-        },
-        Err(_) => false,
-    }
+    let root = parse_source(&source).map_err(|error| error.to_string())?;
+    Ok(match file_level_condition_items_from_root(&root) {
+        None => true,
+        Some(items) => target_axis_passes(&items.whens, target) && gate_axis_passes(&items.gates, enabled_features),
+    })
 }
 
 /// 兼容旧签名：不传 feature 上下文时，无 gate 的文件照常通过；带 gate 的文件得到
@@ -105,7 +112,9 @@ fn filter_paths_for_target(
     let mut filtered = Vec::with_capacity(paths.len());
     for path in paths {
         let content = fs::read_to_string(&path).map_err(PlannerError::Io)?;
-        if source_file_active_for_target_and_features(&content, target, enabled_features) {
+        let active = source_file_conditions_pass(&content, target, enabled_features)
+            .map_err(|message| PlannerError::UnparsableSource { path: path.clone(), message })?;
+        if active {
             filtered.push(path);
         }
     }
