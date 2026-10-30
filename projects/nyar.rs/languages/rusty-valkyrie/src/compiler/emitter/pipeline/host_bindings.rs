@@ -325,16 +325,18 @@ fn declared_owner_name(module: &HirModule, declaration: nyar_types::ItemId) -> O
 
 /// 将 Resolver 选定的 host provider 绑定应用到已链接的 Semantic MIR，
 /// 并在编译边界执行「已解析 callee」的 fail-closed 门禁。
+///
+/// 返回实际生效的合同→provider 调用改写表；二次链接用它把依赖原件规范化到
+/// 与消费模块副本相同的绑定后状态，才能逐字段核对同一冻结身份。
 #[doc(hidden)]
 pub fn apply_host_provider_bindings(
     module: &mut MirModule,
     dependency_mirs: &[MirModule],
     bindings: &[ResolvedHostProviderBinding],
-) -> Result<(), ParseError> {
-    if !bindings.is_empty() {
-        remap_bound_host_contracts(module, dependency_mirs, bindings)?;
-    }
-    enforce_resolved_host_contract_bindings(module)
+) -> Result<BTreeMap<ItemInstanceId, ItemInstanceId>, ParseError> {
+    let remaps = if bindings.is_empty() { BTreeMap::new() } else { remap_bound_host_contracts(module, dependency_mirs, bindings)? };
+    enforce_resolved_host_contract_bindings(module)?;
+    Ok(remaps)
 }
 
 /// 编译边界门禁：已解析调用指向未绑定 provider 的 `[host_contract]` 即结构化失败。
@@ -385,11 +387,12 @@ fn enforce_resolved_host_contract_bindings(module: &MirModule) -> Result<(), Par
 ///
 /// 合同身份覆盖整个实例族：族内每个实例的调用都重定向到 provider，族内全部
 /// 合同体（声明体与实例化副本）一并退役，不得留下进入后端的孤儿。
+/// 返回实际生效的合同→provider 改写表。
 fn remap_bound_host_contracts(
     module: &mut MirModule,
     dependency_mirs: &[MirModule],
     bindings: &[ResolvedHostProviderBinding],
-) -> Result<(), ParseError> {
+) -> Result<BTreeMap<ItemInstanceId, ItemInstanceId>, ParseError> {
     let modules: Vec<&MirModule> = std::iter::once(&*module).chain(dependency_mirs.iter()).collect();
     let mut plans = Vec::new();
 
@@ -452,7 +455,7 @@ fn remap_bound_host_contracts(
     }
 
     if remaps.is_empty() {
-        return Ok(());
+        return Ok(remaps);
     }
 
     for function in &mut module.functions {
@@ -469,7 +472,7 @@ fn remap_bound_host_contracts(
         module.functions.retain(|function| function.instance != Some(*contract_instance));
     }
 
-    Ok(())
+    Ok(remaps)
 }
 
 fn callable_present(modules: &[&MirModule], instance: ItemInstanceId) -> bool {
@@ -510,7 +513,10 @@ fn install_provider_import(module: &mut MirModule, contract: &MirExternalCallCon
     module.register_callable_symbol(instance, symbol).map_err(|detail| ParseError::Invalid { message: detail, span: None })
 }
 
-fn remap_call_targets(function: &mut MirFunction, remaps: &BTreeMap<ItemInstanceId, ItemInstanceId>) {
+/// 按合同→provider 改写表重写函数体内的 Call 目标。
+///
+/// 链接器在二次链接核对 installed 副本合同时复用同一改写事实，不得旁路复制逻辑。
+pub(super) fn remap_call_targets(function: &mut MirFunction, remaps: &BTreeMap<ItemInstanceId, ItemInstanceId>) {
     for block in &mut function.blocks {
         for instruction in &mut block.instructions {
             if let MirOperation::Call { callee, arguments } = &mut instruction.kind {

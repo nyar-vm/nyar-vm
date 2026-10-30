@@ -16,6 +16,8 @@ use nyar_types::{
     layout::{AggregateLayout, AggregateLayoutPlan},
 };
 
+use super::host_bindings::remap_call_targets;
+
 /// 合并已由 Compiler 统一注册的依赖实例闭包。
 ///
 /// 不携带 HIR 闭包时无法看到 `[library_glue]` 角色事实，聚合直通操作阶段不运行；
@@ -25,15 +27,21 @@ pub fn link_reachable_dependency_mir(
     consumer: &mut MirModule,
     dependency_mirs: &[MirModule],
 ) -> Result<(), crate::compiler::syntax::oak::ParseError> {
-    link_reachable_dependency_mir_with_hir(consumer, dependency_mirs, &[])
+    link_reachable_dependency_mir_with_hir(consumer, dependency_mirs, &[], &BTreeMap::new())
 }
 
 /// 合并依赖实例闭包，并把片段根签名所需的聚合直通操作冻结进 Semantic MIR。
+///
+/// `host_binding_remaps` 是本次编译中 `apply_host_provider_bindings` 已实际执行的
+/// 合同→provider 调用改写表；首轮链接传空表。绑定会把消费模块内全部函数（含首轮
+/// 链接迁入的依赖体副本）的 Call 目标改写为 provider 身份，二次链接据此把依赖原件
+/// 规范化到同一绑定后状态，再与消费模块副本逐字段核对；规范化后仍不一致即真实冲突。
 #[doc(hidden)]
 pub fn link_reachable_dependency_mir_with_hir(
     consumer: &mut MirModule,
     dependency_mirs: &[MirModule],
     hirs: &[&HirModule],
+    host_binding_remaps: &BTreeMap<ItemInstanceId, ItemInstanceId>,
 ) -> Result<(), crate::compiler::syntax::oak::ParseError> {
     if dependency_mirs.is_empty() {
         return Ok(());
@@ -62,9 +70,24 @@ pub fn link_reachable_dependency_mir_with_hir(
                     // 模块各有一份副本。唯一副本仍归消费模块；只接受逐字段完全一致的合同，
                     // 定义一旦不同就是真实冲突，仍然失败闭合。
                     let installed_copy = std::ptr::eq(previous_module, &*consumer) && !std::ptr::eq(module, &*consumer);
-                    if installed_copy && previous == function {
-                        definitions.insert(instance, (previous_module, previous));
-                        continue;
+                    if installed_copy {
+                        // 消费模块副本可能已被绑定改写 Call 目标（首轮链接迁入的依赖体
+                        // 同样被重写），而依赖原件保持绑定前状态。用同一改写事实规范化
+                        // 依赖原件后逐字段核对；规范化后仍不一致就是真实冲突。
+                        let matches_copy = if previous == function {
+                            true
+                        }
+                        else if host_binding_remaps.is_empty() {
+                            false
+                        } else {
+                            let mut normalized = (*function).clone();
+                            remap_call_targets(&mut normalized, host_binding_remaps);
+                            &normalized == previous
+                        };
+                        if matches_copy {
+                            definitions.insert(instance, (previous_module, previous));
+                            continue;
+                        }
                     }
                     return Err(ParseError::Invalid {
                         message: format!(
