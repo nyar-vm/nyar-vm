@@ -5,6 +5,7 @@ mod asgard_codegen;
 mod asgard_platform_contract;
 mod asgard_render_ir_canonical;
 mod asgard_style_collector;
+mod pipeline_discover;
 mod symbols_tests;
 
 // Private implementation tests on disk under awsl/, codegen/, etc. — wire when using public API.
