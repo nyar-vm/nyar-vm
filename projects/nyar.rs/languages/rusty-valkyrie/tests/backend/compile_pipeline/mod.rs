@@ -6,7 +6,6 @@
 mod backend_contract_interop_tests;
 #[cfg(false)] // 旧 builder bundle 合同，待按 emitter pipeline 适配
 mod compile_pipeline_backend_bundle_tests;
-#[cfg(false)] // `src/compile_pipeline/canonical.rs` 已迁入 emitter/pipeline
 mod compile_pipeline_canonical_tests;
 #[cfg(false)] // 旧 driver 入口已移除
 mod compile_pipeline_driver_tests;

@@ -1,13 +1,11 @@
-#![cfg(false)] // legacy: architecture refactor (TargetExecutionPlan) — excluded until ported
 use nyar_types::{
     CanonicalProgram, CanonicalSemanticMir, CanonicalTypeKind, NominalValueSemantics, ValueIdentity, layout_choice::ValueRepresentation,
     pipeline::RepresentationPlanStage,
 };
-use rusty_valkyrie::{compile_pipeline::CanonicalRepresentationPlanner, *};
+use rusty_valkyrie::{compiler::emitter::pipeline::CanonicalRepresentationPlanner, *};
 use std::collections::BTreeSet;
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn source_aggregate_semantics_reach_the_representation_plan_without_construction() {
     let output = rusty_valkyrie::ValkyrieCompiler::default()
         .compile_source_to_program(
@@ -22,7 +20,9 @@ fn source_aggregate_semantics_reach_the_representation_plan_without_construction
     assert_eq!(plan.adt_reps.len(), 2);
     let semantic_mir = rusty_valkyrie::compiler::mir::MirLowerer::lower_module_semantic(&rusty_valkyrie::ValkyrieCompiler::default().compile_source("structure Point { value: i32 } class Node { value: i32 } micro value_identity(value: Point) -> Point { return value } micro reference_identity(value: Node) -> Node { return value }").expect("source for representation test"));
     for aggregate in &semantic_mir.structs {
-        let ty = rusty_valkyrie::compiler::types::hir::ValkyrieType::Named(rusty_valkyrie::compiler::types::Identifier::new(&aggregate.name));
+        // canonical 类型表按前端冻结的 `Nominal { declaration }` 形状收录聚合，禁止按短名回查。
+        let item = aggregate.declaration.expect("structure/class 声明必须在前端冻结 declaration ItemId");
+        let ty = rusty_valkyrie::compiler::types::hir::ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
         let declaration = semantic_mir.type_identities[&ty];
         let record = program.linked.nominal_instances.values().find(|record| record.declaration == declaration).unwrap();
         let expected = if aggregate.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
@@ -59,7 +59,6 @@ fn source_aggregate_semantics_reach_the_representation_plan_without_construction
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn planner_requires_each_complete_nominal_type_before_representation() {
     use nyar_types::{NominalInstanceId, TypeId, TypeRecord};
 
@@ -91,6 +90,9 @@ fn planner_requires_each_complete_nominal_type_before_representation() {
         function.parameters[0].1 = ty;
         function.return_type = ty;
         function.value_types.insert(function.parameters[0].0, ty);
+        // canonical 校验要求入口块参数类型与函数参数表逐位一致，夹具必须同步代入新实例类型。
+        let entry = function.entry;
+        function.blocks.get_mut(&entry).expect("入口块必须存在").parameters[0].1 = ty;
         let signature = program.linked.item_instances.get_mut(function_id).unwrap();
         signature.parameter_types[0] = ty;
         signature.return_type = ty;
