@@ -1,5 +1,6 @@
 //! Migrated from `src/ssg/mod.rs` (`tests`).
 
+use rusty_valkyrie::asgard::codegen::StaticRenderResult;
 use rusty_valkyrie::asgard::ssg::*;
 
 #[test]
