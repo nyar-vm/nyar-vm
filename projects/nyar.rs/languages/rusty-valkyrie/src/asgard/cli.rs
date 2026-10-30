@@ -12,7 +12,23 @@ use crate::asgard::{
     config::VoaConfig,
     dev_server::{DevServerOptions, generate_hmr_client_script, run_dev_server},
     pack_voa_delivery,
+    static_site::{StaticSiteOptions, build_static_site},
 };
+
+/// `asgard build` 的交付方式。
+#[derive(Debug, Clone, Default)]
+pub enum AsgardDelivery {
+    /// 完整应用构建（默认）：走 `compile_voa_project` 全管线。
+    #[default]
+    App,
+    /// 静态站点交付：显式 AWSL 根组件入口，渲染带样式的 `index.html`，不进入应用管线。
+    Static {
+        /// 入口根组件文件（相对 `project_dir`，`.w` 或 `.awsl`，须显式给出）。
+        entry: PathBuf,
+        /// 页面 `<title>` 文本；`None` 时使用根组件名（入口文件 stem）。
+        title: Option<String>,
+    },
+}
 
 /// `asgard build` / `asgard dev` 共用参数。
 #[derive(Debug, Clone)]
@@ -23,6 +39,8 @@ pub struct AsgardBuildArgs {
     pub output_dir: Option<PathBuf>,
     /// 覆盖 `asgard.config.v` 中的 `target`（默认使用配置值）。
     pub target: Option<String>,
+    /// 交付方式；默认 `App` 保持既有行为，`Static` 走静态站点编排。
+    pub delivery: AsgardDelivery,
 }
 
 /// `asgard pack` 参数。
@@ -213,8 +231,24 @@ fn print_build_report(report: &crate::asgard::CompileReport, label: &str) {
 
 /// 执行 `asgard build`。
 pub fn run_build(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
-    let report = compile_with_args(args)?;
-    print_build_report(&report, "asgard build");
+    match &args.delivery {
+        AsgardDelivery::App => {
+            let report = compile_with_args(args)?;
+            print_build_report(&report, "asgard build");
+        }
+        AsgardDelivery::Static { entry, title } => {
+            let report = build_static_site(&StaticSiteOptions {
+                project_dir: args.project_dir.clone(),
+                entry: entry.clone(),
+                output_dir: args.output_dir.clone(),
+                title: title.clone(),
+            })?;
+            println!("asgard build (static) complete");
+            println!("output: {}", report.output_dir.display());
+            println!("page: {}", report.page_path.display());
+            println!("component: {}", report.component_name);
+        }
+    }
     Ok(ExitCode::SUCCESS)
 }
 

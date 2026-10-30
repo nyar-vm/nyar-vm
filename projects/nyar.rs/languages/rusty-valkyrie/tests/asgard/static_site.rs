@@ -26,7 +26,7 @@ fn build_page(temp: &TempDir, entry_name: &str) -> String {
         project_dir: project.to_path_buf(),
         entry: PathBuf::from(format!("source/{entry_name}")),
         output_dir: None,
-        title: "静态站点测试".into(),
+        title: Some("静态站点测试".into()),
     })
     .expect("静态站点构建失败");
     assert_eq!(report.component_name, "index");
@@ -59,6 +59,23 @@ fn w_entry_produces_identical_page_to_awsl() {
 }
 
 #[test]
+fn default_title_falls_back_to_component_name() {
+    // 标题缺省时沿用根组件名（入口文件 stem）这一唯一命名来源。
+    let temp = TempDir::new().expect("创建临时目录失败");
+    fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
+    fs::write(temp.path().join("source/index.w"), FIXTURE).expect("写入入口文件失败");
+    let report = build_static_site(&StaticSiteOptions {
+        project_dir: temp.path().to_path_buf(),
+        entry: PathBuf::from("source/index.w"),
+        output_dir: None,
+        title: None,
+    })
+    .expect("静态站点构建失败");
+    let html = fs::read_to_string(&report.page_path).expect("读取 index.html 失败");
+    assert!(html.contains("<title>index</title>"), "缺省标题应为根组件名:\n{html}");
+}
+
+#[test]
 fn rejects_unknown_entry_extension() {
     let temp = TempDir::new().expect("创建临时目录失败");
     fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
@@ -67,7 +84,7 @@ fn rejects_unknown_entry_extension() {
         project_dir: temp.path().to_path_buf(),
         entry: PathBuf::from("source/index.v"),
         output_dir: None,
-        title: "静态站点测试".into(),
+        title: Some("静态站点测试".into()),
     })
     .expect_err(".v 不是静态站点入口后缀，应失败");
     let message = error.to_string();
@@ -82,7 +99,7 @@ fn rejects_missing_entry_file() {
         project_dir: temp.path().to_path_buf(),
         entry: PathBuf::from("source/missing.awsl"),
         output_dir: None,
-        title: "静态站点测试".into(),
+        title: Some("静态站点测试".into()),
     })
     .expect_err("入口文件不存在应失败");
     assert!(error.to_string().contains("missing.awsl"), "诊断应包含入口路径: {error}");
@@ -99,7 +116,7 @@ fn rejects_entry_escaping_project_dir() {
         project_dir: project,
         entry: PathBuf::from("../outside.awsl"),
         output_dir: None,
-        title: "静态站点测试".into(),
+        title: Some("静态站点测试".into()),
     })
     .expect_err("越出项目根的入口应失败");
     assert!(error.to_string().contains("越出项目根"), "诊断应说明入口越出项目根: {error}");
