@@ -1,6 +1,7 @@
 //! mir modules.
 
 mod mir_branch_binding_merge_tests;
+mod mir_loop_break_binding_tests;
 mod mir_ssa_match_lowering_bottom_type_tests;
 mod mir_ssa_nullable_null_tests;
 mod mir_ssa_trait_dispatch_witness_tests;
