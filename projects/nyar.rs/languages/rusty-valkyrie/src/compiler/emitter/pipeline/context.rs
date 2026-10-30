@@ -34,6 +34,10 @@ pub struct CompilerBuildContext {
     pub wasm_package_kind: WasmPackageKind,
     /// 装配层已按 target/profile 过滤的 host provider 选择结果。
     pub selected_host_providers: Vec<CompilerHostProviderBinding>,
+    /// 测试构建的 `[test]` 入口名；空表示普通构建。
+    ///
+    /// 名字来自语义闭包 seed 的显式声明身份，Emitter 据此为每个测试生成 run contract。
+    pub test_entry_names: Vec<String>,
 }
 
 impl CompilerBuildContext {
@@ -44,7 +48,13 @@ impl CompilerBuildContext {
         clr_suspend_strategy: ClrSuspendStrategy,
         wasm_package_kind: WasmPackageKind,
     ) -> Self {
-        Self { arch: arch.into(), target, clr_suspend_strategy, wasm_package_kind, selected_host_providers: Vec::new() }
+        Self { arch: arch.into(), target, clr_suspend_strategy, wasm_package_kind, selected_host_providers: Vec::new(), test_entry_names: Vec::new() }
+    }
+
+    /// 附加测试构建的 `[test]` 入口名（由语义闭包 seed 推导）。
+    pub fn with_test_entries(mut self, test_entry_names: Vec<String>) -> Self {
+        self.test_entry_names = test_entry_names;
+        self
     }
 
     /// 附加 Resolver 已选定的 host provider 绑定。

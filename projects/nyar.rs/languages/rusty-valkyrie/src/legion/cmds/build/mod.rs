@@ -217,11 +217,19 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     }
     let target_profile = plan.project.build_target.target.to_profile(None);
     let clr_suspend_strategy = ClrSuspendStrategy::from_runtime_async_flag(plan.project.build_target.runtime_async);
-    let wasm_package_kind = wasm_package_kind_for_manifest(plan.project.artifact_kind);
+    let wasm_package_kind = if plan.project.is_test {
+        // 测试构建按可调用 library 打包：`[test]` 是唯一的 run 入口，不得要求 `[main]`
+        // 或把测试回落成普通程序入口。
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library
+    }
+    else {
+        wasm_package_kind_for_manifest(plan.project.artifact_kind)
+    };
     fs::create_dir_all(&plan.output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", plan.output_dir.display())))?;
     let host_bindings =
         compiler_host_provider_bindings(&plan.project.selected_host_providers).map_err(|error| LegionError::msg(report!("{error}")))?;
     let build_context = CompilerBuildContext::new(arch, plan.project.build_target.target.clone(), clr_suspend_strategy, wasm_package_kind)
+        .with_test_entries(plan.project.test_entries.clone())
         .with_selected_host_providers(host_bindings);
     let artifact = compile_source_groups_to_artifacts(
         &crate::compiler::hir::lowering::ValkyrieCompiler::default(),

@@ -165,6 +165,16 @@ pub(super) fn collect_surface_contracts(module: &HirModule) -> (Vec<MirExportCon
                     partition: spec.primary_partition(),
                 });
             }
+            else if function.annotations.iter().any(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::test())) {
+                // `[test]` 是测试入口的显式声明：导出名与 run contract 身份就是声明名本身。
+                // 这里不做 case 变换或重命名推导，下游按同一名字 invoke。
+                exports.push(MirExportContract {
+                    instance: function.instance,
+                    symbol: symbol.clone(),
+                    exported_name: function.name.as_str().to_string(),
+                    partition: "default".to_string(),
+                });
+            }
             if function.annotations.iter().any(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::main())) {
                 entries.push(MirEntryContract { instance: function.instance, symbol });
             }
