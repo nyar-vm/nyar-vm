@@ -315,6 +315,20 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// `let` 显式声明类型与初始化表达式的静态类型不兼容。
+    ///
+    /// 整数档位按名义身份判定：不同位宽或有符号性不同的整数不得互相顶替；
+    /// 整数字面量的宽度由声明类型决定，不构成此类不匹配。
+    LetInitializerTypeMismatch {
+        /// 初始化表达式的静态类型。
+        actual: String,
+        /// `let` 声明的类型。
+        expected: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 多个语义检查器各自生产的违规集合。
     SemanticCheckViolations {
         /// 按检查器分组的违规消息。

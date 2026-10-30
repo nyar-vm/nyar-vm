@@ -158,6 +158,10 @@ impl From<HirError> for DiagnosticRow {
             HirError::RefutableLetPattern { pattern, .. } => {
                 row = row.with_arg("pattern", DiagnosticArg::String(pattern.clone()));
             }
+            HirError::LetInitializerTypeMismatch { actual, expected, .. } => {
+                row =
+                    row.with_arg("actual", DiagnosticArg::String(actual.clone())).with_arg("expected", DiagnosticArg::String(expected.clone()));
+            }
             HirError::SemanticCheckViolations { checks, .. } => {
                 row = row.with_arg("checker_count", DiagnosticArg::Int(checks.len() as i64));
                 for (index, check) in checks.iter().enumerate() {
@@ -489,6 +493,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::YieldFromItemTypeMismatch { source, .. } => source.clone(),
         HirError::AmbiguousBareNamePattern { source, .. } => source.clone(),
         HirError::RefutableLetPattern { source, .. } => source.clone(),
+        HirError::LetInitializerTypeMismatch { source, .. } => source.clone(),
         HirError::SemanticCheckViolations { source, .. } => source.clone(),
         HirError::CopyDisciplineViolations { source, .. } => source.clone(),
         HirError::DuplicateTypeDefinition { source, .. } => source.clone(),
@@ -552,6 +557,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::YieldFromItemTypeMismatch { span, .. } => span.clone(),
         HirError::AmbiguousBareNamePattern { span, .. } => span.clone(),
         HirError::RefutableLetPattern { span, .. } => span.clone(),
+        HirError::LetInitializerTypeMismatch { span, .. } => span.clone(),
         HirError::SemanticCheckViolations { span, .. } => span.clone(),
         HirError::CopyDisciplineViolations { span, .. } => span.clone(),
         HirError::DuplicateTypeDefinition { span, .. } => span.clone(),

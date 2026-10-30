@@ -80,6 +80,9 @@ pub fn validate_hir_statement(statement: &HirStatement, state: &mut HirValidatio
                 validate_hir_expr(initializer, state, true)?;
             }
             validate_pattern_semantics(pattern)?;
+            if let (Some(declared), Some(initializer)) = (ty.as_ref(), initializer.as_ref()) {
+                validate_let_initializer_type(declared, initializer, state)?;
+            }
             let inferred_type = ty.clone().or_else(|| initializer.as_ref().and_then(|value| infer_static_expr_type(value, state)));
             if let Some(inferred_type) = inferred_type {
                 bind_pattern_type(state, pattern, &inferred_type);
@@ -88,6 +91,30 @@ pub fn validate_hir_statement(statement: &HirStatement, state: &mut HirValidatio
         HirStatementKind::Expr(expr) => validate_hir_expr(expr, state, false)?,
     }
     Ok(())
+}
+
+/// `let` 显式声明类型与初始化表达式的静态类型必须落在同一名义身份上。
+///
+/// 与 `validate_return_value` 同一口径：先按兼容性判定，再允许整数字面量按声明宽度取值
+/// （`integer_literal_binds_to`）。静态类型推断不出时不下结论，保持既有不阻塞行为。
+pub fn validate_let_initializer_type(declared: &ValkyrieType, initializer: &HirExpr, state: &HirValidationState) -> Result<(), HirError> {
+    let expected_type = resolve_contextual_type(declared, state);
+    let Some(actual_raw) = infer_static_expr_type(initializer, state)
+    else {
+        return Ok(());
+    };
+    let actual_type = resolve_contextual_type(&actual_raw, state);
+    if control_flow_value_type_compatible_with_primitives(&expected_type, &actual_type, Some(state))
+        || integer_literal_binds_to(&expected_type, Some(initializer), state)
+    {
+        return Ok(());
+    }
+    Err(HirError::LetInitializerTypeMismatch {
+        actual: display_type(&actual_type),
+        expected: display_type(&expected_type),
+        source: control_flow_source(),
+        span: expr_diagnostic_span(initializer),
+    })
 }
 
 pub fn validate_hir_block(block: &HirBlock, state: &mut HirValidationState, value_context: bool) -> Result<(), HirError> {
