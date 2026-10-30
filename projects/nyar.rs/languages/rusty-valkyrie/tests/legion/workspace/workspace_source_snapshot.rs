@@ -28,6 +28,36 @@ fn unindexable_entry_source_does_not_become_a_silent_empty_program() {
 }
 
 #[test]
+fn entry_source_with_hash_line_comment_compiles() {
+    // V 行注释是 `#`：入口声明前的中文 `#` 注释是 trivia，不得影响入口 seed。
+    let directory = tempdir().expect("创建源码目录");
+    let source = "# 中文注释\n[main] micro main() -> bool { return true }\n";
+    let group = source_group(directory.path(), "application", source, &[], true);
+    let groups = compile_source_snapshot(&[group]).expect("Resolver 保留输入原文");
+    let output = directory.path().join("output");
+    fs::create_dir_all(&output).expect("创建产物目录");
+    let report = compile_snapshot(&groups, &output).expect("`#` 注释不得破坏入口声明索引");
+    assert!(!report.driver.artifacts.artifacts.is_empty(), "编译成功必须具有产物");
+}
+
+#[test]
+fn entry_source_with_slash_comment_reports_unindexed_source_reason() {
+    // `//` 不是 V 注释标记：整文件词法/语法失败后必须作为 unindexed source 附带原因上报，
+    // 不得只留下「缺入口声明」的误导结论，也不得静默下沉为无入口空模块。
+    let directory = tempdir().expect("创建源码目录");
+    let source = "// 中文注释\n[main] micro main() -> bool { return true }\n";
+    let group = source_group(directory.path(), "application", source, &[], true);
+    let groups = compile_source_snapshot(&[group]).expect("Resolver 保留输入原文");
+    let output = directory.path().join("output");
+    fs::create_dir_all(&output).expect("创建产物目录");
+    let error = compile_snapshot(&groups, &output).expect_err("无法索引的入口文件必须结构化失败");
+    let message = error.to_string();
+    assert!(message.contains("declares no `[export]` or `[main]` entry"), "{message}");
+    assert!(message.contains("unindexed sources"), "{message}");
+    assert!(message.contains("SyntaxError"), "{message}");
+}
+
+#[test]
 fn snapshot_paths_are_manifest_relative_and_reject_outside_sources() {
     let directory = tempdir().expect("创建源码目录");
     let group = source_group(directory.path(), "application", "micro answer() { return 1 }", &[], true);
