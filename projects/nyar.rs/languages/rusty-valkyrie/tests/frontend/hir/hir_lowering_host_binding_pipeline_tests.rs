@@ -1,8 +1,8 @@
 use nyar_types::{CanonicalCallee, CanonicalOperation, ItemInstanceId};
 use rusty_valkyrie::compiler::{
-    emitter::pipeline::CompilerHostProviderBinding,
+    emitter::pipeline::{CompilerHostProviderBinding, resolve_host_provider_bindings},
     hir::lowering::{CompilerSourceGroup, ValkyrieCompiler},
-    semantic::closure::micro_declaration_key,
+    semantic::closure::{DeclarationKey, DeclarationKind, micro_declaration_key},
 };
 
 const TEST_ARCH: &str = "native";
@@ -316,4 +316,66 @@ fn unreached_dependency_host_contract_does_not_block_compilation() {
     ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(&[core, app], &[], TEST_ARCH)
         .expect("依赖组未触达的无体合同不得触发编译边界门禁");
+}
+
+#[test]
+fn imply_method_host_contract_binds_provider_and_retires_contract_body() {
+    // 回归：`imply` 成员的 `[host_contract]` 目标在声明绑定阶段被冻结为 `Nominal { declaration }`，
+    // 身份登记必须按冻结 ItemId 恢复聚合短名并命中选定 provider；重映射后合同体必须从
+    // linked 模块退役，不得作为孤儿定义进入编译产物（合同体携带聚合字段指令）。
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "std",
+            "std",
+            "namespace std.text;\n\
+             structure Utf8Text { _repr: i32 }\n\
+             imply Utf8Text {\n\
+             \x20\x20\x20[host_contract] micro length(self) -> i32 { return self._repr }\n\
+             }",
+        )
+        .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "namespace std.adaptor.wasm.text;\n\
+             using std.text.{Utf8Text};\n\
+             [host_provider(std::text::Utf8Text::length)] micro host_length(value: Utf8Text): i32 { return value._repr }",
+        )
+        .with_direct_dependencies(vec!["core".into(), "std".into()]),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "namespace demo;\n\
+             using std.text.{Utf8Text};\n\
+             [main] micro main() -> i32 { let t = Utf8Text { _repr: 5 }; return t.length() }",
+        )
+            .as_entry()
+            .with_direct_dependencies(vec!["core".into(), "std".into(), "adaptor".into()]),
+    ];
+    let bindings = vec![CompilerHostProviderBinding {
+        contract: DeclarationKey {
+            dependency_key: "std".into(),
+            source_path: "std.v".into(),
+            namespace: vec!["std".into(), "text".into()],
+            kind: DeclarationKind::ImplyMethod,
+            owner: Some("Utf8Text".into()),
+            name: "length".into(),
+        },
+        provider: micro_declaration_key("adaptor", "adaptor.v", &["std".into(), "adaptor".into(), "wasm".into(), "text".into()], "host_length"),
+        required_capabilities: vec![],
+        foreign_bindings: vec![],
+    }];
+    let hirs = ValkyrieCompiler::default()
+        .resolve_source_groups_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .expect("ImplyMethod 合同组必须完成 HIR 物化");
+    let refs = hirs.iter().collect::<Vec<_>>();
+    let resolved = resolve_host_provider_bindings(&refs, &bindings).expect("resolve 必须结构化成功");
+    assert_eq!(resolved.len(), 1, "ImplyMethod 合同必须命中选定 provider");
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .expect("ImplyMethod 合同绑定 provider 后必须完整编译");
+    let canonical = program.canonical();
+    assert!(!canonical.mir.functions.contains_key(&resolved[0].contract_instance), "合同体必须随重映射退役，不得留在编译产物");
+    assert!(canonical.mir.functions.contains_key(&resolved[0].provider_instance), "provider 实现必须进入编译产物");
 }

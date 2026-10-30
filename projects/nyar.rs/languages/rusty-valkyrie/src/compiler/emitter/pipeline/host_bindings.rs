@@ -166,7 +166,7 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
             }
         }
         for implementation in &module.impls {
-            let Some(owner) = target_owner_name(&implementation.target)
+            let Some(owner) = target_owner_name(module, &implementation.target)
             else {
                 continue;
             };
@@ -231,14 +231,39 @@ fn namespace_parts(namespace: &crate::compiler::types::NamePath) -> Vec<String> 
 }
 
 /// `imply` 目标类型的聚合短名：与闭包 `imply_owner_name` 保持同一事实来源。
-fn target_owner_name(ty: &ValkyrieType) -> Option<&str> {
+///
+/// 声明绑定阶段会把可解析的目标冻结为 `Nominal { declaration }`（`bind_declared_nominal_types`），
+/// 短名不再留在类型表达式里；此时按冻结的 `ItemId` 从模块本地声明表与导入语义导出中恢复
+/// 声明短名（与 HIR `impl_self_owner` / `lookup_owner_generics_by_declaration` 同一查找事实源）。
+/// 未登记的 `ItemId` 返回 None，不做按名猜测。
+fn target_owner_name<'a>(module: &'a HirModule, ty: &'a ValkyrieType) -> Option<&'a str> {
     match ty {
         ValkyrieType::Named(name) => Some(name.as_str()),
-        ValkyrieType::Apply(base, _) => target_owner_name(base),
+        ValkyrieType::Apply(base, _) => target_owner_name(module, base),
+        ValkyrieType::Nominal { declaration, .. } => declared_owner_name(module, *declaration),
         // 停线清理：QualifiedPath 不得在 host_bindings 阶段参与 owner 猜测
         // （短名 fallback 违反架构合同）。无显式绑定则返回 None。
         _ => None,
     }
+}
+
+/// 冻结声明身份 → 聚合声明短名：本地 structs/enums 优先，其次导入语义导出。
+fn declared_owner_name(module: &HirModule, declaration: nyar_types::ItemId) -> Option<&str> {
+    if let Some(structure) = module.structs.iter().find(|item| item.constructor_declaration == Some(declaration)) {
+        return Some(structure.name.as_str());
+    }
+    if let Some(enum_def) = module.enums.iter().find(|item| item.declaration == Some(declaration)) {
+        return Some(enum_def.name.as_str());
+    }
+    for export in &module.imported_semantic_exports {
+        if let Some(structure) = export.structs.iter().find(|item| item.constructor_declaration == Some(declaration)) {
+            return Some(structure.name.as_str());
+        }
+        if let Some(enum_def) = export.enums.iter().find(|item| item.declaration == Some(declaration)) {
+            return Some(enum_def.name.as_str());
+        }
+    }
+    None
 }
 
 /// 将 Resolver 选定的 host provider 绑定应用到已链接的 Semantic MIR，
@@ -375,6 +400,10 @@ fn remap_bound_host_contracts(
     for (contract_instance, _provider_instance) in &remaps {
         module.callable_symbols.remove(contract_instance);
         module.external_calls.retain(|contract| contract.instance != Some(*contract_instance));
+        // 合同体退役：调用已全部重映射到 provider 后，合同实现不再有任何调用身份；
+        // 链接 BFS 在重映射之前已把合同体拉入 linked 模块，若不在此移除，合同体将作为
+        // 孤儿定义留在模块中并进入后端校验（其聚合字段指令与 provider 表示不一致即被拒绝）。
+        module.functions.retain(|function| function.instance != Some(*contract_instance));
     }
 
     Ok(())
