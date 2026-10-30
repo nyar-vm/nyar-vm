@@ -371,6 +371,17 @@ impl MirBuilder {
         // keeps reading the pre-loop SSA locals (CLR: index stuck at 0 → NRE / livelock).
         {
             let mut seen: std::collections::BTreeSet<String> = carried_names.iter().cloned().collect();
+            // 值存储类型（tuple/fixed array/名义值类型）的赋值发 AggregateCopy 而不是
+            // StoreVar；dest 以 `LetBinding{name}` 身份回查变量名，否则仅出现在
+            // break/continue arm 内的聚合赋值会被漏检为非携带变量。
+            let let_binding_names: std::collections::BTreeMap<super::MirValueRef, String> = self
+                .values
+                .iter()
+                .filter_map(|value| match &value.origin {
+                    super::MirValueOrigin::LetBinding { name } => Some((value.id, name.clone())),
+                    _ => None,
+                })
+                .collect();
             for block in &self.blocks {
                 if block.id.0 < loop_body_id.0 {
                     continue;
@@ -379,10 +390,20 @@ impl MirBuilder {
                     continue;
                 }
                 for instruction in &block.instructions {
-                    if let super::MirOperation::StoreVar { name, .. } = &instruction.kind {
-                        if pre_loop_bindings.contains_key(name) && seen.insert(name.clone()) {
-                            carried_names.push(name.clone());
+                    match &instruction.kind {
+                        super::MirOperation::StoreVar { name, .. } => {
+                            if pre_loop_bindings.contains_key(name) && seen.insert(name.clone()) {
+                                carried_names.push(name.clone());
+                            }
                         }
+                        super::MirOperation::AggregateCopy { dest: MirOperand::Value(dest), .. } => {
+                            if let Some(name) = let_binding_names.get(dest) {
+                                if pre_loop_bindings.contains_key(name) && seen.insert(name.clone()) {
+                                    carried_names.push(name.clone());
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -558,19 +579,60 @@ impl MirBuilder {
             }
         }
 
+        // break 出边已携带循环携带变量的当前值（lower_break_expr）；exit 侧必须建立同名
+        // phi 参数，否则实参无处安放。header 条件为假的正常退出边经 `Branch` 终结——
+        // `MirTerminator::Branch` 没有实参字段（wasm 后端还禁止 Branch 跳向有参数的块），
+        // 所以把指向 exit 的 Branch 边重定向到 stub 块，由 stub 以 `Jump{exit, header 参数}`
+        // 传入“最后一轮迭代入口值”。break 路径则传入 break 点新值。两条边都齐备后，
+        // 循环后的读取改绑 exit 参数；exit_value 已存在（带值 break）的正常退出边没有
+        // 值可供给 exit_value 参数，维持旧形状（header 参数绑定）。
+        let add_exit_carried = loop_context.exit_reached_by_break && loop_context.exit_value.is_none() && !carried_names.is_empty();
+        let mut exit_carried_refs: std::collections::BTreeMap<String, super::MirValueRef> = std::collections::BTreeMap::new();
+        if add_exit_carried {
+            for name in &carried_names {
+                let ty = pre_loop_bindings.get(name).and_then(|op| infer_builder_operand_type(op, &self.value_types));
+                let value = self.next_value(MirValueOrigin::BlockParameter { block: loop_exit_id, name: name.to_string() });
+                if let Some(ty) = ty {
+                    self.value_types.insert(value, ty);
+                }
+                self.blocks[loop_exit_id.0 as usize].parameters.push(value);
+                exit_carried_refs.insert(name.to_string(), value);
+            }
+            let normal_exit_stub = self.new_block("loop_normal_exit");
+            let stub_arguments: Vec<MirOperand> = carried_names
+                .iter()
+                .map(|name| {
+                    MirOperand::Value(*carried_value_refs.get(name).expect("loop-carried header parameter must exist"))
+                })
+                .collect();
+            self.terminate(MirTerminator::Jump { target: loop_exit_id, arguments: stub_arguments });
+            self.flush_block("loop_normal_exit");
+            for block in &mut self.blocks {
+                if let MirTerminator::Branch { then_target, else_target, .. } = &mut block.terminator {
+                    if *then_target == loop_exit_id {
+                        *then_target = normal_exit_stub;
+                    }
+                    if *else_target == loop_exit_id {
+                        *else_target = normal_exit_stub;
+                    }
+                }
+            }
+        }
+
         self.current_block = loop_exit_id;
         self.current_label = "loop_exit".to_string();
         self.instructions.clear();
         self.terminator = None;
-        // After exit, rebind carried names to **header parameters** (not the body's latest
-        // StoreVar SSA temps). Header params share the same CLR local as StoreVar once slots
-        // unify them, so post-loop loads see the last write. Pointing at StoreVar outputs
-        // breaks emit when `loop_exit` is lowered before the body (silent empty `ret` →
-        // InvalidProgram). Nested stale reads are fixed by that local unify, not by swapping
-        // the MIR binding to a temp that may lack a planned local yet.
+        // After exit, rebind carried names. Without a live `break` edge the header
+        // parameters are the phi the normal-exit path reads (they share the same CLR
+        // local as StoreVar once slots unify them). With `break` edges the exit
+        // parameters above are the only phi that sees break-point values, so prefer
+        // them. Pointing at StoreVar outputs breaks emit when `loop_exit` is lowered
+        // before the body (silent empty `ret` → InvalidProgram).
         self.bindings = pre_loop_bindings;
         for name in &carried_names {
-            if let Some(&param) = carried_value_refs.get(name) {
+            let parameter = exit_carried_refs.get(name).or_else(|| carried_value_refs.get(name)).copied();
+            if let Some(param) = parameter {
                 self.bindings.insert(name.clone(), MirOperand::Value(param));
             }
         }
@@ -595,7 +657,7 @@ impl MirBuilder {
         if let Some(loop_index) = self.resolve_loop_index(label.as_ref()) {
             self.control_flow.loop_at_mut(loop_index).exit_reached_by_break = true;
             let exit = self.control_flow.loop_at(loop_index).exit;
-            let arguments = if let Some(expr) = expr.as_deref() {
+            let mut arguments = if let Some(expr) = expr.as_deref() {
                 let operand = self.lower_expr_to_operand(expr);
                 let ty = infer_builder_operand_type(&operand, &self.value_types);
                 let _ = self.ensure_loop_exit_parameter(loop_index, ty);
@@ -607,6 +669,18 @@ impl MirBuilder {
             else {
                 Vec::new()
             };
+            // break 出边必须携带循环携带变量的当前新值，与 continue/back-edge 同源；
+            // 否则 exit 侧 phi（lower_loop_expr 第二遍后建立）缺实参，循环后读取
+            // 落到 header 参数（上一轮迭代入口值），break 路径静默读到过期值。
+            // exit_value 已存在（带值 break）时 exit 参数不扩 carried，维持原 arity。
+            let carried_values = self.control_flow.loop_at(loop_index).carried_values.clone();
+            if !carried_values.is_empty() && self.control_flow.loop_at(loop_index).exit_value.is_none() {
+                for name in &carried_values {
+                    if let Some(operand) = self.bindings.get(name) {
+                        arguments.push(operand.clone());
+                    }
+                }
+            }
             self.terminate(MirTerminator::Jump { target: exit, arguments });
         }
         else {
