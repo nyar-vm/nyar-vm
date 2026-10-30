@@ -1,5 +1,4 @@
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn explicit_impl_for_non_struct_type_supplies_where_evidence() {
     let compiler = rusty_valkyrie::ValkyrieCompiler::default();
     let module = compiler.compile_source(
@@ -17,7 +16,6 @@ fn absent_explicit_impl_for_non_struct_type_is_rejected() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn same_short_trait_names_keep_independent_evidence() {
     rusty_valkyrie::ValkyrieCompiler::default()
         .compile_source(
