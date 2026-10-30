@@ -52,13 +52,14 @@ fn unselected_host_provider_instances(
             let key =
                 declaration_key(module, DeclarationKind::Micro, &namespace_parts(&function.declaring_namespace), None, function.name.as_str());
             // 精确匹配或忽略 source_path 的 fallback
-            let is_selected = selected_providers.contains(&key) || selected_providers.iter().any(|sel| {
-                sel.dependency_key == key.dependency_key
-                    && sel.namespace == key.namespace
-                    && sel.kind == key.kind
-                    && sel.owner == key.owner
-                    && sel.name == key.name
-            });
+            let is_selected = selected_providers.contains(&key)
+                || selected_providers.iter().any(|sel| {
+                    sel.dependency_key == key.dependency_key
+                        && sel.namespace == key.namespace
+                        && sel.kind == key.kind
+                        && sel.owner == key.owner
+                        && sel.name == key.name
+                });
             if is_selected {
                 continue;
             }
@@ -127,15 +128,19 @@ pub fn resolve_host_provider_bindings(
             continue;
         }
         let provider_family = instances.get(&binding.provider).or_else(|| {
-            instances.iter().find(|(key, _)| {
-                key.dependency_key == binding.provider.dependency_key
-                    && key.namespace == binding.provider.namespace
-                    && key.kind == binding.provider.kind
-                    && key.owner == binding.provider.owner
-                    && key.name == binding.provider.name
-            }).map(|(_, family)| family)
+            instances
+                .iter()
+                .find(|(key, _)| {
+                    key.dependency_key == binding.provider.dependency_key
+                        && key.namespace == binding.provider.namespace
+                        && key.kind == binding.provider.kind
+                        && key.owner == binding.provider.owner
+                        && key.name == binding.provider.name
+                })
+                .map(|(_, family)| family)
         });
-        let Some(provider_family) = provider_family else {
+        let Some(provider_family) = provider_family
+        else {
             continue;
         };
         if provider_family.len() != 1 {
@@ -234,10 +239,12 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
     }
     for module in hirs {
         for callable in &module.instantiated_callables {
-            let (Some(declaration), Some(instance)) = (callable.function.declaration, callable.function.instance) else {
+            let (Some(declaration), Some(instance)) = (callable.function.declaration, callable.function.instance)
+            else {
                 continue;
             };
-            let Some(key) = mint_owner.get(&declaration) else {
+            let Some(key) = mint_owner.get(&declaration)
+            else {
                 continue;
             };
             if let Some(family) = instances.get_mut(key) {
@@ -479,16 +486,12 @@ fn install_provider_definition(
 ) -> Result<(), ParseError> {
     if module.functions.iter().any(|function| function.instance == Some(provider_instance)) {
         let symbol = format!("{}#{}", provider_function.display_symbol, provider_instance.index());
-        module
-            .register_callable_symbol(provider_instance, symbol)
-            .map_err(|e| ParseError::Invalid { message: e, span: None })?;
+        module.register_callable_symbol(provider_instance, symbol).map_err(|e| ParseError::Invalid { message: e, span: None })?;
         return Ok(());
     }
     module.functions.push(provider_function.clone());
     let symbol = format!("{}#{}", provider_function.display_symbol, provider_instance.index());
-    module
-        .register_callable_symbol(provider_instance, symbol)
-        .map_err(|e| ParseError::Invalid { message: e, span: None })?;
+    module.register_callable_symbol(provider_instance, symbol).map_err(|e| ParseError::Invalid { message: e, span: None })?;
     Ok(())
 }
 
