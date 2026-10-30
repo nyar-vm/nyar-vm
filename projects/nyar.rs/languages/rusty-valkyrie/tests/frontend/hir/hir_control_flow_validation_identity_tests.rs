@@ -91,3 +91,42 @@ fn keeps_same_integer_carrier_and_integer_literal_let_bindings() {
             .unwrap_or_else(|error| panic!("整数字面量必须按声明类型 `{declared}` 取值: {error}"));
     }
 }
+
+#[test]
+fn accepts_assignment_to_mutable_let_binding() {
+    // 规范 definitions.md：`let mut counter = 0; counter = 1` 是合法改值。
+    let source = "micro bump() -> i32 { let mut counter: i32 = 0 counter = 1 return counter }";
+    ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("`let mut` 绑定赋值必须通过: {error}"));
+}
+
+#[test]
+fn rejects_assignment_to_immutable_let_with_initializer() {
+    // 规范 definitions.md：`let x = 10; x = 20` 是「无法修改不可变变量」的编译错误。
+    let source = "micro shadow() -> i32 { let x: i32 = 10 x = 20 return x }";
+    let error = ValkyrieCompiler::default().compile_source(source).expect_err("不可变 `let`（带初始化）改值必须结构化失败");
+    let HirError::AssignToImmutable { name, source, span } = &error
+    else {
+        panic!("期望 HirError::AssignToImmutable，got {error:?}");
+    };
+    assert_eq!(name, "x", "被拒绝的绑定名必须原样进入诊断: {name}");
+    assert_eq!(source.id, "<control_flow>", "诊断来源必须是控制流校验: {source:?}");
+    assert_ne!((span.start, span.end), (0, 0), "诊断 span 必须指向赋值表达式");
+}
+
+#[test]
+fn accepts_deferred_initialization_assignment_of_immutable_let() {
+    // 规范 definitions.md 延迟初始化例：`let result: i32` 无初始化，分支内首次赋值是绑定不是改值。
+    let source = "micro lazy(flag: bool) -> i32 { let result: i32; if flag { result = 1 } else { result = 2 } return result }";
+    ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("延迟初始化 `let` 的首次赋值必须通过: {error}"));
+}
+
+#[test]
+fn registers_parameter_mutability_without_tightening_parameter_rebinding() {
+    // `mut` 形参（scope.md 控制符）赋值必须通过。
+    let mutable = "micro bump(mut n: i32) -> i32 { n = 1 return n }";
+    ValkyrieCompiler::default().compile_source(mutable).unwrap_or_else(|error| panic!("`mut` 形参赋值必须通过: {error}"));
+    // 刻意宽松守卫：规范对非 `mut` 形参的名字重绑定沉默（只读承诺针对原地修改），
+    // 本轮只登记可变性事实、不收紧；若未来决定收紧形参，此断言须随规范取证一起更新。
+    let plain = "micro bump(n: i32) -> i32 { n = 1 return n }";
+    ValkyrieCompiler::default().compile_source(plain).unwrap_or_else(|error| panic!("非 `mut` 形参重绑定本轮不得拒绝: {error}"));
+}

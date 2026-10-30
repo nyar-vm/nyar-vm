@@ -329,6 +329,15 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// 对不可变 `let`（带初始化）绑定的赋值：赋值是对已绑定值的改值，须声明 `let mut`。
+    AssignToImmutable {
+        /// 被赋值的绑定名。
+        name: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 多个语义检查器各自生产的违规集合。
     SemanticCheckViolations {
         /// 按检查器分组的违规消息。

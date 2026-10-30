@@ -23,7 +23,7 @@ use nyar_types::{DiagnosticSource, DiagnosticSpan};
 
 use super::{control_flow_source, expr_diagnostic_span};
 
-use crate::compiler::hir::control_flow_validation::state::HirValidationState;
+use crate::compiler::hir::control_flow_validation::state::{HirValidationState, LocalBinding};
 pub fn push_local_scope(state: &mut HirValidationState) {
     state.local_scopes.push(BTreeMap::new());
 }
@@ -56,14 +56,42 @@ pub fn current_self_type(state: &HirValidationState) -> Option<&ValkyrieType> {
     state.self_type_stack.last()
 }
 
-pub fn bind_local_type(state: &mut HirValidationState, name: &str, ty: ValkyrieType) {
+/// 按完整声明事实登记一个名字绑定。
+pub fn bind_local(state: &mut HirValidationState, name: &str, binding: LocalBinding) {
     if let Some(scope) = state.local_scopes.last_mut() {
-        scope.insert(name.to_string(), ty);
+        scope.insert(name.to_string(), binding);
     }
 }
 
+/// 登记形参绑定：只登记可变性事实。
+///
+/// 规范对形参名重绑定沉默（`scope.md` 的只读承诺针对原地修改），本轮不在体内赋值上收紧，
+/// 因此形参的 `rejects_assignment` 恒为 false。
+pub fn bind_parameter_local(state: &mut HirValidationState, name: &str, ty: ValkyrieType, is_mutable: bool) {
+    bind_local(state, name, LocalBinding { ty, is_mutable, rejects_assignment: false });
+}
+
+/// pattern 绑定登记时携带的声明面可变性事实。
+#[derive(Debug, Clone, Copy)]
+pub struct PatternBindingFacts {
+    /// 声明面是否可变。
+    pub is_mutable: bool,
+    /// 体内赋值是否应被拒绝（仅不可变且带初始化的 `let` 为 true）。
+    pub rejects_assignment: bool,
+}
+
+impl PatternBindingFacts {
+    /// `case` / `if let` / loop pattern 等非 `let` 声明位的默认事实：登记但拒绝收紧。
+    pub const LENIENT: Self = Self { is_mutable: false, rejects_assignment: false };
+}
+
 pub fn bind_pattern_type(state: &mut HirValidationState, pattern: &HirPattern, ty: &ValkyrieType) {
-    bind_pattern_type_with_hint(state, pattern, Some(ty));
+    bind_pattern_type_with_hint(state, pattern, Some(ty), PatternBindingFacts::LENIENT);
+}
+
+/// `let` 声明位专用登记：携带该 `let` 的可变性与「不可变且带初始化」的拒绝事实。
+pub fn bind_pattern_type_with_facts(state: &mut HirValidationState, pattern: &HirPattern, ty: &ValkyrieType, facts: PatternBindingFacts) {
+    bind_pattern_type_with_hint(state, pattern, Some(ty), facts);
 }
 
 pub fn validate_pattern_semantics(pattern: &HirPattern) -> Result<(), HirError> {
@@ -119,26 +147,36 @@ pub fn render_pattern_name(name: &NamePath) -> String {
     name.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::")
 }
 
-pub fn bind_pattern_type_with_hint(state: &mut HirValidationState, pattern: &HirPattern, ty: Option<&ValkyrieType>) {
+pub fn bind_pattern_type_with_hint(
+    state: &mut HirValidationState,
+    pattern: &HirPattern,
+    ty: Option<&ValkyrieType>,
+    facts: PatternBindingFacts,
+) {
     match pattern {
         HirPattern::Variable(identifier) => {
-            bind_local_type(state, identifier.name.as_str(), ty.cloned().unwrap_or(ValkyrieType::AutoType));
+            bind_local(state, identifier.name.as_str(), binding_for(ty, facts));
         }
         HirPattern::TypedBind { identifier, ty: pattern_type } => {
             let explicit = pattern_type.parts().last().cloned().map(ValkyrieType::Named);
-            bind_local_type(state, identifier.name.as_str(), explicit.or_else(|| ty.cloned()).unwrap_or(ValkyrieType::AutoType));
+            let ty = explicit.or_else(|| ty.cloned()).unwrap_or(ValkyrieType::AutoType);
+            bind_local(
+                state,
+                identifier.name.as_str(),
+                LocalBinding { ty, is_mutable: facts.is_mutable, rejects_assignment: facts.rejects_assignment },
+            );
         }
         HirPattern::Tuple(items) => {
             if let Some(ValkyrieType::Tuple(types)) = ty {
                 for (item, item_type) in items.iter().zip(types.iter()) {
-                    bind_pattern_type_with_hint(state, item, Some(item_type));
+                    bind_pattern_type_with_hint(state, item, Some(item_type), facts);
                 }
             }
             for item in items.iter().skip(match ty {
                 Some(ValkyrieType::Tuple(types)) => types.len(),
                 _ => 0,
             }) {
-                bind_pattern_type_with_hint(state, item, None);
+                bind_pattern_type_with_hint(state, item, None, facts);
             }
         }
         HirPattern::Extractor(extractor) => match extractor {
@@ -148,46 +186,63 @@ pub fn bind_pattern_type_with_hint(state: &mut HirValidationState, pattern: &Hir
                     _ => None,
                 };
                 for item in prefix {
-                    bind_pattern_type_with_hint(state, item, item_hint);
+                    bind_pattern_type_with_hint(state, item, item_hint, facts);
                 }
                 if let Some(rest) = rest {
-                    bind_local_type(
+                    let rest_ty = item_hint.cloned().map(|item| ValkyrieType::Array(Box::new(item))).unwrap_or(ValkyrieType::AutoType);
+                    bind_local(
                         state,
                         rest.name.as_str(),
-                        item_hint.cloned().map(|item| ValkyrieType::Array(Box::new(item))).unwrap_or(ValkyrieType::AutoType),
+                        LocalBinding { ty: rest_ty, is_mutable: facts.is_mutable, rejects_assignment: facts.rejects_assignment },
                     );
                 }
                 for item in suffix {
-                    bind_pattern_type_with_hint(state, item, item_hint);
+                    bind_pattern_type_with_hint(state, item, item_hint, facts);
                 }
             }
             crate::compiler::types::hir::HirExtractorPattern::Constructor { fields, .. } => {
                 for field in fields {
-                    bind_pattern_type_with_hint(state, field, None);
+                    bind_pattern_type_with_hint(state, field, None, facts);
                 }
             }
         },
         HirPattern::Object { fields, rest, .. } => {
             for (_, field_pattern) in fields {
-                bind_pattern_type_with_hint(state, field_pattern, None);
+                bind_pattern_type_with_hint(state, field_pattern, None, facts);
             }
             if let Some(rest) = rest {
-                bind_local_type(state, rest.name.as_str(), ty.cloned().unwrap_or(ValkyrieType::AutoType));
+                bind_local(state, rest.name.as_str(), binding_for(ty, facts));
             }
         }
         HirPattern::Or(patterns) => {
             for pattern in patterns {
-                bind_pattern_type_with_hint(state, pattern, ty);
+                bind_pattern_type_with_hint(state, pattern, ty, facts);
             }
         }
         HirPattern::Bind { identifier, pattern } => {
-            bind_pattern_type_with_hint(state, pattern, ty);
-            bind_local_type(state, identifier.name.as_str(), ty.cloned().unwrap_or(ValkyrieType::AutoType));
+            bind_pattern_type_with_hint(state, pattern, ty, facts);
+            bind_local(state, identifier.name.as_str(), binding_for(ty, facts));
         }
-        HirPattern::Mut(pattern) | HirPattern::Pin { pattern, .. } => {
-            bind_pattern_type_with_hint(state, pattern, ty);
+        HirPattern::Mut(pattern) => {
+            // pattern 级 `mut` 是声明面可变事实：其下绑定一律按可变登记，不再收紧赋值。
+            bind_pattern_type_with_hint(state, pattern, ty, PatternBindingFacts { is_mutable: true, rejects_assignment: false });
+        }
+        HirPattern::Pin { mutable, pattern } => {
+            // `pin` 本身只约束值不被移动；可变性取 `pin mut` 与声明位事实的并，
+            // `pin mut` 视同可变绑定。
+            let inner = if *mutable { PatternBindingFacts { is_mutable: true, rejects_assignment: false } } else { facts };
+            bind_pattern_type_with_hint(state, pattern, ty, inner);
         }
         _ => {}
+    }
+}
+
+/// 以 hint 类型与声明事实构造一个 `LocalBinding`。
+fn binding_for(ty: Option<&ValkyrieType>, facts: PatternBindingFacts) -> LocalBinding {
+    LocalBinding {
+        ty: ty.cloned().unwrap_or(ValkyrieType::AutoType),
+        is_mutable: facts.is_mutable,
+        rejects_assignment: facts.rejects_assignment,
     }
 }
 
@@ -495,5 +550,10 @@ pub fn statement_contains_fallthrough(statement: &HirStatement) -> bool {
 }
 
 pub fn lookup_local_type(state: &HirValidationState, name: &str) -> Option<ValkyrieType> {
-    state.local_scopes.iter().rev().find_map(|scope| scope.get(name).cloned())
+    lookup_local(state, name).map(|binding| binding.ty.clone())
+}
+
+/// 取回局部绑定的完整声明事实（类型 + 可变性 + 赋值拒绝）。
+pub fn lookup_local<'a>(state: &'a HirValidationState, name: &str) -> Option<&'a LocalBinding> {
+    state.local_scopes.iter().rev().find_map(|scope| scope.get(name))
 }

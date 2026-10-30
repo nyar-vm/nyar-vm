@@ -23,13 +23,28 @@ use nyar_types::{DiagnosticSource, DiagnosticSpan};
 
 use super::{control_flow_source, expr_diagnostic_span};
 
+/// 局部绑定的声明面事实：类型 + 可变性 + 体内赋值是否应被拒绝。
+///
+/// mutability 只在 HIR 声明面（`let` / `let mut` / 形参 / pattern `mut`）登记一次，
+/// 下游校验只消费这份事实，不得从名字或调用点重新推断。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalBinding {
+    /// 绑定的静态类型事实。
+    pub(crate) ty: ValkyrieType,
+    /// 声明面是否可变（`let mut`、`mut` 形参、pattern `mut` / `pin mut`）。
+    pub(crate) is_mutable: bool,
+    /// 体内赋值是否应被拒绝：不可变 `let` 且带初始化时，赋值是对已绑定值的改值。
+    /// 形参（规范对重绑定沉默）与无初始化 `let`（延迟初始化，首次赋值即绑定）为 false。
+    pub(crate) rejects_assignment: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HirValidationState {
     pub(crate) current_function: Option<String>,
     pub(crate) in_guard: bool,
     pub(crate) self_type_stack: Vec<ValkyrieType>,
     pub(crate) return_type_stack: Vec<ValkyrieType>,
-    pub(crate) local_scopes: Vec<BTreeMap<String, ValkyrieType>>,
+    pub(crate) local_scopes: Vec<BTreeMap<String, LocalBinding>>,
     /// Unified loop / try / case chain / catch / generator / async scope tracking.
     pub(crate) control_flow: ControlFlowContext,
     /// 本模块内已冻结为声明身份的数值 primitive（`core/primitive` 的 `structure`）。
