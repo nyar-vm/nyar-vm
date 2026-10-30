@@ -18,6 +18,9 @@ fn function(instructions: Vec<Instruction>, terminator: Terminator, value_types:
             Constant::Utf8(_) => NyarType::Utf8,
             Constant::Utf16(_) => NyarType::Utf16,
             Constant::Unit => NyarType::Unit,
+            // 空值没有独立名义类型，只能经带 `T?` 类型的 LoadConstant 进入计划（与 `physical_contract`
+            // 同一合同）；返回类型推断无法为裸 null 常量给出载体，失败关闭。
+            Constant::Null => panic!("bare null constant has no standalone semantic type"),
         },
         _ => NyarType::Unit,
     };
@@ -199,4 +202,25 @@ fn rejects_call_result_without_semantic_type() {
         value_types,
     ));
     assert_eq!(result.unwrap_err().code, "SMIR001");
+}
+
+#[test]
+fn rejects_bare_null_constant_return() {
+    // 裸 null 常量没有独立语义类型，返回操作数缺少 `T?` 载体时按未定型失败关闭（SMIR001）。
+    let mut fixture = function(Vec::new(), Terminator::Return { value: None }, BTreeMap::new());
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Constant(Constant::Null)) };
+    assert_eq!(validate_function(&fixture).unwrap_err().code, "SMIR001");
+}
+
+#[test]
+fn accepts_null_constant_with_nullable_carrier() {
+    // null 的合法进入路径是带 `T?` 类型的 LoadConstant；SSA 结果类型与返回类型同载体时接受。
+    let output = ValueRef(3);
+    let carrier = NyarType::Nullable(Box::new(NyarType::Integer32 { signed: true }));
+    let result = validate_function(&function(
+        vec![instr(InstructionKind::LoadConstant { constant: Constant::Null, ty: Some(carrier.clone()) }, vec![output])],
+        Terminator::Return { value: Some(Operand::Value(output)) },
+        BTreeMap::from([(output, carrier)]),
+    ));
+    assert!(result.is_ok());
 }
