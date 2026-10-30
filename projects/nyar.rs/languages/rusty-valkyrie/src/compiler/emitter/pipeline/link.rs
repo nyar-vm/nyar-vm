@@ -58,6 +58,14 @@ pub fn link_reachable_dependency_mir_with_hir(
                     });
                 }
                 if let Some((previous_module, previous)) = definitions.insert(instance, (module, function)) {
+                    // 宿主绑定已把依赖 provider 定义迁入消费模块时，同一身份会在本模块与依赖
+                    // 模块各有一份副本。唯一副本仍归消费模块；只接受逐字段完全一致的合同，
+                    // 定义一旦不同就是真实冲突，仍然失败闭合。
+                    let installed_copy = std::ptr::eq(previous_module, &*consumer) && !std::ptr::eq(module, &*consumer);
+                    if installed_copy && previous == function {
+                        definitions.insert(instance, (previous_module, previous));
+                        continue;
+                    }
                     return Err(ParseError::Invalid {
                         message: format!(
                             "ItemInstanceId `{instance}` 定义重复；first=`{}`@`{}`; second=`{}`@`{}`",
@@ -228,7 +236,10 @@ fn freeze_fragment_aggregate_operations(
                 required.push((concrete.clone(), *role, instance));
             }
         }
-        let mut seen = BTreeSet::new();
+        // 同一 (type_id, operation) 只冻结一条；链接可能因宿主绑定后补闭包而重跑，
+        // 已冻结的操作必须视为已存在，不得重复追加。
+        let mut seen =
+            fragment.aggregate_operations.iter().map(|operation| (operation.type_id, operation.operation)).collect::<BTreeSet<_>>();
         for (concrete, operation, instance) in required {
             let type_id = linked.type_identities.get(&concrete).copied().ok_or_else(|| ParseError::Invalid {
                 message: format!("片段 `{}` 的聚合实例 `{concrete:?}` 不在 Compiler 统一 TypeId 表中", fragment.id),

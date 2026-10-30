@@ -102,7 +102,7 @@ fn module_with_contract_call(contract_instance: ItemInstanceId, provider_instanc
 }
 
 fn binding(contract_instance: ItemInstanceId, provider_instance: ItemInstanceId) -> ResolvedHostProviderBinding {
-    ResolvedHostProviderBinding { contract_instance, provider_instance }
+    ResolvedHostProviderBinding { contract_instances: std::iter::once(contract_instance).collect(), provider_instance }
 }
 
 #[test]

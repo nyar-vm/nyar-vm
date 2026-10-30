@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use nyar_types::ItemInstanceId;
+use nyar_types::{ItemId, ItemInstanceId};
 
 use crate::compiler::{
     emitter::backend_contract::interop::function_host_provider_target,
@@ -73,16 +73,20 @@ fn unselected_host_provider_instances(
 }
 
 /// Resolver 选定且已映射为 Compiler 实例身份的 host provider 绑定。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedHostProviderBinding {
-    /// `[host_contract]` 在源码闭包中的 callable 实例。
-    pub contract_instance: ItemInstanceId,
+    /// `[host_contract]` 在源码闭包中的 callable 实例族：声明实例加上单态化按
+    /// 同一声明身份铸造的全部实例化副本。
+    ///
+    /// impl 成员的调用点身份是铸造实例而非声明实例；绑定若只覆盖声明实例，
+    /// 合同体会以实例化孤儿的形态残留在产物里。
+    pub contract_instances: BTreeSet<ItemInstanceId>,
     /// 选定 `[host_provider]` 实现的 callable 实例。
     pub provider_instance: ItemInstanceId,
 }
 
 struct PlannedBinding {
-    contract_instance: ItemInstanceId,
+    contract_instances: BTreeSet<ItemInstanceId>,
     provider_instance: ItemInstanceId,
     provider_function: Option<MirFunction>,
 }
@@ -101,42 +105,60 @@ pub fn resolve_host_provider_bindings(
     let instances = host_callable_instances(hirs)?;
     let mut resolved = Vec::new();
     for binding in bindings {
-        // 精确匹配
-        if let (Some(ci), Some(pi)) = (instances.get(&binding.contract), instances.get(&binding.provider)) {
-            resolved.push(ResolvedHostProviderBinding { contract_instance: *ci, provider_instance: *pi });
+        // 精确匹配；未命中则忽略 source_path fallback（planner 按文件构造，HIR 按 group 合并）。
+        let contract_instances = match instances.get(&binding.contract) {
+            Some(family) => family.clone(),
+            None => {
+                let mut union = BTreeSet::new();
+                for (key, family) in &instances {
+                    if key.dependency_key == binding.contract.dependency_key
+                        && key.namespace == binding.contract.namespace
+                        && key.kind == binding.contract.kind
+                        && key.owner == binding.contract.owner
+                        && key.name == binding.contract.name
+                    {
+                        union.extend(family.iter().copied());
+                    }
+                }
+                union
+            }
+        };
+        if contract_instances.is_empty() {
             continue;
         }
-        // Fallback: 忽略 source_path（planner 按文件构造，HIR 按 group 合并）
-        let contract_match = instances.iter().find(|(k, _)| {
-            k.dependency_key == binding.contract.dependency_key
-                && k.namespace == binding.contract.namespace
-                && k.kind == binding.contract.kind
-                && k.owner == binding.contract.owner
-                && k.name == binding.contract.name
+        let provider_family = instances.get(&binding.provider).or_else(|| {
+            instances.iter().find(|(key, _)| {
+                key.dependency_key == binding.provider.dependency_key
+                    && key.namespace == binding.provider.namespace
+                    && key.kind == binding.provider.kind
+                    && key.owner == binding.provider.owner
+                    && key.name == binding.provider.name
+            }).map(|(_, family)| family)
         });
-        let provider_match = instances.iter().find(|(k, _)| {
-            k.dependency_key == binding.provider.dependency_key
-                && k.namespace == binding.provider.namespace
-                && k.kind == binding.provider.kind
-                && k.owner == binding.provider.owner
-                && k.name == binding.provider.name
-        });
-        if let (Some((_, ci)), Some((_, pi))) = (contract_match, provider_match) {
-            resolved.push(ResolvedHostProviderBinding { contract_instance: *ci, provider_instance: *pi });
+        let Some(provider_family) = provider_family else {
             continue;
+        };
+        if provider_family.len() != 1 {
+            return Err(ParseError::Invalid {
+                message: format!("host provider 声明 `{}` 对应 {} 个实例", binding.provider.encoded(), provider_family.len()),
+                span: None,
+            });
         }
+        let provider_instance = *provider_family.iter().next().expect("single provider instance");
+        resolved.push(ResolvedHostProviderBinding { contract_instances, provider_instance });
     }
     Ok(resolved)
 }
 
-/// HIR 已注册 callable 身份 → inventory 声明身份的唯一映射。
+/// HIR 已注册 callable 身份 → inventory 声明身份的映射（声明身份 → 实例族）。
 ///
-/// 映射只消费 HIR 已注册的 `declaration` / `instance`；同一声明身份对应多个实例
-/// 或同一实例对应多个声明身份都按结构化失败处理。声明种类与拥有者必须与语义闭包
+/// 映射只消费 HIR 已注册的 `declaration` / `instance`；声明种类与拥有者必须与语义闭包
 /// `collect_item` / `collect_members` / `collect_imply` 的登记一致，否则成员合同
-/// 会被当成“未进入闭包”而静默跳过。
-fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKey, ItemInstanceId>, ParseError> {
-    let mut collected = BTreeMap::<DeclarationKey, BTreeSet<ItemInstanceId>>::new();
+/// 会被当成“未进入闭包”而静默跳过。声明侧同一名字出现多个声明身份或多个声明实例
+/// 按结构化失败处理；单态化铸造副本（`instantiated_callables`）不参与名字扫描，
+/// 按同一声明 `ItemId` 挂到实例族下——调用点只指向铸造实例，合同必须覆盖整个族。
+fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKey, BTreeSet<ItemInstanceId>>, ParseError> {
+    let mut collected = BTreeMap::<DeclarationKey, CallableFamily>::new();
     for module in hirs {
         for function in &module.functions {
             collect_callable_instance(
@@ -198,20 +220,48 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
         }
     }
     let mut instances = BTreeMap::new();
-    for (key, found) in collected {
-        if found.len() != 1 {
+    let mut mint_owner = BTreeMap::<ItemId, DeclarationKey>::new();
+    for (key, family) in collected {
+        if family.declarations.len() > 1 || family.instances.len() > 1 {
             return Err(ParseError::Invalid {
-                message: format!("callable 声明 `{}` 对应多个 ItemInstanceId", key.encoded()), span: None
+                message: format!("callable 声明 `{}` 对应多个声明身份或实例", key.encoded()), span: None
             });
         }
-        instances.insert(key, *found.iter().next().expect("single callable instance"));
+        for declaration in &family.declarations {
+            mint_owner.insert(*declaration, key.clone());
+        }
+        instances.insert(key, family.instances);
+    }
+    for module in hirs {
+        for callable in &module.instantiated_callables {
+            let (Some(declaration), Some(instance)) = (callable.function.declaration, callable.function.instance) else {
+                continue;
+            };
+            let Some(key) = mint_owner.get(&declaration) else {
+                continue;
+            };
+            if let Some(family) = instances.get_mut(key) {
+                family.insert(instance);
+            }
+        }
     }
     Ok(instances)
 }
 
-fn collect_callable_instance(collected: &mut BTreeMap<DeclarationKey, BTreeSet<ItemInstanceId>>, key: DeclarationKey, function: &HirFunction) {
+/// 声明身份 → 实例族条目：声明侧实例与单态化铸造副本（后续按 `ItemId` 汇入）合并。
+#[derive(Default)]
+struct CallableFamily {
+    declarations: BTreeSet<ItemId>,
+    instances: BTreeSet<ItemInstanceId>,
+}
+
+fn collect_callable_instance(collected: &mut BTreeMap<DeclarationKey, CallableFamily>, key: DeclarationKey, function: &HirFunction) {
+    let family = collected.entry(key).or_default();
+    if let Some(declaration) = function.declaration {
+        family.declarations.insert(declaration);
+    }
     if let Some(instance) = function.instance {
-        collected.entry(key).or_default().insert(instance);
+        family.instances.insert(instance);
     }
 }
 
@@ -325,6 +375,9 @@ fn enforce_resolved_host_contract_bindings(module: &MirModule) -> Result<(), Par
 }
 
 /// 按 Resolver 绑定把合同调用重映射到 provider，并安装 provider 定义/导入。
+///
+/// 合同身份覆盖整个实例族：族内每个实例的调用都重定向到 provider，族内全部
+/// 合同体（声明体与实例化副本）一并退役，不得留下进入后端的孤儿。
 fn remap_bound_host_contracts(
     module: &mut MirModule,
     dependency_mirs: &[MirModule],
@@ -334,7 +387,7 @@ fn remap_bound_host_contracts(
     let mut plans = Vec::new();
 
     for binding in bindings {
-        if !callable_present(&modules, binding.contract_instance) {
+        if !binding.contract_instances.iter().any(|instance| callable_present(&modules, *instance)) {
             continue;
         }
         if !callable_present(&modules, binding.provider_instance) {
@@ -349,7 +402,7 @@ fn remap_bound_host_contracts(
             .find(|function| function.instance == Some(binding.provider_instance))
             .cloned();
         plans.push(PlannedBinding {
-            contract_instance: binding.contract_instance,
+            contract_instances: binding.contract_instances.clone(),
             provider_instance: binding.provider_instance,
             provider_function,
         });
@@ -358,13 +411,15 @@ fn remap_bound_host_contracts(
     // 先完成全部合同的身份映射校验，再安装 provider 定义；冲突绑定不得留下部分副作用。
     let mut remaps = BTreeMap::<ItemInstanceId, ItemInstanceId>::new();
     for plan in &plans {
-        if plan.contract_instance == plan.provider_instance {
-            continue;
-        }
-        if let Some(previous) = remaps.insert(plan.contract_instance, plan.provider_instance)
-            && previous != plan.provider_instance
-        {
-            return Err(ParseError::Invalid { message: "host contract 不能同时绑定到多个 provider".into(), span: None });
+        for contract_instance in &plan.contract_instances {
+            if *contract_instance == plan.provider_instance {
+                continue;
+            }
+            if let Some(previous) = remaps.insert(*contract_instance, plan.provider_instance)
+                && previous != plan.provider_instance
+            {
+                return Err(ParseError::Invalid { message: "host contract 不能同时绑定到多个 provider".into(), span: None });
+            }
         }
     }
 
@@ -397,12 +452,13 @@ fn remap_bound_host_contracts(
         remap_call_targets(function, &remaps);
     }
 
-    for (contract_instance, _provider_instance) in &remaps {
+    for contract_instance in remaps.keys() {
         module.callable_symbols.remove(contract_instance);
         module.external_calls.retain(|contract| contract.instance != Some(*contract_instance));
-        // 合同体退役：调用已全部重映射到 provider 后，合同实现不再有任何调用身份；
-        // 链接 BFS 在重映射之前已把合同体拉入 linked 模块，若不在此移除，合同体将作为
-        // 孤儿定义留在模块中并进入后端校验（其聚合字段指令与 provider 表示不一致即被拒绝）。
+        // 合同体退役（含实例化副本）：调用已全部重映射到 provider 后，合同实现不再
+        // 有任何调用身份；链接 BFS 在重映射之前已把合同体与铸造副本拉入 linked 模块，
+        // 若不在此移除，它们将作为孤儿定义留在模块中并进入后端校验（其聚合字段指令
+        // 与 provider 表示不一致即被拒绝）。
         module.functions.retain(|function| function.instance != Some(*contract_instance));
     }
 
