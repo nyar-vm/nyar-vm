@@ -62,8 +62,8 @@ impl MirLowerer {
         dispatch: &[generic_call_instantiation::MirDispatchEntry],
     ) -> MirModule {
         let singleton_accessor_instances = crate::compiler::mir::singleton_accessor_instance_map(module);
-        let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
         let mut diagnostics = Vec::new();
+        let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module, &mut diagnostics);
         let structs = collect_field_declarations(module, &mut diagnostics);
         let nominal_offset = u32::try_from(structs.len()).expect("aggregate nominal identity overflow");
         let (sum_types, flags_types) = crate::compiler::hir::lowering::compute_nominal_declarations(module, nominal_offset, &mut diagnostics);
