@@ -12,6 +12,7 @@ use nyar_types::StorageKind;
 
 use crate::compiler::{
     emitter::frontend_contract::concretize_type,
+    mir::MirDiagnostic,
     types::hir::{HirModule, HirStruct, ValkyrieType},
 };
 
@@ -96,8 +97,41 @@ pub fn layout_id_for_type(ty: &ValkyrieType, plan: &AggregateLayoutPlan) -> Opti
     plan.synthetic_layouts.get(&key).copied()
 }
 
+/// 声明层布局事实：核心 primitive 平台载体、已冻结声明拼写与类型级标记。
+///
+/// 拼写与 canonical `register_declaration_spellings` 同口径（`namespace.name`
+/// 规范成 `::`）；载体优先于拼写，保持既有平台符号性口径。缺事实的字段失败
+/// 关闭，禁止按短名猜载体。
+#[derive(Default)]
+struct LayoutFacts {
+    primitive_carriers: BTreeMap<nyar_types::ItemId, ValkyrieType>,
+    declaration_spellings: BTreeMap<nyar_types::ItemId, String>,
+    markers: BTreeSet<nyar_types::ItemId>,
+}
+
+/// 声明拼写：`namespace.name` → `namespace::name`。
+fn declaration_spelling(hir_struct: &HirStruct) -> String {
+    let name = hir_struct.name.as_str();
+    let qualified = if hir_struct.namespace.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}.{}", hir_struct.namespace.iter().map(|id| id.as_str()).collect::<Vec<_>>().join("."), name)
+    };
+    qualified.replace('.', "::")
+}
+
+/// 布局事实缺失的结构化诊断；取代旧严格 concretize 的 panic 路径。
+fn unresolved_layout_diagnostic(hir_struct: &HirStruct) -> MirDiagnostic {
+    MirDiagnostic::UnresolvedValueType {
+        context: format!("聚合 `{}` 字段布局缺少已冻结声明拼写或含未代入类型", declaration_spelling(hir_struct)),
+    }
+}
+
 /// 从 HIR 收集聚合布局计划：结构体、导入结构体与 singleton 载体。
-pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan {
+///
+/// 字段无法解析为平台布局形状时（缺声明拼写、含未代入 `Self`/泛型）不再 panic：
+/// 推送 [`MirDiagnostic::UnresolvedValueType`] 并跳过该声明的登记，由下游按失败处理。
+pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<MirDiagnostic>) -> AggregateLayoutPlan {
     let mut plan = AggregateLayoutPlan::default();
     let mut structs = Vec::new();
     collect_module_structs(module, &mut structs);
@@ -120,14 +154,28 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
         };
         primitive_carriers.insert(declaration, carrier);
     }
+    // 声明拼写覆盖全部声明（含泛型声明与 singleton）：闭合泛型实例
+    // `Nominal{ArrayList, [u8]}` 的基名解析依赖它，与 canonical 登记同口径。
+    let singleton_structs: Vec<HirStruct> =
+        module.singletons.iter().map(|singleton| crate::compiler::mir::singleton::singleton_as_struct(singleton)).collect();
+    let mut declaration_spellings = BTreeMap::new();
+    let imported_structs = module.imported_semantic_exports.iter().flat_map(|export| export.structs.iter());
+    for hir_struct in structs.iter().copied().chain(imported_structs).chain(singleton_structs.iter()) {
+        if let Some(declaration) = hir_struct.constructor_declaration {
+            declaration_spellings.insert(declaration, declaration_spelling(hir_struct));
+        }
+    }
+    let facts = LayoutFacts { primitive_carriers, declaration_spellings, markers };
     for hir_struct in structs {
         // 开放泛型声明不得生成平台布局（字段仍是 binder）；与 SumTypeLayout 同口径。
         if !hir_struct.generics.is_empty() {
             continue;
         }
         let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
-        let layout = layout_for_struct(hir_struct, &mut plan, storage, &primitive_carriers, &markers);
-        register_declared_layout(&mut plan, hir_struct, layout);
+        match layout_for_struct(hir_struct, &plan, storage, &facts) {
+            Some(layout) => register_declared_layout(&mut plan, hir_struct, layout),
+            None => diagnostics.push(unresolved_layout_diagnostic(hir_struct)),
+        }
     }
     // Semantic-group builds keep only consumer HIR; imported structures (e.g.
     // VonDiagnostic) live on imported_semantic_exports and must still provide
@@ -144,17 +192,20 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
                 continue;
             }
             let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
-            let layout = layout_for_struct(hir_struct, &mut plan, storage, &primitive_carriers, &markers);
-            register_declared_layout(&mut plan, hir_struct, layout);
+            match layout_for_struct(hir_struct, &plan, storage, &facts) {
+                Some(layout) => register_declared_layout(&mut plan, hir_struct, layout),
+                None => diagnostics.push(unresolved_layout_diagnostic(hir_struct)),
+            }
         }
     }
-    for singleton in &module.singletons {
-        let hir_struct = crate::compiler::mir::singleton::singleton_as_struct(singleton);
+    for hir_struct in &singleton_structs {
         if !hir_struct.generics.is_empty() {
             continue;
         }
-        let layout = layout_for_struct(&hir_struct, &mut plan, MirStorageKind::Reference, &primitive_carriers, &markers);
-        register_declared_layout(&mut plan, &hir_struct, layout);
+        match layout_for_struct(hir_struct, &plan, MirStorageKind::Reference, &facts) {
+            Some(layout) => register_declared_layout(&mut plan, hir_struct, layout),
+            None => diagnostics.push(unresolved_layout_diagnostic(hir_struct)),
+        }
     }
     plan
 }
@@ -441,32 +492,73 @@ pub fn layout_for_fixed_array(element_type: &ValkyrieType, length: usize, plan: 
     layout
 }
 
-fn layout_for_struct(
-    hir_struct: &HirStruct,
-    plan: &AggregateLayoutPlan,
-    storage: MirStorageKind,
-    primitive_carriers: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
-    markers: &BTreeSet<nyar_types::ItemId>,
-) -> AggregateLayout {
-    let fields = hir_struct
-        .fields
-        .iter()
-        .filter(|field| !is_type_level_marker_field(&field.ty, markers))
-        .map(|field| {
-            // 核心 primitive 声明在 HIR 中冻结为 Nominal{ItemId}；布局必须回到平台载体，
-            // 否则字段布局缺少平台 NyarType::Nominal 形状。
-            let ty = field
-                .ty
-                .nominal_declaration()
-                .and_then(|declaration| primitive_carriers.get(&declaration))
-                .cloned()
-                .unwrap_or_else(|| field.ty.clone());
-            let (size, align) = scalar_layout(&ty, plan);
-            FieldSpec { name: field.name.to_string(), ty, size, align }
-        })
-        .collect();
+/// 递归应用 primitive 载体：结构容器内的 `Nominal{core primitive}` 同样映射到平台载体。
+///
+/// 载体只认已冻结 declaration ItemId；带非空实参的名义实例保留声明身份、
+/// 递归代入实参。这是实例层 `layout_field_type` 拼写路径在声明层的对应物：
+/// `[u8]`、`ArrayList<u8>` 这类形状不再命中严格 concretize 红线。
+fn apply_primitive_carriers(ty: &ValkyrieType, carriers: &BTreeMap<nyar_types::ItemId, ValkyrieType>) -> ValkyrieType {
+    if let Some(carrier) = ty.nominal_declaration().and_then(|declaration| carriers.get(&declaration)) {
+        return carrier.clone();
+    }
+    match ty {
+        ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
+            declaration: *declaration,
+            arguments: arguments.iter().map(|argument| apply_primitive_carriers(argument, carriers)).collect(),
+        },
+        ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(
+            Box::new(apply_primitive_carriers(base, carriers)),
+            arguments.iter().map(|argument| apply_primitive_carriers(argument, carriers)).collect(),
+        ),
+        ValkyrieType::Array(element) => ValkyrieType::Array(Box::new(apply_primitive_carriers(element, carriers))),
+        ValkyrieType::Nullable(element) => ValkyrieType::Nullable(Box::new(apply_primitive_carriers(element, carriers))),
+        ValkyrieType::FixedArray { element, length } => {
+            ValkyrieType::FixedArray { element: Box::new(apply_primitive_carriers(element, carriers)), length: *length }
+        }
+        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| apply_primitive_carriers(item, carriers)).collect()),
+        ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| apply_primitive_carriers(item, carriers)).collect()),
+        other => other.clone(),
+    }
+}
+
+/// 声明层聚合布局：字段先经 primitive 载体递归，再走与实例层同口径的
+/// [`layout_field_type`] 解析；缺事实返回 `None`，由调用方产出结构化诊断。
+fn layout_for_struct(hir_struct: &HirStruct, plan: &AggregateLayoutPlan, storage: MirStorageKind, facts: &LayoutFacts) -> Option<AggregateLayout> {
+    let mut offset = 0u32;
+    let mut max_align = 1u32;
+    let mut fields = Vec::with_capacity(hir_struct.fields.len());
+    for field in hir_struct.fields.iter().filter(|field| !is_type_level_marker_field(&field.ty, &facts.markers)) {
+        // 核心 primitive 声明在 HIR 中冻结为 Nominal{ItemId}；布局必须回到平台载体。
+        let mapped = apply_primitive_carriers(&field.ty, &facts.primitive_carriers);
+        // 可严格 concretize 的字段保持既有大小口径；名义字段走已冻结拼写路径，
+        // 与 canonical 实例层 `layout_field_type` 同口径，按平台形状计量。
+        let (ty, (size, align)) = match concretize_type(&mapped) {
+            Ok(concrete) => (concrete, scalar_layout(&mapped, plan)),
+            Err(_) => {
+                let resolved = layout_field_type(&mapped, &facts.declaration_spellings)?;
+                let extent = layout_field_extent(&resolved);
+                (resolved, extent)
+            }
+        };
+        offset = align_offset(offset, align);
+        fields.push(FieldLayout { name: field.name.to_string(), ty, offset, size, align });
+        offset += size;
+        max_align = max_align.max(align);
+    }
+    // Empty aggregates would otherwise get size=0 and fail SMIR010; language-level
+    // empty structs still need a non-zero carrier for layout contracts.
+    let size = align_offset(offset, max_align).max(if fields.is_empty() { max_align.max(1) } else { 0 });
     let namespace = hir_struct.namespace.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(".");
-    build_aggregate_layout(next_layout_id(plan), &hir_struct.name.to_string(), namespace, storage, fields)
+    Some(AggregateLayout {
+        id: next_layout_id(plan),
+        name: hir_struct.name.to_string(),
+        namespace,
+        key: None,
+        storage,
+        size,
+        align: max_align.max(1),
+        fields,
+    })
 }
 
 fn register_declared_layout(plan: &mut AggregateLayoutPlan, declaration: &HirStruct, layout: AggregateLayout) {
