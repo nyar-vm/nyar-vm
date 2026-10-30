@@ -14,6 +14,7 @@ mod compile_pipeline_driver_tests;
 mod compile_pipeline_host_bindings_tests;
 #[cfg(false)] // 旧 link 入口已移除
 mod compile_pipeline_link_tests;
+mod compile_pipeline_semantic_diagnostic_tests;
 #[cfg(false)] // `compiler_input` 旧字段已移除
 mod compiler_input_ownership;
 #[cfg(false)] // 旧阶段守卫按旧 stage 枚举
