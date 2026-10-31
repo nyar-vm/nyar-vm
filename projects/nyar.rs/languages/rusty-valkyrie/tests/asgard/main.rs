@@ -9,6 +9,7 @@ mod cli_static;
 mod config_discovery;
 mod config_model;
 mod config_probe;
+mod glue_contract;
 mod pipeline_discover;
 mod ssg;
 mod static_site;
