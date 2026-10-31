@@ -1,11 +1,7 @@
 //! `asgard` CLI：`asgard build` / `asgard dev` / `asgard pack`。
-use crate::{
-    asgard::error::{AsgardError, AsgardResult},
-    legion::CanonicalTarget,
-    utilities::report::{display_failure, report_msg},
-};
+use crate::{asgard::error::{AsgardError, AsgardResult}, legion::CanonicalTarget};
 use nyar_format::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
-use std::{ffi::OsString, path::PathBuf, process::ExitCode};
+use std::{path::PathBuf, process::ExitCode};
 
 use crate::asgard::{
     CompileOptions, HostArtifactKind, HostPlatform, PackOptions, PackTarget, compile_voa_project,
@@ -406,43 +402,5 @@ pub fn run(command: &AsgardCommands) -> AsgardResult<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         AsgardCommands::Fmt(args) => run_fmt(args),
-    }
-}
-
-/// 解析当前进程 `argv` 并运行 Asgard CLI（供 `valkyrie-napi` 宿主调用）。
-pub fn run_from_env() -> AsgardResult<ExitCode> {
-    run_with_argv_inner(std::env::args_os().collect())
-}
-
-/// 使用显式 `argv` 运行 Asgard CLI（首项通常为 `"asgard"`）。
-///
-/// 在独立大栈线程上执行（大栈用于 Asgard 编译链）：
-/// `--help` / `--version` 视为成功，解析或执行失败返回退出码 1。
-pub fn run_with_argv(argv: Vec<OsString>) -> i32 {
-    let result = std::thread::Builder::new()
-        .name("asgard-main".into())
-        .stack_size(64 * 1024 * 1024)
-        .spawn(move || run_with_argv_inner(argv))
-        .expect("failed to spawn asgard main thread")
-        .join()
-        .expect("asgard main thread panicked");
-    exit_code_from_result(result)
-}
-
-fn run_with_argv_inner(_argv: Vec<OsString>) -> AsgardResult<ExitCode> {
-    Err(AsgardError::msg(report!(
-        "Asgard 不再在 Rust 库内解析 argv（已移除 clap）。请在 TypeScript 侧组装命令并调用 \
-         `valkyrie-napi` 正交 API；库内请直接使用 `asgard::cli::run` 与 `AsgardCommands`。"
-    )))
-}
-
-fn exit_code_from_result(result: AsgardResult<ExitCode>) -> i32 {
-    match result {
-        Ok(code) if code == ExitCode::SUCCESS => 0,
-        Ok(_) => 1,
-        Err(error) => {
-            eprintln!("{}", display_failure(error));
-            1
-        }
     }
 }
