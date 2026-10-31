@@ -1,5 +1,8 @@
 //! `asgard` CLI：`asgard build` / `asgard dev` / `asgard pack`。
-use crate::{asgard::error::{AsgardError, AsgardResult}, legion::CanonicalTarget};
+use crate::{
+    asgard::error::{AsgardError, AsgardResult},
+    legion::CanonicalTarget,
+};
 use nyar_format::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
 use std::{path::PathBuf, process::ExitCode};
 
