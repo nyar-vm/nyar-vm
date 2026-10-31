@@ -3,6 +3,7 @@
 mod mir_branch_binding_merge_tests;
 mod mir_loop_break_binding_tests;
 mod mir_ssa_aggregate_layout_nominal_fields_tests;
+mod mir_function_reference_tests;
 mod mir_ssa_collection_init_tests;
 mod mir_ssa_match_lowering_bottom_type_tests;
 mod mir_ssa_nullable_null_tests;

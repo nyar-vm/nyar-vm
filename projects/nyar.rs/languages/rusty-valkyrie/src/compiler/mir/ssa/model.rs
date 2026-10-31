@@ -583,6 +583,15 @@ pub enum MirOperation {
         /// 符号路径。
         path: NamePath,
     },
+    /// 载入具名函数的实例身份作为一等值。
+    ///
+    /// 实例由 HIR 单态化固定点铸造并回填到 `FunctionReference`；MIR 不重新铸造、
+    /// 不按短名回查。结果 SSA 值的静态类型是 HIR 冻结的 `Function` 签名，
+    /// 间接调用与跨边界传递都以该值载体为准。
+    LoadFunctionRef {
+        /// HIR 冻结的 callable 实例身份。
+        instance: ItemInstanceId,
+    },
     /// 值拷贝。
     Copy {
         /// 拷贝来源。

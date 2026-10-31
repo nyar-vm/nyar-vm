@@ -661,6 +661,21 @@ impl MirBuilder {
             HirExprKind::AnonymousClass { class_name: Some(class_name), fields, captures, .. } => {
                 self.lower_anonymous_class_expr(class_name, fields, captures)
             }
+            HirExprKind::FunctionReference(reference) => {
+                // 具名函数作值：只消费 HIR 冻结的实例身份，缺失即结构化失败，
+                // 禁止按 symbol 短名回查或现场铸造。
+                let Some(instance) = reference.instance
+                else {
+                    self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedCallableIdentity {
+                        symbol: reference.symbol.to_string(),
+                    });
+                    return MirOperand::Constant(MirConstant::Unit);
+                };
+                let value = self.next_value(MirValueOrigin::Temporary);
+                self.push_instruction(MirOperation::LoadFunctionRef { instance }, vec![value]);
+                self.value_types.insert(value, ValkyrieType::Function(reference.signature.clone()));
+                MirOperand::Value(value)
+            }
             HirExprKind::Fallthrough => self.lower_fallthrough_expr(),
             HirExprKind::Cast { expr, ty } => {
                 let operand = self.lower_expr_to_operand(expr);
