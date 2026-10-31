@@ -372,6 +372,28 @@ impl CanonicalSemanticMir {
                             }
                             Vec::new()
                         }
+                        CanonicalOperation::LoadFunctionRef { instance } => {
+                            // 函数作值只携带冻结实例身份：必须存在于已链接闭包，
+                            // 结果必须恰好一个且为 Function 类型 kind；否则失败关闭。
+                            if !linked.item_instances.contains_key(instance) {
+                                return Err(CanonicalMirError::UnknownCallee { function: *key, callee: *instance });
+                            }
+                            if instruction.results.len() != 1
+                                || !instruction
+                                    .results
+                                    .first()
+                                    .and_then(|value| function.value_types.get(value))
+                                    .is_some_and(|ty| matches!(linked.types.get(ty).map(|row| &row.kind), Some(CanonicalTypeKind::Function { .. })))
+                            {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            Vec::new()
+                        }
                         CanonicalOperation::SumNew { nominal, variant, payload } => {
                             let Some(record) = linked.variants.get(&(*nominal, *variant))
                             else {

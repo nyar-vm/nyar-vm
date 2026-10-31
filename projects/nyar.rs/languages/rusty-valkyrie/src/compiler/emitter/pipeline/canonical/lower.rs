@@ -214,6 +214,8 @@ fn lower_operation(
             Ok(CanonicalOperation::AggregateCopy { source: value(source)?, destination: value(dest)? })
         }
         MirOperation::LoadConstant { constant, .. } => Ok(CanonicalOperation::LoadConstant { constant: lower_constant(constant)? }),
+        // 函数作值 1:1 保留冻结实例身份；结果 Function TypeId 由 value_types 表统一登记。
+        MirOperation::LoadFunctionRef { instance } => Ok(CanonicalOperation::LoadFunctionRef { instance: *instance }),
         MirOperation::ArrayGet { array, index } => Ok(CanonicalOperation::ArrayGet { array: value(array)?, index: value(index)? }),
         MirOperation::ArraySet { array, index, value: stored } => {
             Ok(CanonicalOperation::ArraySet { array: value(array)?, index: value(index)?, value: value(stored)? })
