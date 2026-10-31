@@ -6,6 +6,7 @@ mod array_push_intrinsic_declaration_tests;
 #[cfg(false)] // MirFunction 旧字段、executable_provider 已移除（架构迁移）
 mod case_chain_validation;
 mod frontend_contract_control_flow_payload_witness_identity_tests;
+mod intrinsic_link_boundary_tests;
 #[cfg(false)] // FragmentSubmission 旧字段已移除（架构迁移）
 mod generic_struct_new_contract;
 #[cfg(false)] // FragmentSubmission 旧字段已移除（架构迁移）

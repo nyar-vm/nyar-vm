@@ -2,7 +2,7 @@ use crate::compiler::{
     hir::is_nullable_type,
     types::{
         Identifier, NamePath,
-        hir::{FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
+        hir::{BuiltinStructureOp, FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
     },
 };
 
@@ -329,18 +329,43 @@ impl MirBuilder {
 
     /// 数组结构操作 intrinsic 的统一降级点。
     ///
-    /// 核心合同见文件头：intrinsic 专用 opcode（`ArrayLength`/`ArrayGet`/`ArraySet`）只允许
-    /// 由 adaptor 链接进来的后端专用绑定产生；源码 `[intrinsic(...)]` 自由函数与语言 builtin
-    /// intrinsic 候选一律走普通 Call 路径，由 planner adaptor / backend TargetExecutionPlan
-    /// 链路消费。当前没有 adaptor 链接进来的后端绑定，因此所有数组 intrinsic 调用直接
-    /// `return None` 让主 lowering 循环走 Call 分支。
+    /// 核心合同见文件头：源码 `[intrinsic(...)]` 自由函数永远降级为普通 Call（声明与
+    /// 实例身份必须保留），因此这里只处理**没有声明/实例身份的语言内建下标候选**
+    /// （`suffix [ ]` / `suffix ⁅ ⁆` 及其赋值形态）。这些候选没有 callable 可指向，
+    /// 普通 Call 路径必然失败；其 `intrinsic` 身份由 HIR 候选冻结，不是名字或目标猜测。
     pub(crate) fn try_lower_array_intrinsics(
         &mut self,
-        _resolved: Option<&HirResolvedCall>,
-        _arguments: &[MirOperand],
+        resolved: Option<&HirResolvedCall>,
+        arguments: &[MirOperand],
         _expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
-        None
+        let call = resolved?;
+        if call.declaration.is_some() || call.instance.is_some() {
+            return None;
+        }
+        match call.intrinsic? {
+            BuiltinStructureOp::ArrayGet if arguments.len() == 2 => {
+                let value = self.next_value(MirValueOrigin::CallResult);
+                self.push_instruction(
+                    MirOperation::ArrayGet { array: arguments[0].clone(), index: arguments[1].clone() },
+                    vec![value],
+                );
+                self.value_types.insert(value, call.return_type.clone());
+                Some(MirOperand::Value(value))
+            }
+            BuiltinStructureOp::ArraySet if arguments.len() == 3 => {
+                self.push_instruction(
+                    MirOperation::ArraySet {
+                        array: arguments[0].clone(),
+                        index: arguments[1].clone(),
+                        value: arguments[2].clone(),
+                    },
+                    Vec::new(),
+                );
+                Some(MirOperand::Constant(MirConstant::Unit))
+            }
+            _ => None,
+        }
     }
 
     /// Positional `Range(a, b)` ??????????`StructNew`???????????`Call`??
