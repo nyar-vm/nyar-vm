@@ -14,6 +14,6 @@ mod static_site;
 mod symbols_tests;
 
 // Private implementation tests on disk under awsl/, codegen/, etc. — wire when using public API.
-// TODO: mod config; mod config_script; mod deploy;
+// TODO: mod deploy;
 // TODO: mod host; mod host_backend; mod host_validation;
 // TODO: mod awsl; mod codegen; mod package; mod platform_contract; mod tailwind;
