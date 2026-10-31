@@ -5,7 +5,6 @@ pub mod awsl;
 pub mod cli;
 pub mod codegen;
 pub mod compile;
-pub mod config;
 pub mod config_discovery;
 pub mod config_model;
 pub mod delivery;
