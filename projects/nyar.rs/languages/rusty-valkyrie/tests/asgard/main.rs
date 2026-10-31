@@ -11,6 +11,7 @@ mod config_model;
 mod config_probe;
 mod glue_contract;
 mod pipeline_discover;
+mod static_artifact_tree;
 mod ssg;
 mod static_site;
 mod symbols_tests;
