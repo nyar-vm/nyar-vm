@@ -7,6 +7,7 @@ mod asgard_render_ir_canonical;
 mod asgard_style_collector;
 mod cli_static;
 mod config_discovery;
+mod config_model;
 mod pipeline_discover;
 mod static_site;
 mod ssg;
