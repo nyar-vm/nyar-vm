@@ -243,10 +243,17 @@ impl Default for AwslConfig {
 
 impl VoaConfig {
     /// 从项目目录加载 `asgard.config.v`。
+    ///
+    /// 配置文件缺失时报错，不返回默认配置：`build` / `dev` 不得替用户创建或采用全套默认配置，
+    /// 显式创建配置是 `init` 一类显式动作。
     pub fn load(project_dir: &Path) -> AsgardResult<Self> {
         let config_path = project_dir.join("asgard.config.v");
         if !config_path.exists() {
-            return Ok(Self::default_config());
+            return Err(AsgardError::msg(format!(
+                "asgard: 在 `{}` 未找到 `asgard.config.v`（期望路径：`{}`）。Asgard 不会自动创建配置文件，请显式创建该文件或传入显式配置路径。",
+                project_dir.display(),
+                config_path.display()
+            )));
         }
         let source =
             std::fs::read_to_string(&config_path).map_err(|e| AsgardError::msg(format!("读取配置失败: {}: {e}", config_path.display())))?;
@@ -259,22 +266,6 @@ impl VoaConfig {
         let ast = parse_von(&normalized).map_err(|error| AsgardError::msg(report!("VON 解析失败: {error}")))?;
         let value = from_ast(&ast);
         von_to_config(&value)
-    }
-
-    fn default_config() -> Self {
-        Self {
-            project_type: default_project_type(),
-            target: default_target(),
-            platform: default_platform(),
-            name: None,
-            version: None,
-            render: RenderConfig::default(),
-            build: BuildConfig::default(),
-            language: LanguageConfig::default(),
-            hot_reload: HotReloadConfig::default(),
-            ui: UiConfig::default(),
-            tailwind: TailwindConfig::default(),
-        }
     }
 }
 
