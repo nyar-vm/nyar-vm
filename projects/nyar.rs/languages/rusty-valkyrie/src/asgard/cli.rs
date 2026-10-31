@@ -78,17 +78,6 @@ impl From<AsgardPackTargetArg> for PackTarget {
     }
 }
 
-/// `asgard add` / `asgard remove` 参数。
-#[derive(Debug, Clone)]
-pub struct AsgardDepArgs {
-    /// 依赖包名。
-    pub name: String,
-    /// 版本（add 时使用）。
-    pub version: String,
-    /// 项目目录。
-    pub project_dir: PathBuf,
-}
-
 /// `asgard publish` 参数。
 #[derive(Debug, Clone)]
 pub struct AsgardPublishArgs {
@@ -185,10 +174,6 @@ pub enum AsgardCommands {
     Pack(AsgardPackArgs),
     /// 校验 deploy profile 并打印将构建的制品矩阵（不编排构建）。
     Plan(AsgardPlanArgs),
-    /// 添加 legion.von 依赖。
-    Add(AsgardDepArgs),
-    /// 移除 legion.von 依赖。
-    Remove(AsgardDepArgs),
     /// 发布到商店 / CDN（先 pack 再对接平台 CLI）。
     Publish(AsgardPublishArgs),
     /// 格式化 `.v` / `.vx` / `.von` / `.awsl`（与 `legion fmt` 同引擎）。
@@ -385,16 +370,6 @@ pub fn run(command: &AsgardCommands) -> AsgardResult<ExitCode> {
         AsgardCommands::Dev(args) => run_dev(args),
         AsgardCommands::Pack(args) => run_pack(args),
         AsgardCommands::Plan(args) => run_plan(args),
-        AsgardCommands::Add(args) => {
-            crate::asgard::deps::add_dependency(&args.project_dir, &args.name, &args.version)?;
-            println!("added dependency {} = {}", args.name, args.version);
-            Ok(ExitCode::SUCCESS)
-        }
-        AsgardCommands::Remove(args) => {
-            crate::asgard::deps::remove_dependency(&args.project_dir, &args.name)?;
-            println!("removed dependency {}", args.name);
-            Ok(ExitCode::SUCCESS)
-        }
         AsgardCommands::Publish(args) => {
             let report = crate::asgard::publish_voa(&args.input, args.target.into(), args.output.as_deref())?;
             println!("asgard publish: {}", report.message);

@@ -9,7 +9,6 @@ pub mod config;
 pub mod debug_sidecar;
 pub mod delivery;
 pub mod deploy;
-pub mod deps;
 pub mod dev_server;
 pub mod error;
 pub mod host;
