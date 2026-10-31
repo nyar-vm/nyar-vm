@@ -195,9 +195,20 @@ micro title() -> utf8 {
     assert!(failure.message.contains("text constant"), "SMIR007 诊断必须指明文本常量合同缺失，实际：{}", failure.message);
 }
 
-/// 聚合层探索：结构体返回值经 glue 读回。
+/// 第三层（聚合）：结构体返回值当前断在 wasm 预发射名义身份门禁。
+///
+/// 探针实测（2026-10-31）：最小配置模块返回用户声明结构体时，正式构建链在
+/// WASM pre-emission verifier 失败闭合：「携带无身份名义类型 `ConfigArtifact`；
+/// declaration / `TypeId` 缺失时不得按短名解析存储类」。这与账本「预编码门禁
+/// （`entry.rs validate_storage_identities`）」同源，归前端 MIR SSA 名义身份登记
+/// （Lane G2 在途工作面，本探针不触碰其文件）。
+/// 即便身份门禁转通，配置对象读回仍有第二道已知缺口：JS glue 的 NamedAggregate
+/// demarshal 只支持序列族（length/at），没有按字段访问结构体的合同；
+/// `render_glue_entries` 对非序列聚合停在 `pending_export_name`。
+/// 本用例固化失败形态：门禁转通后此测试转红，探针须升级为读回断言并暴露
+/// 字段访问合同缺口（归后端 glue/ABI 与配置 SDK 所有者）。
 #[test]
-fn c0_aggregate_probe_explore() {
+fn c0_aggregate_layer_fails_closed_on_missing_nominal_identity() {
     let result = build_probe_project(
         "asgard-c0-aggregate",
         r#"structure ConfigArtifact {
@@ -211,11 +222,10 @@ micro configure() -> ConfigArtifact {
 }
 "#,
     );
-    match result {
-        Ok(artifact) => {
-            let call = call_export_through_glue(&artifact, "configure", "[]");
-            println!("AGG CALL RESULT: {call:?}");
-        }
-        Err(failure) => println!("AGG BUILD FAILED: {}", failure.message),
-    }
+    let failure = match result {
+        Err(failure) => failure,
+        Ok(_) => panic!("C0 聚合层当前必须失败闭合于名义身份门禁；若已转通，请把本探针升级为 glue 读回断言，并固化字段访问合同缺口"),
+    };
+    assert!(failure.message.contains("pre-emission verifier"), "聚合层缺口必须来自预发射身份门禁的结构化诊断，实际：{}", failure.message);
+    assert!(failure.message.contains("ConfigArtifact"), "诊断必须指明无身份的名义类型，实际：{}", failure.message);
 }
