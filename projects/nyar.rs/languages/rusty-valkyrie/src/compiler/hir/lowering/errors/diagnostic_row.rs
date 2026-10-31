@@ -165,6 +165,12 @@ impl From<HirError> for DiagnosticRow {
             HirError::CollectionLiteralContractMissing { type_label, .. } => {
                 row = row.with_arg("type_label", DiagnosticArg::TypeName(type_label.clone()));
             }
+            HirError::ArrayNewReturnTypeNotArray { actual, .. } => {
+                row = row.with_arg("actual", DiagnosticArg::TypeName(actual.clone()));
+            }
+            HirError::ArrayNewArityMismatch { expected, actual, .. } => {
+                row = row.with_arg("expected", DiagnosticArg::Int(*expected as i64)).with_arg("actual", DiagnosticArg::Int(*actual as i64));
+            }
             HirError::AssignToImmutable { name, .. } => {
                 row = row.with_arg("name", DiagnosticArg::String(name.clone()));
             }
@@ -501,6 +507,8 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::RefutableLetPattern { source, .. } => source.clone(),
         HirError::LetInitializerTypeMismatch { source, .. } => source.clone(),
         HirError::CollectionLiteralContractMissing { source, .. } => source.clone(),
+        HirError::ArrayNewReturnTypeNotArray { source, .. } => source.clone(),
+        HirError::ArrayNewArityMismatch { source, .. } => source.clone(),
         HirError::AssignToImmutable { source, .. } => source.clone(),
         HirError::SemanticCheckViolations { source, .. } => source.clone(),
         HirError::CopyDisciplineViolations { source, .. } => source.clone(),
@@ -567,6 +575,8 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::RefutableLetPattern { span, .. } => span.clone(),
         HirError::LetInitializerTypeMismatch { span, .. } => span.clone(),
         HirError::CollectionLiteralContractMissing { span, .. } => span.clone(),
+        HirError::ArrayNewReturnTypeNotArray { span, .. } => span.clone(),
+        HirError::ArrayNewArityMismatch { span, .. } => span.clone(),
         HirError::AssignToImmutable { span, .. } => span.clone(),
         HirError::SemanticCheckViolations { span, .. } => span.clone(),
         HirError::CopyDisciplineViolations { span, .. } => span.clone(),

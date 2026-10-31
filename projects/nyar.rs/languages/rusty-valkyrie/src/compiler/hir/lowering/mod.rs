@@ -31,6 +31,7 @@ pub mod errors;
 mod expr_lowering;
 mod generic_binders;
 mod generic_instantiation;
+mod intrinsic_array;
 mod macro_expand;
 mod match_pattern_recovery;
 mod nominal_declarations;
@@ -382,6 +383,12 @@ impl ValkyrieCompiler {
         }
         for hir in &mut hir_groups {
             resolve_hir_calls(hir);
+        }
+        // `builtin.array.new` 规范化必须在调用解析之后、单态化之前：
+        // 它消费解析冻结的返回数组形状，并把文本调用替换为 `HirExprKind::ArrayNew`，
+        // 泛型 element type 交给随后 `instantiate_generic_callables` 的替换路径。
+        for hir in &mut hir_groups {
+            intrinsic_array::normalize_intrinsic_array_new(hir)?;
         }
         // 单态化固定点必须在全部源码组的调用解析之后、语义合同校验与 MIR 之前运行。
         instantiate_generic_callables(&mut hir_groups);

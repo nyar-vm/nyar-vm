@@ -121,6 +121,10 @@ pub(crate) fn match_intrinsic_builtin_candidate(
     }
 
     match intrinsic {
+        // 数组按长度构造不在这里分派：解析必须沿用声明的正常签名（含显式泛型实参），
+        // 再由调用解析之后的 post-binding pass 依据冻结的返回数组形状规范化为
+        // `HirExprKind::ArrayNew`。本处返回 `None` 即回到普通候选匹配。
+        BuiltinStructureOp::ArrayNew => None,
         BuiltinStructureOp::ArrayLen => {
             if args.len() != 1 {
                 return None;

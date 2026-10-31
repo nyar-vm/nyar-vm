@@ -342,6 +342,29 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// `builtin.array.new` 合同声明的返回类型不是数组形状。
+    ///
+    /// `HirExprKind::ArrayNew` 的元素类型只能从调用解析冻结的返回数组形状取；
+    /// 声明返回不是 `[T]` 时在规范化点拒绝失败闭合，禁止按函数名或源码文本猜测。
+    ArrayNewReturnTypeNotArray {
+        /// 合同声明的返回类型标签。
+        actual: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `builtin.array.new` 调用没有恰好一个长度实参。
+    ArrayNewArityMismatch {
+        /// 语义要求的长度实参个数。
+        expected: usize,
+        /// 调用点实际提供的实参个数。
+        actual: usize,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 对不可变 `let`（带初始化）绑定的赋值：赋值是对已绑定值的改值，须声明 `let mut`。
     AssignToImmutable {
         /// 被赋值的绑定名。
