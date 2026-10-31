@@ -64,6 +64,18 @@ pub enum MirDiagnostic {
         /// 上游解析保留的限定名称，仅用于诊断。
         symbol: String,
     },
+    /// 同一 callable 实例被登记了两个不同的 ABI 诊断标签。
+    ///
+    /// 这是真实身份矛盾：一个 `ItemInstanceId` 只能对应一个可读标签。
+    /// 不同实例撞到同一可读标签不是错误，由 [`register_callable_label_entry`] 按实例身份唯一化。
+    ConflictingCallableLabel {
+        /// 冲突的 callable 实例身份。
+        instance: ItemInstanceId,
+        /// 已登记的标签。
+        existing: String,
+        /// 本次尝试登记的标签。
+        incoming: String,
+    },
 }
 
 /// `SSA` 形式的 `MIR` 模块。
@@ -125,6 +137,38 @@ pub(crate) fn register_callable_symbol_entry(
     }
     if let Some((_, existing_symbol)) = table.iter().find(|(_, s)| **s == symbol) {
         return Err(format!("callable ABI 标签 `{symbol}` 重复（已登记标签 `{existing_symbol}`）"));
+    }
+    table.insert(instance, symbol);
+    Ok(())
+}
+
+/// 登记 lowering 产出的 callable 诊断标签，允许不同实例共享同一可读标签。
+///
+/// 身份只由 `instance` 决定；同一可读标签（例如同类型两个重载方法都显示为
+/// `Utf8Builder.new`）不代表同一 callable。冲突时只在后登记项上追加该实例的
+/// 冻结序号（`#<instance.index()>`），先登记项保持与源码符号逐字一致，避免破坏
+/// 既有 ABI/glue 合同的逐字标签。
+///
+/// 同一 `instance` 登记不同标签才是身份矛盾，返回 `Err` 交给调用方转成结构化诊断。
+pub(crate) fn register_callable_label_entry(
+    table: &mut BTreeMap<ItemInstanceId, String>,
+    instance: ItemInstanceId,
+    symbol: String,
+) -> Result<(), MirDiagnostic> {
+    if let Some(previous) = table.get(&instance) {
+        if previous != &symbol {
+            return Err(MirDiagnostic::ConflictingCallableLabel { instance, existing: previous.clone(), incoming: symbol });
+        }
+        return Ok(());
+    }
+    if table.values().any(|existing| existing == &symbol) {
+        // 唯一化判据只来自 instance 自身的冻结身份，不看成员名、源码文本或 target。
+        let mut candidate = format!("{symbol}#{}", instance.index());
+        while table.values().any(|existing| existing == &candidate) {
+            candidate = format!("{candidate}#{}", instance.index());
+        }
+        table.insert(instance, candidate);
+        return Ok(());
     }
     table.insert(instance, symbol);
     Ok(())

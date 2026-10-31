@@ -120,25 +120,23 @@ impl MirLowerer {
         let type_identities = type_identity_table(&functions, &external_calls, &structs, &sum_types);
         let mut callable_symbols = BTreeMap::new();
         // `callable_symbols` 是 instance -> 诊断标签表；ABI 身份只由 `ItemInstanceId` 决定。
+        // 同类型重载方法会共享 `Type.method` 可读标签，由登记层按 instance 冻结序号唯一化；
         // 单态化实例的 `display_symbol` 已携带 `#N` 实例后缀，标签本身不再叠加编号，
         // 保持与源码符号（singleton accessor、stable host symbol）逐字一致。
         for function in &functions {
             if let Some(instance) = function.instance {
-                super::model::register_callable_symbol_entry(&mut callable_symbols, instance, function.display_symbol.clone())
-                    .expect("duplicate callable symbol during lowering");
+                register_callable_label(&mut callable_symbols, &mut diagnostics, instance, function.display_symbol.clone());
             }
         }
         for contract in &external_calls {
             if let Some(instance) = contract.instance {
                 let symbol = crate::compiler::hir::symbols::stable_symbol_key(&contract.symbol);
-                super::model::register_callable_symbol_entry(&mut callable_symbols, instance, symbol)
-                    .expect("duplicate callable symbol during lowering");
+                register_callable_label(&mut callable_symbols, &mut diagnostics, instance, symbol);
             }
         }
         let accessor_instances = crate::compiler::mir::collect_singleton_accessor_contracts(module);
         for (instance, base) in accessor_instances {
-            super::model::register_callable_symbol_entry(&mut callable_symbols, instance, base)
-                .expect("duplicate singleton accessor symbol during lowering");
+            register_callable_label(&mut callable_symbols, &mut diagnostics, instance, base);
         }
         let semantic_fragments = collect_semantic_fragments(module, &exports, &entries);
         let result = MirModule {
@@ -159,5 +157,20 @@ impl MirLowerer {
             diagnostics,
         };
         result
+    }
+}
+
+/// 登记 callable 诊断标签；身份矛盾转成结构化诊断，不中断 lowering。
+///
+/// 不同实例共享可读标签是合法重载，由登记层按 instance 序号唯一化；
+/// 同一实例出现两个标签才是真实身份矛盾，这里只记录诊断，让校验层失败闭合。
+fn register_callable_label(
+    table: &mut BTreeMap<nyar_types::ItemInstanceId, String>,
+    diagnostics: &mut Vec<MirDiagnostic>,
+    instance: nyar_types::ItemInstanceId,
+    label: String,
+) {
+    if let Err(diagnostic) = super::model::register_callable_label_entry(table, instance, label) {
+        diagnostics.push(diagnostic);
     }
 }
