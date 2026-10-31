@@ -52,6 +52,38 @@ fn runs_const_add_return_bytecode() {
 }
 
 #[test]
+fn division_by_zero_traps_instead_of_returning_zero() {
+    for trap_op in [NyarHeadCode::I32DivS, NyarHeadCode::I32RemS] {
+        let code =
+            vec![NyarHeadCode::Constant as u8, 0, 0, 0, 0, NyarHeadCode::Constant as u8, 1, 0, 0, 0, trap_op as u8, NyarHeadCode::Return as u8];
+        let data = NyarModuleData {
+            version: NYAR_VERSION,
+            name: "div_zero".to_string(),
+            constants: vec![NyarConstant::Integer32(7), NyarConstant::Integer32(0)],
+            functions: vec![NyarFunction {
+                name: "main".to_string(),
+                arity: 0,
+                local_count: 0,
+                code_offset: 0,
+                code_length: code.len() as i32,
+            }],
+            imports: Vec::new(),
+            exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
+            witness_entries: Vec::new(),
+            code_bytes: code,
+            globals: Vec::new(),
+            init_function_indices: Vec::new(),
+            layouts: Vec::new(),
+        };
+        let bytes = encode_module(&data);
+        let module = LoadedModule::from_bytes(&bytes).expect("load module");
+        let mut executor = Executor::new();
+        let result = executor.run(&module, 0, Vec::new());
+        assert!(matches!(result, Err(NyarRuntimeError::DivisionByZero { .. })), "{trap_op:?} 除零必须 trap，实际 {result:?}");
+    }
+}
+
+#[test]
 fn select_local_roots_keeps_only_mapped_slots() {
     let locals = vec![Value::I32(1), Value::I32(2), Value::I32(3)];
     let entry = StackMapEntry { instruction_index: 0, local_root_slots: vec![0, 2], operand_root_depth: None };

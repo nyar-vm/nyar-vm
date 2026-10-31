@@ -36,6 +36,11 @@ pub enum NyarRuntimeError {
         /// Actual type name.
         actual: String,
     },
+    /// 除零 / 模零 trap。
+    DivisionByZero {
+        /// 触发 trap 的运算名。
+        operation: &'static str,
+    },
     /// Module load failure.
     ModuleLoad(String),
     /// Requested feature is not implemented (e.g. JIT while disabled).
@@ -59,6 +64,7 @@ impl Display for NyarRuntimeError {
             Self::TypeMismatch { expected, actual } => {
                 write!(f, "type mismatch: expected {expected}, got {actual}")
             }
+            Self::DivisionByZero { operation } => write!(f, "{operation}: division by zero"),
             Self::ModuleLoad(message) => write!(f, "failed to load module: {message}"),
             Self::UnsupportedFeature(feature) => write!(f, "unsupported feature: {feature}"),
         }

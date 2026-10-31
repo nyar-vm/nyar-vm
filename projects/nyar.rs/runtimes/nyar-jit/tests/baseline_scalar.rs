@@ -323,3 +323,51 @@ fn compiles_i32_neg_via_const0_sub() {
         ScalarProgram::RetI32BinopImmLocal { binop: I32Binop::Sub, imm: 0, local: 0, imm_on_left: true }
     );
 }
+
+#[test]
+fn does_not_fold_div_rem_that_can_trap_at_runtime() {
+    let mut jit = BaselineScalarJit;
+    // `Const(6); Const(0); Div; Return`：除零必须运行期 trap，不得折叠为常量。
+    let mut code = Vec::new();
+    code.push(NyarHeadCode::Constant as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    code.push(NyarHeadCode::Constant as u8);
+    code.extend_from_slice(&1i32.to_le_bytes());
+    code.push(NyarHeadCode::I32DivS as u8);
+    code.push(NyarHeadCode::Return as u8);
+    let result = jit.compile_function(&request_with_constants(code, vec![Some(6), Some(0)]));
+    assert!(matches!(result, Err(JitError::Unsupported)), "零常量除数不得折叠: {result:?}");
+
+    // `Load; Load; Rem; Pop; Return`：除数运行期才可知，不得折叠为 void。
+    let mut code = Vec::new();
+    emit_load(&mut code, 0);
+    emit_load(&mut code, 1);
+    code.push(NyarHeadCode::I32RemS as u8);
+    code.push(NyarHeadCode::Pop as u8);
+    code.push(NyarHeadCode::Return as u8);
+    let result = jit.compile_function(&request(code));
+    assert!(matches!(result, Err(JitError::Unsupported)), "运行期除数的 rem 不得折叠为 void: {result:?}");
+
+    // `Const(3); Load; Div; Pop; Return`：rhs 是 local，可能为 0，不得折叠为 void。
+    let mut code = Vec::new();
+    code.push(NyarHeadCode::Constant as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    emit_load(&mut code, 0);
+    code.push(NyarHeadCode::I32DivS as u8);
+    code.push(NyarHeadCode::Pop as u8);
+    code.push(NyarHeadCode::Return as u8);
+    let result = jit.compile_function(&request_with_constants(code, vec![Some(3)]));
+    assert!(matches!(result, Err(JitError::Unsupported)), "local 除数的 div 不得折叠为 void: {result:?}");
+
+    // `Load; Const(3); Div; Pop; Return`：rhs 是非零常量，仍可折叠为 void。
+    let mut code = Vec::new();
+    emit_load(&mut code, 0);
+    code.push(NyarHeadCode::Constant as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    code.push(NyarHeadCode::I32DivS as u8);
+    code.push(NyarHeadCode::Pop as u8);
+    code.push(NyarHeadCode::Return as u8);
+    let artifact = jit.compile_function(&request_with_constants(code, vec![Some(3)])).expect("compile");
+    let blob = artifact.machine_code.as_ref().expect("nonzero const divisor folds to void");
+    assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
+}

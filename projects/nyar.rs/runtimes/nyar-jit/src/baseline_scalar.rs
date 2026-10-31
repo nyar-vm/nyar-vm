@@ -143,6 +143,10 @@ fn match_binop_pop_void_return(code: &[u8]) -> Option<Vec<u8>> {
     if op.size == 0 || (head_to_binop(op.code).is_none() && head_to_cmp(op.code).is_none()) {
         return None;
     }
+    // 除数运行期才可知：除零 trap 不得被 void 折叠吞掉。
+    if discards_trapping_binop(op.code) {
+        return None;
+    }
     pc += op.size as usize;
     let pop = decode_at(code, pc);
     if pop.size == 0 || pop.code != NyarHeadCode::Pop {
@@ -181,7 +185,8 @@ fn match_const_const_op_return(code: &[u8], constant_i32: &[Option<i32>]) -> Opt
     let lhs = constant_i32.get(a_ins.operand1 as usize).copied().flatten()?;
     let rhs = constant_i32.get(b_ins.operand1 as usize).copied().flatten()?;
     if let Some(binop) = head_to_binop(op.code) {
-        let value = eval_i32_binop(binop, lhs, rhs);
+        // 除零必须保留运行期 trap，不得折叠为常量。
+        let value = eval_i32_binop(binop, lhs, rhs)?;
         return Some(encode_ret_const_i32(value));
     }
     if let Some(cmp) = head_to_cmp(op.code) {
@@ -209,7 +214,13 @@ fn match_const_const_op_pop_void(code: &[u8], constant_i32: &[Option<i32>]) -> O
     }
     // 确认常量池可解析（与 value-return 折叠同一合同），结果被 Pop 丢弃。
     let _ = constant_i32.get(a_ins.operand1 as usize).copied().flatten()?;
-    let _ = constant_i32.get(b_ins.operand1 as usize).copied().flatten()?;
+    let rhs = constant_i32.get(b_ins.operand1 as usize).copied().flatten()?;
+    // 除零的 Pop 形态仍必须在运行期 trap，不得折叠为 void 叶。
+    if let Some(binop) = head_to_binop(op.code) {
+        if matches!(binop, I32Binop::DivS | I32Binop::RemS) && rhs == 0 {
+            return None;
+        }
+    }
     pc += op.size as usize;
     let pop = decode_at(code, pc);
     if pop.size == 0 || pop.code != NyarHeadCode::Pop {
@@ -223,28 +234,19 @@ fn match_const_const_op_pop_void(code: &[u8], constant_i32: &[Option<i32>]) -> O
     Some(encode_ret_void())
 }
 
-fn eval_i32_binop(binop: I32Binop, lhs: i32, rhs: i32) -> i32 {
+fn eval_i32_binop(binop: I32Binop, lhs: i32, rhs: i32) -> Option<i32> {
     match binop {
-        I32Binop::Add => lhs.wrapping_add(rhs),
-        I32Binop::Sub => lhs.wrapping_sub(rhs),
-        I32Binop::Mul => lhs.wrapping_mul(rhs),
-        I32Binop::DivS => {
-            if rhs == 0 {
-                0
-            }
-            else {
-                lhs.wrapping_div(rhs)
-            }
-        }
-        I32Binop::RemS => {
-            if rhs == 0 {
-                0
-            }
-            else {
-                lhs.wrapping_rem(rhs)
-            }
-        }
+        I32Binop::Add => Some(lhs.wrapping_add(rhs)),
+        I32Binop::Sub => Some(lhs.wrapping_sub(rhs)),
+        I32Binop::Mul => Some(lhs.wrapping_mul(rhs)),
+        I32Binop::DivS => (rhs != 0).then(|| lhs.wrapping_div(rhs)),
+        I32Binop::RemS => (rhs != 0).then(|| lhs.wrapping_rem(rhs)),
     }
+}
+
+/// 结果被丢弃的折叠形态中，除/余仍必须执行：除数可能为 0，trap 不得被 void 折叠吞掉。
+fn discards_trapping_binop(op_code: NyarHeadCode) -> bool {
+    matches!(head_to_binop(op_code), Some(I32Binop::DivS | I32Binop::RemS))
 }
 
 /// `Load; Dup; Op; Pop; Return` → 同槽运算结果丢弃为 void 叶。
@@ -262,6 +264,10 @@ fn match_load_dup_op_pop_void(code: &[u8]) -> Option<Vec<u8>> {
     pc += dup.size as usize;
     let op = decode_at(code, pc);
     if op.size == 0 || (head_to_binop(op.code).is_none() && head_to_cmp(op.code).is_none()) {
+        return None;
+    }
+    // 同槽 `a/a`：除数运行期才可知，不得折叠吞掉除零 trap。
+    if discards_trapping_binop(op.code) {
         return None;
     }
     pc += op.size as usize;
@@ -342,6 +348,15 @@ fn match_const_load_op_pop_void(code: &[u8], constant_i32: &[Option<i32>]) -> Op
             let _ = load_slot(&first)?;
         }
         _ => return None,
+    }
+    if discards_trapping_binop(op.code) {
+        // 仅当 rhs 是已确认非零的常量池值才可折叠为 void；否则除零 trap 必须保留执行。
+        let rhs_safe = second.code == NyarHeadCode::Constant
+            && second.operand1 >= 0
+            && constant_i32.get(second.operand1 as usize).copied().flatten().is_some_and(|v| v != 0);
+        if !rhs_safe {
+            return None;
+        }
     }
     pc += op.size as usize;
     let pop = decode_at(code, pc);

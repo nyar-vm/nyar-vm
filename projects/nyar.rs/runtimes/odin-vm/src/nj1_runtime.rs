@@ -28,19 +28,15 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
                 I32Binop::Mul => lhs.wrapping_mul(rhs),
                 I32Binop::DivS => {
                     if rhs == 0 {
-                        0
+                        return Err(NyarRuntimeError::DivisionByZero { operation: "nj1 i32.div_s" });
                     }
-                    else {
-                        lhs.wrapping_div(rhs)
-                    }
+                    lhs.wrapping_div(rhs)
                 }
                 I32Binop::RemS => {
                     if rhs == 0 {
-                        0
+                        return Err(NyarRuntimeError::DivisionByZero { operation: "nj1 i32.rem_s" });
                     }
-                    else {
-                        lhs.wrapping_rem(rhs)
-                    }
+                    lhs.wrapping_rem(rhs)
                 }
             };
             Ok(Value::I32(result))
@@ -55,19 +51,15 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
                 I32Binop::Mul => lhs.wrapping_mul(rhs),
                 I32Binop::DivS => {
                     if rhs == 0 {
-                        0
+                        return Err(NyarRuntimeError::DivisionByZero { operation: "nj1 i32.div_s" });
                     }
-                    else {
-                        lhs.wrapping_div(rhs)
-                    }
+                    lhs.wrapping_div(rhs)
                 }
                 I32Binop::RemS => {
                     if rhs == 0 {
-                        0
+                        return Err(NyarRuntimeError::DivisionByZero { operation: "nj1 i32.rem_s" });
                     }
-                    else {
-                        lhs.wrapping_rem(rhs)
-                    }
+                    lhs.wrapping_rem(rhs)
                 }
             };
             Ok(Value::I32(result))
