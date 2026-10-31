@@ -201,7 +201,7 @@ fn duplicate_abi_labels_do_not_redirect_nyar_calls_or_exports() {
     while position < module.code_bytes.len() {
         let instruction = odin_bytecode::decode_at(&module.code_bytes, position);
         assert!(instruction.size > 0, "字节码必须可解码");
-        if instruction.code == odin_bytecode::NyarHeadCode::Call {
+        if instruction.code == odin_bytecode::OdinHeadCode::Call {
             calls.push(instruction.operand1);
         }
         position += instruction.size as usize;

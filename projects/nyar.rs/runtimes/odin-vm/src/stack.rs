@@ -1,6 +1,6 @@
 //! 解释器操作数栈。
 
-use crate::{error::NyarRuntimeError, value::Value};
+use crate::{error::OdinRuntimeError, value::Value};
 
 /// Operand stack for the interpreter.
 #[derive(Debug, Default)]
@@ -30,20 +30,20 @@ impl ValueStack {
     }
 
     /// Pops the top value.
-    pub fn pop(&mut self) -> Result<Value, NyarRuntimeError> {
-        self.slots.pop().ok_or(NyarRuntimeError::StackUnderflow)
+    pub fn pop(&mut self) -> Result<Value, OdinRuntimeError> {
+        self.slots.pop().ok_or(OdinRuntimeError::StackUnderflow)
     }
 
     /// Duplicates the top value.
-    pub fn dup(&mut self) -> Result<(), NyarRuntimeError> {
-        let top = self.slots.last().cloned().ok_or(NyarRuntimeError::StackUnderflow)?;
+    pub fn dup(&mut self) -> Result<(), OdinRuntimeError> {
+        let top = self.slots.last().cloned().ok_or(OdinRuntimeError::StackUnderflow)?;
         self.slots.push(top);
         Ok(())
     }
 
     /// Returns the top value without popping.
-    pub fn peek(&self) -> Result<&Value, NyarRuntimeError> {
-        self.slots.last().ok_or(NyarRuntimeError::StackUnderflow)
+    pub fn peek(&self) -> Result<&Value, OdinRuntimeError> {
+        self.slots.last().ok_or(OdinRuntimeError::StackUnderflow)
     }
 
     /// Borrows all stack values (GC roots).
@@ -60,9 +60,9 @@ impl ValueStack {
     ///
     /// Used when capturing a suspended frame so parent frames do not observe the
     /// callee's remaining operand values, and so resume can restore them later.
-    pub fn split_off_above(&mut self, base: usize) -> Result<Vec<Value>, NyarRuntimeError> {
+    pub fn split_off_above(&mut self, base: usize) -> Result<Vec<Value>, OdinRuntimeError> {
         if base > self.slots.len() {
-            return Err(NyarRuntimeError::StackUnderflow);
+            return Err(OdinRuntimeError::StackUnderflow);
         }
         Ok(self.slots.split_off(base))
     }

@@ -2,7 +2,7 @@ use std::fs;
 
 use crate::{Result, nyar_backend_vm::emit_nyar_module};
 use nyar::{ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane};
-use odin_bytecode::{NyarExportKind, NyarModuleData};
+use odin_bytecode::{OdinExportKind, OdinModuleData};
 
 use super::BundledBackendCompiler;
 use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverRunContract, bundled_backend_capability_descriptor};
@@ -51,11 +51,11 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
 }
 
 #[doc(hidden)]
-pub fn resolve_entry_symbols(module: &NyarModuleData, library_public_exports: &[String]) -> Result<Vec<String>> {
+pub fn resolve_entry_symbols(module: &OdinModuleData, library_public_exports: &[String]) -> Result<Vec<String>> {
     let entries = if library_public_exports.is_empty() { vec!["main".to_owned()] } else { library_public_exports.to_vec() };
     for entry in &entries {
         let matches: Vec<_> =
-            module.exports.iter().filter(|export| export.kind == NyarExportKind::Function && export.symbol_name == *entry).collect();
+            module.exports.iter().filter(|export| export.kind == OdinExportKind::Function && export.symbol_name == *entry).collect();
         if matches.len() != 1 {
             return Err(format!("Nyar 入口 `{entry}` 必须对应唯一明确函数导出"));
         }

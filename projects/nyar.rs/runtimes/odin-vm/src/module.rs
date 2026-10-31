@@ -1,11 +1,11 @@
 //! 已加载 `.nyar` 模块：函数表、常量池、导入解析与全局槽。
 
 use odin_bytecode::{
-    NyarConstant, NyarExport, NyarFunction, NyarGlobal, NyarImport, NyarLayout, NyarModuleData, NyarWitnessDispatchEntry, decode_module,
+    OdinConstant, OdinExport, OdinFunction, OdinGlobal, OdinImport, OdinLayout, OdinModuleData, OdinWitnessDispatchEntry, decode_module,
 };
 
 use crate::{
-    error::NyarRuntimeError,
+    error::OdinRuntimeError,
     executable::{ExecutableFunction, build_executable_table},
     host::{ResolvedImport, resolve_import},
     value::Value,
@@ -46,38 +46,38 @@ pub struct LoadedModule {
     /// Module name.
     pub name: String,
     /// Constant pool.
-    pub constants: Vec<NyarConstant>,
+    pub constants: Vec<OdinConstant>,
     /// Function table.
-    pub functions: Vec<NyarFunction>,
+    pub functions: Vec<OdinFunction>,
     /// Import table（诊断 / 外部绑定；热路径用 [`Self::resolved_imports`]）。
-    pub imports: Vec<NyarImport>,
+    pub imports: Vec<OdinImport>,
     /// 加载期解析的导入槽（`CallImport` 只消费此表）。
     pub resolved_imports: Vec<ResolvedImport>,
     /// Export table.
-    pub exports: Vec<NyarExport>,
+    pub exports: Vec<OdinExport>,
     /// Witness dispatch table.
-    pub witness_entries: Vec<NyarWitnessDispatchEntry>,
+    pub witness_entries: Vec<OdinWitnessDispatchEntry>,
     /// Flat code section bytes（外码；诊断与 JIT 原始视图）。
     pub code_bytes: Vec<u8>,
     /// 按函数索引排列的预解码内码（加载期由外码生成）。
     pub executable: Vec<ExecutableFunction>,
     /// Module-level global slot metadata.
-    pub globals: Vec<NyarGlobal>,
+    pub globals: Vec<OdinGlobal>,
     /// Eager init function indices.
     pub init_function_indices: Vec<i32>,
     /// 稠密布局表（`ObjectNew` / 字段槽校验）。
-    pub layouts: Vec<NyarLayout>,
+    pub layouts: Vec<OdinLayout>,
 }
 
 impl LoadedModule {
     /// Loads a module from `.nyar` bytes.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, NyarRuntimeError> {
-        let data = decode_module(bytes).map_err(|error| NyarRuntimeError::ModuleLoad(error.to_string()))?;
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, OdinRuntimeError> {
+        let data = decode_module(bytes).map_err(|error| OdinRuntimeError::ModuleLoad(error.to_string()))?;
         Self::from_data(data)
     }
 
     /// Wraps decoded module data after import / bytecode verify.
-    pub fn from_data(data: NyarModuleData) -> Result<Self, NyarRuntimeError> {
+    pub fn from_data(data: OdinModuleData) -> Result<Self, OdinRuntimeError> {
         verify_module(&data)?;
         let resolved_imports = data.imports.iter().map(resolve_import).collect::<Result<Vec<_>, _>>()?;
         let executable = build_executable_table(&data.code_bytes, &data.functions)?;
@@ -99,7 +99,7 @@ impl LoadedModule {
     }
 
     /// Returns a constant-pool entry by index.
-    pub fn constant_at(&self, index: i32) -> Option<&NyarConstant> {
+    pub fn constant_at(&self, index: i32) -> Option<&OdinConstant> {
         if index < 0 {
             return None;
         }
@@ -110,7 +110,7 @@ impl LoadedModule {
     pub fn export_index(&self, name: &str) -> Option<usize> {
         self.exports
             .iter()
-            .find(|export| export.kind == odin_bytecode::NyarExportKind::Function && export.symbol_name == name)
+            .find(|export| export.kind == odin_bytecode::OdinExportKind::Function && export.symbol_name == name)
             .map(|export| export.function_index as usize)
     }
 
@@ -118,7 +118,7 @@ impl LoadedModule {
     pub fn export_global_index(&self, name: &str) -> Option<usize> {
         self.exports
             .iter()
-            .find(|export| export.kind == odin_bytecode::NyarExportKind::Global && export.symbol_name == name)
+            .find(|export| export.kind == odin_bytecode::OdinExportKind::Global && export.symbol_name == name)
             .map(|export| export.function_index as usize)
     }
 }

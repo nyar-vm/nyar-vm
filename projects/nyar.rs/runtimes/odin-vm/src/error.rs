@@ -6,7 +6,7 @@ use miette::Diagnostic;
 
 /// Runtime error raised while executing Nyar bytecode.
 #[derive(Debug, Clone, PartialEq, Eq, Diagnostic)]
-pub enum NyarRuntimeError {
+pub enum OdinRuntimeError {
     /// Stack underflow.
     StackUnderflow,
     /// Unknown or unsupported opcode.
@@ -47,7 +47,7 @@ pub enum NyarRuntimeError {
     UnsupportedFeature(&'static str),
 }
 
-impl Display for NyarRuntimeError {
+impl Display for OdinRuntimeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::StackUnderflow => write!(f, "stack underflow"),
@@ -71,4 +71,4 @@ impl Display for NyarRuntimeError {
     }
 }
 
-impl std::error::Error for NyarRuntimeError {}
+impl std::error::Error for OdinRuntimeError {}

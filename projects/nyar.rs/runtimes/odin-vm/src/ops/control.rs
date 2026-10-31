@@ -1,8 +1,8 @@
-use odin_bytecode::{IntrinsicOpcode, NyarHeadCode, NyarInstruction};
+use odin_bytecode::{IntrinsicOpcode, OdinHeadCode, OdinInstruction};
 
 use crate::{
-    array_runtime::{array_get, array_len, array_push, array_set},
-    error::NyarRuntimeError,
+    array_runtime::{array_get, array_length, array_push, array_set},
+    error::OdinRuntimeError,
     frame::Frame,
     host::{ResolvedImport, execute_host_op},
     module::LoadedModule,
@@ -12,20 +12,20 @@ use crate::{
 
 /// Dispatches control-flow and variable instructions.
 pub fn execute_control(
-    instruction: NyarInstruction,
+    instruction: OdinInstruction,
     frame: &mut Frame,
     ctx: &mut ExecutionContext<'_>,
-) -> Result<StepResult, NyarRuntimeError> {
+) -> Result<StepResult, OdinRuntimeError> {
     match instruction.code {
-        NyarHeadCode::Jump => {
+        OdinHeadCode::Jump => {
             frame.ip = frame.ip.wrapping_add(instruction.operand1 as usize);
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::JumpIfTrue | NyarHeadCode::JumpIfFalse => {
+        OdinHeadCode::JumpIfTrue | OdinHeadCode::JumpIfFalse => {
             let condition = ctx.stack.pop()?.to_bool();
             let should_jump = match instruction.code {
-                NyarHeadCode::JumpIfTrue => condition,
-                NyarHeadCode::JumpIfFalse => !condition,
+                OdinHeadCode::JumpIfTrue => condition,
+                OdinHeadCode::JumpIfFalse => !condition,
                 _ => false,
             };
             if should_jump {
@@ -36,41 +36,41 @@ pub fn execute_control(
             }
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg => {
+        OdinHeadCode::LoadLocal | OdinHeadCode::LoadArg => {
             let index = instruction.operand1 as usize;
-            let value = frame.locals.get(index).cloned().ok_or(NyarRuntimeError::LocalIndexOutOfRange(instruction.operand1))?;
+            let value = frame.locals.get(index).cloned().ok_or(OdinRuntimeError::LocalIndexOutOfRange(instruction.operand1))?;
             ctx.stack.push(value);
             frame.ip += instruction.size as usize;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::StoreLocal => {
+        OdinHeadCode::StoreLocal => {
             let index = instruction.operand1 as usize;
             let value = ctx.stack.pop()?;
-            let slot = frame.locals.get_mut(index).ok_or(NyarRuntimeError::LocalIndexOutOfRange(instruction.operand1))?;
+            let slot = frame.locals.get_mut(index).ok_or(OdinRuntimeError::LocalIndexOutOfRange(instruction.operand1))?;
             *slot = value;
             frame.ip += instruction.size as usize;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::LoadGlobal => {
+        OdinHeadCode::LoadGlobal => {
             let index = instruction.operand1 as usize;
-            let value = ctx.globals.get(index).cloned().ok_or(NyarRuntimeError::GlobalIndexOutOfRange(instruction.operand1))?;
+            let value = ctx.globals.get(index).cloned().ok_or(OdinRuntimeError::GlobalIndexOutOfRange(instruction.operand1))?;
             ctx.stack.push(value);
             frame.ip += instruction.size as usize;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::StoreGlobal => {
+        OdinHeadCode::StoreGlobal => {
             let index = instruction.operand1 as usize;
             let value = ctx.stack.pop()?;
-            let slot = ctx.globals.get_mut(index).ok_or(NyarRuntimeError::GlobalIndexOutOfRange(instruction.operand1))?;
+            let slot = ctx.globals.get_mut(index).ok_or(OdinRuntimeError::GlobalIndexOutOfRange(instruction.operand1))?;
             let satb = ctx.heap.concurrent_mark().requires_satb();
             nyar_gc::write_value_slot(ctx.heap.barrier_mut(), slot, value, satb);
             frame.ip += instruction.size as usize;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::CallImport => {
+        OdinHeadCode::CallImport => {
             let import_index = instruction.operand1;
             if import_index < 0 || (import_index as usize) >= ctx.module.resolved_imports.len() {
-                return Err(NyarRuntimeError::ImportIndexOutOfRange(import_index));
+                return Err(OdinRuntimeError::ImportIndexOutOfRange(import_index));
             }
             let resolved = ctx.module.resolved_imports[import_index as usize];
             let arg_count = instruction.operand2.max(0) as usize;
@@ -83,7 +83,7 @@ pub fn execute_control(
             let result = match resolved {
                 ResolvedImport::Host(op) => execute_host_op(op, &args, ctx.heap)?,
                 ResolvedImport::External => {
-                    return Err(NyarRuntimeError::UnsupportedFeature(
+                    return Err(OdinRuntimeError::UnsupportedFeature(
                         "non-host CallImport requires import-index binding; string host dispatch removed",
                     ));
                 }
@@ -92,7 +92,7 @@ pub fn execute_control(
             frame.ip += instruction.size as usize;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::CallIntrinsic => {
+        OdinHeadCode::CallIntrinsic => {
             // 指令身份由 `odin_bytecode::IntrinsicOpcode`（OVM 私有格式合同）给出；
             // 未知操作数 fail-closed，不得猜测或回落到语言 builtin 表。
             let intrinsic_index = instruction.operand1;
@@ -103,11 +103,11 @@ pub fn execute_control(
             }
             args.reverse();
 
-            let intrinsic = IntrinsicOpcode::from_operand(intrinsic_index).map_err(|_| NyarRuntimeError::UnknownIntrinsic(intrinsic_index))?;
+            let intrinsic = IntrinsicOpcode::from_operand(intrinsic_index).map_err(|_| OdinRuntimeError::UnknownIntrinsic(intrinsic_index))?;
 
             let result = match intrinsic {
                 IntrinsicOpcode::ArrayPush => array_push(ctx.heap, args.first().unwrap_or(&Value::Null), args.get(1).unwrap_or(&Value::Null))?,
-                IntrinsicOpcode::ArrayLen => array_len(ctx.heap, args.first().unwrap_or(&Value::Null))?,
+                IntrinsicOpcode::ArrayLen => array_length(ctx.heap, args.first().unwrap_or(&Value::Null))?,
                 IntrinsicOpcode::ArrayGet => array_get(ctx.heap, args.first().unwrap_or(&Value::Null), args.get(1).unwrap_or(&Value::Null))?,
                 IntrinsicOpcode::ArraySet => array_set(
                     ctx.heap,
@@ -116,7 +116,7 @@ pub fn execute_control(
                     args.get(2).unwrap_or(&Value::Null),
                 )?,
                 IntrinsicOpcode::RefDeref => {
-                    return Err(NyarRuntimeError::UnsupportedFeature("CallIntrinsic RefDeref"));
+                    return Err(OdinRuntimeError::UnsupportedFeature("CallIntrinsic RefDeref"));
                 }
                 IntrinsicOpcode::IsNull => {
                     let value = args.first().unwrap_or(&Value::Null);
@@ -124,7 +124,7 @@ pub fn execute_control(
                 }
                 IntrinsicOpcode::UnwrapNull => match args.first().unwrap_or(&Value::Null) {
                     Value::Null => {
-                        return Err(NyarRuntimeError::TypeMismatch { expected: "non-null value", actual: "null".to_string() });
+                        return Err(OdinRuntimeError::TypeMismatch { expected: "non-null value", actual: "null".to_string() });
                     }
                     other => other.clone(),
                 },
@@ -133,19 +133,19 @@ pub fn execute_control(
             frame.ip += instruction.size as usize;
             Ok(StepResult::Continue)
         }
-        _ => Err(NyarRuntimeError::UnknownOpcode(instruction.code as u8)),
+        _ => Err(OdinRuntimeError::UnknownOpcode(instruction.code as u8)),
     }
 }
 
 /// Enters a nested function call.
-pub fn execute_call(instruction: NyarInstruction, frame: &mut Frame, module: &LoadedModule) -> Result<StepResult, NyarRuntimeError> {
+pub fn execute_call(instruction: OdinInstruction, frame: &mut Frame, module: &LoadedModule) -> Result<StepResult, OdinRuntimeError> {
     let function_index = instruction.operand1;
     if function_index < 0 {
-        return Err(NyarRuntimeError::FunctionIndexOutOfRange(function_index));
+        return Err(OdinRuntimeError::FunctionIndexOutOfRange(function_index));
     }
     let function_index = function_index as usize;
     if function_index >= module.functions.len() {
-        return Err(NyarRuntimeError::FunctionIndexOutOfRange(function_index as i32));
+        return Err(OdinRuntimeError::FunctionIndexOutOfRange(function_index as i32));
     }
     frame.ip += instruction.size as usize;
     Ok(StepResult::Call { function_index })

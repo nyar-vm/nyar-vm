@@ -4,7 +4,7 @@
 //! 不再经字符串宿主 `alloc_record` / `record_*`。
 
 use odin_bytecode::{
-    NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarHeadCode, NyarLayout, NyarModuleData, emit_imm1,
+    Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinGlobal, OdinHeadCode, OdinLayout, OdinModuleData, emit_imm1,
     encode_module,
 };
 use odin_vm::{ModuleGlobals, OdinVm, Value};
@@ -13,29 +13,29 @@ use odin_vm::{ModuleGlobals, OdinVm, Value};
 fn eager_singleton_init_and_accessor_roundtrip() {
     let mut code = Vec::new();
     // __init_singleton_Counter: ObjectNew(0); StoreGlobal(0); Return
-    emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
-    emit_imm1(&mut code, NyarHeadCode::StoreGlobal, 0);
-    code.push(NyarHeadCode::Return as u8);
+    emit_imm1(&mut code, OdinHeadCode::ObjectNew, 0);
+    emit_imm1(&mut code, OdinHeadCode::StoreGlobal, 0);
+    code.push(OdinHeadCode::Return as u8);
 
     let accessor_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
-    code.push(NyarHeadCode::Return as u8);
+    emit_imm1(&mut code, OdinHeadCode::LoadGlobal, 0);
+    code.push(OdinHeadCode::Return as u8);
 
-    let module = NyarModuleData {
-        version: NYAR_VERSION,
+    let module = OdinModuleData {
+        version: Odin_VERSION,
         name: "singleton".to_string(),
         constants: Vec::new(),
-        globals: vec![NyarGlobal { name: "Counter.INSTANCE".to_string(), type_name: "Counter".to_string() }],
+        globals: vec![OdinGlobal { name: "Counter.INSTANCE".to_string(), type_name: "Counter".to_string() }],
         init_function_indices: vec![0],
         functions: vec![
-            NyarFunction {
+            OdinFunction {
                 name: "__init_singleton_Counter".to_string(),
                 arity: 0,
                 local_count: 0,
                 code_offset: 0,
                 code_length: accessor_offset,
             },
-            NyarFunction {
+            OdinFunction {
                 name: "Counter__instance".to_string(),
                 arity: 0,
                 local_count: 0,
@@ -45,12 +45,12 @@ fn eager_singleton_init_and_accessor_roundtrip() {
         ],
         imports: Vec::new(),
         exports: vec![
-            NyarExport { kind: NyarExportKind::Global, symbol_name: "Counter.INSTANCE".to_string(), function_index: 0 },
-            NyarExport { kind: NyarExportKind::Function, symbol_name: "Counter__instance".to_string(), function_index: 1 },
+            OdinExport { kind: OdinExportKind::Global, symbol_name: "Counter.INSTANCE".to_string(), function_index: 0 },
+            OdinExport { kind: OdinExportKind::Function, symbol_name: "Counter__instance".to_string(), function_index: 1 },
         ],
         witness_entries: Vec::new(),
         code_bytes: code,
-        layouts: vec![NyarLayout { field_count: 0 }],
+        layouts: vec![OdinLayout { field_count: 0 }],
     };
 
     let bytes = encode_module(&module);
@@ -67,32 +67,32 @@ fn lazy_singleton_accessor_allocates_once() {
     let accessor_offset = 0i32;
     // 惰性分配：两路径在 Return 处栈高度均为 1。
     //   LoadGlobal; Dup; JumpIfTrue -> hit; Pop; ObjectNew; Dup; StoreGlobal; Jump -> hit; hit: Return
-    emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
-    code.push(NyarHeadCode::Dup as u8);
+    emit_imm1(&mut code, OdinHeadCode::LoadGlobal, 0);
+    code.push(OdinHeadCode::Dup as u8);
     let jump_if_pc = code.len();
-    code.push(NyarHeadCode::JumpIfTrue as u8);
+    code.push(OdinHeadCode::JumpIfTrue as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Pop as u8);
-    emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
-    code.push(NyarHeadCode::Dup as u8);
-    emit_imm1(&mut code, NyarHeadCode::StoreGlobal, 0);
+    code.push(OdinHeadCode::Pop as u8);
+    emit_imm1(&mut code, OdinHeadCode::ObjectNew, 0);
+    code.push(OdinHeadCode::Dup as u8);
+    emit_imm1(&mut code, OdinHeadCode::StoreGlobal, 0);
     let jump_to_hit_pc = code.len();
-    code.push(NyarHeadCode::Jump as u8);
+    code.push(OdinHeadCode::Jump as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     let hit = code.len();
-    code.push(NyarHeadCode::Return as u8);
+    code.push(OdinHeadCode::Return as u8);
     let to_hit_if = (hit as i32) - (jump_if_pc as i32);
     code[jump_if_pc + 1..jump_if_pc + 5].copy_from_slice(&to_hit_if.to_le_bytes());
     let to_hit_jump = (hit as i32) - (jump_to_hit_pc as i32);
     code[jump_to_hit_pc + 1..jump_to_hit_pc + 5].copy_from_slice(&to_hit_jump.to_le_bytes());
 
-    let module = NyarModuleData {
-        version: NYAR_VERSION,
+    let module = OdinModuleData {
+        version: Odin_VERSION,
         name: "lazy_singleton".to_string(),
         constants: Vec::new(),
-        globals: vec![NyarGlobal { name: "Counter.INSTANCE".to_string(), type_name: "Counter".to_string() }],
+        globals: vec![OdinGlobal { name: "Counter.INSTANCE".to_string(), type_name: "Counter".to_string() }],
         init_function_indices: Vec::new(),
-        functions: vec![NyarFunction {
+        functions: vec![OdinFunction {
             name: "Counter__get_instance".to_string(),
             arity: 0,
             local_count: 0,
@@ -100,10 +100,10 @@ fn lazy_singleton_accessor_allocates_once() {
             code_length: code.len() as i32,
         }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "Counter__get_instance".to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "Counter__get_instance".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
-        layouts: vec![NyarLayout { field_count: 0 }],
+        layouts: vec![OdinLayout { field_count: 0 }],
     };
 
     let bytes = encode_module(&module);
@@ -122,70 +122,70 @@ fn singleton_field_read_write_roundtrip() {
     let mut code = Vec::new();
 
     let init_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
-    emit_imm1(&mut code, NyarHeadCode::StoreGlobal, 0);
-    code.push(NyarHeadCode::Return as u8);
+    emit_imm1(&mut code, OdinHeadCode::ObjectNew, 0);
+    emit_imm1(&mut code, OdinHeadCode::StoreGlobal, 0);
+    code.push(OdinHeadCode::Return as u8);
     let init_length = code.len() as i32 - init_offset;
 
     // set_total: LoadGlobal; Const(42); FieldSet(0); Pop; Return
     let set_total_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
-    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
-    emit_imm1(&mut code, NyarHeadCode::FieldSet, 0);
-    code.push(NyarHeadCode::Pop as u8);
-    code.push(NyarHeadCode::Return as u8);
+    emit_imm1(&mut code, OdinHeadCode::LoadGlobal, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+    emit_imm1(&mut code, OdinHeadCode::FieldSet, 0);
+    code.push(OdinHeadCode::Pop as u8);
+    code.push(OdinHeadCode::Return as u8);
     let set_total_length = code.len() as i32 - set_total_offset;
 
     // get_total: LoadGlobal; FieldGet(0); Return
     let get_total_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
-    emit_imm1(&mut code, NyarHeadCode::FieldGet, 0);
-    code.push(NyarHeadCode::Return as u8);
+    emit_imm1(&mut code, OdinHeadCode::LoadGlobal, 0);
+    emit_imm1(&mut code, OdinHeadCode::FieldGet, 0);
+    code.push(OdinHeadCode::Return as u8);
     let get_total_length = code.len() as i32 - get_total_offset;
 
     // increment_total: get → +1 → set
     let increment_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
-    emit_imm1(&mut code, NyarHeadCode::FieldGet, 0);
-    emit_imm1(&mut code, NyarHeadCode::Constant, 1);
-    code.push(NyarHeadCode::I32Add as u8);
-    emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
-    emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::FieldSet, 0);
-    code.push(NyarHeadCode::Pop as u8);
-    code.push(NyarHeadCode::Return as u8);
+    emit_imm1(&mut code, OdinHeadCode::LoadGlobal, 0);
+    emit_imm1(&mut code, OdinHeadCode::FieldGet, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 1);
+    code.push(OdinHeadCode::I32Add as u8);
+    emit_imm1(&mut code, OdinHeadCode::StoreLocal, 0);
+    emit_imm1(&mut code, OdinHeadCode::LoadGlobal, 0);
+    emit_imm1(&mut code, OdinHeadCode::LoadLocal, 0);
+    emit_imm1(&mut code, OdinHeadCode::FieldSet, 0);
+    code.push(OdinHeadCode::Pop as u8);
+    code.push(OdinHeadCode::Return as u8);
     let increment_length = code.len() as i32 - increment_offset;
 
-    let module = NyarModuleData {
-        version: NYAR_VERSION,
+    let module = OdinModuleData {
+        version: Odin_VERSION,
         name: "singleton_field_rw".to_string(),
-        constants: vec![NyarConstant::Integer32(42), NyarConstant::Integer32(1)],
-        globals: vec![NyarGlobal { name: "Counter.INSTANCE".to_string(), type_name: "Counter".to_string() }],
+        constants: vec![OdinConstant::Integer32(42), OdinConstant::Integer32(1)],
+        globals: vec![OdinGlobal { name: "Counter.INSTANCE".to_string(), type_name: "Counter".to_string() }],
         init_function_indices: vec![0],
         functions: vec![
-            NyarFunction {
+            OdinFunction {
                 name: "__init_singleton_Counter".to_string(),
                 arity: 0,
                 local_count: 0,
                 code_offset: init_offset,
                 code_length: init_length,
             },
-            NyarFunction {
+            OdinFunction {
                 name: "set_total".to_string(),
                 arity: 0,
                 local_count: 0,
                 code_offset: set_total_offset,
                 code_length: set_total_length,
             },
-            NyarFunction {
+            OdinFunction {
                 name: "get_total".to_string(),
                 arity: 0,
                 local_count: 0,
                 code_offset: get_total_offset,
                 code_length: get_total_length,
             },
-            NyarFunction {
+            OdinFunction {
                 name: "increment_total".to_string(),
                 arity: 0,
                 local_count: 1,
@@ -195,13 +195,13 @@ fn singleton_field_read_write_roundtrip() {
         ],
         imports: Vec::new(),
         exports: vec![
-            NyarExport { kind: NyarExportKind::Function, symbol_name: "set_total".to_string(), function_index: 1 },
-            NyarExport { kind: NyarExportKind::Function, symbol_name: "get_total".to_string(), function_index: 2 },
-            NyarExport { kind: NyarExportKind::Function, symbol_name: "increment_total".to_string(), function_index: 3 },
+            OdinExport { kind: OdinExportKind::Function, symbol_name: "set_total".to_string(), function_index: 1 },
+            OdinExport { kind: OdinExportKind::Function, symbol_name: "get_total".to_string(), function_index: 2 },
+            OdinExport { kind: OdinExportKind::Function, symbol_name: "increment_total".to_string(), function_index: 3 },
         ],
         witness_entries: Vec::new(),
         code_bytes: code,
-        layouts: vec![NyarLayout { field_count: 1 }],
+        layouts: vec![OdinLayout { field_count: 1 }],
     };
 
     let bytes = encode_module(&module);
@@ -229,20 +229,20 @@ fn lazy_singleton_field_write_persists_across_calls() {
     let accessor_offset = code.len() as i32;
     // 惰性分配：两路径在 Return 处栈高度均为 1。
     //   LoadGlobal; Dup; JumpIfTrue -> hit; Pop; ObjectNew; Dup; StoreGlobal; Jump -> hit; hit: Return
-    emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
-    code.push(NyarHeadCode::Dup as u8);
+    emit_imm1(&mut code, OdinHeadCode::LoadGlobal, 0);
+    code.push(OdinHeadCode::Dup as u8);
     let jump_if_pc = code.len();
-    code.push(NyarHeadCode::JumpIfTrue as u8);
+    code.push(OdinHeadCode::JumpIfTrue as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Pop as u8);
-    emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
-    code.push(NyarHeadCode::Dup as u8);
-    emit_imm1(&mut code, NyarHeadCode::StoreGlobal, 0);
+    code.push(OdinHeadCode::Pop as u8);
+    emit_imm1(&mut code, OdinHeadCode::ObjectNew, 0);
+    code.push(OdinHeadCode::Dup as u8);
+    emit_imm1(&mut code, OdinHeadCode::StoreGlobal, 0);
     let jump_to_hit_pc = code.len();
-    code.push(NyarHeadCode::Jump as u8);
+    code.push(OdinHeadCode::Jump as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     let hit = code.len();
-    code.push(NyarHeadCode::Return as u8);
+    code.push(OdinHeadCode::Return as u8);
     let to_hit_if = (hit as i32) - (jump_if_pc as i32);
     code[jump_if_pc + 1..jump_if_pc + 5].copy_from_slice(&to_hit_if.to_le_bytes());
     let to_hit_jump = (hit as i32) - (jump_to_hit_pc as i32);
@@ -251,42 +251,42 @@ fn lazy_singleton_field_write_persists_across_calls() {
 
     // set_field: Call(accessor); (100); FieldSet(0); Pop; Return
     let set_field_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::Call, 0);
-    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
-    emit_imm1(&mut code, NyarHeadCode::FieldSet, 0);
-    code.push(NyarHeadCode::Pop as u8);
-    code.push(NyarHeadCode::Return as u8);
+    emit_imm1(&mut code, OdinHeadCode::Call, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+    emit_imm1(&mut code, OdinHeadCode::FieldSet, 0);
+    code.push(OdinHeadCode::Pop as u8);
+    code.push(OdinHeadCode::Return as u8);
     let set_field_length = code.len() as i32 - set_field_offset;
 
     // get_field: Call(accessor); FieldGet(0); Return
     let get_field_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::Call, 0);
-    emit_imm1(&mut code, NyarHeadCode::FieldGet, 0);
-    code.push(NyarHeadCode::Return as u8);
+    emit_imm1(&mut code, OdinHeadCode::Call, 0);
+    emit_imm1(&mut code, OdinHeadCode::FieldGet, 0);
+    code.push(OdinHeadCode::Return as u8);
     let get_field_length = code.len() as i32 - get_field_offset;
 
-    let module = NyarModuleData {
-        version: NYAR_VERSION,
+    let module = OdinModuleData {
+        version: Odin_VERSION,
         name: "lazy_singleton_field_rw".to_string(),
-        constants: vec![NyarConstant::Integer32(100)],
-        globals: vec![NyarGlobal { name: "Counter.INSTANCE".to_string(), type_name: "Counter".to_string() }],
+        constants: vec![OdinConstant::Integer32(100)],
+        globals: vec![OdinGlobal { name: "Counter.INSTANCE".to_string(), type_name: "Counter".to_string() }],
         init_function_indices: Vec::new(),
         functions: vec![
-            NyarFunction {
+            OdinFunction {
                 name: "Counter__get_instance".to_string(),
                 arity: 0,
                 local_count: 0,
                 code_offset: accessor_offset,
                 code_length: accessor_length,
             },
-            NyarFunction {
+            OdinFunction {
                 name: "set_field".to_string(),
                 arity: 0,
                 local_count: 0,
                 code_offset: set_field_offset,
                 code_length: set_field_length,
             },
-            NyarFunction {
+            OdinFunction {
                 name: "get_field".to_string(),
                 arity: 0,
                 local_count: 0,
@@ -296,13 +296,13 @@ fn lazy_singleton_field_write_persists_across_calls() {
         ],
         imports: Vec::new(),
         exports: vec![
-            NyarExport { kind: NyarExportKind::Function, symbol_name: "Counter__get_instance".to_string(), function_index: 0 },
-            NyarExport { kind: NyarExportKind::Function, symbol_name: "set_field".to_string(), function_index: 1 },
-            NyarExport { kind: NyarExportKind::Function, symbol_name: "get_field".to_string(), function_index: 2 },
+            OdinExport { kind: OdinExportKind::Function, symbol_name: "Counter__get_instance".to_string(), function_index: 0 },
+            OdinExport { kind: OdinExportKind::Function, symbol_name: "set_field".to_string(), function_index: 1 },
+            OdinExport { kind: OdinExportKind::Function, symbol_name: "get_field".to_string(), function_index: 2 },
         ],
         witness_entries: Vec::new(),
         code_bytes: code,
-        layouts: vec![NyarLayout { field_count: 1 }],
+        layouts: vec![OdinLayout { field_count: 1 }],
     };
 
     let bytes = encode_module(&module);

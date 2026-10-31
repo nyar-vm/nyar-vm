@@ -7,7 +7,7 @@
 //! on its operand stack.
 
 use odin_bytecode::{
-    NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NyarWitnessDispatchEntry, emit_imm1,
+    Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, OdinWitnessDispatchEntry, emit_imm1,
     emit_plain, encode_module,
 };
 use odin_vm::{OdinVm, Value};
@@ -20,7 +20,7 @@ use odin_vm::{OdinVm, Value};
 ///
 /// `witness_entries` maps method_name "raise" to function 1 (handler).
 /// Expected: main returns 42 (the value handler resumes the continuation with).
-fn build_effect_handler_module() -> NyarModuleData {
+fn build_effect_handler_module() -> OdinModuleData {
     let mut code = Vec::new();
 
     // Function 0: raiser
@@ -29,10 +29,10 @@ fn build_effect_handler_module() -> NyarModuleData {
     //   Const 2 (999)           ; if resumed, push 999 and return it
     //   Return
     let raiser_offset = 0i32;
-    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 123
-    emit_imm1(&mut code, NyarHeadCode::PerformEffect, 1); // constant pool[1] = "raise"
-    emit_imm1(&mut code, NyarHeadCode::Constant, 2); // 999
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0); // 123
+    emit_imm1(&mut code, OdinHeadCode::PerformEffect, 1); // constant pool[1] = "raise"
+    emit_imm1(&mut code, OdinHeadCode::Constant, 2); // 999
+    emit_plain(&mut code, OdinHeadCode::Return);
 
     // Function 1: handler
     // Stack on entry (top -> bottom): effect_value, continuation
@@ -43,44 +43,44 @@ fn build_effect_handler_module() -> NyarModuleData {
     //   Resume                  ; resume continuation with effect_value
     //   Return                  ; return whatever the continuation returned
     let handler_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0); // local 0 = effect_value
-    emit_imm1(&mut code, NyarHeadCode::StoreLocal, 1); // local 1 = continuation
-    emit_imm1(&mut code, NyarHeadCode::LoadLocal, 1); // push continuation
-    emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0); // push resume_value (= effect_value)
-    emit_plain(&mut code, NyarHeadCode::Resume);
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::StoreLocal, 0); // local 0 = effect_value
+    emit_imm1(&mut code, OdinHeadCode::StoreLocal, 1); // local 1 = continuation
+    emit_imm1(&mut code, OdinHeadCode::LoadLocal, 1); // push continuation
+    emit_imm1(&mut code, OdinHeadCode::LoadLocal, 0); // push resume_value (= effect_value)
+    emit_plain(&mut code, OdinHeadCode::Resume);
+    emit_plain(&mut code, OdinHeadCode::Return);
 
     // Function 2: main
     //   Call 0                  ; call raiser -> PerformEffect -> handler invoked
     //   Return                  ; main returns whatever handler returned
     let main_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::Call, 0); // call raiser
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::Call, 0); // call raiser
+    emit_plain(&mut code, OdinHeadCode::Return);
 
-    NyarModuleData {
-        version: NYAR_VERSION,
+    OdinModuleData {
+        version: Odin_VERSION,
         name: "effect_dispatch".to_string(),
         constants: vec![
-            NyarConstant::Integer32(123),              // effect payload
-            NyarConstant::String("raise".to_string()), // effect method_name
-            NyarConstant::Integer32(999),              // raiser's return value if resumed
+            OdinConstant::Integer32(123),              // effect payload
+            OdinConstant::String("raise".to_string()), // effect method_name
+            OdinConstant::Integer32(999),              // raiser's return value if resumed
         ],
         functions: vec![
-            NyarFunction {
+            OdinFunction {
                 name: "raiser".to_string(),
                 arity: 0,
                 local_count: 0,
                 code_offset: raiser_offset,
                 code_length: handler_offset - raiser_offset,
             },
-            NyarFunction {
+            OdinFunction {
                 name: "handler".to_string(),
                 arity: 0,
                 local_count: 2,
                 code_offset: handler_offset,
                 code_length: main_offset - handler_offset,
             },
-            NyarFunction {
+            OdinFunction {
                 name: "main".to_string(),
                 arity: 0,
                 local_count: 0,
@@ -89,8 +89,8 @@ fn build_effect_handler_module() -> NyarModuleData {
             },
         ],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 2 }],
-        witness_entries: vec![NyarWitnessDispatchEntry {
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 2 }],
+        witness_entries: vec![OdinWitnessDispatchEntry {
             method_id: 0,
             type_id: 0,
             method_name: "raise".to_string(),
@@ -124,18 +124,18 @@ fn perform_effect_without_witness_entry_falls_back_to_suspend() {
     // When witness_entries is empty, PerformEffect must degrade to the old
     // Yield-alias behavior (Suspend) so existing modules keep working.
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 42
-    emit_imm1(&mut code, NyarHeadCode::PerformEffect, 1); // constant pool[1] = "raise"
-    emit_imm1(&mut code, NyarHeadCode::Constant, 2); // 999
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0); // 42
+    emit_imm1(&mut code, OdinHeadCode::PerformEffect, 1); // constant pool[1] = "raise"
+    emit_imm1(&mut code, OdinHeadCode::Constant, 2); // 999
+    emit_plain(&mut code, OdinHeadCode::Return);
 
-    let module = NyarModuleData {
-        version: NYAR_VERSION,
+    let module = OdinModuleData {
+        version: Odin_VERSION,
         name: "effect_no_witness".to_string(),
-        constants: vec![NyarConstant::Integer32(42), NyarConstant::String("raise".to_string()), NyarConstant::Integer32(999)],
-        functions: vec![NyarFunction { name: "raiser".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
+        constants: vec![OdinConstant::Integer32(42), OdinConstant::String("raise".to_string()), OdinConstant::Integer32(999)],
+        functions: vec![OdinFunction { name: "raiser".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "raiser".to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "raiser".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -169,46 +169,46 @@ fn handler_unwind_when_not_resuming_continuation() {
     // function 2 "main": Call 0, Return
     let mut code = Vec::new();
     let raiser_offset = 0i32;
-    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 123
-    emit_imm1(&mut code, NyarHeadCode::PerformEffect, 1); // "raise"
-    emit_imm1(&mut code, NyarHeadCode::Constant, 2); // 999
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0); // 123
+    emit_imm1(&mut code, OdinHeadCode::PerformEffect, 1); // "raise"
+    emit_imm1(&mut code, OdinHeadCode::Constant, 2); // 999
+    emit_plain(&mut code, OdinHeadCode::Return);
 
     let handler_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0); // local 0 = effect_value
-    emit_imm1(&mut code, NyarHeadCode::StoreLocal, 1); // local 1 = continuation (unused)
-    emit_imm1(&mut code, NyarHeadCode::Constant, 3); // 42
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::StoreLocal, 0); // local 0 = effect_value
+    emit_imm1(&mut code, OdinHeadCode::StoreLocal, 1); // local 1 = continuation (unused)
+    emit_imm1(&mut code, OdinHeadCode::Constant, 3); // 42
+    emit_plain(&mut code, OdinHeadCode::Return);
 
     let main_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::Call, 0);
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::Call, 0);
+    emit_plain(&mut code, OdinHeadCode::Return);
 
-    let module = NyarModuleData {
-        version: NYAR_VERSION,
+    let module = OdinModuleData {
+        version: Odin_VERSION,
         name: "effect_unwind".to_string(),
         constants: vec![
-            NyarConstant::Integer32(123),
-            NyarConstant::String("raise".to_string()),
-            NyarConstant::Integer32(999),
-            NyarConstant::Integer32(42),
+            OdinConstant::Integer32(123),
+            OdinConstant::String("raise".to_string()),
+            OdinConstant::Integer32(999),
+            OdinConstant::Integer32(42),
         ],
         functions: vec![
-            NyarFunction {
+            OdinFunction {
                 name: "raiser".to_string(),
                 arity: 0,
                 local_count: 0,
                 code_offset: raiser_offset,
                 code_length: handler_offset - raiser_offset,
             },
-            NyarFunction {
+            OdinFunction {
                 name: "handler".to_string(),
                 arity: 0,
                 local_count: 2,
                 code_offset: handler_offset,
                 code_length: main_offset - handler_offset,
             },
-            NyarFunction {
+            OdinFunction {
                 name: "main".to_string(),
                 arity: 0,
                 local_count: 0,
@@ -217,8 +217,8 @@ fn handler_unwind_when_not_resuming_continuation() {
             },
         ],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 2 }],
-        witness_entries: vec![NyarWitnessDispatchEntry {
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 2 }],
+        witness_entries: vec![OdinWitnessDispatchEntry {
             method_id: 0,
             type_id: 0,
             method_name: "raise".to_string(),

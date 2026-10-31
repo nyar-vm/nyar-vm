@@ -1,19 +1,19 @@
 use odin_vm::{OdinVm, jit::JitError};
 
-use odin_bytecode::{NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, encode_module};
+use odin_bytecode::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
 
 fn empty_module() -> odin_vm::module::LoadedModule {
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Constant as u8);
+    code.push(OdinHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Return as u8);
-    let data = NyarModuleData {
-        version: NYAR_VERSION,
+    code.push(OdinHeadCode::Return as u8);
+    let data = OdinModuleData {
+        version: Odin_VERSION,
         name: "jit-hook".to_string(),
-        constants: vec![NyarConstant::Integer32(0)],
-        functions: vec![NyarFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
+        constants: vec![OdinConstant::Integer32(0)],
+        functions: vec![OdinFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -34,24 +34,24 @@ fn executor_default_jit_is_disabled() {
 
 #[test]
 fn stack_maps_available_without_jit_backend() {
-    use odin_bytecode::NyarHeadCode;
+    use odin_bytecode::OdinHeadCode;
 
     let mut code = Vec::new();
-    code.push(NyarHeadCode::ObjectNew as u8);
+    code.push(OdinHeadCode::ObjectNew as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Return as u8);
-    let data = NyarModuleData {
-        version: NYAR_VERSION,
+    code.push(OdinHeadCode::Return as u8);
+    let data = OdinModuleData {
+        version: Odin_VERSION,
         name: "stack-map".to_string(),
         constants: Vec::new(),
-        functions: vec![NyarFunction { name: "main".to_string(), arity: 0, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
+        functions: vec![OdinFunction { name: "main".to_string(), arity: 0, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
         init_function_indices: Vec::new(),
-        layouts: vec![odin_bytecode::NyarLayout { field_count: 0 }],
+        layouts: vec![odin_bytecode::OdinLayout { field_count: 0 }],
     };
     let module = OdinVm::new().load(&encode_module(&data)).expect("load");
     let maps = OdinVm::new().stack_maps_for(&module, 0).expect("stack maps");
@@ -81,19 +81,19 @@ fn baseline_scalar_jit_fast_path_adds_i32_args() {
     use odin_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
-    code.push(NyarHeadCode::LoadArg as u8);
+    code.push(OdinHeadCode::LoadArg as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::LoadArg as u8);
+    code.push(OdinHeadCode::LoadArg as u8);
     code.extend_from_slice(&1i32.to_le_bytes());
-    code.push(NyarHeadCode::I32Add as u8);
-    code.push(NyarHeadCode::Return as u8);
-    let data = NyarModuleData {
-        version: NYAR_VERSION,
+    code.push(OdinHeadCode::I32Add as u8);
+    code.push(OdinHeadCode::Return as u8);
+    let data = OdinModuleData {
+        version: Odin_VERSION,
         name: "nj1-add".to_string(),
         constants: Vec::new(),
-        functions: vec![NyarFunction { name: "add".to_string(), arity: 2, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
+        functions: vec![OdinFunction { name: "add".to_string(), arity: 2, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "add".to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "add".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -114,21 +114,21 @@ fn baseline_scalar_jit_fast_path_adds_i32_args() {
     assert_eq!(vm.nj1_cache_len(), 1);
 }
 
-fn load_i32_binop_module(name: &str, export: &str, op: NyarHeadCode) -> odin_vm::module::LoadedModule {
+fn load_i32_binop_module(name: &str, export: &str, op: OdinHeadCode) -> odin_vm::module::LoadedModule {
     let mut code = Vec::new();
-    code.push(NyarHeadCode::LoadArg as u8);
+    code.push(OdinHeadCode::LoadArg as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::LoadArg as u8);
+    code.push(OdinHeadCode::LoadArg as u8);
     code.extend_from_slice(&1i32.to_le_bytes());
     code.push(op as u8);
-    code.push(NyarHeadCode::Return as u8);
-    let data = NyarModuleData {
-        version: NYAR_VERSION,
+    code.push(OdinHeadCode::Return as u8);
+    let data = OdinModuleData {
+        version: Odin_VERSION,
         name: name.to_string(),
         constants: Vec::new(),
-        functions: vec![NyarFunction { name: export.to_string(), arity: 2, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
+        functions: vec![OdinFunction { name: export.to_string(), arity: 2, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: export.to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: export.to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -147,48 +147,48 @@ fn baseline_scalar_jit_fast_path_cmp_and_select() {
 
     // LoadArg0; LoadArg1; I32LtS; Return
     let mut cmp_code = Vec::new();
-    cmp_code.push(NyarHeadCode::LoadArg as u8);
+    cmp_code.push(OdinHeadCode::LoadArg as u8);
     cmp_code.extend_from_slice(&0i32.to_le_bytes());
-    cmp_code.push(NyarHeadCode::LoadArg as u8);
+    cmp_code.push(OdinHeadCode::LoadArg as u8);
     cmp_code.extend_from_slice(&1i32.to_le_bytes());
-    cmp_code.push(NyarHeadCode::I32LtS as u8);
-    cmp_code.push(NyarHeadCode::Return as u8);
+    cmp_code.push(OdinHeadCode::I32LtS as u8);
+    cmp_code.push(OdinHeadCode::Return as u8);
     let cmp = load_named_module("nj1-lt", "lt", 2, cmp_code);
     assert_eq!(vm.run(&cmp, "lt", vec![Value::I32(1), Value::I32(2)]).expect("lt"), Value::I32(1));
 
     // select: a==b ? c : d
     let mut sel = Vec::new();
-    sel.push(NyarHeadCode::LoadArg as u8);
+    sel.push(OdinHeadCode::LoadArg as u8);
     sel.extend_from_slice(&0i32.to_le_bytes());
-    sel.push(NyarHeadCode::LoadArg as u8);
+    sel.push(OdinHeadCode::LoadArg as u8);
     sel.extend_from_slice(&1i32.to_le_bytes());
-    sel.push(NyarHeadCode::I32Eq as u8);
+    sel.push(OdinHeadCode::I32Eq as u8);
     let br_pc = sel.len();
-    sel.push(NyarHeadCode::JumpIfFalse as u8);
+    sel.push(OdinHeadCode::JumpIfFalse as u8);
     let offset_pos = sel.len();
     sel.extend_from_slice(&0i32.to_le_bytes());
-    sel.push(NyarHeadCode::LoadArg as u8);
+    sel.push(OdinHeadCode::LoadArg as u8);
     sel.extend_from_slice(&2i32.to_le_bytes());
-    sel.push(NyarHeadCode::Return as u8);
+    sel.push(OdinHeadCode::Return as u8);
     let else_pc = sel.len();
     let rel = (else_pc as i32) - (br_pc as i32);
     sel[offset_pos..offset_pos + 4].copy_from_slice(&rel.to_le_bytes());
-    sel.push(NyarHeadCode::LoadArg as u8);
+    sel.push(OdinHeadCode::LoadArg as u8);
     sel.extend_from_slice(&3i32.to_le_bytes());
-    sel.push(NyarHeadCode::Return as u8);
+    sel.push(OdinHeadCode::Return as u8);
     let select = load_named_module("nj1-sel", "sel", 4, sel);
     assert_eq!(vm.run(&select, "sel", vec![Value::I32(1), Value::I32(1), Value::I32(7), Value::I32(9)]).expect("sel true"), Value::I32(7));
     assert_eq!(vm.run(&select, "sel", vec![Value::I32(1), Value::I32(0), Value::I32(7), Value::I32(9)]).expect("sel false"), Value::I32(9));
 }
 
 fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> odin_vm::module::LoadedModule {
-    let data = NyarModuleData {
-        version: NYAR_VERSION,
+    let data = OdinModuleData {
+        version: Odin_VERSION,
         name: name.to_string(),
         constants: Vec::new(),
-        functions: vec![NyarFunction { name: export.to_string(), arity, local_count: arity, code_offset: 0, code_length: code.len() as i32 }],
+        functions: vec![OdinFunction { name: export.to_string(), arity, local_count: arity, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: export.to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: export.to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -203,11 +203,11 @@ fn baseline_scalar_jit_fast_path_load_dup_mul() {
     use odin_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
-    code.push(NyarHeadCode::LoadArg as u8);
+    code.push(OdinHeadCode::LoadArg as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Dup as u8);
-    code.push(NyarHeadCode::I32Mul as u8);
-    code.push(NyarHeadCode::Return as u8);
+    code.push(OdinHeadCode::Dup as u8);
+    code.push(OdinHeadCode::I32Mul as u8);
+    code.push(OdinHeadCode::Return as u8);
     let module = load_named_module("nj1-sq", "sq", 1, code);
     let mut vm = OdinVm::new();
     vm.set_jit(Box::new(BaselineScalarJit));
@@ -219,17 +219,17 @@ fn baseline_scalar_jit_folds_const_const_binop() {
     use odin_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Constant as u8);
+    code.push(OdinHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Constant as u8);
+    code.push(OdinHeadCode::Constant as u8);
     code.extend_from_slice(&1i32.to_le_bytes());
-    code.push(NyarHeadCode::I32Add as u8);
-    code.push(NyarHeadCode::Return as u8);
-    let data = NyarModuleData {
-        version: NYAR_VERSION,
+    code.push(OdinHeadCode::I32Add as u8);
+    code.push(OdinHeadCode::Return as u8);
+    let data = OdinModuleData {
+        version: Odin_VERSION,
         name: "nj1-fold".to_string(),
-        constants: vec![NyarConstant::Integer32(20), NyarConstant::Integer32(22)],
-        functions: vec![NyarFunction {
+        constants: vec![OdinConstant::Integer32(20), OdinConstant::Integer32(22)],
+        functions: vec![OdinFunction {
             name: "forty_two".to_string(),
             arity: 0,
             local_count: 0,
@@ -237,7 +237,7 @@ fn baseline_scalar_jit_folds_const_const_binop() {
             code_length: code.len() as i32,
         }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "forty_two".to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "forty_two".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -402,9 +402,9 @@ fn install_deopt_frames_invalidates_nj1_and_restores_locals() {
     };
 
     let mut code = Vec::new();
-    code.push(NyarHeadCode::LoadArg as u8);
+    code.push(OdinHeadCode::LoadArg as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Return as u8);
+    code.push(OdinHeadCode::Return as u8);
     let module = load_named_module("nj1-deopt", "id", 1, code);
     let mut vm = OdinVm::new();
     vm.set_jit(Box::new(BaselineScalarJit));
@@ -427,9 +427,9 @@ fn invalidate_assumption_drops_scalar_leaf_cache() {
     };
 
     let mut code = Vec::new();
-    code.push(NyarHeadCode::LoadArg as u8);
+    code.push(OdinHeadCode::LoadArg as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Return as u8);
+    code.push(OdinHeadCode::Return as u8);
     let module = load_named_module("nj1-assume", "id", 1, code);
     let mut vm = OdinVm::new();
     vm.set_jit(Box::new(BaselineScalarJit));
@@ -444,9 +444,9 @@ fn invalidate_nj1_cache_clears_compiled_blobs() {
     use odin_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
-    code.push(NyarHeadCode::LoadArg as u8);
+    code.push(OdinHeadCode::LoadArg as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Return as u8);
+    code.push(OdinHeadCode::Return as u8);
     let module = load_named_module("nj1-inv", "id", 1, code);
     let mut vm = OdinVm::new();
     vm.set_jit(Box::new(BaselineScalarJit));
@@ -465,19 +465,19 @@ fn baseline_scalar_jit_fast_path_const_local_binop() {
     use odin_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Constant as u8);
+    code.push(OdinHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::LoadArg as u8);
+    code.push(OdinHeadCode::LoadArg as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::I32Add as u8);
-    code.push(NyarHeadCode::Return as u8);
-    let data = NyarModuleData {
-        version: NYAR_VERSION,
+    code.push(OdinHeadCode::I32Add as u8);
+    code.push(OdinHeadCode::Return as u8);
+    let data = OdinModuleData {
+        version: Odin_VERSION,
         name: "nj1-imm-add".to_string(),
-        constants: vec![NyarConstant::Integer32(10)],
-        functions: vec![NyarFunction { name: "add10".to_string(), arity: 1, local_count: 1, code_offset: 0, code_length: code.len() as i32 }],
+        constants: vec![OdinConstant::Integer32(10)],
+        functions: vec![OdinFunction { name: "add10".to_string(), arity: 1, local_count: 1, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "add10".to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "add10".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -498,10 +498,10 @@ fn baseline_scalar_jit_fast_path_sub_and_mul() {
     let mut vm = OdinVm::new();
     vm.set_jit(Box::new(BaselineScalarJit));
 
-    let sub = load_i32_binop_module("nj1-sub", "sub", NyarHeadCode::I32Sub);
+    let sub = load_i32_binop_module("nj1-sub", "sub", OdinHeadCode::I32Sub);
     assert_eq!(vm.run(&sub, "sub", vec![Value::I32(40), Value::I32(2)]).expect("sub"), Value::I32(38));
 
-    let mul = load_i32_binop_module("nj1-mul", "mul", NyarHeadCode::I32Mul);
+    let mul = load_i32_binop_module("nj1-mul", "mul", OdinHeadCode::I32Mul);
     assert_eq!(vm.run(&mul, "mul", vec![Value::I32(40), Value::I32(2)]).expect("mul"), Value::I32(80));
     assert_eq!(vm.nj1_cache_len(), 2);
 }

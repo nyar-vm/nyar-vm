@@ -1,12 +1,12 @@
 use nyar_jit::{DisabledJit, JitCompileRequest, JitCompiler, JitError, JitFunctionSpec, StackMapJit};
-use odin_bytecode::NYAR_VERSION;
+use odin_bytecode::Odin_VERSION;
 
 #[test]
 fn disabled_jit_reports_unsupported() {
     let mut jit = DisabledJit;
     assert!(!jit.enabled());
     let request = JitCompileRequest {
-        module_version: NYAR_VERSION,
+        module_version: Odin_VERSION,
         module_name: "test".to_string(),
         code_bytes: vec![0],
         constant_i32: Vec::new(),
@@ -21,7 +21,7 @@ fn stack_map_jit_emits_conservative_maps() {
     let mut jit = StackMapJit;
     assert!(jit.enabled());
     let request = JitCompileRequest {
-        module_version: NYAR_VERSION,
+        module_version: Odin_VERSION,
         module_name: "test".to_string(),
         code_bytes: vec![0],
         constant_i32: Vec::new(),

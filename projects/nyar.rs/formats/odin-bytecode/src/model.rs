@@ -6,7 +6,7 @@
 /// Constant pool entry kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum NyarConstantKind {
+pub enum OdinConstantKind {
     /// 空值常量。
     Null = 0x00,
     /// 布尔常量。
@@ -23,7 +23,7 @@ pub enum NyarConstantKind {
 
 /// Constant pool entry.
 #[derive(Debug, Clone, PartialEq)]
-pub enum NyarConstant {
+pub enum OdinConstant {
     /// 空值。
     Null,
     /// 布尔值。
@@ -40,7 +40,7 @@ pub enum NyarConstant {
 
 /// Function metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NyarFunction {
+pub struct OdinFunction {
     /// 函数名称。
     pub name: String,
     /// 形参个数。
@@ -56,16 +56,16 @@ pub struct NyarFunction {
 /// Import entry kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum NyarImportKind {
+pub enum OdinImportKind {
     /// 导入函数符号。
     Function = 0,
 }
 
 /// Import table entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NyarImport {
+pub struct OdinImport {
     /// 导入项种类。
-    pub kind: NyarImportKind,
+    pub kind: OdinImportKind,
     /// 来源模块名。
     pub module_name: String,
     /// 导入符号名。
@@ -75,7 +75,7 @@ pub struct NyarImport {
 /// Export entry kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum NyarExportKind {
+pub enum OdinExportKind {
     /// 导出函数。
     Function = 0,
     /// 导出全局槽。
@@ -84,9 +84,9 @@ pub enum NyarExportKind {
 
 /// Export table entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NyarExport {
+pub struct OdinExport {
     /// 导出项种类。
-    pub kind: NyarExportKind,
+    pub kind: OdinExportKind,
     /// 对外可见符号名。
     pub symbol_name: String,
     /// Function index when `kind == Function`; global index when `kind == Global`.
@@ -95,7 +95,7 @@ pub struct NyarExport {
 
 /// Module-level global slot (singleton instance storage, etc.).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NyarGlobal {
+pub struct OdinGlobal {
     /// Slot name, e.g. `Counter.INSTANCE`.
     pub name: String,
     /// Aggregate type name used for allocation.
@@ -104,7 +104,7 @@ pub struct NyarGlobal {
 
 /// Witness dispatch entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NyarWitnessDispatchEntry {
+pub struct OdinWitnessDispatchEntry {
     /// 方法语义标识。
     pub method_id: i32,
     /// 具体类型标识。
@@ -122,7 +122,7 @@ pub struct NyarWitnessDispatchEntry {
 /// Section kind in a `.nyar` module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum NyarSectionKind {
+pub enum OdinSectionKind {
     /// 常量池段。
     Constants = 0x01,
     /// 函数元数据段。
@@ -145,34 +145,34 @@ pub enum NyarSectionKind {
 
 /// 语言中立的布局描述：仅槽位数，不含字段名。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NyarLayout {
+pub struct OdinLayout {
     /// 字段槽数量（`FieldGet` / `FieldSet` 的 field_slot 上界）。
     pub field_count: i32,
 }
 
 /// Decoded Nyar module binary view.
 #[derive(Debug, Clone, PartialEq)]
-pub struct NyarModuleData {
+pub struct OdinModuleData {
     /// 模块格式版本号。
     pub version: u32,
     /// 模块名称。
     pub name: String,
     /// 常量池条目。
-    pub constants: Vec<NyarConstant>,
+    pub constants: Vec<OdinConstant>,
     /// 函数元数据表。
-    pub functions: Vec<NyarFunction>,
+    pub functions: Vec<OdinFunction>,
     /// 导入表。
-    pub imports: Vec<NyarImport>,
+    pub imports: Vec<OdinImport>,
     /// 导出表。
-    pub exports: Vec<NyarExport>,
+    pub exports: Vec<OdinExport>,
     /// witness 分派条目。
-    pub witness_entries: Vec<NyarWitnessDispatchEntry>,
+    pub witness_entries: Vec<OdinWitnessDispatchEntry>,
     /// 指令字节码。
     pub code_bytes: Vec<u8>,
     /// Module-level global slots.
-    pub globals: Vec<NyarGlobal>,
+    pub globals: Vec<OdinGlobal>,
     /// Function indices to run for eager singleton / module initialization.
     pub init_function_indices: Vec<i32>,
     /// Layout descriptors；`layout_id` 为稠密下标。
-    pub layouts: Vec<NyarLayout>,
+    pub layouts: Vec<OdinLayout>,
 }

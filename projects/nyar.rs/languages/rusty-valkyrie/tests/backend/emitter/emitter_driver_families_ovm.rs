@@ -7,17 +7,17 @@
 #![cfg(feature = "ovm-lane")]
 
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan, resolve_entry_symbols};
-use odin_bytecode::{NYAR_VERSION, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarModuleData};
+use odin_bytecode::{Odin_VERSION, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
-fn module() -> NyarModuleData {
-    NyarModuleData {
-        version: NYAR_VERSION,
+fn module() -> OdinModuleData {
+    OdinModuleData {
+        version: Odin_VERSION,
         name: "test".to_owned(),
         constants: Vec::new(),
-        functions: vec![NyarFunction { name: "owner::main".to_owned(), arity: 0, local_count: 0, code_offset: 0, code_length: 1 }],
+        functions: vec![OdinFunction { name: "owner::main".to_owned(), arity: 0, local_count: 0, code_offset: 0, code_length: 1 }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "owner::main".to_owned(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "owner::main".to_owned(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: vec![0x05],
         globals: Vec::new(),
@@ -50,13 +50,13 @@ fn entry_contract_rejects_ambiguous_and_invalid_exports() {
 #[test]
 fn entry_contract_preserves_all_declared_library_exports() {
     let mut module = module();
-    module.exports.push(NyarExport { kind: NyarExportKind::Function, symbol_name: "second".to_owned(), function_index: 0 });
+    module.exports.push(OdinExport { kind: OdinExportKind::Function, symbol_name: "second".to_owned(), function_index: 0 });
     let entries = vec!["second".to_owned(), "owner::main".to_owned()];
     assert_eq!(resolve_entry_symbols(&module, &entries).unwrap(), entries);
 }
 
 /// 沿 Compiler 产出的目标私有计划降低到 `.nyar`，不重放调用边。
-fn try_lower_source_groups(groups: &[CompilerSourceGroup]) -> Result<NyarModuleData, String> {
+fn try_lower_source_groups(groups: &[CompilerSourceGroup]) -> Result<OdinModuleData, String> {
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(groups, &[], "native")
         .expect("源码闭包必须完成 Compiler 链路");
@@ -68,11 +68,11 @@ fn try_lower_source_groups(groups: &[CompilerSourceGroup]) -> Result<NyarModuleD
         .map_err(|error| error.to_string())
 }
 
-fn lower_source_groups(groups: &[CompilerSourceGroup]) -> NyarModuleData {
+fn lower_source_groups(groups: &[CompilerSourceGroup]) -> OdinModuleData {
     try_lower_source_groups(groups).expect("只允许沿已绑定实例发射")
 }
 
-fn decoded_codes(module: &NyarModuleData) -> Vec<NyarHeadCode> {
+fn decoded_codes(module: &OdinModuleData) -> Vec<OdinHeadCode> {
     let mut codes = Vec::new();
     let mut position = 0;
     while position < module.code_bytes.len() {
@@ -116,7 +116,7 @@ micro main() -> i32 {
     );
     let module = lower_source_groups(&groups);
     let codes = decoded_codes(&module);
-    assert!(codes.contains(&NyarHeadCode::I32Add), "i32 `+` 必须降低为 I32Add 指令，实际 {codes:?}");
+    assert!(codes.contains(&OdinHeadCode::I32Add), "i32 `+` 必须降低为 I32Add 指令，实际 {codes:?}");
     assert!(
         module.imports.iter().all(|import| import.symbol_name != "i32_add" && import.module_name != "nyar.host"),
         "已内联的数值 provider 不得留下 nyar.host 导入: {:?}",
@@ -201,13 +201,13 @@ micro main() -> i64 {
         .expect("i64_add 必须保留 nyar.host 导入");
     assert_eq!(
         module.imports[import],
-        NyarImport { kind: NyarImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_add".into() }
+        OdinImport { kind: OdinImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_add".into() }
     );
     let mut position = 0;
     let mut call_import = None;
     while position < module.code_bytes.len() {
         let instruction = odin_bytecode::decode_at(&module.code_bytes, position);
-        if instruction.code == NyarHeadCode::CallImport && instruction.operand1 == import as i32 {
+        if instruction.code == OdinHeadCode::CallImport && instruction.operand1 == import as i32 {
             call_import = Some(instruction);
         }
         position += instruction.size as usize;
@@ -236,8 +236,8 @@ micro main() -> i32 {
     );
     let module = lower_source_groups(&groups);
     let codes = decoded_codes(&module);
-    let constant = codes.iter().position(|code| *code == NyarHeadCode::Constant).expect("配方必须先压零常量");
-    let sub = codes.iter().position(|code| *code == NyarHeadCode::I32Sub).expect("配方必须发射 I32Sub");
+    let constant = codes.iter().position(|code| *code == OdinHeadCode::Constant).expect("配方必须先压零常量");
+    let sub = codes.iter().position(|code| *code == OdinHeadCode::I32Sub).expect("配方必须发射 I32Sub");
     assert!(constant < sub, "零常量必须先于 I32Sub，实际 {codes:?}");
     assert!(module.imports.iter().all(|import| import.symbol_name != "i32_neg"), "已内联的取负实现不得留下宿主导入: {:?}", module.imports);
 }

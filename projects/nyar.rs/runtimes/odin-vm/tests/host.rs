@@ -1,5 +1,5 @@
 use nyar_gc::ObjectHeap;
-use odin_bytecode::NyarImport;
+use odin_bytecode::OdinImport;
 use odin_vm::{
     host::{HostOp, ResolvedImport, execute_host_op, parse_host_op, resolve_import},
     value::Value,
@@ -28,6 +28,6 @@ fn begin_and_end_phase_update_heap_strategy() {
 
 #[test]
 fn resolves_non_host_as_external() {
-    let import = NyarImport { kind: odin_bytecode::NyarImportKind::Function, module_name: "guest.mod".into(), symbol_name: "whatever".into() };
+    let import = OdinImport { kind: odin_bytecode::OdinImportKind::Function, module_name: "guest.mod".into(), symbol_name: "whatever".into() };
     assert_eq!(resolve_import(&import).unwrap(), ResolvedImport::External);
 }

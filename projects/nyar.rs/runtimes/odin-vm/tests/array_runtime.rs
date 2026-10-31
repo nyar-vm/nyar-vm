@@ -1,17 +1,17 @@
 use nyar_gc::{ObjectHeap, ObjectPayload, Value};
 use odin_vm::{
-    array_runtime::{array_get, array_len, array_push, array_set, build_fixed_array},
-    error::NyarRuntimeError,
+    array_runtime::{array_get, array_length, array_push, array_set, build_fixed_array},
+    error::OdinRuntimeError,
 };
 
 #[test]
 fn array_push_grows_layout_slots() {
     let mut heap = ObjectHeap::new();
     let array = build_fixed_array(&mut heap, 0, &[]);
-    assert_eq!(array_len(&heap, &array).expect("len0"), Value::I32(0));
+    assert_eq!(array_length(&heap, &array).expect("len0"), Value::I32(0));
     array_push(&mut heap, &array, &Value::I64(2)).expect("push");
     array_push(&mut heap, &array, &Value::I64(7)).expect("push");
-    assert_eq!(array_len(&heap, &array).expect("len2"), Value::I32(2));
+    assert_eq!(array_length(&heap, &array).expect("len2"), Value::I32(2));
     assert_eq!(array_get(&heap, &array, &Value::I32(0)).expect("get0"), Value::I64(2));
     assert_eq!(array_get(&heap, &array, &Value::I32(1)).expect("get1"), Value::I64(7));
 }
@@ -20,7 +20,7 @@ fn array_push_grows_layout_slots() {
 fn fixed_array_len_get_set_use_layout_slots() {
     let mut heap = ObjectHeap::new();
     let array = build_fixed_array(&mut heap, 0, &[Value::I64(1), Value::I64(8), Value::I64(6)]);
-    assert_eq!(array_len(&heap, &array).expect("len"), Value::I32(3));
+    assert_eq!(array_length(&heap, &array).expect("len"), Value::I32(3));
     assert_eq!(array_get(&heap, &array, &Value::I32(0)).expect("get 0"), Value::I64(1));
     assert_eq!(array_get(&heap, &array, &Value::I32(1)).expect("get 1"), Value::I64(8));
     array_set(&mut heap, &array, &Value::I32(1), &Value::I64(99)).expect("set");
@@ -30,8 +30,8 @@ fn fixed_array_len_get_set_use_layout_slots() {
 #[test]
 fn rejects_non_object_for_array_intrinsics() {
     let heap = ObjectHeap::new();
-    let err = array_len(&heap, &Value::I32(1)).expect_err("non-object must fail");
-    assert!(matches!(err, NyarRuntimeError::TypeMismatch { .. }));
+    let err = array_length(&heap, &Value::I32(1)).expect_err("non-object must fail");
+    assert!(matches!(err, OdinRuntimeError::TypeMismatch { .. }));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! Generate-time IR for Nyar bytecode emission.
 
-use odin_bytecode::NyarHeadCode;
+use odin_bytecode::OdinHeadCode;
 
 /// One constant-pool entry (unified index space).
 #[derive(Debug, Clone, PartialEq)]
@@ -165,14 +165,14 @@ pub enum GenerateOperand {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenerateInstruction {
     /// Opcode.
-    pub opcode: NyarHeadCode,
+    pub opcode: OdinHeadCode,
     /// Operands.
     pub operands: Vec<GenerateOperand>,
 }
 
 impl GenerateInstruction {
     /// Create an instruction.
-    pub fn new(opcode: NyarHeadCode, operands: Vec<GenerateOperand>) -> Self {
+    pub fn new(opcode: OdinHeadCode, operands: Vec<GenerateOperand>) -> Self {
         Self { opcode, operands }
     }
 
@@ -241,7 +241,7 @@ impl GenerateFunction {
 
         let labels = self.labels.clone();
         for (index, instruction) in self.instructions.iter_mut().enumerate() {
-            if !matches!(instruction.opcode, NyarHeadCode::Jump | NyarHeadCode::JumpIfTrue | NyarHeadCode::JumpIfFalse) {
+            if !matches!(instruction.opcode, OdinHeadCode::Jump | OdinHeadCode::JumpIfTrue | OdinHeadCode::JumpIfFalse) {
                 continue;
             }
             if let Some(GenerateOperand::Label { name }) = instruction.operands.first().cloned() {

@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use odin_bytecode::NyarHeadCode;
+use odin_bytecode::OdinHeadCode;
 
 use super::generate::{GenerateFunction, GenerateInstruction, GenerateModule, GenerateOperand};
 
@@ -84,19 +84,19 @@ impl StackCompiler {
     }
 
     /// Emit an instruction with operands.
-    pub fn emit(&mut self, opcode: NyarHeadCode, operands: Vec<GenerateOperand>) {
+    pub fn emit(&mut self, opcode: OdinHeadCode, operands: Vec<GenerateOperand>) {
         let function = self.current_function.as_mut().expect("begin_function first");
         function.add_instruction(GenerateInstruction::new(opcode, operands));
     }
 
     /// Emit an instruction without operands.
-    pub fn emit0(&mut self, opcode: NyarHeadCode) {
+    pub fn emit0(&mut self, opcode: OdinHeadCode) {
         self.emit(opcode, Vec::new());
     }
 
     /// Emit a `Constant` reference and return its pool index.
     fn emit_const(&mut self, pool_index: i32) -> i32 {
-        self.emit(NyarHeadCode::Constant, vec![GenerateOperand::Const { pool_index }]);
+        self.emit(OdinHeadCode::Constant, vec![GenerateOperand::Const { pool_index }]);
         pool_index
     }
 
@@ -127,35 +127,35 @@ impl StackCompiler {
     /// Emit `LoadLocal`.
     pub fn emit_load_local(&mut self, name: &str) {
         let index = self.ensure_local(name);
-        self.emit(NyarHeadCode::LoadLocal, vec![GenerateOperand::Local { index }]);
+        self.emit(OdinHeadCode::LoadLocal, vec![GenerateOperand::Local { index }]);
     }
 
     /// Emit `StoreLocal`.
     pub fn emit_store_local(&mut self, name: &str) {
         let index = self.ensure_local(name);
-        self.emit(NyarHeadCode::StoreLocal, vec![GenerateOperand::Local { index }]);
+        self.emit(OdinHeadCode::StoreLocal, vec![GenerateOperand::Local { index }]);
     }
 
     /// Emit a jump to a label.
-    pub fn emit_jump(&mut self, opcode: NyarHeadCode, label: &str) {
+    pub fn emit_jump(&mut self, opcode: OdinHeadCode, label: &str) {
         self.emit(opcode, vec![GenerateOperand::Label { name: label.to_string() }]);
     }
 
     /// Emit `CallImport(import_index, argc)` for a `nyar.host` symbol.
     pub fn emit_call_import(&mut self, module_name: &str, symbol_name: &str, argc: i32) -> i32 {
         let index = self.module.ensure_import(module_name, symbol_name);
-        self.emit(NyarHeadCode::CallImport, vec![GenerateOperand::I32(index), GenerateOperand::I32(argc)]);
+        self.emit(OdinHeadCode::CallImport, vec![GenerateOperand::I32(index), GenerateOperand::I32(argc)]);
         index
     }
 
     /// Emit `Call` by function name.
     pub fn emit_call(&mut self, name: &str) {
-        self.emit(NyarHeadCode::Call, vec![GenerateOperand::FuncRef { name: name.to_string() }]);
+        self.emit(OdinHeadCode::Call, vec![GenerateOperand::FuncRef { name: name.to_string() }]);
     }
 
     /// Emit `return`.
     pub fn emit_return(&mut self) {
-        self.emit0(NyarHeadCode::Return);
+        self.emit0(OdinHeadCode::Return);
     }
 
     /// Emit a minimal `main` that returns an integer constant.

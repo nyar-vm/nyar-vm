@@ -2,9 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use odin_bytecode::{NYAR_VERSION, NyarHeadCode, NyarImport, NyarInstruction, NyarModuleData, OBSOLETE_CALL_NATIVE, decode_at};
+use odin_bytecode::{OBSOLETE_CALL_NATIVE, Odin_VERSION, OdinHeadCode, OdinImport, OdinInstruction, OdinModuleData, decode_at};
 
-use crate::{error::NyarRuntimeError, host::resolve_import};
+use crate::{error::OdinRuntimeError, host::resolve_import};
 
 /// 单函数操作数栈高度上限（加载期拒绝病理模块）。
 pub const MAX_OPERAND_STACK_HEIGHT: i32 = 8192;
@@ -131,13 +131,13 @@ fn edge(target: usize, height: i32, coroutine: CoroutineMeta) -> FlowEdge {
 }
 
 /// 校验已解码模块：版本、导入白名单、下标、函数代码区间、跳转边界、栈高度与栈深上限。
-pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
-    if data.version != NYAR_VERSION {
-        return Err(NyarRuntimeError::ModuleLoad(format!("unsupported module version {}; expected {NYAR_VERSION}", data.version)));
+pub fn verify_module(data: &OdinModuleData) -> Result<(), OdinRuntimeError> {
+    if data.version != Odin_VERSION {
+        return Err(OdinRuntimeError::ModuleLoad(format!("unsupported module version {}; expected {Odin_VERSION}", data.version)));
     }
 
     if data.code_bytes.len() > MAX_MODULE_CODE_BYTES {
-        return Err(NyarRuntimeError::ModuleLoad(format!(
+        return Err(OdinRuntimeError::ModuleLoad(format!(
             "module code section length {} exceeds limit {MAX_MODULE_CODE_BYTES}",
             data.code_bytes.len()
         )));
@@ -145,7 +145,7 @@ pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
 
     for (index, layout) in data.layouts.iter().enumerate() {
         if layout.field_count < 0 {
-            return Err(NyarRuntimeError::ModuleLoad(format!("layout[{index}] has negative field_count {}", layout.field_count)));
+            return Err(OdinRuntimeError::ModuleLoad(format!("layout[{index}] has negative field_count {}", layout.field_count)));
         }
     }
 
@@ -156,26 +156,26 @@ pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
     let mut export_names = BTreeSet::new();
     for export in &data.exports {
         if export.symbol_name.is_empty() || !export_names.insert(&export.symbol_name) {
-            return Err(NyarRuntimeError::ModuleLoad("empty or duplicate export identity".to_owned()));
+            return Err(OdinRuntimeError::ModuleLoad("empty or duplicate export identity".to_owned()));
         }
         let count = match export.kind {
-            odin_bytecode::NyarExportKind::Function => data.functions.len(),
-            odin_bytecode::NyarExportKind::Global => data.globals.len(),
+            odin_bytecode::OdinExportKind::Function => data.functions.len(),
+            odin_bytecode::OdinExportKind::Global => data.globals.len(),
         };
         if export.function_index < 0 || export.function_index as usize >= count {
-            return Err(NyarRuntimeError::ModuleLoad(format!("export `{}` index out of range", export.symbol_name)));
+            return Err(OdinRuntimeError::ModuleLoad(format!("export `{}` index out of range", export.symbol_name)));
         }
     }
     for (index, function) in data.functions.iter().enumerate() {
         if function.arity < 0 || function.local_count < 0 {
-            return Err(NyarRuntimeError::ModuleLoad(format!("function[{index}] has negative arity or local count")));
+            return Err(OdinRuntimeError::ModuleLoad(format!("function[{index}] has negative arity or local count")));
         }
     }
     for &index in &data.init_function_indices {
         let function =
-            usize::try_from(index).ok().and_then(|index| data.functions.get(index)).ok_or(NyarRuntimeError::FunctionIndexOutOfRange(index))?;
+            usize::try_from(index).ok().and_then(|index| data.functions.get(index)).ok_or(OdinRuntimeError::FunctionIndexOutOfRange(index))?;
         if function.arity != 0 {
-            return Err(NyarRuntimeError::ModuleLoad(format!("init function[{index}] must have zero arguments")));
+            return Err(OdinRuntimeError::ModuleLoad(format!("init function[{index}] must have zero arguments")));
         }
     }
     verify_code_stream(data)?;
@@ -186,9 +186,9 @@ pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
     Ok(())
 }
 
-fn verify_import(index: usize, import: &NyarImport) -> Result<(), NyarRuntimeError> {
+fn verify_import(index: usize, import: &OdinImport) -> Result<(), OdinRuntimeError> {
     if import.module_name.is_empty() || import.symbol_name.is_empty() {
-        return Err(NyarRuntimeError::ModuleLoad(format!("import[{index}] has empty module or symbol name")));
+        return Err(OdinRuntimeError::ModuleLoad(format!("import[{index}] has empty module or symbol name")));
     }
     // 解析一次：未知 `nyar.host` 符号在此失败；结果在 `LoadedModule` 侧缓存。
     let _ = resolve_import(import)?;
@@ -196,48 +196,48 @@ fn verify_import(index: usize, import: &NyarImport) -> Result<(), NyarRuntimeErr
 }
 
 /// 整段代码流的操作码与截断检查（不依赖函数表覆盖）。
-fn verify_code_stream(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
+fn verify_code_stream(data: &OdinModuleData) -> Result<(), OdinRuntimeError> {
     let mut pc = 0usize;
     while pc < data.code_bytes.len() {
         let opcode = data.code_bytes[pc];
         if opcode == OBSOLETE_CALL_NATIVE {
-            return Err(NyarRuntimeError::ModuleLoad(format!(
+            return Err(OdinRuntimeError::ModuleLoad(format!(
                 "obsolete CallNative opcode 0x{OBSOLETE_CALL_NATIVE:02X} at pc {pc}; use CallImport"
             )));
         }
 
-        let Some(code) = NyarHeadCode::from_u8(opcode)
+        let Some(code) = OdinHeadCode::from_u8(opcode)
         else {
-            return Err(NyarRuntimeError::UnknownOpcode(opcode));
+            return Err(OdinRuntimeError::UnknownOpcode(opcode));
         };
 
         let instruction = decode_at(&data.code_bytes, pc);
         if instruction.size == 0 {
-            return Err(NyarRuntimeError::ModuleLoad(format!("truncated instruction at pc {pc}")));
+            return Err(OdinRuntimeError::ModuleLoad(format!("truncated instruction at pc {pc}")));
         }
 
         match code {
-            NyarHeadCode::CallImport => {
+            OdinHeadCode::CallImport => {
                 let import_index = instruction.operand1;
                 if import_index < 0 || (import_index as usize) >= data.imports.len() {
-                    return Err(NyarRuntimeError::ImportIndexOutOfRange(import_index));
+                    return Err(OdinRuntimeError::ImportIndexOutOfRange(import_index));
                 }
             }
-            NyarHeadCode::ObjectNew => {
+            OdinHeadCode::ObjectNew => {
                 let layout_id = instruction.operand1;
                 if layout_id < 0 || (layout_id as usize) >= data.layouts.len() {
-                    return Err(NyarRuntimeError::LayoutIndexOutOfRange(layout_id));
+                    return Err(OdinRuntimeError::LayoutIndexOutOfRange(layout_id));
                 }
             }
-            NyarHeadCode::FieldGet | NyarHeadCode::FieldSet => {
+            OdinHeadCode::FieldGet | OdinHeadCode::FieldSet => {
                 let field_slot = instruction.operand1;
                 if field_slot < 0 {
-                    return Err(NyarRuntimeError::FieldSlotOutOfRange(field_slot));
+                    return Err(OdinRuntimeError::FieldSlotOutOfRange(field_slot));
                 }
                 // 热路径按对象自身 layout 校验上界；加载期仅拒绝负槽，并要求至少存在能容纳该槽的布局。
                 let fits_some_layout = data.layouts.iter().any(|layout| field_slot < layout.field_count);
                 if !fits_some_layout {
-                    return Err(NyarRuntimeError::FieldSlotOutOfRange(field_slot));
+                    return Err(OdinRuntimeError::FieldSlotOutOfRange(field_slot));
                 }
             }
             _ => {}
@@ -249,23 +249,23 @@ fn verify_code_stream(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
     Ok(())
 }
 
-fn verify_function(data: &NyarModuleData, function_index: usize, function: &odin_bytecode::NyarFunction) -> Result<(), NyarRuntimeError> {
+fn verify_function(data: &OdinModuleData, function_index: usize, function: &odin_bytecode::OdinFunction) -> Result<(), OdinRuntimeError> {
     if function.code_offset < 0 || function.code_length < 0 {
-        return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] has negative code_offset or code_length")));
+        return Err(OdinRuntimeError::ModuleLoad(format!("function[{function_index}] has negative code_offset or code_length")));
     }
 
     let start = function.code_offset as usize;
     let length = function.code_length as usize;
     let end =
-        start.checked_add(length).ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("function[{function_index}] code range overflows")))?;
+        start.checked_add(length).ok_or_else(|| OdinRuntimeError::ModuleLoad(format!("function[{function_index}] code range overflows")))?;
     if end > data.code_bytes.len() {
-        return Err(NyarRuntimeError::ModuleLoad(format!(
+        return Err(OdinRuntimeError::ModuleLoad(format!(
             "function[{function_index}] code range [{start}, {end}) exceeds code section length {}",
             data.code_bytes.len()
         )));
     }
     if length > MAX_FUNCTION_CODE_BYTES {
-        return Err(NyarRuntimeError::ModuleLoad(format!(
+        return Err(OdinRuntimeError::ModuleLoad(format!(
             "function[{function_index}] code length {length} exceeds limit {MAX_FUNCTION_CODE_BYTES}"
         )));
     }
@@ -301,7 +301,7 @@ fn verify_function(data: &NyarModuleData, function_index: usize, function: &odin
         let height = heights[&pc];
         let mut coroutine = coroutine_metas[&pc];
         if height > MAX_OPERAND_STACK_HEIGHT {
-            return Err(NyarRuntimeError::ModuleLoad(format!(
+            return Err(OdinRuntimeError::ModuleLoad(format!(
                 "function[{function_index}] operand stack height {height} exceeds limit {MAX_OPERAND_STACK_HEIGHT} at pc {pc}"
             )));
         }
@@ -310,14 +310,14 @@ fn verify_function(data: &NyarModuleData, function_index: usize, function: &odin
         let instruction = instructions
             .get(&pc)
             .copied()
-            .ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("function[{function_index}] control reaches non-instruction pc {pc}")))?;
+            .ok_or_else(|| OdinRuntimeError::ModuleLoad(format!("function[{function_index}] control reaches non-instruction pc {pc}")))?;
 
         let arity = function.arity.max(0) as usize;
         verify_instruction_operands(data, function_index, pc, instruction, local_slots, arity)?;
 
-        if instruction.code == NyarHeadCode::Return {
+        if instruction.code == OdinHeadCode::Return {
             if !coroutine.allows_return(height) {
-                return Err(NyarRuntimeError::ModuleLoad(format!(
+                return Err(OdinRuntimeError::ModuleLoad(format!(
                     "function[{function_index}] return at pc {pc} leaves {height} values on stack; at most one allowed"
                 )));
             }
@@ -332,7 +332,7 @@ fn verify_function(data: &NyarModuleData, function_index: usize, function: &odin
             return_shape = Some(match return_shape {
                 None => shape,
                 Some(existing) => merge_return_shape(existing, shape).ok_or_else(|| {
-                    NyarRuntimeError::ModuleLoad(format!(
+                    OdinRuntimeError::ModuleLoad(format!(
                         "function[{function_index}] return type mismatch at pc {pc}: {existing:?} vs {shape:?}"
                     ))
                 })?,
@@ -342,21 +342,21 @@ fn verify_function(data: &NyarModuleData, function_index: usize, function: &odin
         let edges = stack_transfer(data, function_index, pc, instruction, height, &mut types, &mut locals, &mut coroutine)?;
         for (target, edge_height, edge_coroutine) in edges {
             if !boundaries.contains(&target) {
-                return Err(NyarRuntimeError::ModuleLoad(format!(
+                return Err(OdinRuntimeError::ModuleLoad(format!(
                     "function[{function_index}] jump from pc {pc} lands off instruction boundary at {target}"
                 )));
             }
             if target < start || target >= end {
-                return Err(NyarRuntimeError::ModuleLoad(format!(
+                return Err(OdinRuntimeError::ModuleLoad(format!(
                     "function[{function_index}] jump from pc {pc} escapes function range to {target}"
                 )));
             }
             if types.len() as i32 != edge_height {
-                return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] internal type-stack length mismatch at pc {pc}")));
+                return Err(OdinRuntimeError::ModuleLoad(format!("function[{function_index}] internal type-stack length mismatch at pc {pc}")));
             }
             match heights.get(&target) {
                 Some(existing) if *existing != edge_height => {
-                    return Err(NyarRuntimeError::ModuleLoad(format!(
+                    return Err(OdinRuntimeError::ModuleLoad(format!(
                         "function[{function_index}] stack height mismatch at pc {target}: {existing} vs {edge_height}"
                     )));
                 }
@@ -369,7 +369,7 @@ fn verify_function(data: &NyarModuleData, function_index: usize, function: &odin
                 Some(existing) => {
                     let Some(merged) = merge_type_stacks(existing, &types)
                     else {
-                        return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack type mismatch at pc {target}")));
+                        return Err(OdinRuntimeError::ModuleLoad(format!("function[{function_index}] stack type mismatch at pc {target}")));
                     };
                     if merged != *existing {
                         type_stacks.insert(target, merged);
@@ -388,7 +388,7 @@ fn verify_function(data: &NyarModuleData, function_index: usize, function: &odin
                 Some(existing) => {
                     let Some(merged) = merge_local_kinds(existing, &locals)
                     else {
-                        return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] local type mismatch at pc {target}")));
+                        return Err(OdinRuntimeError::ModuleLoad(format!("function[{function_index}] local type mismatch at pc {target}")));
                     };
                     if merged != *existing {
                         local_kinds.insert(target, merged);
@@ -406,7 +406,7 @@ fn verify_function(data: &NyarModuleData, function_index: usize, function: &odin
             let coroutine_changed = match coroutine_metas.get(&target) {
                 Some(existing) if *existing == edge_coroutine => false,
                 Some(_) => {
-                    return Err(NyarRuntimeError::ModuleLoad(format!(
+                    return Err(OdinRuntimeError::ModuleLoad(format!(
                         "function[{function_index}] coroutine stack metadata mismatch at pc {target}"
                     )));
                 }
@@ -425,77 +425,77 @@ fn verify_function(data: &NyarModuleData, function_index: usize, function: &odin
 }
 
 fn decode_function_instructions(
-    data: &NyarModuleData,
+    data: &OdinModuleData,
     function_index: usize,
     start: usize,
     end: usize,
-) -> Result<BTreeMap<usize, NyarInstruction>, NyarRuntimeError> {
+) -> Result<BTreeMap<usize, OdinInstruction>, OdinRuntimeError> {
     let mut instructions = BTreeMap::new();
     let mut pc = start;
     while pc < end {
         let instruction = decode_at(&data.code_bytes, pc);
         if instruction.size == 0 {
-            return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] truncated instruction at pc {pc}")));
+            return Err(OdinRuntimeError::ModuleLoad(format!("function[{function_index}] truncated instruction at pc {pc}")));
         }
         let next = pc
             .checked_add(instruction.size as usize)
-            .ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("function[{function_index}] instruction size overflows at pc {pc}")))?;
+            .ok_or_else(|| OdinRuntimeError::ModuleLoad(format!("function[{function_index}] instruction size overflows at pc {pc}")))?;
         if next > end {
-            return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] instruction at pc {pc} crosses function end {end}")));
+            return Err(OdinRuntimeError::ModuleLoad(format!("function[{function_index}] instruction at pc {pc} crosses function end {end}")));
         }
         instructions.insert(pc, instruction);
         pc = next;
     }
     if pc != end {
-        return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] code range leaves a gap ending at {pc}, expected {end}")));
+        return Err(OdinRuntimeError::ModuleLoad(format!("function[{function_index}] code range leaves a gap ending at {pc}, expected {end}")));
     }
     Ok(instructions)
 }
 
 fn verify_instruction_operands(
-    data: &NyarModuleData,
+    data: &OdinModuleData,
     function_index: usize,
     pc: usize,
-    instruction: NyarInstruction,
+    instruction: OdinInstruction,
     local_slots: usize,
     arity: usize,
-) -> Result<(), NyarRuntimeError> {
+) -> Result<(), OdinRuntimeError> {
     match instruction.code {
-        NyarHeadCode::Constant => {
+        OdinHeadCode::Constant => {
             if instruction.operand1 < 0 || (instruction.operand1 as usize) >= data.constants.len() {
-                return Err(NyarRuntimeError::ModuleLoad(format!(
+                return Err(OdinRuntimeError::ModuleLoad(format!(
                     "function[{function_index}] Const at pc {pc} constant index {} out of range",
                     instruction.operand1
                 )));
             }
         }
-        NyarHeadCode::LoadArg => {
+        OdinHeadCode::LoadArg => {
             // 调用约定：`LoadArg` 只能读 `[0, arity)`，不得越界到普通局部槽。
             if instruction.operand1 < 0 || (instruction.operand1 as usize) >= arity {
-                return Err(NyarRuntimeError::ModuleLoad(format!(
+                return Err(OdinRuntimeError::ModuleLoad(format!(
                     "function[{function_index}] LoadArg at pc {pc} index {} out of arity {arity}",
                     instruction.operand1
                 )));
             }
         }
-        NyarHeadCode::LoadLocal | NyarHeadCode::StoreLocal => {
+        OdinHeadCode::LoadLocal | OdinHeadCode::StoreLocal => {
             if instruction.operand1 < 0 || (instruction.operand1 as usize) >= local_slots {
-                return Err(NyarRuntimeError::LocalIndexOutOfRange(instruction.operand1));
+                return Err(OdinRuntimeError::LocalIndexOutOfRange(instruction.operand1));
             }
         }
-        NyarHeadCode::LoadGlobal | NyarHeadCode::StoreGlobal => {
+        OdinHeadCode::LoadGlobal | OdinHeadCode::StoreGlobal => {
             if instruction.operand1 < 0 || (instruction.operand1 as usize) >= data.globals.len() {
-                return Err(NyarRuntimeError::GlobalIndexOutOfRange(instruction.operand1));
+                return Err(OdinRuntimeError::GlobalIndexOutOfRange(instruction.operand1));
             }
         }
-        NyarHeadCode::Call | NyarHeadCode::CallStatic => {
+        OdinHeadCode::Call | OdinHeadCode::CallStatic => {
             if instruction.operand1 < 0 || (instruction.operand1 as usize) >= data.functions.len() {
-                return Err(NyarRuntimeError::FunctionIndexOutOfRange(instruction.operand1));
+                return Err(OdinRuntimeError::FunctionIndexOutOfRange(instruction.operand1));
             }
         }
-        NyarHeadCode::CallImport | NyarHeadCode::CallIntrinsic => {
+        OdinHeadCode::CallImport | OdinHeadCode::CallIntrinsic => {
             if instruction.operand2 < 0 {
-                return Err(NyarRuntimeError::ModuleLoad(format!(
+                return Err(OdinRuntimeError::ModuleLoad(format!(
                     "function[{function_index}] {:?} at pc {pc} has negative argc {}",
                     instruction.code, instruction.operand2
                 )));
@@ -506,24 +506,24 @@ fn verify_instruction_operands(
     Ok(())
 }
 
-fn require_height(function_index: usize, pc: usize, height: i32, needed: i32) -> Result<(), NyarRuntimeError> {
+fn require_height(function_index: usize, pc: usize, height: i32, needed: i32) -> Result<(), OdinRuntimeError> {
     if height < needed {
-        Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}: height {height}, need {needed}")))
+        Err(OdinRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}: height {height}, need {needed}")))
     }
     else {
         Ok(())
     }
 }
 
-fn require_kind(function_index: usize, pc: usize, kinds: &mut Vec<StackKind>, expected: StackKind) -> Result<(), NyarRuntimeError> {
+fn require_kind(function_index: usize, pc: usize, kinds: &mut Vec<StackKind>, expected: StackKind) -> Result<(), OdinRuntimeError> {
     let Some(actual) = kinds.pop()
     else {
-        return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}")));
+        return Err(OdinRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}")));
     };
     match (actual, expected) {
         (_, StackKind::Any) | (StackKind::Any, _) => Ok(()),
         (a, e) if a == e => Ok(()),
-        _ => Err(NyarRuntimeError::ModuleLoad(format!(
+        _ => Err(OdinRuntimeError::ModuleLoad(format!(
             "function[{function_index}] stack type mismatch at pc {pc}: expected {expected:?}, got {actual:?}"
         ))),
     }
@@ -536,7 +536,7 @@ fn pop_typed_stack(
     expected: StackKind,
     height: i32,
     coroutine: &mut CoroutineMeta,
-) -> Result<i32, NyarRuntimeError> {
+) -> Result<i32, OdinRuntimeError> {
     require_kind(function_index, pc, types, expected)?;
     let (next, new_height) = coroutine.pop_slot(height);
     *coroutine = next;
@@ -549,14 +549,14 @@ fn pop_any_stack(
     types: &mut Vec<StackKind>,
     height: i32,
     coroutine: &mut CoroutineMeta,
-) -> Result<i32, NyarRuntimeError> {
+) -> Result<i32, OdinRuntimeError> {
     pop_typed_stack(function_index, pc, types, StackKind::Any, height, coroutine)
 }
 
-fn push_const_kind(data: &NyarModuleData, instruction: NyarInstruction) -> StackKind {
+fn push_const_kind(data: &OdinModuleData, instruction: OdinInstruction) -> StackKind {
     if instruction.operand1 >= 0 {
         match data.constants.get(instruction.operand1 as usize) {
-            Some(odin_bytecode::NyarConstant::Integer32(_)) | Some(odin_bytecode::NyarConstant::Boolean(_)) => {
+            Some(odin_bytecode::OdinConstant::Integer32(_)) | Some(odin_bytecode::OdinConstant::Boolean(_)) => {
                 return StackKind::I32;
             }
             _ => {}
@@ -567,71 +567,71 @@ fn push_const_kind(data: &NyarModuleData, instruction: NyarInstruction) -> Stack
 
 /// 就地更新 `types` / `locals` / 协程元数据，返回后继边 `(目标 pc, 到达时栈高度, 协程元数据)`。
 fn stack_transfer(
-    data: &NyarModuleData,
+    data: &OdinModuleData,
     function_index: usize,
     pc: usize,
-    instruction: NyarInstruction,
+    instruction: OdinInstruction,
     height: i32,
     types: &mut Vec<StackKind>,
     locals: &mut Vec<StackKind>,
     coroutine: &mut CoroutineMeta,
-) -> Result<Vec<(usize, i32, CoroutineMeta)>, NyarRuntimeError> {
+) -> Result<Vec<(usize, i32, CoroutineMeta)>, OdinRuntimeError> {
     let fallthrough = pc + instruction.size as usize;
 
     match instruction.code {
-        NyarHeadCode::Nop => Ok(vec![flow_edge(fallthrough, height, *coroutine)]),
-        NyarHeadCode::Jump => {
+        OdinHeadCode::Nop => Ok(vec![flow_edge(fallthrough, height, *coroutine)]),
+        OdinHeadCode::Jump => {
             let target = pc.wrapping_add(instruction.operand1 as usize);
             Ok(vec![flow_edge(target, height, *coroutine)])
         }
-        NyarHeadCode::JumpIfTrue | NyarHeadCode::JumpIfFalse => {
+        OdinHeadCode::JumpIfTrue | OdinHeadCode::JumpIfFalse => {
             require_height(function_index, pc, height, 1)?;
             // 条件槽必须是 i32（0/非 0）；拒绝 Ref/Any 冒充布尔条件。
             let after = pop_typed_stack(function_index, pc, types, StackKind::I32, height, coroutine)?;
             let target = pc.wrapping_add(instruction.operand1 as usize);
             Ok(vec![flow_edge(fallthrough, after, *coroutine), flow_edge(target, after, *coroutine)])
         }
-        NyarHeadCode::Return => {
+        OdinHeadCode::Return => {
             // Return 结束本帧。允许空栈（void / init）；有值则留给调用方。
             Ok(Vec::new())
         }
-        NyarHeadCode::Yield | NyarHeadCode::PerformEffect => {
+        OdinHeadCode::Yield | OdinHeadCode::PerformEffect => {
             require_height(function_index, pc, height, 1)?;
             require_kind(function_index, pc, types, StackKind::Any)?;
             types.push(StackKind::Any);
             let resume_meta = CoroutineMeta::after_yield(height);
             Ok(vec![(fallthrough, height, resume_meta)])
         }
-        NyarHeadCode::Resume => {
+        OdinHeadCode::Resume => {
             require_height(function_index, pc, height, 2)?;
             require_kind(function_index, pc, types, StackKind::Any)?;
             require_kind(function_index, pc, types, StackKind::Any)?;
             types.push(StackKind::Any);
             Ok(vec![edge(fallthrough, height - 1, *coroutine)])
         }
-        NyarHeadCode::Constant => {
+        OdinHeadCode::Constant => {
             types.push(push_const_kind(data, instruction));
             Ok(vec![edge(fallthrough, height + 1, *coroutine)])
         }
-        NyarHeadCode::ObjectNew => {
+        OdinHeadCode::ObjectNew => {
             types.push(StackKind::Ref);
             Ok(vec![edge(fallthrough, height + 1, *coroutine)])
         }
-        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg => {
+        OdinHeadCode::LoadLocal | OdinHeadCode::LoadArg => {
             let slot = instruction.operand1 as usize;
             let kind = locals.get(slot).copied().unwrap_or(StackKind::Any);
             types.push(kind);
             Ok(vec![edge(fallthrough, height + 1, *coroutine)])
         }
-        NyarHeadCode::LoadGlobal => {
+        OdinHeadCode::LoadGlobal => {
             types.push(StackKind::Any);
             Ok(vec![edge(fallthrough, height + 1, *coroutine)])
         }
-        NyarHeadCode::StoreLocal => {
+        OdinHeadCode::StoreLocal => {
             require_height(function_index, pc, height, 1)?;
             let Some(stored) = types.pop()
             else {
-                return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}")));
+                return Err(OdinRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}")));
             };
             let (next_meta, after) = coroutine.pop_slot(height);
             *coroutine = next_meta;
@@ -639,7 +639,7 @@ fn stack_transfer(
             let old = locals.get(slot).copied().unwrap_or(StackKind::Any);
             let Some(next) = assign_local_kind(old, stored)
             else {
-                return Err(NyarRuntimeError::ModuleLoad(format!(
+                return Err(OdinRuntimeError::ModuleLoad(format!(
                     "function[{function_index}] local type conflict at pc {pc}: slot {slot} was {old:?}, store {stored:?}"
                 )));
             };
@@ -648,49 +648,49 @@ fn stack_transfer(
             }
             Ok(vec![edge(fallthrough, after, *coroutine)])
         }
-        NyarHeadCode::Pop | NyarHeadCode::StoreGlobal => {
+        OdinHeadCode::Pop | OdinHeadCode::StoreGlobal => {
             require_height(function_index, pc, height, 1)?;
             let after = pop_any_stack(function_index, pc, types, height, coroutine)?;
             Ok(vec![edge(fallthrough, after, *coroutine)])
         }
-        NyarHeadCode::Dup => {
+        OdinHeadCode::Dup => {
             require_height(function_index, pc, height, 1)?;
             let top =
-                *types.last().ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}")))?;
+                *types.last().ok_or_else(|| OdinRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}")))?;
             types.push(top);
             Ok(vec![edge(fallthrough, height + 1, *coroutine)])
         }
-        NyarHeadCode::I32Add
-        | NyarHeadCode::I32Sub
-        | NyarHeadCode::I32Mul
-        | NyarHeadCode::I32DivS
-        | NyarHeadCode::I32RemS
-        | NyarHeadCode::I32Eq
-        | NyarHeadCode::I32Ne
-        | NyarHeadCode::I32LtS
-        | NyarHeadCode::I32LeS
-        | NyarHeadCode::I32GtS
-        | NyarHeadCode::I32GeS => {
+        OdinHeadCode::I32Add
+        | OdinHeadCode::I32Sub
+        | OdinHeadCode::I32Mul
+        | OdinHeadCode::I32DivS
+        | OdinHeadCode::I32RemS
+        | OdinHeadCode::I32Eq
+        | OdinHeadCode::I32Ne
+        | OdinHeadCode::I32LtS
+        | OdinHeadCode::I32LeS
+        | OdinHeadCode::I32GtS
+        | OdinHeadCode::I32GeS => {
             require_height(function_index, pc, height, 2)?;
             let after_rhs = pop_typed_stack(function_index, pc, types, StackKind::I32, height, coroutine)?;
             let after_lhs = pop_typed_stack(function_index, pc, types, StackKind::I32, after_rhs, coroutine)?;
             types.push(StackKind::I32);
             Ok(vec![edge(fallthrough, after_lhs + 1, *coroutine)])
         }
-        NyarHeadCode::FieldGet => {
+        OdinHeadCode::FieldGet => {
             require_height(function_index, pc, height, 1)?;
             let after = pop_typed_stack(function_index, pc, types, StackKind::Ref, height, coroutine)?;
             types.push(StackKind::Any);
             Ok(vec![edge(fallthrough, after + 1, *coroutine)])
         }
-        NyarHeadCode::FieldSet => {
+        OdinHeadCode::FieldSet => {
             require_height(function_index, pc, height, 2)?;
             let after_value = pop_any_stack(function_index, pc, types, height, coroutine)?;
             let after_ref = pop_typed_stack(function_index, pc, types, StackKind::Ref, after_value, coroutine)?;
             types.push(StackKind::Ref);
             Ok(vec![edge(fallthrough, after_ref + 1, *coroutine)])
         }
-        NyarHeadCode::Call | NyarHeadCode::CallStatic => {
+        OdinHeadCode::Call | OdinHeadCode::CallStatic => {
             let callee = &data.functions[instruction.operand1 as usize];
             let arity = callee.arity.max(0);
             require_height(function_index, pc, height, arity)?;
@@ -701,7 +701,7 @@ fn stack_transfer(
             types.push(StackKind::Any);
             Ok(vec![edge(fallthrough, after + 1, *coroutine)])
         }
-        NyarHeadCode::CallImport | NyarHeadCode::CallIntrinsic => {
+        OdinHeadCode::CallImport | OdinHeadCode::CallIntrinsic => {
             let argc = instruction.operand2.max(0);
             require_height(function_index, pc, height, argc)?;
             let mut after = height;

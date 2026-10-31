@@ -5,23 +5,23 @@
 //! independent of any emitter-side lowering path.
 
 use odin_bytecode::{
-    NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, emit_imm1, emit_plain, encode_module,
+    Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1, emit_plain, encode_module,
 };
 use odin_vm::{OdinVm, Value};
 
 /// Builds a module with two functions: a generator `gen` that yields once then returns the
 /// resumed value, and `main` that calls `gen`, stores the resulting coroutine, then resumes
 /// it with a sentinel value. `main` returns the value the coroutine returns on resume.
-fn build_yield_resume_module() -> NyarModuleData {
+fn build_yield_resume_module() -> OdinModuleData {
     // Function 0: gen
     //   Const 0 (42)        ; push yielded value
     //   Yield 0             ; suspend, caller observes coroutine(yielded=42)
     //   Return              ; on resume: return resume_value (still on stack)
     let mut code = Vec::new();
     let gen_offset = 0i32;
-    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // const index 0 -> 42
-    emit_imm1(&mut code, NyarHeadCode::Yield, 0); // operand1 unused by VM, but encoded as Imm1
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0); // const index 0 -> 42
+    emit_imm1(&mut code, OdinHeadCode::Yield, 0); // operand1 unused by VM, but encoded as Imm1
+    emit_plain(&mut code, OdinHeadCode::Return);
 
     // Function 1: main
     //   Call 0              ; call gen -> suspend -> coroutine pushed
@@ -31,20 +31,20 @@ fn build_yield_resume_module() -> NyarModuleData {
     //   Resume              ; pop resume_value(999), pop coroutine, ResumeCoroutine
     //   Return              ; main returns whatever gen returned (999)
     let main_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::Call, 0);
-    emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::Constant, 1); // const index 1 -> 999
-    emit_plain(&mut code, NyarHeadCode::Resume);
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::Call, 0);
+    emit_imm1(&mut code, OdinHeadCode::StoreLocal, 0);
+    emit_imm1(&mut code, OdinHeadCode::LoadLocal, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 1); // const index 1 -> 999
+    emit_plain(&mut code, OdinHeadCode::Resume);
+    emit_plain(&mut code, OdinHeadCode::Return);
 
-    NyarModuleData {
-        version: NYAR_VERSION,
+    OdinModuleData {
+        version: Odin_VERSION,
         name: "coroutine_dispatch".to_string(),
-        constants: vec![NyarConstant::Integer32(42), NyarConstant::Integer32(999)],
+        constants: vec![OdinConstant::Integer32(42), OdinConstant::Integer32(999)],
         functions: vec![
-            NyarFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: gen_offset, code_length: main_offset - gen_offset },
-            NyarFunction {
+            OdinFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: gen_offset, code_length: main_offset - gen_offset },
+            OdinFunction {
                 name: "main".to_string(),
                 arity: 0,
                 local_count: 1,
@@ -53,7 +53,7 @@ fn build_yield_resume_module() -> NyarModuleData {
             },
         ],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 1 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 1 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -80,18 +80,18 @@ fn yield_without_call_returns_coroutine_at_top_level() {
     // When the top-level function itself yields, there is no parent frame to resume it.
     // The executor must return the captured coroutine value instead of looping forever.
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 42
-    emit_imm1(&mut code, NyarHeadCode::Yield, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0); // 42
+    emit_imm1(&mut code, OdinHeadCode::Yield, 0);
     // If resumed, the next instruction would be Return; but at top level we never get here.
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_plain(&mut code, OdinHeadCode::Return);
 
-    let module = NyarModuleData {
-        version: NYAR_VERSION,
+    let module = OdinModuleData {
+        version: Odin_VERSION,
         name: "top_yield".to_string(),
-        constants: vec![NyarConstant::Integer32(42)],
-        functions: vec![NyarFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
+        constants: vec![OdinConstant::Integer32(42)],
+        functions: vec![OdinFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "gen".to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "gen".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -137,32 +137,32 @@ fn resuming_a_completed_coroutine_is_rejected() {
     //     Return                 ; unreachable on success path
     let mut code = Vec::new();
     let gen_offset = 0i32;
-    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 42
-    emit_imm1(&mut code, NyarHeadCode::Yield, 0);
-    emit_imm1(&mut code, NyarHeadCode::Constant, 1); // 100
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0); // 42
+    emit_imm1(&mut code, OdinHeadCode::Yield, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 1); // 100
+    emit_plain(&mut code, OdinHeadCode::Return);
 
     let main_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::Call, 0);
-    emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::Constant, 2); // 999
-    emit_plain(&mut code, NyarHeadCode::Resume);
+    emit_imm1(&mut code, OdinHeadCode::Call, 0);
+    emit_imm1(&mut code, OdinHeadCode::StoreLocal, 0);
+    emit_imm1(&mut code, OdinHeadCode::LoadLocal, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 2); // 999
+    emit_plain(&mut code, OdinHeadCode::Resume);
     // First resume succeeded; gen returned 100 (on stack). Drop it so the stack is clean
     // before the second resume attempt.
-    emit_plain(&mut code, NyarHeadCode::Pop);
-    emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0); // stale coroutine copy
-    emit_imm1(&mut code, NyarHeadCode::Constant, 2); // 999
-    emit_plain(&mut code, NyarHeadCode::Resume);
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_plain(&mut code, OdinHeadCode::Pop);
+    emit_imm1(&mut code, OdinHeadCode::LoadLocal, 0); // stale coroutine copy
+    emit_imm1(&mut code, OdinHeadCode::Constant, 2); // 999
+    emit_plain(&mut code, OdinHeadCode::Resume);
+    emit_plain(&mut code, OdinHeadCode::Return);
 
-    let module = NyarModuleData {
-        version: NYAR_VERSION,
+    let module = OdinModuleData {
+        version: Odin_VERSION,
         name: "coroutine_double_resume".to_string(),
-        constants: vec![NyarConstant::Integer32(42), NyarConstant::Integer32(100), NyarConstant::Integer32(999)],
+        constants: vec![OdinConstant::Integer32(42), OdinConstant::Integer32(100), OdinConstant::Integer32(999)],
         functions: vec![
-            NyarFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: gen_offset, code_length: main_offset - gen_offset },
-            NyarFunction {
+            OdinFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: gen_offset, code_length: main_offset - gen_offset },
+            OdinFunction {
                 name: "main".to_string(),
                 arity: 0,
                 local_count: 1,
@@ -171,7 +171,7 @@ fn resuming_a_completed_coroutine_is_rejected() {
             },
         ],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 1 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 1 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -184,7 +184,7 @@ fn resuming_a_completed_coroutine_is_rejected() {
     let result = vm.run(&loaded, "main", Vec::new());
 
     match result {
-        Err(odin_vm::NyarRuntimeError::TypeMismatch { expected, actual })
+        Err(odin_vm::OdinRuntimeError::TypeMismatch { expected, actual })
             if expected == "active coroutine" && actual == "completed coroutine" =>
         {
             // expected: Resume handler rejected the second resume because `done == true`
@@ -214,27 +214,27 @@ fn yield_preserves_operand_values_above_stack_base() {
     //   Return               ; expect 107
     let mut code = Vec::new();
     let gen_offset = 0i32;
-    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
-    emit_imm1(&mut code, NyarHeadCode::Constant, 1);
-    emit_imm1(&mut code, NyarHeadCode::Yield, 0);
-    emit_plain(&mut code, NyarHeadCode::I32Add);
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 1);
+    emit_imm1(&mut code, OdinHeadCode::Yield, 0);
+    emit_plain(&mut code, OdinHeadCode::I32Add);
+    emit_plain(&mut code, OdinHeadCode::Return);
 
     let main_offset = code.len() as i32;
-    emit_imm1(&mut code, NyarHeadCode::Call, 0);
-    emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::Constant, 2);
-    emit_plain(&mut code, NyarHeadCode::Resume);
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::Call, 0);
+    emit_imm1(&mut code, OdinHeadCode::StoreLocal, 0);
+    emit_imm1(&mut code, OdinHeadCode::LoadLocal, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 2);
+    emit_plain(&mut code, OdinHeadCode::Resume);
+    emit_plain(&mut code, OdinHeadCode::Return);
 
-    let module = NyarModuleData {
-        version: NYAR_VERSION,
+    let module = OdinModuleData {
+        version: Odin_VERSION,
         name: "yield_operand_stack".to_string(),
-        constants: vec![NyarConstant::Integer32(7), NyarConstant::Integer32(42), NyarConstant::Integer32(100)],
+        constants: vec![OdinConstant::Integer32(7), OdinConstant::Integer32(42), OdinConstant::Integer32(100)],
         functions: vec![
-            NyarFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: gen_offset, code_length: main_offset - gen_offset },
-            NyarFunction {
+            OdinFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: gen_offset, code_length: main_offset - gen_offset },
+            OdinFunction {
                 name: "main".to_string(),
                 arity: 0,
                 local_count: 1,
@@ -243,7 +243,7 @@ fn yield_preserves_operand_values_above_stack_base() {
             },
         ],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 1 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 1 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -260,18 +260,18 @@ fn yield_preserves_operand_values_above_stack_base() {
 #[test]
 fn top_level_yield_captures_operand_stack_fragment() {
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 7 — remains above stack_base
-    emit_imm1(&mut code, NyarHeadCode::Constant, 1); // 42 — yielded
-    emit_imm1(&mut code, NyarHeadCode::Yield, 0);
-    emit_plain(&mut code, NyarHeadCode::Return);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0); // 7 — remains above stack_base
+    emit_imm1(&mut code, OdinHeadCode::Constant, 1); // 42 — yielded
+    emit_imm1(&mut code, OdinHeadCode::Yield, 0);
+    emit_plain(&mut code, OdinHeadCode::Return);
 
-    let module = NyarModuleData {
-        version: NYAR_VERSION,
+    let module = OdinModuleData {
+        version: Odin_VERSION,
         name: "top_yield_stack".to_string(),
-        constants: vec![NyarConstant::Integer32(7), NyarConstant::Integer32(42)],
-        functions: vec![NyarFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
+        constants: vec![OdinConstant::Integer32(7), OdinConstant::Integer32(42)],
+        functions: vec![OdinFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "gen".to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "gen".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),

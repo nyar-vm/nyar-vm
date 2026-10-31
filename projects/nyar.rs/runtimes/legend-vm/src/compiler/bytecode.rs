@@ -2,7 +2,7 @@
 
 use miette::Result;
 use odin_bytecode::{
-    NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarImport, NyarImportKind, NyarModuleData, encode_module,
+    Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinImport, OdinImportKind, OdinModuleData, encode_module,
 };
 
 use super::generate::{GenerateConstant, GenerateExportKind, GenerateImportKind, GenerateModule, GenerateOperand};
@@ -17,8 +17,8 @@ impl NyarBytecodeCompiler {
         Ok(encode_module(&self.to_module_data(module)?))
     }
 
-    /// Convert a generate-time module into [`NyarModuleData`].
-    pub fn to_module_data(&self, module: &GenerateModule) -> Result<NyarModuleData> {
+    /// Convert a generate-time module into [`OdinModuleData`].
+    pub fn to_module_data(&self, module: &GenerateModule) -> Result<OdinModuleData> {
         let mut code_bytes = Vec::new();
         let mut functions = Vec::new();
 
@@ -30,7 +30,7 @@ impl NyarBytecodeCompiler {
                     emit_operand(&mut code_bytes, operand, module)?;
                 }
             }
-            functions.push(NyarFunction {
+            functions.push(OdinFunction {
                 name: function.name.clone(),
                 arity: function.parameters.len() as i32,
                 local_count: function.slot_count(),
@@ -39,8 +39,8 @@ impl NyarBytecodeCompiler {
             });
         }
 
-        Ok(NyarModuleData {
-            version: NYAR_VERSION,
+        Ok(OdinModuleData {
+            version: Odin_VERSION,
             name: module.name.clone(),
             constants: convert_constants(&module.constants),
             functions,
@@ -88,39 +88,39 @@ fn find_function_index(module: &GenerateModule, name: &str) -> i32 {
     module.functions.iter().position(|function| function.name == name).unwrap_or(0) as i32
 }
 
-fn convert_constants(pool: &super::generate::GenerateConstantPool) -> Vec<NyarConstant> {
+fn convert_constants(pool: &super::generate::GenerateConstantPool) -> Vec<OdinConstant> {
     pool.entries
         .iter()
         .map(|entry| match entry {
-            GenerateConstant::Null => NyarConstant::Null,
-            GenerateConstant::Bool(value) => NyarConstant::Boolean(*value),
-            GenerateConstant::Int64(value) => NyarConstant::Integer32(*value as i32),
-            GenerateConstant::Float64(value) => NyarConstant::Float64(*value),
-            GenerateConstant::String(value) => NyarConstant::String(value.clone()),
+            GenerateConstant::Null => OdinConstant::Null,
+            GenerateConstant::Bool(value) => OdinConstant::Boolean(*value),
+            GenerateConstant::Int64(value) => OdinConstant::Integer32(*value as i32),
+            GenerateConstant::Float64(value) => OdinConstant::Float64(*value),
+            GenerateConstant::String(value) => OdinConstant::String(value.clone()),
         })
         .collect()
 }
 
-fn convert_imports(imports: &[super::generate::GenerateModuleImport]) -> Vec<NyarImport> {
+fn convert_imports(imports: &[super::generate::GenerateModuleImport]) -> Vec<OdinImport> {
     imports
         .iter()
         .map(|import| {
             let kind = match import.kind {
-                GenerateImportKind::Function | GenerateImportKind::Global | GenerateImportKind::Module => NyarImportKind::Function,
+                GenerateImportKind::Function | GenerateImportKind::Global | GenerateImportKind::Module => OdinImportKind::Function,
             };
-            NyarImport { kind, module_name: import.module_name.clone(), symbol_name: import.symbol_name.clone() }
+            OdinImport { kind, module_name: import.module_name.clone(), symbol_name: import.symbol_name.clone() }
         })
         .collect()
 }
 
-fn convert_exports(exports: &[super::generate::GenerateModuleExport]) -> Vec<NyarExport> {
+fn convert_exports(exports: &[super::generate::GenerateModuleExport]) -> Vec<OdinExport> {
     exports
         .iter()
         .map(|export| {
             let kind = match export.kind {
-                GenerateExportKind::Function | GenerateExportKind::Global => NyarExportKind::Function,
+                GenerateExportKind::Function | GenerateExportKind::Global => OdinExportKind::Function,
             };
-            NyarExport { kind, symbol_name: export.name.clone(), function_index: export.function_index }
+            OdinExport { kind, symbol_name: export.name.clone(), function_index: export.function_index }
         })
         .collect()
 }

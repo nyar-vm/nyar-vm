@@ -12,13 +12,13 @@ GC, and JIT must not redefine opcodes or section layout elsewhere.
 
 | Constant                  | Meaning                                                                  |
 |:--------------------------|:-------------------------------------------------------------------------|
-| `NYAR_MAGIC`              | File magic `NYAR` (big-endian `0x4E594152`)                              |
-| `NYAR_VERSION`            | Current format version (`2`)                                             |
-| `BYTECODE_FORMAT_VERSION` | Provenance / cache key alias, kept in sync with `NYAR_VERSION`           |
+| `ODIN_MAGIC`              | File magic `NYAR` (big-endian `0x4E594152`)                              |
+| `Odin_VERSION`            | Current format version (`2`)                                             |
+| `BYTECODE_FORMAT_VERSION` | Provenance / cache key alias, kept in sync with `Odin_VERSION`           |
 | `OBSOLETE_CALL_NATIVE`    | Retired v1 opcode (`0xD1`); v2 loaders must reject modules containing it |
 
-Modules are built from `NyarModuleData`: functions, constants, imports/exports, globals, layouts, witness dispatch
-tables, and raw code bytes. Sections are described by `NyarSectionKind` with fixed header sizes (`HEADER_SIZE`,
+Modules are built from `OdinModuleData`: functions, constants, imports/exports, globals, layouts, witness dispatch
+tables, and raw code bytes. Sections are described by `OdinSectionKind` with fixed header sizes (`HEADER_SIZE`,
 `SECTION_HEADER_SIZE`).
 
 ## Instruction set (head codes)
@@ -31,8 +31,8 @@ algebraic effects (`PerformEffect`). Emit helpers include `emit_plain`, `emit_im
 ## Public API
 
 - `encode_module` / `decode_module` — round-trip a full module.
-- `NyarFunction`, `NyarImport`, `NyarExport`, `NyarLayout` — structured metadata.
-- `NyarDecodeError` — validation failures (magic, version, unknown sections, obsolete opcodes).
+- `OdinFunction`, `OdinImport`, `OdinExport`, `OdinLayout` — structured metadata.
+- `OdinDecodeError` — validation failures (magic, version, unknown sections, obsolete opcodes).
 
 ## Usage
 
@@ -46,4 +46,4 @@ let restored = decode_module(&bytes)?;
 ## Boundaries
 
 - No interpreter, stack frames, or GC tracing.
-- No language-specific lowering; emitters in compiler crates produce `NyarModuleData`.
+- No language-specific lowering; emitters in compiler crates produce `OdinModuleData`.
