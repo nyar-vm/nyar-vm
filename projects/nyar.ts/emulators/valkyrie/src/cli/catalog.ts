@@ -12,8 +12,8 @@ export const LEGION_CLI_CATALOG: LocaleCatalog = {
     'cli.arg.project': 'Project directory (default: cwd)',
 };
 
-/** Asgard CLI catalog（help/version；其余 argv 透传 Rust）。 */
+/** Asgard CLI catalog（help/version；命令编排由 TS 层诊断，不透传 argv）。 */
 export const ASGARD_CLI_CATALOG: LocaleCatalog = {
-    'cli.intro': 'Asgard VOA toolchain — build, dev, pack (argv forwarded to valkyrie-napi)',
+    'cli.intro': 'Asgard VOA toolchain — static delivery via `build --static <entry>`; other commands await config evaluation',
     'cli.cmd.version': 'Print @nyar/valkyrie version',
 };

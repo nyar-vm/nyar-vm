@@ -4,9 +4,6 @@ import {arch, platform} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-/** Asgard argv 透传（LeetCode 不用）。 */
-export type ValkyrieProduct = 'legion' | 'asgard';
-
 export type LegionExecutionManifestView = {
     schemaVersion: number;
     target: string;
@@ -76,9 +73,8 @@ export type AsgardStaticBuildOutcome = {
     componentName?: string;
 };
 
-/** `valkyrie-napi` 导出的产品面。 */
+/** `valkyrie-napi` 导出的结构化能力面。 */
 type ValkyrieNativeAddon = {
-    runValkyrieCli(product: string, argv: string[]): number;
     asgardBuildStatic(options: AsgardStaticBuildOptions): AsgardStaticBuildOutcome;
     legionPlan(options: LegionPlanOptions): LegionPlanOutcome;
     legionBuild(options: LegionBuildOptions): LegionBuildOutcome;
@@ -164,13 +160,6 @@ export function loadNative(): ValkyrieNativeAddon {
     if (nativeAddon) return nativeAddon;
     nativeAddon = require(resolveNativePath()) as ValkyrieNativeAddon;
     return nativeAddon;
-}
-
-/**
- * 通过 valkyrie-napi 执行 Asgard argv CLI（Legion 已移除 Rust argv 路径）。
- */
-export async function runValkyrieCli(product: ValkyrieProduct, argv: string[]): Promise<number> {
-    return loadNative().runValkyrieCli(product, argv);
 }
 
 /** Asgard 静态站点交付（结构化 API，不经 argv；与 legion 正交面同型）。 */

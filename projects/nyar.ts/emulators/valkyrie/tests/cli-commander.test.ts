@@ -31,4 +31,14 @@ describe('valkyrie Asgard CLI', () => {
         const code = await runAsgardCli(['build', '--static', 'source/index.w', '--bogus']);
         assert.ok(code !== 0);
     });
+
+    it('unknown command exits non-zero', async () => {
+        const code = await runAsgardCli(['no-such-command']);
+        assert.ok(code !== 0);
+    });
+
+    it('build without --static exits non-zero', async () => {
+        const code = await runAsgardCli(['build']);
+        assert.ok(code !== 0);
+    });
 });

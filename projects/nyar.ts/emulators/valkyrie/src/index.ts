@@ -26,7 +26,6 @@ export {
     legionBuild,
     legionPlan,
     legionTest,
-    runValkyrieCli,
     type LegionArtifactFreshness,
     type LegionBuildOptions,
     type LegionBuildOutcome,
@@ -34,7 +33,6 @@ export {
     type LegionPlanOptions,
     type LegionPlanOutcome,
     type LegionTestOutcome,
-    type ValkyrieProduct,
 } from './native.ts';
 
 export * from './legion/index.ts';
