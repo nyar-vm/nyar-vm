@@ -73,7 +73,7 @@ pub mod testing {
     };
     use nyar_types::SingletonInstancePlan;
     #[cfg(feature = "ovm-lane")]
-    use odin_bytecode::NyarModuleData;
+    use odin_bytecode::OdinModuleData;
 
     /// Target profile used by normalized physical-contract observations.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,7 +121,7 @@ pub mod testing {
 
     /// Lower a fragment submission to a Nyar VM module.
     #[cfg(feature = "ovm-lane")]
-    pub fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData> {
+    pub fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<OdinModuleData> {
         super::lowering::testing_lower_fragment_to_nyar_module(submission)
     }
 
@@ -176,7 +176,7 @@ pub mod testing {
 
     /// Re-export Nyar VM entry resolution for driver-family contract tests.
     #[cfg(feature = "ovm-lane")]
-    pub fn resolve_nyar_entry_symbols(module: &odin_bytecode::NyarModuleData, library_public_exports: &[String]) -> crate::Result<Vec<String>> {
+    pub fn resolve_nyar_entry_symbols(module: &odin_bytecode::OdinModuleData, library_public_exports: &[String]) -> crate::Result<Vec<String>> {
         super::driver::families::ovm::resolve_entry_symbols(module, library_public_exports)
     }
 
@@ -489,7 +489,7 @@ impl FragmentSubmission {
 #[derive(Debug, Clone)]
 pub struct OvmBackendInput {
     /// Optional Nyar module payload to emit as `.nyar`.
-    pub nyar_module: Option<odin_bytecode::NyarModuleData>,
+    pub nyar_module: Option<odin_bytecode::OdinModuleData>,
     /// 库模式公开导出名（与 wasm `wasm_export_names` 对齐），用于 run-contract 入口。
     pub library_public_exports: Vec<String>,
     /// Output directory.

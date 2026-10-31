@@ -5,9 +5,9 @@
 
 use std::collections::BTreeMap;
 
-use odin_bytecode::{NyarFunction, NyarHeadCode, NyarInstruction, decode_at};
+use odin_bytecode::{OdinFunction, OdinHeadCode, OdinInstruction, decode_at};
 
-use crate::error::NyarRuntimeError;
+use crate::error::OdinRuntimeError;
 
 /// 函数内指令下标。
 pub type InstructionIndex = u32;
@@ -16,7 +16,7 @@ pub type InstructionIndex = u32;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExecOp {
     /// 操作码。
-    pub code: NyarHeadCode,
+    pub code: OdinHeadCode,
     /// 第一立即数（local / const / import / layout 等下标，或未解析时的原始跳转偏移）。
     pub operand1: i32,
     /// 第二立即数（如 argc）。
@@ -29,8 +29,8 @@ pub struct ExecOp {
 
 impl ExecOp {
     /// 构造供旧版 handler 使用的合成指令；`size` 恒为 1，使 `ip += size` 变为内码步进。
-    pub fn as_instruction(self) -> NyarInstruction {
-        NyarInstruction { code: self.code, size: 1, operand1: self.operand1, operand2: self.operand2, operand3: 0 }
+    pub fn as_instruction(self) -> OdinInstruction {
+        OdinInstruction { code: self.code, size: 1, operand1: self.operand1, operand2: self.operand2, operand3: 0 }
     }
 }
 
@@ -55,31 +55,31 @@ impl ExecutableFunction {
 }
 
 /// 从已验证模块的函数范围构建内码。
-pub fn build_executable_function(code_bytes: &[u8], function: &NyarFunction) -> Result<ExecutableFunction, NyarRuntimeError> {
+pub fn build_executable_function(code_bytes: &[u8], function: &OdinFunction) -> Result<ExecutableFunction, OdinRuntimeError> {
     if function.code_offset < 0 || function.code_length < 0 {
-        return Err(NyarRuntimeError::ModuleLoad("negative function code range".into()));
+        return Err(OdinRuntimeError::ModuleLoad("negative function code range".into()));
     }
     let start = function.code_offset as usize;
     let length = function.code_length as usize;
-    let end = start.checked_add(length).ok_or_else(|| NyarRuntimeError::ModuleLoad("function code range overflow".into()))?;
+    let end = start.checked_add(length).ok_or_else(|| OdinRuntimeError::ModuleLoad("function code range overflow".into()))?;
     if end > code_bytes.len() {
-        return Err(NyarRuntimeError::ModuleLoad(format!("function code range [{start}, {end}) exceeds code section {}", code_bytes.len())));
+        return Err(OdinRuntimeError::ModuleLoad(format!("function code range [{start}, {end}) exceeds code section {}", code_bytes.len())));
     }
 
     if length == 0 {
         return Ok(ExecutableFunction { ops: Vec::new(), safepoints: Vec::new(), source_code_offset: start as u32, source_code_length: 0 });
     }
 
-    let mut decoded: Vec<(usize, NyarInstruction)> = Vec::new();
+    let mut decoded: Vec<(usize, OdinInstruction)> = Vec::new();
     let mut pc = start;
     while pc < end {
         let instruction = decode_at(code_bytes, pc);
         if instruction.size == 0 {
-            return Err(NyarRuntimeError::ModuleLoad(format!("truncated instruction at pc {pc}")));
+            return Err(OdinRuntimeError::ModuleLoad(format!("truncated instruction at pc {pc}")));
         }
         let next = pc + instruction.size as usize;
         if next > end {
-            return Err(NyarRuntimeError::ModuleLoad(format!("instruction at pc {pc} crosses function end")));
+            return Err(OdinRuntimeError::ModuleLoad(format!("instruction at pc {pc} crosses function end")));
         }
         decoded.push((pc, instruction));
         pc = next;
@@ -94,10 +94,10 @@ pub fn build_executable_function(code_bytes: &[u8], function: &NyarFunction) -> 
     let mut safepoints = Vec::new();
     for (index, (byte_pc, instruction)) in decoded.iter().enumerate() {
         let mut target: InstructionIndex = 0;
-        if matches!(instruction.code, NyarHeadCode::Jump | NyarHeadCode::JumpIfTrue | NyarHeadCode::JumpIfFalse) {
+        if matches!(instruction.code, OdinHeadCode::Jump | OdinHeadCode::JumpIfTrue | OdinHeadCode::JumpIfFalse) {
             let target_pc = byte_pc.wrapping_add(instruction.operand1 as usize);
             target = *pc_to_index.get(&target_pc).ok_or_else(|| {
-                NyarRuntimeError::ModuleLoad(format!("inner-code jump from pc {byte_pc} to {target_pc} is not an instruction boundary"))
+                OdinRuntimeError::ModuleLoad(format!("inner-code jump from pc {byte_pc} to {target_pc} is not an instruction boundary"))
             })?;
         }
         if is_safepoint(instruction.code) {
@@ -115,22 +115,22 @@ pub fn build_executable_function(code_bytes: &[u8], function: &NyarFunction) -> 
     Ok(ExecutableFunction { ops, safepoints, source_code_offset: start as u32, source_code_length: length as u32 })
 }
 
-fn is_safepoint(code: NyarHeadCode) -> bool {
+fn is_safepoint(code: OdinHeadCode) -> bool {
     matches!(
         code,
-        NyarHeadCode::Call
-            | NyarHeadCode::CallStatic
-            | NyarHeadCode::CallImport
-            | NyarHeadCode::CallIntrinsic
-            | NyarHeadCode::ObjectNew
-            | NyarHeadCode::Yield
-            | NyarHeadCode::Resume
-            | NyarHeadCode::PerformEffect
-            | NyarHeadCode::Return
+        OdinHeadCode::Call
+            | OdinHeadCode::CallStatic
+            | OdinHeadCode::CallImport
+            | OdinHeadCode::CallIntrinsic
+            | OdinHeadCode::ObjectNew
+            | OdinHeadCode::Yield
+            | OdinHeadCode::Resume
+            | OdinHeadCode::PerformEffect
+            | OdinHeadCode::Return
     )
 }
 
 /// 为模块中每个函数构建内码表。
-pub fn build_executable_table(code_bytes: &[u8], functions: &[NyarFunction]) -> Result<Vec<ExecutableFunction>, NyarRuntimeError> {
+pub fn build_executable_table(code_bytes: &[u8], functions: &[OdinFunction]) -> Result<Vec<ExecutableFunction>, OdinRuntimeError> {
     functions.iter().map(|function| build_executable_function(code_bytes, function)).collect()
 }

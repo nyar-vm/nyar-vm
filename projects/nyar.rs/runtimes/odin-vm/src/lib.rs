@@ -32,17 +32,19 @@ pub mod verify;
 pub mod vm;
 pub mod workload_json;
 
-pub use deopt_value::{decode_value_from_deopt, decode_value_from_deopt_with_roots, encode_value_for_deopt, encode_value_for_deopt_pinned};
-pub use error::NyarRuntimeError;
-pub use executable::{ExecOp, ExecutableFunction, InstructionIndex};
-pub use module::ModuleGlobals;
-pub use nj1_runtime::{execute_nj1_blob, execute_scalar_program};
+pub use crate::{
+    deopt_value::{decode_value_from_deopt, decode_value_from_deopt_with_roots, encode_value_for_deopt, encode_value_for_deopt_pinned},
+    error::OdinRuntimeError,
+    executable::{ExecOp, ExecutableFunction, InstructionIndex},
+    module::ModuleGlobals,
+    nj1_runtime::{execute_nj1_blob, execute_scalar_program},
+    value::{CoroutineState, ObjectId, Value},
+    vm::OdinVm,
+    workload_json::{WorkloadJsonError, parse_workload_intent_json, snapshot_gc_evidence},
+};
 pub use nyar_gc::{
     ConcurrentMarkController, ConcurrentMarkError, ConcurrentMarkEvent, ConcurrentMarkState, ConcurrentMarkTicker, GarbageCollector, GcMode,
     GcPolicy, GcRoots, Generation, HostRoots, IntentError, IntentSource, LayoutDescriptor, LayoutId, ObjectHeap, ObjectLifetimeHint,
     ObjectPayload, PromotionFailure, RelocateMap, RootHandle, RootHandshakeReport, StrategyController, StrategyDecision, StrategyTransition,
     TracePollReport, WorkloadHints, WorkloadIntent, WriteBarrier,
 };
-pub use value::{CoroutineState, ObjectId, Value};
-pub use vm::OdinVm;
-pub use workload_json::{WorkloadJsonError, parse_workload_intent_json, snapshot_gc_evidence};

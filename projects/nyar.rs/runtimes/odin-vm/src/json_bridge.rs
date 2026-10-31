@@ -4,15 +4,15 @@ use miette::{IntoDiagnostic, Result};
 use nyar_gc::ObjectHeap;
 use serde_json::Value as JsonValue;
 
-use crate::{error::NyarRuntimeError, value::Value};
+use crate::{error::OdinRuntimeError, value::Value};
 
 /// 将 JSON 标量转换为运行时值，不分配堆对象。
-pub fn value_from_json(json: &JsonValue) -> Result<Value, NyarRuntimeError> {
+pub fn value_from_json(json: &JsonValue) -> Result<Value, OdinRuntimeError> {
     materialize_value_from_json(json, None)
 }
 
 /// 转换 JSON 标量；提供堆也不能代替缺失的导出类型和布局合同。
-pub fn materialize_value_from_json(json: &JsonValue, heap: Option<&mut ObjectHeap>) -> Result<Value, NyarRuntimeError> {
+pub fn materialize_value_from_json(json: &JsonValue, heap: Option<&mut ObjectHeap>) -> Result<Value, OdinRuntimeError> {
     Ok(match json {
         JsonValue::Null => Value::Null,
         JsonValue::Bool(value) => Value::Bool(*value),
@@ -20,15 +20,15 @@ pub fn materialize_value_from_json(json: &JsonValue, heap: Option<&mut ObjectHea
         JsonValue::String(value) => Value::String(value.clone()),
         JsonValue::Array(_) => {
             if heap.is_none() {
-                return Err(NyarRuntimeError::TypeMismatch {
+                return Err(OdinRuntimeError::TypeMismatch {
                     expected: "heap-backed array contract",
                     actual: "JSON array without runtime heap".to_owned(),
                 });
             }
-            return Err(NyarRuntimeError::UnsupportedFeature("JSON array export type/layout contract"));
+            return Err(OdinRuntimeError::UnsupportedFeature("JSON array export type/layout contract"));
         }
         JsonValue::Object(_) => {
-            return Err(NyarRuntimeError::TypeMismatch {
+            return Err(OdinRuntimeError::TypeMismatch {
                 expected: "declared object export contract",
                 actual: "JSON object without layout contract".to_owned(),
             });
@@ -36,7 +36,7 @@ pub fn materialize_value_from_json(json: &JsonValue, heap: Option<&mut ObjectHea
     })
 }
 
-fn json_number_to_value(number: &serde_json::Number) -> Result<Value, NyarRuntimeError> {
+fn json_number_to_value(number: &serde_json::Number) -> Result<Value, OdinRuntimeError> {
     if let Some(value) = number.as_i64() {
         Ok(scalar_i64(value))
     }
@@ -44,7 +44,7 @@ fn json_number_to_value(number: &serde_json::Number) -> Result<Value, NyarRuntim
         Ok(Value::F64(value))
     }
     else {
-        Err(NyarRuntimeError::TypeMismatch { expected: "number", actual: number.to_string() })
+        Err(OdinRuntimeError::TypeMismatch { expected: "number", actual: number.to_string() })
     }
 }
 
@@ -53,12 +53,12 @@ fn scalar_i64(value: i64) -> Value {
 }
 
 /// 将运行时标量序列化为 JSON；结构值没有正式导出合同就直接失败。
-pub fn value_to_json(value: &Value) -> Result<JsonValue, NyarRuntimeError> {
+pub fn value_to_json(value: &Value) -> Result<JsonValue, OdinRuntimeError> {
     value_to_json_with_heap(value, None)
 }
 
 /// 将运行时值序列化为 JSON；对象必须有明确的导出布局合同。
-pub fn value_to_json_with_heap(value: &Value, heap: Option<&ObjectHeap>) -> Result<JsonValue, NyarRuntimeError> {
+pub fn value_to_json_with_heap(value: &Value, heap: Option<&ObjectHeap>) -> Result<JsonValue, OdinRuntimeError> {
     match value {
         Value::Null => Ok(JsonValue::Null),
         Value::Bool(value) => Ok(JsonValue::Bool(*value)),
@@ -69,14 +69,14 @@ pub fn value_to_json_with_heap(value: &Value, heap: Option<&ObjectHeap>) -> Resu
         Value::String(value) => Ok(JsonValue::String(value.clone())),
         Value::Object(id) => {
             if heap.is_none() {
-                return Err(NyarRuntimeError::TypeMismatch {
+                return Err(OdinRuntimeError::TypeMismatch {
                     expected: "declared object export contract",
                     actual: format!("object#{id} without heap"),
                 });
             }
-            Err(NyarRuntimeError::UnsupportedFeature("JSON object export type/layout contract"))
+            Err(OdinRuntimeError::UnsupportedFeature("JSON object export type/layout contract"))
         }
-        Value::Coroutine(id) => Err(NyarRuntimeError::TypeMismatch { expected: "JSON-exportable value", actual: format!("coroutine#{id}") }),
+        Value::Coroutine(id) => Err(OdinRuntimeError::TypeMismatch { expected: "JSON-exportable value", actual: format!("coroutine#{id}") }),
     }
 }
 

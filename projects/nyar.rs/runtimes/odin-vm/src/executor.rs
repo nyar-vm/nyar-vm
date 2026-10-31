@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    error::NyarRuntimeError,
+    error::OdinRuntimeError,
     frame::Frame,
     jit::{DisabledJit, JitAssumption, JitCompiledArtifact, JitCompiler, JitError, RestoredInterpreterFrame, StackMapEntry, compile_request},
     module::LoadedModule,
@@ -19,9 +19,9 @@ use nyar_gc::{GarbageCollector, GcRoots, LayoutDescriptor, ObjectHeap};
 /// NJ1 编译缓存键：`(module.version, module.name, function_index)`。
 type Nj1CacheKey = (u32, String, usize);
 
-pub(crate) fn validate_argument_count(function: &odin_bytecode::NyarFunction, actual: usize) -> Result<(), NyarRuntimeError> {
+pub(crate) fn validate_argument_count(function: &odin_bytecode::OdinFunction, actual: usize) -> Result<(), OdinRuntimeError> {
     if usize::try_from(function.arity).ok() != Some(actual) {
-        return Err(NyarRuntimeError::ModuleLoad(format!(
+        return Err(OdinRuntimeError::ModuleLoad(format!(
             "function `{}` argument count mismatch: expected {}, got {actual}",
             function.name, function.arity
         )));
@@ -119,7 +119,7 @@ impl Executor {
         restored: &[RestoredInterpreterFrame],
         stack_base: usize,
         roots: Option<&nyar_gc::HostRoots>,
-    ) -> Result<(), NyarRuntimeError> {
+    ) -> Result<(), OdinRuntimeError> {
         self.invalidate_nj1_cache();
         let mut frames = Vec::with_capacity(restored.len());
         for frame in restored.iter().rev() {
@@ -187,7 +187,7 @@ impl Executor {
     }
 
     /// Executes a function in `module` and returns its result value.
-    pub fn run(&mut self, module: &LoadedModule, function_index: usize, args: Vec<Value>) -> Result<Value, NyarRuntimeError> {
+    pub fn run(&mut self, module: &LoadedModule, function_index: usize, args: Vec<Value>) -> Result<Value, OdinRuntimeError> {
         self.run_with_globals(module, function_index, args, &mut vec![Value::Null; module.globals.len()])
     }
 
@@ -198,9 +198,9 @@ impl Executor {
         function_index: usize,
         args: Vec<Value>,
         globals: &mut [Value],
-    ) -> Result<Value, NyarRuntimeError> {
+    ) -> Result<Value, OdinRuntimeError> {
         if globals.len() != module.globals.len() {
-            return Err(NyarRuntimeError::ModuleLoad(format!(
+            return Err(OdinRuntimeError::ModuleLoad(format!(
                 "global slot count mismatch: expected {}, got {}",
                 module.globals.len(),
                 globals.len()
@@ -221,9 +221,9 @@ impl Executor {
         function_index: usize,
         args: Vec<Value>,
         globals: &mut [Value],
-    ) -> Result<Value, NyarRuntimeError> {
+    ) -> Result<Value, OdinRuntimeError> {
         if function_index >= module.functions.len() {
-            return Err(NyarRuntimeError::FunctionIndexOutOfRange(function_index as i32));
+            return Err(OdinRuntimeError::FunctionIndexOutOfRange(function_index as i32));
         }
         validate_argument_count(&module.functions[function_index], args.len())?;
 

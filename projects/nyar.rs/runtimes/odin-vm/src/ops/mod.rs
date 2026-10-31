@@ -1,9 +1,9 @@
 //! 内码操作分派：算术、控制流、对象与宿主调用。
 
-use odin_bytecode::NyarHeadCode;
+use odin_bytecode::OdinHeadCode;
 
 use crate::{
-    error::NyarRuntimeError,
+    error::OdinRuntimeError,
     executable::ExecOp,
     frame::Frame,
     module::LoadedModule,
@@ -68,17 +68,17 @@ pub struct ExecutionContext<'a> {
 }
 
 /// 执行一条预解码内码；`frame.ip` 为函数内指令下标。
-pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'_>) -> Result<StepResult, NyarRuntimeError> {
+pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'_>) -> Result<StepResult, OdinRuntimeError> {
     match op.code {
-        NyarHeadCode::Jump => {
+        OdinHeadCode::Jump => {
             frame.ip = op.target as usize;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::JumpIfTrue | NyarHeadCode::JumpIfFalse => {
+        OdinHeadCode::JumpIfTrue | OdinHeadCode::JumpIfFalse => {
             let condition = ctx.stack.pop()?.to_bool();
             let should_jump = match op.code {
-                NyarHeadCode::JumpIfTrue => condition,
-                NyarHeadCode::JumpIfFalse => !condition,
+                OdinHeadCode::JumpIfTrue => condition,
+                OdinHeadCode::JumpIfFalse => !condition,
                 _ => false,
             };
             if should_jump {
@@ -89,55 +89,55 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
             }
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::Nop => {
+        OdinHeadCode::Nop => {
             frame.ip += 1;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::Constant => {
+        OdinHeadCode::Constant => {
             let index = op.operand1;
-            let constant = ctx.module.constant_at(index).ok_or(NyarRuntimeError::ConstantIndexOutOfRange(index))?;
+            let constant = ctx.module.constant_at(index).ok_or(OdinRuntimeError::ConstantIndexOutOfRange(index))?;
             ctx.stack.push(value_from_constant(constant));
             frame.ip += 1;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::Pop => {
+        OdinHeadCode::Pop => {
             ctx.stack.pop()?;
             frame.ip += 1;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::Dup => {
+        OdinHeadCode::Dup => {
             ctx.stack.dup()?;
             frame.ip += 1;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::Return => Ok(StepResult::Return),
-        NyarHeadCode::Yield => {
+        OdinHeadCode::Return => Ok(StepResult::Return),
+        OdinHeadCode::Yield => {
             let yielded_value = ctx.stack.pop()?;
             frame.ip += 1;
             Ok(StepResult::Suspend { yielded_value })
         }
-        NyarHeadCode::Resume => {
+        OdinHeadCode::Resume => {
             let resume_value = ctx.stack.pop()?;
             let coroutine = ctx.stack.pop()?;
             frame.ip += 1;
             match coroutine {
                 Value::Coroutine(id) => {
-                    let state = ctx.heap.get_coroutine(id).ok_or(NyarRuntimeError::ModuleLoad(format!("coroutine heap id {id} not found")))?;
+                    let state = ctx.heap.get_coroutine(id).ok_or(OdinRuntimeError::ModuleLoad(format!("coroutine heap id {id} not found")))?;
                     if state.done {
-                        return Err(NyarRuntimeError::TypeMismatch { expected: "active coroutine", actual: "completed coroutine".to_string() });
+                        return Err(OdinRuntimeError::TypeMismatch { expected: "active coroutine", actual: "completed coroutine".to_string() });
                     }
                     Ok(StepResult::ResumeCoroutine { coroutine_id: id, state: state.clone(), resume_value })
                 }
-                other => Err(NyarRuntimeError::TypeMismatch { expected: "coroutine", actual: other.type_name().to_string() }),
+                other => Err(OdinRuntimeError::TypeMismatch { expected: "coroutine", actual: other.type_name().to_string() }),
             }
         }
-        NyarHeadCode::PerformEffect => {
+        OdinHeadCode::PerformEffect => {
             let effect_value = ctx.stack.pop()?;
             frame.ip += 1;
 
             let effect_name_index = op.operand1;
             let effect_name = match ctx.module.constant_at(effect_name_index) {
-                Some(odin_bytecode::NyarConstant::String(name)) => name.as_str(),
+                Some(odin_bytecode::OdinConstant::String(name)) => name.as_str(),
                 _ => "raise",
             };
 
@@ -150,25 +150,25 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
                 _ => Ok(StepResult::Suspend { yielded_value: effect_value }),
             }
         }
-        NyarHeadCode::Call | NyarHeadCode::CallStatic => execute_call(op.as_instruction(), frame, ctx.module),
-        NyarHeadCode::LoadLocal
-        | NyarHeadCode::StoreLocal
-        | NyarHeadCode::LoadArg
-        | NyarHeadCode::LoadGlobal
-        | NyarHeadCode::StoreGlobal
-        | NyarHeadCode::CallImport
-        | NyarHeadCode::CallIntrinsic => execute_control(op.as_instruction(), frame, ctx),
-        NyarHeadCode::I32Add
-        | NyarHeadCode::I32Sub
-        | NyarHeadCode::I32Mul
-        | NyarHeadCode::I32DivS
-        | NyarHeadCode::I32RemS
-        | NyarHeadCode::I32Eq
-        | NyarHeadCode::I32Ne
-        | NyarHeadCode::I32LtS
-        | NyarHeadCode::I32LeS
-        | NyarHeadCode::I32GtS
-        | NyarHeadCode::I32GeS => execute_arithmetic(op.as_instruction(), frame, ctx.stack),
-        NyarHeadCode::ObjectNew | NyarHeadCode::FieldGet | NyarHeadCode::FieldSet => execute_object(op.as_instruction(), frame, ctx),
+        OdinHeadCode::Call | OdinHeadCode::CallStatic => execute_call(op.as_instruction(), frame, ctx.module),
+        OdinHeadCode::LoadLocal
+        | OdinHeadCode::StoreLocal
+        | OdinHeadCode::LoadArg
+        | OdinHeadCode::LoadGlobal
+        | OdinHeadCode::StoreGlobal
+        | OdinHeadCode::CallImport
+        | OdinHeadCode::CallIntrinsic => execute_control(op.as_instruction(), frame, ctx),
+        OdinHeadCode::I32Add
+        | OdinHeadCode::I32Sub
+        | OdinHeadCode::I32Mul
+        | OdinHeadCode::I32DivS
+        | OdinHeadCode::I32RemS
+        | OdinHeadCode::I32Eq
+        | OdinHeadCode::I32Ne
+        | OdinHeadCode::I32LtS
+        | OdinHeadCode::I32LeS
+        | OdinHeadCode::I32GtS
+        | OdinHeadCode::I32GeS => execute_arithmetic(op.as_instruction(), frame, ctx.stack),
+        OdinHeadCode::ObjectNew | OdinHeadCode::FieldGet | OdinHeadCode::FieldSet => execute_object(op.as_instruction(), frame, ctx),
     }
 }

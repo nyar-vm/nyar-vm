@@ -3,7 +3,7 @@
 use nyar_jit::{RestoredInterpreterFrame, RestoredLocal};
 
 use crate::{
-    error::NyarRuntimeError,
+    error::OdinRuntimeError,
     value::{ObjectId, Value},
 };
 
@@ -52,7 +52,7 @@ impl Frame {
         restored: &RestoredInterpreterFrame,
         stack_base: usize,
         roots: Option<&nyar_gc::HostRoots>,
-    ) -> Result<Self, NyarRuntimeError> {
+    ) -> Result<Self, OdinRuntimeError> {
         let mut locals = Vec::with_capacity(restored.locals.len());
         for cell in &restored.locals {
             match cell {

@@ -1,4 +1,4 @@
-use odin_bytecode::{NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, encode_module};
+use odin_bytecode::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
 use odin_vm::{
     executor::{Executor, select_local_roots},
     jit::StackMapEntry,
@@ -9,27 +9,27 @@ use odin_vm::{
 #[test]
 fn runs_const_add_return_bytecode() {
     let code = vec![
-        NyarHeadCode::Constant as u8,
+        OdinHeadCode::Constant as u8,
         0,
         0,
         0,
         0,
-        NyarHeadCode::Constant as u8,
+        OdinHeadCode::Constant as u8,
         1,
         0,
         0,
         0,
-        NyarHeadCode::I32Add as u8,
-        NyarHeadCode::Return as u8,
+        OdinHeadCode::I32Add as u8,
+        OdinHeadCode::Return as u8,
     ];
 
-    let data = NyarModuleData {
-        version: NYAR_VERSION,
+    let data = OdinModuleData {
+        version: Odin_VERSION,
         name: "test".to_string(),
-        constants: vec![NyarConstant::Integer32(0), NyarConstant::Integer32(1)],
-        functions: vec![NyarFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
+        constants: vec![OdinConstant::Integer32(0), OdinConstant::Integer32(1)],
+        functions: vec![OdinFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -53,14 +53,14 @@ fn runs_const_add_return_bytecode() {
 
 #[test]
 fn division_by_zero_traps_instead_of_returning_zero() {
-    for trap_op in [NyarHeadCode::I32DivS, NyarHeadCode::I32RemS] {
+    for trap_op in [OdinHeadCode::I32DivS, OdinHeadCode::I32RemS] {
         let code =
-            vec![NyarHeadCode::Constant as u8, 0, 0, 0, 0, NyarHeadCode::Constant as u8, 1, 0, 0, 0, trap_op as u8, NyarHeadCode::Return as u8];
-        let data = NyarModuleData {
-            version: NYAR_VERSION,
+            vec![OdinHeadCode::Constant as u8, 0, 0, 0, 0, OdinHeadCode::Constant as u8, 1, 0, 0, 0, trap_op as u8, OdinHeadCode::Return as u8];
+        let data = OdinModuleData {
+            version: Odin_VERSION,
             name: "div_zero".to_string(),
-            constants: vec![NyarConstant::Integer32(7), NyarConstant::Integer32(0)],
-            functions: vec![NyarFunction {
+            constants: vec![OdinConstant::Integer32(7), OdinConstant::Integer32(0)],
+            functions: vec![OdinFunction {
                 name: "main".to_string(),
                 arity: 0,
                 local_count: 0,
@@ -68,7 +68,7 @@ fn division_by_zero_traps_instead_of_returning_zero() {
                 code_length: code.len() as i32,
             }],
             imports: Vec::new(),
-            exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
+            exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
             witness_entries: Vec::new(),
             code_bytes: code,
             globals: Vec::new(),
@@ -79,7 +79,7 @@ fn division_by_zero_traps_instead_of_returning_zero() {
         let module = LoadedModule::from_bytes(&bytes).expect("load module");
         let mut executor = Executor::new();
         let result = executor.run(&module, 0, Vec::new());
-        assert!(matches!(result, Err(NyarRuntimeError::DivisionByZero { .. })), "{trap_op:?} 除零必须 trap，实际 {result:?}");
+        assert!(matches!(result, Err(OdinRuntimeError::DivisionByZero { .. })), "{trap_op:?} 除零必须 trap，实际 {result:?}");
     }
 }
 

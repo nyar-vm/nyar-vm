@@ -5,7 +5,7 @@
 //! Kept for JS/Python bytecode-pipe probes and temporary stack→`.nyar` experiments.
 
 use nyar_analyzer::residual::ResidualSink;
-use odin_bytecode::NyarHeadCode;
+use odin_bytecode::OdinHeadCode;
 
 use super::{GenerateModule, StackCompiler};
 
@@ -58,51 +58,51 @@ impl ResidualSink for StackResidualSink {
     }
 
     fn pop(&mut self) {
-        self.compiler.emit0(NyarHeadCode::Pop);
+        self.compiler.emit0(OdinHeadCode::Pop);
     }
 
     fn add(&mut self) {
-        self.compiler.emit0(NyarHeadCode::I32Add);
+        self.compiler.emit0(OdinHeadCode::I32Add);
     }
 
     fn sub(&mut self) {
-        self.compiler.emit0(NyarHeadCode::I32Sub);
+        self.compiler.emit0(OdinHeadCode::I32Sub);
     }
 
     fn mul(&mut self) {
-        self.compiler.emit0(NyarHeadCode::I32Mul);
+        self.compiler.emit0(OdinHeadCode::I32Mul);
     }
 
     fn div(&mut self) {
-        self.compiler.emit0(NyarHeadCode::I32DivS);
+        self.compiler.emit0(OdinHeadCode::I32DivS);
     }
 
     fn rem(&mut self) {
-        self.compiler.emit0(NyarHeadCode::I32RemS);
+        self.compiler.emit0(OdinHeadCode::I32RemS);
     }
 
     fn eq(&mut self) {
-        self.compiler.emit0(NyarHeadCode::I32Eq);
+        self.compiler.emit0(OdinHeadCode::I32Eq);
     }
 
     fn ne(&mut self) {
-        self.compiler.emit0(NyarHeadCode::I32Ne);
+        self.compiler.emit0(OdinHeadCode::I32Ne);
     }
 
     fn lt(&mut self) {
-        self.compiler.emit0(NyarHeadCode::I32LtS);
+        self.compiler.emit0(OdinHeadCode::I32LtS);
     }
 
     fn le(&mut self) {
-        self.compiler.emit0(NyarHeadCode::I32LeS);
+        self.compiler.emit0(OdinHeadCode::I32LeS);
     }
 
     fn gt(&mut self) {
-        self.compiler.emit0(NyarHeadCode::I32GtS);
+        self.compiler.emit0(OdinHeadCode::I32GtS);
     }
 
     fn ge(&mut self) {
-        self.compiler.emit0(NyarHeadCode::I32GeS);
+        self.compiler.emit0(OdinHeadCode::I32GeS);
     }
 
     fn concat(&mut self) {
@@ -112,9 +112,9 @@ impl ResidualSink for StackResidualSink {
     fn not(&mut self) {
         let false_l = unique_label("not_false");
         let end_l = unique_label("not_end");
-        self.compiler.emit_jump(NyarHeadCode::JumpIfFalse, &false_l);
+        self.compiler.emit_jump(OdinHeadCode::JumpIfFalse, &false_l);
         self.compiler.emit_const_bool(false);
-        self.compiler.emit_jump(NyarHeadCode::Jump, &end_l);
+        self.compiler.emit_jump(OdinHeadCode::Jump, &end_l);
         self.compiler.emit_label(&false_l);
         self.compiler.emit_const_bool(true);
         self.compiler.emit_label(&end_l);
@@ -129,15 +129,15 @@ impl ResidualSink for StackResidualSink {
     }
 
     fn jump(&mut self, label: &str) {
-        self.compiler.emit_jump(NyarHeadCode::Jump, label);
+        self.compiler.emit_jump(OdinHeadCode::Jump, label);
     }
 
     fn jump_if_false(&mut self, label: &str) {
-        self.compiler.emit_jump(NyarHeadCode::JumpIfFalse, label);
+        self.compiler.emit_jump(OdinHeadCode::JumpIfFalse, label);
     }
 
     fn jump_if_true(&mut self, label: &str) {
-        self.compiler.emit_jump(NyarHeadCode::JumpIfTrue, label);
+        self.compiler.emit_jump(OdinHeadCode::JumpIfTrue, label);
     }
 
     fn begin_function(&mut self, name: &str) {

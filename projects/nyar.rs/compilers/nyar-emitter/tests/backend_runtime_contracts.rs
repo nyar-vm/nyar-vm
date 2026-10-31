@@ -2,7 +2,7 @@ use nyar_emitter::transitional::binary::{
     elf::{NativeElfImage, NativeElfWriter, SharedElfImage, SharedElfWriter, SharedObjectExport},
     pe::{NativePeImage, NativePeWriter},
 };
-use odin_bytecode::{NyarConstant, NyarFunction, NyarModuleData};
+use odin_bytecode::{OdinConstant, OdinFunction, OdinModuleData};
 
 use nyar_emitter::{
     nyar_backend_native::{NativeExecutableKind, classify_native_executable},
@@ -12,11 +12,11 @@ use nyar_emitter::{
 
 #[test]
 fn emits_minimal_module_bytes() {
-    let module = NyarModuleData {
+    let module = OdinModuleData {
         version: 1,
         name: "demo".to_string(),
-        constants: vec![NyarConstant::Integer32(0)],
-        functions: vec![NyarFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: 1 }],
+        constants: vec![OdinConstant::Integer32(0)],
+        functions: vec![OdinFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: 1 }],
         imports: Vec::new(),
         exports: Vec::new(),
         witness_entries: Vec::new(),

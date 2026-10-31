@@ -3,23 +3,23 @@
 //! 本模块是 opcode 数值、指令编码形、指令解码与写入 helper 的唯一所有者。
 //! 它只描述字节流形状，不解释运行时语义。
 
-use crate::errors::NyarDecodeError;
+use crate::errors::OdinDecodeError;
 
 /// Magic value `NYAR` big-endian (`0x4E594152`).
-pub const NYAR_MAGIC: u32 = 0x4E59_4152;
+pub const ODIN_MAGIC: u32 = 0x4E59_4152;
 
 /// Current `.nyar` format version.
 ///
 /// 未正式发布前统一为 `0`（v0 基线）；旧版本的模块一律拒绝，不做兼容读取。
-pub const NYAR_VERSION: u32 = 0;
+pub const Odin_VERSION: u32 = 0;
 
 /// Bytecode format contract version（S-W6 provenance / cache 键）。
-/// 与 [`NYAR_VERSION`] 同步；格式破坏时两者一并递增。
-pub const BYTECODE_FORMAT_VERSION: u32 = NYAR_VERSION;
+/// 与 [`Odin_VERSION`] 同步；格式破坏时两者一并递增。
+pub const BYTECODE_FORMAT_VERSION: u32 = Odin_VERSION;
 
 /// 已删除的 v1 `CallNative` 头码（`0xD1`）。
 ///
-/// 不得再进入 [`NyarHeadCode`]；加载期验证器须拒绝含此字节的 v2 模块，改用 [`NyarHeadCode::CallImport`]。
+/// 不得再进入 [`OdinHeadCode`]；加载期验证器须拒绝含此字节的 v2 模块，改用 [`OdinHeadCode::CallImport`]。
 pub const OBSOLETE_CALL_NATIVE: u8 = 0xD1;
 
 /// File header size in bytes.
@@ -31,7 +31,7 @@ pub const SECTION_HEADER_SIZE: usize = 9;
 /// Nyar instruction head code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u8)]
-pub enum NyarHeadCode {
+pub enum OdinHeadCode {
     /// 无操作。
     #[default]
     Nop = 0x00,
@@ -108,7 +108,7 @@ pub enum NyarHeadCode {
     FieldSet = 0x52,
 }
 
-impl NyarHeadCode {
+impl OdinHeadCode {
     /// Parse a head code from a raw byte.
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
@@ -183,7 +183,7 @@ impl IntrinsicOpcode {
     }
 
     /// 由 `CallIntrinsic` `operand1` 还原指令身份；未知编号 fail-closed。
-    pub fn from_operand(value: i32) -> Result<Self, NyarDecodeError> {
+    pub fn from_operand(value: i32) -> Result<Self, OdinDecodeError> {
         match value {
             0 => Ok(Self::ArrayPush),
             1 => Ok(Self::ArrayLen),
@@ -192,14 +192,14 @@ impl IntrinsicOpcode {
             4 => Ok(Self::RefDeref),
             5 => Ok(Self::IsNull),
             6 => Ok(Self::UnwrapNull),
-            other => Err(NyarDecodeError::UnknownIntrinsicOpcode(other)),
+            other => Err(OdinDecodeError::UnknownIntrinsicOpcode(other)),
         }
     }
 }
 
 /// Instruction encoding form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NyarInstructionForm {
+pub enum OdinInstructionForm {
     /// 仅头码，无立即数。
     Plain,
     /// 头码 + 一个 `i32` 立即数。
@@ -212,9 +212,9 @@ pub enum NyarInstructionForm {
     Invalid,
 }
 
-impl NyarHeadCode {
+impl OdinHeadCode {
     /// Returns the encoding form for this head code.
-    pub fn form(self) -> NyarInstructionForm {
+    pub fn form(self) -> OdinInstructionForm {
         match self {
             Self::Jump
             | Self::JumpIfTrue
@@ -231,8 +231,8 @@ impl NyarHeadCode {
             | Self::StoreGlobal
             | Self::ObjectNew
             | Self::FieldGet
-            | Self::FieldSet => NyarInstructionForm::Imm1,
-            Self::CallIntrinsic | Self::CallImport => NyarInstructionForm::Imm2,
+            | Self::FieldSet => OdinInstructionForm::Imm1,
+            Self::CallIntrinsic | Self::CallImport => OdinInstructionForm::Imm2,
             Self::Nop
             | Self::Return
             | Self::Resume
@@ -248,27 +248,27 @@ impl NyarHeadCode {
             | Self::I32LtS
             | Self::I32LeS
             | Self::I32GtS
-            | Self::I32GeS => NyarInstructionForm::Plain,
+            | Self::I32GeS => OdinInstructionForm::Plain,
         }
     }
 
     /// Returns the encoded instruction size for this head code.
     pub fn code_size(self) -> u8 {
         match self.form() {
-            NyarInstructionForm::Plain => 1,
-            NyarInstructionForm::Imm1 => 5,
-            NyarInstructionForm::Imm2 => 9,
-            NyarInstructionForm::Imm3 => 13,
-            NyarInstructionForm::Invalid => 0,
+            OdinInstructionForm::Plain => 1,
+            OdinInstructionForm::Imm1 => 5,
+            OdinInstructionForm::Imm2 => 9,
+            OdinInstructionForm::Imm3 => 13,
+            OdinInstructionForm::Invalid => 0,
         }
     }
 }
 
 /// Pre-decoded instruction view used by the interpreter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct NyarInstruction {
+pub struct OdinInstruction {
     /// Instruction head code.
-    pub code: NyarHeadCode,
+    pub code: OdinHeadCode,
     /// Encoded size in the bytecode stream; `0` means invalid.
     pub size: u8,
     /// 第一个立即数操作数。
@@ -279,9 +279,9 @@ pub struct NyarInstruction {
     pub operand3: i32,
 }
 
-impl NyarInstruction {
+impl OdinInstruction {
     /// Creates a decoded instruction.
-    pub fn new(code: NyarHeadCode, operand1: i32, operand2: i32, operand3: i32) -> Self {
+    pub fn new(code: OdinHeadCode, operand1: i32, operand2: i32, operand3: i32) -> Self {
         Self { code, size: code.code_size(), operand1, operand2, operand3 }
     }
 
@@ -292,19 +292,19 @@ impl NyarInstruction {
 }
 
 /// Decode one instruction at `pc` from `bytecode`.
-pub fn decode_at(bytecode: &[u8], pc: usize) -> NyarInstruction {
+pub fn decode_at(bytecode: &[u8], pc: usize) -> OdinInstruction {
     if pc >= bytecode.len() {
-        return NyarInstruction::default();
+        return OdinInstruction::default();
     }
 
-    let Some(code) = NyarHeadCode::from_u8(bytecode[pc])
+    let Some(code) = OdinHeadCode::from_u8(bytecode[pc])
     else {
-        return NyarInstruction::default();
+        return OdinInstruction::default();
     };
 
     let size = try_instruction_size(bytecode, pc, code);
     if size == 0 {
-        return NyarInstruction::default();
+        return OdinInstruction::default();
     }
 
     let mut operand1 = 0;
@@ -321,34 +321,34 @@ pub fn decode_at(bytecode: &[u8], pc: usize) -> NyarInstruction {
         operand3 = i32::from_le_bytes(bytecode[pc + 9..pc + 13].try_into().expect("slice"));
     }
 
-    NyarInstruction { code, size, operand1, operand2, operand3 }
+    OdinInstruction { code, size, operand1, operand2, operand3 }
 }
 
 /// 写入无操作数指令（`Plain` 形）。
-pub fn emit_plain(code: &mut Vec<u8>, opcode: NyarHeadCode) {
-    debug_assert_eq!(opcode.form(), NyarInstructionForm::Plain);
+pub fn emit_plain(code: &mut Vec<u8>, opcode: OdinHeadCode) {
+    debug_assert_eq!(opcode.form(), OdinInstructionForm::Plain);
     code.push(opcode as u8);
 }
 
 /// 写入单立即数指令（`Imm1` 形，小端 `i32`）。
-pub fn emit_imm1(code: &mut Vec<u8>, opcode: NyarHeadCode, operand: i32) {
-    debug_assert_eq!(opcode.form(), NyarInstructionForm::Imm1);
+pub fn emit_imm1(code: &mut Vec<u8>, opcode: OdinHeadCode, operand: i32) {
+    debug_assert_eq!(opcode.form(), OdinInstructionForm::Imm1);
     code.push(opcode as u8);
     code.extend_from_slice(&operand.to_le_bytes());
 }
 
 /// 写入双立即数指令（`Imm2` 形，两个小端 `i32`）。
-pub fn emit_imm2(code: &mut Vec<u8>, opcode: NyarHeadCode, operand1: i32, operand2: i32) {
-    debug_assert_eq!(opcode.form(), NyarInstructionForm::Imm2);
+pub fn emit_imm2(code: &mut Vec<u8>, opcode: OdinHeadCode, operand1: i32, operand2: i32) {
+    debug_assert_eq!(opcode.form(), OdinInstructionForm::Imm2);
     code.push(opcode as u8);
     code.extend_from_slice(&operand1.to_le_bytes());
     code.extend_from_slice(&operand2.to_le_bytes());
 }
 
-fn try_instruction_size(bytecode: &[u8], pc: usize, code: NyarHeadCode) -> u8 {
+fn try_instruction_size(bytecode: &[u8], pc: usize, code: OdinHeadCode) -> u8 {
     match code.form() {
-        NyarInstructionForm::Plain => 1,
-        NyarInstructionForm::Imm1 => {
+        OdinInstructionForm::Plain => 1,
+        OdinInstructionForm::Imm1 => {
             if pc + 4 < bytecode.len() {
                 5
             }
@@ -356,7 +356,7 @@ fn try_instruction_size(bytecode: &[u8], pc: usize, code: NyarHeadCode) -> u8 {
                 0
             }
         }
-        NyarInstructionForm::Imm2 => {
+        OdinInstructionForm::Imm2 => {
             if pc + 8 < bytecode.len() {
                 9
             }
@@ -364,7 +364,7 @@ fn try_instruction_size(bytecode: &[u8], pc: usize, code: NyarHeadCode) -> u8 {
                 0
             }
         }
-        NyarInstructionForm::Imm3 => {
+        OdinInstructionForm::Imm3 => {
             if pc + 12 < bytecode.len() {
                 13
             }
@@ -372,6 +372,6 @@ fn try_instruction_size(bytecode: &[u8], pc: usize, code: NyarHeadCode) -> u8 {
                 0
             }
         }
-        NyarInstructionForm::Invalid => 0,
+        OdinInstructionForm::Invalid => 0,
     }
 }

@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 
 /// `.nyar` decode error.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NyarDecodeError {
+pub enum OdinDecodeError {
     /// 输入缓冲区长度不足。
     TooShort,
     /// magic 值非法。
@@ -23,7 +23,7 @@ pub enum NyarDecodeError {
     UnknownIntrinsicOpcode(i32),
 }
 
-impl Display for NyarDecodeError {
+impl Display for OdinDecodeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::TooShort => write!(f, ".nyar buffer too short"),
@@ -38,4 +38,4 @@ impl Display for NyarDecodeError {
     }
 }
 
-impl std::error::Error for NyarDecodeError {}
+impl std::error::Error for OdinDecodeError {}

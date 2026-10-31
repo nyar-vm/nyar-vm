@@ -6,7 +6,7 @@ use crate::{
 };
 use nyar::{HostProjectionBoundary, TargetBackendFamily};
 #[cfg(feature = "ovm-lane")]
-use odin_bytecode::NyarModuleData;
+use odin_bytecode::OdinModuleData;
 
 #[cfg(feature = "ovm-lane")]
 use crate::OvmBackendInput;
@@ -29,7 +29,7 @@ pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSub
 }
 
 #[cfg(feature = "ovm-lane")]
-pub(crate) fn testing_lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData> {
+pub(crate) fn testing_lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<OdinModuleData> {
     ovm::lower_fragment_to_nyar_module(submission)
 }
 

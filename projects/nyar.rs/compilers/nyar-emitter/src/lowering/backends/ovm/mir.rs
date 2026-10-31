@@ -13,8 +13,8 @@ use crate::{
 use nyar::{ExternalImportLink, NamePath};
 use nyar_types::{AggregateLayout, ItemInstanceId, LayoutId};
 use odin_bytecode::{
-    IntrinsicOpcode, NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind,
-    NyarLayout, NyarModuleData,
+    IntrinsicOpcode, Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind,
+    OdinLayout, OdinModuleData,
 };
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
@@ -41,18 +41,18 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
 /// 或默认指令。
 pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
     let (arity, recipe, code) = match mnemonic {
-        "i32.add" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Add),
-        "i32.sub" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Sub),
-        "i32.mul" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Mul),
-        "i32.div" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32DivS),
-        "i32.rem" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32RemS),
-        "i32.eq" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Eq),
-        "i32.ne" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Ne),
-        "i32.lt" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32LtS),
-        "i32.le" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32LeS),
-        "i32.gt" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32GtS),
-        "i32.ge" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32GeS),
-        "i32.neg" => (1, TargetOperatorRecipe::Steps(I32_NEGATE_STEPS), NyarHeadCode::I32Sub),
+        "i32.add" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Add),
+        "i32.sub" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Sub),
+        "i32.mul" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Mul),
+        "i32.div" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32DivS),
+        "i32.rem" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32RemS),
+        "i32.eq" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Eq),
+        "i32.ne" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Ne),
+        "i32.lt" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32LtS),
+        "i32.le" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32LeS),
+        "i32.gt" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GtS),
+        "i32.ge" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GeS),
+        "i32.neg" => (1, TargetOperatorRecipe::Steps(I32_NEGATE_STEPS), OdinHeadCode::I32Sub),
         _ => return None,
     };
     Some(TargetOperatorPlan {
@@ -65,16 +65,16 @@ pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperat
 }
 
 struct BytecodeEmitter<'a> {
-    constants: Vec<NyarConstant>,
+    constants: Vec<OdinConstant>,
     code_bytes: Vec<u8>,
     pending_jumps: Vec<(usize, MirBlockRef)>,
     block_starts: BTreeMap<MirBlockRef, usize>,
     constants_base: i32,
-    imports: &'a mut Vec<NyarImport>,
+    imports: &'a mut Vec<OdinImport>,
 }
 
 impl<'a> BytecodeEmitter<'a> {
-    fn new(constants_base: i32, imports: &'a mut Vec<NyarImport>) -> Self {
+    fn new(constants_base: i32, imports: &'a mut Vec<OdinImport>) -> Self {
         Self {
             constants: Vec::new(),
             code_bytes: Vec::new(),
@@ -87,22 +87,22 @@ impl<'a> BytecodeEmitter<'a> {
 
     fn intern_string(&mut self, value: &str) -> i32 {
         let index = self.constants.len() as i32;
-        self.constants.push(NyarConstant::String(value.to_string()));
+        self.constants.push(OdinConstant::String(value.to_string()));
         index + self.constants_base
     }
 
     /// 登记一个 i32 常量并返回模块常量池下标（复用 `constants_base`）。
     fn intern_i32(&mut self, value: i32) -> i32 {
         let index = self.constants.len() as i32;
-        self.constants.push(NyarConstant::Integer32(value));
+        self.constants.push(OdinConstant::Integer32(value));
         index + self.constants_base
     }
 
-    fn emit_plain(&mut self, opcode: NyarHeadCode) {
+    fn emit_plain(&mut self, opcode: OdinHeadCode) {
         odin_bytecode::emit_plain(&mut self.code_bytes, opcode);
     }
 
-    fn emit_imm1(&mut self, opcode: NyarHeadCode, operand: i32) {
+    fn emit_imm1(&mut self, opcode: OdinHeadCode, operand: i32) {
         odin_bytecode::emit_imm1(&mut self.code_bytes, opcode, operand);
     }
 
@@ -113,8 +113,8 @@ impl<'a> BytecodeEmitter<'a> {
             return index as i32;
         }
         let index = self.imports.len() as i32;
-        self.imports.push(NyarImport {
-            kind: NyarImportKind::Function,
+        self.imports.push(OdinImport {
+            kind: OdinImportKind::Function,
             module_name: HOST_IMPORT_MODULE.to_string(),
             symbol_name: symbol.to_string(),
         });
@@ -124,15 +124,15 @@ impl<'a> BytecodeEmitter<'a> {
     /// 按 imports 表下标调用宿主能力；operand1 = import index，operand2 = argc。
     fn emit_call_import(&mut self, symbol: &str, arg_count: i32) {
         let import_index = self.ensure_host_import(symbol);
-        odin_bytecode::emit_imm2(&mut self.code_bytes, NyarHeadCode::CallImport, import_index, arg_count);
+        odin_bytecode::emit_imm2(&mut self.code_bytes, OdinHeadCode::CallImport, import_index, arg_count);
     }
 
     /// 按 [`IntrinsicOpcode`] 编码调用内置；operand1 = 指令编号，operand2 = argc。
     fn emit_call_intrinsic(&mut self, op: IntrinsicOpcode, arg_count: i32) {
-        odin_bytecode::emit_imm2(&mut self.code_bytes, NyarHeadCode::CallIntrinsic, op.raw(), arg_count);
+        odin_bytecode::emit_imm2(&mut self.code_bytes, OdinHeadCode::CallIntrinsic, op.raw(), arg_count);
     }
 
-    fn emit_jump_placeholder(&mut self, opcode: NyarHeadCode, target: MirBlockRef) -> usize {
+    fn emit_jump_placeholder(&mut self, opcode: OdinHeadCode, target: MirBlockRef) -> usize {
         let position = self.code_bytes.len();
         self.emit_imm1(opcode, 0);
         self.pending_jumps.push((position, target));
@@ -154,7 +154,7 @@ impl<'a> BytecodeEmitter<'a> {
 }
 
 /// Lower MIR-backed fragment operations into a `.nyar` module.
-pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData> {
+pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission) -> Result<OdinModuleData> {
     for instance in submission.backend_plan.instances() {
         let Some(view) = submission.backend_plan.get_function(&instance)
         else {
@@ -169,8 +169,8 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
             return Err(format!("Nyar backend requires a typed sum representation plan; semantic sum operation has no target contract"));
         }
     }
-    let mut module = NyarModuleData {
-        version: NYAR_VERSION,
+    let mut module = OdinModuleData {
+        version: Odin_VERSION,
         name: format!(
             "{}__{}",
             super::sanitize_symbol(submission.backend_plan.module_name()),
@@ -246,7 +246,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 mir_fn.blocks.get(mir_fn.entry.0 as usize).map(|block| block.parameters.len()).unwrap_or(mir_fn.param_types.len()) as i32;
             let local_count = ExecutableSlotPlan::plan_nyar(mir_fn).local_types.len() as i32;
             let function_index = module.functions.len() as i32;
-            module.functions.push(NyarFunction {
+            module.functions.push(OdinFunction {
                 name: export_name.clone(),
                 arity,
                 local_count: local_count.max(arity),
@@ -254,7 +254,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 code_length: module.code_bytes.len() as i32 - code_offset,
             });
             if nyar_should_export_operation(submission, instance) {
-                module.exports.push(NyarExport { kind: NyarExportKind::Function, symbol_name: export_name, function_index });
+                module.exports.push(OdinExport { kind: OdinExportKind::Function, symbol_name: export_name, function_index });
             }
         }
     }
@@ -319,7 +319,7 @@ fn lower_mir_function_to_bytecode(
     external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
     external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
     emitter: &mut BytecodeEmitter<'_>,
-    layouts: &mut Vec<NyarLayout>,
+    layouts: &mut Vec<OdinLayout>,
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
 ) -> crate::Result<()> {
     let ctx = ExecutableLoweringContext::new(submission);
@@ -359,7 +359,7 @@ struct NyarMirLowerer<'a, 'e> {
     function_entry_arities: &'a BTreeMap<i32, usize>,
     external_link_by_instance: &'a BTreeMap<ItemInstanceId, ExternalImportLink>,
     external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
-    layouts: &'a mut Vec<NyarLayout>,
+    layouts: &'a mut Vec<OdinLayout>,
     layout_index_by_id: &'a mut BTreeMap<LayoutId, i32>,
 }
 
@@ -388,7 +388,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.store_to_local(output);
                 }
                 else {
-                    self.emitter.emit_plain(NyarHeadCode::Pop);
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
                 let _ = name;
             }
@@ -403,27 +403,27 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 let layout_index = match &layout {
                     aggregate => self.ensure_nyar_layout(aggregate),
                 };
-                self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
+                self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout_index);
                 let output = output.expect("StructNew must produce an output");
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
                 for (field, value) in fields.iter() {
                     let slot = self.nyar_field_slot(*field);
                     self.emit_field_set_slot(&output_operand, slot, value);
-                    self.emitter.emit_plain(NyarHeadCode::Pop);
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
             MirInstructionKind::TupleNew { layout_id, fields } => {
                 let layout =
                     self.ctx.layout_by_id(*layout_id).cloned().unwrap_or_else(|| panic!("Nyar tuple 布局身份缺少布局合同: {layout_id:?}"));
                 let layout_index = self.ensure_nyar_layout(&layout);
-                self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
+                self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout_index);
                 let output = output.expect("TupleNew must produce an output");
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
                 for (index, value) in fields.iter().enumerate() {
                     self.emit_field_set_slot(&output_operand, index as i32, value);
-                    self.emitter.emit_plain(NyarHeadCode::Pop);
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
             MirInstructionKind::ArrayFromElements { layout_id, elements, .. } => {
@@ -437,12 +437,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     .cloned()
                     .unwrap_or_else(|| panic!("Nyar fixed-array 布局身份缺少布局合同: {layout_id:?}"));
                 let layout_index = self.ensure_nyar_layout(&layout);
-                self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
+                self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout_index);
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
                 for (index, value) in elements.iter().enumerate() {
                     self.emit_field_set_slot(&output_operand, index as i32, value);
-                    self.emitter.emit_plain(NyarHeadCode::Pop);
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
             MirInstructionKind::AggregateCopy { layout_id, source, dest } => {
@@ -453,34 +453,34 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     .unwrap_or_else(|| panic!("Nyar aggregate-copy 布局身份缺少布局合同: {layout_id:?}"));
                 let field_count = layout.fields.len() as i32;
                 let layout_index = self.ensure_nyar_layout(&layout);
-                self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
+                self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout_index);
                 if let MirOperand::Value(dest_value) = dest {
                     self.store_to_local(*dest_value);
                 }
                 for slot in 0..field_count {
                     self.emit_operand(dest);
                     self.emit_operand(source);
-                    self.emitter.emit_imm1(NyarHeadCode::FieldGet, slot);
-                    self.emitter.emit_imm1(NyarHeadCode::FieldSet, slot);
-                    self.emitter.emit_plain(NyarHeadCode::Pop);
+                    self.emitter.emit_imm1(OdinHeadCode::FieldGet, slot);
+                    self.emitter.emit_imm1(OdinHeadCode::FieldSet, slot);
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
             MirInstructionKind::FieldGet { object, field } => {
                 let slot = self.nyar_field_slot(*field);
                 self.emit_operand(object);
-                self.emitter.emit_imm1(NyarHeadCode::FieldGet, slot);
+                self.emitter.emit_imm1(OdinHeadCode::FieldGet, slot);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
                 else {
                     // 无 SSA 绑定的 FieldGet 不得污染后续 Call 的操作数栈；实参由 `emit_call_operand` 再求值。
-                    self.emitter.emit_plain(NyarHeadCode::Pop);
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
             MirInstructionKind::FieldSet { object, field, value } => {
                 let slot = self.nyar_field_slot(*field);
                 self.emit_field_set_slot(object, slot, value);
-                self.emitter.emit_plain(NyarHeadCode::Pop);
+                self.emitter.emit_plain(OdinHeadCode::Pop);
             }
             MirInstructionKind::Call { callee, arguments } => {
                 if let MirOperand::Item(instance) = callee {
@@ -518,7 +518,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emit_operand(index);
                 self.emit_operand(value);
                 self.emitter.emit_call_intrinsic(IntrinsicOpcode::ArraySet, 3);
-                self.emitter.emit_plain(NyarHeadCode::Pop);
+                self.emitter.emit_plain(OdinHeadCode::Pop);
             }
             MirInstructionKind::ArrayLength { array } => {
                 // 禁止 Const(0) 回退：会把 ArrayLen 的 array 实参变成 i32，运行时报 expected object。
@@ -563,17 +563,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     // Call 约定固定压回 1 个返回值；unit / void 用 i32(0) 占位，供调用方 Pop。
                     self.emitter.emit_const_i32(0);
                 }
-                self.emitter.emit_plain(NyarHeadCode::Return);
+                self.emitter.emit_plain(OdinHeadCode::Return);
             }
             MirTerminator::Jump { target, arguments } => {
                 self.emit_block_argument_copies(*target, arguments);
-                self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *target);
+                self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *target);
             }
             MirTerminator::Branch { condition, then_target, else_target } => {
                 self.emit_operand(condition);
-                self.emitter.emit_jump_placeholder(NyarHeadCode::JumpIfFalse, *else_target);
+                self.emitter.emit_jump_placeholder(OdinHeadCode::JumpIfFalse, *else_target);
                 self.emit_block_argument_copies(*then_target, &[]);
-                self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *then_target);
+                self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *then_target);
                 let _ = else_target;
             }
             MirTerminator::PerformEffect { effect, payload, resume_target } => {
@@ -589,9 +589,9 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                             // 无 payload 的 yield：压 i32(0) 作为 unit 占位后再发 Yield。
                             self.emitter.emit_const_i32(0);
                         }
-                        self.emitter.emit_plain(NyarHeadCode::Yield);
+                        self.emitter.emit_plain(OdinHeadCode::Yield);
                         self.emit_block_argument_copies(*resume_target, &[]);
-                        self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *resume_target);
+                        self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *resume_target);
                     }
                     EffectKind::Raise => {
                         // `raise expr`：将 payload 压栈后发射 `PerformEffect` opcode。
@@ -608,9 +608,9 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                             self.emitter.emit_const_i32(0);
                         }
                         let effect_name_index = self.emitter.intern_string("raise");
-                        self.emitter.emit_imm1(NyarHeadCode::PerformEffect, effect_name_index);
+                        self.emitter.emit_imm1(OdinHeadCode::PerformEffect, effect_name_index);
                         self.emit_block_argument_copies(*resume_target, &[]);
-                        self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *resume_target);
+                        self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *resume_target);
                     }
                     EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {
                         // future / async 相关 effect 暂未落地 VM opcode，保留 console_log 调试桩。
@@ -619,7 +619,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                             self.emitter.emit_call_import("console_log", 1);
                         }
                         self.emit_block_argument_copies(*resume_target, &[]);
-                        self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *resume_target);
+                        self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *resume_target);
                     }
                 }
             }
@@ -634,7 +634,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         else {
                             self.emitter.emit_const_i32(0);
                         }
-                        self.emitter.emit_plain(NyarHeadCode::Yield);
+                        self.emitter.emit_plain(OdinHeadCode::Yield);
                     }
                     EffectKind::Raise => {
                         if let Some(payload) = payload {
@@ -644,7 +644,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                             self.emitter.emit_const_i32(0);
                         }
                         let effect_name_index = self.emitter.intern_string("raise");
-                        self.emitter.emit_imm1(NyarHeadCode::PerformEffect, effect_name_index);
+                        self.emitter.emit_imm1(OdinHeadCode::PerformEffect, effect_name_index);
                     }
                     EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {
                         // future / async 相关 effect 暂未落地 VM opcode，保留 console_log 调试桩。
@@ -661,14 +661,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 for (case_key, target) in cases {
                     self.emit_operand(&MirOperand::Value(*state));
                     self.emitter.emit_const_i32(*case_key as i32);
-                    self.emitter.emit_plain(NyarHeadCode::I32Eq);
-                    self.emitter.emit_jump_placeholder(NyarHeadCode::JumpIfTrue, *target);
+                    self.emitter.emit_plain(OdinHeadCode::I32Eq);
+                    self.emitter.emit_jump_placeholder(OdinHeadCode::JumpIfTrue, *target);
                 }
-                self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *default_target);
+                self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *default_target);
             }
             MirTerminator::Unreachable => {
                 // 不可达：发射 Return 防止 fall-through 到下一函数。
-                self.emitter.emit_plain(NyarHeadCode::Return);
+                self.emitter.emit_plain(OdinHeadCode::Return);
             }
         }
     }
@@ -729,7 +729,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                             TargetOperandStep::Arguments => self.emit_external_arguments(&callee_name, arguments),
                             TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value } => {
                                 let index = self.emitter.intern_i32(*value);
-                                self.emitter.emit_imm1(NyarHeadCode::Constant, index);
+                                self.emitter.emit_imm1(OdinHeadCode::Constant, index);
                             }
                             TargetOperandStep::IntegerConstant { operand_type, .. } => {
                                 return Err(format!(
@@ -764,7 +764,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             self.store_to_local(output);
         }
         else {
-            self.emitter.emit_plain(NyarHeadCode::Pop);
+            self.emitter.emit_plain(OdinHeadCode::Pop);
         }
         Ok(())
     }
@@ -781,12 +781,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         for argument in arguments {
             assert!(self.emit_call_operand(argument), "unmaterialized Nyar call operand in `{path:?}`: {argument:?}");
         }
-        self.emitter.emit_imm1(NyarHeadCode::Call, function_index);
+        self.emitter.emit_imm1(OdinHeadCode::Call, function_index);
         if let Some(output) = output {
             self.store_to_local(output);
         }
         else {
-            self.emitter.emit_plain(NyarHeadCode::Pop);
+            self.emitter.emit_plain(OdinHeadCode::Pop);
         }
     }
 
@@ -813,7 +813,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             return *index;
         }
         let index = self.layouts.len() as i32;
-        self.layouts.push(NyarLayout { field_count: aggregate.fields.len() as i32 });
+        self.layouts.push(OdinLayout { field_count: aggregate.fields.len() as i32 });
         self.layout_index_by_id.insert(aggregate.id, index);
         index
     }
@@ -822,7 +822,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     fn emit_field_set_slot(&mut self, object: &MirOperand, field_slot: i32, value: &MirOperand) {
         self.emit_operand(object);
         self.emit_operand(value);
-        self.emitter.emit_imm1(NyarHeadCode::FieldSet, field_slot);
+        self.emitter.emit_imm1(OdinHeadCode::FieldSet, field_slot);
     }
 
     fn emit_block_argument_copies(&mut self, target: MirBlockRef, arguments: &[MirOperand]) {
@@ -847,15 +847,15 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             MirConstant::Float64(value) => {
                 let index = self.emitter.constants.len() as i32 + self.emitter.constants_base;
-                self.emitter.constants.push(NyarConstant::Float64(value.into_inner()));
-                self.emitter.emit_imm1(NyarHeadCode::Constant, index);
+                self.emitter.constants.push(OdinConstant::Float64(value.into_inner()));
+                self.emitter.emit_imm1(OdinHeadCode::Constant, index);
             }
             MirConstant::Bool(value) => {
                 self.emitter.emit_const_bool(*value);
             }
             MirConstant::Utf8(text) => {
                 let index = self.emitter.intern_string(text);
-                self.emitter.emit_imm1(NyarHeadCode::Constant, index);
+                self.emitter.emit_imm1(OdinHeadCode::Constant, index);
             }
             MirConstant::Utf16(_) => panic!("ovm lowering has no explicit UTF-16 text ABI"),
             // OVM 目标没有可空空引用的 ABI 合同；不得用 i32 0 冒充 null。
@@ -898,18 +898,18 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 
     fn emit_load_local(&mut self, local: u16) {
-        self.emitter.emit_imm1(NyarHeadCode::LoadLocal, local as i32);
+        self.emitter.emit_imm1(OdinHeadCode::LoadLocal, local as i32);
     }
 
     fn emit_store_local(&mut self, local: u16) {
-        self.emitter.emit_imm1(NyarHeadCode::StoreLocal, local as i32);
+        self.emitter.emit_imm1(OdinHeadCode::StoreLocal, local as i32);
     }
 }
 
 impl BytecodeEmitter<'_> {
     fn emit_const_i32(&mut self, value: i32) {
         let index = self.intern_i32(value);
-        self.emit_imm1(NyarHeadCode::Constant, index);
+        self.emit_imm1(OdinHeadCode::Constant, index);
     }
 
     fn emit_const_i64(&mut self, value: i64) {
@@ -919,15 +919,15 @@ impl BytecodeEmitter<'_> {
             return;
         }
         let index = self.constants.len() as i32 + self.constants_base;
-        self.constants.push(NyarConstant::Integer32(value as i32));
-        self.emit_imm1(NyarHeadCode::Constant, index);
+        self.constants.push(OdinConstant::Integer32(value as i32));
+        self.emit_imm1(OdinHeadCode::Constant, index);
         self.emit_call_import("i32_to_i64", 1);
         let _ = index;
     }
 
     fn emit_const_bool(&mut self, value: bool) {
         let index = self.constants.len() as i32 + self.constants_base;
-        self.constants.push(NyarConstant::Boolean(value));
-        self.emit_imm1(NyarHeadCode::Constant, index);
+        self.constants.push(OdinConstant::Boolean(value));
+        self.emit_imm1(OdinHeadCode::Constant, index);
     }
 }

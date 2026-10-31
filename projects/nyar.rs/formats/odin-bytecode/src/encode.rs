@@ -2,48 +2,48 @@
 
 use crate::{
     model::{
-        NyarConstant, NyarExport, NyarFunction, NyarGlobal, NyarImport, NyarLayout, NyarModuleData, NyarSectionKind, NyarWitnessDispatchEntry,
+        OdinConstant, OdinExport, OdinFunction, OdinGlobal, OdinImport, OdinLayout, OdinModuleData, OdinSectionKind, OdinWitnessDispatchEntry,
     },
-    opcode::{HEADER_SIZE, NYAR_MAGIC, SECTION_HEADER_SIZE},
+    opcode::{HEADER_SIZE, ODIN_MAGIC, SECTION_HEADER_SIZE},
 };
 
 /// Encode a minimal `.nyar` module.
-pub fn encode_module(data: &NyarModuleData) -> Vec<u8> {
-    let mut sections: Vec<(NyarSectionKind, Vec<u8>)> = Vec::new();
+pub fn encode_module(data: &OdinModuleData) -> Vec<u8> {
+    let mut sections: Vec<(OdinSectionKind, Vec<u8>)> = Vec::new();
 
     if !data.constants.is_empty() {
-        sections.push((NyarSectionKind::Constants, encode_constants(&data.constants)));
+        sections.push((OdinSectionKind::Constants, encode_constants(&data.constants)));
     }
     if !data.functions.is_empty() {
-        sections.push((NyarSectionKind::Functions, encode_functions(&data.functions)));
+        sections.push((OdinSectionKind::Functions, encode_functions(&data.functions)));
     }
     if !data.imports.is_empty() {
-        sections.push((NyarSectionKind::Imports, encode_imports(&data.imports)));
+        sections.push((OdinSectionKind::Imports, encode_imports(&data.imports)));
     }
     if !data.exports.is_empty() {
-        sections.push((NyarSectionKind::Exports, encode_exports(&data.exports)));
+        sections.push((OdinSectionKind::Exports, encode_exports(&data.exports)));
     }
     if !data.witness_entries.is_empty() {
-        sections.push((NyarSectionKind::WitnessEntries, encode_witness_entries(&data.witness_entries)));
+        sections.push((OdinSectionKind::WitnessEntries, encode_witness_entries(&data.witness_entries)));
     }
     if !data.globals.is_empty() {
-        sections.push((NyarSectionKind::Globals, encode_globals(&data.globals)));
+        sections.push((OdinSectionKind::Globals, encode_globals(&data.globals)));
     }
     if !data.init_function_indices.is_empty() {
-        sections.push((NyarSectionKind::InitFunctions, encode_init_functions(&data.init_function_indices)));
+        sections.push((OdinSectionKind::InitFunctions, encode_init_functions(&data.init_function_indices)));
     }
     if !data.layouts.is_empty() {
-        sections.push((NyarSectionKind::Layouts, encode_layouts(&data.layouts)));
+        sections.push((OdinSectionKind::Layouts, encode_layouts(&data.layouts)));
     }
     if !data.code_bytes.is_empty() {
-        sections.push((NyarSectionKind::Code, data.code_bytes.clone()));
+        sections.push((OdinSectionKind::Code, data.code_bytes.clone()));
     }
 
     let name_bytes = data.name.as_bytes();
     let data_start = HEADER_SIZE + sections.len() * SECTION_HEADER_SIZE + 4 + name_bytes.len();
     let mut out = Vec::with_capacity(data_start + sections.iter().map(|(_, d)| d.len()).sum::<usize>());
 
-    out.extend_from_slice(&NYAR_MAGIC.to_be_bytes());
+    out.extend_from_slice(&ODIN_MAGIC.to_be_bytes());
     out.extend_from_slice(&data.version.to_le_bytes());
     out.extend_from_slice(&(sections.len() as i32).to_le_bytes());
     out.extend_from_slice(&(HEADER_SIZE as i32 + sections.len() as i32 * SECTION_HEADER_SIZE as i32).to_le_bytes());
@@ -66,33 +66,33 @@ pub fn encode_module(data: &NyarModuleData) -> Vec<u8> {
     out
 }
 
-fn encode_constants(constants: &[NyarConstant]) -> Vec<u8> {
+fn encode_constants(constants: &[OdinConstant]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&(constants.len() as i32).to_le_bytes());
     for constant in constants {
         match constant {
-            NyarConstant::Null => {
+            OdinConstant::Null => {
                 out.push(0x00);
             }
-            NyarConstant::Boolean(value) => {
+            OdinConstant::Boolean(value) => {
                 out.push(0x01);
                 out.push(u8::from(*value));
             }
-            NyarConstant::Integer32(value) => {
+            OdinConstant::Integer32(value) => {
                 out.push(0x11);
                 out.extend_from_slice(&value.to_le_bytes());
             }
-            NyarConstant::Float64(value) => {
+            OdinConstant::Float64(value) => {
                 out.push(0x22);
                 out.extend_from_slice(&value.to_le_bytes());
             }
-            NyarConstant::String(value) => {
+            OdinConstant::String(value) => {
                 out.push(0x05);
                 let bytes = value.as_bytes();
                 out.extend_from_slice(&(bytes.len() as i32).to_le_bytes());
                 out.extend_from_slice(bytes);
             }
-            NyarConstant::BigInt(value) => {
+            OdinConstant::BigInt(value) => {
                 out.push(0x06);
                 out.extend_from_slice(&(value.len() as i32).to_le_bytes());
                 out.extend_from_slice(value);
@@ -102,7 +102,7 @@ fn encode_constants(constants: &[NyarConstant]) -> Vec<u8> {
     out
 }
 
-fn encode_functions(functions: &[NyarFunction]) -> Vec<u8> {
+fn encode_functions(functions: &[OdinFunction]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&(functions.len() as i32).to_le_bytes());
     for function in functions {
@@ -115,7 +115,7 @@ fn encode_functions(functions: &[NyarFunction]) -> Vec<u8> {
     out
 }
 
-fn encode_imports(imports: &[NyarImport]) -> Vec<u8> {
+fn encode_imports(imports: &[OdinImport]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&(imports.len() as i32).to_le_bytes());
     for import in imports {
@@ -126,7 +126,7 @@ fn encode_imports(imports: &[NyarImport]) -> Vec<u8> {
     out
 }
 
-fn encode_exports(exports: &[NyarExport]) -> Vec<u8> {
+fn encode_exports(exports: &[OdinExport]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&(exports.len() as i32).to_le_bytes());
     for export in exports {
@@ -137,7 +137,7 @@ fn encode_exports(exports: &[NyarExport]) -> Vec<u8> {
     out
 }
 
-fn encode_witness_entries(entries: &[NyarWitnessDispatchEntry]) -> Vec<u8> {
+fn encode_witness_entries(entries: &[OdinWitnessDispatchEntry]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&(entries.len() as i32).to_le_bytes());
     for entry in entries {
@@ -151,7 +151,7 @@ fn encode_witness_entries(entries: &[NyarWitnessDispatchEntry]) -> Vec<u8> {
     out
 }
 
-fn encode_globals(globals: &[NyarGlobal]) -> Vec<u8> {
+fn encode_globals(globals: &[OdinGlobal]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&(globals.len() as i32).to_le_bytes());
     for global in globals {
@@ -170,7 +170,7 @@ fn encode_init_functions(indices: &[i32]) -> Vec<u8> {
     out
 }
 
-fn encode_layouts(layouts: &[NyarLayout]) -> Vec<u8> {
+fn encode_layouts(layouts: &[OdinLayout]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&(layouts.len() as i32).to_le_bytes());
     for layout in layouts {

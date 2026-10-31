@@ -1,7 +1,7 @@
 //! 对外 VM 入口：加载模块、调用导出函数与管理执行器生命周期。
 
 use crate::{
-    error::NyarRuntimeError,
+    error::OdinRuntimeError,
     executor::{Executor, validate_argument_count},
     jit::{JitCompiledArtifact, JitCompiler, JitError},
     module::{LoadedModule, ModuleGlobals},
@@ -22,12 +22,12 @@ impl OdinVm {
     }
 
     /// Loads a `.nyar` module from bytes.
-    pub fn load(&self, bytes: &[u8]) -> Result<LoadedModule, NyarRuntimeError> {
+    pub fn load(&self, bytes: &[u8]) -> Result<LoadedModule, OdinRuntimeError> {
         LoadedModule::from_bytes(bytes)
     }
 
     /// Runs an exported function with arguments.
-    pub fn run(&mut self, module: &LoadedModule, entry: &str, args: Vec<Value>) -> Result<Value, NyarRuntimeError> {
+    pub fn run(&mut self, module: &LoadedModule, entry: &str, args: Vec<Value>) -> Result<Value, OdinRuntimeError> {
         let mut globals = ModuleGlobals::new(module);
         self.run_with_globals(module, &mut globals, entry, args)
     }
@@ -39,9 +39,9 @@ impl OdinVm {
         globals: &mut ModuleGlobals,
         entry: &str,
         args: Vec<Value>,
-    ) -> Result<Value, NyarRuntimeError> {
-        let function_index = module.export_index(entry).ok_or_else(|| NyarRuntimeError::EntryNotFound(entry.to_string()))?;
-        let function = module.functions.get(function_index).ok_or(NyarRuntimeError::FunctionIndexOutOfRange(function_index as i32))?;
+    ) -> Result<Value, OdinRuntimeError> {
+        let function_index = module.export_index(entry).ok_or_else(|| OdinRuntimeError::EntryNotFound(entry.to_string()))?;
+        let function = module.functions.get(function_index).ok_or(OdinRuntimeError::FunctionIndexOutOfRange(function_index as i32))?;
         validate_argument_count(function, args.len())?;
         if !globals.init_done() {
             for &init_index in &module.init_function_indices {
@@ -101,7 +101,7 @@ impl OdinVm {
         restored: &[crate::jit::RestoredInterpreterFrame],
         stack_base: usize,
         roots: Option<&nyar_gc::HostRoots>,
-    ) -> Result<(), NyarRuntimeError> {
+    ) -> Result<(), OdinRuntimeError> {
         self.executor.install_deopt_frames(restored, stack_base, roots)
     }
 

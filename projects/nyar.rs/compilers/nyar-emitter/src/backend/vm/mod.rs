@@ -3,10 +3,10 @@
 use std::{fs, path::Path};
 
 use crate::{EmitterError, Result};
-use odin_bytecode::{NyarModuleData, encode_module};
+use odin_bytecode::{OdinModuleData, encode_module};
 
-/// Encode [`NyarModuleData`] and write it to `output_path`.
-pub fn emit_nyar_module(module: &NyarModuleData, output_path: &Path) -> Result<()> {
+/// Encode [`OdinModuleData`] and write it to `output_path`.
+pub fn emit_nyar_module(module: &OdinModuleData, output_path: &Path) -> Result<()> {
     let bytes = encode_module(module);
 
     if let Some(parent) = output_path.parent() {

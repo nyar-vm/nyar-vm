@@ -20,7 +20,7 @@ pub fn compile_request(module: &LoadedModule, function_index: usize) -> Result<J
         .constants
         .iter()
         .map(|constant| match constant {
-            odin_bytecode::NyarConstant::Integer32(value) => Some(*value),
+            odin_bytecode::OdinConstant::Integer32(value) => Some(*value),
             _ => None,
         })
         .collect();

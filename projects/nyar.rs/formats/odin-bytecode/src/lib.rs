@@ -21,14 +21,16 @@ mod errors;
 mod model;
 mod opcode;
 
-pub use decode::decode_module;
-pub use encode::encode_module;
-pub use errors::NyarDecodeError;
-pub use model::{
-    NyarConstant, NyarConstantKind, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarImport, NyarImportKind, NyarLayout,
-    NyarModuleData, NyarSectionKind, NyarWitnessDispatchEntry,
-};
-pub use opcode::{
-    BYTECODE_FORMAT_VERSION, HEADER_SIZE, IntrinsicOpcode, NYAR_MAGIC, NYAR_VERSION, NyarHeadCode, NyarInstruction, NyarInstructionForm,
-    OBSOLETE_CALL_NATIVE, SECTION_HEADER_SIZE, decode_at, emit_imm1, emit_imm2, emit_plain,
+pub use crate::{
+    decode::decode_module,
+    encode::encode_module,
+    errors::OdinDecodeError,
+    model::{
+        OdinConstant, OdinConstantKind, OdinExport, OdinExportKind, OdinFunction, OdinGlobal, OdinImport, OdinImportKind, OdinLayout,
+        OdinModuleData, OdinSectionKind, OdinWitnessDispatchEntry,
+    },
+    opcode::{
+        BYTECODE_FORMAT_VERSION, HEADER_SIZE, IntrinsicOpcode, OBSOLETE_CALL_NATIVE, ODIN_MAGIC, Odin_VERSION, OdinHeadCode, OdinInstruction,
+        OdinInstructionForm, SECTION_HEADER_SIZE, decode_at, emit_imm1, emit_imm2, emit_plain,
+    },
 };

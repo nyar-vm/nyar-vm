@@ -1,6 +1,6 @@
 use nyar_gc::{ObjectHeap, Value};
 use odin_vm::{
-    error::NyarRuntimeError,
+    error::OdinRuntimeError,
     json_bridge::{materialize_value_from_json, parse_call_args_json, value_from_json, value_to_json_with_heap},
 };
 
@@ -24,11 +24,11 @@ fn structured_json_requires_export_contract() {
 #[test]
 fn json_object_requires_export_contract() {
     let result = value_from_json(&serde_json::json!({"value": 1}));
-    assert!(matches!(result, Err(NyarRuntimeError::TypeMismatch { .. })));
+    assert!(matches!(result, Err(OdinRuntimeError::TypeMismatch { .. })));
 }
 
 #[test]
 fn json_array_requires_heap() {
     let result = value_from_json(&serde_json::json!([1, 2]));
-    assert!(matches!(result, Err(NyarRuntimeError::TypeMismatch { .. })));
+    assert!(matches!(result, Err(OdinRuntimeError::TypeMismatch { .. })));
 }

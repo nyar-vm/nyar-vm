@@ -1,8 +1,8 @@
 //! 宿主导入能力：加载期把符号解析为 [`HostOp`]，热路径只按枚举分派。
 
-use crate::error::NyarRuntimeError;
+use crate::error::OdinRuntimeError;
 use nyar_gc::ObjectHeap;
-use odin_bytecode::NyarImport;
+use odin_bytecode::OdinImport;
 
 use crate::value::Value;
 
@@ -70,10 +70,10 @@ pub enum ResolvedImport {
 }
 
 /// 将导入表项解析为 [`ResolvedImport`]（仅加载 / verify 期调用）。
-pub fn resolve_import(import: &NyarImport) -> Result<ResolvedImport, NyarRuntimeError> {
+pub fn resolve_import(import: &OdinImport) -> Result<ResolvedImport, OdinRuntimeError> {
     if import.module_name == HOST_IMPORT_MODULE {
         let op = parse_host_op(&import.symbol_name)
-            .ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("unknown host import `{HOST_IMPORT_MODULE}::{}`", import.symbol_name)))?;
+            .ok_or_else(|| OdinRuntimeError::ModuleLoad(format!("unknown host import `{HOST_IMPORT_MODULE}::{}`", import.symbol_name)))?;
         Ok(ResolvedImport::Host(op))
     }
     else {
@@ -111,7 +111,7 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
 }
 
 /// 执行已解析的宿主操作（热路径无符号字符串）。
-pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Result<Value, NyarRuntimeError> {
+pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Result<Value, OdinRuntimeError> {
     match op {
         HostOp::Print => {
             let text = args.iter().map(value_display).collect::<Vec<_>>().join("\t");
@@ -136,20 +136,20 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             let phase = match args.first() {
                 Some(Value::String(name)) if !name.is_empty() => name.clone(),
                 Some(other) => {
-                    return Err(NyarRuntimeError::TypeMismatch {
+                    return Err(OdinRuntimeError::TypeMismatch {
                         expected: "non-empty string phase name",
                         actual: other.type_name().to_string(),
                     });
                 }
                 None => {
-                    return Err(NyarRuntimeError::UnsupportedFeature("begin_phase requires a phase name string argument".into()));
+                    return Err(OdinRuntimeError::UnsupportedFeature("begin_phase requires a phase name string argument".into()));
                 }
             };
             let pause_budget_ms = match args.get(1) {
                 Some(Value::I32(value)) if *value >= 0 => Some(*value as u32),
                 Some(Value::I64(value)) if *value >= 0 && *value <= u32::MAX as i64 => Some(*value as u32),
                 Some(other) => {
-                    return Err(NyarRuntimeError::TypeMismatch {
+                    return Err(OdinRuntimeError::TypeMismatch {
                         expected: "non-negative i32 pause_budget_ms",
                         actual: other.type_name().to_string(),
                     });
@@ -159,31 +159,31 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             let mut intent = nyar_gc::WorkloadIntent::empty(nyar_gc::IntentSource::PhaseEvent);
             intent.phase = Some(phase);
             intent.pause_budget_ms = pause_budget_ms;
-            heap.begin_phase(intent).map_err(|error| NyarRuntimeError::ModuleLoad(error.to_string()))?;
+            heap.begin_phase(intent).map_err(|error| OdinRuntimeError::ModuleLoad(error.to_string()))?;
             Ok(Value::Null)
         }
         HostOp::EndPhase => {
             let phase = match args.first() {
                 Some(Value::String(name)) => Some(name.as_str()),
                 Some(other) => {
-                    return Err(NyarRuntimeError::TypeMismatch { expected: "string phase name", actual: other.type_name().to_string() });
+                    return Err(OdinRuntimeError::TypeMismatch { expected: "string phase name", actual: other.type_name().to_string() });
                 }
                 None => None,
             };
-            heap.end_phase(phase).map_err(|error| NyarRuntimeError::ModuleLoad(error.to_string()))?;
+            heap.end_phase(phase).map_err(|error| OdinRuntimeError::ModuleLoad(error.to_string()))?;
             Ok(Value::Null)
         }
         HostOp::I32ToI64 => match args.first() {
             Some(Value::I32(value)) => Ok(Value::I64(*value as i64)),
             Some(Value::I64(value)) => Ok(Value::I64(*value)),
-            Some(other) => Err(NyarRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
+            Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
             None => Ok(Value::I64(0)),
         },
         HostOp::I32Div => {
             let lhs = i32_arg(args, 0)?;
             let rhs = i32_arg(args, 1)?;
             if rhs == 0 {
-                return Err(NyarRuntimeError::DivisionByZero { operation: "host i32_div" });
+                return Err(OdinRuntimeError::DivisionByZero { operation: "host i32_div" });
             }
             Ok(Value::I32(lhs / rhs))
         }
@@ -194,7 +194,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             let lhs = i64_arg(args, 0)?;
             let rhs = i64_arg(args, 1)?;
             if rhs == 0 {
-                return Err(NyarRuntimeError::DivisionByZero { operation: "host i64_div" });
+                return Err(OdinRuntimeError::DivisionByZero { operation: "host i64_div" });
             }
             Ok(Value::I64(lhs / rhs))
         }
@@ -202,7 +202,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             let lhs = i64_arg(args, 0)?;
             let rhs = i64_arg(args, 1)?;
             if rhs == 0 {
-                return Err(NyarRuntimeError::DivisionByZero { operation: "host i64_rem" });
+                return Err(OdinRuntimeError::DivisionByZero { operation: "host i64_rem" });
             }
             Ok(Value::I64(lhs % rhs))
         }
@@ -244,20 +244,20 @@ fn value_display(value: &Value) -> String {
     }
 }
 
-fn i64_arg(args: &[Value], index: usize) -> Result<i64, NyarRuntimeError> {
+fn i64_arg(args: &[Value], index: usize) -> Result<i64, OdinRuntimeError> {
     match args.get(index) {
         Some(Value::I64(value)) => Ok(*value),
         Some(Value::I32(value)) => Ok(*value as i64),
-        Some(other) => Err(NyarRuntimeError::TypeMismatch { expected: "i64", actual: other.type_name().to_string() }),
+        Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i64", actual: other.type_name().to_string() }),
         None => Ok(0),
     }
 }
 
-fn i32_arg(args: &[Value], index: usize) -> Result<i32, NyarRuntimeError> {
+fn i32_arg(args: &[Value], index: usize) -> Result<i32, OdinRuntimeError> {
     match args.get(index) {
         Some(Value::I32(value)) => Ok(*value),
         Some(Value::I64(value)) => Ok(*value as i32),
-        Some(other) => Err(NyarRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
+        Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
         None => Ok(0),
     }
 }
