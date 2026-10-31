@@ -6,6 +6,7 @@
 mod backend_contract_interop_tests;
 #[cfg(false)] // 旧 builder bundle 合同，待按 emitter pipeline 适配
 mod compile_pipeline_backend_bundle_tests;
+mod canonical_function_reference_tests;
 mod compile_pipeline_canonical_tests;
 #[cfg(false)] // 旧 driver 入口已移除
 mod compile_pipeline_driver_tests;

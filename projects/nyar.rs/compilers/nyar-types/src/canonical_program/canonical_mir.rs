@@ -79,6 +79,15 @@ pub enum CanonicalOperation {
         /// 已类型化的常量载荷。
         constant: CanonicalConstant,
     },
+    /// 载入具名函数的实例身份作为一等值。
+    ///
+    /// 实例由 HIR 单态化固定点铸造并经 MIR `LoadFunctionRef` 携带；canonical 只保留
+    /// 身份，不重新铸造、不按短名回查。结果 SSA 值的 `TypeId` 必须是冻结签名的
+    /// `Function` 类型 kind。
+    LoadFunctionRef {
+        /// 已冻结的 callable 实例身份。
+        instance: ItemInstanceId,
+    },
     /// 构造已解析的 sum variant。
     SumNew {
         /// 目标 sum 的名义实例。
