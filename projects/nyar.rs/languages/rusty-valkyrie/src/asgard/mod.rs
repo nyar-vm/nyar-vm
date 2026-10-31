@@ -8,10 +8,8 @@ pub mod compile;
 pub mod config;
 pub mod config_discovery;
 pub mod config_model;
-pub mod debug_sidecar;
 pub mod delivery;
 pub mod deploy;
-pub mod dev_server;
 pub mod error;
 pub mod host;
 pub mod host_backend;
@@ -31,7 +29,6 @@ pub use compile::HostArtifactKind;
 pub use delivery::{PackOptions, PackReport, PackTarget, pack_voa_delivery};
 pub use deploy::{DeployPlan, DeployProfile, list_deploy_profiles, print_deploy_plan};
 pub use host::HostPlatform;
-pub use pipeline::{CompileOptions, CompileReport, IslandKind, awsl_island_kind, compile_voa_project};
 pub use publish::{PublishReport, PublishTarget, publish_voa};
 pub use report_build::{asgard_boot_head_tags, asgard_start_snippet, emit_report_chart_islands};
 pub use ssg::{

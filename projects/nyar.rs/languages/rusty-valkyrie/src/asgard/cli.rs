@@ -1,23 +1,17 @@
 //! `asgard` CLI：`asgard build` / `asgard dev` / `asgard pack`。
-use crate::{
-    asgard::error::{AsgardError, AsgardResult},
-    legion::CanonicalTarget,
-};
+use crate::asgard::error::{AsgardError, AsgardResult};
 use nyar_format::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
 use std::{path::PathBuf, process::ExitCode};
 
 use crate::asgard::{
-    CompileOptions, HostArtifactKind, HostPlatform, PackOptions, PackTarget, compile_voa_project,
-    config::VoaConfig,
-    dev_server::{DevServerOptions, generate_hmr_client_script, run_dev_server},
-    pack_voa_delivery,
+    PackOptions, PackTarget, pack_voa_delivery,
     static_site::{StaticSiteOptions, build_static_site},
 };
 
 /// `asgard build` 的交付方式。
 #[derive(Debug, Clone, Default)]
 pub enum AsgardDelivery {
-    /// 完整应用构建（默认）：走 `compile_voa_project` 全管线。
+    /// 完整应用构建（默认）：配置求值（C0/C2）未闭合，当前为失败闭合诊断。
     #[default]
     App,
     /// 静态站点交付：显式 AWSL 根组件入口，渲染带样式的 `index.html`，不进入应用管线。
@@ -169,9 +163,9 @@ pub struct AsgardPlanArgs {
 /// `asgard` 子命令。
 #[derive(Debug)]
 pub enum AsgardCommands {
-    /// 构建 Asgard 项目（Release / 配置中的 `build.mode`）。
+    /// 构建 Asgard 项目；`App` 交付等待配置求值接入（失败闭合诊断），`Static` 交付已可用。
     Build(AsgardBuildArgs),
-    /// 开发模式构建（含 HMR 开发服务器，browser 平台）。
+    /// 开发模式（含 HMR 开发服务器）：配置求值未闭合，当前为失败闭合诊断。
     Dev(AsgardBuildArgs),
     /// 按交付目标组装交付物（apk / ipa / mini-program / mini-game）。
     Pack(AsgardPackArgs),
@@ -183,42 +177,14 @@ pub enum AsgardCommands {
     Fmt(AsgardFmtArgs),
 }
 
-fn compile_with_args(args: &AsgardBuildArgs) -> AsgardResult<crate::asgard::CompileReport> {
-    let target = match &args.target {
-        Some(value) => Some(CanonicalTarget::parse(value).map_err(|error| AsgardError::msg(report!("{error}")))?),
-        None => None,
-    };
-    compile_voa_project(&CompileOptions { project_dir: args.project_dir.clone(), output_dir: args.output_dir.clone(), target })
-}
-
-fn print_build_report(report: &crate::asgard::CompileReport, label: &str) {
-    println!("{label} complete");
-    println!("output: {}", report.output_dir.display());
-    println!("components: {}", report.component_count);
-    println!("js files: {}", report.js_file_count);
-    println!("wasm: {}", if report.wasm_built { "yes" } else { "no" });
-    if report.host_logic_built {
-        let kind = report
-            .host_artifact_kind
-            .map(|k| match k {
-                HostArtifactKind::Wasm => "wasm",
-                HostArtifactKind::JvmClass => "jvm-class",
-                HostArtifactKind::NativeExecutable => "native-exe",
-            })
-            .unwrap_or("unknown");
-        println!("host logic: yes ({kind})");
-    }
-    else if !matches!(report.platform, HostPlatform::Browser) {
-        println!("host logic: no");
-    }
-}
-
 /// 执行 `asgard build`。
 pub fn run_build(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
     match &args.delivery {
         AsgardDelivery::App => {
-            let report = compile_with_args(args)?;
-            print_build_report(&report, "asgard build");
+            return Err(AsgardError::msg(report!(
+                "asgard build (app): 配置求值（C0/C2）未闭合，应用管线不再读取或解析 `asgard.config.v`；首轮只交付 `build --static` 显式入口，App 构建等待配置求值接入（项目：{}）",
+                args.project_dir.display()
+            )));
         }
         AsgardDelivery::Static { entry, title } => {
             let report = build_static_site(&StaticSiteOptions {
@@ -238,82 +204,10 @@ pub fn run_build(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
 
 /// 执行 `asgard dev`。
 pub fn run_dev(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
-    let config = VoaConfig::load(&args.project_dir)?;
-    let report = compile_with_args(args)?;
-    print_build_report(&report, "asgard dev");
-
-    if !matches!(report.platform, HostPlatform::Browser) {
-        println!("hint: 原生平台请使用 `asgard dev --watch` 模式：监视源码并重建 dist");
-        if config.hot_reload.enabled {
-            let server = DevServerOptions {
-                project_dir: args.project_dir.clone(),
-                dist_dir: report.output_dir.clone(),
-                host: "127.0.0.1".into(),
-                port: config.hot_reload.port,
-                watch_dirs: config.hot_reload.watch.iter().map(|s| s.trim_end_matches('/').to_string()).collect(),
-                ignore_dirs: config.hot_reload.ignore.clone(),
-                debounce_ms: config.hot_reload.debounce,
-            };
-            let compile = CompileOptions {
-                project_dir: args.project_dir.clone(),
-                output_dir: Some(report.output_dir.clone()),
-                target: match &args.target {
-                    Some(value) => Some(CanonicalTarget::parse(value).map_err(|error| AsgardError::msg(report!("{error}")))?),
-                    None => None,
-                },
-            };
-            println!("hint: 重建后请重新安装 APK/IPA 或运行 dist/{{platform}}/ 可执行文件");
-            run_dev_server(&server, &compile)?;
-        }
-        return Ok(ExitCode::SUCCESS);
-    }
-
-    if config.hot_reload.enabled {
-        inject_hmr_client(&report.output_dir)?;
-        let server = DevServerOptions {
-            project_dir: args.project_dir.clone(),
-            dist_dir: report.output_dir.clone(),
-            host: "127.0.0.1".into(),
-            port: config.hot_reload.port,
-            watch_dirs: config.hot_reload.watch.iter().map(|s| s.trim_end_matches('/').to_string()).collect(),
-            ignore_dirs: config.hot_reload.ignore.clone(),
-            debounce_ms: config.hot_reload.debounce,
-        };
-        let compile = CompileOptions {
-            project_dir: args.project_dir.clone(),
-            output_dir: Some(report.output_dir.clone()),
-            target: match &args.target {
-                Some(value) => Some(CanonicalTarget::parse(value).map_err(|error| AsgardError::msg(report!("{error}")))?),
-                None => None,
-            },
-        };
-        run_dev_server(&server, &compile)?;
-    }
-    else {
-        println!("hint: hot_reload.enabled=false；在 dist 目录启动静态服务器预览");
-    }
-    Ok(ExitCode::SUCCESS)
-}
-
-fn inject_hmr_client(dist_dir: &std::path::Path) -> AsgardResult<()> {
-    use std::fs;
-    let index_path = dist_dir.join("index.html");
-    if !index_path.exists() {
-        return Ok(());
-    }
-    let mut html = fs::read_to_string(&index_path)?;
-    let script = generate_hmr_client_script();
-    let tag = format!("<script>{script}</script>");
-    if !html.contains("/__asgard/hmr") {
-        if html.contains("</body>") {
-            html = html.replace("</body>", &format!("{tag}</body>"));
-        }
-        else {
-            html.push_str(&tag);
-        }
-        fs::write(&index_path, html)?;
-    }
-    Ok(())
+    Err(AsgardError::msg(report!(
+        "asgard dev: 配置求值（C0/C2）未闭合，首轮只交付 `build --static` 显式入口；dev 等待配置求值接入（项目：{}）",
+        args.project_dir.display()
+    )))
 }
 
 /// 执行 `asgard pack`。
