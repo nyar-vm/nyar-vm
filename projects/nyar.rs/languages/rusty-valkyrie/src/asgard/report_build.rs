@@ -65,7 +65,15 @@ pub fn emit_report_chart_islands(
     let awsl_v = build_awsl_wasm_source(&components);
     let resolved = resolve_project_source_groups(project_dir, &CanonicalTarget::browser())?;
     let generated = GeneratedSource { producer: "asgard.awsl.report-island", source: &awsl_v };
-    let wasm_built = match compile_wasm_bundle(&resolved.groups, generated, output_dir, module_stem, &CanonicalTarget::browser()) {
+    // 报告图表岛走非入口执行路径：岛包源码组只作为依赖，入口身份唯一来自生成组的显式 `[export]`。
+    let wasm_built = match compile_wasm_bundle(
+        &resolved.groups,
+        generated,
+        output_dir,
+        module_stem,
+        &CanonicalTarget::browser(),
+        crate::asgard::compile::GeneratedEntrySurface::GeneratedOnly,
+    ) {
         Ok(report) => {
             copy_wasm_artifacts_to_dist(output_dir, &report)
                 .map_err(|e| AsgardError::msg(format!("{e}: {}", "报告图表岛 WASM 产物复制失败")))?;

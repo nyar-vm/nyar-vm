@@ -114,9 +114,15 @@ pub fn compile_voa_project(options: &CompileOptions) -> AsgardResult<CompileRepo
             HostBackend::WechatMiniProgram => ("asgard.awsl.wechat-miniprogram", build_awsl_mp_source(&components)),
             _ => ("asgard.awsl.browser-dom", build_awsl_wasm_source(&components)),
         };
-        let report =
-            compile_wasm_bundle(&resolved.groups, GeneratedSource { producer, source: &generated_source }, &output_dir, &module_name, &target)
-                .map_err(|error| AsgardError::msg(format!("WASM 编译失败 (platform={}): {error}", config.platform)))?;
+        let report = compile_wasm_bundle(
+            &resolved.groups,
+            GeneratedSource { producer, source: &generated_source },
+            &output_dir,
+            &module_name,
+            &target,
+            crate::asgard::compile::GeneratedEntrySurface::SharedWithProject,
+        )
+        .map_err(|error| AsgardError::msg(format!("WASM 编译失败 (platform={}): {error}", config.platform)))?;
         copy_wasm_artifacts_to_dist(&output_dir, &report)?;
         true
     }
@@ -366,15 +372,22 @@ fn compile_host_logic(
         HostBackend::IosSwiftUi => ("asgard.awsl.ios-swiftui", build_awsl_host_source(components)),
         _ => ("asgard.awsl.desktop-native", build_awsl_host_source(components)),
     };
-    let report =
-        compile_v_bundle(&resolved.groups, GeneratedSource { producer, source: &generated_source }, &scratch, module_name, &target, backend)
-            .map_err(|error| {
-                AsgardError::msg(format!(
-                    "宿主编译失败: platform={}, target={}, backend={}. \
+    let report = compile_v_bundle(
+        &resolved.groups,
+        GeneratedSource { producer, source: &generated_source },
+        &scratch,
+        module_name,
+        &target,
+        backend,
+        crate::asgard::compile::GeneratedEntrySurface::SharedWithProject,
+    )
+    .map_err(|error| {
+        AsgardError::msg(format!(
+            "宿主编译失败: platform={}, target={}, backend={}. \
              请检查 asgard.config.v target 与 legion.von 对齐，并确认 legion 后端可用。: {error}",
-                    config.platform, target_str, backend_name
-                ))
-            })?;
+            config.platform, target_str, backend_name
+        ))
+    })?;
     validate_host_logic_bytes(&report.artifact_bytes, &config.platform, &backend_name, &target_str, report.kind)?;
     Ok((report.artifact_bytes, report.kind, generated_source))
 }

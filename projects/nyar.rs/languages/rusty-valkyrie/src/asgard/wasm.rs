@@ -7,7 +7,7 @@ use nyar_types::compiler_input::CompilerSourceGroup;
 use std::path::Path;
 
 use crate::asgard::{
-    compile::{GeneratedSource, HostArtifactKind, compile_v_bundle},
+    compile::{GeneratedEntrySurface, GeneratedSource, HostArtifactKind, compile_v_bundle},
     host_backend::HostBackend,
 };
 
@@ -27,8 +27,9 @@ pub fn compile_wasm_bundle(
     output_dir: &Path,
     module_name: &str,
     target: &CanonicalTarget,
+    surface: GeneratedEntrySurface,
 ) -> AsgardResult<WasmCompileReport> {
-    let report = compile_v_bundle(source_groups, generated, output_dir, module_name, target, HostBackend::BrowserDom)?;
+    let report = compile_v_bundle(source_groups, generated, output_dir, module_name, target, HostBackend::BrowserDom, surface)?;
     if report.kind != HostArtifactKind::Wasm {
         return Err(AsgardError::msg(report!("预期 WASM 制品")));
     }

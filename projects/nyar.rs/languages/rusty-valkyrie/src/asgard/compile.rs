@@ -83,24 +83,47 @@ pub struct GeneratedSource<'a> {
     pub source: &'a str,
 }
 
+/// 生成源码组的入口面来源。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GeneratedEntrySurface {
+    /// 应用构建：项目源码组保留入口身份，与生成组共同提供入口 seed。
+    SharedWithProject,
+    /// 报告图表岛构建：岛包源码组降级为纯依赖，可执行面只来自生成组的显式 `[export]`。
+    ///
+    /// 图表岛包（如 `legion.report`）是被报告生成器消费的库：它的可执行面完全由
+    /// Asgard 从 AWSL 降低产生的组件 glue 承担，入口身份来自生成组内的显式声明，
+    /// 不要求也不伪造岛包自身的入口。
+    GeneratedOnly,
+}
+
 /// 把应用源码组与生成源码组合成 Compiler 的完整输入。
 ///
 /// 生成组显式入口，并只依赖本工程的入口组：生成代码可以看到应用源码的声明，
 /// 但不会获得依赖包的额外可见性。
-fn compiler_input_for(source_groups: &[CompilerSourceGroup], generated: GeneratedSource<'_>) -> AsgardResult<CompilerSourceInput> {
-    let entry_keys = source_groups.iter().filter(|group| group.is_entry).map(|group| group.dependency_key.clone()).collect::<Vec<_>>();
-    if entry_keys.is_empty() {
+fn compiler_input_for(
+    source_groups: &[CompilerSourceGroup],
+    generated: GeneratedSource<'_>,
+    surface: GeneratedEntrySurface,
+) -> AsgardResult<CompilerSourceInput> {
+    let project_keys = source_groups.iter().filter(|group| group.is_entry).map(|group| group.dependency_key.clone()).collect::<Vec<_>>();
+    if project_keys.is_empty() {
         return Err(AsgardError::msg(report!("源码快照缺少应用入口组，无法挂接生成源码")));
+    }
+    let mut groups = source_groups.to_vec();
+    if surface == GeneratedEntrySurface::GeneratedOnly {
+        for group in &mut groups {
+            group.is_entry = false;
+        }
     }
     let group = CompilerSourceGroup {
         dependency_key: "asgard.generated".into(),
         name: "asgard.generated".into(),
         sources: vec![CompilerSourceFile { path: "asgard/generated.v".into(), source: generated.source.into() }],
-        direct_dependencies: entry_keys,
+        direct_dependencies: project_keys,
         is_entry: true,
     };
     let generated = GeneratedSourceGroup { producer: generated.producer.into(), group };
-    Ok(CompilerSourceInput { groups: source_groups.to_vec(), generated: vec![generated] })
+    Ok(CompilerSourceInput { groups, generated: vec![generated] })
 }
 
 /// 将已解析的源码组与独立生成源码编译为宿主制品。
@@ -111,6 +134,7 @@ pub fn compile_v_bundle(
     module_name: &str,
     target: &CanonicalTarget,
     backend: HostBackend,
+    surface: GeneratedEntrySurface,
 ) -> AsgardResult<HostCompileReport> {
     let compiler = crate::compiler::hir::lowering::ValkyrieCompiler::default();
     let target_profile = target.to_profile(None);
@@ -121,7 +145,7 @@ pub fn compile_v_bundle(
         nyar::ClrSuspendStrategy::default(),
         nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     );
-    let input = compiler_input_for(source_groups, generated)?;
+    let input = compiler_input_for(source_groups, generated, surface)?;
     let artifact = compile_source_groups_to_artifacts(
         &compiler,
         &input,
