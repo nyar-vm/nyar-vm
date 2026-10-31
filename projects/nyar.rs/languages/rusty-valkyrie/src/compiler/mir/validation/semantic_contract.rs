@@ -416,6 +416,17 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                     }
                 }
             }
+            if let MirOperation::LoadFunctionRef { instance } = &instruction.kind {
+                // 函数作值只携带 HIR 冻结的实例身份：必须已登记在 Compiler identity 表，
+                // 缺失即结构化失败，禁止下游按短名回查。
+                if !module.contains_callable_instance(*instance) {
+                    return Err(error(
+                        "SMIR003",
+                        location.clone(),
+                        "function reference identity is absent from the Compiler identity table".to_string(),
+                    ));
+                }
+            }
             if let MirOperation::Call { callee, arguments } = &instruction.kind {
                 validate_static_call_resolution(module, function, &instruction.kind, location.clone())?;
                 // Callable 必须按 ItemInstanceId 取签名；禁止再按短名聚合多个实例后判歧义。
