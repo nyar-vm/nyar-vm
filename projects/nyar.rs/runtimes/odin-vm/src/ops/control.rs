@@ -103,8 +103,7 @@ pub fn execute_control(
             }
             args.reverse();
 
-            let intrinsic = IntrinsicOpcode::from_operand(intrinsic_index)
-                .map_err(|_| NyarRuntimeError::UnknownIntrinsic(intrinsic_index))?;
+            let intrinsic = IntrinsicOpcode::from_operand(intrinsic_index).map_err(|_| NyarRuntimeError::UnknownIntrinsic(intrinsic_index))?;
 
             let result = match intrinsic {
                 IntrinsicOpcode::ArrayPush => array_push(ctx.heap, args.first().unwrap_or(&Value::Null), args.get(1).unwrap_or(&Value::Null))?,

@@ -13,8 +13,7 @@ use super::{
         gc::WASM_GC_ANYREF,
         sections::{decode_uleb128, encode_uleb128},
     },
-    NominalInstanceId,
-    StorageKind,
+    NominalInstanceId, StorageKind,
     representation::{
         is_js_glue_host_string_type, mir_storage_for_type, wasm_gc_field_type_byte_for_glue, wasm_param_types, wasm_param_value_type,
         wasm_param_value_type_for,

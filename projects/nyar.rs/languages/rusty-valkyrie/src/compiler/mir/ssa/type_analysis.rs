@@ -79,8 +79,12 @@ pub fn type_identity_table(
             ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_unresolved_type_ref),
             ValkyrieType::Apply(base, args) => contains_unresolved_type_ref(base) || args.iter().any(contains_unresolved_type_ref),
             ValkyrieType::Array(e) | ValkyrieType::Nullable(e) => contains_unresolved_type_ref(e),
-            ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => items.iter().any(contains_unresolved_type_ref),
-            ValkyrieType::Function(f) => f.params.iter().any(|p| contains_unresolved_type_ref(p)) || contains_unresolved_type_ref(&f.return_type),
+            ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+                items.iter().any(contains_unresolved_type_ref)
+            }
+            ValkyrieType::Function(f) => {
+                f.params.iter().any(|p| contains_unresolved_type_ref(p)) || contains_unresolved_type_ref(&f.return_type)
+            }
             ValkyrieType::FixedArray { element, .. } => contains_unresolved_type_ref(element),
             ValkyrieType::Associated(a) => contains_unresolved_type_ref(&a.base) || a.type_arguments.iter().any(contains_unresolved_type_ref),
             _ => false,
@@ -142,22 +146,34 @@ pub fn type_identity_table(
     fn collect_instruction_types(set: &mut BTreeSet<ValkyrieType>, instruction: &MirInstruction) {
         match &instruction.kind {
             MirOperation::LoadConstant { ty, .. } => {
-                if let Some(ty) = ty { collect(set, ty, true); }
+                if let Some(ty) = ty {
+                    collect(set, ty, true);
+                }
             }
             MirOperation::Cast { ty, .. } => collect(set, ty, true),
             MirOperation::StoreVar { ty, .. } => {
-                if let Some(ty) = ty { collect(set, ty, true); }
+                if let Some(ty) = ty {
+                    collect(set, ty, true);
+                }
             }
             MirOperation::SumNew { type_args, payload_type, .. } => {
-                for ty in type_args { collect(set, ty, true); }
-                if let Some(ty) = payload_type { collect(set, ty, true); }
+                for ty in type_args {
+                    collect(set, ty, true);
+                }
+                if let Some(ty) = payload_type {
+                    collect(set, ty, true);
+                }
             }
             MirOperation::SumPayloadGet { type_args, payload_type, .. } => {
-                for ty in type_args { collect(set, ty, true); }
+                for ty in type_args {
+                    collect(set, ty, true);
+                }
                 collect(set, payload_type, true);
             }
             MirOperation::SumVariantIs { type_args, .. } => {
-                for ty in type_args { collect(set, ty, true); }
+                for ty in type_args {
+                    collect(set, ty, true);
+                }
             }
             MirOperation::ArrayNew { array_type, .. } => collect(set, array_type, true),
             MirOperation::ArrayFromElements { array_type, .. } => collect(set, array_type, true),

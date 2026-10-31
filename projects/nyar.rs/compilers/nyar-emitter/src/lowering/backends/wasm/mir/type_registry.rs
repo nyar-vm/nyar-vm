@@ -181,10 +181,7 @@ pub(super) fn register_gc_array_types(
 ///
 /// 每个 nominal identity 单独注册一个 type，使 `ref.cast` 能把「同一 nominal 的
 /// 构造与消费」闭合起来；不同 nominal 不会被结构相同而误认。
-pub(super) fn register_gc_sum_types(
-    ctx: &ExecutableLoweringContext,
-    type_indices: &mut Vec<Vec<u8>>,
-) -> BTreeMap<NominalInstanceId, u32> {
+pub(super) fn register_gc_sum_types(ctx: &ExecutableLoweringContext, type_indices: &mut Vec<Vec<u8>>) -> BTreeMap<NominalInstanceId, u32> {
     let sums = ctx.submission.backend_plan.sum_representations();
     let mut nominals = BTreeSet::new();
     let exec = &ctx.submission.backend_plan;

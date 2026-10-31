@@ -10,8 +10,10 @@
 
 use std::{fs, path::PathBuf};
 
-use rusty_valkyrie::asgard::config_model::{ConfigOrigin, ConfigValue, resolve_static_config};
-use rusty_valkyrie::asgard::static_site::{StaticSiteOptions, build_static_site};
+use rusty_valkyrie::asgard::{
+    config_model::{ConfigOrigin, ConfigValue, resolve_static_config},
+    static_site::{StaticSiteOptions, build_static_site},
+};
 use tempfile::TempDir;
 
 /// 带样式与初始状态绑定的根组件入口 fixture。

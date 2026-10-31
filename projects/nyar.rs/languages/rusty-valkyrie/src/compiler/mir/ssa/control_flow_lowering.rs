@@ -601,9 +601,7 @@ impl MirBuilder {
             let normal_exit_stub = self.new_block("loop_normal_exit");
             let stub_arguments: Vec<MirOperand> = carried_names
                 .iter()
-                .map(|name| {
-                    MirOperand::Value(*carried_value_refs.get(name).expect("loop-carried header parameter must exist"))
-                })
+                .map(|name| MirOperand::Value(*carried_value_refs.get(name).expect("loop-carried header parameter must exist")))
                 .collect();
             self.terminate(MirTerminator::Jump { target: loop_exit_id, arguments: stub_arguments });
             self.flush_block("loop_normal_exit");

@@ -35,10 +35,7 @@ fn function<'a>(module: &'a rusty_valkyrie::compiler::mir::ssa::MirModule, name:
     module.functions.iter().find(|function| function.display_symbol.contains(name)).unwrap_or_else(|| panic!("fixture 缺少函数 `{name}`"))
 }
 
-fn block<'a>(
-    function: &'a rusty_valkyrie::compiler::mir::ssa::MirFunction,
-    label: &str,
-) -> &'a rusty_valkyrie::compiler::mir::ssa::MirBlock {
+fn block<'a>(function: &'a rusty_valkyrie::compiler::mir::ssa::MirFunction, label: &str) -> &'a rusty_valkyrie::compiler::mir::ssa::MirBlock {
     function.blocks.iter().find(|block| block.label == label).unwrap_or_else(|| panic!("fixture 缺少 `{label}` 块"))
 }
 
@@ -50,7 +47,10 @@ fn origin<'a>(
 }
 
 /// 块参数对应的携带变量名（只认 BlockParameter 来源）。
-fn parameter_names(function: &rusty_valkyrie::compiler::mir::ssa::MirFunction, block: &rusty_valkyrie::compiler::mir::ssa::MirBlock) -> Vec<String> {
+fn parameter_names(
+    function: &rusty_valkyrie::compiler::mir::ssa::MirFunction,
+    block: &rusty_valkyrie::compiler::mir::ssa::MirBlock,
+) -> Vec<String> {
     block
         .parameters
         .iter()
@@ -62,12 +62,17 @@ fn parameter_names(function: &rusty_valkyrie::compiler::mir::ssa::MirFunction, b
 }
 
 /// 所有以 `Jump` 进入 `target` 的入边（源块 id + 实参）。
-fn incoming_jumps(function: &rusty_valkyrie::compiler::mir::ssa::MirFunction, target: rusty_valkyrie::compiler::mir::ssa::MirBlockRef) -> Vec<(u32, Vec<rusty_valkyrie::compiler::mir::ssa::MirOperand>)> {
+fn incoming_jumps(
+    function: &rusty_valkyrie::compiler::mir::ssa::MirFunction,
+    target: rusty_valkyrie::compiler::mir::ssa::MirBlockRef,
+) -> Vec<(u32, Vec<rusty_valkyrie::compiler::mir::ssa::MirOperand>)> {
     function
         .blocks
         .iter()
         .filter_map(|block| match &block.terminator {
-            rusty_valkyrie::compiler::mir::ssa::MirTerminator::Jump { target: edge, arguments } if *edge == target => Some((block.id.0, arguments.clone())),
+            rusty_valkyrie::compiler::mir::ssa::MirTerminator::Jump { target: edge, arguments } if *edge == target => {
+                Some((block.id.0, arguments.clone()))
+            }
             _ => None,
         })
         .collect()
@@ -155,7 +160,10 @@ fn break_edge_carries_loop_carried_variables_into_exit_phi() {
     for (source, arguments) in &edges {
         assert_eq!(arguments.len(), exit.parameters.len(), "块 {source} 进入 exit 的实参数必须等于 exit 参数数");
         for argument in arguments {
-            let rusty_valkyrie::compiler::mir::ssa::MirOperand::Value(value) = argument else { continue };
+            let rusty_valkyrie::compiler::mir::ssa::MirOperand::Value(value) = argument
+            else {
+                continue;
+            };
             assert!(function.value_types.contains_key(value), "exit 入边实参必须有 SSA 类型");
         }
     }
@@ -175,12 +183,16 @@ fn break_edge_carries_loop_carried_variables_into_exit_phi() {
     );
 
     // stub 边（正常退出）传入的必须是 header 参数值。
-    let stub_edge = incoming_jumps(function, exit.id).into_iter().find(|(source, _)| *source == stub.id.0).expect("正常退出必须经 stub 边进入 exit");
+    let stub_edge =
+        incoming_jumps(function, exit.id).into_iter().find(|(source, _)| *source == stub.id.0).expect("正常退出必须经 stub 边进入 exit");
     let stub_x = match &stub_edge.1[x_argument_index] {
         rusty_valkyrie::compiler::mir::ssa::MirOperand::Value(value) => *value,
         other => panic!("stub 边必须传 SSA 值，实际 {other:?}"),
     };
-    assert!(matches!(origin(function, stub_x), MirValueOrigin::BlockParameter { block, .. } if *block == header.id), "正常退出边必须传 header 参数");
+    assert!(
+        matches!(origin(function, stub_x), MirValueOrigin::BlockParameter { block, .. } if *block == header.id),
+        "正常退出边必须传 header 参数"
+    );
 
     // 循环后的读取必须绑到 exit phi，而不是 header 参数。
     match origin(function, returned_value(function)) {
@@ -205,10 +217,7 @@ fn aggregate_copy_assignment_is_loop_carried_into_exit_phi() {
         assert_eq!(arguments.len(), exit.parameters.len(), "块 {source} 进入 exit 的实参数必须等于 exit 参数数");
     }
     let header = block(function, "loop_header");
-    assert!(
-        parameter_names(function, header).iter().any(|name| name == "pair"),
-        "pair 必须同时是 header phi（continue/back-edge 携带）"
-    );
+    assert!(parameter_names(function, header).iter().any(|name| name == "pair"), "pair 必须同时是 header phi（continue/back-edge 携带）");
     match origin(function, returned_value(function)) {
         MirValueOrigin::BlockParameter { block, name } => {
             assert_eq!(*block, exit.id, "return 必须读取 exit 块的 pair phi");

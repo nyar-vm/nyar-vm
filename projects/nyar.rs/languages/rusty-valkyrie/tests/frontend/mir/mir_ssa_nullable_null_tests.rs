@@ -7,9 +7,8 @@
 use rusty_valkyrie::compiler::{
     hir::ValkyrieCompiler,
     mir::ssa::{MirConstant, MirFunction, MirLowerer, MirModule, MirOperation, MirTerminator},
-    types::SourceID,
+    types::{SourceID, hir::ValkyrieType},
 };
-use rusty_valkyrie::compiler::types::hir::ValkyrieType;
 
 fn compile(source: &str) -> MirModule {
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9901 }).compile_source(source).expect("fixture 必须完成 HIR 分析");

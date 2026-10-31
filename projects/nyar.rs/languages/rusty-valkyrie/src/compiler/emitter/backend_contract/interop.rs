@@ -212,9 +212,10 @@ fn validate_intrinsic_target_binding(function: &HirFunction, scope: &str, source
         return Ok(());
     }
 
-    let explicit_binding = function.annotations.iter().any(|attribute| {
-        attribute_to_interop_contract(attribute).is_some() || attribute_name(attribute).as_deref() == Some("host_contract")
-    });
+    let explicit_binding = function
+        .annotations
+        .iter()
+        .any(|attribute| attribute_to_interop_contract(attribute).is_some() || attribute_name(attribute).as_deref() == Some("host_contract"));
     if explicit_binding {
         return Ok(());
     }

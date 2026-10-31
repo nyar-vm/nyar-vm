@@ -17,16 +17,12 @@ fn contains_open_generic(ty: &ValkyrieType) -> bool {
         ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_open_generic),
         ValkyrieType::Apply(base, arguments) => contains_open_generic(base) || arguments.iter().any(contains_open_generic),
         ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_open_generic(element),
-        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
-            items.iter().any(contains_open_generic)
-        }
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => items.iter().any(contains_open_generic),
         ValkyrieType::Function(function) => {
             function.params.iter().any(|p| contains_open_generic(p)) || contains_open_generic(&function.return_type)
         }
         ValkyrieType::FixedArray { element, .. } => contains_open_generic(element),
-        ValkyrieType::Associated(assoc) => {
-            contains_open_generic(&assoc.base) || assoc.type_arguments.iter().any(contains_open_generic)
-        }
+        ValkyrieType::Associated(assoc) => contains_open_generic(&assoc.base) || assoc.type_arguments.iter().any(contains_open_generic),
         _ => false,
     }
 }

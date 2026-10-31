@@ -7,9 +7,7 @@
 
 use std::{fs, path::Path};
 
-use rusty_valkyrie::asgard::config_model::{
-    ChunkBudgets, ChunkPlan, ConfigOrigin, ConfigValue, ResolvedAsgardConfig, resolve_static_config,
-};
+use rusty_valkyrie::asgard::config_model::{ChunkBudgets, ChunkPlan, ConfigOrigin, ConfigValue, ResolvedAsgardConfig, resolve_static_config};
 use tempfile::TempDir;
 
 fn obj(fields: Vec<(&str, ConfigValue)>) -> ConfigValue {

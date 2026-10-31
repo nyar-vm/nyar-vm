@@ -114,7 +114,8 @@ fn declaration_spelling(hir_struct: &HirStruct) -> String {
     let name = hir_struct.name.as_str();
     let qualified = if hir_struct.namespace.is_empty() {
         name.to_string()
-    } else {
+    }
+    else {
         format!("{}.{}", hir_struct.namespace.iter().map(|id| id.as_str()).collect::<Vec<_>>().join("."), name)
     };
     qualified.replace('.', "::")
@@ -523,7 +524,12 @@ fn apply_primitive_carriers(ty: &ValkyrieType, carriers: &BTreeMap<nyar_types::I
 
 /// 声明层聚合布局：字段先经 primitive 载体递归，再走与实例层同口径的
 /// [`layout_field_type`] 解析；缺事实返回 `None`，由调用方产出结构化诊断。
-fn layout_for_struct(hir_struct: &HirStruct, plan: &AggregateLayoutPlan, storage: MirStorageKind, facts: &LayoutFacts) -> Option<AggregateLayout> {
+fn layout_for_struct(
+    hir_struct: &HirStruct,
+    plan: &AggregateLayoutPlan,
+    storage: MirStorageKind,
+    facts: &LayoutFacts,
+) -> Option<AggregateLayout> {
     let mut offset = 0u32;
     let mut max_align = 1u32;
     let mut fields = Vec::with_capacity(hir_struct.fields.len());

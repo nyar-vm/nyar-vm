@@ -8,7 +8,7 @@ use crate::compiler::{
     hir::overload::has_unresolved_generic_arguments,
     mir::{MirFunction, MirModule, MirOperand, MirOperation, MirStruct, MirSumDeclaration},
     syntax::oak::ParseError,
-    types::hir::{export_spec::parse_library_glue_operation, HirModule, ValkyrieType},
+    types::hir::{HirModule, ValkyrieType, export_spec::parse_library_glue_operation},
 };
 use nyar::planning::SemanticAggregateOperation;
 use nyar_types::{
@@ -79,7 +79,8 @@ pub fn link_reachable_dependency_mir_with_hir(
                         }
                         else if host_binding_remaps.is_empty() {
                             false
-                        } else {
+                        }
+                        else {
                             let mut normalized = (*function).clone();
                             remap_call_targets(&mut normalized, host_binding_remaps);
                             &normalized == previous

@@ -51,13 +51,12 @@ fn glue_export_name_is_the_declared_public_name() {
     assert_eq!(value, "7", "glue 必须读回导出返回值");
 
     // 大小写变体不是别名：导出命名合同是精确名。
-    let wrong_case = call_export_through_glue(&artifact, "Configure", "[]")
-        .expect_err("大小写变体不得命中导出；若命中说明存在按名字猜测的第二层解析");
+    let wrong_case =
+        call_export_through_glue(&artifact, "Configure", "[]").expect_err("大小写变体不得命中导出；若命中说明存在按名字猜测的第二层解析");
     assert!(wrong_case.contains("wasm export not found: Configure"), "诊断必须指明查找失败的导出名，实际：{wrong_case}");
 
     // 完全未知名同样失败闭合，不回落 main/_start 或默认导出。
-    let unknown = call_export_through_glue(&artifact, "doesNotExist", "[]")
-        .expect_err("未知导出名必须失败闭合");
+    let unknown = call_export_through_glue(&artifact, "doesNotExist", "[]").expect_err("未知导出名必须失败闭合");
     assert!(unknown.contains("wasm export not found"), "实际：{unknown}");
 }
 
@@ -94,7 +93,6 @@ fn glue_fails_closed_when_wasm_artifact_is_missing() {
     assert!(wasm_path.exists(), "构建成功后 glue 同目录必须存在配对的 `.wasm` 产物");
     fs::remove_file(&wasm_path).expect("删除 wasm 产物失败");
 
-    let diagnostic =
-        call_export_through_glue(&artifact, "configure", "[]").expect_err("wasm 产物缺失时 glue 导入必须失败，不得静默成功");
+    let diagnostic = call_export_through_glue(&artifact, "configure", "[]").expect_err("wasm 产物缺失时 glue 导入必须失败，不得静默成功");
     assert!(diagnostic.contains("ENOENT") || diagnostic.contains(".wasm"), "诊断必须指明缺失的 wasm 文件，实际：{diagnostic}");
 }
