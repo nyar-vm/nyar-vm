@@ -21,6 +21,7 @@ mod legion_pack_bootstrap_aliases;
 mod legion_planner;
 mod legion_production_lane_build_contract;
 mod legion_production_lane_contract;
+mod legion_test_ovm_builtin_e2e;
 mod legion_valkyrie_v_leetcode_plan;
 mod legion_vcc_data_consumer_inventory;
 mod package_module_boundary;

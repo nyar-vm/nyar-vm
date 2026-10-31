@@ -29,15 +29,21 @@ use super::{
 /// 单次测试执行结果。
 #[derive(Debug, Clone)]
 pub struct RunOutcome {
+    /// 测试是否通过。
     pub success: bool,
+    /// 失败是否发生在编译/会话阶段（而非运行期）。
     pub is_compile_error: bool,
+    /// 失败时的结构化错误文本；通过时为 `None`。
     pub error: Option<String>,
 }
 
 /// 外部 target 测试会话：产物落盘后复用。
 pub struct ExternalTestSession {
+    /// 会话对应的 target 标签。
     pub target: String,
+    /// 测试产物输出目录。
     pub output_dir: PathBuf,
+    /// Compiler 产出的逐入口运行合同。
     pub run_contracts: Vec<RunContract>,
 }
 
@@ -89,6 +95,13 @@ pub fn run_external_test_in_session(
     // 运行器家族必须由 CanonicalTarget 的 profile 推导；按标签字符串猜测会把
     // `wasm32-node-unknown-wasm` 这类完整三元组误判为 Ovm，进而静默换成错误的宿主命令。
     let runner_family = canonical.to_profile(None).runner_family();
+
+    // OVM 家族由 legion 内置的 odin-vm 解释器进程内执行，不存在独立 `ovm` 指令，
+    // 也不解析外部 `odin-vm` 二进制路径或 runner 覆盖。
+    if runner_family == RunnerFamily::Ovm {
+        return run_builtin_ovm_test(&artifact, function_name, verbose);
+    }
+
     let template = match resolve_runner_template(workspace, &canonical, runner_family, cli_runners, function_name) {
         Ok(t) => t,
         Err(error) => return RunOutcome { success: false, is_compile_error: true, error: Some(error.to_string()) },
@@ -122,6 +135,45 @@ pub fn run_external_test_in_session(
             RunOutcome { success: false, is_compile_error: false, error: Some(error) }
         }
         Err(error) => RunOutcome { success: false, is_compile_error: false, error: Some(error.to_string()) },
+    }
+}
+
+/// 用 legion 内置 OVM 运行时进程内执行单个测试入口。
+///
+/// 加载与执行失败一律 fail-closed；`vm.run` 返回 `Ok` 即记为通过，
+/// runner 不猜测、不特判 VM 语义（例如无 handler 的 `raise` 挂起行为）。
+fn run_builtin_ovm_test(artifact: &Path, function_name: &str, verbose: bool) -> RunOutcome {
+    let bytes = match std::fs::read(artifact) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return RunOutcome {
+                success: false,
+                is_compile_error: true,
+                error: Some(format!("读取 OVM 产物 `{}` 失败: {error}", artifact.display())),
+            };
+        }
+    };
+    let mut vm = odin_vm::OdinVm::new();
+    let loaded = match vm.load(&bytes) {
+        Ok(loaded) => loaded,
+        Err(error) => {
+            return RunOutcome {
+                success: false,
+                is_compile_error: true,
+                error: Some(format!("OVM 加载产物 `{}` 失败: {error}", artifact.display())),
+            };
+        }
+    };
+    match vm.run(&loaded, function_name, Vec::new()) {
+        Ok(value) => {
+            if verbose {
+                println!("      ovm: {value:?}");
+            }
+            RunOutcome { success: true, is_compile_error: false, error: None }
+        }
+        Err(error) => {
+            RunOutcome { success: false, is_compile_error: false, error: Some(format!("OVM 执行 `{function_name}` 失败: {error}")) }
+        }
     }
 }
 

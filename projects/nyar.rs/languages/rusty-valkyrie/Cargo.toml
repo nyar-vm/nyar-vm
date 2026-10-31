@@ -44,6 +44,7 @@ oak-core = { workspace = true }
 oak-valkyrie = { workspace = true }
 oak-von = { workspace = true, features = ["serde"] }
 odin-bytecode = { workspace = true }
+odin-vm = { workspace = true }
 ordered-float = { workspace = true }
 pulldown-cmark = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -56,7 +57,6 @@ zip = { workspace = true }
 acorn-aarch64 = { workspace = true }
 acorn-pe = { workspace = true }
 nyar-emitter = { workspace = true }
-odin-vm = { workspace = true }
 tempfile = { workspace = true }
 zip = { workspace = true }
 
