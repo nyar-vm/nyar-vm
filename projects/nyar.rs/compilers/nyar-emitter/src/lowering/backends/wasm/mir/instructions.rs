@@ -478,9 +478,31 @@ impl<'a> WasmMirLowerer<'a> {
                     self.store_scalar(output);
                 }
             }
+            MirInstructionKind::LoadFunctionRef { instance } => {
+                // 函数值 = funcref table 槽位下标（i32 载体）。槽位只来自模块装配的
+                // 预扫描登记；未登记实例是计划事实缺失，结构化失败，禁止编码期补造 table 项。
+                let Some(slot) = self.function_value_table_slots.get(instance).copied()
+                else {
+                    return Err(format!("WASM 函数值 `{instance:?}` 缺少已登记的 funcref table 槽位: {}", self.mir_fn.symbol));
+                };
+                self.emit_i32_const(i32::try_from(slot).expect("funcref table 槽位溢出"));
+                if let Some(output) = instruction_primary_result(instruction) {
+                    self.validate_output_slot_type(output, VALTYPE_I32);
+                    self.assign_output_local(output);
+                }
+                else {
+                    WasmOpcode::Drop.encode(&mut self.code);
+                }
+            }
             MirInstructionKind::Call { callee, arguments } => {
-                // Slim Call has no dispatch/witness/intrinsic_opcode; route as Static.
-                self.emit_call_lowering(callee, arguments, MirDispatchKind::Static, None, None, instruction_primary_result(instruction))?;
+                // Slim Call 没有 dispatch 字段：路由只由 callee 操作数形态决定——
+                // `Item` 是 Compiler 冻结的直接 callable 身份（Static），
+                // `Value` 是函数值 SSA（i32 table 槽载体），必须走类型化间接调用。
+                let dispatch = match callee {
+                    MirOperand::Value(_) => MirDispatchKind::Indirect,
+                    _ => MirDispatchKind::Static,
+                };
+                self.emit_call_lowering(callee, arguments, dispatch, None, None, instruction_primary_result(instruction))?;
             }
             // pattern 无法 lowering：extractor ?resolved 或类型推断失败，
             // 运行?trap——emit wasm `unreachable` (0x00) 立即触发 trap?

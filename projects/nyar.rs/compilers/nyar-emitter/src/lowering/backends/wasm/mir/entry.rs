@@ -9,9 +9,9 @@ use super::{
         },
         gc::{WASM_GC_ANYREF, wasm_gc_struct_type},
         sections::{
-            code_section_bytes, data_section_bytes, decode_uleb128, encode_sleb128_i32, encode_sleb128_i64, encode_uleb128,
-            export_section_bytes, function_section_bytes, import_section_bytes, memory_section_bytes, type_section_bytes, wasm_function_body,
-            wasm_function_type,
+            code_section_bytes, data_section_bytes, decode_uleb128, elem_section_bytes, encode_sleb128_i32, encode_sleb128_i64, encode_uleb128,
+            export_section_bytes, function_section_bytes, import_section_bytes, memory_section_bytes, table_section_bytes, type_section_bytes,
+            wasm_function_body, wasm_function_type,
         },
     },
     MirInstructionKind, StorageKind, WASM_GC_EXTERNREF,
@@ -210,6 +210,38 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         function_index_by_instance.insert(*instance, wasm_idx);
         type_index_by_instance.insert(*instance, type_idx);
     }
+    // 具名函数作值：预扫描全部可执行体，收集 `LoadFunctionRef` 引用的实例并按身份
+    // 顺序登记 funcref table 槽位；只有被作值引用的函数才进 table。引用的实例没有
+    // 函数体（导入或未生成）属于计划事实缺失，编码前结构化失败，禁止现场补造槽位。
+    let mut function_value_instances: BTreeSet<ItemInstanceId> = BTreeSet::new();
+    for (_, mir_fn) in mir_operations.iter() {
+        for block in &mir_fn.blocks {
+            for instruction in &block.instructions {
+                if let MirInstructionKind::LoadFunctionRef { instance } = &instruction.kind {
+                    function_value_instances.insert(*instance);
+                }
+            }
+        }
+    }
+    let function_value_table_slots: BTreeMap<ItemInstanceId, u32> =
+        function_value_instances.iter().copied().enumerate().map(|(slot, instance)| (instance, slot as u32)).collect();
+    let function_value_table_functions: Vec<u32> = function_value_instances
+        .iter()
+        .map(|instance| {
+            function_index_by_instance
+                .get(instance)
+                .copied()
+                .ok_or_else(|| format!("WASM 函数值 `{instance:?}` 引用的实例没有可执行函数体"))
+        })
+        .collect::<crate::Result<Vec<_>>>()?;
+    // 间接调用的 typeidx 只能反查模块已注册的 functype：按签名字节建表，
+    // 禁止为间接调用新造类型条目或按参数个数猜签名。
+    let mut type_index_by_signature: BTreeMap<(Vec<u8>, Option<u8>), u32> = BTreeMap::new();
+    for (dense, (_, mir_fn)) in mir_operations.iter().enumerate() {
+        let params = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
+        let ret = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
+        type_index_by_signature.entry((params, ret)).or_insert(function_type_base + dense as u32);
+    }
     // Node JS-glue：宿主字符串?anyref 传递；?`wasm_import_type_for_field` ?anyref 签名对齐?
     let param_types_by_instance = build_param_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref);
     let return_types_by_instance = build_return_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref);
@@ -278,6 +310,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &string_literal_index,
             &string_literal_offset,
             const_utf8_import,
+            &function_value_table_slots,
+            &type_index_by_signature,
         )?));
         eprintln!("[wasm::function-lower-done] dense={dense}/{} symbol={full}", mir_operations.len());
         mir_wasm_functions.push((wasm_index, full.clone()));
@@ -455,6 +489,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     code_bodies.push(wasm_function_body(wasm_cabi_realloc_bump_body()));
 
     module.sections.push(function_section_bytes(&function_indices));
+    // funcref table：只为被作值引用的函数建表（id 4，必须排在 function(3) 与 memory(5) 之间）。
+    if !function_value_table_functions.is_empty() {
+        module.sections.push(table_section_bytes(u32::try_from(function_value_table_functions.len()).expect("funcref table 大小溢出")));
+    }
     module.sections.push(memory_section_bytes(memory_min_pages_for_heap_base(heap_base)));
     module.sections.push(cabi_heap_global_section(heap_base));
 
@@ -466,6 +504,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     }
 
     module.sections.push(export_section_bytes(&exports));
+    // active elem 段：table 槽位 i 初始化为对应函数的下标（id 9，必须排在 export(7) 与 code(10) 之间）。
+    if !function_value_table_functions.is_empty() {
+        module.sections.push(elem_section_bytes(0, &function_value_table_functions));
+    }
     module.sections.push(code_section_bytes(&code_bodies));
     if wasi_mode {
         // WASI 轨：字符串字面量存入 data 段，运行时通过偏移量访问?

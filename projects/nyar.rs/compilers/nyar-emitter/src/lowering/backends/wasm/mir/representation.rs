@@ -134,6 +134,12 @@ pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &NyarTy
     if matches!(ty, NyarType::Union(_)) {
         return WASM_GC_ANYREF;
     }
+    // 函数值的物理载体是 funcref table 槽位下标（i32）。共享存储闸门把 Function
+    // 归入 Reference 是为引用类聚合服务的；wasm 的 anyref 与 funcref 分属不同
+    // 引用塔，anyref 槽无法承载函数值，必须由本层显式选定 i32 载体。
+    if matches!(ty, NyarType::Function(_)) {
+        return VALTYPE_I32;
+    }
     // 引用类型参数用 anyref (VALTYPE_ANYREF) 传递;值类型参数仍用 i32 地址。
     if ctx.storage_for_type(ty) == StorageKind::Reference {
         return WASM_GC_ANYREF;

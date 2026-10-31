@@ -194,10 +194,19 @@ pub enum InstructionKind {
     /// `generic_function`、`generic_arguments`、`effect`、`receiver_kind`、
     /// `parameter_types`、`intrinsic_opcode`、`signature_complete`、`has_this`。
     Call {
-        /// 可调用操作数（`ItemInstanceId` / 函数值，待定）。
+        /// 可调用操作数（`ItemInstanceId` / 函数值）。
         callee: Operand,
         /// 语义顺序的实参。
         arguments: Vec<Operand>,
+    },
+    /// 具名函数作值：把前端冻结的 callable 实例物化为函数值。
+    ///
+    /// 结果 SSA 值的类型是 `NyarType::Function`（Semantic MIR 已登记）；物理载体
+    /// （如 wasm funcref table 槽位下标）由目标后端决定，不得在此携带任何后端
+    /// 私有编码。实例必须已在链接事实中登记，缺失即结构化失败。
+    LoadFunctionRef {
+        /// 编译器冻结的可调用实例身份。
+        instance: ItemInstanceId,
     },
     /// Construct a named aggregate / struct instance.
     StructNew {
