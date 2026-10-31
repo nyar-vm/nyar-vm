@@ -10,9 +10,12 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use rusty_valkyrie::legion::{SpyMode, SpyOptions, SpyTargetOptions, SpyTargetPlatform, run_spy};
 
+mod asgard_api;
 mod legion_host_api;
 mod product_api;
 mod stdio_capture;
+
+pub use asgard_api::{AsgardStaticBuildOptions, AsgardStaticBuildOutcome};
 
 pub use legion_host_api::{
     LegionArtifactFreshness, LegionExecutionManifestView, LegionTestOutcome, legion_check_artifact_fresh, legion_invoke_ovm_export,
