@@ -4,7 +4,7 @@
 
 #![deny(missing_docs)]
 
-use std::{ffi::OsString, process::ExitCode, thread};
+use std::{process::ExitCode, thread};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -64,18 +64,6 @@ pub struct SpyTargetRunOptions {
     pub glue_audit: Option<bool>,
 }
 
-/// 已移除：Legion 不再提供 argv CLI。请使用 [`legion_plan`] / [`legion_build`]。
-#[napi]
-pub fn legion_run(_argv: Vec<String>) -> Result<i32> {
-    Err(Error::from_reason("legionRun 已移除：请使用 legionPlan / legionBuild 等正交 N-API，勿再拼 argv。"))
-}
-
-/// 已移除：Legion 不再提供 argv CLI。请使用 [`legion_plan`] / [`legion_build`]。
-#[napi]
-pub fn legion_run_captured(_argv: Vec<String>) -> Result<LegionRunOutcome> {
-    Err(Error::from_reason("legionRunCaptured 已移除：请使用 legionPlan / legionBuild 等正交 N-API，勿再拼 argv。"))
-}
-
 /// 运行 `legion spy <mode>` 并捕获输出。
 #[napi]
 pub fn legion_spy_run(mode: String, options: SpyTargetRunOptions) -> Result<LegionRunOutcome> {
@@ -96,27 +84,6 @@ pub fn legion_spy_run(mode: String, options: SpyTargetRunOptions) -> Result<Legi
         .join()
         .expect("legion spy thread panicked");
     Ok(LegionRunOutcome { status: status as u32, stdout, stderr })
-}
-
-/// 解析 argv 但不执行（仅供旧脚本；新宿主请用 [`legion_plan`] / [`legion_build`]）。
-#[napi]
-pub fn legion_parse(_argv: Vec<String>) -> Result<String> {
-    Err(Error::from_reason("legionParse 已废弃：请在 TypeScript 侧解析 argv，并调用 legionPlan / legionBuild 等正交 N-API。"))
-}
-
-/// 运行 Valkyrie 宿主 CLI（仅 `asgard` 仍经 argv 透传；Legion 已移除 CLI）。
-#[napi]
-pub fn run_valkyrie_cli(product: String, argv: Vec<String>) -> Result<i32> {
-    if product == "legion" {
-        return Err(Error::from_reason("runValkyrieCli(legion) 已移除：请使用 legionPlan / legionBuild 等正交 N-API。"));
-    }
-    let mut os_argv: Vec<OsString> = Vec::with_capacity(argv.len() + 1);
-    os_argv.push(OsString::from(product.as_str()));
-    os_argv.extend(argv.into_iter().map(OsString::from));
-    match product.as_str() {
-        "asgard" => Ok(rusty_valkyrie::asgard::cli::run_with_argv(os_argv)),
-        other => Err(Error::from_reason(format!("unsupported valkyrie product '{other}' (expected asgard)"))),
-    }
 }
 
 fn exit_code_to_i32(code: ExitCode) -> i32 {
