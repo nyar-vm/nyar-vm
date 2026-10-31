@@ -1,7 +1,6 @@
 //! Migrated from `src/ssg/mod.rs` (`tests`).
 
-use rusty_valkyrie::asgard::codegen::StaticRenderResult;
-use rusty_valkyrie::asgard::ssg::*;
+use rusty_valkyrie::asgard::{codegen::StaticRenderResult, ssg::*};
 
 #[test]
 fn wrap_with_layout_replaces_slot() {
