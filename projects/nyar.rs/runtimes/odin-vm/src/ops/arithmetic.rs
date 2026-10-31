@@ -14,19 +14,15 @@ pub fn execute_arithmetic(instruction: NyarInstruction, frame: &mut Frame, stack
                 NyarHeadCode::I32Mul => lhs.wrapping_mul(rhs),
                 NyarHeadCode::I32DivS => {
                     if rhs == 0 {
-                        0
+                        return Err(NyarRuntimeError::DivisionByZero { operation: "i32.div_s" });
                     }
-                    else {
-                        lhs.wrapping_div(rhs)
-                    }
+                    lhs.wrapping_div(rhs)
                 }
                 NyarHeadCode::I32RemS => {
                     if rhs == 0 {
-                        0
+                        return Err(NyarRuntimeError::DivisionByZero { operation: "i32.rem_s" });
                     }
-                    else {
-                        lhs.wrapping_rem(rhs)
-                    }
+                    lhs.wrapping_rem(rhs)
                 }
                 _ => unreachable!(),
             };

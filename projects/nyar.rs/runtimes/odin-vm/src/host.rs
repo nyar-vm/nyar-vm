@@ -182,7 +182,10 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::I32Div => {
             let lhs = i32_arg(args, 0)?;
             let rhs = i32_arg(args, 1)?;
-            Ok(Value::I32(if rhs == 0 { 0 } else { lhs / rhs }))
+            if rhs == 0 {
+                return Err(NyarRuntimeError::DivisionByZero { operation: "host i32_div" });
+            }
+            Ok(Value::I32(lhs / rhs))
         }
         HostOp::I64Add => Ok(Value::I64(i64_arg(args, 0)? + i64_arg(args, 1)?)),
         HostOp::I64Sub => Ok(Value::I64(i64_arg(args, 0)? - i64_arg(args, 1)?)),
@@ -190,12 +193,18 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::I64Div => {
             let lhs = i64_arg(args, 0)?;
             let rhs = i64_arg(args, 1)?;
-            Ok(Value::I64(if rhs == 0 { 0 } else { lhs / rhs }))
+            if rhs == 0 {
+                return Err(NyarRuntimeError::DivisionByZero { operation: "host i64_div" });
+            }
+            Ok(Value::I64(lhs / rhs))
         }
         HostOp::I64Rem => {
             let lhs = i64_arg(args, 0)?;
             let rhs = i64_arg(args, 1)?;
-            Ok(Value::I64(if rhs == 0 { 0 } else { lhs % rhs }))
+            if rhs == 0 {
+                return Err(NyarRuntimeError::DivisionByZero { operation: "host i64_rem" });
+            }
+            Ok(Value::I64(lhs % rhs))
         }
         HostOp::I64Neg => Ok(Value::I64(-i64_arg(args, 0)?)),
         HostOp::I64Eq => Ok(Value::Bool(i64_arg(args, 0)? == i64_arg(args, 1)?)),

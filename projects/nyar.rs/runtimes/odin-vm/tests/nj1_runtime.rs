@@ -3,7 +3,7 @@ use nyar_jit::{
     encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts, encode_ret_i32_select_cmp_locals,
     encode_ret_i32_select_cmp_mixed, encode_ret_local, encode_ret_void,
 };
-use odin_vm::{nj1_runtime::execute_nj1_blob, value::Value};
+use odin_vm::{NyarRuntimeError, nj1_runtime::execute_nj1_blob, value::Value};
 
 #[test]
 fn executes_ret_local() {
@@ -18,7 +18,15 @@ fn executes_ret_i32_binops() {
     assert_eq!(execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::Add, 0, 1), &locals).unwrap(), Value::I32(42));
     assert_eq!(execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::DivS, 0, 1), &locals).unwrap(), Value::I32(20));
     assert_eq!(execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::RemS, 0, 1), &locals).unwrap(), Value::I32(0));
-    assert_eq!(execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::DivS, 0, 1), &[Value::I32(7), Value::I32(0)]).unwrap(), Value::I32(0));
+    // 除零必须 trap，不得静默返回 0。
+    assert_eq!(
+        execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::DivS, 0, 1), &[Value::I32(7), Value::I32(0)]),
+        Err(NyarRuntimeError::DivisionByZero { operation: "nj1 i32.div_s" })
+    );
+    assert_eq!(
+        execute_nj1_blob(&encode_ret_i32_binop_imm_local(I32Binop::RemS, 0, 0, false), &[Value::I32(7)]),
+        Err(NyarRuntimeError::DivisionByZero { operation: "nj1 i32.rem_s" })
+    );
 }
 
 #[test]
