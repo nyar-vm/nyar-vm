@@ -7,6 +7,7 @@ pub mod codegen;
 pub mod compile;
 pub mod config;
 pub mod config_discovery;
+pub mod config_model;
 pub mod debug_sidecar;
 pub mod delivery;
 pub mod deploy;
