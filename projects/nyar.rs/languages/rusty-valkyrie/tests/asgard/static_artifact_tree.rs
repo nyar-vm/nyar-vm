@@ -17,9 +17,9 @@ use tempfile::TempDir;
 
 /// 带样式与初始状态绑定的根组件入口 fixture。
 const FIXTURE: &str = r#"<widget index>
-<div class="hero">
-    <h1>{greeting}</h1>
-</div>
+<Column class="hero">
+    <Text class="hero-title">{greeting}</Text>
+</Column>
 </widget>
 <script>
 let greeting: utf8 = "静态产物树"

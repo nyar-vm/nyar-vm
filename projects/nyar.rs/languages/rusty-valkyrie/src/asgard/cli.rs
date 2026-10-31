@@ -1,12 +1,36 @@
 //! `asgard` CLI：`asgard build` / `asgard dev` / `asgard pack`。
 use crate::asgard::error::{AsgardError, AsgardResult};
 use nyar_format::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
-use std::{path::PathBuf, process::ExitCode};
+use std::{
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
 
 use crate::asgard::{
-    PackOptions, PackTarget, pack_voa_delivery,
+    PackOptions, PackTarget, config_discovery::ASGARD_CONFIG_FILENAME, pack_voa_delivery,
     static_site::{StaticSiteOptions, build_static_site},
 };
+
+/// Asgard 项目与配置准入。
+///
+/// Asgard 应用必须是合法 Legion 项目并具备 `asgard.config.v`：前者拥有项目身份与
+/// 工程输入，后者拥有 Asgard 配置，二者不可替代。除 `asgard setup` 初始化路径外，
+/// 需要在项目上执行的命令缺其一都明确失败，不通过裸入口参数或隐式默认配置绕过。
+fn require_project_admission(project_dir: &Path) -> AsgardResult<()> {
+    if !project_dir.join("legion.von").is_file() {
+        return Err(AsgardError::msg(report!(
+            "asgard: 项目准入失败：`{}` 缺少 `legion.von`，Asgard 应用必须是合法 Legion 项目",
+            project_dir.display()
+        )));
+    }
+    if !project_dir.join(ASGARD_CONFIG_FILENAME).is_file() {
+        return Err(AsgardError::msg(report!(
+            "asgard: 项目准入失败：`{}` 缺少 `asgard.config.v`，除 `asgard setup` 外的 Asgard 命令必须同时具备项目与配置",
+            project_dir.display()
+        )));
+    }
+    Ok(())
+}
 
 /// `asgard build` 的交付方式。
 #[derive(Debug, Clone, Default)]
@@ -179,6 +203,7 @@ pub enum AsgardCommands {
 
 /// 执行 `asgard build`。
 pub fn run_build(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
+    require_project_admission(&args.project_dir)?;
     match &args.delivery {
         AsgardDelivery::App => {
             return Err(AsgardError::msg(report!(
@@ -205,6 +230,7 @@ pub fn run_build(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
 
 /// 执行 `asgard dev`。
 pub fn run_dev(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
+    require_project_admission(&args.project_dir)?;
     Err(AsgardError::msg(report!(
         "asgard dev: 配置求值（C0/C2）未闭合，首轮只交付 `build --static` 显式入口；dev 等待配置求值接入（项目：{}）",
         args.project_dir.display()

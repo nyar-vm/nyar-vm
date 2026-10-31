@@ -7,9 +7,9 @@ use tempfile::TempDir;
 
 /// 含 `<style>` 块与 script 字段绑定的根组件源码；widget 名与入口文件 stem（`index`）一致。
 const FIXTURE: &str = r#"<widget index>
-<div class="hero">
-    <h1>{greeting}</h1>
-</div>
+<Column class="hero">
+    <Text class="hero-title">{greeting}</Text>
+</Column>
 </widget>
 <script>
 let greeting: utf8 = "你好，静态世界"
