@@ -396,6 +396,8 @@ fn instruction_operands(kind: &ExecutableInstructionKind) -> Vec<&ExecutableOper
     use crate::contracts::InstructionKind::*;
     match kind {
         LoadConstant { .. } | LoadSymbol { .. } => Vec::new(),
+        // 函数值的实例身份不是操作数；结果 SSA 类型由 value_types 登记校验。
+        LoadFunctionRef { .. } => Vec::new(),
         Copy { source } => vec![source],
         Cast { source, .. } => vec![source],
         StoreVar { value, .. } => vec![value],

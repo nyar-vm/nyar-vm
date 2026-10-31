@@ -1067,6 +1067,16 @@ fn lower_operation(
         CanonicalOperation::Invoke { callee: CanonicalCallee::Value(callee), arguments } => {
             InstructionKind::Call { callee: value(*callee), arguments: arguments.iter().map(|id| value(*id)).collect() }
         }
+        // 具名函数作值：实例身份由前端冻结，目标层只校验链接事实并保留身份。
+        // 被作值引用的函数不出现在任何直接调用边上，可达性必须由本指令登记，
+        // 否则单态化后的实现函数体会被可执行闭包漏掉。
+        CanonicalOperation::LoadFunctionRef { instance } => {
+            if !program.linked.item_instances.contains_key(instance) {
+                return Err(format!("函数值 identity `{instance:?}` 未解析"));
+            }
+            callees.push(*instance);
+            InstructionKind::LoadFunctionRef { instance: *instance }
+        }
         CanonicalOperation::Copy { source } => InstructionKind::Copy { source: value(*source) },
         CanonicalOperation::StoreVar { name, value: stored, ty } => {
             InstructionKind::StoreVar { name: name.clone(), value: value(*stored), ty: ty.map(|id| lower_type(program, id)).transpose()? }

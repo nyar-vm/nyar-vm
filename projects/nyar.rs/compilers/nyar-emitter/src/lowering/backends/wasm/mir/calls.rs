@@ -81,7 +81,14 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_call_indirect(type_index, 0);
             }
             MirDispatchKind::Indirect => {
-                panic!("WASM 缺少类型化间接调用计划: {}", self.mir_fn.symbol);
+                // callee 是函数值 SSA（i32 table 槽载体）。签名事实只来自该 SSA 值
+                // 冻结的 `NyarType::Function`：实参 coerce、`call_indirect` 的 typeidx
+                // 与返回载体全部由它决定；缺事实即结构化失败，禁止回落静态 callee。
+                let (param_types, return_type, type_index) = self.resolve_indirect_callee_signature(callee)?;
+                self.emit_call_arguments(arguments, &param_types);
+                self.emit_operand(callee);
+                self.emit_call_indirect(type_index, 0);
+                callee_return = return_type;
             }
         }
         self.emit_store_call_output(output, callee_return);
@@ -131,6 +138,34 @@ impl<'a> WasmMirLowerer<'a> {
             panic!("WASM 普通调用缺少实例身份");
         };
         *self.return_types_by_instance.get(instance).expect("WASM 实例缺少返回签名")
+    }
+
+    /// 间接调用的签名解析：callee SSA 值必须携带冻结的 `NyarType::Function`，
+    /// 其物理签名必须命中模块已注册的 functype（按签名字节反查 typeidx）。
+    /// 缺类型或缺注册条目都结构化失败，禁止按参数个数或候选顺序猜签名。
+    pub(super) fn resolve_indirect_callee_signature(&self, callee: &MirOperand) -> crate::Result<(Vec<u8>, Option<u8>, u32)> {
+        let MirOperand::Value(value) = callee
+        else {
+            return Err(format!("WASM 间接调用缺少函数值操作数: {}", self.mir_fn.symbol));
+        };
+        let Some(NyarType::Function(signature)) = self.mir_fn.value_types.get(value)
+        else {
+            return Err(format!("WASM 间接调用 callee %{} 缺少冻结 Function 签名: {}", value.0, self.mir_fn.symbol));
+        };
+        let param_types: Vec<u8> = signature
+            .params
+            .iter()
+            .map(|ty| wasm_param_value_type_for(self.ctx, ty, None, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref))
+            .collect();
+        let return_type = match &signature.return_type {
+            NyarType::Unit | NyarType::Bottom => None,
+            other => Some(wasm_param_value_type_for(self.ctx, other, None, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref)),
+        };
+        let type_index = *self
+            .type_index_by_signature
+            .get(&(param_types.clone(), return_type))
+            .ok_or_else(|| format!("WASM 间接调用签名缺少已注册 functype（params={param_types:?} return={return_type:?}）: {}", self.mir_fn.symbol))?;
+        Ok((param_types, return_type, type_index))
     }
 
     pub(super) fn operand_wasm_stack_type(&self, operand: &MirOperand) -> u8 {

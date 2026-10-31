@@ -75,6 +75,8 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
     string_literal_index: &BTreeMap<String, u32>,
     string_literal_offset: &BTreeMap<String, u32>,
     const_utf8_import: Option<u32>,
+    function_value_table_slots: &BTreeMap<ItemInstanceId, u32>,
+    type_index_by_signature: &BTreeMap<(Vec<u8>, Option<u8>), u32>,
 ) -> crate::Result<Vec<u8>> {
     if let Err(error) = validate_pattern_matching_invariants(mir_fn) {
         debug_assert!(false, "pattern matching contract violation in function `{}`: {error:?}", mir_fn.symbol);
@@ -105,6 +107,8 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
         string_literal_index,
         string_literal_offset,
         const_utf8_import,
+        function_value_table_slots,
+        type_index_by_signature,
     );
     lowerer.emit_function_body()?;
     Ok(lowerer.finish())
@@ -165,6 +169,10 @@ pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
     /// WASI 轨：字符串字面量到线性内存偏移量的映射?
     pub(in crate::lowering::backends::wasm::mir) string_literal_offset: &'a BTreeMap<String, u32>,
     pub(in crate::lowering::backends::wasm::mir) const_utf8_import: Option<u32>,
+    /// 函数值实例 → funcref table 槽位下标；由模块装配预扫描 `LoadFunctionRef` 登记。
+    pub(in crate::lowering::backends::wasm::mir) function_value_table_slots: &'a BTreeMap<ItemInstanceId, u32>,
+    /// wasm functype 签名字节 → type 段条目下标；间接调用的 `typeidx` 只能反查已注册条目。
+    pub(in crate::lowering::backends::wasm::mir) type_index_by_signature: &'a BTreeMap<(Vec<u8>, Option<u8>), u32>,
     /// CFG 调度中的基本块索引。
     pub(in crate::lowering::backends::wasm::mir) pc_local: u32,
 }
@@ -196,6 +204,8 @@ impl<'a> WasmMirLowerer<'a> {
         string_literal_index: &'a BTreeMap<String, u32>,
         string_literal_offset: &'a BTreeMap<String, u32>,
         const_utf8_import: Option<u32>,
+        function_value_table_slots: &'a BTreeMap<ItemInstanceId, u32>,
+        type_index_by_signature: &'a BTreeMap<(Vec<u8>, Option<u8>), u32>,
     ) -> Self {
         let block_order = collect_reachable_blocks(mir_fn);
         let block_index = block_order.iter().enumerate().map(|(index, block_id)| (*block_id, index)).collect();
@@ -240,6 +250,8 @@ impl<'a> WasmMirLowerer<'a> {
             string_literal_index,
             string_literal_offset,
             const_utf8_import,
+            function_value_table_slots,
+            type_index_by_signature,
             pc_local: 0,
         };
         lowerer.pc_local = lowerer.alloc_i32_local();
