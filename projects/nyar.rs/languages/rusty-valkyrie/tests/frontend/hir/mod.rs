@@ -4,6 +4,7 @@ mod call_evidence_contract;
 mod call_ssa_result_binding;
 mod hir_collection_literal_tests;
 mod hir_control_flow_validation_identity_tests;
+mod hir_function_reference_tests;
 mod hir_generic_callable_instantiation_tests;
 mod hir_impl_method_where_obligation_tests;
 mod hir_imported_namespace_call_tests;

@@ -361,8 +361,12 @@ pub fn collect_expr_variable_names(expr: &HirExpr, names: &mut BTreeSet<String>)
         | HirExprKind::Assign { value: length, .. }
         | HirExprKind::GenericApply { callee: length, .. }
         | HirExprKind::Cast { expr: length, .. } => collect_expr_variable_names(length, names),
-        HirExprKind::Yield(None) | HirExprKind::Fallthrough | HirExprKind::Literal(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
-        }
+        HirExprKind::Yield(None)
+        | HirExprKind::Fallthrough
+        | HirExprKind::Literal(_)
+        | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
+        | HirExprKind::Continue { .. } => {}
         HirExprKind::With { base, updates } => {
             collect_expr_variable_names(base, names);
             for (_, value) in updates {
@@ -495,9 +499,12 @@ pub fn expr_contains_fallthrough(expr: &HirExpr) -> bool {
         | HirExprKind::Assign { value: length, .. }
         | HirExprKind::GenericApply { callee: length, .. }
         | HirExprKind::Cast { expr: length, .. } => expr_contains_fallthrough(length),
-        HirExprKind::Yield(None) | HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
-            false
-        }
+        HirExprKind::Yield(None)
+        | HirExprKind::Literal(_)
+        | HirExprKind::Variable(_)
+        | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
+        | HirExprKind::Continue { .. } => false,
         HirExprKind::With { base, updates } => {
             expr_contains_fallthrough(base) || updates.iter().any(|(_, value)| expr_contains_fallthrough(value))
         }

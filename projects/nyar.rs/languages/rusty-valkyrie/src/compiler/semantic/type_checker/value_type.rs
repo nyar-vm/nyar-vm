@@ -211,6 +211,7 @@ impl ValueTypeChecker {
             HirExprKind::Literal(_)
             | HirExprKind::Variable(_)
             | HirExprKind::Path(_)
+            | HirExprKind::FunctionReference(_)
             | HirExprKind::Continue { .. }
             | HirExprKind::Fallthrough => {}
             HirExprKind::StoreField { object, field, value, .. } => {

@@ -225,8 +225,13 @@ pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str, source: &Dia
                 validate_expr_call_contracts(arg, function, source)?;
             }
         }
-        HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } | HirExprKind::Fallthrough => {
-        }
+        // 函数引用没有子表达式需要递归；身份缺失由 MIR  lowering 的 fail-closed 处理。
+        HirExprKind::Literal(_)
+        | HirExprKind::Variable(_)
+        | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
+        | HirExprKind::Continue { .. }
+        | HirExprKind::Fallthrough => {}
     }
     Ok(())
 }

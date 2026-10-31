@@ -9,9 +9,9 @@ use crate::compiler::{
                 try_resolve_instance_method, try_resolve_nullary_constructor, try_resolve_pattern_extractor,
                 try_resolve_try_propagate_ok_variant,
             },
-            diagnostics::OverloadCandidate,
+            diagnostics::{OverloadCandidate, OverloadDomain},
             expr_position::ExprPosition,
-            symbol_match::aggregate_constructor_matches_name,
+            symbol_match::{aggregate_constructor_matches_name, symbol_matches_unqualified_free_call},
             types::{
                 canonical_extractor_callee, field_identity_from_type, infer_catch_scrutinee_type, infer_expr_type, infer_scrutinee_type,
                 lookup_struct_field_type, normalize_local_field_chain, object_field_scrutinee_type, payload_field_scrutinee_types,
@@ -24,8 +24,8 @@ use crate::compiler::{
     types::{
         Identifier, NamePath,
         hir::{
-            HirBlock, HirCallArgument, HirExpr, HirExprKind, HirFunction, HirMatchArm, HirModule, HirPattern, HirResolvedCall, HirStatement,
-            HirStatementKind, ValkyrieType,
+            FunctionType, HirBlock, HirCallArgument, HirExpr, HirExprKind, HirFunction, HirFunctionReference, HirMatchArm, HirModule, HirPattern,
+            HirResolvedCall, HirStatement, HirStatementKind, ValkyrieType,
         },
     },
 };
@@ -222,6 +222,57 @@ fn resolve_expr_calls(
     resolve_expr_calls_at(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type, ExprPosition::Value);
 }
 
+/// 裸名实参唯一命中非泛型自由函数声明时改写为 `FunctionReference`。
+///
+/// 判定全部来自候选的结构事实：无限定符号路径与当前模块精确对齐、`declaration`
+/// 已冻结、`generic_binders` 为空。局部绑定与单例名优先，不参与改写；泛型、歧义
+/// 或未命中一律保持原表达式，让调用沿既有路径失败，禁止按短名猜一个实现。
+fn rewrite_free_function_argument_to_reference(
+    expr: &mut HirExpr,
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+    locals: &BTreeMap<String, ValkyrieType>,
+    singleton_names: &std::collections::BTreeSet<Identifier>,
+) {
+    let name = match &expr.kind {
+        HirExprKind::Variable(identifier) => identifier.name.clone(),
+        HirExprKind::Path(path) if path.parts().len() == 1 => path.parts()[0].clone(),
+        _ => return,
+    };
+    if locals.contains_key(name.as_str()) || singleton_names.contains(&name) {
+        return;
+    }
+    let enclosing_module = type_relations.enclosing_module();
+    let mut matched: Option<&OverloadCandidate> = None;
+    for candidate in candidates {
+        if candidate.domain != OverloadDomain::Function || candidate.owner.is_some() {
+            continue;
+        }
+        if candidate.declaration.is_none() || !candidate.generic_binders.is_empty() {
+            continue;
+        }
+        if !symbol_matches_unqualified_free_call(&candidate.symbol, &name, enclosing_module) {
+            continue;
+        }
+        if matched.is_some() {
+            return;
+        }
+        matched = Some(candidate);
+    }
+    let Some(candidate) = matched else {
+        return;
+    };
+    expr.kind = HirExprKind::FunctionReference(HirFunctionReference {
+        declaration: candidate.declaration,
+        instance: candidate.instance,
+        symbol: candidate.symbol.clone(),
+        signature: Box::new(FunctionType {
+            params: candidate.signature.params.clone(),
+            return_type: candidate.signature.return_type.clone(),
+        }),
+    });
+}
+
 fn resolve_expr_calls_at(
     expr: &mut HirExpr,
     candidates: &[OverloadCandidate],
@@ -268,6 +319,7 @@ fn resolve_expr_calls_at(
                     contextual_type
                 };
                 resolve_expr_calls(&mut arg.value, candidates, type_relations, locals, struct_fields, singleton_names, context);
+                rewrite_free_function_argument_to_reference(&mut arg.value, candidates, type_relations, locals, singleton_names);
             }
             *resolved = call_resolver_try_resolve_call(
                 callee,
@@ -483,6 +535,7 @@ fn resolve_expr_calls_at(
         HirExprKind::Variable(_)
         | HirExprKind::Literal(_)
         | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
         | HirExprKind::Return(None)
         | HirExprKind::Break { expr: None, .. }
         | HirExprKind::Continue { .. }

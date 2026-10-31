@@ -493,7 +493,7 @@ pub fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_c
             state.control_flow.pop_catch();
         }
         HirExprKind::Cast { expr, .. } => validate_hir_expr(expr, state, true)?,
-        HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) => {}
+        HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::FunctionReference(_) => {}
     }
     Ok(())
 }

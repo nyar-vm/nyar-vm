@@ -243,6 +243,7 @@ fn validate_expr_extractor_patterns(
         | HirExprKind::Literal(_)
         | HirExprKind::Variable(_)
         | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
         | HirExprKind::SuperCall { .. }
         | HirExprKind::With { .. } => {}
     }

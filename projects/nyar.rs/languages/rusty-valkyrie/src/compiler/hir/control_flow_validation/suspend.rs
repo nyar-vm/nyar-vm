@@ -122,7 +122,12 @@ pub fn shallow_expr_contains_yield(expr: &HirExpr) -> bool {
         | HirExprKind::Assign { value: length, .. }
         | HirExprKind::GenericApply { callee: length, .. }
         | HirExprKind::Cast { expr: length, .. } => shallow_expr_contains_yield(length),
-        HirExprKind::Fallthrough | HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
+        HirExprKind::Fallthrough
+        | HirExprKind::Literal(_)
+        | HirExprKind::Variable(_)
+        | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
+        | HirExprKind::Continue { .. } => {
             false
         }
         HirExprKind::With { base, updates } => {
@@ -185,7 +190,12 @@ pub fn shallow_expr_contains_await(expr: &HirExpr) -> bool {
         | HirExprKind::GenericApply { callee: length, .. }
         | HirExprKind::Cast { expr: length, .. } => shallow_expr_contains_await(length),
         HirExprKind::Yield(_) | HirExprKind::YieldFrom(_) => false,
-        HirExprKind::Fallthrough | HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
+        HirExprKind::Fallthrough
+        | HirExprKind::Literal(_)
+        | HirExprKind::Variable(_)
+        | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
+        | HirExprKind::Continue { .. } => {
             false
         }
         HirExprKind::With { base, updates } => {
@@ -248,7 +258,12 @@ pub fn shallow_expr_contains_block_on(expr: &HirExpr) -> bool {
         | HirExprKind::GenericApply { callee: length, .. }
         | HirExprKind::Cast { expr: length, .. } => shallow_expr_contains_block_on(length),
         HirExprKind::Yield(_) | HirExprKind::YieldFrom(_) => false,
-        HirExprKind::Fallthrough | HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
+        HirExprKind::Fallthrough
+        | HirExprKind::Literal(_)
+        | HirExprKind::Variable(_)
+        | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
+        | HirExprKind::Continue { .. } => {
             false
         }
         HirExprKind::With { base, updates } => {
@@ -320,7 +335,12 @@ pub fn expr_contains_yield(expr: &HirExpr) -> bool {
         | HirExprKind::Assign { value: length, .. }
         | HirExprKind::GenericApply { callee: length, .. }
         | HirExprKind::Cast { expr: length, .. } => expr_contains_yield(length),
-        HirExprKind::Fallthrough | HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } => {
+        HirExprKind::Fallthrough
+        | HirExprKind::Literal(_)
+        | HirExprKind::Variable(_)
+        | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
+        | HirExprKind::Continue { .. } => {
             false
         }
         HirExprKind::With { base, updates } => expr_contains_yield(base) || updates.iter().any(|(_, value)| expr_contains_yield(value)),
@@ -601,6 +621,7 @@ pub fn expr_contains_await(expr: &HirExpr) -> bool {
         | HirExprKind::Literal(_)
         | HirExprKind::Variable(_)
         | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
         | HirExprKind::Continue { .. } => false,
         HirExprKind::With { base, updates } => expr_contains_await(base) || updates.iter().any(|(_, value)| expr_contains_await(value)),
         HirExprKind::TryScope { body, .. } => block_contains_await(body),
@@ -660,6 +681,7 @@ pub fn expr_contains_block_on(expr: &HirExpr) -> bool {
         | HirExprKind::Literal(_)
         | HirExprKind::Variable(_)
         | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
         | HirExprKind::Continue { .. } => false,
         HirExprKind::With { base, updates } => expr_contains_block_on(base) || updates.iter().any(|(_, value)| expr_contains_block_on(value)),
         HirExprKind::TryScope { body, .. } => block_contains_block_on(body),
@@ -723,6 +745,7 @@ pub fn expr_contains_awake(expr: &HirExpr) -> bool {
         | HirExprKind::Literal(_)
         | HirExprKind::Variable(_)
         | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
         | HirExprKind::Continue { .. } => false,
         HirExprKind::With { base, updates } => expr_contains_awake(base) || updates.iter().any(|(_, value)| expr_contains_awake(value)),
         HirExprKind::TryScope { body, .. } => block_contains_awake(body),

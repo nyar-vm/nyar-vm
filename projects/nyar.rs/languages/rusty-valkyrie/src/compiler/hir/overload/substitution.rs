@@ -330,6 +330,21 @@ pub(crate) fn unify_call_type_binders(
             }
             Some(())
         }
+        // 函数类型逐项统一：形参 `micro(T, T) -> i32` 这类含 binder 的期望签名，
+        // 必须由具名函数作值的冻结签名把 T 绑定出来，禁止宽松放行后留给后端猜。
+        ValkyrieType::Function(expected_function) => {
+            let ValkyrieType::Function(actual_function) = actual
+            else {
+                return None;
+            };
+            if expected_function.params.len() != actual_function.params.len() {
+                return None;
+            }
+            for (expected, actual) in expected_function.params.iter().zip(&actual_function.params) {
+                unify_call_type_binders(expected, actual, binders, substitutions)?;
+            }
+            unify_call_type_binders(&expected_function.return_type, &actual_function.return_type, binders, substitutions)
+        }
         _ => Some(()),
     }
 }
