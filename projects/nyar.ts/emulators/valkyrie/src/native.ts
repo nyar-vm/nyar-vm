@@ -61,9 +61,25 @@ export type LegionBuildOutcome = {
     entrySymbol?: string;
 };
 
+export type AsgardStaticBuildOptions = {
+    projectDir: string;
+    entry: string;
+    outputDir?: string;
+    title?: string;
+};
+
+export type AsgardStaticBuildOutcome = {
+    ok: boolean;
+    error?: string;
+    outputDir?: string;
+    pagePath?: string;
+    componentName?: string;
+};
+
 /** `valkyrie-napi` 导出的产品面。 */
 type ValkyrieNativeAddon = {
     runValkyrieCli(product: string, argv: string[]): number;
+    asgardBuildStatic(options: AsgardStaticBuildOptions): AsgardStaticBuildOutcome;
     legionPlan(options: LegionPlanOptions): LegionPlanOutcome;
     legionBuild(options: LegionBuildOptions): LegionBuildOutcome;
     legionTest(projectDir: string, target?: string): LegionTestOutcome;
@@ -155,6 +171,11 @@ export function loadNative(): ValkyrieNativeAddon {
  */
 export async function runValkyrieCli(product: ValkyrieProduct, argv: string[]): Promise<number> {
     return loadNative().runValkyrieCli(product, argv);
+}
+
+/** Asgard 静态站点交付（结构化 API，不经 argv；与 legion 正交面同型）。 */
+export function asgardBuildStatic(options: AsgardStaticBuildOptions): AsgardStaticBuildOutcome {
+    return loadNative().asgardBuildStatic(options);
 }
 
 /** Legion `plan`（结构化 API，不经 argv）。 */
