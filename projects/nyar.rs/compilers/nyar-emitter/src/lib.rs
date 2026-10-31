@@ -741,14 +741,34 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
 
 /// 为每个 `[test]` 入口生成独立 run contract。
 ///
-/// 所有测试共享同一份 library glue，但每个测试必须有各自可执行的物理入口：
-/// `select_artifact` 对同一物理文件的多条 contract 会判成「artifact has multiple
-/// run contracts」，而 library glue 直接 `node` 运行不执行任何导出，会造成静默假通过。
+/// 每个测试必须有各自可执行的物理入口，否则会被静默跳过或假通过。
+/// 机制按后端合同家族分流，不按目标标签字符串猜测：
+/// - Node/wasm glue：所有测试共享同一份 library glue，直接 `node` 运行不执行任何导出，
+///   由 emitter 为每个测试生成独立 launcher；
+/// - VM 后端（ovm）：driver 已按导出入口逐条生成 `--entry` 合同，
+///   emitter 只校验每个 `[test]` 入口被唯一非 node 合同覆盖，并把运行合同收敛为测试集合。
 /// launcher 只按声明名调用导出的测试函数，不拼接入口名或回退 `main`。
 fn emit_test_run_contracts(report: &mut DriverCompileReport, output_dir: &Path, test_entry_names: &[String]) -> Result<()> {
+    if report.run_contracts.iter().any(|contract| contract.invocation != "node") {
+        for test_name in test_entry_names {
+            let matches: Vec<&DriverRunContract> =
+                report.run_contracts.iter().filter(|contract| contract.invocation != "node" && &contract.logical_entry == test_name).collect();
+            let [contract] = matches.as_slice()
+            else {
+                return Err(format!("测试入口 `{test_name}` 必须由后端提供唯一执行合同，实际 {} 条；拒绝静默跳过测试入口", matches.len()));
+            };
+            let artifact_present = Path::new(&contract.physical_entry).is_file() || output_dir.join(&contract.physical_entry).is_file();
+            if !artifact_present {
+                return Err(format!("测试入口 `{test_name}` 的合同指向不存在的产物 `{}`", contract.physical_entry));
+            }
+        }
+        report.run_contracts.retain(|contract| contract.invocation != "node" && test_entry_names.contains(&contract.logical_entry));
+        return Ok(());
+    }
+
     let Some(glue) = report.run_contracts.iter().find(|contract| contract.invocation == "node").map(|contract| contract.physical_entry.clone())
     else {
-        return Err("测试构建没有可调用的 node glue 产物：拒绝静默跳过测试入口".to_string());
+        return Err("测试构建没有可调用的执行合同（node glue 或后端逐入口合同）：拒绝静默跳过测试入口".to_string());
     };
     let stem = glue.strip_suffix(".mjs").ok_or_else(|| format!("node glue 产物 `{glue}` 不是 `.mjs`"))?;
     std::fs::create_dir_all(output_dir).map_err(|error| format!("创建测试 launcher 目录失败: {}: {error}", output_dir.display()))?;
