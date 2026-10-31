@@ -47,21 +47,21 @@ const CORE_PRIMITIVE_DECLARATIONS: &str = concat!(
 );
 
 /// 一次探针构建的可观察结果：产物目录与 Node 可导入的 glue 入口。
-struct ProbeArtifact {
+pub(crate) struct ProbeArtifact {
     _temp: tempfile::TempDir,
-    output_dir: PathBuf,
-    glue_path: PathBuf,
+    pub(crate) output_dir: PathBuf,
+    pub(crate) glue_path: PathBuf,
 }
 
 /// 构建失败的结构化诊断（保留编译输出原文，失败闭合，不伪造成功）。
-struct ProbeFailure {
-    message: String,
+pub(crate) struct ProbeFailure {
+    pub(crate) message: String,
 }
 
 /// 用最小 `legion` 工程（`artifact: "library"` + `target: "node"`）走正式构建链。
 ///
 /// 成功返回落盘产物目录与 `.mjs` glue 路径；失败返回聚合后的结构化诊断文本。
-fn build_probe_project(prefix: &str, source: &str) -> Result<ProbeArtifact, ProbeFailure> {
+pub(crate) fn build_probe_project(prefix: &str, source: &str) -> Result<ProbeArtifact, ProbeFailure> {
     let temp = tempfile::Builder::new().prefix(prefix).tempdir().expect("探针临时目录");
     let root = temp.path();
     let project_dir = root.join("app");
@@ -122,7 +122,7 @@ fn list_dir(dir: &Path) -> String {
 ///
 /// 返回 `Ok(stdout)`（glue 正常完成调用）或 `Err(诊断)`（glue/编译器抛出的结构化错误，
 /// 含退出码与 stderr，供缺口固化断言使用）。
-fn call_export_through_glue(artifact: &ProbeArtifact, export_name: &str, args_json: &str) -> Result<String, String> {
+pub(crate) fn call_export_through_glue(artifact: &ProbeArtifact, export_name: &str, args_json: &str) -> Result<String, String> {
     let runner_path = artifact.output_dir.join("c0_probe_runner.mjs");
     fs::write(
         &runner_path,
