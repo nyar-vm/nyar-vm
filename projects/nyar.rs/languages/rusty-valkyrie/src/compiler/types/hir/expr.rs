@@ -1,8 +1,8 @@
 //! Expression, capture, and capture mode definitions for HIR.
 
 use super::{
-    BuiltinStructureOp, GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent, HirPattern,
-    ValkyrieType,
+    BuiltinStructureOp, FunctionType, GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent,
+    HirPattern, ValkyrieType,
 };
 use crate::compiler::types::{Identifier, NamePath, SourceSpan};
 
@@ -154,6 +154,26 @@ pub struct HirResolvedCall {
     /// Payload type after peeling nullable `T?` extractor returns.
     #[cfg_attr(feature = "serde", serde(default))]
     pub extractor_payload_type: Option<ValkyrieType>,
+}
+
+/// 具名函数作值：重载解析把「函数名直接作实参」冻结成引用节点。
+///
+/// 唯一事实所有者是 frontend 的调用解析：只有无限定名恰好命中一个非泛型自由函数
+/// 声明时才生成；泛型、歧义或未命中保持原表达式，走既有失败路径。实例身份由
+/// 单态化固定点铸造回填，禁止后端按短名回查。
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirFunctionReference {
+    /// 被引用函数的声明身份。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub declaration: Option<nyar_types::ItemId>,
+    /// 单态化固定点铸造的实例身份；固定点之前为空，缺失即结构化失败。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub instance: Option<nyar_types::ItemInstanceId>,
+    /// 声明处冻结的完整限定符号路径。
+    pub symbol: NamePath,
+    /// 具体函数签名；只代入非泛型声明，签名内不残留开放 binder。
+    pub signature: Box<FunctionType>,
 }
 
 /// The kind of an expression.
@@ -487,6 +507,8 @@ pub enum HirExprKind {
         /// Arguments passed to the parent constructor.
         args: Vec<HirExpr>,
     },
+    /// 具名函数作值（如 `quick_sort(nums, cmp_i64)` 的第二个实参按函数名传递）。
+    FunctionReference(HirFunctionReference),
 }
 
 /// Borrow call argument value expressions for traversal helpers.

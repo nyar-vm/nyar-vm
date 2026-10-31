@@ -18,8 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::compiler::{
     hir::overload::{has_unresolved_generic_arguments, owner_type_generic_binders, substitute_type_self},
     types::hir::{
-        AssociatedType, FunctionType, GenericBinderId, HirBlock, HirExpr, HirExprKind, HirFunction, HirInstantiatedCallable, HirModule,
-        HirParam, HirResolvedCall, HirStatementKind, HirTraitDispatch, HirWhereConstraint, ValkyrieType,
+        AssociatedType, FunctionType, GenericBinderId, HirBlock, HirExpr, HirExprKind, HirFunction, HirFunctionReference, HirInstantiatedCallable,
+        HirModule, HirParam, HirResolvedCall, HirStatementKind, HirTraitDispatch, HirWhereConstraint, ValkyrieType,
         export_spec::parse_library_glue_operation, parse_export_spec_from_annotations,
     },
 };
@@ -41,6 +41,14 @@ struct CallableDeclaration {
 
 /// `GenericBinderId` 到具体类型的代入。`BTreeMap` 保证 `(声明, 代入)` 的稳定序。
 type Substitution = BTreeMap<GenericBinderId, ValkyrieType>;
+
+/// 固定点需要闭合的可调用请求点：已解析调用合同，或具名函数作值的引用。
+enum CallableRequest<'a> {
+    /// 已解析调用合同。
+    Call(&'a mut HirResolvedCall),
+    /// 具名函数作值引用；只有非泛型声明会被改写生成。
+    Reference(&'a mut HirFunctionReference),
+}
 
 /// 把仍指向 trait 方法槽的 witness 换成具体 impl 成员的 (声明下标, 代入)。
 ///
@@ -132,7 +140,22 @@ pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
         // 1. 收集仍指向开放声明的调用点。
         let mut requests: BTreeSet<(u32, Substitution)> = BTreeSet::new();
         for module in modules.iter_mut() {
-            visit_module_calls(module, &mut |call| {
+            visit_module_calls(module, &mut |request| {
+                let call = match request {
+                    CallableRequest::Call(call) => call,
+                    // 具名函数作值：非泛型声明按空代入照常铸造实例；
+                    // 声明不在闭包表里（如抽象无泛型 intrinsic）保持空，由后端 fail-closed。
+                    CallableRequest::Reference(reference) => {
+                        let Some(index) = reference.declaration.map(|declaration| declaration.index())
+                        else {
+                            return;
+                        };
+                        if declarations.get(&index).is_some_and(|declaration| declaration.function.generics.is_empty()) {
+                            requests.insert((index, Substitution::new()));
+                        }
+                        return;
+                    }
+                };
                 let Some(index) = call.declaration.map(|declaration| declaration.index())
                 else {
                     return;
@@ -195,7 +218,20 @@ pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
         // 4. 回填调用点。即使本轮没有新实例也必须回填：克隆体里的重复代入
         //    只能指向已存在的实例，不能永远悬空。
         for module in modules.iter_mut() {
-            visit_module_calls(module, &mut |call| {
+            visit_module_calls(module, &mut |request| {
+                let call = match request {
+                    CallableRequest::Call(call) => call,
+                    CallableRequest::Reference(reference) => {
+                        let Some(index) = reference.declaration.map(|declaration| declaration.index())
+                        else {
+                            return;
+                        };
+                        if let Some(instance) = instances.get(&(index, Substitution::new())) {
+                            reference.instance = Some(*instance);
+                        }
+                        return;
+                    }
+                };
                 let Some(index) = call.declaration.map(|declaration| declaration.index())
                 else {
                     return;
@@ -798,8 +834,8 @@ fn substitute_function(function: &mut HirFunction, substitution: &Substitution, 
     substitute_block(&mut function.body, substitution, owner);
 }
 
-/// 遍历模块（含子模块）内全部 callable 体内的已解析调用合同。
-fn visit_module_calls(module: &mut HirModule, visit: &mut impl FnMut(&mut HirResolvedCall)) {
+/// 遍历模块（含子模块）内全部 callable 体内的可调用请求点（调用合同与函数作值引用）。
+fn visit_module_calls(module: &mut HirModule, visit: &mut impl FnMut(CallableRequest<'_>)) {
     for function in &mut module.functions {
         visit_block(&mut function.body, visit);
     }
@@ -846,7 +882,7 @@ fn visit_module_calls(module: &mut HirModule, visit: &mut impl FnMut(&mut HirRes
     }
 }
 
-fn visit_block(block: &mut HirBlock, visit: &mut impl FnMut(&mut HirResolvedCall)) {
+fn visit_block(block: &mut HirBlock, visit: &mut impl FnMut(CallableRequest<'_>)) {
     for statement in &mut block.statements {
         match &mut statement.kind {
             HirStatementKind::Let { initializer, .. } => {
@@ -862,7 +898,7 @@ fn visit_block(block: &mut HirBlock, visit: &mut impl FnMut(&mut HirResolvedCall
     }
 }
 
-fn visit_expr(expr: &mut HirExpr, visit: &mut impl FnMut(&mut HirResolvedCall)) {
+fn visit_expr(expr: &mut HirExpr, visit: &mut impl FnMut(CallableRequest<'_>)) {
     match &mut expr.kind {
         HirExprKind::Call { callee, args, resolved } => {
             visit_expr(callee, visit);
@@ -870,7 +906,7 @@ fn visit_expr(expr: &mut HirExpr, visit: &mut impl FnMut(&mut HirResolvedCall)) 
                 visit_expr(&mut arg.value, visit);
             }
             if let Some(resolved) = resolved {
-                visit(resolved);
+                visit(CallableRequest::Call(resolved));
             }
         }
         HirExprKind::Construct { args, resolved, .. } => {
@@ -878,9 +914,10 @@ fn visit_expr(expr: &mut HirExpr, visit: &mut impl FnMut(&mut HirResolvedCall)) 
                 visit_expr(arg, visit);
             }
             if let Some(resolved) = resolved {
-                visit(resolved);
+                visit(CallableRequest::Call(resolved));
             }
         }
+        HirExprKind::FunctionReference(reference) => visit(CallableRequest::Reference(reference)),
         HirExprKind::Cast { expr: inner, .. }
         | HirExprKind::FieldAccess { object: inner, .. }
         | HirExprKind::FieldInit { value: inner, .. }
@@ -897,7 +934,7 @@ fn visit_expr(expr: &mut HirExpr, visit: &mut impl FnMut(&mut HirResolvedCall)) 
         HirExprKind::TryPropagate { inner, resolved_ok_variant } => {
             visit_expr(inner, visit);
             if let Some(variant) = resolved_ok_variant {
-                visit(variant);
+                visit(CallableRequest::Call(variant));
             }
         }
         HirExprKind::StoreField { object, value, .. } => {
@@ -914,8 +951,8 @@ fn visit_expr(expr: &mut HirExpr, visit: &mut impl FnMut(&mut HirResolvedCall)) 
         // 集合字面量构造槽由 post-binding pass 冻结（声明身份已带、实例待铸造）：
         // 两槽交给固定点登记，字面量项照常下钻。
         HirExprKind::CollectionInit { with_length, append, items, .. } => {
-            visit(with_length);
-            visit(append);
+            visit(CallableRequest::Call(with_length));
+            visit(CallableRequest::Call(append));
             for item in items {
                 visit_expr(item, visit);
             }

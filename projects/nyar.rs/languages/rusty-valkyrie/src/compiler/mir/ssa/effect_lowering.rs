@@ -51,9 +51,12 @@ fn hir_expr_contains_raise(expr: &HirExpr) -> bool {
         HirExprKind::TryScope { body, .. } => hir_block_contains_raise(body),
         HirExprKind::With { base, updates } => hir_expr_contains_raise(base) || updates.iter().any(|(_, expr)| hir_expr_contains_raise(expr)),
         HirExprKind::SuperCall { args, .. } => args.iter().any(hir_expr_contains_raise),
-        HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } | HirExprKind::Fallthrough => {
-            false
-        }
+        HirExprKind::Literal(_)
+        | HirExprKind::Variable(_)
+        | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
+        | HirExprKind::Continue { .. }
+        | HirExprKind::Fallthrough => false,
     }
 }
 
@@ -116,9 +119,12 @@ fn hir_expr_contains_return(expr: &HirExpr) -> bool {
         HirExprKind::With { base, updates } => hir_expr_contains_return(base) || updates.iter().any(|(_, expr)| hir_expr_contains_return(expr)),
         HirExprKind::SuperCall { args, .. } => args.iter().any(hir_expr_contains_return),
         HirExprKind::Cast { expr, .. } => hir_expr_contains_return(expr),
-        HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } | HirExprKind::Fallthrough => {
-            false
-        }
+        HirExprKind::Literal(_)
+        | HirExprKind::Variable(_)
+        | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
+        | HirExprKind::Continue { .. }
+        | HirExprKind::Fallthrough => false,
     }
 }
 
@@ -187,9 +193,12 @@ fn hir_expr_calls_name(expr: &HirExpr, name: &str) -> bool {
             hir_expr_calls_name(base, name) || updates.iter().any(|(_, expr)| hir_expr_calls_name(expr, name))
         }
         HirExprKind::SuperCall { args, .. } => args.iter().any(|expr| hir_expr_calls_name(expr, name)),
-        HirExprKind::Literal(_) | HirExprKind::Variable(_) | HirExprKind::Path(_) | HirExprKind::Continue { .. } | HirExprKind::Fallthrough => {
-            false
-        }
+        HirExprKind::Literal(_)
+        | HirExprKind::Variable(_)
+        | HirExprKind::Path(_)
+        | HirExprKind::FunctionReference(_)
+        | HirExprKind::Continue { .. }
+        | HirExprKind::Fallthrough => false,
     }
 }
 
