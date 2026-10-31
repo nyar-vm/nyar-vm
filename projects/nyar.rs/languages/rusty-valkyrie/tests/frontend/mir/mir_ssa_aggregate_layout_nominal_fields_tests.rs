@@ -7,8 +7,10 @@
 use nyar::NyarType;
 use rusty_valkyrie::{
     Identifier, MirDiagnostic, MirLowerer, ValkyrieCompiler,
-    compiler::emitter::pipeline::canonical_program_from_semantic_mir,
-    compiler::types::hir::{HirField, HirModule, HirStruct},
+    compiler::{
+        emitter::pipeline::canonical_program_from_semantic_mir,
+        types::hir::{HirField, HirModule, HirStruct},
+    },
     compute_aggregate_layout_plan,
     types::hir::types::ValkyrieType,
 };
@@ -45,9 +47,7 @@ micro probe(flag: bool) -> bool {
 "#;
 
 fn compile(source: &str) -> rusty_valkyrie::compiler::mir::ssa::MirModule {
-    let hir = ValkyrieCompiler::default()
-        .compile_source(&format!("{PRIMITIVES}\n{source}"))
-        .expect("fixture 必须完成 HIR 分析");
+    let hir = ValkyrieCompiler::default().compile_source(&format!("{PRIMITIVES}\n{source}")).expect("fixture 必须完成 HIR 分析");
     MirLowerer::lower_module_semantic(&hir)
 }
 
@@ -66,10 +66,7 @@ fn nominal_generic_and_array_fields_lower_without_panic() {
     );
     assert_eq!(
         builder_layout.fields[0].ty,
-        NyarType::Apply(
-            Box::new(NyarType::Named(Identifier::new("core::primitive::ArrayList"))),
-            vec![NyarType::Integer8 { signed: false }]
-        ),
+        NyarType::Apply(Box::new(NyarType::Named(Identifier::new("core::primitive::ArrayList"))), vec![NyarType::Integer8 { signed: false }]),
         "ArrayList<u8> 必须按声明拼写解析为 Apply，实参经 primitive 载体代入"
     );
     assert_eq!(builder_layout.fields[0].size, 8, "引用语义泛型实例字段按引用槽计量");

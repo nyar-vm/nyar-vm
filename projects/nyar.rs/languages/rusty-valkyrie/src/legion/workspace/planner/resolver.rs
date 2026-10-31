@@ -9,12 +9,12 @@ use nyar_package_manager::PackageManager as PackageLegion;
 use crate::legion::workspace::manifest::{BuildTargetSpec, DependencySpec, ProjectManifest, WorkspaceManifest};
 
 use super::{
+    closure_demand::{compile_arch_key, test_entry_names},
     dependencies::{
         ResolvedDependencySource, default_dist_output_dir, effective_dependency_spec, merged_local_dependency_overrides,
         resolve_dependency_source, select_build_target,
     },
     host::collect_host_inventory,
-    closure_demand::{compile_arch_key, test_entry_names},
     source_file_conditions::{filter_semantic_source_groups_for_target, filter_source_files_for_target},
     sources::{
         MAX_SEMANTIC_GROUP_DEPTH, MAX_SEMANTIC_GROUPS, MAX_SOURCE_CLOSURE_FILES, add_distribution_default_dependencies, canonicalize_lossy,
@@ -711,11 +711,7 @@ impl WorkspaceResolver {
 ///
 /// 测试声明只在 `test/` 文件里，装配层若只把测试文件并入哈希输入而不并入语义组，
 /// 闭包永远看不到它们：测试「编译失败」会被误报成 0 通过。
-fn append_test_files_to_entry_group(
-    groups: &mut [PlannedSemanticSourceGroup],
-    test_files: &[PathBuf],
-    project: &str,
-) -> PlannerResult<()> {
+fn append_test_files_to_entry_group(groups: &mut [PlannedSemanticSourceGroup], test_files: &[PathBuf], project: &str) -> PlannerResult<()> {
     let Some(group) = groups.iter_mut().find(|group| group.is_entry)
     else {
         return Err(PlannerError::MissingTestEntryGroup { project: project.to_string() });

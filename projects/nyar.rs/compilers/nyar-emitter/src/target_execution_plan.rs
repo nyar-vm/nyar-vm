@@ -1033,7 +1033,6 @@ fn resolve_witness_to_item(program: &CanonicalProgram, witness: &nyar_types::Can
     Ok(*instance)
 }
 
-
 fn lower_operation(
     program: &CanonicalProgram,
     function: &nyar_types::CanonicalFunction,
@@ -1089,7 +1088,9 @@ fn lower_operation(
         // backend-private 计划只做载体映射，wasm backend 负责编码成 wasm GC 指令。
         // 在此重新拒绝会把已确认的结构语义降级成字符串错误，属禁止的向上推断。
         CanonicalOperation::ArrayGet { array, index } => InstructionKind::ArrayGet { array: value(*array), index: value(*index) },
-        CanonicalOperation::ArraySet { array, index, value: stored } => InstructionKind::ArraySet { array: value(*array), index: value(*index), value: value(*stored) },
+        CanonicalOperation::ArraySet { array, index, value: stored } => {
+            InstructionKind::ArraySet { array: value(*array), index: value(*index), value: value(*stored) }
+        }
         CanonicalOperation::ArrayLength { array } => InstructionKind::ArrayLength { array: value(*array) },
         CanonicalOperation::NullIsNull { value: operand } => InstructionKind::NullIsNull { value: value(*operand) },
         CanonicalOperation::NullUnwrap { value: operand } => InstructionKind::NullUnwrap { value: value(*operand) },
@@ -1109,7 +1110,8 @@ fn lower_operation(
             );
             let layout_id = if need_layout {
                 layout_for_type(*array_type, "ArrayFromElements")?
-            } else {
+            }
+            else {
                 // 普通 Array 不需要 aggregate layout；用 dummy 0 占位，wasm backend 会跳过。
                 0u32
             };
@@ -1177,11 +1179,16 @@ fn signature_contains_generic(program: &CanonicalProgram, function: &nyar_types:
 
 /// 递归检查 canonical 类型（含嵌套）是否包含 Generic。
 fn type_contains_generic_deep(program: &CanonicalProgram, id: nyar_types::TypeId) -> bool {
-    let Some(row) = program.linked.types.get(&id) else { return false; };
+    let Some(row) = program.linked.types.get(&id)
+    else {
+        return false;
+    };
     match &row.kind {
         nyar_types::CanonicalTypeKind::Generic { .. } => true,
         nyar_types::CanonicalTypeKind::Nominal { arguments, .. } => arguments.iter().any(|a| type_contains_generic_deep(program, *a)),
-        nyar_types::CanonicalTypeKind::Tuple(items) | nyar_types::CanonicalTypeKind::Union(items) | nyar_types::CanonicalTypeKind::Intersection(items) => items.iter().any(|a| type_contains_generic_deep(program, *a)),
+        nyar_types::CanonicalTypeKind::Tuple(items)
+        | nyar_types::CanonicalTypeKind::Union(items)
+        | nyar_types::CanonicalTypeKind::Intersection(items) => items.iter().any(|a| type_contains_generic_deep(program, *a)),
         nyar_types::CanonicalTypeKind::Array { element, .. } => type_contains_generic_deep(program, *element),
         nyar_types::CanonicalTypeKind::Nullable(element) => type_contains_generic_deep(program, *element),
         nyar_types::CanonicalTypeKind::Function { parameters, return_type } => {
@@ -1263,12 +1270,21 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
                 // 跳过泛型声明函数
                 let has_generic_sig = func.parameters.iter().any(|(_, tid)| {
                     canonical.linked.types.get(tid).is_some_and(|row| matches!(row.kind, nyar_types::CanonicalTypeKind::Generic { .. }))
-                }) || canonical.linked.types.get(&func.return_type).is_some_and(|row| matches!(row.kind, nyar_types::CanonicalTypeKind::Generic { .. }));
-                if has_generic_sig { continue; }
+                }) || canonical
+                    .linked
+                    .types
+                    .get(&func.return_type)
+                    .is_some_and(|row| matches!(row.kind, nyar_types::CanonicalTypeKind::Generic { .. }));
+                if has_generic_sig {
+                    continue;
+                }
                 // 递归检查 value_types 里有没有嵌套 Generic
                 let mut found = false;
                 for (_, tid) in &func.value_types {
-                    if type_contains_generic_deep(canonical, *tid) { found = true; break; }
+                    if type_contains_generic_deep(canonical, *tid) {
+                        found = true;
+                        break;
+                    }
                 }
                 if found {
                     let name = program.linked.callable_names.get(inst).cloned().unwrap_or_default();
@@ -1281,7 +1297,10 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
                     type_debug.push_str(&format!("TypeId({:?})={:?}; ", tid, row.kind));
                 }
             }
-            return Err(format!("canonical 类型尚无目标合同: {unsupported:?} (module={}, refs=[{}], generic_types=[{}])", program.mir.module_name, refs_debug, type_debug));
+            return Err(format!(
+                "canonical 类型尚无目标合同: {unsupported:?} (module={}, refs=[{}], generic_types=[{}])",
+                program.mir.module_name, refs_debug, type_debug
+            ));
         }
     }
 }

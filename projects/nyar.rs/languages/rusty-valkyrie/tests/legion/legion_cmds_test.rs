@@ -135,7 +135,12 @@ fn test_plan_merges_test_files_into_entry_semantic_group() {
     let workspace = WorkspaceResolver::discover_for_project(&fixture.project_dir).expect("discover workspace");
     let target = parse_target_label("ovm").unwrap();
     let (plan, _mode) = workspace
-        .build_test_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target, output_dir: None, enabled_features: Default::default() })
+        .build_test_plan(&BuildRequest {
+            project_dir: fixture.project_dir.clone(),
+            target,
+            output_dir: None,
+            enabled_features: Default::default(),
+        })
         .expect("test plan generation");
 
     assert!(plan.project.is_test, "test plan must be marked as a test build");
@@ -189,7 +194,12 @@ micro repeated_name() -> i64 {
     let workspace = WorkspaceResolver::discover_for_project(&fixture.project_dir).expect("discover workspace");
     let target = parse_target_label("ovm").unwrap();
     let error = workspace
-        .build_test_plan(&BuildRequest { project_dir: fixture.project_dir.clone(), target, output_dir: None, enabled_features: Default::default() })
+        .build_test_plan(&BuildRequest {
+            project_dir: fixture.project_dir.clone(),
+            target,
+            output_dir: None,
+            enabled_features: Default::default(),
+        })
         .expect_err("duplicate test names must not enter a build plan");
     let message = error.to_string();
     assert!(message.contains("declared more than once"), "unexpected diagnostic: {message}");

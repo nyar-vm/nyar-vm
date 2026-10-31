@@ -93,9 +93,9 @@ fn non_empty_phase_name(name: String) -> Option<String> {
 /// 角色只由语言声明给出，这是「哪个成员实现哪种宿主直通操作」的唯一事实来源；
 /// 调用方不得按成员名猜映射。未知角色或缺失参数时返回 `None`（失败闭合）。
 pub fn parse_library_glue_operation(annotations: &[HirAttribute]) -> Option<LibraryGlueOperation> {
-    let attribute = annotations.iter().find(|attribute| {
-        attribute.name.parts().last().map(|part| part.as_str()) == Some(LibraryGlueOperation::ATTRIBUTE_NAME)
-    })?;
+    let attribute = annotations
+        .iter()
+        .find(|attribute| attribute.name.parts().last().map(|part| part.as_str()) == Some(LibraryGlueOperation::ATTRIBUTE_NAME))?;
 
     for argument in &attribute.arguments {
         if let Some(key) = argument.key.as_ref() {

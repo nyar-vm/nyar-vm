@@ -350,8 +350,8 @@ fn imply_method_host_contract_binds_provider_and_retires_contract_body() {
              using std.text.{Utf8Text};\n\
              [main] micro main() -> i32 { let t = Utf8Text { _repr: 5 }; return t.length() }",
         )
-            .as_entry()
-            .with_direct_dependencies(vec!["core".into(), "std".into(), "adaptor".into()]),
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into(), "std".into(), "adaptor".into()]),
     ];
     let bindings = vec![CompilerHostProviderBinding {
         contract: DeclarationKey {

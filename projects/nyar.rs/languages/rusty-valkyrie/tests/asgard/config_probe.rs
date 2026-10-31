@@ -67,16 +67,9 @@ pub(crate) fn build_probe_project(prefix: &str, source: &str) -> Result<ProbeArt
     let project_dir = root.join("app");
     let source_dir = project_dir.join("source");
     fs::create_dir_all(&source_dir).expect("创建探针工程源码目录");
-    fs::write(
-        root.join("legions.von"),
-        "{\n    name: \"asgard-config-probe\",\n    members: [\"app\"]\n}\n",
-    )
-    .expect("写入 workspace 清单");
-    fs::write(
-        project_dir.join("legion.von"),
-        "{\n    name: \"app\",\n    artifact: \"library\",\n    build: [{ target: \"node\" }]\n}\n",
-    )
-    .expect("写入工程清单");
+    fs::write(root.join("legions.von"), "{\n    name: \"asgard-config-probe\",\n    members: [\"app\"]\n}\n").expect("写入 workspace 清单");
+    fs::write(project_dir.join("legion.von"), "{\n    name: \"app\",\n    artifact: \"library\",\n    build: [{ target: \"node\" }]\n}\n")
+        .expect("写入工程清单");
     fs::write(source_dir.join("main.v"), source).expect("写入探针配置模块源码");
     fs::write(source_dir.join("core_primitive.v"), CORE_PRIMITIVE_DECLARATIONS).expect("写入 primitive 声明");
 
@@ -95,12 +88,8 @@ pub(crate) fn build_probe_project(prefix: &str, source: &str) -> Result<ProbeArt
         return Err(ProbeFailure { message: format!("legion build 退出码非成功: {status:?}") });
     }
 
-    let glue_path = find_glue(&output_dir).ok_or_else(|| ProbeFailure {
-        message: format!(
-            "构建成功但输出目录没有 `.mjs` Node glue: {}",
-            list_dir(&output_dir)
-        ),
-    })?;
+    let glue_path = find_glue(&output_dir)
+        .ok_or_else(|| ProbeFailure { message: format!("构建成功但输出目录没有 `.mjs` Node glue: {}", list_dir(&output_dir)) })?;
     Ok(ProbeArtifact { _temp: temp, output_dir, glue_path })
 }
 
@@ -114,7 +103,9 @@ fn find_glue(output_dir: &Path) -> Option<PathBuf> {
 
 fn list_dir(dir: &Path) -> String {
     fs::read_dir(dir)
-        .map(|entries| entries.filter_map(|entry| entry.ok()).map(|entry| entry.file_name().to_string_lossy().into_owned()).collect::<Vec<_>>().join(", "))
+        .map(|entries| {
+            entries.filter_map(|entry| entry.ok()).map(|entry| entry.file_name().to_string_lossy().into_owned()).collect::<Vec<_>>().join(", ")
+        })
         .unwrap_or_else(|_| "<目录不存在>".to_string())
 }
 
@@ -141,11 +132,7 @@ process.stdout.write(JSON.stringify(value ?? null));
         .output()
         .expect("Node 必须可用（主动交付线宿主）");
     if !output.status.success() {
-        return Err(format!(
-            "node callExport 失败 status={:?}\nstderr={}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stderr)
-        ));
+        return Err(format!("node callExport 失败 status={:?}\nstderr={}", output.status.code(), String::from_utf8_lossy(&output.stderr)));
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }

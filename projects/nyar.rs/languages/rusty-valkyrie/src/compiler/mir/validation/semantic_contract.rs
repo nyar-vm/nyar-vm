@@ -412,11 +412,7 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                         }
                     }
                     _ => {
-                        return Err(error(
-                            "SMIR007",
-                            location.clone(),
-                            "null constant requires a nullable (`T?`) context type".to_string(),
-                        ));
+                        return Err(error("SMIR007", location.clone(), "null constant requires a nullable (`T?`) context type".to_string()));
                     }
                 }
             }

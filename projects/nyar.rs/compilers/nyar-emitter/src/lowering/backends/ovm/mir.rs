@@ -13,8 +13,8 @@ use crate::{
 use nyar::{ExternalImportLink, NamePath};
 use nyar_types::{AggregateLayout, ItemInstanceId, LayoutId};
 use odin_bytecode::{
-    IntrinsicOpcode, NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout,
-    NyarModuleData,
+    IntrinsicOpcode, NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind,
+    NyarLayout, NyarModuleData,
 };
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};

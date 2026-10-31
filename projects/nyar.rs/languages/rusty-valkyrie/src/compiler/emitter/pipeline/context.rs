@@ -48,7 +48,14 @@ impl CompilerBuildContext {
         clr_suspend_strategy: ClrSuspendStrategy,
         wasm_package_kind: WasmPackageKind,
     ) -> Self {
-        Self { arch: arch.into(), target, clr_suspend_strategy, wasm_package_kind, selected_host_providers: Vec::new(), test_entry_names: Vec::new() }
+        Self {
+            arch: arch.into(),
+            target,
+            clr_suspend_strategy,
+            wasm_package_kind,
+            selected_host_providers: Vec::new(),
+            test_entry_names: Vec::new(),
+        }
     }
 
     /// 附加测试构建的 `[test]` 入口名（由语义闭包 seed 推导）。

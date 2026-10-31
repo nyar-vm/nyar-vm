@@ -11,9 +11,7 @@ use nyar_emitter::{build_node_launcher, collect_import_bindings};
 
 /// 构造 library_invoke v0 规格：单个导出 + 可选 glue_entries。
 fn spec(exports: &str, glue_entries: &str) -> String {
-    format!(
-        r#"{{"version":0,"exports":{exports},"glue_entries":{glue_entries},"abi_digest":"sha256-fixture"}}"#
-    )
+    format!(r#"{{"version":0,"exports":{exports},"glue_entries":{glue_entries},"abi_digest":"sha256-fixture"}}"#)
 }
 
 const NO_ENTRIES: &str = "[]";
@@ -41,7 +39,10 @@ fn glue_demarshals_utf8_return_as_raw_handle_number() {
 fn glue_marshal_rejects_js_string_for_utf8_parameter() {
     // Utf8 参数位只接受预转换的 host-intern 句柄；JS 字符串入参必须显式抛错，
     // 不得静默把字符串当句柄或当索引。
-    let glue = library_glue(&spec(r#"{"echo":{"params":[{"index":0,"name":"s","type":{"kind":"Utf8"},"carrier":"i32"}],"returns":{"kind":"Utf8"}}}"#, NO_ENTRIES));
+    let glue = library_glue(&spec(
+        r#"{"echo":{"params":[{"index":0,"name":"s","type":{"kind":"Utf8"},"carrier":"i32"}],"returns":{"kind":"Utf8"}}}"#,
+        NO_ENTRIES,
+    ));
     assert!(glue.contains("Utf8 参数需要预转换为 host-intern 句柄"), "JS 字符串入参必须失败闭合:\n{glue}");
 }
 
@@ -148,7 +149,10 @@ fn glue_call_export_resolves_spec_params_by_position_and_identity() {
     ));
     assert!(glue.contains("export async function callExport"), "library glue 必须暴露 callExport:\n{glue}");
     assert!(glue.contains(r#"const spec = LIBRARY_INVOKE?.exports?.[name];"#), "调用规格必须按导出名查表:\n{glue}");
-    assert!(glue.contains("spec.params.map((param, index) => marshalLibraryArg(paramType(param), args[index]))"), "参数必须按声明顺序逐位 marshal:\n{glue}");
+    assert!(
+        glue.contains("spec.params.map((param, index) => marshalLibraryArg(paramType(param), args[index]))"),
+        "参数必须按声明顺序逐位 marshal:\n{glue}"
+    );
     assert!(glue.contains("demarshalLibraryReturn(spec.returns, raw)"), "返回值必须按返回 schema demarshal:\n{glue}");
     assert!(glue.contains(r#"if (kind === "I64") return BigInt(value ?? 0);"#), "i64 参数必须 BigInt 化:\n{glue}");
 }

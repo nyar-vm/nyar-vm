@@ -6,6 +6,24 @@ use crate::compiler::{
     hir::{
         call_binding::bind_call_arguments,
         construct_binding::bind_construct_fields,
+        overload::{
+            diagnostics::{OverloadCandidate, OverloadDomain, OverloadMatchKind, OverloadResolutionError},
+            resolve_call::pattern_extractor_receiver_type,
+            substitution::{
+                extract_singleton_type_name, instantiate_trait_bound_candidate, instantiate_trait_method_candidate, substitute_self_type,
+                substitute_type_parameters, substitute_type_self, substitute_type_vars, unify_call_type_binders,
+            },
+            symbol_match::{
+                aggregate_constructor_matches_name, candidate_extractor_path_matches, candidate_owned_method_matches,
+                candidate_trait_method_matches, candidate_variant_constructor_matches, symbol_matches_imported_dependency_export,
+                symbol_matches_language_builtin, symbol_matches_unqualified_free_call,
+            },
+            r#trait::impl_nominal_type_name,
+            types::{
+                accepts_array_shape, compute_call_match_kind, extract_callable_name, infer_expr_type, infer_scrutinee_type,
+                is_empty_array_literal,
+            },
+        },
         try_propagate::{
             is_option_apply_type, is_result_apply_type, nullable_payload_type, option_apply_payload_type, result_variant_payload_type,
         },
@@ -16,26 +34,10 @@ use crate::compiler::{
     types::{
         Identifier, NamePath,
         hir::{
-            BuiltinStructureOp, HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirFunction, HirLiteral, HirParam, HirPattern,
-            HirResolvedCall, HirStringSegment, HirTrait, HirTraitBound, HirTraitDispatch, HirVariant, HirWhereConstraint, ValkyrieType,
+            BuiltinStructureOp, HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirFunction, HirLiteral, HirParam,
+            HirPattern, HirResolvedCall, HirStringSegment, HirTrait, HirTraitBound, HirTraitDispatch, HirVariant, HirWhereConstraint,
+            ValkyrieType,
         },
-    },
-};
-use crate::compiler::hir::overload::{
-    diagnostics::{OverloadCandidate, OverloadDomain, OverloadMatchKind, OverloadResolutionError},
-    resolve_call::pattern_extractor_receiver_type,
-    substitution::{
-        extract_singleton_type_name, instantiate_trait_bound_candidate, instantiate_trait_method_candidate, substitute_self_type,
-        substitute_type_parameters, substitute_type_self, substitute_type_vars, unify_call_type_binders,
-    },
-    symbol_match::{
-        aggregate_constructor_matches_name, candidate_extractor_path_matches, candidate_owned_method_matches, candidate_trait_method_matches,
-        candidate_variant_constructor_matches, symbol_matches_imported_dependency_export, symbol_matches_language_builtin,
-        symbol_matches_unqualified_free_call,
-    },
-    r#trait::impl_nominal_type_name,
-    types::{
-        accepts_array_shape, compute_call_match_kind, extract_callable_name, infer_expr_type, infer_scrutinee_type, is_empty_array_literal,
     },
 };
 

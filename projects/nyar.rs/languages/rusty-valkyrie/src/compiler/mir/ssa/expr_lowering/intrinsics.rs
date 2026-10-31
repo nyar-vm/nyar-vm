@@ -352,10 +352,7 @@ impl MirBuilder {
         let array = arguments[0].clone();
         let value = self.next_value(MirValueOrigin::CallResult);
         self.push_instruction(MirOperation::ArrayLength { array }, vec![value]);
-        let return_type = resolved
-            .map(|call| call.return_type.clone())
-            .or_else(|| expected_type.cloned())
-            .unwrap_or(ValkyrieType::Unit);
+        let return_type = resolved.map(|call| call.return_type.clone()).or_else(|| expected_type.cloned()).unwrap_or(ValkyrieType::Unit);
         self.value_types.insert(value, return_type);
         Some(MirOperand::Value(value))
     }
@@ -401,20 +398,13 @@ impl MirBuilder {
         let index = arguments[1].clone();
         let value = self.next_value(MirValueOrigin::CallResult);
         self.push_instruction(MirOperation::ArrayGet { array, index }, vec![value]);
-        let return_type = resolved
-            .map(|call| call.return_type.clone())
-            .or_else(|| expected_type.cloned())
-            .unwrap_or(ValkyrieType::Unit);
+        let return_type = resolved.map(|call| call.return_type.clone()).or_else(|| expected_type.cloned()).unwrap_or(ValkyrieType::Unit);
         self.value_types.insert(value, return_type);
         Some(MirOperand::Value(value))
     }
 
     /// 数组下标写入 intrinsic：`[intrinsic("builtin.array.set")] __array_set(self, ordinal, value)` → `ArraySet`。
-    pub(crate) fn try_lower_array_set_intrinsic(
-        &mut self,
-        resolved: Option<&HirResolvedCall>,
-        arguments: &[MirOperand],
-    ) -> Option<MirOperand> {
+    pub(crate) fn try_lower_array_set_intrinsic(&mut self, resolved: Option<&HirResolvedCall>, arguments: &[MirOperand]) -> Option<MirOperand> {
         if resolved?.intrinsic? != BuiltinStructureOp::ArraySet {
             return None;
         }

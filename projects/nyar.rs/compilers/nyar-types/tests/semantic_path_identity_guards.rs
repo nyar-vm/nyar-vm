@@ -90,9 +90,7 @@ fn ends_with_symbol_heuristics_do_not_grow() {
 
 #[test]
 fn frozen_identity_types_are_public() {
-    use nyar_types::{
-        AttributeId, AttributeRegistration, ImportCapability, ImportIndex, ItemId, TypeInstanceId, builtin_attribute,
-    };
+    use nyar_types::{AttributeId, AttributeRegistration, ImportCapability, ImportIndex, ItemId, TypeInstanceId, builtin_attribute};
     assert!(ItemId::from_index(0).is_some());
     assert!(TypeInstanceId::from_index(0).is_some());
     assert!(ImportIndex::from_index(0).is_some());

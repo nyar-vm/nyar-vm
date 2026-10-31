@@ -92,7 +92,8 @@ fn select_host_providers(
         // 需求判定属于编译边界的「已解析 callee」事实，不是闭包保守超集：
         // 无候选 provider 的合同在这里只是「不选中」，缺实现的失败由
         // Compiler host binding 阶段按真实调用结构化上报。
-        let Some(candidates) = providers_by_contract.get(&contract.id) else {
+        let Some(candidates) = providers_by_contract.get(&contract.id)
+        else {
             continue;
         };
 

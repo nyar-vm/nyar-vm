@@ -18,16 +18,12 @@ fn contains_open_generic(ty: &ValkyrieType) -> bool {
         ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_open_generic),
         ValkyrieType::Apply(base, arguments) => contains_open_generic(base) || arguments.iter().any(contains_open_generic),
         ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_open_generic(element),
-        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
-            items.iter().any(contains_open_generic)
-        }
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => items.iter().any(contains_open_generic),
         ValkyrieType::Function(function) => {
             function.params.iter().any(|p| contains_open_generic(p)) || contains_open_generic(&function.return_type)
         }
         ValkyrieType::FixedArray { element, .. } => contains_open_generic(element),
-        ValkyrieType::Associated(assoc) => {
-            contains_open_generic(&assoc.base) || assoc.type_arguments.iter().any(contains_open_generic)
-        }
+        ValkyrieType::Associated(assoc) => contains_open_generic(&assoc.base) || assoc.type_arguments.iter().any(contains_open_generic),
         _ => false,
     }
 }
@@ -44,9 +40,7 @@ pub(super) fn lower_singleton_method_functions(
     let mut functions = Vec::new();
     for singleton in &module.singletons {
         for method in singleton.methods.iter().filter(|method| {
-            !method.is_abstract
-                && !method.params.iter().any(|p| contains_open_generic(&p.ty))
-                && !contains_open_generic(&method.return_type)
+            !method.is_abstract && !method.params.iter().any(|p| contains_open_generic(&p.ty)) && !contains_open_generic(&method.return_type)
         }) {
             let mut mir_function = lower_function_semantic(
                 module,
@@ -162,9 +156,7 @@ pub(super) fn lower_impl_method_functions(
     }
     for item in &module.structs {
         for method in item.methods.iter().filter(|method| {
-            !method.is_abstract
-                && !method.params.iter().any(|p| contains_open_generic(&p.ty))
-                && !contains_open_generic(&method.return_type)
+            !method.is_abstract && !method.params.iter().any(|p| contains_open_generic(&p.ty)) && !contains_open_generic(&method.return_type)
         }) {
             let mut mir_function = lower_function_semantic(
                 module,
@@ -184,9 +176,7 @@ pub(super) fn lower_impl_method_functions(
     }
     for trait_def in &module.traits {
         for method in trait_def.default_methods.iter().filter(|method| {
-            !method.is_abstract
-                && !method.params.iter().any(|p| contains_open_generic(&p.ty))
-                && !contains_open_generic(&method.return_type)
+            !method.is_abstract && !method.params.iter().any(|p| contains_open_generic(&p.ty)) && !contains_open_generic(&method.return_type)
         }) {
             let mut mir_function = lower_function_semantic(
                 module,

@@ -124,12 +124,10 @@ impl<'a> WasmMirLowerer<'a> {
     /// 未注册即计划不一致：调用方只有在 `layout_uses_gc_struct` 为真时才会走到这里，
     /// 找不到就说明注册条件与使用点分叉，必须失败闭合而不是发 `unreachable` 掩盖。
     pub(super) fn resolve_gc_struct_type_index(&self, layout_id: LayoutId, type_name: &str) -> u32 {
-        self.gc_struct_type_indices.get(&layout_id).copied().unwrap_or_else(|| {
-            panic!(
-                "WASM gc structtype 未注册: layout_id={layout_id:?} type `{type_name}` in `{}`",
-                self.mir_fn.symbol
-            )
-        })
+        self.gc_struct_type_indices
+            .get(&layout_id)
+            .copied()
+            .unwrap_or_else(|| panic!("WASM gc structtype 未注册: layout_id={layout_id:?} type `{type_name}` in `{}`", self.mir_fn.symbol))
     }
 
     /// 查找 sum nominal identity 对应的 wasm-gc structtype `[i32 tag, anyref payload]`。
@@ -137,24 +135,22 @@ impl<'a> WasmMirLowerer<'a> {
     /// 未注册就说明「计划里有这个 sum，降低却没为它登记类型」，必须失败闭合：
     /// 回落到别的 struct 会把编译期不一致变成运行期 `illegal cast`。
     pub(super) fn resolve_gc_sum_type_index(&self, nominal: &NominalInstanceId) -> u32 {
-        self.gc_sum_type_indices.get(nominal).copied().unwrap_or_else(|| {
-            panic!("WASM sum lowering missing gc structtype for nominal {nominal:?} in `{}`", self.mir_fn.symbol)
-        })
+        self.gc_sum_type_indices
+            .get(nominal)
+            .copied()
+            .unwrap_or_else(|| panic!("WASM sum lowering missing gc structtype for nominal {nominal:?} in `{}`", self.mir_fn.symbol))
     }
 
     /// 读取计划冻结的 variant tag 与 payload 类型；缺项即计划不完整，失败闭合。
-    pub(super) fn sum_variant_representation(
-        &self,
-        nominal: &NominalInstanceId,
-        variant: &VariantId,
-    ) -> (u32, Option<nyar_types::TypeId>) {
+    pub(super) fn sum_variant_representation(&self, nominal: &NominalInstanceId, variant: &VariantId) -> (u32, Option<nyar_types::TypeId>) {
         let sums = self.ctx.submission.backend_plan.sum_representations();
-        let sum = sums.get(nominal).unwrap_or_else(|| {
-            panic!("WASM sum lowering missing SumRepresentation for nominal {nominal:?} in `{}`", self.mir_fn.symbol)
-        });
-        let entry = sum.variants.get(variant).unwrap_or_else(|| {
-            panic!("WASM sum lowering missing variant {variant:?} of nominal {nominal:?} in `{}`", self.mir_fn.symbol)
-        });
+        let sum = sums
+            .get(nominal)
+            .unwrap_or_else(|| panic!("WASM sum lowering missing SumRepresentation for nominal {nominal:?} in `{}`", self.mir_fn.symbol));
+        let entry = sum
+            .variants
+            .get(variant)
+            .unwrap_or_else(|| panic!("WASM sum lowering missing variant {variant:?} of nominal {nominal:?} in `{}`", self.mir_fn.symbol));
         (entry.tag, entry.payload_type)
     }
 

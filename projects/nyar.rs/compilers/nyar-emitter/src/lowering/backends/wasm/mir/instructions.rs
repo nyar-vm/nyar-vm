@@ -52,9 +52,9 @@ impl<'a> WasmMirLowerer<'a> {
             MirInstructionKind::Cast { source, ty } => {
                 // 语言层 `as` 是表示转换：转换语义由计划冻结的两端 `NyarType` 决定，
                 // 栈类型字节（`i32`/`i64`）区分不了有符号与无符号扩展。
-                let source_ty = self.operand_semantic_type(source).ok_or_else(|| {
-                    format!("wasm 显式 cast 的源操作数缺少冻结类型: {}", self.mir_fn.symbol)
-                })?;
+                let source_ty = self
+                    .operand_semantic_type(source)
+                    .ok_or_else(|| format!("wasm 显式 cast 的源操作数缺少冻结类型: {}", self.mir_fn.symbol))?;
                 let steps = scalar_cast_steps(source_ty, ty)?;
                 let Some(output) = instruction_primary_result(instruction)
                 else {
@@ -522,11 +522,7 @@ impl<'a> WasmMirLowerer<'a> {
             MirInstructionKind::SumPayloadGet { nominal, variant, object } => {
                 let type_index = self.resolve_gc_sum_type_index(nominal);
                 let (_, payload_type) = self.sum_variant_representation(nominal, variant);
-                assert!(
-                    payload_type.is_some(),
-                    "WASM SumPayloadGet 对无 payload 的 variant {variant:?} 取值 in `{}`",
-                    self.mir_fn.symbol
-                );
+                assert!(payload_type.is_some(), "WASM SumPayloadGet 对无 payload 的 variant {variant:?} 取值 in `{}`", self.mir_fn.symbol);
                 let output = instruction_primary_result(instruction)
                     .unwrap_or_else(|| panic!("WASM SumPayloadGet 缺少结果槽 in `{}`", self.mir_fn.symbol));
                 let target_stack_ty = self.wasm_local_value_type(self.planned_value_local(output));
@@ -599,10 +595,7 @@ impl<'a> WasmMirLowerer<'a> {
             WASM_GC_ANYREF => return,
             VALTYPE_I32 => self.gc_i32_box_type_index,
             VALTYPE_I64 => self.gc_i64_box_type_index,
-            other => panic!(
-                "WASM sum payload 不能还原为 valtype {other}（symbol=`{}`）",
-                self.mir_fn.symbol
-            ),
+            other => panic!("WASM sum payload 不能还原为 valtype {other}（symbol=`{}`）", self.mir_fn.symbol),
         };
         self.emit_ref_cast_struct(box_ty);
         self.emit_struct_get(box_ty, 0);
@@ -675,7 +668,8 @@ fn scalar_cast_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<
     match target {
         NyarType::Integer64 { .. } => steps.push(if source_is_signed(source) {
             ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)
-        } else {
+        }
+        else {
             ScalarCastStep::Byte(WASM_I64_EXTEND_I32_U)
         }),
         // 32 位与 `Character` 就是 i32 载体本身的值。

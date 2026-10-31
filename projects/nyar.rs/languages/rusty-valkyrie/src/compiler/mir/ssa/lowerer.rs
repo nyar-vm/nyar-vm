@@ -25,16 +25,12 @@ fn contains_open_generic(ty: &ValkyrieType) -> bool {
         ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_open_generic),
         ValkyrieType::Apply(base, arguments) => contains_open_generic(base) || arguments.iter().any(contains_open_generic),
         ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_open_generic(element),
-        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
-            items.iter().any(contains_open_generic)
-        }
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => items.iter().any(contains_open_generic),
         ValkyrieType::Function(function) => {
             function.params.iter().any(|p| contains_open_generic(p)) || contains_open_generic(&function.return_type)
         }
         ValkyrieType::FixedArray { element, .. } => contains_open_generic(element),
-        ValkyrieType::Associated(assoc) => {
-            contains_open_generic(&assoc.base) || assoc.type_arguments.iter().any(contains_open_generic)
-        }
+        ValkyrieType::Associated(assoc) => contains_open_generic(&assoc.base) || assoc.type_arguments.iter().any(contains_open_generic),
         _ => false,
     }
 }
@@ -70,7 +66,6 @@ impl MirLowerer {
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let mut external_calls = collect_external_call_contracts(module);
-
 
         let (host_runtime_callables, host_contracts) = if let Some(shared) = shared_host {
             (shared.by_name.clone(), if attach_host_contracts { shared.contracts.clone() } else { Vec::new() })

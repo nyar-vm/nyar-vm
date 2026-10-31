@@ -13,8 +13,8 @@ use super::{
     fragments::canonical_fragments,
     identities::{
         AggregateDeclarations, canonical_type_kind, collect_aggregate_identities, collect_types, ensure_declaration_aggregate_types,
-        intern_instance_field_types, is_array_index_valkyrie_type, register_aggregate_nominal_instances,
-        register_sum_nominal_instances, validate_callable_identities,
+        intern_instance_field_types, is_array_index_valkyrie_type, register_aggregate_nominal_instances, register_sum_nominal_instances,
+        validate_callable_identities,
     },
     lower::lower_function,
 };

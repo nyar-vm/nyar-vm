@@ -261,15 +261,25 @@ pub(crate) fn ensure_declaration_aggregate_types(
 ) -> Result<(), StructuredDiagnosticSet> {
     let mut next = type_values.values().map(|id| id.index()).max().map(|index| index + 1).unwrap_or(0);
     for aggregate in &module.structs {
-        let Some(declaration) = aggregate.declaration else { continue };
+        let Some(declaration) = aggregate.declaration
+        else {
+            continue;
+        };
         let ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
-        if type_values.contains_key(&ty) { continue }
+        if type_values.contains_key(&ty) {
+            continue;
+        }
         intern_type(type_values, &ty, &mut next)?;
     }
     for sum in &module.sum_types {
-        let Some(declaration) = sum.declaration else { continue };
+        let Some(declaration) = sum.declaration
+        else {
+            continue;
+        };
         let ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
-        if type_values.contains_key(&ty) { continue }
+        if type_values.contains_key(&ty) {
+            continue;
+        }
         intern_type(type_values, &ty, &mut next)?;
     }
     Ok(())

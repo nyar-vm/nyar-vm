@@ -124,9 +124,7 @@ pub(crate) fn register_callable_symbol_entry(
         return Ok(());
     }
     if let Some((_, existing_symbol)) = table.iter().find(|(_, s)| **s == symbol) {
-        return Err(format!(
-            "callable ABI 标签 `{symbol}` 重复（已登记标签 `{existing_symbol}`）"
-        ));
+        return Err(format!("callable ABI 标签 `{symbol}` 重复（已登记标签 `{existing_symbol}`）"));
     }
     table.insert(instance, symbol);
     Ok(())

@@ -29,6 +29,6 @@ pub use model::{
     NyarModuleData, NyarSectionKind, NyarWitnessDispatchEntry,
 };
 pub use opcode::{
-    BYTECODE_FORMAT_VERSION, HEADER_SIZE, NYAR_MAGIC, NYAR_VERSION, IntrinsicOpcode, NyarHeadCode, NyarInstruction, NyarInstructionForm,
+    BYTECODE_FORMAT_VERSION, HEADER_SIZE, IntrinsicOpcode, NYAR_MAGIC, NYAR_VERSION, NyarHeadCode, NyarInstruction, NyarInstructionForm,
     OBSOLETE_CALL_NATIVE, SECTION_HEADER_SIZE, decode_at, emit_imm1, emit_imm2, emit_plain,
 };
