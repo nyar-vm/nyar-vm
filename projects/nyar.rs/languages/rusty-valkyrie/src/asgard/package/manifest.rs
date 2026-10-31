@@ -5,7 +5,6 @@ use serde::Serialize;
 use crate::asgard::{
     awsl::LoweredComponent,
     codegen::{JsGlueOutput, encode_mobile_ui_package},
-    config::VoaConfig,
 };
 
 /// manifest 输出。
@@ -24,18 +23,6 @@ pub enum ManifestUrlMode {
     Absolute,
     /// Relative paths (`c/foo.js`) for `file://` report previews.
     Relative,
-}
-
-/// 生成 manifest.json（默认 absolute URLs，对齐全站 hosted browser 产物）。
-pub fn generate_manifest(
-    config: &VoaConfig,
-    components: &[LoweredComponent],
-    js_outputs: &[JsGlueOutput],
-    wasm_name: &str,
-    wasm_built: bool,
-) -> ManifestOutput {
-    let module = config.name.clone().unwrap_or_else(|| "asgard-app".into());
-    generate_manifest_with_urls(&module, &config.build.mode, components, js_outputs, wasm_name, wasm_built, ManifestUrlMode::Absolute)
 }
 
 /// 生成 manifest.json，可切换 relative / absolute asset URLs。
