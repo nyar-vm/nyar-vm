@@ -14,7 +14,7 @@ use super::{
             wasm_function_body, wasm_function_type,
         },
     },
-    ManagedUtf8ToHostHandlePlan, MirInstructionKind, StorageKind, WASM_GC_EXTERNREF,
+    HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, MirInstructionKind, StorageKind, WASM_GC_EXTERNREF,
     imports::{
         build_callee_import_index, build_callee_wasm_operator_index, build_string_literal_index, build_wasi_callee_import_index,
         collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index,
@@ -44,8 +44,9 @@ use acorn_wasm::{
     encode_block_empty, encode_br, encode_br_if, encode_call, encode_drop, encode_f64_const, encode_f64_load, encode_f64_store,
     encode_global_get, encode_global_set, encode_i32_add, encode_i32_and, encode_i32_const, encode_i32_load, encode_i32_store,
     encode_i64_const, encode_i64_load, encode_i64_store, encode_local_get, encode_local_set, encode_local_tee, encode_loop_empty,
-    encode_memory_copy, encode_memory_fill, encode_memory_grow, encode_memory_size, encode_ref_cast_array, encode_ref_cast_type_index,
-    encode_ref_null_anyref, encode_ref_null_externref, encode_struct_get, encode_struct_new_default, encode_struct_set, encode_unreachable,
+    encode_memarg, encode_memory_copy, encode_memory_fill, encode_memory_grow, encode_memory_size, encode_ref_cast_array,
+    encode_ref_cast_type_index, encode_ref_null_anyref, encode_ref_null_externref, encode_struct_get, encode_struct_new_default,
+    encode_struct_set, encode_unreachable,
 };
 
 use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, LayoutId};
@@ -199,6 +200,27 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &host_import_signatures,
         )?
     };
+    // 合同 §5：反方向边界。库导出形参的 SSA 值绑定已登记 gc struct layout 时物理槽是
+    // anyref，而库 ABI 载体冻结为 i32 宿主句柄；宿主句柄直送 anyref 槽会让函数体内首个
+    // `ref.cast` 命中包装句柄而 `illegal cast`。导出边界必须按配方把句柄物化为 managed
+    // 字符串，配方表同样在目标计划阶段冻结；合成导入 `env::host_utf8_extract` 按需追加，
+    // `import_count` 因此在本冻结步之后再取。
+    let host_handle_to_managed_utf8 = if wasi_mode {
+        BTreeMap::new()
+    }
+    else {
+        freeze_host_handle_to_managed_utf8_plans(
+            submission,
+            &ctx,
+            &gc_struct_type_indices,
+            &mut gc_array_type_indices,
+            &mut type_indices,
+            js_glue_utf8_as_anyref,
+            &mut host_imports,
+            &mut import_type_entries,
+            &host_import_signatures,
+        )?
+    };
     let import_count = u32::try_from(host_imports.len()).expect("import count overflow");
     // 函数类型?structtype/arraytype/sumtype 之后开始追加?
     // type_indices 当前?[main_type, structtype_1, ..., structtype_N]?
@@ -251,10 +273,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let function_value_table_functions: Vec<u32> = function_value_instances
         .iter()
         .map(|instance| {
-            function_index_by_instance
-                .get(instance)
-                .copied()
-                .ok_or_else(|| format!("WASM 函数值 `{instance:?}` 引用的实例没有可执行函数体"))
+            function_index_by_instance.get(instance).copied().ok_or_else(|| format!("WASM 函数值 `{instance:?}` 引用的实例没有可执行函数体"))
         })
         .collect::<crate::Result<Vec<_>>>()?;
     // 间接调用的 typeidx 只能反查模块已注册的 functype：按签名字节建表，
@@ -475,6 +494,75 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         }
     }
 
+    // 库导出边界物化 wrapper：为每个携带 host 句柄→managed 物化配方的实例合成一个
+    // 物理签名把配方涉及形参的 anyref 槽替换为 i32 句柄（与冻结库 ABI 载体一致）的
+    // 包装函数；体内按配方把句柄字节拷进 managed struct 后调用内部函数，导出重定向到
+    // wrapper。其余形参与返回原样透传，未命中配方的实例不生成 wrapper。
+    if !wasi_mode {
+        for (instance, plans) in &host_handle_to_managed_utf8 {
+            if plans.is_empty() {
+                continue;
+            }
+            let internal_index = function_index_by_instance
+                .get(instance)
+                .copied()
+                .ok_or_else(|| format!("库导出 `{instance}` 缺少已分配函数下标，无法合成宿主句柄物化 wrapper"))?;
+            let internal_params = param_types_by_function_index
+                .get(&internal_index)
+                .cloned()
+                .ok_or_else(|| format!("库导出 `{instance}` 缺少物理签名，无法合成宿主句柄物化 wrapper"))?;
+            for plan in plans {
+                let Some(&slot) = internal_params.get(plan.param_index as usize)
+                else {
+                    return Err(format!(
+                        "库导出 `{instance}` 物化配方形参下标 {} 超出物理签名参数数 {}",
+                        plan.param_index,
+                        internal_params.len()
+                    ));
+                };
+                if slot != WASM_GC_ANYREF {
+                    return Err(format!(
+                        "库导出 `{instance}` 物化配方形参 {index} 物理槽不是 anyref（实际 0x{slot:02X}）；配方与注册表事实分叉，禁止编码",
+                        index = plan.param_index
+                    ));
+                }
+            }
+            let mut wrapper_params = internal_params.clone();
+            for plan in plans {
+                wrapper_params[plan.param_index as usize] = VALTYPE_I32;
+            }
+            let wrapper_result: Vec<u8> = return_types_by_function_index.get(&internal_index).copied().flatten().into_iter().collect();
+            let wrapper_type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+            type_indices.push(wasm_function_type(&wrapper_params, &wrapper_result));
+            function_indices.push(wrapper_type_index);
+            let mut wrapper_body = Vec::new();
+            emit_host_handle_to_managed_utf8_wrapper_body(
+                plans,
+                internal_index,
+                u32::try_from(internal_params.len()).expect("param count overflow"),
+                &mut wrapper_body,
+            );
+            let wrapper_func_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
+            code_bodies.push(wasm_function_body(wrapper_body));
+            let public_name = submission
+                .backend_plan
+                .wasm_export_names()
+                .get(instance)
+                .cloned()
+                .ok_or_else(|| format!("库导出 `{instance}` 物化配方缺少公开导出名"))?;
+            let mut redirected = false;
+            for export in &mut exports {
+                if export.0 == public_name.as_str() && export.1 == WasmExternalKind::Func.as_u8() {
+                    export.2 = wrapper_func_index;
+                    redirected = true;
+                }
+            }
+            if !redirected {
+                return Err(format!("库导出 `{instance}`（公开名 `{public_name}`）缺少 Func 导出条目，无法重定向到宿主句柄物化 wrapper"));
+            }
+        }
+    }
+
     library_glue::append_library_mode_glue(wasm_package_kind, submission, &mut module)?;
 
     module.sections.push(type_section_bytes(type_indices));
@@ -649,6 +737,192 @@ fn freeze_managed_utf8_to_host_handle_plans(
         );
     }
     Ok(plans)
+}
+
+/// 目标计划阶段冻结「宿主 i32 句柄 → managed 字符串」库导出边界物化配方（合同 §5）。
+///
+/// 扫描已登记公开导出名的实例：entry 块形参 SSA 值绑定已登记 gc struct layout 的
+/// `NyarType::Utf8` 形参，其物理槽是 anyref，而宿主按冻结库 ABI 传 i32 句柄，导出
+/// 边界必须物化。物化事实与冻结 ABI 载体交叉核对：载体不是 `i32` 说明合同已坏，
+/// 结构化失败，禁止静默回落。字节字段槽与 arraytype 推导与 managed→host 冻结同法；
+/// 合成导入 `env::host_utf8_extract` 仅在确有需物化形参时追加到导入表尾部。
+#[allow(clippy::too_many_arguments)]
+fn freeze_host_handle_to_managed_utf8_plans(
+    submission: &FragmentSubmission,
+    ctx: &ExecutableLoweringContext,
+    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    gc_array_type_indices: &mut BTreeMap<String, u32>,
+    type_indices: &mut Vec<Vec<u8>>,
+    js_glue_utf8_as_anyref: bool,
+    host_imports: &mut Vec<(String, String)>,
+    import_type_entries: &mut Vec<u32>,
+    host_import_signatures: &BTreeMap<(String, String), crate::BackendImport>,
+) -> crate::Result<BTreeMap<ItemInstanceId, Vec<HostHandleToManagedUtf8Plan>>> {
+    let mut plans_by_instance: BTreeMap<ItemInstanceId, Vec<HostHandleToManagedUtf8Plan>> = BTreeMap::new();
+    for (instance, public_name) in submission.backend_plan.wasm_export_names() {
+        let Some(view) = submission.backend_plan.get_function(instance)
+        else {
+            continue;
+        };
+        let mir_fn = &view.function;
+        let Some(entry_block) = mir_fn.blocks.iter().find(|block| block.id == mir_fn.entry)
+        else {
+            continue;
+        };
+        for (index, ty) in mir_fn.param_types.iter().enumerate() {
+            if !is_js_glue_host_string_type(ty) {
+                continue;
+            }
+            let Some(layout_id) = entry_block.parameters.get(index).and_then(|value| mir_fn.value_layouts.get(value)).copied()
+            else {
+                continue;
+            };
+            // 未登记 gc struct 的形参槽本就是 i32 句柄，宿主句柄直通，不存在物化需求。
+            let Some(struct_type_index) = gc_struct_type_indices.get(&layout_id).copied()
+            else {
+                continue;
+            };
+            let abi = submission.backend_plan.library_export_abi(instance).ok_or_else(|| {
+                format!("库导出 `{instance}`（export_name={public_name}）缺少冻结 ABI 载体合同，无法核对宿主句柄→managed 物化配方")
+            })?;
+            let Some(carrier) = abi.params.get(index)
+            else {
+                return Err(format!(
+                    "库导出 `{instance}`（export_name={public_name}）形参 {index} 缺少冻结 ABI 载体，无法核对宿主句柄→managed 物化配方"
+                ));
+            };
+            if carrier.as_str() != "i32" {
+                return Err(format!(
+                    "库导出 `{instance}`（export_name={public_name}）形参 {index} 携带 managed 字符串 layout 但冻结 ABI 载体为 `{}`；宿主句柄→managed 物化合同已坏",
+                    carrier.as_str()
+                ));
+            }
+            let layout =
+                ctx.layout_by_id(layout_id).ok_or_else(|| format!("WASM 宿主句柄物化冻结失败: layout_id={layout_id:?} 缺少聚合布局身份"))?;
+            let (bytes_field_slot, element_type) = layout
+                .fields
+                .iter()
+                .enumerate()
+                .find_map(|(field_index, field)| match &field.ty {
+                    NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
+                        matches!(element.as_ref(), NyarType::Integer8 { .. }).then(|| (field_index as u32, element.as_ref().clone()))
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| format!("WASM 宿主句柄物化冻结失败: layout `{}` 缺少整数字节数组字段，无法生成物化配方", layout.name))?;
+            let key = wasm_array_element_type_key(&element_type);
+            let bytes_array_type_index = match gc_array_type_indices.get(&key).copied() {
+                Some(type_index) => type_index,
+                None => {
+                    let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+                    type_indices.push(wasm_gc_array_type(wasm_gc_field_type_byte_for_glue(&element_type, js_glue_utf8_as_anyref)));
+                    gc_array_type_indices.insert(key, type_index);
+                    type_index
+                }
+            };
+            // extract 导入按需追加：下标即 wasm 函数索引（导入排在函数索引空间最前）。
+            let extract_import_index = match host_imports.iter().position(|(module, field)| module == "env" && field == "host_utf8_extract") {
+                Some(existing) => u32::try_from(existing).expect("import index overflow"),
+                None => {
+                    let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+                    type_indices.push(wasm_import_type_bytes_for_host(
+                        submission,
+                        ctx,
+                        false,
+                        "env",
+                        "host_utf8_extract",
+                        js_glue_utf8_as_anyref,
+                        host_import_signatures,
+                    )?);
+                    import_type_entries.push(type_index);
+                    host_imports.push(("env".to_string(), "host_utf8_extract".to_string()));
+                    u32::try_from(host_imports.len() - 1).expect("import index overflow")
+                }
+            };
+            plans_by_instance.entry(*instance).or_default().push(HostHandleToManagedUtf8Plan {
+                param_index: index as u32,
+                struct_type_index,
+                bytes_field_slot,
+                bytes_array_type_index,
+                extract_import_index,
+            });
+        }
+    }
+    Ok(plans_by_instance)
+}
+
+/// 发射库导出物化 wrapper 函数体：按形参顺序，命中配方的形参把宿主 i32 句柄物化为
+/// managed 字符串 struct（`host_utf8_extract` 取回 `(ptr, len)` → `array.new_default`
+/// → 逐字节 `i32.load8_u` + `array.set` → `struct.new_default` + `struct.set`），
+/// 其余形参原样透传，最后 `call` 内部函数并保留返回。
+///
+/// scratch local 布局（形参之后）：`+0` ptr、`+1` len、`+2` idx（i32）、`+3` arr、`+4` obj（anyref）。
+fn emit_host_handle_to_managed_utf8_wrapper_body(
+    plans: &[HostHandleToManagedUtf8Plan],
+    internal_function_index: u32,
+    param_count: u32,
+    body: &mut Vec<u8>,
+) {
+    encode_uleb128(2, body);
+    encode_uleb128(3, body);
+    body.push(VALTYPE_I32);
+    encode_uleb128(2, body);
+    body.push(WASM_GC_ANYREF);
+    let ptr_local = param_count;
+    let len_local = param_count + 1;
+    let idx_local = param_count + 2;
+    let arr_local = param_count + 3;
+    let obj_local = param_count + 4;
+    for index in 0..param_count {
+        let Some(plan) = plans.iter().find(|plan| plan.param_index == index)
+        else {
+            encode_local_get(index, body);
+            continue;
+        };
+        // 句柄 → (ptr, len)：多值返回按结果序压栈，逆序落 local。
+        encode_local_get(index, body);
+        encode_call(plan.extract_import_index, body);
+        encode_local_set(len_local, body);
+        encode_local_set(ptr_local, body);
+        // bytes = array.new_default(len)
+        encode_local_get(len_local, body);
+        encode_array_new_default(plan.bytes_array_type_index, body);
+        encode_local_set(arr_local, body);
+        // 逐字节拷贝：i32.load8_u(ptr + i) → array.set(bytes, i, …)
+        encode_i32_const(0, body);
+        encode_local_set(idx_local, body);
+        encode_block_empty(body);
+        encode_loop_empty(body);
+        encode_local_get(idx_local, body);
+        encode_local_get(len_local, body);
+        WasmOpcode::I32GeU.encode(body);
+        encode_br_if(1, body);
+        encode_local_get(arr_local, body);
+        encode_ref_cast_type_index(plan.bytes_array_type_index, body);
+        encode_local_get(idx_local, body);
+        encode_local_get(ptr_local, body);
+        encode_local_get(idx_local, body);
+        encode_i32_add(body);
+        encode_memarg(WasmOpcode::I32Load8U, 0, 0, body);
+        encode_array_set(plan.bytes_array_type_index, body);
+        encode_local_get(idx_local, body);
+        encode_i32_const(1, body);
+        encode_i32_add(body);
+        encode_local_set(idx_local, body);
+        encode_br(0, body);
+        WasmOpcode::End.encode(body); // loop
+        WasmOpcode::End.encode(body); // block
+        // managed struct：_repr 字段装入字节数组（与 `emit_box_i64_payload` 同款 local 往返）。
+        encode_struct_new_default(plan.struct_type_index, body);
+        encode_local_set(obj_local, body);
+        encode_local_get(obj_local, body);
+        encode_ref_cast_type_index(plan.struct_type_index, body);
+        encode_local_get(arr_local, body);
+        encode_struct_set(plan.struct_type_index, plan.bytes_field_slot, body);
+        encode_local_get(obj_local, body);
+    }
+    encode_call(internal_function_index, body);
+    WasmOpcode::End.encode(body);
 }
 
 pub(super) fn emit_wasi_entry_default_arg(ty: &NyarType, gc_array_type_indices: &BTreeMap<String, u32>, body: &mut Vec<u8>) {

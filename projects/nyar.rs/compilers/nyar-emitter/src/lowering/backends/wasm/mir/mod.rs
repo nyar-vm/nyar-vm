@@ -54,7 +54,7 @@ pub(super) use crate::{
 pub(super) use super::gc::WASM_GC_ANYREF;
 
 // 从子模块 re-export（供兄弟子模块通过 super::* 消费）
-pub(super) use lowerer::{ManagedUtf8ToHostHandlePlan, WASM_GC_EXTERNREF, WasmMirLowerer, array_element_type};
+pub(super) use lowerer::{HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, WASM_GC_EXTERNREF, WasmMirLowerer, array_element_type};
 pub(super) use representation::*;
 pub(super) use type_registry::*;
 

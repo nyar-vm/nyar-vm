@@ -98,6 +98,7 @@ fn js_import_impl(field: &str) -> String {
         "utf8_index_of" => "(s, other) => hostUtf8IndexOf(s, other)".to_string(),
         "utf8_slice" => "(s, start, count) => hostIntern(hostUtf8Slice(s, start, count))".to_string(),
         "host_intern_utf8" => "(ptr, len) => hostInternUtf8Bytes(ptr, len)".to_string(),
+        "host_utf8_extract" => "(handle) => hostUtf8Extract(handle)".to_string(),
         _ => "() => 0".to_string(),
     }
 }
@@ -643,6 +644,16 @@ function hostInternUtf8Bytes(ptr, len) {{
     const memory = hostLinearMemory();
     const bytes = new Uint8Array(memory.buffer, ptr >>> 0, len >>> 0);
     return hostIntern(new TextDecoder("utf-8").decode(bytes));
+}}
+
+// 库导出边界物化：把句柄字符串的 UTF-8 字节经 cabi_realloc 写入线性内存，
+// 以多值 [ptr, len] 返回给 guest wrapper，由 guest 拷进 managed struct 的 [u8] 字段。
+// 每次重新读取 memory.buffer：memory.grow 之后旧 buffer 会被分离（detached）。
+function hostUtf8Extract(handle) {{
+    const bytes = new TextEncoder().encode(hostResolve(handle));
+    const ptr = Number(exports.cabi_realloc(0, 0, 1, bytes.length));
+    new Uint8Array(hostLinearMemory().buffer, ptr >>> 0, bytes.length).set(bytes);
+    return [ptr, bytes.length];
 }}
 
 function hostConstUtf8(index) {{

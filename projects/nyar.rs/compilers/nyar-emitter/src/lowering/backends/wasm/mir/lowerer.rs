@@ -66,6 +66,26 @@ pub(in crate::lowering::backends::wasm) struct ManagedUtf8ToHostHandlePlan {
     pub(in crate::lowering::backends::wasm::mir) intern_import_index: u32,
 }
 
+/// 目标计划冻结的「宿主 i32 句柄 → managed 字符串」库导出边界物化配方。
+///
+/// 合同 §5：库导出实例的 entry 块形参 SSA 值绑定已登记 gc struct layout 时，物理
+/// 形参槽是 anyref，而库 ABI 载体冻结为 i32 句柄；宿主把句柄直接送进导出边界，
+/// 函数体内首个 `ref.cast` 会命中包装句柄而 `illegal cast`。导出边界必须按这张
+/// 配方表物化，编码阶段不再按类型名或布局形状重新推导。配方条目由模块装配
+/// 预扫描（`entry.rs`）在 GC 类型注册表冻结之后一次性生成。
+pub(in crate::lowering::backends::wasm) struct HostHandleToManagedUtf8Plan {
+    /// 导出边界形参下标（与内部函数物理形参顺序一致）。
+    pub(in crate::lowering::backends::wasm::mir) param_index: u32,
+    /// managed 字符串 layout 对应的 wasm-gc structtype 条目。
+    pub(in crate::lowering::backends::wasm::mir) struct_type_index: u32,
+    /// 字节数组字段在 structtype 中的槽位（`Utf8Text._repr: [u8]`）。
+    pub(in crate::lowering::backends::wasm::mir) bytes_field_slot: u32,
+    /// 字节数组字段元素类型对应的 wasm-gc arraytype 条目。
+    pub(in crate::lowering::backends::wasm::mir) bytes_array_type_index: u32,
+    /// 合成宿主导入 `env::host_utf8_extract` 的导入下标（即 wasm 函数下标）。
+    pub(in crate::lowering::backends::wasm::mir) extract_import_index: u32,
+}
+
 pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
     submission: &FragmentSubmission,
     mir_fn: &MirFunction,
