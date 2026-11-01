@@ -3,8 +3,8 @@
 use crate::compiler::types::{
     Identifier, NamePath,
     hir::{
-        BuiltinStructureOp, GenericType, HirDependencySemanticExport, HirEnum, HirExprKind, HirFunction, HirModule, HirParam, HirStringSegment,
-        HirStruct, HirTrait, HirVariadicKind, HirVariant, ValkyrieType,
+        GenericType, HirDependencySemanticExport, HirEnum, HirFunction, HirModule, HirParam, HirStruct, HirTrait, HirVariadicKind, HirVariant,
+        ValkyrieType,
     },
 };
 
@@ -12,24 +12,6 @@ use super::{
     diagnostics::{OverloadCandidate, OverloadDomain, OverloadMatchKind},
     types::struct_apply_type,
 };
-pub(crate) fn declaration_intrinsic(function: &HirFunction) -> Option<BuiltinStructureOp> {
-    let attribute =
-        function.annotations.iter().find(|attribute| attribute.name.parts().len() == 1 && attribute.name.parts()[0].as_str() == "intrinsic")?;
-    let argument = attribute.arguments.first()?;
-    let HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::String(literal)) = &argument.value.kind
-    else {
-        return None;
-    };
-    let mut rendered = String::new();
-    for segment in &literal.segments {
-        let HirStringSegment::Text(text) = segment
-        else {
-            return None;
-        };
-        rendered.push_str(text);
-    }
-    BuiltinStructureOp::from_annotation_path(&rendered)
-}
 
 fn build_function_candidate(module_name: &NamePath, function: &HirFunction, imported_dependency_export: bool) -> OverloadCandidate {
     let symbol = crate::compiler::hir::symbols::stable_hir_function_name_path(module_name, function);
@@ -44,7 +26,6 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction, impo
     candidate.imported_dependency_export = imported_dependency_export;
     candidate.declaration = function.declaration;
     candidate.instance = function.instance;
-    candidate.intrinsic = declaration_intrinsic(function);
     for generic in &function.generics {
         if let Some(binder) = generic.binder {
             candidate = candidate.with_generic_binder(binder);
@@ -187,7 +168,6 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, tra
     let mut candidate = candidate.with_param_specs(function.params.clone());
     candidate.declaration = function.declaration;
     candidate.instance = function.instance;
-    candidate.intrinsic = declaration_intrinsic(function);
     for generic in &function.generics {
         if let Some(binder) = generic.binder {
             candidate = candidate.with_generic_binder(binder);
@@ -244,12 +224,10 @@ pub(crate) fn specialize_method_candidate(
     candidate
 }
 
-/// 收集模块内全部候选（语言内建候选加已声明候选）；外部测试入口。
+/// 收集模块内全部已声明候选；外部测试入口。
 #[doc(hidden)]
 pub fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
-    let mut candidates = language_builtin_candidates();
-    candidates.extend(collect_declared_candidates(module));
-    candidates
+    collect_declared_candidates(module)
 }
 
 fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
@@ -340,44 +318,4 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
         }
     }
     candidates
-}
-
-fn language_builtin_candidates() -> Vec<OverloadCandidate> {
-    let element = Identifier::new("T");
-    let element_type = ValkyrieType::Named(element.clone());
-    let array_type = ValkyrieType::Array(Box::new(element_type.clone()));
-    let index_type = ValkyrieType::Named(Identifier::new("usize"));
-    let mut get = OverloadCandidate::new(
-        NamePath::new(vec![Identifier::new("suffix [ ]")]),
-        OverloadDomain::Function,
-        vec![array_type.clone(), index_type.clone()],
-        element_type.clone(),
-        OverloadMatchKind::NominalExact,
-    );
-    get.intrinsic = Some(BuiltinStructureOp::ArrayGet);
-    let mut set = OverloadCandidate::new(
-        NamePath::new(vec![Identifier::new("suffix [ ]=")]),
-        OverloadDomain::Function,
-        vec![array_type.clone(), index_type.clone(), element_type.clone()],
-        ValkyrieType::Unit,
-        OverloadMatchKind::NominalExact,
-    );
-    set.intrinsic = Some(BuiltinStructureOp::ArraySet);
-    let mut cardinal_get = OverloadCandidate::new(
-        NamePath::new(vec![Identifier::new("suffix ⁅ ⁆")]),
-        OverloadDomain::Function,
-        vec![array_type.clone(), index_type.clone()],
-        element_type.clone(),
-        OverloadMatchKind::NominalExact,
-    );
-    cardinal_get.intrinsic = Some(BuiltinStructureOp::ArrayGet);
-    let mut cardinal_set = OverloadCandidate::new(
-        NamePath::new(vec![Identifier::new("suffix ⁅ ⁆=")]),
-        OverloadDomain::Function,
-        vec![array_type, index_type, element_type],
-        ValkyrieType::Unit,
-        OverloadMatchKind::NominalExact,
-    );
-    cardinal_set.intrinsic = Some(BuiltinStructureOp::ArraySet);
-    vec![get, set, cardinal_get, cardinal_set]
 }

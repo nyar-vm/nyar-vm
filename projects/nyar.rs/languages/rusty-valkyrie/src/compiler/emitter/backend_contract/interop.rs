@@ -16,11 +16,12 @@ pub enum BackendContractError {
         /// 属性参数 span。
         span: DiagnosticSpan,
     },
-    /// 裸 `[intrinsic]` 抽象声明缺少显式目标绑定。
+    /// 声明携带已退役的 `[intrinsic(...)]` 注解。
     ///
-    /// 目标语义只能由声明侧的显式属性给出；backend contract 不从函数名推导
-    /// 目标 operator 或宿主导入，缺显式绑定时必须失败关闭。
-    IntrinsicMissingExplicitTargetBinding {
+    /// builtin 机制与 intrinsic 同源清退后，`[intrinsic]` 不再是任何实现来源；
+    /// 目标语义只能由显式属性（`[wasm_operator]` / `[ovm_operator]` / `[host_contract]`
+    /// 等）声明，过期注解必须显式拒绝，不静默忽略。
+    IntrinsicAnnotationRetired {
         /// 声明所有者的稳定符号名（module 路径 + 声明名）。
         owner: String,
         /// 声明所在源码路径。
@@ -35,7 +36,7 @@ impl BackendContractError {
     pub fn span(&self) -> DiagnosticSpan {
         match self {
             Self::WasiPreview1ImportForbidden { span, .. } => span.clone(),
-            Self::IntrinsicMissingExplicitTargetBinding { span, .. } => span.clone(),
+            Self::IntrinsicAnnotationRetired { span, .. } => span.clone(),
         }
     }
 }
@@ -48,10 +49,11 @@ impl std::fmt::Display for BackendContractError {
                 "WASI supports Component Model only, `{}` must be replaced with a `wasi:...` component import",
                 segments.join("` / `")
             ),
-            Self::IntrinsicMissingExplicitTargetBinding { owner, source, .. } => write!(
+            Self::IntrinsicAnnotationRetired { owner, source, .. } => write!(
                 f,
-                "declaration `{owner}` in `{source}` declares a bare `[intrinsic]` without an explicit target binding; \
-                 declare `[wasm_operator(\"...\")]`, `[ovm_operator(\"...\")]` or `[host_contract]` instead of deriving a target from the function name"
+                "declaration `{owner}` in `{source}` carries the retired `[intrinsic]` annotation; \
+                 the builtin/intrinsic bypass is removed — declare `[wasm_operator(\"...\")]`, `[ovm_operator(\"...\")]`, `[host_contract]` \
+                 or a regular body instead"
             ),
         }
     }
@@ -73,6 +75,16 @@ const WASM_OPERATOR_BINDING_ATTRIBUTE: &str = "wasm_operator";
 /// 与 `[wasm_operator]` 对称：该属性只声明目标 operator 助记符；助记符到目标
 /// 计划的映射归 OVM backend 所有，声明侧不携带任何语义类别或宿主符号名。
 const OVM_OPERATOR_BINDING_ATTRIBUTE: &str = "ovm_operator";
+/// JVM 目标 operator 绑定属性（`[jvm_operator("ldiv")]`）。
+///
+/// 与 `[wasm_operator]` 对称：该属性只声明 JVM 规范助记符；助记符到冻结配方的
+/// 映射归 JVM backend 所有，声明侧不携带任何语义类别或宿主符号名。
+const JVM_OPERATOR_BINDING_ATTRIBUTE: &str = "jvm_operator";
+/// CLR 目标 operator 绑定属性（`[clr_operator("i64.div")]`）。
+///
+/// 与 `[wasm_operator]` 对称：该属性只声明 MSIL 目标 operator 助记符；助记符到
+/// 冻结配方的映射归 CLR backend 所有，声明侧不携带任何语义类别或宿主符号名。
+const CLR_OPERATOR_BINDING_ATTRIBUTE: &str = "clr_operator";
 
 /// 当剝外部导入链接覝求的能力标签。
 pub(crate) fn required_capability(_link: &ExternalImportLink) -> CapabilityTag {
@@ -127,20 +139,16 @@ pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), Backend
 
 /// 标注是否把该可调用声明为「实现不在源码中」的抽象声明。
 ///
-/// 覆盖三类：目标绑定属性、显式 `[host_contract]`、以及 `[intrinsic(...)]`。
-/// 三者的实现来源不同，因此与 [`function_interop_contract`] 只共享「抽象」判定，
-/// 不共享外部导入合同判定：
+/// 覆盖两类：目标绑定属性与显式 `[host_contract]`。两者的实现来源不同，
+/// 因此与 [`function_interop_contract`] 只共享「抽象」判定，不共享外部导入合同判定：
 /// - `[host_contract]` 生成空 host 链接，由 adaptor 的 host provider 填充；
-/// - `[intrinsic(...)]` 由 backend intrinsic lowering 直接编码成 MIR 结构操作，
-///   不生成宿主 external_call；漏掉intrinsic分流时必须表现为链接失败，
-///   而不是静默降级成空体函数。
+/// - 目标绑定属性直接生成宿主 external_call。
 /// 无体声明被判定为抽象后不得降低成空体函数，否则调用静默落到空实现。
+/// `[intrinsic(...)]` 已退役，不再使声明成为抽象，由 [`validate_interop_surface`] 显式拒绝。
 pub(crate) fn annotations_declare_external_import(annotations: &[HirAttribute]) -> bool {
-    annotations.iter().any(|attribute| {
-        attribute_to_interop_contract(attribute).is_some()
-            || attribute_name(attribute).as_deref() == Some("host_contract")
-            || attribute_name(attribute).as_deref() == Some("intrinsic")
-    })
+    annotations
+        .iter()
+        .any(|attribute| attribute_to_interop_contract(attribute).is_some() || attribute_name(attribute).as_deref() == Some("host_contract"))
 }
 
 /// 从函数声明推导语言中性的外部导入链接。
@@ -156,9 +164,8 @@ pub fn function_interop_contract(function: &HirFunction) -> Option<ExternalImpor
     // 由 adaptor 的 host_provider 提供 target-conditioned 链接，此处返回空链接，
     // 等待 host provider resolve 填充具体绑定。
     //
-    // `[intrinsic(...)]` 由 backend intrinsic lowering 直接编码，不生成 external_call，
-    // 因此这里不产链接；裸 `[intrinsic]` 不再从函数名推导 wasm_operator（函数名不是
-    // 语义事实），缺显式绑定时由 [`validate_interop_surface`] 结构化失败关闭。
+    // `[intrinsic(...)]` 已随 builtin 旁路整条清退，不再是实现来源；携带该注解的
+    // 声明由 [`validate_interop_surface`] 显式拒绝，不静默忽略。
     function.annotations.iter().find_map(|attribute| {
         (attribute_name(attribute).as_deref() == Some("host_contract")).then(|| ExternalImportLink::host(None, Vec::new()))
     })
@@ -196,32 +203,18 @@ fn validate_function_interop_surface(function: &HirFunction, scope: &str, source
     for attribute in &function.annotations {
         validate_interop_attribute(attribute)?;
     }
-    validate_intrinsic_target_binding(function, scope, source)
+    validate_intrinsic_annotation_retired(function, scope, source)
 }
 
-/// 裸 `[intrinsic]` 抽象声明必须由显式属性声明目标绑定。
-///
-/// 目标语义（Wasm operator / OVM operator / 宿主导入）只能来自声明侧显式属性；
-/// backend contract 不从函数名推导，也不静默返回「无链接」。
-fn validate_intrinsic_target_binding(function: &HirFunction, scope: &str, source: &str) -> Result<(), BackendContractError> {
-    let bare_intrinsic = function
-        .annotations
-        .iter()
-        .any(|attribute| attribute_name(attribute).as_deref() == Some("intrinsic") && attribute.arguments.is_empty());
-    if !bare_intrinsic || !function.is_abstract {
-        return Ok(());
-    }
-
-    let explicit_binding = function
-        .annotations
-        .iter()
-        .any(|attribute| attribute_to_interop_contract(attribute).is_some() || attribute_name(attribute).as_deref() == Some("host_contract"));
-    if explicit_binding {
+/// `[intrinsic(...)]` 注解已随 builtin 旁路整条清退，任何携带该注解的声明
+/// 显式拒绝（不区分抽象/有体、带参/裸注解），不静默忽略、不降级成空体函数。
+fn validate_intrinsic_annotation_retired(function: &HirFunction, scope: &str, source: &str) -> Result<(), BackendContractError> {
+    if !function.annotations.iter().any(|attribute| attribute_name(attribute).as_deref() == Some("intrinsic")) {
         return Ok(());
     }
 
     let owner = if scope.is_empty() { function.name.as_str().to_string() } else { format!("{scope}::{}", function.name.as_str()) };
-    Err(BackendContractError::IntrinsicMissingExplicitTargetBinding {
+    Err(BackendContractError::IntrinsicAnnotationRetired {
         owner,
         source: source.to_string(),
         span: DiagnosticSpan {
@@ -299,6 +292,24 @@ fn attribute_to_interop_contract(attribute: &HirAttribute) -> Option<ExternalImp
             return None;
         }
         return Some(ExternalImportLink::host(Some(Identifier::new("ovm-operator")), locator_segments));
+    }
+
+    if name == JVM_OPERATOR_BINDING_ATTRIBUTE {
+        // 与 `[wasm_operator]` 同形：JVM 规范助记符必须恰好一段；
+        // 助记符到冻结配方的映射归 JVM backend 私有表所有。
+        if locator_segments.len() != 1 {
+            return None;
+        }
+        return Some(ExternalImportLink::host(Some(Identifier::new("jvm-operator")), locator_segments));
+    }
+
+    if name == CLR_OPERATOR_BINDING_ATTRIBUTE {
+        // 与 `[wasm_operator]` 同形：MSIL 目标 operator 助记符必须恰好一段；
+        // 助记符到冻结配方的映射归 CLR backend 私有表所有。
+        if locator_segments.len() != 1 {
+            return None;
+        }
+        return Some(ExternalImportLink::host(Some(Identifier::new("clr-operator")), locator_segments));
     }
 
     if name == C_BINDING_ATTRIBUTE {

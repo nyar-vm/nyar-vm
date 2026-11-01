@@ -92,6 +92,22 @@ impl MirBuilder {
         None
     }
 
+    /// 发射 `NullIsNull`：null 检查语义指令（try 传播与模式判空共用）。
+    pub(super) fn emit_null_is_null_operand(&mut self, value: MirOperand) -> MirOperand {
+        let result = self.next_value(MirValueOrigin::CallResult);
+        self.push_instruction(MirOperation::NullIsNull { value }, vec![result]);
+        self.value_types.insert(result, ValkyrieType::Boolean);
+        MirOperand::Value(result)
+    }
+
+    /// 发射 `NullUnwrap`：从可空值取出载荷（try 传播与模式绑定共用）。
+    pub(super) fn emit_null_unwrap_operand(&mut self, value: MirOperand, payload_type: ValkyrieType) -> MirOperand {
+        let result = self.next_value(MirValueOrigin::CallResult);
+        self.push_instruction(MirOperation::NullUnwrap { value }, vec![result]);
+        self.value_types.insert(result, payload_type);
+        MirOperand::Value(result)
+    }
+
     pub(super) fn new(
         aggregate_layouts: AggregateLayoutPlan,
         singleton_accessor_instances: BTreeMap<String, nyar_types::ItemInstanceId>,

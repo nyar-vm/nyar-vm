@@ -17,7 +17,6 @@ mod lowerer;
 mod match_lowering;
 mod method_lowering;
 mod model;
-mod null_intrinsic_lowering;
 mod pattern_lowering;
 mod struct_facts;
 /// `MIR` 单元测试辅助工具（构造 builder / 断言结构）。

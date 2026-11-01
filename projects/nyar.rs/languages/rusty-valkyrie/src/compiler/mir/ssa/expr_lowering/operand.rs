@@ -134,9 +134,6 @@ impl MirBuilder {
                             return operand;
                         }
                     }
-                    if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &arguments, expected_type) {
-                        return operand;
-                    }
                     let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved instance call contract");
                     let Some(callee) = lower_resolved_callee(resolved_call)
                     else {
@@ -197,9 +194,6 @@ impl MirBuilder {
                         .collect::<Vec<_>>();
                     if has_receiver {
                         arguments.insert(0, receiver_operand.clone());
-                    }
-                    if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &arguments, expected_type) {
-                        return operand;
                     }
                     let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved field receiver call contract");
                     let Some(callee) = lower_resolved_callee(resolved_call)
@@ -284,9 +278,6 @@ impl MirBuilder {
                         return MirOperand::Constant(MirConstant::Unit);
                     }
                 }
-                if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &arguments, expected_type) {
-                    return operand;
-                }
                 let callee = match lower_callee_operand(callee, resolved.as_ref(), self) {
                     Some(callee) => callee,
                     None if resolved.as_ref().is_some_and(|call| call.domain == HirCallableDomain::Constructor) => {
@@ -325,9 +316,6 @@ impl MirBuilder {
                         return MirOperand::Constant(MirConstant::Unit);
                     }
                 };
-                if let Some(operand) = self.try_lower_null_intrinsics(resolved.as_ref(), &callee, &arguments) {
-                    return operand;
-                }
                 let function_ty = self.function_type_of_callee(&callee);
                 if arguments.len() == 1 {
                     if self.is_option_is_some_call(resolved.as_ref()) && self.option_shaped_type(&arguments[0], None, None).is_some() {
@@ -571,7 +559,7 @@ impl MirBuilder {
             HirExprKind::FieldAccess { object, field, field_id } => {
                 let object_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
                 // 禁止按字段名 `length` 改写成 ArrayLength；数组长度只能来自
-                // 已在 HIR 解析的 BuiltinStructureOp::ArrayLen Call / 明确 ArrayLength 节点。
+                // 已解析的库调用合同 / 明确 ArrayLength 节点。
                 let Some(field_id) = *field_id
                 else {
                     self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });

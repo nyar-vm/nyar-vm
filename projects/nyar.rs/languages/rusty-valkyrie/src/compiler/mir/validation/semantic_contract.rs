@@ -448,7 +448,8 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                                 .find(|candidate| candidate.instance == Some(*identity))
                                 .map(|target| (&target.parameter_types, &target.return_type))
                         }),
-                    // `Symbol` 只保留给内建 intrinsic；不得按名称反查 external callable 签名。
+                    // 只有 `Callable` 实例身份可取签名；`Witness` 分派义务与其他操作数
+                    // 不得按名称反查 external callable 签名。
                     _ => None,
                 };
                 if let Some((parameter_types, return_type)) = signature {

@@ -148,12 +148,6 @@ impl std::fmt::Display for HirError {
             Self::CollectionLiteralContractMissing { type_label, .. } => {
                 write!(f, "collection literal requires a `LiteralSequence` contract impl for the declared type `{type_label}`")
             }
-            Self::ArrayNewReturnTypeNotArray { actual, .. } => {
-                write!(f, "`builtin.array.new` contract must return an array shape `[T]`, got `{actual}`")
-            }
-            Self::ArrayNewArityMismatch { expected, actual, .. } => {
-                write!(f, "`builtin.array.new` contract expects exactly {expected} length argument, got {actual}")
-            }
             Self::AssignToImmutable { name, .. } => {
                 write!(f, "cannot assign to immutable binding `{name}`, declare it with `let mut` to allow reassignment")
             }

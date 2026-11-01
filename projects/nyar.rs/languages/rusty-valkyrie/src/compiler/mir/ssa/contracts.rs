@@ -78,7 +78,7 @@ pub(super) fn collect_external_call_contracts(
         gate: Option<&crate::compiler::hir::HirMaterializationGate>,
         out: &mut Vec<MirExternalCallContract>,
     ) {
-        // 声明期 abstract 函数（host_contract / intrinsic 无泛型）
+        // 声明期 abstract 函数（目标绑定属性 / host_contract，无泛型）
         out.extend(
             module
                 .functions

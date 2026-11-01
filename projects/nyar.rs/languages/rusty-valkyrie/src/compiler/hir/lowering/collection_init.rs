@@ -254,7 +254,6 @@ fn build_collection_init(
     let with_length = HirResolvedCall {
         declaration: fact.with_length.declaration,
         instance: None,
-        intrinsic: None,
         trait_dispatch: None,
         sum_owner: None,
         sum_variant: None,
@@ -268,7 +267,6 @@ fn build_collection_init(
     let append = HirResolvedCall {
         declaration: fact.append.declaration,
         instance: None,
-        intrinsic: None,
         trait_dispatch: None,
         sum_owner: None,
         sum_variant: None,

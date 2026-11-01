@@ -7,7 +7,7 @@ use crate::compiler::{
         call_binding::bind_call_arguments,
         construct_binding::bind_construct_fields,
         overload::{
-            diagnostics::{OverloadCandidate, OverloadDomain, OverloadMatchKind, OverloadResolutionError},
+            diagnostics::{OverloadCandidate, OverloadDomain, OverloadResolutionError},
             resolve_call::pattern_extractor_receiver_type,
             substitution::{
                 extract_singleton_type_name, instantiate_trait_bound_candidate, instantiate_trait_method_candidate, substitute_self_type,
@@ -16,7 +16,7 @@ use crate::compiler::{
             symbol_match::{
                 aggregate_constructor_matches_name, candidate_extractor_path_matches, candidate_owned_method_matches,
                 candidate_trait_method_matches, candidate_variant_constructor_matches, symbol_matches_imported_dependency_export,
-                symbol_matches_language_builtin, symbol_matches_unqualified_free_call,
+                symbol_matches_unqualified_free_call,
             },
             r#trait::impl_nominal_type_name,
             types::{
@@ -27,16 +27,15 @@ use crate::compiler::{
         try_propagate::{
             is_option_apply_type, is_result_apply_type, option_apply_payload_type, result_variant_payload_type,
         },
-        type_relation::{ParameterMatchResult, TypeRelationContext},
+        type_relation::TypeRelationContext,
     },
     mir::AggregateFieldIndex,
     semantic::operator_members,
     types::{
         Identifier, NamePath,
         hir::{
-            BuiltinStructureOp, HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirFunction, HirLiteral, HirParam,
-            HirPattern, HirResolvedCall, HirStringSegment, HirTrait, HirTraitBound, HirTraitDispatch, HirVariant, HirWhereConstraint,
-            ValkyrieType,
+            HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirFunction, HirParam, HirPattern, HirResolvedCall, HirTrait,
+            HirTraitBound, HirTraitDispatch, HirVariant, HirWhereConstraint, ValkyrieType,
         },
     },
 };
@@ -84,112 +83,6 @@ pub(crate) fn peel_explicit_generic_arguments(callee: &HirExpr) -> (Vec<Valkyrie
     }
 }
 
-/// 语言内建结构操作：以候选冻结的 [`BuiltinStructureOp`] 为准。
-pub(crate) fn match_intrinsic_builtin_candidate(
-    candidate: &OverloadCandidate,
-    args: &[HirCallArgument],
-    type_relations: &TypeRelationContext,
-    locals: &BTreeMap<String, ValkyrieType>,
-    struct_fields: &AggregateFieldIndex,
-    singleton_names: &std::collections::BTreeSet<Identifier>,
-) -> Option<OverloadCandidate> {
-    let intrinsic = candidate.intrinsic?;
-    let mk = |signature: crate::compiler::hir::overload::diagnostics::OverloadSignature| OverloadCandidate {
-        declaration: candidate.declaration,
-        instance: candidate.instance,
-        sum_owner: None,
-        sum_variant: None,
-        intrinsic: candidate.intrinsic,
-        symbol: candidate.symbol.clone(),
-        owner: None,
-        trait_owner: candidate.trait_owner.clone(),
-        domain: OverloadDomain::Function,
-        signature,
-        match_kind: OverloadMatchKind::NominalExact,
-        param_specs: Vec::new(),
-        generic_binders: candidate.generic_binders.clone(),
-        where_constraints: candidate.where_constraints.clone(),
-        imported_dependency_export: candidate.imported_dependency_export,
-    };
-    fn infer(
-        expr: &HirExpr,
-        locals: &BTreeMap<String, ValkyrieType>,
-        struct_fields: &AggregateFieldIndex,
-        singleton_names: &std::collections::BTreeSet<Identifier>,
-    ) -> Option<ValkyrieType> {
-        crate::compiler::hir::overload::types::infer_scrutinee_type(expr, locals, struct_fields, singleton_names)
-    }
-
-    match intrinsic {
-        // 数组按长度构造不在这里分派：解析必须沿用声明的正常签名（含显式泛型实参），
-        // 再由调用解析之后的 post-binding pass 依据冻结的返回数组形状规范化为
-        // `HirExprKind::ArrayNew`。本处返回 `None` 即回到普通候选匹配。
-        BuiltinStructureOp::ArrayNew => None,
-        BuiltinStructureOp::ArrayLen => {
-            if args.len() != 1 {
-                return None;
-            }
-            let array_ty = infer(&args[0].value, locals, struct_fields, singleton_names)?;
-            if !matches!(array_ty, ValkyrieType::Array(_) | ValkyrieType::FixedArray { .. }) {
-                return None;
-            }
-            let return_type =
-                type_relations.nominal_type_for_name(&Identifier::new("usize")).unwrap_or_else(|| candidate.signature.return_type.clone());
-            Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature { params: vec![array_ty], return_type }))
-        }
-        BuiltinStructureOp::ArrayGet => {
-            if args.len() != 2 {
-                return None;
-            }
-            let array_ty = infer(&args[0].value, locals, struct_fields, singleton_names)?;
-            let element = match &array_ty {
-                ValkyrieType::Array(e) => e.as_ref().clone(),
-                ValkyrieType::FixedArray { element, .. } => element.as_ref().clone(),
-                _ => return None,
-            };
-            // 下标表达式的静态类型可能尚未可知（如未解析的 `ordinal - 1`）：此时沿用
-            // 声明的形参类型占位，而不是让候选整体失配——否则同一处下标会退回另一个
-            // 返回类型不同的声明候选，静默改变语义。
-            let index_ty = infer(&args[1].value, locals, struct_fields, singleton_names)
-                .unwrap_or_else(|| candidate.signature.params.get(1).cloned().unwrap_or(ValkyrieType::AutoType));
-            if !matches!(index_ty, ValkyrieType::AutoType) && !type_relations.is_numeric_type(&index_ty) {
-                return None;
-            }
-            // ArrayGet intrinsic 语义上始终返回裸元素类型 T。
-            // Option 由调用方通过 Some() 包裹（如 Array.get: `return Some(__array_get(...))`）。
-            // 禁止 intrinsic 签名自身携带 Option，避免 Some() 包裹时产生 Option<Option<T>>。
-            let return_type = element.clone();
-            Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature { params: vec![array_ty, index_ty], return_type }))
-        }
-        BuiltinStructureOp::ArraySet => {
-            if args.len() != 3 {
-                return None;
-            }
-            let array_ty = infer(&args[0].value, locals, struct_fields, singleton_names)?;
-            let element = match &array_ty {
-                ValkyrieType::Array(e) => e.as_ref().clone(),
-                ValkyrieType::FixedArray { element, .. } => element.as_ref().clone(),
-                _ => return None,
-            };
-            let index_ty = infer(&args[1].value, locals, struct_fields, singleton_names)
-                .unwrap_or_else(|| candidate.signature.params.get(1).cloned().unwrap_or(ValkyrieType::AutoType));
-            if !matches!(index_ty, ValkyrieType::AutoType) && !type_relations.is_numeric_type(&index_ty) {
-                return None;
-            }
-            let value_ty = infer(&args[2].value, locals, struct_fields, singleton_names)?;
-            if matches!(value_ty, ValkyrieType::AutoType | ValkyrieType::r#SelfType)
-                || matches!(type_relations.match_parameter(&value_ty, &element), ParameterMatchResult::NoMatch { .. })
-            {
-                return None;
-            }
-            Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature {
-                params: vec![array_ty, index_ty, element],
-                return_type: ValkyrieType::Unit,
-            }))
-        }
-    }
-}
-
 /// 以实参类型判定单个候选是否匹配；外部测试入口。
 #[doc(hidden)]
 pub fn match_call_candidate(
@@ -206,9 +99,6 @@ pub fn match_call_candidate(
         && matches!(candidate.signature.params.first(), Some(ValkyrieType::AutoType | ValkyrieType::r#SelfType))
     {
         return None;
-    }
-    if let Some(matched) = match_intrinsic_builtin_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names) {
-        return Some(matched);
     }
     let bound_exprs: Vec<HirExpr> = if candidate.param_specs.is_empty() {
         args.iter().map(|arg| arg.value.clone()).collect()
@@ -283,7 +173,6 @@ pub fn match_call_candidate(
         instance: candidate.instance,
         sum_owner: candidate.sum_owner,
         sum_variant: candidate.sum_variant,
-        intrinsic: candidate.intrinsic,
         symbol: candidate.symbol.clone(),
         owner: candidate.owner.clone(),
         trait_owner: candidate.trait_owner.clone(),
@@ -322,7 +211,6 @@ pub(crate) fn try_resolve_call(
                 instance: None,
                 sum_owner: None,
                 sum_variant: None,
-                intrinsic: None,
                 trait_dispatch: None,
                 symbol: NamePath::new(vec![Identifier::new(local_name)]),
                 domain: HirCallableDomain::Function,
@@ -372,7 +260,6 @@ pub(crate) fn try_resolve_call(
                     instance: matched.instance,
                     sum_owner: matched.sum_owner,
                     sum_variant: matched.sum_variant,
-                    intrinsic: matched.intrinsic,
                     trait_dispatch: None,
                     symbol: matched.symbol,
                     domain: HirCallableDomain::Function,
@@ -544,7 +431,6 @@ pub(crate) fn try_resolve_call(
         .filter(|candidate| {
             symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
                 || symbol_matches_imported_dependency_export(candidate, &callee_name)
-                || symbol_matches_language_builtin(candidate, &callee_name)
         })
         .filter_map(|candidate| {
             match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
@@ -559,7 +445,6 @@ pub(crate) fn try_resolve_call(
         instance: resolved.instance,
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
-        intrinsic: resolved.intrinsic,
         trait_dispatch: None,
         symbol,
         domain: HirCallableDomain::Function,

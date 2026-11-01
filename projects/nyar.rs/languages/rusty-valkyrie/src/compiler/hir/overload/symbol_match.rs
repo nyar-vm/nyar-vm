@@ -19,11 +19,6 @@ pub(crate) fn symbol_matches_imported_dependency_export(candidate: &OverloadCand
     candidate.symbol.parts().last() == Some(callee_name)
 }
 
-/// 语言内建候选（如数组下标）不属于任何模块，symbol 是注册表内的单段结构名。
-pub(crate) fn symbol_matches_language_builtin(candidate: &OverloadCandidate, callee_name: &Identifier) -> bool {
-    candidate.declaration.is_none() && candidate.intrinsic.is_some() && matches!(candidate.symbol.parts(), [name] if name == callee_name)
-}
-
 /// 自有/静态成员候选：符号为单段成员名，由 `owner` / `trait_owner` 携带归属。
 pub(crate) fn candidate_owned_method_name(candidate: &OverloadCandidate) -> Option<&Identifier> {
     match candidate.symbol.parts() {

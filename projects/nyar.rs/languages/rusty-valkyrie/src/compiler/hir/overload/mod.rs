@@ -2,7 +2,7 @@
 //!
 //! 原始单文件 `overload.rs` 拆分为按职责的子模块：
 //! - `diagnostics.rs`: 域/签名/候选/匹配类别/错误 + `rank` + `resolve_overload`
-//! - `candidates.rs`: 候选构造（`build_*` / `collect_*` / `language_builtin_candidates`）
+//! - `candidates.rs`: 候选构造（`build_*` / `collect_*`）
 //! - `symbol_match.rs`: 符号匹配（`symbol_matches_*` / `candidate_*_matches` / `aggregate_constructor_matches_name`）
 //! - `resolve_call.rs`: resolve_function_calls / resolve_block_calls / resolve_expr_calls / resolve_pattern_calls / resolve_arm_calls / validate_* 系列
 //! - `call_resolver.rs`: `try_resolve_call` / `try_resolve_constructor_call` / `match_call_candidate` / `match_singleton_method_candidate` 等核心匹配逻辑
@@ -59,8 +59,7 @@ pub use resolve_call::{resolve_hir_calls, validate_extractor_patterns};
 // 从 symbol_match re-export 的函数（供 resolve_call / call_resolver 间跨模块调用）
 pub(crate) use symbol_match::{
     aggregate_constructor_matches_name, candidate_extractor_path_matches, candidate_owned_method_matches, candidate_trait_method_matches,
-    candidate_variant_constructor_matches, symbol_matches_imported_dependency_export, symbol_matches_language_builtin,
-    symbol_matches_unqualified_free_call,
+    candidate_variant_constructor_matches, symbol_matches_imported_dependency_export, symbol_matches_unqualified_free_call,
 };
 
 // call_resolver 里的 shim/辅助（被 resolve_call 直接引用）

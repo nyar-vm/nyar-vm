@@ -1,6 +1,8 @@
 use nyar_types::SourceID;
 
-use rusty_valkyrie::{HirError, compiler::hir::ValkyrieCompiler, function_interop_contract, *};
+use rusty_valkyrie::{
+    HirError, compiler::emitter::backend_contract::interop::BackendContractError, compiler::hir::ValkyrieCompiler, function_interop_contract, *,
+};
 
 #[test]
 fn maps_c_binding_attribute_to_win32_host_link() {
@@ -298,30 +300,29 @@ micro i64_add(a: i64, b: i64): i64;
     assert!(function_interop_contract(&module.functions[0]).is_none(), "`[vm]` 必须不再产生宿主绑定，OVM 宿主边界只接受 `[ovm]`");
 }
 
-/// 裸 `[intrinsic]` 抽象声明不得从函数名推导目标：缺显式绑定时必须结构化失败。
-///
-/// 目标语义只能来自声明侧的显式属性。`__i64_add -> i64.add` 这类按名字拼写推导
-/// 曾被当作合法兼容路径，验收已否决：改函数名会改变目标行为。
+/// `[intrinsic]` 注解已随 builtin 旁路整条退役：任何携带该注解的声明——
+/// 抽象无体、带参、带体、裸注解——都必须被 backend contract 显式拒绝，
+/// 不静默忽略、不降级成空体函数，也不从函数名推导目标。
 #[test]
-fn bare_intrinsic_abstract_declaration_fails_closed() {
-    let compiler = ValkyrieCompiler::new(SourceID { version_id: 921 });
-    let error = compiler
-        .compile_source(
+fn any_intrinsic_annotated_declaration_fails_closed() {
+    let sources = [
+        (
+            921,
             r#"
 [intrinsic]
 micro __i64_add(lhs: i64, rhs: i64): i64;
 "#,
-        )
-        .expect_err("裸 `[intrinsic]` 抽象声明缺显式目标绑定，必须失败关闭");
-    let row: nyar_types::DiagnosticRow = error.into();
-    assert!(row.code.contains("backend.contract.rejected"), "expected backend contract rejection, got code={}", row.code);
-}
-
-/// 显式注解路径的 intrinsic 声明仍然成立：身份来自声明，而不是调用点名字。
-#[test]
-fn declared_intrinsic_annotation_path_still_compiles() {
-    let compiler = ValkyrieCompiler::new(SourceID { version_id: 922 });
-    let source = r#"
+        ),
+        (
+            922,
+            r#"
+[intrinsic("f64.add")]
+micro __f64_add(lhs: f64, rhs: f64): f64;
+"#,
+        ),
+        (
+            923,
+            r#"
 [primitive("std::primitive::i64")] structure i64 { }
 [primitive("std::primitive::usize")] structure usize { }
 
@@ -329,10 +330,31 @@ fn declared_intrinsic_annotation_path_still_compiles() {
 micro frozen_length(xs: [i64]): usize {
     return frozen_length(xs)
 }
-"#;
-    let module = compiler.compile_source(source).expect("显式注解路径的 intrinsic 声明必须可编译");
-    let declaration = module.functions.iter().find(|function| function.name.as_str() == "frozen_length").expect("frozen_length");
-    assert!(!declaration.is_abstract, "带体声明的 intrinsic 不是抽象导入");
+"#,
+        ),
+        (
+            924,
+            r#"
+[intrinsic]
+micro helper(): i64 {
+    return 0
+}
+"#,
+        ),
+    ];
+    for (version_id, source) in sources {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id });
+        let error = compiler.compile_source(source).expect_err("携带 `[intrinsic]` 注解的声明必须失败关闭");
+        assert!(
+            matches!(error, HirError::BackendContractRejected(BackendContractError::IntrinsicAnnotationRetired { .. })),
+            "version_id={version_id} 必须命中 IntrinsicAnnotationRetired，got {error:?}"
+        );
+        let rendered = error.to_string();
+        assert!(rendered.contains("retired `[intrinsic]` annotation"), "诊断消息必须指出注解已退役: {rendered}");
+        assert!(rendered.contains("bypass is removed"), "诊断消息必须指出 builtin 旁路已整体移除: {rendered}");
+        let row: nyar_types::DiagnosticRow = error.into();
+        assert!(row.code.contains("backend.contract.rejected"), "expected backend contract rejection, got code={}", row.code);
+    }
 }
 
 #[test]

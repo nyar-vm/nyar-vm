@@ -795,12 +795,12 @@ pub enum MirOperation {
         /// 目标数组。
         array: MirOperand,
     },
-    /// 检测可空值为 null（`builtin.null.is_null`）。
+    /// 检测可空值为 null。
     NullIsNull {
         /// 待检测的可空值。
         value: MirOperand,
     },
-    /// 解包非 null 可空载荷（`builtin.null.unwrap`）。
+    /// 解包非 null 可空载荷。
     NullUnwrap {
         /// 待解包的可空值。
         value: MirOperand,

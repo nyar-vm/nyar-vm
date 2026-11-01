@@ -12,7 +12,6 @@ use crate::compiler::{
         type_relation::{ParameterMatchResult, TypeRelationContext},
     },
     mir::AggregateFieldIndex,
-    semantic::operator_members,
     types::{
         Identifier, NamePath,
         hir::{
@@ -31,8 +30,7 @@ use crate::compiler::hir::overload::{
     },
     symbol_match::{
         aggregate_constructor_matches_name, candidate_extractor_path_matches, candidate_owned_method_matches, candidate_trait_method_matches,
-        candidate_variant_constructor_matches, symbol_matches_imported_dependency_export, symbol_matches_language_builtin,
-        symbol_matches_unqualified_free_call,
+        candidate_variant_constructor_matches, symbol_matches_imported_dependency_export, symbol_matches_unqualified_free_call,
     },
     r#trait::impl_nominal_type_name,
     types::{
@@ -152,7 +150,6 @@ pub(crate) fn build_constructor_resolved_call(
         instance: resolved.instance,
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
-        intrinsic: resolved.intrinsic,
         trait_dispatch: None,
         symbol,
         domain: HirCallableDomain::Constructor,
@@ -195,7 +192,6 @@ pub(crate) fn try_resolve_qualified_free_function(
         instance: resolved.instance,
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
-        intrinsic: resolved.intrinsic,
         trait_dispatch: None,
         symbol: resolved.symbol,
         domain,
@@ -330,7 +326,6 @@ pub(crate) fn try_resolve_singleton_method(
         instance: resolved.instance,
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
-        intrinsic: resolved.intrinsic,
         trait_dispatch: None,
         symbol,
         domain: HirCallableDomain::Function,
@@ -377,7 +372,6 @@ pub(crate) fn try_resolve_type_static_method(
         instance: resolved.instance,
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
-        intrinsic: resolved.intrinsic,
         trait_dispatch: None,
         symbol: overload_symbol_path(&resolved),
         domain: match resolved.domain {
@@ -411,28 +405,15 @@ pub(crate) fn try_resolve_instance_method(
     else {
         return None;
     };
-    // 内建数组形态 `[T]` / 固定数组的运算符成员（`suffix [ ]` / `suffix ⁅ ⁆` 及其赋值形态）
-    // 是语言结构语义：其事实所有者是 frontend 内建下标候选，候选只挂
-    // `BuiltinStructureOp`，返回裸元素 `T`。源码对 `Array<T>` 类写的 `imply` 运算符
-    // 声明只服务类值，不得遮蔽内建数组形态的下标语义——源码里 `[T]⁅i⁆` 一律按裸元素读
-    // （`Option<T>` 由 `get` 这类具名方法提供），否则同一份源码在元素具体时读内置候选、
-    // 元素为形参时读声明候选，会得到两种返回类型。
-    // `List.push` / `ArrayList.push` 这类库行为不是结构语义，仍走普通 callable 与已选
-    // provider，不并入这条路径。
-    let prefer_array_intrinsic = matches!(receiver_type, ValkyrieType::Array(_) | ValkyrieType::FixedArray { .. })
-        && operator_members::is_operator_member_name(method_name.as_str());
+    // 数组下标 / 长度 / 构造不再是语言内建候选：`suffix [ ]` / `suffix ⁅ ⁆` 等运算符
+    // 成员一律由显式声明（类 `imply` / trait）及其已选 provider 驱动。裸 `[T]` 形态
+    // 没有声明候选时保持失配，由 HIR 调用合同验证以 `UnresolvedCall` 显式失败，
+    // 编译器不补造内建旁路。
     let mut filtered = Vec::new();
     for candidate in candidates
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function))
-        .filter(|candidate| {
-            if prefer_array_intrinsic {
-                candidate.declaration.is_none() && candidate.intrinsic.is_some()
-            }
-            else {
-                candidate_has_receiver_parameter(candidate)
-            }
-        })
+        .filter(|candidate| candidate_has_receiver_parameter(candidate))
         .filter(|candidate| candidate_owned_method_matches(candidate, method_name) || candidate_trait_method_matches(candidate, method_name))
     {
         if let ValkyrieType::Generic(generic) = &receiver_type {
@@ -477,7 +458,6 @@ pub(crate) fn try_resolve_instance_method(
         instance: resolved.instance,
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
-        intrinsic: resolved.intrinsic,
         trait_dispatch: None,
         symbol: overload_symbol_path(&resolved),
         domain: HirCallableDomain::Function,

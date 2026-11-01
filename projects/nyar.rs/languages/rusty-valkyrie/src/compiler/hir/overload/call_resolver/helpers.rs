@@ -31,8 +31,7 @@ use crate::compiler::hir::overload::{
     },
     symbol_match::{
         aggregate_constructor_matches_name, candidate_extractor_path_matches, candidate_owned_method_matches, candidate_trait_method_matches,
-        candidate_variant_constructor_matches, symbol_matches_imported_dependency_export, symbol_matches_language_builtin,
-        symbol_matches_unqualified_free_call,
+        candidate_variant_constructor_matches, symbol_matches_imported_dependency_export, symbol_matches_unqualified_free_call,
     },
     r#trait::impl_nominal_type_name,
     types::{
@@ -128,11 +127,10 @@ fn variant_constructor_facts_from_declaration(
         .find_map(|candidate| candidate.sum_owner.zip(candidate.sum_variant))
 }
 pub(crate) fn instantiate_candidate_for_context(candidate: &OverloadCandidate, contextual_type: &ValkyrieType) -> Option<OverloadCandidate> {
-    // 防御：candidate.return_type 最外层是裸 Generic binder 时（如 intrinsic seed
-    // `__array_get(self: Array<T>): T`），禁止用外层 contextual_type 反推泛型。
-    // 否则 Some(Option<T>) context 会把裸 T 绑定成 Option<T>，导致函数 appear 返回
-    // Option<T>，再被 Some 包成 Option<Option<T>>。普通函数/构造器的返回类型总有
-    // 外层形状（Option<T> / ArrayList<T> / Self / Nominal），裸 Generic 只在 intrinsic seed。
+    // 防御：candidate.return_type 最外层是裸 Generic binder 时，禁止用外层
+    // contextual_type 反推泛型。否则 Some(Option<T>) context 会把裸 T 绑定成
+    // Option<T>，导致函数 appear 返回 Option<T>，再被 Some 包成 Option<Option<T>>。
+    // 普通函数/构造器的返回类型总有外层形状（Option<T> / ArrayList<T> / Self / Nominal）。
     if matches!(&candidate.signature.return_type, ValkyrieType::Generic(_)) {
         return None;
     }
@@ -204,7 +202,6 @@ pub fn try_resolve_constructor(
         instance: resolved.instance,
         sum_owner: resolved.sum_owner,
         sum_variant: resolved.sum_variant,
-        intrinsic: resolved.intrinsic,
         trait_dispatch: None,
         symbol: overload_symbol_path(&resolved),
         domain: HirCallableDomain::Constructor,

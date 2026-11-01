@@ -5,10 +5,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::{
-    hir::overload::{candidates::declaration_intrinsic, has_unresolved_generic_arguments},
+    hir::overload::has_unresolved_generic_arguments,
     mir::{MirFunction, MirModule, MirOperand, MirOperation, MirStruct, MirSumDeclaration},
     syntax::oak::ParseError,
-    types::hir::{BuiltinStructureOp, HirFunction, HirModule, ValkyrieType, export_spec::parse_library_glue_operation},
+    types::hir::{HirModule, ValkyrieType, export_spec::parse_library_glue_operation},
 };
 use nyar::planning::SemanticAggregateOperation;
 use nyar_types::{
@@ -17,124 +17,6 @@ use nyar_types::{
 };
 
 use super::host_bindings::remap_call_targets;
-
-/// 语言结构 intrinsic 的 callable 实例 → 结构操作身份。
-///
-/// 身份只来自 HIR 声明上的 `[intrinsic(...)]` 注解（经 `declaration_intrinsic`
-/// 精确解析）与 `instantiated_callables` 铸造的实例，不按符号名、源码文本或目标名推断。
-/// 只在链接边界消费：前端 `lower_module_semantic` 仍按冻结合同产出普通 Call。
-fn structural_intrinsic_instances(hirs: &[&HirModule]) -> BTreeMap<ItemInstanceId, BuiltinStructureOp> {
-    let mut instances = BTreeMap::new();
-    for hir in hirs {
-        collect_structural_intrinsic_instances(hir, &mut instances);
-    }
-    instances
-}
-
-fn collect_structural_intrinsic_instances(module: &HirModule, instances: &mut BTreeMap<ItemInstanceId, BuiltinStructureOp>) {
-    let mut record = |function: &HirFunction| {
-        let Some(instance) = function.instance
-        else {
-            return;
-        };
-        if let Some(op) = declaration_intrinsic(function) {
-            // 结构 opcode 只覆盖当前链接器能编码的数组结构操作；其它 intrinsic 身份
-            // 不在此处生成，仍按普通调用身份裁决。
-            if matches!(op, BuiltinStructureOp::ArrayLen | BuiltinStructureOp::ArrayGet | BuiltinStructureOp::ArraySet) {
-                instances.insert(instance, op);
-            }
-        }
-    };
-    for function in &module.functions {
-        record(function);
-    }
-    for structure in &module.structs {
-        for method in &structure.methods {
-            record(method);
-        }
-    }
-    for trait_decl in &module.traits {
-        for method in trait_decl.methods.iter().chain(trait_decl.default_methods.iter()) {
-            record(method);
-        }
-    }
-    for implementation in &module.impls {
-        for method in &implementation.methods {
-            record(method);
-        }
-    }
-    for export in &module.imported_semantic_exports {
-        for function in &export.functions {
-            record(function);
-        }
-    }
-    for callable in &module.instantiated_callables {
-        record(&callable.function);
-    }
-    for submodule in &module.submodules {
-        collect_structural_intrinsic_instances(submodule, instances);
-    }
-}
-
-/// 把已冻结 intrinsic 身份的 Call 改写为结构 opcode。
-///
-/// 参数个数必须与结构操作合同一致；不一致按结构化身份失败闭合，不静默退化。
-/// 结果 SSA、指令身份与 provenance 保持原 Call 的事实。
-fn lower_structural_intrinsic_calls(
-    function: &mut MirFunction,
-    instances: &BTreeMap<ItemInstanceId, BuiltinStructureOp>,
-) -> Result<(), ParseError> {
-    for block in &mut function.blocks {
-        for instruction in &mut block.instructions {
-            let MirOperation::Call { callee: MirOperand::Callable(instance), arguments } = &mut instruction.kind
-            else {
-                continue;
-            };
-            let Some(op) = instances.get(instance).copied()
-            else {
-                continue;
-            };
-            let operands = std::mem::take(arguments);
-            let expected = match op {
-                BuiltinStructureOp::ArrayLen => 1,
-                BuiltinStructureOp::ArrayGet => 2,
-                BuiltinStructureOp::ArraySet => 3,
-                other => {
-                    return Err(ParseError::Invalid {
-                        message: format!("intrinsic 实例 `{instance}` 的 `{other:?}` 不能被链接阶段编码为结构 opcode"),
-                        span: None,
-                    });
-                }
-            };
-            if operands.len() != expected {
-                return Err(ParseError::Invalid {
-                    message: format!("intrinsic 实例 `{instance}` 的 `{op:?}` 调用实参个数为 {}，合同要求 {expected}", operands.len()),
-                    span: None,
-                });
-            }
-            let mut operands = operands.into_iter();
-            instruction.kind = match op {
-                BuiltinStructureOp::ArrayLen => MirOperation::ArrayLength { array: operands.next().expect("array length receiver") },
-                BuiltinStructureOp::ArrayGet => MirOperation::ArrayGet {
-                    array: operands.next().expect("array get receiver"),
-                    index: operands.next().expect("array get index"),
-                },
-                BuiltinStructureOp::ArraySet => MirOperation::ArraySet {
-                    array: operands.next().expect("array set receiver"),
-                    index: operands.next().expect("array set index"),
-                    value: operands.next().expect("array set value"),
-                },
-                other => {
-                    return Err(ParseError::Invalid {
-                        message: format!("intrinsic 实例 `{instance}` 的 `{other:?}` 不能被链接阶段编码为结构 opcode"),
-                        span: None,
-                    });
-                }
-            };
-        }
-    }
-    Ok(())
-}
 
 /// 合并已由 Compiler 统一注册的依赖实例闭包。
 ///
@@ -166,9 +48,6 @@ pub fn link_reachable_dependency_mir_with_hir(
     }
     let (structs, sum_types, remaps) = freeze_aggregate_identities(consumer, dependency_mirs)?;
     let aggregate_layouts = merge_aggregate_layouts(consumer, dependency_mirs)?;
-    // 语言结构 intrinsic 的冻结实例身份：链接只按声明身份编码结构 opcode，
-    // 前端 lowering 仍保留普通 Call（见 `tests/frontend/contract/array_length_intrinsic_declaration_tests.rs`）。
-    let intrinsic_instances = structural_intrinsic_instances(hirs);
     let mut definitions = BTreeMap::new();
     let mut imports = BTreeMap::new();
     for module in std::iter::once(&*consumer).chain(dependency_mirs) {
@@ -210,7 +89,6 @@ pub fn link_reachable_dependency_mir_with_hir(
                                 })?;
                             remap_function_aggregates(&mut normalized, &remaps[module_index])?;
                             remap_call_targets(&mut normalized, host_binding_remaps);
-                            lower_structural_intrinsic_calls(&mut normalized, &intrinsic_instances)?;
                             &normalized == previous
                         };
                         if matches_copy {
@@ -300,11 +178,6 @@ pub fn link_reachable_dependency_mir_with_hir(
                 }
             }
         }
-        else if intrinsic_instances.contains_key(&instance) {
-            // 冻结 intrinsic 声明身份没有函数体也没有外部导入合同：它在链接边界
-            // 编码为结构 opcode，不是未定义调用。
-            continue;
-        }
         else {
             let callers = consumer
                 .functions
@@ -328,9 +201,6 @@ pub fn link_reachable_dependency_mir_with_hir(
                 span: None,
             });
         }
-    }
-    for function in &mut linked.functions {
-        lower_structural_intrinsic_calls(function, &intrinsic_instances)?;
     }
     *consumer = linked;
     Ok(())

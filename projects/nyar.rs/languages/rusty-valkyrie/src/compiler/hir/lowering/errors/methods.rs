@@ -66,8 +66,6 @@ impl HirError {
             Self::RefutableLetPattern { .. } => "valkyrie.hir.refutable_let_pattern",
             Self::LetInitializerTypeMismatch { .. } => "valkyrie.hir.let_initializer_type_mismatch",
             Self::CollectionLiteralContractMissing { .. } => "valkyrie.hir.collection_literal_contract_missing",
-            Self::ArrayNewReturnTypeNotArray { .. } => "valkyrie.hir.array_new_return_type_not_array",
-            Self::ArrayNewArityMismatch { .. } => "valkyrie.hir.array_new_arity_mismatch",
             Self::AssignToImmutable { .. } => "valkyrie.hir.assign_to_immutable",
             Self::SemanticCheckViolations { .. } => "valkyrie.hir.semantic_check_violations",
             Self::CopyDisciplineViolations { .. } => "valkyrie.hir.copy_discipline_violations",

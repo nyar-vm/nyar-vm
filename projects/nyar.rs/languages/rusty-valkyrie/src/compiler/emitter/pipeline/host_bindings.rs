@@ -9,7 +9,6 @@ use nyar_types::{ItemId, ItemInstanceId};
 
 use crate::compiler::{
     emitter::backend_contract::interop::function_host_provider_target,
-    hir::overload::has_unresolved_generic_arguments,
     mir::{MirExternalCallContract, MirFunction, MirModule, MirOperand, MirOperation},
     semantic::closure::{DeclarationKey, DeclarationKind},
     syntax::oak::ParseError,
@@ -162,43 +161,9 @@ pub fn resolve_host_provider_bindings(
             });
         }
         let provider_instance = *provider_family.instances.iter().next().expect("single provider instance");
-        // provider 必须是闭合可编码实例；签名仍含开放泛型 binder 的声明级 provider 尚未
-        // 单态化，backend 无法编码。此时不得把合同默认体退役：该合同声明带本地实现体，
-        // 仍由合同自身的默认体（链接边界已把 intrinsic 调用编码为结构 opcode）提供实现。
-        if provider_has_open_generic_signature(hirs, provider_instance) {
-            continue;
-        }
         resolved.push(ResolvedHostProviderBinding { contract_instances, provider_instance });
     }
     Ok(resolved)
-}
-
-/// provider 实例的函数签名是否仍含开放泛型 binder。
-///
-/// 只按冻结的 `instance` / `declaration` 身份查找；签名含开放泛型时 backend 无法编码，
-/// 该声明级 provider 不能作为已解析调用的实现。
-fn provider_has_open_generic_signature(hirs: &[&HirModule], instance: ItemInstanceId) -> bool {
-    fn inspect(function: &HirFunction, instance: ItemInstanceId) -> bool {
-        if function.instance != Some(instance) {
-            return false;
-        }
-        has_unresolved_generic_arguments(&function.return_type)
-            || function.params.iter().any(|parameter| has_unresolved_generic_arguments(&parameter.ty))
-    }
-    fn visit(module: &HirModule, instance: ItemInstanceId) -> bool {
-        module.functions.iter().any(|function| inspect(function, instance))
-            || module.structs.iter().flat_map(|item| item.methods.iter()).any(|method| inspect(method, instance))
-            || module
-                .traits
-                .iter()
-                .flat_map(|item| item.methods.iter().chain(item.default_methods.iter()))
-                .any(|method| inspect(method, instance))
-            || module.impls.iter().flat_map(|item| item.methods.iter()).any(|method| inspect(method, instance))
-            || module.imported_semantic_exports.iter().flat_map(|export| export.functions.iter()).any(|function| inspect(function, instance))
-            || module.instantiated_callables.iter().any(|callable| inspect(&callable.function, instance))
-            || module.submodules.iter().any(|submodule| visit(submodule, instance))
-    }
-    hirs.iter().any(|module| visit(module, instance))
 }
 
 /// HIR 已注册 callable 身份 → inventory 声明身份的映射（声明身份 → 实例族）。

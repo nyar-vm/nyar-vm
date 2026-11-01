@@ -405,7 +405,7 @@ impl MirBuilder {
                     let extracted = self.lower_extractor_payload_slot_operand(payload.clone(), slot, slot_type.clone());
                     // Preserve extractor payload/slot types on bindings (`Fine(plan)` → `plan`
                     // must stay `LegionSourceClosurePlan`) so later `plan.files.length()` can
-                    // recover ArrayLen instead of emitting an untyped Call (SMIR002).
+                    // recover ArrayLength instead of emitting an untyped Call (SMIR002).
                     self.bind_pattern_from_operand(field_pattern, extracted, slot_type);
                 }
             }

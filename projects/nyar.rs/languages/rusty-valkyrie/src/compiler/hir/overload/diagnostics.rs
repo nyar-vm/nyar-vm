@@ -38,8 +38,6 @@ pub struct OverloadCandidate {
     pub sum_owner: Option<nyar_types::ItemId>,
     /// 所属 unity 变体的声明身份。
     pub sum_variant: Option<nyar_types::ItemId>,
-    /// 语言内建结构操作身份；只有语言内建候选持有，源码声明候选恒为 `None`。
-    pub intrinsic: Option<crate::compiler::types::hir::BuiltinStructureOp>,
     /// 候选符号的限定路径。
     pub symbol: NamePath,
     /// 拥有该候选的类型名（方法候选）。
@@ -76,7 +74,6 @@ impl OverloadCandidate {
             instance: None,
             sum_owner: None,
             sum_variant: None,
-            intrinsic: None,
             symbol,
             owner: None,
             trait_owner: None,
@@ -121,7 +118,6 @@ impl OverloadCandidate {
             instance: None,
             sum_owner: None,
             sum_variant: None,
-            intrinsic: None,
             symbol,
             owner: Some(owner),
             trait_owner: None,
@@ -177,8 +173,7 @@ pub fn resolve_overload(candidates: &[OverloadCandidate]) -> Result<OverloadCand
         [selected] => Ok((*selected).clone()),
         [] => Err(OverloadResolutionError::NoMatch),
         ambiguous => {
-            // 源码声明携带声明身份与冻结的 intrinsic 合同，语言 builtin 注册表只是
-            // 没有对应声明时的语言级种子；同优先级时声明优先，而不是让两个权威并列。
+            // 同优先级时携带声明身份的候选优先，而不是让两个权威并列。
             let declared = ambiguous.iter().filter(|candidate| candidate.declaration.is_some()).collect::<Vec<_>>();
             if let [selected] = declared.as_slice() {
                 return Ok((**selected).clone());

@@ -116,7 +116,7 @@ impl IdKind for ItemIdKind {
     const NAME: &'static str = "ItemId";
 }
 /// 已声明的语言项（函数 / 方法 / 构造器 / trait 方法 /
-/// std adaptor 入口 / intrinsic 声明）。由包链接器分配。
+/// std adaptor 入口）。由包链接器分配。
 pub type ItemId = SemanticId<ItemIdKind>;
 
 /// [`TypeId`] 的类型标记。

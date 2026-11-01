@@ -408,8 +408,8 @@ fn collect_impl_declarations(modules: &[HirModule]) -> (BTreeMap<u32, CallableDe
         // impl 成员方法（owner_type 为 impl 目标类型）
         for implementation in &module.impls {
             for method in &implementation.methods {
-                // is_abstract 的无泛型函数（如 __i32_eq host_contract）不需要实例化。
-                // 但有泛型的 intrinsic（如 __array_get<T>）需要实例化，因为泛型实参由调用点决定。
+                // is_abstract 的无泛型函数（如 __i32_eq host_contract）不需要实例化；
+                // 有泛型的抽象声明仍要进入闭包表，因为泛型实参由调用点决定。
                 if method.is_abstract && method.generics.is_empty() {
                     continue;
                 }
@@ -428,8 +428,8 @@ fn collect_impl_declarations(modules: &[HirModule]) -> (BTreeMap<u32, CallableDe
         }
         // module-level free function（无 owner_type，无 trait）
         for function in &module.functions {
-            // is_abstract 的无泛型函数（如 __i32_eq host_contract）不需要实例化。
-            // 但有泛型的 intrinsic（如 __array_get<T>）需要实例化，因为泛型实参由调用点决定。
+            // is_abstract 的无泛型函数（如 __i32_eq host_contract）不需要实例化；
+            // 有泛型的抽象声明仍要进入闭包表，因为泛型实参由调用点决定。
             if function.is_abstract && function.generics.is_empty() {
                 continue;
             }

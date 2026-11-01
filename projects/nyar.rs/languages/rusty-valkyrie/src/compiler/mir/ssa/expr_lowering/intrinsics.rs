@@ -1,15 +1,12 @@
 use crate::compiler::{
-    hir::is_nullable_type,
     types::{
-        Identifier, NamePath,
-        hir::{BuiltinStructureOp, FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
+        Identifier,
+        hir::{FunctionType, HirCallableDomain, HirExpr, HirResolvedCall, ValkyrieType},
     },
 };
 
 use crate::compiler::mir::ssa::{
-    MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirValueOrigin, callee_name_matches,
-    expr_helpers::lower_resolved_callee,
-    infer_builder_operand_type, lower_callee_operand,
+    MirBuilder, MirConstant, MirOperand, MirOperation, MirStorageKind, MirValueOrigin, infer_builder_operand_type,
     value_semantics::{ensure_layout_for_type, layout_id_for_type, storage_kind_for_type},
 };
 
@@ -45,10 +42,6 @@ impl MirBuilder {
             ValkyrieType::Apply(_, args) => args.first().cloned(),
             _ => None,
         }
-    }
-
-    pub(crate) fn option_uses_generic_payload(actual_type: &ValkyrieType) -> bool {
-        Self::option_payload_type(actual_type).is_some_and(|payload| matches!(payload, ValkyrieType::Named(name) if name.as_str() == "T"))
     }
 
     /// ??????sum declaration ItemId ??????????? `Named`??
@@ -309,40 +302,6 @@ impl MirBuilder {
         );
         self.value_types.insert(value, return_type);
         Some(MirOperand::Value(value))
-    }
-
-    /// 数组结构操作 intrinsic 的统一降级点。
-    ///
-    /// 核心合同见文件头：源码 `[intrinsic(...)]` 自由函数永远降级为普通 Call（声明与
-    /// 实例身份必须保留），因此这里只处理**没有声明/实例身份的语言内建下标候选**
-    /// （`suffix [ ]` / `suffix ⁅ ⁆` 及其赋值形态）。这些候选没有 callable 可指向，
-    /// 普通 Call 路径必然失败；其 `intrinsic` 身份由 HIR 候选冻结，不是名字或目标猜测。
-    pub(crate) fn try_lower_array_intrinsics(
-        &mut self,
-        resolved: Option<&HirResolvedCall>,
-        arguments: &[MirOperand],
-        _expected_type: Option<&ValkyrieType>,
-    ) -> Option<MirOperand> {
-        let call = resolved?;
-        if call.declaration.is_some() || call.instance.is_some() {
-            return None;
-        }
-        match call.intrinsic? {
-            BuiltinStructureOp::ArrayGet if arguments.len() == 2 => {
-                let value = self.next_value(MirValueOrigin::CallResult);
-                self.push_instruction(MirOperation::ArrayGet { array: arguments[0].clone(), index: arguments[1].clone() }, vec![value]);
-                self.value_types.insert(value, call.return_type.clone());
-                Some(MirOperand::Value(value))
-            }
-            BuiltinStructureOp::ArraySet if arguments.len() == 3 => {
-                self.push_instruction(
-                    MirOperation::ArraySet { array: arguments[0].clone(), index: arguments[1].clone(), value: arguments[2].clone() },
-                    Vec::new(),
-                );
-                Some(MirOperand::Constant(MirConstant::Unit))
-            }
-            _ => None,
-        }
     }
 
     /// Positional `Range(a, b)` ??????????`StructNew`???????????`Call`??

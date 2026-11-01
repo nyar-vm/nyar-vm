@@ -340,8 +340,9 @@ micro check(ordinal: usize): bool {
 }
 
 #[test]
-fn cross_package_array_host_get_usize_ops_resolve() {
-    // 对齐 std.adaptor.wasm `array_host_get`：`ordinal == 0` / `ordinal > item_count`。
+fn cross_package_array_host_get_subscript_fails_unresolved() {
+    // 新合同：跨包形态不改变下标身份——裸 `[T]` 的 `array::[ordinal]` 没有声明候选时
+    // 必须以 UnresolvedCall 显式失败，前端不得合成内建候选。
     let groups = vec![
         CompilerSourceGroup {
             dependency_key: "core".into(),
@@ -387,9 +388,12 @@ namespace std.adaptor.wasm.collection;
             is_entry: true,
         },
     ];
-    ValkyrieCompiler::default()
+    let error = ValkyrieCompiler::default()
         .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
-        .unwrap_or_else(|error| panic!("跨包 array_host_get Some/下标必须解析: {error}"));
+        .expect_err("跨包裸 [T] 下标缺声明候选必须失败关闭");
+    assert!(matches!(error, HirError::UnresolvedCall { .. }), "期望 UnresolvedCall，got {error:?}");
+    let rendered = format!("{error:?}");
+    assert!(rendered.contains("array_host_get"), "失败必须定位到出错函数: {rendered}");
 }
 
 #[test]
@@ -605,17 +609,24 @@ micro time_ms(value: f64): i64 {
 }
 
 #[test]
-fn same_module_array_subscript_resolves() {
+fn bare_array_subscript_fails_unresolved_without_declared_candidate() {
+    // 新合同：数组下标不再是语言内建候选；裸 `[T]` 的 `array::[ordinal]`
+    // 在没有声明候选时必须以 UnresolvedCall 显式失败，前端不得合成候选。
     let source = r#"
 micro get<T>(array: [T], ordinal: usize): T {
     return array::[ordinal]
 }
 "#;
-    ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("同模块 array::[i] 必须解析: {error}"));
+    let error = ValkyrieCompiler::default().compile_source(source).expect_err("裸 [T] 下标缺声明候选必须失败关闭");
+    assert!(matches!(error, HirError::UnresolvedCall { .. }), "期望 UnresolvedCall，got {error:?}");
+    let rendered = format!("{error:?}");
+    assert!(rendered.contains("get"), "失败必须定位到出错函数: {rendered}");
 }
 
 #[test]
-fn same_module_some_after_let_subscript_resolves() {
+fn let_subscript_after_some_declaration_still_fails_unresolved() {
+    // Some 声明与 usize 运算符齐全不改变下标合同：`array::[ordinal]` 没有声明候选，
+    // 调用边界仍必须 UnresolvedCall，不得由前端合成内建候选兜底。
     let source = r#"
 [primitive("std::primitive::usize")]
 structure usize { }
@@ -632,7 +643,10 @@ micro Some<T>(value: T) -> Option<T> {
     return Some(item)
 }
 "#;
-    ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("同模块 let + Some(item) 必须解析: {error}"));
+    let error = ValkyrieCompiler::default().compile_source(source).expect_err("裸 [T] 下标缺声明候选必须失败关闭");
+    assert!(matches!(error, HirError::UnresolvedCall { .. }), "期望 UnresolvedCall，got {error:?}");
+    let rendered = format!("{error:?}");
+    assert!(rendered.contains("array_host_get"), "失败必须定位到出错函数: {rendered}");
 }
 
 #[test]
