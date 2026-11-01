@@ -717,7 +717,7 @@ fn lower_type_namepath(path: &AstNamePath) -> Result<ValkyrieType, HirError> {
         }
     }
     // `Type::Assoc`：两段且非已知命名空间前缀时保留 Associated，禁止丢前缀只留短名。
-    // `core::…` / `std::…` 等限定路径仍走下方短名/builtin 规则，供 bind 按声明冻结。
+    // `std::…` 等限定路径仍走下方短名/builtin 规则，供 bind 按声明冻结。
     if parts.len() == 2 && !is_known_builtin_type_namespace(&parts, last) && !is_module_root_prefix(parts[0]) {
         let head = parts[0];
         return Ok(ValkyrieType::Associated(Box::new(crate::compiler::types::hir::AssociatedType {
@@ -738,7 +738,7 @@ fn lower_type_namepath(path: &AstNamePath) -> Result<ValkyrieType, HirError> {
 }
 
 fn is_module_root_prefix(name: &str) -> bool {
-    matches!(name, "core" | "std" | "self")
+    matches!(name, "std" | "self")
 }
 
 fn is_known_builtin_type_namespace(parts: &[&str], last: &str) -> bool {

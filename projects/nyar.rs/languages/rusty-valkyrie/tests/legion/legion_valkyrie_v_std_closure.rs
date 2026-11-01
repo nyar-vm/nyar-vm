@@ -1,5 +1,5 @@
-//! `valkyrie.v` 语料：`core` 并入 `std` 后，纯数值工程 `auto_link: { std: true }`
-//! 的需求闭包必须只经 `std` 解析，且不得拖入 IO/网络 host binding。
+//! `valkyrie.v` 语料：`core` 并入 `std` 后，纯数值工程显式声明 workspace `std` 依赖，
+//! 其需求闭包必须只经 `std` 解析，且不得拖入 IO/网络 host binding。
 
 use std::path::PathBuf;
 
@@ -27,7 +27,7 @@ fn hits_io_or_network(text: &str) -> bool {
     IO_NETWORK_MARKERS.iter().any(|marker| lowered.contains(marker))
 }
 
-/// 正：`usize-cmp-smoke`（纯数值、`auto_link: { std: true }`）以 clr target 成计划，
+/// 正：`usize-cmp-smoke`（纯数值、显式 `std` workspace 依赖）以 clr target 成计划，
 /// 闭包含 `std` 组、不含任何 `core` 依赖键，且已选 provider 的 capability/外部绑定无 IO/网络。
 #[test]
 fn usize_cmp_smoke_std_closure_resolves_without_core_or_io_bindings() {

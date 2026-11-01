@@ -195,8 +195,7 @@ pub(crate) fn register_workspace_members(
         };
         projects_by_name.insert(manifest.name.clone(), member_dir.clone());
         // 同时按 workspace 成员路径的 basename 建立别名索引。
-        // 例如 `projects/core` 的 manifest.name 可能是 `valkyrie-core`，
-        // 但 auto_link/dependencies 中引用的是逻辑名 `core`（即目录名）。
+        // 成员 `manifest.name` 可能与目录名不一致，而 `dependencies` 常按目录名引用逻辑名。
         if let Some(basename) = Path::new(member).file_name().and_then(|s| s.to_str()) {
             projects_by_name.entry(basename.to_string()).or_insert_with(|| member_dir.clone());
         }
@@ -251,18 +250,6 @@ pub(crate) fn manifest_supports_build_context(manifest: &ProjectManifest, target
         }
     }
     true
-}
-
-pub(crate) fn dependency_supports_source_context(
-    dependency_name: &str,
-    manifest: &ProjectManifest,
-    target: &CanonicalTarget,
-    requested_publish: &[String],
-) -> bool {
-    // `auto_link.core` 是语言语义依赖，不是一个按目标筛选的产物依赖。
-    // core 的 manifest 只描述 seed 语义构建目标；若用同一过滤器匹配
-    // Node/Wasm 或其他 backend target，会在进入 Compiler 前静默丢失 core。
-    dependency_name == "core" || manifest_supports_build_context(manifest, target, requested_publish)
 }
 
 pub(crate) fn implicit_sdk_dependencies(publish: &[String]) -> Vec<&'static str> {

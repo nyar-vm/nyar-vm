@@ -312,12 +312,12 @@ fn discovers_nested_workspace_members_from_parent_workspace() {
 }
 
 #[test]
-fn nested_legion_tools_resolves_outer_core_via_outermost_workspace() {
+fn nested_legion_tools_resolves_outer_std_via_outermost_workspace() {
     // Mirrors valkyrie.v layout:
-    //   legions.von → projects/core + projects/legion._
+    //   legions.von → projects/std + projects/legion._
     //   projects/legion._/legions.von → projects/legion.tools
-    // Discovering from the nested project must not stop at legion._ (missing `core`).
-    let fixture = create_nested_legion_tools_with_outer_core_fixture();
+    // Discovering from the nested project must not stop at legion._ (missing `std`).
+    let fixture = create_nested_legion_tools_with_outer_std_fixture();
 
     let workspace = WorkspaceResolver::discover_for_project(&fixture.project_dir).unwrap();
     assert_eq!(canonicalize_lossy(&workspace.root_dir), canonicalize_lossy(&fixture.root_dir));
@@ -328,11 +328,65 @@ fn nested_legion_tools_resolves_outer_core_via_outermost_workspace() {
             .unwrap_or_else(|error| panic!("expected plan for {target}: {error}"));
         assert_eq!(plan.project.name, "legion.tools");
         assert!(
-            plan.project.dependencies.iter().any(|dep| dep.name == "core"),
-            "target {target} must resolve auto_link core from outer workspace"
+            plan.project.dependencies.iter().any(|dep| dep.name == "std"),
+            "target {target} must resolve explicit workspace `std` from the outermost workspace"
+        );
+        assert!(
+            plan.project.dependencies.iter().all(|dep| dep.name != "core"),
+            "core 已并入 std，闭包不得再出现 core 依赖"
         );
         assert_eq!(canonicalize_lossy(&plan.workspace_root), canonicalize_lossy(&fixture.root_dir));
     }
+}
+
+#[test]
+fn core_workspace_dependency_fails_closed_after_core_removed() {
+    let temp_dir = Builder::new().prefix("legion-core-dep-fail-closed").tempdir().unwrap();
+    let root = canonicalize_lossy(temp_dir.path());
+    fs::create_dir_all(root.join("projects")).unwrap();
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "core-dep-ws",
+    members: [
+        "projects/app",
+        "projects/std"
+    ]
+}
+"#,
+    )
+    .unwrap();
+    write_workspace_project(
+        &root,
+        "projects/std",
+        r#"{
+    name: "std",
+    build: [{ target: "clr" }]
+}
+"#,
+        &[("source/_.v", "namespace std;\n")],
+    );
+    write_workspace_project(
+        &root,
+        "projects/app",
+        r#"{
+    name: "app",
+    dependencies: {
+        "core": { version: "workspace" },
+        "std": { version: "workspace" }
+    },
+    build: [{ target: "clr" }]
+}
+"#,
+        &[("source/main.v", "micro main() -> i64 { return 0; }\n")],
+    );
+
+    let app_dir = root.join("projects").join("app");
+    let workspace = WorkspaceResolver::discover_for_project(&app_dir).unwrap();
+    let error = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir, target: CanonicalTarget::clr(), output_dir: None, ..Default::default() })
+        .expect_err("workspace 中已无 `core` 成员，显式 `core` 依赖必须 fail-closed 拒绝");
+    assert!(error.to_string().contains("core"), "error={error}");
 }
 
 #[test]
@@ -349,7 +403,7 @@ fn builds_legion_tools_like_plan_with_explicit_dependency_closure() {
         .unwrap();
 
     let dependency_names: Vec<&str> = plan.project.dependencies.iter().map(|item| item.name.as_str()).collect();
-    assert_eq!(dependency_names, vec!["core", "legion", "std", "std.data.text.von"]);
+    assert_eq!(dependency_names, vec!["legion", "std", "std.data.text.von"]);
 
     assert!(
         plan.project
@@ -694,10 +748,6 @@ fn create_legion_tools_workspace_fixture() -> WorkspaceFixture {
         "projects/legion.tools",
         r#"{
     name: "legion.tools",
-    auto_link: {
-        core: true,
-        std: false
-    },
     dependencies: {
         "legion": { version: "workspace" },
         "std": { version: "workspace" },
@@ -743,8 +793,8 @@ micro legion_normalize_short_target(value: utf8) -> utf8 {
     WorkspaceFixture { _temp_dir: temp_dir, root_dir, project_dir }
 }
 
-fn create_nested_legion_tools_with_outer_core_fixture() -> WorkspaceFixture {
-    let temp_dir = Builder::new().prefix("legion-tools-nested-outer-core").tempdir().unwrap();
+fn create_nested_legion_tools_with_outer_std_fixture() -> WorkspaceFixture {
+    let temp_dir = Builder::new().prefix("legion-tools-nested-outer-std").tempdir().unwrap();
     let root_dir = canonicalize_lossy(temp_dir.path());
     let subspace_dir = root_dir.join("projects").join("legion._");
     let project_dir = subspace_dir.join("projects").join("legion.tools");
@@ -756,7 +806,7 @@ fn create_nested_legion_tools_with_outer_core_fixture() -> WorkspaceFixture {
         r#"{
     name: "outer-super-workspace",
     members: [
-        "projects/core",
+        "projects/std",
         "projects/legion._"
     ]
 }
@@ -777,32 +827,32 @@ fn create_nested_legion_tools_with_outer_core_fixture() -> WorkspaceFixture {
 
     write_workspace_project(
         &root_dir,
-        "projects/core",
+        "projects/std",
         r#"{
-    name: "valkyrie-core",
-    auto_link: {
-        core: false,
-        std: false
-    },
+    name: "valkyrie-std",
     build: [
         {
-            target: "ovm"
+            target: "clr"
+        },
+        {
+            target: "jvm"
+        },
+        {
+            target: "node"
         }
     ]
 }
 "#,
-        &[("source/_.v", "namespace core;\n")],
+        &[("source/_.v", "namespace valkyrie.std;\n")],
     );
     write_workspace_project(
         &subspace_dir,
         "projects/legion.tools",
         r#"{
     name: "legion.tools",
-    auto_link: {
-        core: true,
-        std: false
+    dependencies: {
+        "std": { version: "workspace" }
     },
-    dependencies: {},
     build: [
         {
             target: "clr"

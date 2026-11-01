@@ -113,6 +113,45 @@ fn dotted_module_type_path_is_rejected_before_canonical() {
 }
 
 #[test]
+fn core_prefixed_type_paths_are_rejected_after_core_merged_into_std() {
+    // 两段：`core` 不再是模块根前缀，基底名在作用域内无绑定。
+    let two_part = TypeExpression::Namepath(Box::new(NamePath {
+        parts: vec![
+            Identifier { name: "core".into(), span: oak_span(4) },
+            Identifier { name: "Solution".into(), span: oak_span(8) },
+        ],
+        span: oak_span(13),
+    }));
+    let error = lower_type_expression(&two_part).expect_err("`core::` 已并入 `std`，必须结构化失败");
+    assert!(matches!(error, HirError::TypeNotFound { .. }), "error={error:?}");
+
+    // 三段：`core::math::Random` 末段同样无法绑定，不得静默回退。
+    let three_part = TypeExpression::Namepath(Box::new(NamePath {
+        parts: vec![
+            Identifier { name: "core".into(), span: oak_span(4) },
+            Identifier { name: "math".into(), span: oak_span(4) },
+            Identifier { name: "Random".into(), span: oak_span(6) },
+        ],
+        span: oak_span(15),
+    }));
+    let error = lower_type_expression(&three_part).expect_err("`core::math::Random` 必须结构化失败");
+    assert!(matches!(error, HirError::TypeNotFound { .. }), "error={error:?}");
+}
+
+#[test]
+fn std_prefixed_builtin_path_still_lowers() {
+    let path = TypeExpression::Namepath(Box::new(NamePath {
+        parts: vec![
+            Identifier { name: "std".into(), span: oak_span(3) },
+            Identifier { name: "primitive".into(), span: oak_span(9) },
+            Identifier { name: "usize".into(), span: oak_span(5) },
+        ],
+        span: oak_span(18),
+    }));
+    assert!(lower_type_expression(&path).is_ok(), "`std::primitive::usize` 仍须按 builtin 短名规则解析");
+}
+
+#[test]
 fn bracket_sugar_lowers_to_array() {
     let sugar = TypeExpression::Unary(Box::new(TypeUnaryNode {
         operator: ValkyrieTokenType::BracketL,

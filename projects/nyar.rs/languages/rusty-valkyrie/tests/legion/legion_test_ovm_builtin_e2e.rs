@@ -36,7 +36,6 @@ fn ovm_test_entries_execute_in_builtin_runtime_ignoring_external_runner() {
         "legion-test-ovm-builtin",
         r#"{
     name: "ovm_builtin_app",
-    auto_link: { core: false, std: false },
     build: [ { target: "ovm" } ]
 }
 "#,
@@ -67,7 +66,6 @@ fn ovm_test_session_fail_closed_on_unknown_entry() {
         "legion-test-ovm-failclosed",
         r#"{
     name: "ovm_failclosed_app",
-    auto_link: { core: false, std: false },
     build: [ { target: "ovm" } ]
 }
 "#,

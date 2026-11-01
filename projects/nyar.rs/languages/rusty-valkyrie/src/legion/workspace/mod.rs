@@ -12,7 +12,7 @@ pub mod source_snapshot;
 
 pub use crate::compiler::semantic::closure::{SemanticClosure, plan_semantic_closure};
 pub use manifest::{
-    AutoLinkConfig, BuildPluginSpec, BuildTargetSpec, DependencySpec, LocalLegionConfig, ProjectArtifactKind, ProjectManifest,
+    BuildPluginSpec, BuildTargetSpec, DependencySpec, LocalLegionConfig, ProjectArtifactKind, ProjectManifest,
     PublishTargetSpec, RunnerBinding, WorkspaceDefaults, WorkspaceManifest,
 };
 pub use oak::{labeled_report, labeled_report_with_context, source_point_span};

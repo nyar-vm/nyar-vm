@@ -222,10 +222,6 @@ fn parses_legion_tools_like_manifest_with_explicit_module_dependencies() {
         name: "legion.tools",
         version: "workspace",
         description: "Legion 构造工具",
-        auto_link: {
-            core: true,
-            std: false
-        },
         dependencies: {
             "legion": { version: "workspace" },
             "std": { version: "workspace" },
@@ -250,8 +246,6 @@ fn parses_legion_tools_like_manifest_with_explicit_module_dependencies() {
     let manifest = ProjectManifest::parse(&source).unwrap();
 
     assert_eq!(manifest.name, "legion.tools");
-    assert!(manifest.auto_link.core);
-    assert!(!manifest.auto_link.std);
 
     assert!(is_workspace_like_dependency(manifest.dependencies.get("legion").unwrap()));
     assert!(is_workspace_like_dependency(manifest.dependencies.get("std").unwrap()));
@@ -276,11 +270,7 @@ fn parses_actual_workspace_members_after_examples_are_narrowed() {
             "projects/legion.tools"
         ],
         workspace: {
-            version: "0.1.0",
-            auto_link: {
-                core: false,
-                std: false
-            }
+            version: "0.1.0"
         }
     }
     "#;
@@ -291,8 +281,43 @@ fn parses_actual_workspace_members_after_examples_are_narrowed() {
     assert!(manifest.members.contains(&"projects/std".to_string()));
     assert!(manifest.members.contains(&"examples/demo.unity.game".to_string()));
     assert!(!manifest.members.contains(&"examples/test.module_system".to_string()));
-    assert!(!manifest.workspace.auto_link.core);
-    assert!(!manifest.workspace.auto_link.std);
+}
+
+#[test]
+fn rejects_removed_auto_link_key_in_project_manifest() {
+    let source = r#"
+    {
+        name: "app",
+        auto_link: {
+            core: true,
+            std: true
+        },
+        build: [ { target: "clr" } ]
+    }
+    "#;
+    let error = ProjectManifest::parse(&source).expect_err("`auto_link` 已从合同移除，键再现必须 fail-closed 拒绝");
+    let message = error.to_string();
+    assert!(message.contains("auto_link"), "message={message}");
+}
+
+#[test]
+fn rejects_removed_auto_link_key_in_workspace_defaults() {
+    let source = r#"
+    {
+        name: "ws",
+        members: [ "app" ],
+        workspace: {
+            version: "0.1.0",
+            auto_link: {
+                core: false,
+                std: false
+            }
+        }
+    }
+    "#;
+    let error = WorkspaceManifest::parse(&source).expect_err("workspace 默认值中的 `auto_link` 同样必须 fail-closed 拒绝");
+    let message = error.to_string();
+    assert!(message.contains("auto_link"), "message={message}");
 }
 
 #[test]

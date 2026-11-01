@@ -136,15 +136,17 @@ impl<'de> Deserialize<'de> for ProjectArtifactKind {
     }
 }
 
-/// 标准库自动链接开关：控制工程是否自动引入 `core` / `std` 依赖。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct AutoLinkConfig {
-    /// 是否自动链接 `core` 标准库。
-    #[serde(default)]
-    pub core: bool,
-    /// 是否自动链接 `std` 标准库。
-    #[serde(default)]
-    pub std: bool,
+/// `auto_link` 机制已从清单合同移除：使用本仓 `std` 的工程显式声明
+/// `dependencies: { "std": { version: "workspace" } }`，未声明的工程走包管理器的 `std`，
+/// 不存在 `no_std` 场景。清单中再出现该键一律 fail-closed 结构化拒绝，不静默忽略。
+fn reject_removed_auto_link<'de, D>(deserializer: D) -> std::result::Result<(), D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let _ = de::IgnoredAny::deserialize(deserializer)?;
+    Err(de::Error::custom(
+        "manifest key `auto_link` was removed from the contract; declare `dependencies: { \"std\": { version: \"workspace\" } }` to use the in-repo `std`, otherwise `std` resolves through the package manager",
+    ))
 }
 
 /// 单项依赖的声明形态：布尔开关、workspace 关键字或详细字段对象。
@@ -336,9 +338,9 @@ pub struct WorkspaceDefaults {
     /// 默认许可证。
     #[serde(default, deserialize_with = "deserialize_option_string")]
     pub license: Option<String>,
-    /// 默认自动链接配置。
-    #[serde(default)]
-    pub auto_link: AutoLinkConfig,
+    /// 已移除的 `auto_link` 键位：出现即 fail-closed 拒绝。
+    #[serde(default, deserialize_with = "reject_removed_auto_link")]
+    pub auto_link: (),
 }
 
 /// workspace 声明的运行器绑定：目标选择器、可执行命令与参数。
@@ -387,9 +389,9 @@ pub struct ProjectManifest {
     /// `binary`（默认）或 `library`；可执行入口与导出表面由源码 `[main]` / `[export]` 标记，manifest 不声明单文件路径。
     #[serde(default)]
     pub artifact: ProjectArtifactKind,
-    /// 工程级自动链接配置。
-    #[serde(default)]
-    pub auto_link: AutoLinkConfig,
+    /// 已移除的 `auto_link` 键位：出现即 fail-closed 拒绝。
+    #[serde(default, deserialize_with = "reject_removed_auto_link")]
+    pub auto_link: (),
     /// 工程声明的依赖表。
     #[serde(default)]
     pub dependencies: BTreeMap<String, DependencySpec>,

@@ -20,7 +20,7 @@ pub use cmds::{
     spy::{SpyMode, SpyOptions, SpyTargetOptions, SpyTargetPlatform, run as run_spy},
 };
 pub use workspace::{
-    AutoLinkConfig, BuildPluginSpec, BuildTargetSpec, DependencySpec, LocalLegionConfig, ProjectArtifactKind, ProjectManifest,
+    BuildPluginSpec, BuildTargetSpec, DependencySpec, LocalLegionConfig, ProjectArtifactKind, ProjectManifest,
     PublishTargetSpec, RunnerBinding, WorkspaceDefaults, WorkspaceManifest,
 };
 

@@ -122,7 +122,6 @@ fn test_plan_merges_test_files_into_entry_semantic_group() {
         "legion-test-group",
         r#"{
     name: "group_app",
-    auto_link: { core: false, std: false },
     build: [ { target: "ovm" } ]
 }
 "#,
@@ -165,7 +164,6 @@ fn test_plan_rejects_duplicate_test_entry_names() {
         "legion-test-duplicate",
         r#"{
     name: "duplicate_app",
-    auto_link: { core: false, std: false },
     build: [ { target: "ovm" } ]
 }
 "#,
@@ -270,7 +268,6 @@ fn test_entry_reuses_workspace_discovery_without_valkyrie_v_root() {
         &app_dir.join("legion.von"),
         r#"{
     name: "app",
-    auto_link: { core: false, std: false },
     build: [{ target: "ovm" }]
 }
 "#,

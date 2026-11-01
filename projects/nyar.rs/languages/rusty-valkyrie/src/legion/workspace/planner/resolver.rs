@@ -18,7 +18,7 @@ use super::{
     source_file_conditions::{filter_semantic_source_groups_for_target, filter_source_files_for_target},
     sources::{
         MAX_SEMANTIC_GROUP_DEPTH, MAX_SEMANTIC_GROUPS, MAX_SOURCE_CLOSURE_FILES, add_distribution_default_dependencies, canonicalize_lossy,
-        collect_source_files, collect_test_v_files, dependency_supports_source_context, find_workspace_root, implicit_sdk_dependencies,
+        collect_source_files, collect_test_v_files, find_workspace_root, implicit_sdk_dependencies, manifest_supports_build_context,
         project_visit_key, register_workspace_members, resolve_project_root, same_path, search_start_dir,
     },
     types::{
@@ -62,7 +62,7 @@ impl WorkspaceResolver {
                 return Ok(workspace);
             }
             // 题级 / 示例包常有独立 `legion.von` 且不在 `legions.von` members 中，
-            // 但仍通过 `core: true` / `std: true` 引用 workspace 成员；保留已发现的 workspace。
+            // 但仍通过显式 `dependencies` 引用 workspace 成员；保留已发现的 workspace。
             let manifest_path = project_dir.join("legion.von");
             if manifest_path.is_file() {
                 let manifest = ProjectManifest::parse(&fs::read_to_string(&manifest_path)?)?;
@@ -202,12 +202,6 @@ impl WorkspaceResolver {
             else {
                 continue;
             };
-            if manifest.auto_link.core {
-                pending.push("core".to_string());
-            }
-            if manifest.auto_link.std {
-                pending.push("std".to_string());
-            }
             for (dependency_name, spec) in &manifest.dependencies {
                 if !matches!(spec, DependencySpec::Disabled) {
                     pending.push(dependency_name.clone());
@@ -402,14 +396,8 @@ impl WorkspaceResolver {
         // 收集当前项目自身的源文件。target 不参与声明是否存在，只选择 adaptor 与 TargetExecutionPlan。
         let mut all_files = collect_source_files(&canonical_dir)?;
 
-        // 收集当前项目的依赖名称（auto_link + 显式声明 + 平台隐式 SDK）。
+        // 收集当前项目的依赖名称（显式声明 + 平台隐式 SDK）。
         let mut dep_names = BTreeSet::new();
-        if manifest.auto_link.core {
-            dep_names.insert("core".to_string());
-        }
-        if manifest.auto_link.std {
-            dep_names.insert("std".to_string());
-        }
         for (dependency_name, dependency_spec) in &manifest.dependencies {
             if !matches!(dependency_spec, DependencySpec::Disabled) {
                 dep_names.insert(dependency_name.clone());
@@ -442,7 +430,7 @@ impl WorkspaceResolver {
             )? {
                 ResolvedDependencySource::Local(dep_dir) => {
                     if let Some(dep_manifest) = self.load_project_manifest_from_dir(&dep_dir) {
-                        if !dependency_supports_source_context(&dep_name, &dep_manifest, &build_target.target, &build_target.publish) {
+                        if !manifest_supports_build_context(&dep_manifest, &build_target.target, &build_target.publish) {
                             continue;
                         }
                         let dep_files = self.collect_source_closure(&dep_dir, &dep_manifest, build_target, visited, false)?;
@@ -453,7 +441,7 @@ impl WorkspaceResolver {
                     let install_dir =
                         self.install_registry_dependency(self.root_dir.as_path(), &dep_name, &version, &registry, &manifest.name)?;
                     if let Some(dep_manifest) = self.load_project_manifest_from_dir(&install_dir) {
-                        if dependency_supports_source_context(&dep_name, &dep_manifest, &build_target.target, &build_target.publish) {
+                        if manifest_supports_build_context(&dep_manifest, &build_target.target, &build_target.publish) {
                             let dep_files = self.collect_source_closure(&install_dir, &dep_manifest, build_target, visited, false)?;
                             all_files.extend(dep_files);
                         }
@@ -598,12 +586,6 @@ impl WorkspaceResolver {
         let mut declared_specs = BTreeMap::new();
         let implicit_names = implicit_sdk_dependencies(&build_target.publish).into_iter().map(|item| item.to_string()).collect::<BTreeSet<_>>();
 
-        if manifest.auto_link.core {
-            names.insert("core".to_string());
-        }
-        if manifest.auto_link.std {
-            names.insert("std".to_string());
-        }
         for (dependency_name, dependency_spec) in &manifest.dependencies {
             if !matches!(dependency_spec, DependencySpec::Disabled) {
                 names.insert(dependency_name.clone());
@@ -641,7 +623,7 @@ impl WorkspaceResolver {
                 ResolvedDependencySource::MissingImplicit => continue,
             };
             if let Some(dependency_manifest) = self.project_manifest(&manifest_dir) {
-                if !dependency_supports_source_context(&dependency_name, dependency_manifest, &build_target.target, &build_target.publish) {
+                if !manifest_supports_build_context(dependency_manifest, &build_target.target, &build_target.publish) {
                     continue;
                 }
             }
