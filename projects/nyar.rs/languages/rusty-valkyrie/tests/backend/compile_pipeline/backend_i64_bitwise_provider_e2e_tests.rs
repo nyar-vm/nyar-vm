@@ -2,7 +2,8 @@
 //! → 目标指令 / `nyar.host` 宿主导入的端到端正反合同。
 //!
 //! 正向：合同经 wasm adaptor 的冻结配方降低为原生指令——移位实参按声明签名（双 `i64`）
-//! 发射，位移量由计划冻结的 `i32.wrap_i64` 截窄步骤落到 `i64.shl`/`i64.shr_s` 之前；
+//! 原样发射（Wasm `i64.shl`/`i64.shr_s` 两个操作数都是 `i64`，位移量由指令按 64 取模，
+//! 不得插入 `i32.wrap_i64`）；
 //! OVM lane 经 `[ovm("i64_*")]` 宿主导入降低为 `CallImport`，加载期解析为 `HostOp`
 //! 并执行出正确结果。
 //! 反向：缺 provider / 未知助记符必须结构化失败，不得空体成功或回落到任何旁路。
@@ -147,10 +148,16 @@ fn lower_wasm(
 }
 
 #[test]
-fn i64_bitwise_wasm_provider_lowers_with_narrowed_shift_amount() {
+fn i64_bitwise_wasm_provider_lowers_shift_without_narrowing() {
     let bytes = lower_wasm(&groups_for(PROVIDERS_WASM), &provider_bindings()).expect("wasm 位运算 provider 链必须完成降低");
-    assert!(bytes.windows(2).any(|window| window == [0xA7, 0x86].as_slice()), "位移量必须先经 i32.wrap_i64 截窄再执行 i64.shl");
-    assert!(bytes.windows(2).any(|window| window == [0xA7, 0x87].as_slice()), "位移量必须先经 i32.wrap_i64 截窄再执行 i64.shr_s");
+    assert!(
+        !bytes.windows(2).any(|window| window == [0xA7, 0x86].as_slice()),
+        "Wasm `i64.shl` 的位移量是 `i64`，不得插入 `i32.wrap_i64`"
+    );
+    assert!(
+        !bytes.windows(2).any(|window| window == [0xA7, 0x87].as_slice()),
+        "Wasm `i64.shr_s` 的位移量是 `i64`，不得插入 `i32.wrap_i64`"
+    );
     assert!(bytes.contains(&0x83) && bytes.contains(&0x84) && bytes.contains(&0x85), "i64.and/or/xor 必须落到冻结 opcode 字节");
 }
 
