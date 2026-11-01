@@ -13,8 +13,8 @@ use nyar_types::pipeline::RepresentationPlanStage;
 use rusty_valkyrie::{MirLowerer, ValkyrieCompiler, compiler::mir::ssa::MirValueOrigin};
 
 const PRIMITIVES: &str = r#"
-namespace core::primitive;
-[primitive("core::primitive::bool")] structure bool { }
+namespace std::primitive;
+[primitive("std::primitive::bool")] structure bool { }
 "#;
 
 fn compile(source: &str) -> rusty_valkyrie::compiler::mir::ssa::MirModule {
@@ -166,7 +166,8 @@ fn if_arm_assignment_observable_at_runtime() {
         PICK_SOURCE,
         "pick",
         "import {readFileSync} from 'node:fs'; \
-         const {instance}=await WebAssembly.instantiate(readFileSync(process.argv[1])); \
+         const mod=await WebAssembly.compile(readFileSync(process.argv[1])); const imports={}; for(const imp of WebAssembly.Module.imports(mod)){ if(!imports[imp.module]) imports[imp.module]={}; if(imp.kind==='function') imports[imp.module][imp.name]=()=>0; else if(imp.kind==='global') imports[imp.module][imp.name]=new WebAssembly.Global({value:'i32',mutable:true},0); else if(imp.kind==='memory') imports[imp.module][imp.name]=new WebAssembly.Memory({initial:1}); else imports[imp.module][imp.name]=new WebAssembly.Table({initial:0,element:'anyfunc'}); } \
+         const instance=await WebAssembly.instantiate(mod, imports); \
          if(instance.exports.pick(1,1,0)!==0) throw new Error('flag=true 必须返回分支内的 b'); \
          if(instance.exports.pick(0,1,0)!==1) throw new Error('flag=false 必须返回初值 a');",
     );
@@ -179,7 +180,8 @@ fn if_arm_assignment_inside_loop_observable_at_runtime() {
         LOOP_PICK_SOURCE,
         "loop_pick",
         "import {readFileSync} from 'node:fs'; \
-         const {instance}=await WebAssembly.instantiate(readFileSync(process.argv[1])); \
+         const mod=await WebAssembly.compile(readFileSync(process.argv[1])); const imports={}; for(const imp of WebAssembly.Module.imports(mod)){ if(!imports[imp.module]) imports[imp.module]={}; if(imp.kind==='function') imports[imp.module][imp.name]=()=>0; else if(imp.kind==='global') imports[imp.module][imp.name]=new WebAssembly.Global({value:'i32',mutable:true},0); else if(imp.kind==='memory') imports[imp.module][imp.name]=new WebAssembly.Memory({initial:1}); else imports[imp.module][imp.name]=new WebAssembly.Table({initial:0,element:'anyfunc'}); } \
+         const instance=await WebAssembly.instantiate(mod, imports); \
          if(instance.exports.loop_pick(1,1,0)!==0) throw new Error('循环体内 if 赋值必须生效'); \
          if(instance.exports.loop_pick(0,1,0)!==1) throw new Error('flag=false 必须返回初值 a');",
     );

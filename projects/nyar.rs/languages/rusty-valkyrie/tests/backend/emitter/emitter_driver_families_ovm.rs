@@ -95,7 +95,7 @@ fn numeric_groups(primitive: &str, app: &str) -> Vec<CompilerSourceGroup> {
 #[test]
 fn i32_operator_lowers_to_vm_numeric_opcode_without_host_import() {
     let groups = numeric_groups(
-        r#"[primitive("core::primitive::i32")]
+        r#"[primitive("std::primitive::i32")]
 structure i32 { }"#,
         r#"
 imply i32 {
@@ -128,7 +128,7 @@ micro main() -> i32 {
 #[test]
 fn unknown_ovm_operator_mnemonic_fails_structurally() {
     let groups = numeric_groups(
-        r#"[primitive("core::primitive::i32")]
+        r#"[primitive("std::primitive::i32")]
 structure i32 { }"#,
         r#"
 imply i32 {
@@ -157,7 +157,7 @@ micro main() -> i32 {
 #[test]
 fn ovm_operator_arity_mismatch_fails_structurally() {
     let groups = numeric_groups(
-        r#"[primitive("core::primitive::i32")]
+        r#"[primitive("std::primitive::i32")]
 structure i32 { }"#,
         r#"
 [host_contract]
@@ -180,7 +180,7 @@ micro main() -> i32 {
 #[test]
 fn i64_add_provider_stays_a_nyar_host_import() {
     let groups = numeric_groups(
-        r#"[primitive("core::primitive::i64")]
+        r#"[primitive("std::primitive::i64")]
 structure i64 { }"#,
         r#"
 [host_contract]
@@ -221,7 +221,7 @@ micro main() -> i64 {
 #[test]
 fn vm_i32_neg_recipe_emits_zero_constant_before_sub() {
     let groups = numeric_groups(
-        r#"[primitive("core::primitive::i32")]
+        r#"[primitive("std::primitive::i32")]
 structure i32 { }"#,
         r#"
 [host_contract]

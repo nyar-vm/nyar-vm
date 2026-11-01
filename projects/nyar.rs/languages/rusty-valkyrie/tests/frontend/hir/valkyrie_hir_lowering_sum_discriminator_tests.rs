@@ -16,7 +16,7 @@ fn test_span() -> SourceSpan {
 #[test]
 fn sum_layouts_are_not_synthesized_without_source_declarations() {
     const SOURCE: &str = r#"
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 { }
 
 [main]

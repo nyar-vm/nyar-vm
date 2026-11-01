@@ -182,7 +182,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
     // VonDiagnostic) live on imported_semantic_exports and must still provide
     // FieldGet layout ids — otherwise SMIR010 "no layout id" on error.message.
     // Skip empty / erased names. Always register distinct (namespace, name) shapes
-    // so TextSpan{start,stop} is not erased by core.text TextSpan{offset,length}.
+    // so TextSpan{start,stop} is not erased by std.text TextSpan{offset,length}.
     for export in &module.imported_semantic_exports {
         for hir_struct in &export.structs {
             if hir_struct.fields.is_empty() || !hir_struct.generics.is_empty() {

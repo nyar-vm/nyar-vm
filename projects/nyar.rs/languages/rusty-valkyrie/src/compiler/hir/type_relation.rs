@@ -431,10 +431,10 @@ pub(crate) fn is_numeric_type_name(name: &str) -> bool {
             | "f32"
             | "f64"
             | "f128"
-            | "core.primitive.usize"
-            | "core.primitive.isize"
-            | "core::primitive::usize"
-            | "core::primitive::isize"
+            | "std.primitive.usize"
+            | "std.primitive.isize"
+            | "std::primitive::usize"
+            | "std::primitive::isize"
     )
 }
 

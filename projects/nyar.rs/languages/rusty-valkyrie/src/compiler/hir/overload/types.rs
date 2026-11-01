@@ -61,7 +61,7 @@ pub(crate) fn is_text_type(ty: &ValkyrieType) -> bool {
     match ty {
         ValkyrieType::Utf8 | ValkyrieType::Utf16 => true,
         ValkyrieType::Named(name) => {
-            matches!(name.as_str(), "text" | "utf8" | "Utf8Text" | "utf16" | "Utf16Text" | "core::text::text" | "core.text.text")
+            matches!(name.as_str(), "text" | "utf8" | "Utf8Text" | "utf16" | "Utf16Text" | "std::text::text" | "std.text.text")
         }
         _ => false,
     }

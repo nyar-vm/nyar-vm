@@ -322,8 +322,8 @@ micro __i64_add(lhs: i64, rhs: i64): i64;
 fn declared_intrinsic_annotation_path_still_compiles() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 922 });
     let source = r#"
-[primitive("core::primitive::i64")] structure i64 { }
-[primitive("core::primitive::usize")] structure usize { }
+[primitive("std::primitive::i64")] structure i64 { }
+[primitive("std::primitive::usize")] structure usize { }
 
 [intrinsic("builtin.array.length")]
 micro frozen_length(xs: [i64]): usize {

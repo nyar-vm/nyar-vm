@@ -103,7 +103,7 @@ fn textspan_as_range_with_usize_add_binds_nominal() {
     // 对齐生产 core：`structure usize` + `infix +` + `Range(self.offset, self.offset + self.length)`。
     // 禁止省略 usize 运算符声明后仍期望 `+` 魔法通过。
     let source = r#"
-[primitive("core::primitive::usize")]
+[primitive("std::primitive::usize")]
 structure usize { }
 
 imply usize {
@@ -144,7 +144,7 @@ imply TextSpan {
 #[test]
 fn textspan_as_range_cross_namespace_binds_nominal() {
     let source = r#"
-[primitive("core::primitive::usize")]
+[primitive("std::primitive::usize")]
 structure usize { }
 
 imply usize {
@@ -153,12 +153,12 @@ imply usize {
     }
 }
 
-namespace core.types
+namespace std.types
 structure Range {
     start: usize,
     end: usize,
 }
-namespace core.text
+namespace std.text
 structure TextSpan {
     offset: usize,
     length: usize
@@ -191,7 +191,7 @@ fn option_or_else_some_construct_binds_nominal_without_short_name() {
     // 对齐生产 `core/source/types/Option.v`：`unite` 变体 + 自由函数 `Some` 同名并存时，
     // `or_else` 臂内 `Some(value)` 必须冻结 Constructor 合同，不得 SMIR003。
     let source = r#"
-namespace core::types;
+namespace std::types;
 unite Option<T> {
     Some { value: T },
     None,
@@ -327,7 +327,7 @@ micro inspect(value: Carrier::Payload): unit {
 fn same_module_usize_eq_literal_resolves_operator_contract() {
     // 字面量 `0` 默认推断为 i32；必须在 unify 前按 formal `usize` 特化。
     let source = r#"
-[primitive("core::primitive::usize")]
+[primitive("std::primitive::usize")]
 structure usize { }
 imply usize {
     infix `==`(self, rhs: Self): bool { return true }
@@ -349,15 +349,15 @@ fn cross_package_array_host_get_usize_ops_resolve() {
             sources: vec![CompilerSourceFile {
                 path: "core.v".into(),
                 source: r#"
-namespace core::primitive;
-[primitive("core::primitive::usize")]
+namespace std::primitive;
+[primitive("std::primitive::usize")]
 structure usize { }
 imply usize {
     infix `==`(self, rhs: Self): bool { return true }
     infix `>`(self, rhs: Self): bool { return true }
     infix `-`(self, rhs: Self): Self { return self }
 }
-namespace core::types;
+namespace std::types;
 unite Option<T> { Some { value: T }, None }
 micro Some<T>(value: T) -> Option<T> {
     let wrapped: Option<T> = Some(value)
@@ -401,7 +401,7 @@ fn cross_package_some_with_local_value_resolves() {
             sources: vec![CompilerSourceFile {
                 path: "core.v".into(),
                 source: r#"
-namespace core::types;
+namespace std::types;
 unite Option<T> { Some { value: T }, None }
 micro Some<T>(value: T) -> Option<T> {
     let wrapped: Option<T> = Some(value)
@@ -445,15 +445,15 @@ fn cross_package_array_host_get_links_without_orphan_callable() {
             sources: vec![CompilerSourceFile {
                 path: "core.v".into(),
                 source: r#"
-namespace core::primitive;
-[primitive("core::primitive::usize")]
+namespace std::primitive;
+[primitive("std::primitive::usize")]
 structure usize { }
 imply usize {
     infix `==`(self, rhs: Self): bool { return true }
     infix `>`(self, rhs: Self): bool { return true }
     infix `-`(self, rhs: Self): Self { return self }
 }
-namespace core::types;
+namespace std::types;
 unite Option<T> { Some { value: T }, None }
 micro Some<T>(value: T) -> Option<T> {
     let wrapped: Option<T> = Some(value)
@@ -617,7 +617,7 @@ micro get<T>(array: [T], ordinal: usize): T {
 #[test]
 fn same_module_some_after_let_subscript_resolves() {
     let source = r#"
-[primitive("core::primitive::usize")]
+[primitive("std::primitive::usize")]
 structure usize { }
 imply usize {
     infix `-`(self, rhs: Self): Self { return self }

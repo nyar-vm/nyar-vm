@@ -9,9 +9,9 @@ use rusty_valkyrie::{
     compiler::types::hir::{HirExpr, HirExprKind, HirFunction, HirModule, ValkyrieType},
 };
 
-/// 数值原始类型名属于 `core/primitive` 的声明族；未声明时 canonical 以 CAN003 拒绝。
-const PRIMITIVES: &str = "[primitive(\"core::primitive::usize\")] structure usize { } \
-    [primitive(\"core::primitive::i32\")] structure i32 { } ";
+/// 数值原始类型名属于 `std/primitive` 的声明族；未声明时 canonical 以 CAN003 拒绝。
+const PRIMITIVES: &str = "[primitive(\"std::primitive::usize\")] structure usize { } \
+    [primitive(\"std::primitive::i32\")] structure i32 { } ";
 
 /// 唯一的 `builtin.array.new` 身份来源。
 const ARRAY_NEW_DECLARATION: &str = "[intrinsic(\"builtin.array.new\")] private micro alloc<T>(length: usize): [T] { } ";

@@ -172,10 +172,10 @@ fn imported_impl_method_contract_survives_dependency_boundary() {
     // 这里用 Resolver 形态的源码组表达同一个边界。
     let groups = [
         rusty_valkyrie::CompilerSourceGroup::single_source(
-            "core.types",
-            "core.types",
+            "std.types",
+            "std.types",
             r#"
-namespace core.types;
+namespace std.types;
 unite Option<T> { Some { value: T }, None }
 imply Option<T> {
     micro unwrap(self) -> T { match self { case Some(value): value case None: raise "none" } }
@@ -190,7 +190,7 @@ imply Option<T> {
 "#,
         )
         .as_entry()
-        .with_direct_dependencies(vec!["core.types".into()]),
+        .with_direct_dependencies(vec!["std.types".into()]),
     ];
     compiler.resolve_source_groups(&groups, "native").expect("imported impl method must resolve from its exported contract");
 }

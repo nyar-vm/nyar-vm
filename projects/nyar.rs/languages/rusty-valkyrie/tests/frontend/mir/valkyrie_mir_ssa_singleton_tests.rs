@@ -17,14 +17,14 @@ use rusty_valkyrie::compiler::mir::ssa::{
 /// 由 `[host_contract]` 提供者补出。frontend 不再为 primitive 类型补造无声明实现，
 /// 所以使用运算符的 fixture 必须像真实源码一样携带这些声明。
 const PRIMITIVE_OPERATOR_DECLARATIONS: &str = r#"
-[primitive("core::primitive::i32")] structure i32 { }
+[primitive("std::primitive::i32")] structure i32 { }
 imply i32 {
     infix `+`(self, rhs: Self): Self { __i32_add(self, rhs) }
 }
 [host_contract]
 private micro __i32_add(lhs: i32, rhs: i32): i32
 
-[primitive("core::primitive::i64")] structure i64 { }
+[primitive("std::primitive::i64")] structure i64 { }
 imply i64 {
     infix `+`(self, rhs: Self): Self { __i64_add(self, rhs) }
 }

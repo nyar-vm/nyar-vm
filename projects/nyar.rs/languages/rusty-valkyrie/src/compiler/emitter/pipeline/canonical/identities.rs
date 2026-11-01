@@ -390,10 +390,10 @@ fn is_array_index_surface_name(name: &str) -> bool {
             | "i128"
             | "byte"
             | "sbyte"
-            | "core.primitive.usize"
-            | "core.primitive.isize"
-            | "core::primitive::usize"
-            | "core::primitive::isize"
+            | "std.primitive.usize"
+            | "std.primitive.isize"
+            | "std::primitive::usize"
+            | "std::primitive::isize"
     )
 }
 

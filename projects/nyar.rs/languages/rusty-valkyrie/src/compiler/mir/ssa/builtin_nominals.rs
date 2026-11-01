@@ -1,6 +1,6 @@
 //! 测试与单组闭包用的占位内置名义类型语义。
 //!
-//! 正式编译由 `core/primitive` 等依赖组提供完整 `structure` 声明；此处只登记
+//! 正式编译由 `std/primitive` 等依赖组提供完整 `structure` 声明；此处只登记
 //! carrier 语义事实，避免 bootstrap 阶段鸡生蛋。不得把短名当作唯一身份。
 
 use nyar_types::{ItemId, NominalValueSemantics};

@@ -266,7 +266,7 @@ mod tests {
         let target = CanonicalTarget::browser();
         let space = target_host_capability_space(target);
         let provider = PlannedHostProvider {
-            contract: "core::primitive::__f64_add".into(),
+            contract: "std::primitive::__f64_add".into(),
             contract_key: None,
             symbol: "std::adaptor::wasm::math::f64_add".into(),
             key: DeclarationKey {

@@ -146,7 +146,7 @@ pub struct HirStruct {
     pub constructor_instance: Option<nyar_types::ItemInstanceId>,
     /// The name of the struct.
     pub name: Identifier,
-    /// 所属命名空间路径（如 `["core", "text"]`）。
+    /// 所属命名空间路径（如 `["std", "text"]`）。
     ///
     /// 由 `namespace foo;` 声明设置，用于在 `TypeDef` 表中区分不同命名空间下的同名类型。
     /// 空向量表示全局命名空间。

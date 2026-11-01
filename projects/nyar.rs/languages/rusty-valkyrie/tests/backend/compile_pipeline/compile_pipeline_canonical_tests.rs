@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 fn source_surface_module() -> MirModule {
     let hir = rusty_valkyrie::ValkyrieCompiler::default()
         .compile_source(
-            "[primitive(\"core::primitive::i32\")] structure i32 { } \
+            "[primitive(\"std::primitive::i32\")] structure i32 { } \
              [export(name: \"answer\")] [main] micro answer() -> i32 { return 23 }",
         )
         .expect("源码导出及入口合同");
@@ -555,7 +555,7 @@ fn null_intrinsic_operations_canonicalize_without_symbol_call() {
 fn i32_pow_while_loop_canonicalizes_with_mutable_locals() {
     rusty_valkyrie::ValkyrieCompiler::default()
         .compile_source_to_program(
-            r#"[primitive("core::primitive::i32")]
+            r#"[primitive("std::primitive::i32")]
 structure i32 { }
 
 imply i32 {

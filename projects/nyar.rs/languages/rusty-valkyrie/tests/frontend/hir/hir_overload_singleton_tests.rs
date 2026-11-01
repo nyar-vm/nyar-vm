@@ -38,7 +38,7 @@ fn imply_bool_infix_not_eq_resolves_eq_operator_call() {
     compiler
         .compile_source(
             r#"
-[primitive("core::primitive::bool")]
+[primitive("std::primitive::bool")]
 structure bool { }
 
 imply bool {
@@ -61,7 +61,7 @@ fn primitive_intrinsic_declaration_resolves_without_helper_name_registry() {
     let hir = compiler
         .compile_source(
             r#"
-[primitive("core::primitive::f64")]
+[primitive("std::primitive::f64")]
 structure f64 { }
 
 imply f64 {
@@ -823,9 +823,9 @@ imply Utf8Text {
 #[test]
 fn debug_ascii_alnum_key_some_construct_resolution() {
     let source = r#"
-namespace core::types;
+namespace std::types;
 unite Option<T> { Some { value: T }, None }
-namespace core::text;
+namespace std::text;
 structure char { }
 imply char {
     micro ascii_alnum_key(self) -> Option<i64> {
@@ -917,10 +917,10 @@ fn float_literal_binds_to_float_formal_parameter() {
     compiler
         .compile_source(
             r#"
-[primitive("core::primitive::f32")]
+[primitive("std::primitive::f32")]
 structure f32 { }
 
-[primitive("core::primitive::f64")]
+[primitive("std::primitive::f64")]
 structure f64 { }
 
 micro take_f64(x: f64) -> f64 {
@@ -950,7 +950,7 @@ fn integer_literal_still_binds_to_integer_formal_parameter() {
     compiler
         .compile_source(
             r#"
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 { }
 
 micro take_i32(x: i32) -> i32 {
@@ -973,7 +973,7 @@ fn float_literal_does_not_bind_to_integer_formal_parameter() {
         let error = compiler
             .compile_source(&format!(
                 r#"
-[primitive("core::primitive::{primitive}")]
+[primitive("std::primitive::{primitive}")]
 structure {primitive} {{ }}
 
 micro take(x: {primitive}) -> {primitive} {{

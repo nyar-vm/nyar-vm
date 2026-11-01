@@ -294,7 +294,7 @@ fn operator_use_site_promotes_receiver_operator_member() {
             false,
             vec![file(
                 "source/primitive/usize.v",
-                "namespace core::primitive;\nstructure usize { }\nimply usize {\n    infix `+`(self, rhs: Self): Self { return rhs }\n    infix `<`(self, rhs: Self): bool { return true }\n    infix `==`(self, rhs: Self): bool { return true }\n}",
+                "namespace std::primitive;\nstructure usize { }\nimply usize {\n    infix `+`(self, rhs: Self): Self { return rhs }\n    infix `<`(self, rhs: Self): bool { return true }\n    infix `==`(self, rhs: Self): bool { return true }\n}",
             )],
         ),
         (
@@ -451,7 +451,7 @@ imply ArrayList<T>: LiteralSequence<T> {
 #[test]
 fn member_owner_link_is_gated_by_owner_group_visibility() {
     let groups = [
-        ("core", false, vec![file("source/primitive/i64.v", "namespace core.primitive;\nstructure i64 { }")]),
+        ("core", false, vec![file("source/primitive/i64.v", "namespace std.primitive;\nstructure i64 { }")]),
         ("std", false, vec![file("source/hash.v", "namespace std.collection;\nimply i64: Hash { micro hash(self): usize { return 0 } }")]),
         ("app", true, vec![file("solution.v", "namespace app;\n[export] micro run(x: i64) -> usize { return x.hash() }")]),
     ];

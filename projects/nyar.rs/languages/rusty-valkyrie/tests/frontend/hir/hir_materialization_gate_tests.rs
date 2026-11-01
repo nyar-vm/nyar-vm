@@ -31,8 +31,8 @@ const TEST_ARCH: &str = "native";
 
 /// 组模式下 `i64` 必须由依赖组声明为 primitive 结构；否则残留 `Named("i64")`
 /// 会以 CAN003 拒绝进入 canonical 类型表。
-const CORE_PRIMITIVE_SOURCE: &str = "namespace core::primitive;\n\
-     [primitive(\"core::primitive::i64\")] structure i64 { }";
+const CORE_PRIMITIVE_SOURCE: &str = "namespace std::primitive;\n\
+     [primitive(\"std::primitive::i64\")] structure i64 { }";
 
 fn core_group() -> CompilerSourceGroup {
     CompilerSourceGroup::single_source("core", "core", CORE_PRIMITIVE_SOURCE)

@@ -239,7 +239,7 @@ pub struct MirStruct {
     pub declaration: Option<nyar_types::ItemId>,
     /// 结构体名称。
     pub name: String,
-    /// 结构体命名空间（点分路径，例如 `core.text`），用于稳定符号与布局查找。
+    /// 结构体命名空间（点分路径，例如 `std.text`），用于稳定符号与布局查找。
     pub namespace: String,
     /// 声明的泛型形参列表；非空表示开放泛型，不生成平台布局。
     pub generics: Vec<crate::compiler::types::hir::GenericType>,

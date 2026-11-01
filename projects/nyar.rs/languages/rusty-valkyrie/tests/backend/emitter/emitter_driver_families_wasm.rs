@@ -17,7 +17,7 @@ fn physical_name_preserves_artifact_names() {
 fn app_source(mnemonic: &str) -> String {
     format!(
         r#"
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 {{ }}
 
 imply i32 {{
@@ -89,7 +89,7 @@ fn unknown_wasm_operator_mnemonic_fails_structurally() {
 #[test]
 fn primitive_i32_infix_add_lowers_without_explicit_imply() {
     let source = r#"
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 { }
 
 micro add(a: i32, b: i32) -> i32 {
@@ -131,7 +131,7 @@ micro add(a: i32, b: i32) -> i32 {
 #[test]
 fn wasm_operator_arity_mismatch_fails_structurally() {
     let source = r#"
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 { }
 
 [wasm_operator("i32.neg")]

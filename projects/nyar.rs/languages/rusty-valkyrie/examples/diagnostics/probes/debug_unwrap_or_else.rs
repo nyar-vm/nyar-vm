@@ -7,7 +7,7 @@ use rusty_valkyrie::{
 #[test]
 fn debug_unwrap_or_else_f_call() {
     let source = r#"
-namespace core::types;
+namespace std::types;
 unite Option<T> { Some { value: T }, None }
 imply Option<T> {
     micro unwrap_or_else(self, f: micro() -> T): T {

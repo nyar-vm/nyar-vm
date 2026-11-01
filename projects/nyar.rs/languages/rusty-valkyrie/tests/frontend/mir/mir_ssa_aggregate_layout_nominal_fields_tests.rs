@@ -17,11 +17,11 @@ use rusty_valkyrie::{
 
 /// 数值原始类型不是语言内建，必须绑定到源码声明身份（与 `mir_branch_binding_merge_tests` 同族夹具）。
 const PRIMITIVES: &str = r#"
-namespace core::primitive;
-[primitive("core::primitive::bool")] structure bool { }
-[primitive("core::primitive::i32")] structure i32 { }
-[primitive("core::primitive::u8")] structure u8 { }
-[primitive("core::primitive::usize")] structure usize { }
+namespace std::primitive;
+[primitive("std::primitive::bool")] structure bool { }
+[primitive("std::primitive::i32")] structure i32 { }
+[primitive("std::primitive::u8")] structure u8 { }
+[primitive("std::primitive::usize")] structure usize { }
 "#;
 
 /// `Utf8Builder.bytes: ArrayList<u8>`（闭合泛型实例）与 `Utf8Text._repr: [u8]`
@@ -66,7 +66,7 @@ fn nominal_generic_and_array_fields_lower_without_panic() {
     );
     assert_eq!(
         builder_layout.fields[0].ty,
-        NyarType::Apply(Box::new(NyarType::Named(Identifier::new("core::primitive::ArrayList"))), vec![NyarType::Integer8 { signed: false }]),
+        NyarType::Apply(Box::new(NyarType::Named(Identifier::new("std::primitive::ArrayList"))), vec![NyarType::Integer8 { signed: false }]),
         "ArrayList<u8> 必须按声明拼写解析为 Apply，实参经 primitive 载体代入"
     );
     assert_eq!(builder_layout.fields[0].size, 8, "引用语义泛型实例字段按引用槽计量");

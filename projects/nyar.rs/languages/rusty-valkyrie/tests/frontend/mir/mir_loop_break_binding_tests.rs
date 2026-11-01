@@ -19,8 +19,8 @@ use nyar_types::pipeline::RepresentationPlanStage;
 use rusty_valkyrie::{MirLowerer, ValkyrieCompiler, compiler::mir::ssa::MirValueOrigin};
 
 const PRIMITIVES: &str = r#"
-namespace core::primitive;
-[primitive("core::primitive::bool")] structure bool { }
+namespace std::primitive;
+[primitive("std::primitive::bool")] structure bool { }
 "#;
 
 fn compile(source: &str) -> rusty_valkyrie::compiler::mir::ssa::MirModule {
@@ -265,7 +265,8 @@ fn break_carried_value_observable_at_runtime() {
         MEET_FLIP_SOURCE,
         "meet_flip",
         "import {readFileSync} from 'node:fs'; \
-         const {instance}=await WebAssembly.instantiate(readFileSync(process.argv[1])); \
+         const mod=await WebAssembly.compile(readFileSync(process.argv[1])); const imports={}; for(const imp of WebAssembly.Module.imports(mod)){ if(!imports[imp.module]) imports[imp.module]={}; if(imp.kind==='function') imports[imp.module][imp.name]=()=>0; else if(imp.kind==='global') imports[imp.module][imp.name]=new WebAssembly.Global({value:'i32',mutable:true},0); else if(imp.kind==='memory') imports[imp.module][imp.name]=new WebAssembly.Memory({initial:1}); else imports[imp.module][imp.name]=new WebAssembly.Table({initial:0,element:'anyfunc'}); } \
+         const instance=await WebAssembly.instantiate(mod, imports); \
          if(instance.exports.meet_flip(1,0)!==0) throw new Error('break 路径必须返回循环体内改写后的 b'); \
          if(instance.exports.meet_flip(0,1)!==1) throw new Error('break 路径必须返回改写后的 b=1');",
     );
@@ -278,7 +279,8 @@ fn normal_exit_and_break_edges_both_observable_at_runtime() {
         FLIP_OR_DRAIN_SOURCE,
         "flip_or_drain",
         "import {readFileSync} from 'node:fs'; \
-         const {instance}=await WebAssembly.instantiate(readFileSync(process.argv[1])); \
+         const mod=await WebAssembly.compile(readFileSync(process.argv[1])); const imports={}; for(const imp of WebAssembly.Module.imports(mod)){ if(!imports[imp.module]) imports[imp.module]={}; if(imp.kind==='function') imports[imp.module][imp.name]=()=>0; else if(imp.kind==='global') imports[imp.module][imp.name]=new WebAssembly.Global({value:'i32',mutable:true},0); else if(imp.kind==='memory') imports[imp.module][imp.name]=new WebAssembly.Memory({initial:1}); else imports[imp.module][imp.name]=new WebAssembly.Table({initial:0,element:'anyfunc'}); } \
+         const instance=await WebAssembly.instantiate(mod, imports); \
          if(instance.exports.flip_or_drain(1,1,0)!==0) throw new Error('break 路径必须返回分支内改写后的 b'); \
          if(instance.exports.flip_or_drain(0,1,0)!==1) throw new Error('正常退出必须返回初值 a');",
     );

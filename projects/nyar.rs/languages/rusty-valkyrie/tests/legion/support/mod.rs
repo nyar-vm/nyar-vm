@@ -12,27 +12,27 @@ pub struct SmokeProject {
     pub project_dir: PathBuf,
 }
 
-/// 源级 `core/primitive` 声明族：数值原始类型名不是语言内建，必须绑定到源码声明身份。
+/// 源级 `std/primitive` 声明族：数值原始类型名不是语言内建，必须绑定到源码声明身份。
 /// 夹具项目声明 `"core": false`，因此在 `source/` 下写入等价声明文件；属性值给出
-/// `core::primitive::*` 身份，与内联编译测试的 `PRIMITIVE_I32` 保持同一合同。
+/// `std::primitive::*` 身份，与内联编译测试的 `PRIMITIVE_I32` 保持同一合同。
 const CORE_PRIMITIVE_DECLARATIONS: &str = concat!(
-    "[primitive(\"core::primitive::i8\")] structure i8 { }\n",
-    "[primitive(\"core::primitive::i16\")] structure i16 { }\n",
-    "[primitive(\"core::primitive::i32\")] structure i32 { }\n",
-    "[primitive(\"core::primitive::i64\")] structure i64 { }\n",
-    "[primitive(\"core::primitive::i128\")] structure i128 { }\n",
-    "[primitive(\"core::primitive::u8\")] structure u8 { }\n",
-    "[primitive(\"core::primitive::u16\")] structure u16 { }\n",
-    "[primitive(\"core::primitive::u32\")] structure u32 { }\n",
-    "[primitive(\"core::primitive::u64\")] structure u64 { }\n",
-    "[primitive(\"core::primitive::u128\")] structure u128 { }\n",
-    "[primitive(\"core::primitive::isize\")] structure isize { }\n",
-    "[primitive(\"core::primitive::usize\")] structure usize { }\n",
-    "[primitive(\"core::primitive::f32\")] structure f32 { }\n",
-    "[primitive(\"core::primitive::f64\")] structure f64 { }\n",
-    "[primitive(\"core::primitive::f128\")] structure f128 { }\n",
-    "[primitive(\"core::primitive::byte\")] structure byte { }\n",
-    "[primitive(\"core::primitive::sbyte\")] structure sbyte { }\n",
+    "[primitive(\"std::primitive::i8\")] structure i8 { }\n",
+    "[primitive(\"std::primitive::i16\")] structure i16 { }\n",
+    "[primitive(\"std::primitive::i32\")] structure i32 { }\n",
+    "[primitive(\"std::primitive::i64\")] structure i64 { }\n",
+    "[primitive(\"std::primitive::i128\")] structure i128 { }\n",
+    "[primitive(\"std::primitive::u8\")] structure u8 { }\n",
+    "[primitive(\"std::primitive::u16\")] structure u16 { }\n",
+    "[primitive(\"std::primitive::u32\")] structure u32 { }\n",
+    "[primitive(\"std::primitive::u64\")] structure u64 { }\n",
+    "[primitive(\"std::primitive::u128\")] structure u128 { }\n",
+    "[primitive(\"std::primitive::isize\")] structure isize { }\n",
+    "[primitive(\"std::primitive::usize\")] structure usize { }\n",
+    "[primitive(\"std::primitive::f32\")] structure f32 { }\n",
+    "[primitive(\"std::primitive::f64\")] structure f64 { }\n",
+    "[primitive(\"std::primitive::f128\")] structure f128 { }\n",
+    "[primitive(\"std::primitive::byte\")] structure byte { }\n",
+    "[primitive(\"std::primitive::sbyte\")] structure sbyte { }\n",
     // 运行时夹具的 `main` 以 `ExitCode` 表达进程退出码；该名字来自 `std` 适配层，
     // 夹具项目声明 `\"std\": false`，因此在源级给出等价别名，避免依赖未链接的 std 组。
     "type ExitCode = i32;\n",

@@ -10,9 +10,9 @@ use rusty_valkyrie::compiler::hir::lowering::{CompilerSourceGroup, ValkyrieCompi
 
 const TEST_ARCH: &str = "native";
 
-const CORE_SOURCE: &str = "namespace core::primitive;\n\
-    [primitive(\"core::primitive::usize\")] structure usize { }\n\
-    [primitive(\"core::primitive::i32\")] structure i32 { }";
+const CORE_SOURCE: &str = "namespace std::primitive;\n\
+    [primitive(\"std::primitive::usize\")] structure usize { }\n\
+    [primitive(\"std::primitive::i32\")] structure i32 { }";
 
 const STD_SOURCE: &str = "namespace demo.std;\n\
     [intrinsic(\"builtin.array.length\")] private micro __len<T>(self: [T]): usize { }\n\

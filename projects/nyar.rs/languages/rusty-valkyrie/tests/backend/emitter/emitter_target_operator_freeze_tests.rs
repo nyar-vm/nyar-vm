@@ -22,7 +22,7 @@ fn plan_from_source(source: &str) -> Result<TargetExecutionPlan, Report> {
 fn numeric_source(mnemonic: &str, result: &str) -> String {
     format!(
         r#"
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 {{ }}
 
 imply i32 {{
@@ -49,10 +49,10 @@ micro main() -> {result} {{
 fn direct_source(return_type: &str) -> String {
     format!(
         r#"
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 {{ }}
 
-[primitive("core::primitive::i64")]
+[primitive("std::primitive::i64")]
 structure i64 {{ }}
 
 [wasm_operator("i32.add")]
@@ -97,7 +97,7 @@ fn frozen_wasm_numeric_recipe_is_consumed_without_backend_inference() {
 #[test]
 fn frozen_wasm_i32_neg_recipe_is_zero_const_then_sub() {
     let source = r#"
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 { }
 
 [wasm_operator("i32.neg")]
@@ -139,7 +139,7 @@ micro main() -> i32 {
 #[test]
 fn frozen_wasm_i64_neg_recipe_is_zero_const_then_sub() {
     let source = r#"
-[primitive("core::primitive::i64")]
+[primitive("std::primitive::i64")]
 structure i64 { }
 
 [wasm_operator("i64.neg")]
@@ -179,10 +179,10 @@ micro main() -> i64 {
 #[test]
 fn declared_operand_carrier_mismatch_fails_plan_construction() {
     let source = r#"
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 { }
 
-[primitive("core::primitive::i64")]
+[primitive("std::primitive::i64")]
 structure i64 { }
 
 [wasm_operator("i32.neg")]
@@ -217,7 +217,7 @@ fn declared_result_slot_mismatch_fails_plan_construction() {
 #[test]
 fn declared_arity_mismatch_fails_plan_construction() {
     let source = r#"
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 { }
 
 [wasm_operator("i32.neg")]

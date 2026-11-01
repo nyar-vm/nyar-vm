@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 
 use rusty_valkyrie::{ValkyrieCompiler, compile_pipeline::canonical_program_from_semantic_mir, compiler::mir::MirLowerer};
 
-/// 数值原始类型名属于 `core/primitive` 的声明族；未声明时残留 `Named` 由 canonical 以 CAN003 拒绝。
-const PRIMITIVE_I32: &str = "[primitive(\"core::primitive::i32\")] structure i32 { } ";
+/// 数值原始类型名属于 `std/primitive` 的声明族；未声明时残留 `Named` 由 canonical 以 CAN003 拒绝。
+const PRIMITIVE_I32: &str = "[primitive(\"std::primitive::i32\")] structure i32 { } ";
 
 #[test]
 fn fragment_contract_ignores_colliding_diagnostic_labels() {

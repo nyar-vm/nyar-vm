@@ -434,7 +434,7 @@ fn legacy_builtin_type_alias(name: &str) -> Option<&'static str> {
 /// 将内建类型名映射到 `HIR` 类型；未知名字返回 `None`。
 ///
 /// 这里只保留**没有源码声明身份**的编码型内建（文本编码、`bool`、`char`、`unit`/`void`
-/// 形态名）；数值原始类型名不是内建：`i8`…`f64` 与 `usize` 一样指 `core/primitive`
+/// 形态名）；数值原始类型名不是内建：`i8`…`f64` 与 `usize` 一样指 `std/primitive`
 /// 的 `structure` 声明身份，由 [`resolve_named_type`] 产出 `Named` 后交给
 /// `bind_declared_nominal_types` 冻结成 [`ValkyrieType::Nominal`]。
 #[doc(hidden)]
@@ -480,7 +480,7 @@ fn encoding_builtin_type(name: &str) -> Option<ValkyrieType> {
 /// `i64(x)` / `f64(x)` 等单实参类型名调用：仅数值 builtin，不含 utf8/bool 等（那些走显式转换函数）。
 ///
 /// 这里是**显式转换**的目标形态，与类型名的声明身份无关：源码写出 `i32` 仍指
-/// `core/primitive` 的 `structure` 声明，只有转换表达式才需要低层 carrier。
+/// `std/primitive` 的 `structure` 声明，只有转换表达式才需要低层 carrier。
 pub(crate) fn numeric_builtin_cast_type(name: &str) -> Option<ValkyrieType> {
     match name {
         "i8" => Some(ValkyrieType::Integer8 { signed: true }),
@@ -515,7 +515,7 @@ fn has_module_type_alias(name: &str) -> bool {
 /// 为基的 `Associated`。两者都只匹配**单段名**：多段路径的末段同名不构成可见性，
 /// 由调用方通过 `single_segment` 拒绝放宽，保持 namespace/owner 隔离。
 ///
-/// 数值原始类型名（`i8`…`f64`、`usize`、`isize` 与 128 位宽度）属于 `core/primitive`
+/// 数值原始类型名（`i8`…`f64`、`usize`、`isize` 与 128 位宽度）属于 `std/primitive`
 /// 的 `structure` 声明族：这里只产出待绑定的 `Named`，不按名字生产低层 carrier；
 /// 声明身份由 `bind_declared_nominal_types` 冻结，声明不可见时残留 `Named` 由 canonical
 /// 以结构化诊断拒绝（CAN003），不会默认成 `Integer32`/`Float64`。
@@ -705,7 +705,7 @@ fn lower_type_namepath(path: &AstNamePath) -> Result<ValkyrieType, HirError> {
         if let Some(expanded) = expand_qualified_module_type_alias(&parts, &[], &mut BTreeSet::new()) {
             return Ok(expanded);
         }
-        // `core::primitive::unit` / `core::primitive::bool` 等编码形态的限定名，
+        // `std::primitive::unit` / `std::primitive::bool` 等编码形态的限定名，
         // 与短名同规则：声明可见也不建立名义身份。
         if is_known_builtin_type_namespace(&parts, last) {
             if let Some(builtin) = encoding_builtin_type(last) {
@@ -744,9 +744,8 @@ fn is_module_root_prefix(name: &str) -> bool {
 fn is_known_builtin_type_namespace(parts: &[&str], last: &str) -> bool {
     let prefix = &parts[..parts.len().saturating_sub(1)];
     match prefix {
-        ["core", "primitive"] => canonical_builtin_type(last).is_some(),
-        ["core", "text"] => matches!(last, "char" | "utf8" | "utf16" | "c_str"),
-        ["std", "text"] => matches!(last, "utf8" | "utf16" | "c_str"),
+        ["std", "primitive"] => canonical_builtin_type(last).is_some(),
+        ["std", "text"] => matches!(last, "char" | "utf8" | "utf16" | "c_str"),
         _ => false,
     }
 }

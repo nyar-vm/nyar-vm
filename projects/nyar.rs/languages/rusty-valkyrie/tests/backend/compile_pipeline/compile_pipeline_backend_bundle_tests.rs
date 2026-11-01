@@ -3,7 +3,7 @@ use nyar::{CanonicalTarget, ClrSuspendStrategy};
 use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
 use rusty_valkyrie::{compile_pipeline::compile_source_groups_to_backend_bundle, *};
 
-const TEMPLATE_SOURCE: &str = r#"[primitive("core::primitive::i32")]
+const TEMPLATE_SOURCE: &str = r#"[primitive("std::primitive::i32")]
 structure i32 { }
 
 <% match arch %>

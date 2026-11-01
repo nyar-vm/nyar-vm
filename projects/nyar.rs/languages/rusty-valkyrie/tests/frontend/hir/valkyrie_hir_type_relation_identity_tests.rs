@@ -9,7 +9,7 @@ fn unresolved_primitive_and_array_spellings_do_not_create_type_equivalence() {
     let context = TypeRelationContext::from_module(&HirModule::default());
     for (spelling, actual) in [
         ("f64", ValkyrieType::Float64),
-        ("core::primitive::f64", ValkyrieType::Float64),
+        ("std::primitive::f64", ValkyrieType::Float64),
         ("Utf8Text", ValkyrieType::Utf8),
         ("Array", ValkyrieType::Array(Box::new(ValkyrieType::Float64))),
     ] {

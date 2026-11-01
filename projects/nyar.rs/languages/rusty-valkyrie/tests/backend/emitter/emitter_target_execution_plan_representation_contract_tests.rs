@@ -17,14 +17,14 @@ fn source_program() -> CompiledProgram {
     )
 }
 
-/// 与生产 `core/primitive` 同构的最小前导。
+/// 与生产 `std/primitive` 同构的最小前导。
 ///
 /// 数值 primitive 名不是内建，必须由可见的 `structure` 声明冻结为声明身份；
 /// 缺少声明时 `i32`/`i64` 只残留待绑定的 `Named`，会被 canonical 以 CAN003 拒绝。
-const PRIMITIVE_DECLARATIONS: &str = r#"[primitive("core::primitive::i32")]
+const PRIMITIVE_DECLARATIONS: &str = r#"[primitive("std::primitive::i32")]
 structure i32 { }
 
-[primitive("core::primitive::i64")]
+[primitive("std::primitive::i64")]
 structure i64 { }
 "#;
 

@@ -9,9 +9,9 @@ use rusty_valkyrie::{
     types::hir::{BuiltinStructureOp, HirExpr, HirExprKind, HirFunction, ValkyrieType},
 };
 
-/// 数值原始类型名属于 `core/primitive` 的声明族；未声明时 canonical 以 CAN003 拒绝。
-const PRIMITIVES: &str = "[primitive(\"core::primitive::usize\")] structure usize { } \
-    [primitive(\"core::primitive::i32\")] structure i32 { } ";
+/// 数值原始类型名属于 `std/primitive` 的声明族；未声明时 canonical 以 CAN003 拒绝。
+const PRIMITIVES: &str = "[primitive(\"std::primitive::usize\")] structure usize { } \
+    [primitive(\"std::primitive::i32\")] structure i32 { } ";
 
 /// 与 `valkyrie.v` core 声明逐字对齐的唯一前端来源。
 const ARRAY_LENGTH_INTRINSIC_DECLARATION: &str = "[intrinsic(\"builtin.array.length\")] micro length<T>(array: [T]): usize { } ";

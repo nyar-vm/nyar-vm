@@ -82,7 +82,7 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirE
         }
         // 裸名在声明作用域链未命中时，只在本模块可见的声明集合内按唯一短名回退。
         // 该集合由「本组声明 + `direct_dependencies` 导出」构成，与语义闭包的可见性合同
-        // 是同一份事实；`std.text` 的 `imply AsciiText: Text` 命中 `core::text::Text` 即走这里。
+        // 是同一份事实；`std.text` 的 `imply AsciiText: Text` 命中 `std::text::Text` 即走这里。
         // 这不是跨全库的名字回退：不可见组的声明根本不在 `declarations` 中。
         if let Some(name) = path.parts().last() {
             let mut matched: Option<(ItemId, usize)> = None;

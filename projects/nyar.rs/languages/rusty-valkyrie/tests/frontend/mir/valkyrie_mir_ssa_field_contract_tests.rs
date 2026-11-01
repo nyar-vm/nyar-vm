@@ -230,8 +230,8 @@ fn option_sum_construct_binds_declaration_identity_without_short_name() {
 
 #[test]
 fn namespaced_struct_param_binds_declaration_identity_through_canonical() {
-    let source = "[primitive(\"core::primitive::i32\")] structure i32 { } \
-             namespace core.text; structure TextSpan { start: i32, end: i32 } \
+    let source = "[primitive(\"std::primitive::i32\")] structure i32 { } \
+             namespace std.text; structure TextSpan { start: i32, end: i32 } \
              micro as_start(span: TextSpan) -> i32 { return span.start }";
     let mir = ValkyrieCompiler::default().compile_source_to_mir(source).expect("Semantic MIR");
     let structure = mir.structs.iter().find(|item| item.name == "TextSpan").expect("TextSpan");
@@ -243,7 +243,7 @@ fn namespaced_struct_param_binds_declaration_identity_through_canonical() {
     let param_id = mir.type_identities.get(&param_ty).copied().expect("参数 Nominal 须进入 type identity 表");
     assert_eq!(param_id, declaration_id, "参数与聚合声明须共享同一 TypeId");
     assert!(!mir.type_identities.contains_key(&ValkyrieType::Named(Identifier::new("TextSpan"))));
-    assert!(!mir.type_identities.contains_key(&ValkyrieType::Named(Identifier::new("core.text.TextSpan"))));
+    assert!(!mir.type_identities.contains_key(&ValkyrieType::Named(Identifier::new("std.text.TextSpan"))));
     let output = ValkyrieCompiler::default().compile_source_to_program(source).expect("命名空间结构字段读取必须贯穿 Compiler");
     output.canonical().validate().expect("不得再因 FieldOwnerMismatch 失败");
 }

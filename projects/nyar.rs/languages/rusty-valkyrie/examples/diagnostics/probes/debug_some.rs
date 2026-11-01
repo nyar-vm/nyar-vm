@@ -1,9 +1,9 @@
 use rusty_valkyrie::ValkyrieCompiler;
 
 const SOURCE: &str = r#"
-namespace core::types;
+namespace std::types;
 unite Option<T> { Some { value: T }, None }
-namespace core::text;
+namespace std::text;
 structure char { }
 imply char {
     micro ascii_alnum_key(self) -> Option<i64> {

@@ -12,6 +12,7 @@ use std::{
 };
 
 use crate::legion::{cmds::source_hygiene, workspace::planner::WorkspaceResolver};
+use nyar_format::formatter::is_awsl_extension;
 
 /// `legion lint` arguments.
 #[derive(Debug, Clone)]
@@ -84,7 +85,7 @@ pub fn run(args: &LintArgs) -> LegionResult<ExitCode> {
         }
 
         match file.extension().and_then(|e| e.to_str()) {
-            Some("awsl") if lint_awsl => {
+            Some(ext) if lint_awsl && is_awsl_extension(&ext.to_ascii_lowercase()) => {
                 let (fixed, issues) = lint_awsl_redundant_parens_in_controls(&source);
                 if issues > 0 {
                     awsl_issues += issues;
@@ -187,7 +188,8 @@ fn collect_files_recursive(root: &Path, awsl_only: bool, files: &mut Vec<PathBuf
 }
 
 fn matches_extension(ext: &str, awsl_only: bool) -> bool {
-    if awsl_only { ext.eq_ignore_ascii_case("awsl") } else { ext.eq_ignore_ascii_case("v") || ext.eq_ignore_ascii_case("vx") }
+    let ext = ext.to_ascii_lowercase();
+    if awsl_only { is_awsl_extension(&ext) } else { ext == "v" || ext == "vx" }
 }
 
 fn lint_awsl_redundant_parens_in_controls(source: &str) -> (String, usize) {

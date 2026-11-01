@@ -152,15 +152,15 @@ fn numeric_primitive_names_lower_to_declaration_reference_not_carrier() {
     }
 }
 
-/// 正例：可见的 `core/primitive` 声明把 `Named` 冻结成 `Nominal{ItemId}`。
+/// 正例：可见的 `std/primitive` 声明把 `Named` 冻结成 `Nominal{ItemId}`。
 #[test]
 fn declared_numeric_primitive_binds_to_nominal_declaration() {
     let hir = compile(
         r#"
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 { }
 
-[primitive("core::primitive::usize")]
+[primitive("std::primitive::usize")]
 structure usize { }
 
 micro add(lhs: i32, rhs: i32) -> i32 {

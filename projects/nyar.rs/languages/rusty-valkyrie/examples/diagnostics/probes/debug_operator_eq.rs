@@ -5,7 +5,7 @@ use rusty_valkyrie::ValkyrieCompiler;
 fn generic_eq_operator_resolves() {
     let source = r#"
 trait Iterator { type Item; micro has_next(self) -> bool; micro next(self) -> Option<Item>; }
-[primitive("core::primitive::i32")]
+[primitive("std::primitive::i32")]
 structure i32 { }
 imply i32 { infix `==`(self, rhs: Self): bool { return true } }
 unite Option<T> { Some { value: T }, None }

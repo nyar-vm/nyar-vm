@@ -49,7 +49,7 @@ impl Highlighter for ValkyrieLexicalHighlighter {
     }
 }
 
-/// `core::types` 基础类型符号表（可配置，从 `core::types` 事实源派生）。
+/// `std::types` 基础类型符号表（可配置，从 `std::types` 事实源派生）。
 ///
 /// 用于 [`ValkyrieSemanticHighlighter`] 对核心类型名做语义着色。
 /// 默认表包含 `Option` / `Result` 及其变体 `Some` / `None` / `Fine` / `Fail`，
@@ -62,7 +62,7 @@ pub struct CoreTypeSymbolTable {
 }
 
 impl CoreTypeSymbolTable {
-    /// 从 `core::types` 事实源派生的默认符号表。
+    /// 从 `std::types` 事实源派生的默认符号表。
     ///
     /// 包含：
     /// - 类型名 `Option` / `Result` → [`HighlightKind::TypeIdentifier`]
@@ -110,7 +110,7 @@ pub struct ValkyrieSemanticHighlighter {
 }
 
 impl ValkyrieSemanticHighlighter {
-    /// 构造，使用默认 `core::types` 符号表。
+    /// 构造，使用默认 `std::types` 符号表。
     pub fn new() -> Self {
         Self { table: CoreTypeSymbolTable::core_types() }
     }

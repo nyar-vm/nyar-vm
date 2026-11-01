@@ -224,10 +224,10 @@ fn is_integer_literal_surface_name(name: &str) -> bool {
             | "f32"
             | "f64"
             | "f128"
-            | "core.primitive.usize"
-            | "core.primitive.isize"
-            | "core::primitive::usize"
-            | "core::primitive::isize"
+            | "std.primitive.usize"
+            | "std.primitive.isize"
+            | "std::primitive::usize"
+            | "std::primitive::isize"
     )
 }
 
@@ -253,8 +253,8 @@ pub(super) fn text_method_owner(ty: &ValkyrieType) -> Option<&'static str> {
         ValkyrieType::Utf8 => Some("Utf8Text"),
         ValkyrieType::Utf16 => Some("Utf16Text"),
         ValkyrieType::Named(name) => match name.as_str() {
-            "utf8" | "Utf8Text" | "core.primitive.utf8" | "core::primitive::utf8" => Some("Utf8Text"),
-            "utf16" | "Utf16Text" | "core.primitive.utf16" | "core::primitive::utf16" => Some("Utf16Text"),
+            "utf8" | "Utf8Text" | "std.primitive.utf8" | "std::primitive::utf8" => Some("Utf8Text"),
+            "utf16" | "Utf16Text" | "std.primitive.utf16" | "std::primitive::utf16" => Some("Utf16Text"),
             _ => None,
         },
         _ => None,

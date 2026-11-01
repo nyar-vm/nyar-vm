@@ -1,6 +1,6 @@
 //! 具体类型接收者上的运算符成员调用必须经该类型已登记的 trait impl 成员解析。
 //!
-//! `core::primitive` 把 `==` / `!=` 声明在 `trait Equal` 上，并以 `imply i64: Equal`
+//! `std::primitive` 把 `==` / `!=` 声明在 `trait Equal` 上，并以 `imply i64: Equal`
 //! 提供实现；调用位点（`x != y`）降低为普通成员名 `infix !=`。本文件冻结：
 //! - 具体类型接收者的 `infix ==` / `infix !=` 解析成功且指向 impl 成员；
 //! - 没有 impl 时保持 fail-closed（`UnresolvedCall`）；
@@ -8,8 +8,8 @@
 
 use rusty_valkyrie::{HirError, ValkyrieCompiler};
 
-const PRIMITIVES: &str = "[primitive(\"core::primitive::i64\")] structure i64 { } \
-    [primitive(\"core::primitive::usize\")] structure usize { } ";
+const PRIMITIVES: &str = "[primitive(\"std::primitive::i64\")] structure i64 { } \
+    [primitive(\"std::primitive::usize\")] structure usize { } ";
 
 const EQUAL_TRAIT: &str = "trait Equal { infix `==`(self, other: Self): bool infix `!=`(self, other: Self): bool } ";
 

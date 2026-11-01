@@ -47,10 +47,10 @@ pub struct HirValidationState {
     pub(crate) local_scopes: Vec<BTreeMap<String, LocalBinding>>,
     /// Unified loop / try / case chain / catch / generator / async scope tracking.
     pub(crate) control_flow: ControlFlowContext,
-    /// 本模块内已冻结为声明身份的数值 primitive（`core/primitive` 的 `structure`）。
+    /// 本模块内已冻结为声明身份的数值 primitive（`std/primitive` 的 `structure`）。
     /// 只有这份声明事实能判定「期望类型是数值」；不得改成对调用点写的类型名做特判。
     pub(crate) numeric_declarations: BTreeSet<nyar_types::ItemId>,
-    /// `core::primitive::bool` 的声明身份；字面量与注解 `bool` 的 `Boolean` 形态与之等价。
+    /// `std::primitive::bool` 的声明身份；字面量与注解 `bool` 的 `Boolean` 形态与之等价。
     pub(crate) boolean_declarations: BTreeSet<nyar_types::ItemId>,
 }
 

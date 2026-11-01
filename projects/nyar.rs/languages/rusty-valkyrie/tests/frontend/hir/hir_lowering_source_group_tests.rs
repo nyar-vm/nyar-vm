@@ -5,8 +5,8 @@ use rusty_valkyrie::{
     types::hir::{HirExprKind, HirFunction, HirStatementKind, compiler::types::ValkyrieType},
 };
 
-/// 数值原始类型名属于 `core/primitive` 的声明族；未声明时残留 `Named` 由 canonical 以 CAN003 拒绝。
-const PRIMITIVE_I32: &str = "[primitive(\"core::primitive::i32\")] structure i32 { } ";
+/// 数值原始类型名属于 `std/primitive` 的声明族；未声明时残留 `Named` 由 canonical 以 CAN003 拒绝。
+const PRIMITIVE_I32: &str = "[primitive(\"std::primitive::i32\")] structure i32 { } ";
 
 #[test]
 fn entry_source_group_parse_failure_reports_file_and_reason() {

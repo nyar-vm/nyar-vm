@@ -251,7 +251,7 @@ fn u32_infix_subtraction_call_matches_declared_return_type() {
     let hir = ValkyrieCompiler::default()
         .compile_source(
             r#"
-namespace core::primitive;
+namespace std::primitive;
 structure u32 { }
 imply u32 {
     infix `-`(self, rhs: u32): u32 {

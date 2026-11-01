@@ -9,7 +9,7 @@ const TEST_ARCH: &str = "native";
 
 /// 组模式下 `i32` 必须由依赖组声明为 primitive 结构；否则残留 `Named("i32")`
 /// 会以 CAN003 拒绝进入 canonical 类型表。
-const CORE_PRIMITIVE_SOURCE: &str = "namespace core::primitive; [primitive(\"core::primitive::i32\")] structure i32 { }";
+const CORE_PRIMITIVE_SOURCE: &str = "namespace std::primitive; [primitive(\"std::primitive::i32\")] structure i32 { }";
 
 fn core_group() -> CompilerSourceGroup {
     CompilerSourceGroup::single_source("core", "core", CORE_PRIMITIVE_SOURCE)
@@ -300,13 +300,13 @@ fn unreferenced_bodyless_host_contract_import_does_not_block_compilation() {
 #[test]
 fn unreached_dependency_host_contract_does_not_block_compilation() {
     // 编译边界门禁只裁决 linked consumer 中的已解析调用：
-    // 依赖组里声明的无体合同（11 题 `core::primitive::__u16_add` 形态）
+    // 依赖组里声明的无体合同（11 题 `std::primitive::__u16_add` 形态）
     // 若没有被可达入口沿 Call 触达，不得按闭包保守超集判失败。
     let core = CompilerSourceGroup::single_source(
         "core",
         "core",
-        "namespace core::primitive;\n\
-         [primitive(\"core::primitive::i32\")] structure i32 { }\n\
+        "namespace std::primitive;\n\
+         [primitive(\"std::primitive::i32\")] structure i32 { }\n\
          [host_contract] micro __u16_add(lhs: i32, rhs: i32): i32\n\
          micro wrapper(lhs: i32, rhs: i32): i32 { return __u16_add(lhs, rhs) }",
     );
