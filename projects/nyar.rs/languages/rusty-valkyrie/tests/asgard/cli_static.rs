@@ -128,6 +128,60 @@ fn dev_failure_keeps_the_previous_generation() {
 }
 
 #[test]
+fn app_delivery_fails_closed_with_structured_diagnostic() {
+    // `App` 交付按设计失败闭合：配置求值（C0/C2）未闭合时不得静默回落到静态路径，
+    // 也不得产出任何页面充当成功。
+    let temp = TempDir::new().expect("创建临时目录失败");
+    fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
+    fs::write(temp.path().join("source/index.w"), FIXTURE).expect("写入入口文件失败");
+    write_project_files(temp.path());
+    let mut args = build_args(&temp, "source/index.w", None);
+    args.delivery = AsgardDelivery::App;
+
+    let error = run(&AsgardCommands::Build(args)).expect_err("App 交付应结构化失败");
+    let message = error.to_string();
+    assert!(message.contains("asgard build (app)"), "诊断应标明 App 交付: {message}");
+    assert!(message.contains("配置求值") && message.contains("C0/C2"), "诊断应指出配置求值缺口: {message}");
+    assert!(message.contains("--static"), "诊断应指明当前可用入口: {message}");
+    assert!(!temp.path().join("dist").join("index.html").exists(), "App 失败路径不得产出静态页面");
+}
+
+#[test]
+fn app_delivery_admission_runs_before_pipeline_diagnostic() {
+    // 准入是命令面共同前置：缺 `legion.von` 时先报准入，而不是先把 App 缺口当结论。
+    let temp = TempDir::new().expect("创建临时目录失败");
+    fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
+    fs::write(temp.path().join("source/index.w"), FIXTURE).expect("写入入口文件失败");
+    fs::write(temp.path().join("asgard.config.v"), CONFIG).expect("写入 asgard.config.v 失败");
+    let mut args = build_args(&temp, "source/index.w", None);
+    args.delivery = AsgardDelivery::App;
+
+    let error = run(&AsgardCommands::Build(args)).expect_err("缺少 Legion 项目应失败");
+    let message = error.to_string();
+    assert!(message.contains("legion.von"), "诊断应指出缺失的 Legion 项目清单: {message}");
+    assert!(!message.contains("配置求值"), "准入失败应先于 App 管线诊断: {message}");
+}
+
+#[test]
+fn dev_app_delivery_fails_closed_without_staging() {
+    // `dev` 只接通静态交付；`App` 必须结构化拒绝，且不得创建 staging 或动到已有产物。
+    let temp = TempDir::new().expect("创建临时目录失败");
+    fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
+    fs::write(temp.path().join("source/index.w"), FIXTURE).expect("写入入口文件失败");
+    write_project_files(temp.path());
+    let mut args = build_args(&temp, "source/index.w", None);
+    args.delivery = AsgardDelivery::App;
+
+    let error = run(&AsgardCommands::Dev(args)).expect_err("App dev 应结构化失败");
+    let message = error.to_string();
+    assert!(message.contains("asgard dev"), "诊断应标明 dev 命令: {message}");
+    assert!(message.contains("配置求值") && message.contains("C0/C2"), "诊断应指出配置求值缺口: {message}");
+    assert!(message.contains("--static"), "诊断应指明静态交付入口: {message}");
+    assert!(!temp.path().join("dist.staging").exists(), "拒绝路径不得创建 staging 目录");
+    assert!(!temp.path().join("dist").exists(), "拒绝路径不得产出 dist");
+}
+
+#[test]
 fn build_requires_legion_project() {
     // 缺少 `legion.von` 的项目不是合法 Legion 项目，命令必须在读取入口前失败。
     let temp = TempDir::new().expect("创建临时目录失败");
