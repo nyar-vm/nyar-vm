@@ -5,7 +5,7 @@
 //! generics, associated types) must be erased or rejected before values reach this
 //! layer — they do not belong in this enum.
 
-use crate::Identifier;
+use crate::{Identifier, LayoutId};
 use std::fmt;
 
 /// Function type `fn(params...) -> ret` at the platform layer.
@@ -78,6 +78,15 @@ pub enum NyarType {
     Utf16,
     /// Nominal type; layout resolved via aggregate / class side tables.
     Named(Identifier),
+    /// 携带身份的名义类型：`layout` 是 canonical 冻结的实例级布局身份，存储类、
+    /// GC 字段与 ABI 一律按该身份解析；`spelling` 仅作诊断与 schema 显示，
+    /// 禁止参与匹配。裸 `Named` 短名残差仍被可执行合同预发射门禁拒绝。
+    Nominal {
+        /// canonical 冻结的实例级布局身份。
+        layout: LayoutId,
+        /// 冻结的声明拼写（诊断/显示用途，不是身份）。
+        spelling: Identifier,
+    },
     /// Instantiated application `Base<Args...>`.
     Apply(Box<NyarType>, Vec<NyarType>),
     /// Function type.
@@ -171,6 +180,7 @@ impl fmt::Display for NyarType {
             NyarType::Utf8 => f.write_str("utf8"),
             NyarType::Utf16 => f.write_str("utf16"),
             NyarType::Named(name) => write!(f, "{name}"),
+            NyarType::Nominal { spelling, .. } => write!(f, "{spelling}"),
             NyarType::Apply(base, args) => {
                 write!(f, "{base}<")?;
                 for (i, arg) in args.iter().enumerate() {
