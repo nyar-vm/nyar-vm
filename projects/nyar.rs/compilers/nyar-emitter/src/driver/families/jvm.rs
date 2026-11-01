@@ -17,7 +17,7 @@ pub(super) fn supports_requirement(requirement: &PartitionBackendRequirement) ->
 
 impl BundledBackendCompiler for JvmFamilyCompiler {
     fn compile(&self, request: DriverCompileRequest<'_>) -> Result<DriverCompileReport> {
-        let DriverBackendInput::Jvm(input) = request.input
+        let DriverBackendInput::Jvm(mut input) = request.input
         else {
             return Err(format!("`JVM` 家族请求必须携带 `JvmBinaryBackendInput`"));
         };
@@ -36,11 +36,33 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
         }
         let has_launcher_entry =
             input.class_file.methods.iter().any(|method| method.name == "main" && method.descriptor.parameter_types.is_empty());
+        let provided_contracts = std::mem::take(&mut input.run_contracts);
+        let mut managed_abi = input.managed_abi.take();
+        if let Some(contract) = managed_abi.as_mut() {
+            // 产物文件名由驱动层决定；契约摘要必须覆盖最终文件名。
+            contract.set_artifact(format!("{}.jar", request.artifact_name));
+        }
         let backend = JvmBinaryBackend::new();
         backend.validate(&input)?;
         let artifacts = backend.compile(input, request.options)?;
-        // 库产物没有零参 `main` 时 `JvmBinaryBackend` 不补造 launcher，因此也没有可执行入口合同。
-        let run_contracts = if has_launcher_entry {
+        // 库产物没有零参 `main` 时 `JvmBinaryBackend` 不补造 launcher；此时每个
+        // managed ABI 入口各自持有可执行的 argv launcher 类与 run contract。
+        let run_contracts = if !provided_contracts.is_empty() {
+            provided_contracts
+        }
+        else if let Some(contract) = &managed_abi {
+            contract
+                .entries
+                .iter()
+                .map(|entry| DriverRunContract {
+                    logical_entry: entry.logical_entry.clone(),
+                    physical_entry: format!("{}.jar", request.artifact_name),
+                    invocation: "java".to_string(),
+                    validate: format!("java -cp {}.jar {}", request.artifact_name, entry.launcher_class.replace('/', ".")),
+                })
+                .collect()
+        }
+        else if has_launcher_entry {
             vec![DriverRunContract {
                 logical_entry: "main".to_string(),
                 physical_entry: format!("{}.jar", request.artifact_name),
@@ -51,6 +73,6 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
         else {
             Vec::new()
         };
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts })
+        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi })
     }
 }

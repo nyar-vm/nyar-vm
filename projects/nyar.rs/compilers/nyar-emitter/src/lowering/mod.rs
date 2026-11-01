@@ -33,10 +33,15 @@ pub(crate) fn testing_lower_fragment_to_nyar_module(submission: &FragmentSubmiss
     ovm::lower_fragment_to_nyar_module(submission)
 }
 
-pub(crate) fn testing_lower_fragment_to_jvm_class(
+pub(crate) fn testing_lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<crate::nyar_backend_jvm::JvmClassFile> {
+    jvm::emit::lower_fragment_to_jvm_class(submission).map(|lowered| lowered.class_file)
+}
+
+pub(crate) fn testing_lower_fragment_to_jvm_managed_surface(
     submission: &FragmentSubmission,
-) -> Result<crate::nyar_backend_jvm::JvmClassFile> {
-    jvm::emit::lower_fragment_to_jvm_class(submission)
+) -> Result<(crate::nyar_backend_jvm::JvmClassFile, Vec<crate::nyar_backend_jvm::JvmClassFile>, Option<crate::ManagedAbiContract>)> {
+    let lowered = jvm::emit::lower_fragment_to_jvm_class(submission)?;
+    Ok((lowered.class_file, lowered.companion_classes, lowered.managed_abi))
 }
 
 pub(crate) fn testing_lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<crate::nyar_backend_clr::MsilModule> {
@@ -116,12 +121,17 @@ pub fn lower_fragment_to_driver_input(
                 output_dir,
             }))
         }
-        TargetBackendFamily::Jvm => Ok(DriverBackendInput::Jvm(crate::nyar_backend_jvm::JvmBinaryBackendInput {
-            class_file: jvm::emit::lower_fragment_to_jvm_class(submission)?,
-            output_dir,
-            emit_class_file: false,
-            companion_classes: Vec::new(),
-        })),
+        TargetBackendFamily::Jvm => {
+            let lowered = jvm::emit::lower_fragment_to_jvm_class(submission)?;
+            Ok(DriverBackendInput::Jvm(crate::nyar_backend_jvm::JvmBinaryBackendInput {
+                class_file: lowered.class_file,
+                output_dir,
+                emit_class_file: false,
+                companion_classes: lowered.companion_classes,
+                managed_abi: lowered.managed_abi,
+                run_contracts: Vec::new(),
+            }))
+        }
         TargetBackendFamily::Clr => Ok(DriverBackendInput::Clr(crate::nyar_backend_clr::ClrBinaryBackendInput {
             module: clr::emit::lower_fragment_to_clr_module(submission)?,
             output_dir,

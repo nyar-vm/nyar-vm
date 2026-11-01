@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use crate::{EmitterError, Result};
+use crate::{DriverRunContract, EmitterError, ManagedAbiContract, Result};
 use nyar::{
     abstractions::{ArtifactFormat, BackendInputKind, BinaryArch, BinaryFlavor, BinaryTarget, TargetFamily},
     backends::{BackendDescriptor, CompilationOptions, TargetCodeGenBackend},
@@ -36,6 +36,10 @@ pub struct JvmBinaryBackendInput {
     pub emit_class_file: bool,
     /// Singleton holder classes emitted alongside the fragment class.
     pub companion_classes: Vec<JvmClassFile>,
+    /// 导出入口的 managed ABI 契约（若有）。
+    pub managed_abi: Option<ManagedAbiContract>,
+    /// 后端已冻结的运行契约；驱动层按契约原样上报。
+    pub run_contracts: Vec<DriverRunContract>,
 }
 
 /// `JVM` 二进制后端。

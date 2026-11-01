@@ -12,17 +12,18 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
+    FragmentSubmission, Result,
     backend_plan_views::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction, ExecutableInstruction as MirInstruction,
         ExecutableValueRef as MirValueRef, NyarType,
     },
     contracts::{Constant, InstructionKind, Operand, Terminator},
     lowering::shared::executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
+    managed_abi::{ManagedAbiContract, ManagedAbiEntry},
     target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::binary::class::{
-        JvmClassFile, JvmCodeBody, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor,
+        JvmClassFile, JvmCodeBody, JvmFieldRef, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor,
     },
-    FragmentSubmission, Result,
 };
 use nyar_types::ItemInstanceId;
 
@@ -103,12 +104,23 @@ struct JvmMethodPlan {
     descriptor: JvmMethodDescriptor,
 }
 
-/// 将片段降低为单个 JVM `class`。
+/// JVM lowering 结果：主类、launcher companion 类与 managed ABI 契约。
+#[derive(Debug, Clone)]
+pub(crate) struct JvmLoweredFragment {
+    /// 片段主类。
+    pub class_file: JvmClassFile,
+    /// 每个导出入口独立的 argv launcher 类。
+    pub companion_classes: Vec<JvmClassFile>,
+    /// 导出入口 ABI 契约；没有可导出入口时为 `None`。
+    pub managed_abi: Option<ManagedAbiContract>,
+}
+
+/// 将片段降低为单个 JVM `class`，并为每个导出入口生成 argv launcher。
 ///
 /// 只降低导出面（`wasm_export_names` / `exported_operations` / 入口操作）以及
 /// 从它们出发、经同片段静态调用可达的函数；其余函数不进入 class，避免为不可达
 /// 形状发明载体。
-pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<JvmClassFile> {
+pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<JvmLoweredFragment> {
     let plan = &submission.backend_plan;
     let operations = collect_jvm_operations(submission);
     if operations.is_empty() {
@@ -153,7 +165,173 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
             .ok_or_else(|| format!("JVM 最小 lowering：可达操作 `{instance:?}` 缺少方法计划"))?;
         class_file.methods.push(lower_function(submission, &internal_name, &view.function, &method, &method_plans, &operator_by_instance)?);
     }
-    Ok(class_file)
+
+    let (companion_classes, managed_abi) = build_managed_abi_surface(&class_file, plan.wasm_export_names(), &method_plans)?;
+    Ok(JvmLoweredFragment { class_file, companion_classes, managed_abi })
+}
+
+/// 为每个导出入口生成 argv launcher，并汇总 managed ABI 契约。
+///
+/// 入口必须已经以 `public static` 方法落在主类中；缺失方法或不可表达的标量类型
+/// 都返回结构化错误，不静默跳过入口。
+fn build_managed_abi_surface(
+    class_file: &JvmClassFile,
+    export_names: &BTreeMap<ItemInstanceId, String>,
+    method_plans: &BTreeMap<ItemInstanceId, JvmMethodPlan>,
+) -> Result<(Vec<JvmClassFile>, Option<ManagedAbiContract>)> {
+    let mut entries = Vec::with_capacity(export_names.len());
+    let mut companion_classes = Vec::with_capacity(export_names.len());
+    let mut used_launcher_names = BTreeSet::new();
+    for (instance, logical_entry) in export_names {
+        let method = method_plans
+            .get(instance)
+            .ok_or_else(|| format!("JVM managed ABI：导出入口 `{logical_entry}` 的实例 `{instance:?}` 没有已降低方法"))?;
+        let lowered = class_file
+            .methods
+            .iter()
+            .find(|candidate| candidate.name == method.name && candidate.descriptor == method.descriptor)
+            .ok_or_else(|| format!("JVM managed ABI：导出入口 `{logical_entry}` 的方法 `{}` 不在主类中", method.name))?;
+        if lowered.access_flags & (JVM_ACC_PUBLIC | JVM_ACC_STATIC) != (JVM_ACC_PUBLIC | JVM_ACC_STATIC) {
+            return Err(format!(
+                "JVM managed ABI：导出入口 `{logical_entry}` 的方法 `{}` 不是 `public static`，拒绝生成 launcher",
+                method.name
+            ));
+        }
+        let parameter_types = method.descriptor.parameter_types.iter().map(managed_scalar_type_name).collect::<Result<Vec<_>>>()?;
+        let return_type = managed_scalar_type_name(&method.descriptor.return_type)?;
+        let launcher_class = managed_launcher_internal_name(logical_entry, &mut used_launcher_names)?;
+        let launcher = build_managed_launcher_class(&launcher_class, &class_file.internal_name, method)?;
+        entries.push(ManagedAbiEntry {
+            logical_entry: logical_entry.clone(),
+            owner: class_file.internal_name.clone(),
+            method: method.name.clone(),
+            signature: method.descriptor.to_string(),
+            parameter_types,
+            return_type,
+            launcher_class,
+        });
+        companion_classes.push(launcher);
+    }
+    let managed_abi = if entries.is_empty() {
+        None
+    }
+    else {
+        // 产物文件名由驱动层最终确定；这里先留空，桥接层负责补全并刷新摘要。
+        Some(ManagedAbiContract::new("jvm", String::new(), entries))
+    };
+    Ok((companion_classes, managed_abi))
+}
+
+/// managed ABI 只接受冻结的标量类型：`i64` / `i32` / `f64` / `bool` / `void`。
+fn managed_scalar_type_name(descriptor: &JvmTypeDescriptor) -> Result<String> {
+    Ok(match descriptor {
+        JvmTypeDescriptor::Long => "i64",
+        JvmTypeDescriptor::Int | JvmTypeDescriptor::Byte | JvmTypeDescriptor::Char | JvmTypeDescriptor::Short => "i32",
+        JvmTypeDescriptor::Double => "f64",
+        JvmTypeDescriptor::Boolean => "bool",
+        JvmTypeDescriptor::Void => "void",
+        JvmTypeDescriptor::Float => {
+            return Err("JVM managed ABI 不支持 `float` (f32) 载体：缺少对应 managed 标量类型名".to_string());
+        }
+        JvmTypeDescriptor::Object(name) => {
+            return Err(format!("JVM managed ABI 不支持引用类型 `{name}`：缺少 managed 标量契约"));
+        }
+        JvmTypeDescriptor::Array(item) => {
+            return Err(format!("JVM managed ABI 不支持数组类型 `[{item}`：缺少 managed 标量契约"));
+        }
+    }
+    .to_string())
+}
+
+/// launcher 内部名：`nyar/invoke/{sanitize(logical_entry)}`，非字母数字转 `_`。
+fn managed_launcher_internal_name(logical_entry: &str, used: &mut BTreeSet<String>) -> Result<String> {
+    let component = logical_entry.chars().map(|character| if character.is_ascii_alphanumeric() { character } else { '_' }).collect::<String>();
+    if component.is_empty() {
+        return Err(format!("JVM managed ABI：导出入口 `{logical_entry}` 无法生成合法 launcher 类名"));
+    }
+    let internal_name = format!("nyar/invoke/{component}");
+    if !used.insert(internal_name.clone()) {
+        return Err(format!("JVM managed ABI：多个导出入口映射到同一 launcher 类 `{internal_name}`"));
+    }
+    Ok(internal_name)
+}
+
+/// 构造 `public static void main(String[])` argv launcher。
+///
+/// 栈顺序：先压 `System.out`，再按声明类型解析每个 argv，调用主类静态方法，
+/// 最后用 `println` 输出返回值；`void` 入口只调用不输出。
+fn build_managed_launcher_class(launcher_internal_name: &str, owner: &str, method: &JvmMethodPlan) -> Result<JvmClassFile> {
+    let mut launcher = JvmClassFile::new(launcher_internal_name.to_string());
+    let mut instructions = Vec::new();
+    let print_result = method.descriptor.return_type != JvmTypeDescriptor::Void;
+    if print_result {
+        instructions.push(JvmInstruction::GetStatic(JvmFieldRef {
+            owner: "java/lang/System".to_string(),
+            name: "out".to_string(),
+            descriptor: JvmTypeDescriptor::Object("java/io/PrintStream".to_string()),
+        }));
+    }
+    let mut argument_slots = 0u16;
+    for (index, parameter) in method.descriptor.parameter_types.iter().enumerate() {
+        let index = i32::try_from(index).map_err(|_| format!("JVM managed ABI launcher 形参序号超出 `int` 载体: {index}"))?;
+        instructions.push(JvmInstruction::ALoad0);
+        instructions.push(JvmInstruction::IConst(index));
+        instructions.push(JvmInstruction::AALoad);
+        instructions.push(JvmInstruction::InvokeStatic(argument_parse_method_ref(parameter)?));
+        argument_slots = argument_slots.saturating_add(parameter.slot_count());
+    }
+    instructions.push(JvmInstruction::InvokeStatic(JvmMethodRef {
+        owner: owner.to_string(),
+        name: method.name.clone(),
+        descriptor: method.descriptor.clone(),
+    }));
+    if print_result {
+        instructions.push(JvmInstruction::InvokeVirtual(JvmMethodRef {
+            owner: "java/io/PrintStream".to_string(),
+            name: "println".to_string(),
+            descriptor: JvmMethodDescriptor::new(vec![method.descriptor.return_type.clone()], JvmTypeDescriptor::Void),
+        }));
+    }
+    instructions.push(JvmInstruction::Return);
+
+    let max_stack = u16::from(print_result).saturating_add(argument_slots).saturating_add(2);
+    launcher.methods.push(JvmMethodSignature {
+        name: "main".to_string(),
+        descriptor: JvmMethodDescriptor::new(
+            vec![JvmTypeDescriptor::array(JvmTypeDescriptor::Object("java/lang/String".to_string()))],
+            JvmTypeDescriptor::Void,
+        ),
+        access_flags: JVM_ACC_PUBLIC | JVM_ACC_STATIC,
+        code: Some(JvmCodeBody { max_stack, max_locals: 1, instructions }),
+    });
+    Ok(launcher)
+}
+
+/// argv 解析调用：按声明标量类型选择 `Long.parseLong` / `Integer.parseInt` /
+/// `Double.parseDouble` / `Boolean.parseBoolean`。
+fn argument_parse_method_ref(descriptor: &JvmTypeDescriptor) -> Result<JvmMethodRef> {
+    let string = JvmTypeDescriptor::Object("java/lang/String".to_string());
+    let (owner, name, return_type) = match descriptor {
+        JvmTypeDescriptor::Long => ("java/lang/Long", "parseLong", JvmTypeDescriptor::Long),
+        JvmTypeDescriptor::Int | JvmTypeDescriptor::Byte | JvmTypeDescriptor::Char | JvmTypeDescriptor::Short => {
+            ("java/lang/Integer", "parseInt", JvmTypeDescriptor::Int)
+        }
+        JvmTypeDescriptor::Double => ("java/lang/Double", "parseDouble", JvmTypeDescriptor::Double),
+        JvmTypeDescriptor::Boolean => ("java/lang/Boolean", "parseBoolean", JvmTypeDescriptor::Boolean),
+        JvmTypeDescriptor::Float => {
+            return Err("JVM managed ABI launcher 不支持 `float` (f32) 形参".to_string());
+        }
+        JvmTypeDescriptor::Object(name) => {
+            return Err(format!("JVM managed ABI launcher 不支持引用类型形参 `{name}`"));
+        }
+        JvmTypeDescriptor::Array(item) => {
+            return Err(format!("JVM managed ABI launcher 不支持数组类型形参 `[{item}`"));
+        }
+        JvmTypeDescriptor::Void => {
+            return Err("JVM managed ABI launcher 形参不能是 `void`".to_string());
+        }
+    };
+    Ok(JvmMethodRef { owner: owner.to_string(), name: name.to_string(), descriptor: JvmMethodDescriptor::new(vec![string], return_type) })
 }
 
 /// 从导出面出发收集可达操作（按实例身份升序，保证稳定输出顺序）。
@@ -599,6 +777,7 @@ impl JvmMethodEmitter<'_> {
                 for step in steps {
                     match step {
                         TargetOperandStep::Arguments => self.emit_operator_arguments(mnemonic, expected_kind, arguments)?,
+                        TargetOperandStep::NarrowTopI64ToI32 => self.instructions.push(JvmInstruction::L2I),
                         TargetOperandStep::IntegerConstant { operand_type, value } => {
                             let kind = JvmSlotKind::of_operand_type(*operand_type);
                             if kind != expected_kind {

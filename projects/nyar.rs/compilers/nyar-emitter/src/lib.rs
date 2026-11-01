@@ -18,6 +18,9 @@ pub mod target_operator;
 mod error;
 pub use error::{EmitterError, Result};
 
+pub mod managed_abi;
+pub use managed_abi::{MANAGED_ABI_SCHEMA_VERSION, ManagedAbiContract, ManagedAbiEntry};
+
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -124,6 +127,14 @@ pub mod testing {
     /// Lower a fragment submission to a JVM class file.
     pub fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<super::nyar_backend_jvm::JvmClassFile> {
         super::lowering::testing_lower_fragment_to_jvm_class(submission)
+    }
+
+    /// Lower a fragment submission to the JVM main class, argv launcher companions,
+    /// and the managed ABI contract.
+    pub fn lower_fragment_to_jvm_managed_surface(
+        submission: &FragmentSubmission,
+    ) -> Result<(super::nyar_backend_jvm::JvmClassFile, Vec<super::nyar_backend_jvm::JvmClassFile>, Option<super::ManagedAbiContract>)> {
+        super::lowering::testing_lower_fragment_to_jvm_managed_surface(submission)
     }
 
     /// Lower a fragment submission to a CLR MSIL module.
@@ -672,6 +683,8 @@ pub struct DriverCompileReport {
     pub entry_symbol: Option<String>,
     /// 运行契约列表。
     pub run_contracts: Vec<DriverRunContract>,
+    /// 导出入口的 managed ABI 契约（若有）。
+    pub managed_abi: Option<ManagedAbiContract>,
 }
 
 struct DriverPartitionCompileRequest<'a> {
@@ -761,7 +774,7 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         reports.push((partition.name.clone(), report));
     }
 
-    let mut report = merge_partition_reports(reports, primary_partition_name.as_deref());
+    let mut report = merge_partition_reports(reports, primary_partition_name.as_deref())?;
     let test_entry_names = request.bundle.test_entry_names();
     if !test_entry_names.is_empty() {
         emit_test_run_contracts(&mut report, request.output_dir, &test_entry_names)?;

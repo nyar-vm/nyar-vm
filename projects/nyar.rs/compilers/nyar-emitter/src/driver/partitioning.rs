@@ -36,14 +36,21 @@ pub(crate) fn partition_artifact_name(base_name: &str, partition: &ArtifactParti
 pub(crate) fn merge_partition_reports(
     reports: Vec<(String, DriverCompileReport)>,
     primary_partition_name: Option<&str>,
-) -> DriverCompileReport {
+) -> crate::Result<DriverCompileReport> {
     let mut merged = DriverCompileReport::default();
     let mut primary_contracts = Vec::new();
     let mut secondary_contracts = Vec::new();
+    let mut managed_abi: Option<(String, crate::ManagedAbiContract)> = None;
     for (partition_name, report) in reports {
         merged.artifacts.artifacts.extend(report.artifacts.artifacts);
         if merged.entry_symbol.is_none() {
             merged.entry_symbol = report.entry_symbol.clone();
+        }
+        if let Some(contract) = report.managed_abi {
+            if let Some((existing_partition, _)) = &managed_abi {
+                return Err(format!("多个分区同时产出 managed ABI 契约：`{existing_partition}` 与 `{partition_name}`；拒绝合并歧义契约"));
+            }
+            managed_abi = Some((partition_name.clone(), contract));
         }
         if primary_partition_name == Some(partition_name.as_str()) {
             primary_contracts.extend(report.run_contracts);
@@ -54,5 +61,6 @@ pub(crate) fn merge_partition_reports(
     }
     merged.run_contracts = primary_contracts;
     merged.run_contracts.extend(secondary_contracts);
-    merged
+    merged.managed_abi = managed_abi.map(|(_, contract)| contract);
+    Ok(merged)
 }

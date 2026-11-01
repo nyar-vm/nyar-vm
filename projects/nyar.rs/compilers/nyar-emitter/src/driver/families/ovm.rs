@@ -46,7 +46,7 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
             }
         }
 
-        Ok(DriverCompileReport { artifacts, entry_symbol, run_contracts })
+        Ok(DriverCompileReport { artifacts, entry_symbol, run_contracts, managed_abi: None })
     }
 }
 

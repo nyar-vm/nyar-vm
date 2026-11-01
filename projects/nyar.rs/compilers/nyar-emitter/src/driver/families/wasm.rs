@@ -34,7 +34,7 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
             HostProjectionBoundary::WasiComponent if !package_as_wasi_command => Vec::new(),
             boundary => vec![wasm_run_contract(request.artifact_name, boundary, wasi_preview)],
         };
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts })
+        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi: None })
     }
 }
 

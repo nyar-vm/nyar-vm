@@ -50,6 +50,6 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
         else {
             Vec::new()
         };
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts })
+        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi: None })
     }
 }

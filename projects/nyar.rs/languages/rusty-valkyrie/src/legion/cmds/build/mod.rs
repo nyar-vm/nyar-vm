@@ -241,6 +241,9 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
         target_profile.artifact_policy.generate_runtime_config,
     )?;
     write_compile_evidence(&plan.output_dir, &artifact.evidence)?;
+    if let Some(managed_abi) = &artifact.driver.managed_abi {
+        write_managed_abi(&plan.output_dir, managed_abi)?;
+    }
     if verbose {
         println!("compiler: canonical artifact set ready");
     }
@@ -266,6 +269,17 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
 /// 编译期架构键：WASI 与 Node 同为 wasm32，但宿主不同，因此使用伪架构键 `"wasi"`。
 pub(crate) fn compile_arch(plan: &BuildPlan) -> &'static str {
     crate::legion::workspace::planner::compile_arch_key(&plan.project.build_target.target)
+}
+
+/// 将 managed ABI 契约落盘为确定性 pretty JSON（字段顺序与入口排序由类型保证）。
+fn write_managed_abi(output_dir: &Path, contract: &nyar_emitter::ManagedAbiContract) -> LegionResult<()> {
+    let output_path = output_dir.join("managed-abi.json");
+    let content = serde_json::to_string_pretty(contract)
+        .map_err(|error| LegionError::msg(format!("序列化 managed ABI 契约失败 {}: {error}", output_path.display())))?;
+    fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", output_dir.display())))?;
+    fs::write(&output_path, format!("{content}\n"))
+        .map_err(|e| LegionError::msg(format!("写入 managed ABI 契约失败 {}: {e}", output_path.display())))?;
+    Ok(())
 }
 
 fn write_compile_evidence(output_dir: &Path, evidence: &crate::compiler::emitter::pipeline::CompilerCompileEvidence) -> LegionResult<()> {
