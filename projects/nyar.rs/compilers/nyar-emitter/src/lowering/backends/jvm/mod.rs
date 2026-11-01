@@ -66,6 +66,9 @@ pub enum JvmOperatorCode {
     IntegerCompareNotEqual,
     /// integer 小于比较（结果压 `int` 0/1）。
     IntegerCompareLessThan,
+    /// integer 无符号小于比较（结果压 `int` 0/1）：JVM 没有无符号 `if_icmp`，
+    /// 展开为「两侧异或 `i32::MIN` 后按有符号比较」的显式序列。
+    IntegerCompareLessThanUnsigned,
     /// integer 小于等于比较（结果压 `int` 0/1）。
     IntegerCompareLessOrEqual,
     /// integer 大于比较（结果压 `int` 0/1）。
@@ -132,6 +135,19 @@ impl JvmOperatorCode {
             Self::IntegerCompareEqual => (vec![], vec![JvmInstruction::IfICmpNe("comparison_false".to_string())]),
             Self::IntegerCompareNotEqual => (vec![], vec![JvmInstruction::IfICmpEq("comparison_false".to_string())]),
             Self::IntegerCompareLessThan => (vec![], vec![JvmInstruction::IfICmpGe("comparison_false".to_string())]),
+            // 无符号比较：`u32` 的序等价于「两侧都翻转符号位后」的 `i32` 序。
+            // 栈 `[a, b]` → `[a ^ MIN, b ^ MIN]`，再按有符号 `<` 展开。
+            Self::IntegerCompareLessThanUnsigned => (
+                vec![
+                    JvmInstruction::IConst(i32::MIN),
+                    JvmInstruction::IXor,
+                    JvmInstruction::Swap,
+                    JvmInstruction::IConst(i32::MIN),
+                    JvmInstruction::IXor,
+                    JvmInstruction::Swap,
+                ],
+                vec![JvmInstruction::IfICmpGe("comparison_false".to_string())],
+            ),
             Self::IntegerCompareLessOrEqual => (vec![], vec![JvmInstruction::IfICmpGt("comparison_false".to_string())]),
             Self::IntegerCompareGreaterThan => (vec![], vec![JvmInstruction::IfICmpLe("comparison_false".to_string())]),
             Self::IntegerCompareGreaterOrEqual => (vec![], vec![JvmInstruction::IfICmpLt("comparison_false".to_string())]),

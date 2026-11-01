@@ -82,6 +82,10 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         "integer.compare_equal" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareEqual),
         "integer.compare_not_equal" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareNotEqual),
         "integer.compare_less_than" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareLessThan),
+        // 无符号 `i32` 小于：JVM 没有单条无符号比较指令，冻结为符号位翻转序列。
+        "integer.compare_less_than_unsigned" => {
+            binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareLessThanUnsigned)
+        }
         "integer.compare_less_or_equal" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareLessOrEqual),
         "integer.compare_greater_than" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareGreaterThan),
         "integer.compare_greater_or_equal" => {

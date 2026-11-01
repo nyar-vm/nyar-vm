@@ -82,6 +82,8 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         // 比较：结果固定为 I32（0/1）；只冻结单 opcode 的 eq/lt/gt。
         "i32.eq" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Ceq),
         "i32.lt" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Clt),
+        // 无符号 `int32` 小于：MSIL 原生 `clt.un`。
+        "i32.lt.un" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::CltUn),
         "i32.gt" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Cgt),
         "i64.eq" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Ceq),
         "i64.lt" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Clt),

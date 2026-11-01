@@ -242,6 +242,25 @@ fn comparison_operator_expansion_uses_unique_method_local_labels() {
     class_file.to_bytes().expect("comparison class encoding");
 }
 
+/// JVM 没有无符号 `if_icmp`：`usize`/`u32` 小于必须展开为「两侧翻转符号位后
+/// 按有符号比较」的显式序列，且不得偷换成有符号 `IntegerCompareLessThan`。
+#[test]
+fn unsigned_integer_less_than_flips_sign_bit_before_signed_branch() {
+    let expansion = JvmOperatorCode::IntegerCompareLessThanUnsigned.instructions();
+    let xor_count = expansion.iter().filter(|instruction| matches!(instruction, JvmInstruction::IXor)).count();
+    let swap_count = expansion.iter().filter(|instruction| matches!(instruction, JvmInstruction::Swap)).count();
+    assert_eq!(xor_count, 2, "两侧各翻转一次符号位: {expansion:?}");
+    assert_eq!(swap_count, 2, "翻转符号位需要两次交换以保持操作数顺序: {expansion:?}");
+    assert!(
+        expansion.iter().any(|instruction| matches!(instruction, JvmInstruction::IConst(value) if *value == i32::MIN)),
+        "翻转必须使用 `i32::MIN` 作为掩码: {expansion:?}"
+    );
+    assert!(
+        expansion.iter().any(|instruction| matches!(instruction, JvmInstruction::IfICmpGe(_))),
+        "翻转后按有符号 `>=` 分支到 false: {expansion:?}"
+    );
+}
+
 #[test]
 fn unfrozen_operator_binding_is_rejected_structurally() {
     let operator = ItemInstanceId::from_index(1).expect("operator instance");
