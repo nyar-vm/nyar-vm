@@ -177,21 +177,18 @@ micro title() -> utf8 {
     assert_eq!(value, "\"asgard\"", "glue 读回的文本配置值必须是导出函数返回的字符串");
 }
 
-/// 第三层（聚合）：结构体返回值当前断在 wasm 预发射名义身份门禁。
+/// 第三层（聚合）：名义身份门禁已转通，聚合配置模块可完成正式构建。
 ///
-/// 探针实测（2026-10-31）：最小配置模块返回用户声明结构体时，正式构建链在
-/// WASM pre-emission verifier 失败闭合：「携带无身份名义类型 `ConfigArtifact`；
-/// declaration / `TypeId` 缺失时不得按短名解析存储类」。这与账本「预编码门禁
-/// （`entry.rs validate_storage_identities`）」同源，归前端 MIR SSA 名义身份登记
-/// （Lane G2 在途工作面，本探针不触碰其文件）。
-/// 即便身份门禁转通，配置对象读回仍有第二道已知缺口：JS glue 的 NamedAggregate
-/// demarshal 只支持序列族（length/at），没有按字段访问结构体的合同；
-/// `render_glue_entries` 对非序列聚合停在 `pending_export_name`。
-/// 本用例固化失败形态：门禁转通后此测试转红，探针须升级为读回断言并暴露
-/// 字段访问合同缺口（归后端 glue/ABI 与配置 SDK 所有者）。
+/// 本轮事实：`NyarType::Nominal` 携带 canonical 冻结的实例级 `layout` 身份，
+/// WASM 预发射 `validate_storage_identities` 只拒绝未注册 layout，因此返回用户
+/// 声明结构体的配置模块不再停在名义身份门禁。
+/// 第二道缺口仍在：JS glue 的 `NamedAggregate` demarshal 只支持序列族（length/at），
+/// 没有按字段访问结构体的合同，`render_glue_entries` 对非序列聚合停在
+/// `pending_export_name`。本用例固化该缺口的结构化诊断，按字段读回由后端 glue/ABI
+/// 与配置 SDK 所有者补齐。
 #[test]
-fn c0_aggregate_layer_fails_closed_on_missing_nominal_identity() {
-    let result = build_probe_project(
+fn c0_aggregate_layer_reports_the_missing_field_access_contract() {
+    let artifact = build_probe_project(
         "asgard-c0-aggregate",
         r#"structure ConfigArtifact {
     target: i32
@@ -203,11 +200,11 @@ micro configure() -> ConfigArtifact {
     return ConfigArtifact { target: 1, entry: 2 }
 }
 "#,
-    );
-    let failure = match result {
-        Err(failure) => failure,
-        Ok(_) => panic!("C0 聚合层当前必须失败闭合于名义身份门禁；若已转通，请把本探针升级为 glue 读回断言，并固化字段访问合同缺口"),
-    };
-    assert!(failure.message.contains("pre-emission verifier"), "聚合层缺口必须来自预发射身份门禁的结构化诊断，实际：{}", failure.message);
-    assert!(failure.message.contains("ConfigArtifact"), "诊断必须指明无身份的名义类型，实际：{}", failure.message);
+    )
+    .unwrap_or_else(|failure| panic!("聚合配置模块必须完成正式构建，实际失败：{}", failure.message));
+
+    let diagnostic =
+        call_export_through_glue(&artifact, "configure", "[]").expect_err("非序列聚合的 JS glue 读回合同尚未实现，必须结构化失败");
+    assert!(diagnostic.contains("Cannot demarshal NamedAggregate"), "缺口诊断必须指明 NamedAggregate demarshal 合同，实际：{diagnostic}");
+    assert!(diagnostic.contains("ConfigArtifact"), "缺口诊断必须指明具体聚合类型，实际：{diagnostic}");
 }
