@@ -7,7 +7,9 @@
 use std::{fs, path::Path};
 
 use rusty_valkyrie::asgard::{
-    chunk_planning::{ChunkPartitioning, DeliveryHost, PruningStrategy, plan_asgard_build},
+    chunk_planning::{
+        ChunkPartitioning, DeliveryHost, PruningStrategy, ensure_browser_chunk_delivery_supported, plan_asgard_build, resolve_chunk_graph,
+    },
     config_model::{ConfigOrigin, ConfigValue, ResolvedAsgardConfig, resolve_static_config},
 };
 use tempfile::TempDir;
@@ -85,4 +87,68 @@ fn webview_without_chunks_config_still_skips_partitioning() {
     let plan = plan_asgard_build(DeliveryHost::DesktopWebView, &config.chunks);
     assert_eq!(plan.chunk_partitioning, ChunkPartitioning::Skipped);
     assert!(plan.chunk_partitioning.plan().is_none());
+}
+
+#[test]
+fn chunk_graph_keeps_declaration_order_with_entry_edges() {
+    let temp = TempDir::new().expect("创建临时目录失败");
+    let config = resolve_config(temp.path(), configured_chunks());
+    let graph = resolve_chunk_graph(&config.chunks, "index").expect("合法边界应解析为依赖图");
+    assert_eq!(graph.entry, "index");
+    assert_eq!(graph.nodes.len(), 2, "每条边界一个按需节点");
+    assert_eq!(graph.nodes[0].component, "Admin");
+    assert_eq!(graph.nodes[1].component, "Docs", "节点顺序必须保持声明顺序");
+    assert_eq!(graph.nodes[0].depends_on, vec!["index".to_string()], "按需 chunk 至少依赖入口闭包");
+    assert!(graph.nodes[0].preload && !graph.nodes[0].prefetch);
+    assert!(!graph.nodes[1].preload && graph.nodes[1].prefetch);
+}
+
+#[test]
+fn chunk_graph_serializes_the_loader_contract_shape() {
+    let temp = TempDir::new().expect("创建临时目录失败");
+    let config = resolve_config(temp.path(), configured_chunks());
+    let graph = resolve_chunk_graph(&config.chunks, "index").expect("合法边界应解析为依赖图");
+    // 冻结 loader 消费的字段形状：entry + nodes[component/depends_on/preload/prefetch]。
+    let value = serde_json::to_value(&graph).expect("依赖图必须可序列化");
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "entry": "index",
+            "nodes": [
+                { "component": "Admin", "depends_on": ["index"], "preload": true, "prefetch": false },
+                { "component": "Docs", "depends_on": ["index"], "preload": false, "prefetch": true }
+            ]
+        }),
+        "依赖图 JSON 形状即 loader 数据合同，字段名不得漂移"
+    );
+}
+
+#[test]
+fn chunk_graph_rejects_duplicate_and_entry_boundaries() {
+    let temp = TempDir::new().expect("创建临时目录失败");
+    let duplicated = ConfigValue::List(vec![boundary("Admin", false, false), boundary("Admin", true, true)]);
+    let config = resolve_config(temp.path(), obj(vec![("boundaries", duplicated)]));
+    let error = resolve_chunk_graph(&config.chunks, "index").expect_err("重复边界组件必须拒绝");
+    assert!(error.to_string().contains("重复声明"), "诊断应说明边界重复: {error}");
+
+    let entry_as_boundary = ConfigValue::List(vec![boundary("index", false, false)]);
+    let config = resolve_config(temp.path(), obj(vec![("boundaries", entry_as_boundary)]));
+    let error = resolve_chunk_graph(&config.chunks, "index").expect_err("入口组件不得再声明为按需边界");
+    assert!(error.to_string().contains("入口"), "诊断应说明与入口重复: {error}");
+}
+
+#[test]
+fn browser_delivery_with_declared_boundaries_fails_closed_until_chunk_artifacts_exist() {
+    let temp = TempDir::new().expect("创建临时目录失败");
+    let config = resolve_config(temp.path(), configured_chunks());
+    let plan = config.build_plan(DeliveryHost::BrowserHttp);
+    let error = ensure_browser_chunk_delivery_supported(&plan).expect_err("带边界的浏览器计划必须失败闭合");
+    let message = error.to_string();
+    assert!(message.contains("chunk"), "诊断应指明 chunk 缺口: {message}");
+    assert!(message.contains("尚未实施"), "诊断应说明缺口状态而不是冒充成功: {message}");
+
+    // 未声明边界的浏览器计划与桌面未分割交付放行。
+    let empty = resolve_config(temp.path(), obj(vec![]));
+    ensure_browser_chunk_delivery_supported(&empty.build_plan(DeliveryHost::BrowserHttp)).expect("无边界的浏览器计划应放行");
+    ensure_browser_chunk_delivery_supported(&empty.build_plan(DeliveryHost::DesktopWebView)).expect("桌面未分割交付应放行");
 }
