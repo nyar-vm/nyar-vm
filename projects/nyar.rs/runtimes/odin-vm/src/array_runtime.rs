@@ -7,7 +7,7 @@ use nyar_gc::{ObjectHeap, ObjectId, ObjectPayload};
 
 use crate::{error::OdinRuntimeError, value::Value};
 
-/// 构造元素已填好的固定数组布局对象（供 harness / 单测注入）。
+/// 构造元素已填好的固定数组布局对象（宿主 `array.new` 与 harness / 单测注入共用）。
 ///
 /// `layout_id` 仅作堆描述；`ArrayGet`/`ArraySet`/`ArrayLen` 只读 `slots`。
 pub fn build_fixed_array(heap: &mut ObjectHeap, layout_id: u32, elements: &[Value]) -> Value {

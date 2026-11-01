@@ -4,7 +4,7 @@ use crate::error::OdinRuntimeError;
 use nyar_gc::ObjectHeap;
 use odin_bytecode::OdinImport;
 
-use crate::value::Value;
+use crate::{array_runtime, value::Value};
 
 /// 与 emitter 约定的宿主导入模块名。
 pub const HOST_IMPORT_MODULE: &str = "nyar.host";
@@ -58,6 +58,14 @@ pub enum HostOp {
     BeginPhase,
     /// 结束业务阶段（可选参数：阶段名 `String`；缺省弹出栈顶）。
     EndPhase,
+    /// 按 `i32` 长度分配元素槽全为 `Null` 的固定数组布局对象。
+    ArrayNew,
+    /// 布局对象的元素槽数量（参数：数组对象）。
+    ArrayLength,
+    /// 按下标读取元素槽（参数：数组对象、下标）。
+    ArrayGet,
+    /// 按下标写入元素槽（参数：数组对象、下标、值）。
+    ArraySet,
 }
 
 /// 加载期解析后的导入槽。
@@ -106,6 +114,10 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "bool_or" => HostOp::BoolOr,
         "begin_phase" => HostOp::BeginPhase,
         "end_phase" => HostOp::EndPhase,
+        "array.new" => HostOp::ArrayNew,
+        "array.length" => HostOp::ArrayLength,
+        "array.get" => HostOp::ArrayGet,
+        "array.set" => HostOp::ArraySet,
         _ => return None,
     })
 }
@@ -219,6 +231,26 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         }
         HostOp::BoolOr => {
             Ok(Value::Bool(args.first().map(Value::to_bool).unwrap_or(false) || args.get(1).map(Value::to_bool).unwrap_or(false)))
+        }
+        HostOp::ArrayNew => {
+            let length = i32_arg(args, 0)?;
+            if length < 0 {
+                return Err(OdinRuntimeError::TypeMismatch { expected: "non-negative array length", actual: format!("i32({length})") });
+            }
+            let slots = vec![Value::Null; length as usize];
+            Ok(array_runtime::build_fixed_array(heap, 0, &slots))
+        }
+        HostOp::ArrayLength => array_runtime::array_length(heap, args.first().unwrap_or(&Value::Null)),
+        HostOp::ArrayGet => {
+            let array = args.first().cloned().unwrap_or(Value::Null);
+            let index = args.get(1).cloned().unwrap_or(Value::I32(0));
+            array_runtime::array_get(heap, &array, &index)
+        }
+        HostOp::ArraySet => {
+            let array = args.first().cloned().unwrap_or(Value::Null);
+            let index = args.get(1).cloned().unwrap_or(Value::I32(0));
+            let value = args.get(2).cloned().unwrap_or(Value::Null);
+            array_runtime::array_set(heap, &array, &index, &value)
         }
     }
 }
