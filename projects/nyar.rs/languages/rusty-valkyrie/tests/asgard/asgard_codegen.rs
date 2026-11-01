@@ -49,6 +49,20 @@ fn boot_script_exposes_unmount_and_unbinds_listeners() {
 }
 
 #[test]
+fn input_intrinsic_emits_two_way_value_binding() {
+    let source = r#"<widget><Column><Input value="{label}" /></Column></widget>
+<script>
+let mut label: utf8 = ""
+</script>"#;
+    let root = AwslParser::parse_root(source).expect("parse");
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default());
+    let v_source = build_awsl_wasm_source(&[lowered]);
+    assert!(v_source.contains("dom_create_element(\"input\")"), "`Input` 必须降低为宿主 `input` 元素");
+    assert!(v_source.contains("rx_bind_value_utf8"), "`value` 绑定应写元素属性而非 HTML 属性");
+    assert!(v_source.contains("dom_bind_input_utf8"), "输入事件应把 DOM value 写回信号");
+}
+
+#[test]
 fn abi_property_and_event_extracted_from_script() {
     let source = r#"<widget demo><Child :theme="theme" /></widget>
 <script>

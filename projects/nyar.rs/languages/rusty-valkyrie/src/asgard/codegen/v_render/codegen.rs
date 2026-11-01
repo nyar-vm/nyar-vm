@@ -14,7 +14,7 @@ use super::{
     loop_frame::LoopFrame,
     reactive::region_uses_reactive,
     routes::hydrate_name_for_route,
-    util::{escape_v_string, map_awsl_component_to_host, sanitize_export},
+    util::{escape_v_string, is_simple_identifier, map_awsl_component_to_host, sanitize_export},
 };
 
 pub(crate) struct VRenderCodegen<'a> {
@@ -282,18 +282,57 @@ impl<'a> VRenderCodegen<'a> {
             "Text" | "text" => "span",
             "Column" | "Box" | "Row" | "Flex" | "column" | "box" | "row" | "flex" => "div",
             "Button" | "button" => "button",
+            "Input" | "input" => "input",
             other => other,
         };
         let var = self.next_var();
         writeln!(self.out, "    let {var} = dom_create_element(\"{host_tag}\")").unwrap();
+        // `<input value="{信号}">` 是双向绑定：信号 → `value` 属性，用户输入 → 信号。
+        // 只有单一标识符形态的表达式才有可写回的信号；复杂表达式保持单向属性绑定。
+        let input_signal = if host_tag == "input" { self.emit_input_value_binding(&var, attrs) } else { None };
         for attr in attrs {
+            if attr.is_event {
+                continue;
+            }
+            if input_signal.is_some() && attr.name == "value" {
+                continue;
+            }
             self.emit_attr(&var, attr);
+        }
+        for attr in attrs {
+            if attr.is_event {
+                self.emit_event_attr(&var, attr);
+            }
+        }
+        if let Some(signal) = input_signal {
+            writeln!(self.out, "    dom_bind_input_utf8({signal}, {var}, \"\")").unwrap();
         }
         for &child_id in region_nodes(self.module, children) {
             let child_var = self.emit_node(child_id);
             writeln!(self.out, "    dom_append({var}, {child_var})").unwrap();
         }
         var
+    }
+
+    /// 识别 `<input value="{signal}">`：发出信号 → 属性绑定并返回信号表达式。
+    fn emit_input_value_binding(&mut self, handle: &str, attrs: &[RenderAttr]) -> Option<String> {
+        let attr = attrs.iter().find(|attr| !attr.is_event && attr.name == "value")?;
+        let RenderAttrValue::Expr(expr_id) = &attr.value
+        else {
+            return None;
+        };
+        let expr = self.module.expr_source(*expr_id).to_string();
+        if !is_simple_identifier(&expr) {
+            return None;
+        }
+        // 循环体内的标识符是迭代变量，不是可写回信号。
+        if self.loop_stack.iter().any(|frame| frame.item_var == expr) {
+            return None;
+        }
+        let export = self.register_utf8_expr(&expr);
+        let (dep1, dep2) = self.dep_args(&expr);
+        writeln!(self.out, "    rx_bind_value_utf8({handle}, \"{export}\", {dep1}, {dep2})").unwrap();
+        Some(dep1)
     }
 
     fn emit_component_call(&mut self, tag: &str, attrs: &[RenderAttr], children: RenderRegionId) -> String {

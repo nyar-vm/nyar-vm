@@ -380,6 +380,21 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     '__voa.rxBindClassUtf8': function (handle, exprExport, dep1, dep2) {
       bindExpr(handle, hostText(exprExport), dep1, dep2, function (node, value) { node.setAttribute('class', value); }, true);
     },
+    '__voa.rxBindValueUtf8': function (handle, exprExport, dep1, dep2) {
+      // `value` 是元素属性而非 HTML 属性：写属性才能让输入框在信号变化后同步。
+      bindExpr(handle, hostText(exprExport), dep1, dep2, function (node, value) { node.value = value == null ? '' : String(value); }, true);
+    },
+    '__voa.domBindInputUtf8': function (signalId, handle, updateExport) {
+      var node = getDomHandle(handle);
+      if (!node) return;
+      var name = hostText(updateExport);
+      var fn = function () {
+        sigSet(signalId, String(node.value == null ? '' : node.value));
+        if (name && wasmExports && typeof wasmExports[name] === 'function') callWasm(name);
+      };
+      node.addEventListener('input', fn);
+      registerCleanup(function () { node.removeEventListener('input', fn); });
+    },
     '__voa.rxBindPropI32': function (sigId, exprExport, dep1, dep2) {
       bindExpr(null, hostText(exprExport), dep1, dep2, function (_node, value) { sigSet(sigId, value | 0); }, false);
     },
