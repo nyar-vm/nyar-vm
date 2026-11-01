@@ -29,7 +29,3 @@ flowchart TB
 ## 与其它模块
 
 Legion 管理工程上下文，Compiler 负责语言语义和编译，Asgard 复用工程布局并负责平台交付。
-
-## LSP
-
-语言服务进程相关代码在 [`lsp/`](lsp/readme.md)（若启用）；语义事实仍来自 `compiler::services` + `driver` 查询。
