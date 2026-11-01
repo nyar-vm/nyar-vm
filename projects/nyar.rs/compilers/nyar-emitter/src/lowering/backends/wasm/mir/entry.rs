@@ -117,14 +117,11 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let host_imports = if wasi_mode {
         collect_wasi_host_imports(submission, wasi_preview)
     }
-    else if export_name == "main" {
-        // 入口模块消费 plan 导入；确有字符串字面量时再合成 `const_utf8`。
-        collect_wasm_host_imports(submission, !string_literals.is_empty())
-    }
     else {
-        // 库导出只补字符串字面量所需的宿主载体，保持既有导入表形状；
-        // 文本编码身份不能因为导出名不是 `main` 就丢失。
-        if string_literals.is_empty() { Vec::new() } else { vec![("env".to_string(), "const_utf8".to_string())] }
+        // 入口模块与库导出统一消费 fragment/plan 冻结身份声明的宿主导入表；
+        // 确有字符串字面量时再合成 `const_utf8`。宿主导入 callable 不能因为
+        // 导出名不是 `main` 就失去 `callee_import_index` 注册路径。
+        collect_wasm_host_imports(submission, !string_literals.is_empty())
     };
     let import_count = u32::try_from(host_imports.len()).expect("import count overflow");
     let callee_import_index = if wasi_mode {

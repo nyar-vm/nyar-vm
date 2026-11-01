@@ -81,3 +81,25 @@ fn wasm_static_call_to_registered_host_import_lowers() {
     };
     lower(call_main(Operand::Item(callee)), Some((callee, import))).expect("已登记宿主导入的静态调用必须正常 lower");
 }
+
+/// 根因合同：库导出 lane（`export_name != "main"`）与入口 lane 一样消费
+/// plan 冻结身份声明的宿主导入表；宿主导入 callee 不得因导出名不是 `main`
+/// 而丢失 `callee_import_index` 注册路径（`leetcode` 矩阵库 lane 实测崩溃现场）。
+#[test]
+fn wasm_library_export_lane_registers_host_import_callees() {
+    let callee = ItemInstanceId::from_index(203).expect("测试 callee 身份");
+    let import = BackendImport {
+        index: ImportIndex::from_index(0).expect("导入下标"),
+        link: nyar::ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".into(), "utf8_length".into()]),
+        parameter_types: Vec::new(),
+        return_type: I32,
+        target_operator: None,
+    };
+    let main_name = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), call_main(Operand::Item(callee)))]));
+    plan.testing_module_name("library_lane").testing_entry_operation(main_name);
+    plan.testing_register_import(callee, import);
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    lower_fragment_to_wasm_mir_module(&submission, "solution")
+        .expect("库导出 lane 的宿主导入 callee 必须按冻结身份注册并正常 lower");
+}
