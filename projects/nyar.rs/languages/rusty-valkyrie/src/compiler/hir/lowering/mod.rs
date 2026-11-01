@@ -404,7 +404,10 @@ impl ValkyrieCompiler {
         // 物化可达性门在冻结调用图上先求声明闭包，单态化只按门内 callable 的调用点
         // 与导出面 glue 种子铸造实例；实例集合在单态化回填完成后收口。
         let mut gate = crate::compiler::hir::reachability::compute_hir_materialization_gate(&hir_groups, host_bindings)?;
-        instantiate_generic_callables(&mut hir_groups, Some(&gate));
+        // Resolver 绑定先给出泛型 provider 的播种映射：合同调用点的具体代入
+        // 在固定点内同时铸造 provider 闭合副本，绑定配对才有同签名实现可指。
+        let provider_seeds = crate::compiler::emitter::pipeline::host_provider_instantiation_seeds(&hir_groups, host_bindings)?;
+        instantiate_generic_callables(&mut hir_groups, Some(&gate), &provider_seeds);
         gate.finalize_instances(&hir_groups);
         for hir in &hir_groups {
             validate_extractor_patterns(hir)?;

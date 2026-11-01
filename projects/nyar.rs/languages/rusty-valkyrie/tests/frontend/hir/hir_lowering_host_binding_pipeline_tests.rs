@@ -380,7 +380,8 @@ fn imply_method_host_contract_binds_provider_and_retires_contract_body() {
         resolved[0].contract_instances.iter().all(|instance| !canonical.mir.functions.contains_key(instance)),
         "合同体与其实例化副本必须随重映射退役，不得留在编译产物"
     );
-    assert!(canonical.mir.functions.contains_key(&resolved[0].provider_instance), "provider 实现必须进入编译产物");
+    let bound_provider_instance = *resolved[0].provider_pairs.values().next().expect("闭合合同实例必须配到 provider 实例");
+    assert!(canonical.mir.functions.contains_key(&bound_provider_instance), "provider 实现必须进入编译产物");
 }
 
 #[test]

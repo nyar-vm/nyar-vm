@@ -132,9 +132,15 @@ fn derive_witness_substitution(declaration: &CallableDeclaration, call: &HirReso
 ///
 /// `gate` 为物化可达性门：不可达 callable 的体内调用点不得播种实例化请求，
 /// 导出面 glue 种子同样只覆盖门内声明；`None` 保持全闭包物化（单源路径）。
+///
+/// `provider_seeds` 为 Resolver 绑定给出的「合同声明下标 → `[host_provider]`
+/// 声明下标」映射：合同调用点的具体代入同时为 provider 声明插入同代入请求，
+/// provider 的闭合副本在同一个固定点铸造，其体内宿主导入调用随之闭合；
+/// 实例身份、签名与实现全部来自声明与 provider 本身，不存在名字表或空体兜底。
 pub(crate) fn instantiate_generic_callables(
     modules: &mut [HirModule],
     gate: Option<&crate::compiler::hir::reachability::HirMaterializationGate>,
+    provider_seeds: &BTreeMap<u32, u32>,
 ) {
     let (declarations, trait_members) = collect_impl_declarations(modules);
     if declarations.is_empty() {
@@ -199,6 +205,19 @@ pub(crate) fn instantiate_generic_callables(
                     if !substitution.is_empty() || declaration.function.generics.is_empty() {
                         requests.insert((index, substitution));
                     }
+                }
+                // 绑定合同的 provider 同步播种：合同调用点的具体代入同时决定
+                // provider 实例签名，provider 闭合副本在本固定点铸造，其体内
+                // 宿主导入调用随之闭合；代入未闭合（调用方仍是泛型上下文）时
+                // 不播种，留给后续具体调用点。
+                if let Some(&provider_index) = provider_seeds.get(&index)
+                    && let Some(provider_declaration) = declarations.get(&provider_index)
+                    && !provider_declaration.function.generics.is_empty()
+                    && let Some(substitution) = derive_substitution(provider_declaration, call)
+                    && !substitution.is_empty()
+                    && !substitution.values().any(has_unresolved_generic_arguments)
+                {
+                    requests.insert((provider_index, substitution));
                 }
             });
         }

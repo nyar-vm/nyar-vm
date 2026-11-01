@@ -9,6 +9,7 @@ use nyar_types::{ItemId, ItemInstanceId};
 
 use crate::compiler::{
     emitter::backend_contract::interop::function_host_provider_target,
+    hir::overload::has_unresolved_generic_arguments,
     mir::{MirExternalCallContract, MirFunction, MirModule, MirOperand, MirOperation},
     semantic::closure::{DeclarationKey, DeclarationKind},
     syntax::oak::ParseError,
@@ -44,6 +45,7 @@ fn unselected_host_provider_instances(
     selected_providers: &BTreeSet<DeclarationKey>,
 ) -> Result<BTreeSet<ItemInstanceId>, ParseError> {
     let mut prune = BTreeSet::new();
+    let mut unselected_declarations = BTreeSet::new();
     for module in hirs {
         for function in &module.functions {
             if function_host_provider_target(function).is_none() {
@@ -63,11 +65,21 @@ fn unselected_host_provider_instances(
             if is_selected {
                 continue;
             }
-            let Some(instance) = function.instance
-            else {
-                continue;
-            };
-            prune.insert(instance);
+            if let Some(declaration) = function.declaration {
+                unselected_declarations.insert(declaration);
+            }
+            if let Some(instance) = function.instance {
+                prune.insert(instance);
+            }
+        }
+        // 泛型 provider 的单态化铸造副本同属未选定 provider 族：按声明身份裁剪，
+        // 否则播种出的实现副本会以孤儿形态进入产物。
+        for callable in &module.instantiated_callables {
+            if callable.function.declaration.is_some_and(|declaration| unselected_declarations.contains(&declaration))
+                && let Some(instance) = callable.function.instance
+            {
+                prune.insert(instance);
+            }
         }
     }
     Ok(prune)
@@ -82,14 +94,19 @@ pub struct ResolvedHostProviderBinding {
     /// impl 成员的调用点身份是铸造实例而非声明实例；绑定若只覆盖声明实例，
     /// 合同体会以实例化孤儿的形态残留在产物里。
     pub contract_instances: BTreeSet<ItemInstanceId>,
-    /// 选定 `[host_provider]` 实现的 callable 实例。
-    pub provider_instance: ItemInstanceId,
+    /// 闭合合同实例 → 同签名闭合 provider 实例的配对表。
+    ///
+    /// 泛型 provider 的声明级实例签名开放，只能承接同样开放的调用形态；绑定
+    /// 把闭合合同副本配到单态化铸造出的同签名 provider 副本上，实例身份、
+    /// 签名与实现全部来自声明与 provider 本身，不存在按名回落或开放实例兜底。
+    /// 开放合同实例不配对，仅随族退役。
+    pub provider_pairs: BTreeMap<ItemInstanceId, ItemInstanceId>,
 }
 
 struct PlannedBinding {
     contract_instances: BTreeSet<ItemInstanceId>,
-    provider_instance: ItemInstanceId,
-    provider_function: Option<MirFunction>,
+    pairs: BTreeMap<ItemInstanceId, ItemInstanceId>,
+    provider_functions: Vec<(ItemInstanceId, MirFunction)>,
 }
 
 /// 把 Resolver 提交的声明身份映射为 Compiler 冻结的 callable 实例。
@@ -107,63 +124,92 @@ pub fn resolve_host_provider_bindings(
     let mut resolved = Vec::new();
     for binding in bindings {
         // 精确匹配；未命中则忽略 source_path fallback（planner 按文件构造，HIR 按 group 合并）。
-        let (contract_declarations, contract_instances) = match instances.get(&binding.contract) {
-            Some(family) => (family.declarations.clone(), family.instances.clone()),
-            None => {
-                let mut declarations = BTreeSet::new();
-                let mut union = BTreeSet::new();
-                for (key, family) in &instances {
-                    if key.dependency_key == binding.contract.dependency_key
-                        && key.namespace == binding.contract.namespace
-                        && key.kind == binding.contract.kind
-                        && key.owner == binding.contract.owner
-                        && key.name == binding.contract.name
-                    {
-                        declarations.extend(family.declarations.iter().copied());
-                        union.extend(family.instances.iter().copied());
-                    }
-                }
-                (declarations, union)
-            }
-        };
-        if contract_instances.is_empty() {
+        let contract_family = family_by_binding_key(&instances, &binding.contract);
+        if contract_family.instances.is_empty() {
             continue;
         }
         // 绑定键必须落在单一已解析声明身份上：编码名下聚合多个声明身份时，
         // Resolver 的名字键无法区分重载，属真歧义，结构化拒绝；同一声明身份族内
         // 的多个实例（声明级实例 + 单态化铸造副本）合法，全部各自绑定。
-        if contract_declarations.len() > 1 {
+        if contract_family.declarations.len() > 1 {
             return Err(ParseError::Invalid {
                 message: format!("callable 声明 `{}` 对应多个声明身份或实例", binding.contract.encoded()),
                 span: None,
             });
         }
-        let provider_family = instances.get(&binding.provider).or_else(|| {
-            instances
-                .iter()
-                .find(|(key, _)| {
-                    key.dependency_key == binding.provider.dependency_key
-                        && key.namespace == binding.provider.namespace
-                        && key.kind == binding.provider.kind
-                        && key.owner == binding.provider.owner
-                        && key.name == binding.provider.name
-                })
-                .map(|(_, family)| family)
-        });
-        let Some(provider_family) = provider_family
-        else {
+        let provider_family = family_by_binding_key(&instances, &binding.provider);
+        if provider_family.instances.is_empty() {
             continue;
-        };
-        if provider_family.instances.len() != 1 {
-            return Err(ParseError::Invalid {
-                message: format!("host provider 声明 `{}` 对应 {} 个实例", binding.provider.encoded(), provider_family.instances.len()),
-                span: None,
-            });
         }
-        let provider_instance = *provider_family.instances.iter().next().expect("single provider instance");
-        resolved.push(ResolvedHostProviderBinding { contract_instances, provider_instance });
+        // provider 配对按具体签名逐项进行：泛型 provider 的声明级实例签名开放，
+        // 只有与闭合合同副本逐项同签名的单态化闭合副本能承接调用；闭合合同实例
+        // 找不到同签名 provider 实例即结构化失败，禁止把调用重映射回开放声明级
+        // 实例（其体内宿主导入从未闭合）。开放合同实例不配对，只随族退役。
+        let mut provider_pairs = BTreeMap::new();
+        for contract_instance in &contract_family.instances {
+            let Some(signature) = contract_family.signatures.get(contract_instance) else {
+                continue;
+            };
+            if host_signature_is_open(signature) {
+                continue;
+            }
+            let mut matched: Option<ItemInstanceId> = None;
+            for provider_instance in &provider_family.instances {
+                let Some(provider_signature) = provider_family.signatures.get(provider_instance) else {
+                    continue;
+                };
+                if provider_signature != signature {
+                    continue;
+                }
+                if matched.is_some() {
+                    return Err(ParseError::Invalid {
+                        message: format!("host provider 声明 `{}` 存在多个与合同实例 `{contract_instance}` 同签名的实例", binding.provider.encoded()),
+                        span: None,
+                    });
+                }
+                matched = Some(*provider_instance);
+            }
+            let Some(provider_instance) = matched else {
+                return Err(ParseError::Invalid {
+                    message: format!(
+                        "host provider 声明 `{}` 没有与闭合合同实例 `{contract_instance}` 同签名的 provider 实例（provider 声明为泛型时，其具体代入由合同调用点在单态化播种中铸造）",
+                        binding.provider.encoded()
+                    ),
+                    span: None,
+                });
+            };
+            provider_pairs.insert(*contract_instance, provider_instance);
+        }
+        resolved.push(ResolvedHostProviderBinding { contract_instances: contract_family.instances, provider_pairs });
     }
     Ok(resolved)
+}
+
+/// 按绑定声明键取出实例族：精确命中优先；未命中则忽略 `source_path` 聚合全部
+/// 同身份键（planner 按文件构造、HIR 按 group 合并时同一声明身份可落在多个键上）。
+fn family_by_binding_key(instances: &BTreeMap<DeclarationKey, CallableFamily>, key: &DeclarationKey) -> CallableFamily {
+    if let Some(family) = instances.get(key) {
+        return family.clone();
+    }
+    let mut union = CallableFamily::default();
+    for (candidate, family) in instances {
+        if candidate.dependency_key == key.dependency_key
+            && candidate.namespace == key.namespace
+            && candidate.kind == key.kind
+            && candidate.owner == key.owner
+            && candidate.name == key.name
+        {
+            union.declarations.extend(family.declarations.iter().copied());
+            union.instances.extend(family.instances.iter().copied());
+            union.signatures.extend(family.signatures.iter().map(|(instance, signature)| (*instance, signature.clone())));
+        }
+    }
+    union
+}
+
+/// 实例签名是否仍含未代入的泛型 binder（开放签名不得承接闭合调用，也不参与配对）。
+fn host_signature_is_open(signature: &(Vec<ValkyrieType>, ValkyrieType)) -> bool {
+    signature.0.iter().chain(std::iter::once(&signature.1)).any(has_unresolved_generic_arguments)
 }
 
 /// HIR 已注册 callable 身份 → inventory 声明身份的映射（声明身份 → 实例族）。
@@ -185,15 +231,20 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
                 &mut collected,
                 declaration_key(module, DeclarationKind::Micro, &namespace_parts(&function.declaring_namespace), None, function.name.as_str()),
                 function,
+                None,
             );
         }
         for structure in &module.structs {
             let namespace: Vec<String> = structure.namespace.iter().map(|part| part.as_str().to_string()).collect();
+            let owner = structure
+                .constructor_declaration
+                .map(|declaration| ValkyrieType::Nominal { declaration, arguments: Vec::new() });
             for method in &structure.methods {
                 collect_callable_instance(
                     &mut collected,
                     declaration_key(module, DeclarationKind::Method, &namespace, Some(structure.name.as_str()), method.name.as_str()),
                     method,
+                    owner.as_ref(),
                 );
             }
         }
@@ -204,6 +255,7 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
                     &mut collected,
                     declaration_key(module, DeclarationKind::Method, &namespace, Some(trait_decl.name.as_str()), method.name.as_str()),
                     method,
+                    None,
                 );
             }
         }
@@ -218,6 +270,7 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
                     &mut collected,
                     declaration_key(module, DeclarationKind::ImplyMethod, &namespace, Some(owner), method.name.as_str()),
                     method,
+                    Some(&implementation.target),
                 );
             }
         }
@@ -235,6 +288,7 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
                         name: function.name.as_str().to_string(),
                     },
                     function,
+                    None,
                 );
             }
         }
@@ -268,6 +322,7 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
             };
             if let Some(family) = instances.get_mut(key) {
                 family.instances.insert(instance);
+                family.signatures.insert(instance, host_callable_signature(&callable.function, callable.owner_type.as_ref()));
             }
         }
     }
@@ -277,14 +332,21 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
 /// 声明身份 → 实例族条目：按声明 `ItemId` 分桶记录声明侧实例（同一声明出现多个
 /// 声明级实例即身份腐坏），并汇总整个键的声明身份集合与实例族（声明级实例加上
 /// 单态化铸造副本，后续按 `ItemId` 汇入）。
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct CallableFamily {
     by_declaration: BTreeMap<Option<ItemId>, BTreeSet<ItemInstanceId>>,
     declarations: BTreeSet<ItemId>,
     instances: BTreeSet<ItemInstanceId>,
+    /// 实例冻结签名（形参表 + 返回类型），provider 按具体签名配对合同实例。
+    signatures: BTreeMap<ItemInstanceId, (Vec<ValkyrieType>, ValkyrieType)>,
 }
 
-fn collect_callable_instance(collected: &mut BTreeMap<DeclarationKey, CallableFamily>, key: DeclarationKey, function: &HirFunction) {
+fn collect_callable_instance(
+    collected: &mut BTreeMap<DeclarationKey, CallableFamily>,
+    key: DeclarationKey,
+    function: &HirFunction,
+    owner: Option<&ValkyrieType>,
+) {
     let family = collected.entry(key).or_default();
     if let Some(declaration) = function.declaration {
         family.declarations.insert(declaration);
@@ -292,7 +354,26 @@ fn collect_callable_instance(collected: &mut BTreeMap<DeclarationKey, CallableFa
     if let Some(instance) = function.instance {
         family.instances.insert(instance);
         family.by_declaration.entry(function.declaration).or_default().insert(instance);
+        family.signatures.insert(instance, host_callable_signature(function, owner));
     }
+}
+
+/// 实例冻结签名（形参表 + 返回类型）。
+///
+/// 声明槽位的 `AutoType`/`SelfType` `self` 按 owner 类型归一化，与单态化侧
+/// `declared_param_type` 同一事实源；否则 imply 成员合同（`length(self)`）与
+/// provider 显式形参（`host_length(value: Utf8Text)`）永远配不上。
+fn host_callable_signature(function: &HirFunction, owner: Option<&ValkyrieType>) -> (Vec<ValkyrieType>, ValkyrieType) {
+    let params = function
+        .params
+        .iter()
+        .enumerate()
+        .map(|(index, parameter)| match (&parameter.ty, index, owner) {
+            (ValkyrieType::AutoType | ValkyrieType::r#SelfType, 0, Some(owner)) => owner.clone(),
+            (ty, _, _) => ty.clone(),
+        })
+        .collect();
+    (params, function.return_type.clone())
 }
 
 fn declaration_key(module: &HirModule, kind: DeclarationKind, namespace: &[String], owner: Option<&str>, name: &str) -> DeclarationKey {
@@ -406,10 +487,10 @@ fn enforce_resolved_host_contract_bindings(module: &MirModule) -> Result<(), Par
     Ok(())
 }
 
-/// 按 Resolver 绑定把合同调用重映射到 provider，并安装 provider 定义/导入。
+/// 按 Resolver 绑定把合同调用逐对重映射到 provider，并安装 provider 定义/导入。
 ///
-/// 合同身份覆盖整个实例族：族内每个实例的调用都重定向到 provider，族内全部
-/// 合同体（声明体与实例化副本）一并退役，不得留下进入后端的孤儿。
+/// 合同身份覆盖整个实例族：闭合实例按签名配对重定向到 provider 闭合副本，
+/// 族内全部合同体与导入（声明体与实例化副本）一并退役，不得留下进入后端的孤儿。
 /// 返回实际生效的合同→provider 改写表。
 fn remap_bound_host_contracts(
     module: &mut MirModule,
@@ -423,33 +504,36 @@ fn remap_bound_host_contracts(
         if !binding.contract_instances.iter().any(|instance| callable_present(&modules, *instance)) {
             continue;
         }
-        if !callable_present(&modules, binding.provider_instance) {
-            return Err(ParseError::Invalid {
-                message: format!("host provider `{}` 未在源码闭包中定义", binding.provider_instance),
-                span: None,
-            });
+        let mut provider_functions = Vec::new();
+        for provider_instance in binding.provider_pairs.values() {
+            if !callable_present(&modules, *provider_instance) {
+                return Err(ParseError::Invalid {
+                    message: format!("host provider `{}` 未在源码闭包中定义", provider_instance),
+                    span: None,
+                });
+            }
+            if let Some(function) =
+                modules.iter().flat_map(|dependency| dependency.functions.iter()).find(|function| function.instance == Some(*provider_instance)).cloned()
+            {
+                provider_functions.push((*provider_instance, function));
+            }
         }
-        let provider_function = modules
-            .iter()
-            .flat_map(|dependency| dependency.functions.iter())
-            .find(|function| function.instance == Some(binding.provider_instance))
-            .cloned();
         plans.push(PlannedBinding {
             contract_instances: binding.contract_instances.clone(),
-            provider_instance: binding.provider_instance,
-            provider_function,
+            pairs: binding.provider_pairs.clone(),
+            provider_functions,
         });
     }
 
     // 先完成全部合同的身份映射校验，再安装 provider 定义；冲突绑定不得留下部分副作用。
     let mut remaps = BTreeMap::<ItemInstanceId, ItemInstanceId>::new();
     for plan in &plans {
-        for contract_instance in &plan.contract_instances {
-            if *contract_instance == plan.provider_instance {
+        for (contract_instance, provider_instance) in &plan.pairs {
+            if contract_instance == provider_instance {
                 continue;
             }
-            if let Some(previous) = remaps.insert(*contract_instance, plan.provider_instance)
-                && previous != plan.provider_instance
+            if let Some(previous) = remaps.insert(*contract_instance, *provider_instance)
+                && previous != *provider_instance
             {
                 return Err(ParseError::Invalid { message: "host contract 不能同时绑定到多个 provider".into(), span: None });
             }
@@ -459,7 +543,7 @@ fn remap_bound_host_contracts(
     // provider 的外部导入合同：无体 provider 由目标指令实现，其链接事实在依赖模块的
     // external_calls 里。重映射会移除原合同导入，必须把 provider 自己的导入合同
     // 一并迁入消费模块，否则调用既无定义也无导入。
-    let selected_provider_instances = plans.iter().map(|plan| plan.provider_instance).collect::<BTreeSet<_>>();
+    let selected_provider_instances = plans.iter().flat_map(|plan| plan.pairs.values().copied()).collect::<BTreeSet<_>>();
     let provider_imports = modules
         .iter()
         .flat_map(|dependency| dependency.external_calls.iter())
@@ -468,12 +552,18 @@ fn remap_bound_host_contracts(
         .map(|contract| (contract.instance.expect("provider import instance"), contract.clone()))
         .collect::<BTreeMap<ItemInstanceId, MirExternalCallContract>>();
 
-    for plan in plans {
-        if let Some(provider_function) = plan.provider_function {
-            install_provider_definition(module, plan.provider_instance, provider_function)?;
+    for plan in &plans {
+        let defined = plan.provider_functions.iter().map(|(instance, _)| *instance).collect::<BTreeSet<_>>();
+        for (provider_instance, provider_function) in &plan.provider_functions {
+            install_provider_definition(module, *provider_instance, provider_function.clone())?;
         }
-        else if let Some(contract) = provider_imports.get(&plan.provider_instance) {
-            install_provider_import(module, contract)?;
+        for provider_instance in plan.pairs.values() {
+            if defined.contains(provider_instance) {
+                continue;
+            }
+            if let Some(contract) = provider_imports.get(provider_instance) {
+                install_provider_import(module, contract)?;
+            }
         }
     }
 
@@ -485,14 +575,18 @@ fn remap_bound_host_contracts(
         remap_call_targets(function, &remaps);
     }
 
-    for contract_instance in remaps.keys() {
-        module.callable_symbols.remove(contract_instance);
-        module.external_calls.retain(|contract| contract.instance != Some(*contract_instance));
-        // 合同体退役（含实例化副本）：调用已全部重映射到 provider 后，合同实现不再
-        // 有任何调用身份；链接 BFS 在重映射之前已把合同体与铸造副本拉入 linked 模块，
-        // 若不在此移除，它们将作为孤儿定义留在模块中并进入后端校验（其聚合字段指令
-        // 与 provider 表示不一致即被拒绝）。
-        module.functions.retain(|function| function.instance != Some(*contract_instance));
+    // 退役整个绑定合同族（不只配对成功的实例）：开放声明级合同若被 BFS 拉入，
+    // 残留导入或定义同样会成为后端孤儿。
+    for plan in &plans {
+        for contract_instance in &plan.contract_instances {
+            module.callable_symbols.remove(contract_instance);
+            module.external_calls.retain(|contract| contract.instance != Some(*contract_instance));
+            // 合同体退役（含实例化副本）：调用已全部重映射到 provider 后，合同实现不再
+            // 有任何调用身份；链接 BFS 在重映射之前已把合同体与铸造副本拉入 linked 模块，
+            // 若不在此移除，它们将作为孤儿定义留在模块中并进入后端校验（其聚合字段指令
+            // 与 provider 表示不一致即被拒绝）。
+            module.functions.retain(|function| function.instance != Some(*contract_instance));
+        }
     }
 
     Ok(remaps)
@@ -558,6 +652,37 @@ pub(super) fn remap_call_targets(function: &mut MirFunction, remaps: &BTreeMap<I
             }
         }
     }
+}
+
+/// 为单态化固定点播种泛型 `[host_provider]` 的具体代入请求。
+///
+/// 返回「合同声明下标 → provider 声明下标」映射：合同调用点的具体代入同时
+/// 决定 provider 实例签名，`instantiate_generic_callables` 据此在铸造合同
+/// 闭合副本的同一固定点铸造 provider 的闭合副本；provider 体内的宿主导入
+/// 调用随之闭合，合同与实现共用同一条实例化路径。只覆盖两侧均为单一声明
+/// 身份的绑定，歧义留给 [`resolve_host_provider_bindings`] 结构化拒绝；
+/// 非泛型 provider 无需播种（声明级实例本身闭合，配对直接命中）。
+pub(crate) fn host_provider_instantiation_seeds(
+    hirs: &[HirModule],
+    bindings: &[CompilerHostProviderBinding],
+) -> Result<BTreeMap<u32, u32>, ParseError> {
+    if bindings.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let hirs = hirs.iter().collect::<Vec<_>>();
+    let instances = host_callable_instances(&hirs)?;
+    let mut seeds = BTreeMap::new();
+    for binding in bindings {
+        let contract_family = family_by_binding_key(&instances, &binding.contract);
+        let provider_family = family_by_binding_key(&instances, &binding.provider);
+        if contract_family.declarations.len() != 1 || provider_family.declarations.len() != 1 {
+            continue;
+        }
+        let contract_declaration = *contract_family.declarations.iter().next().expect("single contract declaration");
+        let provider_declaration = *provider_family.declarations.iter().next().expect("single provider declaration");
+        seeds.insert(contract_declaration.index(), provider_declaration.index());
+    }
+    Ok(seeds)
 }
 
 /// 物化可达性门的 host provider 根：Resolver 选定 `[host_provider]` 绑定的
