@@ -25,6 +25,7 @@ mod legion_production_lane_contract;
 mod legion_test_ovm_builtin_e2e;
 mod legion_test_target_resolution;
 mod legion_valkyrie_v_leetcode_plan;
+mod legion_valkyrie_v_std_closure;
 mod legion_vcc_data_consumer_inventory;
 mod package_module_boundary;
 mod support;
