@@ -8,12 +8,15 @@
 //!   此时字段读取属于计划不一致，结构化失败而不是静默 coerce。
 //!
 //! 两个方向都禁止按类型名特判；判定只依据 layout 身份与注册表。
+//!
+//! 另含 arraytype 注册对称性锁定（`register_gc_array_types` ↔ `resolve_gc_array_type_index`），
+//! 用于复核账本记录的 `ArrayNew missing gc arraytype` 生产缺口在元素类型冻结后的现状。
 
 use acorn_wasm::WasmBinaryModule;
 use nyar::{Identifier, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
-    contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
+    contracts::{ArrayInitialization, Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     testing::lower_fragment_to_wasm_mir_module,
 };
 use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, LayoutId, NyarType, StorageKind};
@@ -107,4 +110,49 @@ fn wasm_host_string_without_layout_binding_stays_i32_and_field_get_fails_structu
     let error = lower(utf8_receiver_field_get_main(field, false), field)
         .expect_err("未绑定 layout 的宿主字符串句柄不得被静默当作 gc struct 对象");
     assert!(error.contains("已注册 gc struct，但对象槽不是引用"), "错误必须指明表示冲突: {error}");
+}
+
+/// arraytype 注册对称性锁定：`ArrayNew` 的元素类型由指令自身进入 `register_gc_array_types`，
+/// 消费侧 `resolve_gc_array_type_index` 用同一 `wasm_array_element_type_key` 反查，
+/// 冻结具体元素类型的计划不可能 miss。账本记录的 `ArrayNew missing gc arraytype`
+/// 属 `7f40a234` 规范化 `builtin.array.new` 之前的观测（当时元素是未实例化泛型）。
+#[test]
+fn wasm_array_new_element_type_self_registers_and_lowers() {
+    let array_ty = NyarType::Array(Box::new(NyarType::Integer64 { signed: true }));
+    let new_arr = Instruction::from_kind(InstructionKind::ArrayNew {
+        array_type: array_ty.clone(),
+        length: Operand::Constant(Constant::Int(3)),
+        initialization: ArrayInitialization::Default,
+    });
+    let block = Block {
+        id: BlockRef(0),
+        label: "entry".to_string(),
+        parameters: Vec::new(),
+        instructions: vec![Instruction { results: vec![ValueRef(0)], ..new_arr }],
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
+    };
+    let function = ExecutableFunction {
+        symbol: "main".to_string(),
+        return_type: array_ty,
+        param_types: Vec::new(),
+        value_types: BTreeMap::from([(ValueRef(0), NyarType::Array(Box::new(NyarType::Integer64 { signed: true })))]),
+        value_layouts: BTreeMap::new(),
+        return_layout: None,
+        entry: BlockRef(0),
+        values: Vec::new(),
+        suspend_points: Vec::new(),
+        frame_layouts: Vec::new(),
+        continuations: Vec::new(),
+        case_chains: Vec::new(),
+        #[allow(deprecated)]
+        state_machine: None,
+        suspend_plan: None,
+        blocks: vec![block],
+        diagnostics: Vec::new(),
+    };
+    let main_name = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
+    plan.testing_module_name("array_type_registration").testing_entry_operation(main_name);
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    lower_fragment_to_wasm_mir_module(&submission, "main").expect("ArrayNew 元素类型必须由注册侧自行登记并命中 arraytype");
 }
