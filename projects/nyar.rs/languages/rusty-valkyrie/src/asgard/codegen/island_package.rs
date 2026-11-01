@@ -41,6 +41,14 @@ impl Default for IslandPackageOptions {
     }
 }
 
+/// 计算已落盘 chunk 的 `sha256:<hex>` 摘要；文件缺失时返回 `None`（不伪造哈希）。
+fn hash_wasm_chunk(output_dir: &Path, wasm_stem: &str) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let bytes = fs::read(output_dir.join(format!("{wasm_stem}.wasm"))).ok()?;
+    let digest = Sha256::digest(&bytes);
+    Some(format!("sha256:{}", digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>()))
+}
+
 /// Report from [`package_browser_islands`].
 #[derive(Debug, Clone)]
 pub struct IslandPackageReport {
@@ -83,8 +91,18 @@ pub fn package_browser_islands(
     }
 
     let url_mode = if opts.relative_urls { ManifestUrlMode::Relative } else { ManifestUrlMode::Absolute };
-    let manifest =
-        generate_manifest_with_urls(&opts.module_stem, &opts.mode, components, &js_outputs, &opts.wasm_stem, opts.wasm_built, url_mode);
+    // chunk 摘要取自真实落盘字节；没有产物字节时不写半成品哈希。
+    let wasm_content_hash = if opts.wasm_built { hash_wasm_chunk(output_dir, &opts.wasm_stem) } else { None };
+    let manifest = generate_manifest_with_urls(
+        &opts.module_stem,
+        &opts.mode,
+        components,
+        &js_outputs,
+        &opts.wasm_stem,
+        opts.wasm_built,
+        url_mode,
+        wasm_content_hash.as_deref(),
+    );
     fs::write(output_dir.join(&manifest.relative_path), &manifest.content)?;
 
     let boot_js = generate_boot_script(&opts.wasm_stem, manifest_url_for_mode(opts.relative_urls));

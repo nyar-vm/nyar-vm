@@ -124,6 +124,13 @@ fn manifest_references_resolve_to_emitted_artifacts() {
         assert!(dist.join(reference).is_file(), "manifest wasm.{key}={reference:?} 未解析到产物文件");
     }
 
+    // hash：条目声明的摘要必须是真实 chunk 字节的 sha256，不是占位符。
+    let declared_hash = wasm_entry.get("hash").and_then(serde_json::Value::as_str).expect("wasm 条目应声明 hash");
+    let wasm_bytes = std::fs::read(dist.join(wasm_entry.get("url").and_then(serde_json::Value::as_str).unwrap())).expect("读取 wasm");
+    let expected_hash =
+        format!("sha256:{}", <sha2::Sha256 as sha2::Digest>::digest(&wasm_bytes).iter().map(|b| format!("{b:02x}")).collect::<String>());
+    assert_eq!(declared_hash, expected_hash, "manifest hash 必须与落盘 chunk 字节对应");
+
     for css in manifest.get("css").and_then(serde_json::Value::as_array).expect("manifest 应声明 css") {
         let reference = css.as_str().expect("css 条目应为字符串");
         assert!(dist.join(reference).is_file(), "manifest css={reference:?} 未解析到产物文件");

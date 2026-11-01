@@ -34,6 +34,7 @@ pub fn generate_manifest_with_urls(
     wasm_name: &str,
     wasm_built: bool,
     url_mode: ManifestUrlMode,
+    wasm_content_hash: Option<&str>,
 ) -> ManifestOutput {
     let module = module_stem.to_string();
     let css = vec![url_path(&format!("{}.css", module.replace('.', "-")), url_mode)];
@@ -43,6 +44,7 @@ pub fn generate_manifest_with_urls(
             name: module.clone(),
             url: url_path(&format!("{wasm_name}.wasm"), url_mode),
             glue: url_path(&format!("{wasm_name}.mjs"), url_mode),
+            hash: wasm_content_hash.map(str::to_string),
         }]
     }
     else {
@@ -105,6 +107,9 @@ struct WasmEntry {
     name: String,
     url: String,
     glue: String,
+    /// 产物字节摘要（`sha256:<hex>`）；仅当调用方持有已落盘 chunk 时写入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hash: Option<String>,
 }
 
 #[derive(Serialize)]
