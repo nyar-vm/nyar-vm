@@ -78,7 +78,7 @@ fn get(address: std::net::SocketAddr, path: &str) -> HttpReply {
         }
     }
     let mut body = Vec::new();
-    reader.read_to_end(&mut body).expect("读取响应体失败");
+    reader.read_to_end(&mut body).unwrap_or_else(|error| panic!("读取响应体失败 kind={:?}: {error}", error.kind()));
     HttpReply { status, headers, body }
 }
 
@@ -117,7 +117,12 @@ fn read_manifest(dist: &Path) -> (String, String, Vec<String>, Vec<String>, serd
     let glue_url = manifest["wasm"][0]["glue"].as_str().expect("manifest 必须声明 glue URL").to_string();
     let components = manifest["components"].as_array().expect("components 必须是数组");
     let component_js = components.iter().map(|entry| entry["js"].as_str().expect("组件条目必须有 js").to_string()).collect();
-    let css = manifest["css"].as_array().expect("css 必须是数组").iter().map(|entry| entry.as_str().expect("css 条目必须是文本").to_string()).collect();
+    let css = manifest["css"]
+        .as_array()
+        .expect("css 必须是数组")
+        .iter()
+        .map(|entry| entry.as_str().expect("css 条目必须是文本").to_string())
+        .collect();
     let integrity = manifest["integrity"].as_object().expect("integrity 必须是对象").clone();
     (wasm_url, glue_url, component_js, css, integrity)
 }
@@ -150,7 +155,11 @@ fn served_build_artifacts_match_manifest_mime_and_integrity() {
     let manifest: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(dist.join("manifest.json")).expect("读取 manifest 失败")).expect("manifest 必须是合法 JSON");
     let chunk_hash = manifest["wasm"][0]["hash"].as_str().expect("wasm 条目必须带 hash");
-    assert_eq!(chunk_hash, format!("sha256:{}", integrity[&wasm_url].as_str().expect("integrity 值必须是文本")), "chunk hash 必须出自 integrity 同一摘要");
+    assert_eq!(
+        chunk_hash,
+        format!("sha256:{}", integrity[&wasm_url].as_str().expect("integrity 值必须是文本")),
+        "chunk hash 必须出自 integrity 同一摘要"
+    );
 
     // 组件胶水、boot 加载器与样式逐一经真实请求验证。
     assert!(!component_js.is_empty(), "静态交付必须产出组件胶水");

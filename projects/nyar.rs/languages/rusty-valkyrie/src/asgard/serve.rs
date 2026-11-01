@@ -8,7 +8,7 @@
 //! 请求，去掉前缀后再映射到产物目录内文件；未设置时按根部署服务。
 
 use std::{
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     path::{Path, PathBuf},
     sync::Arc,
@@ -194,5 +194,20 @@ fn respond(stream: &mut TcpStream, status: u16, content_type: &str, body: &[u8],
     if !head_only {
         stream.write_all(body)?;
     }
-    stream.flush()
+    stream.flush()?;
+    // 有序关闭（`Connection: close`）：先 shutdown 写方向发出 FIN，再读空对端
+    // 直到其对端关闭。写完立即 closesocket 时，大响应体（真实 wasm chunk）在
+    // 慢客户端前会被 Windows 协议栈中止为 RST，客户端表现为偶发 ConnectionReset；
+    // 对端按 `Connection: close` 读完响应即关闭，读到 EOF 就是送达证据。
+    stream.shutdown(std::net::Shutdown::Write)?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(10)))?;
+    let mut discard = [0u8; 2048];
+    loop {
+        match stream.read(&mut discard) {
+            Ok(0) => break,
+            Ok(_) => continue,
+            Err(_) => break,
+        }
+    }
+    Ok(())
 }
