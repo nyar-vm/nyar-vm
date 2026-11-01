@@ -7,6 +7,8 @@
 #[doc(hidden)]
 pub mod recipe;
 
+pub(crate) mod emit;
+
 use crate::transitional::binary::class::JvmInstruction;
 
 /// 已冻结的 JVM operator 编码。
