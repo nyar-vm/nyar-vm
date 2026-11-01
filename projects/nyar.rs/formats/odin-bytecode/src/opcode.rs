@@ -78,6 +78,18 @@ pub enum OdinHeadCode {
     I32DivS = 0x33,
     /// 32 位有符号整数取余。
     I32RemS = 0x35,
+    /// 32 位整数按位与。
+    I32And = 0x36,
+    /// 32 位整数按位或。
+    I32Or = 0x37,
+    /// 32 位整数按位异或。
+    I32Xor = 0x38,
+    /// 32 位整数左移（移位量按 32 取模）。
+    I32Shl = 0x39,
+    /// 32 位整数算术右移（移位量按 32 取模）。
+    I32ShrS = 0x3A,
+    /// 32 位整数逻辑右移（移位量按 32 取模）。
+    I32ShrU = 0x3B,
     /// 32 位有符号整数相等比较。
     I32Eq = 0x40,
     /// 32 位有符号整数不等比较。
@@ -143,6 +155,12 @@ impl OdinHeadCode {
             0x32 => Some(Self::I32Mul),
             0x33 => Some(Self::I32DivS),
             0x35 => Some(Self::I32RemS),
+            0x36 => Some(Self::I32And),
+            0x37 => Some(Self::I32Or),
+            0x38 => Some(Self::I32Xor),
+            0x39 => Some(Self::I32Shl),
+            0x3A => Some(Self::I32ShrS),
+            0x3B => Some(Self::I32ShrU),
             0x40 => Some(Self::I32Eq),
             0x41 => Some(Self::I32Ne),
             0x42 => Some(Self::I32LtS),
@@ -255,6 +273,12 @@ impl OdinHeadCode {
             | Self::I32Mul
             | Self::I32DivS
             | Self::I32RemS
+            | Self::I32And
+            | Self::I32Or
+            | Self::I32Xor
+            | Self::I32Shl
+            | Self::I32ShrS
+            | Self::I32ShrU
             | Self::I32Eq
             | Self::I32Ne
             | Self::I32LtS

@@ -15,6 +15,34 @@ fn roundtrip_ret_i32_binops() {
 }
 
 #[test]
+fn roundtrip_ret_i32_bitwise_binops() {
+    for (binop, byte) in
+        [(I32Binop::And, 5u8), (I32Binop::Or, 6), (I32Binop::Xor, 7), (I32Binop::Shl, 8), (I32Binop::ShrS, 9), (I32Binop::ShrU, 10)]
+    {
+        assert_eq!(binop.to_u8(), byte, "{binop:?} 的编码槽位必须稳定");
+        assert_eq!(I32Binop::from_u8(byte), Some(binop));
+        assert!(binop.is_bitwise());
+        let blob = encode_ret_i32_binop_locals(binop, 0, 1);
+        assert_eq!(blob[4], 0x0F, "位运算必须走专用 opcode 0x0F 而不是算术槽位");
+        assert_eq!(decode_scalar_program(&blob).unwrap(), ScalarProgram::RetI32BinopLocals { binop, a: 0, b: 1 });
+    }
+    assert_eq!(I32Binop::from_u8(11), None, "编码槽位之后的值必须拒绝解码");
+    for binop in [I32Binop::Add, I32Binop::Sub, I32Binop::Mul, I32Binop::DivS, I32Binop::RemS] {
+        assert!(!binop.is_bitwise(), "{binop:?} 已有专用算术 opcode，不得冒充位运算载荷");
+    }
+}
+
+#[test]
+fn rejects_bitwise_locals_blob_with_arithmetic_binop_byte() {
+    // `RET_I32_BITWISE_LOCALS` 只接受位运算/移位载荷；算术 binop 字节 fail-closed。
+    let mut blob = encode_ret_i32_binop_locals(I32Binop::And, 0, 1);
+    blob[5] = I32Binop::Add.to_u8();
+    assert!(decode_scalar_program(&blob).is_err());
+    blob[5] = 0xFF;
+    assert!(decode_scalar_program(&blob).is_err());
+}
+
+#[test]
 fn roundtrip_ret_const_i32() {
     let blob = encode_ret_const_i32(-42);
     assert_eq!(decode_scalar_program(&blob).unwrap(), ScalarProgram::RetConstI32 { value: -42 });

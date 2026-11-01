@@ -38,6 +38,12 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
                     }
                     lhs.wrapping_rem(rhs)
                 }
+                I32Binop::And => lhs & rhs,
+                I32Binop::Or => lhs | rhs,
+                I32Binop::Xor => lhs ^ rhs,
+                I32Binop::Shl => lhs.wrapping_shl(rhs as u32),
+                I32Binop::ShrS => lhs.wrapping_shr(rhs as u32),
+                I32Binop::ShrU => ((lhs as u32).wrapping_shr(rhs as u32)) as i32,
             };
             Ok(Value::I32(result))
         }
@@ -61,6 +67,12 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
                     }
                     lhs.wrapping_rem(rhs)
                 }
+                I32Binop::And => lhs & rhs,
+                I32Binop::Or => lhs | rhs,
+                I32Binop::Xor => lhs ^ rhs,
+                I32Binop::Shl => lhs.wrapping_shl(rhs as u32),
+                I32Binop::ShrS => lhs.wrapping_shr(rhs as u32),
+                I32Binop::ShrU => ((lhs as u32).wrapping_shr(rhs as u32)) as i32,
             };
             Ok(Value::I32(result))
         }

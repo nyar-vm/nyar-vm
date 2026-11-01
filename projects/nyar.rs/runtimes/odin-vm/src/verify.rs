@@ -665,6 +665,12 @@ fn stack_transfer(
         | OdinHeadCode::I32Mul
         | OdinHeadCode::I32DivS
         | OdinHeadCode::I32RemS
+        | OdinHeadCode::I32And
+        | OdinHeadCode::I32Or
+        | OdinHeadCode::I32Xor
+        | OdinHeadCode::I32Shl
+        | OdinHeadCode::I32ShrS
+        | OdinHeadCode::I32ShrU
         | OdinHeadCode::I32Eq
         | OdinHeadCode::I32Ne
         | OdinHeadCode::I32LtS

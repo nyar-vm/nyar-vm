@@ -84,6 +84,58 @@ fn division_by_zero_traps_instead_of_returning_zero() {
 }
 
 #[test]
+fn runs_bitwise_ops_bytecode() {
+    for (bitwise_op, lhs, rhs, expected) in [
+        (OdinHeadCode::I32And, 0b1100, 0b1010, 0b1000),
+        (OdinHeadCode::I32Or, 0b1100, 0b1010, 0b1110),
+        (OdinHeadCode::I32Xor, 0b1100, 0b1010, 0b0110),
+        (OdinHeadCode::I32Shl, 1, 4, 16),
+        (OdinHeadCode::I32Shl, 1, 33, 2),
+        (OdinHeadCode::I32ShrS, -16, 2, -4),
+        (OdinHeadCode::I32ShrU, -16, 2, 0x3FFF_FFFC),
+    ] {
+        let code = vec![
+            OdinHeadCode::Constant as u8,
+            0,
+            0,
+            0,
+            0,
+            OdinHeadCode::Constant as u8,
+            1,
+            0,
+            0,
+            0,
+            bitwise_op as u8,
+            OdinHeadCode::Return as u8,
+        ];
+        let data = OdinModuleData {
+            version: Odin_VERSION,
+            name: "bitwise".to_string(),
+            constants: vec![OdinConstant::Integer32(lhs), OdinConstant::Integer32(rhs)],
+            functions: vec![OdinFunction {
+                name: "main".to_string(),
+                arity: 0,
+                local_count: 0,
+                code_offset: 0,
+                code_length: code.len() as i32,
+            }],
+            imports: Vec::new(),
+            exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
+            witness_entries: Vec::new(),
+            code_bytes: code,
+            globals: Vec::new(),
+            init_function_indices: Vec::new(),
+            layouts: Vec::new(),
+        };
+        let bytes = encode_module(&data);
+        let module = LoadedModule::from_bytes(&bytes).expect("load module");
+        let mut executor = Executor::new();
+        let result = executor.run(&module, 0, Vec::new()).expect("execute");
+        assert_eq!(result, Value::I32(expected), "{bitwise_op:?}({lhs}, {rhs}) 必须等于 {expected}");
+    }
+}
+
+#[test]
 fn select_local_roots_keeps_only_mapped_slots() {
     let locals = vec![Value::I32(1), Value::I32(2), Value::I32(3)];
     let entry = StackMapEntry { instruction_index: 0, local_root_slots: vec![0, 2], operand_root_depth: None };

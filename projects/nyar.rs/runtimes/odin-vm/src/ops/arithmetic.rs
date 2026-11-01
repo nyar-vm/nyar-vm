@@ -28,6 +28,25 @@ pub fn execute_arithmetic(instruction: OdinInstruction, frame: &mut Frame, stack
             };
             stack.push(Value::I32(result));
         }
+        OdinHeadCode::I32And
+        | OdinHeadCode::I32Or
+        | OdinHeadCode::I32Xor
+        | OdinHeadCode::I32Shl
+        | OdinHeadCode::I32ShrS
+        | OdinHeadCode::I32ShrU => {
+            let rhs = pop_i32(stack)?;
+            let lhs = pop_i32(stack)?;
+            let result = match instruction.code {
+                OdinHeadCode::I32And => lhs & rhs,
+                OdinHeadCode::I32Or => lhs | rhs,
+                OdinHeadCode::I32Xor => lhs ^ rhs,
+                OdinHeadCode::I32Shl => lhs.wrapping_shl(rhs as u32),
+                OdinHeadCode::I32ShrS => lhs.wrapping_shr(rhs as u32),
+                OdinHeadCode::I32ShrU => ((lhs as u32).wrapping_shr(rhs as u32)) as i32,
+                _ => unreachable!(),
+            };
+            stack.push(Value::I32(result));
+        }
         OdinHeadCode::I32Eq
         | OdinHeadCode::I32Ne
         | OdinHeadCode::I32LtS

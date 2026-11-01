@@ -245,6 +245,54 @@ fn rejects_i32_binop_on_object_ref() {
 }
 
 #[test]
+fn accepts_bitwise_binop_on_i32() {
+    for bitwise_op in
+        [OdinHeadCode::I32And, OdinHeadCode::I32Or, OdinHeadCode::I32Xor, OdinHeadCode::I32Shl, OdinHeadCode::I32ShrS, OdinHeadCode::I32ShrU]
+    {
+        let mut module = empty_module();
+        module.constants.push(OdinConstant::Integer32(6));
+        module.constants.push(OdinConstant::Integer32(3));
+        let mut code = Vec::new();
+        emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+        emit_imm1(&mut code, OdinHeadCode::Constant, 1);
+        emit_plain(&mut code, bitwise_op);
+        emit_plain(&mut code, OdinHeadCode::Return);
+        module.functions.push(OdinFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
+        module.code_bytes = code;
+        verify_module(&module).unwrap_or_else(|error| panic!("{bitwise_op:?} 两 i32 必须过校验，实际 {error:?}"));
+    }
+}
+
+#[test]
+fn rejects_bitwise_binop_on_object_ref() {
+    let mut module = empty_module();
+    module.constants.push(OdinConstant::Integer32(1));
+    module.layouts.push(OdinLayout { field_count: 0 });
+    let mut code = Vec::new();
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+    emit_imm1(&mut code, OdinHeadCode::ObjectNew, 0);
+    emit_plain(&mut code, OdinHeadCode::I32ShrU);
+    emit_plain(&mut code, OdinHeadCode::Return);
+    module.functions.push(OdinFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
+    module.code_bytes = code;
+    let err = verify_module(&module).expect_err("type mismatch");
+    assert!(matches!(err, OdinRuntimeError::ModuleLoad(message) if message.contains("stack type mismatch")));
+}
+
+#[test]
+fn rejects_bitwise_binop_stack_underflow() {
+    let mut module = empty_module();
+    module.constants.push(OdinConstant::Integer32(1));
+    let mut code = Vec::new();
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+    emit_plain(&mut code, OdinHeadCode::I32And);
+    emit_plain(&mut code, OdinHeadCode::Return);
+    module.functions.push(OdinFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
+    module.code_bytes = code;
+    assert!(verify_module(&module).is_err(), "单操作数位运算必须在加载期拒绝");
+}
+
+#[test]
 fn rejects_operand_stack_deeper_than_limit() {
     let mut module = empty_module();
     module.constants.push(OdinConstant::Integer32(0));

@@ -37,6 +37,8 @@ pub mod op {
     pub const RET_I32_SELECT_CMP_MIXED: u8 = 0x0D;
     /// `return` 无值（void 叶）。
     pub const RET_VOID: u8 = 0x0E;
+    /// `return (i32)locals[a] bitwise_binop (i32)locals[b]`（binop 字节仅接受位运算/移位变体）。
+    pub const RET_I32_BITWISE_LOCALS: u8 = 0x0F;
 }
 
 /// 混合 select：真分支为立即数（假分支为 local）。
@@ -71,6 +73,18 @@ pub enum I32Binop {
     DivS,
     /// 有符号取余。
     RemS,
+    /// 按位与。
+    And,
+    /// 按位或。
+    Or,
+    /// 按位异或。
+    Xor,
+    /// 左移（移位量按 32 取模）。
+    Shl,
+    /// 算术右移（移位量按 32 取模）。
+    ShrS,
+    /// 逻辑右移（移位量按 32 取模）。
+    ShrU,
 }
 
 impl I32Binop {
@@ -82,6 +96,12 @@ impl I32Binop {
             Self::Mul => 2,
             Self::DivS => 3,
             Self::RemS => 4,
+            Self::And => 5,
+            Self::Or => 6,
+            Self::Xor => 7,
+            Self::Shl => 8,
+            Self::ShrS => 9,
+            Self::ShrU => 10,
         }
     }
 
@@ -93,8 +113,19 @@ impl I32Binop {
             2 => Some(Self::Mul),
             3 => Some(Self::DivS),
             4 => Some(Self::RemS),
+            5 => Some(Self::And),
+            6 => Some(Self::Or),
+            7 => Some(Self::Xor),
+            8 => Some(Self::Shl),
+            9 => Some(Self::ShrS),
+            10 => Some(Self::ShrU),
             _ => None,
         }
+    }
+
+    /// 是否为位运算/移位变体（`RET_I32_BITWISE_LOCALS` 的唯一合法载荷）。
+    pub fn is_bitwise(self) -> bool {
+        matches!(self, Self::And | Self::Or | Self::Xor | Self::Shl | Self::ShrS | Self::ShrU)
     }
 }
 
@@ -185,16 +216,19 @@ pub fn encode_ret_local(slot: u16) -> Vec<u8> {
 
 /// 将两 local 的 i32 二元运算编码为 blob。
 pub fn encode_ret_i32_binop_locals(binop: I32Binop, a: u16, b: u16) -> Vec<u8> {
-    let opcode = match binop {
-        I32Binop::Add => op::RET_I32_ADD_LOCALS,
-        I32Binop::Sub => op::RET_I32_SUB_LOCALS,
-        I32Binop::Mul => op::RET_I32_MUL_LOCALS,
-        I32Binop::DivS => op::RET_I32_DIV_LOCALS,
-        I32Binop::RemS => op::RET_I32_REM_LOCALS,
-    };
-    let mut out = Vec::with_capacity(9);
+    let mut out = Vec::with_capacity(10);
     out.extend_from_slice(MACHINE_CODE_MAGIC);
-    out.push(opcode);
+    match binop {
+        I32Binop::Add => out.push(op::RET_I32_ADD_LOCALS),
+        I32Binop::Sub => out.push(op::RET_I32_SUB_LOCALS),
+        I32Binop::Mul => out.push(op::RET_I32_MUL_LOCALS),
+        I32Binop::DivS => out.push(op::RET_I32_DIV_LOCALS),
+        I32Binop::RemS => out.push(op::RET_I32_REM_LOCALS),
+        bitwise @ (I32Binop::And | I32Binop::Or | I32Binop::Xor | I32Binop::Shl | I32Binop::ShrS | I32Binop::ShrU) => {
+            out.push(op::RET_I32_BITWISE_LOCALS);
+            out.push(bitwise.to_u8());
+        }
+    }
     out.extend_from_slice(&a.to_le_bytes());
     out.extend_from_slice(&b.to_le_bytes());
     out
@@ -453,6 +487,18 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
             };
             let a = u16::from_le_bytes([blob[5], blob[6]]);
             let b = u16::from_le_bytes([blob[7], blob[8]]);
+            Ok(ScalarProgram::RetI32BinopLocals { binop, a, b })
+        }
+        op::RET_I32_BITWISE_LOCALS => {
+            if blob.len() != 10 {
+                return Err(MachineCodeError::InvalidBlob);
+            }
+            let binop = I32Binop::from_u8(blob[5]).ok_or(MachineCodeError::InvalidBlob)?;
+            if !binop.is_bitwise() {
+                return Err(MachineCodeError::InvalidBlob);
+            }
+            let a = u16::from_le_bytes([blob[6], blob[7]]);
+            let b = u16::from_le_bytes([blob[8], blob[9]]);
             Ok(ScalarProgram::RetI32BinopLocals { binop, a, b })
         }
         op::RET_CONST_I32 => {

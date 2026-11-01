@@ -100,6 +100,47 @@ fn unsigned_comparison_opcodes_round_trip() {
 }
 
 #[test]
+fn bitwise_opcodes_round_trip() {
+    for (byte, code) in [
+        (0x36u8, OdinHeadCode::I32And),
+        (0x37u8, OdinHeadCode::I32Or),
+        (0x38u8, OdinHeadCode::I32Xor),
+        (0x39u8, OdinHeadCode::I32Shl),
+        (0x3Au8, OdinHeadCode::I32ShrS),
+        (0x3Bu8, OdinHeadCode::I32ShrU),
+    ] {
+        assert_eq!(OdinHeadCode::from_u8(byte), Some(code), "槽位 0x{byte:02X} 必须解析为 {code:?}");
+        assert_eq!(code as u8, byte);
+        assert_eq!(code.form(), OdinInstructionForm::Plain);
+        assert_eq!(code.code_size(), 1);
+    }
+
+    let mut stream = Vec::new();
+    for code in
+        [OdinHeadCode::I32And, OdinHeadCode::I32Or, OdinHeadCode::I32Xor, OdinHeadCode::I32Shl, OdinHeadCode::I32ShrS, OdinHeadCode::I32ShrU]
+    {
+        emit_plain(&mut stream, code);
+    }
+    for (index, code) in
+        [OdinHeadCode::I32And, OdinHeadCode::I32Or, OdinHeadCode::I32Xor, OdinHeadCode::I32Shl, OdinHeadCode::I32ShrS, OdinHeadCode::I32ShrU]
+            .iter()
+            .enumerate()
+    {
+        let decoded = decode_at(&stream, index);
+        assert_eq!(decoded.code, *code);
+        assert!(decoded.is_valid(), "{code:?} 必须是可解码的 Plain 指令");
+    }
+}
+
+#[test]
+fn bitwise_opcode_gaps_stay_unallocated() {
+    // `0x34` 留给未来 DivU/RemU，`0x3C..0x3F` 未分配；一律 fail-closed。
+    for byte in [0x34u8, 0x3C, 0x3D, 0x3E, 0x3F] {
+        assert_eq!(OdinHeadCode::from_u8(byte), None, "未分配槽位 0x{byte:02X} 必须拒绝解码");
+    }
+}
+
+#[test]
 fn signed_comparison_slots_stay_signed_and_unallocated_gaps_rejected() {
     // 偶数槽位属于有符号变体，奇数槽位属于无符号变体；`0x49` 之后不得静默分配。
     assert_eq!(OdinHeadCode::from_u8(0x42), Some(OdinHeadCode::I32LtS));

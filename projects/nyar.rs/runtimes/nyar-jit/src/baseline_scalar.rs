@@ -241,6 +241,12 @@ fn eval_i32_binop(binop: I32Binop, lhs: i32, rhs: i32) -> Option<i32> {
         I32Binop::Mul => Some(lhs.wrapping_mul(rhs)),
         I32Binop::DivS => (rhs != 0).then(|| lhs.wrapping_div(rhs)),
         I32Binop::RemS => (rhs != 0).then(|| lhs.wrapping_rem(rhs)),
+        I32Binop::And => Some(lhs & rhs),
+        I32Binop::Or => Some(lhs | rhs),
+        I32Binop::Xor => Some(lhs ^ rhs),
+        I32Binop::Shl => Some(lhs.wrapping_shl(rhs as u32)),
+        I32Binop::ShrS => Some(lhs.wrapping_shr(rhs as u32)),
+        I32Binop::ShrU => Some(((lhs as u32).wrapping_shr(rhs as u32)) as i32),
     }
 }
 
@@ -613,6 +619,12 @@ fn head_to_binop(code: OdinHeadCode) -> Option<I32Binop> {
         OdinHeadCode::I32Mul => Some(I32Binop::Mul),
         OdinHeadCode::I32DivS => Some(I32Binop::DivS),
         OdinHeadCode::I32RemS => Some(I32Binop::RemS),
+        OdinHeadCode::I32And => Some(I32Binop::And),
+        OdinHeadCode::I32Or => Some(I32Binop::Or),
+        OdinHeadCode::I32Xor => Some(I32Binop::Xor),
+        OdinHeadCode::I32Shl => Some(I32Binop::Shl),
+        OdinHeadCode::I32ShrS => Some(I32Binop::ShrS),
+        OdinHeadCode::I32ShrU => Some(I32Binop::ShrU),
         _ => None,
     }
 }

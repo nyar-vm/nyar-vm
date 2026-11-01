@@ -82,6 +82,56 @@ fn compiles_i32_unsigned_cmp_return() {
 }
 
 #[test]
+fn compiles_i32_bitwise_return() {
+    let mut jit = BaselineScalarJit;
+    for (op, binop) in [
+        (OdinHeadCode::I32And, I32Binop::And),
+        (OdinHeadCode::I32Or, I32Binop::Or),
+        (OdinHeadCode::I32Xor, I32Binop::Xor),
+        (OdinHeadCode::I32Shl, I32Binop::Shl),
+        (OdinHeadCode::I32ShrS, I32Binop::ShrS),
+        (OdinHeadCode::I32ShrU, I32Binop::ShrU),
+    ] {
+        let mut code = Vec::new();
+        emit_load(&mut code, 0);
+        emit_load(&mut code, 1);
+        code.push(op as u8);
+        code.push(OdinHeadCode::Return as u8);
+        let artifact = jit.compile_function(&request(code)).expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetI32BinopLocals { binop, a: 0, b: 1 }, "{op:?} 必须映射到 {binop:?}");
+    }
+}
+
+#[test]
+fn folds_const_const_bitwise_to_ret_const() {
+    let mut jit = BaselineScalarJit;
+    for (op, lhs, rhs, expected) in [
+        (OdinHeadCode::I32And, 0b1100, 0b1010, 0b1000),
+        (OdinHeadCode::I32Or, 0b1100, 0b1010, 0b1110),
+        (OdinHeadCode::I32Xor, 0b1100, 0b1010, 0b0110),
+        (OdinHeadCode::I32Shl, 1, 33, 2),
+        (OdinHeadCode::I32ShrS, -16, 2, -4),
+        (OdinHeadCode::I32ShrU, -16, 2, 0x3FFF_FFFC),
+    ] {
+        let mut code = Vec::new();
+        code.push(OdinHeadCode::Constant as u8);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        code.push(OdinHeadCode::Constant as u8);
+        code.extend_from_slice(&1i32.to_le_bytes());
+        code.push(op as u8);
+        code.push(OdinHeadCode::Return as u8);
+        let artifact = jit.compile_function(&request_with_constants(code, vec![Some(lhs), Some(rhs)])).expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(
+            decode_scalar_program(blob).unwrap(),
+            ScalarProgram::RetConstI32 { value: expected },
+            "{op:?}({lhs}, {rhs}) 必须折叠为 {expected}"
+        );
+    }
+}
+
+#[test]
 fn compiles_load_dup_binop() {
     let mut code = Vec::new();
     emit_load(&mut code, 0);

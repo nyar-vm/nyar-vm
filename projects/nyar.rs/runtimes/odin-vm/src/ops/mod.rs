@@ -163,6 +163,12 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
         | OdinHeadCode::I32Mul
         | OdinHeadCode::I32DivS
         | OdinHeadCode::I32RemS
+        | OdinHeadCode::I32And
+        | OdinHeadCode::I32Or
+        | OdinHeadCode::I32Xor
+        | OdinHeadCode::I32Shl
+        | OdinHeadCode::I32ShrS
+        | OdinHeadCode::I32ShrU
         | OdinHeadCode::I32Eq
         | OdinHeadCode::I32Ne
         | OdinHeadCode::I32LtS
