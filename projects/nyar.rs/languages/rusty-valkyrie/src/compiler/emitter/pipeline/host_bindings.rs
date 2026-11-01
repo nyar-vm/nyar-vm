@@ -594,3 +594,38 @@ pub(super) fn remap_call_targets(function: &mut MirFunction, remaps: &BTreeMap<I
         }
     }
 }
+
+/// 物化可达性门的 host provider 根：Resolver 选定 `[host_provider]` 绑定的
+/// callable 声明身份集合。
+///
+/// 与 [`resolve_host_provider_bindings`] 共用同一族查找事实源（精确匹配 +
+/// 忽略 `source_path` 的 fallback）。provider 体必须物化：合同重映射在链接
+/// 边界要求 provider 实例存在于 MIR，否则报「host provider 未在源码闭包中定义」。
+pub(crate) fn host_provider_root_declarations(
+    hirs: &[&HirModule],
+    bindings: &[CompilerHostProviderBinding],
+) -> Result<BTreeSet<ItemId>, ParseError> {
+    if bindings.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    let instances = host_callable_instances(hirs)?;
+    let mut roots = BTreeSet::new();
+    for binding in bindings {
+        let family = instances.get(&binding.provider).or_else(|| {
+            instances
+                .iter()
+                .find(|(key, _)| {
+                    key.dependency_key == binding.provider.dependency_key
+                        && key.namespace == binding.provider.namespace
+                        && key.kind == binding.provider.kind
+                        && key.owner == binding.provider.owner
+                        && key.name == binding.provider.name
+                })
+                .map(|(_, family)| family)
+        });
+        if let Some(family) = family {
+            roots.extend(family.declarations.iter().copied());
+        }
+    }
+    Ok(roots)
+}

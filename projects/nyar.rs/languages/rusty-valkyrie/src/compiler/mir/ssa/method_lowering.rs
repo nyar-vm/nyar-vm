@@ -7,7 +7,10 @@ use super::{
     model::*,
     value_semantics::AggregateLayoutPlan,
 };
-use crate::compiler::types::hir::{HirModule, ValkyrieType};
+use crate::compiler::{
+    hir::HirMaterializationGate,
+    types::hir::{HirFunction, HirModule, ValkyrieType},
+};
 use std::collections::BTreeMap;
 
 /// 检查类型里是否还有未闭合的泛型 binder（`ValkyrieType::Generic(generic)` 且 `generic.binder.is_some()`）。
@@ -30,6 +33,7 @@ fn contains_open_generic(ty: &ValkyrieType) -> bool {
 
 pub(super) fn lower_singleton_method_functions(
     module: &HirModule,
+    gate: Option<&HirMaterializationGate>,
     aggregate_layouts: &mut AggregateLayoutPlan,
     singleton_accessor_instances: &BTreeMap<String, nyar_types::ItemInstanceId>,
     callable_returns: &CallableReturnTypes,
@@ -37,10 +41,14 @@ pub(super) fn lower_singleton_method_functions(
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
+    let permits = |function: &HirFunction| gate.is_none_or(|gate| gate.permits_declaration(function.declaration));
     let mut functions = Vec::new();
     for singleton in &module.singletons {
         for method in singleton.methods.iter().filter(|method| {
-            !method.is_abstract && !method.params.iter().any(|p| contains_open_generic(&p.ty)) && !contains_open_generic(&method.return_type)
+            !method.is_abstract
+                && permits(method)
+                && !method.params.iter().any(|p| contains_open_generic(&p.ty))
+                && !contains_open_generic(&method.return_type)
         }) {
             let mut mir_function = lower_function_semantic(
                 module,
@@ -57,7 +65,7 @@ pub(super) fn lower_singleton_method_functions(
             mir_function.display_symbol = format!("{}.{}", singleton.name, method.name);
             functions.push(mir_function);
         }
-        if let Some(constructor) = &singleton.constructor {
+        if let Some(constructor) = singleton.constructor.as_deref().filter(|constructor| permits(constructor)) {
             let mut mir_function = lower_function_semantic(
                 module,
                 constructor,
@@ -73,7 +81,7 @@ pub(super) fn lower_singleton_method_functions(
             mir_function.display_symbol = format!("{}.{}", singleton.name, constructor.name);
             functions.push(mir_function);
         }
-        if let Some(finalizer) = &singleton.finalizer {
+        if let Some(finalizer) = singleton.finalizer.as_deref().filter(|finalizer| permits(finalizer)) {
             let mut mir_function = lower_function_semantic(
                 module,
                 finalizer,
@@ -95,6 +103,7 @@ pub(super) fn lower_singleton_method_functions(
 
 pub(super) fn lower_impl_method_functions(
     module: &HirModule,
+    gate: Option<&HirMaterializationGate>,
     aggregate_layouts: &mut AggregateLayoutPlan,
     singleton_accessor_instances: &BTreeMap<String, nyar_types::ItemInstanceId>,
     callable_returns: &CallableReturnTypes,
@@ -102,6 +111,7 @@ pub(super) fn lower_impl_method_functions(
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
+    let permits = |function: &HirFunction| gate.is_none_or(|gate| gate.permits_declaration(function.declaration));
     let mut functions = Vec::new();
     for impl_block in &module.impls {
         let Some(type_name) = impl_owner_type_name(module, &impl_block.target)
@@ -111,6 +121,7 @@ pub(super) fn lower_impl_method_functions(
         for method in impl_block.methods.iter().filter(|method| {
             !method.is_abstract
                 && method.instance.is_some()
+                && permits(method)
                 && !method.params.iter().any(|p| contains_open_generic(&p.ty))
                 && !contains_open_generic(&method.return_type)
         }) {
@@ -138,6 +149,11 @@ pub(super) fn lower_impl_method_functions(
         else {
             continue;
         };
+        // 铸造副本按实例身份门禁：witness 消解产生的 impl 成员实例声明不在可达
+        // 声明集内，其实例身份由可达调用点直接引用，必须按实例放行。
+        if gate.is_some_and(|gate| !gate.permits_instance(Some(instance))) {
+            continue;
+        }
         let mut mir_function = lower_function_semantic(
             module,
             &callable.function,
@@ -156,7 +172,10 @@ pub(super) fn lower_impl_method_functions(
     }
     for item in &module.structs {
         for method in item.methods.iter().filter(|method| {
-            !method.is_abstract && !method.params.iter().any(|p| contains_open_generic(&p.ty)) && !contains_open_generic(&method.return_type)
+            !method.is_abstract
+                && permits(method)
+                && !method.params.iter().any(|p| contains_open_generic(&p.ty))
+                && !contains_open_generic(&method.return_type)
         }) {
             let mut mir_function = lower_function_semantic(
                 module,
@@ -176,7 +195,10 @@ pub(super) fn lower_impl_method_functions(
     }
     for trait_def in &module.traits {
         for method in trait_def.default_methods.iter().filter(|method| {
-            !method.is_abstract && !method.params.iter().any(|p| contains_open_generic(&p.ty)) && !contains_open_generic(&method.return_type)
+            !method.is_abstract
+                && permits(method)
+                && !method.params.iter().any(|p| contains_open_generic(&p.ty))
+                && !contains_open_generic(&method.return_type)
         }) {
             let mut mir_function = lower_function_semantic(
                 module,

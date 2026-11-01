@@ -129,7 +129,13 @@ fn derive_witness_substitution(declaration: &CallableDeclaration, call: &HirReso
 ///
 /// 实例下标从闭包内已冻结的最大 `ItemInstanceId` 续号，顺序只取决于
 /// `(声明下标, 代入)` 的字典序，因此同一输入恒产生同一实例空间。
-pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
+///
+/// `gate` 为物化可达性门：不可达 callable 的体内调用点不得播种实例化请求，
+/// 导出面 glue 种子同样只覆盖门内声明；`None` 保持全闭包物化（单源路径）。
+pub(crate) fn instantiate_generic_callables(
+    modules: &mut [HirModule],
+    gate: Option<&crate::compiler::hir::reachability::HirMaterializationGate>,
+) {
     let (declarations, trait_members) = collect_impl_declarations(modules);
     if declarations.is_empty() {
         return;
@@ -140,7 +146,7 @@ pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
         // 1. 收集仍指向开放声明的调用点。
         let mut requests: BTreeSet<(u32, Substitution)> = BTreeSet::new();
         for module in modules.iter_mut() {
-            visit_module_calls(module, &mut |request| {
+            visit_module_calls(module, gate, &mut |request| {
                 let call = match request {
                     CallableRequest::Call(call) => call,
                     // 具名函数作值：非泛型声明按空代入照常铸造实例；
@@ -198,7 +204,7 @@ pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
         }
         // 2. 导出面种子：导出函数签名里的具体聚合实例，必须带上该聚合的全部
         //    `[library_glue]` 成员；这些成员可能没有任何调用点。
-        seed_export_surface_requests(modules, &declarations, &mut requests);
+        seed_export_surface_requests(modules, gate, &declarations, &mut requests);
         if requests.is_empty() {
             break;
         }
@@ -224,7 +230,7 @@ pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
         // 4. 回填调用点。即使本轮没有新实例也必须回填：克隆体里的重复代入
         //    只能指向已存在的实例，不能永远悬空。
         for module in modules.iter_mut() {
-            visit_module_calls(module, &mut |request| {
+            visit_module_calls(module, gate, &mut |request| {
                 let call = match request {
                     CallableRequest::Call(call) => call,
                     CallableRequest::Reference(reference) => {
@@ -287,6 +293,7 @@ pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
 /// 幂等：同一 (声明, 代入) 重复插入由 `BTreeSet` 与实例表去重。
 fn seed_export_surface_requests(
     modules: &[HirModule],
+    gate: Option<&crate::compiler::hir::reachability::HirMaterializationGate>,
     declarations: &BTreeMap<u32, CallableDeclaration>,
     requests: &mut BTreeSet<(u32, Substitution)>,
 ) {
@@ -300,6 +307,10 @@ fn seed_export_surface_requests(
     for declaration in declarations.values() {
         // 只有声明标注给出角色的成员才是宿主直通操作。
         if parse_library_glue_operation(&declaration.function.annotations).is_none() {
+            continue;
+        }
+        // 物化可达性门已按导出面标记 glue 根；门外声明不得铸造实例。
+        if gate.is_some_and(|gate| !gate.permits_declaration(declaration.function.declaration)) {
             continue;
         }
         let Some(owner) = declaration.owner_type.as_ref()
@@ -846,17 +857,31 @@ fn substitute_function(function: &mut HirFunction, substitution: &Substitution, 
 }
 
 /// 遍历模块（含子模块）内全部 callable 体内的可调用请求点（调用合同与函数作值引用）。
-fn visit_module_calls(module: &mut HirModule, visit: &mut impl FnMut(CallableRequest<'_>)) {
+///
+/// `gate` 为物化可达性门：门不可达 callable 的体内调用点不参与请求播种与回填，
+/// 不可达子图因此不会把泛型实例化拉进物化集合。
+fn visit_module_calls(
+    module: &mut HirModule,
+    gate: Option<&crate::compiler::hir::reachability::HirMaterializationGate>,
+    visit: &mut impl FnMut(CallableRequest<'_>),
+) {
+    let permits = |function: &HirFunction| gate.is_none_or(|gate| gate.permits_declaration(function.declaration));
     for function in &mut module.functions {
-        visit_block(&mut function.body, visit);
+        if permits(function) {
+            visit_block(&mut function.body, visit);
+        }
     }
     for structure in &mut module.structs {
         for method in &mut structure.methods {
-            visit_block(&mut method.body, visit);
+            if permits(method) {
+                visit_block(&mut method.body, visit);
+            }
         }
         for property in &mut structure.properties {
             for accessor in property.getter.iter_mut().chain(property.setter.iter_mut()) {
-                visit_block(&mut accessor.body, visit);
+                if permits(accessor) {
+                    visit_block(&mut accessor.body, visit);
+                }
             }
         }
     }
@@ -867,29 +892,39 @@ fn visit_module_calls(module: &mut HirModule, visit: &mut impl FnMut(CallableReq
             .chain(singleton.constructor.iter_mut().map(Box::as_mut))
             .chain(singleton.finalizer.iter_mut().map(Box::as_mut))
         {
-            visit_block(&mut method.body, visit);
+            if permits(method) {
+                visit_block(&mut method.body, visit);
+            }
         }
     }
     for trait_definition in &mut module.traits {
         for method in trait_definition.methods.iter_mut().chain(trait_definition.default_methods.iter_mut()) {
-            visit_block(&mut method.body, visit);
+            if permits(method) {
+                visit_block(&mut method.body, visit);
+            }
         }
     }
     for implementation in &mut module.impls {
         for method in &mut implementation.methods {
-            visit_block(&mut method.body, visit);
+            if permits(method) {
+                visit_block(&mut method.body, visit);
+            }
         }
     }
     for widget in &mut module.widgets {
         for method in &mut widget.methods {
-            visit_block(&mut method.body, visit);
+            if permits(method) {
+                visit_block(&mut method.body, visit);
+            }
         }
     }
     for callable in &mut module.instantiated_callables {
-        visit_block(&mut callable.function.body, visit);
+        if permits(&callable.function) {
+            visit_block(&mut callable.function.body, visit);
+        }
     }
     for submodule in &mut module.submodules {
-        visit_module_calls(submodule, visit);
+        visit_module_calls(submodule, gate, visit);
     }
 }
 

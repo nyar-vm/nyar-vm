@@ -252,7 +252,7 @@ impl ValkyrieCompiler {
         arch: &str,
     ) -> Result<nyar_types::CompiledProgram, HirError> {
         let entry_indices = groups.iter().enumerate().filter(|(_, group)| group.is_entry).map(|(index, _)| index).collect::<Vec<_>>();
-        let mut hir_groups = self.resolve_source_groups_with_host_bindings(groups, host_bindings, arch)?;
+        let (mut hir_groups, gate) = self.resolve_source_groups_with_materialization_gate(groups, host_bindings, arch)?;
         let final_index = hir_groups
             .len()
             .checked_sub(1)
@@ -263,9 +263,12 @@ impl ValkyrieCompiler {
         let dispatch = crate::compiler::mir::ssa::generic_call_instantiation::collect_dispatch_entries(&all_hirs);
         let mut mir_groups = hir_groups
             .iter()
-            .map(|hir| crate::compiler::mir::MirLowerer::lower_module_semantic_with_host(hir, Some(&host_runtime), false, &dispatch))
+            .map(|hir| {
+                crate::compiler::mir::MirLowerer::lower_module_semantic_with_host(hir, Some(&host_runtime), false, &dispatch, Some(&gate))
+            })
             .collect::<Vec<_>>();
-        let mut final_mir = crate::compiler::mir::MirLowerer::lower_module_semantic_with_host(&final_hir, Some(&host_runtime), true, &dispatch);
+        let mut final_mir =
+            crate::compiler::mir::MirLowerer::lower_module_semantic_with_host(&final_hir, Some(&host_runtime), true, &dispatch, Some(&gate));
         for index in entry_indices {
             if index != final_index {
                 crate::compiler::emitter::pipeline::merge_entry_group_surface(&mut final_mir, &mir_groups[index])?;
@@ -325,6 +328,20 @@ impl ValkyrieCompiler {
         host_bindings: &[crate::compiler::emitter::pipeline::CompilerHostProviderBinding],
         arch: &str,
     ) -> Result<Vec<HirModule>, HirError> {
+        self.resolve_source_groups_with_materialization_gate(groups, host_bindings, arch).map(|(modules, _gate)| modules)
+    }
+
+    /// 构建语义闭包并返回物化可达性门。
+    ///
+    /// 门在调用解析之后、单态化之前于 HIR 冻结调用图上求根可达闭包；
+    /// 不可达 callable 不得进入泛型实例化、MIR 降低与后端物化集合。
+    /// 闭包上界与 closure hash 不受门影响。
+    pub(crate) fn resolve_source_groups_with_materialization_gate(
+        &self,
+        groups: &[CompilerSourceGroup],
+        host_bindings: &[crate::compiler::emitter::pipeline::CompilerHostProviderBinding],
+        arch: &str,
+    ) -> Result<(Vec<HirModule>, crate::compiler::hir::HirMaterializationGate), HirError> {
         validate_source_groups(groups)?;
         let closure = source_group_closure_with_host_bindings(groups, host_bindings, arch)?;
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
@@ -391,12 +408,16 @@ impl ValkyrieCompiler {
             intrinsic_array::normalize_intrinsic_array_new(hir)?;
         }
         // 单态化固定点必须在全部源码组的调用解析之后、语义合同校验与 MIR 之前运行。
-        instantiate_generic_callables(&mut hir_groups);
+        // 物化可达性门在冻结调用图上先求声明闭包，单态化只按门内 callable 的调用点
+        // 与导出面 glue 种子铸造实例；实例集合在单态化回填完成后收口。
+        let mut gate = crate::compiler::hir::reachability::compute_hir_materialization_gate(&hir_groups, host_bindings)?;
+        instantiate_generic_callables(&mut hir_groups, Some(&gate));
+        gate.finalize_instances(&hir_groups);
         for hir in &hir_groups {
             validate_extractor_patterns(hir)?;
             self.validate_hir_semantic_contract(hir)?;
         }
-        Ok(hir_groups)
+        Ok((hir_groups, gate))
     }
 
     fn parse_source_files_without_call_resolution(

@@ -27,17 +27,20 @@ impl MirLowerer {
     /// [`Self::lower_module_semantic_with_host`]。
     pub fn lower_module_semantic(module: &HirModule) -> MirModule {
         let dispatch = generic_call_instantiation::collect_dispatch_entries(&[module]);
-        Self::lower_module_semantic_with_host(module, None, true, &dispatch)
+        Self::lower_module_semantic_with_host(module, None, true, &dispatch, None)
     }
 
     /// 跨包闭包入口：携带程序级 host runtime 身份，供外部调用合同合并使用。
     ///
     /// 分派表必须覆盖完整源码闭包（由调用方预先拼好再传入），不再在 MIR 层做后置泛型物化。
+    /// `gate` 为物化可达性门：门不可达 callable 不发射 MIR 定义、不登记外部调用合同；
+    /// `None` 保持全闭包发射（单模块诊断路径）。
     pub fn lower_module_semantic_with_host(
         module: &HirModule,
         shared_host: Option<&HostRuntimeCallables>,
         attach_host_contracts: bool,
         dispatch: &[generic_call_instantiation::MirDispatchEntry],
+        gate: Option<&crate::compiler::hir::HirMaterializationGate>,
     ) -> MirModule {
         let singleton_accessor_instances = crate::compiler::mir::singleton_accessor_instance_map(module);
         let mut diagnostics = Vec::new();
@@ -47,7 +50,7 @@ impl MirLowerer {
         let (sum_types, flags_types) = crate::compiler::hir::lowering::compute_nominal_declarations(module, nominal_offset, &mut diagnostics);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
-        let mut external_calls = collect_external_call_contracts(module);
+        let mut external_calls = collect_external_call_contracts(module, gate);
 
         let (host_runtime_callables, host_contracts) = if let Some(shared) = shared_host {
             (shared.by_name.clone(), if attach_host_contracts { shared.contracts.clone() } else { Vec::new() })
@@ -68,7 +71,10 @@ impl MirLowerer {
         let (exports, entries) = collect_surface_contracts(module);
         let callable_returns = collect_callable_return_types(module);
         let mut functions = Vec::new();
-        for function in module.functions.iter().filter(|function| !function.is_abstract) {
+        let permits_declaration = |function: &crate::compiler::types::hir::HirFunction| {
+            !function.is_abstract && gate.is_none_or(|gate| gate.permits_declaration(function.declaration))
+        };
+        for function in module.functions.iter().filter(|function| permits_declaration(function)) {
             functions.push(lower_function_semantic(
                 module,
                 function,
@@ -84,6 +90,7 @@ impl MirLowerer {
         }
         functions.extend(lower_singleton_method_functions(
             module,
+            gate,
             &mut aggregate_layouts,
             &singleton_accessor_instances,
             &callable_returns,
@@ -93,6 +100,7 @@ impl MirLowerer {
         ));
         functions.extend(lower_impl_method_functions(
             module,
+            gate,
             &mut aggregate_layouts,
             &singleton_accessor_instances,
             &callable_returns,

@@ -22,6 +22,8 @@ pub mod nominal;
 pub mod nominal_registry;
 /// 重载解析相关能力。
 pub mod overload;
+/// 物化可达性门：HIR 冻结调用图上的根可达闭包。
+pub mod reachability;
 /// Row 类型相关能力。
 pub mod row;
 /// Stable symbol keys for linker / MIR contracts.
@@ -48,6 +50,7 @@ pub use lowering::{
     build_generated_group, build_source_input_with_generated, compose_source_input_groups,
 };
 pub use nominal_registry::{NominalTypeRegistry, variant_constructor_param_types};
+pub use reachability::{HirMaterializationGate, compute_hir_materialization_gate};
 pub use try_propagate::{
     TryPropagateKind, classify_try_operand, is_nullable_type, is_option_apply_type, is_result_apply_type, nullable_payload_type,
     validate_try_propagate_module,

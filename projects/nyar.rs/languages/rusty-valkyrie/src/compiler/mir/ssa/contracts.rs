@@ -69,8 +69,15 @@ pub(crate) fn collect_host_runtime_callables(declaration_base: u32, instance_bas
     HostRuntimeCallables { contracts, by_name }
 }
 
-pub(super) fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallContract> {
-    fn collect_abstract_functions(module: &HirModule, out: &mut Vec<MirExternalCallContract>) {
+pub(super) fn collect_external_call_contracts(
+    module: &HirModule,
+    gate: Option<&crate::compiler::hir::HirMaterializationGate>,
+) -> Vec<MirExternalCallContract> {
+    fn collect_abstract_functions(
+        module: &HirModule,
+        gate: Option<&crate::compiler::hir::HirMaterializationGate>,
+        out: &mut Vec<MirExternalCallContract>,
+    ) {
         // 声明期 abstract 函数（host_contract / intrinsic 无泛型）
         out.extend(
             module
@@ -79,6 +86,7 @@ pub(super) fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExte
                 .filter(|function| {
                     function.is_abstract
                         && function.generics.is_empty()
+                        && gate.is_none_or(|gate| gate.permits_declaration(function.declaration))
                         && crate::compiler::emitter::backend_contract::interop::function_interop_contract(function).is_some()
                 })
                 .filter_map(|function| {
@@ -100,6 +108,7 @@ pub(super) fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExte
                 .iter()
                 .filter(|callable| {
                     callable.function.is_abstract
+                        && gate.is_none_or(|gate| gate.permits_instance(callable.function.instance))
                         && crate::compiler::emitter::backend_contract::interop::function_interop_contract(&callable.function).is_some()
                 })
                 .filter_map(|callable| {
@@ -121,11 +130,11 @@ pub(super) fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExte
                 }),
         );
         for submodule in &module.submodules {
-            collect_abstract_functions(submodule, out);
+            collect_abstract_functions(submodule, gate, out);
         }
     }
     let mut contracts = Vec::new();
-    collect_abstract_functions(module, &mut contracts);
+    collect_abstract_functions(module, gate, &mut contracts);
     contracts.extend(
         module
             .imported_semantic_exports
