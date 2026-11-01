@@ -27,10 +27,15 @@ use crate::{
         JvmClassFile, JvmCodeBody, JvmFieldRef, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor,
     },
 };
-use nyar_types::ItemInstanceId;
+use nyar_types::{AggregateLayoutPlan, ItemInstanceId};
 
 const JVM_ACC_PUBLIC: u16 = 0x0001;
 const JVM_ACC_STATIC: u16 = 0x0008;
+
+/// 引用存储形状在 JVM 上的擦除载体：最小 lowering 只搬运引用（`aload`/`astore`/
+/// `areturn`/调用描述符），值的物化与字段访问由计划冻结的实例级布局
+/// （discriminator + payload 槽）与绑定 operator 负责，backend 不展开字段。
+const JVM_REFERENCE_CARRIER: &str = "java/lang/Object";
 
 /// JVM 槽位种类：决定 `iload`/`lload`/`dload` 等指令与宽度。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,7 +152,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
             name = format!("{base}__{suffix}");
         }
         used_names.insert(name.clone(), ());
-        method_plans.insert(*instance, JvmMethodPlan { name, descriptor: function_descriptor(&view.function)? });
+        method_plans.insert(*instance, JvmMethodPlan { name, descriptor: function_descriptor(plan.aggregate_layouts(), &view.function)? });
     }
 
     let internal_name = format!(
@@ -385,32 +390,32 @@ fn external_operator_by_instance(submission: &FragmentSubmission) -> BTreeMap<It
         .collect()
 }
 
-fn function_descriptor(function: &MirFunction) -> Result<JvmMethodDescriptor> {
+fn function_descriptor(layouts: &AggregateLayoutPlan, function: &MirFunction) -> Result<JvmMethodDescriptor> {
     let entry =
         function.blocks.get(function.entry.0 as usize).ok_or_else(|| format!("JVM 最小 lowering：函数 `{}` 缺少入口块", function.symbol))?;
     let mut parameter_types = Vec::with_capacity(entry.parameters.len());
     for parameter in &entry.parameters {
         let ty =
             function.value_types.get(parameter).ok_or_else(|| format!("JVM 最小 lowering：函数 `{}` 入口形参缺少冻结类型", function.symbol))?;
-        parameter_types.push(jvm_parameter_descriptor(ty)?);
+        parameter_types.push(jvm_parameter_descriptor(layouts, ty)?);
     }
-    Ok(JvmMethodDescriptor::new(parameter_types, jvm_return_descriptor(&function.return_type)?))
+    Ok(JvmMethodDescriptor::new(parameter_types, jvm_return_descriptor(layouts, &function.return_type)?))
 }
 
 /// 局部 / 形参位置的 JVM 载体：`Unit`/`Bottom` 没有值槽。
-fn jvm_parameter_descriptor(ty: &NyarType) -> Result<JvmTypeDescriptor> {
-    let descriptor = jvm_type_descriptor(ty)?;
+fn jvm_parameter_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<JvmTypeDescriptor> {
+    let descriptor = jvm_type_descriptor(layouts, ty)?;
     if descriptor == JvmTypeDescriptor::Void {
         return Err(format!("JVM 最小 lowering：`{ty}` 是 void 形态，不能作为方法形参或局部值"));
     }
     Ok(descriptor)
 }
 
-fn jvm_return_descriptor(ty: &NyarType) -> Result<JvmTypeDescriptor> {
-    jvm_type_descriptor(ty)
+fn jvm_return_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<JvmTypeDescriptor> {
+    jvm_type_descriptor(layouts, ty)
 }
 
-fn jvm_type_descriptor(ty: &NyarType) -> Result<JvmTypeDescriptor> {
+fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<JvmTypeDescriptor> {
     Ok(match ty {
         NyarType::Bottom | NyarType::Unit => JvmTypeDescriptor::Void,
         NyarType::Boolean => JvmTypeDescriptor::Boolean,
@@ -420,14 +425,31 @@ fn jvm_type_descriptor(ty: &NyarType) -> Result<JvmTypeDescriptor> {
         NyarType::Float32 => JvmTypeDescriptor::Float,
         NyarType::Float64 => JvmTypeDescriptor::Double,
         NyarType::Utf8 | NyarType::Utf16 => JvmTypeDescriptor::Object("java/lang/String".to_string()),
+        // 泛型实例（`Option<char>` 等）：存储类由形状决定为引用，载体按
+        // [`JVM_REFERENCE_CARRIER`] 擦除；实例级布局仍在计划中按身份冻结。
+        NyarType::Apply(..) => JvmTypeDescriptor::Object(JVM_REFERENCE_CARRIER.to_string()),
+        // 携带身份的名义类型：存储类按 `layout` 身份解析。引用存储走擦除载体；
+        // 值存储聚合没有单槽 JVM 载体，未注册布局属合同破坏，两者都结构化失败。
+        NyarType::Nominal { layout, spelling } => {
+            let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
+            else {
+                return Err(format!("JVM 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少该形状的 JVM 载体合同"));
+            };
+            if layout.storage.is_reference() {
+                JvmTypeDescriptor::Object(JVM_REFERENCE_CARRIER.to_string())
+            }
+            else {
+                return Err(format!("JVM 最小 lowering 不支持值存储聚合 `{spelling}`：缺少逐字段展开的 JVM 载体合同"));
+            }
+        }
         other => {
             return Err(format!("JVM 最小 lowering 不支持类型 `{other}`：缺少该形状的 JVM 载体合同"));
         }
     })
 }
 
-fn jvm_local_kind(ty: &NyarType) -> Result<JvmSlotKind> {
-    JvmSlotKind::of(&jvm_parameter_descriptor(ty)?)
+fn jvm_local_kind(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<JvmSlotKind> {
+    JvmSlotKind::of(&jvm_parameter_descriptor(layouts, ty)?)
 }
 
 struct JvmMethodEmitter<'a> {
@@ -457,7 +479,7 @@ fn lower_function(
     let mut local_count = 0u16;
     for ty in &slots.local_types {
         slot_offsets.push(local_count);
-        local_count = local_count.saturating_add(jvm_local_kind(ty)?.slot_width());
+        local_count = local_count.saturating_add(jvm_local_kind(submission.backend_plan.aggregate_layouts(), ty)?.slot_width());
     }
 
     let mut emitter = JvmMethodEmitter {
@@ -579,7 +601,7 @@ impl JvmMethodEmitter<'_> {
                                 .value_types
                                 .get(parameter)
                                 .ok_or_else(|| format!("JVM 最小 lowering：块参数缺少冻结类型: function={}", self.function.symbol))
-                                .and_then(jvm_local_kind)
+                                .and_then(|ty| jvm_local_kind(self.submission.backend_plan.aggregate_layouts(), ty))
                         })
                         .collect::<Result<Vec<_>>>()?;
                     (target_block.parameters.len(), kinds)
@@ -912,7 +934,7 @@ impl JvmMethodEmitter<'_> {
             .local_types
             .get(local as usize)
             .ok_or_else(|| format!("JVM 最小 lowering：局部槽 {local} 超出规划表: function={}", self.function.symbol))?;
-        let kind = jvm_local_kind(ty)?;
+        let kind = jvm_local_kind(self.submission.backend_plan.aggregate_layouts(), ty)?;
         Ok((self.slot_offsets[local as usize], kind))
     }
 

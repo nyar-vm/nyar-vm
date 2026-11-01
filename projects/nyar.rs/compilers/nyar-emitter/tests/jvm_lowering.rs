@@ -16,7 +16,8 @@ use nyar_emitter::{
     testing::lower_fragment_to_jvm_class,
 };
 use nyar_types::{
-    Block, BlockRef, ExecutableFunction, ImportIndex, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef,
+    AggregateLayout, AggregateLayoutPlan, Block, BlockRef, ExecutableFunction, FieldLayout, ImportIndex, Instruction, InstructionKind,
+    ItemInstanceId, NyarType, Operand, StorageKind, Terminator, ValueRef,
 };
 
 const LONG: NyarType = NyarType::Integer64 { signed: true };
@@ -342,4 +343,120 @@ fn unsupported_instruction_is_rejected_structurally() {
 
     let error = lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect_err("Cast must fail");
     assert!(error.contains("尚不支持指令 `Cast`"), "{error}");
+}
+
+/// `Option<char>` 的实例级布局：discriminator + payload 槽，引用存储。
+/// 布局身份（`LayoutId` 0）由计划注册表持有，类型只携带身份不携带拼写匹配。
+fn option_char_layout() -> AggregateLayout {
+    AggregateLayout {
+        id: 0,
+        name: "Option".to_string(),
+        namespace: "core".to_string(),
+        key: None,
+        storage: StorageKind::Reference,
+        size: 8,
+        align: 4,
+        fields: vec![
+            FieldLayout { name: "discriminant".to_string(), ty: NyarType::Integer32 { signed: false }, offset: 0, size: 4, align: 4 },
+            FieldLayout { name: "payload".to_string(), ty: NyarType::Character, offset: 4, size: 4, align: 4 },
+        ],
+    }
+}
+
+/// 泛型实例 `Option<char>`：基身份携带已冻结布局，实参代入 `char`。
+fn option_char_type() -> NyarType {
+    NyarType::Apply(Box::new(NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") }), vec![NyarType::Character])
+}
+
+/// 构造签名为 `(Option<char>, char) -> Option<char>` 的入口操作，返回第一个形参。
+fn option_flow_plan(parameters: Vec<NyarType>, return_type: NyarType) -> FragmentSubmission {
+    let mut fixture = function("jvm.option_flow", return_type, parameters);
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(0))) };
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
+    plan.testing_aggregate_layouts(AggregateLayoutPlan { layouts: vec![option_char_layout()], ..AggregateLayoutPlan::default() });
+    FragmentSubmission::from_backend_plan(plan)
+}
+
+/// 泛型实例 `Option<char>` 的 JVM 载体合同：引用存储形状擦除为对象引用，
+/// 形参 / 局部 / 返回槽按引用载体搬运，class 字节可编码并 roundtrip。
+#[test]
+fn option_char_flow_lowers_with_erased_reference_carrier() {
+    let option = option_char_type();
+    let submission = option_flow_plan(vec![option.clone(), NyarType::Character], option.clone());
+    let class_file = lower_fragment_to_jvm_class(&submission).expect("Option<char> reference carrier must lower");
+
+    let method = class_file.methods.iter().find(|method| method.name == "main").expect("entry method");
+    assert_eq!(
+        method.descriptor,
+        JvmMethodDescriptor::new(
+            vec![JvmTypeDescriptor::Object("java/lang/Object".to_string()), JvmTypeDescriptor::Char],
+            JvmTypeDescriptor::Object("java/lang/Object".to_string())
+        )
+    );
+    let instructions = method_code(&class_file, "main");
+    assert!(instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::ALoad(0))), "{instructions:?}");
+    assert!(instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::AReturn)), "{instructions:?}");
+
+    let bytes = class_file.to_bytes().expect("class encoding");
+    let decoded_class = JvmClassFile::from_bytes(&bytes).expect("class decoding");
+    let index = decoded_class.methods.iter().position(|method| method.name == "main").expect("decoded entry method");
+    let code = decoded_class.raw_method_code[index].as_ref().expect("decoded method code");
+    let decoded = decode_instructions(code, &decoded_class.constant_pool);
+    let mnemonics = decoded.iter().map(|instruction| instruction.mnemonic.as_str()).collect::<Vec<_>>();
+    assert!(mnemonics.contains(&"aload_0") || mnemonics.contains(&"aload"), "decoded={mnemonics:?}");
+    assert_eq!(mnemonics.last().copied(), Some("areturn"), "decoded={mnemonics:?}");
+}
+
+/// 携带身份的名义类型引用存储时同样走擦除引用载体（不经泛型实参形状）。
+#[test]
+fn nominal_with_registered_reference_layout_lowers_to_reference_carrier() {
+    let nominal = NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") };
+    let submission = option_flow_plan(vec![nominal.clone()], nominal);
+    let class_file = lower_fragment_to_jvm_class(&submission).expect("reference nominal must lower");
+    let method = class_file.methods.iter().find(|method| method.name == "main").expect("entry method");
+    assert_eq!(
+        method.descriptor,
+        JvmMethodDescriptor::new(
+            vec![JvmTypeDescriptor::Object("java/lang/Object".to_string())],
+            JvmTypeDescriptor::Object("java/lang/Object".to_string())
+        )
+    );
+    class_file.to_bytes().expect("class encoding");
+}
+
+/// `Nominal` 携带的布局身份未在计划中注册：合同破坏，必须结构化失败。
+#[test]
+fn nominal_with_unregistered_layout_is_rejected_structurally() {
+    let nominal = NyarType::Nominal { layout: 7, spelling: Identifier::new("Option") };
+    let submission = option_flow_plan(vec![nominal.clone()], nominal);
+    let error = lower_fragment_to_jvm_class(&submission).expect_err("unregistered layout identity must fail");
+    assert!(error.contains("未在计划中注册"), "{error}");
+}
+
+/// 值存储聚合没有单槽 JVM 载体：必须结构化失败，不得擦除为引用。
+#[test]
+fn value_storage_nominal_is_rejected_structurally() {
+    let mut layout = option_char_layout();
+    layout.storage = StorageKind::Value;
+    let nominal = NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") };
+    let mut fixture = function("jvm.option_flow", nominal.clone(), vec![nominal.clone()]);
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(0))) };
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
+    plan.testing_aggregate_layouts(AggregateLayoutPlan { layouts: vec![layout], ..AggregateLayoutPlan::default() });
+
+    let error = lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect_err("value aggregate must fail");
+    assert!(error.contains("值存储聚合"), "{error}");
+}
+
+/// 裸 `Named` 短名残差不携带身份，仍必须结构化失败。
+#[test]
+fn bare_named_residual_is_rejected_structurally() {
+    let residual = NyarType::Named(Identifier::new("Option"));
+    let submission = option_flow_plan(vec![residual.clone()], residual);
+    let error = lower_fragment_to_jvm_class(&submission).expect_err("bare `Named` residual must fail");
+    assert!(error.contains("缺少该形状的 JVM 载体合同"), "{error}");
 }

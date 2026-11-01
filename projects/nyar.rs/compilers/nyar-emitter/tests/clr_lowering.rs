@@ -16,7 +16,8 @@ use nyar_emitter::{
     transitional::binary::pe::{ClrImageKind, PeWriter, PeWriterOptions},
 };
 use nyar_types::{
-    Block, BlockRef, ExecutableFunction, ImportIndex, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef,
+    AggregateLayout, AggregateLayoutPlan, Block, BlockRef, ExecutableFunction, FieldLayout, ImportIndex, Instruction, InstructionKind,
+    ItemInstanceId, NyarType, Operand, StorageKind, Terminator, ValueRef,
 };
 
 const LONG: NyarType = NyarType::Integer64 { signed: true };
@@ -277,4 +278,100 @@ fn unsupported_instruction_is_rejected_structurally() {
 
     let error = lower_fragment_to_clr_module(&FragmentSubmission::from_backend_plan(plan)).expect_err("Cast must fail");
     assert!(error.contains("尚不支持指令 `Cast`"), "{error}");
+}
+
+/// `Option<char>` 的实例级布局：discriminator + payload 槽，引用存储。
+/// 布局身份（`LayoutId` 0）由计划注册表持有，类型只携带身份不携带拼写匹配。
+fn option_char_layout() -> AggregateLayout {
+    AggregateLayout {
+        id: 0,
+        name: "Option".to_string(),
+        namespace: "core".to_string(),
+        key: None,
+        storage: StorageKind::Reference,
+        size: 8,
+        align: 4,
+        fields: vec![
+            FieldLayout { name: "discriminant".to_string(), ty: NyarType::Integer32 { signed: false }, offset: 0, size: 4, align: 4 },
+            FieldLayout { name: "payload".to_string(), ty: NyarType::Character, offset: 4, size: 4, align: 4 },
+        ],
+    }
+}
+
+/// 泛型实例 `Option<char>`：基身份携带已冻结布局，实参代入 `char`。
+fn option_char_type() -> NyarType {
+    NyarType::Apply(Box::new(NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") }), vec![NyarType::Character])
+}
+
+/// 构造签名为 `(Option<char>, char) -> Option<char>` 的入口操作，返回第一个形参。
+fn option_flow_plan(parameters: Vec<NyarType>, return_type: NyarType) -> FragmentSubmission {
+    let mut fixture = function("clr.option_flow", return_type, parameters);
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(0))) };
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("clr_lowering").testing_entry_operation(main);
+    plan.testing_aggregate_layouts(AggregateLayoutPlan { layouts: vec![option_char_layout()], ..AggregateLayoutPlan::default() });
+    FragmentSubmission::from_backend_plan(plan)
+}
+
+/// 泛型实例 `Option<char>` 的 CLR 载体合同：引用存储形状擦除为 `object`，
+/// 形参 / 局部 / 返回槽按引用载体搬运，方法体可编码。
+#[test]
+fn option_char_flow_lowers_with_erased_reference_carrier() {
+    let option = option_char_type();
+    let submission = option_flow_plan(vec![option.clone(), NyarType::Character], option.clone());
+    let module = lower_fragment_to_clr_module(&submission).expect("Option<char> reference carrier must lower");
+
+    let method = module.global_methods.iter().find(|method| method.method.name == "main").expect("entry method");
+    assert_eq!(method.method.signature, MsilMethodSignature::new(MsilType::Object, vec![MsilType::Object, MsilType::Char]));
+    assert!(method.instructions.iter().any(|instruction| instruction.opcode == MsilOpcode::Ret), "{:?}", method.instructions);
+    let body = MethodBodyEncoder::encode(method, 0x1100_0001).expect("method body encoding");
+    assert!(!body.is_empty());
+    write_library_bytes(&module);
+}
+
+/// 携带身份的名义类型引用存储时同样走擦除引用载体（不经泛型实参形状）。
+#[test]
+fn nominal_with_registered_reference_layout_lowers_to_reference_carrier() {
+    let nominal = NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") };
+    let submission = option_flow_plan(vec![nominal.clone()], nominal);
+    let module = lower_fragment_to_clr_module(&submission).expect("reference nominal must lower");
+    let method = module.global_methods.iter().find(|method| method.method.name == "main").expect("entry method");
+    assert_eq!(method.method.signature, MsilMethodSignature::new(MsilType::Object, vec![MsilType::Object]));
+    write_library_bytes(&module);
+}
+
+/// `Nominal` 携带的布局身份未在计划中注册：合同破坏，必须结构化失败。
+#[test]
+fn nominal_with_unregistered_layout_is_rejected_structurally() {
+    let nominal = NyarType::Nominal { layout: 7, spelling: Identifier::new("Option") };
+    let submission = option_flow_plan(vec![nominal.clone()], nominal);
+    let error = lower_fragment_to_clr_module(&submission).expect_err("unregistered layout identity must fail");
+    assert!(error.contains("未在计划中注册"), "{error}");
+}
+
+/// 值存储聚合没有单槽 CLR 载体：必须结构化失败，不得擦除为引用。
+#[test]
+fn value_storage_nominal_is_rejected_structurally() {
+    let mut layout = option_char_layout();
+    layout.storage = StorageKind::Value;
+    let nominal = NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") };
+    let mut fixture = function("clr.option_flow", nominal.clone(), vec![nominal.clone()]);
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(0))) };
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("clr_lowering").testing_entry_operation(main);
+    plan.testing_aggregate_layouts(AggregateLayoutPlan { layouts: vec![layout], ..AggregateLayoutPlan::default() });
+
+    let error = lower_fragment_to_clr_module(&FragmentSubmission::from_backend_plan(plan)).expect_err("value aggregate must fail");
+    assert!(error.contains("值存储聚合"), "{error}");
+}
+
+/// 裸 `Named` 短名残差不携带身份，仍必须结构化失败。
+#[test]
+fn bare_named_residual_is_rejected_structurally() {
+    let residual = NyarType::Named(Identifier::new("Option"));
+    let submission = option_flow_plan(vec![residual.clone()], residual);
+    let error = lower_fragment_to_clr_module(&submission).expect_err("bare `Named` residual must fail");
+    assert!(error.contains("缺少该形状的 CLR 载体合同"), "{error}");
 }

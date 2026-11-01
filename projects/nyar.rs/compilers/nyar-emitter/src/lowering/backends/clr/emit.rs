@@ -27,7 +27,7 @@ use crate::{
         MsilType,
     },
 };
-use nyar_types::ItemInstanceId;
+use nyar_types::{AggregateLayoutPlan, ItemInstanceId};
 
 /// CLR 栈上标量载体类别：`int32` 覆盖 bool/char/窄整型，比较结果与布尔同槽。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,7 +116,7 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
             name = format!("{base}__{suffix}");
         }
         used_names.insert(name.clone(), ());
-        method_plans.insert(*instance, ClrMethodPlan { name, signature: function_signature(&view.function)? });
+        method_plans.insert(*instance, ClrMethodPlan { name, signature: function_signature(plan.aggregate_layouts(), &view.function)? });
     }
 
     let operator_by_instance = external_operator_by_instance(submission);
@@ -405,32 +405,38 @@ fn external_operator_by_instance(submission: &FragmentSubmission) -> BTreeMap<It
         .collect()
 }
 
-fn function_signature(function: &MirFunction) -> Result<MsilMethodSignature> {
+fn function_signature(layouts: &AggregateLayoutPlan, function: &MirFunction) -> Result<MsilMethodSignature> {
     let entry =
         function.blocks.get(function.entry.0 as usize).ok_or_else(|| format!("CLR 最小 lowering：函数 `{}` 缺少入口块", function.symbol))?;
     let mut parameter_types = Vec::with_capacity(entry.parameters.len());
     for parameter in &entry.parameters {
         let ty =
             function.value_types.get(parameter).ok_or_else(|| format!("CLR 最小 lowering：函数 `{}` 入口形参缺少冻结类型", function.symbol))?;
-        parameter_types.push(msil_parameter_type(ty)?);
+        parameter_types.push(msil_parameter_type(layouts, ty)?);
     }
-    Ok(MsilMethodSignature::new(msil_return_type(&function.return_type)?, parameter_types))
+    Ok(MsilMethodSignature::new(msil_return_type(layouts, &function.return_type)?, parameter_types))
 }
 
 /// 局部 / 形参位置的 CLR 载体：`Unit`/`Bottom` 没有值槽。
-fn msil_parameter_type(ty: &NyarType) -> Result<MsilType> {
-    let msil_type = msil_type(ty)?;
+fn msil_parameter_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<MsilType> {
+    let msil_type = msil_type(layouts, ty)?;
     if msil_type == MsilType::Void {
         return Err(format!("CLR 最小 lowering：`{ty}` 是 void 形态，不能作为方法形参或局部值"));
     }
     Ok(msil_type)
 }
 
-fn msil_return_type(ty: &NyarType) -> Result<MsilType> {
-    msil_type(ty)
+fn msil_return_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<MsilType> {
+    msil_type(layouts, ty)
 }
 
-fn msil_type(ty: &NyarType) -> Result<MsilType> {
+/// 类型的 CLR 载体。
+///
+/// 引用存储形状（`Option<char>` 等泛型实例、引用存储的名义聚合）擦除为
+/// `object` 引用载体：最小 lowering 只搬运引用（`ldloc`/`stloc`/`call` 签名），
+/// discriminator + payload 槽由计划冻结的实例级布局与绑定 operator 负责，
+/// backend 不展开字段访问。
+fn msil_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<MsilType> {
     Ok(match ty {
         NyarType::Bottom | NyarType::Unit => MsilType::Void,
         NyarType::Boolean => MsilType::Bool,
@@ -442,6 +448,22 @@ fn msil_type(ty: &NyarType) -> Result<MsilType> {
         NyarType::Float32 => MsilType::Float32,
         NyarType::Float64 => MsilType::Float64,
         NyarType::Utf8 | NyarType::Utf16 => MsilType::String,
+        // 泛型实例：存储类由形状决定为引用，载体擦除为 `object`。
+        NyarType::Apply(..) => MsilType::Object,
+        // 携带身份的名义类型：存储类按 `layout` 身份解析。引用存储走擦除载体；
+        // 值存储聚合没有单槽 CLR 载体，未注册布局属合同破坏，两者都结构化失败。
+        NyarType::Nominal { layout, spelling } => {
+            let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
+            else {
+                return Err(format!("CLR 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少该形状的 CLR 载体合同"));
+            };
+            if layout.storage.is_reference() {
+                MsilType::Object
+            }
+            else {
+                return Err(format!("CLR 最小 lowering 不支持值存储聚合 `{spelling}`：缺少逐字段展开的 CLR 载体合同"));
+            }
+        }
         other => {
             return Err(format!("CLR 最小 lowering 不支持类型 `{other}`：缺少该形状的 CLR 载体合同"));
         }
@@ -467,7 +489,8 @@ fn lower_function(
     is_entry_point: bool,
 ) -> Result<MsilMethodBody> {
     let slots = ExecutableSlotPlan::plan_nyar(function);
-    let locals = slots.local_types.iter().map(msil_parameter_type).collect::<Result<Vec<_>>>()?;
+    let locals =
+        slots.local_types.iter().map(|ty| msil_parameter_type(submission.backend_plan.aggregate_layouts(), ty)).collect::<Result<Vec<_>>>()?;
     let mut emitter = ClrMethodEmitter {
         submission,
         function,
@@ -613,7 +636,7 @@ impl ClrMethodEmitter<'_> {
                                 .value_types
                                 .get(parameter)
                                 .ok_or_else(|| format!("CLR 最小 lowering：块参数缺少冻结类型: function={}", self.function.symbol))?;
-                            let kind = ClrValueKind::of_msil_type(&msil_parameter_type(ty)?)?;
+                            let kind = ClrValueKind::of_msil_type(&msil_parameter_type(self.submission.backend_plan.aggregate_layouts(), ty)?)?;
                             Ok(kind)
                         })
                         .collect::<Result<Vec<_>>>()?;
@@ -981,7 +1004,7 @@ impl ClrMethodEmitter<'_> {
             .local_types
             .get(local as usize)
             .ok_or_else(|| format!("CLR 最小 lowering：局部槽 {local} 超出规划表: function={}", self.function.symbol))?;
-        ClrValueKind::of_msil_type(&msil_parameter_type(ty)?)
+        ClrValueKind::of_msil_type(&msil_parameter_type(self.submission.backend_plan.aggregate_layouts(), ty)?)
     }
 }
 
