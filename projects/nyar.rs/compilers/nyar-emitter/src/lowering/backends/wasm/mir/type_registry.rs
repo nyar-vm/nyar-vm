@@ -124,7 +124,6 @@ pub(super) fn register_gc_array_types(
         let field_type_byte = wasm_gc_field_type_byte_for_glue(element_type, js_glue_utf8_as_anyref);
         let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         type_indices.push(wasm_gc_array_type(field_type_byte));
-        eprintln!("[wasm::arraytype-register] key={key} element={element_type:?} field={field_type_byte} index={type_index}");
         map.insert(key, type_index);
     };
     {

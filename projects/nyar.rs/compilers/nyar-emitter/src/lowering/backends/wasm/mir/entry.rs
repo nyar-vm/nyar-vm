@@ -156,18 +156,14 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut function_indices = Vec::new();
     let mut code_bodies = Vec::new();
     let mut exports = Vec::new();
-    eprintln!("[wasm::module-lower-start] export={export_name} operations={} host_imports={}", operations.len(), host_imports.len());
     // 语言规范：wasm/wasi 强制 wasm-gc。始终为引用 layout 注册 structtype?
     let gc_struct_type_indices = register_gc_struct_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref);
-    eprintln!("[wasm::module-stage] structs={} types={}", gc_struct_type_indices.len(), type_indices.len());
     // ?heap array element_type 注册 wasm-gc arraytype（Node/V8 ?WASI/wasmtime 均支持）?
     // 必须?glue 感知路径：`[utf8]` →?i32 元，禁止 Named→anyref 误登记?
     let mut gc_array_type_indices = register_gc_array_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref);
-    eprintln!("[wasm::module-stage] arrays={} types={}", gc_array_type_indices.len(), type_indices.len());
     // sum 的物理布局（tag + anyref payload）是后端私有决定，必须按 nominal identity 单独注册，
     // 让 `SumNew` 构造的对象与 `SumPayloadGet` / `SumVariantIs` 的 `ref.cast` 指向同一条目。
     let gc_sum_type_indices = register_gc_sum_types(&ctx, &mut type_indices);
-    eprintln!("[wasm::module-stage] sums={} types={}", gc_sum_type_indices.len(), type_indices.len());
     // Scalar unite payloads such as utf8/bool/i32 handles need boxing into an
     // `[i32]` struct before entering the anyref payload slot.
     let gc_i32_box_type_index = {
@@ -239,7 +235,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         .iter()
         .filter_map(|operation| submission.backend_plan.get_function(operation).map(|view| (*operation, view.function)))
         .collect();
-    eprintln!("[wasm::module-stage] mir_operations={} types={}", mir_operations.len(), type_indices.len());
     let base_function_index = import_count;
     let mut function_index_by_instance = BTreeMap::new();
     let mut type_index_by_instance = BTreeMap::new();
@@ -307,13 +302,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
 
     for (dense, (instance, mir_fn)) in mir_operations.iter().enumerate() {
         let full = submission.backend_plan.abi_name_for_instance(*instance).ok_or_else(|| format!("函数实例缺少 ABI 标签"))?.to_string();
-        eprintln!(
-            "[wasm::function-lower-start] dense={dense}/{} symbol={} blocks={} instructions={}",
-            mir_operations.len(),
-            full,
-            mir_fn.blocks.len(),
-            mir_fn.blocks.iter().map(|block| block.instructions.len()).sum::<usize>(),
-        );
         let param_types = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
         // 每个函数独立计算返回类型,取代旧的模块?`returns_i32`?
         // 引用返回类型 →?anyref (VALTYPE_ANYREF)；i32 →?VALTYPE_I32；void →?空?
@@ -356,7 +344,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &type_index_by_signature,
             &managed_utf8_to_host_handle,
         )?));
-        eprintln!("[wasm::function-lower-done] dense={dense}/{} symbol={full}", mir_operations.len());
         mir_wasm_functions.push((wasm_index, full.clone()));
         if let Some(public_name) = submission.backend_plan.wasm_export_names().get(instance) {
             exports.push((public_name.as_str(), WasmExternalKind::Func.as_u8(), wasm_index));

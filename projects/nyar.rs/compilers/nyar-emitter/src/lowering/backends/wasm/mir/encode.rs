@@ -157,11 +157,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 查找 heap `[T]` 的 element_type 对应 wasm-gc arraytype 的 type_index。
     pub(super) fn resolve_gc_array_type_index(&self, element_type: &NyarType) -> Option<u32> {
         let key = wasm_array_element_type_key(element_type);
-        let resolved = self.gc_array_type_indices.get(&key).copied();
-        if resolved.is_none() {
-            eprintln!("[wasm::arraytype-miss] symbol={} key={} registered={}", self.mir_fn.symbol, key, self.gc_array_type_indices.len(),);
-        }
-        resolved
+        self.gc_array_type_indices.get(&key).copied()
     }
 
     /// 将栈上 anyref 转为 typed struct ref，供 `struct.get` / `struct.set` 使用。

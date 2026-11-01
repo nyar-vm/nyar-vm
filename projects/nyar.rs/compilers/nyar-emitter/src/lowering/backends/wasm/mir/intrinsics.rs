@@ -8,19 +8,6 @@ impl<'a> WasmMirLowerer<'a> {
         }
         let element_type =
             self.infer_array_element_type(&arguments[0]).or_else(|| output.and_then(|value| self.mir_fn.value_types.get(&value).cloned()));
-        if element_type.is_none() {
-            eprintln!(
-                "[wasm::arrayget-type-trace] symbol={} receiver={:?} receiver_ty={:?} output={:?} output_ty={:?}",
-                self.mir_fn.symbol,
-                arguments.first(),
-                arguments.first().and_then(|operand| match operand {
-                    MirOperand::Value(value) => self.mir_fn.value_types.get(value),
-                    _ => None,
-                }),
-                output,
-                output.and_then(|value| self.mir_fn.value_types.get(&value)),
-            );
-        }
         let type_index = element_type.as_ref().and_then(|ty| self.resolve_gc_array_type_index(ty));
         let mut element_stack_ty =
             element_type.as_ref().map(|ty| wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref)).unwrap_or(VALTYPE_I32);

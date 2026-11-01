@@ -660,10 +660,6 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 // 未登记宿主载体的字面量不得伪造 `i32 0` 句柄；
                 // 预编码校验 `validate_string_literal_payloads` 已拒绝该形状。
-                eprintln!(
-                    "[wasm::mir] missing host carrier for utf8 literal at `{}` (wasi={}, const_utf8={:?})",
-                    self.mir_fn.symbol, self.wasi_mode, self.const_utf8_import
-                );
                 encode_unreachable(&mut self.code);
             }
             MirConstant::Utf16(_) => {

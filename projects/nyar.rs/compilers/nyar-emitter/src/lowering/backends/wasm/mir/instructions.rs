@@ -259,7 +259,6 @@ impl<'a> WasmMirLowerer<'a> {
             MirInstructionKind::AggregateCopy { layout_id, source, dest } => {
                 let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned()
                 else {
-                    eprintln!("[wasm::mir] AggregateCopy layout identity is not registered in `{}`", self.mir_fn.symbol);
                     encode_unreachable(&mut self.code);
                     return Ok(());
                 };
@@ -576,8 +575,7 @@ impl<'a> WasmMirLowerer<'a> {
                     WasmOpcode::Drop.encode(&mut self.code);
                 }
             }
-            MirInstructionKind::PatternMatch { value, .. } => {
-                eprintln!("[wasm::mir] PatternMatch trap in `{}`: value={:?}", self.mir_fn.symbol, value);
+            MirInstructionKind::PatternMatch { .. } => {
                 encode_unreachable(&mut self.code);
             }
             _ => {}
