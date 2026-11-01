@@ -268,6 +268,61 @@ micro i32_add(a: i32, b: i32): i32;
     }
 }
 
+#[test]
+fn maps_jvm_operator_binding_to_jvm_operator_host_link() {
+    let compiler = ValkyrieCompiler::new(SourceID { version_id: 920 });
+    let module = compiler
+        .compile_source(
+            r#"
+[jvm_operator("long.divide")]
+micro i64_div(a: i64, b: i64): i64;
+"#,
+        )
+        .unwrap();
+    let contract = function_interop_contract(&module.functions[0]).expect("expected jvm operator contract");
+    assert!(contract.matches_boundary("host"));
+    assert!(contract.matches_platform_tag("jvm-operator"));
+    assert_eq!(contract.locator_segments(), &["long.divide"]);
+}
+
+#[test]
+fn maps_clr_operator_binding_to_clr_operator_host_link() {
+    let compiler = ValkyrieCompiler::new(SourceID { version_id: 921 });
+    let module = compiler
+        .compile_source(
+            r#"
+[clr_operator("i64.div")]
+micro i64_div(a: i64, b: i64): i64;
+"#,
+        )
+        .unwrap();
+    let contract = function_interop_contract(&module.functions[0]).expect("expected clr operator contract");
+    assert!(contract.matches_boundary("host"));
+    assert!(contract.matches_platform_tag("clr-operator"));
+    assert_eq!(contract.locator_segments(), &["i64.div"]);
+}
+
+#[test]
+fn rejects_jvm_and_clr_operator_bindings_with_non_single_segment_locator() {
+    for (version_id, attribute, argument) in
+        [(922, "jvm_operator", r#""i32", "add""#), (923, "clr_operator", r#""i64", "div""#), (924, "jvm_operator", "32")]
+    {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id });
+        let module = compiler
+            .compile_source(&format!(
+                r#"
+[{attribute}({argument})]
+micro numeric_add(a: i64, b: i64): i64;
+"#
+            ))
+            .unwrap();
+        assert!(
+            function_interop_contract(&module.functions[0]).is_none(),
+            "`[{attribute}]` must require exactly one string mnemonic, got {argument}"
+        );
+    }
+}
+
 /// 旧 `opcode` 属性不得再产生任何目标绑定：迁移后不保留兼容别名。
 #[test]
 fn legacy_opcode_attributes_do_not_bind_target_contracts() {
