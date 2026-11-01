@@ -261,7 +261,19 @@ fn validate_static_call_resolution(submission: &FragmentSubmission, function: &E
                         detail: format!("ordinary callable `{path}` must carry a resolved item identity"),
                     });
                 }
-                ExecutableOperand::Value(_) | ExecutableOperand::Constant(_) => {
+                ExecutableOperand::Value(value) => {
+                    // 一等函数值 callee：仅接受冻结 SSA 类型事实携带 `NyarType::Function` 的值。
+                    // 本门只消费 `value_types` 中的既有事实，不重新推导签名；其余 Value callee 失败闭合。
+                    if !function.value_types.get(value).is_some_and(|ty| matches!(ty, NyarType::Function(_))) {
+                        return Err(SemanticMirContractError {
+                            code: "SMIR003",
+                            function: function.symbol.clone(),
+                            location,
+                            detail: "call callee value must carry a frozen `NyarType::Function` SSA type fact".to_string(),
+                        });
+                    }
+                }
+                ExecutableOperand::Constant(_) => {
                     return Err(SemanticMirContractError {
                         code: "SMIR003",
                         function: function.symbol.clone(),
