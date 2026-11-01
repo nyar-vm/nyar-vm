@@ -93,7 +93,7 @@ pub use ast_to_hir::AstToHir;
 pub use nyar_types::compiler_input::{CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup};
 
 #[doc(hidden)]
-pub use expr_lowering::lower_term_expression;
+pub use expr_lowering::{MAX_EXPRESSION_LOWERING_DEPTH, lower_term_expression};
 use expr_lowering::{extract_name_path, lower_block};
 
 use macro_expand::expand_macros_in_root;

@@ -21,6 +21,58 @@ use crate::compiler::{
 
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
+/// 表达式 lowering 的最大嵌套深度。
+///
+/// 守卫只约束递归深度，不改变任何语义；超过上限必须结构化失败，
+/// 不能靠扩大线程栈掩盖递归问题。
+pub const MAX_EXPRESSION_LOWERING_DEPTH: usize = 24;
+
+thread_local! {
+    static EXPRESSION_LOWERING_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// 进入/退出一次表达式 lowering 的 RAII 深度守卫。
+struct ExpressionDepthGuard;
+
+impl ExpressionDepthGuard {
+    fn enter(span: &SourceSpan) -> Result<Self, HirError> {
+        let depth = EXPRESSION_LOWERING_DEPTH.with(|cell| {
+            let next = cell.get().saturating_add(1);
+            cell.set(next);
+            next
+        });
+        if depth > MAX_EXPRESSION_LOWERING_DEPTH {
+            EXPRESSION_LOWERING_DEPTH.with(|cell| cell.set(depth.saturating_sub(1)));
+            return Err(HirError::ExpressionNestingExceeded {
+                depth,
+                limit: MAX_EXPRESSION_LOWERING_DEPTH,
+                source: nyar_types::DiagnosticSource { id: "<hir_lowering>".into(), revision: None },
+                span: nyar_types::DiagnosticSpan { start: span.span.start as usize, end: span.span.end as usize },
+            });
+        }
+        Ok(Self)
+    }
+}
+
+impl Drop for ExpressionDepthGuard {
+    fn drop(&mut self) {
+        EXPRESSION_LOWERING_DEPTH.with(|cell| cell.set(cell.get().saturating_sub(1)));
+    }
+}
+
+/// 在独立 `#[inline(never)]` 栈帧中执行单个构造的 lowering 体。
+///
+/// 巨型 `match` 会把所有分支的临时值合并进同一帧；把每个分支体放进
+/// 单独的调用帧后，单层递归只承担该分支自身的临时值。
+#[inline(never)]
+fn lower_deferred<F>(body: F) -> Result<HirExprKind, HirError>
+where
+    F: FnOnce() -> Result<HirExprKind, HirError>,
+{
+    body()
+}
+
+#[inline(never)]
 pub(super) fn lower_block(body: &Block, source_id: SourceID, fallback_span: Range<usize>) -> Result<HirBlock, HirError> {
     let span_range = if body.span.is_empty() { fallback_span } else { frontend::std_range(&body.span) };
     let (statements, tail) = split_block_tail(&body.statements, source_id, span_range.clone())?;
@@ -165,19 +217,40 @@ fn lower_term_expression_with_context(
         if span.is_empty() { fallback_span } else { frontend::std_range(&span) }
     };
     let span = with_source(&span_range, source_id);
-    let kind = match expression {
-        TermExpression::ArrayLiteral { items, .. } => HirExprKind::ArrayLiteral {
-            items: items
-                .iter()
-                .map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false))
-                .collect::<Result<Vec<_>, _>>()?,
-        },
-        TermExpression::TupleLiteral { items, .. } => HirExprKind::TupleLiteral {
-            items: items
-                .iter()
-                .map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false))
-                .collect::<Result<Vec<_>, _>>()?,
-        },
+    let _depth_guard = ExpressionDepthGuard::enter(&span)?;
+    let kind = lower_term_expression_body(expression, source_id, span_range, preserve_member_access, span.clone())?;
+    Ok(HirExpr { kind, span })
+}
+
+/// 表达式 lowering 的构造分派体。
+///
+/// 独立成 `#[inline(never)]` 函数，避免巨型 `match` 与递归调用点共用同一份
+/// 超大栈帧；深度守卫由调用方统一维护。
+#[inline(never)]
+fn lower_term_expression_body(
+    expression: &TermExpression,
+    source_id: SourceID,
+    span_range: Range<usize>,
+    preserve_member_access: bool,
+    span: SourceSpan,
+) -> Result<HirExprKind, HirError> {
+    Ok(match expression {
+        TermExpression::ArrayLiteral { items, .. } => lower_deferred(|| {
+            Ok(HirExprKind::ArrayLiteral {
+                items: items
+                    .iter()
+                    .map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false))
+                    .collect::<Result<Vec<_>, _>>()?,
+            })
+        })?,
+        TermExpression::TupleLiteral { items, .. } => lower_deferred(|| {
+            Ok(HirExprKind::TupleLiteral {
+                items: items
+                    .iter()
+                    .map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false))
+                    .collect::<Result<Vec<_>, _>>()?,
+            })
+        })?,
         TermExpression::NamePath(path) => lower_name_expression(path, span.clone()),
         TermExpression::StringLiteral(literal) => lower_string_literal_kind(literal, source_id, span_range.clone())?,
         TermExpression::IntegerLiteral { value, .. } => {
@@ -191,137 +264,160 @@ fn lower_term_expression_with_context(
         TermExpression::BooleanLiteral { value, .. } => HirExprKind::Literal(HirLiteral::Bool(*value)),
         TermExpression::Unary(node) => lower_unary_expression(node, source_id, span_range.clone(), span.clone())?,
         TermExpression::Binary(node) => lower_binary_expression(node, source_id, span_range.clone(), span.clone())?,
-        TermExpression::Cast { expr, ty, .. } => HirExprKind::Cast {
-            expr: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)?),
-            ty: super::lower_type_expression(ty)?,
-        },
-        TermExpression::Turbofish { expr, arguments, .. } => HirExprKind::GenericApply {
-            callee: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)?),
-            arguments: arguments.iter().map(super::lower_type_expression).collect::<Result<Vec<_>, _>>()?,
-        },
+        TermExpression::Cast { expr, ty, .. } => lower_deferred(|| {
+            Ok(HirExprKind::Cast {
+                expr: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)?),
+                ty: super::lower_type_expression(ty)?,
+            })
+        })?,
+        TermExpression::Turbofish { expr, arguments, .. } => lower_deferred(|| {
+            Ok(HirExprKind::GenericApply {
+                callee: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)?),
+                arguments: arguments.iter().map(super::lower_type_expression).collect::<Result<Vec<_>, _>>()?,
+            })
+        })?,
         TermExpression::ApplyCall { callee, args, .. } => lower_call_expression(callee, args, source_id, span_range.clone(), span.clone())?,
-        TermExpression::DotCall { receiver, field, .. } => {
+        TermExpression::DotCall { receiver, field, .. } => lower_deferred(|| {
             let object = lower_term_expression_with_context(receiver, source_id, span_range.clone(), false)?;
             let member = field.name.as_str();
-            if let Some(kind) = lower_postfix_effect_member(member, object.clone()) {
+            Ok(if let Some(kind) = lower_postfix_effect_member(member, object.clone()) {
                 kind
             }
             else {
                 HirExprKind::FieldAccess { object: Box::new(object), field: Identifier::new(member), field_id: None }
-            }
-        }
-        TermExpression::Index { receiver, index, .. } => {
+            })
+        })?,
+        TermExpression::Index { receiver, index, .. } => lower_deferred(|| {
             let receiver = lower_term_expression_with_context(receiver, source_id, span_range.clone(), false)?;
             let index = lower_term_expression_with_context(index, source_id, span_range.clone(), false)?;
-            lower_operator_member_call(
+            Ok(lower_operator_member_call(
                 SUBSCRIPT_MEMBER,
                 vec![HirCallArgument::positional(receiver), HirCallArgument::positional(index)],
                 span.clone(),
-            )
-        }
-        TermExpression::Offset { receiver, offset, .. } => {
+            ))
+        })?,
+        TermExpression::Offset { receiver, offset, .. } => lower_deferred(|| {
             let receiver = lower_term_expression_with_context(receiver, source_id, span_range.clone(), false)?;
             let offset = lower_term_expression_with_context(offset, source_id, span_range.clone(), false)?;
-            lower_operator_member_call(
+            Ok(lower_operator_member_call(
                 CARDINAL_SUBSCRIPT_MEMBER,
                 vec![HirCallArgument::positional(receiver), HirCallArgument::positional(offset)],
                 span.clone(),
-            )
-        }
+            ))
+        })?,
         TermExpression::Group { expr, .. } => {
-            lower_term_expression_with_context(expr, source_id, span_range.clone(), preserve_member_access)?.kind
+            lower_deferred(|| Ok(lower_term_expression_with_context(expr, source_id, span_range.clone(), preserve_member_access)?.kind))?
         }
-        TermExpression::Block(block) => HirExprKind::Block(Box::new(lower_block(block, source_id, span_range.clone())?)),
-        TermExpression::Micro(lambda) => {
+        TermExpression::Block(block) => {
+            lower_deferred(|| Ok(HirExprKind::Block(Box::new(lower_block(block, source_id, span_range.clone())?))))?
+        }
+        TermExpression::Micro(lambda) => lower_deferred(|| {
             let hir_params =
                 lambda.params.iter().map(|param| lower_param(param, source_id, span_range.clone())).collect::<Result<Vec<_>, _>>()?;
             let hir_return_type = lambda.return_type.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::AutoType);
             let hir_body = lower_block(&lambda.body, source_id, span_range.clone())?;
-            HirExprKind::Lambda { generics: Vec::new(), params: hir_params, return_type: hir_return_type, body: Box::new(hir_body) }
-        }
+            Ok(HirExprKind::Lambda {
+                generics: Vec::new(),
+                params: hir_params,
+                return_type: hir_return_type,
+                body: Box::new(hir_body),
+            })
+        })?,
         TermExpression::Object { callee, fields, .. } => lower_object_expression(callee, fields, source_id, span_range.clone(), span.clone())?,
         TermExpression::AnonymousClass(literal) => lower_anonymous_class(literal, source_id, span_range.clone())?,
         TermExpression::AnonymousStructure(literal) => lower_anonymous_structure(literal, source_id, span_range.clone())?,
-        TermExpression::If { pattern, condition, then_branch, else_branch, .. } => {
+        TermExpression::If { pattern, condition, then_branch, else_branch, .. } => lower_deferred(|| {
             if let Some(pattern) = pattern {
-                HirExprKind::IfLet {
+                Ok(HirExprKind::IfLet {
                     pattern: lower_pattern(pattern, source_id, span.clone()),
                     scrutinee: Box::new(lower_term_expression_with_context(condition, source_id, span_range.clone(), false)?),
                     then_branch: Box::new(lower_block(then_branch, source_id, span_range.clone())?),
                     else_branch: else_branch.as_ref().map(|body| lower_block(body, source_id, span_range.clone())).transpose()?.map(Box::new),
-                }
+                })
             }
             else {
-                HirExprKind::If {
+                Ok(HirExprKind::If {
                     condition: Box::new(lower_term_expression_with_context(condition, source_id, span_range.clone(), false)?),
                     then_branch: Box::new(lower_block(then_branch, source_id, span_range.clone())?),
                     else_branch: else_branch.as_ref().map(|body| lower_block(body, source_id, span_range.clone())).transpose()?.map(Box::new),
+                })
+            }
+        })?,
+        TermExpression::Match { scrutinee, arms, span: match_span, .. } => lower_deferred(|| {
+            Ok(HirExprKind::Match {
+                scrutinee: Box::new(lower_term_expression_with_context(scrutinee, source_id, span_range.clone(), false)?),
+                arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), crate::compiler::syntax::oak::std_range(match_span))?,
+            })
+        })?,
+        TermExpression::Loop { label, pattern, condition, body, .. } => lower_deferred(|| {
+            Ok(HirExprKind::Loop {
+                label: label.as_ref().map(|value| Identifier::new(value)),
+                pattern: pattern.as_ref().map(|pat| lower_pattern(pat, source_id, span.clone())),
+                iterator: if pattern.is_some() {
+                    condition
+                        .as_ref()
+                        .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
+                        .transpose()?
+                        .map(|e| Box::new(e))
                 }
-            }
-        }
-        TermExpression::Match { scrutinee, arms, span: match_span, .. } => HirExprKind::Match {
-            scrutinee: Box::new(lower_term_expression_with_context(scrutinee, source_id, span_range.clone(), false)?),
-            arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), crate::compiler::syntax::oak::std_range(match_span))?,
-        },
-        TermExpression::Loop { label, pattern, condition, body, .. } => HirExprKind::Loop {
-            label: label.as_ref().map(|value| Identifier::new(value)),
-            pattern: pattern.as_ref().map(|pat| lower_pattern(pat, source_id, span.clone())),
-            iterator: if pattern.is_some() {
-                condition
+                else {
+                    None
+                },
+                condition: if pattern.is_none() {
+                    condition
+                        .as_ref()
+                        .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
+                        .transpose()?
+                        .map(|e| Box::new(e))
+                }
+                else {
+                    None
+                },
+                body: Box::new(lower_block(body, source_id, span_range.clone())?),
+            })
+        })?,
+        TermExpression::Return(node) => lower_deferred(|| {
+            Ok(HirExprKind::Return(
+                node.base
                     .as_ref()
                     .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
                     .transpose()?
-                    .map(|e| Box::new(e))
-            }
-            else {
-                None
-            },
-            condition: if pattern.is_none() {
-                condition
+                    .map(|e| Box::new(e)),
+            ))
+        })?,
+        TermExpression::Break(node) => lower_deferred(|| {
+            Ok(HirExprKind::Break {
+                label: node.label.as_ref().map(|value| Identifier::new(value)),
+                expr: node
+                    .base
                     .as_ref()
                     .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
                     .transpose()?
-                    .map(|e| Box::new(e))
-            }
-            else {
-                None
-            },
-            body: Box::new(lower_block(body, source_id, span_range.clone())?),
-        },
-        TermExpression::Return(node) => HirExprKind::Return(
-            node.base
-                .as_ref()
-                .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
-                .transpose()?
-                .map(|e| Box::new(e)),
-        ),
-        TermExpression::Break(node) => HirExprKind::Break {
-            label: node.label.as_ref().map(|value| Identifier::new(value)),
-            expr: node
-                .base
-                .as_ref()
-                .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
-                .transpose()?
-                .map(|e| Box::new(e)),
-        },
+                    .map(|e| Box::new(e)),
+            })
+        })?,
         TermExpression::Continue(node) => HirExprKind::Continue { label: node.label.as_ref().map(|value| Identifier::new(value)) },
-        TermExpression::Raise(node) => {
-            HirExprKind::Raise(Box::new(lower_optional_term_expression(node.base.as_ref(), source_id, span_range.clone(), span.clone())?))
-        }
-        TermExpression::Resume(node) => {
-            HirExprKind::Resume(Box::new(lower_optional_term_expression(node.base.as_ref(), source_id, span_range.clone(), span.clone())?))
-        }
-        TermExpression::Yield { expr, .. } => HirExprKind::Yield(
-            expr.as_ref()
-                .map(|value| lower_term_expression_with_context(value, source_id, span_range.clone(), false))
-                .transpose()?
-                .map(|e| Box::new(e)),
-        ),
-        TermExpression::Catch { expr, arms, span: catch_span, .. } => HirExprKind::Catch {
-            expr: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)?),
-            arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), crate::compiler::syntax::oak::std_range(catch_span))?,
-        },
-        TermExpression::With { base, updates, .. } => {
+        TermExpression::Raise(node) => lower_deferred(|| {
+            Ok(HirExprKind::Raise(Box::new(lower_optional_term_expression(node.base.as_ref(), source_id, span_range.clone(), span.clone())?)))
+        })?,
+        TermExpression::Resume(node) => lower_deferred(|| {
+            Ok(HirExprKind::Resume(Box::new(lower_optional_term_expression(node.base.as_ref(), source_id, span_range.clone(), span.clone())?)))
+        })?,
+        TermExpression::Yield { expr, .. } => lower_deferred(|| {
+            Ok(HirExprKind::Yield(
+                expr.as_ref()
+                    .map(|value| lower_term_expression_with_context(value, source_id, span_range.clone(), false))
+                    .transpose()?
+                    .map(|e| Box::new(e)),
+            ))
+        })?,
+        TermExpression::Catch { expr, arms, span: catch_span, .. } => lower_deferred(|| {
+            Ok(HirExprKind::Catch {
+                expr: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)?),
+                arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), crate::compiler::syntax::oak::std_range(catch_span))?,
+            })
+        })?,
+        TermExpression::With { base, updates, .. } => lower_deferred(|| {
             let object = lower_term_expression_with_context(base, source_id, span_range.clone(), false)?;
             let mut hir_updates: Vec<HirExpr> = Vec::with_capacity(updates.len());
             for (field, value) in updates {
@@ -331,16 +427,16 @@ fn lower_term_expression_with_context(
                     span: span.clone(),
                 });
             }
-            HirExprKind::Call {
+            Ok(HirExprKind::Call {
                 callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("with")])), span: span.clone() }),
                 args: vec![HirCallArgument::positional(object)]
                     .into_iter()
                     .chain(hir_updates.into_iter().map(|expr| HirCallArgument::positional(expr)))
                     .collect(),
                 resolved: None,
-            }
-        }
-        TermExpression::SuperCall { method, args, .. } => {
+            })
+        })?,
+        TermExpression::SuperCall { method, args, .. } => lower_deferred(|| {
             let callee = HirExpr {
                 kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("super"), Identifier::new(&method.name)])),
                 span: span.clone(),
@@ -352,12 +448,12 @@ fn lower_term_expression_with_context(
                 .into_iter()
                 .map(HirCallArgument::positional)
                 .collect();
-            lower_canonical_call_arguments(callee, arg_exprs)
-        }
-    };
-    Ok(HirExpr { kind, span })
+            Ok(lower_canonical_call_arguments(callee, arg_exprs))
+        })?
+    })
 }
 
+#[inline(never)]
 fn lower_unary_expression(
     node: &TermUnaryNode,
     source_id: SourceID,
@@ -390,6 +486,7 @@ fn lower_unary_expression(
     }
 }
 
+#[inline(never)]
 fn lower_binary_expression(
     node: &TermBinaryNode,
     source_id: SourceID,
@@ -432,6 +529,7 @@ fn lower_binary_expression(
     }
 }
 
+#[inline(never)]
 fn lower_object_expression(
     callee: &TermExpression,
     fields: &[(frontend::ast::Identifier, Option<TermExpression>)],
@@ -591,6 +689,7 @@ fn lower_match_arms(
         .collect()
 }
 
+#[inline(never)]
 fn lower_call_expression(
     callee: &TermExpression,
     args: &[TermExpression],
@@ -769,3 +868,7 @@ fn plain_string_literal_text(literal: &StringLiteral) -> Option<&str> {
         StringSegment::Interpolation(_) => None,
     }
 }
+
+
+
+

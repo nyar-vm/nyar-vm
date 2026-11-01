@@ -92,6 +92,7 @@ impl HirError {
             Self::LegacyBuiltinTypeAlias { .. } => "valkyrie.hir.legacy_builtin_type_alias",
             Self::AmbiguousTextTypeName { .. } => "valkyrie.hir.ambiguous_text_type_name",
             Self::TypeNotFound { .. } => "valkyrie.hir.type_not_found",
+            Self::ExpressionNestingExceeded { .. } => "valkyrie.hir.expression_nesting_exceeded",
             Self::VxUnsupported => "valkyrie.hir.vx_unsupported",
             Self::SourceGroupClosureFailed(_) => "valkyrie.hir.source_group_closure_failed",
             Self::DeriveResolutionFailed { .. } => "valkyrie.hir.derive_resolution_failed",

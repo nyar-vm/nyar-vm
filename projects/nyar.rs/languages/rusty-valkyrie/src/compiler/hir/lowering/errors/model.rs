@@ -606,6 +606,20 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// 表达式 lowering 递归深度超过守卫上限。
+    ///
+    /// 该错误只表达「嵌套过深」这一结构化事实，不携带任何降级产物：
+    /// 调用方必须失败闭合，不得忽略或继续 lowering。
+    ExpressionNestingExceeded {
+        /// 触发时已进入的 lowering 层级。
+        depth: usize,
+        /// 允许的最大层级。
+        limit: usize,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// `.vx` source 暂不支持。
     VxUnsupported,
     /// 源码组语义闭包失败：入口声明缺失、HostProvider 未解析等。

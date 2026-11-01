@@ -273,6 +273,9 @@ impl From<HirError> for DiagnosticRow {
             HirError::TypeNotFound { name, .. } => {
                 row = row.with_arg("name", DiagnosticArg::TypeName(name.clone()));
             }
+            HirError::ExpressionNestingExceeded { depth, limit, .. } => {
+                row = row.with_arg("depth", DiagnosticArg::Int(*depth as i64)).with_arg("limit", DiagnosticArg::Int(*limit as i64));
+            }
             HirError::VxUnsupported => {}
             HirError::SourceGroupClosureFailed(e) => {
                 row = row.with_arg("details", DiagnosticArg::String(e.to_string()));
@@ -528,6 +531,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::PipelineRejected { .. } => DiagnosticSource { id: "<pipeline>".into(), revision: None },
         HirError::LegacyBuiltinTypeAlias { source, .. } | HirError::AmbiguousTextTypeName { source, .. } => source.clone(),
         HirError::TypeNotFound { source, .. } => source.clone(),
+        HirError::ExpressionNestingExceeded { source, .. } => source.clone(),
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
@@ -594,6 +598,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::PipelineRejected { .. } => empty_span(),
         HirError::LegacyBuiltinTypeAlias { span, .. } | HirError::AmbiguousTextTypeName { span, .. } => span.clone(),
         HirError::TypeNotFound { span, .. } => span.clone(),
+        HirError::ExpressionNestingExceeded { span, .. } => span.clone(),
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),

@@ -253,6 +253,9 @@ impl std::fmt::Display for HirError {
                 write!(f, "ambiguous text type `{name}` is forbidden; use an explicit encoding such as `utf8`, `utf16`, or `c_str`")
             }
             Self::TypeNotFound { name, .. } => write!(f, "unknown type name `{name}`: not a module type alias or language builtin"),
+            Self::ExpressionNestingExceeded { depth, limit, .. } => {
+                write!(f, "expression nesting exceeds lowering guard: depth={depth} limit={limit}")
+            }
             Self::VxUnsupported => write!(f, ".vx source is not supported"),
             Self::SourceGroupClosureFailed(e) => write!(f, "source group closure failed: {e}"),
             Self::DeriveResolutionFailed { errors } => {
