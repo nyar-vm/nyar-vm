@@ -291,8 +291,20 @@ impl<'a> WasmMirLowerer<'a> {
                         self.emit_struct_set(type_index, field_index as u32);
                     }
                 }
+                else if layout.fields.is_empty() {
+                    // 零字段值布局（如 `[primitive(...)] structure usize { }`）在运行期
+                    // 就是标量/空载体：值槽直接持有载体本身，不是线性内存地址。
+                    // 对这类赋值必须做标量值拷贝；走 `memory.copy` 会把载体数值当地址用，
+                    // 产生静默错误结果（空结构共享同一地址不可观测，同样安全）。
+                    let Some(dest_local) = self.operand_address_local(dest)
+                    else {
+                        return Ok(());
+                    };
+                    self.emit_operand(source);
+                    self.emit_local_set(dest_local);
+                }
                 else {
-                    // 值类型聚合：memory.copy 复制线性内存字节。
+                    // 非空值类型聚合：memory.copy 复制线性内存字节。
                     match (self.operand_address_local(source), self.operand_address_local(dest)) {
                         (Some(source_local), Some(dest_local)) => {
                             let size = layout.size;
