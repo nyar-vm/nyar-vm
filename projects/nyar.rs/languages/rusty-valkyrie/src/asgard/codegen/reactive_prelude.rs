@@ -59,6 +59,12 @@ micro rx_bind_value_utf8(handle: i32, expr_export: utf8, dep1: i32, dep2: i32)
 [js_builtin("__voa.domBindInputUtf8")]
 micro dom_bind_input_utf8(signal_id: i32, handle: i32, update_export: utf8)
 
+[js_builtin("__voa.mountIslands")]
+micro dom_mount_islands()
+
+[js_builtin("__voa.unmountIslands")]
+micro dom_unmount_islands(): i32
+
 [js_builtin("__voa.rxBindIf")]
 micro rx_bind_if(container: i32, cond_export: utf8, mount_export: utf8, dep1: i32, dep2: i32)
 

@@ -480,6 +480,8 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
       eventBindings.set(name + ':' + String(captured), fn);
       registerCleanup(function () { node.removeEventListener(eventName, fn); });
     },
+    '__voa.mountIslands': function () { mountIslands(); },
+    '__voa.unmountIslands': function () { return unmountIslands(); },
     '__voa.rxBatchBegin': function () { batchDepth += 1; },
     '__voa.rxBatchEnd': function () {
       batchDepth = Math.max(0, batchDepth - 1);
