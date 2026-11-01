@@ -14,7 +14,8 @@ use super::{
             wasm_function_body, wasm_function_type,
         },
     },
-    HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, MirInstructionKind, StorageKind, WASM_GC_EXTERNREF,
+    HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, MirInstructionKind, MirOperand, StorageKind, TargetOperatorBinding,
+    Utf8ArrayElementMaterializePlan, WASM_GC_EXTERNREF, WasmGcArrayOperation,
     imports::{
         build_callee_import_index, build_callee_wasm_operator_index, build_string_literal_index, build_wasi_callee_import_index,
         collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index,
@@ -217,6 +218,27 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &host_import_signatures,
         )?
     };
+    // 合同 §5：`[utf8]` 数组元素边界。`array.get` 结果 SSA 值绑定已登记 gc struct
+    // layout 时物理槽是 anyref，而元素字节按冻结合同是 i32 宿主句柄；编码期必须按
+    // 配方把句柄物化为 managed 字符串，配方表同样在目标计划阶段冻结；合成导入
+    // `env::host_utf8_extract` 按需追加，`import_count` 因此在本冻结步之后再取。
+    let utf8_array_element_materialize = if wasi_mode {
+        BTreeMap::new()
+    }
+    else {
+        freeze_utf8_array_element_materialize_plans(
+            submission,
+            &ctx,
+            &callee_wasm_operator,
+            &gc_struct_type_indices,
+            &mut gc_array_type_indices,
+            &mut type_indices,
+            js_glue_utf8_as_anyref,
+            &mut host_imports,
+            &mut import_type_entries,
+            &host_import_signatures,
+        )?
+    };
     let import_count = u32::try_from(host_imports.len()).expect("import count overflow");
     // 函数类型?structtype/arraytype/sumtype 之后开始追加?
     // type_indices 当前?[main_type, structtype_1, ..., structtype_N]?
@@ -343,6 +365,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &function_value_table_slots,
             &type_index_by_signature,
             &managed_utf8_to_host_handle,
+            &utf8_array_element_materialize,
         )?));
         mir_wasm_functions.push((wasm_index, full.clone()));
         if let Some(public_name) = submission.backend_plan.wasm_export_names().get(instance) {
@@ -836,6 +859,125 @@ fn freeze_host_handle_to_managed_utf8_plans(
         }
     }
     Ok(plans_by_instance)
+}
+
+/// 目标计划阶段冻结「宿主 i32 句柄 → managed 字符串」数组元素边界物化配方（合同 §5）。
+///
+/// `[utf8]` 数组按冻结合同登记为 `arraytype [i32]`（元素是宿主句柄），而 `array.get`
+/// 结果 SSA 值携带已登记 gc struct layout 时物理槽是 anyref；编码期必须按这张配方表
+/// 把取出的 i32 句柄物化为 managed 字符串 struct，禁止按符号名特判，也不得把计划槽
+/// 降级为 i32。扫描命中边界的 layout：MIR `ArrayGet` 臂与 `[wasm_operator("array.get")]`
+/// 冻结绑定调用，结果值为宿主字符串类型且 layout 已登记 gc struct。字节字段槽与
+/// arraytype 推导与库导出物化冻结同法；合成导入 `env::host_utf8_extract` 仅在确有
+/// 命中边界的 layout 时追加到导入表尾部。WASI 轨没有 `host_utf8_extract` 宿主能力，
+/// 装配侧不调用本函数（空表），编码期命中边界即结构化失败，与 WASI 既有 managed
+/// 字符串边界同口径。
+#[allow(clippy::too_many_arguments)]
+fn freeze_utf8_array_element_materialize_plans(
+    submission: &FragmentSubmission,
+    ctx: &ExecutableLoweringContext,
+    callee_wasm_operator: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    gc_array_type_indices: &mut BTreeMap<String, u32>,
+    type_indices: &mut Vec<Vec<u8>>,
+    js_glue_utf8_as_anyref: bool,
+    host_imports: &mut Vec<(String, String)>,
+    import_type_entries: &mut Vec<u32>,
+    host_import_signatures: &BTreeMap<(String, String), crate::BackendImport>,
+) -> crate::Result<BTreeMap<LayoutId, Utf8ArrayElementMaterializePlan>> {
+    let mut boundary_layouts = BTreeSet::new();
+    for instance in submission.backend_plan.instances() {
+        let Some(view) = submission.backend_plan.get_function(&instance)
+        else {
+            continue;
+        };
+        let mir_fn = &view.function;
+        for block in &mir_fn.blocks {
+            for instruction in &block.instructions {
+                let is_array_get = match &instruction.kind {
+                    MirInstructionKind::ArrayGet { .. } => true,
+                    MirInstructionKind::Call { callee: MirOperand::Item(callee), .. } => matches!(
+                        callee_wasm_operator.get(callee),
+                        Some((_, TargetOperatorBinding::FrozenWasmGcArray(plan))) if plan.operation == WasmGcArrayOperation::Get
+                    ),
+                    _ => false,
+                };
+                if !is_array_get {
+                    continue;
+                }
+                for result in &instruction.results {
+                    let Some(ty) = mir_fn.value_types.get(result)
+                    else {
+                        continue;
+                    };
+                    if !is_js_glue_host_string_type(ty) {
+                        continue;
+                    }
+                    let Some(layout_id) = mir_fn.value_layouts.get(result).copied()
+                    else {
+                        continue;
+                    };
+                    if gc_struct_type_indices.contains_key(&layout_id) {
+                        boundary_layouts.insert(layout_id);
+                    }
+                }
+            }
+        }
+    }
+    let mut plans = BTreeMap::new();
+    for layout_id in boundary_layouts {
+        let Some(struct_type_index) = gc_struct_type_indices.get(&layout_id).copied()
+        else {
+            continue;
+        };
+        let layout =
+            ctx.layout_by_id(layout_id).ok_or_else(|| format!("WASM 数组元素物化冻结失败: layout_id={layout_id:?} 缺少聚合布局身份"))?;
+        let (bytes_field_slot, element_type) = layout
+            .fields
+            .iter()
+            .enumerate()
+            .find_map(|(field_index, field)| match &field.ty {
+                NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
+                    matches!(element.as_ref(), NyarType::Integer8 { .. }).then(|| (field_index as u32, element.as_ref().clone()))
+                }
+                _ => None,
+            })
+            .ok_or_else(|| format!("WASM 数组元素物化冻结失败: layout `{}` 缺少整数字节数组字段，无法生成物化配方", layout.name))?;
+        let key = wasm_array_element_type_key(&element_type);
+        let bytes_array_type_index = match gc_array_type_indices.get(&key).copied() {
+            Some(type_index) => type_index,
+            None => {
+                let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+                type_indices.push(wasm_gc_array_type(wasm_gc_field_type_byte_for_glue(&element_type, js_glue_utf8_as_anyref)));
+                gc_array_type_indices.insert(key, type_index);
+                type_index
+            }
+        };
+        // extract 导入按需追加：下标即 wasm 函数索引（导入排在函数索引空间最前）。
+        let extract_import_index = match host_imports.iter().position(|(module, field)| module == "env" && field == "host_utf8_extract") {
+            Some(existing) => u32::try_from(existing).expect("import index overflow"),
+            None => {
+                let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+                type_indices.push(wasm_import_type_bytes_for_host(
+                    submission,
+                    ctx,
+                    false,
+                    "env",
+                    "host_utf8_extract",
+                    js_glue_utf8_as_anyref,
+                    host_import_signatures,
+                )?);
+                import_type_entries.push(type_index);
+                host_imports.push(("env".to_string(), "host_utf8_extract".to_string()));
+                u32::try_from(host_imports.len() - 1).expect("import index overflow")
+            }
+        };
+        plans.insert(
+            layout_id,
+            Utf8ArrayElementMaterializePlan { struct_type_index, bytes_field_slot, bytes_array_type_index, extract_import_index },
+        );
+    }
+    Ok(plans)
 }
 
 /// 发射库导出物化 wrapper 函数体：按形参顺序，命中配方的形参把宿主 i32 句柄物化为

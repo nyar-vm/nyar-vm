@@ -145,7 +145,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 按冻结配方把 managed 字符串 gc struct 转为宿主 i32 句柄：
     /// `struct.get` 取字节数组 → bump 分配线性内存 → 逐字节 `array.get` + `i32.store8`
     /// → `call env::host_intern_utf8(ptr, len)`。栈效果：`[anyref] → [i32]`。
-    fn emit_managed_utf8_to_host_handle(&mut self, operand: &MirOperand) -> crate::Result<()> {
+    pub(super) fn emit_managed_utf8_to_host_handle(&mut self, operand: &MirOperand) -> crate::Result<()> {
         let MirOperand::Value(value) = operand
         else {
             return Err(format!("WASM 宿主字符串边界操作数缺少 SSA 身份: {}", self.mir_fn.symbol));
