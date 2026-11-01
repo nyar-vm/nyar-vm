@@ -237,12 +237,73 @@ pub fn run_build(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
 }
 
 /// 执行 `asgard dev`。
+///
+/// 静态交付的 dev 重建：先构建到 staging 目录，成功后才把整代产物替换为当前
+/// `dist`；构建失败时上一代产物原地保留，不留下半成品页面。
+/// 应用交付（`App`）仍等待配置求值接入。
 pub fn run_dev(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
     require_project_admission(&args.project_dir)?;
-    Err(AsgardError::msg(report!(
-        "asgard dev: 配置求值（C0/C2）未闭合，首轮只交付 `build --static` 显式入口；dev 等待配置求值接入（项目：{}）",
-        args.project_dir.display()
-    )))
+    let AsgardDelivery::Static { entry, title } = &args.delivery
+    else {
+        return Err(AsgardError::msg(report!(
+            "asgard dev: 配置求值（C0/C2）未闭合，应用交付的 dev 尚不可用；静态交付请用 `asgard dev --static <entry>`（项目：{}）",
+            args.project_dir.display()
+        )));
+    };
+    let output_dir = args.output_dir.clone().unwrap_or_else(|| args.project_dir.join("dist"));
+    let staging_dir = staging_directory(&output_dir);
+    if staging_dir.exists() {
+        std::fs::remove_dir_all(&staging_dir)
+            .map_err(|error| AsgardError::msg(report!("清理上一代 staging 失败 {}: {error}", staging_dir.display())))?;
+    }
+    let report = build_static_site(&StaticSiteOptions {
+        project_dir: args.project_dir.clone(),
+        entry: entry.clone(),
+        output_dir: Some(staging_dir.clone()),
+        title: title.clone(),
+        base: "/".to_string(),
+        assets_dir: None,
+    })?;
+    swap_generation(&staging_dir, &output_dir)?;
+    println!("asgard dev (static) rebuilt");
+    println!("output: {}", output_dir.display());
+    println!("page: {}", output_dir.join("index.html").display());
+    println!("component: {}", report.component_name);
+    Ok(ExitCode::SUCCESS)
+}
+
+/// dev 重建的 staging 目录：与被替换的产物目录同级，避免跨卷重命名。
+fn staging_directory(output_dir: &Path) -> PathBuf {
+    let name = output_dir.file_name().and_then(|name| name.to_str()).unwrap_or("dist");
+    output_dir.with_file_name(format!("{name}.staging"))
+}
+
+/// 整代替换：`dist` → `dist.previous`，`dist.staging` → `dist`，成功后再清理上一代。
+///
+/// 第二次重命名失败时把上一代搬回原位，保证失败路径仍可服务旧页面。
+fn swap_generation(staging: &Path, output: &Path) -> AsgardResult<()> {
+    let previous = output.with_file_name(format!(
+        "{}.previous",
+        output.file_name().and_then(|name| name.to_str()).unwrap_or("dist")
+    ));
+    if previous.exists() {
+        std::fs::remove_dir_all(&previous).map_err(|error| AsgardError::msg(report!("清理上一代产物失败 {}: {error}", previous.display())))?;
+    }
+    let had_previous = output.exists();
+    if had_previous {
+        std::fs::rename(output, &previous)
+            .map_err(|error| AsgardError::msg(report!("暂存上一代产物失败 {} → {}: {error}", output.display(), previous.display())))?;
+    }
+    if let Err(error) = std::fs::rename(staging, output) {
+        if had_previous {
+            let _ = std::fs::rename(&previous, output);
+        }
+        return Err(AsgardError::msg(report!("替换产物失败 {} → {}: {error}", staging.display(), output.display())));
+    }
+    if previous.exists() {
+        let _ = std::fs::remove_dir_all(&previous);
+    }
+    Ok(())
 }
 
 /// 执行 `asgard pack`。

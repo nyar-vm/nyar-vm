@@ -96,6 +96,38 @@ fn static_delivery_fails_closed_on_bad_entry() {
 }
 
 #[test]
+fn dev_rebuild_swaps_the_whole_generation() {
+    // dev 成功重建后整代替换：`dist` 内是新一代产物，staging 不残留。
+    let temp = TempDir::new().expect("创建临时目录失败");
+    fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
+    fs::write(temp.path().join("source/index.w"), FIXTURE).expect("写入入口文件失败");
+    write_project_files(temp.path());
+
+    let code = run(&AsgardCommands::Dev(build_args(&temp, "source/index.w", Some("dev 重建".into())))).expect("dev 静态重建应成功");
+    assert_eq!(code, ExitCode::SUCCESS);
+    assert!(temp.path().join("dist/index.html").is_file(), "新一代产物必须落到 dist");
+    assert!(temp.path().join("dist/manifest.json").is_file(), "整代产物应包含 manifest");
+    assert!(!temp.path().join("dist.staging").exists(), "staging 目录应被替换掉而不是残留");
+    assert!(!temp.path().join("dist.previous").exists(), "上一代应在成功后清理");
+}
+
+#[test]
+fn dev_failure_keeps_the_previous_generation() {
+    // 构建失败时上一代 `dist` 原地保留，不被半成品覆盖。
+    let temp = TempDir::new().expect("创建临时目录失败");
+    fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
+    fs::create_dir_all(temp.path().join("dist")).expect("创建上一代产物目录失败");
+    fs::write(temp.path().join("dist/index.html"), "<!DOCTYPE html><title>previous generation</title>").expect("写入上一代页面失败");
+    fs::write(temp.path().join("source/index.w"), "<widget mismatch></widget>").expect("写入名不匹配的入口失败");
+    write_project_files(temp.path());
+
+    let _error = run(&AsgardCommands::Dev(build_args(&temp, "source/index.w", None))).expect_err("入口与根组件名不匹配应失败");
+    let previous = fs::read_to_string(temp.path().join("dist/index.html")).expect("上一代页面应仍然可读");
+    assert!(previous.contains("previous generation"), "失败重建不得覆盖上一代页面: {previous}");
+    assert!(!temp.path().join("dist.staging").exists(), "失败重建不得把 staging 当成产物");
+}
+
+#[test]
 fn build_requires_legion_project() {
     // 缺少 `legion.von` 的项目不是合法 Legion 项目，命令必须在读取入口前失败。
     let temp = TempDir::new().expect("创建临时目录失败");
