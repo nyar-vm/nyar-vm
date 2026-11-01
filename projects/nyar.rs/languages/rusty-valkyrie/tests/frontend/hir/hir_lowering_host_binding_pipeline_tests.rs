@@ -382,3 +382,139 @@ fn imply_method_host_contract_binds_provider_and_retires_contract_body() {
     );
     assert!(canonical.mir.functions.contains_key(&resolved[0].provider_instance), "provider 实现必须进入编译产物");
 }
+
+#[test]
+fn overloaded_imply_methods_outside_bindings_are_each_bound_and_do_not_fail_host_scan() {
+    // 回归（leetcode 矩阵 wasm 构建）：`Utf8Builder::append` 有两个合法重载（不同参数类型），
+    // host binding 扫描按编码名聚合曾把它们误判为歧义并拒绝整个构建。
+    // 编码名不是已解析身份：未被任何绑定引用的重载集合必须原样通过，各实例独立可调用。
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "std",
+            "std",
+            "namespace std.text;\n\
+             structure Utf8Text { _repr: i32 }\n\
+             class Utf8Builder { bytes: i32 }\n\
+             imply Utf8Builder {\n\
+             \x20\x20\x20micro append(self, c: i32) -> i32 { return c }\n\
+             \x20\x20\x20micro append(self, text: Utf8Text) -> i32 { return text._repr }\n\
+             }",
+        )
+        .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "[host_provider(demo::write)] micro write(value: i32) -> i32 { return value }",
+        )
+        .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "namespace demo;\n\
+             using std.text.{Utf8Text, Utf8Builder};\n\
+             [host_contract] micro write(value: i32) -> i32 { }\n\
+             [main] micro main() -> i32 {\n\
+             \x20\x20\x20let b = Utf8Builder { bytes: 1 }\n\
+             \x20\x20\x20let t = Utf8Text { _repr: 2 }\n\
+             \x20\x20\x20let x = b.append(3)\n\
+             \x20\x20\x20let y = b.append(t)\n\
+             \x20\x20\x20return write(y)\n\
+             }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into(), "std".into(), "adaptor".into()]),
+    ];
+    let bindings = vec![CompilerHostProviderBinding {
+        contract: micro_declaration_key("app", "demo.v", &["demo".into()], "write"),
+        provider: micro_declaration_key("adaptor", "adaptor.v", &[], "write"),
+        required_capabilities: vec![],
+        foreign_bindings: vec![],
+    }];
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .expect("同一编码名下的合法重载集合不得被 host binding 扫描判为歧义");
+    let canonical = program.canonical();
+    assert_eq!(user_linked_import_count(canonical), 0, "无关合同仍必须正常绑定到 provider");
+    let main_instance = *canonical.linked.entries.keys().next().expect("main entry");
+    let callees = canonical
+        .mir
+        .functions
+        .get(&main_instance)
+        .expect("main in mir")
+        .blocks
+        .values()
+        .flat_map(|block| block.instructions.iter())
+        .filter_map(|instruction| match &instruction.operation {
+            CanonicalOperation::Invoke { callee, .. } => Some(*callee),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let append_callees = callees
+        .iter()
+        .filter_map(|callee| match callee {
+            CanonicalCallee::Item(instance) => Some(*instance),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(append_callees.len() >= 3, "两个 append 重载调用与 write 调用必须指向各自独立实例, got {append_callees:?}");
+}
+
+#[test]
+fn host_contract_binding_on_overloaded_declaration_key_fails_closed() {
+    // 负向（保留既有拒绝语义）：Resolver 绑定按名字键引用合同，若编码名下聚合了
+    // 多个声明身份（两个同名 `[host_contract]` 重载），名字键无法区分实现目标，
+    // 必须结构化拒绝，不得取第一个候选或按名字表放行。
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "std",
+            "std",
+            "namespace std.text;\n\
+             class Utf8Builder { bytes: i32 }\n\
+             imply Utf8Builder {\n\
+             \x20\x20\x20[host_contract] micro append(self, c: i32) -> i32 { return c }\n\
+             \x20\x20\x20[host_contract] micro append(self, width: i32, height: i32) -> i32 { return height }\n\
+             }",
+        )
+        .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "namespace std.adaptor.wasm.text;\n\
+             using std.text.{Utf8Builder};\n\
+             [host_provider(std::text::Utf8Builder::append)] micro host_append(value: Utf8Builder): i32 { return value.bytes }",
+        )
+        .with_direct_dependencies(vec!["core".into(), "std".into()]),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "namespace demo;\n\
+             using std.text.{Utf8Builder};\n\
+             [main] micro main() -> i32 { let b = Utf8Builder { bytes: 1 }; return b.append(2) }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into(), "std".into(), "adaptor".into()]),
+    ];
+    let bindings = vec![CompilerHostProviderBinding {
+        contract: DeclarationKey {
+            dependency_key: "std".into(),
+            source_path: "std.v".into(),
+            namespace: vec!["std".into(), "text".into()],
+            kind: DeclarationKind::ImplyMethod,
+            owner: Some("Utf8Builder".into()),
+            name: "append".into(),
+        },
+        provider: micro_declaration_key("adaptor", "adaptor.v", &["std".into(), "adaptor".into(), "wasm".into(), "text".into()], "host_append"),
+        required_capabilities: vec![],
+        foreign_bindings: vec![],
+    }];
+    let hirs = ValkyrieCompiler::default()
+        .resolve_source_groups_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .expect("重载合同组必须完成 HIR 物化");
+    let refs = hirs.iter().collect::<Vec<_>>();
+    let error = resolve_host_provider_bindings(&refs, &bindings).expect_err("编码名下多声明身份的合同绑定必须 fail-closed");
+    let message = error.to_string();
+    assert!(message.contains("对应多个声明身份或实例"), "expected structured ambiguity rejection, got: {message}");
+    assert!(message.contains("append"), "failure must name the ambiguous declaration key, got: {message}");
+}

@@ -108,9 +108,10 @@ pub fn resolve_host_provider_bindings(
     let mut resolved = Vec::new();
     for binding in bindings {
         // 精确匹配；未命中则忽略 source_path fallback（planner 按文件构造，HIR 按 group 合并）。
-        let contract_instances = match instances.get(&binding.contract) {
-            Some(family) => family.clone(),
+        let (contract_declarations, contract_instances) = match instances.get(&binding.contract) {
+            Some(family) => (family.declarations.clone(), family.instances.clone()),
             None => {
+                let mut declarations = BTreeSet::new();
                 let mut union = BTreeSet::new();
                 for (key, family) in &instances {
                     if key.dependency_key == binding.contract.dependency_key
@@ -119,14 +120,24 @@ pub fn resolve_host_provider_bindings(
                         && key.owner == binding.contract.owner
                         && key.name == binding.contract.name
                     {
-                        union.extend(family.iter().copied());
+                        declarations.extend(family.declarations.iter().copied());
+                        union.extend(family.instances.iter().copied());
                     }
                 }
-                union
+                (declarations, union)
             }
         };
         if contract_instances.is_empty() {
             continue;
+        }
+        // 绑定键必须落在单一已解析声明身份上：编码名下聚合多个声明身份时，
+        // Resolver 的名字键无法区分重载，属真歧义，结构化拒绝；同一声明身份族内
+        // 的多个实例（声明级实例 + 单态化铸造副本）合法，全部各自绑定。
+        if contract_declarations.len() > 1 {
+            return Err(ParseError::Invalid {
+                message: format!("callable 声明 `{}` 对应多个声明身份或实例", binding.contract.encoded()),
+                span: None,
+            });
         }
         let provider_family = instances.get(&binding.provider).or_else(|| {
             instances
@@ -144,13 +155,13 @@ pub fn resolve_host_provider_bindings(
         else {
             continue;
         };
-        if provider_family.len() != 1 {
+        if provider_family.instances.len() != 1 {
             return Err(ParseError::Invalid {
-                message: format!("host provider 声明 `{}` 对应 {} 个实例", binding.provider.encoded(), provider_family.len()),
+                message: format!("host provider 声明 `{}` 对应 {} 个实例", binding.provider.encoded(), provider_family.instances.len()),
                 span: None,
             });
         }
-        let provider_instance = *provider_family.iter().next().expect("single provider instance");
+        let provider_instance = *provider_family.instances.iter().next().expect("single provider instance");
         // provider 必须是闭合可编码实例；签名仍含开放泛型 binder 的声明级 provider 尚未
         // 单态化，backend 无法编码。此时不得把合同默认体退役：该合同声明带本地实现体，
         // 仍由合同自身的默认体（链接边界已把 intrinsic 调用编码为结构 opcode）提供实现。
@@ -190,10 +201,14 @@ fn provider_has_open_generic_signature(hirs: &[&HirModule], instance: ItemInstan
 ///
 /// 映射只消费 HIR 已注册的 `declaration` / `instance`；声明种类与拥有者必须与语义闭包
 /// `collect_item` / `collect_members` / `collect_imply` 的登记一致，否则成员合同
-/// 会被当成“未进入闭包”而静默跳过。声明侧同一名字出现多个声明身份或多个声明实例
-/// 按结构化失败处理；单态化铸造副本（`instantiated_callables`）不参与名字扫描，
+/// 会被当成“未进入闭包”而静默跳过。名字键（`DeclarationKey`）只在作用域内解析，
+/// 不能代替已解析身份：同一编码名下出现多个声明身份是合法重载集合（如
+/// `Utf8Builder::append` 的 `char` / `&Utf8Text` 重载），扫描本身不得拒绝；
+/// 歧义判定推迟到绑定查找——只有被 Resolver 绑定实际引用的键出现多声明身份、
+/// 或同一声明身份冻结出多个实例（身份腐坏）才按结构化失败处理。
+/// 单态化铸造副本（`instantiated_callables`）不参与名字扫描，
 /// 按同一声明 `ItemId` 挂到实例族下——调用点只指向铸造实例，合同必须覆盖整个族。
-fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKey, BTreeSet<ItemInstanceId>>, ParseError> {
+fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKey, CallableFamily>, ParseError> {
     let mut collected = BTreeMap::<DeclarationKey, CallableFamily>::new();
     for module in hirs {
         for function in &module.functions {
@@ -258,15 +273,19 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
     let mut instances = BTreeMap::new();
     let mut mint_owner = BTreeMap::<ItemId, DeclarationKey>::new();
     for (key, family) in collected {
-        if family.declarations.len() > 1 || family.instances.len() > 1 {
-            return Err(ParseError::Invalid {
-                message: format!("callable 声明 `{}` 对应多个声明身份或实例", key.encoded()), span: None
-            });
+        // 同一声明身份冻结出多个实例是身份腐坏（一个 `ItemId` 只应有一个声明级实例），
+        // 结构化拒绝；多个不同声明身份共享一个编码名是合法重载集合，原样保留。
+        for (declaration, declaration_instances) in &family.by_declaration {
+            if declaration.is_some() && declaration_instances.len() > 1 {
+                return Err(ParseError::Invalid {
+                    message: format!("callable 声明 `{}` 对应多个声明身份或实例", key.encoded()), span: None
+                });
+            }
         }
-        for declaration in &family.declarations {
+        for declaration in family.by_declaration.keys().flatten() {
             mint_owner.insert(*declaration, key.clone());
         }
-        instances.insert(key, family.instances);
+        instances.insert(key, family);
     }
     for module in hirs {
         for callable in &module.instantiated_callables {
@@ -279,16 +298,19 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
                 continue;
             };
             if let Some(family) = instances.get_mut(key) {
-                family.insert(instance);
+                family.instances.insert(instance);
             }
         }
     }
     Ok(instances)
 }
 
-/// 声明身份 → 实例族条目：声明侧实例与单态化铸造副本（后续按 `ItemId` 汇入）合并。
+/// 声明身份 → 实例族条目：按声明 `ItemId` 分桶记录声明侧实例（同一声明出现多个
+/// 声明级实例即身份腐坏），并汇总整个键的声明身份集合与实例族（声明级实例加上
+/// 单态化铸造副本，后续按 `ItemId` 汇入）。
 #[derive(Default)]
 struct CallableFamily {
+    by_declaration: BTreeMap<Option<ItemId>, BTreeSet<ItemInstanceId>>,
     declarations: BTreeSet<ItemId>,
     instances: BTreeSet<ItemInstanceId>,
 }
@@ -300,6 +322,7 @@ fn collect_callable_instance(collected: &mut BTreeMap<DeclarationKey, CallableFa
     }
     if let Some(instance) = function.instance {
         family.instances.insert(instance);
+        family.by_declaration.entry(function.declaration).or_default().insert(instance);
     }
 }
 
