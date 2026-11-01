@@ -2,7 +2,8 @@
 //!
 //! 用 Node 执行真实生成的 `boot.js`：最小 DOM 仿真提供节点、属性、事件与句柄表，
 //! wasm 导出用固定桩函数代替（只验证宿主侧挂载/更新/解绑逻辑，不代表 wasm 语义）。
-//! 断言覆盖 mount → input 事件 → 信号 → DOM 更新 → unmount 解绑 → 重挂载，
+//! 断言覆盖 mount → input 事件 → 信号 → DOM 更新 → unmount 解绑 → 重挂载 →
+//! `pagehide` 页面卸载 dispose（解绑监听/订阅、放下 wasm 实例引用、幂等），
 //! 不允许用“产物里出现 `unmountIslands` 字符串”冒充生命周期正确。
 
 use std::process::Command;

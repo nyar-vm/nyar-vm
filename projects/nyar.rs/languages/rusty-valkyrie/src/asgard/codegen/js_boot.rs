@@ -619,6 +619,26 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     return count;
   }
 
+  // ── 页面卸载 dispose ─────────────────────────────────────────────
+  // 页面卸载的完整链路：按 island 作用域解绑监听/订阅、丢弃 memo、释放 DOM
+  // 句柄，然后清空事件绑定表并放下 wasm 实例引用。wasm 侧状态驻留线性内存，
+  // 随页面卸载由宿主回收；wasm 导出面尚无独立 teardown 导出，不得伪造。
+  // `pagehide` 对 bfcache 与真实关闭都触发，是卸载语义的可靠时点。
+  var pageDisposed = false;
+
+  function disposePage() {
+    if (pageDisposed) return;
+    pageDisposed = true;
+    unmountIslands();
+    memos.clear();
+    eventBindings.clear();
+    wasmExports = null;
+  }
+
+  if (typeof global.addEventListener === 'function') {
+    global.addEventListener('pagehide', disposePage);
+  }
+
   function loadScript(url) {
     return new Promise(function (resolve, reject) {
       var script = document.createElement('script');
@@ -669,6 +689,7 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     registerComponent: registerComponent,
     mountIslands: mountIslands,
     unmountIslands: unmountIslands,
+    disposePage: disposePage,
     hydrate: hydrateFromDom,
     start: start,
     wasmModule: WASM_STEM,

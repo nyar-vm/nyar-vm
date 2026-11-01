@@ -199,6 +199,24 @@ globalThis.CustomEvent = class CustomEvent {
   }
 };
 
+// 页面级事件注册表：捕获 boot 登记的 `pagehide` 卸载监听，测试末尾真实派发。
+const pageListeners = new Map();
+globalThis.addEventListener = (type, handler) => {
+  const key = String(type);
+  if (!pageListeners.has(key)) pageListeners.set(key, new Set());
+  pageListeners.get(key).add(handler);
+};
+globalThis.removeEventListener = (type, handler) => {
+  const set = pageListeners.get(String(type));
+  if (set) set.delete(handler);
+};
+globalThis.dispatchEvent = (event) => {
+  const set = pageListeners.get(String(event.type));
+  if (set) {
+    for (const handler of [...set]) handler(event);
+  }
+};
+
 globalThis.fetch = async (url) => {
   if (url === 'manifest.json' || url === '/manifest.json') {
     return { ok: true, json: async () => ({ wasm: [{ url: 'probe.wasm', glue: 'probe.mjs' }], components: [] }) };
@@ -297,5 +315,20 @@ assert.equal(inputRef.listenerCount('input'), 1, '重挂载必须重新绑定监
 assert.equal(inputRef.value, 'hello', '重挂载必须从当前信号恢复 DOM');
 assert.equal(exprCalls, callsAfterUnmount + 1, '重挂载必须重新计算一次表达式');
 assert.equal(observeCalls, observesAfterUnmount + 1, '重挂载必须重新激活 `sigSubscribe`');
+
+// ── 页面卸载 dispose 链路 ──────────────────────────────────────────
+assert.equal(pageListeners.has('pagehide'), true, 'boot 必须登记 pagehide 卸载监听');
+const exprBeforeUnload = exprCalls;
+const observeBeforeUnload = observeCalls;
+globalThis.dispatchEvent({ type: 'pagehide' });
+assert.equal(host.__voaMounted, false, 'pagehide 必须卸载全部 island');
+assert.equal(inputRef.listenerCount('input'), 0, 'pagehide 必须解绑 input 监听');
+assert.equal(globalThis.__voa.isLoaded(), false, 'pagehide 必须放下 wasm 实例引用');
+globalThis.__voa.host['__voa.sigSetUtf8'](probeSignalId, 'after-pagehide');
+assert.equal(exprCalls, exprBeforeUnload, 'pagehide 后的信号写入不得再执行表达式');
+assert.equal(observeCalls, observeBeforeUnload, 'pagehide 后的信号写入不得再触发 `sigSubscribe`');
+// 幂等：重复卸载事件不得重复清理或抛错。
+globalThis.dispatchEvent({ type: 'pagehide' });
+globalThis.__voa.disposePage();
 
 process.stdout.write('BOOT_LIFECYCLE_OK\n');
