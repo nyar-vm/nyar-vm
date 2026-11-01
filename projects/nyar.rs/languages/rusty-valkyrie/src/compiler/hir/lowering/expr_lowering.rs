@@ -868,7 +868,3 @@ fn plain_string_literal_text(literal: &StringLiteral) -> Option<&str> {
         StringSegment::Interpolation(_) => None,
     }
 }
-
-
-
-
