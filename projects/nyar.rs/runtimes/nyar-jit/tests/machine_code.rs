@@ -68,3 +68,22 @@ fn roundtrip_ret_i32_select_cmp_mixed_and_void() {
     );
     assert_eq!(decode_scalar_program(&encode_ret_void()).unwrap(), ScalarProgram::RetVoid);
 }
+
+#[test]
+fn roundtrip_unsigned_i32_cmp_encoding_and_semantics() {
+    for (cmp, byte) in [(I32Cmp::LtU, 6u8), (I32Cmp::LeU, 7u8), (I32Cmp::GtU, 8u8), (I32Cmp::GeU, 9u8)] {
+        assert_eq!(cmp.to_u8(), byte, "{cmp:?} 的编码槽位必须稳定");
+        assert_eq!(I32Cmp::from_u8(byte), Some(cmp));
+        let blob = encode_ret_i32_cmp_locals(cmp, 0, 1);
+        assert_eq!(decode_scalar_program(&blob).unwrap(), ScalarProgram::RetI32CmpLocals { cmp, a: 0, b: 1 });
+    }
+    assert_eq!(I32Cmp::from_u8(10), None, "编码槽位之后的值必须拒绝解码");
+
+    // 无符号语义：`-1` 的位型是 `0xFFFFFFFF`，对 `1` 必须判大不判小。
+    assert!(!I32Cmp::LtU.eval(-1, 1));
+    assert!(!I32Cmp::LeU.eval(-1, 1));
+    assert!(I32Cmp::GtU.eval(-1, 1));
+    assert!(I32Cmp::GeU.eval(-1, 1));
+    assert!(I32Cmp::LtU.eval(3, 5));
+    assert!(!I32Cmp::GtU.eval(3, 5));
+}

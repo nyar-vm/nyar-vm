@@ -52,6 +52,10 @@ pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "i32.le" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32LeS),
         "i32.gt" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GtS),
         "i32.ge" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GeS),
+        "i32.lt_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32LtU),
+        "i32.le_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32LeU),
+        "i32.gt_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GtU),
+        "i32.ge_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GeU),
         "i32.neg" => (1, TargetOperatorRecipe::Steps(I32_NEGATE_STEPS), OdinHeadCode::I32Sub),
         _ => return None,
     };

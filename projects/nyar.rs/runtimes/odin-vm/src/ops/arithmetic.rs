@@ -31,18 +31,26 @@ pub fn execute_arithmetic(instruction: OdinInstruction, frame: &mut Frame, stack
         OdinHeadCode::I32Eq
         | OdinHeadCode::I32Ne
         | OdinHeadCode::I32LtS
+        | OdinHeadCode::I32LtU
         | OdinHeadCode::I32LeS
+        | OdinHeadCode::I32LeU
         | OdinHeadCode::I32GtS
-        | OdinHeadCode::I32GeS => {
+        | OdinHeadCode::I32GtU
+        | OdinHeadCode::I32GeS
+        | OdinHeadCode::I32GeU => {
             let rhs = pop_i32(stack)?;
             let lhs = pop_i32(stack)?;
             let result = match instruction.code {
                 OdinHeadCode::I32Eq => lhs == rhs,
                 OdinHeadCode::I32Ne => lhs != rhs,
                 OdinHeadCode::I32LtS => lhs < rhs,
+                OdinHeadCode::I32LtU => (lhs as u32) < (rhs as u32),
                 OdinHeadCode::I32LeS => lhs <= rhs,
+                OdinHeadCode::I32LeU => (lhs as u32) <= (rhs as u32),
                 OdinHeadCode::I32GtS => lhs > rhs,
+                OdinHeadCode::I32GtU => (lhs as u32) > (rhs as u32),
                 OdinHeadCode::I32GeS => lhs >= rhs,
+                OdinHeadCode::I32GeU => (lhs as u32) >= (rhs as u32),
                 _ => unreachable!(),
             };
             stack.push(Value::Bool(result));

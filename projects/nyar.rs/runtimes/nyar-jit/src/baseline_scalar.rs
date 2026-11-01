@@ -625,6 +625,10 @@ fn head_to_cmp(code: OdinHeadCode) -> Option<I32Cmp> {
         OdinHeadCode::I32LeS => Some(I32Cmp::LeS),
         OdinHeadCode::I32GtS => Some(I32Cmp::GtS),
         OdinHeadCode::I32GeS => Some(I32Cmp::GeS),
+        OdinHeadCode::I32LtU => Some(I32Cmp::LtU),
+        OdinHeadCode::I32LeU => Some(I32Cmp::LeU),
+        OdinHeadCode::I32GtU => Some(I32Cmp::GtU),
+        OdinHeadCode::I32GeU => Some(I32Cmp::GeU),
         _ => None,
     }
 }

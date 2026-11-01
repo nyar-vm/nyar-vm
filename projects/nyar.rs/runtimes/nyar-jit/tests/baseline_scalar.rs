@@ -62,6 +62,26 @@ fn compiles_i32_cmp_return() {
 }
 
 #[test]
+fn compiles_i32_unsigned_cmp_return() {
+    let mut jit = BaselineScalarJit;
+    for (op, cmp) in [
+        (OdinHeadCode::I32LtU, I32Cmp::LtU),
+        (OdinHeadCode::I32LeU, I32Cmp::LeU),
+        (OdinHeadCode::I32GtU, I32Cmp::GtU),
+        (OdinHeadCode::I32GeU, I32Cmp::GeU),
+    ] {
+        let mut code = Vec::new();
+        emit_load(&mut code, 0);
+        emit_load(&mut code, 1);
+        code.push(op as u8);
+        code.push(OdinHeadCode::Return as u8);
+        let artifact = jit.compile_function(&request(code)).expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetI32CmpLocals { cmp, a: 0, b: 1 }, "{op:?} 必须映射到 {cmp:?}");
+    }
+}
+
+#[test]
 fn compiles_load_dup_binop() {
     let mut code = Vec::new();
     emit_load(&mut code, 0);

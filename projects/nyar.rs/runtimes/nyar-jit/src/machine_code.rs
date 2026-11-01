@@ -113,6 +113,14 @@ pub enum I32Cmp {
     GtS,
     /// 有符号 `>=`
     GeS,
+    /// 无符号 `<`
+    LtU,
+    /// 无符号 `<=`
+    LeU,
+    /// 无符号 `>`
+    GtU,
+    /// 无符号 `>=`
+    GeU,
 }
 
 impl I32Cmp {
@@ -125,6 +133,10 @@ impl I32Cmp {
             Self::LeS => 3,
             Self::GtS => 4,
             Self::GeS => 5,
+            Self::LtU => 6,
+            Self::LeU => 7,
+            Self::GtU => 8,
+            Self::GeU => 9,
         }
     }
 
@@ -137,6 +149,10 @@ impl I32Cmp {
             3 => Some(Self::LeS),
             4 => Some(Self::GtS),
             5 => Some(Self::GeS),
+            6 => Some(Self::LtU),
+            7 => Some(Self::LeU),
+            8 => Some(Self::GtU),
+            9 => Some(Self::GeU),
             _ => None,
         }
     }
@@ -150,6 +166,10 @@ impl I32Cmp {
             Self::LeS => lhs <= rhs,
             Self::GtS => lhs > rhs,
             Self::GeS => lhs >= rhs,
+            Self::LtU => (lhs as u32) < (rhs as u32),
+            Self::LeU => (lhs as u32) <= (rhs as u32),
+            Self::GtU => (lhs as u32) > (rhs as u32),
+            Self::GeU => (lhs as u32) >= (rhs as u32),
         }
     }
 }

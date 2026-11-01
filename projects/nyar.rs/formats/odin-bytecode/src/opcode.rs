@@ -84,12 +84,20 @@ pub enum OdinHeadCode {
     I32Ne = 0x41,
     /// 32 位有符号整数小于比较。
     I32LtS = 0x42,
+    /// 32 位无符号整数小于比较。
+    I32LtU = 0x43,
     /// 32 位有符号整数小于等于比较。
     I32LeS = 0x44,
+    /// 32 位无符号整数小于等于比较。
+    I32LeU = 0x45,
     /// 32 位有符号整数大于比较。
     I32GtS = 0x46,
+    /// 32 位无符号整数大于比较。
+    I32GtU = 0x47,
     /// 32 位有符号整数大于等于比较。
     I32GeS = 0x48,
+    /// 32 位无符号整数大于等于比较。
+    I32GeU = 0x49,
     /// 调用函数（operand1 = 函数索引）。
     Call = 0x04,
     /// 静态调用（operand1 = 函数索引，operand2 = 参数个数）。
@@ -138,9 +146,13 @@ impl OdinHeadCode {
             0x40 => Some(Self::I32Eq),
             0x41 => Some(Self::I32Ne),
             0x42 => Some(Self::I32LtS),
+            0x43 => Some(Self::I32LtU),
             0x44 => Some(Self::I32LeS),
+            0x45 => Some(Self::I32LeU),
             0x46 => Some(Self::I32GtS),
+            0x47 => Some(Self::I32GtU),
             0x48 => Some(Self::I32GeS),
+            0x49 => Some(Self::I32GeU),
             0xD0 => Some(Self::CallIntrinsic),
             0xD2 => Some(Self::CallImport),
             0x50 => Some(Self::ObjectNew),
@@ -246,9 +258,13 @@ impl OdinHeadCode {
             | Self::I32Eq
             | Self::I32Ne
             | Self::I32LtS
+            | Self::I32LtU
             | Self::I32LeS
+            | Self::I32LeU
             | Self::I32GtS
-            | Self::I32GeS => OdinInstructionForm::Plain,
+            | Self::I32GtU
+            | Self::I32GeS
+            | Self::I32GeU => OdinInstructionForm::Plain,
         }
     }
 

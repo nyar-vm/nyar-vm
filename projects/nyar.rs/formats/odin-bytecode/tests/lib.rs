@@ -78,6 +78,38 @@ fn unknown_intrinsic_operand_is_rejected() {
 }
 
 #[test]
+fn unsigned_comparison_opcodes_round_trip() {
+    for (byte, code) in
+        [(0x43u8, OdinHeadCode::I32LtU), (0x45u8, OdinHeadCode::I32LeU), (0x47u8, OdinHeadCode::I32GtU), (0x49u8, OdinHeadCode::I32GeU)]
+    {
+        assert_eq!(OdinHeadCode::from_u8(byte), Some(code), "槽位 0x{byte:02X} 必须解析为 {code:?}");
+        assert_eq!(code as u8, byte);
+        assert_eq!(code.form(), OdinInstructionForm::Plain);
+        assert_eq!(code.code_size(), 1);
+    }
+
+    let mut stream = Vec::new();
+    for code in [OdinHeadCode::I32LtU, OdinHeadCode::I32LeU, OdinHeadCode::I32GtU, OdinHeadCode::I32GeU] {
+        emit_plain(&mut stream, code);
+    }
+    for (index, code) in [OdinHeadCode::I32LtU, OdinHeadCode::I32LeU, OdinHeadCode::I32GtU, OdinHeadCode::I32GeU].iter().enumerate() {
+        let decoded = decode_at(&stream, index);
+        assert_eq!(decoded.code, *code);
+        assert!(decoded.is_valid(), "{code:?} 必须是可解码的 Plain 指令");
+    }
+}
+
+#[test]
+fn signed_comparison_slots_stay_signed_and_unallocated_gaps_rejected() {
+    // 偶数槽位属于有符号变体，奇数槽位属于无符号变体；`0x49` 之后不得静默分配。
+    assert_eq!(OdinHeadCode::from_u8(0x42), Some(OdinHeadCode::I32LtS));
+    assert_eq!(OdinHeadCode::from_u8(0x44), Some(OdinHeadCode::I32LeS));
+    assert_eq!(OdinHeadCode::from_u8(0x46), Some(OdinHeadCode::I32GtS));
+    assert_eq!(OdinHeadCode::from_u8(0x48), Some(OdinHeadCode::I32GeS));
+    assert_eq!(OdinHeadCode::from_u8(0x4A), None, "未分配槽位必须拒绝解码");
+}
+
+#[test]
 fn layouts_section_round_trips() {
     let data = OdinModuleData {
         version: Odin_VERSION,

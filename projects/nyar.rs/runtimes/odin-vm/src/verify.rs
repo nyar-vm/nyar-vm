@@ -668,9 +668,13 @@ fn stack_transfer(
         | OdinHeadCode::I32Eq
         | OdinHeadCode::I32Ne
         | OdinHeadCode::I32LtS
+        | OdinHeadCode::I32LtU
         | OdinHeadCode::I32LeS
+        | OdinHeadCode::I32LeU
         | OdinHeadCode::I32GtS
-        | OdinHeadCode::I32GeS => {
+        | OdinHeadCode::I32GtU
+        | OdinHeadCode::I32GeS
+        | OdinHeadCode::I32GeU => {
             require_height(function_index, pc, height, 2)?;
             let after_rhs = pop_typed_stack(function_index, pc, types, StackKind::I32, height, coroutine)?;
             let after_lhs = pop_typed_stack(function_index, pc, types, StackKind::I32, after_rhs, coroutine)?;
