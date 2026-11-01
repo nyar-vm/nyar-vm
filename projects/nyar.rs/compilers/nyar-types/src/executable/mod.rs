@@ -9,9 +9,6 @@ use ordered_float::OrderedFloat;
 
 use crate::{ItemInstanceId, NamePath, NyarType};
 
-/// 墓碑模块：禁止把 IntrinsicOpcode 重新当作 MIR 权威。
-pub mod intrinsic;
-
 /// SSA value reference within an executable function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ValueRef(pub u32);

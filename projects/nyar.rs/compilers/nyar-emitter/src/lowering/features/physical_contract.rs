@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use nyar_types::{ItemInstanceId, NamePath, NyarType};
+use nyar_types::{ItemInstanceId, NyarType};
 
 use crate::{
     FragmentSubmission, TargetExecutionPlan,
@@ -282,14 +282,6 @@ fn constant_nyar_type(constant: &crate::contracts::Constant) -> NyarType {
         // 空值没有独立名义类型；它只能经带 `T?` 类型的 LoadConstant 进入计划。
         crate::contracts::Constant::Null => panic!("bare null constant has no standalone semantic type"),
     }
-}
-
-/// 已删除（batch 7）：按符号路径猜测 intrinsic 的旁路。
-/// intrinsic 调用必须降级为 `Call { callee: Item(instance) }` 才能通过 adaptor/import binding。
-#[allow(dead_code)]
-fn _is_language_builtin_symbol_unused(path: &NamePath) -> bool {
-    let _ = path;
-    false
 }
 
 fn collect_text_projections(

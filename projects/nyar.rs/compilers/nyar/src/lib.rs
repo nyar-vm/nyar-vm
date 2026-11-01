@@ -53,7 +53,6 @@ pub use nyar_optimizer::{
 };
 pub use nyar_types::{
     AggregateLayoutPlan, CapabilityTag, ExecutableFunction, ExternalCallArgument, ExternalCallEdge, ExternalImportLink, FlagsLayout,
-    FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall, Identifier,
-    InternalCallEdge, NamePath, NyarFunctionType, NyarType, QualifiedName, SingletonInstancePlan, SumTypeLayout, SymbolIdentity,
+    Identifier, InternalCallEdge, NamePath, NyarFunctionType, NyarType, QualifiedName, SingletonInstancePlan, SumTypeLayout, SymbolIdentity,
     WitnessCallEdge, WitnessMethodSlotSubmission, WitnessObject, WitnessSubmission,
 };

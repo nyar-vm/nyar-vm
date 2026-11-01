@@ -31,7 +31,6 @@ pub use self::{
         ArtifactContract, BootstrapStage, EvidencePackage, EvidenceStatus, PrimitiveDefinition, PrimitiveRegistry, Provenance,
         SemanticObservation, SemanticPackageInterface,
     },
-    nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall},
     registries::{AttributeRegistry, AttributeRegistryError},
     semantic_ids::{
         AttributeId, AttributeRegistration, EffectEdgeId, EffectSiteId, EvidenceId, FieldId, GenericFunctionId, IdKind, ImportCapability,
@@ -60,8 +59,6 @@ mod external_import;
 pub mod layout;
 /// 前端、规划器、emitter 与运行时共享的中立可审计合同。
 pub mod neutral_contract;
-/// 语言装配与后端共享的可空 intrinsic 配置。
-pub mod nullable;
 /// 可扩展属性 / 运算符注册表。
 pub mod registries;
 /// 参数化 MIR 语义身份与稀疏 RepresentationPlan。

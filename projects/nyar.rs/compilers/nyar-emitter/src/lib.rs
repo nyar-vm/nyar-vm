@@ -12,7 +12,6 @@ pub mod contracts;
 mod driver;
 #[doc(hidden)]
 pub mod lowering;
-mod nullable_profiles;
 mod target_execution_plan;
 pub mod target_operator;
 
@@ -56,9 +55,6 @@ use crate::{
 
 pub(crate) use backend_plan_views::{FunctionView, SuspendMetadataView};
 pub use lowering::pattern_matching_contract::{PatternMatchingContractError, validate_pattern_matching_invariants};
-pub use nullable_profiles::{
-    FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall,
-};
 pub use nyar::ArtifactPartition;
 
 /// Integration-test support wrappers for crate-internal lowering and compile flows.
