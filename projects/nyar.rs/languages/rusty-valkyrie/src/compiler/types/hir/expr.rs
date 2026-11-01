@@ -1,8 +1,7 @@
 //! Expression, capture, and capture mode definitions for HIR.
 
 use super::{
-    FunctionType, GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent,
-    HirPattern, ValkyrieType,
+    FunctionType, GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent, HirPattern, ValkyrieType,
 };
 use crate::compiler::types::{Identifier, NamePath, SourceSpan};
 

@@ -282,10 +282,7 @@ fn staging_directory(output_dir: &Path) -> PathBuf {
 ///
 /// 第二次重命名失败时把上一代搬回原位，保证失败路径仍可服务旧页面。
 fn swap_generation(staging: &Path, output: &Path) -> AsgardResult<()> {
-    let previous = output.with_file_name(format!(
-        "{}.previous",
-        output.file_name().and_then(|name| name.to_str()).unwrap_or("dist")
-    ));
+    let previous = output.with_file_name(format!("{}.previous", output.file_name().and_then(|name| name.to_str()).unwrap_or("dist")));
     if previous.exists() {
         std::fs::remove_dir_all(&previous).map_err(|error| AsgardError::msg(report!("清理上一代产物失败 {}: {error}", previous.display())))?;
     }

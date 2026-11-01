@@ -22,11 +22,10 @@ use crate::compiler::hir::overload::candidates::collect_module_candidates;
 
 use crate::compiler::hir::overload::{
     call_resolver::{
-        candidate_has_receiver_parameter, enrich_sum_variant_operation_facts,
-        match_singleton_method_candidate, overload_symbol_path, peel_explicit_generic_arguments, try_resolve_constructor,
-        try_resolve_constructor_call, try_resolve_instance_method, try_resolve_nullary_constructor, try_resolve_pattern_extractor,
-        try_resolve_qualified_free_function, try_resolve_singleton_method, try_resolve_try_propagate_ok_variant,
-        try_resolve_type_static_method,
+        candidate_has_receiver_parameter, enrich_sum_variant_operation_facts, match_singleton_method_candidate, overload_symbol_path,
+        peel_explicit_generic_arguments, try_resolve_constructor, try_resolve_constructor_call, try_resolve_instance_method,
+        try_resolve_nullary_constructor, try_resolve_pattern_extractor, try_resolve_qualified_free_function, try_resolve_singleton_method,
+        try_resolve_try_propagate_ok_variant, try_resolve_type_static_method,
     },
     diagnostics::{OverloadCandidate, OverloadResolutionError},
     expr_position::ExprPosition,

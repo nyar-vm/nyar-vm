@@ -1,8 +1,6 @@
-use crate::compiler::{
-    types::{
-        Identifier,
-        hir::{FunctionType, HirCallableDomain, HirExpr, HirResolvedCall, ValkyrieType},
-    },
+use crate::compiler::types::{
+    Identifier,
+    hir::{FunctionType, HirCallableDomain, HirExpr, HirResolvedCall, ValkyrieType},
 };
 
 use crate::compiler::mir::ssa::{

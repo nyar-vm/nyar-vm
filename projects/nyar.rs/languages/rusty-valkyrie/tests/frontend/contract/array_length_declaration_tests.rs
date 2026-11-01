@@ -14,9 +14,8 @@ const PROBE: &str = "micro probe(values: [i32]) -> usize { return length(values)
 
 #[test]
 fn undeclared_array_length_call_fails_without_frontend_synthesis() {
-    let error = ValkyrieCompiler::default()
-        .compile_source_to_program(&format!("{PRIMITIVES}{PROBE}"))
-        .expect_err("缺少声明时数组长度调用不得成功");
+    let error =
+        ValkyrieCompiler::default().compile_source_to_program(&format!("{PRIMITIVES}{PROBE}")).expect_err("缺少声明时数组长度调用不得成功");
     let rendered = format!("{error:?}");
     assert!(matches!(error, HirError::UnresolvedCall { .. }), "缺少声明必须结构化失败为 UnresolvedCall: {rendered}");
     assert!(rendered.contains("length"), "失败必须指出未解析的 length 调用: {rendered}");

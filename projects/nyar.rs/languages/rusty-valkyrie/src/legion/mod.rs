@@ -20,8 +20,8 @@ pub use cmds::{
     spy::{SpyMode, SpyOptions, SpyTargetOptions, SpyTargetPlatform, run as run_spy},
 };
 pub use workspace::{
-    BuildPluginSpec, BuildTargetSpec, DependencySpec, LocalLegionConfig, ProjectArtifactKind, ProjectManifest,
-    PublishTargetSpec, RunnerBinding, WorkspaceDefaults, WorkspaceManifest,
+    BuildPluginSpec, BuildTargetSpec, DependencySpec, LocalLegionConfig, ProjectArtifactKind, ProjectManifest, PublishTargetSpec,
+    RunnerBinding, WorkspaceDefaults, WorkspaceManifest,
 };
 
 /// On-disk layout for Legion projects (`legion.von` / `legions.von` / `legion-lock.von` / `~/.valkyrie`).

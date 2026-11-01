@@ -147,7 +147,8 @@ pub fn resolve_host_provider_bindings(
         // 实例（其体内宿主导入从未闭合）。开放合同实例不配对，只随族退役。
         let mut provider_pairs = BTreeMap::new();
         for contract_instance in &contract_family.instances {
-            let Some(signature) = contract_family.signatures.get(contract_instance) else {
+            let Some(signature) = contract_family.signatures.get(contract_instance)
+            else {
                 continue;
             };
             if host_signature_is_open(signature) {
@@ -155,7 +156,8 @@ pub fn resolve_host_provider_bindings(
             }
             let mut matched: Option<ItemInstanceId> = None;
             for provider_instance in &provider_family.instances {
-                let Some(provider_signature) = provider_family.signatures.get(provider_instance) else {
+                let Some(provider_signature) = provider_family.signatures.get(provider_instance)
+                else {
                     continue;
                 };
                 if provider_signature != signature {
@@ -163,13 +165,17 @@ pub fn resolve_host_provider_bindings(
                 }
                 if matched.is_some() {
                     return Err(ParseError::Invalid {
-                        message: format!("host provider 声明 `{}` 存在多个与合同实例 `{contract_instance}` 同签名的实例", binding.provider.encoded()),
+                        message: format!(
+                            "host provider 声明 `{}` 存在多个与合同实例 `{contract_instance}` 同签名的实例",
+                            binding.provider.encoded()
+                        ),
                         span: None,
                     });
                 }
                 matched = Some(*provider_instance);
             }
-            let Some(provider_instance) = matched else {
+            let Some(provider_instance) = matched
+            else {
                 return Err(ParseError::Invalid {
                     message: format!(
                         "host provider 声明 `{}` 没有与闭合合同实例 `{contract_instance}` 同签名的 provider 实例（provider 声明为泛型时，其具体代入由合同调用点在单态化播种中铸造）",
@@ -236,9 +242,7 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
         }
         for structure in &module.structs {
             let namespace: Vec<String> = structure.namespace.iter().map(|part| part.as_str().to_string()).collect();
-            let owner = structure
-                .constructor_declaration
-                .map(|declaration| ValkyrieType::Nominal { declaration, arguments: Vec::new() });
+            let owner = structure.constructor_declaration.map(|declaration| ValkyrieType::Nominal { declaration, arguments: Vec::new() });
             for method in &structure.methods {
                 collect_callable_instance(
                     &mut collected,
@@ -508,12 +512,14 @@ fn remap_bound_host_contracts(
         for provider_instance in binding.provider_pairs.values() {
             if !callable_present(&modules, *provider_instance) {
                 return Err(ParseError::Invalid {
-                    message: format!("host provider `{}` 未在源码闭包中定义", provider_instance),
-                    span: None,
+                    message: format!("host provider `{}` 未在源码闭包中定义", provider_instance), span: None
                 });
             }
-            if let Some(function) =
-                modules.iter().flat_map(|dependency| dependency.functions.iter()).find(|function| function.instance == Some(*provider_instance)).cloned()
+            if let Some(function) = modules
+                .iter()
+                .flat_map(|dependency| dependency.functions.iter())
+                .find(|function| function.instance == Some(*provider_instance))
+                .cloned()
             {
                 provider_functions.push((*provider_instance, function));
             }

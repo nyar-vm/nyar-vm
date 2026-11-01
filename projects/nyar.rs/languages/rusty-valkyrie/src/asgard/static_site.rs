@@ -198,8 +198,8 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
 fn copy_assets_into_output(assets_root: &Path, output_dir: &Path, reserved: &BTreeSet<String>) -> AsgardResult<()> {
     let mut pending = vec![assets_root.to_path_buf()];
     while let Some(directory) = pending.pop() {
-        let entries = std::fs::read_dir(&directory)
-            .map_err(|error| AsgardError::msg(report!("读取资源目录失败 {}: {error}", directory.display())))?;
+        let entries =
+            std::fs::read_dir(&directory).map_err(|error| AsgardError::msg(report!("读取资源目录失败 {}: {error}", directory.display())))?;
         for entry in entries {
             let entry = entry.map_err(|error| AsgardError::msg(report!("读取资源目录项失败: {error}")))?;
             let path = entry.path();
@@ -217,8 +217,7 @@ fn copy_assets_into_output(assets_root: &Path, output_dir: &Path, reserved: &BTr
             }
             let destination = output_dir.join(&relative);
             if let Some(parent) = destination.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|error| AsgardError::msg(report!("创建资源目录失败 {}: {error}", parent.display())))?;
+                std::fs::create_dir_all(parent).map_err(|error| AsgardError::msg(report!("创建资源目录失败 {}: {error}", parent.display())))?;
             }
             std::fs::copy(&path, &destination)
                 .map_err(|error| AsgardError::msg(report!("复制资源失败 {} → {}: {error}", path.display(), destination.display())))?;

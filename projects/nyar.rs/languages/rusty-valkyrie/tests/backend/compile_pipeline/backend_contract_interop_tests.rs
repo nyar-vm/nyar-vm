@@ -1,7 +1,9 @@
 use nyar_types::SourceID;
 
 use rusty_valkyrie::{
-    HirError, compiler::emitter::backend_contract::interop::BackendContractError, compiler::hir::ValkyrieCompiler, function_interop_contract, *,
+    HirError,
+    compiler::{emitter::backend_contract::interop::BackendContractError, hir::ValkyrieCompiler},
+    function_interop_contract, *,
 };
 
 #[test]

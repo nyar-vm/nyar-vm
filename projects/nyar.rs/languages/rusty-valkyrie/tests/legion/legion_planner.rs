@@ -331,10 +331,7 @@ fn nested_legion_tools_resolves_outer_std_via_outermost_workspace() {
             plan.project.dependencies.iter().any(|dep| dep.name == "std"),
             "target {target} must resolve explicit workspace `std` from the outermost workspace"
         );
-        assert!(
-            plan.project.dependencies.iter().all(|dep| dep.name != "core"),
-            "core 已并入 std，闭包不得再出现 core 依赖"
-        );
+        assert!(plan.project.dependencies.iter().all(|dep| dep.name != "core"), "core 已并入 std，闭包不得再出现 core 依赖");
         assert_eq!(canonicalize_lossy(&plan.workspace_root), canonicalize_lossy(&fixture.root_dir));
     }
 }

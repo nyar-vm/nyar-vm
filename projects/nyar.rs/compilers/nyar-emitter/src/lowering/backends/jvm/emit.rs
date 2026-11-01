@@ -14,13 +14,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::{
     FragmentSubmission, Result,
     backend_plan_views::{
-        ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction, ExecutableInstruction as MirInstruction,
-        ExecutableValueRef as MirValueRef, NyarType,
+        ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction,
+        ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, NyarType,
     },
     contracts::{Constant, InstructionKind, Operand, Terminator},
     lowering::shared::executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
     managed_abi::{ManagedAbiContract, ManagedAbiEntry},
-    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
+    target_operator::{
+        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
+    },
     transitional::binary::class::{
         JvmClassFile, JvmCodeBody, JvmFieldRef, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor,
     },
@@ -130,9 +132,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
     let mut used_names = BTreeMap::<String, ()>::new();
     let mut method_plans = BTreeMap::<ItemInstanceId, JvmMethodPlan>::new();
     for (ordinal, instance) in operations.iter().enumerate() {
-        let view = plan
-            .get_function(instance)
-            .ok_or_else(|| format!("JVM 最小 lowering：可达操作 `{instance:?}` 缺少函数体"))?;
+        let view = plan.get_function(instance).ok_or_else(|| format!("JVM 最小 lowering：可达操作 `{instance:?}` 缺少函数体"))?;
         let base = plan
             .wasm_export_names()
             .get(instance)
@@ -150,8 +150,11 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
         method_plans.insert(*instance, JvmMethodPlan { name, descriptor: function_descriptor(&view.function)? });
     }
 
-    let internal_name =
-        format!("nyar/{}_{}", crate::lowering::sanitize_symbol(plan.module_name()), crate::lowering::sanitize_symbol(plan.fragment_id().as_str()));
+    let internal_name = format!(
+        "nyar/{}_{}",
+        crate::lowering::sanitize_symbol(plan.module_name()),
+        crate::lowering::sanitize_symbol(plan.fragment_id().as_str())
+    );
     let operator_by_instance = external_operator_by_instance(submission);
     let mut class_file = JvmClassFile::new(internal_name.clone());
     for instance in &operations {
@@ -159,10 +162,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
         else {
             continue;
         };
-        let method = method_plans
-            .get(instance)
-            .cloned()
-            .ok_or_else(|| format!("JVM 最小 lowering：可达操作 `{instance:?}` 缺少方法计划"))?;
+        let method = method_plans.get(instance).cloned().ok_or_else(|| format!("JVM 最小 lowering：可达操作 `{instance:?}` 缺少方法计划"))?;
         class_file.methods.push(lower_function(submission, &internal_name, &view.function, &method, &method_plans, &operator_by_instance)?);
     }
 
@@ -386,16 +386,12 @@ fn external_operator_by_instance(submission: &FragmentSubmission) -> BTreeMap<It
 }
 
 fn function_descriptor(function: &MirFunction) -> Result<JvmMethodDescriptor> {
-    let entry = function
-        .blocks
-        .get(function.entry.0 as usize)
-        .ok_or_else(|| format!("JVM 最小 lowering：函数 `{}` 缺少入口块", function.symbol))?;
+    let entry =
+        function.blocks.get(function.entry.0 as usize).ok_or_else(|| format!("JVM 最小 lowering：函数 `{}` 缺少入口块", function.symbol))?;
     let mut parameter_types = Vec::with_capacity(entry.parameters.len());
     for parameter in &entry.parameters {
-        let ty = function
-            .value_types
-            .get(parameter)
-            .ok_or_else(|| format!("JVM 最小 lowering：函数 `{}` 入口形参缺少冻结类型", function.symbol))?;
+        let ty =
+            function.value_types.get(parameter).ok_or_else(|| format!("JVM 最小 lowering：函数 `{}` 入口形参缺少冻结类型", function.symbol))?;
         parameter_types.push(jvm_parameter_descriptor(ty)?);
     }
     Ok(JvmMethodDescriptor::new(parameter_types, jvm_return_descriptor(&function.return_type)?))
@@ -542,11 +538,7 @@ impl JvmMethodEmitter<'_> {
                 self.emit_call(callee, arguments, &output)?;
             }
             other => {
-                return Err(format!(
-                    "JVM 最小 lowering 尚不支持指令 `{}`：function={}",
-                    instruction_kind_name(other),
-                    self.function.symbol
-                ));
+                return Err(format!("JVM 最小 lowering 尚不支持指令 `{}`：function={}", instruction_kind_name(other), self.function.symbol));
             }
         }
         Ok(())
@@ -555,12 +547,8 @@ impl JvmMethodEmitter<'_> {
     fn emit_terminator(&mut self, block: &MirBlock) -> Result<()> {
         match &block.terminator {
             Terminator::Return { value } => {
-                let return_kind = if self.return_descriptor == JvmTypeDescriptor::Void {
-                    None
-                }
-                else {
-                    Some(JvmSlotKind::of(&self.return_descriptor)?)
-                };
+                let return_kind =
+                    if self.return_descriptor == JvmTypeDescriptor::Void { None } else { Some(JvmSlotKind::of(&self.return_descriptor)?) };
                 match (value, return_kind) {
                     (Some(value), Some(kind)) => {
                         self.emit_operand(value, Some(kind))?;
@@ -578,9 +566,11 @@ impl JvmMethodEmitter<'_> {
             Terminator::Jump { target, arguments } => {
                 let target_label = block_label(*target);
                 let (parameter_count, kinds) = {
-                    let target_block = self.function.blocks.get(target.0 as usize).ok_or_else(|| {
-                        format!("JVM 最小 lowering：函数 `{}` 跳转目标块 {:?} 不存在", self.function.symbol, target)
-                    })?;
+                    let target_block = self
+                        .function
+                        .blocks
+                        .get(target.0 as usize)
+                        .ok_or_else(|| format!("JVM 最小 lowering：函数 `{}` 跳转目标块 {:?} 不存在", self.function.symbol, target))?;
                     let kinds = target_block
                         .parameters
                         .iter()
@@ -607,9 +597,11 @@ impl JvmMethodEmitter<'_> {
                     self.emit_operand(argument, Some(*kind))?;
                 }
                 for index in (0..arguments.len()).rev() {
-                    let local = *self.slots.block_param_locals.get(&(*target, index)).ok_or_else(|| {
-                        format!("JVM 最小 lowering：跳转目标块 {:?} 形参 {index} 缺少局部槽", target)
-                    })?;
+                    let local = *self
+                        .slots
+                        .block_param_locals
+                        .get(&(*target, index))
+                        .ok_or_else(|| format!("JVM 最小 lowering：跳转目标块 {:?} 形参 {index} 缺少局部槽", target))?;
                     self.instructions.push(kinds[index].store(self.slot_offsets[local as usize]));
                 }
                 self.instructions.push(JvmInstruction::Goto(target_label));
@@ -622,10 +614,7 @@ impl JvmMethodEmitter<'_> {
                     .filter(|block| block.id == *then_target || block.id == *else_target)
                     .any(|block| !block.parameters.is_empty());
                 if targets_have_parameters {
-                    return Err(format!(
-                        "JVM 最小 lowering 只支持无块参数的条件分支：function={}",
-                        self.function.symbol
-                    ));
+                    return Err(format!("JVM 最小 lowering 只支持无块参数的条件分支：function={}", self.function.symbol));
                 }
                 self.emit_operand(condition, Some(JvmSlotKind::Int))?;
                 self.instructions.push(JvmInstruction::IfEq(block_label(*else_target)));
@@ -636,17 +625,11 @@ impl JvmMethodEmitter<'_> {
                     self.instructions.push(JvmInstruction::Return);
                 }
                 else {
-                    return Err(format!(
-                        "JVM 最小 lowering：非 void 函数 `{}` 的 `Unreachable` 终结缺少返回指令",
-                        self.function.symbol
-                    ));
+                    return Err(format!("JVM 最小 lowering：非 void 函数 `{}` 的 `Unreachable` 终结缺少返回指令", self.function.symbol));
                 }
             }
             other => {
-                return Err(format!(
-                    "JVM 最小 lowering 尚不支持终结符 `{other:?}`: function={}",
-                    self.function.symbol
-                ));
+                return Err(format!("JVM 最小 lowering 尚不支持终结符 `{other:?}`: function={}", self.function.symbol));
             }
         }
         Ok(())
@@ -655,10 +638,7 @@ impl JvmMethodEmitter<'_> {
     fn emit_call(&mut self, callee: &Operand, arguments: &[Operand], output: &Option<(u16, JvmSlotKind)>) -> Result<()> {
         let Operand::Item(instance) = callee
         else {
-            return Err(format!(
-                "JVM 最小 lowering 只支持 `Item` 身份的静态调用: function={} callee={callee:?}",
-                self.function.symbol
-            ));
+            return Err(format!("JVM 最小 lowering 只支持 `Item` 身份的静态调用: function={} callee={callee:?}", self.function.symbol));
         };
         if let Some((mnemonic, binding)) = self.operator_by_instance.get(instance) {
             return self.emit_operator_call(mnemonic, binding, arguments, *output);
@@ -671,17 +651,9 @@ impl JvmMethodEmitter<'_> {
         }
         let Some(method) = self.method_plans.get(instance).cloned()
         else {
-            return Err(format!(
-                "JVM 最小 lowering：同片段调用目标 `{instance:?}` 不在可达方法集中: function={}",
-                self.function.symbol
-            ));
+            return Err(format!("JVM 最小 lowering：同片段调用目标 `{instance:?}` 不在可达方法集中: function={}", self.function.symbol));
         };
-        let parameter_kinds = method
-            .descriptor
-            .parameter_types
-            .iter()
-            .map(JvmSlotKind::of)
-            .collect::<Result<Vec<_>>>()?;
+        let parameter_kinds = method.descriptor.parameter_types.iter().map(JvmSlotKind::of).collect::<Result<Vec<_>>>()?;
         if arguments.len() != parameter_kinds.len() {
             return Err(format!(
                 "JVM 最小 lowering：调用 `{}` 实参数量与冻结签名不符: function={} expected={} actual={}",
@@ -712,17 +684,11 @@ impl JvmMethodEmitter<'_> {
     ) -> Result<()> {
         let TargetOperatorBinding::Frozen(plan) = binding
         else {
-            return Err(format!(
-                "JVM 目标 `jvm_operator` 绑定缺少可编码助记符 `{mnemonic}`: function={}",
-                self.function.symbol
-            ));
+            return Err(format!("JVM 目标 `jvm_operator` 绑定缺少可编码助记符 `{mnemonic}`: function={}", self.function.symbol));
         };
         let TargetOperatorEncoding::Jvm(code) = plan.encoding
         else {
-            return Err(format!(
-                "JVM 目标 `jvm_operator` 绑定 `{mnemonic}` 冻结了非 JVM 编码: function={}",
-                self.function.symbol
-            ));
+            return Err(format!("JVM 目标 `jvm_operator` 绑定 `{mnemonic}` 冻结了非 JVM 编码: function={}", self.function.symbol));
         };
         if arguments.len() != plan.arity {
             return Err(format!(
@@ -750,10 +716,7 @@ impl JvmMethodEmitter<'_> {
 
         let expansion = code.instructions();
         if expansion.is_empty() {
-            return Err(format!(
-                "JVM 目标 operator `{mnemonic}` 的冻结编码 `{code:?}` 没有指令展开: function={}",
-                self.function.symbol
-            ));
+            return Err(format!("JVM 目标 operator `{mnemonic}` 的冻结编码 `{code:?}` 没有指令展开: function={}", self.function.symbol));
         }
         let label_prefix = self.operator_label_prefix();
         self.comparison_ordinal += 1;
@@ -865,10 +828,9 @@ impl JvmMethodEmitter<'_> {
             }
             Operand::Constant(constant) => self.emit_constant(constant, expected),
             Operand::Symbol(path) => Err(format!("JVM 最小 lowering 不支持符号操作数 `{path:?}`: function={}", self.function.symbol)),
-            Operand::Item(instance) => Err(format!(
-                "JVM 最小 lowering 不支持把可调用身份 `{instance:?}` 当值使用: function={}",
-                self.function.symbol
-            )),
+            Operand::Item(instance) => {
+                Err(format!("JVM 最小 lowering 不支持把可调用身份 `{instance:?}` 当值使用: function={}", self.function.symbol))
+            }
         }
     }
 
@@ -889,43 +851,29 @@ impl JvmMethodEmitter<'_> {
                     self.instructions.push(JvmInstruction::IConst(value));
                     Ok(())
                 }
-                Some(other) => Err(format!(
-                    "JVM 最小 lowering：整数常量不能进入 {other:?} 槽: function={}",
-                    self.function.symbol
-                )),
+                Some(other) => Err(format!("JVM 最小 lowering：整数常量不能进入 {other:?} 槽: function={}", self.function.symbol)),
             },
             Constant::Float64(value) => match expected {
-                Some(JvmSlotKind::Float) => Err(format!(
-                    "JVM 最小 lowering 不支持把 f64 常量压入 `float` 槽：function={}",
-                    self.function.symbol
-                )),
-                Some(JvmSlotKind::Int | JvmSlotKind::Long | JvmSlotKind::Reference) => Err(format!(
-                    "JVM 最小 lowering：f64 常量不能进入 {expected:?} 槽: function={}",
-                    self.function.symbol
-                )),
+                Some(JvmSlotKind::Float) => {
+                    Err(format!("JVM 最小 lowering 不支持把 f64 常量压入 `float` 槽：function={}", self.function.symbol))
+                }
+                Some(JvmSlotKind::Int | JvmSlotKind::Long | JvmSlotKind::Reference) => {
+                    Err(format!("JVM 最小 lowering：f64 常量不能进入 {expected:?} 槽: function={}", self.function.symbol))
+                }
                 Some(JvmSlotKind::Double) => {
                     self.instructions.push(JvmInstruction::LdcDouble(value.into_inner().to_bits()));
                     Ok(())
                 }
-                None => Err(format!(
-                    "JVM 最小 lowering：f64 常量缺少明确的 `double` 结果槽，拒绝猜测载体: function={}",
-                    self.function.symbol
-                )),
+                None => Err(format!("JVM 最小 lowering：f64 常量缺少明确的 `double` 结果槽，拒绝猜测载体: function={}", self.function.symbol)),
             },
             Constant::Bool(value) => {
                 if matches!(expected, Some(JvmSlotKind::Long | JvmSlotKind::Float | JvmSlotKind::Double | JvmSlotKind::Reference)) {
-                    return Err(format!(
-                        "JVM 最小 lowering：布尔常量不能进入 {expected:?} 槽: function={}",
-                        self.function.symbol
-                    ));
+                    return Err(format!("JVM 最小 lowering：布尔常量不能进入 {expected:?} 槽: function={}", self.function.symbol));
                 }
                 self.instructions.push(JvmInstruction::IConst(i32::from(*value)));
                 Ok(())
             }
-            other => Err(format!(
-                "JVM 最小 lowering 尚不支持常量 `{other:?}`：缺少 JVM 常量池载体合同，function={}",
-                self.function.symbol
-            )),
+            other => Err(format!("JVM 最小 lowering 尚不支持常量 `{other:?}`：缺少 JVM 常量池载体合同，function={}", self.function.symbol)),
         }
     }
 
@@ -935,10 +883,9 @@ impl JvmMethodEmitter<'_> {
                 self.instructions.push(JvmInstruction::Pop);
                 Ok(())
             }
-            Some(JvmSlotKind::Long | JvmSlotKind::Double) => Err(format!(
-                "JVM 最小 lowering：丢弃 2 槽值需要 `pop2` 编码，当前 JVM 指令模型不提供: function={}",
-                self.function.symbol
-            )),
+            Some(JvmSlotKind::Long | JvmSlotKind::Double) => {
+                Err(format!("JVM 最小 lowering：丢弃 2 槽值需要 `pop2` 编码，当前 JVM 指令模型不提供: function={}", self.function.symbol))
+            }
         }
     }
 
@@ -950,18 +897,16 @@ impl JvmMethodEmitter<'_> {
     }
 
     fn require_output(&self, instruction: &MirInstruction) -> Result<(u16, JvmSlotKind)> {
-        self.output_of(instruction)?.ok_or_else(|| {
-            format!(
-                "JVM 最小 lowering：指令缺少 SSA 结果槽，无法确定局部载体: function={}",
-                self.function.symbol
-            )
-        })
+        self.output_of(instruction)?
+            .ok_or_else(|| format!("JVM 最小 lowering：指令缺少 SSA 结果槽，无法确定局部载体: function={}", self.function.symbol))
     }
 
     fn value_slot(&self, value: MirValueRef) -> Result<(u16, JvmSlotKind)> {
-        let local = *self.slots.value_locals.get(&value).ok_or_else(|| {
-            format!("JVM 最小 lowering：SSA 值 {:?} 缺少规划的局部槽: function={}", value, self.function.symbol)
-        })?;
+        let local = *self
+            .slots
+            .value_locals
+            .get(&value)
+            .ok_or_else(|| format!("JVM 最小 lowering：SSA 值 {:?} 缺少规划的局部槽: function={}", value, self.function.symbol))?;
         let ty = self
             .slots
             .local_types

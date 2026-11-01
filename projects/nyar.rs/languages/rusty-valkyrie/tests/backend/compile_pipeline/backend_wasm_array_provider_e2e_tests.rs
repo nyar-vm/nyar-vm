@@ -136,7 +136,10 @@ fn groups_for(providers: &str) -> Vec<CompilerSourceGroup> {
     ]
 }
 
-fn lower(groups: &[CompilerSourceGroup], bindings: &[rusty_valkyrie::compiler::emitter::pipeline::CompilerHostProviderBinding]) -> Result<acorn_wasm::WasmBinaryModule, String> {
+fn lower(
+    groups: &[CompilerSourceGroup],
+    bindings: &[rusty_valkyrie::compiler::emitter::pipeline::CompilerHostProviderBinding],
+) -> Result<acorn_wasm::WasmBinaryModule, String> {
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(groups, bindings, "native")
         .map_err(|error| error.to_string())?;
@@ -157,7 +160,8 @@ fn assert_gc_array_type_registered(module: &acorn_wasm::WasmBinaryModule) {
 
 #[test]
 fn array_contract_wasm_wrapper_provider_form_lowers() {
-    let module = lower(&groups_for(PROVIDERS_WRAPPER), &provider_bindings()).expect("形制 1（`[host_provider]` 包装体 + `[wasm_operator]` 无体 micro）必须完成降低");
+    let module = lower(&groups_for(PROVIDERS_WRAPPER), &provider_bindings())
+        .expect("形制 1（`[host_provider]` 包装体 + `[wasm_operator]` 无体 micro）必须完成降低");
     assert_gc_array_type_registered(&module);
 }
 

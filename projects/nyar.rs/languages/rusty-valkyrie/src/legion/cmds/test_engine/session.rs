@@ -182,7 +182,8 @@ pub fn execute_external_runner(
     let mut child = match Command::new(command).args(args).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
         Ok(child) => child,
         Err(error) => {
-            let reason = if error.kind() == std::io::ErrorKind::NotFound { "运行时未安装或不在 PATH" } else { "运行时无法启动" };
+            let reason =
+                if error.kind() == std::io::ErrorKind::NotFound { "运行时未安装或不在 PATH" } else { "运行时无法启动" };
             return RunOutcome {
                 success: false,
                 is_compile_error: false,
@@ -295,14 +296,12 @@ fn run_builtin_ovm_test(artifact: &Path, function_name: &str, verbose: bool) -> 
             }
             RunOutcome { success: true, is_compile_error: false, failure: None, error: None }
         }
-        Err(error) => {
-            RunOutcome {
-                success: false,
-                is_compile_error: false,
-                failure: Some(ExternalRunFailure::NonZeroExit),
-                error: Some(format!("OVM 执行 `{function_name}` 失败: {error}")),
-            }
-        }
+        Err(error) => RunOutcome {
+            success: false,
+            is_compile_error: false,
+            failure: Some(ExternalRunFailure::NonZeroExit),
+            error: Some(format!("OVM 执行 `{function_name}` 失败: {error}")),
+        },
     }
 }
 

@@ -388,9 +388,8 @@ namespace std.adaptor.wasm.collection;
             is_entry: true,
         },
     ];
-    let error = ValkyrieCompiler::default()
-        .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
-        .expect_err("跨包裸 [T] 下标缺声明候选必须失败关闭");
+    let error =
+        ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect_err("跨包裸 [T] 下标缺声明候选必须失败关闭");
     assert!(matches!(error, HirError::UnresolvedCall { .. }), "期望 UnresolvedCall，got {error:?}");
     let rendered = format!("{error:?}");
     assert!(rendered.contains("array_host_get"), "失败必须定位到出错函数: {rendered}");

@@ -39,7 +39,11 @@ fn usize_cmp_smoke_std_closure_resolves_without_core_or_io_bindings() {
     let project_dir = valkyrie_v.join("examples").join("usize-cmp-smoke");
     let plan = plan(PlanRequest { project_dir, target: CanonicalTarget::clr(), output_dir: None }).expect("usize-cmp-smoke plan");
 
-    assert!(plan.groups.iter().any(|group| group.dependency_key == "std"), "std:true 必须解析出 `std` 语义组：{:?}", plan.groups.iter().map(|group| &group.dependency_key).collect::<Vec<_>>());
+    assert!(
+        plan.groups.iter().any(|group| group.dependency_key == "std"),
+        "std:true 必须解析出 `std` 语义组：{:?}",
+        plan.groups.iter().map(|group| &group.dependency_key).collect::<Vec<_>>()
+    );
     assert!(
         plan.groups.iter().all(|group| !group.dependency_key.contains("core")),
         "core 已并入 std，闭包不得再出现 core 依赖键：{:?}",

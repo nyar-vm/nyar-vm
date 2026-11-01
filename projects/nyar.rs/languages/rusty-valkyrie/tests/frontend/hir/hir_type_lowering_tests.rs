@@ -116,10 +116,7 @@ fn dotted_module_type_path_is_rejected_before_canonical() {
 fn core_prefixed_type_paths_are_rejected_after_core_merged_into_std() {
     // 两段：`core` 不再是模块根前缀，基底名在作用域内无绑定。
     let two_part = TypeExpression::Namepath(Box::new(NamePath {
-        parts: vec![
-            Identifier { name: "core".into(), span: oak_span(4) },
-            Identifier { name: "Solution".into(), span: oak_span(8) },
-        ],
+        parts: vec![Identifier { name: "core".into(), span: oak_span(4) }, Identifier { name: "Solution".into(), span: oak_span(8) }],
         span: oak_span(13),
     }));
     let error = lower_type_expression(&two_part).expect_err("`core::` 已并入 `std`，必须结构化失败");

@@ -4,8 +4,10 @@
 //! 显式 target 的 runner 家族一律由 `CanonicalTarget::to_profile(None).runner_family()`
 //! 结构化推导，完整三元组不得按标签字符串误判，jvm/clr 不得静默换成其他 lane。
 
-use rusty_valkyrie::legion::RunnerFamily;
-use rusty_valkyrie::legion::cmds::test_engine::{parse_target_label, resolve_test_targets};
+use rusty_valkyrie::legion::{
+    RunnerFamily,
+    cmds::test_engine::{parse_target_label, resolve_test_targets},
+};
 
 #[test]
 fn default_target_is_legion_product_alias() {
