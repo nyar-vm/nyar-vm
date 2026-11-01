@@ -1,5 +1,7 @@
 //! `manifest.json` 生成。
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use crate::asgard::{
@@ -14,6 +16,15 @@ pub struct ManifestOutput {
     pub content: String,
     /// 相对路径。
     pub relative_path: String,
+}
+
+/// 单个产物文件的内容摘要。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManifestDigest {
+    /// manifest 相对产物路径（如 `c/index.js`、`app.wasm`）。
+    pub path: String,
+    /// 小写十六进制 SHA-256；由真实写出产物按字节计算。
+    pub sha256: String,
 }
 
 /// Asset URL style in manifest entries.
@@ -35,6 +46,7 @@ pub fn generate_manifest_with_urls(
     wasm_built: bool,
     url_mode: ManifestUrlMode,
     wasm_content_hash: Option<&str>,
+    digests: &[ManifestDigest],
 ) -> ManifestOutput {
     let module = module_stem.to_string();
     let css = vec![url_path(&format!("{}.css", module.replace('.', "-")), url_mode)];
@@ -51,11 +63,15 @@ pub fn generate_manifest_with_urls(
         vec![]
     };
 
+    // 摘要按路径字典序序列化：同一产物树在任何构建批次都得到同一 manifest。
+    let integrity = digests.iter().map(|digest| (digest.path.clone(), digest.sha256.clone())).collect();
+
     let manifest = VoaManifest {
         module: module.clone(),
         mode: mode.to_string(),
         css: css.clone(),
         wasm,
+        integrity,
         render_ir: Some(RenderIrManifest { encoding: "asgard-ui-v1".into(), size: encode_mobile_ui_package(components).len() }),
         components: components
             .iter()
@@ -91,6 +107,8 @@ struct VoaManifest {
     mode: String,
     css: Vec<String>,
     wasm: Vec<WasmEntry>,
+    /// 内容摘要表：manifest 相对路径 → 小写十六进制 SHA-256。
+    integrity: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     render_ir: Option<RenderIrManifest>,
     components: Vec<ManifestComponent>,

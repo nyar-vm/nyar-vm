@@ -13,6 +13,7 @@ use rusty_valkyrie::asgard::{
     config_model::{ConfigOrigin, ConfigValue, resolve_static_config},
     static_site::{StaticSiteOptions, build_static_site},
 };
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 /// 带样式与初始状态绑定的根组件入口 fixture。
@@ -142,6 +143,30 @@ fn manifest_references_resolve_to_emitted_artifacts() {
     let glue = components[0].get("js").and_then(serde_json::Value::as_str).expect("组件应声明 js");
     assert_eq!(components[0].get("name").and_then(serde_json::Value::as_str), Some("index"), "组件名应与入口 stem 对应");
     assert!(dist.join(glue).is_file(), "manifest 组件胶水 {glue:?} 未解析到产物文件");
+}
+
+#[test]
+fn manifest_integrity_digests_match_emitted_artifact_bytes() {
+    // 摘要必须由真实产物字节计算，而不是按文件名或构建版本推算：
+    // 逐条读取 manifest `integrity`，重算 SHA-256 并与文件内容比对。
+    let temp = TempDir::new().expect("创建临时目录失败");
+    let dist = temp.path().join("dist");
+    build_and_list(temp.path(), &dist, "/");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dist.join("manifest.json")).expect("读取 manifest 失败")).expect("manifest 必须是合法 JSON");
+    let integrity = manifest.get("integrity").and_then(serde_json::Value::as_object).expect("manifest 必须声明 `integrity` 摘要表");
+    assert!(!integrity.is_empty(), "摘要表不能为空");
+
+    let required = ["boot.js", "c/index.js", "static-artifact-fixture.css", "static-artifact-fixture.mjs", "static-artifact-fixture.wasm"];
+    for path in required {
+        let expected = integrity.get(path).and_then(serde_json::Value::as_str).unwrap_or_else(|| panic!("manifest 摘要必须覆盖 {path}"));
+        let bytes = fs::read(dist.join(path)).unwrap_or_else(|error| panic!("摘要引用 {path} 未解析到产物文件: {error}"));
+        assert_eq!(sha256_hex(&bytes), expected, "{path} 的 manifest 摘要必须等于真实产物字节的 SHA-256");
+    }
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn obj(fields: Vec<(&str, ConfigValue)>) -> ConfigValue {

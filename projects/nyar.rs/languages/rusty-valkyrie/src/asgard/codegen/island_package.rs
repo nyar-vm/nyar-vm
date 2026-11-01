@@ -1,11 +1,12 @@
 //! Browser hydrate island packaging: auto glue + boot + CSS + manifest（无手写业务 JS）。
 use crate::asgard::error::{AsgardError, AsgardResult};
+use sha2::{Digest, Sha256};
 use std::{fs, path::Path};
 
 use crate::asgard::{
     awsl::LoweredComponent,
     codegen::{extract_and_merge_styles, generate_boot_script, generate_component_glue, manifest_url_for_mode},
-    package::{ManifestUrlMode, generate_manifest_with_urls},
+    package::{ManifestDigest, ManifestUrlMode, generate_manifest_with_urls},
 };
 
 /// Options for packaging browser hydrate islands.
@@ -90,8 +91,27 @@ pub fn package_browser_islands(
         fs::write(&css_path, &css.content).map_err(|e| AsgardError::msg(format!("{e}: {}", "写入 CSS 失败")))?;
     }
 
+    let boot_js = generate_boot_script(&opts.wasm_stem, manifest_url_for_mode(opts.relative_urls));
+    fs::write(output_dir.join("boot.js"), &boot_js).map_err(|e| AsgardError::msg(format!("{e}: {}", "写入 boot.js 失败")))?;
+    let _ = fs::remove_file(output_dir.join("asgard-runtime.js"));
+
+    // 摘要必须来自真实写出的产物字节，而不是按文件名或版本号推算。
+    let mut digests = Vec::new();
+    for js in &js_outputs {
+        digests.push(digest_of(output_dir, &js.relative_path)?);
+    }
+    for css in &css_outputs {
+        digests.push(digest_of(output_dir, &css.filename)?);
+    }
+    digests.push(digest_of(output_dir, "boot.js")?);
+    if opts.wasm_built {
+        for filename in [format!("{}.wasm", opts.wasm_stem), format!("{}.mjs", opts.wasm_stem)] {
+            digests.push(digest_of(output_dir, &filename)?);
+        }
+    }
+
     let url_mode = if opts.relative_urls { ManifestUrlMode::Relative } else { ManifestUrlMode::Absolute };
-    // chunk 摘要取自真实落盘字节；没有产物字节时不写半成品哈希。
+    // chunk 条目的 `hash` 同样取自真实落盘字节；与摘要表分开保留以兼容既有条目形态。
     let wasm_content_hash = if opts.wasm_built { hash_wasm_chunk(output_dir, &opts.wasm_stem) } else { None };
     let manifest = generate_manifest_with_urls(
         &opts.module_stem,
@@ -102,12 +122,19 @@ pub fn package_browser_islands(
         opts.wasm_built,
         url_mode,
         wasm_content_hash.as_deref(),
+        &digests,
     );
     fs::write(output_dir.join(&manifest.relative_path), &manifest.content)?;
 
-    let boot_js = generate_boot_script(&opts.wasm_stem, manifest_url_for_mode(opts.relative_urls));
-    fs::write(output_dir.join("boot.js"), &boot_js).map_err(|e| AsgardError::msg(format!("{e}: {}", "写入 boot.js 失败")))?;
-    let _ = fs::remove_file(output_dir.join("asgard-runtime.js"));
-
     Ok(IslandPackageReport { js_file_count: js_outputs.len(), css_filenames, routes })
+}
+
+/// 读取真实产物并按字节计算小写十六进制 SHA-256；缺失产物直接失败闭合。
+fn digest_of(output_dir: &Path, relative_path: &str) -> AsgardResult<ManifestDigest> {
+    let normalized = relative_path.replace('\\', "/");
+    let path = output_dir.join(relative_path);
+    let bytes = fs::read(&path).map_err(|e| AsgardError::msg(format!("{e}: 读取产物失败 {}", path.display())))?;
+    let digest = Sha256::digest(&bytes);
+    let sha256: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(ManifestDigest { path: normalized, sha256 })
 }
