@@ -18,6 +18,7 @@ mod config_probe;
 mod glue_contract;
 mod pipeline_discover;
 mod serve;
+mod serve_static_build;
 mod server_runtime;
 mod ssg;
 mod static_artifact_tree;
