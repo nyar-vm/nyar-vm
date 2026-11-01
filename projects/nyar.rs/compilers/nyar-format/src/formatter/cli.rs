@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use super::{FormatBatchOptions, FormatBatchReport, FormatError, FormatOptions, format_paths};
+use super::{AWSL_EXTENSIONS, FormatBatchOptions, FormatBatchReport, FormatError, FormatOptions, format_paths};
 
 /// 宿主 CLI `fmt` / `format` 子命令共用选项。
 #[derive(Debug, Clone)]
@@ -38,9 +38,9 @@ impl Default for FormatCliOptions {
 }
 
 impl FormatCliOptions {
-    /// 仅格式化 `.awsl`。
+    /// 仅格式化 AWSL（`.awsl` 规范拼写与同义缩写 `.w`，取自单一事实源 [`AWSL_EXTENSIONS`]）。
     pub fn awsl_only(mut self) -> Self {
-        self.extensions = Some(vec!["awsl".into()]);
+        self.extensions = Some(AWSL_EXTENSIONS.iter().map(|extension| (*extension).to_string()).collect());
         self
     }
 

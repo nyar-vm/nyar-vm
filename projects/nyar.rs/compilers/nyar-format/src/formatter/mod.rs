@@ -34,8 +34,17 @@ pub use nyar_analyzer::format::{
 /// VON 配置/清单。
 pub const VON_EXTENSIONS: &[&str] = &["von"];
 
-/// 平台拥有的模板语言面（AWSL）。
-pub const AWSL_EXTENSIONS: &[&str] = &["awsl"];
+/// 平台拥有的模板语言面（AWSL）的扩展名集合——Asgard 源码后缀的单一事实源。
+///
+/// `.awsl` 为规范拼写，`.w` 为其同义缩写：同 parser、同 lowering、同身份，
+/// 可接受、不要求迁移、不留双轨。其余站点（LSP、Asgard 管线、CLI、格式化）
+/// 必须引用本集合或其判定函数 [`is_awsl_extension`]，不得各自维护字符串。
+pub const AWSL_EXTENSIONS: &[&str] = &["awsl", "w"];
+
+/// 扩展名是否属于 AWSL 源码集合（`.awsl` 规范拼写 / `.w` 同义缩写）。
+pub fn is_awsl_extension(ext: &str) -> bool {
+    AWSL_EXTENSIONS.contains(&ext)
+}
 
 /// 平台直接拥有 formatter 的源码种类（按文件扩展名）。
 ///
@@ -45,7 +54,7 @@ pub const AWSL_EXTENSIONS: &[&str] = &["awsl"];
 pub enum SourceKind {
     /// VON 数据：`.von`（`oak-von::formatter`）。
     Von,
-    /// AWSL 模板：`.awsl`（`oak-awsl::formatter`）。
+    /// AWSL 模板：`.awsl`（规范拼写）或同义缩写 `.w`（`oak-awsl::formatter`）。
     Awsl,
 }
 
