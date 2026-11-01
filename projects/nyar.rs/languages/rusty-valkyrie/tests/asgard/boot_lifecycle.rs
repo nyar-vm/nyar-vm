@@ -29,8 +29,5 @@ fn boot_js_mount_update_unmount_and_remount_leave_no_bindings() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
-    assert!(
-        String::from_utf8_lossy(&output.stdout).contains("BOOT_LIFECYCLE_OK"),
-        "探针必须完整执行到生命周期断言终点"
-    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("BOOT_LIFECYCLE_OK"), "探针必须完整执行到生命周期断言终点");
 }
