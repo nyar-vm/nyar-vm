@@ -1,7 +1,7 @@
 use nyar_types::ItemInstanceId;
 use rusty_valkyrie::{
     Identifier, NamePath, ValkyrieCompiler,
-    mir::ssa::{MirConstant, MirDiagnostic, MirLowerer, MirOperand, MirOperation, test_support::TestMirBuilder},
+    mir::ssa::{MirConstant, MirDiagnostic, MirLowerer, MirModule, MirOperand, MirOperation, test_support::TestMirBuilder},
     types::hir::{HirExprKind, HirLiteral, HirPattern, ValkyrieType},
 };
 
@@ -304,6 +304,101 @@ fn some_short_name_without_sum_identity_fails_closed() {
             .any(|instruction| { matches!(instruction.kind, MirOperation::SumNew { .. }) }),
         "缺身份时不得发出 SumNew"
     );
+}
+
+const INTEGER_COMPARISON_SOURCE: &str = r#"
+namespace std::primitive;
+structure i64 { }
+imply i64 {
+    infix `==`(self, rhs: Self): bool {
+        return integer_bitwise_equal(self, rhs)
+    }
+}
+micro integer_bitwise_equal(left: i64, right: i64): bool {
+    return true
+}
+micro compare(left: i64, right: i64): bool {
+    return left == right
+}
+"#;
+
+fn integer_comparison_module() -> MirModule {
+    let hir = ValkyrieCompiler::default().compile_source(INTEGER_COMPARISON_SOURCE).expect("整数比较源码必须完成 HIR");
+    MirLowerer::lower_module_semantic(&hir)
+}
+
+/// 整数比较调用：声明返回 `bool`，结果 SSA 类型也是 `bool`，必须通过语义合同校验。
+#[test]
+fn integer_comparison_call_matches_declared_boolean_return_type() {
+    let module = integer_comparison_module();
+    let operator_instance = module
+        .functions
+        .iter()
+        .find(|function| function.display_symbol.contains("infix =="))
+        .and_then(|function| function.instance)
+        .expect("`i64.infix ==` 必须持有实例身份");
+    let operator = module
+        .functions
+        .iter()
+        .find(|function| function.instance == Some(operator_instance))
+        .expect("`i64.infix ==` 必须作为 Semantics MIR 函数存在");
+    assert_eq!(operator.return_type, ValkyrieType::Boolean, "比较运算符的声明返回值是 `bool`");
+
+    let (caller, call_result) = module
+        .functions
+        .iter()
+        .find_map(|function| {
+            let call_result = function.blocks.iter().flat_map(|block| &block.instructions).find_map(|instruction| match &instruction.kind {
+                MirOperation::Call { callee: MirOperand::Callable(callee), .. } if *callee == operator_instance => {
+                    instruction.results.first().copied()
+                }
+                _ => None,
+            })?;
+            Some((function, call_result))
+        })
+        .expect("`compare` 必须把 `left == right` 降低成 `Callable` 比较调用");
+    assert_eq!(caller.value_types.get(&call_result), Some(&ValkyrieType::Boolean), "比较调用结果的 SSA 类型必须与声明的 `bool` 一致");
+
+    rusty_valkyrie::compiler::mir::validation::validate_semantic_module(&module).expect("返回 `bool` 的整数比较调用必须通过语义合同");
+}
+
+/// 旧 provider 把比较声明成返回 `i32`：声明 `bool` 与 SSA 结果 `i32` 不同源时，校验必须整体失败。
+#[test]
+fn integer_comparison_call_rejects_i32_ssa_result_against_boolean_declaration() {
+    let mut module = integer_comparison_module();
+    let operator_instance = module
+        .functions
+        .iter()
+        .find(|function| function.display_symbol.contains("infix =="))
+        .and_then(|function| function.instance)
+        .expect("`i64.infix ==` 必须持有实例身份");
+    let operator = module
+        .functions
+        .iter_mut()
+        .find(|function| function.instance == Some(operator_instance))
+        .expect("`i64.infix ==` 必须作为 Semantics MIR 函数存在");
+    assert_eq!(operator.return_type, ValkyrieType::Boolean, "比较运算符的声明返回值是 `bool`");
+    let call_result = operator
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .find_map(|instruction| match &instruction.kind {
+            MirOperation::Call { .. } => instruction.results.first().copied(),
+            _ => None,
+        })
+        .expect("`i64.infix ==` 的 body 必须持有比较调用");
+    operator.value_types.insert(call_result, ValkyrieType::Integer32 { signed: true });
+
+    let error = rusty_valkyrie::compiler::mir::validation::validate_semantic_module(&module)
+        .expect_err("声明 `bool` 而 SSA 结果 `i32` 的调用必须被拒绝");
+    assert_eq!(error.code, "SMIR007");
+    assert_eq!(error.detail, "call result type differs from declared signature");
+    assert!(error.function.contains("i64.infix =="), "错误必须能定位到比较运算符函数，实际为 `{}`", error.function);
+
+    let rendered = format!("{}: function={}, detail={}", error.code, error.function, error.detail);
+    assert!(rendered.contains("SMIR007"), "{rendered}");
+    assert!(rendered.contains("call result type differs from declared signature"), "{rendered}");
+    assert!(rendered.contains("function=i64.infix =="), "{rendered}");
 }
 
 #[test]
