@@ -133,6 +133,36 @@ pub(crate) fn ovm_operator_target(link: &ExternalImportLink) -> Option<&str> {
     }
 }
 
+/// 源码 `[jvm_operator("ldiv")]` 声明的 JVM 目标 operator 助记符。
+///
+/// 只接受 platform tag `jvm-operator` 且 locator 恰好一段；其余形态返回 `None`，
+/// 由调用方按「缺少可编码目标绑定」结构化失败。
+pub(crate) fn jvm_operator_target(link: &ExternalImportLink) -> Option<&str> {
+    if !link.matches_boundary("host") || !link.matches_platform_tag("jvm-operator") {
+        return None;
+    }
+
+    match link.locator_segments() {
+        [mnemonic] => Some(mnemonic.as_str()),
+        _ => None,
+    }
+}
+
+/// 源码 `[clr_operator("i64.div")]` 声明的 CLR 目标 operator 助记符。
+///
+/// 只接受 platform tag `clr-operator` 且 locator 恰好一段；其余形态返回 `None`，
+/// 由调用方按「缺少可编码目标绑定」结构化失败。
+pub(crate) fn clr_operator_target(link: &ExternalImportLink) -> Option<&str> {
+    if !link.matches_boundary("host") || !link.matches_platform_tag("clr-operator") {
+        return None;
+    }
+
+    match link.locator_segments() {
+        [mnemonic] => Some(mnemonic.as_str()),
+        _ => None,
+    }
+}
+
 pub(crate) fn wasi_host_import_target(link: &ExternalImportLink) -> Option<WasiHostImportTarget<'_>> {
     if !link.matches_boundary("host") {
         return None;

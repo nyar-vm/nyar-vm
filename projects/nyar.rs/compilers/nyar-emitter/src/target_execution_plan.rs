@@ -742,7 +742,8 @@ fn validate_aggregate_operation_shape(operation: &AggregateOperationPlan, identi
     Ok(())
 }
 
-/// 计划构造时冻结 `[wasm_operator]` / `[ovm_operator]` 的完整 operator 计划。
+/// 计划构造时冻结 `[wasm_operator]` / `[ovm_operator]` / `[jvm_operator]` /
+/// `[clr_operator]` 的完整 operator 计划。
 ///
 /// 助记符只在此处解析一次；backend 之后只消费 [`TargetOperatorBinding`]，不得再从
 /// 助记符字符串推断 arity、操作数改写或结果类型。未解析的绑定保留为
@@ -761,6 +762,16 @@ fn freeze_target_operator(link: &ExternalImportLink) -> Option<TargetOperatorBin
     #[cfg(not(feature = "ovm-lane"))]
     if vm_mnemonic.is_some() {
         return Some(TargetOperatorBinding::Unfrozen);
+    }
+    if let Some(mnemonic) = crate::lowering::shared::interop::jvm_operator_target(link) {
+        // JVM 配方表是纯静态后端私有表，无需 feature 门。
+        let resolved = crate::lowering::backends::jvm::recipe::freeze_jvm_operator_binding(mnemonic);
+        return Some(frozen_operator_binding(resolved));
+    }
+    if let Some(mnemonic) = crate::lowering::shared::interop::clr_operator_target(link) {
+        // CLR 配方表同形：纯静态后端私有表。
+        let resolved = crate::lowering::backends::clr::mir::freeze_clr_operator_binding(mnemonic);
+        return Some(frozen_operator_binding(resolved));
     }
     None
 }
@@ -786,6 +797,8 @@ fn validate_frozen_operator(
 ) -> Result<()> {
     let mnemonic = crate::lowering::shared::interop::wasm_operator_target(link)
         .or_else(|| crate::lowering::shared::interop::ovm_operator_target(link))
+        .or_else(|| crate::lowering::shared::interop::jvm_operator_target(link))
+        .or_else(|| crate::lowering::shared::interop::clr_operator_target(link))
         .unwrap_or("<unknown>");
     let function = symbol.unwrap_or("<unknown>");
     if parameter_types.len() != plan.arity {

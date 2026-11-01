@@ -56,6 +56,10 @@ pub enum TargetOperatorEncoding {
     Wasm(u8),
     /// OVM 头码。
     Ovm(OdinHeadCode),
+    /// JVM 冻结码（算术码单指令展开；比较码由 JVM backend 展开为指令序列）。
+    Jvm(crate::lowering::backends::jvm::JvmOperatorCode),
+    /// CLR MSIL opcode（与数值载体无关，载体差异已冻结在配方中）。
+    Clr(crate::transitional::msil::MsilOpcode),
 }
 
 /// 一个已冻结的目标 operator 计划。

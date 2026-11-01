@@ -1,0 +1,73 @@
+//! CLR 数值指令绑定的唯一助记符表。
+//!
+//! `[clr_operator("i64.div")]` 只声明目标 operator 助记符；助记符到**冻结配方**
+//! 的映射归 CLR backend 所有，并在 `TargetExecutionPlan` 构造时一次性写入计划
+//! （arity、操作数发射配方、操作数/结果载体与 MSIL opcode）。emit 侧只编码计划
+//! 里的配方，不再从助记符字符串推断 arity 或操作数改写。
+//!
+//! MSIL 算术/比较 opcode 不区分数值载体，助记符因此必须携带载体限定名
+//! （`i32.add` / `i64.add` / `f64.add`），冻结表按限定名给出唯一配方。
+//! 比较只冻结单 opcode 的 `eq/lt/gt`（`ceq`/`clt`/`cgt`）；`ne/le/ge` 在 MSIL
+//! 上需要 `ceq + not` 之类的序列配方，补齐前不在本表，禁止猜默认指令。
+
+use crate::{
+    target_operator::{TargetOperandType, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
+    transitional::msil::MsilOpcode,
+};
+
+const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: MsilOpcode) -> TargetOperatorPlan {
+    TargetOperatorPlan {
+        arity: 2,
+        operand_type,
+        result_type,
+        recipe: TargetOperatorRecipe::Operands,
+        encoding: TargetOperatorEncoding::Clr(opcode),
+    }
+}
+
+const fn unary(operand_type: TargetOperandType, opcode: MsilOpcode) -> TargetOperatorPlan {
+    TargetOperatorPlan {
+        arity: 1,
+        operand_type,
+        result_type: operand_type,
+        recipe: TargetOperatorRecipe::Operands,
+        encoding: TargetOperatorEncoding::Clr(opcode),
+    }
+}
+
+/// 唯一助记符表。未知助记符返回 `None`。
+pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
+    Some(match mnemonic {
+        // int32 算术：MSIL 单 opcode。
+        "i32.add" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Add),
+        "i32.sub" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Sub),
+        "i32.mul" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Mul),
+        "i32.div" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Div),
+        "i32.rem" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Rem),
+        "i32.neg" => unary(TargetOperandType::I32, MsilOpcode::Neg),
+        // int64 算术：同一批 opcode 对宽载体同形。
+        "i64.add" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Add),
+        "i64.sub" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Sub),
+        "i64.mul" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Mul),
+        "i64.div" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Div),
+        "i64.rem" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Rem),
+        "i64.neg" => unary(TargetOperandType::I64, MsilOpcode::Neg),
+        // float64 算术：MSIL `neg` 对浮点保留 -0.0，与语义一致。
+        "f64.add" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Add),
+        "f64.sub" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Sub),
+        "f64.mul" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Mul),
+        "f64.div" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Div),
+        "f64.neg" => unary(TargetOperandType::F64, MsilOpcode::Neg),
+        // 比较：结果固定为 I32（0/1）；只冻结单 opcode 的 eq/lt/gt。
+        "i32.eq" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Ceq),
+        "i32.lt" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Clt),
+        "i32.gt" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Cgt),
+        "i64.eq" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Ceq),
+        "i64.lt" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Clt),
+        "i64.gt" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Cgt),
+        "f64.eq" => binary(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::Ceq),
+        "f64.lt" => binary(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::Clt),
+        "f64.gt" => binary(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::Cgt),
+        _ => return None,
+    })
+}
