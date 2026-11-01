@@ -408,8 +408,10 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return Ok(false);
         };
-        let TargetOperatorBinding::Frozen(plan) = binding
-        else {
+        let TargetOperatorBinding::Frozen(plan) = binding else {
+            if let TargetOperatorBinding::FrozenWasmGcArray(array_plan) = binding {
+                return self.try_emit_wasm_gc_array_operator(mnemonic, *array_plan, arguments, output, instance).map(|()| true);
+            }
             return Err(format!("WASM `wasm_operator` 绑定缺少可编码助记符 `{mnemonic}`: callee={instance:?} function={}", self.mir_fn.symbol));
         };
         let TargetOperatorEncoding::Wasm(opcode) = plan.encoding
@@ -442,6 +444,51 @@ impl<'a> WasmMirLowerer<'a> {
             }
         }
         Ok(true)
+    }
+
+    /// `[wasm_operator("array.*")]` 冻结绑定：分派到与 MIR `Array*` 臂共享的发射器。
+    ///
+    /// arity 来自计划冻结事实；arraytype 索引由共享发射器在编码期按元素类型从
+    /// RepresentationPlan 注册表解析，与 MIR 臂同一事实源，此处不重新推断。
+    fn try_emit_wasm_gc_array_operator(
+        &mut self,
+        mnemonic: &str,
+        plan: WasmGcArrayOperatorPlan,
+        arguments: &[MirOperand],
+        output: Option<MirValueRef>,
+        instance: &nyar_types::ItemInstanceId,
+    ) -> crate::Result<()> {
+        if arguments.len() != plan.arity {
+            return Err(format!(
+                "WASM `wasm_operator` 数组绑定 `{mnemonic}` 实参数量与冻结 arity 不符: callee={instance:?} function={} expected={} actual={}",
+                self.mir_fn.symbol,
+                plan.arity,
+                arguments.len()
+            ));
+        }
+        match plan.operation {
+            WasmGcArrayOperation::New => {
+                let Some(output) = output
+                else {
+                    return Err(format!(
+                        "WASM `wasm_operator` 数组绑定 `{mnemonic}` 缺少结果槽: callee={instance:?} function={}",
+                        self.mir_fn.symbol
+                    ));
+                };
+                let Some(element_type) = self.mir_fn.value_types.get(&output).and_then(|ty| array_element_type(ty).cloned())
+                else {
+                    return Err(format!(
+                        "WASM `wasm_operator` 数组绑定 `{mnemonic}` 的结果槽缺少堆数组类型事实: callee={instance:?} function={} output=%{}",
+                        self.mir_fn.symbol,
+                        output.0
+                    ));
+                };
+                self.emit_array_new_default_ops(&element_type, &arguments[0], output)
+            }
+            WasmGcArrayOperation::Length => self.emit_array_length_ops(&arguments[0], output),
+            WasmGcArrayOperation::Get => self.emit_array_get_ops(arguments, output),
+            WasmGcArrayOperation::Set => self.emit_array_set_ops(arguments, output),
+        }
     }
 
     /// 按计划冻结的步骤顺序机械编码常量与实参，再执行冻结 opcode。

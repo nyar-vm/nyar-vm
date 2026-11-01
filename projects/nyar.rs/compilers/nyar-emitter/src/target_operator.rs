@@ -80,11 +80,41 @@ pub struct TargetOperatorPlan {
     pub encoding: TargetOperatorEncoding,
 }
 
+/// wasm GC 数组目标 operator 的冻结操作。
+///
+/// 数组 operator 不是单条 opcode：`array.get`/`array.set` 需要先按元素类型
+/// `ref.cast` 到具体 arraytype，`array.new` 的 arraytype 也随元素类型变化。
+/// arraytype 索引**不冻结**在计划里——它是模块装配期 RepresentationPlan 注册表
+/// （`gc_array_type_indices`）的事实，与 MIR `ArrayNew`/`ArrayGet`/`ArraySet`/
+/// `ArrayLength` 臂共用同一解析入口；计划只冻结 arity 与操作身份。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WasmGcArrayOperation {
+    /// `new<T>(length) -> [T]`：按元素 arraytype 分配默认值数组。
+    New,
+    /// `length<T>([T]) -> usize`：`ref.cast array` 后 `array.len`。
+    Length,
+    /// `get<T>([T], index) -> T`：`ref.cast` 元素 arraytype 后 `array.get`。
+    Get,
+    /// `set<T>([T], index, T) -> unit`：`ref.cast` 元素 arraytype 后 `array.set`。
+    Set,
+}
+
+/// 一个已冻结的 wasm GC 数组 operator 计划。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WasmGcArrayOperatorPlan {
+    /// 冻结的实参个数；编码前必须与调用实参个数一致。
+    pub arity: usize,
+    /// 冻结的数组操作身份。
+    pub operation: WasmGcArrayOperation,
+}
+
 /// 计划对目标 operator 绑定的冻结状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetOperatorBinding {
     /// 已冻结完整 operator 计划。
     Frozen(TargetOperatorPlan),
+    /// 已冻结 wasm GC 数组 operator 计划（多步编码，arraytype 编码期解析）。
+    FrozenWasmGcArray(WasmGcArrayOperatorPlan),
     /// 声明了目标 operator 绑定，但该目标没有可编码配方；emit 必须结构化失败。
     Unfrozen,
 }

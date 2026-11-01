@@ -47,6 +47,7 @@ pub(super) use crate::{
     nyar_backend_wasi::WasmBinaryModule,
     target_operator::{
         TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
+        WasmGcArrayOperation, WasmGcArrayOperatorPlan,
     },
 };
 
@@ -61,6 +62,7 @@ pub(super) use type_registry::*;
 // ── Submodules ────────────────────────────────────────────────────────────
 
 mod abi_schema;
+pub(crate) mod array;
 mod calls;
 mod control;
 mod encode;

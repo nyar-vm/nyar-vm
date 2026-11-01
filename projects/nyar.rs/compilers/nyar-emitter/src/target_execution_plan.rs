@@ -14,7 +14,10 @@ use nyar_types::{
 use crate::{
     backend_plan_views::{ExecutableFunction, FunctionView, SuspendMetadataView},
     contracts::{Block, BlockRef, ValueRef},
-    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorPlan, TargetOperatorRecipe},
+    target_operator::{
+        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorPlan, TargetOperatorRecipe, WasmGcArrayOperation,
+        WasmGcArrayOperatorPlan,
+    },
 };
 
 /// 已完成 callable、类型、CFG 和表示合同绑定的目标私有计划。
@@ -340,9 +343,17 @@ impl TargetExecutionPlan {
                 let parameter_types = import.parameter_types.iter().map(|ty| lower_type(canonical, *ty)).collect::<Result<Vec<_>>>()?;
                 let return_type = lower_type(canonical, import.return_type)?;
                 let target_operator = freeze_target_operator(&import.link);
-                if let Some(TargetOperatorBinding::Frozen(plan)) = target_operator {
+                if let Some(binding) = target_operator {
                     let symbol = canonical.linked.callable_names.get(&instance).map(|name| name.to_string());
-                    validate_frozen_operator(instance, symbol.as_deref(), &import.link, &parameter_types, &return_type, &plan)?;
+                    match binding {
+                        TargetOperatorBinding::Frozen(plan) => {
+                            validate_frozen_operator(instance, symbol.as_deref(), &import.link, &parameter_types, &return_type, &plan)?;
+                        }
+                        TargetOperatorBinding::FrozenWasmGcArray(plan) => {
+                            validate_frozen_array_operator(instance, symbol.as_deref(), &import.link, &parameter_types, &return_type, &plan)?;
+                        }
+                        TargetOperatorBinding::Unfrozen => {}
+                    }
                 }
                 imports.insert(
                     instance,
@@ -750,8 +761,15 @@ fn validate_aggregate_operation_shape(operation: &AggregateOperationPlan, identi
 /// [`TargetOperatorBinding::Unfrozen`]，由 emit 侧结构化失败。
 fn freeze_target_operator(link: &ExternalImportLink) -> Option<TargetOperatorBinding> {
     if let Some(mnemonic) = crate::lowering::shared::interop::wasm_operator_target(link) {
-        let resolved = crate::lowering::backends::wasm::mir::numeric::freeze_wasm_numeric_binding(mnemonic);
-        return Some(frozen_operator_binding(resolved));
+        if let Some(plan) = crate::lowering::backends::wasm::mir::numeric::freeze_wasm_numeric_binding(mnemonic) {
+            return Some(TargetOperatorBinding::Frozen(plan));
+        }
+        // 数值表未命中时进入数组助记符表：两者都是 wasm backend 私有的冻结配方表，
+        // 未知助记符统一落 `Unfrozen`，由 emit 结构化失败。
+        if let Some(plan) = crate::lowering::backends::wasm::mir::array::freeze_wasm_array_binding(mnemonic) {
+            return Some(TargetOperatorBinding::FrozenWasmGcArray(plan));
+        }
+        return Some(TargetOperatorBinding::Unfrozen);
     }
     let vm_mnemonic = crate::lowering::shared::interop::ovm_operator_target(link);
     #[cfg(feature = "ovm-lane")]
@@ -843,6 +861,95 @@ fn validate_frozen_operator(
                         plan.operand_type, constant_type
                     ));
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 校验冻结的 wasm GC 数组计划与导入声明的实例化签名一致。
+///
+/// 数组 operator 的物理编码是多步的（`ref.cast` + `array.*`），arraytype 索引属于
+/// 模块装配期 RepresentationPlan 注册表事实，不在计划层冻结；此处校验的是声明签名
+/// 与冻结 arity/操作身份的语义形状：聚合参数必须是堆数组 `[T]`，长度/索引参数必须
+/// 携带 i32 载体，`get`/`set` 的元素槽必须与数组元素类型逐点一致。形状不符即计划
+/// 不成立，结构化失败，不得让后端发射后再改写。
+fn validate_frozen_array_operator(
+    instance: ItemInstanceId,
+    symbol: Option<&str>,
+    link: &ExternalImportLink,
+    parameter_types: &[NyarType],
+    return_type: &NyarType,
+    plan: &WasmGcArrayOperatorPlan,
+) -> Result<()> {
+    use WasmGcArrayOperation::{Get, Length, New, Set};
+    let mnemonic = crate::lowering::shared::interop::wasm_operator_target(link).unwrap_or("<unknown>");
+    let function = symbol.unwrap_or("<unknown>");
+    let fail = |reason: String| -> Result<()> {
+        Err(format!(
+            "目标数组 operator 绑定 `{mnemonic}` 的声明签名与冻结计划不符: function={function} {reason} instance={instance:?} link={link}"
+        ))
+    };
+    if parameter_types.len() != plan.arity {
+        return fail(format!("expected arity={} actual={}", plan.arity, parameter_types.len()));
+    }
+    fn array_element(ty: &NyarType) -> Option<&NyarType> {
+        match ty {
+            NyarType::Array(element) => Some(element.as_ref()),
+            _ => None,
+        }
+    }
+    let index_carrier = |ty: &NyarType| operand_carrier(ty) == Some(TargetOperandType::I32);
+    match plan.operation {
+        New => {
+            let Some(length) = parameter_types.first() else { return fail("arity 事实缺失".to_owned()) };
+            if !index_carrier(length) {
+                return fail(format!("`array.new` 的长度参数必须携带 i32 载体: actual={length:?}"));
+            }
+            if array_element(return_type).is_none() {
+                return fail(format!("`array.new` 的返回类型必须是堆数组 `[T]`: actual={return_type:?}"));
+            }
+        }
+        Length => {
+            let Some(array) = parameter_types.first() else { return fail("arity 事实缺失".to_owned()) };
+            if array_element(array).is_none() {
+                return fail(format!("`array.length` 的聚合参数必须是堆数组 `[T]`: actual={array:?}"));
+            }
+            if !index_carrier(return_type) {
+                return fail(format!("`array.length` 的返回类型必须携带 i32 载体: actual={return_type:?}"));
+            }
+        }
+        Get => {
+            let (Some(array), Some(index)) = (parameter_types.first(), parameter_types.get(1)) else {
+                return fail("arity 事实缺失".to_owned());
+            };
+            let Some(element) = array_element(array) else {
+                return fail(format!("`array.get` 的聚合参数必须是堆数组 `[T]`: actual={array:?}"));
+            };
+            if !index_carrier(index) {
+                return fail(format!("`array.get` 的索引参数必须携带 i32 载体: actual={index:?}"));
+            }
+            if return_type != element {
+                return fail(format!("`array.get` 的返回类型必须与数组元素类型一致: element={element:?} actual={return_type:?}"));
+            }
+        }
+        Set => {
+            let (Some(array), Some(index), Some(value)) =
+                (parameter_types.first(), parameter_types.get(1), parameter_types.get(2))
+            else {
+                return fail("arity 事实缺失".to_owned());
+            };
+            let Some(element) = array_element(array) else {
+                return fail(format!("`array.set` 的聚合参数必须是堆数组 `[T]`: actual={array:?}"));
+            };
+            if !index_carrier(index) {
+                return fail(format!("`array.set` 的索引参数必须携带 i32 载体: actual={index:?}"));
+            }
+            if value != element {
+                return fail(format!("`array.set` 的值参数必须与数组元素类型一致: element={element:?} actual={value:?}"));
+            }
+            if *return_type != NyarType::Unit {
+                return fail(format!("`array.set` 的返回类型必须是 unit: actual={return_type:?}"));
             }
         }
     }

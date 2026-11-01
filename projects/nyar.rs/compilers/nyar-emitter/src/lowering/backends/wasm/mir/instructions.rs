@@ -179,26 +179,12 @@ impl<'a> WasmMirLowerer<'a> {
                         self.mir_fn.symbol
                     );
                 };
-                let Some(type_index) = self.resolve_gc_array_type_index(element_type)
-                else {
-                    panic!(
-                        "WASM ArrayNew missing gc arraytype in `{}` (element={element_type:?}); \
-                         RepresentationPlan must register arraytype — refusing runtime trap placeholders",
-                        self.mir_fn.symbol
-                    );
-                };
+                let _ = local;
                 match initialization {
-                    ArrayInitialization::Default => {
-                        self.emit_operand(length);
-                        self.emit_array_new_default(type_index);
-                        self.emit_local_set(local);
-                    }
-                    ArrayInitialization::Fill(fill) => {
-                        // Fail-closed seed path: allocate default then refuse silent fill loops.
-                        let _ = fill;
-                        self.emit_operand(length);
-                        self.emit_array_new_default(type_index);
-                        self.emit_local_set(local);
+                    ArrayInitialization::Default | ArrayInitialization::Fill(_) => {
+                        // Fail-closed seed path: allocate default; Fill 的静默填充循环
+                        // 由同一共享发射器拒绝（arraytype 事实缺失即结构化失败）。
+                        self.emit_array_new_default_ops(element_type, length, output)?;
                     }
                 }
             }
@@ -456,18 +442,13 @@ impl<'a> WasmMirLowerer<'a> {
                 }
             }
             MirInstructionKind::ArrayGet { array, index } => {
-                self.emit_intrinsic_array_get(&[array.clone(), index.clone()], instruction_primary_result(instruction))?;
+                self.emit_array_get_ops(&[array.clone(), index.clone()], instruction_primary_result(instruction))?;
             }
             MirInstructionKind::ArraySet { array, index, value } => {
-                self.emit_intrinsic_array_set(&[array.clone(), index.clone(), value.clone()], instruction_primary_result(instruction))?;
+                self.emit_array_set_ops(&[array.clone(), index.clone(), value.clone()], instruction_primary_result(instruction))?;
             }
             MirInstructionKind::ArrayLength { array } => {
-                self.emit_operand_coerced(array, WASM_GC_ANYREF);
-                self.emit_ref_cast_array();
-                self.emit_array_len();
-                if let Some(output) = instruction_primary_result(instruction) {
-                    self.store_scalar(output);
-                }
+                self.emit_array_length_ops(array, instruction_primary_result(instruction))?;
             }
             MirInstructionKind::NullIsNull { value } => {
                 self.emit_operand_coerced(value, WASM_GC_ANYREF);
