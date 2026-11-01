@@ -10,6 +10,7 @@ mod boot_lifecycle;
 mod chunk_config_matrix;
 mod chunk_planning;
 mod cli_app_dev;
+mod cli_dev_swap;
 mod cli_static;
 mod config_discovery;
 mod config_model;
