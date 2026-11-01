@@ -51,32 +51,42 @@ impl<'a> WasmMirLowerer<'a> {
                     if self.try_emit_wasi_cli_write_via_stream(arguments, import_index, output) {
                         return Ok(());
                     }
-                    callee_return = self.resolve_callee_return_type(callee, Some(import_index));
-                    let param_types = self.resolve_callee_param_types(callee, Some(import_index));
+                    callee_return = self.resolve_callee_return_type(callee, Some(import_index))?;
+                    let param_types = self.resolve_callee_param_types(callee, Some(import_index))?;
                     self.emit_call_arguments(arguments, &param_types);
                     self.emit_call(import_index);
                 }
                 else if let Some(function_index) = self.resolve_callee_function_index(callee) {
-                    callee_return = *self.return_types_by_function_index.get(&function_index).expect("WASM 函数下标缺少返回签名");
-                    let param_types = self.param_types_by_function_index.get(&function_index).expect("WASM 函数下标缺少参数签名").clone();
+                    // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
+                    let return_type = *self
+                        .return_types_by_function_index
+                        .get(&function_index)
+                        .ok_or_else(|| format!("WASM 函数下标缺少返回签名: function_index={function_index} in `{}`", self.mir_fn.symbol))?;
+                    let param_types = self
+                        .param_types_by_function_index
+                        .get(&function_index)
+                        .ok_or_else(|| format!("WASM 函数下标缺少参数签名: function_index={function_index} in `{}`", self.mir_fn.symbol))?
+                        .clone();
+                    callee_return = return_type;
                     self.emit_call_arguments(arguments, &param_types);
                     self.emit_call(function_index);
                 }
                 else {
-                    panic!("WASM 静态调用缺少已解析 callable identity: {} callee={callee:?}", self.mir_fn.symbol);
+                    // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
+                    return Err(format!("WASM 静态调用缺少已解析 callable identity: {} callee={callee:?}", self.mir_fn.symbol));
                 }
             }
             MirDispatchKind::Witness => {
-                callee_return = self.resolve_callee_return_type(callee, None);
+                callee_return = self.resolve_callee_return_type(callee, None)?;
                 for argument in arguments {
                     self.emit_operand_coerced(argument, self.operand_wasm_stack_type(argument));
                 }
-                if let Some(witness_operand) = witness {
-                    self.emit_operand(witness_operand);
-                }
+                // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
+                let Some(witness_operand) = witness
                 else {
-                    panic!("WASM witness 调用缺少显式分派操作数: {}", self.mir_fn.symbol);
-                }
+                    return Err(format!("WASM witness 调用缺少显式分派操作数: {}", self.mir_fn.symbol));
+                };
+                self.emit_operand(witness_operand);
                 let type_index = self.resolve_callee_type_index(callee);
                 self.emit_call_indirect(type_index, 0);
             }
@@ -91,20 +101,25 @@ impl<'a> WasmMirLowerer<'a> {
                 callee_return = return_type;
             }
         }
-        self.emit_store_call_output(output, callee_return);
+        self.emit_store_call_output(output, callee_return)?;
         Ok(())
     }
 
-    fn emit_store_call_output(&mut self, output: Option<MirValueRef>, callee_return: Option<u8>) {
+    fn emit_store_call_output(&mut self, output: Option<MirValueRef>, callee_return: Option<u8>) -> crate::Result<()> {
         match output {
             Some(output) => {
-                let return_type = callee_return.expect("WASM 有 SSA 结果的调用缺少返回合同");
+                // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
+                let Some(return_type) = callee_return
+                else {
+                    return Err(format!("WASM 有 SSA 结果的调用缺少返回合同: {}", self.mir_fn.symbol));
+                };
                 self.validate_output_slot_type(output, return_type);
                 self.assign_output_local(output);
             }
             None if callee_return.is_some() => WasmOpcode::Drop.encode(&mut self.code),
             None => {}
         }
+        Ok(())
     }
 
     /// 编码阶段只验证预规划槽，不改变 SSA 表示。
@@ -118,26 +133,42 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_set(local);
     }
 
-    pub(super) fn resolve_callee_param_types(&self, callee: &MirOperand, import_index: Option<u32>) -> Vec<u8> {
+    pub(super) fn resolve_callee_param_types(&self, callee: &MirOperand, import_index: Option<u32>) -> crate::Result<Vec<u8>> {
+        // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
         if let Some(index) = import_index {
-            return self.import_param_types.get(index as usize).expect("WASM 导入缺少参数签名").clone();
+            return self
+                .import_param_types
+                .get(index as usize)
+                .ok_or_else(|| format!("WASM 导入缺少参数签名: import_index={index} in `{}`", self.mir_fn.symbol))
+                .cloned();
         }
         let MirOperand::Item(instance) = callee
         else {
-            panic!("WASM 普通调用缺少实例身份");
+            return Err(format!("WASM 普通调用缺少实例身份: {} callee={callee:?}", self.mir_fn.symbol));
         };
-        self.param_types_by_instance.get(instance).expect("WASM 实例缺少参数签名").clone()
+        self.param_types_by_instance
+            .get(instance)
+            .ok_or_else(|| format!("WASM 实例缺少参数签名: callee={callee:?} in `{}`", self.mir_fn.symbol))
+            .cloned()
     }
 
-    pub(super) fn resolve_callee_return_type(&self, callee: &MirOperand, import_index: Option<u32>) -> Option<u8> {
+    pub(super) fn resolve_callee_return_type(&self, callee: &MirOperand, import_index: Option<u32>) -> crate::Result<Option<u8>> {
+        // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
         if let Some(index) = import_index {
-            return *self.import_return_types.get(index as usize).expect("WASM 导入缺少返回签名");
+            return self
+                .import_return_types
+                .get(index as usize)
+                .ok_or_else(|| format!("WASM 导入缺少返回签名: import_index={index} in `{}`", self.mir_fn.symbol))
+                .copied();
         }
         let MirOperand::Item(instance) = callee
         else {
-            panic!("WASM 普通调用缺少实例身份");
+            return Err(format!("WASM 普通调用缺少实例身份: {} callee={callee:?}", self.mir_fn.symbol));
         };
-        *self.return_types_by_instance.get(instance).expect("WASM 实例缺少返回签名")
+        self.return_types_by_instance
+            .get(instance)
+            .ok_or_else(|| format!("WASM 实例缺少返回签名: callee={callee:?} in `{}`", self.mir_fn.symbol))
+            .copied()
     }
 
     /// 间接调用的签名解析：callee SSA 值必须携带冻结的 `NyarType::Function`，
