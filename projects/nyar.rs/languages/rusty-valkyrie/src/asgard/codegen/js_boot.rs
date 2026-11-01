@@ -358,16 +358,23 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
       var fn = function () {
         if (wasmExports && typeof wasmExports[hostText(updateExport)] === 'function') callWasm(hostText(updateExport));
       };
+      var detachers = [];
       deps.forEach(function (dep) {
         if (dep === 'store') {
           storeSubscribers.push(fn);
+          detachers.push(function () { removeFromList(storeSubscribers, fn); });
           return;
         }
         var depId = resolveSigRef(dep);
         if (depId >= 0) {
           signalSubscribers[depId] = signalSubscribers[depId] || [];
           signalSubscribers[depId].push(fn);
+          detachers.push(function () { removeFromList(signalSubscribers[depId], fn); });
         }
+      });
+      // 与 `storeSubscribe` 同一生命周期合同：激活期订阅随 island 卸载解绑。
+      registerCleanup(function () {
+        detachers.forEach(function (detach) { detach(); });
       });
       fn();
     },
