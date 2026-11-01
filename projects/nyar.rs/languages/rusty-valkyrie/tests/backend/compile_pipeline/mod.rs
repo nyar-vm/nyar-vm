@@ -4,6 +4,7 @@
 //! 不再用模块级 `#![cfg(false)]` 把整组（含仍有效的 backend contract 门）一起关掉。
 
 mod backend_contract_interop_tests;
+mod backend_i64_bitwise_provider_e2e_tests;
 mod backend_ovm_array_provider_e2e_tests;
 mod backend_ovm_operator_freeze_tests;
 mod backend_wasm_array_provider_e2e_tests;

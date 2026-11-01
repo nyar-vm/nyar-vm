@@ -20,6 +20,36 @@ fn parses_all_seed_host_ops() {
 }
 
 #[test]
+fn parses_i64_bitwise_host_ops() {
+    assert_eq!(parse_host_op("i64_and"), Some(HostOp::I64And));
+    assert_eq!(parse_host_op("i64_or"), Some(HostOp::I64Or));
+    assert_eq!(parse_host_op("i64_xor"), Some(HostOp::I64Xor));
+    assert_eq!(parse_host_op("i64_shl"), Some(HostOp::I64Shl));
+    assert_eq!(parse_host_op("i64_shr"), Some(HostOp::I64Shr));
+    let import = OdinImport { kind: odin_bytecode::OdinImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_shr_u".into() };
+    assert!(resolve_import(&import).is_err(), "未登记的位移符号必须在加载期拒绝，不得静默外部化");
+}
+
+#[test]
+fn i64_bitwise_host_ops_execute_with_masked_shifts() {
+    let mut heap = ObjectHeap::new();
+    assert_eq!(execute_host_op(HostOp::I64And, &[Value::I64(12), Value::I64(10)], &mut heap).expect("i64_and"), Value::I64(8));
+    assert_eq!(execute_host_op(HostOp::I64Or, &[Value::I64(12), Value::I64(10)], &mut heap).expect("i64_or"), Value::I64(14));
+    assert_eq!(execute_host_op(HostOp::I64Xor, &[Value::I64(12), Value::I64(10)], &mut heap).expect("i64_xor"), Value::I64(6));
+    assert_eq!(execute_host_op(HostOp::I64Shl, &[Value::I64(1), Value::I64(63)], &mut heap).expect("i64_shl 63"), Value::I64(1i64 << 63));
+    // 位移量按 `& 63` 截断，与 wasm `i64.shl`/JVM `lshl`/MSIL `shl` 掩码语义一致。
+    assert_eq!(execute_host_op(HostOp::I64Shl, &[Value::I64(3), Value::I64(65)], &mut heap).expect("i64_shl 65 掩码为 1"), Value::I64(6));
+    assert_eq!(
+        execute_host_op(HostOp::I64Shr, &[Value::I64(-8), Value::I64(1)], &mut heap).expect("i64_shr"),
+        Value::I64(-4),
+        "必须是算术右移"
+    );
+    assert_eq!(execute_host_op(HostOp::I64Shr, &[Value::I64(-1), Value::I64(64)], &mut heap).expect("i64_shr 64 掩码为 0"), Value::I64(-1));
+    // 非整数载体参数必须结构化失败，不得静默转换。
+    assert!(execute_host_op(HostOp::I64Shr, &[Value::Bool(true), Value::I64(1)], &mut heap).is_err(), "bool 参数不得通过 i64 移位路径");
+}
+
+#[test]
 fn array_host_ops_round_trip_new_length_get_set() {
     let mut heap = ObjectHeap::new();
     let array = execute_host_op(HostOp::ArrayNew, &[Value::I32(3)], &mut heap).expect("array.new");
