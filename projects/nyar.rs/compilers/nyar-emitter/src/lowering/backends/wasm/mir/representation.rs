@@ -35,16 +35,17 @@ pub(super) fn mir_storage_for_type(ctx: &ExecutableLoweringContext, ty: &NyarTyp
     ctx.storage_for_type(ty)
 }
 
+/// 对象槽是否走 gc struct：**只读注册表**，不按类型形状特判。
+///
+/// 宿主字符串不得在此反向污染——一旦值携带已登记 gc struct 的 layout，
+/// 构造/字段读取点就按 gc struct 发射；若 ABI 槽仍判成 i32，运行时必
+/// `illegal cast`。注册条件（含 `js_glue_utf8_as_anyref` 的字段判定）已由
+/// `register_gc_struct_types` 冻结，这里消费同一事实，不重新推导。
 pub(super) fn type_uses_gc_struct_param(
     ctx: &ExecutableLoweringContext,
-    ty: &NyarType,
     layout_id: Option<LayoutId>,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
 ) -> bool {
-    // 宿主 utf8/utf16 始终走 i32 句柄，即使同名 layout 被登记为 GC struct。
-    if is_js_glue_host_string_type(ty) {
-        return false;
-    }
     let Some(layout_id) = layout_id
     else {
         return false;
@@ -53,9 +54,8 @@ pub(super) fn type_uses_gc_struct_param(
     else {
         return false;
     };
-    // 注册表即唯一权威。此处若按 `layout.storage` 重新推导，会与
-    // `WasmMirLowerer::layout_uses_gc_struct` 分叉：ABI 槽位判成 i32、
-    // 构造/读取点却按 gc struct 发射，运行时 `illegal cast`。
+    // 此处若按 `layout.storage` 重新推导，会与
+    // `WasmMirLowerer::layout_uses_gc_struct` 分叉。
     gc_struct_type_indices.contains_key(&layout.id)
 }
 
@@ -66,14 +66,15 @@ pub(super) fn wasm_param_value_type_for(
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> u8 {
-    // Node / JS-glue 宿主字符串必须是 i32 句柄，优先于「同名 GC struct layout」判定。
-    // 否则 `utf8` 若被登记为 reference layout，call 实参会被 coerce 成 `ref.null`，
-    // 丢掉 `cli_get_*` / `const_utf8` 返回的句柄。
+    // 注册表是对象槽的唯一权威：值携带已登记 gc struct 的 layout 时，槽必须是
+    // anyref，与构造/字段读取点消费同一冻结事实。宿主字符串特判不得反向污染此处。
+    if type_uses_gc_struct_param(ctx, layout_id, gc_struct_type_indices) {
+        return WASM_GC_ANYREF;
+    }
+    // Node / JS-glue 宿主字符串在**未携带注册 gc struct layout** 时必须是 i32 句柄
+    // （`cli_get_*` / `const_utf8`）；否则 call 实参会被 coerce 成 `ref.null`，丢掉句柄。
     if is_js_glue_host_string_type(ty) {
         return VALTYPE_I32;
-    }
-    if type_uses_gc_struct_param(ctx, ty, layout_id, gc_struct_type_indices) {
-        return WASM_GC_ANYREF;
     }
     wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)
 }
