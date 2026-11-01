@@ -39,7 +39,7 @@ fn collect_structural_intrinsic_instances(module: &HirModule, instances: &mut BT
         };
         if let Some(op) = declaration_intrinsic(function) {
             // 结构 opcode 只覆盖当前链接器能编码的数组结构操作；其它 intrinsic 身份
-            // （如 `builtin.ref.deref`）不在此处生成，仍按普通调用身份裁决。
+            // 不在此处生成，仍按普通调用身份裁决。
             if matches!(op, BuiltinStructureOp::ArrayLen | BuiltinStructureOp::ArrayGet | BuiltinStructureOp::ArraySet) {
                 instances.insert(instance, op);
             }

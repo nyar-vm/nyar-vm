@@ -19,22 +19,6 @@ use super::{
 };
 
 impl MirBuilder {
-    /// 所有 intrinsic lowering 分支统一降级为普通 Call。
-    ///
-    /// 核心合同：intrinsic 专用 opcode 只允许由 adaptor 链接进来的后端专用绑定产生；
-    /// 源码 `[intrinsic(...)]` 自由函数、语言 builtin intrinsic 候选（只挂 intrinsic 身份）
-    /// 一律走普通 Call 路径，让 planner adaptor / backend TargetExecutionPlan 链路消费。
-    /// 当前没有 adaptor 链接进来的后端绑定，因此所有 intrinsic 调用直接 `return None`
-    /// 让主 lowering 循环走 Call 分支。后续 adaptor 真能链接 opcode 时再在此收敛。
-    pub(crate) fn try_lower_ref_deref_intrinsic(
-        &mut self,
-        _resolved: Option<&HirResolvedCall>,
-        _callee: &MirOperand,
-        _arguments: &[MirOperand],
-    ) -> Option<MirOperand> {
-        None
-    }
-
     /// `T?` ???????? sum ??? `Nominal{ItemId}`?
     /// ??? `Named("Option")` ????? variant ???? `call.sum_owner`?
     pub(crate) fn is_option_type(&self, actual_type: &ValkyrieType) -> bool {

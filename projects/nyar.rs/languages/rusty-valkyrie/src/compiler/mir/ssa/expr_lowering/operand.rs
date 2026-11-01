@@ -325,9 +325,6 @@ impl MirBuilder {
                         return MirOperand::Constant(MirConstant::Unit);
                     }
                 };
-                if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
-                    return operand;
-                }
                 if let Some(operand) = self.try_lower_null_intrinsics(resolved.as_ref(), &callee, &arguments) {
                     return operand;
                 }

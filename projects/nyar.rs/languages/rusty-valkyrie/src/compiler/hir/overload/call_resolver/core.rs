@@ -25,7 +25,7 @@ use crate::compiler::{
             },
         },
         try_propagate::{
-            is_option_apply_type, is_result_apply_type, nullable_payload_type, option_apply_payload_type, result_variant_payload_type,
+            is_option_apply_type, is_result_apply_type, option_apply_payload_type, result_variant_payload_type,
         },
         type_relation::{ParameterMatchResult, TypeRelationContext},
     },
@@ -136,14 +136,6 @@ pub(crate) fn match_intrinsic_builtin_candidate(
             let return_type =
                 type_relations.nominal_type_for_name(&Identifier::new("usize")).unwrap_or_else(|| candidate.signature.return_type.clone());
             Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature { params: vec![array_ty], return_type }))
-        }
-        BuiltinStructureOp::RefDeref => {
-            if args.len() != 1 {
-                return None;
-            }
-            let operand_ty = infer(&args[0].value, locals, struct_fields, singleton_names)?;
-            let return_type = nullable_payload_type(&operand_ty).unwrap_or_else(|| candidate.signature.return_type.clone());
-            Some(mk(crate::compiler::hir::overload::diagnostics::OverloadSignature { params: vec![operand_ty], return_type }))
         }
         BuiltinStructureOp::ArrayGet => {
             if args.len() != 2 {

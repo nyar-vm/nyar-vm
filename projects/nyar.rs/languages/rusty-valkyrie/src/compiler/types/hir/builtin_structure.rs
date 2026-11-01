@@ -11,7 +11,7 @@
 /// wasm / OVM 指令。目标指令选择归各 backend 所有；backend 从自身冻结的
 /// 计划与绑定事实出发，不消费本枚举做指令分派。
 ///
-/// 数组按长度构造、下标 get/set、长度与 ref deref 是**有限、类型参数化的语言结构语义**，
+/// 数组按长度构造、下标 get/set、长度是**有限、类型参数化的语言结构语义**，
 /// 因此允许作为内建结构操作保留；不得按元素类型、tuple arity 或 target 扩展枚举。
 /// `ArrayNew` 只冻结「按运行时长度构造一维数组」的语言语义，元素类型由调用解析结果
 /// 的返回数组形状提供，不携带目标指令选择。
@@ -30,8 +30,6 @@ pub enum BuiltinStructureOp {
     ArrayGet,
     /// `builtin.array.set`：数组存储的下标写入。
     ArraySet,
-    /// `builtin.ref.deref`：引用解引用。
-    RefDeref,
 }
 
 impl BuiltinStructureOp {
@@ -39,7 +37,7 @@ impl BuiltinStructureOp {
     ///
     /// 只接受显式声明的注解路径，不做任何按名字末段的兜底猜测：
     /// `builtin.array.new` / `builtin.array.length`（别名 `builtin.array.len`）/
-    /// `builtin.array.get` / `builtin.array.set` / `builtin.ref.deref`。
+    /// `builtin.array.get` / `builtin.array.set`。
     ///
     /// 不落在该命名空间的注解路径（例如 `builtin.array.push`、`array.insert`）
     /// 不产生身份，返回 `None`。
@@ -49,7 +47,6 @@ impl BuiltinStructureOp {
             "builtin.array.length" | "builtin.array.len" => Some(Self::ArrayLen),
             "builtin.array.get" => Some(Self::ArrayGet),
             "builtin.array.set" => Some(Self::ArraySet),
-            "builtin.ref.deref" => Some(Self::RefDeref),
             _ => None,
         }
     }
