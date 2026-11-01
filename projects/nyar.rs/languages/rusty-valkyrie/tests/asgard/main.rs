@@ -9,6 +9,7 @@ mod awsl_extension_source_of_truth;
 mod boot_lifecycle;
 mod chunk_config_matrix;
 mod chunk_planning;
+mod cli_app_dev;
 mod cli_static;
 mod config_discovery;
 mod config_model;
