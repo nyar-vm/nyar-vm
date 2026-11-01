@@ -117,6 +117,20 @@ pub(super) fn type_is_wasm_gc_heap_reference(ty: &NyarType) -> bool {
     matches!(ty, NyarType::Array(_) | NyarType::FixedArray { .. })
 }
 
+/// 该类型在 wasm 线性内存里是否是**带字段的内联聚合**。
+///
+/// 只有带字段的内联聚合的 SSA 槽才持有线性内存地址，`memory.copy` 才是正确的
+/// 赋值/字段写入方式。零字段值布局（`[primitive(...)] structure usize { }`、
+/// 空结构）与所有标量载体（整数/浮点/bool/unit/字符串句柄）的槽直接持有载体
+/// 本身；对这些形状使用 `memory.copy` 会把载体数值当地址解引用，产生静默错误结果。
+pub(super) fn type_is_inline_aggregate(ctx: &ExecutableLoweringContext, ty: &NyarType) -> bool {
+    match ty {
+        NyarType::Tuple(_) | NyarType::FixedArray { .. } => true,
+        NyarType::Nominal { layout, .. } => ctx.layout_by_id(*layout).is_some_and(|layout| !layout.fields.is_empty()),
+        _ => false,
+    }
+}
+
 /// Maps a MIR parameter type to its WASM value-type byte.
 pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &NyarType, js_glue_utf8_as_anyref: bool) -> u8 {
     let _ = js_glue_utf8_as_anyref;

@@ -363,9 +363,11 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
                     self.emit_i32_add();
-                    let field_is_value_type = self.storage_for_type(&field_layout.ty) == StorageKind::Value;
+                    // 只有带字段的内联聚合字段读出的是地址；标量与零字段值布局读出的是载体本身，
+                    // 必须走 `*load`，否则会把字段地址当作标量值返回。
+                    let field_is_inline_aggregate = type_is_inline_aggregate(self.ctx, &field_layout.ty);
                     if let Some(output) = output {
-                        if field_is_value_type {
+                        if field_is_inline_aggregate {
                             self.validate_output_slot_type(output, VALTYPE_I32);
                             self.assign_output_local(output);
                         }
@@ -380,11 +382,10 @@ impl<'a> WasmMirLowerer<'a> {
                             self.assign_output_local(output);
                         }
                     }
-                    else if !field_is_value_type {
-                        self.emit_load_at_field(&field_layout);
-                        WasmOpcode::Drop.encode(&mut self.code);
-                    }
                     else {
+                        if !field_is_inline_aggregate {
+                            self.emit_load_at_field(&field_layout);
+                        }
                         WasmOpcode::Drop.encode(&mut self.code);
                     }
                 }

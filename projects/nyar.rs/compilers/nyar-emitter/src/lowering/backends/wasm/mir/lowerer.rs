@@ -15,8 +15,8 @@ use super::{
     },
     NominalInstanceId, StorageKind,
     representation::{
-        is_js_glue_host_string_type, mir_storage_for_type, wasm_gc_field_type_byte_for_glue, wasm_param_types, wasm_param_value_type,
-        wasm_param_value_type_for,
+        is_js_glue_host_string_type, mir_storage_for_type, type_is_inline_aggregate, wasm_gc_field_type_byte_for_glue, wasm_param_types,
+        wasm_param_value_type, wasm_param_value_type_for,
     },
     type_registry::wasm_array_element_type_key,
 };
@@ -694,10 +694,11 @@ impl<'a> WasmMirLowerer<'a> {
 
     pub(super) fn field_store_stack_type(&self, field: &FieldLayout) -> u8 {
         if self.storage_for_type(&field.ty) == StorageKind::Reference {
-            // 值类型聚合在线性内存中不存?GC 引用,?i32 占位?
+            // 引用字段在线性内存中不存 GC 引用，用 i32 占位。
             VALTYPE_I32
         }
-        else if self.storage_for_type(&field.ty) == StorageKind::Value {
+        else if type_is_inline_aggregate(self.ctx, &field.ty) {
+            // 内联聚合字段的源操作数是地址；标量字段（含零字段值布局）的源是载体本身。
             VALTYPE_I32
         }
         else {
@@ -717,9 +718,9 @@ impl<'a> WasmMirLowerer<'a> {
     /// from the source address (already on the stack) into the parent's field region.
     /// Stack at entry: `[dest_addr, source_value_or_addr]`.
     pub(super) fn emit_store_at_field(&mut self, field: &FieldLayout) {
-        let is_value_type = self.storage_for_type(&field.ty) == StorageKind::Value;
-        if is_value_type {
-            // Stack: [dest_addr, source_addr] →?memory.copy expects [dest, source, len]
+        // 只有带字段的内联聚合才以地址形式存储；标量与零字段值布局直接存载体。
+        if type_is_inline_aggregate(self.ctx, &field.ty) {
+            // Stack: [dest_addr, source_addr] → memory.copy expects [dest, source, len]
             self.emit_i32_const(field.size as i32);
             self.emit_memory_copy();
             return;
