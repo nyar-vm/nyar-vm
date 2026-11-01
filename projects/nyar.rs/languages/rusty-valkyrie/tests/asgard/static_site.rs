@@ -17,10 +17,21 @@ let greeting: utf8 = "你好，静态世界"
 <style>.hero { color: #c67b34; }</style>
 "#;
 
+/// 最小 Legion 工程清单：静态交付要求可解析的工程（WASM 产物链需要项目源码组）。
+const LEGION_MANIFEST: &str = r#"{
+    name: "static-site-fixture",
+    version: "0.1.0",
+    build: [
+        { target: "wasm32-unknown-browser-wasm" }
+    ]
+}
+"#;
+
 /// 在项目根内写入指定文件名的入口并构建，返回 `index.html` 内容。
 fn build_page(temp: &TempDir, entry_name: &str) -> String {
     let project = temp.path();
     fs::create_dir_all(project.join("source")).expect("创建 source/ 目录失败");
+    fs::write(project.join("legion.von"), LEGION_MANIFEST).expect("写入工程清单失败");
     fs::write(project.join("source").join(entry_name), FIXTURE).expect("写入入口文件失败");
     let report = build_static_site(&StaticSiteOptions {
         project_dir: project.to_path_buf(),
@@ -46,7 +57,8 @@ fn awsl_entry_builds_styled_static_page() {
     assert!(html.contains(".hero { color: #c67b34; }"), "应透传组件样式文本:\n{html}");
     assert!(html.contains("asgard-static-index"), "应包含作用域 class:\n{html}");
     assert!(html.contains("你好，静态世界"), "应包含初始状态插值结果:\n{html}");
-    assert!(!html.contains("<script"), "静态页面不应包含 runtime script 标签:\n{html}");
+    assert!(html.contains(r#"<script src="boot.js"></script>"#), "页面应引用 boot.js 启动脚本:\n{html}");
+    assert!(html.contains("data-component=\"index\""), "页面应声明岛挂载点:\n{html}");
 }
 
 #[test]
@@ -64,6 +76,7 @@ fn default_title_falls_back_to_component_name() {
     // 标题缺省时沿用根组件名（入口文件 stem）这一唯一命名来源。
     let temp = TempDir::new().expect("创建临时目录失败");
     fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
+    fs::write(temp.path().join("legion.von"), LEGION_MANIFEST).expect("写入工程清单失败");
     fs::write(temp.path().join("source/index.w"), FIXTURE).expect("写入入口文件失败");
     let report = build_static_site(&StaticSiteOptions {
         project_dir: temp.path().to_path_buf(),
@@ -83,6 +96,7 @@ fn base_prefix_is_consumed_into_base_href() {
     // `<base href>`，末尾目录分隔符由消费层补齐，供子目录部署使用。
     let temp = TempDir::new().expect("创建临时目录失败");
     fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
+    fs::write(temp.path().join("legion.von"), LEGION_MANIFEST).expect("写入工程清单失败");
     fs::write(temp.path().join("source/index.w"), FIXTURE).expect("写入入口文件失败");
     let report = build_static_site(&StaticSiteOptions {
         project_dir: temp.path().to_path_buf(),

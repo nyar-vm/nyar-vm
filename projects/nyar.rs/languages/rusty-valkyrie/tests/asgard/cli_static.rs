@@ -18,9 +18,13 @@ let greeting: utf8 = "你好，静态世界"
 "#;
 
 /// 合法 Legion 项目清单元数据；Asgard 命令的项目与配置准入需要它。
+/// 静态交付依赖浏览器 WASM 产物，工程必须声明对应构建目标。
 const MANIFEST: &str = r#"{
     name: "cli-static",
-    version: "0.1.0"
+    version: "0.1.0",
+    build: [
+        { target: "wasm32-unknown-browser-wasm" }
+    ]
 }
 "#;
 

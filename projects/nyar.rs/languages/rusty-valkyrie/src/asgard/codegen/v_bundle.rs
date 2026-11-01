@@ -74,7 +74,13 @@ fn push_host_callable_micros(out: &mut String, generated: &str) {
 fn emit_module_level_signal_slots(out: &mut String, component: &LoweredComponent) {
     let mut wrote = false;
     for binding in &component.script_bindings {
-        if !binding.reactive {
+        // Memoized 绑定是每次 hydrate 重算的局部值（`rx_memo_*` 返回），不进模块作用域；
+        // 其余绑定（响应式信号槽与非响应式 `let`）必须是模块级：expr / handler 导出
+        // 函数在模块作用域引用它们，缺少模块级绑定时引用悬空、语义闭包失败闭合。
+        if binding.kind == crate::asgard::awsl::BindingKind::Memoized {
+            continue;
+        }
+        if !binding.reactive && binding.init_expr.trim().is_empty() {
             continue;
         }
         writeln!(out, "{}", binding.as_v_let_line()).unwrap();
@@ -108,7 +114,8 @@ fn build_awsl_source_with_prelude(components: &[LoweredComponent], dom_or_mobile
     out.push_str("micro awsl_key_none(): utf8 { return \"\" }\n\n");
     let mut generated = String::new();
     for component in components {
-        emit_module_level_signal_slots(&mut generated, component);
+        // 浏览器路径禁止模块级 `let`（HIR 静默丢弃模块级绑定）：响应式状态全部
+        // 经宿主按名信号表（`sig_named`）寻址，非响应式绑定在使用点内联展开。
         if !component.synthetic_v.trim().is_empty() {
             generated.push_str(&component.synthetic_v);
             generated.push('\n');
@@ -143,7 +150,7 @@ fn emit_component_sig_exports(out: &mut String, component: &LoweredComponent) {
             continue;
         }
         let export = resolve_sig_export(&component.route_name, &binding.name);
-        writeln!(out, "micro {export}(): i32 {{ return {} }}", binding.sig_var).unwrap();
+        writeln!(out, "micro {export}(): i32 {{ return sig_named(\"{}\") }}", binding.sig_var).unwrap();
     }
 }
 
@@ -176,6 +183,25 @@ fn sanitize_route(name: &str) -> String {
         .to_ascii_lowercase()
 }
 
+/// hydrate 函数体的信号初始化行。
+///
+/// 响应式绑定：`let {sig_var} = sig_named(key)` 取宿主按名句柄，再 `sig_set_*` 写入初值
+/// （父组件随后经 `awsl_sig_*` + `rx_bind_prop_*` 覆盖 Property 默认值）。
+/// 非响应式绑定不产生任何行——引用点已内联展开。
 fn script_lets_prelude(component: &LoweredComponent) -> String {
-    component.script_bindings.iter().map(ScriptBinding::as_v_let_line).collect::<Vec<_>>().join("\n    ")
+    component
+        .script_bindings
+        .iter()
+        .filter(|binding| binding.reactive)
+        .map(|binding| {
+            let setter = match binding.value_type {
+                SignalValueType::I32 => "sig_set_i32",
+                SignalValueType::Utf8 => "sig_set_utf8",
+                SignalValueType::Bool => "sig_set_bool",
+            };
+            let sv = binding.sig_var.as_str();
+            format!("let {sv} = sig_named(\"{sv}\")\n{setter}({sv}, {})", binding.init_expr)
+        })
+        .collect::<Vec<_>>()
+        .join("\n    ")
 }

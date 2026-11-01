@@ -106,7 +106,7 @@ fn compiler_input_for(
     surface: GeneratedEntrySurface,
 ) -> AsgardResult<CompilerSourceInput> {
     let project_keys = source_groups.iter().filter(|group| group.is_entry).map(|group| group.dependency_key.clone()).collect::<Vec<_>>();
-    if project_keys.is_empty() {
+    if project_keys.is_empty() && surface != GeneratedEntrySurface::GeneratedOnly {
         return Err(AsgardError::msg(report!("源码快照缺少应用入口组，无法挂接生成源码")));
     }
     let mut groups = source_groups.to_vec();
@@ -139,12 +139,14 @@ pub fn compile_v_bundle(
     let compiler = crate::compiler::hir::lowering::ValkyrieCompiler::default();
     let target_profile = target.to_profile(None);
     fs::create_dir_all(output_dir).map_err(|e| AsgardError::msg(format!("{e}: {}", "failed to create output directory")))?;
-    let build_context = CompilerBuildContext::new(
-        target.arch.as_str(),
-        target.clone(),
-        nyar::ClrSuspendStrategy::default(),
-        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
-    );
+    // 浏览器 UI 交付是「宿主按名调用导出」的库形态：JS 宿主（boot.js / 小程序运行时）
+    // 经 wasm 导出驱动渲染与事件，没有进程式 `main` 入口；`binary` 形态的 main 合同
+    // 在这里不成立，产物表面按 library 校验（至少一个 `[export]`）。
+    let wasm_package_kind = match backend {
+        HostBackend::BrowserDom => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library,
+        _ => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
+    };
+    let build_context = CompilerBuildContext::new(target.arch.as_str(), target.clone(), nyar::ClrSuspendStrategy::default(), wasm_package_kind);
     let input = compiler_input_for(source_groups, generated, surface)?;
     let artifact = compile_source_groups_to_artifacts(
         &compiler,

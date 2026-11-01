@@ -4,17 +4,31 @@
 //! 显式入口校验（后缀集合取自单一事实源 `nyar_format::formatter::AWSL_EXTENSIONS`：
 //! `.awsl` 规范拼写、`.w` 同义缩写，两种后缀同格式同语义，不做后缀猜测，
 //! 入口必须显式给出且位于项目根内）、AWSL 解析与降级、DOM 静态渲染
-//! （以组件初始状态渲染，外部数据为 `Null`）、完整页面组装、产物写出 `index.html`。
+//! （以组件初始状态渲染，外部数据为 `Null`）、页面组装、WASM chunk 与岛包产物装配。
 //! 本模块不做表达式求值，也不复制解析、降级或渲染逻辑；
-//! 各环节的唯一事实所有者分别是 `awsl::compile`、`codegen::html_render` 与 `ssg`。
+//! 各环节的唯一事实所有者分别是 `awsl::compile`、`codegen::html_render`、`ssg`、
+//! `compile::compile_wasm_bundle` 与 `codegen::package_browser_islands`。
+//!
+//! 产物树（`dist/`）：`index.html`（含 `data-component` 岛挂载点与 `boot.js` 引用）、
+//! `<module>.wasm`、`<module>.mjs`（浏览器 WASM glue）、`c/<route>.js`（组件胶水）、
+//! `manifest.json`、`boot.js`、`<module>.css`。页面用相对 URL，子目录部署由
+//! `<base href>`（非根基址）解析。
 
 use std::path::PathBuf;
 
-use crate::asgard::{
-    awsl::{LoweringOptions, compile_awsl_source},
-    codegen::html_render::render_static_ir,
-    error::{AsgardError, AsgardResult},
-    ssg::generate_static_page_with_base,
+use crate::{
+    asgard::{
+        awsl::{LoweringOptions, compile_awsl_source},
+        codegen::{
+            IslandPackageOptions, StaticRenderResult, asgard_boot_script_tag, asgard_boot_stylesheet_tag, build_awsl_wasm_source,
+            package_browser_islands, render_static_ir,
+        },
+        compile::{GeneratedEntrySurface, GeneratedSource, resolve_project_source_groups},
+        error::{AsgardError, AsgardResult},
+        ssg::generate_static_page_full,
+        wasm::{compile_wasm_bundle, copy_wasm_artifacts_to_dist},
+    },
+    legion::CanonicalTarget,
 };
 
 /// 静态站点构建选项。
@@ -90,14 +104,59 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
     let component = compile_awsl_source(&source, file_stem, &relative_path, &LoweringOptions::default())
         .map_err(|error| AsgardError::msg(report!("{}:{}: {}", entry_path.display(), error.span.start, error.message)))?;
 
-    // 静态页面以组件初始状态渲染，外部数据为 Null；标题缺省沿用根组件名这一唯一来源。
+    // 静态页面以组件初始状态渲染，作为 hydration 前的占位内容；外部数据为 Null。
     let rendered = render_static_ir(&component, &serde_json::Value::Null);
     let title = options.title.as_deref().unwrap_or(file_stem);
     let base = page_base(&options.base)?;
-    let page = generate_static_page_with_base(title, std::slice::from_ref(&rendered), "", &base);
 
     let output_dir = options.output_dir.clone().unwrap_or_else(|| project_root.join("dist"));
     std::fs::create_dir_all(&output_dir).map_err(|error| AsgardError::msg(report!("创建输出目录失败 {}: {error}", output_dir.display())))?;
+
+    // 浏览器交付产物：WASM chunk、浏览器 glue、组件胶水、boot 与 manifest。
+    // 命名、URL 形态与初始化顺序都由产物所有者决定，本层只编排调用次序。
+    let target = CanonicalTarget::browser();
+    let generated_source = build_awsl_wasm_source(std::slice::from_ref(&component));
+    let resolved = resolve_project_source_groups(&project_root, &target)
+        .map_err(|error| AsgardError::msg(report!("解析项目源码组失败（静态交付要求可解析的 Legion 工程）: {error}")))?;
+    let module_stem = resolved.project_name.replace('.', "-");
+
+    let wasm_report = compile_wasm_bundle(
+        &resolved.groups,
+        GeneratedSource { producer: "asgard.awsl.static-site", source: &generated_source },
+        &output_dir,
+        &module_stem,
+        &target,
+        GeneratedEntrySurface::GeneratedOnly,
+    )
+    .map_err(|error| AsgardError::msg(report!("WASM 编译失败: {error}")))?;
+    copy_wasm_artifacts_to_dist(&output_dir, &wasm_report)?;
+
+    let wasm_stem = wasm_report.wasm_filename.trim_end_matches(".wasm").to_string();
+    let package_options = IslandPackageOptions {
+        module_stem: module_stem.clone(),
+        wasm_stem,
+        wasm_built: true,
+        // 页面与产物同处部署目录：相对 URL 让子目录部署由 `<base href>` 解析。
+        relative_urls: true,
+        css_mode: "merge".into(),
+        mode: "static".into(),
+        tailwind_css: None,
+    };
+    let package_report = package_browser_islands(std::slice::from_ref(&component), &output_dir, &package_options)?;
+    let stylesheet_href = package_report.css_filenames.first().cloned().unwrap_or_default();
+
+    // 页面只声明岛挂载点与 boot 脚本：组件 DOM 由 WASM 侧的 `awsl_hydrate_*` 建出，
+    // 预渲染内容留在挂载点内作为无 JS 时的占位，hydration 时由 boot 清空后替换。
+    let island = format!(
+        "<div data-island=\"hydrated\" data-component=\"{route}\" data-module=\"{module}\">{html}</div>",
+        route = component.route_name,
+        module = module_stem,
+        html = rendered.html,
+    );
+    let head_tags = if stylesheet_href.is_empty() { String::new() } else { format!("  {}\n", asgard_boot_stylesheet_tag(&stylesheet_href)) };
+    let results = [StaticRenderResult { html: island, css: rendered.css, scope: rendered.scope }];
+    let page = generate_static_page_full(title, &results, "", &base, &head_tags, asgard_boot_script_tag(true));
+
     let page_path = output_dir.join("index.html");
     std::fs::write(&page_path, page).map_err(|error| AsgardError::msg(report!("写入页面失败 {}: {error}", page_path.display())))?;
 

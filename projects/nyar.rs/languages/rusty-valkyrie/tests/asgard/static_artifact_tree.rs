@@ -1,11 +1,11 @@
-//! `build --static` 产物树合同：文件布局、自包含引用与配置字段消费。
+//! `build --static` 产物树合同：文件布局、页面↔产物引用一致性、配置字段消费。
 //!
-//! 当前静态交付线（账本「Asgard 静态页面交付线」）只编排显式入口的 AWSL 初始渲染；
-//! 浏览器交互运行时（JS glue + `.wasm` chunk）尚未接入。本文件固化的当前真实形态：
-//! - 产物树 = 仅 `index.html`；
-//! - 严格模型校验后的 `artifact.base` 已作为构建输入被消费（写入 `<base href>`）；
-//! - `artifact.chunks` 目前只完成配置形状校验，成对 JS/Wasm 产物仍待交互运行时。
-//! 转红触发器：chunk 成对产物落地后，本文件的产物树用例必须升级为 manifest 断言。
+//! 静态交付线现在编排完整浏览器产物：AWSL 初始渲染页面 + WASM chunk + 浏览器 glue +
+//! 组件胶水 + `boot.js` + `manifest.json` + CSS。本文件固化的真实形态：
+//! - 产物树 = 页面 + 胶囊产物（顺序无关，集合相等）；
+//! - 页面内 `src`/`href` 引用必须解析到产物树内真实文件；
+//! - `manifest.json` 引用的 wasm / glue / css / 组件 glue 必须全部存在；
+//! - 严格模型校验后的 `artifact.base` 已作为构建输入被消费（写入 `<base href>`）。
 
 use std::{fs, path::PathBuf};
 
@@ -27,9 +27,20 @@ let greeting: utf8 = "静态产物树"
 <style>.hero { color: #345; }</style>
 "#;
 
+/// 最小 Legion 工程清单：模块名即产物文件 stem（`static-artifact-fixture`）。
+const LEGION_MANIFEST: &str = r#"{
+    name: "static-artifact-fixture",
+    version: "0.1.0",
+    build: [
+        { target: "wasm32-unknown-browser-wasm" }
+    ]
+}
+"#;
+
 /// 在项目根写入入口并构建，返回输出目录内的文件清单（相对输出根，`/` 分隔）。
 fn build_and_list(project: &std::path::Path, output: &std::path::Path, base: &str) -> Vec<String> {
     fs::create_dir_all(project.join("source")).expect("创建 source/ 目录失败");
+    fs::write(project.join("legion.von"), LEGION_MANIFEST).expect("写入工程清单失败");
     fs::write(project.join("source/index.w"), FIXTURE).expect("写入入口文件失败");
     let report = build_static_site(&StaticSiteOptions {
         project_dir: project.to_path_buf(),
@@ -59,26 +70,70 @@ fn collect_files(root: &std::path::Path, dir: &std::path::Path, out: &mut Vec<St
 }
 
 #[test]
-fn static_build_output_tree_is_index_html_only() {
-    // 当前形态：静态交付只落一个自包含 `index.html`，没有 `.mjs`/`.wasm`/chunk/资源拷贝。
-    // 转红触发器：浏览器交互运行时与 wasm chunk 拆分实现落地后，产物树必然多出
-    // 成对的 loader/wasm 文件，本用例应升级为完整 manifest 断言而非直接删除。
+fn static_build_output_tree_contains_paired_browser_artifacts() {
+    // 真实形态：页面 + wasm chunk + 浏览器 glue + 组件胶水 + boot + manifest + CSS。
+    // 断言集合相等而非存在性，避免"目录里有 wasm"冒充交付。
     let temp = TempDir::new().expect("创建临时目录失败");
     let files = build_and_list(temp.path(), &temp.path().join("dist"), "/");
-    assert_eq!(files, vec!["index.html".to_string()], "当前静态产物树应只有 index.html，实际：{files:?}");
+    let expected = vec![
+        "boot.js".to_string(),
+        "c/index.js".to_string(),
+        "index.html".to_string(),
+        "manifest.json".to_string(),
+        "static-artifact-fixture.css".to_string(),
+        "static-artifact-fixture.mjs".to_string(),
+        "static-artifact-fixture.wasm".to_string(),
+        "static-artifact-fixture.wat".to_string(),
+    ];
+    assert_eq!(files, expected, "静态产物树应为页面 + 成对浏览器产物，实际：{files:?}");
 }
 
 #[test]
-fn static_page_is_self_contained_no_missing_references() {
-    // entry 引用一致性：页面内不得出现指向不存在文件的 `src`/`href` 引用；
-    // 当前实现是纯内联样式与正文，因此也不应出现任何外链属性。
+fn static_page_references_resolve_to_emitted_artifacts() {
+    // 页面内每个 `src`/`href` 都必须解析到产物树里的真实文件：这是页面↔产物的一致性证据。
     let temp = TempDir::new().expect("创建临时目录失败");
-    build_and_list(temp.path(), &temp.path().join("dist"), "/");
-    let html = fs::read_to_string(temp.path().join("dist/index.html")).expect("读取 index.html 失败");
+    let dist = temp.path().join("dist");
+    build_and_list(temp.path(), &dist, "/");
+    let html = fs::read_to_string(dist.join("index.html")).expect("读取 index.html 失败");
     assert!(html.contains("<title>产物树测试</title>"), "标题应写入页面:\n{html}");
     assert!(html.contains("静态产物树"), "根组件初始状态应写入页面:\n{html}");
-    assert!(!html.contains("src="), "当前页面不应携带任何 src 引用:\n{html}");
-    assert!(!html.contains("href="), "根部署页面不应携带任何 href 引用:\n{html}");
+    for attribute in ["src=\"", "href=\""] {
+        for fragment in html.split(attribute).skip(1) {
+            let reference = fragment.split('"').next().expect("引用值应以引号闭合");
+            assert!(dist.join(reference).is_file(), "页面引用 {reference:?} 未解析到产物文件:\n{html}");
+        }
+    }
+    assert!(html.contains("data-component=\"index\""), "页面应声明岛挂载点:\n{html}");
+}
+
+#[test]
+fn manifest_references_resolve_to_emitted_artifacts() {
+    // manifest 是 loader 的唯一入口：它声明的 wasm/glue/css/组件胶水必须全部存在，
+    // 且组件名 ↔ 胶水路径 ↔ 页面挂载点三者对应。
+    let temp = TempDir::new().expect("创建临时目录失败");
+    let dist = temp.path().join("dist");
+    build_and_list(temp.path(), &dist, "/");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dist.join("manifest.json")).expect("读取 manifest 失败")).expect("manifest 必须是合法 JSON");
+
+    let wasm_entries = manifest.get("wasm").and_then(serde_json::Value::as_array).expect("manifest 应声明 wasm 条目");
+    assert_eq!(wasm_entries.len(), 1, "静态交付应恰有一个 wasm chunk");
+    let wasm_entry = &wasm_entries[0];
+    for key in ["url", "glue"] {
+        let reference = wasm_entry.get(key).and_then(serde_json::Value::as_str).expect("wasm 条目应声明 url/glue");
+        assert!(dist.join(reference).is_file(), "manifest wasm.{key}={reference:?} 未解析到产物文件");
+    }
+
+    for css in manifest.get("css").and_then(serde_json::Value::as_array).expect("manifest 应声明 css") {
+        let reference = css.as_str().expect("css 条目应为字符串");
+        assert!(dist.join(reference).is_file(), "manifest css={reference:?} 未解析到产物文件");
+    }
+
+    let components = manifest.get("components").and_then(serde_json::Value::as_array).expect("manifest 应声明组件");
+    assert_eq!(components.len(), 1, "静态交付应恰有一个组件胶水");
+    let glue = components[0].get("js").and_then(serde_json::Value::as_str).expect("组件应声明 js");
+    assert_eq!(components[0].get("name").and_then(serde_json::Value::as_str), Some("index"), "组件名应与入口 stem 对应");
+    assert!(dist.join(glue).is_file(), "manifest 组件胶水 {glue:?} 未解析到产物文件");
 }
 
 fn obj(fields: Vec<(&str, ConfigValue)>) -> ConfigValue {
@@ -92,8 +147,7 @@ fn text(value: &str) -> ConfigValue {
 #[test]
 fn resolved_base_is_consumed_by_static_build() {
     // 严格模型把 `artifact.base` 规范化为目录基址后，静态构建必须把它写入页面
-    // `<base href>`，支持子目录部署；`chunks` 仍只完成配置形状校验，成对 JS/Wasm
-    // 产物由交互运行时落地后再升级断言。
+    // `<base href>`，支持子目录部署；页面用相对 URL，因此产物路径随基址解析。
     let temp = TempDir::new().expect("创建临时目录失败");
     // 严格模型校验入口存在性；下面 build_and_list 会再写同一入口（幂等）。
     fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
@@ -117,8 +171,9 @@ fn resolved_base_is_consumed_by_static_build() {
     assert_eq!(config.base, "/app");
     assert_eq!(config.chunks.boundaries.len(), 1);
 
-    let files = build_and_list(temp.path(), &temp.path().join("dist"), &config.base);
-    assert_eq!(files, vec!["index.html".to_string()], "chunks 配置不应改变当前产物树，实际：{files:?}");
+    build_and_list(temp.path(), &temp.path().join("dist"), &config.base);
     let html = fs::read_to_string(temp.path().join("dist/index.html")).expect("读取 index.html 失败");
     assert!(html.contains("<base href=\"/app/\">"), "构建必须消费规范化基址并写入 `<base href>`:\n{html}");
+    // 子目录部署下页面仍引用相对产物路径（由 `<base href>` 解析到 `/app/` 下）。
+    assert!(html.contains(r#"<script src="boot.js"></script>"#), "boot 引用应保持相对路径:\n{html}");
 }

@@ -19,16 +19,19 @@ let title = "hi"
     assert!(lowered.script_bindings.iter().any(|b| b.name == "title" && !b.reactive));
     let v_source = build_awsl_wasm_source(&[lowered]);
     assert!(v_source.contains("sig_create_i32"));
-    assert!(v_source.contains("let title = \"hi\""));
+    // 浏览器生成源码禁止模块级 `let`（HIR 会丢弃模块级绑定）：非响应式绑定在使用点内联，
+    // 未使用的 `title` 不应以任何模块级绑定形式出现。
+    assert!(!v_source.contains("let title"));
 }
 
 #[test]
 fn boot_script_auto_starts_manifest_no_page_inline() {
     let relative = generate_boot_script("legion-test", manifest_url_for_mode(true));
-    assert!(relative.contains("start('manifest.json')"));
+    assert!(relative.contains("var MANIFEST_URL = 'manifest.json'"), "boot 应内建相对 manifest URL");
+    assert!(relative.contains("start(MANIFEST_URL)"), "boot 应自启动 manifest");
     assert!(relative.contains("asgard start failed"));
     let absolute = generate_boot_script("asgard-app", manifest_url_for_mode(false));
-    assert!(absolute.contains("start('/manifest.json')"));
+    assert!(absolute.contains("var MANIFEST_URL = '/manifest.json'"), "boot 应内建根绝对 manifest URL");
     assert_eq!(asgard_boot_script_tag(true), r#"<script src="boot.js"></script>"#);
     assert_eq!(asgard_boot_script_tag(false), r#"<script src="/boot.js"></script>"#);
     assert!(!asgard_boot_script_tag(true).contains("__voa"));

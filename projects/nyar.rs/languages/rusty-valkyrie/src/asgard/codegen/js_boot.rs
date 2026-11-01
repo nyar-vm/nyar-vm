@@ -1,6 +1,15 @@
 //! 最小浏览器启动脚本（无框架 runtime；逻辑在 WASM，JS 仅加载与绑定）。
 //!
 //! 页面 HTML 只允许 `<script src="boot.js">`；`start(manifest)` 由本文件自动执行，禁止内联业务 JS。
+//!
+//! 运行时契约（与 nyar-emitter `wasm_js_glue` 的 Node 壳同构，浏览器自包含版）：
+//! - wasm 导入面为 module `env`，field 为点分名（`__voa.*` / `document.*` / `Element.*`）与合成原语
+//!   （`const_utf8` / `utf8_*` / `host_intern_utf8` / `host_utf8_extract`）。
+//! - utf8 跨界面为 i32 句柄：宿主维护 `hostValues` 表（index ↔ JS string）；字符串字面量表在
+//!   wasm custom section `nyar.strings`，`const_utf8(index)` 把字面量登记进句柄表。
+//! - DOM 节点经句柄表进出：`document.createElement` 返回句柄，`Element.*` 原语按句柄操作真实节点。
+//! - 响应式状态驻留宿主信号表，按名寻址（`__voa.sigNamed`）：生成源码没有模块级 `let`，
+//!   wasm 侧一切状态读写都经 `sig_named(key)` 取回稳定句柄 id。
 
 /// Manifest URL baked into auto-start (`manifest.json` or `/manifest.json`).
 pub fn manifest_url_for_mode(relative: bool) -> &'static str {
@@ -17,375 +26,569 @@ pub fn asgard_boot_stylesheet_tag(css_href: &str) -> String {
     format!(r#"<link rel="stylesheet" href="{css_href}">"#)
 }
 
-/// 生成 `boot.js`：加载 WASM glue、组件胶水，挂载 island，并在加载后自动 `start(manifest_url)`。
+/// 生成 `boot.js`：自 fetch WASM 字节、自实现 `env` 运行时（utf8 句柄 + DOM 句柄 + 信号表），
+/// 按 manifest 加载组件胶水并挂载 island。
 pub fn generate_boot_script(wasm_stem: &str, manifest_url: &str) -> String {
-    let manifest_url = manifest_url.trim();
-    format!(
-        r#"(function (global) {{
+    BOOT_JS_TEMPLATE.replace("__VOA_MANIFEST_URL__", manifest_url.trim()).replace("__VOA_WASM_STEM__", wasm_stem.trim())
+}
+
+const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
   'use strict';
 
-  var domHandles = [null];
-  var wasmExports = null;
-  var componentFactories = new Map();
-  var signals = [];
-  var signalSubscribers = [];
-  var storeSubscribers = [];
-  var batchDepth = 0;
-  var pendingSignals = new Set();
-  var eventBindings = new Map();
+  var MANIFEST_URL = '__VOA_MANIFEST_URL__';
+  var WASM_STEM = '__VOA_WASM_STEM__';
 
-  function storeDomHandle(node) {{
+  // ── utf8 句柄表（index ↔ JS string）──────────────────────────────
+  var hostValues = [''];
+  var hostValueIds = new Map([['', 0]]);
+  var UTF8_LITERALS = [];
+
+  function hostIntern(value) {
+    var text = String(value == null ? '' : value);
+    var known = hostValueIds.get(text);
+    if (known !== undefined) return known;
+    var handle = hostValues.length;
+    hostValues.push(text);
+    hostValueIds.set(text, handle);
+    return handle;
+  }
+
+  function hostResolve(handle) {
+    return (Number.isInteger(handle) && handle >= 0 && handle < hostValues.length) ? hostValues[handle] : '';
+  }
+
+  function hostText(ref) {
+    return typeof ref === 'string' ? ref : hostResolve(ref);
+  }
+
+  // ── wasm 线性内存访问（memory.grow 后必须重取 buffer）────────────
+  function hostLinearMemory() {
+    var memory = wasmExports ? wasmExports.memory : undefined;
+    if (!memory) throw new Error('[boot] wasm module does not export memory');
+    return memory;
+  }
+
+  function hostInternUtf8Bytes(ptr, len) {
+    var bytes = new Uint8Array(hostLinearMemory().buffer, ptr >>> 0, len >>> 0);
+    return hostIntern(new TextDecoder('utf-8').decode(bytes));
+  }
+
+  function hostUtf8Extract(handle) {
+    var bytes = new TextEncoder().encode(hostResolve(handle));
+    var ptr = Number(wasmExports.cabi_realloc(0, 0, 1, bytes.length));
+    new Uint8Array(hostLinearMemory().buffer, ptr >>> 0, bytes.length).set(bytes);
+    return [ptr, bytes.length];
+  }
+
+  // ── utf8 标量语义（Unicode scalars，非 UTF-16 code units）────────
+  function hostUtf8Scalars(s) { return [...hostText(s)]; }
+  function hostUtf8Concat(a, b) { return hostIntern(hostText(a) + hostText(b)); }
+  function hostUtf8Length(s) { return hostUtf8Scalars(s).length; }
+  function hostUtf8Trim(s) { return hostIntern(hostText(s).trim()); }
+  function hostUtf8ToLower(s) { return hostIntern(hostText(s).toLowerCase()); }
+  function hostUtf8ToUpper(s) { return hostIntern(hostText(s).toUpperCase()); }
+  function hostUtf8Replace(s, oldValue, newValue) {
+    var needle = hostText(oldValue);
+    if (hostUtf8Scalars(needle).length === 0) return hostIntern(hostText(s));
+    return hostIntern(hostText(s).split(needle).join(hostText(newValue)));
+  }
+  function hostUtf8StartsWith(s, prefix) { return hostText(s).startsWith(hostText(prefix)) ? 1 : 0; }
+  function hostUtf8EndsWith(s, suffix) { return hostText(s).endsWith(hostText(suffix)) ? 1 : 0; }
+  function hostUtf8Contains(s, other) { return hostText(s).includes(hostText(other)) ? 1 : 0; }
+  function hostUtf8Equals(a, b) { return hostText(a) === hostText(b) ? 1 : 0; }
+  function hostUtf8IndexOf(s, other) {
+    var chars = hostUtf8Scalars(s);
+    var needle = hostUtf8Scalars(other);
+    if (needle.length === 0) return 0;
+    if (needle.length > chars.length) return -1;
+    for (var i = 0; i <= chars.length - needle.length; i++) {
+      var ok = true;
+      for (var j = 0; j < needle.length; j++) {
+        if (chars[i + j] !== needle[j]) { ok = false; break; }
+      }
+      if (ok) return i;
+    }
+    return -1;
+  }
+  function hostUtf8Slice(s, start, count) {
+    var chars = hostUtf8Scalars(s);
+    var from = Math.max(0, start | 0);
+    var len = Math.max(0, count | 0);
+    return hostIntern(chars.slice(from, from + len).join(''));
+  }
+
+  // ── DOM 句柄表 ───────────────────────────────────────────────────
+  var domHandles = [null];
+
+  function storeDomHandle(node) {
     var id = domHandles.length;
     domHandles.push(node);
     return id;
-  }}
+  }
 
-  function getDomHandle(id) {{
+  function getDomHandle(id) {
     return domHandles[id] || null;
-  }}
+  }
 
-  function isLoaded() {{
-    return wasmExports !== null;
-  }}
+  // ── 信号表（按名寻址；响应式状态的唯一事实源）────────────────────
+  var signals = [];
+  var signalSubscribers = [];
+  var namedSignals = new Map();
+  var storeSubscribers = [];
+  var batchDepth = 0;
+  var pendingSignals = new Set();
 
-  function callExport(name) {{
-    if (!wasmExports || typeof wasmExports[name] !== 'function') {{
-      throw new Error('WASM export not found: ' + name);
-    }}
-    return wasmExports[name]();
-  }}
+  function newSignal(value) {
+    var id = signals.length;
+    signals.push({ value: value });
+    signalSubscribers[id] = [];
+    return id;
+  }
 
-  function registerComponent(name, factory) {{
-    componentFactories.set(name, factory);
-  }}
+  function sigNamed(name) {
+    var key = hostText(name);
+    var existing = namedSignals.get(key);
+    if (existing !== undefined) return existing;
+    var id = newSignal(0);
+    namedSignals.set(key, id);
+    return id;
+  }
 
-  function parseDeps(csv, sigIds) {{
-    if (!csv) return sigIds || [];
-    if (csv === 'store') return ['store'];
-    return csv.split(',').map(function (part) {{ return part.trim(); }}).filter(Boolean);
-  }}
-
-  function scheduleNotify(sigId) {{
-    if (sigId === -2) {{
+  function scheduleNotify(sigId) {
+    if (sigId === -2) {
       if (batchDepth > 0) return;
-      storeSubscribers.slice().forEach(function (fn) {{ fn(); }});
+      flushStore();
       return;
-    }}
-    if (batchDepth > 0) {{
+    }
+    if (batchDepth > 0) {
       pendingSignals.add(sigId);
       return;
-    }}
+    }
     runSignalSubscribers(sigId);
-  }}
+  }
 
-  function runSignalSubscribers(sigId) {{
+  function runSignalSubscribers(sigId) {
     var subs = signalSubscribers[sigId];
     if (!subs) return;
-    subs.slice().forEach(function (fn) {{ fn(); }});
-  }}
+    subs.slice().forEach(function (fn) { fn(); });
+  }
 
-  function flushBatch() {{
-    pendingSignals.forEach(function (sigId) {{ runSignalSubscribers(sigId); }});
+  function flushStore() {
+    storeSubscribers.slice().forEach(function (fn) { fn(); });
+  }
+
+  function flushBatch() {
+    pendingSignals.forEach(function (sigId) { runSignalSubscribers(sigId); });
     pendingSignals.clear();
-    storeSubscribers.slice().forEach(function (fn) {{ fn(); }});
-  }}
+    flushStore();
+  }
 
-  var hostApi = {{
-    sigCreateI32: function (v) {{
-      var id = signals.length;
-      signals.push({{ kind: 'i32', value: v | 0 }});
-      signalSubscribers[id] = [];
-      return id;
-    }},
-    sigGetI32: function (id) {{ return (signals[id] && signals[id].value) || 0; }},
-    sigSetI32: function (id, v) {{
-      if (!signals[id]) return;
-      signals[id].value = v | 0;
-      scheduleNotify(id);
-    }},
-    sigCreateUtf8: function (v) {{
-      var id = signals.length;
-      signals.push({{ kind: 'utf8', value: String(v || '') }});
-      signalSubscribers[id] = [];
-      return id;
-    }},
-    sigGetUtf8: function (id) {{ return (signals[id] && signals[id].value) || ''; }},
-    sigSetUtf8: function (id, v) {{
-      if (!signals[id]) return;
-      signals[id].value = String(v || '');
-      scheduleNotify(id);
-    }},
-    sigCreateBool: function (v) {{
-      var id = signals.length;
-      signals.push({{ kind: 'bool', value: !!v }});
-      signalSubscribers[id] = [];
-      return id;
-    }},
-    sigGetBool: function (id) {{ return !!(signals[id] && signals[id].value); }},
-    sigSetBool: function (id, v) {{
-      if (!signals[id]) return;
-      signals[id].value = !!v;
-      scheduleNotify(id);
-    }},
-    sigCreateList: function () {{
-      var id = signals.length;
-      signals.push({{ kind: 'list', value: [] }});
-      signalSubscribers[id] = [];
-      return id;
-    }},
-    sigGetList: function () {{ return []; }},
-    sigSetList: function (id) {{
-      scheduleNotify(id);
-    }},
-    sigSubscribe: function (sigId, depsCsv, updateExport) {{
-      var deps = parseDeps(depsCsv, [sigId]);
-      var fn = function () {{
-        if (wasmExports && typeof wasmExports[updateExport] === 'function') {{
-          wasmExports[updateExport]();
-        }}
-      }};
-      deps.forEach(function (dep) {{
-        if (dep === 'store') {{
+  function sigSet(id, value) {
+    if (!signals[id]) return;
+    signals[id].value = value;
+    scheduleNotify(id);
+  }
+
+  // ── 订阅与表达式绑定 ─────────────────────────────────────────────
+  function parseDeps(csv, sigIds) {
+    if (!csv) return sigIds || [];
+    if (csv === 'store') return ['store'];
+    return csv.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+  }
+
+  function resolveSigRef(name) {
+    if (typeof name === 'number') return name;
+    var parsed = parseInt(name, 10);
+    return isNaN(parsed) ? -1 : parsed;
+  }
+
+  function subscribeDeps(depIds, fn) {
+    var deps = (depIds || []).filter(function (dep) { return dep !== null && dep !== undefined && typeof dep === 'number' && dep >= 0; });
+    if (depIds && depIds.indexOf(-2) >= 0) storeSubscribers.push(fn);
+    if (deps.length === 0 && !(depIds && depIds.indexOf(-2) >= 0)) {
+      fn();
+      return;
+    }
+    deps.forEach(function (depId) {
+      signalSubscribers[depId] = signalSubscribers[depId] || [];
+      signalSubscribers[depId].push(fn);
+    });
+    fn();
+  }
+
+  function callWasm(name) {
+    if (!wasmExports || typeof wasmExports[name] !== 'function') {
+      throw new Error('WASM export not found: ' + name);
+    }
+    return wasmExports[name].apply(null, Array.prototype.slice.call(arguments, 1));
+  }
+
+  function bindExpr(handle, exprExport, dep1, dep2, apply, resolveUtf8) {
+    var update = function () {
+      var raw = callWasm(exprExport);
+      var value = resolveUtf8 ? hostResolve(raw) : raw;
+      if (handle === null || handle === undefined) {
+        apply(null, value);
+        return;
+      }
+      var node = getDomHandle(handle);
+      if (node) apply(node, value);
+    };
+    subscribeDeps([dep1, dep2], update);
+  }
+
+  // ── wasm 实例与组件注册 ──────────────────────────────────────────
+  var wasmExports = null;
+  var componentFactories = new Map();
+  var eventBindings = new Map();
+
+  function isLoaded() {
+    return wasmExports !== null;
+  }
+
+  function registerComponent(name, factory) {
+    componentFactories.set(name, factory);
+  }
+
+  // ── env：wasm 导入面（点分名，与 codegen prelude 一一对应）───────
+  var env = {
+    const_utf8: function (index) { return hostIntern(UTF8_LITERALS[index] ?? ''); },
+    host_intern_utf8: hostInternUtf8Bytes,
+    host_utf8_extract: hostUtf8Extract,
+    utf8_concat: hostUtf8Concat,
+    utf8_length: hostUtf8Length,
+    utf8_trim: hostUtf8Trim,
+    utf8_to_lower: hostUtf8ToLower,
+    utf8_to_upper: hostUtf8ToUpper,
+    utf8_replace: hostUtf8Replace,
+    utf8_starts_with: hostUtf8StartsWith,
+    utf8_ends_with: hostUtf8EndsWith,
+    utf8_contains: hostUtf8Contains,
+    utf8_equals: hostUtf8Equals,
+    utf8_index_of: hostUtf8IndexOf,
+    utf8_slice: hostUtf8Slice,
+
+    'document.createElement': function (tag) { return storeDomHandle(document.createElement(hostText(tag))); },
+    'document.createTextNode': function (text) { return storeDomHandle(document.createTextNode(hostText(text))); },
+    'Element.setAttribute': function (handle, name, value) {
+      var node = getDomHandle(handle);
+      if (node) node.setAttribute(hostText(name), hostText(value));
+    },
+    'Element.appendChild': function (parent, child) {
+      var p = getDomHandle(parent);
+      var c = getDomHandle(child);
+      if (p && c) p.appendChild(c);
+    },
+    'Element.textContent': function (handle, text) {
+      var node = getDomHandle(handle);
+      if (node) node.textContent = hostText(text);
+    },
+    'Element.classList.add': function (handle, token) {
+      var node = getDomHandle(handle);
+      if (node && node.classList) node.classList.add(hostText(token));
+    },
+    'Element.classList.remove': function (handle, token) {
+      var node = getDomHandle(handle);
+      if (node && node.classList) node.classList.remove(hostText(token));
+    },
+    'Element.classList.toggle': function (handle, token) {
+      var node = getDomHandle(handle);
+      if (node && node.classList) node.classList.toggle(hostText(token));
+    },
+    'Element.addEventListener': function (handle, event, callback) {
+      var node = getDomHandle(handle);
+      if (node) node.addEventListener(hostText(event), function () {});
+    },
+    'Element.removeEventListener': function () {},
+    'Element.removeChild': function (parent, child) {
+      var p = getDomHandle(parent);
+      var c = getDomHandle(child);
+      if (p && c) p.removeChild(c);
+    },
+    'Element.insertBefore': function (parent, child, before) {
+      var p = getDomHandle(parent);
+      var c = getDomHandle(child);
+      var b = getDomHandle(before);
+      if (p && c) p.insertBefore(c, b || null);
+    },
+    'Element.replaceChild': function (parent, child, old) {
+      var p = getDomHandle(parent);
+      var c = getDomHandle(child);
+      var o = getDomHandle(old);
+      if (p && c && o) p.replaceChild(c, o);
+    },
+
+    '__voa.sigNamed': sigNamed,
+    '__voa.sigCreateI32': function (v) { return newSignal(v | 0); },
+    '__voa.sigGetI32': function (id) { return (signals[id] && signals[id].value) | 0; },
+    '__voa.sigSetI32': function (id, v) { sigSet(id, v | 0); },
+    '__voa.sigCreateUtf8': function (v) { return newSignal(hostText(v)); },
+    '__voa.sigGetUtf8': function (id) { return hostIntern(signals[id] ? String(signals[id].value == null ? '' : signals[id].value) : ''); },
+    '__voa.sigSetUtf8': function (id, v) { sigSet(id, hostText(v)); },
+    '__voa.sigCreateBool': function (v) { return newSignal(!!v); },
+    '__voa.sigGetBool': function (id) { return !!(signals[id] && signals[id].value); },
+    '__voa.sigSetBool': function (id, v) { sigSet(id, !!v); },
+    '__voa.sigCreateList': function (v) { return newSignal(v); },
+    '__voa.sigGetList': function (id) { return signals[id] ? signals[id].value : 0; },
+    '__voa.sigSetList': function (id, v) { sigSet(id, v); },
+    '__voa.sigSubscribe': function (sigId, depsCsv, updateExport) {
+      var deps = parseDeps(hostText(depsCsv), [sigId]);
+      var fn = function () {
+        if (wasmExports && typeof wasmExports[hostText(updateExport)] === 'function') callWasm(hostText(updateExport));
+      };
+      deps.forEach(function (dep) {
+        if (dep === 'store') {
           storeSubscribers.push(fn);
           return;
-        }}
+        }
         var depId = resolveSigRef(dep);
-        if (depId >= 0) {{
+        if (depId >= 0) {
           signalSubscribers[depId] = signalSubscribers[depId] || [];
           signalSubscribers[depId].push(fn);
-        }}
-      }});
+        }
+      });
       fn();
-    }},
-    rxBindTextUtf8: function (handle, exprExport, dep1, dep2) {{
-      bindExpr(handle, exprExport, [dep1, dep2], function (node, value) {{
-        node.textContent = value;
-      }});
-    }},
-    rxBindAttrUtf8: function (handle, attr, exprExport, dep1, dep2) {{
-      bindExpr(handle, exprExport, [dep1, dep2], function (node, value) {{
-        node.setAttribute(attr, value);
-      }});
-    }},
-    rxBindClassUtf8: function (handle, exprExport, dep1, dep2) {{
-      bindExpr(handle, exprExport, [dep1, dep2], function (node, value) {{
-        node.setAttribute('class', value);
-      }});
-    }},
-    rxBindPropUtf8: function (sigId, exprExport, dep1, dep2) {{
-      bindExpr(null, exprExport, [dep1, dep2], function (_node, value) {{
-        hostApi.sigSetUtf8(sigId, value);
-      }}, true);
-    }},
-    rxBindIf: function (container, condExport, mountExport, dep1, dep2) {{
+    },
+    '__voa.rxBindTextUtf8': function (handle, exprExport, dep1, dep2) {
+      bindExpr(handle, hostText(exprExport), dep1, dep2, function (node, value) { node.textContent = value; }, true);
+    },
+    '__voa.rxBindAttrUtf8': function (handle, attr, exprExport, dep1, dep2) {
+      bindExpr(handle, hostText(exprExport), dep1, dep2, function (node, value) { node.setAttribute(hostText(attr), value); }, true);
+    },
+    '__voa.rxBindClassUtf8': function (handle, exprExport, dep1, dep2) {
+      bindExpr(handle, hostText(exprExport), dep1, dep2, function (node, value) { node.setAttribute('class', value); }, true);
+    },
+    '__voa.rxBindPropI32': function (sigId, exprExport, dep1, dep2) {
+      bindExpr(null, hostText(exprExport), dep1, dep2, function (_node, value) { sigSet(sigId, value | 0); }, false);
+    },
+    '__voa.rxBindPropUtf8': function (sigId, exprExport, dep1, dep2) {
+      bindExpr(null, hostText(exprExport), dep1, dep2, function (_node, value) { sigSet(sigId, value); }, true);
+    },
+    '__voa.rxBindPropBool': function (sigId, exprExport, dep1, dep2) {
+      bindExpr(null, hostText(exprExport), dep1, dep2, function (_node, value) { sigSet(sigId, !!value); }, false);
+    },
+    '__voa.rxBindIf': function (container, condExport, mountExport, dep1, dep2) {
       var mounted = false;
-      var update = function () {{
-        var show = wasmExports[condExport]();
+      var update = function () {
+        var show = callWasm(hostText(condExport));
         var node = getDomHandle(container);
         if (!node) return;
-        if (show && !mounted) {{
-          wasmExports[mountExport](container);
+        if (show && !mounted) {
+          callWasm(hostText(mountExport), container);
           mounted = true;
-        }} else if (!show && mounted) {{
+        } else if (!show && mounted) {
           node.textContent = '';
           mounted = false;
-        }}
-      }};
+        }
+      };
       subscribeDeps([dep1, dep2], update);
-    }},
-    rxBindLoop: function (container, itemsExport, mountExport, keyExport, dep1, dep2) {{
-      var update = function () {{
+    },
+    '__voa.rxBindLoop': function (container, itemsExport, mountExport, keyExport, dep1, dep2) {
+      var update = function () {
         var node = getDomHandle(container);
         if (!node) return;
         while (node.firstChild) node.removeChild(node.firstChild);
-        var items = wasmExports[itemsExport]() || [];
-        for (var i = 0; i < items.length; i++) {{
-          // Pass index so WASM loop_mount can bind `let item = items[index]`.
-          wasmExports[mountExport](container, i);
-        }}
-      }};
+        var items = callWasm(hostText(itemsExport)) || [];
+        if (!Array.isArray(items)) items = [];
+        for (var i = 0; i < items.length; i++) {
+          callWasm(hostText(mountExport), container, i);
+        }
+      };
       subscribeDeps([dep1, dep2], update);
-      var _key = keyExport;
-    }},
-    rxMemoI32: function () {{ return 0; }},
-    rxMemoUtf8: function () {{ return ''; }},
-    domAddEventExport: function (handle, event, handlerExport) {{
+    },
+    '__voa.rxMemoI32': function (memoId, computeExport, dep1, dep2) {
+      return memoCompute(memoId, hostText(computeExport), [dep1, dep2], false);
+    },
+    '__voa.rxMemoUtf8': function (memoId, computeExport, dep1, dep2) {
+      return memoCompute(memoId, hostText(computeExport), [dep1, dep2], true);
+    },
+    '__voa.componentEmit': function (event) {
+      global.dispatchEvent(new CustomEvent('asgard:emit', { detail: { event: hostText(event) } }));
+    },
+    '__voa.componentEmitUtf8': function (event, arg) {
+      global.dispatchEvent(new CustomEvent('asgard:emit', { detail: { event: hostText(event), arg: hostText(arg) } }));
+    },
+    '__voa.componentEmitI32': function (event, arg) {
+      global.dispatchEvent(new CustomEvent('asgard:emit', { detail: { event: hostText(event), arg: arg } }));
+    },
+    '__voa.domAddEventExport': function (handle, event, handlerExport) {
       var node = getDomHandle(handle);
       if (!node) return;
-      var fn = function () {{
-        if (wasmExports && typeof wasmExports[handlerExport] === 'function') {{
-          wasmExports[handlerExport]();
-        }}
-      }};
-      node.addEventListener(event, fn);
-      eventBindings.set(handlerExport, fn);
-    }},
-    domAddEventExportUtf8: function (handle, event, handlerExport, arg) {{
+      var name = hostText(handlerExport);
+      var fn = function () { if (wasmExports && typeof wasmExports[name] === 'function') callWasm(name); };
+      node.addEventListener(hostText(event), fn);
+      eventBindings.set(name, fn);
+    },
+    '__voa.domAddEventExportUtf8': function (handle, event, handlerExport, arg) {
       var node = getDomHandle(handle);
       if (!node) return;
-      var captured = arg;
-      var fn = function () {{
-        if (wasmExports && typeof wasmExports[handlerExport] === 'function') {{
-          wasmExports[handlerExport](captured);
-        }}
-      }};
-      node.addEventListener(event, fn);
-      eventBindings.set(handlerExport + ':' + String(captured), fn);
-    }},
-    domAddEventExportI32: function (handle, event, handlerExport, arg) {{
+      var name = hostText(handlerExport);
+      var captured = hostIntern(hostText(arg));
+      var fn = function () { if (wasmExports && typeof wasmExports[name] === 'function') callWasm(name, captured); };
+      node.addEventListener(hostText(event), fn);
+      eventBindings.set(name + ':' + hostText(arg), fn);
+    },
+    '__voa.domAddEventExportI32': function (handle, event, handlerExport, arg) {
       var node = getDomHandle(handle);
       if (!node) return;
+      var name = hostText(handlerExport);
       var captured = arg | 0;
-      var fn = function () {{
-        if (wasmExports && typeof wasmExports[handlerExport] === 'function') {{
-          wasmExports[handlerExport](captured);
-        }}
-      }};
-      node.addEventListener(event, fn);
-      eventBindings.set(handlerExport + ':' + String(captured), fn);
-    }},
-    rxBatchBegin: function () {{ batchDepth += 1; }},
-    rxBatchEnd: function () {{
+      var fn = function () { if (wasmExports && typeof wasmExports[name] === 'function') callWasm(name, captured); };
+      node.addEventListener(hostText(event), fn);
+      eventBindings.set(name + ':' + String(captured), fn);
+    },
+    '__voa.rxBatchBegin': function () { batchDepth += 1; },
+    '__voa.rxBatchEnd': function () {
       batchDepth = Math.max(0, batchDepth - 1);
       if (batchDepth === 0) flushBatch();
-    }},
-    storeBump: function () {{ scheduleNotify(-2); }},
-    storeSubscribe: function (exportName) {{
-      storeSubscribers.push(function () {{
-        if (wasmExports && typeof wasmExports[exportName] === 'function') {{
-          wasmExports[exportName]();
-        }}
-      }});
-    }},
-    styleCollectorPush: function (classes) {{
-      var text = readUtf8(classes);
+    },
+    '__voa.storeBump': function () { scheduleNotify(-2); },
+    '__voa.storeSubscribe': function (exportName) {
+      var name = hostText(exportName);
+      storeSubscribers.push(function () {
+        if (wasmExports && typeof wasmExports[name] === 'function') callWasm(name);
+      });
+    },
+    '__voa.styleCollectorPush': function (classes) {
+      var text = hostText(classes);
       if (!text) return;
       global.__voaStyleUtilities = global.__voaStyleUtilities || new Set();
-      text.split(/\\s+/).forEach(function (token) {{
+      text.split(/\s+/).forEach(function (token) {
         if (token) global.__voaStyleUtilities.add(token);
-      }});
-    }}
-  }};
+      });
+    }
+  };
 
-  function readUtf8(ptr, len) {{
-    if (typeof ptr === 'string') return ptr;
-    return String(ptr || '');
-  }}
+  // ── memo：按 dep 失效重算 ────────────────────────────────────────
+  var memos = new Map();
 
-  function resolveSigRef(name) {{
-    if (typeof name === 'number') return name;
-    if (name && name.endsWith && name.endsWith('_sig')) {{
-      return -1;
-    }}
-    var parsed = parseInt(name, 10);
-    return isNaN(parsed) ? -1 : parsed;
-  }}
+  function memoCompute(memoId, exportName, depIds, resolveUtf8) {
+    var entry = memos.get(memoId);
+    if (!entry) {
+      entry = { value: resolveUtf8 ? hostIntern('') : 0, exportName: exportName };
+      memos.set(memoId, entry);
+      var recompute = function () {
+        var raw = callWasm(entry.exportName);
+        entry.value = resolveUtf8 ? hostIntern(hostResolve(raw)) : raw;
+      };
+      subscribeDeps(depIds, recompute);
+    }
+    return entry.value;
+  }
 
-  function subscribeDeps(depIds, fn) {{
-    var deps = (depIds || []).filter(function (dep) {{ return dep !== null && dep !== undefined && dep >= 0; }});
-    if (depIds && depIds.indexOf(-2) >= 0) {{
-      storeSubscribers.push(fn);
-    }}
-    if (deps.length === 0 && !(depIds && depIds.indexOf(-2) >= 0)) {{
-      fn();
-      return;
-    }}
-    deps.forEach(function (depId) {{
-      signalSubscribers[depId] = signalSubscribers[depId] || [];
-      signalSubscribers[depId].push(fn);
-    }});
-    fn();
-  }}
+  // ── custom section 解析：nyar.strings 字面量表 ───────────────────
+  function parseCustomSections(bytes) {
+    var pos = 8;
+    function leb() {
+      var result = 0, shift = 0;
+      for (;;) {
+        var b = bytes[pos++];
+        result |= (b & 0x7f) << shift;
+        if (!(b & 0x80)) break;
+        shift += 7;
+      }
+      return result >>> 0;
+    }
+    while (pos < bytes.length) {
+      var id = bytes[pos++];
+      var size = leb();
+      var end = pos + size;
+      if (id === 0) {
+        var nlen = leb();
+        var name = new TextDecoder().decode(bytes.subarray(pos, pos + nlen));
+        pos += nlen;
+        if (name === 'nyar.strings') {
+          try {
+            UTF8_LITERALS = JSON.parse(new TextDecoder().decode(bytes.subarray(pos, end))).strings || [];
+          } catch (e) {
+            console.error('asgard boot: nyar.strings parse failed', e);
+          }
+        }
+      }
+      pos = end;
+    }
+  }
 
-  function bindExpr(handle, exprExport, depIds, apply, propMode) {{
-    var update = function () {{
-      var value = wasmExports[exprExport]();
-      if (propMode) {{
-        apply(null, value);
-        return;
-      }}
-      var node = getDomHandle(handle);
-      if (node) apply(node, value);
-    }};
-    subscribeDeps(depIds, update);
-  }}
-
-  function mountIslands() {{
-    componentFactories.forEach(function (factory, name) {{
+  // ── island 挂载 ──────────────────────────────────────────────────
+  function mountIslands() {
+    componentFactories.forEach(function (factory, name) {
       var nodes = document.querySelectorAll('[data-component="' + name + '"]');
-      nodes.forEach(function (host) {{
+      nodes.forEach(function (host) {
         if (host.__voaMounted) return;
         var node = factory(host);
-        if (node && node.nodeType && node !== host) {{
+        if (node && node.nodeType && node !== host) {
+          // 静态页面在挂载点内留有预渲染占位内容（无 JS 时的可读回退）；
+          // hydration 由 WASM 重建 DOM，追加前清空占位，避免两份 DOM 并存。
+          if (host.getAttribute('data-island') === 'hydrated') {
+            host.textContent = '';
+          }
           host.appendChild(node);
-        }}
+        }
         host.__voaMounted = true;
-      }});
-    }});
-  }}
+      });
+    });
+  }
 
-  function loadScript(url) {{
-    return new Promise(function (resolve, reject) {{
+  function loadScript(url) {
+    return new Promise(function (resolve, reject) {
       var script = document.createElement('script');
       script.src = url;
       script.async = false;
-      script.onload = function () {{ resolve(); }};
-      script.onerror = function () {{ reject(new Error('script load failed: ' + url)); }};
+      script.onload = function () { resolve(); };
+      script.onerror = function () { reject(new Error('script load failed: ' + url)); };
       document.head.appendChild(script);
-    }});
-  }}
+    });
+  }
 
-  async function start(manifestUrl) {{
-    var manifest = await fetch(manifestUrl).then(function (r) {{
+  async function start(manifestUrl) {
+    var manifest = await fetch(manifestUrl).then(function (r) {
       if (!r.ok) throw new Error('manifest fetch failed: ' + r.status);
       return r.json();
-    }});
+    });
 
-    if (manifest.wasm && manifest.wasm.length > 0) {{
-      var entry = manifest.wasm[0];
-      var glue = await import(entry.glue);
-      var imports = {{ __voa: hostApi, env: hostApi }};
-      if (typeof glue.instantiate === 'function') {{
-        var instance = await glue.instantiate(entry.url, imports);
-        wasmExports = instance.exports;
-      }} else if (typeof glue.run === 'function') {{
-        var runInstance = await glue.run(entry.url, imports);
-        wasmExports = runInstance.exports;
-      }}
-    }}
+    var entry = (manifest.wasm && manifest.wasm.length > 0) ? manifest.wasm[0] : null;
+    if (entry) {
+      var bytes = new Uint8Array(await fetch(entry.url).then(function (r) {
+        if (!r.ok) throw new Error('wasm fetch failed: ' + r.status);
+        return r.arrayBuffer();
+      }));
+      parseCustomSections(bytes);
+      var result = await WebAssembly.instantiate(bytes, { env: env });
+      wasmExports = result.instance ? result.instance.exports : result.exports;
+    }
 
-    if (manifest.components) {{
-      for (var i = 0; i < manifest.components.length; i++) {{
+    if (manifest.components) {
+      for (var i = 0; i < manifest.components.length; i++) {
         await loadScript(manifest.components[i].js);
-      }}
-    }}
+      }
+    }
 
     mountIslands();
     return manifest;
-  }}
+  }
 
-  function hydrateFromDom(manifestUrl) {{
-    return start(manifestUrl);
-  }}
+  function hydrateFromDom(manifestUrl) {
+    return start(manifestUrl || MANIFEST_URL);
+  }
 
-  global.__voa = {{
+  global.__voa = {
     storeDomHandle: storeDomHandle,
     getDomHandle: getDomHandle,
     isLoaded: isLoaded,
-    callExport: callExport,
+    callExport: callWasm,
     registerComponent: registerComponent,
     mountIslands: mountIslands,
     hydrate: hydrateFromDom,
     start: start,
-    wasmModule: '{wasm_stem}',
-    host: hostApi
-  }};
+    wasmModule: WASM_STEM,
+    host: env,
+    hostIntern: hostIntern,
+    hostResolve: hostResolve
+  };
 
   // Auto glue: page must not inline start(); boot self-starts on load.
-  start('{manifest_url}').catch(function (e) {{
+  start(MANIFEST_URL).catch(function (e) {
     console.error('asgard start failed:', e);
-  }});
-}})(typeof globalThis !== 'undefined' ? globalThis : window);
-"#
-    )
-}
+  });
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+"##;

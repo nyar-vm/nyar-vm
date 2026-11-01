@@ -113,7 +113,7 @@ pub fn lower_component(root: &AwslRoot, component_name: &str, source_path: &str,
         .map(|script| extract_abi_for_script(script, &name))
         .unwrap_or_else(|| (ComponentAbi { widget_name: name.clone(), ..Default::default() }, Vec::new()));
     let mut script_bindings = abi_to_script_bindings(&component_abi);
-    finalize_signal_slots(&mut script_bindings);
+    finalize_signal_slots(&mut script_bindings, component_name);
     let mut render_ir = canonicalize_surface(surface, &script_bindings);
     run_default_passes(&mut render_ir, ThemeRegistryOptions { single_theme: None, single_mode: None });
     let synthetic_v = generate_synthetic_v(&name, root, &script_bindings);
@@ -148,12 +148,26 @@ fn generate_synthetic_v(name: &str, root: &AwslRoot, bindings: &[ScriptBinding])
     out
 }
 
-fn finalize_signal_slots(bindings: &mut [ScriptBinding]) {
+/// 信号槽命名：`{route}_{name}_sig`。
+///
+/// 生成源码禁止模块级 `let`（HIR 静默丢弃模块级绑定），因此信号槽不再是模块变量，
+/// 而是宿主信号表的**按名句柄**：`sig_var` 同时充当局部变量名与宿主表 key，
+/// 路由前缀保证跨组件唯一。
+fn finalize_signal_slots(bindings: &mut [ScriptBinding], route: &str) {
+    let route_key = sanitize_key(route);
     for binding in bindings.iter_mut() {
         if binding.reactive {
-            binding.sig_var = format!("{}_sig", binding.name);
+            binding.sig_var = format!("{route_key}_{}_sig", sanitize_key(&binding.name));
         }
     }
+}
+
+fn sanitize_key(name: &str) -> String {
+    name.chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || ch == '_' { ch } else { '_' })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_ascii_lowercase()
 }
 
 fn rewrite_script_decls_for_signals(script: &str, bindings: &[ScriptBinding]) -> String {
@@ -222,9 +236,9 @@ fn rewrite_signal_statement(statement: &str, bindings: &[ScriptBinding]) -> Opti
             let rhs = trimmed[prefix.len()..].trim();
             let rhs = substitute_reactive_reads(rhs, bindings);
             let setter = match binding.value_type {
-                SignalValueType::I32 => format!("sig_set_i32({}, {rhs});", binding.sig_var),
-                SignalValueType::Utf8 => format!("sig_set_utf8({}, {rhs});", binding.sig_var),
-                SignalValueType::Bool => format!("sig_set_bool({}, {rhs});", binding.sig_var),
+                SignalValueType::I32 => format!("sig_set_i32(sig_named(\"{}\"), {rhs});", binding.sig_var),
+                SignalValueType::Utf8 => format!("sig_set_utf8(sig_named(\"{}\"), {rhs});", binding.sig_var),
+                SignalValueType::Bool => format!("sig_set_bool(sig_named(\"{}\"), {rhs});", binding.sig_var),
             };
             return Some(setter);
         }
@@ -255,7 +269,8 @@ fn replace_binding_ident(expr: &str, name: &str, replacement: &str) -> String {
     let mut index = 0usize;
     while index < bytes.len() {
         if bytes[index..].starts_with(name_bytes) {
-            let before_ok = index == 0 || !is_ident_char(bytes[index - 1]);
+            // `.` 前缀是字段访问（`post.count`），不是绑定变量引用。
+            let before_ok = index == 0 || (bytes[index - 1] != b'.' && !is_ident_char(bytes[index - 1]));
             let after_index = index + name_bytes.len();
             let after_ok = after_index >= bytes.len() || !is_ident_char(bytes[after_index]);
             if before_ok && after_ok {
@@ -660,11 +675,14 @@ fn abi_to_script_bindings(abi: &ComponentAbi) -> Vec<ScriptBinding> {
     let mut out = Vec::new();
     for property in &abi.properties {
         let init_expr = property.default_expr.clone().unwrap_or_else(|| default_expr_for_type(property.type_hint.as_deref()));
+        // Property 是父组件 `rx_bind_prop_*` 的写入目标：必须有宿主信号句柄。
+        // list 类型没有信号 ABI（sig 仅 i32/utf8/bool），保持内联常量降级。
+        let signal_backed = !is_list_like(property.type_hint.as_deref(), &init_expr);
         out.push(ScriptBinding {
             name: property.name.clone(),
             init_expr: init_expr.clone(),
             kind: BindingKind::Property { required: property.required },
-            reactive: false,
+            reactive: signal_backed,
             sig_var: String::new(),
             value_type: infer_signal_type(property.type_hint.as_deref(), &init_expr),
         });
@@ -701,6 +719,10 @@ fn abi_to_script_bindings(abi: &ComponentAbi) -> Vec<ScriptBinding> {
         });
     }
     out
+}
+
+fn is_list_like(type_hint: Option<&str>, init_expr: &str) -> bool {
+    type_hint.map(|hint| hint.contains("list")).unwrap_or(false) || init_expr.trim() == "[]"
 }
 
 fn default_expr_for_type(type_hint: Option<&str>) -> String {
@@ -753,9 +775,9 @@ impl ScriptBinding {
             return self.name.clone();
         }
         match self.value_type {
-            SignalValueType::I32 => format!("sig_get_i32({})", self.sig_var),
-            SignalValueType::Utf8 => format!("sig_get_utf8({})", self.sig_var),
-            SignalValueType::Bool => format!("sig_get_bool({})", self.sig_var),
+            SignalValueType::I32 => format!("sig_get_i32(sig_named(\"{}\"))", self.sig_var),
+            SignalValueType::Utf8 => format!("sig_get_utf8(sig_named(\"{}\"))", self.sig_var),
+            SignalValueType::Bool => format!("sig_get_bool(sig_named(\"{}\"))", self.sig_var),
         }
     }
 

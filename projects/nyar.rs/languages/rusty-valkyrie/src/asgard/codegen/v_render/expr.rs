@@ -6,16 +6,20 @@ use super::{
 };
 
 pub(crate) fn rewrite_utf8_expr_body(expr: &str, bindings: &[ScriptBinding], loops: &[LoopFrame]) -> String {
+    rewrite_utf8_expr_body_guarded(expr, bindings, loops, &mut Vec::new())
+}
+
+fn rewrite_utf8_expr_body_guarded(expr: &str, bindings: &[ScriptBinding], loops: &[LoopFrame], visiting: &mut Vec<String>) -> String {
     let trimmed = expr.trim();
     if let Some(expanded) = expand_awsl_fstring(trimmed) {
-        return rewrite_utf8_expr_body(&expanded, bindings, loops);
+        return rewrite_utf8_expr_body_guarded(&expanded, bindings, loops, visiting);
     }
     if let Some((cond, then_arm, else_arm)) = split_awsl_ternary(trimmed) {
         return format!(
             "(if {} {{ {} }} else {{ {} }})",
             rewrite_expr_with_loops(&cond, bindings, loops),
-            rewrite_utf8_expr_body(&then_arm, bindings, loops),
-            rewrite_utf8_expr_body(&else_arm, bindings, loops)
+            rewrite_utf8_expr_body_guarded(&then_arm, bindings, loops, visiting),
+            rewrite_utf8_expr_body_guarded(&else_arm, bindings, loops, visiting)
         );
     }
     for binding in bindings {
@@ -24,6 +28,17 @@ pub(crate) fn rewrite_utf8_expr_body(expr: &str, bindings: &[ScriptBinding], loo
                 SignalValueType::Utf8 => binding.read_expr(),
                 SignalValueType::I32 | SignalValueType::Bool => format!("utf8({})", binding.read_expr()),
             };
+        }
+    }
+    // 非响应式绑定（Derived/Memoized/LocalConst）：生成源码没有模块级 `let`，
+    // 整体引用直接内联其 init 表达式（递归展开，环引用时保持原名、由编译报错兜底）。
+    for binding in bindings {
+        if !binding.reactive && !binding.init_expr.trim().is_empty() && trimmed == binding.name && !visiting.iter().any(|v| v == &binding.name)
+        {
+            visiting.push(binding.name.clone());
+            let expanded = rewrite_utf8_expr_body_guarded(&binding.init_expr, bindings, loops, visiting);
+            visiting.pop();
+            return expanded;
         }
     }
     let mut out = rewrite_expr_with_loops(trimmed, bindings, loops);
@@ -52,12 +67,29 @@ pub(crate) fn rewrite_utf8_expr_body(expr: &str, bindings: &[ScriptBinding], loo
 }
 
 pub(crate) fn rewrite_expr_with_loops(expr: &str, bindings: &[ScriptBinding], loops: &[LoopFrame]) -> String {
+    rewrite_expr_with_loops_guarded(expr, bindings, loops, &mut Vec::new())
+}
+
+fn rewrite_expr_with_loops_guarded(expr: &str, bindings: &[ScriptBinding], loops: &[LoopFrame], visiting: &mut Vec<String>) -> String {
     let mut out = normalize_js_string_literals(strip_expr_braces(expr.trim()));
     for binding in bindings.iter().filter(|b| b.reactive) {
         if loops.iter().any(|f| f.item_var == binding.name || f.index_var == binding.name) {
             continue;
         }
         out = replace_ident(&out, &binding.name, &binding.read_expr());
+    }
+    // 非响应式绑定：复合表达式中的裸标识符同样内联 init（生成源码没有模块级 `let` 可引用）。
+    for binding in bindings.iter().filter(|b| !b.reactive && !b.init_expr.trim().is_empty()) {
+        if loops.iter().any(|f| f.item_var == binding.name || f.index_var == binding.name) {
+            continue;
+        }
+        if visiting.iter().any(|v| v == &binding.name) {
+            continue;
+        }
+        visiting.push(binding.name.clone());
+        let inlined = rewrite_expr_with_loops_guarded(&binding.init_expr, bindings, loops, visiting);
+        visiting.pop();
+        out = replace_ident(&out, &binding.name, &format!("({inlined})"));
     }
     normalize_awsl_js_ops(&out)
 }

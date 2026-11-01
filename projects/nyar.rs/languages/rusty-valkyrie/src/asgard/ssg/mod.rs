@@ -33,6 +33,21 @@ pub fn generate_static_page(title: &str, results: &[StaticRenderResult], extra_c
 /// 让页面内相对引用按配置基址解析。`base` 的规范化与合法性由配置所有者负责，
 /// 本函数只消费已解析的目录 URL。
 pub fn generate_static_page_with_base(title: &str, results: &[StaticRenderResult], extra_css: &str, base: &str) -> String {
+    generate_static_page_full(title, results, extra_css, base, "", "")
+}
+
+/// 生成完整静态 HTML 页面，并在 `</head>` / `</body>` 之前追加调用方给出的标记片段。
+///
+/// `head_tags` 用于样式表等头部引用，`body_tags` 用于 `boot.js` 等启动脚本引用；
+/// 两段都是已由产物所有者生成的标记，本函数只负责插入位置与缩进，不解释其内容。
+pub fn generate_static_page_full(
+    title: &str,
+    results: &[StaticRenderResult],
+    extra_css: &str,
+    base: &str,
+    head_tags: &str,
+    body_tags: &str,
+) -> String {
     let mut css = String::new();
     if !extra_css.trim().is_empty() {
         css.push_str(extra_css.trim());
@@ -63,6 +78,10 @@ pub fn generate_static_page_with_base(title: &str, results: &[StaticRenderResult
     if base != "/" {
         writeln!(page, "  <base href=\"{}\">", escape_html(base)).unwrap();
     }
+    if !head_tags.trim().is_empty() {
+        write!(page, "{}", head_tags.trim_end()).unwrap();
+        page.push('\n');
+    }
     if !css.trim().is_empty() {
         writeln!(page, "  <style>").unwrap();
         for line in css.lines() {
@@ -73,6 +92,9 @@ pub fn generate_static_page_with_base(title: &str, results: &[StaticRenderResult
     writeln!(page, "</head>").unwrap();
     writeln!(page, "<body>").unwrap();
     writeln!(page, "{}", body.trim()).unwrap();
+    if !body_tags.trim().is_empty() {
+        writeln!(page, "{}", body_tags.trim()).unwrap();
+    }
     writeln!(page, "</body>").unwrap();
     writeln!(page, "</html>").unwrap();
     page

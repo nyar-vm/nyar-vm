@@ -2,6 +2,9 @@
 
 /// 响应式原语前导（与 `js_boot.rs` 的 `__voa` 实现配对）。
 pub const REACTIVE_PRELUDE: &str = r#"
+[js_builtin("__voa.sigNamed")]
+micro sig_named(name: utf8): i32
+
 [js_builtin("__voa.sigCreateI32")]
 micro sig_create_i32(v: i32): i32
 

@@ -41,7 +41,8 @@ pub(crate) fn replace_ident(expr: &str, name: &str, replacement: &str) -> String
     let mut i = 0usize;
     while i < chars.len() {
         if chars[i..].starts_with(&name_chars) {
-            let before_ok = i == 0 || !is_ident_char(chars[i - 1]);
+            // `.` 前缀说明这是字段访问（`post.count`），不是绑定变量引用。
+            let before_ok = i == 0 || (chars[i - 1] != '.' && !is_ident_char(chars[i - 1]));
             let after = i + name_chars.len();
             let after_ok = after >= chars.len() || !is_ident_char(chars[after]);
             if before_ok && after_ok {
