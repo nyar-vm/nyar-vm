@@ -191,6 +191,17 @@ fn lowers_frozen_long_bitand_operator_to_single_land() {
     class_file.to_bytes().expect("land class encoding");
 }
 
+/// `integer` 位运算冻结码各落一条同载体指令；`u32` 右移必须走逻辑右移 `iushr`。
+#[test]
+fn integer_bitwise_codes_lower_to_single_instruction() {
+    assert!(matches!(JvmOperatorCode::IntegerBitAnd.instructions().as_slice(), [JvmInstruction::IAnd]));
+    assert!(matches!(JvmOperatorCode::IntegerBitOr.instructions().as_slice(), [JvmInstruction::IOr]));
+    assert!(matches!(JvmOperatorCode::IntegerBitXor.instructions().as_slice(), [JvmInstruction::IXor]));
+    assert!(matches!(JvmOperatorCode::IntegerShiftLeft.instructions().as_slice(), [JvmInstruction::IShl]));
+    assert!(matches!(JvmOperatorCode::IntegerShiftRightUnsigned.instructions().as_slice(), [JvmInstruction::IUShr]));
+    assert!(JvmOperatorCode::IntegerBitAnd.arithmetic_instruction().is_some(), "位运算码不得落入比较展开路径");
+}
+
 #[test]
 fn comparison_operator_expansion_uses_unique_method_local_labels() {
     let operator = ItemInstanceId::from_index(1).expect("operator instance");

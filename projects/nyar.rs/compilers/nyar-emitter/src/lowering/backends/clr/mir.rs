@@ -59,6 +59,11 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "i32.div" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Div),
         "i32.rem" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Rem),
         "i32.neg" => unary(TargetOperandType::I32, MsilOpcode::Neg),
+        // int32 位运算：MSIL 单 opcode，按位结果与 `u32` 载体等价。
+        "i32.and" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::And),
+        "i32.or" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Or),
+        "i32.xor" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Xor),
+        "i32.shl" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Shl),
         // int64 算术：同一批 opcode 对宽载体同形。
         "i64.add" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Add),
         "i64.sub" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Sub),

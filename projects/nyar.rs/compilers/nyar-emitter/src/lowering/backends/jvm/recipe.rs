@@ -59,6 +59,13 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         "integer.divide" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerDivide),
         "integer.remainder" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerRemainder),
         "integer.negate" => unary(TargetOperandType::I32, JvmOperatorCode::IntegerNegate),
+        // integer 位运算：JVM 单指令（`iand`/`ior`/`ixor`）。
+        "integer.and" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerBitAnd),
+        "integer.or" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerBitOr),
+        "integer.xor" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerBitXor),
+        // integer 移位：`u32` 左移与有符号同形（`ishl`），右移必须是逻辑右移（`iushr`）。
+        "integer.shift_left" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerShiftLeft),
+        "integer.shift_right_unsigned" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerShiftRightUnsigned),
         // long 算术：JVM 单指令（`ladd`/`lsub`/`lmul`/`ldiv`/`lrem`/`lneg`）。
         "long.add" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongAdd),
         "long.subtract" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongSubtract),

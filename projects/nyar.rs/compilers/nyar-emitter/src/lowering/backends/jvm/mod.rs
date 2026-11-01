@@ -30,6 +30,16 @@ pub enum JvmOperatorCode {
     IntegerRemainder,
     /// JVM `ineg`：integer 取负。
     IntegerNegate,
+    /// JVM `iand`：integer 按位与（`u32` 按位等价）。
+    IntegerBitAnd,
+    /// JVM `ior`：integer 按位或（`u32` 按位等价）。
+    IntegerBitOr,
+    /// JVM `ixor`：integer 按位异或（`u32` 按位等价）。
+    IntegerBitXor,
+    /// JVM `ishl`：integer 左移（`u32` 与有符号同形，位移量按低 5 位取模）。
+    IntegerShiftLeft,
+    /// JVM `iushr`：integer 逻辑右移（`u32` 的右移不能走有符号 `ishr`）。
+    IntegerShiftRightUnsigned,
     /// JVM `ladd`：long 加法。
     LongAdd,
     /// JVM `lsub`：long 减法。
@@ -99,6 +109,11 @@ impl JvmOperatorCode {
             Self::IntegerDivide => JvmInstruction::IDiv,
             Self::IntegerRemainder => JvmInstruction::IRem,
             Self::IntegerNegate => JvmInstruction::INeg,
+            Self::IntegerBitAnd => JvmInstruction::IAnd,
+            Self::IntegerBitOr => JvmInstruction::IOr,
+            Self::IntegerBitXor => JvmInstruction::IXor,
+            Self::IntegerShiftLeft => JvmInstruction::IShl,
+            Self::IntegerShiftRightUnsigned => JvmInstruction::IUShr,
             Self::LongAdd => JvmInstruction::LAdd,
             Self::LongSubtract => JvmInstruction::LSub,
             Self::LongMultiply => JvmInstruction::LMul,
