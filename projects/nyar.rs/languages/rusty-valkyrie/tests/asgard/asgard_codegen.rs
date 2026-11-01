@@ -38,6 +38,17 @@ fn boot_script_auto_starts_manifest_no_page_inline() {
 }
 
 #[test]
+fn boot_script_exposes_unmount_and_unbinds_listeners() {
+    let boot = generate_boot_script("legion-test", manifest_url_for_mode(true));
+    assert!(boot.contains("unmountIslands: unmountIslands"), "boot 应导出 unmountIslands");
+    assert!(boot.contains("registerCleanup"), "挂载期建立的订阅应登记到 island 作用域");
+    assert!(boot.contains("node.removeEventListener(eventName, fn)"), "卸载应真正解除事件监听");
+    assert!(boot.contains("host.__voaDispose"), "挂载点应持有解绑清单");
+    assert!(boot.contains("memos.delete(memoId)"), "卸载应丢弃 memo 缓存");
+    assert!(boot.contains("releaseDomHandles"), "卸载应释放 DOM 句柄");
+}
+
+#[test]
 fn abi_property_and_event_extracted_from_script() {
     let source = r#"<widget demo><Child :theme="theme" /></widget>
 <script>

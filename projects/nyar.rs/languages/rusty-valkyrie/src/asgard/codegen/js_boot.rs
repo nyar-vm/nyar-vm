@@ -204,8 +204,9 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
 
   function subscribeDeps(depIds, fn) {
     var deps = (depIds || []).filter(function (dep) { return dep !== null && dep !== undefined && typeof dep === 'number' && dep >= 0; });
-    if (depIds && depIds.indexOf(-2) >= 0) storeSubscribers.push(fn);
-    if (deps.length === 0 && !(depIds && depIds.indexOf(-2) >= 0)) {
+    var storeBound = depIds && depIds.indexOf(-2) >= 0;
+    if (storeBound) storeSubscribers.push(fn);
+    if (deps.length === 0 && !storeBound) {
       fn();
       return;
     }
@@ -213,7 +214,20 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
       signalSubscribers[depId] = signalSubscribers[depId] || [];
       signalSubscribers[depId].push(fn);
     });
+    // 激活期内建立的订阅登记到当前 island 作用域，`unmountIslands` 逐条解绑。
+    registerCleanup(function () {
+      deps.forEach(function (depId) {
+        removeFromList(signalSubscribers[depId], fn);
+      });
+      if (storeBound) removeFromList(storeSubscribers, fn);
+    });
     fn();
+  }
+
+  function removeFromList(list, item) {
+    if (!list) return;
+    var index = list.indexOf(item);
+    if (index >= 0) list.splice(index, 1);
   }
 
   function callWasm(name) {
@@ -241,6 +255,14 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
   var wasmExports = null;
   var componentFactories = new Map();
   var eventBindings = new Map();
+  // 每个 island 的挂载作用域：激活期内建立的订阅、监听与 memo 都登记在这里，
+  // `unmountIslands` 用同一份清单解绑，重载后不会留下指向旧 DOM 的回调。
+  var mountScopes = [];
+
+  function registerCleanup(fn) {
+    if (mountScopes.length === 0) return;
+    mountScopes[mountScopes.length - 1].push(fn);
+  }
 
   function isLoaded() {
     return wasmExports !== null;
@@ -411,22 +433,26 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     '__voa.componentEmitI32': function (event, arg) {
       global.dispatchEvent(new CustomEvent('asgard:emit', { detail: { event: hostText(event), arg: arg } }));
     },
-    '__voa.domAddEventExport': function (handle, event, handlerExport) {
-      var node = getDomHandle(handle);
-      if (!node) return;
-      var name = hostText(handlerExport);
-      var fn = function () { if (wasmExports && typeof wasmExports[name] === 'function') callWasm(name); };
-      node.addEventListener(hostText(event), fn);
-      eventBindings.set(name, fn);
-    },
     '__voa.domAddEventExportUtf8': function (handle, event, handlerExport, arg) {
       var node = getDomHandle(handle);
       if (!node) return;
       var name = hostText(handlerExport);
       var captured = hostIntern(hostText(arg));
       var fn = function () { if (wasmExports && typeof wasmExports[name] === 'function') callWasm(name, captured); };
-      node.addEventListener(hostText(event), fn);
+      var eventName = hostText(event);
+      node.addEventListener(eventName, fn);
       eventBindings.set(name + ':' + hostText(arg), fn);
+      registerCleanup(function () { node.removeEventListener(eventName, fn); });
+    },
+    '__voa.domAddEventExport': function (handle, event, handlerExport) {
+      var node = getDomHandle(handle);
+      if (!node) return;
+      var name = hostText(handlerExport);
+      var fn = function () { if (wasmExports && typeof wasmExports[name] === 'function') callWasm(name); };
+      var eventName = hostText(event);
+      node.addEventListener(eventName, fn);
+      eventBindings.set(name, fn);
+      registerCleanup(function () { node.removeEventListener(eventName, fn); });
     },
     '__voa.domAddEventExportI32': function (handle, event, handlerExport, arg) {
       var node = getDomHandle(handle);
@@ -434,8 +460,10 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
       var name = hostText(handlerExport);
       var captured = arg | 0;
       var fn = function () { if (wasmExports && typeof wasmExports[name] === 'function') callWasm(name, captured); };
-      node.addEventListener(hostText(event), fn);
+      var eventName = hostText(event);
+      node.addEventListener(eventName, fn);
       eventBindings.set(name + ':' + String(captured), fn);
+      registerCleanup(function () { node.removeEventListener(eventName, fn); });
     },
     '__voa.rxBatchBegin': function () { batchDepth += 1; },
     '__voa.rxBatchEnd': function () {
@@ -445,9 +473,11 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     '__voa.storeBump': function () { scheduleNotify(-2); },
     '__voa.storeSubscribe': function (exportName) {
       var name = hostText(exportName);
-      storeSubscribers.push(function () {
+      var fn = function () {
         if (wasmExports && typeof wasmExports[name] === 'function') callWasm(name);
-      });
+      };
+      storeSubscribers.push(fn);
+      registerCleanup(function () { removeFromList(storeSubscribers, fn); });
     },
     '__voa.styleCollectorPush': function (classes) {
       var text = hostText(classes);
@@ -472,6 +502,8 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
         entry.value = resolveUtf8 ? hostIntern(hostResolve(raw)) : raw;
       };
       subscribeDeps(depIds, recompute);
+      // memo 缓存与 island 生命周期绑定：卸载后丢弃，重挂载时重新计算。
+      registerCleanup(function () { memos.delete(memoId); });
     }
     return entry.value;
   }
@@ -509,13 +541,20 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     }
   }
 
-  // ── island 挂载 ──────────────────────────────────────────────────
+  // ── island 挂载与卸载 ────────────────────────────────────────────
   function mountIslands() {
     componentFactories.forEach(function (factory, name) {
       var nodes = document.querySelectorAll('[data-component="' + name + '"]');
       nodes.forEach(function (host) {
         if (host.__voaMounted) return;
-        var node = factory(host);
+        var cleanups = [];
+        mountScopes.push(cleanups);
+        var node;
+        try {
+          node = factory(host);
+        } finally {
+          mountScopes.pop();
+        }
         if (node && node.nodeType && node !== host) {
           // 静态页面在挂载点内留有预渲染占位内容（无 JS 时的可读回退）；
           // hydration 由 WASM 重建 DOM，追加前清空占位，避免两份 DOM 并存。
@@ -524,9 +563,36 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
           }
           host.appendChild(node);
         }
+        host.__voaDispose = function () { cleanups.forEach(function (fn) { fn(); }); };
         host.__voaMounted = true;
       });
     });
+  }
+
+  // 释放落在 host 子树内的 DOM 句柄，避免句柄表持有已卸载节点。
+  function releaseDomHandles(host) {
+    for (var id = 1; id < domHandles.length; id++) {
+      var node = domHandles[id];
+      if (node && host.contains && host.contains(node)) domHandles[id] = null;
+    }
+  }
+
+  // 卸载 island：解绑监听与订阅、丢弃 memo、释放 DOM 句柄并清空子树。
+  // `target` 缺省为整页；返回卸载的挂载点数，重挂载走 `mountIslands()`。
+  function unmountIslands(target) {
+    var scope = target || document;
+    var hosts = scope.querySelectorAll ? scope.querySelectorAll('[data-component]') : [];
+    var count = 0;
+    hosts.forEach(function (host) {
+      if (!host.__voaMounted) return;
+      if (host.__voaDispose) host.__voaDispose();
+      releaseDomHandles(host);
+      host.__voaDispose = null;
+      host.__voaMounted = false;
+      host.textContent = '';
+      count += 1;
+    });
+    return count;
   }
 
   function loadScript(url) {
@@ -578,6 +644,7 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     callExport: callWasm,
     registerComponent: registerComponent,
     mountIslands: mountIslands,
+    unmountIslands: unmountIslands,
     hydrate: hydrateFromDom,
     start: start,
     wasmModule: WASM_STEM,
