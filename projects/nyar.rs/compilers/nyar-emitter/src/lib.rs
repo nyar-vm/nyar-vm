@@ -142,6 +142,13 @@ pub mod testing {
         super::lowering::testing_lower_fragment_to_clr_module(submission)
     }
 
+    /// Lower a fragment submission to the CLR MSIL module and its managed ABI contract.
+    pub fn lower_fragment_to_clr_managed_surface(
+        submission: &FragmentSubmission,
+    ) -> Result<(super::nyar_backend_clr::MsilModule, Option<super::ManagedAbiContract>)> {
+        super::lowering::testing_lower_fragment_to_clr_managed_surface(submission)
+    }
+
     /// Decode one WASM uleb128 integer (test helper for section parsing).
     pub fn decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
         super::lowering::testing_decode_wasm_uleb128(bytes, pos)

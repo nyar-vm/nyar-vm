@@ -45,7 +45,14 @@ pub(crate) fn testing_lower_fragment_to_jvm_managed_surface(
 }
 
 pub(crate) fn testing_lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<crate::nyar_backend_clr::MsilModule> {
-    clr::emit::lower_fragment_to_clr_module(submission)
+    clr::emit::lower_fragment_to_clr_module(submission).map(|lowered| lowered.module)
+}
+
+pub(crate) fn testing_lower_fragment_to_clr_managed_surface(
+    submission: &FragmentSubmission,
+) -> Result<(crate::nyar_backend_clr::MsilModule, Option<crate::ManagedAbiContract>)> {
+    let lowered = clr::emit::lower_fragment_to_clr_module(submission)?;
+    Ok((lowered.module, lowered.managed_abi))
 }
 
 pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
@@ -132,11 +139,19 @@ pub fn lower_fragment_to_driver_input(
                 run_contracts: Vec::new(),
             }))
         }
-        TargetBackendFamily::Clr => Ok(DriverBackendInput::Clr(crate::nyar_backend_clr::ClrBinaryBackendInput {
-            module: clr::emit::lower_fragment_to_clr_module(submission)?,
-            output_dir,
-            image_kind: None,
-        })),
+        TargetBackendFamily::Clr => {
+            let lowered = clr::emit::lower_fragment_to_clr_module(submission)?;
+            // 库导出面自带合成入口点，仍必须写成 `.dll`；无导出的可执行镜像继续
+            // 按 `is_entry_point` 推断 `.exe`。
+            let image_kind = lowered.managed_abi.as_ref().map(|_| nyar::backends::clr::ClrImageKind::DynamicLibrary);
+            Ok(DriverBackendInput::Clr(crate::nyar_backend_clr::ClrBinaryBackendInput {
+                module: lowered.module,
+                output_dir,
+                image_kind,
+                managed_abi: lowered.managed_abi,
+                run_contracts: Vec::new(),
+            }))
+        }
         other => Err(format!("目标 `{other:?}` 在当前构建中没有已启用的正式 lowering；拒绝切换目标或补造产物")),
     }
 }

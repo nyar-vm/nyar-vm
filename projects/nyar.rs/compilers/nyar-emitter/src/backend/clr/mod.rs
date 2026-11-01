@@ -23,7 +23,7 @@ pub use msil_text_writer::MsilTextWriter;
 
 use std::path::PathBuf;
 
-use crate::{EmitterError, Result};
+use crate::{DriverRunContract, EmitterError, ManagedAbiContract, Result};
 use nyar::{
     abstractions::{ArtifactFormat, BackendInputKind},
     backends::{BackendDescriptor, CompilationOptions, TargetCodeGenBackend, clr::ClrImageKind},
@@ -38,6 +38,10 @@ pub struct ClrBinaryBackendInput {
     pub output_dir: PathBuf,
     /// 期望生成的镜像口味；为空时自动推断。
     pub image_kind: Option<ClrImageKind>,
+    /// 导出入口的 managed ABI 契约（若有）。
+    pub managed_abi: Option<ManagedAbiContract>,
+    /// 后端已冻结的运行契约；驱动层按契约原样上报。
+    pub run_contracts: Vec<DriverRunContract>,
 }
 
 /// `CLR` 二进制后端。
@@ -91,8 +95,15 @@ impl TargetCodeGenBackend for ClrBinaryBackend {
     fn compile(&self, input: Self::Input, options: &CompilationOptions) -> Result<ArtifactSet> {
         std::fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
         let image_kind = image_kind(&input);
+        // 库镜像带了托管入口点时仍是 `.dll`；`dotnet exec <dll>` 依赖同目录的
+        // runtimeconfig 才能启动，因此在写产物时一并生成。
+        let library_with_entry_point =
+            image_kind == ClrImageKind::DynamicLibrary && input.module.global_methods.iter().any(|method| method.is_entry_point);
         let pe_image_kind = match image_kind {
             ClrImageKind::Executable => crate::transitional::binary::pe::ClrImageKind::Executable,
+            // `acorn-pe` 只为 `Executable` flavor 写 CLI `EntryPointToken`；带合成入口的
+            // 库镜像必须借该 flavor 才能被 `dotnet exec` 启动，产物文件名仍保持 `.dll`。
+            ClrImageKind::DynamicLibrary if library_with_entry_point => crate::transitional::binary::pe::ClrImageKind::Executable,
             ClrImageKind::DynamicLibrary => crate::transitional::binary::pe::ClrImageKind::DynamicLibrary,
         };
         let writer = PeWriter::new(PeWriterOptions {
@@ -104,6 +115,10 @@ impl TargetCodeGenBackend for ClrBinaryBackend {
         let relative = format!("{}.{}", options.artifact_name, image_kind.file_extension());
         let artifact_path = input.output_dir.join(&relative);
         std::fs::write(&artifact_path, bytes).map_err(|e| format!("写入 CLR 产物失败：{}: {e}", artifact_path.display()))?;
+
+        if library_with_entry_point {
+            write_dotnet_runtime_config(&input.output_dir, &options.artifact_name)?;
+        }
 
         let mut artifacts = ArtifactSet::default();
         artifacts.push(ArtifactDescriptor {

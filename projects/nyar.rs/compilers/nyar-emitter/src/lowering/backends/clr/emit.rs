@@ -11,17 +11,21 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
+    FragmentSubmission, Result,
     backend_plan_views::{
-        ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction, ExecutableInstruction as MirInstruction,
-        ExecutableValueRef as MirValueRef, NyarType,
+        ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction,
+        ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, NyarType,
     },
     contracts::{Constant, InstructionKind, Operand, Terminator},
     lowering::shared::executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
-    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
-    transitional::msil::{
-        MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilMethodSignature, MsilModule, MsilOpcode, MsilType,
+    managed_abi::{ManagedAbiContract, ManagedAbiEntry},
+    target_operator::{
+        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
     },
-    FragmentSubmission, Result,
+    transitional::msil::{
+        MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilMethodSignature, MsilModule, MsilOpcode,
+        MsilType,
+    },
 };
 use nyar_types::ItemInstanceId;
 
@@ -73,12 +77,21 @@ struct ClrMethodPlan {
     signature: MsilMethodSignature,
 }
 
-/// 将片段降低为单个 `MSIL` 模块。
+/// CLR lowering 结果：`MSIL` 模块与导出入口的 managed ABI 契约。
+#[derive(Debug, Clone)]
+pub(crate) struct ClrLoweredFragment {
+    /// 片段 `MSIL` 模块。
+    pub module: MsilModule,
+    /// 导出入口 ABI 契约；没有可导出入口时为 `None`。
+    pub managed_abi: Option<ManagedAbiContract>,
+}
+
+/// 将片段降低为单个 `MSIL` 模块，并为导出入口合成 argv 分发入口。
 ///
 /// 只降低导出面（`wasm_export_names` / `exported_operations` / 入口操作）以及
 /// 从它们出发、经同片段静态调用可达的函数；其余函数不进入模块，避免为不可达
 /// 形状发明载体。
-pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<MsilModule> {
+pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<ClrLoweredFragment> {
     let plan = &submission.backend_plan;
     let operations = collect_clr_operations(submission);
     if operations.is_empty() {
@@ -88,9 +101,7 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
     let mut used_names = BTreeMap::<String, ()>::new();
     let mut method_plans = BTreeMap::<ItemInstanceId, ClrMethodPlan>::new();
     for (ordinal, instance) in operations.iter().enumerate() {
-        let view = plan
-            .get_function(instance)
-            .ok_or_else(|| format!("CLR 最小 lowering：可达操作 `{instance:?}` 缺少函数体"))?;
+        let view = plan.get_function(instance).ok_or_else(|| format!("CLR 最小 lowering：可达操作 `{instance:?}` 缺少函数体"))?;
         let base = plan
             .wasm_export_names()
             .get(instance)
@@ -111,10 +122,7 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
     let operator_by_instance = external_operator_by_instance(submission);
     let entry_operation = plan.entry_operation();
     let mut module = MsilModule {
-        assembly: MsilAssembly {
-            name: crate::lowering::sanitize_symbol(plan.module_name()),
-            externs: Vec::new(),
-        },
+        assembly: MsilAssembly { name: crate::lowering::sanitize_symbol(plan.module_name()), externs: Vec::new() },
         types: Vec::new(),
         global_methods: Vec::new(),
     };
@@ -123,10 +131,7 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
         else {
             continue;
         };
-        let method = method_plans
-            .get(instance)
-            .cloned()
-            .ok_or_else(|| format!("CLR 最小 lowering：可达操作 `{instance:?}` 缺少方法计划"))?;
+        let method = method_plans.get(instance).cloned().ok_or_else(|| format!("CLR 最小 lowering：可达操作 `{instance:?}` 缺少方法计划"))?;
         module.global_methods.push(lower_function(
             submission,
             &view.function,
@@ -136,7 +141,217 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
             entry_operation == Some(*instance),
         )?);
     }
-    Ok(module)
+
+    let managed_abi = build_managed_abi_surface(&mut module, plan.wasm_export_names(), &method_plans)?;
+    Ok(ClrLoweredFragment { module, managed_abi })
+}
+
+/// 为导出入口生成 managed ABI 契约，并合成唯一的 argv 分发入口 `managed_entry`。
+///
+/// 每个导出入口必须已作为全局方法落库；参数/返回必须是 `i64` / `i32` / `f64` /
+/// `bool` / `void` 标量，其它载体返回结构化错误，不发明入口或默认值。
+fn build_managed_abi_surface(
+    module: &mut MsilModule,
+    export_names: &BTreeMap<ItemInstanceId, String>,
+    method_plans: &BTreeMap<ItemInstanceId, ClrMethodPlan>,
+) -> Result<Option<ManagedAbiContract>> {
+    if export_names.is_empty() {
+        return Ok(None);
+    }
+    if let Some(existing) = module.global_methods.iter().find(|method| method.is_entry_point) {
+        return Err(format!("CLR managed ABI：模块已有可执行入口 `{}`，拒绝再合成 `managed_entry` 造成双入口", existing.method.name));
+    }
+    if module.global_methods.iter().any(|method| method.method.name == MANAGED_ENTRY_METHOD) {
+        return Err(format!("CLR managed ABI：已有全局方法 `{MANAGED_ENTRY_METHOD}`，拒绝复用该名字"));
+    }
+
+    let mut entries = Vec::with_capacity(export_names.len());
+    let mut dispatch_targets = Vec::with_capacity(export_names.len());
+    for (instance, logical_entry) in export_names {
+        let method = method_plans
+            .get(instance)
+            .ok_or_else(|| format!("CLR managed ABI：导出入口 `{logical_entry}` 的实例 `{instance:?}` 没有已降低方法"))?;
+        let body = module
+            .global_methods
+            .iter()
+            .find(|candidate| candidate.method.name == method.name && candidate.method.signature == method.signature)
+            .ok_or_else(|| format!("CLR managed ABI：导出入口 `{logical_entry}` 的方法 `{}` 不在模块中", method.name))?;
+        let parameter_types = method.signature.parameter_types.iter().map(managed_scalar_type_name).collect::<Result<Vec<_>>>()?;
+        let return_type = managed_scalar_type_name(&method.signature.return_type)?;
+        entries.push(ManagedAbiEntry {
+            logical_entry: logical_entry.clone(),
+            owner: GLOBAL_METHODS_TYPE.to_string(),
+            method: method.name.clone(),
+            signature: method.signature.to_string(),
+            parameter_types: parameter_types.clone(),
+            return_type,
+            launcher_class: MANAGED_ENTRY_METHOD.to_string(),
+        });
+        dispatch_targets.push((
+            body.method.signature.clone(),
+            parameter_types.clone(),
+            managed_scalar_type_name(&method.signature.return_type)?,
+        ));
+    }
+
+    let entry_method = build_managed_entry_method(&entries, &dispatch_targets)?;
+    module.global_methods.push(entry_method);
+    // 产物文件名由驱动层最终确定；这里先留空，桥接层负责补全并刷新摘要。
+    Ok(Some(ManagedAbiContract::new("clr", String::new(), entries)))
+}
+
+/// CLI 分发入口名，同时作为 ABI 的 `launcher_class` 标识。
+const MANAGED_ENTRY_METHOD: &str = "managed_entry";
+
+/// PE 写入器为全局方法合成的类型名。
+const GLOBAL_METHODS_TYPE: &str = "_GlobalMethods";
+
+const SYSTEM_STRING: &str = "[mscorlib]System.String";
+const SYSTEM_INT64: &str = "[mscorlib]System.Int64";
+const SYSTEM_INT32: &str = "[mscorlib]System.Int32";
+const SYSTEM_DOUBLE: &str = "[mscorlib]System.Double";
+const SYSTEM_BOOLEAN: &str = "[mscorlib]System.Boolean";
+const SYSTEM_CONSOLE: &str = "[mscorlib]System.Console";
+
+/// managed ABI 只接受冻结的标量类型：`i64` / `i32` / `f64` / `bool` / `void`。
+fn managed_scalar_type_name(ty: &MsilType) -> Result<String> {
+    Ok(match ty {
+        MsilType::Int64 { signed: true } => "i64",
+        MsilType::Int32 { signed: true } => "i32",
+        MsilType::Float64 => "f64",
+        MsilType::Bool => "bool",
+        MsilType::Void => "void",
+        other => {
+            return Err(format!("CLR managed ABI 不支持类型 `{other}`：managed 标量只接受 `i64`/`i32`/`f64`/`bool`/`void`"));
+        }
+    }
+    .to_string())
+}
+
+/// 合成 `int32(string[])` argv 分发入口：`args[0]` 是逻辑入口名，其余按声明类型解析。
+fn build_managed_entry_method(
+    entries: &[ManagedAbiEntry],
+    dispatch_targets: &[(MsilMethodSignature, Vec<String>, String)],
+) -> Result<MsilMethodBody> {
+    let mut instructions = Vec::new();
+    for (index, (entry, (signature, parameter_types, return_type))) in entries.iter().zip(dispatch_targets).enumerate() {
+        let next_label = format!("managed_entry_next_{index}");
+        instructions.push(ldarg0());
+        instructions.push(ldc_i4_0());
+        instructions.push(opcode_instruction(MsilOpcode::LdelemRef));
+        instructions.push(msil_instruction(MsilOpcode::Ldstr, Some(MsilInstructionOperand::StringLiteral(entry.logical_entry.clone()))));
+        instructions.push(call_instruction(string_equality_reference()));
+        instructions.push(branch_instruction(MsilOpcode::Brfalse, next_label.clone()));
+
+        for (parameter_index, parameter_type) in parameter_types.iter().enumerate() {
+            instructions.push(ldarg0());
+            instructions
+                .push(msil_instruction(MsilOpcode::LdcI4, Some(MsilInstructionOperand::Integer(i64::from(parameter_index as u32) + 1))));
+            instructions.push(opcode_instruction(MsilOpcode::LdelemRef));
+            instructions.push(call_instruction(argument_parse_reference(parameter_type)?));
+        }
+        instructions.push(call_instruction(MsilMethodRef { owner: None, name: entry.method.clone(), signature: signature.clone() }));
+        if return_type != "void" {
+            instructions.push(call_instruction(result_print_reference(return_type)?));
+        }
+        instructions.push(ldc_i4_0());
+        instructions.push(opcode_instruction(MsilOpcode::Ret));
+        instructions.push(MsilInstruction { label: Some(next_label), opcode: MsilOpcode::Nop, operand: None });
+    }
+
+    instructions.push(msil_instruction(MsilOpcode::Ldstr, Some(MsilInstructionOperand::StringLiteral("unknown entry".to_string()))));
+    instructions.push(call_instruction(console_write_line_reference("string")?));
+    instructions.push(ldarg0());
+    instructions.push(ldc_i4_0());
+    instructions.push(opcode_instruction(MsilOpcode::LdelemRef));
+    instructions.push(call_instruction(console_write_line_reference("string")?));
+    instructions.push(msil_instruction(MsilOpcode::LdcI4, Some(MsilInstructionOperand::Integer(1))));
+    instructions.push(opcode_instruction(MsilOpcode::Ret));
+
+    let max_stack = dispatch_targets
+        .iter()
+        .map(|(_, parameter_types, _)| u16::try_from(parameter_types.len()).unwrap_or(u16::MAX))
+        .max()
+        .unwrap_or(0)
+        .saturating_add(2);
+    Ok(MsilMethodBody {
+        method: MsilMethodRef {
+            owner: None,
+            name: MANAGED_ENTRY_METHOD.to_string(),
+            signature: MsilMethodSignature::new(MsilType::Int32 { signed: true }, vec![MsilType::sz_array(MsilType::String)]),
+        },
+        locals: Vec::new(),
+        instructions,
+        max_stack,
+        is_entry_point: true,
+        is_async: false,
+    })
+}
+
+fn msil_instruction(opcode: MsilOpcode, operand: Option<MsilInstructionOperand>) -> MsilInstruction {
+    MsilInstruction { label: None, opcode, operand }
+}
+
+fn opcode_instruction(opcode: MsilOpcode) -> MsilInstruction {
+    msil_instruction(opcode, None)
+}
+
+fn ldarg0() -> MsilInstruction {
+    opcode_instruction(MsilOpcode::Ldarg0)
+}
+
+fn ldc_i4_0() -> MsilInstruction {
+    opcode_instruction(MsilOpcode::LdcI4_0)
+}
+
+fn call_instruction(method: MsilMethodRef) -> MsilInstruction {
+    msil_instruction(MsilOpcode::Call, Some(MsilInstructionOperand::Method(method)))
+}
+
+fn branch_instruction(opcode: MsilOpcode, target: String) -> MsilInstruction {
+    msil_instruction(opcode, Some(MsilInstructionOperand::BranchTarget(target)))
+}
+
+fn external_method(owner: &str, name: &str, return_type: MsilType, parameter_types: Vec<MsilType>) -> MsilMethodRef {
+    MsilMethodRef { owner: Some(owner.to_string()), name: name.to_string(), signature: MsilMethodSignature::new(return_type, parameter_types) }
+}
+
+fn string_equality_reference() -> MsilMethodRef {
+    external_method(SYSTEM_STRING, "op_Equality", MsilType::Bool, vec![MsilType::String, MsilType::String])
+}
+
+/// argv 解析调用：按声明标量类型选择 `Int64.Parse` / `Int32.Parse` /
+/// `Double.Parse` / `Boolean.Parse`。
+fn argument_parse_reference(managed_type: &str) -> Result<MsilMethodRef> {
+    let (owner, return_type) = match managed_type {
+        "i64" => (SYSTEM_INT64, MsilType::Int64 { signed: true }),
+        "i32" => (SYSTEM_INT32, MsilType::Int32 { signed: true }),
+        "f64" => (SYSTEM_DOUBLE, MsilType::Float64),
+        "bool" => (SYSTEM_BOOLEAN, MsilType::Bool),
+        other => return Err(format!("CLR managed ABI launcher 不支持形参标量 `{other}`")),
+    };
+    Ok(external_method(owner, "Parse", return_type, vec![MsilType::String]))
+}
+
+/// 结果输出调用：按返回值类型选择匹配的 `Console.WriteLine` 重载。
+fn result_print_reference(managed_type: &str) -> Result<MsilMethodRef> {
+    match managed_type {
+        "i64" | "i32" | "f64" | "bool" => console_write_line_reference(managed_type),
+        "void" => Err("CLR managed ABI launcher：`void` 结果不得生成输出调用".to_string()),
+        other => Err(format!("CLR managed ABI launcher 不支持返回标量 `{other}`")),
+    }
+}
+
+fn console_write_line_reference(managed_type: &str) -> Result<MsilMethodRef> {
+    let parameter_type = match managed_type {
+        "i64" => MsilType::Int64 { signed: true },
+        "i32" => MsilType::Int32 { signed: true },
+        "f64" => MsilType::Float64,
+        "bool" => MsilType::Bool,
+        "string" => MsilType::String,
+        other => return Err(format!("CLR managed ABI launcher 不支持 `Console.WriteLine` 载体 `{other}`")),
+    };
+    Ok(external_method(SYSTEM_CONSOLE, "WriteLine", MsilType::Void, vec![parameter_type]))
 }
 
 /// 从导出面出发收集可达操作（按实例身份升序，保证稳定输出顺序）。
@@ -191,16 +406,12 @@ fn external_operator_by_instance(submission: &FragmentSubmission) -> BTreeMap<It
 }
 
 fn function_signature(function: &MirFunction) -> Result<MsilMethodSignature> {
-    let entry = function
-        .blocks
-        .get(function.entry.0 as usize)
-        .ok_or_else(|| format!("CLR 最小 lowering：函数 `{}` 缺少入口块", function.symbol))?;
+    let entry =
+        function.blocks.get(function.entry.0 as usize).ok_or_else(|| format!("CLR 最小 lowering：函数 `{}` 缺少入口块", function.symbol))?;
     let mut parameter_types = Vec::with_capacity(entry.parameters.len());
     for parameter in &entry.parameters {
-        let ty = function
-            .value_types
-            .get(parameter)
-            .ok_or_else(|| format!("CLR 最小 lowering：函数 `{}` 入口形参缺少冻结类型", function.symbol))?;
+        let ty =
+            function.value_types.get(parameter).ok_or_else(|| format!("CLR 最小 lowering：函数 `{}` 入口形参缺少冻结类型", function.symbol))?;
         parameter_types.push(msil_parameter_type(ty)?);
     }
     Ok(MsilMethodSignature::new(msil_return_type(&function.return_type)?, parameter_types))
@@ -295,16 +506,22 @@ impl ClrMethodEmitter<'_> {
             .get(self.function.entry.0 as usize)
             .ok_or_else(|| format!("CLR 最小 lowering：函数 `{}` 缺少入口块", self.function.symbol))?;
         for index in 0..entry.parameters.len() {
-            let local = *self.slots.block_param_locals.get(&(self.function.entry, index)).ok_or_else(|| {
-                format!("CLR 最小 lowering：入口形参 {index} 缺少局部槽: function={}", self.function.symbol)
-            })?;
+            let local = *self
+                .slots
+                .block_param_locals
+                .get(&(self.function.entry, index))
+                .ok_or_else(|| format!("CLR 最小 lowering：入口形参 {index} 缺少局部槽: function={}", self.function.symbol))?;
             self.local_kind(local)?;
             self.instructions.push(MsilInstruction {
                 label: None,
                 opcode: MsilOpcode::Ldarg,
                 operand: Some(MsilInstructionOperand::Integer(index as i64)),
             });
-            self.instructions.push(MsilInstruction { label: None, opcode: MsilOpcode::Stloc, operand: Some(MsilInstructionOperand::Integer(i64::from(local))) });
+            self.instructions.push(MsilInstruction {
+                label: None,
+                opcode: MsilOpcode::Stloc,
+                operand: Some(MsilInstructionOperand::Integer(i64::from(local))),
+            });
         }
         Ok(())
     }
@@ -354,11 +571,7 @@ impl ClrMethodEmitter<'_> {
                 self.emit_call(callee, arguments, output)?;
             }
             other => {
-                return Err(format!(
-                    "CLR 最小 lowering 尚不支持指令 `{}`：function={}",
-                    instruction_kind_name(other),
-                    self.function.symbol
-                ));
+                return Err(format!("CLR 最小 lowering 尚不支持指令 `{}`：function={}", instruction_kind_name(other), self.function.symbol));
             }
         }
         Ok(())
@@ -386,9 +599,11 @@ impl ClrMethodEmitter<'_> {
             Terminator::Jump { target, arguments } => {
                 let target_label = block_label(*target);
                 let (parameter_count, kinds) = {
-                    let target_block = self.function.blocks.get(target.0 as usize).ok_or_else(|| {
-                        format!("CLR 最小 lowering：函数 `{}` 跳转目标块 {:?} 不存在", self.function.symbol, target)
-                    })?;
+                    let target_block = self
+                        .function
+                        .blocks
+                        .get(target.0 as usize)
+                        .ok_or_else(|| format!("CLR 最小 lowering：函数 `{}` 跳转目标块 {:?} 不存在", self.function.symbol, target))?;
                     let kinds = target_block
                         .parameters
                         .iter()
@@ -417,9 +632,11 @@ impl ClrMethodEmitter<'_> {
                     self.emit_operand(argument, Some(*kind))?;
                 }
                 for index in (0..arguments.len()).rev() {
-                    let local = *self.slots.block_param_locals.get(&(*target, index)).ok_or_else(|| {
-                        format!("CLR 最小 lowering：跳转目标块 {:?} 形参 {index} 缺少局部槽", target)
-                    })?;
+                    let local = *self
+                        .slots
+                        .block_param_locals
+                        .get(&(*target, index))
+                        .ok_or_else(|| format!("CLR 最小 lowering：跳转目标块 {:?} 形参 {index} 缺少局部槽", target))?;
                     self.store_local(local);
                 }
                 self.push_branch(MsilOpcode::Br, target_label);
@@ -469,10 +686,7 @@ impl ClrMethodEmitter<'_> {
         }
         let Some(method) = self.method_plans.get(instance).cloned()
         else {
-            return Err(format!(
-                "CLR 最小 lowering：同片段调用目标 `{instance:?}` 不在可达方法集中: function={}",
-                self.function.symbol
-            ));
+            return Err(format!("CLR 最小 lowering：同片段调用目标 `{instance:?}` 不在可达方法集中: function={}", self.function.symbol));
         };
         let parameter_kinds = method.signature.parameter_types.iter().map(ClrValueKind::of_msil_type).collect::<Result<Vec<_>>>()?;
         if arguments.len() != parameter_kinds.len() {
@@ -509,17 +723,11 @@ impl ClrMethodEmitter<'_> {
     ) -> Result<()> {
         let TargetOperatorBinding::Frozen(plan) = binding
         else {
-            return Err(format!(
-                "CLR 目标 `clr_operator` 绑定缺少可编码助记符 `{mnemonic}`: function={}",
-                self.function.symbol
-            ));
+            return Err(format!("CLR 目标 `clr_operator` 绑定缺少可编码助记符 `{mnemonic}`: function={}", self.function.symbol));
         };
         let TargetOperatorEncoding::Clr(opcode) = plan.encoding
         else {
-            return Err(format!(
-                "CLR 目标 `clr_operator` 绑定 `{mnemonic}` 冻结了非 CLR 编码: function={}",
-                self.function.symbol
-            ));
+            return Err(format!("CLR 目标 `clr_operator` 绑定 `{mnemonic}` 冻结了非 CLR 编码: function={}", self.function.symbol));
         };
         if arguments.len() != plan.arity {
             return Err(format!(
@@ -604,10 +812,7 @@ impl ClrMethodEmitter<'_> {
     fn store_call_result(&mut self, method: &ClrMethodPlan, output: Option<(u16, ClrValueKind)>) -> Result<()> {
         if method.signature.return_type == MsilType::Void {
             if output.is_some() {
-                return Err(format!(
-                    "CLR 最小 lowering：void 调用 `{}` 不得绑定结果槽: function={}",
-                    method.name, self.function.symbol
-                ));
+                return Err(format!("CLR 最小 lowering：void 调用 `{}` 不得绑定结果槽: function={}", method.name, self.function.symbol));
             }
             return Ok(());
         }
@@ -647,10 +852,9 @@ impl ClrMethodEmitter<'_> {
             }
             Operand::Constant(constant) => self.emit_constant(constant, expected),
             Operand::Symbol(path) => Err(format!("CLR 最小 lowering 不支持符号操作数 `{path:?}`: function={}", self.function.symbol)),
-            Operand::Item(instance) => Err(format!(
-                "CLR 最小 lowering 不支持把可调用身份 `{instance:?}` 当值使用: function={}",
-                self.function.symbol
-            )),
+            Operand::Item(instance) => {
+                Err(format!("CLR 最小 lowering 不支持把可调用身份 `{instance:?}` 当值使用: function={}", self.function.symbol))
+            }
         }
     }
 
@@ -694,10 +898,7 @@ impl ClrMethodEmitter<'_> {
                     self.function.symbol
                 )),
                 Some(other) => Err(format!("CLR 最小 lowering：f64 常量不能进入 {other:?} 槽: function={}", self.function.symbol)),
-                None => Err(format!(
-                    "CLR 最小 lowering：f64 常量缺少明确的 `float64` 结果槽，拒绝猜测载体: function={}",
-                    self.function.symbol
-                )),
+                None => Err(format!("CLR 最小 lowering：f64 常量缺少明确的 `float64` 结果槽，拒绝猜测载体: function={}", self.function.symbol)),
             },
             Constant::Bool(value) => {
                 if !matches!(expected, Some(ClrValueKind::Int32) | None) {
@@ -717,19 +918,12 @@ impl ClrMethodEmitter<'_> {
                 }
                 Some(other) => Err(format!("CLR 最小 lowering：字符串常量不能进入 {other:?} 槽: function={}", self.function.symbol)),
             },
-            other => Err(format!(
-                "CLR 最小 lowering 尚不支持常量 `{other:?}`：缺少 CLR 常量载体合同，function={}",
-                self.function.symbol
-            )),
+            other => Err(format!("CLR 最小 lowering 尚不支持常量 `{other:?}`：缺少 CLR 常量载体合同，function={}", self.function.symbol)),
         }
     }
 
     fn push_integer_constant(&mut self, value: i64, opcode: MsilOpcode) {
-        self.instructions.push(MsilInstruction {
-            label: None,
-            opcode,
-            operand: Some(MsilInstructionOperand::Integer(value)),
-        });
+        self.instructions.push(MsilInstruction { label: None, opcode, operand: Some(MsilInstructionOperand::Integer(value)) });
     }
 
     fn load_local(&mut self, slot: u16) {
@@ -768,15 +962,16 @@ impl ClrMethodEmitter<'_> {
     }
 
     fn require_output(&self, instruction: &MirInstruction) -> Result<(u16, ClrValueKind)> {
-        self.output_of(instruction)?.ok_or_else(|| {
-            format!("CLR 最小 lowering：指令缺少 SSA 结果槽，无法确定局部载体: function={}", self.function.symbol)
-        })
+        self.output_of(instruction)?
+            .ok_or_else(|| format!("CLR 最小 lowering：指令缺少 SSA 结果槽，无法确定局部载体: function={}", self.function.symbol))
     }
 
     fn value_slot(&self, value: MirValueRef) -> Result<(u16, ClrValueKind)> {
-        let local = *self.slots.value_locals.get(&value).ok_or_else(|| {
-            format!("CLR 最小 lowering：SSA 值 {:?} 缺少规划的局部槽: function={}", value, self.function.symbol)
-        })?;
+        let local = *self
+            .slots
+            .value_locals
+            .get(&value)
+            .ok_or_else(|| format!("CLR 最小 lowering：SSA 值 {:?} 缺少规划的局部槽: function={}", value, self.function.symbol))?;
         Ok((local, self.local_kind(local)?))
     }
 

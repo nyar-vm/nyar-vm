@@ -17,7 +17,7 @@ pub(super) fn supports_requirement(requirement: &PartitionBackendRequirement) ->
 
 impl BundledBackendCompiler for ClrFamilyCompiler {
     fn compile(&self, request: DriverCompileRequest<'_>) -> Result<DriverCompileReport> {
-        let DriverBackendInput::Clr(input) = request.input
+        let DriverBackendInput::Clr(mut input) = request.input
         else {
             return Err(format!("`CLR` 家族请求必须携带 `ClrBinaryBackendInput`"));
         };
@@ -35,21 +35,48 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
             return Err(format!("`CLR` 后端输入宿主与规划需求不一致：requirement={:?}", requirement.host_boundary));
         }
         let has_entry_point = input.module.global_methods.iter().any(|method| method.is_entry_point);
+        let provided_contracts = std::mem::take(&mut input.run_contracts);
+        let mut managed_abi = input.managed_abi.take();
+        // 库导出面自带合成入口点，产物必须保持 `.dll`；无导出时按入口点推断镜像口味。
+        if managed_abi.is_some() && input.image_kind.is_none() {
+            input.image_kind = Some(nyar::backends::clr::ClrImageKind::DynamicLibrary);
+        }
+        let image_kind = input.image_kind.unwrap_or_else(|| nyar::backends::clr::ClrImageKind::infer(has_entry_point));
+        let artifact_file = format!("{}.{}", request.artifact_name, image_kind.file_extension());
+        if let Some(contract) = managed_abi.as_mut() {
+            // 产物文件名由驱动层决定；契约摘要必须覆盖最终文件名。
+            contract.set_artifact(artifact_file.clone());
+        }
         let backend = ClrBinaryBackend::new();
         backend.validate(&input)?;
         let artifacts = backend.compile(input, request.options)?;
-        // 无入口点的库镜像没有可执行入口合同；只有可执行镜像才提供 `dotnet exec` 合同。
-        let run_contracts = if has_entry_point {
+        // managed ABI 入口逐个提供 argv 分发合同；无导出时才回退到单一 `main` 入口。
+        let run_contracts = if !provided_contracts.is_empty() {
+            provided_contracts
+        }
+        else if let Some(contract) = &managed_abi {
+            contract
+                .entries
+                .iter()
+                .map(|entry| DriverRunContract {
+                    logical_entry: entry.logical_entry.clone(),
+                    physical_entry: artifact_file.clone(),
+                    invocation: "dotnet".to_string(),
+                    validate: format!("dotnet exec {} {}", artifact_file, entry.logical_entry),
+                })
+                .collect()
+        }
+        else if has_entry_point {
             vec![DriverRunContract {
                 logical_entry: "main".to_string(),
-                physical_entry: format!("{}.exe", request.artifact_name),
+                physical_entry: artifact_file.clone(),
                 invocation: "dotnet".to_string(),
-                validate: format!("dotnet exec {}.exe", request.artifact_name),
+                validate: format!("dotnet exec {}", artifact_file),
             }]
         }
         else {
             Vec::new()
         };
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi: None })
+        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi })
     }
 }
