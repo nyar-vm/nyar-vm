@@ -11,7 +11,7 @@
 //! 上需要 `ceq + not` 之类的序列配方，补齐前不在本表，禁止猜默认指令。
 
 use crate::{
-    target_operator::{TargetOperandType, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::msil::MsilOpcode,
 };
 
@@ -35,6 +35,20 @@ const fn unary(operand_type: TargetOperandType, opcode: MsilOpcode) -> TargetOpe
     }
 }
 
+/// `i64` 移位：MSIL `shl`/`shr` 的位移量操作数必须是 `int32`；声明签名携带 `i64`
+/// 位移量，截窄（`conv.i4`）由冻结配方显式给出，emit 只机械执行。
+const I64_SHIFT_STEPS: &[TargetOperandStep] = &[TargetOperandStep::Arguments, TargetOperandStep::NarrowTopI64ToI32];
+
+const fn i64_shift(steps: &'static [TargetOperandStep], opcode: MsilOpcode) -> TargetOperatorPlan {
+    TargetOperatorPlan {
+        arity: 2,
+        operand_type: TargetOperandType::I64,
+        result_type: TargetOperandType::I64,
+        recipe: TargetOperatorRecipe::Steps(steps),
+        encoding: TargetOperatorEncoding::Clr(opcode),
+    }
+}
+
 /// 唯一助记符表。未知助记符返回 `None`。
 pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
     Some(match mnemonic {
@@ -52,6 +66,13 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "i64.div" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Div),
         "i64.rem" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Rem),
         "i64.neg" => unary(TargetOperandType::I64, MsilOpcode::Neg),
+        // int64 位运算：MSIL 单 opcode，载体无关。
+        "i64.and" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::And),
+        "i64.or" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Or),
+        "i64.xor" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Xor),
+        // int64 移位：位移量按冻结配方先 `conv.i4` 截窄，再执行 `shl`/`shr`。
+        "i64.shl" => i64_shift(I64_SHIFT_STEPS, MsilOpcode::Shl),
+        "i64.shr" => i64_shift(I64_SHIFT_STEPS, MsilOpcode::Shr),
         // float64 算术：MSIL `neg` 对浮点保留 -0.0，与语义一致。
         "f64.add" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Add),
         "f64.sub" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Sub),

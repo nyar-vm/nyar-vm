@@ -48,6 +48,16 @@ pub enum HostOp {
     I64Gt,
     /// 64 位有符号大于等于比较。
     I64Ge,
+    /// 64 位按位与。
+    I64And,
+    /// 64 位按位或。
+    I64Or,
+    /// 64 位按位异或。
+    I64Xor,
+    /// 64 位左移（位移量按 `& 63` 截断，与 wasm/JVM/MSIL 掩码语义一致）。
+    I64Shl,
+    /// 64 位算术右移（位移量按 `& 63` 截断，与 wasm `i64.shr_s`/JVM `lshr`/MSIL `shr` 一致）。
+    I64Shr,
     /// 布尔取反。
     BoolNot,
     /// 布尔与。
@@ -109,6 +119,11 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "i64_le" => HostOp::I64Le,
         "i64_gt" => HostOp::I64Gt,
         "i64_ge" => HostOp::I64Ge,
+        "i64_and" => HostOp::I64And,
+        "i64_or" => HostOp::I64Or,
+        "i64_xor" => HostOp::I64Xor,
+        "i64_shl" => HostOp::I64Shl,
+        "i64_shr" => HostOp::I64Shr,
         "bool_not" => HostOp::BoolNot,
         "bool_and" => HostOp::BoolAnd,
         "bool_or" => HostOp::BoolOr,
@@ -225,6 +240,11 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::I64Le => Ok(Value::Bool(i64_arg(args, 0)? <= i64_arg(args, 1)?)),
         HostOp::I64Gt => Ok(Value::Bool(i64_arg(args, 0)? > i64_arg(args, 1)?)),
         HostOp::I64Ge => Ok(Value::Bool(i64_arg(args, 0)? >= i64_arg(args, 1)?)),
+        HostOp::I64And => Ok(Value::I64(i64_arg(args, 0)? & i64_arg(args, 1)?)),
+        HostOp::I64Or => Ok(Value::I64(i64_arg(args, 0)? | i64_arg(args, 1)?)),
+        HostOp::I64Xor => Ok(Value::I64(i64_arg(args, 0)? ^ i64_arg(args, 1)?)),
+        HostOp::I64Shl => Ok(Value::I64(i64_arg(args, 0)? << (i64_arg(args, 1)? & 63) as u32)),
+        HostOp::I64Shr => Ok(Value::I64(i64_arg(args, 0)? >> (i64_arg(args, 1)? & 63) as u32)),
         HostOp::BoolNot => Ok(Value::Bool(!args.first().map(Value::to_bool).unwrap_or(false))),
         HostOp::BoolAnd => {
             Ok(Value::Bool(args.first().map(Value::to_bool).unwrap_or(false) && args.get(1).map(Value::to_bool).unwrap_or(false)))

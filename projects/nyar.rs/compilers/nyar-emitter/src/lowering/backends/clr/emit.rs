@@ -561,6 +561,7 @@ impl ClrMethodEmitter<'_> {
                 for step in steps {
                     match step {
                         TargetOperandStep::Arguments => self.emit_operator_arguments(mnemonic, expected_kind, arguments)?,
+                        TargetOperandStep::NarrowTopI64ToI32 => self.push_opcode(MsilOpcode::ConvI4),
                         TargetOperandStep::IntegerConstant { operand_type, value } => {
                             let kind = ClrValueKind::of_operand_type(*operand_type);
                             if kind != expected_kind {

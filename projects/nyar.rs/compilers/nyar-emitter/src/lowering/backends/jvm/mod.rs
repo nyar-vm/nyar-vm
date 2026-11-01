@@ -42,6 +42,16 @@ pub enum JvmOperatorCode {
     LongRemainder,
     /// JVM `lneg`：long 取负。
     LongNegate,
+    /// JVM `land`：long 按位与。
+    LongBitAnd,
+    /// JVM `lor`：long 按位或。
+    LongBitOr,
+    /// JVM `lxor`：long 按位异或。
+    LongBitXor,
+    /// JVM `lshl`：long 左移（位移量 `int`，截窄由冻结配方显式给出）。
+    LongShiftLeft,
+    /// JVM `lshr`：long 算术右移（位移量 `int`，截窄由冻结配方显式给出）。
+    LongShiftRight,
     /// JVM `dadd`：double 加法。
     DoubleAdd,
     /// JVM `dsub`：double 减法。
@@ -92,6 +102,11 @@ impl JvmOperatorCode {
             Self::LongDivide => JvmInstruction::LDiv,
             Self::LongRemainder => JvmInstruction::LRem,
             Self::LongNegate => JvmInstruction::LNeg,
+            Self::LongBitAnd => JvmInstruction::LAnd,
+            Self::LongBitOr => JvmInstruction::LOr,
+            Self::LongBitXor => JvmInstruction::LXor,
+            Self::LongShiftLeft => JvmInstruction::LShl,
+            Self::LongShiftRight => JvmInstruction::LShr,
             Self::DoubleAdd => JvmInstruction::DAdd,
             Self::DoubleSubtract => JvmInstruction::DSub,
             Self::DoubleMultiply => JvmInstruction::DMul,

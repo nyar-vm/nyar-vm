@@ -408,7 +408,8 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return Ok(false);
         };
-        let TargetOperatorBinding::Frozen(plan) = binding else {
+        let TargetOperatorBinding::Frozen(plan) = binding
+        else {
             if let TargetOperatorBinding::FrozenWasmGcArray(array_plan) = binding {
                 return self.try_emit_wasm_gc_array_operator(mnemonic, *array_plan, arguments, output, instance).map(|()| true);
             }
@@ -479,8 +480,7 @@ impl<'a> WasmMirLowerer<'a> {
                 else {
                     return Err(format!(
                         "WASM `wasm_operator` 数组绑定 `{mnemonic}` 的结果槽缺少堆数组类型事实: callee={instance:?} function={} output=%{}",
-                        self.mir_fn.symbol,
-                        output.0
+                        self.mir_fn.symbol, output.0
                     ));
                 };
                 self.emit_array_new_default_ops(&element_type, &arguments[0], output)
@@ -505,6 +505,7 @@ impl<'a> WasmMirLowerer<'a> {
         for step in steps {
             match step {
                 TargetOperandStep::Arguments => self.emit_wasm_operator_operands(mnemonic, expected, arguments),
+                TargetOperandStep::NarrowTopI64ToI32 => WasmOpcode::I32WrapI64.encode(&mut self.code),
                 TargetOperandStep::IntegerConstant { operand_type, value } => {
                     let carrier = wasm_stack_type(*operand_type);
                     if carrier != expected {

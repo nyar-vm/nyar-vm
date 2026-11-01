@@ -26,6 +26,8 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
     &[TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value: 0 }, TargetOperandStep::Arguments];
 const I64_NEGATE_STEPS: &[TargetOperandStep] =
     &[TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I64, value: 0 }, TargetOperandStep::Arguments];
+/// `i64` 移位的位移量在 wasm 上是 `i32` 操作数：计划显式冻结「发射全部实参后截窄栈顶」。
+const I64_SHIFT_STEPS: &[TargetOperandStep] = &[TargetOperandStep::Arguments, TargetOperandStep::NarrowTopI64ToI32];
 
 const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: u8) -> TargetOperatorPlan {
     TargetOperatorPlan {
@@ -43,6 +45,17 @@ const fn unary(operand_type: TargetOperandType, opcode: u8) -> TargetOperatorPla
         operand_type,
         result_type: operand_type,
         recipe: TargetOperatorRecipe::Operands,
+        encoding: TargetOperatorEncoding::Wasm(opcode),
+    }
+}
+
+/// `i64` 移位：实参按声明签名（双 `i64`）发射，位移量由冻结配方截窄为 `i32` 后再执行 opcode。
+const fn i64_shift(steps: &'static [TargetOperandStep], opcode: u8) -> TargetOperatorPlan {
+    TargetOperatorPlan {
+        arity: 2,
+        operand_type: TargetOperandType::I64,
+        result_type: TargetOperandType::I64,
+        recipe: TargetOperatorRecipe::Steps(steps),
         encoding: TargetOperatorEncoding::Wasm(opcode),
     }
 }
@@ -99,9 +112,9 @@ pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetOperat
         "i64.and" => binary(TargetOperandType::I64, TargetOperandType::I64, 0x83),
         "i64.or" => binary(TargetOperandType::I64, TargetOperandType::I64, 0x84),
         "i64.xor" => binary(TargetOperandType::I64, TargetOperandType::I64, 0x85),
-        "i64.shl" => binary(TargetOperandType::I64, TargetOperandType::I64, 0x86),
-        "i64.shr_s" => binary(TargetOperandType::I64, TargetOperandType::I64, 0x87),
-        "i64.shr_u" => binary(TargetOperandType::I64, TargetOperandType::I64, 0x88),
+        "i64.shl" => i64_shift(I64_SHIFT_STEPS, 0x86),
+        "i64.shr_s" => i64_shift(I64_SHIFT_STEPS, 0x87),
+        "i64.shr_u" => i64_shift(I64_SHIFT_STEPS, 0x88),
         // i64 比较：结果固定为 i32（0/1）。
         "i64.eq" => binary(TargetOperandType::I64, TargetOperandType::I32, 0x51),
         "i64.ne" => binary(TargetOperandType::I64, TargetOperandType::I32, 0x52),

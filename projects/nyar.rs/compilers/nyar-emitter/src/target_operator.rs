@@ -35,6 +35,12 @@ pub enum TargetOperandStep {
         /// 常量值。
         value: i32,
     },
+    /// 把栈顶 `i64` 截窄为目标原生的 `i32` 载体（`i32.wrap_i64` / `l2i` / `conv.i4`）。
+    ///
+    /// 移位类 operator 的冻结合同：目标指令的位移量操作数必须是 `i32`，而声明
+    /// 签名携带 `i64` 位移量；截窄是计划显式冻结的发射步骤，backend 只机械执行，
+    /// 不得按助记符推断是否需要截窄。
+    NarrowTopI64ToI32,
 }
 
 /// 已冻结的 operator 发射配方。

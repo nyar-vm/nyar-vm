@@ -741,6 +741,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                                     self.mir_fn.symbol
                                 ));
                             }
+                            TargetOperandStep::NarrowTopI64ToI32 => {
+                                return Err(format!(
+                                    "Nyar 目标 `ovm_operator` 绑定 `{mnemonic}` 冻结了 i64→i32 截窄配方，OVM 没有 i64 载体可截窄: callee=`{callee_name}` function=`{}`",
+                                    self.mir_fn.symbol
+                                ));
+                            }
                         }
                     }
                     self.emitter.emit_plain(code);

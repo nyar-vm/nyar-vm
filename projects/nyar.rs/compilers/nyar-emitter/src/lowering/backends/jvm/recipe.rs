@@ -13,7 +13,7 @@
 //! 声明该 provider，避免静默错误语义。
 
 use super::JvmOperatorCode;
-use crate::target_operator::{TargetOperandType, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe};
+use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe};
 
 const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, code: JvmOperatorCode) -> TargetOperatorPlan {
     TargetOperatorPlan {
@@ -35,6 +35,20 @@ const fn unary(operand_type: TargetOperandType, code: JvmOperatorCode) -> Target
     }
 }
 
+/// `long` 移位：JVM `lshl`/`lshr` 的位移量操作数必须是 `int`；声明签名携带 `i64`
+/// 位移量，截窄（`l2i`）由冻结配方显式给出，emit 只机械执行。
+const LONG_SHIFT_STEPS: &[TargetOperandStep] = &[TargetOperandStep::Arguments, TargetOperandStep::NarrowTopI64ToI32];
+
+const fn long_shift(steps: &'static [TargetOperandStep], code: JvmOperatorCode) -> TargetOperatorPlan {
+    TargetOperatorPlan {
+        arity: 2,
+        operand_type: TargetOperandType::I64,
+        result_type: TargetOperandType::I64,
+        recipe: TargetOperatorRecipe::Steps(steps),
+        encoding: TargetOperatorEncoding::Jvm(code),
+    }
+}
+
 /// 唯一 operator 配方表。未知名字返回 `None`。
 pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetOperatorPlan> {
     Some(match operator_name {
@@ -52,6 +66,13 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         "long.divide" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongDivide),
         "long.remainder" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongRemainder),
         "long.negate" => unary(TargetOperandType::I64, JvmOperatorCode::LongNegate),
+        // long 位运算：JVM 单指令（`land`/`lor`/`lxor`）。
+        "long.and" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongBitAnd),
+        "long.or" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongBitOr),
+        "long.xor" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongBitXor),
+        // long 移位：位移量按冻结配方先 `l2i` 截窄，再执行 `lshl`/`lshr`。
+        "long.shift_left" => long_shift(LONG_SHIFT_STEPS, JvmOperatorCode::LongShiftLeft),
+        "long.shift_right" => long_shift(LONG_SHIFT_STEPS, JvmOperatorCode::LongShiftRight),
         // double 算术：JVM 单指令（无 `dneg`，见模块头说明）。
         "double.add" => binary(TargetOperandType::F64, TargetOperandType::F64, JvmOperatorCode::DoubleAdd),
         "double.subtract" => binary(TargetOperandType::F64, TargetOperandType::F64, JvmOperatorCode::DoubleSubtract),
