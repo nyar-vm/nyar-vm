@@ -34,7 +34,7 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
 
 /// `[ovm_operator("...")]` 目标助记符到**冻结配方**的唯一映射表。
 ///
-/// 只覆盖 `NyarHeadCode` 已有的 i32 算术/比较变体；位运算、i64、浮点没有对应
+/// 只覆盖 `NyarHeadCode` 已有的 i32 算术/位运算/比较变体；i64、浮点没有对应
 /// 单指令，必须保持宿主导入路径（由 runtime `parse_host_op` 决定是否存在）。
 /// 映射在 `TargetExecutionPlan` 构造时写入计划；未知助记符返回 `None`，由计划
 /// 冻结为 `TargetOperatorBinding::Unfrozen`，emit 结构化失败，禁止回落到宿主导入
@@ -46,6 +46,12 @@ pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "i32.mul" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Mul),
         "i32.div" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32DivS),
         "i32.rem" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32RemS),
+        "i32.and" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32And),
+        "i32.or" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Or),
+        "i32.xor" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Xor),
+        "i32.shl" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Shl),
+        "i32.shr_s" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32ShrS),
+        "i32.shr_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32ShrU),
         "i32.eq" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Eq),
         "i32.ne" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Ne),
         "i32.lt" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32LtS),

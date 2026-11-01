@@ -216,6 +216,44 @@ micro main() -> i64 {
     assert_eq!(call_import.operand2, 2, "CallImport argc 必须等于实参个数");
 }
 
+/// 位运算/移位助记符必须冻结为真实单指令，不得走宿主导入。
+#[test]
+fn i32_bitwise_operators_lower_to_vm_opcodes_without_host_import() {
+    for (mnemonic, provider, expected) in [
+        ("i32.and", "i32_and", OdinHeadCode::I32And),
+        ("i32.or", "i32_or", OdinHeadCode::I32Or),
+        ("i32.xor", "i32_xor", OdinHeadCode::I32Xor),
+        ("i32.shl", "i32_shl", OdinHeadCode::I32Shl),
+        ("i32.shr_s", "i32_shr_s", OdinHeadCode::I32ShrS),
+        ("i32.shr_u", "i32_shr_u", OdinHeadCode::I32ShrU),
+    ] {
+        let groups = numeric_groups(
+            r#"[primitive("std::primitive::i32")]
+structure i32 { }"#,
+            &format!(
+                r#"
+[host_contract]
+[ovm_operator("{mnemonic}")]
+micro {provider}(a: i32, b: i32): i32
+
+[main]
+micro main() -> i32 {{
+    return {provider}(6, 3)
+}}
+"#
+            ),
+        );
+        let module = lower_source_groups(&groups);
+        let codes = decoded_codes(&module);
+        assert!(codes.contains(&expected), "`{mnemonic}` 必须降低为 {expected:?} 指令，实际 {codes:?}");
+        assert!(
+            module.imports.iter().all(|import| import.symbol_name != provider && import.module_name != "nyar.host"),
+            "已内联的 `{provider}` 不得留下 nyar.host 导入: {:?}",
+            module.imports
+        );
+    }
+}
+
 /// `i32.neg` 在 ovm lane 同样按计划冻结的步骤发射：先 `Constant 0`，再 `I32Sub`，
 /// backend 不自行判断取负。
 #[test]
