@@ -20,9 +20,9 @@ pub(crate) mod shared;
 pub(crate) use self::features::pattern_matching_contract;
 
 #[cfg(not(feature = "ovm-lane"))]
-use self::backends::{jvm, wasm};
+use self::backends::{clr, jvm, wasm};
 #[cfg(feature = "ovm-lane")]
-use self::backends::{jvm, ovm, wasm};
+use self::backends::{clr, jvm, ovm, wasm};
 
 pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> Result<WasmBinaryModule> {
     backends::wasm::mir::lower_fragment_mir_to_wasm_module(submission, export_name).map(|(module, _)| module)
@@ -37,6 +37,10 @@ pub(crate) fn testing_lower_fragment_to_jvm_class(
     submission: &FragmentSubmission,
 ) -> Result<crate::nyar_backend_jvm::JvmClassFile> {
     jvm::emit::lower_fragment_to_jvm_class(submission)
+}
+
+pub(crate) fn testing_lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<crate::nyar_backend_clr::MsilModule> {
+    clr::emit::lower_fragment_to_clr_module(submission)
 }
 
 pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
@@ -117,6 +121,11 @@ pub fn lower_fragment_to_driver_input(
             output_dir,
             emit_class_file: false,
             companion_classes: Vec::new(),
+        })),
+        TargetBackendFamily::Clr => Ok(DriverBackendInput::Clr(crate::nyar_backend_clr::ClrBinaryBackendInput {
+            module: clr::emit::lower_fragment_to_clr_module(submission)?,
+            output_dir,
+            image_kind: None,
         })),
         other => Err(format!("目标 `{other:?}` 在当前构建中没有已启用的正式 lowering；拒绝切换目标或补造产物")),
     }

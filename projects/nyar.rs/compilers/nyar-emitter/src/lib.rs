@@ -126,6 +126,11 @@ pub mod testing {
         super::lowering::testing_lower_fragment_to_jvm_class(submission)
     }
 
+    /// Lower a fragment submission to a CLR MSIL module.
+    pub fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<super::nyar_backend_clr::MsilModule> {
+        super::lowering::testing_lower_fragment_to_clr_module(submission)
+    }
+
     /// Decode one WASM uleb128 integer (test helper for section parsing).
     pub fn decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
         super::lowering::testing_decode_wasm_uleb128(bytes, pos)
@@ -260,6 +265,7 @@ impl BundledBackendCapabilityDescriptor {
 
 const WASM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::WasmJsGlue, HostProjectionBoundary::WasiComponent];
 const JVM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Jvm];
+const CLR_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Clr];
 const NATIVE_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Native];
 #[cfg(feature = "ovm-lane")]
 const VM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Vm];
@@ -278,7 +284,18 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::StaticOnly,
         }),
-        TargetBackendFamily::Clr | TargetBackendFamily::Native => None,
+        TargetBackendFamily::Clr => Some(BundledBackendCapabilityDescriptor {
+            backend_family,
+            backend_name: "clr-binary",
+            interpreter: "clr.msil",
+            lane: TargetLane::Clr,
+            input_kind: Some(BackendInputKind::MsilText),
+            target_family: TargetFamily::Clr,
+            supported_host_boundaries: CLR_HOST_BOUNDARIES,
+            reference_management: ReferenceManagement::HostGc,
+            backend_route: BackendRoute::StaticOnly,
+        }),
+        TargetBackendFamily::Native => None,
         TargetBackendFamily::Wasm => Some(BundledBackendCapabilityDescriptor {
             backend_family,
             backend_name: "wasm-binary",

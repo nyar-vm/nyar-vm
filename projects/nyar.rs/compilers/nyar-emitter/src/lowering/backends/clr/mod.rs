@@ -7,3 +7,5 @@
 
 #[doc(hidden)]
 pub mod mir;
+
+pub(crate) mod emit;

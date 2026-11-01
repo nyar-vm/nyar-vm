@@ -3,6 +3,7 @@ use nyar::{BackendCandidate, BackendSelector, PartitionBackendRequirement};
 
 use crate::{DriverCompileReport, DriverCompileRequest};
 
+mod clr;
 mod jvm;
 #[cfg(feature = "ovm-lane")]
 #[doc(hidden)]
@@ -30,20 +31,23 @@ impl DriverCompilerRegistration {
     }
 }
 
+static CLR_COMPILER: clr::ClrFamilyCompiler = clr::ClrFamilyCompiler;
 static JVM_COMPILER: jvm::JvmFamilyCompiler = jvm::JvmFamilyCompiler;
 static WASM_COMPILER: wasm::WasmFamilyCompiler = wasm::WasmFamilyCompiler;
 #[cfg(feature = "ovm-lane")]
 static OVM_COMPILER: ovm::OvmFamilyCompiler = ovm::OvmFamilyCompiler;
 
 #[cfg(feature = "ovm-lane")]
-static DRIVER_COMPILERS: [DriverCompilerRegistration; 3] = [
+static DRIVER_COMPILERS: [DriverCompilerRegistration; 4] = [
+    DriverCompilerRegistration { name: "clr-binary", priority: 100, supports: clr::supports_requirement, compiler: &CLR_COMPILER },
     DriverCompilerRegistration { name: "jvm-jar", priority: 100, supports: jvm::supports_requirement, compiler: &JVM_COMPILER },
     DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
     DriverCompilerRegistration { name: "ovm", priority: 100, supports: ovm::supports_requirement, compiler: &OVM_COMPILER },
 ];
 
 #[cfg(not(feature = "ovm-lane"))]
-static DRIVER_COMPILERS: [DriverCompilerRegistration; 2] = [
+static DRIVER_COMPILERS: [DriverCompilerRegistration; 3] = [
+    DriverCompilerRegistration { name: "clr-binary", priority: 100, supports: clr::supports_requirement, compiler: &CLR_COMPILER },
     DriverCompilerRegistration { name: "jvm-jar", priority: 100, supports: jvm::supports_requirement, compiler: &JVM_COMPILER },
     DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
 ];
