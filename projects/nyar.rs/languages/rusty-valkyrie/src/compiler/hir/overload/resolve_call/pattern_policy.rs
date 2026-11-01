@@ -17,41 +17,6 @@ use crate::compiler::{
     },
 };
 
-use super::validate::{is_builtin_pattern_extractor, is_option_owner_type, is_result_owner_type};
-
-/// `Some` / `None` on `T | null` (and `Option<T>`) are built-in arms — not user extractors.
-pub(super) fn is_builtin_nullable_option_pattern(canonical_callee: &NamePath, actual_type: &ValkyrieType) -> bool {
-    let head = canonical_callee.parts().first().map(|p| p.as_str()).unwrap_or("");
-    if !matches!(head, "Some" | "None") {
-        return false;
-    }
-    crate::compiler::hir::is_nullable_type(actual_type) || is_option_owner_type(actual_type)
-}
-
-/// `Fine` / `Fail` are the language Result-unite arms. Concrete aliases
-/// (`VonParseResult`, `JvmBinaryResult`, …) still use those variant names, so
-/// accept Fine/Fail extractors for any Result-shaped apply (`Result<…>` or
-/// `*Result<…>`) rather than only the nominal `Result` constructor.
-pub(super) fn is_builtin_result_pattern(canonical_callee: &NamePath, actual_type: &ValkyrieType) -> bool {
-    let head = canonical_callee.parts().first().map(|p| p.as_str()).unwrap_or("");
-    if !matches!(head, "Fine" | "Fail") {
-        return false;
-    }
-    if crate::compiler::hir::is_result_apply_type(actual_type) || is_result_owner_type(actual_type) {
-        return true;
-    }
-    is_result_owner_type(actual_type)
-}
-
-/// `Text` / `Object` / … on `VonValue` are language VON unite arms (legion.tools manifest.v).
-pub(super) fn is_builtin_von_value_pattern(canonical_callee: &NamePath, actual_type: &ValkyrieType) -> bool {
-    let head = canonical_callee.parts().first().map(|p| p.as_str()).unwrap_or("");
-    if !matches!(head, "Text" | "Flag" | "Number" | "Name" | "Array" | "Object" | "Empty") {
-        return false;
-    }
-    matches!(actual_type, ValkyrieType::Named(name) if name.as_str() == "VonValue")
-}
-
 /// 当 pattern 名（`canonical_callee` 首段）是 scrutinee 类型的严格子类时，
 /// 该 pattern 为类型测试 pattern，不需要 extractor 方法。
 /// 同名类型（NominalExact）不算类型测试，仍需 extractor。
@@ -81,25 +46,12 @@ pub(super) fn diagnose_pattern_extractor_failure(
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
 ) -> Option<ParseError> {
-    if is_builtin_pattern_extractor(canonical_callee) {
-        return None;
-    }
-
     let type_name = render_valkyrie_type_name(actual_type);
     let extractor_name = canonical_callee.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join(".");
 
     let matching = matching_extractor_candidates(canonical_callee, actual_type, candidates, type_relations);
     if matching.is_empty() {
         if is_subtype_pattern(canonical_callee, actual_type, type_relations) {
-            return None;
-        }
-        if is_builtin_nullable_option_pattern(canonical_callee, actual_type) {
-            return None;
-        }
-        if is_builtin_result_pattern(canonical_callee, actual_type) {
-            return None;
-        }
-        if is_builtin_von_value_pattern(canonical_callee, actual_type) {
             return None;
         }
         return Some(ParseError::Invalid {
@@ -136,17 +88,7 @@ pub(super) fn diagnose_unresolved_extractor_without_scrutinee_type(
     canonical_callee: &NamePath,
     candidates: &[OverloadCandidate],
 ) -> Option<ParseError> {
-    let head = canonical_callee.parts().first().map(|p| p.as_str()).unwrap_or("");
-    if matches!(head, "Fine" | "Fail" | "Some" | "None") {
-        return Some(ParseError::Invalid {
-            message: format!("pattern extractor `{head}` 需要已解析的 scrutinee 类型，不能仅凭变体名放行"),
-            span: None,
-        });
-    }
-    if matches!(head, "Text" | "Flag" | "Number" | "Name" | "Array" | "Object" | "Empty") {
-        return None;
-    }
-    if matches!(canonical_callee.parts(), [owner, member] if owner.as_str() == head && member.as_str() == "extractor")
+    if matches!(canonical_callee.parts(), [_, member] if member.as_str() == "extractor")
         && candidates
             .iter()
             .any(|candidate| candidate.domain == OverloadDomain::Function && candidate_extractor_path_matches(canonical_callee, candidate))

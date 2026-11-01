@@ -266,10 +266,8 @@ fn validate_pattern_extractor_contract(
                             return Err(error);
                         }
                     }
-                    else if !is_builtin_pattern_extractor(canonical_callee) {
-                        if let Some(error) = diagnose_unresolved_extractor_without_scrutinee_type(canonical_callee, candidates) {
-                            return Err(error);
-                        }
+                    else if let Some(error) = diagnose_unresolved_extractor_without_scrutinee_type(canonical_callee, candidates) {
+                        return Err(error);
                     }
                 }
                 let field_scrutinee_types = resolved
@@ -289,10 +287,8 @@ fn validate_pattern_extractor_contract(
                             return Err(error);
                         }
                     }
-                    else if !is_builtin_pattern_extractor(canonical_callee) {
-                        if let Some(error) = diagnose_unresolved_extractor_without_scrutinee_type(canonical_callee, candidates) {
-                            return Err(error);
-                        }
+                    else if let Some(error) = diagnose_unresolved_extractor_without_scrutinee_type(canonical_callee, candidates) {
+                        return Err(error);
                     }
                 }
                 for item in prefix.iter().chain(suffix.iter()) {
@@ -317,13 +313,6 @@ fn validate_pattern_extractor_contract(
         _ => {}
     }
     Ok(())
-}
-
-pub(super) fn is_builtin_pattern_extractor(canonical_callee: &NamePath) -> bool {
-    matches!(
-        canonical_callee.parts(),
-        [owner, method] if owner.as_str() == "array" && method.as_str() == "extractor"
-    )
 }
 
 pub(super) fn is_option_owner_type(ty: &ValkyrieType) -> bool {

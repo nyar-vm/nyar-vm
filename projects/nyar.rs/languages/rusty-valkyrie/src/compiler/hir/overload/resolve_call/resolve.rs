@@ -30,10 +30,7 @@ use crate::compiler::{
     },
 };
 
-use super::{
-    pattern_policy::{is_builtin_nullable_option_pattern, is_builtin_result_pattern},
-    validate::{is_option_owner_type, is_result_owner_type},
-};
+use super::validate::{is_option_owner_type, is_result_owner_type};
 
 /// 对模块内全部 HIR 调用执行重载解析与绑定。
 pub fn resolve_hir_calls(module: &mut HirModule) {
@@ -646,9 +643,7 @@ fn resolve_pattern_calls(
                     if let Some(actual_type) = scrutinee_type {
                         let canonical_callee = canonical_extractor_callee(&name_path);
                         let resolved = try_resolve_pattern_extractor(&canonical_callee, actual_type, candidates, type_relations);
-                        let builtin = is_builtin_nullable_option_pattern(&canonical_callee, actual_type)
-                            || is_builtin_result_pattern(&canonical_callee, actual_type);
-                        if resolved.is_some() || builtin {
+                        if resolved.is_some() {
                             let extractor_fields = fields.iter().map(|(_, field)| field.clone()).collect::<Vec<_>>();
                             *pattern = HirPattern::Extractor(crate::compiler::types::hir::HirExtractorPattern::Constructor {
                                 name: name_path.clone(),
