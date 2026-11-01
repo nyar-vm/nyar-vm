@@ -2,9 +2,9 @@
 use super::*;
 
 impl<'a> WasmMirLowerer<'a> {
-    pub(super) fn emit_intrinsic_array_get(&mut self, arguments: &[MirOperand], output: Option<MirValueRef>) {
+    pub(super) fn emit_intrinsic_array_get(&mut self, arguments: &[MirOperand], output: Option<MirValueRef>) -> crate::Result<()> {
         if arguments.len() < 2 {
-            return;
+            return Ok(());
         }
         let element_type =
             self.infer_array_element_type(&arguments[0]).or_else(|| output.and_then(|value| self.mir_fn.value_types.get(&value).cloned()));
@@ -26,13 +26,15 @@ impl<'a> WasmMirLowerer<'a> {
             element_type.as_ref().map(|ty| wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref)).unwrap_or(VALTYPE_I32);
         // ?arraytype 时禁止先?receiver ?`ref.cast`：receiver 常为误分?i32?
         // 会触?`expected anyref, found i32`（func564 嵌套 ArrayGet）?
+        // 消费侧查不到已注册 arraytype 属于计划事实缺失（可执行合同不一致），
+        // 必须与 `Cast` 臂同款结构化失败返回 `Err`，禁止 panic 把编译期缺陷升级成崩溃。
         let Some(type_index) = type_index
         else {
-            panic!(
+            return Err(format!(
                 "WASM ArrayGet missing gc arraytype in `{}` (element={element_type:?}); \
                  RepresentationPlan must register arraytype — refusing runtime trap placeholders",
                 self.mir_fn.symbol
-            );
+            ));
         };
         self.emit_operand_coerced(&arguments[0], WASM_GC_ANYREF);
         self.emit_ref_cast_array_type(type_index);
@@ -52,22 +54,25 @@ impl<'a> WasmMirLowerer<'a> {
             self.validate_output_slot_type(output, element_stack_ty);
             self.assign_output_local(output);
         }
+        Ok(())
     }
 
-    pub(super) fn emit_intrinsic_array_set(&mut self, arguments: &[MirOperand], output: Option<MirValueRef>) {
+    pub(super) fn emit_intrinsic_array_set(&mut self, arguments: &[MirOperand], output: Option<MirValueRef>) -> crate::Result<()> {
         let _ = output;
         if arguments.len() < 3 {
-            return;
+            return Ok(());
         }
         let element_type = self.infer_array_element_type(&arguments[0]);
         let type_index = element_type.as_ref().and_then(|ty| self.resolve_gc_array_type_index(ty));
+        // 消费侧查不到已注册 arraytype 属于计划事实缺失（可执行合同不一致），
+        // 必须与 `Cast` 臂同款结构化失败返回 `Err`，禁止 panic 把编译期缺陷升级成崩溃。
         let Some(type_index) = type_index
         else {
-            panic!(
+            return Err(format!(
                 "WASM ArraySet missing gc arraytype in `{}` (element={element_type:?}); \
                  RepresentationPlan must register arraytype — refusing runtime trap placeholders",
                 self.mir_fn.symbol
-            );
+            ));
         };
         let element_stack_ty =
             element_type.as_ref().map(|ty| wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref)).unwrap_or(VALTYPE_I32);
@@ -76,5 +81,6 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_i32_operand(&arguments[1]);
         self.emit_operand_coerced(&arguments[2], element_stack_ty);
         self.emit_array_set(type_index);
+        Ok(())
     }
 }

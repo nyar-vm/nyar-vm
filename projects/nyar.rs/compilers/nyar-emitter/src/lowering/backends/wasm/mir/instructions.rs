@@ -416,17 +416,20 @@ impl<'a> WasmMirLowerer<'a> {
                 }
             }
             MirInstructionKind::FieldSet { object, field, value } => {
+                // 计划事实缺失（字段无 layout / gc struct 与对象槽表示冲突 / 对象槽无法定位）
+                // 属于可执行合同不一致，必须与 `Cast` 臂同款结构化失败返回 `Err`，
+                // 禁止 panic 把编译期缺陷升级成崩溃。
                 let Some(layout) = self.ctx.field_layout_by_id(*field).map(|(layout, _, _)| layout).cloned()
                 else {
-                    panic!("WASM FieldSet 缺少 layout in `{}`: field=`{field}`", self.mir_fn.symbol);
+                    return Err(format!("WASM FieldSet 缺少 layout in `{}`: field=`{field}`", self.mir_fn.symbol));
                 };
                 if self.layout_uses_gc_struct(&layout) {
                     let Some(object_local) = self.operand_reference_local(object)
                     else {
-                        panic!(
+                        return Err(format!(
                             "WASM FieldSet 计划不一致: layout `{}` 已注册 gc struct，但对象槽不是引用 (in `{}`)",
                             layout.name, self.mir_fn.symbol
-                        );
+                        ));
                     };
                     let Some((_, field_layout, field_index)) = self.ctx.field_layout_by_id(*field)
                     else {
@@ -450,14 +453,14 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_store_at_field(&field_layout);
                 }
                 else {
-                    panic!("WASM FieldSet 找不到对象槽 in `{}`: layout=`{}` field=`{field}`", self.mir_fn.symbol, layout.name);
+                    return Err(format!("WASM FieldSet 找不到对象槽 in `{}`: layout=`{}` field=`{field}`", self.mir_fn.symbol, layout.name));
                 }
             }
             MirInstructionKind::ArrayGet { array, index } => {
-                self.emit_intrinsic_array_get(&[array.clone(), index.clone()], instruction_primary_result(instruction));
+                self.emit_intrinsic_array_get(&[array.clone(), index.clone()], instruction_primary_result(instruction))?;
             }
             MirInstructionKind::ArraySet { array, index, value } => {
-                self.emit_intrinsic_array_set(&[array.clone(), index.clone(), value.clone()], instruction_primary_result(instruction));
+                self.emit_intrinsic_array_set(&[array.clone(), index.clone(), value.clone()], instruction_primary_result(instruction))?;
             }
             MirInstructionKind::ArrayLength { array } => {
                 self.emit_operand_coerced(array, WASM_GC_ANYREF);
