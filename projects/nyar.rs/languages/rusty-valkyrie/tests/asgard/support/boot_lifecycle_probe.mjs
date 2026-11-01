@@ -211,6 +211,7 @@ globalThis.fetch = async (url) => {
 };
 
 let exprCalls = 0;
+let observeCalls = 0;
 let probeSignalId = -1;
 globalThis.WebAssembly = {
   instantiate: async () => ({
@@ -219,6 +220,9 @@ globalThis.WebAssembly = {
         probeExpr: () => {
           exprCalls += 1;
           return globalThis.__voa.host['__voa.sigGetUtf8'](probeSignalId);
+        },
+        probeObserve: () => {
+          observeCalls += 1;
         },
       },
     },
@@ -250,6 +254,8 @@ globalThis.__voa.registerComponent('probe', (mountPoint) => {
   const handle = globalThis.__voa.storeDomHandle(input);
   globalThis.__voa.host['__voa.rxBindValueUtf8'](handle, 'probeExpr', signalId, -1);
   globalThis.__voa.host['__voa.domBindInputUtf8'](signalId, handle, '');
+  // `sigSubscribe` 与 `rxBindValueUtf8` 走同一激活期作用域；卸载后两条订阅都必须解绑。
+  globalThis.__voa.host['__voa.sigSubscribe'](signalId, String(signalId), 'probeObserve');
   mountPoint.appendChild(input);
   return mountPoint;
 });
@@ -259,12 +265,14 @@ assert.equal(host.__voaMounted, true, 'mount 必须标记挂载点');
 assert.equal(inputRef.listenerCount('input'), 1, 'mount 必须绑定 input 监听');
 assert.equal(inputRef.value, '', '初始信号应把输入框同步为空串');
 assert.equal(exprCalls, 1, '挂载时必须执行一次表达式');
+assert.equal(observeCalls, 1, '`sigSubscribe` 必须在挂载时激活一次');
 
 inputRef.value = 'hello';
 inputRef.dispatchEvent({ type: 'input' });
 assert.equal(inputRef.value, 'hello', 'input 事件必须写回信号并驱动 DOM 更新');
 assert.equal(globalThis.__voa.hostResolve(globalThis.__voa.host['__voa.sigGetUtf8'](probeSignalId)), 'hello', '信号必须保存输入值');
 assert.equal(exprCalls, 2, '信号变化必须触发一次订阅更新');
+assert.equal(observeCalls, 2, '`sigSubscribe` 必须随信号变化触发');
 
 const removed = globalThis.__voa.unmountIslands();
 assert.equal(removed, 1, 'unmount 必须报告卸载的挂载点数');
@@ -273,12 +281,14 @@ assert.equal(host.textContent, '', 'unmount 必须清空岛子树');
 assert.equal(inputRef.listenerCount('input'), 0, 'unmount 必须解绑 input 监听');
 
 const callsAfterUnmount = exprCalls;
+const observesAfterUnmount = observeCalls;
 inputRef.value = 'after-unmount';
 inputRef.dispatchEvent({ type: 'input' });
 assert.equal(globalThis.__voa.hostResolve(globalThis.__voa.host['__voa.sigGetUtf8'](probeSignalId)), 'hello', '卸载后的监听不得再写信号');
 globalThis.__voa.host['__voa.sigSetUtf8'](probeSignalId, 'mutated');
 assert.equal(globalThis.__voa.hostResolve(globalThis.__voa.host['__voa.sigGetUtf8'](probeSignalId)), 'mutated');
 assert.equal(exprCalls, callsAfterUnmount, '卸载后的订阅不得再执行表达式');
+assert.equal(observeCalls, observesAfterUnmount, '卸载后的 `sigSubscribe` 订阅不得再触发');
 globalThis.__voa.host['__voa.sigSetUtf8'](probeSignalId, 'hello');
 
 globalThis.__voa.mountIslands();
@@ -286,5 +296,6 @@ assert.equal(host.__voaMounted, true, '重挂载必须恢复挂载标记');
 assert.equal(inputRef.listenerCount('input'), 1, '重挂载必须重新绑定监听');
 assert.equal(inputRef.value, 'hello', '重挂载必须从当前信号恢复 DOM');
 assert.equal(exprCalls, callsAfterUnmount + 1, '重挂载必须重新计算一次表达式');
+assert.equal(observeCalls, observesAfterUnmount + 1, '重挂载必须重新激活 `sigSubscribe`');
 
 process.stdout.write('BOOT_LIFECYCLE_OK\n');
