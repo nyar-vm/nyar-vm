@@ -34,8 +34,14 @@ fn concrete_receiver_infix_ne_resolves_through_trait_impl() {
         .expect("具体类型接收者的 `infix !=` 必须经 `imply i64: Equal` 解析");
     let function = hir.functions.iter().find(|function| function.name.as_str() == "probe").expect("probe");
     let expression = function.body.expr.as_deref().expect("return 表达式");
-    let rusty_valkyrie::types::hir::HirExprKind::Return(Some(value)) = &expression.kind else { panic!("{expression:?}") };
-    let rusty_valkyrie::types::hir::HirExprKind::Call { resolved, .. } = &value.kind else { panic!("{value:?}") };
+    let rusty_valkyrie::types::hir::HirExprKind::Return(Some(value)) = &expression.kind
+    else {
+        panic!("{expression:?}")
+    };
+    let rusty_valkyrie::types::hir::HirExprKind::Call { resolved, .. } = &value.kind
+    else {
+        panic!("{value:?}")
+    };
     let resolved = resolved.as_ref().expect("infix != 必须解析");
     assert_eq!(resolved.symbol.to_string(), "i64.infix !=", "必须绑定到 i64 的 impl 成员");
 }
@@ -47,8 +53,14 @@ fn concrete_receiver_infix_eq_resolves_through_trait_impl() {
         .expect("具体类型接收者的 `infix ==` 必须经 `imply i64: Equal` 解析");
     let function = hir.functions.iter().find(|function| function.name.as_str() == "probe").expect("probe");
     let expression = function.body.expr.as_deref().expect("return 表达式");
-    let rusty_valkyrie::types::hir::HirExprKind::Return(Some(value)) = &expression.kind else { panic!("{expression:?}") };
-    let rusty_valkyrie::types::hir::HirExprKind::Call { resolved, .. } = &value.kind else { panic!("{value:?}") };
+    let rusty_valkyrie::types::hir::HirExprKind::Return(Some(value)) = &expression.kind
+    else {
+        panic!("{expression:?}")
+    };
+    let rusty_valkyrie::types::hir::HirExprKind::Call { resolved, .. } = &value.kind
+    else {
+        panic!("{value:?}")
+    };
     let resolved = resolved.as_ref().expect("infix == 必须解析");
     assert_eq!(resolved.symbol.to_string(), "i64.infix ==");
 }
@@ -73,8 +85,14 @@ fn concrete_receiver_plain_method_resolves_through_trait_impl() {
         .expect("具体类型接收者的普通方法必须经 `imply i64: Spin` 解析");
     let function = hir.functions.iter().find(|function| function.name.as_str() == "probe").expect("probe");
     let expression = function.body.expr.as_deref().expect("return 表达式");
-    let rusty_valkyrie::types::hir::HirExprKind::Return(Some(value)) = &expression.kind else { panic!("{expression:?}") };
-    let rusty_valkyrie::types::hir::HirExprKind::Call { resolved, .. } = &value.kind else { panic!("{value:?}") };
+    let rusty_valkyrie::types::hir::HirExprKind::Return(Some(value)) = &expression.kind
+    else {
+        panic!("{expression:?}")
+    };
+    let rusty_valkyrie::types::hir::HirExprKind::Call { resolved, .. } = &value.kind
+    else {
+        panic!("{value:?}")
+    };
     let resolved = resolved.as_ref().expect("spin 必须解析");
     assert_eq!(resolved.symbol.to_string(), "i64.spin");
 }

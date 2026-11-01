@@ -666,9 +666,8 @@ impl MirBuilder {
                 // 禁止按 symbol 短名回查或现场铸造。
                 let Some(instance) = reference.instance
                 else {
-                    self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedCallableIdentity {
-                        symbol: reference.symbol.to_string(),
-                    });
+                    self.diagnostics
+                        .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedCallableIdentity { symbol: reference.symbol.to_string() });
                     return MirOperand::Constant(MirConstant::Unit);
                 };
                 let value = self.next_value(MirValueOrigin::Temporary);

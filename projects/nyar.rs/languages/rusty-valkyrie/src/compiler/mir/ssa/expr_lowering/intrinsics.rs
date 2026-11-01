@@ -346,20 +346,13 @@ impl MirBuilder {
         match call.intrinsic? {
             BuiltinStructureOp::ArrayGet if arguments.len() == 2 => {
                 let value = self.next_value(MirValueOrigin::CallResult);
-                self.push_instruction(
-                    MirOperation::ArrayGet { array: arguments[0].clone(), index: arguments[1].clone() },
-                    vec![value],
-                );
+                self.push_instruction(MirOperation::ArrayGet { array: arguments[0].clone(), index: arguments[1].clone() }, vec![value]);
                 self.value_types.insert(value, call.return_type.clone());
                 Some(MirOperand::Value(value))
             }
             BuiltinStructureOp::ArraySet if arguments.len() == 3 => {
                 self.push_instruction(
-                    MirOperation::ArraySet {
-                        array: arguments[0].clone(),
-                        index: arguments[1].clone(),
-                        value: arguments[2].clone(),
-                    },
+                    MirOperation::ArraySet { array: arguments[0].clone(), index: arguments[1].clone(), value: arguments[2].clone() },
                     Vec::new(),
                 );
                 Some(MirOperand::Constant(MirConstant::Unit))

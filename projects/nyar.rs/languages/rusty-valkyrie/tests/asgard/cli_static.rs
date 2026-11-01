@@ -72,7 +72,10 @@ fn build_routes_static_delivery_to_styled_page() {
     assert!(html.contains(".hero { color: #c67b34; }"), "应包含组件样式:\n{html}");
     assert!(html.contains("你好，静态世界"), "应包含初始状态插值:\n{html}");
     assert!(html.contains("<title>CLI 静态交付</title>"), "应使用显式标题:\n{html}");
-    assert!(html.contains("<div class=\"hero\"><span class=\"hero-title\">你好，静态世界</span></div>"), "框架组件应降低为 DOM adapter 形态:\n{html}");
+    assert!(
+        html.contains("<div class=\"hero\"><span class=\"hero-title\">你好，静态世界</span></div>"),
+        "框架组件应降低为 DOM adapter 形态:\n{html}"
+    );
 }
 
 #[test]

@@ -897,8 +897,10 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
                                 instruction.id.index()
                             ));
                         };
-                        if !matches!(canonical.linked.types.get(callee_type).map(|record| &record.kind), Some(CanonicalTypeKind::Function { .. }))
-                        {
+                        if !matches!(
+                            canonical.linked.types.get(callee_type).map(|record| &record.kind),
+                            Some(CanonicalTypeKind::Function { .. })
+                        ) {
                             return Err(format!(
                                 "调用指令 `{}` 的 callee `Value({callee:?})` 类型 `{callee_type:?}` 不是函数类型，尚无目标私有调用合同，拒绝发射间接调用",
                                 instruction.id.index()

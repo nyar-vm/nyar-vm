@@ -188,7 +188,11 @@ fn provider_has_open_generic_signature(hirs: &[&HirModule], instance: ItemInstan
     fn visit(module: &HirModule, instance: ItemInstanceId) -> bool {
         module.functions.iter().any(|function| inspect(function, instance))
             || module.structs.iter().flat_map(|item| item.methods.iter()).any(|method| inspect(method, instance))
-            || module.traits.iter().flat_map(|item| item.methods.iter().chain(item.default_methods.iter())).any(|method| inspect(method, instance))
+            || module
+                .traits
+                .iter()
+                .flat_map(|item| item.methods.iter().chain(item.default_methods.iter()))
+                .any(|method| inspect(method, instance))
             || module.impls.iter().flat_map(|item| item.methods.iter()).any(|method| inspect(method, instance))
             || module.imported_semantic_exports.iter().flat_map(|export| export.functions.iter()).any(|function| inspect(function, instance))
             || module.instantiated_callables.iter().any(|callable| inspect(&callable.function, instance))

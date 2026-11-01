@@ -66,10 +66,7 @@ fn main_function(callee_type: NyarType, referenced_instance: ItemInstanceId) -> 
         id: BlockRef(0),
         label: "entry".to_string(),
         parameters: Vec::new(),
-        instructions: vec![
-            Instruction { results: vec![ValueRef(0)], ..load },
-            Instruction { results: vec![ValueRef(1)], ..call },
-        ],
+        instructions: vec![Instruction { results: vec![ValueRef(0)], ..load }, Instruction { results: vec![ValueRef(1)], ..call }],
         terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(1))) },
     };
     ExecutableFunction {
@@ -101,7 +98,10 @@ fn cmp_instance() -> ItemInstanceId {
 fn lower(callee_type: NyarType, referenced_instance: ItemInstanceId) -> nyar_emitter::Result<WasmBinaryModule> {
     let cmp_name = QualifiedName::new(vec![Identifier::new("cmp")]);
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
-    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(cmp_name, cmp_function()), (main_name.clone(), main_function(callee_type, referenced_instance))]));
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([
+        (cmp_name, cmp_function()),
+        (main_name.clone(), main_function(callee_type, referenced_instance)),
+    ]));
     plan.testing_module_name("function_value_exec").testing_entry_operation(main_name);
     let submission = FragmentSubmission::from_backend_plan(plan);
     lower_fragment_to_wasm_mir_module(&submission, "main")

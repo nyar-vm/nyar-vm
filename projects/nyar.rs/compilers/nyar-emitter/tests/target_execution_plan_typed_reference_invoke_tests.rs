@@ -26,7 +26,10 @@ fn linked_base() -> LinkedSemanticProgram {
     let mut linked = LinkedSemanticProgram::default();
     linked.module_name = "typed-reference".into();
     let value_type = TypeId::from_index(1).unwrap();
-    linked.types.insert(value_type, TypeRecord { declaration: value_type, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true }) });
+    linked.types.insert(
+        value_type,
+        TypeRecord { declaration: value_type, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true }) },
+    );
     let fragment_id = Identifier::new(FRAGMENT);
     linked.fragments.insert(fragment_id.clone(), CanonicalFragment { id: fragment_id, ..Default::default() });
     linked
@@ -45,7 +48,11 @@ fn function_value_program() -> CanonicalProgram {
     );
     linked.item_instances.insert(
         caller,
-        ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: vec![function_type, value_type], return_type: value_type },
+        ItemInstanceRecord {
+            declaration: ItemId::from_index(0).unwrap(),
+            parameter_types: vec![function_type, value_type],
+            return_type: value_type,
+        },
     );
     linked.callable_names.insert(caller, QualifiedName::new(vec![Identifier::new("apply")]));
     let function_value = MirValueId::from_index(0).unwrap();
@@ -72,7 +79,10 @@ fn function_value_program() -> CanonicalProgram {
             },
         )]),
     };
-    CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "typed-reference".into(), functions: BTreeMap::from([(caller, function)]) } }
+    CanonicalProgram {
+        linked,
+        mir: CanonicalSemanticMir { module_name: "typed-reference".into(), functions: BTreeMap::from([(caller, function)]) },
+    }
 }
 
 /// `call_identity(x: i32) -> i32 { return identity(x) }` + `identity(v: i32) -> i32`：
@@ -83,9 +93,7 @@ fn item_call_program() -> CanonicalProgram {
     let identity = ItemInstanceId::from_index(1).unwrap();
     let value_type = TypeId::from_index(1).unwrap();
     for (instance, declaration) in [(caller, ItemId::from_index(0).unwrap()), (identity, ItemId::from_index(1).unwrap())] {
-        linked
-            .item_instances
-            .insert(instance, ItemInstanceRecord { declaration, parameter_types: vec![value_type], return_type: value_type });
+        linked.item_instances.insert(instance, ItemInstanceRecord { declaration, parameter_types: vec![value_type], return_type: value_type });
     }
     linked.callable_names.insert(caller, QualifiedName::new(vec![Identifier::new("call_identity")]));
     linked.callable_names.insert(identity, QualifiedName::new(vec![Identifier::new("identity")]));

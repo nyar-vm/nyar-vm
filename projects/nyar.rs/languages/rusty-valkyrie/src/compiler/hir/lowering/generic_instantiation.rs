@@ -18,8 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::compiler::{
     hir::overload::{has_unresolved_generic_arguments, owner_type_generic_binders, substitute_type_self},
     types::hir::{
-        AssociatedType, FunctionType, GenericBinderId, HirBlock, HirExpr, HirExprKind, HirFunction, HirFunctionReference, HirInstantiatedCallable,
-        HirModule, HirParam, HirResolvedCall, HirStatementKind, HirTraitDispatch, HirWhereConstraint, ValkyrieType,
+        AssociatedType, FunctionType, GenericBinderId, HirBlock, HirExpr, HirExprKind, HirFunction, HirFunctionReference,
+        HirInstantiatedCallable, HirModule, HirParam, HirResolvedCall, HirStatementKind, HirTraitDispatch, HirWhereConstraint, ValkyrieType,
         export_spec::parse_library_glue_operation, parse_export_spec_from_annotations,
     },
 };
@@ -163,9 +163,7 @@ pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
                 // 非泛型 callable 的身份在声明期已冻结成唯一实例，固定点不得再铸造重复
                 // 实例；泛型声明的声明期种子只是占位，调用点的具体代入仍必须铸造真实例，
                 // 并在回填时覆盖它。witness 调用的 `instance` 恒为空，不受影响。
-                if call.instance.is_some()
-                    && declarations.get(&index).is_some_and(|declaration| declaration.function.generics.is_empty())
-                {
+                if call.instance.is_some() && declarations.get(&index).is_some_and(|declaration| declaration.function.generics.is_empty()) {
                     return;
                 }
                 // witness 的 declaration 是 trait 方法槽，不在 impl 成员表里；
@@ -246,9 +244,7 @@ pub(crate) fn instantiate_generic_callables(modules: &mut [HirModule]) {
                 };
                 // 回填同样不得覆盖非泛型声明的冻结实例：与收集步保持同一守卫；
                 // 泛型声明的种子实例必须让位给具体代入铸造出的实例。
-                if call.instance.is_some()
-                    && declarations.get(&index).is_some_and(|declaration| declaration.function.generics.is_empty())
-                {
+                if call.instance.is_some() && declarations.get(&index).is_some_and(|declaration| declaration.function.generics.is_empty()) {
                     return;
                 }
                 if call.trait_dispatch.is_some() {

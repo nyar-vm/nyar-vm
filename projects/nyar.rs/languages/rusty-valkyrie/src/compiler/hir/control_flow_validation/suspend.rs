@@ -127,9 +127,7 @@ pub fn shallow_expr_contains_yield(expr: &HirExpr) -> bool {
         | HirExprKind::Variable(_)
         | HirExprKind::Path(_)
         | HirExprKind::FunctionReference(_)
-        | HirExprKind::Continue { .. } => {
-            false
-        }
+        | HirExprKind::Continue { .. } => false,
         HirExprKind::With { base, updates } => {
             shallow_expr_contains_yield(base) || updates.iter().any(|(_, value)| shallow_expr_contains_yield(value))
         }
@@ -195,9 +193,7 @@ pub fn shallow_expr_contains_await(expr: &HirExpr) -> bool {
         | HirExprKind::Variable(_)
         | HirExprKind::Path(_)
         | HirExprKind::FunctionReference(_)
-        | HirExprKind::Continue { .. } => {
-            false
-        }
+        | HirExprKind::Continue { .. } => false,
         HirExprKind::With { base, updates } => {
             shallow_expr_contains_await(base) || updates.iter().any(|(_, value)| shallow_expr_contains_await(value))
         }
@@ -263,9 +259,7 @@ pub fn shallow_expr_contains_block_on(expr: &HirExpr) -> bool {
         | HirExprKind::Variable(_)
         | HirExprKind::Path(_)
         | HirExprKind::FunctionReference(_)
-        | HirExprKind::Continue { .. } => {
-            false
-        }
+        | HirExprKind::Continue { .. } => false,
         HirExprKind::With { base, updates } => {
             shallow_expr_contains_block_on(base) || updates.iter().any(|(_, value)| shallow_expr_contains_block_on(value))
         }
@@ -340,9 +334,7 @@ pub fn expr_contains_yield(expr: &HirExpr) -> bool {
         | HirExprKind::Variable(_)
         | HirExprKind::Path(_)
         | HirExprKind::FunctionReference(_)
-        | HirExprKind::Continue { .. } => {
-            false
-        }
+        | HirExprKind::Continue { .. } => false,
         HirExprKind::With { base, updates } => expr_contains_yield(base) || updates.iter().any(|(_, value)| expr_contains_yield(value)),
         HirExprKind::TryScope { body, .. } => block_contains_yield(body),
         HirExprKind::SuperCall { args, .. } => args.iter().any(expr_contains_yield),

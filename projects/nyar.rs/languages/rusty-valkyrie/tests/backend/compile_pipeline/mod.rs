@@ -4,9 +4,9 @@
 //! 不再用模块级 `#![cfg(false)]` 把整组（含仍有效的 backend contract 门）一起关掉。
 
 mod backend_contract_interop_tests;
+mod canonical_function_reference_tests;
 #[cfg(false)] // 旧 builder bundle 合同，待按 emitter pipeline 适配
 mod compile_pipeline_backend_bundle_tests;
-mod canonical_function_reference_tests;
 mod compile_pipeline_canonical_tests;
 #[cfg(false)] // 旧 driver 入口已移除
 mod compile_pipeline_driver_tests;

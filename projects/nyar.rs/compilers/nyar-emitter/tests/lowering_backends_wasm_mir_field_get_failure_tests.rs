@@ -23,10 +23,7 @@ fn field_get_main(field: FieldId) -> ExecutableFunction {
         id: BlockRef(0),
         label: "entry".to_string(),
         parameters: Vec::new(),
-        instructions: vec![
-            Instruction { results: vec![ValueRef(0)], ..load },
-            Instruction { results: vec![ValueRef(1)], ..get },
-        ],
+        instructions: vec![Instruction { results: vec![ValueRef(0)], ..load }, Instruction { results: vec![ValueRef(1)], ..get }],
         terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(1))) },
     };
     ExecutableFunction {
@@ -50,7 +47,12 @@ fn field_get_main(field: FieldId) -> ExecutableFunction {
     }
 }
 
-fn lower(function: ExecutableFunction, layouts: Option<AggregateLayoutPlan>, field: FieldId, layout_id: LayoutId) -> nyar_emitter::Result<WasmBinaryModule> {
+fn lower(
+    function: ExecutableFunction,
+    layouts: Option<AggregateLayoutPlan>,
+    field: FieldId,
+    layout_id: LayoutId,
+) -> nyar_emitter::Result<WasmBinaryModule> {
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
     plan.testing_module_name("field_get_failure").testing_entry_operation(main_name);
@@ -67,8 +69,7 @@ fn lower(function: ExecutableFunction, layouts: Option<AggregateLayoutPlan>, fie
 #[test]
 fn wasm_field_get_without_field_layout_fails_structured() {
     let field = FieldId::from_index(9).expect("测试字段身份");
-    let error = lower(field_get_main(field), None, field, 0)
-        .expect_err("字段缺少所属 layout 必须返回 Err，不得 panic");
+    let error = lower(field_get_main(field), None, field, 0).expect_err("字段缺少所属 layout 必须返回 Err，不得 panic");
     assert!(error.contains("FieldGet 缺少字段所属 layout"), "错误必须指明字段 layout 事实缺失: {error}");
 }
 

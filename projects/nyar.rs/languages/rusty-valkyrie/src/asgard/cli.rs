@@ -7,7 +7,9 @@ use std::{
 };
 
 use crate::asgard::{
-    PackOptions, PackTarget, config_discovery::ASGARD_CONFIG_FILENAME, pack_voa_delivery,
+    PackOptions, PackTarget,
+    config_discovery::ASGARD_CONFIG_FILENAME,
+    pack_voa_delivery,
     static_site::{StaticSiteOptions, build_static_site},
 };
 

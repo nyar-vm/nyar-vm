@@ -18,15 +18,13 @@ const I32: NyarType = NyarType::Integer32 { signed: true };
 /// 对象槽固定是 i32 标量——用于注入「gc struct 已注册但对象槽非引用」的冲突形状。
 fn field_set_main(field: FieldId) -> ExecutableFunction {
     let load = Instruction::from_kind(InstructionKind::LoadConstant { constant: Constant::Int(7), ty: Some(I32) });
-    let set = Instruction::from_kind(InstructionKind::FieldSet { object: Operand::Value(ValueRef(0)), field, value: Operand::Value(ValueRef(0)) });
+    let set =
+        Instruction::from_kind(InstructionKind::FieldSet { object: Operand::Value(ValueRef(0)), field, value: Operand::Value(ValueRef(0)) });
     let block = Block {
         id: BlockRef(0),
         label: "entry".to_string(),
         parameters: Vec::new(),
-        instructions: vec![
-            Instruction { results: vec![ValueRef(0)], ..load },
-            Instruction { results: Vec::new(), ..set },
-        ],
+        instructions: vec![Instruction { results: vec![ValueRef(0)], ..load }, Instruction { results: Vec::new(), ..set }],
         terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
     };
     ExecutableFunction {
@@ -50,7 +48,12 @@ fn field_set_main(field: FieldId) -> ExecutableFunction {
     }
 }
 
-fn lower(function: ExecutableFunction, layouts: Option<AggregateLayoutPlan>, field: FieldId, layout_id: LayoutId) -> nyar_emitter::Result<WasmBinaryModule> {
+fn lower(
+    function: ExecutableFunction,
+    layouts: Option<AggregateLayoutPlan>,
+    field: FieldId,
+    layout_id: LayoutId,
+) -> nyar_emitter::Result<WasmBinaryModule> {
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
     plan.testing_module_name("field_set_failure").testing_entry_operation(main_name);
@@ -67,8 +70,7 @@ fn lower(function: ExecutableFunction, layouts: Option<AggregateLayoutPlan>, fie
 #[test]
 fn wasm_field_set_without_field_layout_fails_structured() {
     let field = FieldId::from_index(9).expect("测试字段身份");
-    let error = lower(field_set_main(field), None, field, 0)
-        .expect_err("字段缺少所属 layout 必须返回 Err，不得 panic");
+    let error = lower(field_set_main(field), None, field, 0).expect_err("字段缺少所属 layout 必须返回 Err，不得 panic");
     assert!(error.contains("FieldSet 缺少 layout"), "错误必须指明字段 layout 事实缺失: {error}");
 }
 

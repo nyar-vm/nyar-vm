@@ -16,7 +16,9 @@ use acorn_wasm::WasmBinaryModule;
 use nyar::{Identifier, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
-    contracts::{ArrayInitialization, Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
+    contracts::{
+        ArrayInitialization, Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef,
+    },
     testing::lower_fragment_to_wasm_mir_module,
 };
 use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, LayoutId, NyarType, StorageKind};
@@ -107,8 +109,8 @@ fn wasm_registered_gc_struct_layout_authoritative_over_host_string_handle() {
 #[test]
 fn wasm_host_string_without_layout_binding_stays_i32_and_field_get_fails_structured() {
     let field = FieldId::from_index(0).expect("测试字段身份");
-    let error = lower(utf8_receiver_field_get_main(field, false), field)
-        .expect_err("未绑定 layout 的宿主字符串句柄不得被静默当作 gc struct 对象");
+    let error =
+        lower(utf8_receiver_field_get_main(field, false), field).expect_err("未绑定 layout 的宿主字符串句柄不得被静默当作 gc struct 对象");
     assert!(error.contains("已注册 gc struct，但对象槽不是引用"), "错误必须指明表示冲突: {error}");
 }
 

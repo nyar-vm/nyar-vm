@@ -108,10 +108,7 @@ fn lower_structural_intrinsic_calls(
             };
             if operands.len() != expected {
                 return Err(ParseError::Invalid {
-                    message: format!(
-                        "intrinsic 实例 `{instance}` 的 `{op:?}` 调用实参个数为 {}，合同要求 {expected}",
-                        operands.len()
-                    ),
+                    message: format!("intrinsic 实例 `{instance}` 的 `{op:?}` 调用实参个数为 {}，合同要求 {expected}", operands.len()),
                     span: None,
                 });
             }
@@ -209,8 +206,7 @@ pub fn link_reachable_dependency_mir_with_hir(
                                 .chain(dependency_mirs)
                                 .position(|candidate| std::ptr::eq(candidate, module))
                                 .ok_or_else(|| ParseError::Invalid {
-                                    message: "依赖模块身份不在当前源码闭包中".into(),
-                                    span: None,
+                                    message: "依赖模块身份不在当前源码闭包中".into(), span: None
                                 })?;
                             remap_function_aggregates(&mut normalized, &remaps[module_index])?;
                             remap_call_targets(&mut normalized, host_binding_remaps);

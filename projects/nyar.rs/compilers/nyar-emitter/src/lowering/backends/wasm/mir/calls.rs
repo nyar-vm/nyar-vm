@@ -309,10 +309,9 @@ impl<'a> WasmMirLowerer<'a> {
             NyarType::Unit | NyarType::Bottom => None,
             other => Some(wasm_param_value_type_for(self.ctx, other, None, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref)),
         };
-        let type_index = *self
-            .type_index_by_signature
-            .get(&(param_types.clone(), return_type))
-            .ok_or_else(|| format!("WASM 间接调用签名缺少已注册 functype（params={param_types:?} return={return_type:?}）: {}", self.mir_fn.symbol))?;
+        let type_index = *self.type_index_by_signature.get(&(param_types.clone(), return_type)).ok_or_else(|| {
+            format!("WASM 间接调用签名缺少已注册 functype（params={param_types:?} return={return_type:?}）: {}", self.mir_fn.symbol)
+        })?;
         Ok((param_types, return_type, type_index))
     }
 

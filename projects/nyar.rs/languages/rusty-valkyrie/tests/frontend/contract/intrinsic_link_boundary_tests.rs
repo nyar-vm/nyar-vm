@@ -35,9 +35,7 @@ fn groups() -> [CompilerSourceGroup; 3] {
     [
         CompilerSourceGroup::single_source("core", "core", CORE_SOURCE),
         CompilerSourceGroup::single_source("std", "demo.std", STD_SOURCE).with_direct_dependencies(vec!["core".into()]),
-        CompilerSourceGroup::single_source("app", "demo", APP_SOURCE)
-            .as_entry()
-            .with_direct_dependencies(vec!["core".into(), "std".into()]),
+        CompilerSourceGroup::single_source("app", "demo", APP_SOURCE).as_entry().with_direct_dependencies(vec!["core".into(), "std".into()]),
     ]
 }
 
@@ -47,9 +45,10 @@ fn canonical_operations(program: &nyar_types::CanonicalProgram) -> Vec<(ItemInst
         .functions
         .iter()
         .flat_map(|(instance, function)| {
-            function.blocks.values().flat_map(move |block| {
-                block.instructions.iter().map(move |instruction| (*instance, instruction.operation.clone()))
-            })
+            function
+                .blocks
+                .values()
+                .flat_map(move |block| block.instructions.iter().map(move |instruction| (*instance, instruction.operation.clone())))
         })
         .collect()
 }

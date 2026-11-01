@@ -59,10 +59,12 @@ fn reference(module: &HirModule) -> &HirFunctionReference {
         HirExprKind::Return(Some(expression)) => expression,
         kind => panic!("期望 return 表达式: {kind:?}"),
     };
-    let HirExprKind::Call { args, .. } = &expression.kind else {
+    let HirExprKind::Call { args, .. } = &expression.kind
+    else {
         panic!("期望调用表达式: {:?}", expression.kind)
     };
-    let HirExprKind::FunctionReference(reference) = &args.last().expect("最后一个实参").value.kind else {
+    let HirExprKind::FunctionReference(reference) = &args.last().expect("最后一个实参").value.kind
+    else {
         panic!("最后一个实参必须是 FunctionReference")
     };
     reference
@@ -71,13 +73,16 @@ fn reference(module: &HirModule) -> &HirFunctionReference {
 /// 把裸名实参引用上的冻结实例抹掉（模拟上游未回填的畸形 HIR）。
 fn erase_reference_instance(module: &mut HirModule) {
     let run = module.functions.iter_mut().find(|function| function.name.as_str() == "run").expect("run");
-    let HirExprKind::Return(Some(expression)) = &mut run.body.expr.as_mut().expect("run 体尾表达式").kind else {
+    let HirExprKind::Return(Some(expression)) = &mut run.body.expr.as_mut().expect("run 体尾表达式").kind
+    else {
         panic!("期望 return 表达式");
     };
-    let HirExprKind::Call { args, .. } = &mut expression.kind else {
+    let HirExprKind::Call { args, .. } = &mut expression.kind
+    else {
         panic!("期望调用表达式");
     };
-    let HirExprKind::FunctionReference(reference) = &mut args.last_mut().expect("最后一个实参").value.kind else {
+    let HirExprKind::FunctionReference(reference) = &mut args.last_mut().expect("最后一个实参").value.kind
+    else {
         panic!("最后一个实参必须是 FunctionReference");
     };
     reference.instance = None;
@@ -129,7 +134,8 @@ fn function_reference_argument_lowers_to_load_function_ref() {
     let run = collect_function(&mir, "::run");
     let calls = collect_calls(run);
     assert_eq!(calls.len(), 1, "run 体只有一个 apply 调用");
-    let MirOperand::Value(argument) = &calls[0].1[2] else {
+    let MirOperand::Value(argument) = &calls[0].1[2]
+    else {
         panic!("函数实参必须是 SSA 值，实际 {:?}", calls[0].1[2]);
     };
     match &defining_instruction(run, argument).kind {
@@ -158,7 +164,8 @@ fn generic_consumer_lowers_function_argument_and_indirect_call() {
     let run = collect_function(&mir, "::run");
     let calls = collect_calls(run);
     let last = calls.first().expect("run 体调用").1.last().expect("函数实参");
-    let MirOperand::Value(argument) = last else {
+    let MirOperand::Value(argument) = last
+    else {
         panic!("函数实参必须是 SSA 值");
     };
     match &defining_instruction(run, argument).kind {

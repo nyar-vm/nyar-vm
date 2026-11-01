@@ -16,8 +16,8 @@ use nyar_emitter::{
 };
 use nyar_types::{
     CanonicalBlock, CanonicalBlockId, CanonicalCallee, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalOperation,
-    CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind, InstructionId, ItemId, ItemInstanceId,
-    ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NyarFunctionType, NyarType, TypeId, TypeRecord, ValueIdentity,
+    CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind, InstructionId, ItemId,
+    ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NyarFunctionType, NyarType, TypeId, TypeRecord, ValueIdentity,
     layout_choice::{InvokeLowering, RepresentationPlan, ValueRepresentation},
 };
 
@@ -30,7 +30,12 @@ fn function_type(params: Vec<NyarType>, return_type: NyarType) -> NyarType {
 }
 
 /// 从 terminator 推断 `return_type`，构造最小可提交函数（与既有合同测试同一夹具形态）。
-fn fixture_function(symbol: &str, instructions: Vec<Instruction>, terminator: Terminator, value_types: BTreeMap<ValueRef, NyarType>) -> ExecutableFunction {
+fn fixture_function(
+    symbol: &str,
+    instructions: Vec<Instruction>,
+    terminator: Terminator,
+    value_types: BTreeMap<ValueRef, NyarType>,
+) -> ExecutableFunction {
     let return_type = match &terminator {
         Terminator::Return { value: Some(Operand::Value(value)) } => value_types.get(value).cloned().unwrap_or(NyarType::Unit),
         _ => NyarType::Unit,
@@ -66,7 +71,10 @@ fn linked_base() -> LinkedSemanticProgram {
     let mut linked = LinkedSemanticProgram::default();
     linked.module_name = "smir-function-value".into();
     let value_type = TypeId::from_index(1).unwrap();
-    linked.types.insert(value_type, TypeRecord { declaration: value_type, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true }) });
+    linked.types.insert(
+        value_type,
+        TypeRecord { declaration: value_type, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true }) },
+    );
     let fragment_id = Identifier::new(FRAGMENT);
     linked.fragments.insert(fragment_id.clone(), CanonicalFragment { id: fragment_id, ..Default::default() });
     linked
@@ -79,11 +87,18 @@ fn function_value_program() -> CanonicalProgram {
     let value_type = TypeId::from_index(1).unwrap();
     linked.types.insert(
         function_type_id,
-        TypeRecord { declaration: function_type_id, kind: CanonicalTypeKind::Function { parameters: vec![value_type], return_type: value_type } },
+        TypeRecord {
+            declaration: function_type_id,
+            kind: CanonicalTypeKind::Function { parameters: vec![value_type], return_type: value_type },
+        },
     );
     linked.item_instances.insert(
         caller,
-        ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: vec![function_type_id, value_type], return_type: value_type },
+        ItemInstanceRecord {
+            declaration: ItemId::from_index(0).unwrap(),
+            parameter_types: vec![function_type_id, value_type],
+            return_type: value_type,
+        },
     );
     linked.callable_names.insert(caller, QualifiedName::new(vec![Identifier::new("apply")]));
     let function_value = MirValueId::from_index(0).unwrap();
@@ -110,7 +125,10 @@ fn function_value_program() -> CanonicalProgram {
             },
         )]),
     };
-    CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "smir-function-value".into(), functions: BTreeMap::from([(caller, function)]) } }
+    CanonicalProgram {
+        linked,
+        mir: CanonicalSemanticMir { module_name: "smir-function-value".into(), functions: BTreeMap::from([(caller, function)]) },
+    }
 }
 
 fn production_submission(canonical: &CanonicalProgram) -> FragmentSubmission {
@@ -124,7 +142,8 @@ fn production_submission(canonical: &CanonicalProgram) -> FragmentSubmission {
     let program = CompiledProgram::new(canonical.clone(), plan).expect("测试表示输入必须一致");
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = Identifier::new(FRAGMENT);
-    let executable = TargetExecutionPlan::from_compiled_program(&program, &fragment, TheoryBundle::default(), &roots).expect("`TypedReference` 函数值调用必须成立目标私有调用合同");
+    let executable = TargetExecutionPlan::from_compiled_program(&program, &fragment, TheoryBundle::default(), &roots)
+        .expect("`TypedReference` 函数值调用必须成立目标私有调用合同");
     FragmentSubmission::from_backend_plan(executable)
 }
 
@@ -201,7 +220,10 @@ fn item_call_functions() -> (ItemInstanceId, ItemInstanceId, ExecutableFunction,
     let result = ValueRef(1);
     let caller = fixture_function(
         "call_identity",
-        vec![instr(InstructionKind::Call { callee: Operand::Item(identity_instance), arguments: vec![Operand::Value(argument)] }, vec![result])],
+        vec![instr(
+            InstructionKind::Call { callee: Operand::Item(identity_instance), arguments: vec![Operand::Value(argument)] },
+            vec![result],
+        )],
         Terminator::Return { value: Some(Operand::Value(result)) },
         BTreeMap::from([(argument, I32), (result, I32)]),
     );

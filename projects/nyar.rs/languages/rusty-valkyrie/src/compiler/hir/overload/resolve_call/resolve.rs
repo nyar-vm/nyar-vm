@@ -24,8 +24,8 @@ use crate::compiler::{
     types::{
         Identifier, NamePath,
         hir::{
-            FunctionType, HirBlock, HirCallArgument, HirExpr, HirExprKind, HirFunction, HirFunctionReference, HirMatchArm, HirModule, HirPattern,
-            HirResolvedCall, HirStatement, HirStatementKind, ValkyrieType,
+            FunctionType, HirBlock, HirCallArgument, HirExpr, HirExprKind, HirFunction, HirFunctionReference, HirMatchArm, HirModule,
+            HirPattern, HirResolvedCall, HirStatement, HirStatementKind, ValkyrieType,
         },
     },
 };
@@ -259,17 +259,15 @@ fn rewrite_free_function_argument_to_reference(
         }
         matched = Some(candidate);
     }
-    let Some(candidate) = matched else {
+    let Some(candidate) = matched
+    else {
         return;
     };
     expr.kind = HirExprKind::FunctionReference(HirFunctionReference {
         declaration: candidate.declaration,
         instance: candidate.instance,
         symbol: candidate.symbol.clone(),
-        signature: Box::new(FunctionType {
-            params: candidate.signature.params.clone(),
-            return_type: candidate.signature.return_type.clone(),
-        }),
+        signature: Box::new(FunctionType { params: candidate.signature.params.clone(), return_type: candidate.signature.return_type.clone() }),
     });
 }
 

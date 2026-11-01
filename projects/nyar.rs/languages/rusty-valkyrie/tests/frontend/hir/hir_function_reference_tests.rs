@@ -21,7 +21,8 @@ fn outer_call(function: &HirFunction) -> (&HirResolvedCall, &rusty_valkyrie::com
         HirExprKind::Return(Some(expression)) => expression,
         kind => panic!("期望 return 表达式: {kind:?}"),
     };
-    let HirExprKind::Call { args, resolved, .. } = &expression.kind else {
+    let HirExprKind::Call { args, resolved, .. } = &expression.kind
+    else {
         panic!("期望调用表达式: {:?}", expression.kind)
     };
     let resolved = resolved.as_ref().expect("调用必须完成重载解析");
@@ -29,7 +30,8 @@ fn outer_call(function: &HirFunction) -> (&HirResolvedCall, &rusty_valkyrie::com
 }
 
 fn reference(expression: &rusty_valkyrie::compiler::types::hir::HirExpr) -> &HirFunctionReference {
-    let HirExprKind::FunctionReference(reference) = &expression.kind else {
+    let HirExprKind::FunctionReference(reference) = &expression.kind
+    else {
         panic!("期望 FunctionReference: {:?}", expression.kind)
     };
     reference
@@ -119,11 +121,8 @@ fn function_reference_instance_is_minted_by_instantiation_fixpoint() {
     let (_, argument) = outer_call(run);
     let instance = reference(argument).instance.expect("固定点必须为函数作值铸造实例");
     let cmp_declaration = function(&hir, "cmp_i32").declaration.expect("cmp_i32 声明身份");
-    let callable = hir
-        .instantiated_callables
-        .iter()
-        .find(|callable| callable.function.instance == Some(instance))
-        .expect("引用实例必须进入已铸造实例表");
+    let callable =
+        hir.instantiated_callables.iter().find(|callable| callable.function.instance == Some(instance)).expect("引用实例必须进入已铸造实例表");
     assert_eq!(callable.function.declaration, Some(cmp_declaration), "引用实例必须来自被引用声明");
 }
 
@@ -152,9 +151,7 @@ fn generic_binder_is_bound_from_function_reference_signature() {
 #[test]
 fn generic_function_as_value_stays_unresolved_instead_of_guessing_instantiation() {
     // 泛型声明没有唯一代入：不改写、不铸造，调用沿既有路径结构化失败。
-    let error = ValkyrieCompiler::default()
-        .compile_source(GENERIC_REFERENCE_REJECTED_SOURCE)
-        .expect_err("泛型函数作值不得按短名猜一个代入");
+    let error = ValkyrieCompiler::default().compile_source(GENERIC_REFERENCE_REJECTED_SOURCE).expect_err("泛型函数作值不得按短名猜一个代入");
     assert!(matches!(error, HirError::UnresolvedCall { .. }), "必须保持 UnresolvedCall fail-closed: {error:?}");
 }
 
@@ -172,11 +169,7 @@ fn instantiation_is_deterministic_across_compilations() {
     let first = compile(GENERIC_CONSUMER_SOURCE);
     let second = compile(GENERIC_CONSUMER_SOURCE);
     let projected = |module: &rusty_valkyrie::types::hir::HirModule| {
-        module
-            .instantiated_callables
-            .iter()
-            .map(|callable| (callable.function.name.clone(), callable.function.instance))
-            .collect::<Vec<_>>()
+        module.instantiated_callables.iter().map(|callable| (callable.function.name.clone(), callable.function.instance)).collect::<Vec<_>>()
     };
     assert_eq!(projected(&first), projected(&second), "同一输入的实例空间必须稳定");
     let (_, first_argument) = outer_call(function(&first, "run"));

@@ -55,10 +55,12 @@ fn frozen_instance(hir: &HirModule) -> ItemInstanceId {
         HirExprKind::Return(Some(expression)) => expression,
         kind => panic!("期望 return 表达式: {kind:?}"),
     };
-    let HirExprKind::Call { args, .. } = &expression.kind else {
+    let HirExprKind::Call { args, .. } = &expression.kind
+    else {
         panic!("期望调用表达式: {:?}", expression.kind)
     };
-    let HirExprKind::FunctionReference(reference) = &args.last().expect("最后一个实参").value.kind else {
+    let HirExprKind::FunctionReference(reference) = &args.last().expect("最后一个实参").value.kind
+    else {
         panic!("最后一个实参必须是 FunctionReference")
     };
     reference.instance.expect("固定点必须为函数作值铸造实例")
@@ -132,17 +134,17 @@ fn generic_consumer_reaches_canonical_with_indirect_invoke() {
         .functions
         .values()
         .flat_map(|function| {
-            function.blocks.values().flat_map(|block| &block.instructions).filter_map(move |instruction| {
-                match &instruction.operation {
-                    CanonicalOperation::Invoke { callee: CanonicalCallee::Value(callee), .. } => Some((function, *callee)),
-                    _ => None,
-                }
+            function.blocks.values().flat_map(|block| &block.instructions).filter_map(move |instruction| match &instruction.operation {
+                CanonicalOperation::Invoke { callee: CanonicalCallee::Value(callee), .. } => Some((function, *callee)),
+                _ => None,
             })
         })
         .find(|(function, callee)| {
-            function.value_types.get(callee).and_then(|ty| program.linked.types.get(ty)).is_some_and(|record| {
-                matches!(record.kind, CanonicalTypeKind::Function { .. })
-            })
+            function
+                .value_types
+                .get(callee)
+                .and_then(|ty| program.linked.types.get(ty))
+                .is_some_and(|record| matches!(record.kind, CanonicalTypeKind::Function { .. }))
         });
     assert!(indirect.is_some(), "消费方实例体内必须保留函数值间接调用形态");
 }

@@ -62,8 +62,7 @@ fn lower(function: ExecutableFunction, import: Option<(ItemInstanceId, BackendIm
 #[test]
 fn wasm_static_call_without_registered_callable_fails_structured() {
     let callee = ItemInstanceId::from_index(203).expect("测试 callee 身份");
-    let error = lower(call_main(Operand::Item(callee)), None)
-        .expect_err("callee 缺少已注册 callable 条目必须返回 Err，不得 panic");
+    let error = lower(call_main(Operand::Item(callee)), None).expect_err("callee 缺少已注册 callable 条目必须返回 Err，不得 panic");
     assert!(error.contains("WASM 静态调用缺少已解析 callable identity"), "错误必须指明 callable identity 缺失: {error}");
 }
 
@@ -100,6 +99,5 @@ fn wasm_library_export_lane_registers_host_import_callees() {
     plan.testing_module_name("library_lane").testing_entry_operation(main_name);
     plan.testing_register_import(callee, import);
     let submission = FragmentSubmission::from_backend_plan(plan);
-    lower_fragment_to_wasm_mir_module(&submission, "solution")
-        .expect("库导出 lane 的宿主导入 callee 必须按冻结身份注册并正常 lower");
+    lower_fragment_to_wasm_mir_module(&submission, "solution").expect("库导出 lane 的宿主导入 callee 必须按冻结身份注册并正常 lower");
 }

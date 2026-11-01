@@ -50,10 +50,7 @@ fn array_get_main() -> ExecutableFunction {
     let load = Instruction::from_kind(InstructionKind::LoadConstant { constant: Constant::Int(7), ty: Some(I32) });
     let get = Instruction::from_kind(InstructionKind::ArrayGet { array: Operand::Value(ValueRef(0)), index: Operand::Value(ValueRef(0)) });
     main_function(
-        vec![
-            Instruction { results: vec![ValueRef(0)], ..load },
-            Instruction { results: vec![ValueRef(1)], ..get },
-        ],
+        vec![Instruction { results: vec![ValueRef(0)], ..load }, Instruction { results: vec![ValueRef(1)], ..get }],
         ValueRef(1),
         vec![(ValueRef(0), I32), (ValueRef(1), I32)],
     )
@@ -63,12 +60,13 @@ fn array_get_main() -> ExecutableFunction {
 /// `ArraySet(array=%0, index=%0, value=%0)`；return %0。同样无 `ArrayNew` 登记 arraytype。
 fn array_set_main() -> ExecutableFunction {
     let load = Instruction::from_kind(InstructionKind::LoadConstant { constant: Constant::Int(7), ty: Some(I32) });
-    let set = Instruction::from_kind(InstructionKind::ArraySet { array: Operand::Value(ValueRef(0)), index: Operand::Value(ValueRef(0)), value: Operand::Value(ValueRef(0)) });
+    let set = Instruction::from_kind(InstructionKind::ArraySet {
+        array: Operand::Value(ValueRef(0)),
+        index: Operand::Value(ValueRef(0)),
+        value: Operand::Value(ValueRef(0)),
+    });
     main_function(
-        vec![
-            Instruction { results: vec![ValueRef(0)], ..load },
-            Instruction { results: Vec::new(), ..set },
-        ],
+        vec![Instruction { results: vec![ValueRef(0)], ..load }, Instruction { results: Vec::new(), ..set }],
         ValueRef(0),
         vec![(ValueRef(0), I32)],
     )
