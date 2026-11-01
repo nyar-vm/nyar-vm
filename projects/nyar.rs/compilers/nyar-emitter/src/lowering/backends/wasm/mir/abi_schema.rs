@@ -247,12 +247,17 @@ pub fn abi_schema_for_type(ty: &NyarType) -> WasmAbiType {
         NyarType::Named(id) => {
             WasmAbiType::NamedAggregate { name: simple_name_of(id), module_path: module_path_of(id), generic_args: Vec::new() }
         }
+        // 携带身份的名义类型：schema 显示仍用冻结拼写，身份（layout）不进 schema。
+        NyarType::Nominal { spelling, .. } => {
+            WasmAbiType::NamedAggregate { name: simple_name_of(spelling), module_path: module_path_of(spelling), generic_args: Vec::new() }
+        }
 
         // 泛型应用：`Apply(Base, [T1, T2, ...])`
         // 把 Base（通常是 Named）的语义名字和模块路径提取出来，递归映射泛型参数。
         NyarType::Apply(base, args) => {
             let (name, module_path, base_generic_args) = match base.as_ref() {
                 NyarType::Named(id) => (simple_name_of(id), module_path_of(id), Vec::new()),
+                NyarType::Nominal { spelling, .. } => (simple_name_of(spelling), module_path_of(spelling), Vec::new()),
                 NyarType::Apply(_, _) => {
                     // 嵌套 Apply：展平到最顶层 Named
                     flatten_apply_identity(base.as_ref())
@@ -319,6 +324,7 @@ fn flatten_apply_identity(mut ty: &NyarType) -> (String, String, Vec<NyarType>) 
     loop {
         match ty {
             NyarType::Named(id) => return (simple_name_of(id), module_path_of(id), accumulated),
+            NyarType::Nominal { spelling, .. } => return (simple_name_of(spelling), module_path_of(spelling), accumulated),
             NyarType::Apply(base, args) => {
                 accumulated.extend(args.iter().cloned());
                 ty = base.as_ref();

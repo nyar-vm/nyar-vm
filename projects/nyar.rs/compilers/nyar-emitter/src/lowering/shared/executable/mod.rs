@@ -81,6 +81,15 @@ impl<'a> ExecutableLoweringContext<'a> {
             | NyarType::Nullable(_)
             | NyarType::Apply(..)
             | NyarType::Function(_) => ExecutableStorageKind::Reference,
+            // `Nominal` 携带 canonical 冻结的实例级布局身份：存储类按 `layout` 解析，
+            // 不按拼写匹配。布局缺失属合同破坏（预发射门禁已拒绝该形状）。
+            NyarType::Nominal { layout, spelling } => match self.layout_by_id(*layout) {
+                Some(layout) => layout.storage,
+                None => panic!(
+                    "executable lowering contract violation: `Nominal({spelling})` 的 layout `{layout:?}` 未注册，\
+身份无法解析存储类（预编码校验见 `validate_storage_identities`）"
+                ),
+            },
             NyarType::Named(name) => panic!(
                 "executable lowering contract violation: `Named({name})` 无 declaration / `TypeId` 身份，\
 禁止按短名解析名义 layout 或回落 `Reference`（预编码校验见 `validate_storage_identities`）"
@@ -107,6 +116,8 @@ pub struct UnresolvedStorageIdentity {
 /// 该形状必须在生成任何字节之前结构化失败，而不是由 backend 认亲。
 pub fn validate_storage_identities(submission: &FragmentSubmission) -> Result<(), UnresolvedStorageIdentity> {
     let plan = &submission.backend_plan;
+    let registered_layouts: std::collections::BTreeSet<LayoutId> =
+        plan.aggregate_layouts().layouts.iter().map(|layout| layout.id).collect();
     for instance in plan.instances() {
         let Some(view) = plan.get_function(&instance)
         else {
@@ -129,14 +140,14 @@ pub fn validate_storage_identities(submission: &FragmentSubmission) -> Result<()
             }
         }
         for (site, ty) in sites {
-            if let Some(ty) = named_residual(ty) {
+            if let Some(ty) = named_residual(ty, &registered_layouts) {
                 return Err(UnresolvedStorageIdentity { function: function.symbol.clone(), site, ty });
             }
         }
     }
     for layout in plan.aggregate_layouts().layouts.iter() {
         for field in &layout.fields {
-            if let Some(ty) = named_residual(&field.ty) {
+            if let Some(ty) = named_residual(&field.ty, &registered_layouts) {
                 return Err(UnresolvedStorageIdentity {
                     function: String::new(),
                     site: format!("aggregate layout `{}::{}` field `{}`", layout.namespace, layout.name, field.name),
@@ -148,15 +159,33 @@ pub fn validate_storage_identities(submission: &FragmentSubmission) -> Result<()
     Ok(())
 }
 
-/// 递归查找无身份的名义短名残差（`NyarType::Named`）。
-fn named_residual(ty: &NyarType) -> Option<NyarType> {
+/// 递归查找无法按身份解析存储类的名义形状：
+/// 裸 `Named` 短名残差，或 `Nominal` 携带的 `layout` 未在计划中注册。
+fn named_residual(ty: &NyarType, registered_layouts: &std::collections::BTreeSet<LayoutId>) -> Option<NyarType> {
     match ty {
         NyarType::Named(_) => Some(ty.clone()),
-        NyarType::Apply(_base, arguments) => arguments.iter().find_map(named_residual),
-        NyarType::Function(function) => named_residual(&function.return_type).or_else(|| function.params.iter().find_map(named_residual)),
-        NyarType::Tuple(elements) | NyarType::Union(elements) => elements.iter().find_map(named_residual),
-        NyarType::Array(element) | NyarType::FixedArray { element, .. } | NyarType::Nullable(element) => named_residual(element),
-        NyarType::TraitObject(object) => object.type_arguments.iter().find_map(named_residual),
+        NyarType::Nominal { layout, .. } => {
+            if registered_layouts.contains(layout) {
+                None
+            }
+            else {
+                Some(ty.clone())
+            }
+        }
+        NyarType::Apply(_base, arguments) => arguments.iter().find_map(|argument| named_residual(argument, registered_layouts)),
+        NyarType::Function(function) => {
+            named_residual(&function.return_type, registered_layouts)
+                .or_else(|| function.params.iter().find_map(|parameter| named_residual(parameter, registered_layouts)))
+        }
+        NyarType::Tuple(elements) | NyarType::Union(elements) => {
+            elements.iter().find_map(|element| named_residual(element, registered_layouts))
+        }
+        NyarType::Array(element) | NyarType::FixedArray { element, .. } | NyarType::Nullable(element) => {
+            named_residual(element, registered_layouts)
+        }
+        NyarType::TraitObject(object) => {
+            object.type_arguments.iter().find_map(|argument| named_residual(argument, registered_layouts))
+        }
         _ => None,
     }
 }

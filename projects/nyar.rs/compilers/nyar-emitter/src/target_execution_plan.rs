@@ -683,7 +683,7 @@ fn freeze_abi_carrier(ty: &NyarType) -> Result<AbiCarrier> {
         NyarType::Float64 => AbiCarrier::F64,
         NyarType::Utf8 => AbiCarrier::I32,
         NyarType::Array(_) | NyarType::FixedArray { .. } | NyarType::Nullable(_) | NyarType::Tuple(_) => AbiCarrier::Handle,
-        NyarType::Named(_) | NyarType::Apply(_, _) => AbiCarrier::Handle,
+        NyarType::Named(_) | NyarType::Nominal { .. } | NyarType::Apply(_, _) => AbiCarrier::Handle,
         NyarType::Integer128 { .. } => return Err("Integer128 没有原生 Wasm 载体，需要显式拆分合同".to_string()),
         NyarType::Utf16 => return Err("Utf16 在当前 JS glue 轨没有稳定的宿主 ABI 合同".to_string()),
         NyarType::Bottom => return Err("`void` / bottom 类型不能出现在库导出 ABI 位置".to_string()),
@@ -902,7 +902,10 @@ fn validate_frozen_array_operator(
     let index_carrier = |ty: &NyarType| operand_carrier(ty) == Some(TargetOperandType::I32);
     match plan.operation {
         New => {
-            let Some(length) = parameter_types.first() else { return fail("arity 事实缺失".to_owned()) };
+            let Some(length) = parameter_types.first()
+            else {
+                return fail("arity 事实缺失".to_owned());
+            };
             if !index_carrier(length) {
                 return fail(format!("`array.new` 的长度参数必须携带 i32 载体: actual={length:?}"));
             }
@@ -911,7 +914,10 @@ fn validate_frozen_array_operator(
             }
         }
         Length => {
-            let Some(array) = parameter_types.first() else { return fail("arity 事实缺失".to_owned()) };
+            let Some(array) = parameter_types.first()
+            else {
+                return fail("arity 事实缺失".to_owned());
+            };
             if array_element(array).is_none() {
                 return fail(format!("`array.length` 的聚合参数必须是堆数组 `[T]`: actual={array:?}"));
             }
@@ -920,10 +926,12 @@ fn validate_frozen_array_operator(
             }
         }
         Get => {
-            let (Some(array), Some(index)) = (parameter_types.first(), parameter_types.get(1)) else {
+            let (Some(array), Some(index)) = (parameter_types.first(), parameter_types.get(1))
+            else {
                 return fail("arity 事实缺失".to_owned());
             };
-            let Some(element) = array_element(array) else {
+            let Some(element) = array_element(array)
+            else {
                 return fail(format!("`array.get` 的聚合参数必须是堆数组 `[T]`: actual={array:?}"));
             };
             if !index_carrier(index) {
@@ -934,12 +942,12 @@ fn validate_frozen_array_operator(
             }
         }
         Set => {
-            let (Some(array), Some(index), Some(value)) =
-                (parameter_types.first(), parameter_types.get(1), parameter_types.get(2))
+            let (Some(array), Some(index), Some(value)) = (parameter_types.first(), parameter_types.get(1), parameter_types.get(2))
             else {
                 return fail("arity 事实缺失".to_owned());
             };
-            let Some(element) = array_element(array) else {
+            let Some(element) = array_element(array)
+            else {
                 return fail(format!("`array.set` 的聚合参数必须是堆数组 `[T]`: actual={array:?}"));
             };
             if !index_carrier(index) {
@@ -1402,9 +1410,13 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
                 if let Some(primitive) = NyarType::from_surface_primitive(name.as_str()) {
                     return Ok(primitive);
                 }
-                if program.linked.aggregate_layout_by_type.contains_key(&id)
-                    || program.linked.nominal_instances.values().any(|record| record.ty == id)
-                {
+                // 已冻结实例级布局的零实参 nominal 铸造为携带身份的 `Nominal`：
+                // 存储类/GC 字段/ABI 由 `layout` 身份解析，拼写仅诊断显示。
+                // 未登记布局仍产出裸 `Named` 残差，由预发射门禁结构化拒绝。
+                if let Some(layout) = program.linked.aggregate_layout_by_type.get(&id).copied() {
+                    return Ok(NyarType::Nominal { layout, spelling: name.clone() });
+                }
+                if program.linked.nominal_instances.values().any(|record| record.ty == id) {
                     return Ok(NyarType::Named(name.clone()));
                 }
                 return Err(format!("nominal type `{name}` 缺少目标 layout 或 carrier 合同"));

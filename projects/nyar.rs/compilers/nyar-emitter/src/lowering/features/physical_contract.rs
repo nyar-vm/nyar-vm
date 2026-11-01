@@ -320,6 +320,7 @@ fn physical_category(
             PhysicalValueCategory::Reference
         }
         NyarType::Named(_)
+        | NyarType::Nominal { .. }
         | NyarType::Apply(_, _)
         | NyarType::Function(_)
         | NyarType::Tuple(_)
