@@ -3,11 +3,17 @@
 //! 与 `legionPlan` / `legionBuild` 同型：TypeScript 侧解析 argv 后调用正交 API，
 //! 本层只做参数搬运与结构化结果映射，静态构建的唯一事实所有者是
 //! `rusty_valkyrie::asgard::static_site`。
+//!
+//! 准入与命令面共用 `rusty_valkyrie::asgard::cli::require_project_admission`：
+//! 缺 `legion.von` 或 `asgard.config.v` 的项目在这里被拒绝，不因为走 N-API 而绕过。
 
 use std::{path::PathBuf, thread};
 
 use napi_derive::napi;
-use rusty_valkyrie::asgard::static_site::{StaticSiteOptions, build_static_site};
+use rusty_valkyrie::asgard::{
+    cli::require_project_admission,
+    static_site::{StaticSiteOptions, build_static_site},
+};
 
 /// `asgardBuildStatic` 入参。
 #[napi(object)]
@@ -20,6 +26,8 @@ pub struct AsgardStaticBuildOptions {
     pub output_dir: Option<String>,
     /// 页面标题；缺省为根组件名（入口文件 stem）。
     pub title: Option<String>,
+    /// 产物基址（目录 URL）；缺省 `/`。配置求值闭合前由调用方显式给出，本层不猜测。
+    pub base: Option<String>,
 }
 
 /// `asgardBuildStatic` 的结构化返回。
@@ -37,19 +45,21 @@ pub struct AsgardStaticBuildOutcome {
     pub component_name: Option<String>,
 }
 
-/// 构建静态站点（带样式 `index.html`）并返回结构化结果。
+/// 构建静态站点（页面 + WASM chunk + 岛包产物）并返回结构化结果。
 #[napi]
 pub fn asgard_build_static(options: AsgardStaticBuildOptions) -> AsgardStaticBuildOutcome {
     let worker = thread::Builder::new()
         .name("asgard-static-build".into())
         .stack_size(64 * 1024 * 1024)
         .spawn(move || {
+            let project_dir = PathBuf::from(&options.project_dir);
+            require_project_admission(&project_dir)?;
             build_static_site(&StaticSiteOptions {
-                project_dir: PathBuf::from(&options.project_dir),
+                project_dir,
                 entry: PathBuf::from(&options.entry),
                 output_dir: options.output_dir.map(PathBuf::from),
                 title: options.title,
-                base: "/".to_string(),
+                base: options.base.unwrap_or_else(|| "/".to_string()),
             })
         })
         .expect("failed to spawn asgard static build thread");

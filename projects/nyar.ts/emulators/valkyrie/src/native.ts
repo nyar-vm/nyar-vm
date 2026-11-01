@@ -63,6 +63,7 @@ export type AsgardStaticBuildOptions = {
     entry: string;
     outputDir?: string;
     title?: string;
+    base?: string;
 };
 
 export type AsgardStaticBuildOutcome = {

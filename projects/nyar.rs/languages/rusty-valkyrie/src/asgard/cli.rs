@@ -20,7 +20,10 @@ use crate::asgard::{
 /// Asgard 应用必须是合法 Legion 项目并具备 `asgard.config.v`：前者拥有项目身份与
 /// 工程输入，后者拥有 Asgard 配置，二者不可替代。除 `asgard setup` 初始化路径外，
 /// 需要在项目上执行的命令缺其一都明确失败，不通过裸入口参数或隐式默认配置绕过。
-fn require_project_admission(project_dir: &Path) -> AsgardResult<()> {
+///
+/// 该检查是命令面与程序化 API 面的共同前置：N-API 的 `asgardBuildStatic` 同样调用它，
+/// 准入只有一份实现。
+pub fn require_project_admission(project_dir: &Path) -> AsgardResult<()> {
     if !project_dir.join("legion.von").is_file() {
         return Err(AsgardError::msg(report!(
             "asgard: 项目准入失败：`{}` 缺少 `legion.von`，Asgard 应用必须是合法 Legion 项目",

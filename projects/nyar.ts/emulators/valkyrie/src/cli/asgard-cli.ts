@@ -26,13 +26,14 @@ const CONFIG_PIPELINE_NOTE =
 
 /**
  * `asgard build --static <entry>`：TS 侧解析 argv 后调用正交 N-API（与 legion 同型）。
- * 其余 flag（`--title` / `--output` / 位置参数项目目录）在此消费；
+ * 其余 flag（`--title` / `--output` / `--base` / 位置参数项目目录）在此消费；
  * 未知 flag 失败闭合，不透传。
  */
 function runStaticBuild(argv: string[]): number {
     let entry: string | undefined;
     let title: string | undefined;
     let outputDir: string | undefined;
+    let base: string | undefined;
     let projectDir = process.cwd();
     for (let i = 0; i < argv.length; i += 1) {
         const token = argv[i];
@@ -40,6 +41,7 @@ function runStaticBuild(argv: string[]): number {
         if (token === '--static') entry = argv[i += 1];
         else if (token === '--title') title = argv[i += 1];
         else if (token === '--output' || token === '-o') outputDir = argv[i += 1];
+        else if (token === '--base') base = argv[i += 1];
         else if (!token.startsWith('-')) projectDir = token;
         else {
             console.error(`asgard build --static: 未知选项 ${token}`);
@@ -50,7 +52,7 @@ function runStaticBuild(argv: string[]): number {
         console.error('asgard build --static 需要显式入口 <file.w|file.awsl>（`.w` 与 `.awsl` 同格式同语义）');
         return 1;
     }
-    const outcome = asgardBuildStatic({projectDir: path.resolve(projectDir), entry, outputDir, title});
+    const outcome = asgardBuildStatic({projectDir: path.resolve(projectDir), entry, outputDir, title, base});
     if (!outcome.ok) {
         console.error(outcome.error ?? 'asgard static build failed');
         return 1;
