@@ -21,7 +21,7 @@ pub struct LintArgs {
     pub project_dir: PathBuf,
     /// Lint all workspace members.
     pub workspace: bool,
-    /// Lint target format (`awsl` for AWSL style rules; default: Valkyrie `.v`/`.vx` compile lint).
+    /// Lint target format (`awsl` for AWSL style rules on `.awsl`/`.w` files; default: Valkyrie `.v`/`.vx` compile lint).
     pub format: Option<String>,
     /// Apply auto-fixes for the selected format.
     pub fix: bool,
