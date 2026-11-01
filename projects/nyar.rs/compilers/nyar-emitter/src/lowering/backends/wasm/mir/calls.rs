@@ -203,6 +203,9 @@ impl<'a> WasmMirLowerer<'a> {
         encode_unreachable(&mut self.code);
         WasmOpcode::End.encode(&mut self.code);
         WasmOpcode::End.encode(&mut self.code);
+        // commit heap cursor：global.set 必须先收到 bump_end 新值（与 `bump_allocate` 一致），
+        // 否则 V8 编译期即拒绝（not enough arguments on the stack for global.set）。
+        self.emit_local_get(self.bump_end_local);
         encode_global_set(CABI_HEAP_GLOBAL_INDEX, &mut self.code);
         // 逐字节拷贝：array.get(u8→i32) → i32.store8
         let index_local = self.alloc_i32_local();
