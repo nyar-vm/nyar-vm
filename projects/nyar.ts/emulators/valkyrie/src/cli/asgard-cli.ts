@@ -34,6 +34,7 @@ function runStaticBuild(argv: string[]): number {
     let title: string | undefined;
     let outputDir: string | undefined;
     let base: string | undefined;
+    let assetsDir: string | undefined;
     let projectDir = process.cwd();
     for (let i = 0; i < argv.length; i += 1) {
         const token = argv[i];
@@ -42,6 +43,7 @@ function runStaticBuild(argv: string[]): number {
         else if (token === '--title') title = argv[i += 1];
         else if (token === '--output' || token === '-o') outputDir = argv[i += 1];
         else if (token === '--base') base = argv[i += 1];
+        else if (token === '--assets') assetsDir = argv[i += 1];
         else if (!token.startsWith('-')) projectDir = token;
         else {
             console.error(`asgard build --static: 未知选项 ${token}`);
@@ -52,7 +54,7 @@ function runStaticBuild(argv: string[]): number {
         console.error('asgard build --static 需要显式入口 <file.w|file.awsl>（`.w` 与 `.awsl` 同格式同语义）');
         return 1;
     }
-    const outcome = asgardBuildStatic({projectDir: path.resolve(projectDir), entry, outputDir, title, base});
+    const outcome = asgardBuildStatic({projectDir: path.resolve(projectDir), entry, outputDir, title, base, assetsDir});
     if (!outcome.ok) {
         console.error(outcome.error ?? 'asgard static build failed');
         return 1;

@@ -14,7 +14,10 @@
 //! `manifest.json`、`boot.js`、`<module>.css`。页面用相对 URL，子目录部署由
 //! `<base href>`（非根基址）解析。
 
-use std::path::PathBuf;
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     asgard::{
@@ -48,6 +51,11 @@ pub struct StaticSiteOptions {
     /// 非根基址写入页面 `<base href>`，支持子目录部署；本层只消费已解析基址，
     /// 不重新解释 `artifact.base` 配置字段。
     pub base: String,
+    /// 显式资源目录（相对 `project_dir`）；`None` 表示不拷贝资源。
+    ///
+    /// 资源递归复制到产物根，与页面 / chunk / 胶水 / manifest 同名时失败闭合，
+    /// 不静默覆盖产物。
+    pub assets_dir: Option<PathBuf>,
 }
 
 /// 静态站点构建成功报告。
@@ -160,7 +168,63 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
     let page_path = output_dir.join("index.html");
     std::fs::write(&page_path, page).map_err(|error| AsgardError::msg(report!("写入页面失败 {}: {error}", page_path.display())))?;
 
+    // 资源目录最后复制：前面的产物文件构成保留名集合，重名即失败闭合。
+    if let Some(assets_dir) = &options.assets_dir {
+        let assets_absolute = std::path::absolute(project_root.join(assets_dir))
+            .map_err(|error| AsgardError::msg(report!("规范化资源目录失败 {}: {error}", assets_dir.display())))?;
+        // 包含性以文件系统规范化为准（与入口同一判据），词法比较在 Windows 上会误判。
+        let assets_root = std::fs::canonicalize(&assets_absolute)
+            .map_err(|error| AsgardError::msg(report!("资源目录不可用 {}: {error}", assets_absolute.display())))?;
+        if !assets_root.starts_with(&root_canonical) {
+            return Err(AsgardError::msg(report!("资源目录越出项目根: {} 不在 {} 内", assets_root.display(), project_root.display())));
+        }
+        let mut reserved = BTreeSet::new();
+        reserved.insert("index.html".to_string());
+        reserved.insert("boot.js".to_string());
+        reserved.insert("manifest.json".to_string());
+        reserved.insert(wasm_report.wasm_filename.clone());
+        reserved.insert(wasm_report.glue_filename.clone());
+        for css_filename in &package_report.css_filenames {
+            reserved.insert(css_filename.clone());
+        }
+        reserved.insert(format!("c/{}.js", component.route_name));
+        copy_assets_into_output(&assets_root, &output_dir, &reserved)?;
+    }
+
     Ok(StaticSiteReport { output_dir, page_path, component_name: file_stem.to_string() })
+}
+
+/// 递归复制资源目录到产物根；与已生成产物同名的条目失败闭合，不静默覆盖。
+fn copy_assets_into_output(assets_root: &Path, output_dir: &Path, reserved: &BTreeSet<String>) -> AsgardResult<()> {
+    let mut pending = vec![assets_root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let entries = std::fs::read_dir(&directory)
+            .map_err(|error| AsgardError::msg(report!("读取资源目录失败 {}: {error}", directory.display())))?;
+        for entry in entries {
+            let entry = entry.map_err(|error| AsgardError::msg(report!("读取资源目录项失败: {error}")))?;
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let relative = path
+                .strip_prefix(assets_root)
+                .map_err(|error| AsgardError::msg(report!("资源路径不可相对化 {}: {error}", path.display())))?
+                .to_string_lossy()
+                .replace('\\', "/");
+            if reserved.contains(&relative) {
+                return Err(AsgardError::msg(report!("资源 {} 与已生成产物同名，拒绝覆盖", relative)));
+            }
+            let destination = output_dir.join(&relative);
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|error| AsgardError::msg(report!("创建资源目录失败 {}: {error}", parent.display())))?;
+            }
+            std::fs::copy(&path, &destination)
+                .map_err(|error| AsgardError::msg(report!("复制资源失败 {} → {}: {error}", path.display(), destination.display())))?;
+        }
+    }
+    Ok(())
 }
 
 /// 校验并规范化为可写入 `<base href>` 的目录 URL。

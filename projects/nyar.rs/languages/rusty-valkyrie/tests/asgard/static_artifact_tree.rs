@@ -48,6 +48,7 @@ fn build_and_list(project: &std::path::Path, output: &std::path::Path, base: &st
         output_dir: Some(output.to_path_buf()),
         title: Some("产物树测试".into()),
         base: base.to_string(),
+        assets_dir: None,
     })
     .expect("静态站点构建应成功");
     assert_eq!(report.page_path, output.join("index.html"), "报告页面路径应落在输出目录");

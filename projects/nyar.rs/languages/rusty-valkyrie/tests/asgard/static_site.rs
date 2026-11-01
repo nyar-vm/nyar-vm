@@ -38,6 +38,7 @@ fn build_page(temp: &TempDir, entry_name: &str) -> String {
         entry: PathBuf::from(format!("source/{entry_name}")),
         output_dir: None,
         base: "/".into(),
+        assets_dir: None,
         title: Some("静态站点测试".into()),
     })
     .expect("静态站点构建失败");
@@ -83,6 +84,7 @@ fn default_title_falls_back_to_component_name() {
         entry: PathBuf::from("source/index.w"),
         output_dir: None,
         base: "/".into(),
+        assets_dir: None,
         title: None,
     })
     .expect("静态站点构建失败");
@@ -104,6 +106,7 @@ fn base_prefix_is_consumed_into_base_href() {
         output_dir: None,
         title: Some("子目录部署".into()),
         base: "/app".into(),
+        assets_dir: None,
     })
     .expect("带非根基址的静态构建应成功");
     let html = fs::read_to_string(&report.page_path).expect("读取 index.html 失败");
@@ -121,6 +124,7 @@ fn invalid_base_prefix_is_rejected() {
         output_dir: None,
         title: None,
         base: "app".into(),
+        assets_dir: None,
     })
     .expect_err("基址必须以 `/` 开头");
     assert!(error.to_string().contains("目录 URL"), "诊断应说明基址目录 URL 合同: {error}");
@@ -136,6 +140,7 @@ fn rejects_unknown_entry_extension() {
         entry: PathBuf::from("source/index.v"),
         output_dir: None,
         base: "/".into(),
+        assets_dir: None,
         title: Some("静态站点测试".into()),
     })
     .expect_err(".v 不是静态站点入口后缀，应失败");
@@ -152,6 +157,7 @@ fn rejects_missing_entry_file() {
         entry: PathBuf::from("source/missing.awsl"),
         output_dir: None,
         base: "/".into(),
+        assets_dir: None,
         title: Some("静态站点测试".into()),
     })
     .expect_err("入口文件不存在应失败");
@@ -170,8 +176,59 @@ fn rejects_entry_escaping_project_dir() {
         entry: PathBuf::from("../outside.awsl"),
         output_dir: None,
         base: "/".into(),
+        assets_dir: None,
         title: Some("静态站点测试".into()),
     })
     .expect_err("越出项目根的入口应失败");
     assert!(error.to_string().contains("越出项目根"), "诊断应说明入口越出项目根: {error}");
+}
+
+/// 写入可构建的最小工程（含 `legion.von` 与入口），返回项目根。
+fn writable_project(temp: &TempDir) -> PathBuf {
+    let project = temp.path().to_path_buf();
+    fs::create_dir_all(project.join("source")).expect("创建 source/ 目录失败");
+    fs::write(project.join("legion.von"), LEGION_MANIFEST).expect("写入工程清单失败");
+    fs::write(project.join("source/index.w"), FIXTURE).expect("写入入口文件失败");
+    project
+}
+
+#[test]
+fn assets_directory_is_copied_into_output() {
+    let temp = TempDir::new().expect("创建临时目录失败");
+    let project = writable_project(&temp);
+    fs::create_dir_all(project.join("assets/img")).expect("创建资源目录失败");
+    fs::write(project.join("assets/logo.txt"), "logo").expect("写入资源文件失败");
+    fs::write(project.join("assets/img/icon.svg"), "<svg/>").expect("写入嵌套资源失败");
+
+    let report = build_static_site(&StaticSiteOptions {
+        project_dir: project.clone(),
+        entry: PathBuf::from("source/index.w"),
+        output_dir: None,
+        title: None,
+        base: "/".into(),
+        assets_dir: Some(PathBuf::from("assets")),
+    })
+    .expect("带资源目录的静态构建应成功");
+
+    assert!(report.output_dir.join("logo.txt").is_file(), "资源应复制到产物根");
+    assert!(report.output_dir.join("img/icon.svg").is_file(), "嵌套资源应保留相对路径");
+}
+
+#[test]
+fn asset_colliding_with_generated_artifact_is_rejected() {
+    let temp = TempDir::new().expect("创建临时目录失败");
+    let project = writable_project(&temp);
+    fs::create_dir_all(project.join("assets")).expect("创建资源目录失败");
+    fs::write(project.join("assets/manifest.json"), "{}").expect("写入资源文件失败");
+
+    let error = build_static_site(&StaticSiteOptions {
+        project_dir: project.clone(),
+        entry: PathBuf::from("source/index.w"),
+        output_dir: None,
+        title: None,
+        base: "/".into(),
+        assets_dir: Some(PathBuf::from("assets")),
+    })
+    .expect_err("资源与产物同名应失败");
+    assert!(error.to_string().contains("同名"), "诊断应说明资源与产物同名: {error}");
 }

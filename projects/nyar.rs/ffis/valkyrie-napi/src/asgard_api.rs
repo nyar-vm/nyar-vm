@@ -28,6 +28,8 @@ pub struct AsgardStaticBuildOptions {
     pub title: Option<String>,
     /// 产物基址（目录 URL）；缺省 `/`。配置求值闭合前由调用方显式给出，本层不猜测。
     pub base: Option<String>,
+    /// 显式资源目录（相对 `projectDir`）；缺省不拷贝资源。
+    pub assets_dir: Option<String>,
 }
 
 /// `asgardBuildStatic` 的结构化返回。
@@ -60,6 +62,7 @@ pub fn asgard_build_static(options: AsgardStaticBuildOptions) -> AsgardStaticBui
                 output_dir: options.output_dir.map(PathBuf::from),
                 title: options.title,
                 base: options.base.unwrap_or_else(|| "/".to_string()),
+                assets_dir: options.assets_dir.map(PathBuf::from),
             })
         })
         .expect("failed to spawn asgard static build thread");
