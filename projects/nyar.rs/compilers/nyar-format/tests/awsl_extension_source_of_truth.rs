@@ -1,6 +1,9 @@
 //! AWSL 扩展名单一事实源：`.awsl` 规范拼写与同义缩写 `.w` 同 parser、同 lowering、同身份。
 
-use nyar_format::formatter::{AWSL_EXTENSIONS, FormatBatchOptions, FormatCliOptions, FormatOptions, SourceKind, format_paths, format_source_for_extension, is_awsl_extension};
+use nyar_format::formatter::{
+    AWSL_EXTENSIONS, FormatBatchOptions, FormatCliOptions, FormatOptions, SourceKind, format_paths, format_source_for_extension,
+    is_awsl_extension,
+};
 
 const SAMPLE: &str = r#"
 <template>
