@@ -24,9 +24,7 @@ use crate::compiler::{
                 is_empty_array_literal,
             },
         },
-        try_propagate::{
-            is_option_apply_type, is_result_apply_type, option_apply_payload_type, result_variant_payload_type,
-        },
+        try_propagate::{is_option_apply_type, is_result_apply_type, option_apply_payload_type, result_variant_payload_type},
         type_relation::TypeRelationContext,
     },
     mir::AggregateFieldIndex,
@@ -364,7 +362,16 @@ pub(crate) fn try_resolve_call(
                         contextual_type,
                     );
                 }
-                return try_resolve_qualified_free_function(path, args, candidates, type_relations, locals, struct_fields, singleton_names);
+                return try_resolve_qualified_free_function(
+                    path,
+                    args,
+                    &explicit_generic_arguments,
+                    candidates,
+                    type_relations,
+                    locals,
+                    struct_fields,
+                    singleton_names,
+                );
             }
         }
     }
@@ -431,6 +438,7 @@ pub(crate) fn try_resolve_call(
         .filter(|candidate| {
             symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
                 || symbol_matches_imported_dependency_export(candidate, &callee_name)
+                || type_relations.symbol_matches_import(&candidate.symbol, &callee_name)
         })
         .filter_map(|candidate| {
             match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)

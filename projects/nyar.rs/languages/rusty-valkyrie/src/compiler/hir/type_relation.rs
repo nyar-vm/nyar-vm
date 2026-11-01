@@ -81,6 +81,18 @@ pub enum ParameterMatchResult {
     },
 }
 
+/// 一条模块级导入绑定：`using module::{imported as local}` 或 glob 导入。
+///
+/// 自由函数调用在无限定形式下必须能命中显式导入的声明身份；只按
+/// `enclosing_module + name` 相等匹配会丢掉 `using!` 导入的事实。
+#[derive(Debug, Clone)]
+struct ImportedSymbol {
+    module: NamePath,
+    glob: bool,
+    local: Identifier,
+    imported: Identifier,
+}
+
 /// 类型关系判定上下文：模块的名义、trait 与可调用约束视图。
 #[derive(Debug, Clone)]
 pub struct TypeRelationContext {
@@ -93,6 +105,8 @@ pub struct TypeRelationContext {
     callable_constraints: Vec<HirWhereConstraint>,
     /// 当前正在解析调用的模块路径；无限定自由函数按结构化路径匹配，禁止末段回退。
     enclosing_module: NamePath,
+    /// 模块级 `using` 导入绑定：无限定调用只有命中这些绑定才接受导入目标。
+    imported_symbols: Vec<ImportedSymbol>,
 }
 
 impl TypeRelationContext {
@@ -104,6 +118,8 @@ impl TypeRelationContext {
         let mut enums_by_declaration = BTreeMap::new();
         collect_relation_structs(module, &mut structs, &mut structs_by_declaration);
         collect_relation_enums(module, &mut enums, &mut enums_by_declaration);
+        let mut imported_symbols = Vec::new();
+        collect_relation_imports(module, &mut imported_symbols);
         Self {
             nominal: NominalModuleView::from_module(module),
             traits: TraitModuleView::from_module(module),
@@ -113,7 +129,33 @@ impl TypeRelationContext {
             enums_by_declaration,
             callable_constraints: Vec::new(),
             enclosing_module: module.name.clone(),
+            imported_symbols,
         }
+    }
+
+    /// 无限定自由函数是否命中一条显式 `using` 导入绑定。
+    ///
+    /// - 选择性导入：候选符号必须等于 `module + imported`，且调用名等于本地名；
+    /// - glob 导入：候选符号以导入模块为前缀，调用名比较末段。
+    ///
+    /// 这里只承认模块声明的导入事实，不做跨命名空间的末段回退。
+    pub(crate) fn symbol_matches_import(&self, symbol: &NamePath, callee_name: &Identifier) -> bool {
+        self.imported_symbols.iter().any(|imported| {
+            if imported.glob {
+                let module_parts = imported.module.parts();
+                !module_parts.is_empty()
+                    && symbol.parts().len() > module_parts.len()
+                    && symbol.parts().get(..module_parts.len()) == Some(module_parts)
+                    && symbol.parts().last() == Some(callee_name)
+            }
+            else {
+                let module_parts = imported.module.parts();
+                &imported.local == callee_name
+                    && symbol.parts().len() == module_parts.len() + 1
+                    && symbol.parts().get(..module_parts.len()) == Some(module_parts)
+                    && symbol.parts().last() == Some(&imported.imported)
+            }
+        })
     }
 
     /// 限定当前模块作用域，供无限定自由函数 overload 解析使用。
@@ -381,6 +423,40 @@ fn collect_relation_enums(
     }
     for submodule in &module.submodules {
         collect_relation_enums(submodule, by_name, by_declaration);
+    }
+}
+
+/// 收集模块（含子模块）声明的 `using` 导入绑定。
+fn collect_relation_imports(module: &HirModule, out: &mut Vec<ImportedSymbol>) {
+    for import in &module.imports {
+        if import.glob {
+            let local = import.alias.clone().or_else(|| import.path.parts().last().cloned()).unwrap_or_else(|| Identifier::new(""));
+            out.push(ImportedSymbol { module: import.path.clone(), glob: true, imported: local.clone(), local });
+            continue;
+        }
+        // `using a::b::c`（无花括号）是单符号导入：末段是导入名，前缀是模块。
+        if import.bindings.is_empty() {
+            let parts = import.path.parts();
+            let Some(imported) = parts.last().cloned()
+            else {
+                continue;
+            };
+            let module = NamePath::new(parts[..parts.len().saturating_sub(1)].to_vec());
+            let local = import.alias.clone().unwrap_or_else(|| imported.clone());
+            out.push(ImportedSymbol { module, glob: false, imported, local });
+            continue;
+        }
+        for binding in &import.bindings {
+            out.push(ImportedSymbol {
+                module: import.path.clone(),
+                glob: false,
+                local: binding.alias.clone().unwrap_or_else(|| binding.name.clone()),
+                imported: binding.name.clone(),
+            });
+        }
+    }
+    for submodule in &module.submodules {
+        collect_relation_imports(submodule, out);
     }
 }
 

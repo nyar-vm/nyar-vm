@@ -9,6 +9,7 @@ mod frontend_contract_control_flow_payload_witness_identity_tests;
 #[cfg(false)] // FragmentSubmission 旧字段已移除（架构迁移）
 mod generic_struct_new_contract;
 mod operator_trait_impl_call_tests;
+mod qualified_turbofish_call_tests;
 #[cfg(false)] // FragmentSubmission 旧字段已移除（架构迁移）
 mod singleton_contracts;
 #[cfg(false)] // `assembly` 模块不存在（架构迁移）

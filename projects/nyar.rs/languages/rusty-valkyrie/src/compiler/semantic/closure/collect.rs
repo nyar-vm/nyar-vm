@@ -51,6 +51,16 @@ fn collect_item(builder: &mut FileBuilder, namespace: &[String], item: &ast::Sta
         ast::StatementNode::Trait(trait_decl) => {
             let mut signature = References::default();
             collect_signature_fields(&trait_decl.body.fields, &mut signature);
+            // 关联类型的约束与默认值同样是声明面引用：`type Iter: Iterator<Item=Self::Item>`
+            // 必须把 `Iterator` 纳入闭包，否则部分裁剪的闭包里该约束在 HIR 侧成为未知类型。
+            for associated in &trait_decl.body.associated_types {
+                for bound in &associated.bounds {
+                    collect_type_expression(bound, &mut signature);
+                }
+                if let Some(default) = &associated.default {
+                    collect_type_expression(default, &mut signature);
+                }
+            }
             builder.register(namespace, DeclarationKind::Trait, &trait_decl.name.name, None, None, None, signature);
             collect_members(builder, namespace, &trait_decl.name.name, &trait_decl.body.methods);
         }
@@ -259,6 +269,8 @@ fn collect_where_constraints(constraints: &[ast::type_nodes::WhereConstraint], r
 const LITERAL_SEQUENCE_WITH_LENGTH_MEMBER: &str = "with_length";
 /// 见 [`LITERAL_SEQUENCE_WITH_LENGTH_MEMBER`]。
 const LITERAL_SEQUENCE_APPEND_MEMBER: &str = "append";
+/// `[T]` 类型的聚合声明名：HIR 用同一个名义名匹配数组接收者（`ValkyrieType::Array` → `Array`）。
+const ARRAY_AGGREGATE_NAME: &str = "Array";
 
 fn collect_let(let_stmt: &ast::Let, references: &mut References) {
     if let Some(ty) = &let_stmt.ty {
@@ -465,7 +477,15 @@ fn collect_type_expression(ty: &ast::TypeExpression, references: &mut References
             collect_type_expression(&node.lhs, references);
             collect_type_expression(&node.rhs, references);
         }
-        ast::TypeExpression::Unary(node) => collect_type_expression(&node.base, references),
+        // `[T]` / `[T; n]` 是 `Array<T>` 的语言写法（`ValkyrieType::Array` / `FixedArray`）。
+        // 数组类型的运算符成员（`suffix [ ]` / `suffix ⁅ ⁆` 等）由 `Array` 聚合声明，
+        // 因此类型位置必须引用该聚合，否则成员提升失去拥有者，下标调用在 HIR 无法解析。
+        ast::TypeExpression::Unary(node) => {
+            if matches!(node.operator, ValkyrieTokenType::BracketL) {
+                references.paths.insert(vec![ARRAY_AGGREGATE_NAME.to_string()]);
+            }
+            collect_type_expression(&node.base, references);
+        }
         ast::TypeExpression::Generic(generic) => {
             references.paths.insert(vec![generic.name.name.clone()]);
         }

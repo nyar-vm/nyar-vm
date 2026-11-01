@@ -165,6 +165,7 @@ pub(crate) fn build_constructor_resolved_call(
 pub(crate) fn try_resolve_qualified_free_function(
     path: &NamePath,
     args: &[HirCallArgument],
+    explicit_generic_arguments: &[ValkyrieType],
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
     locals: &BTreeMap<String, ValkyrieType>,
@@ -179,7 +180,9 @@ pub(crate) fn try_resolve_qualified_free_function(
             }
             candidate.symbol.parts() == path.parts()
         })
-        .filter_map(|candidate| match_call_candidate(candidate, args, &[], type_relations, locals, struct_fields, singleton_names))
+        .filter_map(|candidate| {
+            match_call_candidate(candidate, args, explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
+        })
         .collect::<Vec<_>>();
     let resolved = crate::compiler::hir::overload::diagnostics::resolve_overload(&filtered).ok()?;
     let domain = match resolved.domain {

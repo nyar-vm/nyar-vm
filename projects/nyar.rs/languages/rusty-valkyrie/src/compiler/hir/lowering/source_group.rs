@@ -200,6 +200,11 @@ pub(crate) fn visible_nominal_type_names(
                     out.push(VisibleNominalType { namespace: namespace.to_vec(), name: structure.name.name.clone() })
                 }
                 StatementNode::Enums(enums) => out.push(VisibleNominalType { namespace: namespace.to_vec(), name: enums.name.name.clone() }),
+                // trait 名同样会出现在类型位置（关联类型约束 `type Iter: Iterator<...>`、
+                // 泛型上界等），降级为 `Named` 交由 trait 绑定阶段解析声明身份。
+                StatementNode::Trait(trait_decl) => {
+                    out.push(VisibleNominalType { namespace: namespace.to_vec(), name: trait_decl.name.name.clone() })
+                }
                 StatementNode::Variant(variant) => {
                     out.push(VisibleNominalType { namespace: namespace.to_vec(), name: variant.name.name.clone() })
                 }
