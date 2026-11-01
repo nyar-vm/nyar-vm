@@ -887,6 +887,24 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
                         // 放行！在 lower_operation 里尝试消去 Witness 为具体 Item 调用。
                         // self_type 仍开放时（`None`）由 lower_operation 返回结构化失败。
                     }
+                    (CanonicalCallee::Value(callee), Some(InvokeLowering::TypedReference)) => {
+                        // 函数值 callee 的间接调用合同：callee SSA 必须携带 canonical 冻结的
+                        // Function 类型事实，wasm 侧据此发射 `call_indirect`；缺事实失败闭合。
+                        let Some(callee_type) = function.value_types.get(callee)
+                        else {
+                            return Err(format!(
+                                "调用指令 `{}` 的 callee `Value({callee:?})` 缺少 Semantic MIR 类型事实",
+                                instruction.id.index()
+                            ));
+                        };
+                        if !matches!(canonical.linked.types.get(callee_type).map(|record| &record.kind), Some(CanonicalTypeKind::Function { .. }))
+                        {
+                            return Err(format!(
+                                "调用指令 `{}` 的 callee `Value({callee:?})` 类型 `{callee_type:?}` 不是函数类型，尚无目标私有调用合同，拒绝发射间接调用",
+                                instruction.id.index()
+                            ));
+                        }
+                    }
                     (_, None) => {
                         return Err(format!("调用指令 `{}` 缺少 RepresentationPlan 降低合同", instruction.id.index()));
                     }
