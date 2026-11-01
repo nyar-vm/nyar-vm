@@ -16,6 +16,7 @@ mod legion_cmds_spy_jvm;
 mod legion_cmds_spy_pe_parser;
 mod legion_cmds_spy_wasm;
 mod legion_cmds_test;
+mod legion_external_runner_fail_closed;
 mod legion_manifest;
 mod legion_pack_bootstrap_aliases;
 mod legion_planner;

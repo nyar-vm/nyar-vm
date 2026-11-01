@@ -10,9 +10,10 @@ use nyar::{CanonicalTarget, RunnerFamily};
 use nyar_runner::{RuntimeContract as InterpreterRuntimeContract, RuntimeFamily as InterpreterRuntimeFamily};
 use std::{
     collections::BTreeMap,
+    io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use crate::legion::cmds::{
@@ -26,6 +27,34 @@ use super::{
     targets::parse_target_label,
 };
 
+/// 外部 runner 的结构化失败分类。
+///
+/// 外部 runner 必须 fail-closed：运行时缺失、产物格式不符、执行超时、退出码非零
+/// 都要归入可诊断类别，禁止静默跳过或当作通过。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalRunFailure {
+    /// runner 命令未安装或不在 `PATH` 上，无法启动。
+    RuntimeNotInstalled,
+    /// 产物扩展名与目标 profile 声明的主产物格式不一致，拒绝启动 runner。
+    ArtifactFormatMismatch,
+    /// 执行超过时限，进程已被终止。
+    ExecutionTimeout,
+    /// 进程以非零退出码结束，或退出码为零但 `stderr` 非空。
+    NonZeroExit,
+}
+
+impl ExternalRunFailure {
+    /// 测试输出与报告使用的诊断标签。
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RuntimeNotInstalled => "runtime-not-installed",
+            Self::ArtifactFormatMismatch => "artifact-format-mismatch",
+            Self::ExecutionTimeout => "execution-timeout",
+            Self::NonZeroExit => "non-zero-exit",
+        }
+    }
+}
+
 /// 单次测试执行结果。
 #[derive(Debug, Clone)]
 pub struct RunOutcome {
@@ -33,6 +62,8 @@ pub struct RunOutcome {
     pub success: bool,
     /// 失败是否发生在编译/会话阶段（而非运行期）。
     pub is_compile_error: bool,
+    /// 运行期失败的结构化分类；通过或编译期失败为 `None`。
+    pub failure: Option<ExternalRunFailure>,
     /// 失败时的结构化错误文本；通过时为 `None`。
     pub error: Option<String>,
 }
@@ -83,13 +114,14 @@ pub fn run_external_test_in_session(
         return RunOutcome {
             success: false,
             is_compile_error: true,
+            failure: None,
             error: Some(format!("未找到测试 `{function_name}` 对应的产物。{}", describe_runnable_artifacts(session))),
         };
     };
 
     let Ok(canonical) = parse_target_label(&session.target)
     else {
-        return RunOutcome { success: false, is_compile_error: true, error: Some(format!("未知目标 {}", session.target)) };
+        return RunOutcome { success: false, is_compile_error: true, failure: None, error: Some(format!("未知目标 {}", session.target)) };
     };
 
     // 运行器家族必须由 CanonicalTarget 的 profile 推导；按标签字符串猜测会把
@@ -104,38 +136,128 @@ pub fn run_external_test_in_session(
 
     let template = match resolve_runner_template(workspace, &canonical, runner_family, cli_runners, function_name) {
         Ok(t) => t,
-        Err(error) => return RunOutcome { success: false, is_compile_error: true, error: Some(error.to_string()) },
+        Err(error) => return RunOutcome { success: false, is_compile_error: true, failure: None, error: Some(error.to_string()) },
     };
 
     let placeholders = build_placeholders(&session.output_dir, &artifact, runner_family, function_name);
     let command = expand_placeholders(&template.command, &placeholders);
     let args: Vec<String> = template.args.iter().map(|a| expand_placeholders(a, &placeholders)).collect();
 
-    let output = Command::new(&command).args(&args).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
+    // 格式门以目标 profile 的主产物扩展名为唯一事实源，不按标签字符串猜测每个 lane 的产物形态。
+    let expected_extension = canonical.to_profile(None).artifact_policy.primary_extension;
+    execute_external_runner(&command, &args, &artifact, &expected_extension, EXTERNAL_RUNNER_TIMEOUT, verbose)
+}
 
-    match output {
-        Ok(output) if output.status.success() => {
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            if !stderr.trim().is_empty() {
-                return RunOutcome { success: false, is_compile_error: false, error: Some(stderr) };
-            }
-            if verbose {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if !stdout.trim().is_empty() {
-                    println!("      stdout: {}", stdout.trim_end());
-                }
-            }
-            RunOutcome { success: true, is_compile_error: false, error: None }
+/// 外部 runner 默认执行时限。
+pub const EXTERNAL_RUNNER_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// fail-closed 执行外部 runner：格式门 → 启动分类 → 超时轮询 → 退出码分类。
+///
+/// 四类运行期失败各自返回 `ExternalRunFailure` 结构化分类与可诊断文本，
+/// 绝不把「未安装/超时/格式不符」静默折叠成通过或无差别失败。
+pub fn execute_external_runner(
+    command: &str,
+    args: &[String],
+    artifact: &Path,
+    expected_extension: &str,
+    timeout: Duration,
+    verbose: bool,
+) -> RunOutcome {
+    let expected = expected_extension.trim_start_matches('.').to_ascii_lowercase();
+    if !expected.is_empty() {
+        let actual = artifact.extension().map(|ext| ext.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+        if actual != expected {
+            return RunOutcome {
+                success: false,
+                is_compile_error: false,
+                failure: Some(ExternalRunFailure::ArtifactFormatMismatch),
+                error: Some(format!(
+                    "产物格式不匹配: `{}` 扩展名 `{actual}` 与目标主产物格式 `.{expected}` 不一致，拒绝启动 runner",
+                    artifact.display()
+                )),
+            };
         }
-        Ok(output) => {
-            let mut error = String::from_utf8_lossy(&output.stderr).to_string();
-            if error.trim().is_empty() {
-                error = String::from_utf8_lossy(&output.stdout).to_string();
-            }
-            RunOutcome { success: false, is_compile_error: false, error: Some(error) }
-        }
-        Err(error) => RunOutcome { success: false, is_compile_error: false, error: Some(error.to_string()) },
     }
+
+    let mut child = match Command::new(command).args(args).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let reason = if error.kind() == std::io::ErrorKind::NotFound { "运行时未安装或不在 PATH" } else { "运行时无法启动" };
+            return RunOutcome {
+                success: false,
+                is_compile_error: false,
+                failure: Some(ExternalRunFailure::RuntimeNotInstalled),
+                error: Some(format!("{reason}: `{command}` — {error}")),
+            };
+        }
+    };
+
+    // 独立线程排空管道，避免子进程因写满管道缓冲而阻塞、被误判为超时。
+    let stdout_pipe = child.stdout.take().expect("piped stdout");
+    let stderr_pipe = child.stderr.take().expect("piped stderr");
+    let stdout_reader = std::thread::spawn(move || drain_pipe(stdout_pipe));
+    let stderr_reader = std::thread::spawn(move || drain_pipe(stderr_pipe));
+
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if started.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return RunOutcome {
+                        success: false,
+                        is_compile_error: false,
+                        failure: Some(ExternalRunFailure::ExecutionTimeout),
+                        error: Some(format!("执行超时: `{command}` 未在 {} ms 内退出，已终止进程", timeout.as_millis())),
+                    };
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => {
+                return RunOutcome {
+                    success: false,
+                    is_compile_error: false,
+                    failure: Some(ExternalRunFailure::RuntimeNotInstalled),
+                    error: Some(format!("等待 runner `{command}` 失败: {error}")),
+                };
+            }
+        }
+    };
+
+    let stdout = stdout_reader.join().unwrap_or_default();
+    let stderr = stderr_reader.join().unwrap_or_default();
+
+    if status.success() {
+        if !stderr.trim().is_empty() {
+            return RunOutcome { success: false, is_compile_error: false, failure: Some(ExternalRunFailure::NonZeroExit), error: Some(stderr) };
+        }
+        if verbose && !stdout.trim().is_empty() {
+            println!("      stdout: {}", stdout.trim_end());
+        }
+        return RunOutcome { success: true, is_compile_error: false, failure: None, error: None };
+    }
+
+    let code = status.code().map(|code| code.to_string()).unwrap_or_else(|| "signal".to_string());
+    let mut detail = stderr;
+    if detail.trim().is_empty() {
+        detail = stdout;
+    }
+    RunOutcome {
+        success: false,
+        is_compile_error: false,
+        failure: Some(ExternalRunFailure::NonZeroExit),
+        error: Some(format!("runner `{command}` 退出码 {code}: {}", detail.trim())),
+    }
+}
+
+fn drain_pipe(mut pipe: impl Read) -> String {
+    let mut buffer = Vec::new();
+    if pipe.read_to_end(&mut buffer).is_err() {
+        return String::new();
+    }
+    String::from_utf8_lossy(&buffer).to_string()
 }
 
 /// 用 legion 内置 OVM 运行时进程内执行单个测试入口。
@@ -149,6 +271,7 @@ fn run_builtin_ovm_test(artifact: &Path, function_name: &str, verbose: bool) -> 
             return RunOutcome {
                 success: false,
                 is_compile_error: true,
+                failure: None,
                 error: Some(format!("读取 OVM 产物 `{}` 失败: {error}", artifact.display())),
             };
         }
@@ -160,6 +283,7 @@ fn run_builtin_ovm_test(artifact: &Path, function_name: &str, verbose: bool) -> 
             return RunOutcome {
                 success: false,
                 is_compile_error: true,
+                failure: None,
                 error: Some(format!("OVM 加载产物 `{}` 失败: {error}", artifact.display())),
             };
         }
@@ -169,10 +293,15 @@ fn run_builtin_ovm_test(artifact: &Path, function_name: &str, verbose: bool) -> 
             if verbose {
                 println!("      ovm: {value:?}");
             }
-            RunOutcome { success: true, is_compile_error: false, error: None }
+            RunOutcome { success: true, is_compile_error: false, failure: None, error: None }
         }
         Err(error) => {
-            RunOutcome { success: false, is_compile_error: false, error: Some(format!("OVM 执行 `{function_name}` 失败: {error}")) }
+            RunOutcome {
+                success: false,
+                is_compile_error: false,
+                failure: Some(ExternalRunFailure::NonZeroExit),
+                error: Some(format!("OVM 执行 `{function_name}` 失败: {error}")),
+            }
         }
     }
 }
@@ -258,7 +387,7 @@ pub fn run_tests_for_project(
 
             let outcome = match &session {
                 Ok(session) => run_external_test_in_session(workspace, session, &tf.name, cli_runners, verbose),
-                Err(error) => RunOutcome { success: false, is_compile_error: true, error: Some(error.clone()) },
+                Err(error) => RunOutcome { success: false, is_compile_error: true, failure: None, error: Some(error.clone()) },
             };
 
             if outcome.success {
@@ -280,7 +409,10 @@ pub fn run_tests_for_project(
                 });
             }
             else {
-                println!("FAILED");
+                match outcome.failure {
+                    Some(failure) => println!("FAILED [{}]", failure.as_str()),
+                    None => println!("FAILED"),
+                }
                 if let Some(error) = &outcome.error {
                     println!("      {error}");
                 }
