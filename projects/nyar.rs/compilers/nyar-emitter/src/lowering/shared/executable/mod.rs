@@ -116,8 +116,7 @@ pub struct UnresolvedStorageIdentity {
 /// 该形状必须在生成任何字节之前结构化失败，而不是由 backend 认亲。
 pub fn validate_storage_identities(submission: &FragmentSubmission) -> Result<(), UnresolvedStorageIdentity> {
     let plan = &submission.backend_plan;
-    let registered_layouts: std::collections::BTreeSet<LayoutId> =
-        plan.aggregate_layouts().layouts.iter().map(|layout| layout.id).collect();
+    let registered_layouts: std::collections::BTreeSet<LayoutId> = plan.aggregate_layouts().layouts.iter().map(|layout| layout.id).collect();
     for instance in plan.instances() {
         let Some(view) = plan.get_function(&instance)
         else {
@@ -173,19 +172,15 @@ fn named_residual(ty: &NyarType, registered_layouts: &std::collections::BTreeSet
             }
         }
         NyarType::Apply(_base, arguments) => arguments.iter().find_map(|argument| named_residual(argument, registered_layouts)),
-        NyarType::Function(function) => {
-            named_residual(&function.return_type, registered_layouts)
-                .or_else(|| function.params.iter().find_map(|parameter| named_residual(parameter, registered_layouts)))
-        }
+        NyarType::Function(function) => named_residual(&function.return_type, registered_layouts)
+            .or_else(|| function.params.iter().find_map(|parameter| named_residual(parameter, registered_layouts))),
         NyarType::Tuple(elements) | NyarType::Union(elements) => {
             elements.iter().find_map(|element| named_residual(element, registered_layouts))
         }
         NyarType::Array(element) | NyarType::FixedArray { element, .. } | NyarType::Nullable(element) => {
             named_residual(element, registered_layouts)
         }
-        NyarType::TraitObject(object) => {
-            object.type_arguments.iter().find_map(|argument| named_residual(argument, registered_layouts))
-        }
+        NyarType::TraitObject(object) => object.type_arguments.iter().find_map(|argument| named_residual(argument, registered_layouts)),
         _ => None,
     }
 }
