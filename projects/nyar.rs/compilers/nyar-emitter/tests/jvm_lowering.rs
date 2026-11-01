@@ -216,6 +216,42 @@ fn unfrozen_operator_binding_is_rejected_structurally() {
     assert!(error.contains("缺少可编码助记符"), "{error}");
 }
 
+/// 构造两分支控制流，验证条件分支落到 `ifeq` + `goto`，两块各自返回。
+#[test]
+fn conditional_branch_lowers_to_compare_and_jump() {
+    let mut fixture = function("jvm.branch", LONG, vec![LONG, BOOLEAN]);
+    fixture.blocks.push(Block {
+        id: BlockRef(1),
+        label: "then_branch".to_string(),
+        parameters: Vec::new(),
+        instructions: Vec::new(),
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
+    });
+    fixture.blocks.push(Block {
+        id: BlockRef(2),
+        label: "else_branch".to_string(),
+        parameters: Vec::new(),
+        instructions: Vec::new(),
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
+    });
+    fixture.blocks[0].terminator = Terminator::Branch {
+        condition: Operand::Value(ValueRef(1)),
+        then_target: BlockRef(1),
+        else_target: BlockRef(2),
+    };
+
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
+    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "branch".to_string());
+    let class_file = lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect("conditional branch must lower");
+
+    let instructions = method_code(&class_file, "branch");
+    assert!(instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::IfEq(_))), "{instructions:?}");
+    assert!(instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::Goto(_))), "{instructions:?}");
+    class_file.to_bytes().expect("branch class encoding");
+}
+
 #[test]
 fn unsupported_instruction_is_rejected_structurally() {
     let mut fixture = function("jvm.fixture", LONG, vec![LONG]);

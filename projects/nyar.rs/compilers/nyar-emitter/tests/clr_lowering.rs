@@ -180,6 +180,44 @@ fn unfrozen_operator_binding_is_rejected_structurally() {
     assert!(error.contains("缺少可编码助记符"), "{error}");
 }
 
+/// 构造两分支控制流，验证条件分支落到单条 `brfalse` + `br`，两块各自返回。
+#[test]
+fn conditional_branch_lowers_to_single_false_branch() {
+    let mut fixture = function("clr.branch", LONG, vec![LONG, BOOLEAN]);
+    fixture.blocks.push(Block {
+        id: BlockRef(1),
+        label: "then_branch".to_string(),
+        parameters: Vec::new(),
+        instructions: Vec::new(),
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
+    });
+    fixture.blocks.push(Block {
+        id: BlockRef(2),
+        label: "else_branch".to_string(),
+        parameters: Vec::new(),
+        instructions: Vec::new(),
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
+    });
+    fixture.blocks[0].terminator = Terminator::Branch {
+        condition: Operand::Value(ValueRef(1)),
+        then_target: BlockRef(1),
+        else_target: BlockRef(2),
+    };
+
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main, fixture)]));
+    plan.testing_module_name("clr_lowering");
+    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "branch".to_string());
+    let module = lower_fragment_to_clr_module(&FragmentSubmission::from_backend_plan(plan)).expect("conditional branch must lower");
+
+    let instructions =
+        module.global_methods.iter().find(|method| method.method.name == "branch").expect("branch method").instructions.as_slice();
+    assert_eq!(instructions.iter().filter(|instruction| instruction.opcode == MsilOpcode::Brfalse).count(), 1, "{instructions:?}");
+    assert_eq!(instructions.iter().filter(|instruction| instruction.opcode == MsilOpcode::Br).count(), 1, "{instructions:?}");
+    assert_eq!(instructions.iter().filter(|instruction| instruction.opcode == MsilOpcode::Ret).count(), 2, "{instructions:?}");
+    write_library_bytes(&module);
+}
+
 #[test]
 fn unsupported_instruction_is_rejected_structurally() {
     let mut fixture = function("clr.fixture", LONG, vec![LONG]);
