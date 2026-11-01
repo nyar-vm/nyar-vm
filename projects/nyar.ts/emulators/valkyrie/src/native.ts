@@ -75,8 +75,22 @@ export type AsgardStaticBuildOutcome = {
     componentName?: string;
 };
 
+export type AsgardServeOptions = {
+    root: string;
+    base?: string;
+    host?: string;
+    port?: number;
+};
+
+export type AsgardServeOutcome = {
+    ok: boolean;
+    error?: string;
+    address?: string;
+};
+
 /** `valkyrie-napi` 导出的结构化能力面。 */
 type ValkyrieNativeAddon = {
+    asgardServe(options: AsgardServeOptions): AsgardServeOutcome;
     asgardBuildStatic(options: AsgardStaticBuildOptions): AsgardStaticBuildOutcome;
     legionPlan(options: LegionPlanOptions): LegionPlanOutcome;
     legionBuild(options: LegionBuildOptions): LegionBuildOutcome;
@@ -122,8 +136,13 @@ export function hostPlatformKey(): string {
 
 /**
  * Resolve native `.node` via the platform optionalDependency (`@nyar/valkyrie-<short>`).
+ *
+ * `VALKYRIE_NATIVE` 覆盖解析结果：用于本地验证刚构建的 addon（平台目录被其它
+ * 宿主进程占用时无法覆盖），与 harness 的 `VALKYRIE_ASGARD` 同型。
  */
 export function resolveNativePath(): string {
+    const override = process.env.VALKYRIE_NATIVE;
+    if (override && override.trim().length > 0) return override;
     const triple = platformTriple();
     const short = platformShort(triple);
     const packageName = `@nyar/valkyrie-${short}`;
@@ -167,6 +186,11 @@ export function loadNative(): ValkyrieNativeAddon {
 /** Asgard 静态站点交付（结构化 API，不经 argv；与 legion 正交面同型）。 */
 export function asgardBuildStatic(options: AsgardStaticBuildOptions): AsgardStaticBuildOutcome {
     return loadNative().asgardBuildStatic(options);
+}
+
+/** Asgard 静态托管（阻塞调用；MIME 表由 Rust `asgard::serve` 持有）。 */
+export function asgardServe(options: AsgardServeOptions): AsgardServeOutcome {
+    return loadNative().asgardServe(options);
 }
 
 /** Legion `plan`（结构化 API，不经 argv）。 */

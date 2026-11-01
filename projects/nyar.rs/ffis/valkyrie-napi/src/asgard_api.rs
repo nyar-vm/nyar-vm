@@ -47,6 +47,51 @@ pub struct AsgardStaticBuildOutcome {
     pub component_name: Option<String>,
 }
 
+/// `asgardServe` 入参。
+#[napi(object)]
+pub struct AsgardServeOptions {
+    /// 产物根目录。
+    pub root: String,
+    /// 部署前缀（目录 URL）；缺省 `/`。
+    pub base: Option<String>,
+    /// 监听主机；缺省 `127.0.0.1`。
+    pub host: Option<String>,
+    /// 监听端口；缺省 `3000`，`0` 表示系统分配。
+    pub port: Option<u32>,
+}
+
+/// `asgardServe` 的结构化返回；成功时进程内已启动服务线程，本调用阻塞直到进程退出。
+#[napi(object)]
+pub struct AsgardServeOutcome {
+    /// 是否成功启动。
+    pub ok: bool,
+    /// 失败时的错误描述。
+    pub error: Option<String>,
+    /// 实际监听地址（`host:port`）。
+    pub address: Option<String>,
+}
+
+/// 托管静态产物（`application/wasm` 等 MIME 由 `asgard::serve` 单一拥有）。
+#[napi]
+pub fn asgard_serve(options: AsgardServeOptions) -> AsgardServeOutcome {
+    let serve_options = rusty_valkyrie::asgard::serve::ServeOptions {
+        root: PathBuf::from(&options.root),
+        base: options.base.unwrap_or_else(|| "/".to_string()),
+        host: options.host.unwrap_or_else(|| "127.0.0.1".to_string()),
+        port: u16::try_from(options.port.unwrap_or(3000)).unwrap_or(3000),
+    };
+    let (ready_sender, ready_receiver) = std::sync::mpsc::channel();
+    let handle = match rusty_valkyrie::asgard::serve::serve_static(&serve_options, move |address| {
+        let _ = ready_sender.send(address);
+    }) {
+        Ok(handle) => handle,
+        Err(error) => return AsgardServeOutcome { ok: false, error: Some(error.to_string()), address: None },
+    };
+    let address = ready_receiver.recv().map(|address| address.to_string()).unwrap_or_default();
+    let _ = handle.thread.join();
+    AsgardServeOutcome { ok: true, error: None, address: Some(address) }
+}
+
 /// 构建静态站点（页面 + WASM chunk + 岛包产物）并返回结构化结果。
 #[napi]
 pub fn asgard_build_static(options: AsgardStaticBuildOptions) -> AsgardStaticBuildOutcome {

@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {createCli} from '@vmz/commander';
 
 import {ASGARD_CLI_CATALOG} from './catalog.ts';
-import {asgardBuildStatic} from '../native.ts';
+import {asgardBuildStatic, asgardServe} from '../native.ts';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as {version: string};
@@ -14,7 +14,7 @@ const localesRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '../
 const META_COMMANDS = new Set(['help', '--help', '-h', 'version']);
 
 /** 已在产品面登记、但尚未接入配置求值与产物管线的子命令。 */
-const UNWIRED_COMMANDS = new Set(['serve', 'dev', 'pack', 'fmt']);
+const UNWIRED_COMMANDS = new Set(['dev', 'pack', 'fmt']);
 
 /**
  * 设计归属说明：Asgard 的构建内容由项目根 `asgard.config.v` 最后表达式决定，
@@ -67,9 +67,44 @@ function runStaticBuild(argv: string[]): number {
 }
 
 /**
+ * `asgard serve <project>`：托管 `<project>/dist`。
+ *
+ * 监听地址、部署前缀与产物目录都由调用方显式给出；配置求值闭合前不在 TS 层猜测
+ * `artifact.base` / `serve` 配置。MIME 由 Rust `asgard::serve` 单一拥有。
+ */
+function runServe(argv: string[]): number {
+    let projectDir = process.cwd();
+    let root: string | undefined;
+    let base: string | undefined;
+    let host: string | undefined;
+    let port: number | undefined;
+    for (let i = 0; i < argv.length; i += 1) {
+        const token = argv[i];
+        if (token === undefined) continue;
+        if (token === '--root') root = argv[i += 1];
+        else if (token === '--base') base = argv[i += 1];
+        else if (token === '--host') host = argv[i += 1];
+        else if (token === '--port') port = Number(argv[i += 1]);
+        else if (!token.startsWith('-')) projectDir = token;
+        else {
+            console.error(`asgard serve: 未知选项 ${token}`);
+            return 1;
+        }
+    }
+    const resolvedRoot = root === undefined ? path.join(path.resolve(projectDir), 'dist') : path.resolve(root);
+    console.log(`serving ${resolvedRoot} on http://${host ?? '127.0.0.1'}:${port ?? 3000}/${base === undefined ? '' : base.replace(/^\//, '')}`);
+    const outcome = asgardServe({root: resolvedRoot, base, host, port});
+    if (!outcome.ok) {
+        console.error(outcome.error ?? 'asgard serve failed');
+        return 1;
+    }
+    return 0;
+}
+
+/**
  * Asgard 命令编排入口。
  *
- * help/version 走 `@vmz/commander`；`build --static` 是当前唯一可用的静态交付入口，
+ * help/version 走 `@vmz/commander`；`build --static` 与 `serve` 是当前可用入口，
  * 调用结构化 N-API。其余命令在 TS 层明确诊断并以非 0 退出，不转发 argv 到 native，
  * 也不在 TS 层复刻配置解析。
  */
@@ -94,6 +129,7 @@ export async function runAsgardCli(argv: string[] = process.argv.slice(2)): Prom
         console.error('当前可用入口：`asgard build --static <entry.w|entry.awsl>`（显式静态交付，不读取配置）。');
         return 1;
     }
+    if (cmd === 'serve') return runServe(argv.slice(1));
     if (UNWIRED_COMMANDS.has(cmd)) {
         console.error(`asgard ${cmd}: 尚未接入。${CONFIG_PIPELINE_NOTE}`);
         return 1;
