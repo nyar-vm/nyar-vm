@@ -1,7 +1,8 @@
 //! 静态站点构建编排。
 //!
 //! 职责：把既有所有权层串成一次可被 CLI / 测试调用的静态站点构建——
-//! 显式入口校验（`.w` 与 `.awsl` 同格式同语义，两种后缀同等，不做后缀猜测，
+//! 显式入口校验（后缀集合取自单一事实源 `nyar_format::formatter::AWSL_EXTENSIONS`：
+//! `.awsl` 规范拼写、`.w` 同义缩写，两种后缀同格式同语义，不做后缀猜测，
 //! 入口必须显式给出且位于项目根内）、AWSL 解析与降级、DOM 静态渲染
 //! （以组件初始状态渲染，外部数据为 `Null`）、完整页面组装、产物写出 `index.html`。
 //! 本模块不做表达式求值，也不复制解析、降级或渲染逻辑；
@@ -22,7 +23,7 @@ pub struct StaticSiteOptions {
     /// 项目根目录。
     pub project_dir: PathBuf,
     /// 入口根组件文件路径（相对 `project_dir`，如 `source/index.w`）。
-    /// `.w` 与 `.awsl` 同格式同语义，须显式给出，不做后缀猜测。
+    /// `.awsl` 为规范拼写，`.w` 为同义缩写，两者同格式同语义；须显式给出，不做后缀猜测。
     pub entry: PathBuf,
     /// 输出目录；缺省为 `project_dir/dist`。
     pub output_dir: Option<PathBuf>,
@@ -49,9 +50,9 @@ pub struct StaticSiteReport {
 /// 构建静态站点：入口校验 → AWSL 降级 → DOM 静态渲染 → 页面组装 → 写出 `index.html`。
 pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSiteReport> {
     let extension = options.entry.extension().and_then(|ext| ext.to_str()).unwrap_or_default();
-    if !matches!(extension, "w" | "awsl") {
+    if !nyar_format::formatter::is_awsl_extension(extension) {
         return Err(AsgardError::msg(report!(
-            "静态站点入口必须是 `.w` 或 `.awsl` 文件（两种后缀同格式同语义，不做后缀猜测）: {}",
+            "静态站点入口必须是 `.awsl`（规范拼写）或同义缩写 `.w` 文件（两种后缀同格式同语义，不做后缀猜测）: {}",
             options.entry.display()
         )));
     }

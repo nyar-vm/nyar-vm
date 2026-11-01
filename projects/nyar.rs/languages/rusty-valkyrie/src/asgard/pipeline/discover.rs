@@ -1,7 +1,8 @@
 //! 项目源码发现。
 //!
-//! `.w` 是 `.awsl` 的缩写：同格式、同语义、同工具链，后缀只影响文件发现。
-//! 同一父目录下出现同名不同后缀（`.w` 与 `.awsl`）时不建立覆盖关系，
+//! `.awsl` 是规范拼写，`.w` 是其同义缩写：同格式、同语义、同工具链，后缀只影响文件发现。
+//! 后缀集合取自单一事实源 `nyar_format::formatter::AWSL_EXTENSIONS`。
+//! 同一父目录下出现同名不同后缀（`.awsl` 与 `.w`）时不建立覆盖关系，
 //! 该身份碰撞作为错误诊断输出。
 use crate::asgard::error::{AsgardError, AsgardResult};
 use std::path::{Path, PathBuf};
@@ -50,7 +51,7 @@ pub fn discover_sources(project_dir: &Path) -> AsgardResult<DiscoveredSources> {
     Ok(DiscoveredSources { awsl_files, aws_files })
 }
 
-/// 检查 AWSL 源码身份碰撞：同一父目录下同名不同后缀（`.w` 与 `.awsl`）。
+/// 检查 AWSL 源码身份碰撞：同一父目录下同名不同后缀（`.awsl` 与 `.w`）。
 ///
 /// 两者语义相同，不建立任何覆盖或择优关系；发现即报错，由用户消除歧义。
 fn check_awsl_identity_collisions(awsl_files: &[DiscoveredAwslFile]) -> AsgardResult<()> {
@@ -59,7 +60,7 @@ fn check_awsl_identity_collisions(awsl_files: &[DiscoveredAwslFile]) -> AsgardRe
         let key = (file.path.parent(), file.component_name.as_str());
         if let Some(prev) = seen.insert(key, file) {
             return Err(AsgardError::msg(report!(
-                "AWSL 源码身份碰撞: {} 与 {} 在同一目录下同名不同后缀（.w 与 .awsl 同语义），不建立覆盖关系",
+                "AWSL 源码身份碰撞: {} 与 {} 在同一目录下同名不同后缀（.awsl 与 .w 同语义），不建立覆盖关系",
                 prev.relative_path,
                 file.relative_path
             )));
@@ -86,7 +87,7 @@ fn collect_files(
             continue;
         };
         match ext {
-            "awsl" | "w" => {
+            ext if nyar_format::formatter::is_awsl_extension(ext) => {
                 let relative = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
                 let component_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("component").to_string();
                 awsl_files.push(DiscoveredAwslFile { path, component_name, relative_path: relative });

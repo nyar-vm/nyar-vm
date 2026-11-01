@@ -42,8 +42,9 @@ const DEFAULT_OUTPUT: &str = "dist";
 const DEFAULT_BASE: &str = "/";
 /// `artifact.target` 首轮唯一取值。
 const STATIC_TARGET: &str = "static";
-/// 入口文件接受的后缀；两种后缀同格式同语义，不做优先级猜测。
-const ENTRY_SUFFIXES: &[&str] = &["w", "awsl"];
+/// 入口文件接受的后缀；单一事实源为 `nyar_format::formatter::AWSL_EXTENSIONS`
+/// （`.awsl` 规范拼写、`.w` 同义缩写，两种后缀同格式同语义，不做优先级猜测）。
+const ENTRY_SUFFIXES: &[&str] = nyar_format::formatter::AWSL_EXTENSIONS;
 
 /// 结构化配置值：配置求值器与严格模型之间的边界类型（不是 VON，也不是文本）。
 #[derive(Debug, Clone, PartialEq)]
@@ -360,12 +361,12 @@ fn normalize_relative(text: &str, path: &str) -> AsgardResult<PathBuf> {
     Ok(normalized)
 }
 
-/// 校验入口后缀：只接受 `.w` / `.awsl`，不做优先级猜测。
+/// 校验入口后缀：只接受 `.awsl`（规范拼写）或同义缩写 `.w`，不做优先级猜测。
 fn validate_entry_suffix(relative: &Path, path: &str) -> AsgardResult<()> {
     let suffix = relative.extension().and_then(|extension| extension.to_str());
     match suffix {
         Some(suffix) if ENTRY_SUFFIXES.contains(&suffix) => Ok(()),
-        _ => Err(config_error(path, format!("入口 `{}` 只接受 `.w` / `.awsl` 后缀（两者同格式同语义）", relative.display()))),
+        _ => Err(config_error(path, format!("入口 `{}` 只接受 `.awsl` 后缀（同义缩写 `.w` 亦可，两者同格式同语义）", relative.display()))),
     }
 }
 

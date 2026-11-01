@@ -1,6 +1,8 @@
 //! `asgard` CLI：`asgard build` / `asgard dev` / `asgard pack`。
 use crate::asgard::error::{AsgardError, AsgardResult};
-use nyar_format::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
+use nyar_format::formatter::{
+    AWSL_EXTENSIONS, FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with,
+};
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
@@ -42,7 +44,7 @@ pub enum AsgardDelivery {
     App,
     /// 静态站点交付：显式 AWSL 根组件入口，渲染带样式的 `index.html`，不进入应用管线。
     Static {
-        /// 入口根组件文件（相对 `project_dir`，`.w` 或 `.awsl`，须显式给出）。
+        /// 入口根组件文件（相对 `project_dir`，`.awsl` 规范拼写或同义缩写 `.w`，须显式给出）。
         entry: PathBuf,
         /// 页面 `<title>` 文本；`None` 时使用根组件名（入口文件 stem）。
         title: Option<String>,
@@ -155,7 +157,7 @@ pub struct AsgardFmtArgs {
     pub max_width: Option<usize>,
     /// 仅处理指定扩展名（可重复，如 `--ext awsl --ext v`）。
     pub extensions: Vec<String>,
-    /// 仅格式化 AWSL（`.awsl`）；等价于 `--ext awsl`。
+    /// 仅格式化 AWSL（`.awsl` 规范拼写与同义缩写 `.w`）；等价于 `--ext awsl --ext w`。
     pub awsl_only: bool,
 }
 
@@ -163,7 +165,7 @@ impl AsgardFmtArgs {
     fn to_cli_options(&self) -> FormatCliOptions {
         let mut extensions = if self.extensions.is_empty() { None } else { Some(normalize_extensions(&self.extensions)) };
         if self.awsl_only {
-            extensions = Some(vec!["awsl".into()]);
+            extensions = Some(AWSL_EXTENSIONS.iter().map(|extension| (*extension).to_string()).collect());
         }
         FormatCliOptions {
             paths: self.paths.clone(),

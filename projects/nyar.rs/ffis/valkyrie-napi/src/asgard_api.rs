@@ -14,7 +14,7 @@ use rusty_valkyrie::asgard::static_site::{StaticSiteOptions, build_static_site};
 pub struct AsgardStaticBuildOptions {
     /// 项目根目录。
     pub project_dir: String,
-    /// 入口根组件文件路径（相对 `projectDir`，`.w` 或 `.awsl`，须显式给出）。
+    /// 入口根组件文件路径（相对 `projectDir`，`.awsl` 规范拼写或同义缩写 `.w`，须显式给出）。
     pub entry: String,
     /// 输出目录；缺省为 `projectDir/dist`。
     pub output_dir: Option<String>,

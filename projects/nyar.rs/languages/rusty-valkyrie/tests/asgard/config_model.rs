@@ -134,7 +134,10 @@ fn entry_type_and_suffix_are_enforced() {
     let temp = TempDir::new().expect("创建临时目录失败");
     expect_error(resolve(temp.path(), "source/App.w", ConfigValue::Int(1)), "期望对象");
     expect_error(resolve(temp.path(), "source/App.w", obj(vec![("artifact", obj(vec![("entry", ConfigValue::Int(7))]))])), "artifact.entry");
-    expect_error(resolve(temp.path(), "source/App.v", obj(vec![("artifact", obj(vec![("entry", text("source/App.v"))]))])), "`.w` / `.awsl`");
+    expect_error(
+        resolve(temp.path(), "source/App.v", obj(vec![("artifact", obj(vec![("entry", text("source/App.v"))]))])),
+        "只接受 `.awsl` 后缀",
+    );
 }
 
 #[test]

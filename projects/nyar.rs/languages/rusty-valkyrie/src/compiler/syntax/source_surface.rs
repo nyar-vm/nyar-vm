@@ -7,7 +7,7 @@
 //! | Valkyrie 核心 | `.v`, `.valkyrie` | `V` |
 //! | Valkyrie + X-Grammar | `.vx` | `Vx` |
 //! | VON 数据 | `.von` | `Von` |
-//! | Asgard AWSL | `.awsl` | `Awsl` |
+//! | Asgard AWSL | `.awsl`（规范拼写）、`.w`（同义缩写） | `Awsl` |
 
 use std::path::Path;
 
@@ -20,7 +20,7 @@ pub enum SourceKind {
     Vx,
     /// VON 数据：`.von`（`oak-von::formatter`）。
     Von,
-    /// Asgard AWSL 模板：`.awsl`（`oak-awsl::formatter`）。
+    /// Asgard AWSL 模板：`.awsl`（规范拼写）或同义缩写 `.w`（`oak-awsl::formatter`）。
     Awsl,
 }
 
@@ -61,7 +61,10 @@ pub const FORMAT_EXTENSIONS: &[&str] = &["v", "valkyrie", "vx"];
 pub const VON_EXTENSIONS: &[&str] = &["von"];
 
 /// Asgard 模板（与 `.v`/`.vx` 不同语言面）。
-pub const AWSL_EXTENSIONS: &[&str] = &["awsl"];
+///
+/// 单一事实源为 [`nyar_format::formatter::AWSL_EXTENSIONS`]（`.awsl` 规范拼写、`.w` 同义缩写），
+/// 本常量只是别名，不得在此另立集合。
+pub const AWSL_EXTENSIONS: &[&str] = nyar_format::formatter::AWSL_EXTENSIONS;
 
 /// 路径扩展名是否属于任一已知的 Valkyrie 族源文件（`.v` / `.valkyrie` / `.vx`）。
 pub fn is_valkyrie_family_extension(ext: &str) -> bool {

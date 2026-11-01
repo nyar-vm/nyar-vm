@@ -5,6 +5,7 @@ mod asgard_codegen;
 mod asgard_platform_contract;
 mod asgard_render_ir_canonical;
 mod asgard_style_collector;
+mod awsl_extension_source_of_truth;
 mod chunk_config_matrix;
 mod chunk_planning;
 mod cli_static;

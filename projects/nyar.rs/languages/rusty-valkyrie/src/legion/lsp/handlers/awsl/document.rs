@@ -2,9 +2,15 @@
 
 use oak_awsl::{AwslRoot, parse_root};
 
-/// 判断 URI 是否为 AWSL 文件
+/// 判断 URI 是否为 AWSL 文件。
+///
+/// 后缀集合取自单一事实源 [`nyar_format::formatter::AWSL_EXTENSIONS`]
+/// （`.awsl` 规范拼写、`.w` 同义缩写，同 parser、同 lowering、同身份）。
 pub fn is_awsl_uri(uri: &str) -> bool {
-    uri.ends_with(".awsl") || uri.contains(".awsl?")
+    nyar_format::formatter::AWSL_EXTENSIONS.iter().any(|extension| {
+        let suffix = format!(".{extension}");
+        uri.ends_with(&suffix) || uri.contains(&format!("{suffix}?"))
+    })
 }
 
 /// 解析 AWSL 源文件
