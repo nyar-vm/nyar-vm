@@ -324,18 +324,21 @@ impl<'a> WasmMirLowerer<'a> {
             }
             MirInstructionKind::FieldGet { object, field } => {
                 let output = instruction_primary_result(instruction);
+                // 计划事实缺失（字段无 layout / gc struct 与对象槽表示冲突）属于
+                // 可执行合同不一致，必须与 `Cast` 臂同款结构化失败返回 `Err`，
+                // 禁止 panic 把编译期缺陷升级成崩溃。
                 let Some(layout) = self.ctx.field_layout_by_id(*field).map(|(layout, _, _)| layout).cloned()
                 else {
-                    panic!("WASM FieldGet 缺少字段所属 layout in `{}`: field=`{field}` object={object:?}", self.mir_fn.symbol);
+                    return Err(format!("WASM FieldGet 缺少字段所属 layout in `{}`: field=`{field}` object={object:?}", self.mir_fn.symbol));
                 };
                 let use_gc_struct = self.layout_uses_gc_struct(&layout);
                 if use_gc_struct {
                     let Some(object_local) = self.operand_reference_local(object)
                     else {
-                        panic!(
+                        return Err(format!(
                             "WASM FieldGet 计划不一致: layout `{}` 已注册 gc struct，但对象槽不是引用 (in `{}`)",
                             layout.name, self.mir_fn.symbol
-                        );
+                        ));
                     };
                     let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field)
                     else {
