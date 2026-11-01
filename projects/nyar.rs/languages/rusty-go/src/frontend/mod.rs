@@ -237,16 +237,16 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                             return self.ctx.builder().cross_lang_call("nyar", "std::io", "println", arguments, loc);
                         }
                         "os.Exit" => {
-                            return self.ctx.builder().cross_lang_call("nyar", "", "$intrinsic:3", arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "std::os", "exit", arguments, loc);
                         }
                         "panic" => {
-                            return self.ctx.builder().cross_lang_call("nyar", "", "$intrinsic:7", arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "std::types", "panic", arguments, loc);
                         }
                         "sin" | "Math.sin" | "math.sin" => {
-                            return self.ctx.builder().cross_lang_call("nyar", "", "$intrinsic:8", arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "std::math", "sin", arguments, loc);
                         }
                         "sqrt" | "Math.sqrt" | "math.sqrt" => {
-                            return self.ctx.builder().cross_lang_call("nyar", "", "$intrinsic:9", arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "std::math", "sqrt", arguments, loc);
                         }
                         _ => {}
                     }
