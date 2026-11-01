@@ -177,19 +177,18 @@ micro title() -> utf8 {
     assert_eq!(value, "\"asgard\"", "glue 读回的文本配置值必须是导出函数返回的字符串");
 }
 
-/// 第三层（聚合）：名义身份门禁已转通，当前断在 JS glue 的聚合字段读回合同。
+/// 第三层（聚合）：名义身份门禁已转通，聚合配置模块可完成正式构建。
 ///
-/// 预发射名义身份门禁（`validate_storage_identities`）已由携带身份的
-/// `NyarType::Nominal` 满足：最小配置模块返回用户声明结构体时，正式构建链
-/// 产出 wasm + glue。剩余缺口：JS glue 的 `NamedAggregate` demarshal 只支持
-/// 序列族（length/at），没有按字段访问结构体的合同；`render_glue_entries`
-/// 对非序列聚合停在 `pending_export_name`。
-/// 本用例固化该失败形态：构建必须成功，glue 读回必须报出聚合 demarshal
-/// 合同缺口；缺口闭合后把本探针升级为字段读回断言（归后端 glue/ABI 与
-/// 配置 SDK 所有者）。
+/// 本轮事实：`NyarType::Nominal` 携带 canonical 冻结的实例级 `layout` 身份，
+/// WASM 预发射 `validate_storage_identities` 只拒绝未注册 layout，因此返回用户
+/// 声明结构体的配置模块不再停在名义身份门禁。
+/// 第二道缺口仍在：JS glue 的 `NamedAggregate` demarshal 只支持序列族（length/at），
+/// 没有按字段访问结构体的合同，`render_glue_entries` 对非序列聚合停在
+/// `pending_export_name`。本用例固化该缺口的结构化诊断，按字段读回由后端 glue/ABI
+/// 与配置 SDK 所有者补齐。
 #[test]
-fn c0_aggregate_layer_fails_closed_on_glue_field_demarshal_gap() {
-    let result = build_probe_project(
+fn c0_aggregate_layer_reports_the_missing_field_access_contract() {
+    let artifact = build_probe_project(
         "asgard-c0-aggregate",
         r#"structure ConfigArtifact {
     target: i32
@@ -201,19 +200,10 @@ micro configure() -> ConfigArtifact {
     return ConfigArtifact { target: 1, entry: 2 }
 }
 "#,
-    );
-    let artifact = match result {
-        Ok(artifact) => artifact,
-        Err(failure) => panic!("名义身份门禁已转通，构建必须成功，实际失败：{}", failure.message),
-    };
-    let outcome = call_export_through_glue(&artifact, "configure", "[]");
-    println!("AGGREGATE_GLUE_OUTCOME: {outcome:?}");
-    let diagnostic = match outcome {
-        Ok(value) => {
-            panic!("聚合 glue 读回已转通（{value}）：请把本探针升级为字段读回断言并移除缺口固化")
-        }
-        Err(diagnostic) => diagnostic,
-    };
-    assert!(diagnostic.contains("Cannot demarshal NamedAggregate"), "缺口必须来自 glue 聚合 demarshal 合同，实际：{diagnostic}");
-    assert!(diagnostic.contains("ConfigArtifact"), "诊断必须指明聚合类型，实际：{diagnostic}");
+    )
+    .unwrap_or_else(|failure| panic!("聚合配置模块必须完成正式构建，实际失败：{}", failure.message));
+
+    let diagnostic = call_export_through_glue(&artifact, "configure", "[]").expect_err("非序列聚合的 JS glue 读回合同尚未实现，必须结构化失败");
+    assert!(diagnostic.contains("Cannot demarshal NamedAggregate"), "缺口诊断必须指明 NamedAggregate demarshal 合同，实际：{diagnostic}");
+    assert!(diagnostic.contains("ConfigArtifact"), "缺口诊断必须指明具体聚合类型，实际：{diagnostic}");
 }
