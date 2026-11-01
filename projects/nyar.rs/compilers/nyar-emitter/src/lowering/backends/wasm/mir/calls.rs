@@ -6,7 +6,10 @@
 //! authority; this module only maps already-resolved calls to Wasm opcodes.
 
 use super::{numeric, *};
-use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorRecipe};
+use crate::{
+    lowering::backends::wasm::cabi::CABI_HEAP_GLOBAL_INDEX,
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorRecipe},
+};
 
 /// 计划冻结的目标标量载体 → wasm 栈类型字节。
 fn wasm_stack_type(operand_type: TargetOperandType) -> u8 {
@@ -53,7 +56,7 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                     callee_return = self.resolve_callee_return_type(callee, Some(import_index))?;
                     let param_types = self.resolve_callee_param_types(callee, Some(import_index))?;
-                    self.emit_call_arguments(arguments, &param_types);
+                    self.emit_host_import_call_arguments(arguments, &param_types)?;
                     self.emit_call(import_index);
                 }
                 else if let Some(function_index) = self.resolve_callee_function_index(callee) {
@@ -119,6 +122,117 @@ impl<'a> WasmMirLowerer<'a> {
             None if callee_return.is_some() => WasmOpcode::Drop.encode(&mut self.code),
             None => {}
         }
+        Ok(())
+    }
+
+    /// 宿主导入边界的实参发射：ABI 声明 i32 句柄而实参槽是 managed anyref 时，
+    /// 必须消费目标计划冻结的 managed→host 句柄转换配方（合同 §5）；缺配方即
+    /// 可执行合同不一致，结构化失败，禁止 coerce/占位掩盖 carrier 失配。
+    /// 其余组合保持既有 coerce 语义。
+    fn emit_host_import_call_arguments(&mut self, arguments: &[MirOperand], param_types: &[u8]) -> crate::Result<()> {
+        assert_eq!(arguments.len(), param_types.len(), "WASM 调用实参与已解析签名不一致");
+        for (argument, expected) in arguments.iter().zip(param_types) {
+            if *expected == VALTYPE_I32 && self.operand_wasm_stack_type(argument) == WASM_GC_ANYREF {
+                self.emit_managed_utf8_to_host_handle(argument)?;
+            }
+            else {
+                self.emit_operand_coerced(argument, *expected);
+            }
+        }
+        Ok(())
+    }
+
+    /// 按冻结配方把 managed 字符串 gc struct 转为宿主 i32 句柄：
+    /// `struct.get` 取字节数组 → bump 分配线性内存 → 逐字节 `array.get` + `i32.store8`
+    /// → `call env::host_intern_utf8(ptr, len)`。栈效果：`[anyref] → [i32]`。
+    fn emit_managed_utf8_to_host_handle(&mut self, operand: &MirOperand) -> crate::Result<()> {
+        let MirOperand::Value(value) = operand
+        else {
+            return Err(format!("WASM 宿主字符串边界操作数缺少 SSA 身份: {}", self.mir_fn.symbol));
+        };
+        let Some(layout_id) = self.mir_fn.value_layouts.get(value).copied()
+        else {
+            return Err(format!("WASM 宿主字符串边界 %{} 缺少 layout 身份: {}", value.0, self.mir_fn.symbol));
+        };
+        let Some(recipe) = self.managed_utf8_to_host_handle.get(&layout_id)
+        else {
+            return Err(format!(
+                "WASM 宿主字符串边界 %{} (layout={layout_id:?}) 缺少目标计划冻结的 managed→host 句柄转换配方: {}",
+                value.0, self.mir_fn.symbol
+            ));
+        };
+        // managed struct → 字节数组引用
+        self.emit_operand(operand);
+        self.emit_ref_cast_struct(recipe.struct_type_index);
+        self.emit_struct_get(recipe.struct_type_index, recipe.bytes_field_slot);
+        self.emit_ref_cast_array_type(recipe.bytes_array_type_index);
+        let array_local = self.alloc_anyref_local();
+        self.emit_local_set(array_local);
+        // 字节长度
+        self.emit_local_get(array_local);
+        self.emit_ref_cast_array_type(recipe.bytes_array_type_index);
+        self.emit_array_len();
+        let len_local = self.alloc_i32_local();
+        self.emit_local_set(len_local);
+        // 动态 bump 分配（global 0 堆指针），增长逻辑与 `bump_allocate` 同构；
+        // scratch local 在本次转换内闭合，不与其它发射交叠。
+        encode_global_get(CABI_HEAP_GLOBAL_INDEX, &mut self.code);
+        self.emit_local_set(self.stack_ptr_local);
+        self.emit_local_get(self.stack_ptr_local);
+        self.emit_local_get(len_local);
+        self.emit_i32_add();
+        self.emit_local_set(self.bump_end_local);
+        self.emit_local_get(self.bump_end_local);
+        self.emit_i32_const(65535);
+        self.emit_i32_add();
+        self.emit_i32_const(16);
+        WasmOpcode::I32ShrU.encode(&mut self.code);
+        encode_memory_size(&mut self.code);
+        WasmOpcode::I32Sub.encode(&mut self.code);
+        self.emit_local_tee(self.bump_pages_local);
+        self.emit_i32_const(0);
+        WasmOpcode::I32GtS.encode(&mut self.code);
+        WasmOpcode::If.encode(&mut self.code);
+        self.code.push(BLOCKTYPE_EMPTY);
+        self.emit_local_get(self.bump_pages_local);
+        encode_memory_grow(&mut self.code);
+        self.emit_i32_const(-1);
+        WasmOpcode::I32Eq.encode(&mut self.code);
+        WasmOpcode::If.encode(&mut self.code);
+        self.code.push(BLOCKTYPE_EMPTY);
+        encode_unreachable(&mut self.code);
+        WasmOpcode::End.encode(&mut self.code);
+        WasmOpcode::End.encode(&mut self.code);
+        encode_global_set(CABI_HEAP_GLOBAL_INDEX, &mut self.code);
+        // 逐字节拷贝：array.get(u8→i32) → i32.store8
+        let index_local = self.alloc_i32_local();
+        self.emit_i32_const(0);
+        self.emit_local_set(index_local);
+        encode_block_empty(&mut self.code);
+        encode_loop_empty(&mut self.code);
+        self.emit_local_get(index_local);
+        self.emit_local_get(len_local);
+        WasmOpcode::I32GeU.encode(&mut self.code);
+        encode_br_if(1, &mut self.code);
+        self.emit_local_get(self.stack_ptr_local);
+        self.emit_local_get(index_local);
+        self.emit_i32_add();
+        self.emit_local_get(array_local);
+        self.emit_ref_cast_array_type(recipe.bytes_array_type_index);
+        self.emit_local_get(index_local);
+        self.emit_array_get(recipe.bytes_array_type_index);
+        encode_memarg(WasmOpcode::I32Store8, 0, 0, &mut self.code);
+        self.emit_local_get(index_local);
+        self.emit_i32_const(1);
+        self.emit_i32_add();
+        self.emit_local_set(index_local);
+        encode_br(0, &mut self.code);
+        WasmOpcode::End.encode(&mut self.code);
+        WasmOpcode::End.encode(&mut self.code);
+        // 宿主登记：(ptr, len) → i32 handle
+        self.emit_local_get(self.stack_ptr_local);
+        self.emit_local_get(len_local);
+        self.emit_call(recipe.intern_import_index);
         Ok(())
     }
 

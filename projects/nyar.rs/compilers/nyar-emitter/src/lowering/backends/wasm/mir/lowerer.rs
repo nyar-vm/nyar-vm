@@ -50,6 +50,22 @@ pub(in crate::lowering::backends::wasm) fn array_element_type(array_type: &NyarT
 }
 pub(in crate::lowering::backends::wasm) const WASM_GC_EXTERNREF: u8 = VALTYPE_EXTERNREF;
 
+/// 目标计划阶段冻结的「managed 字符串 → 宿主 i32 句柄」转换配方。
+///
+/// 合同 §5：转换决定属于 target plan，编码阶段只消费这张表，不再按类型名
+/// 或布局形状重新推导。配方条目由模块装配预扫描（`entry.rs`）在 GC 类型
+/// 注册表冻结之后一次性生成。
+pub(in crate::lowering::backends::wasm) struct ManagedUtf8ToHostHandlePlan {
+    /// managed 字符串 layout 对应的 wasm-gc structtype 条目。
+    pub(in crate::lowering::backends::wasm::mir) struct_type_index: u32,
+    /// 字节数组字段在 structtype 中的槽位（`Utf8Text._repr: [u8]`）。
+    pub(in crate::lowering::backends::wasm::mir) bytes_field_slot: u32,
+    /// 字节数组字段元素类型对应的 wasm-gc arraytype 条目。
+    pub(in crate::lowering::backends::wasm::mir) bytes_array_type_index: u32,
+    /// 合成宿主导入 `env::host_intern_utf8` 的导入下标（即 wasm 函数下标）。
+    pub(in crate::lowering::backends::wasm::mir) intern_import_index: u32,
+}
+
 pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
     submission: &FragmentSubmission,
     mir_fn: &MirFunction,
@@ -77,6 +93,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
     const_utf8_import: Option<u32>,
     function_value_table_slots: &BTreeMap<ItemInstanceId, u32>,
     type_index_by_signature: &BTreeMap<(Vec<u8>, Option<u8>), u32>,
+    managed_utf8_to_host_handle: &BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
 ) -> crate::Result<Vec<u8>> {
     if let Err(error) = validate_pattern_matching_invariants(mir_fn) {
         debug_assert!(false, "pattern matching contract violation in function `{}`: {error:?}", mir_fn.symbol);
@@ -109,6 +126,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
         const_utf8_import,
         function_value_table_slots,
         type_index_by_signature,
+        managed_utf8_to_host_handle,
     );
     lowerer.emit_function_body()?;
     Ok(lowerer.finish())
@@ -173,6 +191,8 @@ pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
     pub(in crate::lowering::backends::wasm::mir) function_value_table_slots: &'a BTreeMap<ItemInstanceId, u32>,
     /// wasm functype 签名字节 → type 段条目下标；间接调用的 `typeidx` 只能反查已注册条目。
     pub(in crate::lowering::backends::wasm::mir) type_index_by_signature: &'a BTreeMap<(Vec<u8>, Option<u8>), u32>,
+    /// 目标计划冻结的 managed 字符串 → 宿主 i32 句柄转换配方表（编码期只读消费）。
+    pub(in crate::lowering::backends::wasm::mir) managed_utf8_to_host_handle: &'a BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
     /// CFG 调度中的基本块索引。
     pub(in crate::lowering::backends::wasm::mir) pc_local: u32,
 }
@@ -206,6 +226,7 @@ impl<'a> WasmMirLowerer<'a> {
         const_utf8_import: Option<u32>,
         function_value_table_slots: &'a BTreeMap<ItemInstanceId, u32>,
         type_index_by_signature: &'a BTreeMap<(Vec<u8>, Option<u8>), u32>,
+        managed_utf8_to_host_handle: &'a BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
     ) -> Self {
         let block_order = collect_reachable_blocks(mir_fn);
         let block_index = block_order.iter().enumerate().map(|(index, block_id)| (*block_id, index)).collect();
@@ -252,6 +273,7 @@ impl<'a> WasmMirLowerer<'a> {
             const_utf8_import,
             function_value_table_slots,
             type_index_by_signature,
+            managed_utf8_to_host_handle,
             pc_local: 0,
         };
         lowerer.pc_local = lowerer.alloc_i32_local();

@@ -97,6 +97,7 @@ fn js_import_impl(field: &str) -> String {
         "utf8_equals" => "(a, b) => hostUtf8Equals(a, b)".to_string(),
         "utf8_index_of" => "(s, other) => hostUtf8IndexOf(s, other)".to_string(),
         "utf8_slice" => "(s, start, count) => hostIntern(hostUtf8Slice(s, start, count))".to_string(),
+        "host_intern_utf8" => "(ptr, len) => hostInternUtf8Bytes(ptr, len)".to_string(),
         _ => "() => 0".to_string(),
     }
 }
@@ -625,6 +626,23 @@ function hostIntern(value) {{
 
 function hostResolve(handle) {{
     return Number.isInteger(handle) && handle >= 0 && handle < hostValues.length ? hostValues[handle] : "";
+}}
+
+// managed 字符串 → 宿主 i32 句柄：guest 侧已把 gc struct 的 [u8] 拷贝进线性内存，
+// 宿主按 (ptr, len) 读取 UTF-8 字节并登记进既有 hostIntern 句柄表。
+// 每次重新读取 memory.buffer：memory.grow 之后旧 buffer 会被分离（detached）。
+function hostLinearMemory() {{
+    const memory = typeof exports !== "undefined" && exports ? exports.memory : undefined;
+    if (!memory) {{
+        throw new Error("[wasm-js-glue] managed string boundary requires the wasm module to export its linear memory as 'memory'");
+    }}
+    return memory;
+}}
+
+function hostInternUtf8Bytes(ptr, len) {{
+    const memory = hostLinearMemory();
+    const bytes = new Uint8Array(memory.buffer, ptr >>> 0, len >>> 0);
+    return hostIntern(new TextDecoder("utf-8").decode(bytes));
 }}
 
 function hostConstUtf8(index) {{

@@ -7,14 +7,14 @@ use super::{
             CABI_HEAP_GLOBAL_INDEX, cabi_heap_base_after_data, cabi_heap_global_section, memory_min_pages_for_heap_base,
             wasm_cabi_realloc_bump_body,
         },
-        gc::{WASM_GC_ANYREF, wasm_gc_struct_type},
+        gc::{WASM_GC_ANYREF, wasm_gc_array_type, wasm_gc_struct_type},
         sections::{
             code_section_bytes, data_section_bytes, decode_uleb128, elem_section_bytes, encode_sleb128_i32, encode_sleb128_i64, encode_uleb128,
             export_section_bytes, function_section_bytes, import_section_bytes, memory_section_bytes, table_section_bytes, type_section_bytes,
             wasm_function_body, wasm_function_type,
         },
     },
-    MirInstructionKind, StorageKind, WASM_GC_EXTERNREF,
+    ManagedUtf8ToHostHandlePlan, MirInstructionKind, StorageKind, WASM_GC_EXTERNREF,
     imports::{
         build_callee_import_index, build_callee_wasm_operator_index, build_string_literal_index, build_wasi_callee_import_index,
         collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index,
@@ -23,7 +23,8 @@ use super::{
     library_glue,
     lowerer::lower_mir_function_to_wasm_bytes,
     representation::{
-        is_js_glue_host_string_type, layout_needs_gc_struct, type_is_wasm_gc_heap_reference, wasm_param_types, wasm_return_value_type,
+        is_js_glue_host_string_type, layout_needs_gc_struct, type_is_wasm_gc_heap_reference, wasm_gc_field_type_byte_for_glue,
+        wasm_param_types, wasm_return_value_type,
     },
     strings::{
         build_wasi_string_data_section, build_wasi_string_literal_offsets, wasi_string_data_section_size, wasm_function_type_param_bytes,
@@ -114,7 +115,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 字符串字面量属于被发射模块本身，与导出名是 `main` 还是库导出无关；
     // 只有常量载体（`const_utf8` / WASI 偏移）在两种宿主形态下不同。
     let string_literals = collect_mir_string_literals(submission, &operations);
-    let host_imports = if wasi_mode {
+    let mut host_imports = if wasi_mode {
         collect_wasi_host_imports(submission, wasi_preview)
     }
     else {
@@ -123,7 +124,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         // 导出名不是 `main` 就失去 `callee_import_index` 注册路径。
         collect_wasm_host_imports(submission, !string_literals.is_empty())
     };
-    let import_count = u32::try_from(host_imports.len()).expect("import count overflow");
+    // `import_count` 在 managed→host 句柄转换导入按需合成之后再取（见下方冻结步）。
     let callee_import_index = if wasi_mode {
         build_wasi_callee_import_index(submission, &host_imports, wasi_preview)
     }
@@ -160,7 +161,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     eprintln!("[wasm::module-stage] structs={} types={}", gc_struct_type_indices.len(), type_indices.len());
     // ?heap array element_type 注册 wasm-gc arraytype（Node/V8 ?WASI/wasmtime 均支持）?
     // 必须?glue 感知路径：`[utf8]` →?i32 元，禁止 Named→anyref 误登记?
-    let gc_array_type_indices = register_gc_array_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref);
+    let mut gc_array_type_indices = register_gc_array_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref);
     eprintln!("[wasm::module-stage] arrays={} types={}", gc_array_type_indices.len(), type_indices.len());
     // sum 的物理布局（tag + anyref payload）是后端私有决定，必须按 nominal identity 单独注册，
     // 让 `SumNew` 构造的对象与 `SumPayloadGet` / `SumVariantIs` 的 `ref.cast` 指向同一条目。
@@ -178,6 +179,27 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         type_indices.push(wasm_gc_struct_type(&[VALTYPE_I64]));
         type_index
     };
+    // 合同 §5：managed 字符串 → 宿主 i32 句柄的转换在目标计划阶段冻结，编码期只消费配方表。
+    // `NyarType::Utf8` SSA 值携带已登记 gc struct layout 时，宿主导入边界必须按配方转换；
+    // 合成导入 `env::host_intern_utf8` 仅在模块确有 managed 字符串时按需追加，因此
+    // `import_count` 在冻结步之后再取。
+    let managed_utf8_to_host_handle = if wasi_mode {
+        BTreeMap::new()
+    }
+    else {
+        freeze_managed_utf8_to_host_handle_plans(
+            submission,
+            &ctx,
+            &gc_struct_type_indices,
+            &mut gc_array_type_indices,
+            &mut type_indices,
+            js_glue_utf8_as_anyref,
+            &mut host_imports,
+            &mut import_type_entries,
+            &host_import_signatures,
+        )?
+    };
+    let import_count = u32::try_from(host_imports.len()).expect("import count overflow");
     // 函数类型?structtype/arraytype/sumtype 之后开始追加?
     // type_indices 当前?[main_type, structtype_1, ..., structtype_N]?
     // 第一个函数类型应放在 N+1 处，对应 type_index = type_indices.len()?
@@ -313,6 +335,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             const_utf8_import,
             &function_value_table_slots,
             &type_index_by_signature,
+            &managed_utf8_to_host_handle,
         )?));
         eprintln!("[wasm::function-lower-done] dense={dense}/{} symbol={full}", mir_operations.len());
         mir_wasm_functions.push((wasm_index, full.clone()));
@@ -532,6 +555,100 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         &gc_array_type_indices,
     );
     Ok((module, host_imports))
+}
+
+/// 目标计划阶段冻结「managed 字符串 → 宿主 i32 句柄」转换配方（合同 §5）。
+///
+/// 扫描所有函数携带 gc struct layout 的 `NyarType::Utf8` SSA 值：这些值在宿主导入
+/// 边界（ABI 声明 i32 句柄）必须由编码期按配方转换，转换事实不允许在编码阶段
+/// 按类型名或布局形状重新推导。字节字段槽来自 layout 的整数字节数组字段，
+/// arraytype 缺失时按注册表同一构造器补登记；合成导入 `env::host_intern_utf8`
+/// 仅在确有 managed 字符串时追加到导入表尾部。
+#[allow(clippy::too_many_arguments)]
+fn freeze_managed_utf8_to_host_handle_plans(
+    submission: &FragmentSubmission,
+    ctx: &ExecutableLoweringContext,
+    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    gc_array_type_indices: &mut BTreeMap<String, u32>,
+    type_indices: &mut Vec<Vec<u8>>,
+    js_glue_utf8_as_anyref: bool,
+    host_imports: &mut Vec<(String, String)>,
+    import_type_entries: &mut Vec<u32>,
+    host_import_signatures: &BTreeMap<(String, String), crate::BackendImport>,
+) -> crate::Result<BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>> {
+    let mut managed_string_layouts = BTreeSet::new();
+    for instance in submission.backend_plan.instances() {
+        let Some(view) = submission.backend_plan.get_function(&instance)
+        else {
+            continue;
+        };
+        for (value, ty) in &view.function.value_types {
+            if !is_js_glue_host_string_type(ty) {
+                continue;
+            }
+            if let Some(layout_id) = view.function.value_layouts.get(value).copied() {
+                managed_string_layouts.insert(layout_id);
+            }
+        }
+    }
+    if managed_string_layouts.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    // 合成导入按需追加：下标即 wasm 函数索引（导入排在函数索引空间最前）。
+    let intern_import_index = match host_imports.iter().position(|(module, field)| module == "env" && field == "host_intern_utf8") {
+        Some(index) => u32::try_from(index).expect("import index overflow"),
+        None => {
+            let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+            type_indices.push(wasm_import_type_bytes_for_host(
+                submission,
+                ctx,
+                false,
+                "env",
+                "host_intern_utf8",
+                js_glue_utf8_as_anyref,
+                host_import_signatures,
+            )?);
+            import_type_entries.push(type_index);
+            host_imports.push(("env".to_string(), "host_intern_utf8".to_string()));
+            u32::try_from(host_imports.len() - 1).expect("import index overflow")
+        }
+    };
+    let mut plans = BTreeMap::new();
+    for layout_id in managed_string_layouts {
+        // 未登记 gc struct 的 layout 槽位本就是 i32 句柄，不存在转换需求。
+        let Some(struct_type_index) = gc_struct_type_indices.get(&layout_id).copied()
+        else {
+            continue;
+        };
+        let layout =
+            ctx.layout_by_id(layout_id).ok_or_else(|| format!("WASM managed 字符串转换冻结失败: layout_id={layout_id:?} 缺少聚合布局身份"))?;
+        let (bytes_field_slot, element_type) = layout
+            .fields
+            .iter()
+            .enumerate()
+            .find_map(|(index, field)| match &field.ty {
+                NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
+                    matches!(element.as_ref(), NyarType::Integer8 { .. }).then(|| (index as u32, element.as_ref().clone()))
+                }
+                _ => None,
+            })
+            .ok_or_else(|| format!("WASM managed 字符串转换冻结失败: layout `{}` 缺少整数字节数组字段，无法生成 host 句柄配方", layout.name))?;
+        let key = wasm_array_element_type_key(&element_type);
+        let bytes_array_type_index = match gc_array_type_indices.get(&key).copied() {
+            Some(type_index) => type_index,
+            None => {
+                let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+                type_indices.push(wasm_gc_array_type(wasm_gc_field_type_byte_for_glue(&element_type, js_glue_utf8_as_anyref)));
+                gc_array_type_indices.insert(key, type_index);
+                type_index
+            }
+        };
+        plans.insert(
+            layout_id,
+            ManagedUtf8ToHostHandlePlan { struct_type_index, bytes_field_slot, bytes_array_type_index, intern_import_index },
+        );
+    }
+    Ok(plans)
 }
 
 pub(super) fn emit_wasi_entry_default_arg(ty: &NyarType, gc_array_type_indices: &BTreeMap<String, u32>, body: &mut Vec<u8>) {

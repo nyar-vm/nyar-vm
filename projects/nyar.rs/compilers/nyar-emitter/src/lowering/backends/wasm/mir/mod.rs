@@ -23,9 +23,9 @@ pub(super) use acorn_wasm::{
     encode_block_empty, encode_br, encode_br_if, encode_call, encode_drop, encode_f64_const, encode_f64_load, encode_f64_store,
     encode_global_get, encode_global_set, encode_i32_add, encode_i32_and, encode_i32_const, encode_i32_load, encode_i32_store,
     encode_i64_const, encode_i64_load, encode_i64_store, encode_local_get, encode_local_set, encode_local_tee, encode_loop_empty,
-    encode_memory_copy, encode_memory_fill, encode_memory_grow, encode_memory_size, encode_ref_cast_array, encode_ref_cast_type_index,
-    encode_ref_null_anyref, encode_ref_null_externref, encode_sleb128_i64, encode_struct_get, encode_struct_new_default, encode_struct_set,
-    encode_unreachable,
+    encode_memarg, encode_memory_copy, encode_memory_fill, encode_memory_grow, encode_memory_size, encode_ref_cast_array,
+    encode_ref_cast_type_index, encode_ref_null_anyref, encode_ref_null_externref, encode_sleb128_i64, encode_struct_get,
+    encode_struct_new_default, encode_struct_set, encode_unreachable,
 };
 
 // 从 crate::backend_plan_views re-export
@@ -54,7 +54,7 @@ pub(super) use crate::{
 pub(super) use super::gc::WASM_GC_ANYREF;
 
 // 从子模块 re-export（供兄弟子模块通过 super::* 消费）
-pub(super) use lowerer::{WASM_GC_EXTERNREF, WasmMirLowerer, array_element_type};
+pub(super) use lowerer::{ManagedUtf8ToHostHandlePlan, WASM_GC_EXTERNREF, WasmMirLowerer, array_element_type};
 pub(super) use representation::*;
 pub(super) use type_registry::*;
 

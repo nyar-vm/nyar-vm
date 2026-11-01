@@ -192,6 +192,8 @@ pub(super) fn wasm_import_type_for_field(field: &str) -> Option<Vec<u8>> {
     let signature = match field {
         "cli_get_verbose" => wasm_function_type(&[], &[VALTYPE_I32]),
         "const_utf8" => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
+        // 目标计划合成的 managed→host 句柄转换入口：(linear_ptr, len) → host i32 handle。
+        "host_intern_utf8" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
         "cli_get_project" | "cli_get_target" | "cli_get_output" => wasm_function_type(&[], &[VALTYPE_I32]),
         "get_current_directory" | "get_input" | "read_source_byte" => wasm_function_type(&[], &[VALTYPE_I32]),
         "read_file_text" => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
