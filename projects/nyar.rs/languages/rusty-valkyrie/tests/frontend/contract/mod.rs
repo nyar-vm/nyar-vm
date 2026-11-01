@@ -1,6 +1,7 @@
 //! contract modules.
 
 mod array_length_declaration_tests;
+mod cross_group_qualified_turbofish_generic_call_tests;
 mod array_new_declaration_tests;
 mod array_push_declaration_tests;
 #[cfg(false)] // MirFunction 旧字段、executable_provider 已移除（架构迁移）
