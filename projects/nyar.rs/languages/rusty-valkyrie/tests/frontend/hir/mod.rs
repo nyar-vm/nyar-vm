@@ -1,5 +1,6 @@
 //! hir modules.
 
+mod array_extractor_pattern_tests;
 mod call_evidence_contract;
 mod call_ssa_result_binding;
 mod hir_class_target_attribute_tests;

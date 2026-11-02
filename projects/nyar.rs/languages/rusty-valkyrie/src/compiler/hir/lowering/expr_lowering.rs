@@ -12,8 +12,8 @@ use crate::compiler::{
     syntax::oak::{
         self as frontend,
         ast::{
-            AnonymousClass, AnonymousMicro, AnonymousStructure, Block, Break, ClassPattern, Continue, LiteralPattern, MatchArm, Pattern, Raise,
-            Resume, Return, Statement, StringLiteral, StringSegment, TermBinaryNode, TermExpression, TermUnaryNode, TextSegment,
+            AnonymousClass, AnonymousMicro, AnonymousStructure, ArrayPattern, Block, Break, ClassPattern, Continue, LiteralPattern, MatchArm, Pattern,
+            Raise, Resume, Return, Statement, StringLiteral, StringSegment, TermBinaryNode, TermExpression, TermUnaryNode, TextSegment,
             VariablePattern, WildcardPattern, pattern_nodes::ElsePattern,
         },
     },
@@ -163,6 +163,29 @@ fn lower_pattern(pattern: &Pattern, source_id: SourceID, span: SourceSpan) -> Hi
         Pattern::Type(type_pattern) => HirPattern::Name(lower_name_path(&type_pattern.name)),
         Pattern::Class(class_pattern) => lower_class_pattern(class_pattern, source_id, span),
         Pattern::Else(_) => HirPattern::Else,
+        Pattern::Array(array_pattern) => lower_array_pattern(array_pattern, source_id, span),
+    }
+}
+
+fn lower_array_pattern(pattern: &ArrayPattern, source_id: SourceID, span: SourceSpan) -> HirPattern {
+    // 内置数组类型 `[T]` 的名义 owner 名是 `Array`（`impl_nominal_type_name`），
+    // extractor 路径遵循 `<Owner>.extractor` 约定（`canonical_extractor_callee`）。
+    let canonical_callee = crate::compiler::types::NamePath::new(vec![Identifier::new("Array"), Identifier::new("extractor")]);
+    let prefix = pattern.prefix.iter().map(|item| lower_pattern(item, source_id, span.clone())).collect();
+    let rest = pattern.rest.as_ref().map(|rest| lower_array_rest_binding(rest, source_id, span.clone()));
+    let suffix = pattern.suffix.iter().map(|item| lower_pattern(item, source_id, span.clone())).collect();
+    HirPattern::Extractor(HirExtractorPattern::Array { canonical_callee, prefix, rest, suffix, resolved: None })
+}
+
+fn lower_array_rest_binding(pattern: &Pattern, source_id: SourceID, span: SourceSpan) -> HirIdentifier {
+    match pattern {
+        Pattern::Variable(variable) => HirIdentifier {
+            name: Identifier::new(&variable.name.name),
+            shadow_index: 0,
+            span: with_source(&frontend::std_range(&variable.span), source_id),
+        },
+        // HIR 的 rest 仅为绑定；`..._` 等无绑定形态落为汇名 `_`，槽位 arity 语义不变。
+        _ => HirIdentifier { name: Identifier::new("_"), shadow_index: 0, span },
     }
 }
 
