@@ -114,7 +114,7 @@ fn lower_statement(statement: &Statement, source_id: SourceID, fallback_span: Ra
             Ok(HirStatement {
                 kind: HirStatementKind::Let {
                     is_mutable: has_modifier(&binding.annotations, "mut"),
-                    pattern: lower_pattern(&binding.pattern, source_id, span.clone()),
+                    pattern: lower_pattern(&binding.pattern, source_id, span.clone())?,
                     initializer,
                     ty: binding.ty.as_ref().map(lower_type_expression).transpose()?,
                 },
@@ -151,30 +151,32 @@ fn lower_statement_expression(
     }
 }
 
-fn lower_pattern(pattern: &Pattern, source_id: SourceID, span: SourceSpan) -> HirPattern {
-    match pattern {
+fn lower_pattern(pattern: &Pattern, source_id: SourceID, span: SourceSpan) -> Result<HirPattern, HirError> {
+    Ok(match pattern {
         Pattern::Wildcard(wildcard) => HirPattern::Wildcard,
         Pattern::Variable(variable) => HirPattern::Variable(HirIdentifier {
             name: Identifier::new(&variable.name.name),
             shadow_index: 0,
             span: with_source(&frontend::std_range(&variable.span), source_id),
         }),
-        Pattern::Literal(literal) => HirPattern::Literal(parse_pattern_literal(&literal.value)),
+        Pattern::Literal(literal) => HirPattern::Literal(parse_pattern_literal(literal)?),
         Pattern::Type(type_pattern) => HirPattern::Name(lower_name_path(&type_pattern.name)),
-        Pattern::Class(class_pattern) => lower_class_pattern(class_pattern, source_id, span),
+        Pattern::Class(class_pattern) => lower_class_pattern(class_pattern, source_id, span)?,
         Pattern::Else(_) => HirPattern::Else,
-        Pattern::Array(array_pattern) => lower_array_pattern(array_pattern, source_id, span),
-    }
+        Pattern::Array(array_pattern) => lower_array_pattern(array_pattern, source_id, span)?,
+    })
 }
 
-fn lower_array_pattern(pattern: &ArrayPattern, source_id: SourceID, span: SourceSpan) -> HirPattern {
+fn lower_array_pattern(pattern: &ArrayPattern, source_id: SourceID, span: SourceSpan) -> Result<HirPattern, HirError> {
     // 内置数组类型 `[T]` 的名义 owner 名是 `Array`（`impl_nominal_type_name`），
     // extractor 路径遵循 `<Owner>.extractor` 约定（`canonical_extractor_callee`）。
     let canonical_callee = crate::compiler::types::NamePath::new(vec![Identifier::new("Array"), Identifier::new("extractor")]);
-    let prefix = pattern.prefix.iter().map(|item| lower_pattern(item, source_id, span.clone())).collect();
+    let prefix =
+        pattern.prefix.iter().map(|item| lower_pattern(item, source_id, span.clone())).collect::<Result<Vec<_>, _>>()?;
     let rest = pattern.rest.as_ref().map(|rest| lower_array_rest_binding(rest, source_id, span.clone()));
-    let suffix = pattern.suffix.iter().map(|item| lower_pattern(item, source_id, span.clone())).collect();
-    HirPattern::Extractor(HirExtractorPattern::Array { canonical_callee, prefix, rest, suffix, resolved: None })
+    let suffix =
+        pattern.suffix.iter().map(|item| lower_pattern(item, source_id, span.clone())).collect::<Result<Vec<_>, _>>()?;
+    Ok(HirPattern::Extractor(HirExtractorPattern::Array { canonical_callee, prefix, rest, suffix, resolved: None }))
 }
 
 fn lower_array_rest_binding(pattern: &Pattern, source_id: SourceID, span: SourceSpan) -> HirIdentifier {
@@ -189,40 +191,42 @@ fn lower_array_rest_binding(pattern: &Pattern, source_id: SourceID, span: Source
     }
 }
 
-fn lower_class_pattern(pattern: &ClassPattern, source_id: SourceID, span: SourceSpan) -> HirPattern {
+fn lower_class_pattern(pattern: &ClassPattern, source_id: SourceID, span: SourceSpan) -> Result<HirPattern, HirError> {
     let name = lower_name_path(&pattern.name);
-    let fields = pattern
-        .fields
-        .iter()
-        .map(|(field, nested)| {
-            let field_pattern = nested
-                .as_ref()
-                .map(|nested| lower_pattern(nested, source_id, span.clone()))
-                .unwrap_or(HirPattern::Variable(HirIdentifier { name: Identifier::new(&field.name), shadow_index: 0, span: span.clone() }));
-            (Identifier::new(&field.name), field_pattern)
-        })
-        .collect::<Vec<_>>();
+    let mut fields = Vec::with_capacity(pattern.fields.len());
+    for (field, nested) in &pattern.fields {
+        let field_pattern = match nested {
+            Some(nested) => lower_pattern(nested, source_id, span.clone())?,
+            None => HirPattern::Variable(HirIdentifier { name: Identifier::new(&field.name), shadow_index: 0, span: span.clone() }),
+        };
+        fields.push((Identifier::new(&field.name), field_pattern));
+    }
     let field_ids = vec![None; fields.len()];
-    HirPattern::Object { name: Some(name), type_declaration: None, fields, field_ids, rest: None }
+    Ok(HirPattern::Object { name: Some(name), type_declaration: None, fields, field_ids, rest: None })
 }
 
-fn parse_pattern_literal(value: &str) -> HirLiteral {
+fn parse_pattern_literal(literal: &LiteralPattern) -> Result<HirLiteral, HirError> {
+    let value = literal.value.as_str();
     if value == "true" || value == "false" {
-        HirLiteral::Bool(value == "true")
+        return Ok(HirLiteral::Bool(value == "true"));
     }
-    else if let Ok(value) = value.parse::<i64>() {
-        HirLiteral::Integer64(value)
+    let literal_range = frontend::std_range(&literal.span);
+    if let Some((prefix, content, content_start)) = single_quote_literal::split_single_quote_capture(value, literal_range.start) {
+        let prefix_name = prefix.as_ref().map(|(name, _)| *name);
+        let decoded = single_quote_literal::decode_single_quote_literal(prefix, content, &literal_range, content_start)?;
+        return Ok(single_quote_literal::single_quote_literal_value(decoded, prefix_name));
     }
-    else if let Ok(value) = value.parse::<f64>() {
-        HirLiteral::Float64(OrderedFloat(value))
+    if let Ok(value) = value.parse::<i64>() {
+        return Ok(HirLiteral::Integer64(value));
     }
-    else {
-        HirLiteral::String(crate::compiler::types::hir::HirStringLiteral {
-            prefix: None,
-            quote_count: 1,
-            segments: vec![crate::compiler::types::hir::HirStringSegment::Text(value.to_string())],
-        })
+    if let Ok(value) = value.parse::<f64>() {
+        return Ok(HirLiteral::Float64(OrderedFloat(value)));
     }
+    Ok(HirLiteral::String(crate::compiler::types::hir::HirStringLiteral {
+        prefix: None,
+        quote_count: 1,
+        segments: vec![crate::compiler::types::hir::HirStringSegment::Text(value.to_string())],
+    }))
 }
 
 #[doc(hidden)]
@@ -292,7 +296,12 @@ fn lower_term_expression_body(
             let literal_range = frontend::std_range(literal_span);
             let capture_start = prefix.as_ref().map_or(literal_range.start, |prefix| prefix.span.end);
             let content_start = capture_start + *quote_count as usize;
-            let decoded = single_quote_literal::decode_single_quote_literal(prefix.as_ref(), content, &literal_range, content_start)?;
+            let decoded = single_quote_literal::decode_single_quote_literal(
+                prefix.as_ref().map(|prefix| (prefix.name.as_str(), prefix.span.start..prefix.span.end)),
+                content,
+                &literal_range,
+                content_start,
+            )?;
             single_quote_literal::single_quote_literal_kind(decoded, prefix.as_ref())
         }
         TermExpression::Unary(node) => lower_unary_expression(node, source_id, span_range.clone(), span.clone())?,
@@ -362,7 +371,7 @@ fn lower_term_expression_body(
         TermExpression::If { pattern, condition, then_branch, else_branch, .. } => lower_deferred(|| {
             if let Some(pattern) = pattern {
                 Ok(HirExprKind::IfLet {
-                    pattern: lower_pattern(pattern, source_id, span.clone()),
+                    pattern: lower_pattern(pattern, source_id, span.clone())?,
                     scrutinee: Box::new(lower_term_expression_with_context(condition, source_id, span_range.clone(), false)?),
                     then_branch: Box::new(lower_block(then_branch, source_id, span_range.clone())?),
                     else_branch: else_branch.as_ref().map(|body| lower_block(body, source_id, span_range.clone())).transpose()?.map(Box::new),
@@ -389,7 +398,7 @@ fn lower_term_expression_body(
                 // 迭代项类型由 `next() -> Option<Item>` 经 `unwrap` 普通推导得出。
                 let iter_source = condition.as_ref().expect("语法不变量：`loop pat in src` 必带迭代源");
                 let iterator = lower_term_expression_with_context(iter_source, source_id, span_range.clone(), false)?;
-                let pattern = lower_pattern(loop_pattern, source_id, span.clone());
+                let pattern = lower_pattern(loop_pattern, source_id, span.clone())?;
                 let body = lower_block(body, source_id, span_range.clone())?;
                 return Ok(lower_for_in_desugar(hir_label, pattern, iterator, body, span.clone()));
             }
@@ -705,7 +714,7 @@ fn lower_match_arms(
     }
     arms.iter()
         .map(|arm| -> Result<_, HirError> {
-            let pattern = lower_pattern(&arm.pattern, source_id, span.clone());
+            let pattern = lower_pattern(&arm.pattern, source_id, span.clone())?;
             let guard = arm
                 .guard
                 .as_ref()

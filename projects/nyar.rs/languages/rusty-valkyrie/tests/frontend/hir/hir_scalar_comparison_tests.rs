@@ -246,10 +246,7 @@ using std.text;
     compile(consumer).expect("`Some('<')` 提取器模式必须解析");
 }
 
-// 缺口：提取器臂与 `else` 臂同现时 `else` 丢失，报 `missing None`（显式 `case None`
-// 正常）。定位在 match 恢复/降低层的 else 保留，与本套件的主题无关，先挂起。
 #[test]
-#[ignore = "else arm is dropped next to extractor arms; pending fix"]
 fn match_option_char_with_else_arm_resolves() {
     let consumer = r#"
 namespace app;

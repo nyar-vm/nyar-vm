@@ -39,27 +39,57 @@ pub(crate) enum DecodedSingleQuoteLiteral {
 
 /// 判定并解码单引号捕获字面量；失败一律结构化并携带精确 span。
 ///
+/// `prefix` 是紧邻引号串前的标识符名与源码区间（无前缀为 `None`）；
 /// `literal_span` 是整个字面量（含前缀与两侧引号串）的源码区间；
 /// `content_start` 是内容首字节的源码偏移，用于把转义错误定位到具体序列。
 pub(crate) fn decode_single_quote_literal(
-    prefix: Option<&OakIdentifier>,
+    prefix: Option<(&str, Range<usize>)>,
     content: &str,
     literal_span: &Range<usize>,
     content_start: usize,
 ) -> Result<DecodedSingleQuoteLiteral, HirError> {
-    match prefix.map(|prefix| prefix.name.as_str()) {
-        Some("r") => classify_chars(content.chars().collect(), literal_span),
-        Some("b") => decode_byte_literal(content, literal_span, content_start),
-        Some(_) => {
-            let prefix = prefix.expect("前缀分支已匹配");
-            let prefix_span = DiagnosticSpan { start: prefix.span.start, end: prefix.span.end };
-            Err(single_quote_literal_error(SingleQuoteLiteralFailure::UnknownPrefix { prefix: prefix.name.clone() }, prefix_span))
+    match prefix {
+        Some(("r", _)) => classify_chars(content.chars().collect(), literal_span),
+        Some(("b", _)) => decode_byte_literal(content, literal_span, content_start),
+        Some((name, span)) => {
+            let prefix_span = DiagnosticSpan { start: span.start, end: span.end };
+            Err(single_quote_literal_error(SingleQuoteLiteralFailure::UnknownPrefix { prefix: name.to_string() }, prefix_span))
         }
         None => {
             let decoded = decode_cooked_chars(content, content_start)?;
             classify_chars(decoded, literal_span)
         }
     }
+}
+
+/// 从原始捕获文本（含前缀与两侧引号串）拆出结构化解码输入。
+///
+/// 模式位的 Oak 字面量节点只携带源码原文；返回 `None` 表示文本不是单引号捕获
+/// 形态（数字、双引号字符串等），调用方按其他字面量门类继续判定。
+pub(crate) fn split_single_quote_capture(raw: &str, literal_start: usize) -> Option<(Option<(&str, Range<usize>)>, &str, usize)> {
+    let quote_index = raw.find('\'')?;
+    let prefix_text = &raw[..quote_index];
+    if !prefix_text.is_empty() && !is_valid_prefix_identifier(prefix_text) {
+        return None;
+    }
+    let after_prefix = &raw[quote_index..];
+    let quote_count = after_prefix.chars().take_while(|character| *character == '\'').count();
+    let body = &after_prefix[quote_count..];
+    let closing: String = "'".repeat(quote_count);
+    if body.len() < quote_count || !body.ends_with(&closing) {
+        return None;
+    }
+    let content = &body[..body.len() - quote_count];
+    let prefix =
+        if prefix_text.is_empty() { None } else { Some((prefix_text, literal_start..literal_start + quote_index)) };
+    let content_start = literal_start + quote_index + quote_count;
+    Some((prefix, content, content_start))
+}
+
+fn is_valid_prefix_identifier(text: &str) -> bool {
+    let mut characters = text.chars();
+    matches!(characters.next(), Some(first) if first == '_' || first.is_alphabetic())
+        && characters.all(|character| character == '_' || character.is_alphanumeric())
 }
 
 /// 把字符序列归类为字符或字符串：恰好一个字符归 `char`，其余（含空捕获）归 `Utf8`。
@@ -240,15 +270,20 @@ fn decode_byte_literal(content: &str, literal_span: &Range<usize>, content_start
     }
 }
 
-/// 把解码结果落到 HIR 字面量节点；`prefix` 原样携带，不新造语义标记。
-pub(crate) fn single_quote_literal_kind(decoded: DecodedSingleQuoteLiteral, prefix: Option<&OakIdentifier>) -> HirExprKind {
-    HirExprKind::Literal(match decoded {
+/// 把解码结果落到 HIR 字面量；`prefix` 原样携带，不新造语义标记。
+pub(crate) fn single_quote_literal_value(decoded: DecodedSingleQuoteLiteral, prefix: Option<&str>) -> HirLiteral {
+    match decoded {
         DecodedSingleQuoteLiteral::Character(value) => HirLiteral::Character(value),
         DecodedSingleQuoteLiteral::Byte(value) => HirLiteral::Byte(value),
         DecodedSingleQuoteLiteral::Text(text) => HirLiteral::String(HirStringLiteral {
-            prefix: prefix.map(|prefix| Identifier::new(&prefix.name)),
+            prefix: prefix.map(Identifier::new),
             quote_count: 1,
             segments: vec![HirStringSegment::Text(text)],
         }),
-    })
+    }
+}
+
+/// 把解码结果落到 HIR 表达式节点；`prefix` 原样携带，不新造语义标记。
+pub(crate) fn single_quote_literal_kind(decoded: DecodedSingleQuoteLiteral, prefix: Option<&OakIdentifier>) -> HirExprKind {
+    HirExprKind::Literal(single_quote_literal_value(decoded, prefix.map(|prefix| prefix.name.as_str())))
 }

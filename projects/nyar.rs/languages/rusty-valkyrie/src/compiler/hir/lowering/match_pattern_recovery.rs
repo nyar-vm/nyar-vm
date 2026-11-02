@@ -261,6 +261,17 @@ fn parse_hir_literal(text: &str) -> Option<HirLiteral> {
     if text == "true" || text == "false" {
         return Some(HirLiteral::Bool(text == "true"));
     }
+    // 单引号捕获（`char`/`u8`/raw 文本）与表达式侧共用同一解码合同；
+    // 恢复路径的 span 仅作兜底，解码失败由上层归入 `MatchRecoveryStage::Pattern`。
+    if let Some((prefix, content, content_start)) =
+        super::single_quote_literal::split_single_quote_capture(text, 0)
+    {
+        let prefix_name = prefix.as_ref().map(|(name, _)| *name);
+        let decoded =
+            super::single_quote_literal::decode_single_quote_literal(prefix, content, &(0..text.len()), content_start)
+                .ok()?;
+        return Some(super::single_quote_literal::single_quote_literal_value(decoded, prefix_name));
+    }
     if let Ok(value) = text.parse::<i64>() {
         return Some(HirLiteral::Integer64(value));
     }
