@@ -602,5 +602,4 @@ impl MirBuilder {
         }
         accumulated.unwrap_or(MirOperand::Constant(MirConstant::Bool(true)))
     }
-
 }

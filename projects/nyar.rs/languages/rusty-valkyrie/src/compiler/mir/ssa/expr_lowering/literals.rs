@@ -240,7 +240,9 @@ pub(crate) fn refine_auto_sum_instantiation_args(type_args: &[ValkyrieType], pay
 
 pub(crate) fn refine_auto_apply_type(ty: &ValkyrieType, payload_type: Option<&ValkyrieType>) -> ValkyrieType {
     match ty {
-        ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.iter().any(|arg| matches!(arg, ValkyrieType::AutoType)) => {
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity }
+            if arguments.iter().any(|arg| matches!(arg, ValkyrieType::AutoType)) =>
+        {
             ValkyrieType::Nominal {
                 declaration: *declaration,
                 arguments: refine_auto_sum_instantiation_args(arguments, payload_type),
