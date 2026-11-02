@@ -114,6 +114,18 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
 
     // 静态页面以组件初始状态渲染，作为 hydration 前的占位内容；外部数据为 Null。
     let rendered = render_static_ir(&component, &serde_json::Value::Null);
+    // 超过求值/渲染结构上限意味着产物必然残缺：失败闭合，不写出半页。
+    if !rendered.diagnostics.is_empty() {
+        let details = rendered
+            .diagnostics
+            .iter()
+            .map(|diagnostic| {
+                format!("{:?}（{} 深度 {} > 上限 {}）", diagnostic.kind, diagnostic.target, diagnostic.depth, diagnostic.limit)
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(AsgardError::msg(report!("静态渲染超过结构上限，拒绝产出残缺页面: {details}")));
+    }
     let title = options.title.as_deref().unwrap_or(file_stem);
     let base = page_base(&options.base)?;
 

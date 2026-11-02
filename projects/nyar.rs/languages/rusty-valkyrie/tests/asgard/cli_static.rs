@@ -2,7 +2,10 @@
 
 use std::{fs, path::PathBuf, process::ExitCode};
 
-use rusty_valkyrie::asgard::cli::{AsgardBuildArgs, AsgardCommands, AsgardDelivery, run};
+use rusty_valkyrie::asgard::{
+    cli::{AsgardBuildArgs, AsgardCommands, AsgardDelivery, run},
+    codegen::expr_eval::MAX_EXPRESSION_EVALUATION_DEPTH,
+};
 use tempfile::TempDir;
 
 /// 带样式与初始状态绑定的根组件入口 fixture。
@@ -93,6 +96,33 @@ fn static_delivery_fails_closed_on_bad_entry() {
     let error = run(&AsgardCommands::Build(build_args(&temp, "source/index.v", None))).expect_err("非法入口后缀应失败");
     assert!(error.to_string().contains(".w"), "诊断应说明合法后缀: {error}");
     assert!(!temp.path().join("dist").join("index.html").exists(), "失败路径不应产出页面");
+}
+
+/// 超过求值结构上限的入口必须结构化失败：不崩溃，也不写出残缺页面。
+#[test]
+fn static_delivery_fails_closed_on_depth_exceeded() {
+    let temp = TempDir::new().expect("创建临时目录失败");
+    fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
+    let expression = format!("{}active", "!".repeat(MAX_EXPRESSION_EVALUATION_DEPTH + 4));
+    let fixture = format!(
+        r#"<widget index>
+<Column class="hero">
+    <Text class="hero-title">{{active}}</Text>
+    <Text class="deep">{{{expression}}}</Text>
+</Column>
+</widget>
+<script>
+let active: bool = true
+</script>
+"#
+    );
+    fs::write(temp.path().join("source/index.w"), fixture).expect("写入超深表达式入口失败");
+    write_project_files(temp.path());
+
+    let error = run(&AsgardCommands::Build(build_args(&temp, "source/index.w", None))).expect_err("超深表达式应结构化失败");
+    let message = error.to_string();
+    assert!(message.contains("静态渲染超过结构上限"), "诊断应说明结构上限失败: {message}");
+    assert!(!temp.path().join("dist").join("index.html").exists(), "失败路径不得产出残缺页面");
 }
 
 #[test]
