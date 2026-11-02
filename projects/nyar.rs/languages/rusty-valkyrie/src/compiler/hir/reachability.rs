@@ -83,6 +83,9 @@ impl HirMaterializationGate {
                 walker.visit_callable(function);
             }
         }
+        for module in modules {
+            collect_instantiated_body_instances(module, self, &mut walker);
+        }
         self.reachable_instances.extend(walker.instances);
     }
 }
@@ -177,6 +180,19 @@ fn collect_instantiated_instances(module: &HirModule, gate: &mut HirMaterializat
     }
     for submodule in &module.submodules {
         collect_instantiated_instances(submodule, gate);
+    }
+}
+
+/// 可达声明的铸造克隆体同样携带物化事实：witness 消解到 impl 成员的实例只回填在
+/// 克隆体调用点上，其声明身份不在可达集，必须由可达克隆体体内的已回填 callee 放行。
+fn collect_instantiated_body_instances(module: &HirModule, gate: &HirMaterializationGate, walker: &mut ReachabilityWalker<'_>) {
+    for callable in &module.instantiated_callables {
+        if gate.permits_declaration(callable.function.declaration) {
+            walker.visit_callable(&callable.function);
+        }
+    }
+    for submodule in &module.submodules {
+        collect_instantiated_body_instances(submodule, gate, walker);
     }
 }
 

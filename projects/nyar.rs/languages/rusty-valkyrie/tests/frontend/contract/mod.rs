@@ -20,3 +20,4 @@ mod valkyrie_control_flow_context;
 mod valkyrie_highlight;
 mod valkyrie_lint;
 mod valkyrie_types_hir_export_spec;
+mod witness_instance_materialization_gate_tests;

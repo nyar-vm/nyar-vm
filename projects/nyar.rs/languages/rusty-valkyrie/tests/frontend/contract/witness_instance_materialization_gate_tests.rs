@@ -1,0 +1,215 @@
+//! witness 消解实例的物化门禁合同。
+//!
+//! 泛型接收者上的 trait 方法调用（`where T: Equal` 内的 `infix ==`）在 HIR 解析期
+//! 冻结 `trait_dispatch` evidence，单态化固定点把它消解为具体 impl 成员实例并回填到
+//! 铸造克隆体的调用点。物化可达性门必须按「可达克隆体体内的已回填 callee」放行这些
+//! 实例：它们的声明身份（impl 成员）不在声明级可达集内，若只按声明门禁收口，链接期
+//! 会以「调用实例没有定义或显式导入合同」结构化失败。
+//!
+//! 本文件冻结：
+//! - 正例一：`Array<T>::contains` 体内 `self.get(i).unwrap() == value` 的 witness 实例
+//!   端到端物化成功（`contains` 场景）；
+//! - 正例二：委托链 `insert` → `find_slot` 体内的 witness 实例端到端物化成功
+//!   （哈希表 `find_slot` / `find_insert_slot` 场景的同构形态）；
+//! - 反例：具体代入类型没有相应 trait impl 时，where 证据保持 fail-closed，
+//!   以 `UnresolvedCall` 结构化拒绝。
+
+use nyar_types::compiler_input::CompilerSourceGroup;
+use rusty_valkyrie::{HirError, ValkyrieCompiler};
+
+const PRIMITIVES: &str = "namespace std.primitive;
+[primitive(\"std::primitive::usize\")] structure usize { }
+[primitive(\"std::primitive::i64\")] structure i64 { }
+[primitive(\"std::primitive::i32\")] structure i32 { }
+[primitive(\"std::primitive::bool\")] structure bool { }
+
+trait Equal {
+    infix `==`(self, other: Self): bool
+    infix `!=`(self, other: Self): bool
+}
+
+imply usize: Equal {
+    infix `==`(self, other: Self): bool { return true }
+    infix `!=`(self, other: Self): bool { return false }
+}
+
+imply usize {
+    infix `<`(self, other: usize): bool { return true }
+    infix `+`(self, other: usize): usize { return self }
+}
+
+imply i64: Equal {
+    infix `==`(self, other: Self): bool { return true }
+    infix `!=`(self, other: Self): bool { return false }
+}
+
+imply i32: Equal {
+    infix `==`(self, other: Self): bool { return true }
+    infix `!=`(self, other: Self): bool { return false }
+}
+";
+
+const OPTION: &str = "namespace std.types;
+
+micro panic<T>(message: T): void {
+}
+
+[tag(OptionKind)]
+unite Option<T> {
+    [tag(0)]
+    Some { value: T },
+    [tag(1, default)]
+    None,
+}
+
+imply Option<T> {
+    micro is_none(self): bool {
+        match self {
+            case Some(value):
+                false
+            case None:
+                true
+        }
+    }
+
+    micro is_some(self): bool {
+        match self {
+            case Some(value):
+                true
+            case None:
+                false
+        }
+    }
+
+    micro unwrap(self): T {
+        match self {
+            case Some(value):
+                value
+            case None:
+                panic(\"unwrap on `None` value\")
+        }
+    }
+}
+";
+
+const ARRAY: &str = "namespace std.collection;
+
+type Equal = std::primitive::Equal;
+
+class Array<T> {
+}
+
+imply Array<T> {
+    micro length(self): usize { return 0 }
+
+    micro get(self, index: usize): Option<T> {
+        let missing: Option<T> = None
+        return missing
+    }
+
+    micro contains(self, value: T): bool where T: Equal {
+        let mut i: usize = 0
+        while i < self.length() {
+            if self.get(i).unwrap() == value {
+                return true
+            }
+            i = i + 1
+        }
+        return false
+    }
+}
+";
+
+const TABLE_CHAIN: &str = "namespace std.collection;
+
+type Equal = std::primitive::Equal;
+
+class Table<K> {
+}
+
+imply Table<K> {
+    micro find_slot(self, key: K): bool where K: Equal {
+        return key == key
+    }
+
+    micro insert(self, key: K): bool where K: Equal {
+        return self.find_slot(key)
+    }
+}
+";
+
+const APP_CONTAINS: &str = "namespace leetcode.app;
+
+[export]
+micro touch(array: Array<i32>): bool {
+    return array.contains(1)
+}
+
+[main]
+micro main() {
+}
+";
+
+const APP_TABLE: &str = "namespace leetcode.app;
+
+[export]
+micro touch_table(table: Table<i64>): bool {
+    return table.insert(7)
+}
+
+[main]
+micro main() {
+}
+";
+
+const APP_OPAQUE: &str = "namespace leetcode.app;
+
+class Opaque {
+}
+
+[export]
+micro touch_opaque(array: Array<Opaque>, value: Opaque): bool {
+    return array.contains(value)
+}
+
+[main]
+micro main() {
+}
+";
+
+fn source_groups(collection_source: &str, app_source: &str) -> Vec<CompilerSourceGroup> {
+    let core_group = CompilerSourceGroup::single_source("std.primitive", "std.primitive", PRIMITIVES);
+    let types_group =
+        CompilerSourceGroup::single_source("std.types", "std.types", OPTION).with_direct_dependencies(vec!["std.primitive".to_string()]);
+    let collection_group = CompilerSourceGroup::single_source("std.collection", "std.collection", collection_source)
+        .with_direct_dependencies(vec!["std.primitive".to_string(), "std.types".to_string()]);
+    let app_group = CompilerSourceGroup::single_source("leetcode.app", "leetcode.app", app_source)
+        .with_direct_dependencies(vec!["std.primitive".to_string(), "std.types".to_string(), "std.collection".to_string()])
+        .as_entry();
+    vec![core_group, types_group, collection_group, app_group]
+}
+
+/// 正例一：`where T: Equal` 内 `infix ==` 的 witness 实例必须物化到程序里。
+#[test]
+fn generic_receiver_infix_witness_instance_is_materialized() {
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&source_groups(ARRAY, APP_CONTAINS))
+        .expect("`contains` 体内的 witness 实例必须经物化门放行并链接成功");
+}
+
+/// 正例二：委托链末端的 witness 实例（`insert` → `find_slot` → `==`）同样物化成功。
+#[test]
+fn delegated_chain_witness_instance_is_materialized() {
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&source_groups(TABLE_CHAIN, APP_TABLE))
+        .expect("委托链末端的 witness 实例必须经物化门放行并链接成功");
+}
+
+/// 反例：具体代入类型没有 `Equal` impl 时，where 证据保持 fail-closed。
+#[test]
+fn concrete_argument_without_trait_impl_is_rejected() {
+    let error = ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&source_groups(ARRAY, APP_OPAQUE))
+        .expect_err("`Opaque` 没有 `Equal` impl 时 `contains` 不得解析");
+    assert!(matches!(&error, HirError::UnresolvedCall { .. }), "got {error:?}");
+}
