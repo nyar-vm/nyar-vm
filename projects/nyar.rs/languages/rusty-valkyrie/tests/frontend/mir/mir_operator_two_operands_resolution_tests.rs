@@ -386,7 +386,6 @@ micro check(n: usize) -> bool {
 "#;
     compile(app).expect("相互递归的自由函数必须解析");
 }
-
 /// D5：限定路径 turbofish `std::array::new::<usize>` 必须解析到依赖声明并完成实例化。
 ///
 /// 与 `std::collection::array::new::<T>` 语料同形：显式泛型实参是**具体类型**，
@@ -432,4 +431,38 @@ micro fresh() -> usize {
 "#;
     let error = compile(app).expect_err("非泛型函数附 turbofish 必须结构化失败");
     assert!(error.contains("unresolved call"), "expected unresolved call, got: {error}");
+}
+
+/// 统一访问：字段形态的零参成员 `.length` 与调用形态 `.length()` 必须等价。
+#[test]
+fn field_shaped_zero_arg_member_matches_call() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro len_value(xs: ArrayList<usize>) -> usize {
+    return xs.length
+}
+
+[export]
+micro len_call(xs: ArrayList<usize>) -> usize {
+    return xs.length()
+}
+"#;
+    compile(app).expect("`.length` 与 `.length()` 必须等价");
+}
+
+/// 统一访问反例：既不是聚合字段、也没有零参方法的成员必须结构化失败。
+#[test]
+fn unknown_member_without_method_or_field_fails() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro len_value(xs: ArrayList<usize>) -> usize {
+    return xs.not_a_member
+}
+"#;
+    let error = compile(app).expect_err("未声明的成员必须结构化失败");
+    assert!(error.contains("SMIR007") && error.contains("demo::len_value"), "失败必须带结构化 MIR 码与函数身份：{error}");
 }
