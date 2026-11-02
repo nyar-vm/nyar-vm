@@ -17,7 +17,9 @@ mod hir_lowering_source_group_tests;
 mod hir_lowering_template_expand_tests;
 mod hir_lowering_vx_tests;
 mod hir_materialization_gate_tests;
+mod hir_fine_constructor_resolution_tests;
 mod hir_overload_identity_tests;
+mod hir_scalar_comparison_tests;
 #[cfg(false)] // AstToHir 已移除、类型签名变化（架构迁移）
 mod hir_overload_singleton_tests;
 mod hir_single_quote_literal_tests;

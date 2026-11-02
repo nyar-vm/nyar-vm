@@ -126,6 +126,27 @@ fn variant_constructor_facts_from_declaration(
         .filter(|candidate| candidate_variant_constructor_matches(candidate, &Identifier::new(variant_name)))
         .find_map(|candidate| candidate.sum_owner.zip(candidate.sum_variant))
 }
+/// 名义头的可比较标签：`Nominal` 取声明身份，路径形态取名，apply 递归取基。
+/// 两侧都有头且不同即 owner 不同；任一侧无头则不判（无可判别事实）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum NominalHeadLabel {
+    /// 名义声明身份。
+    Declaration(nyar_types::ItemId),
+    /// 路径/短名形态的类型名。
+    Name(String),
+}
+
+/// 取类型的名义头标签；`Generic`、函数、tuple 等无名义头的类型返回 `None`。
+pub(crate) fn nominal_head_label(ty: &ValkyrieType) -> Option<NominalHeadLabel> {
+    match ty {
+        ValkyrieType::Nominal { declaration, .. } => Some(NominalHeadLabel::Declaration(*declaration)),
+        ValkyrieType::Named(name) => Some(NominalHeadLabel::Name(name.to_string())),
+        ValkyrieType::QualifiedPath { namespace, name } => Some(NominalHeadLabel::Name(ValkyrieType::qualified_path_label(namespace, name))),
+        ValkyrieType::Apply(base, _) => nominal_head_label(base),
+        _ => None,
+    }
+}
+
 pub(crate) fn instantiate_candidate_for_context(candidate: &OverloadCandidate, contextual_type: &ValkyrieType) -> Option<OverloadCandidate> {
     // 防御：candidate.return_type 最外层是裸 Generic binder 时，禁止用外层
     // contextual_type 反推泛型。否则 Some(Option<T>) context 会把裸 T 绑定成
@@ -177,17 +198,32 @@ pub fn try_resolve_constructor(
         args.to_vec()
     };
     let arguments = HirCallArgument::from_exprs(bound_values);
-    let filtered = candidates
+    // 同名构造（`Result::Fine` 与 `DataOutcome::Fine` 并存）按上下文名义头收窄：
+    // 存在与上下文同头的候选时只保留它们；没有同头候选时不收窄——上下文可能只是
+    // 宽松的语句级提示（如无标注 `let` 继承外层返回类型），不得据此清空候选集。
+    let name_matched = candidates.iter().filter(|candidate| aggregate_constructor_matches_name(candidate, path)).collect::<Vec<_>>();
+    let context_head = contextual_type.and_then(nominal_head_label);
+    let head_matched = context_head.as_ref().map(|head| {
+        name_matched
+            .iter()
+            .copied()
+            .filter(|candidate| matches!(nominal_head_label(&candidate.signature.return_type), Some(candidate_head) if candidate_head == *head))
+            .collect::<Vec<_>>()
+    });
+    let pool = match head_matched {
+        Some(matching) if !matching.is_empty() => matching,
+        _ => name_matched.clone(),
+    };
+    let filtered = pool
         .iter()
-        .filter(|candidate| aggregate_constructor_matches_name(candidate, path))
         .filter_map(|candidate| {
             if let Some(context) = contextual_type {
-                if let Some(instantiated) = instantiate_candidate_for_context(candidate, context) {
-                    if let Some(matched) =
+                if !matches!(&candidate.signature.return_type, ValkyrieType::Generic(_))
+                    && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
+                    && let Some(matched) =
                         match_call_candidate(&instantiated, &arguments, &[], type_relations, locals, struct_fields, singleton_names)
-                    {
-                        return Some(matched);
-                    }
+                {
+                    return Some(matched);
                 }
             }
             match_call_candidate(candidate, &arguments, &[], type_relations, locals, struct_fields, singleton_names)

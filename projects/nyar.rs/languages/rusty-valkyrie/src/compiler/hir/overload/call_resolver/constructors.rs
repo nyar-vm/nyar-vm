@@ -40,7 +40,10 @@ use crate::compiler::hir::overload::{
 
 use super::{
     core::{candidate_has_receiver_parameter, match_call_candidate, overload_symbol_path, peel_explicit_generic_arguments},
-    helpers::{enrich_unite_variant_constructor_facts, instantiate_candidate_for_context, try_resolve_constructor},
+    helpers::{
+        NominalHeadLabel, enrich_unite_variant_constructor_facts, instantiate_candidate_for_context, nominal_head_label,
+        try_resolve_constructor,
+    },
     patterns::enrich_sum_variant_operation_facts,
 };
 
@@ -59,25 +62,37 @@ pub(crate) fn try_resolve_constructor_call(
     let callee_name = extract_callable_name(callee)?;
     let callee_path = NamePath::new(vec![callee_name.clone()]);
 
-    let owned_variant_constructors = candidates
+    // 同名构造按上下文名义头收窄（与 `try_resolve_constructor` 同形纪律）：
+    // 有同头候选才收窄，否则不收窄（宽松上下文不得清空候选集）。
+    let context_head = contextual_type.and_then(nominal_head_label);
+    let owned_name_matched = candidates
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Constructor && candidate.owner.is_some())
         .filter(|candidate| candidate.is_auto_constructor)
         .filter(|candidate| candidate_variant_constructor_matches(candidate, &callee_name))
+        .collect::<Vec<_>>();
+    let owned_head_matched = context_head.as_ref().map(|head| {
+        owned_name_matched
+            .iter()
+            .copied()
+            .filter(|candidate| matches!(nominal_head_label(&candidate.signature.return_type), Some(candidate_head) if candidate_head == *head))
+            .collect::<Vec<_>>()
+    });
+    let owned_pool = match owned_head_matched {
+        Some(matching) if !matching.is_empty() => matching,
+        _ => owned_name_matched.clone(),
+    };
+    let owned_variant_constructors = owned_pool
+        .iter()
         .filter_map(|candidate| {
-            if let Some(context) = contextual_type
-                && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
-                && let Some(matched) = match_call_candidate(
-                    &instantiated,
-                    args,
-                    &explicit_generic_arguments,
-                    type_relations,
-                    locals,
-                    struct_fields,
-                    singleton_names,
-                )
-            {
-                return Some(matched);
+            if let Some(context) = contextual_type {
+                if !matches!(&candidate.signature.return_type, ValkyrieType::Generic(_))
+                    && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
+                    && let Some(matched) =
+                        match_call_candidate(&instantiated, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
+                {
+                    return Some(matched);
+                }
             }
             match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
         })
@@ -95,24 +110,33 @@ pub(crate) fn try_resolve_constructor_call(
         ));
     }
 
-    let free_constructors = candidates
+    let free_name_matched = candidates
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Constructor && candidate.owner.is_none())
         .filter(|candidate| aggregate_constructor_matches_name(candidate, &callee_path))
+        .collect::<Vec<_>>();
+    let free_head_matched = context_head.as_ref().map(|head| {
+        free_name_matched
+            .iter()
+            .copied()
+            .filter(|candidate| matches!(nominal_head_label(&candidate.signature.return_type), Some(candidate_head) if candidate_head == *head))
+            .collect::<Vec<_>>()
+    });
+    let free_pool = match free_head_matched {
+        Some(matching) if !matching.is_empty() => matching,
+        _ => free_name_matched.clone(),
+    };
+    let free_constructors = free_pool
+        .iter()
         .filter_map(|candidate| {
-            if let Some(context) = contextual_type
-                && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
-                && let Some(matched) = match_call_candidate(
-                    &instantiated,
-                    args,
-                    &explicit_generic_arguments,
-                    type_relations,
-                    locals,
-                    struct_fields,
-                    singleton_names,
-                )
-            {
-                return Some(matched);
+            if let Some(context) = contextual_type {
+                if !matches!(&candidate.signature.return_type, ValkyrieType::Generic(_))
+                    && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
+                    && let Some(matched) =
+                        match_call_candidate(&instantiated, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
+                {
+                    return Some(matched);
+                }
             }
             match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
         })
