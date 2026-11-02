@@ -1,8 +1,10 @@
 //! JVM 最小 MIR → `class` 降低。
 //!
-//! 只消费计划已经冻结的标量事实：整型/浮点常量、SSA local、冻结 operator、
-//! 块标签与条件分支、同片段 `invokestatic` 调用以及 `Return`。聚合、数组、sum、
-//! 宿主导入等形状在这里返回结构化错误，不补造指令、默认值或空体方法。
+//! 只消费计划已经冻结的事实：整型/浮点常量、SSA local、冻结 operator、
+//! 块标签与条件分支、同片段 `invokestatic` 调用以及 `Return`；容器形状按冻结的
+//! 布局身份、sum 表示与元素类型发射布局/sum companion 类及构造、字段、数组、
+//! sum、可空指令。未冻结身份或缺少 JVM 载体合同的形状仍返回结构化错误，
+//! 不补造指令、默认值或空体方法。
 //!
 //! 类内部名与方法命名都是稳定规则：类内部名取模块名与片段 id 的
 //! [`crate::lowering::sanitize_symbol`] 结果；导出函数取计划冻结的
@@ -24,13 +26,21 @@ use crate::{
         TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
     },
     transitional::binary::class::{
-        JvmClassFile, JvmCodeBody, JvmFieldRef, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor,
+        JvmClassFile, JvmCodeBody, JvmFieldRef, JvmFieldSignature, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature,
+        JvmTypeDescriptor,
     },
 };
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, ItemInstanceId};
+use nyar_types::{
+    AggregateLayout, AggregateLayoutPlan, FieldId, ItemInstanceId, LayoutId, NominalInstanceId, VariantId,
+    layout_choice::SumRepresentation,
+};
 
 const JVM_ACC_PUBLIC: u16 = 0x0001;
 const JVM_ACC_STATIC: u16 = 0x0008;
+
+/// sum companion 类的物理字段名；字段顺序由后端合同固定，禁止按 variant 名推断槽位。
+const JVM_SUM_TAG_FIELD: &str = "tag";
+const JVM_SUM_PAYLOAD_FIELD: &str = "payload";
 
 /// 引用存储形状在 JVM 上的擦除载体：最小 lowering 只搬运引用（`aload`/`astore`/
 /// `areturn`/调用描述符），值的物化与字段访问由计划冻结的实例级布局
@@ -171,7 +181,19 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
         class_file.methods.push(lower_function(submission, &internal_name, &view.function, &method, &method_plans, &operator_by_instance)?);
     }
 
-    let (companion_classes, managed_abi) = build_managed_abi_surface(&class_file, plan.wasm_export_names(), &method_plans)?;
+    let (launcher_classes, managed_abi) = build_managed_abi_surface(&class_file, plan.wasm_export_names(), &method_plans)?;
+    let mut companion_classes = build_layout_classes(plan.aggregate_layouts())?;
+    companion_classes.extend(build_sum_classes(submission)?);
+    companion_classes.extend(launcher_classes);
+    let mut companion_names = BTreeSet::new();
+    for companion in &companion_classes {
+        if !companion_names.insert(companion.internal_name.clone()) {
+            return Err(format!(
+                "JVM 最小 lowering：companion 类内部名 `{}` 冲突：布局类、sum 类与 launcher 类必须各有唯一载体",
+                companion.internal_name
+            ));
+        }
+    }
     Ok(JvmLoweredFragment { class_file, companion_classes, managed_abi })
 }
 
@@ -422,6 +444,225 @@ pub(crate) fn jvm_layout_class_name(layout: &AggregateLayout) -> String {
     format!("nyar/layout/{}${}", crate::lowering::sanitize_symbol(&layout.name), layout.id)
 }
 
+/// 布局字段在 companion 类中的唯一名字；构造与字段访问必须共用这一条规则。
+fn jvm_layout_field_name(slot: usize) -> String {
+    format!("field{slot}")
+}
+
+/// sum companion 类的稳定内部名：只由 nominal 身份派生，禁止按 variant 名/短名推断。
+fn jvm_sum_class_name(nominal: NominalInstanceId, _sum: &SumRepresentation) -> String {
+    format!("nyar/sum/${}", nominal.index())
+}
+
+/// 布局/sum companion 类的默认构造器签名。
+///
+/// `JvmClassFile::to_bytes` 对 `code: None` 的 `"<init>"` 方法自动合成
+/// `aload_0; invokespecial java/lang/Object.<init>; return`，因此这里不手写空体。
+fn jvm_default_constructor() -> JvmMethodSignature {
+    JvmMethodSignature {
+        name: "<init>".to_string(),
+        descriptor: JvmMethodDescriptor::new(Vec::new(), JvmTypeDescriptor::Void),
+        access_flags: JVM_ACC_PUBLIC,
+        code: None,
+    }
+}
+
+fn jvm_constructor_ref(owner: &str) -> JvmMethodRef {
+    JvmMethodRef {
+        owner: owner.to_string(),
+        name: "<init>".to_string(),
+        descriptor: JvmMethodDescriptor::new(Vec::new(), JvmTypeDescriptor::Void),
+    }
+}
+
+fn jvm_layout_field_ref(layout: &AggregateLayout, slot: usize, descriptor: JvmTypeDescriptor) -> JvmFieldRef {
+    JvmFieldRef { owner: jvm_layout_class_name(layout), name: jvm_layout_field_name(slot), descriptor }
+}
+
+/// 为所有需要堆载体的布局生成 companion 类。
+///
+/// 类名只由 layout 身份派生；JVM 没有内联结构体，逐字段复制只能走
+/// `AggregateCopy`。零字段值存储布局与块 2 的载体拒绝保持同一合同。
+fn build_layout_classes(layouts: &AggregateLayoutPlan) -> Result<Vec<JvmClassFile>> {
+    let mut classes = Vec::new();
+    for layout in &layouts.layouts {
+        if !(layout.storage.is_reference() || !layout.fields.is_empty()) {
+            continue;
+        }
+        let mut class_file = JvmClassFile::new(jvm_layout_class_name(layout));
+        for (slot, field) in layout.fields.iter().enumerate() {
+            class_file.fields.push(JvmFieldSignature {
+                name: jvm_layout_field_name(slot),
+                descriptor: jvm_type_descriptor(layouts, &field.ty)?,
+                access_flags: JVM_ACC_PUBLIC,
+            });
+        }
+        class_file.methods.push(jvm_default_constructor());
+        classes.push(class_file);
+    }
+    Ok(classes)
+}
+
+/// 只为 MIR 中实际出现 sum 指令的 nominal 生成 tag/payload companion 类。
+fn build_sum_classes(submission: &FragmentSubmission) -> Result<Vec<JvmClassFile>> {
+    let plan = &submission.backend_plan;
+    let mut nominals = BTreeSet::new();
+    for instance in plan.instances() {
+        let Some(view) = plan.get_function(&instance)
+        else {
+            continue;
+        };
+        for block in &view.function.blocks {
+            for instruction in &block.instructions {
+                match &instruction.kind {
+                    InstructionKind::SumNew { nominal, .. }
+                    | InstructionKind::SumPayloadGet { nominal, .. }
+                    | InstructionKind::SumVariantIs { nominal, .. } => {
+                        nominals.insert(*nominal);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let mut classes = Vec::with_capacity(nominals.len());
+    for nominal in nominals {
+        let Some(sum) = plan.sum_representations().get(&nominal)
+        else {
+            return Err(format!("JVM 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`"));
+        };
+        if sum.tag_width == 0 || sum.tag_width > 4 {
+            return Err(format!(
+                "JVM 最小 lowering：sum nominal `{nominal:?}` 的 `tag_width`={} 超出 1..=4 合同",
+                sum.tag_width
+            ));
+        }
+        let mut class_file = JvmClassFile::new(jvm_sum_class_name(nominal, sum));
+        class_file.fields.push(JvmFieldSignature {
+            name: JVM_SUM_TAG_FIELD.to_string(),
+            descriptor: JvmTypeDescriptor::Int,
+            access_flags: JVM_ACC_PUBLIC,
+        });
+        class_file.fields.push(JvmFieldSignature {
+            name: JVM_SUM_PAYLOAD_FIELD.to_string(),
+            descriptor: JvmTypeDescriptor::Object(JVM_REFERENCE_CARRIER.to_string()),
+            access_flags: JVM_ACC_PUBLIC,
+        });
+        class_file.methods.push(jvm_default_constructor());
+        classes.push(class_file);
+    }
+    Ok(classes)
+}
+
+/// 数组创建指令：标量元素走 `newarray`，引用/装箱元素走 `anewarray`。
+fn jvm_array_creation_instruction(element: &JvmTypeDescriptor) -> Result<JvmInstruction> {
+    Ok(match element {
+        JvmTypeDescriptor::Boolean => JvmInstruction::NewArray(4),
+        JvmTypeDescriptor::Char => JvmInstruction::NewArray(5),
+        JvmTypeDescriptor::Byte => JvmInstruction::NewArray(8),
+        JvmTypeDescriptor::Short => JvmInstruction::NewArray(9),
+        JvmTypeDescriptor::Int => JvmInstruction::NewArray(10),
+        JvmTypeDescriptor::Object(name) => JvmInstruction::ANewArray(name.clone()),
+        JvmTypeDescriptor::Array(_) => JvmInstruction::ANewArray(element.to_string()),
+        JvmTypeDescriptor::Long | JvmTypeDescriptor::Float | JvmTypeDescriptor::Double => {
+            return Err(format!(
+                "JVM 最小 lowering：`{element}` 数组元素必须使用装箱引用数组，禁止生成无元素存取指令的原生数组"
+            ));
+        }
+        JvmTypeDescriptor::Void => return Err("JVM 最小 lowering：`void` 不能作为数组元素载体".to_string()),
+    })
+}
+
+/// 数组元素读写指令；宽值/引用元素统一走 `aaload`/`aastore`。
+fn jvm_array_access_instructions(element: &JvmTypeDescriptor) -> Result<(JvmInstruction, JvmInstruction)> {
+    Ok(match element {
+        JvmTypeDescriptor::Boolean | JvmTypeDescriptor::Byte => (JvmInstruction::BALoad, JvmInstruction::BAStore),
+        JvmTypeDescriptor::Char => (JvmInstruction::CALoad, JvmInstruction::CAStore),
+        JvmTypeDescriptor::Short => (JvmInstruction::SALoad, JvmInstruction::SAStore),
+        JvmTypeDescriptor::Int => (JvmInstruction::IALoad, JvmInstruction::IAStore),
+        JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_) => (JvmInstruction::AALoad, JvmInstruction::AAStore),
+        JvmTypeDescriptor::Long | JvmTypeDescriptor::Float | JvmTypeDescriptor::Double => {
+            return Err(format!("JVM 最小 lowering：`{element}` 数组元素缺少 `laload`/`faload`/`daload` 指令，必须先装箱"));
+        }
+        JvmTypeDescriptor::Void => return Err("JVM 最小 lowering：`void` 不能作为数组元素载体".to_string()),
+    })
+}
+
+/// 标量载体的装箱类：i8/i16/i32 统一 `Integer`，其余按精确标量盒。
+fn jvm_box_class_name(descriptor: &JvmTypeDescriptor) -> Result<String> {
+    Ok(match descriptor {
+        JvmTypeDescriptor::Long => "java/lang/Long".to_string(),
+        JvmTypeDescriptor::Float => "java/lang/Float".to_string(),
+        JvmTypeDescriptor::Double => "java/lang/Double".to_string(),
+        JvmTypeDescriptor::Boolean => "java/lang/Boolean".to_string(),
+        JvmTypeDescriptor::Char => "java/lang/Character".to_string(),
+        JvmTypeDescriptor::Int | JvmTypeDescriptor::Byte | JvmTypeDescriptor::Short => "java/lang/Integer".to_string(),
+        JvmTypeDescriptor::Object(name) => name.clone(),
+        JvmTypeDescriptor::Array(_) => descriptor.to_string(),
+        JvmTypeDescriptor::Void => return Err("JVM 最小 lowering：`void` 没有装箱载体".to_string()),
+    })
+}
+
+fn jvm_box_value_of(descriptor: &JvmTypeDescriptor) -> Result<JvmMethodRef> {
+    let (owner, parameter, return_type) = match descriptor {
+        JvmTypeDescriptor::Long => ("java/lang/Long", JvmTypeDescriptor::Long, JvmTypeDescriptor::Object("java/lang/Long".to_string())),
+        JvmTypeDescriptor::Float => {
+            ("java/lang/Float", JvmTypeDescriptor::Float, JvmTypeDescriptor::Object("java/lang/Float".to_string()))
+        }
+        JvmTypeDescriptor::Double => {
+            ("java/lang/Double", JvmTypeDescriptor::Double, JvmTypeDescriptor::Object("java/lang/Double".to_string()))
+        }
+        JvmTypeDescriptor::Boolean => {
+            ("java/lang/Boolean", JvmTypeDescriptor::Boolean, JvmTypeDescriptor::Object("java/lang/Boolean".to_string()))
+        }
+        JvmTypeDescriptor::Char => {
+            ("java/lang/Character", JvmTypeDescriptor::Char, JvmTypeDescriptor::Object("java/lang/Character".to_string()))
+        }
+        JvmTypeDescriptor::Int | JvmTypeDescriptor::Byte | JvmTypeDescriptor::Short => {
+            ("java/lang/Integer", JvmTypeDescriptor::Int, JvmTypeDescriptor::Object("java/lang/Integer".to_string()))
+        }
+        JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_) | JvmTypeDescriptor::Void => {
+            return Err(format!("JVM 最小 lowering：`{descriptor}` 不是可装箱标量载体"));
+        }
+    };
+    Ok(JvmMethodRef {
+        owner: owner.to_string(),
+        name: "valueOf".to_string(),
+        descriptor: JvmMethodDescriptor::new(vec![parameter], return_type),
+    })
+}
+
+fn jvm_unbox_method(descriptor: &JvmTypeDescriptor) -> Result<JvmMethodRef> {
+    let (owner, name, return_type) = match descriptor {
+        JvmTypeDescriptor::Long => ("java/lang/Long", "longValue", JvmTypeDescriptor::Long),
+        JvmTypeDescriptor::Float => ("java/lang/Float", "floatValue", JvmTypeDescriptor::Float),
+        JvmTypeDescriptor::Double => ("java/lang/Double", "doubleValue", JvmTypeDescriptor::Double),
+        JvmTypeDescriptor::Boolean => ("java/lang/Boolean", "booleanValue", JvmTypeDescriptor::Boolean),
+        JvmTypeDescriptor::Char => ("java/lang/Character", "charValue", JvmTypeDescriptor::Char),
+        JvmTypeDescriptor::Int | JvmTypeDescriptor::Byte | JvmTypeDescriptor::Short => {
+            ("java/lang/Integer", "intValue", JvmTypeDescriptor::Int)
+        }
+        JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_) | JvmTypeDescriptor::Void => {
+            return Err(format!("JVM 最小 lowering：`{descriptor}` 不是可解箱的标量载体"));
+        }
+    };
+    Ok(JvmMethodRef {
+        owner: owner.to_string(),
+        name: name.to_string(),
+        descriptor: JvmMethodDescriptor::new(Vec::new(), return_type),
+    })
+}
+
+/// 数组类型 `Array<T>` / `FixedArray { element, .. }` 的元素类型。
+fn jvm_array_element_type(array_type: &NyarType) -> Result<&NyarType> {
+    match array_type {
+        NyarType::Array(element) => Ok(element),
+        NyarType::FixedArray { element, .. } => Ok(element),
+        other => Err(format!("JVM 最小 lowering：`{other}` 不是数组类型，缺少元素载体")),
+    }
+}
+
 /// 数组元素位置的 JVM 载体。
 ///
 /// acorn-jvm 没有 `laload`/`lastore`/`faload`/`daload`，因此 i64/f32/f64 元素
@@ -639,6 +880,169 @@ impl JvmMethodEmitter<'_> {
             InstructionKind::Call { callee, arguments } => {
                 let output = self.output_of(instruction)?;
                 self.emit_call(callee, arguments, &output)?;
+            }
+            InstructionKind::StructNew { nominal, fields } => {
+                let layout = self.layout_by_nominal(*nominal)?;
+                let output = self.require_output(instruction)?;
+                self.emit_layout_new(&layout, output)?;
+                for (field, value) in fields {
+                    let Some((layout_id, slot)) = self.submission.backend_plan.aggregate_layout_by_field().get(field).copied()
+                    else {
+                        return Err(format!(
+                            "JVM 最小 lowering：字段身份 `{field:?}` 未登记布局索引: function={}",
+                            self.function.symbol
+                        ));
+                    };
+                    if layout_id != layout.id {
+                        return Err(format!(
+                            "JVM 最小 lowering：字段 `{field:?}` 属于布局身份 `{layout_id}`，与构造的 nominal `{nominal:?}` 布局 `{}` 不符: function={}",
+                            layout.id, self.function.symbol
+                        ));
+                    }
+                    self.emit_layout_field_write(&layout, output.0, slot as usize, value)?;
+                }
+            }
+            InstructionKind::TupleNew { layout_id, fields } => {
+                let layout = self.layout_by_id(*layout_id)?;
+                if fields.len() != layout.fields.len() {
+                    return Err(format!(
+                        "JVM 最小 lowering：tuple 布局 `{}` 字段数量与操作数不符: function={} expected={} actual={}",
+                        layout.id,
+                        self.function.symbol,
+                        layout.fields.len(),
+                        fields.len()
+                    ));
+                }
+                let output = self.require_output(instruction)?;
+                self.emit_layout_new(&layout, output)?;
+                for (slot, value) in fields.iter().enumerate() {
+                    self.emit_layout_field_write(&layout, output.0, slot, value)?;
+                }
+            }
+            InstructionKind::AggregateCopy { layout_id, source, dest } => {
+                let layout = self.layout_by_id(*layout_id)?;
+                if layout.fields.is_empty() {
+                    self.emit_operand(source, Some(JvmSlotKind::Reference))?;
+                    self.store_operand(dest, JvmSlotKind::Reference)?;
+                }
+                else {
+                    let dest_slot = self.reference_operand_slot(dest)?;
+                    let source_slot = self.reference_operand_slot(source)?;
+                    let class_name = jvm_layout_class_name(&layout);
+                    self.instructions.push(JvmInstruction::New(class_name.clone()));
+                    self.instructions.push(JvmInstruction::Dup);
+                    self.instructions.push(JvmInstruction::InvokeSpecial(jvm_constructor_ref(&class_name)));
+                    self.instructions.push(JvmInstruction::AStore(dest_slot));
+                    for slot in 0..layout.fields.len() {
+                        let (descriptor, _) = self.layout_field_descriptor(&layout, u32::try_from(slot).unwrap_or(u32::MAX))?;
+                        let field_ref = jvm_layout_field_ref(&layout, slot, descriptor);
+                        // `putfield` 栈序是 `object, value`：先压目标对象，再从源对象读字段。
+                        self.instructions.push(JvmInstruction::ALoad(dest_slot));
+                        self.instructions.push(JvmInstruction::ALoad(source_slot));
+                        self.instructions.push(JvmInstruction::GetField(field_ref.clone()));
+                        self.instructions.push(JvmInstruction::PutField(field_ref));
+                    }
+                }
+            }
+            InstructionKind::FieldGet { object, field } => {
+                let (layout, slot) = self.field_location(*field)?;
+                let (descriptor, kind) = self.layout_field_descriptor(&layout, slot)?;
+                let field_ref = jvm_layout_field_ref(&layout, slot as usize, descriptor);
+                self.emit_operand(object, Some(JvmSlotKind::Reference))?;
+                self.instructions.push(JvmInstruction::GetField(field_ref));
+                match self.output_of(instruction)? {
+                    Some((output, output_kind)) => {
+                        if output_kind != kind {
+                            return Err(format!(
+                                "JVM 最小 lowering：字段 `{field:?}` 载体 {kind:?} 与结果槽 {output_kind:?} 不符: function={}",
+                                self.function.symbol
+                            ));
+                        }
+                        self.instructions.push(kind.store(output));
+                    }
+                    None => match kind {
+                        JvmSlotKind::Long | JvmSlotKind::Double => {
+                            return Err(format!(
+                                "JVM 最小 lowering：丢弃 2 槽字段需要 `pop2` 编码，当前 JVM 指令模型不提供: function={}",
+                                self.function.symbol
+                            ));
+                        }
+                        _ => self.instructions.push(JvmInstruction::Pop),
+                    },
+                }
+            }
+            InstructionKind::FieldSet { object, field, value } => {
+                let (layout, slot) = self.field_location(*field)?;
+                let (descriptor, kind) = self.layout_field_descriptor(&layout, slot)?;
+                let field_ref = jvm_layout_field_ref(&layout, slot as usize, descriptor);
+                self.emit_operand(object, Some(JvmSlotKind::Reference))?;
+                self.emit_operand(value, Some(kind))?;
+                self.instructions.push(JvmInstruction::PutField(field_ref));
+            }
+            InstructionKind::SumNew { nominal, variant, payload } => {
+                self.emit_sum_new(instruction, *nominal, *variant, payload)?;
+            }
+            InstructionKind::SumPayloadGet { nominal, variant, object } => {
+                self.emit_sum_payload_get(instruction, *nominal, *variant, object)?;
+            }
+            InstructionKind::SumVariantIs { nominal, variant, object } => {
+                self.emit_sum_variant_is(instruction, *nominal, *variant, object)?;
+            }
+            InstructionKind::ArrayFromElements { layout_id: _, array_type, elements } => {
+                self.emit_array_from_elements(instruction, array_type, elements)?;
+            }
+            InstructionKind::ArrayNew { array_type, length, initialization } => match initialization {
+                crate::contracts::ArrayInitialization::Default => self.emit_array_new(instruction, array_type, length)?,
+                crate::contracts::ArrayInitialization::Fill(_) => {
+                    return Err("JVM 最小 lowering 不支持数组 Fill 初始化".to_string());
+                }
+            },
+            InstructionKind::ArrayGet { array, index } => {
+                self.emit_array_get(instruction, array, index)?;
+            }
+            InstructionKind::ArraySet { array, index, value } => {
+                self.emit_array_set(array, index, value)?;
+            }
+            InstructionKind::ArrayLength { array } => {
+                self.emit_operand(array, Some(JvmSlotKind::Reference))?;
+                self.instructions.push(JvmInstruction::ArrayLength);
+                match self.output_of(instruction)? {
+                    Some((slot, kind)) => {
+                        if kind != JvmSlotKind::Int {
+                            return Err(format!(
+                                "JVM 最小 lowering：`ArrayLength` 结果必须是 `int` 槽: function={} actual={kind:?}",
+                                self.function.symbol
+                            ));
+                        }
+                        self.instructions.push(JvmInstruction::IStore(slot));
+                    }
+                    None => self.instructions.push(JvmInstruction::Pop),
+                }
+            }
+            InstructionKind::NullIsNull { value } => {
+                self.emit_operand(value, Some(JvmSlotKind::Reference))?;
+                let true_label = self.fresh_comparison_label("null_true");
+                let end_label = self.fresh_comparison_label("null_end");
+                self.instructions.push(JvmInstruction::IfNull(true_label.clone()));
+                self.instructions.push(JvmInstruction::IConst(0));
+                self.instructions.push(JvmInstruction::Goto(end_label.clone()));
+                self.instructions.push(JvmInstruction::Label(true_label));
+                self.instructions.push(JvmInstruction::IConst(1));
+                self.instructions.push(JvmInstruction::Label(end_label));
+                self.store_or_pop_boolean(instruction)?;
+            }
+            InstructionKind::NullUnwrap { value } => {
+                let output = self.output_of(instruction)?;
+                self.emit_operand(value, Some(JvmSlotKind::Reference))?;
+                match output {
+                    Some((slot, kind)) => {
+                        if kind != JvmSlotKind::Reference {
+                            return Err("JVM 最小 lowering：可空标量需要 sum 表示，不能按引用直接解包".to_string());
+                        }
+                        self.instructions.push(JvmInstruction::AStore(slot));
+                    }
+                    None => self.instructions.push(JvmInstruction::Pop),
+                }
             }
             other => {
                 return Err(format!("JVM 最小 lowering 尚不支持指令 `{}`：function={}", instruction_kind_name(other), self.function.symbol));
@@ -1022,6 +1426,506 @@ impl JvmMethodEmitter<'_> {
     /// 比较展开标签前缀：当前块标签 + 方法内比较序号，保证方法内唯一。
     fn operator_label_prefix(&self) -> String {
         format!("{}_{}", block_label(self.current_block), self.comparison_ordinal)
+    }
+
+    /// 为布尔化展开分配方法内唯一标签。
+    fn fresh_comparison_label(&mut self, suffix: &str) -> String {
+        let label = format!("{}_{}_{}", block_label(self.current_block), self.comparison_ordinal, suffix);
+        self.comparison_ordinal += 1;
+        label
+    }
+
+    fn layout_by_id(&self, layout_id: LayoutId) -> Result<AggregateLayout> {
+        self.submission
+            .backend_plan
+            .aggregate_layouts()
+            .layouts
+            .iter()
+            .find(|layout| layout.id == layout_id)
+            .cloned()
+            .ok_or_else(|| format!("JVM 最小 lowering：布局身份 `{layout_id}` 未在计划中注册: function={}", self.function.symbol))
+    }
+
+    fn layout_by_nominal(&self, nominal: NominalInstanceId) -> Result<AggregateLayout> {
+        let Some(layout_id) = self.submission.backend_plan.aggregate_layout_by_nominal().get(&nominal).copied()
+        else {
+            return Err(format!(
+                "JVM 最小 lowering：nominal `{nominal:?}` 没有冻结的布局身份: function={}",
+                self.function.symbol
+            ));
+        };
+        self.layout_by_id(layout_id)
+    }
+
+    fn layout_field_descriptor(&self, layout: &AggregateLayout, slot: u32) -> Result<(JvmTypeDescriptor, JvmSlotKind)> {
+        let Some(field) = layout.fields.get(slot as usize)
+        else {
+            return Err(format!(
+                "JVM 最小 lowering：布局 `{}` 缺少字段槽 {slot}: function={}",
+                layout.name, self.function.symbol
+            ));
+        };
+        let layouts = self.submission.backend_plan.aggregate_layouts();
+        let descriptor = jvm_type_descriptor(layouts, &field.ty)?;
+        Ok((descriptor.clone(), JvmSlotKind::of(&descriptor)?))
+    }
+
+    fn field_location(&self, field: FieldId) -> Result<(AggregateLayout, u32)> {
+        let Some((layout_id, slot)) = self.submission.backend_plan.aggregate_layout_by_field().get(&field).copied()
+        else {
+            return Err(format!(
+                "JVM 最小 lowering：字段身份 `{field:?}` 未登记布局索引: function={}",
+                self.function.symbol
+            ));
+        };
+        Ok((self.layout_by_id(layout_id)?, slot))
+    }
+
+    fn operand_type(&self, operand: &Operand) -> Result<NyarType> {
+        match operand {
+            Operand::Value(value) => self
+                .function
+                .value_types
+                .get(value)
+                .cloned()
+                .ok_or_else(|| format!("JVM 最小 lowering：SSA 值 {:?} 缺少冻结类型: function={}", value, self.function.symbol)),
+            Operand::Constant(constant) => Ok(match constant {
+                Constant::Int(_) => NyarType::Integer32 { signed: true },
+                Constant::Float64(_) => NyarType::Float64,
+                Constant::Bool(_) => NyarType::Boolean,
+                Constant::Utf8(_) | Constant::Utf16(_) => NyarType::Utf8,
+                other => {
+                    return Err(format!(
+                        "JVM 最小 lowering：常量 `{other:?}` 没有可装箱的冻结类型: function={}",
+                        self.function.symbol
+                    ));
+                }
+            }),
+            other => Err(format!("JVM 最小 lowering：操作数 `{other:?}` 没有冻结类型: function={}", self.function.symbol)),
+        }
+    }
+
+    fn output_type(&self, instruction: &MirInstruction) -> Result<Option<NyarType>> {
+        let Some(value) = self.slots.instruction_output(instruction)
+        else {
+            return Ok(None);
+        };
+        self.function
+            .value_types
+            .get(&value)
+            .cloned()
+            .map(Some)
+            .ok_or_else(|| format!("JVM 最小 lowering：SSA 值 {:?} 缺少冻结类型: function={}", value, self.function.symbol))
+    }
+
+    fn reference_operand_slot(&self, operand: &Operand) -> Result<u16> {
+        let Operand::Value(value) = operand
+        else {
+            return Err(format!(
+                "JVM 最小 lowering：只有 SSA 值可作为引用局部目标: function={} dest={operand:?}",
+                self.function.symbol
+            ));
+        };
+        let (slot, kind) = self.value_slot(*value)?;
+        if kind != JvmSlotKind::Reference {
+            return Err(format!(
+                "JVM 最小 lowering：聚合拷贝目标必须是引用载体: function={} actual={kind:?}",
+                self.function.symbol
+            ));
+        }
+        Ok(slot)
+    }
+
+    fn store_operand(&mut self, operand: &Operand, kind: JvmSlotKind) -> Result<()> {
+        let Operand::Value(value) = operand
+        else {
+            return Err(format!(
+                "JVM 最小 lowering：只有 SSA 值可作为局部目标: function={} dest={operand:?}",
+                self.function.symbol
+            ));
+        };
+        let (slot, actual) = self.value_slot(*value)?;
+        if actual != kind {
+            return Err(format!(
+                "JVM 最小 lowering：目标 SSA 值 {:?} 的槽载体 {actual:?} 与期望 {kind:?} 不符: function={}",
+                value, self.function.symbol
+            ));
+        }
+        self.instructions.push(kind.store(slot));
+        Ok(())
+    }
+
+    /// 发射一个可能已处于标量槽的 payload/元素，并按目标类型按需装箱。
+    fn emit_boxed_operand(&mut self, operand: &Operand, ty: &NyarType) -> Result<()> {
+        let descriptor = {
+            let layouts = self.submission.backend_plan.aggregate_layouts();
+            jvm_type_descriptor(layouts, ty)?
+        };
+        match &descriptor {
+            JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_) => self.emit_operand(operand, Some(JvmSlotKind::Reference)),
+            JvmTypeDescriptor::Void => Err(format!(
+                "JVM 最小 lowering：`{ty}` 是 void 形态，不能作为需要引用的值: function={}",
+                self.function.symbol
+            )),
+            scalar => {
+                let kind = JvmSlotKind::of(scalar)?;
+                self.emit_operand(operand, Some(kind))?;
+                let boxing = jvm_box_value_of(scalar)?;
+                self.instructions.push(JvmInstruction::InvokeStatic(boxing));
+                Ok(())
+            }
+        }
+    }
+
+    fn emit_array_element_value(&mut self, operand: &Operand, element: &NyarType) -> Result<()> {
+        let (target, element_descriptor) = {
+            let layouts = self.submission.backend_plan.aggregate_layouts();
+            (jvm_type_descriptor(layouts, element)?, jvm_array_element_descriptor(layouts, element)?)
+        };
+        let target_kind = JvmSlotKind::of(&target)?;
+        if matches!(element_descriptor, JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_))
+            && target_kind != JvmSlotKind::Reference
+        {
+            return self.emit_boxed_operand(operand, element);
+        }
+        self.emit_operand(operand, Some(target_kind))
+    }
+
+    fn emit_layout_new(&mut self, layout: &AggregateLayout, output: (u16, JvmSlotKind)) -> Result<()> {
+        if output.1 != JvmSlotKind::Reference {
+            return Err(format!(
+                "JVM 最小 lowering：布局 `{}` 的构造结果必须是引用槽: function={} actual={:?}",
+                layout.name, self.function.symbol, output.1
+            ));
+        }
+        let class_name = jvm_layout_class_name(layout);
+        self.instructions.push(JvmInstruction::New(class_name.clone()));
+        self.instructions.push(JvmInstruction::Dup);
+        self.instructions.push(JvmInstruction::InvokeSpecial(jvm_constructor_ref(&class_name)));
+        self.instructions.push(JvmSlotKind::Reference.store(output.0));
+        Ok(())
+    }
+
+    fn emit_layout_field_write(&mut self, layout: &AggregateLayout, output_slot: u16, slot: usize, value: &Operand) -> Result<()> {
+        let (descriptor, kind) = self.layout_field_descriptor(layout, u32::try_from(slot).unwrap_or(u32::MAX))?;
+        let field_ref = jvm_layout_field_ref(layout, slot, descriptor);
+        self.instructions.push(JvmInstruction::ALoad(output_slot));
+        self.emit_operand(value, Some(kind))?;
+        self.instructions.push(JvmInstruction::PutField(field_ref));
+        Ok(())
+    }
+
+    fn emit_sum_new(
+        &mut self,
+        instruction: &MirInstruction,
+        nominal: NominalInstanceId,
+        variant: VariantId,
+        payload: &Option<Operand>,
+    ) -> Result<()> {
+        let Some(sum) = self.submission.backend_plan.sum_representations().get(&nominal).cloned()
+        else {
+            return Err(format!(
+                "JVM 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`: function={}",
+                self.function.symbol
+            ));
+        };
+        let Some(variant_rep) = sum.variants.get(&variant).copied()
+        else {
+            return Err(format!(
+                "JVM 最小 lowering：variant `{variant:?}` 不属于 sum nominal `{nominal:?}`: function={}",
+                self.function.symbol
+            ));
+        };
+        if payload.is_some() != variant_rep.payload_type.is_some() {
+            return Err(format!(
+                "JVM 最小 lowering：variant `{variant:?}` 的 payload 操作数与冻结 payload 类型不一致: function={} nominal={nominal:?} payload={} expected={}",
+                self.function.symbol,
+                payload.is_some(),
+                variant_rep.payload_type.is_some()
+            ));
+        }
+        let tag = i32::try_from(variant_rep.tag)
+            .map_err(|_| format!("JVM 最小 lowering：variant `{variant:?}` 的 tag 超出 `int` 载体: function={}", self.function.symbol))?;
+        let output = self.require_output(instruction)?;
+        if output.1 != JvmSlotKind::Reference {
+            return Err(format!(
+                "JVM 最小 lowering：sum 构造结果必须是引用槽: function={} actual={:?}",
+                self.function.symbol, output.1
+            ));
+        }
+        let class_name = jvm_sum_class_name(nominal, &sum);
+        self.instructions.push(JvmInstruction::New(class_name.clone()));
+        self.instructions.push(JvmInstruction::Dup);
+        self.instructions.push(JvmInstruction::InvokeSpecial(jvm_constructor_ref(&class_name)));
+        self.instructions.push(JvmSlotKind::Reference.store(output.0));
+
+        self.instructions.push(JvmInstruction::ALoad(output.0));
+        self.instructions.push(JvmInstruction::IConst(tag));
+        self.instructions.push(JvmInstruction::PutField(JvmFieldRef {
+            owner: class_name.clone(),
+            name: JVM_SUM_TAG_FIELD.to_string(),
+            descriptor: JvmTypeDescriptor::Int,
+        }));
+
+        if let Some(payload) = payload {
+            let payload_type = self.operand_type(payload)?;
+            self.instructions.push(JvmInstruction::ALoad(output.0));
+            self.emit_boxed_operand(payload, &payload_type)?;
+            self.instructions.push(JvmInstruction::PutField(JvmFieldRef {
+                owner: class_name,
+                name: JVM_SUM_PAYLOAD_FIELD.to_string(),
+                descriptor: JvmTypeDescriptor::Object(JVM_REFERENCE_CARRIER.to_string()),
+            }));
+        }
+        Ok(())
+    }
+
+    fn emit_sum_variant_is(
+        &mut self,
+        instruction: &MirInstruction,
+        nominal: NominalInstanceId,
+        variant: VariantId,
+        object: &Operand,
+    ) -> Result<()> {
+        let Some(sum) = self.submission.backend_plan.sum_representations().get(&nominal).cloned()
+        else {
+            return Err(format!(
+                "JVM 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`: function={}",
+                self.function.symbol
+            ));
+        };
+        let Some(variant_rep) = sum.variants.get(&variant).copied()
+        else {
+            return Err(format!(
+                "JVM 最小 lowering：variant `{variant:?}` 不属于 sum nominal `{nominal:?}`: function={}",
+                self.function.symbol
+            ));
+        };
+        let tag = i32::try_from(variant_rep.tag)
+            .map_err(|_| format!("JVM 最小 lowering：variant `{variant:?}` 的 tag 超出 `int` 载体: function={}", self.function.symbol))?;
+        let class_name = jvm_sum_class_name(nominal, &sum);
+        self.emit_operand(object, Some(JvmSlotKind::Reference))?;
+        self.instructions.push(JvmInstruction::GetField(JvmFieldRef {
+            owner: class_name,
+            name: JVM_SUM_TAG_FIELD.to_string(),
+            descriptor: JvmTypeDescriptor::Int,
+        }));
+        self.instructions.push(JvmInstruction::IConst(tag));
+        let true_label = self.fresh_comparison_label("sum_true");
+        let end_label = self.fresh_comparison_label("sum_end");
+        self.instructions.push(JvmInstruction::IfICmpEq(true_label.clone()));
+        self.instructions.push(JvmInstruction::IConst(0));
+        self.instructions.push(JvmInstruction::Goto(end_label.clone()));
+        self.instructions.push(JvmInstruction::Label(true_label));
+        self.instructions.push(JvmInstruction::IConst(1));
+        self.instructions.push(JvmInstruction::Label(end_label));
+        self.store_or_pop_boolean(instruction)
+    }
+
+    fn emit_sum_payload_get(
+        &mut self,
+        instruction: &MirInstruction,
+        nominal: NominalInstanceId,
+        variant: VariantId,
+        object: &Operand,
+    ) -> Result<()> {
+        let Some(sum) = self.submission.backend_plan.sum_representations().get(&nominal).cloned()
+        else {
+            return Err(format!(
+                "JVM 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`: function={}",
+                self.function.symbol
+            ));
+        };
+        let Some(variant_rep) = sum.variants.get(&variant).copied()
+        else {
+            return Err(format!(
+                "JVM 最小 lowering：variant `{variant:?}` 不属于 sum nominal `{nominal:?}`: function={}",
+                self.function.symbol
+            ));
+        };
+        if variant_rep.payload_type.is_none() {
+            return Err(format!(
+                "JVM 最小 lowering：variant `{variant:?}` 没有 payload，不能取载荷: function={} nominal={nominal:?}",
+                self.function.symbol
+            ));
+        }
+        let class_name = jvm_sum_class_name(nominal, &sum);
+        self.emit_operand(object, Some(JvmSlotKind::Reference))?;
+        self.instructions.push(JvmInstruction::GetField(JvmFieldRef {
+            owner: class_name,
+            name: JVM_SUM_PAYLOAD_FIELD.to_string(),
+            descriptor: JvmTypeDescriptor::Object(JVM_REFERENCE_CARRIER.to_string()),
+        }));
+
+        let output = self.output_of(instruction)?;
+        let Some((slot, kind)) = output
+        else {
+            self.instructions.push(JvmInstruction::Pop);
+            return Ok(());
+        };
+        let Some(target_type) = self.output_type(instruction)?
+        else {
+            return Err(format!("JVM 最小 lowering：sum payload 结果缺少冻结类型: function={}", self.function.symbol));
+        };
+        let target = {
+            let layouts = self.submission.backend_plan.aggregate_layouts();
+            jvm_type_descriptor(layouts, &target_type)?
+        };
+        let target_kind = JvmSlotKind::of(&target)?;
+        if target_kind != kind {
+            return Err(format!(
+                "JVM 最小 lowering：sum payload 目标载体 {target_kind:?} 与结果槽 {kind:?} 不符: function={}",
+                self.function.symbol
+            ));
+        }
+        self.instructions.push(JvmInstruction::CheckCast(jvm_box_class_name(&target)?));
+        if target_kind != JvmSlotKind::Reference {
+            self.instructions.push(JvmInstruction::InvokeVirtual(jvm_unbox_method(&target)?));
+        }
+        self.instructions.push(kind.store(slot));
+        Ok(())
+    }
+
+    fn store_or_pop_boolean(&mut self, instruction: &MirInstruction) -> Result<()> {
+        match self.output_of(instruction)? {
+            Some((slot, kind)) => {
+                if kind != JvmSlotKind::Int {
+                    return Err(format!(
+                        "JVM 最小 lowering：布尔结果槽载体必须是 `int`: function={} actual={kind:?}",
+                        self.function.symbol
+                    ));
+                }
+                self.instructions.push(JvmInstruction::IStore(slot));
+                Ok(())
+            }
+            None => {
+                self.instructions.push(JvmInstruction::Pop);
+                Ok(())
+            }
+        }
+    }
+
+    fn emit_array_from_elements(&mut self, instruction: &MirInstruction, array_type: &NyarType, elements: &[Operand]) -> Result<()> {
+        let element = jvm_array_element_type(array_type)?.clone();
+        let (creation, store) = {
+            let layouts = self.submission.backend_plan.aggregate_layouts();
+            let element_descriptor = jvm_array_element_descriptor(layouts, &element)?;
+            let creation = jvm_array_creation_instruction(&element_descriptor)?;
+            let (_, store) = jvm_array_access_instructions(&element_descriptor)?;
+            (creation, store)
+        };
+        let length = i32::try_from(elements.len())
+            .map_err(|_| format!("JVM 最小 lowering：数组元素数量超出 `int` 载体: function={}", self.function.symbol))?;
+        self.instructions.push(JvmInstruction::IConst(length));
+        self.instructions.push(creation);
+        for (index, value) in elements.iter().enumerate() {
+            let index = i32::try_from(index)
+                .map_err(|_| format!("JVM 最小 lowering：数组元素下标超出 `int` 载体: function={}", self.function.symbol))?;
+            self.instructions.push(JvmInstruction::Dup);
+            self.instructions.push(JvmInstruction::IConst(index));
+            self.emit_array_element_value(value, &element)?;
+            self.instructions.push(store.clone());
+        }
+        match self.output_of(instruction)? {
+            Some((slot, kind)) => {
+                if kind != JvmSlotKind::Reference {
+                    return Err(format!(
+                        "JVM 最小 lowering：数组结果必须是引用槽: function={} actual={kind:?}",
+                        self.function.symbol
+                    ));
+                }
+                self.instructions.push(JvmInstruction::AStore(slot));
+                Ok(())
+            }
+            None => {
+                self.instructions.push(JvmInstruction::Pop);
+                Ok(())
+            }
+        }
+    }
+
+    fn emit_array_new(&mut self, instruction: &MirInstruction, array_type: &NyarType, length: &Operand) -> Result<()> {
+        let element = jvm_array_element_type(array_type)?.clone();
+        let creation = {
+            let layouts = self.submission.backend_plan.aggregate_layouts();
+            jvm_array_creation_instruction(&jvm_array_element_descriptor(layouts, &element)?)?
+        };
+        self.emit_operand(length, Some(JvmSlotKind::Int))?;
+        self.instructions.push(creation);
+        match self.output_of(instruction)? {
+            Some((slot, kind)) => {
+                if kind != JvmSlotKind::Reference {
+                    return Err(format!(
+                        "JVM 最小 lowering：数组结果必须是引用槽: function={} actual={kind:?}",
+                        self.function.symbol
+                    ));
+                }
+                self.instructions.push(JvmInstruction::AStore(slot));
+                Ok(())
+            }
+            None => {
+                self.instructions.push(JvmInstruction::Pop);
+                Ok(())
+            }
+        }
+    }
+
+    fn emit_array_get(&mut self, instruction: &MirInstruction, array: &Operand, index: &Operand) -> Result<()> {
+        let array_type = self.operand_type(array)?;
+        let element = jvm_array_element_type(&array_type)?.clone();
+        let (element_descriptor, target, load) = {
+            let layouts = self.submission.backend_plan.aggregate_layouts();
+            let element_descriptor = jvm_array_element_descriptor(layouts, &element)?;
+            let target = jvm_type_descriptor(layouts, &element)?;
+            let (load, _) = jvm_array_access_instructions(&element_descriptor)?;
+            (element_descriptor, target, load)
+        };
+        let target_kind = JvmSlotKind::of(&target)?;
+        self.emit_operand(array, Some(JvmSlotKind::Reference))?;
+        self.emit_operand(index, Some(JvmSlotKind::Int))?;
+        self.instructions.push(load);
+        if matches!(element_descriptor, JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_))
+            && target_kind != JvmSlotKind::Reference
+        {
+            self.instructions.push(JvmInstruction::CheckCast(jvm_box_class_name(&target)?));
+            self.instructions.push(JvmInstruction::InvokeVirtual(jvm_unbox_method(&target)?));
+        }
+        match self.output_of(instruction)? {
+            Some((slot, kind)) => {
+                if kind != target_kind {
+                    return Err(format!(
+                        "JVM 最小 lowering：数组元素目标载体 {target_kind:?} 与结果槽 {kind:?} 不符: function={}",
+                        self.function.symbol
+                    ));
+                }
+                self.instructions.push(kind.store(slot));
+                Ok(())
+            }
+            None => match target_kind {
+                JvmSlotKind::Long | JvmSlotKind::Double => Err(format!(
+                    "JVM 最小 lowering：丢弃 2 槽数组元素需要 `pop2` 编码，当前 JVM 指令模型不提供: function={}",
+                    self.function.symbol
+                )),
+                _ => {
+                    self.instructions.push(JvmInstruction::Pop);
+                    Ok(())
+                }
+            },
+        }
+    }
+
+    fn emit_array_set(&mut self, array: &Operand, index: &Operand, value: &Operand) -> Result<()> {
+        let array_type = self.operand_type(array)?;
+        let element = jvm_array_element_type(&array_type)?.clone();
+        let store = {
+            let layouts = self.submission.backend_plan.aggregate_layouts();
+            jvm_array_access_instructions(&jvm_array_element_descriptor(layouts, &element)?)?.1
+        };
+        self.emit_operand(array, Some(JvmSlotKind::Reference))?;
+        self.emit_operand(index, Some(JvmSlotKind::Int))?;
+        self.emit_array_element_value(value, &element)?;
+        self.instructions.push(store);
+        Ok(())
     }
 }
 
