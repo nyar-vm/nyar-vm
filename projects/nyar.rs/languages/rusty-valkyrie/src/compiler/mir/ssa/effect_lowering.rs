@@ -333,6 +333,13 @@ impl MirBuilder {
     pub(super) fn lower_uncaught_raise(&mut self, payload: Option<MirOperand>) -> MirOperand {
         let carrier_type = payload.as_ref().and_then(|operand| infer_builder_operand_type(operand, &self.value_types));
         let resume_parameter_type = self.default_raise_resume_type(&carrier_type);
+        // `Resume = !`（never）的恢复通道不会回灌任何值：resume 块不声明形参，
+        // 否则该形参带着 `void`（never）类型落进物理槽位校验（BPHYS001）。
+        // 表达式值以 `Unit` 常量给出，与「正常值不可得」同义。
+        if matches!(resume_parameter_type, Some(ValkyrieType::Void)) {
+            self.lower_perform_effect_without_resume_parameter("raise_resume", MirEffectKind::Raise, payload);
+            return MirOperand::Constant(MirConstant::Unit);
+        }
         self.lower_perform_effect("raise_resume", MirEffectKind::Raise, payload, resume_parameter_type)
     }
 

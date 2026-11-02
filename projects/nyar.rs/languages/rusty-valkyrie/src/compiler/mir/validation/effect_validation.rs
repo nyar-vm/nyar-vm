@@ -21,7 +21,12 @@ pub(super) fn validate_effect_resume_target(
 ) -> Result<(), MirValidationError> {
     ensure_target_exists(function_name, block_label, resume_target, blocks)?;
     let actual_parameter_count = blocks.get(&resume_target).copied().unwrap_or_default();
-    let expected_parameter_count = expected_effect_resume_parameter_count(effect);
+    // `None` 表示该 effect 的恢复通道是否回灌值取决于载体（如 `Raise` 的 `Resume = !`
+    // 与 handler 恢复并存），形参数 0 或 1 都合法，本层不校验具体值。
+    let Some(expected_parameter_count) = expected_effect_resume_parameter_count(effect)
+    else {
+        return Ok(());
+    };
     if actual_parameter_count != expected_parameter_count {
         return Err(MirValidationError::EffectResumeParameterCountMismatch {
             function: function_name.to_string(),

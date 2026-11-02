@@ -79,10 +79,15 @@ pub(super) fn integer_type_name(signed: bool, bits: u16) -> String {
     if signed { format!("i{bits}") } else { format!("u{bits}") }
 }
 
-pub(super) fn expected_effect_resume_parameter_count(effect: MirEffectKind) -> usize {
+/// `Raise` 的 resume 块形参数允许 0 或 1：
+/// - 0：`Resume = !`（never）的恢复通道不回灌值，lowering 不声明形参；
+/// - 1：handler / 基本类型载体的恢复通道回灌一个值。
+/// 其余 effect 仍是定值：AsyncSpawn 为 0，其余为 1。
+pub(super) fn expected_effect_resume_parameter_count(effect: MirEffectKind) -> Option<usize> {
     match effect {
-        MirEffectKind::AsyncSpawn => 0,
-        MirEffectKind::Raise | MirEffectKind::Yield | MirEffectKind::DelegateYield | MirEffectKind::Await | MirEffectKind::AsyncBlock => 1,
+        MirEffectKind::AsyncSpawn => Some(0),
+        MirEffectKind::Raise => None,
+        MirEffectKind::Yield | MirEffectKind::DelegateYield | MirEffectKind::Await | MirEffectKind::AsyncBlock => Some(1),
     }
 }
 

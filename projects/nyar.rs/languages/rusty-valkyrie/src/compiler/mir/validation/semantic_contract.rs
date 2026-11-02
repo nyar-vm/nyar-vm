@@ -467,7 +467,9 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                             ));
                         }
                     }
-                    let expected_results = usize::from(*return_type != ValkyrieType::Unit);
+                    // `unit` 与 `void`（never）都不产生可物化值：调用结果数必须为 0，
+                    // 与 `push_call_returning` 的发射纪律一致，不得要求占位结果槽。
+                    let expected_results = usize::from(!matches!(*return_type, ValkyrieType::Unit | ValkyrieType::Void));
                     if instruction.results.len() != expected_results {
                         return Err(error("SMIR007", location.clone(), "call result count differs from declared signature".to_owned()));
                     }

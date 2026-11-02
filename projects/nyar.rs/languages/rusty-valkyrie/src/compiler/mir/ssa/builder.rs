@@ -217,8 +217,10 @@ impl MirBuilder {
     }
 
     /// Emit a call with known return type. `unit` 不得占用物理 value 槽（BPHYS001）。
+    /// `void`（never，与 `is_never_type` 同义）同样不产生可物化值：调用正常返回时不存在
+    /// 可用结果，与 `unit` 同形——不占槽、以 `Unit` 常量作为表达式值。
     pub(super) fn push_call_returning(&mut self, callee: MirOperand, arguments: Vec<MirOperand>, return_type: ValkyrieType) -> MirOperand {
-        if matches!(return_type, ValkyrieType::Unit) {
+        if matches!(return_type, ValkyrieType::Unit | ValkyrieType::Void) {
             self.push_instruction(MirOperation::Call { callee, arguments }, Vec::new());
             return MirOperand::Constant(MirConstant::Unit);
         }
