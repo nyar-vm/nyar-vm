@@ -48,6 +48,11 @@ pub struct SemanticClosure {
     /// 这是测试 run contract 的 `logical_entry` 唯一来源：名字由显式 `[test]` 声明给出，
     /// 下游不得按文件或函数名重新猜测。
     pub test_entries: Vec<String>,
+    /// Primitive 自举身份表：`[primitive("std::primitive::i32")]` 注解的唯一消费产物。
+    ///
+    /// 在可见性与需求展开之前从源码 inventory 建立；键是声明携带的身份字符串，不是短名。
+    /// 下游的类型识别、carrier 布局与数值/字面量判定必须查这张表，不得再按名字放行。
+    pub primitive_identities: PrimitiveIdentityTable,
     /// 未能建立声明索引的 inventory 文件（`依赖组::路径` → 失败原因）。
     pub unindexed_source_files: BTreeMap<String, String>,
     /// 闭包稳定摘要。
@@ -99,6 +104,20 @@ pub enum SemanticClosureError {
         /// 命中的声明身份（依赖组::路径::种类::namespace::拥有者::名字）。
         declarations: Vec<String>,
     },
+    /// 同一 primitive 自举身份被两个声明携带：身份必须唯一，不得择一登记。
+    DuplicatePrimitiveIdentity {
+        /// 重复的 `[primitive(...)]` 身份字符串。
+        identity: String,
+        /// 携带该身份的声明身份。
+        declarations: Vec<String>,
+    },
+    /// `[primitive(...)]` 身份字符串不是合法的 `::` 限定名：自举身份没有可校验形态。
+    MalformedPrimitiveIdentity {
+        /// 携带畸形注解的声明身份。
+        declaration: String,
+        /// 注解给出的身份字符串。
+        identity: String,
+    },
 }
 
 impl std::fmt::Display for SemanticClosureError {
@@ -123,6 +142,12 @@ impl std::fmt::Display for SemanticClosureError {
             Self::HostProviderAmbiguous { symbol, declarations } => {
                 write!(formatter, "host provider `{symbol}` 在语义源码闭包中命中多个声明身份: {declarations:?}")
             }
+            Self::DuplicatePrimitiveIdentity { identity, declarations } => {
+                write!(formatter, "primitive identity `{identity}` 被多个声明携带: {declarations:?}")
+            }
+            Self::MalformedPrimitiveIdentity { declaration, identity } => {
+                write!(formatter, "声明 `{declaration}` 的 `[primitive]` 身份 `{identity}` 不是合法的 `::` 限定名")
+            }
         }
     }
 }
@@ -133,7 +158,10 @@ mod collect;
 mod index_file;
 mod indexes;
 mod plan;
+mod primitive_identity;
 mod retain;
+
+pub use primitive_identity::{PrimitiveIdentity, PrimitiveIdentityTable};
 
 pub(crate) use collect::imply_owner_name;
 pub(crate) use index_file::name_path_segments;

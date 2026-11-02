@@ -14,6 +14,8 @@ pub(crate) struct IndexedFile {
     pub(crate) declarations: Vec<DeclarationIndexEntry>,
     /// 变体名 → 拥有该变体的 sum/unite 声明。
     pub(crate) variant_members: Vec<(String, DeclarationKey)>,
+    /// 携带 `[primitive("…")]` 注解的声明身份 → 注解给出的身份字符串。
+    pub(crate) primitive_identities: Vec<(DeclarationKey, String)>,
     /// 文件级语句（`using`、顶层 `let`/表达式）的自由名引用。
     pub(crate) module_references: BTreeSet<ScopedReference>,
     /// 文件级语句的成员选择名；与声明级选择名一样只参与成员提升。
@@ -31,6 +33,7 @@ pub(crate) fn index_source_file(dependency_key: &str, path: &str, source: &str, 
         source_digest: combined_content_hash(&[source]),
         declarations: builder.declarations,
         variant_members: builder.variant_members,
+        primitive_identities: builder.primitive_identities,
         module_references: builder.module_references,
         module_selectors: builder.module_selectors,
     })
@@ -43,6 +46,7 @@ pub(crate) struct FileBuilder {
     source_path: String,
     declarations: Vec<DeclarationIndexEntry>,
     pub(crate) variant_members: Vec<(String, DeclarationKey)>,
+    pub(crate) primitive_identities: Vec<(DeclarationKey, String)>,
     module_references: BTreeSet<ScopedReference>,
     module_selectors: BTreeSet<String>,
     import_paths: BTreeSet<String>,
@@ -91,6 +95,14 @@ impl FileBuilder {
         if let Some(entry) = self.declarations.iter_mut().rev().find(|entry| &entry.key == key) {
             entry.host_abi_role = true;
         }
+    }
+
+    /// 登记声明携带的 `[primitive("…")]` 自举身份。
+    ///
+    /// 这里只保存「声明身份 → 注解字符串」的原始配对；形态校验与唯一性建表
+    /// 在整个 inventory 完成后由 `build_primitive_identity_table` 统一执行。
+    pub(crate) fn register_primitive_identity(&mut self, key: DeclarationKey, identity: String) {
+        self.primitive_identities.push((key, identity));
     }
 
     pub(crate) fn register_module_references(&mut self, namespace: &[String], references: References) {

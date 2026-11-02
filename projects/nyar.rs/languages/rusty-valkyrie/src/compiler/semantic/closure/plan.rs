@@ -105,6 +105,12 @@ pub fn plan_semantic_closure_with_host_bindings(
             }
         }
     }
+    // Primitive 自举身份表必须在可见性与需求展开之前建立：`[primitive("…")]` 的意义就是
+    // 让 std 尚未进入闭包时，编译器仍能按声明携带的身份识别类型、分配 carrier 布局。
+    // 重复或畸形身份在这里结构化失败，不允许下游按短名回退放行。
+    let primitive_identities = super::primitive_identity::build_primitive_identity_table(
+        indexed_files.values().flat_map(|file| file.primitive_identities.iter().cloned()),
+    )?;
     // 聚合身份与成员身份、别名与目标的关联必须在整个 inventory 索引完成后统一按声明身份建立：
     // 聚合与它的成员可以在同组的不同文件里，也可以跨依赖组（std 的 `imply i64: Hash` 与 core 的
     // `structure i64`），按文件边界或「短名 + namespace」连接都是名字近似。
@@ -269,6 +275,7 @@ pub fn plan_semantic_closure_with_host_bindings(
         declaration_index,
         demanded_declarations: demanded,
         test_entries: test_entry_names,
+        primitive_identities,
         unindexed_source_files,
         digest,
     })

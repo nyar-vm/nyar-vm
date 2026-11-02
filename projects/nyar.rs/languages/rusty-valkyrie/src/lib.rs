@@ -73,7 +73,7 @@ pub use crate::compiler::mir::{
 // Semantic closure 类型（测试通过 glob 从 crate root 访问）
 #[doc(hidden)]
 pub use crate::compiler::semantic::closure::{
-    ClosureGroupInput, DeclarationKind, SemanticClosure, SemanticClosureError, plan_semantic_closure,
+    ClosureGroupInput, DeclarationKind, PrimitiveIdentity, PrimitiveIdentityTable, SemanticClosure, SemanticClosureError, plan_semantic_closure,
 };
 
 // Compiler input 类型（测试通过 glob 从 crate root 访问）

@@ -448,6 +448,89 @@ imply ArrayList<T>: LiteralSequence<T> {
     assert!(closure.groups[0].body_lowering_source_paths.contains("source/collection.v"), "合同 impl 所在文件必须下沉 body");
 }
 
+/// 返回规划结果的夹具：自举身份失败必须在闭包边界结构化可见，不能 expect 成功。
+fn try_plan_with_visibility(
+    groups: &[(&str, bool, Vec<(String, String)>)],
+    visibility: &[&[&str]],
+) -> Result<SemanticClosure, SemanticClosureError> {
+    let inputs = groups
+        .iter()
+        .zip(visibility)
+        .map(|((key, is_entry, files), dependencies)| ClosureGroupInput {
+            dependency_key: key,
+            module_name: key,
+            direct_dependencies: dependencies,
+            is_entry: *is_entry,
+            files: files.as_slice(),
+        })
+        .collect::<Vec<_>>();
+    plan_semantic_closure(&inputs, "wasm32")
+}
+
+#[test]
+fn primitive_annotations_register_bootstrap_identities_before_visibility() {
+    // 自举的正向证明：app 未声明对 core 的可见性、也没有引用 `i32` 声明，
+    // 声明不进闭包，但 `[primitive("…")]` 身份仍必须在可见性展开之前登记成表。
+    let groups = [
+        (
+            "core",
+            false,
+            vec![file("source/primitive/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }")],
+        ),
+        ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return 0 }")]),
+    ];
+    let closure = plan_with_visibility(&groups, &[&[], &[]]);
+    assert_eq!(closure.primitive_identities.len(), 1);
+    let identity = closure.primitive_identities.get("std::primitive::i32").expect("bootstrap identity registered before visibility");
+    assert_eq!(identity.declaration.dependency_key, "core");
+    assert_eq!(identity.declaration.name, "i32");
+    // 反查同样按声明身份成立：下游名字表迁移后必须以这张表为唯一事实来源。
+    assert_eq!(closure.primitive_identities.identity_of(&identity.declaration), Some("std::primitive::i32"));
+    // 未被可见性命中的声明确实不在需求闭包内——身份表与闭包需求是两条独立通道。
+    assert!(!closure.demanded_declarations.iter().any(|key| key.name == "i32"));
+}
+
+#[test]
+fn duplicate_primitive_identity_is_structured_failure() {
+    // 同一编译内两个声明携带同一自举身份：不得择一登记。
+    let groups = [
+        (
+            "core",
+            false,
+            vec![
+                file("source/a.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }"),
+                file("source/b.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure shadow { }"),
+            ],
+        ),
+        ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return 0 }")]),
+    ];
+    let error = try_plan_with_visibility(&groups, &[&[], &["core"]]).expect_err("duplicate primitive identity must fail");
+    match error {
+        SemanticClosureError::DuplicatePrimitiveIdentity { identity, declarations } => {
+            assert_eq!(identity, "std::primitive::i32");
+            assert_eq!(declarations.len(), 2);
+        }
+        other => panic!("expected DuplicatePrimitiveIdentity, got {other}"),
+    }
+}
+
+#[test]
+fn malformed_primitive_identity_is_structured_failure() {
+    // 身份字符串必须至少是 `::` 限定名：裸短名没有可校验的自举形态。
+    let groups = [
+        ("core", false, vec![file("source/a.v", "namespace std.primitive;\n[primitive(\"i32\")]\nstructure i32 { }")]),
+        ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return 0 }")]),
+    ];
+    let error = try_plan_with_visibility(&groups, &[&[], &["core"]]).expect_err("malformed primitive identity must fail");
+    match error {
+        SemanticClosureError::MalformedPrimitiveIdentity { declaration, identity } => {
+            assert_eq!(identity, "i32");
+            assert!(declaration.contains("::structure::"), "失败必须指名携带注解的声明: {declaration}");
+        }
+        other => panic!("expected MalformedPrimitiveIdentity, got {other}"),
+    }
+}
+
 #[test]
 fn member_owner_link_is_gated_by_owner_group_visibility() {
     let groups = [

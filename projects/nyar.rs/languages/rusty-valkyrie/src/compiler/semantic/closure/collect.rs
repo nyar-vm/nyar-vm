@@ -45,7 +45,12 @@ fn collect_item(builder: &mut FileBuilder, namespace: &[String], item: &ast::Sta
         ast::StatementNode::Structure(structure) => {
             let mut signature = References::default();
             collect_signature_fields(&structure.body.fields, &mut signature);
-            builder.register(namespace, DeclarationKind::Structure, &structure.name.name, None, None, None, signature);
+            let key = builder.register(namespace, DeclarationKind::Structure, &structure.name.name, None, None, None, signature);
+            // `[primitive("…")]` 是自举身份的唯一来源：在可见性展开之前按声明身份登记，
+            // 让 std 尚未可见时编译器仍能识别这些类型。注解形态校验在建表时统一执行。
+            if let Some(identity) = super::primitive_identity::primitive_annotation_identity(&structure.annotations) {
+                builder.register_primitive_identity(key, identity);
+            }
             collect_members(builder, namespace, &structure.name.name, &structure.body.methods);
         }
         ast::StatementNode::Trait(trait_decl) => {
