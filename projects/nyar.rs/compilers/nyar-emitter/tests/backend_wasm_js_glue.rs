@@ -109,6 +109,52 @@ fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
     assert!(launcher.contains("abi_digest"), "launcher must carry the ABI digest verbatim");
 }
 
+/// 验证泛型容器元素的编组/反编组按**声明身份**决定：单参数泛型容器的唯一
+/// `generic_arg` 就是元素 schema，必须交给 `marshalLibraryArg` /
+/// `demarshalLibraryReturn`；否则 `ArrayList<utf8>` 的 i32 载体（宿主字符串句柄）
+/// 会被当作裸数值转换，JS 字符串入参退化成句柄 0（空字符串）。
+#[test]
+fn container_elements_marshal_through_declared_element_schema() {
+    let spec = r#"{
+        "version": 0,
+        "exports": {
+            "firstLen": {
+                "params": [
+                    {"index":0,"name":"words","type":{"kind":"NamedAggregate","name":"ArrayList","module_path":"std::collection","generic_args":[{"kind":"Utf8"}]},"carrier":"handle"}
+                ],
+                "returns": {"kind":"I64"}
+            }
+        },
+        "glue_entries": [
+            {
+                "kind": "NamedAggregate",
+                "name": "ArrayList",
+                "module_path": "std::collection",
+                "generic_args": [{"kind":"Utf8"}],
+                "operations": [
+                    {"operation":"construct","export_name":"$seq_std_collection_ArrayList_utf8_new","param_carriers":["i32"],"return_carrier":"handle","export_source":"declared"},
+                    {"operation":"push","export_name":"$seq_std_collection_ArrayList_utf8_push","param_carriers":["handle","i32"],"return_carrier":"void","export_source":"declared"},
+                    {"operation":"length","export_name":"$seq_std_collection_ArrayList_utf8_len","param_carriers":["handle"],"return_carrier":"i32","export_source":"declared"},
+                    {"operation":"at","export_name":"$seq_std_collection_ArrayList_utf8_at","param_carriers":["handle","i32"],"return_carrier":"i32","export_source":"declared"}
+                ],
+                "source": "declaration_identity",
+                "status": "ready"
+            }
+        ],
+        "abi_digest": "sha256-fixture"
+    }"#;
+    let launcher = build_node_launcher("demo", &[], &[], true, Some(spec));
+    assert!(
+        launcher.contains("const elementSchema = Array.isArray(schema.generic_args) && schema.generic_args.length === 1 ? schema.generic_args[0] : null;"),
+        "元素 schema 必须来自声明身份的唯一 generic_arg"
+    );
+    assert!(launcher.contains("push(handle, marshalLibraryArg(elementSchema, item));"), "入参元素必须经元素 schema 编组（utf8 走 hostIntern）");
+    assert!(
+        launcher.contains("out.push(demarshalLibraryReturn(elementSchema, value));"),
+        "返回值元素必须经元素 schema 反编组（utf8 走 hostResolve）"
+    );
+}
+
 #[test]
 fn build_node_launcher_without_cli_imports_skips_cli_dispatch() {
     let imports = vec![("env".to_string(), "emit_byte".to_string())];
