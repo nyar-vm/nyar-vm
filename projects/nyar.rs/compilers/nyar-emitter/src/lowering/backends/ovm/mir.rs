@@ -184,6 +184,9 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
     };
 
     let mut layout_index_by_id = BTreeMap::<LayoutId, i32>::new();
+    // 定长数组的 `layout_id` 不保证进入 `AggregateLayoutPlan`（合成布局由前端按需登记），
+    // OVM 的 Odin 槽位又没有类型，因此按字段数铸造后端私有布局，绝不以未冻结身份开新布局。
+    let mut layout_index_by_field_count = BTreeMap::<i32, i32>::new();
     let sum_layout_index_by_nominal = register_sum_layouts(submission, &mut module.layouts)?;
     let external_link_by_instance = submission
         .backend_plan
@@ -234,6 +237,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 &mut emitter,
                 &mut module.layouts,
                 &mut layout_index_by_id,
+                &mut layout_index_by_field_count,
             )?;
 
             module.constants.extend(emitter.constants);
@@ -364,6 +368,7 @@ fn lower_mir_function_to_bytecode(
     emitter: &mut BytecodeEmitter<'_>,
     layouts: &mut Vec<OdinLayout>,
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
+    layout_index_by_field_count: &mut BTreeMap<i32, i32>,
 ) -> crate::Result<()> {
     let ctx = ExecutableLoweringContext::new(submission);
     let slots = ExecutableSlotPlan::plan_nyar(mir_fn);
@@ -382,6 +387,7 @@ fn lower_mir_function_to_bytecode(
         sum_layout_index_by_nominal,
         layouts,
         layout_index_by_id,
+        layout_index_by_field_count,
     };
     for block_id in block_order {
         lowerer.emitter.block_starts.insert(block_id, lowerer.emitter.code_bytes.len());
@@ -406,6 +412,7 @@ struct NyarMirLowerer<'a, 'e> {
     sum_layout_index_by_nominal: &'a BTreeMap<NominalInstanceId, i32>,
     layouts: &'a mut Vec<OdinLayout>,
     layout_index_by_id: &'a mut BTreeMap<LayoutId, i32>,
+    layout_index_by_field_count: &'a mut BTreeMap<i32, i32>,
 }
 
 impl<'a, 'e> NyarMirLowerer<'a, 'e> {
@@ -444,26 +451,29 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::StructNew { nominal, fields } => {
-                let layout = self.ctx.layout_by_nominal(*nominal).cloned().unwrap_or_else(|| panic!("Nyar 聚合身份缺少布局合同: {nominal:?}"));
-                let layout_index = match &layout {
-                    aggregate => self.ensure_nyar_layout(aggregate),
-                };
+                let layout = self.ctx.layout_by_nominal(*nominal).cloned().ok_or_else(|| {
+                    format!("OVM 聚合身份缺少布局合同：nominal {nominal:?} 不在计划的 AggregateLayoutPlan")
+                })?;
+                let layout_index = self.ensure_nyar_layout(&layout);
                 self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout_index);
-                let output = output.expect("StructNew must produce an output");
+                let output = output.ok_or_else(|| format!("OVM StructNew 必须产出值槽（symbol=`{}`）", self.mir_fn.symbol))?;
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
                 for (field, value) in fields.iter() {
-                    let slot = self.nyar_field_slot(*field);
+                    let slot = self.nyar_field_slot(*field)?;
                     self.emit_field_set_slot(&output_operand, slot, value);
                     self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
             MirInstructionKind::TupleNew { layout_id, fields } => {
-                let layout =
-                    self.ctx.layout_by_id(*layout_id).cloned().unwrap_or_else(|| panic!("Nyar tuple 布局身份缺少布局合同: {layout_id:?}"));
+                let layout = self
+                    .ctx
+                    .layout_by_id(*layout_id)
+                    .cloned()
+                    .ok_or_else(|| format!("OVM tuple 布局身份缺少布局合同：layout_id={layout_id:?}"))?;
                 let layout_index = self.ensure_nyar_layout(&layout);
                 self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout_index);
-                let output = output.expect("TupleNew must produce an output");
+                let output = output.ok_or_else(|| format!("OVM TupleNew 必须产出值槽（symbol=`{}`）", self.mir_fn.symbol))?;
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
                 for (index, value) in fields.iter().enumerate() {
@@ -471,17 +481,27 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
-            MirInstructionKind::ArrayFromElements { layout_id, elements, .. } => {
+            MirInstructionKind::ArrayFromElements { array_type, elements, .. } => {
                 let Some(output) = output
                 else {
-                    return Ok(());
+                    return Err(format!("OVM ArrayFromElements 必须产出值槽（symbol=`{}`）", self.mir_fn.symbol));
                 };
-                let layout = self
-                    .ctx
-                    .layout_by_id(*layout_id)
-                    .cloned()
-                    .unwrap_or_else(|| panic!("Nyar fixed-array 布局身份缺少布局合同: {layout_id:?}"));
-                let layout_index = self.ensure_nyar_layout(&layout);
+                // 合成的定长数组布局身份不保证进入 `AggregateLayoutPlan`；Odin 布局只记录
+                // 字段数且槽位无类型，所以按元素个数铸造后端私有布局，禁止依赖未冻结的
+                // `layout_id`，更不允许 panic 杀进程。
+                if let NyarType::FixedArray { length, .. } = array_type
+                    && *length != elements.len()
+                {
+                    return Err(format!(
+                        "OVM ArrayFromElements 的元素个数与冻结的定长数组类型不符：type={array_type} declared={length} actual={}（symbol=`{}`）",
+                        elements.len(),
+                        self.mir_fn.symbol
+                    ));
+                }
+                let field_count = i32::try_from(elements.len()).map_err(|_| {
+                    format!("OVM ArrayFromElements 元素个数超出 i32 布局槽位：{}（symbol=`{}`）", elements.len(), self.mir_fn.symbol)
+                })?;
+                let layout_index = self.ensure_nyar_layout_for_field_count(field_count);
                 self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout_index);
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
@@ -495,7 +515,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     .ctx
                     .layout_by_id(*layout_id)
                     .cloned()
-                    .unwrap_or_else(|| panic!("Nyar aggregate-copy 布局身份缺少布局合同: {layout_id:?}"));
+                    .ok_or_else(|| format!("OVM aggregate-copy 布局身份缺少布局合同：layout_id={layout_id:?}"))?;
                 let field_count = layout.fields.len() as i32;
                 let layout_index = self.ensure_nyar_layout(&layout);
                 self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout_index);
@@ -511,7 +531,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::FieldGet { object, field } => {
-                let slot = self.nyar_field_slot(*field);
+                let slot = self.nyar_field_slot(*field)?;
                 self.emit_operand(object);
                 self.emitter.emit_imm1(OdinHeadCode::FieldGet, slot);
                 if let Some(output) = output {
@@ -523,7 +543,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::FieldSet { object, field, value } => {
-                let slot = self.nyar_field_slot(*field);
+                let slot = self.nyar_field_slot(*field)?;
                 self.emit_field_set_slot(object, slot, value);
                 self.emitter.emit_plain(OdinHeadCode::Pop);
             }
@@ -915,14 +935,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         false
     }
 
-    fn nyar_field_slot(&self, field: nyar_types::FieldId) -> i32 {
+    fn nyar_field_slot(&self, field: nyar_types::FieldId) -> crate::Result<i32> {
         self.ctx
             .submission
             .backend_plan
             .aggregate_layout_by_field()
             .get(&field)
             .map(|(_, slot)| *slot as i32)
-            .unwrap_or_else(|| panic!("Nyar 字段身份缺少布局槽位合同: {field:?}"))
+            .ok_or_else(|| format!("OVM 字段身份缺少布局槽位合同：field={field:?}"))
     }
 
     fn ensure_nyar_layout(&mut self, aggregate: &AggregateLayout) -> i32 {
@@ -932,6 +952,18 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         let index = self.layouts.len() as i32;
         self.layouts.push(OdinLayout { field_count: aggregate.fields.len() as i32 });
         self.layout_index_by_id.insert(aggregate.id, index);
+        index
+    }
+
+    /// 定长数组用的后端私有布局：Odin 对象只有字段数，没有字段类型，因此同字段数的
+    /// 数组可以共享布局；身份只用于物理容纳，不参与语义匹配。
+    fn ensure_nyar_layout_for_field_count(&mut self, field_count: i32) -> i32 {
+        if let Some(index) = self.layout_index_by_field_count.get(&field_count) {
+            return *index;
+        }
+        let index = self.layouts.len() as i32;
+        self.layouts.push(OdinLayout { field_count });
+        self.layout_index_by_field_count.insert(field_count, index);
         index
     }
 
