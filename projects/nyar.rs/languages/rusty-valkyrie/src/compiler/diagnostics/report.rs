@@ -5,9 +5,9 @@
 //! 每条带 `error[code]: message`、`--> file:line:col` 定位行、源码片段与 `^` 指向。
 //! 同一输入渲染两次必须得到完全一致的输出（排序只依赖诊断自身字段）。
 
-use nyar_types::DiagnosticSpan;
+use nyar_types::{DiagnosticArg, DiagnosticSpan};
 
-use super::pending::PendingDiagnostics;
+use super::pending::{CompileDiagnostic, PendingDiagnostics};
 
 /// 渲染配置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,25 +61,80 @@ pub fn render_compile_diagnostics(
         ))
     });
 
-    let mut rendered = String::new();
-    for index in order.iter().take(options.max_diagnostics) {
-        let diagnostic = &pending.diagnostics[*index];
-        rendered.push_str(&render_one(
-            &diagnostic.message,
-            &diagnostic.row.code,
-            &diagnostic.row.source.id,
-            &diagnostic.row.primary_span,
-            resolve_source,
-        ));
-        rendered.push('\n');
+    // 去级联：同一根因（code + 主标识参数）归并成一条，附受影响站点数；
+    // 归并按根因键全局合并（首次出现的排序位置决定组的展示顺序），
+    // 后续依赖同一失败事实的诊断不再各自刷屏。
+    let diagnostics = &pending.diagnostics;
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut group_by_key = std::collections::BTreeMap::<String, usize>::new();
+    for index in order {
+        let key = root_cause_key(&diagnostics[index]);
+        match group_by_key.get(&key) {
+            Some(group_index) => groups[*group_index].push(index),
+            None => {
+                group_by_key.insert(key, groups.len());
+                groups.push(vec![index]);
+            }
+        }
     }
-    let not_shown = order.len().saturating_sub(options.max_diagnostics) + pending.overflow;
+
+    let mut rendered = String::new();
+    let mut shown = 0usize;
+    for group in groups.iter().take(options.max_diagnostics) {
+        let first = &diagnostics[group[0]];
+        rendered.push_str(&render_one(&first.message, &first.row.code, &first.row.source.id, &first.row.primary_span, resolve_source));
+        if group.len() > 1 {
+            let sites = group[1..].iter().take(5).map(|index| site_label(&diagnostics[*index], resolve_source)).collect::<Vec<_>>();
+            let extra = group.len() - 1 - sites.len();
+            let mut note =
+                format!("   = {} more site{} with the same root cause: {}", group.len() - 1, plural_suffix(group.len() - 1), sites.join(", "));
+            if extra > 0 {
+                note.push_str(&format!(", +{extra} more"));
+            }
+            rendered.push_str(&note);
+            rendered.push('\n');
+        }
+        rendered.push('\n');
+        shown += group.len();
+    }
+    let not_shown = pending.total().saturating_sub(shown);
     if not_shown > 0 {
         rendered.push_str(&format!("note: {} more diagnostic(s) not shown (limit {} reached)\n", not_shown, options.max_diagnostics));
     }
     let total = pending.total();
     rendered.push_str(&format!("error: aborting due to {} previous error{}\n", total, plural_suffix(total)));
     rendered
+}
+
+/// 归并根因的稳定键：`code` 加主标识参数（`selector` / `name`），缺失时回退到消息文本。
+fn root_cause_key(diagnostic: &CompileDiagnostic) -> String {
+    let identity = diagnostic.row.args.get("selector").or_else(|| diagnostic.row.args.get("name"));
+    match identity {
+        Some(arg) => format!("{}|{}", diagnostic.row.code, render_arg(arg)),
+        None => format!("{}|{}", diagnostic.row.code, diagnostic.message),
+    }
+}
+
+fn render_arg(arg: &DiagnosticArg) -> String {
+    match arg {
+        DiagnosticArg::String(value)
+        | DiagnosticArg::TypeName(value)
+        | DiagnosticArg::Aggregate(value)
+        | DiagnosticArg::CallableShort(value)
+        | DiagnosticArg::DependencyKey(value) => value.clone(),
+        DiagnosticArg::Int(value) => value.to_string(),
+        DiagnosticArg::SymbolPath(parts) => parts.join("::"),
+        DiagnosticArg::Span(span) => format!("{}..{}", span.start, span.end),
+    }
+}
+
+/// 归并备注里的站点标签：能拿到源码时给 `file:line:col`，否则退化为字节区间。
+fn site_label(diagnostic: &CompileDiagnostic, resolve_source: &dyn Fn(&str) -> Option<String>) -> String {
+    let span = &diagnostic.row.primary_span;
+    match resolve_source(&diagnostic.row.source.id).as_deref().map(|text| locate(text, span)) {
+        Some(located) => format!("{}:{}:{}", diagnostic.row.source.id, located.line, located.column),
+        None => format!("{}:{}..{}", diagnostic.row.source.id, span.start, span.end),
+    }
 }
 
 /// 确定性排序键：先文件，再 span 起点、终点，再 code 与消息。
