@@ -3,7 +3,7 @@ use rusty_valkyrie::{
     hir::lowering::lower_term_expression,
     types::{
         SourceID,
-        hir::{HirExpr, HirExprKind},
+        hir::{HirExpr, HirExprKind, HirStatementKind},
     },
 };
 
@@ -28,10 +28,20 @@ fn assignment_and_field_write_keep_structured_targets() {
 
 #[test]
 fn iteration_source_is_not_a_boolean_condition() {
-    assert!(matches!(
-        lower("micro visit() { loop item in values { consume(item) } }").kind,
-        HirExprKind::Loop { pattern: Some(_), iterator: Some(_), condition: None, .. }
-    ));
+    // for-in 在 HIR 早期脱糖为迭代协议的普通成员调用（`into_iterator`/`has_next`/`next`/`unwrap`），
+    // 不再保留 `Loop { pattern, iterator }` 形态；`while` 的条件循环不受影响。
+    let desugared = lower("micro visit() { loop item in values { consume(item) } }");
+    let HirExprKind::Block(block) = &desugared.kind
+    else {
+        panic!("for-in 必须脱糖为块表达式，got {:?}", desugared.kind)
+    };
+    assert!(block.statements.iter().any(|statement| {
+        matches!(
+            &statement.kind,
+            HirStatementKind::Expr(expr)
+                if matches!(&expr.kind, HirExprKind::Loop { pattern: None, iterator: None, condition: None, .. })
+        )
+    }));
     assert!(matches!(
         lower("micro visit() { while ready { consume() } }").kind,
         HirExprKind::Loop { pattern: None, iterator: None, condition: Some(_), .. }

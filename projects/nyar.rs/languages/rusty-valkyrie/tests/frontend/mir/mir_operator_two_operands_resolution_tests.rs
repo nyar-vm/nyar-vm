@@ -77,6 +77,85 @@ imply ArrayList<T> {
     micro nth(self, index: usize): T {
         return self⁅index⁆
     }
+
+    micro length(self): usize {
+        return self._length
+    }
+}
+
+[tag(OptionKind)]
+unite Option<T> {
+    [tag(0)]
+    Some { value: T },
+    [tag(1, default)]
+    None,
+}
+
+micro panic<T>(msg: T): void {
+}
+
+micro Some<T>(value: T) -> Option<T> {
+    let wrapped: Option<T> = Some(value)
+    return wrapped
+}
+
+imply Option<T> {
+    micro unwrap(self): T {
+        match self {
+            case Some(value):
+                value
+            case None:
+                panic("unwrap on `None` value")
+        }
+    }
+}
+
+class ArrayListIterator<T> {
+    _list: ArrayList<T>
+    _index: usize
+}
+
+imply ArrayList<T>: std::iterator::IntoIterator {
+    type Item = T;
+    type Iter = ArrayListIterator<T>;
+
+    micro into_iterator(self): ArrayListIterator<T> {
+        return ArrayListIterator { _list: self, _index: 0 }
+    }
+}
+
+imply ArrayListIterator<T>: std::iterator::Iterator {
+    type Item = T;
+
+    micro has_next(self): bool {
+        return self._index < self._list.length()
+    }
+
+    micro next(mut self): Option<T> {
+        if !self.has_next() {
+            return None
+        }
+        let value: T = self._list⁅self._index⁆
+        self._index = self._index + 1
+        return Some(value)
+    }
+}
+
+namespace std.iterator;
+
+trait Iterator {
+    type Item;
+
+    micro has_next(self): bool
+
+    micro next(mut self): Option<Item>
+}
+
+trait IntoIterator {
+    type Item;
+    type Iter: Iterator<Item=Self::Item>;
+
+    micro into_iterator(self): Self::Iter
 }
 "#;
 
@@ -231,6 +310,24 @@ micro pick_two<T>(list: ArrayList<T>, i: usize, j: usize): T {
 }
 "#;
     compile(app).expect("递归泛型内的 `push` 与 `suffix ⁅ ⁆` 必须解析");
+}
+
+/// D1：`loop x in ArrayList` 的迭代项必须是 `T`，不得是 `Option<T>`。
+#[test]
+fn loop_in_iteration_item_is_element_type() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro sum_list(xs: ArrayList<usize>) -> usize {
+    let mut total: usize = 0
+    loop x in xs {
+        total = total + x
+    }
+    return total
+}
+"#;
+    compile(app).expect("`loop x in ArrayList` 的迭代项必须是元素类型 `T`（D1）");
 }
 
 /// 相互递归的自由函数：调用点在双方声明之间必须双向解析。

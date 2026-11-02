@@ -432,7 +432,15 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
                 collect_term(expr, references);
             }
         }
-        ast::TermExpression::Loop { condition, body, .. } => {
+        ast::TermExpression::Loop { pattern, condition, body, .. } => {
+            if pattern.is_some() {
+                // for-in 在 HIR 下降期脱糖为迭代协议成员调用（`into_iterator`/`has_next`/`next`/`unwrap`），
+                // 这些成员名不出现在源码里；闭包必须按同一份协议选择名提升对应 witness，
+                // 否则脱糖后的调用点没有声明可解析。
+                for selector in operator_members::FOR_IN_PROTOCOL_SELECTORS {
+                    references.selectors.insert(selector.to_string());
+                }
+            }
             if let Some(condition) = condition {
                 collect_term(condition, references);
             }

@@ -26,6 +26,23 @@ pub(crate) const CARDINAL_SUBSCRIPT_ASSIGN_MEMBER: &str = "suffix ⁅ ⁆=";
 /// 解引用读取 `*receiver` 的成员名。
 pub(crate) const DEREF_READ_MEMBER: &str = "deref_read";
 
+/// for-in 脱糖 `coll.into_iterator()` 的成员名（`IntoIterator` 协议）。
+pub(crate) const FOR_IN_INTO_ITERATOR_MEMBER: &str = "into_iterator";
+/// for-in 脱糖 `it.has_next()` 的成员名（`Iterator` 协议）。
+pub(crate) const FOR_IN_HAS_NEXT_MEMBER: &str = "has_next";
+/// for-in 脱糖 `it.next()` 的成员名（`Iterator` 协议）。
+pub(crate) const FOR_IN_NEXT_MEMBER: &str = "next";
+/// for-in 脱糖取迭代项的 `Option::unwrap()` 成员名。
+pub(crate) const FOR_IN_UNWRAP_MEMBER: &str = "unwrap";
+
+/// for-in 迭代协议的选择名集合。
+///
+/// for-in 在 HIR 下降期脱糖为迭代协议成员调用（`lower_for_in_desugar`），这些调用
+/// 不出现在源码里；语义闭包必须按同一份成员名把协议 witness 纳入需求，否则脱糖
+/// 后的调用点没有声明可解析。两个消费方（闭包规划、HIR 脱糖）只准引用本常量组。
+pub(crate) const FOR_IN_PROTOCOL_SELECTORS: [&str; 4] =
+    [FOR_IN_INTO_ITERATOR_MEMBER, FOR_IN_HAS_NEXT_MEMBER, FOR_IN_NEXT_MEMBER, FOR_IN_UNWRAP_MEMBER];
+
 /// `{fixity} {lexeme}`：运算符成员名的唯一拼写。
 ///
 /// fixity 只允许 `prefix` / `infix` / `suffix` 三种词素；`prefix \`-\`` 与 `infix \`-\``

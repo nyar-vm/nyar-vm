@@ -5,8 +5,9 @@ use ordered_float::OrderedFloat;
 use super::*;
 use crate::compiler::{
     semantic::operator_members::{
-        CARDINAL_SUBSCRIPT_ASSIGN_MEMBER, CARDINAL_SUBSCRIPT_MEMBER, DEREF_READ_MEMBER, SUBSCRIPT_ASSIGN_MEMBER, SUBSCRIPT_MEMBER,
-        infix_member_name, prefix_member_name,
+        CARDINAL_SUBSCRIPT_ASSIGN_MEMBER, CARDINAL_SUBSCRIPT_MEMBER, DEREF_READ_MEMBER, FOR_IN_HAS_NEXT_MEMBER,
+        FOR_IN_INTO_ITERATOR_MEMBER, FOR_IN_NEXT_MEMBER, FOR_IN_UNWRAP_MEMBER, SUBSCRIPT_ASSIGN_MEMBER, SUBSCRIPT_MEMBER, infix_member_name,
+        prefix_member_name,
     },
     syntax::oak::{
         self as frontend,
@@ -350,29 +351,25 @@ fn lower_term_expression_body(
             })
         })?,
         TermExpression::Loop { label, pattern, condition, body, .. } => lower_deferred(|| {
+            let hir_label = label.as_ref().map(|value| Identifier::new(value));
+            if let Some(loop_pattern) = pattern {
+                // for-in 在 HIR 早期脱糖为迭代协议的普通成员调用，不存在循环专用类型规则；
+                // 迭代项类型由 `next() -> Option<Item>` 经 `unwrap` 普通推导得出。
+                let iter_source = condition.as_ref().expect("语法不变量：`loop pat in src` 必带迭代源");
+                let iterator = lower_term_expression_with_context(iter_source, source_id, span_range.clone(), false)?;
+                let pattern = lower_pattern(loop_pattern, source_id, span.clone());
+                let body = lower_block(body, source_id, span_range.clone())?;
+                return Ok(lower_for_in_desugar(hir_label, pattern, iterator, body, span.clone()));
+            }
             Ok(HirExprKind::Loop {
-                label: label.as_ref().map(|value| Identifier::new(value)),
-                pattern: pattern.as_ref().map(|pat| lower_pattern(pat, source_id, span.clone())),
-                iterator: if pattern.is_some() {
-                    condition
-                        .as_ref()
-                        .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
-                        .transpose()?
-                        .map(|e| Box::new(e))
-                }
-                else {
-                    None
-                },
-                condition: if pattern.is_none() {
-                    condition
-                        .as_ref()
-                        .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
-                        .transpose()?
-                        .map(|e| Box::new(e))
-                }
-                else {
-                    None
-                },
+                label: hir_label,
+                pattern: None,
+                iterator: None,
+                condition: condition
+                    .as_ref()
+                    .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
+                    .transpose()?
+                    .map(|e| Box::new(e)),
                 body: Box::new(lower_block(body, source_id, span_range.clone())?),
             })
         })?,
@@ -732,6 +729,102 @@ fn lower_operator_member_call(member: &str, args: Vec<HirCallArgument>, span: So
 
 fn lower_canonical_call_arguments(callee: HirExpr, args: Vec<HirCallArgument>) -> HirExprKind {
     HirExprKind::Call { callee: Box::new(callee), args, resolved: None }
+}
+
+/// for-in 脱糖：`loop pat in coll { body }` 展开为迭代协议的普通成员调用序列——
+///
+/// ```text
+/// {
+///     let mut __for_in_iterator = coll.into_iterator()
+///     loop {
+///         if !__for_in_iterator.has_next() { break }
+///         let pat = __for_in_iterator.next().unwrap()
+///         body
+///     }
+/// }
+/// ```
+///
+/// 迭代项类型由 `Iterator::next() -> Option<Item>` 经 `unwrap` 的普通推导得出：
+/// 集合是 `IntoIterator` 的哪个实现、返回什么 `Item`，全部交给普通成员解析按
+/// 声明身份冻结，编译器不持有任何集合形状表。脱糖节点共享原循环的 span。
+fn lower_for_in_desugar(label: Option<Identifier>, pattern: HirPattern, iterator: HirExpr, body: HirBlock, span: SourceSpan) -> HirExprKind {
+    const TEMP: &str = "__for_in_iterator";
+    let temp_ident = |span: &SourceSpan| HirIdentifier { name: Identifier::new(TEMP), shadow_index: 0, span: span.clone() };
+    let temp_var = |span: &SourceSpan| HirExpr { kind: HirExprKind::Variable(temp_ident(span)), span: span.clone() };
+    // 具名方法与 `x.m(args)` 同形：`FieldAccess` 作 callee；运算符才走 `{fixity} {lexeme}` 成员名。
+    let dot_call = |object: HirExpr, member: &str, span: &SourceSpan| HirExpr {
+        kind: HirExprKind::Call {
+            callee: Box::new(HirExpr {
+                kind: HirExprKind::FieldAccess { object: Box::new(object), field: Identifier::new(member), field_id: None },
+                span: span.clone(),
+            }),
+            args: Vec::new(),
+            resolved: None,
+        },
+        span: span.clone(),
+    };
+    let operator_call = |member: &str, args: Vec<HirExpr>, span: &SourceSpan| HirExpr {
+        kind: HirExprKind::Call {
+            callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new(member)])), span: span.clone() }),
+            args: args.into_iter().map(HirCallArgument::positional).collect(),
+            resolved: None,
+        },
+        span: span.clone(),
+    };
+    let bind_iterator = HirStatement {
+        kind: HirStatementKind::Let {
+            is_mutable: true,
+            pattern: HirPattern::Variable(temp_ident(&span)),
+            initializer: Some(Box::new(dot_call(iterator, FOR_IN_INTO_ITERATOR_MEMBER, &span))),
+            ty: None,
+        },
+        span: span.clone(),
+    };
+    let break_stmt = HirStatement {
+        kind: HirStatementKind::Expr(Box::new(HirExpr { kind: HirExprKind::Break { label: None, expr: None }, span: span.clone() })),
+        span: span.clone(),
+    };
+    let guard = HirStatement {
+        kind: HirStatementKind::Expr(Box::new(HirExpr {
+            kind: HirExprKind::If {
+                condition: Box::new(operator_call("prefix !", vec![dot_call(temp_var(&span), FOR_IN_HAS_NEXT_MEMBER, &span)], &span)),
+                then_branch: Box::new(HirBlock { statements: vec![break_stmt], expr: None, span: span.clone() }),
+                else_branch: None,
+            },
+            span: span.clone(),
+        })),
+        span: span.clone(),
+    };
+    let bind_item = HirStatement {
+        kind: HirStatementKind::Let {
+            is_mutable: false,
+            pattern,
+            initializer: Some(Box::new(dot_call(dot_call(temp_var(&span), FOR_IN_NEXT_MEMBER, &span), FOR_IN_UNWRAP_MEMBER, &span))),
+            ty: None,
+        },
+        span: span.clone(),
+    };
+    let mut loop_statements = Vec::with_capacity(body.statements.len() + 2);
+    loop_statements.push(guard);
+    loop_statements.push(bind_item);
+    loop_statements.extend(body.statements);
+    let loop_span = body.span.clone();
+    let inner_loop = HirExpr {
+        kind: HirExprKind::Loop {
+            label,
+            pattern: None,
+            iterator: None,
+            condition: None,
+            body: Box::new(HirBlock { statements: loop_statements, expr: body.expr, span: loop_span }),
+        },
+        span: span.clone(),
+    };
+    let outer_span = span.clone();
+    HirExprKind::Block(Box::new(HirBlock {
+        statements: vec![bind_iterator, HirStatement { kind: HirStatementKind::Expr(Box::new(inner_loop)), span }],
+        expr: None,
+        span: outer_span,
+    }))
 }
 
 fn lower_short_circuit_and(

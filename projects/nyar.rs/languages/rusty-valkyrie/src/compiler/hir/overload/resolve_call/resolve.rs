@@ -498,11 +498,11 @@ fn resolve_expr_calls_at(
             if let (Some(pattern), Some(iterator)) = (pattern, iterator) {
                 let iter_type = infer_expr_type(iterator, locals);
                 resolve_pattern_calls(pattern, candidates, type_relations, iter_type.as_ref(), struct_fields);
-                if let Some(iter_type) = iter_type.as_ref() {
-                    let element_type = match iter_type {
-                        ValkyrieType::Array(inner) => inner.as_ref().clone(),
-                        other => other.clone(),
-                    };
+                // for-in 在 HIR 下降期已脱糖为迭代协议调用（`into_iterator`/`next`/`unwrap`），
+                // 迭代项类型由协议成员返回类型普通推导；只有结构化数组 `[T]` 仍在此直接给元素类型，
+                // 集合聚合一律不得把自身绑成元素类型。
+                if let Some(ValkyrieType::Array(inner)) = iter_type.as_ref() {
+                    let element_type = inner.as_ref().clone();
                     bind_pattern_type(pattern, &element_type, &mut body_locals);
                 }
             }
