@@ -11,12 +11,14 @@ use rusty_valkyrie::{
 };
 
 /// 数值原始类型名属于 `std/primitive` 的声明族；未声明时 canonical 以 CAN003 拒绝。
-const PRIMITIVES: &str = "namespace std::primitive;\n\
-    [primitive(\"std::primitive::usize\")] structure usize { }\n\
-    [primitive(\"std::primitive::i32\")] structure i32 { }\n\
-    imply usize {\n\
-    \x20\x20infix `+`(self, rhs: Self): Self { return rhs }\n\
-    }";
+const PRIMITIVES: &str = concat!(
+    "namespace std::primitive;\n",
+    "[primitive(\"std::primitive::usize\")] structure usize { }\n",
+    "[primitive(\"std::primitive::i32\")] structure i32 { }\n",
+    "imply usize {\n",
+    "  infix `+`(self, rhs: Self): Self { return rhs }\n",
+    "}"
+);
 
 /// 依赖组：`[host_contract]` 无体泛型声明，显式泛型实参由调用方绑定。
 const ARRAY_CONTRACT: &str = "namespace std.collection.array;\n\
@@ -24,17 +26,19 @@ const ARRAY_CONTRACT: &str = "namespace std.collection.array;\n\
     micro new<T>(length: usize): [T]";
 
 /// 调用方组：用自己的泛型参数 `T` 显式指定依赖声明的泛型实参。
-const CALLER: &str = "namespace std.collection;\n\
-    [host_contract]\n\
-    micro fill<T>(value: T, n: usize): [T] {\n\
-    \x20\x20let old_len: usize = n\n\
-    \x20\x20let new_array: [T] = std::collection::array::new::<T>(old_len + 1)\n\
-    \x20\x20return new_array\n\
-    }\n\
-    [main] micro main() -> i32 {\n\
-    \x20\x20fill(1, 2)\n\
-    \x20\x20return 0\n\
-    }";
+const CALLER: &str = concat!(
+    "namespace std.collection;\n",
+    "[host_contract]\n",
+    "micro fill<T>(value: T, n: usize): [T] {\n",
+    "  let old_len: usize = n\n",
+    "  let new_array: [T] = std::collection::array::new::<T>(old_len + 1)\n",
+    "  return new_array\n",
+    "}\n",
+    "[main] micro main() -> i32 {\n",
+    "  fill(1, 2)\n",
+    "  return 0\n",
+    "}"
+);
 
 fn groups() -> Vec<CompilerSourceGroup> {
     vec![

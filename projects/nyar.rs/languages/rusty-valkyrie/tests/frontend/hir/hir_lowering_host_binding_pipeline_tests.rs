@@ -328,11 +328,13 @@ fn imply_method_host_contract_binds_provider_and_retires_contract_body() {
         CompilerSourceGroup::single_source(
             "std",
             "std",
-            "namespace std.text;\n\
-             structure Utf8Text { _repr: i32 }\n\
-             imply Utf8Text {\n\
-             \x20\x20\x20[host_contract] micro length(self) -> i32 { return self._repr }\n\
-             }",
+            concat!(
+                "namespace std.text;\n",
+                "structure Utf8Text { _repr: i32 }\n",
+                "imply Utf8Text {\n",
+                "   [host_contract] micro length(self) -> i32 { return self._repr }\n",
+                "}"
+            ),
         )
         .with_direct_dependencies(vec!["core".into()]),
         CompilerSourceGroup::single_source(
@@ -394,13 +396,15 @@ fn overloaded_imply_methods_outside_bindings_are_each_bound_and_do_not_fail_host
         CompilerSourceGroup::single_source(
             "std",
             "std",
-            "namespace std.text;\n\
-             structure Utf8Text { _repr: i32 }\n\
-             class Utf8Builder { bytes: i32 }\n\
-             imply Utf8Builder {\n\
-             \x20\x20\x20micro append(self, c: i32) -> i32 { return c }\n\
-             \x20\x20\x20micro append(self, text: Utf8Text) -> i32 { return text._repr }\n\
-             }",
+            concat!(
+                "namespace std.text;\n",
+                "structure Utf8Text { _repr: i32 }\n",
+                "class Utf8Builder { bytes: i32 }\n",
+                "imply Utf8Builder {\n",
+                "   micro append(self, c: i32) -> i32 { return c }\n",
+                "   micro append(self, text: Utf8Text) -> i32 { return text._repr }\n",
+                "}"
+            ),
         )
         .with_direct_dependencies(vec!["core".into()]),
         CompilerSourceGroup::single_source(
@@ -412,16 +416,18 @@ fn overloaded_imply_methods_outside_bindings_are_each_bound_and_do_not_fail_host
         CompilerSourceGroup::single_source(
             "app",
             "demo",
-            "namespace demo;\n\
-             using std.text.{Utf8Text, Utf8Builder};\n\
-             [host_contract] micro write(value: i32) -> i32 { }\n\
-             [main] micro main() -> i32 {\n\
-             \x20\x20\x20let b = Utf8Builder { bytes: 1 }\n\
-             \x20\x20\x20let t = Utf8Text { _repr: 2 }\n\
-             \x20\x20\x20let x = b.append(3)\n\
-             \x20\x20\x20let y = b.append(t)\n\
-             \x20\x20\x20return write(y)\n\
-             }",
+            concat!(
+                "namespace demo;\n",
+                "using std.text.{Utf8Text, Utf8Builder};\n",
+                "[host_contract] micro write(value: i32) -> i32 { }\n",
+                "[main] micro main() -> i32 {\n",
+                "   let b = Utf8Builder { bytes: 1 }\n",
+                "   let t = Utf8Text { _repr: 2 }\n",
+                "   let x = b.append(3)\n",
+                "   let y = b.append(t)\n",
+                "   return write(y)\n",
+                "}"
+            ),
         )
         .as_entry()
         .with_direct_dependencies(vec!["core".into(), "std".into(), "adaptor".into()]),
@@ -471,12 +477,14 @@ fn host_contract_binding_on_overloaded_declaration_key_fails_closed() {
         CompilerSourceGroup::single_source(
             "std",
             "std",
-            "namespace std.text;\n\
-             class Utf8Builder { bytes: i32 }\n\
-             imply Utf8Builder {\n\
-             \x20\x20\x20[host_contract] micro append(self, c: i32) -> i32 { return c }\n\
-             \x20\x20\x20[host_contract] micro append(self, width: i32, height: i32) -> i32 { return height }\n\
-             }",
+            concat!(
+                "namespace std.text;\n",
+                "class Utf8Builder { bytes: i32 }\n",
+                "imply Utf8Builder {\n",
+                "   [host_contract] micro append(self, c: i32) -> i32 { return c }\n",
+                "   [host_contract] micro append(self, width: i32, height: i32) -> i32 { return height }\n",
+                "}"
+            ),
         )
         .with_direct_dependencies(vec!["core".into()]),
         CompilerSourceGroup::single_source(
