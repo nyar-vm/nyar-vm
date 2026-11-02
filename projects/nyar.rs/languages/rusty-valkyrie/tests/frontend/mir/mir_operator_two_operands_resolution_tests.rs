@@ -168,10 +168,56 @@ micro plain(): usize {
     return 0
 }
 
+[host_contract]
+micro get<T>(array: [T], index: usize): T
+
+[host_contract]
+micro set<T>(array: [T], index: usize, value: T): unit
+
 namespace std.types;
 
 micro panic<T>(msg: T): void {
     raise msg
+}
+
+namespace std.operator;
+
+trait Cardinal {
+    type Element;
+
+    suffix `⁅ ⁆`(self, offset: usize): Element
+
+    suffix `⁅ ⁆=`(mut self, offset: usize, value: Element)
+}
+
+namespace std.collection;
+
+class Nums<T> {
+    _items: [T]
+}
+
+imply Nums<T> {
+    micro length(self): usize {
+        return 0
+    }
+}
+
+imply Nums<T>: std::operator::Cardinal {
+    type Element = T;
+
+    suffix `⁅ ⁆`(self, offset: usize): T {
+        if offset >= self.length() {
+            std::types::panic("Cardinal ⁅ ⁆ 越界：offset 超出元素个数")
+        }
+        return std::collection::array::get(self._items, offset)
+    }
+
+    suffix `⁅ ⁆=`(mut self, offset: usize, value: T): unit {
+        if offset >= self.length() {
+            std::types::panic("Cardinal ⁅ ⁆= 越界：offset 超出元素个数")
+        }
+        std::collection::array::set(self._items, offset, value)
+    }
 }
 "#;
 
@@ -205,6 +251,14 @@ micro usize_eq(lhs: usize, rhs: usize): bool
 [host_provider(std::primitive::__bool_not)]
 [ovm("i32_eqz")]
 micro bool_not(x: bool): bool
+
+[host_provider(std::collection::array::get)]
+[ovm("array_get")]
+micro array_host_get<T>(array: [T], index: usize): T
+
+[host_provider(std::collection::array::set)]
+[ovm("array_set")]
+micro array_host_set<T>(array: [T], index: usize, value: T): unit
 "#;
 
 fn provider_bindings() -> Vec<rusty_valkyrie::compiler::emitter::pipeline::CompilerHostProviderBinding> {
@@ -219,6 +273,16 @@ fn provider_bindings() -> Vec<rusty_valkyrie::compiler::emitter::pipeline::Compi
             required_capabilities: vec![],
             foreign_bindings: vec![],
         })
+        .chain(
+            [("get", "array_host_get"), ("set", "array_host_set")].into_iter().map(|(contract, provider)| {
+                rusty_valkyrie::compiler::emitter::pipeline::CompilerHostProviderBinding {
+                    contract: micro_declaration_key("core", "core.v", &["std".to_owned(), "collection".to_owned(), "array".to_owned()], contract),
+                    provider: micro_declaration_key("adaptor", "adaptor.v", &adaptor_ns, provider),
+                    required_capabilities: vec![],
+                    foreign_bindings: vec![],
+                }
+            }),
+        )
         .collect()
 }
 
@@ -576,4 +640,63 @@ micro boom() -> usize {
 "#;
     let error = compile(app).expect_err("`panic` 独占函数体与声明返回类型不一致必须结构化失败");
     assert!(error.contains("SMIR007"), "expected SMIR007 return mismatch, got: {error}");
+}
+
+/// D12''：`Cardinal` trait 实现的 `⁅ ⁆` 经 `[host_contract]` 泛型 `get` 委托时，
+/// 索引读取必须解析到具体实例，`let` 初始化类型与声明标注一致。
+#[test]
+fn cardinal_index_over_host_contract_get_compiles() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro first(nums: Nums<usize>) -> usize {
+    let x: usize = nums⁅0⁆
+    return x
+}
+"#;
+    compile(app).expect("`⁅ ⁆` 经 host contract `get` 的索引读取必须编译");
+}
+
+/// D12''：元素类型是 `Option<T>` 时，索引结果链上调用 `unwrap` 必须解析。
+#[test]
+fn cardinal_index_result_unwraps_when_element_is_option() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro first(nums: Nums<Option<usize>>) -> usize {
+    return nums⁅0⁆.unwrap()
+}
+"#;
+    compile(app).expect("`Option<T>` 元素的 `⁅ ⁆` 结果必须能链上 `unwrap`");
+}
+
+/// D12''：`⁅ ⁆=` 索引写入经 `[host_contract]` 泛型 `set` 委托时必须解析到具体实例。
+#[test]
+fn cardinal_index_assign_over_host_contract_set_compiles() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro swap(mut nums: Nums<usize>) -> unit {
+    nums⁅0⁆ = nums⁅1⁆
+}
+"#;
+    compile(app).expect("`⁅ ⁆=` 经 host contract `set` 的索引写入必须编译");
+}
+
+/// D12'' 反例：元素类型不是 `Option` 时索引结果上的 `unwrap` 必须结构化失败。
+#[test]
+fn cardinal_index_unwrap_on_plain_element_fails() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro first(nums: Nums<usize>) -> usize {
+    return nums⁅0⁆.unwrap()
+}
+"#;
+    let error = compile(app).expect_err("非 `Option` 元素上的 `unwrap` 必须结构化失败");
+    assert!(error.contains("unresolved call"), "expected unresolved call, got: {error}");
 }
