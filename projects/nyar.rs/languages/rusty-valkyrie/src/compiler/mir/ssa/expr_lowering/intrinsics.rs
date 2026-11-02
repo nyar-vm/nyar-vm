@@ -45,7 +45,8 @@ impl MirBuilder {
     /// ??????sum declaration ItemId ??????????? `Named`??
     pub(crate) fn sum_apply_type(&self, declaration: nyar_types::ItemId, type_args: &[ValkyrieType]) -> Option<ValkyrieType> {
         let _ = crate::compiler::mir::ssa::MirSumDeclaration::find_by_declaration(&self.sum_types, declaration)?;
-        Some(ValkyrieType::Nominal { declaration, arguments: type_args.to_vec() })
+        // sum 声明（枚举）不是 `[primitive]` 声明，没有自举身份。
+        Some(ValkyrieType::Nominal { declaration, arguments: type_args.to_vec(), primitive_identity: None })
     }
 
     /// 仅从 impl 实参或 sum declaration 的 Generic binder 补全 Result 类型参数；禁止发明 `Named(T/E)`。

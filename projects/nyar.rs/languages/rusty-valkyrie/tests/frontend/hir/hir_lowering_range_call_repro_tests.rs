@@ -30,7 +30,8 @@ fn assert_nominal_return(hir: &HirModule, function_name: &str, owner_name: &str)
         .unwrap_or_else(|| panic!("缺少函数 `{function_name}`"));
     assert_eq!(
         function.return_type,
-        ValkyrieType::Nominal { declaration, arguments: Vec::new() },
+        // 期望身份随夹具声明自身的注解而定。
+        ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: owner.primitive_identity.clone() },
         "`{function_name}` 返回类型须是 Nominal{{ItemId}}，不得残留 Named/限定名字符串"
     );
 }
@@ -314,7 +315,7 @@ micro inspect(value: Carrier::Payload): unit {
             assert_eq!(associated.name.as_str(), "Payload");
             assert_eq!(
                 associated.base,
-                ValkyrieType::Nominal { declaration: carrier_decl, arguments: Vec::new() },
+                ValkyrieType::Nominal { declaration: carrier_decl, arguments: Vec::new(), primitive_identity: carrier.primitive_identity.clone() },
                 "Associated.base 须是 Nominal{{Carrier}}，不得残留 Named，got {:?}",
                 associated.base
             );

@@ -250,6 +250,8 @@ pub struct MirStruct {
     pub is_value_type: bool,
     /// 已冻结的父类型声明身份；禁止再用短名索引继承链。
     pub parent_declarations: Vec<nyar_types::ItemId>,
+    /// 声明携带的 `[primitive("…")]` 自举身份（规范身份，不是短名）；自 `HirStruct` 透传。
+    pub primitive_identity: Option<Box<str>>,
 }
 
 impl MirStruct {
@@ -267,7 +269,7 @@ impl MirStruct {
     /// 按 `owner` 的泛型实参代入后返回字段类型；`owner` 或字段不匹配时返回 `None`。
     pub fn instantiate_field(&self, owner: &ValkyrieType, field: &str) -> Option<ValkyrieType> {
         let (declaration, arguments) = match owner {
-            ValkyrieType::Nominal { declaration, arguments } => (*declaration, arguments.as_slice()),
+            ValkyrieType::Nominal { declaration, arguments, .. } => (*declaration, arguments.as_slice()),
             _ => return None,
         };
         if self.declaration != Some(declaration) || arguments.len() != self.generics.len() {
@@ -308,7 +310,8 @@ impl MirStruct {
             return Some(ty);
         }
         let inherited = structure.parent_declarations.iter().find_map(|parent| {
-            let parent_owner = ValkyrieType::Nominal { declaration: *parent, arguments: Vec::new() };
+            // 仅作字段查找的声明键使用，不进入类型事实；查找只读 declaration。
+            let parent_owner = ValkyrieType::Nominal { declaration: *parent, arguments: Vec::new(), primitive_identity: None };
             Self::lookup_field_type(declarations, &parent_owner, field_name, visiting)
         });
         visiting.remove(&declaration);

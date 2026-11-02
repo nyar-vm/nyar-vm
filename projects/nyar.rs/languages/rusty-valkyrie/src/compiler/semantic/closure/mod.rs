@@ -162,6 +162,7 @@ mod primitive_identity;
 mod retain;
 
 pub use primitive_identity::{PrimitiveIdentity, PrimitiveIdentityTable};
+pub(crate) use primitive_identity::primitive_annotation_identity;
 
 pub(crate) use collect::imply_owner_name;
 pub(crate) use index_file::name_path_segments;

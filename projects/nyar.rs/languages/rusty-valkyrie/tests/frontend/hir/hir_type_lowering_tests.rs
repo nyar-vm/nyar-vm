@@ -231,16 +231,30 @@ micro index(n: usize) -> usize {
     for param in &add.params {
         assert_eq!(
             param.ty,
-            ValkyrieType::Nominal { declaration: i32_declaration, arguments: vec![] },
+            ValkyrieType::Nominal {
+                declaration: i32_declaration,
+                arguments: vec![],
+                // 绑定期把声明注解的身份冻结到引用点。
+                primitive_identity: Some(Box::from("std::primitive::i32")),
+            },
             "形参类型必须是 `i32` 声明身份，不得是同名的低层 carrier"
         );
     }
-    assert_eq!(add.return_type, ValkyrieType::Nominal { declaration: i32_declaration, arguments: vec![] });
+    assert_eq!(
+        add.return_type,
+        ValkyrieType::Nominal { declaration: i32_declaration, arguments: vec![], primitive_identity: Some(Box::from("std::primitive::i32")) }
+    );
 
     let usize_declaration = declaration_of(&hir, "usize");
     let index = hir.functions.iter().find(|function| function.name.as_str() == "index").expect("缺少 `index`");
-    assert_eq!(index.params[0].ty, ValkyrieType::Nominal { declaration: usize_declaration, arguments: vec![] });
-    assert_eq!(index.return_type, ValkyrieType::Nominal { declaration: usize_declaration, arguments: vec![] });
+    assert_eq!(
+        index.params[0].ty,
+        ValkyrieType::Nominal { declaration: usize_declaration, arguments: vec![], primitive_identity: Some(Box::from("std::primitive::usize")) }
+    );
+    assert_eq!(
+        index.return_type,
+        ValkyrieType::Nominal { declaration: usize_declaration, arguments: vec![], primitive_identity: Some(Box::from("std::primitive::usize")) }
+    );
 }
 
 /// 反例：没有可见声明时不得凭名字获得 carrier；HIR 只保留待绑定引用，

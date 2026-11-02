@@ -64,6 +64,12 @@ pub(crate) fn lower_attribute(attribute: &Attribute, source_id: SourceID, fallba
     Ok(HirAttribute::with_arguments(NamePath::new(vec![oak_identifier(&attribute.name)]), arguments))
 }
 
+/// 原样下降整组特性标注：不筛选、不解释语义，未知属性一并保留，
+/// 目标映射属性的形态合法性由 backend contract 阶段统一校验。
+pub(crate) fn lower_attributes(annotations: &[Attribute], source_id: SourceID, fallback_span: Range<usize>) -> Result<Vec<HirAttribute>, HirError> {
+    annotations.iter().map(|attribute| lower_attribute(attribute, source_id, fallback_span.clone())).collect()
+}
+
 pub(crate) fn lower_attribute_argument_expression(
     expr: &TermExpression,
     source_id: SourceID,
@@ -98,6 +104,11 @@ pub(crate) fn lower_visibility(annotations: &[Attribute]) -> HirVisibility {
 
 pub(crate) fn has_modifier(annotations: &[Attribute], name: &str) -> bool {
     annotations.iter().any(|attribute| attribute.name.name == name)
+}
+
+/// 统计变体声明上 `[constructor]` 的出现次数；重复标注由 AST 校验 fail-closed。
+pub(crate) fn constructor_attribute_count(annotations: &[Attribute]) -> usize {
+    annotations.iter().filter(|attribute| attribute.name.name == "constructor").count()
 }
 
 pub(crate) fn lower_derives(annotations: &[Attribute]) -> Vec<NamePath> {

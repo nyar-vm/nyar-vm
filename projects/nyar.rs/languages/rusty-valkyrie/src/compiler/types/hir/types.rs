@@ -330,6 +330,13 @@ pub enum ValkyrieType {
         declaration: nyar_types::ItemId,
         /// 类型实参列表。
         arguments: Vec<ValkyrieType>,
+        /// 声明携带的 `[primitive("…")]` 自举身份（规范身份，不是表面短名）。
+        ///
+        /// 由绑定期从声明的注解冻结写入；仅携带该注解的声明为 `Some`。
+        /// 下游的类型识别、carrier 布局与数值/字面量判定必须读这个字段，
+        /// 不得再按短名或路径字符串猜。
+        #[cfg_attr(feature = "serde", serde(default))]
+        primitive_identity: Option<Box<str>>,
     },
     /// 类型应用 `F<A, B, ...>`。
     Apply(Box<ValkyrieType>, Vec<ValkyrieType>),
@@ -390,6 +397,16 @@ impl ValkyrieType {
         }
     }
 
+    /// 声明携带的 `[primitive("…")]` 自举身份；未绑定或声明无该注解时为 `None`。
+    ///
+    /// 这是下游识别 primitive 类型的唯一事实来源：返回 `None` 时不得回退短名匹配。
+    pub fn primitive_identity(&self) -> Option<&str> {
+        match self {
+            Self::Nominal { primitive_identity, .. } => primitive_identity.as_deref(),
+            _ => None,
+        }
+    }
+
     /// 名义类型实参；非名义形状返回空切片。
     pub fn nominal_arguments(&self) -> &[ValkyrieType] {
         match self {
@@ -398,6 +415,53 @@ impl ValkyrieType {
             _ => &[],
         }
     }
+}
+
+/// 数值自举身份的形状：整数（位宽、有符号）或浮点（位宽）。
+///
+/// 这是 `[primitive("std::primitive::…")]` 身份的类型层面事实，不是 carrier 决定；
+/// carrier 由表示层按同一身份授予。`usize`/`isize` 的位宽是目标指针宽度合同。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimitiveNumericShape {
+    /// 整数形状。
+    Integer {
+        /// 位宽。
+        bits: u16,
+        /// 是否有符号。
+        signed: bool,
+    },
+    /// 浮点形状。
+    Float {
+        /// 位宽。
+        bits: u16,
+    },
+}
+
+/// 按 `[primitive]` 规范身份（`std::primitive::i32` 等，不是表面短名）给出数值形状。
+///
+/// 身份表外一律 `None`：调用方不得回退到短名匹配。数值族覆盖 std 已声明的
+/// 全部整数与浮点身份；`bool`/`unit`/`void`/`any`/`null` 不是数值。
+pub fn numeric_primitive_identity_shape(identity: &str) -> Option<PrimitiveNumericShape> {
+    use PrimitiveNumericShape::{Float, Integer};
+    Some(match identity {
+        "std::primitive::i8" => Integer { bits: 8, signed: true },
+        "std::primitive::i16" => Integer { bits: 16, signed: true },
+        "std::primitive::i32" => Integer { bits: 32, signed: true },
+        "std::primitive::i64" => Integer { bits: 64, signed: true },
+        "std::primitive::i128" => Integer { bits: 128, signed: true },
+        "std::primitive::u8" => Integer { bits: 8, signed: false },
+        "std::primitive::u16" => Integer { bits: 16, signed: false },
+        "std::primitive::u32" => Integer { bits: 32, signed: false },
+        "std::primitive::u64" => Integer { bits: 64, signed: false },
+        "std::primitive::u128" => Integer { bits: 128, signed: false },
+        // 目标指针宽度合同：本工具链的 canonical 位宽为 64。
+        "std::primitive::usize" => Integer { bits: 64, signed: false },
+        "std::primitive::isize" => Integer { bits: 64, signed: true },
+        "std::primitive::f32" => Float { bits: 32 },
+        "std::primitive::f64" => Float { bits: 64 },
+        "std::primitive::f128" => Float { bits: 128 },
+        _ => return None,
+    })
 }
 
 /// 泛型参数由所属声明和源码参数序号唯一标识，拼写只供解析与诊断。

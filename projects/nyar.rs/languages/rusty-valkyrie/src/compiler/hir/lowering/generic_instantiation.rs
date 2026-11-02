@@ -536,8 +536,8 @@ pub(crate) fn unify_instantiation(template: &ValkyrieType, concrete: &ValkyrieTy
                 }
             }
         }
-        ValkyrieType::Nominal { declaration, arguments } => match concrete {
-            ValkyrieType::Nominal { declaration: actual, arguments: actual_arguments }
+        ValkyrieType::Nominal { declaration, arguments, .. } => match concrete {
+            ValkyrieType::Nominal { declaration: actual, arguments: actual_arguments, .. }
                 if declaration == actual && arguments.len() == actual_arguments.len() =>
             {
                 arguments.iter().zip(actual_arguments).all(|(template, concrete)| unify_instantiation(template, concrete, substitution))
@@ -649,9 +649,10 @@ pub(crate) fn substitute_type(ty: &ValkyrieType, substitution: &Substitution) ->
             }
             ty.clone()
         }
-        ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
             declaration: *declaration,
             arguments: arguments.iter().map(|argument| substitute_type(argument, substitution)).collect(),
+            primitive_identity: primitive_identity.clone(),
         },
         ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(
             Box::new(substitute_type(base, substitution)),

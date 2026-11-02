@@ -100,7 +100,7 @@ fn missing_declaration_spelling_yields_structured_diagnostic() {
             id: None,
             name: Identifier::new("ghost"),
             doc: Default::default(),
-            ty: ValkyrieType::Nominal { declaration: ghost, arguments: Vec::new() },
+            ty: ValkyrieType::Nominal { declaration: ghost, arguments: Vec::new(), primitive_identity: None },
             visibility: Default::default(),
             is_mutable: false,
         }],

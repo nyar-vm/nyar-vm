@@ -242,7 +242,11 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
         }
         for structure in &module.structs {
             let namespace: Vec<String> = structure.namespace.iter().map(|part| part.as_str().to_string()).collect();
-            let owner = structure.constructor_declaration.map(|declaration| ValkyrieType::Nominal { declaration, arguments: Vec::new() });
+            let owner = structure.constructor_declaration.map(|declaration| ValkyrieType::Nominal {
+                declaration,
+                arguments: Vec::new(),
+                primitive_identity: structure.primitive_identity.clone(),
+            });
             for method in &structure.methods {
                 collect_callable_instance(
                     &mut collected,

@@ -17,8 +17,8 @@ use crate::compiler::{
     types::{
         Identifier, NamePath, SourceID,
         hir::{
-            HirAssociatedTypeImpl, HirBlock, HirCompileWarning, HirDependencySemanticExport, HirDocumentation, HirEnum, HirExpr, HirExprKind,
-            HirField, HirFlagMember, HirFlags, HirFunction, HirImpl, HirImport, HirImportBinding, HirKind, HirLiteral, HirModule, HirParam,
+            HirAssociatedTypeImpl, HirAttribute, HirBlock, HirCompileWarning, HirDependencySemanticExport, HirDocumentation, HirEnum, HirExpr,
+            HirExprKind, HirField, HirFlagMember, HirFlags, HirFunction, HirImpl, HirImport, HirImportBinding, HirKind, HirLiteral, HirModule, HirParam,
             HirParameterBindingKind, HirProperty, HirSingleton, HirStatement, HirStatementKind, HirStruct, HirTrait, HirTraitBound,
             HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant, HirVisibility, HirWhereConstraint, HirWidget, HirWidgetLifecycle,
             ValkyrieType,
@@ -417,10 +417,13 @@ impl AstToHir {
 
     fn lower_class(&self, class_decl: &ClassDeclaration, namespace: &NamePath) -> Result<HirStruct, HirError> {
         let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&class_decl.generics), &[]);
+        let span = frontend::std_range(&class_decl.span);
+        let hir_annotations = lower_attributes(&class_decl.annotations, self.source_id, span)?;
         self.lower_class_like(
             Identifier::new(&class_decl.name.name),
             namespace.parts(),
             &class_decl.annotations,
+            hir_annotations,
             &class_decl.generics,
             &class_decl.parents,
             &class_decl.body.fields,
@@ -431,10 +434,13 @@ impl AstToHir {
 
     fn lower_structure(&self, structure: &StructureDeclaration, namespace: &NamePath) -> Result<HirStruct, HirError> {
         let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&structure.generics), &[]);
+        let span = frontend::std_range(&structure.span);
+        let hir_annotations = lower_attributes(&structure.annotations, self.source_id, span)?;
         self.lower_class_like(
             Identifier::new(&structure.name.name),
             namespace.parts(),
             &structure.annotations,
+            hir_annotations,
             &structure.generics,
             &structure.parents,
             &structure.body.fields,
@@ -448,6 +454,7 @@ impl AstToHir {
         name: Identifier,
         namespace: &[Identifier],
         annotations: &[Attribute],
+        hir_annotations: Vec<HirAttribute>,
         generics: &[GenericParam],
         parents: &[Parent],
         fields: &[FieldDeclaration],
@@ -478,6 +485,10 @@ impl AstToHir {
             abstract_methods: Vec::new(),
             abstract_properties: Vec::new(),
             derives: lower_derives(annotations),
+            // `[primitive("…")]` 是自举身份的唯一来源：下降期从声明注解读出，
+            // 绑定期再冻结到引用该声明的 `ValkyrieType::Nominal` 上。
+            primitive_identity: crate::compiler::semantic::closure::primitive_annotation_identity(annotations).map(Box::from),
+            annotations: hir_annotations,
         })
     }
 
@@ -653,6 +664,7 @@ impl AstToHir {
                     fields: Vec::new(),
                     result_type: None,
                     discriminator: Some(lower_term_expression(&case.body, self.source_id, span)?),
+                    is_constructor: false,
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -816,6 +828,7 @@ impl AstToHir {
             fields: variant.fields.iter().map(lower_field).collect::<Result<Vec<_>, _>>()?,
             result_type: None,
             discriminator,
+            is_constructor: constructor_attribute_count(&variant.annotations) == 1,
         })
     }
 

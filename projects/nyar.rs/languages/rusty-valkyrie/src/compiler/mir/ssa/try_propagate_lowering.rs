@@ -203,7 +203,10 @@ impl MirBuilder {
         }
         let fields = structure.fields.iter().map(|field| field.id).zip(struct_fields.into_iter().map(|(_, value)| value)).collect::<Vec<_>>();
         self.instructions.push(MirInstruction::from_operation(MirOperation::StructNew { nominal, fields }));
-        self.value_types.insert(value, ValkyrieType::Nominal { declaration, arguments: Vec::new() });
+        self.value_types.insert(
+            value,
+            ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: structure.primitive_identity.clone() },
+        );
         MirOperand::Value(value)
     }
 }

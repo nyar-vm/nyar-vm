@@ -1,6 +1,6 @@
 //! Struct, parent, and field definitions for HIR.
 
-use super::{HirDocumentation, HirFunction, HirProperty, HirVisibility, ValkyrieType};
+use super::{HirAttribute, HirDocumentation, HirFunction, HirProperty, HirVisibility, ValkyrieType};
 use crate::compiler::types::{Identifier, NamePath};
 
 /// A parent class with optional alias for renamed inheritance.
@@ -209,6 +209,19 @@ pub struct HirStruct {
     /// during the HIR lowering phase. The actual trait implementations
     /// are generated during compilation.
     pub derives: Vec<NamePath>,
+    /// 声明携带的 `[primitive("…")]` 自举身份（规范身份，不是短名）。
+    ///
+    /// 由 HIR 下降期从声明注解读出；绑定期把它冻结到引用该声明的
+    /// [`crate::compiler::types::hir::ValkyrieType::Nominal`] 上。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub primitive_identity: Option<Box<str>>,
+    /// 声明级特性注解（如 `[jvm("…")]` / `[clr("…", "…")]` / `[js("…")]` 目标类型映射）。
+    ///
+    /// 函数级注解承载调用约定（`ExternalImportLink`），类型级注解承载**类型身份**，
+    /// 两者粒度不同、互不替代。未知注解原样保留，目标映射属性的形态合法性由
+    /// backend contract 阶段校验，此处不做语义解释。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub annotations: Vec<HirAttribute>,
 }
 
 impl HirStruct {

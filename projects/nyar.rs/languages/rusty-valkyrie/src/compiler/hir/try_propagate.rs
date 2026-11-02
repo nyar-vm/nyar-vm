@@ -82,7 +82,7 @@ pub fn classify_try_operand(operand_type: &ValkyrieType, module: &HirModule) -> 
         return Some(TryPropagateKind::Nullable(payload));
     }
     match operand_type {
-        ValkyrieType::Nominal { declaration, arguments } => classify_unity_try_operand(*declaration, arguments, module),
+        ValkyrieType::Nominal { declaration, arguments, .. } => classify_unity_try_operand(*declaration, arguments, module),
         ValkyrieType::Apply(base, arguments) => match base.as_ref() {
             ValkyrieType::Nominal { declaration, .. } => classify_unity_try_operand(*declaration, arguments, module),
             _ => None,

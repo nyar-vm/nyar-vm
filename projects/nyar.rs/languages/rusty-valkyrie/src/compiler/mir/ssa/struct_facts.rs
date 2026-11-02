@@ -69,6 +69,7 @@ pub(super) fn lower_struct(
         fields,
         is_value_type: hir_struct.is_value_type,
         parent_declarations: resolve_parent_declarations(module, &hir_struct.parents),
+        primitive_identity: hir_struct.primitive_identity.clone(),
     }
 }
 
@@ -112,6 +113,7 @@ pub(super) fn collect_field_declarations(module: &HirModule, diagnostics: &mut V
                 fields,
                 is_value_type: false,
                 parent_declarations: Vec::new(),
+                primitive_identity: None,
             });
             *next_nominal += 1;
         }
@@ -137,9 +139,10 @@ pub(super) fn resolve_self_type_with_owner(ty: &ValkyrieType, owner: Option<&Val
     match (ty, owner) {
         (ValkyrieType::SelfType, Some(owner)) => owner.clone(),
         (ValkyrieType::Named(name), Some(owner)) if name.as_str() == "Self" => owner.clone(),
-        (ValkyrieType::Nominal { declaration, arguments }, _) => ValkyrieType::Nominal {
+        (ValkyrieType::Nominal { declaration, arguments, primitive_identity }, _) => ValkyrieType::Nominal {
             declaration: *declaration,
             arguments: arguments.iter().map(|arg| resolve_self_type_with_owner(arg, owner)).collect(),
+            primitive_identity: primitive_identity.clone(),
         },
         (ValkyrieType::Array(inner), _) => ValkyrieType::Array(Box::new(resolve_self_type_with_owner(inner, owner))),
         (ValkyrieType::FixedArray { element, length }, _) => {

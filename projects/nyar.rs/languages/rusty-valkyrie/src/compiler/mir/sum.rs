@@ -72,7 +72,8 @@ impl MirSumDeclaration {
             return Some(crate::compiler::hir::overload::substitute_type_vars(result, &substitutions));
         }
         let declaration = self.declaration?;
-        Some(ValkyrieType::Nominal { declaration, arguments: arguments.to_vec() })
+        // sum（枚举）不是 `[primitive]` 声明，没有自举身份。
+        Some(ValkyrieType::Nominal { declaration, arguments: arguments.to_vec(), primitive_identity: None })
     }
     /// 只按声明 binder 代入，不依据 variant 拼写选择实参位置。
     pub fn instantiate_payload(&self, variant: &MirSumVariant, arguments: &[ValkyrieType]) -> Option<Option<ValkyrieType>> {

@@ -139,7 +139,11 @@ pub fn type_identity_table(
 
     /// 聚合声明的规范类型键：已绑定 ItemId 的无参 Nominal。
     fn aggregate_type_key(structure: &MirStruct) -> Option<ValkyrieType> {
-        structure.declaration.map(|declaration| ValkyrieType::Nominal { declaration, arguments: Vec::new() })
+        structure.declaration.map(|declaration| ValkyrieType::Nominal {
+            declaration,
+            arguments: Vec::new(),
+            primitive_identity: structure.primitive_identity.clone(),
+        })
     }
 
     /// 从单条 MIR 指令中提取所有携带的 ValkyrieType 字段，递归收集。
@@ -220,7 +224,8 @@ pub fn type_identity_table(
     }
     for sum in sums {
         if let Some(declaration) = sum.declaration {
-            collect(&mut types, &ValkyrieType::Nominal { declaration, arguments: Vec::new() }, true);
+            // sum（枚举）不是 `[primitive]` 声明，没有自举身份。
+            collect(&mut types, &ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: None }, true);
         }
         for variant in &sum.variants {
             for field in &variant.fields {

@@ -250,7 +250,11 @@ fn register_declaration_spellings(
         else {
             continue;
         };
-        let id = type_id(type_values, &ValkyrieType::Nominal { declaration, arguments: Vec::new() })?;
+        let id = type_id(type_values, &ValkyrieType::Nominal {
+            declaration,
+            arguments: Vec::new(),
+            primitive_identity: aggregate.primitive_identity.clone(),
+        })?;
         let spelling = canonical_surface_spelling(&aggregate.qualified_name());
         item_spellings.insert(declaration, spelling.clone());
         spellings.insert(id, Identifier::new(&spelling));
@@ -260,7 +264,7 @@ fn register_declaration_spellings(
         else {
             continue;
         };
-        let id = type_id(type_values, &ValkyrieType::Nominal { declaration, arguments: Vec::new() })?;
+        let id = type_id(type_values, &ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: None })?;
         item_spellings.insert(declaration, sum.name.clone());
         spellings.insert(id, Identifier::new(&sum.name));
     }

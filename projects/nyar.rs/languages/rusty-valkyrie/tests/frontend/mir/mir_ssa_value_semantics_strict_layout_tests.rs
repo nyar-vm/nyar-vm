@@ -48,12 +48,12 @@ fn storage_kind_keys_value_by_declaration_not_named() {
         MirStorageKind::Reference
     );
     assert_eq!(
-        storage_kind_for_type(&ValkyrieType::Nominal { declaration: point, arguments: Vec::new() }, &value_declarations),
+        storage_kind_for_type(&ValkyrieType::Nominal { declaration: point, arguments: Vec::new(), primitive_identity: None }, &value_declarations),
         MirStorageKind::Value
     );
     assert_eq!(
         storage_kind_for_type(
-            &ValkyrieType::Nominal { declaration: nyar_types::ItemId::from_index(2).expect("test ItemId"), arguments: Vec::new() },
+            &ValkyrieType::Nominal { declaration: nyar_types::ItemId::from_index(2).expect("test ItemId"), arguments: Vec::new(), primitive_identity: None },
             &value_declarations
         ),
         MirStorageKind::Reference

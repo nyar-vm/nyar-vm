@@ -67,6 +67,7 @@ fn collect_module_dispatch(module: &HirModule, entries: &mut Vec<MirDispatchEntr
         let target = ValkyrieType::Nominal {
             declaration,
             arguments: structure.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect(),
+            primitive_identity: structure.primitive_identity.clone(),
         };
         for method in &structure.methods {
             let Some(instance) = method.instance
@@ -129,9 +130,10 @@ pub(crate) fn type_instantiates_generic_signature(template: &ValkyrieType, concr
 pub(crate) fn apply_type_substitution(ty: &ValkyrieType, substitutions: &BTreeMap<GenericBinderId, ValkyrieType>) -> ValkyrieType {
     match ty {
         ValkyrieType::Generic(generic) => generic.binder.and_then(|binder| substitutions.get(&binder)).cloned().unwrap_or_else(|| ty.clone()),
-        ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
             declaration: *declaration,
             arguments: arguments.iter().map(|argument| apply_type_substitution(argument, substitutions)).collect(),
+            primitive_identity: primitive_identity.clone(),
         },
         ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(
             Box::new(apply_type_substitution(base, substitutions)),
@@ -165,8 +167,8 @@ pub(crate) fn unify_generic_instantiation(
     match (template, concrete) {
         (left, right) if left == right => true,
         (
-            ValkyrieType::Nominal { declaration: template_decl, arguments: template_args },
-            ValkyrieType::Nominal { declaration: concrete_decl, arguments: concrete_args },
+            ValkyrieType::Nominal { declaration: template_decl, arguments: template_args, .. },
+            ValkyrieType::Nominal { declaration: concrete_decl, arguments: concrete_args, .. },
         ) => {
             template_decl == concrete_decl
                 && template_args.len() == concrete_args.len()

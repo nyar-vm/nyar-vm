@@ -8,7 +8,7 @@ use nyar_types::{
 use crate::compiler::{
     emitter::frontend_contract::concretize_type,
     mir::{MirModule, instance_layout_for_type, instantiate_fields},
-    types::hir::ValkyrieType,
+    types::hir::{PrimitiveNumericShape, ValkyrieType, numeric_primitive_identity_shape},
 };
 
 use super::errors::{error, error_without_module, type_id};
@@ -35,7 +35,7 @@ pub(crate) fn collect_aggregate_identities(
             if aggregate.namespace.is_empty() { aggregate.name.clone() } else { format!("{}.{}", aggregate.namespace, aggregate.name) };
         let item =
             aggregate.declaration.ok_or_else(|| error_without_module("CAN018", format!("聚合 `{qualified}` 缺少 declaration ItemId")))?;
-        let ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
+        let ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new(), primitive_identity: aggregate.primitive_identity.clone() };
         let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("聚合 `{qualified}` 缺少类型事实")))?;
         let nominal = aggregate.nominal;
         // 值语义事实由上游 `structure`/`class` 关键字冻结：`structure` 是值类型，`class` 是引用类型。
@@ -59,7 +59,7 @@ pub(crate) fn collect_aggregate_identities(
     }
     for sum in &module.sum_types {
         let item = sum.declaration.ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少 declaration ItemId", sum.name)))?;
-        let ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
+        let ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new(), primitive_identity: None };
         let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少类型事实", sum.name)))?;
         // 值语义事实由前端声明冻结：enum/unite 默认就是值类型（Value），与 structure 相同。
         let semantics = if sum.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
@@ -113,7 +113,7 @@ pub(crate) fn register_aggregate_nominal_instances(
         else {
             continue;
         };
-        let declared = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
+        let declared = ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: structure.primitive_identity.clone() };
         let declaration_type = type_id(type_values, &declared)?;
         let Some(nominal) = declaration_nominals.get(&declaration_type).copied()
         else {
@@ -135,7 +135,7 @@ pub(crate) fn register_aggregate_nominal_instances(
             semantics
         };
         for (concrete, concrete_type) in type_values {
-            let ValkyrieType::Nominal { declaration: instance_declaration, arguments } = concrete
+            let ValkyrieType::Nominal { declaration: instance_declaration, arguments, .. } = concrete
             else {
                 continue;
             };
@@ -222,7 +222,7 @@ pub(crate) fn intern_instance_field_types(
                 continue;
             }
             for concrete in &snapshot {
-                let ValkyrieType::Nominal { declaration: instance_declaration, arguments } = concrete
+                let ValkyrieType::Nominal { declaration: instance_declaration, arguments, .. } = concrete
                 else {
                     continue;
                 };
@@ -265,7 +265,7 @@ pub(crate) fn ensure_declaration_aggregate_types(
         else {
             continue;
         };
-        let ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
+        let ty = ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: aggregate.primitive_identity.clone() };
         if type_values.contains_key(&ty) {
             continue;
         }
@@ -276,7 +276,7 @@ pub(crate) fn ensure_declaration_aggregate_types(
         else {
             continue;
         };
-        let ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
+        let ty = ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: None };
         if type_values.contains_key(&ty) {
             continue;
         }
@@ -364,11 +364,14 @@ pub(crate) fn is_array_index_valkyrie_type(ty: &ValkyrieType, module: &MirModule
         | ValkyrieType::Integer64 { .. }
         | ValkyrieType::Integer128 { .. } => true,
         ValkyrieType::Named(name) => is_array_index_surface_name(name.as_str()),
-        ValkyrieType::Nominal { declaration, arguments } if arguments.is_empty() => module
-            .structs
-            .iter()
-            .find(|item| item.declaration == Some(*declaration))
-            .is_some_and(|item| is_array_index_surface_name(item.name.as_str())),
+        // 身份驱动：数组下标只认声明携带的 `[primitive]` 整数身份。
+        // 类型自身缺身份时回查声明侧 `MirStruct`（同一注解事实），禁止按名字认。
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.is_empty() => {
+            let identity = primitive_identity.as_deref().or_else(|| {
+                module.structs.iter().find(|item| item.declaration == Some(*declaration)).and_then(|item| item.primitive_identity.as_deref())
+            });
+            identity.and_then(numeric_primitive_identity_shape).is_some_and(|shape| matches!(shape, PrimitiveNumericShape::Integer { .. }))
+        }
         _ => false,
     }
 }
@@ -437,8 +440,8 @@ pub(crate) fn canonical_type_kind(
         ValkyrieType::Character => CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Character),
         ValkyrieType::Utf8 => CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Utf8),
         ValkyrieType::Utf16 => CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Utf16),
-        ValkyrieType::Nominal { declaration: item, arguments } => {
-            let declaration_ty = ValkyrieType::Nominal { declaration: *item, arguments: Vec::new() };
+        ValkyrieType::Nominal { declaration: item, arguments, primitive_identity } => {
+            let declaration_ty = ValkyrieType::Nominal { declaration: *item, arguments: Vec::new(), primitive_identity: primitive_identity.clone() };
             let declaration = type_id(ids, &declaration_ty)?;
             CanonicalTypeKind::Nominal { declaration, arguments: arguments.iter().map(id).collect::<Result<_, _>>()? }
         }
@@ -493,7 +496,7 @@ pub(crate) fn register_sum_nominal_instances(
     let mut next_nominal = nominals.keys().map(|id| id.index()).max().map(|index| index + 1).unwrap_or(0);
     for sum in &module.sum_types {
         let item = sum.declaration.ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少 declaration ItemId", sum.name)))?;
-        let declaration_ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
+        let declaration_ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new(), primitive_identity: None };
         let declaration = type_id(type_values, &declaration_ty)?;
         // 值语义事实已由 collect_aggregate_identities 从 sum 声明登记进 nominals map。
         let existing_semantics = nominals
@@ -515,7 +518,7 @@ pub(crate) fn register_sum_nominal_instances(
         by_type.insert(declaration, sum.nominal);
     }
     for (ty, concrete_ty) in type_values {
-        let ValkyrieType::Nominal { declaration: item, arguments } = ty
+        let ValkyrieType::Nominal { declaration: item, arguments, .. } = ty
         else {
             continue;
         };
@@ -528,7 +531,7 @@ pub(crate) fn register_sum_nominal_instances(
             // `register_aggregate_nominal_instances` 单独登记；这里不复制第二份事实。
             continue;
         };
-        let declaration = type_id(type_values, &ValkyrieType::Nominal { declaration: *item, arguments: Vec::new() })?;
+        let declaration = type_id(type_values, &ValkyrieType::Nominal { declaration: *item, arguments: Vec::new(), primitive_identity: None })?;
         let nominal =
             NominalInstanceId::from_index(next_nominal).ok_or_else(|| error_without_module("CAN020", "sum instance identity 溢出"))?;
         next_nominal = next_nominal.checked_add(1).ok_or_else(|| error_without_module("CAN020", "sum instance identity 溢出"))?;
@@ -587,11 +590,12 @@ fn sum_payload_layout(
     if let Ok(concrete) = concretize_type(ty) {
         return Some(concrete);
     }
-    let ValkyrieType::Nominal { declaration, arguments } = ty
+    let ValkyrieType::Nominal { declaration, arguments, primitive_identity } = ty
     else {
         return None;
     };
-    let declaration_id = type_values.get(&ValkyrieType::Nominal { declaration: *declaration, arguments: Vec::new() })?;
+    let declaration_id =
+        type_values.get(&ValkyrieType::Nominal { declaration: *declaration, arguments: Vec::new(), primitive_identity: primitive_identity.clone() })?;
     let spelling = declaration_spellings.get(declaration_id)?;
     let layout =
         nyar_types::NyarType::from_surface_primitive(spelling.as_str()).unwrap_or_else(|| nyar_types::NyarType::Named(spelling.clone()));

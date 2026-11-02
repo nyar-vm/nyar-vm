@@ -166,7 +166,7 @@ pub(crate) fn sum_new_parts_from_constructor(
     let sum = sum_types.iter().find(|item| item.declaration == Some(owner))?;
     let variant = sum.variants.iter().find(|item| item.declaration == Some(variant_declaration))?;
     let (sum_type, type_args) = match &call.return_type {
-        ValkyrieType::Nominal { declaration, arguments } if Some(*declaration) == sum.declaration => (sum.name.clone(), arguments.clone()),
+        ValkyrieType::Nominal { declaration, arguments, .. } if Some(*declaration) == sum.declaration => (sum.name.clone(), arguments.clone()),
         _ => return None,
     };
     if call.return_type.nominal_declaration() != sum.declaration {
@@ -200,8 +200,12 @@ pub(crate) fn refine_auto_sum_instantiation_args(type_args: &[ValkyrieType], pay
 
 pub(crate) fn refine_auto_apply_type(ty: &ValkyrieType, payload_type: Option<&ValkyrieType>) -> ValkyrieType {
     match ty {
-        ValkyrieType::Nominal { declaration, arguments } if arguments.iter().any(|arg| matches!(arg, ValkyrieType::AutoType)) => {
-            ValkyrieType::Nominal { declaration: *declaration, arguments: refine_auto_sum_instantiation_args(arguments, payload_type) }
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.iter().any(|arg| matches!(arg, ValkyrieType::AutoType)) => {
+            ValkyrieType::Nominal {
+                declaration: *declaration,
+                arguments: refine_auto_sum_instantiation_args(arguments, payload_type),
+                primitive_identity: primitive_identity.clone(),
+            }
         }
         ValkyrieType::Apply(base, args) if args.iter().any(|arg| matches!(arg, ValkyrieType::AutoType)) => {
             ValkyrieType::Apply(base.clone(), refine_auto_sum_instantiation_args(args, payload_type))

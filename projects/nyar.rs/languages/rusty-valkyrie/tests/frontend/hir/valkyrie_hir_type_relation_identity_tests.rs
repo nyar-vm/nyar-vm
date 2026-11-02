@@ -25,7 +25,11 @@ fn unresolved_name_cannot_match_a_bound_nominal_declaration() {
     let hir = rusty_valkyrie::ValkyrieCompiler::default().compile_source("structure Record { value: i32 }").expect("结构声明解析");
     let context = TypeRelationContext::from_module(&hir);
     let item = hir.structs.first().expect("结构声明");
-    let nominal = ValkyrieType::Nominal { declaration: item.constructor_declaration.expect("冻结声明身份"), arguments: vec![] };
+    let nominal = ValkyrieType::Nominal {
+        declaration: item.constructor_declaration.expect("冻结声明身份"),
+        arguments: vec![],
+        primitive_identity: item.primitive_identity.clone(),
+    };
     let unresolved = ValkyrieType::Named(item.name.clone());
     assert!(matches!(context.match_parameter(&nominal, &unresolved), ParameterMatchResult::NoMatch { .. }));
     assert!(matches!(context.match_parameter(&unresolved, &nominal), ParameterMatchResult::NoMatch { .. }));

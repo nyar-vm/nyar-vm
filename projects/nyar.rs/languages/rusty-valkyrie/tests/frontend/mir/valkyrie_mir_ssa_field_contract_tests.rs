@@ -27,7 +27,8 @@ fn source_module() -> MirModule {
 
 fn parcel_nominal(module: &MirModule, arguments: Vec<ValkyrieType>) -> ValkyrieType {
     let declaration = module.structs[0].declaration.expect("Parcel 须冻结 constructor_declaration");
-    ValkyrieType::Nominal { declaration, arguments }
+    // 夹具聚合没有 `[primitive]` 注解，无自举身份。
+    ValkyrieType::Nominal { declaration, arguments, primitive_identity: None }
 }
 
 fn field_id(module: &MirModule, name: &str) -> nyar_types::FieldId {
@@ -125,7 +126,7 @@ fn declared_fields_instantiate_function_fixed_array_and_self_without_layout() {
     let first = declaration.fields[0].ty.clone();
     let second = declaration.fields[1].ty.clone();
     let item = declaration.declaration.expect("Parcel declaration");
-    let owner = ValkyrieType::Nominal { declaration: item, arguments: vec![ValkyrieType::Boolean, ValkyrieType::Utf8] };
+    let owner = ValkyrieType::Nominal { declaration: item, arguments: vec![ValkyrieType::Boolean, ValkyrieType::Utf8], primitive_identity: None };
     declaration.fields[0].ty = ValkyrieType::Function(Box::new(FunctionType { params: vec![first], return_type: second.clone() }));
     assert_eq!(
         declaration.instantiate_field(&owner, "head"),
@@ -156,13 +157,13 @@ fn source_field_declarations_bind_by_item_id_and_reject_named_owners() {
     assert_ne!(first_id, second_id, "同编译单元内不同声明必须有不同 ItemId");
     for declaration in &declarations {
         let item = declaration.declaration.expect("Item 须冻结 declaration");
-        let owner = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
+        let owner = ValkyrieType::Nominal { declaration: item, arguments: Vec::new(), primitive_identity: None };
         assert_eq!(declaration.instantiate_field(&owner, "value"), Some(ValkyrieType::Boolean));
         // Named 短名/限定名都不是 owner 身份。
         assert_eq!(declaration.instantiate_field(&ValkyrieType::Named(Identifier::new("Item")), "value"), None);
         assert_eq!(declaration.instantiate_field(&ValkyrieType::Named(Identifier::new(&declaration.qualified_name())), "value"), None);
     }
-    let owner = ValkyrieType::Nominal { declaration: second_id, arguments: Vec::new() };
+    let owner = ValkyrieType::Nominal { declaration: second_id, arguments: Vec::new(), primitive_identity: None };
     assert_eq!(declarations[0].instantiate_field(&owner, "value"), None);
 }
 
@@ -195,11 +196,11 @@ fn sum_param_binds_declaration_identity_through_canonical() {
     let mir = ValkyrieCompiler::default().compile_source_to_mir(source).expect("Semantic MIR");
     let sum = mir.sum_types.iter().find(|item| item.name == "Envelope").expect("Envelope");
     let item = sum.declaration.expect("Envelope declaration ItemId");
-    let expected = ValkyrieType::Nominal { declaration: item, arguments: vec![ValkyrieType::Utf8] };
+    let expected = ValkyrieType::Nominal { declaration: item, arguments: vec![ValkyrieType::Utf8], primitive_identity: None };
     let function = mir.functions.iter().find(|f| f.display_symbol.contains("identity")).expect("identity");
     assert_eq!(function.param_types[0], expected, "sum 参数须是 Nominal{{ItemId}}，不得残留 Named/Apply(Named)");
     assert_eq!(function.return_type, expected, "sum 返回类型须与参数共享同一 Nominal 声明");
-    let monomorphic = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
+    let monomorphic = ValkyrieType::Nominal { declaration: item, arguments: Vec::new(), primitive_identity: None };
     assert!(mir.type_identities.contains_key(&monomorphic), "sum 声明键须进入 type identity 表");
     assert!(mir.type_identities.contains_key(&expected), "具体 sum 实例须进入 type identity 表");
     assert!(!mir.type_identities.contains_key(&ValkyrieType::Named(Identifier::new("Envelope"))));
@@ -216,7 +217,7 @@ fn option_sum_construct_binds_declaration_identity_without_short_name() {
     let mir = ValkyrieCompiler::default().compile_source_to_mir(source).unwrap_or_else(|err| panic!("Option sum 源码失败: {err:?}"));
     let option = mir.sum_types.iter().find(|item| item.name.contains("Option")).expect("Option");
     let item = option.declaration.expect("Option declaration");
-    let expected = ValkyrieType::Nominal { declaration: item, arguments: vec![ValkyrieType::Utf8] };
+    let expected = ValkyrieType::Nominal { declaration: item, arguments: vec![ValkyrieType::Utf8], primitive_identity: None };
     let wrap = mir.functions.iter().find(|f| f.display_symbol.contains("wrap")).expect("wrap");
     assert_eq!(wrap.return_type, expected, "Option 返回须是 Nominal{{ItemId}}");
     let identity = mir.functions.iter().find(|f| f.display_symbol.contains("identity")).expect("identity");
@@ -236,7 +237,7 @@ fn namespaced_struct_param_binds_declaration_identity_through_canonical() {
     let mir = ValkyrieCompiler::default().compile_source_to_mir(source).expect("Semantic MIR");
     let structure = mir.structs.iter().find(|item| item.name == "TextSpan").expect("TextSpan");
     let item = structure.declaration.expect("TextSpan declaration ItemId");
-    let declaration_ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
+    let declaration_ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new(), primitive_identity: None };
     let declaration_id = mir.type_identities.get(&declaration_ty).copied().expect("Nominal 声明键须进入 type identity 表");
     let param_ty = mir.functions.iter().find(|f| f.display_symbol.contains("as_start")).expect("as_start").param_types[0].clone();
     assert_eq!(param_ty, declaration_ty, "参数须是已绑定 ItemId 的 Nominal，不得残留 Named 短名");

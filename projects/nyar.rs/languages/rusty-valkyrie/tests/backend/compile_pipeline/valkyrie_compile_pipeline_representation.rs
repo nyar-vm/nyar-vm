@@ -22,7 +22,12 @@ fn source_aggregate_semantics_reach_the_representation_plan_without_construction
     for aggregate in &semantic_mir.structs {
         // canonical 类型表按前端冻结的 `Nominal { declaration }` 形状收录聚合，禁止按短名回查。
         let item = aggregate.declaration.expect("structure/class 声明必须在前端冻结 declaration ItemId");
-        let ty = rusty_valkyrie::compiler::types::hir::ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
+        let ty = rusty_valkyrie::compiler::types::hir::ValkyrieType::Nominal {
+            declaration: item,
+            arguments: Vec::new(),
+            // 查找键的身份必须与聚合声明一致，否则命不中类型表。
+            primitive_identity: aggregate.primitive_identity.clone(),
+        };
         let declaration = semantic_mir.type_identities[&ty];
         let record = program.linked.nominal_instances.values().find(|record| record.declaration == declaration).unwrap();
         let expected = if aggregate.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };

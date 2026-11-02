@@ -94,20 +94,24 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
         namespace: &NamePath,
         structs: &[HirStruct],
         enums: &[HirEnum],
-    ) -> Result<Option<nyar_types::ItemId>, HirError> {
+    ) -> Result<Option<(nyar_types::ItemId, Option<Box<str>>)>, HirError> {
         if let Some(item) = unique_struct(name, namespace, structs)? {
-            return Ok(Some(item.constructor_declaration.ok_or_else(|| HirError::StructureMissingConstructor {
+            let declaration = item.constructor_declaration.ok_or_else(|| HirError::StructureMissingConstructor {
                 qualified_name: qualified_struct(item).to_string(),
                 source: plan_source(),
                 span: plan_span(),
-            })?));
+            })?;
+            // 声明携带的 `[primitive]` 自举身份随绑定冻结到 Nominal：
+            // 下游只认这个字段，不再按短名识别 primitive 类型。
+            return Ok(Some((declaration, item.primitive_identity.clone())));
         }
         if let Some(item) = unique_enum(name, enums)? {
-            return Ok(Some(item.declaration.ok_or_else(|| HirError::SumUniteMissingDeclaration {
+            let declaration = item.declaration.ok_or_else(|| HirError::SumUniteMissingDeclaration {
                 name: item.name.to_string(),
                 source: plan_source(),
                 span: plan_span(),
-            })?));
+            })?;
+            return Ok(Some((declaration, None)));
         }
         Ok(None)
     }
@@ -137,8 +141,8 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
                 }
             }
             ValkyrieType::Named(name) => {
-                if let Some(declaration) = resolve_declaration(name, namespace, structs, enums)? {
-                    *ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
+                if let Some((declaration, primitive_identity)) = resolve_declaration(name, namespace, structs, enums)? {
+                    *ty = ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity };
                 }
             }
             ValkyrieType::Apply(base, args) => {
@@ -149,14 +153,14 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
                     ValkyrieType::Named(name) => resolve_declaration(name, namespace, structs, enums)?,
                     _ => None,
                 };
-                if let Some(declaration) = resolved_declaration {
+                if let Some((declaration, primitive_identity)) = resolved_declaration {
                     if args.len() == 1 && is_array_owner(declaration, structs) {
                         let element = args.remove(0);
                         *ty = ValkyrieType::Array(Box::new(element));
                         return Ok(());
                     }
                     let arguments = std::mem::take(args);
-                    *ty = ValkyrieType::Nominal { declaration, arguments };
+                    *ty = ValkyrieType::Nominal { declaration, arguments, primitive_identity };
                     return Ok(());
                 }
                 bind_type(base, namespace, structs, enums)?;

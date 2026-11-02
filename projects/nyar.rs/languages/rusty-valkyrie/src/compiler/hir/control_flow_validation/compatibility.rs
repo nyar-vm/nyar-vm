@@ -88,8 +88,8 @@ pub fn primitive_boolean_compatible(expected: &ValkyrieType, actual: &ValkyrieTy
 pub fn nominal_apply_types_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
     match (expected, actual) {
         (
-            ValkyrieType::Nominal { declaration: expected_decl, arguments: expected_args },
-            ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args },
+            ValkyrieType::Nominal { declaration: expected_decl, arguments: expected_args, .. },
+            ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args, .. },
         ) if expected_decl == actual_decl && expected_args.len() == actual_args.len() => {
             expected_args.iter().zip(actual_args).all(|(expected, actual)| type_parameters_compatible(expected, actual))
         }
@@ -221,7 +221,7 @@ pub fn display_type(ty: &ValkyrieType) -> String {
         ValkyrieType::Utf16 => "utf16".to_string(),
         ValkyrieType::Named(name) => name.to_string(),
         ValkyrieType::QualifiedPath { namespace, name } => ValkyrieType::qualified_path_label(namespace, name),
-        ValkyrieType::Nominal { declaration, arguments } => {
+        ValkyrieType::Nominal { declaration, arguments, .. } => {
             if arguments.is_empty() {
                 format!("Nominal({declaration:?})")
             }

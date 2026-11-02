@@ -49,7 +49,7 @@ fn sum_declaration_rejects_duplicate_owner_binder_and_field() {
 fn sum_declaration_preserves_variant_result_refinement() {
     let mut hir = ValkyrieCompiler::default().compile_source("unite Parcel<T> { Arbitrary { value: T } }").expect("当前源码声明");
     let item = hir.enums[0].declaration.expect("Parcel declaration");
-    let refined = ValkyrieType::Nominal { declaration: item, arguments: vec![ValkyrieType::Boolean] };
+    let refined = ValkyrieType::Nominal { declaration: item, arguments: vec![ValkyrieType::Boolean], primitive_identity: None };
     hir.enums[0].variants[0].result_type = Some(refined.clone());
     let mir = MirLowerer::lower_module_semantic(&hir);
     let sum = &mir.sum_types[0];

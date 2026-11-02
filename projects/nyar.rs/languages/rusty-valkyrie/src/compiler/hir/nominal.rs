@@ -286,6 +286,9 @@ pub fn lower_unite(enum_def: &HirEnum, layout: UniteLayout) -> LoweredUnite {
         abstract_methods: vec![],
         abstract_properties: vec![],
         derives: vec![],
+        annotations: vec![],
+        // `unite` 枚举下降出的合成基类不是 `[primitive]` 声明，没有自举身份。
+        primitive_identity: None,
     };
 
     let variants =
@@ -392,6 +395,9 @@ fn lower_variant(
         abstract_methods: vec![],
         abstract_properties: vec![],
         derives: vec![],
+        annotations: vec![],
+        // `unite` 变体下降出的合成 struct 不是 `[primitive]` 声明，没有自举身份。
+        primitive_identity: None,
     }
 }
 

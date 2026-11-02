@@ -84,9 +84,10 @@ pub(crate) fn specialize_method_param_type(
 pub fn substitute_type_self(ty: &ValkyrieType, replacement: &ValkyrieType) -> ValkyrieType {
     match ty {
         ValkyrieType::SelfType => replacement.clone(),
-        ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
             declaration: *declaration,
             arguments: arguments.iter().map(|argument| substitute_type_self(argument, replacement)).collect(),
+            primitive_identity: primitive_identity.clone(),
         },
         ValkyrieType::Array(inner) => ValkyrieType::Array(Box::new(substitute_type_self(inner, replacement))),
         ValkyrieType::Apply(base, args) => ValkyrieType::Apply(
@@ -134,9 +135,10 @@ pub fn substitute_associated_equations(
     equations: &BTreeMap<Identifier, ValkyrieType>,
 ) -> ValkyrieType {
     match ty {
-        ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
             declaration: *declaration,
             arguments: arguments.iter().map(|argument| substitute_associated_equations(argument, constrained_type, equations)).collect(),
+            primitive_identity: primitive_identity.clone(),
         },
         ValkyrieType::Associated(associated) if &associated.base == constrained_type => {
             equations.get(&associated.name).cloned().unwrap_or_else(|| {
@@ -317,8 +319,8 @@ pub(crate) fn unify_call_type_binders(
             }
             Some(())
         }
-        ValkyrieType::Nominal { declaration: expected_decl, arguments: expected_args } => {
-            let ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args } = actual
+        ValkyrieType::Nominal { declaration: expected_decl, arguments: expected_args, .. } => {
+            let ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args, .. } = actual
             else {
                 return None;
             };
@@ -526,8 +528,8 @@ pub(crate) fn substitute_type_parameters(ty: &ValkyrieType, receiver: &ValkyrieT
     let (receiver_args, actual_args) = match (receiver, actual) {
         (ValkyrieType::Apply(_, receiver_args), ValkyrieType::Apply(_, actual_args)) => (receiver_args.as_slice(), actual_args.as_slice()),
         (
-            ValkyrieType::Nominal { declaration: receiver_decl, arguments: receiver_args },
-            ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args },
+            ValkyrieType::Nominal { declaration: receiver_decl, arguments: receiver_args, .. },
+            ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args, .. },
         ) if receiver_decl == actual_decl => (receiver_args.as_slice(), actual_args.as_slice()),
         _ => return ty.clone(),
     };
@@ -548,9 +550,10 @@ pub(crate) fn substitute_type_parameters(ty: &ValkyrieType, receiver: &ValkyrieT
 pub(crate) fn substitute_type_vars(ty: &ValkyrieType, substitutions: &BTreeMap<GenericBinderId, ValkyrieType>) -> ValkyrieType {
     match ty {
         ValkyrieType::Generic(generic) => generic.binder.and_then(|binder| substitutions.get(&binder)).cloned().unwrap_or_else(|| ty.clone()),
-        ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
             declaration: *declaration,
             arguments: arguments.iter().map(|arg| substitute_type_vars(arg, substitutions)).collect(),
+            primitive_identity: primitive_identity.clone(),
         },
         ValkyrieType::Apply(base, args) => ValkyrieType::Apply(
             Box::new(substitute_type_vars(base, substitutions)),

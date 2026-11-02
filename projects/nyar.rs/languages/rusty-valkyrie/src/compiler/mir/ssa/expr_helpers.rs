@@ -194,7 +194,7 @@ pub(super) fn is_integer_literal_formal_type(ty: &ValkyrieType, structs: &[super
         | ValkyrieType::Float32
         | ValkyrieType::Float64 => true,
         ValkyrieType::Named(name) => is_integer_literal_surface_name(name.as_str()),
-        ValkyrieType::Nominal { declaration, arguments } if arguments.is_empty() => {
+        ValkyrieType::Nominal { declaration, arguments, .. } if arguments.is_empty() => {
             match super::MirStruct::find_by_declaration(structs, *declaration) {
                 Some(item) => is_integer_literal_surface_name(item.name.as_str()),
                 None => true,

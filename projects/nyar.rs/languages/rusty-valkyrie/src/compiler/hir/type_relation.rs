@@ -172,10 +172,14 @@ impl TypeRelationContext {
     /// 短名 → 已冻结的 `Nominal{ItemId}`（有 declaration 时）；供 Self/AutoType 回收，禁止只写回 Named。
     pub fn nominal_type_for_name(&self, name: &Identifier) -> Option<ValkyrieType> {
         if let Some(item) = self.structs.get(name) {
-            return Some(ValkyrieType::Nominal { declaration: item.constructor_declaration?, arguments: Vec::new() });
+            return Some(ValkyrieType::Nominal {
+                declaration: item.constructor_declaration?,
+                arguments: Vec::new(),
+                primitive_identity: item.primitive_identity.clone(),
+            });
         }
         let item = self.enums.get(name)?;
-        Some(ValkyrieType::Nominal { declaration: item.declaration?, arguments: Vec::new() })
+        Some(ValkyrieType::Nominal { declaration: item.declaration?, arguments: Vec::new(), primitive_identity: None })
     }
 
     /// 字面量特化用：`Named("usize")` 与对应 `Nominal{ItemId}` 都算数值类型。
@@ -223,8 +227,8 @@ impl TypeRelationContext {
 
         // `Nominal{ItemId}` 只认 declaration；同 declaration + 实参相容即为 exact。
         if let (
-            ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args },
-            ValkyrieType::Nominal { declaration: expected_decl, arguments: expected_args },
+            ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args, .. },
+            ValkyrieType::Nominal { declaration: expected_decl, arguments: expected_args, .. },
         ) = (actual, expected)
         {
             if actual_decl == expected_decl

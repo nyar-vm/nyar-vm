@@ -123,10 +123,12 @@ pub(super) fn impl_receiver_type(
             .map(|sum| sum.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect())
             .unwrap_or_default()
     };
+    // owner 已冻结身份的声明补齐实参后仍是同一声明：自举身份随 owner 透传。
+    let primitive_identity = owner.primitive_identity().map(Box::from);
     if type_args.is_empty() {
-        return ValkyrieType::Nominal { declaration, arguments: Vec::new() };
+        return ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity };
     }
-    ValkyrieType::Nominal { declaration, arguments: type_args }
+    ValkyrieType::Nominal { declaration, arguments: type_args, primitive_identity }
 }
 
 /// imply 方法返回类型：只消费已冻结的 `Nominal{ItemId}` / Self 代入。
@@ -149,7 +151,7 @@ pub(super) fn impl_method_return_type(
     };
     // 返回类型已是 owner 自身的无参 Nominal 时，按 imply 实参补齐 binder（仍不查短名）。
     match resolved {
-        ValkyrieType::Nominal { declaration, arguments } if declaration == owner_declaration && arguments.is_empty() => {
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } if declaration == owner_declaration && arguments.is_empty() => {
             let type_args = if owner_sum.generics.len() == 2 {
                 result_method_return_type_args(function_generics, impl_type_arguments, owner_sum)
             }
@@ -157,10 +159,10 @@ pub(super) fn impl_method_return_type(
                 sum_method_return_type_args(function_generics, impl_type_arguments, owner_sum)
             };
             if type_args.is_empty() {
-                ValkyrieType::Nominal { declaration, arguments: Vec::new() }
+                ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: primitive_identity.clone() }
             }
             else {
-                ValkyrieType::Nominal { declaration, arguments: type_args }
+                ValkyrieType::Nominal { declaration, arguments: type_args, primitive_identity: primitive_identity.clone() }
             }
         }
         other => other,
@@ -213,7 +215,7 @@ pub(super) fn impl_method_param_type(
     match (ty, impl_owner_type) {
         (ValkyrieType::AutoType | ValkyrieType::SelfType, Some(owner)) => impl_receiver_type(owner, impl_type_arguments, sum_types),
         // 已绑定为 owner 声明的无参 Nominal 时补齐 imply 实参。
-        (ValkyrieType::Nominal { declaration, arguments }, Some(owner))
+        (ValkyrieType::Nominal { declaration, arguments, .. }, Some(owner))
             if arguments.is_empty() && owner.nominal_declaration() == Some(*declaration) =>
         {
             impl_receiver_type(owner, impl_type_arguments, sum_types)

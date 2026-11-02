@@ -18,7 +18,8 @@ use crate::compiler::{
 pub(crate) fn enum_apply_type(enum_def: &crate::compiler::types::hir::HirEnum) -> ValkyrieType {
     let arguments = enum_def.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect::<Vec<_>>();
     if let Some(declaration) = enum_def.declaration {
-        return ValkyrieType::Nominal { declaration, arguments };
+        // 枚举不是 `[primitive]` 声明，没有自举身份。
+        return ValkyrieType::Nominal { declaration, arguments, primitive_identity: None };
     }
     // 缺 declaration 时不得伪装成功身份；保留表面 Named 供诊断，后续绑定/校验应失败。
     if arguments.is_empty() {
@@ -32,7 +33,7 @@ pub(crate) fn enum_apply_type(enum_def: &crate::compiler::types::hir::HirEnum) -
 pub(crate) fn struct_apply_type(struct_def: &crate::compiler::types::hir::HirStruct) -> ValkyrieType {
     let arguments = struct_def.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect::<Vec<_>>();
     if let Some(declaration) = struct_def.constructor_declaration {
-        return ValkyrieType::Nominal { declaration, arguments };
+        return ValkyrieType::Nominal { declaration, arguments, primitive_identity: struct_def.primitive_identity.clone() };
     }
     if arguments.is_empty() {
         ValkyrieType::Named(struct_def.name.clone())

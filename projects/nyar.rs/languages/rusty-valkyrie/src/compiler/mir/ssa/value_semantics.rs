@@ -226,7 +226,7 @@ pub struct InstanceLayout {
 /// 只认已冻结的 declaration 与 binder：形参数目不符、缺 binder、或实参仍含
 /// 开放泛型形参时返回 `None`；禁止按字段名或短名猜代入结果。
 pub fn instantiate_fields(structure: &crate::compiler::mir::MirStruct, instance: &ValkyrieType) -> Option<Vec<ValkyrieType>> {
-    let ValkyrieType::Nominal { declaration, arguments } = instance
+    let ValkyrieType::Nominal { declaration, arguments, .. } = instance
     else {
         return None;
     };
@@ -324,7 +324,7 @@ fn layout_field_type(ty: &ValkyrieType, declaration_spellings: &BTreeMap<nyar_ty
         return Some(concrete);
     }
     match ty {
-        ValkyrieType::Nominal { declaration, arguments } => {
+        ValkyrieType::Nominal { declaration, arguments, .. } => {
             let spelling = declaration_spellings.get(declaration)?;
             let base = nyar_types::NyarType::from_surface_primitive(spelling)
                 .unwrap_or_else(|| nyar_types::NyarType::Named(nyar_types::Identifier::new(spelling)));
@@ -503,9 +503,10 @@ fn apply_primitive_carriers(ty: &ValkyrieType, carriers: &BTreeMap<nyar_types::I
         return carrier.clone();
     }
     match ty {
-        ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
             declaration: *declaration,
             arguments: arguments.iter().map(|argument| apply_primitive_carriers(argument, carriers)).collect(),
+            primitive_identity: primitive_identity.clone(),
         },
         ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(
             Box::new(apply_primitive_carriers(base, carriers)),

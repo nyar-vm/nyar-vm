@@ -7,7 +7,7 @@ use crate::compiler::{
         overload::{
             call_resolver::{
                 try_resolve_instance_method, try_resolve_nullary_constructor, try_resolve_pattern_extractor,
-                try_resolve_try_propagate_ok_variant,
+                resolve_variant_pattern_constructor, try_resolve_try_propagate_ok_variant,
             },
             diagnostics::{OverloadCandidate, OverloadDomain},
             expr_position::ExprPosition,
@@ -589,7 +589,9 @@ fn resolve_pattern_calls(
                 }
                 else {
                     let canonical_callee = canonical_extractor_callee(name);
-                    if let Some(resolved) = try_resolve_pattern_extractor(&canonical_callee, actual_type, candidates, type_relations) {
+                    let resolved = try_resolve_pattern_extractor(&canonical_callee, actual_type, candidates, type_relations)
+                        .or_else(|| resolve_variant_pattern_constructor(&canonical_callee, actual_type, candidates));
+                    if let Some(resolved) = resolved {
                         *pattern = HirPattern::Extractor(crate::compiler::types::hir::HirExtractorPattern::Constructor {
                             name: name.clone(),
                             canonical_callee,
@@ -602,7 +604,8 @@ fn resolve_pattern_calls(
         }
         HirPattern::Extractor(crate::compiler::types::hir::HirExtractorPattern::Constructor { fields, canonical_callee, resolved, .. }) => {
             if let Some(actual_type) = scrutinee_type {
-                *resolved = try_resolve_pattern_extractor(canonical_callee, actual_type, candidates, type_relations);
+                *resolved = try_resolve_pattern_extractor(canonical_callee, actual_type, candidates, type_relations)
+                    .or_else(|| resolve_variant_pattern_constructor(canonical_callee, actual_type, candidates));
             }
             let field_scrutinee_types = resolved
                 .as_ref()
@@ -642,7 +645,8 @@ fn resolve_pattern_calls(
                 if let Some(name_path) = name.clone() {
                     if let Some(actual_type) = scrutinee_type {
                         let canonical_callee = canonical_extractor_callee(&name_path);
-                        let resolved = try_resolve_pattern_extractor(&canonical_callee, actual_type, candidates, type_relations);
+                        let resolved = try_resolve_pattern_extractor(&canonical_callee, actual_type, candidates, type_relations)
+                            .or_else(|| resolve_variant_pattern_constructor(&canonical_callee, actual_type, candidates));
                         if resolved.is_some() {
                             let extractor_fields = fields.iter().map(|(_, field)| field.clone()).collect::<Vec<_>>();
                             *pattern = HirPattern::Extractor(crate::compiler::types::hir::HirExtractorPattern::Constructor {
@@ -685,7 +689,9 @@ fn resolve_pattern_calls(
                     .and_then(|name_path| crate::compiler::hir::overload::types::pattern_type_declaration(name_path, type_relations));
             }
             let field_owner = type_declaration
-                .map(|declaration| ValkyrieType::Nominal { declaration, arguments: Vec::new() })
+                // 字段模式解析的 owner 只可能是带字段的聚合；`[primitive]` 声明零字段，
+                // 不会进入字段解析，这里没有自举身份可查。
+                .map(|declaration| ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: None })
                 .or_else(|| scrutinee_type.cloned());
             for (index, (field_name, item)) in fields.iter_mut().enumerate() {
                 let field_scrutinee = object_field_scrutinee_type(name.as_ref(), field_name, struct_fields);
