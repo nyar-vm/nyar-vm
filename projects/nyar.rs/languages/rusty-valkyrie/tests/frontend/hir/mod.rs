@@ -24,10 +24,6 @@ mod hir_trait_system_impl_identity_tests;
 mod hir_expression_nesting_guard_tests;
 mod hir_type_lowering_tests;
 mod valkyrie_frontend_contract_nyar_type;
-mod variant_constructor_attribute_tests;
-mod variant_constructor_call_tests;
-mod variant_constructor_pattern_tests;
-mod variant_constructor_synthesis_tests;
 mod valkyrie_frontend_error;
 mod valkyrie_frontend_naming;
 mod valkyrie_frontend_staging_tests;
@@ -44,3 +40,7 @@ mod valkyrie_hir_type_relation_identity_tests;
 mod valkyrie_parser;
 #[cfg(false)] // `type_checker` crate root 模块不存在（架构迁移）
 mod valkyrie_type_checker_control_flow_validation;
+mod variant_constructor_attribute_tests;
+mod variant_constructor_call_tests;
+mod variant_constructor_pattern_tests;
+mod variant_constructor_synthesis_tests;

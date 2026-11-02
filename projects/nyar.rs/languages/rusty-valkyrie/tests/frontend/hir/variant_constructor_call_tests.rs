@@ -2,9 +2,7 @@
 
 use rusty_valkyrie::{
     HirError, ValkyrieCompiler,
-    types::hir::{
-        HirBlock, HirCallableDomain, HirExpr, HirExprKind, HirModule, HirResolvedCall, HirStatementKind, ValkyrieType,
-    },
+    types::hir::{HirBlock, HirCallableDomain, HirExpr, HirExprKind, HirModule, HirResolvedCall, HirStatementKind, ValkyrieType},
 };
 
 fn compile(source: &str) -> HirModule {
@@ -88,7 +86,11 @@ fn assert_option_of_integer32(function: &str, call: &HirResolvedCall, option_dec
     match &call.return_type {
         ValkyrieType::Nominal { declaration, arguments, .. } => {
             assert_eq!(*declaration, option_declaration, "{function}: 返回类型必须指向 unite 声明身份");
-            assert_eq!(arguments, &vec![ValkyrieType::Integer32 { signed: true }], "{function}: `Some(1)` 必须经既有泛型实例化推出 `Option<i32>`");
+            assert_eq!(
+                arguments,
+                &vec![ValkyrieType::Integer32 { signed: true }],
+                "{function}: `Some(1)` 必须经既有泛型实例化推出 `Option<i32>`"
+            );
         }
         other => panic!("{function}: 返回类型必须是 Nominal，got {other:?}"),
     }
@@ -110,9 +112,7 @@ fn option_declaration(module: &HirModule) -> nyar_types::ItemId {
 
 #[test]
 fn marked_variant_bracket_call_resolves_through_constructor_domain() {
-    let module = compile(&format!(
-        "{MARKED_OPTION}\nmicro produce() {{ let present = Some(1) }}\n"
-    ));
+    let module = compile(&format!("{MARKED_OPTION}\nmicro produce() {{ let present = Some(1) }}\n"));
     let calls = resolved_calls_in_function(&module, "produce");
     assert_eq!(calls.len(), 1, "`Some(1)` 必须产生一次已解析调用");
     let call = calls[0];
@@ -179,9 +179,7 @@ micro produce() {
 
 #[test]
 fn literal_construction_stays_available_with_constructor_attribute() {
-    let module = compile(&format!(
-        "{MARKED_OPTION}\nmicro produce() {{ let literal = Some {{ value: 1 }} }}\n"
-    ));
+    let module = compile(&format!("{MARKED_OPTION}\nmicro produce() {{ let literal = Some {{ value: 1 }} }}\n"));
     let calls = resolved_calls_in_function(&module, "produce");
     assert_eq!(calls.len(), 1, "`Some {{ value: 1 }}` 必须产生一次已解析构造");
     let call = calls[0];
@@ -235,4 +233,30 @@ micro produce() {{
     assert_eq!(calls[0].return_type, calls[1].return_type, "两种写法的产物类型必须一致");
     assert_eq!(calls[0].domain, HirCallableDomain::Constructor);
     assert_eq!(calls[1].domain, HirCallableDomain::Constructor);
+}
+
+/// 私有载荷字段是「字面量构造始终可用」的唯一例外。
+///
+/// 语言已经建模 `[private]` 字段可见性（`HirField.visibility` + `lower_visibility`），
+/// 但 `AccessControlChecker` / `VisibilityChecker` 目前没有任何调用点，字面量构造路径
+/// 尚无可见性门禁。这里如实记录缺口：不发明可见性机制、不伪造通过。
+#[test]
+#[ignore = "blocked: 私有载荷字段的字面量构造尚无可见性语义支撑（`HirField.visibility` 已建模，`AccessControlChecker`/`VisibilityChecker` 无调用点）"]
+fn private_payload_field_literal_construction_is_rejected() {
+    let error = compile_error(
+        r#"
+unite Secret<T> {
+    [constructor]
+    Hidden {
+        [private]
+        value: T,
+    },
+    Empty,
+}
+micro produce() {
+    let literal = Hidden { value: 1 }
+}
+"#,
+    );
+    assert!(format!("{error:?}").contains("private"), "私有载荷字段的具名字面量构造必须结构化拒绝（当前尚无可见性门禁）: {error:?}");
 }

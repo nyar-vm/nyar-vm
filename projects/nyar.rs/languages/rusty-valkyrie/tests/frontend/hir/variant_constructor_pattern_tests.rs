@@ -4,8 +4,9 @@
 //! 载荷按字段声明顺序绑定，泛型 scrutinee 走既有类型代换链。
 
 use rusty_valkyrie::{
-    ValkyrieCompiler, validate_semantic_module,
+    ValkyrieCompiler,
     types::hir::{HirExprKind, HirExtractorPattern, HirMatchArm, HirModule, HirPattern, ValkyrieType},
+    validate_semantic_module,
 };
 
 fn compile(source: &str) -> HirModule {
@@ -28,7 +29,8 @@ fn match_arms<'a>(module: &'a HirModule, function: &str) -> &'a [HirMatchArm] {
 }
 
 fn variant_pattern<'a>(arm: &'a HirMatchArm, variant: &str) -> &'a HirExtractorPattern {
-    let HirPattern::Extractor(HirExtractorPattern::Constructor { name, resolved, .. }) = &arm.pattern else {
+    let HirPattern::Extractor(HirExtractorPattern::Constructor { name, resolved, .. }) = &arm.pattern
+    else {
         panic!("{variant} 分支必须降为变体提取模式，got {:?}", arm.pattern);
     };
     assert_eq!(name.to_string(), variant);

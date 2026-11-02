@@ -74,7 +74,9 @@ fn duplicate_constructor_attribute_is_rejected() {
 
 #[test]
 fn constructor_attribute_on_structure_is_rejected() {
-    let error = ValkyrieCompiler::default().compile_source("[constructor] structure Holder { }").expect_err("结构体上的 [constructor] 必须 fail-closed");
+    let error = ValkyrieCompiler::default()
+        .compile_source("[constructor] structure Holder { }")
+        .expect_err("结构体上的 [constructor] 必须 fail-closed");
     match error {
         HirError::ConstructorAttributeOnNonVariant { target_kind, name, .. } => {
             assert_eq!(target_kind, "structure");

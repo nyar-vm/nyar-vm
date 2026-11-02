@@ -29,4 +29,5 @@ mod legion_valkyrie_v_std_closure;
 mod legion_vcc_data_consumer_inventory;
 mod package_module_boundary;
 mod support;
+mod variant_constructor_option_e2e;
 mod workspace;
