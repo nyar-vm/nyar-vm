@@ -229,11 +229,28 @@ namespace app;
     compile(consumer).expect("match 臂上的 char 字面量模式必须解析");
 }
 
-// 缺口：`match` 提取器内嵌 char 字面量（`Some('<')`）触发模式恢复路径的无界增长
-// （60s/32GB 爆内存）。修复前用 `#[ignore]` 挂起，禁止当作通过。
 #[test]
-#[ignore = "extractor pattern with nested char literal grows without bound; pending fix"]
 fn match_option_char_with_some_char_literal_pattern_resolves() {
+    let consumer = r#"
+namespace app;
+
+using std.text;
+
+[export] micro probe(optional: Option<char>) -> i32 {
+    match optional {
+        case Some('<'): return 1
+        case None: return 0
+    }
+}
+"#;
+    compile(consumer).expect("`Some('<')` 提取器模式必须解析");
+}
+
+// 缺口：提取器臂与 `else` 臂同现时 `else` 丢失，报 `missing None`（显式 `case None`
+// 正常）。定位在 match 恢复/降低层的 else 保留，与本套件的主题无关，先挂起。
+#[test]
+#[ignore = "else arm is dropped next to extractor arms; pending fix"]
+fn match_option_char_with_else_arm_resolves() {
     let consumer = r#"
 namespace app;
 
@@ -246,7 +263,7 @@ using std.text;
     }
 }
 "#;
-    compile(consumer).expect("`Some('<')` 模式必须解析");
+    compile(consumer).expect("`Some('<')` + `else` 必须解析");
 }
 
 // ---------- 反例：混比结构化失败 ----------
