@@ -231,7 +231,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     let build_context = CompilerBuildContext::new(arch, plan.project.build_target.target.clone(), clr_suspend_strategy, wasm_package_kind)
         .with_test_entries(plan.project.test_entries.clone())
         .with_selected_host_providers(host_bindings);
-    let artifact = compile_source_groups_to_artifacts(
+    let artifact = match compile_source_groups_to_artifacts(
         &crate::compiler::hir::lowering::ValkyrieCompiler::default(),
         &nyar_types::compiler_input::CompilerSourceInput::application(source_groups),
         &build_context,
@@ -239,7 +239,10 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
         &plan.project.name,
         plan.project.build_target.wat,
         target_profile.artifact_policy.generate_runtime_config,
-    )?;
+    ) {
+        Ok(artifact) => artifact,
+        Err(error) => return Err(compile_error_with_diagnostics(error, plan)),
+    };
     write_compile_evidence(&plan.output_dir, &artifact.evidence)?;
     if let Some(managed_abi) = &artifact.driver.managed_abi {
         write_managed_abi(&plan.output_dir, managed_abi)?;
@@ -264,6 +267,32 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     }
 
     Ok(artifact.driver)
+}
+
+/// 编译失败时取出本编译单元暂存的全部可恢复诊断，渲染成多诊断报告。
+///
+/// 没有暂存诊断（例如规划、后端或装配阶段的失败）保持原有单错误文本不变；
+/// 有暂存诊断时以完整报告作为错误消息：同一编译单元的全部独立错误一次列出，
+/// 按 `(文件, span)` 稳定排序、同一根因归并、超出上限给汇总。
+/// 源码原文按诊断的 `source.id`（相对组 manifest 目录的逻辑路径）懒读磁盘，
+/// 与 `compile_source_snapshot` 同样做 BOM 归一化，保证 span → 行列映射一致。
+fn compile_error_with_diagnostics(error: crate::compiler::emitter::pipeline::PipelineError, plan: &BuildPlan) -> LegionError {
+    let pending = crate::compiler::diagnostics::pending::take_pending_diagnostics();
+    if pending.is_empty() {
+        return LegionError::from(error);
+    }
+    let options = crate::compiler::diagnostics::report::DiagnosticRenderOptions::from_environment();
+    let report = crate::compiler::diagnostics::report::render_compile_diagnostics(
+        &pending,
+        &|id| {
+            plan.project.semantic_source_groups.iter().find_map(|group| {
+                let content = std::fs::read_to_string(group.manifest_dir.join(id)).ok()?;
+                Some(content.strip_prefix('\u{FEFF}').map(str::to_string).unwrap_or(content))
+            })
+        },
+        &options,
+    );
+    if report.trim().is_empty() { LegionError::from(error) } else { LegionError::msg(report.trim_end().to_string()) }
 }
 
 /// 编译期架构键：WASI 与 Node 同为 wasm32，但宿主不同，因此使用伪架构键 `"wasi"`。

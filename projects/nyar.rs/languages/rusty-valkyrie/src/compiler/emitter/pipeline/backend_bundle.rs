@@ -68,6 +68,9 @@ pub fn compile_source_groups_to_backend_bundle(
     groups: &[CompilerSourceGroup],
     context: &CompilerBuildContext,
 ) -> PipelineResult<CompilerBuildBundle> {
+    // 编译单元入口清空诊断暂存汇：本单元内各检查阶段记录的可恢复诊断
+    // 都属于本单元，失败路径由调用方一次性取出渲染，不带上一单元的残留。
+    crate::compiler::diagnostics::pending::clear_pending_diagnostics();
     let compiled_program =
         compiler.compile_source_groups_to_program_with_host_bindings(groups, &context.selected_host_providers, &context.arch)?;
     let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, context.target.clone(), context.clr_suspend_strategy)?;
