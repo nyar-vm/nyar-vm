@@ -19,6 +19,8 @@ pub enum HirError {
         selector: String,
         /// 失败所在的源码片段 / 函数名。
         context: String,
+        /// 解析失败的原因分类；来自解析期注册表或合同校验补记。
+        reason: crate::compiler::types::hir::HirCallResolutionFailureKind,
         /// 诊断引用的源码或 artifact 身份。
         source: DiagnosticSource,
         /// 诊断主定位 span。

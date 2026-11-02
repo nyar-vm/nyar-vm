@@ -60,6 +60,8 @@ fn renames_view_method_to_render_with_element_return() {
         type_aliases: Vec::new(),
         statements: Vec::new(),
         instantiated_callables: Vec::new(),
+        diagnostic_sources: std::collections::BTreeMap::new(),
+        call_resolution_failures: Vec::new(),
     };
     let enhanced = enhance_vx_widgets(module);
     let render = enhanced.widgets[0].methods.iter().find(|method| method.name.as_str() == "render").expect("render");

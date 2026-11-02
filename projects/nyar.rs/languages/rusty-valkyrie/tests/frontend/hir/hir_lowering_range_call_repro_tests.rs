@@ -668,7 +668,7 @@ fn unresolved_call_diagnostic_points_at_real_module_source() {
     }];
     let error =
         ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect_err("未解析调用必须在 HIR 合同边界失败");
-    let HirError::UnresolvedCall { selector, context, source, span } = &error
+    let HirError::UnresolvedCall { selector, context, source, span, .. } = &error
     else {
         panic!("期望 HirError::UnresolvedCall，got {error:?}");
     };

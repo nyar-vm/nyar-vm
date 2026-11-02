@@ -203,6 +203,8 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         statements: Vec::new(),
         type_aliases: Vec::new(),
         instantiated_callables: Vec::new(),
+        diagnostic_sources: std::collections::BTreeMap::new(),
+        call_resolution_failures: Vec::new(),
     };
     let func = lower_function_semantic(
         &module,
@@ -244,5 +246,7 @@ pub fn lower_test_module(functions: Vec<HirFunction>, structs: Vec<HirStruct>) -
         statements: Vec::new(),
         type_aliases: Vec::new(),
         instantiated_callables: Vec::new(),
+        diagnostic_sources: std::collections::BTreeMap::new(),
+        call_resolution_failures: Vec::new(),
     })
 }

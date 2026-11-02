@@ -1,5 +1,6 @@
 //! 表达式/语句/模式级调用解析（不含 try_resolve_* 核心匹配逻辑）。
 
+mod failure_sink;
 mod pattern_policy;
 mod resolve;
 mod validate;

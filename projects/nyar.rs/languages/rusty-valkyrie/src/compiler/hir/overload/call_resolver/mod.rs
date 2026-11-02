@@ -2,12 +2,14 @@
 
 mod constructors;
 mod core;
+mod explain;
 mod helpers;
 mod patterns;
 
 pub use constructors::{match_singleton_method_candidate, try_resolve_nullary_constructor};
 pub use core::match_call_candidate;
 pub use helpers::try_resolve_constructor;
+pub(crate) use explain::explain_unresolved_call;
 
 pub(crate) use constructors::{
     build_constructor_resolved_call, try_resolve_constructor_call, try_resolve_instance_method, try_resolve_qualified_free_function,

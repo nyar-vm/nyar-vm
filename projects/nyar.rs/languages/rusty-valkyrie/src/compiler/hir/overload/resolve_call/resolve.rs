@@ -6,7 +6,7 @@ use crate::compiler::{
     hir::{
         overload::{
             call_resolver::{
-                try_resolve_instance_method, try_resolve_nullary_constructor, try_resolve_pattern_extractor,
+                explain_unresolved_call, try_resolve_instance_method, try_resolve_nullary_constructor, try_resolve_pattern_extractor,
                 resolve_variant_pattern_constructor, try_resolve_try_propagate_ok_variant,
             },
             diagnostics::{OverloadCandidate, OverloadDomain},
@@ -24,13 +24,16 @@ use crate::compiler::{
     types::{
         Identifier, NamePath,
         hir::{
-            FunctionType, HirBlock, HirCallArgument, HirExpr, HirExprKind, HirFunction, HirFunctionReference, HirMatchArm, HirModule,
-            HirPattern, HirResolvedCall, HirStatement, HirStatementKind, ValkyrieType,
+            FunctionType, HirBlock, HirCallArgument, HirCallResolutionFailure, HirExpr, HirExprKind, HirFunction, HirFunctionReference,
+            HirMatchArm, HirModule, HirPattern, HirResolvedCall, HirStatement, HirStatementKind, ValkyrieType,
         },
     },
 };
 
-use super::validate::{is_option_owner_type, is_result_owner_type};
+use super::{
+    failure_sink::{record_failure, with_failure_collector},
+    validate::{is_option_owner_type, is_result_owner_type},
+};
 
 /// 对模块内全部 HIR 调用执行重载解析与绑定。
 pub fn resolve_hir_calls(module: &mut HirModule) {
@@ -50,47 +53,53 @@ fn resolve_submodule_calls(
     singleton_names: &std::collections::BTreeSet<Identifier>,
 ) {
     let type_relations = &type_relations.with_enclosing_module(&module.name);
-    for function in &mut module.functions {
-        resolve_function_calls(function, candidates, type_relations, struct_fields, singleton_names, None);
-    }
-    for item in &mut module.structs {
-        use crate::compiler::hir::overload::types::struct_apply_type;
-        let owner_type = struct_apply_type(item);
-        for method in &mut item.methods {
-            resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+    // 本层函数体内解析失败的调用点归本模块的注册表；子模块递归各归各层。
+    let ((), failures) = with_failure_collector(|| {
+        for function in &mut module.functions {
+            resolve_function_calls(function, candidates, type_relations, struct_fields, singleton_names, None);
         }
-    }
-    for item in &mut module.singletons {
-        for method in &mut item.methods {
-            let owner_type = ValkyrieType::Named(item.name.clone());
-            resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+        for item in &mut module.structs {
+            use crate::compiler::hir::overload::types::struct_apply_type;
+            let owner_type = struct_apply_type(item);
+            for method in &mut item.methods {
+                resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+            }
         }
-        if let Some(constructor) = &mut item.constructor {
-            let owner_type = ValkyrieType::Named(item.name.clone());
-            resolve_function_calls(constructor, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+        for item in &mut module.singletons {
+            for method in &mut item.methods {
+                let owner_type = ValkyrieType::Named(item.name.clone());
+                resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+            }
+            if let Some(constructor) = &mut item.constructor {
+                let owner_type = ValkyrieType::Named(item.name.clone());
+                resolve_function_calls(constructor, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+            }
+            if let Some(finalizer) = &mut item.finalizer {
+                let owner_type = ValkyrieType::Named(item.name.clone());
+                resolve_function_calls(finalizer, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+            }
         }
-        if let Some(finalizer) = &mut item.finalizer {
-            let owner_type = ValkyrieType::Named(item.name.clone());
-            resolve_function_calls(finalizer, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+        for item in &mut module.traits {
+            let scoped =
+                (!item.declaring_namespace.parts().is_empty()).then(|| type_relations.with_enclosing_module(&item.declaring_namespace));
+            let relations = scoped.as_ref().unwrap_or(type_relations);
+            for method in item.methods.iter_mut().chain(item.default_methods.iter_mut()) {
+                resolve_function_calls(method, candidates, relations, struct_fields, singleton_names, None);
+            }
         }
-    }
-    for item in &mut module.traits {
-        let scoped = (!item.declaring_namespace.parts().is_empty()).then(|| type_relations.with_enclosing_module(&item.declaring_namespace));
-        let relations = scoped.as_ref().unwrap_or(type_relations);
-        for method in item.methods.iter_mut().chain(item.default_methods.iter_mut()) {
-            resolve_function_calls(method, candidates, relations, struct_fields, singleton_names, None);
+        for item in &mut module.impls {
+            let scoped =
+                (!item.declaring_namespace.parts().is_empty()).then(|| type_relations.with_enclosing_module(&item.declaring_namespace));
+            let relations = scoped.as_ref().unwrap_or(type_relations);
+            for method in &mut item.methods {
+                resolve_function_calls(method, candidates, relations, struct_fields, singleton_names, Some(&item.target));
+            }
         }
-    }
-    for item in &mut module.impls {
-        let scoped = (!item.declaring_namespace.parts().is_empty()).then(|| type_relations.with_enclosing_module(&item.declaring_namespace));
-        let relations = scoped.as_ref().unwrap_or(type_relations);
-        for method in &mut item.methods {
-            resolve_function_calls(method, candidates, relations, struct_fields, singleton_names, Some(&item.target));
+        for submodule in &mut module.submodules {
+            resolve_submodule_calls(submodule, candidates, type_relations, struct_fields, singleton_names);
         }
-    }
-    for submodule in &mut module.submodules {
-        resolve_submodule_calls(submodule, candidates, type_relations, struct_fields, singleton_names);
-    }
+    });
+    module.call_resolution_failures.extend(failures);
 }
 
 fn resolve_function_calls(
@@ -285,6 +294,8 @@ fn resolve_expr_calls_at(
     {
         return;
     }
+    // `expr.kind` 可变借用期间取不到 `expr.span`，失败登记需要的区间先捕获。
+    let expr_span = expr.span.clone();
     match &mut expr.kind {
         HirExprKind::Call { callee, args, resolved } => {
             resolve_expr_calls_at(
@@ -326,6 +337,13 @@ fn resolve_expr_calls_at(
                 singleton_names,
                 contextual_type,
             );
+            if resolved.is_none() {
+                record_failure(HirCallResolutionFailure {
+                    span: expr_span,
+                    callee: callee.kind.callable_label(),
+                    reason: explain_unresolved_call(callee, args, candidates, type_relations, locals, struct_fields, singleton_names),
+                });
+            }
         }
         HirExprKind::FieldAccess { object, field, field_id } => {
             resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);

@@ -220,6 +220,8 @@ impl AstToHir {
             statements: Vec::new(),
             type_aliases,
             instantiated_callables: Vec::new(),
+            diagnostic_sources: std::collections::BTreeMap::new(),
+            call_resolution_failures: Vec::new(),
         };
         hoist_anonymous_classes(&mut hir);
         let mut injector = crate::compiler::expansion::derive::DeriveInjector::new();

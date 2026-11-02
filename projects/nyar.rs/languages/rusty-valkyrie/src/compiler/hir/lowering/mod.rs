@@ -463,9 +463,14 @@ impl ValkyrieCompiler {
         let _nominal_scope = crate::compiler::hir::NominalTypeScope::enter(visible_nominal_type_names(&roots, imported_semantic_exports));
         register_root_type_alias_targets(&roots)?;
         let mut merged: Option<HirModule> = None;
-        for (file, root) in &prepared {
-            let module = self.lower_prepared_source_file(file, root, imported_semantic_exports, module_name.clone())?;
+        // 每个源文件分配独立 `SourceID`，span 自带文件身份；诊断按 `diagnostic_sources`
+        // 表回查真实文件路径，而不是整组共享入口文件身份。
+        for (index, (file, root)) in prepared.iter().enumerate() {
+            let file_source_id = SourceID { version_id: self.source_id.version_id.wrapping_add(index as u32) };
+            let mut module = self.lower_prepared_source_file(file, root, imported_semantic_exports, module_name.clone(), file_source_id)?;
+            module.diagnostic_sources.insert(file_source_id.version_id, file.path.clone());
             if let Some(target) = &mut merged {
+                target.diagnostic_sources.extend(module.diagnostic_sources);
                 target.imports.extend(module.imports);
                 target.warnings.extend(module.warnings);
                 target.submodules.extend(module.submodules);
@@ -529,9 +534,10 @@ impl ValkyrieCompiler {
         root: &ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name: Option<NamePath>,
+        file_source_id: SourceID,
     ) -> Result<HirModule, HirError> {
         source_context::with_hir_lower_source(&file.source, || {
-            AstToHir::new(self.source_id).lower_prepared_root(root, imported_semantic_exports, module_name)
+            AstToHir::new(file_source_id).lower_prepared_root(root, imported_semantic_exports, module_name)
         })
     }
 

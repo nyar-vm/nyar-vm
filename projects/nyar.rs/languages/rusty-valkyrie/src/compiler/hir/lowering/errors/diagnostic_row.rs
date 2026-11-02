@@ -25,10 +25,11 @@ impl From<HirError> for DiagnosticRow {
         let mut row = DiagnosticRow::new(error.code(), DiagnosticSeverity::Error, phase, owner, source, span);
 
         match &error {
-            HirError::UnresolvedCall { selector, context, .. } => {
+            HirError::UnresolvedCall { selector, context, reason, .. } => {
                 row = row
                     .with_arg("selector", DiagnosticArg::String(selector.clone()))
-                    .with_arg("context", DiagnosticArg::String(context.clone()));
+                    .with_arg("context", DiagnosticArg::String(context.clone()))
+                    .with_arg("reason", DiagnosticArg::String(reason.tag().to_string()));
             }
             HirError::UnresolvedConstructor { name, context, .. } => {
                 row = row.with_arg("name", DiagnosticArg::Aggregate(name.clone())).with_arg("context", DiagnosticArg::String(context.clone()));

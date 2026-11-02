@@ -507,6 +507,22 @@ pub enum HirExprKind {
     FunctionReference(HirFunctionReference),
 }
 
+impl HirExprKind {
+    /// 用户可读的 callee 形态标签，供调用诊断展示。
+    ///
+    /// 变量、路径与成员访问链给出源码形态（`next`、`std::collection::push`、
+    /// `set.is_empty`）；计算得到的函数值没有可命名符号，统一渲染 `<fn value>`。
+    /// 任何分支都不得输出内部占位符。
+    pub fn callable_label(&self) -> String {
+        match self {
+            HirExprKind::Variable(identifier) => identifier.name.to_string(),
+            HirExprKind::Path(path) => path.to_string(),
+            HirExprKind::FieldAccess { object, field, .. } => format!("{}.{}", object.kind.callable_label(), field),
+            _ => "<fn value>".to_string(),
+        }
+    }
+}
+
 /// Borrow call argument value expressions for traversal helpers.
 pub fn hir_call_arg_values(args: &[HirCallArgument]) -> impl Iterator<Item = &HirExpr> {
     args.iter().map(|arg| &arg.value)

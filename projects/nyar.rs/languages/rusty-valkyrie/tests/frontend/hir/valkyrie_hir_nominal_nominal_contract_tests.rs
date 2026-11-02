@@ -133,6 +133,8 @@ fn module_with_imported_unite(enum_def: HirEnum) -> HirModule {
         singletons: vec![],
         statements: vec![],
         instantiated_callables: Vec::new(),
+        diagnostic_sources: std::collections::BTreeMap::new(),
+        call_resolution_failures: Vec::new(),
     }
 }
 

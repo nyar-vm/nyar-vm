@@ -208,6 +208,7 @@ pub fn named_type_name(ty: &ValkyrieType) -> Option<&str> {
     }
 }
 
+/// 类型的用户可读渲染（`i64`、`[T]`、`micro(...) -> ...` 等），供诊断文案使用。
 pub fn display_type(ty: &ValkyrieType) -> String {
     match ty {
         ValkyrieType::Void => "void".to_string(),

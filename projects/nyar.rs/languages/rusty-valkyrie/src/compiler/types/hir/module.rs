@@ -70,6 +70,117 @@ pub struct HirModule {
     /// MIR lowering 只发射本表与声明期已闭合的 callable。
     #[cfg_attr(feature = "serde", serde(default))]
     pub instantiated_callables: Vec<HirInstantiatedCallable>,
+    /// 组内逐文件诊断源表：`SourceID.version_id` → 源文件路径。
+    ///
+    /// 多文件源码组在 lowering 时按文件分配 `SourceID` 并登记本表；诊断按表达式
+    /// span 携带的 `SourceID` 回本表取真实文件，而不是整组共享入口文件身份。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub diagnostic_sources: std::collections::BTreeMap<u32, String>,
+    /// 调用解析失败注册表：解析器在 `resolved` 留空的调用点登记结构化失败事实，
+    /// 合同校验按调用点 span 回查，诊断不再依赖占位符或重新推导。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub call_resolution_failures: Vec<HirCallResolutionFailure>,
+}
+
+/// 一次调用解析失败的结构化事实。
+///
+/// 由重载解析在失败现场登记；合同校验只消费，不重新推导。
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirCallResolutionFailure {
+    /// 失败调用点的源码区间（含 lowering 分配的源文件身份）。
+    pub span: SourceSpan,
+    /// 用户可读的 callee 形态（`set.is_empty`、`next`、`<fn value>` 等）。
+    pub callee: String,
+    /// 失败原因分类。
+    pub reason: HirCallResolutionFailureKind,
+}
+
+/// 调用解析失败的原因分类。
+///
+/// 解析器只能给出它在失败现场能证明的事实；候选集可见性过滤等
+/// 不可观察的中间状态不在这里虚构。
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum HirCallResolutionFailureKind {
+    /// 名字未找到：作用域内没有任何以该名注册的 callable 候选。
+    NameNotFound,
+    /// 接收者类型未定：成员调用的对象表达式推不出类型。
+    ReceiverTypeUnknown {
+        /// 成员名。
+        member: String,
+    },
+    /// 候选集为空：接收者类型已知，但没有任何以该成员名注册的候选。
+    NoMethodCandidate {
+        /// 成员名。
+        member: String,
+        /// 接收者类型的用户可读形态。
+        receiver: String,
+    },
+    /// 有同名候选，但实参/泛型代入后无一存活。
+    NoViableOverload {
+        /// 同名候选数。
+        candidates: usize,
+    },
+    /// 标量族混比：`char`/`u8` 一侧与整型一侧直接比较，没有隐式统一。
+    MixedScalarComparison {
+        /// 左操作数类型的用户可读形态。
+        left: String,
+        /// 右操作数类型的用户可读形态。
+        right: String,
+    },
+    /// 显式泛型实参未结算（仍含开放 binder），无法代入候选。
+    GenericsUnresolved,
+    /// callee 是计算得到的函数值，没有可命名符号。
+    ComputedCallee,
+    /// 候选已绑定，但 `where` 证据拒绝具体代入，实例未闭合（合同校验期补记）。
+    InstanceNotClosed,
+    /// 解析器未留下失败事实：出现即表示诊断链路自身有缺口，而不是用户代码的新类别。
+    FailureUnrecorded,
+}
+
+impl HirCallResolutionFailureKind {
+    /// 机器可读的稳定分类标签，供诊断参数与统计分组使用。
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::NameNotFound => "name-not-found",
+            Self::ReceiverTypeUnknown { .. } => "receiver-type-unknown",
+            Self::NoMethodCandidate { .. } => "no-method-candidate",
+            Self::NoViableOverload { .. } => "no-viable-overload",
+            Self::MixedScalarComparison { .. } => "mixed-scalar-comparison",
+            Self::GenericsUnresolved => "generics-unresolved",
+            Self::ComputedCallee => "computed-callee",
+            Self::InstanceNotClosed => "instance-not-closed",
+            Self::FailureUnrecorded => "failure-unrecorded",
+        }
+    }
+
+    /// 用户可读的原因句子，接在 `unresolved call .. in ..` 之后。
+    pub fn describe(&self) -> String {
+        match self {
+            Self::NameNotFound => "no callable with this name is in scope".to_string(),
+            Self::ReceiverTypeUnknown { member } => format!("receiver type is unknown, so member `{member}` cannot be resolved"),
+            Self::NoMethodCandidate { member, receiver } => {
+                format!("no method candidate named `{member}` exists for receiver type `{receiver}`")
+            }
+            Self::NoViableOverload { candidates } => {
+                format!("{candidates} candidate(s) share the name, but none matches the argument types")
+            }
+            Self::MixedScalarComparison { left, right } => {
+                format!(
+                    "`{left}` and `{right}` are different scalar families; cast explicitly (for example `c as u32`) or compare by code point"
+                )
+            }
+            Self::GenericsUnresolved => "explicit generic arguments still contain open binders".to_string(),
+            Self::ComputedCallee => "callee is a computed function value without a nameable symbol".to_string(),
+            Self::InstanceNotClosed => {
+                "candidate is bound, but `where` evidence rejected the concrete substitution, so the instance never closed".to_string()
+            }
+            Self::FailureUnrecorded => {
+                "the resolver rejected this call without recording a reason; this is a diagnostics gap in the compiler".to_string()
+            }
+        }
+    }
 }
 
 /// A resolved `using` import in HIR.
@@ -154,6 +265,8 @@ impl Default for HirModule {
             statements: Vec::new(),
             type_aliases: Vec::new(),
             instantiated_callables: Vec::new(),
+            diagnostic_sources: std::collections::BTreeMap::new(),
+            call_resolution_failures: Vec::new(),
         }
     }
 }

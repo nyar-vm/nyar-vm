@@ -31,6 +31,15 @@ fn expr_diagnostic_span(expr: &HirExpr) -> DiagnosticSpan {
     DiagnosticSpan { start: expr.span.get_start() as usize, end: expr.span.get_end() as usize }
 }
 
+/// 表达式自带的 `SourceID` 经 `diagnostic_sources` 表回查真实文件身份；
+/// 表内缺失（单文件编译、旧缓存模块）时回退到调用方继承的模块身份，不伪造路径。
+fn expr_diagnostic_source(module: &HirModule, expr: &HirExpr, inherited: &DiagnosticSource) -> DiagnosticSource {
+    match module.diagnostic_sources.get(&expr.span.source.version_id) {
+        Some(path) => DiagnosticSource { id: path.clone(), revision: None },
+        None => inherited.clone(),
+    }
+}
+
 /// 前端统一验证调用身份、枚举判别与完整语义合同，不按错误文本放行。
 pub(crate) fn validate_hir_contract(hir: &HirModule) -> Result<(), HirError> {
     validate_resolved_call_contracts(hir)?;
@@ -66,7 +75,7 @@ pub(crate) fn validate_resolved_call_contracts(hir: &HirModule) -> Result<(), Hi
 /// 消息是不带定位后缀的展示文本（定位由渲染层从 `source` + `span` 展开）。
 fn compile_diagnostic_from_call_error(error: &HirError) -> Option<CompileDiagnostic> {
     let row = match error {
-        HirError::UnresolvedCall { selector, context, source, span } => DiagnosticRow::new(
+        HirError::UnresolvedCall { selector, context, reason, source, span } => DiagnosticRow::new(
             error.code(),
             DiagnosticSeverity::Error,
             DiagnosticPhase::Hir,
@@ -75,7 +84,8 @@ fn compile_diagnostic_from_call_error(error: &HirError) -> Option<CompileDiagnos
             span.clone(),
         )
         .with_arg("selector", DiagnosticArg::String(selector.clone()))
-        .with_arg("context", DiagnosticArg::String(context.clone())),
+        .with_arg("context", DiagnosticArg::String(context.clone()))
+        .with_arg("reason", DiagnosticArg::String(reason.tag().to_string())),
         HirError::UnresolvedConstructor { name, context, source, span } => DiagnosticRow::new(
             error.code(),
             DiagnosticSeverity::Error,
@@ -89,7 +99,7 @@ fn compile_diagnostic_from_call_error(error: &HirError) -> Option<CompileDiagnos
         _ => return None,
     };
     let message = match error {
-        HirError::UnresolvedCall { selector, context, .. } => format!("unresolved call `{selector}` in {context}"),
+        HirError::UnresolvedCall { selector, context, reason, .. } => format!("unresolved call `{selector}` in {context}: {}", reason.describe()),
         HirError::UnresolvedConstructor { name, context, .. } => format!("unresolved constructor `{name}` in {context}"),
         _ => unreachable!("the row match above already filtered to call diagnostics"),
     };
@@ -102,40 +112,40 @@ fn collect_module_call_contracts(hir: &HirModule, source: &DiagnosticSource, err
     }
     for singleton in &hir.singletons {
         for function in &singleton.methods {
-            collect_function_call_contracts(function, source, errors, false);
+            collect_function_call_contracts(hir, function, source, errors, false);
         }
     }
     for function in &hir.functions {
-        collect_function_call_contracts(function, source, errors, false);
+        collect_function_call_contracts(hir, function, source, errors, false);
     }
     for structure in &hir.structs {
         for function in &structure.methods {
-            collect_function_call_contracts(function, source, errors, false);
+            collect_function_call_contracts(hir, function, source, errors, false);
         }
         for property in &structure.properties {
             if let Some(function) = &property.getter {
-                collect_function_call_contracts(function, source, errors, false);
+                collect_function_call_contracts(hir, function, source, errors, false);
             }
             if let Some(function) = &property.setter {
-                collect_function_call_contracts(function, source, errors, false);
+                collect_function_call_contracts(hir, function, source, errors, false);
             }
         }
     }
     for trait_def in &hir.traits {
         for function in trait_def.methods.iter().chain(&trait_def.default_methods) {
-            collect_function_call_contracts(function, source, errors, false);
+            collect_function_call_contracts(hir, function, source, errors, false);
         }
     }
     for implementation in &hir.impls {
         for function in &implementation.methods {
-            collect_function_call_contracts(function, source, errors, false);
+            collect_function_call_contracts(hir, function, source, errors, false);
         }
     }
     // 单态化铸造的克隆体同样是会进入 MIR 的真实函数体：其签名与体内类型已完全代入，
     // 固定点按 where 证据拒绝具体代入时，克隆体内的调用点保持未闭合。声明体的开放
     // 占位仍由后续具体克隆闭合，不能在这里提前拒绝，因此只有克隆体要求实例已闭合。
     for callable in &hir.instantiated_callables {
-        collect_function_call_contracts(&callable.function, source, errors, true);
+        collect_function_call_contracts(hir, &callable.function, source, errors, true);
     }
 }
 
@@ -143,28 +153,30 @@ fn collect_module_call_contracts(hir: &HirModule, source: &DiagnosticSource, err
 #[allow(dead_code)]
 pub(crate) fn validate_function_call_contracts(function: &HirFunction, source: &DiagnosticSource) -> Result<(), HirError> {
     let mut errors = Vec::new();
-    collect_function_call_contracts(function, source, &mut errors, false);
+    collect_function_call_contracts(&HirModule::default(), function, source, &mut errors, false);
     errors.into_iter().next().map_or(Ok(()), Err)
 }
 
 fn collect_function_call_contracts(
+    module: &HirModule,
     function: &HirFunction,
     source: &DiagnosticSource,
     errors: &mut Vec<HirError>,
     require_closed_instance: bool,
 ) {
-    collect_block_call_contracts(&function.body, &function.name.to_string(), source, errors, require_closed_instance);
+    collect_block_call_contracts(module, &function.body, &function.name.to_string(), source, errors, require_closed_instance);
 }
 
 // 仅保留给 `lowering::mod` 的 pub(crate) 门面 re-export；收集式遍历不再经此入口。
 #[allow(dead_code)]
 pub(crate) fn validate_block_call_contracts(block: &HirBlock, function: &str, source: &DiagnosticSource) -> Result<(), HirError> {
     let mut errors = Vec::new();
-    collect_block_call_contracts(block, function, source, &mut errors, false);
+    collect_block_call_contracts(&HirModule::default(), block, function, source, &mut errors, false);
     errors.into_iter().next().map_or(Ok(()), Err)
 }
 
 fn collect_block_call_contracts(
+    module: &HirModule,
     block: &HirBlock,
     function: &str,
     source: &DiagnosticSource,
@@ -175,21 +187,21 @@ fn collect_block_call_contracts(
         match &statement.kind {
             HirStatementKind::Let { initializer, .. } => {
                 if let Some(initializer) = initializer {
-                    collect_expr_call_contracts(initializer, function, source, errors, require_closed_instance);
+                    collect_expr_call_contracts(module, initializer, function, source, errors, require_closed_instance);
                 }
             }
-            HirStatementKind::Expr(expr) => collect_expr_call_contracts(expr, function, source, errors, require_closed_instance),
+            HirStatementKind::Expr(expr) => collect_expr_call_contracts(module, expr, function, source, errors, require_closed_instance),
         }
     }
     if let Some(expr) = &block.expr {
-        collect_expr_call_contracts(expr, function, source, errors, require_closed_instance);
+        collect_expr_call_contracts(module, expr, function, source, errors, require_closed_instance);
     }
 }
 
 #[doc(hidden)]
 pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str, source: &DiagnosticSource) -> Result<(), HirError> {
     let mut errors = Vec::new();
-    collect_expr_call_contracts(expr, function, source, &mut errors, false);
+    collect_expr_call_contracts(&HirModule::default(), expr, function, source, &mut errors, false);
     errors.into_iter().next().map_or(Ok(()), Err)
 }
 
@@ -220,6 +232,7 @@ fn resolved_call_is_unclosed(resolved: Option<&HirResolvedCall>, require_closed_
 /// 前序遍历表达式树，收集全部未解析调用/构造；顺序与旧的首次失败遍历一致，
 /// 因此收集版返回的首个错误与旧行为逐字节相同。
 fn collect_expr_call_contracts(
+    module: &HirModule,
     expr: &HirExpr,
     function: &str,
     source: &DiagnosticSource,
@@ -229,20 +242,37 @@ fn collect_expr_call_contracts(
     match &expr.kind {
         HirExprKind::Call { callee, args, resolved, .. } => {
             if resolved_call_is_unclosed(resolved.as_ref(), require_closed_instance) {
-                let callee_name = match &callee.kind {
-                    HirExprKind::Path(path) => path.to_string(),
-                    _ => "<computed>".to_string(),
-                };
+                let callee_name = callee.kind.callable_label();
+                // 原因只取解析期登记的事实；克隆体与门面路径按结构化兜底补记，
+                // 任何分支都不得回退到占位符。
+                let reason = module
+                    .call_resolution_failures
+                    .iter()
+                    .find(|failure| {
+                        failure.span.source.version_id == expr.span.source.version_id
+                            && failure.span.get_start() == expr.span.get_start()
+                            && failure.span.get_end() == expr.span.get_end()
+                    })
+                    .map(|failure| failure.reason.clone())
+                    .unwrap_or_else(|| {
+                        if resolved.is_some() {
+                            crate::compiler::types::hir::HirCallResolutionFailureKind::InstanceNotClosed
+                        }
+                        else {
+                            crate::compiler::types::hir::HirCallResolutionFailureKind::FailureUnrecorded
+                        }
+                    });
                 errors.push(HirError::UnresolvedCall {
                     selector: callee_name,
                     context: function.to_string(),
-                    source: source.clone(),
+                    reason,
+                    source: expr_diagnostic_source(module, expr, source),
                     span: expr_diagnostic_span(expr),
                 });
             }
-            collect_expr_call_contracts(callee, function, source, errors, require_closed_instance);
+            collect_expr_call_contracts(module, callee, function, source, errors, require_closed_instance);
             for arg in args {
-                collect_expr_call_contracts(&arg.value, function, source, errors, require_closed_instance);
+                collect_expr_call_contracts(module, &arg.value, function, source, errors, require_closed_instance);
             }
         }
         HirExprKind::Construct { path, args, resolved } => {
@@ -250,12 +280,12 @@ fn collect_expr_call_contracts(
                 errors.push(HirError::UnresolvedConstructor {
                     name: path.to_string(),
                     context: function.to_string(),
-                    source: source.clone(),
+                    source: expr_diagnostic_source(module, expr, source),
                     span: expr_diagnostic_span(expr),
                 });
             }
             for arg in args {
-                collect_expr_call_contracts(arg, function, source, errors, require_closed_instance);
+                collect_expr_call_contracts(module, arg, function, source, errors, require_closed_instance);
             }
         }
         HirExprKind::FieldInit { value, .. }
@@ -265,83 +295,83 @@ fn collect_expr_call_contracts(
         | HirExprKind::YieldFrom(value)
         | HirExprKind::TryPropagate { inner: value, .. }
         | HirExprKind::Raise(value)
-        | HirExprKind::Resume(value) => collect_expr_call_contracts(value, function, source, errors, require_closed_instance),
-        HirExprKind::Cast { expr, .. } => collect_expr_call_contracts(expr, function, source, errors, require_closed_instance),
-        HirExprKind::ArrayNew { length, .. } => collect_expr_call_contracts(length, function, source, errors, require_closed_instance),
+        | HirExprKind::Resume(value) => collect_expr_call_contracts(module, value, function, source, errors, require_closed_instance),
+        HirExprKind::Cast { expr, .. } => collect_expr_call_contracts(module, expr, function, source, errors, require_closed_instance),
+        HirExprKind::ArrayNew { length, .. } => collect_expr_call_contracts(module, length, function, source, errors, require_closed_instance),
         HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } | HirExprKind::CollectionInit { items, .. } => {
             for item in items {
-                collect_expr_call_contracts(item, function, source, errors, require_closed_instance);
+                collect_expr_call_contracts(module, item, function, source, errors, require_closed_instance);
             }
         }
-        HirExprKind::FieldAccess { object, .. } => collect_expr_call_contracts(object, function, source, errors, require_closed_instance),
+        HirExprKind::FieldAccess { object, .. } => collect_expr_call_contracts(module, object, function, source, errors, require_closed_instance),
         HirExprKind::StoreField { object, value, .. } => {
-            collect_expr_call_contracts(object, function, source, errors, require_closed_instance);
-            collect_expr_call_contracts(value, function, source, errors, require_closed_instance);
+            collect_expr_call_contracts(module, object, function, source, errors, require_closed_instance);
+            collect_expr_call_contracts(module, value, function, source, errors, require_closed_instance);
         }
-        HirExprKind::GenericApply { callee, .. } => collect_expr_call_contracts(callee, function, source, errors, require_closed_instance),
-        HirExprKind::Block(block) => collect_block_call_contracts(block, function, source, errors, require_closed_instance),
-        HirExprKind::Lambda { body, .. } => collect_block_call_contracts(body, function, source, errors, require_closed_instance),
+        HirExprKind::GenericApply { callee, .. } => collect_expr_call_contracts(module, callee, function, source, errors, require_closed_instance),
+        HirExprKind::Block(block) => collect_block_call_contracts(module, block, function, source, errors, require_closed_instance),
+        HirExprKind::Lambda { body, .. } => collect_block_call_contracts(module, body, function, source, errors, require_closed_instance),
         HirExprKind::AnonymousClass { fields, methods, .. } => {
             for (_, value) in fields {
-                collect_expr_call_contracts(value, function, source, errors, require_closed_instance);
+                collect_expr_call_contracts(module, value, function, source, errors, require_closed_instance);
             }
             for method in methods {
-                collect_function_call_contracts(method, source, errors, require_closed_instance);
+                collect_function_call_contracts(module, method, source, errors, require_closed_instance);
             }
         }
         HirExprKind::If { condition, then_branch, else_branch } => {
-            collect_expr_call_contracts(condition, function, source, errors, require_closed_instance);
-            collect_block_call_contracts(then_branch, function, source, errors, require_closed_instance);
+            collect_expr_call_contracts(module, condition, function, source, errors, require_closed_instance);
+            collect_block_call_contracts(module, then_branch, function, source, errors, require_closed_instance);
             if let Some(block) = else_branch {
-                collect_block_call_contracts(block, function, source, errors, require_closed_instance);
+                collect_block_call_contracts(module, block, function, source, errors, require_closed_instance);
             }
         }
         HirExprKind::IfLet { scrutinee, then_branch, else_branch, .. } => {
-            collect_expr_call_contracts(scrutinee, function, source, errors, require_closed_instance);
-            collect_block_call_contracts(then_branch, function, source, errors, require_closed_instance);
+            collect_expr_call_contracts(module, scrutinee, function, source, errors, require_closed_instance);
+            collect_block_call_contracts(module, then_branch, function, source, errors, require_closed_instance);
             if let Some(block) = else_branch {
-                collect_block_call_contracts(block, function, source, errors, require_closed_instance);
+                collect_block_call_contracts(module, block, function, source, errors, require_closed_instance);
             }
         }
         HirExprKind::Match { scrutinee, arms } | HirExprKind::Case { scrutinee, arms } | HirExprKind::Catch { expr: scrutinee, arms } => {
-            collect_expr_call_contracts(scrutinee, function, source, errors, require_closed_instance);
+            collect_expr_call_contracts(module, scrutinee, function, source, errors, require_closed_instance);
             for arm in arms {
                 if let Some(guard) = &arm.guard {
-                    collect_expr_call_contracts(guard, function, source, errors, require_closed_instance);
+                    collect_expr_call_contracts(module, guard, function, source, errors, require_closed_instance);
                 }
-                collect_expr_call_contracts(&arm.body, function, source, errors, require_closed_instance);
+                collect_expr_call_contracts(module, &arm.body, function, source, errors, require_closed_instance);
             }
         }
         HirExprKind::Loop { iterator, condition, body, .. } => {
             if let Some(iterator) = iterator {
-                collect_expr_call_contracts(iterator, function, source, errors, require_closed_instance);
+                collect_expr_call_contracts(module, iterator, function, source, errors, require_closed_instance);
             }
             if let Some(condition) = condition {
-                collect_expr_call_contracts(condition, function, source, errors, require_closed_instance);
+                collect_expr_call_contracts(module, condition, function, source, errors, require_closed_instance);
             }
-            collect_block_call_contracts(body, function, source, errors, require_closed_instance);
+            collect_block_call_contracts(module, body, function, source, errors, require_closed_instance);
         }
         HirExprKind::Return(value) | HirExprKind::Yield(value) => {
             if let Some(value) = value {
-                collect_expr_call_contracts(value, function, source, errors, require_closed_instance);
+                collect_expr_call_contracts(module, value, function, source, errors, require_closed_instance);
             }
         }
-        HirExprKind::Assign { value, .. } => collect_expr_call_contracts(value, function, source, errors, require_closed_instance),
+        HirExprKind::Assign { value, .. } => collect_expr_call_contracts(module, value, function, source, errors, require_closed_instance),
         HirExprKind::Break { expr, .. } => {
             if let Some(value) = expr {
-                collect_expr_call_contracts(value, function, source, errors, require_closed_instance);
+                collect_expr_call_contracts(module, value, function, source, errors, require_closed_instance);
             }
         }
-        HirExprKind::TryScope { body, .. } => collect_block_call_contracts(body, function, source, errors, require_closed_instance),
+        HirExprKind::TryScope { body, .. } => collect_block_call_contracts(module, body, function, source, errors, require_closed_instance),
         HirExprKind::With { base, updates } => {
-            collect_expr_call_contracts(base, function, source, errors, require_closed_instance);
+            collect_expr_call_contracts(module, base, function, source, errors, require_closed_instance);
             for (_, value) in updates {
-                collect_expr_call_contracts(value, function, source, errors, require_closed_instance);
+                collect_expr_call_contracts(module, value, function, source, errors, require_closed_instance);
             }
         }
         HirExprKind::SuperCall { args, .. } => {
             for arg in args {
-                collect_expr_call_contracts(arg, function, source, errors, require_closed_instance);
+                collect_expr_call_contracts(module, arg, function, source, errors, require_closed_instance);
             }
         }
         // 函数引用没有子表达式需要递归；身份缺失由 MIR  lowering 的 fail-closed 处理。
