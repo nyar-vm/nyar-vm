@@ -490,9 +490,7 @@ fn collect_relation_structs(
 pub(crate) fn is_numeric_type_name(name: &str) -> bool {
     matches!(
         name,
-        "byte"
-            | "sbyte"
-            | "usize"
+        "usize"
             | "isize"
             | "u8"
             | "u16"

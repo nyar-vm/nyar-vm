@@ -46,8 +46,6 @@ pub(super) fn is_copy_compatible_primitive_alias(name: &str) -> bool {
         name,
         "usize"
             | "isize"
-            | "byte"
-            | "sbyte"
             | "u8"
             | "i8"
             | "u16"

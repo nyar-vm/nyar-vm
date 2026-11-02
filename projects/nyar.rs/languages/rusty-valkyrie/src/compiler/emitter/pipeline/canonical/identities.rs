@@ -388,8 +388,6 @@ fn is_array_index_surface_name(name: &str) -> bool {
             | "i32"
             | "i64"
             | "i128"
-            | "byte"
-            | "sbyte"
             | "std.primitive.usize"
             | "std.primitive.isize"
             | "std::primitive::usize"
@@ -401,19 +399,21 @@ fn is_array_index_surface_name(name: &str) -> bool {
 /// 返回 `None` 表示不是 primitive numeric，应继续走 CAN003 报错路径。
 pub(crate) fn canonical_primitive_from_named(name: &str) -> Option<CanonicalPrimitiveType> {
     Some(match name {
-        "boolean" | "Bool" | "bool" => CanonicalPrimitiveType::Bool,
+        // 只认 std 正式声明的拼写。`int`/`Int`/`long`/`double`/`boolean`/`byte` 等
+        // 规范里不存在的别名不允许在此被翻译成 primitive：残留 `Named` 必须走 CAN003。
+        "bool" => CanonicalPrimitiveType::Bool,
         "i8" => CanonicalPrimitiveType::Integer { bits: 8, signed: true },
-        "u8" | "byte" => CanonicalPrimitiveType::Integer { bits: 8, signed: false },
+        "u8" => CanonicalPrimitiveType::Integer { bits: 8, signed: false },
         "i16" => CanonicalPrimitiveType::Integer { bits: 16, signed: true },
         "u16" => CanonicalPrimitiveType::Integer { bits: 16, signed: false },
-        "i32" | "int" | "Int" => CanonicalPrimitiveType::Integer { bits: 32, signed: true },
-        "u32" | "uint" | "UInt" => CanonicalPrimitiveType::Integer { bits: 32, signed: false },
-        "i64" | "long" | "Long" => CanonicalPrimitiveType::Integer { bits: 64, signed: true },
-        "u64" | "ulong" => CanonicalPrimitiveType::Integer { bits: 64, signed: false },
+        "i32" => CanonicalPrimitiveType::Integer { bits: 32, signed: true },
+        "u32" => CanonicalPrimitiveType::Integer { bits: 32, signed: false },
+        "i64" => CanonicalPrimitiveType::Integer { bits: 64, signed: true },
+        "u64" => CanonicalPrimitiveType::Integer { bits: 64, signed: false },
         "i128" => CanonicalPrimitiveType::Integer { bits: 128, signed: true },
         "u128" => CanonicalPrimitiveType::Integer { bits: 128, signed: false },
-        "f32" | "float32" => CanonicalPrimitiveType::Float { bits: 32 },
-        "f64" | "float" | "Float" | "double" | "Double" => CanonicalPrimitiveType::Float { bits: 64 },
+        "f32" => CanonicalPrimitiveType::Float { bits: 32 },
+        "f64" => CanonicalPrimitiveType::Float { bits: 64 },
         _ => return None,
     })
 }

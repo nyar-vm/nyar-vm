@@ -160,8 +160,9 @@ fn bracket_sugar_lowers_to_array() {
     assert_eq!(lower_type_expression(&sugar).expect("bracket sugar lowers"), expected);
 }
 
-const NUMERIC_PRIMITIVE_NAMES: [&str; 16] =
-    ["i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "isize", "usize", "f32", "f64", "f128", "byte"];
+// `byte`/`sbyte` 不在 std 声明里，也不是规范拼写，因此不在数值族夹具中。
+const NUMERIC_PRIMITIVE_NAMES: [&str; 15] =
+    ["i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "isize", "usize", "f32", "f64", "f128"];
 
 fn compile(source: &str) -> Result<HirModule, HirError> {
     ValkyrieCompiler::new(SourceID::default()).compile_source(source)
@@ -185,6 +186,21 @@ fn numeric_primitive_names_lower_to_declaration_reference_not_carrier() {
             ValkyrieType::Named(HirIdentifier::new(name)),
             "`{name}` 必须是待绑定的声明引用，不得按名字生产低层 carrier"
         );
+    }
+}
+
+/// 反例：规范外拼写不是数值声明族，也没有编码内建身份，必须结构化失败。
+///
+/// 这些名字此前被名字表当作 primitive 放行；删除别名表后它们只能走
+/// `resolve_named_type` 的声明解析，未声明即 `TypeNotFound`。
+#[test]
+fn spec_external_primitive_spellings_fail_closed() {
+    for name in [
+        "byte", "sbyte", "int", "Int", "long", "Long", "ulong", "uint", "UInt", "Double", "double", "Bool", "boolean", "float32", "float",
+        "Float",
+    ] {
+        assert!(canonical_builtin_type(name).is_none(), "`{name}` 不得被当成无声明身份内建");
+        assert!(lower_type_expression(&path_type(name)).is_err(), "未声明的 `{name}` 必须结构化失败，不得被名字表放行");
     }
 }
 

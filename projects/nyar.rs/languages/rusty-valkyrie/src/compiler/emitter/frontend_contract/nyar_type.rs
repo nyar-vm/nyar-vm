@@ -41,8 +41,8 @@ fn concretize_primitive_named_alias(name: &str) -> Option<NyarType> {
     let simple = name.rsplit([':', '.']).next().unwrap_or(name);
     Some(match simple {
         "bool" => NyarType::Boolean,
-        "byte" | "u8" => NyarType::Integer8 { signed: false },
-        "sbyte" | "i8" => NyarType::Integer8 { signed: true },
+        "u8" => NyarType::Integer8 { signed: false },
+        "i8" => NyarType::Integer8 { signed: true },
         "u16" => NyarType::Integer16 { signed: false },
         "i16" => NyarType::Integer16 { signed: true },
         // Platform-width and unannotated integer literals share i32 in this seed profile.
