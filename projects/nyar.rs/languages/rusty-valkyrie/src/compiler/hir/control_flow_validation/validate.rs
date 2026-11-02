@@ -26,7 +26,7 @@ use super::{control_flow_source, expr_diagnostic_span};
 use crate::compiler::hir::control_flow_validation::{
     compatibility::{
         control_flow_value_type_compatible, control_flow_value_type_compatible_with_primitives, display_type, future_resume_type,
-        generator_yield_type, integer_literal_binds_to, return_without_value_compatible,
+        generator_yield_type, return_without_value_compatible, scalar_literal_binds_to,
     },
     pattern::{
         PatternBindingFacts, bind_parameter_local, bind_pattern_type, bind_pattern_type_with_facts, collect_pattern_bound_names,
@@ -99,7 +99,7 @@ pub fn validate_hir_statement(statement: &HirStatement, state: &mut HirValidatio
 /// `let` 显式声明类型与初始化表达式的静态类型必须落在同一名义身份上。
 ///
 /// 与 `validate_return_value` 同一口径：先按兼容性判定，再允许整数字面量按声明宽度取值
-/// （`integer_literal_binds_to`）。静态类型推断不出时不下结论，保持既有不阻塞行为。
+/// （`scalar_literal_binds_to`）。静态类型推断不出时不下结论，保持既有不阻塞行为。
 pub fn validate_let_initializer_type(declared: &ValkyrieType, initializer: &HirExpr, state: &HirValidationState) -> Result<(), HirError> {
     let expected_type = resolve_contextual_type(declared, state);
     let Some(actual_raw) = infer_static_expr_type(initializer, state)
@@ -108,7 +108,7 @@ pub fn validate_let_initializer_type(declared: &ValkyrieType, initializer: &HirE
     };
     let actual_type = resolve_contextual_type(&actual_raw, state);
     if control_flow_value_type_compatible_with_primitives(&expected_type, &actual_type, Some(state))
-        || integer_literal_binds_to(&expected_type, Some(initializer), state)
+        || scalar_literal_binds_to(&expected_type, Some(initializer), state)
     {
         return Ok(());
     }
@@ -430,7 +430,7 @@ pub fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_c
                 if let Some(break_type) = break_type {
                     if let Some(expected_type) = &expected_type {
                         if !control_flow_value_type_compatible(expected_type, &break_type)
-                            && !integer_literal_binds_to(expected_type, Some(break_value), state)
+                            && !scalar_literal_binds_to(expected_type, Some(break_value), state)
                         {
                             return Err(HirError::BreakValueTypeMismatch {
                                 actual: display_type(&break_type),
@@ -719,6 +719,8 @@ pub fn infer_literal_type(literal: &HirLiteral) -> Option<ValkyrieType> {
         HirLiteral::Float64(_) => Some(ValkyrieType::Float64),
         HirLiteral::Bool(_) => Some(ValkyrieType::Boolean),
         HirLiteral::Unit => Some(ValkyrieType::Unit),
+        HirLiteral::Character(_) => Some(ValkyrieType::Character),
+        HirLiteral::Byte(_) => Some(ValkyrieType::Integer8 { signed: false }),
         HirLiteral::String(_) => None,
         // 空值没有独立名义类型；其 `T?` 由使用位置的上下文给出。
         HirLiteral::Null => None,
@@ -773,7 +775,7 @@ pub fn validate_return_value(expr: &HirExpr, value: Option<&HirExpr>, state: &Hi
     };
     let actual_type = resolve_contextual_type(&actual_raw, state);
     if control_flow_value_type_compatible_with_primitives(&expected_type, &actual_type, Some(state))
-        || integer_literal_binds_to(&expected_type, Some(value), state)
+        || scalar_literal_binds_to(&expected_type, Some(value), state)
     {
         return Ok(());
     }
@@ -817,7 +819,7 @@ pub fn validate_yield_value(expr: &HirExpr, value: Option<&HirExpr>, state: &Hir
         return Ok(());
     };
     let actual_type = resolve_contextual_type(&actual_raw, state);
-    if control_flow_value_type_compatible(&yield_item_type, &actual_type) || integer_literal_binds_to(&yield_item_type, Some(value), state) {
+    if control_flow_value_type_compatible(&yield_item_type, &actual_type) || scalar_literal_binds_to(&yield_item_type, Some(value), state) {
         return Ok(());
     }
     Err(HirError::YieldValueTypeMismatch {

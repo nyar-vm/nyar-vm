@@ -978,6 +978,9 @@ fn validate_frozen_array_operator(
 fn operand_carrier(ty: &NyarType) -> Option<TargetOperandType> {
     match ty {
         NyarType::Integer32 { .. } => Some(TargetOperandType::I32),
+        // `char`（u16 code unit）在这些 lane 的物理载体是 i32（ABI 层 `AbiCarrier::I32` 同构）；
+        // 等值/比较配方按零扩展后的码位判定，不引入截断语义。
+        NyarType::Character => Some(TargetOperandType::I32),
         NyarType::Integer64 { .. } => Some(TargetOperandType::I64),
         NyarType::Float64 => Some(TargetOperandType::F64),
         _ => None,

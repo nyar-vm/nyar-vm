@@ -34,6 +34,16 @@ impl MirBuilder {
                     {
                         Some(expected.clone())
                     }
+                    (HirLiteral::Byte(_), Some(expected))
+                        if crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(expected, &self.field_declarations) =>
+                    {
+                        Some(expected.clone())
+                    }
+                    (HirLiteral::Character(_), Some(expected))
+                        if crate::compiler::mir::ssa::expr_helpers::is_character_literal_formal_type(expected, &self.field_declarations) =>
+                    {
+                        Some(expected.clone())
+                    }
                     _ => ty,
                 };
                 let value = self.next_value(MirValueOrigin::Literal);

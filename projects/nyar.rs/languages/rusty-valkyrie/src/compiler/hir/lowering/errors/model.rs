@@ -669,6 +669,56 @@ pub enum HirError {
     /// backend contract 拒绝声明面的互操作能力。
     /// 直接携带 backend contract 事实，不在 lowering 阶段重拼失败文本。
     BackendContractRejected(crate::compiler::emitter::backend_contract::interop::BackendContractError),
+    /// 单引号捕获字面量的语义判定失败（字符/字节/raw 归属与转义解码）。
+    InvalidSingleQuoteLiteral {
+        /// 结构化失败原因。
+        failure: SingleQuoteLiteralFailure,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span（指向出错的转义序列或整个字面量）。
+        span: DiagnosticSpan,
+    },
+}
+
+/// 单引号捕获字面量的结构化失败原因。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SingleQuoteLiteralFailure {
+    /// 未识别的前缀标识符：单引号捕获只定义 `r`（raw）与 `b`（字节）。
+    UnknownPrefix {
+        /// 源码写出的前缀。
+        prefix: String,
+    },
+    /// 空字节字面量 `b''`。
+    EmptyByteLiteral,
+    /// 字节字面量解码后不是恰好一个字节。
+    ByteLiteralNotSingleByte {
+        /// 解码得到的字节数。
+        count: usize,
+    },
+    /// 字节字面量的裸字符必须是 ASCII；更宽的值请写 `\xNN`。
+    ByteLiteralNotAscii {
+        /// 源码写出的字符。
+        character: String,
+    },
+    /// 字节字面量不接受 `\u{...}` 转义，请写 `\xNN`。
+    UnicodeEscapeInByteLiteral,
+    /// 非法转义序列（如 `\q`）。
+    InvalidEscapeSequence {
+        /// 出错的转义文本（含反斜杠）。
+        escape: String,
+    },
+    /// `\u{...}` 转义不是合法 Unicode 码位（空、非十六进制或超过 0x10FFFF）。
+    InvalidUnicodeEscape {
+        /// 出错的转义文本（含 `\u{` 与 `}`）。
+        escape: String,
+    },
+    /// 内容以孤立反斜杠结束；按捕获优先语义，转义不能跨界救定界符。
+    DanglingEscape,
+    /// 字符字面量超出 BMP：`char` 是 u16 code unit，不能静默截断。
+    CharacterBeyondBmp {
+        /// 解码得到的码位。
+        value: u32,
+    },
 }
 
 /// TGrammar 模板构造类别。

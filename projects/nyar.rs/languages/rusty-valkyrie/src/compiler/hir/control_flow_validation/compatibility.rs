@@ -121,17 +121,21 @@ pub fn array_types_compatible(expected: &ValkyrieType, actual: &ValkyrieType) ->
         _ => false,
     }
 }
-///
-/// 字面量的静态形态只有默认宽度 `i64`，字面量本身不携带宽度事实；期望类型是数值类型时
-/// 按期望类型取值。判定与 `overload.rs::specialize_call_literal_exprs` 完全同源：
-/// 同一份数值名集合（`Named("i32")` 与 `Nominal{ItemId}` 都算数值），同一条件（仅整数字面量）。
-pub fn integer_literal_binds_to(expected: &ValkyrieType, value: Option<&HirExpr>, state: &HirValidationState) -> bool {
-    if !matches!(value.map(|value| &value.kind), Some(HirExprKind::Literal(HirLiteral::Integer64(_)))) {
-        return false;
-    }
-    match expected {
+/// 标量字面量按期望类型绑定：整数字面量（默认宽度 `i64`）只认数值期望；字节字面量
+/// 同源（值域 `u8` 已在 lowering 校验）；字符字面量额外接受 `char` 期望（码位值即字符）。
+/// 判定与 `overload.rs::specialize_call_literal_exprs` 完全同源：同一份数值名集合
+/// （`Named("i32")` 与 `Nominal{ItemId}` 都算数值），同一条件（仅标量字面量）。
+pub fn scalar_literal_binds_to(expected: &ValkyrieType, value: Option<&HirExpr>, state: &HirValidationState) -> bool {
+    let numeric_expected = match expected {
         ValkyrieType::Nominal { declaration, .. } => state.numeric_declarations.contains(declaration),
         other => crate::compiler::hir::type_relation::is_numeric_type_name_of(other),
+    };
+    match value.map(|value| &value.kind) {
+        Some(HirExprKind::Literal(HirLiteral::Integer64(_) | HirLiteral::Byte(_))) => numeric_expected,
+        Some(HirExprKind::Literal(HirLiteral::Character(_))) => {
+            numeric_expected || crate::compiler::hir::type_relation::is_character_type_name_of(expected)
+        }
+        _ => false,
     }
 }
 
@@ -149,7 +153,7 @@ pub fn is_integer_type(ty: &ValkyrieType) -> bool {
 /// 整数 carrier 的互容只承认同一名义身份（ADR 0009/0013）：位宽与有符号性都必须相同。
 ///
 /// 不同档位（如 `i32` 与 `i64`、`i32` 与 `u32`）不得因「都是整数」互相顶替。
-/// 整数字面量的宽度由期望类型决定，走 `integer_literal_binds_to`，不在这里放宽。
+/// 标量字面量的宽度由期望类型决定，走 `scalar_literal_binds_to`，不在这里放宽。
 fn integer_carriers_share_identity(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
     if !is_integer_type(expected) || !is_integer_type(actual) {
         return false;

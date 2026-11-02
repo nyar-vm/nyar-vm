@@ -305,6 +305,30 @@ impl From<HirError> for DiagnosticRow {
             HirError::BackendContractRejected(error) => {
                 row = row.with_arg("details", DiagnosticArg::String(error.to_string()));
             }
+            HirError::InvalidSingleQuoteLiteral { failure, .. } => {
+                row = row.with_arg("failure", DiagnosticArg::String(single_quote_literal_failure_name(failure).to_string()));
+                match failure {
+                    SingleQuoteLiteralFailure::UnknownPrefix { prefix } => {
+                        row = row.with_arg("prefix", DiagnosticArg::String(prefix.clone()));
+                    }
+                    SingleQuoteLiteralFailure::ByteLiteralNotSingleByte { count } => {
+                        row = row.with_arg("count", DiagnosticArg::Int(*count as i64));
+                    }
+                    SingleQuoteLiteralFailure::ByteLiteralNotAscii { character } => {
+                        row = row.with_arg("character", DiagnosticArg::String(character.clone()));
+                    }
+                    SingleQuoteLiteralFailure::InvalidEscapeSequence { escape }
+                    | SingleQuoteLiteralFailure::InvalidUnicodeEscape { escape } => {
+                        row = row.with_arg("escape", DiagnosticArg::String(escape.clone()));
+                    }
+                    SingleQuoteLiteralFailure::CharacterBeyondBmp { value } => {
+                        row = row.with_arg("value", DiagnosticArg::Int(*value as i64));
+                    }
+                    SingleQuoteLiteralFailure::EmptyByteLiteral
+                    | SingleQuoteLiteralFailure::UnicodeEscapeInByteLiteral
+                    | SingleQuoteLiteralFailure::DanglingEscape => {}
+                }
+            }
         }
 
         row.with_internal_message(error.code().to_string())
@@ -554,6 +578,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
+        HirError::InvalidSingleQuoteLiteral { source, .. } => source.clone(),
     }
 }
 
@@ -624,5 +649,21 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
+        HirError::InvalidSingleQuoteLiteral { span, .. } => span.clone(),
+    }
+}
+
+/// 单引号字面量失败原因的稳定短名（用于诊断参数）。
+pub(super) fn single_quote_literal_failure_name(failure: &SingleQuoteLiteralFailure) -> &'static str {
+    match failure {
+        SingleQuoteLiteralFailure::UnknownPrefix { .. } => "unknown_prefix",
+        SingleQuoteLiteralFailure::EmptyByteLiteral => "empty_byte_literal",
+        SingleQuoteLiteralFailure::ByteLiteralNotSingleByte { .. } => "byte_literal_not_single_byte",
+        SingleQuoteLiteralFailure::ByteLiteralNotAscii { .. } => "byte_literal_not_ascii",
+        SingleQuoteLiteralFailure::UnicodeEscapeInByteLiteral => "unicode_escape_in_byte_literal",
+        SingleQuoteLiteralFailure::InvalidEscapeSequence { .. } => "invalid_escape_sequence",
+        SingleQuoteLiteralFailure::InvalidUnicodeEscape { .. } => "invalid_unicode_escape",
+        SingleQuoteLiteralFailure::DanglingEscape => "dangling_escape",
+        SingleQuoteLiteralFailure::CharacterBeyondBmp { .. } => "character_beyond_bmp",
     }
 }

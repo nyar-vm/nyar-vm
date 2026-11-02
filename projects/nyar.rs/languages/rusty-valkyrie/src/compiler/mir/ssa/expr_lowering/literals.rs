@@ -29,6 +29,46 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
             }),
         ),
         HirLiteral::Float64(value) => (MirConstant::Float64(*value), Some(ValkyrieType::Float64)),
+        // 字符字面量：形参为 `char` 或整数类型时写形参类型（overload 已特化），
+        // 否则默认 `char`；值为已校验的 u16 码元，按整数常量编码。
+        HirLiteral::Character(value) => (
+            MirConstant::Int(*value as i64),
+            Some(match expected_type {
+                Some(
+                    ty @ (ValkyrieType::Character
+                    | ValkyrieType::Integer8 { .. }
+                    | ValkyrieType::Integer16 { .. }
+                    | ValkyrieType::Integer32 { .. }
+                    | ValkyrieType::Integer64 { .. }
+                    | ValkyrieType::Integer128 { .. }),
+                ) => ty.clone(),
+                Some(ty @ (ValkyrieType::Named(_) | ValkyrieType::Nominal { .. }))
+                    if crate::compiler::mir::ssa::expr_helpers::is_character_literal_formal_type(ty, &[]) =>
+                {
+                    ty.clone()
+                }
+                _ => ValkyrieType::Character,
+            }),
+        ),
+        // 字节字面量：形参为整数类型时写形参类型，否则默认 `u8`。
+        HirLiteral::Byte(value) => (
+            MirConstant::Int(*value as i64),
+            Some(match expected_type {
+                Some(
+                    ty @ (ValkyrieType::Integer8 { .. }
+                    | ValkyrieType::Integer16 { .. }
+                    | ValkyrieType::Integer32 { .. }
+                    | ValkyrieType::Integer64 { .. }
+                    | ValkyrieType::Integer128 { .. }),
+                ) => ty.clone(),
+                Some(ty @ (ValkyrieType::Named(_) | ValkyrieType::Nominal { .. }))
+                    if crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(ty, &[]) =>
+                {
+                    ty.clone()
+                }
+                _ => ValkyrieType::Integer8 { signed: false },
+            }),
+        ),
         HirLiteral::Bool(value) => (MirConstant::Bool(*value), Some(ValkyrieType::Boolean)),
         HirLiteral::String(value) => (
             MirConstant::Utf8(

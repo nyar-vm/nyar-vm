@@ -275,6 +275,50 @@ impl std::fmt::Display for HirError {
                 Ok(())
             }
             Self::BackendContractRejected(error) => write!(f, "backend contract rejected the declaration: {error}"),
+            Self::InvalidSingleQuoteLiteral { failure, span, .. } => {
+                use super::model::SingleQuoteLiteralFailure;
+                match failure {
+                    SingleQuoteLiteralFailure::UnknownPrefix { prefix } => {
+                        write!(
+                            f,
+                            "unknown single-quote literal prefix `{prefix}` at {}..{} (only `r` and `b` are defined)",
+                            span.start, span.end
+                        )
+                    }
+                    SingleQuoteLiteralFailure::EmptyByteLiteral => {
+                        write!(f, "empty byte literal `b''` at {}..{}", span.start, span.end)
+                    }
+                    SingleQuoteLiteralFailure::ByteLiteralNotSingleByte { count } => {
+                        write!(f, "byte literal must decode to exactly one byte, got {count} at {}..{}", span.start, span.end)
+                    }
+                    SingleQuoteLiteralFailure::ByteLiteralNotAscii { character } => {
+                        write!(
+                            f,
+                            "byte literal character `{character}` is not ASCII; write a `\\xNN` escape instead (at {}..{})",
+                            span.start, span.end
+                        )
+                    }
+                    SingleQuoteLiteralFailure::UnicodeEscapeInByteLiteral => {
+                        write!(f, "byte literal does not accept `\\u{{...}}`; write `\\xNN` instead (at {}..{})", span.start, span.end)
+                    }
+                    SingleQuoteLiteralFailure::InvalidEscapeSequence { escape } => {
+                        write!(f, "invalid escape sequence `{escape}` at {}..{}", span.start, span.end)
+                    }
+                    SingleQuoteLiteralFailure::InvalidUnicodeEscape { escape } => {
+                        write!(f, "invalid unicode escape `{escape}` at {}..{}", span.start, span.end)
+                    }
+                    SingleQuoteLiteralFailure::DanglingEscape => {
+                        write!(f, "dangling backslash at the end of the captured literal at {}..{}", span.start, span.end)
+                    }
+                    SingleQuoteLiteralFailure::CharacterBeyondBmp { value } => {
+                        write!(
+                            f,
+                            "character literal U+{value:X} is beyond the BMP: `char` is a u16 code unit (at {}..{})",
+                            span.start, span.end
+                        )
+                    }
+                }
+            }
         }
     }
 }

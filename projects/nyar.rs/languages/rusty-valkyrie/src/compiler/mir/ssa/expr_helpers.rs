@@ -231,6 +231,25 @@ fn is_integer_literal_surface_name(name: &str) -> bool {
     )
 }
 
+/// 字符字面量可特化到的形参类型：`char`（内建变体、源码短名或 `[primitive("std::text::char")]`
+/// 的 `Nominal`）或任意整数字面量形参；与整数字面量同源，缺表时接受已特化合同。
+pub(super) fn is_character_literal_formal_type(ty: &ValkyrieType, structs: &[super::MirStruct]) -> bool {
+    match ty {
+        ValkyrieType::Character => true,
+        ValkyrieType::Named(name) => name.as_str() == "char" || is_integer_literal_surface_name(name.as_str()),
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.is_empty() => {
+            if primitive_identity.as_deref() == Some("std::text::char") {
+                return true;
+            }
+            match super::MirStruct::find_by_declaration(structs, *declaration) {
+                Some(item) => item.name.as_str() == "char" || is_integer_literal_surface_name(item.name.as_str()),
+                None => true,
+            }
+        }
+        _ => is_integer_literal_formal_type(ty, structs),
+    }
+}
+
 pub(super) fn named_type_name(ty: &ValkyrieType) -> Option<&str> {
     match ty {
         ValkyrieType::Named(name) => Some(name.as_str()),

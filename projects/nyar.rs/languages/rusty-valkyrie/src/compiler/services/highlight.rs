@@ -192,7 +192,7 @@ fn classify_token_kind(kind: &ValkyrieTokenType) -> HighlightKind {
         ValkyrieTokenType::Keyword(_) => HighlightKind::Keyword,
         ValkyrieTokenType::StringLiteral | ValkyrieTokenType::CharLiteral => HighlightKind::String,
         ValkyrieTokenType::IntegerLiteral | ValkyrieTokenType::FloatLiteral | ValkyrieTokenType::BoolLiteral => HighlightKind::Number,
-        ValkyrieTokenType::Identifier | ValkyrieTokenType::Label | ValkyrieTokenType::StringPrefix => HighlightKind::Identifier,
+        ValkyrieTokenType::Identifier | ValkyrieTokenType::Label => HighlightKind::Identifier,
         ValkyrieTokenType::ParenthesisL
         | ValkyrieTokenType::ParenthesisR
         | ValkyrieTokenType::BraceL

@@ -490,12 +490,34 @@ impl MirBuilder {
                 if !crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(&actual_type, &self.field_declarations) {
                     return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value);
                 }
-                if let Some(expected_type) = expected_type {
-                    if actual_type != expected_type
-                        && !crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(&expected_type, &self.field_declarations)
+                if let Some(expected_type) = &expected_type {
+                    if actual_type != *expected_type
+                        && !crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(expected_type, &self.field_declarations)
                     {
                         return MirOperand::Constant(MirConstant::Bool(false));
                     }
+                }
+                self.lower_eq_constant_operand(value, constant, &actual_type)
+            }
+            // 字符/字节字面量模式与整数字面量同一等值比较路径：值是码位/字节常量，
+            // 形参口径由对应 formal 判定承担。
+            HirLiteral::Character(_) => {
+                let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
+                else {
+                    return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value);
+                };
+                if !crate::compiler::mir::ssa::expr_helpers::is_character_literal_formal_type(&actual_type, &self.field_declarations) {
+                    return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value);
+                }
+                self.lower_eq_constant_operand(value, constant, &actual_type)
+            }
+            HirLiteral::Byte(_) => {
+                let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
+                else {
+                    return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value);
+                };
+                if !crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(&actual_type, &self.field_declarations) {
+                    return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value);
                 }
                 self.lower_eq_constant_operand(value, constant, &actual_type)
             }

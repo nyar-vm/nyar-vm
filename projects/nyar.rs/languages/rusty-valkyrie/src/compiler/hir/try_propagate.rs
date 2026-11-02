@@ -106,6 +106,8 @@ fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> O
         HirExprKind::Literal(literal) => Some(match literal {
             crate::compiler::types::hir::HirLiteral::Integer64(_) => ValkyrieType::Integer64 { signed: true },
             crate::compiler::types::hir::HirLiteral::Float64(_) => ValkyrieType::Float64,
+            crate::compiler::types::hir::HirLiteral::Character(_) => ValkyrieType::Character,
+            crate::compiler::types::hir::HirLiteral::Byte(_) => ValkyrieType::Integer8 { signed: false },
             crate::compiler::types::hir::HirLiteral::String(_) => ValkyrieType::Named(Identifier::new("utf8")),
             crate::compiler::types::hir::HirLiteral::Bool(_) => ValkyrieType::Boolean,
             crate::compiler::types::hir::HirLiteral::Unit => ValkyrieType::Unit,

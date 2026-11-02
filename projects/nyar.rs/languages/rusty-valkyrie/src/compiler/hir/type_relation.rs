@@ -192,6 +192,14 @@ impl TypeRelationContext {
         }
     }
 
+    /// 字符字面量可特化到的形参类型：`char` 自身，或任意数值形参（码位值参与比较/算术）。
+    ///
+    /// 与整数字面量同源：值域校验（码位 ≤ 0xFFFF）已在 HIR lowering 完成，
+    /// 窄形参（如 `u8`）是否容得下具体值沿用整数字面量同一缺口，不在此特判。
+    pub fn is_character_literal_formal(&self, ty: &ValkyrieType) -> bool {
+        is_character_type_name_of(ty) || self.is_numeric_type(ty)
+    }
+
     /// 字面量特化用：只有浮点形参接受浮点字面量。
     ///
     /// 整数形参不是浮点类型，浮点字面量不得按“同属数值”静默塞入整数类型；与
@@ -535,6 +543,19 @@ pub(crate) fn is_numeric_type_name_of(ty: &ValkyrieType) -> bool {
         | ValkyrieType::Float32
         | ValkyrieType::Float64 => true,
         ValkyrieType::Named(name) => is_numeric_type_name(name.as_str()),
+        _ => false,
+    }
+}
+
+/// 字符类型判定（字符字面量特化与值位置绑定共用同一份口径）。
+///
+/// `char` 是 u16 code unit 的编码型内建；声明面允许以 `Character` 内建变体、
+/// 源码短名 `char`、或携带 `[primitive("std::text::char")]` 身份的 `Nominal` 出现。
+pub(crate) fn is_character_type_name_of(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Character => true,
+        ValkyrieType::Named(name) => matches!(name.as_str(), "char" | "std::text::char"),
+        ValkyrieType::Nominal { primitive_identity, .. } => primitive_identity.as_deref() == Some("std::text::char"),
         _ => false,
     }
 }

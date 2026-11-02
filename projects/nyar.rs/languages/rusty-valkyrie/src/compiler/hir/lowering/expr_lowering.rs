@@ -263,6 +263,15 @@ fn lower_term_expression_body(
             HirExprKind::Literal(HirLiteral::Float64(OrderedFloat(parsed)))
         }
         TermExpression::BooleanLiteral { value, .. } => HirExprKind::Literal(HirLiteral::Bool(*value)),
+        TermExpression::SingleQuoteLiteral { prefix, quote_count, content, span: literal_span } => {
+            // 捕获事实来自 Oak：内容未解码，前缀是紧邻标识符；字符/字节/raw 归属与
+            // 转义解码由 `single_quote_literal` 模块按合同完成，失败结构化带 span。
+            let literal_range = frontend::std_range(literal_span);
+            let capture_start = prefix.as_ref().map_or(literal_range.start, |prefix| prefix.span.end);
+            let content_start = capture_start + *quote_count as usize;
+            let decoded = single_quote_literal::decode_single_quote_literal(prefix.as_ref(), content, &literal_range, content_start)?;
+            single_quote_literal::single_quote_literal_kind(decoded, prefix.as_ref())
+        }
         TermExpression::Unary(node) => lower_unary_expression(node, source_id, span_range.clone(), span.clone())?,
         TermExpression::Binary(node) => lower_binary_expression(node, source_id, span_range.clone(), span.clone())?,
         TermExpression::Cast { expr, ty, .. } => lower_deferred(|| {

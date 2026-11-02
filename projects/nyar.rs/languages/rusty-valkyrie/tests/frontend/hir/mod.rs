@@ -19,6 +19,7 @@ mod hir_materialization_gate_tests;
 mod hir_overload_identity_tests;
 #[cfg(false)] // AstToHir 已移除、类型签名变化（架构迁移）
 mod hir_overload_singleton_tests;
+mod hir_single_quote_literal_tests;
 mod hir_trait_dispatch_evidence_tests;
 mod hir_trait_system_impl_identity_tests;
 mod hir_expression_nesting_guard_tests;

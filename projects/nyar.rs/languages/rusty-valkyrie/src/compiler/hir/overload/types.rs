@@ -227,6 +227,10 @@ pub fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) 
             }
             crate::compiler::types::hir::HirLiteral::Integer64(_) => ValkyrieType::Integer64 { signed: true },
             crate::compiler::types::hir::HirLiteral::Float64(_) => ValkyrieType::Float64,
+            // 字符字面量默认归 `char`（u16 code unit），字节字面量默认归 `u8`；
+            // 形参特化在 `specialize_literal_expr_type` 完成。
+            crate::compiler::types::hir::HirLiteral::Character(_) => ValkyrieType::Character,
+            crate::compiler::types::hir::HirLiteral::Byte(_) => ValkyrieType::Integer8 { signed: false },
             crate::compiler::types::hir::HirLiteral::String(_) => ValkyrieType::Utf8,
             crate::compiler::types::hir::HirLiteral::Bool(_) => ValkyrieType::Boolean,
             crate::compiler::types::hir::HirLiteral::Unit => ValkyrieType::Unit,

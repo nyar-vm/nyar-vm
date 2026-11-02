@@ -100,6 +100,7 @@ impl HirError {
             Self::SourceGroupClosureFailed(_) => "valkyrie.hir.source_group_closure_failed",
             Self::DeriveResolutionFailed { .. } => "valkyrie.hir.derive_resolution_failed",
             Self::BackendContractRejected(_) => "backend.contract.rejected",
+            Self::InvalidSingleQuoteLiteral { .. } => "valkyrie.hir.invalid_single_quote_literal",
         }
     }
 }

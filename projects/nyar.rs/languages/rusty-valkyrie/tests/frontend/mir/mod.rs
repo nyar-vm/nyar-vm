@@ -9,6 +9,7 @@ mod mir_ssa_collection_init_tests;
 mod mir_ssa_match_lowering_bottom_type_tests;
 mod mir_ssa_nullable_null_tests;
 mod mir_ssa_overloaded_callable_label_tests;
+mod mir_ssa_single_quote_literal_tests;
 mod mir_ssa_trait_dispatch_witness_tests;
 mod mir_ssa_type_level_marker_fields_tests;
 mod mir_ssa_value_semantics_strict_layout_tests;

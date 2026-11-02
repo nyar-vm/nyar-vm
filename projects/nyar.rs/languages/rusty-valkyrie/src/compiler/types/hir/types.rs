@@ -815,6 +815,10 @@ pub enum HirLiteral {
     Integer64(i64),
     /// 64 位浮点数。
     Float64(ordered_float::OrderedFloat<f64>),
+    /// 字符字面量（`'x'`）：`char` 是 u16 code unit，值已在 lowering 校验于 BMP 内。
+    Character(u16),
+    /// 字节字面量（`b'x'`）：值域 `u8`。
+    Byte(u8),
     /// 字符串字面量。
     String(HirStringLiteral),
     /// 布尔值。

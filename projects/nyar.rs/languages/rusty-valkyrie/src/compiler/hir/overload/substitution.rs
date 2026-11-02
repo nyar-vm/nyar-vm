@@ -389,6 +389,15 @@ pub(crate) fn specialize_literal_expr_type(
         HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Integer64(_)) if type_relations.is_numeric_type(expected) => {
             expected.clone()
         }
+        // Character literals are representation-polymorphic like integer literals: a `char`
+        // formal binds directly, a numeric formal binds the code point value, so
+        // `code_point == ' '` (u32 vs char literal) needs no `as` cast at the call site.
+        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Character(_)) if type_relations.is_character_literal_formal(expected) => {
+            expected.clone()
+        }
+        // Byte literals bind to numeric formals (`b' '` in a `u32` comparison), same rule
+        // as integer literals; the `u8` value range was validated during HIR lowering.
+        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Byte(_)) if type_relations.is_numeric_type(expected) => expected.clone(),
         // Float literals only bind to float formals: `1.0` is not a representation of any
         // integer, so it must not be silently accepted for `i32`/`usize`. Only `f32`/`f64`
         // accept Float64 literals in source (e.g. `1000000.0`).
