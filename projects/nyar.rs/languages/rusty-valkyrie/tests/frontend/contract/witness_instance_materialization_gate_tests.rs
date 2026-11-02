@@ -177,6 +177,118 @@ micro main() {
 }
 ";
 
+const HASH_MAP: &str = "namespace std.collection;
+
+type Equal = std::primitive::Equal;
+
+class HashMap<K, V> {
+}
+
+imply HashMap<K, V> {
+    micro insert(mut self, key: K, value: V): unit
+        where K: Equal
+    {
+        return
+    }
+
+    micro contains_key(self, key: K): bool
+        where K: Equal
+    {
+        return key == key
+    }
+}
+";
+
+const APP_INTERSECTION: &str = "namespace leetcode.app;
+
+[export]
+micro intersection(mut table: HashMap<i64, bool>, key: i64): bool {
+    table.insert(key, true)
+    return table.contains_key(key)
+}
+
+[main]
+micro main() {
+}
+";
+
+const BOUND_EVIDENCE: &str = "namespace std.bounds;
+
+trait Outer {
+    micro outer_mark(self): bool
+}
+
+trait Inner {
+    micro inner_mark(self): bool
+}
+
+structure Opaque {
+}
+
+imply Opaque: Outer {
+    micro outer_mark(self): bool { return true }
+}
+";
+
+const BOUND_EVIDENCE_WITH_INNER: &str = "namespace std.bounds;
+
+trait Outer {
+    micro outer_mark(self): bool
+}
+
+trait Inner {
+    micro inner_mark(self): bool
+}
+
+structure Opaque {
+}
+
+imply Opaque: Outer {
+    micro outer_mark(self): bool { return true }
+}
+
+imply Opaque: Inner {
+    micro inner_mark(self): bool { return true }
+}
+";
+
+const APP_DELEGATED_BOUND: &str = "namespace leetcode.app;
+
+using std.bounds;
+
+micro inner<T>(value: T): bool
+    where T: Inner
+{
+    return value.inner_mark()
+}
+
+micro outer<T>(value: T): bool
+    where T: Outer
+{
+    return inner(value)
+}
+
+[export]
+micro touch(value: Opaque): bool {
+    if value.outer_mark() {
+        return outer(value)
+    }
+    return false
+}
+
+[main]
+micro main() {
+}
+";
+
+fn bound_groups(evidence_source: &str) -> Vec<CompilerSourceGroup> {
+    let bounds_group = CompilerSourceGroup::single_source("std.bounds", "std.bounds", evidence_source);
+    let app_group = CompilerSourceGroup::single_source("leetcode.app", "leetcode.app", APP_DELEGATED_BOUND)
+        .with_direct_dependencies(vec!["std.bounds".to_string()])
+        .as_entry();
+    vec![bounds_group, app_group]
+}
+
 fn source_groups(collection_source: &str, app_source: &str) -> Vec<CompilerSourceGroup> {
     let core_group = CompilerSourceGroup::single_source("std.primitive", "std.primitive", PRIMITIVES);
     let types_group =
@@ -212,4 +324,39 @@ fn concrete_argument_without_trait_impl_is_rejected() {
         .compile_source_groups_to_program(&source_groups(ARRAY, APP_OPAQUE))
         .expect_err("`Opaque` 没有 `Equal` impl 时 `contains` 不得解析");
     assert!(matches!(&error, HirError::UnresolvedCall { .. }), "got {error:?}");
+}
+
+/// D4：`intersection-of-two-arrays` 语料形态——`HashMap<i64, bool>` 的
+/// `insert` / `contains_key` 都带 `where K: Equal`，具体代入 `i64` 时证据必须进入实例化。
+#[test]
+fn intersection_of_two_arrays_shape_compiles() {
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&source_groups(HASH_MAP, APP_INTERSECTION))
+        .expect("`HashMap<i64, bool>` 的 `insert` / `contains_key` 必须以 `i64: Equal` 证据实例化");
+}
+
+/// D3/D4 反例：解析期被延后的内层约束，必须在具体类型实例化时结算。
+///
+/// `outer<T>` 只声明 `T: Outer`，体内调用 `inner` 要求 `T: Inner`。解析 `outer` 时 `T`
+/// 仍是开放 binder，内层义务只能延后；`Opaque` 只有 `Outer` 证据，实例化 `outer<Opaque>`
+/// 后必须结构化失败，不得静默生成一个无 `Inner` 证据的实例。
+#[test]
+fn delegated_bound_missing_at_instantiation_is_rejected() {
+    let error = ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&bound_groups(BOUND_EVIDENCE))
+        .expect_err("`Opaque` 没有 `Inner` impl 时 `inner` 不得实例化");
+    match &error {
+        HirError::UnresolvedCall { selector, .. } => {
+            assert_eq!(selector.to_string(), "inner", "缺证据必须落在内层委托调用 `inner` 上: {error:?}")
+        }
+        other => panic!("expected unresolved call, got {other:?}"),
+    }
+}
+
+/// 正例对照：补上 `imply Opaque: Inner` 后同一委托链必须成功。
+#[test]
+fn delegated_bound_present_at_instantiation_compiles() {
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&bound_groups(BOUND_EVIDENCE_WITH_INNER))
+        .expect("`Opaque` 具备 `Inner` impl 时委托链必须实例化成功");
 }

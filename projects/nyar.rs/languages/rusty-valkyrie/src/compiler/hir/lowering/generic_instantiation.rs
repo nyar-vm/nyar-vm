@@ -16,7 +16,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::{
-    hir::overload::{has_unresolved_generic_arguments, owner_type_generic_binders, substitute_type_self},
+    hir::{
+        overload::{has_unresolved_generic_arguments, owner_type_generic_binders, substitute_type_self},
+        type_relation::TypeRelationContext,
+    },
     types::hir::{
         AssociatedType, FunctionType, GenericBinderId, HirBlock, HirExpr, HirExprKind, HirFunction, HirFunctionReference,
         HirInstantiatedCallable, HirModule, HirParam, HirResolvedCall, HirStatementKind, HirTraitDispatch, HirWhereConstraint, ValkyrieType,
@@ -146,6 +149,8 @@ pub(crate) fn instantiate_generic_callables(
     if declarations.is_empty() {
         return;
     }
+    // 每个声明模块的 trait 证据视图：实例化期用它结算解析期被延后的开放义务。
+    let relations = modules.iter().map(TypeRelationContext::from_module).collect::<Vec<_>>();
     let mut next_instance = modules.iter().filter_map(super::max_hir_callable_instance_index).max().map_or(0, |index| index.saturating_add(1));
     let mut instances: BTreeMap<(u32, Substitution), nyar_types::ItemInstanceId> = BTreeMap::new();
     loop {
@@ -237,6 +242,11 @@ pub(crate) fn instantiate_generic_callables(
             else {
                 continue;
             };
+            // 解析期对开放目标延后的义务必须在这里按具体代入结算：证据缺失则
+            // 不铸造实例，调用点保持未闭合，由既有合同验证结构化失败。
+            if !where_constraints_satisfied(declaration, substitution, relations.get(declaration.module)) {
+                continue;
+            }
             let Some(instance) = nyar_types::ItemInstanceId::from_index(next_instance)
             else {
                 continue;
@@ -293,8 +303,16 @@ pub(crate) fn instantiate_generic_callables(
                 else {
                     return;
                 };
-                if let Some(instance) = instances.get(&(index, substitution)) {
-                    call.instance = Some(*instance);
+                // 只有完全具体的代入才代表「按 where 证据结算后被拒绝」；空代入或
+                // 仍含开放 binder 的代入是声明体内的自递归/跨结构占位，留给后续
+                // 具体克隆闭合，不能在这里抹掉占位实例。
+                let concrete_attempt = !substitution.is_empty() && !substitution.values().any(has_unresolved_generic_arguments);
+                match instances.get(&(index, substitution)) {
+                    Some(instance) => call.instance = Some(*instance),
+                    // 具体代入没有铸造出实例（where 证据不足被拒）时，调用点不得保留
+                    // 解析期/声明种子留下的开放占位实例，否则缺失证据会被静默放行。
+                    None if concrete_attempt => call.instance = None,
+                    None => {}
                 }
             });
         }
@@ -689,6 +707,28 @@ fn substitute_where_constraint(constraint: &mut HirWhereConstraint, substitution
             equation.ty = substitute_type(&declared_type(&equation.ty, owner), substitution);
         }
     }
+}
+
+/// 实例化期的 where 证据结算：把声明约束按代入展开后交给模块的 trait 视图。
+///
+/// 仍含开放 binder 的约束由 `satisfies_where_constraints` 继续延后；目标已具体化却
+/// 没有显式 impl evidence 时返回 false，调用点不得铸造实例。空 substitutions 是
+/// 因为约束在进入本函数前已按实例代入完毕。
+fn where_constraints_satisfied(
+    declaration: &CallableDeclaration,
+    substitution: &Substitution,
+    relations: Option<&TypeRelationContext>,
+) -> bool {
+    let Some(relations) = relations
+    else {
+        return false;
+    };
+    let owner = declaration.owner_type.as_ref();
+    let mut constraints = declaration.function.where_constraints.clone();
+    for constraint in &mut constraints {
+        substitute_where_constraint(constraint, substitution, owner);
+    }
+    relations.satisfies_where_constraints(&constraints, &BTreeMap::new())
 }
 
 fn substitute_block(block: &mut HirBlock, substitution: &Substitution, owner: Option<&ValkyrieType>) {
