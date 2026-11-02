@@ -18,7 +18,7 @@ use nyar_types::{
     layout_choice::{SumRepresentation, SumVariantRepresentation},
     NyarType, NominalInstanceId, TypeId, VariantId,
 };
-use odin_bytecode::{decode_at, OdinHeadCode, OdinInstruction, OdinModuleData};
+use odin_bytecode::{decode_at, OdinConstant, OdinHeadCode, OdinInstruction, OdinModuleData};
 
 const SUM_TYPE: NyarType = NyarType::Utf8;
 const I32: NyarType = NyarType::Integer32 { signed: true };
@@ -85,6 +85,20 @@ fn lower(function: ExecutableFunction, representation: Option<SumRepresentation>
     plan.testing_module_name("ovm_typed_sum").testing_entry_operation(main_name);
     if let Some(representation) = representation {
         plan.testing_register_sum_representation(nominal(), representation);
+    }
+    lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
+}
+
+/// 登记多个 nominal 的冻结表示：每条表示只影响它自己的 nominal 身份。
+fn lower_with_representations(
+    function: ExecutableFunction,
+    representations: Vec<SumRepresentation>,
+) -> nyar_emitter::Result<OdinModuleData> {
+    let main_name = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
+    plan.testing_module_name("ovm_typed_sum").testing_entry_operation(main_name);
+    for representation in representations {
+        plan.testing_register_sum_representation(representation.nominal, representation);
     }
     lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
 }
@@ -184,4 +198,106 @@ fn ovm_sum_payload_contract_mismatch_fails() {
     )
     .expect_err("载荷合同不一致必须失败");
     assert!(error.contains("载荷与计划合同不一致"), "错误必须点名载荷合同不一致: {error}");
+}
+
+/// 正：`SumPayloadGet` 只读取 payload 槽 1，tag 槽 0 不被复用。
+#[test]
+fn ovm_sum_payload_get_reads_payload_slot() {
+    let instructions = vec![
+        sum_new(Some(Operand::Constant(Constant::Int(7)))),
+        Instruction {
+            results: vec![ValueRef(1)],
+            ..Instruction::from_kind(InstructionKind::SumPayloadGet {
+                nominal: nominal(),
+                variant: variant(),
+                object: Operand::Value(ValueRef(0)),
+            })
+        },
+    ];
+    let module = lower(
+        sum_function(instructions, BTreeMap::from([(ValueRef(0), SUM_TYPE), (ValueRef(1), I32)])),
+        Some(representation(nominal(), 1, true)),
+    )
+    .expect("带 payload 的冻结变体必须允许 SumPayloadGet");
+
+    let instructions = decoded(&module);
+    let payload_gets = instructions
+        .iter()
+        .filter(|instruction| instruction.code == OdinHeadCode::FieldGet && instruction.operand1 == 1)
+        .count();
+    assert_eq!(payload_gets, 1, "SumPayloadGet 必须且只能读取 payload 槽 1");
+}
+
+/// 反：对无 payload 的 variant 取值必须结构化失败，不得从空槽静默读出。
+#[test]
+fn ovm_sum_payload_get_on_unit_variant_fails() {
+    let instructions = vec![
+        sum_new(None),
+        Instruction {
+            results: vec![ValueRef(1)],
+            ..Instruction::from_kind(InstructionKind::SumPayloadGet {
+                nominal: nominal(),
+                variant: variant(),
+                object: Operand::Value(ValueRef(0)),
+            })
+        },
+    ];
+    let error = lower(
+        sum_function(instructions, BTreeMap::from([(ValueRef(0), SUM_TYPE), (ValueRef(1), I32)])),
+        Some(representation(nominal(), 1, false)),
+    )
+    .expect_err("无 payload 的 variant 取值必须失败");
+    assert!(error.contains("无 payload"), "错误必须点名无 payload 的 variant: {error}");
+}
+
+/// 正：tag 与 payload 合同按 **nominal 身份**查表，同一 `VariantId` 在不同 nominal
+/// 下拥有各自的 tag；不得按 variant 短名或固定 tag 推断。
+#[test]
+fn ovm_sum_variant_tags_are_looked_up_per_nominal() {
+    let other = NominalInstanceId::from_index(1).expect("第二个测试 nominal 身份");
+    let mut other_representation = representation(other, 1, true);
+    if let Some(variant_layout) = other_representation.variants.get_mut(&variant()) {
+        variant_layout.tag = 2;
+    }
+
+    let instructions = vec![
+        sum_new(Some(Operand::Constant(Constant::Int(7)))),
+        Instruction {
+            results: vec![ValueRef(1)],
+            ..Instruction::from_kind(InstructionKind::SumNew {
+                nominal: other,
+                variant: variant(),
+                payload: Some(Operand::Constant(Constant::Int(9))),
+            })
+        },
+        Instruction {
+            results: vec![ValueRef(2)],
+            ..Instruction::from_kind(InstructionKind::SumVariantIs { nominal: nominal(), variant: variant(), object: Operand::Value(ValueRef(0)) })
+        },
+        Instruction {
+            results: vec![ValueRef(3)],
+            ..Instruction::from_kind(InstructionKind::SumVariantIs { nominal: other, variant: variant(), object: Operand::Value(ValueRef(1)) })
+        },
+    ];
+    let mut plan_representations = vec![representation(nominal(), 1, true), other_representation];
+    plan_representations.sort_by_key(|entry| entry.nominal);
+    let module = lower_with_representations(
+        sum_function(
+            instructions,
+            BTreeMap::from([(ValueRef(0), SUM_TYPE), (ValueRef(1), SUM_TYPE), (ValueRef(2), I32), (ValueRef(3), I32)]),
+        ),
+        plan_representations,
+    )
+    .expect("两个 nominal 的冻结表示都必须生效");
+
+    let tags = module
+        .constants
+        .iter()
+        .filter_map(|constant| match constant {
+            OdinConstant::Integer32(value) => Some(*value),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(tags.contains(&0), "nominal 0 的 tag 必须是 0: {tags:?}");
+    assert!(tags.contains(&2), "nominal 1 的 tag 必须来自它自己的表示（2）: {tags:?}");
 }
