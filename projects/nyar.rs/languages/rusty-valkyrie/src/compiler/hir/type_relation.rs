@@ -380,7 +380,13 @@ impl TypeRelationContext {
                     let context_target = substitute_relation_type(&context.target, substitutions);
                     context_target == target
                 }) {
-                    return bound_is_satisfied_by_context(bound, context, &self.callable_constraints, substitutions);
+                    if bound_is_satisfied_by_context(bound, context, &self.callable_constraints, substitutions) {
+                        return true;
+                    }
+                    // 同一目标已有调用方约束、但不提供本 bound 时，不能就此拒绝：
+                    // 若目标仍是开放刚性泛型参数，本 bound 是调用方尚未履行的义务，
+                    // 必须留到具体类型实例化时结算（见 `instantiate_generic_callables`）。
+                    return relation_type_is_open_obligation(&target);
                 }
                 let Ok(witness) = self.traits.satisfy_explicit_type(&target, bound)
                 else {
