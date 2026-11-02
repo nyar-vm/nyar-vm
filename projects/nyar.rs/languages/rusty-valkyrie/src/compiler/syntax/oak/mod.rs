@@ -50,10 +50,74 @@ pub fn parse_source_with_language(source: &str, language: &ValkyrieLanguage) -> 
     let text = SourceText::new(source);
     let mut session = ParseSession::<ValkyrieLanguage>::default();
     let output = builder.build(&text, &[], &mut session);
-    output.result.map_err(ParseError::from_oak).map(|mut root| {
-        normalize_trait_operator_members(&mut root);
-        root
-    })
+    // 解析期结构化诊断进同一诊断汇（多诊断报告）。
+    // 已核实的 oak 行为（`oak.rs` a202114d）：Valkyrie 文法以 `Result` 早退，实际产出
+    // fatal 单错且 `diagnostics` 恒为空；恢复记录接入 oak 后，这里自动带出全部
+    // 非致命诊断。此处只转述 oak 已生产的事实，不在外部包装出多错假象。
+    for diagnostic in &output.diagnostics {
+        crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_oak_error(diagnostic));
+    }
+    output
+        .result
+        .map_err(|error| {
+            // `build` 的 CST→AST 失败分支会把同一错误同时放进 result 与 diagnostics；
+            // 只在尚未记录时补记 fatal，避免同一错误出现两次。
+            let already_recorded = output
+                .diagnostics
+                .iter()
+                .any(|recorded| recorded.source_offset() == error.source_offset() && recorded.to_string() == error.to_string());
+            if !already_recorded {
+                crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_oak_error(&error));
+            }
+            let mut primary = ParseError::from_oak(error);
+            // 词法诊断（如"未闭合的引号捕获"）携带比兜底解析错误更精确的原因与定位；
+            // 失败时必须一并带出，不能只报兜底消息吞掉根因。
+            if !output.diagnostics.is_empty() {
+                let details = output.diagnostics.iter().map(|diagnostic| diagnostic.to_string()).collect::<Vec<_>>().join("; ");
+                if let ParseError::Invalid { message, .. } = &mut primary {
+                    *message = format!("{details}; {message}");
+                }
+            }
+            primary
+        })
+        .map(|mut root| {
+            normalize_trait_operator_members(&mut root);
+            root
+        })
+}
+
+/// 把 oak 生产的单条诊断投影为编译诊断汇条目。
+///
+/// `code` 由 oak 的稳定 i18n key 派生（`error.syntax` → `valkyrie.frontend.parse.syntax`），
+/// 不自行枚举错误清单；`phase`/`owner` 按诊断合同诚实记录为语法阶段、oak-valkyrie 生产。
+/// 文件身份不在本层可用：source 先落 `<frontend>` 占位（与既有 `FrontendRejected` 行一致），
+/// 组管线接入文件身份后应升级为真实路径。
+fn compile_diagnostic_from_oak_error(error: &oak_core::OakError) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
+    use nyar_types::{DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan};
+    let kind = error.kind();
+    let span = match error.source_offset() {
+        Some(offset) => DiagnosticSpan { start: offset, end: offset.saturating_add(1) },
+        None => DiagnosticSpan { start: 0, end: 0 },
+    };
+    let code = format!("valkyrie.frontend.parse.{}", kind.key().trim_start_matches("error."));
+    let message = match kind {
+        oak_core::OakErrorKind::SyntaxError { message, .. }
+        | oak_core::OakErrorKind::CustomError { message }
+        | oak_core::OakErrorKind::SemanticError { message }
+        | oak_core::OakErrorKind::FormatError { message }
+        | oak_core::OakErrorKind::ProtocolError { message }
+        | oak_core::OakErrorKind::InternalError { message } => message.clone(),
+        _ => error.to_string(),
+    };
+    let row = DiagnosticRow::new(
+        code,
+        DiagnosticSeverity::Error,
+        DiagnosticPhase::Parsing,
+        DiagnosticOwner::syntax("oak-valkyrie"),
+        DiagnosticSource { id: "<frontend>".into(), revision: None },
+        span,
+    );
+    crate::compiler::diagnostics::pending::CompileDiagnostic::new(row, message)
 }
 
 /// Oak 把 trait 体里的运算符声明（`infix \`==\``）拆成两个成员节点：早先一个名字恰为 fixity
