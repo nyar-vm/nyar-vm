@@ -342,7 +342,7 @@ impl MirBuilder {
     /// `Resume = !` 处理名义载体；基本类型载荷（如 `raise 42`）保留随载荷推断。
     fn default_raise_resume_type(&self, carrier_type: &Option<ValkyrieType>) -> Option<ValkyrieType> {
         let carrier = carrier_type.as_ref()?;
-        if carrier.nominal_declaration().is_some() { Some(ValkyrieType::Void) } else { None }
+        if carrier.nominal_declaration().is_some() { Some(ValkyrieType::Void) } else { Some(carrier.clone()) }
     }
 
     pub(super) fn lower_handler_raise(&mut self, handler_index: usize, payload: Option<MirOperand>) -> MirOperand {

@@ -167,6 +167,12 @@ micro new<T>(): [T] {
 micro plain(): usize {
     return 0
 }
+
+namespace std.types;
+
+micro panic<T>(msg: T): void {
+    raise msg
+}
 "#;
 
 const ADAPTOR: &str = r#"
@@ -502,4 +508,72 @@ micro fresh() -> [usize] {
 "#;
     let error = compile(app).expect_err("不存在的依赖成员必须结构化失败");
     assert!(error.contains("unresolved call"), "expected unresolved call, got: {error}");
+}
+
+/// D12'：`raise` 的名义载体（`usize` 形参）resume 块参数必须按 `Resume = !` 冻结为 `void`，不得无类型。
+#[test]
+fn panic_raise_nominal_payload_keeps_never_resume() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro boom() -> unit {
+    std::types::panic::<usize>(0)
+}
+"#;
+    compile(app).expect("名义载体的 raise resume 参数必须按 `!` 冻结");
+}
+
+/// D12'：`raise "..."` 的 UTF-8 字面量载体不是名义类型，resume 参数必须保留随载荷推断的类型。
+///
+/// 与 `Option::unwrap` / `char_at` 越界分支同形：`panic("...")` 出现在 match 臂。
+#[test]
+fn panic_raise_literal_payload_assigns_resume_type() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro unwrap_opt(x: Option<usize>) -> usize {
+    match x {
+        case Some(value): value
+        case None: std::types::panic("unwrap on None")
+    }
+}
+"#;
+    compile(app).expect("字面量载体的 raise resume 参数必须带 SSA 类型");
+}
+
+/// D12'：`panic(error)` 的载体是调用方泛型 binder 时，resume 参数同样必须带 SSA 类型。
+///
+/// 与 `Result::unwrap_fail` 同形：开放克隆进消费模块后仍要过 SMIR001。
+#[test]
+fn panic_raise_open_binder_payload_assigns_resume_type() {
+    let app = r#"
+namespace demo;
+
+micro propagate<E>(error: E) -> unit {
+    std::types::panic::<E>(error)
+}
+
+[export]
+micro boom() -> unit {
+    propagate::<usize>(1)
+}
+"#;
+    compile(app).expect("开放 binder 载体的 raise resume 参数必须带 SSA 类型");
+}
+
+/// D12' 反例：`raise` 修复不得掩盖类型检查——函数体只剩 `panic` 而声明返回 `usize` 必须结构化失败。
+#[test]
+fn panic_only_body_return_mismatch_fails() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro boom() -> usize {
+    std::types::panic("boom")
+}
+"#;
+    let error = compile(app).expect_err("`panic` 独占函数体与声明返回类型不一致必须结构化失败");
+    assert!(error.contains("SMIR007"), "expected SMIR007 return mismatch, got: {error}");
 }
