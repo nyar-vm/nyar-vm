@@ -1,6 +1,7 @@
 //! diagnostics modules.
 
 mod call_contract_collection;
+mod comment_syntax;
 mod compile_plan_report;
 mod error_kinds;
 mod merge_and_cap;
