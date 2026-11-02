@@ -2,6 +2,7 @@
 
 mod call_evidence_contract;
 mod call_ssa_result_binding;
+mod hir_class_target_attribute_tests;
 mod hir_collection_literal_tests;
 mod hir_control_flow_validation_identity_tests;
 mod hir_function_reference_tests;

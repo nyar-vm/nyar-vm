@@ -29,6 +29,26 @@ pub enum BackendContractError {
         /// 声明 span。
         span: DiagnosticSpan,
     },
+    /// 类型级目标映射属性的形态非法（参数个数不符、参数不是字符串字面量、或存在空串）。
+    ///
+    /// 类型身份是声明级合同：`[jvm]` 恰好一段非空字符串（内部类名）、`[clr]` 恰好两段
+    /// （assembly 与全名）、`[js]` 一到两段（模块与全局名）、`[js_builtin]` 恰好一段；
+    /// 畸形声明显式拒绝，不静默忽略、不按名字猜测。函数级同名属性表达调用约定，
+    /// 走另一条入口，不受本合同约束。
+    MalformedTypeTargetAttribute {
+        /// 属性名（`jvm` / `clr` / `js` / `js_builtin`）。
+        attribute: String,
+        /// 携带该属性的类型聚合全名（module 路径 + 类型名）。
+        owner: String,
+        /// 期望的稳定形态描述。
+        expected: &'static str,
+        /// 实际解析出的字符串字面量段数。
+        actual: usize,
+        /// 类型所在源码路径。
+        source: String,
+        /// 属性参数 span。
+        span: DiagnosticSpan,
+    },
 }
 
 impl BackendContractError {
@@ -37,6 +57,7 @@ impl BackendContractError {
         match self {
             Self::WasiPreview1ImportForbidden { span, .. } => span.clone(),
             Self::IntrinsicAnnotationRetired { span, .. } => span.clone(),
+            Self::MalformedTypeTargetAttribute { span, .. } => span.clone(),
         }
     }
 }
@@ -54,6 +75,10 @@ impl std::fmt::Display for BackendContractError {
                 "declaration `{owner}` in `{source}` carries the retired `[intrinsic]` annotation; \
                  the builtin/intrinsic bypass is removed — declare `[wasm_operator(\"...\")]`, `[ovm_operator(\"...\")]`, `[host_contract]` \
                  or a regular body instead"
+            ),
+            Self::MalformedTypeTargetAttribute { attribute, owner, expected, actual, .. } => write!(
+                f,
+                "type-level target mapping attribute `[{attribute}]` on `{owner}` requires {expected}, but resolved {actual} string segment(s)"
             ),
         }
     }
@@ -103,6 +128,10 @@ pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), Backend
         validate_function_interop_surface(function, &scope, &source)?;
     }
     for struct_decl in &module.structs {
+        let owner = if scope.is_empty() { struct_decl.name.as_str().to_string() } else { format!("{scope}::{}", struct_decl.name.as_str()) };
+        for attribute in &struct_decl.annotations {
+            validate_type_target_attribute(attribute, &owner, &source)?;
+        }
         for method in &struct_decl.methods {
             validate_function_interop_surface(method, &scope, &source)?;
         }
@@ -221,6 +250,42 @@ fn validate_intrinsic_annotation_retired(function: &HirFunction, scope: &str, so
             start: usize::try_from(function.span.get_start()).unwrap_or(0),
             end: usize::try_from(function.span.get_end()).unwrap_or(0),
         },
+    })
+}
+
+/// 类型级目标类型映射属性的形态合同。
+///
+/// 只检查形状（段数与非空字符串字面量）；类型身份的解析与绑定归后续阶段，
+/// 此层不做平台语义解释。未列出的属性名不是类型映射属性，原样放行；
+/// 函数级同名属性表达调用约定，不经由此入口校验。
+fn validate_type_target_attribute(attribute: &HirAttribute, owner: &str, source: &str) -> Result<(), BackendContractError> {
+    let Some(name) = attribute_name(attribute)
+    else {
+        return Ok(());
+    };
+    let (min_segments, max_segments, expected): (usize, usize, &'static str) = match name {
+        "jvm" => (1, 1, "exactly one non-empty string segment (internal class name)"),
+        "clr" => (2, 2, "exactly two non-empty string segments (assembly, full type name)"),
+        "js" => (1, 2, "one or two non-empty string segments (module, global name)"),
+        "js_builtin" => (1, 1, "exactly one non-empty string segment (global path)"),
+        _ => return Ok(()),
+    };
+    let segments = attribute.arguments.iter().filter_map(argument_string_literal).collect::<Vec<_>>();
+    let malformed = segments.len() != attribute.arguments.len()
+        || segments.len() < min_segments
+        || segments.len() > max_segments
+        || segments.iter().any(|segment| segment.trim().is_empty());
+    if !malformed {
+        return Ok(());
+    }
+    let span = attribute_argument_span(attribute);
+    Err(BackendContractError::MalformedTypeTargetAttribute {
+        attribute: name.to_string(),
+        owner: owner.to_string(),
+        expected,
+        actual: segments.len(),
+        source: source.to_string(),
+        span: DiagnosticSpan { start: span.start, end: span.end },
     })
 }
 
