@@ -157,6 +157,16 @@ trait IntoIterator {
 
     micro into_iterator(self): Self::Iter
 }
+
+namespace std.array;
+
+micro new<T>(): [T] {
+    return []
+}
+
+micro plain(): usize {
+    return 0
+}
 "#;
 
 const ADAPTOR: &str = r#"
@@ -375,4 +385,51 @@ micro check(n: usize) -> bool {
 }
 "#;
     compile(app).expect("相互递归的自由函数必须解析");
+}
+
+/// D5：限定路径 turbofish `std::array::new::<usize>` 必须解析到依赖声明并完成实例化。
+///
+/// 与 `std::collection::array::new::<T>` 语料同形：显式泛型实参是**具体类型**，
+/// 调用点必须绑定依赖组声明，不得被拆成 `<` / `>` 比较链。
+#[test]
+fn qualified_turbofish_call_resolves() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro fresh() -> [usize] {
+    return std::array::new::<usize>()
+}
+"#;
+    compile(app).expect("`std::array::new::<usize>()` turbofish 必须解析");
+}
+
+/// D5 反例：显式泛型实参个数与声明 binder 个数不等时必须结构化失败。
+#[test]
+fn qualified_turbofish_arity_mismatch_fails() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro fresh() -> [usize] {
+    return std::array::new::<usize, bool>()
+}
+"#;
+    let error = compile(app).expect_err("显式泛型实参个数不匹配必须结构化失败");
+    assert!(error.contains("unresolved call"), "expected unresolved call, got: {error}");
+}
+
+/// D5 反例：非泛型限定函数附显式泛型实参必须结构化失败。
+#[test]
+fn turbofish_on_non_generic_qualified_call_fails() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro fresh() -> usize {
+    return std::array::plain::<usize>()
+}
+"#;
+    let error = compile(app).expect_err("非泛型函数附 turbofish 必须结构化失败");
+    assert!(error.contains("unresolved call"), "expected unresolved call, got: {error}");
 }
