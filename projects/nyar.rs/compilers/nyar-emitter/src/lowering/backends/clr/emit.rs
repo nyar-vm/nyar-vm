@@ -27,7 +27,7 @@ use crate::{
         MsilType,
     },
 };
-use nyar_types::{AggregateLayoutPlan, ItemInstanceId};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, ItemInstanceId};
 
 /// CLR 栈上标量载体类别：`int32` 覆盖 bool/char/窄整型，比较结果与布尔同槽。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -430,13 +430,62 @@ fn msil_return_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<Msil
     msil_type(layouts, ty)
 }
 
-/// 类型的 CLR 载体。
+/// 布局类型定义的稳定名字：`nyar::layout::<sanitized(name)>$<layout id>`。
 ///
-/// 引用存储形状（`Option<char>` 等泛型实例、引用存储的名义聚合）擦除为
-/// `object` 引用载体：最小 lowering 只搬运引用（`ldloc`/`stloc`/`call` 签名），
-/// discriminator + payload 槽由计划冻结的实例级布局与绑定 operator 负责，
-/// backend 不展开字段访问。
-fn msil_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<MsilType> {
+/// CLR 名字用 `::` 层级；块 4 生成 `MsilTypeDef` 时复用同一函数，绝不另写第二套规则。
+/// 同一 layout id 稳定、不同布局不撞名。
+pub(crate) fn clr_layout_type_name(layout: &AggregateLayout) -> String {
+    format!("nyar::layout::{}${}", crate::lowering::sanitize_symbol(&layout.name), layout.id)
+}
+
+/// 数组元素位置的 CLR 载体。
+///
+/// acorn-pe 没有 `ldelem.i8`/`stelem.i8`，i64 元素由块 4 用
+/// `ldelem.any`/`stelem.any` + `Type("int64")` 存取；载体本身仍是 `Int64`。
+fn msil_array_element_type(layouts: &AggregateLayoutPlan, element: &NyarType) -> Result<MsilType> {
+    Ok(match element {
+        NyarType::Boolean => MsilType::Bool,
+        NyarType::Integer8 { signed } => MsilType::Int8 { signed: *signed },
+        NyarType::Integer16 { signed } => MsilType::Int16 { signed: *signed },
+        NyarType::Integer32 { signed } => MsilType::Int32 { signed: *signed },
+        NyarType::Character => MsilType::Char,
+        NyarType::Integer64 { signed } => MsilType::Int64 { signed: *signed },
+        NyarType::Float32 => MsilType::Float32,
+        NyarType::Float64 => MsilType::Float64,
+        NyarType::Utf8 | NyarType::Utf16 => MsilType::String,
+        NyarType::Apply(..) => MsilType::Object,
+        // 名义布局按冻结身份取类型定义名；值存储聚合没有单槽 CLR 载体。
+        NyarType::Nominal { layout, spelling } => {
+            let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
+            else {
+                return Err(format!("CLR 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少数组元素 CLR 载体合同"));
+            };
+            if layout.storage.is_reference() {
+                MsilType::Named(clr_layout_type_name(layout))
+            }
+            else {
+                return Err(format!("CLR 最小 lowering 不支持值存储聚合 `{spelling}` 作为数组元素：缺少单槽 CLR 载体合同"));
+            }
+        }
+        NyarType::Array(inner) | NyarType::FixedArray { element: inner, .. } => MsilType::sz_array(msil_array_element_type(layouts, inner)?),
+        // 可空元素只能复用引用载体（`null` 表示空）；标量需要 sum 表示。
+        NyarType::Nullable(inner) => {
+            let ty = msil_array_element_type(layouts, inner)?;
+            if matches!(ty, MsilType::String | MsilType::Object | MsilType::Named(_) | MsilType::SzArray(_)) {
+                ty
+            }
+            else {
+                return Err(format!("CLR 最小 lowering：可空标量 `{element}` 需要 sum 表示，不能擦成引用"));
+            }
+        }
+        other => {
+            return Err(format!("CLR 最小 lowering 不支持数组元素类型 `{other}`：缺少该形状的 CLR 载体合同"));
+        }
+    })
+}
+
+/// 类型的 CLR 载体：标量取原生类型，数组取 `SzArray`，引用布局取类型定义名。
+pub(crate) fn msil_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<MsilType> {
     Ok(match ty {
         NyarType::Bottom | NyarType::Unit => MsilType::Void,
         NyarType::Boolean => MsilType::Bool,
@@ -448,20 +497,44 @@ fn msil_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<MsilType> {
         NyarType::Float32 => MsilType::Float32,
         NyarType::Float64 => MsilType::Float64,
         NyarType::Utf8 | NyarType::Utf16 => MsilType::String,
+        // 栈/堆数组的载体是元素载体数组；`[T; N]` 的长度由 `ArrayFromElements` 表达。
+        NyarType::Array(element) => MsilType::sz_array(msil_array_element_type(layouts, element)?),
+        NyarType::FixedArray { element, .. } => MsilType::sz_array(msil_array_element_type(layouts, element)?),
+        // 布局身份只经 `TupleNew`/`AggregateCopy` 的 `layout_id` 进入后端，类型描述符
+        // 没有该事实，禁止按形状猜布局。
+        NyarType::Tuple(..) => {
+            return Err(format!(
+                "CLR 最小 lowering：裸 tuple `{ty}` 没有布局身份：布局身份只经 `TupleNew`/`AggregateCopy` 的 `layout_id` 进入后端，类型描述符没有该事实"
+            ));
+        }
+        // 可空引用直接复用引用载体（`null` 表示空）；标量需要 sum 表示，不得静默装箱。
+        NyarType::Nullable(inner) => {
+            let ty = msil_type(layouts, inner)?;
+            if matches!(ty, MsilType::String | MsilType::Object | MsilType::Named(_) | MsilType::SzArray(_)) {
+                ty
+            }
+            else if ty == MsilType::Void {
+                return Err(format!("CLR 最小 lowering：可空 `{ty}` 的内层是 void，没有可复用的引用载体"));
+            }
+            else {
+                return Err(format!("CLR 最小 lowering：可空标量 `{ty}` 需要 sum 表示，不得静默装箱"));
+            }
+        }
         // 泛型实例：存储类由形状决定为引用，载体擦除为 `object`。
         NyarType::Apply(..) => MsilType::Object,
-        // 携带身份的名义类型：存储类按 `layout` 身份解析。引用存储走擦除载体；
-        // 值存储聚合没有单槽 CLR 载体，未注册布局属合同破坏，两者都结构化失败。
+        // 携带身份的名义类型：存储类按 `layout` 身份解析，引用/值存储都指向
+        // 布局类型定义。CLR 没有内联结构体，逐字段拷贝由 `AggregateCopy` 承担，
+        // 它是唯一允许的复制路径；零字段值布局与 wasm 标量语义一致，维持结构化失败。
         NyarType::Nominal { layout, spelling } => {
             let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
             else {
                 return Err(format!("CLR 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少该形状的 CLR 载体合同"));
             };
-            if layout.storage.is_reference() {
-                MsilType::Object
+            if layout.storage.is_reference() || !layout.fields.is_empty() {
+                MsilType::Named(clr_layout_type_name(layout))
             }
             else {
-                return Err(format!("CLR 最小 lowering 不支持值存储聚合 `{spelling}`：缺少逐字段展开的 CLR 载体合同"));
+                return Err(format!("CLR 最小 lowering 不支持零字段值存储聚合 `{spelling}`：缺少单槽 CLR 载体合同"));
             }
         }
         other => {

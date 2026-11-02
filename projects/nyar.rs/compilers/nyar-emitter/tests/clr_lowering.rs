@@ -337,7 +337,13 @@ fn nominal_with_registered_reference_layout_lowers_to_reference_carrier() {
     let submission = option_flow_plan(vec![nominal.clone()], nominal);
     let module = lower_fragment_to_clr_module(&submission).expect("reference nominal must lower");
     let method = module.global_methods.iter().find(|method| method.method.name == "main").expect("entry method");
-    assert_eq!(method.method.signature, MsilMethodSignature::new(MsilType::Object, vec![MsilType::Object]));
+    assert_eq!(
+        method.method.signature,
+        MsilMethodSignature::new(
+            MsilType::Named("nyar::layout::Option$0".to_string()),
+            vec![MsilType::Named("nyar::layout::Option$0".to_string())]
+        )
+    );
     write_library_bytes(&module);
 }
 
@@ -350,9 +356,10 @@ fn nominal_with_unregistered_layout_is_rejected_structurally() {
     assert!(error.contains("未在计划中注册"), "{error}");
 }
 
-/// 值存储聚合没有单槽 CLR 载体：必须结构化失败，不得擦除为引用。
+/// 值存储聚合同样指向布局类型定义：CLR 没有内联结构体，逐字段拷贝由
+/// `AggregateCopy` 承担，是唯一允许的复制路径。
 #[test]
-fn value_storage_nominal_is_rejected_structurally() {
+fn value_storage_nominal_uses_layout_type_name() {
     let mut layout = option_char_layout();
     layout.storage = StorageKind::Value;
     let nominal = NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") };
@@ -363,7 +370,32 @@ fn value_storage_nominal_is_rejected_structurally() {
     plan.testing_module_name("clr_lowering").testing_entry_operation(main);
     plan.testing_aggregate_layouts(AggregateLayoutPlan { layouts: vec![layout], ..AggregateLayoutPlan::default() });
 
-    let error = lower_fragment_to_clr_module(&FragmentSubmission::from_backend_plan(plan)).expect_err("value aggregate must fail");
+    let module = lower_fragment_to_clr_module(&FragmentSubmission::from_backend_plan(plan)).expect("value aggregate must lower");
+    let method = module.global_methods.iter().find(|method| method.method.name == "main").expect("entry method");
+    assert_eq!(
+        method.method.signature,
+        MsilMethodSignature::new(
+            MsilType::Named("nyar::layout::Option$0".to_string()),
+            vec![MsilType::Named("nyar::layout::Option$0".to_string())]
+        )
+    );
+}
+
+/// 零字段值存储聚合与 wasm 标量语义一致：没有单槽 CLR 载体，必须结构化失败。
+#[test]
+fn zero_field_value_storage_nominal_is_rejected_structurally() {
+    let mut layout = option_char_layout();
+    layout.storage = StorageKind::Value;
+    layout.fields.clear();
+    let nominal = NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") };
+    let mut fixture = function("clr.option_flow", nominal.clone(), vec![nominal.clone()]);
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(0))) };
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("clr_lowering").testing_entry_operation(main);
+    plan.testing_aggregate_layouts(AggregateLayoutPlan { layouts: vec![layout], ..AggregateLayoutPlan::default() });
+
+    let error = lower_fragment_to_clr_module(&FragmentSubmission::from_backend_plan(plan)).expect_err("zero-field value aggregate must fail");
     assert!(error.contains("值存储聚合"), "{error}");
 }
 

@@ -118,6 +118,19 @@ pub mod testing {
         super::lowering::testing_lower_fragment_to_wasm_mir_module(submission, export_name)
     }
 
+    /// Resolve the JVM carrier descriptor for a frozen platform type (carrier contract tests).
+    pub fn jvm_type_descriptor(
+        layouts: &nyar_types::AggregateLayoutPlan,
+        ty: &nyar_types::NyarType,
+    ) -> Result<super::nyar_backend_jvm::JvmTypeDescriptor> {
+        super::lowering::testing_jvm_type_descriptor(layouts, ty)
+    }
+
+    /// Resolve the CLR carrier type for a frozen platform type (carrier contract tests).
+    pub fn msil_type(layouts: &nyar_types::AggregateLayoutPlan, ty: &nyar_types::NyarType) -> Result<super::nyar_backend_clr::MsilType> {
+        super::lowering::testing_msil_type(layouts, ty)
+    }
+
     /// Lower a fragment submission to a Nyar VM module.
     #[cfg(feature = "ovm-lane")]
     pub fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<OdinModuleData> {

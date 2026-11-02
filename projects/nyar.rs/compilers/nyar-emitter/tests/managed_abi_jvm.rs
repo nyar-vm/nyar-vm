@@ -161,5 +161,5 @@ fn unsupported_return_type_does_not_fabricate_entry() {
         Ok((_, companions, managed_abi)) => panic!("unsupported return type must fail: companions={companions:?} abi={managed_abi:?}"),
         Err(error) => error,
     };
-    assert!(error.contains("不支持类型"), "{error}");
+    assert!(error.contains("裸 tuple") || error.contains("不支持类型"), "{error}");
 }

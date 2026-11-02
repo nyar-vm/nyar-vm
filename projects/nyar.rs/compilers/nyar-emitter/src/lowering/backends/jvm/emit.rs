@@ -27,7 +27,7 @@ use crate::{
         JvmClassFile, JvmCodeBody, JvmFieldRef, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor,
     },
 };
-use nyar_types::{AggregateLayoutPlan, ItemInstanceId};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, ItemInstanceId};
 
 const JVM_ACC_PUBLIC: u16 = 0x0001;
 const JVM_ACC_STATIC: u16 = 0x0008;
@@ -415,7 +415,64 @@ fn jvm_return_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result
     jvm_type_descriptor(layouts, ty)
 }
 
-fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<JvmTypeDescriptor> {
+/// 布局 companion 类的稳定内部名：`nyar/layout/<sanitized(name)>$<layout id>`。
+///
+/// 同一 layout id 稳定、不同布局不撞名；名字只用于 companion 类，不是语义身份。
+pub(crate) fn jvm_layout_class_name(layout: &AggregateLayout) -> String {
+    format!("nyar/layout/{}${}", crate::lowering::sanitize_symbol(&layout.name), layout.id)
+}
+
+/// 数组元素位置的 JVM 载体。
+///
+/// acorn-jvm 没有 `laload`/`lastore`/`faload`/`daload`，因此 i64/f32/f64 元素
+/// 必须用装箱引用数组（`java/lang/Long` / `Double` / `Float`），这是块 3 存取
+/// 指令的前提；标量元素选 `NewArray` atype 可直接承载的基本类型。
+fn jvm_array_element_descriptor(layouts: &AggregateLayoutPlan, element: &NyarType) -> Result<JvmTypeDescriptor> {
+    Ok(match element {
+        NyarType::Boolean => JvmTypeDescriptor::Boolean,
+        NyarType::Integer8 { .. } => JvmTypeDescriptor::Byte,
+        NyarType::Integer16 { .. } => JvmTypeDescriptor::Short,
+        NyarType::Integer32 { .. } => JvmTypeDescriptor::Int,
+        NyarType::Character => JvmTypeDescriptor::Char,
+        NyarType::Integer64 { .. } => JvmTypeDescriptor::Object("java/lang/Long".to_string()),
+        NyarType::Float32 => JvmTypeDescriptor::Object("java/lang/Float".to_string()),
+        NyarType::Float64 => JvmTypeDescriptor::Object("java/lang/Double".to_string()),
+        NyarType::Utf8 | NyarType::Utf16 => JvmTypeDescriptor::Object("java/lang/String".to_string()),
+        // 名义布局按冻结身份取 companion 类名；值存储聚合没有单槽 JVM 载体。
+        NyarType::Nominal { layout, spelling } => {
+            let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
+            else {
+                return Err(format!("JVM 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少数组元素 JVM 载体合同"));
+            };
+            if layout.storage.is_reference() {
+                JvmTypeDescriptor::Object(jvm_layout_class_name(layout))
+            }
+            else {
+                return Err(format!("JVM 最小 lowering 不支持值存储聚合 `{spelling}` 作为数组元素：缺少单槽 JVM 载体合同"));
+            }
+        }
+        // 泛型实例（`Option<char>` 等）：存储类由形状决定为引用，按擦除载体。
+        NyarType::Apply(..) => JvmTypeDescriptor::Object(JVM_REFERENCE_CARRIER.to_string()),
+        NyarType::Array(inner) | NyarType::FixedArray { element: inner, .. } => {
+            JvmTypeDescriptor::array(jvm_array_element_descriptor(layouts, inner)?)
+        }
+        // 可空元素只能复用引用载体（`null` 表示空）；标量需要 sum 表示。
+        NyarType::Nullable(inner) => {
+            let descriptor = jvm_array_element_descriptor(layouts, inner)?;
+            if matches!(descriptor, JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_)) {
+                descriptor
+            }
+            else {
+                return Err(format!("JVM 最小 lowering：可空标量 `{element}` 需要 sum 表示，不能擦成引用"));
+            }
+        }
+        other => {
+            return Err(format!("JVM 最小 lowering 不支持数组元素类型 `{other}`：缺少该形状的 JVM 载体合同"));
+        }
+    })
+}
+
+pub(crate) fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<JvmTypeDescriptor> {
     Ok(match ty {
         NyarType::Bottom | NyarType::Unit => JvmTypeDescriptor::Void,
         NyarType::Boolean => JvmTypeDescriptor::Boolean,
@@ -425,21 +482,45 @@ fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<J
         NyarType::Float32 => JvmTypeDescriptor::Float,
         NyarType::Float64 => JvmTypeDescriptor::Double,
         NyarType::Utf8 | NyarType::Utf16 => JvmTypeDescriptor::Object("java/lang/String".to_string()),
+        // 栈/堆数组的载体是元素载体数组；`[T; N]` 的长度由 `ArrayFromElements` 表达。
+        NyarType::Array(element) => JvmTypeDescriptor::array(jvm_array_element_descriptor(layouts, element)?),
+        NyarType::FixedArray { element, .. } => JvmTypeDescriptor::array(jvm_array_element_descriptor(layouts, element)?),
+        // 布局身份只经 `TupleNew`/`AggregateCopy` 的 `layout_id` 进入后端，类型描述符
+        // 没有该事实，禁止按形状猜布局。
+        NyarType::Tuple(..) => {
+            return Err(format!(
+                "JVM 最小 lowering：裸 tuple `{ty}` 没有布局身份：布局身份只经 `TupleNew`/`AggregateCopy` 的 `layout_id` 进入后端，类型描述符没有该事实"
+            ));
+        }
+        // 可空引用直接复用引用载体（`null` 表示空）；标量需要 sum 表示，不得静默装箱。
+        NyarType::Nullable(inner) => {
+            let descriptor = jvm_type_descriptor(layouts, inner)?;
+            if matches!(descriptor, JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_)) {
+                descriptor
+            }
+            else if descriptor == JvmTypeDescriptor::Void {
+                return Err(format!("JVM 最小 lowering：可空 `{ty}` 的内层是 void，没有可复用的引用载体"));
+            }
+            else {
+                return Err(format!("JVM 最小 lowering：可空标量 `{ty}` 需要 sum 表示，不得静默装箱"));
+            }
+        }
         // 泛型实例（`Option<char>` 等）：存储类由形状决定为引用，载体按
         // [`JVM_REFERENCE_CARRIER`] 擦除；实例级布局仍在计划中按身份冻结。
         NyarType::Apply(..) => JvmTypeDescriptor::Object(JVM_REFERENCE_CARRIER.to_string()),
-        // 携带身份的名义类型：存储类按 `layout` 身份解析。引用存储走擦除载体；
-        // 值存储聚合没有单槽 JVM 载体，未注册布局属合同破坏，两者都结构化失败。
+        // 携带身份的名义类型：存储类按 `layout` 身份解析，引用/值存储都指向
+        // companion 布局类。JVM 没有内联结构体，逐字段拷贝由 `AggregateCopy` 承担，
+        // 它是唯一允许的复制路径；零字段值布局与 wasm 标量语义一致，维持结构化失败。
         NyarType::Nominal { layout, spelling } => {
             let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
             else {
                 return Err(format!("JVM 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少该形状的 JVM 载体合同"));
             };
-            if layout.storage.is_reference() {
-                JvmTypeDescriptor::Object(JVM_REFERENCE_CARRIER.to_string())
+            if layout.storage.is_reference() || !layout.fields.is_empty() {
+                JvmTypeDescriptor::Object(jvm_layout_class_name(layout))
             }
             else {
-                return Err(format!("JVM 最小 lowering 不支持值存储聚合 `{spelling}`：缺少逐字段展开的 JVM 载体合同"));
+                return Err(format!("JVM 最小 lowering 不支持零字段值存储聚合 `{spelling}`：缺少单槽 JVM 载体合同"));
             }
         }
         other => {
