@@ -139,6 +139,18 @@ pub fn link_reachable_dependency_mir_with_hir(
     if pending.is_empty() {
         pending = consumer.functions.iter().filter_map(|function| function.instance).collect();
     }
+    // 消费模块自身发射的函数体里已冻结的调用目标同样是必须闭合的引用：
+    // 出口可达链之外的声明体（如泛型种子声明）引用依赖侧铸造的开放克隆时，
+    // 该实例必须随链接迁入消费模块，否则 `validate_static_call_resolution` 报 SMIR003。
+    for function in &consumer.functions {
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                if let MirOperation::Call { callee: MirOperand::Callable(callee), .. } = &instruction.kind {
+                    pending.push(*callee);
+                }
+            }
+        }
+    }
     // 片段根签名需要的聚合直通操作必须先冻结，并把生产者加入可达根，
     // 否则这些宿主直通成员既不会进入 linked，也无法在 canonical 找到生产者。
     freeze_fragment_aggregate_operations(hirs, &definitions, &mut linked, &mut pending)?;

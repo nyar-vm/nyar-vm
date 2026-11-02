@@ -158,7 +158,7 @@ trait IntoIterator {
     micro into_iterator(self): Self::Iter
 }
 
-namespace std.array;
+namespace std.collection.array;
 
 micro new<T>(): [T] {
     return []
@@ -386,7 +386,7 @@ micro check(n: usize) -> bool {
 "#;
     compile(app).expect("相互递归的自由函数必须解析");
 }
-/// D5：限定路径 turbofish `std::array::new::<usize>` 必须解析到依赖声明并完成实例化。
+/// D5：限定路径 turbofish `std::collection::array::new::<usize>` 必须解析到依赖声明并完成实例化。
 ///
 /// 与 `std::collection::array::new::<T>` 语料同形：显式泛型实参是**具体类型**，
 /// 调用点必须绑定依赖组声明，不得被拆成 `<` / `>` 比较链。
@@ -397,10 +397,10 @@ namespace demo;
 
 [export]
 micro fresh() -> [usize] {
-    return std::array::new::<usize>()
+    return std::collection::array::new::<usize>()
 }
 "#;
-    compile(app).expect("`std::array::new::<usize>()` turbofish 必须解析");
+    compile(app).expect("`std::collection::array::new::<usize>()` turbofish 必须解析");
 }
 
 /// D5 反例：显式泛型实参个数与声明 binder 个数不等时必须结构化失败。
@@ -411,7 +411,7 @@ namespace demo;
 
 [export]
 micro fresh() -> [usize] {
-    return std::array::new::<usize, bool>()
+    return std::collection::array::new::<usize, bool>()
 }
 "#;
     let error = compile(app).expect_err("显式泛型实参个数不匹配必须结构化失败");
@@ -426,7 +426,7 @@ namespace demo;
 
 [export]
 micro fresh() -> usize {
-    return std::array::plain::<usize>()
+    return std::collection::array::plain::<usize>()
 }
 "#;
     let error = compile(app).expect_err("非泛型函数附 turbofish 必须结构化失败");
@@ -465,4 +465,41 @@ micro len_value(xs: ArrayList<usize>) -> usize {
 "#;
     let error = compile(app).expect_err("未声明的成员必须结构化失败");
     assert!(error.contains("SMIR007") && error.contains("demo::len_value"), "失败必须带结构化 MIR 码与函数身份：{error}");
+}
+/// 开放实例可达性：泛型体内 `std::collection::array::new::<T>()` 铸造的开放克隆，
+/// 被具体实例 `fill::<usize>` 的调用链引用时，必须随链接迁入消费模块。
+#[test]
+fn open_instance_clone_reaches_consumer_module() {
+    let app = r#"
+namespace demo;
+
+micro fill<T>(): [T] {
+    return std::collection::array::new::<T>()
+}
+
+[export]
+micro fresh() -> [usize] {
+    return fill::<usize>()
+}
+"#;
+    compile(app).expect("开放克隆必须随具体实例的引用闭包迁入消费模块");
+}
+
+/// 开放实例可达性反例：泛型体内不存在的依赖成员不得因根集合放宽而静默通过。
+#[test]
+fn open_instance_clone_unresolved_member_still_fails() {
+    let app = r#"
+namespace demo;
+
+micro fill<T>(): [T] {
+    return std::collection::array::missing::<T>()
+}
+
+[export]
+micro fresh() -> [usize] {
+    return fill::<usize>()
+}
+"#;
+    let error = compile(app).expect_err("不存在的依赖成员必须结构化失败");
+    assert!(error.contains("unresolved call"), "expected unresolved call, got: {error}");
 }
