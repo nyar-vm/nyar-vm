@@ -376,3 +376,37 @@ micro check(n: usize) -> bool {
 "#;
     compile(app).expect("相互递归的自由函数必须解析");
 }
+
+/// 统一访问：字段形态的零参成员 `.length` 与调用形态 `.length()` 必须等价。
+#[test]
+fn field_shaped_zero_arg_member_matches_call() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro len_value(xs: ArrayList<usize>) -> usize {
+    return xs.length
+}
+
+[export]
+micro len_call(xs: ArrayList<usize>) -> usize {
+    return xs.length()
+}
+"#;
+    compile(app).expect("`.length` 与 `.length()` 必须等价");
+}
+
+/// 统一访问反例：既不是聚合字段、也没有零参方法的成员必须结构化失败。
+#[test]
+fn unknown_member_without_method_or_field_fails() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro len_value(xs: ArrayList<usize>) -> usize {
+    return xs.not_a_member
+}
+"#;
+    let error = compile(app).expect_err("未声明的成员必须结构化失败");
+    assert!(error.contains("SMIR007") && error.contains("demo::len_value"), "失败必须带结构化 MIR 码与函数身份：{error}");
+}
