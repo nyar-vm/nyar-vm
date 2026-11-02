@@ -22,7 +22,11 @@ fn merges_same_root_cause_into_one_entry_with_site_count() {
     assert_eq!(collected.total(), 3);
     assert_eq!(selectors(&collected), vec!["alpha", "beta", "alpha"]);
 
-    let rendered = report::render_compile_diagnostics(&collected, &|id| (id == "<hir_module>").then(|| source.to_string()), &DiagnosticRenderOptions::default());
+    let rendered = report::render_compile_diagnostics(
+        &collected,
+        &|id| (id == "<hir_module>").then(|| source.to_string()),
+        &DiagnosticRenderOptions::default(),
+    );
     assert_eq!(rendered.matches("error[valkyrie.hir.unresolved_call]").count(), 2, "alpha 两次出现必须归并成一条: {rendered}");
     assert!(rendered.contains("= 1 more site with the same root cause: <hir_module>:4:5"), "{rendered}");
     assert!(rendered.trim_end().ends_with("error: aborting due to 3 previous errors"), "{rendered}");

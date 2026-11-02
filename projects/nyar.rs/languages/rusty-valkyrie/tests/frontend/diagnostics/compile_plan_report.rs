@@ -18,7 +18,8 @@ fn create_multi_error_project(prefix: &str, source: &str) -> (tempfile::TempDir,
     let project_dir = root.join("app");
     let source_dir = project_dir.join("source");
     std::fs::create_dir_all(&source_dir).expect("create source dir");
-    std::fs::write(root.join("legions.von"), "{\n    name: \"diag-smoke\",\n    members: [\n        \"app\"\n    ]\n}\n").expect("write workspace manifest");
+    std::fs::write(root.join("legions.von"), "{\n    name: \"diag-smoke\",\n    members: [\n        \"app\"\n    ]\n}\n")
+        .expect("write workspace manifest");
     std::fs::write(
         project_dir.join("legion.von"),
         "{\n    name: \"app\",\n    dependencies: {\n        \"std\": false,\n        \"core\": false\n    },\n    build: [\n        { target: \"ovm\" }\n    ]\n}\n",
@@ -36,8 +37,12 @@ fn compile_plan_lists_every_independent_error_in_one_report() {
         "[main]\nmicro main() -> i64 {\n    alpha()\n    beta()\n    alpha()\n    return 0\n}\n",
     );
     let workspace = WorkspaceResolver::discover_for_project(&project_dir).expect("workspace discovery");
-    let request =
-        BuildRequest { project_dir: project_dir.clone(), target: "ovm".parse().expect("canonical target"), output_dir: None, ..Default::default() };
+    let request = BuildRequest {
+        project_dir: project_dir.clone(),
+        target: "ovm".parse().expect("canonical target"),
+        output_dir: None,
+        ..Default::default()
+    };
     let plan = workspace.build_plan(&request).expect("build plan");
     let message = compile_plan(&plan, false).expect_err("undeclared callees must fail").to_string();
 

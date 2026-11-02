@@ -28,7 +28,11 @@ fn collects_every_unresolved_call_in_one_compilation_unit() {
     assert_eq!(selectors(&collected), vec!["alpha", "beta", "gamma"]);
 
     // 渲染后一次列出全部独立错误，且按 span 顺序稳定。
-    let rendered = report::render_compile_diagnostics(&collected, &|id| (id == "<hir_module>").then(|| source.to_string()), &DiagnosticRenderOptions::default());
+    let rendered = report::render_compile_diagnostics(
+        &collected,
+        &|id| (id == "<hir_module>").then(|| source.to_string()),
+        &DiagnosticRenderOptions::default(),
+    );
     let alpha_at = rendered.find("`alpha`").expect("rendered contains alpha");
     let beta_at = rendered.find("`beta`").expect("rendered contains beta");
     let gamma_at = rendered.find("`gamma`").expect("rendered contains gamma");
