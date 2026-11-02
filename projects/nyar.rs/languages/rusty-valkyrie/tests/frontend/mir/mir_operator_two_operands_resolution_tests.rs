@@ -330,6 +330,25 @@ micro sum_list(xs: ArrayList<usize>) -> usize {
     compile(app).expect("`loop x in ArrayList` 的迭代项必须是元素类型 `T`（D1）");
 }
 
+/// D1 反例：没有 `IntoIterator` 实现的集合必须结构化失败，不得把集合自身当元素类型静默通过。
+#[test]
+fn loop_in_non_iterable_source_fails() {
+    let app = r#"
+namespace demo;
+
+[export]
+micro sum_number(n: usize) -> usize {
+    let mut total: usize = 0
+    loop x in n {
+        total = total + x
+    }
+    return total
+}
+"#;
+    let error = compile(app).expect_err("没有 `IntoIterator` 实现的 `usize` 必须结构化失败（D1 反例）");
+    assert!(error.contains("unresolved call") && error.contains("demo.v"), "脱糖后的调用必须结构化失败并带源码坐标：{error}");
+}
+
 /// 相互递归的自由函数：调用点在双方声明之间必须双向解析。
 #[test]
 fn mutually_recursive_free_functions_resolve() {
