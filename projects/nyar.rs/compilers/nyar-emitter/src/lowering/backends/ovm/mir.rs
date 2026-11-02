@@ -776,7 +776,18 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         }
                         let effect_name_index = self.emitter.intern_string("raise");
                         self.emitter.emit_imm1(OdinHeadCode::PerformEffect, effect_name_index);
-                        self.emit_block_argument_copies(*resume_target, &[]);
+                        // resume 时 VM 把 resume 值压到栈顶；resume 块的唯一形参直接从栈顶落槽。
+                        // 零形参 resume 块（`Resume = !` 的未捕获 raise）没有落槽对象，
+                        // 栈顶值由 VM 的续体语义持有，本层不补造操作数。
+                        let resume_block = self.mir_fn.blocks.iter().find(|block| block.id == *resume_target).expect("validated resume target");
+                        match resume_block.parameters.len() {
+                            0 => {}
+                            1 => {
+                                let local = self.slots.block_param_locals[&(*resume_target, 0)];
+                                self.emit_store_local(local);
+                            }
+                            count => panic!("ovm `raise` resume 块只接受至多一个 resume 形参，实际 {count}: {}", self.mir_fn.symbol),
+                        }
                         self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *resume_target);
                     }
                     EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {

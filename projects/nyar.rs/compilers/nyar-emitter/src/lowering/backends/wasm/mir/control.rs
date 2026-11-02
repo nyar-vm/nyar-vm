@@ -80,6 +80,10 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_br_depth(continue_depth);
             }
             MirTerminator::Unreachable => encode_unreachable(&mut self.code),
+            // `Raise` 的 wasm 目标合同：未捕获 raise 等价于 trap。payload 已由前置指令
+            // 完成求值，终止符本身不再消费；resume 块在 wasm 上永不可达（trap 不会返回），
+            // 仍保留在调度表中以保持块身份与验证器一致。
+            MirTerminator::PerformEffect { effect: crate::contracts::EffectKind::Raise, .. } => encode_unreachable(&mut self.code),
             other => panic!("WASM 不支持此终结符 {:?}: {}", std::mem::discriminant(other), self.mir_fn.symbol),
         }
     }

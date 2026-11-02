@@ -1581,6 +1581,40 @@ mod tests {
         assert_eq!(constant_encoding_type(&CanonicalConstant::Int(1)), None, "整数宽度不由常量变体单独声称");
         assert_eq!(constant_encoding_type(&CanonicalConstant::Unit), None, "Unit 不声称文本编码");
     }
+
+    /// `Raise` 是唯一进入目标合同的 canonical effect：映射为 executable `PerformEffect`，
+    /// payload 与 resume 目标原样保留，由各后端决定自己的目标语义（wasm trap / ovm 分派）。
+    #[test]
+    fn raise_terminator_enters_the_target_contract() {
+        let payload = nyar_types::MirValueId::from_index(7).expect("测试值身份");
+        let lowered = lower_terminator(CanonicalTerminator::PerformEffect {
+            effect: nyar_types::canonical_program::CanonicalEffectKind::Raise,
+            payload: Some(payload),
+            resume_target: CanonicalBlockId(3),
+        })
+        .expect("`Raise` 必须有目标合同");
+        assert_eq!(
+            lowered,
+            Terminator::PerformEffect {
+                effect: nyar_types::EffectKind::Raise,
+                payload: Some(Operand::Value(ValueRef(7))),
+                resume_target: BlockRef(3)
+            }
+        );
+    }
+
+    /// 反例：`Yield` 等其余 effect 没有目标合同，必须在计划层失败闭合，
+    /// 不得静默降级为普通终止符或 `Unreachable`。
+    #[test]
+    fn non_raise_effect_terminators_still_fail_closed() {
+        let error = lower_terminator(CanonicalTerminator::PerformEffect {
+            effect: nyar_types::canonical_program::CanonicalEffectKind::Yield,
+            payload: None,
+            resume_target: CanonicalBlockId(1),
+        })
+        .expect_err("`Yield` 不得进入目标合同");
+        assert!(error.contains("尚无目标合同"), "诊断必须保持失败闭合语义，实际：{error}");
+    }
 }
 
 fn lower_terminator(terminator: CanonicalTerminator) -> Result<Terminator> {
@@ -1594,6 +1628,16 @@ fn lower_terminator(terminator: CanonicalTerminator) -> Result<Terminator> {
             Terminator::Branch { condition: value(condition), then_target: BlockRef(then_target.0), else_target: BlockRef(else_target.0) }
         }
         CanonicalTerminator::Unreachable => Terminator::Unreachable,
+        // `Raise` 是唯一进入目标合同的 canonical effect：wasm 以 trap（`unreachable`）
+        // 终止，ovm 以原生 `PerformEffect` 分派；托管 lane 在 emit 侧结构化失败。
+        // 其余 effect（yield/await/…）需要续体运行时或状态机重写，本层尚无合同，继续失败闭合。
+        CanonicalTerminator::PerformEffect { effect: nyar_types::canonical_program::CanonicalEffectKind::Raise, payload, resume_target } => {
+            Terminator::PerformEffect {
+                effect: nyar_types::EffectKind::Raise,
+                payload: payload.map(value),
+                resume_target: BlockRef(resume_target.0),
+            }
+        }
         unsupported => {
             return Err(format!("canonical effect terminator 尚无目标合同: {unsupported:?}"));
         }
