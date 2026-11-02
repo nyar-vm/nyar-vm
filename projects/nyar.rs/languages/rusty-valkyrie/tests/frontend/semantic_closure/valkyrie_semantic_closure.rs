@@ -53,9 +53,10 @@ fn unreachable_inventory_syntax_error_does_not_expand_into_body_paths() {
     assert_eq!(closure.groups[1].body_lowering_source_paths, BTreeSet::from(["solution.v".into()]));
     assert!(!closure.digest.is_empty());
     assert!(closure.demanded_declarations.iter().any(|key| key.name == "answer"));
-    // 无法建立索引的文件必须显式记录，供下游在声明缺失时 fail-closed。
-    assert_eq!(closure.unindexed_source_files.len(), 1);
-    assert!(closure.unindexed_source_files.contains_key("library::source/broken.v"));
+    // 根循环恢复后语法错误文件仍可索引：坏 item 被丢弃，文件不再落入 unindexed；
+    // 被丢弃的声明不得进入闭包（缺失声明在下游按 fail-closed 处理）。
+    assert!(closure.unindexed_source_files.is_empty(), "恢复后坏文件仍产出（空的）索引: {:?}", closure.unindexed_source_files);
+    assert!(!closure.demanded_declarations.iter().any(|key| key.name == "broken"), "坏 item 的声明不得进入闭包");
 }
 
 #[test]

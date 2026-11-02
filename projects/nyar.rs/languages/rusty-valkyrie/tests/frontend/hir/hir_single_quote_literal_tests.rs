@@ -7,7 +7,10 @@
 
 use rusty_valkyrie::{
     HirError, ValkyrieCompiler,
-    compiler::hir::lowering::errors::SingleQuoteLiteralFailure,
+    compiler::{
+        diagnostics::pending,
+        hir::lowering::errors::SingleQuoteLiteralFailure,
+    },
     types::hir::{HirExprKind, HirLiteral, HirStatementKind, types::ValkyrieType},
 };
 
@@ -174,18 +177,33 @@ fn unknown_prefix_fails() {
 #[test]
 fn delimiter_escape_cannot_be_rescued() {
     // `'\''` 非法：捕获在第二个引号处闭合，残余引号未闭合；必须报未闭合，不得救转义。
-    let error = ValkyrieCompiler::default().compile_source("micro probe() { let bad = '\\'' }").expect_err("转义定界符必须失败");
-    let message = error.to_string();
-    assert!(message.contains("unterminated quoted literal"), "必须报未闭合捕获：{message}");
+    // 根循环恢复后失败不再致命：坏 item 被丢弃，未闭合原因记入诊断汇。
+    pending::clear_pending_diagnostics();
+    ValkyrieCompiler::default().compile_source("micro probe() { let bad = '\\'' }").expect("恢复后编译在恢复模块上继续");
+    let collected = pending::take_pending_diagnostics();
+    assert!(
+        collected.diagnostics.iter().any(|diagnostic| diagnostic.message.contains("unterminated quoted literal")),
+        "必须报未闭合捕获：{collected:?}"
+    );
     // `"\""` 同理。
-    let error = ValkyrieCompiler::default().compile_source("micro probe() { let bad = \"\\\"\" }").expect_err("转义定界符必须失败");
-    assert!(error.to_string().contains("unterminated quoted literal"));
+    pending::clear_pending_diagnostics();
+    ValkyrieCompiler::default().compile_source("micro probe() { let bad = \"\\\"\" }").expect("恢复后编译在恢复模块上继续");
+    let collected = pending::take_pending_diagnostics();
+    assert!(
+        collected.diagnostics.iter().any(|diagnostic| diagnostic.message.contains("unterminated quoted literal")),
+        "必须报未闭合捕获：{collected:?}"
+    );
 }
 
 #[test]
 fn unterminated_capture_reports_distinct_diagnostic() {
-    let error = ValkyrieCompiler::default().compile_source("micro probe() { let bad = '\\").expect_err("未闭合必须失败");
-    assert!(error.to_string().contains("unterminated quoted literal: opening run of 1 `'`"));
+    pending::clear_pending_diagnostics();
+    ValkyrieCompiler::default().compile_source("micro probe() { let bad = '\\").expect("恢复后编译在恢复模块上继续");
+    let collected = pending::take_pending_diagnostics();
+    assert!(
+        collected.diagnostics.iter().any(|diagnostic| diagnostic.message.contains("unterminated quoted literal: opening run of 1 `'`")),
+        "必须带开引号数量的未闭合诊断：{collected:?}"
+    );
 }
 
 // ---------- 类型规则：字面量提升与比较/算术互通 ----------

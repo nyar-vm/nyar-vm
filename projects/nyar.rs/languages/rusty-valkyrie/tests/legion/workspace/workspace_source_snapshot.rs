@@ -2,6 +2,7 @@
 use nyar_types::compiler_input::CompilerSourceGroup;
 use rusty_valkyrie::{
     compiler::{
+        diagnostics::pending,
         emitter::pipeline::{
             CompilerArtifactReport, CompilerBuildContext, CompilerHostProviderBinding, PipelineResult, compile_source_groups_to_artifacts,
         },
@@ -41,20 +42,24 @@ fn entry_source_with_hash_line_comment_compiles() {
 }
 
 #[test]
-fn entry_source_with_slash_comment_reports_unindexed_source_reason() {
-    // `//` 不是 V 注释标记：整文件词法/语法失败后必须作为 unindexed source 附带原因上报，
-    // 不得只留下「缺入口声明」的误导结论，也不得静默下沉为无入口空模块。
+fn entry_source_with_slash_comment_recovers_entry_and_records_parse_diagnostic() {
+    // `//` 不是 V 注释标记：垃圾 token 触发根循环恢复——记入诊断汇、跳到下一
+    // item 边界，`[main]` 入口声明照常索引编译。错误不再让整文件下沉为
+    // unindexed，也不静默：解析诊断必须在暂存汇可见。
     let directory = tempdir().expect("创建源码目录");
     let source = "// 中文注释\n[main] micro main() -> bool { return true }\n";
     let group = source_group(directory.path(), "application", source, &[], true);
     let groups = compile_source_snapshot(&[group]).expect("Resolver 保留输入原文");
     let output = directory.path().join("output");
     fs::create_dir_all(&output).expect("创建产物目录");
-    let error = compile_snapshot(&groups, &output).expect_err("无法索引的入口文件必须结构化失败");
-    let message = error.to_string();
-    assert!(message.contains("declares no `[export]`, `[main]` or `[test]` entry"), "{message}");
-    assert!(message.contains("unindexed sources"), "{message}");
-    assert!(message.contains("SyntaxError"), "{message}");
+    pending::clear_pending_diagnostics();
+    let report = compile_snapshot(&groups, &output).expect("恢复后入口声明照常索引编译");
+    assert!(!report.driver.artifacts.artifacts.is_empty(), "编译成功必须具有产物");
+    let collected = pending::take_pending_diagnostics();
+    assert!(
+        collected.diagnostics.iter().any(|diagnostic| diagnostic.row.code.starts_with("valkyrie.frontend.parse")),
+        "`//` 垃圾必须记录解析诊断: {collected:?}"
+    );
 }
 
 #[test]

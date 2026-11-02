@@ -1,5 +1,6 @@
 use rusty_valkyrie::{
     ValkyrieCompiler,
+    compiler::diagnostics::pending,
     types::{
         Identifier,
         hir::{HirAssociatedTypeBinding, ValkyrieType},
@@ -69,7 +70,13 @@ fn bound_nominal_types_share_the_signature_declaration_identity() {
 fn malformed_where_clauses_fail_at_the_text_boundary() {
     for clause in ["where T", "where T:", "where T: Display +", "where T: Mapper<i32", "where T: Mapper<Item = >", "where T: Mapper<>"] {
         let source = format!("micro present<T>(value: T): utf8 {clause} {{ return \"ok\" }}");
-        assert!(ValkyrieCompiler::default().compile_source(&source).is_err(), "错误约束不能退化为无约束成功：{clause}");
+        // 根循环恢复后畸形约束不再致命：坏 item 被丢弃（不退化为无约束成功），
+        // 解析诊断如实在汇。
+        pending::clear_pending_diagnostics();
+        let module = ValkyrieCompiler::default().compile_source(&source).expect("恢复后编译在恢复模块上继续");
+        assert!(!module.functions.iter().any(|function| function.name.as_str() == "present"), "错误约束不能退化为无约束成功：{clause}");
+        let collected = pending::take_pending_diagnostics();
+        assert!(!collected.diagnostics.is_empty(), "错误约束必须记录解析诊断：{clause}");
     }
 }
 
