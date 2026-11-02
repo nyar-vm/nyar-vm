@@ -16,6 +16,7 @@
 
 pub mod array_runtime;
 pub mod deopt_value;
+pub mod dom_runtime;
 pub mod error;
 pub mod executable;
 pub mod executor;

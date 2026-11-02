@@ -4,7 +4,7 @@ use crate::error::OdinRuntimeError;
 use nyar_gc::ObjectHeap;
 use odin_bytecode::OdinImport;
 
-use crate::{array_runtime, value::Value};
+use crate::{array_runtime, dom_runtime, value::Value};
 
 /// 与 emitter 约定的宿主导入模块名。
 pub const HOST_IMPORT_MODULE: &str = "nyar.host";
@@ -76,6 +76,18 @@ pub enum HostOp {
     ArrayGet,
     /// 按下标写入元素槽（参数：数组对象、下标、值）。
     ArraySet,
+    /// `asgard.render` 合同：创建元素节点（参数：标签名 `String`）。
+    DomCreateElement,
+    /// `asgard.render` 合同：创建文本节点（参数：文本 `String`）。
+    DomCreateText,
+    /// `asgard.render` 合同：追加子节点（参数：父元素、子节点）。
+    DomAppend,
+    /// `asgard.render` 合同：设置元素属性（参数：元素、名 `String`、值 `String`）。
+    DomSetAttr,
+    /// `asgard.render` 合同：读取元素属性（参数：元素、名 `String`）。
+    DomGetAttr,
+    /// `asgard.render` 合同：设置元素文本内容（参数：元素、文本 `String`）。
+    DomSetText,
 }
 
 /// 加载期解析后的导入槽。
@@ -133,6 +145,12 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "array.length" => HostOp::ArrayLength,
         "array.get" => HostOp::ArrayGet,
         "array.set" => HostOp::ArraySet,
+        "dom_create_element" => HostOp::DomCreateElement,
+        "dom_create_text" => HostOp::DomCreateText,
+        "dom_append" => HostOp::DomAppend,
+        "dom_set_attr" => HostOp::DomSetAttr,
+        "dom_get_attr" => HostOp::DomGetAttr,
+        "dom_set_text" => HostOp::DomSetText,
         _ => return None,
     })
 }
@@ -272,6 +290,35 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             let value = args.get(2).cloned().unwrap_or(Value::Null);
             array_runtime::array_set(heap, &array, &index, &value)
         }
+        HostOp::DomCreateElement => {
+            let tag = string_arg(args, 0, "dom_create_element tag")?;
+            dom_runtime::create_element(heap, &tag)
+        }
+        HostOp::DomCreateText => {
+            let text = string_arg(args, 0, "dom_create_text text")?;
+            dom_runtime::create_text(heap, &text)
+        }
+        HostOp::DomAppend => {
+            let parent = args.first().cloned().unwrap_or(Value::Null);
+            let child = args.get(1).cloned().unwrap_or(Value::Null);
+            dom_runtime::append(heap, &parent, &child)
+        }
+        HostOp::DomSetAttr => {
+            let node = args.first().cloned().unwrap_or(Value::Null);
+            let name = string_arg(args, 1, "dom_set_attr name")?;
+            let value = string_arg(args, 2, "dom_set_attr value")?;
+            dom_runtime::set_attr(heap, &node, &name, &value)
+        }
+        HostOp::DomGetAttr => {
+            let node = args.first().cloned().unwrap_or(Value::Null);
+            let name = string_arg(args, 1, "dom_get_attr name")?;
+            dom_runtime::get_attr(heap, &node, &name)
+        }
+        HostOp::DomSetText => {
+            let node = args.first().cloned().unwrap_or(Value::Null);
+            let text = string_arg(args, 1, "dom_set_text text")?;
+            dom_runtime::set_text(heap, &node, &text)
+        }
     }
 }
 
@@ -311,5 +358,13 @@ fn i32_arg(args: &[Value], index: usize) -> Result<i32, OdinRuntimeError> {
         Some(Value::I64(value)) => Ok(*value as i32),
         Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
         None => Ok(0),
+    }
+}
+
+fn string_arg(args: &[Value], index: usize, what: &'static str) -> Result<String, OdinRuntimeError> {
+    match args.get(index) {
+        Some(Value::String(value)) => Ok(value.clone()),
+        Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: what, actual: other.type_name().to_string() }),
+        None => Err(OdinRuntimeError::TypeMismatch { expected: what, actual: "missing argument".into() }),
     }
 }
