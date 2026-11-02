@@ -19,7 +19,7 @@ fn enum_named<'a>(module: &'a HirModule, name: &str) -> &'a HirEnum {
     module.enums.iter().find(|item| item.name.as_str() == name).unwrap_or_else(|| panic!("缺少 {name} 声明"))
 }
 
-fn variant_constructor<'a>(candidates: &'a [OverloadCandidate], owner: &str, symbol: &str) -> &'a OverloadCandidate {
+fn variant_auto_constructor<'a>(candidates: &'a [OverloadCandidate], owner: &str, symbol: &str) -> &'a OverloadCandidate {
     candidates
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
@@ -54,9 +54,9 @@ unite Option<T> {
     let candidates = collect_module_candidates(&module);
     let option = enum_named(&module, "Option");
     let some = &option.variants[0];
-    let candidate = variant_constructor(&candidates, "Option", "Some");
+    let candidate = variant_auto_constructor(&candidates, "Option", "Some");
 
-    assert!(candidate.is_variant_constructor, "Some 必须携带 [constructor] 标记");
+    assert!(candidate.is_auto_constructor, "Some 必须携带 [constructor] 标记");
     assert_eq!(candidate.declaration, some.declaration, "构造候选必须绑定变体声明身份");
     assert_eq!(candidate.sum_owner, option.declaration, "构造候选必须绑定 unite 声明身份");
     assert_eq!(candidate.sum_variant, some.declaration, "构造候选必须绑定变体声明身份");
@@ -85,9 +85,9 @@ unite Pair {
     let candidates = collect_module_candidates(&module);
     let pair = enum_named(&module, "Pair");
     let both = &pair.variants[0];
-    let candidate = variant_constructor(&candidates, "Pair", "Both");
+    let candidate = variant_auto_constructor(&candidates, "Pair", "Both");
 
-    assert!(candidate.is_variant_constructor);
+    assert!(candidate.is_auto_constructor);
     assert_eq!(candidate.signature.params, vec![ValkyrieType::Boolean, ValkyrieType::Utf8], "参数必须按字段声明顺序");
     assert_eq!(candidate.signature.params, both.fields.iter().map(|field| field.ty.clone()).collect::<Vec<_>>());
     assert_nominal_return(&candidate.signature.return_type, pair.declaration.expect("Pair declaration"), 0);
@@ -107,9 +107,9 @@ unite Flag {
     let candidates = collect_module_candidates(&module);
     let flag = enum_named(&module, "Flag");
     let off = &flag.variants[0];
-    let candidate = variant_constructor(&candidates, "Flag", "Off");
+    let candidate = variant_auto_constructor(&candidates, "Flag", "Off");
 
-    assert!(candidate.is_variant_constructor);
+    assert!(candidate.is_auto_constructor);
     assert!(candidate.signature.params.is_empty(), "零载荷变体的构造参数必须为空");
     assert_eq!(candidate.sum_owner, flag.declaration);
     assert_eq!(candidate.sum_variant, off.declaration);
@@ -132,8 +132,8 @@ unite Plain<T> {
     let plain = enum_named(&module, "Plain");
 
     for variant in &plain.variants {
-        let candidate = variant_constructor(&candidates, "Plain", variant.name.as_str());
-        assert!(!candidate.is_variant_constructor, "{} 未标注 [constructor]，括号调用入口必须关闭", variant.name);
+        let candidate = variant_auto_constructor(&candidates, "Plain", variant.name.as_str());
+        assert!(!candidate.is_auto_constructor, "{} 未标注 [constructor]，括号调用入口必须关闭", variant.name);
         assert_eq!(candidate.signature.params, variant.fields.iter().map(|field| field.ty.clone()).collect::<Vec<_>>());
         assert_eq!(candidate.sum_variant, variant.declaration);
     }
@@ -155,7 +155,7 @@ unite Mixed {
     let candidates = collect_module_candidates(&module);
     let mixed = enum_named(&module, "Mixed");
 
-    assert!(variant_constructor(&candidates, "Mixed", "Wrapped").is_variant_constructor);
-    assert!(!variant_constructor(&candidates, "Mixed", "Bare").is_variant_constructor);
+    assert!(variant_auto_constructor(&candidates, "Mixed", "Wrapped").is_auto_constructor);
+    assert!(!variant_auto_constructor(&candidates, "Mixed", "Bare").is_auto_constructor);
     assert_eq!(mixed.variants.len(), 2);
 }

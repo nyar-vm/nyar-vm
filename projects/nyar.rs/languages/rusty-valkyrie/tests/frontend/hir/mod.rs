@@ -40,7 +40,7 @@ mod valkyrie_hir_type_relation_identity_tests;
 mod valkyrie_parser;
 #[cfg(false)] // `type_checker` crate root 模块不存在（架构迁移）
 mod valkyrie_type_checker_control_flow_validation;
-mod variant_constructor_attribute_tests;
-mod variant_constructor_call_tests;
-mod variant_constructor_pattern_tests;
-mod variant_constructor_synthesis_tests;
+mod variant_auto_constructor_attribute_tests;
+mod variant_auto_constructor_call_tests;
+mod variant_auto_constructor_pattern_tests;
+mod variant_auto_constructor_synthesis_tests;

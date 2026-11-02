@@ -62,7 +62,7 @@ pub(crate) fn try_resolve_constructor_call(
     let owned_variant_constructors = candidates
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Constructor && candidate.owner.is_some())
-        .filter(|candidate| candidate.is_variant_constructor)
+        .filter(|candidate| candidate.is_auto_constructor)
         .filter(|candidate| candidate_variant_constructor_matches(candidate, &callee_name))
         .filter_map(|candidate| {
             if let Some(context) = contextual_type

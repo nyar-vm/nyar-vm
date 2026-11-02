@@ -106,7 +106,7 @@ fn build_variant_constructor_candidate(variant: &HirVariant, enum_def: &HirEnum)
     candidate.instance = variant.instance;
     candidate.sum_owner = enum_def.declaration;
     candidate.sum_variant = variant.declaration;
-    candidate.is_variant_constructor = variant.is_constructor;
+    candidate.is_auto_constructor = variant.is_auto_constructor;
     candidate
 }
 

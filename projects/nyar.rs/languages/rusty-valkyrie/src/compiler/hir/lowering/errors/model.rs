@@ -370,7 +370,7 @@ pub enum HirError {
         span: DiagnosticSpan,
     },
     /// `[constructor]` 标注落在非 `unite` 的变体上。
-    ConstructorAttributeOnNonUnityVariant {
+    AutoConstructorAttributeOnNonUnityVariant {
         /// 变体所属聚合名。
         aggregate: String,
         /// 被标注的变体名。
@@ -383,7 +383,7 @@ pub enum HirError {
         span: DiagnosticSpan,
     },
     /// `[constructor]` 标注落在变体以外的声明上。
-    ConstructorAttributeOnNonVariant {
+    AutoConstructorAttributeOnNonVariant {
         /// 被标注声明的类别。
         target_kind: String,
         /// 被标注声明的短名。
@@ -394,7 +394,7 @@ pub enum HirError {
         span: DiagnosticSpan,
     },
     /// 同一变体重复标注 `[constructor]`。
-    DuplicateConstructorAttribute {
+    DuplicateAutoConstructorAttribute {
         /// 变体所属聚合名。
         aggregate: String,
         /// 被重复标注的变体名。

@@ -107,7 +107,7 @@ pub(crate) fn has_modifier(annotations: &[Attribute], name: &str) -> bool {
 }
 
 /// 统计变体声明上 `[constructor]` 的出现次数；重复标注由 AST 校验 fail-closed。
-pub(crate) fn constructor_attribute_count(annotations: &[Attribute]) -> usize {
+pub(crate) fn auto_constructor_attribute_count(annotations: &[Attribute]) -> usize {
     annotations.iter().filter(|attribute| attribute.name.name == "constructor").count()
 }
 

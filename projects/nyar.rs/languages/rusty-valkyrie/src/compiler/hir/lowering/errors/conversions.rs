@@ -167,13 +167,13 @@ impl std::fmt::Display for HirError {
                 }
                 Ok(())
             }
-            Self::ConstructorAttributeOnNonUnityVariant { aggregate, variant, declared_kind, .. } => {
+            Self::AutoConstructorAttributeOnNonUnityVariant { aggregate, variant, declared_kind, .. } => {
                 write!(f, "`[constructor]` on `{aggregate}` variant `{variant}` requires a `unite`, but the aggregate is `{declared_kind}`")
             }
-            Self::ConstructorAttributeOnNonVariant { target_kind, name, .. } => {
+            Self::AutoConstructorAttributeOnNonVariant { target_kind, name, .. } => {
                 write!(f, "`[constructor]` is only valid on `unite` variants, but found on {target_kind} `{name}`")
             }
-            Self::DuplicateConstructorAttribute { aggregate, variant, .. } => {
+            Self::DuplicateAutoConstructorAttribute { aggregate, variant, .. } => {
                 write!(f, "duplicate `[constructor]` attribute on `{aggregate}` variant `{variant}`")
             }
             Self::DuplicateTypeDefinition { name, namespace, prior_kind, current_kind, .. } => {

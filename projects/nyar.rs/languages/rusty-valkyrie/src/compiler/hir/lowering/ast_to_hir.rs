@@ -664,7 +664,7 @@ impl AstToHir {
                     fields: Vec::new(),
                     result_type: None,
                     discriminator: Some(lower_term_expression(&case.body, self.source_id, span)?),
-                    is_constructor: false,
+                    is_auto_constructor: false,
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -828,7 +828,7 @@ impl AstToHir {
             fields: variant.fields.iter().map(lower_field).collect::<Result<Vec<_>, _>>()?,
             result_type: None,
             discriminator,
-            is_constructor: constructor_attribute_count(&variant.annotations) == 1,
+            is_auto_constructor: auto_constructor_attribute_count(&variant.annotations) == 1,
         })
     }
 

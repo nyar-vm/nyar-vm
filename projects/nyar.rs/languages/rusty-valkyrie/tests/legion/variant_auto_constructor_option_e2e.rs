@@ -107,11 +107,11 @@ fn write_test_suite(project_dir: &Path) {
 }
 
 #[test]
-fn variant_constructor_entries_execute_in_builtin_ovm() {
+fn variant_auto_constructor_entries_execute_in_builtin_ovm() {
     let fixture = create_smoke_project_with_manifest(
         "legion-variant-constructor",
         r#"{
-    name: "variant_constructor_app",
+    name: "variant_auto_constructor_app",
     build: [ { target: "ovm" } ]
 }
 "#,

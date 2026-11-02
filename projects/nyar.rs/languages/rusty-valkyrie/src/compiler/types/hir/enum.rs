@@ -79,7 +79,7 @@ pub struct HirVariant {
     ///
     /// 花括号字面量构造 (`Some { value: x }`) 不受该标记影响，始终可用。
     #[cfg_attr(feature = "serde", serde(default))]
-    pub is_constructor: bool,
+    pub is_auto_constructor: bool,
 }
 
 impl Default for HirVariant {
@@ -92,7 +92,7 @@ impl Default for HirVariant {
             fields: Vec::new(),
             result_type: None,
             discriminator: None,
-            is_constructor: false,
+            is_auto_constructor: false,
         }
     }
 }

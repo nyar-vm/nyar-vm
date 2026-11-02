@@ -1,7 +1,7 @@
 //! `AST -> HIR` 前的结构与语义预校验。
 
 use crate::compiler::{
-    hir::{HirError, lowering::constructor_attribute_count},
+    hir::{HirError, lowering::auto_constructor_attribute_count},
     syntax::oak::{
         ValkyrieRoot,
         ast::{Attribute, EnumsKind, NamePath, StatementNode},
@@ -13,17 +13,17 @@ use nyar_types::{DiagnosticSource, DiagnosticSpan};
 
 /// 校验 Oak `AST` 根节点是否满足进入 `HIR` lowering 的前提。
 pub(crate) fn validate_ast_root(root: &ValkyrieRoot) -> Result<(), HirError> {
-    validate_constructor_attributes(&root.items)?;
+    validate_auto_constructor_attributes(&root.items)?;
     validate_duplicate_type_names(&root.items, &[])
 }
 
 /// `[constructor]` 只允许出现在 `unite` 变体上，且每个变体最多一次。
-fn validate_constructor_attributes(items: &[StatementNode]) -> Result<(), HirError> {
+fn validate_auto_constructor_attributes(items: &[StatementNode]) -> Result<(), HirError> {
     for item in items {
         match item {
             StatementNode::Namespace(namespace) => {
                 if !crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
-                    validate_constructor_attributes(crate::compiler::syntax::oak::namespace_items(namespace))?;
+                    validate_auto_constructor_attributes(crate::compiler::syntax::oak::namespace_items(namespace))?;
                 }
             }
             StatementNode::Enums(enums) => {
@@ -33,9 +33,9 @@ fn validate_constructor_attributes(items: &[StatementNode]) -> Result<(), HirErr
                     EnumsKind::Enum => "enum",
                 };
                 for variant in &enums.variants {
-                    let count = constructor_attribute_count(&variant.annotations);
+                    let count = auto_constructor_attribute_count(&variant.annotations);
                     if count > 1 {
-                        return Err(HirError::DuplicateConstructorAttribute {
+                        return Err(HirError::DuplicateAutoConstructorAttribute {
                             aggregate: enums.name.name.clone(),
                             variant: variant.name.name.clone(),
                             source: ast_source(),
@@ -44,7 +44,7 @@ fn validate_constructor_attributes(items: &[StatementNode]) -> Result<(), HirErr
                     }
                     if count == 1 && enums.kind != EnumsKind::Unity {
                         let declared_kind = aggregate_kind;
-                        return Err(HirError::ConstructorAttributeOnNonUnityVariant {
+                        return Err(HirError::AutoConstructorAttributeOnNonUnityVariant {
                             aggregate: enums.name.name.clone(),
                             variant: variant.name.name.clone(),
                             declared_kind: declared_kind.to_string(),
@@ -75,10 +75,10 @@ fn reject_constructor_annotation(
     name: &str,
     span: &oak_core::Range<usize>,
 ) -> Result<(), HirError> {
-    if constructor_attribute_count(annotations) == 0 {
+    if auto_constructor_attribute_count(annotations) == 0 {
         return Ok(());
     }
-    Err(HirError::ConstructorAttributeOnNonVariant {
+    Err(HirError::AutoConstructorAttributeOnNonVariant {
         target_kind: target_kind.to_string(),
         name: name.to_string(),
         source: ast_source(),
