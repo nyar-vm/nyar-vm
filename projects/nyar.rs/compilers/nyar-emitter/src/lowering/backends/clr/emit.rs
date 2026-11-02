@@ -16,18 +16,18 @@ use crate::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction,
         ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, NyarType,
     },
-    contracts::{Constant, InstructionKind, Operand, Terminator},
+    contracts::{ArrayInitialization, Constant, InstructionKind, Operand, Terminator},
     lowering::shared::executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
     managed_abi::{ManagedAbiContract, ManagedAbiEntry},
     target_operator::{
         TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
     },
     transitional::msil::{
-        MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilMethodSignature, MsilModule, MsilOpcode,
-        MsilType,
+        MsilAssembly, MsilField, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilMethodSignature, MsilModule,
+        MsilOpcode, MsilType, MsilTypeDef,
     },
 };
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, ItemInstanceId};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, ItemInstanceId, LayoutId, NominalInstanceId, VariantId};
 
 /// CLR 栈上标量载体类别：`int32` 覆盖 bool/char/窄整型，比较结果与布尔同槽。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,24 +121,31 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
 
     let operator_by_instance = external_operator_by_instance(submission);
     let entry_operation = plan.entry_operation();
+    let layout_types = build_layout_types(plan.aggregate_layouts())?;
+    let sum_types = build_sum_types(submission)?;
     let mut module = MsilModule {
         assembly: MsilAssembly { name: crate::lowering::sanitize_symbol(plan.module_name()), externs: Vec::new() },
         types: Vec::new(),
         global_methods: Vec::new(),
     };
+    module.types.extend(layout_types);
+    module.types.extend(sum_types);
+    reject_duplicate_type_names(&module.types)?;
     for instance in &operations {
         let Some(view) = plan.get_function(instance)
         else {
             continue;
         };
         let method = method_plans.get(instance).cloned().ok_or_else(|| format!("CLR 最小 lowering：可达操作 `{instance:?}` 缺少方法计划"))?;
+        // 有导出面时 PE 入口由合成的 `managed_entry` 独占；单个导出方法不能再标入口。
+        let is_entry_point = entry_operation == Some(*instance) && plan.wasm_export_names().is_empty();
         module.global_methods.push(lower_function(
             submission,
             &view.function,
             &method,
             &method_plans,
             &operator_by_instance,
-            entry_operation == Some(*instance),
+            is_entry_point,
         )?);
     }
 
@@ -438,6 +445,160 @@ pub(crate) fn clr_layout_type_name(layout: &AggregateLayout) -> String {
     format!("nyar::layout::{}${}", crate::lowering::sanitize_symbol(&layout.name), layout.id)
 }
 
+/// 布局字段在生成类型中的唯一名字；构造与字段访问必须共用这一条规则。
+fn clr_layout_field_name(slot: usize) -> String {
+    format!("field{slot}")
+}
+
+/// sum 生成类型的稳定名字：只由 nominal 身份派生，禁止按 variant 名/短名推断。
+fn clr_sum_type_name(nominal: NominalInstanceId) -> String {
+    format!("nyar::sum::${}", nominal.index())
+}
+
+const CLR_SUM_TAG_FIELD: &str = "tag";
+const CLR_SUM_PAYLOAD_FIELD: &str = "payload";
+const SYSTEM_OBJECT: &str = "[mscorlib]System.Object";
+
+/// 生成类型的实例默认构造器：`ldarg.0; call instance void [mscorlib]System.Object::.ctor(); ret`。
+///
+/// 构造函数体是 PE 写入器唯一要求的实例初始化路径；没有它，生成的类型无法加载。
+fn clr_instance_constructor(type_name: &str) -> MsilMethodBody {
+    MsilMethodBody {
+        method: MsilMethodRef {
+            owner: Some(type_name.to_string()),
+            name: ".ctor".to_string(),
+            signature: MsilMethodSignature::new_instance(MsilType::Void, Vec::new()),
+        },
+        locals: Vec::new(),
+        instructions: vec![
+            ldarg0(),
+            call_instruction(MsilMethodRef {
+                owner: Some(SYSTEM_OBJECT.to_string()),
+                name: ".ctor".to_string(),
+                signature: MsilMethodSignature::new_instance(MsilType::Void, Vec::new()),
+            }),
+            opcode_instruction(MsilOpcode::Ret),
+        ],
+        max_stack: 1,
+        is_entry_point: false,
+        is_async: false,
+    }
+}
+
+/// 为所有需要堆载体的布局生成 `MsilTypeDef`。
+///
+/// 规则与块 2 的 `msil_type` 载体分类一致：引用存储或非零字段布局才需要类型定义；
+/// 零字段值存储布局继续在载体层结构化拒绝。
+fn build_layout_types(layouts: &AggregateLayoutPlan) -> Result<Vec<MsilTypeDef>> {
+    let mut types = Vec::new();
+    for layout in &layouts.layouts {
+        if !(layout.storage.is_reference() || !layout.fields.is_empty()) {
+            continue;
+        }
+        let type_name = clr_layout_type_name(layout);
+        let mut fields = Vec::with_capacity(layout.fields.len());
+        for (slot, field) in layout.fields.iter().enumerate() {
+            fields.push(MsilField { name: clr_layout_field_name(slot), ty: msil_type(layouts, &field.ty)?, is_static: false });
+        }
+        types.push(MsilTypeDef {
+            methods: vec![clr_instance_constructor(&type_name)],
+            full_name: type_name,
+            namespace: String::new(),
+            fields,
+            is_value_type: false,
+        });
+    }
+    Ok(types)
+}
+
+/// 只为 MIR 中实际出现 sum 指令的 nominal 生成 tag/payload 类型定义。
+fn build_sum_types(submission: &FragmentSubmission) -> Result<Vec<MsilTypeDef>> {
+    let plan = &submission.backend_plan;
+    let mut nominals = BTreeSet::new();
+    for instance in plan.instances() {
+        let Some(view) = plan.get_function(&instance)
+        else {
+            continue;
+        };
+        for block in &view.function.blocks {
+            for instruction in &block.instructions {
+                match &instruction.kind {
+                    InstructionKind::SumNew { nominal, .. }
+                    | InstructionKind::SumPayloadGet { nominal, .. }
+                    | InstructionKind::SumVariantIs { nominal, .. } => {
+                        nominals.insert(*nominal);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let mut types = Vec::with_capacity(nominals.len());
+    for nominal in nominals {
+        let Some(sum) = plan.sum_representations().get(&nominal)
+        else {
+            return Err(format!("CLR 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`"));
+        };
+        if sum.tag_width == 0 || sum.tag_width > 4 {
+            return Err(format!(
+                "CLR 最小 lowering：sum nominal `{nominal:?}` 的 `tag_width`={} 超出 1..=4 合同",
+                sum.tag_width
+            ));
+        }
+        let type_name = clr_sum_type_name(nominal);
+        types.push(MsilTypeDef {
+            methods: vec![clr_instance_constructor(&type_name)],
+            full_name: type_name,
+            namespace: String::new(),
+            fields: vec![
+                MsilField { name: CLR_SUM_TAG_FIELD.to_string(), ty: MsilType::Int32 { signed: true }, is_static: false },
+                MsilField { name: CLR_SUM_PAYLOAD_FIELD.to_string(), ty: MsilType::Object, is_static: false },
+            ],
+            is_value_type: false,
+        });
+    }
+    Ok(types)
+}
+
+/// 生成类型全名必须模块内唯一，否则字段/构造 token 会静默漂移。
+fn reject_duplicate_type_names(types: &[MsilTypeDef]) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    for type_def in types {
+        if !seen.insert(type_def.qualified_name()) {
+            return Err(format!("CLR 最小 lowering：生成类型全名 `{}` 重复，拒绝输出歧义模块", type_def.qualified_name()));
+        }
+    }
+    Ok(())
+}
+
+/// 数组类型 `Array<T>` / `FixedArray { element, .. }` 的元素类型。
+fn clr_array_element_type(array_type: &NyarType) -> Result<&NyarType> {
+    match array_type {
+        NyarType::Array(element) => Ok(element),
+        NyarType::FixedArray { element, .. } => Ok(element),
+        other => Err(format!("CLR 最小 lowering：`{other}` 不是数组形态，缺少元素类型合同")),
+    }
+}
+
+/// `Int32` 元素走专用指令，引用载体走 `ldelem.ref`，其余统一 `ldelem.any + Type`。
+fn clr_array_load_opcode(element: &MsilType) -> MsilOpcode {
+    match element {
+        MsilType::Int32 { .. } => MsilOpcode::LdelemI4,
+        MsilType::String | MsilType::Object | MsilType::Named(_) | MsilType::SzArray(_) => MsilOpcode::LdelemRef,
+        _ => MsilOpcode::LdelemAny,
+    }
+}
+
+/// 与 [`clr_array_load_opcode`] 对称的元素存储 opcode。
+fn clr_array_store_opcode(element: &MsilType) -> MsilOpcode {
+    match element {
+        MsilType::Int32 { .. } => MsilOpcode::StelemI4,
+        MsilType::String | MsilType::Object | MsilType::Named(_) | MsilType::SzArray(_) => MsilOpcode::StelemRef,
+        _ => MsilOpcode::StelemAny,
+    }
+}
+
 /// 数组元素位置的 CLR 载体。
 ///
 /// acorn-pe 没有 `ldelem.i8`/`stelem.i8`，i64 元素由块 4 用
@@ -665,6 +826,149 @@ impl ClrMethodEmitter<'_> {
             InstructionKind::Call { callee, arguments } => {
                 let output = self.output_of(instruction)?;
                 self.emit_call(callee, arguments, output)?;
+            }
+            InstructionKind::StructNew { nominal, fields } => {
+                let layout = self.layout_by_nominal(*nominal)?;
+                let output = self.require_output(instruction)?;
+                self.emit_layout_new(&layout, output)?;
+                for (field, value) in fields {
+                    let Some((layout_id, slot)) = self.submission.backend_plan.aggregate_layout_by_field().get(field).copied()
+                    else {
+                        return Err(format!(
+                            "CLR 最小 lowering：字段身份 `{field:?}` 未登记布局索引: function={}",
+                            self.function.symbol
+                        ));
+                    };
+                    if layout_id != layout.id {
+                        return Err(format!(
+                            "CLR 最小 lowering：字段 `{field:?}` 属于布局身份 `{layout_id}`，与构造的 nominal `{nominal:?}` 布局 `{}` 不符: function={}",
+                            layout.id, self.function.symbol
+                        ));
+                    }
+                    self.emit_layout_field_write(&layout, output.0, slot as usize, value)?;
+                }
+            }
+            InstructionKind::TupleNew { layout_id, fields } => {
+                let layout = self.layout_by_id(*layout_id)?;
+                if fields.len() != layout.fields.len() {
+                    return Err(format!(
+                        "CLR 最小 lowering：tuple 布局 `{}` 字段数量与操作数不符: function={} expected={} actual={}",
+                        layout.id,
+                        self.function.symbol,
+                        layout.fields.len(),
+                        fields.len()
+                    ));
+                }
+                let output = self.require_output(instruction)?;
+                self.emit_layout_new(&layout, output)?;
+                for (slot, value) in fields.iter().enumerate() {
+                    self.emit_layout_field_write(&layout, output.0, slot, value)?;
+                }
+            }
+            InstructionKind::AggregateCopy { layout_id, source, dest } => {
+                let layout = self.layout_by_id(*layout_id)?;
+                if layout.fields.is_empty() {
+                    self.emit_operand(source, Some(ClrValueKind::Reference))?;
+                    self.store_operand(dest, ClrValueKind::Reference)?;
+                }
+                else {
+                    let dest_slot = self.reference_operand_slot(dest)?;
+                    let source_slot = self.reference_operand_slot(source)?;
+                    self.emit_layout_new(&layout, (dest_slot, ClrValueKind::Reference))?;
+                    for slot in 0..layout.fields.len() {
+                        self.load_local(dest_slot);
+                        self.load_local(source_slot);
+                        self.push_field_opcode(MsilOpcode::Ldfld, &clr_layout_type_name(&layout), &clr_layout_field_name(slot));
+                        self.push_field_opcode(MsilOpcode::Stfld, &clr_layout_type_name(&layout), &clr_layout_field_name(slot));
+                    }
+                }
+            }
+            InstructionKind::FieldGet { object, field } => {
+                let (layout, slot) = self.field_location(*field)?;
+                let (_, field_kind) = self.layout_field_type(&layout, slot)?;
+                self.emit_operand(object, Some(ClrValueKind::Reference))?;
+                self.push_field_opcode(MsilOpcode::Ldfld, &clr_layout_type_name(&layout), &clr_layout_field_name(slot as usize));
+                match self.output_of(instruction)? {
+                    Some((output, output_kind)) => {
+                        if output_kind != field_kind {
+                            return Err(format!(
+                                "CLR 最小 lowering：字段 `{field:?}` 载体 {field_kind:?} 与结果槽 {output_kind:?} 不符: function={}",
+                                self.function.symbol
+                            ));
+                        }
+                        self.store_local(output);
+                    }
+                    None => self.emit_pop(),
+                }
+            }
+            InstructionKind::FieldSet { object, field, value } => {
+                let (layout, slot) = self.field_location(*field)?;
+                let (_, field_kind) = self.layout_field_type(&layout, slot)?;
+                self.emit_operand(object, Some(ClrValueKind::Reference))?;
+                self.emit_operand(value, Some(field_kind))?;
+                self.push_field_opcode(MsilOpcode::Stfld, &clr_layout_type_name(&layout), &clr_layout_field_name(slot as usize));
+            }
+            InstructionKind::SumNew { nominal, variant, payload } => {
+                self.emit_sum_new(instruction, *nominal, *variant, payload)?;
+            }
+            InstructionKind::SumPayloadGet { nominal, variant, object } => {
+                self.emit_sum_payload_get(instruction, *nominal, *variant, object)?;
+            }
+            InstructionKind::SumVariantIs { nominal, variant, object } => {
+                self.emit_sum_variant_is(instruction, *nominal, *variant, object)?;
+            }
+            InstructionKind::ArrayFromElements { layout_id: _, array_type, elements } => {
+                self.emit_array_from_elements(instruction, array_type, elements)?;
+            }
+            InstructionKind::ArrayNew { array_type, length, initialization } => match initialization {
+                ArrayInitialization::Default => self.emit_array_new(instruction, array_type, length)?,
+                ArrayInitialization::Fill(_) => {
+                    return Err(format!("CLR 最小 lowering 不支持数组 Fill 初始化: function={}", self.function.symbol));
+                }
+            },
+            InstructionKind::ArrayGet { array, index } => {
+                self.emit_array_get(instruction, array, index)?;
+            }
+            InstructionKind::ArraySet { array, index, value } => {
+                self.emit_array_set(array, index, value)?;
+            }
+            InstructionKind::ArrayLength { array } => {
+                self.emit_operand(array, Some(ClrValueKind::Reference))?;
+                self.push_opcode(MsilOpcode::Ldlen);
+                match self.output_of(instruction)? {
+                    Some((slot, kind)) => {
+                        if kind != ClrValueKind::Int32 {
+                            return Err(format!(
+                                "CLR 最小 lowering：`ArrayLength` 结果必须是 `int32` 槽: function={} actual={kind:?}",
+                                self.function.symbol
+                            ));
+                        }
+                        self.store_local(slot);
+                    }
+                    None => self.emit_pop(),
+                }
+            }
+            InstructionKind::NullIsNull { value } => {
+                self.emit_operand(value, Some(ClrValueKind::Reference))?;
+                self.push_opcode(MsilOpcode::Ldnull);
+                self.push_opcode(MsilOpcode::Ceq);
+                self.store_or_pop_boolean(instruction)?;
+            }
+            InstructionKind::NullUnwrap { value } => {
+                let output = self.output_of(instruction)?;
+                self.emit_operand(value, Some(ClrValueKind::Reference))?;
+                match output {
+                    Some((slot, kind)) => {
+                        if kind != ClrValueKind::Reference {
+                            return Err(format!(
+                                "CLR 最小 lowering：可空标量需要 sum 表示，不能按引用直接解包: function={} actual={kind:?}",
+                                self.function.symbol
+                            ));
+                        }
+                        self.store_local(slot);
+                    }
+                    None => self.emit_pop(),
+                }
             }
             other => {
                 return Err(format!("CLR 最小 lowering 尚不支持指令 `{}`：function={}", instruction_kind_name(other), self.function.symbol));
@@ -929,6 +1233,473 @@ impl ClrMethodEmitter<'_> {
                 Ok(())
             }
         }
+    }
+
+    fn layout_by_id(&self, layout_id: LayoutId) -> Result<AggregateLayout> {
+        self.submission
+            .backend_plan
+            .aggregate_layouts()
+            .layouts
+            .iter()
+            .find(|layout| layout.id == layout_id)
+            .cloned()
+            .ok_or_else(|| format!("CLR 最小 lowering：布局身份 `{layout_id}` 未在计划中注册: function={}", self.function.symbol))
+    }
+
+    fn layout_by_nominal(&self, nominal: NominalInstanceId) -> Result<AggregateLayout> {
+        let Some(layout_id) = self.submission.backend_plan.aggregate_layout_by_nominal().get(&nominal).copied()
+        else {
+            return Err(format!("CLR 最小 lowering：nominal `{nominal:?}` 没有冻结的布局身份: function={}", self.function.symbol));
+        };
+        self.layout_by_id(layout_id)
+    }
+
+    fn layout_field_type(&self, layout: &AggregateLayout, slot: u32) -> Result<(MsilType, ClrValueKind)> {
+        let Some(field) = layout.fields.get(slot as usize)
+        else {
+            return Err(format!("CLR 最小 lowering：布局 `{}` 缺少字段槽 {slot}: function={}", layout.name, self.function.symbol));
+        };
+        let carrier = msil_type(self.submission.backend_plan.aggregate_layouts(), &field.ty)?;
+        let kind = ClrValueKind::of_msil_type(&carrier)?;
+        Ok((carrier, kind))
+    }
+
+    fn field_location(&self, field: FieldId) -> Result<(AggregateLayout, u32)> {
+        let Some((layout_id, slot)) = self.submission.backend_plan.aggregate_layout_by_field().get(&field).copied()
+        else {
+            return Err(format!("CLR 最小 lowering：字段身份 `{field:?}` 未登记布局索引: function={}", self.function.symbol));
+        };
+        Ok((self.layout_by_id(layout_id)?, slot))
+    }
+
+    fn operand_type(&self, operand: &Operand) -> Result<NyarType> {
+        match operand {
+            Operand::Value(value) => self
+                .function
+                .value_types
+                .get(value)
+                .cloned()
+                .ok_or_else(|| format!("CLR 最小 lowering：SSA 值 {:?} 缺少冻结类型: function={}", value, self.function.symbol)),
+            Operand::Constant(constant) => Ok(match constant {
+                Constant::Int(_) => NyarType::Integer32 { signed: true },
+                Constant::Float64(_) => NyarType::Float64,
+                Constant::Bool(_) => NyarType::Boolean,
+                Constant::Utf8(_) | Constant::Utf16(_) => NyarType::Utf8,
+                other => {
+                    return Err(format!("CLR 最小 lowering：常量 `{other:?}` 没有可装箱的冻结类型: function={}", self.function.symbol));
+                }
+            }),
+            other => Err(format!("CLR 最小 lowering：操作数 `{other:?}` 没有冻结类型: function={}", self.function.symbol)),
+        }
+    }
+
+    fn output_type(&self, instruction: &MirInstruction) -> Result<Option<NyarType>> {
+        let Some(value) = self.slots.instruction_output(instruction)
+        else {
+            return Ok(None);
+        };
+        self.function
+            .value_types
+            .get(&value)
+            .cloned()
+            .map(Some)
+            .ok_or_else(|| format!("CLR 最小 lowering：SSA 值 {:?} 缺少冻结类型: function={}", value, self.function.symbol))
+    }
+
+    fn reference_operand_slot(&self, operand: &Operand) -> Result<u16> {
+        let Operand::Value(value) = operand
+        else {
+            return Err(format!("CLR 最小 lowering：只有 SSA 值可作为引用局部目标: function={} actual={operand:?}", self.function.symbol));
+        };
+        let (slot, kind) = self.value_slot(*value)?;
+        if kind != ClrValueKind::Reference {
+            return Err(format!("CLR 最小 lowering：聚合拷贝目标必须是引用载体: function={} actual={kind:?}", self.function.symbol));
+        }
+        Ok(slot)
+    }
+
+    fn store_operand(&mut self, operand: &Operand, kind: ClrValueKind) -> Result<()> {
+        let Operand::Value(value) = operand
+        else {
+            return Err(format!("CLR 最小 lowering：只有 SSA 值可作为局部目标: function={} dest={operand:?}", self.function.symbol));
+        };
+        let (slot, actual) = self.value_slot(*value)?;
+        if actual != kind {
+            return Err(format!(
+                "CLR 最小 lowering：目标 SSA 值 {:?} 的槽载体 {actual:?} 与期望 {kind:?} 不符: function={}",
+                value, self.function.symbol
+            ));
+        }
+        self.store_local(slot);
+        Ok(())
+    }
+
+    fn push_newobj(&mut self, type_name: &str) {
+        self.instructions.push(MsilInstruction {
+            label: None,
+            opcode: MsilOpcode::Newobj,
+            operand: Some(MsilInstructionOperand::Method(MsilMethodRef {
+                owner: Some(type_name.to_string()),
+                name: ".ctor".to_string(),
+                signature: MsilMethodSignature::new_instance(MsilType::Void, Vec::new()),
+            })),
+        });
+    }
+
+    fn push_type_opcode(&mut self, opcode: MsilOpcode, ty: &MsilType) {
+        self.instructions.push(MsilInstruction { label: None, opcode, operand: Some(MsilInstructionOperand::Type(ty.to_string())) });
+    }
+
+    /// 数组元素加载：`ldelem.any` 必须携带元素类型 token，其它专用指令不带。
+    fn push_array_load(&mut self, element: &MsilType) {
+        let opcode = clr_array_load_opcode(element);
+        if opcode == MsilOpcode::LdelemAny {
+            self.push_type_opcode(opcode, element);
+        }
+        else {
+            self.push_opcode(opcode);
+        }
+    }
+
+    /// 与 [`Self::push_array_load`] 对称的元素写入。
+    fn push_array_store(&mut self, element: &MsilType) {
+        let opcode = clr_array_store_opcode(element);
+        if opcode == MsilOpcode::StelemAny {
+            self.push_type_opcode(opcode, element);
+        }
+        else {
+            self.push_opcode(opcode);
+        }
+    }
+
+    fn push_field_opcode(&mut self, opcode: MsilOpcode, owner: &str, name: &str) {
+        self.instructions.push(MsilInstruction {
+            label: None,
+            opcode,
+            operand: Some(MsilInstructionOperand::Field(owner.to_string(), name.to_string())),
+        });
+    }
+
+    fn emit_layout_new(&mut self, layout: &AggregateLayout, output: (u16, ClrValueKind)) -> Result<()> {
+        if output.1 != ClrValueKind::Reference {
+            return Err(format!(
+                "CLR 最小 lowering：布局 `{}` 的构造结果必须是引用槽: function={} actual={:?}",
+                layout.name, self.function.symbol, output.1
+            ));
+        }
+        self.push_newobj(&clr_layout_type_name(layout));
+        self.store_local(output.0);
+        Ok(())
+    }
+
+    fn emit_layout_field_write(&mut self, layout: &AggregateLayout, output_slot: u16, slot: usize, value: &Operand) -> Result<()> {
+        let (_, kind) = self.layout_field_type(layout, u32::try_from(slot).unwrap_or(u32::MAX))?;
+        self.load_local(output_slot);
+        self.emit_operand(value, Some(kind))?;
+        self.push_field_opcode(MsilOpcode::Stfld, &clr_layout_type_name(layout), &clr_layout_field_name(slot));
+        Ok(())
+    }
+
+    /// 发射一个可能已处于标量槽的 payload/元素，并按目标类型按需装箱。
+    fn emit_boxed_operand(&mut self, operand: &Operand, ty: &NyarType) -> Result<()> {
+        let carrier = msil_type(self.submission.backend_plan.aggregate_layouts(), ty)
+            .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
+        match &carrier {
+            MsilType::String | MsilType::Object | MsilType::Named(_) | MsilType::SzArray(_) => {
+                self.emit_operand(operand, Some(ClrValueKind::Reference))
+            }
+            MsilType::Void => {
+                Err(format!("CLR 最小 lowering：`{ty}` 是 void 形态，不能作为需要引用的值: function={}", self.function.symbol))
+            }
+            scalar => {
+                let kind = ClrValueKind::of_msil_type(scalar)?;
+                self.emit_operand(operand, Some(kind))?;
+                self.push_type_opcode(MsilOpcode::Box, scalar);
+                Ok(())
+            }
+        }
+    }
+
+    /// 发射数组元素值：标量进入引用元素槽时按槽的精确保鲜载体装箱。
+    fn emit_array_element_value(&mut self, operand: &Operand, element: &NyarType) -> Result<()> {
+        let element_carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), element)
+            .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
+        let element_kind = ClrValueKind::of_msil_type(&element_carrier)?;
+        if element_kind == ClrValueKind::Reference {
+            let operand_ty = self.operand_type(operand)?;
+            let operand_carrier = msil_type(self.submission.backend_plan.aggregate_layouts(), &operand_ty)
+                .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
+            let operand_kind = ClrValueKind::of_msil_type(&operand_carrier)?;
+            if operand_kind != ClrValueKind::Reference {
+                self.emit_operand(operand, Some(operand_kind))?;
+                self.push_type_opcode(MsilOpcode::Box, &operand_carrier);
+                return Ok(());
+            }
+        }
+        self.emit_operand(operand, Some(element_kind))
+    }
+
+    fn emit_sum_new(
+        &mut self,
+        instruction: &MirInstruction,
+        nominal: NominalInstanceId,
+        variant: VariantId,
+        payload: &Option<Operand>,
+    ) -> Result<()> {
+        let Some(sum) = self.submission.backend_plan.sum_representations().get(&nominal).cloned()
+        else {
+            return Err(format!(
+                "CLR 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`: function={}",
+                self.function.symbol
+            ));
+        };
+        let Some(variant_rep) = sum.variants.get(&variant).copied()
+        else {
+            return Err(format!(
+                "CLR 最小 lowering：variant `{variant:?}` 不属于 sum nominal `{nominal:?}`: function={}",
+                self.function.symbol
+            ));
+        };
+        if payload.is_some() != variant_rep.payload_type.is_some() {
+            return Err(format!(
+                "CLR 最小 lowering：variant `{variant:?}` 的 payload 操作数与冻结 payload 类型不一致: function={} nominal={nominal:?} payload={} expected={}",
+                self.function.symbol,
+                payload.is_some(),
+                variant_rep.payload_type.is_some()
+            ));
+        }
+        let tag = i32::try_from(variant_rep.tag)
+            .map_err(|_| format!("CLR 最小 lowering：variant `{variant:?}` 的 tag 超出 `int32` 载体: function={}", self.function.symbol))?;
+        let output = self.require_output(instruction)?;
+        if output.1 != ClrValueKind::Reference {
+            return Err(format!("CLR 最小 lowering：sum 构造结果必须是引用槽: function={} actual={:?}", self.function.symbol, output.1));
+        }
+        let type_name = clr_sum_type_name(nominal);
+        self.push_newobj(&type_name);
+        self.store_local(output.0);
+        self.load_local(output.0);
+        self.push_integer_constant(i64::from(tag), MsilOpcode::LdcI4);
+        self.push_field_opcode(MsilOpcode::Stfld, &type_name, CLR_SUM_TAG_FIELD);
+        if let Some(payload) = payload {
+            let payload_type = self.operand_type(payload)?;
+            self.load_local(output.0);
+            self.emit_boxed_operand(payload, &payload_type)?;
+            self.push_field_opcode(MsilOpcode::Stfld, &type_name, CLR_SUM_PAYLOAD_FIELD);
+        }
+        Ok(())
+    }
+
+    fn emit_sum_variant_is(
+        &mut self,
+        instruction: &MirInstruction,
+        nominal: NominalInstanceId,
+        variant: VariantId,
+        object: &Operand,
+    ) -> Result<()> {
+        let Some(sum) = self.submission.backend_plan.sum_representations().get(&nominal).cloned()
+        else {
+            return Err(format!(
+                "CLR 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`: function={}",
+                self.function.symbol
+            ));
+        };
+        let Some(variant_rep) = sum.variants.get(&variant).copied()
+        else {
+            return Err(format!(
+                "CLR 最小 lowering：variant `{variant:?}` 不属于 sum nominal `{nominal:?}`: function={}",
+                self.function.symbol
+            ));
+        };
+        let tag = i32::try_from(variant_rep.tag)
+            .map_err(|_| format!("CLR 最小 lowering：variant `{variant:?}` 的 tag 超出 `int32` 载体: function={}", self.function.symbol))?;
+        let type_name = clr_sum_type_name(nominal);
+        self.emit_operand(object, Some(ClrValueKind::Reference))?;
+        self.push_field_opcode(MsilOpcode::Ldfld, &type_name, CLR_SUM_TAG_FIELD);
+        self.push_integer_constant(i64::from(tag), MsilOpcode::LdcI4);
+        self.push_opcode(MsilOpcode::Ceq);
+        self.store_or_pop_boolean(instruction)
+    }
+
+    fn emit_sum_payload_get(
+        &mut self,
+        instruction: &MirInstruction,
+        nominal: NominalInstanceId,
+        variant: VariantId,
+        object: &Operand,
+    ) -> Result<()> {
+        let Some(sum) = self.submission.backend_plan.sum_representations().get(&nominal).cloned()
+        else {
+            return Err(format!(
+                "CLR 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`: function={}",
+                self.function.symbol
+            ));
+        };
+        let Some(variant_rep) = sum.variants.get(&variant).copied()
+        else {
+            return Err(format!(
+                "CLR 最小 lowering：variant `{variant:?}` 不属于 sum nominal `{nominal:?}`: function={}",
+                self.function.symbol
+            ));
+        };
+        if variant_rep.payload_type.is_none() {
+            return Err(format!(
+                "CLR 最小 lowering：variant `{variant:?}` 没有 payload，不能取载荷: function={} nominal={nominal:?}",
+                self.function.symbol
+            ));
+        }
+        let type_name = clr_sum_type_name(nominal);
+        self.emit_operand(object, Some(ClrValueKind::Reference))?;
+        self.push_field_opcode(MsilOpcode::Ldfld, &type_name, CLR_SUM_PAYLOAD_FIELD);
+
+        let Some((slot, kind)) = self.output_of(instruction)?
+        else {
+            self.emit_pop();
+            return Ok(());
+        };
+        let Some(target_type) = self.output_type(instruction)?
+        else {
+            return Err(format!("CLR 最小 lowering：sum payload 结果缺少冻结类型: function={}", self.function.symbol));
+        };
+        let target_carrier = msil_type(self.submission.backend_plan.aggregate_layouts(), &target_type)?;
+        let target_kind = ClrValueKind::of_msil_type(&target_carrier)?;
+        if target_kind != kind {
+            return Err(format!(
+                "CLR 最小 lowering：sum payload 目标载体 {target_kind:?} 与结果槽 {kind:?} 不符: function={}",
+                self.function.symbol
+            ));
+        }
+        if target_kind != ClrValueKind::Reference {
+            self.push_type_opcode(MsilOpcode::UnboxAny, &target_carrier);
+        }
+        else if matches!(target_carrier, MsilType::Named(_) | MsilType::SzArray(_)) {
+            self.push_type_opcode(MsilOpcode::Castclass, &target_carrier);
+        }
+        self.store_local(slot);
+        Ok(())
+    }
+
+    fn store_or_pop_boolean(&mut self, instruction: &MirInstruction) -> Result<()> {
+        match self.output_of(instruction)? {
+            Some((slot, kind)) => {
+                if kind != ClrValueKind::Int32 {
+                    return Err(format!(
+                        "CLR 最小 lowering：布尔结果槽载体必须是 `int32`: function={} actual={kind:?}",
+                        self.function.symbol
+                    ));
+                }
+                self.store_local(slot);
+                Ok(())
+            }
+            None => {
+                self.emit_pop();
+                Ok(())
+            }
+        }
+    }
+
+    fn emit_array_from_elements(&mut self, instruction: &MirInstruction, array_type: &NyarType, elements: &[Operand]) -> Result<()> {
+        let element = clr_array_element_type(array_type)
+            .map_err(|error| format!("{error}: function={}", self.function.symbol))?
+            .clone();
+        let carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), &element)
+            .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
+        let length = i32::try_from(elements.len())
+            .map_err(|_| format!("CLR 最小 lowering：数组元素数量超出 `int32` 载体: function={}", self.function.symbol))?;
+        self.push_integer_constant(i64::from(length), MsilOpcode::LdcI4);
+        self.push_type_opcode(MsilOpcode::Newarr, &carrier);
+        for (index, value) in elements.iter().enumerate() {
+            let index = i32::try_from(index)
+                .map_err(|_| format!("CLR 最小 lowering：数组元素下标超出 `int32` 载体: function={}", self.function.symbol))?;
+            self.push_opcode(MsilOpcode::Dup);
+            self.push_integer_constant(i64::from(index), MsilOpcode::LdcI4);
+            self.emit_array_element_value(value, &element)?;
+            self.push_array_store(&carrier);
+        }
+        match self.output_of(instruction)? {
+            Some((slot, kind)) => {
+                if kind != ClrValueKind::Reference {
+                    return Err(format!("CLR 最小 lowering：数组结果必须是引用槽: function={} actual={kind:?}", self.function.symbol));
+                }
+                self.store_local(slot);
+                Ok(())
+            }
+            None => {
+                self.emit_pop();
+                Ok(())
+            }
+        }
+    }
+
+    fn emit_array_new(&mut self, instruction: &MirInstruction, array_type: &NyarType, length: &Operand) -> Result<()> {
+        let element = clr_array_element_type(array_type)
+            .map_err(|error| format!("{error}: function={}", self.function.symbol))?
+            .clone();
+        let carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), &element)
+            .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
+        self.emit_operand(length, Some(ClrValueKind::Int32))?;
+        self.push_type_opcode(MsilOpcode::Newarr, &carrier);
+        match self.output_of(instruction)? {
+            Some((slot, kind)) => {
+                if kind != ClrValueKind::Reference {
+                    return Err(format!("CLR 最小 lowering：数组结果必须是引用槽: function={} actual={kind:?}", self.function.symbol));
+                }
+                self.store_local(slot);
+                Ok(())
+            }
+            None => {
+                self.emit_pop();
+                Ok(())
+            }
+        }
+    }
+
+    fn emit_array_get(&mut self, instruction: &MirInstruction, array: &Operand, index: &Operand) -> Result<()> {
+        let array_type = self.operand_type(array)?;
+        let element = clr_array_element_type(&array_type)
+            .map_err(|error| format!("{error}: function={}", self.function.symbol))?
+            .clone();
+        let carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), &element)
+            .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
+        let carrier_kind = ClrValueKind::of_msil_type(&carrier)?;
+        self.emit_operand(array, Some(ClrValueKind::Reference))?;
+        self.emit_operand(index, Some(ClrValueKind::Int32))?;
+        self.push_array_load(&carrier);
+        let Some((slot, kind)) = self.output_of(instruction)?
+        else {
+            self.emit_pop();
+            return Ok(());
+        };
+        let Some(target_type) = self.output_type(instruction)?
+        else {
+            return Err(format!("CLR 最小 lowering：数组元素结果缺少冻结类型: function={}", self.function.symbol));
+        };
+        let target_carrier = msil_type(self.submission.backend_plan.aggregate_layouts(), &target_type)?;
+        let target_kind = ClrValueKind::of_msil_type(&target_carrier)?;
+        if target_kind != kind {
+            return Err(format!(
+                "CLR 最小 lowering：数组元素目标载体 {target_kind:?} 与结果槽 {kind:?} 不符: function={}",
+                self.function.symbol
+            ));
+        }
+        if carrier_kind == ClrValueKind::Reference && target_kind != ClrValueKind::Reference {
+            self.push_type_opcode(MsilOpcode::UnboxAny, &target_carrier);
+        }
+        self.store_local(slot);
+        Ok(())
+    }
+
+    fn emit_array_set(&mut self, array: &Operand, index: &Operand, value: &Operand) -> Result<()> {
+        let array_type = self.operand_type(array)?;
+        let element = clr_array_element_type(&array_type)
+            .map_err(|error| format!("{error}: function={}", self.function.symbol))?
+            .clone();
+        let carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), &element)
+            .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
+        self.emit_operand(array, Some(ClrValueKind::Reference))?;
+        self.emit_operand(index, Some(ClrValueKind::Int32))?;
+        self.emit_array_element_value(value, &element)?;
+        self.push_array_store(&carrier);
+        Ok(())
     }
 
     fn emit_operand(&mut self, operand: &Operand, expected: Option<ClrValueKind>) -> Result<()> {
