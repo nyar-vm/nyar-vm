@@ -249,11 +249,19 @@ micro index(n: usize) -> usize {
     let index = hir.functions.iter().find(|function| function.name.as_str() == "index").expect("缺少 `index`");
     assert_eq!(
         index.params[0].ty,
-        ValkyrieType::Nominal { declaration: usize_declaration, arguments: vec![], primitive_identity: Some(Box::from("std::primitive::usize")) }
+        ValkyrieType::Nominal {
+            declaration: usize_declaration,
+            arguments: vec![],
+            primitive_identity: Some(Box::from("std::primitive::usize"))
+        }
     );
     assert_eq!(
         index.return_type,
-        ValkyrieType::Nominal { declaration: usize_declaration, arguments: vec![], primitive_identity: Some(Box::from("std::primitive::usize")) }
+        ValkyrieType::Nominal {
+            declaration: usize_declaration,
+            arguments: vec![],
+            primitive_identity: Some(Box::from("std::primitive::usize"))
+        }
     );
 }
 

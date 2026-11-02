@@ -1,7 +1,6 @@
 //! 表达式 lowering 嵌套深度守卫：普通嵌套必须成功，超过上限必须结构化失败。
 
-use rusty_valkyrie::{HirError, ValkyrieCompiler};
-use rusty_valkyrie::compiler::hir::lowering::MAX_EXPRESSION_LOWERING_DEPTH;
+use rusty_valkyrie::{HirError, ValkyrieCompiler, compiler::hir::lowering::MAX_EXPRESSION_LOWERING_DEPTH};
 
 fn nested_source(depth: usize) -> String {
     let mut source = String::from("micro deep(): i64 {\n    return ");
@@ -32,4 +31,3 @@ fn deeply_nested_expression_fails_closed() {
         other => panic!("期望 ExpressionNestingExceeded，实际 {other:?}"),
     }
 }
-

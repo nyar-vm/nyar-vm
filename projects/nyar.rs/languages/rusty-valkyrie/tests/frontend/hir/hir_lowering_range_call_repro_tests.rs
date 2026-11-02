@@ -316,7 +316,11 @@ micro inspect(value: Carrier::Payload): unit {
             assert_eq!(associated.name.as_str(), "Payload");
             assert_eq!(
                 associated.base,
-                ValkyrieType::Nominal { declaration: carrier_decl, arguments: Vec::new(), primitive_identity: carrier.primitive_identity.clone() },
+                ValkyrieType::Nominal {
+                    declaration: carrier_decl,
+                    arguments: Vec::new(),
+                    primitive_identity: carrier.primitive_identity.clone()
+                },
                 "Associated.base 须是 Nominal{{Carrier}}，不得残留 Named，got {:?}",
                 associated.base
             );

@@ -103,9 +103,8 @@ fn js_type_attribute_with_three_segments_is_rejected() {
 
 #[test]
 fn empty_type_target_segment_is_rejected() {
-    let error = ValkyrieCompiler::default()
-        .compile_source("[jvm(\"\")]\nclass Wrong {\n}\n")
-        .expect_err("类级目标映射属性空串必须 fail-closed");
+    let error =
+        ValkyrieCompiler::default().compile_source("[jvm(\"\")]\nclass Wrong {\n}\n").expect_err("类级目标映射属性空串必须 fail-closed");
     match error {
         HirError::BackendContractRejected(BackendContractError::MalformedTypeTargetAttribute { attribute, actual, .. }) => {
             assert_eq!(attribute, "jvm");
