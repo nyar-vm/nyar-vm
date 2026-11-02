@@ -10,7 +10,7 @@ use super::{
     capability::{provider_matches_target, target_host_capability_space},
     condition_eval::{provider_passes_gate_axis, provider_passes_target_axis},
     host_inventory_ast::collect_host_inventory_from_root,
-    types::{PlannedHostContract, PlannedHostProvider, PlannedSemanticSourceGroup, PlannerError, PlannerResult},
+    types::{PlannedHostContract, PlannedHostProvider, PlannedHostProviderExclusion, PlannedSemanticSourceGroup, PlannerError, PlannerResult},
 };
 
 #[derive(Debug, Default)]
@@ -18,6 +18,8 @@ pub(crate) struct HostInventory {
     pub(crate) contracts: Vec<PlannedHostContract>,
     pub(crate) providers: Vec<PlannedHostProvider>,
     pub(crate) selected_providers: Vec<PlannedHostProvider>,
+    /// 因 feature gate 未启用而被排除的 provider（编译期诊断事实）。
+    pub(crate) gated_out_providers: Vec<PlannedHostProviderExclusion>,
 }
 
 pub(crate) fn collect_host_inventory(
@@ -59,8 +61,10 @@ pub(crate) fn collect_host_inventory(
             .then(left.line.cmp(&right.line))
     });
     inventory.providers.dedup_by(|left, right| left.key == right.key && left.contract == right.contract);
-    inventory.selected_providers =
+    let (selected, gated_out) =
         select_host_providers(&inventory.contracts, &inventory.providers, demanded_declaration_keys, target, enabled_features)?;
+    inventory.selected_providers = selected;
+    inventory.gated_out_providers = gated_out;
     Ok(inventory)
 }
 
@@ -70,7 +74,7 @@ fn select_host_providers(
     demanded_declaration_keys: Option<&BTreeSet<DeclarationKey>>,
     target: CanonicalTarget,
     enabled_features: Option<&std::collections::BTreeSet<String>>,
-) -> PlannerResult<Vec<PlannedHostProvider>> {
+) -> PlannerResult<(Vec<PlannedHostProvider>, Vec<PlannedHostProviderExclusion>)> {
     let available_capabilities = target_host_capability_space(target);
     let contracts_by_id: BTreeMap<&str, &PlannedHostContract> = contracts.iter().map(|item| (item.id.as_str(), item)).collect();
     let mut providers_by_contract: BTreeMap<String, Vec<&PlannedHostProvider>> = BTreeMap::new();
@@ -83,6 +87,7 @@ fn select_host_providers(
     }
 
     let mut selected = Vec::new();
+    let mut gated_out = Vec::new();
     for contract in contracts {
         if let Some(demanded) = demanded_declaration_keys {
             if !demanded.contains(&contract.key) {
@@ -109,6 +114,17 @@ fn select_host_providers(
         // 选择语义（target axis / gate axis / capability 匹配）保持不变，
         // 合同是否真的被调用由编译边界裁决。
         if compatible.is_empty() {
+            // 记录被 feature gate 排除的候选：编译期 unbound-contract 诊断据此
+            // 指出「provider 存在但被哪个 feature 排除」，不是凭空缺实现。
+            for candidate in candidates {
+                if !provider_passes_gate_axis(candidate, enabled_features) {
+                    for gate in &candidate.gate_attributes {
+                        if gate.key == "feature" {
+                            gated_out.push(PlannedHostProviderExclusion { provider: (*candidate).clone(), feature: gate.value.clone() });
+                        }
+                    }
+                }
+            }
             continue;
         }
 
@@ -133,9 +149,9 @@ fn select_host_providers(
             .then(left.source_file.cmp(&right.source_file))
             .then(left.line.cmp(&right.line))
     });
-    Ok(selected)
+    Ok((selected, gated_out))
 }
 
-fn normalized_contract_reference(reference: &str) -> String {
+pub(crate) fn normalized_contract_reference(reference: &str) -> String {
     reference.split(['.', ':']).map(str::trim).filter(|segment| !segment.is_empty()).collect::<Vec<_>>().join("::")
 }

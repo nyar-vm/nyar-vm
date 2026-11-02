@@ -3090,3 +3090,201 @@ fn local_config_overrides_git_dependency_with_path() {
     assert!(plan.project.dependencies.iter().any(|dep| dep.name == "std"));
     assert!(plan.project.source_files.iter().any(|path| path.ends_with("stdlib/source/lib.v")));
 }
+
+#[test]
+fn gated_out_host_provider_is_recorded_with_contract_provider_and_feature() {
+    // provider 存在但被 `[gate(feature = "...")]` 排除时，plan 必须把「合同 / provider /
+    // 缺失 feature」记录为诊断事实，供编译边界 unbound-contract 失败渲染可操作的修复面；
+    // 被排除的 provider 不得进入 selected 集合。
+    let temp_dir = Builder::new().prefix("legion-gated-out-provider").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let provider_dir = root.join("asgard.render.host.ovm");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(provider_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-gated-out",
+    members: [
+        "app",
+        "asgard.render.host.ovm"
+    ]
+}
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "asgard.render.host.ovm": "workspace"
+    },
+    build: [
+        {
+            target: "ovm"
+        }
+    ]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace demo;
+
+[host_contract]
+micro dom_create_element(tag: utf8): unit
+
+micro main() -> unit {
+    dom_create_element("div")
+}
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        provider_dir.join("legion.von"),
+        r#"{
+    name: "asgard.render.host.ovm",
+    build: [
+        {
+            target: "ovm"
+        }
+    ]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        provider_dir.join("source").join("host.v"),
+        r#"namespace asgard.render.host.ovm;
+
+[host_provider(demo::dom_create_element)]
+[ovm("dom_create_element")]
+[gate(feature = "asgard.ssg.dom")]
+micro host_dom_create_element(tag: utf8): unit
+"#,
+    )
+    .unwrap();
+
+    let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::parse("ovm").unwrap(),
+            output_dir: None,
+            enabled_features: BTreeSet::new(),
+        })
+        .unwrap();
+
+    assert!(plan.project.selected_host_providers.is_empty(), "gated provider must not be selected: {:?}", plan.project.selected_host_providers);
+    let exclusion = plan
+        .project
+        .gated_out_host_providers
+        .iter()
+        .find(|item| item.feature == "asgard.ssg.dom")
+        .expect("gated-out provider must be recorded");
+    assert_eq!(exclusion.provider.contract, "demo::dom_create_element");
+    assert_eq!(exclusion.provider.symbol, "asgard::render::host::ovm::host_dom_create_element");
+    assert_eq!(exclusion.feature, "asgard.ssg.dom");
+}
+
+#[test]
+fn enabled_feature_selects_provider_and_leaves_no_exclusion() {
+    // 同一布局启用 feature 后 provider 正常入选，且不产生任何排除记录。
+    let temp_dir = Builder::new().prefix("legion-gated-in-provider").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let provider_dir = root.join("asgard.render.host.ovm");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(provider_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-gated-in",
+    members: [
+        "app",
+        "asgard.render.host.ovm"
+    ]
+}
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "asgard.render.host.ovm": "workspace"
+    },
+    build: [
+        {
+            target: "ovm"
+        }
+    ]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace demo;
+
+[host_contract]
+micro dom_create_element(tag: utf8): unit
+
+micro main() -> unit {
+    dom_create_element("div")
+}
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        provider_dir.join("legion.von"),
+        r#"{
+    name: "asgard.render.host.ovm",
+    build: [
+        {
+            target: "ovm"
+        }
+    ]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        provider_dir.join("source").join("host.v"),
+        r#"namespace asgard.render.host.ovm;
+
+[host_provider(demo::dom_create_element)]
+[ovm("dom_create_element")]
+[gate(feature = "asgard.ssg.dom")]
+micro host_dom_create_element(tag: utf8): unit
+"#,
+    )
+    .unwrap();
+
+    let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
+    let enabled_features = ["asgard.ssg.dom".to_string()].into_iter().collect::<BTreeSet<_>>();
+    let plan = workspace
+        .build_plan(&BuildRequest {
+            project_dir: app_dir.clone(),
+            target: CanonicalTarget::parse("ovm").unwrap(),
+            output_dir: None,
+            enabled_features,
+        })
+        .unwrap();
+
+    assert_eq!(plan.project.selected_host_providers.len(), 1, "enabled feature must select the provider");
+    assert_eq!(plan.project.selected_host_providers[0].contract, "demo::dom_create_element");
+    assert!(plan.project.gated_out_host_providers.is_empty(), "selected provider must not be recorded as excluded");
+}

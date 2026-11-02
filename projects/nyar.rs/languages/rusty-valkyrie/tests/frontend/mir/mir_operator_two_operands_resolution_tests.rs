@@ -213,7 +213,7 @@ fn compile(app: &str) -> Result<(), String> {
         CompilerSourceGroup::single_source("app", "demo", app).as_entry().with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
     ];
     ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &provider_bindings(), "native")
+        .compile_source_groups_to_program_with_host_bindings(&groups, &provider_bindings(), &[], "native")
         .map(|_| ())
         .map_err(|error| error.to_string())
 }

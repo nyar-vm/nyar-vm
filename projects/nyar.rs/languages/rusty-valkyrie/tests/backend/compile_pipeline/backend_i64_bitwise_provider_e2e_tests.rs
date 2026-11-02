@@ -125,7 +125,7 @@ fn compile(
     bindings: &[rusty_valkyrie::compiler::emitter::pipeline::CompilerHostProviderBinding],
 ) -> Result<nyar_types::CompiledProgram, String> {
     ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(groups, bindings, "native")
+        .compile_source_groups_to_program_with_host_bindings(groups, bindings, &[], "native")
         .map_err(|error| error.to_string())
 }
 

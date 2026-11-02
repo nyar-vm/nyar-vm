@@ -13,7 +13,7 @@ use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
 fn plan_from_source(source: &str) -> Result<TargetExecutionPlan, Report> {
     let groups = [CompilerSourceGroup::single_source("demo", "demo", source).as_entry()];
-    let program = ValkyrieCompiler::default().compile_source_groups_to_program_with_host_bindings(&groups, &[], "wasm")?;
+    let program = ValkyrieCompiler::default().compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], "wasm")?;
     let fragment = program.canonical().linked.fragments.keys().next().cloned().expect("目标程序必须保留片段身份");
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
     TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)

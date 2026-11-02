@@ -86,7 +86,7 @@ fn array_groups(main_body: &str) -> Vec<CompilerSourceGroup> {
 /// 沿 Compiler 产出的目标私有计划降低到 `.nyar`，不重放调用边。
 fn lower_with_bindings(groups: &[CompilerSourceGroup], bindings: &[CompilerHostProviderBinding]) -> Result<OdinModuleData, String> {
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(groups, bindings, "native")
+        .compile_source_groups_to_program_with_host_bindings(groups, bindings, &[], "native")
         .map_err(|error| error.to_string())?;
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
@@ -263,7 +263,7 @@ fn lower(
     bindings: &[rusty_valkyrie::compiler::emitter::pipeline::CompilerHostProviderBinding],
 ) -> Result<odin_bytecode::OdinModuleData, String> {
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(groups, bindings, "native")
+        .compile_source_groups_to_program_with_host_bindings(groups, bindings, &[], "native")
         .map_err(|error| error.to_string())?;
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();

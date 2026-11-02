@@ -45,7 +45,7 @@ micro main() -> i32 {{
 fn numeric_submission(mnemonic: &str) -> FragmentSubmission {
     let groups = [CompilerSourceGroup::single_source("demo", "demo", &app_source(mnemonic)).as_entry()];
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &[], "wasm")
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], "wasm")
         .expect("i32 算术源码必须完成 Compiler 分析");
     let fragment = program.canonical().linked.fragments.keys().next().cloned().expect("目标程序必须保留片段身份");
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
@@ -97,7 +97,7 @@ micro add(a: i32, b: i32) -> i32 {
 }
 "#;
     let groups = [CompilerSourceGroup::single_source("demo", "demo", source).as_entry()];
-    let program = ValkyrieCompiler::default().compile_source_groups_to_program_with_host_bindings(&groups, &[], "wasm");
+    let program = ValkyrieCompiler::default().compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], "wasm");
     match program {
         Ok(program) => {
             let fragment = program.canonical().linked.fragments.keys().next().cloned().expect("目标程序必须保留片段身份");
@@ -148,7 +148,7 @@ micro main() -> i32 {
 "#;
     let groups = [CompilerSourceGroup::single_source("demo", "demo", source).as_entry()];
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &[], "wasm")
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], "wasm")
         .expect("i32 数值源码必须完成 Compiler 分析");
     let fragment = program.canonical().linked.fragments.keys().next().cloned().expect("目标程序必须保留片段身份");
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();

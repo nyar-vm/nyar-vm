@@ -111,7 +111,7 @@ fn groups_for(providers: &str) -> Vec<CompilerSourceGroup> {
 
 fn compile(groups: &[CompilerSourceGroup], bindings: &[CompilerHostProviderBinding]) -> Result<nyar_types::CompiledProgram, String> {
     ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(groups, bindings, "native")
+        .compile_source_groups_to_program_with_host_bindings(groups, bindings, &[], "native")
         .map_err(|error| error.to_string())
 }
 

@@ -15,7 +15,7 @@ use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 /// 沿 Compiler 产出的目标私有计划降低到 `.nyar`，不重放调用边。
 fn try_lower_source_groups(groups: &[CompilerSourceGroup]) -> Result<OdinModuleData, String> {
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(groups, &[], "native")
+        .compile_source_groups_to_program_with_host_bindings(groups, &[], &[], "native")
         .expect("源码闭包必须完成 Compiler 链路");
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
@@ -178,7 +178,7 @@ micro main() -> i32 {{
 fn plan_with_binding(mnemonic: &str) -> TargetExecutionPlan {
     let groups = source_groups(mnemonic);
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &[], "native")
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], "native")
         .expect("源码闭包必须完成 Compiler 链路");
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();

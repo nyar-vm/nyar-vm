@@ -57,6 +57,7 @@ pub(crate) fn compile_ssg_ovm_bundle(
         .map_err(|error| AsgardError::msg(report!("读取项目源码快照失败: {error}")))?;
     let host_bindings =
         compiler_host_provider_bindings(&plan.project.selected_host_providers).map_err(|error| AsgardError::msg(report!("{error}")))?;
+    let gated_out_host_providers = crate::legion::workspace::planner::compiler_gated_out_host_providers(&plan.project.gated_out_host_providers);
 
     // 生成代码直接引用 `asgard.render` 合同族声明：合同包必须在生成组的显式
     // 依赖闭包内（生成组默认只见应用组自身声明，不见应用组的依赖）。
@@ -71,7 +72,8 @@ pub(crate) fn compile_ssg_ovm_bundle(
     let target_profile = target.to_profile(None);
     let build_context =
         CompilerBuildContext::new(target.arch.as_str(), target.clone(), nyar::ClrSuspendStrategy::default(), WasmPackageKind::Library)
-            .with_selected_host_providers(host_bindings);
+            .with_selected_host_providers(host_bindings)
+            .with_gated_out_host_providers(gated_out_host_providers);
     let input = compiler_input_for_with_dependencies(&groups, generated, GeneratedEntrySurface::GeneratedOnly, &contract_keys)?;
     fs::create_dir_all(scratch_dir)
         .map_err(|error| AsgardError::msg(report!("创建 SSG 中间产物目录失败 {}: {error}", scratch_dir.display())))?;

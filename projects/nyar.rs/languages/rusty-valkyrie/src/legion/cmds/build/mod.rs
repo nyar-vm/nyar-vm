@@ -228,9 +228,11 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     fs::create_dir_all(&plan.output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", plan.output_dir.display())))?;
     let host_bindings =
         compiler_host_provider_bindings(&plan.project.selected_host_providers).map_err(|error| LegionError::msg(report!("{error}")))?;
+    let gated_out_host_providers = crate::legion::workspace::planner::compiler_gated_out_host_providers(&plan.project.gated_out_host_providers);
     let build_context = CompilerBuildContext::new(arch, plan.project.build_target.target.clone(), clr_suspend_strategy, wasm_package_kind)
         .with_test_entries(plan.project.test_entries.clone())
-        .with_selected_host_providers(host_bindings);
+        .with_selected_host_providers(host_bindings)
+        .with_gated_out_host_providers(gated_out_host_providers);
     let artifact = match compile_source_groups_to_artifacts(
         &crate::compiler::hir::lowering::ValkyrieCompiler::default(),
         &nyar_types::compiler_input::CompilerSourceInput::application(source_groups),

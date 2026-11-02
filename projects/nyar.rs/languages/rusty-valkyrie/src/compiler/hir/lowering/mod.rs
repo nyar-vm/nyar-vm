@@ -229,7 +229,7 @@ impl ValkyrieCompiler {
     /// 从完整依赖顺序的源码快照构建一个语义闭包。
     #[doc(hidden)]
     pub fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, HirError> {
-        self.compile_source_groups_to_program_with_host_bindings(groups, &[], DEFAULT_COMPILE_ARCH)
+        self.compile_source_groups_to_program_with_host_bindings(groups, &[], &[], DEFAULT_COMPILE_ARCH)
     }
 
     /// 从「应用组 + 独立生成组」的完整输入构建程序。
@@ -238,18 +238,23 @@ impl ValkyrieCompiler {
         &self,
         input: &CompilerSourceInput,
         host_bindings: &[crate::compiler::emitter::pipeline::CompilerHostProviderBinding],
+        gated_out_host_providers: &[crate::compiler::emitter::pipeline::CompilerGatedOutHostProvider],
         arch: &str,
     ) -> Result<nyar_types::CompiledProgram, HirError> {
         let groups = compose_source_input_groups(input)?;
-        self.compile_source_groups_to_program_with_host_bindings(&groups, host_bindings, arch)
+        self.compile_source_groups_to_program_with_host_bindings(&groups, host_bindings, gated_out_host_providers, arch)
     }
 
     /// 从完整依赖顺序的源码快照构建语义闭包，并应用 Resolver 选定的 host provider 绑定。
+    ///
+    /// `gated_out_host_providers` 是 Resolver 记录的「provider 存在但被 feature gate 排除」
+    /// 诊断事实，只用于编译边界 unbound-contract 失败的诊断渲染，不参与选择语义。
     #[doc(hidden)]
     pub fn compile_source_groups_to_program_with_host_bindings(
         &self,
         groups: &[CompilerSourceGroup],
         host_bindings: &[crate::compiler::emitter::pipeline::CompilerHostProviderBinding],
+        gated_out_host_providers: &[crate::compiler::emitter::pipeline::CompilerGatedOutHostProvider],
         arch: &str,
     ) -> Result<nyar_types::CompiledProgram, HirError> {
         let entry_indices = groups.iter().enumerate().filter(|(_, group)| group.is_entry).map(|(index, _)| index).collect::<Vec<_>>();
@@ -299,8 +304,12 @@ impl ValkyrieCompiler {
             )?;
         }
         let resolved_host_bindings = crate::compiler::emitter::pipeline::resolve_host_provider_bindings(&all_hirs, host_bindings)?;
-        let host_binding_remaps =
-            crate::compiler::emitter::pipeline::apply_host_provider_bindings(&mut final_mir, &mir_groups, &resolved_host_bindings)?;
+        let host_binding_remaps = crate::compiler::emitter::pipeline::apply_host_provider_bindings(
+            &mut final_mir,
+            &mir_groups,
+            &resolved_host_bindings,
+            gated_out_host_providers,
+        )?;
         // provider 依赖闭包：链接 BFS 在重映射前不可达 provider，其函数体引用的 wasm 导入
         // 与本地 helper 不会随定义迁入消费模块。绑定安装后由同一 BFS 再走一遍闭合闭包；
         // 合同调用已全部改写为 provider 身份，退役合同体不会被重新拉入。

@@ -62,7 +62,7 @@ fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
         foreign_bindings: vec![],
     }];
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
         .expect("host provider binding must close across dependency groups");
     let canonical = program.canonical();
     assert_eq!(user_linked_import_count(canonical), 0, "contract import must be rewritten to provider callable");
@@ -101,7 +101,7 @@ fn bodyless_target_bound_provider_carries_its_own_import_contract() {
         foreign_bindings: vec![],
     }];
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
         .expect("无体目标绑定 provider 必须闭合绑定链");
     let canonical = program.canonical();
     let imports = canonical
@@ -142,7 +142,7 @@ fn bodyless_js_provider_carries_js_import_contract() {
         foreign_bindings: vec![r#"js("random")"#.into()],
     }];
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
         .expect("bodyless [js] provider must close binding chain");
     let canonical = program.canonical();
     let imports = canonical
@@ -192,7 +192,7 @@ fn same_source_file_unselected_js_provider_is_pruned_from_linked_imports() {
         foreign_bindings: vec![r#"js("random")"#.into()],
     }];
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
         .expect("unselected sibling provider in same file must not link");
     let canonical = program.canonical();
     let imports = canonical
@@ -236,7 +236,7 @@ fn selected_host_binding_does_not_link_sibling_provider_import() {
         foreign_bindings: vec![],
     }];
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
         .expect("only selected provider import must link");
     let canonical = program.canonical();
     let imports = canonical
@@ -272,7 +272,7 @@ fn resolved_call_to_bodyless_host_contract_without_provider_fails_at_boundary() 
         .with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
     ];
     let error = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &[], TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], TEST_ARCH)
         .expect_err("已解析调用指向未绑定 provider 的无体合同必须 fail-closed");
     let message = error.to_string();
     assert!(message.contains("no host provider is bound"), "expected compile-boundary gate failure, got: {message}");
@@ -293,7 +293,7 @@ fn unreferenced_bodyless_host_contract_import_does_not_block_compilation() {
         .with_direct_dependencies(vec!["core".into()]),
     ];
     ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &[], TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], TEST_ARCH)
         .expect("无体合同存在但没有任何已解析调用时不得触发编译边界门禁");
 }
 
@@ -314,7 +314,7 @@ fn unreached_dependency_host_contract_does_not_block_compilation() {
         .as_entry()
         .with_direct_dependencies(vec!["core".into()]);
     ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&[core, app], &[], TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&[core, app], &[], &[], TEST_ARCH)
         .expect("依赖组未触达的无体合同不得触发编译边界门禁");
 }
 
@@ -375,7 +375,7 @@ fn imply_method_host_contract_binds_provider_and_retires_contract_body() {
     let resolved = resolve_host_provider_bindings(&refs, &bindings).expect("resolve 必须结构化成功");
     assert_eq!(resolved.len(), 1, "ImplyMethod 合同必须命中选定 provider");
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
         .expect("ImplyMethod 合同绑定 provider 后必须完整编译");
     let canonical = program.canonical();
     assert!(
@@ -439,7 +439,7 @@ fn overloaded_imply_methods_outside_bindings_are_each_bound_and_do_not_fail_host
         foreign_bindings: vec![],
     }];
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
         .expect("同一编码名下的合法重载集合不得被 host binding 扫描判为歧义");
     let canonical = program.canonical();
     assert_eq!(user_linked_import_count(canonical), 0, "无关合同仍必须正常绑定到 provider");
@@ -526,4 +526,109 @@ fn host_contract_binding_on_overloaded_declaration_key_fails_closed() {
     let message = error.to_string();
     assert!(message.contains("对应多个声明身份或实例"), "expected structured ambiguity rejection, got: {message}");
     assert!(message.contains("append"), "failure must name the ambiguous declaration key, got: {message}");
+}
+
+#[test]
+fn live_call_to_gated_out_provider_fails_with_contract_provider_and_feature() {
+    // 活调用命中 feature gate 排除：provider 存在但 `[gate(feature = "...")]` 未启用，
+    // unbound-contract 失败必须同时点名合同、被排除的 provider 与缺失的 feature，
+    // 给出可操作的修复面，而不是凭空缺实现。
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "asgard.render.host.ovm",
+            "namespace asgard.render.host.ovm;\n\
+             [host_provider(demo::dom_create_element)] [gate(feature = \"asgard.ssg.dom\")] micro host_dom_create_element(tag: i32): i32 { return tag }",
+        )
+        .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "[host_contract] micro dom_create_element(tag: i32): i32 \
+                [main] micro main() -> i32 { return dom_create_element(1) }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
+    ];
+    let gated_out = vec![rusty_valkyrie::compiler::emitter::pipeline::CompilerGatedOutHostProvider {
+        contract: "demo::dom_create_element".into(),
+        provider: "asgard::render::host::ovm::host_dom_create_element".into(),
+        feature: "asgard.ssg.dom".into(),
+    }];
+    let error = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &gated_out, TEST_ARCH)
+        .expect_err("被 feature gate 排除的 provider 不得静默补位，必须 fail-closed");
+    let message = error.to_string();
+    assert!(message.contains("no host provider is bound"), "必须保持 unbound-contract 门禁失败: {message}");
+    assert!(message.contains("demo::dom_create_element"), "失败必须点名合同限定名: {message}");
+    assert!(message.contains("asgard::render::host::ovm::host_dom_create_element"), "失败必须点名被排除的 provider: {message}");
+    assert!(message.contains("asgard.ssg.dom"), "失败必须点名缺失的 feature: {message}");
+}
+
+#[test]
+fn dead_contract_with_gated_out_provider_does_not_block_compilation() {
+    // 死调用不受影响：合同存在、gated-out 事实存在，但没有任何已解析调用触达合同，
+    // 编译边界门禁不得失败（链接 BFS 不会把不可达合同并入 consumer）。
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "[host_contract] micro dom_create_element(tag: i32): i32 \
+                [main] micro main() -> i32 { return 0 }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into()]),
+    ];
+    let gated_out = vec![rusty_valkyrie::compiler::emitter::pipeline::CompilerGatedOutHostProvider {
+        contract: "demo::dom_create_element".into(),
+        provider: "asgard::render::host::ovm::host_dom_create_element".into(),
+        feature: "asgard.ssg.dom".into(),
+    }];
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &gated_out, TEST_ARCH)
+        .expect("gated-out 事实不改变死合同的可达性语义：无已解析调用即不触发门禁");
+}
+
+#[test]
+fn unbound_contract_error_stays_structured_and_does_not_degrade() {
+    // 结构化错误不退化：有无 gated-out 事实，失败都保持 `HirError::FrontendRejected`
+    // 包裹 `ParseError::Invalid` 的同一结构；无事实时消息保持基线形态、不编造 feature。
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "[host_contract] micro dom_create_element(tag: i32): i32 \
+                [main] micro main() -> i32 { return dom_create_element(1) }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into()]),
+    ];
+
+    let without_facts = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], TEST_ARCH)
+        .expect_err("无 provider 事实时仍必须 fail-closed");
+    let rusty_valkyrie::HirError::FrontendRejected(rusty_valkyrie::compiler::syntax::oak::ParseError::Invalid { .. }) = &without_facts
+    else {
+        panic!("错误必须保持 FrontendRejected(ParseError::Invalid) 结构，实际: {without_facts:?}");
+    };
+    let base_message = without_facts.to_string();
+    assert!(base_message.contains("no host provider is bound"), "基线消息必须保持 unbound 语义: {base_message}");
+    assert!(!base_message.contains("is gated out"), "无事实时不得编造 feature 提示: {base_message}");
+
+    let gated_out = vec![rusty_valkyrie::compiler::emitter::pipeline::CompilerGatedOutHostProvider {
+        contract: "demo::dom_create_element".into(),
+        provider: "asgard::render::host::ovm::host_dom_create_element".into(),
+        feature: "asgard.ssg.dom".into(),
+    }];
+    let with_facts = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &gated_out, TEST_ARCH)
+        .expect_err("有 provider 事实时同样 fail-closed");
+    let rusty_valkyrie::HirError::FrontendRejected(rusty_valkyrie::compiler::syntax::oak::ParseError::Invalid { .. }) = &with_facts
+    else {
+        panic!("错误必须保持 FrontendRejected(ParseError::Invalid) 结构，实际: {with_facts:?}");
+    };
+    assert!(with_facts.to_string().contains("is gated out"), "有事实时必须追加 gate 提示: {with_facts}");
 }

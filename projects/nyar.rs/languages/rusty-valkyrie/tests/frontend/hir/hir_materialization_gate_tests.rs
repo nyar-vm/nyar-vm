@@ -157,7 +157,7 @@ fn unreachable_member_is_never_instantiated_nor_materialized_in_program() {
     assert_eq!(minted_for_wrapper_get, 0, "门不可达的 `Wrapper::get` 不得进入泛型实例化");
 
     let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &[], TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], TEST_ARCH)
         .expect("入口导出泛型程序必须完整编译");
     let canonical = program.canonical();
     let materialized_for_wrapper_get = canonical.linked.item_instances.values().filter(|record| record.declaration == wrapper_get).count();
@@ -205,6 +205,6 @@ fn selected_host_provider_declaration_is_a_materialization_root() {
     assert!(gate.reachable_declarations().contains(&contract), "被 `[main]` 调用的合同声明必须可达");
 
     ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
         .expect("provider 作为物化根后合同重映射必须完整编译");
 }

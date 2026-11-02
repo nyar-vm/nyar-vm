@@ -16,7 +16,7 @@ use crate::compiler::{
     types::hir::{HirFunction, HirModule, ValkyrieType},
 };
 
-use super::context::CompilerHostProviderBinding;
+use super::context::{CompilerGatedOutHostProvider, CompilerHostProviderBinding};
 
 /// 从依赖 MIR 中移除未选 `[host_provider]` 的外部导入合同（同文件多 provider 时仍只链入选中项）。
 #[doc(hidden)]
@@ -438,6 +438,9 @@ fn declared_owner_name(module: &HirModule, declaration: nyar_types::ItemId) -> O
 /// 将 Resolver 选定的 host provider 绑定应用到已链接的 Semantic MIR，
 /// 并在编译边界执行「已解析 callee」的 fail-closed 门禁。
 ///
+/// `gated_out` 是 Resolver 记录的「provider 存在但被 feature gate 排除」诊断事实；
+/// 门禁失败时据此指出缺的是哪个 feature，而不是凭空缺实现。
+///
 /// 返回实际生效的合同→provider 调用改写表；二次链接用它把依赖原件规范化到
 /// 与消费模块副本相同的绑定后状态，才能逐字段核对同一冻结身份。
 #[doc(hidden)]
@@ -445,9 +448,10 @@ pub fn apply_host_provider_bindings(
     module: &mut MirModule,
     dependency_mirs: &[MirModule],
     bindings: &[ResolvedHostProviderBinding],
+    gated_out: &[CompilerGatedOutHostProvider],
 ) -> Result<BTreeMap<ItemInstanceId, ItemInstanceId>, ParseError> {
     let remaps = if bindings.is_empty() { BTreeMap::new() } else { remap_bound_host_contracts(module, dependency_mirs, bindings)? };
-    enforce_resolved_host_contract_bindings(module)?;
+    enforce_resolved_host_contract_bindings(module, gated_out)?;
     Ok(remaps)
 }
 
@@ -459,7 +463,7 @@ pub fn apply_host_provider_bindings(
 /// 说明实现来源缺失，禁止静默编码成空体或默认值。
 /// 闭包提升但从未被可达代码调用的合同不在此失败——链接 BFS 不会把
 /// 不可达成员与合同并入 consumer。
-fn enforce_resolved_host_contract_bindings(module: &MirModule) -> Result<(), ParseError> {
+fn enforce_resolved_host_contract_bindings(module: &MirModule, gated_out: &[CompilerGatedOutHostProvider]) -> Result<(), ParseError> {
     let unbound: BTreeMap<ItemInstanceId, &MirExternalCallContract> = module
         .external_calls
         .iter()
@@ -479,13 +483,7 @@ fn enforce_resolved_host_contract_bindings(module: &MirModule) -> Result<(), Par
                         if let MirOperand::Callable(instance) = operand
                             && let Some(contract) = unbound.get(instance)
                         {
-                            return Err(ParseError::Invalid {
-                                message: format!(
-                                    "host contract `{}` (instance `{instance}`) has a resolved call but no host provider is bound",
-                                    contract.symbol
-                                ),
-                                span: None,
-                            });
+                            return Err(ParseError::Invalid { message: unbound_contract_message(contract, *instance, gated_out), span: None });
                         }
                     }
                 }
@@ -493,6 +491,28 @@ fn enforce_resolved_host_contract_bindings(module: &MirModule) -> Result<(), Par
         }
     }
     Ok(())
+}
+
+/// 渲染 unbound-contract 门禁失败：合同与实例身份之外，若 Resolver 记录了
+/// 「provider 存在但被 feature gate 排除」的事实，逐条指出被排除的 provider
+/// 与其要求的 feature，给出可操作的修复面（启用 feature），而非凭空缺实现。
+fn unbound_contract_message(
+    contract: &MirExternalCallContract,
+    instance: ItemInstanceId,
+    gated_out: &[CompilerGatedOutHostProvider],
+) -> String {
+    let contract_name = contract.symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
+    let base = format!("host contract `{contract_name}` (instance `{instance}`) has a resolved call but no host provider is bound");
+    let exclusions = gated_out.iter().filter(|exclusion| exclusion.contract == contract_name).collect::<Vec<_>>();
+    if exclusions.is_empty() {
+        return base;
+    }
+    let details = exclusions
+        .iter()
+        .map(|exclusion| format!("provider `{}` is gated out: feature `{}` is not enabled", exclusion.provider, exclusion.feature))
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!("{base}; {details}")
 }
 
 /// 按 Resolver 绑定把合同调用逐对重映射到 provider，并安装 provider 定义/导入。

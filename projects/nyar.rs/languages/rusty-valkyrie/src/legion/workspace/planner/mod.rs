@@ -13,7 +13,7 @@ mod target_gate;
 mod target_when;
 mod types;
 
-pub(crate) use bindings::compiler_host_provider_bindings;
+pub(crate) use bindings::{compiler_gated_out_host_providers, compiler_host_provider_bindings};
 pub(crate) use closure_demand::{compile_arch_key, demanded_declaration_keys};
 
 pub use dependencies::*;

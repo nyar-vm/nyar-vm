@@ -34,10 +34,23 @@ pub struct CompilerBuildContext {
     pub wasm_package_kind: WasmPackageKind,
     /// 装配层已按 target/profile 过滤的 host provider 选择结果。
     pub selected_host_providers: Vec<CompilerHostProviderBinding>,
+    /// 因 `[gate(feature = "...")]` 未启用而被排除的 host provider（诊断事实）。
+    pub gated_out_host_providers: Vec<CompilerGatedOutHostProvider>,
     /// 测试构建的 `[test]` 入口名；空表示普通构建。
     ///
     /// 名字来自语义闭包 seed 的显式声明身份，Emitter 据此为每个测试生成 run contract。
     pub test_entry_names: Vec<String>,
+}
+
+/// 被 feature gate 排除的 host provider（供 unbound-contract 诊断引用）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompilerGatedOutHostProvider {
+    /// 被实现的 `[host_contract]` 限定名（`::` 分隔）。
+    pub contract: String,
+    /// 被排除的 provider 限定名（`::` 分隔）。
+    pub provider: String,
+    /// 该 provider 的 gate 声明要求而未启用的 feature。
+    pub feature: String,
 }
 
 impl CompilerBuildContext {
@@ -54,6 +67,7 @@ impl CompilerBuildContext {
             clr_suspend_strategy,
             wasm_package_kind,
             selected_host_providers: Vec::new(),
+            gated_out_host_providers: Vec::new(),
             test_entry_names: Vec::new(),
         }
     }
@@ -67,6 +81,12 @@ impl CompilerBuildContext {
     /// 附加 Resolver 已选定的 host provider 绑定。
     pub fn with_selected_host_providers(mut self, providers: Vec<CompilerHostProviderBinding>) -> Self {
         self.selected_host_providers = providers;
+        self
+    }
+
+    /// 附加被 feature gate 排除的 host provider（诊断事实）。
+    pub fn with_gated_out_host_providers(mut self, gated_out: Vec<CompilerGatedOutHostProvider>) -> Self {
+        self.gated_out_host_providers = gated_out;
         self
     }
 }

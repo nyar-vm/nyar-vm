@@ -134,6 +134,15 @@ pub struct PlannedHostProvider {
     pub gate_attributes: Vec<GatePredicate>,
 }
 
+/// 因 `[gate(feature = "...")]` 未启用而被排除的宿主 provider 及其所需 feature（诊断事实）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedHostProviderExclusion {
+    /// 被排除的宿主 provider 候选。
+    pub provider: PlannedHostProvider,
+    /// 该 provider 的 gate 声明要求而未启用的 feature。
+    pub feature: String,
+}
+
 /// 单个工程的构建计划：清单位置、源码闭包、语义源码组与宿主契约。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlannedProject {
@@ -154,6 +163,9 @@ pub struct PlannedProject {
     pub host_provider_candidates: Vec<PlannedHostProvider>,
     /// 已选定的宿主契约提供者。
     pub selected_host_providers: Vec<PlannedHostProvider>,
+    /// 因 `[gate(feature = "...")]` 未启用而被排除的宿主 provider（供编译期诊断引用）。
+    #[serde(default)]
+    pub gated_out_host_providers: Vec<PlannedHostProviderExclusion>,
     /// 匹配到的构建目标配置。
     pub build_target: BuildTargetSpec,
     /// 产物类型（binary / library）。
