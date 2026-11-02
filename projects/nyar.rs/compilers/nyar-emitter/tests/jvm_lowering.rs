@@ -195,11 +195,12 @@ fn lowers_frozen_long_bitand_operator_to_single_land() {
 /// `integer` 位运算冻结码各落一条同载体指令；`u32` 右移必须走逻辑右移 `iushr`。
 #[test]
 fn integer_bitwise_codes_lower_to_single_instruction() {
-    assert!(matches!(JvmOperatorCode::IntegerBitAnd.instructions().as_slice(), [JvmInstruction::IAnd]));
-    assert!(matches!(JvmOperatorCode::IntegerBitOr.instructions().as_slice(), [JvmInstruction::IOr]));
-    assert!(matches!(JvmOperatorCode::IntegerBitXor.instructions().as_slice(), [JvmInstruction::IXor]));
-    assert!(matches!(JvmOperatorCode::IntegerShiftLeft.instructions().as_slice(), [JvmInstruction::IShl]));
-    assert!(matches!(JvmOperatorCode::IntegerShiftRightUnsigned.instructions().as_slice(), [JvmInstruction::IUShr]));
+    // 算术/位运算码不消费 scratch 槽，参数值无意义。
+    assert!(matches!(JvmOperatorCode::IntegerBitAnd.instructions(0).as_slice(), [JvmInstruction::IAnd]));
+    assert!(matches!(JvmOperatorCode::IntegerBitOr.instructions(0).as_slice(), [JvmInstruction::IOr]));
+    assert!(matches!(JvmOperatorCode::IntegerBitXor.instructions(0).as_slice(), [JvmInstruction::IXor]));
+    assert!(matches!(JvmOperatorCode::IntegerShiftLeft.instructions(0).as_slice(), [JvmInstruction::IShl]));
+    assert!(matches!(JvmOperatorCode::IntegerShiftRightUnsigned.instructions(0).as_slice(), [JvmInstruction::IUShr]));
     assert!(JvmOperatorCode::IntegerBitAnd.arithmetic_instruction().is_some(), "位运算码不得落入比较展开路径");
 }
 
@@ -258,7 +259,7 @@ fn comparison_operator_expansion_uses_unique_method_local_labels() {
 /// 按有符号比较」的显式序列，且不得偷换成有符号 `IntegerCompareLessThan`。
 #[test]
 fn unsigned_integer_less_than_flips_sign_bit_before_signed_branch() {
-    let expansion = JvmOperatorCode::IntegerCompareLessThanUnsigned.instructions();
+    let expansion = JvmOperatorCode::IntegerCompareLessThanUnsigned.instructions(0);
     let xor_count = expansion.iter().filter(|instruction| matches!(instruction, JvmInstruction::IXor)).count();
     let swap_count = expansion.iter().filter(|instruction| matches!(instruction, JvmInstruction::Swap)).count();
     assert_eq!(xor_count, 2, "两侧各翻转一次符号位: {expansion:?}");
@@ -271,6 +272,57 @@ fn unsigned_integer_less_than_flips_sign_bit_before_signed_branch() {
         expansion.iter().any(|instruction| matches!(instruction, JvmInstruction::IfICmpGe(_))),
         "翻转后按有符号 `>=` 分支到 false: {expansion:?}"
     );
+}
+
+/// JVM 没有无符号 `lcmp` 也没有 `swap2`：`u64` 小于必须展开为「两侧翻转符号位后
+/// 按有符号 `lcmp` 比较」，翻转中途经 scratch `long` 槽周转，且槽必须随
+/// `max_locals` 预留、随 class 字节 roundtrip 保留。
+#[test]
+fn unsigned_long_less_than_flips_sign_bits_through_scratch_local() {
+    let scratch = 7u16;
+    let expansion = JvmOperatorCode::LongCompareLessThanUnsigned.instructions(scratch);
+    let xor_count = expansion.iter().filter(|instruction| matches!(instruction, JvmInstruction::LXor)).count();
+    assert_eq!(xor_count, 2, "两侧各翻转一次符号位: {expansion:?}");
+    assert_eq!(
+        expansion.iter().filter(|instruction| matches!(instruction, JvmInstruction::LdcLong(value) if *value == i64::MIN)).count(),
+        2,
+        "翻转必须使用 `i64::MIN` 作为掩码: {expansion:?}"
+    );
+    assert!(
+        expansion.iter().any(|instruction| matches!(instruction, JvmInstruction::LStore(slot) if *slot == scratch)),
+        "中途结果必须存入 scratch 槽: {expansion:?}"
+    );
+    assert!(
+        expansion.iter().any(|instruction| matches!(instruction, JvmInstruction::LLoad(slot) if *slot == scratch)),
+        "翻转后必须从 scratch 槽取回: {expansion:?}"
+    );
+    assert!(
+        expansion.iter().any(|instruction| matches!(instruction, JvmInstruction::LCmp))
+            && expansion.iter().any(|instruction| matches!(instruction, JvmInstruction::IfGe(_))),
+        "翻转后按 `lcmp` + 有符号 `>=` 分支到 false: {expansion:?}"
+    );
+
+    let class_file = lower_single_operator_call(JvmOperatorCode::LongCompareLessThanUnsigned, TargetOperandType::I32, BOOLEAN);
+    let instructions = method_code(&class_file, "add");
+    // scratch 槽是方法级预留的第 5 槽：2 个 `long` 形参占 0..4，结果 `int` 占 4。
+    let lstore = instructions.iter().position(|instruction| matches!(instruction, JvmInstruction::LStore(5))).expect("必须发射 scratch lstore");
+    let lload = instructions.iter().position(|instruction| matches!(instruction, JvmInstruction::LLoad(5))).expect("必须发射 scratch lload");
+    let lcmp = instructions.iter().position(|instruction| matches!(instruction, JvmInstruction::LCmp)).expect("必须发射 lcmp");
+    assert!(lstore < lload && lload < lcmp, "scratch 周转必须先存后取再比较: {instructions:?}");
+
+    // 方法级 `max_locals` 必须覆盖 scratch 槽：2 个 `long` 形参（4 槽）+ 结果 `int`（1 槽）+ scratch（2 槽）。
+    let method = class_file.methods.iter().find(|method| method.name == "add").expect("lowered method");
+    assert_eq!(method.code.as_ref().expect("method code").max_locals, 7, "scratch long 槽必须计入 max_locals");
+
+    let bytes = class_file.to_bytes().expect("class encoding");
+    let decoded_class = JvmClassFile::from_bytes(&bytes).expect("class decoding");
+    let index = decoded_class.methods.iter().position(|method| method.name == "add").expect("decoded method");
+    let code = decoded_class.raw_method_code[index].as_ref().expect("decoded method code");
+    let decoded = decode_instructions(code, &decoded_class.constant_pool);
+    let mnemonics = decoded.iter().map(|instruction| instruction.mnemonic.as_str()).collect::<Vec<_>>();
+    assert!(mnemonics.contains(&"ldc2_w"), "scratch 翻转常量必须随字节码保留: {mnemonics:?}");
+    assert!(mnemonics.contains(&"lstore"), "scratch 槽必须随字节码保留: {mnemonics:?}");
+    assert!(mnemonics.contains(&"lcmp"), "signed `lcmp` 必须随字节码保留: {mnemonics:?}");
 }
 
 #[test]

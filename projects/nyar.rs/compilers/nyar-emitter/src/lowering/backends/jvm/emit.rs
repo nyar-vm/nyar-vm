@@ -35,6 +35,8 @@ use nyar_types::{
     layout_choice::SumRepresentation,
 };
 
+use super::JvmOperatorCode;
+
 const JVM_ACC_PUBLIC: u16 = 0x0001;
 const JVM_ACC_STATIC: u16 = 0x0008;
 
@@ -786,6 +788,9 @@ struct JvmMethodEmitter<'a> {
     instructions: Vec<JvmInstruction>,
     current_block: MirBlockRef,
     comparison_ordinal: usize,
+    /// 无符号 `u64` 比较展开使用的 scratch `long` 槽（2 槽宽），仅当函数实际引用
+    /// `LongCompareLessThanUnsigned` 时在 `max_locals` 尾部预留；未预留即未引用。
+    scratch_long_slot: Option<u16>,
 }
 
 fn lower_function(
@@ -804,6 +809,26 @@ fn lower_function(
         local_count = local_count.saturating_add(jvm_local_kind(submission.backend_plan.aggregate_layouts(), ty)?.slot_width());
     }
 
+    // 无符号 `u64` 比较的冻结展开需要 2 槽 scratch long 周转（JVM 没有 `swap2`）；
+    // 只在函数实际引用该 operator 时预留，避免无关方法的 `max_locals` 虚增。
+    let needs_scratch_long = function.blocks.iter().flat_map(|block| &block.instructions).any(|instruction| {
+        let InstructionKind::Call { callee: Operand::Item(instance), .. } = &instruction.kind
+        else {
+            return false;
+        };
+        operator_by_instance
+            .get(instance)
+            .is_some_and(|(_, binding)| matches!(binding, TargetOperatorBinding::Frozen(plan) if plan.encoding == TargetOperatorEncoding::Jvm(JvmOperatorCode::LongCompareLessThanUnsigned)))
+    });
+    let scratch_long_slot = if needs_scratch_long {
+        let slot = local_count;
+        local_count = local_count.saturating_add(2);
+        Some(slot)
+    }
+    else {
+        None
+    };
+
     let mut emitter = JvmMethodEmitter {
         submission,
         internal_name,
@@ -816,6 +841,7 @@ fn lower_function(
         instructions: Vec::new(),
         current_block: function.entry,
         comparison_ordinal: 0,
+        scratch_long_slot,
     };
 
     for block_id in collect_reachable_blocks(function) {
@@ -1221,7 +1247,17 @@ impl JvmMethodEmitter<'_> {
         }
         self.emit_operator_operands(mnemonic, expected_kind, plan, arguments)?;
 
-        let expansion = code.instructions();
+        // 无符号 `u64` 比较的展开要消费方法级 scratch `long` 槽；槽在 `lower_function`
+        // 按同一绑定表预留，未预留说明计划与发射扫描不一致，必须失败闭合。
+        let scratch_long_slot = if code == JvmOperatorCode::LongCompareLessThanUnsigned {
+            self.scratch_long_slot.ok_or_else(|| {
+                format!("JVM 目标 operator `{mnemonic}` 的展开需要 scratch long 槽，但方法级预留缺失: function={}", self.function.symbol)
+            })?
+        }
+        else {
+            0
+        };
+        let expansion = code.instructions(scratch_long_slot);
         if expansion.is_empty() {
             return Err(format!("JVM 目标 operator `{mnemonic}` 的冻结编码 `{code:?}` 没有指令展开: function={}", self.function.symbol));
         }

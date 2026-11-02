@@ -92,6 +92,8 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "i32.gt" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Cgt),
         "i64.eq" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Ceq),
         "i64.lt" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Clt),
+        // 无符号 `int64` 小于：MSIL `clt.un` 对宽载体同形（ECMA-335 的 `clt.un` 接受 int64）。
+        "i64.lt.un" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::CltUn),
         "i64.gt" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Cgt),
         "f64.eq" => binary(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::Ceq),
         "f64.lt" => binary(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::Clt),

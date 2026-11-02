@@ -91,6 +91,10 @@ pub enum JvmOperatorCode {
     LongCompareNotEqual,
     /// long 小于比较（结果压 `int` 0/1）。
     LongCompareLessThan,
+    /// long 无符号小于比较（结果压 `int` 0/1）：JVM 没有无符号 `lcmp`，
+    /// 展开为「两侧异或 `i64::MIN` 翻转符号位后按有符号比较」的显式序列；
+    /// JVM 没有 `swap2`，中间的翻转结果经发射方预留的 scratch long 槽周转。
+    LongCompareLessThanUnsigned,
     /// long 小于等于比较（结果压 `int` 0/1）。
     LongCompareLessOrEqual,
     /// long 大于比较（结果压 `int` 0/1）。
@@ -138,7 +142,12 @@ impl JvmOperatorCode {
     /// 算术码展开为单条指令；比较码展开为产生 `int` 0/1 的分支序列。
     /// 序列中的标签是发射期占位名，由调用方（lowering emit）替换为带后缀的
     /// 唯一标签；本函数只给出形状，不解析跳转。
-    pub fn instructions(self) -> Vec<JvmInstruction> {
+    ///
+    /// `scratch_long_slot` 是发射方在 `max_locals` 之外按需预留的 2 槽 `long`
+    /// 周转槽；只有 [`Self::LongCompareLessThanUnsigned`] 消费它——`u64` 的序等价于
+    /// 「两侧都翻转符号位后」的 `i64` 序，而 JVM 没有 `swap2`，翻转中途必须经局部槽
+    /// 周转。其余码忽略该参数。
+    pub fn instructions(self, scratch_long_slot: u16) -> Vec<JvmInstruction> {
         if let Some(instruction) = self.arithmetic_instruction() {
             return vec![instruction];
         }
@@ -169,6 +178,20 @@ impl JvmOperatorCode {
             Self::LongCompareEqual => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfNe("comparison_false".to_string())]),
             Self::LongCompareNotEqual => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfEq("comparison_false".to_string())]),
             Self::LongCompareLessThan => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfGe("comparison_false".to_string())]),
+            // 无符号 `u64` 小于：栈 `[a, b]` → 先把 `b ^ MIN` 周转进 scratch 槽，
+            // 再翻转 `a`，最后 `lcmp` 按有符号比较。`ldc2_w i64::MIN` + `lxor` 即符号位翻转。
+            Self::LongCompareLessThanUnsigned => (
+                vec![
+                    JvmInstruction::LdcLong(i64::MIN),
+                    JvmInstruction::LXor,
+                    JvmInstruction::LStore(scratch_long_slot),
+                    JvmInstruction::LdcLong(i64::MIN),
+                    JvmInstruction::LXor,
+                    JvmInstruction::LLoad(scratch_long_slot),
+                    JvmInstruction::LCmp,
+                ],
+                vec![JvmInstruction::IfGe("comparison_false".to_string())],
+            ),
             Self::LongCompareLessOrEqual => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfGt("comparison_false".to_string())]),
             Self::LongCompareGreaterThan => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfLe("comparison_false".to_string())]),
             Self::LongCompareGreaterOrEqual => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfLt("comparison_false".to_string())]),

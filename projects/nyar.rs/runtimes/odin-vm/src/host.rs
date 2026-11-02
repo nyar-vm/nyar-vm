@@ -48,6 +48,8 @@ pub enum HostOp {
     I64Gt,
     /// 64 位有符号大于等于比较。
     I64Ge,
+    /// 64 位无符号小于比较（`u64` 的 `<`；与有符号 `I64Lt` 在最高位为 1 时结论不同）。
+    I64LtU,
     /// 64 位按位与。
     I64And,
     /// 64 位按位或。
@@ -131,6 +133,7 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "i64_le" => HostOp::I64Le,
         "i64_gt" => HostOp::I64Gt,
         "i64_ge" => HostOp::I64Ge,
+        "i64_lt_u" => HostOp::I64LtU,
         "i64_and" => HostOp::I64And,
         "i64_or" => HostOp::I64Or,
         "i64_xor" => HostOp::I64Xor,
@@ -258,6 +261,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::I64Le => Ok(Value::Bool(i64_arg(args, 0)? <= i64_arg(args, 1)?)),
         HostOp::I64Gt => Ok(Value::Bool(i64_arg(args, 0)? > i64_arg(args, 1)?)),
         HostOp::I64Ge => Ok(Value::Bool(i64_arg(args, 0)? >= i64_arg(args, 1)?)),
+        HostOp::I64LtU => Ok(Value::Bool((i64_arg(args, 0)? as u64) < (i64_arg(args, 1)? as u64))),
         HostOp::I64And => Ok(Value::I64(i64_arg(args, 0)? & i64_arg(args, 1)?)),
         HostOp::I64Or => Ok(Value::I64(i64_arg(args, 0)? | i64_arg(args, 1)?)),
         HostOp::I64Xor => Ok(Value::I64(i64_arg(args, 0)? ^ i64_arg(args, 1)?)),

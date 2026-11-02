@@ -206,6 +206,21 @@ fn comparison_lowers_to_single_clt_without_branch_expansion() {
     write_library_bytes(&module);
 }
 
+/// 无符号 `u64` 小于：MSIL `clt.un` 对 `int64` 载体同形，必须是单条 `clt.un`，
+/// 不得偷换成有符号 `clt`，也不得展开为分支序列。
+#[test]
+fn unsigned_long_comparison_lowers_to_single_clt_un() {
+    let module = lower_single_operator_call("less", "i64.lt.un", MsilOpcode::CltUn, TargetOperandType::I32, BOOLEAN);
+    let instructions = module.global_methods.iter().find(|method| method.method.name == "less").expect("less method").instructions.as_slice();
+    assert_eq!(instructions.iter().filter(|instruction| instruction.opcode == MsilOpcode::CltUn).count(), 1, "{instructions:?}");
+    assert!(!instructions.iter().any(|instruction| instruction.opcode == MsilOpcode::Clt), "无符号比较不得混入有符号 `clt`: {instructions:?}");
+    assert!(
+        !instructions.iter().any(|instruction| matches!(instruction.opcode, MsilOpcode::Br | MsilOpcode::Brfalse | MsilOpcode::Brtrue)),
+        "comparison must not expand into branch sequences: {instructions:?}"
+    );
+    write_library_bytes(&module);
+}
+
 #[test]
 fn unfrozen_operator_binding_is_rejected_structurally() {
     let operator = ItemInstanceId::from_index(1).expect("operator instance");

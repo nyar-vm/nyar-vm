@@ -102,6 +102,11 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         "long.compare_equal" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareEqual),
         "long.compare_not_equal" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareNotEqual),
         "long.compare_less_than" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareLessThan),
+        // 无符号 `u64` 小于：JVM 没有无符号 `lcmp`，冻结为符号位翻转序列（展开见
+        // `JvmOperatorCode::LongCompareLessThanUnsigned`）；翻转中途经 scratch long 槽周转。
+        "long.compare_less_than_unsigned" => {
+            binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareLessThanUnsigned)
+        }
         "long.compare_less_or_equal" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareLessOrEqual),
         "long.compare_greater_than" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareGreaterThan),
         "long.compare_greater_or_equal" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareGreaterOrEqual),

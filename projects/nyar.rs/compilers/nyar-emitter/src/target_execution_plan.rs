@@ -1500,6 +1500,7 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::target_operator::TargetOperatorEncoding;
     use nyar_types::{CanonicalBlockId, CanonicalFunction, CanonicalPrimitiveType, ItemId, TypeRecord};
 
     fn type_id(index: u32) -> nyar_types::TypeId {
@@ -1614,6 +1615,46 @@ mod tests {
         })
         .expect_err("`Yield` 不得进入目标合同");
         assert!(error.contains("尚无目标合同"), "诊断必须保持失败闭合语义，实际：{error}");
+    }
+
+    /// `u64` 无符号小于的托管目标配方：CLR 冻结为原生 `clt.un`，JVM 冻结为符号位
+    /// 翻转展开码；操作数载体 `I64`、结果槽 `I32`，与 `__u64_lt` 的声明签名一致。
+    #[test]
+    fn unsigned_u64_less_than_freezes_managed_operator_plans() {
+        let clr_link = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("clr-operator")), vec!["i64.lt.un".to_string()]);
+        let Some(TargetOperatorBinding::Frozen(clr_plan)) = freeze_target_operator(&clr_link)
+        else {
+            panic!("`i64.lt.un` 必须冻结")
+        };
+        assert_eq!(clr_plan.arity, 2);
+        assert_eq!(clr_plan.operand_type, TargetOperandType::I64);
+        assert_eq!(clr_plan.result_type, TargetOperandType::I32);
+        assert_eq!(clr_plan.encoding, TargetOperatorEncoding::Clr(crate::transitional::msil::MsilOpcode::CltUn));
+
+        let jvm_link =
+            nyar::ExternalImportLink::host(Some(nyar::Identifier::new("jvm-operator")), vec!["long.compare_less_than_unsigned".to_string()]);
+        let Some(TargetOperatorBinding::Frozen(jvm_plan)) = freeze_target_operator(&jvm_link)
+        else {
+            panic!("`long.compare_less_than_unsigned` 必须冻结")
+        };
+        assert_eq!(jvm_plan.arity, 2);
+        assert_eq!(jvm_plan.operand_type, TargetOperandType::I64);
+        assert_eq!(jvm_plan.result_type, TargetOperandType::I32);
+        assert!(matches!(
+            jvm_plan.encoding,
+            TargetOperatorEncoding::Jvm(crate::lowering::backends::jvm::JvmOperatorCode::LongCompareLessThanUnsigned)
+        ));
+    }
+
+    /// 反例：无符号除余 / 逻辑右移等刻意未冻结的助记符必须保持 `Unfrozen`，
+    /// 由 emit 侧结构化失败，不得在本层猜默认指令。
+    #[test]
+    fn deliberately_unfrozen_unsigned_variants_stay_unfrozen() {
+        let clr_link = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("clr-operator")), vec!["i64.div.un".to_string()]);
+        assert_eq!(freeze_target_operator(&clr_link), Some(TargetOperatorBinding::Unfrozen), "无符号除法不得冻结");
+        let jvm_link =
+            nyar::ExternalImportLink::host(Some(nyar::Identifier::new("jvm-operator")), vec!["long.shift_right_unsigned".to_string()]);
+        assert_eq!(freeze_target_operator(&jvm_link), Some(TargetOperatorBinding::Unfrozen), "未冻结助记符不得冻结");
     }
 }
 

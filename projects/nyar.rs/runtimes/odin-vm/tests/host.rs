@@ -31,6 +31,20 @@ fn parses_i64_bitwise_host_ops() {
 }
 
 #[test]
+fn i64_unsigned_less_than_uses_unsigned_bit_patterns() {
+    assert_eq!(parse_host_op("i64_lt_u"), Some(HostOp::I64LtU));
+    let mut heap = ObjectHeap::new();
+    // `-1` 的位型是 `u64::MAX`：无符号语义下不小于 `1`，与有符号 `i64_lt` 结论相反。
+    assert_eq!(execute_host_op(HostOp::I64LtU, &[Value::I64(-1), Value::I64(1)], &mut heap).expect("i64_lt_u (-1, 1)"), Value::Bool(false));
+    assert_eq!(execute_host_op(HostOp::I64Lt, &[Value::I64(-1), Value::I64(1)], &mut heap).expect("i64_lt (-1, 1)"), Value::Bool(true));
+    // 非负操作数上无符号与有符号语义一致。
+    assert_eq!(execute_host_op(HostOp::I64LtU, &[Value::I64(3), Value::I64(5)], &mut heap).expect("i64_lt_u (3, 5)"), Value::Bool(true));
+    assert_eq!(execute_host_op(HostOp::I64LtU, &[Value::I64(5), Value::I64(3)], &mut heap).expect("i64_lt_u (5, 3)"), Value::Bool(false));
+    // 非整数载体参数必须结构化失败，不得静默转换。
+    assert!(execute_host_op(HostOp::I64LtU, &[Value::Bool(true), Value::I64(1)], &mut heap).is_err(), "bool 参数不得通过 i64 无符号比较路径");
+}
+
+#[test]
 fn i64_bitwise_host_ops_execute_with_masked_shifts() {
     let mut heap = ObjectHeap::new();
     assert_eq!(execute_host_op(HostOp::I64And, &[Value::I64(12), Value::I64(10)], &mut heap).expect("i64_and"), Value::I64(8));
