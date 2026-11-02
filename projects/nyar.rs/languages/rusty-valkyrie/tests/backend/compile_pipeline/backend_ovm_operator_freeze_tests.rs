@@ -235,3 +235,103 @@ fn unknown_ovm_mnemonic_stays_unfrozen_and_fails_structurally() {
     let message = error.to_string();
     assert!(message.contains("i32.lt_uu"), "错误必须指出未冻结助记符: {message}");
 }
+
+/// D15 夹具：共存 `i64 ==` 与 `bool ==` / `!=` 的源码组。
+fn d15_groups(with_i64_eq: bool) -> Vec<CompilerSourceGroup> {
+    let i64_impl = if with_i64_eq {
+        r#"
+imply i64 {
+    infix `==`(self, rhs: Self): bool { return true }
+}
+"#
+    }
+    else {
+        ""
+    };
+    vec![
+        CompilerSourceGroup::single_source(
+            "core",
+            "core",
+            &format!(
+                r#"
+[primitive("std::primitive::i64")]
+structure i64 {{ }}
+
+[primitive("std::primitive::bool")]
+structure bool {{ }}
+
+imply bool {{
+    prefix `!`(self): bool {{ return false }}
+    infix `==`(self, rhs: Self): bool {{ return true }}
+    infix `!=`(self, rhs: Self): bool {{ return !(self == rhs) }}
+}}
+{i64_impl}
+"#
+            ),
+        ),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            &format!(
+                r#"
+namespace demo;
+
+[export(case: "camelCase")]
+micro probe(a: i64, b: i64, x: bool, y: bool) -> bool {{
+    let neg: bool = x != y
+    {i64_use}return neg
+}}
+"#,
+                i64_use = if with_i64_eq { "let eq: bool = a == b\n    " } else { "" }
+            ),
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into()]),
+    ]
+}
+
+/// D15 夹具：把源码组降低到片段提交，供导出名与入口决议断言。
+fn d15_submission(groups: &[CompilerSourceGroup]) -> FragmentSubmission {
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(groups, &[], &[], "native")
+        .expect("源码闭包必须完成 Compiler 链路");
+    let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
+    let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
+    let plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots).expect("计划必须冻结");
+    FragmentSubmission::from_backend_plan(plan)
+}
+
+/// D15：共存 `i64 ==` 与 `bool ==` 时，ovm 导出名必须按实例身份消歧，入口逐一可解析，
+/// 公共导出名保持原样。
+#[test]
+fn coexisting_infix_eq_instances_export_unique_names() {
+    let submission = d15_submission(&d15_groups(true));
+    let entries = nyar_emitter::lowering::backends::ovm::library_public_export_names(&submission);
+    let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&submission).expect("共存 `==` 实例必须完成降低");
+    let names = module.exports.iter().map(|export| export.symbol_name.clone()).collect::<Vec<_>>();
+    let unique = names.iter().collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(names.len(), unique.len(), "ovm 导出名必须按实例身份唯一: {names:?}");
+    assert!(names.iter().any(|name| name == "probe"), "公共导出名必须保持原样: {names:?}");
+    let eq_exports = names.iter().filter(|name| name.starts_with("core::infix ==")).collect::<Vec<_>>();
+    assert_eq!(eq_exports.len(), 2, "两个 `==` 实例都必须导出: {names:?}");
+    assert!(eq_exports.iter().all(|name| name.contains('#')), "abi 派生名冲突时必须按实例下标消歧: {eq_exports:?}");
+    nyar_emitter::resolve_entry_symbols(&module, &entries).expect("库公开入口必须逐一解析到唯一函数导出");
+}
+
+/// D15：单一 `==` 实例不触发冲突时，导出名保持 abi 原名，不得追加实例下标。
+#[test]
+fn single_infix_eq_instance_keeps_unqualified_export_name() {
+    let submission = d15_submission(&d15_groups(false));
+    let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&submission).expect("单一 `==` 实例必须完成降低");
+    let names = module.exports.iter().map(|export| export.symbol_name.clone()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name == "core::infix =="), "无冲突时导出名必须保持 abi 原名: {names:?}");
+}
+
+/// D15 反例：不存在的入口名仍然必须按「唯一明确函数导出」失败闭合。
+#[test]
+fn unknown_entry_name_still_fails_closed() {
+    let submission = d15_submission(&d15_groups(true));
+    let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&submission).expect("共存 `==` 实例必须完成降低");
+    let error = nyar_emitter::resolve_entry_symbols(&module, &["core::missing".to_owned()]).expect_err("未知入口名必须结构化失败");
+    assert!(error.contains("必须对应唯一明确函数导出"), "{error}");
+}

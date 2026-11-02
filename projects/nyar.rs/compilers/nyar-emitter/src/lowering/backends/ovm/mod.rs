@@ -11,3 +11,9 @@ pub fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> crate::
     }
     Err(format!("Nyar VM backend requires Compiler-owned executable functions; edge-based semantic replay is not a valid input"))
 }
+
+/// 库模式公开导出名（run-contract 入口）；与模块内 `NyarExport.symbol_name` 一一对应（集成测试专用）。
+#[doc(hidden)]
+pub fn library_public_export_names(submission: &FragmentSubmission) -> Vec<String> {
+    super::ovm_mir::nyar_library_public_export_names(submission)
+}

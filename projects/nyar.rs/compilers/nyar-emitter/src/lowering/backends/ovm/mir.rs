@@ -206,6 +206,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
         })
         .collect::<BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>>();
 
+    let export_names = nyar_export_name_map(submission);
     let mut function_index_by_instance = BTreeMap::<ItemInstanceId, i32>::new();
     {
         let exec = &submission.backend_plan;
@@ -221,7 +222,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 continue;
             };
             let mir_fn = &view.function;
-            let export_name = nyar_mir_export_name(submission, instance);
+            let export_name = export_names.get(&instance).cloned().unwrap_or_else(|| nyar_mir_export_name(submission, instance));
             let code_offset = module.code_bytes.len() as i32;
             let constants_base = module.constants.len() as i32;
             let mut emitter = BytecodeEmitter::new(constants_base, &mut module.imports);
@@ -346,14 +347,49 @@ fn nyar_mir_export_name(submission: &FragmentSubmission, operation: ItemInstance
         .unwrap_or_else(|| panic!("函数实例缺少 ABI 标签: {operation:?}"))
 }
 
+/// 片段内导出符号的实例 → 名称映射：公共导出名（`wasm_export_names`）保持原样；
+/// abi 派生名在同一片段绑定多个实例时按实例下标消歧，导出表与入口决议共用同一映射。
+fn nyar_export_name_map(submission: &FragmentSubmission) -> BTreeMap<ItemInstanceId, String> {
+    let plan = &submission.backend_plan;
+    let mut bases: BTreeMap<ItemInstanceId, String> = BTreeMap::new();
+    for operation in plan.exported_operations().iter().copied().chain(plan.entry_operation()) {
+        bases.entry(operation).or_insert_with(|| nyar_mir_export_name(submission, operation));
+    }
+    for operation in plan.wasm_export_names().keys() {
+        bases.entry(*operation).or_insert_with(|| nyar_mir_export_name(submission, *operation));
+    }
+    let mut groups: BTreeMap<String, Vec<ItemInstanceId>> = BTreeMap::new();
+    for (operation, name) in &bases {
+        groups.entry(name.clone()).or_default().push(*operation);
+    }
+    let mut resolved = BTreeMap::new();
+    for (name, operations) in groups {
+        if operations.len() == 1 {
+            resolved.insert(operations[0], name);
+            continue;
+        }
+        for operation in operations {
+            // 公共导出名是 run-contract 的稳定表面，冲突组内只给 abi 派生名追加实例下标。
+            if plan.wasm_export_names().contains_key(&operation) {
+                resolved.insert(operation, name.clone());
+            }
+            else {
+                resolved.insert(operation, format!("{name}#{}", operation.index()));
+            }
+        }
+    }
+    resolved
+}
+
 /// Nyar VM run-contract 入口必须与模块内 `NyarExport.symbol_name` 一致；不能假定裸 `main`。
 pub(crate) fn nyar_library_public_export_names(submission: &FragmentSubmission) -> Vec<String> {
     let plan = &submission.backend_plan;
+    let names = nyar_export_name_map(submission);
     if plan.exported_operations().is_empty() {
-        plan.entry_operation().map(|entry| vec![nyar_mir_export_name(submission, entry)]).unwrap_or_default()
+        plan.entry_operation().and_then(|entry| names.get(&entry).cloned()).map(|name| vec![name]).unwrap_or_default()
     }
     else {
-        plan.exported_operations().iter().map(|operation| nyar_mir_export_name(submission, *operation)).collect()
+        plan.exported_operations().iter().filter_map(|operation| names.get(operation).cloned()).collect()
     }
 }
 
