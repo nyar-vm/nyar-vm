@@ -124,53 +124,18 @@ impl CopySemanticsValidator {
         self.is_value(ty)
     }
 
-    /// 判断给定类型是否可被值类型安全地按拷贝语义持有。
+    /// 判断给定类型是否可被值类型按拷贝语义持有。
     ///
-    /// 仅 copy 兼容类型可作为值类型 struct 的字段：基本标量、定长数组、元组、
-    /// 以及已注册的值类型。堆数组、函数、trait 对象、未注册命名类型等引用类型
-    /// 不兼容，违反 copy discipline。
+    /// 语言语义：值类型可含任意字段类型——class 实例、堆数组、`unite` 等引用类型
+    /// 字段均合法；值类型的拷贝为浅拷贝，引用字段拷贝引用本身。
+    /// 此前将堆数组、未注册命名类型等引用字段一律判非法属于过严误判
+    /// （`copy discipline violation` 的 `ReferenceTypedField` 分支）。
     fn is_copy_compatible(&self, ty: &HirType) -> bool {
-        match ty {
-            HirType::Void
-            | HirType::Unit
-            | HirType::Boolean
-            | HirType::Character
-            | HirType::Utf8
-            | HirType::Utf16
-            | HirType::Float32
-            | HirType::Float64
-            | HirType::AutoType
-            | HirType::SelfType => true,
-            HirType::Integer8 { .. }
-            | HirType::Integer16 { .. }
-            | HirType::Integer32 { .. }
-            | HirType::Integer64 { .. }
-            | HirType::Integer128 { .. } => true,
-            HirType::Tuple(items) => items.iter().all(|item| self.is_copy_compatible(item)),
-            HirType::FixedArray { element, .. } => self.is_copy_compatible(element),
-            HirType::Named(name) => is_copy_compatible_primitive_alias(name.as_str()) || self.value_types.contains(name),
-            // 停线清理：QualifiedPath 不得再被当作"安全 false"处理。
-            // 若 QualifiedPath 到达这里说明其生产源头未被切断。
-            // 已绑定 declaration：按声明侧值类型登记判断，禁止再按短名回查。
-            HirType::Nominal { declaration, .. } => self.value_type_declarations.contains(declaration),
-            // 未代入的泛型参数在声明期没有类型事实：`structure Entry<K> { key: K }` 的 `K`
-            // 可能被实例化为标量，也可能是堆数组。这里既不能判可拷贝，也不能判违反 copy
-            // discipline——字段闭包的复制语义属于实例事实，必须由代入完整实例后的阶段验证
-            // （ADR 0006）。引用型包装（`Array`/`Function`/`TraitObject` 等）不因这条例外放行。
-            HirType::Generic(_) => true,
-            HirType::Array(_)
-            | HirType::Function(_)
-            | HirType::TypeLambda(_)
-            | HirType::TraitObject(_)
-            | HirType::Associated(_)
-            | HirType::Row(_)
-            | HirType::Apply(_, _)
-            | HirType::Nullable(_)
-            | HirType::Union(_)
-            | HirType::Intersection(_) => false,
-            // 停线清理：QualifiedPath 不得再被当作"安全 false"。到达这里说明源头未切断，panic 暴露上游问题。
-            HirType::QualifiedPath { .. } => panic!("QualifiedPath must not reach is_copy_compatible; frontend lowering must resolve it"),
+        // 停线清理：QualifiedPath 不得再被当作"安全 false"。到达这里说明源头未切断，panic 暴露上游问题。
+        if matches!(ty, HirType::QualifiedPath { .. }) {
+            panic!("QualifiedPath must not reach is_copy_compatible; frontend lowering must resolve it");
         }
+        true
     }
 
     /// 声明期字段 copy 兼容：泛型形参在代入前不得按短名判引用。
@@ -184,8 +149,8 @@ impl CopySemanticsValidator {
 
     /// 在值类型结构体中查找首个引用类型字段，返回该字段引用以便定位违规。
     ///
-    /// 值类型应当只包含拷贝兼容的字段；若存在堆数组或未注册命名类型等引用字段，
-    /// 则该值类型无法被安全地按拷贝语义传递或返回，违反 copy discipline。
+    /// 当前语言语义下值类型可含任意字段类型（浅拷贝语义），本查询不产生违规字段；
+    /// 保留该查询以稳定调用面，并作为未来布局级约束（如递归值类型）的落点。
     pub fn find_non_copy_field<'a>(&self, struct_def: &'a HirStruct) -> Option<&'a HirField> {
         struct_def.fields.iter().find(|field| !self.is_field_copy_compatible(struct_def, &field.ty))
     }
