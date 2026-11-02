@@ -100,7 +100,7 @@ pub enum GeneratedEntrySurface {
 ///
 /// 生成组显式入口，并只依赖本工程的入口组：生成代码可以看到应用源码的声明，
 /// 但不会获得依赖包的额外可见性。
-fn compiler_input_for(
+pub(crate) fn compiler_input_for(
     source_groups: &[CompilerSourceGroup],
     generated: GeneratedSource<'_>,
     surface: GeneratedEntrySurface,
@@ -124,6 +124,25 @@ fn compiler_input_for(
     };
     let generated = GeneratedSourceGroup { producer: generated.producer.into(), group };
     Ok(CompilerSourceInput { groups, generated: vec![generated] })
+}
+
+/// 在生成组上追加显式依赖键的输入组装：SSG 生成代码直接引用合同族声明
+/// （`asgard.render`），其包可见性必须显式挂接，不经应用组间接传递。
+pub(crate) fn compiler_input_for_with_dependencies(
+    source_groups: &[CompilerSourceGroup],
+    generated: GeneratedSource<'_>,
+    surface: GeneratedEntrySurface,
+    extra_dependency_keys: &[String],
+) -> AsgardResult<CompilerSourceInput> {
+    let mut input = compiler_input_for(source_groups, generated, surface)?;
+    for generated_group in &mut input.generated {
+        for key in extra_dependency_keys {
+            if !generated_group.group.direct_dependencies.contains(key) {
+                generated_group.group.direct_dependencies.push(key.clone());
+            }
+        }
+    }
+    Ok(input)
 }
 
 /// 将已解析的源码组与独立生成源码编译为宿主制品。
@@ -211,7 +230,7 @@ pub fn compile_v_bundle(
     }
 }
 
-fn primary_artifact_name(report: &nyar_emitter::DriverCompileReport, kind: ArtifactKind) -> AsgardResult<String> {
+pub(crate) fn primary_artifact_name(report: &nyar_emitter::DriverCompileReport, kind: ArtifactKind) -> AsgardResult<String> {
     report
         .artifacts
         .artifacts

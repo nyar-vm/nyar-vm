@@ -24,6 +24,7 @@ pub mod mp_render;
 pub mod mp_style;
 pub mod reactive_prelude;
 pub mod section_framing;
+pub mod ssg_ovm;
 pub mod tailwind;
 pub mod terminal_prelude;
 pub mod terminal_render;

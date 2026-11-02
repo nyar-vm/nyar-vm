@@ -5,11 +5,11 @@ mod bindings;
 mod codegen;
 mod entry;
 mod events;
-mod expr;
+pub(crate) mod expr;
 mod loop_frame;
 mod reactive;
 mod routes;
-mod util;
+pub(crate) mod util;
 
 pub use entry::render_component_v;
 pub use routes::{export_mount_name_for_route, export_name_for_route, hydrate_name_for_route, mount_name_for_route};

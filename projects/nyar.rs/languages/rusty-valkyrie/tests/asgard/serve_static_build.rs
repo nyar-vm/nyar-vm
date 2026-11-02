@@ -19,6 +19,8 @@ use rusty_valkyrie::asgard::{
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
+use crate::support::write_legion_project;
+
 /// 带交互状态的根组件入口；widget 名与入口文件 stem（`index`）一致。
 const FIXTURE: &str = r#"<widget index>
 <Column class="hero">
@@ -29,16 +31,6 @@ const FIXTURE: &str = r#"<widget index>
 let greeting: utf8 = "serve 真实产物"
 </script>
 <style>.hero { color: #c67b34; }</style>
-"#;
-
-/// 最小 Legion 工程清单：静态交付的 WASM 产物链需要可解析的工程。
-const LEGION_MANIFEST: &str = r#"{
-    name: "serve-static-build",
-    version: "0.1.0",
-    build: [
-        { target: "wasm32-unknown-browser-wasm" }
-    ]
-}
 "#;
 
 /// 一次原始 HTTP/1.1 GET 的结果：状态码、头部与响应体字节。
@@ -87,7 +79,7 @@ fn build_and_serve(base: &str) -> (TempDir, PathBuf, std::net::SocketAddr) {
     let temp = TempDir::new().expect("创建临时目录失败");
     let project = temp.path();
     fs::create_dir_all(project.join("source")).expect("创建 source/ 目录失败");
-    fs::write(project.join("legion.von"), LEGION_MANIFEST).expect("写入工程清单失败");
+    write_legion_project(project, "serve-static-build");
     fs::write(project.join("source/index.w"), FIXTURE).expect("写入入口文件失败");
     let report = build_static_site(&StaticSiteOptions {
         project_dir: project.to_path_buf(),

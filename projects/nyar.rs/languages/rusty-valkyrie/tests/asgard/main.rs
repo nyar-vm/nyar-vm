@@ -22,8 +22,10 @@ mod serve;
 mod serve_static_build;
 mod server_runtime;
 mod ssg;
+mod ssg_ovm;
 mod static_artifact_tree;
 mod static_site;
+mod support;
 mod symbols_tests;
 
 // Private implementation tests on disk under awsl/, codegen/, etc. — wire when using public API.

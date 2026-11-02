@@ -24,7 +24,7 @@ use crate::{
         awsl::{LoweringOptions, compile_awsl_source},
         codegen::{
             IslandPackageOptions, StaticRenderResult, asgard_boot_script_tag, asgard_boot_stylesheet_tag, build_awsl_wasm_source,
-            package_browser_islands, render_static_ir,
+            package_browser_islands, ssg_ovm::render_static_ovm,
         },
         compile::{GeneratedEntrySurface, GeneratedSource, resolve_project_source_groups},
         error::{AsgardError, AsgardResult},
@@ -112,22 +112,26 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
     let component = compile_awsl_source(&source, file_stem, &relative_path, &LoweringOptions::default())
         .map_err(|error| AsgardError::msg(report!("{}:{}: {}", entry_path.display(), error.span.start, error.message)))?;
 
-    // 静态页面以组件初始状态渲染，作为 hydration 前的占位内容；外部数据为 Null。
-    let rendered = render_static_ir(&component, &serde_json::Value::Null);
-    // 超过求值/渲染结构上限意味着产物必然残缺：失败闭合，不写出半页。
+    // 基址校验是廉价输入校验：先于任何编译（含 SSG 的 OVM 构建）失败闭合。
+    let base = page_base(&options.base)?;
+
+    // 静态页面以组件初始状态渲染，作为 hydration 前的占位内容。
+    // 渲染语义由 V 生成代码经 Legion 内置 Odin VM 进程内执行（`asgard.render`
+    // 合同族），Rust 只做编排、能力声明与产物落盘；越出 SSG 准入子集的构造
+    // 在准入门结构化失败（失败闭合，不写出半页），不再由 Rust 解释模板表达式。
+    let ssg_scratch = project_root.join(".cache").join("asgard-ssg");
+    let rendered = render_static_ovm(&component, &project_root, &ssg_scratch, file_stem)?;
+    // 防御网：渲染结果携带诊断意味着产物必然残缺，失败闭合。
     if !rendered.diagnostics.is_empty() {
         let details = rendered
             .diagnostics
             .iter()
-            .map(|diagnostic| {
-                format!("{:?}（{} 深度 {} > 上限 {}）", diagnostic.kind, diagnostic.target, diagnostic.depth, diagnostic.limit)
-            })
+            .map(|diagnostic| format!("{:?}（{} 深度 {} > 上限 {}）", diagnostic.kind, diagnostic.target, diagnostic.depth, diagnostic.limit))
             .collect::<Vec<_>>()
             .join("; ");
         return Err(AsgardError::msg(report!("静态渲染超过结构上限，拒绝产出残缺页面: {details}")));
     }
     let title = options.title.as_deref().unwrap_or(file_stem);
-    let base = page_base(&options.base)?;
 
     let output_dir = options.output_dir.clone().unwrap_or_else(|| project_root.join("dist"));
     std::fs::create_dir_all(&output_dir).map_err(|error| AsgardError::msg(report!("创建输出目录失败 {}: {error}", output_dir.display())))?;

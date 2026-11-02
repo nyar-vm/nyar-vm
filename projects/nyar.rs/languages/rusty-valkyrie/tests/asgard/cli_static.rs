@@ -2,11 +2,10 @@
 
 use std::{fs, path::PathBuf, process::ExitCode};
 
-use rusty_valkyrie::asgard::{
-    cli::{AsgardBuildArgs, AsgardCommands, AsgardDelivery, run},
-    codegen::expr_eval::MAX_EXPRESSION_EVALUATION_DEPTH,
-};
+use rusty_valkyrie::asgard::cli::{AsgardBuildArgs, AsgardCommands, AsgardDelivery, run};
 use tempfile::TempDir;
+
+use crate::support::{legion_manifest, write_legion_project};
 
 /// 带样式与初始状态绑定的根组件入口 fixture。
 const FIXTURE: &str = r#"<widget index>
@@ -18,17 +17,6 @@ const FIXTURE: &str = r#"<widget index>
 let greeting: utf8 = "你好，静态世界"
 </script>
 <style>.hero { color: #c67b34; }</style>
-"#;
-
-/// 合法 Legion 项目清单元数据；Asgard 命令的项目与配置准入需要它。
-/// 静态交付依赖浏览器 WASM 产物，工程必须声明对应构建目标。
-const MANIFEST: &str = r#"{
-    name: "cli-static",
-    version: "0.1.0",
-    build: [
-        { target: "wasm32-unknown-browser-wasm" }
-    ]
-}
 "#;
 
 /// 合法 Asgard 配置入口。
@@ -49,9 +37,9 @@ define_config(AsgardConfig {
 })
 "#;
 
-/// 写入项目准入所需的两份工程文件。
+/// 写入项目准入所需的工程文件（工作区清单、项目清单与配置）。
 fn write_project_files(project: &std::path::Path) {
-    fs::write(project.join("legion.von"), MANIFEST).expect("写入 legion.von 失败");
+    write_legion_project(project, "cli-static");
     fs::write(project.join("asgard.config.v"), CONFIG).expect("写入 asgard.config.v 失败");
 }
 
@@ -98,30 +86,28 @@ fn static_delivery_fails_closed_on_bad_entry() {
     assert!(!temp.path().join("dist").join("index.html").exists(), "失败路径不应产出页面");
 }
 
-/// 超过求值结构上限的入口必须结构化失败：不崩溃，也不写出残缺页面。
+/// 越出 SSG 准入子集的表达式必须结构化失败：不崩溃，也不写出残缺页面。
 #[test]
-fn static_delivery_fails_closed_on_depth_exceeded() {
+fn static_delivery_fails_closed_on_out_of_subset_expression() {
     let temp = TempDir::new().expect("创建临时目录失败");
     fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
-    let expression = format!("{}active", "!".repeat(MAX_EXPRESSION_EVALUATION_DEPTH + 4));
-    let fixture = format!(
-        r#"<widget index>
+    let fixture = r#"<widget index>
 <Column class="hero">
-    <Text class="hero-title">{{active}}</Text>
-    <Text class="deep">{{{expression}}}</Text>
+    <Text class="hero-title">{active}</Text>
+    <Text class="deep">{!active}</Text>
 </Column>
 </widget>
 <script>
 let active: bool = true
 </script>
-"#
-    );
-    fs::write(temp.path().join("source/index.w"), fixture).expect("写入超深表达式入口失败");
+"#;
+    fs::write(temp.path().join("source/index.w"), fixture).expect("写入越界表达式入口失败");
     write_project_files(temp.path());
 
-    let error = run(&AsgardCommands::Build(build_args(&temp, "source/index.w", None))).expect_err("超深表达式应结构化失败");
+    let error = run(&AsgardCommands::Build(build_args(&temp, "source/index.w", None))).expect_err("越界表达式应结构化失败");
     let message = error.to_string();
-    assert!(message.contains("静态渲染超过结构上限"), "诊断应说明结构上限失败: {message}");
+    assert!(message.contains("SSG 准入子集"), "诊断应说明越出准入子集: {message}");
+    assert!(message.contains("表达式形态越出"), "诊断应指出表达式形态越界: {message}");
     assert!(!temp.path().join("dist").join("index.html").exists(), "失败路径不得产出残缺页面");
 }
 
@@ -231,7 +217,7 @@ fn build_requires_asgard_config() {
     let temp = TempDir::new().expect("创建临时目录失败");
     fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
     fs::write(temp.path().join("source/index.w"), FIXTURE).expect("写入入口文件失败");
-    fs::write(temp.path().join("legion.von"), MANIFEST).expect("写入 legion.von 失败");
+    fs::write(temp.path().join("legion.von"), legion_manifest("cli-static")).expect("写入 legion.von 失败");
 
     let error = run(&AsgardCommands::Build(build_args(&temp, "source/index.w", None))).expect_err("缺少 asgard.config.v 应失败");
     let message = error.to_string();

@@ -1,4 +1,9 @@
 //! RenderIR → 静态 HTML（SSG / 文档站，无 hydration）。
+//!
+//! **退役中**：静态交付（`static_site`）已切换到 `codegen::ssg_ovm` 的
+//! V/OVM 渲染路径；本模块仅作为迁移期对照实现服务其余消费方（文档/报告
+//! 与既有测试），新逻辑不得再加到这里，全部消费方迁移后随 `expr_eval`
+//! 一并删除。
 
 use std::fmt::Write as _;
 

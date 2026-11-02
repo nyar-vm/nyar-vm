@@ -16,6 +16,8 @@ use rusty_valkyrie::asgard::{
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
+use crate::support::write_legion_project;
+
 /// 带样式与初始状态绑定的根组件入口 fixture。
 const FIXTURE: &str = r#"<widget index>
 <Column class="hero">
@@ -28,20 +30,10 @@ let greeting: utf8 = "静态产物树"
 <style>.hero { color: #345; }</style>
 "#;
 
-/// 最小 Legion 工程清单：模块名即产物文件 stem（`static-artifact-fixture`）。
-const LEGION_MANIFEST: &str = r#"{
-    name: "static-artifact-fixture",
-    version: "0.1.0",
-    build: [
-        { target: "wasm32-unknown-browser-wasm" }
-    ]
-}
-"#;
-
 /// 在项目根写入入口并构建，返回输出目录内的文件清单（相对输出根，`/` 分隔）。
 fn build_and_list(project: &std::path::Path, output: &std::path::Path, base: &str) -> Vec<String> {
     fs::create_dir_all(project.join("source")).expect("创建 source/ 目录失败");
-    fs::write(project.join("legion.von"), LEGION_MANIFEST).expect("写入工程清单失败");
+    write_legion_project(project, "static-artifact-fixture");
     fs::write(project.join("source/index.w"), FIXTURE).expect("写入入口文件失败");
     let report = build_static_site(&StaticSiteOptions {
         project_dir: project.to_path_buf(),
