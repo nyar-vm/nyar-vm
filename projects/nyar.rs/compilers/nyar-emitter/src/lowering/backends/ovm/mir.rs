@@ -1,6 +1,6 @@
 //! OVM bytecode lowering from semantic MIR.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     backend_plan_views::{
@@ -11,7 +11,7 @@ use crate::{
     contracts::{EffectKind, ValueOrigin},
 };
 use nyar::{ExternalImportLink, NamePath};
-use nyar_types::{AggregateLayout, ItemInstanceId, LayoutId};
+use nyar_types::{AggregateLayout, ItemInstanceId, LayoutId, NominalInstanceId, VariantId};
 use odin_bytecode::{
     IntrinsicOpcode, Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind,
     OdinLayout, OdinModuleData,
@@ -165,20 +165,6 @@ impl<'a> BytecodeEmitter<'a> {
 
 /// Lower MIR-backed fragment operations into a `.nyar` module.
 pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission) -> Result<OdinModuleData> {
-    for instance in submission.backend_plan.instances() {
-        let Some(view) = submission.backend_plan.get_function(&instance)
-        else {
-            continue;
-        };
-        if view.function.blocks.iter().flat_map(|block| &block.instructions).any(|instruction| {
-            matches!(
-                &instruction.kind,
-                MirInstructionKind::SumNew { .. } | MirInstructionKind::SumPayloadGet { .. } | MirInstructionKind::SumVariantIs { .. }
-            )
-        }) {
-            return Err(format!("Nyar backend requires a typed sum representation plan; semantic sum operation has no target contract"));
-        }
-    }
     let mut module = OdinModuleData {
         version: Odin_VERSION,
         name: format!(
@@ -198,6 +184,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
     };
 
     let mut layout_index_by_id = BTreeMap::<LayoutId, i32>::new();
+    let sum_layout_index_by_nominal = register_sum_layouts(submission, &mut module.layouts)?;
     let external_link_by_instance = submission
         .backend_plan
         .imports()
@@ -243,6 +230,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 &function_entry_arities,
                 &external_link_by_instance,
                 &external_opcode_by_instance,
+                &sum_layout_index_by_nominal,
                 &mut emitter,
                 &mut module.layouts,
                 &mut layout_index_by_id,
@@ -270,6 +258,50 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
     }
 
     Ok(module)
+}
+
+/// 为模块内出现过的 nominal sum 铸造后端私有物理布局，返回 nominal → 布局下标。
+///
+/// 物理合同由本文件固定：槽 0 = tag（i32），槽 1 = payload。字段顺序是 OVM 后端
+/// 私有事实，只由计划冻结的 `SumRepresentation` 驱动；禁止按 variant 名 / 短名
+/// 推断槽位。tag 宽度合同与 wasm `type_registry` 一致，只承诺 1..=4 字节。
+fn register_sum_layouts(submission: &FragmentSubmission, layouts: &mut Vec<OdinLayout>) -> crate::Result<BTreeMap<NominalInstanceId, i32>> {
+    let sums = submission.backend_plan.sum_representations();
+    let exec = &submission.backend_plan;
+    let mut nominals = BTreeSet::new();
+    for instance in exec.instances() {
+        let Some(view) = exec.get_function(&instance)
+        else {
+            continue;
+        };
+        for block in &view.function.blocks {
+            for instruction in &block.instructions {
+                let nominal = match &instruction.kind {
+                    MirInstructionKind::SumNew { nominal, .. }
+                    | MirInstructionKind::SumPayloadGet { nominal, .. }
+                    | MirInstructionKind::SumVariantIs { nominal, .. } => *nominal,
+                    _ => continue,
+                };
+                nominals.insert(nominal);
+            }
+        }
+    }
+    let mut map = BTreeMap::new();
+    for nominal in nominals {
+        let sum = sums
+            .get(&nominal)
+            .ok_or_else(|| format!("OVM sum 表示缺失：nominal {nominal:?} 没有冻结的 SumTypeLayout"))?;
+        if sum.tag_width == 0 || sum.tag_width > 4 {
+            return Err(format!(
+                "OVM sum 表示只承诺 1..=4 字节 tag（nominal={nominal:?}, tag_width={}）",
+                sum.tag_width
+            ));
+        }
+        let index = layouts.len() as i32;
+        layouts.push(OdinLayout { field_count: 2 });
+        map.insert(nominal, index);
+    }
+    Ok(map)
 }
 
 /// 在降低函数体之前登记全部 operation → 稠密下标，供 `Call` 解析（含前向引用）。
@@ -328,6 +360,7 @@ fn lower_mir_function_to_bytecode(
     function_entry_arities: &BTreeMap<i32, usize>,
     external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
     external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    sum_layout_index_by_nominal: &BTreeMap<NominalInstanceId, i32>,
     emitter: &mut BytecodeEmitter<'_>,
     layouts: &mut Vec<OdinLayout>,
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
@@ -346,6 +379,7 @@ fn lower_mir_function_to_bytecode(
         function_entry_arities,
         external_link_by_instance,
         external_opcode_by_instance,
+        sum_layout_index_by_nominal,
         layouts,
         layout_index_by_id,
     };
@@ -369,6 +403,7 @@ struct NyarMirLowerer<'a, 'e> {
     function_entry_arities: &'a BTreeMap<i32, usize>,
     external_link_by_instance: &'a BTreeMap<ItemInstanceId, ExternalImportLink>,
     external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    sum_layout_index_by_nominal: &'a BTreeMap<NominalInstanceId, i32>,
     layouts: &'a mut Vec<OdinLayout>,
     layout_index_by_id: &'a mut BTreeMap<LayoutId, i32>,
 }
@@ -491,6 +526,72 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 let slot = self.nyar_field_slot(*field);
                 self.emit_field_set_slot(object, slot, value);
                 self.emitter.emit_plain(OdinHeadCode::Pop);
+            }
+            // sum 的物理载体是后端私有的 `[i32 tag, payload]` 对象；语义身份（nominal /
+            // variant）只来自计划冻结的 `SumRepresentation`，绝不按名字或字面 tag 推断。
+            // OVM 的 Odin 对象字段是无类型槽，标量载荷直接入槽；wasm 的 payload 槽是
+            // anyref 才需要装箱，这里不得照抄 wasm 的装箱路径。
+            MirInstructionKind::SumNew { nominal, variant, payload } => {
+                let (tag, planned_payload_type) = {
+                    let sum = self
+                        .submission
+                        .backend_plan
+                        .sum_representations()
+                        .get(nominal)
+                        .ok_or_else(|| format!("OVM sum 表示缺失：nominal {nominal:?} 没有冻结的 SumTypeLayout"))?;
+                    let variant_layout = sum
+                        .variants
+                        .get(variant)
+                        .ok_or_else(|| format!("OVM SumNew 的 variant {variant:?} 不属于 nominal {nominal:?} 的冻结变体表"))?;
+                    (variant_layout.tag, variant_layout.payload_type)
+                };
+                if planned_payload_type.is_some() != payload.is_some() {
+                    return Err(format!(
+                        "OVM SumNew 的 variant {variant:?} 载荷与计划合同不一致：计划 payload_type={planned_payload_type:?}，指令 payload={}",
+                        payload.is_some()
+                    ));
+                }
+                let Some(output) = output
+                else {
+                    return Err(format!("OVM SumNew 必须产出值槽（symbol=`{}`）", self.mir_fn.symbol));
+                };
+                let sum_layout_index = self.ensure_sum_layout(*nominal)?;
+                self.emitter.emit_imm1(OdinHeadCode::ObjectNew, sum_layout_index);
+                self.store_to_local(output);
+                let object = MirOperand::Value(output);
+                self.emit_field_set_slot(&object, 0, &MirOperand::Constant(MirConstant::Int(i64::from(tag))));
+                self.emitter.emit_plain(OdinHeadCode::Pop);
+                if let Some(payload) = payload {
+                    self.emit_field_set_slot(&object, 1, payload);
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
+                }
+            }
+            MirInstructionKind::SumVariantIs { nominal, variant, object } => {
+                let tag = self.sum_variant_tag(*nominal, *variant, "SumVariantIs")?;
+                self.emit_operand(object);
+                self.emitter.emit_imm1(OdinHeadCode::FieldGet, 0);
+                self.emitter.emit_const_i32(tag as i32);
+                self.emitter.emit_plain(OdinHeadCode::I32Eq);
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                }
+                else {
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
+                }
+            }
+            MirInstructionKind::SumPayloadGet { nominal, variant, object } => {
+                let payload_type = self.sum_variant_payload_type(*nominal, *variant, "SumPayloadGet")?;
+                if payload_type.is_none() {
+                    return Err(format!("OVM SumPayloadGet 对无 payload 的 variant {variant:?} 取值（nominal={nominal:?}）"));
+                }
+                self.emit_operand(object);
+                self.emitter.emit_imm1(OdinHeadCode::FieldGet, 1);
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                }
+                else {
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
+                }
             }
             MirInstructionKind::Call { callee, arguments } => {
                 if let MirOperand::Item(instance) = callee {
@@ -832,6 +933,43 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         self.layouts.push(OdinLayout { field_count: aggregate.fields.len() as i32 });
         self.layout_index_by_id.insert(aggregate.id, index);
         index
+    }
+
+    /// 注册阶段已为每个出现过的 nominal 铸造布局；此查询是后端自洽性护栏。
+    fn ensure_sum_layout(&self, nominal: NominalInstanceId) -> crate::Result<i32> {
+        self.sum_layout_index_by_nominal
+            .get(&nominal)
+            .copied()
+            .ok_or_else(|| format!("OVM sum 表示缺失：nominal {nominal:?} 没有冻结的 SumTypeLayout"))
+    }
+
+    fn sum_variant_tag(&self, nominal: NominalInstanceId, variant: VariantId, operation: &str) -> crate::Result<u32> {
+        self.submission
+            .backend_plan
+            .sum_representations()
+            .get(&nominal)
+            .ok_or_else(|| format!("OVM sum 表示缺失：nominal {nominal:?} 没有冻结的 SumTypeLayout"))?
+            .variants
+            .get(&variant)
+            .map(|variant_layout| variant_layout.tag)
+            .ok_or_else(|| format!("OVM {operation} 的 variant {variant:?} 不属于 nominal {nominal:?} 的冻结变体表"))
+    }
+
+    fn sum_variant_payload_type(
+        &self,
+        nominal: NominalInstanceId,
+        variant: VariantId,
+        operation: &str,
+    ) -> crate::Result<Option<nyar_types::TypeId>> {
+        self.submission
+            .backend_plan
+            .sum_representations()
+            .get(&nominal)
+            .ok_or_else(|| format!("OVM sum 表示缺失：nominal {nominal:?} 没有冻结的 SumTypeLayout"))?
+            .variants
+            .get(&variant)
+            .map(|variant_layout| variant_layout.payload_type)
+            .ok_or_else(|| format!("OVM {operation} 的 variant {variant:?} 不属于 nominal {nominal:?} 的冻结变体表"))
     }
 
     /// `FieldSet` 栈效果为 `[obj, value] -> [obj]`；调用方随后 `Pop`。

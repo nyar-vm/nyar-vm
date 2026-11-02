@@ -299,6 +299,17 @@ impl TargetExecutionPlan {
         self
     }
 
+    /// 登记 nominal sum 的冻结表示合同（集成测试专用）。
+    #[doc(hidden)]
+    pub fn testing_register_sum_representation(
+        &mut self,
+        nominal: nyar_types::NominalInstanceId,
+        sum: nyar_types::layout_choice::SumRepresentation,
+    ) -> &mut Self {
+        self.sum_reps.insert(nominal, sum);
+        self
+    }
+
     /// 从完整 `CompiledProgram` 生成闭包；任何无法无损投影的语义都失败。
     pub fn from_compiled_program(
         program: &CompiledProgram,
