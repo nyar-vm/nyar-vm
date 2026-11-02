@@ -315,9 +315,17 @@ function marshalLibraryArg(schema, value) {{
         // 元素 carrier 从 construct 或 push 的 param_carriers 推断（通常 push 的第二个参数是元素）
         const pushOp = entry.operations.find(o => o.operation === "push");
         const elementCarrier = (pushOp?.param_carriers ?? []).at(-1) ?? "i32";
+        // 元素 schema 只来自声明身份：单参数泛型容器的唯一 `generic_arg` 就是元素类型。
+        // `utf8`/`utf16` 元素在 ABI 上是 i32 宿主句柄，必须经 hostIntern 登记；若按
+        // i32 宽度直接转换，JS 字符串会变成 `Number("ab") | 0 === 0`，即空字符串句柄。
+        const elementSchema = Array.isArray(schema.generic_args) && schema.generic_args.length === 1 ? schema.generic_args[0] : null;
         const arr = Array.isArray(value) ? value : [];
         const handle = construct(arr.length);
         for (const item of arr) {{
+            if (elementSchema) {{
+                push(handle, marshalLibraryArg(elementSchema, item));
+                continue;
+            }}
             let wasmItem = item;
             if (elementCarrier === "i64") wasmItem = BigInt(item ?? 0);
             else if (elementCarrier === "i32") wasmItem = Number(item ?? 0) | 0;
@@ -405,9 +413,17 @@ function demarshalLibraryReturn(schema, raw) {{
         // 返回值 carrier 推断自 at 操作的 return_carrier
         const atOp = entry.operations.find(o => o.operation === "at");
         const returnCarrier = atOp?.return_carrier ?? "i32";
+        // 返回值元素与入参对称：元素 schema 来自声明身份，`utf8`/`utf16` 的 i32
+        // 载体是宿主句柄，必须 hostResolve 回字符串；按宽度取 Number 会漏掉解码。
+        const elementSchema = Array.isArray(schema.generic_args) && schema.generic_args.length === 1 ? schema.generic_args[0] : null;
         for (let i = 0; i < len; i++) {{
             // V `ArrayList.at` 使用序数索引（1-based）；JS 循环 `i` 是基数（0-based），故传 `i + 1`。
-            let v = atFn(raw, i + 1);
+            const value = atFn(raw, i + 1);
+            if (elementSchema) {{
+                out.push(demarshalLibraryReturn(elementSchema, value));
+                continue;
+            }}
+            let v = value;
             if (returnCarrier === "i64") v = Number(v);
             else v = Number(v);
             out.push(v);
