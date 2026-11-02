@@ -235,6 +235,7 @@ fn render_page(
             css
         },
         scope: layout.scope,
+        diagnostics: body.diagnostics,
     };
 
     let base_css = report_base_css(report_project)?;

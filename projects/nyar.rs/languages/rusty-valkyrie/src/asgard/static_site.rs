@@ -162,7 +162,7 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
         html = rendered.html,
     );
     let head_tags = if stylesheet_href.is_empty() { String::new() } else { format!("  {}\n", asgard_boot_stylesheet_tag(&stylesheet_href)) };
-    let results = [StaticRenderResult { html: island, css: rendered.css, scope: rendered.scope }];
+    let results = [StaticRenderResult { html: island, css: rendered.css, scope: rendered.scope, diagnostics: rendered.diagnostics }];
     let page = generate_static_page_full(title, &results, "", &base, &head_tags, asgard_boot_script_tag(true));
 
     let page_path = output_dir.join("index.html");

@@ -11,8 +11,12 @@ use crate::asgard::{
         RenderTextSegment, ScriptBinding, TemplateNodeKind,
         render_ir::{attr_value_source, region_nodes},
     },
-    codegen::expr_eval::ExprContext,
+    codegen::expr_eval::{EvalDiagnostic, EvalDiagnosticKind, ExprContext},
 };
+
+/// RenderIR 节点嵌套渲染上限。超过上限记录结构化诊断并跳过子树，
+/// 不允许深嵌套模板把宿主进程栈打穿。
+pub const MAX_RENDER_NESTING_DEPTH: usize = 64;
 
 /// 静态 HTML 渲染结果。
 #[derive(Debug, Clone)]
@@ -23,6 +27,8 @@ pub struct StaticRenderResult {
     pub css: String,
     /// 作用域 class 前缀。
     pub scope: String,
+    /// 渲染期结构化诊断（表达式求值深度、节点嵌套深度）。
+    pub diagnostics: Vec<EvalDiagnostic>,
 }
 
 /// 将已降级的组件 RenderIR 渲染为静态 HTML。
@@ -40,7 +46,8 @@ pub fn render_static_ir(component: &LoweredComponent, data: &Value) -> StaticRen
         html_body = html_body.trim_end()
     );
 
-    StaticRenderResult { html, css, scope }
+    let diagnostics = ctx.expr.diagnostics();
+    StaticRenderResult { html, css, scope, diagnostics }
 }
 
 struct HtmlRenderCtx<'a> {
@@ -55,20 +62,29 @@ impl<'a> HtmlRenderCtx<'a> {
     }
 
     fn emit_roots(&mut self, out: &mut String, module: &RenderModule) {
-        self.emit_region(out, module, &module.roots);
+        self.emit_region(out, module, &module.roots, 0);
     }
 
-    fn emit_region(&mut self, out: &mut String, module: &RenderModule, node_ids: &[RenderNodeId]) {
+    fn emit_region(&mut self, out: &mut String, module: &RenderModule, node_ids: &[RenderNodeId], depth: usize) {
         for &node_id in node_ids {
-            self.emit_node(out, module, node_id);
+            self.emit_node(out, module, node_id, depth);
         }
     }
 
-    fn emit_region_id(&mut self, out: &mut String, module: &RenderModule, region: RenderRegionId) {
-        self.emit_region(out, module, region_nodes(module, region));
+    fn emit_region_id(&mut self, out: &mut String, module: &RenderModule, region: RenderRegionId, depth: usize) {
+        self.emit_region(out, module, region_nodes(module, region), depth);
     }
 
-    fn emit_node(&mut self, out: &mut String, module: &RenderModule, node_id: RenderNodeId) {
+    fn emit_node(&mut self, out: &mut String, module: &RenderModule, node_id: RenderNodeId, depth: usize) {
+        if depth > MAX_RENDER_NESTING_DEPTH {
+            self.expr.record_diagnostic(EvalDiagnostic {
+                kind: EvalDiagnosticKind::RenderNestingExceeded,
+                target: node_label(module, node_id),
+                depth,
+                limit: MAX_RENDER_NESTING_DEPTH,
+            });
+            return;
+        }
         match module.node(node_id) {
             RenderNode::Element(element) => {
                 let tag = &element.tag;
@@ -88,7 +104,7 @@ impl<'a> HtmlRenderCtx<'a> {
                 }
                 else {
                     write!(out, ">").unwrap();
-                    self.emit_region(out, module, children);
+                    self.emit_region(out, module, children, depth + 1);
                     write!(out, "</{html_tag}>").unwrap();
                 }
             }
@@ -97,7 +113,7 @@ impl<'a> HtmlRenderCtx<'a> {
                 write!(out, "<{html_tag}").unwrap();
                 self.emit_attrs(out, module, &component.attrs);
                 write!(out, ">").unwrap();
-                self.emit_region_id(out, module, component.children);
+                self.emit_region_id(out, module, component.children, depth + 1);
                 write!(out, "</{html_tag}>").unwrap();
             }
             RenderNode::Text(text) => {
@@ -106,18 +122,18 @@ impl<'a> HtmlRenderCtx<'a> {
             }
             RenderNode::If(render_if) => {
                 if self.expr.eval_truthy(module.expr_source(render_if.condition)) {
-                    self.emit_region_id(out, module, render_if.then_region);
+                    self.emit_region_id(out, module, render_if.then_region, depth + 1);
                 }
                 else {
-                    self.emit_region_id(out, module, render_if.else_region);
+                    self.emit_region_id(out, module, render_if.else_region, depth + 1);
                 }
             }
-            RenderNode::Loop(render_loop) => self.emit_loop(out, module, render_loop),
-            RenderNode::Fragment(fragment) => self.emit_region_id(out, module, fragment.children),
+            RenderNode::Loop(render_loop) => self.emit_loop(out, module, render_loop, depth + 1),
+            RenderNode::Fragment(fragment) => self.emit_region_id(out, module, fragment.children, depth + 1),
         }
     }
 
-    fn emit_loop(&mut self, out: &mut String, module: &RenderModule, render_loop: &RenderLoopNode) {
+    fn emit_loop(&mut self, out: &mut String, module: &RenderModule, render_loop: &RenderLoopNode, body_depth: usize) {
         let items = self.expr.eval_value(module.expr_source(render_loop.items));
         let Some(array) = items.as_array()
         else {
@@ -125,7 +141,7 @@ impl<'a> HtmlRenderCtx<'a> {
         };
         for (index, item) in array.iter().enumerate() {
             self.expr.push_loop(&render_loop.item_var, &render_loop.index_var, item.clone(), index);
-            self.emit_region_id(out, module, render_loop.body_region);
+            self.emit_region_id(out, module, render_loop.body_region, body_depth);
             self.expr.pop_loop();
         }
     }
@@ -159,6 +175,17 @@ impl<'a> HtmlRenderCtx<'a> {
             }
         }
         out
+    }
+}
+
+fn node_label(module: &RenderModule, node_id: RenderNodeId) -> String {
+    match module.node(node_id) {
+        RenderNode::Element(element) => element.tag.clone(),
+        RenderNode::Component(component) => component.tag.clone(),
+        RenderNode::Text(_) => "text".into(),
+        RenderNode::If(_) => "if".into(),
+        RenderNode::Loop(_) => "loop".into(),
+        RenderNode::Fragment(_) => "fragment".into(),
     }
 }
 

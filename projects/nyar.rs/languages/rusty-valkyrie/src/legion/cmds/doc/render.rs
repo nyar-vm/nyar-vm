@@ -64,8 +64,12 @@ pub fn render_sections(sections: &mut [DocSection], doc_output_dir: &Path, verbo
             merged_component_css.push_str(&page_shell.css);
             merged_component_css.push('\n');
 
-            let page_result =
-                crate::asgard::codegen::StaticRenderResult { html: fragment_html, css: rendered.css.clone(), scope: rendered.scope.clone() };
+            let page_result = crate::asgard::codegen::StaticRenderResult {
+                html: fragment_html,
+                css: rendered.css.clone(),
+                scope: rendered.scope.clone(),
+                diagnostics: rendered.diagnostics.clone(),
+            };
             let page_title = format!("{title} - {}", section.name);
             let mut html = generate_static_page(&page_title, &[page_result], embedded_base_css());
             inject_stylesheet_link(&mut html, &format!("{asset_prefix}legion-document.css"));
@@ -110,7 +114,12 @@ pub fn render_doc_index(sections: &[DocSection], doc_output_dir: &Path) -> Legio
     });
     let rendered = render_awsl_static(embedded_layout_awsl(), "layout", "layout.awsl", &layout_data);
     let fragment_html = rendered.html.replace("<p>LEGION_DOC_SLOT</p>", &body);
-    let page_result = crate::asgard::codegen::StaticRenderResult { html: fragment_html, css: rendered.css, scope: rendered.scope };
+    let page_result = crate::asgard::codegen::StaticRenderResult {
+        html: fragment_html,
+        css: rendered.css,
+        scope: rendered.scope,
+        diagnostics: rendered.diagnostics,
+    };
     let mut html = generate_static_page("用户文档", &[page_result], embedded_base_css());
     inject_stylesheet_link(&mut html, "../legion-document.css");
     fs::write(doc_output_dir.join("index.html"), html)?;

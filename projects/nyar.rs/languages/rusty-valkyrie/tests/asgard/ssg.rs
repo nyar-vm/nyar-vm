@@ -13,7 +13,12 @@ fn wrap_with_layout_replaces_slot() {
 
 #[test]
 fn generate_static_page_has_no_runtime() {
-    let result = StaticRenderResult { html: "<div>ok</div>".into(), css: ".x{color:red}".into(), scope: "asgard-static-test".into() };
+    let result = StaticRenderResult {
+        html: "<div>ok</div>".into(),
+        css: ".x{color:red}".into(),
+        scope: "asgard-static-test".into(),
+        diagnostics: Vec::new(),
+    };
     let page = generate_static_page("Test", &[result], "");
     assert!(page.contains("<!DOCTYPE html>"));
     assert!(page.contains("ok"));

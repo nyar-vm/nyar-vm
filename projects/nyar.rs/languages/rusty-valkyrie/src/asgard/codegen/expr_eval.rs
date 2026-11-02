@@ -1,14 +1,43 @@
 //! AWSL 模板表达式静态求值（SSG / SSR 子集）。
 
+use std::cell::RefCell;
+
 use serde_json::{Value, json};
 
 use crate::asgard::awsl::ScriptBinding;
+
+/// 模板表达式求值递归上限。超过上限返回空值并记录结构化诊断，
+/// 不允许无界递归把宿主进程栈打穿。
+pub const MAX_EXPRESSION_EVALUATION_DEPTH: usize = 64;
+
+/// 静态渲染诊断种类。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvalDiagnosticKind {
+    /// 模板表达式求值递归超过上限。
+    ExpressionDepthExceeded,
+    /// RenderIR 节点嵌套超过渲染上限。
+    RenderNestingExceeded,
+}
+
+/// 求值/渲染期记录的结构化诊断。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvalDiagnostic {
+    /// 诊断种类。
+    pub kind: EvalDiagnosticKind,
+    /// 触发诊断的表达式源码或节点标签。
+    pub target: String,
+    /// 触发时的实测深度。
+    pub depth: usize,
+    /// 允许的最大深度。
+    pub limit: usize,
+}
 
 /// 求值上下文：合并 script 绑定默认值与请求/页面数据。
 #[derive(Debug, Clone)]
 pub struct ExprContext {
     root: Value,
     loop_stack: Vec<LoopFrame>,
+    diagnostics: RefCell<Vec<EvalDiagnostic>>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +60,21 @@ impl ExprContext {
             }
             merge_value(map, data);
         }
-        Self { root, loop_stack: Vec::new() }
+        Self { root, loop_stack: Vec::new(), diagnostics: RefCell::new(Vec::new()) }
+    }
+
+    /// 取出求值/渲染期收集的结构化诊断。
+    pub fn diagnostics(&self) -> Vec<EvalDiagnostic> {
+        self.diagnostics.borrow().clone()
+    }
+
+    /// 记录一条结构化诊断；同一 `kind` 与目标的重复触发只保留首条。
+    pub(crate) fn record_diagnostic(&self, diagnostic: EvalDiagnostic) {
+        let mut sink = self.diagnostics.borrow_mut();
+        let duplicate = sink.iter().any(|existing| existing.kind == diagnostic.kind && existing.target == diagnostic.target);
+        if !duplicate {
+            sink.push(diagnostic);
+        }
     }
 
     /// 压入循环迭代作用域。
@@ -55,7 +98,7 @@ impl ExprContext {
             let current = self.lookup_var("__current_path").and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
             return Value::Bool(path == current);
         }
-        self.eval_expression(expr)
+        self.eval_expression(expr, 0)
     }
 
     /// 求值表达式为字符串。
@@ -68,17 +111,21 @@ impl ExprContext {
         value_truthy(&self.eval_value(expr))
     }
 
-    fn eval_expression(&self, expr: &str) -> Value {
+    fn eval_expression(&self, expr: &str, depth: usize) -> Value {
         let expr = expr.trim();
+        if depth > MAX_EXPRESSION_EVALUATION_DEPTH {
+            self.record_depth_diagnostic(EvalDiagnosticKind::ExpressionDepthExceeded, expr, depth, MAX_EXPRESSION_EVALUATION_DEPTH);
+            return Value::Null;
+        }
         if let Some(path) = expr.strip_prefix("isActive(").and_then(|s| s.strip_suffix(')')) {
             let path = self.eval_string(path.trim());
             let current = self.lookup_var("__current_path").and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
             return Value::Bool(path == current);
         }
-        if let Some(result) = self.parse_ternary(expr) {
+        if let Some(result) = self.parse_ternary(expr, depth) {
             return result;
         }
-        if let Some(result) = self.parse_string_concat(expr) {
+        if let Some(result) = self.parse_string_concat(expr, depth) {
             return result;
         }
         if (expr.starts_with('"') && expr.ends_with('"')) || (expr.starts_with('\'') && expr.ends_with('\'')) {
@@ -96,14 +143,14 @@ impl ExprContext {
         if expr == "null" || expr == "undefined" {
             return Value::Null;
         }
-        if let Some(inner) = expr.strip_prefix('!').map(str::trim) {
-            return Value::Bool(!value_truthy(&self.eval_expression(inner)));
+        if let Some(inner) = expr.strip_prefix('!') {
+            return Value::Bool(!value_truthy(&self.eval_expression(inner.trim(), depth + 1)));
         }
         if let Some((left, right)) = split_top_level_binary(expr, "==") {
-            return Value::Bool(values_equal(&self.eval_expression(left), &self.eval_expression(right)));
+            return Value::Bool(values_equal(&self.eval_expression(left, depth + 1), &self.eval_expression(right, depth + 1)));
         }
         if let Some((left, right)) = split_top_level_binary(expr, "!=") {
-            return Value::Bool(!values_equal(&self.eval_expression(left), &self.eval_expression(right)));
+            return Value::Bool(!values_equal(&self.eval_expression(left, depth + 1), &self.eval_expression(right, depth + 1)));
         }
         if let Some(value) = self.lookup_var(expr) {
             return value;
@@ -115,47 +162,62 @@ impl ExprContext {
                 }
             }
         }
-        self.eval_binary_expression(expr).unwrap_or(Value::Null)
+        self.eval_binary_expression(expr, depth).unwrap_or(Value::Null)
     }
 
-    fn eval_binary_expression(&self, expr: &str) -> Option<Value> {
+    fn eval_binary_expression(&self, expr: &str, depth: usize) -> Option<Value> {
         let tokens = tokenize_expression(expr);
         if tokens.is_empty() {
             return None;
         }
         if tokens.len() == 1 {
-            return Some(self.eval_expression(&tokens[0]));
+            let token = tokens[0].as_str();
+            // 单 token 重新求值必须相对输入取得进展，否则 `expr → token → expr` 会自递归成环。
+            if token == expr {
+                return None;
+            }
+            return Some(self.eval_expression(token, depth + 1));
         }
-        self.eval_tokens_binary(&tokens)
+        self.eval_tokens_binary(&tokens, depth + 1)
     }
 
-    fn eval_tokens_binary(&self, tokens: &[String]) -> Option<Value> {
+    fn eval_tokens_binary(&self, tokens: &[String], depth: usize) -> Option<Value> {
+        if depth > MAX_EXPRESSION_EVALUATION_DEPTH {
+            let expr = tokens.join(" ");
+            self.record_depth_diagnostic(EvalDiagnosticKind::ExpressionDepthExceeded, &expr, depth, MAX_EXPRESSION_EVALUATION_DEPTH);
+            return None;
+        }
         for precedence in (0..=8).rev() {
             if let Some(index) = find_operator_with_precedence(tokens, precedence) {
                 let op = tokens[index].as_str();
                 if op == "!" {
-                    let operand = self.eval_tokens_binary(&tokens[index + 1..])?;
+                    let operand = self.eval_tokens_binary(&tokens[index + 1..], depth + 1)?;
                     return Some(Value::Bool(!value_truthy(&operand)));
                 }
-                let left = self.eval_tokens_binary(&tokens[..index])?;
-                let right = self.eval_tokens_binary(&tokens[index + 1..])?;
+                let left = self.eval_tokens_binary(&tokens[..index], depth + 1)?;
+                let right = self.eval_tokens_binary(&tokens[index + 1..], depth + 1)?;
                 return Some(apply_binary_op(&left, op, &right));
             }
         }
         None
     }
 
-    fn parse_ternary(&self, expr: &str) -> Option<Value> {
+    fn parse_ternary(&self, expr: &str, depth: usize) -> Option<Value> {
         let q = find_top_level_char(expr, '?')?;
         let cond = expr[..q].trim();
         let rest = expr[q + 1..].trim();
         let colon = find_top_level_char(rest, ':')?;
         let when_true = rest[..colon].trim();
         let when_false = rest[colon + 1..].trim();
-        if value_truthy(&self.eval_expression(cond)) { Some(self.eval_expression(when_true)) } else { Some(self.eval_expression(when_false)) }
+        if value_truthy(&self.eval_expression(cond, depth + 1)) {
+            Some(self.eval_expression(when_true, depth + 1))
+        }
+        else {
+            Some(self.eval_expression(when_false, depth + 1))
+        }
     }
 
-    fn parse_string_concat(&self, expr: &str) -> Option<Value> {
+    fn parse_string_concat(&self, expr: &str, depth: usize) -> Option<Value> {
         if !expr.contains('+') {
             return None;
         }
@@ -194,9 +256,13 @@ impl ExprContext {
         }
         let mut out = String::new();
         for part in parts {
-            out.push_str(&value_to_string(&self.eval_expression(&part)));
+            out.push_str(&value_to_string(&self.eval_expression(&part, depth + 1)));
         }
         Some(Value::String(out))
+    }
+
+    fn record_depth_diagnostic(&self, kind: EvalDiagnosticKind, target: &str, depth: usize, limit: usize) {
+        self.record_diagnostic(EvalDiagnostic { kind, target: target.to_string(), depth, limit });
     }
 
     fn lookup_var(&self, name: &str) -> Option<Value> {
