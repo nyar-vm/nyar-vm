@@ -321,7 +321,12 @@ pub(crate) fn default_dist_output_dir(project_dir: &Path, target: &CanonicalTarg
 }
 
 pub(crate) fn select_build_target(manifest: &ProjectManifest, target: &CanonicalTarget) -> Option<BuildTargetSpec> {
-    manifest.build.iter().find(|item| item.target == *target).cloned().or_else(|| synthesize_cli_build_target(manifest, target))
+    manifest
+        .build
+        .iter()
+        .find(|item| super::sources::build_target_compatible(&item.target, target))
+        .cloned()
+        .or_else(|| synthesize_cli_build_target(manifest, target))
 }
 
 /// CLI 显式 `--target` 未写入 `legion.von` 时，为 library 工程合成默认 build 项（单文件库工程等）。

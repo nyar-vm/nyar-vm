@@ -226,8 +226,18 @@ pub(crate) const MAX_SEMANTIC_GROUPS: usize = 64;
 /// 语义依赖展开最大深度。
 pub(crate) const MAX_SEMANTIC_GROUP_DEPTH: usize = 32;
 
+/// 依赖支持判定：声明 target 与构建 target 的 arch / specification / abi 一致即兼容。
+///
+/// vendor 是发行风味（openjdk / microsoft / node 等），不构成依赖支持门槛；规格或
+/// ABI 不同（browser / wechat / wasi / managed 等）仍然是硬边界。消费方按泛化
+/// `jvm-unknown-*` / `clr-unknown-*` 构建时，声明 `jvm-openjdk-*` / `clr-microsoft-*`
+/// 的依赖包必须把声明面带入闭包，不得被 vendor 差一挤出依赖闭包。
+pub(crate) fn build_target_compatible(declared: &CanonicalTarget, requested: &CanonicalTarget) -> bool {
+    declared.arch == requested.arch && declared.specification == requested.specification && declared.abi == requested.abi
+}
+
 pub(crate) fn manifest_supports_build_context(manifest: &ProjectManifest, target: &CanonicalTarget, requested_publish: &[String]) -> bool {
-    if !manifest.build.is_empty() && !manifest.build.iter().any(|item| item.target == *target) {
+    if !manifest.build.is_empty() && !manifest.build.iter().any(|item| build_target_compatible(&item.target, target)) {
         return false;
     }
     let Some(sdk_vendor) = &manifest.sdk_vendor
@@ -238,7 +248,7 @@ pub(crate) fn manifest_supports_build_context(manifest: &ProjectManifest, target
         let target_matches = sdk_vendor
             .targets
             .iter()
-            .any(|item| item == &target.to_string() || item.parse::<CanonicalTarget>().map(|parsed| parsed == *target).unwrap_or(false));
+            .any(|item| item.parse::<CanonicalTarget>().map(|parsed| build_target_compatible(&parsed, target)).unwrap_or(false));
         if !target_matches {
             return false;
         }
