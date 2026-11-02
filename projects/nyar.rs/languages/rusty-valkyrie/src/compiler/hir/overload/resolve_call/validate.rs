@@ -45,42 +45,103 @@ use super::{
 };
 
 /// 校验模块内 pattern extractor 合同（在 `resolve_hir_calls` 之后调用）。
+///
+/// 同一编译单元内全部 extractor 失败在此收集并记入诊断暂存汇（多诊断报告）；
+/// 控制流保持返回首个错误，fail-closed 不变。单个 pattern 失败即跳过其子树：
+/// 子 pattern 的 scrutinee 类型由父 extractor 载荷派生，父失败不再级联出
+/// 「无 scrutinee 类型」的次生错误。
+///
+/// 可达性说明：数组 extractor（`HirExtractorPattern::Array`）属计划内语法
+/// （`case [head, ...tail]`），等待 oak AST/parser 节点与 lowering 构造接入；
+/// 上游接入后本收集路径即激活，与调用合同收集同构。
 pub fn validate_extractor_patterns(module: &HirModule) -> Result<(), crate::compiler::syntax::oak::ParseError> {
     let candidates = collect_module_candidates(module);
     let type_relations = TypeRelationContext::from_module(module);
     // 与 resolve_hir_calls 共用唯一生产者；禁止再拼一份短名 BTreeMap。
     let struct_fields = collect_aggregate_field_map(module);
+    let mut errors = Vec::new();
     for function in &module.functions {
-        validate_function_extractor_patterns(function, &candidates, &type_relations, &struct_fields)?;
+        collect_function_extractor_patterns(function, &candidates, &type_relations, &struct_fields, &mut errors);
     }
     for item in &module.structs {
         for method in &item.methods {
-            validate_function_extractor_patterns(method, &candidates, &type_relations, &struct_fields)?;
+            collect_function_extractor_patterns(method, &candidates, &type_relations, &struct_fields, &mut errors);
         }
     }
-    Ok(())
+    let mut errors = errors.into_iter();
+    let Some(first) = errors.next()
+    else {
+        return Ok(());
+    };
+    let source = extractor_diagnostic_source(module);
+    for error in std::iter::once(&first).chain(errors.as_slice()) {
+        crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_parse_error(error, &source));
+    }
+    Err(first)
 }
 
-fn validate_function_extractor_patterns(
+/// extractor 失败的源码身份：优先模块 `source_path`，无文件身份时回落到稳定标签。
+fn extractor_diagnostic_source(module: &HirModule) -> nyar_types::DiagnosticSource {
+    if module.source_path.trim().is_empty() {
+        nyar_types::DiagnosticSource { id: "<frontend>".into(), revision: None }
+    }
+    else {
+        nyar_types::DiagnosticSource { id: module.source_path.clone(), revision: None }
+    }
+}
+
+/// 把 extractor 校验生产的 `ParseError` 投影为多诊断报告条目。
+///
+/// `code` 复用 `HirError::FrontendRejected` 的唯一事实源（不重拼字符串）；
+/// span 取自 `ParseError::Invalid` 携带的源码区间，没有区间时为空 span。
+fn compile_diagnostic_from_parse_error(
+    error: &crate::compiler::syntax::oak::ParseError,
+    source: &nyar_types::DiagnosticSource,
+) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
+    use nyar_types::{DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSpan};
+    let span = match error {
+        crate::compiler::syntax::oak::ParseError::Invalid { span: Some(range), .. } => DiagnosticSpan { start: range.start, end: range.end },
+        _ => DiagnosticSpan { start: 0, end: 0 },
+    };
+    let code = crate::compiler::hir::lowering::errors::HirError::from(crate::compiler::syntax::oak::ParseError::Invalid {
+        message: String::new(),
+        span: None,
+    })
+    .code();
+    let row = DiagnosticRow::new(
+        code,
+        DiagnosticSeverity::Error,
+        DiagnosticPhase::Hir,
+        DiagnosticOwner::frontend("rusty-valkyrie"),
+        source.clone(),
+        span,
+    )
+    .with_cause(error.to_string());
+    crate::compiler::diagnostics::pending::CompileDiagnostic::new(row, error.to_string())
+}
+
+fn collect_function_extractor_patterns(
     function: &HirFunction,
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
     struct_fields: &AggregateFieldIndex,
-) -> Result<(), crate::compiler::syntax::oak::ParseError> {
+    errors: &mut Vec<crate::compiler::syntax::oak::ParseError>,
+) {
     let mut locals = BTreeMap::new();
     for param in &function.params {
         locals.insert(param.name.name.to_string(), param.ty.clone());
     }
-    validate_block_extractor_patterns(&function.body, candidates, type_relations, &locals, struct_fields)
+    collect_block_extractor_patterns(&function.body, candidates, type_relations, &locals, struct_fields, errors)
 }
 
-fn validate_block_extractor_patterns(
+fn collect_block_extractor_patterns(
     block: &HirBlock,
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &AggregateFieldIndex,
-) -> Result<(), crate::compiler::syntax::oak::ParseError> {
+    errors: &mut Vec<crate::compiler::syntax::oak::ParseError>,
+) {
     let mut locals = locals.clone();
     for statement in &block.statements {
         match &statement.kind {
@@ -92,10 +153,10 @@ fn validate_block_extractor_patterns(
                         .as_ref()
                         .cloned()
                         .or_else(|| initializer.as_ref().and_then(|init| infer_scrutinee_type(init, &locals, struct_fields, &BTreeSet::new())));
-                    validate_pattern_extractor_contract(pattern, inferred_type.as_ref(), candidates, type_relations, struct_fields)?;
+                    collect_pattern_extractor_contract(pattern, inferred_type.as_ref(), candidates, type_relations, struct_fields, errors);
                 }
                 if let Some(initializer) = initializer {
-                    validate_expr_extractor_patterns(initializer, candidates, type_relations, &locals, struct_fields)?;
+                    collect_expr_extractor_patterns(initializer, candidates, type_relations, &locals, struct_fields, errors);
                 }
                 if let Some(ty) = ty {
                     bind_pattern_type(pattern, ty, &mut locals);
@@ -106,27 +167,27 @@ fn validate_block_extractor_patterns(
                     }
                 }
             }
-            HirStatementKind::Expr(expr) => validate_expr_extractor_patterns(expr, candidates, type_relations, &locals, struct_fields)?,
+            HirStatementKind::Expr(expr) => collect_expr_extractor_patterns(expr, candidates, type_relations, &locals, struct_fields, errors),
         }
     }
     if let Some(expr) = &block.expr {
-        validate_expr_extractor_patterns(expr, candidates, type_relations, &locals, struct_fields)?;
+        collect_expr_extractor_patterns(expr, candidates, type_relations, &locals, struct_fields, errors);
     }
-    Ok(())
 }
 
-fn validate_expr_extractor_patterns(
+fn collect_expr_extractor_patterns(
     expr: &HirExpr,
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &AggregateFieldIndex,
-) -> Result<(), crate::compiler::syntax::oak::ParseError> {
+    errors: &mut Vec<crate::compiler::syntax::oak::ParseError>,
+) {
     match &expr.kind {
         HirExprKind::Call { callee, args, .. } => {
-            validate_expr_extractor_patterns(callee, candidates, type_relations, locals, struct_fields)?;
+            collect_expr_extractor_patterns(callee, candidates, type_relations, locals, struct_fields, errors);
             for arg in args {
-                validate_expr_extractor_patterns(&arg.value, candidates, type_relations, locals, struct_fields)?;
+                collect_expr_extractor_patterns(&arg.value, candidates, type_relations, locals, struct_fields, errors);
             }
         }
         HirExprKind::GenericApply { callee, .. }
@@ -139,81 +200,83 @@ fn validate_expr_extractor_patterns(
         | HirExprKind::Resume(callee)
         | HirExprKind::Assign { value: callee, .. }
         | HirExprKind::FieldAccess { object: callee, .. } => {
-            validate_expr_extractor_patterns(callee, candidates, type_relations, locals, struct_fields)?;
+            collect_expr_extractor_patterns(callee, candidates, type_relations, locals, struct_fields, errors);
         }
         HirExprKind::TryPropagate { inner, .. } => {
-            validate_expr_extractor_patterns(inner, candidates, type_relations, locals, struct_fields)?;
+            collect_expr_extractor_patterns(inner, candidates, type_relations, locals, struct_fields, errors);
         }
         HirExprKind::Cast { expr, .. } => {
-            validate_expr_extractor_patterns(expr, candidates, type_relations, locals, struct_fields)?;
+            collect_expr_extractor_patterns(expr, candidates, type_relations, locals, struct_fields, errors);
         }
         HirExprKind::StoreField { object, value, .. } => {
-            validate_expr_extractor_patterns(object, candidates, type_relations, locals, struct_fields)?;
-            validate_expr_extractor_patterns(value, candidates, type_relations, locals, struct_fields)?;
+            collect_expr_extractor_patterns(object, candidates, type_relations, locals, struct_fields, errors);
+            collect_expr_extractor_patterns(value, candidates, type_relations, locals, struct_fields, errors);
         }
-        HirExprKind::ArrayNew { length, .. } => validate_expr_extractor_patterns(length, candidates, type_relations, locals, struct_fields)?,
+        HirExprKind::ArrayNew { length, .. } => {
+            collect_expr_extractor_patterns(length, candidates, type_relations, locals, struct_fields, errors)
+        }
         HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } | HirExprKind::CollectionInit { items, .. } => {
             for item in items {
-                validate_expr_extractor_patterns(item, candidates, type_relations, locals, struct_fields)?;
+                collect_expr_extractor_patterns(item, candidates, type_relations, locals, struct_fields, errors);
             }
         }
         HirExprKind::Construct { args, .. } => {
             for arg in args {
-                validate_expr_extractor_patterns(arg, candidates, type_relations, locals, struct_fields)?;
+                collect_expr_extractor_patterns(arg, candidates, type_relations, locals, struct_fields, errors);
             }
         }
-        HirExprKind::Lambda { body, .. } => validate_block_extractor_patterns(body, candidates, type_relations, locals, struct_fields)?,
+        HirExprKind::Lambda { body, .. } => collect_block_extractor_patterns(body, candidates, type_relations, locals, struct_fields, errors),
         HirExprKind::AnonymousClass { fields, methods, .. } => {
             for (_, value) in fields {
-                validate_expr_extractor_patterns(value, candidates, type_relations, locals, struct_fields)?;
+                collect_expr_extractor_patterns(value, candidates, type_relations, locals, struct_fields, errors);
             }
             for method in methods {
-                validate_function_extractor_patterns(method, candidates, type_relations, struct_fields)?;
+                collect_function_extractor_patterns(method, candidates, type_relations, struct_fields, errors);
             }
         }
         HirExprKind::Return(Some(value)) | HirExprKind::Yield(Some(value)) | HirExprKind::Resume(value) => {
-            validate_expr_extractor_patterns(value, candidates, type_relations, locals, struct_fields)?;
+            collect_expr_extractor_patterns(value, candidates, type_relations, locals, struct_fields, errors);
         }
         HirExprKind::Break { expr: Some(value), .. } => {
-            validate_expr_extractor_patterns(value, candidates, type_relations, locals, struct_fields)?;
+            collect_expr_extractor_patterns(value, candidates, type_relations, locals, struct_fields, errors);
         }
         HirExprKind::Match { scrutinee, arms } | HirExprKind::Case { scrutinee, arms } => {
-            validate_expr_extractor_patterns(scrutinee, candidates, type_relations, locals, struct_fields)?;
+            collect_expr_extractor_patterns(scrutinee, candidates, type_relations, locals, struct_fields, errors);
             let scrutinee_type = infer_scrutinee_type(scrutinee, locals, struct_fields, &BTreeSet::new());
             for arm in arms {
-                validate_pattern_extractor_contract(&arm.pattern, scrutinee_type.as_ref(), candidates, type_relations, struct_fields)?;
+                collect_pattern_extractor_contract(&arm.pattern, scrutinee_type.as_ref(), candidates, type_relations, struct_fields, errors);
                 if let Some(guard) = &arm.guard {
-                    validate_expr_extractor_patterns(guard, candidates, type_relations, locals, struct_fields)?;
+                    collect_expr_extractor_patterns(guard, candidates, type_relations, locals, struct_fields, errors);
                 }
-                validate_expr_extractor_patterns(&arm.body, candidates, type_relations, locals, struct_fields)?;
+                collect_expr_extractor_patterns(&arm.body, candidates, type_relations, locals, struct_fields, errors);
             }
         }
         HirExprKind::IfLet { pattern, scrutinee, then_branch, else_branch } => {
-            validate_expr_extractor_patterns(scrutinee, candidates, type_relations, locals, struct_fields)?;
+            collect_expr_extractor_patterns(scrutinee, candidates, type_relations, locals, struct_fields, errors);
             let scrutinee_type = infer_scrutinee_type(scrutinee, locals, struct_fields, &BTreeSet::new());
-            validate_pattern_extractor_contract(pattern, scrutinee_type.as_ref(), candidates, type_relations, struct_fields)?;
-            validate_block_extractor_patterns(then_branch, candidates, type_relations, locals, struct_fields)?;
+            collect_pattern_extractor_contract(pattern, scrutinee_type.as_ref(), candidates, type_relations, struct_fields, errors);
+            collect_block_extractor_patterns(then_branch, candidates, type_relations, locals, struct_fields, errors);
             if let Some(else_branch) = else_branch {
-                validate_block_extractor_patterns(else_branch, candidates, type_relations, locals, struct_fields)?;
+                collect_block_extractor_patterns(else_branch, candidates, type_relations, locals, struct_fields, errors);
             }
         }
         HirExprKind::Catch { expr, arms } => {
-            validate_expr_extractor_patterns(expr, candidates, type_relations, locals, struct_fields)?;
+            collect_expr_extractor_patterns(expr, candidates, type_relations, locals, struct_fields, errors);
             let scrutinee_type = infer_catch_scrutinee_type(expr, locals);
             for arm in arms {
-                validate_pattern_extractor_contract(&arm.pattern, scrutinee_type.as_ref(), candidates, type_relations, struct_fields)?;
+                collect_pattern_extractor_contract(&arm.pattern, scrutinee_type.as_ref(), candidates, type_relations, struct_fields, errors);
                 if let Some(guard) = &arm.guard {
-                    validate_expr_extractor_patterns(guard, candidates, type_relations, locals, struct_fields)?;
+                    collect_expr_extractor_patterns(guard, candidates, type_relations, locals, struct_fields, errors);
                 }
-                validate_expr_extractor_patterns(&arm.body, candidates, type_relations, locals, struct_fields)?;
+                collect_expr_extractor_patterns(&arm.body, candidates, type_relations, locals, struct_fields, errors);
             }
         }
         HirExprKind::Loop { pattern, iterator, condition, body, .. } => {
             if let Some(iterator) = iterator {
-                validate_expr_extractor_patterns(iterator, candidates, type_relations, locals, struct_fields)?;
+                collect_expr_extractor_patterns(iterator, candidates, type_relations, locals, struct_fields, errors);
             }
             if let Some(condition) = condition {
-                validate_expr_extractor_patterns(condition, candidates, type_relations, locals, struct_fields)?;
+                collect_expr_extractor_patterns(condition, candidates, type_relations, locals, struct_fields, errors);
             }
             if let (Some(pattern), Some(iterator)) = (pattern, iterator) {
                 let iter_type = infer_expr_type(iterator, locals);
@@ -221,17 +284,17 @@ fn validate_expr_extractor_patterns(
                     ValkyrieType::Array(inner) => inner.as_ref().clone(),
                     other => other.clone(),
                 });
-                validate_pattern_extractor_contract(pattern, element_type.as_ref(), candidates, type_relations, struct_fields)?;
+                collect_pattern_extractor_contract(pattern, element_type.as_ref(), candidates, type_relations, struct_fields, errors);
             }
-            validate_block_extractor_patterns(body, candidates, type_relations, locals, struct_fields)?;
+            collect_block_extractor_patterns(body, candidates, type_relations, locals, struct_fields, errors);
         }
-        HirExprKind::Block(block) => validate_block_extractor_patterns(block, candidates, type_relations, locals, struct_fields)?,
-        HirExprKind::TryScope { body, .. } => validate_block_extractor_patterns(body, candidates, type_relations, locals, struct_fields)?,
+        HirExprKind::Block(block) => collect_block_extractor_patterns(block, candidates, type_relations, locals, struct_fields, errors),
+        HirExprKind::TryScope { body, .. } => collect_block_extractor_patterns(body, candidates, type_relations, locals, struct_fields, errors),
         HirExprKind::If { condition, then_branch, else_branch } => {
-            validate_expr_extractor_patterns(condition, candidates, type_relations, locals, struct_fields)?;
-            validate_block_extractor_patterns(then_branch, candidates, type_relations, locals, struct_fields)?;
+            collect_expr_extractor_patterns(condition, candidates, type_relations, locals, struct_fields, errors);
+            collect_block_extractor_patterns(then_branch, candidates, type_relations, locals, struct_fields, errors);
             if let Some(else_branch) = else_branch {
-                validate_block_extractor_patterns(else_branch, candidates, type_relations, locals, struct_fields)?;
+                collect_block_extractor_patterns(else_branch, candidates, type_relations, locals, struct_fields, errors);
             }
         }
         HirExprKind::Return(None)
@@ -246,27 +309,30 @@ fn validate_expr_extractor_patterns(
         | HirExprKind::SuperCall { .. }
         | HirExprKind::With { .. } => {}
     }
-    Ok(())
 }
 
-fn validate_pattern_extractor_contract(
+/// 收集单个 pattern 的 extractor 失败；失败即返回、不再递归子 pattern（去级联）。
+fn collect_pattern_extractor_contract(
     pattern: &HirPattern,
     scrutinee_type: Option<&ValkyrieType>,
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
     struct_fields: &AggregateFieldIndex,
-) -> Result<(), crate::compiler::syntax::oak::ParseError> {
+    errors: &mut Vec<crate::compiler::syntax::oak::ParseError>,
+) {
     match pattern {
         HirPattern::Extractor(extractor) => match extractor {
             HirExtractorPattern::Constructor { canonical_callee, resolved, fields, .. } => {
                 if resolved.is_none() {
                     if let Some(actual_type) = scrutinee_type {
                         if let Some(error) = diagnose_pattern_extractor_failure(canonical_callee, actual_type, candidates, type_relations) {
-                            return Err(error);
+                            errors.push(error);
+                            return;
                         }
                     }
                     else if let Some(error) = diagnose_unresolved_extractor_without_scrutinee_type(canonical_callee, candidates) {
-                        return Err(error);
+                        errors.push(error);
+                        return;
                     }
                 }
                 let field_scrutinee_types = resolved
@@ -276,42 +342,43 @@ fn validate_pattern_extractor_contract(
                     .unwrap_or_default();
                 for (index, field) in fields.iter().enumerate() {
                     let field_scrutinee = field_scrutinee_types.get(index).and_then(|ty| ty.as_ref());
-                    validate_pattern_extractor_contract(field, field_scrutinee, candidates, type_relations, struct_fields)?;
+                    collect_pattern_extractor_contract(field, field_scrutinee, candidates, type_relations, struct_fields, errors);
                 }
             }
             HirExtractorPattern::Array { canonical_callee, resolved, prefix, suffix, .. } => {
                 if resolved.is_none() {
                     if let Some(actual_type) = scrutinee_type {
                         if let Some(error) = diagnose_pattern_extractor_failure(canonical_callee, actual_type, candidates, type_relations) {
-                            return Err(error);
+                            errors.push(error);
+                            return;
                         }
                     }
                     else if let Some(error) = diagnose_unresolved_extractor_without_scrutinee_type(canonical_callee, candidates) {
-                        return Err(error);
+                        errors.push(error);
+                        return;
                     }
                 }
                 for item in prefix.iter().chain(suffix.iter()) {
-                    validate_pattern_extractor_contract(item, None, candidates, type_relations, struct_fields)?;
+                    collect_pattern_extractor_contract(item, None, candidates, type_relations, struct_fields, errors);
                 }
             }
         },
         HirPattern::Tuple(items) | HirPattern::Or(items) => {
             for item in items {
-                validate_pattern_extractor_contract(item, scrutinee_type, candidates, type_relations, struct_fields)?;
+                collect_pattern_extractor_contract(item, scrutinee_type, candidates, type_relations, struct_fields, errors);
             }
         }
         HirPattern::Bind { pattern, .. } | HirPattern::Mut(pattern) | HirPattern::Pin { pattern, .. } => {
-            validate_pattern_extractor_contract(pattern, scrutinee_type, candidates, type_relations, struct_fields)?;
+            collect_pattern_extractor_contract(pattern, scrutinee_type, candidates, type_relations, struct_fields, errors);
         }
         HirPattern::Object { name, fields, .. } => {
             for (field_name, field_pattern) in fields {
                 let field_scrutinee = object_field_scrutinee_type(name.as_ref(), field_name, struct_fields);
-                validate_pattern_extractor_contract(field_pattern, field_scrutinee, candidates, type_relations, struct_fields)?;
+                collect_pattern_extractor_contract(field_pattern, field_scrutinee, candidates, type_relations, struct_fields, errors);
             }
         }
         _ => {}
     }
-    Ok(())
 }
 
 pub(super) fn is_option_owner_type(ty: &ValkyrieType) -> bool {
