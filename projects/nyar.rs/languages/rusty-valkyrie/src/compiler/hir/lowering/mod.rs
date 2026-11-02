@@ -49,6 +49,7 @@ pub(crate) use diagnostics::{
     CompileWarningScope, identity_duplicated, index_exhausted, pipeline_rejected, push_compile_warning, take_compile_warnings,
 };
 use diagnostics::{plan_source, plan_span};
+pub(crate) use attribute_lowering::constructor_attribute_count;
 
 pub use contract_validation::validate_expr_call_contracts;
 pub(crate) use contract_validation::{

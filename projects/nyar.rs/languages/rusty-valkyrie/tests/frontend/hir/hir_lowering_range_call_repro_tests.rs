@@ -194,6 +194,7 @@ fn option_or_else_some_construct_binds_nominal_without_short_name() {
     let source = r#"
 namespace std::types;
 unite Option<T> {
+    [constructor]
     Some { value: T },
     None,
 }

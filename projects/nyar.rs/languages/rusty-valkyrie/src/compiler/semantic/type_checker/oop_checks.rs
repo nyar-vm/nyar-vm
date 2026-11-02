@@ -219,6 +219,10 @@ impl SealedMatchChecker {
         }
 
         let enum_name = infer_sum_type_scrutinee(scrutinee, env, checker.enum_registry(), struct_fields)
+            .or_else(|| {
+                infer_scrutinee_nominal_declaration(scrutinee, env, struct_fields)
+                    .and_then(|declaration| checker.enum_registry().name_of_declaration(declaration).cloned())
+            })
             .or_else(|| checker.enum_registry().enum_from_covered_variants(&all_covered));
         let Some(enum_name) = enum_name
         else {
@@ -289,6 +293,24 @@ fn infer_scrutinee_nominal_type(
             let owner_type = infer_scrutinee_nominal_type(object, env, struct_fields)?;
             let field_ty = struct_fields.get(&owner_type)?.get(field)?;
             nominal_type_name(field_ty)
+        }
+        _ => None,
+    }
+}
+
+/// Resolve the nominal declaration identity of a match scrutinee, including `expr.kind` FieldAccess.
+fn infer_scrutinee_nominal_declaration(
+    scrutinee: &HirExpr,
+    env: &BTreeMap<Identifier, ValkyrieType>,
+    struct_fields: &BTreeMap<Identifier, BTreeMap<Identifier, ValkyrieType>>,
+) -> Option<nyar_types::ItemId> {
+    match &scrutinee.kind {
+        HirExprKind::Variable(identifier) => env.get(&identifier.name)?.nominal_declaration(),
+        HirExprKind::Path(path) => env.get(&last_name(path)?)?.nominal_declaration(),
+        HirExprKind::FieldAccess { object, field, .. } => {
+            let owner_type = infer_scrutinee_nominal_type(object, env, struct_fields)?;
+            let field_ty = struct_fields.get(&owner_type)?.get(field)?;
+            field_ty.nominal_declaration()
         }
         _ => None,
     }

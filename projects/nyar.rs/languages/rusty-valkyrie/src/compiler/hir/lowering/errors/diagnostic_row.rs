@@ -177,6 +177,22 @@ impl From<HirError> for DiagnosticRow {
             HirError::CopyDisciplineViolations { violations, .. } => {
                 row = row.with_arg("violation_count", DiagnosticArg::Int(violations.len() as i64));
             }
+            HirError::ConstructorAttributeOnNonUnityVariant { aggregate, variant, declared_kind, .. } => {
+                row = row
+                    .with_arg("aggregate", DiagnosticArg::Aggregate(aggregate.clone()))
+                    .with_arg("variant", DiagnosticArg::CallableShort(variant.clone()))
+                    .with_arg("declared_kind", DiagnosticArg::String(declared_kind.clone()));
+            }
+            HirError::ConstructorAttributeOnNonVariant { target_kind, name, .. } => {
+                row = row
+                    .with_arg("target_kind", DiagnosticArg::String(target_kind.clone()))
+                    .with_arg("name", DiagnosticArg::String(name.clone()));
+            }
+            HirError::DuplicateConstructorAttribute { aggregate, variant, .. } => {
+                row = row
+                    .with_arg("aggregate", DiagnosticArg::Aggregate(aggregate.clone()))
+                    .with_arg("variant", DiagnosticArg::CallableShort(variant.clone()));
+            }
             HirError::DuplicateTypeDefinition { name, namespace, prior_kind, current_kind, .. } => {
                 row = row
                     .with_arg("name", DiagnosticArg::String(name.clone()))
@@ -507,6 +523,9 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::AssignToImmutable { source, .. } => source.clone(),
         HirError::SemanticCheckViolations { source, .. } => source.clone(),
         HirError::CopyDisciplineViolations { source, .. } => source.clone(),
+        HirError::ConstructorAttributeOnNonUnityVariant { source, .. } => source.clone(),
+        HirError::ConstructorAttributeOnNonVariant { source, .. } => source.clone(),
+        HirError::DuplicateConstructorAttribute { source, .. } => source.clone(),
         HirError::DuplicateTypeDefinition { source, .. } => source.clone(),
         HirError::TryPropagateErrorTypeMismatch { source, .. } => source.clone(),
         HirError::BackendContractRejected(_) => DiagnosticSource { id: "<backend_contract>".into(), revision: None },
@@ -574,6 +593,9 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::AssignToImmutable { span, .. } => span.clone(),
         HirError::SemanticCheckViolations { span, .. } => span.clone(),
         HirError::CopyDisciplineViolations { span, .. } => span.clone(),
+        HirError::ConstructorAttributeOnNonUnityVariant { span, .. } => span.clone(),
+        HirError::ConstructorAttributeOnNonVariant { span, .. } => span.clone(),
+        HirError::DuplicateConstructorAttribute { span, .. } => span.clone(),
         HirError::DuplicateTypeDefinition { span, .. } => span.clone(),
         HirError::TryPropagateErrorTypeMismatch { span, .. } => span.clone(),
         HirError::BackendContractRejected(error) => error.span(),

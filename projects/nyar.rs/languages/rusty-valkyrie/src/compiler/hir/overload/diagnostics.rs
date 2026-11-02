@@ -58,6 +58,8 @@ pub struct OverloadCandidate {
     pub where_constraints: Vec<HirWhereConstraint>,
     /// 来自 `imported_semantic_exports` 的顶层函数；无限定调用按导出名匹配，不按 consumer 模块路径。
     pub imported_dependency_export: bool,
+    /// 该构造候选是否来自带 `[constructor]` 的 `unite` 变体，决定括号调用入口是否可见。
+    pub is_variant_constructor: bool,
 }
 
 impl OverloadCandidate {
@@ -84,6 +86,7 @@ impl OverloadCandidate {
             generic_binders: BTreeSet::new(),
             where_constraints: Vec::new(),
             imported_dependency_export: false,
+            is_variant_constructor: false,
         }
     }
 
@@ -128,6 +131,7 @@ impl OverloadCandidate {
             generic_binders: BTreeSet::new(),
             where_constraints: Vec::new(),
             imported_dependency_export: false,
+            is_variant_constructor: false,
         }
     }
 }

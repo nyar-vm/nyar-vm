@@ -369,6 +369,41 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// `[constructor]` 标注落在非 `unite` 的变体上。
+    ConstructorAttributeOnNonUnityVariant {
+        /// 变体所属聚合名。
+        aggregate: String,
+        /// 被标注的变体名。
+        variant: String,
+        /// 聚合声明类别（`enums` / `enum`）。
+        declared_kind: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `[constructor]` 标注落在变体以外的声明上。
+    ConstructorAttributeOnNonVariant {
+        /// 被标注声明的类别。
+        target_kind: String,
+        /// 被标注声明的短名。
+        name: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 同一变体重复标注 `[constructor]`。
+    DuplicateConstructorAttribute {
+        /// 变体所属聚合名。
+        aggregate: String,
+        /// 被重复标注的变体名。
+        variant: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 同一 namespace 下出现重复类型声明。
     DuplicateTypeDefinition {
         /// 重复声明的短名。

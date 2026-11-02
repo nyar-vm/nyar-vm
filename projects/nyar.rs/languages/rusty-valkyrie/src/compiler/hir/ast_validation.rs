@@ -1,10 +1,10 @@
 //! `AST -> HIR` 前的结构与语义预校验。
 
 use crate::compiler::{
-    hir::HirError,
+    hir::{HirError, lowering::constructor_attribute_count},
     syntax::oak::{
         ValkyrieRoot,
-        ast::{EnumsKind, NamePath, StatementNode},
+        ast::{Attribute, EnumsKind, NamePath, StatementNode},
     },
 };
 use std::collections::BTreeMap;
@@ -13,7 +13,85 @@ use nyar_types::{DiagnosticSource, DiagnosticSpan};
 
 /// 校验 Oak `AST` 根节点是否满足进入 `HIR` lowering 的前提。
 pub(crate) fn validate_ast_root(root: &ValkyrieRoot) -> Result<(), HirError> {
+    validate_constructor_attributes(&root.items)?;
     validate_duplicate_type_names(&root.items, &[])
+}
+
+/// `[constructor]` 只允许出现在 `unite` 变体上，且每个变体最多一次。
+fn validate_constructor_attributes(items: &[StatementNode]) -> Result<(), HirError> {
+    for item in items {
+        match item {
+            StatementNode::Namespace(namespace) => {
+                if !crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
+                    validate_constructor_attributes(crate::compiler::syntax::oak::namespace_items(namespace))?;
+                }
+            }
+            StatementNode::Enums(enums) => {
+                let aggregate_kind = match enums.kind {
+                    EnumsKind::Unity => "unite",
+                    EnumsKind::Enums => "enums",
+                    EnumsKind::Enum => "enum",
+                };
+                for variant in &enums.variants {
+                    let count = constructor_attribute_count(&variant.annotations);
+                    if count > 1 {
+                        return Err(HirError::DuplicateConstructorAttribute {
+                            aggregate: enums.name.name.clone(),
+                            variant: variant.name.name.clone(),
+                            source: ast_source(),
+                            span: ast_span(&variant.span),
+                        });
+                    }
+                    if count == 1 && enums.kind != EnumsKind::Unity {
+                        let declared_kind = aggregate_kind;
+                        return Err(HirError::ConstructorAttributeOnNonUnityVariant {
+                            aggregate: enums.name.name.clone(),
+                            variant: variant.name.name.clone(),
+                            declared_kind: declared_kind.to_string(),
+                            source: ast_source(),
+                            span: ast_span(&variant.span),
+                        });
+                    }
+                }
+            }
+            StatementNode::Micro(item) => reject_constructor_annotation(&item.annotations, "micro", &item.name.name, &item.span)?,
+            StatementNode::Class(item) => reject_constructor_annotation(&item.annotations, "class", &item.name.name, &item.span)?,
+            StatementNode::Structure(item) => reject_constructor_annotation(&item.annotations, "structure", &item.name.name, &item.span)?,
+            StatementNode::Union(item) => reject_constructor_annotation(&item.annotations, "union", &item.name.name, &item.span)?,
+            StatementNode::Singleton(item) => reject_constructor_annotation(&item.annotations, "singleton", &item.name.name, &item.span)?,
+            StatementNode::Flags(item) => reject_constructor_annotation(&item.annotations, "flags", &item.name.name, &item.span)?,
+            StatementNode::Trait(item) => reject_constructor_annotation(&item.annotations, "trait", &item.name.name, &item.span)?,
+            StatementNode::Widget(item) => reject_constructor_annotation(&item.annotations, "widget", &item.name.name, &item.span)?,
+            StatementNode::Variant(item) => reject_constructor_annotation(&item.annotations, "variant", &item.name.name, &item.span)?,
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn reject_constructor_annotation(
+    annotations: &[Attribute],
+    target_kind: &str,
+    name: &str,
+    span: &oak_core::Range<usize>,
+) -> Result<(), HirError> {
+    if constructor_attribute_count(annotations) == 0 {
+        return Ok(());
+    }
+    Err(HirError::ConstructorAttributeOnNonVariant {
+        target_kind: target_kind.to_string(),
+        name: name.to_string(),
+        source: ast_source(),
+        span: ast_span(span),
+    })
+}
+
+fn ast_source() -> DiagnosticSource {
+    DiagnosticSource { id: "<ast>".into(), revision: None }
+}
+
+fn ast_span(span: &oak_core::Range<usize>) -> DiagnosticSpan {
+    DiagnosticSpan { start: span.start, end: span.end }
 }
 
 /// 重复定义键必须带当前 namespace 前缀。

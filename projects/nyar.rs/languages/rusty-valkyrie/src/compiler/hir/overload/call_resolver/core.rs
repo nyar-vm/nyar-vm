@@ -184,6 +184,7 @@ pub fn match_call_candidate(
         generic_binders: candidate.generic_binders.clone(),
         where_constraints: candidate.where_constraints.clone(),
         imported_dependency_export: candidate.imported_dependency_export,
+        is_variant_constructor: candidate.is_variant_constructor,
     })
 }
 

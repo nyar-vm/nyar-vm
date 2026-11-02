@@ -17,4 +17,7 @@ pub(crate) use core::{
     candidate_has_receiver_parameter, is_unresolved_variant_reference, overload_symbol_path, peel_explicit_generic_arguments, try_resolve_call,
 };
 pub(crate) use helpers::instantiate_candidate_for_context;
-pub(crate) use patterns::{enrich_sum_variant_operation_facts, try_resolve_pattern_extractor, try_resolve_try_propagate_ok_variant};
+pub(crate) use patterns::{
+    enrich_sum_variant_operation_facts, resolve_variant_pattern_constructor, try_resolve_pattern_extractor,
+    try_resolve_try_propagate_ok_variant,
+};

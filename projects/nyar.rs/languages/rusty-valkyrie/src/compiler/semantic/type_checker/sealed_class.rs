@@ -94,6 +94,8 @@ impl SealedClassRegistry {
 #[derive(Debug, Default, Clone)]
 pub struct EnumRegistry {
     sum_types: BTreeMap<Identifier, Vec<Identifier>>,
+    /// unite/enum 声明身份到类型名的映射，用于按声明身份识别 `Nominal` 标注。
+    sum_declarations: BTreeMap<nyar_types::ItemId, Identifier>,
 }
 
 impl EnumRegistry {
@@ -102,6 +104,9 @@ impl EnumRegistry {
         let mut registry = Self::default();
         for enum_def in module.enums.iter().chain(module.imported_enums.iter()).chain(module.imported_nominal_enums()) {
             registry.sum_types.insert(enum_def.name.clone(), enum_def.variants.iter().map(|variant| variant.name.clone()).collect());
+            if let Some(declaration) = enum_def.declaration {
+                registry.sum_declarations.insert(declaration, enum_def.name.clone());
+            }
         }
         registry
     }
@@ -109,6 +114,16 @@ impl EnumRegistry {
     /// 判断给定名字是否为本注册表登记的 sum/enum 类型。
     pub fn is_sum_type(&self, name: &Identifier) -> bool {
         self.sum_types.contains_key(name)
+    }
+
+    /// 判断给定声明身份是否为本注册表登记的 sum/enum 声明。
+    pub fn is_sum_declaration(&self, declaration: nyar_types::ItemId) -> bool {
+        self.sum_declarations.contains_key(&declaration)
+    }
+
+    /// 返回给定声明身份对应的 sum/enum 类型名；未知声明返回 None。
+    pub fn name_of_declaration(&self, declaration: nyar_types::ItemId) -> Option<&Identifier> {
+        self.sum_declarations.get(&declaration)
     }
 
     /// 返回给定 sum 类型的变体名列表；未知类型返回空切片。

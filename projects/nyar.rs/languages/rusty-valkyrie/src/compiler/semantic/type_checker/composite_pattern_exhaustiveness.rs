@@ -178,6 +178,14 @@ impl CompositePatternExhaustivenessChecker {
             return;
         }
 
+        // `Nominal { declaration, .. }` 形式的 sum/unite 标注按声明身份识别：
+        // 其穷尽性由 `SealedMatchChecker` 的变体检查负责，此处跳过以免误报 refutable。
+        if let Some(declaration) = scrutinee_type.as_ref().and_then(|ty| ty.nominal_declaration()) {
+            if self.enum_registry.is_sum_declaration(declaration) {
+                return;
+            }
+        }
+
         // sealed/enum scrutinee 由 `SealedMatchChecker` 负责穷尽性判定，此处跳过以免重复报错。
         // `Result<T, E>` / `Option<T>` 等是 `Apply(Named(base), …)`，必须按 base 识别，
         // 否则 Fine/Fail·Some/None 会被误判成「全 refutable」而强迫加 `else`。

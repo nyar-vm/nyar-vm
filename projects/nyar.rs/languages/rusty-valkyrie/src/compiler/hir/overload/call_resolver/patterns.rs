@@ -36,6 +36,7 @@ use crate::compiler::hir::overload::{
     r#trait::impl_nominal_type_name,
     types::{
         accepts_array_shape, compute_call_match_kind, extract_callable_name, infer_expr_type, infer_scrutinee_type, is_empty_array_literal,
+        nullable_union_type,
     },
 };
 
@@ -146,6 +147,69 @@ pub(crate) fn try_resolve_pattern_extractor(
         return_type,
         parameter_types,
         has_receiver,
+        extractor_payload_type: Some(payload_type),
+    })
+}
+
+/// 从模式调用路径取变体段：`canonical_extractor_callee` 末尾固定追加 `extractor`，
+/// 变体段即其前一段；不按变体短名对 `Some`/`None` 做特判。
+fn variant_segment_from_extractor_callee(canonical_callee: &NamePath) -> Option<Identifier> {
+    match canonical_callee.parts() {
+        [.., variant, extractor] if extractor.as_str() == "extractor" => Some(variant.clone()),
+        _ => None,
+    }
+}
+
+/// 按 scrutinee 的声明身份解析 unite 变体模式构造。
+///
+/// 现有 Function 域 extractor 候选对泛型 scrutinee（`Option<i32>` vs `Option<T>`）
+/// 无法在不代入 binder 的前提下匹配；这里用 Constructor 候选的声明身份 + 既有泛型
+/// 代入链完成同一件事，返回 Extractor 域并保留 `sum_owner` / `sum_variant`。
+/// 只匹配已有 unite extractor 证据的 `sum_owner`，不放宽到普通 `enums`。
+pub(crate) fn resolve_variant_pattern_constructor(
+    canonical_callee: &NamePath,
+    actual_type: &ValkyrieType,
+    candidates: &[OverloadCandidate],
+) -> Option<HirResolvedCall> {
+    let declaration = sum_declaration_of_type(actual_type)?;
+    let variant_name = variant_segment_from_extractor_callee(canonical_callee)?;
+    let unity_variants = candidates
+        .iter()
+        .filter(|candidate| candidate.domain == OverloadDomain::Function)
+        .filter(|candidate| candidate.sum_owner == Some(declaration))
+        .filter(|candidate| matches!(candidate.symbol.parts(), [member] if member.as_str() == "extractor"))
+        .filter_map(|candidate| candidate.sum_variant)
+        .collect::<Vec<_>>();
+    let candidate = candidates
+        .iter()
+        .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
+        .filter(|candidate| candidate.sum_owner == Some(declaration))
+        .filter(|candidate| candidate.sum_variant.is_some_and(|variant| unity_variants.contains(&variant)))
+        .find(|candidate| matches!(candidate.symbol.parts(), [name] if name == &variant_name))?;
+    let mut substitutions = BTreeMap::new();
+    unify_call_type_binders(&candidate.signature.return_type, actual_type, &candidate.generic_binders, &mut substitutions)?;
+    let parameter_types = candidate
+        .signature
+        .params
+        .iter()
+        .map(|parameter| substitute_type_vars(parameter, &substitutions))
+        .collect::<Vec<_>>();
+    let payload_type = match parameter_types.as_slice() {
+        [] => ValkyrieType::Unit,
+        [single] => single.clone(),
+        _ => ValkyrieType::Tuple(parameter_types.clone()),
+    };
+    Some(HirResolvedCall {
+        declaration: candidate.declaration,
+        instance: candidate.instance,
+        sum_owner: candidate.sum_owner,
+        sum_variant: candidate.sum_variant,
+        trait_dispatch: None,
+        symbol: candidate.symbol.clone(),
+        domain: HirCallableDomain::Extractor,
+        return_type: nullable_union_type(payload_type.clone()),
+        parameter_types,
+        has_receiver: false,
         extractor_payload_type: Some(payload_type),
     })
 }

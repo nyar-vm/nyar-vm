@@ -75,6 +75,11 @@ pub struct HirVariant {
     pub result_type: Option<super::ValkyrieType>,
     /// Optional explicit enum discriminator (`enums Color { Red = 2 }`).
     pub discriminator: Option<HirExpr>,
+    /// `[constructor]` 变体属性；为 true 时该变体额外提供位置参数构造入口。
+    ///
+    /// 花括号字面量构造 (`Some { value: x }`) 不受该标记影响，始终可用。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub is_constructor: bool,
 }
 
 impl Default for HirVariant {
@@ -87,6 +92,7 @@ impl Default for HirVariant {
             fields: Vec::new(),
             result_type: None,
             discriminator: None,
+            is_constructor: false,
         }
     }
 }
