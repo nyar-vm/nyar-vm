@@ -358,6 +358,34 @@ fn normalize_trait_member_type(
             associated_types,
         })
     }
+
+    /// 目标类型对某 trait 的唯一显式实现给出的关联类型等式（impl 形参已代入）。
+    ///
+    /// trait 默认方法体只持有 `Self`/`Self::Assoc` 投影；要在具体接收者上铸造实例，
+    /// 必须先把这些投影落到该目标的 impl 关联类型上。候选不唯一（例如 blanket impl
+    /// 与具体 impl 同时成立）或缺项时返回 `None`，由调用方保持 fail-closed，
+    /// 禁止挑一个 impl 猜。
+    pub fn associated_type_equations(
+        &self,
+        declaration: nyar_types::ItemId,
+        candidate: &ValkyrieType,
+        trait_arguments: &[ValkyrieType],
+    ) -> Option<BTreeMap<Identifier, ValkyrieType>> {
+        let trait_def = self.declarations.get(&declaration)?;
+        let mut matches = self
+            .impls
+            .iter()
+            .filter(|item| item.trait_declaration == Some(declaration))
+            .filter_map(|item| Self::impl_header_substitution(item, candidate, trait_arguments).map(|substitution| (item, substitution)))
+            .collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return None;
+        }
+        let (implementation, substitution) = matches.pop()?;
+        let trait_path = NamePath::new(vec![trait_def.name.clone()]);
+        let equations = collect_associated_types(implementation, trait_def, &trait_path).ok()?;
+        Some(equations.into_iter().map(|(name, ty)| (name, substitute_type_vars(&ty, &substitution))).collect())
+    }
 }
 
 /// 检查 struct 是否满足具名 trait；显式 impl 优先于结构化入口。

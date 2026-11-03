@@ -18,13 +18,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::compiler::{
     hir::{
         lowering::errors::HirError,
-        overload::{has_unresolved_generic_arguments, owner_type_generic_binders, substitute_type_self},
+        overload::{
+            has_unresolved_generic_arguments, owner_type_generic_binders, substitute_type_self, substitution::substitute_associated_equations,
+        },
+        trait_system::TraitModuleView,
         type_relation::TypeRelationContext,
     },
-    types::hir::{
-        AssociatedType, FunctionType, GenericBinderId, HirBlock, HirExpr, HirExprKind, HirFunction, HirFunctionReference,
-        HirInstantiatedCallable, HirModule, HirParam, HirResolvedCall, HirStatementKind, HirTraitDispatch, HirWhereConstraint, ValkyrieType,
-        export_spec::parse_library_glue_operation, parse_export_spec_from_annotations,
+    types::{
+        Identifier,
+        hir::{
+            AssociatedType, FunctionType, GenericBinderId, HirBlock, HirExpr, HirExprKind, HirFunction, HirFunctionReference,
+            HirInstantiatedCallable, HirModule, HirParam, HirResolvedCall, HirStatementKind, HirTraitDispatch, HirWhereConstraint, ValkyrieType,
+            export_spec::parse_library_glue_operation, parse_export_spec_from_annotations,
+        },
     },
 };
 
@@ -45,6 +51,17 @@ struct CallableDeclaration {
 
 /// `GenericBinderId` 到具体类型的代入。`BTreeMap` 保证 `(声明, 代入)` 的稳定序。
 type Substitution = BTreeMap<GenericBinderId, ValkyrieType>;
+
+/// 一个固定点实例请求的完整身份。
+///
+/// 普通声明由 `(声明, 代入)` 唯一确定；trait 默认方法没有 impl owner，同一默认方法
+/// 在不同 self 类型上是不同实现，`self_type` 必须进入身份，否则不同接收者会撞实例。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct InstanceRequest {
+    declaration: u32,
+    substitution: Substitution,
+    self_type: Option<ValkyrieType>,
+}
 
 /// 固定点需要闭合的可调用请求点：已解析调用合同，或具名函数作值的引用。
 enum CallableRequest<'a> {
@@ -123,25 +140,29 @@ fn instantiation_limit_error(
 fn discharge_trait_witness(
     declarations: &BTreeMap<u32, CallableDeclaration>,
     trait_members: &BTreeMap<u32, String>,
+    trait_views: &[TraitModuleView],
     call: &HirResolvedCall,
-) -> Option<(u32, Substitution)> {
+) -> Option<(u32, Substitution, Option<ValkyrieType>)> {
     let dispatch = call.trait_dispatch.as_ref()?;
     if has_unresolved_generic_arguments(&dispatch.self_type) {
         return None;
     }
-    // 身份形态 1：witness 直接冻结了已选定的 impl 成员声明。trait 归属必须与
-    // witness 冻结的 trait 一致（不一致即身份损坏，保持 witness 由后端精确失败）；
-    // 代入仍由 (owner, 成员签名) 与调用合同统一推出，不从调用点照搬。
+    // 身份形态 1：witness 直接冻结了已选定的 impl 成员声明或 trait 默认方法声明。
+    // trait 归属必须与 witness 冻结的 trait 一致（不一致即身份损坏，保持 witness
+    // 由后端精确失败）；代入仍由 (owner, 成员签名) 与调用合同统一推出，不从调用点照搬。
     if let Some(declaration) = declarations.get(&dispatch.method_declaration.index()) {
         if declaration.trait_declaration != Some(dispatch.trait_declaration) {
             return None;
         }
-        let substitution = derive_witness_substitution(declaration, call)?;
-        return Some((declaration.index, substitution));
+        let equations = declaration_equations(declaration, &dispatch.self_type, trait_views);
+        let substitution = derive_witness_substitution(declaration, call, &equations)?;
+        // 默认方法没有 impl owner：具体 self 类型就是它的实现身份，必须进实例键。
+        let self_type = if declaration.owner_type.is_none() { Some(dispatch.self_type.clone()) } else { None };
+        return Some((declaration.index, substitution, self_type));
     }
     // 身份形态 2：witness 冻结的是 trait 方法槽声明，恢复成员名后搜索唯一实现。
     let member_name = trait_members.get(&dispatch.method_declaration.index())?;
-    let mut matched: Option<(u32, Substitution)> = None;
+    let mut matched: Option<(u32, Substitution, Option<ValkyrieType>)> = None;
     for declaration in declarations.values() {
         if declaration.trait_declaration != Some(dispatch.trait_declaration) {
             continue;
@@ -149,16 +170,35 @@ fn discharge_trait_witness(
         if declaration.function.name.as_str() != member_name.as_str() {
             continue;
         }
-        let Some(substitution) = derive_witness_substitution(declaration, call)
+        let Some(substitution) = derive_witness_substitution(declaration, call, &BTreeMap::new())
         else {
             continue;
         };
         if matched.is_some() {
             return None;
         }
-        matched = Some((declaration.index, substitution));
+        matched = Some((declaration.index, substitution, None));
     }
     matched
+}
+
+/// 具体 self 类型上该声明所属 trait 的关联类型等式。
+///
+/// impl 成员与自由函数的 owner 已在声明里，关联投影由 owner 自身结算；只有 trait
+/// 默认方法（`owner_type` 为空）需要按具体 self 类型去查它的唯一 impl。
+fn declaration_equations(
+    declaration: &CallableDeclaration,
+    self_type: &ValkyrieType,
+    trait_views: &[TraitModuleView],
+) -> BTreeMap<Identifier, ValkyrieType> {
+    let Some(trait_declaration) = declaration.trait_declaration
+    else {
+        return BTreeMap::new();
+    };
+    trait_views
+        .get(declaration.module)
+        .and_then(|view| view.associated_type_equations(trait_declaration, self_type, &[]))
+        .unwrap_or_default()
 }
 
 /// witness 候选的精确代入：impl owner 必须与 witness 冻结的接收者实例结构化同一，
@@ -166,9 +206,14 @@ fn discharge_trait_witness(
 ///
 /// 不做等长检查时，形参个数不同的候选会退化成「只按返回类型匹配」，这正是跨 owner
 /// 错选 witness 的来源；因此这里对不等长候选直接判不合格。
-fn derive_witness_substitution(declaration: &CallableDeclaration, call: &HirResolvedCall) -> Option<Substitution> {
+fn derive_witness_substitution(
+    declaration: &CallableDeclaration,
+    call: &HirResolvedCall,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
+) -> Option<Substitution> {
     let dispatch = call.trait_dispatch.as_ref()?;
-    let owner = declaration.owner_type.as_ref()?;
+    // trait 默认方法挂在 trait 上，没有 impl owner：具体 self 类型就是它的 owner。
+    let owner = declaration.owner_type.as_ref().unwrap_or(&dispatch.self_type);
     let mut substitution = Substitution::new();
     if !unify_instantiation(owner, &dispatch.self_type, &mut substitution) {
         return None;
@@ -177,8 +222,13 @@ fn derive_witness_substitution(declaration: &CallableDeclaration, call: &HirReso
     if owner_type_generic_binders(owner).iter().any(|binder| !substitution.contains_key(binder)) {
         return None;
     }
-    let declared_params =
-        declaration.function.params.iter().enumerate().map(|(index, param)| declared_param_type(param, index, Some(owner))).collect::<Vec<_>>();
+    let declared_params = declaration
+        .function
+        .params
+        .iter()
+        .enumerate()
+        .map(|(index, param)| substitute_associated_equations(&declared_param_type(param, index, Some(owner)), owner, equations))
+        .collect::<Vec<_>>();
     if declared_params.len() != call.parameter_types.len() {
         return None;
     }
@@ -187,7 +237,8 @@ fn derive_witness_substitution(declaration: &CallableDeclaration, call: &HirReso
             return None;
         }
     }
-    let declared_return = declared_type(&declaration.function.return_type, Some(owner));
+    let declared_return =
+        substitute_associated_equations(&declared_type(&declaration.function.return_type, Some(owner)), owner, equations);
     if !unify_instantiation(&declared_return, &call.return_type, &mut substitution) {
         return None;
     }
@@ -220,14 +271,16 @@ pub(crate) fn instantiate_generic_callables(
     }
     // 每个声明模块的 trait 证据视图：实例化期用它结算解析期被延后的开放义务。
     let relations = modules.iter().map(TypeRelationContext::from_module).collect::<Vec<_>>();
+    // trait 默认方法的关联类型等式按具体 self 类型查询，和上面的证据视图同源。
+    let trait_views = modules.iter().map(TraitModuleView::from_module).collect::<Vec<_>>();
     let mut next_instance = modules.iter().filter_map(super::max_hir_callable_instance_index).max().map_or(0, |index| index.saturating_add(1));
-    let mut instances: BTreeMap<(u32, Substitution), nyar_types::ItemInstanceId> = BTreeMap::new();
+    let mut instances: BTreeMap<InstanceRequest, nyar_types::ItemInstanceId> = BTreeMap::new();
     let mut per_declaration: BTreeMap<u32, usize> = BTreeMap::new();
     let mut rounds = 0usize;
     loop {
         rounds = rounds.saturating_add(1);
         // 1. 收集仍指向开放声明的调用点。
-        let mut requests: BTreeSet<(u32, Substitution)> = BTreeSet::new();
+        let mut requests: BTreeSet<InstanceRequest> = BTreeSet::new();
         for module in modules.iter_mut() {
             visit_module_calls(module, gate, &mut |request| {
                 let call = match request {
@@ -240,7 +293,7 @@ pub(crate) fn instantiate_generic_callables(
                             return;
                         };
                         if declarations.get(&index).is_some_and(|declaration| declaration.function.generics.is_empty()) {
-                            requests.insert((index, Substitution::new()));
+                            requests.insert(InstanceRequest { declaration: index, substitution: Substitution::new(), self_type: None });
                         }
                         return;
                     }
@@ -258,7 +311,7 @@ pub(crate) fn instantiate_generic_callables(
                 // witness 的 declaration 是 trait 方法槽，不在 impl 成员表里；
                 // 必须先换成具体 impl 成员，再按 (声明下标, 代入) 铸造实例。
                 if call.trait_dispatch.is_some() {
-                    let Some((index, substitution)) = discharge_trait_witness(&declarations, &trait_members, call)
+                    let Some((index, substitution, self_type)) = discharge_trait_witness(&declarations, &trait_members, &trait_views, call)
                     else {
                         return;
                     };
@@ -267,7 +320,7 @@ pub(crate) fn instantiate_generic_callables(
                         return;
                     };
                     if !substitution.is_empty() || declaration.function.generics.is_empty() {
-                        requests.insert((index, substitution));
+                        requests.insert(InstanceRequest { declaration: index, substitution, self_type });
                     }
                     return;
                 }
@@ -280,7 +333,7 @@ pub(crate) fn instantiate_generic_callables(
                     // （比如 imply 方法内部自调用），没有替换就不需要铸造实例。
                     // 无泛型函数：空 substitution 是合法的（所有类型本就具体），照常铸造。
                     if !substitution.is_empty() || declaration.function.generics.is_empty() {
-                        requests.insert((index, substitution));
+                        requests.insert(InstanceRequest { declaration: index, substitution, self_type: None });
                     }
                 }
                 // 绑定合同的 provider 同步播种：合同调用点的具体代入同时决定
@@ -294,7 +347,7 @@ pub(crate) fn instantiate_generic_callables(
                     && !substitution.is_empty()
                     && !substitution.values().any(has_unresolved_generic_arguments)
                 {
-                    requests.insert((provider_index, substitution));
+                    requests.insert(InstanceRequest { declaration: provider_index, substitution, self_type: None });
                 }
             });
         }
@@ -317,17 +370,19 @@ pub(crate) fn instantiate_generic_callables(
         }
         // 3. 按稳定序铸造新实例。
         let before = instances.len();
-        for (index, substitution) in &requests {
-            if instances.contains_key(&(*index, substitution.clone())) {
+        for request in &requests {
+            if instances.contains_key(request) {
                 continue;
             }
+            let InstanceRequest { declaration: index, substitution, self_type } = request;
             let Some(declaration) = declarations.get(index)
             else {
                 continue;
             };
+            let equations = self_type.as_ref().map_or_else(BTreeMap::new, |self_type| declaration_equations(declaration, self_type, &trait_views));
             // 解析期对开放目标延后的义务必须在这里按具体代入结算：证据缺失则
             // 不铸造实例，调用点保持未闭合，由既有合同验证结构化失败。
-            if !where_constraints_satisfied(declaration, substitution, relations.get(declaration.module)) {
+            if !where_constraints_satisfied(declaration, substitution, self_type.as_ref(), &equations, relations.get(declaration.module)) {
                 continue;
             }
             let Some(instance) = nyar_types::ItemInstanceId::from_index(next_instance)
@@ -335,8 +390,8 @@ pub(crate) fn instantiate_generic_callables(
                 continue;
             };
             next_instance = next_instance.saturating_add(1);
-            let callable = instantiate_callable(declaration, substitution, instance);
-            instances.insert((*index, substitution.clone()), instance);
+            let callable = instantiate_callable(declaration, substitution, self_type.as_ref(), &equations, instance);
+            instances.insert(request.clone(), instance);
             *per_declaration.entry(*index).or_insert(0) += 1;
             modules[declaration.module].instantiated_callables.push(callable);
             if instances.len() > MAX_GENERIC_INSTANCES {
@@ -360,7 +415,9 @@ pub(crate) fn instantiate_generic_callables(
                         else {
                             return;
                         };
-                        if let Some(instance) = instances.get(&(index, Substitution::new())) {
+                        if let Some(instance) =
+                            instances.get(&InstanceRequest { declaration: index, substitution: Substitution::new(), self_type: None })
+                        {
                             reference.instance = Some(*instance);
                         }
                         return;
@@ -376,11 +433,11 @@ pub(crate) fn instantiate_generic_callables(
                     return;
                 }
                 if call.trait_dispatch.is_some() {
-                    let Some((index, substitution)) = discharge_trait_witness(&declarations, &trait_members, call)
+                    let Some((index, substitution, self_type)) = discharge_trait_witness(&declarations, &trait_members, &trait_views, call)
                     else {
                         return;
                     };
-                    if let Some(instance) = instances.get(&(index, substitution)) {
+                    if let Some(instance) = instances.get(&InstanceRequest { declaration: index, substitution, self_type }) {
                         // witness 义务已由具体 impl 实例偿清：继续把 trait evidence 传到后端
                         // 只会诱发「按签名挑一个实现」的后置猜测。
                         call.instance = Some(*instance);
@@ -400,7 +457,7 @@ pub(crate) fn instantiate_generic_callables(
                 // 仍含开放 binder 的代入是声明体内的自递归/跨结构占位，留给后续
                 // 具体克隆闭合，不能在这里抹掉占位实例。
                 let concrete_attempt = !substitution.is_empty() && !substitution.values().any(has_unresolved_generic_arguments);
-                match instances.get(&(index, substitution)) {
+                match instances.get(&InstanceRequest { declaration: index, substitution, self_type: None }) {
                     Some(instance) => call.instance = Some(*instance),
                     // 具体代入没有铸造出实例（where 证据不足被拒）时，调用点不得保留
                     // 解析期/声明种子留下的开放占位实例，否则缺失证据会被静默放行。
@@ -425,7 +482,7 @@ fn seed_export_surface_requests(
     modules: &[HirModule],
     gate: Option<&crate::compiler::hir::reachability::HirMaterializationGate>,
     declarations: &BTreeMap<u32, CallableDeclaration>,
-    requests: &mut BTreeSet<(u32, Substitution)>,
+    requests: &mut BTreeSet<InstanceRequest>,
 ) {
     let mut concretes = BTreeSet::new();
     for module in modules {
@@ -463,7 +520,7 @@ fn seed_export_surface_requests(
             if substitution.values().any(has_unresolved_generic_arguments) {
                 continue;
             }
-            requests.insert((declaration.index, substitution));
+            requests.insert(InstanceRequest { declaration: declaration.index, substitution, self_type: None });
         }
     }
 }
@@ -533,6 +590,25 @@ fn collect_impl_declarations(modules: &[HirModule]) -> (BTreeMap<u32, CallableDe
                 if let Some(declaration) = method.declaration {
                     trait_members.entry(declaration.index()).or_insert_with(|| method.name.to_string());
                 }
+            }
+            // trait 默认方法：方法体归 trait，impl 只提供 Self 与关联类型。默认方法
+            // 没有 impl owner，具体 self 类型在 witness 消解时进入实例身份。
+            for method in &trait_definition.default_methods {
+                if method.is_abstract {
+                    continue;
+                }
+                let Some(declaration) = method.declaration
+                else {
+                    continue;
+                };
+                trait_members.entry(declaration.index()).or_insert_with(|| method.name.to_string());
+                declarations.entry(declaration.index()).or_insert_with(|| CallableDeclaration {
+                    module: module_index,
+                    index: declaration.index(),
+                    function: method.clone(),
+                    owner_type: None,
+                    trait_declaration: trait_definition.declaration,
+                });
             }
         }
         // impl 成员方法（owner_type 为 impl 目标类型）
@@ -709,24 +785,42 @@ pub(crate) fn unify_instantiation(template: &ValkyrieType, concrete: &ValkyrieTy
 fn instantiate_callable(
     declaration: &CallableDeclaration,
     substitution: &Substitution,
+    self_type: Option<&ValkyrieType>,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
     instance: nyar_types::ItemInstanceId,
 ) -> HirInstantiatedCallable {
-    let owner = declaration.owner_type.as_ref();
+    // trait 默认方法没有 impl owner：调用点冻结的 self 类型就是它的 owner。
+    let owner = self_type.or(declaration.owner_type.as_ref());
     let mut function = declaration.function.clone();
     function.instance = Some(instance);
     // 全部泛型已在签名与体内代入，实例不再携带自己的泛型参数。
     function.generics = Vec::new();
     for (index, param) in function.params.iter_mut().enumerate() {
         let declared = declared_param_type(&declaration.function.params[index], index, owner);
-        param.ty = substitute_type(&declared, substitution);
+        param.ty = instantiate_declared_type(&declared, owner, substitution, equations);
     }
-    function.return_type = substitute_type(&declared_type(&declaration.function.return_type, owner), substitution);
+    function.return_type = instantiate_declared_type(&declaration.function.return_type, owner, substitution, equations);
     for constraint in &mut function.where_constraints {
-        substitute_where_constraint(constraint, substitution, owner);
+        substitute_where_constraint(constraint, substitution, owner, equations);
     }
-    substitute_block(&mut function.body, substitution, owner);
+    substitute_block(&mut function.body, substitution, owner, equations);
     let owner_type = owner.map(|owner| substitute_type(owner, substitution));
     HirInstantiatedCallable { function, owner_type, trait_declaration: declaration.trait_declaration }
+}
+
+/// 声明侧类型 → 实例类型：先落 `Self`/owner，再应用 binder 代入，最后按 impl
+/// 关联类型等式消去 `owner::Assoc` 投影。
+fn instantiate_declared_type(
+    ty: &ValkyrieType,
+    owner: Option<&ValkyrieType>,
+    substitution: &Substitution,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
+) -> ValkyrieType {
+    let substituted = substitute_type(&declared_type(ty, owner), substitution);
+    match owner {
+        Some(owner) => substitute_associated_equations(&substituted, owner, equations),
+        None => substituted,
+    }
 }
 
 /// 把声明侧类型里的 binder 换成代入结果。
@@ -790,15 +884,64 @@ pub(crate) fn substitute_type(ty: &ValkyrieType, substitution: &Substitution) ->
     }
 }
 
-fn substitute_where_constraint(constraint: &mut HirWhereConstraint, substitution: &Substitution, owner: Option<&ValkyrieType>) {
-    constraint.target = substitute_type(&declared_type(&constraint.target, owner), substitution);
+fn substitute_where_constraint(
+    constraint: &mut HirWhereConstraint,
+    substitution: &Substitution,
+    owner: Option<&ValkyrieType>,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
+) {
+    constraint.target = instantiate_declared_type(&constraint.target, owner, substitution, equations);
     for bound in &mut constraint.bounds {
         for argument in &mut bound.type_arguments {
-            *argument = substitute_type(&declared_type(argument, owner), substitution);
+            *argument = instantiate_declared_type(argument, owner, substitution, equations);
         }
         for equation in &mut bound.associated_types {
-            equation.ty = substitute_type(&declared_type(&equation.ty, owner), substitution);
+            equation.ty = instantiate_declared_type(&equation.ty, owner, substitution, equations);
         }
+    }
+}
+
+fn substitute_block(
+    block: &mut HirBlock,
+    substitution: &Substitution,
+    owner: Option<&ValkyrieType>,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
+) {
+    for statement in &mut block.statements {
+        match &mut statement.kind {
+            HirStatementKind::Let { ty, initializer, .. } => {
+                if let Some(ty) = ty {
+                    *ty = instantiate_declared_type(ty, owner, substitution, equations);
+                }
+                if let Some(initializer) = initializer {
+                    substitute_expr(initializer, substitution, owner, equations);
+                }
+            }
+            HirStatementKind::Expr(expr) => substitute_expr(expr, substitution, owner, equations),
+        }
+    }
+    if let Some(expr) = &mut block.expr {
+        substitute_expr(expr, substitution, owner, equations);
+    }
+}
+
+fn substitute_resolved_call(
+    call: &mut HirResolvedCall,
+    substitution: &Substitution,
+    owner: Option<&ValkyrieType>,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
+) {
+    for parameter in &mut call.parameter_types {
+        *parameter = instantiate_declared_type(parameter, owner, substitution, equations);
+    }
+    call.return_type = instantiate_declared_type(&call.return_type, owner, substitution, equations);
+    if let Some(payload) = &mut call.extractor_payload_type {
+        *payload = instantiate_declared_type(payload, owner, substitution, equations);
+    }
+    if let Some(dispatch) = &mut call.trait_dispatch {
+        let self_type = instantiate_declared_type(&dispatch.self_type, owner, substitution, equations);
+        *dispatch =
+            HirTraitDispatch { trait_declaration: dispatch.trait_declaration, method_declaration: dispatch.method_declaration, self_type };
     }
 }
 
@@ -810,86 +953,59 @@ fn substitute_where_constraint(constraint: &mut HirWhereConstraint, substitution
 fn where_constraints_satisfied(
     declaration: &CallableDeclaration,
     substitution: &Substitution,
+    self_type: Option<&ValkyrieType>,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
     relations: Option<&TypeRelationContext>,
 ) -> bool {
     let Some(relations) = relations
     else {
         return false;
     };
-    let owner = declaration.owner_type.as_ref();
+    let owner = self_type.or(declaration.owner_type.as_ref());
     let mut constraints = declaration.function.where_constraints.clone();
     for constraint in &mut constraints {
-        substitute_where_constraint(constraint, substitution, owner);
+        substitute_where_constraint(constraint, substitution, owner, equations);
     }
     relations.satisfies_where_constraints(&constraints, &BTreeMap::new())
 }
 
-fn substitute_block(block: &mut HirBlock, substitution: &Substitution, owner: Option<&ValkyrieType>) {
-    for statement in &mut block.statements {
-        match &mut statement.kind {
-            HirStatementKind::Let { ty, initializer, .. } => {
-                if let Some(ty) = ty {
-                    *ty = substitute_type(&declared_type(ty, owner), substitution);
-                }
-                if let Some(initializer) = initializer {
-                    substitute_expr(initializer, substitution, owner);
-                }
-            }
-            HirStatementKind::Expr(expr) => substitute_expr(expr, substitution, owner),
-        }
-    }
-    if let Some(expr) = &mut block.expr {
-        substitute_expr(expr, substitution, owner);
-    }
-}
-
-fn substitute_resolved_call(call: &mut HirResolvedCall, substitution: &Substitution, owner: Option<&ValkyrieType>) {
-    for parameter in &mut call.parameter_types {
-        *parameter = substitute_type(&declared_type(parameter, owner), substitution);
-    }
-    call.return_type = substitute_type(&declared_type(&call.return_type, owner), substitution);
-    if let Some(payload) = &mut call.extractor_payload_type {
-        *payload = substitute_type(&declared_type(payload, owner), substitution);
-    }
-    if let Some(dispatch) = &mut call.trait_dispatch {
-        let self_type = substitute_type(&declared_type(&dispatch.self_type, owner), substitution);
-        *dispatch =
-            HirTraitDispatch { trait_declaration: dispatch.trait_declaration, method_declaration: dispatch.method_declaration, self_type };
-    }
-}
-
-fn substitute_expr(expr: &mut HirExpr, substitution: &Substitution, owner: Option<&ValkyrieType>) {
+fn substitute_expr(
+    expr: &mut HirExpr,
+    substitution: &Substitution,
+    owner: Option<&ValkyrieType>,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
+) {
     match &mut expr.kind {
         HirExprKind::Cast { ty, expr: inner } => {
-            *ty = substitute_type(&declared_type(ty, owner), substitution);
-            substitute_expr(inner, substitution, owner);
+            *ty = instantiate_declared_type(ty, owner, substitution, equations);
+            substitute_expr(inner, substitution, owner, equations);
         }
         HirExprKind::Lambda { params, return_type, body, .. } => {
             for param in params {
-                param.ty = substitute_type(&declared_type(&param.ty, owner), substitution);
+                param.ty = instantiate_declared_type(&param.ty, owner, substitution, equations);
             }
-            *return_type = substitute_type(&declared_type(return_type, owner), substitution);
-            substitute_block(body, substitution, owner);
+            *return_type = instantiate_declared_type(return_type, owner, substitution, equations);
+            substitute_block(body, substitution, owner, equations);
         }
         HirExprKind::TryScope { result_type, body, .. } => {
             if let Some(ty) = result_type {
-                *ty = substitute_type(&declared_type(ty, owner), substitution);
+                *ty = instantiate_declared_type(ty, owner, substitution, equations);
             }
-            substitute_block(body, substitution, owner);
+            substitute_block(body, substitution, owner, equations);
         }
-        HirExprKind::Block(block) => substitute_block(block, substitution, owner),
+        HirExprKind::Block(block) => substitute_block(block, substitution, owner, equations),
         HirExprKind::If { condition, then_branch, else_branch, .. } => {
-            substitute_expr(condition, substitution, owner);
-            substitute_block(then_branch, substitution, owner);
+            substitute_expr(condition, substitution, owner, equations);
+            substitute_block(then_branch, substitution, owner, equations);
             if let Some(branch) = else_branch {
-                substitute_block(branch, substitution, owner);
+                substitute_block(branch, substitution, owner, equations);
             }
         }
         HirExprKind::IfLet { scrutinee, then_branch, else_branch, .. } => {
-            substitute_expr(scrutinee, substitution, owner);
-            substitute_block(then_branch, substitution, owner);
+            substitute_expr(scrutinee, substitution, owner, equations);
+            substitute_block(then_branch, substitution, owner, equations);
             if let Some(branch) = else_branch {
-                substitute_block(branch, substitution, owner);
+                substitute_block(branch, substitution, owner, equations);
             }
         }
         HirExprKind::Return(Some(value))
@@ -899,114 +1015,119 @@ fn substitute_expr(expr: &mut HirExpr, substitution: &Substitution, owner: Optio
         | HirExprKind::BlockOn(value)
         | HirExprKind::YieldFrom(value)
         | HirExprKind::Raise(value)
-        | HirExprKind::Resume(value) => substitute_expr(value, substitution, owner),
+        | HirExprKind::Resume(value) => substitute_expr(value, substitution, owner, equations),
         HirExprKind::TryPropagate { inner, resolved_ok_variant } => {
-            substitute_expr(inner, substitution, owner);
+            substitute_expr(inner, substitution, owner, equations);
             if let Some(variant) = resolved_ok_variant {
-                substitute_resolved_call(variant, substitution, owner);
+                substitute_resolved_call(variant, substitution, owner, equations);
             }
         }
         HirExprKind::Call { callee, args, resolved } => {
-            substitute_expr(callee, substitution, owner);
+            substitute_expr(callee, substitution, owner, equations);
             for arg in args {
-                substitute_expr(&mut arg.value, substitution, owner);
+                substitute_expr(&mut arg.value, substitution, owner, equations);
             }
             if let Some(resolved) = resolved {
-                substitute_resolved_call(resolved, substitution, owner);
+                substitute_resolved_call(resolved, substitution, owner, equations);
             }
         }
         HirExprKind::Construct { args, resolved, .. } => {
             for arg in args {
-                substitute_expr(arg, substitution, owner);
+                substitute_expr(arg, substitution, owner, equations);
             }
             if let Some(resolved) = resolved {
-                substitute_resolved_call(resolved, substitution, owner);
+                substitute_resolved_call(resolved, substitution, owner, equations);
             }
         }
         HirExprKind::FieldAccess { object, .. } | HirExprKind::FieldInit { value: object, .. } => {
-            substitute_expr(object, substitution, owner);
+            substitute_expr(object, substitution, owner, equations);
         }
         HirExprKind::StoreField { object, value, .. } => {
-            substitute_expr(object, substitution, owner);
-            substitute_expr(value, substitution, owner);
+            substitute_expr(object, substitution, owner, equations);
+            substitute_expr(value, substitution, owner, equations);
         }
         HirExprKind::GenericApply { callee, arguments } => {
-            substitute_expr(callee, substitution, owner);
+            substitute_expr(callee, substitution, owner, equations);
             for argument in arguments {
-                *argument = substitute_type(&declared_type(argument, owner), substitution);
+                *argument = instantiate_declared_type(argument, owner, substitution, equations);
             }
         }
         HirExprKind::ArrayNew { element_type, length } => {
-            *element_type = substitute_type(&declared_type(element_type, owner), substitution);
-            substitute_expr(length, substitution, owner);
+            *element_type = instantiate_declared_type(element_type, owner, substitution, equations);
+            substitute_expr(length, substitution, owner, equations);
         }
         HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
             for item in items {
-                substitute_expr(item, substitution, owner);
+                substitute_expr(item, substitution, owner, equations);
             }
         }
         HirExprKind::Match { scrutinee, arms, .. } | HirExprKind::Case { scrutinee, arms, .. } => {
-            substitute_expr(scrutinee, substitution, owner);
+            substitute_expr(scrutinee, substitution, owner, equations);
             for arm in arms {
                 if let Some(guard) = &mut arm.guard {
-                    substitute_expr(guard, substitution, owner);
+                    substitute_expr(guard, substitution, owner, equations);
                 }
-                substitute_expr(&mut arm.body, substitution, owner);
+                substitute_expr(&mut arm.body, substitution, owner, equations);
             }
         }
         HirExprKind::Loop { iterator, body, condition, .. } => {
             if let Some(iterator) = iterator {
-                substitute_expr(iterator, substitution, owner);
+                substitute_expr(iterator, substitution, owner, equations);
             }
             if let Some(condition) = condition {
-                substitute_expr(condition, substitution, owner);
+                substitute_expr(condition, substitution, owner, equations);
             }
-            substitute_block(body, substitution, owner);
+            substitute_block(body, substitution, owner, equations);
         }
         HirExprKind::Catch { expr: inner, arms } => {
-            substitute_expr(inner, substitution, owner);
+            substitute_expr(inner, substitution, owner, equations);
             for arm in arms {
                 if let Some(guard) = &mut arm.guard {
-                    substitute_expr(guard, substitution, owner);
+                    substitute_expr(guard, substitution, owner, equations);
                 }
-                substitute_expr(&mut arm.body, substitution, owner);
+                substitute_expr(&mut arm.body, substitution, owner, equations);
             }
         }
         HirExprKind::With { base, updates } => {
-            substitute_expr(base, substitution, owner);
+            substitute_expr(base, substitution, owner, equations);
             for (_, update) in updates {
-                substitute_expr(update, substitution, owner);
+                substitute_expr(update, substitution, owner, equations);
             }
         }
         HirExprKind::SuperCall { args, .. } => {
             for arg in args {
-                substitute_expr(arg, substitution, owner);
+                substitute_expr(arg, substitution, owner, equations);
             }
         }
         HirExprKind::Assign { value, .. } | HirExprKind::Break { expr: Some(value), .. } => {
-            substitute_expr(value, substitution, owner);
+            substitute_expr(value, substitution, owner, equations);
         }
         HirExprKind::AnonymousClass { fields, methods, .. } => {
             for (_, value) in fields {
-                substitute_expr(value, substitution, owner);
+                substitute_expr(value, substitution, owner, equations);
             }
             for method in methods {
-                substitute_function(method, substitution, owner);
+                substitute_function(method, substitution, owner, equations);
             }
         }
         _ => {}
     }
 }
 
-fn substitute_function(function: &mut HirFunction, substitution: &Substitution, owner: Option<&ValkyrieType>) {
+fn substitute_function(
+    function: &mut HirFunction,
+    substitution: &Substitution,
+    owner: Option<&ValkyrieType>,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
+) {
     for param in &mut function.params {
-        param.ty = substitute_type(&declared_type(&param.ty, owner), substitution);
+        param.ty = instantiate_declared_type(&param.ty, owner, substitution, equations);
     }
-    function.return_type = substitute_type(&declared_type(&function.return_type, owner), substitution);
+    function.return_type = instantiate_declared_type(&function.return_type, owner, substitution, equations);
     for constraint in &mut function.where_constraints {
-        substitute_where_constraint(constraint, substitution, owner);
+        substitute_where_constraint(constraint, substitution, owner, equations);
     }
-    substitute_block(&mut function.body, substitution, owner);
+    substitute_block(&mut function.body, substitution, owner, equations);
 }
 
 /// 遍历模块（含子模块）内全部 callable 体内的可调用请求点（调用合同与函数作值引用）。
