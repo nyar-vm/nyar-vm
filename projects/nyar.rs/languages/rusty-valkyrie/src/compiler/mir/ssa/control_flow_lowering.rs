@@ -108,6 +108,31 @@ impl MirBuilder {
         else_branch: &Option<Box<crate::compiler::hir::HirBlock>>,
         expected_type: Option<&ValkyrieType>,
     ) -> MirOperand {
+        self.lower_if_expr_impl(condition, then_branch, else_branch, expected_type, true)
+    }
+
+    /// 语句位置的 `if`：臂尾值被丢弃，不得为 merge 块建值参数。
+    ///
+    /// 两条臂的尾表达式仍要 lowering（副作用与调用解析不变），但结果不进入 phi。
+    /// 否则一条臂产出非 `unit` 值、另一条臂产出 `unit` 或提前 `return` 时，
+    /// merge 块只按单侧建参数，另一侧入边不带实参，触发 SMIR007 `jump arity differs`。
+    pub(super) fn lower_if_statement(
+        &mut self,
+        condition: &HirExpr,
+        then_branch: &crate::compiler::hir::HirBlock,
+        else_branch: &Option<Box<crate::compiler::hir::HirBlock>>,
+    ) -> MirOperand {
+        self.lower_if_expr_impl(condition, then_branch, else_branch, None, false)
+    }
+
+    fn lower_if_expr_impl(
+        &mut self,
+        condition: &HirExpr,
+        then_branch: &crate::compiler::hir::HirBlock,
+        else_branch: &Option<Box<crate::compiler::hir::HirBlock>>,
+        expected_type: Option<&ValkyrieType>,
+        carry_value: bool,
+    ) -> MirOperand {
         let condition_type = ValkyrieType::Boolean;
         let cond_val = self.lower_expr_to_operand_with_hint(condition, Some(&condition_type));
         let pre_if_bindings = self.bindings.clone();
@@ -131,7 +156,12 @@ impl MirBuilder {
             // 没有 else 分支的 `if` 在语言层不是值表达式：缺失的 else 一侧没有值
             // 可以与 then 的尾值合并。禁止为它伪造 `Int(0)` / 空文本之类的“默认值”，
             // 那会让任意名义/聚合类型凭空获得一个值，后端只能在不同表示之间猜。
-            let merge_ty = if else_branch.is_some() { Self::branch_merge_type(&then_result, expected_type, &self.value_types) } else { None };
+            let merge_ty = if carry_value && else_branch.is_some() {
+                Self::branch_merge_type(&then_result, expected_type, &self.value_types)
+            }
+            else {
+                None
+            };
             if merge_ty.is_some() {
                 self.ensure_branch_exit_parameter(merge_block, &mut exit_value, merge_ty.clone());
             }
@@ -149,7 +179,8 @@ impl MirBuilder {
             let returns = self.terminator.is_some();
             let exit = (self.current_block, self.bindings.clone());
             if self.terminator.is_none() {
-                let merge_ty = Self::branch_merge_type(&result, expected_type, &self.value_types);
+                let merge_ty =
+                    if carry_value { Self::branch_merge_type(&result, expected_type, &self.value_types) } else { None };
                 if merge_ty.is_some() {
                     self.ensure_branch_exit_parameter(merge_block, &mut exit_value, merge_ty.clone());
                 }

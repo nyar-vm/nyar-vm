@@ -6,7 +6,7 @@ use super::{
 };
 use crate::compiler::types::{
     Identifier, NamePath,
-    hir::{HirExpr, HirFunction, HirPattern, HirStatement, HirStatementKind, ValkyrieType},
+    hir::{HirExpr, HirExprKind, HirFunction, HirPattern, HirStatement, HirStatementKind, ValkyrieType},
 };
 use nyar_types::VariantId;
 use std::collections::BTreeMap;
@@ -398,7 +398,16 @@ impl MirBuilder {
                 }
             }
             HirStatementKind::Expr(expression) => {
-                let _ = self.lower_expr_to_operand(expression);
+                // 语句位置的值被丢弃：`if` 的臂尾值不得为 merge 块建值参数，否则
+                // 两条臂尾类型不一致时只有单侧入边带实参（SMIR007 `jump arity differs`）。
+                match &expression.kind {
+                    HirExprKind::If { condition, then_branch, else_branch } => {
+                        let _ = self.lower_if_statement(condition, then_branch, else_branch);
+                    }
+                    _ => {
+                        let _ = self.lower_expr_to_operand(expression);
+                    }
+                }
             }
         }
     }

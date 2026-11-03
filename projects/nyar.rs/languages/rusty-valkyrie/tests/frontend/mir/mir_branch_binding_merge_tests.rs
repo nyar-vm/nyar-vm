@@ -373,3 +373,77 @@ fn else_if_chain_terminates_at_runtime() {
 fn nested_if_chain_terminates_at_runtime() {
     run_in_node_with_watchdog(NESTED_IF_CHAIN_SOURCE, "chain_nested", &[0, 0], 1);
 }
+
+const DISCARDED_IF_SOURCE: &str = r#"
+micro bool_result(flag: bool) -> bool {
+    return flag
+}
+
+micro unit_result(flag: bool): unit {
+    let ignored: bool = flag
+}
+
+micro statement_if_discards_arms(flag: bool, value: bool) -> bool {
+    if flag {
+        bool_result(value)
+    } else {
+        unit_result(value)
+    }
+    return value
+}
+"#;
+
+/// 语句位置的 `if` 丢弃臂尾值：一条臂产出 `bool`、另一条产出 `unit` 时不得为
+/// merge 块建值参数，否则只有单侧入边带实参，触发 SMIR007 `jump arity differs`。
+#[test]
+fn statement_if_arms_with_different_tail_types_do_not_merge_a_value() {
+    let module = compile(DISCARDED_IF_SOURCE);
+    let function = function(&module, "statement_if_discards_arms");
+    let merge = function.blocks.iter().find(|block| block.label == "merge").expect("if 必须有 merge 块");
+    assert!(merge.parameters.is_empty(), "语句位置 if 的 merge 块不得有值参数：{:?}", merge.parameters);
+    rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&module)
+        .expect("语句位置 if 的两条臂都必须以相同 arity 跳入 merge");
+}
+
+/// 运行期：两条臂都被执行到并正确汇合——`flag` 为真走 then，为假走 else。
+#[test]
+fn statement_if_discard_is_observable_at_runtime() {
+    run_in_node(
+        DISCARDED_IF_SOURCE,
+        "statement_if_discards_arms",
+        "import {readFileSync} from 'node:fs'; \
+         const mod=await WebAssembly.compile(readFileSync(process.argv[1])); const imports={}; for(const imp of WebAssembly.Module.imports(mod)){ if(!imports[imp.module]) imports[imp.module]={}; if(imp.kind==='function') imports[imp.module][imp.name]=()=>0; else if(imp.kind==='global') imports[imp.module][imp.name]=new WebAssembly.Global({value:'i32',mutable:true},0); else if(imp.kind==='memory') imports[imp.module][imp.name]=new WebAssembly.Memory({initial:1}); else imports[imp.module][imp.name]=new WebAssembly.Table({initial:0,element:'anyfunc'}); } \
+         const instance=await WebAssembly.instantiate(mod, imports); \
+         if(instance.exports.statement_if_discards_arms(1,1)!==1) throw new Error('flag=true 必须走 then 臂'); \
+         if(instance.exports.statement_if_discards_arms(0,1)!==1) throw new Error('flag=false 必须走 else 臂');",
+    );
+}
+
+const VALUE_IF_MISMATCH_SOURCE: &str = r#"
+micro bool_result(flag: bool) -> bool {
+    return flag
+}
+
+micro unit_result(flag: bool): unit {
+    let ignored: bool = flag
+}
+
+micro value_if_with_unit_arm(flag: bool, value: bool) -> bool {
+    let chosen: bool = if flag { bool_result(value) } else { unit_result(value) }
+    return chosen
+}
+"#;
+
+/// 反例：值位置的 `if` 仍要求两臂类型一致，`unit` 臂不得冒充 `bool`。
+/// 收紧语句位置的丢弃规则不能把值位置的类型检查一起放宽。
+#[test]
+fn value_position_if_with_mismatched_arm_type_still_fails() {
+    let module = compile(VALUE_IF_MISMATCH_SOURCE);
+    let error = rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&module)
+        .expect_err("值位置 if 的 `unit` 臂不得冒充 `bool`");
+    let message = format!("{error:?}");
+    assert!(
+        message.contains("SMIR007") || message.contains("CAN010") || message.contains("arity") || message.contains("type"),
+        "必须保持结构化失败，实际：{message}"
+    );
+}
