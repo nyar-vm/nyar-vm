@@ -901,6 +901,18 @@ fn substitute_where_constraint(
     }
 }
 
+/// impl 体内：把声明槽位中的 `Self` 代入 impl 头部 target（含泛型实参）。
+///
+/// 与 [`substitute_function`] 的声明期代入同一口径，但只处理方法体，且发生在调用解析
+/// 之前。方法体里 `let`/cast/lambda 等声明槽位若保留未代入的 `SelfType`，局部变量就会
+/// 带上一个与 owner 不同的类型身份，成员调用只看到 owner 上的候选却拿 `SelfType` 去
+/// 匹配，最终报 `unresolved_call`。
+pub(crate) fn substitute_impl_self_declarations(block: &mut HirBlock, owner: &ValkyrieType) {
+    let substitution = Substitution::new();
+    let equations = BTreeMap::new();
+    substitute_block(block, &substitution, Some(owner), &equations);
+}
+
 fn substitute_block(
     block: &mut HirBlock,
     substitution: &Substitution,

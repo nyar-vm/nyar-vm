@@ -715,6 +715,14 @@ impl AstToHir {
         else {
             Vec::new()
         };
+        let mut methods = Vec::with_capacity(imply.methods.len());
+        for method in &imply.methods {
+            let mut lowered = self.lower_method(method)?;
+            // impl 体内 `Self` 就是 impl 头部 target（含泛型实参）：在调用解析前把
+            // 方法体声明槽位里的 `Self` 代入 target，与显式写 target 类型同型。
+            crate::compiler::hir::lowering::substitute_impl_self_declarations(&mut lowered.body, &target);
+            methods.push(lowered);
+        }
         Ok(HirImpl {
             trait_declaration: None,
             declaring_namespace: declaring_namespace.clone(),
@@ -723,7 +731,7 @@ impl AstToHir {
             where_constraints: Vec::new(),
             target,
             trait_path: imply.trait_type.as_ref().map(lower_trait_path_from_type),
-            methods: imply.methods.iter().map(|method| self.lower_method(method)).collect::<Result<Vec<_>, _>>()?,
+            methods,
             associated_type_impls,
             associated_const_impls: Vec::new(),
         })

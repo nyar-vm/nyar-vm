@@ -79,7 +79,7 @@ pub(crate) use generic_binders::{
     register_function_declarations,
 };
 
-pub(crate) use generic_instantiation::{instantiate_generic_callables, unify_instantiation};
+pub(crate) use generic_instantiation::{instantiate_generic_callables, substitute_impl_self_declarations, unify_instantiation};
 #[doc(hidden)]
 pub use generic_instantiation::{MAX_FIXPOINT_ROUNDS, MAX_GENERIC_INSTANCES};
 
