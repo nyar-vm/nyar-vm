@@ -845,8 +845,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *default_target);
             }
             MirTerminator::Unreachable => {
-                // 不可达：发射 Return 防止 fall-through 到下一函数。
-                self.emitter.emit_plain(OdinHeadCode::Return);
+                // 不可达块不得物化为裸 `Return`：加载期 verifier 按 CFG 可达性把每条
+                // `Return` 计入返回形状汇合（与位置无关），空栈 `Return` 会与值返回
+                // 冲突。发射指向本块块首的自旋 `Jump`——运行期不可达（穷举 match 的
+                // no_match 边与 `Never` 臂由前端/canonical 门保证），verifier 在自环上
+                // 收敛且不贡献返回形状，同时终止字节流防止落入下一函数。
+                self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, block.id);
             }
         }
     }
