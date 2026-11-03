@@ -6,6 +6,7 @@
 mod backend_contract_interop_tests;
 mod backend_f64_provider_e2e_tests;
 mod backend_i64_bitwise_provider_e2e_tests;
+mod backend_large_i64_literal_e2e_tests;
 mod backend_match_default_binding_tests;
 mod backend_match_null_payload_e2e_tests;
 mod backend_ovm_array_provider_e2e_tests;
