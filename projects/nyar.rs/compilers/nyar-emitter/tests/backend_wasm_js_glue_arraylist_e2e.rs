@@ -7,19 +7,17 @@
 //! 正向覆盖：`ArrayList<i64>`、嵌套 `ArrayList<ArrayList<i64>>`、`ArrayList<utf8>`。
 //! 反向覆盖：wire 形状错、元素类型错、i64 用 Number、i64 越界——全部必须结构化失败。
 
-use std::collections::BTreeMap;
-use std::process::Command;
+use std::{collections::BTreeMap, process::Command};
 
+use acorn_wasm::{VALTYPE_ANYREF, WasmOpcode, encode_ref_null_anyref};
 use nyar::{HostProjectionBoundary, Identifier, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
     contracts::{Block, BlockRef, ExecutableFunction, Operand, Terminator, Value, ValueRef},
     lowering::backends::wasm::lower_fragment_to_wasm_module_for,
-    nyar_backend_wasi::{WasiPreview, WasmPackageKind, WasmBinaryModule},
+    nyar_backend_wasi::{WasiPreview, WasmBinaryModule, WasmPackageKind, WasmSection},
 };
-use nyar_types::{
-    AggregateLayout, FieldLayout, ItemInstanceId, NyarType, StorageKind, ValueOrigin,
-};
+use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, NyarType, StorageKind, ValueOrigin};
 
 const I64: NyarType = NyarType::Integer64 { signed: true };
 const I32: NyarType = NyarType::Integer32 { signed: true };
@@ -48,14 +46,14 @@ fn sequence_layout(id: u32, element: NyarType, length_ty: NyarType) -> Aggregate
 
 /// 恒等函数：`echo(x: T) -> T`。返回入参句柄，用来验证 glue 写进 VM 内存的
 /// 容器/数组确实能被后续 demarshal 逐元素读回。
-fn identity_function(ty: NyarType, layout: u32) -> ExecutableFunction {
+fn identity_function(ty: NyarType, layout: Option<u32>) -> ExecutableFunction {
     ExecutableFunction {
         symbol: "echo".to_string(),
         return_type: ty.clone(),
         param_types: vec![ty.clone()],
         value_types: BTreeMap::from([(ValueRef(0), ty)]),
-        value_layouts: BTreeMap::from([(ValueRef(0), layout)]),
-        return_layout: Some(layout),
+        value_layouts: layout.map(|layout| BTreeMap::from([(ValueRef(0), layout)])).unwrap_or_default(),
+        return_layout: layout,
         entry: BlockRef(0),
         values: vec![Value { id: ValueRef(0), origin: ValueOrigin::Parameter { index: 0, name: "nums".to_string() } }],
         suspend_points: Vec::new(),
@@ -86,7 +84,7 @@ struct EmittedBridge {
 fn emit_bridge(layouts: &[(NyarType, AggregateLayout)]) -> EmittedBridge {
     let (ty, layout) = layouts.first().expect("至少一个布局").clone();
     let name = QualifiedName::new(vec![Identifier::new("echo")]);
-    let plan = TargetExecutionPlan::from_functions(BTreeMap::from([(name, identity_function(ty, layout.id))]));
+    let plan = TargetExecutionPlan::from_functions(BTreeMap::from([(name, identity_function(ty, Some(layout.id)))]));
     let mut plan = plan;
     for (ty, layout) in layouts {
         plan.testing_register_type_layout(ty.clone(), layout.clone());
@@ -94,13 +92,28 @@ fn emit_bridge(layouts: &[(NyarType, AggregateLayout)]) -> EmittedBridge {
     plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("实例身份"), "echo".to_string());
     plan.testing_freeze_library_export_abis().expect("冻结库导出载体");
     let submission = FragmentSubmission::from_backend_plan(plan);
-    let (module, imports) = lower_fragment_to_wasm_module_for(
-        &submission,
-        HostProjectionBoundary::WasmJsGlue,
-        WasiPreview::Preview2,
-        WasmPackageKind::Library,
-    )
-    .expect("发射 ArrayList 库模块");
+    let (module, imports) =
+        lower_fragment_to_wasm_module_for(&submission, HostProjectionBoundary::WasmJsGlue, WasiPreview::Preview2, WasmPackageKind::Library)
+            .expect("发射 ArrayList 库模块");
+    let spec = module
+        .sections
+        .iter()
+        .find(|section| section.name.as_deref() == Some("nyar.library_invoke"))
+        .map(|section| String::from_utf8_lossy(&section.bytes).to_string())
+        .expect("库模块必须携带 nyar.library_invoke");
+    EmittedBridge { module, imports, spec }
+}
+
+/// 发射无布局的直接类型（如 `Nullable(I64)`）：槽是 anyref，但 schema 是 `Option`。
+fn emit_plain(ty: NyarType) -> EmittedBridge {
+    let name = QualifiedName::new(vec![Identifier::new("echo")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(name, identity_function(ty, None))]));
+    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("实例身份"), "echo".to_string());
+    plan.testing_freeze_library_export_abis().expect("冻结库导出载体");
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    let (module, imports) =
+        lower_fragment_to_wasm_module_for(&submission, HostProjectionBoundary::WasmJsGlue, WasiPreview::Preview2, WasmPackageKind::Library)
+            .expect("发射单值库模块");
     let spec = module
         .sections
         .iter()
@@ -220,7 +233,7 @@ process.stdout.write(JSON.stringify(out));"#,
 }
 
 #[test]
-fn wire_shape_mismatch_fails_at_boundary_with_path()  {
+fn wire_shape_mismatch_fails_at_boundary_with_path() {
     let ty = arraylist_of(I64);
     let bridge = emit_bridge(&[(ty, sequence_layout(1, I64, I32))]);
     let stdout = run_in_node(
@@ -284,4 +297,122 @@ process.stdout.write(JSON.stringify(out));"#,
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
     let message = parsed["error"].as_str().expect("越界 i64 必须结构化失败");
     assert!(message.contains("outside the 64-bit range"), "失败信息必须说明越界: {message}");
+}
+
+// ── 标量元素：缺值 / 类型不符必须带路径与期望类型失败闭合 ─────────────────────
+
+fn arraylist_case(element: NyarType) -> EmittedBridge {
+    emit_bridge(&[(arraylist_of(element.clone()), sequence_layout(1, element, I32))])
+}
+
+/// 调用 `echo`，把抛出的错误消息交回 Rust（空串表示没有报错）。
+fn call_error(bridge: &EmittedBridge, arg_js: &str) -> String {
+    let driver = format!(
+        r#"const out = {{}};
+try {{ await callExport("echo", {arg_js}); }}
+catch (error) {{ out.error = String(error && error.message ? error.message : error); }}
+process.stdout.write(JSON.stringify(out));"#
+    );
+    let stdout = run_in_node(bridge, &driver);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
+    parsed["error"].as_str().unwrap_or("").to_string()
+}
+
+#[test]
+fn i32_element_null_fails_with_path_and_expected_type() {
+    let bridge = arraylist_case(I32);
+    let message = call_error(&bridge, "[1, null, 3]");
+    assert!(message.contains("arg0[1]"), "失败信息必须定位到元素: {message}");
+    assert!(message.contains("I32"), "失败信息必须带期望类型: {message}");
+    assert!(message.contains("expected an integer number"), "失败信息必须说明期望载体: {message}");
+}
+
+#[test]
+fn f64_element_string_fails_with_path_and_expected_type() {
+    let bridge = arraylist_case(NyarType::Float64);
+    let message = call_error(&bridge, "[1.5, \"2.5\"]");
+    assert!(message.contains("arg0[1]"), "失败信息必须定位到元素: {message}");
+    assert!(message.contains("F64"), "失败信息必须带期望类型: {message}");
+    assert!(message.contains("expected a finite number"), "失败信息必须说明期望载体: {message}");
+}
+
+#[test]
+fn char_element_multi_codepoint_fails_with_path_and_expected_type() {
+    let bridge = arraylist_case(NyarType::Character);
+    let message = call_error(&bridge, "[\"ab\"]");
+    assert!(message.contains("arg0[0]"), "失败信息必须定位到元素: {message}");
+    assert!(message.contains("Char"), "失败信息必须带期望类型: {message}");
+    assert!(message.contains("expected a single Unicode code point"), "失败信息必须说明 Char 合同: {message}");
+}
+
+#[test]
+fn undefined_element_fails_with_path_and_expected_type() {
+    let bridge = arraylist_case(I32);
+    let message = call_error(&bridge, "[undefined]");
+    assert!(message.contains("arg0[0]"), "失败信息必须定位到元素: {message}");
+    assert!(message.contains("undefined"), "失败信息必须区分缺值: {message}");
+    assert!(message.contains("I32"), "失败信息必须带期望类型: {message}");
+}
+
+// ── Option 标量内层：三种位置都必须失败闭合 ────────────────────────────────
+
+#[test]
+fn option_scalar_parameter_fails_closed_with_schema() {
+    let bridge = emit_plain(NyarType::Nullable(Box::new(I64)));
+    let schema = spec_exports(&bridge.spec);
+    assert_eq!(schema["echo"]["params"][0]["type"]["kind"], "Option");
+    assert_eq!(schema["echo"]["params"][0]["type"]["inner"]["kind"], "I64");
+    let message = call_error(&bridge, "5n");
+    assert!(message.contains("at arg0"), "失败信息必须带入参路径: {message}");
+    assert!(message.contains("Option<I64>"), "失败信息必须带 schema 内层类型: {message}");
+    assert!(message.contains("no Wasm handle carrier"), "失败信息必须说明载体缺口: {message}");
+}
+
+#[test]
+fn option_scalar_container_element_fails_closed_with_schema() {
+    let bridge = arraylist_case(NyarType::Nullable(Box::new(I64)));
+    let schema = spec_exports(&bridge.spec);
+    assert_eq!(schema["echo"]["params"][0]["type"]["element"]["kind"], "Option");
+    assert_eq!(schema["echo"]["params"][0]["type"]["element"]["inner"]["kind"], "I64");
+    let message = call_error(&bridge, "[5n]");
+    assert!(message.contains("arg0[0]"), "失败信息必须定位到元素: {message}");
+    assert!(message.contains("Option<I64>"), "失败信息必须带 schema 内层类型: {message}");
+}
+
+/// 手工 wasm：`() -> anyref` 直接 `ref.null`，用来实测返回值侧的 Option 反编组。
+fn nullref_module(export: &str) -> WasmBinaryModule {
+    let mut module = WasmBinaryModule::new();
+    module.sections.push(WasmSection { id: 1, name: None, bytes: vec![1, 0x60, 0, 1, VALTYPE_ANYREF] });
+    module.sections.push(WasmSection { id: 3, name: None, bytes: vec![1, 0] });
+    // Export 段（id=7）：1 个函数导出（count / name_len / name / kind=func / func_idx）。
+    let mut exports_payload = vec![1u8];
+    exports_payload.push(u8::try_from(export.len()).expect("export name"));
+    exports_payload.extend(export.as_bytes());
+    exports_payload.extend([0x00, 0x00]);
+    module.sections.push(WasmSection { id: 7, name: None, bytes: exports_payload });
+    let mut body = vec![0u8];
+    encode_ref_null_anyref(&mut body);
+    WasmOpcode::End.encode(&mut body);
+    let mut code = vec![1u8, u8::try_from(body.len()).expect("body len")];
+    code.append(&mut body);
+    module.sections.push(WasmSection { id: 10, name: None, bytes: code });
+    module
+}
+
+#[test]
+fn option_scalar_return_fails_closed_with_schema() {
+    let spec = r#"{"version":0,"exports":{"noop":{"params":[],"returns":{"kind":"Option","inner":{"kind":"I64"}}}}}"#;
+    let bridge = EmittedBridge { module: nullref_module("noop"), imports: Vec::new(), spec: spec.to_string() };
+    let stdout = run_in_node(
+        &bridge,
+        r#"const out = {};
+try { out.value = await callExport("noop", []); }
+catch (error) { out.error = String(error && error.message ? error.message : error); }
+process.stdout.write(JSON.stringify(out));"#,
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
+    let message = parsed["error"].as_str().expect("返回 Option<i64> 必须结构化失败");
+    assert!(message.contains("at return"), "失败信息必须带返回值路径: {message}");
+    assert!(message.contains("Option<I64>"), "失败信息必须带 schema 内层类型: {message}");
+    assert!(message.contains("no Wasm handle carrier"), "失败信息必须说明载体缺口: {message}");
 }

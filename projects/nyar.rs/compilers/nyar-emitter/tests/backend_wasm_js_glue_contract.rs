@@ -25,10 +25,8 @@ fn glue_demarshals_utf8_return_through_host_intern_table() {
     // `Utf8` 返回在 JS glue 轨是宿主 host-intern 句柄；demarshal 必须经
     // `hostResolve` 解码回 JS 字符串，而不是把句柄当数字交给调用方。
     let glue = launcher_for(&spec(r#"{"title":{"params":[],"returns":{"kind":"Utf8"}}}"#));
-    assert!(
-        glue.contains(r#"if (kind === "Utf8" || kind === "Utf16") return raw == null ? "" : hostResolve(raw);"#),
-        "Utf8 返回必须经 host-intern 表解码为字符串:\n{glue}"
-    );
+    assert!(glue.contains("expected a valid host string handle"), "Utf8 返回必须是合法 host-intern 句柄，空引用/越界不得降级为空串:\n{glue}");
+    assert!(glue.contains("return hostResolve(raw);"), "Utf8 返回必须经 host-intern 表解码:\n{glue}");
 }
 
 #[test]
@@ -37,10 +35,8 @@ fn glue_marshals_js_string_utf8_parameter_to_host_handle() {
     // 不把字符串当裸 i32。
     let glue =
         launcher_for(&spec(r#"{"echo":{"params":[{"index":0,"name":"s","type":{"kind":"Utf8"},"carrier":"i32"}],"returns":{"kind":"Utf8"}}}"#));
-    assert!(
-        glue.contains(r#"return typeof value === "string" ? hostIntern(value) : Number(value ?? 0);"#),
-        "JS 字符串入参必须登记为 host-intern 句柄:\n{glue}"
-    );
+    assert!(glue.contains("expected a string or an integer host handle"), "Utf8 入参缺值/类型不符必须失败闭合:\n{glue}");
+    assert!(glue.contains("return hostIntern(value);"), "JS 字符串入参必须登记为 host-intern 句柄:\n{glue}");
 }
 
 // ── handle 载体规则：无桥复合类型一律失败闭合 ─────────────────────────────
@@ -100,10 +96,7 @@ fn glue_call_export_resolves_spec_params_by_position_and_identity() {
         glue.contains("spec.params.map((param, index) => marshalLibraryArg(paramType(param), args[index], `arg${index}`))"),
         "参数必须按声明顺序逐位 marshal:\n{glue}"
     );
-    assert!(
-        glue.contains(r#"demarshalLibraryReturn(spec.returns, raw, "return")"#),
-        "返回值必须按返回 schema demarshal:\n{glue}"
-    );
+    assert!(glue.contains(r#"demarshalLibraryReturn(spec.returns, raw, "return")"#), "返回值必须按返回 schema demarshal:\n{glue}");
     assert!(glue.contains(r#"if (typeof value === "bigint") return value;"#), "i64 参数必须保留 BigInt 原值:\n{glue}");
     assert!(glue.contains("I64 requires a BigInt"), "i64 参数只接受 BigInt / 十进制字符串:\n{glue}");
 }
@@ -114,8 +107,9 @@ fn glue_i64_return_demarshals_as_bigint_without_number_narrowing() {
     // 不得经 Number 收窄（>2^53 静默丢精度，u64 满值 / 负数高位全中招）。
     let glue =
         launcher_for(&spec(r#"{"solve":{"params":[{"index":0,"name":"n","type":{"kind":"I64"},"carrier":"i64"}],"returns":{"kind":"I64"}}}"#));
-    assert!(glue.contains(r#"if (kind === "I64") return raw == null ? null : BigInt(raw);"#), "i64 返回必须透出 BigInt:\n{glue}");
-    assert!(!glue.contains(r#"if (kind === "I64") return raw == null ? null : Number(raw);"#), "i64 返回不得经 Number 收窄:\n{glue}");
+    assert!(glue.contains("expected a BigInt (the wasm i64 carrier)"), "i64 返回必须是 BigInt 载体，缺值/类型不符一律失败闭合:\n{glue}");
+    assert!(glue.contains("return raw;"), "i64 返回必须原样透出 BigInt:\n{glue}");
+    assert!(!glue.contains("Number(raw)"), "i64 返回不得经 Number 收窄:\n{glue}");
 }
 
 #[test]

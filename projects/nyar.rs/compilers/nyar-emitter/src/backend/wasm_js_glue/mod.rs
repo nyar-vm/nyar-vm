@@ -204,6 +204,14 @@ function describePath(path) {{
     return path ? ` at ${{path}}` : "";
 }}
 
+// 值诊断只用于错误信息：显式区分 `null` / `undefined`，避免把缺值渲染成 "object"。
+function describeValue(value) {{
+    if (value === null) return "null";
+    if (value === undefined) return "undefined";
+    if (typeof value === "string") return `string ${{JSON.stringify(value)}}`;
+    return `${{typeof value}} ${{String(value)}}`;
+}}
+
 function bridgeExport(name, role, path) {{
     if (typeof name !== "string" || name.length === 0) {{
         throw new Error(`[wasm-js-glue]${{describePath(path)}}: ABI schema is missing the ` + role + ` export name`);
@@ -238,13 +246,48 @@ function marshalLibraryArg(schema, value, path) {{
             `[wasm-js-glue]${{describePath(path)}}: Cannot marshal I64 from ${{typeof value}} ${{String(value)}}. I64 requires a BigInt or a decimal string; Number cannot represent the full 64-bit range.`
         );
     }}
-    if (kind === "I32" || kind === "F32" || kind === "F64") return Number(value ?? 0);
-    if (kind === "Bool") return value ? 1 : 0;
-    if (kind === "Char") return Number(value ?? 0);
+    // 32/64 位标量一律显式校验：缺值（`undefined`）、显式 `null`、类型不符都不得
+    // 被 `value ?? 0` 补成 0。错误信息必须带路径与期望类型，与本项目
+    // 「缺参不补 0、`array.set` 不静默写第 0 槽」的失败闭合原则一致。
+    if (kind === "I32") {{
+        if (typeof value !== "number" || !Number.isInteger(value)) {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot marshal I32 from ${{describeValue(value)}}: expected an integer number.`);
+        }}
+        if (value < -(2 ** 31) || value > 2 ** 32 - 1) {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot marshal I32 from ${{value}}: outside the 32-bit range.`);
+        }}
+        return value;
+    }}
+    if (kind === "F32" || kind === "F64") {{
+        if (typeof value !== "number" || !Number.isFinite(value)) {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot marshal ${{kind}} from ${{describeValue(value)}}: expected a finite number.`);
+        }}
+        return value;
+    }}
+    if (kind === "Bool") {{
+        if (typeof value !== "boolean") {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot marshal Bool from ${{describeValue(value)}}: expected a boolean.`);
+        }}
+        return value ? 1 : 0;
+    }}
+    if (kind === "Char") {{
+        const codePoint =
+            typeof value === "string" && [...value].length === 1
+                ? value.codePointAt(0)
+                : typeof value === "number" && Number.isInteger(value)
+                  ? value
+                  : null;
+        if (codePoint == null || codePoint < 0 || codePoint > 0x10ffff) {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot marshal Char from ${{describeValue(value)}}: expected a single Unicode code point.`);
+        }}
+        return codePoint;
+    }}
     if (kind === "Utf8" || kind === "Utf16") {{
         // Utf8/Utf16 在 JS glue 轨是 i32 host-intern 句柄：JS 字符串入参在此登记为句柄，
-        // 已是句柄的数值原样透传，避免把字符串当成裸 i32。
-        return typeof value === "string" ? hostIntern(value) : Number(value ?? 0);
+        // 已是句柄的整数原样透传；缺值与类型不符一律失败闭合。
+        if (typeof value === "string") return hostIntern(value);
+        if (typeof value === "number" && Number.isInteger(value)) return value;
+        throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot marshal ${{kind}} from ${{describeValue(value)}}: expected a string or an integer host handle.`);
     }}
     if (kind === "Unit") return undefined;
 
@@ -330,12 +373,45 @@ function demarshalLibraryReturn(schema, raw, path) {{
 
     // ── Primitive carriers ──────────────────────────────────────────────
     // I64：Wasm i64 返回值在 JS 侧天然是 BigInt，原样透出保持全 64 位精度；
-    // 不允许经 Number 收窄（>2^53 静默丢精度）。
-    if (kind === "I64") return raw == null ? null : BigInt(raw);
-    if (kind === "I32" || kind === "F32" || kind === "F64") return Number(raw);
-    if (kind === "Bool") return raw !== 0 && raw !== null;
-    if (kind === "Char") return Number(raw);
-    if (kind === "Utf8" || kind === "Utf16") return raw == null ? "" : hostResolve(raw);
+    // 不允许经 Number 收窄（>2^53 静默丢精度）。返回值侧与入参侧对称：
+    // 空引用或非 BigInt 一律失败闭合，不得降级成 `null`。
+    if (kind === "I64") {{
+        if (typeof raw !== "bigint") {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal I64 from ${{describeValue(raw)}}: expected a BigInt (the wasm i64 carrier).`);
+        }}
+        return raw;
+    }}
+    if (kind === "I32") {{
+        if (typeof raw !== "number" || !Number.isInteger(raw)) {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal I32 from ${{describeValue(raw)}}: expected an integer number.`);
+        }}
+        return raw;
+    }}
+    if (kind === "F32" || kind === "F64") {{
+        if (typeof raw !== "number" || !Number.isFinite(raw)) {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}} from ${{describeValue(raw)}}: expected a finite number.`);
+        }}
+        return raw;
+    }}
+    if (kind === "Bool") {{
+        if (typeof raw !== "number") {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Bool from ${{describeValue(raw)}}: expected the i32 bool carrier.`);
+        }}
+        return raw !== 0;
+    }}
+    if (kind === "Char") {{
+        if (typeof raw !== "number" || !Number.isInteger(raw)) {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Char from ${{describeValue(raw)}}: expected an integer code point.`);
+        }}
+        return raw;
+    }}
+    if (kind === "Utf8" || kind === "Utf16") {{
+        // 空引用/越界句柄不得降级成空串：句柄必须落在已登记的 host 字符串表内。
+        if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0 || raw >= hostValues.length) {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}} from ${{describeValue(raw)}}: expected a valid host string handle.`);
+        }}
+        return hostResolve(raw);
+    }}
 
     // ── Option：与 marshal 对称，null 引用即 None；Some 的内层按自身 schema 反编组 ──
     if (kind === "Option") {{
