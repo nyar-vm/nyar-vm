@@ -41,6 +41,11 @@ pub enum OdinRuntimeError {
         /// 触发 trap 的运算名。
         operation: &'static str,
     },
+    /// 有符号整数溢出 trap（如 `i64::MIN / -1`）：不得 panic 穿透进程。
+    ArithmeticOverflow {
+        /// 触发 trap 的运算名。
+        operation: &'static str,
+    },
     /// `Trap` 指令被执行：前端声明为不可达的块在运行期真的到达了。
     TrapExecuted {
         /// 触发时正在执行的函数名。
@@ -81,6 +86,7 @@ impl Display for OdinRuntimeError {
                 write!(f, "type mismatch: expected {expected}, got {actual}")
             }
             Self::DivisionByZero { operation } => write!(f, "{operation}: division by zero"),
+            Self::ArithmeticOverflow { operation } => write!(f, "{operation}: integer overflow"),
             Self::TrapExecuted { function, ip } => {
                 write!(f, "reached unreachable trap in function `{function}` at pc {ip}")
             }

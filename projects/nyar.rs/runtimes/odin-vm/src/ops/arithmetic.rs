@@ -16,13 +16,15 @@ pub fn execute_arithmetic(instruction: OdinInstruction, frame: &mut Frame, stack
                     if rhs == 0 {
                         return Err(OdinRuntimeError::DivisionByZero { operation: "i32.div_s" });
                     }
-                    lhs.wrapping_div(rhs)
+                    // `i32::MIN / -1` 在数学上溢出 i32 表示范围：不得 panic 或回绕，转结构化错误。
+                    lhs.checked_div(rhs).ok_or(OdinRuntimeError::ArithmeticOverflow { operation: "i32.div_s" })?
                 }
                 OdinHeadCode::I32RemS => {
                     if rhs == 0 {
                         return Err(OdinRuntimeError::DivisionByZero { operation: "i32.rem_s" });
                     }
-                    lhs.wrapping_rem(rhs)
+                    // `i32::MIN % -1` 与除法同源溢出（Rust `wrapping_rem` 会静默给 0）；统一结构化失败。
+                    lhs.checked_rem(rhs).ok_or(OdinRuntimeError::ArithmeticOverflow { operation: "i32.rem_s" })?
                 }
                 _ => unreachable!(),
             };

@@ -22,6 +22,24 @@ pub enum HostOp {
     ConsoleLog,
     /// 有符号 32 位转 64 位。
     I32ToI64,
+    /// 32 位有符号整数转 64 位浮点（IEEE-754，`i32` 全域精确）。
+    I32ToF64,
+    /// 64 位有符号整数转 64 位浮点（超过 2^53 的奇数按 IEEE-754 就近舍入）。
+    I64ToF64,
+    /// 64 位浮点加法（严格 IEEE-754，不 trap：溢出得 ±inf）。
+    F64Add,
+    /// 64 位浮点减法（严格 IEEE-754，不 trap）。
+    F64Sub,
+    /// 64 位浮点乘法（严格 IEEE-754，不 trap）。
+    F64Mul,
+    /// 64 位浮点除法（严格 IEEE-754，不 trap：除零得 ±inf 或 NaN）。
+    F64Div,
+    /// 64 位浮点取负（翻转符号位，保留 NaN 载荷）。
+    F64Neg,
+    /// 64 位浮点转 32 位整数（饱和，NaN 转 0，与 wasm `trunc_sat` 同口径）。
+    F64ToI32,
+    /// 64 位浮点转 64 位整数（饱和，NaN 转 0，与 wasm `trunc_sat` 同口径）。
+    F64ToI64,
     /// 有符号 32 位整除。
     I32Div,
     /// 无符号 32 位整除（`u32` 的 `/`；与有符号 `I32Div` 在最高位为 1 时结论不同）。
@@ -130,6 +148,15 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "string_concat" => HostOp::StringConcat,
         "console_log" => HostOp::ConsoleLog,
         "i32_to_i64" => HostOp::I32ToI64,
+        "i32_to_f64" => HostOp::I32ToF64,
+        "i64_to_f64" => HostOp::I64ToF64,
+        "f64_add" => HostOp::F64Add,
+        "f64_sub" => HostOp::F64Sub,
+        "f64_mul" => HostOp::F64Mul,
+        "f64_div" => HostOp::F64Div,
+        "f64_neg" => HostOp::F64Neg,
+        "f64_to_i32" => HostOp::F64ToI32,
+        "f64_to_i64" => HostOp::F64ToI64,
         "i32_div" => HostOp::I32Div,
         "i32_div_u" => HostOp::I32DivU,
         "i32_rem_u" => HostOp::I32RemU,
@@ -242,13 +269,28 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
             None => Ok(Value::I64(0)),
         },
+        // ---- 浮点：严格 IEEE-754，不 trap；转换统一「饱和 + NaN→0」 ----
+        HostOp::I32ToF64 => match args.first() {
+            Some(Value::I32(value)) => Ok(Value::F64(*value as f64)),
+            Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
+            None => Err(OdinRuntimeError::StackUnderflow),
+        },
+        HostOp::I64ToF64 => Ok(Value::F64(i64_arg_strict(args, 0)? as f64)),
+        HostOp::F64Add => Ok(Value::F64(f64_arg(args, 0)? + f64_arg(args, 1)?)),
+        HostOp::F64Sub => Ok(Value::F64(f64_arg(args, 0)? - f64_arg(args, 1)?)),
+        HostOp::F64Mul => Ok(Value::F64(f64_arg(args, 0)? * f64_arg(args, 1)?)),
+        // 除零不报错：IEEE-754 下 1/0 = +inf、-1/0 = -inf、0/0 = NaN。
+        HostOp::F64Div => Ok(Value::F64(f64_arg(args, 0)? / f64_arg(args, 1)?)),
+        HostOp::F64Neg => Ok(Value::F64(-f64_arg(args, 0)?)),
+        HostOp::F64ToI32 => Ok(Value::I32(f64_to_i32_saturating(f64_arg(args, 0)?))),
+        HostOp::F64ToI64 => Ok(Value::I64(f64_to_i64_saturating(f64_arg(args, 0)?))),
         HostOp::I32Div => {
             let lhs = i32_arg(args, 0)?;
             let rhs = i32_arg(args, 1)?;
             if rhs == 0 {
                 return Err(OdinRuntimeError::DivisionByZero { operation: "host i32_div" });
             }
-            Ok(Value::I32(lhs / rhs))
+            lhs.checked_div(rhs).map(Value::I32).ok_or(OdinRuntimeError::ArithmeticOverflow { operation: "host i32_div" })
         }
         HostOp::I32DivU => {
             let lhs = i32_arg(args, 0)?;
@@ -275,7 +317,8 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             if rhs == 0 {
                 return Err(OdinRuntimeError::DivisionByZero { operation: "host i64_div" });
             }
-            Ok(Value::I64(lhs / rhs))
+            // `i64::MIN / -1` 在 Rust 是溢出 panic；转成结构化错误，避免 abort 进程。
+            lhs.checked_div(rhs).map(Value::I64).ok_or(OdinRuntimeError::ArithmeticOverflow { operation: "host i64_div" })
         }
         HostOp::I64Rem => {
             let lhs = i64_arg(args, 0)?;
@@ -283,7 +326,8 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             if rhs == 0 {
                 return Err(OdinRuntimeError::DivisionByZero { operation: "host i64_rem" });
             }
-            Ok(Value::I64(lhs % rhs))
+            // `i64::MIN % -1` 同样溢出（数学结果为 0，但硬件整除去溢出检查）。
+            lhs.checked_rem(rhs).map(Value::I64).ok_or(OdinRuntimeError::ArithmeticOverflow { operation: "host i64_rem" })
         }
         HostOp::I64DivU => {
             let lhs = i64_arg(args, 0)?;
@@ -410,6 +454,67 @@ fn i32_arg(args: &[Value], index: usize) -> Result<i32, OdinRuntimeError> {
         Some(Value::I64(value)) => Ok(*value as i32),
         Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
         None => Ok(0),
+    }
+}
+
+/// 严格整数取参：缺参报 `StackUnderflow`，不给默认值（浮点族与整数转换共用）。
+fn i64_arg_strict(args: &[Value], index: usize) -> Result<i64, OdinRuntimeError> {
+    match args.get(index) {
+        Some(Value::I64(value)) => Ok(*value),
+        Some(Value::I32(value)) => Ok(*value as i64),
+        Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i64", actual: other.type_name().to_string() }),
+        None => Err(OdinRuntimeError::StackUnderflow),
+    }
+}
+
+/// 严格浮点取参：只接受 `F64` 载体（不做隐式加宽）；缺参 / 其它载体一律结构化失败。
+fn f64_arg(args: &[Value], index: usize) -> Result<f64, OdinRuntimeError> {
+    match args.get(index) {
+        Some(Value::F64(value)) => Ok(*value),
+        Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "f64", actual: other.type_name().to_string() }),
+        None => Err(OdinRuntimeError::StackUnderflow),
+    }
+}
+
+/// 浮点转 `i32`：饱和 + NaN→0（与 wasm `i32.trunc_sat_f64_s` 同口径）。
+///
+/// 显式判界而不依赖 `as` 的平台行为：`NaN` → 0、`+inf`/超上界 → `i32::MAX`、
+/// `-inf`/超下界 → `i32::MIN`，有限值朝零截断。
+fn f64_to_i32_saturating(value: f64) -> i32 {
+    if value.is_nan() {
+        return 0;
+    }
+    let truncated = value.trunc();
+    if truncated <= i32::MIN as f64 {
+        i32::MIN
+    }
+    else if truncated >= i32::MAX as f64 {
+        i32::MAX
+    }
+    else {
+        truncated as i32
+    }
+}
+
+/// 浮点转 `i64`：饱和 + NaN→0（与 wasm `i64.trunc_sat_f64_s` 同口径）。
+///
+/// `i64::MAX as f64` 实际是 2^63，超出 i64 表示范围，不能直接当上界比较，
+/// 因此用 2^63 作为开区间上界、`-2^63` 作为闭区间下界显式判界。
+fn f64_to_i64_saturating(value: f64) -> i64 {
+    if value.is_nan() {
+        return 0;
+    }
+    let truncated = value.trunc();
+    const I64_MIN_AS_F64: f64 = -9_223_372_036_854_775_808.0;
+    const I64_MAX_PLUS_ONE_AS_F64: f64 = 9_223_372_036_854_775_808.0;
+    if truncated <= I64_MIN_AS_F64 {
+        i64::MIN
+    }
+    else if truncated >= I64_MAX_PLUS_ONE_AS_F64 {
+        i64::MAX
+    }
+    else {
+        truncated as i64
     }
 }
 
