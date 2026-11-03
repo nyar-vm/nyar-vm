@@ -111,6 +111,10 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
             Ok(StepResult::Continue)
         }
         OdinHeadCode::Return => Ok(StepResult::Return),
+        OdinHeadCode::Trap => Err(OdinRuntimeError::TrapExecuted {
+            function: ctx.module.functions.get(frame.function_index).map(|function| function.name.clone()).unwrap_or_default(),
+            ip: frame.ip as u32,
+        }),
         OdinHeadCode::Yield => {
             let yielded_value = ctx.stack.pop()?;
             frame.ip += 1;

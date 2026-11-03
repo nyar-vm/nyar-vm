@@ -41,6 +41,22 @@ pub enum OdinRuntimeError {
         /// 触发 trap 的运算名。
         operation: &'static str,
     },
+    /// `Trap` 指令被执行：前端声明为不可达的块在运行期真的到达了。
+    TrapExecuted {
+        /// 触发时正在执行的函数名。
+        function: String,
+        /// 触发时的指令下标（函数内 pc）。
+        ip: u32,
+    },
+    /// 单次调用执行步数超预算：把"挂死"变成可归因的结构化失败。
+    StepBudgetExceeded {
+        /// 触发时正在执行的函数名。
+        function: String,
+        /// 触发时的指令偏移（函数内 pc）。
+        ip: u32,
+        /// 生效的步数预算。
+        limit: u64,
+    },
     /// Module load failure.
     ModuleLoad(String),
     /// Requested feature is not implemented (e.g. JIT while disabled).
@@ -65,6 +81,12 @@ impl Display for OdinRuntimeError {
                 write!(f, "type mismatch: expected {expected}, got {actual}")
             }
             Self::DivisionByZero { operation } => write!(f, "{operation}: division by zero"),
+            Self::TrapExecuted { function, ip } => {
+                write!(f, "reached unreachable trap in function `{function}` at pc {ip}")
+            }
+            Self::StepBudgetExceeded { function, ip, limit } => {
+                write!(f, "step budget exceeded in function `{function}` at pc {ip}: limit {limit} instructions per call")
+            }
             Self::ModuleLoad(message) => write!(f, "failed to load module: {message}"),
             Self::UnsupportedFeature(feature) => write!(f, "unsupported feature: {feature}"),
         }

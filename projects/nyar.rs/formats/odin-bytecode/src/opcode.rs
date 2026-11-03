@@ -11,7 +11,8 @@ pub const ODIN_MAGIC: u32 = 0x4E59_4152;
 /// Current `.nyar` format version.
 ///
 /// 未正式发布前统一为 `0`（v0 基线）；旧版本的模块一律拒绝，不做兼容读取。
-pub const Odin_VERSION: u32 = 0;
+/// 新增 `Trap` 头码（0x0C）属于格式扩展，v1 起生效：旧产物被拒绝、缓存随之失效。
+pub const Odin_VERSION: u32 = 1;
 
 /// Bytecode format contract version（S-W6 provenance / cache 键）。
 /// 与 [`Odin_VERSION`] 同步；格式破坏时两者一并递增。
@@ -48,6 +49,9 @@ pub enum OdinHeadCode {
     Yield = 0x0A,
     /// 异步恢复：弹出栈顶的 Coroutine 值与 resume 值，恢复挂起帧继续执行。
     Resume = 0x0B,
+    /// 执行期 trap：以结构化运行时错误终止当前调用，不再有后继指令。
+    /// 用于发射 `Unreachable`（可达性已被前端声明为不可达）的真 trap 语义。
+    Trap = 0x0C,
     /// 触发代数效应（raise）：弹出栈顶的 effect payload，捕获当前续延并调用 handler。
     /// handler 可选择 resume（控制流回到 resume_target，resume 值在栈顶）或不 resume。
     /// 若 `Effectful::Resume = !`，resume 路径不可达，VM 在尝试 resume 时报错。
@@ -140,6 +144,7 @@ impl OdinHeadCode {
             0x05 => Some(Self::Return),
             0x0A => Some(Self::Yield),
             0x0B => Some(Self::Resume),
+            0x0C => Some(Self::Trap),
             0x0D => Some(Self::PerformEffect),
             0x0F => Some(Self::CallStatic),
             0x10 => Some(Self::Constant),
@@ -264,6 +269,7 @@ impl OdinHeadCode {
             | Self::FieldSet => OdinInstructionForm::Imm1,
             Self::CallIntrinsic | Self::CallImport => OdinInstructionForm::Imm2,
             Self::Nop
+            | Self::Trap
             | Self::Return
             | Self::Resume
             | Self::Pop

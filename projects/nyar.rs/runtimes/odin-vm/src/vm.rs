@@ -26,6 +26,21 @@ impl OdinVm {
         LoadedModule::from_bytes(bytes)
     }
 
+    /// 覆盖单次调用步数预算；`None` 关闭预算。
+    pub fn set_step_budget(&mut self, budget: Option<u64>) {
+        self.executor.set_step_budget(budget);
+    }
+
+    /// 当前生效的单次调用步数预算。
+    pub fn step_budget(&self) -> Option<u64> {
+        self.executor.step_budget()
+    }
+
+    /// 最近一次调用实际执行的指令数。
+    pub fn last_step_count(&self) -> u64 {
+        self.executor.last_step_count()
+    }
+
     /// Runs an exported function with arguments.
     pub fn run(&mut self, module: &LoadedModule, entry: &str, args: Vec<Value>) -> Result<Value, OdinRuntimeError> {
         let mut globals = ModuleGlobals::new(module);

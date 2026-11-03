@@ -595,6 +595,10 @@ fn stack_transfer(
             // Return 结束本帧。允许空栈（void / init）；有值则留给调用方。
             Ok(Vec::new())
         }
+        OdinHeadCode::Trap => {
+            // 执行期 trap 与 Return 同形：无后继、不参与返回形状汇合。
+            Ok(Vec::new())
+        }
         OdinHeadCode::Yield | OdinHeadCode::PerformEffect => {
             require_height(function_index, pc, height, 1)?;
             require_kind(function_index, pc, types, StackKind::Any)?;

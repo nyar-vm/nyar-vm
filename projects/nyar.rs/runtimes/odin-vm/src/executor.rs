@@ -41,6 +41,33 @@ pub fn select_local_roots(locals: &[Value], entry: &StackMapEntry) -> Vec<Value>
     entry.local_root_slots.iter().filter_map(|&slot| locals.get(slot as usize).cloned()).collect()
 }
 
+/// 单次调用默认步数预算。
+///
+/// 取值依据（实测，见 `tests/step_budget.rs`，debug 构建）：
+/// - 常规单测函数：10^2–10^3 条指令（低于预算 5–6 个数量级）；
+/// - 10^3 轮倒计时循环：约 8×10^3 条指令；
+/// - 10^6 轮倒计时循环：8.0×10^6 条指令 / 1.1–1.9s（约 4–7×10^6 条/秒，随机器负载浮动）。
+///
+/// 取 10^8：对 10^6 轮长循环有 12.5 倍余量（等价于 10^6 轮 × 每轮 ≤100 条指令），
+/// 而在 debug 下耗时约 14–24s，**低于外部 test runner 的 60s 超时**，保证预算先触发、
+/// 失败可归因，而不是被进程级超时吞掉。确实需要更长计算的用例应显式提高预算。
+/// `NYAR_OVM_STEP_BUDGET` 可覆盖（0 = 不限）。
+pub const DEFAULT_STEP_BUDGET: u64 = 100_000_000;
+
+/// 环境变量入口：覆盖单次调用步数预算，`0` 表示关闭预算。
+pub const STEP_BUDGET_ENV: &str = "NYAR_OVM_STEP_BUDGET";
+
+fn configured_step_budget() -> Option<u64> {
+    match std::env::var(STEP_BUDGET_ENV) {
+        Ok(raw) => match raw.trim().parse::<u64>() {
+            Ok(0) => None,
+            Ok(limit) => Some(limit),
+            Err(_) => Some(DEFAULT_STEP_BUDGET),
+        },
+        Err(_) => Some(DEFAULT_STEP_BUDGET),
+    }
+}
+
 /// Bytecode interpreter loop.
 pub struct Executor {
     stack: ValueStack,
@@ -50,6 +77,10 @@ pub struct Executor {
     jit: Box<dyn JitCompiler>,
     /// 已成功编译的 NJ1 blob 缓存（避免每次 `run` 重编译）。
     nj1_cache: HashMap<Nj1CacheKey, Nj1CacheEntry>,
+    /// 单次调用步数预算；`None` 表示不设上限。
+    step_budget: Option<u64>,
+    /// 最近一次调用实际执行的指令数（诊断 / 测试）。
+    last_steps: u64,
 }
 
 impl Executor {
@@ -62,7 +93,24 @@ impl Executor {
             frames: Vec::new(),
             jit: Box::new(DisabledJit),
             nj1_cache: HashMap::new(),
+            step_budget: configured_step_budget(),
+            last_steps: 0,
         }
+    }
+
+    /// 覆盖单次调用步数预算；`None` 关闭预算。
+    pub fn set_step_budget(&mut self, budget: Option<u64>) {
+        self.step_budget = budget;
+    }
+
+    /// 当前生效的单次调用步数预算。
+    pub fn step_budget(&self) -> Option<u64> {
+        self.step_budget
+    }
+
+    /// 最近一次 `run` 实际执行的指令数。
+    pub fn last_step_count(&self) -> u64 {
+        self.last_steps
     }
 
     /// Creates an executor with a custom JIT backend.
@@ -275,6 +323,12 @@ impl Executor {
 
         self.frames = vec![frame];
 
+        // 预算按"单次调用"计：本计数器只覆盖这一次 `run` 的整个调用树（含嵌套帧）。
+        // 计数恒定进行（一次 `saturating_add`），`None` 只是不做上限比较，保留诊断值。
+        let step_budget = self.step_budget;
+        let mut executed_steps: u64 = 0;
+        self.last_steps = 0;
+
         while let Some(current) = self.frames.last_mut() {
             let ops_len = module.executable.get(current.function_index).map(|exec| exec.ops.len()).unwrap_or(0);
 
@@ -285,6 +339,17 @@ impl Executor {
 
             let function_index = current.function_index;
             let ip_at_op = current.ip as u32;
+            executed_steps = executed_steps.saturating_add(1);
+            if let Some(limit) = step_budget {
+                if executed_steps > limit {
+                    self.last_steps = executed_steps;
+                    return Err(OdinRuntimeError::StepBudgetExceeded {
+                        function: module.functions.get(function_index).map(|function| function.name.clone()).unwrap_or_default(),
+                        ip: ip_at_op,
+                        limit,
+                    });
+                }
+            }
             let pressure_safepoint = (self.heap.over_soft_limit() || self.heap.nursery_pressure())
                 && module.executable.get(function_index).map(|exec| exec.safepoints.binary_search(&ip_at_op).is_ok()).unwrap_or(false);
 
@@ -328,6 +393,7 @@ impl Executor {
                     );
                     self.apply_relocate_map(&relocate, globals);
                     if self.frames.is_empty() {
+                        self.last_steps = executed_steps;
                         return self.stack.pop().or(Ok(Value::Null));
                     }
                 }
@@ -363,6 +429,7 @@ impl Executor {
                     let coroutine_id = self.heap.alloc_coroutine(state);
                     self.stack.push(Value::Coroutine(coroutine_id));
                     if self.frames.is_empty() {
+                        self.last_steps = executed_steps;
                         return self.stack.pop().or(Ok(Value::Null));
                     }
                 }

@@ -13,8 +13,9 @@ fn structural_opcodes_are_imm1() {
 #[test]
 fn bytecode_format_version_tracks_nyar_version() {
     assert_eq!(BYTECODE_FORMAT_VERSION, Odin_VERSION);
-    // 未正式发布前格式基线统一为 v0；递增格式必须同时抬 `NYAR_VERSION`。
-    assert_eq!(BYTECODE_FORMAT_VERSION, 0);
+    // v1：新增 `Trap` 头码（0x0C）。旧缓存产物因版本不匹配被拒绝，无需迁移读取。
+    // 递增格式必须同时抬 `NYAR_VERSION`。
+    assert_eq!(BYTECODE_FORMAT_VERSION, 1);
 }
 
 #[test]
@@ -129,6 +130,18 @@ fn bitwise_opcodes_round_trip() {
         let decoded = decode_at(&stream, index);
         assert_eq!(decoded.code, *code);
         assert!(decoded.is_valid(), "{code:?} 必须是可解码的 Plain 指令");
+    }
+}
+
+#[test]
+fn trap_opcode_round_trips_and_low_gaps_stay_rejected() {
+    // 0x0C 从"未分配"变为 `Trap`；0x06..0x09、0x0E 仍是未分配槽位，必须 fail-closed。
+    assert_eq!(OdinHeadCode::from_u8(0x0C), Some(OdinHeadCode::Trap), "槽位 0x0C 必须是 Trap");
+    assert_eq!(OdinHeadCode::Trap as u8, 0x0C);
+    assert_eq!(OdinHeadCode::Trap.form(), OdinInstructionForm::Plain);
+    assert_eq!(OdinHeadCode::Trap.code_size(), 1);
+    for byte in [0x06u8, 0x07, 0x08, 0x09, 0x0E] {
+        assert_eq!(OdinHeadCode::from_u8(byte), None, "未分配槽位 0x{byte:02X} 必须拒绝解码");
     }
 }
 
