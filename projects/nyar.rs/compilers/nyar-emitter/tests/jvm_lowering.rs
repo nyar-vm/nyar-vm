@@ -3,7 +3,11 @@
 //! 这些用例直接构造已冻结的片段计划，验证冻结 operator 的机械展开、比较标签
 //! 唯一性，以及未冻结绑定 / 未支持指令的结构化拒绝；不经过前端。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+    process::Command,
+};
 
 use nyar::{ExternalImportLink, Identifier, QualifiedName};
 use nyar_emitter::{
@@ -13,7 +17,7 @@ use nyar_emitter::{
     target_operator::{
         TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
     },
-    testing::lower_fragment_to_jvm_class,
+    testing::{lower_fragment_to_jvm_class, lower_fragment_to_jvm_managed_surface},
 };
 use nyar_types::{
     AggregateLayout, AggregateLayoutPlan, Block, BlockRef, ExecutableFunction, FieldLayout, ImportIndex, Instruction, InstructionKind,
@@ -168,6 +172,68 @@ fn lower_operator_call_with_plan(name: &str, operator: TargetOperatorPlan) -> Jv
     plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), name.to_string());
     plan.testing_register_import(instance, operator_import(operator));
     lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect("frozen operator must lower")
+}
+
+fn java_available() -> bool {
+    Command::new("java").arg("-version").output().map(|output| output.status.success()).unwrap_or(false)
+}
+
+fn write_class(directory: &Path, class_file: &JvmClassFile) {
+    let path = directory.join(format!("{}.class", class_file.internal_name));
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("class package directory");
+    }
+    std::fs::write(&path, class_file.to_bytes().expect("class encoding")).expect("class file write");
+}
+
+/// 把冻结配方降低成 managed surface，返回导出方法的 argv launcher 内部名。
+fn managed_launcher_for(
+    directory: &Path,
+    export: &str,
+    parameter_types: Vec<NyarType>,
+    return_type: NyarType,
+    operator: TargetOperatorPlan,
+    mnemonic: &str,
+) -> String {
+    let instance = ItemInstanceId::from_index(1).expect("operator instance");
+    let result_value = ValueRef(parameter_types.len() as u32);
+    let mut fixture = function("jvm.unsigned.runtime", return_type.clone(), parameter_types.clone());
+    fixture.value_types.insert(result_value, return_type.clone());
+    let arguments = (0..parameter_types.len() as u32).map(|index| Operand::Value(ValueRef(index))).collect();
+    fixture.blocks[0].instructions.push(instr(InstructionKind::Call { callee: Operand::Item(instance), arguments }, vec![result_value]));
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(result_value)) };
+
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("jvm_unsigned_runtime").testing_entry_operation(main);
+    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), export.to_string());
+    plan.testing_register_import(
+        instance,
+        BackendImport {
+            index: ImportIndex::from_index(0).expect("import index"),
+            link: ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec![mnemonic.to_string()]),
+            parameter_types,
+            return_type,
+            target_operator: Some(TargetOperatorBinding::Frozen(operator)),
+        },
+    );
+
+    let (class_file, companions, _) =
+        lower_fragment_to_jvm_managed_surface(&FragmentSubmission::from_backend_plan(plan)).expect("managed surface must lower");
+    write_class(directory, &class_file);
+    for companion in &companions {
+        write_class(directory, companion);
+    }
+    format!("nyar/invoke/{export}")
+}
+
+fn run_launcher(directory: &Path, launcher: &str, arguments: &[&str]) -> std::process::Output {
+    let mut command = Command::new("java");
+    command.arg("-cp").arg(directory).arg(launcher.replace('/', "."));
+    for argument in arguments {
+        command.arg(argument);
+    }
+    command.output().expect("java launcher")
 }
 
 #[test]
@@ -489,6 +555,97 @@ fn unsigned_operator_operand_type_mismatch_is_rejected_structurally() {
 
     let error = lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect_err("operand type mismatch must fail");
     assert!(error.contains("实参载体与冻结 operand_type 不符"), "{error}");
+}
+
+/// 真实 JVM 宿主执行：`Long.divideUnsigned`/`remainderUnsigned`/`lushr` 的高位边界
+/// 必须与 OVM 的无符号语义一致（`-1` 是 `u64::MAX` 的十进制位模式）。
+#[test]
+fn unsigned_long_operators_execute_unsigned_semantics_on_host_java() {
+    if !java_available() {
+        eprintln!("skip jvm host runtime: java not on PATH");
+        return;
+    }
+    let directory = tempfile::tempdir().expect("temp dir");
+
+    let divide = managed_launcher_for(
+        directory.path(),
+        "divide",
+        vec![LONG, LONG],
+        LONG,
+        operator_plan(JvmOperatorCode::LongDivideUnsigned, TargetOperandType::I64, TargetOperandType::I64),
+        "long.divide_unsigned",
+    );
+    let run = run_launcher(directory.path(), &divide, &["-1", "2"]);
+    assert!(run.status.success(), "stderr={}", String::from_utf8_lossy(&run.stderr));
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "9223372036854775807", "u64::MAX/2 必须按无符号商输出");
+
+    // 零除数必须由宿主抛出算术异常，不得静默产出一个值。
+    let run = run_launcher(directory.path(), &divide, &["-1", "0"]);
+    assert!(!run.status.success(), "零除数必须失败: stdout={}", String::from_utf8_lossy(&run.stdout));
+    assert!(String::from_utf8_lossy(&run.stderr).contains("ArithmeticException"), "stderr={}", String::from_utf8_lossy(&run.stderr));
+
+    let remainder = managed_launcher_for(
+        directory.path(),
+        "remainder",
+        vec![LONG, LONG],
+        LONG,
+        operator_plan(JvmOperatorCode::LongRemainderUnsigned, TargetOperandType::I64, TargetOperandType::I64),
+        "long.remainder_unsigned",
+    );
+    let run = run_launcher(directory.path(), &remainder, &["-1", "3"]);
+    assert!(run.status.success(), "stderr={}", String::from_utf8_lossy(&run.stderr));
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "0", "u64::MAX%3 必须按无符号余数输出");
+
+    let shift = managed_launcher_for(
+        directory.path(),
+        "shift",
+        vec![LONG, LONG],
+        LONG,
+        shift_operator_plan(JvmOperatorCode::LongShiftRightUnsigned),
+        "long.shift_right_unsigned",
+    );
+    // 位移量 127 与 63 的低 6 位相同：按 `&63` 截断后结果必须仍是 1。
+    let run = run_launcher(directory.path(), &shift, &["-9223372036854775808", "127"]);
+    assert!(run.status.success(), "stderr={}", String::from_utf8_lossy(&run.stderr));
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "1", "(1<<63) >> 127 必须按 &63 截断为逻辑右移 63");
+}
+
+/// 真实 JVM 宿主执行：`Integer.divideUnsigned`/`remainderUnsigned` 的 `u32` 边界。
+#[test]
+fn unsigned_integer_operators_execute_unsigned_semantics_on_host_java() {
+    if !java_available() {
+        eprintln!("skip jvm host runtime: java not on PATH");
+        return;
+    }
+    let directory = tempfile::tempdir().expect("temp dir");
+
+    let divide = managed_launcher_for(
+        directory.path(),
+        "divide",
+        vec![INTEGER, INTEGER],
+        INTEGER,
+        operator_plan(JvmOperatorCode::IntegerDivideUnsigned, TargetOperandType::I32, TargetOperandType::I32),
+        "integer.divide_unsigned",
+    );
+    let run = run_launcher(directory.path(), &divide, &["-1", "2"]);
+    assert!(run.status.success(), "stderr={}", String::from_utf8_lossy(&run.stderr));
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "2147483647", "u32::MAX/2 必须按无符号商输出");
+
+    let run = run_launcher(directory.path(), &divide, &["-1", "0"]);
+    assert!(!run.status.success(), "零除数必须失败: stdout={}", String::from_utf8_lossy(&run.stdout));
+    assert!(String::from_utf8_lossy(&run.stderr).contains("ArithmeticException"), "stderr={}", String::from_utf8_lossy(&run.stderr));
+
+    let remainder = managed_launcher_for(
+        directory.path(),
+        "remainder",
+        vec![INTEGER, INTEGER],
+        INTEGER,
+        operator_plan(JvmOperatorCode::IntegerRemainderUnsigned, TargetOperandType::I32, TargetOperandType::I32),
+        "integer.remainder_unsigned",
+    );
+    let run = run_launcher(directory.path(), &remainder, &["-1", "3"]);
+    assert!(run.status.success(), "stderr={}", String::from_utf8_lossy(&run.stderr));
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "0", "u32::MAX%3 必须按无符号余数输出");
 }
 
 #[test]
