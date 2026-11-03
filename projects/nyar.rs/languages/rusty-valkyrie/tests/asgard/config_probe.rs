@@ -47,6 +47,7 @@ const CORE_PRIMITIVE_DECLARATIONS: &str = concat!(
 );
 
 /// 一次探针构建的可观察结果：产物目录与 Node 可导入的 glue 入口。
+#[derive(Debug)]
 pub(crate) struct ProbeArtifact {
     _temp: tempfile::TempDir,
     pub(crate) output_dir: PathBuf,
@@ -56,6 +57,56 @@ pub(crate) struct ProbeArtifact {
 /// 构建失败的结构化诊断（保留编译输出原文，失败闭合，不伪造成功）。
 pub(crate) struct ProbeFailure {
     pub(crate) message: String,
+}
+
+/// 依赖 `std` workspace 成员的探针工程构建：`std::types::Option` 是普通
+/// `unite` 声明（带 `OptionKind` 标注），配置读回必须验证它经正式链的行为。
+pub(crate) fn build_probe_project_with_std(prefix: &str, source: &str) -> Result<ProbeArtifact, ProbeFailure> {
+    let temp = tempfile::Builder::new().prefix(prefix).tempdir().expect("探针临时目录");
+    let root = temp.path();
+    let project_dir = root.join("app");
+    let source_dir = project_dir.join("source");
+    fs::create_dir_all(&source_dir).expect("创建探针工程源码目录");
+    let std_path = crate::support::valkyrie_v_package(&["projects", "std"]);
+    fs::write(
+        root.join("legions.von"),
+        format!("{{\n    name: \"asgard-config-probe\",\n    members: [\"{std_path}\", \"app\"]\n}}\n"),
+    )
+    .expect("写入 workspace 清单");
+    fs::write(
+        project_dir.join("legion.von"),
+        "{\n    name: \"app\",\n    artifact: \"library\",\n    dependencies: {\n        \"std\": { version: \"workspace\" }\n    },\n    build: [{ target: \"node\" }]\n}\n",
+    )
+    .expect("写入工程清单");
+    fs::write(source_dir.join("main.v"), source).expect("写入探针配置模块源码");
+    let output_dir = output_dir_of(&project_dir);
+    run_probe_build(temp, project_dir, output_dir)
+}
+
+/// 探针工程输出目录。
+fn output_dir_of(project_dir: &Path) -> PathBuf {
+    project_dir.join("dist").join("probe")
+}
+
+/// 执行正式 `legion build` 并定位 glue；两个探针工程构造共用的尾段。
+fn run_probe_build(temp: tempfile::TempDir, project_dir: PathBuf, output_dir: PathBuf) -> Result<ProbeArtifact, ProbeFailure> {
+    let status = run(&BuildArgs {
+        project_dir: project_dir.clone(),
+        target: CanonicalTarget::parse("node").expect("Node 目标"),
+        output_dir: Some(output_dir.clone()),
+        debug_artifacts: false,
+    });
+    let status = match status {
+        Ok(code) => code,
+        Err(error) => return Err(ProbeFailure { message: format!("legion build 返回错误: {error:?}") }),
+    };
+    if status != ExitCode::SUCCESS {
+        return Err(ProbeFailure { message: format!("legion build 退出码非成功: {status:?}") });
+    }
+
+    let glue_path = find_glue(&output_dir)
+        .ok_or_else(|| ProbeFailure { message: format!("构建成功但输出目录没有 `.mjs` Node glue: {}", list_dir(&output_dir)) })?;
+    Ok(ProbeArtifact { _temp: temp, output_dir, glue_path })
 }
 
 /// 用最小 `legion` 工程（`artifact: "library"` + `target: "node"`）走正式构建链。
@@ -256,4 +307,181 @@ micro label() -> utf8 {
     let text = call_export_through_glue(&artifact, "label", "[]")
         .unwrap_or_else(|diagnostic| panic!("同模块文本返回值必须仍可读回，实际失败：{diagnostic}"));
     assert_eq!(text, "\"asgard\"", "文本返回值不得受聚合字段合同发射影响");
+}
+
+/// 语言事实固化：省略返回类型的函数被拒绝（返回类型无推断）。
+///
+/// 模块级尾表达式要成为可导出的配置入口，合成函数必须携带显式返回类型；
+/// 本测试锁定当前语言事实。若语言引入返回类型推断，本测试必须翻转为正例。
+#[test]
+fn c0_language_fact_omitted_return_type_is_rejected() {
+    let failure = build_probe_project(
+        "asgard-c0-omit-return",
+        r#"[export(name: "configure")]
+micro configure() {
+    return 7
+}
+"#,
+    )
+    .expect_err("省略返回类型当前必须被类型检查拒绝");
+    assert!(
+        failure.message.contains("incompatible with the function return type"),
+        "拒绝诊断必须说明返回类型不匹配：{}",
+        failure.message
+    );
+}
+
+/// 缺口固化：无载荷 unite 变体构造被降低为 `unit`，无法作为导出返回值。
+///
+/// 配置内的枚举式产物类型（如 `ArtifactTarget`）依赖 unite 值跨边界；
+/// 当前正式链在 Semantic MIR 合同处拒绝（返回操作数实际类型为 Unit）。
+/// 缺口闭合后本测试必须翻转为「构造并经 glue 读回变体身份」的正例。
+#[test]
+fn c0_gap_unite_value_construction_lowers_to_unit() {
+    let failure = build_probe_project(
+        "asgard-c0-unite",
+        r#"unite Choice {
+    On
+    Off
+}
+
+[export(name: "configure")]
+micro configure() -> Choice {
+    return Choice.On
+}
+"#,
+    )
+    .expect_err("unite 值构造当前必须在 Semantic MIR 合同处失败");
+    assert!(failure.message.contains("SMIR007"), "诊断必须携带合同代码：{}", failure.message);
+    assert!(failure.message.contains("actual=Unit"), "诊断必须指出变体构造被降低为 Unit：{}", failure.message);
+}
+
+/// 缺口固化：单变体 unite（产物类型枚举的最小形态）同样被降低为 `unit`。
+#[test]
+fn c0_gap_single_variant_unite_construction_lowers_to_unit() {
+    let failure = build_probe_project(
+        "asgard-c0-unite-single",
+        r#"unite Target {
+    Static
+}
+
+[export(name: "configure")]
+micro configure() -> Target {
+    return Target.Static
+}
+"#,
+    )
+    .expect_err("单变体 unite 构造当前必须在 Semantic MIR 合同处失败");
+    assert!(failure.message.contains("SMIR007"), "诊断必须携带合同代码：{}", failure.message);
+    assert!(failure.message.contains("actual=Unit"), "诊断必须指出变体构造被降低为 Unit：{}", failure.message);
+}
+
+/// 缺口固化：结构体字段持有 unite 类型时，canonical 布局无法解析该字段。
+#[test]
+fn c0_gap_struct_field_with_unite_type_unresolved_in_canonical() {
+    let failure = build_probe_project(
+        "asgard-c0-struct-unite-field",
+        r#"unite Choice {
+    On
+    Off
+}
+
+structure Holder {
+    choice: Choice
+}
+
+[export(name: "configure")]
+micro configure() -> Holder {
+    let choice: Choice = Choice.Off
+    return Holder { choice }
+}
+"#,
+    )
+    .expect_err("unite 字段布局当前必须在 canonical 降低处失败");
+    assert!(failure.message.contains("CAN033"), "诊断必须携带合同代码：{}", failure.message);
+}
+
+/// 缺口固化：std 依赖在场时，类型位置的 `utf8` 解析到名义类型，与字符串字面量的
+/// 原始 `utf8` 不一致，返回类型检查在 Semantic MIR 合同处失败。
+///
+/// 配置 SDK 的字段全部是 `utf8`；该缺口闭合前，依赖 std 的配置模块无法完成
+/// 真实类型求值。缺口闭合后本测试必须翻转为正例。
+#[test]
+fn c0_gap_std_dependency_drifts_utf8_type_resolution() {
+    let failure = build_probe_project_with_std(
+        "asgard-c0-std-utf8",
+        r#"[export(name: "title")]
+micro title() -> utf8 {
+    return "asgard"
+}
+"#,
+    )
+    .expect_err("std 在场时 utf8 返回类型当前必须与字面量类型不一致");
+    assert!(failure.message.contains("SMIR007"), "诊断必须携带合同代码：{}", failure.message);
+    assert!(failure.message.contains("actual=Utf8"), "诊断必须保留字面量侧的原始 utf8 事实：{}", failure.message);
+}
+
+/// 缺口固化：`Option<utf8>`（配置内 `output` / `base` / `assets` 的形态）在
+/// std 在场时因 `utf8` 解析漂移无法通过返回类型检查。
+#[test]
+fn c0_gap_std_option_utf8_is_incoherent() {
+    let failure = build_probe_project_with_std(
+        "asgard-c0-std-option-utf8",
+        r#"using std::types::{Option, Some, None};
+
+[export(name: "with_value")]
+micro with_value() -> Option<utf8> {
+    return Some("dist")
+}
+"#,
+    )
+    .expect_err("Option<utf8> 当前必须因 utf8 解析漂移失败");
+    assert!(
+        failure.message.contains("incompatible with the function return type"),
+        "诊断必须说明返回类型不匹配：{}",
+        failure.message
+    );
+}
+
+/// 缺口固化：`Option<结构体>` 的构造在 std 在场时调用解析失败。
+#[test]
+fn c0_gap_std_option_struct_constructor_unresolved() {
+    let failure = build_probe_project_with_std(
+        "asgard-c0-std-option-struct",
+        r#"using std::types::{Option, Some, None};
+
+structure Endpoint {
+    host: utf8
+    port: u32
+}
+
+[export(name: "with_value")]
+micro with_value() -> Option<Endpoint> {
+    return Some(Endpoint { host: "127.0.0.1", port: 3000 })
+}
+"#,
+    )
+    .expect_err("Option<结构体> 构造当前必须解析失败");
+    assert!(failure.message.contains("unresolved"), "诊断必须指出构造解析失败：{}", failure.message);
+}
+
+/// 缺口固化：裸对象字面量不是合法表达式，模块尾表达式作者形态尚不可解析。
+#[test]
+fn c0_gap_bare_object_literal_tail_is_not_parseable() {
+    let failure = build_probe_project(
+        "asgard-c0-von-literal",
+        r#"{
+    artifact: {
+        target: "static"
+        entry: "source/index.w"
+    }
+}
+"#,
+    )
+    .expect_err("裸对象字面量尾表达式当前必须解析失败");
+    assert!(
+        failure.message.contains("valkyrie.frontend.parse.syntax"),
+        "诊断必须携带解析阶段代码：{}",
+        failure.message
+    );
 }
