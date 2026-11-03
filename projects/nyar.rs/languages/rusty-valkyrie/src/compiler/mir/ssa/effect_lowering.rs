@@ -437,6 +437,8 @@ impl MirBuilder {
                     self.terminator = None;
                     self.bindings = saved_bindings.clone();
                     self.static_bindings = saved_static_bindings.clone();
+                    // sum 载荷在判别成功后继块顶部物化，与 match / if-let 同一合同。
+                    let payload = payload.map(|payload| self.materialize_probe_payload(payload));
                     self.bind_catch_arm_pattern(&arm.pattern, raised_operand, payload);
                 }
 

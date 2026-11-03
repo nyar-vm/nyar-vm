@@ -108,7 +108,6 @@ impl MirBuilder {
                 self.bindings = saved_bindings.clone();
                 self.static_bindings = saved_static_bindings.clone();
                 let (matched, payload) = self.lower_pattern_match_probe(&arm.pattern, scrutinee_operand.clone());
-                extractor_payload = payload;
                 self.terminate(MirTerminator::Branch { condition: matched, then_target: body_or_guard_block, else_target: next_target });
                 self.flush_block(&arm_label);
                 self.current_block = body_or_guard_block;
@@ -117,6 +116,9 @@ impl MirBuilder {
                 self.terminator = None;
                 self.bindings = saved_bindings.clone();
                 self.static_bindings = saved_static_bindings.clone();
+                // sum 载荷延后在判别成功的后继块物化：check 块只承担 tag 判定，
+                // nullary 变体的 null 载荷槽不会在未匹配路径被读（wasm `ref.cast` trap）。
+                extractor_payload = payload.map(|payload| self.materialize_probe_payload(payload));
             }
 
             if let Some(guard) = &arm.guard {

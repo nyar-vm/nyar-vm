@@ -223,7 +223,7 @@ impl MirBuilder {
         }
     }
 
-    pub(crate) fn lower_pattern_match_probe(&mut self, pattern: &HirPattern, value: MirOperand) -> (MirOperand, Option<MirOperand>) {
+    pub(crate) fn lower_pattern_match_probe(&mut self, pattern: &HirPattern, value: MirOperand) -> (MirOperand, Option<ProbePayload>) {
         match pattern {
             HirPattern::Extractor(extractor) => {
                 // Tagged unite/enum：按 tag 判别（空字段与带字段均适用）。
@@ -237,9 +237,35 @@ impl MirBuilder {
                 let nullable = self.lower_extractor_call_operand(resolved, value.clone());
                 let matched = self.lower_nullable_some_operand(nullable.clone());
                 let condition = self.lower_extractor_nested_pattern_match_operand(extractor, nullable.clone(), matched, resolved);
-                (condition, Some(nullable))
+                (condition, Some(ProbePayload::Materialized(nullable)))
             }
             _ => (self.lower_pattern_match_operand(pattern, value), None),
+        }
+    }
+
+    /// 把 probe 返回的载荷在**当前块**物化为 `SumPayloadGet`。
+    ///
+    /// 调用点必须保证当前块只从「tag 判别已成功」的边可达：nullary 变体的载荷槽
+    /// 按合同为 null（见 `HirPattern::Extractor` 空字段早退），在 check 块急切提取
+    /// 会让 wasm 的 `ref.cast`/`struct.get` 在 `None` scrutinee 上 trap。
+    pub(crate) fn materialize_probe_payload(&mut self, payload: ProbePayload) -> MirOperand {
+        match payload {
+            ProbePayload::Materialized(operand) => operand,
+            ProbePayload::DeferredSum(spec) => {
+                let output = self.next_value(MirValueOrigin::Temporary);
+                self.push_instruction(
+                    MirOperation::SumPayloadGet {
+                        nominal: spec.nominal,
+                        type_args: spec.type_args,
+                        variant: spec.variant,
+                        payload_type: spec.payload_type.clone(),
+                        object: spec.object,
+                    },
+                    vec![output],
+                );
+                self.value_types.insert(output, spec.payload_type);
+                MirOperand::Value(output)
+            }
         }
     }
 
@@ -385,12 +411,13 @@ impl MirBuilder {
         self.lower_extractor_nested_pattern_match_operand(extractor, nullable, matched, resolved)
     }
 
-    /// Constructor extractor on a sum scrutinee → `SumVariantIs`；带字段时再 `SumPayloadGet`。
+    /// Constructor extractor on a sum scrutinee → `SumVariantIs`；带字段时载荷只登记
+    /// 为 `DeferredSumPayload` 计划，由成功后继块物化，不得在判别前读 null 载荷槽。
     fn try_lower_sum_constructor_tag_match(
         &mut self,
         extractor: &HirExtractorPattern,
         value: MirOperand,
-    ) -> Option<(MirOperand, Option<MirOperand>)> {
+    ) -> Option<(MirOperand, Option<ProbePayload>)> {
         let HirExtractorPattern::Constructor { name, fields, resolved, .. } = extractor
         else {
             return None;
@@ -404,68 +431,62 @@ impl MirBuilder {
         // Prefer sum-layout payload typing (substitutes Result Apply args). HIR-resolved
         // extractor metadata often still carries unbound `T`/`E` and must not win.
         // Never fall through to FieldGet `payload` against a payload-struct layout.
-        let payload = if let Some(payload) = self.lower_sum_payload_operand(&actual_type, name, value.clone(), resolved_ref) {
-            payload
+        let payload_spec = if let Some(spec) = self.plan_sum_payload(&actual_type, name, value.clone(), resolved_ref) {
+            spec
         }
         else if let Some(resolved) = resolved_ref {
-            self.try_lower_result_option_extractor(resolved, value.clone())
-                .or_else(|| self.lower_sum_payload_operand(&actual_type, name, value.clone(), Some(resolved)))?
+            self.plan_result_option_payload(resolved, value.clone())
+                .or_else(|| self.plan_sum_payload(&actual_type, name, value.clone(), Some(resolved)))?
         }
         else {
             return None;
         };
-        Some((condition, Some(payload)))
+        Some((condition, Some(ProbePayload::DeferredSum(payload_spec))))
     }
 
-    /// Emit `SumPayloadGet` for a sum scrutinee and register the variant payload type.
-    fn lower_sum_payload_operand(
+    /// 登记 `SumPayloadGet` 所需的 sum 载荷事实（不发射指令）。
+    fn plan_sum_payload(
         &mut self,
         actual_type: &ValkyrieType,
         variant_name: &NamePath,
         value: MirOperand,
         resolved: Option<&HirResolvedCall>,
-    ) -> Option<MirOperand> {
+    ) -> Option<DeferredSumPayload> {
         let pattern_variant = variant_name.name();
         let variant = pattern_variant.as_str();
         let (nominal, variant_id) = self.resolve_sum_variant_identity(actual_type, variant, resolved)?;
         let payload_ty = self.resolve_sum_variant_payload_type(actual_type, variant, resolved)?;
-        let output = self.next_value(MirValueOrigin::Temporary);
-        self.push_instruction(
-            MirOperation::SumPayloadGet {
-                // Alias scrutinees (`VonParseResult`) must still name the declared unite (`Result`).
-                nominal,
-                type_args: self.sum_type_args_for_scrutinee(actual_type),
-                variant: variant_id,
-                payload_type: payload_ty.clone(),
-                object: value,
-            },
-            vec![output],
-        );
-        self.value_types.insert(output, payload_ty);
-        Some(MirOperand::Value(output))
+        Some(DeferredSumPayload {
+            object: value,
+            nominal,
+            type_args: self.sum_type_args_for_scrutinee(actual_type),
+            variant: variant_id,
+            payload_type: payload_ty,
+        })
     }
 
     /// `case Fine(x)` / `Fail(e)` / `Some(v)` must use SumPayloadGet — never FieldGet
     /// against a payload structure layout (that caused SMIR010 on LegionSourceClosurePlan).
-    fn try_lower_result_option_extractor(&mut self, resolved: &HirResolvedCall, value: MirOperand) -> Option<MirOperand> {
+    fn plan_result_option_payload(&mut self, resolved: &HirResolvedCall, value: MirOperand) -> Option<DeferredSumPayload> {
         let (owner, variant_declaration) = resolved.sum_owner.zip(resolved.sum_variant)?;
         let (nominal, variant_id) = self.sum_identity_by_declarations(owner, variant_declaration)?;
         let object_ty = infer_builder_operand_type(&value, &self.value_types)?;
         // 具体实参代入优先于 HIR 上残留的 Named("T"|"E")；禁止 Fine/Fail/Some 拼写选槽。
         let payload_ty = self.resolve_sum_variant_payload_type(&object_ty, "", Some(resolved))?;
-        let output = self.next_value(MirValueOrigin::Temporary);
-        self.push_instruction(
-            MirOperation::SumPayloadGet {
-                nominal,
-                type_args: crate::compiler::mir::ssa::expr_lowering::type_args_from_sum_shaped(&object_ty),
-                variant: variant_id,
-                payload_type: payload_ty.clone(),
-                object: value,
-            },
-            vec![output],
-        );
-        self.value_types.insert(output, payload_ty);
-        Some(MirOperand::Value(output))
+        Some(DeferredSumPayload {
+            object: value,
+            nominal,
+            type_args: crate::compiler::mir::ssa::expr_lowering::type_args_from_sum_shaped(&object_ty),
+            variant: variant_id,
+            payload_type: payload_ty,
+        })
+    }
+
+    /// `case Fine(x)` / `Fail(e)` / `Some(v)` must use SumPayloadGet — never FieldGet
+    /// against a payload structure layout (that caused SMIR010 on LegionSourceClosurePlan).
+    fn try_lower_result_option_extractor(&mut self, resolved: &HirResolvedCall, value: MirOperand) -> Option<MirOperand> {
+        let spec = self.plan_result_option_payload(resolved, value)?;
+        Some(self.materialize_probe_payload(ProbePayload::DeferredSum(spec)))
     }
 
     pub(crate) fn lower_literal_pattern_match_operand(&mut self, literal: &HirLiteral, value: MirOperand) -> MirOperand {

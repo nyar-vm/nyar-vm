@@ -201,6 +201,8 @@ impl MirBuilder {
 
         self.current_block = then_block;
         self.bindings = pre_bindings.clone();
+        // sum 载荷只在判别成功的 then 分支顶部物化，避免未匹配路径读 null 载荷槽。
+        let payload = payload.map(|payload| self.materialize_probe_payload(payload));
         self.bind_pattern_from_operand_with_payload(pattern, scrutinee_operand, None, payload);
         let then_result = self.lower_branch_block_value(then_branch);
         let then_exit: BranchArmExit = (self.current_block, self.bindings.clone());
@@ -474,6 +476,8 @@ impl MirBuilder {
                     self.bindings.insert(name.clone(), MirOperand::Value(param));
                 }
             }
+            // sum 载荷只在判别成功的 loop_pat_bind 块顶部物化，未匹配路径不读载荷。
+            let payload = payload.map(|payload| self.materialize_probe_payload(payload));
             let element_ty = Self::loop_bind_type_hint(&scrutinee_operand, &self.value_types);
             self.bind_pattern_from_operand_with_payload(loop_pattern, scrutinee_operand, element_ty, payload);
             loop_pattern_bindings = self
