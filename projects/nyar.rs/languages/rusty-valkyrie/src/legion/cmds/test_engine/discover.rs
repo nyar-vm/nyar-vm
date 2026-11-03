@@ -34,8 +34,17 @@ fn discover_in_content(content: &str, compile_only: bool, functions: &mut Vec<Di
     let mut pending_attr = "";
     let mut pending_modifier = "";
 
+    // 文件头 BOM 是编码标记，不是声明序列的一部分；它不得让首行 `[test]` 失去配对。
+    let content = content.strip_prefix('\u{feff}').unwrap_or(content);
+
     for line in content.lines() {
         let trimmed = line.trim();
+
+        // 空白行与注释是 trivia：attribute / 修饰符要跨过它们继续配对紧随其后的声明。
+        // 只按“遇到非声明行就清空”处理会把 `[test]` 后的首条注释当成未配对，从而漏掉该测试。
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("//") {
+            continue;
+        }
 
         if trimmed.starts_with("[test]") {
             pending_attr = "test";

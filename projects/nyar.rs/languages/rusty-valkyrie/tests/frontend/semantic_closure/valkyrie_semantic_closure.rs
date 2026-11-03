@@ -547,3 +547,14 @@ fn member_owner_link_is_gated_by_owner_group_visibility() {
     assert!(!hidden.demanded_declarations.iter().any(|key| key.name == "hash"));
     assert!(hidden.demanded_declarations.iter().any(|key| key.kind == DeclarationKind::Structure && key.name == "i64"));
 }
+
+#[test]
+fn two_test_annotations_become_two_test_entries() {
+    let groups = [(
+        "app",
+        true,
+        vec![file("suite.v", "[test] micro alpha() -> i32 { return 1 }\n[test] micro beta() -> i32 { return 2 }")],
+    )];
+    let closure = plan_from_groups(&groups);
+    assert_eq!(closure.test_entries, vec!["alpha".to_string(), "beta".to_string()]);
+}
