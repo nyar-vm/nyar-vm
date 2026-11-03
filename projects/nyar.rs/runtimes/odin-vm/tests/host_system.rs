@@ -10,6 +10,7 @@ use odin_vm::{
     host::{HostOp, execute_host_op},
     module::LoadedModule,
     output_runtime::capture,
+    random_runtime,
     vm::OdinVm,
 };
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -96,6 +97,112 @@ fn println_rejects_non_declared_carriers_and_short_arguments() {
     assert!(matches!(error, OdinRuntimeError::StackUnderflow));
     let error = run_import_err("println", Vec::new(), 0);
     assert!(matches!(error, OdinRuntimeError::StackUnderflow));
+}
+
+/// 随机测试串行锁：环境变量是进程级状态，涉及 `ODIN_VM_RAND_SEED` 的用例必须互斥。
+static RANDOM_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// xoshiro256**（256 位状态，SplitMix64 播种）在固定种子下的逐值序列。
+/// 换算法或改播种必须同步修改本表——这张表就是确定性证据。
+const SEED_ZERO_SEQUENCE: [u64; 4] = [11091344671253066420, 13793997310169335082, 1900383378846508768, 7684712102626143532];
+const SEED_ONE_SEQUENCE: [u64; 4] = [12966619160104079557, 9600361134598540522, 10590380919521690900, 7218738570589545383];
+const SEED_DEFAULT_SEQUENCE: [u64; 4] = [17006091401577628144, 18369550347859807172, 17024098124861754899, 2308077655910561512];
+
+#[test]
+fn random_u64_matches_xoshiro256_star_star_fixed_seed_sequences() {
+    for (seed, expected) in [(0u64, SEED_ZERO_SEQUENCE), (1u64, SEED_ONE_SEQUENCE), (random_runtime::DEFAULT_SEED, SEED_DEFAULT_SEQUENCE)] {
+        assert_eq!(random_runtime::sequence_from_seed(seed, 4), expected, "seed {seed:#018X}");
+    }
+}
+
+#[test]
+fn random_u64_is_deterministic_across_vm_runs_with_explicit_seed() {
+    let module = import_module("random_u64", Vec::new(), 0);
+    let mut vm = OdinVm::new();
+    vm.set_random_seed(0);
+    let mut observed = Vec::new();
+    for _ in 0..4 {
+        let value = vm.run(&module, "main", Vec::new()).expect("随机调用必须成功");
+        let Value::I64(bits) = value
+        else {
+            panic!("random_u64 必须返回 i64 位模式，实际 {value:?}");
+        };
+        observed.push(bits as u64);
+    }
+    assert_eq!(observed, SEED_ZERO_SEQUENCE, "显式种子下的序列必须与固定表一致");
+
+    // 换一个 VM、同一显式种子：首值必须复现。
+    let mut other = OdinVm::new();
+    other.set_random_seed(1);
+    let value = other.run(&module, "main", Vec::new()).expect("随机调用必须成功");
+    let Value::I64(bits) = value
+    else {
+        panic!("random_u64 必须返回 i64 位模式，实际 {value:?}");
+    };
+    assert_eq!(bits as u64, SEED_ONE_SEQUENCE[0], "同种子必须复现首值");
+}
+
+#[test]
+fn random_u64_default_seed_is_used_only_without_override() {
+    let _guard = RANDOM_ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+    let previous = std::env::var_os(random_runtime::RANDOM_SEED_ENV);
+    unsafe { std::env::remove_var(random_runtime::RANDOM_SEED_ENV) };
+    // 在新线程取首值：保证线程局部随机状态未被子序列用例推进。
+    let value = std::thread::spawn(|| run_ok(HostOp::RandomU64, &[])).join().expect("随机调用必须成功");
+    let Value::I64(bits) = value
+    else {
+        panic!("random_u64 必须返回 i64 位模式，实际 {value:?}");
+    };
+    assert_eq!(bits as u64, SEED_DEFAULT_SEQUENCE[0], "无覆盖时必须用默认固定种子");
+    if let Some(previous) = previous {
+        unsafe { std::env::set_var(random_runtime::RANDOM_SEED_ENV, previous) };
+    }
+}
+
+#[test]
+fn random_u64_env_seed_overrides_default_and_invalid_values_fail() {
+    let _guard = RANDOM_ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+    let previous = std::env::var_os(random_runtime::RANDOM_SEED_ENV);
+    unsafe { std::env::set_var(random_runtime::RANDOM_SEED_ENV, "7") };
+    // 在新线程取首值：线程局部状态首次初始化时才读取环境变量。
+    let value = std::thread::spawn(|| run_ok(HostOp::RandomU64, &[])).join().expect("随机调用必须成功");
+    let Value::I64(bits) = value
+    else {
+        panic!("random_u64 必须返回 i64 位模式，实际 {value:?}");
+    };
+    assert_eq!(bits as u64, random_runtime::sequence_from_seed(7, 1)[0], "环境变量种子必须覆盖默认种子");
+
+    for invalid in ["abc", "-1", "0x10", "18446744073709551616", ""] {
+        let error = random_runtime::parse_seed(random_runtime::RANDOM_SEED_ENV, invalid).expect_err("非法种子必须结构化失败");
+        assert!(
+            matches!(error, OdinRuntimeError::InvalidSeed { source, ref value } if source == random_runtime::RANDOM_SEED_ENV && value == invalid),
+            "种子 {invalid:?} 实际 {error:?}"
+        );
+    }
+
+    // 真实宿主路径：非法环境变量必须让 `random_u64` 结构化失败，而不是静默用默认种子。
+    unsafe { std::env::set_var(random_runtime::RANDOM_SEED_ENV, "abc") };
+    let error = std::thread::spawn(|| run(HostOp::RandomU64, &[])).join().expect("线程必须结束").expect_err("非法种子必须失败");
+    assert!(
+        matches!(error, OdinRuntimeError::InvalidSeed { source, ref value } if source == random_runtime::RANDOM_SEED_ENV && value == "abc"),
+        "实际 {error:?}"
+    );
+
+    if let Some(previous) = previous {
+        unsafe { std::env::set_var(random_runtime::RANDOM_SEED_ENV, previous) };
+    }
+    else {
+        unsafe { std::env::remove_var(random_runtime::RANDOM_SEED_ENV) };
+    }
+}
+
+#[test]
+fn random_seed_priority_is_explicit_then_env_then_default() {
+    assert_eq!(random_runtime::resolve_seed(Some(5), Some("bad")).expect("显式种子优先"), 5);
+    assert_eq!(random_runtime::resolve_seed(None, Some("9")).expect("环境变量可解析"), 9);
+    assert_eq!(random_runtime::resolve_seed(None, None).expect("默认种子"), random_runtime::DEFAULT_SEED);
+    let error = random_runtime::resolve_seed(None, Some("bad")).expect_err("非法环境变量不得回落默认值");
+    assert!(matches!(error, OdinRuntimeError::InvalidSeed { source, .. } if source == random_runtime::RANDOM_SEED_ENV));
 }
 
 #[test]

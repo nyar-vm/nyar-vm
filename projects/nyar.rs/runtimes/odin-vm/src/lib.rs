@@ -28,6 +28,7 @@ pub mod module;
 pub mod nj1_runtime;
 pub mod ops;
 pub mod output_runtime;
+pub mod random_runtime;
 pub mod stack;
 pub mod text_runtime;
 pub mod time_runtime;

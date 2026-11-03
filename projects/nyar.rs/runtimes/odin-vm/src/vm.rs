@@ -5,6 +5,7 @@ use crate::{
     executor::{Executor, validate_argument_count},
     jit::{JitCompiledArtifact, JitCompiler, JitError},
     module::{LoadedModule, ModuleGlobals},
+    random_runtime,
     value::Value,
 };
 use nyar_gc::ObjectHeap;
@@ -39,6 +40,13 @@ impl OdinVm {
     /// 最近一次调用实际执行的指令数。
     pub fn last_step_count(&self) -> u64 {
         self.executor.last_step_count()
+    }
+
+    /// 显式设定随机种子：覆盖 `ODIN_VM_RAND_SEED` 与默认种子，并重置随机序列。
+    ///
+    /// 与 [`Self::set_step_budget`] 同风格：宿主在 `run` 前调用。种子按当前线程生效。
+    pub fn set_random_seed(&mut self, seed: u64) {
+        random_runtime::set_seed(seed);
     }
 
     /// Runs an exported function with arguments.

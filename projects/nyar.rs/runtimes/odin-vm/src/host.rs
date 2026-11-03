@@ -4,7 +4,7 @@ use crate::error::OdinRuntimeError;
 use nyar_gc::{ObjectHeap, ObjectPayload};
 use odin_bytecode::OdinImport;
 
-use crate::{array_runtime, dom_runtime, output_runtime, text_runtime, time_runtime, value::Value};
+use crate::{array_runtime, dom_runtime, output_runtime, random_runtime, text_runtime, time_runtime, value::Value};
 
 /// 与 emitter 约定的宿主导入模块名。
 pub const HOST_IMPORT_MODULE: &str = "nyar.host";
@@ -28,6 +28,8 @@ pub enum HostOp {
     MonotonicMs,
     /// 睡眠给定毫秒数并原样返回；负值结构化失败。
     SleepMs,
+    /// 取一个全宽 64 位原始随机字（无符号位模式由 `Value::I64` 承载，不做范围整形）。
+    RandomU64,
     /// 有符号 32 位转 64 位。
     I32ToI64,
     /// 32 位有符号整数转 64 位浮点（IEEE-754，`i32` 全域精确）。
@@ -199,6 +201,7 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "get_time" => HostOp::GetTime,
         "monotonic_ms" => HostOp::MonotonicMs,
         "sleep_ms" => HostOp::SleepMs,
+        "random_u64" => HostOp::RandomU64,
         "i32_to_i64" => HostOp::I32ToI64,
         "i32_to_f64" => HostOp::I32ToF64,
         "i64_to_f64" => HostOp::I64ToF64,
@@ -305,6 +308,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::GetTime => Ok(Value::I64(time_runtime::epoch_millis())),
         HostOp::MonotonicMs => Ok(Value::I64(time_runtime::monotonic_millis())),
         HostOp::SleepMs => Ok(Value::I32(time_runtime::sleep_ms(i32_arg(args, 0)?)?)),
+        HostOp::RandomU64 => Ok(Value::I64(random_runtime::next_u64()? as i64)),
         HostOp::BeginPhase => {
             let phase = match args.first() {
                 Some(Value::String(name)) if !name.is_empty() => name.clone(),

@@ -79,6 +79,13 @@ pub enum OdinRuntimeError {
         /// 实际收到的负值。
         value: i64,
     },
+    /// 随机种子非法（非十进制、负数或超出 `u64`）：结构化失败，不回落默认种子。
+    InvalidSeed {
+        /// 种子来源（环境变量名或调用方）。
+        source: &'static str,
+        /// 原始文本。
+        value: String,
+    },
     /// `Trap` 指令被执行：前端声明为不可达的块在运行期真的到达了。
     TrapExecuted {
         /// 触发时正在执行的函数名。
@@ -127,6 +134,7 @@ impl Display for OdinRuntimeError {
             Self::UnterminatedCStr { operation } => write!(f, "{operation}: unterminated C string"),
             Self::EmbeddedNul { operation } => write!(f, "{operation}: embedded NUL cannot be represented as C string"),
             Self::NegativeArgument { operation, value } => write!(f, "{operation}: negative argument {value}"),
+            Self::InvalidSeed { source, value } => write!(f, "invalid random seed from {source}: {value:?}"),
             Self::TrapExecuted { function, ip } => {
                 write!(f, "reached unreachable trap in function `{function}` at pc {ip}")
             }
