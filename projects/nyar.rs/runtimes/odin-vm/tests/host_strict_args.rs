@@ -103,7 +103,6 @@ fn dom_ops_require_arguments() {
 
     let mut heap = ObjectHeap::new();
     let element = execute_host_op(HostOp::DomCreateElement, &[Value::String("div".to_string())], &mut heap).expect("创建元素");
-    let text = execute_host_op(HostOp::DomCreateText, &[Value::String("hi".to_string())], &mut heap).expect("创建文本");
     assert_underflow(execute_host_op(HostOp::DomAppend, &[element.clone()], &mut heap), "DomAppend 缺子节点");
     assert_underflow(execute_host_op(HostOp::DomAppend, &[], &mut heap), "DomAppend 零参");
     assert_underflow(execute_host_op(HostOp::DomSetAttr, &[element.clone(), Value::String("id".to_string())], &mut heap), "DomSetAttr 缺值");

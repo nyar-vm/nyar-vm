@@ -8,8 +8,7 @@
 //! panic 失败而不是被吞掉。
 
 use odin_bytecode::{
-    Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData, emit_imm1,
-    emit_imm2, emit_plain, encode_module,
+    Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1, emit_plain, encode_module,
 };
 use odin_vm::{
     ObjectHeap, Value,

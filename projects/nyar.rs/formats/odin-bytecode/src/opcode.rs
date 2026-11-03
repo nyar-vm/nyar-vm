@@ -12,6 +12,10 @@ pub const ODIN_MAGIC: u32 = 0x4E59_4152;
 ///
 /// 未正式发布前统一为 `0`（v0 基线）；旧版本的模块一律拒绝，不做兼容读取。
 /// 新增 `Trap` 头码（0x0C）属于格式扩展，v1 起生效：旧产物被拒绝、缓存随之失效。
+///
+/// 名称沿用 `Odin*` 类型前缀约定（与 `OdinHeadCode` / `OdinInstruction` 一致），
+/// 刻意不改成全大写，避免对公开 ABI 常量做无谓改名。
+#[allow(non_upper_case_globals)]
 pub const Odin_VERSION: u32 = 1;
 
 /// Bytecode format contract version（S-W6 provenance / cache 键）。
