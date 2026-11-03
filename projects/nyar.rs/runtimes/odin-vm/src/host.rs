@@ -4,7 +4,7 @@ use crate::error::OdinRuntimeError;
 use nyar_gc::{ObjectHeap, ObjectPayload};
 use odin_bytecode::OdinImport;
 
-use crate::{array_runtime, dom_runtime, text_runtime, value::Value};
+use crate::{array_runtime, dom_runtime, output_runtime, text_runtime, value::Value};
 
 /// 与 emitter 约定的宿主导入模块名。
 pub const HOST_IMPORT_MODULE: &str = "nyar.host";
@@ -20,6 +20,8 @@ pub enum HostOp {
     StringConcat,
     /// 输出一行控制台日志。
     ConsoleLog,
+    /// 单参数 `println` 重载：i32 按十进制、utf8 原样输出，末尾换行，返回传入值。
+    Println,
     /// 有符号 32 位转 64 位。
     I32ToI64,
     /// 32 位有符号整数转 64 位浮点（IEEE-754，`i32` 全域精确）。
@@ -187,6 +189,7 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "print" => HostOp::Print,
         "string_concat" => HostOp::StringConcat,
         "console_log" => HostOp::ConsoleLog,
+        "println" => HostOp::Println,
         "i32_to_i64" => HostOp::I32ToI64,
         "i32_to_f64" => HostOp::I32ToF64,
         "i64_to_f64" => HostOp::I64ToF64,
@@ -265,7 +268,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
     match op {
         HostOp::Print => {
             let text = args.iter().map(value_display).collect::<Vec<_>>().join("\t");
-            println!("{text}");
+            output_runtime::emit_line(&text);
             Ok(args.last().cloned().unwrap_or(Value::Null))
         }
         HostOp::StringConcat => {
@@ -275,9 +278,21 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         }
         HostOp::ConsoleLog => {
             let value = args.first().ok_or(OdinRuntimeError::StackUnderflow)?;
-            println!("{value}");
+            output_runtime::emit_line(&value.to_string());
             Ok(Value::Null)
         }
+        HostOp::Println => match args.first() {
+            Some(Value::I32(value)) => {
+                output_runtime::emit_line(&value.to_string());
+                Ok(Value::I32(*value))
+            }
+            Some(Value::String(value)) => {
+                output_runtime::emit_line(value);
+                Ok(Value::String(value.clone()))
+            }
+            Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32 or utf8", actual: other.type_name().to_string() }),
+            None => Err(OdinRuntimeError::StackUnderflow),
+        },
         HostOp::BeginPhase => {
             let phase = match args.first() {
                 Some(Value::String(name)) if !name.is_empty() => name.clone(),
