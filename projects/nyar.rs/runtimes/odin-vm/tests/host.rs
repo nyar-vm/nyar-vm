@@ -26,8 +26,11 @@ fn parses_i64_bitwise_host_ops() {
     assert_eq!(parse_host_op("i64_xor"), Some(HostOp::I64Xor));
     assert_eq!(parse_host_op("i64_shl"), Some(HostOp::I64Shl));
     assert_eq!(parse_host_op("i64_shr"), Some(HostOp::I64Shr));
-    let import = OdinImport { kind: odin_bytecode::OdinImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_shr_u".into() };
-    assert!(resolve_import(&import).is_err(), "未登记的位移符号必须在加载期拒绝，不得静默外部化");
+    // `i64_shr_u` 是逻辑右移（`u64` 的 `>>`），已登记；未登记的签名变体仍须在加载期拒绝。
+    let known = OdinImport { kind: odin_bytecode::OdinImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_shr_u".into() };
+    assert_eq!(resolve_import(&known).expect("i64_shr_u 已登记"), ResolvedImport::Host(HostOp::I64ShrU));
+    let unknown = OdinImport { kind: odin_bytecode::OdinImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_shr_s".into() };
+    assert!(resolve_import(&unknown).is_err(), "未登记的位移符号必须在加载期拒绝，不得静默外部化");
 }
 
 #[test]

@@ -24,6 +24,10 @@ pub enum HostOp {
     I32ToI64,
     /// 有符号 32 位整除。
     I32Div,
+    /// 无符号 32 位整除（`u32` 的 `/`；与有符号 `I32Div` 在最高位为 1 时结论不同）。
+    I32DivU,
+    /// 无符号 32 位取余（`u32` 的 `%`）。
+    I32RemU,
     /// 64 位有符号加法。
     I64Add,
     /// 64 位有符号减法。
@@ -34,6 +38,10 @@ pub enum HostOp {
     I64Div,
     /// 64 位有符号取余。
     I64Rem,
+    /// 无符号 64 位整除（`u64` 的 `/`；与有符号 `I64Div` 在最高位为 1 时结论不同）。
+    I64DivU,
+    /// 无符号 64 位取余（`u64` 的 `%`）。
+    I64RemU,
     /// 64 位有符号取负。
     I64Neg,
     /// 64 位有符号相等比较。
@@ -60,6 +68,8 @@ pub enum HostOp {
     I64Shl,
     /// 64 位算术右移（位移量按 `& 63` 截断，与 wasm `i64.shr_s`/JVM `lshr`/MSIL `shr` 一致）。
     I64Shr,
+    /// 64 位逻辑右移（位移量按 `& 63` 截断，与 wasm `i64.shr_u`/JVM `lushr`/MSIL `shr.un` 一致）。
+    I64ShrU,
     /// 布尔取反。
     BoolNot,
     /// 布尔与。
@@ -121,11 +131,15 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "console_log" => HostOp::ConsoleLog,
         "i32_to_i64" => HostOp::I32ToI64,
         "i32_div" => HostOp::I32Div,
+        "i32_div_u" => HostOp::I32DivU,
+        "i32_rem_u" => HostOp::I32RemU,
         "i64_add" => HostOp::I64Add,
         "i64_sub" => HostOp::I64Sub,
         "i64_mul" => HostOp::I64Mul,
         "i64_div" => HostOp::I64Div,
         "i64_rem" => HostOp::I64Rem,
+        "i64_div_u" => HostOp::I64DivU,
+        "i64_rem_u" => HostOp::I64RemU,
         "i64_neg" => HostOp::I64Neg,
         "i64_eq" => HostOp::I64Eq,
         "i64_ne" => HostOp::I64Ne,
@@ -139,6 +153,7 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "i64_xor" => HostOp::I64Xor,
         "i64_shl" => HostOp::I64Shl,
         "i64_shr" => HostOp::I64Shr,
+        "i64_shr_u" => HostOp::I64ShrU,
         "bool_not" => HostOp::BoolNot,
         "bool_and" => HostOp::BoolAnd,
         "bool_or" => HostOp::BoolOr,
@@ -235,6 +250,22 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             }
             Ok(Value::I32(lhs / rhs))
         }
+        HostOp::I32DivU => {
+            let lhs = i32_arg(args, 0)?;
+            let rhs = i32_arg(args, 1)?;
+            if rhs == 0 {
+                return Err(OdinRuntimeError::DivisionByZero { operation: "host i32_div_u" });
+            }
+            Ok(Value::I32((lhs as u32 / rhs as u32) as i32))
+        }
+        HostOp::I32RemU => {
+            let lhs = i32_arg(args, 0)?;
+            let rhs = i32_arg(args, 1)?;
+            if rhs == 0 {
+                return Err(OdinRuntimeError::DivisionByZero { operation: "host i32_rem_u" });
+            }
+            Ok(Value::I32((lhs as u32 % rhs as u32) as i32))
+        }
         HostOp::I64Add => Ok(Value::I64(i64_arg(args, 0)? + i64_arg(args, 1)?)),
         HostOp::I64Sub => Ok(Value::I64(i64_arg(args, 0)? - i64_arg(args, 1)?)),
         HostOp::I64Mul => Ok(Value::I64(i64_arg(args, 0)? * i64_arg(args, 1)?)),
@@ -254,6 +285,22 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             }
             Ok(Value::I64(lhs % rhs))
         }
+        HostOp::I64DivU => {
+            let lhs = i64_arg(args, 0)?;
+            let rhs = i64_arg(args, 1)?;
+            if rhs == 0 {
+                return Err(OdinRuntimeError::DivisionByZero { operation: "host i64_div_u" });
+            }
+            Ok(Value::I64((lhs as u64 / rhs as u64) as i64))
+        }
+        HostOp::I64RemU => {
+            let lhs = i64_arg(args, 0)?;
+            let rhs = i64_arg(args, 1)?;
+            if rhs == 0 {
+                return Err(OdinRuntimeError::DivisionByZero { operation: "host i64_rem_u" });
+            }
+            Ok(Value::I64((lhs as u64 % rhs as u64) as i64))
+        }
         HostOp::I64Neg => Ok(Value::I64(-i64_arg(args, 0)?)),
         HostOp::I64Eq => Ok(Value::Bool(i64_arg(args, 0)? == i64_arg(args, 1)?)),
         HostOp::I64Ne => Ok(Value::Bool(i64_arg(args, 0)? != i64_arg(args, 1)?)),
@@ -267,6 +314,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::I64Xor => Ok(Value::I64(i64_arg(args, 0)? ^ i64_arg(args, 1)?)),
         HostOp::I64Shl => Ok(Value::I64(i64_arg(args, 0)? << (i64_arg(args, 1)? & 63) as u32)),
         HostOp::I64Shr => Ok(Value::I64(i64_arg(args, 0)? >> (i64_arg(args, 1)? & 63) as u32)),
+        HostOp::I64ShrU => Ok(Value::I64((i64_arg(args, 0)? as u64 >> (i64_arg(args, 1)? & 63) as u32) as i64)),
         HostOp::BoolNot => Ok(Value::Bool(!args.first().map(Value::to_bool).unwrap_or(false))),
         HostOp::BoolAnd => {
             Ok(Value::Bool(args.first().map(Value::to_bool).unwrap_or(false) && args.get(1).map(Value::to_bool).unwrap_or(false)))
