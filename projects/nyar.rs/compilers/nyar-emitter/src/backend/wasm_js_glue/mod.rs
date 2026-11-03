@@ -185,9 +185,9 @@ function abiKind(schema) {{
     return null;
 }}
 
-// 判断 schema 是否自带 Wasm handle 载体（容器 / 具名聚合 / 可空）。
-// 与后端 `abi_carrier_name` 的容器集合一致：这些类型在 Wasm 里是 GC 引用，
-// JS 侧只能传递、不能构造；标量需要装箱，不存在 box/unbox 合同。
+// 判断 schema 在 Wasm 里是否直接以 GC 引用承载（容器 / 具名聚合 / 元组 / 嵌套 Option）。
+// 这些值本身就占 anyref 槽，JS 侧只能传递、不能构造；`Option` 的内层若属于此类，
+// 不需要额外的 box/unbox 合同。标量内层必须由 schema 的 `box` 合同放行。
 function hasWasmHandleCarrier(schema) {{
     const kind = abiKind(schema);
     return kind === "NamedAggregate" || kind === "Array" || kind === "FixedArray" || kind === "Tuple" || kind === "Option";
@@ -291,17 +291,26 @@ function marshalLibraryArg(schema, value, path) {{
     }}
     if (kind === "Unit") return undefined;
 
-    // ── Option 是结构化容器：None 就是 null 引用，Some 的内层按自身 schema 编组 ──
-    // 内层必须有 handle 载体（容器 / 具名聚合）；标量内层在 Wasm GC 里是装箱值，
-    // 需要 box/unbox 合同，当前未定义，失败关闭而不是把裸标量当引用传。
+    // ── Option：wire 形状固定为 `None` → null、`Some(v)` → v ─────────────────
+    // Wasm 物理降级是 niche：None 就是空引用；Some(引用) 直接透传句柄；
+    // Some(标量) 必须先按 schema 的 `box` 合同装进后端已注册的 `[i32]`/`[i64]`。
+    // 没有合同就没有表示——宿主不得按 kind 现场造一个。
     if (kind === "Option") {{
-        if (!hasWasmHandleCarrier(schema.inner)) {{
+        if (value === null) return null;
+        if (value === undefined) {{
             throw new Error(
-                `[wasm-js-glue]${{describePath(path)}}: Cannot marshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox ABI contract that is not defined.`
+                `[wasm-js-glue]${{describePath(path)}}: Cannot marshal Option: undefined is not the None wire form. None must be null; Some(v) must be the payload value. Schema: ${{JSON.stringify(schema)}}`
             );
         }}
-        if (value == null) return null;
-        return marshalLibraryArg(schema.inner, value, path);
+        if (hasWasmHandleCarrier(schema.inner)) return marshalLibraryArg(schema.inner, value, path);
+        const contract = schema.box;
+        if (!contract || typeof contract.new !== "string" || typeof contract.get !== "string") {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot marshal Option<${{abiKind(schema.inner)}}>: ABI schema carries no box/unbox contract for this payload carrier. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        const boxNew = bridgeExport(contract.new, "option box constructor", path);
+        return boxNew(marshalLibraryArg(schema.inner, value, path));
     }}
 
     // ── Array / 序列视图：JS 数组 → VM 物理数组，必要时再装配成容器聚合 ──
@@ -413,15 +422,23 @@ function demarshalLibraryReturn(schema, raw, path) {{
         return hostResolve(raw);
     }}
 
-    // ── Option：与 marshal 对称，null 引用即 None；Some 的内层按自身 schema 反编组 ──
+    // ── Option：与 marshal 对称；wire 形状固定为 `None` → null、`Some(v)` → v ──
     if (kind === "Option") {{
-        if (!hasWasmHandleCarrier(schema.inner)) {{
+        if (raw === null) return null;
+        if (raw === undefined) {{
             throw new Error(
-                `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox ABI contract that is not defined.`
+                `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Option: wasm produced no reference slot value (undefined); None is the null reference. Schema: ${{JSON.stringify(schema)}}`
             );
         }}
-        if (raw == null) return null;
-        return demarshalLibraryReturn(schema.inner, raw, path);
+        if (hasWasmHandleCarrier(schema.inner)) return demarshalLibraryReturn(schema.inner, raw, path);
+        const contract = schema.box;
+        if (!contract || typeof contract.new !== "string" || typeof contract.get !== "string") {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Option<${{abiKind(schema.inner)}}>: ABI schema carries no box/unbox contract for this payload carrier. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        const boxGet = bridgeExport(contract.get, "option box accessor", path);
+        return demarshalLibraryReturn(schema.inner, boxGet(raw), path);
     }}
 
     // ── Array / 序列视图：物理数组 → JS 数组；序列容器先读回字段再投影 ──

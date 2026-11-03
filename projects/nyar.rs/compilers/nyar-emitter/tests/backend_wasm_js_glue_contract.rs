@@ -49,8 +49,9 @@ fn glue_fails_closed_for_unbridged_composite_kinds() {
     // 方向仍无桥。）
     assert!(glue.contains("Cannot marshal schema kind"), "复合类型 marshal 必须失败闭合:\n{glue}");
     assert!(glue.contains("Cannot demarshal schema kind"), "复合类型 demarshal 必须失败闭合:\n{glue}");
-    // Option 内层没有 handle 载体时（标量载荷需要 box/unbox 合同）拒绝裸标量。
-    assert!(glue.contains("inner type has no Wasm handle carrier"), "Option 标量内层必须失败闭合:\n{glue}");
+    // Option 标量载荷必须由 schema 的 `box` 合同放行；合同缺席时拒绝现场造表示。
+    assert!(glue.contains("ABI schema carries no box/unbox contract"), "Option 标量内层必须按合同失败闭合:\n{glue}");
+    assert!(glue.contains("undefined is not the None wire form"), "None 只接受 null:\n{glue}");
     // 未知 schema kind 不静默 passthrough。
     assert!(glue.contains("no ABI bridge implemented"), "未知 kind 必须失败闭合:\n{glue}");
 }
