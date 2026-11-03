@@ -1,12 +1,12 @@
 //! Compiler 成功载荷到目标私有执行计划的唯一边界。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::{EmitterError, Result};
 use nyar::{ExternalImportLink, QualifiedName};
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalOperation, CanonicalProgram, CanonicalTerminator,
-    CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, LayoutId, NyarFunctionType, NyarType, Operand,
+    CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarFunctionType, NyarType, Operand,
     Terminator, Value, ValueOrigin,
     layout_choice::{InvokeLowering, ValueRepresentation},
 };
@@ -37,7 +37,6 @@ pub struct TargetExecutionPlan {
     aggregate_layout_by_nominal: BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId>,
     aggregate_layout_by_field: BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)>,
     aggregate_layout_by_type: BTreeMap<nyar_types::TypeId, nyar_types::LayoutId>,
-    aggregate_operations: Vec<AggregateOperationPlan>,
     flags_types: Vec<nyar_types::FlagsLayout>,
     singleton_instances: Vec<nyar_types::SingletonInstancePlan>,
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
@@ -60,87 +59,6 @@ pub struct BackendImport {
     pub return_type: NyarType,
     /// 计划冻结的目标 operator 绑定；`None` 表示该导入不是目标 operator 绑定。
     pub target_operator: Option<TargetOperatorBinding>,
-}
-
-/// 聚合 helper operation 的物理种类。
-///
-/// 本类型是 [`nyar_types::LibraryGlueOperation`] 的别名，不保留独立枚举：operation
-/// 身份来自语言声明标注 `[library_glue(construct|push|length|at)]`，由前端冻结进
-/// canonical 片段，属于 canonical 事实而非目标私有事实。目标层只消费它，不得再维护
-/// 第二套枚举与之同步。具体参数的语义由聚合布局与 ABI 结构事实决定，名称字符串
-/// 仅用于产物合同序列化，由别名类型自带的 `as_str` 提供。
-pub use nyar_types::LibraryGlueOperation as AggregateOperation;
-
-/// 聚合 helper operation 在 Wasm 层的参数或返回载体。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AggregateOperationCarrier {
-    /// `i32` 载体。
-    I32,
-    /// `i64` 载体。
-    I64,
-    /// `f32` 载体。
-    F32,
-    /// `f64` 载体。
-    F64,
-    /// 宿主持有的聚合句柄。
-    ///
-    /// 与 `AbiCarrier::Handle` 是同一物理载体：库导出 ABI 把具名聚合与容器一律交给
-    /// 宿主作为不透明对象（Wasm GC 引用在 JS 侧就是不可构造、只能传递的对象）。
-    /// glue operation 的聚合槽位必须用它，不能写成 `i32`——`i32` 是线性内存句柄
-    /// 时代的残留，与导出函数形参的真实载体不一致。
-    Handle,
-    /// 无返回值。
-    Void,
-}
-
-impl AggregateOperationCarrier {
-    /// 返回 Wasm 载体名称（lowercase）。
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::I32 => "i32",
-            Self::I64 => "i64",
-            Self::F32 => "f32",
-            Self::F64 => "f64",
-            Self::Handle => "handle",
-            Self::Void => "void",
-        }
-    }
-}
-
-/// 聚合 helper operation 的物理生产者。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AggregateOperationProducer {
-    /// plan 中真实函数体实例；其 plan 导出名必须等于 operation 的 `export_name`。
-    FunctionBody(ItemInstanceId),
-}
-
-impl AggregateOperationProducer {
-    /// 返回承载该 operation 的函数体实例。
-    pub fn instance(self) -> ItemInstanceId {
-        match self {
-            Self::FunctionBody(instance) => instance,
-        }
-    }
-}
-
-/// plan 冻结的聚合 helper operation。
-///
-/// 一个 operation 绑定聚合布局身份、operation 种类、参数/返回载体、真实 Wasm 导出名
-/// 与唯一物理生产者。`glue_entries` 只能消费这里的 operation，backend 不得自行合成。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AggregateOperationPlan {
-    /// 目标聚合布局身份。
-    pub layout_id: LayoutId,
-    /// operation 种类。
-    pub operation: AggregateOperation,
-    /// 按顺序排列的参数载体。
-    pub param_carriers: Vec<AggregateOperationCarrier>,
-    /// 返回载体；无返回值时为 [`AggregateOperationCarrier::Void`]。
-    pub return_carrier: AggregateOperationCarrier,
-    /// 真实 Wasm 导出名；必须与生产者在 plan 中的导出名一致。
-    pub export_name: String,
-    /// 物理生产者。
-    pub producer: AggregateOperationProducer,
 }
 
 /// 库导出参数或返回值的 Wasm 物理载体。
@@ -260,13 +178,6 @@ impl TargetExecutionPlan {
     #[doc(hidden)]
     pub fn testing_aggregate_layouts(&mut self, layouts: nyar_types::AggregateLayoutPlan) -> &mut Self {
         self.aggregate_layouts = layouts;
-        self
-    }
-
-    /// 登记 plan 冻结的聚合 helper operation（集成测试专用）。
-    #[doc(hidden)]
-    pub fn testing_register_aggregate_operation(&mut self, operation: AggregateOperationPlan) -> &mut Self {
-        self.aggregate_operations.push(operation);
         self
     }
 
@@ -403,9 +314,6 @@ impl TargetExecutionPlan {
             aggregate_layout_by_nominal: canonical.linked.aggregate_layout_by_nominal.clone(),
             aggregate_layout_by_field: canonical.linked.aggregate_layout_by_field.clone(),
             aggregate_layout_by_type: canonical.linked.aggregate_layout_by_type.clone(),
-            // 聚合 helper operation 的载体必须先冻结 producer 的库导出 ABI 再派生，
-            // 因此在构造阶段留空，由 `freeze_aggregate_operations` 补齐。
-            aggregate_operations: Vec::new(),
             flags_types: canonical.linked.flags_types.clone(),
             singleton_instances: canonical.linked.singleton_instances.clone(),
             functions,
@@ -415,8 +323,6 @@ impl TargetExecutionPlan {
             sum_reps: program.representation().sum_reps.clone(),
         };
         plan.freeze_library_export_abis()?;
-        plan.freeze_aggregate_operations(&fragment.aggregate_operations)?;
-        plan.validate_aggregate_operations()?;
         Ok(plan)
     }
 
@@ -447,41 +353,6 @@ impl TargetExecutionPlan {
             abis.insert(*instance, abi);
         }
         self.library_export_abis = abis;
-        Ok(())
-    }
-
-    /// 把 canonical 冻结的聚合宿主直通操作映射为 plan 事实。
-    ///
-    /// operation 身份、布局身份、导出名与 producer 全部来自前端；plan 只补充物理载体，
-    /// 且载体必须从 producer 的**真实签名**（已由 [`Self::freeze_library_export_abis`]
-    /// 冻结的 [`LibraryExportAbi`]）逐一映射得到，不得在此写死 `i32` / handle 列表。
-    /// producer 没有已冻结 ABI 说明它不在 `wasm_export_names` 里，合同已坏，失败闭合。
-    /// operation 的形状（如 `construct` 必须是 `[i32] -> handle`）留给
-    /// [`Self::validate_aggregate_operations`] 统一判定，避免两处规则漂移。
-    fn freeze_aggregate_operations(&mut self, declared: &[nyar_types::CanonicalAggregateOperation]) -> Result<()> {
-        let mut operations = Vec::with_capacity(declared.len());
-        for operation in declared {
-            let producer = operation.producer;
-            let Some(abi) = self.library_export_abis.get(&producer)
-            else {
-                return Err(format!(
-                    "聚合 helper operation 的 producer 缺少已冻结库导出 ABI: layout_id={} operation={} producer={producer:?} \
-                     export_name={}",
-                    operation.layout_id,
-                    operation.operation.as_str(),
-                    operation.export_name
-                ));
-            };
-            operations.push(AggregateOperationPlan {
-                layout_id: operation.layout_id,
-                operation: operation.operation,
-                param_carriers: abi.params.iter().copied().map(aggregate_operation_carrier).collect(),
-                return_carrier: aggregate_operation_carrier(abi.returns),
-                export_name: operation.export_name.clone(),
-                producer: AggregateOperationProducer::FunctionBody(producer),
-            });
-        }
-        self.aggregate_operations = operations;
         Ok(())
     }
 
@@ -538,69 +409,6 @@ impl TargetExecutionPlan {
     /// 返回聚合布局计划。
     pub fn aggregate_layouts(&self) -> &nyar_types::AggregateLayoutPlan {
         &self.aggregate_layouts
-    }
-
-    /// 返回 plan 冻结的聚合 helper operation。
-    ///
-    /// `glue_entries` 只能消费这里的 operation；backend 不得在 emit 阶段自行合成。
-    pub fn aggregate_operations(&self) -> &[AggregateOperationPlan] {
-        &self.aggregate_operations
-    }
-
-    /// 校验聚合 helper operation 的布局身份、载体形状与真实生产者。
-    ///
-    /// 任何缺失事实（未登记布局、producer 缺少函数体或导出名、operation 载体与
-    /// operation 形状不符、同一布局/operation 重复）都在此结构化失败。
-    pub fn validate_aggregate_operations(&self) -> Result<()> {
-        let mut seen = BTreeSet::new();
-        for operation in &self.aggregate_operations {
-            let layout = self.aggregate_layouts.layouts.iter().find(|layout| layout.id == operation.layout_id).ok_or_else(|| {
-                format!(
-                    "聚合 helper operation 缺少布局事实: layout_id={} operation={} export_name={}",
-                    operation.layout_id,
-                    operation.operation.as_str(),
-                    operation.export_name
-                )
-            })?;
-            let identity = format!("{}.{}<layout_id={}>", layout.namespace, layout.name, layout.id);
-            if !seen.insert((operation.layout_id, operation.operation)) {
-                return Err(format!(
-                    "聚合 helper operation 重复: aggregate={identity} operation={} export_name={}",
-                    operation.operation.as_str(),
-                    operation.export_name
-                ));
-            }
-            let producer = operation.producer.instance();
-            let Some(declared_export) = self.wasm_export_names.get(&producer)
-            else {
-                return Err(format!(
-                    "聚合 helper operation 的 producer 未声明 plan 导出: aggregate={identity} operation={} producer={producer:?} \
-                     export_name={} param_carriers={:?} return_carrier={}",
-                    operation.operation.as_str(),
-                    operation.export_name,
-                    operation.param_carriers.iter().map(|carrier| carrier.as_str()).collect::<Vec<_>>(),
-                    operation.return_carrier.as_str()
-                ));
-            };
-            if declared_export != &operation.export_name {
-                return Err(format!(
-                    "聚合 helper operation 的 export 身份与 producer 不一致: aggregate={identity} operation={} \
-                     export_name={} producer_export_name={declared_export} producer={producer:?}",
-                    operation.operation.as_str(),
-                    operation.export_name
-                ));
-            }
-            if !self.functions.contains_key(&producer) {
-                return Err(format!(
-                    "聚合 helper operation 的 producer 缺少 Compiler 函数体: aggregate={identity} operation={} producer={producer:?} \
-                     export_name={}",
-                    operation.operation.as_str(),
-                    operation.export_name
-                ));
-            }
-            validate_aggregate_operation_shape(operation, &identity)?;
-        }
-        Ok(())
     }
 
     /// 返回 nominal 实例到布局 ID 的映射。
@@ -662,7 +470,7 @@ impl TargetExecutionPlan {
 /// 冻结一个库导出函数的参数与返回载体。
 ///
 /// 参数按 `param_types` 声明顺序逐个映射；返回值按 `return_type` 映射。映射语义
-/// 必须与 `library_glue` 消费的 `WasmAbiType` 载体保持一一对应。没有稳定 Wasm
+/// 必须与 `nyar.library_invoke` section 序列化消费的 `WasmAbiType` 载体保持一一对应。没有稳定 Wasm
 /// 载体的类型（`Integer128` / `Utf16` / `Bottom` / `Function` / `TraitObject` /
 /// `Union`）在此结构化失败，不得回落为默认载体。
 fn freeze_library_export_abi(function: &ExecutableFunction) -> Result<LibraryExportAbi> {
@@ -702,66 +510,6 @@ fn freeze_abi_carrier(ty: &NyarType) -> Result<AbiCarrier> {
         NyarType::TraitObject(_) => return Err("TraitObject（dynamic dispatch）没有稳定的 Wasm 载体".to_string()),
         NyarType::Union(_) => return Err("匿名 union 的 Wasm ABI 合同尚未定义".to_string()),
     })
-}
-
-/// 把已冻结的库导出 ABI 载体映射为 glue operation 载体。
-///
-/// 两个枚举一一对应且都是全函数；这里的 `match` 必须穷尽，不允许 `_` 兜底猜测载体。
-fn aggregate_operation_carrier(carrier: AbiCarrier) -> AggregateOperationCarrier {
-    match carrier {
-        AbiCarrier::I32 => AggregateOperationCarrier::I32,
-        AbiCarrier::I64 => AggregateOperationCarrier::I64,
-        AbiCarrier::F32 => AggregateOperationCarrier::F32,
-        AbiCarrier::F64 => AggregateOperationCarrier::F64,
-        AbiCarrier::Handle => AggregateOperationCarrier::Handle,
-        AbiCarrier::Void => AggregateOperationCarrier::Void,
-    }
-}
-
-/// 校验聚合 helper operation 的载体形状。
-///
-/// `construct` 是 `[i32] -> handle`（宿主用元素数量请求一个空聚合）；
-/// `length` 是 `[handle] -> i32`；`push` 是 `[handle, E] -> void`；
-/// `at` 是 `[handle, i32] -> E`。聚合槽位一律是宿主句柄，与导出函数形参的
-/// 物理载体一致；任何偏离都在计划的物理解释层失败。
-fn validate_aggregate_operation_shape(operation: &AggregateOperationPlan, identity: &str) -> Result<()> {
-    use AggregateOperationCarrier::{Handle, I32, Void};
-    let fail = |expected: &str| {
-        Err(format!(
-            "聚合 helper operation 载体形状不合法: aggregate={identity} operation={} expected={expected} actual_param_carriers={:?} \
-             actual_return_carrier={}",
-            operation.operation.as_str(),
-            operation.param_carriers.iter().map(|carrier| carrier.as_str()).collect::<Vec<_>>(),
-            operation.return_carrier.as_str()
-        ))
-    };
-    match operation.operation {
-        AggregateOperation::Construct => {
-            if operation.param_carriers.as_slice() != [I32] || operation.return_carrier != Handle {
-                return fail("[i32] -> handle");
-            }
-        }
-        AggregateOperation::Length => {
-            if operation.param_carriers.as_slice() != [Handle] || operation.return_carrier != I32 {
-                return fail("[handle] -> i32");
-            }
-        }
-        AggregateOperation::Push => {
-            if operation.param_carriers.len() != 2
-                || operation.param_carriers[0] != Handle
-                || operation.param_carriers[1] == Void
-                || operation.return_carrier != Void
-            {
-                return fail("[handle, E] -> void");
-            }
-        }
-        AggregateOperation::At => {
-            if operation.param_carriers.as_slice() != [Handle, I32] || operation.return_carrier == Void {
-                return fail("[handle, i32] -> E");
-            }
-        }
-    }
-    Ok(())
 }
 
 /// 计划构造时冻结 `[wasm_operator]` / `[ovm_operator]` / `[jvm_operator]` /

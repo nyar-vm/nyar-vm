@@ -69,9 +69,9 @@ fn build_node_launcher_library_mode_exposes_call_export_without_main_dispatch() 
 
 #[test]
 fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
-    // `nyar.library_invoke` v0 合同：version 0 + 带参数身份的 params + glue_entries + abi_digest。
+    // `nyar.library_invoke` v0 合同：version 0 + 带参数身份的 params + abi_digest。
     // abi_digest 在启动壳里只做携带，不参与校验，因此这里用固定占位值；真实值由
-    // `library_glue::abi_contract_digest` 在编译期计算。
+    // 编译期 section 序列化时计算。
     let spec = r#"{
         "version": 0,
         "exports": {
@@ -83,76 +83,13 @@ fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
                 "returns": {"kind":"NamedAggregate","name":"ArrayList","module_path":"std::collections","generic_args":[{"kind":"I64"}]}
             }
         },
-        "glue_entries": [
-            {
-                "kind": "NamedAggregate",
-                "name": "ArrayList",
-                "module_path": "std::collections",
-                "generic_args": [{"kind":"I64"}],
-                "operations": [
-                    {"operation":"construct","export_name":"$seq_std_collections_ArrayList_i64_new","param_carriers":["i32"],"return_carrier":"i32","export_source":"backend_synthetic"},
-                    {"operation":"push","export_name":"$seq_std_collections_ArrayList_i64_push","param_carriers":["i32","i64"],"return_carrier":"void","export_source":"backend_synthetic"},
-                    {"operation":"length","export_name":"$seq_std_collections_ArrayList_i64_len","param_carriers":["i32"],"return_carrier":"i32","export_source":"backend_synthetic"},
-                    {"operation":"at","export_name":"$seq_std_collections_ArrayList_i64_at","param_carriers":["i32","i32"],"return_carrier":"i64","export_source":"backend_synthetic"}
-                ],
-                "source": "backend_synthetic",
-                "status": "ready"
-            }
-        ],
         "abi_digest": "sha256-fixture"
     }"#;
     let launcher = build_node_launcher("demo", &[], &[], true, Some(spec));
     assert!(launcher.contains("marshalLibraryArg"), "library glue must marshal args from invoke spec");
     assert!(launcher.contains("demarshalLibraryReturn"), "library glue must demarshal returns from invoke spec");
-    assert!(launcher.contains("glue_entries"), "launcher must carry the glue_entries contract verbatim");
     assert!(launcher.contains("\"version\": 0"), "launcher must carry the schema version verbatim");
     assert!(launcher.contains("abi_digest"), "launcher must carry the ABI digest verbatim");
-}
-
-/// 验证泛型容器元素的编组/反编组按**声明身份**决定：单参数泛型容器的唯一
-/// `generic_arg` 就是元素 schema，必须交给 `marshalLibraryArg` /
-/// `demarshalLibraryReturn`；否则 `ArrayList<utf8>` 的 i32 载体（宿主字符串句柄）
-/// 会被当作裸数值转换，JS 字符串入参退化成句柄 0（空字符串）。
-#[test]
-fn container_elements_marshal_through_declared_element_schema() {
-    let spec = r#"{
-        "version": 0,
-        "exports": {
-            "firstLen": {
-                "params": [
-                    {"index":0,"name":"words","type":{"kind":"NamedAggregate","name":"ArrayList","module_path":"std::collection","generic_args":[{"kind":"Utf8"}]},"carrier":"handle"}
-                ],
-                "returns": {"kind":"I64"}
-            }
-        },
-        "glue_entries": [
-            {
-                "kind": "NamedAggregate",
-                "name": "ArrayList",
-                "module_path": "std::collection",
-                "generic_args": [{"kind":"Utf8"}],
-                "operations": [
-                    {"operation":"construct","export_name":"$seq_std_collection_ArrayList_utf8_new","param_carriers":["i32"],"return_carrier":"handle","export_source":"declared"},
-                    {"operation":"push","export_name":"$seq_std_collection_ArrayList_utf8_push","param_carriers":["handle","i32"],"return_carrier":"void","export_source":"declared"},
-                    {"operation":"length","export_name":"$seq_std_collection_ArrayList_utf8_len","param_carriers":["handle"],"return_carrier":"i32","export_source":"declared"},
-                    {"operation":"at","export_name":"$seq_std_collection_ArrayList_utf8_at","param_carriers":["handle","i32"],"return_carrier":"i32","export_source":"declared"}
-                ],
-                "source": "declaration_identity",
-                "status": "ready"
-            }
-        ],
-        "abi_digest": "sha256-fixture"
-    }"#;
-    let launcher = build_node_launcher("demo", &[], &[], true, Some(spec));
-    assert!(
-        launcher.contains("const elementSchema = Array.isArray(schema.generic_args) && schema.generic_args.length === 1 ? schema.generic_args[0] : null;"),
-        "元素 schema 必须来自声明身份的唯一 generic_arg"
-    );
-    assert!(launcher.contains("push(handle, marshalLibraryArg(elementSchema, item));"), "入参元素必须经元素 schema 编组（utf8 走 hostIntern）");
-    assert!(
-        launcher.contains("out.push(demarshalLibraryReturn(elementSchema, value));"),
-        "返回值元素必须经元素 schema 反编组（utf8 走 hostResolve）"
-    );
 }
 
 #[test]

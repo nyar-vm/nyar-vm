@@ -1,7 +1,7 @@
 //! 阶段 B：唯一的 Valkyrie → Wasm ABI 合同。
 //!
 //! 本模块为 `nyar.library_invoke` JSON section 提供**结构化、可序列化**的
-//! ABI schema 枚举，替代 `library_glue.rs` 里硬编码的 `abi_kind_for_type -> Option<&'static str>`。
+//! ABI schema 枚举。
 //!
 //! 设计约束（架构师硬性要求）：
 //! - 禁止按容器名称硬编码 ABI（`is_list_i64`、`is_arraylist` 一律禁止）
@@ -10,7 +10,7 @@
 //! - 每个 NyarType 必须生成语义 identity；不认识的变体显式返回 `Unsupported`
 //!
 //! 下游消费：
-//! - `library_glue.rs`：序列化为 `nyar.library_invoke` JSON section
+//! - `library_invoke.rs`：序列化为 `nyar.library_invoke` JSON section
 //! - `wasm_js_glue`：按结构化 schema 生成 JS marshal/demarshal 代码
 //! - 其他宿主（CLR / JVM / Native）：按同一份 schema 生成各自绑定
 
@@ -147,7 +147,7 @@ pub enum WasmAbiType {
     /// - `NyarType::Integer128 { .. }`：Wasm 无原生 i128，需要 explicit 拆分合同
     /// - `NyarType::Bottom` / `void`：底部类型不应出现在参数位置
     Unsupported {
-        /// 可读原因，供 `library_glue` 报错时展示。
+        /// 可读原因，供 ABI 合同校验失败时展示。
         reason: String,
     },
 }

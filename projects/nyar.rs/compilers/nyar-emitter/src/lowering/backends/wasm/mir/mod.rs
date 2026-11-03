@@ -73,7 +73,7 @@ mod entry;
 mod imports;
 mod instructions;
 mod intrinsics;
-pub(crate) mod library_glue;
+mod library_invoke;
 mod lowerer;
 pub(crate) mod numeric;
 mod operands;

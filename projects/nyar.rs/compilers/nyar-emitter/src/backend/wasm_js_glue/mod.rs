@@ -4,7 +4,7 @@
 //! 不承载 `.wasi` / `wasmtime` / 任何 WASI preview 模块语义，
 //! 也不依赖 `backend::wasi` 子树的任何符号。
 
-use std::{collections::BTreeSet, fs, path::Path};
+use std::{fs, path::Path};
 
 use crate::{EmitterError, Result};
 use acorn_wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
@@ -31,13 +31,7 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
             WasmPackageKind::Library => true,
             WasmPackageKind::Binary => false,
         };
-        let library_invoke = if library_mode {
-            validate_library_invoke_exports(&wasm_path)?;
-            read_library_invoke_spec(&wasm_path)
-        }
-        else {
-            None
-        };
+        let library_invoke = if library_mode { read_library_invoke_spec(&wasm_path) } else { None };
         let launcher = build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode, library_invoke.as_deref());
         fs::write(&launcher_path, launcher).map_err(|e| format!("写入 Node 启动壳失败：{}: {e}", launcher_path.display()))?;
 
@@ -176,28 +170,6 @@ fn read_library_invoke_spec(wasm_path: &Path) -> Option<String> {
     None
 }
 
-/// 校验 `nyar.library_invoke` 的 glue 合同引用真实存在的 Wasm export。
-///
-/// 选择在生成 JS glue 的最早位置校验：lowering 阶段的
-/// `append_library_mode_glue` 只有 plan 的 `wasm_export_names()`，看不到最终
-/// export section；而这里已经读取到落盘 Wasm 模块的真实导出列表。缺失导出
-/// 会直接返回 `Err`，不会生成只在运行时才失败的启动壳。
-fn validate_library_invoke_exports(wasm_path: &Path) -> Result<()> {
-    let Some(spec) = read_library_invoke_spec(wasm_path)
-    else {
-        return Ok(());
-    };
-    let payload: serde_json::Value = serde_json::from_str(&spec).map_err(|error| format!("解析 nyar.library_invoke 自定义段失败: {error}"))?;
-    let Some(glue_entries) = payload.get("glue_entries").and_then(|value| value.as_array())
-    else {
-        return Ok(());
-    };
-    let bytes = fs::read(wasm_path).map_err(|error| format!("读取 WASM 失败：{}: {error}", wasm_path.display()))?;
-    let module = WasmBinaryModule::from_bytes(&bytes).map_err(|error| format!("WASM 解析失败：{error}"))?;
-    let wasm_exports: BTreeSet<String> = parse_export_section(&module).into_iter().map(|item| item.name).collect();
-    crate::lowering::backends::wasm::mir::library_glue::validate_glue_entry_exports(glue_entries, &wasm_exports)
-}
-
 fn library_invoke_marshaler_js(spec_json: &str) -> String {
     // LIBRARY_INVOKE 的 `returns` 与 marshal 目标消费结构化的 WasmAbiType JSON schema：
     // 要么是 string (旧格式 "i64")，要么是 object (新格式 {"kind": "I64", ...})。
@@ -215,52 +187,12 @@ function abiKind(schema) {{
     return null;
 }}
 
-// 从 schema 提取 generic_args 的 kind 字符串数组（如 ArrayList<I64> → ["I64"]）。
-function genericKinds(schema) {{
-    if (!schema || !Array.isArray(schema.generic_args)) return [];
-    return schema.generic_args.map(a => abiKind(a)).filter(Boolean);
-}}
-
-// 在 LIBRARY_INVOKE.glue_entries 里按 kind + module_path + name + genericKinds 查找匹配 entry。
-// 匹配 key = `${{kind}}:${{modulePath}}:${{name}}:${{genericKinds.join(',')}}`。
-// module_path 可能是空字符串（synthetic primitive helper），用 `e.module_path || ''` 安全访问。
-function findGlueEntry(kind, modulePath, name, genericKindsList) {{
-    const entries = LIBRARY_INVOKE?.glue_entries ?? [];
-    for (const e of entries) {{
-        if (e.kind !== kind) continue;
-        if ((e.module_path || '') !== (modulePath || '')) continue;
-        if (name !== undefined && e.name !== name) continue;
-        if (genericKindsList && genericKindsList.length > 0) {{
-            const ek = (e.generic_args ?? []).map(a => abiKind(a));
-            if (ek.join(',') !== genericKindsList.join(',')) continue;
-        }}
-        return e;
-    }}
-    return null;
-}}
-
 // 判断 schema 是否自带 Wasm handle 载体（容器 / 具名聚合 / 可空）。
 // 与后端 `abi_carrier_name` 的容器集合一致：这些类型在 Wasm 里是 GC 引用，
 // JS 侧只能传递、不能构造；标量需要装箱，不存在 box/unbox 合同。
 function hasWasmHandleCarrier(schema) {{
     const kind = abiKind(schema);
     return kind === "NamedAggregate" || kind === "Array" || kind === "FixedArray" || kind === "Tuple" || kind === "Option";
-}}
-
-// 检查 glue entry 的每个 operation 都有非空 export_name。
-// Stage A 产出的 export_name 当前是空字符串，只有 Stage C 填了 valkyrie.v 侧真实导出名才算可用。
-function entryHasExportNames(entry) {{
-    if (!entry || !Array.isArray(entry.operations)) return false;
-    for (const op of entry.operations) {{
-        if (typeof op.export_name !== 'string' || op.export_name.length === 0) return false;
-    }}
-    return true;
-}}
-
-// 从 entry.operations 里按 operation 名查找 export_name。
-function operationExportName(entry, operation) {{
-    const op = (entry?.operations ?? []).find(o => o.operation === operation);
-    return op ? op.export_name : null;
 }}
 
 // 从 param 条目提取 marshal 用的类型 schema。
@@ -286,82 +218,20 @@ function marshalLibraryArg(schema, value) {{
     }}
     if (kind === "Unit") return undefined;
 
-    // ── NamedAggregate：从 glue_entries registry 查找 marshal 规则 ────
-    // 不硬编码名称，完全消费 Stage A 生成的 glue_entries JSON 数组。
-    if (kind === "NamedAggregate") {{
-        const gk = genericKinds(schema);
-        const modPath = schema.module_path || '';
-        const entry = findGlueEntry("NamedAggregate", modPath, schema.name, gk);
-        if (!entry) {{
-            throw new Error(
-                `[wasm-js-glue] Cannot marshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry not found in LIBRARY_INVOKE.glue_entries. Compiler must emit glue_entries with this schema identity.`
-            );
-        }}
-        if (!entryHasExportNames(entry)) {{
-            const missingOps = (entry.operations || []).filter(o => !o.export_name).map(o => o.operation).join(',') || '(no operations with export_name)';
-            throw new Error(
-                `[wasm-js-glue] Cannot marshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry found but missing export_name on operations: ${{missingOps}}. Compiler (Stage A/B/C) must fill export_name for all operations before JS glue can call them.`
-            );
-        }}
-        const constructName = operationExportName(entry, "construct");
-        const pushName = operationExportName(entry, "push");
-        const construct = constructName ? exports[constructName] : null;
-        const push = pushName ? exports[pushName] : null;
-        if (!construct || !push) {{
-            throw new Error(
-                `[wasm-js-glue] Cannot marshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry missing construct/push export. construct=${{constructName}}, push=${{pushName}}.`
-            );
-        }}
-        // 元素 carrier 从 construct 或 push 的 param_carriers 推断（通常 push 的第二个参数是元素）
-        const pushOp = entry.operations.find(o => o.operation === "push");
-        const elementCarrier = (pushOp?.param_carriers ?? []).at(-1) ?? "i32";
-        // 元素 schema 只来自声明身份：单参数泛型容器的唯一 `generic_arg` 就是元素类型。
-        // `utf8`/`utf16` 元素在 ABI 上是 i32 宿主句柄，必须经 hostIntern 登记；若按
-        // i32 宽度直接转换，JS 字符串会变成 `Number("ab") | 0 === 0`，即空字符串句柄。
-        const elementSchema = Array.isArray(schema.generic_args) && schema.generic_args.length === 1 ? schema.generic_args[0] : null;
-        const arr = Array.isArray(value) ? value : [];
-        const handle = construct(arr.length);
-        for (const item of arr) {{
-            if (elementSchema) {{
-                push(handle, marshalLibraryArg(elementSchema, item));
-                continue;
-            }}
-            let wasmItem = item;
-            if (elementCarrier === "i64") wasmItem = BigInt(item ?? 0);
-            else if (elementCarrier === "i32") wasmItem = Number(item ?? 0) | 0;
-            else if (elementCarrier === "f64") wasmItem = Number(item ?? 0);
-            else if (elementCarrier === "f32") wasmItem = Number(item ?? 0);
-            push(handle, wasmItem);
-        }}
-        return handle;
-    }}
-
-    // ── 复合类型必须有 glue 合同，禁止 passthrough ──────────────────
-    if (kind === "Array") {{
-        const gk = genericKinds(schema);
-        throw new Error(
-            `[wasm-js-glue] Cannot marshal Array<${{gk.join(',')}}>: Array requires glue_entries contract. Please add a NamedAggregate-based glue entry.`
-        );
-    }}
+    // ── Option 是结构化容器：None 就是 null 引用，Some 的内层按自身 schema 编组 ──
+    // 内层必须有 handle 载体（容器 / 具名聚合）；标量内层在 Wasm GC 里是装箱值，
+    // 需要 box/unbox 合同，当前未定义，失败关闭而不是把裸标量当引用传。
     if (kind === "Option") {{
-        // Option 是结构化容器：None 就是 null 引用，Some 就是内层值本身，不另生 glue entry。
-        // 内层必须有 handle 载体（容器 / 具名聚合）；标量内层在 Wasm GC 里是装箱值，
-        // 需要 box/unbox 的 glue 合同，当前未定义，失败关闭而不是把裸标量当引用传。
         if (!hasWasmHandleCarrier(schema.inner)) {{
             throw new Error(
-                `[wasm-js-glue] Cannot marshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox glue contract that is not defined.`
+                `[wasm-js-glue] Cannot marshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox ABI contract that is not defined.`
             );
         }}
         if (value == null) return null;
         return marshalLibraryArg(schema.inner, value);
     }}
-    if (kind === "Tuple") {{
-        throw new Error(
-            `[wasm-js-glue] Cannot marshal Tuple: heterogeneous tuples require glue_entries contract with per-element carriers. Tuple ABI bridge not implemented yet.`
-        );
-    }}
 
-    // ── 未知 schema kind ────────────────────────────────────────────────
+    // ── 聚合 / 数组 / 元组等复合类型当前没有 ABI 桥，一律失败闭合 ──
     throw new Error(
         `[wasm-js-glue] Cannot marshal schema kind "${{kind}}": no ABI bridge implemented. Schema: ${{JSON.stringify(schema)}}`
     );
@@ -381,80 +251,18 @@ function demarshalLibraryReturn(schema, raw) {{
     if (kind === "Char") return Number(raw);
     if (kind === "Utf8" || kind === "Utf16") return raw == null ? "" : hostResolve(raw);
 
-    // ── NamedAggregate：从 glue_entries registry 查找 demarshal 规则 ────
-    if (kind === "NamedAggregate") {{
-        if (raw == null) return null;
-        const gk = genericKinds(schema);
-        const modPath = schema.module_path || '';
-        const entry = findGlueEntry("NamedAggregate", modPath, schema.name, gk);
-        if (!entry) {{
-            throw new Error(
-                `[wasm-js-glue] Cannot demarshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry not found in LIBRARY_INVOKE.glue_entries. Compiler must emit glue_entries with this schema identity.`
-            );
-        }}
-        if (!entryHasExportNames(entry)) {{
-            const missingOps = (entry.operations || []).filter(o => !o.export_name).map(o => o.operation).join(',') || '(no operations with export_name)';
-            throw new Error(
-                `[wasm-js-glue] Cannot demarshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry found but missing export_name on operations: ${{missingOps}}. Compiler (Stage A/B/C) must fill export_name for all operations before JS glue can call them.`
-            );
-        }}
-        const lengthName = operationExportName(entry, "length");
-        const atName = operationExportName(entry, "at");
-        const lengthFn = lengthName ? exports[lengthName] : null;
-        const atFn = atName ? exports[atName] : null;
-        if (!lengthFn || !atFn) {{
-            throw new Error(
-                `[wasm-js-glue] Cannot demarshal NamedAggregate ${{modPath}}.${{schema.name}}<${{gk.join(',')}}>: glue entry missing length/at export. length=${{lengthName}}, at=${{atName}}.`
-            );
-        }}
-        const len = Number(lengthFn(raw));
-        if (len === 0) return [];
-        const out = [];
-        // 返回值 carrier 推断自 at 操作的 return_carrier
-        const atOp = entry.operations.find(o => o.operation === "at");
-        const returnCarrier = atOp?.return_carrier ?? "i32";
-        // 返回值元素与入参对称：元素 schema 来自声明身份，`utf8`/`utf16` 的 i32
-        // 载体是宿主句柄，必须 hostResolve 回字符串；按宽度取 Number 会漏掉解码。
-        const elementSchema = Array.isArray(schema.generic_args) && schema.generic_args.length === 1 ? schema.generic_args[0] : null;
-        for (let i = 0; i < len; i++) {{
-            // V `ArrayList.at` 使用序数索引（1-based）；JS 循环 `i` 是基数（0-based），故传 `i + 1`。
-            const value = atFn(raw, i + 1);
-            if (elementSchema) {{
-                out.push(demarshalLibraryReturn(elementSchema, value));
-                continue;
-            }}
-            let v = value;
-            if (returnCarrier === "i64") v = Number(v);
-            else v = Number(v);
-            out.push(v);
-        }}
-        return out;
-    }}
-
-    // ── 复合类型必须有 glue 合同，禁止 passthrough ──────────────────
-    if (kind === "Array") {{
-        const gk = genericKinds(schema);
-        throw new Error(
-            `[wasm-js-glue] Cannot demarshal Array<${{gk.join(',')}}>: Array requires glue_entries contract. Please add a NamedAggregate-based glue entry.`
-        );
-    }}
+    // ── Option：与 marshal 对称，null 引用即 None；Some 的内层按自身 schema 反编组 ──
     if (kind === "Option") {{
-        // 与 marshal 对称：null 引用即 None；Some 的内层按自身 schema 反序列化。
         if (!hasWasmHandleCarrier(schema.inner)) {{
             throw new Error(
-                `[wasm-js-glue] Cannot demarshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox glue contract that is not defined.`
+                `[wasm-js-glue] Cannot demarshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox ABI contract that is not defined.`
             );
         }}
         if (raw == null) return null;
         return demarshalLibraryReturn(schema.inner, raw);
     }}
-    if (kind === "Tuple") {{
-        throw new Error(
-            `[wasm-js-glue] Cannot demarshal Tuple: heterogeneous tuples require glue_entries contract with per-element carriers. Tuple ABI bridge not implemented yet.`
-        );
-    }}
 
-    // ── 未知 schema kind ────────────────────────────────────────────────
+    // ── 聚合 / 数组 / 元组等复合类型当前没有 ABI 桥，一律失败闭合 ──
     throw new Error(
         `[wasm-js-glue] Cannot demarshal schema kind "${{kind}}": no ABI bridge implemented. Schema: ${{JSON.stringify(schema)}}`
     );

@@ -21,7 +21,7 @@ use super::{
         collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index,
         host_import_signature_index, validate_string_literal_payloads, wasi_core_import_name, wasm_import_type_bytes_for_host,
     },
-    library_glue,
+    library_invoke,
     lowerer::lower_mir_function_to_wasm_bytes,
     representation::{
         is_js_glue_host_string_type, layout_needs_gc_struct, type_is_wasm_gc_heap_reference, wasm_gc_field_type_byte_for_glue,
@@ -573,7 +573,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         }
     }
 
-    library_glue::append_library_mode_glue(wasm_package_kind, submission, &mut module)?;
+    library_invoke::append_library_invoke_section(wasm_package_kind, submission, &mut module)?;
 
     module.sections.push(type_section_bytes(type_indices));
     if !host_imports.is_empty() {
