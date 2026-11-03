@@ -15,6 +15,17 @@ use crate::compiler::{
     },
 };
 
+/// 模块可见的全部聚合声明：本地声明、依赖语义导出的声明与子模块递归。
+fn collect_visible_structs(module: &HirModule, out: &mut Vec<HirStruct>) {
+    out.extend(module.structs.iter().cloned());
+    for export in &module.imported_semantic_exports {
+        out.extend(export.structs.iter().cloned());
+    }
+    for submodule in &module.submodules {
+        collect_visible_structs(submodule, out);
+    }
+}
+
 /// 在结构体/枚举已分配 declaration ItemId 之后，把唯一可解析的 `Named`/`Apply(Named, …)`
 /// 绑定为 [`ValkyrieType::Nominal`]。这是 Resolver→HIR 的声明身份冻结，不是短名改写或后置补丁。
 pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
@@ -25,15 +36,6 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
         let mut parts = item.namespace.iter().map(|part| part.as_str()).collect::<Vec<_>>();
         parts.push(item.name.as_str());
         Identifier::new(&parts.join("."))
-    }
-    fn collect_structs(module: &HirModule, out: &mut Vec<HirStruct>) {
-        out.extend(module.structs.iter().cloned());
-        for export in &module.imported_semantic_exports {
-            out.extend(export.structs.iter().cloned());
-        }
-        for submodule in &module.submodules {
-            collect_structs(submodule, out);
-        }
     }
     fn collect_enums(module: &HirModule, out: &mut Vec<HirEnum>) {
         out.extend(module.enums.iter().cloned());
@@ -137,9 +139,12 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
         }
         enums.iter().find(|item| item.declaration == Some(declaration)).map(|item| SelfOwnerPath::named(&[], &item.name))
     }
-    /// 结构化数组 `[T]` 的声明 owner 是否是 `class Array<T>`。
-    fn is_array_owner(declaration: nyar_types::ItemId, structs: &[HirStruct]) -> bool {
-        array_owner_declarations(structs).contains(&declaration)
+    /// 声明是否恰为模块冻结的唯一内建 `[T]` owner 声明。
+    ///
+    /// 判定只比较冻结的声明身份（`ItemId`），不按名字扫描候选；
+    /// 候选冻结见 [`freeze_array_owner`]。
+    fn is_array_owner(declaration: nyar_types::ItemId, structs: &[HirStruct]) -> Result<bool, HirError> {
+        Ok(freeze_array_owner(structs)? == Some(declaration))
     }
     fn bind_type(ty: &mut ValkyrieType, namespace: &NamePath, structs: &[HirStruct], enums: &[HirEnum]) -> Result<(), HirError> {
         match ty {
@@ -166,7 +171,7 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
                     _ => None,
                 };
                 if let Some((declaration, primitive_identity)) = resolved_declaration {
-                    if args.len() == 1 && is_array_owner(declaration, structs) {
+                    if args.len() == 1 && is_array_owner(declaration, structs)? {
                         let element = args.remove(0);
                         *ty = ValkyrieType::Array(Box::new(element));
                         return Ok(());
@@ -439,8 +444,10 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
     }
     let mut structs = Vec::new();
     let mut enums = Vec::new();
-    collect_structs(module, &mut structs);
+    collect_visible_structs(module, &mut structs);
     collect_enums(module, &mut enums);
+    // 多候选内建数组 owner 在任何 `[T]` 引用之前结构化失败，禁止静默取首项。
+    freeze_array_owner(&structs)?;
     for item in &mut module.structs {
         let namespace = NamePath::new(item.namespace.clone());
         for field in &mut item.fields {
@@ -562,27 +569,54 @@ fn revoke_open_impl_seed_instances(module: &mut HirModule) {
     }
 }
 
-/// 全部承担结构化数组 `[T]` owner 身份的声明：唯一约定是名为 `Array` 且带一个泛型的聚合。
-fn array_owner_declarations(structs: &[HirStruct]) -> Vec<nyar_types::ItemId> {
-    structs
-        .iter()
-        .filter(|item| item.name.as_str() == "Array" && item.generics.len() == 1)
-        .filter_map(|item| item.constructor_declaration)
-        .collect()
+/// 内建结构化数组 `[T]` 的 canonical 声明坐标：std 的 `std.collection.Array`。
+///
+/// 这里只在**定位内建声明**时使用规范坐标；owner 冻结后，所有引用只按
+/// `ItemId` 相等比较（`is_array_owner`），不再按短名扫描候选。
+const BUILTIN_ARRAY_NAMESPACE: [&str; 2] = ["std", "collection"];
+const BUILTIN_ARRAY_NAME: &str = "Array";
+
+fn is_canonical_array_owner(item: &HirStruct) -> bool {
+    item.generics.len() == 1
+        && item.name.as_str() == BUILTIN_ARRAY_NAME
+        && item.namespace.iter().map(|part| part.as_str()).eq(BUILTIN_ARRAY_NAMESPACE)
 }
 
-/// 模块（含可见依赖导出与子模块）内结构化数组的 owner 声明。
-pub(crate) fn array_owner_declaration(module: &HirModule) -> Option<nyar_types::ItemId> {
-    let local = array_owner_declarations(&module.structs);
-    if let Some(declaration) = local.first() {
-        return Some(*declaration);
+/// 缺省标准声明的独立编译单元里承担内建 `[T]` 身份的声明拼写。
+fn is_builtin_array_spelling(item: &HirStruct) -> bool {
+    item.name.as_str() == BUILTIN_ARRAY_NAME && item.generics.len() == 1
+}
+
+/// 把候选声明冻结成唯一 owner 身份：多候选必须结构化失败，不再静默 `.first()`。
+fn freeze_owner_declaration(items: &[&HirStruct]) -> Result<Option<nyar_types::ItemId>, HirError> {
+    let mut declarations: Vec<nyar_types::ItemId> = items.iter().filter_map(|item| item.constructor_declaration).collect();
+    declarations.sort_unstable();
+    declarations.dedup();
+    if declarations.len() > 1 {
+        return Err(HirError::ArrayOwnerAmbiguous { candidate_count: declarations.len(), source: plan_source(), span: plan_span() });
     }
-    for export in &module.imported_semantic_exports {
-        if let Some(declaration) = array_owner_declarations(&export.structs).first() {
-            return Some(*declaration);
-        }
+    Ok(declarations.first().copied())
+}
+
+/// 可见声明集合内 `[T]` 的 owner：canonical `std.collection.Array` 优先；
+/// 看不到标准声明的独立编译单元回退到唯一的 `Array` 单泛型声明。
+///
+/// 同名的用户聚合只参与回退候选，不会覆盖 canonical 内建声明：
+/// 存在 `std.collection.Array` 时，用户自己的 `Array<T>` 仍是普通名义类型。
+fn freeze_array_owner(structs: &[HirStruct]) -> Result<Option<nyar_types::ItemId>, HirError> {
+    let canonical: Vec<&HirStruct> = structs.iter().filter(|item| is_canonical_array_owner(item)).collect();
+    if !canonical.is_empty() {
+        return freeze_owner_declaration(&canonical);
     }
-    module.submodules.iter().find_map(array_owner_declaration)
+    let fallback: Vec<&HirStruct> = structs.iter().filter(|item| is_builtin_array_spelling(item)).collect();
+    freeze_owner_declaration(&fallback)
+}
+
+/// 模块（含可见依赖导出与子模块）内冻结的 `[T]` owner 声明。
+pub(crate) fn array_owner_declaration(module: &HirModule) -> Result<Option<nyar_types::ItemId>, HirError> {
+    let mut structs = Vec::new();
+    collect_visible_structs(module, &mut structs);
+    freeze_array_owner(&structs)
 }
 
 pub(crate) fn lookup_owner_generics_by_declaration(module: &HirModule, declaration: nyar_types::ItemId) -> Vec<GenericType> {
@@ -613,9 +647,11 @@ pub(crate) fn combined_impl_generic_context(module: &HirModule, implementation: 
     let mut generics = implementation.generics.clone();
     let owner_generics = match &implementation.target {
         ValkyrieType::Nominal { declaration, .. } => lookup_owner_generics_by_declaration(module, *declaration),
-        ValkyrieType::Array(_) => {
-            array_owner_declaration(module).map(|declaration| lookup_owner_generics_by_declaration(module, declaration)).unwrap_or_default()
-        }
+        ValkyrieType::Array(_) => array_owner_declaration(module)
+            .ok()
+            .flatten()
+            .map(|declaration| lookup_owner_generics_by_declaration(module, declaration))
+            .unwrap_or_default(),
         _ => Vec::new(),
     };
     for owner in owner_generics {

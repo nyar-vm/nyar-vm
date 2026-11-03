@@ -54,6 +54,7 @@ impl HirError {
             Self::UnresolvedConstructor { .. } => "valkyrie.hir.unresolved_constructor",
             Self::NominalAmbiguous { .. } => "valkyrie.hir.nominal_ambiguous",
             Self::SumUniteAmbiguous { .. } => "valkyrie.hir.sum_unite_ambiguous",
+            Self::ArrayOwnerAmbiguous { .. } => "valkyrie.hir.array_owner_ambiguous",
             Self::StructureMissingConstructor { .. } => "valkyrie.hir.structure_missing_constructor",
             Self::SumUniteMissingDeclaration { .. } => "valkyrie.hir.sum_unite_missing_declaration",
             Self::InvalidDiscriminator { .. } => "valkyrie.hir.invalid_discriminator",

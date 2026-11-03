@@ -41,6 +41,9 @@ impl std::fmt::Display for HirError {
             Self::SumUniteAmbiguous { name, candidate_count, .. } => {
                 write!(f, "sum/unite `{name}` is ambiguous ({candidate_count} candidates)")
             }
+            Self::ArrayOwnerAmbiguous { candidate_count, .. } => {
+                write!(f, "builtin array owner `[T]` is ambiguous ({candidate_count} candidates)")
+            }
             Self::StructureMissingConstructor { qualified_name, .. } => {
                 write!(f, "structure `{qualified_name}` missing constructor_declaration")
             }

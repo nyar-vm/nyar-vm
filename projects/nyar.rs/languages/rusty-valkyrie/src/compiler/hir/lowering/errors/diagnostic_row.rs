@@ -44,6 +44,9 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("name", DiagnosticArg::Aggregate(name.clone()))
                     .with_arg("candidate_count", DiagnosticArg::Int(*candidate_count as i64));
             }
+            HirError::ArrayOwnerAmbiguous { candidate_count, .. } => {
+                row = row.with_arg("candidate_count", DiagnosticArg::Int(*candidate_count as i64));
+            }
             HirError::StructureMissingConstructor { qualified_name, .. } => {
                 row = row.with_arg("aggregate", DiagnosticArg::Aggregate(qualified_name.clone()));
             }
@@ -538,6 +541,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::UnresolvedConstructor { source, .. } => source.clone(),
         HirError::NominalAmbiguous { source, .. } => source.clone(),
         HirError::SumUniteAmbiguous { source, .. } => source.clone(),
+        HirError::ArrayOwnerAmbiguous { source, .. } => source.clone(),
         HirError::StructureMissingConstructor { source, .. } => source.clone(),
         HirError::SumUniteMissingDeclaration { source, .. } => source.clone(),
         HirError::InvalidDiscriminator { source, .. } => source.clone(),
@@ -612,6 +616,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::UnresolvedConstructor { span, .. } => span.clone(),
         HirError::NominalAmbiguous { span, .. } => span.clone(),
         HirError::SumUniteAmbiguous { span, .. } => span.clone(),
+        HirError::ArrayOwnerAmbiguous { span, .. } => span.clone(),
         HirError::StructureMissingConstructor { span, .. } => span.clone(),
         HirError::SumUniteMissingDeclaration { span, .. } => span.clone(),
         HirError::InvalidDiscriminator { span, .. } => span.clone(),

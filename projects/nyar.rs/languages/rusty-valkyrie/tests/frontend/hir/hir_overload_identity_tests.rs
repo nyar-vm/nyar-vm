@@ -274,6 +274,123 @@ fn compile_operator_groups(std: &str, app: &str) -> Result<(), String> {
     }
 }
 
+/// 内建 `[T]` 的 owner 是 canonical `std.collection.Array` 的声明身份，不是
+/// 「本地任意名叫 `Array` 的单泛型聚合」。用户在同一项目里声明自己的
+/// `Array<T>` 时，它必须保持普通名义身份，不被当成内建数组 owner。
+#[test]
+fn same_named_user_array_keeps_nominal_identity_next_to_builtin_owner() {
+    let source = r#"
+namespace app;
+
+class Array<T> {
+    value: T
+}
+
+namespace std.collection;
+
+class Array<T> {
+}
+
+[export]
+micro keep_std(a: Array<i32>): bool {
+    return false
+}
+
+namespace app;
+
+[export]
+micro wrap(a: Array<i32>): Array<i32> {
+    return a
+}
+
+[export]
+micro probe(items: [i32]): bool {
+    return false
+}
+"#;
+    let hir = ValkyrieCompiler::default().compile_source(source).expect("同名 Array 不得导致绑定失败");
+    let wrap = hir.functions.iter().find(|function| function.name.as_str() == "wrap").unwrap();
+    assert!(
+        matches!(wrap.params[0].ty, ValkyrieType::Nominal { .. }),
+        "用户自己的 `Array<T>` 必须冻结为名义声明身份，实际: {:?}",
+        wrap.params[0].ty
+    );
+    let keep_std = hir.functions.iter().find(|function| function.name.as_str() == "keep_std").unwrap();
+    assert!(
+        matches!(keep_std.params[0].ty, ValkyrieType::Array(_)),
+        "canonical `std.collection.Array<T>` 必须折叠为内建 `[T]`，实际: {:?}",
+        keep_std.params[0].ty
+    );
+    let probe = hir.functions.iter().find(|function| function.name.as_str() == "probe").unwrap();
+    assert!(matches!(probe.params[0].ty, ValkyrieType::Array(_)), "内建 `[T]` 仍由 canonical owner 承担");
+}
+
+/// 无同名冲突的标准场景：`Array<T>` 解析到可见的 `std.collection.Array`，
+/// 仍按内建 `[T]` 结构化身份冻结。
+#[test]
+fn canonical_array_owner_still_folds_array_spelling() {
+    let std = r#"
+namespace std.collection;
+
+class Array<T> {
+    _typing: Phantom<T>
+}
+
+structure Phantom<T> {
+}
+"#;
+    let app = r#"
+namespace app;
+
+[export]
+micro wrap(a: Array<i32>): Array<i32> {
+    return a
+}
+"#;
+    let modules = compile_groups(std, app).expect("标准 Array 场景必须编译");
+    let app_module = modules
+        .iter()
+        .find(|module| module.functions.iter().any(|function| function.name.as_str() == "wrap"))
+        .expect("app 模块");
+    let wrap = app_module.functions.iter().find(|function| function.name.as_str() == "wrap").unwrap();
+    assert!(matches!(wrap.params[0].ty, ValkyrieType::Array(_)), "`Array<T>` 必须折叠为内建 `[T]`");
+}
+
+/// 可见作用域里多个 `Array<T>` 声明且没有 canonical `std.collection.Array` 时，
+/// 必须结构化报错；不得像旧实现那样 `.first()` 静默取首项。
+#[test]
+fn multiple_array_owners_are_reported_as_structured_error() {
+    let source = r#"
+namespace a;
+
+class Array<T> {
+    value: T
+}
+
+namespace b;
+
+class Array<T> {
+    value: T
+}
+
+micro probe(items: [i32]): bool {
+    return false
+}
+"#;
+    let error = ValkyrieCompiler::default().compile_source(source).expect_err("多候选内建数组 owner 必须报错");
+    assert!(error.to_string().contains("ambiguous"), "必须是结构化歧义错误，实际: {error}");
+}
+
+fn compile_groups(std: &str, app: &str) -> Result<Vec<rusty_valkyrie::types::hir::HirModule>, String> {
+    use rusty_valkyrie::{CompilerSourceGroup, compiler::diagnostics::pending, hir::lowering::DEFAULT_COMPILE_ARCH};
+    pending::clear_pending_diagnostics();
+    let groups = [
+        CompilerSourceGroup::single_source("std.collection", "std.collection", std),
+        CompilerSourceGroup::single_source("app", "app", app).as_entry().with_direct_dependencies(vec!["std.collection".into()]),
+    ];
+    ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).map_err(|error| error.to_string())
+}
+
 #[cfg(false)] // 历史用例访问 overload pub(crate) 内部函数（架构迁移遗留），维持排除
 mod legacy_internals {
     use rusty_valkyrie::{

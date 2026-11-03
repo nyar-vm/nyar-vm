@@ -59,6 +59,15 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// 内建结构化数组 `[T]` 的 owner 声明在可见作用域内多候选，无法冻结唯一身份。
+    ArrayOwnerAmbiguous {
+        /// 候选声明数量。
+        candidate_count: usize,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 结构缺少 constructor_declaration，无法绑定名义类型。
     StructureMissingConstructor {
         /// 结构聚合全名（namespace::name）。
