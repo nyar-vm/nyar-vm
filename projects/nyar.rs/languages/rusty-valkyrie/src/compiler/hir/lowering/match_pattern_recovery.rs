@@ -140,12 +140,8 @@ fn split_match_arms(interior: &str) -> Vec<(String, String)> {
                 index = next;
                 continue;
             }
-            if rest.starts_with("default") && is_word_boundary(rest, 7) {
-                index += 7;
-                index = skip_ascii_whitespace(interior, index);
-                if interior.as_bytes().get(index) == Some(&b':') {
-                    index += 1;
-                }
+            if let Some(consumed) = default_arm_marker(rest) {
+                index += consumed;
                 index = skip_ascii_whitespace(interior, index);
                 let (body, next) = read_arm_body(interior, index);
                 arms.push(("else".to_string(), body));
@@ -216,10 +212,24 @@ fn starts_next_arm(text: &str, index: usize) -> bool {
     if rest.starts_with("else") && is_word_boundary(rest, 4) {
         return true;
     }
-    if rest.starts_with("default") && is_word_boundary(rest, 7) {
+    if default_arm_marker(rest).is_some() {
         return true;
     }
     false
+}
+
+/// `default` 仅在紧随（可隔空白）`:` 时才是臂标记，与解析器同一规则；
+/// 否则它是臂体内的普通标识符表达式（如读取名为 `default` 的绑定）。
+/// 返回连冒号在内的消费长度。
+fn default_arm_marker(rest: &str) -> Option<usize> {
+    if !(rest.starts_with("default") && is_word_boundary(rest, 7)) {
+        return None;
+    }
+    let mut index = 7;
+    while rest.as_bytes().get(index).is_some_and(|byte| byte.is_ascii_whitespace()) {
+        index += 1;
+    }
+    if rest.as_bytes().get(index) == Some(&b':') { Some(index + 1) } else { None }
 }
 
 fn parse_recovered_pattern(text: &str) -> Option<HirPattern> {
