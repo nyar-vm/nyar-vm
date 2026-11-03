@@ -308,7 +308,7 @@ fn resolve_expr_calls_at(
                 contextual_type,
                 ExprPosition::Callee,
             );
-            let argument_contexts = crate::compiler::hir::overload::substitution::member_call_argument_contexts(
+            let member_argument_contexts = crate::compiler::hir::overload::substitution::member_call_argument_contexts(
                 callee,
                 candidates,
                 type_relations,
@@ -316,6 +316,13 @@ fn resolve_expr_calls_at(
                 struct_fields,
                 singleton_names,
             );
+            // 成员调用形态供给为空时，按自由函数 callee 补同样的逐槽形参上下文；
+            // 两种 callee 形态互斥，不叠加。
+            let argument_contexts = if member_argument_contexts.is_empty() {
+                crate::compiler::hir::overload::substitution::free_call_argument_contexts(callee, candidates, type_relations, locals, singleton_names)
+            } else {
+                member_argument_contexts
+            };
             for (index, arg) in args.iter_mut().enumerate() {
                 let supplied = argument_contexts.get(index).and_then(|context| context.as_ref());
                 let context = if call_resolver_is_unresolved_variant_reference(&arg.value, locals) {

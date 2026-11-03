@@ -506,6 +506,67 @@ pub(crate) fn member_call_argument_contexts(
     contexts
 }
 
+/// 自由函数调用的实参上下文类型（裸名 callee，不含接收者槽）。
+///
+/// 与 `member_call_argument_contexts` 同口径、覆盖互补的 callee 形态：callee 为
+/// 单段名字且不是局部绑定或 singleton 时，按同名自由函数候选的形参类型逐槽供给
+/// 上下文；多个候选在同一槽给出不同类型时该槽置 `None`（冲突不猜）。无接收者、
+/// 无可代入证据，因此不做 binder 代入——上下文只为无自足类型的实参（裸 `None`
+/// 这类 nullary 变体引用）提供收窄锚点，最终类型正确性仍由候选匹配与
+/// `try_resolve_nullary_constructor` 的精确 unify 判定。
+pub(crate) fn free_call_argument_contexts(
+    callee: &crate::compiler::types::hir::HirExpr,
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+    locals: &BTreeMap<String, ValkyrieType>,
+    singleton_names: &std::collections::BTreeSet<Identifier>,
+) -> Vec<Option<ValkyrieType>> {
+    use crate::compiler::types::hir::HirExprKind;
+
+    let name = match &callee.kind {
+        HirExprKind::Variable(identifier) => identifier.name.clone(),
+        HirExprKind::Path(path) if path.parts().len() == 1 => path.parts()[0].clone(),
+        _ => return Vec::new(),
+    };
+    if locals.contains_key(name.as_str()) || singleton_names.contains(&name) {
+        return Vec::new();
+    }
+    let enclosing_module = type_relations.enclosing_module();
+    let mut contexts: Vec<Option<ValkyrieType>> = Vec::new();
+    let mut conflicted: Vec<bool> = Vec::new();
+    let mut applicable = false;
+    for candidate in candidates
+        .iter()
+        .filter(|candidate| matches!(candidate.domain, super::diagnostics::OverloadDomain::Function))
+        .filter(|candidate| candidate.owner.is_none())
+        .filter(|candidate| super::symbol_match::symbol_matches_unqualified_free_call(&candidate.symbol, &name, enclosing_module))
+    {
+        applicable = true;
+        for (slot, param) in candidate.signature.params.iter().enumerate() {
+            let context = param.clone();
+            if contexts.len() <= slot {
+                contexts.resize(slot + 1, None);
+                conflicted.resize(slot + 1, false);
+            }
+            if conflicted[slot] {
+                continue;
+            }
+            match &contexts[slot] {
+                None => contexts[slot] = Some(context),
+                Some(existing) if existing != &context => {
+                    contexts[slot] = None;
+                    conflicted[slot] = true;
+                }
+                Some(_) => {}
+            }
+        }
+    }
+    if !applicable {
+        return Vec::new();
+    }
+    contexts
+}
+
 pub(crate) fn try_resolve_qualified_free_function_substitute_vars_only() {
     // no-op placeholder
 }
