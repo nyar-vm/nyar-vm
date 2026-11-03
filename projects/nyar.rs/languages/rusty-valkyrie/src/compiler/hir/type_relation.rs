@@ -123,6 +123,7 @@ impl TypeRelationContext {
         collect_relation_enums(module, &mut enums, &mut enums_by_declaration);
         let mut imported_symbols = Vec::new();
         collect_relation_imports(module, &mut imported_symbols);
+        collect_group_scope_imports(module, &mut imported_symbols);
         Self {
             nominal: NominalModuleView::from_module(module),
             traits: TraitModuleView::from_module(module),
@@ -547,6 +548,22 @@ fn collect_relation_imports(module: &HirModule, out: &mut Vec<ImportedSymbol>) {
     }
     for submodule in &module.submodules {
         collect_relation_imports(submodule, out);
+    }
+}
+
+/// 同一源码组内的模块共享一个文件作用域：组内任一命名空间的顶层声明都能被组内
+/// 其它模块以短名无限定引用。
+///
+/// 这与组内名义类型的短名解析保持一致（`NominalModuleView` 同样按组内声明集合建索引），
+/// 也符合「Package 拥有 Module、声明及包内可见性」的合同。跨组仍然只承认显式 `using`
+/// 绑定与依赖组导出，不允许以末段回退跨越组边界；本绑定只在判定上下文构造时合成，
+/// 不进入 HIR 序列化面。
+fn collect_group_scope_imports(module: &HirModule, out: &mut Vec<ImportedSymbol>) {
+    if let Some(name) = module.name.parts().last() {
+        out.push(ImportedSymbol { module: module.name.clone(), glob: true, local: name.clone(), imported: name.clone() });
+    }
+    for submodule in &module.submodules {
+        collect_group_scope_imports(submodule, out);
     }
 }
 
