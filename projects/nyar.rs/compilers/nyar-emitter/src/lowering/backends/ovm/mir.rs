@@ -457,7 +457,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         for instruction in &block.instructions {
             self.emit_instruction(instruction)?;
         }
-        self.emit_terminator(block);
+        self.emit_terminator(block)?;
         Ok(())
     }
 
@@ -720,7 +720,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         Ok(())
     }
 
-    fn emit_terminator(&mut self, block: &MirBlock) {
+    fn emit_terminator(&mut self, block: &MirBlock) -> crate::Result<()> {
         match &block.terminator {
             MirTerminator::Return { value } => {
                 if let Some(value) = value {
@@ -837,8 +837,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 // 状态机入口：读取 state local，与每个 case_key 比较；
                 // 匹配则跳到对应 target，否则跳到 default_target。
                 for (case_key, target) in cases {
+                    // `case_key` 是 `u32`，`as i32` 会把 ≥ 2^31 的键静默折回负值。
+                    // 没有任何生产者把它约束在 i32 内，因此超界必须结构化失败，
+                    // 不得发出一个永远匹配不上的错误常量。
+                    let case_key = i32::try_from(*case_key).map_err(|_| {
+                        format!(
+                            "OVM StateDispatch 的 case_key {} 超出 i32 表示范围（symbol=`{}`）",
+                            *case_key, self.mir_fn.symbol
+                        )
+                    })?;
                     self.emit_operand(&MirOperand::Value(*state));
-                    self.emitter.emit_const_i32(*case_key as i32);
+                    self.emitter.emit_const_i32(case_key);
                     self.emitter.emit_plain(OdinHeadCode::I32Eq);
                     self.emitter.emit_jump_placeholder(OdinHeadCode::JumpIfTrue, *target);
                 }
@@ -853,6 +862,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_plain(OdinHeadCode::Trap);
             }
         }
+        Ok(())
     }
 
     /// 发射 `backend_plan.imports()` 中的外部 provider 调用。
