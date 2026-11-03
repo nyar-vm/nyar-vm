@@ -20,6 +20,7 @@ mod glue_contract;
 mod interactive_artifact;
 mod list_each_shape;
 mod pipeline_discover;
+mod product_page;
 mod serve;
 mod serve_static_build;
 mod server_runtime;
