@@ -114,6 +114,49 @@ pub fn plan_semantic_closure_with_host_bindings(
     // `structure i64`），按文件边界或「短名 + namespace」连接都是名字近似。
     indexes.link(&visibility);
 
+    // `imply` 块是目标聚合的声明面事实：where 证据（`T: Equal`）在 HIR 调用解析时
+    // 必须能在 trait 视图里看到实现，与「是否有调用点以成员形式选中 witness 方法」
+    // 无关。这里按 `MemberOwner` 链接把每个 witness 方法解析到聚合声明身份，建立
+    // owner → impl 方法 的反查表；保留判定在下面的固定点内按「聚合 + trait 双双需求」执行。
+    // 该规则只扩展名字解析上界，body 物化仍由可达性门独立收口。
+    let empty_visibility = BTreeSet::new();
+    let mut impl_methods_by_owner = BTreeMap::<DeclarationKey, Vec<DeclarationKey>>::new();
+    for (key, entry) in &declaration_index {
+        if key.kind != DeclarationKind::ImplyMethod {
+            continue;
+        }
+        let Some(DeclarationLink::MemberOwner(owner_reference)) = &entry.link
+        else {
+            continue;
+        };
+        let visible = visibility.get(&key.dependency_key).unwrap_or(&empty_visibility);
+        for resolved in indexes.resolve(owner_reference, &key.namespace, visible) {
+            // 别名目标按其 `AliasTarget` 链接跟进一层：`imply utf8: Hash` 的 `utf8`
+            // 常是 `Utf8Text` 的别名，impl 声明的所有者必须是真实聚合身份。
+            let aggregate = if resolved.kind == DeclarationKind::TypeAlias {
+                declaration_index.get(&resolved).and_then(|alias| match &alias.link {
+                    Some(DeclarationLink::AliasTarget(target)) => {
+                        indexes.resolve(target, &resolved.namespace, visible).iter().next().cloned()
+                    }
+                    _ => None,
+                })
+            }
+            else {
+                Some(resolved)
+            };
+            let Some(aggregate) = aggregate
+            else {
+                continue;
+            };
+            if matches!(
+                aggregate.kind,
+                DeclarationKind::Class | DeclarationKind::Structure | DeclarationKind::Union | DeclarationKind::Enum | DeclarationKind::Flags
+            ) {
+                impl_methods_by_owner.entry(aggregate).or_default().push(key.clone());
+            }
+        }
+    }
+
     let mut demanded = BTreeSet::new();
     let mut selectors = BTreeSet::<String>::new();
     let mut queue = VecDeque::new();
@@ -187,7 +230,6 @@ pub fn plan_semantic_closure_with_host_bindings(
     // provider 的引用永远不被遍历，被引用的聚合不会进入依赖组 HIR，随后类型绑定必然失败。
     enqueue_selected_host_providers(host_bindings, &declaration_index, &mut queue)?;
 
-    let empty_visibility = BTreeSet::new();
     loop {
         while let Some(key) = queue.pop_front() {
             if !demanded.insert(key.clone()) {
@@ -232,6 +274,51 @@ pub fn plan_semantic_closure_with_host_bindings(
             for member in indexes.selected_members(aggregate, &selectors) {
                 if !demanded.contains(&member) {
                     promoted.insert(member);
+                }
+            }
+        }
+        // 证据驱动的 impl 保留：`T: Equal` 这类 where 证据在 HIR 调用解析时必须能看到
+        // 目标聚合的实现，即使没有任何调用点以成员形式选中 witness 方法。保留条件要求
+        // 两条声明面事实同时成立——目标聚合已被需求，且 impl 实现的 trait 本身已被需求
+        // （trait 别名按 `AliasTarget` 跟进到真实 trait 声明）。「外壳始终物化」会破坏
+        // §3.1 的需求闭包上界含义，故不以聚合单独决定保留。
+        for aggregate in &demanded {
+            let Some(impl_methods) = impl_methods_by_owner.get(aggregate)
+            else {
+                continue;
+            };
+            for method in impl_methods {
+                if demanded.contains(method) {
+                    continue;
+                }
+                let Some(entry) = declaration_index.get(method)
+                else {
+                    continue;
+                };
+                let visible = visibility.get(&method.dependency_key).unwrap_or(&empty_visibility);
+                let implements_demanded_trait = entry.references.iter().any(|reference| {
+                    indexes
+                        .resolve(reference, &method.namespace, visible)
+                        .iter()
+                        .any(|resolved| {
+                            let trait_key = if resolved.kind == DeclarationKind::TypeAlias {
+                                declaration_index.get(resolved).and_then(|alias| match &alias.link {
+                                    Some(DeclarationLink::AliasTarget(target)) => indexes
+                                        .resolve(target, &resolved.namespace, visible)
+                                        .iter()
+                                        .find(|key| key.kind == DeclarationKind::Trait)
+                                        .cloned(),
+                                    _ => None,
+                                })
+                            }
+                            else {
+                                Some(resolved.clone())
+                            };
+                            trait_key.is_some_and(|key| key.kind == DeclarationKind::Trait && demanded.contains(&key))
+                        })
+                });
+                if implements_demanded_trait {
+                    promoted.insert(method.clone());
                 }
             }
         }
