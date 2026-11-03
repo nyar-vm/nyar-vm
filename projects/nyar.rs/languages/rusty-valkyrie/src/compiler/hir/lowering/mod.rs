@@ -80,6 +80,8 @@ pub(crate) use generic_binders::{
 };
 
 pub(crate) use generic_instantiation::instantiate_generic_callables;
+#[doc(hidden)]
+pub use generic_instantiation::{MAX_FIXPOINT_ROUNDS, MAX_GENERIC_INSTANCES};
 
 pub(crate) use attribute_lowering::{
     PropertyMethodKind, default_module_name, generic_parameter_names, has_modifier, imply_generic_parameter_names, is_property_accessor,
@@ -418,7 +420,7 @@ impl ValkyrieCompiler {
         // Resolver 绑定先给出泛型 provider 的播种映射：合同调用点的具体代入
         // 在固定点内同时铸造 provider 闭合副本，绑定配对才有同签名实现可指。
         let provider_seeds = crate::compiler::emitter::pipeline::host_provider_instantiation_seeds(&hir_groups, host_bindings)?;
-        instantiate_generic_callables(&mut hir_groups, Some(&gate), &provider_seeds);
+        instantiate_generic_callables(&mut hir_groups, Some(&gate), &provider_seeds)?;
         gate.finalize_instances(&hir_groups);
         for hir in &hir_groups {
             validate_extractor_patterns(hir)?;

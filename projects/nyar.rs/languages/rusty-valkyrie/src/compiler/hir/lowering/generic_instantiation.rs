@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::{
     hir::{
+        lowering::errors::HirError,
         overload::{has_unresolved_generic_arguments, owner_type_generic_binders, substitute_type_self},
         type_relation::TypeRelationContext,
     },
@@ -51,6 +52,61 @@ enum CallableRequest<'a> {
     Call(&'a mut HirResolvedCall),
     /// 具名函数作值引用；只有非泛型声明会被改写生成。
     Reference(&'a mut HirFunctionReference),
+}
+
+/// 单态化固定点允许铸造的最大 `(声明, 代入)` 实例数。
+///
+/// 每个新实例都 `instantiate_callable` 克隆整个函数体；递归泛型或开放克隆会让
+/// 组合无界膨胀（`boom<T>` 体内 `boom::<Box<T>>` 这类更深自代入），上限处必须
+/// fail-closed，不许静默截断实例表。正常全量闭包远低于该量级。
+pub const MAX_GENERIC_INSTANCES: usize = 65_536;
+
+/// 单态化固定点的最大轮次。
+///
+/// 每轮至少铸造一个新实例才继续；超过该轮次仍有增长即判定不收敛。
+pub const MAX_FIXPOINT_ROUNDS: usize = 512;
+
+/// 固定点超限诊断的 top-N 规模。
+const TOP_GROWTH_REPORT: usize = 5;
+
+/// 把声明身份投影为「限定名 + 冻结 span」供超限诊断使用。
+fn declaration_label(declarations: &BTreeMap<u32, CallableDeclaration>, index: u32) -> (String, nyar_types::DiagnosticSpan) {
+    let Some(declaration) = declarations.get(&index)
+    else {
+        return (format!("<declaration #{index}>"), nyar_types::DiagnosticSpan { start: 0, end: 0 });
+    };
+    let function = &declaration.function;
+    let qualified = if function.declaring_namespace.parts().is_empty() {
+        function.name.as_str().to_string()
+    }
+    else {
+        let namespace = function.declaring_namespace.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join(".");
+        format!("{namespace}.{}", function.name.as_str())
+    };
+    (qualified, nyar_types::DiagnosticSpan { start: function.span.span.start as usize, end: function.span.span.end as usize })
+}
+
+/// 超限失败：实例数 top-N 按声明聚合，span 取增长最快的声明。
+fn instantiation_limit_error(
+    kind: super::errors::GenericInstantiationLimitKind,
+    limit: usize,
+    actual: usize,
+    declarations: &BTreeMap<u32, CallableDeclaration>,
+    per_declaration: &BTreeMap<u32, usize>,
+) -> HirError {
+    let mut ranked: Vec<(u32, usize)> = per_declaration.iter().map(|(index, count)| (*index, *count)).collect();
+    ranked.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+    let top_growth =
+        ranked.iter().take(TOP_GROWTH_REPORT).map(|(index, count)| (declaration_label(declarations, *index).0, *count)).collect::<Vec<_>>();
+    let span = ranked.first().map(|(index, _)| declaration_label(declarations, *index).1).unwrap_or(nyar_types::DiagnosticSpan { start: 0, end: 0 });
+    HirError::GenericInstantiationLimitExceeded {
+        kind,
+        limit,
+        actual,
+        top_growth,
+        source: nyar_types::DiagnosticSource { id: "<hir_lowering>".into(), revision: None },
+        span,
+    }
 }
 
 /// 把仍指向 trait 方法槽的 witness 换成具体 impl 成员的 (声明下标, 代入)。
@@ -144,16 +200,19 @@ pub(crate) fn instantiate_generic_callables(
     modules: &mut [HirModule],
     gate: Option<&crate::compiler::hir::reachability::HirMaterializationGate>,
     provider_seeds: &BTreeMap<u32, u32>,
-) {
+) -> Result<(), HirError> {
     let (declarations, trait_members) = collect_impl_declarations(modules);
     if declarations.is_empty() {
-        return;
+        return Ok(());
     }
     // 每个声明模块的 trait 证据视图：实例化期用它结算解析期被延后的开放义务。
     let relations = modules.iter().map(TypeRelationContext::from_module).collect::<Vec<_>>();
     let mut next_instance = modules.iter().filter_map(super::max_hir_callable_instance_index).max().map_or(0, |index| index.saturating_add(1));
     let mut instances: BTreeMap<(u32, Substitution), nyar_types::ItemInstanceId> = BTreeMap::new();
+    let mut per_declaration: BTreeMap<u32, usize> = BTreeMap::new();
+    let mut rounds = 0usize;
     loop {
+        rounds = rounds.saturating_add(1);
         // 1. 收集仍指向开放声明的调用点。
         let mut requests: BTreeSet<(u32, Substitution)> = BTreeSet::new();
         for module in modules.iter_mut() {
@@ -230,7 +289,18 @@ pub(crate) fn instantiate_generic_callables(
         //    `[library_glue]` 成员；这些成员可能没有任何调用点。
         seed_export_surface_requests(modules, gate, &declarations, &mut requests);
         if requests.is_empty() {
-            break;
+            return Ok(());
+        }
+        // 收敛守卫：递归泛型或开放克隆会让 `(声明, 代入)` 无界膨胀；
+        // 上限处 fail-closed，诊断带增长最快的声明 top-N。
+        if rounds > MAX_FIXPOINT_ROUNDS {
+            return Err(instantiation_limit_error(
+                super::errors::GenericInstantiationLimitKind::Rounds,
+                MAX_FIXPOINT_ROUNDS,
+                rounds,
+                &declarations,
+                &per_declaration,
+            ));
         }
         // 3. 按稳定序铸造新实例。
         let before = instances.len();
@@ -254,7 +324,17 @@ pub(crate) fn instantiate_generic_callables(
             next_instance = next_instance.saturating_add(1);
             let callable = instantiate_callable(declaration, substitution, instance);
             instances.insert((*index, substitution.clone()), instance);
+            *per_declaration.entry(*index).or_insert(0) += 1;
             modules[declaration.module].instantiated_callables.push(callable);
+            if instances.len() > MAX_GENERIC_INSTANCES {
+                return Err(instantiation_limit_error(
+                    super::errors::GenericInstantiationLimitKind::Instances,
+                    MAX_GENERIC_INSTANCES,
+                    instances.len(),
+                    &declarations,
+                    &per_declaration,
+                ));
+            }
         }
         // 4. 回填调用点。即使本轮没有新实例也必须回填：克隆体里的重复代入
         //    只能指向已存在的实例，不能永远悬空。
@@ -317,7 +397,7 @@ pub(crate) fn instantiate_generic_callables(
             });
         }
         if instances.len() == before {
-            break;
+            return Ok(());
         }
     }
 }

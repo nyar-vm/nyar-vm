@@ -657,6 +657,25 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// 单态化固定点超过上限。
+    ///
+    /// 递归泛型或开放克隆会让 `(声明, 代入)` 组合无界膨胀；该错误只表达
+    /// 「超过上限」这一结构化事实，调用方必须失败闭合，不得忽略超限继续铸造，
+    /// 也不许静默截断实例表。
+    GenericInstantiationLimitExceeded {
+        /// 触发的上限类别。
+        kind: GenericInstantiationLimitKind,
+        /// 允许的上限。
+        limit: usize,
+        /// 触发时的实际规模。
+        actual: usize,
+        /// 实例增长最快的声明 top-N：声明限定名与该声明已铸造的实例数。
+        top_growth: Vec<(String, usize)>,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span（增长最快的声明的冻结 span）。
+        span: DiagnosticSpan,
+    },
     /// `.vx` source 暂不支持。
     VxUnsupported,
     /// 源码组语义闭包失败：入口声明缺失、HostProvider 未解析等。
@@ -786,6 +805,15 @@ pub enum TemplateFailure {
         /// 重新解析产出的顶层项数量。
         produced_items: usize,
     },
+}
+
+/// 单态化固定点超限的类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenericInstantiationLimitKind {
+    /// 铸造的 `(声明, 代入)` 实例总数超过上限。
+    Instances,
+    /// 固定点轮次超过上限（仍有新实例产生，未见收敛趋势）。
+    Rounds,
 }
 
 /// `match` 源码恢复阶段。

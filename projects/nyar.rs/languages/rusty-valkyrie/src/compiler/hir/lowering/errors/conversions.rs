@@ -265,6 +265,21 @@ impl std::fmt::Display for HirError {
             Self::ExpressionNestingExceeded { depth, limit, .. } => {
                 write!(f, "expression nesting exceeds lowering guard: depth={depth} limit={limit}")
             }
+            Self::GenericInstantiationLimitExceeded { kind, limit, actual, top_growth, .. } => {
+                use super::model::GenericInstantiationLimitKind;
+                let kind_label = match kind {
+                    GenericInstantiationLimitKind::Instances => "instances",
+                    GenericInstantiationLimitKind::Rounds => "fixpoint rounds",
+                };
+                write!(f, "generic instantiation limit exceeded: {kind_label} actual={actual} limit={limit}")?;
+                if !top_growth.is_empty() {
+                    write!(f, "; fastest growing declarations:")?;
+                    for (name, count) in top_growth {
+                        write!(f, " {name}×{count}")?;
+                    }
+                }
+                Ok(())
+            }
             Self::VxUnsupported => write!(f, ".vx source is not supported"),
             Self::SourceGroupClosureFailed(e) => write!(f, "source group closure failed: {e}"),
             Self::DeriveResolutionFailed { errors } => {

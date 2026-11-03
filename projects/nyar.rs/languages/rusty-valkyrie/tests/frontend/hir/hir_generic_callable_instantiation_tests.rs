@@ -39,6 +39,40 @@ fn compile(source: &str) -> rusty_valkyrie::types::hir::HirModule {
     ValkyrieCompiler::default().compile_source(source).expect("泛型 impl 源码必须完成 HIR")
 }
 
+/// 递归泛型的更深自代入（`boom<T>` 体内 `boom::<Box<T>>`）会让 `(声明, 代入)`
+/// 无界膨胀；单态化固定点必须在轮次上限处 fail-closed，诊断携带增长最快的
+/// 声明名，不得静默截断实例表。
+///
+/// 病态输入的代价本身就是发散的（第 512 轮的克隆体携带 512 层嵌套类型）：
+/// 该用例全链跑一次约两分钟，验证的是 fail-closed 诊断形态而非吞吐；
+/// 手动跑：`cargo test -- --ignored deeper_self_substitution`。
+#[test]
+#[ignore = "病态发散输入，按上面对说明手动运行"]
+fn deeper_self_substitution_fails_closed_at_fixpoint_round_limit() {
+    let source = r#"
+class Box<T> {
+    _value: T
+}
+
+micro boom<T>(x: T) -> i32 {
+    return boom::<Box<T>>(Box { _value: x })
+}
+
+[export]
+micro probe() -> i32 {
+    return boom::<i32>(1)
+}
+"#;
+    let failure = ValkyrieCompiler::default().compile_source(source).expect_err("不收敛的固定点必须结构化失败");
+    let HirError::GenericInstantiationLimitExceeded { kind, limit, top_growth, .. } = failure
+    else {
+        panic!("必须是单态化上限诊断: {failure}");
+    };
+    assert_eq!(kind, rusty_valkyrie::compiler::hir::lowering::errors::GenericInstantiationLimitKind::Rounds);
+    assert_eq!(limit, rusty_valkyrie::compiler::hir::lowering::MAX_FIXPOINT_ROUNDS);
+    assert!(top_growth.iter().any(|(name, _)| name.ends_with("boom")), "top-N 必须含增长声明: {top_growth:?}");
+}
+
 fn resolved_calls(function: &HirFunction) -> Vec<&HirResolvedCall> {
     let mut calls = Vec::new();
     for statement in &function.body.statements {

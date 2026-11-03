@@ -199,12 +199,21 @@ pub(crate) fn register_aggregate_nominal_instances(
     Ok(bindings)
 }
 
+/// 实例字段类型 intern 的总量上限。
+///
+/// `A<A<A<…>>>` 型嵌套实例每轮固定点必新增一层派生类型，总量无界即病态输入；
+/// 正常闭包的 canonical 类型表远低于该量级。上限处 fail-closed，不许静默截断。
+pub(crate) const MAX_INTERNED_TYPES: usize = 65_536;
+
 /// 为实例级字段类型补齐 canonical 类型身份。
 ///
 /// 实例字段类型是「声明字段 × binder 代入」的派生事实，可能从未作为 SSA 值出现，
 /// 因此不在前端 `type_identities` 里。这里按既有子类型递归登记，新 `TypeId` 稠密
 /// 追加在末尾，不改写任何前端已给出的身份；嵌套实例会引出新的实例类型，故循环到
 /// 不再产出新类型为止。无法无损投影到 canonical 的派生类型仍失败关闭。
+///
+/// 循环只有「无增长」一个正常退出；总量超过 [`MAX_INTERNED_TYPES`] 判定为不收敛
+/// 的嵌套实例（`A<A<A<…>>>`），按 CAN059 结构化失败并给出模块与当前规模上下文。
 pub(crate) fn intern_instance_field_types(
     module: &MirModule,
     type_values: &mut BTreeMap<ValkyrieType, TypeId>,
@@ -239,6 +248,17 @@ pub(crate) fn intern_instance_field_types(
                 for field in &fields {
                     intern_type(type_values, field, &mut next)?;
                 }
+            }
+            if type_values.len() > MAX_INTERNED_TYPES {
+                return Err(error(
+                    module,
+                    "CAN059",
+                    format!(
+                        "实例字段类型 intern 不收敛：类型表规模 {} 超过上限 {MAX_INTERNED_TYPES}；聚合 `{}` 的嵌套实例持续派生新类型（`A<A<A<…>>>` 型输入须由上游拒绝）",
+                        type_values.len(),
+                        structure.qualified_name(),
+                    ),
+                ));
             }
         }
         if type_values.len() == before {

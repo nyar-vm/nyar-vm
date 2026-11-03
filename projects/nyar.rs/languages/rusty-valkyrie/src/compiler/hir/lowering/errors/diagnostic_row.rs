@@ -293,6 +293,18 @@ impl From<HirError> for DiagnosticRow {
             HirError::ExpressionNestingExceeded { depth, limit, .. } => {
                 row = row.with_arg("depth", DiagnosticArg::Int(*depth as i64)).with_arg("limit", DiagnosticArg::Int(*limit as i64));
             }
+            HirError::GenericInstantiationLimitExceeded { kind, limit, actual, top_growth, .. } => {
+                use crate::compiler::hir::lowering::errors::model::GenericInstantiationLimitKind;
+                let kind_label = match kind {
+                    GenericInstantiationLimitKind::Instances => "instances",
+                    GenericInstantiationLimitKind::Rounds => "rounds",
+                };
+                row = row
+                    .with_arg("kind", DiagnosticArg::String(kind_label.to_string()))
+                    .with_arg("limit", DiagnosticArg::Int(*limit as i64))
+                    .with_arg("actual", DiagnosticArg::Int(*actual as i64))
+                    .with_arg("top_growth", DiagnosticArg::Int(top_growth.len() as i64));
+            }
             HirError::VxUnsupported => {}
             HirError::SourceGroupClosureFailed(e) => {
                 row = row.with_arg("details", DiagnosticArg::String(e.to_string()));
@@ -576,6 +588,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::LegacyBuiltinTypeAlias { source, .. } | HirError::AmbiguousTextTypeName { source, .. } => source.clone(),
         HirError::TypeNotFound { source, .. } => source.clone(),
         HirError::ExpressionNestingExceeded { source, .. } => source.clone(),
+        HirError::GenericInstantiationLimitExceeded { source, .. } => source.clone(),
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
@@ -647,6 +660,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::LegacyBuiltinTypeAlias { span, .. } | HirError::AmbiguousTextTypeName { span, .. } => span.clone(),
         HirError::TypeNotFound { span, .. } => span.clone(),
         HirError::ExpressionNestingExceeded { span, .. } => span.clone(),
+        HirError::GenericInstantiationLimitExceeded { span, .. } => span.clone(),
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
