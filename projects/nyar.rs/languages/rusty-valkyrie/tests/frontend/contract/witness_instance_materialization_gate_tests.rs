@@ -326,6 +326,64 @@ fn concrete_argument_without_trait_impl_is_rejected() {
     assert!(matches!(&error, HirError::UnresolvedCall { .. }), "got {error:?}");
 }
 
+const BAG: &str = "namespace std.collection;
+
+type Equal = std::primitive::Equal;
+
+class Bag<T> {
+    _items: [T]
+}
+
+imply Bag<T> {
+    micro put(self, value: T): bool where T: Equal {
+        return value == value
+    }
+}
+";
+
+const APP_BAG: &str = "namespace leetcode.app;
+
+[export]
+micro touch_bag(bag: Bag<i32>): bool {
+    return bag.put(1)
+}
+
+[main]
+micro main() {
+}
+";
+
+const APP_BAG_WRONG_LITERAL: &str = "namespace leetcode.app;
+
+[export]
+micro touch_bag(bag: Bag<i32>): bool {
+    return bag.put(\"x\")
+}
+
+[main]
+micro main() {
+}
+";
+
+/// receiver 实参必须把类泛型 binder 先钉住：`Bag<i32>` 上的 `put(1)`，
+/// `T` 由 receiver 播种为 `i32` 名义，字面量再按形参特化并通过 `Equal` 证据；
+/// 否则开放 binder 被字面量绑成编码原语，证据必然拒绝。
+#[test]
+fn receiver_seeded_generic_binder_specializes_literal_argument() {
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&source_groups(BAG, APP_BAG))
+        .expect("`Bag<i32>` 上的 `put(1)` 必须经 receiver 播种解析");
+}
+
+/// 反例：receiver 已把 `T` 钉到 `i32` 时，字符串字面量不得塞进同一形参。
+#[test]
+fn receiver_seeded_generic_binder_rejects_wrong_literal() {
+    let error = ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&source_groups(BAG, APP_BAG_WRONG_LITERAL))
+        .expect_err("`Bag<i32>` 上的 `put(\"x\")` 必须失败闭合");
+    assert!(matches!(&error, HirError::UnresolvedCall { .. }), "got {error:?}");
+}
+
 /// D4：`intersection-of-two-arrays` 语料形态——`HashMap<i64, bool>` 的
 /// `insert` / `contains_key` 都带 `where K: Equal`，具体代入 `i64` 时证据必须进入实例化。
 #[test]

@@ -133,6 +133,28 @@ imply Utf8Text: std::operator::Ordinal {
         std::types::panic("mock: no write path")
     }
 }
+
+imply Utf8Text: std::operator::Equal {
+    infix `==`(self, rhs: Self): bool { return true }
+
+    infix `!=`(self, rhs: Self): bool { return true }
+}
+
+namespace std.collection;
+
+type Equal = std::operator::Equal;
+
+class Bag<T> {
+    _items: [T]
+}
+
+imply Bag<T> {
+    micro put(self, value: T): bool
+        where T: Equal
+    {
+        return true
+    }
+}
 "#;
 
 fn compile(consumer: &str) -> Result<(), String> {
@@ -340,5 +362,20 @@ micro take_i32(v: i32) -> bool { return true }
 }
 "#;
     let failure = compile(consumer).expect_err("字符串字面量不得塞进非文本形参");
+    assert!(failure.contains("valkyrie.hir.unresolved_call"), "必须是结构化未解析调用诊断: {failure}");
+}
+
+#[test]
+fn string_literal_rejects_mismatched_receiver_binder() {
+    let consumer = r#"
+namespace app;
+
+using std.collection::Bag;
+
+[export] micro probe(bag: Bag<u8>) -> bool {
+    return bag.put("x")
+}
+"#;
+    let failure = compile(consumer).expect_err("receiver 已钉 `u8` 时字符串字面量必须失败闭合");
     assert!(failure.contains("valkyrie.hir.unresolved_call"), "必须是结构化未解析调用诊断: {failure}");
 }

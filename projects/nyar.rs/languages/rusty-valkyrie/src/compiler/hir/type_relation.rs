@@ -182,6 +182,14 @@ impl TypeRelationContext {
         Some(ValkyrieType::Nominal { declaration: item.declaration?, arguments: Vec::new(), primitive_identity: None })
     }
 
+    /// owner 名与 `Nominal` declaration 的身份核对：`impl_nominal_type_name` 对
+    /// `Nominal` 无表面名，receiver 已冻结为 `Nominal{ItemId}` 时必须按 declaration
+    /// 反查 owner，否则泛型方法调用的 owner 实参无从播种。
+    pub fn owner_name_matches_declaration(&self, owner: &Identifier, declaration: nyar_types::ItemId) -> bool {
+        self.structs_by_declaration.get(&declaration).is_some_and(|item| item.name == *owner)
+            || self.enums_by_declaration.get(&declaration).is_some_and(|item| item.name == *owner)
+    }
+
     /// 字面量特化用：`Named("usize")` 与对应 `Nominal{ItemId}` 都算数值类型。
     pub fn is_numeric_type(&self, ty: &ValkyrieType) -> bool {
         match ty {

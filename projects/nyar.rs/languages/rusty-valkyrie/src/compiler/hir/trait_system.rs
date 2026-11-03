@@ -214,6 +214,24 @@ impl TraitModuleView {
             .map_err(|error| TraitModuleError::Satisfaction { error })
     }
 
+/// 显式类型身份核对：`primitive_identity` 是声明携带的事实缓存，同一 declaration 的
+/// 两个 `Nominal` 发生点可能一方带缓存、一方未带（注解位置与泛型实参路径冻结口径
+/// 不同），按全字段结构相等会把同一类型误判为两种实现目标；身份只认 declaration
+/// 与逐层实参，其余形状仍按结构相等。
+fn explicit_type_identity_matches(a: &ValkyrieType, b: &ValkyrieType) -> bool {
+    match (a, b) {
+        (
+            ValkyrieType::Nominal { declaration: a_declaration, arguments: a_arguments, .. },
+            ValkyrieType::Nominal { declaration: b_declaration, arguments: b_arguments, .. },
+        ) => {
+            a_declaration == b_declaration
+                && a_arguments.len() == b_arguments.len()
+                && a_arguments.iter().zip(b_arguments).all(|(a, b)| Self::explicit_type_identity_matches(a, b))
+        }
+        _ => a == b,
+    }
+}
+
     /// 按已解析的目标类型与 trait 声明身份检查显式实现；允许 primitive 等非结构类型参与 evidence。
     pub fn satisfy_explicit_type(&self, candidate: &ValkyrieType, bound: &HirTraitBound) -> Result<NamedTraitWitness, TraitModuleError> {
         let declaration = bound
@@ -227,7 +245,9 @@ impl TraitModuleView {
             .impls
             .iter()
             .filter(|item| {
-                item.trait_declaration == Some(declaration) && item.target == *candidate && item.trait_arguments == bound.type_arguments
+                item.trait_declaration == Some(declaration)
+                    && Self::explicit_type_identity_matches(&item.target, candidate)
+                    && item.trait_arguments == bound.type_arguments
             })
             .collect::<Vec<_>>();
         if matches.len() != 1 {
