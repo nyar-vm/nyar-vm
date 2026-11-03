@@ -42,6 +42,8 @@ pub enum HostOp {
     I32ToF64,
     /// 64 位有符号整数转 64 位浮点（超过 2^53 的奇数按 IEEE-754 就近舍入）。
     I64ToF64,
+    /// 有符号 64 位窄化为有符号 32 位；超出 `i32` 表示范围结构化失败，不静默截断。
+    I64ToI32,
     /// 64 位浮点加法（严格 IEEE-754，不 trap：溢出得 ±inf）。
     F64Add,
     /// 64 位浮点减法（严格 IEEE-754，不 trap）。
@@ -214,6 +216,7 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "i32_to_i64" => HostOp::I32ToI64,
         "i32_to_f64" => HostOp::I32ToF64,
         "i64_to_f64" => HostOp::I64ToF64,
+        "i64_to_i32" => HostOp::I64ToI32,
         "f64_add" => HostOp::F64Add,
         "f64_sub" => HostOp::F64Sub,
         "f64_mul" => HostOp::F64Mul,
@@ -375,6 +378,15 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             None => Err(OdinRuntimeError::StackUnderflow),
         },
         HostOp::I64ToF64 => Ok(Value::F64(i64_arg(args, 0)? as f64)),
+        // 窄化必须带范围校验：`as i32` 会静默回绕，超出 `i32` 表示范围一律结构化失败。
+        HostOp::I64ToI32 => {
+            let value = match args.first() {
+                Some(Value::I64(value)) => *value,
+                Some(other) => return Err(OdinRuntimeError::TypeMismatch { expected: "i64", actual: other.type_name().to_string() }),
+                None => return Err(OdinRuntimeError::StackUnderflow),
+            };
+            i32::try_from(value).map(Value::I32).map_err(|_| OdinRuntimeError::ArithmeticOverflow { operation: "host i64_to_i32" })
+        }
         HostOp::F64Add => Ok(Value::F64(f64_arg(args, 0)? + f64_arg(args, 1)?)),
         HostOp::F64Sub => Ok(Value::F64(f64_arg(args, 0)? - f64_arg(args, 1)?)),
         HostOp::F64Mul => Ok(Value::F64(f64_arg(args, 0)? * f64_arg(args, 1)?)),
