@@ -135,6 +135,13 @@ pub enum HirCallResolutionFailureKind {
     ComputedCallee,
     /// 候选已绑定，但 `where` 证据拒绝具体代入，实例未闭合（合同校验期补记）。
     InstanceNotClosed,
+    /// for-in 源缺少迭代协议 trait 证据：既不是 `IntoIterator`，也不是 `Iterator`。
+    ///
+    /// for-in 的义务由 trait 声明身份结算；同名成员方法不构成证据。
+    ForInProtocolUnsatisfied {
+        /// 迭代源类型的用户可读形态。
+        source: String,
+    },
     /// 解析器未留下失败事实：出现即表示诊断链路自身有缺口，而不是用户代码的新类别。
     FailureUnrecorded,
 }
@@ -151,6 +158,7 @@ impl HirCallResolutionFailureKind {
             Self::GenericsUnresolved => "generics-unresolved",
             Self::ComputedCallee => "computed-callee",
             Self::InstanceNotClosed => "instance-not-closed",
+            Self::ForInProtocolUnsatisfied { .. } => "for-in-protocol-unsatisfied",
             Self::FailureUnrecorded => "failure-unrecorded",
         }
     }
@@ -176,6 +184,9 @@ impl HirCallResolutionFailureKind {
             Self::InstanceNotClosed => {
                 "candidate is bound, but `where` evidence rejected the concrete substitution, so the instance never closed".to_string()
             }
+            Self::ForInProtocolUnsatisfied { source } => format!(
+                "for-in source `{source}` lacks trait evidence: it implements neither `std.iterator::IntoIterator` nor `std.iterator::Iterator`"
+            ),
             Self::FailureUnrecorded => {
                 "the resolver rejected this call without recording a reason; this is a diagnostics gap in the compiler".to_string()
             }

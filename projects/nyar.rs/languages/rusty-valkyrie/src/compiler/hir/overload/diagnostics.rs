@@ -40,8 +40,13 @@ pub struct OverloadCandidate {
     pub sum_variant: Option<nyar_types::ItemId>,
     /// 候选符号的限定路径。
     pub symbol: NamePath,
-    /// 拥有该候选的类型名（方法候选）。
+    /// 拥有该候选的类型名（方法候选）。这是**可调用身份**的短名，不承担接收者
+    /// 参与判定：泛型头部 impl（如 `imply<T> ...`）没有可用的短名时为 `None`。
     pub owner: Option<Identifier>,
+    /// 该候选所属 impl 的完整头部目标类型（含泛型实参，如 `Array<T>`）。它才是
+    /// **impl 身份**：接收者形态（具体 / 泛型）由它与实参的结构统一决定。trait 槽
+    /// 候选没有 impl 身份，因此为 `None`，只由上下文 bound 决定是否参与。
+    pub impl_target: Option<ValkyrieType>,
     /// 该候选所属 trait 的声明身份。
     pub trait_owner: Option<nyar_types::ItemId>,
     /// 候选所属的重载域。
@@ -78,6 +83,7 @@ impl OverloadCandidate {
             sum_variant: None,
             symbol,
             owner: None,
+            impl_target: None,
             trait_owner: None,
             domain,
             signature: OverloadSignature { params, return_type },
@@ -123,6 +129,7 @@ impl OverloadCandidate {
             sum_variant: None,
             symbol,
             owner: Some(owner),
+            impl_target: None,
             trait_owner: None,
             domain,
             signature: OverloadSignature { params, return_type },

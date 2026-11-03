@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::compiler::{
     hir::{
+        control_flow_validation::display_type,
         overload::{
             call_resolver::{
                 explain_unresolved_call, try_resolve_instance_method, try_resolve_nullary_constructor, try_resolve_pattern_extractor,
@@ -21,17 +22,18 @@ use crate::compiler::{
         type_relation::TypeRelationContext,
     },
     mir::{AggregateFieldIndex, collect_aggregate_field_map},
+    semantic::operator_members::FOR_IN_ITERATOR_TRAIT,
     types::{
         Identifier, NamePath,
         hir::{
-            FunctionType, HirBlock, HirCallArgument, HirCallResolutionFailure, HirExpr, HirExprKind, HirFunction, HirFunctionReference,
-            HirMatchArm, HirModule, HirPattern, HirResolvedCall, HirStatement, HirStatementKind, ValkyrieType,
+            FunctionType, HirBlock, HirCallArgument, HirCallResolutionFailure, HirCallResolutionFailureKind, HirExpr, HirExprKind, HirFunction, HirFunctionReference,
+            HirMatchArm, HirModule, HirLetOrigin, HirPattern, HirResolvedCall, HirStatement, HirStatementKind, ValkyrieType,
         },
     },
 };
 
 use super::{
-    failure_sink::{record_failure, with_failure_collector},
+    failure_sink::{record_failure, replace_failure_at, with_failure_collector},
     validate::{is_option_owner_type, is_result_owner_type},
 };
 
@@ -115,6 +117,14 @@ fn resolve_function_calls(
         _ => type_relations.with_enclosing_module(&function.declaring_namespace),
     };
     let type_relations = type_relations.with_callable_constraints(&function.where_constraints);
+    let owned_relations;
+    let type_relations = match owner_type {
+        Some(owner) => {
+            owned_relations = type_relations.with_impl_owner(owner.clone());
+            &owned_relations
+        }
+        None => &type_relations,
+    };
     let mut locals = function
         .params
         .iter()
@@ -161,13 +171,49 @@ fn resolve_statement_calls(
     contextual_type: Option<&ValkyrieType>,
 ) {
     match &mut statement.kind {
-        HirStatementKind::Let { pattern, initializer, ty, .. } => {
+        HirStatementKind::Let { pattern, initializer, ty, origin, .. } => {
             if let Some(initializer) = initializer {
                 let hint = ty.as_ref().or(contextual_type);
                 resolve_expr_calls(initializer, candidates, type_relations, locals, struct_fields, singleton_names, hint);
+                // `loop item in src` 的迭代器绑定带结构化标记，不按临时名识别。
+                // 语义义务只由 trait 声明身份结算：`IntoIterator` 证据决定脱糖调用是否
+                // 成立；只有迭代源本身具备 `Iterator` 证据时才允许直用迭代源。同名
+                // inherent 方法既不是 `IntoIterator` 也不是 `Iterator`，不构成证据。
+                if *origin == HirLetOrigin::ForInIterator
+                    && let Some(source) = for_in_iterator_source(initializer).cloned()
+                {
+                    if !into_iterator_has_protocol_evidence(initializer, candidates, type_relations) {
+                        // 已解析到同名 inherent 方法时也必须撤销：它不是协议实现。
+                        if let HirExprKind::Call { resolved, .. } = &mut initializer.kind {
+                            *resolved = None;
+                        }
+                        let source_type = infer_scrutinee_type(&source, locals, struct_fields, singleton_names);
+                        let source_satisfies_iterator =
+                            source_type.as_ref().is_some_and(|ty| type_relations.satisfies_protocol(ty, FOR_IN_ITERATOR_TRAIT));
+                        if source_satisfies_iterator {
+                            **initializer = source;
+                        }
+                        else {
+                            let receiver = source_type.as_ref().map(display_type).unwrap_or_else(|| "<unknown>".to_string());
+                            let failure = HirCallResolutionFailure {
+                                span: initializer.span.clone(),
+                                callee: "for-in".to_string(),
+                                reason: HirCallResolutionFailureKind::ForInProtocolUnsatisfied { source: receiver },
+                            };
+                            replace_failure_at(&initializer.span, failure);
+                        }
+                    }
+                }
             }
-            let binding_type =
-                ty.clone().or_else(|| initializer.as_ref().and_then(|expr| infer_scrutinee_type(expr, locals, struct_fields, singleton_names)));
+            // 方法体内 `let x: Self = ...`：`Self` 是 impl 目标，不能带着投影存活到
+            // 成员调用匹配（否则 `Self` 与 `ArrayList<T>` 不统一，`push` 落空）。
+            let binding_type = ty
+                .as_ref()
+                .map(|ty| match type_relations.impl_owner() {
+                    Some(owner) => crate::compiler::hir::overload::substitute_type_self(ty, owner),
+                    None => ty.clone(),
+                })
+                .or_else(|| initializer.as_ref().and_then(|expr| infer_scrutinee_type(expr, locals, struct_fields, singleton_names)));
             if let Some(binding_type) = binding_type {
                 bind_pattern_type(pattern, &binding_type, locals);
             }
@@ -176,6 +222,50 @@ fn resolve_statement_calls(
             resolve_expr_calls(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
         }
     }
+}
+
+/// for-in 脱糖绑定的迭代源：`<source>.into_iterator()` 的接收者。
+fn for_in_iterator_source(expr: &HirExpr) -> Option<&HirExpr> {
+    let HirExprKind::Call { callee, args, .. } = &expr.kind
+    else {
+        return None;
+    };
+    if !args.is_empty() {
+        return None;
+    }
+    let HirExprKind::FieldAccess { object, field, .. } = &callee.kind
+    else {
+        return None;
+    };
+    (field.as_str() == crate::compiler::semantic::operator_members::FOR_IN_INTO_ITERATOR_MEMBER).then_some(object.as_ref())
+}
+
+/// 脱糖调用是否真的由 `std.iterator::IntoIterator` 提供证据。
+///
+/// 具体 impl 成员按声明身份在候选表里核对 trait 归属；泛型源经 trait 槽解析时核对
+/// witness 冻结的 trait 声明。同名 inherent 方法不构成证据。
+fn into_iterator_has_protocol_evidence(
+    initializer: &HirExpr,
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+) -> bool {
+    let HirExprKind::Call { resolved: Some(call), .. } = &initializer.kind
+    else {
+        return false;
+    };
+    let Some(protocol) =
+        type_relations.protocol_trait_declaration(crate::compiler::semantic::operator_members::FOR_IN_INTO_ITERATOR_TRAIT)
+    else {
+        return false;
+    };
+    if let Some(dispatch) = &call.trait_dispatch {
+        return dispatch.trait_declaration == protocol;
+    }
+    candidates
+        .iter()
+        .find(|candidate| candidate.declaration == call.declaration)
+        .and_then(|candidate| candidate.trait_owner)
+        .is_some_and(|owner| owner == protocol)
 }
 
 /// 值位置成员访问（`receiver.member`，不带括号）的调用合同。

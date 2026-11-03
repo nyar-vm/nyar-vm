@@ -170,7 +170,11 @@ pub fn match_call_candidate(
             crate::compiler::hir::overload::substitution::specialize_literal_expr_type(expr, actual, &contextual_expected, type_relations)
         });
         match actual.as_ref() {
-            Some(actual) => unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions)?,
+            Some(actual) => {
+                if unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions).is_none() {
+                    return None;
+                }
+            }
             None if is_empty_array_literal(expr) && accepts_array_shape(&contextual_expected) => {}
             None => return None,
         }
@@ -193,6 +197,7 @@ pub fn match_call_candidate(
         sum_variant: candidate.sum_variant,
         symbol: candidate.symbol.clone(),
         owner: candidate.owner.clone(),
+        impl_target: candidate.impl_target.clone(),
         trait_owner: candidate.trait_owner.clone(),
         domain: candidate.domain.clone(),
         signature: crate::compiler::hir::overload::diagnostics::OverloadSignature {

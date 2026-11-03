@@ -75,7 +75,7 @@ pub fn validate_hir_function(function: &HirFunction, state: &mut HirValidationSt
 
 pub fn validate_hir_statement(statement: &HirStatement, state: &mut HirValidationState) -> Result<(), HirError> {
     match &statement.kind {
-        HirStatementKind::Let { pattern, initializer, ty, is_mutable } => {
+        HirStatementKind::Let { pattern, initializer, ty, is_mutable, .. } => {
             if let Some(initializer) = initializer {
                 validate_hir_expr(initializer, state, true)?;
             }

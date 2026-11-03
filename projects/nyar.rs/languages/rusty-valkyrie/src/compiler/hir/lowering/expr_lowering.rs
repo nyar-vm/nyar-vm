@@ -117,6 +117,7 @@ fn lower_statement(statement: &Statement, source_id: SourceID, fallback_span: Ra
                     pattern: lower_pattern(&binding.pattern, source_id, span.clone())?,
                     initializer,
                     ty: binding.ty.as_ref().map(lower_type_expression).transpose()?,
+                    origin: crate::compiler::types::hir::HirLetOrigin::Ordinary,
                 },
                 span,
             })
@@ -815,6 +816,8 @@ fn lower_for_in_desugar(label: Option<Identifier>, pattern: HirPattern, iterator
             pattern: HirPattern::Variable(temp_ident(&span)),
             initializer: Some(Box::new(dot_call(iterator, FOR_IN_INTO_ITERATOR_MEMBER, &span))),
             ty: None,
+            // 这是脱糖节点本身的结构化身份：解析期只按该标记结算迭代协议义务。
+            origin: crate::compiler::types::hir::HirLetOrigin::ForInIterator,
         },
         span: span.clone(),
     };
@@ -839,6 +842,7 @@ fn lower_for_in_desugar(label: Option<Identifier>, pattern: HirPattern, iterator
             pattern,
             initializer: Some(Box::new(dot_call(dot_call(temp_var(&span), FOR_IN_NEXT_MEMBER, &span), FOR_IN_UNWRAP_MEMBER, &span))),
             ty: None,
+            origin: crate::compiler::types::hir::HirLetOrigin::Ordinary,
         },
         span: span.clone(),
     };

@@ -27,6 +27,20 @@ pub struct HirStatement {
     pub span: SourceSpan,
 }
 
+/// `let` 绑定的来源。
+///
+/// for-in 脱糖节点必须带结构化身份：解析期据此结算迭代协议义务，
+/// 禁止按临时标识符或方法名探测识别脱糖节点。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum HirLetOrigin {
+    /// 源码中的普通 `let`。
+    #[default]
+    Ordinary,
+    /// `loop pattern in source` 脱糖产生的迭代器绑定。
+    ForInIterator,
+}
+
 /// The kind of a statement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -41,6 +55,9 @@ pub enum HirStatementKind {
         initializer: Option<Box<HirExpr>>,
         /// The optional type annotation.
         ty: Option<super::ValkyrieType>,
+        /// 绑定的来源；for-in 迭代器绑定必须由迭代协议义务结算。
+        #[cfg_attr(feature = "serde", serde(default))]
+        origin: HirLetOrigin,
     },
     /// An expression statement.
     Expr(Box<HirExpr>),

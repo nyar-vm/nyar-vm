@@ -11,12 +11,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::compiler::{
     hir::{
         nominal::{NominalModuleError, NominalModuleView},
+        overload::has_unresolved_generic_arguments,
         row::{RowMethodSignature, RowRequirement, RowRequirementError},
         trait_system::{NamedTraitWitness, TraitModuleError, TraitModuleView},
     },
     types::{
         Identifier, NamePath,
-        hir::{GenericBinderId, HirEnum, HirModule, HirStruct, HirWhereConstraint, RowType, TraitObject, ValkyrieType, primitive_identity_builtin_type},
+        hir::{GenericBinderId, HirEnum, HirModule, HirStruct, HirTraitBound, HirWhereConstraint, RowType, TraitObject, ValkyrieType, primitive_identity_builtin_type},
     },
 };
 
@@ -107,6 +108,8 @@ pub struct TypeRelationContext {
     enclosing_module: NamePath,
     /// 模块级 `using` 导入绑定：无限定调用只有命中这些绑定才接受导入目标。
     imported_symbols: Vec<ImportedSymbol>,
+    /// 当前正在解析的函数所属 impl 的目标类型；`let` 声明里写 `Self` 时按此代入。
+    impl_owner: Option<ValkyrieType>,
 }
 
 impl TypeRelationContext {
@@ -130,7 +133,52 @@ impl TypeRelationContext {
             callable_constraints: Vec::new(),
             enclosing_module: module.name.clone(),
             imported_symbols,
+            impl_owner: None,
         }
+    }
+
+    /// 记录当前 impl 的目标类型，供方法体内 `Self` 声明代入。
+    pub(crate) fn with_impl_owner(&self, owner: ValkyrieType) -> Self {
+        Self { impl_owner: Some(owner), ..self.clone() }
+    }
+
+    /// 当前 impl 的目标类型。
+    pub(crate) fn impl_owner(&self) -> Option<&ValkyrieType> {
+        self.impl_owner.as_ref()
+    }
+
+    /// 语言级迭代协议 trait 的声明身份（`std.iterator::{IntoIterator, Iterator}`）。
+    pub(crate) fn protocol_trait_declaration(&self, name: &str) -> Option<nyar_types::ItemId> {
+        self.traits.declaration_at_namespace(&crate::compiler::semantic::operator_members::FOR_IN_PROTOCOL_NAMESPACE, name)
+    }
+
+    /// 目标类型是否满足给定协议 trait 的 obligation。
+    ///
+    /// 合法证据只有两种：调用上下文已有同一目标的 bound，或目标完全具体且存在唯一
+    /// 显式 impl。目标仍含开放泛型且上下文没有 bound 时一律不满足——无界 blanket
+    /// 不得靠「泛型让位具体」之类的优先级被静默选中。
+    pub(crate) fn satisfies_protocol(&self, target: &ValkyrieType, name: &str) -> bool {
+        let Some(declaration) = self.protocol_trait_declaration(name) else {
+            return false;
+        };
+        if self
+            .callable_constraints
+            .iter()
+            .any(|constraint| &constraint.target == target && constraint.bounds.iter().any(|bound| bound.declaration == Some(declaration)))
+        {
+            return true;
+        }
+        if has_unresolved_generic_arguments(target) {
+            return false;
+        }
+        let namespace = crate::compiler::semantic::operator_members::FOR_IN_PROTOCOL_NAMESPACE;
+        let bound = HirTraitBound {
+            declaration: Some(declaration),
+            trait_path: NamePath::new(vec![Identifier::new(namespace[0]), Identifier::new(namespace[1]), Identifier::new(name)]),
+            type_arguments: Vec::new(),
+            associated_types: Vec::new(),
+        };
+        self.traits.satisfy_explicit_type(target, &bound).is_ok()
     }
 
     /// 无限定自由函数是否命中一条显式 `using` 导入绑定。

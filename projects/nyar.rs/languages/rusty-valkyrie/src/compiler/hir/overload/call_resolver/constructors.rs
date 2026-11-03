@@ -445,11 +445,20 @@ pub(crate) fn try_resolve_instance_method(
         .filter(|candidate| candidate_has_receiver_parameter(candidate))
         .filter(|candidate| candidate_owned_method_matches(candidate, method_name) || candidate_trait_method_matches(candidate, method_name))
     {
-        if let ValkyrieType::Generic(generic) = &receiver_type {
+        // 接收者参与判定只看候选的 impl 身份，不看 owner 短名：
+        // - 有 impl 身份（`impl_target`）：接收者形态（具体 / 泛型 / 裸 binder）一律
+        //   由该 impl 头部与实参的结构统一决定；泛型头部 impl 因此和具体 impl 走
+        //   同一套匹配，不再因为「取不到短名」被排除。
+        // - 无 impl 身份：只可能是 trait 方法槽。它没有实现证据，泛型接收者由上下文
+        //   bound 真解覆盖才参与；具体接收者留给 witness 路径结算，不用优先级兜底。
+        if candidate.impl_target.is_some() {
+            if let Some(matched) = match_call_candidate(candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names) {
+                filtered.push(matched);
+            }
+        } else if let ValkyrieType::Generic(generic) = &receiver_type {
             if generic.binder.is_none() {
                 continue;
             }
-            let mut bounded = false;
             for bound in type_relations
                 .callable_constraints()
                 .iter()
@@ -457,29 +466,12 @@ pub(crate) fn try_resolve_instance_method(
                 .flat_map(|constraint| &constraint.bounds)
                 .filter(|bound| bound.declaration.is_some() && bound.declaration == candidate.trait_owner)
             {
-                bounded = true;
                 if let Some(candidate) = instantiate_trait_bound_candidate(candidate, &receiver_type, bound)
                     && let Some(matched) =
                         match_call_candidate(&candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names)
                 {
                     filtered.push(matched);
                 }
-            }
-            if !bounded {
-                if let Some(candidate) = instantiate_trait_method_candidate(candidate, &receiver_type)
-                    && let Some(matched) =
-                        match_call_candidate(&candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names)
-                {
-                    filtered.push(matched);
-                }
-            }
-        }
-        // 具体接收者上，inherent 成员与「已归属具体 impl 的 trait 成员」都进入实参
-        // 匹配（trait 归属只是决胜阶段的tie-break事实，不构成匹配门槛）；只有
-        // trait 方法槽（无 owner、首参 `Self` 占位）继续排除，它由 witness 路径结算。
-        else if candidate.trait_owner.is_none() || candidate.owner.is_some() {
-            if let Some(matched) = match_call_candidate(candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names) {
-                filtered.push(matched);
             }
         }
     }

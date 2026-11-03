@@ -644,6 +644,12 @@ pub(crate) fn propagate_impl_owner_type_generics(module: &mut HirModule) {
     let bindings = module.impls.iter().map(|implementation| combined_impl_generic_context(module, implementation)).collect::<Vec<_>>();
     for (implementation, generics) in module.impls.iter_mut().zip(bindings) {
         propagate_declared_generic_binders(&mut implementation.target, &generics);
+        // impl 头部声明的关联类型绑定（如 `type Item = T`）必须与 owner 的泛型
+        // binder 对齐：否则 `Item` 里的 `T` 一直是未绑定形态，关联等式代入后
+        // 会留下游离类型变量，`Iterator<Item = i32>` 这类义务永远解不出来。
+        for associated in &mut implementation.associated_type_impls {
+            propagate_declared_generic_binders(&mut associated.concrete_type, &generics);
+        }
         for method in &mut implementation.methods {
             propagate_declared_generic_binders(&mut method.return_type, &generics);
             for param in &mut method.params {

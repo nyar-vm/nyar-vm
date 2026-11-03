@@ -211,6 +211,21 @@ impl TraitModuleView {
         view
     }
 
+    /// 按「声明命名空间 + trait 名」定位协议 trait 的声明身份。
+    ///
+    /// 语言规范把迭代协议固定在 `std.iterator` 下；身份必须来自 trait 声明本身，
+    /// 不得从接收者成员名或 impl 短名反推。
+    pub(crate) fn declaration_at_namespace(&self, namespace: &[&str], name: &str) -> Option<nyar_types::ItemId> {
+        let name = Identifier::new(name);
+        self.declarations
+            .iter()
+            .find(|(_, definition)| {
+                definition.name == name
+                    && definition.declaring_namespace.parts().iter().map(|part| part.as_str()).eq(namespace.iter().copied())
+            })
+            .map(|(identity, _)| *identity)
+    }
+
     /// 按名字检查 struct 是否满足具名 trait，并生成 witness。
     pub fn satisfy_named_trait(&self, candidate_name: &Identifier, trait_name: &Identifier) -> Result<NamedTraitWitness, TraitModuleError> {
         let candidate = self.structs.get(candidate_name).ok_or_else(|| TraitModuleError::UnknownStruct { name: candidate_name.clone() })?;
@@ -226,11 +241,22 @@ impl TraitModuleView {
 /// 实例化目标（`ArrayIterator<i32>`）永远失配，使一切泛型实现的 evidence 退化成
 /// 「没有实现」。改为结构统一后，关联类型与成员签名可以用同一份代入归一化。
 fn impl_header_substitution(
+    view: &TraitModuleView,
     implementation: &HirImpl,
     candidate: &ValkyrieType,
     bound_arguments: &[ValkyrieType],
 ) -> Option<BTreeMap<GenericBinderId, ValkyrieType>> {
-    if implementation.trait_arguments.len() != bound_arguments.len() {
+    Self::impl_header_substitution_at(view, implementation, candidate, bound_arguments, 0)
+}
+
+fn impl_header_substitution_at(
+    view: &TraitModuleView,
+    implementation: &HirImpl,
+    candidate: &ValkyrieType,
+    bound_arguments: &[ValkyrieType],
+    depth: usize,
+) -> Option<BTreeMap<GenericBinderId, ValkyrieType>> {
+    if depth > 8 || implementation.trait_arguments.len() != bound_arguments.len() {
         return None;
     }
     let mut substitution = BTreeMap::new();
@@ -240,6 +266,20 @@ fn impl_header_substitution(
     for (declared, actual) in implementation.trait_arguments.iter().zip(bound_arguments) {
         if !unify_instantiation(declared, actual, &mut substitution) {
             return None;
+        }
+    }
+    // impl 头部 bounds 必须真解：blanket 只有在当次代入后义务仍成立时才是候选。
+    // 解不出来（含代入后仍是开放泛型）就整体不参与，不用任何优先级兜底。
+    for constraint in &implementation.where_constraints {
+        let target = substitute_type_vars(&constraint.target, &substitution);
+        if crate::compiler::hir::overload::has_unresolved_generic_arguments(&target) {
+            return None;
+        }
+        for bound in &constraint.bounds {
+            if bound.declaration.is_none() {
+                return None;
+            }
+            view.satisfy_explicit_type_at(&target, bound, depth + 1).ok()?;
         }
     }
     Some(substitution)
@@ -268,6 +308,15 @@ fn normalize_trait_member_type(
 
     /// 按已解析的目标类型与 trait 声明身份检查显式实现；允许 primitive 等非结构类型参与 evidence。
     pub fn satisfy_explicit_type(&self, candidate: &ValkyrieType, bound: &HirTraitBound) -> Result<NamedTraitWitness, TraitModuleError> {
+        self.satisfy_explicit_type_at(candidate, bound, 0)
+    }
+
+    pub(crate) fn satisfy_explicit_type_at(
+        &self,
+        candidate: &ValkyrieType,
+        bound: &HirTraitBound,
+        depth: usize,
+    ) -> Result<NamedTraitWitness, TraitModuleError> {
         let declaration = bound
             .declaration
             .ok_or_else(|| TraitModuleError::UnknownTrait { name: bound.trait_path.parts().last().cloned().unwrap_or_default() })?;
@@ -275,14 +324,26 @@ fn normalize_trait_member_type(
             .declarations
             .get(&declaration)
             .ok_or_else(|| TraitModuleError::UnknownTrait { name: bound.trait_path.parts().last().cloned().unwrap_or_default() })?;
-        let mut matches = self
+        let matches = self
             .impls
             .iter()
             .filter(|item| item.trait_declaration == Some(declaration))
             .filter_map(|item| {
-                Self::impl_header_substitution(item, candidate, &bound.type_arguments).map(|substitution| (item, substitution))
+                Self::impl_header_substitution_at(self, item, candidate, &bound.type_arguments, depth)
+                    .map(|substitution| (item, substitution))
             })
             .collect::<Vec<_>>();
+        // 具体度排序：只保留「不被任何其他匹配更具体」的候选。具体 impl 因此优先于
+        // blanket；同具体度多匹配保持歧义，绝不按声明顺序挑一个。
+        let maximal = (0..matches.len())
+            .filter(|index| {
+                !(0..matches.len()).any(|other| {
+                    other != *index && compare_impl_specificity(matches[other].0, matches[*index].0) == ImplSpecificity::LessSpecific
+                })
+            })
+            .map(|index| matches[index].clone())
+            .collect::<Vec<_>>();
+        let mut matches = maximal;
         if matches.len() != 1 {
             return Err(TraitModuleError::Satisfaction {
                 error: if matches.is_empty() {
@@ -372,11 +433,22 @@ fn normalize_trait_member_type(
         trait_arguments: &[ValkyrieType],
     ) -> Option<BTreeMap<Identifier, ValkyrieType>> {
         let trait_def = self.declarations.get(&declaration)?;
-        let mut matches = self
+        let matches = self
             .impls
             .iter()
             .filter(|item| item.trait_declaration == Some(declaration))
-            .filter_map(|item| Self::impl_header_substitution(item, candidate, trait_arguments).map(|substitution| (item, substitution)))
+            .filter_map(|item| {
+                Self::impl_header_substitution(self, item, candidate, trait_arguments).map(|substitution| (item, substitution))
+            })
+            .collect::<Vec<_>>();
+        // 与 witness 路径同一套具体度判据：具体 impl 优先 blanket，同具体度保持不唯一。
+        let mut matches = (0..matches.len())
+            .filter(|index| {
+                !(0..matches.len()).any(|other| {
+                    other != *index && compare_impl_specificity(matches[other].0, matches[*index].0) == ImplSpecificity::LessSpecific
+                })
+            })
+            .map(|index| matches[index].clone())
             .collect::<Vec<_>>();
         if matches.len() != 1 {
             return None;

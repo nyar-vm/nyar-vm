@@ -37,7 +37,7 @@ pub use module::{
     HirImportBinding, HirInstantiatedCallable, HirModule, HirTypeAlias,
 };
 pub use property::HirProperty;
-pub use statement::{HirArgument, HirAttribute, HirBlock, HirMatchArm, HirStatement, HirStatementKind};
+pub use statement::{HirArgument, HirAttribute, HirBlock, HirLetOrigin, HirMatchArm, HirStatement, HirStatementKind};
 pub use r#struct::{AbstractPropertyRequirement, HirField, HirParent, HirStruct, InheritancePermission};
 pub use r#trait::{HirAssociatedConst, HirAssociatedType, HirTrait};
 pub use type_family::{HirTypeFamily, HirTypeFunction};

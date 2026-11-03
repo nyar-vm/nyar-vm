@@ -1,5 +1,7 @@
 //! 候选构造：collect_module_candidates / build_function_candidate 等。
 
+use std::collections::BTreeMap;
+
 use crate::compiler::types::{
     Identifier, NamePath,
     hir::{
@@ -223,6 +225,38 @@ pub(crate) fn specialize_method_candidate(
     for generic in owner_type_generic_binders(owner_type) {
         candidate = candidate.with_generic_binder(generic);
     }
+    // impl 身份（完整头部目标）与接收者形态分开保存：之后接收者是否具体只由
+    // 它与实参的结构统一决定，不再看 `owner` 短名是否存在。
+    candidate.impl_target = Some(owner_type.clone());
+    candidate
+}
+
+/// impl 头部声明的关联等式（`type Item = T`）。这是 impl 自己在冻结期就持有的
+/// 语义，不依赖任何成员签名的形状推断。
+fn frozen_impl_equations(implementation: &HirImpl) -> BTreeMap<Identifier, ValkyrieType> {
+    implementation
+        .associated_type_impls
+        .iter()
+        .map(|associated| (associated.name.clone(), associated.concrete_type.clone()))
+        .collect()
+}
+
+/// 候选冻结时把 impl 头部等式代入成员签名（`Self::Item` → impl 声明的具体类型），
+/// 让后续匹配只看已冻结签名，不在降级期按签名反推关联类型。
+fn freeze_impl_member_equations(
+    mut candidate: OverloadCandidate,
+    target: &ValkyrieType,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
+) -> OverloadCandidate {
+    if equations.is_empty() {
+        return candidate;
+    }
+    let substitute = |ty: &ValkyrieType| substitute_associated_equations(ty, target, equations);
+    candidate.signature.params = candidate.signature.params.iter().map(substitute).collect();
+    candidate.signature.return_type = substitute(&candidate.signature.return_type);
+    for param in &mut candidate.param_specs {
+        param.ty = substitute(&param.ty);
+    }
     candidate
 }
 
@@ -318,8 +352,13 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
         // `imply u64: Equal` 的 trait 归属必须随成员进入候选表：丢了它，trait impl
         // 成员与同形 inherent 成员在决胜阶段无法区分，同优先级并列会被误判成歧义。
         let trait_ref = item.trait_declaration.and_then(|declaration| module.traits.iter().find(|item| item.declaration == Some(declaration)));
+        let equations = frozen_impl_equations(item);
         candidates.extend(item.methods.iter().map(|method| {
-            specialize_method_candidate(build_method_candidate(method, owner.clone(), trait_ref), &item.target, &item.generics)
+            freeze_impl_member_equations(
+                specialize_method_candidate(build_method_candidate(method, owner.clone(), trait_ref), &item.target, &item.generics),
+                &item.target,
+                &equations,
+            )
         }));
         if let Some(trait_ref) = trait_ref {
             append_trait_default_candidates(&mut candidates, trait_ref, item, owner.clone());

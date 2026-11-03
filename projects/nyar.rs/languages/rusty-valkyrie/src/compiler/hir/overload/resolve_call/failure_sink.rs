@@ -30,3 +30,17 @@ pub(crate) fn record_failure(failure: HirCallResolutionFailure) {
         }
     });
 }
+
+/// 用同一调用点的更精确失败替换普通失败。
+///
+/// 脱糖节点的义务判定发生在通用调用解析之后：普通解析可能已为同一个 span
+/// 登记了「方法不存在」，而协议义务检查能给出更准确的失败类别。只替换同 span
+/// 的既有登记，不吞掉源表达式内部其它调用点的失败。
+pub(crate) fn replace_failure_at(span: &crate::compiler::types::SourceSpan, failure: HirCallResolutionFailure) {
+    COLLECTOR_STACK.with(|stack| {
+        if let Some(top) = stack.borrow_mut().last_mut() {
+            top.retain(|existing| &existing.span != span);
+            top.push(failure);
+        }
+    });
+}
