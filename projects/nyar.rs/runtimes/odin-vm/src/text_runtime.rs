@@ -67,6 +67,50 @@ pub fn from_utf16(units: &[u16], operation: &'static str) -> Result<String, Odin
     Ok(text)
 }
 
+/// UTF-8 → C 字符串字节：末尾补终止 NUL；内嵌 NUL 拒绝而不是截断。
+pub fn to_c_str(text: &str, operation: &'static str) -> Result<Vec<u8>, OdinRuntimeError> {
+    if text.contains('\0') {
+        return Err(OdinRuntimeError::EmbeddedNul { operation });
+    }
+    let mut bytes = text.as_bytes().to_vec();
+    bytes.push(0);
+    Ok(bytes)
+}
+
+/// UTF-16 → C 字符串字节：先按孤立代理规则转 UTF-8，再补终止 NUL。
+pub fn utf16_to_c_str(units: &[u16], operation: &'static str) -> Result<Vec<u8>, OdinRuntimeError> {
+    let text = from_utf16(units, operation)?;
+    to_c_str(&text, operation)
+}
+
+/// C 字符串内容长度（按字节，终止 NUL 不计）；缺终止 NUL 结构化失败。
+pub fn c_str_length(bytes: &[u8], operation: &'static str) -> Result<i32, OdinRuntimeError> {
+    Ok(c_str_content(bytes, operation)?.len() as i32)
+}
+
+/// C 字符串 → UTF-8：按首个 NUL 终止取内容，非法 UTF-8 结构化失败。
+pub fn c_str_to_utf8(bytes: &[u8], operation: &'static str) -> Result<String, OdinRuntimeError> {
+    let content = c_str_content(bytes, operation)?;
+    match std::str::from_utf8(content) {
+        Ok(text) => Ok(text.to_string()),
+        Err(_) => Err(OdinRuntimeError::InvalidUtf8 { operation }),
+    }
+}
+
+/// C 字符串 → UTF-16：先按 C 字符串规则解出 UTF-8，再按代理对规则编码。
+pub fn c_str_to_utf16(bytes: &[u8], operation: &'static str) -> Result<Vec<u16>, OdinRuntimeError> {
+    let text = c_str_to_utf8(bytes, operation)?;
+    Ok(to_utf16(&text))
+}
+
+/// 取首个 NUL 之前的内容；缓冲区没有 NUL 时拒绝，绝不读过末尾。
+fn c_str_content<'a>(bytes: &'a [u8], operation: &'static str) -> Result<&'a [u8], OdinRuntimeError> {
+    match bytes.iter().position(|byte| *byte == 0) {
+        Some(end) => Ok(&bytes[..end]),
+        None => Err(OdinRuntimeError::UnterminatedCStr { operation }),
+    }
+}
+
 /// 第 `char_index` 个码点的字节偏移；越界时返回字节末尾（仅内部使用，调用方已判界）。
 fn byte_offset(text: &str, char_index: usize) -> usize {
     text.char_indices().nth(char_index).map(|(offset, _)| offset).unwrap_or(text.len())

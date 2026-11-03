@@ -128,6 +128,38 @@ fn run_utf16(op: HostOp, units: &[u16]) -> Result<Value, OdinRuntimeError> {
     execute_host_op(op, &[array], &mut heap)
 }
 
+/// 把字节序列包成宿主的 C 字符串固定数组载体。
+fn c_str_array(heap: &mut ObjectHeap, bytes: &[u8]) -> Value {
+    let elements = bytes.iter().map(|byte| Value::I32(*byte as i32)).collect::<Vec<_>>();
+    array_runtime::build_fixed_array(heap, 0, &elements)
+}
+
+/// 从宿主 C 字符串固定数组载体读回字节序列。
+fn c_str_bytes(heap: &ObjectHeap, value: &Value) -> Vec<u8> {
+    let Value::Object(object_id) = value
+    else {
+        panic!("期望 C 字符串数组载体，实际 {}", value.type_name());
+    };
+    let Some(ObjectPayload::LayoutObject { slots, .. }) = heap.get(*object_id)
+    else {
+        panic!("期望布局数组对象，实际 object id {object_id}");
+    };
+    slots
+        .iter()
+        .map(|slot| match slot {
+            Value::I32(byte) => *byte as u8,
+            other => panic!("期望 i32 字节槽，实际 {}", other.type_name()),
+        })
+        .collect()
+}
+
+/// 用给定字节构造 C 字符串数组后执行宿主符号。
+fn run_cstr(op: HostOp, bytes: &[u8]) -> Result<Value, OdinRuntimeError> {
+    let mut heap = ObjectHeap::new();
+    let array = c_str_array(&mut heap, bytes);
+    execute_host_op(op, &[array], &mut heap)
+}
+
 // ---- 共享语料 ----
 const EMPTY: &str = "";
 const ASCII: &str = "abc";
@@ -322,6 +354,172 @@ fn utf16_symbols_reject_wrong_carriers_and_short_arguments() {
     }
 }
 
+// ---- C 字符串 ----
+
+#[test]
+fn utf8_to_c_str_appends_terminator_and_preserves_bytes() {
+    let cases: [(&str, Vec<u8>); 6] = [
+        (EMPTY, vec![0]),
+        (ASCII, vec![0x61, 0x62, 0x63, 0]),
+        (BMP_CHINESE, vec![0xE4, 0xB8, 0xAD, 0xE6, 0x96, 0x87, 0]),
+        (ASTRAL, vec![0xF0, 0x9F, 0x98, 0x80, 0]),
+        (COMBINING, vec![0x61, 0xCC, 0x81, 0]),
+        (LONG_ASCII, vec![0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64, 0]),
+    ];
+    let mut heap = ObjectHeap::new();
+    for (sample, expected) in cases {
+        let value = execute_host_op(HostOp::Utf8ToCStr, &[text(sample)], &mut heap).unwrap();
+        assert_eq!(c_str_bytes(&heap, &value), expected, "utf8_to_c_str({sample:?})");
+    }
+}
+
+#[test]
+fn utf8_to_c_str_rejects_embedded_nul() {
+    for sample in ["a\0b", "\0", "\0abc"] {
+        let error = run(HostOp::Utf8ToCStr, &[text(sample)]).expect_err("内嵌 NUL 必须失败");
+        match error {
+            OdinRuntimeError::EmbeddedNul { operation } => assert_eq!(operation, "utf8_to_c_str", "输入 {sample:?}"),
+            other => panic!("期望 EmbeddedNul，实际 {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn c_str_to_utf8_reads_until_first_nul() {
+    let cases: [(Vec<u8>, &str); 7] = [
+        (vec![0], EMPTY),
+        (vec![0x61, 0x62, 0x63, 0], ASCII),
+        (vec![0xE4, 0xB8, 0xAD, 0xE6, 0x96, 0x87, 0], BMP_CHINESE),
+        (vec![0xF0, 0x9F, 0x98, 0x80, 0], ASTRAL),
+        (vec![0x61, 0xCC, 0x81, 0], COMBINING),
+        (vec![0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64, 0], LONG_ASCII),
+        // 首个 NUL 之后的内容不参与解码。
+        (vec![0x61, 0, 0x62], "a"),
+    ];
+    for (bytes, expected) in cases {
+        assert_eq!(run_cstr(HostOp::CStrToUtf8, &bytes).unwrap(), text(expected), "c_str_to_utf8({bytes:?})");
+    }
+}
+
+#[test]
+fn c_str_operations_reject_unterminated_buffers() {
+    for (op, operation) in
+        [(HostOp::CStrToUtf8, "c_str_to_utf8"), (HostOp::CStrToUtf16, "c_str_to_utf16"), (HostOp::CStrLength, "c_str_length")]
+    {
+        let error = run_cstr(op, &[0x61, 0x62]).expect_err("缺终止 NUL 必须失败");
+        match error {
+            OdinRuntimeError::UnterminatedCStr { operation: actual } => assert_eq!(actual, operation),
+            other => panic!("{op:?} 期望 UnterminatedCStr，实际 {other:?}"),
+        }
+    }
+    // 空缓冲区同样没有 NUL，不能当作长度为 0 的 C 字符串。
+    assert!(matches!(run_cstr(HostOp::CStrLength, &[]).expect_err("空缓冲区没有 NUL"), OdinRuntimeError::UnterminatedCStr { .. }));
+}
+
+#[test]
+fn c_str_to_utf8_rejects_invalid_utf8() {
+    let invalid: [&[u8]; 4] = [&[0xFF, 0], &[0xC0, 0x80, 0], &[0xE4, 0xB8, 0], &[0x80, 0]];
+    for bytes in invalid {
+        let error = run_cstr(HostOp::CStrToUtf8, bytes).expect_err("非法 UTF-8 必须失败");
+        match error {
+            OdinRuntimeError::InvalidUtf8 { operation } => assert_eq!(operation, "c_str_to_utf8", "输入 {bytes:?}"),
+            other => panic!("期望 InvalidUtf8，实际 {other:?}"),
+        }
+        let error = run_cstr(HostOp::CStrToUtf16, bytes).expect_err("非法 UTF-8 必须失败");
+        match error {
+            OdinRuntimeError::InvalidUtf8 { operation } => assert_eq!(operation, "c_str_to_utf16", "输入 {bytes:?}"),
+            other => panic!("期望 InvalidUtf8，实际 {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn c_str_length_counts_content_bytes() {
+    let cases: [(Vec<u8>, i32); 7] = [
+        (vec![0], 0),
+        (vec![0x61, 0x62, 0x63, 0], 3),
+        (vec![0xE4, 0xB8, 0xAD, 0xE6, 0x96, 0x87, 0], 6),
+        (vec![0xF0, 0x9F, 0x98, 0x80, 0], 4),
+        (vec![0x61, 0xCC, 0x81, 0], 3),
+        (vec![0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64, 0], 11),
+        (vec![0x61, 0, 0x62], 1),
+    ];
+    for (bytes, expected) in cases {
+        assert_eq!(run_cstr(HostOp::CStrLength, &bytes).unwrap(), Value::I32(expected), "c_str_length({bytes:?})");
+    }
+}
+
+#[test]
+fn c_str_to_utf16_encodes_surrogate_pairs() {
+    let cases: [(Vec<u8>, Vec<u16>); 3] = [
+        (vec![0], vec![]),
+        (vec![0xE4, 0xB8, 0xAD, 0xE6, 0x96, 0x87, 0], vec![0x4E2D, 0x6587]),
+        (vec![0xF0, 0x9F, 0x98, 0x80, 0], vec![0xD83D, 0xDE00]),
+    ];
+    let mut heap = ObjectHeap::new();
+    for (bytes, expected) in cases {
+        let array = c_str_array(&mut heap, &bytes);
+        let value = execute_host_op(HostOp::CStrToUtf16, &[array], &mut heap).unwrap();
+        assert_eq!(utf16_units(&heap, &value), expected, "c_str_to_utf16({bytes:?})");
+    }
+}
+
+#[test]
+fn utf16_to_c_str_encodes_and_terminates() {
+    let cases: [(Vec<u16>, Vec<u8>); 4] = [
+        (vec![], vec![0]),
+        (vec![0x4E2D, 0x6587], vec![0xE4, 0xB8, 0xAD, 0xE6, 0x96, 0x87, 0]),
+        (vec![0xD83D, 0xDE00], vec![0xF0, 0x9F, 0x98, 0x80, 0]),
+        (vec![0x61, 0x0301], vec![0x61, 0xCC, 0x81, 0]),
+    ];
+    let mut heap = ObjectHeap::new();
+    for (units, expected) in cases {
+        let array = utf16_array(&mut heap, &units);
+        let value = execute_host_op(HostOp::Utf16ToCStr, &[array], &mut heap).unwrap();
+        assert_eq!(c_str_bytes(&heap, &value), expected, "utf16_to_c_str({units:?})");
+    }
+}
+
+#[test]
+fn utf16_to_c_str_rejects_lone_surrogates_and_embedded_nul() {
+    let error = run_utf16(HostOp::Utf16ToCStr, &[0xD83D]).expect_err("孤立代理必须失败");
+    match error {
+        OdinRuntimeError::InvalidUtf8 { operation } => assert_eq!(operation, "utf16_to_c_str"),
+        other => panic!("期望 InvalidUtf8，实际 {other:?}"),
+    }
+    let error = run_utf16(HostOp::Utf16ToCStr, &[0x61, 0x0000, 0x62]).expect_err("内嵌 NUL 必须失败");
+    match error {
+        OdinRuntimeError::EmbeddedNul { operation } => assert_eq!(operation, "utf16_to_c_str"),
+        other => panic!("期望 EmbeddedNul，实际 {other:?}"),
+    }
+}
+
+#[test]
+fn c_str_symbols_reject_wrong_carriers_and_short_arguments() {
+    for op in [HostOp::CStrToUtf8, HostOp::CStrToUtf16, HostOp::CStrLength] {
+        let error = run(op, &[text(ASCII)]).expect_err("字符串不是 C 字符串载体");
+        assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }), "{op:?} 实际 {error:?}");
+        let error = run(op, &[]).expect_err("缺参必须失败");
+        assert!(matches!(error, OdinRuntimeError::StackUnderflow), "{op:?} 实际 {error:?}");
+    }
+    for op in [HostOp::Utf8ToCStr, HostOp::Utf16ToCStr] {
+        let error = run(op, &[Value::I32(1)]).expect_err("整数不是文本载体");
+        assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }), "{op:?} 实际 {error:?}");
+        let error = run(op, &[]).expect_err("缺参必须失败");
+        assert!(matches!(error, OdinRuntimeError::StackUnderflow), "{op:?} 实际 {error:?}");
+    }
+
+    // 非法字节槽：超出 u8 范围 / 非整数载体。
+    let mut heap = ObjectHeap::new();
+    for element in [Value::I32(0x100), Value::F64(1.0), Value::Null] {
+        let array = array_runtime::build_fixed_array(&mut heap, 0, &[element.clone()]);
+        for op in [HostOp::CStrToUtf8, HostOp::CStrToUtf16, HostOp::CStrLength] {
+            let error = execute_host_op(op, &[array.clone()], &mut heap).expect_err("非法字节必须失败");
+            assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }), "{op:?} 元素 {element:?} 实际 {error:?}");
+        }
+    }
+}
+
 // ---- 真实 `CallImport` 端到端 ----
 
 #[test]
@@ -402,5 +600,58 @@ fn utf16_length_executes_through_call_import() {
         run_import_chain(vec![OdinConstant::String(BMP_CHINESE.to_string())], vec!["utf8_to_utf16", "utf16_length"], &[(0, 1), (1, 1)]),
         Value::I32(2),
         "BMP 中文每字一个码元"
+    );
+}
+
+#[test]
+fn utf8_to_c_str_executes_through_call_import() {
+    assert_eq!(
+        run_import_chain(vec![OdinConstant::String(ASTRAL.to_string())], vec!["utf8_to_c_str", "c_str_length"], &[(0, 1), (1, 1)]),
+        Value::I32(4),
+        "astral 在 C 字符串里占 4 字节"
+    );
+}
+
+#[test]
+fn utf8_to_c_str_embedded_nul_fails_through_call_import() {
+    let error = run_import_err("utf8_to_c_str", vec![OdinConstant::String("a\0b".to_string())], 1);
+    match error {
+        OdinRuntimeError::EmbeddedNul { operation } => assert_eq!(operation, "utf8_to_c_str"),
+        other => panic!("期望 EmbeddedNul，实际 {other:?}"),
+    }
+}
+
+#[test]
+fn c_str_to_utf8_executes_through_call_import() {
+    assert_eq!(
+        run_import_chain(vec![OdinConstant::String("a😀b".to_string())], vec!["utf8_to_c_str", "c_str_to_utf8"], &[(0, 1), (1, 1)]),
+        text("a😀b"),
+        "C 字符串往返必须保持内容"
+    );
+}
+
+#[test]
+fn utf16_to_c_str_executes_through_call_import() {
+    assert_eq!(
+        run_import_chain(
+            vec![OdinConstant::String(ASTRAL.to_string())],
+            vec!["utf8_to_utf16", "utf16_to_c_str", "c_str_to_utf8"],
+            &[(0, 1), (1, 1), (2, 1)]
+        ),
+        text(ASTRAL),
+        "UTF-16 → C 字符串 → UTF-8 必须往返"
+    );
+}
+
+#[test]
+fn c_str_to_utf16_executes_through_call_import() {
+    assert_eq!(
+        run_import_chain(
+            vec![OdinConstant::String(ASTRAL.to_string())],
+            vec!["utf8_to_c_str", "c_str_to_utf16", "utf16_length"],
+            &[(0, 1), (1, 1), (2, 1)]
+        ),
+        Value::I32(2),
+        "C 字符串 → UTF-16 后 astral 仍是两个码元"
     );
 }
