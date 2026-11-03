@@ -231,26 +231,6 @@ fn is_integer_literal_surface_name(name: &str) -> bool {
     )
 }
 
-/// 字符串字面量可特化到的形参类型：内建 `Utf8`/`Utf16`、源码文本名（`utf8`、`Utf8Text` 等，
-/// 含 `type utf8 = Utf8Text` 别名目标）的 `Named`/`Nominal`；与整数字面量同源，缺表时接受已特化合同。
-pub(super) fn is_string_literal_formal_type(ty: &ValkyrieType, structs: &[super::MirStruct]) -> bool {
-    match ty {
-        ValkyrieType::Utf8 | ValkyrieType::Utf16 => true,
-        ValkyrieType::Named(name) => is_string_literal_surface_name(name.as_str()),
-        ValkyrieType::Nominal { declaration, arguments, .. } if arguments.is_empty() => {
-            match super::MirStruct::find_by_declaration(structs, *declaration) {
-                Some(item) => is_string_literal_surface_name(item.name.as_str()),
-                None => true,
-            }
-        }
-        _ => false,
-    }
-}
-
-fn is_string_literal_surface_name(name: &str) -> bool {
-    matches!(name, "text" | "utf8" | "Utf8Text" | "utf16" | "Utf16Text" | "std::text::text" | "std.text.text")
-}
-
 /// 字符字面量可特化到的形参类型：`char`（内建变体、源码短名或 `[primitive("std::text::char")]`
 /// 的 `Nominal`）或任意整数字面量形参；与整数字面量同源，缺表时接受已特化合同。
 pub(super) fn is_character_literal_formal_type(ty: &ValkyrieType, structs: &[super::MirStruct]) -> bool {

@@ -86,6 +86,30 @@ pub(super) fn call_site_type_compatible(declared: &ValkyrieType, actual: &Valkyr
         || crate::compiler::mir::ssa::generic_call_instantiation::type_instantiates_generic_signature(declared, actual)
 }
 
+/// 文本编码与名义声明的调用边界兼容：字符串常量按 SMIR007 文本常量条款只携带
+/// 编码类型（`Utf8`/`Utf16`），源级 `type utf8 = Utf8Text` 别名把该编码锚定到名义
+/// 声明上，因此编码实参与同族文本名义形参兼容；跨族（`Utf16` 实参对 `utf8` 形参）
+/// 与非文本名义依旧失败闭合。
+pub(super) fn text_encoding_matches_nominal(declared: &ValkyrieType, actual: &ValkyrieType, structs: &[crate::compiler::mir::MirStruct]) -> bool {
+    let ValkyrieType::Nominal { declaration, arguments, .. } = declared
+    else {
+        return false;
+    };
+    if !arguments.is_empty() {
+        return false;
+    }
+    let Some(item) = crate::compiler::mir::MirStruct::find_by_declaration(structs, *declaration)
+    else {
+        return false;
+    };
+    let name = item.name.as_str();
+    match actual {
+        ValkyrieType::Utf8 => matches!(name, "text" | "utf8" | "Utf8Text" | "std::text::text" | "std.text.text"),
+        ValkyrieType::Utf16 => matches!(name, "text" | "utf16" | "Utf16Text" | "std::text::text" | "std.text.text"),
+        _ => false,
+    }
+}
+
 /// 检查两个类型是否是同一个 primitive numeric 的不同表示形式：
 /// `Named("i32")` ↔ `Integer32 { .. }`、`Named("f64")` ↔ `Float64` 等。
 fn primitive_named_equivalent(a: &ValkyrieType, b: &ValkyrieType) -> bool {
