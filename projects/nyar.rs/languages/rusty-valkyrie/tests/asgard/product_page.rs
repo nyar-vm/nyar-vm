@@ -46,16 +46,16 @@ const PRODUCT_PAGE: &str = r#"<widget index>
     </Row>
     <Column class="panel">
         <Row class="tabs">
-            <Text class="tab" @click="tab_overview">概览</Text>
-            <Text class="tab" @click="tab_alerts">告警</Text>
-            <Text class="tab" @click="tab_history">历史</Text>
+            <Button class="tab" @click="tab_overview">概览</Button>
+            <Button class="tab" @click="tab_alerts">告警</Button>
+            <Button class="tab" @click="tab_history">历史</Button>
         </Row>
         <Text class="panel-body">{panel_body}</Text>
         <Row class="status-row">
             <Text class="status-label">系统状态</Text>
             <Text class="status-value">{status_text}</Text>
-            <Text class="status-action" @click="mark_maintenance">标记维护</Text>
-            <Text class="status-action" @click="restore_running">恢复运行</Text>
+            <Button class="status-action" @click="mark_maintenance">标记维护</Button>
+            <Button class="status-action" @click="restore_running">恢复运行</Button>
         </Row>
     </Column>
 </Column>
@@ -94,12 +94,12 @@ micro restore_running() {
 .card-label { color: #94a3b8; font-size: 13px; }
 .panel { display: flex; flex-direction: column; background: #1e293b; border-radius: 12px; padding: 20px; gap: 14px; }
 .tabs { display: flex; flex-direction: row; gap: 12px; }
-.tab { color: #cbd5e1; background: #334155; border-radius: 8px; padding: 6px 14px; font-size: 14px; cursor: pointer; }
+.tab { color: #cbd5e1; background: #334155; border: none; border-radius: 8px; padding: 6px 14px; font-size: 14px; cursor: pointer; }
 .panel-body { color: #e2e8f0; font-size: 15px; min-height: 24px; }
 .status-row { display: flex; flex-direction: row; gap: 12px; align-items: center; }
 .status-label { color: #94a3b8; font-size: 13px; }
 .status-value { color: #4ade80; font-size: 14px; font-weight: 600; }
-.status-action { color: #f8fafc; background: #0ea5e9; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.status-action { color: #f8fafc; background: #0ea5e9; border: none; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
 </style>
 "#;
 
