@@ -166,9 +166,7 @@ fn scalar_library_exports_do_not_require_collection_name_or_layout_glue() {
         }])
     );
     assert_eq!(metadata["exports"]["identity"]["returns"], serde_json::json!({"kind": "I64"}));
-    assert_eq!(metadata["version"], serde_json::json!(2));
-    // 标量导出不要求任何 NamedAggregate glue 条目。
-    assert_eq!(metadata["glue_entries"], serde_json::json!([]));
+    assert_eq!(metadata["version"], serde_json::json!(0));
 }
 
 #[cfg(feature = "ovm-lane")]

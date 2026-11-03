@@ -182,10 +182,9 @@ micro title() -> utf8 {
 /// 本轮事实：`NyarType::Nominal` 携带 canonical 冻结的实例级 `layout` 身份，
 /// WASM 预发射 `validate_storage_identities` 只拒绝未注册 layout，因此返回用户
 /// 声明结构体的配置模块不再停在名义身份门禁。
-/// 第二道缺口仍在：JS glue 的 `NamedAggregate` demarshal 只支持序列族（length/at），
-/// 没有按字段访问结构体的合同，`render_glue_entries` 对非序列聚合停在
-/// `pending_export_name`。本用例固化该缺口的结构化诊断，按字段读回由后端 glue/ABI
-/// 与配置 SDK 所有者补齐。
+/// 第二道缺口仍在：JS glue 没有按字段访问结构体的 ABI 合同，聚合返回值在
+/// `callExport` 读回时按「无 ABI 桥」结构化失败。本用例固化该缺口的结构化诊断，
+/// 按字段读回由后端 glue/ABI 与配置 SDK 所有者补齐。
 #[test]
 fn c0_aggregate_layer_reports_the_missing_field_access_contract() {
     let artifact = build_probe_project(
@@ -204,6 +203,6 @@ micro configure() -> ConfigArtifact {
     .unwrap_or_else(|failure| panic!("聚合配置模块必须完成正式构建，实际失败：{}", failure.message));
 
     let diagnostic = call_export_through_glue(&artifact, "configure", "[]").expect_err("非序列聚合的 JS glue 读回合同尚未实现，必须结构化失败");
-    assert!(diagnostic.contains("Cannot demarshal NamedAggregate"), "缺口诊断必须指明 NamedAggregate demarshal 合同，实际：{diagnostic}");
+    assert!(diagnostic.contains("Cannot demarshal schema kind"), "缺口诊断必须指明缺少 ABI 桥，实际：{diagnostic}");
     assert!(diagnostic.contains("ConfigArtifact"), "缺口诊断必须指明具体聚合类型，实际：{diagnostic}");
 }
