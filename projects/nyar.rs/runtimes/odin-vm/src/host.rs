@@ -30,6 +30,12 @@ pub enum HostOp {
     SleepMs,
     /// 取一个全宽 64 位原始随机字（无符号位模式由 `Value::I64` 承载，不做范围整形）。
     RandomU64,
+    /// f64 正弦（严格 IEEE-754，不 trap：`±inf` 得 NaN，`±0.0` 保持符号）。
+    MathSin,
+    /// f64 余弦（严格 IEEE-754，不 trap：`±inf` 得 NaN）。
+    MathCos,
+    /// f64 平方根（严格 IEEE-754，不 trap：负非零值得 NaN，`-0.0` 得 `-0.0`）。
+    MathSqrt,
     /// 有符号 32 位转 64 位。
     I32ToI64,
     /// 32 位有符号整数转 64 位浮点（IEEE-754，`i32` 全域精确）。
@@ -202,6 +208,9 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "monotonic_ms" => HostOp::MonotonicMs,
         "sleep_ms" => HostOp::SleepMs,
         "random_u64" => HostOp::RandomU64,
+        "math_sin" => HostOp::MathSin,
+        "math_cos" => HostOp::MathCos,
+        "math_sqrt" => HostOp::MathSqrt,
         "i32_to_i64" => HostOp::I32ToI64,
         "i32_to_f64" => HostOp::I32ToF64,
         "i64_to_f64" => HostOp::I64ToF64,
@@ -309,6 +318,9 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::MonotonicMs => Ok(Value::I64(time_runtime::monotonic_millis())),
         HostOp::SleepMs => Ok(Value::I32(time_runtime::sleep_ms(i32_arg(args, 0)?)?)),
         HostOp::RandomU64 => Ok(Value::I64(random_runtime::next_u64()? as i64)),
+        HostOp::MathSin => Ok(Value::F64(f64_arg(args, 0)?.sin())),
+        HostOp::MathCos => Ok(Value::F64(f64_arg(args, 0)?.cos())),
+        HostOp::MathSqrt => Ok(Value::F64(f64_arg(args, 0)?.sqrt())),
         HostOp::BeginPhase => {
             let phase = match args.first() {
                 Some(Value::String(name)) if !name.is_empty() => name.clone(),

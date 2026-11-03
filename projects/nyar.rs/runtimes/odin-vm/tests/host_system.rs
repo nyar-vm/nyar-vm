@@ -205,6 +205,76 @@ fn random_seed_priority_is_explicit_then_env_then_default() {
     assert!(matches!(error, OdinRuntimeError::InvalidSeed { source, .. } if source == random_runtime::RANDOM_SEED_ENV));
 }
 
+fn f64_of(value: Value) -> f64 {
+    match value {
+        Value::F64(number) => number,
+        other => panic!("期望 f64，实际 {other:?}"),
+    }
+}
+
+#[test]
+fn math_sqrt_matches_ieee_754_expected_values() {
+    assert!(f64_of(run_ok(HostOp::MathSqrt, &[Value::F64(-1.0)])).is_nan(), "sqrt(-1.0) 必须是 NaN");
+    let negative_zero = f64_of(run_ok(HostOp::MathSqrt, &[Value::F64(-0.0)]));
+    assert_eq!(negative_zero, 0.0, "sqrt(-0.0) 数值为 0");
+    assert!(negative_zero.is_sign_negative(), "sqrt(-0.0) 必须保留负号位，实际 {negative_zero:?}");
+
+    let four = f64_of(run_ok(HostOp::MathSqrt, &[Value::F64(4.0)]));
+    assert_eq!(four, 2.0, "sqrt(4.0) 必须是精确 2.0");
+
+    let positive_zero = f64_of(run_ok(HostOp::MathSqrt, &[Value::F64(0.0)]));
+    assert_eq!(positive_zero, 0.0, "sqrt(0.0) 数值为 0");
+    assert!(!positive_zero.is_sign_negative(), "sqrt(0.0) 为正零");
+
+    assert_eq!(f64_of(run_ok(HostOp::MathSqrt, &[Value::F64(f64::INFINITY)])), f64::INFINITY, "sqrt(+inf) 保持 +inf");
+}
+
+#[test]
+fn math_sin_and_cos_match_ieee_754_expected_values() {
+    let positive_zero = f64_of(run_ok(HostOp::MathSin, &[Value::F64(0.0)]));
+    assert_eq!(positive_zero, 0.0, "sin(+0.0) 数值为 0");
+    assert!(!positive_zero.is_sign_negative(), "sin(+0.0) 为正零");
+
+    let negative_zero = f64_of(run_ok(HostOp::MathSin, &[Value::F64(-0.0)]));
+    assert_eq!(negative_zero, 0.0, "sin(-0.0) 数值为 0");
+    assert!(negative_zero.is_sign_negative(), "sin(-0.0) 必须保留负号位，实际 {negative_zero:?}");
+
+    assert!(f64_of(run_ok(HostOp::MathSin, &[Value::F64(f64::INFINITY)])).is_nan(), "sin(+inf) 必须是 NaN");
+    assert!(f64_of(run_ok(HostOp::MathSin, &[Value::F64(f64::NEG_INFINITY)])).is_nan(), "sin(-inf) 必须是 NaN");
+
+    assert_eq!(f64_of(run_ok(HostOp::MathCos, &[Value::F64(0.0)])), 1.0, "cos(0.0) 必须是精确 1.0");
+    assert!(f64_of(run_ok(HostOp::MathCos, &[Value::F64(f64::INFINITY)])).is_nan(), "cos(+inf) 必须是 NaN");
+    assert!(f64_of(run_ok(HostOp::MathCos, &[Value::F64(f64::NEG_INFINITY)])).is_nan(), "cos(-inf) 必须是 NaN");
+}
+
+#[test]
+fn math_symbols_execute_through_call_import_without_trapping() {
+    let sqrt_two = f64_of(run_import("math_sqrt", vec![OdinConstant::Float64(4.0)], 1));
+    assert_eq!(sqrt_two, 2.0);
+    let sin_zero = f64_of(run_import("math_sin", vec![OdinConstant::Float64(0.0)], 1));
+    assert_eq!(sin_zero, 0.0);
+    assert!(!sin_zero.is_sign_negative());
+    let cos_zero = f64_of(run_import("math_cos", vec![OdinConstant::Float64(0.0)], 1));
+    assert_eq!(cos_zero, 1.0);
+    // IEEE 域外输入也走 Ok，不 trap：宿主返回 NaN 而不是错误。
+    let sqrt_negative = f64_of(run_import("math_sqrt", vec![OdinConstant::Float64(-1.0)], 1));
+    assert!(sqrt_negative.is_nan());
+    let sin_infinity = f64_of(run_import("math_sin", vec![OdinConstant::Float64(f64::INFINITY)], 1));
+    assert!(sin_infinity.is_nan());
+}
+
+#[test]
+fn math_symbols_reject_non_f64_carriers_and_short_arguments() {
+    for op in [HostOp::MathSin, HostOp::MathCos, HostOp::MathSqrt] {
+        for carrier in [Value::I32(0), Value::I64(0), Value::Null, Value::Bool(true)] {
+            let error = run(op, &[carrier.clone()]).expect_err("非 f64 载体必须失败");
+            assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }), "{op:?} 载体 {carrier:?} 实际 {error:?}");
+        }
+        let error = run(op, &[]).expect_err("缺参必须失败");
+        assert!(matches!(error, OdinRuntimeError::StackUnderflow), "{op:?} 实际 {error:?}");
+    }
+}
+
 #[test]
 fn print_keeps_variadic_tab_separated_behavior() {
     let (value, lines) = capture(|| run_ok(HostOp::Print, &[Value::I32(1), text("x"), Value::Bool(true)]));
