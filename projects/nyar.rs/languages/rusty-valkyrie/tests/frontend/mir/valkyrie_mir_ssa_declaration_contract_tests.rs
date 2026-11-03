@@ -4,6 +4,9 @@ const HOST_CONTRACT_SOURCE: &str = "[primitive(\"std::primitive::i32\")] structu
     [host_contract] micro foreign(value: i32) -> i32 { } \
     micro caller(value: i32) -> i32 { return foreign(value) }";
 
+/// 数值原始类型不是语言内建，必须绑定到源码声明身份。
+const PRIMITIVES: &str = "[primitive(\"std::primitive::i32\")] structure i32 { } ";
+
 #[test]
 fn source_import_declaration_has_signature_but_no_fabricated_body() {
     let output = ValkyrieCompiler::default().compile_source_to_program(HOST_CONTRACT_SOURCE).expect("显式 import 与普通调用沿真实构建入口闭合");
@@ -49,7 +52,7 @@ fn every_test_annotation_becomes_one_export_contract() {
             vec!["alpha", "beta", "gamma"],
         ),
     ] {
-        let hir = compiler.compile_source(source).expect("测试源码必须通过 HIR");
+        let hir = compiler.compile_source(&format!("{PRIMITIVES}{source}")).expect("测试源码必须通过 HIR");
         let mir = MirLowerer::lower_module_semantic(&hir);
         let names = mir.exports.iter().map(|contract| contract.exported_name.clone()).collect::<Vec<_>>();
         assert_eq!(names, expected, "每个 `[test]` 必须按声明顺序产出一条导出合同: source={source}");
@@ -60,8 +63,11 @@ fn every_test_annotation_becomes_one_export_contract() {
 #[test]
 fn bom_prefixed_test_file_keeps_all_test_contracts() {
     let compiler = ValkyrieCompiler::default();
-    let source = "\u{feff}[test]\nmicro alpha() -> i32 { return 1 }\n[test]\nmicro beta() -> i32 { return 2 }\n";
-    let hir = compiler.compile_source(source).expect("带 BOM 的测试文件必须通过 HIR");
+    // BOM 必须仍在文件首位：声明追加在 BOM 之后，不改变该用例的 BOM 前提。
+    let source = format!(
+        "\u{feff}{PRIMITIVES}\n[test]\nmicro alpha() -> i32 {{ return 1 }}\n[test]\nmicro beta() -> i32 {{ return 2 }}\n"
+    );
+    let hir = compiler.compile_source(&source).expect("带 BOM 的测试文件必须通过 HIR");
     let mir = MirLowerer::lower_module_semantic(&hir);
     let names = mir.exports.iter().map(|contract| contract.exported_name.clone()).collect::<Vec<_>>();
     assert_eq!(names, vec!["alpha", "beta"], "UTF-8 BOM 不得吞掉首个 `[test]` 的合同: {names:?}");
@@ -70,8 +76,8 @@ fn bom_prefixed_test_file_keeps_all_test_contracts() {
 #[test]
 fn namespaced_test_file_with_backticked_names_keeps_first_test_contract() {
     let compiler = ValkyrieCompiler::default();
-    let source = "namespace suite;\n\n# 首测说明注释\n# 第二行注释\n\n[test]\nmicro `test alpha`() -> i32 { return 1 }\n\n[test]\nmicro `test beta`() -> i32 { return 2 }\n\n[test]\nmicro `test gamma`() -> i32 { return 3 }\n";
-    let hir = compiler.compile_source(source).expect("真实测试文件形态必须通过 HIR");
+    let source = format!("{PRIMITIVES}\nnamespace suite;\n\n# 首测说明注释\n# 第二行注释\n\n[test]\nmicro `test alpha`() -> i32 {{ return 1 }}\n\n[test]\nmicro `test beta`() -> i32 {{ return 2 }}\n\n[test]\nmicro `test gamma`() -> i32 {{ return 3 }}\n");
+    let hir = compiler.compile_source(&source).expect("真实测试文件形态必须通过 HIR");
     let mir = MirLowerer::lower_module_semantic(&hir);
     let names = mir.exports.iter().map(|contract| contract.exported_name.clone()).collect::<Vec<_>>();
     assert_eq!(

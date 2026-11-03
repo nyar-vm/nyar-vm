@@ -63,6 +63,10 @@ fn assert_resolved_range_construct(hir: &HirModule, function_name: &str) {
 #[test]
 fn range_usize_literals_bind_nominal_and_resolve() {
     let source = r#"
+[primitive("std::primitive::u64")]
+structure u64 { }
+type usize = u64;
+
 structure Range {
     start: usize,
     end: usize,
@@ -331,11 +335,13 @@ micro inspect(value: Carrier::Payload): unit {
 
 #[test]
 fn same_module_usize_eq_literal_resolves_operator_contract() {
-    // 字面量 `0` 默认推断为 i32；必须在 unify 前按 formal `usize` 特化。
+    // 生产 std 的 `usize` 是 `type usize = u64` 指针宽度别名；字面量 `0` 默认推断为 `i64`；
+    // 必须在 unify 前按 formal `usize` 的声明身份特化为 `u64`。
     let source = r#"
-[primitive("std::primitive::usize")]
-structure usize { }
-imply usize {
+[primitive("std::primitive::u64")]
+structure u64 { }
+type usize = u64;
+imply u64 {
     infix `==`(self, rhs: Self): bool { return true }
 }
 micro check(ordinal: usize): bool {
