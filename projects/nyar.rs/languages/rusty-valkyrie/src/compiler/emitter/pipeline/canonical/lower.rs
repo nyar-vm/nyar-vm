@@ -459,6 +459,7 @@ fn lower_constant(constant: &MirConstant) -> Result<CanonicalConstant, Structure
         MirConstant::Utf16(value) => Ok(CanonicalConstant::Utf16(value.clone())),
         MirConstant::Unit => Ok(CanonicalConstant::Unit),
         MirConstant::Null => Ok(CanonicalConstant::Null),
-        MirConstant::Float64(_) => Err(error_without_module("CAN012", "浮点常量没有 canonical 形状")),
+        // 位模式保真：`-0.0` 符号位与 NaN payload 不能在 canonical 边界被规范化。
+        MirConstant::Float64(value) => Ok(CanonicalConstant::Float64(value.0.to_bits())),
     }
 }

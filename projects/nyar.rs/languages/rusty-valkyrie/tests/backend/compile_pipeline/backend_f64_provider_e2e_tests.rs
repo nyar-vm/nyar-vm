@@ -4,9 +4,11 @@
 //! 否则 `__f64_add` / `__f64_lt` / `math_sqrt` / `f64_to_i32` 的签名在计划期就被拒，
 //! 宿主能力一条都到不了 OVM 运行时。
 //!
-//! 浮点**字面量**当前在 canonical 层被 `CAN012` 拒绝（"浮点常量没有 canonical 形状"），
-//! 因此本测试用 `i64_to_f64` + `f64_div` 构造 2.5、4.0、NaN 与 1.5/2.25，
-//! 不绕过 canonical 边界，也不把 f64 降成 i64 位模式。
+//! 浮点**字面量**走 canonical 的位模式常量（`CanonicalConstant::Float64(u64)`），
+//! 不做 i64 位模式搬运；canonical 不再拒绝浮点常量。
+//!
+//! 语言没有 NaN / `-0.0` 字面量：`-0.0` 是运行时 `neg(0.0)`，NaN 由 `0.0 / 0.0` 产生。
+//! 本测试按此事实取证，不假装支持。
 
 use nyar::TheoryBundle;
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan};
@@ -24,11 +26,20 @@ structure i32 { }
 [primitive("std::primitive::i64")]
 structure i64 { }
 
+[primitive("std::primitive::f32")]
+structure f32 { }
+
 [primitive("std::primitive::f64")]
 structure f64 { }
 
 [host_contract]
 micro __i64_to_f64(value: i64): f64
+
+[host_contract]
+micro __i32_to_f32(value: i32): f32
+
+[host_contract]
+micro __f64_neg(value: f64): f64
 
 [host_contract]
 micro __f64_add(lhs: f64, rhs: f64): f64
@@ -52,6 +63,14 @@ namespace demo.adaptor.f64;
 [host_provider(demo::primitive::f64_ops::__i64_to_f64)]
 [ovm("i64_to_f64")]
 micro i64_to_f64(value: i64): f64
+
+[host_provider(demo::primitive::f64_ops::__i32_to_f32)]
+[ovm("i32_to_f32")]
+micro i32_to_f32(value: i32): f32
+
+[host_provider(demo::primitive::f64_ops::__f64_neg)]
+[ovm("f64_neg")]
+micro f64_neg(value: f64): f64
 
 [host_provider(demo::primitive::f64_ops::__f64_add)]
 [ovm("f64_add")]
@@ -80,6 +99,8 @@ fn provider_bindings() -> Vec<rusty_valkyrie::compiler::emitter::pipeline::Compi
     let adaptor_ns = ["demo".to_owned(), "adaptor".to_owned(), "f64".to_owned()];
     [
         ("i64_to_f64", "i64_to_f64"),
+        ("i32_to_f32", "i32_to_f32"),
+        ("f64_neg", "f64_neg"),
         ("f64_add", "f64_add"),
         ("f64_div", "f64_div"),
         ("f64_lt", "f64_lt"),
@@ -204,4 +225,76 @@ mod ovm {
             .expect("OVM 必须完成 NaN 比较");
         assert_eq!(value, Value::Bool(false), "NaN < 1.0 必须为 false");
     }
+
+    /// 字面量直接进常量池：`1.5 + 2.25 = 3.75`。
+    #[test]
+    fn float_literals_execute_to_three_point_seventy_five() {
+        let value = run_main("f64", "    return __f64_add(1.5, 2.25)").expect("浮点字面量必须穿过 canonical 进入 OVM");
+        assert_eq!(value, Value::F64(3.75), "1.5 + 2.25 必须是 f64 3.75");
+    }
+
+    /// `-0.0` 的符号位必须保留：`1.0 / -0.0 = -inf`，而 `1.0 / 0.0 = +inf`。
+    ///
+    /// 语言没有负零字面量：`-0.0` 会被前端降成 `prefix -` 调用，而该算子需要
+    /// `Neg` 合同与 provider（本测试的 demonamespace 未声明），所以这里用宿主
+    /// 符号 `__f64_neg(0.0)` 产生负零，再用除法观测符号位，避免把「算子合同缺失」
+    /// 当成「负零被抹平」。
+    #[test]
+    fn negative_zero_keeps_its_sign_bit() {
+        let negative = run_main("f64", "    let z: f64 = __f64_neg(0.0)\n    return __f64_div(1.0, z)").expect("OVM 必须完成 -0.0 除法");
+        match negative {
+            Value::F64(value) => {
+                assert!(value.is_infinite() && value.is_sign_negative(), "1.0 / -0.0 必须是 -inf（符号位为负），实际 {value}");
+            }
+            other => panic!("必须返回 F64，实际 {other:?}"),
+        }
+        let positive = run_main("f64", "    let z: f64 = 0.0\n    return __f64_div(1.0, z)").expect("OVM 必须完成 0.0 除法");
+        match positive {
+            Value::F64(value) => {
+                assert!(value.is_infinite() && value.is_sign_positive(), "1.0 / 0.0 必须是 +inf（对照组），实际 {value}");
+            }
+            other => panic!("必须返回 F64，实际 {other:?}"),
+        }
+    }
+
+    /// 极端量级字面量往返保真：`1e300` / `1e-300` 必须按 IEEE 位模式进入常量池。
+    ///
+    /// 词法事实（见报告）：指数的科学记数法会被静默截掉指数部分——`1e300` 得到整数 `1`，
+    /// `1.0e300` 得到 `1.0`。因此这里改用纯十进制拼写（三百位）来测**常量载体**的
+    /// 极端量级保真，避免把词法缺陷当成载体缺陷，也不为此加特判。
+    #[test]
+    fn extreme_magnitude_literals_round_trip_exactly() {
+        let big = format!("    return 1{}.0", "0".repeat(300));
+        match run_main("f64", &big).expect("1e300 的十进制拼写必须可写") {
+            Value::F64(value) => assert_eq!(value.to_bits(), 1e300f64.to_bits(), "1e300 必须逐位保真"),
+            other => panic!("大数量级必须降低为 F64，实际 {other:?}"),
+        }
+        let small = format!("    return 0.{}1", "0".repeat(299));
+        match run_main("f64", &small).expect("1e-300 的十进制拼写必须可写") {
+            Value::F64(value) => assert_eq!(value.to_bits(), 1e-300f64.to_bits(), "1e-300 必须逐位保真"),
+            other => panic!("小数量级必须降低为 F64，实际 {other:?}"),
+        }
+    }
+
+    /// 语言没有 NaN 字面量：对照路径 `0.0 / 0.0` 必须产生 NaN（不是 0，也不是聚会成常量）。
+    #[test]
+    fn nan_is_produced_by_zero_over_zero_not_a_literal() {
+        let value = run_main("f64", "    return __f64_div(0.0, 0.0)").expect("OVM 必须完成 0.0 / 0.0");
+        match value {
+            Value::F64(value) => assert!(value.is_nan(), "0.0 / 0.0 必须是 NaN，实际 {value}"),
+            other => panic!("必须返回 F64，实际 {other:?}"),
+        }
+    }
+}
+
+/// 反例：`Float{bits:32}` 仍未登记，f32 必须在计划期结构化失败并点名该 primitive。
+///
+/// 这里只做编译 + 计划，不要求 f32 有运行能力；断言是诊断字符串而不是 panic。
+#[test]
+fn f32_fails_closed_at_the_unregistered_primitive() {
+    // 失败点在**计划期**：canonical 能表示 `Float{bits:32}`，但 `lower_type` 未登记它。
+    let program = compile("f64", "    let narrowed = __i32_to_f32(3)\n    return 1.5").expect("f32 源必须能编译到 canonical");
+    let error = plan_for(&program).expect_err("f32 本轮仍无目标合同，必须失败闭合");
+    assert!(error.contains("Float { bits: 32 }"), "诊断必须点名未登记的 f32 目标合同，实际：{error}");
+    assert!(error.contains("primitive 尚无目标合同"), "诊断必须是计划期结构化失败，实际：{error}");
 }
