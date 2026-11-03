@@ -3,13 +3,14 @@
 use crate::compiler::types::{
     Identifier, NamePath,
     hir::{
-        GenericType, HirDependencySemanticExport, HirEnum, HirFunction, HirModule, HirParam, HirStruct, HirTrait, HirVariadicKind, HirVariant,
-        ValkyrieType,
+        GenericType, HirDependencySemanticExport, HirEnum, HirFunction, HirImpl, HirModule, HirParam, HirStruct, HirTrait, HirVariadicKind,
+        HirVariant, ValkyrieType,
     },
 };
 
 use super::{
     diagnostics::{OverloadCandidate, OverloadDomain, OverloadMatchKind},
+    substitution::{substitute_associated_equations, substitute_type_self},
     types::struct_apply_type,
 };
 
@@ -225,6 +226,58 @@ pub(crate) fn specialize_method_candidate(
     candidate
 }
 
+/// impl 未显式覆盖的 trait 默认方法：把 `Self` 与关联类型投影落到该 impl 的具体
+/// 目标上，形成可参与接收者匹配的候选。
+///
+/// 默认方法体归 trait 声明，impl 只提供关联类型等式与泛型，因此候选不携带声明期
+/// 实例——同一默认方法在不同 self 类型上是不同实现，实例身份必须在单态化阶段按
+/// `(声明, 代入, self 类型)` 结算。impl 显式声明的同名成员优先（覆盖默认实现）。
+fn append_trait_default_candidates(
+    candidates: &mut Vec<OverloadCandidate>,
+    trait_ref: &HirTrait,
+    implementation: &HirImpl,
+    owner: Option<Identifier>,
+) {
+    let overridden = implementation.methods.iter().map(|method| method.name.clone()).collect::<std::collections::BTreeSet<_>>();
+    let equations = implementation
+        .associated_type_impls
+        .iter()
+        .map(|item| (item.name.clone(), item.concrete_type.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    // 关联类型缺项时该 impl 对 trait 的证据不成立：不放宽候选，保持 fail-closed。
+    if trait_ref.associated_types.iter().any(|associated| !equations.contains_key(&associated.name)) {
+        return;
+    }
+    let target = &implementation.target;
+    for method in &trait_ref.default_methods {
+        if method.is_abstract || overridden.contains(&method.name) {
+            continue;
+        }
+        let mut candidate =
+            specialize_method_candidate(build_method_candidate(method, owner.clone(), Some(trait_ref)), target, &implementation.generics);
+        candidate.signature.params = candidate.signature.params.iter().map(|ty| substitute_associated_equations(ty, target, &equations)).collect();
+        candidate.signature.return_type = substitute_associated_equations(&candidate.signature.return_type, target, &equations);
+        for param in &mut candidate.param_specs {
+            param.ty = substitute_associated_equations(&param.ty, target, &equations);
+        }
+        for constraint in &mut candidate.where_constraints {
+            constraint.target = substitute_associated_equations(&substitute_type_self(&constraint.target, target), target, &equations);
+            for bound in &mut constraint.bounds {
+                bound.type_arguments = bound
+                    .type_arguments
+                    .iter()
+                    .map(|ty| substitute_associated_equations(&substitute_type_self(ty, target), target, &equations))
+                    .collect();
+                for equation in &mut bound.associated_types {
+                    equation.ty = substitute_associated_equations(&substitute_type_self(&equation.ty, target), target, &equations);
+                }
+            }
+        }
+        candidate.instance = None;
+        candidates.push(candidate);
+    }
+}
+
 /// 收集模块内全部已声明候选；外部测试入口。
 #[doc(hidden)]
 pub fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
@@ -268,6 +321,9 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
         candidates.extend(item.methods.iter().map(|method| {
             specialize_method_candidate(build_method_candidate(method, owner.clone(), trait_ref), &item.target, &item.generics)
         }));
+        if let Some(trait_ref) = trait_ref {
+            append_trait_default_candidates(&mut candidates, trait_ref, item, owner.clone());
+        }
     }
     for export in &module.imported_semantic_exports {
         candidates.extend(
@@ -305,6 +361,9 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
             candidates.extend(item.methods.iter().map(|method| {
                 specialize_method_candidate(build_method_candidate(method, owner.clone(), trait_ref), &item.target, &item.generics)
             }));
+            if let Some(trait_ref) = trait_ref {
+                append_trait_default_candidates(&mut candidates, trait_ref, item, owner.clone());
+            }
         }
     }
     for item in &module.enums {

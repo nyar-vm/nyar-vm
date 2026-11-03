@@ -193,28 +193,8 @@ pub(super) fn lower_impl_method_functions(
             functions.push(mir_function);
         }
     }
-    for trait_def in &module.traits {
-        for method in trait_def.default_methods.iter().filter(|method| {
-            !method.is_abstract
-                && permits(method)
-                && !method.params.iter().any(|p| contains_open_generic(&p.ty))
-                && !contains_open_generic(&method.return_type)
-        }) {
-            let mut mir_function = lower_function_semantic(
-                module,
-                method,
-                aggregate_layouts,
-                singleton_accessor_instances,
-                callable_returns,
-                member_dispatch,
-                Some(ValkyrieType::Named(trait_def.name.clone())),
-                impl_type_arguments_from_generics(&trait_def.generics),
-                host_runtime_callables,
-                diagnostics,
-            );
-            mir_function.display_symbol = format!("{}.{}", trait_def.name, method.name);
-            functions.push(mir_function);
-        }
-    }
+    // trait 默认方法没有可独立降低的实体：其 `Self` 是开放的，只有 witness 消解后
+    // 按具体 self 类型铸造的实例（`module.instantiated_callables`）才有确定签名。
+    // 在此按 trait 名降一份「默认实现」会产出 `Self = Named(trait)` 的伪 callee。
     functions
 }
