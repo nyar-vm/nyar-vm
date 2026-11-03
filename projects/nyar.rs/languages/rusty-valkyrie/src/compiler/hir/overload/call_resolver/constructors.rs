@@ -483,6 +483,26 @@ pub(crate) fn try_resolve_instance_method(
             }
         }
     }
+    // 第三层方法派发：独立 micro 的自由函数（首参 `self`）。语言合同规定
+    // 「类型自身方法 → trait 方法 → 扩展 micro」三层依次回落；只有前两层没有
+    // 任何匹配时才进入这一层。按 scope/import 的完整符号身份筛选，不做名字特判。
+    if filtered.is_empty() {
+        for candidate in candidates
+            .iter()
+            .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function))
+            .filter(|candidate| candidate.owner.is_none() && candidate.trait_owner.is_none())
+            .filter(|candidate| candidate_has_receiver_parameter(candidate))
+            .filter(|candidate| {
+                symbol_matches_unqualified_free_call(&candidate.symbol, method_name, type_relations.enclosing_module())
+                    || type_relations.symbol_matches_import(&candidate.symbol, method_name)
+                    || (candidate.imported_dependency_export && candidate.symbol.parts().last() == Some(method_name))
+            })
+        {
+            if let Some(matched) = match_call_candidate(candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names) {
+                filtered.push(matched);
+            }
+        }
+    }
     let resolved = crate::compiler::hir::overload::diagnostics::resolve_overload(&filtered).ok()?;
     let has_receiver = candidate_has_receiver_parameter(&resolved);
     let mut call = HirResolvedCall {

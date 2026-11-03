@@ -7,10 +7,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::{
-    hir::row::{RowMethodSignature, RowRequirement, RowRequirementError},
+    hir::{
+        lowering::unify_instantiation,
+        overload::substitution::{substitute_associated_equations, substitute_type_self, substitute_type_vars},
+        row::{RowMethodSignature, RowRequirement, RowRequirementError},
+    },
     types::{
         Identifier, NamePath,
-        hir::{HirImpl, HirModule, HirStruct, HirTrait, HirTraitBound, ValkyrieType, ValkyrieType as HirType},
+        hir::{
+            GenericBinderId, HirImpl, HirModule, HirStruct, HirTrait, HirTraitBound, ValkyrieType, ValkyrieType as HirType,
+        },
         witness::{MethodEntry, MethodId, MethodPath, ModuleId, TraitId, TypeId, TypeMetadata, WitnessTable, WitnessTableBuilder},
     },
 };
@@ -214,12 +220,50 @@ impl TraitModuleView {
             .map_err(|error| TraitModuleError::Satisfaction { error })
     }
 
-/// 实现目标与候选的类型身份比较。
+/// impl 头部对具体候选的结构统一：impl 泛型形参由 receiver 与 trait 实参固定。
 ///
-/// `[primitive]` 声明已在绑定期折叠成内建载体，`Nominal` 只承载真实结构类型；
-/// 注解、泛型实参与 impl 目标三条路径的冻结口径一致，直接结构相等即可。
-fn explicit_type_identity_matches(a: &ValkyrieType, b: &ValkyrieType) -> bool {
-    a == b
+/// 按完整类型相等比较时，泛型 impl（如 `imply ArrayIterator<T>: Iterator`）对
+/// 实例化目标（`ArrayIterator<i32>`）永远失配，使一切泛型实现的 evidence 退化成
+/// 「没有实现」。改为结构统一后，关联类型与成员签名可以用同一份代入归一化。
+fn impl_header_substitution(
+    implementation: &HirImpl,
+    candidate: &ValkyrieType,
+    bound_arguments: &[ValkyrieType],
+) -> Option<BTreeMap<GenericBinderId, ValkyrieType>> {
+    if implementation.trait_arguments.len() != bound_arguments.len() {
+        return None;
+    }
+    let mut substitution = BTreeMap::new();
+    if !unify_instantiation(&implementation.target, candidate, &mut substitution) {
+        return None;
+    }
+    for (declared, actual) in implementation.trait_arguments.iter().zip(bound_arguments) {
+        if !unify_instantiation(declared, actual, &mut substitution) {
+            return None;
+        }
+    }
+    Some(substitution)
+}
+
+/// 把 impl 成员签名归一化到被检查的具体类型：先代入 impl 形参，再把 `Self`
+/// 与关联类型投影落到同一目标上。
+fn normalize_impl_member_type(
+    ty: &ValkyrieType,
+    target: &ValkyrieType,
+    substitution: &BTreeMap<GenericBinderId, ValkyrieType>,
+    associated_types: &BTreeMap<Identifier, ValkyrieType>,
+) -> ValkyrieType {
+    let substituted = substitute_type_vars(ty, substitution);
+    substitute_associated_equations(&substitute_type_self(&substituted, target), target, associated_types)
+}
+
+/// trait 声明的期望签名同样归一化到该目标类型上。
+fn normalize_trait_member_type(
+    ty: &ValkyrieType,
+    target: &ValkyrieType,
+    associated_types: &BTreeMap<Identifier, ValkyrieType>,
+) -> ValkyrieType {
+    substitute_associated_equations(&substitute_type_self(ty, target), target, associated_types)
 }
 
     /// 按已解析的目标类型与 trait 声明身份检查显式实现；允许 primitive 等非结构类型参与 evidence。
@@ -231,13 +275,12 @@ fn explicit_type_identity_matches(a: &ValkyrieType, b: &ValkyrieType) -> bool {
             .declarations
             .get(&declaration)
             .ok_or_else(|| TraitModuleError::UnknownTrait { name: bound.trait_path.parts().last().cloned().unwrap_or_default() })?;
-        let matches = self
+        let mut matches = self
             .impls
             .iter()
-            .filter(|item| {
-                item.trait_declaration == Some(declaration)
-                    && Self::explicit_type_identity_matches(&item.target, candidate)
-                    && item.trait_arguments == bound.type_arguments
+            .filter(|item| item.trait_declaration == Some(declaration))
+            .filter_map(|item| {
+                Self::impl_header_substitution(item, candidate, &bound.type_arguments).map(|substitution| (item, substitution))
             })
             .collect::<Vec<_>>();
         if matches.len() != 1 {
@@ -253,13 +296,18 @@ fn explicit_type_identity_matches(a: &ValkyrieType, b: &ValkyrieType) -> bool {
                 },
             });
         }
-        let implementation = matches[0];
+        let (implementation, substitution) = matches.pop().expect("single explicit impl match");
         // 父 trait 尚未拥有解析后的 bound 合同，不得用名称递归制造成功证据。
         if !trait_def.super_traits.is_empty() {
             return Err(TraitModuleError::Satisfaction {
                 error: TraitSatisfactionError::MissingExplicitImplForSuperTraits { trait_path: bound.trait_path.clone() },
             });
         }
+        let associated_types = collect_associated_types(implementation, trait_def, &bound.trait_path)
+            .map_err(|error| TraitModuleError::Satisfaction { error })?
+            .into_iter()
+            .map(|(name, ty)| (name, substitute_type_vars(&ty, &substitution)))
+            .collect::<BTreeMap<_, _>>();
         for method in trait_def.methods.iter().chain(trait_def.default_methods.iter().filter(|method| method.is_abstract)) {
             let candidate_method = find_explicit_method(implementation, &bound.trait_path, &method.name)
                 .map_err(|error| TraitModuleError::Satisfaction { error })?;
@@ -269,22 +317,31 @@ fn explicit_type_identity_matches(a: &ValkyrieType, b: &ValkyrieType) -> bool {
                     error: TraitSatisfactionError::MissingMethodBinding { trait_path: bound.trait_path.clone(), name: method.name.clone() },
                 });
             };
-            let actual_params = candidate_method.params.iter().map(|param| param.ty.clone()).collect::<Vec<_>>();
-            let expected_params = method.params.iter().map(|param| param.ty.clone()).collect::<Vec<_>>();
+            let actual_params = candidate_method
+                .params
+                .iter()
+                .map(|param| Self::normalize_impl_member_type(&param.ty, candidate, &substitution, &associated_types))
+                .collect::<Vec<_>>();
+            let expected_params = method
+                .params
+                .iter()
+                .map(|param| Self::normalize_trait_member_type(&param.ty, candidate, &associated_types))
+                .collect::<Vec<_>>();
+            let actual_return = Self::normalize_impl_member_type(&candidate_method.return_type, candidate, &substitution, &associated_types);
+            let expected_return = Self::normalize_trait_member_type(&method.return_type, candidate, &associated_types);
             if candidate_method.declaration.is_none()
                 || candidate_method.is_abstract
                 || actual_params != expected_params
-                || candidate_method.return_type != method.return_type
+                || actual_return != expected_return
             {
                 return Err(TraitModuleError::Satisfaction {
                     error: TraitSatisfactionError::MissingMethodBinding { trait_path: bound.trait_path.clone(), name: method.name.clone() },
                 });
             }
         }
-        let associated_types =
-            collect_associated_types(implementation, trait_def, &bound.trait_path).map_err(|error| TraitModuleError::Satisfaction { error })?;
         for equation in &bound.associated_types {
-            if associated_types.get(&equation.name) != Some(&HirType::from(equation.ty.clone())) {
+            let expected = Self::normalize_trait_member_type(&equation.ty, candidate, &associated_types);
+            if associated_types.get(&equation.name) != Some(&expected) {
                 return Err(TraitModuleError::Satisfaction {
                     error: TraitSatisfactionError::MissingAssociatedTypeBinding {
                         trait_path: bound.trait_path.clone(),
