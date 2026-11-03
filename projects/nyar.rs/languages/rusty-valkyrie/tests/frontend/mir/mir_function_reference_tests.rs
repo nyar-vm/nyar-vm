@@ -15,6 +15,9 @@ use rusty_valkyrie::{
 };
 
 const NON_GENERIC_CONSUMER_SOURCE: &str = r#"
+[primitive("std::primitive::i32")]
+structure i32 { }
+
 micro cmp_i32(a: i32, b: i32) -> i32 {
     return 0
 }
@@ -29,6 +32,12 @@ micro run() -> i32 {
 "#;
 
 const GENERIC_CONSUMER_SOURCE: &str = r#"
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+[primitive("std::primitive::i32")]
+structure i32 { }
+
 micro cmp_i64(a: i64, b: i64) -> i32 {
     return 0
 }

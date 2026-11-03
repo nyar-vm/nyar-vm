@@ -38,6 +38,12 @@ fn reference(expression: &rusty_valkyrie::compiler::types::hir::HirExpr) -> &Hir
 }
 
 const GENERIC_CONSUMER_SOURCE: &str = r#"
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+[primitive("std::primitive::i32")]
+structure i32 { }
+
 micro cmp_i64(a: i64, b: i64) -> i32 {
     return 0
 }
@@ -54,6 +60,9 @@ micro run() -> i32 {
 "#;
 
 const NON_GENERIC_CONSUMER_SOURCE: &str = r#"
+[primitive("std::primitive::i32")]
+structure i32 { }
+
 micro cmp_i32(a: i32, b: i32) -> i32 {
     return 0
 }
@@ -68,6 +77,12 @@ micro run() -> i32 {
 "#;
 
 const GENERIC_REFERENCE_REJECTED_SOURCE: &str = r#"
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+[primitive("std::primitive::i32")]
+structure i32 { }
+
 micro choose<T>(a: T, b: T, cmp: micro(T, T) -> i32) -> i32 {
     return cmp(a, b)
 }
@@ -82,6 +97,12 @@ micro run() -> i32 {
 "#;
 
 const LOCAL_SHADOW_SOURCE: &str = r#"
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+[primitive("std::primitive::i32")]
+structure i32 { }
+
 micro cmp_i64(a: i64, b: i64) -> i32 {
     return 0
 }
@@ -182,6 +203,12 @@ fn cross_module_free_function_reference_is_not_rewritten() {
     // 非当前模块的裸名不满足无限定自由调用对齐：保持现状，沿既有失败路径。
     const LIBRARY: &str = r#"
 namespace lib;
+
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+[primitive("std::primitive::i32")]
+structure i32 { }
 
 micro cmp_i64(a: i64, b: i64) -> i32 {
     return 0
