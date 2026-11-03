@@ -4,7 +4,11 @@
 //! 不得在注解位置产生第二个名义身份；注解、表达式与 `using` 三条路径必须得到
 //! 同一个内建 `ValkyrieType`。
 
-use rusty_valkyrie::{CompilerSourceGroup, MirLowerer, MirOperand, MirTerminator, ValkyrieCompiler, types::hir::ValkyrieType};
+use rusty_valkyrie::{
+    CompilerSourceGroup, MirLowerer, MirOperand, MirTerminator, ValkyrieCompiler,
+    compiler::emitter::frontend_contract::concretize_type,
+    types::{Identifier as HirIdentifier, hir::ValkyrieType},
+};
 
 const CORE: &str = r#"
 namespace std.primitive;
@@ -556,6 +560,19 @@ fn primitive_declarations_never_produce_nominal_anywhere() {
         .filter_map(|ty| ty.primitive_identity())
         .collect::<Vec<_>>();
     assert!(identities.is_empty(), "类型事实表不得残留 primitive `Nominal` 声明键: {identities:?}");
+}
+
+/// `f128` 没有 carrier：按名映射必须失败关闭或保持 `Named`，不得静默降精度到 `f64`。
+#[test]
+fn f128_name_fails_closed_instead_of_degrading_to_f64() {
+    let named = ValkyrieType::Named(HirIdentifier::new("f128"));
+    match concretize_type(&named) {
+        Ok(nyar_types::NyarType::Float64) => panic!("`f128` 不得映射到 `Float64`（静默降精度）"),
+        Ok(nyar_types::NyarType::Named(name)) => assert_eq!(name.as_str(), "f128", "`f128` 只能保持自身命名，不得变成别的载体"),
+        Ok(other) => panic!("`f128` 没有 carrier，不允许落到 {other:?}"),
+        Err(_) => {}
+    }
+    assert!(nyar_types::NyarType::from_surface_primitive("f128").is_none(), "`f128` 没有宿主绑定载体，只能失败关闭");
 }
 
 /// `any` / `null` 不进折表：它们是顶/空类型，不是宿主绑定标量。

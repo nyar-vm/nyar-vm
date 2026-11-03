@@ -51,9 +51,10 @@ fn concretize_primitive_named_alias(name: &str) -> Option<NyarType> {
         "u64" | "i64" => NyarType::Integer64 { signed: true },
         "u128" | "i128" => NyarType::Integer128 { signed: true },
         "f32" => NyarType::Float32,
-        "f64" | "f128" => NyarType::Float64,
+        "f64" => NyarType::Float64,
         "utf8" | "Utf8Text" => NyarType::Utf8,
         "utf16" | "Utf16Text" => NyarType::Utf16,
+        // `f128` 没有 carrier：宁可失败关闭，也不静默降精度成 `Float64`。
         _ => return None,
     })
 }
