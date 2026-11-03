@@ -103,7 +103,8 @@ fn name_based_explanation(
                     || candidate_trait_method_matches(candidate, name)
                     || symbol_matches_unqualified_free_call(&candidate.symbol, name, enclosing_module)
                     || symbol_matches_imported_dependency_export(candidate, name)
-                    || type_relations.symbol_matches_import(&candidate.symbol, name))
+                    || type_relations.symbol_matches_import(&candidate.symbol, name)
+                    || type_relations.symbol_matches_group_scope(&candidate.symbol, name))
         })
         .count();
     if named == 0 { HirCallResolutionFailureKind::NameNotFound } else { HirCallResolutionFailureKind::NoViableOverload { candidates: named } }

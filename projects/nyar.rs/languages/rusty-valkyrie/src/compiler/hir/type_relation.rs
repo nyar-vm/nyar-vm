@@ -108,6 +108,12 @@ pub struct TypeRelationContext {
     enclosing_module: NamePath,
     /// 模块级 `using` 导入绑定：无限定调用只有命中这些绑定才接受导入目标。
     imported_symbols: Vec<ImportedSymbol>,
+    /// 同一源码组内的命名空间清单：组内各命名空间共享文件作用域。
+    ///
+    /// 该清单只供无限定自由函数通道使用，**不**并入 `imported_symbols`：成员方法派发
+    /// 只认类型自身方法、trait 方法与显式导入/依赖导出的扩展 micro，组作用域不得把
+    /// 同组其它命名空间的同名函数拉进方法候选池。
+    group_scope_namespaces: Vec<NamePath>,
     /// 当前正在解析的函数所属 impl 的目标类型；`let` 声明里写 `Self` 时按此代入。
     impl_owner: Option<ValkyrieType>,
 }
@@ -123,7 +129,8 @@ impl TypeRelationContext {
         collect_relation_enums(module, &mut enums, &mut enums_by_declaration);
         let mut imported_symbols = Vec::new();
         collect_relation_imports(module, &mut imported_symbols);
-        collect_group_scope_imports(module, &mut imported_symbols);
+        let mut group_scope_namespaces = Vec::new();
+        collect_group_scope_namespaces(module, &mut group_scope_namespaces);
         Self {
             nominal: NominalModuleView::from_module(module),
             traits: TraitModuleView::from_module(module),
@@ -134,6 +141,7 @@ impl TypeRelationContext {
             callable_constraints: Vec::new(),
             enclosing_module: module.name.clone(),
             imported_symbols,
+            group_scope_namespaces,
             impl_owner: None,
         }
     }
@@ -204,6 +212,24 @@ impl TypeRelationContext {
                     && symbol.parts().get(..module_parts.len()) == Some(module_parts)
                     && symbol.parts().last() == Some(&imported.imported)
             }
+        })
+    }
+
+    /// 无限定自由函数是否命中同一源码组内的文件作用域。
+    ///
+    /// 一个源码组就是一次 package 编译单元：组内任一命名空间的顶层声明都能被组内
+    /// 其它模块以单段短名引用。候选符号必须落在组作用域前缀之下、末段等于调用名；
+    /// 跨组路径不会命中，不做末段回退。
+    ///
+    /// 该谓词只服务自由函数通道，**不**参与成员方法派发：`x.method()` 的第三层扩展
+    /// micro 只认显式导入与依赖导出。
+    pub(crate) fn symbol_matches_group_scope(&self, symbol: &NamePath, callee_name: &Identifier) -> bool {
+        self.group_scope_namespaces.iter().any(|namespace| {
+            let namespace_parts = namespace.parts();
+            !namespace_parts.is_empty()
+                && symbol.parts().len() > namespace_parts.len()
+                && symbol.parts().get(..namespace_parts.len()) == Some(namespace_parts)
+                && symbol.parts().last() == Some(callee_name)
         })
     }
 
@@ -556,14 +582,14 @@ fn collect_relation_imports(module: &HirModule, out: &mut Vec<ImportedSymbol>) {
 ///
 /// 这与组内名义类型的短名解析保持一致（`NominalModuleView` 同样按组内声明集合建索引），
 /// 也符合「Package 拥有 Module、声明及包内可见性」的合同。跨组仍然只承认显式 `using`
-/// 绑定与依赖组导出，不允许以末段回退跨越组边界；本绑定只在判定上下文构造时合成，
-/// 不进入 HIR 序列化面。
-fn collect_group_scope_imports(module: &HirModule, out: &mut Vec<ImportedSymbol>) {
-    if let Some(name) = module.name.parts().last() {
-        out.push(ImportedSymbol { module: module.name.clone(), glob: true, local: name.clone(), imported: name.clone() });
+/// 绑定与依赖组导出，不允许以末段回退跨越组边界；本清单只服务自由函数通道，不进入
+/// HIR 序列化面，也不并入 `imported_symbols`（成员方法派发不认组作用域）。
+fn collect_group_scope_namespaces(module: &HirModule, out: &mut Vec<NamePath>) {
+    if !module.name.parts().is_empty() {
+        out.push(module.name.clone());
     }
     for submodule in &module.submodules {
-        collect_group_scope_imports(submodule, out);
+        collect_group_scope_namespaces(submodule, out);
     }
 }
 

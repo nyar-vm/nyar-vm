@@ -506,6 +506,7 @@ pub(crate) fn try_resolve_call(
             symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
                 || symbol_matches_imported_dependency_export(candidate, &callee_name)
                 || type_relations.symbol_matches_import(&candidate.symbol, &callee_name)
+                || type_relations.symbol_matches_group_scope(&candidate.symbol, &callee_name)
         })
         .filter_map(|candidate| {
             match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
