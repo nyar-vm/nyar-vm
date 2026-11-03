@@ -666,7 +666,7 @@ impl MirBuilder {
             HirExprKind::IfLet { pattern, scrutinee, then_branch, else_branch } => {
                 self.lower_if_let_expr(pattern, scrutinee, then_branch, else_branch)
             }
-            HirExprKind::Block(body) => self.lower_block_expr(body),
+            HirExprKind::Block(body) => self.lower_block_expr(body, expected_type),
             HirExprKind::Loop { label, pattern, iterator, condition, body, .. } => {
                 self.lower_loop_expr(label, pattern, iterator, condition, body)
             }

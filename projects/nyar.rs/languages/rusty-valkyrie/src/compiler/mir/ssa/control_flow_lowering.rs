@@ -286,7 +286,11 @@ impl MirBuilder {
         exit_value.map(MirOperand::Value).unwrap_or(MirOperand::Constant(MirConstant::Unit))
     }
 
-    pub(super) fn lower_block_expr(&mut self, body: &crate::compiler::hir::HirBlock) -> MirOperand {
+    pub(super) fn lower_block_expr(
+        &mut self,
+        body: &crate::compiler::hir::HirBlock,
+        expected_type: Option<&crate::compiler::hir::ValkyrieType>,
+    ) -> MirOperand {
         let saved_bindings = self.bindings.clone();
         let saved_static_bindings = self.static_bindings.clone();
 
@@ -298,7 +302,7 @@ impl MirBuilder {
         }
 
         let result = if self.terminator.is_none() {
-            body.expr.as_ref().map(|expr| self.lower_expr_to_operand(expr)).unwrap_or(MirOperand::Constant(MirConstant::Unit))
+            body.expr.as_ref().map(|expr| self.lower_expr_to_operand_with_hint(expr, expected_type)).unwrap_or(MirOperand::Constant(MirConstant::Unit))
         }
         else {
             MirOperand::Constant(MirConstant::Unit)

@@ -34,7 +34,7 @@ impl MirBuilder {
             MirTryScopeContext { exit: try_exit, exit_value },
         );
 
-        let body_result = self.lower_block_expr(body);
+        let body_result = self.lower_block_expr(body, None);
 
         self.control_flow.pop_try();
 

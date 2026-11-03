@@ -20,14 +20,43 @@ use ordered_float::OrderedFloat;
 
 /// Oak 产出的 match arm 是否需从源码恢复。
 pub fn match_needs_source_recovery(source: &str, match_span: Range<usize>, arms: &[MatchArm]) -> bool {
-    let expected = count_match_arms_in_source(source, match_span);
+    let expected = count_match_arms_in_source(source, match_span.clone());
     if expected == 0 {
         return false;
     }
     if expected > arms.len() {
         return true;
     }
-    arms.iter().any(|arm| broken_wildcard_arm(source, arm) || oak_lost_case_pattern(source, arm))
+    if arms.iter().any(|arm| broken_wildcard_arm(source, arm) || oak_lost_case_pattern(source, arm)) {
+        return true;
+    }
+    // 带守卫的臂无法靠 `recover_match_arms` 保留 guard；不为区间模式触发整体恢复。
+    arms.iter().all(|arm| arm.guard.is_none()) && source_has_range_pattern(source, match_span)
+}
+
+/// 源码中的 `case` 模式是否为区间。
+///
+/// Oak 的 `Pattern` 没有区间变体：`case 2..=8` 的三个 token 被逐个按字面量处理，
+/// 最后一个端点覆盖成 `Literal`，arm 的 span 也随之收缩到该端点（如 `8: 1`），
+/// 因此不能按 arm span 判定，只能按 match 块内的源码文本判定。
+fn source_has_range_pattern(source: &str, match_span: Range<usize>) -> bool {
+    extract_match_block_interior(source, match_span)
+        .map(|interior| split_match_arms(&interior).into_iter().any(|(pattern, _)| is_range_pattern_text(&pattern)))
+        .unwrap_or(false)
+}
+
+/// 判定要求两端都解析为已知字面量（空端点为开放区间），避免把含 `..` 的字符串
+/// 字面量误判成区间。
+fn is_range_pattern_text(text: &str) -> bool {
+    let Some((start, end, _)) = parse_range_pattern(text) else {
+        return false;
+    };
+    let start = start.filter(|text| !text.is_empty());
+    let end = end.filter(|text| !text.is_empty());
+    if start.is_none() && end.is_none() {
+        return false;
+    }
+    start.is_none_or(|text| parse_hir_literal(text).is_some()) && end.is_none_or(|text| parse_hir_literal(text).is_some())
 }
 
 /// Oak `parse_match_pattern` 尚未覆盖字面量/区间，`case 7` 等会落成 Wildcard。
