@@ -39,8 +39,10 @@ impl<'a> WasmMirLowerer<'a> {
         let block_id = self.block_order[case_index];
         let block = self.mir_fn.blocks.iter().find(|block| block.id == block_id).expect("WASM 调度块必须存在");
         for instruction in &block.instructions {
+            self.current_instruction_id = Some(instruction.id);
             self.emit_instruction(instruction)?;
         }
+        self.current_instruction_id = None;
         self.emit_terminator(case_index, case_count, block)?;
         Ok(())
     }

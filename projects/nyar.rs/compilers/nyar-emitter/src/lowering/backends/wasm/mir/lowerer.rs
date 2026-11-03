@@ -241,6 +241,8 @@ pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
     pub(in crate::lowering::backends::wasm::mir) utf8_array_element_materialize: &'a BTreeMap<LayoutId, Utf8ArrayElementMaterializePlan>,
     /// CFG 调度中的基本块索引。
     pub(in crate::lowering::backends::wasm::mir) pc_local: u32,
+    /// 当前正在发射的指令身份。ABI 载体失配必须报出来源指令，禁止只报函数名。
+    pub(in crate::lowering::backends::wasm::mir) current_instruction_id: Option<nyar_types::InstructionId>,
 }
 
 impl<'a> WasmMirLowerer<'a> {
@@ -325,6 +327,7 @@ impl<'a> WasmMirLowerer<'a> {
             managed_utf8_to_host_handle,
             utf8_array_element_materialize,
             pc_local: 0,
+            current_instruction_id: None,
         };
         lowerer.pc_local = lowerer.alloc_i32_local();
         let entry = mir_fn.blocks.iter().find(|block| block.id == mir_fn.entry).expect("WASM 函数缺少入口块");
@@ -451,6 +454,39 @@ impl<'a> WasmMirLowerer<'a> {
         let valtype = self.local_valtypes.get(declared).expect("WASM local 未预规划");
         assert_eq!(valtype.len(), 1, "WASM local 类型合同不完整");
         valtype[0]
+    }
+
+    /// 槽/载体的可读标签，用于结构化失败信息。
+    pub(super) fn abi_valtype_label(&self, valtype: u8) -> String {
+        match valtype {
+            VALTYPE_I32 => "i32".to_string(),
+            VALTYPE_I64 => "i64".to_string(),
+            VALTYPE_F64 => "f64".to_string(),
+            WASM_GC_ANYREF => "anyref".to_string(),
+            WASM_GC_EXTERNREF => "externref".to_string(),
+            other => format!("valtype({other:#x})"),
+        }
+    }
+
+    /// 操作数的可读描述（SSA 值带冻结语义类型），用于结构化失败信息。
+    pub(super) fn describe_operand(&self, operand: &MirOperand) -> String {
+        match operand {
+            MirOperand::Value(value) => match self.mir_fn.value_types.get(value) {
+                Some(ty) => format!("%{} ({ty:?})", value.0),
+                None => format!("%{} (<missing semantic type>)", value.0),
+            },
+            MirOperand::Constant(constant) => format!("constant {constant:?}"),
+            MirOperand::Symbol(path) => format!("symbol {path:?}"),
+            MirOperand::Item(instance) => format!("item {instance:?}"),
+        }
+    }
+
+    /// 当前发射位置的来源标签：指令身份，或终结符。
+    pub(super) fn instruction_origin(&self) -> String {
+        match self.current_instruction_id {
+            Some(id) => format!("instruction={id}"),
+            None => "terminator".to_string(),
+        }
     }
 
     pub(super) fn plan_instruction(&mut self, instruction: &MirInstruction) {

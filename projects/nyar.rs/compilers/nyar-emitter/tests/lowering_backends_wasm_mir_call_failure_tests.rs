@@ -7,10 +7,10 @@ use acorn_wasm::WasmBinaryModule;
 use nyar::{Identifier, QualifiedName};
 use nyar_emitter::{
     BackendImport, FragmentSubmission, TargetExecutionPlan,
-    contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
+    contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     testing::lower_fragment_to_wasm_mir_module,
 };
-use nyar_types::{ImportIndex, ItemInstanceId, NyarType};
+use nyar_types::{ImportIndex, InstructionId, ItemInstanceId, NyarType, ProvenanceId};
 use std::collections::BTreeMap;
 
 const I32: NyarType = NyarType::Integer32 { signed: true };
@@ -81,9 +81,64 @@ fn wasm_static_call_to_registered_host_import_lowers() {
     lower(call_main(Operand::Item(callee)), Some((callee, import))).expect("已登记宿主导入的静态调用必须正常 lower");
 }
 
-/// 根因合同：库导出 lane（`export_name != "main"`）与入口 lane 一样消费
-/// plan 冻结身份声明的宿主导入表；宿主导入 callee 不得因导出名不是 `main`
-/// 而丢失 `callee_import_index` 注册路径（`leetcode` 矩阵库 lane 实测崩溃现场）。
+/// 宽度失配不再靠 `i64.extend_i32_s` / `i32.wrap_i64` 靠载体猜：
+/// 目标槽是 i64 而实参槽已规划为 i32 时，编码期必须结构化失败，
+/// 错误信息带槽类型、实际载体、操作数与来源指令。
+#[test]
+fn wasm_i64_slot_receiving_i32_carrier_fails_structured() {
+    let callee = ItemInstanceId::from_index(203).expect("测试 callee 身份");
+    let load = Instruction {
+        id: InstructionId::from_index(1).expect("指令身份"),
+        results: vec![ValueRef(0)],
+        kind: InstructionKind::LoadConstant { constant: Constant::Int(1), ty: None },
+        provenance: ProvenanceId::from_index(1).expect("provenance"),
+    };
+    let call = Instruction {
+        id: InstructionId::from_index(2).expect("指令身份"),
+        results: vec![ValueRef(1)],
+        kind: InstructionKind::Call { callee: Operand::Item(callee), arguments: vec![Operand::Value(ValueRef(0))] },
+        provenance: ProvenanceId::from_index(2).expect("provenance"),
+    };
+    let block = Block {
+        id: BlockRef(0),
+        label: "entry".to_string(),
+        parameters: Vec::new(),
+        instructions: vec![load, call],
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(1))) },
+    };
+    let function = ExecutableFunction {
+        symbol: "main".to_string(),
+        return_type: I32,
+        param_types: Vec::new(),
+        value_types: BTreeMap::from([(ValueRef(0), I32), (ValueRef(1), I32)]),
+        value_layouts: BTreeMap::new(),
+        return_layout: None,
+        entry: BlockRef(0),
+        values: Vec::new(),
+        suspend_points: Vec::new(),
+        frame_layouts: Vec::new(),
+        continuations: Vec::new(),
+        case_chains: Vec::new(),
+        #[allow(deprecated)]
+        state_machine: None,
+        suspend_plan: None,
+        blocks: vec![block],
+        diagnostics: Vec::new(),
+    };
+    let import = BackendImport {
+        index: ImportIndex::from_index(0).expect("导入下标"),
+        link: nyar::ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".into(), "utf8_length".into()]),
+        parameter_types: vec![NyarType::Integer64 { signed: true }],
+        return_type: I32,
+        target_operator: None,
+    };
+    let error = lower(function, Some((callee, import))).expect_err("i32 实参送进 i64 形参槽必须结构化失败，禁止静默 extend");
+    assert!(error.contains("WASM ABI 宽度失配"), "错误必须指明宽度失配: {error}");
+    assert!(error.contains("slot=i64"), "错误必须带目标槽类型: {error}");
+    assert!(error.contains("actual=i32"), "错误必须带实际载体: {error}");
+    assert!(error.contains("origin=instruction=InstructionId(2)"), "错误必须带来源指令: {error}");
+}
+
 #[test]
 fn wasm_library_export_lane_registers_host_import_callees() {
     let callee = ItemInstanceId::from_index(203).expect("测试 callee 身份");

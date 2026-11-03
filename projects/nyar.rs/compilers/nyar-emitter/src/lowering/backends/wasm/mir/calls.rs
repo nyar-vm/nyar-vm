@@ -374,15 +374,19 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_unbox_f64_payload();
             return Ok(());
         }
-        if expected == VALTYPE_I64 && actual == VALTYPE_I32 {
-            self.emit_operand(operand)?;
-            WasmOpcode::I64ExtendI32S.encode(&mut self.code);
-            return Ok(());
-        }
-        if expected == VALTYPE_I32 && actual == VALTYPE_I64 {
-            self.emit_operand(operand)?;
-            WasmOpcode::I32WrapI64.encode(&mut self.code);
-            return Ok(());
+        // 宽度不同的整数载体只有语义类型能决定扩展/截断方向：i32→i64 需要
+        // 有符号/无符号选择，i64→i32 需要显式收窄。这里没有语义类型，任何
+        // `extend` / `wrap` 都是靠载体猜，一律结构化失败。
+        if (expected == VALTYPE_I64 && actual == VALTYPE_I32) || (expected == VALTYPE_I32 && actual == VALTYPE_I64) {
+            return Err(format!(
+                "WASM ABI 宽度失配 in `{}`: slot={} actual={} operand={} origin={}; \
+                 integer widen/narrow requires an explicit `Cast` driven by both semantic types — refusing to guess sign or truncate",
+                self.mir_fn.symbol,
+                self.abi_valtype_label(expected),
+                self.abi_valtype_label(actual),
+                self.describe_operand(operand),
+                self.instruction_origin()
+            ));
         }
         if expected == WASM_GC_ANYREF && actual == VALTYPE_I64 {
             return self.emit_box_i64_payload(operand);
@@ -394,9 +398,13 @@ impl<'a> WasmMirLowerer<'a> {
             return self.emit_operand(operand);
         }
         Err(format!(
-            "WASM ABI carrier mismatch in `{}`: expected={expected:#x} actual={actual:#x}; \
+            "WASM ABI carrier mismatch in `{}`: slot={} actual={} operand={} origin={}; \
              TargetExecutionPlan must provide an explicit conversion — refusing null/0 placeholders",
-            self.mir_fn.symbol
+            self.mir_fn.symbol,
+            self.abi_valtype_label(expected),
+            self.abi_valtype_label(actual),
+            self.describe_operand(operand),
+            self.instruction_origin()
         ))
     }
 
