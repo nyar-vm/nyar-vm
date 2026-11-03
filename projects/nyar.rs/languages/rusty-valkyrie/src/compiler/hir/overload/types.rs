@@ -61,9 +61,7 @@ pub(crate) fn nullable_union_type(payload: ValkyrieType) -> ValkyrieType {
 pub(crate) fn is_text_type(ty: &ValkyrieType) -> bool {
     match ty {
         ValkyrieType::Utf8 | ValkyrieType::Utf16 => true,
-        ValkyrieType::Named(name) => {
-            matches!(name.as_str(), "text" | "utf8" | "Utf8Text" | "utf16" | "Utf16Text" | "std::text::text" | "std.text.text")
-        }
+        ValkyrieType::Named(name) => crate::compiler::hir::type_relation::is_text_type_name(name.as_str()),
         _ => false,
     }
 }

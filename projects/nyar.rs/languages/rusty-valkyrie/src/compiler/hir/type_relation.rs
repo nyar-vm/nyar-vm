@@ -192,6 +192,18 @@ impl TypeRelationContext {
         }
     }
 
+    /// 字符串字面量可特化到的形参类型：`Utf8`/`Utf16` 原语、`Named` 文本拼写，
+    /// 以及经别名解析后的 `Nominal{ItemId}`（`type utf8 = Utf8Text` 的目标声明）。
+    /// 与 `is_numeric_type` 同源：名字集合按 declaration 冻结身份核对，不按拼写猜。
+    pub fn is_text_formal(&self, ty: &ValkyrieType) -> bool {
+        match ty {
+            ValkyrieType::Nominal { declaration, .. } => {
+                self.structs_by_declaration.get(declaration).is_some_and(|item| is_text_type_name(item.name.as_str()))
+            }
+            other => crate::compiler::hir::overload::types::is_text_type(other),
+        }
+    }
+
     /// 字符字面量可特化到的形参类型：`char` 自身，或任意数值形参（码位值参与比较/算术）。
     ///
     /// 与整数字面量同源：值域校验（码位 ≤ 0xFFFF）已在 HIR lowering 完成，
@@ -528,6 +540,11 @@ pub(crate) fn is_numeric_type_name(name: &str) -> bool {
             | "std::primitive::usize"
             | "std::primitive::isize"
     )
+}
+
+/// 文本名集合：字符串字面量特化只认这些名字（含 `type utf8 = Utf8Text` 的别名目标）。
+pub(crate) fn is_text_type_name(name: &str) -> bool {
+    matches!(name.as_ref(), "text" | "utf8" | "Utf8Text" | "utf16" | "Utf16Text" | "std::text::text" | "std.text.text")
 }
 
 /// 浮点名集合：浮点字面量只认这几个名字，整数名不在其中。

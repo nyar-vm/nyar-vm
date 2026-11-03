@@ -402,12 +402,9 @@ pub(crate) fn specialize_literal_expr_type(
         // integer, so it must not be silently accepted for `i32`/`usize`. Only `f32`/`f64`
         // accept Float64 literals in source (e.g. `1000000.0`).
         HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Float64(_)) if type_relations.is_float_type(expected) => expected.clone(),
-        // String literals infer as `Utf8` but core APIs take `text`.
-        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::String(_))
-            if crate::compiler::hir::overload::types::is_text_type(expected) =>
-        {
-            expected.clone()
-        }
+        // String literals infer as `Utf8` but core APIs take `text`/`utf8`
+        // (possibly behind an alias resolved to `Nominal{ItemId}`).
+        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::String(_)) if type_relations.is_text_formal(expected) => expected.clone(),
         // 空数组字面量没有自足类型，只能由形式参数类型提供上下文；保留 `None`
         // 交给统一阶段做形状校验，不得在这里猜元素类型。
         _ => actual.clone(),

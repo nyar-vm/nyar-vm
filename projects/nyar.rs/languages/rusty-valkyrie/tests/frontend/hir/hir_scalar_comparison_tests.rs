@@ -91,6 +91,8 @@ structure Utf8Text {
     _repr: [u8]
 }
 
+type utf8 = Utf8Text;
+
 imply Utf8Text {
     micro byte_at(self, offset: u64): Option<u8> {
         let empty: Option<u8> = None
@@ -100,6 +102,10 @@ imply Utf8Text {
     micro character_at(self, index: u64): Option<char> {
         let empty: Option<char> = None
         return empty
+    }
+
+    micro concat(self, other: utf8): utf8 {
+        return self
     }
 }
 
@@ -263,6 +269,22 @@ using std.text;
     compile(consumer).expect("`Some('<')` + `else` 必须解析");
 }
 
+// ---------- 正例：字符串字面量实参特化 ----------
+
+#[test]
+fn string_literal_binds_aliased_utf8_formal() {
+    let consumer = r#"
+namespace app;
+
+using std.text;
+
+[export] micro probe(a: Utf8Text) -> Utf8Text {
+    return a.concat("x")
+}
+"#;
+    compile(consumer).expect("字符串字面量必须特化到别名解析后的 `utf8` 形参");
+}
+
 // ---------- 反例：混比结构化失败 ----------
 
 #[test]
@@ -303,5 +325,20 @@ namespace app;
 }
 "#;
     let failure = compile(consumer).expect_err("u8 与 i32 值混比必须失败");
+    assert!(failure.contains("valkyrie.hir.unresolved_call"), "必须是结构化未解析调用诊断: {failure}");
+}
+
+#[test]
+fn string_literal_rejects_non_text_formal() {
+    let consumer = r#"
+namespace app;
+
+micro take_i32(v: i32) -> bool { return true }
+
+[export] micro probe() -> bool {
+    return take_i32("x")
+}
+"#;
+    let failure = compile(consumer).expect_err("字符串字面量不得塞进非文本形参");
     assert!(failure.contains("valkyrie.hir.unresolved_call"), "必须是结构化未解析调用诊断: {failure}");
 }
