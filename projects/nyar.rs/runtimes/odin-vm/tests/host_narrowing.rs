@@ -9,8 +9,8 @@
 //! 成功与失败都走真实 `CallImport` 路径，避免只测分派表。
 
 use odin_bytecode::{
-    Odin_VERSION, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData, emit_imm1, emit_imm2,
-    emit_plain, encode_module,
+    Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData, emit_imm1,
+    emit_imm2, emit_plain, encode_module,
 };
 use odin_vm::{
     ObjectHeap, Value,
@@ -35,7 +35,7 @@ fn assert_overflow(result: Result<Value, OdinRuntimeError>) {
 
 /// `main(value: i64) -> (导入返回值) { import(value) }`，走真实 `CallImport`。
 ///
-/// 常量池没有 `Integer64` 载体，因此 `i64` 值只能由调用方以参数传入。
+/// 这条链路刻意不经常量池，证明宿主窄化与常量载体彼此独立。
 fn import_module() -> LoadedModule {
     let mut code = Vec::new();
     emit_imm1(&mut code, OdinHeadCode::LoadArg, 0);
@@ -102,4 +102,35 @@ fn i64_to_i32_rejects_non_i64_carriers_and_missing_arguments() {
     }
     let error = run(HostOp::I64ToI32, &[]).expect_err("缺参必须结构化失败");
     assert!(matches!(error, OdinRuntimeError::StackUnderflow), "实际 {error:?}");
+}
+
+/// `Integer64` 常量必须直接载入为 `Value::I64`：不经 `Integer32` 截断，也不经 `i32_to_i64` 拓宽。
+#[test]
+fn integer64_constant_loads_as_i64_without_truncation() {
+    for value in [i64::MAX, i64::MIN, 2_147_483_648] {
+        let mut code = Vec::new();
+        emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+        emit_plain(&mut code, OdinHeadCode::Return);
+        let data = OdinModuleData {
+            version: Odin_VERSION,
+            name: format!("i64_constant_{value}"),
+            constants: vec![OdinConstant::Integer64(value)],
+            functions: vec![OdinFunction {
+                name: "main".to_string(),
+                arity: 0,
+                local_count: 0,
+                code_offset: 0,
+                code_length: code.len() as i32,
+            }],
+            imports: Vec::new(),
+            exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
+            witness_entries: Vec::new(),
+            code_bytes: code,
+            globals: Vec::new(),
+            init_function_indices: Vec::new(),
+            layouts: Vec::new(),
+        };
+        let loaded = LoadedModule::from_bytes(&encode_module(&data)).expect("Integer64 常量模块必须通过 verifier");
+        assert_eq!(OdinVm::new().run(&loaded, "main", Vec::new()).expect("Integer64 常量必须可执行"), Value::I64(value));
+    }
 }

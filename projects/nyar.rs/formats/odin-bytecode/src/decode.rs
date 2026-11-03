@@ -21,6 +21,10 @@ pub fn decode_module(data: &[u8]) -> Result<OdinModuleData, OdinDecodeError> {
     }
 
     let version = u32::from_le_bytes(data[4..8].try_into().expect("version"));
+    // 旧/未来版本一律结构化拒绝：常量池种类编号随版本变化，兼容读取会静默错解。
+    if version != crate::Odin_VERSION {
+        return Err(OdinDecodeError::InvalidVersion(version));
+    }
     let section_count = i32::from_le_bytes(data[8..12].try_into().expect("sections")) as usize;
     let name_offset = i32::from_le_bytes(data[12..16].try_into().expect("name")) as usize;
 
@@ -134,6 +138,12 @@ fn decode_constant(kind: u8, slice: &[u8]) -> Result<(OdinConstant, usize), Odin
                 return Err(OdinDecodeError::TooShort);
             }
             Ok((OdinConstant::Integer32(i32::from_le_bytes(slice[0..4].try_into().expect("i32"))), 4))
+        }
+        0x12 => {
+            if slice.len() < 8 {
+                return Err(OdinDecodeError::TooShort);
+            }
+            Ok((OdinConstant::Integer64(i64::from_le_bytes(slice[0..8].try_into().expect("i64"))), 8))
         }
         0x22 => {
             if slice.len() < 8 {

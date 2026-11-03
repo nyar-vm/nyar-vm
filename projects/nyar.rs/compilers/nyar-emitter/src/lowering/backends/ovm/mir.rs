@@ -1150,16 +1150,16 @@ impl BytecodeEmitter<'_> {
     }
 
     fn emit_const_i64(&mut self, value: i64) {
-        if value >= i32::MIN as i64 && value <= i32::MAX as i64 {
-            self.emit_const_i32(value as i32);
+        if let Ok(value) = i32::try_from(value) {
+            self.emit_const_i32(value);
             self.emit_call_import("i32_to_i64", 1);
             return;
         }
+        // 超出 `i32` 表示范围必须用 `Integer64`：`value as i32` + `i32_to_i64`
+        // 只保留低 32 位并符号扩展，会把 `i64::MAX` 静默编成 `-1`。
         let index = self.constants.len() as i32 + self.constants_base;
-        self.constants.push(OdinConstant::Integer32(value as i32));
+        self.constants.push(OdinConstant::Integer64(value));
         self.emit_imm1(OdinHeadCode::Constant, index);
-        self.emit_call_import("i32_to_i64", 1);
-        let _ = index;
     }
 
     fn emit_const_bool(&mut self, value: bool) {

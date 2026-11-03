@@ -17,6 +17,8 @@ pub enum OdinConstantKind {
     BigInt = 0x06,
     /// 32 位有符号整数常量。
     Integer32 = 0x11,
+    /// 64 位有符号整数常量。
+    Integer64 = 0x12,
     /// 64 位浮点常量。
     Float64 = 0x22,
 }
@@ -30,6 +32,8 @@ pub enum OdinConstant {
     Boolean(bool),
     /// 32 位有符号整数。
     Integer32(i32),
+    /// 64 位有符号整数。
+    Integer64(i64),
     /// 64 位浮点数。
     Float64(f64),
     /// UTF-8 字符串。

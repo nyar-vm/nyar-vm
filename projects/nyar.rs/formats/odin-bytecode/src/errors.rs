@@ -9,6 +9,8 @@ pub enum OdinDecodeError {
     TooShort,
     /// magic 值非法。
     InvalidMagic(u32),
+    /// 模块格式版本与当前 `Odin_VERSION` 不一致；旧产物一律拒绝，不做兼容读取。
+    InvalidVersion(u32),
     /// 常量种类字节未知。
     InvalidConstantKind(u8),
     /// 导入种类字节未知。
@@ -28,6 +30,9 @@ impl Display for OdinDecodeError {
         match self {
             Self::TooShort => write!(f, ".nyar buffer too short"),
             Self::InvalidMagic(magic) => write!(f, "invalid .nyar magic: 0x{magic:08X}"),
+            Self::InvalidVersion(version) => {
+                write!(f, "unsupported .nyar format version: {version} (expected {})", crate::Odin_VERSION)
+            }
             Self::InvalidConstantKind(kind) => write!(f, "invalid constant kind: {kind}"),
             Self::InvalidImportKind(kind) => write!(f, "invalid import kind: {kind}"),
             Self::InvalidExportKind(kind) => write!(f, "invalid export kind: {kind}"),

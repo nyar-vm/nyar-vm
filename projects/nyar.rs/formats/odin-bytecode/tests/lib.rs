@@ -13,9 +13,10 @@ fn structural_opcodes_are_imm1() {
 #[test]
 fn bytecode_format_version_tracks_nyar_version() {
     assert_eq!(BYTECODE_FORMAT_VERSION, Odin_VERSION);
-    // v1：新增 `Trap` 头码（0x0C）。旧缓存产物因版本不匹配被拒绝，无需迁移读取。
+    // v1：新增 `Trap` 头码（0x0C）。v2：新增 `Integer64` 常量（0x12）。
+    // `decode_module` 对非当前版本一律 `InvalidVersion` 拒绝，旧缓存产物按缓存未命中处理。
     // 递增格式必须同时抬 `NYAR_VERSION`。
-    assert_eq!(BYTECODE_FORMAT_VERSION, 1);
+    assert_eq!(BYTECODE_FORMAT_VERSION, 2);
 }
 
 #[test]
@@ -181,4 +182,63 @@ fn layouts_section_round_trips() {
     let bytes = encode_module(&data);
     let decoded = decode_module(&bytes).expect("decode");
     assert_eq!(decoded.layouts, data.layouts);
+}
+
+fn module_with_constants(constants: Vec<OdinConstant>) -> OdinModuleData {
+    OdinModuleData {
+        version: Odin_VERSION,
+        name: "constant-pool-test".into(),
+        constants,
+        functions: Vec::new(),
+        imports: Vec::new(),
+        exports: Vec::new(),
+        witness_entries: Vec::new(),
+        code_bytes: Vec::new(),
+        globals: Vec::new(),
+        init_function_indices: Vec::new(),
+        layouts: Vec::new(),
+    }
+}
+
+/// `Integer64` 必须按 8 字节小端往返；`i64::MAX` / `i64::MIN` 不得在编码层被截成 32 位。
+#[test]
+fn integer64_constant_round_trips() {
+    let constants = vec![
+        OdinConstant::Integer32(-1),
+        OdinConstant::Integer64(i64::MAX),
+        OdinConstant::Integer64(i64::MIN),
+        OdinConstant::Integer64(2_147_483_648),
+    ];
+    let data = module_with_constants(constants.clone());
+    let decoded = decode_module(&encode_module(&data)).expect("Integer64 常量必须可往返");
+    assert_eq!(decoded.constants, constants, "常量池往返后必须逐项相同");
+}
+
+/// NaN payload 与 `-0.0` 的符号位属于位模式，`OdinConstant` 的 `PartialEq` 无法区分，必须按位断言。
+#[test]
+fn float64_constant_round_trips_bit_exactly() {
+    let negative_zero = OdinConstant::Float64(-0.0f64);
+    let nan_payload = OdinConstant::Float64(f64::from_bits(0x7ff8_0000_dead_beef));
+    let data = module_with_constants(vec![negative_zero.clone(), nan_payload.clone()]);
+    let decoded = decode_module(&encode_module(&data)).expect("float64 常量必须可往返");
+    match (&decoded.constants[0], &decoded.constants[1]) {
+        (OdinConstant::Float64(negative), OdinConstant::Float64(nan)) => {
+            assert_eq!(negative.to_bits(), (-0.0f64).to_bits(), "-0.0 的符号位必须保留");
+            assert_eq!(nan.to_bits(), 0x7ff8_0000_dead_beef, "NaN payload 必须逐位保留");
+        }
+        other => panic!("常量池形状必须保持不变，实际 {other:?}"),
+    }
+}
+
+/// 旧产物（版本 0/1）与未来产物必须结构化拒绝：常量种类编号随版本变化，兼容读取会静默错解。
+#[test]
+fn foreign_format_versions_are_rejected_structurally() {
+    for version in [0u32, 1, Odin_VERSION + 1] {
+        let mut data = module_with_constants(vec![OdinConstant::Integer64(i64::MAX)]);
+        data.version = version;
+        match decode_module(&encode_module(&data)) {
+            Err(OdinDecodeError::InvalidVersion(rejected)) => assert_eq!(rejected, version),
+            other => panic!("版本 {version} 必须以 `InvalidVersion` 拒绝，实际 {other:?}"),
+        }
+    }
 }

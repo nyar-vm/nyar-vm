@@ -73,7 +73,7 @@ fn rejects_invalid_function_and_initializer_contracts() {
 #[test]
 fn rejects_wrong_version() {
     let mut module = empty_module();
-    // 当前版本是 `Odin_VERSION`（v1，含 `Trap`）；两侧错配一律拒绝，不做兼容读取。
+    // 当前版本是 `Odin_VERSION`（v2，含 `Trap` 与 `Integer64` 常量）；两侧错配一律拒绝，不做兼容读取。
     for wrong in [0, Odin_VERSION + 1] {
         module.version = wrong;
         assert!(matches!(verify_module(&module), Err(OdinRuntimeError::ModuleLoad(_))), "版本 {wrong} 必须被拒绝");

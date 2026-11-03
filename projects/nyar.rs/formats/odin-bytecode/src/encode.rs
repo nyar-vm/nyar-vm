@@ -82,6 +82,10 @@ fn encode_constants(constants: &[OdinConstant]) -> Vec<u8> {
                 out.push(0x11);
                 out.extend_from_slice(&value.to_le_bytes());
             }
+            OdinConstant::Integer64(value) => {
+                out.push(0x12);
+                out.extend_from_slice(&value.to_le_bytes());
+            }
             OdinConstant::Float64(value) => {
                 out.push(0x22);
                 out.extend_from_slice(&value.to_le_bytes());

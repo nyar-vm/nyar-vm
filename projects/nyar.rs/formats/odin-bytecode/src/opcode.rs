@@ -15,8 +15,10 @@ pub const ODIN_MAGIC: u32 = 0x4E59_4152;
 ///
 /// 名称沿用 `Odin*` 类型前缀约定（与 `OdinHeadCode` / `OdinInstruction` 一致），
 /// 刻意不改成全大写，避免对公开 ABI 常量做无谓改名。
+///
+/// v1 → v2：常量池新增 `Integer64`（0x12），旧版本模块由 `decode_module` 结构化拒绝。
 #[allow(non_upper_case_globals)]
-pub const Odin_VERSION: u32 = 1;
+pub const Odin_VERSION: u32 = 2;
 
 /// Bytecode format contract version（S-W6 provenance / cache 键）。
 /// 与 [`Odin_VERSION`] 同步；格式破坏时两者一并递增。
