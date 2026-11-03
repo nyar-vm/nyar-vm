@@ -447,3 +447,48 @@ fn value_position_if_with_mismatched_arm_type_still_fails() {
         "必须保持结构化失败，实际：{message}"
     );
 }
+
+/// 反例：人为构造的跳边实参数量与目标块参数数量不一致时，Semantic MIR 校验必须拒绝。
+/// 收紧语句位置 `if` 的汇合建模不能演变成"arity 校验被放宽"。
+#[test]
+fn hand_built_jump_arity_mismatch_is_still_rejected() {
+    use rusty_valkyrie::{
+        Identifier, MirBlock, MirBlockRef, MirFunction, MirOperand, MirTerminator, MirValue, MirValueOrigin, MirValueRef, NamePath,
+        mir::MirModule, types::hir::ValkyrieType, validate_semantic_module,
+    };
+
+    let stray = MirValueRef(0);
+    let mut module: MirModule = rusty_valkyrie::compiler::mir::ssa::test_support::lower_test_module(Vec::new(), Vec::new());
+    module.functions.push(MirFunction {
+        display_symbol: "fixture.jump_arity".into(),
+        symbol: NamePath::new(vec![Identifier::new("fixture"), Identifier::new("jump_arity")]),
+        declaration: None,
+        instance: None,
+        return_type: ValkyrieType::Unit,
+        param_types: Vec::new(),
+        value_types: [(stray, ValkyrieType::Boolean)].into_iter().collect(),
+        entry: MirBlockRef(0),
+        values: vec![MirValue { id: stray, origin: MirValueOrigin::Temporary }],
+        blocks: vec![
+            MirBlock {
+                id: MirBlockRef(0),
+                label: "entry".into(),
+                parameters: Vec::new(),
+                instructions: Vec::new(),
+                terminator: MirTerminator::Jump { target: MirBlockRef(1), arguments: vec![MirOperand::Value(stray)] },
+            },
+            MirBlock {
+                id: MirBlockRef(1),
+                label: "plain_target".into(),
+                parameters: Vec::new(),
+                instructions: Vec::new(),
+                terminator: MirTerminator::Return { value: None },
+            },
+        ],
+    });
+
+    let error = validate_semantic_module(&module).expect_err("跳边实参数与目标块参数数不一致必须拒绝");
+    assert_eq!(error.code, "SMIR007", "必须落在 SMIR007，实际 {error:?}");
+    assert!(error.detail.contains("arity"), "必须报 arity 不一致，实际 {}", error.detail);
+    assert_eq!(error.function, "fixture.jump_arity");
+}
