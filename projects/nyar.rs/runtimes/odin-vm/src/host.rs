@@ -40,6 +40,18 @@ pub enum HostOp {
     F64ToI32,
     /// 64 位浮点转 64 位整数（饱和，NaN 转 0，与 wasm `trunc_sat` 同口径）。
     F64ToI64,
+    /// 64 位浮点相等（IEEE-754：NaN 比较为 false，`+0.0` 与 `-0.0` 相等）。
+    F64Eq,
+    /// 64 位浮点不等（IEEE-754：NaN 与任何值不等，含 NaN 自身）。
+    F64Ne,
+    /// 64 位浮点小于（IEEE-754：NaN 比较为 false）。
+    F64Lt,
+    /// 64 位浮点小于等于（IEEE-754：NaN 比较为 false）。
+    F64Le,
+    /// 64 位浮点大于（IEEE-754：NaN 比较为 false）。
+    F64Gt,
+    /// 64 位浮点大于等于（IEEE-754：NaN 比较为 false）。
+    F64Ge,
     /// 有符号 32 位整除。
     I32Div,
     /// 无符号 32 位整除（`u32` 的 `/`；与有符号 `I32Div` 在最高位为 1 时结论不同）。
@@ -157,6 +169,12 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "f64_neg" => HostOp::F64Neg,
         "f64_to_i32" => HostOp::F64ToI32,
         "f64_to_i64" => HostOp::F64ToI64,
+        "f64_eq" => HostOp::F64Eq,
+        "f64_ne" => HostOp::F64Ne,
+        "f64_lt" => HostOp::F64Lt,
+        "f64_le" => HostOp::F64Le,
+        "f64_gt" => HostOp::F64Gt,
+        "f64_ge" => HostOp::F64Ge,
         "i32_div" => HostOp::I32Div,
         "i32_div_u" => HostOp::I32DivU,
         "i32_rem_u" => HostOp::I32RemU,
@@ -284,6 +302,14 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::F64Neg => Ok(Value::F64(-f64_arg(args, 0)?)),
         HostOp::F64ToI32 => Ok(Value::I32(f64_to_i32_saturating(f64_arg(args, 0)?))),
         HostOp::F64ToI64 => Ok(Value::I64(f64_to_i64_saturating(f64_arg(args, 0)?))),
+        // 比较直接复用 Rust `f64` 运算符：NaN 参与的有序比较为 false，`!=` 为 true，
+        // `==` 对 `+0.0`/`-0.0` 为 true（IEEE-754 相等，不是按位比较）。
+        HostOp::F64Eq => Ok(Value::Bool(f64_arg(args, 0)? == f64_arg(args, 1)?)),
+        HostOp::F64Ne => Ok(Value::Bool(f64_arg(args, 0)? != f64_arg(args, 1)?)),
+        HostOp::F64Lt => Ok(Value::Bool(f64_arg(args, 0)? < f64_arg(args, 1)?)),
+        HostOp::F64Le => Ok(Value::Bool(f64_arg(args, 0)? <= f64_arg(args, 1)?)),
+        HostOp::F64Gt => Ok(Value::Bool(f64_arg(args, 0)? > f64_arg(args, 1)?)),
+        HostOp::F64Ge => Ok(Value::Bool(f64_arg(args, 0)? >= f64_arg(args, 1)?)),
         HostOp::I32Div => {
             let lhs = i32_arg(args, 0)?;
             let rhs = i32_arg(args, 1)?;
