@@ -80,23 +80,23 @@ micro restore_running() {
 }
 </script>
 <style>
-.page { min-height: 100vh; background: #0f172a; padding: 24px; gap: 24px; }
-.topbar { justify-content: space-between; align-items: center; }
+.page { display: flex; flex-direction: column; min-height: 100vh; background: #0f172a; padding: 24px; gap: 24px; }
+.topbar { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
 .brand { color: #38bdf8; font-size: 20px; font-weight: 700; }
-.nav { gap: 16px; }
+.nav { display: flex; flex-direction: row; gap: 16px; }
 .nav-item { color: #94a3b8; font-size: 14px; }
-.hero { gap: 8px; padding: 32px 0; }
+.hero { display: flex; flex-direction: column; gap: 8px; padding: 32px 0; }
 .hero-title { color: #f8fafc; font-size: 32px; font-weight: 700; }
 .hero-sub { color: #94a3b8; font-size: 14px; }
-.cards { gap: 16px; }
-.card { background: #1e293b; border-radius: 12px; padding: 16px; gap: 6px; flex: 1; }
+.cards { display: flex; flex-direction: row; gap: 16px; }
+.card { display: flex; flex-direction: column; background: #1e293b; border-radius: 12px; padding: 16px; gap: 6px; flex: 1; }
 .card-value { color: #38bdf8; font-size: 26px; font-weight: 700; }
 .card-label { color: #94a3b8; font-size: 13px; }
-.panel { background: #1e293b; border-radius: 12px; padding: 20px; gap: 14px; }
-.tabs { gap: 12px; }
+.panel { display: flex; flex-direction: column; background: #1e293b; border-radius: 12px; padding: 20px; gap: 14px; }
+.tabs { display: flex; flex-direction: row; gap: 12px; }
 .tab { color: #cbd5e1; background: #334155; border-radius: 8px; padding: 6px 14px; font-size: 14px; cursor: pointer; }
 .panel-body { color: #e2e8f0; font-size: 15px; min-height: 24px; }
-.status-row { gap: 12px; align-items: center; }
+.status-row { display: flex; flex-direction: row; gap: 12px; align-items: center; }
 .status-label { color: #94a3b8; font-size: 13px; }
 .status-value { color: #4ade80; font-size: 14px; font-weight: 600; }
 .status-action { color: #f8fafc; background: #0ea5e9; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
@@ -161,8 +161,8 @@ fn product_page_inlines_critical_styles() {
     build_product_page(&temp);
     let html = fs::read_to_string(output_dir(&temp).join("index.html")).expect("读取 index.html 失败");
     assert!(html.contains("<style>"), "首屏关键样式应内联:\n{html}");
-    for rule in [".page { min-height: 100vh", ".hero-title { color: #f8fafc", ".card { background: #1e293b"] {
-        assert!(html.contains(rule), "内联样式应覆盖产品页规则 `{rule}`:\n{html}");
+    for rule in [".page { display: flex; flex-direction: column", ".cards { display: flex; flex-direction: row", ".card { display: flex; flex-direction: column; background: #1e293b"] {
+        assert!(html.contains(rule), "内联样式应覆盖产品页布局规则 `{rule}`:\n{html}");
     }
 }
 
