@@ -271,6 +271,7 @@ pub fn try_resolve_nullary_constructor(
     try_resolve_constructor(
         &NamePath::new(vec![name.clone()]),
         &[],
+        &[],
         &narrowed,
         type_relations,
         locals,

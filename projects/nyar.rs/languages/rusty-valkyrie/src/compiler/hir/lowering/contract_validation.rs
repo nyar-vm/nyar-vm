@@ -275,7 +275,7 @@ fn collect_expr_call_contracts(
                 collect_expr_call_contracts(module, &arg.value, function, source, errors, require_closed_instance);
             }
         }
-        HirExprKind::Construct { path, args, resolved } => {
+        HirExprKind::Construct { path, args, resolved, .. } => {
             if resolved.is_none() {
                 errors.push(HirError::UnresolvedConstructor {
                     name: path.to_string(),

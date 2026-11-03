@@ -197,6 +197,9 @@ pub enum HirExprKind {
         /// Semantic MIR resolves nominal variants from `resolved` declarations,
         /// never from the final path segment.
         path: NamePath,
+        /// Explicit generic arguments written with turbofish on the constructor, empty when inferred.
+        #[cfg_attr(feature = "serde", serde(default))]
+        generic_arguments: Vec<ValkyrieType>,
         /// The arguments.
         args: Vec<HirExpr>,
         /// HIR overload resolution result for constructor calls.

@@ -446,7 +446,7 @@ impl MirBuilder {
                 self.value_types.insert(tuple_value, tuple_type);
                 MirOperand::Value(tuple_value)
             }
-            HirExprKind::Construct { path, args, resolved } => {
+            HirExprKind::Construct { path, args, resolved, .. } => {
                 let name = path.parts().last().cloned().unwrap_or_else(|| Identifier::new("_"));
                 let struct_type_name = self.struct_new_owner_name(&name);
                 let mut fields: Vec<(nyar_types::FieldId, MirOperand)> = Vec::with_capacity(args.len());

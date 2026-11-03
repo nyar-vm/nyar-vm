@@ -160,6 +160,7 @@ fn map_literal_expr(entries: Vec<(Identifier, HirExpr)>, span: SourceSpan) -> Hi
     HirExpr {
         kind: HirExprKind::Construct {
             path: NamePath::new(vec![Identifier::new("Map")]),
+            generic_arguments: Vec::new(),
             args: entries
                 .into_iter()
                 .map(|(name, value)| HirExpr {

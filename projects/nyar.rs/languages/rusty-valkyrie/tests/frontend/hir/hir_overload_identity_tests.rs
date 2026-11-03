@@ -547,6 +547,7 @@ micro caller(value: i64) -> i64 { panic(value) }
             .collect::<Vec<_>>();
         try_resolve_constructor(
             &NamePath::new(vec![Identifier::new("Present")]),
+            &[],
             &arguments,
             candidates,
             &TypeRelationContext::from_module(&HirModule::default()),

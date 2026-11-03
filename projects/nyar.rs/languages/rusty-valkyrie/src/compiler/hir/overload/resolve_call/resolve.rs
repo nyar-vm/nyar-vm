@@ -399,7 +399,7 @@ fn resolve_expr_calls_at(
                 *resolved_ok_variant = operand_type.as_ref().and_then(|ty| try_resolve_try_propagate_ok_variant(ty, candidates));
             }
         }
-        HirExprKind::Construct { path, args, resolved } => {
+        HirExprKind::Construct { path, generic_arguments, args, resolved } => {
             let constructor_name = path.parts().last().cloned();
             for arg in args.iter_mut() {
                 let field_context = match &arg.kind {
@@ -432,6 +432,7 @@ fn resolve_expr_calls_at(
             if resolved.is_none() {
                 *resolved = call_resolver_try_resolve_constructor(
                     path,
+                    generic_arguments,
                     args,
                     candidates,
                     type_relations,
@@ -797,6 +798,7 @@ fn call_resolver_try_resolve_call(
 
 fn call_resolver_try_resolve_constructor(
     path: &NamePath,
+    explicit_generic_arguments: &[ValkyrieType],
     args: &[crate::compiler::types::hir::HirExpr],
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
@@ -807,6 +809,7 @@ fn call_resolver_try_resolve_constructor(
 ) -> Option<HirResolvedCall> {
     crate::compiler::hir::overload::call_resolver::try_resolve_constructor(
         path,
+        explicit_generic_arguments,
         args,
         candidates,
         type_relations,
@@ -840,7 +843,12 @@ fn try_resolve_nullary_variant_expr(
     {
         *expr = HirExpr {
             span: expr.span.clone(),
-            kind: HirExprKind::Construct { path: NamePath::new(vec![name.clone()]), args: Vec::new(), resolved: Some(resolved) },
+            kind: HirExprKind::Construct {
+                path: NamePath::new(vec![name.clone()]),
+                generic_arguments: Vec::new(),
+                args: Vec::new(),
+                resolved: Some(resolved),
+            },
         };
     }
 }

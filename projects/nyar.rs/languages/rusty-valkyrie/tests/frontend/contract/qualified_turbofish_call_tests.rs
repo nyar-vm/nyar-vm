@@ -64,3 +64,38 @@ fn undeclared_operator_operand_type_fails_closed() {
         other => panic!("期望 UnresolvedCall，实际 {other:?}"),
     }
 }
+
+/// 构造位置的 turbofish（`Wrap::<T> { .. }`）必须保留名字路径并解析构造，
+/// 不得退化成占位 `_` 路径。
+#[test]
+fn turbofish_constructor_binds_declaration() {
+    let source = format!(
+        "{PRIMITIVES}\
+         structure Wrap<T> {{ _value: T, _index: usize }} \
+         micro make<T>(value: T): Wrap<T> {{ return Wrap::<T> {{ _value: value, _index: 0 }} }}"
+    );
+    let hir = compile_named(&source, "probe.nested").expect("构造位置 turbofish 必须完成 HIR");
+    let expression = probe_tail_expression(find_function(&hir, "make"));
+    let HirExprKind::Construct { path, generic_arguments, resolved, .. } = &expression.kind
+    else {
+        panic!("构造位置 turbofish 必须落在 Construct: {expression:?}");
+    };
+    assert_eq!(path.to_string(), "Wrap", "turbofish 构造必须保留构造名而不是 `_` 占位");
+    assert_eq!(generic_arguments.len(), 1, "`::<T>` 必须作为显式泛型实参保留: {generic_arguments:?}");
+    assert!(resolved.is_some(), "构造必须解析到候选: {resolved:?}");
+}
+
+/// 显式泛型实参数量与 binder 不符时必须失败闭合，不得静默丢弃 turbofish。
+#[test]
+fn turbofish_constructor_wrong_arity_fails_closed() {
+    let source = format!(
+        "{PRIMITIVES}\
+         structure Wrap<T> {{ _value: T, _index: usize }} \
+         micro make<T>(value: T): Wrap<T> {{ return Wrap::<T, i32> {{ _value: value, _index: 0 }} }}"
+    );
+    let error = compile_named(&source, "probe.nested").expect_err("binder 数量不符的 turbofish 构造必须失败闭合");
+    match error {
+        HirError::UnresolvedConstructor { name, .. } => assert_eq!(name, "Wrap", "失败必须落在构造名"),
+        other => panic!("期望 UnresolvedConstructor，实际 {other:?}"),
+    }
+}

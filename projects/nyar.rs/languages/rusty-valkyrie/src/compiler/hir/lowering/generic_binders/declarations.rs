@@ -227,11 +227,14 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
                     }
                 }
             }
-            HirExprKind::Construct { path, args, resolved } => {
+            HirExprKind::Construct { path, generic_arguments, args, resolved } => {
                 if let Some(owner) = self_owner {
                     if path.parts().len() == 1 && path.parts()[0].as_str() == "Self" {
                         *path = owner.construct_path.clone();
                     }
+                }
+                for argument in generic_arguments.iter_mut() {
+                    bind_type(argument, namespace, structs, enums)?;
                 }
                 for arg in args {
                     bind_expr(arg, namespace, structs, enums, self_owner)?;

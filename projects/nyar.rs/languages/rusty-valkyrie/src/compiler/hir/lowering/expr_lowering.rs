@@ -575,7 +575,13 @@ fn lower_object_expression(
     fallback_span: Range<usize>,
     span: SourceSpan,
 ) -> Result<HirExprKind, HirError> {
-    let path = extract_name_path(callee).unwrap_or_else(|| NamePath::new(vec![Identifier::new("_")]));
+    let (name_callee, generic_arguments) = match callee {
+        TermExpression::Turbofish { expr, arguments, .. } => {
+            (expr.as_ref(), arguments.iter().map(super::lower_type_expression).collect::<Result<Vec<_>, _>>()?)
+        }
+        _ => (callee, Vec::new()),
+    };
+    let path = extract_name_path(name_callee).unwrap_or_else(|| NamePath::new(vec![Identifier::new("_")]));
     let args: Vec<_> = fields
         .iter()
         .map(|(field, value)| -> Result<_, HirError> {
@@ -592,7 +598,7 @@ fn lower_object_expression(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(HirExprKind::Construct { path, args, resolved: None })
+    Ok(HirExprKind::Construct { path, generic_arguments, args, resolved: None })
 }
 
 fn lower_anonymous_class(literal: &AnonymousClass, source_id: SourceID, fallback_span: Range<usize>) -> Result<HirExprKind, HirError> {

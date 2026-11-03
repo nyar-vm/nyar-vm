@@ -167,6 +167,7 @@ pub(crate) fn instantiate_candidate_for_context(candidate: &OverloadCandidate, c
 #[doc(hidden)]
 pub fn try_resolve_constructor(
     path: &NamePath,
+    explicit_generic_arguments: &[ValkyrieType],
     args: &[HirExpr],
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
@@ -220,13 +221,20 @@ pub fn try_resolve_constructor(
             if let Some(context) = contextual_type {
                 if !matches!(&candidate.signature.return_type, ValkyrieType::Generic(_))
                     && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
-                    && let Some(matched) =
-                        match_call_candidate(&instantiated, &arguments, &[], type_relations, locals, struct_fields, singleton_names)
+                    && let Some(matched) = match_call_candidate(
+                        &instantiated,
+                        &arguments,
+                        explicit_generic_arguments,
+                        type_relations,
+                        locals,
+                        struct_fields,
+                        singleton_names,
+                    )
                 {
                     return Some(matched);
                 }
             }
-            match_call_candidate(candidate, &arguments, &[], type_relations, locals, struct_fields, singleton_names)
+            match_call_candidate(candidate, &arguments, explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
         })
         .collect::<Vec<_>>();
     let resolved = crate::compiler::hir::overload::diagnostics::resolve_overload(&filtered).ok()?;
