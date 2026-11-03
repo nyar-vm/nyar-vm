@@ -205,7 +205,16 @@ function marshalLibraryArg(schema, value) {{
     if (kind == null) return value;
 
     // ── Primitive carriers ──────────────────────────────────────────────
-    if (kind === "I64") return BigInt(value ?? 0);
+    // I64：Wasm JS API 只接受 BigInt。Number 入参仅允许安全整数范围；
+    // 超范围 Number 本身已丢精度，必须显式拒绝而不是静默截断。
+    if (kind === "I64") {{
+        if (typeof value === "number" && !Number.isSafeInteger(value)) {{
+            throw new Error(
+                `[wasm-js-glue] Cannot marshal I64 from Number ${{value}}: outside the safe-integer range, the value would be silently truncated. Pass a BigInt instead.`
+            );
+        }}
+        return BigInt(value ?? 0);
+    }}
     if (kind === "I32" || kind === "F32" || kind === "F64") return Number(value ?? 0);
     if (kind === "Bool") return value ? 1 : 0;
     if (kind === "Char") return Number(value ?? 0);
@@ -243,7 +252,9 @@ function demarshalLibraryReturn(schema, raw) {{
     if (kind === "Unit") return undefined;
 
     // ── Primitive carriers ──────────────────────────────────────────────
-    if (kind === "I64") return raw == null ? null : Number(raw);
+    // I64：Wasm i64 返回值在 JS 侧天然是 BigInt，原样透出保持全 64 位精度；
+    // 不允许经 Number 收窄（>2^53 静默丢精度）。
+    if (kind === "I64") return raw == null ? null : BigInt(raw);
     if (kind === "I32" || kind === "F32" || kind === "F64") return Number(raw);
     if (kind === "Bool") return raw !== 0 && raw !== null;
     if (kind === "Char") return Number(raw);

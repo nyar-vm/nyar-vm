@@ -82,7 +82,28 @@ fn glue_call_export_resolves_spec_params_by_position_and_identity() {
         "参数必须按声明顺序逐位 marshal:\n{glue}"
     );
     assert!(glue.contains("demarshalLibraryReturn(spec.returns, raw)"), "返回值必须按返回 schema demarshal:\n{glue}");
-    assert!(glue.contains(r#"if (kind === "I64") return BigInt(value ?? 0);"#), "i64 参数必须 BigInt 化:\n{glue}");
+    assert!(glue.contains("return BigInt(value ?? 0);"), "i64 参数必须 BigInt 化:\n{glue}");
+}
+
+#[test]
+fn glue_i64_return_demarshals_as_bigint_without_number_narrowing() {
+    // Wasm i64 返回值经 JS API 天然是 BigInt：demarshal 必须原样透出 BigInt，
+    // 不得经 Number 收窄（>2^53 静默丢精度，u64 满值 / 负数高位全中招）。
+    let glue =
+        launcher_for(&spec(r#"{"solve":{"params":[{"index":0,"name":"n","type":{"kind":"I64"},"carrier":"i64"}],"returns":{"kind":"I64"}}}"#));
+    assert!(glue.contains(r#"if (kind === "I64") return raw == null ? null : BigInt(raw);"#), "i64 返回必须透出 BigInt:\n{glue}");
+    assert!(!glue.contains(r#"if (kind === "I64") return raw == null ? null : Number(raw);"#), "i64 返回不得经 Number 收窄:\n{glue}");
+}
+
+#[test]
+fn glue_i64_parameter_rejects_unsafe_number_with_explicit_error() {
+    // 反例合同：调用方用 Number 承载超安全整数范围的值时，marshal 必须显式
+    // 报错并指引改用 BigInt，不得静默截断；安全整数范围内的 Number 仍接受。
+    let glue =
+        launcher_for(&spec(r#"{"echo":{"params":[{"index":0,"name":"v","type":{"kind":"I64"},"carrier":"i64"}],"returns":{"kind":"I64"}}}"#));
+    assert!(glue.contains(r#"typeof value === "number" && !Number.isSafeInteger(value)"#), "i64 参数必须检查 Number 安全整数范围:\n{glue}");
+    assert!(glue.contains("Cannot marshal I64 from Number"), "超范围 Number 必须有结构化报错:\n{glue}");
+    assert!(glue.contains("Pass a BigInt instead"), "报错必须指引改用 BigInt:\n{glue}");
 }
 
 #[test]

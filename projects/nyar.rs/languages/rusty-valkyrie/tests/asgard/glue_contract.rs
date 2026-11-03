@@ -96,3 +96,45 @@ fn glue_fails_closed_when_wasm_artifact_is_missing() {
     let diagnostic = call_export_through_glue(&artifact, "configure", "[]").expect_err("wasm 产物缺失时 glue 导入必须失败，不得静默成功");
     assert!(diagnostic.contains("ENOENT") || diagnostic.contains(".wasm"), "诊断必须指明缺失的 wasm 文件，实际：{diagnostic}");
 }
+
+/// 64-bit 整数导出：参数透传（echo）与超 2^53 常量各一条。
+///
+/// 前端整数字面量按 `i64` 解析，`9223372036854775807`（`i64::MAX`）是可表达的
+/// 最大 64 位值；`4611686018427387905`（2^62+1）超过 2^53 且非 2 的幂，
+/// 经 `Number` 必然丢精度，是往返保真的最小判别值。
+const U64_ECHO_EXPORT: &str = r#"[export(name: "echo")]
+micro echo(v: u64) -> u64 {
+    return v
+}
+
+[export(name: "maxExpressible")]
+micro maxExpressible() -> u64 {
+    return 9223372036854775807
+}
+"#;
+
+#[test]
+fn glue_i64_values_roundtrip_through_bigint() {
+    let artifact = build_scalar("glue-i64-bigint", U64_ECHO_EXPORT);
+
+    // 零参导出返回超 2^53 常量：demarshal 必须保真到个位。
+    let value =
+        call_export_through_glue(&artifact, "maxExpressible", "[]").unwrap_or_else(|diagnostic| panic!("u64 导出必须可调用：{diagnostic}"));
+    assert_eq!(value, "9223372036854775807", "超 2^53 的 64 位返回值必须逐位保真");
+
+    // BigInt 入参 → wasm → BigInt 返回：2^62+1 全链路往返，逐位一致。
+    let echoed = call_export_through_glue(&artifact, "echo", "[\"4611686018427387905n\"]")
+        .unwrap_or_else(|diagnostic| panic!("BigInt 参数必须可经 glue 传入：{diagnostic}"));
+    assert_eq!(echoed, "4611686018427387905", "超 2^53 的 BigInt 参数必须逐位往返保真");
+}
+
+#[test]
+fn glue_i64_rejects_lossy_number_parameter() {
+    let artifact = build_scalar("glue-i64-lossy", U64_ECHO_EXPORT);
+
+    // JSON Number 无法承载超 2^53 的整数：marshal 必须显式拒绝，不得静默截断。
+    let diagnostic =
+        call_export_through_glue(&artifact, "echo", "[4611686018427387904]").expect_err("超出安全整数范围的 Number 必须被拒绝，不得静默截断");
+    assert!(diagnostic.contains("Cannot marshal I64 from Number"), "诊断必须指明 Number 承载不安全，实际：{diagnostic}");
+    assert!(diagnostic.contains("BigInt"), "诊断必须指明改用 BigInt，实际：{diagnostic}");
+}

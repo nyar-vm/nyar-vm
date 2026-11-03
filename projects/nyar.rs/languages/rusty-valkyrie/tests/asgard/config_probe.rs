@@ -115,12 +115,16 @@ fn list_dir(dir: &Path) -> String {
 /// 含退出码与 stderr，供缺口固化断言使用）。
 pub(crate) fn call_export_through_glue(artifact: &ProbeArtifact, export_name: &str, args_json: &str) -> Result<String, String> {
     let runner_path = artifact.output_dir.join("c0_probe_runner.mjs");
+    // 参数协议：JSON 之外允许 `"<digits>n"` 字符串表示 BigInt（i64/u64 超过 2^53
+    // 的入参无法用 JSON Number 无损表达）。返回值：BigInt 按十进制文本输出，
+    // 其余按 JSON 序列化，保持既有标量/文本探针输出形状不变。
     fs::write(
         &runner_path,
         r#"import { pathToFileURL } from "node:url";
 const glue = await import(pathToFileURL(process.argv[2]).href);
-const value = await glue.callExport(process.argv[3], ...JSON.parse(process.argv[4]));
-process.stdout.write(JSON.stringify(value ?? null));
+const args = JSON.parse(process.argv[4], (key, value) => (typeof value === "string" && /^-?\d+n$/.test(value) ? BigInt(value.slice(0, -1)) : value));
+const value = await glue.callExport(process.argv[3], ...args);
+process.stdout.write(typeof value === "bigint" ? value.toString() : JSON.stringify(value ?? null));
 "#,
     )
     .expect("写入 Node 探针 runner");
