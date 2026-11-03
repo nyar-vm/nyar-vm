@@ -354,29 +354,125 @@ fn undefined_element_fails_with_path_and_expected_type() {
     assert!(message.contains("I32"), "失败信息必须带期望类型: {message}");
 }
 
-// ── Option 标量内层：三种位置都必须失败闭合 ────────────────────────────────
+// ── Option 标量内层：真实降级是 niche（None = ref.null，Some(标量) = [i32]/[i64] box）──
+// wire 规则：None → null，Some(v) → v。以下全部是真发射 wasm + Node 实跑。
 
-#[test]
-fn option_scalar_parameter_fails_closed_with_schema() {
-    let bridge = emit_plain(NyarType::Nullable(Box::new(I64)));
-    let schema = spec_exports(&bridge.spec);
-    assert_eq!(schema["echo"]["params"][0]["type"]["kind"], "Option");
-    assert_eq!(schema["echo"]["params"][0]["type"]["inner"]["kind"], "I64");
-    let message = call_error(&bridge, "5n");
-    assert!(message.contains("at arg0"), "失败信息必须带入参路径: {message}");
-    assert!(message.contains("Option<I64>"), "失败信息必须带 schema 内层类型: {message}");
-    assert!(message.contains("no Wasm handle carrier"), "失败信息必须说明载体缺口: {message}");
+fn nullable_of(inner: NyarType) -> NyarType {
+    NyarType::Nullable(Box::new(inner))
+}
+
+fn call_value(bridge: &EmittedBridge, arg_js: &str) -> serde_json::Value {
+    let driver = format!(
+        r#"const out = {{}};
+try {{ out.value = await callExport("echo", {arg_js}); }}
+catch (error) {{ out.error = String(error && error.message ? error.message : error); }}
+process.stdout.write(JSON.stringify(out, (_, v) => typeof v === "bigint" ? String(v) : v));"#
+    );
+    serde_json::from_str(&run_in_node(bridge, &driver)).expect("driver JSON")
 }
 
 #[test]
-fn option_scalar_container_element_fails_closed_with_schema() {
-    let bridge = arraylist_case(NyarType::Nullable(Box::new(I64)));
-    let schema = spec_exports(&bridge.spec);
-    assert_eq!(schema["echo"]["params"][0]["type"]["element"]["kind"], "Option");
-    assert_eq!(schema["echo"]["params"][0]["type"]["element"]["inner"]["kind"], "I64");
-    let message = call_error(&bridge, "[5n]");
-    assert!(message.contains("arg0[0]"), "失败信息必须定位到元素: {message}");
-    assert!(message.contains("Option<I64>"), "失败信息必须带 schema 内层类型: {message}");
+fn option_i64_roundtrips_as_parameter_and_return() {
+    let bridge = emit_plain(nullable_of(I64));
+    let exports = spec_exports(&bridge.spec);
+    let schema = &exports["echo"]["params"][0]["type"];
+    assert_eq!(schema["kind"], "Option");
+    assert_eq!(schema["inner"]["kind"], "I64");
+    assert_eq!(schema["box"]["payload"], "i64", "Option<i64> 必须携带 [i64] 装箱合同: {schema}");
+
+    let stdout = run_in_node(
+        &bridge,
+        r#"const out = {};
+const none = await callExport("echo", null);
+out.none = none === null ? "null" : none;
+const some = await callExport("echo", 5n);
+out.some = typeof some === "bigint" ? String(some) : some;
+process.stdout.write(JSON.stringify(out));"#,
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
+    assert!(parsed["error"].is_null(), "Option<i64> 往返不得失败: {stdout}");
+    assert_eq!(parsed["none"], "null", "None 必须以 null 往返: {stdout}");
+    assert_eq!(parsed["some"], "5", "Some(i64) 必须以 BigInt 往返: {stdout}");
+}
+
+#[test]
+fn option_i64_container_elements_roundtrip_mixed_none_and_some() {
+    let bridge = arraylist_case(nullable_of(I64));
+    let exports = spec_exports(&bridge.spec);
+    let element = &exports["echo"]["params"][0]["type"]["element"];
+    assert_eq!(element["kind"], "Option");
+    assert_eq!(element["inner"]["kind"], "I64");
+    assert_eq!(element["box"]["payload"], "i64", "容器元素同样必须携带装箱合同: {element}");
+
+    let parsed = call_value(&bridge, "[null, 5n, null, 7n]");
+    assert!(parsed["error"].is_null(), "ArrayList<Option<i64>> 往返不得失败: {parsed}");
+    assert_eq!(parsed["value"], serde_json::json!([null, "5", null, "7"]));
+}
+
+#[test]
+fn option_utf8_roundtrips_as_parameter_and_return() {
+    let bridge = emit_plain(nullable_of(UTF8));
+    let exports = spec_exports(&bridge.spec);
+    let schema = &exports["echo"]["params"][0]["type"];
+    assert_eq!(schema["kind"], "Option");
+    assert_eq!(schema["inner"]["kind"], "Utf8");
+    assert_eq!(schema["box"]["payload"], "i32", "Utf8 在 JS glue 是 i32 宿主句柄: {schema}");
+
+    let stdout = run_in_node(
+        &bridge,
+        r#"const out = {};
+const none = await callExport("echo", null);
+out.none = none === null ? "null" : none;
+const some = await callExport("echo", "中文😀");
+out.some = some;
+process.stdout.write(JSON.stringify(out));"#,
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
+    assert!(parsed["error"].is_null(), "Option<utf8> 往返不得失败: {stdout}");
+    assert_eq!(parsed["none"], "null");
+    assert_eq!(parsed["some"], "中文😀");
+}
+
+#[test]
+fn option_utf8_container_elements_roundtrip_mixed() {
+    let bridge = arraylist_case(nullable_of(UTF8));
+    let parsed = call_value(&bridge, "[\"中文😀\", null, \"\"]");
+    assert!(parsed["error"].is_null(), "ArrayList<Option<utf8>> 往返不得失败: {parsed}");
+    assert_eq!(parsed["value"], serde_json::json!(["中文😀", null, ""]));
+}
+
+#[test]
+fn option_undefined_param_is_rejected_with_path() {
+    let bridge = emit_plain(nullable_of(I64));
+    let message = call_error(&bridge, "undefined");
+    assert!(message.contains("at arg0"), "失败信息必须带入参路径: {message}");
+    assert!(message.contains("undefined is not the None wire form"), "失败信息必须说明 wire 规则: {message}");
+    assert!(message.contains("Option"), "失败信息必须带 Option schema: {message}");
+}
+
+#[test]
+fn option_inner_type_mismatch_fails_at_arg_path() {
+    let bridge = emit_plain(nullable_of(I64));
+    let message = call_error(&bridge, "5");
+    assert!(message.contains("at arg0"), "失败信息必须带入参路径: {message}");
+    assert!(message.contains("I64"), "失败信息必须带内层期望类型: {message}");
+    assert!(message.contains("requires a BigInt"), "失败信息必须说明内层载体合同: {message}");
+}
+
+#[test]
+fn option_container_element_mismatch_fails_at_element_path() {
+    let bridge = arraylist_case(nullable_of(I64));
+    let message = call_error(&bridge, "[null, 5n, \"oops\"]");
+    assert!(message.contains("arg0[2]"), "失败信息必须定位到元素: {message}");
+    assert!(message.contains("I64"), "失败信息必须带内层期望类型: {message}");
+}
+
+#[test]
+fn option_array_where_scalar_payload_expected_fails_at_arg_path() {
+    let bridge = emit_plain(nullable_of(I64));
+    let message = call_error(&bridge, "[]");
+    assert!(message.contains("at arg0"), "失败信息必须带入参路径: {message}");
+    assert!(message.contains("I64"), "失败信息必须带内层期望类型: {message}");
 }
 
 /// 手工 wasm：`() -> anyref` 直接 `ref.null`，用来实测返回值侧的 Option 反编组。
@@ -400,8 +496,8 @@ fn nullref_module(export: &str) -> WasmBinaryModule {
 }
 
 #[test]
-fn option_scalar_return_fails_closed_with_schema() {
-    let spec = r#"{"version":0,"exports":{"noop":{"params":[],"returns":{"kind":"Option","inner":{"kind":"I64"}}}}}"#;
+fn option_return_none_demarshals_to_null() {
+    let spec = r#"{"version":0,"exports":{"noop":{"params":[],"returns":{"kind":"Option","inner":{"kind":"I64"},"box":{"new":"nyar$option$new$i64$0","get":"nyar$option$get$i64$0","payload":"i64"}}}}}"#;
     let bridge = EmittedBridge { module: nullref_module("noop"), imports: Vec::new(), spec: spec.to_string() };
     let stdout = run_in_node(
         &bridge,
@@ -411,8 +507,22 @@ catch (error) { out.error = String(error && error.message ? error.message : erro
 process.stdout.write(JSON.stringify(out));"#,
     );
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
-    let message = parsed["error"].as_str().expect("返回 Option<i64> 必须结构化失败");
-    assert!(message.contains("at return"), "失败信息必须带返回值路径: {message}");
-    assert!(message.contains("Option<I64>"), "失败信息必须带 schema 内层类型: {message}");
-    assert!(message.contains("no Wasm handle carrier"), "失败信息必须说明载体缺口: {message}");
+    assert!(parsed["error"].is_null(), "空引用必须反编组为 null: {stdout}");
+    assert!(parsed["value"].is_null());
+}
+
+#[test]
+fn option_scalar_without_box_contract_fails_closed_on_marshal() {
+    // 后端只为 i32/i64 注册了 box struct；f64 载荷没有物理表示，schema 也不得编合同。
+    let bridge = emit_plain(nullable_of(NyarType::Float64));
+    let exports = spec_exports(&bridge.spec);
+    let schema = &exports["echo"]["params"][0]["type"];
+    assert_eq!(schema["kind"], "Option");
+    assert_eq!(schema["inner"]["kind"], "F64");
+    assert!(schema["box"].is_null(), "无 box struct 的载荷不得携带合同: {schema}");
+
+    let message = call_error(&bridge, "1.5");
+    assert!(message.contains("at arg0"), "失败信息必须带入参路径: {message}");
+    assert!(message.contains("Option<F64>"), "失败信息必须带 schema 内层类型: {message}");
+    assert!(message.contains("no box/unbox contract"), "失败信息必须说明合同缺口: {message}");
 }
