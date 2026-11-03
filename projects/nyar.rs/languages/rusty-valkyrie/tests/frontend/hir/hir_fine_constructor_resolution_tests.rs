@@ -251,6 +251,9 @@ micro severity_is_error(diagnostic: Diagnostic) -> bool {
 #[test]
 fn generic_structure_construction_with_unit_variant_field_resolves() {
     let source = r#"
+[primitive("std::primitive::i64")]
+structure i64 { }
+
 unite DataCacheSlot<T> {
     [constructor]
     Filled { value: T },

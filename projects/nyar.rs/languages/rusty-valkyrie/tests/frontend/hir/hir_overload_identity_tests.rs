@@ -69,6 +69,9 @@ fn qualified_type_static_call_does_not_fall_back_to_unrelated_new() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 5202 });
     let result = compiler.compile_source(
         r#"
+[primitive("std::primitive::i64")]
+structure i64 { }
+
 structure HashMap<K, V> {
     capacity: i64
 }
@@ -109,9 +112,9 @@ micro main() {
         })
         .expect("HashMap::new must carry a resolved call contract");
     assert_eq!(resolved.symbol.to_string(), "HashMap.new");
-    // 当前身份合同：fixture 未声明 `i64` primitive，形参类型冻结为 `Named`，不折叠成内建标量
-    // （数值 carrier 映射是后续工作包）。本用例锁定的是限定静态调用绑定声明签名这一身份事实。
-    assert_eq!(resolved.parameter_types, vec![ValkyrieType::Named(Identifier::new("i64"))]);
+    // 身份合同：`i64` 由 `[primitive]` 声明身份，形参类型折叠为内建整型载体；
+    // 本用例锁定的是限定静态调用绑定声明签名这一身份事实。
+    assert_eq!(resolved.parameter_types, vec![ValkyrieType::Integer64 { signed: true }]);
 }
 
 /// 同一 owner 的 inherent 成员与 trait impl 成员同形并存时，调用解析按方法解析的

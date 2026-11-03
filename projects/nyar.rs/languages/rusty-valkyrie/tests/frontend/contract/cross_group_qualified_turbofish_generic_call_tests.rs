@@ -10,12 +10,13 @@ use rusty_valkyrie::{
     },
 };
 
-/// 数值原始类型名属于 `std/primitive` 的声明族；未声明时 canonical 以 CAN003 拒绝。
+/// 数值原始类型名属于 `std/primitive` 的声明族；`usize` 是生产 std 的指针宽度别名。
 const PRIMITIVES: &str = concat!(
     "namespace std::primitive;\n",
-    "[primitive(\"std::primitive::usize\")] structure usize { }\n",
+    "[primitive(\"std::primitive::u64\")] structure u64 { }\n",
     "[primitive(\"std::primitive::i32\")] structure i32 { }\n",
-    "imply usize {\n",
+    "type usize = u64;\n",
+    "imply u64 {\n",
     "  infix `+`(self, rhs: Self): Self { return rhs }\n",
     "}"
 );

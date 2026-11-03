@@ -18,22 +18,24 @@ use nyar_types::compiler_input::CompilerSourceGroup;
 use rusty_valkyrie::{HirError, ValkyrieCompiler};
 
 const PRIMITIVES: &str = "namespace std.primitive;
-[primitive(\"std::primitive::usize\")] structure usize { }
+[primitive(\"std::primitive::u64\")] structure u64 { }
 [primitive(\"std::primitive::i64\")] structure i64 { }
 [primitive(\"std::primitive::i32\")] structure i32 { }
 [primitive(\"std::primitive::bool\")] structure bool { }
+
+type usize = u64;
 
 trait Equal {
     infix `==`(self, other: Self): bool
     infix `!=`(self, other: Self): bool
 }
 
-imply usize: Equal {
+imply u64: Equal {
     infix `==`(self, other: Self): bool { return true }
     infix `!=`(self, other: Self): bool { return false }
 }
 
-imply usize {
+imply u64 {
     infix `<`(self, other: usize): bool { return true }
     infix `+`(self, other: usize): usize { return self }
 }

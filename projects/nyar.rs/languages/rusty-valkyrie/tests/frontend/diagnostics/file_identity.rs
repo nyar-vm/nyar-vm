@@ -69,7 +69,10 @@ fn group_compile_fails_closed_on_recovery_and_names_only_the_broken_file() {
 fn clean_group_compile_is_not_affected_by_the_boundary() {
     pending::clear_pending_diagnostics();
     let groups = vec![entry_group(vec![
-        file("source/a.v", "[main]\nmicro main() -> i64 {\n    return 0\n}\n"),
+        file(
+            "source/a.v",
+            "[primitive(\"std::primitive::i64\")] structure i64 { }\n[main]\nmicro main() -> i64 {\n    return 0\n}\n",
+        ),
         file("source/c.v", "micro helper() -> i64 {\n    return 1\n}\n"),
     ])];
     ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect("干净工程必须照常编译");
@@ -89,7 +92,11 @@ fn create_three_file_project(prefix: &str, broken: bool) -> (tempfile::TempDir, 
         "{\n    name: \"app\",\n    dependencies: {\n        \"std\": false,\n        \"core\": false\n    },\n    build: [\n        { target: \"ovm\" }\n    ]\n}\n",
     )
     .expect("write project manifest");
-    std::fs::write(source_dir.join("a.v"), "[main]\nmicro main() -> i64 {\n    return 0\n}\n").expect("write a.v");
+    std::fs::write(
+        source_dir.join("a.v"),
+        "[primitive(\"std::primitive::i64\")] structure i64 { }\n[main]\nmicro main() -> i64 {\n    return 0\n}\n",
+    )
+    .expect("write a.v");
     std::fs::write(source_dir.join("c.v"), "micro helper() -> i64 {\n    return 1\n}\n").expect("write c.v");
     let b_source = if broken { "micro broken() {\n    +\n}\n" } else { "micro fine() -> i64 {\n    return 2\n}\n" };
     std::fs::write(source_dir.join("b.v"), b_source).expect("write b.v");

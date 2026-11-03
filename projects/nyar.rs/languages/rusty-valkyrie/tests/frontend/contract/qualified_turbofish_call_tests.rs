@@ -13,8 +13,9 @@ use rusty_valkyrie::{
     },
 };
 
-/// 数值原始类型名属于 `std/primitive` 的声明族；未声明时 canonical 以 CAN003 拒绝。
-const PRIMITIVES: &str = "[primitive(\"std::primitive::usize\")] structure usize { } \
+/// 数值原始类型名属于 `std/primitive` 的声明族；`usize` 是生产 std 的指针宽度别名。
+const PRIMITIVES: &str = "[primitive(\"std::primitive::u64\")] structure u64 { } \
+    type usize = u64; \
     [primitive(\"std::primitive::i32\")] structure i32 { } ";
 
 fn compile_named(source: &str, module: &str) -> Result<HirModule, HirError> {

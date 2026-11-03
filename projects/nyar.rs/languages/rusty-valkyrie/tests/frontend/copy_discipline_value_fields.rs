@@ -7,6 +7,9 @@
 
 use rusty_valkyrie::{SourceID, ValkyrieCompiler};
 
+/// 数值原始类型不是语言内建，必须绑定到源码声明身份。
+const PRIMITIVES: &str = "[primitive(\"std::primitive::i32\")] structure i32 { } ";
+
 #[test]
 fn structure_with_class_instance_field_is_accepted() {
     let compiler = ValkyrieCompiler::new(SourceID::default());
@@ -16,20 +19,23 @@ fn structure_with_class_instance_field_is_accepted() {
 #[test]
 fn structure_with_heap_array_field_is_accepted() {
     let compiler = ValkyrieCompiler::new(SourceID::default());
-    compiler.compile_source("structure Holder { items: [i32] }").expect("heap array field must be accepted");
+    compiler.compile_source(&format!("{PRIMITIVES}structure Holder {{ items: [i32] }}")).expect("heap array field must be accepted");
 }
 
 #[test]
 fn structure_with_unite_field_is_accepted() {
     let compiler = ValkyrieCompiler::new(SourceID::default());
-    compiler.compile_source("unite Choice { A { x: i32 } B } structure Holder { choice: Choice }").expect("unite field must be accepted");
+    compiler
+        .compile_source(&format!("{PRIMITIVES}unite Choice {{ A {{ x: i32 }} B }} structure Holder {{ choice: Choice }}"))
+        .expect("unite field must be accepted");
 }
 
 #[test]
 fn reference_fields_compile_through_parameter_and_return_paths() {
     let compiler = ValkyrieCompiler::new(SourceID::default());
     compiler
-        .compile_source(
+        .compile_source(&format!(
+            "{PRIMITIVES}\n{}",
             r#"
 class Payload {
 }
@@ -56,6 +62,6 @@ micro entry() -> i32 {
     return 0
 }
 "#,
-        )
+        ))
         .expect("reference-typed fields must compile through parameter and return paths");
 }

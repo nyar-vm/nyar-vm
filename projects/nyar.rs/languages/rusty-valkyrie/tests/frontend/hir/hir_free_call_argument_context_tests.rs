@@ -7,6 +7,9 @@
 use rusty_valkyrie::ValkyrieCompiler;
 
 const OPTION_DECL: &str = r#"
+[primitive("std::primitive::i32")]
+structure i32 { }
+
 [tag(ProbeOptionKind)]
 unite ProbeOption<T> {
     [tag(0)]
