@@ -414,6 +414,11 @@ pub(crate) fn try_resolve_type_static_method(
     })
 }
 
+/// 解析实例方法调用（`receiver.member(args)` / 值位置成员访问）。
+///
+/// 返回结构化结果：无候选或形参失配是 `NoMatch`，多个同具体度候选并列是
+/// `Ambiguous`。调用方必须把歧义作为独立失败类别上报，不得用 `.ok()` 折算成
+/// 「无一候选」，否则显式 impl 的同具体度冲突会退化成 `NoViableOverload`。
 pub(crate) fn try_resolve_instance_method(
     receiver: &HirExpr,
     method_name: &Identifier,
@@ -423,7 +428,7 @@ pub(crate) fn try_resolve_instance_method(
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &AggregateFieldIndex,
     singleton_names: &std::collections::BTreeSet<Identifier>,
-) -> Option<HirResolvedCall> {
+) -> Result<HirResolvedCall, OverloadResolutionError> {
     let receiver_arg = HirCallArgument::positional(receiver.clone());
     let mut full_args = Vec::with_capacity(args.len() + 1);
     full_args.push(receiver_arg);
@@ -432,7 +437,7 @@ pub(crate) fn try_resolve_instance_method(
     let Some(receiver_type) =
         infer_expr_type(receiver, locals).or_else(|| infer_scrutinee_type(receiver, locals, struct_fields, singleton_names))
     else {
-        return None;
+        return Err(OverloadResolutionError::NoMatch);
     };
     // 数组下标 / 长度 / 构造不再是语言内建候选：`suffix [ ]` / `suffix ⁅ ⁆` 等运算符
     // 成员一律由显式声明（类 `imply` / trait）及其已选 provider 驱动。裸 `[T]` 形态
@@ -455,7 +460,8 @@ pub(crate) fn try_resolve_instance_method(
             if let Some(matched) = match_call_candidate(candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names) {
                 filtered.push(matched);
             }
-        } else if let ValkyrieType::Generic(generic) = &receiver_type {
+        }
+        else if let ValkyrieType::Generic(generic) = &receiver_type {
             if generic.binder.is_none() {
                 continue;
             }
@@ -495,7 +501,7 @@ pub(crate) fn try_resolve_instance_method(
             }
         }
     }
-    let resolved = crate::compiler::hir::overload::diagnostics::resolve_overload(&filtered).ok()?;
+    let resolved = crate::compiler::hir::overload::diagnostics::resolve_overload(&filtered)?;
     let has_receiver = candidate_has_receiver_parameter(&resolved);
     let mut call = HirResolvedCall {
         declaration: resolved.declaration,
@@ -519,5 +525,5 @@ pub(crate) fn try_resolve_instance_method(
     {
         call.trait_dispatch = Some(HirTraitDispatch { trait_declaration, method_declaration, self_type: receiver_type.clone() });
     }
-    Some(call)
+    Ok(call)
 }

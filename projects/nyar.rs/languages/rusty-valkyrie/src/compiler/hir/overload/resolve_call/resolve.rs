@@ -10,7 +10,7 @@ use crate::compiler::{
                 explain_unresolved_call, try_resolve_instance_method, try_resolve_nullary_constructor, try_resolve_pattern_extractor,
                 resolve_variant_pattern_constructor, try_resolve_try_propagate_ok_variant,
             },
-            diagnostics::{OverloadCandidate, OverloadDomain},
+            diagnostics::{OverloadCandidate, OverloadDomain, OverloadResolutionError},
             expr_position::ExprPosition,
             symbol_match::{aggregate_constructor_matches_name, symbol_matches_unqualified_free_call},
             types::{
@@ -33,7 +33,7 @@ use crate::compiler::{
 };
 
 use super::{
-    failure_sink::{record_failure, replace_failure_at, with_failure_collector},
+    failure_sink::{failure_recorded_at, record_failure, replace_failure_at, with_failure_collector},
     validate::{is_option_owner_type, is_result_owner_type},
 };
 
@@ -290,12 +290,38 @@ fn try_resolve_value_member_access(
     if receiver_type.as_ref().is_some_and(|ty| lookup_struct_field_type(ty, &member, struct_fields).is_some()) {
         return false;
     }
-    let resolved = try_resolve_instance_method(&receiver, &member, &[], candidates, type_relations, locals, struct_fields, singleton_names)
-        .or_else(|| {
-            let callee = HirExpr { kind: HirExprKind::Path(NamePath::new(vec![member.clone()])), span: span.clone() };
-            let args = vec![HirCallArgument::positional(receiver.clone())];
-            call_resolver_try_resolve_call(&callee, &args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
-        });
+    let resolved =
+        match try_resolve_instance_method(&receiver, &member, &[], candidates, type_relations, locals, struct_fields, singleton_names) {
+            Ok(call) => Some(call),
+            // 同具体度并列是独立失败类别：不得回落成自由函数调用，也不得留在字段访问形态。
+            // 冻结成 `resolved: None` 的调用形态，让合同校验按该 span 取到结构化原因。
+            Err(OverloadResolutionError::Ambiguous { candidates: ambiguous }) => {
+                let callee = HirExpr { kind: HirExprKind::Path(NamePath::new(vec![member.clone()])), span: span.clone() };
+                let args = vec![HirCallArgument::positional(receiver)];
+                record_failure(HirCallResolutionFailure {
+                    span: span.clone(),
+                    callee: member.to_string(),
+                    reason: HirCallResolutionFailureKind::AmbiguousExplicitImpls { candidates: ambiguous.len() },
+                });
+                expr.kind = HirExprKind::Call { callee: Box::new(callee), args, resolved: None };
+                return true;
+            }
+            Err(OverloadResolutionError::NoMatch) => {
+                let callee = HirExpr { kind: HirExprKind::Path(NamePath::new(vec![member.clone()])), span: span.clone() };
+                let args = vec![HirCallArgument::positional(receiver.clone())];
+                call_resolver_try_resolve_call(
+                    &callee,
+                    &args,
+                    candidates,
+                    type_relations,
+                    locals,
+                    struct_fields,
+                    singleton_names,
+                    contextual_type,
+                    &span,
+                )
+            }
+        };
     let Some(resolved) = resolved
     else {
         return false;
@@ -433,8 +459,11 @@ fn resolve_expr_calls_at(
                 struct_fields,
                 singleton_names,
                 contextual_type,
+                &expr_span,
             );
-            if resolved.is_none() {
+            // 解析期已按本调用点冻结了结构化失败（例如同具体度歧义）时保留该原因，
+            // 不用宽泛的「无一候选」覆盖。
+            if resolved.is_none() && !failure_recorded_at(&expr_span) {
                 record_failure(HirCallResolutionFailure {
                     span: expr_span,
                     callee: callee.kind.callable_label(),
@@ -880,6 +909,7 @@ fn call_resolver_try_resolve_call(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &std::collections::BTreeSet<Identifier>,
     contextual_type: Option<&ValkyrieType>,
+    call_span: &crate::compiler::types::SourceSpan,
 ) -> Option<HirResolvedCall> {
     crate::compiler::hir::overload::call_resolver::try_resolve_call(
         callee,
@@ -890,6 +920,7 @@ fn call_resolver_try_resolve_call(
         struct_fields,
         singleton_names,
         contextual_type,
+        call_span,
     )
 }
 

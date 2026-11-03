@@ -44,3 +44,10 @@ pub(crate) fn replace_failure_at(span: &crate::compiler::types::SourceSpan, fail
         }
     });
 }
+
+/// 该调用点是否已经登记了更精确的失败事实。
+///
+/// 供上层在通用「无一候选」兜底前查询，避免用宽泛失败覆盖已记录的结构化原因。
+pub(crate) fn failure_recorded_at(span: &crate::compiler::types::SourceSpan) -> bool {
+    COLLECTOR_STACK.with(|stack| stack.borrow().last().is_some_and(|top| top.iter().any(|existing| &existing.span == span)))
+}

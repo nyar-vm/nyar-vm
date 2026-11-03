@@ -8,7 +8,7 @@ use crate::compiler::{
         construct_binding::bind_construct_fields,
         overload::{
             diagnostics::{OverloadCandidate, OverloadDomain, OverloadResolutionError},
-            resolve_call::pattern_extractor_receiver_type,
+            resolve_call::{pattern_extractor_receiver_type, record_failure},
             substitution::{
                 extract_singleton_type_name, instantiate_trait_bound_candidate, instantiate_trait_method_candidate, substitute_self_type,
                 substitute_type_parameters, substitute_type_self, substitute_type_vars, unify_call_type_binders,
@@ -30,10 +30,11 @@ use crate::compiler::{
     mir::AggregateFieldIndex,
     semantic::operator_members,
     types::{
-        Identifier, NamePath,
+        Identifier, NamePath, SourceSpan,
         hir::{
-            HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirFunction, HirParam, HirPattern, HirResolvedCall, HirTrait,
-            HirTraitBound, HirTraitDispatch, HirVariant, HirWhereConstraint, ValkyrieType,
+            HirCallArgument, HirCallResolutionFailure, HirCallResolutionFailureKind, HirCallableDomain, HirEnum, HirExpr, HirExprKind,
+            HirFunction, HirParam, HirPattern, HirResolvedCall, HirTrait, HirTraitBound, HirTraitDispatch, HirVariant, HirWhereConstraint,
+            ValkyrieType,
         },
     },
 };
@@ -213,6 +214,22 @@ pub fn match_call_candidate(
     })
 }
 
+/// 把方法派发的结构化歧义登记到当前调用点。
+///
+/// `NoMatch` 不在此处登记：由上层通用兜底给出「无一候选」。`Ambiguous` 是独立失败
+/// 类别，必须按调用点 span 冻结，否则会被兜底覆盖成「none matches」。
+fn record_method_resolution_failure(span: &SourceSpan, callee: String, error: OverloadResolutionError) {
+    let OverloadResolutionError::Ambiguous { candidates } = error
+    else {
+        return;
+    };
+    record_failure(HirCallResolutionFailure {
+        span: span.clone(),
+        callee,
+        reason: HirCallResolutionFailureKind::AmbiguousExplicitImpls { candidates: candidates.len() },
+    });
+}
+
 pub(crate) fn try_resolve_call(
     callee: &HirExpr,
     args: &[HirCallArgument],
@@ -222,6 +239,7 @@ pub(crate) fn try_resolve_call(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &std::collections::BTreeSet<Identifier>,
     contextual_type: Option<&ValkyrieType>,
+    call_span: &SourceSpan,
 ) -> Option<HirResolvedCall> {
     let (explicit_generic_arguments, callee) = peel_explicit_generic_arguments(callee);
     if let Some(local_name) = match &callee.kind {
@@ -324,7 +342,13 @@ pub(crate) fn try_resolve_call(
     }
 
     if let HirExprKind::FieldAccess { object, field, .. } = &callee.kind {
-        return try_resolve_instance_method(object, field, args, candidates, type_relations, locals, struct_fields, singleton_names);
+        return match try_resolve_instance_method(object, field, args, candidates, type_relations, locals, struct_fields, singleton_names) {
+            Ok(call) => Some(call),
+            Err(error) => {
+                record_method_resolution_failure(call_span, callee.kind.callable_label(), error);
+                None
+            }
+        };
     }
     if let HirExprKind::Path(path) = &callee.kind {
         if path.parts().len() >= 2 && locals.contains_key(path.parts()[0].as_str()) {
@@ -344,7 +368,7 @@ pub(crate) fn try_resolve_call(
                     span: span.clone(),
                 };
             }
-            return try_resolve_instance_method(
+            return match try_resolve_instance_method(
                 &receiver,
                 method_name,
                 args,
@@ -353,7 +377,13 @@ pub(crate) fn try_resolve_call(
                 locals,
                 struct_fields,
                 singleton_names,
-            );
+            ) {
+                Ok(call) => Some(call),
+                Err(error) => {
+                    record_method_resolution_failure(call_span, callee.kind.callable_label(), error);
+                    None
+                }
+            };
         }
     }
     if let HirExprKind::Path(path) = &callee.kind {
@@ -443,7 +473,7 @@ pub(crate) fn try_resolve_call(
         else {
             &[]
         };
-        if let Some(resolved) = try_resolve_instance_method(
+        match try_resolve_instance_method(
             &first.value,
             &callee_name,
             method_args,
@@ -453,7 +483,14 @@ pub(crate) fn try_resolve_call(
             struct_fields,
             singleton_names,
         ) {
-            return Some(resolved);
+            Ok(resolved) => return Some(resolved),
+            // 运算符成员同为方法派发：同具体度并列必须按调用点冻结成结构化歧义，
+            // 不继续回落到自由函数，也不在这里补造实现。
+            Err(error @ OverloadResolutionError::Ambiguous { .. }) => {
+                record_method_resolution_failure(call_span, callee.kind.callable_label(), error);
+                return None;
+            }
+            Err(OverloadResolutionError::NoMatch) => {}
         }
         // operator 成员必须由显式声明（`imply` / `trait`）及其已选 provider 驱动。
         // 此处解析不出候选时保持 `resolved: None`，由 HIR 调用合同验证阶段以

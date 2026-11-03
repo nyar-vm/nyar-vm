@@ -142,6 +142,14 @@ pub enum HirCallResolutionFailureKind {
         /// 迭代源类型的用户可读形态。
         source: String,
     },
+    /// 多个显式 impl 候选同具体度并存，无法选出唯一 witness。
+    ///
+    /// 与 `TraitSatisfactionError::AmbiguousExplicitImpls` 同一判定语义：
+    /// 不得静默取首个、按声明顺序或按来源排序挑选。
+    AmbiguousExplicitImpls {
+        /// 并列的显式 impl 候选数。
+        candidates: usize,
+    },
     /// 解析器未留下失败事实：出现即表示诊断链路自身有缺口，而不是用户代码的新类别。
     FailureUnrecorded,
 }
@@ -159,6 +167,7 @@ impl HirCallResolutionFailureKind {
             Self::ComputedCallee => "computed-callee",
             Self::InstanceNotClosed => "instance-not-closed",
             Self::ForInProtocolUnsatisfied { .. } => "for-in-protocol-unsatisfied",
+            Self::AmbiguousExplicitImpls { .. } => "ambiguous-explicit-impls",
             Self::FailureUnrecorded => "failure-unrecorded",
         }
     }
@@ -187,6 +196,9 @@ impl HirCallResolutionFailureKind {
             Self::ForInProtocolUnsatisfied { source } => format!(
                 "for-in source `{source}` lacks trait evidence: it implements neither `std.iterator::IntoIterator` nor `std.iterator::Iterator`"
             ),
+            Self::AmbiguousExplicitImpls { candidates } => {
+                format!("{candidates} explicit impl candidates share the same specificity, so no unique witness can be selected")
+            }
             Self::FailureUnrecorded => {
                 "the resolver rejected this call without recording a reason; this is a diagnostics gap in the compiler".to_string()
             }
