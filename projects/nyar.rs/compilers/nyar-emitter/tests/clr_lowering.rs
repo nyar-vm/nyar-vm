@@ -221,6 +221,42 @@ fn unsigned_long_comparison_lowers_to_single_clt_un() {
     write_library_bytes(&module);
 }
 
+/// 无符号 `u64` 除法：MSIL 原生 `div.un`，不得偷换成有符号 `div`。
+#[test]
+fn unsigned_long_division_lowers_to_single_div_un() {
+    let module = lower_single_operator_call("div", "i64.div.un", MsilOpcode::DivUn, TargetOperandType::I64, LONG);
+    let instructions = module.global_methods.iter().find(|method| method.method.name == "div").expect("div method").instructions.as_slice();
+    assert_eq!(instructions.iter().filter(|instruction| instruction.opcode == MsilOpcode::DivUn).count(), 1, "{instructions:?}");
+    assert!(!instructions.iter().any(|instruction| instruction.opcode == MsilOpcode::Div), "无符号除法不得混入有符号 `div`: {instructions:?}");
+    MethodBodyEncoder::encode(module.global_methods.iter().find(|method| method.method.name == "div").expect("div method"), 0x1100_0003)
+        .expect("div method body encoding");
+    write_library_bytes(&module);
+}
+
+/// 无符号 `u64` 取余：MSIL 原生 `rem.un`，不得偷换成有符号 `rem`。
+#[test]
+fn unsigned_long_remainder_lowers_to_single_rem_un() {
+    let module = lower_single_operator_call("rem", "i64.rem.un", MsilOpcode::RemUn, TargetOperandType::I64, LONG);
+    let instructions = module.global_methods.iter().find(|method| method.method.name == "rem").expect("rem method").instructions.as_slice();
+    assert_eq!(instructions.iter().filter(|instruction| instruction.opcode == MsilOpcode::RemUn).count(), 1, "{instructions:?}");
+    assert!(!instructions.iter().any(|instruction| instruction.opcode == MsilOpcode::Rem), "无符号取余不得混入有符号 `rem`: {instructions:?}");
+    write_library_bytes(&module);
+}
+
+/// 无符号 `u64` 逻辑右移：先 `conv.i4` 截窄位移量，再 `shr.un`；不得落到算术 `shr`。
+#[test]
+fn unsigned_long_shift_lowers_to_shr_un_after_conv_i4() {
+    let module = lower_operator_call_with_plan("shift", "i64.shr.un", shift_operator_plan(MsilOpcode::ShrUn));
+    let instructions = module.global_methods.iter().find(|method| method.method.name == "shift").expect("shift method").instructions.as_slice();
+    let narrow = instructions.iter().position(|instruction| instruction.opcode == MsilOpcode::ConvI4).expect("配方必须发射 conv.i4 截窄位移量");
+    let shift = instructions.iter().position(|instruction| instruction.opcode == MsilOpcode::ShrUn).expect("配方必须执行 shr.un");
+    assert!(narrow < shift, "conv.i4 必须先于 shr.un: {instructions:?}");
+    assert!(!instructions.iter().any(|instruction| instruction.opcode == MsilOpcode::Shr), "逻辑右移不得混入算术 `shr`: {instructions:?}");
+    MethodBodyEncoder::encode(module.global_methods.iter().find(|method| method.method.name == "shift").expect("shift method"), 0x1100_0004)
+        .expect("shift method body encoding");
+    write_library_bytes(&module);
+}
+
 #[test]
 fn unfrozen_operator_binding_is_rejected_structurally() {
     let operator = ItemInstanceId::from_index(1).expect("operator instance");

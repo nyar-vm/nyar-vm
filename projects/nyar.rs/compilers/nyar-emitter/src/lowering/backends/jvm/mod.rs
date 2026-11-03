@@ -9,7 +9,25 @@ pub mod recipe;
 
 pub(crate) mod emit;
 
-use crate::transitional::binary::class::JvmInstruction;
+use crate::transitional::binary::class::{JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmTypeDescriptor};
+
+/// `java/lang/Integer` 上的无符号二元静态方法调用（参数与返回值均为 `int`）。
+fn integer_unsigned_call(name: &str) -> JvmInstruction {
+    JvmInstruction::InvokeStatic(JvmMethodRef {
+        owner: "java/lang/Integer".to_string(),
+        name: name.to_string(),
+        descriptor: JvmMethodDescriptor::new(vec![JvmTypeDescriptor::Int, JvmTypeDescriptor::Int], JvmTypeDescriptor::Int),
+    })
+}
+
+/// `java/lang/Long` 上的无符号二元静态方法调用（参数与返回值均为 `long`）。
+fn long_unsigned_call(name: &str) -> JvmInstruction {
+    JvmInstruction::InvokeStatic(JvmMethodRef {
+        owner: "java/lang/Long".to_string(),
+        name: name.to_string(),
+        descriptor: JvmMethodDescriptor::new(vec![JvmTypeDescriptor::Long, JvmTypeDescriptor::Long], JvmTypeDescriptor::Long),
+    })
+}
 
 /// 已冻结的 JVM operator 编码。
 ///
@@ -40,6 +58,10 @@ pub enum JvmOperatorCode {
     IntegerShiftLeft,
     /// JVM `iushr`：integer 逻辑右移（`u32` 的右移不能走有符号 `ishr`）。
     IntegerShiftRightUnsigned,
+    /// `Integer.divideUnsigned(II)I`：`u32` 除法（JVM 无无符号 `idiv`）。
+    IntegerDivideUnsigned,
+    /// `Integer.remainderUnsigned(II)I`：`u32` 取余（JVM 无无符号 `irem`）。
+    IntegerRemainderUnsigned,
     /// JVM `ladd`：long 加法。
     LongAdd,
     /// JVM `lsub`：long 减法。
@@ -62,6 +84,12 @@ pub enum JvmOperatorCode {
     LongShiftLeft,
     /// JVM `lshr`：long 算术右移（位移量 `int`，截窄由冻结配方显式给出）。
     LongShiftRight,
+    /// JVM `lushr`：long 逻辑右移（`u64` 的右移不能走有符号 `lshr`）。
+    LongShiftRightUnsigned,
+    /// `Long.divideUnsigned(JJ)J`：`u64` 除法（JVM 无无符号 `ldiv`）。
+    LongDivideUnsigned,
+    /// `Long.remainderUnsigned(JJ)J`：`u64` 取余（JVM 无无符号 `lrem`）。
+    LongRemainderUnsigned,
     /// JVM `dadd`：double 加法。
     DoubleAdd,
     /// JVM `dsub`：double 减法。
@@ -105,7 +133,7 @@ pub enum JvmOperatorCode {
 
 impl JvmOperatorCode {
     /// 单指令算术码对应的 JVM 指令；比较码返回 `None`（必须走 [`Self::instructions`]）。
-    pub const fn arithmetic_instruction(self) -> Option<JvmInstruction> {
+    pub fn arithmetic_instruction(self) -> Option<JvmInstruction> {
         Some(match self {
             Self::IntegerAdd => JvmInstruction::IAdd,
             Self::IntegerSubtract => JvmInstruction::ISub,
@@ -118,6 +146,9 @@ impl JvmOperatorCode {
             Self::IntegerBitXor => JvmInstruction::IXor,
             Self::IntegerShiftLeft => JvmInstruction::IShl,
             Self::IntegerShiftRightUnsigned => JvmInstruction::IUShr,
+            // JVM 没有无符号 `idiv`/`irem` 单指令；Java 8 起由标准库静态方法给出。
+            Self::IntegerDivideUnsigned => integer_unsigned_call("divideUnsigned"),
+            Self::IntegerRemainderUnsigned => integer_unsigned_call("remainderUnsigned"),
             Self::LongAdd => JvmInstruction::LAdd,
             Self::LongSubtract => JvmInstruction::LSub,
             Self::LongMultiply => JvmInstruction::LMul,
@@ -129,6 +160,10 @@ impl JvmOperatorCode {
             Self::LongBitXor => JvmInstruction::LXor,
             Self::LongShiftLeft => JvmInstruction::LShl,
             Self::LongShiftRight => JvmInstruction::LShr,
+            Self::LongShiftRightUnsigned => JvmInstruction::LUShr,
+            // JVM 没有无符号 `ldiv`/`lrem` 单指令；Java 8 起由标准库静态方法给出。
+            Self::LongDivideUnsigned => long_unsigned_call("divideUnsigned"),
+            Self::LongRemainderUnsigned => long_unsigned_call("remainderUnsigned"),
             Self::DoubleAdd => JvmInstruction::DAdd,
             Self::DoubleSubtract => JvmInstruction::DSub,
             Self::DoubleMultiply => JvmInstruction::DMul,

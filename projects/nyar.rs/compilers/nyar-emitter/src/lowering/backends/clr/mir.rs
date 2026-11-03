@@ -58,18 +58,26 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "i32.mul" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Mul),
         "i32.div" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Div),
         "i32.rem" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Rem),
+        // 无符号 `u32` 除/余：MSIL 原生 `div.un`/`rem.un`（零除数抛 DivideByZeroException）。
+        "i32.div.un" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::DivUn),
+        "i32.rem.un" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::RemUn),
         "i32.neg" => unary(TargetOperandType::I32, MsilOpcode::Neg),
         // int32 位运算：MSIL 单 opcode，按位结果与 `u32` 载体等价。
         "i32.and" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::And),
         "i32.or" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Or),
         "i32.xor" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Xor),
         "i32.shl" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Shl),
+        // 无符号 `u32` 逻辑右移：MSIL `shr.un`（有符号 `shr` 会做算术右移）。
+        "i32.shr.un" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::ShrUn),
         // int64 算术：同一批 opcode 对宽载体同形。
         "i64.add" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Add),
         "i64.sub" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Sub),
         "i64.mul" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Mul),
         "i64.div" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Div),
         "i64.rem" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Rem),
+        // 无符号 `u64` 除/余：MSIL `div.un`/`rem.un` 对 int64 载体同形。
+        "i64.div.un" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::DivUn),
+        "i64.rem.un" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::RemUn),
         "i64.neg" => unary(TargetOperandType::I64, MsilOpcode::Neg),
         // int64 位运算：MSIL 单 opcode，载体无关。
         "i64.and" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::And),
@@ -78,6 +86,8 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         // int64 移位：位移量按冻结配方先 `conv.i4` 截窄，再执行 `shl`/`shr`。
         "i64.shl" => i64_shift(I64_SHIFT_STEPS, MsilOpcode::Shl),
         "i64.shr" => i64_shift(I64_SHIFT_STEPS, MsilOpcode::Shr),
+        // 无符号 `u64` 逻辑右移：`shr.un`，位移量同样先 `conv.i4` 截窄。
+        "i64.shr.un" => i64_shift(I64_SHIFT_STEPS, MsilOpcode::ShrUn),
         // float64 算术：MSIL `neg` 对浮点保留 -0.0，与语义一致。
         "f64.add" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Add),
         "f64.sub" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Sub),

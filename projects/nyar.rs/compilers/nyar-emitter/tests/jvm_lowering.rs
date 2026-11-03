@@ -105,6 +105,34 @@ fn lower_single_operator_call(code: JvmOperatorCode, result_type: TargetOperandT
     lower_fragment_to_jvm_class(&submission).expect("frozen operator must lower")
 }
 
+/// 构造只调用一个 `int` 冻结 operator 的导出函数（操作数与结果均为 `int`）。
+fn lower_i32_operator_call(name: &str, code: JvmOperatorCode) -> JvmClassFile {
+    let operator = ItemInstanceId::from_index(1).expect("operator instance");
+    let mut fixture = function("jvm.fixture", INTEGER, vec![INTEGER, INTEGER]);
+    fixture.value_types.insert(ValueRef(2), INTEGER);
+    fixture.blocks[0].instructions.push(instr(
+        InstructionKind::Call { callee: Operand::Item(operator), arguments: vec![Operand::Value(ValueRef(0)), Operand::Value(ValueRef(1))] },
+        vec![ValueRef(2)],
+    ));
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(2))) };
+
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
+    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), name.to_string());
+    plan.testing_register_import(
+        operator,
+        BackendImport {
+            index: ImportIndex::from_index(0).expect("import index"),
+            link: ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec!["integer.divide_unsigned".to_string()]),
+            parameter_types: vec![INTEGER, INTEGER],
+            return_type: INTEGER,
+            target_operator: Some(TargetOperatorBinding::Frozen(operator_plan(code, TargetOperandType::I32, TargetOperandType::I32))),
+        },
+    );
+    lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect("frozen operator must lower")
+}
+
 fn method_code<'a>(class_file: &'a JvmClassFile, name: &str) -> &'a [JvmInstruction] {
     let method = class_file.methods.iter().find(|method| method.name == name).expect("lowered method");
     method.code.as_ref().expect("lowered method code").instructions.as_slice()
@@ -323,6 +351,144 @@ fn unsigned_long_less_than_flips_sign_bits_through_scratch_local() {
     assert!(mnemonics.contains(&"ldc2_w"), "scratch 翻转常量必须随字节码保留: {mnemonics:?}");
     assert!(mnemonics.contains(&"lstore"), "scratch 槽必须随字节码保留: {mnemonics:?}");
     assert!(mnemonics.contains(&"lcmp"), "signed `lcmp` 必须随字节码保留: {mnemonics:?}");
+}
+
+/// JVM 没有无符号 `ldiv`：`u64` 除法的冻结配方必须发射
+/// `Long.divideUnsigned(JJ)J` 静态调用，不得落到有符号 `ldiv`。
+#[test]
+fn unsigned_long_division_lowers_to_invokestatic_divide_unsigned() {
+    let class_file = lower_operator_call_with_plan(
+        "divide",
+        operator_plan(JvmOperatorCode::LongDivideUnsigned, TargetOperandType::I64, TargetOperandType::I64),
+    );
+    let instructions = method_code(&class_file, "divide");
+    let call = instructions
+        .iter()
+        .find_map(|instruction| match instruction {
+            JvmInstruction::InvokeStatic(reference) if reference.name == "divideUnsigned" => Some(reference),
+            _ => None,
+        })
+        .expect("u64 除法必须发射 Long.divideUnsigned 静态调用");
+    assert_eq!(call.owner, "java/lang/Long");
+    assert_eq!(call.descriptor, JvmMethodDescriptor::new(vec![JvmTypeDescriptor::Long, JvmTypeDescriptor::Long], JvmTypeDescriptor::Long));
+    assert_eq!(instructions.iter().filter(|instruction| matches!(instruction, JvmInstruction::InvokeStatic(_))).count(), 1, "{instructions:?}");
+    assert!(
+        instructions.iter().all(|instruction| !matches!(instruction, JvmInstruction::LDiv)),
+        "无符号除法不得落到有符号 ldiv: {instructions:?}"
+    );
+
+    let bytes = class_file.to_bytes().expect("divide_unsigned class encoding");
+    let decoded_class = JvmClassFile::from_bytes(&bytes).expect("class decoding");
+    let index = decoded_class.methods.iter().position(|method| method.name == "divide").expect("decoded divide method");
+    let code = decoded_class.raw_method_code[index].as_ref().expect("decoded method code");
+    let decoded = decode_instructions(code, &decoded_class.constant_pool);
+    let mnemonics = decoded.iter().map(|instruction| instruction.mnemonic.as_str()).collect::<Vec<_>>();
+    assert!(mnemonics.contains(&"invokestatic"), "Long.divideUnsigned 必须随字节码保留 invokestatic: {mnemonics:?}");
+    assert!(!mnemonics.contains(&"ldiv"), "无符号除法不得出现有符号 ldiv: {mnemonics:?}");
+}
+
+/// JVM 没有无符号 `lrem`：`u64` 取余的冻结配方必须发射
+/// `Long.remainderUnsigned(JJ)J` 静态调用，不得落到有符号 `lrem`。
+#[test]
+fn unsigned_long_remainder_lowers_to_invokestatic_remainder_unsigned() {
+    let class_file = lower_operator_call_with_plan(
+        "remainder",
+        operator_plan(JvmOperatorCode::LongRemainderUnsigned, TargetOperandType::I64, TargetOperandType::I64),
+    );
+    let instructions = method_code(&class_file, "remainder");
+    let call = instructions
+        .iter()
+        .find_map(|instruction| match instruction {
+            JvmInstruction::InvokeStatic(reference) if reference.name == "remainderUnsigned" => Some(reference),
+            _ => None,
+        })
+        .expect("u64 取余必须发射 Long.remainderUnsigned 静态调用");
+    assert_eq!(call.owner, "java/lang/Long");
+    assert_eq!(call.descriptor, JvmMethodDescriptor::new(vec![JvmTypeDescriptor::Long, JvmTypeDescriptor::Long], JvmTypeDescriptor::Long));
+    assert!(
+        instructions.iter().all(|instruction| !matches!(instruction, JvmInstruction::LRem)),
+        "无符号取余不得落到有符号 lrem: {instructions:?}"
+    );
+    class_file.to_bytes().expect("remainder_unsigned class encoding");
+}
+
+/// `u64` 逻辑右移：位移量先 `l2i` 截窄，再 `lushr`（JVM 按低 6 位取模）；
+/// 不得落到有符号 `lshr`。
+#[test]
+fn unsigned_long_shift_lowers_to_lushr_after_l2i() {
+    let class_file = lower_operator_call_with_plan("shift", shift_operator_plan(JvmOperatorCode::LongShiftRightUnsigned));
+    let instructions = method_code(&class_file, "shift");
+    let narrow = instructions.iter().position(|instruction| matches!(instruction, JvmInstruction::L2I)).expect("位移量必须先 l2i 截窄");
+    let shift = instructions.iter().position(|instruction| matches!(instruction, JvmInstruction::LUShr)).expect("必须发射逻辑右移 lushr");
+    assert!(narrow < shift, "l2i 必须先于 lushr: {instructions:?}");
+    assert!(
+        instructions.iter().all(|instruction| !matches!(instruction, JvmInstruction::LShr)),
+        "无符号右移不得落到有符号 lshr: {instructions:?}"
+    );
+
+    let bytes = class_file.to_bytes().expect("shr_un class encoding");
+    let decoded_class = JvmClassFile::from_bytes(&bytes).expect("class decoding");
+    let index = decoded_class.methods.iter().position(|method| method.name == "shift").expect("decoded shift method");
+    let code = decoded_class.raw_method_code[index].as_ref().expect("decoded method code");
+    let decoded = decode_instructions(code, &decoded_class.constant_pool);
+    let mnemonics = decoded.iter().map(|instruction| instruction.mnemonic.as_str()).collect::<Vec<_>>();
+    let narrow_pos = mnemonics.iter().position(|mnemonic| *mnemonic == "l2i").expect("l2i 必须随字节码保留");
+    let shift_pos = mnemonics.iter().position(|mnemonic| *mnemonic == "lushr").expect("lushr 必须随字节码保留");
+    assert!(narrow_pos < shift_pos, "roundtrip 后 l2i 仍须先于 lushr: {mnemonics:?}");
+}
+
+/// JVM 没有无符号 `idiv`/`irem`：`u32` 除/余的冻结配方必须发射
+/// `Integer.divideUnsigned(II)I` 与 `Integer.remainderUnsigned(II)I`，不得落到
+/// 有符号 `idiv`/`irem`。
+#[test]
+fn unsigned_integer_division_and_remainder_lower_to_invokestatic_calls() {
+    for (name, code, expected) in [
+        ("divide", JvmOperatorCode::IntegerDivideUnsigned, "divideUnsigned"),
+        ("remainder", JvmOperatorCode::IntegerRemainderUnsigned, "remainderUnsigned"),
+    ] {
+        let class_file = lower_i32_operator_call(name, code);
+        let instructions = method_code(&class_file, name);
+        let call = instructions
+            .iter()
+            .find_map(|instruction| match instruction {
+                JvmInstruction::InvokeStatic(reference) if reference.name == expected => Some(reference),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("u32 运算必须发射 Integer.{expected} 静态调用: {instructions:?}"));
+        assert_eq!(call.owner, "java/lang/Integer");
+        assert_eq!(call.descriptor, JvmMethodDescriptor::new(vec![JvmTypeDescriptor::Int, JvmTypeDescriptor::Int], JvmTypeDescriptor::Int));
+        assert!(
+            instructions.iter().all(|instruction| !matches!(instruction, JvmInstruction::IDiv | JvmInstruction::IRem)),
+            "无符号 {name} 不得落到有符号 idiv/irem: {instructions:?}"
+        );
+        class_file.to_bytes().expect("unsigned integer class encoding");
+    }
+}
+
+/// 冻结配方声明 `I64` 操作数，但实参载体是 `I32`：必须结构化失败，
+/// 不得隐式放宽或静默改为有符号除法。
+#[test]
+fn unsigned_operator_operand_type_mismatch_is_rejected_structurally() {
+    let operator = ItemInstanceId::from_index(1).expect("operator instance");
+    let mut fixture = function("jvm.fixture", LONG, vec![INTEGER, INTEGER]);
+    fixture.value_types.insert(ValueRef(2), LONG);
+    fixture.blocks[0].instructions.push(instr(
+        InstructionKind::Call { callee: Operand::Item(operator), arguments: vec![Operand::Value(ValueRef(0)), Operand::Value(ValueRef(1))] },
+        vec![ValueRef(2)],
+    ));
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(2))) };
+
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
+    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "divide".to_string());
+    plan.testing_register_import(
+        operator,
+        operator_import(operator_plan(JvmOperatorCode::LongDivideUnsigned, TargetOperandType::I64, TargetOperandType::I64)),
+    );
+
+    let error = lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect_err("operand type mismatch must fail");
+    assert!(error.contains("实参载体与冻结 operand_type 不符"), "{error}");
 }
 
 #[test]

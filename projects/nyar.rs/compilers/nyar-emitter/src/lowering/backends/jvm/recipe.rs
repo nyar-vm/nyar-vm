@@ -66,6 +66,9 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         // integer 移位：`u32` 左移与有符号同形（`ishl`），右移必须是逻辑右移（`iushr`）。
         "integer.shift_left" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerShiftLeft),
         "integer.shift_right_unsigned" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerShiftRightUnsigned),
+        // 无符号 `u32` 除/余：JVM 没有无符号 `idiv`/`irem`，冻结为 Java 8 标准库静态方法。
+        "integer.divide_unsigned" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerDivideUnsigned),
+        "integer.remainder_unsigned" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerRemainderUnsigned),
         // long 算术：JVM 单指令（`ladd`/`lsub`/`lmul`/`ldiv`/`lrem`/`lneg`）。
         "long.add" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongAdd),
         "long.subtract" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongSubtract),
@@ -80,6 +83,11 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         // long 移位：位移量按冻结配方先 `l2i` 截窄，再执行 `lshl`/`lshr`。
         "long.shift_left" => long_shift(LONG_SHIFT_STEPS, JvmOperatorCode::LongShiftLeft),
         "long.shift_right" => long_shift(LONG_SHIFT_STEPS, JvmOperatorCode::LongShiftRight),
+        // 无符号 `u64` 右移：逻辑右移 `lushr`，位移量同样先截窄。
+        "long.shift_right_unsigned" => long_shift(LONG_SHIFT_STEPS, JvmOperatorCode::LongShiftRightUnsigned),
+        // 无符号 `u64` 除/余：JVM 没有无符号 `ldiv`/`lrem`，冻结为 Java 8 标准库静态方法。
+        "long.divide_unsigned" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongDivideUnsigned),
+        "long.remainder_unsigned" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongRemainderUnsigned),
         // double 算术：JVM 单指令（无 `dneg`，见模块头说明）。
         "double.add" => binary(TargetOperandType::F64, TargetOperandType::F64, JvmOperatorCode::DoubleAdd),
         "double.subtract" => binary(TargetOperandType::F64, TargetOperandType::F64, JvmOperatorCode::DoubleSubtract),
