@@ -267,13 +267,21 @@ pub(crate) fn property_is_lazy(method: &MethodDeclaration) -> bool {
     has_modifier(&method.annotations, "lazy")
 }
 
-pub(crate) fn lower_using(using: &UsingDeclaration) -> HirImport {
-    HirImport {
+pub(crate) fn lower_using(using: &UsingDeclaration) -> Result<HirImport, HirError> {
+    // 解析层对无法识别的导入语法（如已废弃的 `using!`）不做诊断，只产出空路径
+    // `UsingDeclaration`；空路径不是合法导入，必须在此 fail-closed，不得静默产出空 `HirImport`。
+    if using.path.parts.is_empty() {
+        return Err(HirError::UnrecognizedImport {
+            source: nyar_types::DiagnosticSource { id: "<ast>".into(), revision: None },
+            span: nyar_types::DiagnosticSpan { start: using.span.start, end: using.span.end },
+        });
+    }
+    Ok(HirImport {
         path: lower_name_path(&using.path),
         alias: using.alias.as_ref().map(|alias| Identifier::new(&alias.name)),
         bindings: using.imports.iter().map(|item| HirImportBinding { name: Identifier::new(&item.name), alias: None }).collect(),
         glob: false,
-    }
+    })
 }
 
 pub(crate) fn lower_trait_path_from_type(ty: &TypeExpression) -> NamePath {

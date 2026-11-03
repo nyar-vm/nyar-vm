@@ -109,6 +109,7 @@ impl HirError {
             Self::UnionNotLowered { .. } => "valkyrie.hir.union_not_lowered",
             Self::UnexpandedTemplateItem { .. } => "valkyrie.hir.unexpanded_template_item",
             Self::UnsupportedRootItem { .. } => "valkyrie.hir.unsupported_root_item",
+            Self::UnrecognizedImport { .. } => "valkyrie.hir.unrecognized_import",
             Self::PipelineRejected { .. } => "valkyrie.hir.pipeline_rejected",
             Self::LegacyBuiltinTypeAlias { .. } => "valkyrie.hir.legacy_builtin_type_alias",
             Self::AmbiguousTextTypeName { .. } => "valkyrie.hir.ambiguous_text_type_name",

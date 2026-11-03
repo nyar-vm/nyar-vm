@@ -614,6 +614,16 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// 导入声明没有可解析的路径：语法未被前端识别（例如已废弃的 `using!`）。
+    ///
+    /// Oak 解析器对无法识别的导入语法不做诊断，只产出空路径的 `UsingDeclaration`；
+    /// HIR 不得把它翻译成空 `HirImport` 静默放行，必须在此 fail-closed。
+    UnrecognizedImport {
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 下游 compile pipeline 拒绝已 lowering 的输入。
     ///
     /// 原样转发下游已冻结的诊断 code 与 module 身份，不在 HIR 侧重新拼装失败文本。

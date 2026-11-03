@@ -134,14 +134,14 @@ impl AstToHir {
                 .unwrap_or_else(default_module_name)
         });
 
-        let imports = root
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                StatementNode::Using(using) => Some(lower_using(using)),
-                _ => None,
-            })
-            .collect();
+        // 导入必须先经过 fail-closed 校验：解析层产出的空路径 `UsingDeclaration`（如旧
+        // `using!` 残留）不得被翻译成空 `HirImport` 混入物化结果。
+        let mut imports = Vec::new();
+        for item in &root.items {
+            if let StatementNode::Using(using) = item {
+                imports.push(lower_using(using)?);
+            }
+        }
 
         let mut type_aliases = Vec::new();
 

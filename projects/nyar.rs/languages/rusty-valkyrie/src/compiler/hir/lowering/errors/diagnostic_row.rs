@@ -276,6 +276,7 @@ impl From<HirError> for DiagnosticRow {
             HirError::UnsupportedRootItem { item_kind, .. } => {
                 row = row.with_arg("item_kind", DiagnosticArg::String(item_kind.clone()));
             }
+            HirError::UnrecognizedImport { .. } => {}
             HirError::PipelineRejected { codes, module, messages } => {
                 row =
                     row.with_arg("module", DiagnosticArg::String(module.clone())).with_arg("codes", DiagnosticArg::Aggregate(codes.join(",")));
@@ -597,6 +598,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::UnionNotLowered { source, .. } => source.clone(),
         HirError::UnexpandedTemplateItem { source, .. } => source.clone(),
         HirError::UnsupportedRootItem { source, .. } => source.clone(),
+        HirError::UnrecognizedImport { source, .. } => source.clone(),
         HirError::PipelineRejected { .. } => DiagnosticSource { id: "<pipeline>".into(), revision: None },
         HirError::LegacyBuiltinTypeAlias { source, .. } | HirError::AmbiguousTextTypeName { source, .. } => source.clone(),
         HirError::TypeNotFound { source, .. } => source.clone(),
@@ -672,6 +674,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::UnionNotLowered { span, .. } => span.clone(),
         HirError::UnexpandedTemplateItem { span, .. } => span.clone(),
         HirError::UnsupportedRootItem { span, .. } => span.clone(),
+        HirError::UnrecognizedImport { span, .. } => span.clone(),
         HirError::PipelineRejected { .. } => empty_span(),
         HirError::LegacyBuiltinTypeAlias { span, .. } | HirError::AmbiguousTextTypeName { span, .. } => span.clone(),
         HirError::TypeNotFound { span, .. } => span.clone(),

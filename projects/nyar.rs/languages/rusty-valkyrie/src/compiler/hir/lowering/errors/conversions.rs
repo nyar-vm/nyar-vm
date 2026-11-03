@@ -255,6 +255,9 @@ impl std::fmt::Display for HirError {
             Self::UnsupportedRootItem { item_kind, .. } => {
                 write!(f, "root item kind `{item_kind}` is not supported by HIR lowering")
             }
+            Self::UnrecognizedImport { source, span } => {
+                write!(f, "unrecognized import syntax at {}:{}..{}: the import declaration has no path", source.id, span.start, span.end)
+            }
             Self::PipelineRejected { codes, module, messages } => {
                 write!(f, "compile pipeline rejected module `{module}`")?;
                 if !codes.is_empty() {
