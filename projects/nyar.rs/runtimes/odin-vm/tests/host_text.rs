@@ -96,6 +96,20 @@ fn text(value: &str) -> Value {
     Value::String(value.to_string())
 }
 
+fn i32_of(value: Value) -> i32 {
+    match value {
+        Value::I32(number) => number,
+        other => panic!("期望 i32，实际 {other:?}"),
+    }
+}
+
+fn string_of(value: Value) -> String {
+    match value {
+        Value::String(text) => text,
+        other => panic!("期望字符串，实际 {other:?}"),
+    }
+}
+
 /// 把码元序列包成宿主的 UTF-16 固定数组载体。
 fn utf16_array(heap: &mut ObjectHeap, units: &[u16]) -> Value {
     let elements = units.iter().map(|unit| Value::I32(*unit as i32)).collect::<Vec<_>>();
@@ -167,17 +181,25 @@ const BMP_CHINESE: &str = "中文";
 const ASTRAL: &str = "😀";
 const COMBINING: &str = "a\u{0301}";
 const LONG_ASCII: &str = "hello world";
+/// 单个占满 4 字节的码点（U+10FFFF）。
+const MAX_CODE_POINT: &str = "\u{10FFFF}";
+/// 混合语料：BMP 中文 + astral + ASCII + 组合附加符。
+const MIXED: &str = "中文😀a\u{0301}";
 
 #[test]
 fn length_bytes_counts_bytes_not_code_points() {
-    for (sample, bytes) in [(EMPTY, 0), (ASCII, 3), (BMP_CHINESE, 6), (ASTRAL, 4), (COMBINING, 3), (LONG_ASCII, 11)] {
+    for (sample, bytes) in
+        [(EMPTY, 0), (ASCII, 3), (BMP_CHINESE, 6), (ASTRAL, 4), (COMBINING, 3), (LONG_ASCII, 11), (MAX_CODE_POINT, 4), (MIXED, 13)]
+    {
         assert_eq!(run_ok(HostOp::Utf8LengthBytes, &[text(sample)]), Value::I32(bytes), "length_bytes({sample:?})");
     }
 }
 
 #[test]
 fn length_chars_counts_code_points_including_astral_and_combining() {
-    for (sample, chars) in [(EMPTY, 0), (ASCII, 3), (BMP_CHINESE, 2), (ASTRAL, 1), (COMBINING, 2), (LONG_ASCII, 11)] {
+    for (sample, chars) in
+        [(EMPTY, 0), (ASCII, 3), (BMP_CHINESE, 2), (ASTRAL, 1), (COMBINING, 2), (LONG_ASCII, 11), (MAX_CODE_POINT, 1), (MIXED, 5)]
+    {
         assert_eq!(run_ok(HostOp::Utf8LengthChars, &[text(sample)]), Value::I32(chars), "length_chars({sample:?})");
     }
 }
@@ -271,6 +293,35 @@ fn concat_and_comparison_reject_wrong_carriers_and_short_arguments() {
         assert!(matches!(error, OdinRuntimeError::StackUnderflow), "{op:?} 实际 {error:?}");
         let error = run(op, &[text(ASCII), Value::I32(1)]).expect_err("非字符串载体必须失败");
         assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }), "{op:?} 实际 {error:?}");
+    }
+}
+
+// ---- 长度与 slice 的交叉断言 ----
+
+#[test]
+fn length_chars_matches_code_point_walk_via_slice() {
+    let corpus = [EMPTY, ASCII, BMP_CHINESE, ASTRAL, COMBINING, LONG_ASCII, MAX_CODE_POINT, MIXED];
+    for sample in corpus {
+        let chars = i32_of(run_ok(HostOp::Utf8LengthChars, &[text(sample)]));
+        let mut segments = 0;
+        for start in 0..chars {
+            let segment = string_of(run_ok(HostOp::Utf8Slice, &[text(sample), Value::I32(start), Value::I32(start + 1)]));
+            assert!(!segment.is_empty(), "slice({sample:?}, {start}, {}) 不能是空段", start + 1);
+            segments += 1;
+        }
+        assert_eq!(segments, chars, "length_chars 必须等于逐码点 slice 的段数：{sample:?}");
+    }
+}
+
+#[test]
+fn length_bytes_matches_whole_slice_byte_length() {
+    let corpus = [EMPTY, ASCII, BMP_CHINESE, ASTRAL, COMBINING, LONG_ASCII, MAX_CODE_POINT, MIXED];
+    for sample in corpus {
+        let chars = i32_of(run_ok(HostOp::Utf8LengthChars, &[text(sample)]));
+        let bytes = i32_of(run_ok(HostOp::Utf8LengthBytes, &[text(sample)]));
+        let whole = string_of(run_ok(HostOp::Utf8Slice, &[text(sample), Value::I32(0), Value::I32(chars)]));
+        assert_eq!(whole, sample, "整串 slice 必须还原原串：{sample:?}");
+        assert_eq!(whole.len() as i32, bytes, "slice(0, length_chars) 的字节数必须等于 length_bytes：{sample:?}");
     }
 }
 
