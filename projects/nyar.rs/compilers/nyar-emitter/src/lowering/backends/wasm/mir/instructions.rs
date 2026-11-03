@@ -589,9 +589,10 @@ impl<'a> WasmMirLowerer<'a> {
             }
             VALTYPE_I32 => self.gc_i32_box_type_index,
             VALTYPE_I64 => self.gc_i64_box_type_index,
+            VALTYPE_F64 => self.gc_f64_box_type_index,
             other => panic!(
                 "WASM sum payload 不能以 valtype {other} 装箱（symbol=`{}`）；\
-                 sum 载荷槽只承诺 anyref 与 `[i32]` / `[i64]` 装箱",
+                 sum 载荷槽只承诺 anyref 与 `[i32]` / `[i64]` / `[f64]` 装箱",
                 self.mir_fn.symbol
             ),
         };
@@ -615,6 +616,7 @@ impl<'a> WasmMirLowerer<'a> {
             WASM_GC_ANYREF => return,
             VALTYPE_I32 => self.gc_i32_box_type_index,
             VALTYPE_I64 => self.gc_i64_box_type_index,
+            VALTYPE_F64 => self.gc_f64_box_type_index,
             other => panic!("WASM sum payload 不能还原为 valtype {other}（symbol=`{}`）", self.mir_fn.symbol),
         };
         self.emit_ref_cast_struct(box_ty);

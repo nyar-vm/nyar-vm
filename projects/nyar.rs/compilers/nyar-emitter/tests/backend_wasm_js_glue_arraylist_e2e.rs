@@ -512,17 +512,67 @@ process.stdout.write(JSON.stringify(out));"#,
 }
 
 #[test]
-fn option_scalar_without_box_contract_fails_closed_on_marshal() {
-    // 后端只为 i32/i64 注册了 box struct；f64 载荷没有物理表示，schema 也不得编合同。
+fn option_f64_roundtrips_as_parameter_and_return() {
     let bridge = emit_plain(nullable_of(NyarType::Float64));
     let exports = spec_exports(&bridge.spec);
     let schema = &exports["echo"]["params"][0]["type"];
     assert_eq!(schema["kind"], "Option");
     assert_eq!(schema["inner"]["kind"], "F64");
+    assert_eq!(schema["box"]["payload"], "f64", "Option<F64> 必须携带 [f64] 装箱合同: {schema}");
+
+    let stdout = run_in_node(
+        &bridge,
+        r#"const out = {};
+const none = await callExport("echo", null);
+out.none = none === null ? "null" : none;
+const some = await callExport("echo", 2.5);
+out.some = some;
+const negative = await callExport("echo", -1.25);
+out.negative = negative;
+process.stdout.write(JSON.stringify(out));"#,
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
+    assert!(parsed["error"].is_null(), "Option<F64> 往返不得失败: {stdout}");
+    assert_eq!(parsed["none"], "null", "None 必须以 null 往返: {stdout}");
+    assert_eq!(parsed["some"], 2.5, "Some(f64) 必须以 Number 往返: {stdout}");
+    assert_eq!(parsed["negative"], -1.25, "Some(f64) 负值同样必须保真: {stdout}");
+}
+
+#[test]
+fn option_f64_container_elements_roundtrip_mixed_none_and_some() {
+    let bridge = arraylist_case(nullable_of(NyarType::Float64));
+    let exports = spec_exports(&bridge.spec);
+    let element = &exports["echo"]["params"][0]["type"]["element"];
+    assert_eq!(element["kind"], "Option");
+    assert_eq!(element["inner"]["kind"], "F64");
+    assert_eq!(element["box"]["payload"], "f64", "容器元素同样必须携带 [f64] 装箱合同: {element}");
+
+    let parsed = call_value(&bridge, "[null, 2.5, null, -0.75]");
+    assert!(parsed["error"].is_null(), "ArrayList<Option<F64>> 往返不得失败: {parsed}");
+    assert_eq!(parsed["value"], serde_json::json!([null, 2.5, null, -0.75]));
+}
+
+#[test]
+fn option_f64_inner_type_mismatch_fails_at_element_path() {
+    let bridge = arraylist_case(nullable_of(NyarType::Float64));
+    let message = call_error(&bridge, "[null, 2.5, \"oops\"]");
+    assert!(message.contains("arg0[2]"), "失败信息必须定位到元素: {message}");
+    assert!(message.contains("F64"), "失败信息必须带内层期望类型: {message}");
+    assert!(message.contains("expected a finite number"), "失败信息必须说明 F64 载体合同: {message}");
+}
+
+#[test]
+fn option_scalar_without_box_contract_fails_closed_on_marshal() {
+    // 后端只为 i32/i64/f64 注册了 box struct；f32 载荷没有物理表示，schema 也不得编合同。
+    let bridge = emit_plain(nullable_of(NyarType::Float32));
+    let exports = spec_exports(&bridge.spec);
+    let schema = &exports["echo"]["params"][0]["type"];
+    assert_eq!(schema["kind"], "Option");
+    assert_eq!(schema["inner"]["kind"], "F32");
     assert!(schema["box"].is_null(), "无 box struct 的载荷不得携带合同: {schema}");
 
     let message = call_error(&bridge, "1.5");
     assert!(message.contains("at arg0"), "失败信息必须带入参路径: {message}");
-    assert!(message.contains("Option<F64>"), "失败信息必须带 schema 内层类型: {message}");
+    assert!(message.contains("Option<F32>"), "失败信息必须带 schema 内层类型: {message}");
     assert!(message.contains("no box/unbox contract"), "失败信息必须说明合同缺口: {message}");
 }

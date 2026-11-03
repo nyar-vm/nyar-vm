@@ -177,6 +177,13 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         type_indices.push(wasm_gc_struct_type(&[VALTYPE_I64]));
         type_index
     };
+    // `Option<F64>` 的 payload niche 与 i32/i64 同构：`ref.null` 表示 None，
+    // Some(标量) 进 `[f64]` 单字段 struct。`[f32]` 没有目标合同，不注册。
+    let gc_f64_box_type_index = {
+        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_gc_struct_type(&[VALTYPE_F64]));
+        type_index
+    };
     // 合同 §5：managed 字符串 → 宿主 i32 句柄的转换在目标计划阶段冻结，编码期只消费配方表。
     // `NyarType::Utf8` SSA 值携带已登记 gc struct layout 时，宿主导入边界必须按配方转换；
     // 合成导入 `env::host_intern_utf8` 仅在模块确有 managed 字符串时按需追加，因此
@@ -356,6 +363,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &gc_sum_type_indices,
             gc_i32_box_type_index,
             gc_i64_box_type_index,
+            gc_f64_box_type_index,
             &callee_import_index,
             &callee_wasm_operator,
             &host_imports,
@@ -586,6 +594,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             js_glue_utf8_as_anyref,
             gc_i32_box_type_index,
             gc_i64_box_type_index,
+            gc_f64_box_type_index,
             &mut type_indices,
             &mut function_indices,
             &mut code_bodies,
@@ -1309,6 +1318,7 @@ fn emit_library_field_accessors<'name>(
     js_glue_utf8_as_anyref: bool,
     gc_i32_box_type_index: u32,
     gc_i64_box_type_index: u32,
+    gc_f64_box_type_index: u32,
     type_indices: &mut Vec<Vec<u8>>,
     function_indices: &mut Vec<u32>,
     code_bodies: &mut Vec<Vec<u8>>,
@@ -1376,14 +1386,14 @@ fn emit_library_field_accessors<'name>(
     let mut reachable: BTreeSet<LayoutId> = BTreeSet::new();
     let mut array_elements: BTreeMap<String, NyarType> = BTreeMap::new();
     // Option 标量载荷的物理载体集合：`None` 是 `ref.null`，`Some(标量)` 必须装进
-    // 后端已注册的 `[i32]` / `[i64]` box。只在这里收集**导出签名可达**的载荷，
+    // 后端已注册的 `[i32]` / `[i64]` / `[f64]` box。只在这里收集**导出签名可达**的载荷，
     // 不按类型名或调用点外的事实猜。
-    let mut option_payloads: BTreeSet<&'static str> = BTreeSet::new();
+    let mut option_payloads: BTreeSet<String> = BTreeSet::new();
     while let Some(ty) = worklist.pop() {
         if let NyarType::Nullable(inner) = &ty {
             let inner_schema = super::abi_schema::abi_schema_for_type(inner);
             if let Some(contract) = super::abi_schema::option_box_contract(&inner_schema) {
-                option_payloads.insert(if contract.payload == "i64" { "i64" } else { "i32" });
+                option_payloads.insert(contract.payload.to_string());
             }
         }
         collect_bridge_nodes(&ty, ctx, &mut reachable, &mut array_elements, &mut worklist);
@@ -1472,11 +1482,10 @@ fn emit_library_field_accessors<'name>(
     // 同源（载荷载体确定性派生）；宿主按 schema 合同调用，不现场构造 GC 对象。
     let mut option_plans: Vec<(String, String, u32, u8)> = Vec::new();
     for payload in &option_payloads {
-        let (box_type_index, carrier, schema) = if *payload == "i64" {
-            (gc_i64_box_type_index, VALTYPE_I64, super::abi_schema::WasmAbiType::I64)
-        }
-        else {
-            (gc_i32_box_type_index, VALTYPE_I32, super::abi_schema::WasmAbiType::I32)
+        let (box_type_index, carrier, schema) = match payload.as_str() {
+            "i64" => (gc_i64_box_type_index, VALTYPE_I64, super::abi_schema::WasmAbiType::I64),
+            "f64" => (gc_f64_box_type_index, VALTYPE_F64, super::abi_schema::WasmAbiType::F64),
+            _ => (gc_i32_box_type_index, VALTYPE_I32, super::abi_schema::WasmAbiType::I32),
         };
         let contract = super::abi_schema::option_box_contract(&schema).expect("可达 Option 载荷必须有与 box struct 对应的装箱合同");
         option_plans.push((contract.new, contract.get, box_type_index, carrier));

@@ -567,17 +567,19 @@ pub fn aggregate_constructor_export_name(layout: &AggregateLayout) -> String {
 
 /// `Option<标量>` 的 grain 合同派生：只按**载荷物理载体**决定，不看类型名。
 ///
-/// 与后端已注册的 box struct 一一对应（`entry.rs` 的 `[i32]` / `[i64]`）：
+/// 与后端已注册的 box struct 一一对应（`entry.rs` 的 `[i32]` / `[i64]` / `[f64]`）：
 /// - `i32` 载体：`I32` / `Bool` / `Char` / `Utf8`（JS glue 里 UTF-8 是宿主 i32 句柄）；
-/// - `i64` 载体：`I64`。
+/// - `i64` 载体：`I64`；
+/// - `f64` 载体：`F64`。
 ///
 /// 引用载体（`Array` / `FixedArray` / `Tuple` / `NamedAggregate` / 嵌套 `Option`）
-/// 本身就是可空 anyref 槽里的值，不需要合同；其余标量载体（`F32` / `F64`）
-/// 后端没有注册对应 box struct，返回 `None`，由宿主结构化失败而不是现场造表示。
+/// 本身就是可空 anyref 槽里的值，不需要合同；其余标量载体（`F32`）没有目标合同，
+/// 后端也没有注册对应 box struct，返回 `None`，由宿主结构化失败而不是现场造表示。
 pub fn option_box_contract(inner: &WasmAbiType) -> Option<WasmAbiOptionBox> {
     let payload = match inner {
         WasmAbiType::I32 | WasmAbiType::Bool | WasmAbiType::Char | WasmAbiType::Utf8 => "i32",
         WasmAbiType::I64 => "i64",
+        WasmAbiType::F64 => "f64",
         _ => return None,
     };
     let digest = combined_content_hash(&[&format!("option-box:{payload}")]);
@@ -741,7 +743,19 @@ mod tests {
         let contract = option_box_contract(&WasmAbiType::I64).expect("i64 载荷可装箱");
         assert_eq!(contract.payload, "i64");
         assert!(contract.new.starts_with("nyar$option$new$i64$"));
-        assert!(option_box_contract(&WasmAbiType::F64).is_none(), "后端未注册 [f64] box，不得发明合同");
+    }
+
+    #[test]
+    fn nullable_f64_payload_uses_f64_box_contract() {
+        let contract = option_box_contract(&WasmAbiType::F64).expect("f64 载荷有 `[f64]` box 合同");
+        assert_eq!(contract.payload, "f64");
+        assert!(contract.new.starts_with("nyar$option$new$f64$"));
+        assert!(contract.get.starts_with("nyar$option$get$f64$"));
+    }
+
+    #[test]
+    fn nullable_f32_payload_has_no_box_contract() {
+        assert!(option_box_contract(&WasmAbiType::F32).is_none(), "后端未注册 [f32] box，不得发明合同");
     }
 
     #[test]

@@ -123,6 +123,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
     gc_sum_type_indices: &BTreeMap<NominalInstanceId, u32>,
     gc_i32_box_type_index: u32,
     gc_i64_box_type_index: u32,
+    gc_f64_box_type_index: u32,
     callee_import_index: &BTreeMap<ItemInstanceId, u32>,
     callee_wasm_operator: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
     host_imports: &[(String, String)],
@@ -157,6 +158,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
         gc_sum_type_indices,
         gc_i32_box_type_index,
         gc_i64_box_type_index,
+        gc_f64_box_type_index,
         callee_import_index,
         callee_wasm_operator,
         host_imports,
@@ -214,6 +216,8 @@ pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
     pub(in crate::lowering::backends::wasm::mir) gc_i32_box_type_index: u32,
     /// 泛型 `T` 数组槽中的 i64 装箱用 structtype `[i64]`。
     pub(in crate::lowering::backends::wasm::mir) gc_i64_box_type_index: u32,
+    /// `Option<F64>` niche 的 f64 装箱用 structtype `[f64]`。
+    pub(in crate::lowering::backends::wasm::mir) gc_f64_box_type_index: u32,
     /// heap array element_type 字符串键 -> wasm-gc arraytype 的 type_index。
     pub(in crate::lowering::backends::wasm::mir) gc_array_type_indices: &'a BTreeMap<String, u32>,
     /// sum nominal identity -> wasm-gc structtype `[i32 tag, anyref payload]` 的 type_index。
@@ -260,6 +264,7 @@ impl<'a> WasmMirLowerer<'a> {
         gc_sum_type_indices: &'a BTreeMap<NominalInstanceId, u32>,
         gc_i32_box_type_index: u32,
         gc_i64_box_type_index: u32,
+        gc_f64_box_type_index: u32,
         callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
         callee_wasm_operator: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
         host_imports: &'a [(String, String)],
@@ -308,6 +313,7 @@ impl<'a> WasmMirLowerer<'a> {
             gc_sum_type_indices,
             gc_i32_box_type_index,
             gc_i64_box_type_index,
+            gc_f64_box_type_index,
             callee_import_index,
             callee_wasm_operator,
             host_imports,

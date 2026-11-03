@@ -369,6 +369,11 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_unbox_i64_payload();
             return Ok(());
         }
+        if expected == VALTYPE_F64 && (actual == WASM_GC_ANYREF || actual == WASM_GC_EXTERNREF) {
+            self.emit_operand(operand)?;
+            self.emit_unbox_f64_payload();
+            return Ok(());
+        }
         if expected == VALTYPE_I64 && actual == VALTYPE_I32 {
             self.emit_operand(operand)?;
             WasmOpcode::I64ExtendI32S.encode(&mut self.code);
@@ -381,6 +386,9 @@ impl<'a> WasmMirLowerer<'a> {
         }
         if expected == WASM_GC_ANYREF && actual == VALTYPE_I64 {
             return self.emit_box_i64_payload(operand);
+        }
+        if expected == WASM_GC_ANYREF && actual == VALTYPE_F64 {
+            return self.emit_box_f64_payload(operand);
         }
         if expected == WASM_GC_EXTERNREF && actual == WASM_GC_ANYREF {
             return self.emit_operand(operand);
@@ -580,6 +588,27 @@ impl<'a> WasmMirLowerer<'a> {
     /// 由上游 boxing / `ArrayNew` default 合同保证载荷已初始化。
     pub(super) fn emit_unbox_i64_payload(&mut self) {
         let box_ty = self.gc_i64_box_type_index;
+        self.emit_ref_cast_struct(box_ty);
+        self.emit_struct_get(box_ty, 0);
+    }
+
+    /// `f64` → wasm-gc struct `[f64]`（anyref），供 `Option<F64>` 的 niche 载荷槽使用。
+    fn emit_box_f64_payload(&mut self, operand: &MirOperand) -> crate::Result<()> {
+        let box_ty = self.gc_f64_box_type_index;
+        self.emit_struct_new_default(box_ty);
+        let tmp = self.alloc_anyref_local();
+        self.emit_local_set(tmp);
+        self.emit_local_get(tmp);
+        self.emit_ref_cast_struct(box_ty);
+        self.emit_contract_operand(operand, VALTYPE_F64)?;
+        self.emit_struct_set(box_ty, 0);
+        self.emit_local_get(tmp);
+        Ok(())
+    }
+
+    /// 栈顶 anyref（f64 box）→ f64；null 不为 0.0，语义与 i64 拆箱一致。
+    pub(super) fn emit_unbox_f64_payload(&mut self) {
+        let box_ty = self.gc_f64_box_type_index;
         self.emit_ref_cast_struct(box_ty);
         self.emit_struct_get(box_ty, 0);
     }
