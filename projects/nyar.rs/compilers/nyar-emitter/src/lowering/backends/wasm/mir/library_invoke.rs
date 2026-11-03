@@ -489,7 +489,7 @@ mod tests {
                 container: None,
             },
             WasmAbiType::FixedArray { element: Box::new(WasmAbiType::I64), length: 2 },
-            WasmAbiType::Option { inner: Box::new(WasmAbiType::I64) },
+            WasmAbiType::Option { inner: Box::new(WasmAbiType::I64), box_contract: None },
             WasmAbiType::Tuple { fields: vec![WasmAbiType::I64] },
             WasmAbiType::NamedAggregate {
                 name: "ArrayList".to_string(),

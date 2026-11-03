@@ -104,9 +104,17 @@ pub enum WasmAbiType {
     ///
     /// Nyar 源层写作 `Nullable(T)`；schema 层统一命名为 Option
     /// （与 Valkyrie 表面语法 `T?`、`Option<T>` 对齐）。
+    ///
+    /// Wasm 物理降级是 **niche**：`None` = `ref.null`，`Some(引用)` 直接是该引用；
+    /// `Some(标量)` 则需要把标量装进 `[i32]` / `[i64]` box 后再放进 anyref 槽。
+    /// `box_contract` 只在标量载荷需要装箱时出现；引用载荷（容器 / 具名聚合 /
+    /// 嵌套 Option）没有合同，宿主直接透传。宿主不得按 kind 猜哪一侧。
     Option {
         /// 内部非空值类型。
         inner: Box<WasmAbiType>,
+        /// 标量载荷的 box/unbox 导出合同；引用载荷为 `None`。
+        #[serde(default, skip_serializing_if = "Option::is_none", rename = "box")]
+        box_contract: Option<Box<WasmAbiOptionBox>>,
     },
 
     /// Tuple / product aggregate `(T1, T2, ...)`。
@@ -238,6 +246,22 @@ pub struct WasmAbiSequence {
     pub length_type: Box<WasmAbiType>,
 }
 
+/// `Option<标量>` 的装箱合同。
+///
+/// 派生自 Wasm 物理降级事实：标量载荷在 anyref 槽里的唯一合法表示是后端已注册的
+/// `[i32]` / `[i64]` box struct。`new` / `get` 是模块导出的 `struct.new` /
+/// `ref.cast` + `struct.get` 包装；名字由载荷载体确定性派生，与
+/// [`WasmAbiSequence::constructor`] 同源（布局/载体身份，不看类型名）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WasmAbiOptionBox {
+    /// `(payload 载体) -> anyref`：`struct.new` 包装导出名。
+    pub new: String,
+    /// `(anyref) -> payload 载体`：`ref.cast` + `struct.get` 包装导出名。
+    pub get: String,
+    /// 载荷物理载体（`i32` / `i64`），同时是 box struct 的身份事实。
+    pub payload: String,
+}
+
 impl WasmAbiType {
     /// 返回值是否有 Wasm 物理 carrier。
     ///
@@ -292,7 +316,7 @@ impl WasmAbiType {
 /// | `Utf16`                      | `Utf16`（当前视为 Unsupported）                | JS glue 轨暂无支持                             |
 /// | `Array(T)`                   | `Array { element: schema(T) }`                 |                                                |
 /// | `FixedArray { element, n }`  | `FixedArray { element: schema(element), n }`   |                                                |
-/// | `Nullable(T)`                | `Option { inner: schema(T) }`                  |                                                |
+/// | `Nullable(T)`                | `Option { inner: schema(T), box?: ... }`        | 标量载荷带装箱合同 |
 /// | `Tuple([...])`               | `Tuple { fields: [...] }`                      |                                                |
 /// | `Named(id)`                  | `NamedAggregate { name, module_path, generic_args: [] }` |                       |
 /// | `Apply(Base, args)`          | `NamedAggregate { name, module_path, schema(args)}`|                                        |
@@ -329,7 +353,11 @@ pub fn abi_schema_for_type(ty: &NyarType) -> WasmAbiType {
             WasmAbiType::FixedArray { element: Box::new(abi_schema_for_type(element)), length: *length }
         }
 
-        NyarType::Nullable(inner) => WasmAbiType::Option { inner: Box::new(abi_schema_for_type(inner)) },
+        NyarType::Nullable(inner) => {
+            let inner = Box::new(abi_schema_for_type(inner));
+            let box_contract = option_box_contract(&inner).map(Box::new);
+            WasmAbiType::Option { inner, box_contract }
+        }
 
         NyarType::Tuple(fields) => WasmAbiType::Tuple { fields: fields.iter().map(abi_schema_for_type).collect() },
 
@@ -420,7 +448,9 @@ pub fn abi_schema_for_type_with_layouts(
             length: *length,
         },
         NyarType::Nullable(inner) => {
-            WasmAbiType::Option { inner: Box::new(abi_schema_for_type_with_layouts(inner, layouts, layout_by_type)) }
+            let inner = Box::new(abi_schema_for_type_with_layouts(inner, layouts, layout_by_type));
+            let box_contract = option_box_contract(&inner).map(Box::new);
+            WasmAbiType::Option { inner, box_contract }
         }
         NyarType::Tuple(fields) => WasmAbiType::Tuple {
             fields: fields.iter().map(|field| abi_schema_for_type_with_layouts(field, layouts, layout_by_type)).collect(),
@@ -533,6 +563,30 @@ pub fn aggregate_constructor_export_name(layout: &AggregateLayout) -> String {
     let suffix = digest.get(..16).unwrap_or(&digest);
     let sanitize = |text: &str| text.chars().map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' }).collect::<String>();
     format!("nyar$new${}${}", sanitize(&layout.name), suffix)
+}
+
+/// `Option<标量>` 的 grain 合同派生：只按**载荷物理载体**决定，不看类型名。
+///
+/// 与后端已注册的 box struct 一一对应（`entry.rs` 的 `[i32]` / `[i64]`）：
+/// - `i32` 载体：`I32` / `Bool` / `Char` / `Utf8`（JS glue 里 UTF-8 是宿主 i32 句柄）；
+/// - `i64` 载体：`I64`。
+///
+/// 引用载体（`Array` / `FixedArray` / `Tuple` / `NamedAggregate` / 嵌套 `Option`）
+/// 本身就是可空 anyref 槽里的值，不需要合同；其余标量载体（`F32` / `F64`）
+/// 后端没有注册对应 box struct，返回 `None`，由宿主结构化失败而不是现场造表示。
+pub fn option_box_contract(inner: &WasmAbiType) -> Option<WasmAbiOptionBox> {
+    let payload = match inner {
+        WasmAbiType::I32 | WasmAbiType::Bool | WasmAbiType::Char | WasmAbiType::Utf8 => "i32",
+        WasmAbiType::I64 => "i64",
+        _ => return None,
+    };
+    let digest = combined_content_hash(&[&format!("option-box:{payload}")]);
+    let suffix = digest.get(..16).unwrap_or(&digest).to_string();
+    Some(WasmAbiOptionBox {
+        new: format!("nyar$option$new${payload}${suffix}"),
+        get: format!("nyar$option$get${payload}${suffix}"),
+        payload: payload.to_string(),
+    })
 }
 
 /// 物理数组操作导出的确定性名字：由元素类型的结构化拼写派生。
@@ -663,7 +717,31 @@ mod tests {
     #[test]
     fn nullable_becomes_option() {
         let opt = NyarType::Nullable(Box::new(nyar("i32")));
-        assert_eq!(abi_schema_for_type(&opt), WasmAbiType::Option { inner: Box::new(WasmAbiType::I32) });
+        let WasmAbiType::Option { inner, box_contract } = abi_schema_for_type(&opt) else {
+            panic!("Nullable(i32) 必须投影为 Option")
+        };
+        assert_eq!(*inner, WasmAbiType::I32);
+        let contract = box_contract.expect("标量载荷必须带装箱合同");
+        assert_eq!(contract.payload, "i32");
+        assert!(contract.new.starts_with("nyar$option$new$i32$"));
+        assert!(contract.get.starts_with("nyar$option$get$i32$"));
+    }
+
+    #[test]
+    fn nullable_handle_payload_has_no_box_contract() {
+        let opt = NyarType::Nullable(Box::new(NyarType::Array(Box::new(nyar("i64")))));
+        let WasmAbiType::Option { box_contract, .. } = abi_schema_for_type(&opt) else {
+            panic!("Nullable([i64]) 必须投影为 Option")
+        };
+        assert!(box_contract.is_none(), "引用载荷直接复用可空槽引用，不得要求装箱");
+    }
+
+    #[test]
+    fn nullable_i64_payload_uses_i64_box_contract() {
+        let contract = option_box_contract(&WasmAbiType::I64).expect("i64 载荷可装箱");
+        assert_eq!(contract.payload, "i64");
+        assert!(contract.new.starts_with("nyar$option$new$i64$"));
+        assert!(option_box_contract(&WasmAbiType::F64).is_none(), "后端未注册 [f64] box，不得发明合同");
     }
 
     #[test]
