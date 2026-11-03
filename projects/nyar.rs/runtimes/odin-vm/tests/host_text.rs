@@ -8,7 +8,7 @@ use odin_bytecode::{
     emit_imm2, emit_plain, encode_module,
 };
 use odin_vm::{
-    ObjectHeap, Value,
+    ObjectHeap, ObjectPayload, Value, array_runtime,
     error::OdinRuntimeError,
     host::{HostOp, execute_host_op},
     module::LoadedModule,
@@ -58,8 +58,74 @@ fn run_import_err(symbol: &str, constants: Vec<OdinConstant>, argc: i32) -> Odin
     OdinVm::new().run(&module, "main", Vec::new()).expect_err("端到端执行必须结构化失败")
 }
 
+/// 构造多步导入链：常量按序入栈，随后按 `steps`（导入下标, 参数个数）依次 `CallImport`。
+fn chain_module(constants: Vec<OdinConstant>, imports: Vec<&str>, steps: &[(i32, i32)]) -> LoadedModule {
+    let mut code = Vec::new();
+    for index in 0..constants.len() as i32 {
+        emit_imm1(&mut code, OdinHeadCode::Constant, index);
+    }
+    for (import_index, argc) in steps {
+        emit_imm2(&mut code, OdinHeadCode::CallImport, *import_index, *argc);
+    }
+    emit_plain(&mut code, OdinHeadCode::Return);
+    let data = OdinModuleData {
+        version: Odin_VERSION,
+        name: "host_text_chain".to_string(),
+        constants,
+        functions: vec![OdinFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
+        imports: imports
+            .into_iter()
+            .map(|symbol| OdinImport { kind: OdinImportKind::Function, module_name: "nyar.host".to_string(), symbol_name: symbol.to_string() })
+            .collect(),
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
+        witness_entries: Vec::new(),
+        code_bytes: code,
+        globals: Vec::new(),
+        init_function_indices: Vec::new(),
+        layouts: Vec::new(),
+    };
+    LoadedModule::from_bytes(&encode_module(&data)).expect("测试模块必须通过 verifier")
+}
+
+fn run_import_chain(constants: Vec<OdinConstant>, imports: Vec<&str>, steps: &[(i32, i32)]) -> Value {
+    let module = chain_module(constants, imports, steps);
+    OdinVm::new().run(&module, "main", Vec::new()).expect("端到端执行必须成功")
+}
+
 fn text(value: &str) -> Value {
     Value::String(value.to_string())
+}
+
+/// 把码元序列包成宿主的 UTF-16 固定数组载体。
+fn utf16_array(heap: &mut ObjectHeap, units: &[u16]) -> Value {
+    let elements = units.iter().map(|unit| Value::I32(*unit as i32)).collect::<Vec<_>>();
+    array_runtime::build_fixed_array(heap, 0, &elements)
+}
+
+/// 从宿主 UTF-16 固定数组载体读回码元序列。
+fn utf16_units(heap: &ObjectHeap, value: &Value) -> Vec<u16> {
+    let Value::Object(object_id) = value
+    else {
+        panic!("期望 UTF-16 数组载体，实际 {}", value.type_name());
+    };
+    let Some(ObjectPayload::LayoutObject { slots, .. }) = heap.get(*object_id)
+    else {
+        panic!("期望布局数组对象，实际 object id {object_id}");
+    };
+    slots
+        .iter()
+        .map(|slot| match slot {
+            Value::I32(unit) => *unit as u16,
+            other => panic!("期望 i32 码元槽，实际 {}", other.type_name()),
+        })
+        .collect()
+}
+
+/// 用给定码元构造数组后执行 UTF-16 宿主符号。
+fn run_utf16(op: HostOp, units: &[u16]) -> Result<Value, OdinRuntimeError> {
+    let mut heap = ObjectHeap::new();
+    let array = utf16_array(&mut heap, units);
+    execute_host_op(op, &[array], &mut heap)
 }
 
 // ---- 共享语料 ----
@@ -176,6 +242,86 @@ fn concat_and_comparison_reject_wrong_carriers_and_short_arguments() {
     }
 }
 
+// ---- UTF-16 ----
+
+#[test]
+fn utf8_to_utf16_emits_surrogate_pairs() {
+    let cases: [(&str, Vec<u16>); 6] = [
+        (EMPTY, vec![]),
+        (ASCII, vec![0x61, 0x62, 0x63]),
+        (BMP_CHINESE, vec![0x4E2D, 0x6587]),
+        (ASTRAL, vec![0xD83D, 0xDE00]),
+        (COMBINING, vec![0x61, 0x0301]),
+        (LONG_ASCII, vec![0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64]),
+    ];
+    let mut heap = ObjectHeap::new();
+    for (sample, expected) in cases {
+        let value = execute_host_op(HostOp::Utf8ToUtf16, &[text(sample)], &mut heap).unwrap();
+        assert_eq!(utf16_units(&heap, &value), expected, "utf8_to_utf16({sample:?})");
+    }
+}
+
+#[test]
+fn utf16_length_counts_code_units_not_code_points() {
+    let cases: [(Vec<u16>, i32); 5] =
+        [(vec![], 0), (vec![0x61, 0x62, 0x63], 3), (vec![0x4E2D, 0x6587], 2), (vec![0xD83D, 0xDE00], 2), (vec![0x61, 0x0301], 2)];
+    for (units, expected) in cases {
+        assert_eq!(run_utf16(HostOp::Utf16Length, &units).unwrap(), Value::I32(expected), "utf16_length({units:?})");
+    }
+}
+
+#[test]
+fn utf16_to_utf8_round_trips_all_corpora() {
+    let cases: [(Vec<u16>, &str); 6] = [
+        (vec![], EMPTY),
+        (vec![0x61, 0x62, 0x63], ASCII),
+        (vec![0x4E2D, 0x6587], BMP_CHINESE),
+        (vec![0xD83D, 0xDE00], ASTRAL),
+        (vec![0x61, 0x0301], COMBINING),
+        (vec![0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64], LONG_ASCII),
+    ];
+    for (units, expected) in cases {
+        assert_eq!(run_utf16(HostOp::Utf16ToUtf8, &units).unwrap(), text(expected), "utf16_to_utf8({units:?})");
+    }
+}
+
+#[test]
+fn utf16_to_utf8_rejects_lone_surrogates() {
+    let cases: [Vec<u16>; 6] =
+        [vec![0xD83D], vec![0xDE00], vec![0xD83D, 0x0041], vec![0x0041, 0xDE00], vec![0xD83D, 0xD83D], vec![0xDE00, 0xD83D]];
+    for units in cases {
+        let error = run_utf16(HostOp::Utf16ToUtf8, &units).expect_err("孤立代理必须失败");
+        match error {
+            OdinRuntimeError::InvalidUtf8 { operation } => assert_eq!(operation, "utf16_to_utf8", "输入 {units:?}"),
+            other => panic!("期望 InvalidUtf8，实际 {other:?}（输入 {units:?}）"),
+        }
+    }
+}
+
+#[test]
+fn utf16_symbols_reject_wrong_carriers_and_short_arguments() {
+    for op in [HostOp::Utf16Length, HostOp::Utf16ToUtf8] {
+        let error = run(op, &[text(ASCII)]).expect_err("字符串不是 UTF-16 载体");
+        assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }), "{op:?} 实际 {error:?}");
+        let error = run(op, &[]).expect_err("缺参必须失败");
+        assert!(matches!(error, OdinRuntimeError::StackUnderflow), "{op:?} 实际 {error:?}");
+    }
+    let error = run(HostOp::Utf8ToUtf16, &[Value::I32(1)]).expect_err("非字符串入参必须失败");
+    assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }), "实际 {error:?}");
+    let error = run(HostOp::Utf8ToUtf16, &[]).expect_err("缺参必须失败");
+    assert!(matches!(error, OdinRuntimeError::StackUnderflow));
+
+    // 非法码元槽：超出 u16 范围 / 非整数载体。
+    let mut heap = ObjectHeap::new();
+    for element in [Value::I32(0x1_0000), Value::F64(1.0), Value::Null] {
+        let array = array_runtime::build_fixed_array(&mut heap, 0, &[element.clone()]);
+        let error = execute_host_op(HostOp::Utf16Length, &[array.clone()], &mut heap).expect_err("非法码元必须失败");
+        assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }), "元素 {element:?} 实际 {error:?}");
+        let error = execute_host_op(HostOp::Utf16ToUtf8, &[array], &mut heap).expect_err("非法码元必须失败");
+        assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }), "元素 {element:?} 实际 {error:?}");
+    }
+}
+
 // ---- 真实 `CallImport` 端到端 ----
 
 #[test]
@@ -227,5 +373,34 @@ fn eq_and_ne_execute_through_call_import() {
         run_import("utf8.ne", vec![OdinConstant::String("e\u{0301}".to_string()), OdinConstant::String("\u{e9}".to_string())], 2),
         Value::Bool(true),
         "组合式与预组合式不等"
+    );
+}
+
+#[test]
+fn utf8_to_utf16_executes_through_call_import() {
+    let value = run_import("utf8_to_utf16", vec![OdinConstant::String(ASTRAL.to_string())], 1);
+    assert!(matches!(value, Value::Object(_)), "必须产出 UTF-16 数组载体，实际 {value:?}");
+}
+
+#[test]
+fn utf16_to_utf8_executes_through_call_import() {
+    assert_eq!(
+        run_import_chain(vec![OdinConstant::String("a😀b".to_string())], vec!["utf8_to_utf16", "utf16_to_utf8"], &[(0, 1), (1, 1)]),
+        text("a😀b"),
+        "UTF-16 往返必须保持内容"
+    );
+}
+
+#[test]
+fn utf16_length_executes_through_call_import() {
+    assert_eq!(
+        run_import_chain(vec![OdinConstant::String(ASTRAL.to_string())], vec!["utf8_to_utf16", "utf16_length"], &[(0, 1), (1, 1)]),
+        Value::I32(2),
+        "astral 码点在 UTF-16 中是两个码元"
+    );
+    assert_eq!(
+        run_import_chain(vec![OdinConstant::String(BMP_CHINESE.to_string())], vec!["utf8_to_utf16", "utf16_length"], &[(0, 1), (1, 1)]),
+        Value::I32(2),
+        "BMP 中文每字一个码元"
     );
 }

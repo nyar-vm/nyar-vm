@@ -1,7 +1,7 @@
 //! 宿主导入能力：加载期把符号解析为 [`HostOp`]，热路径只按枚举分派。
 
 use crate::error::OdinRuntimeError;
-use nyar_gc::ObjectHeap;
+use nyar_gc::{ObjectHeap, ObjectPayload};
 use odin_bytecode::OdinImport;
 
 use crate::{array_runtime, dom_runtime, text_runtime, value::Value};
@@ -64,6 +64,12 @@ pub enum HostOp {
     Utf8Eq,
     /// UTF-8 按码点序列不等判定。
     Utf8Ne,
+    /// UTF-8 转 UTF-16：astral 码点产出代理对。
+    Utf8ToUtf16,
+    /// UTF-16 转 UTF-8：孤立代理结构化失败，不替换成 U+FFFD。
+    Utf16ToUtf8,
+    /// UTF-16 码元计数（代理对算 2，不是码点数）。
+    Utf16Length,
     /// 有符号 32 位整除。
     I32Div,
     /// 无符号 32 位整除（`u32` 的 `/`；与有符号 `I32Div` 在最高位为 1 时结论不同）。
@@ -193,6 +199,9 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "utf8.concat" => HostOp::Utf8Concat,
         "utf8.eq" => HostOp::Utf8Eq,
         "utf8.ne" => HostOp::Utf8Ne,
+        "utf8_to_utf16" => HostOp::Utf8ToUtf16,
+        "utf16_to_utf8" => HostOp::Utf16ToUtf8,
+        "utf16_length" => HostOp::Utf16Length,
         "i32_div" => HostOp::I32Div,
         "i32_div_u" => HostOp::I32DivU,
         "i32_rem_u" => HostOp::I32RemU,
@@ -340,6 +349,15 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         }
         HostOp::Utf8Eq => Ok(Value::Bool(text_runtime::equals(utf8_arg(args, 0, "utf8")?, utf8_arg(args, 1, "utf8")?))),
         HostOp::Utf8Ne => Ok(Value::Bool(!text_runtime::equals(utf8_arg(args, 0, "utf8")?, utf8_arg(args, 1, "utf8")?))),
+        HostOp::Utf8ToUtf16 => {
+            let units = text_runtime::to_utf16(utf8_arg(args, 0, "utf8")?);
+            Ok(build_u16_array(heap, &units))
+        }
+        HostOp::Utf16ToUtf8 => {
+            let units = u16_array_arg(heap, args, 0)?;
+            Ok(Value::String(text_runtime::from_utf16(&units, "utf16_to_utf8")?))
+        }
+        HostOp::Utf16Length => Ok(Value::I32(text_runtime::utf16_length(&u16_array_arg(heap, args, 0)?))),
         HostOp::I32Div => {
             let lhs = i32_arg(args, 0)?;
             let rhs = i32_arg(args, 1)?;
@@ -566,6 +584,34 @@ fn f64_to_i64_saturating(value: f64) -> i64 {
     else {
         truncated as i64
     }
+}
+
+/// 严格 UTF-16 取参：只接受码元固定数组（`Value::I32` 槽位，0..=0xFFFF）。
+fn u16_array_arg(heap: &ObjectHeap, args: &[Value], index: usize) -> Result<Vec<u16>, OdinRuntimeError> {
+    let value = args.get(index).ok_or(OdinRuntimeError::StackUnderflow)?;
+    let Value::Object(object_id) = value
+    else {
+        return Err(OdinRuntimeError::TypeMismatch { expected: "utf16 array", actual: value.type_name().to_string() });
+    };
+    let slots = match heap.get(*object_id) {
+        Some(ObjectPayload::LayoutObject { slots, .. }) => slots,
+        Some(_) => {
+            return Err(OdinRuntimeError::TypeMismatch { expected: "utf16 array", actual: "non-layout object".to_string() });
+        }
+        None => return Err(OdinRuntimeError::ModuleLoad(format!("invalid object id {object_id}"))),
+    };
+    slots
+        .iter()
+        .map(|element| match element {
+            Value::I32(unit) if (0..=0xFFFF).contains(unit) => Ok(*unit as u16),
+            other => Err(OdinRuntimeError::TypeMismatch { expected: "utf16 code unit", actual: other.type_name().to_string() }),
+        })
+        .collect()
+}
+
+fn build_u16_array(heap: &mut ObjectHeap, units: &[u16]) -> Value {
+    let elements = units.iter().map(|unit| Value::I32(*unit as i32)).collect::<Vec<_>>();
+    array_runtime::build_fixed_array(heap, 0, &elements)
 }
 
 /// 严格 UTF-8 取参：只接受 `Value::String`；缺参 / 其它载体一律结构化失败。

@@ -45,6 +45,28 @@ pub fn equals(left: &str, right: &str) -> bool {
     left.chars().eq(right.chars())
 }
 
+/// UTF-8 → UTF-16 码元序列：astral 码点产出代理对（U+1F600 → `D83D DE00`）。
+pub fn to_utf16(text: &str) -> Vec<u16> {
+    text.encode_utf16().collect()
+}
+
+/// UTF-16 码元计数：代理对算 2 个单元，不是码点数。
+pub fn utf16_length(units: &[u16]) -> i32 {
+    units.len() as i32
+}
+
+/// UTF-16 → UTF-8：孤立代理（`D800..=DFFF` 落单）结构化失败，不替换、不丢弃。
+pub fn from_utf16(units: &[u16], operation: &'static str) -> Result<String, OdinRuntimeError> {
+    let mut text = String::with_capacity(units.len());
+    for decoded in char::decode_utf16(units.iter().copied()) {
+        match decoded {
+            Ok(value) => text.push(value),
+            Err(_) => return Err(OdinRuntimeError::InvalidUtf8 { operation }),
+        }
+    }
+    Ok(text)
+}
+
 /// 第 `char_index` 个码点的字节偏移；越界时返回字节末尾（仅内部使用，调用方已判界）。
 fn byte_offset(text: &str, char_index: usize) -> usize {
     text.char_indices().nth(char_index).map(|(offset, _)| offset).unwrap_or(text.len())
