@@ -440,7 +440,10 @@ pub enum PrimitiveNumericShape {
 /// 按 `[primitive]` 规范身份（`std::primitive::i32` 等，不是表面短名）给出数值形状。
 ///
 /// 身份表外一律 `None`：调用方不得回退到短名匹配。数值族覆盖 std 已声明的
-/// 全部整数与浮点身份；`bool`/`unit`/`void`/`any`/`null` 不是数值。
+/// 全部定宽整数与浮点身份；`bool`/`unit`/`void`/`any`/`null` 不是数值。
+/// `usize`/`isize` 不在本表：它们是指针宽度别名，由 std 按目标架构的
+/// `<% match %>`（`std::primitive::pointer_width`）结算成定宽整数后再进入编译器，
+/// 编译器不得把它们当内建量化形状。
 pub fn numeric_primitive_identity_shape(identity: &str) -> Option<PrimitiveNumericShape> {
     use PrimitiveNumericShape::{Float, Integer};
     Some(match identity {
@@ -454,9 +457,6 @@ pub fn numeric_primitive_identity_shape(identity: &str) -> Option<PrimitiveNumer
         "std::primitive::u32" => Integer { bits: 32, signed: false },
         "std::primitive::u64" => Integer { bits: 64, signed: false },
         "std::primitive::u128" => Integer { bits: 128, signed: false },
-        // 目标指针宽度合同：本工具链的 canonical 位宽为 64。
-        "std::primitive::usize" => Integer { bits: 64, signed: false },
-        "std::primitive::isize" => Integer { bits: 64, signed: true },
         "std::primitive::f32" => Float { bits: 32 },
         "std::primitive::f64" => Float { bits: 64 },
         "std::primitive::f128" => Float { bits: 128 },

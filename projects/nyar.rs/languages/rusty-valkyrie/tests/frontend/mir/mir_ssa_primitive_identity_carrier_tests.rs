@@ -17,7 +17,7 @@ use rusty_valkyrie::{
         types::hir::{HirField, HirModule, HirStruct},
     },
     compute_aggregate_layout_plan,
-    types::hir::types::ValkyrieType,
+    types::hir::types::{PrimitiveNumericShape, ValkyrieType, numeric_primitive_identity_shape},
 };
 
 fn lower(source: &str) -> MirModule {
@@ -129,4 +129,126 @@ class Holder {
     let field = holder_field(&module);
     assert_eq!(field.ty, NyarType::Integer64 { signed: false }, "u64 身份必须映射到 u64 载体: {field:?}");
     assert_eq!(field.size, 8, "u64 载体按 8 字节计量: {field:?}");
+}
+
+/// `usize`/`isize` 不是数值形状表身份：表里必须没有它们，宽度由 std 别名结算。
+#[test]
+fn numeric_shape_table_excludes_pointer_width_aliases() {
+    assert!(numeric_primitive_identity_shape("std::primitive::usize").is_none(), "usize 是指针宽度别名，不属于数值量化表");
+    assert!(numeric_primitive_identity_shape("std::primitive::isize").is_none(), "isize 是指针宽度别名，不属于数值量化表");
+    // f128 仍是 128 位形状，但 1.0 没有内建载体（只记录结论，不降精度）。
+    assert!(
+        matches!(numeric_primitive_identity_shape("std::primitive::f128"), Some(PrimitiveNumericShape::Float { bits: 128 })),
+        "f128 形状保持 128 位，不得静默降到 64"
+    );
+}
+
+/// 64 位目标验收：`usize`/`isize` 经 std 的指针宽度别名结算后，字段必须是 8 字节。
+#[test]
+fn pointer_width_aliases_settle_to_eight_bytes() {
+    let module = lower(
+        r#"
+namespace std::primitive;
+
+[primitive("std::primitive::u64")] structure u64 { }
+[primitive("std::primitive::i64")] structure i64 { }
+
+type usize = u64;
+type isize = i64;
+
+class Holder {
+    a: usize,
+    b: isize,
+}
+"#,
+    );
+    let layout = layout(&module, "Holder");
+    let a = &layout.fields[0];
+    let b = &layout.fields[1];
+    assert_eq!(a.ty, NyarType::Integer64 { signed: false }, "64 位目标 usize 必须结算成 u64: {a:?}");
+    assert_eq!(a.size, 8, "64 位目标 usize 字段必须 8 字节: {a:?}");
+    assert_eq!(b.ty, NyarType::Integer64 { signed: true }, "64 位目标 isize 必须结算成 i64: {b:?}");
+    assert_eq!(b.size, 8, "64 位目标 isize 字段必须 8 字节: {b:?}");
+}
+
+/// 无声明的数值短名不得借载体：`structure i32 { }` 没有 `[primitive]` 身份时，
+/// 字段只能按自身名义布局，不能因为名字像 i32 就变成 4 字节整数。
+#[test]
+fn identity_less_numeric_declaration_does_not_borrow_numeric_carrier() {
+    let declaration = nyar_types::ItemId::from_index(602).expect("test ItemId");
+    let holder = nyar_types::ItemId::from_index(603).expect("test ItemId");
+    let mut module = HirModule::default();
+    module.structs.push(HirStruct {
+        constructor_declaration: Some(declaration),
+        name: Identifier::new("i32"),
+        namespace: vec![Identifier::new("acme")],
+        is_value_type: true,
+        ..Default::default()
+    });
+    module.structs.push(HirStruct {
+        constructor_declaration: Some(holder),
+        name: Identifier::new("Holder"),
+        namespace: vec![Identifier::new("acme")],
+        fields: vec![HirField {
+            id: None,
+            name: Identifier::new("x"),
+            doc: Default::default(),
+            ty: ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: None },
+            visibility: Default::default(),
+            is_mutable: false,
+        }],
+        ..Default::default()
+    });
+    let mut diagnostics = Vec::new();
+    let plan = compute_aggregate_layout_plan(&module, &mut diagnostics);
+    let holder_layout = plan.layouts.iter().find(|layout| layout.name == "Holder").expect("Holder 布局");
+    let field = &holder_layout.fields[0];
+    assert!(matches!(field.ty, NyarType::Nominal { .. }), "无身份声明的数值短名不得经 spelling 桥取载体: {field:?}");
+    assert_eq!(field.size, 1, "零字段值类型按自身 1 字节布局计量: {field:?}");
+}
+
+/// 编码名桥仍然有效：`Utf8Text`（无 `[primitive]` 身份）仍按编码名映射到 `Utf8`。
+#[test]
+fn identity_less_encoding_name_keeps_encoding_carrier() {
+    let module = lower(
+        r#"
+namespace test;
+
+[primitive("std::primitive::u8")] structure u8 { }
+
+class Utf8Text {
+    _repr: [u8],
+}
+
+class Holder {
+    text: Utf8Text,
+}
+"#,
+    );
+    let field = holder_field(&module);
+    assert_eq!(field.ty, NyarType::Utf8, "编码名 `Utf8Text` 仍走编码桥: {field:?}");
+    assert_eq!(field.size, 4, "Utf8 载体按 4 字节槽计量: {field:?}");
+}
+
+/// 反例（修前观测点）：伪造 `[primitive("std::primitive::usize")]` 声明不再得到 4 字节整数。
+///
+/// 修前该声明经数值形状表 + 拼写桥变成 `Integer32 { signed: true }`（4 字节）；
+/// 修后 `usize` 不是内建数值身份，声明只能按自身名义布局结算。
+#[test]
+fn malformed_usize_primitive_declaration_is_not_a_numeric_carrier() {
+    let module = lower(
+        r#"
+namespace std::primitive;
+
+[primitive("std::primitive::usize")]
+structure usize { }
+
+class Holder {
+    x: usize,
+}
+"#,
+    );
+    let field = holder_field(&module);
+    assert_eq!(field.size, 1, "usize 伪造声明不得再得 4 字节整数载体: {field:?}");
+    assert_ne!(field.ty, NyarType::Integer32 { signed: true }, "usize 不得按拼写降成 i32: {field:?}");
 }

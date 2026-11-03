@@ -15,7 +15,7 @@ use crate::compiler::{
     mir::MirDiagnostic,
     types::{
         Identifier,
-        hir::{HirEnum, HirModule, HirStruct, HirVariant, ValkyrieType, numeric_primitive_identity_shape, primitive_identity_builtin_type},
+        hir::{HirEnum, HirModule, HirStruct, HirVariant, ValkyrieType, primitive_identity_builtin_type},
     },
 };
 
@@ -458,20 +458,14 @@ fn layout_field_type(
         ValkyrieType::Nominal { declaration, arguments, primitive_identity } => {
             let spelling = declaration_spellings.get(declaration)?;
             // 带 `[primitive]` 身份时载体只能由该身份决定：spelling 末段只是显示名，
-            // 同名的用户声明不得借到内建载体。没有身份的声明保留既有 surface spelling
-            // 桥（编码名 `Utf8Text`/`utf16` 走这条，它们不是 primitive 身份）。
+            // 同名的用户声明不得借到内建载体。没有身份的声明只保留编码名桥
+            // （`Utf8Text`/`utf16` 这类）；数值短名（`i32`/`usize`/`byte` …）不在此列，
+            // 必须由声明自身布局或 std 的指针宽度别名结算。
             let base = match primitive_identity.as_deref() {
                 Some(identity) => primitive_identity_builtin_type(identity)
                     .and_then(|builtin| concretize_type(&builtin).ok())
-                    .or_else(|| {
-                        // `usize`/`isize`/`f128` 仍登记在数值身份表里，但 1.0 尚未给
-                        // 它们内建载体；保留既有 surface spelling 桥，避免同一声明在
-                        // 布局与 canonical 之间换口径。是否走桥由身份表决定，名字不参与判定。
-                        numeric_primitive_identity_shape(identity).and_then(|_| nyar_types::NyarType::from_surface_primitive(spelling))
-                    })
                     .unwrap_or_else(|| nominal_layout_base(plan, *declaration, spelling)),
-                None => nyar_types::NyarType::from_surface_primitive(spelling)
-                    .unwrap_or_else(|| nominal_layout_base(plan, *declaration, spelling)),
+                None => encoding_spelling_carrier(spelling).unwrap_or_else(|| nominal_layout_base(plan, *declaration, spelling)),
             };
             if arguments.is_empty() {
                 return Some(base);
@@ -672,6 +666,17 @@ fn apply_primitive_carriers(ty: &ValkyrieType, carriers: &BTreeMap<nyar_types::I
         ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| apply_primitive_carriers(item, carriers)).collect()),
         ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| apply_primitive_carriers(item, carriers)).collect()),
         other => other.clone(),
+    }
+}
+
+/// 无 `[primitive]` 身份声明的编码名桥：只允许文本编码载体。
+///
+/// 数值短名（`i32`/`usize`/`byte` …）即使拼写与内建同名也不得经此桥，
+/// 数值载体只认规范身份；`usize`/`isize` 由 std 的指针宽度别名结算成定宽整数。
+fn encoding_spelling_carrier(spelling: &str) -> Option<nyar_types::NyarType> {
+    match nyar_types::NyarType::from_surface_primitive(spelling) {
+        Some(carrier @ (nyar_types::NyarType::Utf8 | nyar_types::NyarType::Utf16 | nyar_types::NyarType::Character)) => Some(carrier),
+        _ => None,
     }
 }
 
