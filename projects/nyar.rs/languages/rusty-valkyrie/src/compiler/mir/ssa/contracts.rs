@@ -230,7 +230,6 @@ pub(super) fn collect_semantic_fragments(
             entry_operation: None,
             rewrite_theory: RewriteTheory::default(),
             wasm_export_names: BTreeMap::new(),
-            aggregate_operations: Vec::new(),
         });
         if !fragment.exported_operations.contains(&instance) {
             fragment.exported_operations.push(instance);
@@ -258,7 +257,6 @@ pub(super) fn collect_semantic_fragments(
                 entry_operation: None,
                 rewrite_theory: RewriteTheory::default(),
                 wasm_export_names: BTreeMap::new(),
-                aggregate_operations: Vec::new(),
             },
         );
     }

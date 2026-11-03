@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 use nyar_types::compiler_input::{DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath};
@@ -125,10 +123,7 @@ fn collect_members(builder: &mut FileBuilder, namespace: &[String], owner: &str,
         let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
         // 拥有者引用相对成员自身 namespace：聚合与该成员同文件同 namespace 时按 namespace 链命中。
         let link = Some(DeclarationLink::MemberOwner(vec![owner.to_string()]));
-        let key = builder.register(namespace, DeclarationKind::Method, &name, Some(owner), link, None, references);
-        if operator_members::declares_host_abi_role(&method.annotations) {
-            builder.mark_host_abi_role(&key);
-        }
+        builder.register(namespace, DeclarationKind::Method, &name, Some(owner), link, None, references);
     }
 }
 
@@ -153,10 +148,7 @@ fn collect_imply(builder: &mut FileBuilder, namespace: &[String], imply: &ast::I
         collect_method(method, &mut references);
         let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
         let link = owner_reference.clone().map(DeclarationLink::MemberOwner);
-        let key = builder.register(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref(), link, None, references);
-        if operator_members::declares_host_abi_role(&method.annotations) {
-            builder.mark_host_abi_role(&key);
-        }
+        builder.register(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref(), link, None, references);
     }
 }
 

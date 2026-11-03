@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use nyar_types::{
     combined_content_hash,
@@ -82,19 +82,8 @@ impl FileBuilder {
             references: references.paths,
             selectors: references.selectors,
             import_paths: references.imports,
-            host_abi_role: false,
         });
         key
-    }
-
-    /// 把刚登记的声明标记为宿主直通角色成员。
-    ///
-    /// 角色标注是需求事实而不是结构关联，所以只在索引里留一个布尔位；具体角色名由
-    /// HIR/目标层按同一标注解析，闭包规划不需要知道是哪种操作。
-    pub(crate) fn mark_host_abi_role(&mut self, key: &DeclarationKey) {
-        if let Some(entry) = self.declarations.iter_mut().rev().find(|entry| &entry.key == key) {
-            entry.host_abi_role = true;
-        }
     }
 
     /// 登记声明携带的 `[primitive("…")]` 自举身份。

@@ -5,8 +5,6 @@ use nyar_types::{
     compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind},
 };
 
-use crate::compiler::input::CompilerSourceGroup;
-
 use super::{
     ClosureGroupInput, GroupSemanticClosure, SemanticClosure, SemanticClosureError,
     index_file::{IndexedFile, index_source_file},
@@ -232,13 +230,6 @@ pub fn plan_semantic_closure_with_host_bindings(
                 continue;
             }
             for member in indexes.selected_members(aggregate, &selectors) {
-                if !demanded.contains(&member) {
-                    promoted.insert(member);
-                }
-            }
-            // 宿主直通角色驱动的成员提升：`[library_glue]` 是声明级需求事实（宿主 ABI
-            // 需要这个成员），与调用点是否出现选择名无关，随拥有聚合一起进入闭包。
-            for member in indexes.host_abi_members_of(aggregate) {
                 if !demanded.contains(&member) {
                     promoted.insert(member);
                 }

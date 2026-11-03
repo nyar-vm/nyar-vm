@@ -2,8 +2,8 @@
 //! 从根集合求「真正需要物化」的 callable 可达闭包。
 //!
 //! 根集合：`[export]` / `[main]` / `[test]` 表面注解成员、Resolver 选定 `[host_provider]`
-//! 的 callable 族、导出面具体聚合的 `[library_glue]` 成员，以及 singleton 成员
-//! （其唯一实例由 backend init/unload 生命周期路径直通调用，属程序级义务而非调用边）。
+//! 的 callable 族，以及 singleton 成员（其唯一实例由 backend init/unload 生命周期
+//! 路径直通调用，属程序级义务而非调用边）。
 //! BFS 沿 `HirExprKind::Call` / `Construct` / `CollectionInit` / `TryPropagate` /
 //! `FunctionReference` 的冻结 callee 边（含 witness `trait_dispatch` 双声明身份与
 //! `sum_owner` / `sum_variant` evidence）以及签名/体内全部类型引用展开。
@@ -20,8 +20,7 @@ use crate::compiler::{
     syntax::oak::ParseError,
     types::hir::{
         HirBlock, HirExpr, HirExprKind, HirFunction, HirLiteral, HirMatchArm, HirModule, HirPattern, HirResolvedCall, HirStatement,
-        HirStatementKind, HirStringLiteral, HirWhereConstraint, ValkyrieType, export_spec::parse_library_glue_operation,
-        parse_export_spec_from_annotations, resolve_attribute_id,
+        HirStatementKind, HirStringLiteral, HirWhereConstraint, ValkyrieType, parse_export_spec_from_annotations, resolve_attribute_id,
     },
 };
 
@@ -118,14 +117,6 @@ pub fn compute_hir_materialization_gate(
     for module in modules {
         collect_singleton_roots(module, &mut walker);
     }
-    // 根 4：导出面具体聚合的 `[library_glue]` 成员。
-    let mut exported_nominals = BTreeSet::new();
-    for module in modules {
-        collect_exported_nominal_declarations(module, &mut exported_nominals);
-    }
-    for module in modules {
-        collect_glue_roots(module, &exported_nominals, &mut walker);
-    }
     walker.index_callables(&callables);
     walker.run();
     Ok(HirMaterializationGate { reachable_declarations: walker.declarations, reachable_instances: BTreeSet::new() })
@@ -207,65 +198,6 @@ fn collect_singleton_roots(module: &HirModule, walker: &mut ReachabilityWalker<'
     }
     for submodule in &module.submodules {
         collect_singleton_roots(submodule, walker);
-    }
-}
-
-/// 导出函数签名中出现的名义声明身份（含嵌套实参）。
-fn collect_exported_nominal_declarations(module: &HirModule, out: &mut BTreeSet<ItemId>) {
-    for function in &module.functions {
-        if parse_export_spec_from_annotations(&function.annotations).is_none() {
-            continue;
-        }
-        for param in &function.params {
-            collect_nominal_declarations(&param.ty, out);
-        }
-        collect_nominal_declarations(&function.return_type, out);
-    }
-    for submodule in &module.submodules {
-        collect_exported_nominal_declarations(submodule, out);
-    }
-}
-
-/// `[library_glue]` 成员根：owner 聚合出现在导出面即直通放行；owner 不可解析
-/// （自由函数等）时保持今日物化事实，不做按名回查。
-fn collect_glue_roots(module: &HirModule, exported: &BTreeSet<ItemId>, walker: &mut ReachabilityWalker<'_>) {
-    for function in &module.functions {
-        if parse_library_glue_operation(&function.annotations).is_some() {
-            walker.mark(function.declaration);
-        }
-    }
-    for structure in &module.structs {
-        for method in &structure.methods {
-            if parse_library_glue_operation(&method.annotations).is_some() && glue_owner_permitted(structure.constructor_declaration, exported)
-            {
-                walker.mark(method.declaration);
-            }
-        }
-    }
-    for implementation in &module.impls {
-        let owner = implementation.target.nominal_declaration();
-        for method in &implementation.methods {
-            if parse_library_glue_operation(&method.annotations).is_some() && glue_owner_permitted(owner, exported) {
-                walker.mark(method.declaration);
-            }
-        }
-    }
-    for trait_definition in &module.traits {
-        for method in &trait_definition.default_methods {
-            if parse_library_glue_operation(&method.annotations).is_some() && glue_owner_permitted(trait_definition.declaration, exported) {
-                walker.mark(method.declaration);
-            }
-        }
-    }
-    for submodule in &module.submodules {
-        collect_glue_roots(submodule, exported, walker);
-    }
-}
-
-fn glue_owner_permitted(owner: Option<ItemId>, exported: &BTreeSet<ItemId>) -> bool {
-    match owner {
-        Some(owner) => exported.contains(&owner),
-        None => true,
     }
 }
 

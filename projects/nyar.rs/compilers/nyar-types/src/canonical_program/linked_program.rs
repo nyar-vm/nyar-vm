@@ -87,11 +87,6 @@ pub struct CanonicalFragment {
     pub internal_call_edges: Vec<CanonicalCallEdge>,
     /// callable identity 到公开 Wasm 名称的映射。
     pub wasm_export_names: BTreeMap<ItemInstanceId, String>,
-    /// 片段冻结的聚合宿主直通操作。
-    ///
-    /// 只记录「哪个聚合布局、哪种操作、由哪个函数实例实现、导出名是什么」。
-    /// 物理载体（Wasm carrier）不属于这里，由目标计划按生产者的真实签名冻结。
-    pub aggregate_operations: Vec<CanonicalAggregateOperation>,
 }
 
 /// 库导出聚合的宿主直通操作种类。
@@ -136,19 +131,6 @@ impl LibraryGlueOperation {
             _ => None,
         }
     }
-}
-
-/// Canonical 片段冻结的一条聚合宿主直通操作。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CanonicalAggregateOperation {
-    /// 目标聚合布局身份。
-    pub layout_id: crate::LayoutId,
-    /// 操作种类。
-    pub operation: LibraryGlueOperation,
-    /// 真实 Wasm 导出名。
-    pub export_name: String,
-    /// 实现该操作的 callable 实例。
-    pub producer: ItemInstanceId,
 }
 
 /// Canonical 片段内的内部调用边。

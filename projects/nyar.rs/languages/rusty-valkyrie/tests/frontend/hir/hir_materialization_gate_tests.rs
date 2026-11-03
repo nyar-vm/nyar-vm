@@ -1,8 +1,8 @@
 //! 物化可达性门回归合同。
 //!
 //! semantic-closure-v1 闭包只是名字解析上界；门在 HIR 冻结调用图上从根集合
-//! （`[export]` / `[main]` / `[test]`、Resolver 选定 host provider、导出面具体聚合的
-//! `[library_glue]` 成员、singleton 生命周期成员）沿 callee 边求可达闭包。
+//! （`[export]` / `[main]` / `[test]`、Resolver 选定 host provider、singleton
+//! 生命周期成员）沿 callee 边求可达闭包。
 //! 不可达 callable 不得进入泛型实例化、MIR 降低与 backend `item_instances` 物化集合。
 //!
 //! 锁定三条事实：
