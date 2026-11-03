@@ -91,13 +91,9 @@ impl MirSumDeclaration {
         if self.generics.len() != arguments.len() {
             return None;
         }
-        let payload = variant.payload_type()?;
-        if variant.fields.len() > 1 {
-            let ValkyrieType::Nominal { declaration, .. } = payload
-            else {
-                return None;
-            };
-            return Some(Some(ValkyrieType::Nominal { declaration, arguments: arguments.to_vec(), primitive_identity: None }));
+        // 无字段变体没有 payload，和「代入失败」必须区分：前者是合法的 `None` 载荷。
+        if variant.fields.is_empty() {
+            return Some(None);
         }
         let substitutions = self
             .generics
@@ -105,7 +101,11 @@ impl MirSumDeclaration {
             .zip(arguments)
             .map(|(generic, argument)| Some((generic.binder?, argument.clone())))
             .collect::<Option<BTreeMap<_, _>>>()?;
-        Some(Some(crate::compiler::hir::overload::substitute_type_vars(&payload, &substitutions)))
+        if variant.fields.len() == 1 {
+            return Some(Some(crate::compiler::hir::overload::substitute_type_vars(&variant.fields[0].ty, &substitutions)));
+        }
+        let declaration = variant.declaration?;
+        Some(Some(ValkyrieType::Nominal { declaration, arguments: arguments.to_vec(), primitive_identity: None }))
     }
 
     /// 记录字段类型的实例化结果：字段仍按声明 binder 逐个代入。
