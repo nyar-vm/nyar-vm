@@ -46,6 +46,32 @@ pub enum OdinRuntimeError {
         /// 触发 trap 的运算名。
         operation: &'static str,
     },
+    /// 码点下标越界（`utf8.slice`）：结构化失败，不 clamp 成空串或截断。
+    IndexOutOfBounds {
+        /// 触发失败的运算名。
+        operation: &'static str,
+        /// 请求的起始码点下标（可为负）。
+        start: i64,
+        /// 请求的结束码点下标（半开区间，可为负）。
+        end: i64,
+        /// 文本实际码点数。
+        length: u64,
+    },
+    /// 非法文本编码（非法 UTF-8 字节 / 孤立 UTF-16 代理）：fail-closed，不替换成 U+FFFD。
+    InvalidUtf8 {
+        /// 触发失败的运算名。
+        operation: &'static str,
+    },
+    /// C 字符串没有终止 NUL：不得读到缓冲区外，也不得猜测长度。
+    UnterminatedCStr {
+        /// 触发失败的运算名。
+        operation: &'static str,
+    },
+    /// 文本含内嵌 NUL，无法无损转成 C 字符串：拒绝而不是截断。
+    EmbeddedNul {
+        /// 触发失败的运算名。
+        operation: &'static str,
+    },
     /// `Trap` 指令被执行：前端声明为不可达的块在运行期真的到达了。
     TrapExecuted {
         /// 触发时正在执行的函数名。
@@ -87,6 +113,12 @@ impl Display for OdinRuntimeError {
             }
             Self::DivisionByZero { operation } => write!(f, "{operation}: division by zero"),
             Self::ArithmeticOverflow { operation } => write!(f, "{operation}: integer overflow"),
+            Self::IndexOutOfBounds { operation, start, end, length } => {
+                write!(f, "{operation}: range [{start}, {end}) out of bounds for {length} code points")
+            }
+            Self::InvalidUtf8 { operation } => write!(f, "{operation}: invalid text encoding"),
+            Self::UnterminatedCStr { operation } => write!(f, "{operation}: unterminated C string"),
+            Self::EmbeddedNul { operation } => write!(f, "{operation}: embedded NUL cannot be represented as C string"),
             Self::TrapExecuted { function, ip } => {
                 write!(f, "reached unreachable trap in function `{function}` at pc {ip}")
             }

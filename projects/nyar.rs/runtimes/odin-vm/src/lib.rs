@@ -28,6 +28,7 @@ pub mod module;
 pub mod nj1_runtime;
 pub mod ops;
 pub mod stack;
+pub mod text_runtime;
 pub mod value;
 pub mod verify;
 pub mod vm;

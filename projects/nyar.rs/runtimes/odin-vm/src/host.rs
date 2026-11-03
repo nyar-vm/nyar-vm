@@ -4,7 +4,7 @@ use crate::error::OdinRuntimeError;
 use nyar_gc::ObjectHeap;
 use odin_bytecode::OdinImport;
 
-use crate::{array_runtime, dom_runtime, value::Value};
+use crate::{array_runtime, dom_runtime, text_runtime, value::Value};
 
 /// 与 emitter 约定的宿主导入模块名。
 pub const HOST_IMPORT_MODULE: &str = "nyar.host";
@@ -52,6 +52,12 @@ pub enum HostOp {
     F64Gt,
     /// 64 位浮点大于等于（IEEE-754：NaN 比较为 false）。
     F64Ge,
+    /// UTF-8 字节长度（不做任何码点计算）。
+    Utf8LengthBytes,
+    /// UTF-8 码点计数（astral 字符算 1，组合附加符按各自码点计数）。
+    Utf8LengthChars,
+    /// UTF-8 按码点下标取半开区间 `[start, end)`；越界结构化失败，不 clamp。
+    Utf8Slice,
     /// 有符号 32 位整除。
     I32Div,
     /// 无符号 32 位整除（`u32` 的 `/`；与有符号 `I32Div` 在最高位为 1 时结论不同）。
@@ -175,6 +181,9 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "f64_le" => HostOp::F64Le,
         "f64_gt" => HostOp::F64Gt,
         "f64_ge" => HostOp::F64Ge,
+        "utf8.length_bytes" => HostOp::Utf8LengthBytes,
+        "utf8.length_chars" => HostOp::Utf8LengthChars,
+        "utf8.slice" => HostOp::Utf8Slice,
         "i32_div" => HostOp::I32Div,
         "i32_div_u" => HostOp::I32DivU,
         "i32_rem_u" => HostOp::I32RemU,
@@ -306,6 +315,15 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::F64Le => Ok(Value::Bool(f64_arg(args, 0)? <= f64_arg(args, 1)?)),
         HostOp::F64Gt => Ok(Value::Bool(f64_arg(args, 0)? > f64_arg(args, 1)?)),
         HostOp::F64Ge => Ok(Value::Bool(f64_arg(args, 0)? >= f64_arg(args, 1)?)),
+        // ---- UTF-8 文本：索引空间是码点，越界结构化失败 ----
+        HostOp::Utf8LengthBytes => Ok(Value::I32(text_runtime::length_bytes(utf8_arg(args, 0, "utf8")?))),
+        HostOp::Utf8LengthChars => Ok(Value::I32(text_runtime::length_chars(utf8_arg(args, 0, "utf8")?))),
+        HostOp::Utf8Slice => {
+            let text = utf8_arg(args, 0, "utf8")?;
+            let start = i32_arg(args, 1)? as i64;
+            let end = i32_arg(args, 2)? as i64;
+            Ok(Value::String(text_runtime::slice(text, start, end, "utf8.slice")?))
+        }
         HostOp::I32Div => {
             let lhs = i32_arg(args, 0)?;
             let rhs = i32_arg(args, 1)?;
@@ -531,6 +549,15 @@ fn f64_to_i64_saturating(value: f64) -> i64 {
     }
     else {
         truncated as i64
+    }
+}
+
+/// 严格 UTF-8 取参：只接受 `Value::String`；缺参 / 其它载体一律结构化失败。
+fn utf8_arg<'a>(args: &'a [Value], index: usize, what: &'static str) -> Result<&'a str, OdinRuntimeError> {
+    match args.get(index) {
+        Some(Value::String(value)) => Ok(value.as_str()),
+        Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: what, actual: other.type_name().to_string() }),
+        None => Err(OdinRuntimeError::StackUnderflow),
     }
 }
 
