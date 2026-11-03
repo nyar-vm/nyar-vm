@@ -210,6 +210,29 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
             declaration_spellings.insert(declaration, declaration_spelling(hir_struct));
         }
     }
+    // sum 声明（enum/unite）也是名义字段的合法载体：变体记录可以嵌套另一个 sum 字段，
+    // 拼写必须与 canonical `register_declaration_spellings` 同口径，否则嵌套记录布局
+    // 缺少字段事实，使用点只能失败关闭。
+    let mut enum_declarations: Vec<(Vec<Identifier>, &HirEnum)> = Vec::new();
+    collect_module_enums(module, &mut enum_declarations);
+    for export in &module.imported_semantic_exports {
+        for hir_enum in &export.enums {
+            enum_declarations.push((export.module.parts().to_vec(), hir_enum));
+        }
+    }
+    for (namespace, hir_enum) in &enum_declarations {
+        let Some(declaration) = hir_enum.declaration
+        else {
+            continue;
+        };
+        let qualified = if namespace.is_empty() {
+            hir_enum.name.as_str().to_string()
+        }
+        else {
+            format!("{}.{}", namespace.iter().map(|id| id.as_str()).collect::<Vec<_>>().join("."), hir_enum.name.as_str())
+        };
+        declaration_spellings.insert(declaration, qualified.replace('.', "::"));
+    }
     let facts = LayoutFacts { primitive_carriers, declaration_spellings, markers };
     // 已登记声明布局的 (结构体, 存储类) 清单：供第二遍在 declaration_to_layout
     // 完整后重解字段身份，消除登记顺序对字段载体的影响。
@@ -268,13 +291,6 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
     // 供 `FieldGet` 从布局取偏移。开放泛型枚举的字段仍是 binder，不生成平台布局；
     // 零字段变体没有 payload 记录。字段事实不完整的记录不登记，使用点由
     // `layout_id_for_type` / `field_identity_from_type` 按结构化诊断失败关闭。
-    let mut enum_declarations: Vec<(Vec<Identifier>, &HirEnum)> = Vec::new();
-    collect_module_enums(module, &mut enum_declarations);
-    for export in &module.imported_semantic_exports {
-        for hir_enum in &export.enums {
-            enum_declarations.push((export.module.parts().to_vec(), hir_enum));
-        }
-    }
     let mut variant_records: Vec<HirStruct> = Vec::new();
     for (namespace, hir_enum) in &enum_declarations {
         if !hir_enum.generics.is_empty() {

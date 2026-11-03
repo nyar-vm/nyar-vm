@@ -112,18 +112,10 @@ impl MirBuilder {
                 self.bind_pattern_from_operand_with_payload(&HirPattern::Variable(identifier.clone()), operand, typed_hint, None);
             }
             HirPattern::Tuple(items) => {
-                // Tuple patterns can arrive through an extractor payload. In
-                // that form the direct binding hint is intentionally absent,
-                // but the payload operand still carries the canonical SSA
-                // type. Preserve that type before creating tuple_get_N so a
-                // backend never has to rediscover the tuple layout.
-                let tuple_ty = ty
-                    .clone()
-                    .or_else(|| infer_builder_operand_type(&operand, &self.value_types))
-                    .or_else(|| extractor_payload.as_ref().and_then(|payload| infer_builder_operand_type(payload, &self.value_types)));
-                for (index, item_pattern) in items.iter().enumerate() {
-                    let extracted = self.extract_tuple_field_operand(&operand, index, tuple_ty.as_ref());
-                    self.bind_pattern_from_operand_with_payload(item_pattern, MirOperand::Value(extracted), None, None);
+                // tuple projection 已删除：没有名义记录身份的位置投影不再合成。
+                // 逐项保留结构化失败，不得把首个元素伪装成整个 payload。
+                for item_pattern in items {
+                    self.bind_unknown_pattern_bindings(item_pattern);
                 }
             }
             HirPattern::Extractor(extractor) => {
@@ -159,9 +151,27 @@ impl MirBuilder {
                         }
                     }
                     else {
-                        for (slot, (_, field_pattern)) in fields.iter().enumerate() {
-                            let extracted = self.lower_extractor_payload_slot_operand(payload.clone(), slot, payload_ty.clone());
-                            self.bind_pattern_from_operand_with_payload(field_pattern, extracted, None, None);
+                        for (field_name, field_pattern) in fields {
+                            // 多字段变体 payload 是名义记录：按字段名命中已冻结字段身份，
+                            // 不存在字段名就结构化失败，绝不回落到成员/自由函数查找。
+                            let Some((field_id, field_type)) =
+                                payload_ty.as_ref().and_then(|payload_ty| self.variant_record_field_by_name(payload_ty, field_name))
+                            else {
+                                self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity {
+                                    field: field_name.to_string(),
+                                });
+                                self.bind_unknown_pattern_bindings(field_pattern);
+                                continue;
+                            };
+                            let output = self.next_value(MirValueOrigin::Temporary);
+                            self.push_instruction(MirOperation::FieldGet { object: payload.clone(), field: field_id }, vec![output]);
+                            self.value_types.insert(output, field_type);
+                            self.bind_pattern_from_operand_with_payload(
+                                field_pattern,
+                                MirOperand::Value(output),
+                                None,
+                                None,
+                            );
                         }
                     }
                     if let Some(rest) = rest {
@@ -362,12 +372,12 @@ impl MirBuilder {
         let variant_declaration = resolved.sum_variant?;
         let sum = crate::compiler::mir::ssa::MirSumDeclaration::find_by_declaration(&self.sum_types, owner)?;
         let variant = sum.variants.iter().find(|item| item.declaration == Some(variant_declaration))?;
+        // payload 类型必须与构造侧同口径：变体 declaration × 枚举实参。
+        // 非泛型枚举同样走这里，多字段变体因此得到名义记录而不是 HIR tuple。
         let args = crate::compiler::mir::ssa::expr_lowering::type_args_from_sum_shaped(actual_type);
-        if !args.is_empty() {
-            if let Some(Some(payload_ty)) = sum.instantiate_payload(variant, &args) {
-                if !looks_like_unbound_type_parameter(&payload_ty) {
-                    return Some(payload_ty);
-                }
+        if let Some(Some(payload_ty)) = sum.instantiate_payload(variant, &args) {
+            if !looks_like_unbound_type_parameter(&payload_ty) {
+                return Some(payload_ty);
             }
         }
         if let ValkyrieType::Nullable(inner) = actual_type {
@@ -379,22 +389,9 @@ impl MirBuilder {
     }
 
     pub(crate) fn lower_tuple_pattern_match_operand(&mut self, items: &[HirPattern], value: MirOperand) -> MirOperand {
-        let Some(ValkyrieType::Tuple(types)) = infer_builder_operand_type(&value, &self.value_types)
-        else {
-            return self.lower_fallback_pattern_match(HirPattern::Tuple(items.to_vec()), value);
-        };
-        if items.len() != types.len() {
-            return MirOperand::Constant(MirConstant::Bool(false));
-        }
-
-        let mut accumulated: Option<MirOperand> = None;
-        for (index, item_pattern) in items.iter().enumerate() {
-            let extracted = self.extract_tuple_field_operand(&value, index, Some(&ValkyrieType::Tuple(types.clone())));
-            let item_match = self.lower_pattern_match_operand(item_pattern, MirOperand::Value(extracted));
-            accumulated = Some(self.merge_pattern_match_operands(accumulated, item_match));
-        }
-
-        accumulated.unwrap_or(MirOperand::Constant(MirConstant::Bool(true)))
+        // tuple projection 已删除：元组位置匹配没有名义字段身份，一律结构化失败。
+        let _ = value;
+        self.lower_fallback_pattern_match(HirPattern::Tuple(items.to_vec()), MirOperand::Constant(MirConstant::Unit))
     }
 
     /// extractor 命中条件：先对空字段 unite 臂做 `tag` 比较；带 payload 的臂仍走 `T?`/`null`。

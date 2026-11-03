@@ -201,7 +201,7 @@ impl MirBuilder {
         let return_type = self.sum_apply_type(owner, &type_args).unwrap_or_else(|| call.return_type.clone());
         let (nominal, variant) = self.sum_identity_by_declarations(owner, variant_declaration)?;
         let value = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(MirOperation::SumNew { nominal, type_args, variant, payload_type: None, payload: None }, vec![value]);
+        self.push_instruction(MirOperation::SumNew { nominal, type_args, variant, payload_type: None, payloads: Vec::new() }, vec![value]);
         self.value_types.insert(value, return_type);
         Some(MirOperand::Value(value))
     }
@@ -248,7 +248,13 @@ impl MirBuilder {
         });
         let value = self.next_value(MirValueOrigin::CallResult);
         self.push_instruction(
-            MirOperation::SumNew { nominal, type_args: emitted_type_args, variant: variant_id, payload_type, payload: Some(payload_operand) },
+            MirOperation::SumNew {
+                nominal,
+                type_args: emitted_type_args,
+                variant: variant_id,
+                payload_type,
+                payloads: vec![payload_operand],
+            },
             vec![value],
         );
         self.value_types.insert(value, return_type);
@@ -295,7 +301,7 @@ impl MirBuilder {
                 type_args: emitted_type_args,
                 variant,
                 payload_type: payload_type.clone(),
-                payload: Some(payload_operand),
+                payloads: vec![payload_operand],
             },
             vec![value],
         );

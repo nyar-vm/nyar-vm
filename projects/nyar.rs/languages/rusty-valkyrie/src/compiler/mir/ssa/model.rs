@@ -716,8 +716,11 @@ pub enum MirOperation {
         variant: VariantId,
         /// 可选 payload 静态类型。
         payload_type: Option<ValkyrieType>,
-        /// 可选 payload 操作数。
-        payload: Option<MirOperand>,
+        /// 按 variant 声明顺序排列的全部 payload 字段操作数；无字段变体为空。
+        ///
+        /// 多字段变体的这些操作数共同构成一个名义变体记录；Canonical 侧按
+        /// 已登记的记录身份合成记录值，再作为 [`Self::SumNew`] 的单个 payload 使用。
+        payloads: Vec<MirOperand>,
     },
     /// Extract a payload from an explicitly identified nominal sum variant.
     /// This must not be represented as a field named `value`, `error`, or

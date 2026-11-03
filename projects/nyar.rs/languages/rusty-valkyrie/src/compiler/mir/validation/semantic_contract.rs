@@ -99,16 +99,34 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 };
                 let owner = infer_operand_static_type(function, object).ok_or_else(|| failure("字段对象缺少完整语义类型"))?;
                 let declaration_id = owner.nominal_declaration().ok_or_else(|| failure("字段对象不是已绑定 declaration 的名义实例"))?;
-                let declaration = crate::compiler::mir::ssa::MirStruct::find_by_declaration(&module.structs, declaration_id)
-                    .ok_or_else(|| failure("字段对象没有声明合同"))?;
-                let declared_field = declaration
-                    .fields
-                    .iter()
-                    .find(|candidate| candidate.id == *field)
-                    .ok_or_else(|| failure("字段 identity 不属于对象声明"))?;
-                let expected = declaration
-                    .instantiate_field(&owner, declared_field.name.as_str())
-                    .ok_or_else(|| failure("字段身份或完整类型代入与声明不一致"))?;
+                // payload 多字段变体是名义变体记录：字段合同与普通聚合同一口径，
+                // 但声明来源必须是已冻结的 variant declaration，不能回落到 sum/struct 短名。
+                let expected = if let Some(declaration) = crate::compiler::mir::ssa::MirStruct::find_by_declaration(&module.structs, declaration_id) {
+                    let declared_field = declaration
+                        .fields
+                        .iter()
+                        .find(|candidate| candidate.id == *field)
+                        .ok_or_else(|| failure("字段 identity 不属于对象声明"))?;
+                    declaration
+                        .instantiate_field(&owner, declared_field.name.as_str())
+                        .ok_or_else(|| failure("字段身份或完整类型代入与声明不一致"))?
+                }
+                else {
+                    let (sum, variant) = crate::compiler::mir::MirSumDeclaration::find_record_variant(&module.sum_types, declaration_id)
+                        .ok_or_else(|| failure("字段对象没有声明合同"))?;
+                    let slot = variant
+                        .fields
+                        .iter()
+                        .position(|candidate| candidate.id == *field)
+                        .ok_or_else(|| failure("字段 identity 不属于变体记录声明"))?;
+                    let arguments = match &owner {
+                        ValkyrieType::Nominal { arguments, .. } => arguments.as_slice(),
+                        _ => &[],
+                    };
+                    sum.instantiate_field_types(variant, arguments)
+                        .and_then(|fields| fields.get(slot).cloned())
+                        .ok_or_else(|| failure("字段身份或完整类型代入与变体记录不一致"))?
+                };
                 if let Some(stored) = stored {
                     if !instruction.results.is_empty() || infer_operand_static_type(function, stored).as_ref() != Some(&expected) {
                         return Err(failure("字段写入值或结果数量与声明不一致"));
@@ -119,7 +137,7 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 }
                 continue;
             }
-            if let MirOperation::SumNew { nominal, type_args, variant, payload_type, payload } = &instruction.kind {
+            if let MirOperation::SumNew { nominal, type_args, variant, payload_type, payloads } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
                 let Some(sum) = module.sum_types.iter().find(|sum| sum.nominal == *nominal)
                 else {
@@ -146,20 +164,18 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                     detail: "sum 实例的类型实参数量与声明不一致".to_string(),
                 })?;
                 let expected_result = sum.instantiate_result(declared, type_args);
-                let payload_value_type = match payload {
-                    Some(MirOperand::Value(value)) => function.value_types.get(value),
-                    Some(_) => None,
-                    None => None,
-                };
+                // 每个 payload 字段操作数都必须按声明顺序对上实例化后的字段类型；
+                // 多字段载荷是变体记录，字段数量与顺序同样属于合同。
+                let expected_fields = sum.instantiate_field_types(declared, type_args);
+                let field_types_match = expected_fields.as_ref().is_some_and(|expected| {
+                    expected.len() == payloads.len()
+                        && payloads.iter().zip(expected).all(|(operand, expected)| match operand {
+                            MirOperand::Value(value) => function.value_types.get(value) == Some(expected),
+                            _ => false,
+                        })
+                });
                 let output_type = instruction.results.first().and_then(|output| function.value_types.get(output));
-                if output_type != expected_result.as_ref()
-                    || payload_type != &expected_payload
-                    || match (&expected_payload, payload, payload_value_type) {
-                        (None, None, _) => false,
-                        (Some(expected), Some(MirOperand::Value(_)), Some(actual)) => expected != actual,
-                        _ => true,
-                    }
-                {
+                if output_type != expected_result.as_ref() || payload_type != &expected_payload || !field_types_match {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.display_symbol.clone(),

@@ -132,8 +132,17 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         &mut field_records,
     )?;
     let mut field_by_owner = aggregate_bindings.field_by_owner.clone();
-    let sum_instance_by_type =
-        register_sum_nominal_instances(module, &type_values, &declaration_spellings, &mut linked, &mut nominals, &mut field_records, &mut field_by_owner)?;
+    let mut variant_records = BTreeMap::new();
+    let sum_instance_by_type = register_sum_nominal_instances(
+        module,
+        &type_values,
+        &declaration_spellings,
+        &mut linked,
+        &mut nominals,
+        &mut field_records,
+        &mut field_by_owner,
+        &mut variant_records,
+    )?;
     // 实例级字段身份同样只认已冻结的记录；声明级与实例级字段在同一张表内稠密互异。
     linked.fields = field_records.clone();
     let mut nominal_by_type = aggregate_bindings.by_type.clone();
@@ -225,6 +234,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
                     &field_records,
                     &field_by_owner,
                     &field_names,
+                    &variant_records,
                     &mut next_instruction,
                 )?,
             ))

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use nyar_types::{
     CanonicalPrimitiveType, CanonicalTypeKind, FieldId, FieldRecord, Identifier, LinkedSemanticProgram, NominalInstanceId,
-    NominalInstanceRecord, NominalValueSemantics, StructuredDiagnosticSet, TypeId,
+    NominalInstanceRecord, NominalValueSemantics, StructuredDiagnosticSet, TypeId, VariantId,
 };
 
 use crate::compiler::{
@@ -558,6 +558,19 @@ pub(crate) fn canonical_type_kind(
     })
 }
 
+/// 多字段变体记录在 canonical 侧的冻结身份。
+///
+/// 同一枚举的两个变体各有独立记录身份（`variant.declaration` 不同），不共享一个。
+#[derive(Debug, Clone)]
+pub(crate) struct VariantRecordBinding {
+    /// 记录自身的 nominal 实例身份。
+    pub nominal: NominalInstanceId,
+    /// 记录类型在 canonical 类型表中的 `TypeId`。
+    pub ty: TypeId,
+    /// 记录字段的声明身份，按变体声明顺序排列（canonical 再映射到实例字段身份）。
+    pub fields: Vec<FieldId>,
+}
+
 /// 登记一个多字段变体记录：记录 nominal、记录字段身份与布局绑定。
 ///
 /// 记录身份 = 变体自身冻结 `ItemId` + 枚举实参。记录只有一条布局链路：
@@ -574,9 +587,9 @@ fn register_variant_record(
     field_by_owner: &mut BTreeMap<(NominalInstanceId, FieldId), FieldId>,
     next_nominal: &mut u32,
     next_field: &mut u32,
-) -> Result<(), StructuredDiagnosticSet> {
+) -> Result<Option<VariantRecordBinding>, StructuredDiagnosticSet> {
     if variant.fields.len() < 2 {
-        return Ok(());
+        return Ok(None);
     }
     let declaration = variant
         .declaration
@@ -615,7 +628,7 @@ fn register_variant_record(
         linked.aggregate_layout_by_type.insert(record_type, layout_id);
         linked.aggregate_layout_by_nominal.insert(record, layout_id);
     }
-    Ok(())
+    Ok(Some(VariantRecordBinding { nominal: record, ty: record_type, fields: variant.fields.iter().map(|field| field.id).collect() }))
 }
 
 /// 为每个具体 `Nominal{ItemId, args}` 注册 sum 实例与已代入 payload；SumNew 按结果类型选取实例。
@@ -627,6 +640,7 @@ pub(crate) fn register_sum_nominal_instances(
     nominals: &mut BTreeMap<NominalInstanceId, AggregateIdentity>,
     field_records: &mut BTreeMap<FieldId, FieldRecord>,
     field_by_owner: &mut BTreeMap<(NominalInstanceId, FieldId), FieldId>,
+    variant_records: &mut BTreeMap<(NominalInstanceId, VariantId), VariantRecordBinding>,
 ) -> Result<BTreeMap<TypeId, NominalInstanceId>, StructuredDiagnosticSet> {
     let mut by_type = BTreeMap::new();
     let mut next_nominal = nominals.keys().map(|id| id.index()).max().map(|index| index + 1).unwrap_or(0);
@@ -663,7 +677,7 @@ pub(crate) fn register_sum_nominal_instances(
             linked.variants.insert((sum.nominal, variant.id), nyar_types::VariantRecord { payload_type });
             // 多字段 payload 是变体记录：声明记录进类型表、字段进 field_by_owner，并由记录布局生成 TypeDef。
             if sum.generics.is_empty() {
-                register_variant_record(
+                if let Some(binding) = register_variant_record(
                     sum,
                     variant,
                     &[],
@@ -674,7 +688,11 @@ pub(crate) fn register_sum_nominal_instances(
                     field_by_owner,
                     &mut next_nominal,
                     &mut next_field,
-                )?;
+                )? {
+                    // 声明侧记录：SumNew 该枚举的结果 nominal 就是 `sum.nominal`。
+                    by_type.insert(binding.ty, binding.nominal);
+                    variant_records.insert((sum.nominal, variant.id), binding);
+                }
             }
         }
         by_type.insert(declaration, sum.nominal);
@@ -715,7 +733,7 @@ pub(crate) fn register_sum_nominal_instances(
             }
             // 泛型实例的变体记录同样按「变体 ItemId + 枚举实参」独立登记：同一枚举的两个
             // 变体各有记录身份，不共享一个。
-            register_variant_record(
+            if let Some(binding) = register_variant_record(
                 sum,
                 variant,
                 arguments,
@@ -726,7 +744,11 @@ pub(crate) fn register_sum_nominal_instances(
                 field_by_owner,
                 &mut next_nominal,
                 &mut next_field,
-            )?;
+            )? {
+                // 具体泛型实例记录：SumNew 的结果 nominal 成败在此一举，记录同样按实例独立。
+                by_type.insert(binding.ty, binding.nominal);
+                variant_records.insert((nominal, variant.id), binding);
+            }
             // 布局侧仍写 NyarType；语义身份只认上方 VariantRecord 的 TypeId。
             // 多字段 payload 走变体记录已登记布局（`physical_layout` 同口径）；单字段
             // 名义 payload（`usize`、`SwissTableEntry<K, V>` 等）没有结构化目标形状，

@@ -258,7 +258,7 @@ impl MirBuilder {
                         if let Some(operand) = self.try_lower_struct_constructor_call(call, &arguments) {
                             return operand;
                         }
-                        if let Some((sum_type, type_args, variant, payload_type, payload)) =
+                        if let Some((sum_type, type_args, variant, payload_type, payloads, multi_field)) =
                             sum_new_parts_from_constructor(call, &arguments, &self.sum_types)
                         {
                             let value = self.next_value(MirValueOrigin::CallResult);
@@ -272,15 +272,18 @@ impl MirBuilder {
                             else {
                                 return MirOperand::Constant(MirConstant::Unit);
                             };
-                            let (return_type, payload_type) = concretize_variant_constructor_types(
+                            let concretized = concretize_variant_constructor_types(
                                 &call.return_type,
-                                payload_type,
+                                payload_type.clone(),
                                 expected_type,
                                 &arguments,
                                 &self.value_types,
                             );
+                            let return_type = concretized.0;
+                            // 多字段变体：payload 类型必须保持变体记录身份，不能被首字段类型覆盖。
+                            let payload_type = if multi_field { payload_type } else { concretized.1 };
                             self.push_instruction(
-                                MirOperation::SumNew { nominal, type_args, variant: variant_id, payload_type, payload },
+                                MirOperation::SumNew { nominal, type_args, variant: variant_id, payload_type, payloads },
                                 vec![value],
                             );
                             self.value_types.insert(value, return_type);
@@ -519,11 +522,36 @@ impl MirBuilder {
                             let value = self.next_value(MirValueOrigin::CallResult);
                             let ctor_return = call.return_type.clone();
                             let type_args = type_args_from_sum_shaped(&ctor_return);
-                            let payload_type = call.parameter_types.first().cloned();
-                            let payload = match field_values.len() {
-                                0 => None,
-                                1 => Some(field_values[0].clone()),
-                                _ => field_values.first().cloned(),
+                            // 多字段变体：按声明顺序收集全部字段操作数，payload 类型取
+                            // 「变体 declaration × 枚举实参」的记录身份，不取首字段类型。
+                            let multi_payload = {
+                                let sum = self.sum_types.iter().find(|item| item.declaration == Some(owner));
+                                let variant = sum.and_then(|sum| {
+                                    sum.variants.iter().find(|item| item.declaration == Some(variant_declaration))
+                                });
+                                variant.filter(|variant| variant.fields.len() > 1).and_then(|variant| {
+                                    let record_type = sum.and_then(|sum| sum.instantiate_payload(variant, &type_args)).flatten();
+                                    let ordered = variant
+                                        .fields
+                                        .iter()
+                                        .map(|declared| {
+                                            fields.iter().find(|(id, _)| *id == declared.id).map(|(_, operand)| operand.clone())
+                                        })
+                                        .collect::<Option<Vec<_>>>()?;
+                                    Some((record_type, ordered))
+                                })
+                            };
+                            let (payload_type, payloads, has_record_payload) = match multi_payload {
+                                Some((record_type, payloads)) => (record_type, payloads, true),
+                                None => {
+                                    let payload_type = call.parameter_types.first().cloned();
+                                    let payloads = match field_values.len() {
+                                        0 => Vec::new(),
+                                        1 => vec![field_values[0].clone()],
+                                        _ => field_values.clone(),
+                                    };
+                                    (payload_type, payloads, false)
+                                }
                             };
                             let Some((nominal, variant_id)) = self.sum_identity_by_declarations(owner, variant_declaration)
                             else {
@@ -532,15 +560,17 @@ impl MirBuilder {
                                     .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
                                 return MirOperand::Constant(MirConstant::Unit);
                             };
-                            let (return_type, payload_type) = concretize_variant_constructor_types(
+                            let concretized = concretize_variant_constructor_types(
                                 &ctor_return,
-                                payload_type,
+                                payload_type.clone(),
                                 expected_type,
                                 &field_values,
                                 &self.value_types,
                             );
+                            let return_type = concretized.0;
+                            let payload_type = if has_record_payload { payload_type } else { concretized.1 };
                             self.push_instruction(
-                                MirOperation::SumNew { nominal, type_args, variant: variant_id, payload_type, payload },
+                                MirOperation::SumNew { nominal, type_args, variant: variant_id, payload_type, payloads },
                                 vec![value],
                             );
                             self.value_types.insert(value, return_type);

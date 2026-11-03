@@ -200,7 +200,7 @@ pub(crate) fn sum_new_parts_from_constructor(
     call: &HirResolvedCall,
     arguments: &[MirOperand],
     sum_types: &[crate::compiler::mir::ssa::MirSumDeclaration],
-) -> Option<(String, Vec<ValkyrieType>, String, Option<ValkyrieType>, Option<MirOperand>)> {
+) -> Option<(String, Vec<ValkyrieType>, String, Option<ValkyrieType>, Vec<MirOperand>, bool)> {
     let owner = call.sum_owner?;
     let variant_declaration = call.sum_variant?;
     let sum = sum_types.iter().find(|item| item.declaration == Some(owner))?;
@@ -212,13 +212,16 @@ pub(crate) fn sum_new_parts_from_constructor(
     if call.return_type.nominal_declaration() != sum.declaration {
         return None;
     }
-    let payload_type = call.parameter_types.first().cloned();
-    let payload = match arguments.len() {
-        0 => None,
-        1 => Some(arguments[0].clone()),
-        _ => arguments.first().cloned(),
+    // 多字段变体的 payload 是名义变体记录：全部实参按声明顺序构成记录字段，
+    // payload 类型只能由声明 + 枚举实参代入，不能取首个字段类型伪装。
+    let multi_field = variant.fields.len() > 1;
+    let payload_type = if multi_field {
+        sum.instantiate_payload(variant, &type_args).flatten()
+    }
+    else {
+        call.parameter_types.first().cloned()
     };
-    Some((sum_type, type_args, variant.name.clone(), payload_type, payload))
+    Some((sum_type, type_args, variant.name.clone(), payload_type, arguments.to_vec(), multi_field))
 }
 
 pub(crate) fn type_args_from_sum_shaped(ty: &ValkyrieType) -> Vec<ValkyrieType> {

@@ -76,8 +76,8 @@ impl MirBuilder {
         match extractor {
             HirExtractorPattern::Constructor { fields, .. } => {
                 for (slot, field_pattern) in fields.iter().enumerate() {
-                    let extracted =
-                        self.lower_extractor_payload_slot_operand(payload.clone(), slot, self.infer_extractor_slot_type(resolved, slot));
+                    let slot_type = self.infer_extractor_payload_field_type(&payload, slot).or_else(|| self.infer_extractor_slot_type(resolved, slot));
+                    let extracted = self.lower_extractor_payload_field_operand(payload.clone(), slot, slot_type);
                     let item_match = self.lower_pattern_match_operand(field_pattern, extracted);
                     accumulated = Some(self.merge_pattern_match_operands(accumulated, item_match));
                 }
@@ -153,42 +153,89 @@ impl MirBuilder {
         self.lower_nullable_some_operand(nullable)
     }
 
-    fn lower_extractor_payload_slot_operand(&mut self, payload: MirOperand, slot: usize, expected_type: Option<ValkyrieType>) -> MirOperand {
+    /// 从已登记变体记录 payload 按声明槽位取字段。
+    ///
+    /// 返回的是变体自身冻结的字段身份与代入后的字段类型；记录身份来自
+    /// `variant.declaration`，同一枚举的不同变体各自独立。
+    fn variant_record_slot(&self, payload_ty: &ValkyrieType, slot: usize) -> Option<(nyar_types::FieldId, ValkyrieType)> {
+        let ValkyrieType::Nominal { declaration, arguments, .. } = payload_ty
+        else {
+            return None;
+        };
+        let (sum, variant) = crate::compiler::mir::MirSumDeclaration::find_record_variant(&self.sum_types, *declaration)?;
+        let field = variant.fields.get(slot)?;
+        let field_types = sum.instantiate_field_types(variant, arguments)?;
+        Some((field.id, field_types.get(slot)?.clone()))
+    }
+
+    pub(crate) fn variant_record_field_by_name(
+        &self,
+        payload_ty: &ValkyrieType,
+        name: &nyar_types::Identifier,
+    ) -> Option<(nyar_types::FieldId, ValkyrieType)> {
+        let ValkyrieType::Nominal { declaration, arguments, .. } = payload_ty
+        else {
+            return None;
+        };
+        let (sum, variant) = crate::compiler::mir::MirSumDeclaration::find_record_variant(&self.sum_types, *declaration)?;
+        let target = name.to_string();
+        let slot = variant.fields.iter().position(|field| field.name == target)?;
+        let field_types = sum.instantiate_field_types(variant, arguments)?;
+        Some((variant.fields[slot].id, field_types.get(slot)?.clone()))
+    }
+
+    /// 按变体记录字段身份取 payload 槽位；没有记录身份时只允许单字段 payload 本身。
+    fn lower_extractor_payload_field_operand(
+        &mut self,
+        payload: MirOperand,
+        slot: usize,
+        expected_type: Option<ValkyrieType>,
+    ) -> MirOperand {
         let payload_type = infer_builder_operand_type(&payload, &self.value_types);
-        match payload_type.as_ref() {
-            Some(ValkyrieType::Tuple(_)) => {
-                let extracted = self.reject_unmodeled_static_operation("tuple projection", MirValueOrigin::Temporary);
-                if let Some(expected_type) = expected_type {
-                    self.value_types.insert(extracted, expected_type);
-                }
-                MirOperand::Value(extracted)
-            }
-            _ if slot == 0 => {
-                // Single-field extractor payload: the value is the payload itself — no synthetic Call.
-                // Do not clobber a concrete SSA type (e.g. VonDiagnostic from Result Apply) with the
-                // generic unite parameter (`Named("E")`) from HIR extractor_payload_type.
-                if let (Some(expected_type), MirOperand::Value(value)) = (expected_type, &payload) {
-                    self.value_types.entry(*value).or_insert(expected_type);
-                }
-                payload
-            }
-            _ => {
-                let extracted = self.reject_unmodeled_static_operation("tuple projection", MirValueOrigin::Temporary);
-                if let Some(expected_type) = expected_type {
-                    self.value_types.insert(extracted, expected_type);
-                }
-                MirOperand::Value(extracted)
-            }
+        if let Some((field, field_type)) = payload_type.as_ref().and_then(|payload_ty| self.variant_record_slot(payload_ty, slot)) {
+            let output = self.next_value(MirValueOrigin::Temporary);
+            self.push_instruction(MirOperation::FieldGet { object: payload, field }, vec![output]);
+            self.value_types.insert(output, field_type);
+            return MirOperand::Value(output);
         }
+        self.lower_extractor_payload_single_slot_operand(payload, slot, expected_type)
+    }
+
+    fn lower_extractor_payload_single_slot_operand(
+        &mut self,
+        payload: MirOperand,
+        slot: usize,
+        expected_type: Option<ValkyrieType>,
+    ) -> MirOperand {
+        if slot == 0 {
+            // Single-field extractor payload: the value is the payload itself — no synthetic projection.
+            // Do not clobber a concrete SSA type (e.g. VonDiagnostic from Result Apply) with the
+            // generic unite parameter (`Named("E")`) from HIR extractor_payload_type.
+            if let (Some(expected_type), MirOperand::Value(value)) = (expected_type, &payload) {
+                self.value_types.entry(*value).or_insert(expected_type);
+            }
+            return payload;
+        }
+        // 没有变体记录身份的后续槽位一律失败关闭；不再制造 tuple projection。
+        let extracted = self.reject_unmodeled_static_operation("extractor payload slot", MirValueOrigin::Temporary);
+        if let Some(expected_type) = expected_type {
+            self.value_types.insert(extracted, expected_type);
+        }
+        MirOperand::Value(extracted)
+    }
+
+    fn lower_extractor_payload_slot_operand(&mut self, payload: MirOperand, slot: usize, expected_type: Option<ValkyrieType>) -> MirOperand {
+        self.lower_extractor_payload_single_slot_operand(payload, slot, expected_type)
+    }
+
+    fn infer_extractor_payload_field_type(&self, payload: &MirOperand, slot: usize) -> Option<ValkyrieType> {
+        let payload_ty = infer_builder_operand_type(payload, &self.value_types)?;
+        self.variant_record_slot(&payload_ty, slot).map(|(_, field_type)| field_type)
     }
 
     fn infer_extractor_slot_type(&self, resolved: &HirResolvedCall, slot: usize) -> Option<ValkyrieType> {
         let payload_type = resolved.extractor_payload_type.clone().or_else(|| nullable_payload_type(&resolved.return_type))?;
-        match payload_type {
-            ValkyrieType::Tuple(items) => items.get(slot).cloned(),
-            _ if slot == 0 => Some(payload_type.clone()),
-            _ => None,
-        }
+        if slot == 0 { Some(payload_type) } else { None }
     }
 
     /// 表达式字段读取：身份由 HIR 冻结，MIR 只按 `FieldId` 发出 `FieldGet`。
@@ -394,15 +441,19 @@ impl MirBuilder {
         match extractor {
             HirExtractorPattern::Constructor { fields, .. } => {
                 for (slot, field_pattern) in fields.iter().enumerate() {
-                    let mut slot_type = resolved.and_then(|resolved| self.infer_extractor_slot_type(resolved, slot));
                     let payload_ty = infer_builder_operand_type(&payload, &self.value_types);
+                    let record_slot = payload_ty.as_ref().and_then(|payload_ty| self.variant_record_slot(payload_ty, slot));
+                    let mut slot_type = record_slot
+                        .as_ref()
+                        .map(|(_, field_type)| field_type.clone())
+                        .or_else(|| resolved.and_then(|resolved| self.infer_extractor_slot_type(resolved, slot)));
                     if slot_type.as_ref().is_some_and(is_generic_parameter) {
                         slot_type = payload_ty.clone();
                     }
                     else if slot_type.is_none() {
                         slot_type = payload_ty;
                     }
-                    let extracted = self.lower_extractor_payload_slot_operand(payload.clone(), slot, slot_type.clone());
+                    let extracted = self.lower_extractor_payload_field_operand(payload.clone(), slot, slot_type.clone());
                     // Preserve extractor payload/slot types on bindings (`Fine(plan)` → `plan`
                     // must stay `LegionSourceClosurePlan`) so later `plan.files.length()` can
                     // recover ArrayLength instead of emitting an untyped Call (SMIR002).
@@ -529,23 +580,6 @@ impl MirBuilder {
             }
             _ => {}
         }
-    }
-
-    pub(crate) fn extract_tuple_field_operand(&mut self, operand: &MirOperand, index: usize, tuple_ty: Option<&ValkyrieType>) -> MirValueRef {
-        if let (MirOperand::Value(value), Some(tuple_ty)) = (operand, tuple_ty) {
-            // Keep the producer's semantic tuple type attached to the
-            // operand itself. `tuple_get_N` is a physical projection, but
-            // its owner layout must still come from Semantic MIR metadata.
-            self.value_types.insert(*value, tuple_ty.clone());
-            let _ = ensure_layout_for_type(&mut self.aggregate_layouts, tuple_ty);
-        }
-        let extracted = self.reject_unmodeled_static_operation("tuple projection", MirValueOrigin::Temporary);
-        if let Some(ValkyrieType::Tuple(types)) = tuple_ty {
-            if let Some(elem_ty) = types.get(index) {
-                self.value_types.insert(extracted, elem_ty.clone());
-            }
-        }
-        extracted
     }
 
     /// 无法完成 lowering 的模式匹配回退路径。

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallee, CanonicalConstant, CanonicalFunction,
     CanonicalInstruction, CanonicalOperation, CanonicalTerminator, CanonicalWitness, FieldId, FieldRecord, ItemInstanceId, MirValueId,
-    NominalInstanceId, StructuredDiagnosticSet, TypeId, canonical_program::CanonicalEffectKind,
+    NominalInstanceId, StructuredDiagnosticSet, TypeId, VariantId, canonical_program::CanonicalEffectKind,
 };
 
 use crate::compiler::{
@@ -12,6 +12,7 @@ use crate::compiler::{
 };
 
 use super::errors::{error_without_module, type_id};
+use super::identities::VariantRecordBinding;
 
 pub(crate) fn lower_function(
     function: &MirFunction,
@@ -21,15 +22,25 @@ pub(crate) fn lower_function(
     fields: &BTreeMap<FieldId, FieldRecord>,
     field_by_owner: &BTreeMap<(NominalInstanceId, FieldId), FieldId>,
     field_names: &BTreeMap<FieldId, String>,
+    variant_records: &BTreeMap<(NominalInstanceId, VariantId), VariantRecordBinding>,
     next_instruction: &mut u32,
 ) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
-    let value_types = function
+    let mut value_types = function
         .value_types
         .iter()
         .map(|(value, ty)| {
             Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))
         })
         .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
+    // 多字段 SumNew 需要为记录值分配一个新的 canonical SSA 值；编号必须来自
+    // 函数内已冻结的 SSA 值集合，避免与任何 MIR 结果/参数撞身份。
+    let mut next_value = function
+        .value_types
+        .keys()
+        .map(|value| value.0)
+        .max()
+        .map(|index| index + 1)
+        .unwrap_or(0);
     let (parameters, parameter_names) = canonical_entry_parameters(function, ids)?;
     let blocks = function
         .blocks
@@ -48,32 +59,24 @@ pub(crate) fn lower_function(
                 .instructions
                 .iter()
                 .map(|instruction| {
-                    let id = nyar_types::InstructionId::from_index(*next_instruction)
-                        .ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
-                    *next_instruction =
-                        (*next_instruction).checked_add(1).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
-                    Ok(CanonicalInstruction {
-                        id,
-                        results: instruction
-                            .results
-                            .iter()
-                            .map(|value| {
-                                MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))
-                            })
-                            .collect::<Result<_, _>>()?,
-                        operation: lower_operation(
-                            &instruction.kind,
-                            &instruction.results,
-                            &function.value_types,
-                            ids,
-                            nominal_by_type,
-                            fields,
-                            field_by_owner,
-                            field_names,
-                        )?,
-                    })
+                    lower_instruction_set(
+                        instruction,
+                        function,
+                        ids,
+                        nominal_by_type,
+                        fields,
+                        field_by_owner,
+                        field_names,
+                        variant_records,
+                        next_instruction,
+                        &mut next_value,
+                        &mut value_types,
+                    )
                 })
-                .collect::<Result<_, StructuredDiagnosticSet>>()?;
+                .collect::<Result<Vec<_>, StructuredDiagnosticSet>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
             Ok((id, CanonicalBlock { id, parameters, instructions, terminator: lower_terminator(&block.terminator)? }))
         })
         .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
@@ -168,6 +171,95 @@ fn resolve_instance_field(
     })
 }
 
+/// 把单条 MIR 指令 lowering 成一条或多条 canonical 指令。
+///
+/// 多字段变体的 `SumNew` 在 MIR 侧携带全部字段操作数；此处在 canonical 侧用
+/// 已登记记录 nominal + `field_by_owner` 合成一条 `StructNew`，记录值再作为
+/// `SumNew` 的唯一 payload。`CanonicalOperation` 形状保持不变。
+#[allow(clippy::too_many_arguments)]
+fn lower_instruction_set(
+    instruction: &crate::compiler::mir::MirInstruction,
+    function: &MirFunction,
+    ids: &BTreeMap<ValkyrieType, TypeId>,
+    nominal_by_type: &BTreeMap<TypeId, NominalInstanceId>,
+    fields: &BTreeMap<FieldId, FieldRecord>,
+    field_by_owner: &BTreeMap<(NominalInstanceId, FieldId), FieldId>,
+    field_names: &BTreeMap<FieldId, String>,
+    variant_records: &BTreeMap<(NominalInstanceId, VariantId), VariantRecordBinding>,
+    next_instruction: &mut u32,
+    next_value: &mut u32,
+    value_types: &mut BTreeMap<MirValueId, TypeId>,
+) -> Result<Vec<CanonicalInstruction>, StructuredDiagnosticSet> {
+    let next_instruction_id = |next: &mut u32| -> Result<nyar_types::InstructionId, StructuredDiagnosticSet> {
+        let id = nyar_types::InstructionId::from_index(*next).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
+        *next = (*next).checked_add(1).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
+        Ok(id)
+    };
+    let results = instruction
+        .results
+        .iter()
+        .map(|value| MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")))
+        .collect::<Result<Vec<_>, _>>()?;
+    if let MirOperation::SumNew { nominal, variant, payloads, .. } = &instruction.kind {
+        let result_ty = instruction.results.first().and_then(|result| function.value_types.get(result));
+        let concrete = resolve_sum_nominal(*nominal, result_ty, ids, nominal_by_type)?;
+        if let Some(binding) = variant_records.get(&(concrete, *variant)) {
+            if payloads.len() != binding.fields.len() {
+                return Err(error_without_module(
+                    "CAN018",
+                    format!("变体记录 payload 字段数 {} 与已登记字段数 {} 不一致", payloads.len(), binding.fields.len()),
+                ));
+            }
+            let record_value =
+                MirValueId::from_index(*next_value).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?;
+            *next_value = (*next_value).checked_add(1).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?;
+            value_types.insert(record_value, binding.ty);
+            let record_instruction = next_instruction_id(next_instruction)?;
+            let record_fields = payloads
+                .iter()
+                .zip(&binding.fields)
+                .map(|(operand, declared)| {
+                    let value = match operand {
+                        MirOperand::Value(value) => {
+                            MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))
+                        }
+                        _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")),
+                    }?;
+                    Ok((resolve_instance_field(binding.nominal, *declared, field_by_owner, field_names)?, value))
+                })
+                .collect::<Result<Vec<_>, StructuredDiagnosticSet>>()?;
+            let sum_instruction = next_instruction_id(next_instruction)?;
+            return Ok(vec![
+                CanonicalInstruction {
+                    id: record_instruction,
+                    results: vec![record_value],
+                    operation: CanonicalOperation::StructNew { nominal: binding.nominal, fields: record_fields },
+                },
+                CanonicalInstruction {
+                    id: sum_instruction,
+                    results,
+                    operation: CanonicalOperation::SumNew { nominal: concrete, variant: *variant, payload: Some(record_value) },
+                },
+            ]);
+        }
+    }
+    let id = next_instruction_id(next_instruction)?;
+    Ok(vec![CanonicalInstruction {
+        id,
+        results,
+        operation: lower_operation(
+            &instruction.kind,
+            &instruction.results,
+            &function.value_types,
+            ids,
+            nominal_by_type,
+            fields,
+            field_by_owner,
+            field_names,
+        )?,
+    }])
+}
+
 fn lower_operation(
     operation: &MirOperation,
     results: &[crate::compiler::mir::MirValueRef],
@@ -244,11 +336,12 @@ fn lower_operation(
             },
             fields: fields.iter().map(value).collect::<Result<_, _>>()?,
         }),
-        MirOperation::SumNew { nominal, variant, payload_type, payload, .. } => {
+        MirOperation::SumNew { nominal, variant, payload_type, payloads, .. } => {
             let result_ty = results.first().and_then(|result| value_types.get(result));
             let concrete = resolve_sum_nominal(*nominal, result_ty, ids, nominal_by_type)?;
             let _ = payload_type;
-            Ok(CanonicalOperation::SumNew { nominal: concrete, variant: *variant, payload: payload.as_ref().map(value).transpose()? })
+            // 多字段变体的记录值由 `lower_instruction_set` 先行合成；到这里 payload 至多一个操作数。
+            Ok(CanonicalOperation::SumNew { nominal: concrete, variant: *variant, payload: payloads.first().map(value).transpose()? })
         }
         MirOperation::SumPayloadGet { nominal, variant, object, .. } => {
             let object_ty = match object {

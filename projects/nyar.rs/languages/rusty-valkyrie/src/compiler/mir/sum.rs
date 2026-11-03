@@ -65,6 +65,16 @@ impl MirSumDeclaration {
         if matches.len() == 1 { Some(matches[0]) } else { None }
     }
 
+    /// 按变体记录自身冻结的 `ItemId` 查找唯一 `(sum, variant)`。
+    ///
+    /// 记录身份只来自 `variant.declaration`；同一枚举的不同变体各自命中不同记录，
+    /// 不会共享一个身份。禁止按变体短名回查。
+    pub fn find_record_variant<'a>(declarations: &'a [Self], declaration: nyar_types::ItemId) -> Option<(&'a Self, &'a MirSumVariant)> {
+        let matches: Vec<(&Self, &MirSumVariant)> =
+            declarations.iter().flat_map(|sum| sum.variants.iter().filter(move |variant| variant.declaration == Some(declaration)).map(move |variant| (sum, variant))).collect();
+        if matches.len() == 1 { Some(matches[0]) } else { None }
+    }
+
     /// 完成声明结果或 variant refinement 的同一泛型代入。
     pub fn instantiate_result(&self, variant: &MirSumVariant, arguments: &[ValkyrieType]) -> Option<ValkyrieType> {
         if self.generics.len() != arguments.len() {
