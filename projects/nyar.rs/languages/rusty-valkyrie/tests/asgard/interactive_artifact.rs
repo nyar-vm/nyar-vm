@@ -55,8 +55,8 @@ fn interactive_build_emits_paired_browser_artifacts() {
     let expected = [
         "boot.js",
         "c/index.js",
+        "index.css",
         "index.html",
-        "interactive-artifact.css",
         "interactive-artifact.mjs",
         "interactive-artifact.wasm",
         "interactive-artifact.wat",

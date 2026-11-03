@@ -1,6 +1,7 @@
-//! CSS 提取与合并。
+//! CSS 提取与切分：`merge` 输出单一全局样式文件；`per-component` 按组件切分为
+//! 独立 css chunk（命名合同为 [`crate::asgard::package::component_css_filename`]）。
 
-use crate::asgard::awsl::LoweredComponent;
+use crate::asgard::{awsl::LoweredComponent, package::component_css_filename};
 
 /// CSS 输出。
 #[derive(Debug, Clone)]
@@ -11,7 +12,7 @@ pub struct CssOutput {
     pub filename: String,
 }
 
-/// 从组件列表提取并合并样式。
+/// 从组件列表提取样式并按模式切分。
 pub fn extract_and_merge_styles(
     components: &[LoweredComponent],
     project_name: &str,
@@ -26,7 +27,7 @@ pub fn extract_and_merge_styles(
                     component
                         .style
                         .as_ref()
-                        .map(|style| CssOutput { content: style.clone(), filename: format!("{}.css", component.name.to_ascii_lowercase()) })
+                        .map(|style| CssOutput { content: style.clone(), filename: component_css_filename(&component.name) })
                 })
                 .collect::<Vec<_>>();
             if let Some(extra) = tailwind_css {

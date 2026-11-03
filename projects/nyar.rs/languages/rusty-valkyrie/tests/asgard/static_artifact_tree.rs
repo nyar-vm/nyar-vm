@@ -72,9 +72,9 @@ fn static_build_output_tree_contains_paired_browser_artifacts() {
     let expected = vec![
         "boot.js".to_string(),
         "c/index.js".to_string(),
+        "index.css".to_string(),
         "index.html".to_string(),
         "manifest.json".to_string(),
-        "static-artifact-fixture.css".to_string(),
         "static-artifact-fixture.mjs".to_string(),
         "static-artifact-fixture.wasm".to_string(),
         "static-artifact-fixture.wat".to_string(),
@@ -138,6 +138,31 @@ fn manifest_references_resolve_to_emitted_artifacts() {
 }
 
 #[test]
+fn critical_css_is_inlined_and_registered_as_chunk() {
+    // 首屏关键样式内联为页面 `<style>`，不再经 `<link>` 重复装载；
+    // 同一份样式仍作为组件级 css chunk 落盘并由 manifest 登记（含组件关联）。
+    let temp = TempDir::new().expect("创建临时目录失败");
+    let dist = temp.path().join("dist");
+    build_and_list(temp.path(), &dist, "/");
+    let html = fs::read_to_string(dist.join("index.html")).expect("读取 index.html 失败");
+    assert!(html.contains("<style>"), "入口组件关键样式应内联为首屏 <style>:\n{html}");
+    assert!(html.contains(".hero { color: #345; }"), "内联样式必须是入口组件样式:\n{html}");
+    assert!(!html.contains("rel=\"stylesheet\""), "关键样式已内联，页面不得再链接装载:\n{html}");
+
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dist.join("manifest.json")).expect("读取 manifest 失败")).expect("manifest 必须是合法 JSON");
+    let css = manifest.get("css").and_then(serde_json::Value::as_array).expect("manifest 应声明 css chunk");
+    assert_eq!(css.len(), 1, "静态交付应恰有一个组件级 css chunk");
+    assert_eq!(css[0].as_str(), Some("index.css"), "css chunk 必须按组件名登记");
+    let components = manifest.get("components").and_then(serde_json::Value::as_array).expect("manifest 应声明组件");
+    assert_eq!(
+        components[0].get("css").and_then(serde_json::Value::as_str),
+        Some("index.css"),
+        "组件条目必须登记自己的 css chunk"
+    );
+}
+
+#[test]
 fn manifest_integrity_digests_match_emitted_artifact_bytes() {
     // 摘要必须由真实产物字节计算，而不是按文件名或构建版本推算：
     // 逐条读取 manifest `integrity`，重算 SHA-256 并与文件内容比对。
@@ -149,7 +174,7 @@ fn manifest_integrity_digests_match_emitted_artifact_bytes() {
     let integrity = manifest.get("integrity").and_then(serde_json::Value::as_object).expect("manifest 必须声明 `integrity` 摘要表");
     assert!(!integrity.is_empty(), "摘要表不能为空");
 
-    let required = ["boot.js", "c/index.js", "static-artifact-fixture.css", "static-artifact-fixture.mjs", "static-artifact-fixture.wasm"];
+    let required = ["boot.js", "c/index.js", "index.css", "static-artifact-fixture.mjs", "static-artifact-fixture.wasm"];
     for path in required {
         let expected = integrity.get(path).and_then(serde_json::Value::as_str).unwrap_or_else(|| panic!("manifest 摘要必须覆盖 {path}"));
         let bytes = fs::read(dist.join(path)).unwrap_or_else(|error| panic!("摘要引用 {path} 未解析到产物文件: {error}"));

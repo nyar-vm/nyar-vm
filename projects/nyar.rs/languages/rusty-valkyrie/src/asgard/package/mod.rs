@@ -12,6 +12,6 @@ pub use android::{AndroidPackageOutput, package_android_project};
 pub use artifact::PackageArtifact;
 pub use desktop::{DesktopPackageOutput, package_desktop_project};
 pub use ios::{IosPackageOutput, package_ios_project};
-pub use manifest::{ManifestDigest, ManifestOutput, ManifestUrlMode, generate_manifest_with_urls};
+pub use manifest::{ManifestDigest, ManifestOutput, ManifestUrlMode, component_css_filename, generate_manifest_with_urls};
 pub use miniprogram::{MpAppJsonOutput, MpPackageOutput, generate_app_json, package_miniprogram_pages};
 pub use terminal::{TerminalPackageOutput, package_terminal_project};

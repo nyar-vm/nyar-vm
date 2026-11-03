@@ -37,6 +37,10 @@ pub enum ManifestUrlMode {
 }
 
 /// 生成 manifest.json，可切换 relative / absolute asset URLs。
+///
+/// `css_files` 是打包阶段真实落盘的 css chunk 文件名（顺序即产物顺序）；
+/// `per_component_css` 为真时每个组件条目额外登记自己的 css chunk URL。
+/// manifest 不再按模块名推算 css 文件名，避免与实际产物漂移。
 pub fn generate_manifest_with_urls(
     module_stem: &str,
     mode: &str,
@@ -47,9 +51,11 @@ pub fn generate_manifest_with_urls(
     url_mode: ManifestUrlMode,
     wasm_content_hash: Option<&str>,
     digests: &[ManifestDigest],
+    css_files: &[String],
+    per_component_css: bool,
 ) -> ManifestOutput {
     let module = module_stem.to_string();
-    let css = vec![url_path(&format!("{}.css", module.replace('.', "-")), url_mode)];
+    let css = css_files.iter().map(|file| url_path(&file.replace('\\', "/"), url_mode)).collect();
 
     let wasm = if wasm_built {
         vec![WasmEntry {
@@ -69,24 +75,39 @@ pub fn generate_manifest_with_urls(
     let manifest = VoaManifest {
         module: module.clone(),
         mode: mode.to_string(),
-        css: css.clone(),
+        css,
         wasm,
         integrity,
         render_ir: Some(RenderIrManifest { encoding: "asgard-ui-v1".into(), size: encode_mobile_ui_package(components).len() }),
         components: components
             .iter()
             .zip(js_outputs.iter())
-            .map(|(component, js)| ManifestComponent {
-                name: js_relative_name(&js.relative_path),
-                js: url_path(&js.relative_path.replace('\\', "/"), url_mode),
-                strategy: component.hydrate_strategy.clone(),
-                island: component.island_type.clone(),
+            .map(|(component, js)| {
+                let component_css = if per_component_css {
+                    let filename = component_css_filename(&component.name);
+                    css_files.contains(&filename).then(|| url_path(&filename, url_mode))
+                }
+                else {
+                    None
+                };
+                ManifestComponent {
+                    name: js_relative_name(&js.relative_path),
+                    js: url_path(&js.relative_path.replace('\\', "/"), url_mode),
+                    css: component_css,
+                    strategy: component.hydrate_strategy.clone(),
+                    island: component.island_type.clone(),
+                }
             })
             .collect(),
     };
 
     let content = serde_json::to_string_pretty(&manifest).unwrap_or_else(|_| "{}".into());
     ManifestOutput { content, relative_path: "manifest.json".into() }
+}
+
+/// 组件级 css chunk 文件名：与 `extract_and_merge_styles` 的 per-component 命名一致。
+pub fn component_css_filename(component_name: &str) -> String {
+    format!("{}.css", component_name.to_ascii_lowercase())
 }
 
 fn url_path(path: &str, mode: ManifestUrlMode) -> String {
@@ -134,6 +155,9 @@ struct WasmEntry {
 struct ManifestComponent {
     name: String,
     js: String,
+    /// 组件级 css chunk URL；仅按组件切分样式时登记。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    css: Option<String>,
     strategy: String,
     island: String,
 }

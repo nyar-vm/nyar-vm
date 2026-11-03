@@ -15,6 +15,7 @@ mod cli_static;
 mod config_discovery;
 mod config_model;
 mod config_probe;
+mod css_chunks;
 mod glue_contract;
 mod interactive_artifact;
 mod list_each_shape;

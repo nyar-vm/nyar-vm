@@ -9,10 +9,11 @@
 //! 各环节的唯一事实所有者分别是 `awsl::compile`、`codegen::html_render`、`ssg`、
 //! `compile::compile_wasm_bundle` 与 `codegen::package_browser_islands`。
 //!
-//! 产物树（缺省 `.cache/asgard/`）：`index.html`（含 `data-component` 岛挂载点与 `boot.js` 引用）、
-//! `<module>.wasm`、`<module>.mjs`（浏览器 WASM glue）、`c/<route>.js`（组件胶水）、
-//! `manifest.json`、`boot.js`、`<module>.css`。页面用相对 URL，子目录部署由
-//! `<base href>`（非根基址）解析。
+//! 产物树（缺省 `.cache/asgard/`）：`index.html`（含 `data-component` 岛挂载点、`boot.js`
+//! 引用与入口组件的首屏关键样式内联）、`<module>.wasm`、`<module>.mjs`（浏览器 WASM glue）、
+//! `c/<route>.js`（组件胶水）、`manifest.json`、`boot.js`、组件级 css chunk
+//! （`<component>.css`，由 manifest 逐条登记；非关键 chunk 经页面 `<link>` 装载）。
+//! 页面用相对 URL，子目录部署由 `<base href>`（非根基址）解析。
 
 use std::{
     collections::BTreeSet,
@@ -162,12 +163,14 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
         wasm_built: true,
         // 页面与产物同处部署目录：相对 URL 让子目录部署由 `<base href>` 解析。
         relative_urls: true,
-        css_mode: "merge".into(),
+        // 样式按组件切分为独立 css chunk：入口组件的首屏关键样式内联进页面，
+        // 其余 chunk 由 manifest 登记、按需装载，不再输出单一全局样式文件。
+        css_mode: "per-component".into(),
         mode: "static".into(),
         tailwind_css: None,
     };
     let package_report = package_browser_islands(std::slice::from_ref(&component), &output_dir, &package_options)?;
-    let stylesheet_href = package_report.css_filenames.first().cloned().unwrap_or_default();
+    let critical_css = crate::asgard::package::component_css_filename(&component.name);
 
     // 页面只声明岛挂载点与 boot 脚本：组件 DOM 由 WASM 侧的 `awsl_hydrate_*` 建出，
     // 预渲染内容留在挂载点内作为无 JS 时的占位，hydration 时由 boot 清空后替换。
@@ -177,7 +180,15 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
         module = module_stem,
         html = rendered.html,
     );
-    let head_tags = if stylesheet_href.is_empty() { String::new() } else { format!("  {}\n", asgard_boot_stylesheet_tag(&stylesheet_href)) };
+    // 入口组件 css 已由 `generate_static_page_full` 内联为首屏 `<style>`，
+    // 只对其余 css chunk 生成 `<link>`，避免关键样式重复装载。
+    let mut head_tags = String::new();
+    for css_filename in &package_report.css_filenames {
+        if *css_filename == critical_css {
+            continue;
+        }
+        head_tags.push_str(&format!("  {}\n", asgard_boot_stylesheet_tag(css_filename)));
+    }
     let results = [StaticRenderResult { html: island, css: rendered.css, scope: rendered.scope, diagnostics: rendered.diagnostics }];
     let page = generate_static_page_full(title, &results, "", &base, &head_tags, asgard_boot_script_tag(true));
 

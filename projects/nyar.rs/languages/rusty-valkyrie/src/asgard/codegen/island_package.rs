@@ -123,6 +123,8 @@ pub fn package_browser_islands(
         url_mode,
         wasm_content_hash.as_deref(),
         &digests,
+        &css_filenames,
+        opts.css_mode == "per-component",
     );
     fs::write(output_dir.join(&manifest.relative_path), &manifest.content)?;
 
