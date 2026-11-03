@@ -7,7 +7,7 @@ use nyar_types::{
 
 use crate::compiler::{
     emitter::frontend_contract::concretize_type,
-    mir::{MirModule, instance_layout_for_type, instantiate_fields},
+    mir::{MirModule, MirSumDeclaration, MirSumVariant, instance_layout_for_type, instantiate_fields, layout_id_for_type},
     types::hir::{PrimitiveNumericShape, ValkyrieType, numeric_primitive_identity_shape},
 };
 
@@ -268,6 +268,60 @@ pub(crate) fn intern_instance_field_types(
     Ok(())
 }
 
+/// 为多字段变体记录补齐 canonical 类型身份。
+///
+/// 记录身份 = 变体自身冻结 `ItemId` + 枚举实参。声明记录（零实参）与每个具体实例记录
+/// 都必须进类型表；记录字段是已按 binder 代入的变体字段类型，也要 intern，供
+/// `FieldRecord` 与随后生成的 `TypeDef` / 布局引用。单字段 payload 不是记录，跳过。
+pub(crate) fn intern_variant_record_types(
+    module: &MirModule,
+    type_values: &mut BTreeMap<ValkyrieType, TypeId>,
+) -> Result<(), StructuredDiagnosticSet> {
+    let mut next = type_values.values().map(|id| id.index()).max().map(|index| index + 1).unwrap_or(0);
+    let snapshot: Vec<ValkyrieType> = type_values.keys().cloned().collect();
+    let mut records: Vec<(ValkyrieType, Vec<ValkyrieType>)> = Vec::new();
+    for sum in &module.sum_types {
+        let Some(declaration) = sum.declaration
+        else {
+            continue;
+        };
+        for concrete in &snapshot {
+            let ValkyrieType::Nominal { declaration: instance_declaration, arguments, .. } = concrete
+            else {
+                continue;
+            };
+            if *instance_declaration != declaration {
+                continue;
+            }
+            for variant in &sum.variants {
+                if variant.fields.len() < 2 {
+                    continue;
+                }
+                let Some(record_declaration) = variant.declaration
+                else {
+                    continue;
+                };
+                let record =
+                    ValkyrieType::Nominal { declaration: record_declaration, arguments: arguments.clone(), primitive_identity: None };
+                let Some(fields) = sum.instantiate_field_types(variant, arguments)
+                else {
+                    continue;
+                };
+                records.push((record, fields));
+            }
+        }
+    }
+    for (record, fields) in records {
+        intern_type(type_values, &record, &mut next)?;
+        for field in fields {
+            intern_type(type_values, &field, &mut next)?;
+        }
+    }
+    Ok(())
+}
+
+
+///
 /// 为每个聚合声明显式登记零实参 Nominal 类型到 type_values。
 ///
 /// 泛型声明（`generics` 非空）的零实参 Nominal 是声明级身份：backend 需要它找到
@@ -504,6 +558,66 @@ pub(crate) fn canonical_type_kind(
     })
 }
 
+/// 登记一个多字段变体记录：记录 nominal、记录字段身份与布局绑定。
+///
+/// 记录身份 = 变体自身冻结 `ItemId` + 枚举实参。记录只有一条布局链路：
+/// `ValkyrieType::Nominal` → 已登记 `AggregateLayout` → `FieldGet` 偏移。
+#[allow(clippy::too_many_arguments)]
+fn register_variant_record(
+    sum: &MirSumDeclaration,
+    variant: &MirSumVariant,
+    arguments: &[ValkyrieType],
+    type_values: &BTreeMap<ValkyrieType, TypeId>,
+    linked: &mut LinkedSemanticProgram,
+    nominals: &mut BTreeMap<NominalInstanceId, AggregateIdentity>,
+    field_records: &mut BTreeMap<FieldId, FieldRecord>,
+    field_by_owner: &mut BTreeMap<(NominalInstanceId, FieldId), FieldId>,
+    next_nominal: &mut u32,
+    next_field: &mut u32,
+) -> Result<(), StructuredDiagnosticSet> {
+    if variant.fields.len() < 2 {
+        return Ok(());
+    }
+    let declaration = variant
+        .declaration
+        .ok_or_else(|| error_without_module("CAN018", format!("变体 `{}` 缺少 declaration ItemId", variant.name)))?;
+    let record_ty = ValkyrieType::Nominal { declaration, arguments: arguments.to_vec(), primitive_identity: None };
+    let record_type = type_id(type_values, &record_ty)?;
+    let field_types = sum
+        .instantiate_field_types(variant, arguments)
+        .ok_or_else(|| error_without_module("CAN018", format!("变体 `{}` 的记录字段无法按枚举实参代入", variant.name)))?;
+    let record = NominalInstanceId::from_index(*next_nominal)
+        .ok_or_else(|| error_without_module("CAN020", "变体记录 instance identity 溢出"))?;
+    *next_nominal = (*next_nominal).checked_add(1).ok_or_else(|| error_without_module("CAN020", "变体记录 instance identity 溢出"))?;
+    nominals.insert(record, (record_type, NominalValueSemantics::Value));
+    let layout_id = layout_id_for_type(&record_ty, &linked.aggregate_layouts);
+    let mut ids = Vec::with_capacity(variant.fields.len());
+    for (index, (field, ty)) in variant.fields.iter().zip(field_types.iter()).enumerate() {
+        let id = FieldId::from_index(*next_field).ok_or_else(|| error_without_module("CAN022", "变体记录字段 identity 溢出"))?;
+        *next_field = (*next_field).checked_add(1).ok_or_else(|| error_without_module("CAN022", "变体记录字段 identity 溢出"))?;
+        if field_records.insert(id, FieldRecord { owner: record, ty: type_id(type_values, ty)? }).is_some() {
+            return Err(error_without_module(
+                "CAN022",
+                format!("变体记录字段 identity 冲突: {}::{}.{}", sum.name, variant.name, field.name),
+            ));
+        }
+        field_by_owner.insert((record, field.id), id);
+        if let Some(layout_id) = layout_id {
+            linked.aggregate_layout_by_field.insert(id, (layout_id, index as u32));
+        }
+        ids.push(id);
+    }
+    linked.nominal_instances.insert(
+        record,
+        NominalInstanceRecord { declaration: record_type, ty: record_type, semantics: NominalValueSemantics::Value, fields: ids },
+    );
+    if let Some(layout_id) = layout_id {
+        linked.aggregate_layout_by_type.insert(record_type, layout_id);
+        linked.aggregate_layout_by_nominal.insert(record, layout_id);
+    }
+    Ok(())
+}
+
 /// 为每个具体 `Nominal{ItemId, args}` 注册 sum 实例与已代入 payload；SumNew 按结果类型选取实例。
 pub(crate) fn register_sum_nominal_instances(
     module: &MirModule,
@@ -511,9 +625,22 @@ pub(crate) fn register_sum_nominal_instances(
     declaration_spellings: &BTreeMap<TypeId, Identifier>,
     linked: &mut LinkedSemanticProgram,
     nominals: &mut BTreeMap<NominalInstanceId, AggregateIdentity>,
+    field_records: &mut BTreeMap<FieldId, FieldRecord>,
+    field_by_owner: &mut BTreeMap<(NominalInstanceId, FieldId), FieldId>,
 ) -> Result<BTreeMap<TypeId, NominalInstanceId>, StructuredDiagnosticSet> {
     let mut by_type = BTreeMap::new();
     let mut next_nominal = nominals.keys().map(|id| id.index()).max().map(|index| index + 1).unwrap_or(0);
+    // 变体记录字段身份与聚合字段同表稠密互异，必须在全部声明字段之后分配。
+    let mut next_field = field_records
+        .keys()
+        .map(|field| field.index())
+        .chain(module.structs.iter().flat_map(|structure| structure.fields.iter().map(|field| field.id.index())))
+        .chain(
+            module.sum_types.iter().flat_map(|sum| sum.variants.iter().flat_map(|variant| variant.fields.iter().map(|field| field.id.index()))),
+        )
+        .max()
+        .map(|index| index + 1)
+        .unwrap_or(0);
     for sum in &module.sum_types {
         let item = sum.declaration.ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少 declaration ItemId", sum.name)))?;
         let declaration_ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new(), primitive_identity: None };
@@ -534,6 +661,21 @@ pub(crate) fn register_sum_nominal_instances(
             let payload_type =
                 if sum.generics.is_empty() { variant.payload_type().map(|ty| type_id(type_values, &ty)).transpose()? } else { None };
             linked.variants.insert((sum.nominal, variant.id), nyar_types::VariantRecord { payload_type });
+            // 多字段 payload 是变体记录：声明记录进类型表、字段进 field_by_owner，并由记录布局生成 TypeDef。
+            if sum.generics.is_empty() {
+                register_variant_record(
+                    sum,
+                    variant,
+                    &[],
+                    type_values,
+                    linked,
+                    nominals,
+                    field_records,
+                    field_by_owner,
+                    &mut next_nominal,
+                    &mut next_field,
+                )?;
+            }
         }
         by_type.insert(declaration, sum.nominal);
     }
@@ -571,10 +713,32 @@ pub(crate) fn register_sum_nominal_instances(
             if open_generic {
                 continue;
             }
+            // 泛型实例的变体记录同样按「变体 ItemId + 枚举实参」独立登记：同一枚举的两个
+            // 变体各有记录身份，不共享一个。
+            register_variant_record(
+                sum,
+                variant,
+                arguments,
+                type_values,
+                linked,
+                nominals,
+                field_records,
+                field_by_owner,
+                &mut next_nominal,
+                &mut next_field,
+            )?;
             // 布局侧仍写 NyarType；语义身份只认上方 VariantRecord 的 TypeId。
+            // 多字段 payload 走变体记录已登记布局（`physical_layout` 同口径）；单字段
             // 名义 payload（`usize`、`SwissTableEntry<K, V>` 等）没有结构化目标形状，
             // 按声明身份已冻结的 surface spelling 表示，与 emitter `lower_type` 同口径。
-            let layout_payload = instantiated.as_ref().and_then(|ty| sum_payload_layout(ty, type_values, declaration_spellings));
+            let layout_payload = instantiated.as_ref().and_then(|ty| {
+                if variant.fields.len() > 1 {
+                    crate::compiler::mir::record_payload_layout(ty, &linked.aggregate_layouts)
+                }
+                else {
+                    sum_payload_layout(ty, type_values, declaration_spellings)
+                }
+            });
             layout_variants.push(nyar_types::SumVariantLayout {
                 id: variant.id,
                 name: variant.name.clone(),

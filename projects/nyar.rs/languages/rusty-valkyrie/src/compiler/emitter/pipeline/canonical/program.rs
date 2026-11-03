@@ -13,8 +13,8 @@ use super::{
     fragments::canonical_fragments,
     identities::{
         AggregateDeclarations, canonical_type_kind, collect_aggregate_identities, collect_types, ensure_declaration_aggregate_types,
-        intern_instance_field_types, is_array_index_valkyrie_type, register_aggregate_nominal_instances, register_sum_nominal_instances,
-        validate_callable_identities,
+        intern_instance_field_types, intern_variant_record_types, is_array_index_valkyrie_type, register_aggregate_nominal_instances,
+        register_sum_nominal_instances, validate_callable_identities,
     },
     lower::lower_function,
 };
@@ -32,6 +32,9 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     // 实例级字段类型是 binder 代入的派生事实，前端类型表可能从未见过；先补齐身份，
     // 实例布局与字段记录才能引用它们。
     intern_instance_field_types(module, &mut type_values)?;
+    // 多字段变体记录的类型身份（变体 ItemId + 枚举实参）与字段类型在 canonical 汇总前补齐；
+    // 记录与聚合字段共用同一张 FieldRecord / 布局表。
+    intern_variant_record_types(module, &mut type_values)?;
     // 泛型声明（generics 非空）的零实参 Nominal 是 backend 找到 declaration ItemId 的关键。
     // 虽然 type_identity_table 已登记，但跨模块合并或 std 依赖可能漏项；这里显式确保。
     ensure_declaration_aggregate_types(module, &mut type_values)?;
@@ -72,7 +75,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     linked.sum_types = module
         .sum_types
         .iter()
-        .map(|sum| sum.physical_layout())
+        .map(|sum| sum.physical_layout(&module.aggregate_layouts))
         .collect::<Result<_, _>>()
         .map_err(|failure| error(module, "CAN054", format!("sum 物理 payload 类型未完成实例化: {failure}")))?;
     linked.flags_types = module.flags_types.clone();
@@ -128,7 +131,9 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         &mut nominals,
         &mut field_records,
     )?;
-    let sum_instance_by_type = register_sum_nominal_instances(module, &type_values, &declaration_spellings, &mut linked, &mut nominals)?;
+    let mut field_by_owner = aggregate_bindings.field_by_owner.clone();
+    let sum_instance_by_type =
+        register_sum_nominal_instances(module, &type_values, &declaration_spellings, &mut linked, &mut nominals, &mut field_records, &mut field_by_owner)?;
     // 实例级字段身份同样只认已冻结的记录；声明级与实例级字段在同一张表内稠密互异。
     linked.fields = field_records.clone();
     let mut nominal_by_type = aggregate_bindings.by_type.clone();
@@ -218,7 +223,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
                     &type_values,
                     &nominal_by_type,
                     &field_records,
-                    &aggregate_bindings.field_by_owner,
+                    &field_by_owner,
                     &field_names,
                     &mut next_instruction,
                 )?,

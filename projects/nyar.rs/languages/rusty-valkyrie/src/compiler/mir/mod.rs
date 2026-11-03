@@ -8,6 +8,7 @@ mod sum;
 /// Semantic MIR 合同与模块级校验。
 pub mod validation;
 pub use sum::{MirSumDeclaration, MirSumVariant};
+pub(crate) use sum::record_payload_layout;
 
 use crate::compiler::{
     driver::validation::ControlFlowScheduler,
