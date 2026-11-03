@@ -17,6 +17,9 @@ use rusty_valkyrie::{
 const STD: &str = r#"
 namespace std.operator;
 
+[primitive("std::primitive::i32")]
+structure i32 { }
+
 trait Equal {
     infix `==`(self, other: Self): bool
 

@@ -14,6 +14,18 @@ use rusty_valkyrie::{
     types::hir::{HirExprKind, HirLiteral, HirStatementKind, types::ValkyrieType},
 };
 
+/// 数值/文本原始类型不是语言内建，必须绑定到源码声明身份。
+const PRIMITIVES: &str = r#"
+[primitive("std::primitive::u8")]
+structure u8 { }
+
+[primitive("std::primitive::u32")]
+structure u32 { }
+
+[primitive("std::text::char")]
+structure char { }
+"#;
+
 /// 编译 `micro probe() { let ... }` 并返回首个 let 初始化表达式的 kind。
 fn first_let_initializer_kind(source: &str) -> HirExprKind {
     let hir = ValkyrieCompiler::default().compile_source(source).expect("字面量必须完成 HIR lowering");
@@ -34,7 +46,8 @@ fn assert_character(source: &str, expected: u16) {
 }
 
 fn assert_byte(source: &str, expected: u8) {
-    match first_let_initializer_kind(source) {
+    let source = format!("{PRIMITIVES}\n{source}");
+    match first_let_initializer_kind(&source) {
         HirExprKind::Literal(HirLiteral::Byte(value)) => assert_eq!(value, expected, "源码 {source}"),
         other => panic!("源码 {source} 必须归字节字面量，实际 {other:?}"),
     }
@@ -213,12 +226,13 @@ fn byte_literal_specializes_to_numeric_formal() {
     // `b' '` 对 `u32` 形参直接绑定，不要求调用方写 `as u32`。
     let compiler = ValkyrieCompiler::default();
     let hir = compiler
-        .compile_source(
+        .compile_source(&format!(
+            "{PRIMITIVES}\n{}",
             r#"
 micro takes_u32(value: u32): bool { return true }
 micro probe(): bool { return takes_u32(b' ') }
-"#,
-        )
+"#
+        ))
         .expect("字节字面量必须按数值形参特化");
     let function = hir.functions.iter().find(|function| function.name.as_str() == "probe").unwrap();
     let HirExprKind::Return(Some(result)) = &function.body.expr.as_ref().unwrap().kind
@@ -242,14 +256,15 @@ micro probe(): bool { return takes_u32(b' ') }
 fn character_literal_binds_char_and_numeric_formals() {
     let compiler = ValkyrieCompiler::default();
     let hir = compiler
-        .compile_source(
+        .compile_source(&format!(
+            "{PRIMITIVES}\n{}",
             r#"
 micro takes_char(value: char): bool { return true }
 micro takes_u32(value: u32): bool { return true }
 micro probe(): bool { return takes_char(' ') }
 micro probe_numeric(): bool { return takes_u32('\t') }
-"#,
-        )
+"#
+        ))
         .expect("字符字面量必须同时绑定 char 与数值形参");
     let probe = hir.functions.iter().find(|function| function.name.as_str() == "probe").unwrap();
     let HirExprKind::Return(Some(result)) = &probe.body.expr.as_ref().unwrap().kind
@@ -298,6 +313,6 @@ micro probe(): bool { return takes_char(b'0') }
 fn let_annotation_binds_literal_without_cast() {
     // `let` 注解位置同样走标量字面量绑定：`u32`/`u8`/`char` 都不要求 `as`。
     ValkyrieCompiler::default()
-        .compile_source("micro probe() { let space: u32 = ' ' let tab: u8 = b'\\t' let mark: char = '#' }")
+        .compile_source(&format!("{PRIMITIVES}\n{}", "micro probe() { let space: u32 = ' ' let tab: u8 = b'\\t' let mark: char = '#' }"))
         .expect("let 注解必须直接绑定字符/字节字面量");
 }

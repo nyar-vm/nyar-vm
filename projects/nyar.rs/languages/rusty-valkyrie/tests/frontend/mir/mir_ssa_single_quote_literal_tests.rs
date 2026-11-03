@@ -1,6 +1,6 @@
 //! 字符/字节字面量的 MIR 编码：值按整数常量编码，类型归属 `char`/`u8`/形参特化。
 //!
-//! fixture 只用内建数值名与 `char`（编码型内建），不依赖任何 std adaptor。
+//! fixture 用 `[primitive]` 声明身份的内建名，不依赖任何 std adaptor。
 
 use rusty_valkyrie::{
     MirLowerer, ValkyrieCompiler,
@@ -10,8 +10,25 @@ use rusty_valkyrie::{
     },
 };
 
+/// 数值/文本原始类型不是语言内建，必须绑定到源码声明身份。
+const PRIMITIVES: &str = r#"
+[primitive("std::primitive::i32")]
+structure i32 { }
+
+[primitive("std::primitive::u8")]
+structure u8 { }
+
+[primitive("std::primitive::u32")]
+structure u32 { }
+
+[primitive("std::text::char")]
+structure char { }
+"#;
+
 fn compile(source: &str) -> MirModule {
-    let hir = ValkyrieCompiler::default().compile_source(source).expect("fixture 必须完成 HIR 分析");
+    let hir = ValkyrieCompiler::default()
+        .compile_source(&format!("{PRIMITIVES}\n{source}"))
+        .expect("fixture 必须完成 HIR 分析");
     MirLowerer::lower_module_semantic(&hir)
 }
 
