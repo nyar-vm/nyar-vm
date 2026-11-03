@@ -465,13 +465,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         let output = self.slots.instruction_output(instruction);
         match &instruction.kind {
             MirInstructionKind::LoadConstant { constant, .. } => {
-                self.emit_load_constant(constant);
+                // 常量位宽只由结果槽的冻结类型决定；槽缺失时回落到 semantic MIR
+                // 对 `Constant::Int` 的合同（Integer64），绝不按数值大小猜。
+                let output_ty = output.and_then(|value| self.value_slot_type(value));
+                self.emit_load_constant(constant, output_ty.as_ref())?;
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
             }
             MirInstructionKind::StoreVar { name, value, .. } => {
-                self.emit_operand(value);
+                let output_ty = output.and_then(|value| self.value_slot_type(value));
+                self.emit_operand_typed(value, output_ty.as_ref())?;
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
@@ -481,7 +485,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 let _ = name;
             }
             MirInstructionKind::Copy { source } => {
-                self.emit_operand(source);
+                let output_ty = output.and_then(|value| self.value_slot_type(value));
+                self.emit_operand_typed(source, output_ty.as_ref())?;
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
@@ -497,7 +502,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 let output_operand = MirOperand::Value(output);
                 for (field, value) in fields.iter() {
                     let slot = self.nyar_field_slot(*field)?;
-                    self.emit_field_set_slot(&output_operand, slot, value);
+                    let value_ty = self.field_value_type(*field);
+                    self.emit_field_set_slot(&output_operand, slot, value, value_ty.as_ref())?;
                     self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
@@ -513,7 +519,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
                 for (index, value) in fields.iter().enumerate() {
-                    self.emit_field_set_slot(&output_operand, index as i32, value);
+                    let value_ty = layout.fields.get(index).map(|field| field.ty.clone());
+                    self.emit_field_set_slot(&output_operand, index as i32, value, value_ty.as_ref())?;
                     self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
@@ -537,12 +544,16 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 let field_count = i32::try_from(elements.len()).map_err(|_| {
                     format!("OVM ArrayFromElements 元素个数超出 i32 布局槽位：{}（symbol=`{}`）", elements.len(), self.mir_fn.symbol)
                 })?;
+                let element_ty = match array_type {
+                    NyarType::FixedArray { element, .. } | NyarType::Array(element) => Some((**element).clone()),
+                    _ => None,
+                };
                 let layout_index = self.ensure_nyar_layout_for_field_count(field_count);
                 self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout_index);
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
                 for (index, value) in elements.iter().enumerate() {
-                    self.emit_field_set_slot(&output_operand, index as i32, value);
+                    self.emit_field_set_slot(&output_operand, index as i32, value, element_ty.as_ref())?;
                     self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
@@ -559,8 +570,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.store_to_local(*dest_value);
                 }
                 for slot in 0..field_count {
-                    self.emit_operand(dest);
-                    self.emit_operand(source);
+                    self.emit_operand(dest)?;
+                    self.emit_operand(source)?;
                     self.emitter.emit_imm1(OdinHeadCode::FieldGet, slot);
                     self.emitter.emit_imm1(OdinHeadCode::FieldSet, slot);
                     self.emitter.emit_plain(OdinHeadCode::Pop);
@@ -568,7 +579,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             MirInstructionKind::FieldGet { object, field } => {
                 let slot = self.nyar_field_slot(*field)?;
-                self.emit_operand(object);
+                self.emit_operand(object)?;
                 self.emitter.emit_imm1(OdinHeadCode::FieldGet, slot);
                 if let Some(output) = output {
                     self.store_to_local(output);
@@ -580,7 +591,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             MirInstructionKind::FieldSet { object, field, value } => {
                 let slot = self.nyar_field_slot(*field)?;
-                self.emit_field_set_slot(object, slot, value);
+                let value_ty = self.field_value_type(*field);
+                self.emit_field_set_slot(object, slot, value, value_ty.as_ref())?;
                 self.emitter.emit_plain(OdinHeadCode::Pop);
             }
             // sum 的物理载体是后端私有的 `[i32 tag, payload]` 对象；语义身份（nominal /
@@ -615,16 +627,30 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_imm1(OdinHeadCode::ObjectNew, sum_layout_index);
                 self.store_to_local(output);
                 let object = MirOperand::Value(output);
-                self.emit_field_set_slot(&object, 0, &MirOperand::Constant(MirConstant::Int(i64::from(tag))));
+                // tag 槽的合同宽度是 i32（`SumRepresentation.tag_width` <= 4），超界即失败。
+                let tag_value = i32::try_from(tag).map_err(|_| {
+                    format!(
+                        "OVM SumNew 的 tag {tag} 超出 i32 槽合同（nominal={nominal:?}, variant={variant:?}, symbol=`{}`）",
+                        self.mir_fn.symbol
+                    )
+                })?;
+                let tag_ty = NyarType::Integer32 { signed: true };
+                self.emit_field_set_slot(&object, 0, &MirOperand::Constant(MirConstant::Int(i64::from(tag_value))), Some(&tag_ty))?;
                 self.emitter.emit_plain(OdinHeadCode::Pop);
                 if let Some(payload) = payload {
-                    self.emit_field_set_slot(&object, 1, payload);
+                    // payload 槽本身不带类型；SSA 载荷用其冻结语义类型，常量载荷
+                    // 回落到 semantic MIR 合同（`Constant::Int` = Integer64）。
+                    let payload_ty = match payload {
+                        MirOperand::Value(value) => self.value_semantic_type(*value),
+                        _ => None,
+                    };
+                    self.emit_field_set_slot(&object, 1, payload, payload_ty.as_ref())?;
                     self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
             MirInstructionKind::SumVariantIs { nominal, variant, object } => {
                 let tag = self.sum_variant_tag(*nominal, *variant, "SumVariantIs")?;
-                self.emit_operand(object);
+                self.emit_operand(object)?;
                 self.emitter.emit_imm1(OdinHeadCode::FieldGet, 0);
                 self.emitter.emit_const_i32(tag as i32);
                 self.emitter.emit_plain(OdinHeadCode::I32Eq);
@@ -640,7 +666,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 if payload_type.is_none() {
                     return Err(format!("OVM SumPayloadGet 对无 payload 的 variant {variant:?} 取值（nominal={nominal:?}）"));
                 }
-                self.emit_operand(object);
+                self.emit_operand(object)?;
                 self.emitter.emit_imm1(OdinHeadCode::FieldGet, 1);
                 if let Some(output) = output {
                     self.store_to_local(output);
@@ -667,29 +693,32 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         .abi_name_for_instance(*instance)
                         .unwrap_or_else(|| panic!("validated callable identity has no diagnostic name: {instance:?}"));
                     let path = NamePath::new(name.parts().to_vec());
-                    self.emit_direct_call(index, &path, arguments, output);
+                    self.emit_direct_call(index, &path, arguments, output)?;
                     return Ok(());
                 }
                 panic!("Semantic MIR 调用未绑定 ItemInstanceId，拒绝进入 Nyar 后端: {callee:?}");
             }
             MirInstructionKind::ArrayGet { array, index } => {
-                self.emit_call_operand(array);
-                self.emit_operand(index);
+                self.emit_call_operand(array)?;
+                let index_ty = NyarType::Integer32 { signed: true };
+                self.emit_operand_typed(index, Some(&index_ty))?;
                 self.emitter.emit_call_intrinsic(IntrinsicOpcode::ArrayGet, 2);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
             }
             MirInstructionKind::ArraySet { array, index, value } => {
-                self.emit_call_operand(array);
-                self.emit_operand(index);
-                self.emit_operand(value);
+                self.emit_call_operand(array)?;
+                let index_ty = NyarType::Integer32 { signed: true };
+                self.emit_operand_typed(index, Some(&index_ty))?;
+                let value_ty = self.array_element_type(array);
+                self.emit_operand_typed(value, value_ty.as_ref())?;
                 self.emitter.emit_call_intrinsic(IntrinsicOpcode::ArraySet, 3);
                 self.emitter.emit_plain(OdinHeadCode::Pop);
             }
             MirInstructionKind::ArrayLength { array } => {
                 // 禁止 Const(0) 回退：会把 ArrayLen 的 array 实参变成 i32，运行时报 expected object。
-                if !self.emit_call_operand(array) {
+                if !self.emit_call_operand(array)? {
                     panic!("ovm ArrayLength operand not materializable in `{}`", self.mir_fn.symbol);
                 }
                 self.emitter.emit_call_intrinsic(IntrinsicOpcode::ArrayLen, 1);
@@ -698,7 +727,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::NullIsNull { value } => {
-                if !self.emit_call_operand(value) {
+                if !self.emit_call_operand(value)? {
                     panic!("ovm NullIsNull operand not materializable in `{}`", self.mir_fn.symbol);
                 }
                 self.emitter.emit_call_intrinsic(IntrinsicOpcode::IsNull, 1);
@@ -707,7 +736,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::NullUnwrap { value } => {
-                if !self.emit_call_operand(value) {
+                if !self.emit_call_operand(value)? {
                     panic!("ovm NullUnwrap operand not materializable in `{}`", self.mir_fn.symbol);
                 }
                 self.emitter.emit_call_intrinsic(IntrinsicOpcode::UnwrapNull, 1);
@@ -724,7 +753,9 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         match &block.terminator {
             MirTerminator::Return { value } => {
                 if let Some(value) = value {
-                    self.emit_operand(value);
+                    // 返回槽类型是函数签名的冻结事实；常量必须按它选位宽。
+                    let return_ty = self.mir_fn.return_type.clone();
+                    self.emit_operand_typed(value, Some(&return_ty))?;
                 }
                 else {
                     // Call 约定固定压回 1 个返回值；unit / void 用 i32(0) 占位，供调用方 Pop。
@@ -733,13 +764,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_plain(OdinHeadCode::Return);
             }
             MirTerminator::Jump { target, arguments } => {
-                self.emit_block_argument_copies(*target, arguments);
+                self.emit_block_argument_copies(*target, arguments)?;
                 self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *target);
             }
             MirTerminator::Branch { condition, then_target, else_target } => {
-                self.emit_operand(condition);
+                let condition_ty = NyarType::Boolean;
+                self.emit_operand_typed(condition, Some(&condition_ty))?;
                 self.emitter.emit_jump_placeholder(OdinHeadCode::JumpIfFalse, *else_target);
-                self.emit_block_argument_copies(*then_target, &[]);
+                self.emit_block_argument_copies(*then_target, &[])?;
                 self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *then_target);
                 let _ = else_target;
             }
@@ -750,14 +782,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         // VM 弹出 yielded 值、捕获当前帧为 `CoroutineState`、挂起返回父帧；
                         // 当父帧 `Resume` 时从 `Yield` 之后继续，跳到 resume_target。
                         if let Some(payload) = payload {
-                            self.emit_operand(payload);
+                            self.emit_operand(payload)?;
                         }
                         else {
                             // 无 payload 的 yield：压 i32(0) 作为 unit 占位后再发 Yield。
                             self.emitter.emit_const_i32(0);
                         }
                         self.emitter.emit_plain(OdinHeadCode::Yield);
-                        self.emit_block_argument_copies(*resume_target, &[]);
+                        self.emit_block_argument_copies(*resume_target, &[])?;
                         self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *resume_target);
                     }
                     EffectKind::Raise => {
@@ -768,7 +800,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         // 若未 resume 则按未处理效果传播。
                         // 对 `Effectful::Resume = !`：resume 不可达时 VM 不必保留 resume 续体。
                         if let Some(payload) = payload {
-                            self.emit_operand(payload);
+                            self.emit_operand(payload)?;
                         }
                         else {
                             // 无 payload 的 raise：压 i32(0) 作为 unit 占位。
@@ -793,10 +825,10 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {
                         // future / async 相关 effect 暂未落地 VM opcode，保留 console_log 调试桩。
                         if let Some(payload) = payload {
-                            self.emit_operand(payload);
+                            self.emit_operand(payload)?;
                             self.emitter.emit_call_import("console_log", 1);
                         }
-                        self.emit_block_argument_copies(*resume_target, &[]);
+                        self.emit_block_argument_copies(*resume_target, &[])?;
                         self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *resume_target);
                     }
                 }
@@ -807,7 +839,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 match effect {
                     EffectKind::Yield | EffectKind::DelegateYield => {
                         if let Some(payload) = payload {
-                            self.emit_operand(payload);
+                            self.emit_operand(payload)?;
                         }
                         else {
                             self.emitter.emit_const_i32(0);
@@ -816,7 +848,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     }
                     EffectKind::Raise => {
                         if let Some(payload) = payload {
-                            self.emit_operand(payload);
+                            self.emit_operand(payload)?;
                         }
                         else {
                             self.emitter.emit_const_i32(0);
@@ -827,7 +859,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {
                         // future / async 相关 effect 暂未落地 VM opcode，保留 console_log 调试桩。
                         if let Some(payload) = payload {
-                            self.emit_operand(payload);
+                            self.emit_operand(payload)?;
                             self.emitter.emit_call_import("console_log", 1);
                         }
                     }
@@ -846,7 +878,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                             *case_key, self.mir_fn.symbol
                         )
                     })?;
-                    self.emit_operand(&MirOperand::Value(*state));
+                    self.emit_operand(&MirOperand::Value(*state))?;
                     self.emitter.emit_const_i32(case_key);
                     self.emitter.emit_plain(OdinHeadCode::I32Eq);
                     self.emitter.emit_jump_placeholder(OdinHeadCode::JumpIfTrue, *target);
@@ -912,13 +944,13 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             match plan.recipe {
                 TargetOperatorRecipe::Operands => {
-                    self.emit_external_arguments(&callee_name, arguments);
+                    self.emit_external_arguments(&callee_name, arguments)?;
                     self.emitter.emit_plain(code);
                 }
                 TargetOperatorRecipe::Steps(steps) => {
                     for step in steps {
                         match step {
-                            TargetOperandStep::Arguments => self.emit_external_arguments(&callee_name, arguments),
+                            TargetOperandStep::Arguments => self.emit_external_arguments(&callee_name, arguments)?,
                             TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value } => {
                                 let index = self.emitter.intern_i32(*value);
                                 self.emitter.emit_imm1(OdinHeadCode::Constant, index);
@@ -967,17 +999,28 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         Ok(())
     }
 
-    fn emit_external_arguments(&mut self, callee_name: &str, arguments: &[MirOperand]) {
+    fn emit_external_arguments(&mut self, callee_name: &str, arguments: &[MirOperand]) -> crate::Result<()> {
         for argument in arguments {
-            assert!(self.emit_call_operand(argument), "unmaterialized Nyar external call operand in `{callee_name}`: {argument:?}");
+            if !self.emit_call_operand(argument)? {
+                panic!("unmaterialized Nyar external call operand in `{callee_name}`: {argument:?}");
+            }
         }
+        Ok(())
     }
 
-    fn emit_direct_call(&mut self, function_index: i32, path: &nyar::NamePath, arguments: &[MirOperand], output: Option<MirValueRef>) {
+    fn emit_direct_call(
+        &mut self,
+        function_index: i32,
+        path: &nyar::NamePath,
+        arguments: &[MirOperand],
+        output: Option<MirValueRef>,
+    ) -> crate::Result<()> {
         let expected = self.function_entry_arities.get(&function_index).copied().unwrap_or(arguments.len());
         assert_eq!(arguments.len(), expected, "validated call arity differs from function entry: {path:?} index={function_index}");
         for argument in arguments {
-            assert!(self.emit_call_operand(argument), "unmaterialized Nyar call operand in `{path:?}`: {argument:?}");
+            if !self.emit_call_operand(argument)? {
+                panic!("unmaterialized Nyar call operand in `{path:?}`: {argument:?}");
+            }
         }
         self.emitter.emit_imm1(OdinHeadCode::Call, function_index);
         if let Some(output) = output {
@@ -986,14 +1029,26 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         else {
             self.emitter.emit_plain(OdinHeadCode::Pop);
         }
+        Ok(())
     }
 
-    /// Call 实参只能读取已规划的 SSA/local 值。
-    fn emit_call_operand(&mut self, operand: &MirOperand) -> bool {
-        if self.try_emit_operand(operand) {
-            return true;
+    /// Call 实参只能读取已规划的 SSA/local 值；操作数位常量按 semantic MIR 合同发射。
+    fn emit_call_operand(&mut self, operand: &MirOperand) -> crate::Result<bool> {
+        match operand {
+            MirOperand::Value(value) => {
+                let Some(local) = self.slots.value_locals.get(value).copied()
+                else {
+                    return Ok(false);
+                };
+                self.emit_load_local(local);
+                Ok(true)
+            }
+            MirOperand::Constant(_) => {
+                self.emit_operand(operand)?;
+                Ok(true)
+            }
+            MirOperand::Symbol(_) | MirOperand::Item(_) => Ok(false),
         }
-        false
     }
 
     fn nyar_field_slot(&self, field: nyar_types::FieldId) -> crate::Result<i32> {
@@ -1066,32 +1121,65 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 
     /// `FieldSet` 栈效果为 `[obj, value] -> [obj]`；调用方随后 `Pop`。
-    fn emit_field_set_slot(&mut self, object: &MirOperand, field_slot: i32, value: &MirOperand) {
-        self.emit_operand(object);
-        self.emit_operand(value);
+    /// `value_ty` 是制品槽的冻结类型（Odin 槽本身无类型），常量位宽必须由它决定。
+    fn emit_field_set_slot(
+        &mut self,
+        object: &MirOperand,
+        field_slot: i32,
+        value: &MirOperand,
+        value_ty: Option<&NyarType>,
+    ) -> crate::Result<()> {
+        self.emit_operand(object)?;
+        self.emit_operand_typed(value, value_ty)?;
         self.emitter.emit_imm1(OdinHeadCode::FieldSet, field_slot);
+        Ok(())
     }
 
-    fn emit_block_argument_copies(&mut self, target: MirBlockRef, arguments: &[MirOperand]) {
+    fn emit_block_argument_copies(&mut self, target: MirBlockRef, arguments: &[MirOperand]) -> crate::Result<()> {
         let target_block = self.mir_fn.blocks.iter().find(|block| block.id == target).expect("validated branch target");
         assert_eq!(arguments.len(), target_block.parameters.len(), "validated branch arity");
-        for argument in arguments {
-            self.emit_operand(argument);
+        for (index, argument) in arguments.iter().enumerate() {
+            let param_local = self.slots.block_param_locals[&(target, index)];
+            let param_ty = self.slots.local_types[usize::from(param_local)].clone();
+            self.emit_operand_typed(argument, Some(&param_ty))?;
         }
         for index in (0..arguments.len()).rev() {
             let param_local = self.slots.block_param_locals[&(target, index)];
             self.emit_store_local(param_local);
         }
+        Ok(())
     }
 
-    fn emit_load_constant(&mut self, constant: &MirConstant) {
+    /// 发射常量。整数位宽只由目标槽的冻结类型决定：
+    /// - `Some(Integer32)`：必须落在 i32 表示范围内，否则结构化失败；
+    /// - `Some(Integer64)`：发 `Integer64` 载体；
+    /// - `None`（操作数位没有槽上下文）：回落到 semantic MIR 合同
+    ///   `Constant::Int(_) => Integer64 { signed: true }`，**不按数值大小选位宽**；
+    /// - 其它槽类型：结构化失败。
+    fn emit_load_constant(&mut self, constant: &MirConstant, slot_ty: Option<&NyarType>) -> crate::Result<()> {
         match constant {
-            MirConstant::Int(value) if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 => {
-                self.emitter.emit_const_i32(*value as i32);
-            }
-            MirConstant::Int(value) => {
-                self.emitter.emit_const_i64(*value);
-            }
+            MirConstant::Int(value) => match slot_ty {
+                Some(NyarType::Integer32 { .. }) => {
+                    let narrowed = i32::try_from(*value).map_err(|_| {
+                        format!(
+                            "OVM 整数常量 {value} 超出目标 Integer32 槽的表示范围（slot={}, symbol=`{}`）",
+                            slot_ty.map(ToString::to_string).unwrap_or_else(|| "<none>".to_string()),
+                            self.mir_fn.symbol
+                        )
+                    })?;
+                    self.emitter.emit_const_i32(narrowed);
+                }
+                Some(NyarType::Integer64 { .. }) | None => {
+                    self.emitter.emit_const_i64(*value);
+                }
+                Some(other) => {
+                    return Err(format!(
+                        "OVM 整数常量 {value} 与已规划槽类型不匹配：slot={other} symbol=`{}`；\
+                         禁止把整数载荷塞进非整数槽",
+                        self.mir_fn.symbol
+                    ));
+                }
+            },
             MirConstant::Float64(value) => {
                 let index = self.emitter.constants.len() as i32 + self.emitter.constants_base;
                 self.emitter.constants.push(OdinConstant::Float64(value.into_inner()));
@@ -1111,27 +1199,56 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_const_i32(0);
             }
         }
+        Ok(())
     }
 
-    fn emit_operand(&mut self, operand: &MirOperand) {
-        assert!(self.try_emit_operand(operand), "validated operand has a planned local");
+    fn emit_operand(&mut self, operand: &MirOperand) -> crate::Result<()> {
+        self.emit_operand_typed(operand, None)
     }
 
-    fn try_emit_operand(&mut self, operand: &MirOperand) -> bool {
+    fn emit_operand_typed(&mut self, operand: &MirOperand, slot_ty: Option<&NyarType>) -> crate::Result<()> {
         match operand {
             MirOperand::Value(value) => {
-                if let Some(local) = self.slots.value_locals.get(value).copied() {
-                    self.emit_load_local(local);
-                    return true;
-                }
-                false
+                let local = self.slots.value_locals.get(value).copied().ok_or_else(|| {
+                    format!("OVM SSA 值缺少预规划槽：%{}（symbol=`{}`）", value.0, self.mir_fn.symbol)
+                })?;
+                self.emit_load_local(local);
+                Ok(())
             }
-            MirOperand::Constant(constant) => {
-                self.emit_load_constant(constant);
-                true
-            }
-            MirOperand::Symbol(_) => false,
-            MirOperand::Item(_) => false,
+            MirOperand::Constant(constant) => self.emit_load_constant(constant, slot_ty),
+            MirOperand::Symbol(path) => Err(format!("OVM 操作数不支持符号引用 {path:?}（symbol=`{}`）", self.mir_fn.symbol)),
+            MirOperand::Item(instance) => Err(format!("OVM 操作数不支持 callable 身份 {instance:?}（symbol=`{}`）", self.mir_fn.symbol)),
+        }
+    }
+
+    /// SSA 值的物理槽类型（来自 `ExecutableSlotPlan` 的冻结类型）。
+    fn value_slot_type(&self, value: MirValueRef) -> Option<NyarType> {
+        self.slots
+            .value_locals
+            .get(&value)
+            .and_then(|local| self.slots.local_types.get(usize::from(*local)))
+            .cloned()
+    }
+
+    /// SSA 值的语义类型（操作数位常量回落用的同一张冻结表）。
+    fn value_semantic_type(&self, value: MirValueRef) -> Option<NyarType> {
+        self.mir_fn.value_types.get(&value).cloned()
+    }
+
+    /// 制品字段的冻结类型；Odin 槽无类型，常量位宽只能由布局合同给出。
+    fn field_value_type(&self, field: nyar_types::FieldId) -> Option<NyarType> {
+        self.ctx.field_layout_by_id(field).map(|(_, layout, _)| layout.ty.clone())
+    }
+
+    /// 数组元素类型：只从 SSA 值的冻结语义类型读取，不回查名字。
+    fn array_element_type(&self, array: &MirOperand) -> Option<NyarType> {
+        let MirOperand::Value(value) = array
+        else {
+            return None;
+        };
+        match self.mir_fn.value_types.get(value)? {
+            NyarType::Array(element) | NyarType::FixedArray { element, .. } => Some((**element).clone()),
+            _ => None,
         }
     }
 
