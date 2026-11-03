@@ -204,32 +204,38 @@ fn length_chars_counts_code_points_including_astral_and_combining() {
     }
 }
 
+/// 已废弃的 end 语义表（第 3 层首版 `slice(start, end)`，保留作为变更证据，不再参与断言）：
+/// `("a😀b", 0, 1) -> "a"`、`("a😀b", 1, 2) -> "😀"`、`("a😀b", 2, 3) -> "b"`、
+/// `("a😀b", 0, 3) -> "a😀b"`、`("a😀b", 3, 3) -> ""`、`("中文", 1, 2) -> "文"`。
+/// 第三参数从 end 改为 count 后，同一组输入除 `(0,3)` 外语义全部不同。
 #[test]
-fn slice_uses_half_open_code_point_indices() {
+fn slice_uses_code_point_start_and_count() {
     // "a😀b"：3 个码点；emoji 占 4 字节。
     let mixed = "a😀b";
     assert_eq!(run_ok(HostOp::Utf8Slice, &[text(mixed), Value::I32(0), Value::I32(1)]), text("a"));
-    assert_eq!(run_ok(HostOp::Utf8Slice, &[text(mixed), Value::I32(1), Value::I32(2)]), text("😀"), "astral 是 1 个码点");
-    assert_eq!(run_ok(HostOp::Utf8Slice, &[text(mixed), Value::I32(2), Value::I32(3)]), text("b"));
+    assert_eq!(run_ok(HostOp::Utf8Slice, &[text(mixed), Value::I32(1), Value::I32(1)]), text("😀"), "astral 是 1 个码点");
+    assert_eq!(run_ok(HostOp::Utf8Slice, &[text(mixed), Value::I32(2), Value::I32(1)]), text("b"));
+    assert_eq!(run_ok(HostOp::Utf8Slice, &[text(mixed), Value::I32(1), Value::I32(2)]), text("😀b"), "count 是码点个数");
     assert_eq!(run_ok(HostOp::Utf8Slice, &[text(mixed), Value::I32(0), Value::I32(3)]), text(mixed));
-    assert_eq!(run_ok(HostOp::Utf8Slice, &[text(mixed), Value::I32(3), Value::I32(3)]), text(""), "末尾空区间合法");
-    // 空串上的 [0, 0) 必须成功。
+    assert_eq!(run_ok(HostOp::Utf8Slice, &[text(mixed), Value::I32(3), Value::I32(0)]), text(""), "start == length 且 count == 0 合法");
+    // 空串上的 (0, 0) 必须成功。
     assert_eq!(run_ok(HostOp::Utf8Slice, &[text(EMPTY), Value::I32(0), Value::I32(0)]), text(""));
     // 组合附加符是两个码点，不能被当作一个字。
     assert_eq!(run_ok(HostOp::Utf8Slice, &[text(COMBINING), Value::I32(0), Value::I32(1)]), text("a"));
-    assert_eq!(run_ok(HostOp::Utf8Slice, &[text(COMBINING), Value::I32(1), Value::I32(2)]), text("\u{0301}"));
+    assert_eq!(run_ok(HostOp::Utf8Slice, &[text(COMBINING), Value::I32(1), Value::I32(1)]), text("\u{0301}"));
     // BMP 中文按码点切分。
-    assert_eq!(run_ok(HostOp::Utf8Slice, &[text(BMP_CHINESE), Value::I32(1), Value::I32(2)]), text("文"));
+    assert_eq!(run_ok(HostOp::Utf8Slice, &[text(BMP_CHINESE), Value::I32(1), Value::I32(1)]), text("文"));
 }
 
 #[test]
 fn slice_rejects_out_of_bounds_without_clamping() {
-    for (start, end) in [(2, 1), (0, 4), (4, 4), (-1, 1), (0, -1)] {
-        let error = run(HostOp::Utf8Slice, &[text(ASCII), Value::I32(start), Value::I32(end)]).expect_err("越界必须失败");
+    // ASCII 长度 3；count 语义下的越界反例。
+    for (start, count) in [(4, 0), (3, 1), (0, 4), (2, 2), (-1, 1), (0, -1)] {
+        let error = run(HostOp::Utf8Slice, &[text(ASCII), Value::I32(start), Value::I32(count)]).expect_err("越界必须失败");
         match error {
-            OdinRuntimeError::IndexOutOfBounds { operation, start: actual_start, end: actual_end, length } => {
+            OdinRuntimeError::IndexOutOfBounds { operation, start: actual_start, count: actual_count, length } => {
                 assert_eq!(operation, "utf8.slice");
-                assert_eq!((actual_start, actual_end, length), (start as i64, end as i64, 3));
+                assert_eq!((actual_start, actual_count, length), (start as i64, count as i64, 3));
             }
             other => panic!("期望 IndexOutOfBounds，实际 {other:?}"),
         }
@@ -244,9 +250,9 @@ fn length_and_slice_symbols_reject_wrong_carriers_and_short_arguments() {
         let error = run(op, &[]).expect_err("缺参必须失败");
         assert!(matches!(error, OdinRuntimeError::StackUnderflow), "{op:?} 实际 {error:?}");
     }
-    let error = run(HostOp::Utf8Slice, &[text(ASCII), Value::I32(0)]).expect_err("缺 end 必须失败");
+    let error = run(HostOp::Utf8Slice, &[text(ASCII), Value::I32(0)]).expect_err("缺 count 必须失败");
     assert!(matches!(error, OdinRuntimeError::StackUnderflow));
-    let error = run(HostOp::Utf8Slice, &[text(ASCII)]).expect_err("缺 start/end 必须失败");
+    let error = run(HostOp::Utf8Slice, &[text(ASCII)]).expect_err("缺 start/count 必须失败");
     assert!(matches!(error, OdinRuntimeError::StackUnderflow));
     let error = run(HostOp::Utf8Slice, &[Value::Null, Value::I32(0), Value::I32(1)]).expect_err("非字符串载体必须失败");
     assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }));
@@ -305,8 +311,8 @@ fn length_chars_matches_code_point_walk_via_slice() {
         let chars = i32_of(run_ok(HostOp::Utf8LengthChars, &[text(sample)]));
         let mut segments = 0;
         for start in 0..chars {
-            let segment = string_of(run_ok(HostOp::Utf8Slice, &[text(sample), Value::I32(start), Value::I32(start + 1)]));
-            assert!(!segment.is_empty(), "slice({sample:?}, {start}, {}) 不能是空段", start + 1);
+            let segment = string_of(run_ok(HostOp::Utf8Slice, &[text(sample), Value::I32(start), Value::I32(1)]));
+            assert!(!segment.is_empty(), "slice({sample:?}, {start}, 1) 不能是空段");
             segments += 1;
         }
         assert_eq!(segments, chars, "length_chars 必须等于逐码点 slice 的段数：{sample:?}");
@@ -587,7 +593,7 @@ fn length_chars_executes_through_call_import() {
 #[test]
 fn slice_executes_through_call_import() {
     assert_eq!(
-        run_import("utf8.slice", vec![OdinConstant::String("a😀b".to_string()), OdinConstant::Integer32(1), OdinConstant::Integer32(2)], 3),
+        run_import("utf8.slice", vec![OdinConstant::String("a😀b".to_string()), OdinConstant::Integer32(1), OdinConstant::Integer32(1)], 3),
         Value::String("😀".to_string())
     );
 }
@@ -597,8 +603,8 @@ fn slice_out_of_bounds_fails_through_call_import() {
     let error =
         run_import_err("utf8.slice", vec![OdinConstant::String(ASCII.to_string()), OdinConstant::Integer32(0), OdinConstant::Integer32(9)], 3);
     match error {
-        OdinRuntimeError::IndexOutOfBounds { operation, start, end, length } => {
-            assert_eq!((operation, start, end, length), ("utf8.slice", 0, 9, 3));
+        OdinRuntimeError::IndexOutOfBounds { operation, start, count, length } => {
+            assert_eq!((operation, start, count, length), ("utf8.slice", 0, 9, 3));
         }
         other => panic!("期望 IndexOutOfBounds，实际 {other:?}"),
     }

@@ -354,8 +354,8 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::Utf8Slice => {
             let text = utf8_arg(args, 0, "utf8")?;
             let start = i32_arg(args, 1)? as i64;
-            let end = i32_arg(args, 2)? as i64;
-            Ok(Value::String(text_runtime::slice(text, start, end, "utf8.slice")?))
+            let count = i32_arg(args, 2)? as i64;
+            Ok(Value::String(text_runtime::slice(text, start, count, "utf8.slice")?))
         }
         HostOp::Utf8Concat => {
             let left = utf8_arg(args, 0, "utf8")?;

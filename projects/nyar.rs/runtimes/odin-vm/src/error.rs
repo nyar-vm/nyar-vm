@@ -52,8 +52,8 @@ pub enum OdinRuntimeError {
         operation: &'static str,
         /// 请求的起始码点下标（可为负）。
         start: i64,
-        /// 请求的结束码点下标（半开区间，可为负）。
-        end: i64,
+        /// 请求的码点个数（可为负）。
+        count: i64,
         /// 文本实际码点数。
         length: u64,
     },
@@ -113,8 +113,8 @@ impl Display for OdinRuntimeError {
             }
             Self::DivisionByZero { operation } => write!(f, "{operation}: division by zero"),
             Self::ArithmeticOverflow { operation } => write!(f, "{operation}: integer overflow"),
-            Self::IndexOutOfBounds { operation, start, end, length } => {
-                write!(f, "{operation}: range [{start}, {end}) out of bounds for {length} code points")
+            Self::IndexOutOfBounds { operation, start, count, length } => {
+                write!(f, "{operation}: start {start} count {count} out of bounds for {length} code points")
             }
             Self::InvalidUtf8 { operation } => write!(f, "{operation}: invalid text encoding"),
             Self::UnterminatedCStr { operation } => write!(f, "{operation}: unterminated C string"),
