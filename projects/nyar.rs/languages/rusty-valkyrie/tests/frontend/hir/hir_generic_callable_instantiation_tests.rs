@@ -562,3 +562,83 @@ fn instantiation_is_deterministic_across_compilations() {
     };
     assert_eq!(projected(&first), projected(&second), "同一输入的实例空间必须稳定");
 }
+
+/// 具体接收者直接调用泛型 impl 的 trait 成员（`ArrayList<u8>` 上 `⁅ ⁆` 这类形态）：
+/// 解析期重载决胜已选定 impl 成员，witness 冻结的是成员自身声明而不是 trait 方法槽；
+/// 固定点必须承认这种身份并闭合代入、铸造实例，否则 witness 存活到后端计划层失败。
+const CONCRETE_RECEIVER_TRAIT_CORE: &str = r#"
+namespace std.operator;
+
+trait Length {
+    micro length(self): i64
+}
+
+namespace std.collection;
+
+class ArrayList<T> {
+    _length: i64
+}
+
+imply ArrayList<T> {
+    micro new(capacity: i64): Self {
+        return ArrayList { _length: capacity }
+    }
+}
+
+imply ArrayList<T>: std.operator::Length {
+    micro length(self): i64 {
+        return self._length
+    }
+}
+"#;
+
+const CONCRETE_RECEIVER_TRAIT_APP: &str = r#"
+namespace demo;
+
+using std.collection::{ArrayList}
+
+[export]
+micro probe() -> i64 {
+    let list: ArrayList<i64> = ArrayList::new(7)
+    return list.length()
+}
+"#;
+
+#[test]
+fn concrete_receiver_trait_member_witness_discharges_to_selected_impl_instance() {
+    let groups = [
+        CompilerSourceGroup::single_source("core", "core", CONCRETE_RECEIVER_TRAIT_CORE),
+        CompilerSourceGroup::single_source("app", "app", CONCRETE_RECEIVER_TRAIT_APP).as_entry().with_direct_dependencies(vec!["core".into()]),
+    ];
+    let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("跨包泛型 impl 必须完成 HIR");
+    let core = modules
+        .iter()
+        .find(|module| module.traits.iter().any(|item| item.name.as_str() == "Length"))
+        .expect("core 模块必须含 `Length` trait");
+    let length_trait = core.traits.iter().find(|item| item.name.as_str() == "Length").and_then(|item| item.declaration).expect("trait 声明身份");
+    let impl_member = core
+        .impls
+        .iter()
+        .find(|implementation| implementation.trait_declaration == Some(length_trait))
+        .and_then(|implementation| implementation.methods.iter().find(|method| method.name.as_str() == "length"))
+        .and_then(|method| method.declaration)
+        .expect("`imply ArrayList<T>: Length` 成员声明身份");
+    let app = modules
+        .iter()
+        .find(|module| module.functions.iter().any(|function| function.name.as_str() == "probe"))
+        .expect("app 模块必须含 `probe`");
+    let probe = app.functions.iter().find(|function| function.name.as_str() == "probe").expect("probe");
+    let calls = body_calls(probe);
+    let call = calls.iter().copied().find(|call| call.symbol.parts().last().is_some_and(|part| part.as_str() == "length")).expect("length 调用");
+    assert!(call.trait_dispatch.is_none(), "具体接收者的 witness 必须由固定点消去: {:?}", call.trait_dispatch);
+    let instance = call.instance.expect("消去 witness 后调用点必须指向具体 impl 实例");
+    let member = modules
+        .iter()
+        .flat_map(|module| module.instantiated_callables.iter())
+        .find(|callable| callable.function.instance == Some(instance))
+        .expect("被选 impl 成员的实例必须由固定点铸造");
+    assert_eq!(member.function.declaration, Some(impl_member), "实例必须来自解析期选定的那个 impl 成员声明");
+    assert_eq!(member.trait_declaration, Some(length_trait), "实例必须保留 trait 归属");
+    let owner = member.owner_type.as_ref().expect("impl 实例必须携带具体 owner");
+    assert_closed(owner, "实例 owner 类型");
+}

@@ -111,12 +111,14 @@ fn instantiation_limit_error(
 
 /// 把仍指向 trait 方法槽的 witness 换成具体 impl 成员的 (声明下标, 代入)。
 ///
-/// witness 冻结的是「trait 方法槽 + 接收者静态类型」。`self` 类型具体化后，哪个
-/// impl 提供该成员只能由 (trait 声明, 成员名, impl owner 与接收者实例同一, 成员签名
-/// 统一) 共同决定，且候选必须唯一。owner 同一不能省：静态 trait 方法的
-/// `parameter_types` 不含接收者，签名统一本身约束不到 owner，只按成员名 + 签名
-/// 匹配会让同名成员跨 owner 命中。任何一项不成立都保持 witness，让后端按冻结身份
-/// 失败；不得回退首个候选或按名字猜一个「看起来合适」的实现（`Hash::hash` 被猜成
+/// witness 的 `method_declaration` 携带两种合法身份（解析期两处冻结点）：
+/// 1. 具体接收者路径（`try_resolve_instance_method`）：重载决胜已经选定唯一 impl
+///    成员，witness 冻结的就是该成员的声明——实现身份已定，固定点只剩代入闭合。
+/// 2. 开放接收者/trait-bound 路径：实现尚不可知，witness 冻结的是 trait 方法槽
+///    声明——这里按 (trait 声明, 成员名, impl owner 与接收者实例同一, 成员签名统一)
+///    搜索唯一 impl 成员，候选不唯一或缺位都保持 witness。
+/// 两种身份按 `declarations` 成员资格机械区分（槽位声明不在 impl 成员表里），
+/// 不得回退首个候选或按名字猜一个「看起来合适」的实现（`Hash::hash` 被猜成
 /// `i64.infix -` 就是这么来的）。
 fn discharge_trait_witness(
     declarations: &BTreeMap<u32, CallableDeclaration>,
@@ -127,6 +129,17 @@ fn discharge_trait_witness(
     if has_unresolved_generic_arguments(&dispatch.self_type) {
         return None;
     }
+    // 身份形态 1：witness 直接冻结了已选定的 impl 成员声明。trait 归属必须与
+    // witness 冻结的 trait 一致（不一致即身份损坏，保持 witness 由后端精确失败）；
+    // 代入仍由 (owner, 成员签名) 与调用合同统一推出，不从调用点照搬。
+    if let Some(declaration) = declarations.get(&dispatch.method_declaration.index()) {
+        if declaration.trait_declaration != Some(dispatch.trait_declaration) {
+            return None;
+        }
+        let substitution = derive_witness_substitution(declaration, call)?;
+        return Some((declaration.index, substitution));
+    }
+    // 身份形态 2：witness 冻结的是 trait 方法槽声明，恢复成员名后搜索唯一实现。
     let member_name = trait_members.get(&dispatch.method_declaration.index())?;
     let mut matched: Option<(u32, Substitution)> = None;
     for declaration in declarations.values() {
