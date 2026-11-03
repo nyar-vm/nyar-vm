@@ -287,7 +287,11 @@ function marshalLibraryArg(schema, value, path) {{
         const constructor = bridgeExport(seq.constructor, "container constructor", path);
         const ctorArgs = new Array(seq.field_count).fill(null);
         ctorArgs[seq.items_field_index] = items;
-        ctorArgs[seq.length_field_index] = marshalLibraryArg(seq.length_type, value.length, `${{path}}.length`);
+        ctorArgs[seq.length_field_index] = marshalLibraryArg(
+            seq.length_type,
+            abiKind(seq.length_type) === "I64" ? BigInt(value.length) : value.length,
+            `${{path}}.length`
+        );
         return constructor(...ctorArgs);
     }}
 
