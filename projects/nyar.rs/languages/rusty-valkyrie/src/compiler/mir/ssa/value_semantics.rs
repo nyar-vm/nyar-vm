@@ -15,7 +15,7 @@ use crate::compiler::{
     mir::MirDiagnostic,
     types::{
         Identifier,
-        hir::{HirEnum, HirModule, HirStruct, HirVariant, ValkyrieType},
+        hir::{HirEnum, HirModule, HirStruct, HirVariant, ValkyrieType, numeric_primitive_identity_shape, primitive_identity_builtin_type},
     },
 };
 
@@ -182,8 +182,10 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
     collect_module_structs(module, &mut structs);
     // 纯类型级标记字段（零字段值类型 + 泛型实参）不进入运行时布局，与 MIR 字段事实同口径。
     let markers = type_level_marker_declarations(module);
-    // 核心 primitive（如 `structure i32 { }`）的声明身份在 HIR 保留为 Nominal{ItemId}，
-    // 但字段布局必须使用其平台载体形状。
+    // 核心 primitive（如 `[primitive("std::primitive::i32")] structure i32 { }`）的声明
+    // 身份在 HIR 保留为 Nominal{ItemId}，字段布局必须使用其平台载体形状。载体只认声明
+    // 携带的 `[primitive]` 规范身份：短名只用于诊断显示，与身份无关；同名但没有该身份
+    // （或身份指向别的载体）的声明保持自身名义布局，不能因为名字像内建就取错载体。
     let mut primitive_carriers = BTreeMap::new();
     for hir_struct in &structs {
         if !hir_struct.is_value_type || !hir_struct.generics.is_empty() || !hir_struct.fields.is_empty() {
@@ -193,7 +195,8 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
         else {
             continue;
         };
-        let Some(carrier) = crate::compiler::hir::type_lowering::numeric_builtin_cast_type(hir_struct.name.as_str())
+        let Some(carrier) =
+            hir_struct.primitive_identity.as_deref().and_then(crate::compiler::types::hir::primitive_identity_builtin_type)
         else {
             continue;
         };
@@ -452,16 +455,24 @@ fn layout_field_type(
         return Some(concrete);
     }
     match ty {
-        ValkyrieType::Nominal { declaration, arguments, .. } => {
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => {
             let spelling = declaration_spellings.get(declaration)?;
-            let base = nyar_types::NyarType::from_surface_primitive(spelling).unwrap_or_else(|| {
-                // 与发射端 `lower_type` 同一载体：已登记布局的零实参 nominal 携带
-                // `Nominal` 身份；未登记保留裸 `Named` 残差，由预发射门禁拒绝。
-                match plan.declaration_to_layout.get(declaration).copied() {
-                    Some(layout) => nyar_types::NyarType::Nominal { layout, spelling: nyar_types::Identifier::new(spelling) },
-                    None => nyar_types::NyarType::Named(nyar_types::Identifier::new(spelling)),
-                }
-            });
+            // 带 `[primitive]` 身份时载体只能由该身份决定：spelling 末段只是显示名，
+            // 同名的用户声明不得借到内建载体。没有身份的声明保留既有 surface spelling
+            // 桥（编码名 `Utf8Text`/`utf16` 走这条，它们不是 primitive 身份）。
+            let base = match primitive_identity.as_deref() {
+                Some(identity) => primitive_identity_builtin_type(identity)
+                    .and_then(|builtin| concretize_type(&builtin).ok())
+                    .or_else(|| {
+                        // `usize`/`isize`/`f128` 仍登记在数值身份表里，但 1.0 尚未给
+                        // 它们内建载体；保留既有 surface spelling 桥，避免同一声明在
+                        // 布局与 canonical 之间换口径。是否走桥由身份表决定，名字不参与判定。
+                        numeric_primitive_identity_shape(identity).and_then(|_| nyar_types::NyarType::from_surface_primitive(spelling))
+                    })
+                    .unwrap_or_else(|| nominal_layout_base(plan, *declaration, spelling)),
+                None => nyar_types::NyarType::from_surface_primitive(spelling)
+                    .unwrap_or_else(|| nominal_layout_base(plan, *declaration, spelling)),
+            };
             if arguments.is_empty() {
                 return Some(base);
             }
@@ -661,6 +672,15 @@ fn apply_primitive_carriers(ty: &ValkyrieType, carriers: &BTreeMap<nyar_types::I
         ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| apply_primitive_carriers(item, carriers)).collect()),
         ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| apply_primitive_carriers(item, carriers)).collect()),
         other => other.clone(),
+    }
+}
+
+/// 无平台载体、也无 surface spelling 桥时的名义声明基形状：已登记布局提升为
+/// `Nominal` 身份，缺布局保留裸 `Named` 残差，由预发射门禁拒绝。
+fn nominal_layout_base(plan: &AggregateLayoutPlan, declaration: nyar_types::ItemId, spelling: &str) -> nyar_types::NyarType {
+    match plan.declaration_to_layout.get(&declaration).copied() {
+        Some(layout) => nyar_types::NyarType::Nominal { layout, spelling: nyar_types::Identifier::new(spelling) },
+        None => nyar_types::NyarType::Named(nyar_types::Identifier::new(spelling)),
     }
 }
 

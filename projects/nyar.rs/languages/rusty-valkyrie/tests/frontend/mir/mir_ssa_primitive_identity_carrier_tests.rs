@@ -1,0 +1,132 @@
+//! primitive 载体必须由声明携带的 `[primitive("…")]` 规范身份决定。
+//!
+//! 修复前 `compute_aggregate_layout_plan` 用 `numeric_builtin_cast_type(struct.name)`
+//! 按**短名**登记 carrier：任何零字段 `structure i32 { }` 都会被当成内建 i32 载体，
+//! 哪怕它的 `primitive_identity` 是另一条身份（`acme::i32`）或根本没有身份。
+//! `layout_field_type` 的 `from_surface_primitive(spelling)` 也是按名字猜。
+//!
+//! 这里用两个反例把“名字”和“身份”分开：
+//! - 同名但不同身份（`acme::i32`）：字段必须落在该声明自己的名义布局，而不是 i32 载体；
+//! - 标注漂移（名字 `i32`、身份 `std::primitive::u64`）：字段必须落在 u64 载体。
+
+use nyar::NyarType;
+use rusty_valkyrie::{
+    Identifier, MirLowerer, ValkyrieCompiler,
+    compiler::{
+        mir::ssa::{AggregateLayout, MirModule},
+        types::hir::{HirField, HirModule, HirStruct},
+    },
+    compute_aggregate_layout_plan,
+    types::hir::types::ValkyrieType,
+};
+
+fn lower(source: &str) -> MirModule {
+    let hir = ValkyrieCompiler::default().compile_source(source).expect("fixture 必须完成 HIR 分析");
+    MirLowerer::lower_module_semantic(&hir)
+}
+
+fn layout<'a>(module: &'a MirModule, name: &str) -> &'a AggregateLayout {
+    module.aggregate_layouts.layouts.iter().find(|layout| layout.name == name).unwrap_or_else(|| {
+        panic!(
+            "缺少 `{name}` 布局，已登记: {:?}",
+            module.aggregate_layouts.layouts.iter().map(|layout| layout.name.clone()).collect::<Vec<_>>()
+        )
+    })
+}
+
+fn holder_field(module: &MirModule) -> &nyar_types::FieldLayout {
+    &layout(module, "Holder").fields[0]
+}
+
+/// 反例（本次修复的观测点）：用户 struct 与内建载体同名 `i32`，但身份是 `acme::i32`。
+///
+/// 修复前字段按名字拿到 `Integer32` 载体（size 4）；修复后必须落在 `acme::i32`
+/// 自己的零字段值类型布局（size 1），字段类型是名义布局而不是裸整数载体。
+#[test]
+fn same_name_user_struct_does_not_borrow_builtin_carrier() {
+    let module = lower(
+        r#"
+namespace acme;
+
+[primitive("acme::i32")]
+structure i32 { }
+
+class Holder {
+    x: i32,
+}
+"#,
+    );
+    let field = holder_field(&module);
+    assert_eq!(field.size, 1, "同名声明的字段必须按声明身份布局，不能按名字取 i32 载体: {field:?}");
+    assert_eq!(field.align, 1, "零字段值类型按自身布局计量: {field:?}");
+    assert!(
+        matches!(field.ty, NyarType::Nominal { .. }),
+        "字段类型必须保留名义布局身份，而不是名字反推出的内建载体: {field:?}"
+    );
+    assert_eq!(layout(&module, "i32").size, 1, "零字段值类型自身布局为 1 字节");
+}
+
+/// 标注漂移反例：声明名字是 `i32`，但 `primitive_identity` 是 `std::primitive::u64`。
+///
+/// 身份是唯一事实来源：字段必须是 u64 载体（size 8），而不是名字暗示的 i32（size 4）。
+/// 修复前按名字登记 carrier 会得到 `Integer32`，这条断言能发现漂移。
+#[test]
+fn primitive_identity_overrides_matching_struct_name() {
+    let declaration = nyar_types::ItemId::from_index(600).expect("test ItemId");
+    let holder = nyar_types::ItemId::from_index(601).expect("test ItemId");
+    let identity: Box<str> = Box::from("std::primitive::u64");
+    let mut module = HirModule::default();
+    module.structs.push(HirStruct {
+        constructor_declaration: Some(declaration),
+        name: Identifier::new("i32"),
+        namespace: vec![Identifier::new("acme")],
+        is_value_type: true,
+        primitive_identity: Some(identity.clone()),
+        ..Default::default()
+    });
+    module.structs.push(HirStruct {
+        constructor_declaration: Some(holder),
+        name: Identifier::new("Holder"),
+        namespace: vec![Identifier::new("acme")],
+        fields: vec![HirField {
+            id: None,
+            name: Identifier::new("x"),
+            doc: Default::default(),
+            ty: ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: Some(identity) },
+            visibility: Default::default(),
+            is_mutable: false,
+        }],
+        ..Default::default()
+    });
+    let mut diagnostics = Vec::new();
+    let plan = compute_aggregate_layout_plan(&module, &mut diagnostics);
+    let holder_layout = plan.layouts.iter().find(|layout| layout.name == "Holder").expect("Holder 布局");
+    let field = &holder_layout.fields[0];
+    assert_eq!(
+        field.ty,
+        NyarType::Integer64 { signed: false },
+        "载体必须由 primitive_identity（u64）决定，而不是同名短名 i32: {field:?}"
+    );
+    assert_eq!(field.size, 8, "标注漂移时字段大小必须跟随身份: {field:?}");
+    assert!(diagnostics.is_empty(), "漂移是身份优先的合法声明，不应产出结构化诊断: {diagnostics:?}");
+}
+
+/// 正向回归：正确标注的数值声明仍按其身份得到内建载体（修复不得收紧这条）。
+#[test]
+fn annotated_numeric_declaration_still_maps_to_carrier() {
+    let module = lower(
+        r#"
+namespace acme;
+
+[primitive("std::primitive::u64")]
+structure Wide { }
+
+class Holder {
+    x: Wide,
+}
+"#,
+    );
+    let field = holder_field(&module);
+    assert_eq!(field.ty, NyarType::Integer64 { signed: false }, "u64 身份必须映射到 u64 载体: {field:?}");
+    assert_eq!(field.size, 8, "u64 载体按 8 字节计量: {field:?}");
+}

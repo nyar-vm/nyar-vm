@@ -10,6 +10,7 @@ mod mir_ssa_aggregate_layout_nominal_fields_tests;
 mod mir_ssa_collection_init_tests;
 mod mir_ssa_match_lowering_bottom_type_tests;
 mod mir_ssa_nullable_null_tests;
+mod mir_ssa_primitive_identity_carrier_tests;
 mod mir_ssa_single_quote_literal_tests;
 mod mir_ssa_overloaded_callable_label_tests;
 mod mir_ssa_trait_dispatch_witness_tests;
