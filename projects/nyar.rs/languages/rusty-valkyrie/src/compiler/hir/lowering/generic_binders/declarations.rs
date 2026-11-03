@@ -879,8 +879,9 @@ pub(crate) fn register_function_declarations(module: &mut HirModule, next: &mut 
             register(method, next, next_instance, false)?;
         }
         for method in trait_definition.default_methods.iter_mut() {
-            let materialized_default = !method.is_abstract;
-            register(method, next, next_instance, materialized_default)?;
+            // trait 方法（含默认方法）依赖开放的 `Self`，没有声明期单态实例；
+            // 实例只能由 witness 消解时按具体 self 类型铸造。
+            register(method, next, next_instance, false)?;
         }
     }
     // `imply X<K, V>` 的 `implementation.generics` 为空，owner 泛型只来自 target。
