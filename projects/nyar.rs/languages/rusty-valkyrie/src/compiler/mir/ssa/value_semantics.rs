@@ -167,6 +167,9 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
         }
     }
     let facts = LayoutFacts { primitive_carriers, declaration_spellings, markers };
+    // 已登记声明布局的 (结构体, 存储类) 清单：供第二遍在 declaration_to_layout
+    // 完整后重解字段身份，消除登记顺序对字段载体的影响。
+    let mut registered: Vec<(&HirStruct, MirStorageKind)> = Vec::new();
     for hir_struct in structs {
         // 开放泛型声明不得生成平台布局（字段仍是 binder）；与 SumTypeLayout 同口径。
         if !hir_struct.generics.is_empty() {
@@ -174,7 +177,10 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
         }
         let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
         match layout_for_struct(hir_struct, &plan, storage, &facts) {
-            Some(layout) => register_declared_layout(&mut plan, hir_struct, layout),
+            Some(layout) => {
+                registered.push((hir_struct, storage));
+                register_declared_layout(&mut plan, hir_struct, layout);
+            }
             None => diagnostics.push(unresolved_layout_diagnostic(hir_struct)),
         }
     }
@@ -194,7 +200,10 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
             }
             let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
             match layout_for_struct(hir_struct, &plan, storage, &facts) {
-                Some(layout) => register_declared_layout(&mut plan, hir_struct, layout),
+                Some(layout) => {
+                    registered.push((hir_struct, storage));
+                    register_declared_layout(&mut plan, hir_struct, layout);
+                }
                 None => diagnostics.push(unresolved_layout_diagnostic(hir_struct)),
             }
         }
@@ -204,8 +213,34 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
             continue;
         }
         match layout_for_struct(hir_struct, &plan, MirStorageKind::Reference, &facts) {
-            Some(layout) => register_declared_layout(&mut plan, hir_struct, layout),
+            Some(layout) => {
+                registered.push((hir_struct, MirStorageKind::Reference));
+                register_declared_layout(&mut plan, hir_struct, layout);
+            }
             None => diagnostics.push(unresolved_layout_diagnostic(hir_struct)),
+        }
+    }
+    // 第二遍：declaration_to_layout 完整后重解已登记布局的字段事实，把名义
+    // 字段从裸 `Named` 提升为携带身份的 `Nominal`（与发射端 `lower_type` 同
+    // 口径），并按已登记布局重计名义字段的 extent。登记顺序不再影响字段
+    // 身份与偏移/尺寸/对齐；聚合自身尺寸随字段事实一并刷新。
+    for (hir_struct, storage) in &registered {
+        let Some(item) = hir_struct.constructor_declaration
+        else {
+            continue;
+        };
+        let Some(layout_id) = plan.declaration_to_layout.get(&item).copied()
+        else {
+            continue;
+        };
+        let Some(resolved) = layout_for_struct(hir_struct, &plan, *storage, &facts)
+        else {
+            continue;
+        };
+        if let Some(existing) = plan.layouts.iter_mut().find(|layout| layout.id == layout_id) {
+            existing.fields = resolved.fields;
+            existing.size = resolved.size;
+            existing.align = resolved.align;
         }
     }
     plan
@@ -274,8 +309,8 @@ pub fn instance_layout_for_type(
     let mut max_align = 1u32;
     let mut fields = Vec::with_capacity(field_types.len());
     for (declared, ty) in structure.fields.iter().zip(field_types.iter()) {
-        let layout_ty = layout_field_type(ty, declaration_spellings)?;
-        let (size, align) = layout_field_extent(&layout_ty);
+        let layout_ty = layout_field_type(ty, declaration_spellings, plan)?;
+        let (size, align) = layout_field_extent(&layout_ty, plan)?;
         offset = align_offset(offset, align);
         fields.push(FieldLayout { name: declared.name.clone(), ty: layout_ty, offset, size, align });
         offset += size;
@@ -319,46 +354,63 @@ fn type_contains_open_generic(ty: &ValkyrieType) -> bool {
 ///
 /// 与 emitter `lower_type` 同口径（声明 spelling 先查 primitive 别名，否则
 /// `Named`；实参递归）。任一环节缺事实返回 `None`，禁止按短名猜载体。
-fn layout_field_type(ty: &ValkyrieType, declaration_spellings: &BTreeMap<nyar_types::ItemId, String>) -> Option<nyar_types::NyarType> {
+fn layout_field_type(
+    ty: &ValkyrieType,
+    declaration_spellings: &BTreeMap<nyar_types::ItemId, String>,
+    plan: &AggregateLayoutPlan,
+) -> Option<nyar_types::NyarType> {
     if let Ok(concrete) = concretize_type(ty) {
         return Some(concrete);
     }
     match ty {
         ValkyrieType::Nominal { declaration, arguments, .. } => {
             let spelling = declaration_spellings.get(declaration)?;
-            let base = nyar_types::NyarType::from_surface_primitive(spelling)
-                .unwrap_or_else(|| nyar_types::NyarType::Named(nyar_types::Identifier::new(spelling)));
+            let base = nyar_types::NyarType::from_surface_primitive(spelling).unwrap_or_else(|| {
+                // 与发射端 `lower_type` 同一载体：已登记布局的零实参 nominal 携带
+                // `Nominal` 身份；未登记保留裸 `Named` 残差，由预发射门禁拒绝。
+                match plan.declaration_to_layout.get(declaration).copied() {
+                    Some(layout) => nyar_types::NyarType::Nominal { layout, spelling: nyar_types::Identifier::new(spelling) },
+                    None => nyar_types::NyarType::Named(nyar_types::Identifier::new(spelling)),
+                }
+            });
             if arguments.is_empty() {
                 return Some(base);
             }
             Some(nyar_types::NyarType::Apply(
                 Box::new(base),
-                arguments.iter().map(|argument| layout_field_type(argument, declaration_spellings)).collect::<Option<Vec<_>>>()?,
+                arguments.iter().map(|argument| layout_field_type(argument, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
             ))
         }
         ValkyrieType::Apply(base, arguments) => Some(nyar_types::NyarType::Apply(
-            Box::new(layout_field_type(base, declaration_spellings)?),
-            arguments.iter().map(|argument| layout_field_type(argument, declaration_spellings)).collect::<Option<Vec<_>>>()?,
+            Box::new(layout_field_type(base, declaration_spellings, plan)?),
+            arguments.iter().map(|argument| layout_field_type(argument, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
         )),
-        ValkyrieType::Array(element) => Some(nyar_types::NyarType::Array(Box::new(layout_field_type(element, declaration_spellings)?))),
-        ValkyrieType::FixedArray { element, length } => {
-            Some(nyar_types::NyarType::FixedArray { element: Box::new(layout_field_type(element, declaration_spellings)?), length: *length })
-        }
+        ValkyrieType::Array(element) => Some(nyar_types::NyarType::Array(Box::new(layout_field_type(element, declaration_spellings, plan)?))),
+        ValkyrieType::FixedArray { element, length } => Some(nyar_types::NyarType::FixedArray {
+            element: Box::new(layout_field_type(element, declaration_spellings, plan)?),
+            length: *length,
+        }),
         ValkyrieType::Tuple(items) => Some(nyar_types::NyarType::Tuple(
-            items.iter().map(|item| layout_field_type(item, declaration_spellings)).collect::<Option<Vec<_>>>()?,
+            items.iter().map(|item| layout_field_type(item, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
         )),
-        ValkyrieType::Nullable(element) => Some(nyar_types::NyarType::Nullable(Box::new(layout_field_type(element, declaration_spellings)?))),
+        ValkyrieType::Nullable(element) => {
+            Some(nyar_types::NyarType::Nullable(Box::new(layout_field_type(element, declaration_spellings, plan)?)))
+        }
         ValkyrieType::Union(items) => Some(nyar_types::NyarType::Union(
-            items.iter().map(|item| layout_field_type(item, declaration_spellings)).collect::<Option<Vec<_>>>()?,
+            items.iter().map(|item| layout_field_type(item, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
         )),
         _ => None,
     }
 }
 
-/// 字段字节大小与对齐：标量按宽度，其余按引用槽。
-fn layout_field_extent(ty: &nyar_types::NyarType) -> (u32, u32) {
+/// 字段字节大小与对齐：标量按宽度，名义字段按已登记布局的实际尺寸，其余按引用槽。
+///
+/// 名义值聚合是内联字节区：嵌套 `memory.copy` 的长度就是字段 extent，固定
+/// 引用槽宽度会截断大于槽的聚合。布局缺失失败闭合，禁止猜尺寸。
+fn layout_field_extent(ty: &nyar_types::NyarType, plan: &AggregateLayoutPlan) -> Option<(u32, u32)> {
     match ty {
-        nyar_types::NyarType::Integer64 { .. } | nyar_types::NyarType::Integer128 { .. } | nyar_types::NyarType::Float64 => (8, 8),
+        nyar_types::NyarType::Integer64 { .. } | nyar_types::NyarType::Integer128 { .. } | nyar_types::NyarType::Float64 => Some((8, 8)),
+        nyar_types::NyarType::Nominal { layout, .. } => plan.layouts.iter().find(|item| item.id == *layout).map(|item| (item.size, item.align)),
         nyar_types::NyarType::Bottom
         | nyar_types::NyarType::Unit
         | nyar_types::NyarType::Boolean
@@ -368,8 +420,8 @@ fn layout_field_extent(ty: &nyar_types::NyarType) -> (u32, u32) {
         | nyar_types::NyarType::Float32
         | nyar_types::NyarType::Character
         | nyar_types::NyarType::Utf8
-        | nyar_types::NyarType::Utf16 => (4, 4),
-        _ => (8, 8),
+        | nyar_types::NyarType::Utf16 => Some((4, 4)),
+        _ => Some((8, 8)),
     }
 }
 
@@ -542,8 +594,8 @@ fn layout_for_struct(
         let (ty, (size, align)) = match concretize_type(&mapped) {
             Ok(concrete) => (concrete, scalar_layout(&mapped, plan)),
             Err(_) => {
-                let resolved = layout_field_type(&mapped, &facts.declaration_spellings)?;
-                let extent = layout_field_extent(&resolved);
+                let resolved = layout_field_type(&mapped, &facts.declaration_spellings, plan)?;
+                let extent = layout_field_extent(&resolved, plan)?;
                 (resolved, extent)
             }
         };
