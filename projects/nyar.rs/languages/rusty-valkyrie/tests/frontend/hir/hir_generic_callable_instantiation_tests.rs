@@ -8,6 +8,12 @@ use rusty_valkyrie::{
 };
 
 const BOX_SOURCE: &str = r#"
+[primitive("std::primitive::i32")]
+structure i32 { }
+
+[primitive("std::primitive::f64")]
+structure f64 { }
+
 class Box<T> {
     _value: T
 }
@@ -121,6 +127,9 @@ fn collect_expr_calls<'a>(expression: &'a rusty_valkyrie::compiler::types::hir::
 const TWO_OWNER_TRAIT_SOURCE: &str = r#"
 namespace test.witness;
 
+[primitive("std::primitive::i32")]
+structure i32 { }
+
 trait Echo {
     micro echo(self) -> bool
 }
@@ -152,6 +161,9 @@ micro caller() -> bool {
 /// 同一 trait 在同一 owner 声明的两个候选 binder 形态上都成立：调用点必须结构化失败。
 const AMBIGUOUS_OWNER_TRAIT_SOURCE: &str = r#"
 namespace test.witness;
+
+[primitive("std::primitive::i32")]
+structure i32 { }
 
 trait Echo {
     micro echo(self) -> bool
@@ -250,6 +262,9 @@ fn ambiguous_owner_witness_is_rejected_instead_of_picking_a_candidate() {
 const STATIC_TRAIT_SOURCE: &str = r#"
 namespace test.witness;
 
+[primitive("std::primitive::i32")]
+structure i32 { }
+
 trait Tagged {
     micro tag() -> bool
 }
@@ -283,6 +298,9 @@ micro caller() -> bool {
 /// 不得借用别处 owner 的 witness 让程序通过。
 const MISSING_WITNESS_SOURCE: &str = r#"
 namespace test.witness;
+
+[primitive("std::primitive::i32")]
+structure i32 { }
 
 trait Tagged {
     micro tag() -> bool
@@ -569,6 +587,9 @@ fn instantiation_is_deterministic_across_compilations() {
 const CONCRETE_RECEIVER_TRAIT_CORE: &str = r#"
 namespace std.operator;
 
+[primitive("std::primitive::i64")]
+structure i64 { }
+
 trait Length {
     micro length(self): i64
 }
@@ -596,6 +617,7 @@ const CONCRETE_RECEIVER_TRAIT_APP: &str = r#"
 namespace demo;
 
 using std.collection::{ArrayList}
+using std.operator::{i64}
 
 [export]
 micro probe() -> i64 {
