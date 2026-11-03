@@ -709,6 +709,19 @@ pub enum HirError {
         /// 诊断主定位 span（指向出错的转义序列或整个字面量）。
         span: DiagnosticSpan,
     },
+    /// 整数字面量按"符号 + 量级"解释后超出 `i64` 可表示范围。
+    IntegerLiteralOutOfRange {
+        /// 源码写出的字面量（含符号）。
+        literal: String,
+        /// 量级的十进制文本；量级本身超出 `u64` 时保留源码量级文本。
+        magnitude: String,
+        /// 触发的范围：`signed_64` 或 `unsigned_64_magnitude`。
+        range: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断定位 span（指向整个字面量）。
+        span: DiagnosticSpan,
+    },
 }
 
 /// 单引号捕获字面量的结构化失败原因。

@@ -8,6 +8,7 @@ mod hir_collection_literal_tests;
 mod hir_control_flow_validation_identity_tests;
 mod hir_function_reference_tests;
 mod impl_self_type_equivalence_tests;
+mod integer_literal_range_tests;
 mod hir_generic_callable_instantiation_tests;
 mod hir_impl_method_where_obligation_tests;
 mod hir_imported_namespace_call_tests;

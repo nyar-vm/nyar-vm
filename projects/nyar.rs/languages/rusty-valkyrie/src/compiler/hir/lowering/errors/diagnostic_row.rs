@@ -321,6 +321,11 @@ impl From<HirError> for DiagnosticRow {
             HirError::BackendContractRejected(error) => {
                 row = row.with_arg("details", DiagnosticArg::String(error.to_string()));
             }
+            HirError::IntegerLiteralOutOfRange { literal, magnitude, range, .. } => {
+                row = row.with_arg("literal", DiagnosticArg::String(literal.clone()));
+                row = row.with_arg("magnitude", DiagnosticArg::String(magnitude.clone()));
+                row = row.with_arg("range", DiagnosticArg::String(range.clone()));
+            }
             HirError::InvalidSingleQuoteLiteral { failure, .. } => {
                 row = row.with_arg("failure", DiagnosticArg::String(single_quote_literal_failure_name(failure).to_string()));
                 match failure {
@@ -597,6 +602,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
         HirError::InvalidSingleQuoteLiteral { source, .. } => source.clone(),
+        HirError::IntegerLiteralOutOfRange { source, .. } => source.clone(),
     }
 }
 
@@ -670,6 +676,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
         HirError::InvalidSingleQuoteLiteral { span, .. } => span.clone(),
+        HirError::IntegerLiteralOutOfRange { span, .. } => span.clone(),
     }
 }
 

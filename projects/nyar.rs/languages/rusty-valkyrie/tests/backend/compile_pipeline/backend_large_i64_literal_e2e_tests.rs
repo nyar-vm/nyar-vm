@@ -62,6 +62,13 @@ mod ovm {
         executor.run(&loaded, entry.function_index as usize, Vec::new()).map_err(|error| error.to_string())
     }
 
+    /// `i64::MIN` 的源码写法必须原样到达运行时：`-9223372036854775808` 是合法字面量。
+    #[test]
+    fn i64_lowest_min_literal_executes_exactly() {
+        let value = run_main("    return -9223372036854775808").expect("i64::MIN 字面量必须可运行");
+        assert_eq!(value, Value::I64(i64::MIN), "`-9223372036854775808` 必须是 i64::MIN");
+    }
+
     /// `i64::MAX` 必须原样到达运行时；旧实现会得到 `-1`。
     #[test]
     fn i64_max_literal_executes_exactly() {

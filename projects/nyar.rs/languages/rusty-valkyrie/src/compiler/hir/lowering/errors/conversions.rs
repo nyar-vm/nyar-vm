@@ -297,6 +297,9 @@ impl std::fmt::Display for HirError {
                 Ok(())
             }
             Self::BackendContractRejected(error) => write!(f, "backend contract rejected the declaration: {error}"),
+            Self::IntegerLiteralOutOfRange { literal, magnitude, range, .. } => {
+                write!(f, "integer literal `{literal}` (magnitude {magnitude}) is out of range `{range}`")
+            }
             Self::InvalidSingleQuoteLiteral { failure, span, .. } => {
                 use super::model::SingleQuoteLiteralFailure;
                 match failure {

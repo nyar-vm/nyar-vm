@@ -282,8 +282,7 @@ fn lower_term_expression_body(
         TermExpression::NamePath(path) => lower_name_expression(path, span.clone()),
         TermExpression::StringLiteral(literal) => lower_string_literal_kind(literal, source_id, span_range.clone())?,
         TermExpression::IntegerLiteral { value, .. } => {
-            let parsed = parse_integer_literal(value).unwrap_or_else(|error| panic!("illegal integer literal `{value}`: {error}"));
-            HirExprKind::Literal(HirLiteral::Integer64(parsed))
+            HirExprKind::Literal(HirLiteral::Integer64(integer_literal_value(value, false, span_range.clone())?))
         }
         TermExpression::FloatLiteral { value, .. } => {
             let parsed = value.parse::<f64>().unwrap_or_else(|error| panic!("illegal float literal `{value}`: {error}"));
@@ -498,23 +497,15 @@ fn lower_unary_expression(
     fallback_span: Range<usize>,
     span: SourceSpan,
 ) -> Result<HirExprKind, HirError> {
-    let folded_neg_literal = matches!(node.operator, ValkyrieTokenType::Minus)
-        .then(|| {
-            if let TermExpression::IntegerLiteral { value, .. } = &node.base {
-                parse_integer_literal(value).ok().and_then(|value| {
-                    let folded = -(value as i128);
-                    (folded >= i64::MIN as i128 && folded <= i64::MAX as i128).then(|| folded as i64)
-                })
-            }
-            else {
-                None
-            }
-        })
-        .flatten();
-    if let Some(value) = folded_neg_literal {
-        Ok(HirExprKind::Literal(HirLiteral::Integer64(value)))
+    if matches!(node.operator, ValkyrieTokenType::Minus) {
+        if let TermExpression::IntegerLiteral { value, .. } = &node.base {
+            // 按"符号 + 量级"结合：量级先以 `u64` 承载，取负后再做 `i64` 范围检查，
+            // 因此 `-2^63` 合法，而 `+2^63` 与 `-2^64` 都是结构化诊断。
+            let folded = integer_literal_value(value, true, frontend::std_range(&node.base.span()))?;
+            return Ok(HirExprKind::Literal(HirLiteral::Integer64(folded)));
+        }
     }
-    else if matches!(node.operator, ValkyrieTokenType::Star) {
+    if matches!(node.operator, ValkyrieTokenType::Star) {
         let base = lower_term_expression_with_context(&node.base, source_id, fallback_span, false)?;
         Ok(lower_method_call_kind(DEREF_READ_MEMBER, vec![HirCallArgument::positional(base)], span))
     }
@@ -933,17 +924,49 @@ fn lower_string_literal_kind(literal: &StringLiteral, source_id: SourceID, fallb
     Ok(HirExprKind::Literal(HirLiteral::String(lower_string_literal(literal, source_id, fallback_span)?)))
 }
 
-fn parse_integer_literal(text: &str) -> Result<i64, std::num::ParseIntError> {
+/// 整数字面量按"符号 + 量级"解释：量级用 `u64` 承载，符号在结合时应用，
+/// 最后对带符号值做 `i64` 范围检查。失败是结构化诊断，不 panic。
+fn integer_literal_value(text: &str, negative: bool, span: Range<usize>) -> Result<i64, HirError> {
+    let magnitude = parse_integer_literal_magnitude(text)
+        .map_err(|()| integer_literal_out_of_range(text, negative, None, "unsigned_64_magnitude", span.clone()))?;
+    let signed = if negative { -(magnitude as i128) } else { magnitude as i128 };
+    if signed >= i64::MIN as i128 && signed <= i64::MAX as i128 {
+        Ok(signed as i64)
+    }
+    else {
+        Err(integer_literal_out_of_range(text, negative, Some(magnitude), "signed_64", span))
+    }
+}
+
+fn integer_literal_out_of_range(
+    text: &str,
+    negative: bool,
+    magnitude: Option<u64>,
+    range: &'static str,
+    span: Range<usize>,
+) -> HirError {
+    let literal = if negative { format!("-{text}") } else { text.to_string() };
+    let magnitude = magnitude.map_or_else(|| text.to_string(), |value| value.to_string());
+    HirError::IntegerLiteralOutOfRange {
+        literal,
+        magnitude,
+        range: range.to_string(),
+        source: nyar_types::DiagnosticSource { id: "<hir_lowering>".into(), revision: None },
+        span: nyar_types::DiagnosticSpan { start: span.start, end: span.end },
+    }
+}
+
+fn parse_integer_literal_magnitude(text: &str) -> Result<u64, ()> {
     if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
-        return i64::from_str_radix(hex, 16);
+        return u64::from_str_radix(hex, 16).map_err(|_| ());
     }
     if let Some(bin) = text.strip_prefix("0b").or_else(|| text.strip_prefix("0B")) {
-        return i64::from_str_radix(bin, 2);
+        return u64::from_str_radix(bin, 2).map_err(|_| ());
     }
     if let Some(oct) = text.strip_prefix("0o").or_else(|| text.strip_prefix("0O")) {
-        return i64::from_str_radix(oct, 8);
+        return u64::from_str_radix(oct, 8).map_err(|_| ());
     }
-    text.parse::<i64>()
+    text.parse::<u64>().map_err(|_| ())
 }
 
 fn lower_string_literal(
