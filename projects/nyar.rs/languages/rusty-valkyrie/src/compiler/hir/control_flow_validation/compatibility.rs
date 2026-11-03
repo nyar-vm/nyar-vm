@@ -155,13 +155,17 @@ pub fn is_integer_type(ty: &ValkyrieType) -> bool {
 /// 不同档位（如 `i32` 与 `i64`、`i32` 与 `u32`）不得因「都是整数」互相顶替。
 /// 标量字面量的宽度由期望类型决定，走 `scalar_literal_binds_to`，不在这里放宽。
 fn integer_carriers_share_identity(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
-    if !is_integer_type(expected) || !is_integer_type(actual) {
-        return false;
+    match (integer_carrier_identity(expected), integer_carrier_identity(actual)) {
+        (Some(left), Some(right)) => left == right,
+        _ => false,
     }
-    integer_carrier_identity(expected) == integer_carrier_identity(actual)
 }
 
 /// 整数 carrier 名义身份的构成因子：位宽 + 有符号性。
+///
+/// 除内建 `Integer*` 变体外，已冻结的 primitive 名义声明（`[primitive("std::primitive::u8")]`
+/// 等声明引用的 `Nominal { primitive_identity }` 形态）按同一命名规则归族——primitive
+/// 类型的同一性合同由 `primitive_identity` 承载，与声明 ItemId 的分配顺序无关。
 fn integer_carrier_identity(ty: &ValkyrieType) -> Option<(u16, bool)> {
     Some(match ty {
         ValkyrieType::Integer8 { signed } => (8, *signed),
@@ -169,6 +173,21 @@ fn integer_carrier_identity(ty: &ValkyrieType) -> Option<(u16, bool)> {
         ValkyrieType::Integer32 { signed } => (32, *signed),
         ValkyrieType::Integer64 { signed } => (64, *signed),
         ValkyrieType::Integer128 { signed } => (128, *signed),
+        ValkyrieType::Nominal { primitive_identity: Some(identity), arguments, .. } if arguments.is_empty() => {
+            match identity.rsplit("::").next().unwrap_or(identity) {
+                "i8" => (8, true),
+                "u8" | "byte" => (8, false),
+                "i16" => (16, true),
+                "u16" => (16, false),
+                "i32" | "int" => (32, true),
+                "u32" => (32, false),
+                "i64" | "long" => (64, true),
+                "u64" => (64, false),
+                "i128" => (128, true),
+                "u128" => (128, false),
+                _ => return None,
+            }
+        }
         _ => return None,
     })
 }
