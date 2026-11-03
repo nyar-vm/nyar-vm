@@ -365,6 +365,102 @@ micro main() {
 }
 ";
 
+const TEXT_GRAPH: &str = "namespace std.graph;
+
+type Equal = std::primitive::Equal;
+
+[primitive(\"std::primitive::text\")]
+structure text {
+}
+
+trait Hash {
+    micro hash(self): usize
+}
+
+imply text: Equal {
+    infix `==`(self, other: Self): bool { return true }
+
+    infix `!=`(self, other: Self): bool { return false }
+}
+
+imply text: Hash {
+    micro hash(self): usize { return 0 }
+}
+
+class Graph<N> {
+}
+
+imply Graph<N> {
+    micro add_edge(mut self, from: N, to: N): unit where N: Equal & Hash {
+        return
+    }
+}
+";
+
+const APP_TEXT_GRAPH: &str = "namespace leetcode.app;
+
+[export]
+micro touch_graph(graph: Graph<text>): unit {
+    graph.add_edge(\"a\", \"b\")
+}
+
+[main]
+micro main() {
+}
+";
+
+/// `DirectedGraph<utf8>` 的同构形态：双 bound（`Equal & Hash`）+ 字符串字面量，
+/// receiver 必须把 `N` 钉到 `text`，字面量按文本形参特化，双份证据都按 declaration 结算。
+#[test]
+#[ignore = "fails until `HirModule.impls` reaches dependency exports and instantiation trait views (currently empty at both boundaries)"]
+fn receiver_seeded_binder_specializes_text_literal_with_two_bounds() {
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&source_groups(TEXT_GRAPH, APP_TEXT_GRAPH))
+        .expect("`Graph<text>` 上的 `add_edge(\"a\", \"b\")` 必须经 receiver 播种与双证据解析");
+}
+
+const CLASS_EVIDENCE: &str = "namespace std.evidence;
+
+type Equal = std::primitive::Equal;
+
+class Plain {
+}
+
+imply Plain: Equal {
+    infix `==`(self, other: Self): bool { return true }
+
+    infix `!=`(self, other: Self): bool { return false }
+}
+
+micro touch<T>(x: T): bool where T: Equal {
+    return true
+}
+";
+
+const APP_CLASS_EVIDENCE: &str = "namespace leetcode.app;
+
+using std.evidence::{Plain, touch};
+
+[export]
+micro touch_plain(plain: Plain): bool {
+    return touch(plain)
+}
+
+[main]
+micro main() {
+}
+";
+
+/// 类（class）目标上的 trait impl 必须和结构体一样提供 where 证据：
+/// `touch<Plain>` 代入具体类类型时 `Equal` 证据不得缺席。
+#[test]
+#[ignore = "fails until `HirModule.impls` reaches dependency exports and instantiation trait views (currently empty at both boundaries)"]
+fn class_target_trait_impl_satisfies_where_evidence() {
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&source_groups(CLASS_EVIDENCE, APP_CLASS_EVIDENCE))
+        .expect("class 目标的 `Equal` impl 必须满足 where 证据");
+}
+
 /// receiver 实参必须把类泛型 binder 先钉住：`Bag<i32>` 上的 `put(1)`，
 /// `T` 由 receiver 播种为 `i32` 名义，字面量再按形参特化并通过 `Equal` 证据；
 /// 否则开放 binder 被字面量绑成编码原语，证据必然拒绝。
