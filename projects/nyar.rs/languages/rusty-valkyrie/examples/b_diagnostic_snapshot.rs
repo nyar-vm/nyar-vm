@@ -154,7 +154,7 @@ fn main() {
     let dump = args.get(4).is_some_and(|flag| flag == "dump");
 
     let worker = std::thread::Builder::new()
-        .stack_size(256 * 1024 * 1024)
+        .stack_size(rusty_valkyrie::legion::cmds::LEGION_DRIVER_STACK_BYTES)
         .spawn(move || run(project, target, out_dir, dump))
         .expect("spawn worker");
     worker.join().expect("join worker");

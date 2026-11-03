@@ -46,7 +46,14 @@ pub struct BuildArgs {
 }
 
 /// 执行 `legion build`。
+///
+/// 编译链是表达式深度驱动的递归，主线程默认栈装不下；统一在 `legion-driver` worker 上跑。
 pub fn run(args: &BuildArgs) -> LegionResult<ExitCode> {
+    let args = args.clone();
+    crate::legion::cmds::run_with_driver_stack(move || run_inner(&args))
+}
+
+fn run_inner(args: &BuildArgs) -> LegionResult<ExitCode> {
     let project_input = resolve_project_path(&args.project_dir)?;
     let workspace = WorkspaceResolver::discover_for_project(&project_input)?;
     if workspace.is_at_workspace_root(&project_input) {
@@ -163,7 +170,7 @@ fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
             output_dir: args.output_dir.clone(),
             debug_artifacts: args.debug_artifacts,
         };
-        match run(&member_args) {
+        match run_inner(&member_args) {
             Ok(code) if code == ExitCode::SUCCESS => {}
             Ok(_) => failures.push(format!("{}: exited with failure code", project_dir.display())),
             Err(error) => failures.push(format!("{}: {}", project_dir.display(), error)),

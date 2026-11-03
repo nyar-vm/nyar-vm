@@ -41,6 +41,37 @@ pub mod vendor;
 
 use std::path::Path;
 
+/// legion 驱动栈预算（字节）。
+///
+/// 依据（2026-11 实测，目标 `ovm`，项目 `bitwise-ors-of-subarrays`）：
+/// - HIR lowering 递归由表达式嵌套深度驱动，每层约 40 KiB 栈；`MAX_EXPRESSION_LOWERING_DEPTH`
+///   允许 24 层，25 层嵌套的峰值约 1.05 MiB，正好越过 Windows 主线程默认 1 MiB。
+/// - 同一程序 1 MiB 退出 `0xC00000FD`，1.1 MiB 起 exit 0；栈预算再翻倍（2/4/8/16 MiB）
+///   结果不变，说明峰值由 guard 上限决定、不随程序规模增长。
+/// - MIR/SSA/后端 lowering 尚未在这个项目上逼近上限，因此留 ~60× 余量。
+///
+/// 固定 64 MiB 只设在 worker 线程上，不改变主线程栈，也不要求调用方传魔数。
+pub const LEGION_DRIVER_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+/// 在固定栈预算的 worker 线程上执行 legion 驱动入口。
+///
+/// `build`/`test`/`plan` 与 example 入口统一走这里，避免各入口散落不同的魔数栈大小。
+pub fn run_with_driver_stack<T, F>(work: F) -> T
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    let worker = std::thread::Builder::new()
+        .name("legion-driver".into())
+        .stack_size(LEGION_DRIVER_STACK_BYTES)
+        .spawn(work)
+        .expect("spawn legion driver thread");
+    match worker.join() {
+        Ok(value) => value,
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
+
 /// CLI 日志用路径：尽量相对 cwd，或收敛到仓名相对片段，禁止原样打印本机绝对路径。
 pub(crate) fn path_for_cli_log(path: &Path) -> String {
     let raw = path.to_string_lossy();

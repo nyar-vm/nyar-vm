@@ -38,7 +38,14 @@ pub struct TestArgs {
 }
 
 /// 执行 `legion test`。
+///
+/// 编译链是表达式深度驱动的递归，主线程默认栈装不下；统一在 `legion-driver` worker 上跑。
 pub fn run(args: &TestArgs) -> LegionResult<ExitCode> {
+    let args = args.clone();
+    crate::legion::cmds::run_with_driver_stack(move || run_inner(&args))
+}
+
+fn run_inner(args: &TestArgs) -> LegionResult<ExitCode> {
     let project_dir = resolve_project_path(&args.project_dir)?;
     let targets = resolve_test_targets(args.target.as_deref());
     let workspace = WorkspaceResolver::discover_for_project(&project_dir)?;

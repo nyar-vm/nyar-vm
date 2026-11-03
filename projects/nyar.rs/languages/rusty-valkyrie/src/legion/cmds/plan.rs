@@ -20,7 +20,14 @@ pub struct PlanArgs {
 }
 
 /// 执行 `legion plan`（安全：不调用 `compile_plan`）。
+///
+/// `plan` 也会解析源码（planner 条件求值），递归同样由源码嵌套深度驱动，统一走 driver 栈预算。
 pub fn run(args: &PlanArgs) -> LegionResult<ExitCode> {
+    let args = args.clone();
+    crate::legion::cmds::run_with_driver_stack(move || run_inner(&args))
+}
+
+fn run_inner(args: &PlanArgs) -> LegionResult<ExitCode> {
     let project_input = resolve_project_path(&args.project_dir)?;
     let build_plan = plan(PlanRequest { project_dir: project_input, target: args.target.clone(), output_dir: None })?;
     if !build_plan.is_compilable() {

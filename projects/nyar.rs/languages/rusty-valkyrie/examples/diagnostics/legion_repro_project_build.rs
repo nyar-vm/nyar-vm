@@ -4,6 +4,11 @@
 use std::{path::PathBuf, process::ExitCode};
 
 fn main() -> ExitCode {
+    // 与 `legion build`/`test`/`plan` 共用同一固定栈预算的 driver 线程。
+    rusty_valkyrie::legion::cmds::run_with_driver_stack(build)
+}
+
+fn build() -> ExitCode {
     let mut arguments = std::env::args().skip(1);
     let Some(project) = arguments.next().map(PathBuf::from)
     else {
