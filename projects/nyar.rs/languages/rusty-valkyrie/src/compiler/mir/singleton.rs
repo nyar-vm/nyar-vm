@@ -94,6 +94,18 @@ fn collect_aggregate_field_map_into(module: &HirModule, index: &mut AggregateFie
             index.generics_by_declaration.insert(declaration, item.generics.clone());
         }
     }
+    // 多字段 unite/enum 变体的 payload 是名义记录，字段按变体声明身份登记；
+    // 记录名不是可解析类型名，因此只登记 declaration 键，不登记 by_name。
+    for enum_definition in &module.enums {
+        for variant in &enum_definition.variants {
+            let Some(declaration) = variant.declaration
+            else {
+                continue;
+            };
+            index.by_declaration.insert(declaration, variant.fields.clone());
+            index.generics_by_declaration.insert(declaration, enum_definition.generics.clone());
+        }
+    }
     for singleton in &module.singletons {
         index.by_name.insert(singleton.name.clone(), singleton.fields.clone());
         index.generics_by_name.insert(singleton.name.clone(), singleton.generics.clone());
@@ -105,6 +117,16 @@ fn collect_aggregate_field_map_into(module: &HirModule, index: &mut AggregateFie
             if let Some(declaration) = item.constructor_declaration {
                 index.by_declaration.entry(declaration).or_insert_with(|| item.fields.clone());
                 index.generics_by_declaration.entry(declaration).or_insert_with(|| item.generics.clone());
+            }
+        }
+        for enum_definition in &export.enums {
+            for variant in &enum_definition.variants {
+                let Some(declaration) = variant.declaration
+                else {
+                    continue;
+                };
+                index.by_declaration.entry(declaration).or_insert_with(|| variant.fields.clone());
+                index.generics_by_declaration.entry(declaration).or_insert_with(|| enum_definition.generics.clone());
             }
         }
     }

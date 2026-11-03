@@ -13,7 +13,10 @@ use nyar_types::StorageKind;
 use crate::compiler::{
     emitter::frontend_contract::concretize_type,
     mir::MirDiagnostic,
-    types::hir::{HirModule, HirStruct, ValkyrieType},
+    types::{
+        Identifier,
+        hir::{HirEnum, HirModule, HirStruct, HirVariant, ValkyrieType},
+    },
 };
 
 pub use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, LayoutKey, SumTypeLayout, SumVariantLayout};
@@ -128,6 +131,47 @@ fn unresolved_layout_diagnostic(hir_struct: &HirStruct) -> MirDiagnostic {
     }
 }
 
+/// 收集模块树内的全部枚举及其所属命名空间。
+fn collect_module_enums<'a>(module: &'a HirModule, output: &mut Vec<(Vec<Identifier>, &'a HirEnum)>) {
+    for hir_enum in &module.enums {
+        output.push((module.name.parts().to_vec(), hir_enum));
+    }
+    for submodule in &module.submodules {
+        collect_module_enums(submodule, output);
+    }
+}
+
+/// 多字段 unite/enum 变体的 payload 记录视图。
+///
+/// 记录身份取变体自身的冻结声明 `ItemId`，命名空间取所属模块；字段是变体
+/// 声明字段本身（字段 `FieldId` 已在 HIR 登记），因此 `FieldGet` 可从该布局
+/// 直接取偏移。零字段变体没有 payload 记录。
+fn variant_record_as_struct(namespace: &[Identifier], hir_enum: &HirEnum, variant: &HirVariant) -> HirStruct {
+    HirStruct {
+        constructor_declaration: variant.declaration,
+        constructor_instance: None,
+        name: Identifier::new(&format!("{}::{}", hir_enum.name.as_str(), variant.name.as_str())),
+        namespace: namespace.to_vec(),
+        doc: variant.doc.clone(),
+        generics: hir_enum.generics.clone(),
+        parents: Vec::new(),
+        fields: variant.fields.clone(),
+        methods: Vec::new(),
+        properties: Vec::new(),
+        visibility: hir_enum.visibility,
+        is_value_type: true,
+        is_abstract: false,
+        is_sealed: false,
+        is_final: false,
+        is_open: false,
+        abstract_methods: Vec::new(),
+        abstract_properties: Vec::new(),
+        derives: Vec::new(),
+        annotations: Vec::new(),
+        primitive_identity: None,
+    }
+}
+
 /// 从 HIR 收集聚合布局计划：结构体、导入结构体与 singleton 载体。
 ///
 /// 字段无法解析为平台布局形状时（缺声明拼写、含未代入 `Self`/泛型）不再 panic：
@@ -218,6 +262,35 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
                 register_declared_layout(&mut plan, hir_struct, layout);
             }
             None => diagnostics.push(unresolved_layout_diagnostic(hir_struct)),
+        }
+    }
+    // 多字段 unite/enum 变体的 payload 是名义记录：按变体声明身份登记独立字段布局，
+    // 供 `FieldGet` 从布局取偏移。开放泛型枚举的字段仍是 binder，不生成平台布局；
+    // 零字段变体没有 payload 记录。字段事实不完整的记录不登记，使用点由
+    // `layout_id_for_type` / `field_identity_from_type` 按结构化诊断失败关闭。
+    let mut enum_declarations: Vec<(Vec<Identifier>, &HirEnum)> = Vec::new();
+    collect_module_enums(module, &mut enum_declarations);
+    for export in &module.imported_semantic_exports {
+        for hir_enum in &export.enums {
+            enum_declarations.push((export.module.parts().to_vec(), hir_enum));
+        }
+    }
+    let mut variant_records: Vec<HirStruct> = Vec::new();
+    for (namespace, hir_enum) in &enum_declarations {
+        if !hir_enum.generics.is_empty() {
+            continue;
+        }
+        for variant in &hir_enum.variants {
+            if variant.fields.is_empty() {
+                continue;
+            }
+            variant_records.push(variant_record_as_struct(namespace, hir_enum, variant));
+        }
+    }
+    for record in &variant_records {
+        if let Some(layout) = layout_for_struct(record, &plan, MirStorageKind::Value, &facts) {
+            registered.push((record, MirStorageKind::Value));
+            register_declared_layout(&mut plan, record, layout);
         }
     }
     // 第二遍：declaration_to_layout 完整后重解已登记布局的字段事实，把名义
