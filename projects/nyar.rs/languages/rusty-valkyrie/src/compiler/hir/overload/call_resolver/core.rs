@@ -233,9 +233,13 @@ pub(crate) fn try_resolve_call(
             if let [subject] = subjects.as_slice() {
                 let mut matches = Vec::new();
                 for bound in &subject.bounds {
+                    // 只收 trait 声明里的方法槽（无 owner）：impl 成员的 `trait_owner`
+                    // 归属事实让它在名字与 trait 身份上都命中，但它不是槽位——
+                    // 代入槽位声明会错配实参，必须把 impl 成员排除在这条路径之外。
                     for candidate in candidates
                         .iter()
                         .filter(|candidate| !candidate_has_receiver_parameter(candidate))
+                        .filter(|candidate| candidate.owner.is_none())
                         .filter(|candidate| candidate_trait_method_matches(candidate, method_name))
                         .filter(|candidate| bound.declaration.is_some() && candidate.trait_owner == bound.declaration)
                     {

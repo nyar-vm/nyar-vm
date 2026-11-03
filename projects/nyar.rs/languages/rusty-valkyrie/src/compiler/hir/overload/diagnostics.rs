@@ -182,6 +182,14 @@ pub fn resolve_overload(candidates: &[OverloadCandidate]) -> Result<OverloadCand
             if let [selected] = declared.as_slice() {
                 return Ok((**selected).clone());
             }
+            // 身份俱在仍并列时，inherent impl 成员严格优先于 trait impl 成员：
+            // `imply u64` 与 `imply u64: Equal` 的同形 `==` 并存是合法的（u64 既要有
+            // 原生比较也要有 trait 证据），按方法解析的既定语义由 inherent 胜出，
+            // 不得让同形对撞退化成「无一候选」。
+            let inherent = ambiguous.iter().filter(|candidate| candidate.trait_owner.is_none()).collect::<Vec<_>>();
+            if let [selected] = inherent.as_slice() {
+                return Ok((**selected).clone());
+            }
             Err(OverloadResolutionError::Ambiguous { candidates: ambiguous.iter().map(|candidate| candidate.symbol.clone()).collect() })
         }
     }

@@ -114,6 +114,166 @@ micro main() {
     assert_eq!(resolved.parameter_types, vec![ValkyrieType::Named(Identifier::new("i64"))]);
 }
 
+/// 同一 owner 的 inherent 成员与 trait impl 成员同形并存时，调用解析按方法解析的
+/// 既定语义由 inherent 胜出，不得让同形对撞退化成「无一候选」。
+///
+/// 野外形态：std 的 `u64` 同时声明 `imply u64 { infix == }` 与 `imply u64: Equal`，
+/// `a == b` 必须解析到 inherent 成员；`imply u64: Equal` 的 `!=` 体内 `!(self == rhs)`
+/// 也必须解析（Equal 的 `==` 候选与 inherent 候选同形并存）。
+#[test]
+fn inherent_and_trait_impl_members_with_identical_signature_prefer_inherent() {
+    let std = r#"
+namespace std.primitive;
+
+[primitive("std::primitive::bool")]
+structure bool { }
+
+imply bool {
+    prefix `!`(self): bool {
+        if self {
+            return false
+        }
+        return true
+    }
+}
+
+namespace std.operator;
+
+trait Equal {
+    infix `==`(self, other: Self): bool
+
+    infix `!=`(self, other: Self): bool
+}
+
+namespace std.primitive;
+
+[primitive("std::primitive::u64")]
+structure u64 { }
+
+imply u64 {
+    infix `==`(self, rhs: Self): bool {
+        __u64_eq(self, rhs)
+    }
+}
+
+imply u64: std::operator::Equal {
+    infix `==`(self, rhs: Self): bool {
+        __u64_eq(self, rhs)
+    }
+    infix `!=`(self, rhs: Self): bool {
+        return !(self == rhs)
+    }
+}
+
+[host_contract]
+private micro __u64_eq(a: u64, b: u64): bool
+"#;
+    let app = r#"
+namespace demo;
+
+[export]
+micro probe(a: u64, b: u64): bool {
+    return a != b
+}
+"#;
+    compile_operator_groups(std, app).expect("inherent 与 trait 同形成员并存时必须由 inherent 胜出");
+}
+
+/// 某成员只经 trait impl 提供（无 inherent 同名兄弟）时，具体接收者上的调用必须
+/// 解析到该 impl 成员——trait 归属事实不构成匹配门槛。
+#[test]
+fn trait_impl_member_resolves_when_no_inherent_sibling_exists() {
+    let std = r#"
+namespace std.primitive;
+
+[primitive("std::primitive::bool")]
+structure bool { }
+
+imply bool {
+    prefix `!`(self): bool {
+        if self {
+            return false
+        }
+        return true
+    }
+}
+
+namespace std.operator;
+
+trait Equal {
+    infix `==`(self, other: Self): bool
+
+    infix `!=`(self, other: Self): bool
+}
+
+trait PartialOrder {
+    infix `<`(self, other: Self): bool
+
+    infix `<=`(self, other: Self): bool
+}
+
+namespace std.primitive;
+
+[primitive("std::primitive::u64")]
+structure u64 { }
+
+imply u64 {
+    infix `==`(self, rhs: Self): bool {
+        __u64_eq(self, rhs)
+    }
+}
+
+imply u64: std::operator::Equal {
+    infix `==`(self, rhs: Self): bool {
+        __u64_eq(self, rhs)
+    }
+    infix `!=`(self, rhs: Self): bool {
+        return !(self == rhs)
+    }
+}
+
+imply u64: std::operator::PartialOrder {
+    infix `<`(self, rhs: Self): bool {
+        __u64_lt(self, rhs)
+    }
+    infix `<=`(self, rhs: Self): bool {
+        return !(rhs < self)
+    }
+}
+
+[host_contract]
+private micro __u64_eq(a: u64, b: u64): bool
+
+[host_contract]
+private micro __u64_lt(a: u64, b: u64): bool
+"#;
+    let app = r#"
+namespace demo;
+
+[export]
+micro probe(a: u64, b: u64): bool {
+    return a < b
+}
+"#;
+    compile_operator_groups(std, app).expect("`a < b` 必须解析到 `PartialOrder` 的 impl 成员");
+}
+
+fn compile_operator_groups(std: &str, app: &str) -> Result<(), String> {
+    use rusty_valkyrie::{CompilerSourceGroup, compiler::diagnostics::pending, hir::lowering::DEFAULT_COMPILE_ARCH};
+    pending::clear_pending_diagnostics();
+    let groups = [
+        CompilerSourceGroup::single_source("std", "std", std),
+        CompilerSourceGroup::single_source("app", "app", app).as_entry().with_direct_dependencies(vec!["std".into()]),
+    ];
+    let result = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH);
+    let collected = pending::take_pending_diagnostics();
+    match result {
+        Ok(_) if collected.total() == 0 => Ok(()),
+        Ok(_) => Err(format!("编译成功但诊断汇非空: {collected:?}")),
+        Err(error) => Err(format!("{error}; diagnostics: {collected:?}")),
+    }
+}
+
 #[cfg(false)] // 历史用例访问 overload pub(crate) 内部函数（架构迁移遗留），维持排除
 mod legacy_internals {
     use rusty_valkyrie::{

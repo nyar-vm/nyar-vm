@@ -262,11 +262,12 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
     }
     for item in &module.impls {
         let owner = impl_owner_identifier(module, &item.target);
-        candidates.extend(
-            item.methods
-                .iter()
-                .map(|method| specialize_method_candidate(build_method_candidate(method, owner.clone(), None), &item.target, &item.generics)),
-        );
+        // `imply u64: Equal` 的 trait 归属必须随成员进入候选表：丢了它，trait impl
+        // 成员与同形 inherent 成员在决胜阶段无法区分，同优先级并列会被误判成歧义。
+        let trait_ref = item.trait_declaration.and_then(|declaration| module.traits.iter().find(|item| item.declaration == Some(declaration)));
+        candidates.extend(item.methods.iter().map(|method| {
+            specialize_method_candidate(build_method_candidate(method, owner.clone(), trait_ref), &item.target, &item.generics)
+        }));
     }
     for export in &module.imported_semantic_exports {
         candidates.extend(
@@ -299,11 +300,11 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
         }
         for item in &export.impls {
             let owner = impl_owner_identifier(module, &item.target).or_else(|| impl_owner_identifier_from_export(export, &item.target));
-            candidates.extend(
-                item.methods.iter().map(|method| {
-                    specialize_method_candidate(build_method_candidate(method, owner.clone(), None), &item.target, &item.generics)
-                }),
-            );
+            // 跨包 impl 同理：trait 归属按 resolver 已绑定的身份带上。
+            let trait_ref = item.trait_declaration.and_then(|declaration| export.traits.iter().find(|item| item.declaration == Some(declaration)));
+            candidates.extend(item.methods.iter().map(|method| {
+                specialize_method_candidate(build_method_candidate(method, owner.clone(), trait_ref), &item.target, &item.generics)
+            }));
         }
     }
     for item in &module.enums {

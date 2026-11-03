@@ -473,7 +473,10 @@ pub(crate) fn try_resolve_instance_method(
                 }
             }
         }
-        else if candidate.trait_owner.is_none() {
+        // 具体接收者上，inherent 成员与「已归属具体 impl 的 trait 成员」都进入实参
+        // 匹配（trait 归属只是决胜阶段的tie-break事实，不构成匹配门槛）；只有
+        // trait 方法槽（无 owner、首参 `Self` 占位）继续排除，它由 witness 路径结算。
+        else if candidate.trait_owner.is_none() || candidate.owner.is_some() {
             if let Some(matched) = match_call_candidate(candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names) {
                 filtered.push(matched);
             }
