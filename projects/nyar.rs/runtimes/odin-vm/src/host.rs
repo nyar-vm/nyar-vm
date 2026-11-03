@@ -227,17 +227,13 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             Ok(args.last().cloned().unwrap_or(Value::Null))
         }
         HostOp::StringConcat => {
-            let left = args.first().map(value_display).unwrap_or_default();
-            let right = args.get(1).map(value_display).unwrap_or_default();
+            let left = value_display(args.first().ok_or(OdinRuntimeError::StackUnderflow)?);
+            let right = value_display(args.get(1).ok_or(OdinRuntimeError::StackUnderflow)?);
             Ok(Value::String(format!("{left}{right}")))
         }
         HostOp::ConsoleLog => {
-            if let Some(value) = args.first() {
-                println!("{value}");
-            }
-            else {
-                println!();
-            }
+            let value = args.first().ok_or(OdinRuntimeError::StackUnderflow)?;
+            println!("{value}");
             Ok(Value::Null)
         }
         HostOp::BeginPhase => {
@@ -285,7 +281,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             Some(Value::I32(value)) => Ok(Value::I64(*value as i64)),
             Some(Value::I64(value)) => Ok(Value::I64(*value)),
             Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
-            None => Ok(Value::I64(0)),
+            None => Err(OdinRuntimeError::StackUnderflow),
         },
         // ---- 浮点：严格 IEEE-754，不 trap；转换统一「饱和 + NaN→0」 ----
         HostOp::I32ToF64 => match args.first() {
@@ -293,7 +289,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
             None => Err(OdinRuntimeError::StackUnderflow),
         },
-        HostOp::I64ToF64 => Ok(Value::F64(i64_arg_strict(args, 0)? as f64)),
+        HostOp::I64ToF64 => Ok(Value::F64(i64_arg(args, 0)? as f64)),
         HostOp::F64Add => Ok(Value::F64(f64_arg(args, 0)? + f64_arg(args, 1)?)),
         HostOp::F64Sub => Ok(Value::F64(f64_arg(args, 0)? - f64_arg(args, 1)?)),
         HostOp::F64Mul => Ok(Value::F64(f64_arg(args, 0)? * f64_arg(args, 1)?)),
@@ -385,12 +381,16 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::I64Shl => Ok(Value::I64(i64_arg(args, 0)? << (i64_arg(args, 1)? & 63) as u32)),
         HostOp::I64Shr => Ok(Value::I64(i64_arg(args, 0)? >> (i64_arg(args, 1)? & 63) as u32)),
         HostOp::I64ShrU => Ok(Value::I64((i64_arg(args, 0)? as u64 >> (i64_arg(args, 1)? & 63) as u32) as i64)),
-        HostOp::BoolNot => Ok(Value::Bool(!args.first().map(Value::to_bool).unwrap_or(false))),
+        HostOp::BoolNot => Ok(Value::Bool(!args.first().ok_or(OdinRuntimeError::StackUnderflow)?.to_bool())),
         HostOp::BoolAnd => {
-            Ok(Value::Bool(args.first().map(Value::to_bool).unwrap_or(false) && args.get(1).map(Value::to_bool).unwrap_or(false)))
+            let lhs = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.to_bool();
+            let rhs = args.get(1).ok_or(OdinRuntimeError::StackUnderflow)?.to_bool();
+            Ok(Value::Bool(lhs && rhs))
         }
         HostOp::BoolOr => {
-            Ok(Value::Bool(args.first().map(Value::to_bool).unwrap_or(false) || args.get(1).map(Value::to_bool).unwrap_or(false)))
+            let lhs = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.to_bool();
+            let rhs = args.get(1).ok_or(OdinRuntimeError::StackUnderflow)?.to_bool();
+            Ok(Value::Bool(lhs || rhs))
         }
         HostOp::ArrayNew => {
             let length = i32_arg(args, 0)?;
@@ -400,16 +400,16 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             let slots = vec![Value::Null; length as usize];
             Ok(array_runtime::build_fixed_array(heap, 0, &slots))
         }
-        HostOp::ArrayLength => array_runtime::array_length(heap, args.first().unwrap_or(&Value::Null)),
+        HostOp::ArrayLength => array_runtime::array_length(heap, args.first().ok_or(OdinRuntimeError::StackUnderflow)?),
         HostOp::ArrayGet => {
-            let array = args.first().cloned().unwrap_or(Value::Null);
-            let index = args.get(1).cloned().unwrap_or(Value::I32(0));
+            let array = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
+            let index = args.get(1).ok_or(OdinRuntimeError::StackUnderflow)?.clone();
             array_runtime::array_get(heap, &array, &index)
         }
         HostOp::ArraySet => {
-            let array = args.first().cloned().unwrap_or(Value::Null);
-            let index = args.get(1).cloned().unwrap_or(Value::I32(0));
-            let value = args.get(2).cloned().unwrap_or(Value::Null);
+            let array = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
+            let index = args.get(1).ok_or(OdinRuntimeError::StackUnderflow)?.clone();
+            let value = args.get(2).ok_or(OdinRuntimeError::StackUnderflow)?.clone();
             array_runtime::array_set(heap, &array, &index, &value)
         }
         HostOp::DomCreateElement => {
@@ -421,23 +421,23 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             dom_runtime::create_text(heap, &text)
         }
         HostOp::DomAppend => {
-            let parent = args.first().cloned().unwrap_or(Value::Null);
-            let child = args.get(1).cloned().unwrap_or(Value::Null);
+            let parent = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
+            let child = args.get(1).ok_or(OdinRuntimeError::StackUnderflow)?.clone();
             dom_runtime::append(heap, &parent, &child)
         }
         HostOp::DomSetAttr => {
-            let node = args.first().cloned().unwrap_or(Value::Null);
+            let node = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
             let name = string_arg(args, 1, "dom_set_attr name")?;
             let value = string_arg(args, 2, "dom_set_attr value")?;
             dom_runtime::set_attr(heap, &node, &name, &value)
         }
         HostOp::DomGetAttr => {
-            let node = args.first().cloned().unwrap_or(Value::Null);
+            let node = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
             let name = string_arg(args, 1, "dom_get_attr name")?;
             dom_runtime::get_attr(heap, &node, &name)
         }
         HostOp::DomSetText => {
-            let node = args.first().cloned().unwrap_or(Value::Null);
+            let node = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
             let text = string_arg(args, 1, "dom_set_text text")?;
             dom_runtime::set_text(heap, &node, &text)
         }
@@ -470,7 +470,7 @@ fn i64_arg(args: &[Value], index: usize) -> Result<i64, OdinRuntimeError> {
         Some(Value::I64(value)) => Ok(*value),
         Some(Value::I32(value)) => Ok(*value as i64),
         Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i64", actual: other.type_name().to_string() }),
-        None => Ok(0),
+        None => Err(OdinRuntimeError::StackUnderflow),
     }
 }
 
@@ -479,16 +479,6 @@ fn i32_arg(args: &[Value], index: usize) -> Result<i32, OdinRuntimeError> {
         Some(Value::I32(value)) => Ok(*value),
         Some(Value::I64(value)) => Ok(*value as i32),
         Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
-        None => Ok(0),
-    }
-}
-
-/// 严格整数取参：缺参报 `StackUnderflow`，不给默认值（浮点族与整数转换共用）。
-fn i64_arg_strict(args: &[Value], index: usize) -> Result<i64, OdinRuntimeError> {
-    match args.get(index) {
-        Some(Value::I64(value)) => Ok(*value),
-        Some(Value::I32(value)) => Ok(*value as i64),
-        Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i64", actual: other.type_name().to_string() }),
         None => Err(OdinRuntimeError::StackUnderflow),
     }
 }
@@ -548,6 +538,6 @@ fn string_arg(args: &[Value], index: usize, what: &'static str) -> Result<String
     match args.get(index) {
         Some(Value::String(value)) => Ok(value.clone()),
         Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: what, actual: other.type_name().to_string() }),
-        None => Err(OdinRuntimeError::TypeMismatch { expected: what, actual: "missing argument".into() }),
+        None => Err(OdinRuntimeError::StackUnderflow),
     }
 }
