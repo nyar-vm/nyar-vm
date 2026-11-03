@@ -36,6 +36,8 @@ pub fn color_token(name: &str) -> Option<ColorToken> {
         "ink-soft" => ColorToken { hex: "#e2e8f0" },
         "ink-muted" => ColorToken { hex: "#94a3b8" },
         "ok" => ColorToken { hex: "#4ade80" },
+        "warn" => ColorToken { hex: "#f97316" },
+        "danger" => ColorToken { hex: "#ef4444" },
         _ => return None,
     })
 }

@@ -27,6 +27,7 @@ mod serve_static_build;
 mod server_runtime;
 mod ssg;
 mod ssg_ovm;
+mod ssg_style_contract;
 mod static_artifact_tree;
 mod static_site;
 mod support;
