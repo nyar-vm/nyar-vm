@@ -37,6 +37,12 @@ pub struct TargetExecutionPlan {
     aggregate_layout_by_nominal: BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId>,
     aggregate_layout_by_field: BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)>,
     aggregate_layout_by_type: BTreeMap<nyar_types::TypeId, nyar_types::LayoutId>,
+    /// 以结构化 `NyarType` 为键布局索引。
+    ///
+    /// `NyarType::Apply`（如 `ArrayList<i64>`）不携带 `LayoutId`；库导出 ABI 的
+    /// 字段/容器桥需要从类型拼写回查冻结布局。索引只在 canonical 计划构建时
+    /// 由 `aggregate_layout_by_type` 逐项 `lower_type` 生成，不按名字猜布局。
+    aggregate_layout_by_nyar_type: BTreeMap<NyarType, nyar_types::LayoutId>,
     flags_types: Vec<nyar_types::FlagsLayout>,
     singleton_instances: Vec<nyar_types::SingletonInstancePlan>,
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
@@ -203,6 +209,21 @@ impl TargetExecutionPlan {
         self
     }
 
+    /// 登记结构化 `NyarType` → layout，并写入 `aggregate_layouts`（集成测试专用）。
+    ///
+    /// 生产路径由 `from_compiled_program` 从 `aggregate_layout_by_type` 逐项
+    /// `lower_type` 生成；手工计划没有 canonical，必须显式登记同一事实，
+    /// 否则泛型实例（`Apply`）只能退回按名字猜测布局。
+    #[doc(hidden)]
+    pub fn testing_register_type_layout(&mut self, ty: nyar_types::NyarType, layout: nyar_types::AggregateLayout) -> &mut Self {
+        let layout_id = layout.id;
+        if !self.aggregate_layouts.layouts.iter().any(|item| item.id == layout_id) {
+            self.aggregate_layouts.layouts.push(layout);
+        }
+        self.aggregate_layout_by_nyar_type.insert(ty, layout_id);
+        self
+    }
+
     /// 登记外部导入 callable（集成测试专用）。
     #[doc(hidden)]
     pub fn testing_register_import(&mut self, instance: ItemInstanceId, import: BackendImport) -> &mut Self {
@@ -299,6 +320,14 @@ impl TargetExecutionPlan {
             pending.extend(callees);
             functions.insert(instance, lowered);
         }
+        let mut aggregate_layout_by_nyar_type = BTreeMap::new();
+        for (type_id, layout_id) in &canonical.linked.aggregate_layout_by_type {
+            // lower_type 只对“可执行类型”有结果；函数签名等非值类型跳过即可，
+            // 它们不会成为容器元素或导出位置。
+            if let Ok(ty) = lower_type(canonical, *type_id) {
+                aggregate_layout_by_nyar_type.insert(ty, *layout_id);
+            }
+        }
         let mut plan = Self {
             module_name: canonical.linked.module_name.clone(),
             fragment_id: fragment.id.clone(),
@@ -314,6 +343,7 @@ impl TargetExecutionPlan {
             aggregate_layout_by_nominal: canonical.linked.aggregate_layout_by_nominal.clone(),
             aggregate_layout_by_field: canonical.linked.aggregate_layout_by_field.clone(),
             aggregate_layout_by_type: canonical.linked.aggregate_layout_by_type.clone(),
+            aggregate_layout_by_nyar_type,
             flags_types: canonical.linked.flags_types.clone(),
             singleton_instances: canonical.linked.singleton_instances.clone(),
             functions,
@@ -424,6 +454,13 @@ impl TargetExecutionPlan {
     /// 返回类型 ID 到布局 ID 的映射。
     pub fn aggregate_layout_by_type(&self) -> &BTreeMap<nyar_types::TypeId, nyar_types::LayoutId> {
         &self.aggregate_layout_by_type
+    }
+
+    /// 返回结构化 `NyarType` 到布局 ID 的映射。
+    ///
+    /// 这是 `Apply(Named, args)` 唯一可用的布局身份来源；按名字回查布局被禁止。
+    pub fn aggregate_layout_by_nyar_type(&self) -> &BTreeMap<NyarType, nyar_types::LayoutId> {
+        &self.aggregate_layout_by_nyar_type
     }
 
     /// 返回 flags 类型布局列表。
@@ -1394,15 +1431,65 @@ mod tests {
         ));
     }
 
-    /// 反例：无符号除余 / 逻辑右移等刻意未冻结的助记符必须保持 `Unfrozen`，
-    /// 由 emit 侧结构化失败，不得在本层猜默认指令。
+    /// `u64`/`u32` 无符号除、余、逻辑右移的托管目标配方：
+    /// CLR 冻结为原生 `div.un`/`rem.un`/`shr.un`；JVM 冻结为 `lushr`/`iushr` 或
+    /// `Integer/Long.divideUnsigned/remainderUnsigned` 静态调用。
     #[test]
-    fn deliberately_unfrozen_unsigned_variants_stay_unfrozen() {
-        let clr_link = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("clr-operator")), vec!["i64.div.un".to_string()]);
-        assert_eq!(freeze_target_operator(&clr_link), Some(TargetOperatorBinding::Unfrozen), "无符号除法不得冻结");
-        let jvm_link =
-            nyar::ExternalImportLink::host(Some(nyar::Identifier::new("jvm-operator")), vec!["long.shift_right_unsigned".to_string()]);
-        assert_eq!(freeze_target_operator(&jvm_link), Some(TargetOperatorBinding::Unfrozen), "未冻结助记符不得冻结");
+    fn unsigned_div_rem_shift_freeze_managed_operator_plans() {
+        use crate::lowering::backends::jvm::JvmOperatorCode;
+        use crate::transitional::msil::MsilOpcode;
+
+        for (mnemonic, operand, result, opcode) in [
+            ("i32.div.un", TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::DivUn),
+            ("i32.rem.un", TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::RemUn),
+            ("i32.shr.un", TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::ShrUn),
+            ("i64.div.un", TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::DivUn),
+            ("i64.rem.un", TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::RemUn),
+            ("i64.shr.un", TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::ShrUn),
+        ] {
+            let link = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("clr-operator")), vec![mnemonic.to_string()]);
+            let Some(TargetOperatorBinding::Frozen(plan)) = freeze_target_operator(&link)
+            else {
+                panic!("`{mnemonic}` 必须冻结")
+            };
+            assert_eq!(plan.arity, 2);
+            assert_eq!(plan.operand_type, operand);
+            assert_eq!(plan.result_type, result);
+            assert_eq!(plan.encoding, TargetOperatorEncoding::Clr(opcode), "`{mnemonic}` 编码");
+        }
+
+        for (mnemonic, operand, result, code) in [
+            ("integer.divide_unsigned", TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerDivideUnsigned),
+            ("integer.remainder_unsigned", TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerRemainderUnsigned),
+            ("long.divide_unsigned", TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongDivideUnsigned),
+            ("long.remainder_unsigned", TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongRemainderUnsigned),
+            ("long.shift_right_unsigned", TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongShiftRightUnsigned),
+        ] {
+            let link = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("jvm-operator")), vec![mnemonic.to_string()]);
+            let Some(TargetOperatorBinding::Frozen(plan)) = freeze_target_operator(&link)
+            else {
+                panic!("`{mnemonic}` 必须冻结")
+            };
+            assert_eq!(plan.arity, 2);
+            assert_eq!(plan.operand_type, operand);
+            assert_eq!(plan.result_type, result);
+            assert_eq!(plan.encoding, TargetOperatorEncoding::Jvm(code), "`{mnemonic}` 编码");
+        }
+    }
+
+    /// 反例：近似但未冻结的助记符必须保持 `Unfrozen`，由 emit 侧结构化失败，
+    /// 不得按名字前缀猜默认指令。
+    #[test]
+    fn near_miss_unsigned_mnemonics_stay_unfrozen() {
+        for (lane, mnemonic) in [
+            ("clr-operator", "i64.div_unsigned"),
+            ("clr-operator", "i64.shr.un.extra"),
+            ("jvm-operator", "long.div.un"),
+            ("jvm-operator", "long.shift_right_unsigned.extra"),
+        ] {
+            let link = nyar::ExternalImportLink::host(Some(nyar::Identifier::new(lane)), vec![mnemonic.to_string()]);
+            assert_eq!(freeze_target_operator(&link), Some(TargetOperatorBinding::Unfrozen), "`{mnemonic}` 不得冻结");
+        }
     }
 }
 

@@ -71,7 +71,7 @@ fn glue_named_aggregate_demarshal_follows_field_access_contract() {
     assert!(glue.contains("const accessor = exports[field.accessor];"), "字段必须按合同 accessor 导出读取:\n{glue}");
     assert!(glue.contains(r#"accessor export ""#) && glue.contains("is missing"), "缺 accessor 导出必须失败闭合:\n{glue}");
     assert!(
-        glue.contains("aggregate[field.name] = demarshalLibraryReturn(field.type, accessor(raw));"),
+        glue.contains("aggregate[field.name] = demarshalLibraryReturn(field.type, accessor(raw), `${path}.${field.name}`);"),
         "字段值必须按字段 schema 递归反编组:\n{glue}"
     );
 }
@@ -97,11 +97,15 @@ fn glue_call_export_resolves_spec_params_by_position_and_identity() {
     assert!(glue.contains("export async function callExport"), "library glue 必须暴露 callExport:\n{glue}");
     assert!(glue.contains(r#"const spec = LIBRARY_INVOKE?.exports?.[name];"#), "调用规格必须按导出名查表:\n{glue}");
     assert!(
-        glue.contains("spec.params.map((param, index) => marshalLibraryArg(paramType(param), args[index]))"),
+        glue.contains("spec.params.map((param, index) => marshalLibraryArg(paramType(param), args[index], `arg${index}`))"),
         "参数必须按声明顺序逐位 marshal:\n{glue}"
     );
-    assert!(glue.contains("demarshalLibraryReturn(spec.returns, raw)"), "返回值必须按返回 schema demarshal:\n{glue}");
-    assert!(glue.contains("return BigInt(value ?? 0);"), "i64 参数必须 BigInt 化:\n{glue}");
+    assert!(
+        glue.contains(r#"demarshalLibraryReturn(spec.returns, raw, "return")"#),
+        "返回值必须按返回 schema demarshal:\n{glue}"
+    );
+    assert!(glue.contains(r#"if (typeof value === "bigint") return value;"#), "i64 参数必须保留 BigInt 原值:\n{glue}");
+    assert!(glue.contains("I64 requires a BigInt"), "i64 参数只接受 BigInt / 十进制字符串:\n{glue}");
 }
 
 #[test]
@@ -115,14 +119,14 @@ fn glue_i64_return_demarshals_as_bigint_without_number_narrowing() {
 }
 
 #[test]
-fn glue_i64_parameter_rejects_unsafe_number_with_explicit_error() {
-    // 反例合同：调用方用 Number 承载超安全整数范围的值时，marshal 必须显式
-    // 报错并指引改用 BigInt，不得静默截断；安全整数范围内的 Number 仍接受。
+fn glue_i64_parameter_rejects_number_with_explicit_error() {
+    // 反例合同：Number 一律不得作为 i64 入参——即使落在安全整数范围，
+    // 它也表达不了完整 64 位合同；marshal 必须显式报错并指引改用 BigInt。
     let glue =
         launcher_for(&spec(r#"{"echo":{"params":[{"index":0,"name":"v","type":{"kind":"I64"},"carrier":"i64"}],"returns":{"kind":"I64"}}}"#));
-    assert!(glue.contains(r#"typeof value === "number" && !Number.isSafeInteger(value)"#), "i64 参数必须检查 Number 安全整数范围:\n{glue}");
-    assert!(glue.contains("Cannot marshal I64 from Number"), "超范围 Number 必须有结构化报错:\n{glue}");
-    assert!(glue.contains("Pass a BigInt instead"), "报错必须指引改用 BigInt:\n{glue}");
+    assert!(glue.contains("Cannot marshal I64 from"), "Number 作为 i64 必须有结构化报错:\n{glue}");
+    assert!(glue.contains("I64 requires a BigInt"), "报错必须指明 BigInt 合同:\n{glue}");
+    assert!(glue.contains("outside the 64-bit range"), "十进制字符串越界必须显式报错:\n{glue}");
 }
 
 #[test]

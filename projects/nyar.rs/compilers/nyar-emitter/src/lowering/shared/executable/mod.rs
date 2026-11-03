@@ -43,6 +43,18 @@ impl<'a> ExecutableLoweringContext<'a> {
         self.submission.backend_plan.aggregate_layout_by_type().get(&ty).and_then(|id| self.layout_by_id(*id))
     }
 
+    /// 按结构化类型查冻结布局。
+    ///
+    /// `Nominal` 自带 `LayoutId`；`Apply`（泛型实例）从计划冻结的
+    /// `NyarType → LayoutId` 索引解析。两者之外不做名字回查。
+    pub fn layout_for_nyar_type(&self, ty: &NyarType) -> Option<&AggregateLayout> {
+        let layout_id = match ty {
+            NyarType::Nominal { layout, .. } => *layout,
+            _ => *self.submission.backend_plan.aggregate_layout_by_nyar_type().get(ty)?,
+        };
+        self.layout_by_id(layout_id)
+    }
+
     pub fn field_layout_by_id(&self, field: FieldId) -> Option<(&AggregateLayout, &FieldLayout, u32)> {
         let (layout_id, slot) = self.submission.backend_plan.aggregate_layout_by_field().get(&field)?;
         let layout = self.layout_by_id(*layout_id)?;

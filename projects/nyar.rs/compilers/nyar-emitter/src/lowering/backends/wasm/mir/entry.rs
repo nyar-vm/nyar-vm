@@ -582,6 +582,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             submission,
             &ctx,
             &gc_struct_type_indices,
+            &gc_array_type_indices,
             js_glue_utf8_as_anyref,
             &mut type_indices,
             &mut function_indices,
@@ -1302,6 +1303,7 @@ fn emit_library_field_accessors<'name>(
     submission: &FragmentSubmission,
     ctx: &ExecutableLoweringContext,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    gc_array_type_indices: &BTreeMap<String, u32>,
     js_glue_utf8_as_anyref: bool,
     type_indices: &mut Vec<Vec<u8>>,
     function_indices: &mut Vec<u32>,
@@ -1310,40 +1312,67 @@ fn emit_library_field_accessors<'name>(
     import_count: u32,
     name_store: &'name mut Vec<String>,
 ) -> crate::Result<()> {
-    /// 返回类型可达性收集：穿透容器，落到 nominal 布局身份。
-    fn collect_nominal_layouts(ty: &NyarType, out: &mut Vec<LayoutId>) {
+    /// 从导出位置（参数或返回值）收集桥接可达节点。
+    ///
+    /// - `Nominal` 自带布局；`Apply` 只从计划冻结的 `NyarType → LayoutId`
+    ///   索引解析，索引缺失直接跳过（schema 侧同样没有字段合同，宿主失败闭合）。
+    /// - heap `Array<T>` 收集元素类型，供发射 `array.new_default/get/set/len`。
+    /// - 深搜按 `reachable` 去重，布局环不会死循环。
+    fn collect_bridge_nodes(
+        ty: &NyarType,
+        ctx: &ExecutableLoweringContext,
+        reachable: &mut BTreeSet<LayoutId>,
+        array_elements: &mut BTreeMap<String, NyarType>,
+        worklist: &mut Vec<NyarType>,
+    ) {
         match ty {
-            NyarType::Nominal { layout, .. } => out.push(*layout),
-            NyarType::Array(element) | NyarType::FixedArray { element, .. } | NyarType::Nullable(element) => {
-                collect_nominal_layouts(element, out)
+            NyarType::Array(element) => {
+                array_elements
+                    .entry(wasm_array_element_type_key(element))
+                    .or_insert_with(|| element.as_ref().clone());
+                worklist.push(element.as_ref().clone());
+            }
+            NyarType::FixedArray { element, .. } | NyarType::Nullable(element) => {
+                worklist.push(element.as_ref().clone());
             }
             NyarType::Tuple(elements) | NyarType::Union(elements) => {
-                for element in elements {
-                    collect_nominal_layouts(element, out);
+                worklist.extend(elements.iter().cloned());
+            }
+            NyarType::Nominal { layout, .. } => {
+                if reachable.insert(*layout) {
+                    if let Some(item) = ctx.layout_by_id(*layout) {
+                        worklist.extend(item.fields.iter().map(|field| field.ty.clone()));
+                    }
+                }
+            }
+            NyarType::Apply(..) => {
+                if let Some(item) = ctx.layout_for_nyar_type(ty) {
+                    if reachable.insert(item.id) {
+                        worklist.extend(item.fields.iter().map(|field| field.ty.clone()));
+                    }
+                }
+                else if let NyarType::Apply(base, args) = ty {
+                    worklist.push(base.as_ref().clone());
+                    worklist.extend(args.iter().cloned());
                 }
             }
             _ => {}
         }
     }
 
-    let mut worklist: Vec<LayoutId> = Vec::new();
+    let mut worklist: Vec<NyarType> = Vec::new();
     for (instance, _) in submission.backend_plan.wasm_export_names() {
         let Some(view) = submission.backend_plan.get_function(instance)
         else {
             continue;
         };
-        collect_nominal_layouts(&view.function.return_type, &mut worklist);
+        worklist.extend(view.function.param_types.iter().cloned());
+        worklist.push(view.function.return_type.clone());
     }
     let mut reachable: BTreeSet<LayoutId> = BTreeSet::new();
-    while let Some(layout_id) = worklist.pop() {
-        if !reachable.insert(layout_id) {
-            continue;
-        }
-        let layout =
-            ctx.layout_by_id(layout_id).ok_or_else(|| format!("WASM 聚合字段 accessor 发射失败: layout_id={layout_id:?} 缺聚合布局身份"))?;
-        for field in &layout.fields {
-            collect_nominal_layouts(&field.ty, &mut worklist);
-        }
+    let mut array_elements: BTreeMap<String, NyarType> = BTreeMap::new();
+    while let Some(ty) = worklist.pop() {
+        collect_bridge_nodes(&ty, ctx, &mut reachable, &mut array_elements, &mut worklist);
     }
 
     // 阶段 1：按布局/字段顺序确定性派生全部 accessor 身份；名字统一进
@@ -1370,11 +1399,65 @@ fn emit_library_field_accessors<'name>(
             plans.push((name, AccessorPlan { layout_id: *layout_id, field_index, gc_struct_type_index }));
         }
     }
+    let accessor_name_start = name_store.len();
     name_store.extend(plans.iter().map(|(name, _)| name.clone()));
 
-    // 阶段 2：发射函数体并登记导出。导出条目借用名字切片（不可变、与
-    // name_store 同寿命），避免从 `&mut` 直接索引产生短命借用。
+    // 阶段 2：聚合构造桥计划。布局有 GC struct 且跨 ABI 位置是 reference 时，
+    // 发射 `struct.new` 包装：参数按字段声明顺序取物理载体，结果 anyref。
+    // 这是宿主把 JS 数组装配成 VM 容器（例如 ArrayList 的 backing array +
+    // 计数）的唯一合法入口，不在宿主侧复刻布局。
+    #[derive(Clone, Copy)]
+    struct ConstructorPlan {
+        layout_id: LayoutId,
+        struct_type_index: u32,
+    }
+    let mut constructor_plans: Vec<(String, ConstructorPlan)> = Vec::new();
+    for layout_id in &reachable {
+        let layout = ctx.layout_by_id(*layout_id).expect("可达布局已通过身份核对");
+        let Some(struct_type_index) = gc_struct_type_indices.get(layout_id).copied()
+        else {
+            continue;
+        };
+        if layout.storage != StorageKind::Reference {
+            continue;
+        }
+        let name = super::abi_schema::aggregate_constructor_export_name(layout);
+        if !emitted_names.insert(name.clone()) {
+            continue;
+        }
+        constructor_plans.push((name, ConstructorPlan { layout_id: *layout_id, struct_type_index }));
+    }
+    let constructor_name_start = name_store.len();
+    name_store.extend(constructor_plans.iter().map(|(name, _)| name.clone()));
+
+    // 阶段 3：heap array 物理读写桥计划。按元素类型确定性派生四个导出：
+    // `length` / `get` / `new` / `set`。宿主只用 schema 里的名字调度。
+    struct ArrayOpPlan {
+        name: String,
+        array_type_index: u32,
+        element_type: u8,
+        kind: u8,
+    }
+    let mut array_plans: Vec<ArrayOpPlan> = Vec::new();
+    for (key, element) in &array_elements {
+        let Some(array_type_index) = gc_array_type_indices.get(key).copied()
+        else {
+            return Err(format!("WASM 容器数组桥发射失败: 元素类型 `{element:?}` 未注册 gc arraytype（key={key}）"));
+        };
+        let element_type = wasm_gc_field_type_byte_for_glue(element, js_glue_utf8_as_anyref);
+        let ops = super::abi_schema::array_ops_export_names(element);
+        array_plans.push(ArrayOpPlan { name: ops.length, array_type_index, element_type, kind: 0 });
+        array_plans.push(ArrayOpPlan { name: ops.get, array_type_index, element_type, kind: 1 });
+        array_plans.push(ArrayOpPlan { name: ops.new, array_type_index, element_type, kind: 2 });
+        array_plans.push(ArrayOpPlan { name: ops.set, array_type_index, element_type, kind: 3 });
+    }
+    let array_name_start = name_store.len();
+    name_store.extend(array_plans.iter().map(|plan| plan.name.clone()));
+
+    // 名字全部登记完成后才建立不可变切片；导出条目借用该切片。
     let names: &[String] = name_store.as_slice();
+
+    // 阶段 4：发射 accessor 函数体并登记导出。
     for (position, (_, plan)) in plans.iter().enumerate() {
         let layout = ctx.layout_by_id(plan.layout_id).expect("可达布局已通过身份核对");
         let field = &layout.fields[plan.field_index];
@@ -1425,7 +1508,81 @@ fn emit_library_field_accessors<'name>(
         function_indices.push(type_index);
         let function_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
         code_bodies.push(wasm_function_body(body));
-        exports.push((names[position].as_str(), WasmExternalKind::Func.as_u8(), function_index));
+        exports.push((names[accessor_name_start + position].as_str(), WasmExternalKind::Func.as_u8(), function_index));
+    }
+
+    // 阶段 5：发射聚合构造函数体。
+    for (position, (_, plan)) in constructor_plans.iter().enumerate() {
+        let layout = ctx.layout_by_id(plan.layout_id).expect("可达布局已通过身份核对");
+        let param_types: Vec<u8> =
+            layout.fields.iter().map(|field| wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref)).collect();
+        let mut body = Vec::new();
+        encode_uleb128(0, &mut body);
+        for field_index in 0..layout.fields.len() {
+            encode_local_get(field_index as u32, &mut body);
+        }
+        acorn_wasm::WasmGcOpcode::StructNew.encode(&mut body);
+        encode_uleb128(plan.struct_type_index, &mut body);
+        WasmOpcode::End.encode(&mut body);
+        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_function_type(&param_types, &[WASM_GC_ANYREF]));
+        function_indices.push(type_index);
+        let function_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
+        code_bodies.push(wasm_function_body(body));
+        exports.push((names[constructor_name_start + position].as_str(), WasmExternalKind::Func.as_u8(), function_index));
+    }
+
+    // 阶段 6：发射物理数组读写函数体。
+    for (position, plan) in array_plans.iter().enumerate() {
+        let array_type_index = plan.array_type_index;
+        let element_type = plan.element_type;
+        let (param_types, result_types, body) = match plan.kind {
+            0 => {
+                let mut body = Vec::new();
+                encode_uleb128(0, &mut body);
+                encode_local_get(0, &mut body);
+                encode_ref_cast_type_index(array_type_index, &mut body);
+                encode_array_len(&mut body);
+                WasmOpcode::End.encode(&mut body);
+                (vec![WASM_GC_ANYREF], vec![VALTYPE_I32], body)
+            }
+            1 => {
+                let mut body = Vec::new();
+                encode_uleb128(0, &mut body);
+                encode_local_get(0, &mut body);
+                encode_ref_cast_type_index(array_type_index, &mut body);
+                encode_local_get(1, &mut body);
+                encode_array_get(array_type_index, &mut body);
+                WasmOpcode::End.encode(&mut body);
+                (vec![WASM_GC_ANYREF, VALTYPE_I32], vec![element_type], body)
+            }
+            2 => {
+                let mut body = Vec::new();
+                encode_uleb128(0, &mut body);
+                encode_local_get(0, &mut body);
+                encode_array_new_default(array_type_index, &mut body);
+                WasmOpcode::End.encode(&mut body);
+                (vec![VALTYPE_I32], vec![WASM_GC_ANYREF], body)
+            }
+            _ => {
+                let mut body = Vec::new();
+                encode_uleb128(0, &mut body);
+                // array.set 无局部变量，body 里不声明 locals。
+                encode_local_get(0, &mut body);
+                encode_ref_cast_type_index(array_type_index, &mut body);
+                encode_local_get(1, &mut body);
+                encode_local_get(2, &mut body);
+                encode_array_set(array_type_index, &mut body);
+                WasmOpcode::End.encode(&mut body);
+                (vec![WASM_GC_ANYREF, VALTYPE_I32, element_type], Vec::new(), body)
+            }
+        };
+        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_function_type(&param_types, &result_types));
+        function_indices.push(type_index);
+        let function_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
+        code_bodies.push(wasm_function_body(body));
+        exports.push((names[array_name_start + position].as_str(), WasmExternalKind::Func.as_u8(), function_index));
     }
     Ok(())
 }

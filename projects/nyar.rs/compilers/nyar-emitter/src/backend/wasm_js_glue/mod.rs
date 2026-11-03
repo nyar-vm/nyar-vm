@@ -200,20 +200,43 @@ function paramType(param) {{
     return param;
 }}
 
-function marshalLibraryArg(schema, value) {{
+function describePath(path) {{
+    return path ? ` at ${{path}}` : "";
+}}
+
+function bridgeExport(name, role, path) {{
+    if (typeof name !== "string" || name.length === 0) {{
+        throw new Error(`[wasm-js-glue]${{describePath(path)}}: ABI schema is missing the ` + role + ` export name`);
+    }}
+    const handler = exports[name];
+    if (typeof handler !== "function") {{
+        throw new Error(`[wasm-js-glue]${{describePath(path)}}: required ` + role + ` export "${{name}}" is missing from the wasm module`);
+    }}
+    return handler;
+}}
+
+function marshalLibraryArg(schema, value, path) {{
     const kind = abiKind(schema);
     if (kind == null) return value;
 
     // ── Primitive carriers ──────────────────────────────────────────────
-    // I64：Wasm JS API 只接受 BigInt。Number 入参仅允许安全整数范围；
-    // 超范围 Number 本身已丢精度，必须显式拒绝而不是静默截断。
+    // I64：Wasm JS API 只接受 BigInt。Number 一律拒绝——即使落在安全整数
+    // 范围，它也表达不了完整 64 位合同，静默转换会让「传错类型」看起来像成功。
+    // 十进制字符串是跨进程 JSON 的既有 i64 文本载体，按文本精确恢复。
     if (kind === "I64") {{
-        if (typeof value === "number" && !Number.isSafeInteger(value)) {{
-            throw new Error(
-                `[wasm-js-glue] Cannot marshal I64 from Number ${{value}}: outside the safe-integer range, the value would be silently truncated. Pass a BigInt instead.`
-            );
+        if (typeof value === "bigint") return value;
+        if (typeof value === "string" && /^[-+]?\d+$/.test(value.trim())) {{
+            const parsed = BigInt(value.trim());
+            if (parsed < -(2n ** 63n) || parsed > 2n ** 64n - 1n) {{
+                throw new Error(
+                    `[wasm-js-glue]${{describePath(path)}}: Cannot marshal I64 from ${{value}}: outside the 64-bit range.`
+                );
+            }}
+            return parsed;
         }}
-        return BigInt(value ?? 0);
+        throw new Error(
+            `[wasm-js-glue]${{describePath(path)}}: Cannot marshal I64 from ${{typeof value}} ${{String(value)}}. I64 requires a BigInt or a decimal string; Number cannot represent the full 64-bit range.`
+        );
     }}
     if (kind === "I32" || kind === "F32" || kind === "F64") return Number(value ?? 0);
     if (kind === "Bool") return value ? 1 : 0;
@@ -231,20 +254,70 @@ function marshalLibraryArg(schema, value) {{
     if (kind === "Option") {{
         if (!hasWasmHandleCarrier(schema.inner)) {{
             throw new Error(
-                `[wasm-js-glue] Cannot marshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox ABI contract that is not defined.`
+                `[wasm-js-glue]${{describePath(path)}}: Cannot marshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox ABI contract that is not defined.`
             );
         }}
         if (value == null) return null;
-        return marshalLibraryArg(schema.inner, value);
+        return marshalLibraryArg(schema.inner, value, path);
     }}
 
-    // ── 聚合 / 数组 / 元组等复合类型当前没有 ABI 桥，一律失败闭合 ──
+    // ── Array / 序列视图：JS 数组 → VM 物理数组，必要时再装配成容器聚合 ──
+    // 构造只走 wasm 导出（`array.new_default` / `array.set` / `struct.new`
+    // 包装），宿主不复刻布局；schema 里的 ops/container 合同是唯一调度依据。
+    if (kind === "Array") {{
+        if (!Array.isArray(value)) {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot marshal ${{kind}}: expected a JS Array, got ${{typeof value}}. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        const ops = schema.ops;
+        if (!ops || typeof ops.new !== "string" || typeof ops.set !== "string") {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot marshal ${{kind}}: ABI schema has no physical array ops contract. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        const allocate = bridgeExport(ops.new, "array.new", path);
+        const set = bridgeExport(ops.set, "array.set", path);
+        const items = allocate(value.length);
+        for (let i = 0; i < value.length; i++) {{
+            set(items, i, marshalLibraryArg(schema.element, value[i], `${{path}}[${{i}}]`));
+        }}
+        if (!schema.container) return items;
+        const seq = schema.container;
+        const constructor = bridgeExport(seq.constructor, "container constructor", path);
+        const ctorArgs = new Array(seq.field_count).fill(null);
+        ctorArgs[seq.items_field_index] = items;
+        ctorArgs[seq.length_field_index] = marshalLibraryArg(seq.length_type, value.length, `${{path}}.length`);
+        return constructor(...ctorArgs);
+    }}
+
+    // ── NamedAggregate：按布局派生的字段构造合同逐字段编组 ──
+    // 只有非序列形状走到这里。字段名/构造器名都来自 schema；缺字段合同或
+    // 缺 `struct.new` 包装导出都失败闭合，不默认回填字段。
+    if (kind === "NamedAggregate") {{
+        const fields = schema.fields;
+        if (!Array.isArray(fields) || fields.length === 0) {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot marshal NamedAggregate "${{schema.name}}": no field construction contract in ABI schema. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        if (value == null || typeof value !== "object" || Array.isArray(value)) {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot marshal NamedAggregate "${{schema.name}}": expected a field object, got ${{Array.isArray(value) ? "array" : typeof value}}. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        const constructor = bridgeExport(schema.constructor, "aggregate constructor", path);
+        const ctorArgs = fields.map((field) => marshalLibraryArg(field.type, value[field.name], `${{path}}.${{field.name}}`));
+        return constructor(...ctorArgs);
+    }}
+
+    // ── 未支持形状一律失败闭合 ──
     throw new Error(
-        `[wasm-js-glue] Cannot marshal schema kind "${{kind}}": no ABI bridge implemented. Schema: ${{JSON.stringify(schema)}}`
+        `[wasm-js-glue]${{describePath(path)}}: Cannot marshal schema kind "${{kind}}": no ABI bridge implemented. Schema: ${{JSON.stringify(schema)}}`
     );
 }}
 
-function demarshalLibraryReturn(schema, raw) {{
+function demarshalLibraryReturn(schema, raw, path) {{
     const kind = abiKind(schema);
     if (kind == null) return raw;
 
@@ -264,11 +337,49 @@ function demarshalLibraryReturn(schema, raw) {{
     if (kind === "Option") {{
         if (!hasWasmHandleCarrier(schema.inner)) {{
             throw new Error(
-                `[wasm-js-glue] Cannot demarshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox ABI contract that is not defined.`
+                `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Option<${{abiKind(schema.inner)}}>: inner type has no Wasm handle carrier. Scalar payloads require a box/unbox ABI contract that is not defined.`
             );
         }}
         if (raw == null) return null;
-        return demarshalLibraryReturn(schema.inner, raw);
+        return demarshalLibraryReturn(schema.inner, raw, path);
+    }}
+
+    // ── Array / 序列视图：物理数组 → JS 数组；序列容器先读回字段再投影 ──
+    // 序列容器只经 schema 声明的 accessor/ops 读取，按冻结布局事实定位
+    // backing array 与计数；不按类型名识别 ArrayList。
+    if (kind === "Array") {{
+        if (raw == null) {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: wasm returned a null reference`);
+        }}
+        const ops = schema.ops;
+        if (!ops || typeof ops.length !== "string" || typeof ops.get !== "string") {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: ABI schema has no physical array ops contract. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        if (schema.container) {{
+            const seq = schema.container;
+            const readItems = bridgeExport(seq.items_accessor, "container items accessor", path);
+            const readLength = bridgeExport(seq.length_accessor, "container length accessor", path);
+            const items = readItems(raw);
+            if (items == null) {{
+                throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: container backing array is a null reference`);
+            }}
+            const length = Number(demarshalLibraryReturn(seq.length_type, readLength(raw), `${{path}}.length`));
+            const get = bridgeExport(ops.get, "array.get", path);
+            const output = new Array(length);
+            for (let i = 0; i < length; i++) {{
+                output[i] = demarshalLibraryReturn(schema.element, get(items, i), `${{path}}[${{i}}]`);
+            }}
+            return output;
+        }}
+        const length = Number(bridgeExport(ops.length, "array.len", path)(raw));
+        const get = bridgeExport(ops.get, "array.get", path);
+        const output = new Array(length);
+        for (let i = 0; i < length; i++) {{
+            output[i] = demarshalLibraryReturn(schema.element, get(raw, i), `${{path}}[${{i}}]`);
+        }}
+        return output;
     }}
 
     // ── NamedAggregate：按布局派生的字段访问合同逐字段读回 ──
@@ -280,28 +391,28 @@ function demarshalLibraryReturn(schema, raw) {{
         const fields = schema.fields;
         if (!Array.isArray(fields) || fields.length === 0) {{
             throw new Error(
-                `[wasm-js-glue] Cannot demarshal NamedAggregate "${{schema.name}}": no field access contract in ABI schema. Schema: ${{JSON.stringify(schema)}}`
+                `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal NamedAggregate "${{schema.name}}": no field access contract in ABI schema. Schema: ${{JSON.stringify(schema)}}`
             );
         }}
         if (raw == null) {{
-            throw new Error(`[wasm-js-glue] Cannot demarshal NamedAggregate "${{schema.name}}": wasm returned a null reference`);
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal NamedAggregate "${{schema.name}}": wasm returned a null reference`);
         }}
         const aggregate = {{}};
         for (const field of fields) {{
             const accessor = exports[field.accessor];
             if (typeof accessor !== "function") {{
                 throw new Error(
-                    `[wasm-js-glue] Cannot demarshal NamedAggregate "${{schema.name}}" field "${{field.name}}": accessor export "${{field.accessor}}" is missing`
+                    `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal NamedAggregate "${{schema.name}}" field "${{field.name}}": accessor export "${{field.accessor}}" is missing`
                 );
             }}
-            aggregate[field.name] = demarshalLibraryReturn(field.type, accessor(raw));
+            aggregate[field.name] = demarshalLibraryReturn(field.type, accessor(raw), `${{path}}.${{field.name}}`);
         }}
         return aggregate;
     }}
 
-    // ── 聚合 / 数组 / 元组等复合类型当前没有 ABI 桥，一律失败闭合 ──
+    // ── 未支持形状一律失败闭合 ──
     throw new Error(
-        `[wasm-js-glue] Cannot demarshal schema kind "${{kind}}": no ABI bridge implemented. Schema: ${{JSON.stringify(schema)}}`
+        `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal schema kind "${{kind}}": no ABI bridge implemented. Schema: ${{JSON.stringify(schema)}}`
     );
 }}
 "#,
@@ -705,9 +816,9 @@ const wasmBytes = readFileSync(new URL("./{name}.wasm", import.meta.url));
     }}
     const spec = LIBRARY_INVOKE?.exports?.[name];
     if (spec?.params) {{
-        const marshaled = spec.params.map((param, index) => marshalLibraryArg(paramType(param), args[index]));
+        const marshaled = spec.params.map((param, index) => marshalLibraryArg(paramType(param), args[index], `arg${{index}}`));
         const raw = fn(...marshaled);
-        return demarshalLibraryReturn(spec.returns, raw);
+        return demarshalLibraryReturn(spec.returns, raw, "return");
     }}
     return fn(...args);
 }}

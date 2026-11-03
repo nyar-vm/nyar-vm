@@ -120,6 +120,7 @@ fn schematize_function_abi(
     function: &ExecutableFunction,
     abi: &LibraryExportAbi,
     layouts: &nyar_types::AggregateLayoutPlan,
+    layout_by_type: &std::collections::BTreeMap<nyar_types::NyarType, nyar_types::LayoutId>,
 ) -> Result<(Vec<serde_json::Value>, super::abi_schema::WasmAbiType)> {
     let identities = parameter_identities(instance_label, function)?;
     if abi.params.len() != function.param_types.len() {
@@ -131,7 +132,7 @@ fn schematize_function_abi(
     }
     let mut params_json = Vec::with_capacity(function.param_types.len());
     for (position, ty) in function.param_types.iter().enumerate() {
-        let schema = abi_schema_for_type_with_layouts(ty, layouts);
+        let schema = abi_schema_for_type_with_layouts(ty, layouts, layout_by_type);
         if let Some(reason) = schema.unsupported_reason() {
             return Err(format!("库导出 `{instance_label}` 参数 {position} 类型 `{ty}` 没有 Wasm ABI 合同: {reason}"));
         }
@@ -154,7 +155,7 @@ fn schematize_function_abi(
         }));
     }
 
-    let ret_schema = abi_schema_for_type_with_layouts(&function.return_type, layouts);
+    let ret_schema = abi_schema_for_type_with_layouts(&function.return_type, layouts, layout_by_type);
     if let Some(reason) = ret_schema.unsupported_reason() {
         return Err(format!("库导出 `{instance_label}` 返回类型 `{}` 没有 Wasm ABI 合同: {reason}", function.return_type));
     }
@@ -189,7 +190,13 @@ pub(super) fn append_library_invoke_section(
             .ok_or_else(|| format!("库导出 `{instance}`（公开名 `{public_name}`）没有冻结的 ABI 载体合同；backend 不得自行推导 carrier"))?;
 
         let instance_label = format!("{instance}");
-        let (params_json, returns_schema) = schematize_function_abi(&instance_label, &function, abi, ctx.layouts)?;
+        let (params_json, returns_schema) = schematize_function_abi(
+            &instance_label,
+            &function,
+            abi,
+            ctx.layouts,
+            plan.aggregate_layout_by_nyar_type(),
+        )?;
 
         // 注意：WasmAbiType 的 serde(tag = "kind", rename_all = "PascalCase")
         // 会自动生成 {"kind": "I64"} / {"kind": "Array", "element": {...}} 格式。
@@ -351,7 +358,14 @@ mod tests {
         let function = abi_function(&[(0, "nums", list.clone()), (1, "target", nyar("i64"))], list.clone());
         let abi = frozen_abi(vec![AbiCarrier::Handle, AbiCarrier::I64], AbiCarrier::Handle);
         let (params_json, returns) =
-            schematize_function_abi("twoSum", &function, &abi, &nyar_types::AggregateLayoutPlan::default()).expect("参数身份完整");
+            schematize_function_abi(
+                "twoSum",
+                &function,
+                &abi,
+                &nyar_types::AggregateLayoutPlan::default(),
+                &std::collections::BTreeMap::new(),
+            )
+            .expect("参数身份完整");
         assert_eq!(
             params_json,
             vec![
@@ -372,7 +386,14 @@ mod tests {
         let function = abi_function(&[(0, "value", nyar("i64")), (1, "value", nyar("i64"))], nyar("i64"));
         let abi = frozen_abi(vec![AbiCarrier::I64, AbiCarrier::I64], AbiCarrier::I64);
         let error =
-            schematize_function_abi("identity", &function, &abi, &nyar_types::AggregateLayoutPlan::default()).expect_err("参数名重复必须失败");
+            schematize_function_abi(
+                "identity",
+                &function,
+                &abi,
+                &nyar_types::AggregateLayoutPlan::default(),
+                &std::collections::BTreeMap::new(),
+            )
+            .expect_err("参数名重复必须失败");
         assert!(error.contains("identity"), "error must carry the export name: {error}");
         assert!(error.contains("index=1") || error.contains("参数 1"), "error must carry the parameter index: {error}");
         assert!(error.contains("重复"), "error must explain the duplicate name: {error}");
@@ -383,7 +404,14 @@ mod tests {
         let function = abi_function(&[(0, "", nyar("i64"))], nyar("i64"));
         let abi = frozen_abi(vec![AbiCarrier::I64], AbiCarrier::I64);
         let error =
-            schematize_function_abi("identity", &function, &abi, &nyar_types::AggregateLayoutPlan::default()).expect_err("参数名缺失必须失败");
+            schematize_function_abi(
+                "identity",
+                &function,
+                &abi,
+                &nyar_types::AggregateLayoutPlan::default(),
+                &std::collections::BTreeMap::new(),
+            )
+            .expect_err("参数名缺失必须失败");
         assert!(error.contains("identity"), "error must carry the export name: {error}");
         assert!(error.contains("缺少 canonical 参数名"), "error must explain the missing name: {error}");
     }
@@ -393,8 +421,14 @@ mod tests {
         let mut function = abi_function(&[(0, "value", nyar("i64"))], nyar("i64"));
         function.param_types.push(nyar("i32"));
         let abi = frozen_abi(vec![AbiCarrier::I64, AbiCarrier::I32], AbiCarrier::I64);
-        let error = schematize_function_abi("identity", &function, &abi, &nyar_types::AggregateLayoutPlan::default())
-            .expect_err("身份数量不一致必须失败");
+        let error = schematize_function_abi(
+            "identity",
+            &function,
+            &abi,
+            &nyar_types::AggregateLayoutPlan::default(),
+            &std::collections::BTreeMap::new(),
+        )
+        .expect_err("身份数量不一致必须失败");
         assert!(error.contains("数量不一致"), "error must explain the count mismatch: {error}");
     }
 
@@ -404,8 +438,14 @@ mod tests {
         // backend 不得以 schema 推导结果覆盖 plan 事实。
         let function = abi_function(&[(0, "value", nyar("i32"))], nyar("i32"));
         let abi = frozen_abi(vec![AbiCarrier::Handle], AbiCarrier::I32);
-        let error = schematize_function_abi("identity", &function, &abi, &nyar_types::AggregateLayoutPlan::default())
-            .expect_err("冻结核对不一致必须失败");
+        let error = schematize_function_abi(
+            "identity",
+            &function,
+            &abi,
+            &nyar_types::AggregateLayoutPlan::default(),
+            &std::collections::BTreeMap::new(),
+        )
+        .expect_err("冻结核对不一致必须失败");
         assert!(error.contains("identity"), "error must carry the instance label: {error}");
         assert!(error.contains("参数 0"), "error must carry the parameter index: {error}");
         assert!(error.contains("plan_carrier=handle"), "error must carry the plan carrier: {error}");
@@ -438,7 +478,16 @@ mod tests {
         assert_eq!(abi_carrier_name(&WasmAbiType::Utf8).expect("utf8"), "i32");
         assert_eq!(abi_carrier_name(&WasmAbiType::Unit).expect("unit"), "void");
         for schema in [
-            WasmAbiType::Array { element: Box::new(WasmAbiType::I64) },
+            WasmAbiType::Array {
+                element: Box::new(WasmAbiType::I64),
+                ops: crate::lowering::backends::wasm::mir::abi_schema::WasmAbiArrayOps {
+                    length: String::new(),
+                    get: String::new(),
+                    new: String::new(),
+                    set: String::new(),
+                },
+                container: None,
+            },
             WasmAbiType::FixedArray { element: Box::new(WasmAbiType::I64), length: 2 },
             WasmAbiType::Option { inner: Box::new(WasmAbiType::I64) },
             WasmAbiType::Tuple { fields: vec![WasmAbiType::I64] },
@@ -447,6 +496,7 @@ mod tests {
                 module_path: String::new(),
                 generic_args: vec![WasmAbiType::I64],
                 fields: Vec::new(),
+                constructor: None,
             },
         ] {
             assert_eq!(abi_carrier_name(&schema).expect("handle"), "handle");

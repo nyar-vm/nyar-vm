@@ -169,6 +169,16 @@ pub(super) fn register_gc_array_types(
             }
         }
     }
+    // 容器桥：布局字段里的 backing array 不一定出现在 MIR 指令里（例如
+    // `ArrayList<T>` 的 `_items: [T]` 只作为入参容器的一部分被宿主构造）。
+    // 按冻结布局补齐 arraytype，否则容器桥导出无法 `ref.cast`。
+    for layout in &ctx.layouts.layouts {
+        for field in &layout.fields {
+            if let NyarType::Array(element) = &field.ty {
+                ensure(element.as_ref(), type_indices, &mut map);
+            }
+        }
+    }
     map
 }
 
