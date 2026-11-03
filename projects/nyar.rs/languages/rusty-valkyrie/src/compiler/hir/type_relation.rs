@@ -11,7 +11,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::compiler::{
     hir::{
         nominal::{NominalModuleError, NominalModuleView},
-        overload::has_unresolved_generic_arguments,
         row::{RowMethodSignature, RowRequirement, RowRequirementError},
         trait_system::{NamedTraitWitness, TraitModuleError, TraitModuleView},
     },
@@ -159,35 +158,6 @@ impl TypeRelationContext {
     /// 语言级迭代协议 trait 的声明身份（`std.iterator::{IntoIterator, Iterator}`）。
     pub(crate) fn protocol_trait_declaration(&self, name: &str) -> Option<nyar_types::ItemId> {
         self.traits.declaration_at_namespace(&crate::compiler::semantic::operator_members::FOR_IN_PROTOCOL_NAMESPACE, name)
-    }
-
-    /// 目标类型是否满足给定协议 trait 的 obligation。
-    ///
-    /// 合法证据只有两种：调用上下文已有同一目标的 bound，或目标完全具体且存在唯一
-    /// 显式 impl。目标仍含开放泛型且上下文没有 bound 时一律不满足——无界 blanket
-    /// 不得靠「泛型让位具体」之类的优先级被静默选中。
-    pub(crate) fn satisfies_protocol(&self, target: &ValkyrieType, name: &str) -> bool {
-        let Some(declaration) = self.protocol_trait_declaration(name) else {
-            return false;
-        };
-        if self
-            .callable_constraints
-            .iter()
-            .any(|constraint| &constraint.target == target && constraint.bounds.iter().any(|bound| bound.declaration == Some(declaration)))
-        {
-            return true;
-        }
-        if has_unresolved_generic_arguments(target) {
-            return false;
-        }
-        let namespace = crate::compiler::semantic::operator_members::FOR_IN_PROTOCOL_NAMESPACE;
-        let bound = HirTraitBound {
-            declaration: Some(declaration),
-            trait_path: NamePath::new(vec![Identifier::new(namespace[0]), Identifier::new(namespace[1]), Identifier::new(name)]),
-            type_arguments: Vec::new(),
-            associated_types: Vec::new(),
-        };
-        self.traits.satisfy_explicit_type(target, &bound).is_ok()
     }
 
     /// 无限定自由函数是否命中一条显式 `using` 导入绑定。

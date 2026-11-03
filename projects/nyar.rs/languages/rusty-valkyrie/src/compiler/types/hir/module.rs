@@ -194,7 +194,7 @@ impl HirCallResolutionFailureKind {
                 "candidate is bound, but `where` evidence rejected the concrete substitution, so the instance never closed".to_string()
             }
             Self::ForInProtocolUnsatisfied { source } => format!(
-                "for-in source `{source}` lacks trait evidence: it implements neither `std.iterator::IntoIterator` nor `std.iterator::Iterator`"
+                "for-in source `{source}` lacks trait evidence: it does not implement `std.iterator::IntoIterator`"
             ),
             Self::AmbiguousExplicitImpls { candidates } => {
                 format!("{candidates} explicit impl candidates share the same specificity, so no unique witness can be selected")

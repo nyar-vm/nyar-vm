@@ -45,13 +45,11 @@ pub(crate) const FOR_IN_PROTOCOL_SELECTORS: [&str; 4] =
 
 /// for-in 迭代协议 trait 的规范命名空间（语言规范 `std.iterator`）。
 ///
-/// 协议义务的身份是 trait 声明本身，不是接收者上的同名成员：for-in 必须以这两个
-/// trait 的声明身份结算，禁止用方法名探测替代 obligation。
+/// 协议义务的身份是 trait 声明本身，不是接收者上的同名成员：for-in 必须以
+/// `IntoIterator` 的声明身份结算，禁止用方法名探测替代 obligation。
 pub(crate) const FOR_IN_PROTOCOL_NAMESPACE: [&str; 2] = ["std", "iterator"];
 /// `IntoIterator` 协议 trait 名。
 pub(crate) const FOR_IN_INTO_ITERATOR_TRAIT: &str = "IntoIterator";
-/// `Iterator` 协议 trait 名。
-pub(crate) const FOR_IN_ITERATOR_TRAIT: &str = "Iterator";
 
 /// `{fixity} {lexeme}`：运算符成员名的唯一拼写。
 ///

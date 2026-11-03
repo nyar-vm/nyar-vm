@@ -22,7 +22,6 @@ use crate::compiler::{
         type_relation::TypeRelationContext,
     },
     mir::{AggregateFieldIndex, collect_aggregate_field_map},
-    semantic::operator_members::FOR_IN_ITERATOR_TRAIT,
     types::{
         Identifier, NamePath,
         hir::{
@@ -176,9 +175,8 @@ fn resolve_statement_calls(
                 let hint = ty.as_ref().or(contextual_type);
                 resolve_expr_calls(initializer, candidates, type_relations, locals, struct_fields, singleton_names, hint);
                 // `loop item in src` 的迭代器绑定带结构化标记，不按临时名识别。
-                // 语义义务只由 trait 声明身份结算：`IntoIterator` 证据决定脱糖调用是否
-                // 成立；只有迭代源本身具备 `Iterator` 证据时才允许直用迭代源。同名
-                // inherent 方法既不是 `IntoIterator` 也不是 `Iterator`，不构成证据。
+                // 语义义务只由 trait 声明身份结算：脱糖调用必须由 `IntoIterator`
+                // 提供证据；同名的 `Iterator` 证据、同名 inherent 方法都不构成迭代源。
                 if *origin == HirLetOrigin::ForInIterator
                     && let Some(source) = for_in_iterator_source(initializer).cloned()
                 {
@@ -188,20 +186,13 @@ fn resolve_statement_calls(
                             *resolved = None;
                         }
                         let source_type = infer_scrutinee_type(&source, locals, struct_fields, singleton_names);
-                        let source_satisfies_iterator =
-                            source_type.as_ref().is_some_and(|ty| type_relations.satisfies_protocol(ty, FOR_IN_ITERATOR_TRAIT));
-                        if source_satisfies_iterator {
-                            **initializer = source;
-                        }
-                        else {
-                            let receiver = source_type.as_ref().map(display_type).unwrap_or_else(|| "<unknown>".to_string());
-                            let failure = HirCallResolutionFailure {
-                                span: initializer.span.clone(),
-                                callee: "for-in".to_string(),
-                                reason: HirCallResolutionFailureKind::ForInProtocolUnsatisfied { source: receiver },
-                            };
-                            replace_failure_at(&initializer.span, failure);
-                        }
+                        let receiver = source_type.as_ref().map(display_type).unwrap_or_else(|| "<unknown>".to_string());
+                        let failure = HirCallResolutionFailure {
+                            span: initializer.span.clone(),
+                            callee: "for-in".to_string(),
+                            reason: HirCallResolutionFailureKind::ForInProtocolUnsatisfied { source: receiver },
+                        };
+                        replace_failure_at(&initializer.span, failure);
                     }
                 }
             }
