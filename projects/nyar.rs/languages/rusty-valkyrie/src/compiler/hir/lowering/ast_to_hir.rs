@@ -675,10 +675,35 @@ impl AstToHir {
     }
 
     fn lower_imply(&self, imply: &ImplyDeclaration, declaring_namespace: &NamePath) -> Result<HirImpl, HirError> {
-        // `ImplyDeclaration` 已无 `associated_types` 字段；trait 关联类型实现现另有通道。
-        let associated_names: Vec<String> = Vec::new();
-        let _generic_scope = GenericBinderScope::enter(&imply_generic_parameter_names(imply), &associated_names);
-        let associated_type_impls = Vec::new();
+        let generic_names = imply_generic_parameter_names(imply);
+        let _generic_scope = GenericBinderScope::enter(&generic_names, &[]);
+        let target = crate::compiler::hir::lower_type_expression(&imply.target_type)?;
+        let mut associated_type_impls = Vec::new();
+        let mut seen_associated = std::collections::BTreeSet::new();
+        for item in &imply.associated_types {
+            let name = oak_identifier(&item.name);
+            let span = frontend::std_range(&item.span);
+            // 同一 impl 重复声明同一关联类型无法确定唯一等式：拒绝失败闭合，禁止后者覆盖前者。
+            if !seen_associated.insert(name.clone()) {
+                return Err(frontend::ParseError::Invalid {
+                    message: format!("impl 重复声明关联类型：{name}"),
+                    span: Some(span),
+                }
+                .into());
+            }
+            let Some(equation) = item.default.as_ref()
+            else {
+                // `type Item`（无 `= T`）在 impl 里没有等式，是结构损坏而不是可推断的缺省。
+                return Err(frontend::ParseError::Invalid {
+                    message: format!("impl 关联类型缺少等式：{name}"),
+                    span: Some(span),
+                }
+                .into());
+            };
+            let concrete_type = crate::compiler::hir::lower_type_expression(equation)?;
+            let concrete_type = crate::compiler::hir::overload::substitution::substitute_type_self(&concrete_type, &target);
+            associated_type_impls.push(HirAssociatedTypeImpl::new(name, concrete_type, with_source(&span, self.source_id)));
+        }
         let trait_arguments = if let Some(ty) = imply.trait_type.as_ref() {
             if let TypeExpression::Apply(node) = ty {
                 node.arguments.iter().map(crate::compiler::hir::lower_type_expression).collect::<Result<Vec<_>, _>>()?
@@ -696,7 +721,7 @@ impl AstToHir {
             trait_arguments,
             generics: lower_generic_parameters(&imply.generics),
             where_constraints: Vec::new(),
-            target: crate::compiler::hir::lower_type_expression(&imply.target_type)?,
+            target,
             trait_path: imply.trait_type.as_ref().map(lower_trait_path_from_type),
             methods: imply.methods.iter().map(|method| self.lower_method(method)).collect::<Result<Vec<_>, _>>()?,
             associated_type_impls,

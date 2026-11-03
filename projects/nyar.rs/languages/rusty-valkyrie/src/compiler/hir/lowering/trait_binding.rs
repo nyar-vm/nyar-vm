@@ -1,5 +1,5 @@
 //! 在调用解析前将 trait 路径冻结到 Compiler 的声明身份。
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::{
     hir::lowering::errors::HirError,
@@ -10,6 +10,37 @@ use crate::compiler::{
     },
 };
 use nyar_types::ItemId;
+
+/// 按声明身份索引 trait 声明的关联类型名：`ItemId` → 关联类型名集合。
+///
+/// impl 侧关联类型等式的合法性只能对照 trait 声明判定；索引与
+/// `trait_declaration_index` 覆盖同一可见声明面（本组声明 + 依赖导出 + 子模块）。
+fn trait_associated_type_index(module: &HirModule) -> Result<BTreeMap<ItemId, BTreeSet<crate::compiler::types::Identifier>>, HirError> {
+    fn collect_trait(item: &HirTrait, index: &mut BTreeMap<ItemId, BTreeSet<crate::compiler::types::Identifier>>) -> Result<(), HirError> {
+        let identity = item
+            .declaration
+            .ok_or_else(|| HirError::from(ParseError::Invalid { message: "trait export 缺少声明身份".into(), span: None }))?;
+        index.entry(identity).or_default().extend(item.associated_types.iter().map(|associated| associated.name.clone()));
+        Ok(())
+    }
+    fn collect(module: &HirModule, index: &mut BTreeMap<ItemId, BTreeSet<crate::compiler::types::Identifier>>) -> Result<(), HirError> {
+        for item in &module.traits {
+            collect_trait(item, index)?;
+        }
+        for export in &module.imported_semantic_exports {
+            for item in &export.traits {
+                collect_trait(item, index)?;
+            }
+        }
+        for child in &module.submodules {
+            collect(child, index)?;
+        }
+        Ok(())
+    }
+    let mut index = BTreeMap::new();
+    collect(module, &mut index)?;
+    Ok(index)
+}
 
 /// 收集模块（含依赖导出与子模块）可见的 trait 声明路径索引：`NamePath` → `(ItemId, 泛型元数)`。
 ///
@@ -49,6 +80,7 @@ pub(crate) fn trait_declaration_index(module: &HirModule) -> Result<BTreeMap<Nam
 
 pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirError> {
     let declarations = trait_declaration_index(module)?;
+    let declared_associated_types = trait_associated_type_index(module)?;
     /// 按声明作用域解析 trait 路径。
     ///
     /// 返回 `Ok(None)` 表示当前可见声明集合里没有该路径——这是**声明面事实缺失**，
@@ -131,7 +163,11 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirE
     fn function(item: &mut HirFunction, namespace: &NamePath, declarations: &BTreeMap<NamePath, Vec<(ItemId, usize)>>) -> Result<(), HirError> {
         bounds(&mut item.where_constraints, namespace, declarations)
     }
-    fn bind(module: &mut HirModule, declarations: &BTreeMap<NamePath, Vec<(ItemId, usize)>>) -> Result<(), HirError> {
+    fn bind(
+        module: &mut HirModule,
+        declarations: &BTreeMap<NamePath, Vec<(ItemId, usize)>>,
+        declared_associated_types: &BTreeMap<ItemId, BTreeSet<crate::compiler::types::Identifier>>,
+    ) -> Result<(), HirError> {
         for item in &mut module.functions {
             let namespace = item.declaring_namespace.clone();
             function(item, &namespace, declarations)?;
@@ -161,6 +197,37 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirE
                 }
                 item.trait_declaration = Some(identity);
             }
+            // 关联类型等式只能对照 trait 声明判定：无 trait 的 impl、trait 未声明的名字、
+            // 以及 trait 要求而 impl 缺项，都是实现事实不完整，必须在此拒绝失败闭合。
+            if let Some(identity) = item.trait_declaration {
+                let declared = declared_associated_types.get(&identity).cloned().unwrap_or_default();
+                let trait_label = item.trait_path.as_ref().map(ToString::to_string).unwrap_or_default();
+                let mut provided = BTreeSet::new();
+                for equation in &item.associated_type_impls {
+                    if !declared.contains(&equation.name) {
+                        return Err(ParseError::Invalid {
+                            message: format!("impl 声明了 trait 未声明的关联类型：{trait_label}::{}", equation.name),
+                            span: Some(equation.span.span.start as usize..equation.span.span.end as usize),
+                        }
+                        .into());
+                    }
+                    provided.insert(equation.name.clone());
+                }
+                if let Some(missing) = declared.iter().find(|name| !provided.contains(*name)) {
+                    return Err(ParseError::Invalid {
+                        message: format!("impl 缺少 trait 要求的关联类型：{trait_label}::{missing}"),
+                        span: None,
+                    }
+                    .into());
+                }
+            }
+            else if let Some(equation) = item.associated_type_impls.first() {
+                return Err(ParseError::Invalid {
+                    message: format!("impl 没有 trait 却声明关联类型：{}", equation.name),
+                    span: Some(equation.span.span.start as usize..equation.span.span.end as usize),
+                }
+                .into());
+            }
             bounds(&mut item.where_constraints, &item.declaring_namespace, declarations)?;
             for method in &mut item.methods {
                 function(method, &item.declaring_namespace, declarations)?;
@@ -175,9 +242,9 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), HirE
             }
         }
         for child in &mut module.submodules {
-            bind(child, declarations)?;
+            bind(child, declarations, declared_associated_types)?;
         }
         Ok(())
     }
-    bind(module, &declarations)
+    bind(module, &declarations, &declared_associated_types)
 }
