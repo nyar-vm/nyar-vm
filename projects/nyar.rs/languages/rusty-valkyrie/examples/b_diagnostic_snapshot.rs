@@ -1,8 +1,18 @@
 //! Reproducible diagnostic baseline snapshot for the `std` test curve.
 //!
-//! Unique key = `(diagnostic id, first symbol in the header/notes)`. Every test entry
-//! compiles the whole `std` library, so one key usually counts once per entry (131 for
-//! the 2026-11-04 x `ovm` baseline).
+//! Unique key = `(diagnostic id, normalized message)`. Every test entry compiles the
+//! whole `std` library, so one key usually counts once per entry (131 for the
+//! 2026-11-04 x `ovm` baseline).
+//!
+//! Diagnostics without a `file:line` location are never dropped: they are keyed the
+//! same way and counted in `unlocated_diagnostics`. A body that carries no `error[...]`
+//! header at all (a fail-fast `Display` message such as `unrecognized import syntax at
+//! <ast>:20..25: ...`) is recorded as one `unlabeled` diagnostic, which is exactly the
+//! shape the parser used to lose silently.
+//!
+//! `dropped` counts diagnostics the parser could not decode (for example a malformed
+//! `error[...]` header). `dropped: 0` is a hard assertion: any dropped diagnostic makes
+//! the tool exit 1 instead of writing a quietly incomplete snapshot.
 //!
 //! Usage (run from the `nyar-vm.rs` repository root):
 //!
@@ -31,6 +41,7 @@ use rusty_valkyrie::legion::{cmds::test_engine::run_tests_for_project, workspace
 struct Occurrence {
     id: String,
     symbol: String,
+    message: String,
     count: usize,
     first_file: String,
     first_line: usize,
@@ -41,6 +52,7 @@ struct Occurrence {
 struct Diagnostic {
     id: String,
     symbol: String,
+    message: String,
     file: String,
     line: usize,
     text: String,
@@ -71,46 +83,69 @@ fn parse_location(line: &str) -> Option<(String, usize)> {
     Some((path, line))
 }
 
-fn parse_diagnostics(message: &str) -> Vec<Diagnostic> {
+/// 无 `error[...]` 头的诊断体（fail-fast `Display` 文本）统一记到这个 id，不能静默丢。
+const UNLABELED_DIAGNOSTIC_ID: &str = "unlabeled";
+
+/// 分组的消息键：折叠空白，避免同一诊断因换行/缩进差异裂成多键。
+fn normalize_message(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn build_diagnostic(id: String, message: String, lines: &[String], text: String) -> Diagnostic {
+    let symbol = first_backtick_symbol(&message)
+        .or_else(|| lines.iter().find_map(|line| first_backtick_symbol(line)))
+        .unwrap_or_default();
+    let (file, line) = lines.iter().find_map(|line| parse_location(line)).unwrap_or_else(|| (String::new(), 0));
+    Diagnostic { id, symbol, message, file, line, text }
+}
+
+/// 返回 `(诊断列表, 无法解码的条数)`。无位置诊断照样入列表；只有 `error[...]` 头本身
+/// 损坏时才计入 `dropped`，并由调用方断言必须为 0。
+fn parse_diagnostics(message: &str) -> (Vec<Diagnostic>, usize) {
     let mut diagnostics = Vec::new();
+    let mut dropped = 0usize;
     let mut current: Option<(String, Vec<String>)> = None;
-    let mut finish = |current: Option<(String, Vec<String>)>, diagnostics: &mut Vec<Diagnostic>| {
+    let mut preamble: Vec<String> = Vec::new();
+    let mut finish = |current: Option<(String, Vec<String>)>, diagnostics: &mut Vec<Diagnostic>, dropped: &mut usize| {
         let Some((header, lines)) = current
         else {
             return;
         };
         let (id, message) = {
             let Some(rest) = header.strip_prefix("error[") else {
+                *dropped += 1;
                 return;
             };
             let Some(end) = rest.find(']') else {
+                *dropped += 1;
                 return;
             };
             let id = rest[..end].to_string();
-            let message = rest[end + 1..].trim_start_matches(':').trim().to_string();
+            let message = normalize_message(rest[end + 1..].trim_start_matches(':'));
             (id, message)
         };
-        let symbol = first_backtick_symbol(&message)
-            .or_else(|| lines.iter().find_map(|line| first_backtick_symbol(line)))
-            .unwrap_or_default();
-        let (file, line) = lines
-            .iter()
-            .find_map(|line| parse_location(line))
-            .unwrap_or_else(|| (String::new(), 0));
         let text = std::iter::once(header.clone()).chain(lines.clone()).collect::<Vec<_>>().join("\n");
-        diagnostics.push(Diagnostic { id, symbol, file, line, text });
+        diagnostics.push(build_diagnostic(id, message, &lines, text));
     };
     for line in message.lines() {
         if line.trim_start().starts_with("error[") {
-            finish(current.take(), &mut diagnostics);
+            finish(current.take(), &mut diagnostics, &mut dropped);
             current = Some((line.trim_start().to_string(), Vec::new()));
         }
         else if let Some((_, lines)) = current.as_mut() {
             lines.push(line.to_string());
         }
+        else {
+            preamble.push(line.to_string());
+        }
     }
-    finish(current.take(), &mut diagnostics);
-    diagnostics
+    finish(current.take(), &mut diagnostics, &mut dropped);
+    let body = preamble.join("\n");
+    if !body.trim().is_empty() {
+        let message = normalize_message(&body);
+        diagnostics.push(build_diagnostic(UNLABELED_DIAGNOSTIC_ID.to_string(), message, &preamble, body));
+    }
+    (diagnostics, dropped)
 }
 
 fn attribution_guess(diagnostic: &Diagnostic) -> &'static str {
@@ -166,6 +201,8 @@ fn run(project: PathBuf, target: String, out_dir: PathBuf, dump: bool) {
 
     let mut groups = BTreeMap::<(String, String), Occurrence>::new();
     let mut total_diagnostics = 0usize;
+    let mut unlocated_diagnostics = 0usize;
+    let mut dropped = 0usize;
     let mut dumped = 0usize;
     for entry in entries.iter().filter(|entry| entry.error.is_some()) {
         let message = entry.error.clone().unwrap_or_default();
@@ -174,12 +211,18 @@ fn run(project: PathBuf, target: String, out_dir: PathBuf, dump: bool) {
             println!("{message}");
             dumped += 1;
         }
-        for diagnostic in parse_diagnostics(&message) {
+        let (parsed, body_dropped) = parse_diagnostics(&message);
+        dropped += body_dropped;
+        for diagnostic in parsed {
             total_diagnostics += 1;
-            let key = (diagnostic.id.clone(), diagnostic.symbol.clone());
+            if diagnostic.file.is_empty() {
+                unlocated_diagnostics += 1;
+            }
+            let key = (diagnostic.id.clone(), diagnostic.message.clone());
             let slot = groups.entry(key).or_insert_with(|| Occurrence {
                 id: diagnostic.id.clone(),
                 symbol: diagnostic.symbol.clone(),
+                message: diagnostic.message.clone(),
                 first_file: diagnostic.file.clone(),
                 first_line: diagnostic.line,
                 first_entry: entry.name.clone(),
@@ -191,7 +234,7 @@ fn run(project: PathBuf, target: String, out_dir: PathBuf, dump: bool) {
     }
 
     let mut unique = groups.into_values().collect::<Vec<_>>();
-    unique.sort_by(|left, right| right.count.cmp(&left.count).then(left.id.cmp(&right.id)).then(left.symbol.cmp(&right.symbol)));
+    unique.sort_by(|left, right| right.count.cmp(&left.count).then(left.id.cmp(&right.id)).then(left.message.cmp(&right.message)));
 
     fs::create_dir_all(&out_dir).expect("create report dir");
     let stem = out_dir.join("std-diagnostic-baseline-2026-11-04");
@@ -202,21 +245,22 @@ fn run(project: PathBuf, target: String, out_dir: PathBuf, dump: bool) {
     json.push_str(&format!("  \"project\": \"{}\",\n", json_escape(&project.to_string_lossy())));
     json.push_str(&format!("  \"target\": \"{}\",\n", json_escape(&target)));
     json.push_str(&format!(
-        "  \"totals\": {{\"passed\": {passed}, \"failed\": {failed}, \"skipped\": {skipped}, \"entries\": {}, \"diagnostic_occurrences\": {total_diagnostics}, \"unique_keys\": {}}},\n",
+        "  \"totals\": {{\"passed\": {passed}, \"failed\": {failed}, \"skipped\": {skipped}, \"entries\": {}, \"diagnostic_occurrences\": {total_diagnostics}, \"unique_keys\": {}, \"unlocated_diagnostics\": {unlocated_diagnostics}, \"dropped\": {dropped}, \"dropped_assertion\": \"dropped == 0, otherwise exit 1\"}},\n",
         entries.len(),
         unique.len()
     ));
     json.push_str("  \"groups\": [\n");
     for (index, group) in unique.iter().enumerate() {
         json.push_str(&format!(
-            "    {{\"id\": \"{}\", \"symbol\": \"{}\", \"count\": {}, \"first_file\": \"{}\", \"first_line\": {}, \"first_entry\": \"{}\", \"attribution_guess\": \"{}\", \"sample\": \"{}\"}}{}\n",
+            "    {{\"id\": \"{}\", \"symbol\": \"{}\", \"message\": \"{}\", \"count\": {}, \"first_file\": \"{}\", \"first_line\": {}, \"first_entry\": \"{}\", \"attribution_guess\": \"{}\", \"sample\": \"{}\"}}{}\n",
             json_escape(&group.id),
             json_escape(&group.symbol),
+            json_escape(&group.message),
             group.count,
             json_escape(&group.first_file),
             group.first_line,
             json_escape(&group.first_entry),
-            attribution_guess(&Diagnostic { id: group.id.clone(), symbol: group.symbol.clone(), file: group.first_file.clone(), line: group.first_line, text: String::new() }),
+            attribution_guess(&Diagnostic { id: group.id.clone(), symbol: group.symbol.clone(), message: group.message.clone(), file: group.first_file.clone(), line: group.first_line, text: String::new() }),
             json_escape(&group.sample),
             if index + 1 == unique.len() { "" } else { "," }
         ));
@@ -227,31 +271,34 @@ fn run(project: PathBuf, target: String, out_dir: PathBuf, dump: bool) {
     let mut markdown = String::new();
     markdown.push_str("# std 诊断基线快照（2026-11-04）\n\n");
     markdown.push_str(&format!(
-        "- project: `{}`\n- target: `{}`\n- totals: passed={passed} failed={failed} skipped={skipped} entries={} diagnostic_occurrences={total_diagnostics} unique_keys={}\n",
+        "- project: `{}`\n- target: `{}`\n- totals: passed={passed} failed={failed} skipped={skipped} entries={} diagnostic_occurrences={total_diagnostics} unique_keys={} unlocated_diagnostics={unlocated_diagnostics} dropped={dropped}\n",
         project.display(),
         target,
         entries.len(),
         unique.len()
     ));
-    markdown.push_str("- key: (diagnostic id, 首出现符号)；`count` 为全部条目的诊断出现次数\n");
+    markdown.push_str("- key: (diagnostic id, 规范化消息)；`count` 为全部条目的诊断出现次数\n");
+    markdown.push_str("- 无 `file:line` 的诊断照样入快照（计入 `unlocated_diagnostics`）；整段无 `error[...]` 头的 fail-fast 文本记为一条 `unlabeled` 诊断\n");
+    markdown.push_str("- `dropped` 为无法解码的诊断条数，硬断言 `dropped: 0`，非零时工具以退出码 1 失败\n");
     markdown.push_str("- 重跑命令：\n\n```powershell\n$env:CARGO_TARGET_DIR='e:\\victory 胜利女神\\nyar-vm.rs\\.target-std-loop'\ncargo +nightly-2026-10-23 run -q --manifest-path 'e:\\victory 胜利女神\\nyar-vm.rs\\projects\\nyar.rs\\Cargo.toml' -p rusty-valkyrie --example b_diagnostic_snapshot -- 'e:\\victory 胜利女神\\valkyrie.v\\projects\\std' ovm 'e:\\victory 胜利女神\\reports'\n```\n\n");
-    markdown.push_str("| # | count | id | symbol | first file:line | guess |\n|---|---|---|---|---|---|\n");
+    markdown.push_str("| # | count | id | symbol | message | first file:line | guess |\n|---|---|---|---|---|---|---|\n");
     for (index, group) in unique.iter().enumerate() {
         markdown.push_str(&format!(
-            "| {} | {} | `{}` | `{}` | `{}:{}` | {} |\n",
+            "| {} | {} | `{}` | `{}` | {} | `{}:{}` | {} |\n",
             index + 1,
             group.count,
             group.id,
             group.symbol,
+            group.message,
             group.first_file,
             group.first_line,
-            attribution_guess(&Diagnostic { id: group.id.clone(), symbol: group.symbol.clone(), file: group.first_file.clone(), line: group.first_line, text: String::new() })
+            attribution_guess(&Diagnostic { id: group.id.clone(), symbol: group.symbol.clone(), message: group.message.clone(), file: group.first_file.clone(), line: group.first_line, text: String::new() })
         ));
     }
     let mut by_id = BTreeMap::<&str, (usize, usize)>::new();
     let mut by_attribution = BTreeMap::<&str, (usize, usize)>::new();
     for group in &unique {
-        let guess = attribution_guess(&Diagnostic { id: group.id.clone(), symbol: group.symbol.clone(), file: group.first_file.clone(), line: group.first_line, text: String::new() });
+        let guess = attribution_guess(&Diagnostic { id: group.id.clone(), symbol: group.symbol.clone(), message: group.message.clone(), file: group.first_file.clone(), line: group.first_line, text: String::new() });
         by_id.entry(group.id.as_str()).or_insert((0, 0)).0 += 1;
         by_id.entry(group.id.as_str()).or_insert((0, 0)).1 += group.count;
         by_attribution.entry(guess).or_insert((0, 0)).0 += 1;
@@ -270,8 +317,13 @@ fn run(project: PathBuf, target: String, out_dir: PathBuf, dump: bool) {
 
     println!("SNAPSHOT totals passed={passed} failed={failed} skipped={skipped} entries={}", entries.len());
     println!("SNAPSHOT diagnostic_occurrences={total_diagnostics} unique_keys={}", unique.len());
+    println!("SNAPSHOT unlocated_diagnostics={unlocated_diagnostics} dropped={dropped}");
     for group in unique.iter().take(30) {
-        println!("  x{} {} `{}` first={}:{} guess={}", group.count, group.id, group.symbol, group.first_file, group.first_line, attribution_guess(&Diagnostic { id: group.id.clone(), symbol: group.symbol.clone(), file: group.first_file.clone(), line: group.first_line, text: String::new() }));
+        println!("  x{} {} `{}` first={}:{} guess={}", group.count, group.id, group.symbol, group.first_file, group.first_line, attribution_guess(&Diagnostic { id: group.id.clone(), symbol: group.symbol.clone(), message: group.message.clone(), file: group.first_file.clone(), line: group.first_line, text: String::new() }));
     }
     println!("SNAPSHOT written: {} , {}", stem.with_extension("json").display(), stem.with_extension("md").display());
+    if dropped > 0 {
+        eprintln!("SNAPSHOT ASSERTION FAILED: dropped={dropped} 条诊断未被解析，快照不完整，工具失败");
+        std::process::exit(1);
+    }
 }
