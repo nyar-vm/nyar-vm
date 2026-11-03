@@ -152,7 +152,8 @@ fn pattern_literal_compare_uses_dispatch_bound_infix_eq() {
 
 #[test]
 fn pattern_range_compare_uses_dispatch_bound_infix_lt() {
-    let owner = ValkyrieType::Named(Identifier::new("i64"));
+    // 数值身份来自声明载体：合成 owner 用 `Integer64` 载体，不再用裸短名 `Named("i64")`。
+    let owner = ValkyrieType::Integer64 { signed: true };
     let lt_instance = ItemInstanceId::from_index(2).expect("instance");
     let mut builder = TestMirBuilder::new();
     builder.register_member_dispatch(owner.clone(), "infix <", lt_instance);
@@ -173,6 +174,7 @@ fn integer_match_patterns_use_declared_operator_dispatch() {
     let hir = ValkyrieCompiler::default()
         .compile_source(
             r#"
+[primitive("std::primitive::i64")]
 structure i64 { }
 imply i64 {
     infix `==`(self, rhs: Self): bool { return true }
@@ -215,6 +217,8 @@ fn integer_match_patterns_without_operators_fail_closed() {
     let hir = ValkyrieCompiler::default()
         .compile_source(
             r#"
+[primitive("std::primitive::i64")]
+structure i64 { }
 micro literal_match(value: i64) -> i64 {
     match value {
         case 7: 1
@@ -252,6 +256,7 @@ fn u32_infix_subtraction_call_matches_declared_return_type() {
         .compile_source(
             r#"
 namespace std::primitive;
+[primitive("std::primitive::u32")]
 structure u32 { }
 imply u32 {
     infix `-`(self, rhs: u32): u32 {

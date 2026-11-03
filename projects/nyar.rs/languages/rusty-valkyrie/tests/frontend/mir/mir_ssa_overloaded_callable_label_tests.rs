@@ -20,6 +20,14 @@ use rusty_valkyrie::{
 const OVERLOADED_BUILDER_SOURCE: &str = r#"
 namespace std.text;
 
+[primitive("std::primitive::i32")]
+structure i32 { }
+
+[primitive("std::primitive::u64")]
+structure u64 { }
+
+type usize = u64;
+
 class Utf8Builder {
     payload: i32
 }
