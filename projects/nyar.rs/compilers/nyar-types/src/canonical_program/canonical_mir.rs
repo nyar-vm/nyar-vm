@@ -24,6 +24,12 @@ pub enum CanonicalOperand {
 pub enum CanonicalConstant {
     /// 有符号整数。
     Int(i64),
+    /// IEEE-754 float64，以位模式保存。
+    ///
+    /// 用 `u64` 位模式而不是 `f64`：`-0.0` 的符号位与 NaN payload 必须原样穿过
+    /// canonical → 目标计划 → 常量池；`f64` 的 `PartialEq` 会把 `-0.0 == 0.0` 判真、
+    /// 把 NaN 判假，也无法满足本类型的 `Eq` 合同。
+    Float64(u64),
     /// 布尔值。
     Bool(bool),
     /// UTF-8 文本。

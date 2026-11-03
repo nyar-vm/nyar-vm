@@ -91,6 +91,12 @@ pub enum Constant {
     Null,
 }
 
+impl From<f64> for Constant {
+    fn from(value: f64) -> Self {
+        Self::Float64(OrderedFloat(value))
+    }
+}
+
 /// Instruction / terminator operand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Operand {

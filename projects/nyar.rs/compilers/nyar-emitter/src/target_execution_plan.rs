@@ -1118,7 +1118,7 @@ fn lower_operation(
     })
 }
 
-/// 文本常量的编码身份由常量变体自身决定；整数/空值没有在这里声称的编码身份。
+/// 文本常量的编码身份由常量变体自身决定；整数/浮点/空值没有在这里声称的编码身份。
 fn constant_encoding_type(constant: &CanonicalConstant) -> Option<NyarType> {
     match constant {
         CanonicalConstant::Utf8(_) => Some(NyarType::Utf8),
@@ -1130,6 +1130,8 @@ fn constant_encoding_type(constant: &CanonicalConstant) -> Option<NyarType> {
 fn lower_constant(constant: &CanonicalConstant) -> Constant {
     match constant {
         CanonicalConstant::Int(v) => Constant::Int(*v),
+        // 位模式原样重建：`-0.0` 与 NaN payload 不在计划层被规范化。
+        CanonicalConstant::Float64(bits) => Constant::from(f64::from_bits(*bits)),
         CanonicalConstant::Bool(v) => Constant::Bool(*v),
         CanonicalConstant::Utf8(v) => Constant::Utf8(v.clone()),
         CanonicalConstant::Utf16(v) => Constant::Utf16(v.clone()),
@@ -1358,6 +1360,35 @@ mod tests {
         assert_eq!(lower_type(&program, type_id(0)).expect("f64 必须有目标合同"), NyarType::Float64);
         let error = lower_type(&program, type_id(1)).expect_err("f32 本轮仍无目标合同");
         assert!(error.contains("Float { bits: 32 }"), "诊断必须点名未登记的 f32，实际：{error}");
+    }
+
+    /// canonical 用 `u64` 位模式承载 float64，计划层必须按位重建：`-0.0` 的符号位
+    /// 与 NaN payload 一旦被 `f64` 语义规范化，常量池就再也分不出 `-0.0` 与 `0.0`。
+    #[test]
+    fn float64_canonical_constant_preserves_sign_bit_and_nan_payload() {
+        let negative_zero = CanonicalConstant::Float64((-0.0f64).to_bits());
+        let positive_zero = CanonicalConstant::Float64(0.0f64.to_bits());
+        match lower_constant(&negative_zero) {
+            Constant::Float64(value) => {
+                assert!(value.0.is_sign_negative(), "`-0.0` 的符号位不得在计划层丢失");
+                assert_eq!(value.0.to_bits(), (-0.0f64).to_bits());
+            }
+            other => panic!("float64 常量必须降低为 `Constant::Float64`，实际 {other:?}"),
+        }
+        // 计划层的 `Constant::Float64` 用 `OrderedFloat`，其 `PartialEq` 仍是 f64 语义
+        // （`-0.0 == 0.0`），因此相等性无法区分两者；canonical 选 `u64` 位模式正是为此。
+        match (lower_constant(&negative_zero), lower_constant(&positive_zero)) {
+            (Constant::Float64(negative), Constant::Float64(positive)) => {
+                assert_ne!(negative.0.to_bits(), positive.0.to_bits(), "`-0.0` 与 `0.0` 的位模式必须不同");
+            }
+            other => panic!("两个零常量都必须保持 float64 载体，实际 {other:?}"),
+        }
+        // 带 payload 的 quiet NaN：位模式重建后 payload 必须逐位保真。
+        let nan_payload = 0x7ff8_0000_dead_beefu64;
+        match lower_constant(&CanonicalConstant::Float64(nan_payload)) {
+            Constant::Float64(value) => assert_eq!(value.0.to_bits(), nan_payload, "NaN payload 不得被规范化"),
+            other => panic!("NaN 常量必须保持 float64 载体，实际 {other:?}"),
+        }
     }
 
     /// `Intersection` 必须在 frontend 擦除；平台 lowering 静默降成 `Union` 会改变语义，
