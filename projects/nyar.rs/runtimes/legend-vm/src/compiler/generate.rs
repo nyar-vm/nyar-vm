@@ -161,6 +161,20 @@ pub enum GenerateOperand {
     Null,
 }
 
+/// Jump target resolved to a byte offset relative to the jump instruction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedLabel {
+    /// Signed byte distance from the jump instruction to its target.
+    pub relative_offset: i32,
+}
+
+/// Function-table id resolved from a [`GenerateOperand::FuncRef`] name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedFunctionId {
+    /// Index into [`GenerateModule::functions`].
+    pub index: i32,
+}
+
 /// Generate-time instruction.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenerateInstruction {
@@ -251,7 +265,8 @@ impl GenerateFunction {
                 };
                 let from = byte_at[index] as i32;
                 let to = byte_at[target_index.min(byte_at.len() - 1)] as i32;
-                instruction.operands = vec![GenerateOperand::I32(to.wrapping_sub(from))];
+                let resolved = ResolvedLabel { relative_offset: to.wrapping_sub(from) };
+                instruction.operands = vec![GenerateOperand::I32(resolved.relative_offset)];
             }
         }
     }
@@ -287,6 +302,14 @@ impl GenerateModule {
             function_index: self.functions.len() as i32,
         });
         self.functions.push(function);
+    }
+
+    /// Resolve a [`GenerateOperand::FuncRef`] name to its function-table id.
+    ///
+    /// `None` means the module defines no such function: emitters must fail
+    /// closed instead of substituting index `0`.
+    pub fn resolve_function_id(&self, name: &str) -> Option<ResolvedFunctionId> {
+        self.functions.iter().position(|function| function.name == name).map(|index| ResolvedFunctionId { index: index as i32 })
     }
 
     /// Return the import index for `(module_name, symbol_name)`, adding it once.
