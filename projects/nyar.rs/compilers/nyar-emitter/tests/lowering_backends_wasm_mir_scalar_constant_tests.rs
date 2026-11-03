@@ -177,6 +177,53 @@ fn constant_argument_to_i64_parameter_executes_exactly() {
     assert_eq!(execute_main(&module), i64::MAX.to_string(), "字面量实参进入 i64 形参槽必须保真，不得先截断成 i32 再符号扩展");
 }
 
+/// `echo(a: i32) -> i32`：恒等函数，用作 i32 形参的静态调用目标。
+fn identity_i32(symbol: &str) -> ExecutableFunction {
+    let block = Block {
+        id: BlockRef(0),
+        label: "entry".to_string(),
+        parameters: vec![ValueRef(0)],
+        instructions: Vec::new(),
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
+    };
+    empty_function(symbol, vec![I32.clone()], I32.clone(), vec![block])
+}
+
+/// `main() -> i32`：把整型字面量作为 `i32` 形参传给 `echo`，返回调用结果。
+fn call_with_i32_constant(symbol: &str, callee: ItemInstanceId, value: i64) -> ExecutableFunction {
+    let call = Instruction::from_kind(InstructionKind::Call { callee: Operand::Item(callee), arguments: vec![Operand::Constant(Constant::Int(value))] });
+    let block = Block {
+        id: BlockRef(0),
+        label: "entry".to_string(),
+        parameters: Vec::new(),
+        instructions: vec![Instruction { results: vec![ValueRef(0)], ..call }],
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
+    };
+    let mut function = empty_function(symbol, Vec::new(), I32.clone(), vec![block]);
+    function.value_types.insert(ValueRef(0), I32.clone());
+    function
+}
+
+#[test]
+fn constant_argument_to_i32_parameter_executes_exactly() {
+    let callee = ItemInstanceId::from_index(0).expect("echo 实例身份");
+    let module = lower(vec![("echo", identity_i32("echo")), ("main", call_with_i32_constant("main", callee, 7))], "main")
+        .expect("i32 形参 + 可表示常量必须完成 lowering");
+    assert_eq!(execute_main(&module), "7", "字面量实参进入 i32 形参槽必须原值送达");
+}
+
+#[test]
+fn constant_argument_to_i32_parameter_out_of_range_fails_structured() {
+    let callee = ItemInstanceId::from_index(0).expect("echo 实例身份");
+    let error = lower(
+        vec![("echo", identity_i32("echo")), ("main", call_with_i32_constant("main", callee, 2_147_483_648))],
+        "main",
+    )
+    .expect_err("i32 形参装不下 2147483648，必须结构化失败");
+    assert!(error.contains("2147483648"), "失败信息必须带出事常量值: {error}");
+    assert!(error.contains("i32"), "失败信息必须说明目标槽位宽: {error}");
+}
+
 #[test]
 fn i32_slot_constant_out_of_range_fails_structured() {
     let error = lower(vec![("main", constant_function("main", I32.clone(), 2_147_483_648))], "main")

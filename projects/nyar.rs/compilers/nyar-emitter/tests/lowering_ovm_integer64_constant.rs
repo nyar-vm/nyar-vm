@@ -16,7 +16,7 @@ use nyar_emitter::{
     },
     testing::lower_fragment_to_nyar_module,
 };
-use nyar_types::{InstructionId, NyarType, ProvenanceId};
+use nyar_types::{InstructionId, ItemInstanceId, NyarType, ProvenanceId};
 use odin_bytecode::{OdinConstant, OdinImport, OdinModuleData};
 
 fn integer64() -> NyarType {
@@ -198,4 +198,99 @@ fn try_lower_load_constant(literal: i64, slot_type: NyarType) -> Result<OdinModu
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
     plan.testing_module_name("ovm_integer64_constant").testing_entry_operation(main_name);
     lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
+}
+
+fn integer32() -> NyarType {
+    NyarType::Integer32 { signed: true }
+}
+
+/// `echo(a: i32) -> i32`：入口形参即返回值。
+fn identity_i32(symbol: &str) -> ExecutableFunction {
+    ExecutableFunction {
+        symbol: symbol.to_string(),
+        return_type: integer32(),
+        param_types: vec![integer32()],
+        value_types: BTreeMap::from([(ValueRef(0), integer32())]),
+        value_layouts: BTreeMap::new(),
+        return_layout: None,
+        entry: BlockRef(0),
+        values: Vec::new(),
+        suspend_points: Vec::new(),
+        frame_layouts: Vec::new(),
+        continuations: Vec::new(),
+        case_chains: Vec::new(),
+        #[allow(deprecated)]
+        state_machine: None,
+        suspend_plan: None,
+        blocks: vec![Block {
+            id: BlockRef(0),
+            label: "entry".to_string(),
+            parameters: vec![ValueRef(0)],
+            instructions: Vec::new(),
+            terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
+        }],
+        diagnostics: Vec::new(),
+    }
+}
+
+/// `main() -> i32`：把整型字面量作为 i32 形参传给 `echo` 并返回结果。
+fn call_with_i32_constant(symbol: &str, callee: ItemInstanceId, literal: i64) -> ExecutableFunction {
+    ExecutableFunction {
+        symbol: symbol.to_string(),
+        return_type: integer32(),
+        param_types: Vec::new(),
+        value_types: BTreeMap::from([(ValueRef(0), integer32())]),
+        value_layouts: BTreeMap::new(),
+        return_layout: None,
+        entry: BlockRef(0),
+        values: Vec::new(),
+        suspend_points: Vec::new(),
+        frame_layouts: Vec::new(),
+        continuations: Vec::new(),
+        case_chains: Vec::new(),
+        #[allow(deprecated)]
+        state_machine: None,
+        suspend_plan: None,
+        blocks: vec![Block {
+            id: BlockRef(0),
+            label: "entry".to_string(),
+            parameters: Vec::new(),
+            instructions: vec![Instruction {
+                id: InstructionId::from_index(1).expect("指令身份"),
+                results: vec![ValueRef(0)],
+                kind: InstructionKind::Call { callee: Operand::Item(callee), arguments: vec![Operand::Constant(Constant::Int(literal))] },
+                provenance: ProvenanceId::from_index(1).expect("provenance"),
+            }],
+            terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
+        }],
+        diagnostics: Vec::new(),
+    }
+}
+
+fn try_lower_i32_call(literal: i64) -> Result<OdinModuleData, String> {
+    let callee = ItemInstanceId::from_index(0).expect("echo 实例身份");
+    let echo_name = QualifiedName::new(vec![Identifier::new("echo")]);
+    let main_name = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([
+        (echo_name, identity_i32("echo")),
+        (main_name.clone(), call_with_i32_constant("main", callee, literal)),
+    ]));
+    plan.testing_module_name("ovm_integer64_constant").testing_entry_operation(main_name);
+    lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
+}
+
+/// i32 形参 + 可表示常量实参：必须按 i32 槽位发 `Integer32`，不得静默拓宽。
+#[test]
+fn i32_parameter_constant_in_range_matches_slot() {
+    let module = try_lower_i32_call(7).expect("7 在 i32 形参范围内，必须能 lowering");
+    assert_eq!(pool_integer32(&module), vec![7], "常量实参必须按 i32 形参槽进 Integer32 池: {:?}", module.constants);
+    assert!(pool_integer64(&module).is_empty(), "i32 形参槽不得出现 Integer64 池条目: {:?}", module.constants);
+    assert!(!widens_through_host_import(&module), "i32 形参槽不得拓宽: {:?}", module.imports);
+}
+
+/// i32 形参 + 越界常量实参：必须结构化失败，禁止静默截断/拓宽。
+#[test]
+fn i32_parameter_constant_out_of_range_fails_structured() {
+    let error = try_lower_i32_call(2_147_483_648).expect_err("i32 形参装不下 2147483648，必须结构化失败");
+    assert!(error.contains("超出目标 Integer32 槽的表示范围"), "错误必须指明 i32 形参槽越界: {error}");
 }

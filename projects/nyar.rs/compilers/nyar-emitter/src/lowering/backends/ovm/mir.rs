@@ -215,6 +215,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
             function_index_by_instance.insert(*instance, index as i32);
         }
         let function_entry_arities = build_nyar_function_entry_arities(exec.as_ref(), &operations);
+        let param_types_by_function_index = build_nyar_function_param_types(exec.as_ref(), &operations)?;
 
         for instance in operations {
             let Some(view) = exec.get_function(&instance)
@@ -232,6 +233,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 mir_fn,
                 &function_index_by_instance,
                 &function_entry_arities,
+                &param_types_by_function_index,
                 &external_link_by_instance,
                 &external_opcode_by_instance,
                 &sum_layout_index_by_nominal,
@@ -328,6 +330,39 @@ fn build_nyar_function_entry_arities(exec: &TargetExecutionPlan, operations: &[I
     map
 }
 
+/// 被调函数的入口形参槽类型表（与 arity 同源：入口块 SSA 形参的冻结槽类型）。
+///
+/// 常量实参的位宽必须由它决定；计划侧没有这张表时，Call 操作数位只能回落到
+/// semantic MIR 合同（`Constant::Int` = Integer64），会把 i32 形参静默拓宽。
+fn build_nyar_function_param_types(
+    exec: &TargetExecutionPlan,
+    operations: &[ItemInstanceId],
+) -> crate::Result<BTreeMap<i32, Vec<NyarType>>> {
+    let mut map = BTreeMap::new();
+    for (index, instance) in operations.iter().enumerate() {
+        let Some(view) = exec.get_function(instance)
+        else {
+            continue;
+        };
+        let mir_fn = &view.function;
+        let slots = ExecutableSlotPlan::plan_nyar(mir_fn);
+        let parameters = mir_fn.blocks.get(mir_fn.entry.0 as usize).map(|block| block.parameters.as_slice()).unwrap_or(&[]);
+        let types = parameters
+            .iter()
+            .map(|parameter| {
+                slots
+                    .value_locals
+                    .get(parameter)
+                    .and_then(|local| slots.local_types.get(usize::from(*local)))
+                    .cloned()
+                    .ok_or_else(|| format!("OVM 形参 SSA 值缺少已规划槽类型：%{}（symbol=`{}`）", parameter.0, mir_fn.symbol))
+            })
+            .collect::<crate::Result<Vec<_>>>()?;
+        map.insert(index as i32, types);
+    }
+    Ok(map)
+}
+
 /// 库模式只导出用户 `[export]` / `exported_operations`；闭包内 std 辅助函数保持内部 `Call` 可见性。
 fn nyar_should_export_operation(submission: &FragmentSubmission, operation: ItemInstanceId) -> bool {
     if submission.backend_plan.wasm_export_names().contains_key(&operation) {
@@ -398,6 +433,7 @@ fn lower_mir_function_to_bytecode(
     mir_fn: &MirFunction,
     function_index_by_instance: &BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &BTreeMap<i32, usize>,
+    param_types_by_function_index: &BTreeMap<i32, Vec<NyarType>>,
     external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
     external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
     sum_layout_index_by_nominal: &BTreeMap<NominalInstanceId, i32>,
@@ -418,6 +454,7 @@ fn lower_mir_function_to_bytecode(
         emitter,
         function_index_by_instance,
         function_entry_arities,
+        param_types_by_function_index,
         external_link_by_instance,
         external_opcode_by_instance,
         sum_layout_index_by_nominal,
@@ -443,6 +480,7 @@ struct NyarMirLowerer<'a, 'e> {
     emitter: &'a mut BytecodeEmitter<'e>,
     function_index_by_instance: &'a BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &'a BTreeMap<i32, usize>,
+    param_types_by_function_index: &'a BTreeMap<i32, Vec<NyarType>>,
     external_link_by_instance: &'a BTreeMap<ItemInstanceId, ExternalImportLink>,
     external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
     sum_layout_index_by_nominal: &'a BTreeMap<NominalInstanceId, i32>,
@@ -1017,9 +1055,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     ) -> crate::Result<()> {
         let expected = self.function_entry_arities.get(&function_index).copied().unwrap_or(arguments.len());
         assert_eq!(arguments.len(), expected, "validated call arity differs from function entry: {path:?} index={function_index}");
-        for argument in arguments {
-            if !self.emit_call_operand(argument)? {
-                panic!("unmaterialized Nyar call operand in `{path:?}`: {argument:?}");
+        for (index, argument) in arguments.iter().enumerate() {
+            // 常量实参的位宽来自被调函数已冻结的入口形参槽类型；没有该槽时
+            // 才回落到 semantic MIR 合同，绝不按字面量大小选位宽。
+            let param_ty = self.param_types_by_function_index.get(&function_index).and_then(|types| types.get(index));
+            match argument {
+                MirOperand::Value(_) => {
+                    if !self.emit_call_operand(argument)? {
+                        panic!("unmaterialized Nyar call operand in `{path:?}`: {argument:?}");
+                    }
+                }
+                _ => self.emit_operand_typed(argument, param_ty)?,
             }
         }
         self.emitter.emit_imm1(OdinHeadCode::Call, function_index);
