@@ -30,6 +30,7 @@ pub mod ops;
 pub mod output_runtime;
 pub mod stack;
 pub mod text_runtime;
+pub mod time_runtime;
 pub mod value;
 pub mod verify;
 pub mod vm;

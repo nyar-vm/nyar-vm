@@ -12,6 +12,7 @@ use odin_vm::{
     output_runtime::capture,
     vm::OdinVm,
 };
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 fn run(op: HostOp, args: &[Value]) -> Result<Value, OdinRuntimeError> {
     let mut heap = ObjectHeap::new();
@@ -102,4 +103,75 @@ fn print_keeps_variadic_tab_separated_behavior() {
     let (value, lines) = capture(|| run_ok(HostOp::Print, &[Value::I32(1), text("x"), Value::Bool(true)]));
     assert_eq!(value, Value::Bool(true), "print 仍返回最后一个参数");
     assert_eq!(lines, vec!["1\tx\ttrue".to_string()]);
+}
+
+/// 墙钟毫秒只做区间断言：不写死具体值，避免校时 / 调度造成 flaky。
+#[test]
+fn get_time_returns_unix_epoch_millis_within_call_interval() {
+    let before = SystemTime::now().duration_since(UNIX_EPOCH).expect("测试机时钟早于纪元").as_millis() as i64;
+    let value = run_ok(HostOp::GetTime, &[]);
+    let after = SystemTime::now().duration_since(UNIX_EPOCH).expect("测试机时钟早于纪元").as_millis() as i64;
+    let Value::I64(millis) = value
+    else {
+        panic!("get_time 必须返回 i64，实际 {value:?}");
+    };
+    assert!((before..=after).contains(&millis), "get_time 落在调用区间内：before {before} value {millis} after {after}");
+}
+
+/// 单调毫秒连续取值必须非递减；不写死差值。
+#[test]
+fn monotonic_ms_never_goes_backwards() {
+    let mut previous = match run_ok(HostOp::MonotonicMs, &[]) {
+        Value::I64(value) => value,
+        other => panic!("monotonic_ms 必须返回 i64，实际 {other:?}"),
+    };
+    for _ in 0..8 {
+        let current = match run_ok(HostOp::MonotonicMs, &[]) {
+            Value::I64(value) => value,
+            other => panic!("monotonic_ms 必须返回 i64，实际 {other:?}"),
+        };
+        assert!(current >= previous, "单调时钟回退：previous {previous} current {current}");
+        previous = current;
+    }
+}
+
+#[test]
+fn get_time_and_monotonic_ms_execute_through_call_import() {
+    let value = run_import("get_time", Vec::new(), 0);
+    let Value::I64(millis) = value
+    else {
+        panic!("CallImport get_time 必须返回 i64，实际 {value:?}");
+    };
+    assert!(millis > 0, "Unix 纪元毫秒必须为正，实际 {millis}");
+
+    let value = run_import("monotonic_ms", Vec::new(), 0);
+    let Value::I64(millis) = value
+    else {
+        panic!("CallImport monotonic_ms 必须返回 i64，实际 {value:?}");
+    };
+    assert!(millis >= 0, "单调毫秒不得为负，实际 {millis}");
+}
+
+#[test]
+fn sleep_ms_returns_declared_i32_and_rejects_negative_values() {
+    for ms in [0, 1, 50] {
+        let started = Instant::now();
+        let value = run_ok(HostOp::SleepMs, &[Value::I32(ms)]);
+        assert_eq!(value, Value::I32(ms), "sleep_ms 原样返回入参");
+        assert!(started.elapsed().as_millis() < 5_000, "sleep_ms({ms}) 不应拖到秒级");
+    }
+
+    for ms in [-1, i32::MIN] {
+        let error = run(HostOp::SleepMs, &[Value::I32(ms)]).expect_err("负值必须结构化失败");
+        assert!(
+            matches!(error, OdinRuntimeError::NegativeArgument { operation, value } if operation == "sleep_ms" && value == ms as i64),
+            "sleep_ms({ms}) 实际 {error:?}"
+        );
+    }
+
+    let error = run_import_err("sleep_ms", vec![OdinConstant::Integer32(-3)], 1);
+    assert!(matches!(error, OdinRuntimeError::NegativeArgument { operation: "sleep_ms", value: -3 }), "CallImport sleep_ms(-3) 实际 {error:?}");
+
+    let error = run(HostOp::SleepMs, &[text("5")]).expect_err("非数值载体必须失败");
+    assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }), "实际 {error:?}");
 }

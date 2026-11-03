@@ -4,7 +4,7 @@ use crate::error::OdinRuntimeError;
 use nyar_gc::{ObjectHeap, ObjectPayload};
 use odin_bytecode::OdinImport;
 
-use crate::{array_runtime, dom_runtime, output_runtime, text_runtime, value::Value};
+use crate::{array_runtime, dom_runtime, output_runtime, text_runtime, time_runtime, value::Value};
 
 /// 与 emitter 约定的宿主导入模块名。
 pub const HOST_IMPORT_MODULE: &str = "nyar.host";
@@ -22,6 +22,12 @@ pub enum HostOp {
     ConsoleLog,
     /// 单参数 `println` 重载：i32 按十进制、utf8 原样输出，末尾换行，返回传入值。
     Println,
+    /// Unix 纪元毫秒（墙钟，可回拨）。
+    GetTime,
+    /// 单调时钟毫秒（进程内基准，不回退）。
+    MonotonicMs,
+    /// 睡眠给定毫秒数并原样返回；负值结构化失败。
+    SleepMs,
     /// 有符号 32 位转 64 位。
     I32ToI64,
     /// 32 位有符号整数转 64 位浮点（IEEE-754，`i32` 全域精确）。
@@ -190,6 +196,9 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "string_concat" => HostOp::StringConcat,
         "console_log" => HostOp::ConsoleLog,
         "println" => HostOp::Println,
+        "get_time" => HostOp::GetTime,
+        "monotonic_ms" => HostOp::MonotonicMs,
+        "sleep_ms" => HostOp::SleepMs,
         "i32_to_i64" => HostOp::I32ToI64,
         "i32_to_f64" => HostOp::I32ToF64,
         "i64_to_f64" => HostOp::I64ToF64,
@@ -293,6 +302,9 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32 or utf8", actual: other.type_name().to_string() }),
             None => Err(OdinRuntimeError::StackUnderflow),
         },
+        HostOp::GetTime => Ok(Value::I64(time_runtime::epoch_millis())),
+        HostOp::MonotonicMs => Ok(Value::I64(time_runtime::monotonic_millis())),
+        HostOp::SleepMs => Ok(Value::I32(time_runtime::sleep_ms(i32_arg(args, 0)?)?)),
         HostOp::BeginPhase => {
             let phase = match args.first() {
                 Some(Value::String(name)) if !name.is_empty() => name.clone(),

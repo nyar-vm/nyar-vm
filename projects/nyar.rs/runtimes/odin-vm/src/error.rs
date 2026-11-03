@@ -72,6 +72,13 @@ pub enum OdinRuntimeError {
         /// 触发失败的运算名。
         operation: &'static str,
     },
+    /// 宿主调用收到负数参数（如 `sleep_ms`）：结构化失败，不 clamp。
+    NegativeArgument {
+        /// 触发失败的运算名。
+        operation: &'static str,
+        /// 实际收到的负值。
+        value: i64,
+    },
     /// `Trap` 指令被执行：前端声明为不可达的块在运行期真的到达了。
     TrapExecuted {
         /// 触发时正在执行的函数名。
@@ -119,6 +126,7 @@ impl Display for OdinRuntimeError {
             Self::InvalidUtf8 { operation } => write!(f, "{operation}: invalid text encoding"),
             Self::UnterminatedCStr { operation } => write!(f, "{operation}: unterminated C string"),
             Self::EmbeddedNul { operation } => write!(f, "{operation}: embedded NUL cannot be represented as C string"),
+            Self::NegativeArgument { operation, value } => write!(f, "{operation}: negative argument {value}"),
             Self::TrapExecuted { function, ip } => {
                 write!(f, "reached unreachable trap in function `{function}` at pc {ip}")
             }
