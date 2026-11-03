@@ -194,6 +194,14 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
         .iter()
         .map(|(instance, import)| (*instance, import.link.clone()))
         .collect::<BTreeMap<ItemInstanceId, ExternalImportLink>>();
+    // 外部调用的实参位宽与内部调用同源：来自计划冻结的签名（`BackendImport.parameter_types`）。
+    // 消费点缺失签名时必须结构化失败，不得回落到 semantic MIR 的 `Integer64` 默认。
+    let external_param_types_by_instance = submission
+        .backend_plan
+        .imports()
+        .iter()
+        .map(|(instance, import)| (*instance, import.parameter_types.clone()))
+        .collect::<BTreeMap<ItemInstanceId, Vec<NyarType>>>();
     // `[ovm_operator]` 绑定的冻结配方只从计划读取：助记符仅用于诊断，arity、操作数
     // 改写与头码全部来自 `TargetExecutionPlan`。
     let external_opcode_by_instance = submission
@@ -235,6 +243,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 &function_entry_arities,
                 &param_types_by_function_index,
                 &external_link_by_instance,
+                &external_param_types_by_instance,
                 &external_opcode_by_instance,
                 &sum_layout_index_by_nominal,
                 &mut emitter,
@@ -435,6 +444,7 @@ fn lower_mir_function_to_bytecode(
     function_entry_arities: &BTreeMap<i32, usize>,
     param_types_by_function_index: &BTreeMap<i32, Vec<NyarType>>,
     external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
+    external_param_types_by_instance: &BTreeMap<ItemInstanceId, Vec<NyarType>>,
     external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
     sum_layout_index_by_nominal: &BTreeMap<NominalInstanceId, i32>,
     emitter: &mut BytecodeEmitter<'_>,
@@ -456,6 +466,7 @@ fn lower_mir_function_to_bytecode(
         function_entry_arities,
         param_types_by_function_index,
         external_link_by_instance,
+        external_param_types_by_instance,
         external_opcode_by_instance,
         sum_layout_index_by_nominal,
         layouts,
@@ -482,6 +493,7 @@ struct NyarMirLowerer<'a, 'e> {
     function_entry_arities: &'a BTreeMap<i32, usize>,
     param_types_by_function_index: &'a BTreeMap<i32, Vec<NyarType>>,
     external_link_by_instance: &'a BTreeMap<ItemInstanceId, ExternalImportLink>,
+    external_param_types_by_instance: &'a BTreeMap<ItemInstanceId, Vec<NyarType>>,
     external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
     sum_layout_index_by_nominal: &'a BTreeMap<NominalInstanceId, i32>,
     layouts: &'a mut Vec<OdinLayout>,
@@ -982,13 +994,13 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             match plan.recipe {
                 TargetOperatorRecipe::Operands => {
-                    self.emit_external_arguments(&callee_name, arguments)?;
+                    self.emit_external_arguments(&callee_name, instance, arguments)?;
                     self.emitter.emit_plain(code);
                 }
                 TargetOperatorRecipe::Steps(steps) => {
                     for step in steps {
                         match step {
-                            TargetOperandStep::Arguments => self.emit_external_arguments(&callee_name, arguments)?,
+                            TargetOperandStep::Arguments => self.emit_external_arguments(&callee_name, instance, arguments)?,
                             TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value } => {
                                 let index = self.emitter.intern_i32(*value);
                                 self.emitter.emit_imm1(OdinHeadCode::Constant, index);
@@ -1024,7 +1036,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                      需要 host 边界 + 目标标签 `ovm-operator` + 恰好一段符号，未绑定目标 provider 不得回落"
                 );
             };
-            self.emit_external_arguments(&callee_name, arguments);
+            self.emit_external_arguments(&callee_name, instance, arguments)?;
             self.emitter.emit_call_import(symbol, arguments.len() as i32);
         }
 
@@ -1037,13 +1049,60 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         Ok(())
     }
 
-    fn emit_external_arguments(&mut self, callee_name: &str, arguments: &[MirOperand]) -> crate::Result<()> {
-        for argument in arguments {
-            if !self.emit_call_operand(argument)? {
-                panic!("unmaterialized Nyar external call operand in `{callee_name}`: {argument:?}");
+    /// 按计划冻结的 `BackendImport.parameter_types` 发射外部调用实参。
+    ///
+    /// 位宽权威与内部调用同源（签名表），此处不按字面量值域猜测：签名表缺项时
+    /// 结构化失败，绝不回落到 semantic MIR 的 `Integer64` 默认。
+    fn emit_external_arguments(
+        &mut self,
+        callee_name: &str,
+        instance: ItemInstanceId,
+        arguments: &[MirOperand],
+    ) -> crate::Result<()> {
+        let parameter_types = self.external_param_types_by_instance.get(&instance).cloned();
+        let import_symbol = self
+            .external_link_by_instance
+            .get(&instance)
+            .map(|link| link.locator_segments().join("::"))
+            .unwrap_or_default();
+        for (index, argument) in arguments.iter().enumerate() {
+            let actual = self.operand_actual_type(argument);
+            let Some(expected) = parameter_types.as_ref().and_then(|types| types.get(index)).cloned()
+            else {
+                return Err(format!(
+                    "OVM 外部调用 `{callee_name}`（import={import_symbol} instance={instance:?}）的实参 #{index} 缺少已规划签名类型：\
+                     期望类型=<`BackendImport.parameter_types` 未覆盖该参数>，实际类型={actual}；\
+                     禁止回落到 semantic MIR 的 `Integer64` 默认"
+                ));
+            };
+            match argument {
+                MirOperand::Value(_) => {
+                    if !self.emit_call_operand(argument)? {
+                        panic!("unmaterialized Nyar external call operand in `{callee_name}`: {argument:?}");
+                    }
+                }
+                _ => self.emit_operand_typed(argument, Some(&expected)).map_err(|error| {
+                    format!(
+                        "OVM 外部调用 `{callee_name}`（import={import_symbol} instance={instance:?}）的实参 #{index} 发射失败：\
+                         期望类型={expected}，实际类型={actual}；{error}"
+                    )
+                })?,
             }
         }
         Ok(())
+    }
+
+    /// 实参当前的实际载体/字面量描述，只用于结构化失败文本，不参与发射决策。
+    fn operand_actual_type(&self, operand: &MirOperand) -> String {
+        match operand {
+            MirOperand::Value(value) => self
+                .value_slot_type(*value)
+                .or_else(|| self.value_semantic_type(*value))
+                .map(|ty| ty.to_string())
+                .unwrap_or_else(|| format!("%{}（未冻结类型）", value.0)),
+            MirOperand::Constant(constant) => format!("{constant:?}（无槽字面量）"),
+            other => format!("{other:?}"),
+        }
     }
 
     fn emit_direct_call(
