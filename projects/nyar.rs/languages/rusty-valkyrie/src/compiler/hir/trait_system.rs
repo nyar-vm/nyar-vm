@@ -226,6 +226,14 @@ impl TraitModuleView {
             .map(|(identity, _)| *identity)
     }
 
+    /// 按声明身份查回 trait 声明本体。
+    ///
+    /// 候选装配必须按身份解析：impl 的 `trait_declaration` 是跨模块绑定的，
+    /// 用短名在「当前模块/当前导出」里查表会漏掉兄弟子模块与其它命名空间的声明。
+    pub(crate) fn declaration(&self, identity: nyar_types::ItemId) -> Option<&HirTrait> {
+        self.declarations.get(&identity)
+    }
+
     /// 按名字检查 struct 是否满足具名 trait，并生成 witness。
     pub fn satisfy_named_trait(&self, candidate_name: &Identifier, trait_name: &Identifier) -> Result<NamedTraitWitness, TraitModuleError> {
         let candidate = self.structs.get(candidate_name).ok_or_else(|| TraitModuleError::UnknownStruct { name: candidate_name.clone() })?;

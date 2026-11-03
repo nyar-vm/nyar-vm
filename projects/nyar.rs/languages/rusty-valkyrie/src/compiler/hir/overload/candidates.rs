@@ -15,6 +15,7 @@ use super::{
     substitution::{substitute_associated_equations, substitute_type_self},
     types::struct_apply_type,
 };
+use crate::compiler::hir::trait_system::TraitModuleView;
 
 fn build_function_candidate(module_name: &NamePath, function: &HirFunction, imported_dependency_export: bool) -> OverloadCandidate {
     let symbol = crate::compiler::hir::symbols::stable_hir_function_name_path(module_name, function);
@@ -315,17 +316,18 @@ fn append_trait_default_candidates(
 /// 收集模块内全部已声明候选；外部测试入口。
 #[doc(hidden)]
 pub fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
-    collect_declared_candidates(module)
+    let trait_view = TraitModuleView::from_module(module);
+    collect_declared_candidates(module, &trait_view)
 }
 
-fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
+fn collect_declared_candidates(module: &HirModule, trait_view: &TraitModuleView) -> Vec<OverloadCandidate> {
     use super::r#trait::{impl_owner_identifier, impl_owner_identifier_from_export};
 
     let mut candidates = Vec::new();
     candidates.extend(module.functions.iter().map(|function| build_function_candidate(&module.name, function, false)));
     let local_function_names = module.functions.iter().map(|function| function.name.clone()).collect::<std::collections::BTreeSet<_>>();
     for submodule in &module.submodules {
-        candidates.extend(collect_declared_candidates(submodule));
+        candidates.extend(collect_declared_candidates(submodule, trait_view));
     }
     for item in &module.structs {
         candidates.push(build_struct_constructor_candidate(item));
@@ -351,7 +353,7 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
         let owner = impl_owner_identifier(module, &item.target);
         // `imply u64: Equal` 的 trait 归属必须随成员进入候选表：丢了它，trait impl
         // 成员与同形 inherent 成员在决胜阶段无法区分，同优先级并列会被误判成歧义。
-        let trait_ref = item.trait_declaration.and_then(|declaration| module.traits.iter().find(|item| item.declaration == Some(declaration)));
+        let trait_ref = item.trait_declaration.and_then(|declaration| trait_view.declaration(declaration));
         let equations = frozen_impl_equations(item);
         candidates.extend(item.methods.iter().map(|method| {
             freeze_impl_member_equations(
@@ -396,7 +398,7 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
         for item in &export.impls {
             let owner = impl_owner_identifier(module, &item.target).or_else(|| impl_owner_identifier_from_export(export, &item.target));
             // 跨包 impl 同理：trait 归属按 resolver 已绑定的身份带上。
-            let trait_ref = item.trait_declaration.and_then(|declaration| export.traits.iter().find(|item| item.declaration == Some(declaration)));
+            let trait_ref = item.trait_declaration.and_then(|declaration| trait_view.declaration(declaration));
             candidates.extend(item.methods.iter().map(|method| {
                 specialize_method_candidate(build_method_candidate(method, owner.clone(), trait_ref), &item.target, &item.generics)
             }));

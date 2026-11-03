@@ -133,6 +133,18 @@ fn collect_imply(builder: &mut FileBuilder, namespace: &[String], imply: &ast::I
     if let Some(trait_type) = &imply.trait_type {
         collect_type_expression(trait_type, &mut signature);
     }
+    // impl 外壳本身是 evidence 身份：空体 impl（或 witness 全被裁掉的 impl）没有任何
+    // 方法可供「聚合 + trait 双需求」提升，外壳必须独立登记，否则 HIR 里不存在该 impl。
+    let shell_owner = imply_owner_name(imply);
+    builder.register(
+        namespace,
+        DeclarationKind::Imply,
+        imply_trait_name(imply).as_deref().unwrap_or_default(),
+        shell_owner.as_deref(),
+        type_target_reference(&imply.target_type).map(DeclarationLink::MemberOwner),
+        None,
+        signature.clone(),
+    );
     if imply.methods.is_empty() {
         // 没有 witness 方法的 imply 只有外壳，作为文件级引用保存。
         builder.register_module_references(namespace, signature);
@@ -155,6 +167,11 @@ fn collect_imply(builder: &mut FileBuilder, namespace: &[String], imply: &ast::I
 /// imply 目标类型的聚合短名：`imply HashMap<K, V>` / `imply std::collection::HashMap<K, V>` → `HashMap`。
 pub(crate) fn imply_owner_name(imply: &ast::ImplyDeclaration) -> Option<String> {
     type_target_reference(&imply.target_type).and_then(|segments| segments.last().cloned())
+}
+
+/// imply 实施的 trait 短名：`imply Person: Same` → `Same`；无 trait 的 impl 返回 `None`。
+pub(crate) fn imply_trait_name(imply: &ast::ImplyDeclaration) -> Option<String> {
+    imply.trait_type.as_ref().and_then(type_target_reference).and_then(|segments| segments.last().cloned())
 }
 
 /// 类型表达式被引用的名字路径：`Utf8Text` → `["Utf8Text"]`，`std::collection::HashMap<K, V>` → `["std","collection","HashMap"]`。

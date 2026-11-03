@@ -85,7 +85,9 @@ fn keep_declaration(
         ast::StatementNode::TypeFunction(type_function) => {
             demanded.contains(&key_of(namespace, DeclarationKind::TypeFunction, &type_function.name.name, None))
         }
-        // imply 块的每个 witness 方法各自是一份被需求声明；拥有者与成员名都与 `collect_imply` 一致。
+        // imply 块产出两类声明：witness 方法身份，以及承载「该聚合实施该 trait」的 impl 外壳身份。
+        // 空体 impl（或 witness 全被裁掉的 impl）没有方法可供提升，只能由外壳自身的需求身份保留；
+        // 判定与 `plan.rs` 固定点一致，仍是「聚合 + trait 双双需求」，不按短名或是否为空兜底。
         ast::StatementNode::Imply(imply) => {
             let owner = imply_owner_name(imply);
             imply.methods.retain(|method| {
@@ -93,6 +95,12 @@ fn keep_declaration(
                 demanded.contains(&key_of(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref()))
             });
             !imply.methods.is_empty()
+                || demanded.contains(&key_of(
+                    namespace,
+                    DeclarationKind::Imply,
+                    super::collect::imply_trait_name(imply).as_deref().unwrap_or_default(),
+                    owner.as_deref(),
+                ))
         }
         // 包装语句按其内部条目的身份保留或丢弃，包装节点本身不是声明。
         ast::StatementNode::Statement(inner) => keep_declaration(inner.as_mut(), namespace, demanded, key_of),

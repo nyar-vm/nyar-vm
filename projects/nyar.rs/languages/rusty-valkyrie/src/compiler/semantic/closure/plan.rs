@@ -120,9 +120,9 @@ pub fn plan_semantic_closure_with_host_bindings(
     // owner → impl 方法 的反查表；保留判定在下面的固定点内按「聚合 + trait 双双需求」执行。
     // 该规则只扩展名字解析上界，body 物化仍由可达性门独立收口。
     let empty_visibility = BTreeSet::new();
-    let mut impl_methods_by_owner = BTreeMap::<DeclarationKey, Vec<DeclarationKey>>::new();
+    let mut impl_evidence_by_owner = BTreeMap::<DeclarationKey, Vec<DeclarationKey>>::new();
     for (key, entry) in &declaration_index {
-        if key.kind != DeclarationKind::ImplyMethod {
+        if !matches!(key.kind, DeclarationKind::ImplyMethod | DeclarationKind::Imply) {
             continue;
         }
         let Some(DeclarationLink::MemberOwner(owner_reference)) = &entry.link
@@ -152,7 +152,7 @@ pub fn plan_semantic_closure_with_host_bindings(
                 aggregate.kind,
                 DeclarationKind::Class | DeclarationKind::Structure | DeclarationKind::Union | DeclarationKind::Enum | DeclarationKind::Flags
             ) {
-                impl_methods_by_owner.entry(aggregate).or_default().push(key.clone());
+                impl_evidence_by_owner.entry(aggregate).or_default().push(key.clone());
             }
         }
     }
@@ -283,7 +283,7 @@ pub fn plan_semantic_closure_with_host_bindings(
         // （trait 别名按 `AliasTarget` 跟进到真实 trait 声明）。「外壳始终物化」会破坏
         // §3.1 的需求闭包上界含义，故不以聚合单独决定保留。
         for aggregate in &demanded {
-            let Some(impl_methods) = impl_methods_by_owner.get(aggregate)
+            let Some(impl_methods) = impl_evidence_by_owner.get(aggregate)
             else {
                 continue;
             };

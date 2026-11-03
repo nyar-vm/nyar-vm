@@ -145,6 +145,8 @@ pub enum DeclarationKind {
     Method,
     /// trait 实现方法声明。
     ImplyMethod,
+    /// trait 实现外壳：承载「目标聚合实施该 trait」的 evidence 身份，无方法体的空 impl 也有此身份。
+    Imply,
 }
 
 impl DeclarationKind {
@@ -162,6 +164,7 @@ impl DeclarationKind {
             Self::TypeFunction => "type_function",
             Self::Method => "method",
             Self::ImplyMethod => "imply_method",
+            Self::Imply => "imply",
         }
     }
 
@@ -172,7 +175,7 @@ impl DeclarationKind {
 
     /// 是否为成员声明：成员身份只能由「拥有者聚合身份 + 选择名」产生，不进入短名索引。
     pub fn is_member(self) -> bool {
-        matches!(self, Self::Method | Self::ImplyMethod)
+        matches!(self, Self::Method | Self::ImplyMethod | Self::Imply)
     }
 }
 
