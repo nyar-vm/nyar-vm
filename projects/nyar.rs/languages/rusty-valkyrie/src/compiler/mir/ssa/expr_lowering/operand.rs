@@ -44,6 +44,13 @@ impl MirBuilder {
                     {
                         Some(expected.clone())
                     }
+                    // 字符串字面量与整数/字符同源：overload 已按别名解析后的文本形参特化，
+                    // MIR 必须写出同一类型，否则 SMIR007 仍见 `Utf8` vs `Nominal{Utf8Text}`。
+                    (HirLiteral::String(_), Some(expected))
+                        if crate::compiler::mir::ssa::expr_helpers::is_string_literal_formal_type(expected, &self.field_declarations) =>
+                    {
+                        Some(expected.clone())
+                    }
                     _ => ty,
                 };
                 let value = self.next_value(MirValueOrigin::Literal);
