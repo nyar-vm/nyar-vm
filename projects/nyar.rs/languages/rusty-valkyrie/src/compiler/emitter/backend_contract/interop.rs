@@ -266,7 +266,6 @@ fn validate_type_target_attribute(attribute: &HirAttribute, owner: &str, source:
     let (min_segments, max_segments, expected): (usize, usize, &'static str) = match name {
         "jvm" => (1, 1, "exactly one non-empty string segment (internal class name)"),
         "clr" => (2, 2, "exactly two non-empty string segments (assembly, full type name)"),
-        "js" => (1, 2, "one or two non-empty string segments (module, global name)"),
         "js_builtin" => (1, 1, "exactly one non-empty string segment (global path)"),
         _ => return Ok(()),
     };
@@ -426,9 +425,9 @@ fn c_binding_platform(library: &str) -> Option<&'static str> {
 }
 
 fn is_host_import_surface_tag(name: &str) -> bool {
-    // `js` / `js_builtin` / `ovm`：抽象宿主绑定，须进入 external import 合同，
+    // `js_builtin` / `ovm`：抽象宿主绑定，须进入 external import 合同，
     // 否则 Invoke(ItemInstanceId) 在 link 阶段报「没有定义或显式导入合同」。
-    matches!(name, "clr" | "wasm" | "wasi" | "jvm" | "com" | "js" | "js_builtin" | "ovm")
+    matches!(name, "clr" | "wasm" | "wasi" | "jvm" | "com" | "js_builtin" | "ovm")
 }
 
 fn attribute_name(attribute: &HirAttribute) -> Option<&str> {

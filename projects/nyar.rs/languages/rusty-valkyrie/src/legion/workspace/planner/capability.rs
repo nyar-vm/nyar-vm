@@ -5,10 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use super::types::PlannedHostProvider;
 
-/// Oak attribute 上的一个外部绑定（`js` / `wasm` / … 的参数表达式）。
+/// Oak attribute 上的一个外部绑定（`js_builtin` / `wasm` / … 的参数表达式）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ForeignBinding {
-    Js { symbol: String },
     JsBuiltin { symbol: String },
     Wasm { module: String, field: String },
     Clr { symbol: String },
@@ -18,7 +17,6 @@ pub enum ForeignBinding {
 impl ForeignBinding {
     pub(crate) fn display(&self) -> String {
         match self {
-            Self::Js { symbol } => format!("js(\"{symbol}\")"),
             Self::JsBuiltin { symbol } => format!("js_builtin(\"{symbol}\")"),
             Self::Wasm { module, field } => format!("wasm(\"{module}\", \"{field}\")"),
             Self::Clr { symbol } => format!("clr(\"{symbol}\")"),
@@ -27,7 +25,7 @@ impl ForeignBinding {
     }
 }
 
-/// 从 `[js("fetch")]`、`[js_builtin("wx.request")]` 等 attribute 推导目标能力 id。
+/// 从 `[js_builtin("wx.request")]` 等 attribute 推导目标能力 id。
 pub(crate) fn js_capability_id(symbol: &str) -> String {
     let trimmed = symbol.trim();
     if trimmed.is_empty() {
@@ -73,7 +71,7 @@ pub(crate) fn required_capabilities_from_foreign_bindings(bindings: &[ForeignBin
     let mut required = Vec::new();
     for binding in bindings {
         match binding {
-            ForeignBinding::Js { symbol } | ForeignBinding::JsBuiltin { symbol } => required.push(js_capability_id(symbol)),
+            ForeignBinding::JsBuiltin { symbol } => required.push(js_capability_id(symbol)),
             ForeignBinding::Wasm { module, field } => required.push(wasm_capability_id(module, field)),
             ForeignBinding::Clr { symbol } => required.push(format!("clr.{symbol}")),
             ForeignBinding::Jvm { symbol } => required.push(format!("jvm.{symbol}")),
@@ -249,7 +247,7 @@ mod tests {
     #[test]
     fn capability_available_resolves_through_host_capability_space() {
         // 过渡机制：有 "js" 空间 → 所有 js.* capability 可用。
-        // 这让 provider 声明的 [js("fetch")] 在 browser target 下能匹配成功。
+        // 这让 provider 声明的 [js_builtin("fetch")] 在 browser target 下能匹配成功。
         let browser_space = target_host_capability_space(CanonicalTarget::browser());
         assert!(capability_available("js.fetch", &browser_space));
         assert!(capability_available("js.random", &browser_space));

@@ -81,14 +81,14 @@ pub(crate) fn wasm_host_import_target(link: &ExternalImportLink) -> Option<WasmH
     }
 }
 
-/// `[js("fetch")]` / `[js_builtin("wx.request")]` → browser/node wasm `env` 导入字段。
+/// `[js_builtin("wx.request")]` → browser/node wasm `env` 导入字段。
 ///
 /// WasmJsGlue 轨在 MIR 阶段仍通过 wasm `call` 命中宿主导入；`.mjs` 启动壳按字段名提供实现。
 pub(crate) fn js_glue_host_import_target(link: &ExternalImportLink) -> Option<WasmHostImportTarget<'_>> {
     if !link.matches_boundary("host") {
         return None;
     }
-    if !link.matches_platform_tag("js") && !link.matches_platform_tag("js_builtin") {
+    if !link.matches_platform_tag("js_builtin") {
         return None;
     }
 

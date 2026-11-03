@@ -88,20 +88,6 @@ fn clr_type_attribute_with_single_segment_is_rejected() {
 }
 
 #[test]
-fn js_type_attribute_with_three_segments_is_rejected() {
-    let error = ValkyrieCompiler::default()
-        .compile_source("[js(\"collections\", \"PriorityQueue\", \"extra\")]\nclass Wrong {\n}\n")
-        .expect_err("类级 `[js]` 超段必须 fail-closed");
-    match error {
-        HirError::BackendContractRejected(BackendContractError::MalformedTypeTargetAttribute { attribute, actual, .. }) => {
-            assert_eq!(attribute, "js");
-            assert_eq!(actual, 3);
-        }
-        other => panic!("期望 MalformedTypeTargetAttribute，got {other:?}"),
-    }
-}
-
-#[test]
 fn empty_type_target_segment_is_rejected() {
     let error =
         ValkyrieCompiler::default().compile_source("[jvm(\"\")]\nclass Wrong {\n}\n").expect_err("类级目标映射属性空串必须 fail-closed");

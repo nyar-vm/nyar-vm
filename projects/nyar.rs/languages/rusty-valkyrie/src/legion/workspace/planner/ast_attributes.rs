@@ -26,10 +26,6 @@ pub(crate) fn foreign_bindings_from_attributes(attributes: &[Attribute]) -> Vec<
 fn foreign_binding_from_attribute(attribute: &Attribute) -> Option<ForeignBinding> {
     let name = attribute.name.name.as_str();
     match name {
-        "js" => {
-            let symbol = attribute.args.first().and_then(|arg| term_string_literal(&arg.value))?;
-            Some(ForeignBinding::Js { symbol })
-        }
         "js_builtin" => {
             let symbol = attribute.args.first().and_then(|arg| term_string_literal(&arg.value))?;
             Some(ForeignBinding::JsBuiltin { symbol })
