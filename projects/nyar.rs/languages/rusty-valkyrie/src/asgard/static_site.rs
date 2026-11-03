@@ -9,7 +9,7 @@
 //! 各环节的唯一事实所有者分别是 `awsl::compile`、`codegen::html_render`、`ssg`、
 //! `compile::compile_wasm_bundle` 与 `codegen::package_browser_islands`。
 //!
-//! 产物树（`dist/`）：`index.html`（含 `data-component` 岛挂载点与 `boot.js` 引用）、
+//! 产物树（缺省 `.cache/asgard/`）：`index.html`（含 `data-component` 岛挂载点与 `boot.js` 引用）、
 //! `<module>.wasm`、`<module>.mjs`（浏览器 WASM glue）、`c/<route>.js`（组件胶水）、
 //! `manifest.json`、`boot.js`、`<module>.css`。页面用相对 URL，子目录部署由
 //! `<base href>`（非根基址）解析。
@@ -42,7 +42,7 @@ pub struct StaticSiteOptions {
     /// 入口根组件文件路径（相对 `project_dir`，如 `source/index.w`）。
     /// `.awsl` 为规范拼写，`.w` 为同义缩写，两者同格式同语义；须显式给出，不做后缀猜测。
     pub entry: PathBuf,
-    /// 输出目录；缺省为 `project_dir/dist`。
+    /// 输出目录；缺省为 `project_dir/.cache/asgard`。
     pub output_dir: Option<PathBuf>,
     /// 页面 `<title>` 文本；`None` 时使用根组件名（入口文件 stem）。
     pub title: Option<String>,
@@ -133,7 +133,7 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
     }
     let title = options.title.as_deref().unwrap_or(file_stem);
 
-    let output_dir = options.output_dir.clone().unwrap_or_else(|| project_root.join("dist"));
+    let output_dir = options.output_dir.clone().unwrap_or_else(|| project_root.join(".cache").join("asgard"));
     std::fs::create_dir_all(&output_dir).map_err(|error| AsgardError::msg(report!("创建输出目录失败 {}: {error}", output_dir.display())))?;
 
     // 浏览器交付产物：WASM chunk、浏览器 glue、组件胶水、boot 与 manifest。

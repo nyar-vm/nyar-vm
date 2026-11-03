@@ -46,7 +46,7 @@ fn minimal_config_fills_documented_defaults() {
 
     assert_eq!(config.target, StaticArtifactTarget::Static);
     assert_eq!(config.entry, temp.path().join("source").join("App.w"));
-    assert_eq!(config.output, temp.path().join("dist"));
+    assert_eq!(config.output, temp.path().join(".cache").join("asgard"));
     assert_eq!(config.base, "/");
     assert_eq!(config.chunks, ChunkPlan::default());
     assert_eq!(config.assets, None);

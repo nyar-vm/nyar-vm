@@ -26,7 +26,7 @@ define_config(AsgardConfig {
     artifact: ArtifactConfig {
         target: Some(ArtifactTarget.Static)
         entry: "source/index.w"
-        output: Some("dist")
+        output: Some(".cache/asgard")
         base: Some("/")
         chunks: None
     }
@@ -53,8 +53,8 @@ fn project_with(delivery: AsgardDelivery) -> (TempDir, AsgardBuildArgs) {
 
 /// 失败闭合时不得写出任何页面或产物目录。
 fn assert_no_artifacts(temp: &TempDir) {
-    assert!(!temp.path().join("dist").exists(), "失败闭合不得创建输出目录");
-    assert!(!temp.path().join("dist").join("index.html").exists(), "失败闭合不得写出页面");
+    assert!(!temp.path().join(".cache").join("asgard").exists(), "失败闭合不得创建缺省输出目录");
+    assert!(!temp.path().join(".cache").join("asgard").join("index.html").exists(), "失败闭合不得写出页面");
 }
 
 #[test]

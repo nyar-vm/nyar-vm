@@ -36,8 +36,8 @@ const ENDPOINT_FIELDS: &[&str] = &["host", "port"];
 const DEFAULT_HOST: &str = "127.0.0.1";
 /// 缺省监听端口。
 const DEFAULT_PORT: u16 = 3000;
-/// 缺省输出目录（相对项目根）。
-const DEFAULT_OUTPUT: &str = "dist";
+/// 缺省输出目录（相对项目根）；与 Legion 侧 `.cache/legion` 的缓存目录约定对齐。
+const DEFAULT_OUTPUT: &str = ".cache/asgard";
 /// 缺省 URL 基址（目录形）。
 const DEFAULT_BASE: &str = "/";
 /// `artifact.target` 首轮唯一取值。
@@ -146,7 +146,7 @@ pub struct ResolvedAsgardConfig {
     pub target: StaticArtifactTarget,
     /// 组件入口的绝对路径，保证位于项目根内且是存在的普通文件。
     pub entry: PathBuf,
-    /// 输出目录的绝对路径，保证位于项目根内；缺省 `<root>/dist`。
+    /// 输出目录的绝对路径，保证位于项目根内；缺省 `<root>/.cache/asgard`。
     pub output: PathBuf,
     /// 目录形 URL 基址；缺省 `/`。
     pub base: String,

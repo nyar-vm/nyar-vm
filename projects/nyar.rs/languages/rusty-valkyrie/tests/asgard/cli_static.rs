@@ -26,7 +26,7 @@ define_config(AsgardConfig {
     artifact: ArtifactConfig {
         target: Some(ArtifactTarget.Static)
         entry: "source/index.w"
-        output: Some("dist")
+        output: Some(".cache/asgard")
         base: Some("/")
         chunks: None
     }
@@ -62,7 +62,7 @@ fn build_routes_static_delivery_to_styled_page() {
     let code = run(&AsgardCommands::Build(build_args(&temp, "source/index.w", Some("CLI 静态交付".into())))).expect("CLI 静态交付构建应成功");
     assert_eq!(code, ExitCode::SUCCESS);
 
-    let html = fs::read_to_string(temp.path().join("dist").join("index.html")).expect("读取 index.html 失败");
+    let html = fs::read_to_string(temp.path().join(".cache").join("asgard").join("index.html")).expect("读取 index.html 失败");
     assert!(html.contains("<!DOCTYPE html>"), "应为完整 HTML 页面");
     assert!(html.contains(".hero { color: #c67b34; }"), "应包含组件样式:\n{html}");
     assert!(html.contains("你好，静态世界"), "应包含初始状态插值:\n{html}");
@@ -83,7 +83,7 @@ fn static_delivery_fails_closed_on_bad_entry() {
 
     let error = run(&AsgardCommands::Build(build_args(&temp, "source/index.v", None))).expect_err("非法入口后缀应失败");
     assert!(error.to_string().contains(".w"), "诊断应说明合法后缀: {error}");
-    assert!(!temp.path().join("dist").join("index.html").exists(), "失败路径不应产出页面");
+    assert!(!temp.path().join(".cache").join("asgard").join("index.html").exists(), "失败路径不应产出页面");
 }
 
 /// 越出 SSG 准入子集的表达式必须结构化失败：不崩溃，也不写出残缺页面。
@@ -108,7 +108,7 @@ let active: bool = true
     let message = error.to_string();
     assert!(message.contains("SSG 准入子集"), "诊断应说明越出准入子集: {message}");
     assert!(message.contains("表达式形态越出"), "诊断应指出表达式形态越界: {message}");
-    assert!(!temp.path().join("dist").join("index.html").exists(), "失败路径不得产出残缺页面");
+    assert!(!temp.path().join(".cache").join("asgard").join("index.html").exists(), "失败路径不得产出残缺页面");
 }
 
 #[test]
@@ -121,26 +121,26 @@ fn dev_rebuild_swaps_the_whole_generation() {
 
     let code = run(&AsgardCommands::Dev(build_args(&temp, "source/index.w", Some("dev 重建".into())))).expect("dev 静态重建应成功");
     assert_eq!(code, ExitCode::SUCCESS);
-    assert!(temp.path().join("dist/index.html").is_file(), "新一代产物必须落到 dist");
-    assert!(temp.path().join("dist/manifest.json").is_file(), "整代产物应包含 manifest");
-    assert!(!temp.path().join("dist.staging").exists(), "staging 目录应被替换掉而不是残留");
-    assert!(!temp.path().join("dist.previous").exists(), "上一代应在成功后清理");
+    assert!(temp.path().join(".cache/asgard/index.html").is_file(), "新一代产物必须落到缺省输出目录");
+    assert!(temp.path().join(".cache/asgard/manifest.json").is_file(), "整代产物应包含 manifest");
+    assert!(!temp.path().join(".cache/asgard.staging").exists(), "staging 目录应被替换掉而不是残留");
+    assert!(!temp.path().join(".cache/asgard.previous").exists(), "上一代应在成功后清理");
 }
 
 #[test]
 fn dev_failure_keeps_the_previous_generation() {
-    // 构建失败时上一代 `dist` 原地保留，不被半成品覆盖。
+    // 构建失败时上一代产物原地保留，不被半成品覆盖。
     let temp = TempDir::new().expect("创建临时目录失败");
     fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
-    fs::create_dir_all(temp.path().join("dist")).expect("创建上一代产物目录失败");
-    fs::write(temp.path().join("dist/index.html"), "<!DOCTYPE html><title>previous generation</title>").expect("写入上一代页面失败");
+    fs::create_dir_all(temp.path().join(".cache").join("asgard")).expect("创建上一代产物目录失败");
+    fs::write(temp.path().join(".cache/asgard/index.html"), "<!DOCTYPE html><title>previous generation</title>").expect("写入上一代页面失败");
     fs::write(temp.path().join("source/index.w"), "<widget mismatch></widget>").expect("写入名不匹配的入口失败");
     write_project_files(temp.path());
 
     let _error = run(&AsgardCommands::Dev(build_args(&temp, "source/index.w", None))).expect_err("入口与根组件名不匹配应失败");
-    let previous = fs::read_to_string(temp.path().join("dist/index.html")).expect("上一代页面应仍然可读");
+    let previous = fs::read_to_string(temp.path().join(".cache/asgard/index.html")).expect("上一代页面应仍然可读");
     assert!(previous.contains("previous generation"), "失败重建不得覆盖上一代页面: {previous}");
-    assert!(!temp.path().join("dist.staging").exists(), "失败重建不得把 staging 当成产物");
+    assert!(!temp.path().join(".cache/asgard.staging").exists(), "失败重建不得把 staging 当成产物");
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn app_delivery_fails_closed_with_structured_diagnostic() {
     assert!(message.contains("asgard build (app)"), "诊断应标明 App 交付: {message}");
     assert!(message.contains("配置求值") && message.contains("C0/C2"), "诊断应指出配置求值缺口: {message}");
     assert!(message.contains("--static"), "诊断应指明当前可用入口: {message}");
-    assert!(!temp.path().join("dist").join("index.html").exists(), "App 失败路径不得产出静态页面");
+    assert!(!temp.path().join(".cache").join("asgard").join("index.html").exists(), "App 失败路径不得产出静态页面");
 }
 
 #[test]
@@ -193,8 +193,8 @@ fn dev_app_delivery_fails_closed_without_staging() {
     assert!(message.contains("asgard dev"), "诊断应标明 dev 命令: {message}");
     assert!(message.contains("配置求值") && message.contains("C0/C2"), "诊断应指出配置求值缺口: {message}");
     assert!(message.contains("--static"), "诊断应指明静态交付入口: {message}");
-    assert!(!temp.path().join("dist.staging").exists(), "拒绝路径不得创建 staging 目录");
-    assert!(!temp.path().join("dist").exists(), "拒绝路径不得产出 dist");
+    assert!(!temp.path().join(".cache/asgard.staging").exists(), "拒绝路径不得创建 staging 目录");
+    assert!(!temp.path().join(".cache").join("asgard").exists(), "拒绝路径不得产出缺省输出目录");
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn build_requires_legion_project() {
     let error = run(&AsgardCommands::Build(build_args(&temp, "source/index.w", None))).expect_err("缺少 legion.von 应失败");
     let message = error.to_string();
     assert!(message.contains("legion.von"), "诊断应指出缺失的 Legion 项目清单: {message}");
-    assert!(!temp.path().join("dist").join("index.html").exists(), "失败路径不应产出页面");
+    assert!(!temp.path().join(".cache").join("asgard").join("index.html").exists(), "失败路径不应产出页面");
 }
 
 #[test]
@@ -222,5 +222,5 @@ fn build_requires_asgard_config() {
     let error = run(&AsgardCommands::Build(build_args(&temp, "source/index.w", None))).expect_err("缺少 asgard.config.v 应失败");
     let message = error.to_string();
     assert!(message.contains("asgard.config.v"), "诊断应指出缺失的 Asgard 配置: {message}");
-    assert!(!temp.path().join("dist").join("index.html").exists(), "失败路径不应产出页面");
+    assert!(!temp.path().join(".cache").join("asgard").join("index.html").exists(), "失败路径不应产出页面");
 }

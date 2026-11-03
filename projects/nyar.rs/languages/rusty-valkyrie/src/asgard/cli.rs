@@ -239,7 +239,7 @@ pub fn run_build(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
 /// 执行 `asgard dev`。
 ///
 /// 静态交付的 dev 重建：先构建到 staging 目录，成功后才把整代产物替换为当前
-/// `dist`；构建失败时上一代产物原地保留，不留下半成品页面。
+/// 输出目录（缺省 `.cache/asgard`）；构建失败时上一代产物原地保留，不留下半成品页面。
 /// 应用交付（`App`）仍等待配置求值接入。
 pub fn run_dev(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
     require_project_admission(&args.project_dir)?;
@@ -250,7 +250,7 @@ pub fn run_dev(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
             args.project_dir.display()
         )));
     };
-    let output_dir = args.output_dir.clone().unwrap_or_else(|| args.project_dir.join("dist"));
+    let output_dir = args.output_dir.clone().unwrap_or_else(|| args.project_dir.join(".cache").join("asgard"));
     let staging_dir = staging_directory(&output_dir);
     if staging_dir.exists() {
         std::fs::remove_dir_all(&staging_dir)
@@ -274,18 +274,18 @@ pub fn run_dev(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
 
 /// dev 重建的 staging 目录：与被替换的产物目录同级，避免跨卷重命名。
 fn staging_directory(output_dir: &Path) -> PathBuf {
-    let name = output_dir.file_name().and_then(|name| name.to_str()).unwrap_or("dist");
+    let name = output_dir.file_name().and_then(|name| name.to_str()).unwrap_or("asgard");
     output_dir.with_file_name(format!("{name}.staging"))
 }
 
-/// 整代替换：`dist` → `dist.previous`，`dist.staging` → `dist`，成功后再清理上一代。
+/// 整代替换：输出目录 → `<输出目录>.previous`，staging → 输出目录，成功后再清理上一代。
 ///
 /// 第二次重命名失败时把上一代搬回原位，保证失败路径仍可服务旧页面。
 /// 公开给定向测试直接锁定替换/回滚语义；命令路径的唯一调用方是 `run_dev`。
 pub fn swap_generation(staging: &Path, output: &Path) -> AsgardResult<()> {
     let previous = output.with_file_name(format!(
         "{}.previous",
-        output.file_name().and_then(|name| name.to_str()).unwrap_or("dist")
+        output.file_name().and_then(|name| name.to_str()).unwrap_or("asgard")
     ));
     if previous.exists() {
         std::fs::remove_dir_all(&previous).map_err(|error| AsgardError::msg(report!("清理上一代产物失败 {}: {error}", previous.display())))?;
