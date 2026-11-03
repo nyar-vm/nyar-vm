@@ -1,8 +1,16 @@
 //! 结构体字段布局、继承索引与值类型事实。
 
 use super::{model::*, value_semantics};
-use crate::compiler::types::hir::{HirModule, HirParent, ValkyrieType};
+use crate::compiler::types::hir::{HirModule, HirParent, ValkyrieType, primitive_identity_builtin_type};
 use std::collections::{BTreeMap, BTreeSet};
+
+/// `[primitive]` 声明折叠到内建载体的宿主绑定 stub：不再作为聚合进入 MIR。
+///
+/// 折叠后的标量只有内建身份；声明 stub 没有字段、没有布局，也不承载任何值，
+/// 留在 `MirStruct` 只会在类型事实表里重新生成第二个 `Nominal` 身份。
+fn is_builtin_primitive_stub(structure: &crate::compiler::types::hir::HirStruct) -> bool {
+    structure.primitive_identity.as_deref().and_then(primitive_identity_builtin_type).is_some()
+}
 
 fn struct_matches_parent_path(structure: &crate::compiler::types::hir::HirStruct, parent: &HirParent) -> bool {
     let path = parent.name.parts();
@@ -82,11 +90,17 @@ pub(super) fn collect_field_declarations(module: &HirModule, diagnostics: &mut V
         diagnostics: &mut Vec<MirDiagnostic>,
     ) {
         for hir_struct in &module.structs {
+            if is_builtin_primitive_stub(hir_struct) {
+                continue;
+            }
             declarations.push(lower_struct(module, hir_struct, *next_nominal, markers, diagnostics));
             *next_nominal += 1;
         }
         for export in &module.imported_semantic_exports {
             for hir_struct in &export.structs {
+                if is_builtin_primitive_stub(hir_struct) {
+                    continue;
+                }
                 declarations.push(lower_struct(module, hir_struct, *next_nominal, markers, diagnostics));
                 *next_nominal += 1;
             }
