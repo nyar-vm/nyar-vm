@@ -58,6 +58,12 @@ pub enum HostOp {
     Utf8LengthChars,
     /// UTF-8 按码点下标取半开区间 `[start, end)`；越界结构化失败，不 clamp。
     Utf8Slice,
+    /// UTF-8 原样拼接（保留两侧内容，不做规范化）。
+    Utf8Concat,
+    /// UTF-8 按码点序列相等判定（不做 Unicode 规范化）。
+    Utf8Eq,
+    /// UTF-8 按码点序列不等判定。
+    Utf8Ne,
     /// 有符号 32 位整除。
     I32Div,
     /// 无符号 32 位整除（`u32` 的 `/`；与有符号 `I32Div` 在最高位为 1 时结论不同）。
@@ -184,6 +190,9 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "utf8.length_bytes" => HostOp::Utf8LengthBytes,
         "utf8.length_chars" => HostOp::Utf8LengthChars,
         "utf8.slice" => HostOp::Utf8Slice,
+        "utf8.concat" => HostOp::Utf8Concat,
+        "utf8.eq" => HostOp::Utf8Eq,
+        "utf8.ne" => HostOp::Utf8Ne,
         "i32_div" => HostOp::I32Div,
         "i32_div_u" => HostOp::I32DivU,
         "i32_rem_u" => HostOp::I32RemU,
@@ -324,6 +333,13 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             let end = i32_arg(args, 2)? as i64;
             Ok(Value::String(text_runtime::slice(text, start, end, "utf8.slice")?))
         }
+        HostOp::Utf8Concat => {
+            let left = utf8_arg(args, 0, "utf8")?;
+            let right = utf8_arg(args, 1, "utf8")?;
+            Ok(Value::String(text_runtime::concat(left, right)))
+        }
+        HostOp::Utf8Eq => Ok(Value::Bool(text_runtime::equals(utf8_arg(args, 0, "utf8")?, utf8_arg(args, 1, "utf8")?))),
+        HostOp::Utf8Ne => Ok(Value::Bool(!text_runtime::equals(utf8_arg(args, 0, "utf8")?, utf8_arg(args, 1, "utf8")?))),
         HostOp::I32Div => {
             let lhs = i32_arg(args, 0)?;
             let rhs = i32_arg(args, 1)?;

@@ -30,6 +30,21 @@ pub fn slice(text: &str, start: i64, end: i64, operation: &'static str) -> Resul
     Ok(text[start_byte..end_byte].to_string())
 }
 
+/// 原样拼接：不做任何编码转换或规范化，两侧内容逐字节保留。
+pub fn concat(left: &str, right: &str) -> String {
+    let mut result = String::with_capacity(left.len() + right.len());
+    result.push_str(left);
+    result.push_str(right);
+    result
+}
+
+/// 按码点序列相等判定；不做 Unicode 规范化（组合式与预组合式不等）。
+///
+/// 在合法 UTF-8 上等价于字节相等，但按码点走可避免未来引入规范化实现时语义漂移。
+pub fn equals(left: &str, right: &str) -> bool {
+    left.chars().eq(right.chars())
+}
+
 /// 第 `char_index` 个码点的字节偏移；越界时返回字节末尾（仅内部使用，调用方已判界）。
 fn byte_offset(text: &str, char_index: usize) -> usize {
     text.char_indices().nth(char_index).map(|(offset, _)| offset).unwrap_or(text.len())

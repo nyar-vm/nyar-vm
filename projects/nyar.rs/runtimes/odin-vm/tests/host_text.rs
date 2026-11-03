@@ -132,6 +132,50 @@ fn length_and_slice_symbols_reject_wrong_carriers_and_short_arguments() {
     assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }));
 }
 
+#[test]
+fn concat_preserves_both_sides_verbatim() {
+    for (left, right, joined) in [
+        (EMPTY, EMPTY, ""),
+        (EMPTY, ASCII, "abc"),
+        (ASCII, EMPTY, "abc"),
+        (BMP_CHINESE, ASTRAL, "中文😀"),
+        (ASTRAL, BMP_CHINESE, "😀中文"),
+        (COMBINING, ASTRAL, "a\u{0301}😀"),
+        (LONG_ASCII, BMP_CHINESE, "hello world中文"),
+    ] {
+        assert_eq!(run_ok(HostOp::Utf8Concat, &[text(left), text(right)]), text(joined), "concat({left:?}, {right:?})");
+    }
+}
+
+#[test]
+fn eq_and_ne_compare_code_point_sequences_without_normalization() {
+    // 组合式 `a` + U+0301 与预组合式 U+00E9 视觉近似，但码点序列不同 —— 不做规范化。
+    let decomposed = "e\u{0301}";
+    let precomposed = "\u{e9}";
+    assert_eq!(run_ok(HostOp::Utf8Eq, &[text(decomposed), text(precomposed)]), Value::Bool(false));
+    assert_eq!(run_ok(HostOp::Utf8Ne, &[text(decomposed), text(precomposed)]), Value::Bool(true));
+    for sample in [EMPTY, ASCII, BMP_CHINESE, ASTRAL, COMBINING, LONG_ASCII] {
+        assert_eq!(run_ok(HostOp::Utf8Eq, &[text(sample), text(sample)]), Value::Bool(true), "eq({sample:?}, self)");
+        assert_eq!(run_ok(HostOp::Utf8Ne, &[text(sample), text(sample)]), Value::Bool(false), "ne({sample:?}, self)");
+    }
+    assert_eq!(run_ok(HostOp::Utf8Eq, &[text(ASCII), text(BMP_CHINESE)]), Value::Bool(false));
+    assert_eq!(run_ok(HostOp::Utf8Ne, &[text(ASCII), text(BMP_CHINESE)]), Value::Bool(true));
+    // 码点序列相等：同一个 astral 码点在不同写法上仍是同一序列。
+    assert_eq!(run_ok(HostOp::Utf8Eq, &[text(ASTRAL), text("\u{1F600}")]), Value::Bool(true));
+}
+
+#[test]
+fn concat_and_comparison_reject_wrong_carriers_and_short_arguments() {
+    for op in [HostOp::Utf8Concat, HostOp::Utf8Eq, HostOp::Utf8Ne] {
+        let error = run(op, &[text(ASCII)]).expect_err("缺第二参必须失败");
+        assert!(matches!(error, OdinRuntimeError::StackUnderflow), "{op:?} 实际 {error:?}");
+        let error = run(op, &[]).expect_err("缺参必须失败");
+        assert!(matches!(error, OdinRuntimeError::StackUnderflow), "{op:?} 实际 {error:?}");
+        let error = run(op, &[text(ASCII), Value::I32(1)]).expect_err("非字符串载体必须失败");
+        assert!(matches!(error, OdinRuntimeError::TypeMismatch { .. }), "{op:?} 实际 {error:?}");
+    }
+}
+
 // ---- 真实 `CallImport` 端到端 ----
 
 #[test]
@@ -163,4 +207,25 @@ fn slice_out_of_bounds_fails_through_call_import() {
         }
         other => panic!("期望 IndexOutOfBounds，实际 {other:?}"),
     }
+}
+
+#[test]
+fn concat_executes_through_call_import() {
+    assert_eq!(
+        run_import("utf8.concat", vec![OdinConstant::String(EMPTY.to_string()), OdinConstant::String(ASTRAL.to_string())], 2),
+        Value::String(ASTRAL.to_string())
+    );
+}
+
+#[test]
+fn eq_and_ne_execute_through_call_import() {
+    assert_eq!(
+        run_import("utf8.eq", vec![OdinConstant::String(COMBINING.to_string()), OdinConstant::String(COMBINING.to_string())], 2),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        run_import("utf8.ne", vec![OdinConstant::String("e\u{0301}".to_string()), OdinConstant::String("\u{e9}".to_string())], 2),
+        Value::Bool(true),
+        "组合式与预组合式不等"
+    );
 }
