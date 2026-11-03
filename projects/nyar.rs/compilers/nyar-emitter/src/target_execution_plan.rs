@@ -1181,6 +1181,9 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
             nyar_types::CanonicalPrimitiveType::Integer { bits: 16, signed } => Ok(NyarType::Integer16 { signed: *signed }),
             nyar_types::CanonicalPrimitiveType::Integer { bits: 32, signed } => Ok(NyarType::Integer32 { signed: *signed }),
             nyar_types::CanonicalPrimitiveType::Integer { bits: 64, signed } => Ok(NyarType::Integer64 { signed: *signed }),
+            // `Float64` 与整数同构：`Value` 已有独立 `F64` 载体，不降成 `i64` 位模式。
+            // f32 仍无目标合同（不属于本轮），继续走 `unsupported` 分支。
+            nyar_types::CanonicalPrimitiveType::Float { bits: 64 } => Ok(NyarType::Float64),
             nyar_types::CanonicalPrimitiveType::Character => Ok(NyarType::Character),
             nyar_types::CanonicalPrimitiveType::Utf8 => Ok(NyarType::Utf8),
             nyar_types::CanonicalPrimitiveType::Utf16 => Ok(NyarType::Utf16),
@@ -1342,6 +1345,19 @@ mod tests {
         assert_eq!(lower_type(&program, type_id(0)).expect("u8"), NyarType::Integer8 { signed: false });
         assert_eq!(lower_type(&program, type_id(1)).expect("i16"), NyarType::Integer16 { signed: true });
         assert_eq!(lower_type(&program, type_id(2)).expect("Character"), NyarType::Character);
+    }
+
+    /// `Float{bits:64}` 必须有目标合同：f64 的宿主符号（算术/比较/转换）都以它为前提。
+    /// `Float{bits:32}` 仍未登记，必须继续失败闭合——本测试只锁定事实，不替 f32 开合同。
+    #[test]
+    fn float64_primitive_has_target_contract_while_float32_stays_unsupported() {
+        let program = program_with_types(vec![
+            (type_id(0), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Float { bits: 64 })),
+            (type_id(1), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Float { bits: 32 })),
+        ]);
+        assert_eq!(lower_type(&program, type_id(0)).expect("f64 必须有目标合同"), NyarType::Float64);
+        let error = lower_type(&program, type_id(1)).expect_err("f32 本轮仍无目标合同");
+        assert!(error.contains("Float { bits: 32 }"), "诊断必须点名未登记的 f32，实际：{error}");
     }
 
     /// `Intersection` 必须在 frontend 擦除；平台 lowering 静默降成 `Union` 会改变语义，
