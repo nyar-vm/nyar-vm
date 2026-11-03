@@ -17,6 +17,14 @@ use rusty_valkyrie::{
 const CONTRACT_SOURCE: &str = r#"
 namespace std.collection;
 
+[primitive("std::primitive::u32")]
+structure u32 { }
+
+[primitive("std::primitive::u64")]
+structure u64 { }
+
+type usize = u64;
+
 trait LiteralSequence<T> {
     micro with_length(n: usize): Self
     micro append(mut self, value: T): unit

@@ -15,6 +15,9 @@ fn hashmap_insert_groups() -> Vec<CompilerSourceGroup> {
             r#"
 namespace std.collection;
 
+[primitive("std::primitive::i64")]
+structure i64 { }
+
 class HashMap<K, V> {
     _capacity: i64
 }
@@ -37,7 +40,7 @@ imply HashMap<K, V> {
             r#"
 namespace demo;
 
-using std.collection::{HashMap}
+using std.collection::{HashMap, i64}
 
 [export]
 micro probe(flag: bool, flag2: bool) -> bool {

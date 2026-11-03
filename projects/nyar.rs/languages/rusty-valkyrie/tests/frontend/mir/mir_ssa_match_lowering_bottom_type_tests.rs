@@ -26,6 +26,9 @@ namespace std.primitive;
 [primitive("std::primitive::bool")]
 structure bool { }
 
+[primitive("std::primitive::i64")]
+structure i64 { }
+
 namespace std.types;
 
 micro panic<T>(message: T): void {
@@ -71,6 +74,8 @@ micro probe(flag: bool) -> bool {
 fn basic_carrier_raise_keeps_one_resume_parameter() {
     let app = r#"
 namespace demo;
+
+using std.primitive::{i64}
 
 [export]
 micro probe(flag: bool) -> i64 {

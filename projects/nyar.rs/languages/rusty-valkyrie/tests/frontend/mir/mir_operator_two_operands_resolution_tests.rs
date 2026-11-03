@@ -1,22 +1,25 @@
 //! 双操作数算子与成员调用的解析回归：两个**变量**之间的 `infix`/`prefix`/`suffix`
 //! 必须像「变量 + 字面量」一样解析到 imply 成员，不得在候选纳入阶段丢候选。
 //!
-//! 镜像 std 形制：`structure usize` + `imply usize` 运算符成员 + `[host_contract]`，
-//! provider 经 `[host_provider]` + `[ovm]` 挂在独立 adaptor 组（与 std.adaptor.ovm 同构）。
+//! 镜像 std 形制：`[primitive] structure u64` + `type usize = u64` 指针宽度别名 +
+//! `imply u64` 运算符成员 + `[host_contract]`，provider 经 `[host_provider]` + `[ovm]`
+//! 挂在独立 adaptor 组（与 std.adaptor.ovm 同构）。
 
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
 const CORE: &str = r#"
 namespace std.primitive;
 
-[primitive("std::primitive::usize")]
-structure usize { }
+[primitive("std::primitive::u64")]
+structure u64 { }
+
+type usize = u64;
 
 trait Equal {
     infix `==`(self, rhs: Self): bool
 }
 
-imply usize {
+imply u64 {
     infix `+`(self, rhs: Self): Self { __usize_add(self, rhs) }
     infix `-`(self, rhs: Self): Self { __usize_sub(self, rhs) }
     infix `*`(self, rhs: Self): Self { __usize_mul(self, rhs) }
@@ -34,7 +37,7 @@ imply bool {
     prefix `!`(self): bool { __bool_not(self) }
 }
 
-imply usize: Equal {
+imply u64: Equal {
     infix `==`(self, rhs: Self): bool { __usize_eq(self, rhs) }
 }
 
