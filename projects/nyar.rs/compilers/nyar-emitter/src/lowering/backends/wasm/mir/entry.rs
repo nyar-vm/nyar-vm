@@ -584,6 +584,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &gc_struct_type_indices,
             &gc_array_type_indices,
             js_glue_utf8_as_anyref,
+            gc_i32_box_type_index,
+            gc_i64_box_type_index,
             &mut type_indices,
             &mut function_indices,
             &mut code_bodies,
@@ -1305,6 +1307,8 @@ fn emit_library_field_accessors<'name>(
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     gc_array_type_indices: &BTreeMap<String, u32>,
     js_glue_utf8_as_anyref: bool,
+    gc_i32_box_type_index: u32,
+    gc_i64_box_type_index: u32,
     type_indices: &mut Vec<Vec<u8>>,
     function_indices: &mut Vec<u32>,
     code_bodies: &mut Vec<Vec<u8>>,
@@ -1371,7 +1375,17 @@ fn emit_library_field_accessors<'name>(
     }
     let mut reachable: BTreeSet<LayoutId> = BTreeSet::new();
     let mut array_elements: BTreeMap<String, NyarType> = BTreeMap::new();
+    // Option 标量载荷的物理载体集合：`None` 是 `ref.null`，`Some(标量)` 必须装进
+    // 后端已注册的 `[i32]` / `[i64]` box。只在这里收集**导出签名可达**的载荷，
+    // 不按类型名或调用点外的事实猜。
+    let mut option_payloads: BTreeSet<&'static str> = BTreeSet::new();
     while let Some(ty) = worklist.pop() {
+        if let NyarType::Nullable(inner) = &ty {
+            let inner_schema = super::abi_schema::abi_schema_for_type(inner);
+            if let Some(contract) = super::abi_schema::option_box_contract(&inner_schema) {
+                option_payloads.insert(if contract.payload == "i64" { "i64" } else { "i32" });
+            }
+        }
         collect_bridge_nodes(&ty, ctx, &mut reachable, &mut array_elements, &mut worklist);
     }
 
@@ -1453,6 +1467,22 @@ fn emit_library_field_accessors<'name>(
     }
     let array_name_start = name_store.len();
     name_store.extend(array_plans.iter().map(|plan| plan.name.clone()));
+
+    // 阶段 7：Option 标量载荷的装箱/拆箱桥。名字与 `abi_schema::option_box_contract`
+    // 同源（载荷载体确定性派生）；宿主按 schema 合同调用，不现场构造 GC 对象。
+    let mut option_plans: Vec<(String, String, u32, u8)> = Vec::new();
+    for payload in &option_payloads {
+        let (box_type_index, carrier, schema) = if *payload == "i64" {
+            (gc_i64_box_type_index, VALTYPE_I64, super::abi_schema::WasmAbiType::I64)
+        }
+        else {
+            (gc_i32_box_type_index, VALTYPE_I32, super::abi_schema::WasmAbiType::I32)
+        };
+        let contract = super::abi_schema::option_box_contract(&schema).expect("可达 Option 载荷必须有与 box struct 对应的装箱合同");
+        option_plans.push((contract.new, contract.get, box_type_index, carrier));
+    }
+    let option_name_start = name_store.len();
+    name_store.extend(option_plans.iter().flat_map(|(new, get, _, _)| [new.clone(), get.clone()]));
 
     // 名字全部登记完成后才建立不可变切片；导出条目借用该切片。
     let names: &[String] = name_store.as_slice();
@@ -1583,6 +1613,37 @@ fn emit_library_field_accessors<'name>(
         let function_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
         code_bodies.push(wasm_function_body(body));
         exports.push((names[array_name_start + position].as_str(), WasmExternalKind::Func.as_u8(), function_index));
+    }
+
+    // 阶段 8：发射 Option 装箱/拆箱函数体。
+    // 与后端函数体的标量↔anyref 强制转换同构：`struct.new` 装进 `[i32]`/`[i64]`，
+    // `ref.cast` + `struct.get 0` 拆回。空引用不进入 `get`（宿主先判 null）。
+    for (position, (_, _, box_type_index, carrier)) in option_plans.iter().enumerate() {
+        let mut new_body = Vec::new();
+        encode_uleb128(0, &mut new_body);
+        encode_local_get(0, &mut new_body);
+        acorn_wasm::WasmGcOpcode::StructNew.encode(&mut new_body);
+        encode_uleb128(*box_type_index, &mut new_body);
+        WasmOpcode::End.encode(&mut new_body);
+        let new_type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_function_type(&[*carrier], &[WASM_GC_ANYREF]));
+        function_indices.push(new_type_index);
+        let new_function_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
+        code_bodies.push(wasm_function_body(new_body));
+        exports.push((names[option_name_start + position * 2].as_str(), WasmExternalKind::Func.as_u8(), new_function_index));
+
+        let mut get_body = Vec::new();
+        encode_uleb128(0, &mut get_body);
+        encode_local_get(0, &mut get_body);
+        encode_ref_cast_type_index(*box_type_index, &mut get_body);
+        encode_struct_get(*box_type_index, 0, &mut get_body);
+        WasmOpcode::End.encode(&mut get_body);
+        let get_type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_function_type(&[WASM_GC_ANYREF], &[*carrier]));
+        function_indices.push(get_type_index);
+        let get_function_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
+        code_bodies.push(wasm_function_body(get_body));
+        exports.push((names[option_name_start + position * 2 + 1].as_str(), WasmExternalKind::Func.as_u8(), get_function_index));
     }
     Ok(())
 }
