@@ -2,7 +2,7 @@
 //!
 //! 正式编译流只能调用 [`parse`] / [`parse_source`]，不得引入第二条 parser 成功路径。
 
-pub use crate::compiler::syntax::oak::{self, ValkyrieRoot, parse_source, std_range};
+pub use crate::compiler::syntax::oak::{self, ValkyrieRoot, parse_source, parse_source_with_identity, std_range};
 pub use oak_core::OakDiagnostics;
 
 use oak_core::{Builder, ParseSession, SourceText};

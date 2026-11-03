@@ -283,8 +283,19 @@ fn compile_error_with_diagnostics(error: crate::compiler::emitter::pipeline::Pip
     if pending.is_empty() {
         return LegionError::from(error);
     }
+    // 最终失败事实不得被多诊断报告吞掉：暂存汇已含同 code 条目说明它已被记录，
+    // 否则在报告末尾补一行最终失败（rustc 在 aborting 行后同型给出最终失败）。
+    let fatal_code = match &error {
+        crate::compiler::emitter::pipeline::PipelineError::Hir(hir) => Some(hir.code()),
+        _ => None,
+    };
+    let fatal_text = error.to_string();
+    let represented = match fatal_code {
+        Some(code) => pending.diagnostics.iter().any(|diagnostic| diagnostic.row.code == code),
+        None => pending.diagnostics.iter().any(|diagnostic| diagnostic.message == fatal_text),
+    };
     let options = crate::compiler::diagnostics::report::DiagnosticRenderOptions::from_environment();
-    let report = crate::compiler::diagnostics::report::render_compile_diagnostics(
+    let mut report = crate::compiler::diagnostics::report::render_compile_diagnostics(
         &pending,
         &|id| {
             plan.project.semantic_source_groups.iter().find_map(|group| {
@@ -294,6 +305,9 @@ fn compile_error_with_diagnostics(error: crate::compiler::emitter::pipeline::Pip
         },
         &options,
     );
+    if !represented {
+        report.push_str(&format!("error: {fatal_text}\n"));
+    }
     if report.trim().is_empty() { LegionError::from(error) } else { LegionError::msg(report.trim_end().to_string()) }
 }
 

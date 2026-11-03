@@ -243,6 +243,9 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("path", DiagnosticArg::String(path.clone()))
                     .with_cause(error.to_string());
             }
+            HirError::PendingErrorsRejected { count, .. } => {
+                row = row.with_arg("count", DiagnosticArg::Int(*count as i64));
+            }
             HirError::DependencyExportUnavailable { group, dependency, .. } => {
                 row = row
                     .with_arg("group", DiagnosticArg::DependencyKey(group.clone()))
@@ -575,7 +578,8 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::SourceInputEntryGroupMissing { source, .. } => source.clone(),
         HirError::SourceReadFailed { source, .. } => source.clone(),
         HirError::EmptySemanticSourceGroupPlan { source, .. } => source.clone(),
-        HirError::SourceFileRejected { error, .. } => frontend_source(error),
+        HirError::SourceFileRejected { path, .. } => DiagnosticSource { id: path.clone(), revision: None },
+        HirError::PendingErrorsRejected { source, .. } => source.clone(),
         HirError::DependencyExportUnavailable { source, .. } => source.clone(),
         HirError::DependencyExportIdentityCollision { source, .. } => source.clone(),
         HirError::DeclarationIndexExhausted { source, .. } => source.clone(),
@@ -648,6 +652,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::SourceReadFailed { span, .. } => span.clone(),
         HirError::EmptySemanticSourceGroupPlan { span, .. } => span.clone(),
         HirError::SourceFileRejected { error, .. } => frontend_span(error),
+        HirError::PendingErrorsRejected { span, .. } => span.clone(),
         HirError::DependencyExportUnavailable { span, .. } => span.clone(),
         HirError::DependencyExportIdentityCollision { span, .. } => span.clone(),
         HirError::DeclarationIndexExhausted { span, .. } => span.clone(),

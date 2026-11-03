@@ -5,7 +5,7 @@ use nyar_types::{
     compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath},
 };
 
-use crate::compiler::syntax::oak::{ast, parse_source};
+use crate::compiler::syntax::oak::{ast, parse_source_with_identity};
 
 use super::{ScopedReference, collect::collect_items};
 
@@ -23,7 +23,7 @@ pub(crate) struct IndexedFile {
 }
 
 pub(crate) fn index_source_file(dependency_key: &str, path: &str, source: &str, arch: &str) -> Result<IndexedFile, String> {
-    let mut root = parse_source(source).map_err(|error| error.to_string())?;
+    let mut root = parse_source_with_identity(source, path).map_err(|error| error.to_string())?;
     // TGrammar 模板分支必须按编译架构展开后再建索引：入口声明可能只在某个分支里，
     // 直接索引模板节点会让 `[export]` / `[main]` 在索引阶段不可见。
     crate::compiler::hir::lowering::template_expand::expand_templates_in_root(&mut root, source, arch).map_err(|error| error.to_string())?;

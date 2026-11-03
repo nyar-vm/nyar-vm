@@ -3,7 +3,7 @@ use std::{
     fs,
 };
 
-use crate::compiler::{semantic::closure::DeclarationKey, syntax::oak::parse_source};
+use crate::compiler::{semantic::closure::DeclarationKey, syntax::oak::parse_source_with_identity};
 use nyar::CanonicalTarget;
 
 use super::{
@@ -44,7 +44,8 @@ pub(crate) fn collect_host_inventory(
                 .to_string_lossy()
                 .replace('\\', "/");
             let source = fs::read_to_string(source_file)?;
-            let root = parse_source(&source).map_err(|error| PlannerError::CompileFailed { message: error.to_string() })?;
+            let root = parse_source_with_identity(&source, &source_path)
+                .map_err(|error| PlannerError::CompileFailed { message: error.to_string() })?;
             collect_host_inventory_from_root(&group.dependency_key, &source_path, source_file, &source, &root, &mut inventory);
         }
     }

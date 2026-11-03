@@ -9,7 +9,7 @@ use crate::compiler::{
     syntax::oak::{
         ParseError,
         ast::{MatchArm, StatementNode, TermExpression},
-        parse_source,
+        parse_source_with_identity,
     },
     types::hir::{HirLiteral, HirPattern},
 };
@@ -287,7 +287,9 @@ fn parse_arm_body_expression(body: &str, span: DiagnosticSpan) -> Result<TermExp
         return Err(HirError::match_recovery_failed(MatchRecoveryStage::ArmBody, None, span));
     }
     let wrapper = format!("micro __match_arm_body() {{ {trimmed} }}");
-    let root = parse_source(&wrapper)?;
+    // 包装文本是合成源：诊断身份明确落 `<frontend:match-arm-body>`；
+    // 臂体在来源文件中的站点由 `MatchRecoveryFailed` 的 span 承担。
+    let root = parse_source_with_identity(&wrapper, "<frontend:match-arm-body>")?;
     let micro = root
         .items
         .iter()

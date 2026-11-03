@@ -42,10 +42,10 @@ fn entry_source_with_hash_line_comment_compiles() {
 }
 
 #[test]
-fn entry_source_with_slash_comment_recovers_entry_and_records_parse_diagnostic() {
+fn entry_source_with_slash_comment_fails_closed_and_names_file() {
     // `//` 不是 V 注释标记：垃圾 token 触发根循环恢复——记入诊断汇、跳到下一
-    // item 边界，`[main]` 入口声明照常索引编译。错误不再让整文件下沉为
-    // unindexed，也不静默：解析诊断必须在暂存汇可见。
+    // item 边界。恢复只保证兄弟 item 可解析；批处理编译不得带着被丢弃的项
+    // 产出产物，必须在闭包索引边界收口，且解析诊断携带真实文件身份。
     let directory = tempdir().expect("创建源码目录");
     let source = "// 中文注释\n[main] micro main() -> bool { return true }\n";
     let group = source_group(directory.path(), "application", source, &[], true);
@@ -53,13 +53,15 @@ fn entry_source_with_slash_comment_recovers_entry_and_records_parse_diagnostic()
     let output = directory.path().join("output");
     fs::create_dir_all(&output).expect("创建产物目录");
     pending::clear_pending_diagnostics();
-    let report = compile_snapshot(&groups, &output).expect("恢复后入口声明照常索引编译");
-    assert!(!report.driver.artifacts.artifacts.is_empty(), "编译成功必须具有产物");
+    let error = compile_snapshot(&groups, &output).expect_err("恢复丢弃项必须在闭包索引边界收口");
+    assert!(error.to_string().contains("recoverable error diagnostic"), "{error}");
     let collected = pending::take_pending_diagnostics();
-    assert!(
-        collected.diagnostics.iter().any(|diagnostic| diagnostic.row.code.starts_with("valkyrie.frontend.parse")),
-        "`//` 垃圾必须记录解析诊断: {collected:?}"
-    );
+    let parse_diagnostic = collected
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.row.code.starts_with("valkyrie.frontend.parse"))
+        .unwrap_or_else(|| panic!("`//` 垃圾必须记录解析诊断: {collected:?}"));
+    assert_eq!(parse_diagnostic.row.source.id, "application.v", "解析诊断必须携带真实文件身份: {collected:?}");
 }
 
 #[test]
@@ -246,7 +248,9 @@ fn resolver_keeps_templates_and_compiler_expands_by_arch() {
 }
 
 #[test]
-fn unreachable_dependency_inventory_syntax_error_does_not_block_entry_snapshot() {
+fn unreachable_dependency_inventory_syntax_error_fails_closed_and_names_file() {
+    // 索引覆盖闭包内全部库存文件：即使坏文件的声明不可达，解析恢复丢项也意味着
+    // 声明索引缺事实；批处理编译必须在闭包索引边界收口，诊断携带真实文件身份。
     let directory = tempdir().expect("创建源码目录");
     let good = directory.path().join("library/good.v");
     let broken = directory.path().join("library/broken.v");
@@ -276,5 +280,14 @@ fn unreachable_dependency_inventory_syntax_error_does_not_block_entry_snapshot()
     assert_eq!(groups[0].sources.len(), 2);
     let output = directory.path().join("output");
     fs::create_dir_all(&output).expect("创建产物目录");
-    compile_snapshot(&groups, &output).expect("不可达库存语法错误不得阻塞入口");
+    pending::clear_pending_diagnostics();
+    let error = compile_snapshot(&groups, &output).expect_err("库存文件丢项必须在闭包索引边界收口");
+    assert!(error.to_string().contains("recoverable error diagnostic"), "{error}");
+    let collected = pending::take_pending_diagnostics();
+    let parse_diagnostic = collected
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.row.code.starts_with("valkyrie.frontend.parse"))
+        .unwrap_or_else(|| panic!("坏文件必须记录解析诊断: {collected:?}"));
+    assert_eq!(parse_diagnostic.row.source.id, "broken.v", "解析诊断必须携带坏文件的真实身份: {collected:?}");
 }

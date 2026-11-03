@@ -10,7 +10,7 @@
 
 use std::cell::RefCell;
 
-use nyar_types::DiagnosticRow;
+use nyar_types::{DiagnosticRow, DiagnosticSeverity};
 
 /// 暂存汇的硬上限：超出后不再暂存新诊断，只累计丢弃数量。
 ///
@@ -94,4 +94,16 @@ pub fn take_pending_diagnostics() -> PendingDiagnostics {
 /// 当前线程暂存汇是否为空（不取走诊断）。
 pub fn pending_diagnostics_is_empty() -> bool {
     PENDING.with(|pending| pending.borrow().is_empty())
+}
+
+/// 阶段边界收口判据：暂存汇中 Error 级诊断的总数与首条副本（不取走诊断）。
+///
+/// 超出硬上限被丢弃的诊断级别不可知，按 Error 保守计入；Warning/Info/Hint 不参与计数。
+pub fn pending_error_summary() -> (usize, Option<CompileDiagnostic>) {
+    PENDING.with(|pending| {
+        let pending = pending.borrow();
+        let first = pending.diagnostics.iter().find(|diagnostic| matches!(diagnostic.row.severity, DiagnosticSeverity::Error)).cloned();
+        let recorded = pending.diagnostics.iter().filter(|diagnostic| matches!(diagnostic.row.severity, DiagnosticSeverity::Error)).count();
+        (recorded + pending.overflow, first)
+    })
 }

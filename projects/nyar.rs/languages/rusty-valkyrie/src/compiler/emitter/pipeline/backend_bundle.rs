@@ -77,6 +77,9 @@ pub fn compile_source_groups_to_backend_bundle(
         &context.gated_out_host_providers,
         &context.arch,
     )?;
+    // 产物化前的最终边界：任何阶段遗留在暂存汇中的 Error 级诊断都必须在产物落盘前收口，
+    // 不允许带被丢弃项的编译单元产出产物。
+    crate::compiler::hir::lowering::HirError::reject_pending_errors()?;
     let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, context.target.clone(), context.clr_suspend_strategy)?;
     let bundle = CompilerBuildBundle {
         compiled_program,

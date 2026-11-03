@@ -224,6 +224,13 @@ impl std::fmt::Display for HirError {
             Self::SourceFileRejected { dependency_key, path, error } => {
                 write!(f, "source group `{dependency_key}` file `{path}` was rejected: {error}")
             }
+            Self::PendingErrorsRejected { count, source, span } => {
+                write!(
+                    f,
+                    "compile unit closed with {count} recoverable error diagnostic(s), first at {}:{}..{}",
+                    source.id, span.start, span.end
+                )
+            }
             Self::DependencyExportUnavailable { group, dependency, .. } => {
                 write!(f, "source group `{group}` requires the semantic export of `{dependency}`, which is unavailable")
             }

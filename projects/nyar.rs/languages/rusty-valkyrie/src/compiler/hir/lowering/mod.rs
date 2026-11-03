@@ -46,11 +46,11 @@ pub use super::CaptureAnalyzer;
 pub use errors::HirError;
 
 // Re-export sub-module symbols at the lowering facade boundary.
+pub(crate) use attribute_lowering::auto_constructor_attribute_count;
 pub(crate) use diagnostics::{
     CompileWarningScope, identity_duplicated, index_exhausted, pipeline_rejected, push_compile_warning, take_compile_warnings,
 };
 use diagnostics::{plan_source, plan_span};
-pub(crate) use attribute_lowering::auto_constructor_attribute_count;
 
 pub use contract_validation::validate_expr_call_contracts;
 pub(crate) use contract_validation::{
@@ -356,6 +356,10 @@ impl ValkyrieCompiler {
     ) -> Result<(Vec<HirModule>, crate::compiler::hir::HirMaterializationGate), HirError> {
         validate_source_groups(groups)?;
         let closure = source_group_closure_with_host_bindings(groups, host_bindings, arch)?;
+        // 闭包索引解析是批处理编译的第一阶段边界：解析恢复丢弃的项必须在此收口。
+        // 索引覆盖闭包内全部库存文件，任何文件的丢项都意味着声明索引缺事实；
+        // 不允许缺项事实进入 HIR 物化而演变成下游误导性级联错误。
+        HirError::reject_pending_errors()?;
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
         let mut next_declaration = 0u32;
@@ -413,6 +417,8 @@ impl ValkyrieCompiler {
         for hir in &mut hir_groups {
             resolve_hir_calls(hir);
         }
+        // 各组源文件解析与 HIR 物化完成后的第二阶段边界：同上，带 Error 级诊断即收口。
+        HirError::reject_pending_errors()?;
         // 单态化固定点必须在全部源码组的调用解析之后、语义合同校验与 MIR 之前运行。
         // 物化可达性门在冻结调用图上先求声明闭包，单态化只按门内 callable 的调用点
         // 与导出面 glue 种子铸造实例；实例集合在单态化回填完成后收口。
@@ -519,7 +525,7 @@ impl ValkyrieCompiler {
         file: &CompilerSourceFile,
         arch: &str,
     ) -> Result<ValkyrieRoot, HirError> {
-        let mut root = frontend::parse_source(&file.source).map_err(|parse_err| HirError::SourceFileRejected {
+        let mut root = frontend::parse_source_with_identity(&file.source, &file.path).map_err(|parse_err| HirError::SourceFileRejected {
             dependency_key: group.dependency_key.clone(),
             path: file.path.clone(),
             error: parse_err,

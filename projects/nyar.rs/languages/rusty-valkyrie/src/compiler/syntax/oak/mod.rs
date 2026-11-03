@@ -36,13 +36,29 @@ pub fn production_language() -> ValkyrieLanguage {
     ValkyrieLanguage { support_t_grammar: true, ..ValkyrieLanguage::default() }
 }
 
-/// 使用 Oak 解析源码；失败时返回结构化 `ParseError`，禁止回退旧 parser。
+/// 匿名源码的稳定诊断身份：测试夹具与合成包装没有可归属的文件路径。
+pub const ANONYMOUS_SOURCE_ID: &str = "<frontend>";
+
+/// 使用 Oak 解析匿名源码；失败时返回结构化 `ParseError`，禁止回退旧 parser。
+///
+/// 匿名入口只为单源码测试夹具与无法归属的合成包装服务，诊断落 [`ANONYMOUS_SOURCE_ID`]；
+/// 任何有真实文件身份的调用方必须走 [`parse_source_with_identity`]。
 pub fn parse_source(source: &str) -> Result<ValkyrieRoot, ParseError> {
-    parse_source_with_language(source, &production_language())
+    parse_source_with_language_and_identity(source, &production_language(), ANONYMOUS_SOURCE_ID)
 }
 
-/// 使用显式 `ValkyrieLanguage` 配置解析源码。
+/// 使用 Oak 解析具名源码；解析期诊断携带调用方给出的真实源码身份。
+pub fn parse_source_with_identity(source: &str, source_id: &str) -> Result<ValkyrieRoot, ParseError> {
+    parse_source_with_language_and_identity(source, &production_language(), source_id)
+}
+
+/// 使用显式 `ValkyrieLanguage` 配置解析匿名源码。
 pub fn parse_source_with_language(source: &str, language: &ValkyrieLanguage) -> Result<ValkyrieRoot, ParseError> {
+    parse_source_with_language_and_identity(source, language, ANONYMOUS_SOURCE_ID)
+}
+
+/// 使用显式 `ValkyrieLanguage` 配置与显式源码身份解析源码。
+pub fn parse_source_with_language_and_identity(source: &str, language: &ValkyrieLanguage, source_id: &str) -> Result<ValkyrieRoot, ParseError> {
     if !language.support_t_grammar {
         reject_unsupported_template_source(source)?;
     }
@@ -55,7 +71,7 @@ pub fn parse_source_with_language(source: &str, language: &ValkyrieLanguage) -> 
     // fatal 单错且 `diagnostics` 恒为空；恢复记录接入 oak 后，这里自动带出全部
     // 非致命诊断。此处只转述 oak 已生产的事实，不在外部包装出多错假象。
     for diagnostic in &output.diagnostics {
-        crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_oak_error(diagnostic));
+        crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_oak_error(diagnostic, source_id));
     }
     output
         .result
@@ -67,7 +83,7 @@ pub fn parse_source_with_language(source: &str, language: &ValkyrieLanguage) -> 
                 .iter()
                 .any(|recorded| recorded.source_offset() == error.source_offset() && recorded.to_string() == error.to_string());
             if !already_recorded {
-                crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_oak_error(&error));
+                crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_oak_error(&error, source_id));
             }
             let mut primary = ParseError::from_oak(error);
             // 词法诊断（如"未闭合的引号捕获"）携带比兜底解析错误更精确的原因与定位；
@@ -90,9 +106,8 @@ pub fn parse_source_with_language(source: &str, language: &ValkyrieLanguage) -> 
 ///
 /// `code` 由 oak 的稳定 i18n key 派生（`error.syntax` → `valkyrie.frontend.parse.syntax`），
 /// 不自行枚举错误清单；`phase`/`owner` 按诊断合同诚实记录为语法阶段、oak-valkyrie 生产。
-/// 文件身份不在本层可用：source 先落 `<frontend>` 占位（与既有 `FrontendRejected` 行一致），
-/// 组管线接入文件身份后应升级为真实路径。
-fn compile_diagnostic_from_oak_error(error: &oak_core::OakError) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
+/// 文件身份由调用方在解析入口给出：真实文件落逻辑路径，匿名/合成源落 [`ANONYMOUS_SOURCE_ID`]。
+fn compile_diagnostic_from_oak_error(error: &oak_core::OakError, source_id: &str) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
     use nyar_types::{DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan};
     let kind = error.kind();
     let span = match error.source_offset() {
@@ -114,7 +129,7 @@ fn compile_diagnostic_from_oak_error(error: &oak_core::OakError) -> crate::compi
         DiagnosticSeverity::Error,
         DiagnosticPhase::Parsing,
         DiagnosticOwner::syntax("oak-valkyrie"),
-        DiagnosticSource { id: "<frontend>".into(), revision: None },
+        DiagnosticSource { id: source_id.into(), revision: None },
         span,
     );
     crate::compiler::diagnostics::pending::CompileDiagnostic::new(row, message)

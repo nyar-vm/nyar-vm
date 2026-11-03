@@ -32,6 +32,22 @@ impl HirError {
         Self::MatchRecoveryFailed { stage, pattern, source: DiagnosticSource { id: "<match>".into(), revision: None }, span }
     }
 
+    /// 阶段边界收口判据：诊断暂存汇仍有 Error 级条目时返回收口失败，否则放行。
+    ///
+    /// 恢复（recovery）设计只保证单个坏项不阻断同文件兄弟项的解析；批处理编译单元
+    /// 不得带着被丢弃的项继续物化，否则下游会以缺项事实生产误导性级联错误。
+    /// 收口只读取不取走：全部诊断留在暂存汇中，由失败路径一次性渲染。
+    pub(crate) fn reject_pending_errors() -> Result<(), Self> {
+        let (count, first) = crate::compiler::diagnostics::pending::pending_error_summary();
+        if count == 0 {
+            return Ok(());
+        }
+        let (source, span) = first.map(|diagnostic| (diagnostic.row.source, diagnostic.row.primary_span)).unwrap_or_else(|| {
+            (nyar_types::DiagnosticSource { id: "<pending>".into(), revision: None }, nyar_types::DiagnosticSpan { start: 0, end: 0 })
+        });
+        Err(Self::PendingErrorsRejected { count, source, span })
+    }
+
     pub(crate) fn code(&self) -> &'static str {
         match self {
             Self::UnresolvedCall { .. } => "valkyrie.hir.unresolved_call",
@@ -83,6 +99,7 @@ impl HirError {
             Self::SourceReadFailed { .. } => "valkyrie.hir.source_read_failed",
             Self::EmptySemanticSourceGroupPlan { .. } => "valkyrie.hir.empty_semantic_source_group_plan",
             Self::SourceFileRejected { .. } => "valkyrie.hir.source_file_rejected",
+            Self::PendingErrorsRejected { .. } => "valkyrie.hir.pending_errors_rejected",
             Self::DependencyExportUnavailable { .. } => "valkyrie.hir.dependency_export_unavailable",
             Self::DependencyExportIdentityCollision { .. } => "valkyrie.hir.dependency_export_identity_collision",
             Self::DeclarationIndexExhausted { .. } => "valkyrie.hir.declaration_index_exhausted",

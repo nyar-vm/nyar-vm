@@ -519,6 +519,16 @@ pub enum HirError {
         /// frontend 生产的结构化解析失败。
         error: crate::compiler::syntax::oak::ParseError,
     },
+    /// 阶段边界收口：诊断暂存汇中仍有 Error 级可恢复诊断，拒绝带着被丢弃的项继续物化。
+    /// 全部诊断留在暂存汇中由失败路径统一渲染；本变体只携带首条的归属事实。
+    PendingErrorsRejected {
+        /// 暂存汇中 Error 级诊断总数（含超出上限被丢弃的）。
+        count: usize,
+        /// 首条 Error 诊断的源码身份。
+        source: DiagnosticSource,
+        /// 首条 Error 诊断的定位。
+        span: DiagnosticSpan,
+    },
     /// 依赖导出的语义事实不可用。
     DependencyExportUnavailable {
         /// 消费依赖的组。

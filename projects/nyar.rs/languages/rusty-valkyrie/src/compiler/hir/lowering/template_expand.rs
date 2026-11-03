@@ -4,7 +4,7 @@ use crate::compiler::{
     hir::lowering::HirError,
     syntax::oak::{
         ast::{Block, Statement, StatementNode, TemplateIf, TemplateLoop, TemplateMatch, TemplateNode, ValkyrieRoot},
-        parse_source_with_language, production_language,
+        parse_source_with_language_and_identity, production_language,
     },
 };
 
@@ -274,8 +274,10 @@ fn expand_fragment(
         return Ok(Vec::new());
     }
     // 元表达式 splice 发生在语句上下文中，须经块内重解析而非模块根。
+    // 包装文本是合成源：诊断身份明确落 `<frontend:template-fragment>`，不冒充真实文件；
+    // 模板在来源文件中的站点由上层 `TemplateExpansionFailed` 的 span 单独承担。
     let wrapped = format!("micro __tg_fragment() -> void {{ {snippet}; }}");
-    let root = parse_source_with_language(&wrapped, &production_language())?;
+    let root = parse_source_with_language_and_identity(&wrapped, &production_language(), "<frontend:template-fragment>")?;
     let fragment_failure = |produced_items: usize| {
         HirError::template_expansion_failed(
             TemplateConstruct::BlockFragment,

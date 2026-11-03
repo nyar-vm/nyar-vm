@@ -7,7 +7,7 @@ use std::{collections::BTreeSet, fs, path::PathBuf};
 
 use nyar::CanonicalTarget;
 
-use crate::compiler::syntax::oak::{ValkyrieRoot, ast::StatementNode, namespace_is_declaration_only, parse_source};
+use crate::compiler::syntax::oak::{ValkyrieRoot, ast::StatementNode, namespace_is_declaration_only, parse_source, parse_source_with_identity};
 
 use super::{
     ast_attributes::{gate_attributes_from_items, when_attributes_from_items},
@@ -30,17 +30,19 @@ pub(crate) fn source_file_active_for_target_and_features(
     target: CanonicalTarget,
     enabled_features: Option<&BTreeSet<String>>,
 ) -> bool {
-    source_file_conditions_pass(source, target, enabled_features).unwrap_or(false)
+    source_file_conditions_pass(source, target, enabled_features, crate::compiler::syntax::oak::ANONYMOUS_SOURCE_ID).unwrap_or(false)
 }
 
 /// 解析源码并判定其文件级条件；无法解析时返回解析器原因，绝不静默排除。
+/// `source_id` 是恢复诊断归属的源码身份：真实文件给逻辑路径，测试夹具给匿名占位。
 pub(crate) fn source_file_conditions_pass(
     source: &str,
     target: CanonicalTarget,
     enabled_features: Option<&BTreeSet<String>>,
+    source_id: &str,
 ) -> Result<bool, String> {
     let source = normalize_line_endings(source);
-    let root = parse_source(&source).map_err(|error| error.to_string())?;
+    let root = parse_source_with_identity(&source, source_id).map_err(|error| error.to_string())?;
     Ok(match file_level_condition_items_from_root(&root) {
         None => true,
         Some(items) => target_axis_passes(&items.whens, target) && gate_axis_passes(&items.gates, enabled_features),
@@ -112,7 +114,8 @@ fn filter_paths_for_target(
     let mut filtered = Vec::with_capacity(paths.len());
     for path in paths {
         let content = fs::read_to_string(&path).map_err(PlannerError::Io)?;
-        let active = source_file_conditions_pass(&content, target, enabled_features)
+        let source_id = path.to_string_lossy().replace('\\', "/");
+        let active = source_file_conditions_pass(&content, target, enabled_features, &source_id)
             .map_err(|message| PlannerError::UnparsableSource { path: path.clone(), message })?;
         if active {
             filtered.push(path);

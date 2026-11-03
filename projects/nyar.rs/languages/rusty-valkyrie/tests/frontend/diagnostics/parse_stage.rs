@@ -23,7 +23,8 @@ fn syntax_error_is_recorded_as_structured_parse_diagnostic() {
     let collected = pending::take_pending_diagnostics();
     // `@@@` 触发失败后根循环在 `@` 边界重试，第二次失败同样如实记录：两条诊断 @[26, 43]。
     assert_eq!(collected.total(), 2, "oak records each failed parse attempt: {collected:?}");
-    let spans: Vec<(usize, usize)> = collected.diagnostics.iter().map(|diagnostic| (diagnostic.row.primary_span.start, diagnostic.row.primary_span.end)).collect();
+    let spans: Vec<(usize, usize)> =
+        collected.diagnostics.iter().map(|diagnostic| (diagnostic.row.primary_span.start, diagnostic.row.primary_span.end)).collect();
     assert_eq!(spans, [(26, 27), (43, 44)], "parse error byte offsets: {collected:?}");
     for diagnostic in &collected.diagnostics {
         assert_eq!(diagnostic.row.code, "valkyrie.frontend.parse.syntax");
@@ -88,4 +89,35 @@ fn clean_source_records_no_parse_diagnostic() {
     let source = "micro main() -> i64 {\n    return 0\n}\n";
     ValkyrieCompiler::default().compile_source(source).expect("clean source compiles");
     assert!(pending::pending_diagnostics_is_empty());
+}
+
+// `from` 不是 Valkyrie 关键字：导入语法是 `using name::path::id`，文法中没有任何
+// 产生式消费 `from`（`yield_from` 恒为 false 的残留已从关键字表移除）。
+// 以下三形态必须照常解析并构建，且不产生解析诊断。
+
+#[test]
+#[ignore = "field positions accept `from` only after the oak rev bump that carries the keyword-table removal"]
+fn from_as_field_name_parses_and_compiles() {
+    pending::clear_pending_diagnostics();
+    let source = "class Edge {\n    from: i32\n}\n[main]\nmicro main() -> i64 {\n    let edge = Edge { from: 1 }\n    return edge.from\n}\n";
+    let module = ValkyrieCompiler::default().compile_source(source).expect("field named `from` must compile");
+    assert!(module.structs.iter().any(|item| item.name.as_str() == "Edge"), "class must survive: {:?}", module.structs);
+    assert!(pending::pending_diagnostics_is_empty(), "no parse diagnostics expected for `from` field");
+}
+
+#[test]
+fn from_as_local_variable_name_parses_and_compiles() {
+    pending::clear_pending_diagnostics();
+    let source = "[main]\nmicro main() -> i64 {\n    let from: i64 = 1\n    return from\n}\n";
+    ValkyrieCompiler::default().compile_source(source).expect("local variable named `from` must compile");
+    assert!(pending::pending_diagnostics_is_empty(), "no parse diagnostics expected for `from` binding");
+}
+
+#[test]
+fn from_as_function_name_parses_and_compiles() {
+    pending::clear_pending_diagnostics();
+    let source = "micro from() -> i64 {\n    return 1\n}\n[main]\nmicro main() -> i64 {\n    return from()\n}\n";
+    let module = ValkyrieCompiler::default().compile_source(source).expect("function named `from` must compile");
+    assert!(module.functions.iter().any(|function| function.name.as_str() == "from"), "function `from` must survive: {:?}", module.functions);
+    assert!(pending::pending_diagnostics_is_empty(), "no parse diagnostics expected for `from` function");
 }
