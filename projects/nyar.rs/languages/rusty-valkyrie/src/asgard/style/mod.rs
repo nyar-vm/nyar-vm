@@ -192,6 +192,11 @@ pub enum StyleContractError {
         /// 结构错误细节。
         detail: String,
     },
+    /// 样式块声明了 `target` 专属端，但当前合同只承载公共块。
+    TargetSheetUnsupported {
+        /// 块声明的目标端列表。
+        targets: Vec<String>,
+    },
 }
 
 impl StyleContractError {
@@ -204,6 +209,9 @@ impl StyleContractError {
             Self::BadValue { property, value, reason } => format!("样式合同拒绝 `{property}: {value}`：{reason}"),
             Self::ImportantForbidden => "样式合同禁止 `!important`".to_string(),
             Self::Malformed { detail } => format!("样式合同文法错误：{detail}"),
+            Self::TargetSheetUnsupported { targets } => {
+                format!("样式块声明了专属端 [{}]：当前样式合同只承载公共块", targets.join(", "))
+            }
         }
     }
 

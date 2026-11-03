@@ -115,10 +115,23 @@ pub fn lower_component(
     options: &LoweringOptions,
 ) -> Result<LoweredComponent, crate::asgard::style::StyleContractError> {
     let name = widget_name_from_stem(component_name);
-    let style_contract = match &root.style {
-        Some(text) if !text.trim().is_empty() => Some(crate::asgard::style::parse_style_contract(text)?),
-        _ => None,
-    };
+    // 公共样式块按声明顺序合并为一张合同；带 `target` 的块是独立分表，当前合同尚未承载。
+    let mut public_style = String::new();
+    for block in &root.styles {
+        if let Some(targets) = &block.target {
+            return Err(crate::asgard::style::StyleContractError::TargetSheetUnsupported { targets: targets.clone() });
+        }
+        let content = block.content.trim();
+        if content.is_empty() {
+            continue;
+        }
+        if !public_style.is_empty() {
+            public_style.push('\n');
+        }
+        public_style.push_str(content);
+    }
+    let style_contract =
+        (!public_style.is_empty()).then(|| crate::asgard::style::parse_style_contract(&public_style)).transpose()?;
     let mut surface = wrap_widget_roots_in_fragment(lower_template_nodes(&root.template));
     let layout = collect_layout_bindings(&mut surface, style_contract.as_ref());
     let (component_abi, abi_issues) = root
@@ -136,7 +149,7 @@ pub fn lower_component(
         route_name: component_name.to_string(),
         synthetic_v,
         render_ir,
-        style: root.style.clone(),
+        style: (!public_style.is_empty()).then_some(public_style),
         style_contract,
         layout,
         script_bindings,
