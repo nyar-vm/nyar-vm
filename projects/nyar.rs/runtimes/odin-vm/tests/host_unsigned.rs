@@ -5,7 +5,7 @@
 //! `CallImport` 端到端路径。
 
 use odin_bytecode::{
-    OdinImport, OdinImportKind, Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1,
+    Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData, emit_imm1,
     emit_imm2, emit_plain, encode_module,
 };
 use odin_vm::{
@@ -78,10 +78,7 @@ fn i64_shr_u_fills_with_zero_not_sign_bit() {
     // 0x8000_0000_0000_0000 >> 63 = 1。
     assert_eq!(run(HostOp::I64ShrU, &[Value::I64(i64::MIN), Value::I64(63)]).expect("右移"), Value::I64(1));
     // 0xFFFF_FFFF_FFFF_FFF8 >> 1 = 0x7FFF_FFFF_FFFF_FFFC。
-    assert_eq!(
-        run(HostOp::I64ShrU, &[Value::I64(-8), Value::I64(1)]).expect("右移"),
-        Value::I64(9_223_372_036_854_775_804)
-    );
+    assert_eq!(run(HostOp::I64ShrU, &[Value::I64(-8), Value::I64(1)]).expect("右移"), Value::I64(9_223_372_036_854_775_804));
     // 位移量按 &63 截断：shift 64 等价 0。
     assert_eq!(run(HostOp::I64ShrU, &[Value::I64(-1), Value::I64(64)]).expect("右移"), Value::I64(-1));
 }

@@ -6,20 +6,14 @@
 use odin_bytecode::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1, emit_plain, encode_module,
 };
-use odin_vm::{error::OdinRuntimeError, module::LoadedModule, Value};
+use odin_vm::{Value, error::OdinRuntimeError, module::LoadedModule};
 
 fn module_with(code: Vec<u8>, constants: Vec<OdinConstant>, local_count: i32) -> LoadedModule {
     let data = OdinModuleData {
         version: Odin_VERSION,
         name: "step_budget".to_string(),
         constants,
-        functions: vec![OdinFunction {
-            name: "main".to_string(),
-            arity: 0,
-            local_count,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        }],
+        functions: vec![OdinFunction { name: "main".to_string(), arity: 0, local_count, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
         exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
@@ -103,16 +97,10 @@ fn long_loop_is_not_false_killed_by_default_budget() {
     let elapsed = started.elapsed();
     assert_eq!(value, Value::I32(0));
     let steps = vm.last_step_count();
-    eprintln!(
-        "step_budget: 10^3 轮 = {small_steps} 条指令; 10^6 轮 = {steps} 条指令, 耗时 {elapsed:?}, 默认预算 {:?}",
-        vm.step_budget()
-    );
+    eprintln!("step_budget: 10^3 轮 = {small_steps} 条指令; 10^6 轮 = {steps} 条指令, 耗时 {elapsed:?}, 默认预算 {:?}", vm.step_budget());
     assert!(small_steps > 8_000, "每轮 8 条指令，10^3 轮实测 {small_steps}");
     assert!(steps > 8_000_000, "每轮 8 条指令，10^6 轮实测 {steps}");
-    assert!(
-        steps.saturating_mul(10) <= odin_vm::executor::DEFAULT_STEP_BUDGET,
-        "默认预算对 10^6 轮长循环至少要有 10 倍余量：steps={steps}"
-    );
+    assert!(steps.saturating_mul(10) <= odin_vm::executor::DEFAULT_STEP_BUDGET, "默认预算对 10^6 轮长循环至少要有 10 倍余量：steps={steps}");
 }
 
 /// `Trap` 指令：前端把可达块误标成 `Unreachable` 时，运行期立即得到带 function/pc 的结构化失败
