@@ -271,6 +271,34 @@ function demarshalLibraryReturn(schema, raw) {{
         return demarshalLibraryReturn(schema.inner, raw);
     }}
 
+    // ── NamedAggregate：按布局派生的字段访问合同逐字段读回 ──
+    // 字段列表与 accessor 导出名来自 `nyar.library_invoke` 的 `fields` 合同
+    // （冻结布局派生，非名字表）：聚合句柄经 accessor 逐字段读取，再按字段
+    // schema 递归反编组。缺字段合同、空句柄或缺 accessor 导出都失败闭合，
+    // 不猜测字段，不默认回填。
+    if (kind === "NamedAggregate") {{
+        const fields = schema.fields;
+        if (!Array.isArray(fields) || fields.length === 0) {{
+            throw new Error(
+                `[wasm-js-glue] Cannot demarshal NamedAggregate "${{schema.name}}": no field access contract in ABI schema. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        if (raw == null) {{
+            throw new Error(`[wasm-js-glue] Cannot demarshal NamedAggregate "${{schema.name}}": wasm returned a null reference`);
+        }}
+        const aggregate = {{}};
+        for (const field of fields) {{
+            const accessor = exports[field.accessor];
+            if (typeof accessor !== "function") {{
+                throw new Error(
+                    `[wasm-js-glue] Cannot demarshal NamedAggregate "${{schema.name}}" field "${{field.name}}": accessor export "${{field.accessor}}" is missing`
+                );
+            }}
+            aggregate[field.name] = demarshalLibraryReturn(field.type, accessor(raw));
+        }}
+        return aggregate;
+    }}
+
     // ── 聚合 / 数组 / 元组等复合类型当前没有 ABI 桥，一律失败闭合 ──
     throw new Error(
         `[wasm-js-glue] Cannot demarshal schema kind "${{kind}}": no ABI bridge implemented. Schema: ${{JSON.stringify(schema)}}`

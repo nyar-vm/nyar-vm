@@ -24,8 +24,8 @@ use super::{
     library_invoke,
     lowerer::lower_mir_function_to_wasm_bytes,
     representation::{
-        is_js_glue_host_string_type, layout_needs_gc_struct, type_is_wasm_gc_heap_reference, wasm_gc_field_type_byte_for_glue,
-        wasm_param_types, wasm_return_value_type,
+        is_js_glue_host_string_type, layout_needs_gc_struct, type_is_inline_aggregate, type_is_wasm_gc_heap_reference,
+        wasm_gc_field_type_byte_for_glue, wasm_param_types, wasm_return_value_type,
     },
     strings::{
         build_wasi_string_data_section, build_wasi_string_literal_offsets, wasi_string_data_section_size, wasm_function_type_param_bytes,
@@ -573,6 +573,24 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         }
     }
 
+    // 库导出聚合的字段 accessor：从冻结布局派生逐字段读取函数并导出，供宿主
+    // 按 `nyar.library_invoke` 的字段合同读回聚合返回值。只有库导出返回签名
+    // 可达的布局参与；accessor 名与 schema 同源确定性派生，不按名字识别。
+    let mut accessor_export_names: Vec<String> = Vec::new();
+    if wasm_package_kind == WasmPackageKind::Library {
+        emit_library_field_accessors(
+            submission,
+            &ctx,
+            &gc_struct_type_indices,
+            js_glue_utf8_as_anyref,
+            &mut type_indices,
+            &mut function_indices,
+            &mut code_bodies,
+            &mut exports,
+            import_count,
+            &mut accessor_export_names,
+        )?;
+    }
     library_invoke::append_library_invoke_section(wasm_package_kind, submission, &mut module)?;
 
     module.sections.push(type_section_bytes(type_indices));
@@ -1265,4 +1283,149 @@ pub(crate) fn augment_wasm_with_value_aggregate_metadata(module: &mut WasmBinary
     let payload =
         format!("mir_functions={};value_layouts={};reference_layouts={}", mir_functions_len, value_layout_count, reference_layout_count);
     module.sections.push(WasmSection { id: 0, name: Some("nyar.value_aggregate".to_string()), bytes: payload.into_bytes() });
+}
+
+/// 库导出聚合的字段 accessor 发射（布局派生的 demarshal 读取合同）。
+///
+/// 从库导出返回签名可达的 nominal 布局（含字段递归）出发，为每个字段发射
+/// 一个读取函数并导出：
+/// - 已注册 gc struct 的布局：`(param anyref)` → `ref.cast` + `struct.get`，
+///   字段槽位字节与冻结注册表一致；
+/// - 未注册的 value 布局：`(param i32 线性地址)` → 冻结偏移 + 与 `FieldGet`
+///   同配方的类型化 load；内联聚合字段本身即地址，不 load。
+///
+/// accessor 导出名与 [`super::abi_schema::field_accessor_export_name`] 同源，
+/// 由布局身份确定性派生；JS glue 按 `nyar.library_invoke` 字段合同里的名字
+/// 查表。缺布局身份直接结构化失败，不做默认回填。
+#[allow(clippy::too_many_arguments)]
+fn emit_library_field_accessors<'name>(
+    submission: &FragmentSubmission,
+    ctx: &ExecutableLoweringContext,
+    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    js_glue_utf8_as_anyref: bool,
+    type_indices: &mut Vec<Vec<u8>>,
+    function_indices: &mut Vec<u32>,
+    code_bodies: &mut Vec<Vec<u8>>,
+    exports: &mut Vec<(&'name str, u8, u32)>,
+    import_count: u32,
+    name_store: &'name mut Vec<String>,
+) -> crate::Result<()> {
+    /// 返回类型可达性收集：穿透容器，落到 nominal 布局身份。
+    fn collect_nominal_layouts(ty: &NyarType, out: &mut Vec<LayoutId>) {
+        match ty {
+            NyarType::Nominal { layout, .. } => out.push(*layout),
+            NyarType::Array(element) | NyarType::FixedArray { element, .. } | NyarType::Nullable(element) => {
+                collect_nominal_layouts(element, out)
+            }
+            NyarType::Tuple(elements) | NyarType::Union(elements) => {
+                for element in elements {
+                    collect_nominal_layouts(element, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut worklist: Vec<LayoutId> = Vec::new();
+    for (instance, _) in submission.backend_plan.wasm_export_names() {
+        let Some(view) = submission.backend_plan.get_function(instance)
+        else {
+            continue;
+        };
+        collect_nominal_layouts(&view.function.return_type, &mut worklist);
+    }
+    let mut reachable: BTreeSet<LayoutId> = BTreeSet::new();
+    while let Some(layout_id) = worklist.pop() {
+        if !reachable.insert(layout_id) {
+            continue;
+        }
+        let layout =
+            ctx.layout_by_id(layout_id).ok_or_else(|| format!("WASM 聚合字段 accessor 发射失败: layout_id={layout_id:?} 缺聚合布局身份"))?;
+        for field in &layout.fields {
+            collect_nominal_layouts(&field.ty, &mut worklist);
+        }
+    }
+
+    // 阶段 1：按布局/字段顺序确定性派生全部 accessor 身份；名字统一进
+    // 调用方作用域的 name_store，导出条目从中稳定借用。
+    #[derive(Clone, Copy)]
+    struct AccessorPlan {
+        layout_id: LayoutId,
+        field_index: usize,
+        gc_struct_type_index: Option<u32>,
+    }
+    let mut plans: Vec<(String, AccessorPlan)> = Vec::new();
+    let mut emitted_names: BTreeSet<String> = BTreeSet::new();
+    for layout_id in &reachable {
+        let layout = ctx.layout_by_id(*layout_id).expect("可达布局已通过身份核对");
+        if layout.fields.is_empty() {
+            continue;
+        }
+        let gc_struct_type_index = gc_struct_type_indices.get(layout_id).copied();
+        for (field_index, _) in layout.fields.iter().enumerate() {
+            let name = super::abi_schema::field_accessor_export_name(layout, field_index);
+            if !emitted_names.insert(name.clone()) {
+                continue;
+            }
+            plans.push((name, AccessorPlan { layout_id: *layout_id, field_index, gc_struct_type_index }));
+        }
+    }
+    name_store.extend(plans.iter().map(|(name, _)| name.clone()));
+
+    // 阶段 2：发射函数体并登记导出。导出条目借用名字切片（不可变、与
+    // name_store 同寿命），避免从 `&mut` 直接索引产生短命借用。
+    let names: &[String] = name_store.as_slice();
+    for (position, (_, plan)) in plans.iter().enumerate() {
+        let layout = ctx.layout_by_id(plan.layout_id).expect("可达布局已通过身份核对");
+        let field = &layout.fields[plan.field_index];
+        let (param_types, result_type, body) = match plan.gc_struct_type_index {
+            Some(struct_type_index) => {
+                // gc struct：(param anyref) → ref.cast + struct.get。
+                let result_type = wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref);
+                let mut body = Vec::new();
+                encode_uleb128(0, &mut body);
+                encode_local_get(0, &mut body);
+                encode_ref_cast_type_index(struct_type_index, &mut body);
+                encode_struct_get(struct_type_index, plan.field_index as u32, &mut body);
+                WasmOpcode::End.encode(&mut body);
+                (vec![WASM_GC_ANYREF], result_type, body)
+            }
+            None => {
+                // 线性 value 布局：(param i32 地址) → 冻结偏移 + 类型化 load，
+                // load 配方与 `FieldGet` 的线性路径完全一致。
+                let inline_aggregate = type_is_inline_aggregate(ctx, &field.ty);
+                let result_type = if inline_aggregate {
+                    VALTYPE_I32
+                }
+                else {
+                    match field.ty {
+                        NyarType::Float64 => VALTYPE_F64,
+                        NyarType::Integer64 { .. } => VALTYPE_I64,
+                        _ => VALTYPE_I32,
+                    }
+                };
+                let mut body = Vec::new();
+                encode_uleb128(0, &mut body);
+                encode_local_get(0, &mut body);
+                encode_i32_const(field.offset as i32, &mut body);
+                encode_i32_add(&mut body);
+                if !inline_aggregate {
+                    match field.ty {
+                        NyarType::Float64 => encode_f64_load(3, 0, &mut body),
+                        NyarType::Integer64 { .. } => encode_i64_load(3, 0, &mut body),
+                        _ => encode_i32_load(2, 0, &mut body),
+                    }
+                }
+                WasmOpcode::End.encode(&mut body);
+                (vec![VALTYPE_I32], result_type, body)
+            }
+        };
+        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_function_type(&param_types, &[result_type]));
+        function_indices.push(type_index);
+        let function_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
+        code_bodies.push(wasm_function_body(body));
+        exports.push((names[position].as_str(), WasmExternalKind::Func.as_u8(), function_index));
+    }
+    Ok(())
 }

@@ -48,13 +48,32 @@ fn glue_marshals_js_string_utf8_parameter_to_host_handle() {
 #[test]
 fn glue_fails_closed_for_unbridged_composite_kinds() {
     let glue = launcher_for(&spec(r#"{"noop":{"params":[],"returns":{"kind":"Unit"}}}"#));
-    // 具名聚合 / 数组 / 元组当前没有 ABI 桥：两个方向都必须失败闭合而不是 passthrough。
+    // 数组 / 元组等复合类型当前没有 ABI 桥：两个方向都必须失败闭合而不是 passthrough。
+    // （NamedAggregate 的 demarshal 已有字段访问合同桥，见专项用例；其 marshal
+    // 方向仍无桥。）
     assert!(glue.contains("Cannot marshal schema kind"), "复合类型 marshal 必须失败闭合:\n{glue}");
     assert!(glue.contains("Cannot demarshal schema kind"), "复合类型 demarshal 必须失败闭合:\n{glue}");
     // Option 内层没有 handle 载体时（标量载荷需要 box/unbox 合同）拒绝裸标量。
     assert!(glue.contains("inner type has no Wasm handle carrier"), "Option 标量内层必须失败闭合:\n{glue}");
     // 未知 schema kind 不静默 passthrough。
     assert!(glue.contains("no ABI bridge implemented"), "未知 kind 必须失败闭合:\n{glue}");
+}
+
+#[test]
+fn glue_named_aggregate_demarshal_follows_field_access_contract() {
+    // NamedAggregate 返回按 `nyar.library_invoke` 冻结的字段合同逐字段读回：
+    // 聚合句柄经布局派生的 accessor 导出读取，字段递归反编组。缺字段合同、
+    // 空句柄、缺 accessor 导出都必须结构化失败，不猜字段、不默认回填。
+    let glue = launcher_for(&spec(r#"{"noop":{"params":[],"returns":{"kind":"Unit"}}}"#));
+    assert!(glue.contains(r#"if (kind === "NamedAggregate") {"#), "NamedAggregate 必须有 demarshal 分支:\n{glue}");
+    assert!(glue.contains("no field access contract in ABI schema"), "缺字段合同必须失败闭合:\n{glue}");
+    assert!(glue.contains("wasm returned a null reference"), "空句柄必须失败闭合:\n{glue}");
+    assert!(glue.contains("const accessor = exports[field.accessor];"), "字段必须按合同 accessor 导出读取:\n{glue}");
+    assert!(glue.contains(r#"accessor export ""#) && glue.contains("is missing"), "缺 accessor 导出必须失败闭合:\n{glue}");
+    assert!(
+        glue.contains("aggregate[field.name] = demarshalLibraryReturn(field.type, accessor(raw));"),
+        "字段值必须按字段 schema 递归反编组:\n{glue}"
+    );
 }
 
 #[test]

@@ -241,3 +241,95 @@ pub fn executable_has_state_machine(function: &ExecutableFunction) -> bool {
         )
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::TargetExecutionPlan;
+    use nyar_types::{Identifier, StorageKind};
+
+    /// 构造仅含返回类型与参数类型的最小可执行函数。
+    fn identity_function(return_type: NyarType, param_types: Vec<NyarType>) -> ExecutableFunction {
+        ExecutableFunction {
+            symbol: "probe".to_string(),
+            return_type,
+            param_types,
+            value_types: std::collections::BTreeMap::new(),
+            value_layouts: std::collections::BTreeMap::new(),
+            return_layout: None,
+            entry: crate::contracts::BlockRef(0),
+            values: Vec::new(),
+            suspend_points: Vec::new(),
+            frame_layouts: Vec::new(),
+            continuations: Vec::new(),
+            case_chains: Vec::new(),
+            #[allow(deprecated)]
+            state_machine: None,
+            suspend_plan: None,
+            blocks: vec![crate::contracts::Block {
+                id: crate::contracts::BlockRef(0),
+                label: "entry".to_string(),
+                parameters: Vec::new(),
+                instructions: Vec::new(),
+                terminator: crate::contracts::Terminator::Return { value: None },
+            }],
+            diagnostics: Vec::new(),
+        }
+    }
+
+    fn submission(return_type: NyarType, layouts: AggregateLayoutPlan) -> FragmentSubmission {
+        let function = identity_function(return_type, Vec::new());
+        let name = nyar::QualifiedName::new(vec![nyar::Identifier::new("probe")]);
+        let mut plan = TargetExecutionPlan::from_functions(std::collections::BTreeMap::from([(name, function)]));
+        plan.testing_aggregate_layouts(layouts);
+        FragmentSubmission::from_backend_plan(plan)
+    }
+
+    fn layout_with_field(layout_id: LayoutId, field_ty: NyarType) -> AggregateLayoutPlan {
+        AggregateLayoutPlan {
+            layouts: vec![AggregateLayout {
+                id: layout_id,
+                name: "Probe".to_string(),
+                namespace: "app".to_string(),
+                key: None,
+                storage: StorageKind::Value,
+                size: 8,
+                align: 8,
+                fields: vec![FieldLayout { name: "payload".to_string(), ty: field_ty, offset: 0, size: 8, align: 8 }],
+            }],
+            ..AggregateLayoutPlan::default()
+        }
+    }
+
+    #[test]
+    fn named_residual_in_return_type_is_rejected() {
+        let submission = submission(NyarType::Named(Identifier::new("Config")), AggregateLayoutPlan::default());
+        let error = validate_storage_identities(&submission).expect_err("裸 Named 缺声明身份必须被拒绝");
+        assert_eq!(error.site, "return type");
+        assert_eq!(error.ty, NyarType::Named(Identifier::new("Config")));
+    }
+
+    #[test]
+    fn named_residual_in_layout_field_is_rejected() {
+        let layouts = layout_with_field(1, NyarType::Named(Identifier::new("EngineSpec")));
+        let submission = submission(nyar_types::NyarType::Unit, layouts);
+        let error = validate_storage_identities(&submission).expect_err("layout 字段裸 Named 必须被拒绝");
+        assert!(error.site.contains("field `payload`"), "site must identify the layout field: {}", error.site);
+    }
+
+    #[test]
+    fn nominal_with_unregistered_layout_is_rejected() {
+        let nominal = NyarType::Nominal { layout: 7, spelling: Identifier::new("app::Config") };
+        let submission = submission(nominal.clone(), AggregateLayoutPlan::default());
+        let error = validate_storage_identities(&submission).expect_err("未注册布局的 Nominal 必须被拒绝");
+        assert_eq!(error.ty, nominal);
+    }
+
+    #[test]
+    fn nominal_with_registered_layout_passes() {
+        let layouts = layout_with_field(1, nyar_types::NyarType::Integer32 { signed: true });
+        let nominal = NyarType::Nominal { layout: 1, spelling: Identifier::new("app::Probe") };
+        let submission = submission(nominal, layouts);
+        validate_storage_identities(&submission).expect("已注册布局的 Nominal 必须通过");
+    }
+}
