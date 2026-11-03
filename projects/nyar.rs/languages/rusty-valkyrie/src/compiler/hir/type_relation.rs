@@ -239,12 +239,18 @@ impl TypeRelationContext {
             || self.enums_by_declaration.get(&declaration).is_some_and(|item| item.name == *owner)
     }
 
-    /// 字面量特化用：`Named("usize")` 与对应 `Nominal{ItemId}` 都算数值类型。
+    /// 字面量特化用：数值形参只认已冻结的 `[primitive]` 身份。
+    ///
+    /// 短名不参与判定：名叫 `i32` 的普通 class 不是数值类型；未结算别名的
+    /// `Named("usize")` 同样不算，留给别名展开或失败关闭，禁止按名字猜。
     pub fn is_numeric_type(&self, ty: &ValkyrieType) -> bool {
         match ty {
-            ValkyrieType::Nominal { declaration, .. } => {
-                self.structs_by_declaration.get(declaration).is_some_and(|item| is_numeric_type_name(item.name.as_str()))
-            }
+            ValkyrieType::Nominal { declaration, .. } => self
+                .structs_by_declaration
+                .get(declaration)
+                .and_then(|item| item.primitive_identity.as_deref())
+                .and_then(primitive_identity_builtin_type)
+                .is_some_and(|builtin| is_numeric_type_name_of(&builtin)),
             other => is_numeric_type_name_of(other),
         }
     }
@@ -587,9 +593,10 @@ fn collect_relation_structs(
     }
 }
 
-/// 数值名集合：源码写出的数值名与对应声明共用同一份口径。
+/// 数值面拼写集合：仅用于 HIR 阶段识别“这个未结算拼写可能是数值类型名”。
 ///
-/// 这里只判定“名字属于数值 primitive 声明族”，不生产任何低层 carrier；carrier 由表示阶段拥有。
+/// 不参与数值身份判定（`TypeRelation::is_numeric_type` 只认 `[primitive]` 身份）；
+/// 这里不生产任何低层 carrier，carrier 由表示阶段拥有。
 pub(crate) fn is_numeric_type_name(name: &str) -> bool {
     matches!(
         name,
@@ -625,22 +632,21 @@ fn is_float_type_name(name: &str) -> bool {
     matches!(name, "f32" | "f64" | "f128")
 }
 
-/// 数值类型判定（字面量特化与值位置字面量绑定共用同一份口径）。
+/// 数值类型判定：只认已结算的平台数值形状。
 ///
-/// `Named("i32")` 这类源码写出的数值名与对应 `Nominal{ItemId}` 都算数值；判定只认数值名集合，
-/// 不解析声明本身。
+/// `Named("i32")` 这类未绑定声明的拼写不再算数值——按名字猜身份会让同名普通
+/// class 通过字面量特化；缺别名/缺身份必须失败关闭。
 pub(crate) fn is_numeric_type_name_of(ty: &ValkyrieType) -> bool {
-    match ty {
+    matches!(
+        ty,
         ValkyrieType::Integer8 { .. }
-        | ValkyrieType::Integer16 { .. }
-        | ValkyrieType::Integer32 { .. }
-        | ValkyrieType::Integer64 { .. }
-        | ValkyrieType::Integer128 { .. }
-        | ValkyrieType::Float32
-        | ValkyrieType::Float64 => true,
-        ValkyrieType::Named(name) => is_numeric_type_name(name.as_str()),
-        _ => false,
-    }
+            | ValkyrieType::Integer16 { .. }
+            | ValkyrieType::Integer32 { .. }
+            | ValkyrieType::Integer64 { .. }
+            | ValkyrieType::Integer128 { .. }
+            | ValkyrieType::Float32
+            | ValkyrieType::Float64
+    )
 }
 
 /// 字符类型判定（字符字面量特化与值位置绑定共用同一份口径）。

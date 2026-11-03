@@ -20,10 +20,7 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
                     | ValkyrieType::Integer64 { .. }
                     | ValkyrieType::Integer128 { .. }),
                 ) => ty.clone(),
-                // Named 数值形参（如 `usize`）在无 MirStruct 表时也可直接特化；Nominal 由调用方用声明表覆盖。
-                Some(ty @ ValkyrieType::Named(_)) if crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(ty, &[]) => {
-                    ty.clone()
-                }
+                // 未结算别名（`Named("usize")` 等）不再按名字特化；名义形参由调用方用声明表覆盖。
                 _ if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 => ValkyrieType::Integer32 { signed: true },
                 _ => ValkyrieType::Integer64 { signed: true },
             }),

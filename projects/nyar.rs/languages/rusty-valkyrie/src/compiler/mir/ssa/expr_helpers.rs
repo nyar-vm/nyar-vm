@@ -179,11 +179,10 @@ fn valkyrie_type_is_numeric(ty: &ValkyrieType) -> bool {
     )
 }
 
-/// 整数字面量可特化到的形参类型：原生整数、`Named(usize/…)`、以及无参 `Nominal{ItemId}`。
+/// 整数字面量可特化到的形参类型：原生数值形状，或带 `[primitive]` 身份的无参 `Nominal`。
 ///
-/// 无参 `Nominal` 在声明表可解析时按表面名确认数值；表中缺失时仍接受——调用点形参已是
-/// overload 特化后的合同（`specialize_call_literal_exprs` + `is_numeric_type`），MIR 必须写出
-/// 同一 `Nominal`，不得因跨包 `field_declarations` 不完整退回 `Integer32`（SMIR007）。
+/// 短名不参与判定：`Named("usize")` 等未结算别名不再按名字接受，缺别名/缺声明表时
+/// 返回 `false`，让 `SMIR007` 正常触发，而不是把字面量写成错的形参类型。
 pub(super) fn is_integer_literal_formal_type(ty: &ValkyrieType, structs: &[super::MirStruct]) -> bool {
     match ty {
         ValkyrieType::Integer8 { .. }
@@ -193,57 +192,36 @@ pub(super) fn is_integer_literal_formal_type(ty: &ValkyrieType, structs: &[super
         | ValkyrieType::Integer128 { .. }
         | ValkyrieType::Float32
         | ValkyrieType::Float64 => true,
-        ValkyrieType::Named(name) => is_integer_literal_surface_name(name.as_str()),
         ValkyrieType::Nominal { declaration, arguments, .. } if arguments.is_empty() => {
-            match super::MirStruct::find_by_declaration(structs, *declaration) {
-                Some(item) => is_integer_literal_surface_name(item.name.as_str()),
-                None => true,
-            }
+            super::MirStruct::find_by_declaration(structs, *declaration)
+                .is_some_and(|item| is_numeric_primitive_identity(item.primitive_identity.as_deref()))
         }
         _ => false,
     }
 }
 
-fn is_integer_literal_surface_name(name: &str) -> bool {
-    matches!(
-        name,
-        "byte"
-            | "sbyte"
-            | "usize"
-            | "isize"
-            | "u8"
-            | "u16"
-            | "u32"
-            | "u64"
-            | "u128"
-            | "i8"
-            | "i16"
-            | "i32"
-            | "i64"
-            | "i128"
-            | "f32"
-            | "f64"
-            | "f128"
-            | "std.primitive.usize"
-            | "std.primitive.isize"
-            | "std::primitive::usize"
-            | "std::primitive::isize"
-    )
+/// 声明身份是否为数值 primitive：只认 `[primitive("std::primitive::…")]` 折叠出的载体。
+fn is_numeric_primitive_identity(identity: Option<&str>) -> bool {
+    identity
+        .and_then(crate::compiler::types::hir::primitive_identity_builtin_type)
+        .is_some_and(|builtin| crate::compiler::hir::type_relation::is_numeric_type_name_of(&builtin))
 }
 
 /// 字符字面量可特化到的形参类型：`char`（内建变体、源码短名或 `[primitive("std::text::char")]`
-/// 的 `Nominal`）或任意整数字面量形参；与整数字面量同源，缺表时接受已特化合同。
+/// 的 `Nominal`）或任意带数值 primitive 身份的形参；缺表与未结算别名一律 `false`。
 pub(super) fn is_character_literal_formal_type(ty: &ValkyrieType, structs: &[super::MirStruct]) -> bool {
     match ty {
         ValkyrieType::Character => true,
-        ValkyrieType::Named(name) => name.as_str() == "char" || is_integer_literal_surface_name(name.as_str()),
+        ValkyrieType::Named(name) => name.as_str() == "char",
         ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.is_empty() => {
             if primitive_identity.as_deref() == Some("std::text::char") {
                 return true;
             }
             match super::MirStruct::find_by_declaration(structs, *declaration) {
-                Some(item) => item.name.as_str() == "char" || is_integer_literal_surface_name(item.name.as_str()),
-                None => true,
+                Some(item) => {
+                    item.name.as_str() == "char" || is_numeric_primitive_identity(item.primitive_identity.as_deref())
+                }
+                None => false,
             }
         }
         _ => is_integer_literal_formal_type(ty, structs),
