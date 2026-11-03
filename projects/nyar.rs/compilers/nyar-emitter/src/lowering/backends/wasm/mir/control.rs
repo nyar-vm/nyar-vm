@@ -41,7 +41,7 @@ impl<'a> WasmMirLowerer<'a> {
         for instruction in &block.instructions {
             self.emit_instruction(instruction)?;
         }
-        self.emit_terminator(case_index, case_count, block);
+        self.emit_terminator(case_index, case_count, block)?;
         Ok(())
     }
 
@@ -49,19 +49,19 @@ impl<'a> WasmMirLowerer<'a> {
         u32::try_from(case_count.checked_sub(case_index + 1).expect("WASM case 不在调度表内")).expect("WASM 分支深度溢出")
     }
 
-    fn emit_terminator(&mut self, case_index: usize, case_count: usize, block: &MirBlock) {
+    fn emit_terminator(&mut self, case_index: usize, case_count: usize, block: &MirBlock) -> crate::Result<()> {
         let continue_depth = self.cfg_continue_depth(case_index, case_count);
         match &block.terminator {
             MirTerminator::Return { value } => {
                 match (self.return_value_type, value) {
-                    (Some(expected), Some(value)) => self.emit_contract_operand(value, expected),
+                    (Some(expected), Some(value)) => self.emit_contract_operand(value, expected)?,
                     (None, None) => {}
                     _ => panic!("WASM 返回值与已确定签名不一致: {}", self.mir_fn.symbol),
                 }
                 encode_return(&mut self.code);
             }
             MirTerminator::Jump { target, arguments } => {
-                self.emit_jump_arguments(*target, arguments);
+                self.emit_jump_arguments(*target, arguments)?;
                 let target_index = self.block_index[target];
                 self.emit_i32_const(i32::try_from(target_index).expect("WASM 跳转目标溢出"));
                 self.emit_local_set(self.pc_local);
@@ -74,7 +74,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 self.emit_i32_const(i32::try_from(self.block_index[then_target]).expect("WASM 分支目标溢出"));
                 self.emit_i32_const(i32::try_from(self.block_index[else_target]).expect("WASM 分支目标溢出"));
-                self.emit_contract_operand(condition, VALTYPE_I32);
+                self.emit_contract_operand(condition, VALTYPE_I32)?;
                 WasmOpcode::Select.encode(&mut self.code);
                 self.emit_local_set(self.pc_local);
                 self.emit_br_depth(continue_depth);
@@ -86,6 +86,7 @@ impl<'a> WasmMirLowerer<'a> {
             MirTerminator::PerformEffect { effect: crate::contracts::EffectKind::Raise, .. } => encode_unreachable(&mut self.code),
             other => panic!("WASM 不支持此终结符 {:?}: {}", std::mem::discriminant(other), self.mir_fn.symbol),
         }
+        Ok(())
     }
 
     pub(super) fn planned_value_local(&self, value: MirValueRef) -> u32 {
@@ -96,12 +97,13 @@ impl<'a> WasmMirLowerer<'a> {
             .unwrap_or_else(|| panic!("WASM SSA 值缺少预规划槽: %{} in {}", value.0, self.mir_fn.symbol))
     }
 
-    pub(super) fn emit_contract_operand(&mut self, operand: &MirOperand, expected: u8) {
+    pub(super) fn emit_contract_operand(&mut self, operand: &MirOperand, expected: u8) -> crate::Result<()> {
         match operand {
             MirOperand::Value(value) => {
                 let local = self.planned_value_local(*value);
                 assert_eq!(self.wasm_local_value_type(local), expected, "WASM SSA 槽与目标合同不一致: {}", self.mir_fn.symbol);
                 self.emit_local_get(local);
+                Ok(())
             }
             MirOperand::Constant(constant) => self.emit_load_constant_for_slot(constant, expected),
             MirOperand::Symbol(_) => panic!("WASM CFG 操作数必须是 SSA 值或已类型化常量"),
@@ -109,16 +111,17 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
-    fn emit_jump_arguments(&mut self, target: MirBlockRef, arguments: &[MirOperand]) {
+    fn emit_jump_arguments(&mut self, target: MirBlockRef, arguments: &[MirOperand]) -> crate::Result<()> {
         let target_block = self.mir_fn.blocks.iter().find(|block| block.id == target).expect("WASM 跳转目标不存在");
         assert_eq!(target_block.parameters.len(), arguments.len(), "WASM 块参数数量不一致");
         let destinations = target_block.parameters.iter().map(|parameter| self.planned_value_local(*parameter)).collect::<Vec<_>>();
         for (argument, destination) in arguments.iter().zip(&destinations) {
-            self.emit_contract_operand(argument, self.wasm_local_value_type(*destination));
+            self.emit_contract_operand(argument, self.wasm_local_value_type(*destination))?;
         }
         for destination in destinations.into_iter().rev() {
             self.emit_local_set(destination);
         }
+        Ok(())
     }
 
     fn emit_br_depth(&mut self, depth: u32) {

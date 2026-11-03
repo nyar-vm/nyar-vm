@@ -5,17 +5,16 @@ impl<'a> WasmMirLowerer<'a> {
     pub(super) fn emit_instruction(&mut self, instruction: &MirInstruction) -> crate::Result<()> {
         match &instruction.kind {
             MirInstructionKind::LoadConstant { constant, .. } => {
-                // Int 常量在字节码层默认是 i32.const，但 plan 可能?value_types
-                //（Integer64）把 output 分到 i64 local。必须按槽位 valtype 发射?
-                // 否则 `i32.const -1; local.set <i64>` →?expected i64, found i32?
-                if let Some(output) = instruction_primary_result(instruction) {
-                    let slot_ty = self.output_scalar_slot_type(output);
-                    self.emit_load_constant_for_slot(constant, slot_ty);
-                    self.store_scalar(output);
-                }
+                // 常量的目标槽 valtype 是唯一权威：i64 槽必须 `i64.const`，
+                // i32 槽必须 `i32.const` 且范围可表示。无槽形态没有合法位宽，
+                // 不得回退到「猜 i32」。
+                let Some(output) = instruction_primary_result(instruction)
                 else {
-                    self.emit_load_constant(constant);
-                }
+                    return Err(format!("WASM 常量指令缺少结果槽，无法确定目标 valtype: `{}`", self.mir_fn.symbol));
+                };
+                let slot_ty = self.output_scalar_slot_type(output);
+                self.emit_load_constant_for_slot(constant, slot_ty)?;
+                self.store_scalar(output);
             }
             MirInstructionKind::StoreVar { value, .. } => {
                 // `StoreVar` 的 result 是「变量在该程序点的当前值」的 SSA 身份：
@@ -24,13 +23,13 @@ impl<'a> WasmMirLowerer<'a> {
                 // 停留在槽默认值（引用槽是 null、标量槽是 0），后续 `ref.cast` 直接
                 // 触发 `illegal cast`。禁止按变量名重建值（那是另一回事），但按 SSA
                 // 身份搬运值是这条指令的全部语义。
-                let source_stack_ty = self.operand_wasm_stack_type(value);
-                self.emit_operand(value);
                 if let Some(output) = instruction_primary_result(instruction) {
-                    self.validate_output_slot_type(output, source_stack_ty);
+                    let slot_ty = self.output_scalar_slot_type(output);
+                    self.emit_contract_operand(value, slot_ty)?;
                     self.assign_output_local(output);
                 }
                 else {
+                    self.emit_operand(value)?;
                     WasmOpcode::Drop.encode(&mut self.code);
                 }
             }
@@ -39,13 +38,13 @@ impl<'a> WasmMirLowerer<'a> {
                 // ?source **真实栈类?*（含 param 槽位 valtype）校?output 槽?
                 // 铁律：`emit_operand` 压栈类型必须与即?`local.set` 的槽 valtype 一致，
                 // 否则出现 `local.set expected i32, found anyref`（func ?array 形参 Copy）?
-                let source_stack_ty = self.operand_wasm_stack_type(source);
-                self.emit_operand(source);
                 if let Some(output) = instruction_primary_result(instruction) {
-                    self.validate_output_slot_type(output, source_stack_ty);
+                    let slot_ty = self.output_scalar_slot_type(output);
+                    self.emit_contract_operand(source, slot_ty)?;
                     self.assign_output_local(output);
                 }
                 else {
+                    self.emit_operand(source)?;
                     WasmOpcode::Drop.encode(&mut self.code);
                 }
             }
@@ -60,7 +59,7 @@ impl<'a> WasmMirLowerer<'a> {
                 else {
                     return Err(format!("wasm 显式 cast 缺少结果槽: {}", self.mir_fn.symbol));
                 };
-                self.emit_operand(source);
+                self.emit_operand(source)?;
                 for step in &steps {
                     self.emit_scalar_cast_step(*step);
                 }
@@ -87,7 +86,7 @@ impl<'a> WasmMirLowerer<'a> {
                         let field = field_layout;
                         self.emit_local_get(local);
                         self.emit_ref_cast_struct(type_index);
-                        self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field));
+                        self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field))?;
                         self.emit_struct_set(type_index, field_index as u32);
                     }
                 }
@@ -110,7 +109,7 @@ impl<'a> WasmMirLowerer<'a> {
                         self.emit_local_get(local);
                         self.emit_i32_const(field.offset as i32);
                         self.emit_i32_add();
-                        self.emit_operand_coerced(value, self.field_store_stack_type(field));
+                        self.emit_operand_coerced(value, self.field_store_stack_type(field))?;
                         self.emit_store_at_field(field);
                     }
                 }
@@ -137,7 +136,7 @@ impl<'a> WasmMirLowerer<'a> {
                         };
                         self.emit_local_get(local);
                         self.emit_ref_cast_struct(type_index);
-                        self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field));
+                        self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field))?;
                         self.emit_struct_set(type_index, index as u32);
                     }
                 }
@@ -158,7 +157,7 @@ impl<'a> WasmMirLowerer<'a> {
                         self.emit_local_get(local);
                         self.emit_i32_const(field.offset as i32);
                         self.emit_i32_add();
-                        self.emit_operand_coerced(value, self.field_store_stack_type(field));
+                        self.emit_operand_coerced(value, self.field_store_stack_type(field))?;
                         self.emit_store_at_field(field);
                     }
                 }
@@ -217,7 +216,7 @@ impl<'a> WasmMirLowerer<'a> {
                             self.emit_local_get(local);
                             self.emit_i32_const(field.offset as i32);
                             self.emit_i32_add();
-                            self.emit_operand_coerced(value, self.field_store_stack_type(field));
+                            self.emit_operand_coerced(value, self.field_store_stack_type(field))?;
                             self.emit_store_at_field(field);
                         }
                         return Ok(());
@@ -237,7 +236,7 @@ impl<'a> WasmMirLowerer<'a> {
                 };
                 let element_stack_ty = wasm_gc_field_type_byte_for_glue(element_type, self.js_glue_utf8_as_anyref);
                 for value in elements {
-                    self.emit_operand_coerced(value, element_stack_ty);
+                    self.emit_operand_coerced(value, element_stack_ty)?;
                 }
                 self.emit_array_new_fixed(type_index, elements.len() as u32);
                 self.emit_local_set(local);
@@ -300,7 +299,7 @@ impl<'a> WasmMirLowerer<'a> {
                     else {
                         return Ok(());
                     };
-                    self.emit_operand(source);
+                    self.emit_contract_operand(source, self.wasm_local_value_type(dest_local))?;
                     self.emit_local_set(dest_local);
                 }
                 else {
@@ -436,7 +435,7 @@ impl<'a> WasmMirLowerer<'a> {
                     let type_index = self.resolve_gc_struct_type_index(layout.id, &layout.name);
                     self.emit_local_get(object_local);
                     self.emit_ref_cast_struct(type_index);
-                    self.emit_operand_coerced(value, self.gc_struct_field_stack_type(&field_layout));
+                    self.emit_operand_coerced(value, self.gc_struct_field_stack_type(&field_layout))?;
                     self.emit_struct_set(type_index, field_index as u32);
                 }
                 else if let Some(object_local) = self.operand_address_local(object) {
@@ -447,7 +446,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
                     self.emit_i32_add();
-                    self.emit_operand_coerced(value, self.field_store_stack_type(&field_layout));
+                    self.emit_operand_coerced(value, self.field_store_stack_type(&field_layout))?;
                     self.emit_store_at_field(&field_layout);
                 }
                 else {
@@ -464,7 +463,7 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_array_length_ops(array, instruction_primary_result(instruction))?;
             }
             MirInstructionKind::NullIsNull { value } => {
-                self.emit_operand_coerced(value, WASM_GC_ANYREF);
+                self.emit_operand_coerced(value, WASM_GC_ANYREF)?;
                 WasmOpcode::RefIsNull.encode(&mut self.code);
                 if let Some(output) = instruction_primary_result(instruction) {
                     self.store_scalar(output);
@@ -472,7 +471,7 @@ impl<'a> WasmMirLowerer<'a> {
             }
             MirInstructionKind::NullUnwrap { value } => {
                 // `try?` / pattern lowering already branches on `NullIsNull` before unwrap.
-                self.emit_operand_coerced(value, WASM_GC_ANYREF);
+                self.emit_operand_coerced(value, WASM_GC_ANYREF)?;
                 if let Some(output) = instruction_primary_result(instruction) {
                     self.store_scalar(output);
                 }
@@ -528,7 +527,7 @@ impl<'a> WasmMirLowerer<'a> {
                 if let Some(payload) = payload {
                     self.emit_local_get(object_local);
                     self.emit_ref_cast_struct(type_index);
-                    self.emit_payload_to_anyref(payload);
+                    self.emit_payload_to_anyref(payload)?;
                     self.emit_struct_set(type_index, SUM_PAYLOAD_FIELD);
                 }
                 self.emit_local_get(object_local);
@@ -547,7 +546,7 @@ impl<'a> WasmMirLowerer<'a> {
                 let output = instruction_primary_result(instruction)
                     .unwrap_or_else(|| panic!("WASM SumPayloadGet 缺少结果槽 in `{}`", self.mir_fn.symbol));
                 let target_stack_ty = self.wasm_local_value_type(self.planned_value_local(output));
-                self.emit_operand_coerced(object, WASM_GC_ANYREF);
+                self.emit_operand_coerced(object, WASM_GC_ANYREF)?;
                 self.emit_ref_cast_struct(type_index);
                 self.emit_struct_get(type_index, SUM_PAYLOAD_FIELD);
                 self.emit_payload_from_anyref(target_stack_ty);
@@ -557,7 +556,7 @@ impl<'a> WasmMirLowerer<'a> {
             MirInstructionKind::SumVariantIs { nominal, variant, object } => {
                 let type_index = self.resolve_gc_sum_type_index(nominal);
                 let (tag, _) = self.sum_variant_representation(nominal, variant);
-                self.emit_operand_coerced(object, WASM_GC_ANYREF);
+                self.emit_operand_coerced(object, WASM_GC_ANYREF)?;
                 self.emit_ref_cast_struct(type_index);
                 self.emit_struct_get(type_index, SUM_TAG_FIELD);
                 self.emit_i32_const(i32::try_from(tag).expect("sum tag 超出 i32"));
@@ -581,12 +580,12 @@ impl<'a> WasmMirLowerer<'a> {
     ///
     /// 载荷槽统一是 `anyref`，所以标量必须先装箱成 `[i32]` / `[i64]`；直接放标量
     /// 会让 `struct.set` 在 V8 校验阶段失败。引用载荷原样透传。
-    fn emit_payload_to_anyref(&mut self, payload: &MirOperand) {
+    fn emit_payload_to_anyref(&mut self, payload: &MirOperand) -> crate::Result<()> {
         let stack_ty = self.operand_wasm_stack_type(payload);
         let box_ty = match stack_ty {
             WASM_GC_ANYREF => {
-                self.emit_operand(payload);
-                return;
+                self.emit_contract_operand(payload, WASM_GC_ANYREF)?;
+                return Ok(());
             }
             VALTYPE_I32 => self.gc_i32_box_type_index,
             VALTYPE_I64 => self.gc_i64_box_type_index,
@@ -601,9 +600,10 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_set(tmp);
         self.emit_local_get(tmp);
         self.emit_ref_cast_struct(box_ty);
-        self.emit_operand(payload);
+        self.emit_contract_operand(payload, stack_ty)?;
         self.emit_struct_set(box_ty, 0);
         self.emit_local_get(tmp);
+        Ok(())
     }
 
     /// 把 sum 载荷槽里的 `anyref` 还原成 result 槽要求的物理类型。

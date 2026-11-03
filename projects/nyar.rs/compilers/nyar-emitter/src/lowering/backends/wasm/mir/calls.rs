@@ -51,7 +51,7 @@ impl<'a> WasmMirLowerer<'a> {
                     return Ok(());
                 }
                 if let Some(import_index) = self.resolve_callee_import_index(callee, arguments) {
-                    if self.try_emit_wasi_cli_write_via_stream(arguments, import_index, output) {
+                    if self.try_emit_wasi_cli_write_via_stream(arguments, import_index, output)? {
                         return Ok(());
                     }
                     callee_return = self.resolve_callee_return_type(callee, Some(import_index))?;
@@ -71,7 +71,7 @@ impl<'a> WasmMirLowerer<'a> {
                         .ok_or_else(|| format!("WASM 函数下标缺少参数签名: function_index={function_index} in `{}`", self.mir_fn.symbol))?
                         .clone();
                     callee_return = return_type;
-                    self.emit_call_arguments(arguments, &param_types);
+                    self.emit_call_arguments(arguments, &param_types)?;
                     self.emit_call(function_index);
                 }
                 else {
@@ -82,14 +82,14 @@ impl<'a> WasmMirLowerer<'a> {
             MirDispatchKind::Witness => {
                 callee_return = self.resolve_callee_return_type(callee, None)?;
                 for argument in arguments {
-                    self.emit_operand_coerced(argument, self.operand_wasm_stack_type(argument));
+                    self.emit_operand_coerced(argument, self.operand_wasm_stack_type(argument))?;
                 }
                 // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
                 let Some(witness_operand) = witness
                 else {
                     return Err(format!("WASM witness 调用缺少显式分派操作数: {}", self.mir_fn.symbol));
                 };
-                self.emit_operand(witness_operand);
+                self.emit_operand(witness_operand)?;
                 let type_index = self.resolve_callee_type_index(callee);
                 self.emit_call_indirect(type_index, 0);
             }
@@ -98,8 +98,8 @@ impl<'a> WasmMirLowerer<'a> {
                 // 冻结的 `NyarType::Function`：实参 coerce、`call_indirect` 的 typeidx
                 // 与返回载体全部由它决定；缺事实即结构化失败，禁止回落静态 callee。
                 let (param_types, return_type, type_index) = self.resolve_indirect_callee_signature(callee)?;
-                self.emit_call_arguments(arguments, &param_types);
-                self.emit_operand(callee);
+                self.emit_call_arguments(arguments, &param_types)?;
+                self.emit_operand(callee)?;
                 self.emit_call_indirect(type_index, 0);
                 callee_return = return_type;
             }
@@ -136,7 +136,7 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_managed_utf8_to_host_handle(argument)?;
             }
             else {
-                self.emit_operand_coerced(argument, *expected);
+                self.emit_operand_coerced(argument, *expected)?;
             }
         }
         Ok(())
@@ -162,7 +162,7 @@ impl<'a> WasmMirLowerer<'a> {
             ));
         };
         // managed struct → 字节数组引用
-        self.emit_operand(operand);
+        self.emit_operand(operand)?;
         self.emit_ref_cast_struct(recipe.struct_type_index);
         self.emit_struct_get(recipe.struct_type_index, recipe.bytes_field_slot);
         self.emit_ref_cast_array_type(recipe.bytes_array_type_index);
@@ -345,47 +345,51 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
-    pub(super) fn emit_operand_coerced(&mut self, operand: &MirOperand, expected: u8) {
+    /// 按目标合同发射操作数。
+    ///
+    /// 常量不携带位宽（`MirConstant::Int` 只有 `i64` 载荷），因此常量一律交给
+    /// 目标槽 valtype 决定 `i32.const` / `i64.const` / `f64.const`。任何宽度转换
+    /// 只对已规划 SSA 槽生效，避免把 i64 字面量先截断成 i32 再符号扩展。
+    pub(super) fn emit_operand_coerced(&mut self, operand: &MirOperand, expected: u8) -> crate::Result<()> {
+        if let MirOperand::Constant(constant) = operand {
+            return self.emit_load_constant_for_slot(constant, expected);
+        }
         let actual = self.operand_wasm_stack_type(operand);
         if actual == expected {
-            self.emit_operand(operand);
-            return;
+            return self.emit_operand(operand);
         }
         // Reference-local metadata is authoritative for GC aggregates：槽位已是引用，
         // 即便表面分类成 i32 也不得用 ref.null 顶替。
         if expected == WASM_GC_ANYREF && self.operand_reference_local(operand).is_some() {
-            self.emit_operand(operand);
-            return;
+            return self.emit_operand(operand);
         }
         // 仅允许 TargetExecutionPlan 已承诺的显式宽度转换；禁止用 0 / null 掩盖 carrier 失配。
         if expected == VALTYPE_I64 && (actual == WASM_GC_ANYREF || actual == WASM_GC_EXTERNREF) {
-            self.emit_operand(operand);
+            self.emit_operand(operand)?;
             self.emit_unbox_i64_payload();
-            return;
+            return Ok(());
         }
         if expected == VALTYPE_I64 && actual == VALTYPE_I32 {
-            self.emit_operand(operand);
+            self.emit_operand(operand)?;
             WasmOpcode::I64ExtendI32S.encode(&mut self.code);
-            return;
+            return Ok(());
         }
         if expected == VALTYPE_I32 && actual == VALTYPE_I64 {
-            self.emit_operand(operand);
+            self.emit_operand(operand)?;
             WasmOpcode::I32WrapI64.encode(&mut self.code);
-            return;
+            return Ok(());
         }
         if expected == WASM_GC_ANYREF && actual == VALTYPE_I64 {
-            self.emit_box_i64_payload(operand);
-            return;
+            return self.emit_box_i64_payload(operand);
         }
         if expected == WASM_GC_EXTERNREF && actual == WASM_GC_ANYREF {
-            self.emit_operand(operand);
-            return;
+            return self.emit_operand(operand);
         }
-        panic!(
+        Err(format!(
             "WASM ABI carrier mismatch in `{}`: expected={expected:#x} actual={actual:#x}; \
              TargetExecutionPlan must provide an explicit conversion — refusing null/0 placeholders",
             self.mir_fn.symbol
-        );
+        ))
     }
 
     /// `[wasm_operator("...")]` 绑定：把契约调用直接编码为目标数值指令。
@@ -432,7 +436,7 @@ impl<'a> WasmMirLowerer<'a> {
         }
         let operand_type = wasm_stack_type(plan.operand_type);
         match plan.recipe {
-            TargetOperatorRecipe::Operands => self.emit_wasm_operator_operands(mnemonic, operand_type, arguments),
+            TargetOperatorRecipe::Operands => self.emit_wasm_operator_operands(mnemonic, operand_type, arguments)?,
             TargetOperatorRecipe::Steps(steps) => self.emit_wasm_operator_recipe(mnemonic, operand_type, steps, arguments)?,
         }
         numeric::emit_opcode(opcode, &mut self.code);
@@ -504,7 +508,7 @@ impl<'a> WasmMirLowerer<'a> {
     ) -> crate::Result<()> {
         for step in steps {
             match step {
-                TargetOperandStep::Arguments => self.emit_wasm_operator_operands(mnemonic, expected, arguments),
+                TargetOperandStep::Arguments => self.emit_wasm_operator_operands(mnemonic, expected, arguments)?,
                 TargetOperandStep::NarrowTopI64ToI32 => WasmOpcode::I32WrapI64.encode(&mut self.code),
                 TargetOperandStep::IntegerConstant { operand_type, value } => {
                     let carrier = wasm_stack_type(*operand_type);
@@ -530,17 +534,21 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(())
     }
 
-    /// 按自然栈类型发射绑定实参，并断言与计划冻结的实参载体一致。
-    fn emit_wasm_operator_operands(&mut self, mnemonic: &str, expected: u8, arguments: &[MirOperand]) {
+    /// 按目标绑定载体发射实参。SSA 槽的栈类型必须与计划冻结的实参载体一致；
+    /// 常量没有独立位宽，交给目标载体在 `emit_load_constant_for_slot` 里选指令。
+    fn emit_wasm_operator_operands(&mut self, mnemonic: &str, expected: u8, arguments: &[MirOperand]) -> crate::Result<()> {
         for argument in arguments {
-            let actual = self.operand_wasm_stack_type(argument);
-            assert_eq!(
-                actual, expected,
-                "WASM `wasm_operator` 实参栈类型与目标绑定不一致: `{mnemonic}` expects {expected:#x} actual {actual:#x} in {}",
-                self.mir_fn.symbol
-            );
-            self.emit_operand(argument);
+            if let MirOperand::Value(_) = argument {
+                let actual = self.operand_wasm_stack_type(argument);
+                assert_eq!(
+                    actual, expected,
+                    "WASM `wasm_operator` 实参栈类型与目标绑定不一致: `{mnemonic}` expects {expected:#x} actual {actual:#x} in {}",
+                    self.mir_fn.symbol
+                );
+            }
+            self.emit_contract_operand(argument, expected)?;
         }
+        Ok(())
     }
 
     pub(super) fn resolve_callee_import_index(&self, callee: &MirOperand, _arguments: &[MirOperand]) -> Option<u32> {
@@ -552,16 +560,17 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// `i64` → wasm-gc struct `[i64]`（anyref），供泛型 `T` 数组槽使用。
-    fn emit_box_i64_payload(&mut self, operand: &MirOperand) {
+    fn emit_box_i64_payload(&mut self, operand: &MirOperand) -> crate::Result<()> {
         let box_ty = self.gc_i64_box_type_index;
         self.emit_struct_new_default(box_ty);
         let tmp = self.alloc_anyref_local();
         self.emit_local_set(tmp);
         self.emit_local_get(tmp);
         self.emit_ref_cast_struct(box_ty);
-        self.emit_operand(operand);
+        self.emit_contract_operand(operand, VALTYPE_I64)?;
         self.emit_struct_set(box_ty, 0);
         self.emit_local_get(tmp);
+        Ok(())
     }
 
     /// 栈顶 anyref（i64 box）→ i64。
@@ -579,35 +588,35 @@ impl<'a> WasmMirLowerer<'a> {
     ///
     /// 顺序必须是：new →??reader 交给 write-via-stream →?write(writer) →?drop-writable →?drop future?
     /// ?write 再交 reader 会在 sync `stream.write` 上永久挂起?
-    fn try_emit_wasi_cli_write_via_stream(&mut self, arguments: &[MirOperand], import_index: u32, output: Option<MirValueRef>) -> bool {
+    fn try_emit_wasi_cli_write_via_stream(&mut self, arguments: &[MirOperand], import_index: u32, output: Option<MirValueRef>) -> crate::Result<bool> {
         if !self.wasi_mode || arguments.len() != 1 {
-            return false;
+            return Ok(false);
         }
         let Some((module, field)) = self.host_imports.get(import_index as usize)
         else {
-            return false;
+            return Ok(false);
         };
         if field != "write-via-stream" {
-            return false;
+            return Ok(false);
         }
         if !(module.contains("stdout") || module.contains("stderr")) {
-            return false;
+            return Ok(false);
         }
         let Some(stream_new) = self.find_host_import_index(module, "[stream-new-0]write-via-stream")
         else {
-            return false;
+            return Ok(false);
         };
         let Some(stream_write) = self.find_host_import_index(module, "[stream-write-0]write-via-stream")
         else {
-            return false;
+            return Ok(false);
         };
         let Some(stream_drop_w) = self.find_host_import_index(module, "[stream-drop-writable-0]write-via-stream")
         else {
-            return false;
+            return Ok(false);
         };
         let Some(future_drop) = self.find_host_import_index(module, "[future-drop-readable-1]write-via-stream")
         else {
-            return false;
+            return Ok(false);
         };
         // utf8 handle: [len:u32 LE][bytes…]
         let handle = self.alloc_i32_local();
@@ -618,7 +627,7 @@ impl<'a> WasmMirLowerer<'a> {
         let reader = self.alloc_i32_local();
         let fut = self.alloc_i32_local();
 
-        self.emit_operand_coerced(&arguments[0], VALTYPE_I32);
+        self.emit_operand_coerced(&arguments[0], VALTYPE_I32)?;
         self.emit_local_set(handle);
 
         self.emit_local_get(handle);
@@ -666,7 +675,7 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_ref_null_anyref();
             self.assign_output_local(out);
         }
-        true
+        Ok(true)
     }
 
     fn find_host_import_index(&self, module: &str, field: &str) -> Option<u32> {

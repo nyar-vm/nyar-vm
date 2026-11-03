@@ -23,7 +23,7 @@ impl<'a> WasmMirLowerer<'a> {
                 self.mir_fn.symbol
             ));
         };
-        self.emit_operand(length);
+        self.emit_contract_operand(length, VALTYPE_I32)?;
         self.emit_array_new_default(type_index);
         self.validate_output_slot_type(output, WASM_GC_ANYREF);
         self.assign_output_local(output);
@@ -32,7 +32,7 @@ impl<'a> WasmMirLowerer<'a> {
 
     /// 发射 `ref.cast array` + `array.len`：栈 `[anyref]` → `[i32]`，结果写入 `output`。
     pub(super) fn emit_array_length_ops(&mut self, array: &MirOperand, output: Option<MirValueRef>) -> crate::Result<()> {
-        self.emit_operand_coerced(array, WASM_GC_ANYREF);
+        self.emit_operand_coerced(array, WASM_GC_ANYREF)?;
         self.emit_ref_cast_array();
         self.emit_array_len();
         if let Some(output) = output {
@@ -63,9 +63,9 @@ impl<'a> WasmMirLowerer<'a> {
                 self.mir_fn.symbol
             ));
         };
-        self.emit_operand_coerced(&arguments[0], WASM_GC_ANYREF);
+        self.emit_operand_coerced(&arguments[0], WASM_GC_ANYREF)?;
         self.emit_ref_cast_array_type(type_index);
-        self.emit_i32_operand(&arguments[1]);
+        self.emit_i32_operand(&arguments[1])?;
         self.emit_array_get(type_index);
         if let Some(output) = output {
             let wants_i64 = self.mir_fn.value_types.get(&output).is_some_and(|ty| {
@@ -112,9 +112,9 @@ impl<'a> WasmMirLowerer<'a> {
         };
         let element_stack_ty =
             element_type.as_ref().map(|ty| wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref)).unwrap_or(VALTYPE_I32);
-        self.emit_operand_coerced(&arguments[0], WASM_GC_ANYREF);
+        self.emit_operand_coerced(&arguments[0], WASM_GC_ANYREF)?;
         self.emit_ref_cast_array_type(type_index);
-        self.emit_i32_operand(&arguments[1]);
+        self.emit_i32_operand(&arguments[1])?;
         // `[utf8]` 数组元素边界：元素按冻结合同是 i32 宿主句柄，而实参槽是 managed
         // anyref 时，必须消费目标计划冻结的 managed→host 句柄转换配方（合同 §5）；
         // 缺配方即可执行合同不一致，结构化失败，禁止 coerce/占位掩盖 carrier 失配。
@@ -122,7 +122,7 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_managed_utf8_to_host_handle(&arguments[2])?;
         }
         else {
-            self.emit_operand_coerced(&arguments[2], element_stack_ty);
+            self.emit_operand_coerced(&arguments[2], element_stack_ty)?;
         }
         self.emit_array_set(type_index);
         Ok(())

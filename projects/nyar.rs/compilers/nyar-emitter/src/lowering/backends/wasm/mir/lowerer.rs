@@ -492,12 +492,12 @@ impl<'a> WasmMirLowerer<'a> {
         local
     }
 
-    pub(super) fn emit_f64_operand(&mut self, operand: &MirOperand) {
-        self.emit_contract_operand(operand, VALTYPE_F64);
+    pub(super) fn emit_f64_operand(&mut self, operand: &MirOperand) -> crate::Result<()> {
+        self.emit_contract_operand(operand, VALTYPE_F64)
     }
 
-    pub(super) fn emit_i32_operand(&mut self, operand: &MirOperand) {
-        self.emit_contract_operand(operand, VALTYPE_I32);
+    pub(super) fn emit_i32_operand(&mut self, operand: &MirOperand) -> crate::Result<()> {
+        self.emit_contract_operand(operand, VALTYPE_I32)
     }
 
     /// 引用 local →?i32 布尔：`ref.is_null` ?`i32.eqz`?=非空, 0=null）?
@@ -507,11 +507,12 @@ impl<'a> WasmMirLowerer<'a> {
         WasmOpcode::I32Eqz.encode(&mut self.code);
     }
 
-    pub(super) fn emit_call_arguments(&mut self, arguments: &[MirOperand], param_types: &[u8]) {
+    pub(super) fn emit_call_arguments(&mut self, arguments: &[MirOperand], param_types: &[u8]) -> crate::Result<()> {
         assert_eq!(arguments.len(), param_types.len(), "WASM 调用实参与已解析签名不一致");
         for (argument, expected) in arguments.iter().zip(param_types) {
-            self.emit_operand_coerced(argument, *expected);
+            self.emit_operand_coerced(argument, *expected)?;
         }
+        Ok(())
     }
 
     /// Receiver array-ness is Semantic MIR metadata, never a nominal name or
@@ -606,17 +607,22 @@ impl<'a> WasmMirLowerer<'a> {
             .unwrap_or_else(|| panic!("WASM semantic MIR contract violation: missing aggregate layout identity in `{}`", self.mir_fn.symbol))
     }
 
-    pub(super) fn emit_operand(&mut self, operand: &MirOperand) {
+    /// 发射 SSA 值槽。常量没有独立类型（`MirConstant::Int` 只承载 `i64` 载荷），
+    /// 必须由调用方经 [`Self::emit_load_constant_for_slot`] / `emit_contract_operand`
+    /// 给出目标槽 valtype；此处拒绝按默认位宽猜测。
+    pub(super) fn emit_operand(&mut self, operand: &MirOperand) -> crate::Result<()> {
         match operand {
             MirOperand::Value(value) => {
                 let local = self.planned_value_local(*value);
                 self.emit_local_get(local);
+                Ok(())
             }
-            MirOperand::Constant(constant) => self.emit_load_constant(constant),
-            MirOperand::Symbol(_) => panic!("WASM 值操作数缺少 SSA 身份"),
-            MirOperand::Item(_) => {
-                panic!("WASM callable identity cannot be used as a value operand")
-            }
+            MirOperand::Constant(_) => Err(format!(
+                "WASM 常量操作数缺少目标槽 valtype，禁止按默认 i32 猜测: `{}`",
+                self.mir_fn.symbol
+            )),
+            MirOperand::Symbol(_) => Err(format!("WASM 值操作数缺少 SSA 身份: `{}`", self.mir_fn.symbol)),
+            MirOperand::Item(_) => Err(format!("WASM callable identity cannot be used as a value operand: `{}`", self.mir_fn.symbol)),
         }
     }
 
@@ -624,76 +630,89 @@ impl<'a> WasmMirLowerer<'a> {
         self.wasm_local_value_type(self.planned_value_local(output))
     }
 
-    /// 按目标槽 valtype 发射常量（Int→i64/i32/f64；Unit→anyref；String 仍按 wasi/js 路径）?
-    pub(super) fn emit_load_constant_for_slot(&mut self, constant: &MirConstant, slot_ty: u8) {
+    /// 常量发射的唯一入口：目标槽 valtype 是选 `i32.const` / `i64.const` / `f64.const`
+    /// 的唯一权威。
+    ///
+    /// `MirConstant::Int` 只承载 `i64` 载荷、不携带位宽，因此不存在「按常量自身类型
+    /// 发射」的合法形态。历史上与之并行的无槽版本会 `*value as i32` 截断 i64 字面量，
+    /// 现已在 `emit_operand` 处删除，禁止恢复猜测分支。
+    pub(super) fn emit_load_constant_for_slot(&mut self, constant: &MirConstant, slot_ty: u8) -> crate::Result<()> {
         match constant {
             MirConstant::Int(value) => match slot_ty {
                 VALTYPE_I64 => self.emit_i64_const(*value),
                 VALTYPE_F64 => self.emit_f64_const(*value as f64),
-                VALTYPE_I32 => self.emit_i32_const(*value as i32),
-                _ => panic!("WASM 整数常量与已规划槽不一致"),
+                VALTYPE_I32 => {
+                    // i32 槽收到超出表示范围的字面量属计划不一致：禁止 `as i32` 截断。
+                    let narrowed = i32::try_from(*value).map_err(|_| {
+                        format!(
+                            "WASM 整数常量 {value} 超出目标 i32 槽的表示范围（槽位已规划为 i32，禁止截断）: `{}`",
+                            self.mir_fn.symbol
+                        )
+                    })?;
+                    self.emit_i32_const(narrowed);
+                }
+                other => {
+                    return Err(format!(
+                        "WASM 整数常量与已规划槽 valtype {other:#x} 不一致: `{}`",
+                        self.mir_fn.symbol
+                    ));
+                }
             },
             MirConstant::Bool(value) => match slot_ty {
                 VALTYPE_I32 => self.emit_i32_const(if *value { 1 } else { 0 }),
-                _ => panic!("WASM 布尔常量与已规划槽不一致"),
+                other => {
+                    return Err(format!("WASM 布尔常量与已规划槽 valtype {other:#x} 不一致: `{}`", self.mir_fn.symbol));
+                }
             },
             MirConstant::Float64(value) => match slot_ty {
                 VALTYPE_F64 => self.emit_f64_const(value.into_inner()),
-                _ => panic!("WASM 浮点常量与已规划槽不一致"),
+                other => {
+                    return Err(format!("WASM 浮点常量与已规划槽 valtype {other:#x} 不一致: `{}`", self.mir_fn.symbol));
+                }
             },
-            MirConstant::Utf8(_) => {
-                assert_eq!(slot_ty, VALTYPE_I32, "WASM 文本句柄与已规划槽不一致");
-                self.emit_load_constant(constant);
-            }
-            MirConstant::Unit => {
-                assert_eq!(slot_ty, WASM_GC_ANYREF, "WASM 单元值与已规划槽不一致");
-                self.emit_load_constant(constant);
-            }
-            // 可空空值就是 `T?` 的空引用；槽必须已按 Nullable 规划成 anyref。
-            MirConstant::Null => {
-                assert_eq!(slot_ty, WASM_GC_ANYREF, "WASM 空值与已规划的 nullable 槽不一致");
-                self.emit_ref_null_anyref();
-            }
-            MirConstant::Utf16(_) => {
-                panic!("WASM lowering requires an explicit UTF-16 ABI contract")
-            }
-        }
-    }
-
-    pub(super) fn emit_load_constant(&mut self, constant: &MirConstant) {
-        match constant {
-            MirConstant::Int(value) => self.emit_i32_const(*value as i32),
-            MirConstant::Float64(value) => self.emit_f64_const(value.into_inner()),
-            MirConstant::Bool(value) => self.emit_i32_const(if *value { 1 } else { 0 }),
             MirConstant::Utf8(text) => {
+                if slot_ty != VALTYPE_I32 {
+                    return Err(format!("WASM 文本句柄与已规划槽 valtype {slot_ty:#x} 不一致: `{}`", self.mir_fn.symbol));
+                }
                 // WASI 轨：字符串字面量作为线性内存偏移量（i32）传递，
-                // 字符串内容已通过 data 段在模块初始化时写入线性内存?
-                // Canonical ABI 的「字符串」对?**utf8 字节序列**（非语言?string）?
+                // 字符串内容已通过 data 段在模块初始化时写入线性内存。
+                // Canonical ABI 的「字符串」对是 **utf8 字节序列**（非语言级 string）。
                 if self.wasi_mode {
                     if let Some(&offset) = self.string_literal_offset.get(text) {
                         self.emit_i32_const(offset as i32);
-                        return;
+                        return Ok(());
                     }
                 }
                 else if let Some(import_index) = self.const_utf8_import {
                     if let Some(&literal_index) = self.string_literal_index.get(text) {
                         self.emit_i32_const(literal_index as i32);
                         self.emit_call(import_index);
-                        return;
+                        return Ok(());
                     }
                 }
                 // 未登记宿主载体的字面量不得伪造 `i32 0` 句柄；
                 // 预编码校验 `validate_string_literal_payloads` 已拒绝该形状。
                 encode_unreachable(&mut self.code);
             }
-            MirConstant::Utf16(_) => {
-                panic!("WASM lowering requires an explicit UTF-16 ABI contract")
+            // Unit ADT=1（恰有一个值）；用 ref.null any 作 GC 占位，勿与 void(ADT=0) 混淆。
+            MirConstant::Unit => {
+                if slot_ty != WASM_GC_ANYREF {
+                    return Err(format!("WASM 单元值与已规划槽 valtype {slot_ty:#x} 不一致: `{}`", self.mir_fn.symbol));
+                }
+                self.emit_ref_null_anyref();
             }
-            // Unit ADT=1（恰有一个值）；用 ref.null any ?GC 占位，勿?void(ADT=0) 混淆?
-            MirConstant::Unit => self.emit_ref_null_anyref(),
-            // `T?` 的空引用：直接编码空引用，不构造名义 Option 载体。
-            MirConstant::Null => self.emit_ref_null_anyref(),
+            // 可空空值就是 `T?` 的空引用；槽必须已按 Nullable 规划成 anyref。
+            MirConstant::Null => {
+                if slot_ty != WASM_GC_ANYREF {
+                    return Err(format!("WASM 空值与已规划的 nullable 槽 valtype {slot_ty:#x} 不一致: `{}`", self.mir_fn.symbol));
+                }
+                self.emit_ref_null_anyref();
+            }
+            MirConstant::Utf16(_) => {
+                return Err(format!("WASM lowering requires an explicit UTF-16 ABI contract: `{}`", self.mir_fn.symbol));
+            }
         }
+        Ok(())
     }
 
     /// 将栈顶值存?output 对应?local?
