@@ -28,6 +28,11 @@ pub(crate) fn wasm_gc_field_type_byte(ty: &NyarType) -> u8 {
         | NyarType::TraitObject(_)
         | NyarType::Union(_)
         | NyarType::Apply(_, _) => VALTYPE_ANYREF,
+        // `Nullable(T)` 的物理载体就是 GC 引用：`None` 是 `ref.null`，`Some` 的标量
+        // 载荷已在 `[i32]` / `[i64]` 装箱里（见 `emit_operand_coerced`）。字段/元素
+        // 槽若回落 i32，会把引用值写进 i32 槽，与 `storage_for_type` 的
+        // `Reference` 分类和 `AbiCarrier::Handle` 冻结值分叉。
+        NyarType::Nullable(_) => VALTYPE_ANYREF,
         _ => VALTYPE_I32,
     }
 }
