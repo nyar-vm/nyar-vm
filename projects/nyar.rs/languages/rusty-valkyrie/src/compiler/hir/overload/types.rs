@@ -32,6 +32,12 @@ pub(crate) fn enum_apply_type(enum_def: &crate::compiler::types::hir::HirEnum) -
 
 pub(crate) fn struct_apply_type(struct_def: &crate::compiler::types::hir::HirStruct) -> ValkyrieType {
     let arguments = struct_def.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect::<Vec<_>>();
+    // `[primitive]` 声明只是内建标量的宿主绑定，类型位置必须折叠回唯一内建身份。
+    if arguments.is_empty() {
+        if let Some(builtin) = struct_def.primitive_identity.as_deref().and_then(crate::compiler::types::hir::primitive_identity_builtin_type) {
+            return builtin;
+        }
+    }
     if let Some(declaration) = struct_def.constructor_declaration {
         return ValkyrieType::Nominal { declaration, arguments, primitive_identity: struct_def.primitive_identity.clone() };
     }

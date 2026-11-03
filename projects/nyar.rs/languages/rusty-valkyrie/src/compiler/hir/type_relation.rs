@@ -16,7 +16,7 @@ use crate::compiler::{
     },
     types::{
         Identifier, NamePath,
-        hir::{GenericBinderId, HirEnum, HirModule, HirStruct, HirWhereConstraint, RowType, TraitObject, ValkyrieType},
+        hir::{GenericBinderId, HirEnum, HirModule, HirStruct, HirWhereConstraint, RowType, TraitObject, ValkyrieType, primitive_identity_builtin_type},
     },
 };
 
@@ -170,8 +170,12 @@ impl TypeRelationContext {
     }
 
     /// 短名 → 已冻结的 `Nominal{ItemId}`（有 declaration 时）；供 Self/AutoType 回收，禁止只写回 Named。
+    /// `[primitive]` 声明折叠回唯一内建身份，与注解路径产出同一类型。
     pub fn nominal_type_for_name(&self, name: &Identifier) -> Option<ValkyrieType> {
         if let Some(item) = self.structs.get(name) {
+            if let Some(builtin) = item.primitive_identity.as_deref().and_then(primitive_identity_builtin_type) {
+                return Some(builtin);
+            }
             return Some(ValkyrieType::Nominal {
                 declaration: item.constructor_declaration?,
                 arguments: Vec::new(),
@@ -580,13 +584,12 @@ pub(crate) fn is_numeric_type_name_of(ty: &ValkyrieType) -> bool {
 
 /// 字符类型判定（字符字面量特化与值位置绑定共用同一份口径）。
 ///
-/// `char` 是 u16 code unit 的编码型内建；声明面允许以 `Character` 内建变体、
-/// 源码短名 `char`、或携带 `[primitive("std::text::char")]` 身份的 `Nominal` 出现。
+/// `char` 是 u16 code unit 的编码型内建；声明面已折叠成 `Character`，未绑定声明
+/// 只可能以源码短名出现。
 pub(crate) fn is_character_type_name_of(ty: &ValkyrieType) -> bool {
     match ty {
         ValkyrieType::Character => true,
         ValkyrieType::Named(name) => matches!(name.as_str(), "char" | "std::text::char"),
-        ValkyrieType::Nominal { primitive_identity, .. } => primitive_identity.as_deref() == Some("std::text::char"),
         _ => false,
     }
 }

@@ -10,6 +10,7 @@ use crate::compiler::{
         hir::{
             GenericBinderId, GenericType, HirBlock, HirEnum, HirExpr, HirExprKind, HirField, HirFlagMember, HirFunction, HirImpl, HirModule,
             HirSingleton, HirStatementKind, HirStruct, HirTrait, HirVariant, HirWhereConstraint, ValkyrieType,
+            primitive_identity_builtin_type,
         },
     },
 };
@@ -122,7 +123,14 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
     fn impl_self_owner(target: &ValkyrieType, structs: &[HirStruct], enums: &[HirEnum]) -> Option<SelfOwnerPath> {
         let declaration = match target {
             ValkyrieType::Nominal { declaration, .. } => *declaration,
-            _ => return None,
+            // 内建标量 owner 已折叠成载体：`Self` 仍指 std 那条 `[primitive]`
+            // 声明的限定路径，据此解析 `Self::` 关联项与构造入口。
+            builtin => {
+                return structs
+                    .iter()
+                    .find(|item| item.primitive_identity.as_deref().and_then(primitive_identity_builtin_type).as_ref() == Some(builtin))
+                    .map(SelfOwnerPath::from_struct);
+            }
         };
         if let Some(item) = structs.iter().find(|item| item.constructor_declaration == Some(declaration)) {
             return Some(SelfOwnerPath::from_struct(item));
@@ -142,7 +150,11 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
             }
             ValkyrieType::Named(name) => {
                 if let Some((declaration, primitive_identity)) = resolve_declaration(name, namespace, structs, enums)? {
-                    *ty = ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity };
+                    *ty = primitive_identity.as_deref().and_then(primitive_identity_builtin_type).unwrap_or(ValkyrieType::Nominal {
+                        declaration,
+                        arguments: Vec::new(),
+                        primitive_identity,
+                    });
                 }
             }
             ValkyrieType::Apply(base, args) => {
@@ -158,6 +170,14 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
                         let element = args.remove(0);
                         *ty = ValkyrieType::Array(Box::new(element));
                         return Ok(());
+                    }
+                    // 内建标量不是泛型声明：带实参的 `f64<T>` 属另一类错误，
+                    // 不在这里折叠，保留 `Nominal` 让下游按声明身份报错。
+                    if args.is_empty() {
+                        if let Some(builtin) = primitive_identity.as_deref().and_then(primitive_identity_builtin_type) {
+                            *ty = builtin;
+                            return Ok(());
+                        }
                     }
                     let arguments = std::mem::take(args);
                     *ty = ValkyrieType::Nominal { declaration, arguments, primitive_identity };

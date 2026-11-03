@@ -204,65 +204,40 @@ fn spec_external_primitive_spellings_fail_closed() {
     }
 }
 
-/// 正例：可见的 `std/primitive` 声明把 `Named` 冻结成 `Nominal{ItemId}`。
+/// 正例：可见的 `std/primitive` 声明把 `Named` 折叠成该内建标量的唯一身份，
+/// 声明本身只是宿主绑定，不得在类型位置产生第二个 `Nominal`。
 #[test]
-fn declared_numeric_primitive_binds_to_nominal_declaration() {
+fn declared_numeric_primitive_folds_to_builtin_identity() {
     let hir = compile(
         r#"
 [primitive("std::primitive::i32")]
 structure i32 { }
 
-[primitive("std::primitive::usize")]
-structure usize { }
+[primitive("std::primitive::u64")]
+structure u64 { }
 
 micro add(lhs: i32, rhs: i32) -> i32 {
     return lhs
 }
 
-micro index(n: usize) -> usize {
+micro index(n: u64) -> u64 {
     return n
 }
 "#,
     )
-    .expect("已声明的数值 primitive 必须绑定为声明身份");
+    .expect("已声明的数值 primitive 必须绑定为内建身份");
 
-    let i32_declaration = declaration_of(&hir, "i32");
     let add = hir.functions.iter().find(|function| function.name.as_str() == "add").expect("缺少 `add`");
     for param in &add.params {
-        assert_eq!(
-            param.ty,
-            ValkyrieType::Nominal {
-                declaration: i32_declaration,
-                arguments: vec![],
-                // 绑定期把声明注解的身份冻结到引用点。
-                primitive_identity: Some(Box::from("std::primitive::i32")),
-            },
-            "形参类型必须是 `i32` 声明身份，不得是同名的低层 carrier"
-        );
+        assert_eq!(param.ty, ValkyrieType::Integer32 { signed: true }, "形参类型必须是内建 `i32` 身份，不得是 `Nominal`");
     }
-    assert_eq!(
-        add.return_type,
-        ValkyrieType::Nominal { declaration: i32_declaration, arguments: vec![], primitive_identity: Some(Box::from("std::primitive::i32")) }
-    );
+    assert_eq!(add.return_type, ValkyrieType::Integer32 { signed: true });
+    assert!(!matches!(add.return_type, ValkyrieType::Nominal { .. }), "`i32` 注解不得产生 `Nominal`");
 
-    let usize_declaration = declaration_of(&hir, "usize");
     let index = hir.functions.iter().find(|function| function.name.as_str() == "index").expect("缺少 `index`");
-    assert_eq!(
-        index.params[0].ty,
-        ValkyrieType::Nominal {
-            declaration: usize_declaration,
-            arguments: vec![],
-            primitive_identity: Some(Box::from("std::primitive::usize"))
-        }
-    );
-    assert_eq!(
-        index.return_type,
-        ValkyrieType::Nominal {
-            declaration: usize_declaration,
-            arguments: vec![],
-            primitive_identity: Some(Box::from("std::primitive::usize"))
-        }
-    );
+    // `u64` 的 `[primitive]` 声明同样只做宿主绑定，注解直接落到无符号 64 位载体。
+    assert_eq!(index.params[0].ty, ValkyrieType::Integer64 { signed: false });
+    assert_eq!(index.return_type, ValkyrieType::Integer64 { signed: false });
 }
 
 /// 反例：没有可见声明时不得凭名字获得 carrier；HIR 只保留待绑定引用，

@@ -464,6 +464,39 @@ pub fn numeric_primitive_identity_shape(identity: &str) -> Option<PrimitiveNumer
     })
 }
 
+/// 把 `[primitive("…")]` 规范身份折叠成该内建标量的唯一类型身份。
+///
+/// 内建标量在语言里只有一个 TypeId；std 的 `[primitive] structure` 只是宿主绑定
+/// 声明，不是第二个名义类型。因此绑定阶段必须走本表，命中即产出内建载体，
+/// 不得生成 [`ValkyrieType::Nominal`]。
+///
+/// 表外身份一律 `None`，调用方保留既有形态并在缺口清单登记：
+/// `std::primitive::f128`（无 128 位浮点载体）、`std::primitive::any` / `null`
+/// （顶/空类型，不是宿主绑定的标量载体）、`std::text::text`（Utf8/Utf16 双载体）。
+/// `usize`/`isize` 不是 `[primitive]` 声明：std 用 `type usize = u32|u64` 别名，
+/// 别名展开后自然落到对应内建整数，不进入本表。
+pub fn primitive_identity_builtin_type(identity: &str) -> Option<ValkyrieType> {
+    Some(match identity {
+        "std::primitive::bool" => ValkyrieType::Boolean,
+        "std::primitive::unit" => ValkyrieType::Unit,
+        "std::primitive::void" => ValkyrieType::Void,
+        "std::text::char" => ValkyrieType::Character,
+        "std::primitive::f32" => ValkyrieType::Float32,
+        "std::primitive::f64" => ValkyrieType::Float64,
+        "std::primitive::i8" => ValkyrieType::Integer8 { signed: true },
+        "std::primitive::i16" => ValkyrieType::Integer16 { signed: true },
+        "std::primitive::i32" => ValkyrieType::Integer32 { signed: true },
+        "std::primitive::i64" => ValkyrieType::Integer64 { signed: true },
+        "std::primitive::i128" => ValkyrieType::Integer128 { signed: true },
+        "std::primitive::u8" => ValkyrieType::Integer8 { signed: false },
+        "std::primitive::u16" => ValkyrieType::Integer16 { signed: false },
+        "std::primitive::u32" => ValkyrieType::Integer32 { signed: false },
+        "std::primitive::u64" => ValkyrieType::Integer64 { signed: false },
+        "std::primitive::u128" => ValkyrieType::Integer128 { signed: false },
+        _ => return None,
+    })
+}
+
 /// 泛型参数由所属声明和源码参数序号唯一标识，拼写只供解析与诊断。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

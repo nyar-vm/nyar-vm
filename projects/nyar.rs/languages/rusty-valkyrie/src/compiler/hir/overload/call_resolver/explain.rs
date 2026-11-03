@@ -130,11 +130,6 @@ fn scalar_family(ty: &ValkyrieType) -> Option<ScalarFamily> {
         | ValkyrieType::Integer64 { .. }
         | ValkyrieType::Integer128 { .. } => Some(ScalarFamily::Integer),
         ValkyrieType::Named(name) => scalar_family_of_name(name.as_str()),
-        // 已冻结的名义声明携带 primitive 身份：按同一命名规则归族。
-        ValkyrieType::Nominal { primitive_identity: Some(identity), .. } => {
-            let short = identity.rsplit("::").next().unwrap_or(identity);
-            scalar_family_of_name(short)
-        }
         _ => None,
     }
 }
