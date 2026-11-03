@@ -257,8 +257,7 @@ fn abi_contract_digest(version: u64, exports: &serde_json::Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TargetExecutionPlan;
-    use crate::{AbiCarrier, LibraryExportAbi};
+    use crate::{AbiCarrier, LibraryExportAbi, TargetExecutionPlan};
     use nyar_types::NyarType;
 
     fn nyar(s: &str) -> NyarType {

@@ -35,9 +35,8 @@ fn glue_demarshals_utf8_return_through_host_intern_table() {
 fn glue_marshals_js_string_utf8_parameter_to_host_handle() {
     // Utf8/Utf16 参数位接受 JS 字符串并在宿主表登记句柄；数值句柄原样透传，
     // 不把字符串当裸 i32。
-    let glue = launcher_for(&spec(
-        r#"{"echo":{"params":[{"index":0,"name":"s","type":{"kind":"Utf8"},"carrier":"i32"}],"returns":{"kind":"Utf8"}}}"#,
-    ));
+    let glue =
+        launcher_for(&spec(r#"{"echo":{"params":[{"index":0,"name":"s","type":{"kind":"Utf8"},"carrier":"i32"}],"returns":{"kind":"Utf8"}}}"#));
     assert!(
         glue.contains(r#"return typeof value === "string" ? hostIntern(value) : Number(value ?? 0);"#),
         "JS 字符串入参必须登记为 host-intern 句柄:\n{glue}"
@@ -74,9 +73,8 @@ fn glue_handle_carrier_set_matches_backend_abi() {
 fn glue_call_export_resolves_spec_params_by_position_and_identity() {
     // callExport 合同：按 LIBRARY_INVOKE.exports[name].params 逐位 marshal，
     // 返回按 returns schema demarshal；无规格命中时原样透传（宿主 helper 路径）。
-    let glue = launcher_for(&spec(
-        r#"{"solve":{"params":[{"index":0,"name":"n","type":{"kind":"I64"},"carrier":"i64"}],"returns":{"kind":"I64"}}}"#,
-    ));
+    let glue =
+        launcher_for(&spec(r#"{"solve":{"params":[{"index":0,"name":"n","type":{"kind":"I64"},"carrier":"i64"}],"returns":{"kind":"I64"}}}"#));
     assert!(glue.contains("export async function callExport"), "library glue 必须暴露 callExport:\n{glue}");
     assert!(glue.contains(r#"const spec = LIBRARY_INVOKE?.exports?.[name];"#), "调用规格必须按导出名查表:\n{glue}");
     assert!(

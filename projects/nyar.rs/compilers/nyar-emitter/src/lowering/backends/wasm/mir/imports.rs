@@ -402,7 +402,7 @@ mod host_import_signature_tests {
             import_id,
             BackendImport {
                 index: ImportIndex::from_index(0).expect("import index"),
-                link: ExternalImportLink::host(Some(Identifier::new("js")), vec!["fetch".into()]),
+                link: ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["fetch".into()]),
                 parameter_types: vec![NyarType::Integer32 { signed: true }, NyarType::Integer32 { signed: true }],
                 return_type: NyarType::Integer32 { signed: true },
                 target_operator: None,
@@ -412,7 +412,7 @@ mod host_import_signature_tests {
         let ctx = ExecutableLoweringContext::new(&submission);
         let signatures = host_import_signature_index(&submission);
         let type_bytes = wasm_import_type_bytes_for_host(&submission, &ctx, false, "env", "fetch", false, &signatures)
-            .expect("js fetch must derive wasm signature from BackendImport");
+            .expect("js_builtin fetch must derive wasm signature from BackendImport");
         let params = super::super::strings::wasm_function_type_param_bytes(&type_bytes);
         assert_eq!(params, vec![VALTYPE_I32, VALTYPE_I32]);
         assert_eq!(super::super::strings::wasm_function_type_result_byte(&type_bytes), Some(VALTYPE_I32));
@@ -428,7 +428,7 @@ mod host_import_signature_tests {
                 index: ImportIndex::from_index(0).expect("import index"),
                 // `env::utf8_length` 同时存在于字段名表（`[i32] -> [i32]`），
                 // 这里由 plan 声明一个不同的签名，验证 plan 胜出。
-                link: ExternalImportLink::host(Some(Identifier::new("js")), vec!["utf8_length".into()]),
+                link: ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["utf8_length".into()]),
                 parameter_types: vec![NyarType::Integer32 { signed: true }, NyarType::Integer32 { signed: true }],
                 return_type: NyarType::Integer64 { signed: true },
                 target_operator: None,
