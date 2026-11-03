@@ -16,6 +16,7 @@ mod config_discovery;
 mod config_model;
 mod config_probe;
 mod glue_contract;
+mod interactive_artifact;
 mod list_each_shape;
 mod pipeline_discover;
 mod serve;
