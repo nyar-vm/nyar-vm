@@ -20,6 +20,12 @@ impl ConcretizeError {
     fn new(message: impl Into<String>) -> Self {
         Self { message: message.into() }
     }
+
+    /// 附上布局/声明位置，供结构化诊断定位；不改错误类别，只补上下文。
+    pub(crate) fn at(mut self, location: impl fmt::Display) -> Self {
+        self.message = format!("{} (at {location})", self.message);
+        self
+    }
 }
 
 impl fmt::Display for ConcretizeError {
@@ -30,13 +36,19 @@ impl fmt::Display for ConcretizeError {
 
 impl std::error::Error for ConcretizeError {}
 
-/// Expand language primitive aliases (`usize`, `i32`, …) and text carriers
+/// Expand fixed-width numeric spellings (`i32`, …) and text carriers
 /// (`Utf8Text`/`utf8`, `Utf16Text`/`utf16`) to concrete platform shapes.
 ///
-/// Struct field layouts previously kept `Named("usize")` while integer literals lower to
-/// `Integer32`, which failed SMIR010 StructNew field-type contracts (TextSpan.start/stop).
+/// `Named("usize")`/`Named("isize")` deliberately fall through to a structured error in
+/// [`concretize_type`]: their width is target-dependent and must be settled by the
+/// `std::primitive::pointer_width` alias expansion, never guessed as `Integer32`.
 /// `type utf16 = Utf16Text` leaves `return self` as `Named(Utf16Text)` while the declared
 /// return is `ValkyrieType::Utf16` → SMIR007 unless both concretize to `NyarType::Utf16`.
+/// 指针宽度整数面（`usize`/`isize` 及其限定拼写）：宽度由目标决定，不能由短名给载体。
+fn is_platform_width_surface_name(name: &str) -> bool {
+    matches!(name.rsplit([':', '.']).next().unwrap_or(name), "usize" | "isize")
+}
+
 fn concretize_primitive_named_alias(name: &str) -> Option<NyarType> {
     let simple = name.rsplit([':', '.']).next().unwrap_or(name);
     Some(match simple {
@@ -45,9 +57,9 @@ fn concretize_primitive_named_alias(name: &str) -> Option<NyarType> {
         "i8" => NyarType::Integer8 { signed: true },
         "u16" => NyarType::Integer16 { signed: false },
         "i16" => NyarType::Integer16 { signed: true },
-        // Platform-width and unannotated integer literals share i32 in this seed profile.
-        "usize" | "u32" | "i32" => NyarType::Integer32 { signed: true },
-        "isize" => NyarType::Integer32 { signed: true },
+        // 定宽整数按声明拼写给载体；`usize`/`isize` 是目标相关宽度，必须由
+        // `std::primitive::pointer_width` 的别名展开结算，禁止在此按名字猜位宽。
+        "u32" | "i32" => NyarType::Integer32 { signed: true },
         "u64" | "i64" => NyarType::Integer64 { signed: true },
         "u128" | "i128" => NyarType::Integer128 { signed: true },
         "f32" => NyarType::Float32,
@@ -79,6 +91,10 @@ pub fn concretize_type(ty: &ValkyrieType) -> Result<NyarType, ConcretizeError> {
         ValkyrieType::Named(name) if name.as_str() == "Self" => {
             Err(ConcretizeError::new("Named(\"Self\") must be substituted before platform lowering"))
         }
+        // 指针宽度别名缺声明时必须失败关闭：静默按 32 位会产出错误的字段载体与布局。
+        ValkyrieType::Named(name) if is_platform_width_surface_name(name.as_str()) => Err(ConcretizeError::new(format!(
+            "platform-width type `{name}` must be resolved to a fixed-width integer by pointer-width alias expansion before platform lowering"
+        ))),
         ValkyrieType::Named(name) => Ok(concretize_primitive_named_alias(name.as_str()).unwrap_or_else(|| NyarType::Named(name.clone()))),
         ValkyrieType::QualifiedPath { namespace, name } => Err(ConcretizeError::new(format!(
             "qualified type path `{}` must bind to Nominal before platform lowering",

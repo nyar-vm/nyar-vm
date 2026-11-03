@@ -156,7 +156,11 @@ impl MirSumDeclaration {
                         match variant.fields.len() {
                             // 单字段 payload 直接是字段类型，与既有口径一致。
                             0 => None,
-                            1 => Some(crate::compiler::emitter::frontend_contract::concretize_type(&variant.fields[0].ty)?),
+                            // 位置补到 `Enum::Variant`，与布局诊断同口径，便于定位缺别名来源。
+                            1 => Some(
+                                crate::compiler::emitter::frontend_contract::concretize_type(&variant.fields[0].ty)
+                                    .map_err(|error| error.at(format!("{}::{}", self.name, variant.name)))?,
+                            ),
                             // 多字段 payload 是变体记录：只认已登记布局。
                             _ => Some(variant_record_layout(variant, layouts)?),
                         }

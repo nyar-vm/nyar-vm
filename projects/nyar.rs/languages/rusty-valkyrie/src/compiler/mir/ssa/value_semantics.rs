@@ -125,10 +125,10 @@ fn declaration_spelling(hir_struct: &HirStruct) -> String {
 }
 
 /// 布局事实缺失的结构化诊断；取代旧严格 concretize 的 panic 路径。
-fn unresolved_layout_diagnostic(hir_struct: &HirStruct) -> MirDiagnostic {
-    MirDiagnostic::UnresolvedValueType {
-        context: format!("聚合 `{}` 字段布局缺少已冻结声明拼写或含未代入类型", declaration_spelling(hir_struct)),
-    }
+///
+/// `reason` 由 [`layout_for_struct`] 给出，含字段位置与 concretize 的类型名原因。
+fn unresolved_layout_diagnostic(hir_struct: &HirStruct, reason: &str) -> MirDiagnostic {
+    MirDiagnostic::UnresolvedValueType { context: format!("聚合 `{}`: {reason}", declaration_spelling(hir_struct)) }
 }
 
 /// 收集模块树内的全部枚举及其所属命名空间。
@@ -247,11 +247,11 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
         }
         let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
         match layout_for_struct(hir_struct, &plan, storage, &facts) {
-            Some(layout) => {
+            Ok(layout) => {
                 registered.push((hir_struct, storage));
                 register_declared_layout(&mut plan, hir_struct, layout);
             }
-            None => diagnostics.push(unresolved_layout_diagnostic(hir_struct)),
+            Err(reason) => diagnostics.push(unresolved_layout_diagnostic(hir_struct, &reason)),
         }
     }
     // Semantic-group builds keep only consumer HIR; imported structures (e.g.
@@ -270,11 +270,11 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
             }
             let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
             match layout_for_struct(hir_struct, &plan, storage, &facts) {
-                Some(layout) => {
+                Ok(layout) => {
                     registered.push((hir_struct, storage));
                     register_declared_layout(&mut plan, hir_struct, layout);
                 }
-                None => diagnostics.push(unresolved_layout_diagnostic(hir_struct)),
+                Err(reason) => diagnostics.push(unresolved_layout_diagnostic(hir_struct, &reason)),
             }
         }
     }
@@ -283,11 +283,11 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
             continue;
         }
         match layout_for_struct(hir_struct, &plan, MirStorageKind::Reference, &facts) {
-            Some(layout) => {
+            Ok(layout) => {
                 registered.push((hir_struct, MirStorageKind::Reference));
                 register_declared_layout(&mut plan, hir_struct, layout);
             }
-            None => diagnostics.push(unresolved_layout_diagnostic(hir_struct)),
+            Err(reason) => diagnostics.push(unresolved_layout_diagnostic(hir_struct, &reason)),
         }
     }
     // 多字段 unite/enum 变体的 payload 是名义记录：按变体声明身份登记独立字段布局，
@@ -307,7 +307,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
         }
     }
     for record in &variant_records {
-        if let Some(layout) = layout_for_struct(record, &plan, MirStorageKind::Value, &facts) {
+        if let Ok(layout) = layout_for_struct(record, &plan, MirStorageKind::Value, &facts) {
             registered.push((record, MirStorageKind::Value));
             register_declared_layout(&mut plan, record, layout);
         }
@@ -325,7 +325,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
         else {
             continue;
         };
-        let Some(resolved) = layout_for_struct(hir_struct, &plan, *storage, &facts)
+        let Ok(resolved) = layout_for_struct(hir_struct, &plan, *storage, &facts)
         else {
             continue;
         };
@@ -690,13 +690,16 @@ fn nominal_layout_base(plan: &AggregateLayoutPlan, declaration: nyar_types::Item
 }
 
 /// 声明层聚合布局：字段先经 primitive 载体递归，再走与实例层同口径的
-/// [`layout_field_type`] 解析；缺事实返回 `None`，由调用方产出结构化诊断。
+/// [`layout_field_type`] 解析。
+///
+/// 缺事实返回带字段位置与 concretize 类型名原因的结构化错误，由调用方产出
+/// 诊断；禁止按短名猜载体或尺寸（指针宽度别名缺声明即走此失败关闭）。
 fn layout_for_struct(
     hir_struct: &HirStruct,
     plan: &AggregateLayoutPlan,
     storage: MirStorageKind,
     facts: &LayoutFacts,
-) -> Option<AggregateLayout> {
+) -> Result<AggregateLayout, String> {
     let mut offset = 0u32;
     let mut max_align = 1u32;
     let mut fields = Vec::with_capacity(hir_struct.fields.len());
@@ -707,9 +710,13 @@ fn layout_for_struct(
         // 与 canonical 实例层 `layout_field_type` 同口径，按平台形状计量。
         let (ty, (size, align)) = match concretize_type(&mapped) {
             Ok(concrete) => (concrete, scalar_layout(&mapped, plan)),
-            Err(_) => {
-                let resolved = layout_field_type(&mapped, &facts.declaration_spellings, plan)?;
-                let extent = layout_field_extent(&resolved, plan)?;
+            Err(error) => {
+                // 失败关闭：字段无法结算出平台载体时保留 concretize 的类型名原因，
+                // 并补上字段位置；不得回落到按短名猜尺寸。
+                let resolved = layout_field_type(&mapped, &facts.declaration_spellings, plan)
+                    .ok_or_else(|| format!("字段 `{}`: {error}", field.name.as_str()))?;
+                let extent = layout_field_extent(&resolved, plan)
+                    .ok_or_else(|| format!("字段 `{}` 解析为 `{resolved:?}` 但缺少已登记容量", field.name.as_str()))?;
                 (resolved, extent)
             }
         };
@@ -722,7 +729,7 @@ fn layout_for_struct(
     // empty structs still need a non-zero carrier for layout contracts.
     let size = align_offset(offset, max_align).max(if fields.is_empty() { max_align.max(1) } else { 0 });
     let namespace = hir_struct.namespace.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(".");
-    Some(AggregateLayout {
+    Ok(AggregateLayout {
         id: next_layout_id(plan),
         name: hir_struct.name.to_string(),
         namespace,
