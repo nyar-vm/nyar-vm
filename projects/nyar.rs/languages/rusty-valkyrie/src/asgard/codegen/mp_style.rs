@@ -11,11 +11,12 @@ pub struct MpWxssOutput {
     pub content: String,
 }
 
-/// 从组件样式块生成 WXSS。
+/// 从组件样式合同生成 WXSS（dom 系降级复用 web lowering，再按早期固定 `1px = 2rpx` 换算）。
 pub fn generate_page_wxss(component: &LoweredComponent) -> Option<MpWxssOutput> {
-    let style = component.style.as_ref()?;
+    let contract = component.style_contract.as_ref()?;
     let route = &component.route_name;
-    Some(MpWxssOutput { relative_path: format!("pages/{route}/{route}.wxss"), content: px_to_rpx(style) })
+    let css = crate::asgard::style::web::lower_contract(contract);
+    Some(MpWxssOutput { relative_path: format!("pages/{route}/{route}.wxss"), content: px_to_rpx(&css) })
 }
 
 fn px_to_rpx(source: &str) -> String {

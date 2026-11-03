@@ -53,6 +53,7 @@ pub fn generate_manifest_with_urls(
     digests: &[ManifestDigest],
     css_files: &[String],
     per_component_css: bool,
+    porting_cost: &[String],
 ) -> ManifestOutput {
     let module = module_stem.to_string();
     let css = css_files.iter().map(|file| url_path(&file.replace('\\', "/"), url_mode)).collect();
@@ -78,6 +79,7 @@ pub fn generate_manifest_with_urls(
         css,
         wasm,
         integrity,
+        porting_cost: porting_cost.to_vec(),
         render_ir: Some(RenderIrManifest { encoding: "asgard-ui-v1".into(), size: encode_mobile_ui_package(components).len() }),
         components: components
             .iter()
@@ -130,6 +132,9 @@ struct VoaManifest {
     wasm: Vec<WasmEntry>,
     /// 内容摘要表：manifest 相对路径 → 小写十六进制 SHA-256。
     integrity: BTreeMap<String, String>,
+    /// 移植成本条目：`web_only` 原始 CSS 块登记；非 dom 后端构建据此 fail-closed。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    porting_cost: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     render_ir: Option<RenderIrManifest>,
     components: Vec<ManifestComponent>,

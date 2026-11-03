@@ -53,6 +53,6 @@ pub fn render_static_ovm(
         serialize::escape_attr(&component.route_name),
         body.trim_end()
     );
-    let css = component.style.clone().unwrap_or_default();
+    let css = crate::asgard::style::web::component_web_css(component);
     Ok(StaticRenderResult { html, css, scope, diagnostics: Vec::new() })
 }

@@ -16,7 +16,9 @@ const FIXTURE: &str = r#"<widget index>
 <script>
 let greeting: utf8 = "你好，静态世界"
 </script>
-<style>.hero { color: #c67b34; }</style>
+<style>
+root { color: @brand }
+</style>
 "#;
 
 /// 在项目根内写入指定文件名的入口并构建，返回 `index.html` 内容。
@@ -47,7 +49,7 @@ fn awsl_entry_builds_styled_static_page() {
 
     assert!(html.contains("<!DOCTYPE html>"), "应为完整 HTML 页面");
     assert!(html.contains("<style>"), "页面应包含样式块:\n{html}");
-    assert!(html.contains(".hero { color: #c67b34; }"), "应透传组件样式文本:\n{html}");
+    assert!(html.contains(".sc-root { color: #38bdf8; }"), "应内联样式合同降级产物:\n{html}");
     assert!(html.contains("asgard-static-index"), "应包含作用域 class:\n{html}");
     assert!(html.contains("你好，静态世界"), "应包含初始状态插值结果:\n{html}");
     assert!(html.contains(r#"<script src="boot.js"></script>"#), "页面应引用 boot.js 启动脚本:\n{html}");

@@ -17,45 +17,48 @@ use tempfile::TempDir;
 use crate::support::write_legion_project;
 
 /// 产品页夹具：运维控制台（多区布局 + 标签切换 + 状态流转）。
+///
+/// 布局与样式全部经样式合同 DSL 表达（root / slot / #id 三类选择器 + 封闭属性集），
+/// 页面源码不出现任何 CSS 专有名词。
 const PRODUCT_PAGE: &str = r#"<widget index>
-<Column class="page">
-    <Row class="topbar">
-        <Text class="brand">Nimbus Panel</Text>
-        <Row class="nav">
-            <Text class="nav-item">概览</Text>
-            <Text class="nav-item">文档</Text>
+<Column slot="page">
+    <Row slot="topbar">
+        <Text id="brand">Nimbus Panel</Text>
+        <Row slot="nav">
+            <Text id="nav-item">概览</Text>
+            <Text id="nav-item">文档</Text>
         </Row>
     </Row>
-    <Column class="hero">
-        <Text class="hero-title">Nimbus 集群控制台</Text>
-        <Text class="hero-sub">轻量运维面板 · 静态交付演示</Text>
+    <Column slot="hero">
+        <Text id="hero-title">Nimbus 集群控制台</Text>
+        <Text id="hero-sub">轻量运维面板 · 静态交付演示</Text>
     </Column>
-    <Row class="cards">
-        <Column class="card">
-            <Text class="card-value">12</Text>
-            <Text class="card-label">在线节点</Text>
+    <Row slot="cards">
+        <Column slot="card">
+            <Text id="card-value">12</Text>
+            <Text id="card-label">在线节点</Text>
         </Column>
-        <Column class="card">
-            <Text class="card-value">34%</Text>
-            <Text class="card-label">平均负载</Text>
+        <Column slot="card">
+            <Text id="card-value">34%</Text>
+            <Text id="card-label">平均负载</Text>
         </Column>
-        <Column class="card">
-            <Text class="card-value">0</Text>
-            <Text class="card-label">24h 故障</Text>
+        <Column slot="card">
+            <Text id="card-value">0</Text>
+            <Text id="card-label">24h 故障</Text>
         </Column>
     </Row>
-    <Column class="panel">
-        <Row class="tabs">
-            <Button class="tab" @click="tab_overview">概览</Button>
-            <Button class="tab" @click="tab_alerts">告警</Button>
-            <Button class="tab" @click="tab_history">历史</Button>
+    <Column slot="panel">
+        <Row slot="tabs">
+            <Button id="tab" @click="tab_overview">概览</Button>
+            <Button id="tab" @click="tab_alerts">告警</Button>
+            <Button id="tab" @click="tab_history">历史</Button>
         </Row>
-        <Text class="panel-body">{panel_body}</Text>
-        <Row class="status-row">
-            <Text class="status-label">系统状态</Text>
-            <Text class="status-value">{status_text}</Text>
-            <Button class="status-action" @click="mark_maintenance">标记维护</Button>
-            <Button class="status-action" @click="restore_running">恢复运行</Button>
+        <Text id="panel-body">{panel_body}</Text>
+        <Row slot="status">
+            <Text id="status-label">系统状态</Text>
+            <Text id="status-value">{status_text}</Text>
+            <Button id="status-action" @click="mark_maintenance">标记维护</Button>
+            <Button id="status-action" @click="restore_running">恢复运行</Button>
         </Row>
     </Column>
 </Column>
@@ -80,26 +83,28 @@ micro restore_running() {
 }
 </script>
 <style>
-.page { display: flex; flex-direction: column; min-height: 100vh; background: #0f172a; padding: 24px; gap: 24px; }
-.topbar { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
-.brand { color: #38bdf8; font-size: 20px; font-weight: 700; }
-.nav { display: flex; flex-direction: row; gap: 16px; }
-.nav-item { color: #94a3b8; font-size: 14px; }
-.hero { display: flex; flex-direction: column; gap: 8px; padding: 32px 0; }
-.hero-title { color: #f8fafc; font-size: 32px; font-weight: 700; }
-.hero-sub { color: #94a3b8; font-size: 14px; }
-.cards { display: flex; flex-direction: row; gap: 16px; }
-.card { display: flex; flex-direction: column; background: #1e293b; border-radius: 12px; padding: 16px; gap: 6px; flex: 1; }
-.card-value { color: #38bdf8; font-size: 26px; font-weight: 700; }
-.card-label { color: #94a3b8; font-size: 13px; }
-.panel { display: flex; flex-direction: column; background: #1e293b; border-radius: 12px; padding: 20px; gap: 14px; }
-.tabs { display: flex; flex-direction: row; gap: 12px; }
-.tab { color: #cbd5e1; background: #334155; border: none; border-radius: 8px; padding: 6px 14px; font-size: 14px; cursor: pointer; }
-.panel-body { color: #e2e8f0; font-size: 15px; min-height: 24px; }
-.status-row { display: flex; flex-direction: row; gap: 12px; align-items: center; }
-.status-label { color: #94a3b8; font-size: 13px; }
-.status-value { color: #4ade80; font-size: 14px; font-weight: 600; }
-.status-action { color: #f8fafc; background: #0ea5e9; border: none; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+root { direction: vertical; spacing: 24; inset: 24; background: @surface; width: fill; height: fill }
+slot topbar { direction: horizontal; main-align: space-between; cross-align: center }
+slot nav { direction: horizontal; spacing: 16 }
+slot hero { direction: vertical; spacing: 8; inset: 32 }
+slot cards { direction: horizontal; spacing: 16 }
+slot card { direction: vertical; spacing: 6; inset: 16; background: @panel; radius: 12; width: fill }
+slot panel { direction: vertical; spacing: 14; inset: 20; background: @panel; radius: 12 }
+slot tabs { direction: horizontal; spacing: 12 }
+slot status { direction: horizontal; spacing: 12; cross-align: center }
+#brand { text: @title; color: @brand }
+#nav-item { text: @caption; color: @ink-muted }
+#hero-title { text: @hero; color: @ink }
+#hero-sub { text: @caption; color: @ink-muted }
+#card-value { text: @value; color: @brand }
+#card-label { text: @caption; color: @ink-muted }
+#tab { text: @caption; color: @ink-soft; background: @panel-hover; radius: 8; inset: 6 }
+#panel-body { text: @body; color: @ink-soft }
+#status-label { text: @caption; color: @ink-muted }
+#status-value { text: @caption; color: @ok }
+#status-action { text: @caption; color: @ink; background: @brand-strong; radius: 8; inset: 6 }
+state hover on #tab { background: @panel }
+state pressed on #status-action { background: @brand }
 </style>
 "#;
 
@@ -161,8 +166,8 @@ fn product_page_inlines_critical_styles() {
     build_product_page(&temp);
     let html = fs::read_to_string(output_dir(&temp).join("index.html")).expect("读取 index.html 失败");
     assert!(html.contains("<style>"), "首屏关键样式应内联:\n{html}");
-    for rule in [".page { display: flex; flex-direction: column", ".cards { display: flex; flex-direction: row", ".card { display: flex; flex-direction: column; background: #1e293b"] {
-        assert!(html.contains(rule), "内联样式应覆盖产品页布局规则 `{rule}`:\n{html}");
+    for rule in [".sc-root { display: flex; flex-direction: column;", ".sc-slot-cards { display: flex; flex-direction: row;", ".sc-id-brand { font-size: 20px; font-weight: 700; line-height: 1.3; color: #38bdf8; }"] {
+        assert!(html.contains(rule), "内联样式应覆盖产品页合同降级规则 `{rule}`:\n{html}");
     }
 }
 

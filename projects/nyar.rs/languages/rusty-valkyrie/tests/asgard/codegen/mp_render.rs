@@ -20,11 +20,10 @@ count = count + 1
 }
 </script>
 <style>
-.wrap { padding: 24px; }
-.count { font-size: 32px; }
+root { inset: 24 }
 </style>"#;
     let root = AwslParser::parse_root(source).expect("parse awsl");
-    let component = lower_component(&root, "counter", "counter.awsl", &LoweringOptions::default());
+    let component = lower_component(&root, "counter", "counter.awsl", &LoweringOptions::default()).expect("lower counter");
     let wxml = generate_page_wxml(&component);
     assert!(wxml.content.contains("<view"), "wxml={}", wxml.content);
     assert!(wxml.content.contains("{{count}}"), "wxml={}", wxml.content);

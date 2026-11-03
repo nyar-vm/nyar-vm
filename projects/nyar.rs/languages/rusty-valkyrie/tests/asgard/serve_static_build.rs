@@ -30,7 +30,9 @@ const FIXTURE: &str = r#"<widget index>
 <script>
 let greeting: utf8 = "serve 真实产物"
 </script>
-<style>.hero { color: #c67b34; }</style>
+<style>
+root { color: @brand }
+</style>
 "#;
 
 /// 一次原始 HTTP/1.1 GET 的结果：状态码、头部与响应体字节。

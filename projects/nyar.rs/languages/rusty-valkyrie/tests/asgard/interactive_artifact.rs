@@ -28,7 +28,9 @@ micro toggle() {
     mode = "on"
 }
 </script>
-<style>.hero { color: #c67b34; }</style>
+<style>
+root { color: @brand }
+</style>
 "#;
 
 /// 构建交互夹具并返回输出目录。

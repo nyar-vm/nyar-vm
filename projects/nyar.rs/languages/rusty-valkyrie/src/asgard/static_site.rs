@@ -111,7 +111,7 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
     let source = std::fs::read_to_string(&entry_path)
         .map_err(|error| AsgardError::msg(report!("读取入口文件失败 {}: {error}", entry_path.display())))?;
     let component = compile_awsl_source(&source, file_stem, &relative_path, &LoweringOptions::default())
-        .map_err(|error| AsgardError::msg(report!("{}:{}: {}", entry_path.display(), error.span.start, error.message)))?;
+        .map_err(|error| AsgardError::msg(report!("{}: {error}", entry_path.display())))?;
 
     // 基址校验是廉价输入校验：先于任何编译（含 SSG 的 OVM 构建）失败闭合。
     let base = page_base(&options.base)?;
@@ -168,6 +168,11 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
         css_mode: "per-component".into(),
         mode: "static".into(),
         tailwind_css: None,
+        porting_cost: component
+            .style_contract
+            .as_ref()
+            .map(crate::asgard::style::web::porting_cost_entries)
+            .unwrap_or_default(),
     };
     let package_report = package_browser_islands(std::slice::from_ref(&component), &output_dir, &package_options)?;
     let critical_css = crate::asgard::package::component_css_filename(&component.name);

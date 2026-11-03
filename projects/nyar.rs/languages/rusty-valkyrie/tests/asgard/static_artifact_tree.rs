@@ -27,7 +27,9 @@ const FIXTURE: &str = r#"<widget index>
 <script>
 let greeting: utf8 = "静态产物树"
 </script>
-<style>.hero { color: #345; }</style>
+<style>
+root { color: @ink-muted }
+</style>
 "#;
 
 /// 在项目根写入入口并构建，返回输出目录内的文件清单（相对输出根，`/` 分隔）。
@@ -146,7 +148,7 @@ fn critical_css_is_inlined_and_registered_as_chunk() {
     build_and_list(temp.path(), &dist, "/");
     let html = fs::read_to_string(dist.join("index.html")).expect("读取 index.html 失败");
     assert!(html.contains("<style>"), "入口组件关键样式应内联为首屏 <style>:\n{html}");
-    assert!(html.contains(".hero { color: #345; }"), "内联样式必须是入口组件样式:\n{html}");
+    assert!(html.contains(".sc-root { color: #94a3b8; }"), "内联样式必须是入口组件的合同降级:\n{html}");
     assert!(!html.contains("rel=\"stylesheet\""), "关键样式已内联，页面不得再链接装载:\n{html}");
 
     let manifest: serde_json::Value =

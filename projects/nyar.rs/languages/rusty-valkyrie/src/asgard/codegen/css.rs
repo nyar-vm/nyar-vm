@@ -23,12 +23,8 @@ pub fn extract_and_merge_styles(
         "per-component" => {
             let mut outputs = components
                 .iter()
-                .filter_map(|component| {
-                    component
-                        .style
-                        .as_ref()
-                        .map(|style| CssOutput { content: style.clone(), filename: component_css_filename(&component.name) })
-                })
+                .map(|component| CssOutput { content: crate::asgard::style::web::component_web_css(component), filename: component_css_filename(&component.name) })
+                .filter(|output| !output.content.trim().is_empty())
                 .collect::<Vec<_>>();
             if let Some(extra) = tailwind_css {
                 if let Some(first) = outputs.first_mut() {
@@ -43,9 +39,10 @@ pub fn extract_and_merge_styles(
         _ => {
             let mut merged = String::new();
             for component in components {
-                if let Some(style) = &component.style {
+                let css = crate::asgard::style::web::component_web_css(component);
+                if !css.trim().is_empty() {
                     merged.push_str(&format!("/* {} */\n", component.name));
-                    merged.push_str(style);
+                    merged.push_str(&css);
                     merged.push('\n');
                 }
             }

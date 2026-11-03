@@ -16,14 +16,14 @@ use tempfile::TempDir;
 /// 两个带各自样式的组件：切分后应各得一个 css chunk。
 fn fixture_components() -> Vec<LoweredComponent> {
     let index = compile_awsl_source(
-        "<widget index>\n<Text class=\"a\">index</Text>\n</widget>\n<style>.a { color: #111; }</style>\n",
+        "<widget index>\n<Text>index</Text>\n</widget>\n<style>\nroot { background: @surface }\n</style>\n",
         "index",
         "index.w",
         &LoweringOptions::default(),
     )
     .expect("index 组件降级应成功");
     let panel = compile_awsl_source(
-        "<widget panel>\n<Text class=\"b\">panel</Text>\n</widget>\n<style>.b { color: #222; padding: 4px; }</style>\n",
+        "<widget panel>\n<Text>panel</Text>\n</widget>\n<style>\nroot { background: @panel }\n</style>\n",
         "panel",
         "panel.w",
         &LoweringOptions::default(),
@@ -41,6 +41,7 @@ fn package(components: &[LoweredComponent], output: &Path, css_mode: &str) {
         css_mode: css_mode.into(),
         mode: "static".into(),
         tailwind_css: None,
+        porting_cost: Vec::new(),
     };
     package_browser_islands(components, output, &options).expect("岛打包应成功");
 }
@@ -56,8 +57,8 @@ fn merge_mode_emits_single_global_stylesheet() {
     let output = temp.path().join("out");
     package(&fixture_components(), &output, "merge");
     let merged = fs::read_to_string(output.join("css-chunks.css")).expect("merge 模式应输出全局 css");
-    assert!(merged.contains(".a { color: #111; }"), "全局 css 应含第一个组件样式:\n{merged}");
-    assert!(merged.contains(".b { color: #222; padding: 4px; }"), "全局 css 应含第二个组件样式:\n{merged}");
+    assert!(merged.contains(".sc-root { background: #0f172a; }"), "全局 css 应含第一个组件的合同降级:\n{merged}");
+    assert!(merged.contains(".sc-root { background: #1e293b; }"), "全局 css 应含第二个组件的合同降级:\n{merged}");
     assert!(!output.join("index.css").exists(), "merge 模式不得输出组件级 chunk");
     let manifest = read_manifest(&output);
     let css = manifest.get("css").and_then(serde_json::Value::as_array).expect("manifest 应声明 css");
@@ -74,8 +75,9 @@ fn per_component_mode_emits_one_chunk_per_component() {
 
     let index_css = fs::read_to_string(output.join("index.css")).expect("index 组件应有独立 css chunk");
     let panel_css = fs::read_to_string(output.join("panel.css")).expect("panel 组件应有独立 css chunk");
-    assert_eq!(index_css, ".a { color: #111; }", "index chunk 只含自己的样式");
-    assert_eq!(panel_css, ".b { color: #222; padding: 4px; }", "panel chunk 只含自己的样式");
+    assert!(index_css.contains("background: #0f172a"), "index chunk 只含自己的合同降级:\n{index_css}");
+    assert!(panel_css.contains("background: #1e293b"), "panel chunk 只含自己的合同降级:\n{panel_css}");
+    assert!(!index_css.contains("#1e293b"), "chunk 之间不得串样式:\n{index_css}");
     assert!(!output.join("css-chunks.css").exists(), "per-component 模式不得再输出全局合并文件");
     let index_bytes = fs::metadata(output.join("index.css")).expect("index.css 元数据").len();
     let panel_bytes = fs::metadata(output.join("panel.css")).expect("panel.css 元数据").len();

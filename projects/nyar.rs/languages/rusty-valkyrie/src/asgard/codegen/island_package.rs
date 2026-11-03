@@ -26,6 +26,8 @@ pub struct IslandPackageOptions {
     pub mode: String,
     /// Optional Tailwind CLI output appended to merged CSS.
     pub tailwind_css: Option<String>,
+    /// 移植成本条目（`web_only` 块登记）；写入 manifest，非 dom 后端据此 fail-closed。
+    pub porting_cost: Vec<String>,
 }
 
 impl Default for IslandPackageOptions {
@@ -38,6 +40,7 @@ impl Default for IslandPackageOptions {
             css_mode: "merge".into(),
             mode: "production".into(),
             tailwind_css: None,
+            porting_cost: Vec::new(),
         }
     }
 }
@@ -125,6 +128,7 @@ pub fn package_browser_islands(
         &digests,
         &css_filenames,
         opts.css_mode == "per-component",
+        &opts.porting_cost,
     );
     fs::write(output_dir.join(&manifest.relative_path), &manifest.content)?;
 

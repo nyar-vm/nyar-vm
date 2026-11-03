@@ -41,6 +41,10 @@ pub struct LoweredComponent {
     pub render_ir: super::render_ir::RenderIr,
     /// 样式块原文。
     pub style: Option<String>,
+    /// 解析后的样式合同（`<style>` 内容是合同 DSL，不是 CSS）；缺席表示无样式声明。
+    pub style_contract: Option<crate::asgard::style::StyleContract>,
+    /// 布局合同绑定：各后端降级阶段消费的唯一输入（含构建期文本度量结果）。
+    pub layout: Vec<crate::asgard::layout::LayoutBinding>,
     /// script 块顶层绑定（变量名、初始表达式、是否响应式 `let mut`）。
     pub script_bindings: Vec<ScriptBinding>,
     /// Extracted component ABI.
@@ -103,10 +107,20 @@ pub enum SignalValueType {
     Bool,
 }
 
-/// 将 AWSL 根节点降级。
-pub fn lower_component(root: &AwslRoot, component_name: &str, source_path: &str, options: &LoweringOptions) -> LoweredComponent {
+/// 将 AWSL 根节点降级；样式合同解析与布局绑定收集在此 fail-closed。
+pub fn lower_component(
+    root: &AwslRoot,
+    component_name: &str,
+    source_path: &str,
+    options: &LoweringOptions,
+) -> Result<LoweredComponent, crate::asgard::style::StyleContractError> {
     let name = widget_name_from_stem(component_name);
-    let surface = wrap_widget_roots_in_fragment(lower_template_nodes(&root.template));
+    let style_contract = match &root.style {
+        Some(text) if !text.trim().is_empty() => Some(crate::asgard::style::parse_style_contract(text)?),
+        _ => None,
+    };
+    let mut surface = wrap_widget_roots_in_fragment(lower_template_nodes(&root.template));
+    let layout = collect_layout_bindings(&mut surface, style_contract.as_ref());
     let (component_abi, abi_issues) = root
         .script
         .as_deref()
@@ -117,12 +131,14 @@ pub fn lower_component(root: &AwslRoot, component_name: &str, source_path: &str,
     let mut render_ir = canonicalize_surface(surface, &script_bindings);
     run_default_passes(&mut render_ir, ThemeRegistryOptions { single_theme: None, single_mode: None });
     let synthetic_v = generate_synthetic_v(&name, root, &script_bindings);
-    LoweredComponent {
+    Ok(LoweredComponent {
         name,
         route_name: component_name.to_string(),
         synthetic_v,
         render_ir,
         style: root.style.clone(),
+        style_contract,
+        layout,
         script_bindings,
         component_abi,
         abi_issues,
@@ -130,7 +146,156 @@ pub fn lower_component(root: &AwslRoot, component_name: &str, source_path: &str,
         hydrate_strategy: options.default_strategy.clone(),
         source_path: source_path.to_string(),
         script_source: root.script.clone(),
+    })
+}
+
+/// 合同句柄类分配 + 布局/度量绑定收集。
+///
+/// 句柄映射：组件根节点 → `sc-root`；`slot="name"` 元素 → `sc-slot-<name>`；
+/// `id="name"` 元素 → `sc-id-<name>`。度量只接受纯静态文本目标；动态文本的
+/// 度量请求记为 `MeasureRejected`，由降级阶段 fail-closed。
+fn collect_layout_bindings(surface: &mut SurfaceIr, contract: Option<&crate::asgard::style::StyleContract>) -> Vec<crate::asgard::layout::LayoutBinding> {
+    let mut bindings = Vec::new();
+    let Some(contract) = contract
+    else {
+        return bindings;
+    };
+    assign_handle_classes(surface, &mut true);
+    for rule in &contract.rules {
+        let handle = crate::asgard::style::handle_class(&rule.selector);
+        if let Some(spec) = crate::asgard::style::web::layout_spec_of(&rule.declarations) {
+            bindings.push(crate::asgard::layout::LayoutBinding::Container { class: handle.clone(), spec });
+        }
+        if rule.declarations.iter().any(|declaration| declaration.property == crate::asgard::style::Property::Measure) {
+            let max_width = rule
+                .declarations
+                .iter()
+                .find(|declaration| declaration.property == crate::asgard::style::Property::MaxWidth)
+                .and_then(|declaration| match &declaration.value {
+                    crate::asgard::style::Value::Points(points) => Some(crate::asgard::layout::Points(*points as f32)),
+                    _ => None,
+                })
+                .unwrap_or(crate::asgard::layout::Points(320.0));
+            let font_size = rule
+                .declarations
+                .iter()
+                .find_map(|declaration| match (&declaration.property, &declaration.value) {
+                    (crate::asgard::style::Property::Text, crate::asgard::style::Value::Token(token)) => {
+                        crate::asgard::style::tokens::text_token(token).map(|token| token.size)
+                    }
+                    _ => None,
+                })
+                .unwrap_or(15);
+            match static_text_of(surface, &handle) {
+                Some(text) => {
+                    let run = crate::asgard::layout::measure::TextRun {
+                        text,
+                        font: crate::asgard::layout::measure::FontId("stage1-system-stack".into()),
+                        size: crate::asgard::layout::Points(font_size as f32),
+                    };
+                    let metrics = crate::asgard::layout::measure::measure_run(&run, max_width, &crate::asgard::layout::measure::StubFontMetrics);
+                    bindings.push(crate::asgard::layout::LayoutBinding::MeasuredText { class: handle, metrics });
+                }
+                None => bindings.push(crate::asgard::layout::LayoutBinding::MeasureRejected {
+                    class: handle,
+                    reason: "度量目标含动态文本或不存在；构建期度量只接受静态文本运行".to_string(),
+                }),
+            }
+        }
     }
+    bindings
+}
+
+/// 递归分配合同句柄类；根节点取第一个 Tag。
+fn assign_handle_classes(nodes: &mut SurfaceIr, is_root_scope: &mut bool) {
+    for node in nodes.iter_mut() {
+        match node {
+            SurfaceNode::Tag { tag: _, kind: _, attrs, children, .. } => {
+                let mut handles = Vec::new();
+                if *is_root_scope {
+                    handles.push(crate::asgard::style::handle_class(&crate::asgard::style::Selector::Root));
+                    *is_root_scope = false;
+                }
+                for attr in attrs.iter() {
+                    if let SurfaceAttrValue::Static(value) = &attr.value {
+                        if attr.name == "slot" {
+                            handles.push(crate::asgard::style::handle_class(&crate::asgard::style::Selector::Slot(value.trim().to_string())));
+                        }
+                        if attr.name == "id" {
+                            handles.push(crate::asgard::style::handle_class(&crate::asgard::style::Selector::Id(value.trim().to_string())));
+                        }
+                    }
+                }
+                if !handles.is_empty() {
+                    merge_handle_classes(attrs, handles);
+                }
+                assign_handle_classes(children, &mut false);
+            }
+            SurfaceNode::Fragment { children, .. } => assign_handle_classes(children, is_root_scope),
+            _ => {}
+        }
+    }
+}
+
+/// 把句柄类并入 class 属性；动态 class 无法承载合同句柄，保持缺席由规则失配暴露。
+fn merge_handle_classes(attrs: &mut Vec<SurfaceAttr>, handles: Vec<String>) {
+    match attrs.iter_mut().find(|attr| attr.name == "class") {
+        Some(attr) => {
+            if let SurfaceAttrValue::Static(existing) = &mut attr.value {
+                let mut merged = existing.clone();
+                for handle in handles {
+                    if !merged.split_whitespace().any(|part| part == handle) {
+                        merged.push(' ');
+                        merged.push_str(&handle);
+                    }
+                }
+                *existing = merged;
+            }
+        }
+        None => attrs.push(SurfaceAttr { name: "class".into(), value: SurfaceAttrValue::Static(handles.join(" ")), is_event: false, is_prop: false }),
+    }
+}
+
+/// 取句柄目标元素的纯静态文本；含动态片段返回 `None`。
+fn static_text_of(nodes: &SurfaceIr, handle: &str) -> Option<String> {
+    for node in nodes {
+        match node {
+            SurfaceNode::Tag { attrs, children, .. } => {
+                let has_handle = attrs.iter().any(|attr| {
+                    attr.name == "class" && matches!(&attr.value, SurfaceAttrValue::Static(value) if value.split_whitespace().any(|part| part == handle))
+                });
+                if has_handle {
+                    let mut text = String::new();
+                    for child in children.iter() {
+                        match child {
+                            SurfaceNode::Text { parts, .. } => {
+                                for part in parts {
+                                    match part {
+                                        SurfaceTextPart::Static(chunk) => text.push_str(chunk),
+                                        SurfaceTextPart::Dynamic(_) => return None,
+                                    }
+                                }
+                            }
+                            _ => return None,
+                        }
+                    }
+                    if !text.trim().is_empty() {
+                        return Some(text);
+                    }
+                }
+                if let Some(found) = static_text_of(children, handle) {
+                    return Some(found);
+                }
+            }
+            SurfaceNode::Fragment { children, .. } => {
+                if let Some(found) = static_text_of(children, handle) {
+                    return Some(found);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn generate_synthetic_v(name: &str, root: &AwslRoot, bindings: &[ScriptBinding]) -> String {

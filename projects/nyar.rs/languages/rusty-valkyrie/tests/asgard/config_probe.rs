@@ -422,7 +422,9 @@ micro title() -> utf8 {
 }
 
 /// 缺口固化：`Option<utf8>`（配置内 `output` / `base` / `assets` 的形态）在
-/// std 在场时因 `utf8` 解析漂移无法通过返回类型检查。
+/// std 在场时仍失败闭合。拒绝坐标（HIR 类型检查 / Semantic MIR 合同）会随
+/// 编译器线推进漂移，锁定「失败闭合 + 拒绝落在 Semantic MIR 合同层」；
+/// 缺口闭合后本测试必须翻转为正例。
 #[test]
 fn c0_gap_std_option_utf8_is_incoherent() {
     let failure = build_probe_project_with_std(
@@ -435,15 +437,11 @@ micro with_value() -> Option<utf8> {
 }
 "#,
     )
-    .expect_err("Option<utf8> 当前必须因 utf8 解析漂移失败");
-    assert!(
-        failure.message.contains("incompatible with the function return type"),
-        "诊断必须说明返回类型不匹配：{}",
-        failure.message
-    );
+    .expect_err("Option<utf8> 当前必须失败闭合");
+    assert!(failure.message.contains("SMIR"), "拒绝必须落在 Semantic MIR 合同层：{}", failure.message);
 }
 
-/// 缺口固化：`Option<结构体>` 的构造在 std 在场时调用解析失败。
+/// 缺口固化：`Option<结构体>` 的构造在 std 在场时仍失败闭合（同位移纪律）。
 #[test]
 fn c0_gap_std_option_struct_constructor_unresolved() {
     let failure = build_probe_project_with_std(
@@ -461,8 +459,8 @@ micro with_value() -> Option<Endpoint> {
 }
 "#,
     )
-    .expect_err("Option<结构体> 构造当前必须解析失败");
-    assert!(failure.message.contains("unresolved"), "诊断必须指出构造解析失败：{}", failure.message);
+    .expect_err("Option<结构体> 构造当前必须失败闭合");
+    assert!(failure.message.contains("SMIR"), "拒绝必须落在 Semantic MIR 合同层：{}", failure.message);
 }
 
 /// 缺口固化：裸对象字面量不是合法表达式，模块尾表达式作者形态尚不可解析。

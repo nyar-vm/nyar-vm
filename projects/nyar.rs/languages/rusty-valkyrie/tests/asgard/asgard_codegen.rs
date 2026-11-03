@@ -14,7 +14,7 @@ let mut count = 0
 let title = "hi"
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
-    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default());
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
     assert!(lowered.script_bindings.iter().any(|b| b.name == "count" && b.reactive));
     assert!(lowered.script_bindings.iter().any(|b| b.name == "title" && !b.reactive));
     let v_source = build_awsl_wasm_source(&[lowered]);
@@ -55,7 +55,7 @@ fn input_intrinsic_emits_two_way_value_binding() {
 let mut label: utf8 = ""
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
-    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default());
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
     let v_source = build_awsl_wasm_source(&[lowered]);
     assert!(v_source.contains("dom_create_element(\"input\")"), "`Input` 必须降低为宿主 `input` 元素");
     assert!(v_source.contains("rx_bind_value_utf8"), "`value` 绑定应写元素属性而非 HTML 属性");
@@ -77,7 +77,7 @@ micro handler() {
 }
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
-    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default());
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
     assert_eq!(lowered.component_abi.properties.len(), 1);
     assert_eq!(lowered.component_abi.events.len(), 1);
     assert!(lowered.abi_issues.iter().all(|issue| issue.severity != oak_awsl::AbiSeverity::Error));

@@ -14,6 +14,7 @@ pub mod error;
 pub mod host;
 pub mod host_backend;
 pub mod host_validation;
+pub mod layout;
 pub mod package;
 pub mod pipeline;
 pub mod platform_contract;
@@ -24,6 +25,7 @@ pub mod server_runtime;
 pub mod sourcemap;
 pub mod ssg;
 pub mod static_site;
+pub mod style;
 pub mod tailwind;
 pub mod wasm;
 

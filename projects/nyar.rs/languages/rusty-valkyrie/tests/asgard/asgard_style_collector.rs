@@ -18,7 +18,7 @@ fn first_element_class_attr(lowered: &rusty_valkyrie::asgard::awsl::LoweredCompo
 fn style_codegen_uses_class_binding() {
     let source = r#"<widget><div @style="flex w-4"></div></widget>"#;
     let root = AwslParser::parse_root(source).expect("parse");
-    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default());
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
     let v_source = build_awsl_wasm_source(&[lowered]);
     assert!(v_source.contains("rx_bind_class_utf8"));
     assert!(!v_source.contains("rx_bind_attr_utf8") || !v_source.contains("\"style\""));
@@ -28,7 +28,7 @@ fn style_codegen_uses_class_binding() {
 fn ternary_style_collects_both_arms() {
     let source = r#"<widget><div @style="ready ? 'flex p-2' : 'hidden'"></div></widget>"#;
     let root = AwslParser::parse_root(source).expect("parse");
-    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default());
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
     let collector = rusty_valkyrie::asgard::tailwind::collect_from_components(&[lowered]);
     assert!(collector.utilities().any(|u| u == "flex"));
     assert!(collector.utilities().any(|u| u == "p-2"));
@@ -39,7 +39,7 @@ fn ternary_style_collects_both_arms() {
 fn inline_style_binding_not_collected_as_utility() {
     let source = r#"<widget><div :style="width: 100px"></div></widget>"#;
     let root = AwslParser::parse_root(source).expect("parse");
-    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default());
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
     let module = &lowered.render_ir;
     let style_attr = module.roots.iter().find_map(|&id| match module.node(id) {
         RenderNode::Element(element) => element.attrs.iter().find(|attr| attr.name == "style"),

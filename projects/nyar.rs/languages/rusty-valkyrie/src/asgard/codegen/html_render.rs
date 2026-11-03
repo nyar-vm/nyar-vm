@@ -43,7 +43,7 @@ pub fn render_static_ir(component: &LoweredComponent, data: &Value) -> StaticRen
     let mut ctx = HtmlRenderCtx::new(component, data, &scope);
     ctx.emit_roots(&mut html_body, &component.render_ir);
 
-    let css = component.style.as_deref().unwrap_or("").to_string();
+    let css = crate::asgard::style::web::component_web_css(component);
     let html = format!(
         "<div class=\"{scope}\" data-asgard-static=\"{name}\">\n{html_body}\n</div>",
         scope = scope,

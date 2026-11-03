@@ -39,7 +39,7 @@ fn if_awsl() -> &'static str {
 #[test]
 fn golden_counter_blob_has_magic_and_fields() {
     let root = AwslParser::parse_root(counter_awsl()).expect("parse");
-    let component = lower_component(&root, "counter", "counter.awsl", &LoweringOptions::default());
+    let component = lower_component(&root, "counter", "counter.awsl", &LoweringOptions::default()).expect("lower counter");
     let blob = encode_mobile_ui_package(&[component]);
     assert!(blob.starts_with(UI_BIN_MAGIC));
     let text = String::from_utf8_lossy(&blob);
@@ -50,7 +50,7 @@ fn golden_counter_blob_has_magic_and_fields() {
 #[test]
 fn golden_if_blob_encodes_branches() {
     let root = AwslParser::parse_root(if_awsl()).expect("parse");
-    let component = lower_component(&root, "if-demo", "if-demo.awsl", &LoweringOptions::default());
+    let component = lower_component(&root, "if-demo", "if-demo.awsl", &LoweringOptions::default()).expect("lower if-demo");
     let blob = encode_mobile_ui_package(&[component]);
     assert!(blob.starts_with(UI_BIN_MAGIC));
     assert!(blob.len() > 32);
@@ -137,7 +137,7 @@ fn desktop_package_embeds_native_and_ui_sections() {
         package::desktop::package_desktop_project,
     };
     let root = AwslParser::parse_root(counter_awsl()).expect("parse");
-    let component = lower_component(&root, "counter", "counter.awsl", &LoweringOptions::default());
+    let component = lower_component(&root, "counter", "counter.awsl", &LoweringOptions::default()).expect("lower counter");
     let native = b"native-so-payload";
     let out = package_desktop_project(&[component], "app", "linux", native);
     let exe = out.files.iter().find(|(n, _)| n == "app").expect("exe");

@@ -47,7 +47,7 @@ pub fn emit_report_chart_islands(
         let filled = fill_chart_placeholders(&wrapper, &title_lit, &series_lit);
         let awsl = expand_interactive_col_plot(&filled, &icp_awsl, &chart.route)?;
         let component = compile_awsl_source(&awsl, &chart.route, &format!("{}.awsl", chart.route), &LoweringOptions::default())
-            .map_err(|error| AsgardError::msg(report!("compile chart AWSL {}: {}", chart.route, error.message)))?;
+            .map_err(|error| AsgardError::msg(report!("compile chart AWSL {}: {error}", chart.route)))?;
         let mount = format!(
             r#"<div data-island="hydrated" data-component="{route}" data-module="{module}"></div>"#,
             route = chart.route,
@@ -94,6 +94,7 @@ pub fn emit_report_chart_islands(
         css_mode: "merge".into(),
         mode: "report".into(),
         tailwind_css: None,
+        porting_cost: Vec::new(),
     };
     package_browser_islands(&components, output_dir, &opts).map_err(|e| AsgardError::msg(format!("{e}: {}", "package chart islands")))?;
 
