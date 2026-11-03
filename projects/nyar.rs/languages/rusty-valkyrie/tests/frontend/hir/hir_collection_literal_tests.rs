@@ -13,6 +13,14 @@ use rusty_valkyrie::{
 const CONTRACT_SOURCE: &str = r#"
 namespace std.collection;
 
+[primitive("std::primitive::u32")]
+structure u32 { }
+
+[primitive("std::primitive::u64")]
+structure u64 { }
+
+type usize = u64;
+
 trait LiteralSequence<T> {
     micro with_length(n: usize): Self
     micro append(mut self, value: T): unit
@@ -136,10 +144,7 @@ fn collection_literal_builds_collection_init_with_minted_slots() {
     let initializer = first_let_initializer(function(&module, "build"));
     let (container_type, element_type, with_length, append, items) = expect_collection_init(initializer);
     assert!(container_type.nominal_declaration().is_some(), "容器类型必须是名义类型");
-    match element_type {
-        ValkyrieType::Named(name) => assert_eq!(name.as_str(), "u32", "元素类型应为 u32"),
-        other => panic!("元素类型应为 u32，实际 {other:?}"),
-    }
+    assert_eq!(*element_type, ValkyrieType::Integer32 { signed: false }, "元素类型应为 `u32` 的内建载体（`[primitive]` 身份折叠，不再留下短名拼写）");
     assert_eq!(items.len(), 3, "字面量项必须逐项保留");
     assert!(with_length.declaration.is_some(), "with_length 槽必须冻结声明身份");
     assert!(with_length.instance.is_some(), "with_length 槽实例必须由单态化固定点铸造");
