@@ -2,6 +2,7 @@
 
 mod mir_branch_binding_merge_tests;
 mod mir_function_reference_tests;
+mod mir_hashmap_insert_merge_tests;
 mod mir_loop_break_binding_tests;
 mod mir_match_payload_deferral_tests;
 mod mir_operator_two_operands_resolution_tests;
