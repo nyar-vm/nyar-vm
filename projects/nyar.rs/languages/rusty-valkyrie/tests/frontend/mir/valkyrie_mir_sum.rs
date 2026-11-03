@@ -22,9 +22,14 @@ unite Parcel<First, Second> {
     assert_eq!(sum.generics, hir.enums[0].generics);
     assert_eq!(variant.fields[0].name, "head");
     assert_eq!(variant.fields[1].name, "tail");
+    let record = variant.declaration.expect("Arbitrary declaration");
     assert_eq!(
         sum.instantiate_payload(variant, &[ValkyrieType::Boolean, ValkyrieType::Utf8]),
-        Some(Some(ValkyrieType::Tuple(vec![ValkyrieType::Utf8, ValkyrieType::Array(Box::new(ValkyrieType::Boolean))])))
+        Some(Some(ValkyrieType::Nominal {
+            declaration: record,
+            arguments: vec![ValkyrieType::Boolean, ValkyrieType::Utf8],
+            primitive_identity: None,
+        }))
     );
     assert!(sum.instantiate_payload(variant, &[ValkyrieType::Boolean]).is_none());
     validate_semantic_module(&mir).expect("声明合同");
