@@ -15,6 +15,17 @@ fn snake_case_to_camel_case_examples() {
     assert_eq!(snake_case_to_camel_case("api_ping"), "apiPing");
 }
 
+/// 分段规则：段首字母大写；连续单字母段合并成一个词，只大写该词首字母；
+/// 数字段原样；连续下划线切断合并但不吞掉后续边界；已驼峰输入原样。
+#[test]
+fn snake_case_to_camel_case_segment_rules() {
+    assert_eq!(snake_case_to_camel_case("subarray_bitwise_o_r_s"), "subarrayBitwiseOrs");
+    assert_eq!(snake_case_to_camel_case("a_b_c"), "aBc");
+    assert_eq!(snake_case_to_camel_case("x_2d"), "x2d");
+    assert_eq!(snake_case_to_camel_case("twoSum"), "twoSum");
+    assert_eq!(snake_case_to_camel_case("a_b__c"), "aBC");
+}
+
 #[test]
 fn attribute_id_maps_export_and_main() {
     let export = HirAttribute::new(NamePath::new(vec![Identifier::new("export")]));

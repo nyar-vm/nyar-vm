@@ -208,21 +208,46 @@ fn path_to_partition(path: &NamePath) -> String {
 }
 
 /// `two_sum` → `twoSum`（`export(case: "camelCase")` 命名变换）。
+///
+/// 按 `_` 分段处理，规则以段为单位而不是逐字符拼装：
+/// - 首段原样保留（含已驼峰输入，无下划线时原样返回）；
+/// - 后续段首字母大写，其余字符原样；
+/// - 连续的单字母段视为一个词，只大写该 run 的首字母，其余字母不强制大写
+///   （`o_r_s` → `ors`，而不是 `ORS`）；数字段没有大小写，原样输出并切断连读；
+/// - 前导/尾随/连续下划线不产生字符，但会切断单字母连读，后续段仍算新词，
+///   不吞掉词边界（`a_b__c` → `aBC`）。
+///
+/// `subarray_bitwise_o_r_s` → `subarrayBitwiseOrs`。
 pub fn snake_case_to_camel_case(name: &str) -> String {
-    let mut out = String::new();
-    let mut upper_next = false;
-    for ch in name.chars() {
-        if ch == '_' {
-            upper_next = true;
+    let mut out = String::with_capacity(name.len());
+    let mut first_segment_seen = false;
+    let mut previous_single_letter = false;
+    for segment in name.split('_') {
+        if segment.is_empty() {
+            previous_single_letter = false;
             continue;
         }
-        if upper_next {
-            out.extend(ch.to_uppercase());
-            upper_next = false;
+        if !first_segment_seen {
+            out.push_str(segment);
+            first_segment_seen = true;
+            previous_single_letter = false;
+            continue;
+        }
+        let mut chars = segment.chars();
+        let first = chars.next().expect("non-empty segment");
+        if previous_single_letter && is_single_letter_segment(segment) {
+            out.push(first);
         }
         else {
-            out.push(ch);
+            out.extend(first.to_uppercase());
         }
+        out.extend(chars);
+        previous_single_letter = is_single_letter_segment(segment);
     }
     out
+}
+
+fn is_single_letter_segment(segment: &str) -> bool {
+    let mut chars = segment.chars();
+    matches!((chars.next(), chars.next()), (Some(ch), None) if ch.is_alphabetic())
 }
