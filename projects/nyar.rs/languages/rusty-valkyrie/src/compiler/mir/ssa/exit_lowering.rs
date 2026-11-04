@@ -34,6 +34,7 @@ impl MirBuilder {
 
     pub(super) fn terminate_nullable_try_early_exit(&mut self, value: MirOperand) {
         if let Some(try_scope) = self.control_flow.current_try_scope().cloned() {
+            self.control_flow.mark_current_try_early_exit();
             let arguments = if try_scope.exit_value.is_some() { vec![value.clone()] } else { Vec::new() };
             self.terminate_function_exit(FunctionExitKind::TryScopeExit { target: try_scope.exit, arguments });
         }

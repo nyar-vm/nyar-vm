@@ -495,7 +495,7 @@ fn hand_built_jump_arity_mismatch_is_still_rejected() {
 
 use rusty_valkyrie::compiler::mir::ssa::test_support::{block, expr, TestMirBuilder};
 use rusty_valkyrie::compiler::types::hir::{
-    HirExpr, HirExprKind, HirIdentifier, HirLiteral, HirPattern, HirStatement, HirStatementKind, ValkyrieType,
+    HirBlock, HirExpr, HirExprKind, HirIdentifier, HirLiteral, HirPattern, HirStatement, HirStatementKind, ValkyrieType,
 };
 use rusty_valkyrie::compiler::types::SourceID;
 use rusty_valkyrie::{Identifier, MirOperand, SourceSpan};
@@ -597,4 +597,70 @@ fn block_expression_local_declaration_does_not_suppress_outer_writeback() {
     let inner = expr(HirExprKind::Block(Box::new(block(vec![bool_let("y", true, false), write], None))));
     builder.lower_expr_to_operand(&inner);
     assert_ne!(read_binding(&mut builder, "x"), Some(before), "块内局部声明不得抑制其它块外绑定的写回");
+}
+
+/// 反向风险：块内新声明只属于块作用域，退出后不得泄漏成外层可读绑定。
+#[test]
+fn block_expression_local_declaration_does_not_leak() {
+    use rusty_valkyrie::compiler::mir::ssa::test_support::block;
+    let mut builder = TestMirBuilder::new();
+    let inner = expr(HirExprKind::Block(Box::new(block(vec![bool_let("y", true, false)], None))));
+    builder.lower_expr_to_operand(&inner);
+    assert_eq!(read_binding(&mut builder, "y"), None, "块内 `let y` 退出后仍可读，说明新声明泄漏到外层绑定");
+}
+
+fn nullable_bool_let(name: &str, mutable: bool) -> HirStatement {
+    HirStatement {
+        kind: HirStatementKind::Let {
+            is_mutable: mutable,
+            pattern: HirPattern::Variable(HirIdentifier { name: Identifier::new(name), shadow_index: 0, span: test_span() }),
+            initializer: Some(Box::new(expr(HirExprKind::Literal(HirLiteral::Null)))),
+            ty: Some(ValkyrieType::Nullable(Box::new(ValkyrieType::Boolean))),
+            origin: Default::default(),
+        },
+        span: test_span(),
+    }
+}
+
+fn try_scope(body: HirBlock) -> HirExpr {
+    expr(HirExprKind::TryScope { is_optional: false, is_forced: false, result_type: None, body: Box::new(body) })
+}
+
+/// 残余形态：没有 `?` 提前出口的 try 作用域只有单一 fallthrough 前驱，等价于普通块，
+/// 块外写回必须继续传播，不能再退回入口槽。
+#[test]
+fn try_scope_without_early_exit_propagates_outer_writeback() {
+    let mut builder = TestMirBuilder::new();
+    builder.lower_statement(&bool_let("x", true, true));
+    let before = read_binding(&mut builder, "x").expect("`x` 必须是 SSA 绑定");
+    let write = HirStatement { kind: HirStatementKind::Expr(Box::new(bool_assign("x", false))), span: test_span() };
+    builder.lower_expr_to_operand(&try_scope(block(vec![write], None)));
+    assert_ne!(read_binding(&mut builder, "x"), Some(before), "无提前出口的 try 作用域必须像普通块一样保留块外写回");
+    assert!(builder.diagnostics().is_empty(), "无提前出口的 try 写回不应产生诊断：{:?}", builder.diagnostics());
+}
+
+/// 残余形态：`?` 可以在块外写回之前退出 `try_exit`，写回值没有被线程化成
+/// `try_exit` 的块参数；此形态当前无法表达，必须结构化拒绝而不是静默恢复入口槽。
+#[test]
+fn try_scope_writeback_with_early_exit_is_rejected() {
+    let mut builder = TestMirBuilder::new();
+    builder.lower_statement(&bool_let("x", true, true));
+    builder.lower_statement(&nullable_bool_let("n", false));
+    let write = HirStatement { kind: HirStatementKind::Expr(Box::new(bool_assign("x", false))), span: test_span() };
+    let propagate = HirStatement {
+        kind: HirStatementKind::Expr(Box::new(expr(HirExprKind::TryPropagate {
+            inner: Box::new(expr(HirExprKind::Variable(HirIdentifier { name: Identifier::new("n"), shadow_index: 0, span: test_span() }))),
+            resolved_ok_variant: None,
+        }))),
+        span: test_span(),
+    };
+    builder.lower_expr_to_operand(&try_scope(block(vec![write, propagate], None)));
+    let rejected = builder.diagnostics().iter().any(|diagnostic| {
+        matches!(
+            diagnostic,
+            rusty_valkyrie::MirDiagnostic::UnsupportedExpression { kind, .. }
+                if kind.contains("try scope writes outer binding `x`") && kind.contains("not threaded")
+        )
+    });
+    assert!(rejected, "带 `?` 提前出口的 try 写回必须 fail-closed，实际诊断：{:?}", builder.diagnostics());
 }

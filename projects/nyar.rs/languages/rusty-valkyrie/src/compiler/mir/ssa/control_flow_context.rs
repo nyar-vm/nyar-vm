@@ -28,6 +28,12 @@ pub(super) struct MirLoopContext {
 pub(super) struct MirTryScopeContext {
     pub exit: MirBlockRef,
     pub exit_value: Option<MirValueRef>,
+    /// `?` 是否已经在该 try 作用域内产生过提前出口。
+    ///
+    /// 只有单一 fallthrough 前驱的 try 作用域等价于普通块，块外绑定的写回可以
+    /// 继续传播；一旦存在提前出口，写回值没有被线程化到 `try_exit` 的块参数，
+    /// 必须 fail-closed 而不是静默恢复成入口槽。
+    pub early_exit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,6 +144,12 @@ impl MirBuilderControlFlow {
 
     pub fn current_try_scope(&self) -> Option<&MirTryScopeContext> {
         self.tries.last()
+    }
+
+    pub fn mark_current_try_early_exit(&mut self) {
+        if let Some(try_scope) = self.tries.last_mut() {
+            try_scope.early_exit = true;
+        }
     }
 
     pub fn in_try_scope(&self) -> bool {
