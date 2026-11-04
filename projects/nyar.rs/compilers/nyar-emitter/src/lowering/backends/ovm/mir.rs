@@ -523,6 +523,24 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.store_to_local(output);
                 }
             }
+            MirInstructionKind::LoadFunctionRef { instance } => {
+                // 函数值 = 本模块 `module.functions` 的函数索引（i32）。跨模块/导入
+                // 实例没有稳定索引，只能结构化失败：不回落符号、不猜。
+                let Some(index) = self.function_index_by_instance.get(instance).copied()
+                else {
+                    return Err(format!(
+                        "OVM 函数值要求 instance 属于本模块函数表（跨模块/导入函数值未支持）：{instance:?}（symbol=`{}`）",
+                        self.mir_fn.symbol
+                    ));
+                };
+                self.emitter.emit_const_i32(index);
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                }
+                else {
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
+                }
+            }
             MirInstructionKind::StoreVar { name, value, .. } => {
                 let output_ty = output.and_then(|value| self.value_slot_type(value));
                 self.emit_operand_typed(value, output_ty.as_ref())?;
@@ -770,7 +788,51 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.emit_direct_call(index, &path, arguments, output)?;
                     return Ok(());
                 }
-                panic!("Semantic MIR 调用未绑定 ItemInstanceId，拒绝进入 Nyar 后端: {callee:?}");
+                // 函数值间接调用：callee 是携带冻结 `Function` 签名的 SSA 值，
+                // 运行期目标是槽里的函数索引；实参位宽由签名决定，绝不按字面量猜。
+                let MirOperand::Value(callee_value) = callee
+                else {
+                    return Err(format!("OVM Call 的 callee 既不是可调用实例也不是函数值：{callee:?}（symbol=`{}`）", self.mir_fn.symbol));
+                };
+                let semantic = self.value_semantic_type(*callee_value);
+                let Some(NyarType::Function(signature)) = semantic.clone()
+                else {
+                    let actual = semantic.as_ref().map(ToString::to_string).unwrap_or_else(|| "<未冻结>".to_string());
+                    return Err(format!(
+                        "OVM 间接调用要求 callee 携带冻结 Function 签名，实际类型 {actual}（symbol=`{}`）",
+                        self.mir_fn.symbol
+                    ));
+                };
+                if arguments.len() != signature.params.len() {
+                    return Err(format!(
+                        "OVM 间接调用实参个数 {} 与冻结签名形参个数 {} 不符（symbol=`{}`）",
+                        arguments.len(),
+                        signature.params.len(),
+                        self.mir_fn.symbol
+                    ));
+                }
+                // 先压实参、再压 callee：`CallIndirect` 只弹 callee，实参留在栈上
+                // 由新帧按 arity 消费（Odin 没有 swap，顺序错了取不出来）。
+                for (index, argument) in arguments.iter().enumerate() {
+                    let param_ty = signature.params.get(index);
+                    match argument {
+                        MirOperand::Value(_) => {
+                            if !self.emit_call_operand(argument)? {
+                                return Err(format!("OVM 间接调用实参缺少预规划槽：{argument:?}（symbol=`{}`）", self.mir_fn.symbol));
+                            }
+                        }
+                        _ => self.emit_operand_typed(argument, param_ty)?,
+                    }
+                }
+                self.emit_operand_typed(callee, None)?;
+                self.emitter.emit_imm1(OdinHeadCode::CallIndirect, arguments.len() as i32);
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                }
+                else {
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
+                }
+                return Ok(());
             }
             MirInstructionKind::ArrayGet { array, index } => {
                 self.emit_call_operand(array)?;
@@ -818,7 +880,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.store_to_local(output);
                 }
             }
-            _ => {}
+            // fail-closed：未实现的指令必须报错，绝不静默吞掉（静默会让输出槽保持
+            // `Value::Null`，把编译期错误推迟成运行期错值）。
+            kind => {
+                return Err(format!("OVM 后端未实现指令 {kind:?}（symbol=`{}`）", self.mir_fn.symbol));
+            }
         }
         Ok(())
     }
