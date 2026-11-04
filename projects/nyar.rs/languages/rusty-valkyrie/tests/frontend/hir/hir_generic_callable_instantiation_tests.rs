@@ -158,7 +158,15 @@ micro caller() -> bool {
 }
 "#;
 
-/// 同一 trait 在同一 owner 声明的两个候选 binder 形态上都成立：调用点必须结构化失败。
+/// `imply Box<U>: Echo` 的 `U` 没有声明 binder（impl 头部只把 owner 类自身的泛型参数
+/// 绑进 `generics`），所以它不是 `Box<i32>` 上的第二个可求证据的 impl 身份。
+/// 调用点只能按 owner 实例选中 `imply Box<T>: Echo`，这不是同特异性多匹配。
+///
+/// 依据 01 §4：impl 候选身份由完整头部（generic binders、target、关联等式）决定；
+/// 特异性排序与歧义失败只发生在**实际匹配**的候选之间。此前该测试在 `cd564617`
+/// 变绿，是因为 `discharge_trait_witness` 尚无「witness 冻结在 impl 成员声明上」的
+/// 身份形态，任何 impl 成员 witness 都必然不闭合；`3be47f26` 补齐该形态后，
+/// 唯一 owner 匹配候选被正常消去。
 const AMBIGUOUS_OWNER_TRAIT_SOURCE: &str = r#"
 namespace test.witness;
 
@@ -248,13 +256,44 @@ fn trait_witness_discharges_to_owner_matched_impl_instance() {
 }
 
 #[test]
-fn ambiguous_owner_witness_is_rejected_instead_of_picking_a_candidate() {
-    // `imply Box<T>: Echo` 与 `imply Box<U>: Echo` 对同一个 self 类型给出两个候选：
-    // 调用点必须结构化失败，禁止静默取第一个候选，也不得让 witness 漂到后端再猜。
-    let error = ValkyrieCompiler::default()
-        .compile_source(AMBIGUOUS_OWNER_TRAIT_SOURCE)
-        .expect_err("同一 owner 的多个候选 witness 必须在调用点边界失败");
-    assert!(matches!(error, HirError::UnresolvedCall { .. }), "多个候选 witness 必须结构化失败，不得回退首个实现: {error:?}");
+fn binderless_owner_generic_adds_no_second_witness_candidate() {
+    // `imply Box<U>: Echo` 的 `U` 没有声明 binder，不能对 `Box<i32>` 求证据；
+    // 因此这里只有一个按 owner 实例匹配的合法候选，不构成同特异性多匹配。
+    let hir = compile(AMBIGUOUS_OWNER_TRAIT_SOURCE);
+    let echo_trait = hir.traits.iter().find(|item| item.name.as_str() == "Echo").expect("Echo 声明");
+    let trait_declaration = echo_trait.declaration.expect("trait 声明身份");
+    let use_echo = hir
+        .functions
+        .iter()
+        .find(|function| function.name.as_str() == "use_echo")
+        .and_then(|function| function.declaration)
+        .expect("use_echo 声明身份");
+
+    let mut selected = Vec::new();
+    for callable in hir.instantiated_callables.iter().filter(|callable| callable.function.declaration == Some(use_echo)) {
+        let receiver = callable.function.params.first().map(|param| param.ty.clone()).expect("`use_echo` 必须有接收者实参");
+        assert_closed(&receiver, "实例化接收者类型");
+        let calls = body_calls(&callable.function);
+        assert_eq!(calls.len(), 1, "实例体内必须只有一处 trait 方法调用: {calls:?}");
+        let call = calls[0];
+        assert!(call.trait_dispatch.is_none(), "接收者实例身份已确定时必须消去 witness: {:?}", call.trait_dispatch);
+        let instance = call.instance.expect("唯一 owner 匹配候选必须被选中");
+        let member = hir
+            .instantiated_callables
+            .iter()
+            .find(|callable| callable.function.instance == Some(instance))
+            .expect("impl 实例必须已由固定点铸造");
+        assert_eq!(member.function.name.as_str(), "echo");
+        assert_eq!(member.trait_declaration, Some(trait_declaration), "只能选中同一 trait 的 impl 实例");
+        assert_eq!(member.owner_type.as_ref(), Some(&receiver), "impl owner 必须与接收者实例身份一致");
+        selected.push(instance);
+    }
+    assert_eq!(selected.len(), 1, "`Box<U>` 没有 binder，不得成为第二个 witness 候选: {selected:?}");
+    for callable in &hir.instantiated_callables {
+        if let Some(owner) = callable.owner_type.as_ref() {
+            assert!(!format!("{owner:?}").contains("binder: None"), "binder-less owner 不得铸造实例: {owner:?}");
+        }
+    }
 }
 
 /// 静态 trait 方法没有接收者槽：owner 只能由 witness 冻结的 self 类型约束，
