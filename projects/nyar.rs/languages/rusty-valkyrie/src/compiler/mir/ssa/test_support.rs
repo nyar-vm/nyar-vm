@@ -182,11 +182,13 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
     };
     let module = HirModule {
         name: NamePath::new(vec![Identifier::new("demo")]),
+        wire_version: crate::compiler::types::hir::HIR_WIRE_VERSION,
         dependency_key: "demo".into(),
         source_path: "demo.v".into(),
         primary_namespace: false,
         doc: HirDocumentation::default(),
-        imports: Vec::new(),
+        files: Vec::new(),
+        primary_imports: Vec::new(),
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![function.clone()],
@@ -226,11 +228,13 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
 pub fn lower_test_module(functions: Vec<HirFunction>, structs: Vec<HirStruct>) -> MirModule {
     super::MirLowerer::lower_module_semantic(&HirModule {
         name: NamePath::new(vec![Identifier::new("demo")]),
+        wire_version: crate::compiler::types::hir::HIR_WIRE_VERSION,
         dependency_key: "demo".into(),
         source_path: "demo.v".into(),
         primary_namespace: false,
         doc: HirDocumentation::default(),
-        imports: Vec::new(),
+        files: Vec::new(),
+        primary_imports: Vec::new(),
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions,

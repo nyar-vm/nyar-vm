@@ -308,10 +308,12 @@ pub(crate) fn lower_namespace_name(namespace: &NamespaceDeclaration) -> String {
 /// 收集 `namespace { ... }` 体内的导入，并校验 `using!` 的放置。
 ///
 /// `in_primary` 只表示当前 body 由 `namespace!` 引入；嵌套普通 namespace 不会继承主空间身份。
+/// 主空间 `using!` 进入 `primary_imports`，文件局部 `using` 进入 `imports`。
 pub(crate) fn lower_namespace_body_imports(
     items: &[StatementNode],
     in_primary: bool,
     imports: &mut Vec<HirImport>,
+    primary_imports: &mut Vec<HirImport>,
 ) -> Result<(), HirError> {
     for item in items {
         match item {
@@ -322,13 +324,20 @@ pub(crate) fn lower_namespace_body_imports(
                         span: nyar_types::DiagnosticSpan { start: using.span.start, end: using.span.end },
                     });
                 }
-                imports.push(lower_using(using)?);
+                let lowered = lower_using(using)?;
+                if using_is_primary(using) {
+                    primary_imports.push(lowered);
+                }
+                else {
+                    imports.push(lowered);
+                }
             }
             StatementNode::Namespace(namespace) if namespace.body.is_some() => {
                 lower_namespace_body_imports(
                     crate::compiler::syntax::oak::namespace_items(namespace),
                     namespace_is_primary(namespace),
                     imports,
+                    primary_imports,
                 )?;
             }
             _ => {}

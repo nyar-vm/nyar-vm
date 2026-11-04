@@ -33,8 +33,8 @@ pub use function::HirFunction;
 pub use identifier::HirIdentifier;
 pub use r#impl::{HirAssociatedTypeBinding, HirDerive, HirImpl, HirTraitBound, HirWhereConstraint};
 pub use module::{
-    HirCallResolutionFailure, HirCallResolutionFailureKind, HirCompileWarning, HirDependencySemanticExport, HirDocumentation, HirImport,
-    HirImportBinding, HirInstantiatedCallable, HirModule, HirTypeAlias,
+    HIR_WIRE_VERSION, HirCallResolutionFailure, HirCallResolutionFailureKind, HirCompileWarning, HirDependencySemanticExport,
+    HirDocumentation, HirFileScope, HirImport, HirImportBinding, HirInstantiatedCallable, HirModule, HirTypeAlias,
 };
 pub use property::HirProperty;
 pub use statement::{HirArgument, HirAttribute, HirBlock, HirLetOrigin, HirMatchArm, HirStatement, HirStatementKind};

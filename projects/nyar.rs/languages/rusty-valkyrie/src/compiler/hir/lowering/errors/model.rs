@@ -644,6 +644,19 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// 传入的 HIR wire 版本与当前合同不符。
+    ///
+    /// 旧序列表省略新增字段时版本缺省为 `0`；此处结构化拒绝，不做静默兼容。
+    HirWireVersionRejected {
+        /// 报文携带的版本。
+        found: u32,
+        /// 当前合同要求的版本。
+        expected: u32,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 下游 compile pipeline 拒绝已 lowering 的输入。
     ///
     /// 原样转发下游已冻结的诊断 code 与 module 身份，不在 HIR 侧重新拼装失败文本。

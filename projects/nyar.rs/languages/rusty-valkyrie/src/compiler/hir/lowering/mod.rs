@@ -137,7 +137,18 @@ impl ValkyrieCompiler {
     /// Validates an already materialized HIR module before it crosses into
     /// Semantic MIR. Cache consumers must use this instead of trusting the
     /// schema version of serialized HIR as a semantic guarantee.
+    ///
+    /// wire 版本是硬门：反序列化旧报文缺少版本字段（缺省为 `0`）时结构化拒绝，
+    /// 不因 `serde(default)` 而静默接收。
     pub fn validate_hir_semantic_contract(&self, hir: &HirModule) -> Result<(), HirError> {
+        if hir.wire_version != HIR_WIRE_VERSION {
+            return Err(HirError::HirWireVersionRejected {
+                found: hir.wire_version,
+                expected: HIR_WIRE_VERSION,
+                source: plan_source(),
+                span: plan_span(),
+            });
+        }
         validate_interop_surface(hir).map_err(HirError::BackendContractRejected)?;
         validate_hir_contract(hir)
     }
@@ -478,9 +489,13 @@ impl ValkyrieCompiler {
             let file_source_id = SourceID { version_id: self.source_id.version_id.wrapping_add(index as u32) };
             let mut module = self.lower_prepared_source_file(file, root, imported_semantic_exports, module_name.clone(), file_source_id)?;
             module.diagnostic_sources.insert(file_source_id.version_id, file.path.clone());
+            for scope in &mut module.files {
+                scope.path = file.path.clone();
+            }
             if let Some(target) = &mut merged {
                 target.diagnostic_sources.extend(module.diagnostic_sources);
-                target.imports.extend(module.imports);
+                target.files.extend(module.files);
+                target.primary_imports.extend(module.primary_imports);
                 target.warnings.extend(module.warnings);
                 target.submodules.extend(module.submodules);
                 target.functions.extend(module.functions);

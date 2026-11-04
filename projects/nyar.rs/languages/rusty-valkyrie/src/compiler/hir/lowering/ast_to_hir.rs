@@ -17,11 +17,11 @@ use crate::compiler::{
     types::{
         Identifier, NamePath, SourceID,
         hir::{
-            HirAssociatedTypeImpl, HirAttribute, HirBlock, HirCompileWarning, HirDependencySemanticExport, HirDocumentation, HirEnum, HirExpr,
-            HirExprKind, HirField, HirFlagMember, HirFlags, HirFunction, HirImpl, HirImport, HirImportBinding, HirKind, HirLiteral, HirModule, HirParam,
-            HirParameterBindingKind, HirProperty, HirSingleton, HirStatement, HirStatementKind, HirStruct, HirTrait, HirTraitBound,
-            HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant, HirVisibility, HirWhereConstraint, HirWidget, HirWidgetLifecycle,
-            ValkyrieType,
+            HIR_WIRE_VERSION, HirAssociatedTypeImpl, HirAttribute, HirBlock, HirCompileWarning, HirDependencySemanticExport,
+            HirDocumentation, HirEnum, HirExpr, HirExprKind, HirField, HirFileScope, HirFlagMember, HirFlags, HirFunction, HirImpl, HirImport,
+            HirImportBinding, HirKind, HirLiteral, HirModule, HirParam, HirParameterBindingKind, HirProperty, HirSingleton, HirStatement,
+            HirStatementKind, HirStruct, HirTrait, HirTraitBound, HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant, HirVisibility,
+            HirWhereConstraint, HirWidget, HirWidgetLifecycle, ValkyrieType,
         },
     },
 };
@@ -136,7 +136,9 @@ impl AstToHir {
 
         // 导入必须先经过 fail-closed 校验：真正缺 path 的畸形 `using` 不得被翻译成空
         // `HirImport`。`using!` 是主空间一等导入，只校验放置，不走空 path 拒绝路径。
+        // 文件局部 `using` 与主空间 `using!` 分表保存：前者进文件作用域，后者进 unit 共享表。
         let mut imports = Vec::new();
+        let mut primary_imports = Vec::new();
         let mut primary_namespace = false;
         let mut primary_scope = false;
         for item in &root.items {
@@ -161,7 +163,13 @@ impl AstToHir {
                             span: nyar_types::DiagnosticSpan { start: using.span.start, end: using.span.end },
                         });
                     }
-                    imports.push(lower_using(using)?);
+                    let lowered = lower_using(using)?;
+                    if using_is_primary(using) {
+                        primary_imports.push(lowered);
+                    }
+                    else {
+                        imports.push(lowered);
+                    }
                 }
                 StatementNode::Namespace(namespace) if namespace.body.is_some() => {
                     if namespace_is_primary(namespace) {
@@ -178,11 +186,23 @@ impl AstToHir {
                         crate::compiler::syntax::oak::namespace_items(namespace),
                         namespace_is_primary(namespace),
                         &mut imports,
+                        &mut primary_imports,
                     )?;
                 }
                 _ => {}
             }
         }
+
+        let file_namespace = root
+            .items
+            .iter()
+            .find_map(|item| match item {
+                StatementNode::Namespace(namespace) if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) => {
+                    Some(lower_name_path(&namespace.name).parts().to_vec())
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
 
         let mut type_aliases = Vec::new();
 
@@ -240,11 +260,19 @@ impl AstToHir {
 
         let mut hir = HirModule {
             name: module_name,
+            wire_version: HIR_WIRE_VERSION,
             dependency_key: String::new(),
             source_path: String::new(),
             primary_namespace,
             doc: HirDocumentation::default(),
-            imports,
+            files: vec![HirFileScope {
+                path: String::new(),
+                source_id: self.source_id.version_id,
+                namespace: file_namespace,
+                imports,
+                declarations: Vec::new(),
+            }],
+            primary_imports,
             warnings: Vec::new(),
             submodules: Vec::new(),
             functions,
@@ -272,7 +300,28 @@ impl AstToHir {
             return Err(HirError::DeriveResolutionFailed { errors: derive_result.errors });
         }
         hir.warnings = take_compile_warnings();
+        hir.files[0].declarations = Self::collect_file_declarations(&hir);
         Ok(hir)
+    }
+
+    /// 收集本模块（含嵌套子模块）声明面的本地名，供文件作用域记录。
+    fn collect_file_declarations(module: &HirModule) -> Vec<Identifier> {
+        let mut names = Vec::new();
+        Self::collect_declared_names(module, &mut names);
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    fn collect_declared_names(module: &HirModule, names: &mut Vec<Identifier>) {
+        names.extend(module.functions.iter().map(|function| function.name.clone()));
+        names.extend(module.structs.iter().map(|item| item.name.clone()));
+        names.extend(module.enums.iter().map(|item| item.name.clone()));
+        names.extend(module.traits.iter().map(|item| item.name.clone()));
+        names.extend(module.type_aliases.iter().map(|item| item.name.clone()));
+        for submodule in &module.submodules {
+            Self::collect_declared_names(submodule, names);
+        }
     }
 
     fn lower_items(

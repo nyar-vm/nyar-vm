@@ -280,6 +280,9 @@ impl From<HirError> for DiagnosticRow {
             HirError::DuplicatePrimaryNamespace { namespaces, .. } => {
                 row = row.with_arg("namespaces", DiagnosticArg::Aggregate(namespaces.join(",")));
             }
+            HirError::HirWireVersionRejected { found, expected, .. } => {
+                row = row.with_arg("found", DiagnosticArg::Int(*found as i64)).with_arg("expected", DiagnosticArg::Int(*expected as i64));
+            }
             HirError::PipelineRejected { codes, module, messages } => {
                 row =
                     row.with_arg("module", DiagnosticArg::String(module.clone())).with_arg("codes", DiagnosticArg::Aggregate(codes.join(",")));
@@ -603,7 +606,8 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::UnsupportedRootItem { source, .. } => source.clone(),
         HirError::UnrecognizedImport { source, .. }
         | HirError::PrimaryImportOutsidePrimaryNamespace { source, .. }
-        | HirError::DuplicatePrimaryNamespace { source, .. } => source.clone(),
+        | HirError::DuplicatePrimaryNamespace { source, .. }
+        | HirError::HirWireVersionRejected { source, .. } => source.clone(),
         HirError::PipelineRejected { .. } => DiagnosticSource { id: "<pipeline>".into(), revision: None },
         HirError::LegacyBuiltinTypeAlias { source, .. } | HirError::AmbiguousTextTypeName { source, .. } => source.clone(),
         HirError::TypeNotFound { source, .. } => source.clone(),
@@ -681,7 +685,8 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::UnsupportedRootItem { span, .. } => span.clone(),
         HirError::UnrecognizedImport { span, .. }
         | HirError::PrimaryImportOutsidePrimaryNamespace { span, .. }
-        | HirError::DuplicatePrimaryNamespace { span, .. } => span.clone(),
+        | HirError::DuplicatePrimaryNamespace { span, .. }
+        | HirError::HirWireVersionRejected { span, .. } => span.clone(),
         HirError::PipelineRejected { .. } => empty_span(),
         HirError::LegacyBuiltinTypeAlias { span, .. } | HirError::AmbiguousTextTypeName { span, .. } => span.clone(),
         HirError::TypeNotFound { span, .. } => span.clone(),

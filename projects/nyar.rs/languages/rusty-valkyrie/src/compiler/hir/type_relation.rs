@@ -520,8 +520,21 @@ fn collect_relation_enums(
 }
 
 /// 收集模块（含子模块）声明的 `using` 导入绑定。
+///
+/// 导入归属由文件作用域承载：逐文件局部导入 + unit 共享的主空间 `using!`。
+/// P1 阶段两者仍合并成同一候选池，匹配语义与改造前一致。
 fn collect_relation_imports(module: &HirModule, out: &mut Vec<ImportedSymbol>) {
-    for import in &module.imports {
+    for scope in &module.files {
+        collect_import_bindings(&scope.imports, out);
+    }
+    collect_import_bindings(&module.primary_imports, out);
+    for submodule in &module.submodules {
+        collect_relation_imports(submodule, out);
+    }
+}
+
+fn collect_import_bindings(imports: &[crate::compiler::types::hir::HirImport], out: &mut Vec<ImportedSymbol>) {
+    for import in imports {
         if import.glob {
             let local = import.alias.clone().or_else(|| import.path.parts().last().cloned()).unwrap_or_else(|| Identifier::new(""));
             out.push(ImportedSymbol { module: import.path.clone(), glob: true, imported: local.clone(), local });
@@ -547,9 +560,6 @@ fn collect_relation_imports(module: &HirModule, out: &mut Vec<ImportedSymbol>) {
                 imported: binding.name.clone(),
             });
         }
-    }
-    for submodule in &module.submodules {
-        collect_relation_imports(submodule, out);
     }
 }
 

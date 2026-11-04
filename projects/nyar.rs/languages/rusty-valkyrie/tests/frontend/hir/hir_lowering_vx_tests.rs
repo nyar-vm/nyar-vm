@@ -39,10 +39,13 @@ fn renames_view_method_to_render_with_element_return() {
     };
     let module = HirModule {
         name: NamePath::new(vec![Identifier::new("test")]),
+        wire_version: rusty_valkyrie::compiler::types::hir::HIR_WIRE_VERSION,
         dependency_key: String::new(),
         source_path: "test.v".to_string(),
+        primary_namespace: false,
         doc: HirDocumentation::default(),
-        imports: Vec::new(),
+        files: Vec::new(),
+        primary_imports: Vec::new(),
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: Vec::new(),

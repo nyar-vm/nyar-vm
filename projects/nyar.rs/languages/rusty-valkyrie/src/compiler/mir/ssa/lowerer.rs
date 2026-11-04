@@ -49,7 +49,13 @@ impl MirLowerer {
         let nominal_offset = u32::try_from(structs.len()).expect("aggregate nominal identity overflow");
         let (sum_types, flags_types) = crate::compiler::hir::lowering::compute_nominal_declarations(module, nominal_offset, &mut diagnostics);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
-        let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
+        let imports: Vec<_> = module
+            .files
+            .iter()
+            .flat_map(|scope| scope.imports.iter())
+            .chain(module.primary_imports.iter())
+            .map(|import| import.path.to_string())
+            .collect();
         let mut external_calls = collect_external_call_contracts(module, gate);
 
         let (host_runtime_callables, host_contracts) = if let Some(shared) = shared_host {

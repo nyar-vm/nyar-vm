@@ -275,6 +275,13 @@ impl std::fmt::Display for HirError {
                     namespaces.join(", ")
                 )
             }
+            Self::HirWireVersionRejected { found, expected, source, span } => {
+                write!(
+                    f,
+                    "HIR wire version mismatch at {}:{}..{}: found `{found}`, expected `{expected}`; rebuild the artifact instead of reading a stale payload",
+                    source.id, span.start, span.end
+                )
+            }
             Self::PipelineRejected { codes, module, messages } => {
                 write!(f, "compile pipeline rejected module `{module}`")?;
                 if !codes.is_empty() {

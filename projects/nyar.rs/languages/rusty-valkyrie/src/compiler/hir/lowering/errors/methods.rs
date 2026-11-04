@@ -112,6 +112,7 @@ impl HirError {
             Self::UnrecognizedImport { .. } => "valkyrie.hir.unrecognized_import",
             Self::PrimaryImportOutsidePrimaryNamespace { .. } => "valkyrie.hir.primary_import_outside_primary_namespace",
             Self::DuplicatePrimaryNamespace { .. } => "valkyrie.hir.duplicate_primary_namespace",
+            Self::HirWireVersionRejected { .. } => "valkyrie.hir.hir_wire_version_rejected",
             Self::PipelineRejected { .. } => "valkyrie.hir.pipeline_rejected",
             Self::LegacyBuiltinTypeAlias { .. } => "valkyrie.hir.legacy_builtin_type_alias",
             Self::AmbiguousTextTypeName { .. } => "valkyrie.hir.ambiguous_text_type_name",

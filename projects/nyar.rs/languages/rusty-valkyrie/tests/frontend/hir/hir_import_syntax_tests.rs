@@ -50,8 +50,9 @@ fn live_using_lowers_to_non_empty_hir_import() {
     let hir = ValkyrieCompiler::new(SourceID::default())
         .compile_source("namespace probe;\nusing std.collection::{ArrayList};\n")
         .expect("活语法导入必须可编译");
-    assert_eq!(hir.imports.len(), 1, "既有一个导入声明，就必须产出一个 `HirImport`");
-    let import = &hir.imports[0];
+    assert_eq!(hir.files.len(), 1, "单源码编译必须产出一个文件作用域");
+    assert_eq!(hir.files[0].imports.len(), 1, "既有一个导入声明，就必须产出一个 `HirImport`");
+    let import = &hir.files[0].imports[0];
     assert_eq!(import.path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>(), vec!["std", "collection"], "导入路径不得被截断或清空");
     assert_eq!(import.bindings.iter().map(|binding| binding.name.as_str()).collect::<Vec<_>>(), vec!["ArrayList"]);
 }

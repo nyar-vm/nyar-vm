@@ -6,6 +6,12 @@ use super::{
 };
 use crate::compiler::types::{Identifier, NamePath, SourceSpan};
 
+/// HIR wire 格式版本。
+///
+/// 新增字段必须递增本版本：反序列化的旧报文缺少版本字段（缺省为 `0`）或版本
+/// 与本常量不符时，必须在语义合同校验处结构化拒绝，不许静默接收。
+pub const HIR_WIRE_VERSION: u32 = 1;
+
 /// A module in HIR.
 ///
 /// Modules are the top-level organizational unit in Valkyrie,
@@ -15,6 +21,9 @@ use crate::compiler::types::{Identifier, NamePath, SourceSpan};
 pub struct HirModule {
     /// The fully qualified name path of the module.
     pub name: NamePath,
+    /// wire 格式版本；反序列化旧报文时缺省为 `0`，由语义合同校验拒绝。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub wire_version: u32,
     /// Resolver 分配的依赖组身份；与语义闭包 `DeclarationKey.dependency_key` 对齐。
     #[cfg_attr(feature = "serde", serde(default))]
     pub dependency_key: String,
@@ -26,12 +35,23 @@ pub struct HirModule {
     pub primary_namespace: bool,
     /// Documentation for the module.
     pub doc: HirDocumentation,
-    /// Import statements in this module.
-    pub imports: Vec<HirImport>,
+    /// 文件作用域表：每个源文件的路径、`SourceID`、namespace、局部导入与声明名。
+    ///
+    /// 合并后的声明仍平铺在本模块；文件作用域只承载身份与导入归属，
+    /// 不改变声明存储位置，也**不**用 `submodules` 塞文件。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub files: Vec<HirFileScope>,
+    /// 主空间 `using!` 导入：全 unit 共享，不属于任何单文件的局部导入。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub primary_imports: Vec<HirImport>,
     /// Non-fatal compile warnings collected during lowering.
     #[cfg_attr(feature = "serde", serde(skip, default = "Vec::new"))]
     pub warnings: Vec<HirCompileWarning>,
     /// Nested submodules.
+    ///
+    /// 既有递归载体：expansion、type relation、emitter、reachability、trait system、
+    /// generic binders 等消费者会递归读取。**不是**文件载体，不承载文件作用域；
+    /// 文件身份只走 `files`。
     pub submodules: Vec<HirModule>,
     /// Functions defined in this module.
     pub functions: Vec<HirFunction>,
@@ -238,6 +258,33 @@ pub struct HirImportBinding {
     pub alias: Option<Identifier>,
 }
 
+/// 一个源文件在编译 unit 内的作用域身份。
+///
+/// 文件作用域只描述「这个文件是谁、导入了什么、声明了哪些名字」；
+/// 声明本身仍平铺在 `HirModule`，不为任何声明结构体增加 `file_id`。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirFileScope {
+    /// Resolver 分配的源文件路径；单源码字符串编译时为空。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub path: String,
+    /// 该文件 lowering 使用的 `SourceID.version_id`。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub source_id: u32,
+    /// 本文件声明的命名空间路径；空表示无显式 `namespace`。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub namespace: Vec<Identifier>,
+    /// 本文件局部 `using` 导入（不含主空间 `using!`）。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub imports: Vec<HirImport>,
+    /// 本文件声明面导出的本地名（函数 / 结构 / 枚举 / trait / 类型别名）。
+    ///
+    /// 供按文件判定可见性：同 namespace 跨文件同名允许并存，但只有在
+    /// 本文件声明或显式导入的名字对该文件可见。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub declarations: Vec<Identifier>,
+}
+
 /// A non-fatal compile warning attached to a module.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -275,11 +322,13 @@ impl Default for HirModule {
     fn default() -> Self {
         Self {
             name: NamePath::new(vec![Identifier::new("main")]),
+            wire_version: HIR_WIRE_VERSION,
             dependency_key: String::new(),
             source_path: String::new(),
             primary_namespace: false,
             doc: HirDocumentation::default(),
-            imports: Vec::new(),
+            files: Vec::new(),
+            primary_imports: Vec::new(),
             warnings: Vec::new(),
             submodules: Vec::new(),
             functions: Vec::new(),

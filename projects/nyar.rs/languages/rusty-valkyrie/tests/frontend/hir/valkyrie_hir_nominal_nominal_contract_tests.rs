@@ -104,10 +104,13 @@ fn gadt_unite() -> HirEnum {
 fn module_with_imported_unite(enum_def: HirEnum) -> HirModule {
     HirModule {
         name: NamePath::new(vec![Identifier::new("consumer")]),
+        wire_version: rusty_valkyrie::compiler::types::hir::HIR_WIRE_VERSION,
         dependency_key: "consumer".into(),
         source_path: "consumer.v".into(),
+        primary_namespace: false,
         doc: HirDocumentation::default(),
-        imports: vec![],
+        files: vec![],
+        primary_imports: vec![],
         warnings: Vec::new(),
         submodules: vec![],
         functions: vec![],
