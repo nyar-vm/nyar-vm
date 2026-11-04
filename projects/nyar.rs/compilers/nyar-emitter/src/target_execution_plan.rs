@@ -1161,6 +1161,9 @@ fn type_contains_generic_deep(program: &CanonicalProgram, id: nyar_types::TypeId
         nyar_types::CanonicalTypeKind::Tuple(items)
         | nyar_types::CanonicalTypeKind::Union(items)
         | nyar_types::CanonicalTypeKind::Intersection(items) => items.iter().any(|a| type_contains_generic_deep(program, *a)),
+        nyar_types::CanonicalTypeKind::LabeledTuple { fields } => {
+            fields.iter().any(|(_, ty)| type_contains_generic_deep(program, *ty))
+        }
         nyar_types::CanonicalTypeKind::Array { element, .. } => type_contains_generic_deep(program, *element),
         nyar_types::CanonicalTypeKind::Nullable(element) => type_contains_generic_deep(program, *element),
         nyar_types::CanonicalTypeKind::Function { parameters, return_type } => {
@@ -1192,6 +1195,11 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
             unsupported => Err(format!("primitive 尚无目标合同: {unsupported:?}")),
         },
         CanonicalTypeKind::Tuple(items) => Ok(NyarType::Tuple(items.iter().map(|id| lower_type(program, *id)).collect::<Result<_>>()?)),
+        // 唯一标签擦除点：标签只属于 canonical 身份，目标层按位置布局，`NyarType`
+        // 与 `LayoutKey` 保持无标签。类型身份不等但布局相同的元组在 ABI 上允许。
+        CanonicalTypeKind::LabeledTuple { fields } => Ok(NyarType::Tuple(
+            fields.iter().map(|(_, ty)| lower_type(program, *ty)).collect::<Result<_>>()?,
+        )),
         CanonicalTypeKind::Array { element, length: None } => Ok(NyarType::Array(Box::new(lower_type(program, *element)?))),
         CanonicalTypeKind::Array { element, length: Some(length) } => Ok(NyarType::FixedArray {
             element: Box::new(lower_type(program, *element)?),

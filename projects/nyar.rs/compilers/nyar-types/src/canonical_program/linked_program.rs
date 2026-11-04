@@ -251,6 +251,14 @@ pub enum CanonicalTypeKind {
     },
     /// 元组类型。
     Tuple(Vec<TypeId>),
+    /// 带标签元组：字段标签是类型身份的一部分，字段顺序即位置身份。
+    ///
+    /// 与 [`CanonicalTypeKind::Tuple`] 是两个不同类型，二者之间没有隐式兼容；
+    /// `NyarType` / `LayoutKey` 保持无标签，目标布局按位置擦除标签（`Ord` 不受影响）。
+    LabeledTuple {
+        /// 按源码顺序的 `(标签, 字段类型)`。
+        fields: Vec<(Identifier, TypeId)>,
+    },
     /// 数组类型。
     Array {
         /// 元素类型。
@@ -381,6 +389,15 @@ pub(crate) fn canonical_types_compatible(linked: &LinkedSemanticProgram, actual:
         (CanonicalTypeKind::Tuple(actual), CanonicalTypeKind::Tuple(expected)) if actual.len() == expected.len() => {
             actual.iter().zip(expected).all(|(actual, expected)| canonical_types_compatible(linked, *actual, *expected))
         }
+        // 标签是类型身份的一部分：同名同型同长度才兼容；带标签 ↔ 无标签没有隐式兼容，
+        // 跨形态必须由语言层的显式重构造（或未来单独设计的 `as` 结构转换）完成。
+        (CanonicalTypeKind::LabeledTuple { fields: actual }, CanonicalTypeKind::LabeledTuple { fields: expected })
+            if actual.len() == expected.len() =>
+        {
+            actual.iter().zip(expected).all(|((actual_name, actual_ty), (expected_name, expected_ty))| {
+                actual_name == expected_name && canonical_types_compatible(linked, *actual_ty, *expected_ty)
+            })
+        }
         // 形参身份由 `binder`(owner, ordinal) 决定：同一 binder 才是同一形参。
         (
             CanonicalTypeKind::Generic { owner: actual_owner, ordinal: actual_ordinal },
@@ -422,6 +439,7 @@ impl LinkedSemanticProgram {
                 CanonicalTypeKind::Tuple(members) | CanonicalTypeKind::Union(members) | CanonicalTypeKind::Intersection(members) => {
                     members.clone()
                 }
+                CanonicalTypeKind::LabeledTuple { fields } => fields.iter().map(|(_, ty)| *ty).collect(),
                 CanonicalTypeKind::Array { element, .. } | CanonicalTypeKind::Nullable(element) => {
                     vec![*element]
                 }
@@ -488,6 +506,7 @@ impl LinkedSemanticProgram {
                 CanonicalTypeKind::Tuple(members) | CanonicalTypeKind::Union(members) | CanonicalTypeKind::Intersection(members) => {
                     members.clone()
                 }
+                CanonicalTypeKind::LabeledTuple { fields } => fields.iter().map(|(_, ty)| *ty).collect(),
                 CanonicalTypeKind::Array { element, .. } | CanonicalTypeKind::Nullable(element) => {
                     vec![*element]
                 }

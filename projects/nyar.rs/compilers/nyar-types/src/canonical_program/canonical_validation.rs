@@ -989,6 +989,14 @@ fn unify_call_signature(
                     .zip(expected_items)
                     .all(|(actual, expected)| unify_call_signature(linked, *actual, *expected, bindings, allow_new_bindings))
         }
+        // 带标签元组的标签也是身份的一部分；与无标签元组不做隐式统一。
+        (CanonicalTypeKind::LabeledTuple { fields: actual_items }, CanonicalTypeKind::LabeledTuple { fields: expected_items })
+            if actual_items.len() == expected_items.len() =>
+        {
+            actual_items.iter().zip(expected_items).all(|((actual_name, actual), (expected_name, expected))| {
+                actual_name == expected_name && unify_call_signature(linked, *actual, *expected, bindings, allow_new_bindings)
+            })
+        }
         (
             CanonicalTypeKind::Array { element: actual_element, length: actual_length },
             CanonicalTypeKind::Array { element: expected_element, length: expected_length },
