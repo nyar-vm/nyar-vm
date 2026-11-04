@@ -16,7 +16,7 @@ use crate::compiler::{
     },
     types::{
         Identifier, NamePath,
-        hir::{GenericBinderId, HirEnum, HirModule, HirStruct, HirTraitBound, HirWhereConstraint, RowType, TraitObject, ValkyrieType, primitive_identity_builtin_type},
+        hir::{GenericBinderId, HirAssociatedTypeBinding, HirEnum, HirModule, HirStruct, HirTraitBound, HirWhereConstraint, RowType, TraitObject, ValkyrieType, primitive_identity_builtin_type},
     },
 };
 
@@ -477,7 +477,24 @@ impl TypeRelationContext {
                     // 必须留到具体类型实例化时结算（见 `instantiate_generic_callables`）。
                     return relation_type_is_open_obligation(&target);
                 }
-                let Ok(witness) = self.traits.satisfy_explicit_type(&target, bound)
+                // witness 结算必须看到调用侧的实参代入：`where I: Iterator<Item = T>`
+                // 的关联等式右侧是调用方 binder，未代入时 witness 只能看到开放 binder，
+                // 与 impl 冻结的具体关联类型永远不等。先把 bound 按当前 substitutions
+                // 落成目标形态再取 evidence，证据链与 impl 声明仍然逐项核对。
+                let substituted_bound = HirTraitBound {
+                    declaration: bound.declaration,
+                    trait_path: bound.trait_path.clone(),
+                    type_arguments: bound.type_arguments.iter().map(|ty| substitute_relation_type(ty, substitutions)).collect(),
+                    associated_types: bound
+                        .associated_types
+                        .iter()
+                        .map(|equation| HirAssociatedTypeBinding {
+                            name: equation.name.clone(),
+                            ty: substitute_relation_type(&equation.ty, substitutions),
+                        })
+                        .collect(),
+                };
+                let Ok(witness) = self.traits.satisfy_explicit_type(&target, &substituted_bound)
                 else {
                     return relation_type_is_open_obligation(&target);
                 };
@@ -487,6 +504,55 @@ impl TypeRelationContext {
                 })
             })
         })
+    }
+
+    /// 关联类型驱动的 binder 推断：`where I: Iterator<Item = T>` 中 `I` 已由接收者
+    /// 确定、`T` 只出现在关联等式右侧时，用 impl witness 冻结的关联类型补出 `T`。
+    /// 目标仍含未绑定 binder 时不做（那是调用方尚未履行的义务，留给实例化结算）。
+    pub fn infer_associated_binders(
+        &self,
+        constraints: &[HirWhereConstraint],
+        substitutions: &mut BTreeMap<GenericBinderId, ValkyrieType>,
+        binders: &BTreeSet<GenericBinderId>,
+    ) {
+        for constraint in constraints {
+            let target = substitute_relation_type(&constraint.target, substitutions);
+            if relation_type_is_open_obligation(&target) {
+                continue;
+            }
+            for bound in &constraint.bounds {
+                if bound.associated_types.is_empty() {
+                    continue;
+                }
+                let bound_without_equations = HirTraitBound {
+                    declaration: bound.declaration,
+                    trait_path: bound.trait_path.clone(),
+                    type_arguments: bound.type_arguments.iter().map(|ty| substitute_relation_type(ty, substitutions)).collect(),
+                    associated_types: Vec::new(),
+                };
+                let Ok(witness) = self.traits.satisfy_explicit_type(&target, &bound_without_equations)
+                else {
+                    continue;
+                };
+                for equation in &bound.associated_types {
+                    let expected = substitute_relation_type(&equation.ty, substitutions);
+                    let ValkyrieType::Generic(generic) = &expected
+                    else {
+                        continue;
+                    };
+                    let Some(binder) = generic.binder
+                    else {
+                        continue;
+                    };
+                    if !binders.contains(&binder) || substitutions.contains_key(&binder) {
+                        continue;
+                    }
+                    if let Some(actual) = witness.associated_types.get(&equation.name) {
+                        substitutions.insert(binder, actual.clone());
+                    }
+                }
+            }
+        }
     }
 
     /// 校验具名类型是否满足匿名 row 的方法要求。

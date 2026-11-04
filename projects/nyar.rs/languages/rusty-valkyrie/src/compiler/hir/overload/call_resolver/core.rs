@@ -82,6 +82,26 @@ pub(crate) fn peel_explicit_generic_arguments(callee: &HirExpr) -> (Vec<Valkyrie
     }
 }
 
+/// 上下文相关的 lambda 实参类型：仅当形参槽位期望函数类型、且 lambda 自身的
+/// 形参与返回类型都已标注时，才把该签名作为实参类型参与匹配。
+fn infer_contextual_lambda_type(expr: &HirExpr, expected: &ValkyrieType) -> Option<ValkyrieType> {
+    let ValkyrieType::Function(_) = expected
+    else {
+        return None;
+    };
+    let HirExprKind::Lambda { params, return_type, .. } = &expr.kind
+    else {
+        return None;
+    };
+    if matches!(return_type, ValkyrieType::AutoType) || params.iter().any(|param| matches!(param.ty, ValkyrieType::AutoType)) {
+        return None;
+    }
+    Some(ValkyrieType::Function(Box::new(crate::compiler::types::hir::FunctionType {
+        params: params.iter().map(|param| param.ty.clone()).collect(),
+        return_type: return_type.clone(),
+    })))
+}
+
 /// 以实参类型判定单个候选是否匹配；外部测试入口。
 #[doc(hidden)]
 pub fn match_call_candidate(
@@ -170,9 +190,12 @@ pub fn match_call_candidate(
     let mut matched_actual_types = Vec::with_capacity(bound_exprs.len());
     for (expr, (expected, actual)) in bound_exprs.iter().zip(expected_params.iter().zip(actual_types.iter())) {
         let contextual_expected = substitute_type_vars(expected, &substitutions);
-        let actual = actual.as_ref().map(|actual| {
-            crate::compiler::hir::overload::substitution::specialize_literal_expr_type(expr, actual, &contextual_expected, type_relations)
-        });
+        let actual = actual
+            .as_ref()
+            .map(|actual| {
+                crate::compiler::hir::overload::substitution::specialize_literal_expr_type(expr, actual, &contextual_expected, type_relations)
+            })
+            .or_else(|| infer_contextual_lambda_type(expr, &contextual_expected));
         match actual.as_ref() {
             Some(actual) => {
                 if unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions).is_none() {
@@ -184,6 +207,9 @@ pub fn match_call_candidate(
         }
         matched_actual_types.push(actual);
     }
+    // `where I: Iterator<Item = T>` 里 `T` 可能只出现在关联等式右侧：接收者已锁定 `I`
+    // 后，用 impl witness 的关联类型补出 `T`，再按常规路径核对 where 证据。
+    type_relations.infer_associated_binders(&candidate.where_constraints, &mut substitutions, &candidate.generic_binders);
     let expected_params = expected_params.iter().map(|ty| substitute_type_vars(ty, &substitutions)).collect::<Vec<_>>();
     if !type_relations.satisfies_where_constraints(&candidate.where_constraints, &substitutions) {
         return None;
