@@ -41,6 +41,13 @@ pub enum ImplyErrorKind {
         /// 实现所在的 target 类型。
         target: HirType,
     },
+    /// trait 的 super trait 链成环（`trait A: B` + `trait B: A`，含 `trait A: A`）。
+    SuperTraitCycle {
+        /// 环的入口 trait 路径。
+        trait_name: NamePath,
+        /// 闭合环，末项回到 `trait_name`。
+        cycle: Vec<NamePath>,
+    },
     /// 实现中缺少 trait 声明的必需方法。
     MissingMethod {
         /// trait 路径。
@@ -182,11 +189,43 @@ impl ImplyChecker {
         for trait_def in &module.traits {
             self.traits.insert(trait_def.name.clone(), trait_def.clone());
         }
+        // 声明级缺陷必须先报：成环的 super trait 链没有可满足的闭包，
+        // 后续按 impl 的检查只会放大噪音。
+        self.check_super_trait_cycles(&module.traits);
         for (index, impl_block) in module.impls.iter().enumerate() {
             self.check_duplicate_impl(index, &module.impls);
             self.check_impl(impl_block, &module.impls);
         }
         self.errors.clone()
+    }
+
+    fn check_super_trait_cycles(&mut self, declared: &[HirTrait]) {
+        // 建索引时用「声明命名空间 + 短名」作身份：`self.traits` 按短名收口，
+        // 跨命名空间的同名 trait 会在那里合并，不能拿来做环检测。
+        let traits = declared.iter().map(|trait_def| (trait_identity_path(trait_def), trait_def)).collect::<BTreeMap<_, _>>();
+        let mut reported = BTreeSet::new();
+        for identity in traits.keys() {
+            if reported.contains(identity) {
+                continue;
+            }
+            let mut visiting = Vec::new();
+            let mut done = BTreeSet::new();
+            let Some(cycle) = find_super_trait_cycle(&traits, identity, &mut visiting, &mut done)
+            else {
+                continue;
+            };
+            for step in &cycle {
+                reported.insert(step.clone());
+            }
+            self.errors.push(ImplyError {
+                kind: ImplyErrorKind::SuperTraitCycle { trait_name: identity.clone(), cycle: cycle.clone() },
+                message: format!(
+                    "E_TRAIT_SUPER_CYCLE: super trait 链成环：{}",
+                    cycle.iter().map(display_path).collect::<Vec<_>>().join(" -> ")
+                ),
+                span: None,
+            });
+        }
     }
 
     /// 清空已登记的 trait 与违规列表。
@@ -503,6 +542,9 @@ fn render_method_signature(method: &HirFunction) -> String {
 fn trait_type_to_path(ty: &HirType) -> Option<NamePath> {
     match ty {
         HirType::Named(name) => Some(NamePath::new(vec![name.clone()])),
+        HirType::QualifiedPath { namespace, name } => Some(NamePath::new(
+            namespace.iter().map(|part| Identifier::new(part)).chain(std::iter::once(name.clone())).collect(),
+        )),
         HirType::Apply(base, _) => match base.as_ref() {
             HirType::Named(name) => Some(NamePath::new(vec![name.clone()])),
             _ => None,
@@ -539,4 +581,78 @@ fn collect_super_trait_paths_inner(
             }
         }
     }
+}
+
+/// trait 的声明身份路径：声明命名空间 + 短名。
+///
+/// super trait 环检测必须按这个身份判等；`last_name` 只用于显示，不参与判等。
+fn trait_identity_path(trait_def: &HirTrait) -> NamePath {
+    let mut path = trait_def.declaring_namespace.clone();
+    path.append(trait_def.name.clone());
+    path
+}
+
+/// 把 super trait 引用解析成声明身份路径。
+///
+/// 单段引用按 `scope` 所在命名空间补全；已带命名空间段的引用按原样匹配。
+fn resolve_super_trait_path(
+    traits: &BTreeMap<NamePath, &HirTrait>,
+    scope: &NamePath,
+    reference: &NamePath,
+) -> Option<NamePath> {
+    let candidate = if reference.parts().len() > 1 {
+        reference.clone()
+    } else {
+        let parent = &scope.parts()[..scope.parts().len().saturating_sub(1)];
+        let mut parts = parent.to_vec();
+        parts.push(reference.name());
+        NamePath::new(parts)
+    };
+    if traits.contains_key(&candidate) {
+        return Some(candidate);
+    }
+    if traits.contains_key(reference) {
+        return Some(reference.clone());
+    }
+    None
+}
+
+/// 在 trait 图里从 `current` 出发查找 super trait 环。
+///
+/// `current` 与链上元素都是声明身份路径。`visiting` 是当前递归链：调用方传入空栈，
+/// 由本函数压入根路径，因此 `trait A: A` 这类自环也能命中。`done` 记忆化已完全展开
+/// 且无环的 trait，避免同一根下重复遍历。命中链上已有路径时返回 `visiting[start..]`
+/// 再补上闭合项，故结果首项是入口 trait、末项回到入口 trait。
+fn find_super_trait_cycle(
+    traits: &BTreeMap<NamePath, &HirTrait>,
+    current: &NamePath,
+    visiting: &mut Vec<NamePath>,
+    done: &mut BTreeSet<NamePath>,
+) -> Option<Vec<NamePath>> {
+    if let Some(start) = visiting.iter().position(|path| path == current) {
+        let mut cycle = visiting[start..].to_vec();
+        cycle.push(current.clone());
+        return Some(cycle);
+    }
+    if done.contains(current) {
+        return None;
+    }
+    let trait_def = traits.get(current)?;
+    visiting.push(current.clone());
+    for super_trait in &trait_def.super_traits {
+        let Some(super_trait_path) = trait_type_to_path(super_trait)
+        else {
+            continue;
+        };
+        let Some(resolved) = resolve_super_trait_path(traits, current, &super_trait_path)
+        else {
+            continue;
+        };
+        if let Some(cycle) = find_super_trait_cycle(traits, &resolved, visiting, done) {
+            return Some(cycle);
+        }
+    }
+    visiting.pop();
+    done.insert(current.clone());
+    None
 }
