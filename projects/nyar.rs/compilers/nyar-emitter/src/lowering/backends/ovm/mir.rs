@@ -557,6 +557,13 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
+            // 本块只有指令与不可达分支：`TupleGet` 尚无生产者，接入前禁止静默退化为近似读。
+            MirInstructionKind::TupleGet { object, layout_id, index } => {
+                return Err(format!(
+                    "OVM 后端尚未提供 TupleGet 的精确表示编码（object={object:?}, layout_id={layout_id:?}, index={index}，symbol=`{}`）",
+                    self.mir_fn.symbol
+                ));
+            }
             MirInstructionKind::TupleNew { layout_id, fields } => {
                 let layout = self
                     .ctx

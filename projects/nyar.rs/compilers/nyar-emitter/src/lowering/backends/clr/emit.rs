@@ -848,6 +848,13 @@ impl ClrMethodEmitter<'_> {
                     self.emit_layout_field_write(&layout, output.0, slot as usize, value)?;
                 }
             }
+            // 本块只有指令与不可达分支：`TupleGet` 尚无生产者，接入前禁止静默退化为近似读。
+            InstructionKind::TupleGet { object, layout_id, index } => {
+                return Err(format!(
+                    "CLR 后端尚未提供 TupleGet 的精确表示编码（object={object:?}, layout={layout_id:?}, index={index}，function={}）",
+                    self.function.symbol
+                ));
+            }
             InstructionKind::TupleNew { layout_id, fields } => {
                 let layout = self.layout_by_id(*layout_id)?;
                 if fields.len() != layout.fields.len() {
@@ -1864,6 +1871,7 @@ fn instruction_kind_name(kind: &InstructionKind) -> &'static str {
         InstructionKind::LoadFunctionRef { .. } => "LoadFunctionRef",
         InstructionKind::StructNew { .. } => "StructNew",
         InstructionKind::TupleNew { .. } => "TupleNew",
+        InstructionKind::TupleGet { .. } => "TupleGet",
         InstructionKind::AggregateCopy { .. } => "AggregateCopy",
         InstructionKind::FieldGet { .. } => "FieldGet",
         InstructionKind::FieldSet { .. } => "FieldSet",

@@ -1096,6 +1096,17 @@ fn lower_operation(
                 fields: fields.iter().map(|id| value(*id)).collect(),
             }
         }
+        CanonicalOperation::TupleGet { object, tuple_type, index } => {
+            let arity = match program.linked.types.get(tuple_type).map(|row| &row.kind) {
+                Some(nyar_types::CanonicalTypeKind::Tuple(members)) => members.len(),
+                Some(nyar_types::CanonicalTypeKind::LabeledTuple { fields }) => fields.len(),
+                _ => return Err(format!("TupleGet 对象不是元组类型: {tuple_type:?}")),
+            };
+            if (*index as usize) >= arity {
+                return Err(format!("TupleGet 位置索引 {index} 越界（元组长度 {arity}）"));
+            }
+            InstructionKind::TupleGet { object: value(*object), layout_id: layout_for_type(*tuple_type, "TupleGet")?, index: *index }
+        }
         CanonicalOperation::StructNew { nominal, fields } => {
             InstructionKind::StructNew { nominal: *nominal, fields: fields.iter().map(|(field, id)| (*field, value(*id))).collect() }
         }

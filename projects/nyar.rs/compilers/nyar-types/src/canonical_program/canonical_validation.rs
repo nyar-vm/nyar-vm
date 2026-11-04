@@ -823,6 +823,29 @@ impl CanonicalSemanticMir {
                             }
                             fields.clone()
                         }
+                        CanonicalOperation::TupleGet { object, tuple_type, index } => {
+                            let arity = match linked.types.get(tuple_type).map(|row| &row.kind) {
+                                Some(CanonicalTypeKind::Tuple(members)) => members.len(),
+                                Some(CanonicalTypeKind::LabeledTuple { fields }) => fields.len(),
+                                _ => {
+                                    return Err(CanonicalMirError::OperationResultTypeMismatch {
+                                        function: *key,
+                                        instruction: instruction.id,
+                                    });
+                                }
+                            };
+                            if (*index as usize) >= arity {
+                                return Err(CanonicalMirError::OperationOperandArityMismatch { function: *key, instruction: instruction.id });
+                            }
+                            if function.value_types.get(object) != Some(tuple_type) {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *object,
+                                });
+                            }
+                            vec![*object]
+                        }
                     };
                     if uses.iter().any(|value| !value_is_available(value)) {
                         let value = *uses.iter().find(|value| !value_is_available(value)).unwrap();

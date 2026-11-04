@@ -225,6 +225,17 @@ pub enum InstructionKind {
         /// 元素值；arity / 类型来自结果 `TypeId`。
         fields: Vec<Operand>,
     },
+    /// Read one element from a tuple by positional index.
+    ///
+    /// Tuple labels live only in the type identity; the physical layout is positional.
+    TupleGet {
+        /// 元组对象。
+        object: Operand,
+        /// 编译器已验证的完整 tuple 布局身份。
+        layout_id: crate::LayoutId,
+        /// 来自元组类型身份的位置索引。
+        index: u32,
+    },
     /// Copy an aggregate by layout.
     AggregateCopy {
         /// 编译器已验证的源/目标聚合布局身份。

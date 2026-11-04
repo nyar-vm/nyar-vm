@@ -425,6 +425,7 @@ fn instruction_operands(kind: &ExecutableInstructionKind) -> Vec<&ExecutableOper
         }
         StructNew { fields, .. } => fields.iter().map(|(_, value)| value).collect(),
         TupleNew { fields, .. } => fields.iter().collect(),
+        TupleGet { object, .. } => vec![object],
         AggregateCopy { source, dest, .. } => vec![source, dest],
         FieldGet { object, .. } => vec![object],
         FieldSet { object, value, .. } => vec![object, value],

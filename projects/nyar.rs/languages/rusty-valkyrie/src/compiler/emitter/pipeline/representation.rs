@@ -137,7 +137,8 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                         | CanonicalOperation::NullIsNull { .. }
                         | CanonicalOperation::NullUnwrap { .. }
                         | CanonicalOperation::LoadFunctionRef { .. }
-                        | CanonicalOperation::TupleNew { .. } => {}
+                        | CanonicalOperation::TupleNew { .. }
+                        | CanonicalOperation::TupleGet { .. } => {}
                     }
                 }
             }

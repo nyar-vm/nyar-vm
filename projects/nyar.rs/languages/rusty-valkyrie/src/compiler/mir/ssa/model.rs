@@ -683,6 +683,13 @@ pub enum MirOperation {
         /// 元组元素值。
         fields: Vec<MirOperand>,
     },
+    /// 按位置读取元组元素；标签只参与类型身份，解析由字段名到位置在 HIR 完成。
+    TupleGet {
+        /// 目标元组值。
+        object: MirOperand,
+        /// 位置索引。
+        index: u32,
+    },
     /// 聚合值整体拷贝。
     AggregateCopy {
         /// 拷贝来源。

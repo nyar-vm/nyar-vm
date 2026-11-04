@@ -198,6 +198,17 @@ pub enum CanonicalOperation {
         /// 与类型列表对齐的字段 SSA 值。
         fields: Vec<MirValueId>,
     },
+    /// 按位置读取元组元素。
+    ///
+    /// `tuple_type` 是完整元组类型身份（带标签或无标签）；标签只参与身份，布局按位置冻结。
+    TupleGet {
+        /// 元组 SSA 值。
+        object: MirValueId,
+        /// 完整元组类型身份。
+        tuple_type: TypeId,
+        /// 位置索引。
+        index: u32,
+    },
 }
 
 /// 已完成类型检查的调用目标。
