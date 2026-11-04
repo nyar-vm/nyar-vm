@@ -998,11 +998,21 @@ fn substitute_expr(
             *ty = instantiate_declared_type(ty, owner, substitution, equations);
             substitute_expr(inner, substitution, owner, equations);
         }
-        HirExprKind::Lambda { params, return_type, body, .. } => {
+        HirExprKind::Lambda { params, return_type, body, captures, hoisted, .. } => {
             for param in params {
                 param.ty = instantiate_declared_type(&param.ty, owner, substitution, equations);
             }
             *return_type = instantiate_declared_type(return_type, owner, substitution, equations);
+            // 捕获事实与环境聚合随 owner 单态化一起代入：不同实例得到不同环境
+            // 类型实参，不能共享同一份 `Nominal{arguments}`。
+            for capture in captures {
+                capture.ty = instantiate_declared_type(&capture.ty, owner, substitution, equations);
+            }
+            if let Some(environment) = hoisted.as_mut().and_then(|identity| identity.environment.as_mut()) {
+                if let Some(ty) = environment.ty.as_mut() {
+                    *ty = instantiate_declared_type(ty, owner, substitution, equations);
+                }
+            }
             substitute_block(body, substitution, owner, equations);
         }
         HirExprKind::TryScope { result_type, body, .. } => {

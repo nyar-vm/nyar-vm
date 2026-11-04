@@ -39,7 +39,6 @@ pub(super) fn lower_singleton_method_functions(
     callable_returns: &CallableReturnTypes,
     member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
-    lambda_allocator: &std::rc::Rc<super::LambdaInstanceAllocator>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let permits = |function: &HirFunction| gate.is_none_or(|gate| gate.permits_declaration(function.declaration));
@@ -61,7 +60,6 @@ pub(super) fn lower_singleton_method_functions(
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
                 host_runtime_callables,
-                std::rc::Rc::clone(lambda_allocator),
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, method.name);
@@ -79,7 +77,6 @@ pub(super) fn lower_singleton_method_functions(
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
                 host_runtime_callables,
-                std::rc::Rc::clone(lambda_allocator),
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, constructor.name);
@@ -97,7 +94,6 @@ pub(super) fn lower_singleton_method_functions(
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
                 host_runtime_callables,
-                std::rc::Rc::clone(lambda_allocator),
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, finalizer.name);
@@ -116,7 +112,6 @@ pub(super) fn lower_impl_method_functions(
     callable_returns: &CallableReturnTypes,
     member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
-    lambda_allocator: &std::rc::Rc<super::LambdaInstanceAllocator>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let permits = |function: &HirFunction| {
@@ -151,7 +146,6 @@ pub(super) fn lower_impl_method_functions(
                 Some(impl_block.target.clone()),
                 impl_type_arguments_from_generics(&impl_block.generics),
                 host_runtime_callables,
-                std::rc::Rc::clone(lambda_allocator),
                 diagnostics,
             );
             mir_function.display_symbol = format!("{type_name}.{}", method.name);
@@ -182,7 +176,6 @@ pub(super) fn lower_impl_method_functions(
             callable.owner_type.clone(),
             Vec::new(),
             host_runtime_callables,
-            std::rc::Rc::clone(lambda_allocator),
             diagnostics,
         );
         // 同一声明的不同代入必须有不同的 ABI 标签。
@@ -207,7 +200,6 @@ pub(super) fn lower_impl_method_functions(
                 Some(struct_apply_type(item, array_owner)),
                 impl_type_arguments_from_generics(&item.generics),
                 host_runtime_callables,
-                std::rc::Rc::clone(lambda_allocator),
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", item.name, method.name);

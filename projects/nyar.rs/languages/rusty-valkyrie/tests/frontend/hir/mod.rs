@@ -16,6 +16,7 @@ mod hir_impl_method_where_obligation_tests;
 mod hir_imply_super_trait_cycle_tests;
 mod hir_import_syntax_tests;
 mod hir_imported_namespace_call_tests;
+mod hir_lambda_capture_tests;
 mod hir_lowering_host_binding_pipeline_tests;
 mod hir_lowering_range_call_repro_tests;
 #[cfg(false)] // types::hir::compiler 路径已不存在（架构迁移）

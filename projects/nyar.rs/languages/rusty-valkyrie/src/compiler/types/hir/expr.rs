@@ -83,6 +83,11 @@ pub struct HirCapture {
     pub mode: CaptureMode,
     /// Whether the capture is mutable.
     pub is_mutable: bool,
+    /// Whether the lambda body writes the captured binding.
+    ///
+    /// P3 的可变捕获 cell 物化依赖该标记；捕获分析不得丢弃写入事实。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub is_write: bool,
     /// Storage hint based on escape analysis.
     ///
     /// This field is populated during escape analysis and indicates
@@ -170,6 +175,44 @@ pub struct HirFunctionReference {
     pub symbol: NamePath,
     /// 具体函数签名；只代入非泛型声明，签名内不残留开放 binder。
     pub signature: Box<FunctionType>,
+}
+
+/// 闭包值在 HIR 提升期冻结的身份事实。
+///
+/// 闭包值由**冻结 callable 实例**（合成函数代码指针）与**捕获环境聚合**共同组成；
+/// 两者都在同一份冻结事实中产生，后续阶段（含 MIR）只消费，不得按捕获名、字段形状
+/// 或短名重新铸造 nominal/`FieldId`/实例。
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirLambdaIdentity {
+    /// 提升期合成的 `HirFunction` 名（模块内唯一，由编译器铸造）。
+    pub function_name: Identifier,
+    /// 合成函数声明身份；注册声明后回填。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub declaration: Option<nyar_types::ItemId>,
+    /// 合成函数实例身份；注册声明后回填。MIR 只消费该实例。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub instance: Option<nyar_types::ItemInstanceId>,
+    /// 捕获环境聚合；无捕获 lambda 不产生环境。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub environment: Option<HirLambdaEnvironment>,
+}
+
+/// 捕获环境聚合的冻结身份。
+///
+/// 环境是 per-lambda 合成的 nominal 结构（不是 tuple）：它作为整体强制 `Reference`
+/// 载体，随函数值跨变量、参数与导出边界传递。
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirLambdaEnvironment {
+    /// 合成环境结构名（模块内唯一，由编译器铸造）。
+    pub struct_name: Identifier,
+    /// 环境聚合的 nominal 类型；名义类型绑定后回填。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub ty: Option<ValkyrieType>,
+    /// 捕获字段身份，顺序与 [`HirExprKind::Lambda`] 的 `captures` 一致；注册字段后回填。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub field_ids: Vec<nyar_types::FieldId>,
 }
 
 /// The kind of an expression.
@@ -317,6 +360,12 @@ pub enum HirExprKind {
         return_type: ValkyrieType,
         /// The body.
         body: Box<HirBlock>,
+        /// Variables captured from the enclosing scope（含写标记）。
+        #[cfg_attr(feature = "serde", serde(default))]
+        captures: Vec<HirCapture>,
+        /// 提升期冻结的合成函数与环境聚合身份。
+        #[cfg_attr(feature = "serde", serde(default))]
+        hoisted: Option<HirLambdaIdentity>,
     },
     /// Anonymous class expression.
     ///

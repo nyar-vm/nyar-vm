@@ -8,6 +8,8 @@ pub mod ast_validation;
 pub mod call_binding;
 /// 闭包捕获分析。
 pub mod capture_analysis;
+/// 闭包 lambda 提升与捕获环境身份铸造。
+pub mod lambda_hoist;
 /// Field-name binding for brace struct literals.
 pub mod construct_binding;
 /// `HIR` 控制流语义校验。
@@ -38,6 +40,7 @@ pub mod type_lowering;
 pub mod type_relation;
 pub use crate::compiler::types::hir::*;
 pub use anonymous_class_hoist::hoist_anonymous_classes;
+pub use lambda_hoist::{bind_lambda_environments, hoist_lambdas};
 pub(crate) use ast_validation::validate_ast_root;
 pub use capture_analysis::CaptureAnalyzer;
 pub use construct_binding::bind_construct_fields;

@@ -363,6 +363,8 @@ fn lower_term_expression_body(
                 params: hir_params,
                 return_type: hir_return_type,
                 body: Box::new(hir_body),
+                captures: Vec::new(),
+                hoisted: None,
             })
         })?,
         TermExpression::Object { callee, fields, .. } => lower_object_expression(callee, fields, source_id, span_range.clone(), span.clone())?,
@@ -641,6 +643,7 @@ fn lower_anonymous_literal_fields(
                 ty: ValkyrieType::Unit,
                 mode: CaptureMode::ByReference,
                 is_mutable: false,
+                is_write: false,
                 storage_hint: CaptureStorage::default(),
             })
             .collect(),

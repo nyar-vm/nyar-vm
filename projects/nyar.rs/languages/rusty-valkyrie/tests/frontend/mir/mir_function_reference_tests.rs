@@ -327,7 +327,7 @@ fn lambda_arity_mismatch_is_structured() {
     assert!(validate_semantic_module(&mir).is_err(), "结构化诊断必须转化为合同失败，不得静默通过");
 }
 
-/// 写入捕获变量：MIR 必须结构化失败，lambda 体内不得出现影子 `StoreVar`。
+/// 写入捕获变量：MIR 必须结构化失败并点名 lambda 实例与捕获名，lambda 体内不得出现影子 `StoreVar`。
 #[test]
 fn lambda_write_to_captured_binding_is_structured() {
     let hir = compile(LAMBDA_WRITE_CAPTURE_SOURCE);
@@ -335,9 +335,10 @@ fn lambda_write_to_captured_binding_is_structured() {
     assert!(
         mir.diagnostics.iter().any(|diagnostic| matches!(
             diagnostic,
-            MirDiagnostic::UnsupportedExpression { kind, .. } if kind.contains("writes outer binding `total`")
+            MirDiagnostic::UnsupportedExpression { kind, .. }
+                if kind.contains("lambda instance") && kind.contains("captures [total]")
         )),
-        "写入捕获变量必须结构化报错：{:?}",
+        "非空捕获必须结构化报错并点名实例与捕获名：{:?}",
         mir.diagnostics
     );
     assert!(

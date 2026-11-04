@@ -278,10 +278,6 @@ impl ValkyrieCompiler {
         let final_hir = hir_groups.pop().ok_or_else(|| HirError::EmptySemanticSourceGroupPlan { source: plan_source(), span: plan_span() })?;
         let all_hirs = std::iter::once(&final_hir).chain(hir_groups.iter()).collect::<Vec<_>>();
         let host_runtime = crate::compiler::mir::ssa::contracts::allocate_program_host_runtime(&all_hirs);
-        // 同一程序闭包共享 lambda 身份分配器：不同源码组合成的 lambda 不得撞号。
-        let lambda_allocator = std::rc::Rc::new(
-            crate::compiler::mir::ssa::contracts::allocate_program_lambda_instances(&all_hirs, &host_runtime),
-        );
         let dispatch = crate::compiler::mir::ssa::generic_call_instantiation::collect_dispatch_entries(&all_hirs);
         let mut mir_groups = hir_groups
             .iter()
@@ -292,7 +288,6 @@ impl ValkyrieCompiler {
                     false,
                     &dispatch,
                     Some(&gate),
-                    Some(&lambda_allocator),
                 )
             })
             .collect::<Vec<_>>();
@@ -302,7 +297,6 @@ impl ValkyrieCompiler {
             true,
             &dispatch,
             Some(&gate),
-            Some(&lambda_allocator),
         );
         for index in entry_indices {
             if index != final_index {
@@ -416,6 +410,9 @@ impl ValkyrieCompiler {
             hir_module.source_path = group.sources.first().map(|file| file.path.clone()).unwrap_or_else(|| format!("{}.v", group.name));
             register_function_declarations(&mut hir_module, &mut next_declaration, &mut next_instance)?;
             register_field_declarations(&mut hir_module, &mut next_field)?;
+            // lambda 环境身份先回填、再冻结泛型 binder：环境实参以 `Named`
+            // 占位书写，由外层 callable 的泛型声明在冻结期绑定同一 bearer。
+            crate::compiler::hir::bind_lambda_environments(&mut hir_module);
             freeze_module_generic_binders(&mut hir_module);
             bind_declared_nominal_types(&mut hir_module)?;
             trait_binding::bind_trait_declarations(&mut hir_module)?;

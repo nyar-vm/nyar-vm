@@ -74,9 +74,7 @@ pub(super) struct MirBuilder {
     pub(super) host_runtime_callables: BTreeMap<String, nyar_types::ItemInstanceId>,
     /// 本函数 lowering 期间合成的 lambda 函数体；并入 `MirModule.functions` 后才能发射。
     pub(super) pending_functions: Vec<MirFunction>,
-    /// 程序级 lambda 身份分配器；同一程序内所有 builder 共享同一 `Rc`，保证实例唯一。
-    pub(super) lambda_allocator: Option<std::rc::Rc<super::lambda_lowering::LambdaInstanceAllocator>>,
-    /// 外层局部绑定名；lambda 体内引用这些名字即捕获，本轮不表示捕获环境。
+    /// 外层局部绑定名；捕获名已在 HIR 提升期改写为环境字段访问，本集合仅作防御性断言。
     pub(super) captured_bindings: BTreeSet<String>,
 }
 
@@ -166,7 +164,6 @@ impl MirBuilder {
             workload_phase: None,
             host_runtime_callables,
             pending_functions: Vec::new(),
-            lambda_allocator: None,
             captured_bindings: BTreeSet::new(),
         }
     }

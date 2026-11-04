@@ -1,6 +1,6 @@
 use crate::compiler::{
     hir::{
-        GenericBinderScope, NominalTypeScope, hoist_anonymous_classes,
+        GenericBinderScope, NominalTypeScope, bind_lambda_environments, hoist_anonymous_classes, hoist_lambdas,
         overload::{resolve_hir_calls, validate_extractor_patterns},
     },
     mir::{SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZER_NAME},
@@ -87,6 +87,10 @@ impl AstToHir {
         }
         register_function_declarations(&mut hir, &mut 0, &mut 0)?;
         register_field_declarations(&mut hir, &mut 0)?;
+        // 环境身份必须在 binder 冻结之前回填：环境聚合的实参先落 `Named` 占位，
+        // 由随后的 `freeze_module_generic_binders` 用外层 callable 的 bearer 冻结，
+        // 单态化才能按具体实参代入环境类型。
+        bind_lambda_environments(&mut hir);
         freeze_module_generic_binders(&mut hir);
         crate::compiler::hir::lowering::generic_binders::bind_declared_nominal_types(&mut hir)?;
         bind_trait_declarations(&mut hir)?;
@@ -294,6 +298,7 @@ impl AstToHir {
             call_resolution_failures: Vec::new(),
         };
         hoist_anonymous_classes(&mut hir);
+        hoist_lambdas(&mut hir);
         let mut injector = crate::compiler::expansion::derive::DeriveInjector::new();
         let derive_result = injector.inject_derives(&mut hir);
         if derive_result.has_errors() {

@@ -39,8 +39,6 @@ impl TestMirBuilder {
             None,
             BTreeMap::new(),
         );
-        // 单元测试里的 lambda 需要身份分配器；测试构建器使用 0 起编号。
-        inner.lambda_allocator = Some(std::rc::Rc::new(super::LambdaInstanceAllocator::new(0, 0)));
         Self { inner }
     }
 
@@ -220,7 +218,6 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         None,
         Vec::new(),
         &BTreeMap::new(),
-        std::rc::Rc::new(super::LambdaInstanceAllocator::new(0, 0)),
         &mut Vec::new(),
     );
     func

@@ -25,7 +25,6 @@ pub(super) fn lower_function_semantic(
     impl_owner_type: Option<ValkyrieType>,
     impl_type_arguments: Vec<ValkyrieType>,
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
-    lambda_allocator: std::rc::Rc<super::LambdaInstanceAllocator>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> (MirFunction, Vec<MirFunction>) {
     let effectful_inline_targets = effect_lowering::collect_effectful_inline_targets(module);
@@ -58,8 +57,6 @@ pub(super) fn lower_function_semantic(
         &builder.sum_types,
     );
     builder.current_return_type = resolved_return_type.clone();
-    // lambda 合成函数与当前函数共享同一程序级身份分配器，实例编号全局唯一。
-    builder.lambda_allocator = Some(lambda_allocator);
 
     // 为函数参数分配 SSA 值，并登记到绑定表与入口块 `parameters`。
     // `self` 参数在 HIR 里常为 `AutoType`/`SelfType`（无显式标注），这里用 impl owner

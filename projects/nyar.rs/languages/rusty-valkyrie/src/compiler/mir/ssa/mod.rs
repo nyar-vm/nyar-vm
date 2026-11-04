@@ -46,7 +46,6 @@ pub use model::*;
 use builder::MirBuilder;
 use callable_types::CallableReturnTypes;
 use function_lowering::lower_function_semantic;
-pub use lambda_lowering::LambdaInstanceAllocator;
 use struct_facts::resolve_self_type_with_owner;
 pub(crate) use type_analysis::type_contains_non_monomorphic_signature_reference;
 pub use type_analysis::type_identity_table;

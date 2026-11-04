@@ -1,5 +1,5 @@
 //! `HIR` 闭包捕获分析的最小前端数据结构。
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::compiler::types::{
     Identifier, SourceID, SourceSpan,
@@ -10,7 +10,7 @@ use crate::compiler::types::{
 #[derive(Debug, Default)]
 pub struct CaptureAnalyzer {
     bindings: BTreeMap<String, CaptureBinding>,
-    captured: BTreeSet<String>,
+    captured: BTreeMap<String, bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,9 +31,13 @@ impl CaptureAnalyzer {
     }
 
     /// 标记当前可见变量已被闭包捕获。
-    pub fn access_var(&mut self, name: &str, _is_write: bool) {
+    ///
+    /// `is_write` 记录 lambda 体内对该绑定是否有写入；P3 的可变捕获 cell 需要
+    /// 该事实，任何调用方都不得丢弃。
+    pub fn access_var(&mut self, name: &str, is_write: bool) {
         if self.bindings.contains_key(name) {
-            self.captured.insert(name.to_string());
+            let entry = self.captured.entry(name.to_string()).or_insert(false);
+            *entry = *entry || is_write;
         }
     }
 
@@ -41,7 +45,7 @@ impl CaptureAnalyzer {
     pub fn into_captures(self) -> Vec<HirCapture> {
         self.captured
             .into_iter()
-            .filter_map(|name| {
+            .filter_map(|(name, is_write)| {
                 let binding = self.bindings.get(&name)?;
                 Some(HirCapture {
                     identifier: HirIdentifier {
@@ -52,6 +56,7 @@ impl CaptureAnalyzer {
                     ty: binding.ty.clone(),
                     mode: capture_mode(&binding.ty),
                     is_mutable: binding.is_mutable,
+                    is_write,
                     storage_hint: CaptureStorage::default(),
                 })
             })

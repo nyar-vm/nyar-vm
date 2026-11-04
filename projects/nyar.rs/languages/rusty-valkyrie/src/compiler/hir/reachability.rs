@@ -480,7 +480,7 @@ impl<'a> ReachabilityWalker<'a> {
                 }
             }
             HirExprKind::Block(block) => self.visit_block(block),
-            HirExprKind::Lambda { params, return_type, body, .. } => {
+            HirExprKind::Lambda { params, return_type, body, captures, hoisted, .. } => {
                 for param in params {
                     self.visit_type(&param.ty);
                     if let Some(default) = &param.default {
@@ -488,6 +488,20 @@ impl<'a> ReachabilityWalker<'a> {
                     }
                 }
                 self.visit_type(return_type);
+                for capture in captures {
+                    self.visit_type(&capture.ty);
+                }
+                // 根边：lambda 创建点 → 提升期合成的 callable 实例。
+                // 间接调用无法从调用图反查目标，缺少该边时合成函数会被 DCE 掉，
+                // 运行期间接调用将找不到目标。
+                if let Some(hoisted) = hoisted {
+                    self.mark(hoisted.declaration);
+                    if let Some(environment) = &hoisted.environment {
+                        if let Some(ty) = &environment.ty {
+                            self.visit_type(ty);
+                        }
+                    }
+                }
                 self.visit_block(body);
             }
             HirExprKind::AnonymousClass { parents, fields, methods, captures, .. } => {

@@ -60,7 +60,8 @@ impl MirBuilder {
                 if let Some(bound) = self.bindings.get(identifier.name.as_str()).cloned() {
                     return bound;
                 }
-                // lambda 体内的外层局部名是捕获；本轮不表示捕获环境，结构化失败而非落 `Unit`。
+                // 防御性断言：HIR 提升已把捕获名改写为环境形参的 `FieldAccess`，
+                // 正常路径不应到达这里；保留该检查避免任何影子局部静默兜底。
                 if self.captured_bindings.contains(identifier.name.as_str()) {
                     self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnsupportedExpression {
                         span: expr.span.clone(),
@@ -688,7 +689,8 @@ impl MirBuilder {
             }
             HirExprKind::Assign { target, value } => {
                 let name = target.as_str().to_string();
-                // 对捕获变量的写入同样没有环境载体；必须结构化失败，不能新建影子局部。
+                // 防御性断言：可变捕获在 HIR 提升期已改写为环境上的 `StoreField`，
+                // 正常路径不应到达这里；保留该检查，禁止新建影子局部兜底。
                 if !self.bindings.contains_key(&name) && self.captured_bindings.contains(&name) {
                     self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnsupportedExpression {
                         span: expr.span.clone(),
@@ -751,10 +753,9 @@ impl MirBuilder {
             HirExprKind::AnonymousClass { class_name: Some(class_name), fields, captures, .. } => {
                 self.lower_anonymous_class_expr(class_name, fields, captures)
             }
-            HirExprKind::Lambda { params, return_type, body, .. } => {
-                // 无捕获 lambda：合成独立 `MirFunction` 并发射 `LoadFunctionRef`；
-                // 捕获环境本轮不表示（见 `captured_bindings`）。
-                self.lower_lambda_expr(params, return_type, body, expected_type, &expr.span)
+            HirExprKind::Lambda { params, return_type, captures, hoisted, .. } => {
+                // 只消费 HIR 提升期冻结的合成函数实例；捕获环境本轮不物化。
+                self.lower_lambda_expr(params, return_type, expected_type, &expr.span, captures, hoisted.as_ref())
             }
             HirExprKind::FunctionReference(reference) => {
                 // 具名函数作值：只消费 HIR 冻结的实例身份，缺失即结构化失败，

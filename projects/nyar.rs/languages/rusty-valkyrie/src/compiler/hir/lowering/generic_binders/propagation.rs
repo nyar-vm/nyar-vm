@@ -97,11 +97,21 @@ pub(crate) fn propagate_generic_binders_in_expr(expr: &mut HirExpr, generics: &[
             propagate_declared_generic_binders(ty, generics);
             propagate_generic_binders_in_expr(inner, generics);
         }
-        HirExprKind::Lambda { params, return_type, body, .. } => {
+        HirExprKind::Lambda { params, return_type, body, captures, hoisted, .. } => {
             for param in params {
                 propagate_declared_generic_binders(&mut param.ty, generics);
             }
             propagate_declared_generic_binders(return_type, generics);
+            for capture in captures {
+                propagate_declared_generic_binders(&mut capture.ty, generics);
+            }
+            // 环境聚合的实参以 `Named` 占位回填，此处按**外层 callable** 的泛型
+            // 绑定 bearer，保证单态化代入的是同一个 bearer。
+            if let Some(environment) = hoisted.as_mut().and_then(|identity| identity.environment.as_mut()) {
+                if let Some(ty) = environment.ty.as_mut() {
+                    propagate_declared_generic_binders(ty, generics);
+                }
+            }
             propagate_generic_binders_in_block(body, generics);
         }
         HirExprKind::TryScope { result_type, body, .. } => {

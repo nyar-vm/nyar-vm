@@ -277,11 +277,19 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
                 bind_expr(inner, namespace, structs, enums, self_owner)?;
                 bind_type(ty, namespace, structs, enums)?;
             }
-            HirExprKind::Lambda { params, return_type, body, .. } => {
+            HirExprKind::Lambda { params, return_type, body, captures, hoisted, .. } => {
                 for param in params {
                     bind_type(&mut param.ty, namespace, structs, enums)?;
                 }
                 bind_type(return_type, namespace, structs, enums)?;
+                for capture in captures {
+                    bind_type(&mut capture.ty, namespace, structs, enums)?;
+                }
+                if let Some(environment) = hoisted.as_mut().and_then(|identity| identity.environment.as_mut()) {
+                    if let Some(ty) = environment.ty.as_mut() {
+                        bind_type(ty, namespace, structs, enums)?;
+                    }
+                }
                 bind_block(body, namespace, structs, enums, self_owner)?;
             }
             HirExprKind::TryScope { result_type, body, .. } => {
