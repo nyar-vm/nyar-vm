@@ -31,18 +31,36 @@ fn hierarchical_using_parses_into_full_path() {
 }
 
 #[test]
-fn deprecated_using_bang_parses_into_empty_path_without_diagnostic() {
-    // 解析层事实：`using!` 的 `!` 不被 `parse_using` 消费，导入声明退化为空路径，
-    // 且完全不产出解析错误（静默）。本测试锁定该上游行为，改动 Oak 后需同步更新。
-    assert_eq!(parsed_using_paths("namespace probe;\nusing! std::collection::{ArrayList};\n"), vec![Vec::<String>::new()]);
+fn using_bang_parses_into_full_path_without_diagnostic() {
+    // 解析层事实：`using!` 的 `!` 不进入路径，导入声明保留完整路径且不产出解析错误；
+    // 主空间限定由 HIR lowering 的放置校验负责，解析层不代判。
+    assert_eq!(
+        parsed_using_paths("namespace probe;\nusing! std::collection::{ArrayList};\n"),
+        vec![vec!["std".to_string(), "collection".to_string()]]
+    );
 }
 
 #[test]
-fn rejects_deprecated_using_bang_at_lowering() {
+fn rejects_using_bang_outside_primary_namespace() {
+    // `using!` 只属于主空间 `namespace!`：普通 namespace 下的 `using!` 必须结构化失败。
     let error = ValkyrieCompiler::new(SourceID::default())
         .compile_source("namespace probe;\nusing! std::collection::{ArrayList};\n")
-        .expect_err("空路径导入必须结构化失败，不得产出空 `HirImport`");
-    assert!(matches!(error, HirError::UnrecognizedImport { .. }), "got {error:?}");
+        .expect_err("非主空间的 `using!` 必须结构化失败");
+    assert!(matches!(error, HirError::PrimaryImportOutsidePrimaryNamespace { .. }), "got {error:?}");
+}
+
+#[test]
+fn primary_using_bang_lowers_to_module_scoped_import() {
+    // 主空间 `using!` 进入 unit 共享表，不得与文件局部 `using` 混表。
+    let hir = ValkyrieCompiler::new(SourceID::default())
+        .compile_source("namespace! probe;\nusing! std::collection::{ArrayList};\n")
+        .expect("主空间 `using!` 必须可编译");
+    assert!(hir.files[0].imports.is_empty(), "`using!` 不得混入文件局部导入表");
+    assert_eq!(hir.primary_imports.len(), 1);
+    assert_eq!(
+        hir.primary_imports[0].path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>(),
+        vec!["std", "collection"]
+    );
 }
 
 #[test]
