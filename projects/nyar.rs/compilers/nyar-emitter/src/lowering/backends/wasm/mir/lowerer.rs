@@ -136,7 +136,9 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
     utf8_array_element_materialize: &BTreeMap<LayoutId, Utf8ArrayElementMaterializePlan>,
 ) -> crate::Result<Vec<u8>> {
     if let Err(error) = validate_pattern_matching_invariants(mir_fn) {
-        debug_assert!(false, "pattern matching contract violation in function `{}`: {error:?}", mir_fn.symbol);
+        // 合同违约必须是编译期结构化失败：`debug_assert!` 只在 debug 构建里 panic，
+        // release 构建会继续 lowering 并可能把残差 `PatternMatch` 编成运行期 trap。
+        return Err(format!("pattern matching contract violation in function `{}`: {error:?}", mir_fn.symbol));
     }
     let ctx = ExecutableLoweringContext::new(submission);
     let mut lowerer = WasmMirLowerer::new(

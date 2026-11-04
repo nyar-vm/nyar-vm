@@ -404,7 +404,14 @@ impl<'a> WasmMirLowerer<'a> {
                                 self.emit_memory_copy();
                             }
                         }
-                        _ => {}
+                        (source_slot, dest_slot) => {
+                            // 非空值聚合必须走线性内存字节拷贝；缺任一地址槽就是可执行
+                            // 合同不一致，静默跳过会让目标槽保持旧值（运行期错编）。
+                            return Err(format!(
+                                "WASM AggregateCopy 非地址型聚合缺少地址槽 in `{}`: source={source_slot:?} dest={dest_slot:?}",
+                                self.mir_fn.symbol
+                            ));
+                        }
                     }
                 }
             }
@@ -428,7 +435,12 @@ impl<'a> WasmMirLowerer<'a> {
                     };
                     let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field)
                     else {
-                        return Ok(());
+                        // 上面已用同一字段身份解析出 layout，二次查表不可能失败：
+                        // 失败即计划自相矛盾，必须报错而不是静默丢弃结果槽。
+                        return Err(format!(
+                            "WASM FieldGet 字段 layout 二次查表不一致（gc struct 分支）: field=`{field}`（symbol=`{}`）",
+                            self.mir_fn.symbol
+                        ));
                     };
                     let type_index = self.resolve_gc_struct_type_index(layout.id, &layout.name);
                     self.emit_local_get(object_local);
@@ -447,7 +459,11 @@ impl<'a> WasmMirLowerer<'a> {
                 else if let Some(object_local) = self.operand_address_local(object) {
                     let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field)
                     else {
-                        return Ok(());
+                        // 与 gc struct 分支同理：二次查表失败是计划自相矛盾，禁止静默跳过。
+                        return Err(format!(
+                            "WASM FieldGet 字段 layout 二次查表不一致（地址分支）: field=`{field}`（symbol=`{}`）",
+                            self.mir_fn.symbol
+                        ));
                     };
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
@@ -658,10 +674,15 @@ impl<'a> WasmMirLowerer<'a> {
                     WasmOpcode::Drop.encode(&mut self.code);
                 }
             }
-            MirInstructionKind::PatternMatch { .. } => {
-                encode_unreachable(&mut self.code);
+            // fail-closed：未实现的指令必须在编码期结构化失败。把 `PatternMatch` 编成
+            // 运行期 `unreachable` 会把后端能力缺口伪装成运行期 trap，调用方无法区分
+            // 「程序真的不可达」与「后端没实现」。
+            MirInstructionKind::PatternMatch { pattern_debug, .. } => {
+                return Err(format!("WASM 后端未实现指令 PatternMatch（pattern=`{pattern_debug}`，symbol=`{}`）", self.mir_fn.symbol));
             }
-            _ => {}
+            kind => {
+                return Err(format!("WASM 后端未实现指令 {kind:?}（symbol=`{}`）", self.mir_fn.symbol));
+            }
         }
         Ok(())
     }
