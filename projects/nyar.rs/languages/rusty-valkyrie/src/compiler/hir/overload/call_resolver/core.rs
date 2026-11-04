@@ -93,9 +93,12 @@ pub fn match_call_candidate(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &std::collections::BTreeSet<Identifier>,
 ) -> Option<OverloadCandidate> {
+    // trait 方法槽没有实现证据：首参是 `Self` 占位时，只有 trait 声明体内部
+    // （`self` 已冻结为 `Self`）才允许参与匹配；其它接收者一律拒绝，禁止按名字兜底。
     if candidate.owner.is_none()
         && candidate.trait_owner.is_some()
         && matches!(candidate.signature.params.first(), Some(ValkyrieType::AutoType | ValkyrieType::r#SelfType))
+        && !type_relations.is_trait_self_scope(candidate.trait_owner)
     {
         return None;
     }

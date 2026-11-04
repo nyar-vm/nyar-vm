@@ -461,6 +461,16 @@ pub(crate) fn try_resolve_instance_method(
                 filtered.push(matched);
             }
         }
+        else if matches!(&receiver_type, ValkyrieType::r#SelfType) && type_relations.is_trait_self_scope(candidate.trait_owner) {
+            // trait 默认体：`self` 就是 `Self`，只认本 trait 的方法槽。不进入 impl
+            // 候选，也不借同名候选池兜底。
+            if let Some(instantiated) = instantiate_trait_method_candidate(candidate, &receiver_type)
+                && let Some(matched) =
+                    match_call_candidate(&instantiated, &full_args, &[], type_relations, locals, struct_fields, singleton_names)
+            {
+                filtered.push(matched);
+            }
+        }
         else if let ValkyrieType::Generic(generic) = &receiver_type {
             if generic.binder.is_none() {
                 continue;

@@ -85,9 +85,13 @@ fn resolve_submodule_calls(
         for item in &mut module.traits {
             let scoped =
                 (!item.declaring_namespace.parts().is_empty()).then(|| type_relations.with_enclosing_module(&item.declaring_namespace));
-            let relations = scoped.as_ref().unwrap_or(type_relations);
+            let base = scoped.as_ref().unwrap_or(type_relations);
+            // 默认体里的 `self` 是声明期占位：作用域冻结在本 trait，owner 也必须是
+            // `Self`，否则成员查找会落回全局同名候选池。
+            let scoped_relations = item.declaration.map(|declaration| base.with_trait_self_scope(declaration));
+            let relations = scoped_relations.as_ref().unwrap_or(base);
             for method in item.methods.iter_mut().chain(item.default_methods.iter_mut()) {
-                resolve_function_calls(method, candidates, relations, struct_fields, singleton_names, None);
+                resolve_function_calls(method, candidates, relations, struct_fields, singleton_names, Some(&ValkyrieType::r#SelfType));
             }
         }
         for item in &mut module.impls {

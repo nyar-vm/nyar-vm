@@ -31,6 +31,7 @@ mod hir_scalar_comparison_tests;
 mod hir_overload_singleton_tests;
 mod hir_single_quote_literal_tests;
 mod hir_trait_dispatch_evidence_tests;
+mod hir_trait_default_self_scope_tests;
 mod hir_trait_system_impl_identity_tests;
 mod hir_expression_nesting_guard_tests;
 mod hir_type_lowering_tests;

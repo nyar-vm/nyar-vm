@@ -115,6 +115,9 @@ pub struct TypeRelationContext {
     group_scope_namespaces: Vec<NamePath>,
     /// 当前正在解析的函数所属 impl 的目标类型；`let` 声明里写 `Self` 时按此代入。
     impl_owner: Option<ValkyrieType>,
+    /// 当前正在解析的函数所属 trait 声明身份；默认体里的 `self` 只能是本 trait 的
+    /// 方法槽，不许回退到全局同名候选池。
+    trait_self_scope: Option<nyar_types::ItemId>,
 }
 
 impl TypeRelationContext {
@@ -142,6 +145,7 @@ impl TypeRelationContext {
             imported_symbols,
             group_scope_namespaces,
             impl_owner: None,
+            trait_self_scope: None,
         }
     }
 
@@ -153,6 +157,16 @@ impl TypeRelationContext {
     /// 当前 impl 的目标类型。
     pub(crate) fn impl_owner(&self) -> Option<&ValkyrieType> {
         self.impl_owner.as_ref()
+    }
+
+    /// 记录当前 trait 声明作用域；默认体里的 `self` 绑定与成员查找据此收敛到本 trait。
+    pub(crate) fn with_trait_self_scope(&self, declaration: nyar_types::ItemId) -> Self {
+        Self { trait_self_scope: Some(declaration), ..self.clone() }
+    }
+
+    /// 候选的 trait 归属是否正是当前声明作用域。
+    pub(crate) fn is_trait_self_scope(&self, trait_owner: Option<nyar_types::ItemId>) -> bool {
+        self.trait_self_scope.is_some() && self.trait_self_scope == trait_owner
     }
 
     /// 语言级迭代协议 trait 的声明身份（`std.iterator::{IntoIterator, Iterator}`）。

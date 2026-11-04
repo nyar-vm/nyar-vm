@@ -144,6 +144,12 @@ fn discharge_trait_witness(
     call: &HirResolvedCall,
 ) -> Option<(u32, Substitution, Option<ValkyrieType>)> {
     let dispatch = call.trait_dispatch.as_ref()?;
+    // 守卫：声明期 trait 默认体里的 `self` 仍是 `Self` 占位，不是实现类型。把
+    // `self = Self` 铸成实例等于给单态化留一个永不闭合的开放身份；必须保持 witness，
+    // 等默认体按具体 self 类型实例化、代入收敛后再结算。
+    if matches!(&dispatch.self_type, ValkyrieType::r#SelfType | ValkyrieType::AutoType) {
+        return None;
+    }
     if has_unresolved_generic_arguments(&dispatch.self_type) {
         return None;
     }
