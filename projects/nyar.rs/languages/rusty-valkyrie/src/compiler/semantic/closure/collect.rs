@@ -123,7 +123,10 @@ fn collect_members(builder: &mut FileBuilder, namespace: &[String], owner: &str,
         let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
         // 拥有者引用相对成员自身 namespace：聚合与该成员同文件同 namespace 时按 namespace 链命中。
         let link = Some(DeclarationLink::MemberOwner(vec![owner.to_string()]));
-        builder.register(namespace, DeclarationKind::Method, &name, Some(owner), link, None, references);
+        // 成员与自由 `micro` 用同一条入口注解规则：声明体方法上的 `[export]` 本身就是导出根，
+        // 不能在闭包收集阶段把它当成普通成员丢掉。
+        let entry_point = entry_point_annotation(&method.annotations);
+        builder.register(namespace, DeclarationKind::Method, &name, Some(owner), link, entry_point, references);
     }
 }
 

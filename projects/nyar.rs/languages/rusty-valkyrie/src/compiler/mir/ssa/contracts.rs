@@ -4,7 +4,7 @@ use super::model::*;
 use super::LambdaInstanceAllocator;
 use crate::compiler::types::{
     Identifier, NamePath,
-    hir::{HirModule, ValkyrieType, parse_export_spec_from_annotations, resolve_attribute_id},
+    hir::{HirFunction, HirModule, ValkyrieType, parse_export_spec_from_annotations, resolve_attribute_id},
 };
 use nyar::{CapabilityTag, RewriteTheory, SemanticFragment};
 use nyar_types::{ExternalImportLink, ItemInstanceId, builtin_attribute};
@@ -181,29 +181,50 @@ pub(super) fn collect_external_call_contracts(
 }
 
 pub(super) fn collect_surface_contracts(module: &HirModule) -> (Vec<MirExportContract>, Vec<MirEntryContract>) {
+    fn visit_function(
+        module: &HirModule,
+        function: &HirFunction,
+        exports: &mut Vec<MirExportContract>,
+        entries: &mut Vec<MirEntryContract>,
+    ) {
+        let symbol = crate::compiler::hir::symbols::stable_hir_function_name_path(&module.name, function);
+        if let Some(spec) = parse_export_spec_from_annotations(&function.annotations) {
+            exports.push(MirExportContract {
+                instance: function.instance,
+                symbol: symbol.clone(),
+                exported_name: spec.resolve_exported_name(&function.name),
+                partition: spec.primary_partition(),
+            });
+        }
+        else if function.annotations.iter().any(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::test())) {
+            // `[test]` 是测试入口的显式声明：导出名与 run contract 身份就是声明名本身。
+            // 这里不做 case 变换或重命名推导，下游按同一名字 invoke。
+            exports.push(MirExportContract {
+                instance: function.instance,
+                symbol: symbol.clone(),
+                exported_name: function.name.as_str().to_string(),
+                partition: "default".to_string(),
+            });
+        }
+        if function.annotations.iter().any(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::main())) {
+            entries.push(MirEntryContract { instance: function.instance, symbol });
+        }
+    }
     fn visit(module: &HirModule, exports: &mut Vec<MirExportContract>, entries: &mut Vec<MirEntryContract>) {
         for function in &module.functions {
-            let symbol = crate::compiler::hir::symbols::stable_hir_function_name_path(&module.name, function);
-            if let Some(spec) = parse_export_spec_from_annotations(&function.annotations) {
-                exports.push(MirExportContract {
-                    instance: function.instance,
-                    symbol: symbol.clone(),
-                    exported_name: spec.resolve_exported_name(&function.name),
-                    partition: spec.primary_partition(),
-                });
+            visit_function(module, function, exports, entries);
+        }
+        // 声明体方法与 impl 成员同样是 surface：`[export]` 挂在成员上就是导出根，
+        // 不以“顶层函数”为限。只有已冻结 callable 实例的成员才产生合同——没有实例
+        // 的成员（泛型 owner / 泛型 impl 的开放成员）由后续诊断负责，合同层不伪造身份。
+        for item in &module.structs {
+            for method in item.methods.iter().filter(|method| method.instance.is_some()) {
+                visit_function(module, method, exports, entries);
             }
-            else if function.annotations.iter().any(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::test())) {
-                // `[test]` 是测试入口的显式声明：导出名与 run contract 身份就是声明名本身。
-                // 这里不做 case 变换或重命名推导，下游按同一名字 invoke。
-                exports.push(MirExportContract {
-                    instance: function.instance,
-                    symbol: symbol.clone(),
-                    exported_name: function.name.as_str().to_string(),
-                    partition: "default".to_string(),
-                });
-            }
-            if function.annotations.iter().any(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::main())) {
-                entries.push(MirEntryContract { instance: function.instance, symbol });
+        }
+        for item in &module.impls {
+            for method in item.methods.iter().filter(|method| method.instance.is_some()) {
+                visit_function(module, method, exports, entries);
             }
         }
         for submodule in &module.submodules {
@@ -222,16 +243,20 @@ pub(super) fn collect_semantic_fragments(
     exports: &[MirExportContract],
     entries: &[MirEntryContract],
 ) -> Vec<SemanticFragment> {
-    let mut fragments = BTreeMap::<Identifier, SemanticFragment>::new();
-    for function in &module.functions {
+    fn add(
+        function: &HirFunction,
+        exports: &[MirExportContract],
+        entries: &[MirEntryContract],
+        fragments: &mut BTreeMap<Identifier, SemanticFragment>,
+    ) {
         let Some(instance) = function.instance
         else {
-            continue;
+            return;
         };
         let export = exports.iter().find(|export| export.instance == Some(instance));
         let is_entry = entries.iter().any(|entry| entry.instance == Some(instance));
         if export.is_none() && !is_entry {
-            continue;
+            return;
         }
         let id = if let Some(export) = export {
             Identifier::new(&format!("export__{}", export.partition.replace('.', "_")))
@@ -266,6 +291,22 @@ pub(super) fn collect_semantic_fragments(
             && !fragment.required_capabilities.iter().any(|capability| capability.as_str() == "suspend")
         {
             fragment.required_capabilities.push(CapabilityTag::new("suspend"));
+        }
+    }
+    let mut fragments = BTreeMap::<Identifier, SemanticFragment>::new();
+    for function in &module.functions {
+        add(function, exports, entries, &mut fragments);
+    }
+    // 声明体 / impl 成员与顶层函数共用同一条片段规则：成员上的 `[export]` 必须成为
+    // `exported_operations` 与 `wasm_export_names`，否则 Canonical 的链接根拿不到该实例。
+    for item in &module.structs {
+        for method in &item.methods {
+            add(method, exports, entries, &mut fragments);
+        }
+    }
+    for item in &module.impls {
+        for method in &item.methods {
+            add(method, exports, entries, &mut fragments);
         }
     }
     if fragments.is_empty() {

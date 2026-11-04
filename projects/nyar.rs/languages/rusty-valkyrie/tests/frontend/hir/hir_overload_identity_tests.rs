@@ -430,6 +430,43 @@ micro probe(items: [i32]): bool {
     assert!(error.to_string().contains("ambiguous"), "必须是结构化歧义错误，实际: {error}");
 }
 
+/// 对照：`class Array<T>`（泛型 owner）的成员已迁到 `imply`，因为泛型 owner
+/// 的实例闭合入口尚未覆盖声明体成员；单态 owner 的声明体方法不需要迁移，
+/// 它的候选绑定类自身的 `Nominal` 身份而不是裸名。
+#[test]
+fn monomorphic_class_body_method_candidate_binds_its_nominal_owner() {
+    let source = r#"
+namespace std.primitive;
+
+[primitive("std::primitive::i32")] structure i32 { }
+
+namespace app;
+
+class Counter {
+    micro bump(self) -> i32 { return 0 }
+}
+"#;
+    let hir = ValkyrieCompiler::default().compile_source(source).expect("单态类体方法必须完成 HIR");
+    let owner = hir
+        .structs
+        .iter()
+        .find(|item| item.name.as_str() == "Counter")
+        .expect("Counter 声明")
+        .constructor_declaration
+        .expect("Counter 声明身份");
+    let candidate = collect_module_candidates(&hir)
+        .into_iter()
+        .find(|candidate| candidate.symbol.parts().last().is_some_and(|part| part.as_str() == "bump"))
+        .expect("类体方法必须产生自己的候选");
+    assert!(candidate.instance.is_some(), "单态 owner 的候选必须冻结实例身份");
+    match candidate.impl_target.as_ref() {
+        Some(ValkyrieType::Nominal { declaration, .. }) => {
+            assert_eq!(*declaration, owner, "候选的 impl 目标必须是类自身的 `Nominal` 身份")
+        }
+        other => panic!("候选的 impl 目标必须是 `Nominal`，实际 {other:?}"),
+    }
+}
+
 fn compile_groups(std: &str, app: &str) -> Result<Vec<rusty_valkyrie::types::hir::HirModule>, String> {
     use rusty_valkyrie::{CompilerSourceGroup, compiler::diagnostics::pending, hir::lowering::DEFAULT_COMPILE_ARCH};
     pending::clear_pending_diagnostics();

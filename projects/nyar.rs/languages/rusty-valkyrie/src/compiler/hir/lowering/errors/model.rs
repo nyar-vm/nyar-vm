@@ -415,7 +415,8 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
-    /// 类/结构体的声明体内声明了方法；固有方法只能写在 `imply` 块里。
+    /// 泛型类/结构体的声明体内声明了方法；单态 owner 的声明体方法已经支持，
+    /// 泛型 owner 暂不支持（暂时的实现边界，不是语言禁令）。
     ClassBodyMethodDeclared {
         /// 声明方法所在的聚合名。
         aggregate: String,

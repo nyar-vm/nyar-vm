@@ -336,9 +336,6 @@ fn collect_declared_candidates(module: &HirModule, trait_view: &TraitModuleView)
     for item in &module.structs {
         candidates.push(build_struct_constructor_candidate(item, array_owner));
     }
-    // 类/结构体声明体的方法已在 HIR 边界结构化拒绝，`HirStruct.methods` 恒为空。
-    // 断言守住“不得再给类体方法接一条候选/特化路径”。
-    debug_assert!(module.structs.iter().all(|item| item.methods.is_empty()), "HirStruct.methods 必须为空");
     for item in &module.structs {
         candidates.extend(item.methods.iter().map(|method| {
             specialize_method_candidate(build_method_candidate(method, Some(item.name.clone()), None), &struct_apply_type(item, array_owner), &item.generics)

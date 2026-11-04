@@ -185,7 +185,7 @@ impl std::fmt::Display for HirError {
             Self::ClassBodyMethodDeclared { aggregate, method, .. } => {
                 write!(
                     f,
-                    "`{aggregate}` 的声明体不允许声明方法 `{method}`；固有方法请写在 `imply {aggregate}<T> {{ ... }}` 块里"
+                    "泛型声明体 `{aggregate}` 的成员方法 `{method}` 暂不支持；声明体方法目前只覆盖单态 owner，泛型 owner 的实例闭合尚未接入"
                 )
             }
             Self::SourceGroupProducerMissing { dependency_key, .. } => {

@@ -554,17 +554,28 @@ impl AstToHir {
         methods: &[MethodDeclaration],
         is_value_type: bool,
     ) -> Result<HirStruct, HirError> {
-        // 声明体内不允许声明方法：固有方法只有 `imply Foo<T> { ... }` 一个载体。
-        // 必须在 HIR 边界结构化拒绝，不能降级进 `HirStruct.methods`——否则调用点会
-        // 在 MIR 跌成不可达的 `UnresolvedCallableIdentity`，且没有任何前端诊断。
-        if let Some(method) = methods.first() {
-            return Err(HirError::ClassBodyMethodDeclared {
-                aggregate: name.as_str().to_string(),
-                method: operator_member_name(&method.name, &method.annotations).as_str().to_string(),
-                source: nyar_types::DiagnosticSource { id: "<ast>".into(), revision: None },
-                span: nyar_types::DiagnosticSpan { start: method.name.span.start, end: method.name.span.end },
-            });
+        // 声明体方法就是该聚合 `Nominal` 上的固有方法；没有接收者参数的成员按静态成员处理，
+        // MIR 侧仍发射普通 `Invoke`，不需要新的调用形态。
+        // 泛型 owner 的声明体方法暂不支持：声明期只为单态 owner 铸造 callable 实例，
+        // 且单态化入口（`CallableDeclaration`）只收 trait default / impl 成员 / 自由函数，
+        // 泛型 owner 的成员没有可闭合的实例来源。这里保持结构化拒绝，不做静默降级——
+        // 否则调用点会在 MIR 跌成不可达的 `UnresolvedCallableIdentity`，且没有任何前端诊断。
+        if !generics.is_empty() {
+            if let Some(method) = methods.first() {
+                return Err(HirError::ClassBodyMethodDeclared {
+                    aggregate: name.as_str().to_string(),
+                    method: operator_member_name(&method.name, &method.annotations).as_str().to_string(),
+                    source: nyar_types::DiagnosticSource { id: "<ast>".into(), revision: None },
+                    span: nyar_types::DiagnosticSpan { start: method.name.span.start, end: method.name.span.end },
+                });
+            }
         }
+        let methods = if generics.is_empty() {
+            methods.iter().map(|method| self.lower_method(method)).collect::<Result<Vec<_>, _>>()?
+        }
+        else {
+            Vec::new()
+        };
         Ok(HirStruct {
             constructor_declaration: None,
             constructor_instance: None,
@@ -574,7 +585,7 @@ impl AstToHir {
             generics: lower_generic_parameters(generics),
             parents: parents.iter().map(lower_parent).collect(),
             fields: fields.iter().map(lower_field).collect::<Result<Vec<_>, _>>()?,
-            methods: Vec::new(),
+            methods,
             visibility: lower_visibility(annotations),
             is_value_type,
             is_abstract: has_modifier(annotations, "abstract"),
