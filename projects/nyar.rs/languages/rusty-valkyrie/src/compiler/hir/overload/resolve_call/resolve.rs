@@ -462,12 +462,19 @@ fn resolve_expr_calls_at(
                 });
             }
         }
-        HirExprKind::FieldAccess { object, field, field_id, .. } => {
+        HirExprKind::FieldAccess { object, field, field_id, tuple_index } => {
             resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
-            if field_id.is_none() {
-                *field_id = infer_scrutinee_type(object, locals, struct_fields, singleton_names)
-                    .as_ref()
-                    .and_then(|object_type| field_identity_from_type(object_type, field, struct_fields));
+            if field_id.is_none() && tuple_index.is_none() {
+                // 字段解析统一走 `resolve_field`：带标签元组冻结成位置索引，
+                // 名义聚合冻结成字段身份；无名元组与未命中都保持未解析，交给下游结构化失败。
+                if let Some(object_type) = infer_scrutinee_type(object, locals, struct_fields, singleton_names) {
+                    match struct_fields.resolve_field(&object_type, field) {
+                        crate::compiler::mir::FieldResolution::LabeledTuple { index, .. } => *tuple_index = Some(index),
+                        crate::compiler::mir::FieldResolution::Aggregate { field_id: resolved, .. } => *field_id = resolved,
+                        crate::compiler::mir::FieldResolution::UnlabeledTuple
+                        | crate::compiler::mir::FieldResolution::NotFound => {}
+                    }
+                }
             }
         }
         HirExprKind::GenericApply { callee, .. } => resolve_expr_calls_at(
