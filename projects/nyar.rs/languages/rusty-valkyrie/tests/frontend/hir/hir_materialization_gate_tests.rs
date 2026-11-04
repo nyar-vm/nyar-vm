@@ -304,3 +304,171 @@ fn witness_minted_clone_body_closes_nested_member_instance() {
         .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], TEST_ARCH)
         .expect("witness 克隆体实例闭合后整条编译链必须成功");
 }
+
+/// 依赖组里 `Tagged: Base` 的 super trait 证据只在库组可见，入口组只能看到导出面。
+const SUPER_TRAIT_LIBRARY_SOURCE: &str = r#"
+namespace lib;
+
+trait Base {
+    micro base(self) -> i64
+    micro doubled(self) -> i64 {
+        return self.base()
+    }
+}
+trait Tagged: Base { micro tag(self) -> i64 }
+
+class Thing { value: i64 }
+
+imply Thing {
+    micro new(value: i64): Self {
+        return Thing { value: value }
+    }
+}
+
+imply Thing: Base {
+    micro base(self) -> i64 {
+        return self.value
+    }
+}
+
+imply Thing: Tagged {
+    micro tag(self) -> i64 {
+        return self.value
+    }
+}
+
+[export]
+micro run<X>(item: X) -> i64
+    where X: Tagged
+{
+    return item.tag()
+}
+
+[export]
+micro base_of<X>(item: X) -> i64
+    where X: Base
+{
+    return item.base()
+}
+"#;
+
+const SUPER_TRAIT_ENTRY_SOURCE: &str = r#"
+namespace app;
+
+using lib.{Thing, run, base_of};
+
+[export]
+micro entry() -> i64 {
+    let seed: i64 = 7
+    let thing: Thing = Thing.new(seed)
+    let tagged: i64 = run(thing)
+    let base: i64 = base_of(thing)
+    return tagged
+}
+"#;
+
+fn super_trait_groups() -> Vec<CompilerSourceGroup> {
+    vec![
+        core_group(),
+        CompilerSourceGroup::single_source("lib", "lib", SUPER_TRAIT_LIBRARY_SOURCE)
+            .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source("app", "app", SUPER_TRAIT_ENTRY_SOURCE)
+            .as_entry()
+            .with_direct_dependencies(vec!["core".into(), "lib".into()]),
+    ]
+}
+
+#[test]
+fn imported_super_trait_evidence_closes_concrete_where_witness() {
+    let groups = super_trait_groups();
+    ValkyrieCompiler::default()
+        .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
+        .expect("具体实参 `Thing` 的 super trait 证据必须经导出面解析到同一 trait 声明身份");
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], TEST_ARCH)
+        .expect("super trait 证据闭合后整条编译链必须成功");
+}
+
+/// 同一 impl 内的成员调用：`peek` 体内的 `self.inner()` 也必须拿到具体实例。
+const GENERIC_IMPL_SUPER_TRAIT_SOURCE: &str = r#"
+namespace app;
+
+trait Base {
+    micro base(self) -> i64
+    micro doubled(self) -> i64 {
+        return self.base()
+    }
+}
+trait Tagged: Base { micro tag(self) -> i64 }
+
+class Thing { value: i64 }
+imply Thing {
+    micro new(value: i64): Self {
+        return Thing { value: value }
+    }
+}
+imply Thing: Base {
+    micro base(self) -> i64 {
+        return self.value
+    }
+}
+imply Thing: Tagged {
+    micro tag(self) -> i64 {
+        return self.value
+    }
+}
+
+class Holder<T> { marker: i64 }
+imply Holder<T> {
+    micro new(marker: i64): Self {
+        return Holder { marker: marker }
+    }
+    micro peek(self) -> i64
+        where T: Tagged
+    {
+        return self.inner()
+    }
+    micro inner(self) -> i64
+        where T: Tagged
+    {
+        return self.marker
+    }
+}
+
+[export]
+micro entry() -> i64 {
+    let seed: i64 = 5
+    let thing: Thing = Thing.new(seed)
+    let holder: Holder<Thing> = Holder.new(seed)
+    let peeked: i64 = holder.peek()
+    let base: i64 = thing.base()
+    return peeked
+}
+"#;
+
+#[test]
+fn super_trait_evidence_closes_nested_impl_member_instance() {
+    let groups = vec![
+        core_group(),
+        CompilerSourceGroup::single_source("app", "app", GENERIC_IMPL_SUPER_TRAIT_SOURCE)
+            .as_entry()
+            .with_direct_dependencies(vec!["core".into()]),
+    ];
+    let hirs = ValkyrieCompiler::default()
+        .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
+        .expect("`Holder<Thing>::peek` 体内对 `inner` 的调用必须在 super trait 证据闭合后铸造实例");
+
+    let inners = hirs
+        .iter()
+        .flat_map(|module| module.instantiated_callables.iter())
+        .filter(|callable| callable.function.name.as_str() == "inner")
+        .collect::<Vec<_>>();
+    assert!(!inners.is_empty(), "`Holder<Thing>::inner` 克隆体必须已铸造");
+    // 泛型 impl 成员的开放克隆体保留 binder 是应有的；这里要求的是 `peek` 的具体实参调用
+    // 已经把 `Holder<Thing>::inner` 也铸成闭合实例。
+    let closed = inners.iter().any(|callable| {
+        callable.owner_type.as_ref().is_some_and(|owner| !format!("{owner:?}").contains("binder: Some("))
+    });
+    let owners = inners.iter().map(|callable| format!("{:?}", callable.owner_type)).collect::<Vec<_>>();
+    assert!(closed, "至少一个 `inner` 实例的 owner 必须闭合: {owners:?}");
+}

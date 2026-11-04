@@ -241,6 +241,44 @@ impl TraitModuleView {
         self.declarations.get(&identity)
     }
 
+    /// 把 trait 声明中的 super trait 引用解析成声明身份上的 bound。
+    ///
+    /// 单段引用按 owner 的声明命名空间补全；多段引用按身份原样匹配。解析不到、
+    /// 或引用携带需要 owner 泛型代入的实参时返回 `None`，由调用方保持 fail-closed。
+    fn super_trait_bound(&self, owner: &HirTrait, super_trait: &HirType) -> Option<HirTraitBound> {
+        let reference = trait_type_to_path(super_trait)?;
+        if matches!(super_trait, HirType::Apply(_, arguments) if !arguments.is_empty()) {
+            return None;
+        }
+        let mut identity = owner.declaring_namespace.clone();
+        identity.append(reference.name());
+        let (declaration, trait_path) = match self.declaration_identity(&identity) {
+            Some(declaration) => (declaration, identity),
+            None => (self.declaration_identity(&reference)?, reference),
+        };
+        Some(HirTraitBound {
+            declaration: Some(declaration),
+            trait_path,
+            type_arguments: Vec::new(),
+            associated_types: Vec::new(),
+        })
+    }
+
+    /// 按「声明命名空间 + 短名」的声明身份查 trait；同名多身份时保持不唯一。
+    fn declaration_identity(&self, identity: &NamePath) -> Option<nyar_types::ItemId> {
+        let mut found = None;
+        for (declaration, definition) in &self.declarations {
+            if trait_identity_path(definition) != *identity {
+                continue;
+            }
+            if found.is_some() {
+                return None;
+            }
+            found = Some(*declaration);
+        }
+        found
+    }
+
     /// 按名字检查 struct 是否满足具名 trait，并生成 witness。
     pub fn satisfy_named_trait(&self, candidate_name: &Identifier, trait_name: &Identifier) -> Result<NamedTraitWitness, TraitModuleError> {
         let candidate = self.structs.get(candidate_name).ok_or_else(|| TraitModuleError::UnknownStruct { name: candidate_name.clone() })?;
@@ -332,6 +370,19 @@ fn normalize_trait_member_type(
         bound: &HirTraitBound,
         depth: usize,
     ) -> Result<NamedTraitWitness, TraitModuleError> {
+        let mut chain = Vec::new();
+        self.satisfy_explicit_type_inner(candidate, bound, depth, &mut chain)
+    }
+
+    /// 求证据的递归主体。`chain` 记录当前 super trait 链上的声明身份：
+    /// 环按身份拒绝，绝不按短名递归。
+    fn satisfy_explicit_type_inner(
+        &self,
+        candidate: &ValkyrieType,
+        bound: &HirTraitBound,
+        depth: usize,
+        chain: &mut Vec<nyar_types::ItemId>,
+    ) -> Result<NamedTraitWitness, TraitModuleError> {
         let declaration = bound
             .declaration
             .ok_or_else(|| TraitModuleError::UnknownTrait { name: bound.trait_path.parts().last().cloned().unwrap_or_default() })?;
@@ -339,6 +390,18 @@ fn normalize_trait_member_type(
             .declarations
             .get(&declaration)
             .ok_or_else(|| TraitModuleError::UnknownTrait { name: bound.trait_path.parts().last().cloned().unwrap_or_default() })?;
+        if let Some(start) = chain.iter().position(|item| *item == declaration) {
+            let mut cycle = chain[start..]
+                .iter()
+                .filter_map(|item| self.declarations.get(item))
+                .map(trait_identity_path)
+                .collect::<Vec<_>>();
+            cycle.push(bound.trait_path.clone());
+            return Err(TraitModuleError::Satisfaction {
+                error: TraitSatisfactionError::CyclicSuperTraits { trait_path: bound.trait_path.clone(), cycle },
+            });
+        }
+        chain.push(declaration);
         let matches = self
             .impls
             .iter()
@@ -373,12 +436,16 @@ fn normalize_trait_member_type(
             });
         }
         let (implementation, substitution) = matches.pop().expect("single explicit impl match");
-        // 父 trait 尚未拥有解析后的 bound 合同，不得用名称递归制造成功证据。
-        if !trait_def.super_traits.is_empty() {
-            return Err(TraitModuleError::Satisfaction {
-                error: TraitSatisfactionError::MissingExplicitImplForSuperTraits { trait_path: bound.trait_path.clone() },
-            });
+        // super trait 必须是该候选上的真实证据：按声明身份逐层求解，任一父 trait
+        // 解析不到身份或缺显式实现都保持 fail-closed，不按短名借用证据。
+        for super_trait in &trait_def.super_traits {
+            let super_bound = self.super_trait_bound(trait_def, super_trait).ok_or_else(|| {
+                let trait_path = trait_type_to_path(super_trait).unwrap_or_else(|| bound.trait_path.clone());
+                TraitModuleError::Satisfaction { error: TraitSatisfactionError::MissingExplicitImplForSuperTraits { trait_path } }
+            })?;
+            self.satisfy_explicit_type_inner(candidate, &super_bound, depth + 1, chain)?;
         }
+        chain.pop();
         let associated_types = collect_associated_types(implementation, trait_def, &bound.trait_path)
             .map_err(|error| TraitModuleError::Satisfaction { error })?
             .into_iter()
@@ -817,6 +884,13 @@ fn trait_type_to_path(ty: &HirType) -> Option<NamePath> {
         },
         _ => None,
     }
+}
+
+/// trait 的声明身份路径：声明命名空间 + 短名。super trait 判等只认这个身份。
+fn trait_identity_path(definition: &HirTrait) -> NamePath {
+    let mut path = definition.declaring_namespace.clone();
+    path.append(definition.name.clone());
+    path
 }
 
 /// 显式 impl 之间的具体度比较结果。

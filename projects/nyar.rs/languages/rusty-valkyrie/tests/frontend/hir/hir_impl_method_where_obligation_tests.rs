@@ -106,6 +106,80 @@ imply Table<K, V> {
 }
 
 #[test]
+fn concrete_super_trait_evidence_closes_where_witness() {
+    let compiler = ValkyrieCompiler::default();
+    compiler
+        .compile_source(
+            r#"
+trait Base { micro base(self) -> i64 }
+trait Tagged: Base { micro tag(self) -> i64 }
+class Thing { value: i64 }
+imply Thing {
+    micro new(value: i64): Self {
+        return Thing { value: value }
+    }
+}
+imply Thing: Base {
+    micro base(self) -> i64 {
+        return self.value
+    }
+}
+imply Thing: Tagged {
+    micro tag(self) -> i64 {
+        return self.value
+    }
+}
+micro run<X>(item: X) -> i64 where X: Tagged {
+    return item.tag()
+}
+[export]
+micro entry() -> i64 {
+    let seed: i64 = 3
+    let thing: Thing = Thing.new(seed)
+    return run(thing)
+}
+"#,
+        )
+        .expect("具体实参 `Thing` 同时有 `Tagged` 与 super trait `Base` 的显式实现时，where witness 必须闭合");
+}
+
+#[test]
+fn concrete_super_trait_without_base_impl_stays_rejected() {
+    let compiler = ValkyrieCompiler::default();
+    assert!(
+        compiler
+            .compile_source(
+                r#"
+trait Base { micro base(self) -> i64 }
+trait Tagged: Base { micro tag(self) -> i64 }
+class Bare { value: i64 }
+imply Bare {
+    micro new(value: i64): Self {
+        return Bare { value: value }
+    }
+}
+imply Bare: Tagged {
+    micro tag(self) -> i64 {
+        return self.value
+    }
+}
+micro run<X>(item: X) -> i64 where X: Tagged {
+    return item.tag()
+}
+[export]
+micro entry() -> i64 {
+    let seed: i64 = 3
+    let bare: Bare = Bare.new(seed)
+    return run(bare)
+}
+"#,
+            )
+            .is_err(),
+        "缺少 super trait `Base` 的显式实现时，`Tagged` witness 不得铸造"
+    );
+}
+
+#[test]
 fn concrete_target_without_evidence_is_still_rejected() {
     let compiler = ValkyrieCompiler::default();
     assert!(
