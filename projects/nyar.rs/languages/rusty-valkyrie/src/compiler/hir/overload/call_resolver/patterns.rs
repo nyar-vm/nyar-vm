@@ -160,12 +160,15 @@ fn variant_segment_from_extractor_callee(canonical_callee: &NamePath) -> Option<
     }
 }
 
-/// 按 scrutinee 的声明身份解析 unite 变体模式构造。
+/// 按 scrutinee 的声明身份解析枚举变体模式构造。
 ///
 /// 现有 Function 域 extractor 候选对泛型 scrutinee（`Option<i32>` vs `Option<T>`）
 /// 无法在不代入 binder 的前提下匹配；这里用 Constructor 候选的声明身份 + 既有泛型
 /// 代入链完成同一件事，返回 Extractor 域并保留 `sum_owner` / `sum_variant`。
-/// 只匹配已有 unite extractor 证据的 `sum_owner`，不放宽到普通 `enums`。
+///
+/// `unite` 变体与普通 `enums` 变体共用这条 Constructor 路径：前者另有 extractor
+/// 候选，后者没有，但两边的 `sum_owner` / `sum_variant` 都是声明期冻结的 tag 身份。
+/// 不得因缺少 extractor 证据把普通 `enums` 的 `case <variant>` 留在 `Name` 回退里。
 pub(crate) fn resolve_variant_pattern_constructor(
     canonical_callee: &NamePath,
     actual_type: &ValkyrieType,
@@ -173,18 +176,10 @@ pub(crate) fn resolve_variant_pattern_constructor(
 ) -> Option<HirResolvedCall> {
     let declaration = sum_declaration_of_type(actual_type)?;
     let variant_name = variant_segment_from_extractor_callee(canonical_callee)?;
-    let unity_variants = candidates
-        .iter()
-        .filter(|candidate| candidate.domain == OverloadDomain::Function)
-        .filter(|candidate| candidate.sum_owner == Some(declaration))
-        .filter(|candidate| matches!(candidate.symbol.parts(), [member] if member.as_str() == "extractor"))
-        .filter_map(|candidate| candidate.sum_variant)
-        .collect::<Vec<_>>();
     let candidate = candidates
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
         .filter(|candidate| candidate.sum_owner == Some(declaration))
-        .filter(|candidate| candidate.sum_variant.is_some_and(|variant| unity_variants.contains(&variant)))
         .find(|candidate| matches!(candidate.symbol.parts(), [name] if name == &variant_name))?;
     let mut substitutions = BTreeMap::new();
     unify_call_type_binders(&candidate.signature.return_type, actual_type, &candidate.generic_binders, &mut substitutions)?;
