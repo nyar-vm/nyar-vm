@@ -5,6 +5,7 @@
 
 use rusty_valkyrie::{
     Identifier, SourceID, ValkyrieCompiler,
+    compiler::hir::overload::collect_module_candidates,
     types::hir::{HirExprKind, HirStatementKind, types::ValkyrieType},
 };
 
@@ -357,6 +358,49 @@ micro wrap(a: Array<i32>): Array<i32> {
         .expect("app 模块");
     let wrap = app_module.functions.iter().find(|function| function.name.as_str() == "wrap").unwrap();
     assert!(matches!(wrap.params[0].ty, ValkyrieType::Array(_)), "`Array<T>` 必须折叠为内建 `[T]`");
+}
+
+/// 守卫：数组 owner 的类型身份只允许 owner-freeze 折叠这一条路径产生。
+/// 构造器候选与固有方法候选的签名里一旦出现 `Nominal{declaration: Array}` 或裸 `Named("Array")`，
+/// 就是"第二身份生产者"复活，必须当缺陷失败。
+#[test]
+fn array_owner_candidates_never_forge_a_second_identity() {
+    let source = r#"
+namespace std.primitive;
+
+[primitive("std::primitive::i32")] structure i32 { }
+[primitive("std::primitive::u64")] structure u64 { }
+[primitive("std::primitive::bool")] structure bool { }
+
+type usize = u64;
+
+namespace std.collection;
+
+class Array<T> {
+    _typing: T
+
+    micro probe(self) -> bool { return true }
+}
+"#;
+    let hir = ValkyrieCompiler::default().compile_source(source).expect("数组 owner 绑定");
+    let array_owner =
+        hir.structs.iter().find(|item| item.name.as_str() == "Array").expect("Array 声明").constructor_declaration.expect("Array 声明身份");
+    let candidates = collect_module_candidates(&hir);
+    let mut structural_hits = 0usize;
+    for candidate in &candidates {
+        for ty in std::iter::once(&candidate.signature.return_type).chain(candidate.signature.params.iter()) {
+            if matches!(ty, ValkyrieType::Named(name) if name.as_str() == "Array") {
+                panic!("候选 {:?} 以裸 `Named(Array)` 表示数组 owner: {ty:?}", candidate.symbol);
+            }
+            if let ValkyrieType::Nominal { declaration, .. } = ty {
+                assert_ne!(*declaration, array_owner, "候选 {:?} 以 `Nominal` 铸出数组 owner 的第二身份: {ty:?}", candidate.symbol);
+            }
+            if matches!(ty, ValkyrieType::Array(_)) {
+                structural_hits += 1;
+            }
+        }
+    }
+    assert!(structural_hits >= 2, "数组 owner 的构造器与方法候选必须都产出结构形态，实际命中 {structural_hits}");
 }
 
 /// 可见作用域里多个 `Array<T>` 声明且没有 canonical `std.collection.Array` 时，

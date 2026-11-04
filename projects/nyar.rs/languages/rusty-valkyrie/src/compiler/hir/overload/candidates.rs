@@ -15,6 +15,7 @@ use super::{
     substitution::{substitute_associated_equations, substitute_type_self},
     types::struct_apply_type,
 };
+use crate::compiler::hir::lowering::array_owner_declaration;
 use crate::compiler::hir::trait_system::TraitModuleView;
 
 fn build_function_candidate(module_name: &NamePath, function: &HirFunction, imported_dependency_export: bool) -> OverloadCandidate {
@@ -62,13 +63,13 @@ fn struct_constructor_path(item: &HirStruct) -> NamePath {
     NamePath::new(parts)
 }
 
-fn build_struct_constructor_candidate(item: &HirStruct) -> OverloadCandidate {
+fn build_struct_constructor_candidate(item: &HirStruct, array_owner: Option<nyar_types::ItemId>) -> OverloadCandidate {
     let param_specs = synthetic_field_params(item);
     let mut candidate = OverloadCandidate::new(
         struct_constructor_path(item),
         OverloadDomain::Constructor,
         item.fields.iter().map(|field| field.ty.clone()).collect(),
-        struct_apply_type(item),
+        struct_apply_type(item, array_owner),
         OverloadMatchKind::Row,
     )
     .with_param_specs(param_specs);
@@ -323,6 +324,9 @@ pub fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
 fn collect_declared_candidates(module: &HirModule, trait_view: &TraitModuleView) -> Vec<OverloadCandidate> {
     use super::r#trait::{impl_owner_identifier, impl_owner_identifier_from_export};
 
+    // `[T]` 的类型身份只能由 owner-freeze 折叠产生；候选层只查询冻结结果，不自行铸形态。
+    // 歧义在 `bind_declared_nominal_types` 已结构化失败，此处取不到 owner 只会发生在已中止的编译。
+    let array_owner = array_owner_declaration(module).ok().flatten();
     let mut candidates = Vec::new();
     candidates.extend(module.functions.iter().map(|function| build_function_candidate(&module.name, function, false)));
     let local_function_names = module.functions.iter().map(|function| function.name.clone()).collect::<std::collections::BTreeSet<_>>();
@@ -330,11 +334,11 @@ fn collect_declared_candidates(module: &HirModule, trait_view: &TraitModuleView)
         candidates.extend(collect_declared_candidates(submodule, trait_view));
     }
     for item in &module.structs {
-        candidates.push(build_struct_constructor_candidate(item));
+        candidates.push(build_struct_constructor_candidate(item, array_owner));
     }
     for item in &module.structs {
         candidates.extend(item.methods.iter().map(|method| {
-            specialize_method_candidate(build_method_candidate(method, Some(item.name.clone()), None), &struct_apply_type(item), &item.generics)
+            specialize_method_candidate(build_method_candidate(method, Some(item.name.clone()), None), &struct_apply_type(item, array_owner), &item.generics)
         }));
     }
     for item in &module.singletons {
@@ -376,11 +380,11 @@ fn collect_declared_candidates(module: &HirModule, trait_view: &TraitModuleView)
                 .map(|function| build_function_candidate(&export.module, function, true)),
         );
         for item in &export.structs {
-            candidates.push(build_struct_constructor_candidate(item));
+            candidates.push(build_struct_constructor_candidate(item, array_owner));
             candidates.extend(item.methods.iter().map(|method| {
                 specialize_method_candidate(
                     build_method_candidate(method, Some(item.name.clone()), None),
-                    &struct_apply_type(item),
+                    &struct_apply_type(item, array_owner),
                     &item.generics,
                 )
             }));

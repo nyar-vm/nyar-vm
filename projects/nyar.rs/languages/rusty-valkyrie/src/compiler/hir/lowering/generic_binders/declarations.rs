@@ -29,6 +29,8 @@ fn collect_visible_structs(module: &HirModule, out: &mut Vec<HirStruct>) {
 /// 在结构体/枚举已分配 declaration ItemId 之后，把唯一可解析的 `Named`/`Apply(Named, …)`
 /// 绑定为 [`ValkyrieType::Nominal`]。这是 Resolver→HIR 的声明身份冻结，不是短名改写或后置补丁。
 pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
+    // `[T]` owner 在本层绑定期即冻结：多候选是结构化失败，下游候选/解析只查询结果，不另铸形态。
+    array_owner_declaration(module)?;
     fn qualified_struct(item: &HirStruct) -> Identifier {
         if item.namespace.is_empty() {
             return item.name.clone();

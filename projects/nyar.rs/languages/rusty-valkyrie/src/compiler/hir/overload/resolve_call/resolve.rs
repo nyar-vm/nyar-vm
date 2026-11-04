@@ -54,6 +54,8 @@ fn resolve_submodule_calls(
     singleton_names: &std::collections::BTreeSet<Identifier>,
 ) {
     let type_relations = &type_relations.with_enclosing_module(&module.name);
+    // `[T]` 身份只查询本层绑定期冻结的 owner；歧义已在 bind 阶段结构化失败。
+    let array_owner = crate::compiler::hir::lowering::array_owner_declaration(module).ok().flatten();
     // 本层函数体内解析失败的调用点归本模块的注册表；子模块递归各归各层。
     let ((), failures) = with_failure_collector(|| {
         for function in &mut module.functions {
@@ -61,7 +63,7 @@ fn resolve_submodule_calls(
         }
         for item in &mut module.structs {
             use crate::compiler::hir::overload::types::struct_apply_type;
-            let owner_type = struct_apply_type(item);
+            let owner_type = struct_apply_type(item, array_owner);
             for method in &mut item.methods {
                 resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
             }

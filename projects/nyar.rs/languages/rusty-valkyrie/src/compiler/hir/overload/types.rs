@@ -30,8 +30,16 @@ pub(crate) fn enum_apply_type(enum_def: &crate::compiler::types::hir::HirEnum) -
     }
 }
 
-pub(crate) fn struct_apply_type(struct_def: &crate::compiler::types::hir::HirStruct) -> ValkyrieType {
+pub(crate) fn struct_apply_type(struct_def: &crate::compiler::types::hir::HirStruct, array_owner: Option<nyar_types::ItemId>) -> ValkyrieType {
     let arguments = struct_def.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect::<Vec<_>>();
+    // 冻结数组 owner 的结构形态才是 `[T]` 的唯一规范表示：`Array<T>` 与 `[T]` 同身份，
+    // 不得在候选/构造结果里另铸 `Nominal{Array}`。
+    if let Some(owner) = array_owner
+        && arguments.len() == 1
+        && struct_def.constructor_declaration == Some(owner)
+    {
+        return ValkyrieType::Array(Box::new(arguments[0].clone()));
+    }
     // `[primitive]` 声明只是内建标量的宿主绑定，类型位置必须折叠回唯一内建身份。
     if arguments.is_empty() {
         if let Some(builtin) = struct_def.primitive_identity.as_deref().and_then(crate::compiler::types::hir::primitive_identity_builtin_type) {
