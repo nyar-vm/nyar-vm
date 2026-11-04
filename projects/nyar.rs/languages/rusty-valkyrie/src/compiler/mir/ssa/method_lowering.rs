@@ -8,7 +8,7 @@ use super::{
     value_semantics::AggregateLayoutPlan,
 };
 use crate::compiler::{
-    hir::HirMaterializationGate,
+    hir::{HirMaterializationGate, lowering::array_owner_declaration, overload::types::struct_apply_type},
     types::hir::{HirFunction, HirModule, ValkyrieType},
 };
 use std::collections::BTreeMap;
@@ -112,6 +112,9 @@ pub(super) fn lower_impl_method_functions(
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let permits = |function: &HirFunction| gate.is_none_or(|gate| gate.permits_declaration(function.declaration));
+    // 固有方法的 `self` 是声明侧唯一身份的复原：`Array` owner 折成结构形态，其余结构折成 `Nominal`，
+    // 不得用裸 `Named(owner)` 充当 self（那是第三种身份）。
+    let array_owner = array_owner_declaration(module).ok().flatten();
     let mut functions = Vec::new();
     for impl_block in &module.impls {
         let Some(type_name) = impl_owner_type_name(module, &impl_block.target)
@@ -184,7 +187,7 @@ pub(super) fn lower_impl_method_functions(
                 singleton_accessor_instances,
                 callable_returns,
                 member_dispatch,
-                Some(ValkyrieType::Named(item.name.clone())),
+                Some(struct_apply_type(item, array_owner)),
                 impl_type_arguments_from_generics(&item.generics),
                 host_runtime_callables,
                 diagnostics,

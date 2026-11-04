@@ -10,7 +10,7 @@ use rusty_valkyrie::{
     ValkyrieCompiler,
     compiler::mir::validation::validate_semantic_module,
     mir::ssa::{MirConstant, MirDiagnostic, MirFunction, MirLowerer, MirOperand, MirOperation, MirValueRef},
-    types::hir::{HirExpr, HirExprKind, HirFunction, HirModule, HirResolvedCall, HirStatementKind},
+    types::hir::{HirExpr, HirExprKind, HirFunction, HirModule, HirResolvedCall, HirStatementKind, ValkyrieType},
 };
 
 /// 与 HIR 侧集合字面量夹具同形的完整单源合同源码。
@@ -230,5 +230,53 @@ fn nested_collection_init_completes_inner_expansion_before_outer_append() {
             }
             other => panic!("内层容器结果必须由 with_length 调用定义，实际 {other:?}"),
         }
+    }
+}
+
+/// 守卫：数组 owner 的固有方法 `self` 只能是结构形态 `Array(_)`。
+/// 裸 `Named("Array")` 是第三份身份，任何签名里出现即当缺陷失败。
+#[test]
+fn array_owner_self_type_never_falls_back_to_bare_named() {
+    let source = r#"
+namespace std.primitive;
+
+[primitive("std::primitive::i32")] structure i32 { }
+[primitive("std::primitive::u64")] structure u64 { }
+[primitive("std::primitive::bool")] structure bool { }
+
+type usize = u64;
+
+namespace std.collection;
+
+class Array<T> {
+    _typing: T
+
+    micro probe(self) -> bool { return true }
+}
+"#;
+    let hir = ValkyrieCompiler::default().compile_source(source).expect("数组 owner 必须完成绑定");
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    let forged: Vec<&str> = mir
+        .functions
+        .iter()
+        .filter(|function| {
+            function
+                .param_types
+                .iter()
+                .chain(std::iter::once(&function.return_type))
+                .any(|ty| matches!(ty, ValkyrieType::Named(name) if name.as_str() == "Array"))
+        })
+        .map(|function| function.display_symbol.as_str())
+        .collect();
+    assert!(forged.is_empty(), "数组 owner 的签名不得回落到裸 `Named(Array)`，命中: {forged:?}");
+    let array_methods: Vec<&MirFunction> = mir.functions.iter().filter(|function| function.display_symbol.starts_with("Array.")).collect();
+    assert!(!array_methods.is_empty(), "守卫夹具必须产出 Array owner 的固有方法");
+    for function in array_methods {
+        assert!(
+            matches!(function.param_types[0], ValkyrieType::Array(_)),
+            "{} 的 self 必须是结构形态，实际 {:?}",
+            function.display_symbol,
+            function.param_types[0]
+        );
     }
 }

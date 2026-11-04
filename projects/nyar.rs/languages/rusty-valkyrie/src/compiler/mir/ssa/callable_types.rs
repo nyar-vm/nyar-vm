@@ -2,7 +2,7 @@
 
 use super::{MirSumDeclaration, hir_identity::impl_owner_type_name, struct_facts::resolve_self_type_with_owner};
 use crate::compiler::{
-    hir::symbols::stable_hir_function_symbol,
+    hir::{lowering::array_owner_declaration, overload::types::struct_apply_type, symbols::stable_hir_function_symbol},
     types::hir::{HirFunction, HirModule, ValkyrieType},
 };
 use nyar_types::ItemInstanceId;
@@ -28,6 +28,8 @@ pub(super) fn collect_callable_return_types(module: &HirModule) -> CallableRetur
 }
 
 fn collect_callable_return_types_into(module: &HirModule, index: &mut CallableReturnTypes) {
+    // 结构体固有方法的 `self` 复原走同一条 owner 折叠，不得用裸 `Named(owner)` 当 self。
+    let array_owner = array_owner_declaration(module).ok().flatten();
     for function in &module.functions {
         register_callable_return(index, stable_hir_function_symbol(&module.name, function), function, function.return_type.clone());
     }
@@ -46,7 +48,7 @@ fn collect_callable_return_types_into(module: &HirModule, index: &mut CallableRe
         }
     }
     for item in &module.structs {
-        let owner = ValkyrieType::Named(item.name.clone());
+        let owner = struct_apply_type(item, array_owner);
         for method in &item.methods {
             register_callable_return(
                 index,
