@@ -308,7 +308,23 @@ impl MirBuilder {
             MirOperand::Constant(MirConstant::Unit)
         };
 
-        self.bindings = saved_bindings;
+        // 块作用域只隐藏块内新声明：对块外已存在绑定的写回是语句副作用，
+        // 必须在块退出后对后继读取可见。`for ... in` 的脱糖把迭代器与循环包进
+        // 这样的 `Block`；若无条件恢复全部绑定，循环内对块外累加器的赋值会被
+        // 回退成初始槽（`remove-duplicates` 的 `k` 因此恒为 0）。
+        let mut block_declarations = std::collections::BTreeSet::new();
+        for statement in &body.statements {
+            if let crate::compiler::hir::HirStatementKind::Let { pattern, .. } = &statement.kind {
+                crate::compiler::hir::control_flow_validation::collect_pattern_bound_names_into(pattern, &mut block_declarations);
+            }
+        }
+        let block_bindings = std::mem::replace(&mut self.bindings, saved_bindings);
+        for (name, operand) in block_bindings {
+            // 新声明不逃逸块；同名声明遮蔽块外绑定，退出时恢复块前值。
+            if self.bindings.contains_key(&name) && !block_declarations.contains(&name) {
+                self.bindings.insert(name, operand);
+            }
+        }
         self.static_bindings = saved_static_bindings;
         result
     }

@@ -28,6 +28,7 @@ mod state;
 mod suspend;
 mod validate;
 
+pub(crate) use pattern::collect_pattern_bound_names_into;
 pub(crate) use state::{HirValidationState, boolean_declarations_in_module, numeric_declarations_in_module};
 
 pub use compatibility::{control_flow_value_type_compatible, display_type};

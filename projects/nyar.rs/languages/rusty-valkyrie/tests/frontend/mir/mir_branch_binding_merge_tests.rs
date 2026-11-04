@@ -492,3 +492,109 @@ fn hand_built_jump_arity_mismatch_is_still_rejected() {
     assert!(error.detail.contains("arity"), "必须报 arity 不一致，实际 {}", error.detail);
     assert_eq!(error.function, "fixture.jump_arity");
 }
+
+use rusty_valkyrie::compiler::mir::ssa::test_support::{block, expr, TestMirBuilder};
+use rusty_valkyrie::compiler::types::hir::{
+    HirExpr, HirExprKind, HirIdentifier, HirLiteral, HirPattern, HirStatement, HirStatementKind, ValkyrieType,
+};
+use rusty_valkyrie::compiler::types::SourceID;
+use rusty_valkyrie::{Identifier, MirOperand, SourceSpan};
+
+fn bool_literal(value: bool) -> HirExpr {
+    expr(HirExprKind::Literal(HirLiteral::Bool(value)))
+}
+
+fn bool_let(name: &str, value: bool, mutable: bool) -> HirStatement {
+    let span = test_span();
+    let initializer = bool_literal(value);
+    HirStatement {
+        kind: HirStatementKind::Let {
+            is_mutable: mutable,
+            pattern: HirPattern::Variable(HirIdentifier { name: Identifier::new(name), shadow_index: 0, span: test_span() }),
+            initializer: Some(Box::new(initializer)),
+            ty: Some(ValkyrieType::Boolean),
+            origin: Default::default(),
+        },
+        span,
+    }
+}
+
+fn test_span() -> SourceSpan {
+    SourceSpan::new(SourceID::default(), 0, 0)
+}
+
+fn bool_assign(name: &str, value: bool) -> HirExpr {
+    expr(HirExprKind::Assign { target: Identifier::new(name), value: Box::new(bool_literal(value)) })
+}
+
+/// 块表达式（HIR `Block`）：`{ if condition { <name> = value } }`。
+fn conditional_block(condition: bool, name: &str, value: bool) -> HirExpr {
+    let assignment = HirStatement { kind: HirStatementKind::Expr(Box::new(bool_assign(name, value))), span: test_span() };
+    let conditional = expr(HirExprKind::If {
+        condition: Box::new(bool_literal(condition)),
+        then_branch: Box::new(block(vec![assignment], None)),
+        else_branch: None,
+    });
+    let statement = HirStatement { kind: HirStatementKind::Expr(Box::new(conditional)), span: test_span() };
+    expr(HirExprKind::Block(Box::new(block(vec![statement], None))))
+}
+
+fn read_binding(builder: &mut TestMirBuilder, name: &str) -> Option<u32> {
+    let identifier = HirIdentifier { name: Identifier::new(name), shadow_index: 0, span: test_span() };
+    match builder.lower_expr_to_operand(&expr(HirExprKind::Variable(identifier))) {
+        MirOperand::Value(value) => Some(value.0),
+        _ => None,
+    }
+}
+
+/// HIR `Block` 表达式的块作用域只隐藏块内新声明；对块外可变绑定的写回
+/// 必须在块退出后对后继读取可见。for-in 脱糖正是把迭代器与循环包进这样的块，
+/// 循环内的赋值曾因此被恢复成块前的初始槽（`remove-duplicates` 返回 0）。
+#[test]
+fn block_expression_writeback_is_visible_to_subsequent_read() {
+    let mut builder = TestMirBuilder::new();
+    builder.lower_statement(&bool_let("x", true, true));
+    let before = read_binding(&mut builder, "x").expect("`x` 必须是 SSA 绑定");
+    builder.lower_expr_to_operand(&conditional_block(true, "x", false));
+    let after = read_binding(&mut builder, "x").expect("块退出后 `x` 必须仍可读");
+    assert_ne!(before, after, "块内写回被块退出时的作用域恢复丢弃，后继读取回到初始槽");
+}
+
+/// 反例：块内同名 `let` 是新的作用域绑定，不得泄漏为块外 `x` 的写回。
+#[test]
+fn block_expression_shadowing_does_not_overwrite_outer_binding() {
+    let mut builder = TestMirBuilder::new();
+    builder.lower_statement(&bool_let("x", true, true));
+    let before = read_binding(&mut builder, "x").expect("`x` 必须是 SSA 绑定");
+    let inner = expr(HirExprKind::Block(Box::new(block(vec![bool_let("x", false, false)], None))));
+    builder.lower_expr_to_operand(&inner);
+    let after = read_binding(&mut builder, "x").expect("块退出后 `x` 必须仍可读");
+    assert_eq!(before, after, "块内同名 `let` 不得改写块外绑定");
+}
+
+/// 矩阵：嵌套块逐层退出时都要把块外写回传递出去。
+#[test]
+fn block_expression_nested_blocks_propagate_writeback() {
+    use rusty_valkyrie::compiler::mir::ssa::test_support::block;
+    let mut builder = TestMirBuilder::new();
+    builder.lower_statement(&bool_let("x", true, true));
+    let before = read_binding(&mut builder, "x").expect("`x` 必须是 SSA 绑定");
+    let inner = conditional_block(true, "x", false);
+    let statement = HirStatement { kind: HirStatementKind::Expr(Box::new(inner)), span: test_span() };
+    let outer = expr(HirExprKind::Block(Box::new(block(vec![statement], None))));
+    builder.lower_expr_to_operand(&outer);
+    assert_ne!(read_binding(&mut builder, "x"), Some(before), "嵌套块退出时写回被丢弃");
+}
+
+/// 矩阵：块内新增声明只隐藏该名字；其它块外绑定的写回仍必须保留。
+#[test]
+fn block_expression_local_declaration_does_not_suppress_outer_writeback() {
+    use rusty_valkyrie::compiler::mir::ssa::test_support::block;
+    let mut builder = TestMirBuilder::new();
+    builder.lower_statement(&bool_let("x", true, true));
+    let before = read_binding(&mut builder, "x").expect("`x` 必须是 SSA 绑定");
+    let write = HirStatement { kind: HirStatementKind::Expr(Box::new(bool_assign("x", false))), span: test_span() };
+    let inner = expr(HirExprKind::Block(Box::new(block(vec![bool_let("y", true, false), write], None))));
+    builder.lower_expr_to_operand(&inner);
+    assert_ne!(read_binding(&mut builder, "x"), Some(before), "块内局部声明不得抑制其它块外绑定的写回");
+}
