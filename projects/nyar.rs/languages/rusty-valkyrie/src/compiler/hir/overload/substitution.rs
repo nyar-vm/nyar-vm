@@ -539,7 +539,14 @@ pub(crate) fn free_call_argument_contexts(
         .iter()
         .filter(|candidate| matches!(candidate.domain, super::diagnostics::OverloadDomain::Function))
         .filter(|candidate| candidate.owner.is_none())
-        .filter(|candidate| super::symbol_match::symbol_matches_unqualified_free_call(&candidate.symbol, &name, enclosing_module))
+        .filter(|candidate| {
+            // 候选身份必须与 `try_resolve_call` 的自由函数通道同口径，否则导入来的
+            // 被调函数拿不到形参期望类型，裸变体实参会被外层返回类型误杀。
+            super::symbol_match::symbol_matches_unqualified_free_call(&candidate.symbol, &name, enclosing_module)
+                || super::symbol_match::symbol_matches_imported_dependency_export(candidate, &name)
+                || type_relations.symbol_matches_import(&candidate.symbol, &name)
+                || type_relations.symbol_matches_group_scope(&candidate.symbol, &name)
+        })
     {
         applicable = true;
         for (slot, param) in candidate.signature.params.iter().enumerate() {
