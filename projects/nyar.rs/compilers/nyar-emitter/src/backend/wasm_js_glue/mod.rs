@@ -205,11 +205,23 @@ function describePath(path) {{
 }}
 
 // 值诊断只用于错误信息：显式区分 `null` / `undefined`，避免把缺值渲染成 "object"。
+// 非预期载体一律给出结构化「载体不符」描述，绝不对 managed wasm GC 引用调用
+// `String()`——那只会抛 TypeError 并把真正的载体错误掩盖掉。
 function describeValue(value) {{
     if (value === null) return "null";
     if (value === undefined) return "undefined";
     if (typeof value === "string") return `string ${{JSON.stringify(value)}}`;
-    return `${{typeof value}} ${{String(value)}}`;
+    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {{
+        return `${{typeof value}} ${{value.toString()}}`;
+    }}
+    if (typeof value === "symbol") return "symbol";
+    if (typeof value === "function") return "function";
+    if (typeof value === "object") {{
+        const prototype = Object.getPrototypeOf(value);
+        const shape = prototype === null ? "null-prototype object" : "object";
+        return `${{shape}} (carrier mismatch: expected a primitive carrier value, not a managed wasm reference)`;
+    }}
+    return typeof value;
 }}
 
 function bridgeExport(name, role, path) {{

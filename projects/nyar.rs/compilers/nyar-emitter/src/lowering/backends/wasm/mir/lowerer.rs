@@ -55,6 +55,7 @@ pub(in crate::lowering::backends::wasm) const WASM_GC_EXTERNREF: u8 = VALTYPE_EX
 /// 合同 §5：转换决定属于 target plan，编码阶段只消费这张表，不再按类型名
 /// 或布局形状重新推导。配方条目由模块装配预扫描（`entry.rs`）在 GC 类型
 /// 注册表冻结之后一次性生成。
+#[derive(Clone, Copy)]
 pub(in crate::lowering::backends::wasm) struct ManagedUtf8ToHostHandlePlan {
     /// managed 字符串 layout 对应的 wasm-gc structtype 条目。
     pub(in crate::lowering::backends::wasm::mir) struct_type_index: u32,

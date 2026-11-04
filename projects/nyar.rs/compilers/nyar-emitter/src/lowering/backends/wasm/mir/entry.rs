@@ -225,6 +225,15 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &host_import_signatures,
         )?
     };
+    // 合同 §5：导出返回值侧与形参侧共用同一张 managed→host 配方表。返回 layout 已登记
+    // gc struct 时物理返回值是 anyref，而库 ABI 返回载体冻结为 i32 宿主句柄；导出边界
+    // 必须物化，禁止 anyref 透传给按 i32 解包的宿主 glue。
+    let managed_utf8_return_to_host_handle = if wasi_mode {
+        BTreeMap::new()
+    }
+    else {
+        freeze_managed_utf8_return_to_host_handle_plans(submission, &managed_utf8_to_host_handle, &gc_struct_type_indices)?
+    };
     // 合同 §5：宿主 i32 句柄 → managed 字符串边界。产生句柄的两类站点是 `[utf8]`
     // 数组元素（`array.get`）与宿主导入返回值（`utf8_*` 宿主函数）；结果 SSA 值绑定
     // 已登记 gc struct layout 时物理槽是 anyref，编码期必须按配方把句柄物化为
@@ -514,17 +523,25 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         }
     }
 
-    // 库导出边界物化 wrapper：为每个携带 host 句柄→managed 物化配方的实例合成一个
-    // 物理签名把配方涉及形参的 anyref 槽替换为 i32 句柄（与冻结库 ABI 载体一致）的
-    // 包装函数；体内按配方把句柄字节拷进 managed struct 后调用内部函数，导出重定向到
-    // wrapper。其余形参与返回原样透传，未命中配方的实例不生成 wrapper。
+    // 库导出边界物化 wrapper：为每个携带宿主句柄边界配方的实例合成一个物理签名与
+    // 冻结库 ABI 载体一致的包装函数——形参把 anyref 槽替换为 i32 句柄，返回把 anyref
+    // 替换为 i32 句柄；体内先按配方物化形参，调用内部函数后再按配方把返回物化，
+    // 导出重定向到 wrapper。未命中任一配方的实例不生成 wrapper。
     if !wasi_mode {
-        for (instance, plans) in &host_handle_to_managed_utf8 {
-            if plans.is_empty() {
+        let wrapper_instances: BTreeSet<ItemInstanceId> = host_handle_to_managed_utf8
+            .keys()
+            .chain(managed_utf8_return_to_host_handle.keys())
+            .copied()
+            .collect();
+        for instance in wrapper_instances {
+            let empty_plans = Vec::new();
+            let plans = host_handle_to_managed_utf8.get(&instance).unwrap_or(&empty_plans);
+            let return_plan = managed_utf8_return_to_host_handle.get(&instance);
+            if plans.is_empty() && return_plan.is_none() {
                 continue;
             }
             let internal_index = function_index_by_instance
-                .get(instance)
+                .get(&instance)
                 .copied()
                 .ok_or_else(|| format!("库导出 `{instance}` 缺少已分配函数下标，无法合成宿主句柄物化 wrapper"))?;
             let internal_params = param_types_by_function_index
@@ -551,13 +568,26 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             for plan in plans {
                 wrapper_params[plan.param_index as usize] = VALTYPE_I32;
             }
-            let wrapper_result: Vec<u8> = return_types_by_function_index.get(&internal_index).copied().flatten().into_iter().collect();
+            let internal_return = return_types_by_function_index.get(&internal_index).copied().flatten();
+            let wrapper_result: Vec<u8> = match return_plan {
+                Some(_) => {
+                    if internal_return != Some(WASM_GC_ANYREF) {
+                        return Err(format!(
+                            "库导出 `{instance}` 返回物化配方命中但内部函数物理返回不是 anyref（实际 {:?}）；配方与注册表事实分叉，禁止编码",
+                            internal_return
+                        ));
+                    }
+                    vec![VALTYPE_I32]
+                }
+                None => internal_return.into_iter().collect(),
+            };
             let wrapper_type_index = u32::try_from(type_indices.len()).expect("type index overflow");
             type_indices.push(wasm_function_type(&wrapper_params, &wrapper_result));
             function_indices.push(wrapper_type_index);
             let mut wrapper_body = Vec::new();
             emit_host_handle_to_managed_utf8_wrapper_body(
                 plans,
+                return_plan,
                 internal_index,
                 u32::try_from(internal_params.len()).expect("param count overflow"),
                 &mut wrapper_body,
@@ -567,7 +597,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             let public_name = submission
                 .backend_plan
                 .wasm_export_names()
-                .get(instance)
+                .get(&instance)
                 .cloned()
                 .ok_or_else(|| format!("库导出 `{instance}` 物化配方缺少公开导出名"))?;
             let mut redirected = false;
@@ -717,6 +747,13 @@ fn freeze_managed_utf8_to_host_handle_plans(
                 continue;
             }
             if let Some(layout_id) = view.function.value_layouts.get(value).copied() {
+                managed_string_layouts.insert(layout_id);
+            }
+        }
+        // 返回值侧与形参侧同载体合同：导出返回的 managed 字符串 layout 也必须在
+        // 配方表内，返回物化 wrapper 不得另造一份转换逻辑。
+        if is_js_glue_host_string_type(&view.function.return_type) {
+            if let Some(layout_id) = view.function.return_layout {
                 managed_string_layouts.insert(layout_id);
             }
         }
@@ -893,6 +930,56 @@ fn freeze_host_handle_to_managed_utf8_plans(
     Ok(plans_by_instance)
 }
 
+/// 目标计划阶段冻结「导出返回值 managed 字符串 → 宿主 i32 句柄」物化配方（合同 §5）。
+///
+/// 与形参侧同一条载体合同：导出声明的 `returns` 是宿主句柄 `i32`，而 MIR 返回 layout
+/// 已登记 gc struct 时物理返回值是 anyref。命中即按 [`ManagedUtf8ToHostHandlePlan`] 的
+/// 同一张 managed→host 配方表合成导出 wrapper；载体不是 `i32`、或 layout 已登记
+/// gc struct 却缺少配方，均结构化失败并点名实例与类型，禁止静默退回 anyref 透传。
+fn freeze_managed_utf8_return_to_host_handle_plans(
+    submission: &FragmentSubmission,
+    managed_utf8_to_host_handle: &BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
+    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+) -> crate::Result<BTreeMap<ItemInstanceId, ManagedUtf8ToHostHandlePlan>> {
+    let mut plans = BTreeMap::new();
+    for (instance, public_name) in submission.backend_plan.wasm_export_names() {
+        let Some(view) = submission.backend_plan.get_function(instance)
+        else {
+            continue;
+        };
+        let mir_fn = &view.function;
+        if !is_js_glue_host_string_type(&mir_fn.return_type) {
+            continue;
+        }
+        // 宿主字符串返回类型的冻结载体只能是 i32 句柄；载体不明或分叉即刻结构化失败。
+        let abi = submission.backend_plan.library_export_abi(instance).ok_or_else(|| {
+            format!("库导出 `{instance}`（export_name={public_name}）缺少冻结 ABI 载体合同，无法核对 managed→宿主句柄返回物化配方")
+        })?;
+        if abi.returns != crate::target_execution_plan::AbiCarrier::I32 {
+            return Err(format!(
+                "库导出 `{instance}`（export_name={public_name}）返回类型 `{}` 的冻结 ABI 载体为 `{}`，不是宿主字符串句柄 `i32`；返回物化合同已坏",
+                mir_fn.return_type,
+                abi.returns.as_str()
+            ));
+        }
+        // 未登记 gc struct 的返回槽本就是 i32 句柄，与冻结载体一致，无物化需求。
+        let Some(layout_id) = mir_fn.return_layout else {
+            continue;
+        };
+        if gc_struct_type_indices.get(&layout_id).is_none() {
+            continue;
+        }
+        let recipe = managed_utf8_to_host_handle.get(&layout_id).cloned().ok_or_else(|| {
+            format!(
+                "库导出 `{instance}`（export_name={public_name}）返回类型 `{}` (layout={layout_id:?}) 缺少目标计划冻结的 managed→host 句柄转换配方",
+                mir_fn.return_type
+            )
+        })?;
+        plans.insert(*instance, recipe);
+    }
+    Ok(plans)
+}
+
 /// 目标计划阶段冻结「宿主 i32 句柄 → managed 字符串」物化配方（合同 §5）。
 ///
 /// 两类站点产生宿主 i32 句柄：`[utf8]` 数组元素（`array.get`，数组按冻结合同登记为
@@ -1017,28 +1104,42 @@ fn freeze_utf8_host_handle_materialize_plans(
     Ok(plans)
 }
 
-/// 发射库导出物化 wrapper 函数体：按形参顺序，命中配方的形参把宿主 i32 句柄物化为
+/// 发射库导出边界物化 wrapper 函数体：按形参顺序，命中配方的形参把宿主 i32 句柄物化为
 /// managed 字符串 struct（`host_utf8_extract` 取回 `(ptr, len)` → `array.new_default`
 /// → 逐字节 `i32.load8_u` + `array.set` → `struct.new_default` + `struct.set`），
-/// 其余形参原样透传，最后 `call` 内部函数并保留返回。
+/// 其余形参原样透传；调用内部函数后，若命中返回配方则把 managed 字符串 struct 反向
+/// 物化为宿主 i32 句柄（`struct.get` 取字节数组 → bump 分配 → 逐字节 `array.get`
+/// + `i32.store8` → `env::host_intern_utf8(ptr, len)`），保证返回侧与形参侧走同一套
+/// 载体合同。
 ///
-/// scratch local 布局（形参之后）：`+0` ptr、`+1` len、`+2` idx（i32）、`+3` arr、`+4` obj（anyref）。
+/// scratch local 布局（形参之后，先 i32 组再 anyref 组）：形参侧 `+0` ptr、`+1` len、
+/// `+2` idx（i32）、`arr`、`obj`（anyref）；返回侧追加 `+3` ret_len、`+4` ret_ptr、
+/// `+5` ret_end、`+6` ret_pages、`+7` ret_idx（i32）与 `ret_arr`（anyref）。
 fn emit_host_handle_to_managed_utf8_wrapper_body(
     plans: &[HostHandleToManagedUtf8Plan],
+    return_plan: Option<&ManagedUtf8ToHostHandlePlan>,
     internal_function_index: u32,
     param_count: u32,
     body: &mut Vec<u8>,
 ) {
+    let i32_local_count: u32 = if return_plan.is_some() { 8 } else { 3 };
+    let anyref_local_count: u32 = if return_plan.is_some() { 3 } else { 2 };
     encode_uleb128(2, body);
-    encode_uleb128(3, body);
+    encode_uleb128(i32_local_count, body);
     body.push(VALTYPE_I32);
-    encode_uleb128(2, body);
+    encode_uleb128(anyref_local_count, body);
     body.push(WASM_GC_ANYREF);
     let ptr_local = param_count;
     let len_local = param_count + 1;
     let idx_local = param_count + 2;
-    let arr_local = param_count + 3;
-    let obj_local = param_count + 4;
+    let arr_local = param_count + i32_local_count;
+    let obj_local = param_count + i32_local_count + 1;
+    let ret_arr_local = param_count + i32_local_count + 2;
+    let ret_len_local = param_count + 3;
+    let ret_ptr_local = param_count + 4;
+    let ret_end_local = param_count + 5;
+    let ret_pages_local = param_count + 6;
+    let ret_idx_local = param_count + 7;
     for index in 0..param_count {
         let Some(plan) = plans.iter().find(|plan| plan.param_index == index)
         else {
@@ -1088,6 +1189,77 @@ fn emit_host_handle_to_managed_utf8_wrapper_body(
         encode_local_get(obj_local, body);
     }
     encode_call(internal_function_index, body);
+    if let Some(plan) = return_plan {
+        // managed struct → 字节数组引用
+        encode_ref_cast_type_index(plan.struct_type_index, body);
+        encode_struct_get(plan.struct_type_index, plan.bytes_field_slot, body);
+        encode_ref_cast_type_index(plan.bytes_array_type_index, body);
+        encode_local_set(ret_arr_local, body);
+        encode_local_get(ret_arr_local, body);
+        encode_ref_cast_type_index(plan.bytes_array_type_index, body);
+        encode_array_len(body);
+        encode_local_set(ret_len_local, body);
+        // 动态 bump 分配（global 0 堆指针），增长逻辑与 lowerer 的
+        // `emit_managed_utf8_to_host_handle` 同构，保证两侧载体转换不分叉。
+        encode_global_get(CABI_HEAP_GLOBAL_INDEX, body);
+        encode_local_set(ret_ptr_local, body);
+        encode_local_get(ret_ptr_local, body);
+        encode_local_get(ret_len_local, body);
+        encode_i32_add(body);
+        encode_local_set(ret_end_local, body);
+        encode_local_get(ret_end_local, body);
+        encode_i32_const(65535, body);
+        encode_i32_add(body);
+        encode_i32_const(16, body);
+        WasmOpcode::I32ShrU.encode(body);
+        encode_memory_size(body);
+        WasmOpcode::I32Sub.encode(body);
+        encode_local_tee(ret_pages_local, body);
+        encode_i32_const(0, body);
+        WasmOpcode::I32GtS.encode(body);
+        WasmOpcode::If.encode(body);
+        body.push(BLOCKTYPE_EMPTY);
+        encode_local_get(ret_pages_local, body);
+        encode_memory_grow(body);
+        encode_i32_const(-1, body);
+        WasmOpcode::I32Eq.encode(body);
+        WasmOpcode::If.encode(body);
+        body.push(BLOCKTYPE_EMPTY);
+        encode_unreachable(body);
+        WasmOpcode::End.encode(body);
+        WasmOpcode::End.encode(body);
+        // commit heap cursor：先压 bump_end 新值再 global.set（与 lowerer 同序）。
+        encode_local_get(ret_end_local, body);
+        encode_global_set(CABI_HEAP_GLOBAL_INDEX, body);
+        // 逐字节拷贝：array.get(u8→i32) → i32.store8(ptr + i)
+        encode_i32_const(0, body);
+        encode_local_set(ret_idx_local, body);
+        encode_block_empty(body);
+        encode_loop_empty(body);
+        encode_local_get(ret_idx_local, body);
+        encode_local_get(ret_len_local, body);
+        WasmOpcode::I32GeU.encode(body);
+        encode_br_if(1, body);
+        encode_local_get(ret_ptr_local, body);
+        encode_local_get(ret_idx_local, body);
+        encode_i32_add(body);
+        encode_local_get(ret_arr_local, body);
+        encode_ref_cast_type_index(plan.bytes_array_type_index, body);
+        encode_local_get(ret_idx_local, body);
+        encode_array_get(plan.bytes_array_type_index, body);
+        encode_memarg(WasmOpcode::I32Store8, 0, 0, body);
+        encode_local_get(ret_idx_local, body);
+        encode_i32_const(1, body);
+        encode_i32_add(body);
+        encode_local_set(ret_idx_local, body);
+        encode_br(0, body);
+        WasmOpcode::End.encode(body); // loop
+        WasmOpcode::End.encode(body); // block
+        // 宿主登记：(ptr, len) → i32 handle
+        encode_local_get(ret_ptr_local, body);
+        encode_local_get(ret_len_local, body);
+        encode_call(plan.intern_import_index, body);
+    }
     WasmOpcode::End.encode(body);
 }
 

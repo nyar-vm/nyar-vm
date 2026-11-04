@@ -369,3 +369,77 @@ fn wasm_host_import_utf8_return_without_byte_array_field_fails_structured() {
         .expect_err("缺少整数字节数组字段的宿主导入返回值边界必须在冻结期结构化失败");
     assert!(error.contains("缺少整数字节数组字段"), "错误必须指明冻结失败的缺失事实: {error}");
 }
+
+/// 返回值侧测试的库导出装配：注册 `utf8_concat` 宿主导入（形参与返回都是 `Utf8`），
+/// 其余冻结步骤与 [`lower_library`] 相同。
+fn lower_library_concat(
+    function: ExecutableFunction,
+    layouts: AggregateLayoutPlan,
+    freeze_abis: bool,
+) -> nyar_emitter::Result<WasmBinaryModule> {
+    let main_name = QualifiedName::new(vec![Identifier::new("host_concat")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
+    plan.testing_module_name("host_string_boundary").testing_entry_operation(main_name);
+    plan.testing_aggregate_layouts(layouts);
+    plan.testing_register_import(utf8_concat_callee(), utf8_concat_import());
+    let instance = *plan.instances().first().expect("测试库导出实例");
+    plan.testing_wasm_export_names_mut().insert(instance, "romanToInt".to_string());
+    if freeze_abis {
+        plan.testing_freeze_library_export_abis()?;
+    }
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    lower_fragment_to_wasm_mir_module(&submission, "host_concat")
+}
+
+/// 返回值侧正向：库导出 `returns: Utf8` 且返回 layout 绑定 `Utf8Text`（物理槽 anyref）时，
+/// 导出边界必须与形参侧共用同一张 managed→host 配方表——合成 wrapper、返回槽替换为
+/// i32 宿主句柄、按需追加 `env::host_intern_utf8`，导出重定向到 wrapper。
+/// 修复前返回 anyref 原样透传，glue 按 i32 句柄解包得到 null-proto struct。
+#[test]
+fn wasm_library_export_utf8_return_materializes_host_handle_through_synthesized_wrapper() {
+    let module =
+        lower_library_concat(utf8_concat_call_main(Some(UTF8_TEXT_LAYOUT_ID)), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()), true)
+            .expect("库导出 `returns: Utf8` 返回值必须按冻结配方物化为宿主 i32 句柄");
+    let imports = import_keys(&module);
+    assert!(
+        imports.contains(&("env".to_string(), "host_intern_utf8".to_string())),
+        "返回物化必须按需合成 `env::host_intern_utf8`: {imports:?}"
+    );
+    let export = parse_export_section(&module).into_iter().find(|item| item.name == "romanToInt").expect("公开导出名必须存在");
+    assert_eq!(export.kind, WasmExternalKind::Func);
+    assert_eq!(export.index, func_import_count(&module) + 1, "导出必须重定向到返回物化 wrapper");
+
+    assert_eq!(parse_code_section(&module).len(), 3, "函数体必须是 main + 物化 wrapper + cabi_realloc");
+    let type_indices = function_section_type_indices(&module);
+    let (main_params, main_results) = func_type(&module, type_indices[0]);
+    assert_eq!(main_params, vec![WasmValueType::AnyRef, WasmValueType::AnyRef], "内部函数形参槽必须保持 managed anyref");
+    assert_eq!(main_results, vec![WasmValueType::AnyRef], "内部函数返回槽必须保持 managed anyref");
+    let (wrapper_params, wrapper_results) = func_type(&module, type_indices[1]);
+    assert_eq!(wrapper_params, vec![WasmValueType::I32, WasmValueType::I32], "wrapper 形参槽必须是 i32 宿主句柄");
+    assert_eq!(wrapper_results, vec![WasmValueType::I32], "wrapper 返回槽必须是 i32 宿主句柄");
+}
+
+/// 返回值侧按需：返回 layout 未绑定注册 gc struct 时物理返回值本就是 i32 句柄，
+/// 不得合成 wrapper，也不得追加 `env::host_intern_utf8`。
+#[test]
+fn wasm_library_export_utf8_return_without_layout_keeps_i32_handle() {
+    let module = lower_library_concat(utf8_concat_call_main(None), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()), true)
+        .expect("未绑定 layout 的库导出返回值必须继续走 i32 ABI");
+    let imports = import_keys(&module);
+    assert!(!imports.contains(&("env".to_string(), "host_intern_utf8".to_string())), "无返回物化需求时不得合成 intern 导入: {imports:?}");
+    let export = parse_export_section(&module).into_iter().find(|item| item.name == "romanToInt").expect("公开导出名必须存在");
+    assert_eq!(export.index, func_import_count(&module), "导出必须仍指向内部函数本身");
+    let type_indices = function_section_type_indices(&module);
+    let (_, results) = func_type(&module, type_indices[0]);
+    assert_eq!(results, vec![WasmValueType::I32], "未绑定 layout 的字符串返回值必须是 i32 宿主句柄");
+}
+
+/// 返回值侧负向：layout 已登记 gc struct 但缺少整数字节数组字段时，managed→host
+/// 返回配方无法在冻结期生成，必须结构化失败并点名实例与类型，禁止退回 anyref 透传。
+#[test]
+fn wasm_library_export_utf8_return_without_byte_array_field_fails_structured() {
+    let error =
+        lower_library_concat(utf8_concat_call_main(Some(NO_BYTES_LAYOUT_ID)), layout_plan(NO_BYTES_LAYOUT_ID, "HostHandleText", long_array()), true)
+            .expect_err("缺少整数字节数组字段的库导出返回值必须在冻结期结构化失败");
+    assert!(error.contains("缺少整数字节数组字段"), "错误必须指明冻结失败的缺失事实: {error}");
+}

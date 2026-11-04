@@ -232,6 +232,63 @@ process.stdout.write(JSON.stringify(out));"#,
     assert_eq!(parsed["value"], serde_json::json!(["alpha", "beta", ""]));
 }
 
+/// `Utf8Text` 形状：一个 heap `Array<Integer8>` 字节字段（与 `std` 的 managed 字符串一致）。
+fn utf8_text_layout(id: u32) -> AggregateLayout {
+    AggregateLayout {
+        id,
+        name: "Utf8Text".to_string(),
+        namespace: "std".to_string(),
+        key: None,
+        storage: StorageKind::Reference,
+        size: 8,
+        align: 8,
+        fields: vec![FieldLayout {
+            name: "_repr".to_string(),
+            ty: NyarType::Array(Box::new(NyarType::Integer8 { signed: false })),
+            offset: 0,
+            size: 8,
+            align: 8,
+        }],
+    }
+}
+
+/// `returns: Utf8` 顶层返回值：VM 内部返回 managed 字符串 struct（anyref），导出边界
+/// 必须按 schema 物化为宿主 i32 句柄，再经 glue 解包回 JS 字符串。修复前导出物理签名是
+/// `(result anyref)`，glue 按 i32 解包拿到 null-proto struct 并抛 TypeError。
+#[test]
+fn utf8_return_roundtrips_as_host_string() {
+    let bridge = emit_bridge(&[(UTF8, utf8_text_layout(3))]);
+    let exports = spec_exports(&bridge.spec);
+    assert_eq!(exports["echo"]["returns"]["kind"], "Utf8");
+    let stdout = run_in_node(
+        &bridge,
+        r#"const out = {};
+try { out.value = await callExport("echo", "hello 世界"); }
+catch (error) { out.error = String(error && error.message ? error.message : error); }
+process.stdout.write(JSON.stringify(out));"#,
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
+    assert!(parsed["error"].is_null(), "Utf8 返回值物化不得失败: {stdout}");
+    assert_eq!(parsed["value"], serde_json::json!("hello 世界"));
+}
+
+#[test]
+fn utf8_return_without_layout_stays_i32_and_fails_on_missing_handle() {
+    // 未登记 managed 字符串 layout 时返回槽就是宿主 i32 句柄；恒等函数把入参句柄原样
+    // 返回，因此必须往返成功而不是被误当 anyref 解包。
+    let bridge = emit_plain(UTF8);
+    let stdout = run_in_node(
+        &bridge,
+        r#"const out = {};
+try { out.value = await callExport("echo", "hello 世界"); }
+catch (error) { out.error = String(error && error.message ? error.message : error); }
+process.stdout.write(JSON.stringify(out));"#,
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
+    assert!(parsed["error"].is_null(), "i32 句柄返回值不得失败: {stdout}");
+    assert_eq!(parsed["value"], serde_json::json!("hello 世界"));
+}
+
 #[test]
 fn wire_shape_mismatch_fails_at_boundary_with_path() {
     let ty = arraylist_of(I64);
