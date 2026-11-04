@@ -140,7 +140,7 @@ match score {
 # 多值匹配
 match day {
     case "Saturday" | "Sunday": "Weekend"
-    case "Monday"..="Friday": "Weekday"
+    case "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday": "Weekday"
     case _: "Invalid"
 }
 ```
