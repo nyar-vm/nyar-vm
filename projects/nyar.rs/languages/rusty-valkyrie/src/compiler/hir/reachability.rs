@@ -207,20 +207,6 @@ fn collect_module_callables<'a>(module: &'a HirModule, out: &mut Vec<&'a HirFunc
 /// 落到具体类型的实例才放行。
 fn collect_instantiated_instances(module: &HirModule, gate: &mut HirMaterializationGate) {
     for callable in &module.instantiated_callables {
-        if std::env::var("INSTDEBUG").is_ok()
-            && callable.function.name.as_str() == "length"
-            && callable.function.instance.is_some_and(|i| (380..=500).contains(&i.index()))
-        {
-            eprintln!(
-                "CLOSED-DEBUG inst={:?} owner={:?} params={:?} ret={:?} closed={} decl_permit={}",
-                callable.function.instance.map(|i| i.index()),
-                callable.owner_type,
-                callable.function.params.iter().map(|p| &p.ty).collect::<Vec<_>>(),
-                callable.function.return_type,
-                instantiated_callable_is_closed(callable),
-                gate.permits_declaration(callable.function.declaration),
-            );
-        }
         if gate.permits_declaration(callable.function.declaration)
             && instantiated_callable_is_closed(callable)
             && let Some(instance) = callable.function.instance
