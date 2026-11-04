@@ -688,6 +688,16 @@ impl MirBuilder {
             }
             HirExprKind::Assign { target, value } => {
                 let name = target.as_str().to_string();
+                // 对捕获变量的写入同样没有环境载体；必须结构化失败，不能新建影子局部。
+                if !self.bindings.contains_key(&name) && self.captured_bindings.contains(&name) {
+                    self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnsupportedExpression {
+                        span: expr.span.clone(),
+                        kind: format!(
+                            "lambda writes outer binding `{name}`: capture environments are not represented in Semantic MIR"
+                        ),
+                    });
+                    return MirOperand::Constant(MirConstant::Unit);
+                }
                 let existing = self.bindings.get(&name).cloned();
                 let expected = existing.as_ref().and_then(|operand| infer_builder_operand_type(operand, &self.value_types));
                 let operand = self.lower_expr_to_operand_with_hint(value, expected.as_ref());

@@ -276,6 +276,24 @@ fn lambda_argument_lowers_to_synthesized_function() {
     );
 }
 
+/// 对捕获变量的写入没有环境载体：必须结构化失败，不得新建影子局部。
+const LAMBDA_WRITE_CAPTURE_SOURCE: &str = r#"
+[primitive("std::primitive::i32")]
+structure i32 { }
+
+micro apply(f: micro(i32) -> unit) -> unit {
+    return f(1)
+}
+
+micro run() -> i32 {
+    let mut total: i32 = 0
+    apply(micro(item: i32) -> unit {
+        total = item
+    })
+    return total
+}
+"#;
+
 /// 形参数量与上下文函数类型不符：MIR 结构化报错，不得静默落 Unit 后通过校验。
 #[test]
 fn lambda_arity_mismatch_is_structured() {
@@ -307,6 +325,37 @@ fn lambda_arity_mismatch_is_structured() {
         mir.diagnostics
     );
     assert!(validate_semantic_module(&mir).is_err(), "结构化诊断必须转化为合同失败，不得静默通过");
+}
+
+/// 写入捕获变量：MIR 必须结构化失败，lambda 体内不得出现影子 `StoreVar`。
+#[test]
+fn lambda_write_to_captured_binding_is_structured() {
+    let hir = compile(LAMBDA_WRITE_CAPTURE_SOURCE);
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    assert!(
+        mir.diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic,
+            MirDiagnostic::UnsupportedExpression { kind, .. } if kind.contains("writes outer binding `total`")
+        )),
+        "写入捕获变量必须结构化报错：{:?}",
+        mir.diagnostics
+    );
+    assert!(
+        rusty_valkyrie::compiler::mir::validation::validate_module(&mir).is_err(),
+        "结构化诊断必须转化为合同失败，不得静默通过"
+    );
+    let lambda = mir
+        .functions
+        .iter()
+        .find(|function| function.display_symbol.contains("__lambda_"))
+        .expect("捕获 lambda 仍应合成独立函数以暴露失败点");
+    assert!(
+        !lambda.blocks.iter().any(|block| block.instructions.iter().any(|instruction| matches!(
+            &instruction.kind,
+            MirOperation::StoreVar { name, .. } if name == "total"
+        ))),
+        "不得为捕获写入新建影子局部：{lambda:?}"
+    );
 }
 
 /// identity 表未登记的实例被 SMIR003 拒绝：下游不得按短名回查救活。
