@@ -77,8 +77,18 @@ impl MirLowerer {
         let (exports, entries) = collect_surface_contracts(module);
         let callable_returns = collect_callable_return_types(module);
         let mut functions = Vec::new();
+        // 有物化门（正式程序管线）时，开放声明体是单态化模板，不能直接降 MIR：其体内
+        // 调用只能指向带开放 binder 的克隆体，而物化门按 `instantiated_callable_is_closed`
+        // 只放行闭合实例，该克隆体不会发射；继续降本体会把调用退化成 `Unit` 占位并在语义
+        // 合同校验阶段报返回类型不符。闭合实例由 `instantiated_callables` 按实例身份单独降。
+        // 无门的 Semantic MIR 夹具（`lower_module_semantic`）保留全部声明：canonical 的
+        // binder 身份与 witness 分派测试以声明模板本身为观测对象。
         let permits_declaration = |function: &crate::compiler::types::hir::HirFunction| {
-            !function.is_abstract && gate.is_none_or(|gate| gate.permits_declaration(function.declaration))
+            !function.is_abstract
+                && gate.is_none_or(|gate| {
+                    gate.permits_declaration(function.declaration)
+                        && crate::compiler::hir::lowering::declaration_body_is_closed(function)
+                })
         };
         for function in module.functions.iter().filter(|function| permits_declaration(function)) {
             let (mir_function, nested_functions) = lower_function_semantic(

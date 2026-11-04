@@ -189,7 +189,12 @@ pub(super) fn collect_surface_contracts(module: &HirModule) -> (Vec<MirExportCon
         }
     }
     fn visit(module: &HirModule, exports: &mut Vec<MirExportContract>, entries: &mut Vec<MirEntryContract>) {
-        for function in &module.functions {
+        // 开放声明体是单态化模板，不产生 MIR 定义（见 `lowerer` 的同一闭合判据）；
+        // 其 `function.instance` 只是声明期种子，不是冻结实例。为它发表面合同会在
+        // 链接期留下「调用实例没有定义或显式导入合同」的悬空条目。
+        for function in module.functions.iter().filter(|function| {
+            crate::compiler::hir::lowering::declaration_body_is_closed(function)
+        }) {
             visit_function(module, function, exports, entries);
         }
         // 声明体方法与 impl 成员同样是 surface：`[export]` 挂在成员上就是导出根，

@@ -80,7 +80,8 @@ pub(crate) use generic_binders::{
 };
 
 pub(crate) use generic_instantiation::{
-    GenericInstantiationState, instantiate_generic_callables, substitute_impl_self_declarations, unify_instantiation,
+    GenericInstantiationState, declaration_body_is_closed, instantiate_generic_callables, substitute_impl_self_declarations,
+    unify_instantiation,
 };
 #[doc(hidden)]
 pub use generic_instantiation::{MAX_FIXPOINT_ROUNDS, MAX_GENERIC_INSTANCES};

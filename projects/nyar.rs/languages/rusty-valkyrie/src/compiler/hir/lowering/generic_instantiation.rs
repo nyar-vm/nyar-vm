@@ -1362,7 +1362,7 @@ fn visit_module_calls(
 /// §4 的实例身份含完整泛型替换。开放 binder 只允许在克隆体上逐层结算；把实例写回
 /// 仍含开放 binder 的声明体，等于把单态化中间态冻进声明——该实例随后会被声明可达性
 /// 当作真实 callee 收进物化集，最终在链接期表现为「调用实例没有定义或显式导入合同」。
-fn declaration_body_is_closed(function: &HirFunction) -> bool {
+pub(crate) fn declaration_body_is_closed(function: &HirFunction) -> bool {
     if !function.generics.is_empty()
         || function.params.iter().any(|param| has_unresolved_generic_arguments(&param.ty))
         || has_unresolved_generic_arguments(&function.return_type)
