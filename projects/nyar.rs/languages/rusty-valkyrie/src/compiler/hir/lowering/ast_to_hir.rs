@@ -718,7 +718,11 @@ impl AstToHir {
                 .map(|item| lower_trait_associated_type(item, self.source_id))
                 .collect::<Result<Vec<_>, _>>()?,
             associated_constants: Vec::new(),
-            super_traits: Vec::new(),
+            super_traits: trait_decl
+                .super_traits
+                .iter()
+                .map(crate::compiler::hir::lower_type_expression)
+                .collect::<Result<Vec<_>, _>>()?,
             default_methods,
             visibility: lower_visibility(&trait_decl.annotations),
         })

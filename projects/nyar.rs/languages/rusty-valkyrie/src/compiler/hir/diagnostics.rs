@@ -76,6 +76,13 @@ pub fn diagnose_failure(failure: &SemanticFailure) -> SemanticDiagnostic {
                 code: "E_TRAIT_SUPER_IMPL_REQUIRED",
                 message: format!("具名 trait `{trait_path}` 含有 super trait，必须提供显式实现"),
             },
+            TraitSatisfactionError::CyclicSuperTraits { trait_path, cycle } => SemanticDiagnostic {
+                code: "E_TRAIT_SUPER_CYCLE",
+                message: format!(
+                    "super trait 链成环：{}（在 `{trait_path}` 处闭合）",
+                    cycle.iter().map(|path| path.to_string()).collect::<Vec<_>>().join(" -> ")
+                ),
+            },
             TraitSatisfactionError::MissingExplicitImplForAssociatedTypes { trait_path } => SemanticDiagnostic {
                 code: "E_TRAIT_ASSOC_IMPL_REQUIRED",
                 message: format!("具名 trait `{trait_path}` 含有关联类型，必须提供显式实现"),

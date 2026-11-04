@@ -97,6 +97,13 @@ pub enum TraitSatisfactionError {
         /// trait 的限定路径。
         trait_path: NamePath,
     },
+    /// super trait 链自身成环（`trait A: B` + `trait B: A`，含 `trait A: A`）。
+    CyclicSuperTraits {
+        /// 环上遇到的 trait 路径。
+        trait_path: NamePath,
+        /// 从 `trait_path` 回到自身的闭合环，按链序排列（末项即 `trait_path`）。
+        cycle: Vec<NamePath>,
+    },
     /// 含关联类型的 trait 缺少显式实现。
     MissingExplicitImplForAssociatedTypes {
         /// trait 的限定路径。
@@ -538,7 +545,10 @@ fn ensure_explicit_super_trait_chain(
     traits: &BTreeMap<Identifier, HirTrait>,
 ) -> Result<(), TraitSatisfactionError> {
     let mut visited = BTreeSet::new();
-    ensure_explicit_super_trait_chain_inner(target, trait_def, impls, traits, &mut visited)
+    // 当前递归链（含根 trait）：命中链上已有路径即成环，必须在展开前拒绝，
+    // 否则 `trait A: B` + `trait B: A` 会无限递归。
+    let mut visiting = vec![NamePath::new(vec![trait_def.name.clone()])];
+    ensure_explicit_super_trait_chain_inner(target, trait_def, impls, traits, &mut visited, &mut visiting)
 }
 
 fn ensure_explicit_super_trait_chain_inner(
@@ -547,12 +557,18 @@ fn ensure_explicit_super_trait_chain_inner(
     impls: &[HirImpl],
     traits: &BTreeMap<Identifier, HirTrait>,
     visited: &mut BTreeSet<NamePath>,
+    visiting: &mut Vec<NamePath>,
 ) -> Result<(), TraitSatisfactionError> {
     for super_trait in &trait_def.super_traits {
         let Some(super_trait_path) = trait_type_to_path(super_trait)
         else {
             continue;
         };
+        if let Some(start) = visiting.iter().position(|path| path == &super_trait_path) {
+            let mut cycle = visiting[start..].to_vec();
+            cycle.push(super_trait_path.clone());
+            return Err(TraitSatisfactionError::CyclicSuperTraits { trait_path: super_trait_path, cycle });
+        }
         if !visited.insert(super_trait_path.clone()) {
             continue;
         }
@@ -561,7 +577,9 @@ fn ensure_explicit_super_trait_chain_inner(
         }
         if let Some(super_trait_name) = super_trait_path.parts().last() {
             if let Some(super_trait_def) = traits.get(super_trait_name) {
-                ensure_explicit_super_trait_chain_inner(target, super_trait_def, impls, traits, visited)?;
+                visiting.push(super_trait_path.clone());
+                ensure_explicit_super_trait_chain_inner(target, super_trait_def, impls, traits, visited, visiting)?;
+                visiting.pop();
             }
         }
     }
