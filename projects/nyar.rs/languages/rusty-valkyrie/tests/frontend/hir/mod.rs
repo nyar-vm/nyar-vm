@@ -13,6 +13,7 @@ mod integer_literal_range_tests;
 mod hir_generic_callable_instantiation_tests;
 mod hir_group_scope_call_tests;
 mod hir_impl_method_where_obligation_tests;
+mod hir_imply_super_trait_cycle_tests;
 mod hir_import_syntax_tests;
 mod hir_imported_namespace_call_tests;
 mod hir_lowering_host_binding_pipeline_tests;
