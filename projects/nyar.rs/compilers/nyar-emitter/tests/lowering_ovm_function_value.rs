@@ -123,26 +123,37 @@ fn decoded_at(module: &OdinModuleData, offset: i32, length: i32) -> Vec<OdinInst
     instructions
 }
 
-/// 正：函数值落成常量函数下标，间接调用落成 `CallIndirect`（argc=0）。
+/// 正：函数值落成两槽闭包对象（槽 0 = 常量函数下标，槽 1 = null 环境），
+/// 间接调用落成 `CallIndirect`（argc = 可见实参 + 环境槽 = 1）。
 #[test]
-fn ovm_function_value_lowers_to_constant_index_and_call_indirect() {
+fn ovm_function_value_lowers_to_closure_object_and_call_indirect() {
     // `from_functions` 按名称序分配身份：`callee` -> 0，`main` -> 1。
     let callee_instance = ItemInstanceId::from_index(0).expect("callee 身份");
     let module = lower(caller_function(callee_instance)).expect("函数值与间接调用必须能 lowering");
 
     let main = module.functions.iter().find(|function| function.name == "main").expect("main 必须导出");
     let instructions = decoded_at(&module, main.code_offset, main.code_length);
-    let constant =
-        instructions.iter().find(|instruction| instruction.code == OdinHeadCode::Constant).expect("LoadFunctionRef 必须发射函数下标常量");
-    assert_eq!(
-        module.constants.get(constant.operand1 as usize),
-        Some(&odin_bytecode::OdinConstant::Integer32(0)),
-        "函数值必须是 callee 的函数表下标"
+    assert!(
+        instructions.iter().any(|instruction| instruction.code == OdinHeadCode::ObjectNew),
+        "无捕获函数值也必须用统一闭包对象载体，不能退回裸 i32"
+    );
+    let constant = instructions
+        .iter()
+        .filter(|instruction| instruction.code == OdinHeadCode::Constant)
+        .find(|instruction| module.constants.get(instruction.operand1 as usize) == Some(&odin_bytecode::OdinConstant::Integer32(0)))
+        .expect("LoadFunctionRef 必须把 callee 函数表下标写进闭包槽 0");
+    assert_eq!(constant.code, OdinHeadCode::Constant);
+    assert!(
+        instructions
+            .iter()
+            .any(|instruction| instruction.code == OdinHeadCode::Constant
+                && module.constants.get(instruction.operand1 as usize) == Some(&odin_bytecode::OdinConstant::Null)),
+        "无捕获闭包的环境槽必须显式写 null"
     );
 
     let indirect =
         instructions.iter().find(|instruction| instruction.code == OdinHeadCode::CallIndirect).expect("间接调用必须发射 CallIndirect");
-    assert_eq!(indirect.operand1, 0, "零实参调用的 argc 必须是 0");
+    assert_eq!(indirect.operand1, 1, "零可见实参调用的 argc 必须包含环境槽");
     assert_eq!(module.functions.len(), 2, "callee 必须进入同一模块函数表");
 }
 

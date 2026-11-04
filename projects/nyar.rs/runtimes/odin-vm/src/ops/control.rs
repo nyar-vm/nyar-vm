@@ -153,9 +153,12 @@ pub fn execute_call(instruction: OdinInstruction, frame: &mut Frame, module: &Lo
 
 /// Enters a nested call whose target comes from the operand stack.
 ///
-/// 栈布局 `[arg0, …, argN-1, callee]`：只弹 `callee`（`i32` 函数索引），实参留在栈上
-/// 由新帧按 `arity` 消费（与 [`execute_call`] 的直调约定一致）。索引越界或 callee
-/// 不是 `i32` 一律结构化失败，不回落、不猜测。
+/// 栈布局 `[arg0, …, argN-1, env, callee]`：只弹 `callee`（`i32` 函数索引），实参与
+/// 环境槽留在栈上由新帧按 `arity` 消费（与 [`execute_call`] 的直调约定一致）。
+/// `argc`（operand1）= 可见实参 + 1（闭包载体尾环境槽）：合成 lambda 的 `arity`
+/// 含环境形参，具名函数引用的 `arity` 只有可见形参，后者的尾槽必须是 `null` 且
+/// 在进入帧前消费掉。索引越界、argc/arity 不合合同或 callee 不是 `i32` 一律
+/// 结构化失败，不回落、不猜测。
 pub fn execute_call_indirect(
     instruction: OdinInstruction,
     frame: &mut Frame,
@@ -171,6 +174,26 @@ pub fn execute_call_indirect(
     if function_index < 0 || (function_index as usize) >= ctx.module.functions.len() {
         return Err(OdinRuntimeError::FunctionIndexOutOfRange(function_index));
     }
+    let function_index = function_index as usize;
+    let argc = instruction.operand1.max(0) as usize;
+    let arity = ctx.module.functions[function_index].arity.max(0) as usize;
+    if argc == arity + 1 {
+        // 具名函数引用携带统一闭包载体，但目标 arity 不含环境形参：尾槽只能是
+        // 显式 null，捕获环境不允许走这条直调路径。
+        let environment = ctx.stack.pop()?;
+        if !matches!(environment, Value::Null) {
+            return Err(OdinRuntimeError::TypeMismatch {
+                expected: "null capture environment for named function reference",
+                actual: environment.type_name().to_string(),
+            });
+        }
+    }
+    else if argc != arity {
+        return Err(OdinRuntimeError::ModuleLoad(format!(
+            "CallIndirect argc {argc} does not match function[{function_index}] `{}` arity {arity}",
+            ctx.module.functions[function_index].name
+        )));
+    }
     frame.ip += instruction.size as usize;
-    Ok(StepResult::Call { function_index: function_index as usize })
+    Ok(StepResult::Call { function_index })
 }

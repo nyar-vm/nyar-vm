@@ -18,6 +18,7 @@ mod legion_cmds_spy_wasm;
 mod legion_cmds_test;
 mod legion_external_runner_fail_closed;
 mod legion_manifest;
+mod legion_ovm_closure_p2_e2e;
 mod legion_pack_bootstrap_aliases;
 mod legion_planner;
 mod legion_production_lane_build_contract;

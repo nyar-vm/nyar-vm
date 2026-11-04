@@ -524,30 +524,51 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::LoadFunctionRef { instance, environment, captured } => {
-                // 函数值 = 本模块 `module.functions` 的函数索引（i32）。跨模块/导入
-                // 实例没有稳定索引，只能结构化失败：不回落符号、不猜。
-                // 捕获环境由后续提交的 OVM 闭包载体承载；当前阶段必须结构化失败。
-                if environment.is_some() {
-                    return Err(format!(
-                        "OVM 闭包载体尚未落地：lambda instance={instance:?} captured=[{}]（symbol=`{}`）",
-                        captured.join(", "),
-                        self.mir_fn.symbol
-                    ));
-                }
+                // 函数值 = 两槽闭包对象：槽 0 = 本模块函数表下标（code i32），
+                // 槽 1 = 捕获环境聚合或 null。跨模块/导入实例没有稳定下标，
+                // 只能结构化失败：不回落符号、不猜，也不把闭包降回裸 i32。
                 let Some(index) = self.function_index_by_instance.get(instance).copied()
                 else {
                     return Err(format!(
-                        "OVM 函数值要求 instance 属于本模块函数表（跨模块/导入函数值未支持）：{instance:?}（symbol=`{}`）",
+                        "OVM 闭包载体要求 instance 属于本模块函数表（跨模块/导入函数值未支持）：{instance:?}（symbol=`{}`）",
                         self.mir_fn.symbol
                     ));
                 };
-                self.emitter.emit_const_i32(index);
-                if let Some(output) = output {
-                    self.store_to_local(output);
+                let Some(output) = output else {
+                    return Err(format!(
+                        "OVM 闭包载体必须有结果槽：instance={instance:?} captured=[{}]（symbol=`{}`）",
+                        captured.join(", "),
+                        self.mir_fn.symbol
+                    ));
+                };
+                let object = MirOperand::Value(output);
+                let layout = self.ensure_nyar_layout_for_field_count(2);
+                self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout);
+                self.store_to_local(output);
+                // 槽 0：code 下标。Odin 槽无类型，常量位宽由这里固定为 i32。
+                self.emit_field_set_slot(
+                    &object,
+                    0,
+                    &MirOperand::Constant(MirConstant::Int(index as i64)),
+                    Some(&NyarType::Integer32 { signed: true }),
+                )?;
+                self.emitter.emit_plain(OdinHeadCode::Pop);
+                // 槽 1：环境聚合或显式 null（无捕获也必须仍是闭包对象）。
+                match environment {
+                    Some(environment) => {
+                        let environment_ty = match environment {
+                            MirOperand::Value(value) => self.value_semantic_type(*value),
+                            _ => None,
+                        };
+                        self.emit_field_set_slot(&object, 1, environment, environment_ty.as_ref())?;
+                    }
+                    None => {
+                        self.emit_operand(&object)?;
+                        self.emitter.emit_const_null();
+                        self.emitter.emit_imm1(OdinHeadCode::FieldSet, 1);
+                    }
                 }
-                else {
-                    self.emitter.emit_plain(OdinHeadCode::Pop);
-                }
+                self.emitter.emit_plain(OdinHeadCode::Pop);
             }
             MirInstructionKind::StoreVar { name, value, .. } => {
                 let output_ty = output.and_then(|value| self.value_slot_type(value));
@@ -832,8 +853,9 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         self.mir_fn.symbol
                     ));
                 }
-                // 先压实参、最后压 callee：`CallIndirect` 只弹 callee，实参留在栈上。
-                // 环境槽由后续提交的闭包载体承载，当前阶段的 argc 只数可见实参。
+                // 先压实参、再压环境槽、最后压 code：`CallIndirect` 只弹 callee，
+                // 实参与环境槽留在栈上；Odin 没有 swap，顺序错了取不出来。
+                // 环境槽是合成 lambda 的尾形参，因此 argc = 可见实参 + 1。
                 for (index, argument) in arguments.iter().enumerate() {
                     let param_ty = signature.params.get(index);
                     match argument {
@@ -845,8 +867,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         _ => self.emit_operand_typed(argument, param_ty)?,
                     }
                 }
+                // 闭包载体两槽：0 = code i32 函数下标，1 = env 聚合对象或 null。
                 self.emit_operand_typed(callee, None)?;
-                self.emitter.emit_imm1(OdinHeadCode::CallIndirect, arguments.len() as i32);
+                self.emitter.emit_imm1(OdinHeadCode::FieldGet, 1);
+                self.emit_operand_typed(callee, None)?;
+                self.emitter.emit_imm1(OdinHeadCode::FieldGet, 0);
+                self.emitter.emit_imm1(OdinHeadCode::CallIndirect, arguments.len() as i32 + 1);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
