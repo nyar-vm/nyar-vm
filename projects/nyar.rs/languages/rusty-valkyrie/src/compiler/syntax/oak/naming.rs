@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use oak_valkyrie::ast::{
-    Block, ClassDeclaration, ImplyDeclaration, Let, MethodDeclaration, MicroDeclaration, NamespaceDeclaration, Param, Pattern, Property,
+    Block, ClassDeclaration, ImplyDeclaration, Let, MethodDeclaration, MicroDeclaration, NamespaceDeclaration, Param, Pattern,
     SingletonDeclaration, Statement, StatementNode, Trait, TypeFunction, ValkyrieRoot, WidgetDeclaration,
 };
 /// Diagnostic code: identifier must be `snake_case` (`E0301`).
@@ -63,7 +63,6 @@ fn walk_statement_node(node: &StatementNode, violations: &mut Vec<NamingViolatio
         StatementNode::Widget(widget) => walk_widget(widget, violations),
         StatementNode::Micro(micro) => walk_micro(micro, violations),
         StatementNode::TypeFunction(type_function) => walk_type_function(type_function, violations),
-        StatementNode::Property(property) => walk_property(property, violations),
         StatementNode::Let(let_stmt) => walk_let_binding(let_stmt, violations),
         StatementNode::Statement(inner) => walk_statement_node(inner, violations),
         _ => {}
@@ -120,14 +119,6 @@ fn walk_type_function(type_function: &TypeFunction, violations: &mut Vec<NamingV
         walk_parameter(param, violations);
     }
     walk_block(&type_function.body, violations);
-}
-
-fn walk_property(property: &Property, violations: &mut Vec<NamingViolation>) {
-    check_identifier(&property.name.name, std_range(&property.name.span), violations);
-    for param in &property.params {
-        walk_parameter(param, violations);
-    }
-    walk_block(&property.body, violations);
 }
 
 fn walk_method(method: &MethodDeclaration, violations: &mut Vec<NamingViolation>) {

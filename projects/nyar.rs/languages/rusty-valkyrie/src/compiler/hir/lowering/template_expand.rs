@@ -221,7 +221,6 @@ pub(crate) fn statement_node_kind(item: &StatementNode) -> &'static str {
         StatementNode::Statement(_) => "statement",
         StatementNode::Variant(_) => "variant",
         StatementNode::Effect(_) => "effect",
-        StatementNode::Property(_) => "property",
         StatementNode::Shader(_) => "shader",
         StatementNode::Component(_) => "component",
         StatementNode::System(_) => "system",

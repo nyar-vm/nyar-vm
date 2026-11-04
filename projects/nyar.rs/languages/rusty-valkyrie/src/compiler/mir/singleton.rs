@@ -232,7 +232,6 @@ pub fn singleton_as_struct(singleton: &HirSingleton) -> HirStruct {
         parents: singleton.parents.clone(),
         fields: singleton.fields.clone(),
         methods: singleton.methods.clone(),
-        properties: singleton.properties.clone(),
         visibility: singleton.visibility,
         is_value_type: false,
         is_abstract: false,
@@ -240,7 +239,6 @@ pub fn singleton_as_struct(singleton: &HirSingleton) -> HirStruct {
         is_final: false,
         is_open: false,
         abstract_methods: Vec::new(),
-        abstract_properties: Vec::new(),
         derives: singleton.derives.clone(),
         annotations: Vec::new(),
         // singleton 视图不是 `[primitive]` 声明，没有自举身份。

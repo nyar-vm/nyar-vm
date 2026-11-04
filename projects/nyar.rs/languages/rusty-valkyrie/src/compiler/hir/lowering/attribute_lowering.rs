@@ -17,7 +17,7 @@ use crate::compiler::{
         Identifier, NamePath, SourceID, SourceSpan,
         hir::{
             GenericType, HirArgument, HirAssociatedType, HirAttribute, HirBlock, HirDocumentation, HirEnum, HirExpr, HirExprKind, HirField,
-            HirFlagMember, HirFunction, HirImport, HirImportBinding, HirLiteral, HirParam, HirParameterBindingKind, HirParent, HirProperty,
+            HirFlagMember, HirFunction, HirImport, HirImportBinding, HirLiteral, HirParam, HirParameterBindingKind, HirParent,
             HirSingleton, HirStatement, HirStatementKind, HirTraitBound, HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant,
             HirVisibility, HirWhereConstraint,
         },
@@ -209,65 +209,6 @@ pub(crate) fn lower_method_params(method: &MethodDeclaration, source_id: SourceI
     method.parameters.iter().map(|param| lower_param(param, source_id, span.clone())).collect()
 }
 
-pub(crate) fn lower_property_params(method: &MethodDeclaration, source_id: SourceID) -> Result<Vec<HirParam>, HirError> {
-    lower_method_params(method, source_id)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PropertyMethodKind {
-    Get,
-    Set,
-}
-
-pub(crate) fn property_accessor_kind(method: &MethodDeclaration) -> Option<PropertyMethodKind> {
-    if has_modifier(&method.annotations, "get") {
-        Some(PropertyMethodKind::Get)
-    }
-    else if has_modifier(&method.annotations, "set") {
-        Some(PropertyMethodKind::Set)
-    }
-    else {
-        None
-    }
-}
-
-pub(crate) fn is_property_accessor(method: &MethodDeclaration) -> bool {
-    property_accessor_kind(method).is_some()
-}
-
-pub(crate) fn lower_property_type(method: &MethodDeclaration, accessor_kind: PropertyMethodKind) -> Result<ValkyrieType, HirError> {
-    Ok(match accessor_kind {
-        PropertyMethodKind::Get => method.return_type.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::Unit),
-        PropertyMethodKind::Set => {
-            method.parameters.last().and_then(|param| param.ty.as_ref().map(lower_type_expression)).transpose()?.unwrap_or(ValkyrieType::Unit)
-        }
-    })
-}
-
-pub(crate) fn property_is_abstract(method: &MethodDeclaration) -> bool {
-    method.body.is_none() || has_modifier(&method.annotations, "abstract")
-}
-
-pub(crate) fn property_is_final(method: &MethodDeclaration) -> bool {
-    has_modifier(&method.annotations, "final")
-}
-
-pub(crate) fn property_is_static(method: &MethodDeclaration) -> bool {
-    has_modifier(&method.annotations, "static")
-}
-
-pub(crate) fn property_is_virtual(method: &MethodDeclaration) -> bool {
-    has_modifier(&method.annotations, "virtual")
-}
-
-pub(crate) fn property_is_override(method: &MethodDeclaration) -> bool {
-    has_modifier(&method.annotations, "override")
-}
-
-pub(crate) fn property_is_lazy(method: &MethodDeclaration) -> bool {
-    has_modifier(&method.annotations, "lazy")
-}
-
 pub(crate) fn lower_using(using: &UsingDeclaration) -> Result<HirImport, HirError> {
     // 只有真正缺 path 的畸形 `using` 在这里 fail-closed；`using!` 是主空间导入，
     // 由 oak 正常产出非空 path，并通过 `primary` 身份进入 HIR，不再走这条拒绝路径。
@@ -286,18 +227,18 @@ pub(crate) fn lower_using(using: &UsingDeclaration) -> Result<HirImport, HirErro
     })
 }
 
-/// `using!` 的主空间身份：oak 新节点字段在 rev 重钉前置为占位。
+/// `using!` 的主空间身份由 oak 的 `UsingDeclaration.primary` 决定。
 ///
-/// 所有身份读取集中在这里，rev 重钉时只改这两个函数体，不散落字段访问。
+/// 所有身份读取集中在这里，不散落字段访问。
 #[inline]
-pub(crate) fn using_is_primary(_using: &UsingDeclaration) -> bool {
-    false
+pub(crate) fn using_is_primary(using: &UsingDeclaration) -> bool {
+    using.primary
 }
 
-/// `namespace!` 的主空间身份：与 [`using_is_primary`] 同一占位点。
+/// `namespace!` 的主空间身份由 oak 的 `NamespaceDeclaration.primary` 决定。
 #[inline]
-pub(crate) fn namespace_is_primary(_namespace: &NamespaceDeclaration) -> bool {
-    false
+pub(crate) fn namespace_is_primary(namespace: &NamespaceDeclaration) -> bool {
+    namespace.primary
 }
 
 /// 主空间声明的规范名字，只用于结构化诊断文本。

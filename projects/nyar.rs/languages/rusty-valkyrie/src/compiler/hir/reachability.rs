@@ -137,9 +137,6 @@ fn collect_module_callables<'a>(module: &'a HirModule, out: &mut Vec<&'a HirFunc
     out.extend(module.functions.iter());
     for structure in &module.structs {
         out.extend(structure.methods.iter());
-        for property in &structure.properties {
-            out.extend(property.getter.iter().chain(property.setter.iter()));
-        }
     }
     for implementation in &module.impls {
         out.extend(implementation.methods.iter());

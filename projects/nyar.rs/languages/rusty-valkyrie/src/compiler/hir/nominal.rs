@@ -276,7 +276,6 @@ pub fn lower_unite(enum_def: &HirEnum, layout: UniteLayout) -> LoweredUnite {
         parents: vec![],
         fields: vec![],
         methods: vec![],
-        properties: vec![],
         visibility: enum_def.visibility,
         is_value_type: false,
         is_abstract: true,
@@ -284,7 +283,6 @@ pub fn lower_unite(enum_def: &HirEnum, layout: UniteLayout) -> LoweredUnite {
         is_final: false,
         is_open: false,
         abstract_methods: vec![],
-        abstract_properties: vec![],
         derives: vec![],
         annotations: vec![],
         // `unite` 枚举下降出的合成基类不是 `[primitive]` 声明，没有自举身份。
@@ -385,7 +383,6 @@ fn lower_variant(
         parents: vec![HirParent::with_generics(base_path.clone(), parent_generics)],
         fields: variant.fields.clone(),
         methods: vec![],
-        properties: vec![],
         visibility,
         is_value_type: false,
         is_abstract: false,
@@ -393,7 +390,6 @@ fn lower_variant(
         is_final: true,
         is_open: false,
         abstract_methods: vec![],
-        abstract_properties: vec![],
         derives: vec![],
         annotations: vec![],
         // `unite` 变体下降出的合成 struct 不是 `[primitive]` 声明，没有自举身份。

@@ -252,14 +252,6 @@ pub(crate) fn freeze_struct_generic_binders(structure: &mut HirStruct) {
     for method in &mut structure.methods {
         freeze_function_generic_binders(method);
     }
-    for property in &mut structure.properties {
-        if let Some(getter) = &mut property.getter {
-            freeze_function_generic_binders(getter);
-        }
-        if let Some(setter) = &mut property.setter {
-            freeze_function_generic_binders(setter);
-        }
-    }
 }
 
 pub(crate) fn freeze_trait_generic_binders(trait_definition: &mut HirTrait) {

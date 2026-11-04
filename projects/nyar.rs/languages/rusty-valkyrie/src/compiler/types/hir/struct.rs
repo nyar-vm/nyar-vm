@@ -1,6 +1,6 @@
 //! Struct, parent, and field definitions for HIR.
 
-use super::{HirAttribute, HirDocumentation, HirFunction, HirProperty, HirVisibility, ValkyrieType};
+use super::{HirAttribute, HirDocumentation, HirFunction, HirVisibility, ValkyrieType};
 use crate::compiler::types::{Identifier, NamePath};
 
 /// A parent class with optional alias for renamed inheritance.
@@ -161,8 +161,6 @@ pub struct HirStruct {
     pub fields: Vec<HirField>,
     /// Methods defined directly on the struct.
     pub methods: Vec<HirFunction>,
-    /// Properties (computed fields with getter/setter).
-    pub properties: Vec<HirProperty>,
     /// Visibility of the struct.
     pub visibility: HirVisibility,
     /// Whether this is a value type (immutable, copied on assignment).
@@ -197,12 +195,6 @@ pub struct HirStruct {
     /// These are method identifiers declared as abstract in this class or
     /// inherited from abstract parent classes that haven't been implemented yet.
     pub abstract_methods: Vec<Identifier>,
-    /// List of abstract property names that concrete subclasses must implement.
-    ///
-    /// These are property identifiers declared as abstract in this class or
-    /// inherited from abstract parent classes that haven't been implemented yet.
-    /// Each entry contains the property name and whether getter/setter is required.
-    pub abstract_properties: Vec<AbstractPropertyRequirement>,
     /// Traits to derive via the derive macro system.
     ///
     /// This list is populated from `@derive(Trait1, Trait2)` attributes
@@ -325,47 +317,6 @@ pub enum InheritancePermission {
     /// This is the default for classes without modifiers,
     /// and for `final` classes (deprecated).
     Blocked,
-}
-
-/// Requirement for abstract property implementation.
-///
-/// Describes what a concrete subclass must implement for an abstract property.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct AbstractPropertyRequirement {
-    /// The name of the abstract property.
-    pub name: Identifier,
-    /// Whether a getter implementation is required.
-    pub requires_getter: bool,
-    /// Whether a setter implementation is required.
-    pub requires_setter: bool,
-    /// The type of the property.
-    pub ty: ValkyrieType,
-    /// The parent class that declared this abstract property.
-    pub parent_class: Option<Identifier>,
-}
-
-impl AbstractPropertyRequirement {
-    /// Creates a new abstract property requirement.
-    pub fn new(name: Identifier, requires_getter: bool, requires_setter: bool, ty: ValkyrieType) -> Self {
-        Self { name, requires_getter, requires_setter, ty, parent_class: None }
-    }
-
-    /// Creates a requirement for a read-only property (getter only).
-    pub fn readonly(name: Identifier, ty: ValkyrieType) -> Self {
-        Self::new(name, true, false, ty)
-    }
-
-    /// Creates a requirement for a read-write property (getter and setter).
-    pub fn readwrite(name: Identifier, ty: ValkyrieType) -> Self {
-        Self::new(name, true, true, ty)
-    }
-
-    /// Sets the parent class that declared this requirement.
-    pub fn with_parent(mut self, parent: Identifier) -> Self {
-        self.parent_class = Some(parent);
-        self
-    }
 }
 
 /// A field in a struct.

@@ -531,11 +531,6 @@ fn transform_module(module: &mut HirModule, context: &TransformContext<'_>) -> R
         for method in &mut structure.methods {
             transform_function(method, context)?;
         }
-        for property in &mut structure.properties {
-            for accessor in property.getter.iter_mut().chain(property.setter.iter_mut()) {
-                transform_function(accessor, context)?;
-            }
-        }
     }
     for singleton in &mut module.singletons {
         for method in singleton

@@ -6,7 +6,7 @@
 //! 子模块分工：
 //!
 //! - 既有子模块：类语义、复合模式穷尽、控制流、effect 类型、imply、字面量穷尽、oop、模式、singleton、不可达分支。
-//! - 访问控制、构造器链、属性、value 类型、复制语义、sealed/enum 穷尽、widget 检查各自独立成文件。
+//! - 访问控制、构造器链、value 类型、复制语义、sealed/enum 穷尽、widget 检查各自独立成文件。
 
 mod access_control;
 mod class_semantics;
@@ -20,7 +20,6 @@ mod literal_exhaustiveness;
 mod oop_checks;
 mod path_helpers;
 mod pattern_checks;
-mod property_check;
 mod sealed_class;
 mod singleton_checks;
 mod unreachable_arm;
@@ -45,7 +44,6 @@ pub use self::{
     literal_exhaustiveness::{LiteralExhaustivenessChecker, LiteralExhaustivenessError, LiteralExhaustivenessErrorKind},
     oop_checks::SealedMatchChecker,
     pattern_checks::check_pattern_refutability,
-    property_check::{PropertyChecker, PropertyError, PropertyErrorKind, SetterValidationAnalyzer},
     sealed_class::{EnumRegistry, ExhaustivenessChecker, SealedClassError, SealedClassErrorKind, SealedClassRegistry},
     singleton_checks::{SingletonChecker, SingletonError, SingletonErrorKind},
     unreachable_arm::{UnreachableArmChecker, UnreachableArmError, UnreachableArmErrorKind},

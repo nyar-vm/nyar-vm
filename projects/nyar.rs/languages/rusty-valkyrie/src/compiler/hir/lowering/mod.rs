@@ -84,12 +84,11 @@ pub(crate) use generic_instantiation::{instantiate_generic_callables, substitute
 pub use generic_instantiation::{MAX_FIXPOINT_ROUNDS, MAX_GENERIC_INSTANCES};
 
 pub(crate) use attribute_lowering::{
-    PropertyMethodKind, default_module_name, generic_parameter_names, has_modifier, imply_generic_parameter_names, is_property_accessor,
-    lower_attribute, lower_attribute_argument_expression, lower_bound_identifier, lower_derives, lower_documentation, lower_field,
-    lower_generic_parameter, lower_generic_parameters, lower_method_params, lower_name_path, lower_param, lower_parent, lower_property_params,
-    lower_property_type, lower_trait_associated_type, lower_trait_path_from_type, lower_using, lower_visibility, lower_where_constraints,
-    oak_identifier, operator_member_name, property_accessor_kind, property_is_abstract, property_is_final, property_is_lazy,
-    property_is_override, property_is_static, property_is_virtual, tag_attribute_discriminator, with_source,
+    default_module_name, generic_parameter_names, has_modifier, imply_generic_parameter_names, lower_attribute,
+    lower_attribute_argument_expression, lower_bound_identifier, lower_derives, lower_documentation, lower_field, lower_generic_parameter,
+    lower_generic_parameters, lower_method_params, lower_name_path, lower_param, lower_parent, lower_trait_associated_type,
+    lower_trait_path_from_type, lower_using, lower_visibility, lower_where_constraints, oak_identifier, operator_member_name,
+    tag_attribute_discriminator, with_source,
 };
 
 pub use ast_to_hir::AstToHir;

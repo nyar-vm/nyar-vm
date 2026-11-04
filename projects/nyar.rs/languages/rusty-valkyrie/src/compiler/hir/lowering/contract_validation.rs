@@ -122,14 +122,6 @@ fn collect_module_call_contracts(hir: &HirModule, source: &DiagnosticSource, err
         for function in &structure.methods {
             collect_function_call_contracts(hir, function, source, errors, false);
         }
-        for property in &structure.properties {
-            if let Some(function) = &property.getter {
-                collect_function_call_contracts(hir, function, source, errors, false);
-            }
-            if let Some(function) = &property.setter {
-                collect_function_call_contracts(hir, function, source, errors, false);
-            }
-        }
     }
     for trait_def in &hir.traits {
         for function in trait_def.methods.iter().chain(&trait_def.default_methods) {

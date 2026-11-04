@@ -29,15 +29,6 @@ pub enum FinalClassErrorKind {
         /// 声明该 final 方法的父类名。
         parent: Identifier,
     },
-    /// 重写了父类的 final 属性。
-    FinalPropertyOverride {
-        /// 子类名。
-        class_name: Identifier,
-        /// 被重写的属性名。
-        property: Identifier,
-        /// 声明该 final 属性的父类名。
-        parent: Identifier,
-    },
 }
 
 /// 单条 final 类违规：类别、渲染后的消息与源码位置。
@@ -69,19 +60,6 @@ impl FinalClassError {
             span,
         }
     }
-
-    /// 构造「重写 final 属性」错误。
-    pub fn final_property_override(class_name: Identifier, property: Identifier, parent: Identifier, span: Option<SourceSpan>) -> Self {
-        Self {
-            kind: FinalClassErrorKind::FinalPropertyOverride {
-                class_name: class_name.clone(),
-                property: property.clone(),
-                parent: parent.clone(),
-            },
-            message: format!("{} 不能重写 final 属性 {}::{}", class_name, parent, property),
-            span,
-        }
-    }
 }
 
 impl fmt::Display for FinalClassError {
@@ -99,7 +77,6 @@ pub struct FinalClassChecker {
     inheritance_map: BTreeMap<Identifier, Vec<Identifier>>,
     final_class_names: BTreeSet<Identifier>,
     final_methods: BTreeMap<Identifier, BTreeSet<Identifier>>,
-    final_properties: BTreeMap<Identifier, BTreeSet<Identifier>>,
     errors: Vec<FinalClassError>,
 }
 
@@ -120,10 +97,6 @@ impl FinalClassChecker {
             }
             self.final_methods
                 .insert(class.name.clone(), class.methods.iter().filter(|method| method.is_final).map(|method| method.name.clone()).collect());
-            self.final_properties.insert(
-                class.name.clone(),
-                class.properties.iter().filter(|property| property.is_final).map(|property| property.name.clone()).collect(),
-            );
         }
 
         for class in &module.structs {
@@ -138,18 +111,6 @@ impl FinalClassChecker {
                             self.errors.push(FinalClassError::final_method_override(
                                 class.name.clone(),
                                 method.name.clone(),
-                                parent.clone(),
-                                None,
-                            ));
-                        }
-                    }
-                }
-                if let Some(properties) = self.final_properties.get(parent) {
-                    for property in &class.properties {
-                        if properties.contains(&property.name) {
-                            self.errors.push(FinalClassError::final_property_override(
-                                class.name.clone(),
-                                property.name.clone(),
                                 parent.clone(),
                                 None,
                             ));
@@ -195,11 +156,6 @@ impl FinalClassChecker {
         self.final_methods.get(name)
     }
 
-    /// 返回给定类声明的 final 属性名集合。
-    pub fn get_final_properties(&self, name: &Identifier) -> Option<&BTreeSet<Identifier>> {
-        self.final_properties.get(name)
-    }
-
     /// 返回按类名索引的类定义表。
     pub fn class_map(&self) -> &BTreeMap<Identifier, HirStruct> {
         &self.class_map
@@ -221,7 +177,6 @@ impl FinalClassChecker {
         self.inheritance_map.clear();
         self.final_class_names.clear();
         self.final_methods.clear();
-        self.final_properties.clear();
         self.errors.clear();
     }
 }

@@ -21,16 +21,6 @@ pub fn check_pattern_refutability(module: &HirModule) -> Result<(), HirError> {
             let mut checker = PatternRefutabilityChecker::new();
             checker.check_function(method)?;
         }
-        for property in &struct_def.properties {
-            if let Some(getter) = &property.getter {
-                let mut checker = PatternRefutabilityChecker::new();
-                checker.check_function(getter)?;
-            }
-            if let Some(setter) = &property.setter {
-                let mut checker = PatternRefutabilityChecker::new();
-                checker.check_function(setter)?;
-            }
-        }
     }
     for trait_def in &module.traits {
         for method in &trait_def.methods {

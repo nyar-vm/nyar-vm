@@ -44,20 +44,6 @@ pub fn validate_control_flow_module(module: &HirModule) -> Result<(), HirError> 
             validate_hir_function(method, &mut state)?;
             pop_self_type(&mut state);
         }
-        for property in &struct_def.properties {
-            if let Some(getter) = &property.getter {
-                let mut state = validation_state(&numeric_declarations, &boolean_declarations);
-                push_self_type(&mut state, ValkyrieType::Named(struct_def.name.clone()));
-                validate_hir_function(getter, &mut state)?;
-                pop_self_type(&mut state);
-            }
-            if let Some(setter) = &property.setter {
-                let mut state = validation_state(&numeric_declarations, &boolean_declarations);
-                push_self_type(&mut state, ValkyrieType::Named(struct_def.name.clone()));
-                validate_hir_function(setter, &mut state)?;
-                pop_self_type(&mut state);
-            }
-        }
     }
     for trait_def in &module.traits {
         for method in &trait_def.methods {

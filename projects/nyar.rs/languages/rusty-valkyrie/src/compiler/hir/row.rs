@@ -3,14 +3,14 @@
 //! This module intentionally models only the narrow semantics currently settled
 //! in the architecture notes:
 //! - anonymous rows are shape-only method requirements
-//! - row satisfaction is checked against methods/property accessors
+//! - row satisfaction is checked against methods
 //! - associated types are rejected because they belong to named traits
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::types::{
     Identifier,
-    hir::{HirField, HirProperty, HirStruct, ValkyrieType},
+    hir::{HirField, HirStruct, ValkyrieType},
 };
 
 /// 匿名 row 要求中的单个方法签名。
@@ -174,30 +174,6 @@ impl RowCandidate {
             }
         }
 
-        for property in &candidate.properties {
-            if !property.visibility.is_public() {
-                continue;
-            }
-
-            if let Some(getter) = property.getter.as_ref() {
-                methods.push(RowMethodSignature {
-                    name: getter.name.clone(),
-                    params: callable_surface_params(getter.params.iter().map(|param| param.ty.clone()).collect()),
-                    return_type: getter.return_type.clone(),
-                });
-            }
-            if let Some(setter) = property.setter.as_ref() {
-                methods.push(RowMethodSignature {
-                    name: setter.name.clone(),
-                    params: callable_surface_params(setter.params.iter().map(|param| param.ty.clone()).collect()),
-                    return_type: setter.return_type.clone(),
-                });
-            }
-            else if !property.is_readonly {
-                methods.push(synthetic_setter_signature(property));
-            }
-        }
-
         Self { methods }
     }
 
@@ -214,14 +190,6 @@ fn synthetic_setter_signature_from_field(field: &HirField) -> RowMethodSignature
     RowMethodSignature {
         name: Identifier::new(&format!("set_{}", field.name)),
         params: vec![field.ty.clone()],
-        return_type: ValkyrieType::Unit,
-    }
-}
-
-fn synthetic_setter_signature(property: &HirProperty) -> RowMethodSignature {
-    RowMethodSignature {
-        name: Identifier::new(&format!("set_{}", property.name)),
-        params: vec![property.ty.clone()],
         return_type: ValkyrieType::Unit,
     }
 }

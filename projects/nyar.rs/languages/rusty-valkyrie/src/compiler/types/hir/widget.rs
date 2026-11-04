@@ -1,6 +1,6 @@
 //! Widget, widget lifecycle, and singleton definitions for HIR.
 
-use super::{GenericType, HirDocumentation, HirExpr, HirField, HirFunction, HirParent, HirProperty, HirVisibility};
+use super::{GenericType, HirDocumentation, HirExpr, HirField, HirFunction, HirParent, HirVisibility};
 use crate::compiler::types::{Identifier, NamePath};
 
 /// A widget in HIR.
@@ -153,8 +153,6 @@ pub struct HirSingleton {
     /// Ordinary methods defined on the singleton (excludes constructor and
     /// finalizer, which are stored in `constructor` / `finalizer`).
     pub methods: Vec<HirFunction>,
-    /// Properties (computed fields with getter/setter).
-    pub properties: Vec<HirProperty>,
     /// Visibility of the singleton.
     pub visibility: HirVisibility,
     /// Traits to derive via the derive macro system.

@@ -19,7 +19,7 @@ use crate::compiler::{
         hir::{
             HIR_WIRE_VERSION, HirAssociatedTypeImpl, HirAttribute, HirBlock, HirCompileWarning, HirDependencySemanticExport,
             HirDocumentation, HirEnum, HirExpr, HirExprKind, HirField, HirFileScope, HirFlagMember, HirFlags, HirFunction, HirImpl, HirImport,
-            HirImportBinding, HirKind, HirLiteral, HirModule, HirParam, HirParameterBindingKind, HirProperty, HirSingleton, HirStatement,
+            HirImportBinding, HirKind, HirLiteral, HirModule, HirParam, HirParameterBindingKind, HirSingleton, HirStatement,
             HirStatementKind, HirStruct, HirTrait, HirTraitBound, HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant, HirVisibility,
             HirWhereConstraint, HirWidget, HirWidgetLifecycle, ValkyrieType,
         },
@@ -563,12 +563,7 @@ impl AstToHir {
             generics: lower_generic_parameters(generics),
             parents: parents.iter().map(lower_parent).collect(),
             fields: fields.iter().map(lower_field).collect::<Result<Vec<_>, _>>()?,
-            methods: methods
-                .iter()
-                .filter(|method| !is_property_accessor(method))
-                .map(|method| self.lower_method(method))
-                .collect::<Result<Vec<_>, _>>()?,
-            properties: self.lower_object_properties(methods)?,
+            methods: methods.iter().map(|method| self.lower_method(method)).collect::<Result<Vec<_>, _>>()?,
             visibility: lower_visibility(annotations),
             is_value_type,
             is_abstract: has_modifier(annotations, "abstract"),
@@ -576,7 +571,6 @@ impl AstToHir {
             is_final: has_modifier(annotations, "final"),
             is_open: has_modifier(annotations, "open"),
             abstract_methods: Vec::new(),
-            abstract_properties: Vec::new(),
             derives: lower_derives(annotations),
             // `[primitive("…")]` 是自举身份的唯一来源：下降期从声明注解读出，
             // 绑定期再冻结到引用该声明的 `ValkyrieType::Nominal` 上。
@@ -620,7 +614,6 @@ impl AstToHir {
             .body
             .methods
             .iter()
-            .filter(|method| !is_property_accessor(method))
             .map(|method| self.lower_method(method))
             .collect::<Result<Vec<_>, _>>()?;
         let mut constructor: Option<Box<HirFunction>> = None;
@@ -647,7 +640,6 @@ impl AstToHir {
             parents: singleton.parents.iter().map(lower_parent).collect(),
             fields: singleton.body.fields.iter().map(lower_field).collect::<Result<Vec<_>, _>>()?,
             methods: ordinary_methods,
-            properties: self.lower_object_properties(&singleton.body.methods)?,
             visibility: lower_visibility(&singleton.annotations),
             derives: lower_derives(&singleton.annotations),
             is_lazy: has_modifier(&singleton.annotations, "lazy"),
@@ -690,7 +682,7 @@ impl AstToHir {
         let _generic_scope = GenericBinderScope::enter(&generic_names, &associated);
         let mut methods = Vec::new();
         let mut default_methods = Vec::new();
-        for method in trait_decl.body.methods.iter().filter(|method| !is_property_accessor(method)) {
+        for method in &trait_decl.body.methods {
             let lowered = crate::compiler::hir::lowering::generic_binders::finalize_trait_method_signature(
                 crate::compiler::hir::lowering::generic_binders::lower_trait_method(self.lower_method(method)?, &associated_names),
             );
@@ -865,72 +857,6 @@ impl AstToHir {
         })
     }
 
-    fn lower_object_properties(&self, methods: &[MethodDeclaration]) -> Result<Vec<HirProperty>, HirError> {
-        let mut lowered = Vec::new();
-
-        for method in methods.iter().filter(|method| is_property_accessor(method)) {
-            let Some(accessor_kind) = property_accessor_kind(method)
-            else {
-                continue;
-            };
-            let accessor = self.lower_property_accessor(method, accessor_kind)?;
-            let ty = lower_property_type(method, accessor_kind)?;
-
-            if let Some(existing) = lowered.iter_mut().find(|item: &&mut HirProperty| item.name == oak_identifier(&method.name)) {
-                existing.ty = ty;
-                existing.doc = lower_documentation(&method.annotations);
-                existing.visibility = lower_visibility(&method.annotations);
-                existing.is_abstract = existing.is_abstract || property_is_abstract(method);
-                existing.is_final = existing.is_final || property_is_final(method);
-                existing.is_static = existing.is_static || property_is_static(method);
-                existing.is_virtual = existing.is_virtual || property_is_virtual(method);
-                existing.is_override = existing.is_override || property_is_override(method);
-                existing.is_lazy = existing.is_lazy || property_is_lazy(method);
-                match accessor_kind {
-                    PropertyMethodKind::Get => {
-                        existing.getter = Some(accessor);
-                    }
-                    PropertyMethodKind::Set => {
-                        existing.setter = Some(accessor);
-                        existing.is_readonly = false;
-                    }
-                }
-                continue;
-            }
-
-            let mut hir_property = HirProperty {
-                name: oak_identifier(&method.name),
-                doc: lower_documentation(&method.annotations),
-                ty,
-                getter: None,
-                setter: None,
-                is_readonly: accessor_kind == PropertyMethodKind::Get,
-                visibility: lower_visibility(&method.annotations),
-                is_abstract: property_is_abstract(method),
-                is_final: property_is_final(method),
-                is_static: property_is_static(method),
-                is_virtual: property_is_virtual(method),
-                is_override: property_is_override(method),
-                is_lazy: property_is_lazy(method),
-                lazy_backing_field: None,
-            };
-
-            match accessor_kind {
-                PropertyMethodKind::Get => {
-                    hir_property.getter = Some(accessor);
-                }
-                PropertyMethodKind::Set => {
-                    hir_property.setter = Some(accessor);
-                    hir_property.is_readonly = false;
-                }
-            }
-
-            lowered.push(hir_property);
-        }
-
-        Ok(lowered)
-    }
-
     fn lower_enum_variant(&self, variant: &EnumVariant, kind: EnumsKind) -> Result<HirVariant, HirError> {
         let span = frontend::std_range(&variant.span);
         let discriminator =
@@ -955,55 +881,6 @@ impl AstToHir {
             result_type: None,
             discriminator,
             is_auto_constructor: auto_constructor_attribute_count(&variant.annotations) == 1,
-        })
-    }
-
-    fn lower_property_accessor(&self, method: &MethodDeclaration, accessor_kind: PropertyMethodKind) -> Result<HirFunction, HirError> {
-        let accessor_name = match accessor_kind {
-            PropertyMethodKind::Get => oak_identifier(&method.name),
-            PropertyMethodKind::Set => Identifier::new(&format!("set_{}", method.name.name)),
-        };
-
-        Ok(HirFunction {
-            declaration: None,
-            instance: None,
-            name: accessor_name,
-            declaring_namespace: NamePath::default(),
-            doc: lower_documentation(&method.annotations),
-            annotations: method
-                .annotations
-                .iter()
-                .map(|attribute| lower_attribute(attribute, self.source_id, crate::compiler::syntax::oak::std_range(&method.span)))
-                .collect::<Result<Vec<_>, _>>()?,
-            generics: lower_generic_parameters(&method.generics),
-            where_constraints: Vec::new(),
-            params: method
-                .parameters
-                .iter()
-                .map(|param| lower_param(param, self.source_id, crate::compiler::syntax::oak::std_range(&method.span)))
-                .collect::<Result<Vec<_>, _>>()?,
-            return_type: method
-                .return_type
-                .as_ref()
-                .map(crate::compiler::hir::lower_type_expression)
-                .transpose()?
-                .unwrap_or(ValkyrieType::Unit),
-            body: method
-                .body
-                .as_ref()
-                .map(|block| lower_block(block, self.source_id, crate::compiler::syntax::oak::std_range(&method.span)))
-                .transpose()?
-                .unwrap_or_else(|| HirBlock {
-                    statements: Vec::new(),
-                    expr: None,
-                    span: with_source(&frontend::std_range(&method.span), self.source_id),
-                }),
-            span: with_source(&frontend::std_range(&method.span), self.source_id),
-            visibility: lower_visibility(&method.annotations),
-            is_abstract: method.body.is_none() || has_modifier(&method.annotations, "abstract"),
-            is_final: has_modifier(&method.annotations, "final"),
-            is_virtual: has_modifier(&method.annotations, "virtual"),
-            is_override: has_modifier(&method.annotations, "override"),
         })
     }
 }

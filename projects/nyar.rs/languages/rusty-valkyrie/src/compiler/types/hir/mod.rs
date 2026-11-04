@@ -8,7 +8,6 @@ pub mod function;
 pub mod identifier;
 pub mod r#impl;
 pub mod module;
-pub mod property;
 pub mod statement;
 pub mod r#struct;
 pub mod r#trait;
@@ -36,9 +35,8 @@ pub use module::{
     HIR_WIRE_VERSION, HirCallResolutionFailure, HirCallResolutionFailureKind, HirCompileWarning, HirDependencySemanticExport,
     HirDocumentation, HirFileScope, HirImport, HirImportBinding, HirInstantiatedCallable, HirModule, HirTypeAlias,
 };
-pub use property::HirProperty;
 pub use statement::{HirArgument, HirAttribute, HirBlock, HirLetOrigin, HirMatchArm, HirStatement, HirStatementKind};
-pub use r#struct::{AbstractPropertyRequirement, HirField, HirParent, HirStruct, InheritancePermission};
+pub use r#struct::{HirField, HirParent, HirStruct, InheritancePermission};
 pub use r#trait::{HirAssociatedConst, HirAssociatedType, HirTrait};
 pub use type_family::{HirTypeFamily, HirTypeFunction};
 pub use visibility::HirVisibility;

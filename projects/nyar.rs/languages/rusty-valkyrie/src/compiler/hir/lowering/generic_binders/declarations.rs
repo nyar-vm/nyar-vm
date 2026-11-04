@@ -719,11 +719,6 @@ pub(crate) fn max_hir_declaration_index(module: &HirModule) -> Option<u32> {
             for method in &structure.methods {
                 consider(method.declaration, max);
             }
-            for property in &structure.properties {
-                for accessor in property.getter.iter().chain(property.setter.iter()) {
-                    consider(accessor.declaration, max);
-                }
-            }
         }
         for enum_definition in &module.enums {
             consider(enum_definition.declaration, max);
@@ -779,11 +774,6 @@ pub(crate) fn max_hir_callable_instance_index(module: &HirModule) -> Option<u32>
             consider(structure.constructor_instance, max);
             for method in &structure.methods {
                 consider(method.instance, max);
-            }
-            for property in &structure.properties {
-                for accessor in property.getter.iter().chain(property.setter.iter()) {
-                    consider(accessor.instance, max);
-                }
             }
         }
         for enum_definition in &module.enums {
@@ -863,11 +853,6 @@ pub(crate) fn register_function_declarations(module: &mut HirModule, next: &mut 
         }
         for method in &mut structure.methods {
             register(method, next, next_instance, structure.generics.is_empty())?;
-        }
-        for property in &mut structure.properties {
-            for accessor in property.getter.iter_mut().chain(property.setter.iter_mut()) {
-                register(accessor, next, next_instance, structure.generics.is_empty())?;
-            }
         }
     }
     for enum_definition in &mut module.enums {

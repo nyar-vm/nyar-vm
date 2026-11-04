@@ -1163,13 +1163,6 @@ fn visit_module_calls(
                 visit_block(&mut method.body, visit);
             }
         }
-        for property in &mut structure.properties {
-            for accessor in property.getter.iter_mut().chain(property.setter.iter_mut()) {
-                if permits(accessor) {
-                    visit_block(&mut accessor.body, visit);
-                }
-            }
-        }
     }
     for singleton in &mut module.singletons {
         for method in singleton
