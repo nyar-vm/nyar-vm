@@ -122,10 +122,14 @@ fn bodyless_target_bound_provider_carries_its_own_import_contract() {
 }
 
 #[test]
-fn bodyless_js_provider_carries_js_import_contract() {
+fn bodyless_js_builtin_provider_carries_js_import_contract() {
     let groups = [
         core_group(),
-        CompilerSourceGroup::single_source("adaptor", "adaptor", "[host_provider(demo::rand)] [js(\"random\")] micro js_rand(seed: i32): i32")
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "[host_provider(demo::rand)] [js_builtin(\"random\")] micro js_rand(seed: i32): i32",
+        )
             .with_direct_dependencies(vec!["core".into()]),
         CompilerSourceGroup::single_source(
             "app",
@@ -139,11 +143,11 @@ fn bodyless_js_provider_carries_js_import_contract() {
         contract: micro_declaration_key("app", "demo.v", &[], "rand"),
         provider: micro_declaration_key("adaptor", "adaptor.v", &[], "js_rand"),
         required_capabilities: vec!["js.random".into()],
-        foreign_bindings: vec![r#"js("random")"#.into()],
+        foreign_bindings: vec![r#"js_builtin("random")"#.into()],
     }];
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
-        .expect("bodyless [js] provider must close binding chain");
+        .expect("bodyless [js_builtin] provider must close binding chain");
     let canonical = program.canonical();
     let imports = canonical
         .linked
@@ -155,7 +159,7 @@ fn bodyless_js_provider_carries_js_import_contract() {
         })
         .collect::<Vec<_>>();
     assert_eq!(imports.len(), 1, "provider js binding must become external import");
-    assert!(imports[0].link.matches_platform_tag("js"), "link={:?}", imports[0].link);
+    assert!(imports[0].link.matches_platform_tag("js_builtin"), "link={:?}", imports[0].link);
     assert_eq!(imports[0].link.locator_segments(), &["random"]);
     let main_instance = *canonical.linked.entries.keys().next().expect("main entry");
     let call = invoke_callee(canonical, main_instance).expect("main must call rand");
@@ -163,15 +167,15 @@ fn bodyless_js_provider_carries_js_import_contract() {
 }
 
 #[test]
-fn same_source_file_unselected_js_provider_is_pruned_from_linked_imports() {
+fn same_source_file_unselected_js_builtin_provider_is_pruned_from_linked_imports() {
     let groups = [
         core_group(),
         CompilerSourceGroup::single_source(
             "adaptor",
             "adaptor",
             "namespace std.adaptor.js;\n\
-             [host_provider(demo::fetch)] [js(\"fetch\")] micro js_fetch(x: i32): i32\n\
-             [host_provider(demo::random)] [js(\"random\")] micro js_random(x: i32): i32",
+             [host_provider(demo::fetch)] [js_builtin(\"fetch\")] micro js_fetch(x: i32): i32\n\
+             [host_provider(demo::random)] [js_builtin(\"random\")] micro js_random(x: i32): i32",
         )
         .with_direct_dependencies(vec!["core".into()]),
         CompilerSourceGroup::single_source(
@@ -189,7 +193,7 @@ fn same_source_file_unselected_js_provider_is_pruned_from_linked_imports() {
         contract: micro_declaration_key("app", "demo.v", &[], "random"),
         provider: micro_declaration_key("adaptor", "adaptor.v", &js_ns, "js_random"),
         required_capabilities: vec!["js.random".into()],
-        foreign_bindings: vec![r#"js("random")"#.into()],
+        foreign_bindings: vec![r#"js_builtin("random")"#.into()],
     }];
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
