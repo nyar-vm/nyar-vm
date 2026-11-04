@@ -39,6 +39,7 @@ pub(super) fn lower_singleton_method_functions(
     callable_returns: &CallableReturnTypes,
     member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
+    lambda_allocator: &std::rc::Rc<super::LambdaInstanceAllocator>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let permits = |function: &HirFunction| gate.is_none_or(|gate| gate.permits_declaration(function.declaration));
@@ -50,7 +51,7 @@ pub(super) fn lower_singleton_method_functions(
                 && !method.params.iter().any(|p| contains_open_generic(&p.ty))
                 && !contains_open_generic(&method.return_type)
         }) {
-            let mut mir_function = lower_function_semantic(
+            let (mut mir_function, nested_functions) = lower_function_semantic(
                 module,
                 method,
                 aggregate_layouts,
@@ -60,13 +61,15 @@ pub(super) fn lower_singleton_method_functions(
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
                 host_runtime_callables,
+                std::rc::Rc::clone(lambda_allocator),
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, method.name);
             functions.push(mir_function);
+            functions.extend(nested_functions);
         }
         if let Some(constructor) = singleton.constructor.as_deref().filter(|constructor| permits(constructor)) {
-            let mut mir_function = lower_function_semantic(
+            let (mut mir_function, nested_functions) = lower_function_semantic(
                 module,
                 constructor,
                 aggregate_layouts,
@@ -76,13 +79,15 @@ pub(super) fn lower_singleton_method_functions(
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
                 host_runtime_callables,
+                std::rc::Rc::clone(lambda_allocator),
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, constructor.name);
             functions.push(mir_function);
+            functions.extend(nested_functions);
         }
         if let Some(finalizer) = singleton.finalizer.as_deref().filter(|finalizer| permits(finalizer)) {
-            let mut mir_function = lower_function_semantic(
+            let (mut mir_function, nested_functions) = lower_function_semantic(
                 module,
                 finalizer,
                 aggregate_layouts,
@@ -92,10 +97,12 @@ pub(super) fn lower_singleton_method_functions(
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
                 host_runtime_callables,
+                std::rc::Rc::clone(lambda_allocator),
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, finalizer.name);
             functions.push(mir_function);
+            functions.extend(nested_functions);
         }
     }
     functions
@@ -109,6 +116,7 @@ pub(super) fn lower_impl_method_functions(
     callable_returns: &CallableReturnTypes,
     member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
+    lambda_allocator: &std::rc::Rc<super::LambdaInstanceAllocator>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let permits = |function: &HirFunction| gate.is_none_or(|gate| gate.permits_declaration(function.declaration));
@@ -128,7 +136,7 @@ pub(super) fn lower_impl_method_functions(
                 && !method.params.iter().any(|p| contains_open_generic(&p.ty))
                 && !contains_open_generic(&method.return_type)
         }) {
-            let mut mir_function = lower_function_semantic(
+            let (mut mir_function, nested_functions) = lower_function_semantic(
                 module,
                 method,
                 aggregate_layouts,
@@ -138,10 +146,12 @@ pub(super) fn lower_impl_method_functions(
                 Some(impl_block.target.clone()),
                 impl_type_arguments_from_generics(&impl_block.generics),
                 host_runtime_callables,
+                std::rc::Rc::clone(lambda_allocator),
                 diagnostics,
             );
             mir_function.display_symbol = format!("{type_name}.{}", method.name);
             functions.push(mir_function);
+            functions.extend(nested_functions);
         }
     }
     for callable in &module.instantiated_callables {
@@ -157,7 +167,7 @@ pub(super) fn lower_impl_method_functions(
         if gate.is_some_and(|gate| !gate.permits_instance(Some(instance))) {
             continue;
         }
-        let mut mir_function = lower_function_semantic(
+        let (mut mir_function, nested_functions) = lower_function_semantic(
             module,
             &callable.function,
             aggregate_layouts,
@@ -167,11 +177,13 @@ pub(super) fn lower_impl_method_functions(
             callable.owner_type.clone(),
             Vec::new(),
             host_runtime_callables,
+            std::rc::Rc::clone(lambda_allocator),
             diagnostics,
         );
         // 同一声明的不同代入必须有不同的 ABI 标签。
         mir_function.display_symbol = format!("{}#{}", mir_function.display_symbol, instance.index());
         functions.push(mir_function);
+        functions.extend(nested_functions);
     }
     // 类/结构体声明体的方法已在 HIR 边界结构化拒绝，`HirStruct.methods` 恒为空。
     // 断言守住“不得再给类体方法接一条 MIR 发射路径”。
@@ -183,7 +195,7 @@ pub(super) fn lower_impl_method_functions(
                 && !method.params.iter().any(|p| contains_open_generic(&p.ty))
                 && !contains_open_generic(&method.return_type)
         }) {
-            let mut mir_function = lower_function_semantic(
+            let (mut mir_function, nested_functions) = lower_function_semantic(
                 module,
                 method,
                 aggregate_layouts,
@@ -193,10 +205,12 @@ pub(super) fn lower_impl_method_functions(
                 Some(struct_apply_type(item, array_owner)),
                 impl_type_arguments_from_generics(&item.generics),
                 host_runtime_callables,
+                std::rc::Rc::clone(lambda_allocator),
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", item.name, method.name);
             functions.push(mir_function);
+            functions.extend(nested_functions);
         }
     }
     // trait 默认方法没有可独立降低的实体：其 `Self` 是开放的，只有 witness 消解后

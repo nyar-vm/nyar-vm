@@ -60,6 +60,17 @@ impl MirBuilder {
                 if let Some(bound) = self.bindings.get(identifier.name.as_str()).cloned() {
                     return bound;
                 }
+                // lambda 体内的外层局部名是捕获；本轮不表示捕获环境，结构化失败而非落 `Unit`。
+                if self.captured_bindings.contains(identifier.name.as_str()) {
+                    self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnsupportedExpression {
+                        span: expr.span.clone(),
+                        kind: format!(
+                            "lambda captures outer binding `{}`: capture environments are not represented in Semantic MIR",
+                            identifier.name
+                        ),
+                    });
+                    return MirOperand::Constant(MirConstant::Unit);
+                }
                 self.diagnostics
                     .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedCallableIdentity { symbol: identifier.name.to_string() });
                 MirOperand::Constant(MirConstant::Unit)
@@ -729,6 +740,11 @@ impl MirBuilder {
             }
             HirExprKind::AnonymousClass { class_name: Some(class_name), fields, captures, .. } => {
                 self.lower_anonymous_class_expr(class_name, fields, captures)
+            }
+            HirExprKind::Lambda { params, return_type, body, .. } => {
+                // 无捕获 lambda：合成独立 `MirFunction` 并发射 `LoadFunctionRef`；
+                // 捕获环境本轮不表示（见 `captured_bindings`）。
+                self.lower_lambda_expr(params, return_type, body, expected_type, &expr.span)
             }
             HirExprKind::FunctionReference(reference) => {
                 // 具名函数作值：只消费 HIR 冻结的实例身份，缺失即结构化失败，

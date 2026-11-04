@@ -1,6 +1,7 @@
 //! 模块级外部调用、导出与入口合同收集，以及语义片段构造。
 
 use super::model::*;
+use super::LambdaInstanceAllocator;
 use crate::compiler::types::{
     Identifier, NamePath,
     hir::{HirModule, ValkyrieType, parse_export_spec_from_annotations, resolve_attribute_id},
@@ -48,6 +49,27 @@ pub(crate) fn allocate_program_host_runtime(modules: &[&HirModule]) -> HostRunti
         .map(|index| index.saturating_add(1))
         .unwrap_or(0);
     collect_host_runtime_callables(declaration_base, instance_base)
+}
+
+/// 跨源码组程序闭包：lambda 合成函数的身份必须越过全部 HIR 实例与 host runtime 合同。
+///
+/// 同一程序内所有模块共享返回的分配器，因此不同模块合成的 lambda 不会撞号。
+pub(crate) fn allocate_program_lambda_instances(modules: &[&HirModule], host: &HostRuntimeCallables) -> LambdaInstanceAllocator {
+    let declaration_base = modules
+        .iter()
+        .filter_map(|module| crate::compiler::hir::lowering::max_hir_declaration_index(module))
+        .chain(host.contracts.iter().filter_map(|contract| contract.declaration).map(|declaration| declaration.index()))
+        .max()
+        .map(|index| index.saturating_add(1))
+        .unwrap_or(0);
+    let instance_base = modules
+        .iter()
+        .filter_map(|module| crate::compiler::hir::lowering::max_hir_callable_instance_index(module))
+        .chain(host.contracts.iter().filter_map(|contract| contract.instance).map(|instance| instance.index()))
+        .max()
+        .map(|index| index.saturating_add(1))
+        .unwrap_or(0);
+    LambdaInstanceAllocator::new(declaration_base, instance_base)
 }
 
 pub(crate) fn collect_host_runtime_callables(declaration_base: u32, instance_base: u32) -> HostRuntimeCallables {

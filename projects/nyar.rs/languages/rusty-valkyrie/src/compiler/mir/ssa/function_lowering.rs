@@ -25,8 +25,9 @@ pub(super) fn lower_function_semantic(
     impl_owner_type: Option<ValkyrieType>,
     impl_type_arguments: Vec<ValkyrieType>,
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
+    lambda_allocator: std::rc::Rc<super::LambdaInstanceAllocator>,
     diagnostics: &mut Vec<MirDiagnostic>,
-) -> MirFunction {
+) -> (MirFunction, Vec<MirFunction>) {
     let effectful_inline_targets = effect_lowering::collect_effectful_inline_targets(module);
     let field_declarations = collect_field_declarations(module, diagnostics);
     let nominal_offset = u32::try_from(field_declarations.len()).expect("aggregate nominal identity overflow");
@@ -57,6 +58,8 @@ pub(super) fn lower_function_semantic(
         &builder.sum_types,
     );
     builder.current_return_type = resolved_return_type.clone();
+    // lambda 合成函数与当前函数共享同一程序级身份分配器，实例编号全局唯一。
+    builder.lambda_allocator = Some(lambda_allocator);
 
     // 为函数参数分配 SSA 值，并登记到绑定表与入口块 `parameters`。
     // `self` 参数在 HIR 里常为 `AutoType`/`SelfType`（无显式标注），这里用 impl owner
@@ -133,6 +136,8 @@ pub(super) fn lower_function_semantic(
         })
         .collect();
     diagnostics.append(&mut builder.diagnostics);
+    // lambda 函数体先于外层函数交给模块入口；嵌套 lambda 已在创建时并回。
+    let nested_functions = std::mem::take(&mut builder.pending_functions);
     let symbol = stable_hir_function_name_path(&module.name, function);
     let mir_function = MirFunction {
         display_symbol: stable_symbol_key(&symbol),
@@ -147,5 +152,5 @@ pub(super) fn lower_function_semantic(
         blocks: builder.blocks,
     };
     // 已删除：suspend_analysis / frame_planning 向 MirFunction 挂 God 元数据。
-    mir_function
+    (mir_function, nested_functions)
 }

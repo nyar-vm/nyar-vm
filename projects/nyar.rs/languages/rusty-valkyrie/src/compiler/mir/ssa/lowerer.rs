@@ -13,6 +13,7 @@ use super::{
     struct_facts::collect_field_declarations,
     type_analysis::type_identity_table,
     value_semantics,
+    LambdaInstanceAllocator,
 };
 use crate::compiler::types::hir::HirModule;
 use std::collections::BTreeMap;
@@ -27,7 +28,7 @@ impl MirLowerer {
     /// [`Self::lower_module_semantic_with_host`]。
     pub fn lower_module_semantic(module: &HirModule) -> MirModule {
         let dispatch = generic_call_instantiation::collect_dispatch_entries(&[module]);
-        Self::lower_module_semantic_with_host(module, None, true, &dispatch, None)
+        Self::lower_module_semantic_with_host(module, None, true, &dispatch, None, None)
     }
 
     /// 跨包闭包入口：携带程序级 host runtime 身份，供外部调用合同合并使用。
@@ -41,6 +42,7 @@ impl MirLowerer {
         attach_host_contracts: bool,
         dispatch: &[generic_call_instantiation::MirDispatchEntry],
         gate: Option<&crate::compiler::hir::HirMaterializationGate>,
+        lambda_allocator: Option<&std::rc::Rc<LambdaInstanceAllocator>>,
     ) -> MirModule {
         let singleton_accessor_instances = crate::compiler::mir::singleton_accessor_instance_map(module);
         let mut diagnostics = Vec::new();
@@ -74,6 +76,23 @@ impl MirLowerer {
             (host_runtime.by_name, host_runtime.contracts)
         };
         external_calls.extend(host_contracts);
+        // lambda 合成函数的声明/实例必须落在本模块全部 HIR 身份与宿主合同之后；
+        // 跨模块闭包由调用方共享同一分配器，保证程序内唯一。
+        let lambda_allocator = lambda_allocator.cloned().unwrap_or_else(|| {
+            let declaration_base = crate::compiler::hir::lowering::max_hir_declaration_index(module)
+                .into_iter()
+                .chain(external_calls.iter().filter_map(|contract| contract.declaration).map(|declaration| declaration.index()))
+                .max()
+                .map(|index| index.saturating_add(1))
+                .unwrap_or(0);
+            let instance_base = crate::compiler::hir::lowering::max_hir_callable_instance_index(module)
+                .into_iter()
+                .chain(external_calls.iter().filter_map(|contract| contract.instance).map(|instance| instance.index()))
+                .max()
+                .map(|index| index.saturating_add(1))
+                .unwrap_or(0);
+            std::rc::Rc::new(LambdaInstanceAllocator::new(declaration_base, instance_base))
+        });
         let (exports, entries) = collect_surface_contracts(module);
         let callable_returns = collect_callable_return_types(module);
         let mut functions = Vec::new();
@@ -81,7 +100,7 @@ impl MirLowerer {
             !function.is_abstract && gate.is_none_or(|gate| gate.permits_declaration(function.declaration))
         };
         for function in module.functions.iter().filter(|function| permits_declaration(function)) {
-            functions.push(lower_function_semantic(
+            let (mir_function, nested_functions) = lower_function_semantic(
                 module,
                 function,
                 &mut aggregate_layouts,
@@ -91,8 +110,11 @@ impl MirLowerer {
                 None,
                 Vec::new(),
                 &host_runtime_callables,
+                std::rc::Rc::clone(&lambda_allocator),
                 &mut diagnostics,
-            ));
+            );
+            functions.push(mir_function);
+            functions.extend(nested_functions);
         }
         functions.extend(lower_singleton_method_functions(
             module,
@@ -102,6 +124,7 @@ impl MirLowerer {
             &callable_returns,
             dispatch,
             &host_runtime_callables,
+            &lambda_allocator,
             &mut diagnostics,
         ));
         functions.extend(lower_impl_method_functions(
@@ -112,6 +135,7 @@ impl MirLowerer {
             &callable_returns,
             dispatch,
             &host_runtime_callables,
+            &lambda_allocator,
             &mut diagnostics,
         ));
         // 编译器内建宿主合同只在函数真正发射 begin/end phase 调用时进入外部调用闭包。

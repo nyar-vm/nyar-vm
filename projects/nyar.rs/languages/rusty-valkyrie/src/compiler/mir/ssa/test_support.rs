@@ -30,17 +30,18 @@ impl Default for TestMirBuilder {
 impl TestMirBuilder {
     /// 创建不带额外类型上下文的测试构建器。
     pub fn new() -> Self {
-        Self {
-            inner: MirBuilder::new(
-                AggregateLayoutPlan::default(),
-                BTreeMap::new(),
-                BTreeMap::new(),
-                super::CallableReturnTypes { by_symbol: BTreeMap::new(), by_instance: BTreeMap::new() },
-                Vec::new(),
-                None,
-                BTreeMap::new(),
-            ),
-        }
+        let mut inner = MirBuilder::new(
+            AggregateLayoutPlan::default(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            super::CallableReturnTypes { by_symbol: BTreeMap::new(), by_instance: BTreeMap::new() },
+            Vec::new(),
+            None,
+            BTreeMap::new(),
+        );
+        // 单元测试里的 lambda 需要身份分配器；测试构建器使用 0 起编号。
+        inner.lambda_allocator = Some(std::rc::Rc::new(super::LambdaInstanceAllocator::new(0, 0)));
+        Self { inner }
     }
 
     /// 降低模式匹配谓词并返回匹配结果操作数。
@@ -209,7 +210,7 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         diagnostic_sources: std::collections::BTreeMap::new(),
         call_resolution_failures: Vec::new(),
     };
-    let func = lower_function_semantic(
+    let (func, _nested_functions) = lower_function_semantic(
         &module,
         &function,
         &mut AggregateLayoutPlan::default(),
@@ -219,6 +220,7 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         None,
         Vec::new(),
         &BTreeMap::new(),
+        std::rc::Rc::new(super::LambdaInstanceAllocator::new(0, 0)),
         &mut Vec::new(),
     );
     func
