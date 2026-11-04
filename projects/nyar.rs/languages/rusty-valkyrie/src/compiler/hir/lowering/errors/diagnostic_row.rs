@@ -347,6 +347,12 @@ impl From<HirError> for DiagnosticRow {
                     row = row.with_arg("name", DiagnosticArg::String(name.clone()));
                 }
             }
+            HirError::InvalidArrayExtent { failure, .. } => {
+                row = row.with_arg("failure", DiagnosticArg::String(array_extent_failure_name(failure).to_string()));
+                if let ArrayExtentFailure::UnsupportedDimensionCount { count } = failure {
+                    row = row.with_arg("count", DiagnosticArg::Int(*count as i64));
+                }
+            }
             HirError::InvalidSingleQuoteLiteral { failure, .. } => {
                 row = row.with_arg("failure", DiagnosticArg::String(single_quote_literal_failure_name(failure).to_string()));
                 match failure {
@@ -631,6 +637,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::InvalidSingleQuoteLiteral { source, .. } => source.clone(),
         HirError::IntegerLiteralOutOfRange { source, .. } => source.clone(),
         HirError::InvalidTupleLabeling { source, .. } => source.clone(),
+        HirError::InvalidArrayExtent { source, .. } => source.clone(),
     }
 }
 
@@ -712,6 +719,18 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::InvalidSingleQuoteLiteral { span, .. } => span.clone(),
         HirError::IntegerLiteralOutOfRange { span, .. } => span.clone(),
         HirError::InvalidTupleLabeling { span, .. } => span.clone(),
+        HirError::InvalidArrayExtent { span, .. } => span.clone(),
+    }
+}
+
+/// 数组 extent 失败原因的稳定短名（用于诊断参数）。
+pub(super) fn array_extent_failure_name(failure: &ArrayExtentFailure) -> &'static str {
+    match failure {
+        ArrayExtentFailure::NotLiteral => "not_literal",
+        ArrayExtentFailure::LengthNotRepresentable => "length_not_representable",
+        ArrayExtentFailure::NegativeLength => "negative_length",
+        ArrayExtentFailure::ZeroDimension => "zero_dimension",
+        ArrayExtentFailure::UnsupportedDimensionCount { .. } => "unsupported_dimension_count",
     }
 }
 

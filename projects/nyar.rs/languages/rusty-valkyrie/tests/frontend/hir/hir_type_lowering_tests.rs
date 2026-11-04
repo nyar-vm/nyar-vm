@@ -2,7 +2,7 @@ use rusty_valkyrie::{
     HirError, SourceID, ValkyrieCompiler,
     frontend::ast::{Identifier, NamePath, TypeExpression, type_nodes::TypeUnaryNode},
     hir::type_lowering::{canonical_builtin_type, lower_type_expression, validate_type_expression},
-    hir::lowering::errors::TupleLabelingFailure,
+    hir::lowering::errors::{ArrayExtentFailure, TupleLabelingFailure},
     types::{
         Identifier as HirIdentifier,
         hir::{HirModule, HirStruct, ValkyrieType},
@@ -11,6 +11,7 @@ use rusty_valkyrie::{
 
 use oak_core::Range;
 use oak_valkyrie::lexer::ValkyrieTokenType;
+use rusty_valkyrie::compiler::syntax::oak::ast::TermExpression as TypeExtent;
 
 fn oak_span(len: usize) -> Range<usize> {
     Range { start: 0, end: len }
@@ -315,4 +316,90 @@ micro probe(x: i32) -> i32 {
     assert_eq!(probe.params[0].ty, ValkyrieType::Named(HirIdentifier::new("i32")));
     assert_eq!(probe.return_type, ValkyrieType::Named(HirIdentifier::new("i32")));
     assert_ne!(probe.params[0].ty, ValkyrieType::Integer32 { signed: true });
+}
+
+fn int_literal(value: &str) -> TypeExtent {
+    TypeExtent::IntegerLiteral { value: value.to_string(), span: oak_span(value.len()) }
+}
+
+fn tuple_extent(items: Vec<TypeExtent>) -> TypeExtent {
+    TypeExtent::TupleLiteral { items, span: oak_span(0) }
+}
+
+fn bracket_type(element: &str, length: Option<TypeExtent>) -> TypeExpression {
+    TypeExpression::Unary(Box::new(TypeUnaryNode {
+        operator: ValkyrieTokenType::BracketL,
+        base: path_type(element),
+        length,
+        span: oak_span(0),
+    }))
+}
+
+/// 正例：裸整数 extent 保持栈类型 `FixedArray`，与既有 `[T; N]` 完全一致。
+#[test]
+fn fixed_array_bare_integer_extent_stays_stack_type() {
+    assert_eq!(
+        lower_type_expression(&bracket_type("i32", Some(int_literal("4")))).expect("裸整数 extent 合法"),
+        ValkyrieType::FixedArray { element: Box::new(ValkyrieType::Named(HirIdentifier::new("i32"))), length: 4 }
+    );
+}
+
+/// 正例：`[T]` 仍折叠成结构化 `Array`，不因新增形状语法改道。
+#[test]
+fn unsized_array_extent_stays_structural_array() {
+    assert_eq!(
+        lower_type_expression(&bracket_type("i32", None)).expect("无 extent 合法"),
+        ValkyrieType::Array(Box::new(ValkyrieType::Named(HirIdentifier::new("i32"))))
+    );
+}
+
+/// 正例：整数元组 extent 落到唯一产生点：按维数折成 `Array1D/2D/3D<T>` 应用。
+///
+/// `[T; (W, H)]` 与 `Array2D<T, (W, H)>` 都解析到同一个 `Array2D` 声明身份，
+/// 不另起一套 `ValkyrieType` 形态。
+#[test]
+fn tuple_extent_lowers_to_dimension_wrapper_application() {
+    for (extent, name) in [
+        (vec![3u32], "Array1D"),
+        (vec![2, 3], "Array2D"),
+        (vec![2, 3, 4], "Array3D"),
+    ] {
+        let items = extent.into_iter().map(|dimension| int_literal(&dimension.to_string())).collect();
+        let lowered = lower_type_expression(&bracket_type("i32", Some(tuple_extent(items)))).expect("整数元组 extent 合法");
+        assert_eq!(
+            lowered,
+            ValkyrieType::Apply(
+                Box::new(ValkyrieType::Named(HirIdentifier::new(name))),
+                vec![ValkyrieType::Named(HirIdentifier::new("i32"))],
+            ),
+            "维数应折成 `{name}`"
+        );
+    }
+}
+
+/// 反例：非法 extent 一律结构化拒绝，不再静默折成 0。
+#[test]
+fn invalid_array_extents_are_structurally_rejected() {
+    let negative = TypeExtent::Unary(Box::new(rusty_valkyrie::compiler::syntax::oak::ast::term_nodes::TermUnaryNode {
+        operator: ValkyrieTokenType::Minus,
+        base: int_literal("3"),
+        span: oak_span(0),
+    }));
+    let cases = vec![
+        (Some(negative), ArrayExtentFailure::NegativeLength),
+        (Some(tuple_extent(vec![int_literal("2"), int_literal("0")])), ArrayExtentFailure::ZeroDimension),
+        (Some(tuple_extent(Vec::new())), ArrayExtentFailure::UnsupportedDimensionCount { count: 0 }),
+        (
+            Some(tuple_extent(vec![int_literal("1"), int_literal("2"), int_literal("3"), int_literal("4")])),
+            ArrayExtentFailure::UnsupportedDimensionCount { count: 4 },
+        ),
+        (Some(TypeExtent::FloatLiteral { value: "1.5".into(), span: oak_span(3) }), ArrayExtentFailure::NotLiteral),
+    ];
+    for (extent, expected) in cases {
+        let error = lower_type_expression(&bracket_type("i32", extent)).expect_err("非法 extent 必须拒绝");
+        assert!(
+            matches!(error, HirError::InvalidArrayExtent { ref failure, .. } if failure == &expected),
+            "error={error:?}"
+        );
+    }
 }

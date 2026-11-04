@@ -797,6 +797,37 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// `[T; extent]` 的类型位 extent 不合法。
+    ///
+    /// extent 的合法形态只有整数字面量与整数元组字面量：前者是栈 `[T; N]`，
+    /// 后者是堆形状包装 `[T; (W, H)]`。其它表达式、负数量级、零维度与
+    /// 超出支持维数都必须拒绝，不得静默折叠成别的长度。
+    InvalidArrayExtent {
+        /// 结构化失败原因。
+        failure: ArrayExtentFailure,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+}
+
+/// 固定数组 extent 的结构化失败原因。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArrayExtentFailure {
+    /// extent 不是整数字面量或整数元组字面量。
+    NotLiteral,
+    /// 整数字面量量级超出 `usize` 可表示范围。
+    LengthNotRepresentable,
+    /// 带负号的 extent。
+    NegativeLength,
+    /// 元组形状的某一维为 0。
+    ZeroDimension,
+    /// 元组形状的维数不在 1..=3。
+    UnsupportedDimensionCount {
+        /// 实际写出的维数。
+        count: usize,
+    },
 }
 
 /// 元组标签形态的结构化失败原因。

@@ -9,7 +9,7 @@ use crate::compiler::{
     syntax::oak::{
         self,
         ast::{
-            NamePath as AstNamePath, TypeExpression,
+            NamePath as AstNamePath, TermExpression, TypeExpression,
             type_nodes::{FunctionType as AstFunctionType, OptionalType, TupleType},
         },
     },
@@ -21,7 +21,7 @@ use crate::compiler::{
 use nyar_types::DiagnosticSpan;
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
-use super::lowering::errors::TupleLabelingFailure;
+use super::lowering::errors::{ArrayExtentFailure, TupleLabelingFailure};
 
 thread_local! {
     static MODULE_TYPE_ALIASES: RefCell<Vec<BTreeMap<String, ModuleTypeAliasEntry>>> = RefCell::new(Vec::new());
@@ -347,15 +347,9 @@ pub fn lower_type_expression(ty: &TypeExpression) -> Result<ValkyrieType, HirErr
         TypeExpression::Unary(node) => match node.operator {
             ValkyrieTokenType::BracketL => {
                 let element = lower_type_expression(&node.base)?;
-                if let Some(length_expr) = &node.length {
-                    let length = match length_expr {
-                        crate::compiler::syntax::oak::ast::TermExpression::IntegerLiteral { value, .. } => value.parse().unwrap_or(0),
-                        _ => 0,
-                    };
-                    ValkyrieType::FixedArray { element: Box::new(element), length }
-                }
-                else {
-                    ValkyrieType::Array(Box::new(element))
+                match &node.length {
+                    Some(extent) => lower_array_extent(extent, element)?,
+                    None => ValkyrieType::Array(Box::new(element)),
                 }
             }
             _ => lower_type_expression(&node.base)?,
@@ -416,10 +410,7 @@ pub(crate) fn render_type_expression(ty: &TypeExpression) -> String {
         TypeExpression::Unary(node) => match node.operator {
             ValkyrieTokenType::BracketL => {
                 if let Some(length_expr) = &node.length {
-                    let length = match length_expr {
-                        crate::compiler::syntax::oak::ast::TermExpression::IntegerLiteral { value, .. } => value.clone(),
-                        _ => "?".to_string(),
-                    };
+                    let length = render_array_extent(length_expr);
                     format!("[{}; {}]", render_type_expression(&node.base), length)
                 }
                 else {
@@ -602,6 +593,72 @@ fn tuple_labeling_error(failure: TupleLabelingFailure) -> HirError {
         failure,
         source: nyar_types::DiagnosticSource { id: "<type_lowering>".into(), revision: None },
         span: DiagnosticSpan { start: 0, end: 0 },
+    }
+}
+
+fn array_extent_error(failure: ArrayExtentFailure) -> HirError {
+    HirError::InvalidArrayExtent {
+        failure,
+        source: nyar_types::DiagnosticSource { id: "<type_lowering>".into(), revision: None },
+        span: DiagnosticSpan { start: 0, end: 0 },
+    }
+}
+
+/// 将 `[T; extent]` 的类型位 extent 折成唯一的两种形态。
+///
+/// 裸整数字面量是栈 `FixedArray<T, N>`；整数元组字面量是堆包装
+/// `Array1D<T>` / `Array2D<T>` / `Array3D<T>`（括号即堆），与
+/// `Array2D<T, (W, H)>` 落在同一个声明身份上。
+///
+/// 形状元组只逐维校验为正，不参与类型身份：语言不做 const generic，
+/// 元素总数与行主序线性化由包装实例的运行时形状给出。其它 extent 一律
+/// 结构化拒绝，不再静默折叠成 0。
+fn lower_array_extent(extent: &TermExpression, element: ValkyrieType) -> Result<ValkyrieType, HirError> {
+    match extent {
+        TermExpression::IntegerLiteral { value, .. } => {
+            let length = parse_array_extent_length(value)?;
+            Ok(ValkyrieType::FixedArray { element: Box::new(element), length })
+        }
+        TermExpression::TupleLiteral { items, .. } => {
+            let mut dimensions = Vec::with_capacity(items.len());
+            for item in items {
+                match item {
+                    TermExpression::IntegerLiteral { value, .. } => dimensions.push(parse_array_extent_length(value)?),
+                    _ => return Err(array_extent_error(ArrayExtentFailure::NotLiteral)),
+                }
+            }
+            if dimensions.contains(&0) {
+                return Err(array_extent_error(ArrayExtentFailure::ZeroDimension));
+            }
+            let name = match dimensions.len() {
+                1 => "Array1D",
+                2 => "Array2D",
+                3 => "Array3D",
+                count => return Err(array_extent_error(ArrayExtentFailure::UnsupportedDimensionCount { count })),
+            };
+            Ok(ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new(name))), vec![element]))
+        }
+        TermExpression::Unary(unary)
+            if unary.operator == ValkyrieTokenType::Minus && matches!(&unary.base, TermExpression::IntegerLiteral { .. }) =>
+        {
+            Err(array_extent_error(ArrayExtentFailure::NegativeLength))
+        }
+        _ => Err(array_extent_error(ArrayExtentFailure::NotLiteral)),
+    }
+}
+
+fn parse_array_extent_length(value: &str) -> Result<usize, HirError> {
+    value.parse::<usize>().map_err(|_| array_extent_error(ArrayExtentFailure::LengthNotRepresentable))
+}
+
+fn render_array_extent(extent: &TermExpression) -> String {
+    match extent {
+        TermExpression::IntegerLiteral { value, .. } => value.clone(),
+        TermExpression::TupleLiteral { items, .. } => {
+            let rendered: Vec<String> = items.iter().map(render_array_extent).collect();
+            format!("({})", rendered.join(", "))
+        }
+        _ => "?".to_string(),
     }
 }
 

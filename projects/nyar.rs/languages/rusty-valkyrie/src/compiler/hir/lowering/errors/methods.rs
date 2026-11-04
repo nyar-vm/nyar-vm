@@ -127,6 +127,7 @@ impl HirError {
             Self::InvalidSingleQuoteLiteral { .. } => "valkyrie.hir.invalid_single_quote_literal",
             Self::IntegerLiteralOutOfRange { .. } => "valkyrie.hir.integer_literal_out_of_range",
             Self::InvalidTupleLabeling { .. } => "valkyrie.hir.invalid_tuple_labeling",
+            Self::InvalidArrayExtent { .. } => "valkyrie.hir.invalid_array_extent",
         }
     }
 }

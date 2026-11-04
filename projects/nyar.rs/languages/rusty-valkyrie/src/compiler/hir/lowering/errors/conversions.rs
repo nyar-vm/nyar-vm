@@ -343,6 +343,24 @@ impl std::fmt::Display for HirError {
                     }
                 }
             }
+            Self::InvalidArrayExtent { failure, .. } => {
+                use super::model::ArrayExtentFailure;
+                match failure {
+                    ArrayExtentFailure::NotLiteral => write!(
+                        f,
+                        "fixed array extent must be an integer literal or an integer tuple literal"
+                    ),
+                    ArrayExtentFailure::LengthNotRepresentable => {
+                        write!(f, "fixed array length exceeds the representable `usize` range")
+                    }
+                    ArrayExtentFailure::NegativeLength => write!(f, "fixed array extent must not be negative"),
+                    ArrayExtentFailure::ZeroDimension => write!(f, "array shape dimensions must be greater than zero"),
+                    ArrayExtentFailure::UnsupportedDimensionCount { count } => write!(
+                        f,
+                        "array shape has {count} dimensions; only 1, 2 or 3 dimensions are supported"
+                    ),
+                }
+            }
             Self::BackendContractRejected(error) => write!(f, "backend contract rejected the declaration: {error}"),
             Self::IntegerLiteralOutOfRange { literal, magnitude, range, .. } => {
                 write!(f, "integer literal `{literal}` (magnitude {magnitude}) is out of range `{range}`")
