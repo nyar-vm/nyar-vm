@@ -21,7 +21,7 @@ use crate::compiler::{
             r#trait::impl_nominal_type_name,
             types::{
                 accepts_array_shape, compute_call_match_kind, extract_callable_name, infer_expr_type, infer_scrutinee_type,
-                is_empty_array_literal,
+                is_empty_array_literal, lookup_struct_field_type,
             },
         },
         try_propagate::{is_option_apply_type, is_result_apply_type, option_apply_payload_type, result_variant_payload_type},
@@ -80,6 +80,42 @@ pub(crate) fn peel_explicit_generic_arguments(callee: &HirExpr) -> (Vec<Valkyrie
         HirExprKind::GenericApply { callee, arguments } => (arguments.clone(), callee.as_ref()),
         _ => (Vec::new(), callee),
     }
+}
+
+/// 函数值调用的统一合同：无声明、无实例、无接收者槽，签名就是函数值自身的类型。
+/// 局部变量的函数值调用与结构字段的函数值调用共用这一份结算结果。
+fn function_value_call(symbol: NamePath, func: &crate::compiler::types::hir::FunctionType) -> HirResolvedCall {
+    HirResolvedCall {
+        declaration: None,
+        instance: None,
+        sum_owner: None,
+        sum_variant: None,
+        trait_dispatch: None,
+        symbol,
+        domain: HirCallableDomain::Function,
+        return_type: func.return_type.clone(),
+        parameter_types: func.params.clone(),
+        has_receiver: false,
+        extractor_payload_type: None,
+    }
+}
+
+/// 函数型结构字段调用（`receiver.field(args)`）：字段表冻结的字段类型本身是函数值时，
+/// 按函数值调用结算。字段不是函数值即返回 `None`，由调用方保持结构化「无候选」。
+fn function_typed_field_call(
+    object: &HirExpr,
+    field: &Identifier,
+    locals: &BTreeMap<String, ValkyrieType>,
+    struct_fields: &AggregateFieldIndex,
+    singleton_names: &std::collections::BTreeSet<Identifier>,
+) -> Option<HirResolvedCall> {
+    let object_type = infer_expr_type(object, locals)
+        .or_else(|| infer_scrutinee_type(object, locals, struct_fields, singleton_names))?;
+    let ValkyrieType::Function(func) = lookup_struct_field_type(&object_type, field, struct_fields)?
+    else {
+        return None;
+    };
+    Some(function_value_call(NamePath::new(vec![field.clone()]), &func))
 }
 
 /// 上下文相关的 lambda 实参类型：仅当形参槽位期望函数类型、且 lambda 自身的
@@ -277,19 +313,7 @@ pub(crate) fn try_resolve_call(
         _ => None,
     } {
         if let Some(ValkyrieType::Function(func)) = locals.get(local_name) {
-            return Some(HirResolvedCall {
-                declaration: None,
-                instance: None,
-                sum_owner: None,
-                sum_variant: None,
-                trait_dispatch: None,
-                symbol: NamePath::new(vec![Identifier::new(local_name)]),
-                domain: HirCallableDomain::Function,
-                return_type: func.return_type.clone(),
-                parameter_types: func.params.clone(),
-                has_receiver: false,
-                extractor_payload_type: None,
-            });
+            return Some(function_value_call(NamePath::new(vec![Identifier::new(local_name)]), func));
         }
         if locals.contains_key(local_name) {
             return None;
@@ -373,6 +397,9 @@ pub(crate) fn try_resolve_call(
     if let HirExprKind::FieldAccess { object, field, .. } = &callee.kind {
         return match try_resolve_instance_method(object, field, args, candidates, type_relations, locals, struct_fields, singleton_names) {
             Ok(call) => Some(call),
+            // 方法层确实没有候选时，字段类型为函数值的成员按函数值调用结算；
+            // 字段不是函数值仍返回 `None`，由上层给出结构化「无候选」。
+            Err(OverloadResolutionError::NoMatch) => function_typed_field_call(object, field, locals, struct_fields, singleton_names),
             Err(error) => {
                 record_method_resolution_failure(call_span, callee.kind.callable_label(), error);
                 None
