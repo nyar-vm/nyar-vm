@@ -364,7 +364,7 @@ pub(crate) fn try_resolve_call(
             };
             for field in &path.parts()[1..path.parts().len() - 1] {
                 receiver = HirExpr {
-                    kind: HirExprKind::FieldAccess { object: Box::new(receiver), field: field.clone(), field_id: None },
+                    kind: HirExprKind::FieldAccess { object: Box::new(receiver), field: field.clone(), field_id: None, tuple_index: None },
                     span: span.clone(),
                 };
             }
