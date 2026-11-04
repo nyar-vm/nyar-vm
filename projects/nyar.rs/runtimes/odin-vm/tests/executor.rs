@@ -135,6 +135,136 @@ fn runs_bitwise_ops_bytecode() {
     }
 }
 
+/// 函数值 = 槽里的函数索引：`CallIndirect` 只弹 callee，实参留给新帧。
+#[test]
+fn runs_call_indirect_through_function_value_slot() {
+    // 栈布局必须是 `[arg, callee]`：先压 7，再压 callee（函数下标 1）。
+    let main_code = vec![
+        OdinHeadCode::Constant as u8,
+        0,
+        0,
+        0,
+        0,
+        OdinHeadCode::Constant as u8,
+        1,
+        0,
+        0,
+        0,
+        OdinHeadCode::CallIndirect as u8,
+        1,
+        0,
+        0,
+        0,
+        OdinHeadCode::Return as u8,
+    ];
+    let callee_offset = main_code.len() as i32;
+    let mut code = main_code;
+    code.extend_from_slice(&[
+        OdinHeadCode::LoadArg as u8,
+        0,
+        0,
+        0,
+        0,
+        OdinHeadCode::Constant as u8,
+        2,
+        0,
+        0,
+        0,
+        OdinHeadCode::I32Mul as u8,
+        OdinHeadCode::Return as u8,
+    ]);
+
+    let data = OdinModuleData {
+        version: Odin_VERSION,
+        name: "call_indirect".to_string(),
+        constants: vec![OdinConstant::Integer32(7), OdinConstant::Integer32(1), OdinConstant::Integer32(2)],
+        functions: vec![
+            OdinFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: callee_offset },
+            OdinFunction {
+                name: "double".to_string(),
+                arity: 1,
+                local_count: 0,
+                code_offset: callee_offset,
+                code_length: code.len() as i32 - callee_offset,
+            },
+        ],
+        imports: Vec::new(),
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
+        witness_entries: Vec::new(),
+        code_bytes: code,
+        globals: Vec::new(),
+        init_function_indices: Vec::new(),
+        layouts: Vec::new(),
+    };
+
+    let bytes = encode_module(&data);
+    let module = LoadedModule::from_bytes(&bytes).expect("load module");
+    let mut executor = Executor::new();
+    let result = executor.run(&module, 0, Vec::new()).expect("execute");
+    assert_eq!(result, Value::I32(14), "double(7) 必须经函数值间接调用返回 14");
+}
+
+/// 间接调用必须 fail-closed：callee 越界 / 非 `i32` 都是结构化错误，不许错值。
+#[test]
+fn call_indirect_counterexamples_fail_closed() {
+    fn run_with(callee: OdinConstant, function_count: usize) -> Result<Value, OdinRuntimeError> {
+        let code = vec![
+            OdinHeadCode::Constant as u8,
+            0,
+            0,
+            0,
+            0,
+            OdinHeadCode::Constant as u8,
+            1,
+            0,
+            0,
+            0,
+            OdinHeadCode::CallIndirect as u8,
+            1,
+            0,
+            0,
+            0,
+            OdinHeadCode::Return as u8,
+        ];
+        let data = OdinModuleData {
+            version: Odin_VERSION,
+            name: "call_indirect_counterexample".to_string(),
+            constants: vec![OdinConstant::Integer32(7), callee],
+            functions: (0..function_count)
+                .map(|index| OdinFunction {
+                    name: format!("f{index}"),
+                    arity: 0,
+                    local_count: 0,
+                    code_offset: 0,
+                    code_length: code.len() as i32,
+                })
+                .collect(),
+            imports: Vec::new(),
+            exports: Vec::new(),
+            witness_entries: Vec::new(),
+            code_bytes: code,
+            globals: Vec::new(),
+            init_function_indices: Vec::new(),
+            layouts: Vec::new(),
+        };
+        let bytes = encode_module(&data);
+        let module = LoadedModule::from_bytes(&bytes).expect("load module");
+        let mut executor = Executor::new();
+        executor.run(&module, 0, Vec::new())
+    }
+
+    // 越界索引：函数表只有 1 项。
+    let out_of_range = run_with(OdinConstant::Integer32(9), 1);
+    assert!(matches!(out_of_range, Err(OdinRuntimeError::FunctionIndexOutOfRange(9))), "越界函数索引必须结构化失败，实际 {out_of_range:?}");
+
+    // `Null` callee：经槽位传递后静态类型被抹平，只能运行期拒绝。
+    let null_callee = run_with(OdinConstant::Null, 2);
+    assert!(
+        matches!(null_callee, Err(OdinRuntimeError::TypeMismatch { expected: "function index (i32)", .. })),
+        "Null callee 必须 TypeMismatch，实际 {null_callee:?}"
+    );
+}
+
 #[test]
 fn select_local_roots_keeps_only_mapped_slots() {
     let locals = vec![Value::I32(1), Value::I32(2), Value::I32(3)];

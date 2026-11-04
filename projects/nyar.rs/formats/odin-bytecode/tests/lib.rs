@@ -14,9 +14,10 @@ fn structural_opcodes_are_imm1() {
 fn bytecode_format_version_tracks_nyar_version() {
     assert_eq!(BYTECODE_FORMAT_VERSION, Odin_VERSION);
     // v1：新增 `Trap` 头码（0x0C）。v2：新增 `Integer64` 常量（0x12）。
+    // v3：新增 `CallIndirect` 头码（0x06）。
     // `decode_module` 对非当前版本一律 `InvalidVersion` 拒绝，旧缓存产物按缓存未命中处理。
     // 递增格式必须同时抬 `NYAR_VERSION`。
-    assert_eq!(BYTECODE_FORMAT_VERSION, 2);
+    assert_eq!(BYTECODE_FORMAT_VERSION, 3);
 }
 
 #[test]
@@ -136,14 +137,31 @@ fn bitwise_opcodes_round_trip() {
 
 #[test]
 fn trap_opcode_round_trips_and_low_gaps_stay_rejected() {
-    // 0x0C 从"未分配"变为 `Trap`；0x06..0x09、0x0E 仍是未分配槽位，必须 fail-closed。
+    // 0x0C 从"未分配"变为 `Trap`；0x07..0x09、0x0E 仍是未分配槽位，必须 fail-closed。
     assert_eq!(OdinHeadCode::from_u8(0x0C), Some(OdinHeadCode::Trap), "槽位 0x0C 必须是 Trap");
     assert_eq!(OdinHeadCode::Trap as u8, 0x0C);
     assert_eq!(OdinHeadCode::Trap.form(), OdinInstructionForm::Plain);
     assert_eq!(OdinHeadCode::Trap.code_size(), 1);
-    for byte in [0x06u8, 0x07, 0x08, 0x09, 0x0E] {
+    for byte in [0x07u8, 0x08, 0x09, 0x0E] {
         assert_eq!(OdinHeadCode::from_u8(byte), None, "未分配槽位 0x{byte:02X} 必须拒绝解码");
     }
+}
+
+/// `CallIndirect` 的槽位、形态与 operand 编码必须稳定：operand1 = argc。
+#[test]
+fn call_indirect_round_trips_as_imm1() {
+    assert_eq!(OdinHeadCode::CallIndirect as u8, 0x06);
+    assert_eq!(OdinHeadCode::from_u8(0x06), Some(OdinHeadCode::CallIndirect));
+    assert_eq!(OdinHeadCode::CallIndirect.form(), OdinInstructionForm::Imm1);
+    assert_eq!(OdinHeadCode::CallIndirect.code_size(), 5);
+
+    let mut stream = Vec::new();
+    emit_imm1(&mut stream, OdinHeadCode::CallIndirect, 2);
+    let decoded = decode_at(&stream, 0);
+    assert_eq!(decoded.code, OdinHeadCode::CallIndirect);
+    assert_eq!(decoded.operand1, 2);
+    assert_eq!(decoded.operand2, 0);
+    assert_eq!(decoded.size, 5);
 }
 
 #[test]

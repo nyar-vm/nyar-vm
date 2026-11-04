@@ -73,7 +73,7 @@ fn rejects_invalid_function_and_initializer_contracts() {
 #[test]
 fn rejects_wrong_version() {
     let mut module = empty_module();
-    // 当前版本是 `Odin_VERSION`（v2，含 `Trap` 与 `Integer64` 常量）；两侧错配一律拒绝，不做兼容读取。
+    // 当前版本是 `Odin_VERSION`（v3，含 `CallIndirect`、`Trap` 与 `Integer64` 常量）；两侧错配一律拒绝，不做兼容读取。
     for wrong in [0, Odin_VERSION + 1] {
         module.version = wrong;
         assert!(matches!(verify_module(&module), Err(OdinRuntimeError::ModuleLoad(_))), "版本 {wrong} 必须被拒绝");
@@ -183,6 +183,51 @@ fn rejects_field_slot_without_fitting_layout() {
     code.extend_from_slice(&1i32.to_le_bytes());
     module.code_bytes = code;
     assert!(matches!(verify_module(&module), Err(OdinRuntimeError::FieldSlotOutOfRange(1))));
+}
+
+/// `CallIndirect` 的栈合同：先弹 callee、再弹 argc 个实参，最后压回一个结果。
+#[test]
+fn accepts_call_indirect_with_balanced_stack() {
+    let mut module = empty_module();
+    module.constants.push(OdinConstant::Integer32(7));
+    module.constants.push(OdinConstant::Integer32(1));
+    let mut code = Vec::new();
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 1);
+    emit_imm1(&mut code, OdinHeadCode::CallIndirect, 1);
+    emit_plain(&mut code, OdinHeadCode::Return);
+    module.functions.push(OdinFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
+    module.code_bytes = code;
+    verify_module(&module).expect("CallIndirect argc=1 且栈高 2 必须通过校验");
+}
+
+/// 负 argc 与栈不足都必须在加载期结构化拒绝，不许进执行期。
+#[test]
+fn rejects_call_indirect_negative_argc_and_underflow() {
+    let mut module = empty_module();
+    module.constants.push(OdinConstant::Integer32(7));
+    module.constants.push(OdinConstant::Integer32(1));
+    let mut code = Vec::new();
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 1);
+    emit_imm1(&mut code, OdinHeadCode::CallIndirect, -1);
+    emit_plain(&mut code, OdinHeadCode::Return);
+    module.functions.push(OdinFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
+    module.code_bytes = code;
+    let err = verify_module(&module).expect_err("negative argc");
+    assert!(matches!(err, OdinRuntimeError::ModuleLoad(message) if message.contains("negative argc")));
+
+    // 只压了 callee，缺一个实参。
+    let mut module = empty_module();
+    module.constants.push(OdinConstant::Integer32(1));
+    let mut code = Vec::new();
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+    emit_imm1(&mut code, OdinHeadCode::CallIndirect, 1);
+    emit_plain(&mut code, OdinHeadCode::Return);
+    module.functions.push(OdinFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
+    module.code_bytes = code;
+    let err = verify_module(&module).expect_err("underflow");
+    assert!(matches!(err, OdinRuntimeError::ModuleLoad(message) if message.contains("stack underflow")));
 }
 
 #[test]
