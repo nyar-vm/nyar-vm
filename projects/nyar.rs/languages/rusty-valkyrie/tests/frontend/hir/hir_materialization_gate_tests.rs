@@ -208,3 +208,99 @@ fn selected_host_provider_declaration_is_a_materialization_root() {
         .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
         .expect("provider 作为物化根后合同重映射必须完整编译");
 }
+
+/// witness 消解出的 impl 泛型成员（`Wrapper<T>::probe`）只在 `run<P: Prober>` 的
+/// 约束调用点被到达：代入闭合前，静态声明可达闭包看不到 `probe` 的声明身份。
+/// 该克隆体体内对另一个 impl 泛型成员（`Leaf<T>::tag_of`）的调用必须照样结算实例；
+/// 旧实现按声明过滤已铸造克隆体，整段体内调用被跳过，`tag_of` 停在 `instance=None`
+/// 并被合同验证误报 `InstanceNotClosed`。
+const WITNESS_CHAIN_SOURCE: &str = r#"
+namespace app;
+
+class Leaf<T> {
+    value: T,
+    tag: i64
+}
+
+imply Leaf<T> {
+    micro new(value: T): Self {
+        return Leaf { value: value, tag: 1 }
+    }
+
+    micro tag_of(self) -> i64 {
+        return self.tag
+    }
+}
+
+trait Prober {
+    micro probe(self) -> i64
+}
+
+class Wrapper<T> {
+    leaf: Leaf<T>
+}
+
+imply Wrapper<T> {
+    micro new(leaf: Leaf<T>): Self {
+        return Wrapper { leaf: leaf }
+    }
+}
+
+imply Wrapper<T>: Prober {
+    micro probe(self) -> i64 {
+        return self.leaf.tag_of()
+    }
+}
+
+micro run<P>(p: P) -> i64
+    where P: Prober
+{
+    return p.probe()
+}
+
+[export]
+micro entry() -> i64 {
+    let seed: i64 = 1
+    let wrapper: Wrapper<i64> = Wrapper.new(Leaf.new(seed))
+    return run(wrapper)
+}
+"#;
+
+fn witness_chain_groups() -> Vec<CompilerSourceGroup> {
+    vec![
+        core_group(),
+        CompilerSourceGroup::single_source("app", "app", WITNESS_CHAIN_SOURCE)
+            .as_entry()
+            .with_direct_dependencies(vec!["core".into()]),
+    ]
+}
+
+#[test]
+fn witness_minted_clone_body_closes_nested_member_instance() {
+    let groups = witness_chain_groups();
+    let hirs = ValkyrieCompiler::default()
+        .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
+        .expect("witness 消解出的克隆体体内嵌套 impl 泛型成员调用必须闭合实例");
+
+    let probe = hirs
+        .iter()
+        .flat_map(|module| module.instantiated_callables.iter())
+        .find(|callable| callable.function.name.as_str() == "probe")
+        .expect("`Wrapper<i64>::probe` 必须已由 witness 消解铸造");
+    let receiver = format!("{:?}", probe.function.params.first().expect("`probe` 必须有接收者").ty);
+    assert!(receiver.contains("Integer64"), "`probe` 接收者必须是 `Wrapper<i64>`: {receiver}");
+    assert!(!receiver.contains("binder: Some("), "`probe` 接收者必须闭合: {receiver}");
+
+    let tag_of = hirs
+        .iter()
+        .flat_map(|module| module.instantiated_callables.iter())
+        .find(|callable| callable.function.name.as_str() == "tag_of")
+        .expect("witness 克隆体体内对 `Leaf::tag_of` 的调用必须铸造实例");
+    let owner = format!("{:?}", tag_of.owner_type.as_ref().expect("`tag_of` 实例必须带 owner"));
+    assert!(owner.contains("Integer64"), "`tag_of` 必须闭合到 `Leaf<i64>`: {owner}");
+    assert!(!owner.contains("binder: Some("), "`tag_of` owner 必须闭合: {owner}");
+
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], TEST_ARCH)
+        .expect("witness 克隆体实例闭合后整条编译链必须成功");
+}

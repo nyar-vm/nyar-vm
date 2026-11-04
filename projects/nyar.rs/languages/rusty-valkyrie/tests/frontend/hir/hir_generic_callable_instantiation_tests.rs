@@ -2,7 +2,7 @@
 
 use rusty_valkyrie::{
     CompilerSourceGroup, HirError, ValkyrieCompiler,
-    compiler::types::hir::{HirExprKind, HirFunction, HirResolvedCall, HirStatementKind},
+    compiler::types::hir::{HirCallResolutionFailureKind, HirExprKind, HirFunction, HirResolvedCall, HirStatementKind},
     hir::lowering::DEFAULT_COMPILE_ARCH,
     types::hir::ValkyrieType,
 };
@@ -663,4 +663,133 @@ fn concrete_receiver_trait_member_witness_discharges_to_selected_impl_instance()
     assert_eq!(member.trait_declaration, Some(length_trait), "实例必须保留 trait 归属");
     let owner = member.owner_type.as_ref().expect("impl 实例必须携带具体 owner");
     assert_closed(owner, "实例 owner 类型");
+}
+
+/// 同一 impl 泛型成员之间的调用链（`echo` → `value`）：声明体按开放 binder 铸出的
+/// 占位实例不得被具体克隆体继承，具体克隆体必须按自己的代入重铸并指向具体实例。
+const CHAINED_IMPL_MEMBER_SOURCE: &str = r#"
+namespace test.instance;
+
+[primitive("std::primitive::i32")]
+structure i32 { }
+
+class Box<T> {
+    _value: T
+}
+
+imply Box<T> {
+    micro new(value: T): Self {
+        return Box { _value: value }
+    }
+
+    micro value(self) -> T {
+        return self._value
+    }
+
+    micro echo(self) -> T {
+        let inner: T = self.value()
+        return inner
+    }
+}
+
+[export]
+micro probe() -> i32 {
+    let boxed: Box<i32> = Box.new(7)
+    let result: i32 = boxed.echo()
+    return result
+}
+"#;
+
+#[test]
+fn monomorphized_clone_member_call_targets_concrete_instance() {
+    let hir = compile(CHAINED_IMPL_MEMBER_SOURCE);
+    let echoes = hir
+        .instantiated_callables
+        .iter()
+        .filter(|callable| callable.function.name.as_str() == "echo")
+        .collect::<Vec<_>>();
+    assert_eq!(echoes.len(), 1, "`Box<i32>` 只应有一个 `echo` 实例");
+    let clone = echoes[0];
+    let receiver = clone.function.params.first().map(|param| param.ty.clone()).expect("`echo` 必须有接收者实参");
+    assert_closed(&receiver, "`echo` 实例接收者");
+
+    let calls = body_calls(&clone.function);
+    let call = calls
+        .iter()
+        .copied()
+        .find(|call| call.symbol.parts().last().is_some_and(|part| part.as_str() == "value"))
+        .expect("`echo` 实例体内必须保留 `value` 调用");
+    assert!(call.trait_dispatch.is_none(), "普通 impl 成员调用不得携带 witness");
+    let instance = call.instance.expect("克隆体内的 impl 泛型成员调用必须已闭合");
+    let member = hir
+        .instantiated_callables
+        .iter()
+        .find(|callable| callable.function.instance == Some(instance))
+        .expect("被调用成员的实例必须已由固定点铸造");
+    assert_eq!(member.function.name.as_str(), "value", "只能指向 `value` 成员");
+    assert_eq!(member.owner_type.as_ref(), Some(&receiver), "克隆体必须指向 `Box<i32>` 实例，而不是声明体的开放占位实例");
+    assert_closed(member.owner_type.as_ref().expect("`value` 实例 owner"), "`value` 实例 owner");
+}
+
+/// 反例：`Box::read` 的 `where T: Marked` 在 `i32` 上没有证据，具体代入不得铸造实例；
+/// 克隆体内的该调用必须保持 `instance = None` 并由合同验证报 `InstanceNotClosed`。
+const UNCLOSED_WHERE_INSTANCE_SOURCE: &str = r#"
+namespace test.instance;
+
+[primitive("std::primitive::i32")]
+structure i32 { }
+
+trait Marked {
+    micro mark(self) -> bool
+}
+
+class Box<T> {
+    _value: T
+}
+
+imply Box<T> {
+    micro new(value: T): Self {
+        return Box { _value: value }
+    }
+
+    micro read(self) -> T
+        where T: Marked
+    {
+        return self._value
+    }
+}
+
+class Wrapper<T> {
+    _boxed: Box<T>
+}
+
+imply Wrapper<T> {
+    micro read(self) -> T {
+        let value: T = self._boxed.read()
+        return value
+    }
+}
+
+[export]
+micro probe() -> i32 {
+    let boxed: Box<i32> = Box.new(1)
+    let wrapper: Wrapper<i32> = Wrapper { _boxed: boxed }
+    let result: i32 = wrapper.read()
+    return result
+}
+"#;
+
+#[test]
+fn where_rejected_member_instance_stays_unclosed() {
+    let error = ValkyrieCompiler::default()
+        .compile_source(UNCLOSED_WHERE_INSTANCE_SOURCE)
+        .expect_err("`i32` 没有 `Marked` 证据时 `Box::read` 实例不得铸造");
+    let HirError::UnresolvedCall { reason, .. } = &error
+    else {
+        panic!("必须是未闭合调用诊断: {error:?}");
+    };
+    assert!(
+        matches!(reason, HirCallResolutionFailureKind::InstanceNotClosed),
+        "缺失 where 证据必须以 `InstanceNotClosed` 失败: {error:?}"
+    );
 }
