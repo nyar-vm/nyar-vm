@@ -11,7 +11,10 @@ use rusty_valkyrie::{
     ValkyrieCompiler,
     compiler::mir::validation::validate_semantic_module,
     mir::ssa::{MirDiagnostic, MirFunction, MirInstruction, MirLowerer, MirOperand, MirOperation, MirValueRef},
-    types::hir::{HirExprKind, HirFunction, HirFunctionReference, HirModule, ValkyrieType},
+    types::{
+        Identifier,
+        hir::{HirExprKind, HirFunction, HirFunctionReference, HirModule, ValkyrieType},
+    },
 };
 
 const NON_GENERIC_CONSUMER_SOURCE: &str = r#"
@@ -50,6 +53,22 @@ micro run() -> i32 {
     let x: i64 = 3
     let y: i64 = 5
     return choose(x, y, cmp_i64)
+}
+"#;
+
+/// 无捕获 lambda 作实参：MIR 落成同模块合成函数 + `LoadFunctionRef`，不是 Unit。
+const LAMBDA_CONSUMER_SOURCE: &str = r#"
+[primitive("std::primitive::bool")]
+structure bool { }
+
+micro apply(mapper: micro(bool) -> bool) -> bool {
+    return mapper(true)
+}
+
+micro run() -> bool {
+    return apply(micro(value: bool) -> bool {
+        return value
+    })
 }
 "#;
 
@@ -219,6 +238,75 @@ fn missing_instance_lowers_to_fail_closed_diagnostic() {
             .any(|block| block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::LoadFunctionRef { .. })))),
         "实例缺失时不得发射 LoadFunctionRef"
     );
+}
+
+/// 无捕获 lambda 作实参：合成独立 MIR 函数并发射 `LoadFunctionRef`，结果类型为 Function。
+#[test]
+fn lambda_argument_lowers_to_synthesized_function() {
+    let hir = compile(LAMBDA_CONSUMER_SOURCE);
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    assert!(
+        !mir.diagnostics.iter().any(|diagnostic| matches!(diagnostic, MirDiagnostic::UnsupportedExpression { .. })),
+        "无捕获 lambda 不得落 UnsupportedExpression：{:?}",
+        mir.diagnostics
+    );
+    assert!(validate_semantic_module(&mir).is_ok(), "lambda 提升后的 Semantic MIR 必须通过合同校验");
+
+    let run = collect_function(&mir, "::run");
+    let calls = collect_calls(run);
+    assert_eq!(calls.len(), 1, "run 体只有一个 apply 调用");
+    let MirOperand::Value(argument) = &calls[0].1[0]
+    else {
+        panic!("lambda 实参必须是 SSA 值，实际 {:?}", calls[0].1[0]);
+    };
+    let MirOperation::LoadFunctionRef { instance } = &defining_instruction(run, argument).kind
+    else {
+        panic!("lambda 实参必须由 LoadFunctionRef 定义");
+    };
+    let lambda = mir
+        .functions
+        .iter()
+        .find(|function| function.instance == Some(*instance))
+        .expect("LoadFunctionRef 必须指向同模块合成函数");
+    assert!(lambda.declaration.is_some(), "合成 lambda 必须有冻结声明身份");
+    assert!(lambda.display_symbol.contains("__lambda_"), "合成函数标签必须可辨识：{}", lambda.display_symbol);
+    assert!(
+        matches!(run.value_types.get(argument), Some(ValkyrieType::Function(_))),
+        "LoadFunctionRef 结果必须登记为 Function 类型"
+    );
+}
+
+/// 形参数量与上下文函数类型不符：MIR 结构化报错，不得静默落 Unit 后通过校验。
+#[test]
+fn lambda_arity_mismatch_is_structured() {
+    let mut hir = compile(LAMBDA_CONSUMER_SOURCE);
+    let run = hir.functions.iter_mut().find(|function| function.name.as_str() == "run").expect("run");
+    let HirExprKind::Return(Some(expression)) = &mut run.body.expr.as_mut().expect("run 体尾表达式").kind
+    else {
+        panic!("期望 return 表达式");
+    };
+    let HirExprKind::Call { args, .. } = &mut expression.kind
+    else {
+        panic!("期望调用表达式");
+    };
+    let HirExprKind::Lambda { params, .. } = &mut args[0].value.kind
+    else {
+        panic!("实参必须是 Lambda");
+    };
+    let mut extra = params[0].clone();
+    extra.name.name = Identifier::new("extra");
+    params.push(extra);
+
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    assert!(
+        mir.diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic,
+            MirDiagnostic::UnsupportedExpression { kind, .. } if kind.contains("lambda arity mismatch")
+        )),
+        "形参数量不符必须结构化报错：{:?}",
+        mir.diagnostics
+    );
+    assert!(validate_semantic_module(&mir).is_err(), "结构化诊断必须转化为合同失败，不得静默通过");
 }
 
 /// identity 表未登记的实例被 SMIR003 拒绝：下游不得按短名回查救活。
