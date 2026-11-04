@@ -528,10 +528,13 @@ pub(crate) fn canonical_type_kind(
                 ));
             }
         },
-        // 停线清理：QualifiedPath 不得进入 canonical。若到达这里说明前端生成/绑定
-        // 阶段未切断该路径，直接走通配错误（CAN003 "类型没有无损 canonical 形状"）。
-        ValkyrieType::Apply(base, args) => {
-            CanonicalTypeKind::Nominal { declaration: id(base)?, arguments: args.iter().map(id).collect::<Result<_, _>>()? }
+        // `Apply` 必须在 HIR 绑定阶段折成唯一结构形态（`Nominal` / `Array` / `FixedArray`）。
+        // 到达 canonical 说明上游漏折，按缺陷拒绝，不在本层兜成 `Nominal`。
+        ValkyrieType::Apply(base, _) => {
+            return Err(error_without_module(
+                "CAN003",
+                format!("未折叠的类型应用 `{base:?}` 进入 canonical 类型表；必须在 HIR 绑定阶段折成 Nominal 或 Array"),
+            ));
         }
         ValkyrieType::Tuple(items) => CanonicalTypeKind::Tuple(items.iter().map(id).collect::<Result<_, _>>()?),
         ValkyrieType::Array(element) => CanonicalTypeKind::Array { element: id(element)?, length: None },
