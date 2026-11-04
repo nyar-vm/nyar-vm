@@ -515,3 +515,42 @@ fn delegated_bound_present_at_instantiation_compiles() {
         .compile_source_groups_to_program(&bound_groups(BOUND_EVIDENCE_WITH_INNER))
         .expect("`Opaque` 具备 `Inner` impl 时委托链必须实例化成功");
 }
+
+const DEFAULT_BODY_CHAIN: &str = "namespace std.collection;
+
+trait Sorted {
+    micro cmp(self, other: Self): bool
+
+    micro keep_left(self, other: Self): bool {
+        return self.cmp(other)
+    }
+}
+
+imply u64: Sorted {
+    micro cmp(self, other: Self): bool { return self < other }
+}
+";
+
+const APP_DEFAULT_BODY_CHAIN: &str = "namespace leetcode.app;
+
+using std.collection::Sorted;
+
+[export]
+micro touch(value: u64): bool {
+    return value.keep_left(value)
+}
+
+[main]
+micro main() {
+}
+";
+
+/// 正例三：trait 默认体克隆到具体 `Self` 后，体内已回填的内部调用（`keep_left` → impl
+/// `cmp`）以及 impl 体内再派生的固有算子实例（`cmp` 体内 `u64 <`）都必须物化。
+/// 这两级 callee 的声明身份都不在声明级可达集内，只能按实例可达闭包收口。
+#[test]
+fn default_body_internal_call_on_concrete_self_is_materialized() {
+    ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&source_groups(DEFAULT_BODY_CHAIN, APP_DEFAULT_BODY_CHAIN))
+        .expect("默认体克隆体内已回填的 callee 实例必须物化并链接成功");
+}

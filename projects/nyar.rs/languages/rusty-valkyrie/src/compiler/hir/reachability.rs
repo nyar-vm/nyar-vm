@@ -51,6 +51,16 @@ impl HirMaterializationGate {
         &self.reachable_declarations
     }
 
+    /// callable 是否允许物化：声明可达，或其实例身份已被可达调用点直接引用。
+    ///
+    /// trait 默认体克隆到实现类型后，体内 `self` 派发会逐层回填成 impl 成员实例
+    /// （如 `Comparable::compare` 体内的 i32 固有 `infix <`），其声明身份不在可达集；
+    /// 实例才是调用图上的真实身份。
+    fn permits_function(&self, function: &HirFunction) -> bool {
+        self.permits_declaration(function.declaration)
+            || function.instance.is_some_and(|instance| self.permits_instance(Some(instance)))
+    }
+
     /// 可达 callable 实例集合（只读事实面，供诊断与回归断言）。
     pub fn reachable_instances(&self) -> &BTreeSet<ItemInstanceId> {
         &self.reachable_instances
@@ -66,26 +76,35 @@ impl HirMaterializationGate {
         for module in modules {
             collect_module_callables(module, &mut callables);
         }
-        for function in &callables {
-            if self.permits_declaration(function.declaration)
-                && let Some(instance) = function.instance
-            {
-                self.reachable_instances.insert(instance);
-            }
-        }
         for module in modules {
             collect_instantiated_instances(module, self);
         }
-        let mut walker = ReachabilityWalker::collecting();
-        for function in &callables {
-            if self.permits_declaration(function.declaration) {
-                walker.visit_callable(function);
+        // 实例集只增不减，按固定点收口。trait 默认体克隆到实现类型后，体内的
+        // 派发是逐层回填的（默认体 → impl 成员 → 其体内算子成员），一趟扫不完；
+        // 每轮把「声明可达或实例已可达」的 callable 体内已回填 callee 收进集合。
+        loop {
+            let before = self.reachable_instances.len();
+            for function in &callables {
+                if self.permits_declaration(function.declaration)
+                    && let Some(instance) = function.instance
+                {
+                    self.reachable_instances.insert(instance);
+                }
+            }
+            let mut walker = ReachabilityWalker::collecting();
+            for function in &callables {
+                if self.permits_function(function) {
+                    walker.visit_callable(function);
+                }
+            }
+            for module in modules {
+                collect_instantiated_body_instances(module, self, &mut walker);
+            }
+            self.reachable_instances.extend(walker.instances);
+            if self.reachable_instances.len() == before {
+                break;
             }
         }
-        for module in modules {
-            collect_instantiated_body_instances(module, self, &mut walker);
-        }
-        self.reachable_instances.extend(walker.instances);
     }
 }
 
@@ -173,9 +192,10 @@ fn collect_instantiated_instances(module: &HirModule, gate: &mut HirMaterializat
 
 /// 可达声明的铸造克隆体同样携带物化事实：witness 消解到 impl 成员的实例只回填在
 /// 克隆体调用点上，其声明身份不在可达集，必须由可达克隆体体内的已回填 callee 放行。
+/// 门禁口径与 MIR 发射一致：克隆体按**实例**放行，而不是按声明。
 fn collect_instantiated_body_instances(module: &HirModule, gate: &HirMaterializationGate, walker: &mut ReachabilityWalker<'_>) {
     for callable in &module.instantiated_callables {
-        if gate.permits_declaration(callable.function.declaration) {
+        if gate.permits_instance(callable.function.instance) {
             walker.visit_callable(&callable.function);
         }
     }
