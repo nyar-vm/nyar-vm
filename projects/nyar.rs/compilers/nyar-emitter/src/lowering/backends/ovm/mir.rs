@@ -559,6 +559,19 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.store_to_local(output);
                 }
             }
+            MirInstructionKind::Cast { source, ty } => {
+                // 源类型只从 semantic MIR 的冻结表读取（常量位宽回落同一合同），
+                // 不按数值大小或目标类型反推。
+                let source_ty = self.operand_semantic_type(source)?;
+                self.emit_operand_typed(source, Some(&source_ty))?;
+                self.emit_cast_conversion(&source_ty, ty)?;
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                }
+                else {
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
+                }
+            }
             MirInstructionKind::StructNew { nominal, fields } => {
                 let layout = self.ctx.layout_by_nominal(*nominal).cloned().ok_or_else(|| {
                     format!("OVM 聚合身份缺少布局合同：nominal {nominal:?} 不在计划的 AggregateLayoutPlan")
@@ -1462,6 +1475,147 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
 
     fn emit_store_local(&mut self, local: u16) {
         self.emitter.emit_imm1(OdinHeadCode::StoreLocal, local as i32);
+    }
+
+    /// 操作数的 semantic MIR 冻结类型。
+    ///
+    /// `Value` 读 [`Self::value_semantic_type`]；常量回落 `semantic_mir_contract`
+    /// 的同一张合同（`Int → Integer64{signed}` 等），符号/实例身份没有源类型。
+    fn operand_semantic_type(&self, operand: &MirOperand) -> crate::Result<NyarType> {
+        match operand {
+            MirOperand::Value(value) => self
+                .value_semantic_type(*value)
+                .ok_or_else(|| format!("OVM `Cast` 源 SSA 值缺少冻结语义类型：%{}（symbol=`{}`）", value.0, self.mir_fn.symbol)),
+            MirOperand::Constant(constant) => match constant {
+                MirConstant::Int(_) => Ok(NyarType::Integer64 { signed: true }),
+                MirConstant::Float64(_) => Ok(NyarType::Float64),
+                MirConstant::Bool(_) => Ok(NyarType::Boolean),
+                MirConstant::Utf8(_) => Ok(NyarType::Utf8),
+                MirConstant::Utf16(_) => Ok(NyarType::Utf16),
+                MirConstant::Unit => Ok(NyarType::Unit),
+                MirConstant::Null => Err(format!("OVM `Cast` 的空值操作数没有源类型，无法确定转换语义（symbol=`{}`）", self.mir_fn.symbol)),
+            },
+            MirOperand::Symbol(path) => Err(format!("OVM `Cast` 源操作数不支持符号引用 {path:?}（symbol=`{}`）", self.mir_fn.symbol)),
+            MirOperand::Item(instance) => {
+                Err(format!("OVM `Cast` 源操作数不支持 callable 身份 {instance:?}（symbol=`{}`）", self.mir_fn.symbol))
+            }
+        }
+    }
+    /// `as` 的表示转换：只使用「源有符号性 + 目标位宽」的通用规则，不按类型名特判。
+    ///
+    /// 整数（含 `Character` 的 32 位无符号码位）有确定语义；其余组合（浮点↔整数、
+    /// 布尔/文本↔数值）没有目标合同，必须结构化拒绝，禁止编造近似转换。
+    fn emit_cast_conversion(&mut self, source_ty: &NyarType, target_ty: &NyarType) -> crate::Result<()> {
+        if source_ty == target_ty {
+            return Ok(());
+        }
+        let (Some(source), Some(target)) = (ovm_int_shape(source_ty), ovm_int_shape(target_ty))
+        else {
+            return Err(format!(
+                "OVM 后端没有 `{source_ty}` → `{target_ty}` 的确定转换语义（symbol=`{}`）：\
+                 当前只冻结整数↔整数（含 `Character`）的位宽/符号规则；\
+                 浮点与整数、布尔/文本与数值之间的 `as` 缺少目标合同，不得退化为近似转换",
+                self.mir_fn.symbol
+            ));
+        };
+        self.emit_int_cast_steps(source, target);
+        Ok(())
+    }
+
+    /// 整数表示转换的落地指令序列。
+    ///
+    /// 位宽 ≤ 32 的值以 `i32` 为载体（窄整数必须处于自身类型的规范形态），
+    /// 位宽 64 以 `i64` 为载体。规则只看源的符号性与两端位宽：
+    /// 拓宽按源符号性做符号/零扩展，收窄按目标位宽截断，等宽换符号性保持位模式。
+    fn emit_int_cast_steps(&mut self, source: OvmIntShape, target: OvmIntShape) {
+        if source.bits < 32 {
+            self.emit_i32_canonicalize(source);
+        }
+        if target.bits == 64 {
+            if source.bits == 64 {
+                // `u64 ↔ i64`：载体与位模式不变，只有解释变。
+            }
+            else if source.bits == 32 && !source.signed {
+                self.emit_u32_to_i64();
+            }
+            else {
+                // 源已处于规范形态：有符号按符号扩展，窄无符号值非负，符号扩展即零扩展。
+                self.emitter.emit_call_import("i32_to_i64", 1);
+            }
+        }
+        else {
+            if source.bits == 64 {
+                self.emit_i64_truncate_to_i32();
+            }
+            if target.bits < 32 {
+                self.emit_i32_canonicalize(target);
+            }
+        }
+    }
+
+    /// 把 `i32` 载体上的值按 8/16 位宽规范化：有符号做符号扩展，无符号做掩码截断。
+    fn emit_i32_canonicalize(&mut self, shape: OvmIntShape) {
+        debug_assert!(shape.bits == 8 || shape.bits == 16);
+        let shift = 32 - i32::from(shape.bits);
+        if shape.signed {
+            // `(x << (32-b)) >>s (32-b)`：先保留低 b 位，再按第 b-1 位符号扩展。
+            self.emitter.emit_const_i32(shift);
+            self.emitter.emit_plain(OdinHeadCode::I32Shl);
+            self.emitter.emit_const_i32(shift);
+            self.emitter.emit_plain(OdinHeadCode::I32ShrS);
+        }
+        else {
+            let mask = (1i32 << shape.bits) - 1;
+            self.emitter.emit_const_i32(mask);
+            self.emitter.emit_plain(OdinHeadCode::I32And);
+        }
+    }
+
+    /// `i64` → `i32` 的位截断。
+    ///
+    /// 宿主的 `i64_to_i32` 带范围校验（溢出即结构化失败），直接调用会把 `as i32`
+    /// 的位截断误编成运行期错误。先 `(x << 32) >>s 32` 把低 32 位符号扩展进
+    /// `i32` 表示范围，再走范围校验必定成功的 `i64_to_i32`。
+    fn emit_i64_truncate_to_i32(&mut self) {
+        self.emitter.emit_const_i64(32);
+        self.emitter.emit_call_import("i64_shl", 2);
+        self.emitter.emit_const_i64(32);
+        self.emitter.emit_call_import("i64_shr", 2);
+        self.emitter.emit_call_import("i64_to_i32", 1);
+    }
+
+    /// `u32` → `i64` 的零扩展。
+    ///
+    /// `i32_to_i64` 恒为符号扩展；`u32` 值 ≥ 2^31 时以负数落在 `i32` 载体上，
+    /// 半程必须补 2^32。无分支配方：`sext(x) + ((sext(x) >>>u 63) * 2^32)`。
+    fn emit_u32_to_i64(&mut self) {
+        self.emitter.emit_call_import("i32_to_i64", 1);
+        self.emitter.emit_plain(OdinHeadCode::Dup);
+        self.emitter.emit_const_i64(63);
+        self.emitter.emit_call_import("i64_shr_u", 2);
+        self.emitter.emit_const_i64(1i64 << 32);
+        self.emitter.emit_call_import("i64_mul", 2);
+        self.emitter.emit_call_import("i64_add", 2);
+    }
+}
+
+/// 整数表示形状：只携带位宽与符号性，`Character` 视为 32 位无符号码位。
+///
+/// 转换规则必须由这两项决定，不得按 `NyarType` 变体名逐条特判。
+#[derive(Clone, Copy)]
+struct OvmIntShape {
+    bits: u16,
+    signed: bool,
+}
+
+fn ovm_int_shape(ty: &NyarType) -> Option<OvmIntShape> {
+    match ty {
+        NyarType::Integer8 { signed } => Some(OvmIntShape { bits: 8, signed: *signed }),
+        NyarType::Integer16 { signed } => Some(OvmIntShape { bits: 16, signed: *signed }),
+        NyarType::Integer32 { signed } => Some(OvmIntShape { bits: 32, signed: *signed }),
+        NyarType::Integer64 { signed } => Some(OvmIntShape { bits: 64, signed: *signed }),
+        NyarType::Character => Some(OvmIntShape { bits: 32, signed: false }),
+        _ => None,
     }
 }
 
