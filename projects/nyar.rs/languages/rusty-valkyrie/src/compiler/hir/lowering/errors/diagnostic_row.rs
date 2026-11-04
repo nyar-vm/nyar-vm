@@ -336,6 +336,12 @@ impl From<HirError> for DiagnosticRow {
                 row = row.with_arg("magnitude", DiagnosticArg::String(magnitude.clone()));
                 row = row.with_arg("range", DiagnosticArg::String(range.clone()));
             }
+            HirError::InvalidTupleLabeling { failure, .. } => {
+                row = row.with_arg("failure", DiagnosticArg::String(tuple_labeling_failure_name(failure).to_string()));
+                if let TupleLabelingFailure::DuplicateLabel { name } = failure {
+                    row = row.with_arg("name", DiagnosticArg::String(name.clone()));
+                }
+            }
             HirError::InvalidSingleQuoteLiteral { failure, .. } => {
                 row = row.with_arg("failure", DiagnosticArg::String(single_quote_literal_failure_name(failure).to_string()));
                 match failure {
@@ -618,6 +624,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
         HirError::InvalidSingleQuoteLiteral { source, .. } => source.clone(),
         HirError::IntegerLiteralOutOfRange { source, .. } => source.clone(),
+        HirError::InvalidTupleLabeling { source, .. } => source.clone(),
     }
 }
 
@@ -697,6 +704,15 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
         HirError::InvalidSingleQuoteLiteral { span, .. } => span.clone(),
         HirError::IntegerLiteralOutOfRange { span, .. } => span.clone(),
+        HirError::InvalidTupleLabeling { span, .. } => span.clone(),
+    }
+}
+
+/// 元组标签形态失败原因的稳定短名（用于诊断参数）。
+pub(super) fn tuple_labeling_failure_name(failure: &TupleLabelingFailure) -> &'static str {
+    match failure {
+        TupleLabelingFailure::Mixed => "mixed",
+        TupleLabelingFailure::DuplicateLabel { .. } => "duplicate_label",
     }
 }
 

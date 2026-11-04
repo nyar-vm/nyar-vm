@@ -15,11 +15,13 @@ use crate::compiler::{
     },
     types::{
         Identifier,
-        hir::{FunctionType, GenericType, HirKind, RowMethodType, RowType, ValkyrieType},
+        hir::{FunctionType, GenericType, HirKind, HirTupleField, RowMethodType, RowType, ValkyrieType},
     },
 };
 use nyar_types::DiagnosticSpan;
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
+
+use super::lowering::errors::TupleLabelingFailure;
 
 thread_local! {
     static MODULE_TYPE_ALIASES: RefCell<Vec<BTreeMap<String, ModuleTypeAliasEntry>>> = RefCell::new(Vec::new());
@@ -286,7 +288,30 @@ pub fn lower_type_expression(ty: &TypeExpression) -> Result<ValkyrieType, HirErr
                 ValkyrieType::Unit
             }
             else {
-                ValkyrieType::Tuple(tuple.elements.iter().map(|e| lower_type_expression(&e.ty)).collect::<Result<Vec<_>, _>>()?)
+                let lowered = tuple
+                    .elements
+                    .iter()
+                    .map(|element| Ok((element.name.as_ref().map(|name| Identifier::new(&name.name)), lower_type_expression(&element.ty)?)))
+                    .collect::<Result<Vec<_>, HirError>>()?;
+                let named = lowered.iter().filter(|(name, _)| name.is_some()).count();
+                if named == 0 {
+                    ValkyrieType::Tuple(lowered.into_iter().map(|(_, ty)| ty).collect())
+                }
+                else if named != lowered.len() {
+                    return Err(tuple_labeling_error(TupleLabelingFailure::Mixed));
+                }
+                else {
+                    let mut seen = BTreeSet::new();
+                    let mut fields = Vec::with_capacity(lowered.len());
+                    for (name, ty) in lowered {
+                        let name = name.expect("all elements named by the count check");
+                        if !seen.insert(name.as_str().to_string()) {
+                            return Err(tuple_labeling_error(TupleLabelingFailure::DuplicateLabel { name: name.as_str().to_string() }));
+                        }
+                        fields.push(HirTupleField { name, ty });
+                    }
+                    ValkyrieType::LabeledTuple(fields)
+                }
             }
         }
         TypeExpression::Function(function) => ValkyrieType::Function(Box::new(FunctionType {
@@ -572,6 +597,14 @@ fn resolve_named_type(name: &str, single_segment: bool) -> Result<ValkyrieType, 
     })
 }
 
+fn tuple_labeling_error(failure: TupleLabelingFailure) -> HirError {
+    HirError::InvalidTupleLabeling {
+        failure,
+        source: nyar_types::DiagnosticSource { id: "<type_lowering>".into(), revision: None },
+        span: DiagnosticSpan { start: 0, end: 0 },
+    }
+}
+
 fn expand_module_type_alias(name: &str, arguments: &[ValkyrieType], visiting: &mut BTreeSet<String>) -> Option<ValkyrieType> {
     if visiting.contains(name) {
         return None;
@@ -677,6 +710,9 @@ fn expand_type_aliases(ty: &ValkyrieType, visiting: &mut BTreeSet<String>) -> Va
             params: function.params.iter().map(|param| expand_type_aliases(param, visiting)).collect(),
             return_type: expand_type_aliases(&function.return_type, visiting),
         })),
+        ValkyrieType::LabeledTuple(fields) => ValkyrieType::LabeledTuple(
+            fields.iter().map(|field| HirTupleField { name: field.name.clone(), ty: expand_type_aliases(&field.ty, visiting) }).collect(),
+        ),
         _ => ty.clone(),
     }
 }

@@ -125,6 +125,7 @@ impl HirError {
             Self::BackendContractRejected(_) => "backend.contract.rejected",
             Self::InvalidSingleQuoteLiteral { .. } => "valkyrie.hir.invalid_single_quote_literal",
             Self::IntegerLiteralOutOfRange { .. } => "valkyrie.hir.integer_literal_out_of_range",
+            Self::InvalidTupleLabeling { .. } => "valkyrie.hir.invalid_tuple_labeling",
         }
     }
 }

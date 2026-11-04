@@ -774,6 +774,30 @@ pub enum HirError {
         /// 诊断定位 span（指向整个字面量）。
         span: DiagnosticSpan,
     },
+    /// 元组类型表达式的标签形态不合法。
+    ///
+    /// 元组要么全命名、要么全不命名；部分命名会让类型身份里出现无名占位，
+    /// 属于必须拒绝的非法状态。全命名时标签不得重复。
+    InvalidTupleLabeling {
+        /// 结构化失败原因。
+        failure: TupleLabelingFailure,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+}
+
+/// 元组标签形态的结构化失败原因。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TupleLabelingFailure {
+    /// 同一元组里既有带名元素又有不带名元素。
+    Mixed,
+    /// 全部带名但标签重复。
+    DuplicateLabel {
+        /// 重复的标签文本。
+        name: String,
+    },
 }
 
 /// 单引号捕获字面量的结构化失败原因。

@@ -326,6 +326,17 @@ impl std::fmt::Display for HirError {
                 }
                 Ok(())
             }
+            Self::InvalidTupleLabeling { failure, .. } => {
+                use super::model::TupleLabelingFailure;
+                match failure {
+                    TupleLabelingFailure::Mixed => {
+                        write!(f, "tuple type mixes labeled and unlabeled elements; label all elements or none")
+                    }
+                    TupleLabelingFailure::DuplicateLabel { name } => {
+                        write!(f, "tuple type repeats the label `{name}`")
+                    }
+                }
+            }
             Self::BackendContractRejected(error) => write!(f, "backend contract rejected the declaration: {error}"),
             Self::IntegerLiteralOutOfRange { literal, magnitude, range, .. } => {
                 write!(f, "integer literal `{literal}` (magnitude {magnitude}) is out of range `{range}`")

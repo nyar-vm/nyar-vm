@@ -2,6 +2,7 @@ use rusty_valkyrie::{
     HirError, SourceID, ValkyrieCompiler,
     frontend::ast::{Identifier, NamePath, TypeExpression, type_nodes::TypeUnaryNode},
     hir::type_lowering::{canonical_builtin_type, lower_type_expression, validate_type_expression},
+    hir::lowering::errors::TupleLabelingFailure,
     types::{
         Identifier as HirIdentifier,
         hir::{HirModule, HirStruct, ValkyrieType},
@@ -23,7 +24,7 @@ fn path_type(name: &str) -> TypeExpression {
 }
 
 #[test]
-fn named_tuple_type_lowers_to_positional_tuple() {
+fn named_tuple_type_lowers_to_labeled_tuple() {
     use rusty_valkyrie::compiler::syntax::oak::ast::type_nodes::{TupleType, TupleTypeElement};
 
     let tuple = TypeExpression::Tuple(Box::new(TupleType {
@@ -39,8 +40,65 @@ fn named_tuple_type_lowers_to_positional_tuple() {
     }));
     assert_eq!(
         lower_type_expression(&tuple).expect("named tuple lowers"),
-        ValkyrieType::Tuple(vec![ValkyrieType::Named(HirIdentifier::new("usize")), ValkyrieType::Named(HirIdentifier::new("u32"))],)
+        ValkyrieType::LabeledTuple(vec![
+            rusty_valkyrie::types::hir::HirTupleField {
+                name: HirIdentifier::new("ordinal"),
+                ty: ValkyrieType::Named(HirIdentifier::new("usize")),
+            },
+            rusty_valkyrie::types::hir::HirTupleField {
+                name: HirIdentifier::new("value"),
+                ty: ValkyrieType::Named(HirIdentifier::new("u32")),
+            },
+        ])
     );
+}
+
+fn tuple_type(elements: Vec<(Option<&str>, &str)>) -> TypeExpression {
+    use rusty_valkyrie::compiler::syntax::oak::ast::type_nodes::{TupleType, TupleTypeElement};
+
+    TypeExpression::Tuple(Box::new(TupleType {
+        elements: elements
+            .into_iter()
+            .map(|(name, ty)| TupleTypeElement {
+                name: name.map(|name| Identifier { name: name.to_string(), span: oak_span(name.len()) }),
+                ty: path_type(ty),
+                span: oak_span(0),
+            })
+            .collect(),
+        span: oak_span(0),
+    }))
+}
+
+/// 反例：部分命名的元组必须在类型构造处结构化失败。
+///
+/// 允许它会让 `LabeledTuple` 里出现无名占位，正是设计里明确否掉的非法状态。
+#[test]
+fn mixed_labeled_tuple_is_structurally_rejected() {
+    for tuple in [vec![(Some("a"), "i32"), (None, "i64")], vec![(None, "i32"), (Some("b"), "i64")]] {
+        let error = lower_type_expression(&tuple_type(tuple)).expect_err("混合命名元组必须拒绝");
+        assert!(matches!(error, HirError::InvalidTupleLabeling { failure: TupleLabelingFailure::Mixed, .. }), "error={error:?}");
+    }
+}
+
+/// 反例：全命名但标签重复，类型身份无法唯一确定位置。
+#[test]
+fn duplicate_tuple_labels_are_structurally_rejected() {
+    let error =
+        lower_type_expression(&tuple_type(vec![(Some("a"), "i32"), (Some("a"), "i64")])).expect_err("重复标签必须拒绝");
+    assert!(
+        matches!(error, HirError::InvalidTupleLabeling { failure: TupleLabelingFailure::DuplicateLabel { ref name }, .. } if name == "a"),
+        "error={error:?}"
+    );
+}
+
+/// 正例：全无名元组仍是独立的无标签形态，一个字节都不改。
+#[test]
+fn unlabeled_tuple_stays_positional_tuple() {
+    assert_eq!(
+        lower_type_expression(&tuple_type(vec![(None, "i32"), (None, "i32")])).expect("无标签元组合法"),
+        ValkyrieType::Tuple(vec![ValkyrieType::Named(HirIdentifier::new("i32")), ValkyrieType::Named(HirIdentifier::new("i32"))])
+    );
+    assert_eq!(lower_type_expression(&tuple_type(Vec::new())).expect("空元组合法"), ValkyrieType::Unit);
 }
 
 #[test]
