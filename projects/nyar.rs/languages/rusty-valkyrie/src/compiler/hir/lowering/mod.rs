@@ -70,7 +70,7 @@ pub(crate) use source_group::{
 pub use source_group::{build_generated_group, build_source_input_with_generated, compose_source_input_groups, validate_source_groups};
 
 pub(crate) use generic_binders::{
-    array_owner_declaration, bind_declared_nominal_types, combined_impl_generic_context, finalize_trait_method_signature,
+    array_owner_declaration, bind_declared_nominal_types, combined_impl_generic_context,
     freeze_enum_generic_binders, freeze_function_generic_binders, freeze_generic_binders, freeze_impl_generic_binders,
     freeze_module_generic_binders, freeze_struct_generic_binders, freeze_trait_generic_binders, lookup_owner_generics_by_declaration,
     lower_trait_associated_type_references, lower_trait_method, max_hir_callable_instance_index, max_hir_declaration_index,

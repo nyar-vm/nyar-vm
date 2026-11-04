@@ -683,9 +683,8 @@ impl AstToHir {
         let mut methods = Vec::new();
         let mut default_methods = Vec::new();
         for method in &trait_decl.body.methods {
-            let lowered = crate::compiler::hir::lowering::generic_binders::finalize_trait_method_signature(
-                crate::compiler::hir::lowering::generic_binders::lower_trait_method(self.lower_method(method)?, &associated_names),
-            );
+            let lowered =
+                crate::compiler::hir::lowering::generic_binders::lower_trait_method(self.lower_method(method)?, &associated_names);
             if lowered.is_abstract {
                 methods.push(lowered);
             }

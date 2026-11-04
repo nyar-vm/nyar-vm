@@ -317,14 +317,6 @@ pub(crate) fn freeze_module_generic_binders(module: &mut HirModule) {
     }
 }
 
-/// Trait 成员以 `;` 结束时 parser 常给出空块而非 `body: None`，需回收为纯签名。
-pub(crate) fn finalize_trait_method_signature(mut method: HirFunction) -> HirFunction {
-    if method.body.statements.is_empty() && method.body.expr.is_none() {
-        method.is_abstract = true;
-    }
-    method
-}
-
 pub(crate) fn lower_trait_method(mut method: HirFunction, associated_names: &std::collections::BTreeSet<Identifier>) -> HirFunction {
     let generic_names = method.generics.iter().map(|generic| generic.name.clone()).collect::<std::collections::BTreeSet<_>>();
     for param in &mut method.params {
