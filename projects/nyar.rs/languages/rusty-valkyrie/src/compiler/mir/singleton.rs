@@ -124,6 +124,55 @@ pub enum TupleFieldResolution<'a> {
     NotTuple,
 }
 
+#[cfg(test)]
+mod tuple_field_resolution_tests {
+    use super::*;
+    use crate::compiler::types::hir::HirTupleField;
+
+    fn labeled(fields: &[(&str, ValkyrieType)]) -> ValkyrieType {
+        ValkyrieType::LabeledTuple(
+            fields.iter().map(|(name, ty)| HirTupleField { name: Identifier::new(*name), ty: ty.clone() }).collect(),
+        )
+    }
+
+    #[test]
+    fn labeled_tuple_member_resolves_to_its_position() {
+        let pair = labeled(&[("ordinal", ValkyrieType::Integer32 { signed: false }), ("value", ValkyrieType::Utf8)]);
+        let resolution = AggregateFieldIndex::resolve_tuple_field(&pair, &Identifier::new("value"));
+        assert_eq!(
+            resolution,
+            TupleFieldResolution::Labeled { index: 1, ty: &ValkyrieType::Utf8 },
+            "带标签元组必须按标签解析到源码顺序位置"
+        );
+    }
+
+    #[test]
+    fn unlabeled_tuple_rejects_by_name_access_without_position_fallback() {
+        let pair = ValkyrieType::Tuple(vec![ValkyrieType::Integer32 { signed: false }, ValkyrieType::Utf8]);
+        assert_eq!(
+            AggregateFieldIndex::resolve_tuple_field(&pair, &Identifier::new("value")),
+            TupleFieldResolution::Unlabeled,
+            "无标签元组按名访问必须是结构化失败，禁止退回按位置解析"
+        );
+    }
+
+    #[test]
+    fn unknown_label_is_not_a_tuple_position() {
+        let pair = labeled(&[("ordinal", ValkyrieType::Integer32 { signed: false })]);
+        assert_eq!(AggregateFieldIndex::resolve_tuple_field(&pair, &Identifier::new("value")), TupleFieldResolution::NotFound);
+    }
+
+    #[test]
+    fn labeled_and_unlabeled_tuples_are_distinct_type_identities() {
+        let element = ValkyrieType::Integer32 { signed: false };
+        assert_ne!(
+            labeled(&[("ordinal", element.clone())]),
+            ValkyrieType::Tuple(vec![element]),
+            "标签参与类型身份，带标签元组与无标签元组不是同一类型"
+        );
+    }
+}
+
 /// 聚合/元组字段的统一解析结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldResolution {
