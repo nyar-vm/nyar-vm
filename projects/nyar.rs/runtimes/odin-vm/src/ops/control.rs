@@ -150,3 +150,27 @@ pub fn execute_call(instruction: OdinInstruction, frame: &mut Frame, module: &Lo
     frame.ip += instruction.size as usize;
     Ok(StepResult::Call { function_index })
 }
+
+/// Enters a nested call whose target comes from the operand stack.
+///
+/// 栈布局 `[arg0, …, argN-1, callee]`：只弹 `callee`（`i32` 函数索引），实参留在栈上
+/// 由新帧按 `arity` 消费（与 [`execute_call`] 的直调约定一致）。索引越界或 callee
+/// 不是 `i32` 一律结构化失败，不回落、不猜测。
+pub fn execute_call_indirect(
+    instruction: OdinInstruction,
+    frame: &mut Frame,
+    ctx: &mut ExecutionContext<'_>,
+) -> Result<StepResult, OdinRuntimeError> {
+    let callee = ctx.stack.pop()?;
+    let function_index = match callee {
+        Value::I32(index) => index,
+        other => {
+            return Err(OdinRuntimeError::TypeMismatch { expected: "function index (i32)", actual: other.type_name().to_string() });
+        }
+    };
+    if function_index < 0 || (function_index as usize) >= ctx.module.functions.len() {
+        return Err(OdinRuntimeError::FunctionIndexOutOfRange(function_index));
+    }
+    frame.ip += instruction.size as usize;
+    Ok(StepResult::Call { function_index: function_index as usize })
+}

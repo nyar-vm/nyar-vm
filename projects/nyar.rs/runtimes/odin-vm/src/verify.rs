@@ -501,6 +501,16 @@ fn verify_instruction_operands(
                 )));
             }
         }
+        OdinHeadCode::CallIndirect => {
+            // callee 经槽位/字段传递后静态类型已抹成 `Any`，这里只能校验 argc；
+            // 函数索引的合法性由执行期 `execute_call_indirect` fail-closed。
+            if instruction.operand1 < 0 {
+                return Err(OdinRuntimeError::ModuleLoad(format!(
+                    "function[{function_index}] CallIndirect at pc {pc} has negative argc {}",
+                    instruction.operand1
+                )));
+            }
+        }
         _ => {}
     }
     Ok(())
@@ -719,6 +729,18 @@ fn stack_transfer(
             let argc = instruction.operand2.max(0);
             require_height(function_index, pc, height, argc)?;
             let mut after = height;
+            for _ in 0..argc {
+                after = pop_any_stack(function_index, pc, types, after, coroutine)?;
+            }
+            types.push(StackKind::Any);
+            Ok(vec![edge(fallthrough, after + 1, *coroutine)])
+        }
+        OdinHeadCode::CallIndirect => {
+            // 栈布局 `[arg0, …, argN-1, callee]`：先弹 callee，再弹 argc 个实参。
+            let argc = instruction.operand1.max(0);
+            require_height(function_index, pc, height, argc + 1)?;
+            let after_callee = pop_any_stack(function_index, pc, types, height, coroutine)?;
+            let mut after = after_callee;
             for _ in 0..argc {
                 after = pop_any_stack(function_index, pc, types, after, coroutine)?;
             }

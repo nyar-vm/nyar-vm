@@ -17,7 +17,7 @@ mod control;
 mod object;
 
 pub use arithmetic::execute_arithmetic;
-pub use control::{execute_call, execute_control};
+pub use control::{execute_call, execute_call_indirect, execute_control};
 pub use object::execute_object;
 
 /// Result of executing one instruction.
@@ -155,6 +155,7 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
             }
         }
         OdinHeadCode::Call | OdinHeadCode::CallStatic => execute_call(op.as_instruction(), frame, ctx.module),
+        OdinHeadCode::CallIndirect => execute_call_indirect(op.as_instruction(), frame, ctx),
         OdinHeadCode::LoadLocal
         | OdinHeadCode::StoreLocal
         | OdinHeadCode::LoadArg

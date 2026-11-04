@@ -17,8 +17,10 @@ pub const ODIN_MAGIC: u32 = 0x4E59_4152;
 /// 刻意不改成全大写，避免对公开 ABI 常量做无谓改名。
 ///
 /// v1 → v2：常量池新增 `Integer64`（0x12），旧版本模块由 `decode_module` 结构化拒绝。
+///
+/// v2 → v3：新增 `CallIndirect` 头码（0x06），旧版本模块由 `decode_module` 结构化拒绝。
 #[allow(non_upper_case_globals)]
-pub const Odin_VERSION: u32 = 2;
+pub const Odin_VERSION: u32 = 3;
 
 /// Bytecode format contract version（S-W6 provenance / cache 键）。
 /// 与 [`Odin_VERSION`] 同步；格式破坏时两者一并递增。
@@ -50,6 +52,12 @@ pub enum OdinHeadCode {
     JumpIfFalse = 0x03,
     /// 从当前帧返回。
     Return = 0x05,
+    /// 间接调用（operand1 = argc）。
+    ///
+    /// 栈布局 `[arg0, …, argN-1, callee]`：弹出栈顶的 `callee`（`i32` 函数索引，
+    /// 越界即运行期结构化错误），实参留在栈上由新帧按 `arity` 消费（与 [`Self::Call`] 一致）。
+    /// 因为本指令只弹 `callee`，发射侧必须先压实参、再压 callee。
+    CallIndirect = 0x06,
     /// 异步让出：弹出栈顶值作为 yielded 值，暂停当前帧并交还控制权。
     /// operand1 = resume_state（恢复后跳转的 ip 偏移标识）。
     Yield = 0x0A,
@@ -148,6 +156,7 @@ impl OdinHeadCode {
             0x03 => Some(Self::JumpIfFalse),
             0x04 => Some(Self::Call),
             0x05 => Some(Self::Return),
+            0x06 => Some(Self::CallIndirect),
             0x0A => Some(Self::Yield),
             0x0B => Some(Self::Resume),
             0x0C => Some(Self::Trap),
@@ -262,6 +271,7 @@ impl OdinHeadCode {
             | Self::JumpIfFalse
             | Self::Call
             | Self::CallStatic
+            | Self::CallIndirect
             | Self::Constant
             | Self::Yield
             | Self::PerformEffect

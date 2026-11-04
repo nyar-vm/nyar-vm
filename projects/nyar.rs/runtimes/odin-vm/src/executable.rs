@@ -120,6 +120,7 @@ fn is_safepoint(code: OdinHeadCode) -> bool {
         code,
         OdinHeadCode::Call
             | OdinHeadCode::CallStatic
+            | OdinHeadCode::CallIndirect
             | OdinHeadCode::CallImport
             | OdinHeadCode::CallIntrinsic
             | OdinHeadCode::ObjectNew
