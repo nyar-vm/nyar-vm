@@ -459,6 +459,11 @@ fn collect_generic_names(ty: &ValkyrieType, names: &mut BTreeSet<Identifier>) {
                 collect_generic_names(item, names);
             }
         }
+        ValkyrieType::LabeledTuple(fields) => {
+            for field in fields {
+                collect_generic_names(&field.ty, names);
+            }
+        }
         ValkyrieType::Row(row) => {
             for method in &row.methods {
                 for param in &method.params {

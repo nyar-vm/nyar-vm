@@ -37,6 +37,10 @@ pub(super) fn display_type(ty: &ValkyrieType) -> String {
             display_type(&function.return_type)
         ),
         ValkyrieType::Tuple(items) => format!("({})", items.iter().map(display_type).collect::<Vec<_>>().join(", ")),
+        ValkyrieType::LabeledTuple(fields) => format!(
+            "({})",
+            fields.iter().map(|field| format!("{}: {}", field.name, display_type(&field.ty))).collect::<Vec<_>>().join(", ")
+        ),
         ValkyrieType::Row(row) => format!(
             "{{ {} }}",
             row.methods

@@ -269,6 +269,18 @@ pub struct TypeLambda {
     pub body: ValkyrieType,
 }
 
+/// 带标签元组的字段：标签是类型身份的一部分，位置仍按源码顺序。
+///
+/// `name` 使用无 shadow 的 [`Identifier`]（只含文本），避免成员可见性身份混进类型身份。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirTupleField {
+    /// 字段标签。
+    pub name: Identifier,
+    /// 字段类型。
+    pub ty: ValkyrieType,
+}
+
 /// Type model of Valkyrie language.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -374,6 +386,10 @@ pub enum ValkyrieType {
     Union(Vec<ValkyrieType>),
     /// `A & B & C` anonymous intersection type
     Intersection(Vec<ValkyrieType>),
+    /// 带标签元组：标签参与类型身份；无标签元组仍走 [`Self::Tuple`]，两者不互相兼容。
+    ///
+    /// 新增变体必须追加在枚举末尾，保证既有变体的 `Ord` 判别顺序与 `TypeId` 分配不变。
+    LabeledTuple(Vec<HirTupleField>),
 }
 
 impl Default for ValkyrieType {
