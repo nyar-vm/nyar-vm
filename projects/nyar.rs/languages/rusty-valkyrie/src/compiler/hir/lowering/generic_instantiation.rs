@@ -27,9 +27,10 @@ use crate::compiler::{
     types::{
         Identifier,
         hir::{
-            AssociatedType, FunctionType, GenericBinderId, HirBlock, HirExpr, HirExprKind, HirFunction, HirFunctionReference,
-            HirInstantiatedCallable, HirModule, HirParam, HirResolvedCall, HirStatementKind, HirTraitDispatch, HirWhereConstraint, ValkyrieType,
-            export_spec::parse_library_glue_operation, parse_export_spec_from_annotations,
+            AssociatedType, FunctionType, GenericBinderId, GenericType, HirBlock, HirExpr, HirExprKind, HirFunction,
+            HirFunctionReference, HirInstantiatedCallable, HirLambdaIdentity, HirModule, HirParam, HirResolvedCall, HirStatementKind,
+            HirTraitDispatch, HirWhereConstraint, ValkyrieType, export_spec::parse_library_glue_operation,
+            parse_export_spec_from_annotations,
         },
     },
 };
@@ -63,12 +64,26 @@ struct InstanceRequest {
     self_type: Option<ValkyrieType>,
 }
 
+/// 跨多次单态化调用保存的实例账本。
+///
+/// 物化门在每轮固定点之后才补进「实例已达」的声明；这些新声明必须先回到本固定点
+/// 铸造体内调用点实例，否则 MIR 只能退化成 Unit 占位。账本按
+/// `(声明, 代入, self)` 复用已铸造实例，重入不会重复铸造同一请求。
+#[derive(Default)]
+pub(crate) struct GenericInstantiationState {
+    instances: BTreeMap<InstanceRequest, nyar_types::ItemInstanceId>,
+    per_declaration: BTreeMap<u32, usize>,
+    next_instance: Option<u32>,
+}
+
 /// 固定点需要闭合的可调用请求点：已解析调用合同，或具名函数作值的引用。
 enum CallableRequest<'a> {
     /// 已解析调用合同。
     Call(&'a mut HirResolvedCall),
     /// 具名函数作值引用；只有非泛型声明会被改写生成。
     Reference(&'a mut HirFunctionReference),
+    /// lambda 创建点：合成函数继承 owner 泛型，必须按环境类型实参解析到具体实例。
+    Lambda { identity: &'a mut HirLambdaIdentity, params: &'a [HirParam], return_type: &'a ValkyrieType },
 }
 
 /// 单态化固定点允许铸造的最大 `(声明, 代入)` 实例数。
@@ -270,6 +285,7 @@ pub(crate) fn instantiate_generic_callables(
     modules: &mut [HirModule],
     gate: Option<&crate::compiler::hir::reachability::HirMaterializationGate>,
     provider_seeds: &BTreeMap<u32, u32>,
+    state: &mut GenericInstantiationState,
 ) -> Result<(), HirError> {
     let (declarations, trait_members) = collect_impl_declarations(modules);
     if declarations.is_empty() {
@@ -279,9 +295,23 @@ pub(crate) fn instantiate_generic_callables(
     let relations = modules.iter().map(TypeRelationContext::from_module).collect::<Vec<_>>();
     // trait 默认方法的关联类型等式按具体 self 类型查询，和上面的证据视图同源。
     let trait_views = modules.iter().map(TraitModuleView::from_module).collect::<Vec<_>>();
-    let mut next_instance = modules.iter().filter_map(super::max_hir_callable_instance_index).max().map_or(0, |index| index.saturating_add(1));
-    let mut instances: BTreeMap<InstanceRequest, nyar_types::ItemInstanceId> = BTreeMap::new();
-    let mut per_declaration: BTreeMap<u32, usize> = BTreeMap::new();
+    let max_instance = modules.iter().filter_map(super::max_hir_callable_instance_index).max().map_or(0, |index| index.saturating_add(1));
+    let next_instance = state.next_instance.get_or_insert(max_instance);
+    if max_instance > *next_instance {
+        *next_instance = max_instance;
+    }
+    let next_instance = &mut *next_instance;
+    // lambda 环境聚合的泛型声明表：合成环境的类型实参是 owner 代入的冻结来源。
+    let environment_generics = modules
+        .iter()
+        .flat_map(|module| module.structs.iter())
+        .filter_map(|structure| {
+            let declaration = structure.constructor_declaration?;
+            Some((declaration.index(), structure.generics.clone()))
+        })
+        .collect::<BTreeMap<u32, Vec<GenericType>>>();
+    let instances = &mut state.instances;
+    let per_declaration = &mut state.per_declaration;
     let mut rounds = 0usize;
     loop {
         rounds = rounds.saturating_add(1);
@@ -301,6 +331,24 @@ pub(crate) fn instantiate_generic_callables(
                         if declarations.get(&index).is_some_and(|declaration| declaration.function.generics.is_empty()) {
                             requests.insert(InstanceRequest { declaration: index, substitution: Substitution::new(), self_type: None });
                         }
+                        return;
+                    }
+                    // lambda 创建点：合成函数若是泛型声明，必须按环境类型实参铸造具体
+                    // 实例；单态合成函数的声明期实例已经冻结，无需请求。
+                    CallableRequest::Lambda { identity, params, return_type } => {
+                        let Some(index) = identity.declaration.map(|declaration| declaration.index())
+                        else {
+                            return;
+                        };
+                        if !declarations.get(&index).is_some_and(|declaration| !declaration.function.generics.is_empty()) {
+                            return;
+                        }
+                        let Some(substitution) =
+                            derive_lambda_substitution(&declarations, &environment_generics, index, identity, params, return_type)
+                        else {
+                            return;
+                        };
+                        requests.insert(InstanceRequest { declaration: index, substitution, self_type: None });
                         return;
                     }
                 };
@@ -391,11 +439,11 @@ pub(crate) fn instantiate_generic_callables(
             if !where_constraints_satisfied(declaration, substitution, self_type.as_ref(), &equations, relations.get(declaration.module)) {
                 continue;
             }
-            let Some(instance) = nyar_types::ItemInstanceId::from_index(next_instance)
+            let Some(instance) = nyar_types::ItemInstanceId::from_index(*next_instance)
             else {
                 continue;
             };
-            next_instance = next_instance.saturating_add(1);
+            *next_instance = (*next_instance).saturating_add(1);
             let callable = instantiate_callable(declaration, substitution, self_type.as_ref(), &equations, instance);
             instances.insert(request.clone(), instance);
             *per_declaration.entry(*index).or_insert(0) += 1;
@@ -425,6 +473,28 @@ pub(crate) fn instantiate_generic_callables(
                             instances.get(&InstanceRequest { declaration: index, substitution: Substitution::new(), self_type: None })
                         {
                             reference.instance = Some(*instance);
+                        }
+                        return;
+                    }
+                    // lambda 创建点回填具体合成函数实例；开放代入保持声明期种子，
+                    // 由 MIR/目标侧结构化失败，不静默使用未单态化的实例。
+                    CallableRequest::Lambda { identity, params, return_type } => {
+                        let Some(index) = identity.declaration.map(|declaration| declaration.index())
+                        else {
+                            return;
+                        };
+                        if !declarations.get(&index).is_some_and(|declaration| !declaration.function.generics.is_empty()) {
+                            return;
+                        }
+                        let Some(substitution) =
+                            derive_lambda_substitution(&declarations, &environment_generics, index, identity, params, return_type)
+                        else {
+                            return;
+                        };
+                        if let Some(instance) =
+                            instances.get(&InstanceRequest { declaration: index, substitution, self_type: None })
+                        {
+                            identity.instance = Some(*instance);
                         }
                         return;
                     }
@@ -704,6 +774,66 @@ fn derive_substitution(declaration: &CallableDeclaration, call: &HirResolvedCall
     // 也不再检查 substitution.values() 是否闭合——跨结构委托调用第一次只会把声明侧 binder
     // 映射到调用方的 binder，后续轮次会继续闭合。只要 unify 全通过，就接受。
     Some(substitution)
+}
+
+/// lambda 合成函数的实例代入。
+///
+/// 合成函数继承 owner 泛型，而环境聚合的实参正是 owner 代入在创建点的冻结结果：
+/// 先按环境结构泛型配对得到 owner binder 的代入，再用 lambda 自身签名统一剩余
+/// binder（lambda 自定义泛型）。任一 owner/lambda binder 未闭合时不铸造实例，
+/// `hoisted.instance` 保持声明期种子，由 MIR 目标侧结构化失败。
+fn derive_lambda_substitution(
+    declarations: &BTreeMap<u32, CallableDeclaration>,
+    environment_generics: &BTreeMap<u32, Vec<GenericType>>,
+    declaration_index: u32,
+    identity: &HirLambdaIdentity,
+    params: &[HirParam],
+    return_type: &ValkyrieType,
+) -> Option<Substitution> {
+    let declaration = declarations.get(&declaration_index)?;
+    if declaration.function.generics.is_empty() {
+        return Some(Substitution::new());
+    }
+    let mut substitution = Substitution::new();
+    if let Some(environment) = &identity.environment {
+        let ValkyrieType::Nominal { declaration: environment_declaration, arguments, .. } = environment.ty.as_ref()?
+        else {
+            return None;
+        };
+        let generics = environment_generics.get(&environment_declaration.index())?;
+        if generics.len() != arguments.len() {
+            return None;
+        }
+        for (generic, argument) in generics.iter().zip(arguments) {
+            if let Some(binder) = generic.binder {
+                substitution.insert(binder, argument.clone());
+            }
+        }
+    }
+    // 合成函数形参 = lambda 形参 + 可选尾环境形参；模板与已具体化的实际类型统一。
+    let environment_params = usize::from(identity.environment.is_some());
+    if declaration.function.params.len() != params.len() + environment_params {
+        return None;
+    }
+    for (declared, actual) in declaration.function.params.iter().zip(params) {
+        if !unify_instantiation(&declared.ty, &actual.ty, &mut substitution) {
+            return None;
+        }
+    }
+    if !unify_instantiation(&declaration.function.return_type, return_type, &mut substitution) {
+        return None;
+    }
+    // owner + lambda 的每个 binder 都必须有具体代入；开放 binder 保持实例空缺。
+    declaration
+        .function
+        .generics
+        .iter()
+        .all(|generic| {
+            generic.binder.is_some_and(|binder| {
+                substitution.get(&binder).is_some_and(|bound| !has_unresolved_generic_arguments(bound))
+            })
+        })
+        .then_some(substitution)
 }
 
 /// 结构化统一：只认已冻结的 binder 与名义声明身份，不做短名匹配。
@@ -1167,7 +1297,9 @@ fn visit_module_calls(
     gate: Option<&crate::compiler::hir::reachability::HirMaterializationGate>,
     visit: &mut impl FnMut(CallableRequest<'_>),
 ) {
-    let permits = |function: &HirFunction| gate.is_none_or(|gate| gate.permits_declaration(function.declaration));
+    let permits = |function: &HirFunction| {
+        gate.is_none_or(|gate| gate.permits_declaration(function.declaration)) && declaration_body_is_closed(function)
+    };
     for function in &mut module.functions {
         if permits(function) {
             visit_block(&mut function.body, visit);
@@ -1223,6 +1355,21 @@ fn visit_module_calls(
     for submodule in &mut module.submodules {
         visit_module_calls(submodule, gate, visit);
     }
+}
+
+/// 声明级 callable 的签名是否闭合。
+///
+/// §4 的实例身份含完整泛型替换。开放 binder 只允许在克隆体上逐层结算；把实例写回
+/// 仍含开放 binder 的声明体，等于把单态化中间态冻进声明——该实例随后会被声明可达性
+/// 当作真实 callee 收进物化集，最终在链接期表现为「调用实例没有定义或显式导入合同」。
+fn declaration_body_is_closed(function: &HirFunction) -> bool {
+    if !function.generics.is_empty()
+        || function.params.iter().any(|param| has_unresolved_generic_arguments(&param.ty))
+        || has_unresolved_generic_arguments(&function.return_type)
+    {
+        return false;
+    }
+    true
 }
 
 fn visit_block(block: &mut HirBlock, visit: &mut impl FnMut(CallableRequest<'_>)) {
@@ -1301,7 +1448,12 @@ fn visit_expr(expr: &mut HirExpr, visit: &mut impl FnMut(CallableRequest<'_>)) {
             }
         }
         HirExprKind::Block(block) | HirExprKind::TryScope { body: block, .. } => visit_block(block, visit),
-        HirExprKind::Lambda { body, .. } => visit_block(body, visit),
+        HirExprKind::Lambda { params, return_type, body, hoisted, .. } => {
+            if let Some(identity) = hoisted.as_mut() {
+                visit(CallableRequest::Lambda { identity, params, return_type });
+            }
+            visit_block(body, visit);
+        }
         HirExprKind::If { condition, then_branch, else_branch, .. } => {
             visit_expr(condition, visit);
             visit_block(then_branch, visit);

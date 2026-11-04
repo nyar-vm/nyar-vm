@@ -139,11 +139,15 @@ pub fn link_reachable_dependency_mir_with_hir(
     // 消费模块自身发射的函数体里已冻结的调用目标同样是必须闭合的引用：
     // 出口可达链之外的声明体（如泛型种子声明）引用依赖侧铸造的开放克隆时，
     // 该实例必须随链接迁入消费模块，否则 `validate_static_call_resolution` 报 SMIR003。
+    // 闭包值（`LoadFunctionRef`）虽然不经静态 `Call` 边调用，其代码指针同样是必须
+    // 迁入的函数实例；漏掉该边会让 lambda 合成函数留在依赖模块，运行期间接调用无目标。
     for function in &consumer.functions {
         for block in &function.blocks {
             for instruction in &block.instructions {
-                if let MirOperation::Call { callee: MirOperand::Callable(callee), .. } = &instruction.kind {
-                    pending.push(*callee);
+                match &instruction.kind {
+                    MirOperation::Call { callee: MirOperand::Callable(callee), .. } => pending.push(*callee),
+                    MirOperation::LoadFunctionRef { instance, .. } => pending.push(*instance),
+                    _ => {}
                 }
             }
         }
@@ -155,8 +159,10 @@ pub fn link_reachable_dependency_mir_with_hir(
         if let Some((module, function)) = definitions.get(&instance) {
             for block in &function.blocks {
                 for instruction in &block.instructions {
-                    if let MirOperation::Call { callee: MirOperand::Callable(callee), .. } = &instruction.kind {
-                        pending.push(*callee);
+                    match &instruction.kind {
+                        MirOperation::Call { callee: MirOperand::Callable(callee), .. } => pending.push(*callee),
+                        MirOperation::LoadFunctionRef { instance, .. } => pending.push(*instance),
+                        _ => {}
                     }
                 }
             }

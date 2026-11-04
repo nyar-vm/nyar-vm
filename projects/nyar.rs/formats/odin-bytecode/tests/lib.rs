@@ -14,10 +14,10 @@ fn structural_opcodes_are_imm1() {
 fn bytecode_format_version_tracks_nyar_version() {
     assert_eq!(BYTECODE_FORMAT_VERSION, Odin_VERSION);
     // v1：新增 `Trap` 头码（0x0C）。v2：新增 `Integer64` 常量（0x12）。
-    // v3：新增 `CallIndirect` 头码（0x06）。
+    // v3：新增 `CallIndirect` 头码（0x06）。v4：`Function` 值改为两槽闭包对象。
     // `decode_module` 对非当前版本一律 `InvalidVersion` 拒绝，旧缓存产物按缓存未命中处理。
     // 递增格式必须同时抬 `NYAR_VERSION`。
-    assert_eq!(BYTECODE_FORMAT_VERSION, 3);
+    assert_eq!(BYTECODE_FORMAT_VERSION, 4);
 }
 
 #[test]

@@ -582,9 +582,17 @@ impl<'a> WasmMirLowerer<'a> {
                     self.store_scalar(output);
                 }
             }
-            MirInstructionKind::LoadFunctionRef { instance } => {
+            MirInstructionKind::LoadFunctionRef { instance, environment, captured } => {
                 // 函数值 = funcref table 槽位下标（i32 载体）。槽位只来自模块装配的
                 // 预扫描登记；未登记实例是计划事实缺失，结构化失败，禁止编码期补造 table 项。
+                // 捕获环境在 WASM 没有载体（P4 之前）：必须结构化失败，不得丢弃。
+                if environment.is_some() {
+                    return Err(format!(
+                        "WASM 闭包载体尚未落地：lambda instance `{instance:?}` 捕获 [{}]；function={}",
+                        captured.join(", "),
+                        self.mir_fn.symbol
+                    ));
+                }
                 let Some(slot) = self.function_value_table_slots.get(instance).copied()
                 else {
                     return Err(format!("WASM 函数值 `{instance:?}` 缺少已登记的 funcref table 槽位: {}", self.mir_fn.symbol));

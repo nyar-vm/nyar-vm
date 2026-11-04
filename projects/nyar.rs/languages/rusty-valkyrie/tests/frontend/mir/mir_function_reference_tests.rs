@@ -167,7 +167,7 @@ fn function_reference_argument_lowers_to_load_function_ref() {
         panic!("函数实参必须是 SSA 值，实际 {:?}", calls[0].1[2]);
     };
     match &defining_instruction(run, argument).kind {
-        MirOperation::LoadFunctionRef { instance: loaded } => {
+        MirOperation::LoadFunctionRef { instance: loaded, .. } => {
             assert_eq!(*loaded, instance, "MIR 只消费 HIR 冻结实例，不重新铸造");
         }
         other => panic!("函数实参必须由 LoadFunctionRef 定义，实际 {other:?}"),
@@ -197,7 +197,7 @@ fn generic_consumer_lowers_function_argument_and_indirect_call() {
         panic!("函数实参必须是 SSA 值");
     };
     match &defining_instruction(run, argument).kind {
-        MirOperation::LoadFunctionRef { instance: loaded } => assert_eq!(*loaded, instance),
+        MirOperation::LoadFunctionRef { instance: loaded, .. } => assert_eq!(*loaded, instance),
         other => panic!("期望 LoadFunctionRef，实际 {other:?}"),
     }
 
@@ -259,7 +259,7 @@ fn lambda_argument_lowers_to_synthesized_function() {
     else {
         panic!("lambda 实参必须是 SSA 值，实际 {:?}", calls[0].1[0]);
     };
-    let MirOperation::LoadFunctionRef { instance } = &defining_instruction(run, argument).kind
+    let MirOperation::LoadFunctionRef { instance, .. } = &defining_instruction(run, argument).kind
     else {
         panic!("lambda 实参必须由 LoadFunctionRef 定义");
     };
@@ -336,9 +336,9 @@ fn lambda_write_to_captured_binding_is_structured() {
         mir.diagnostics.iter().any(|diagnostic| matches!(
             diagnostic,
             MirDiagnostic::UnsupportedExpression { kind, .. }
-                if kind.contains("lambda instance") && kind.contains("captures [total]")
+                if kind.contains("lambda instance") && kind.contains("writes captured binding `total`")
         )),
-        "非空捕获必须结构化报错并点名实例与捕获名：{:?}",
+        "写捕获必须结构化报错并点名实例与捕获名（P3 前红线）：{:?}",
         mir.diagnostics
     );
     assert!(
@@ -369,7 +369,7 @@ fn unregistered_instance_rejected_by_validation() {
     for function in &mut mir.functions {
         for block in &mut function.blocks {
             for instruction in &mut block.instructions {
-                if let MirOperation::LoadFunctionRef { instance } = &mut instruction.kind {
+                if let MirOperation::LoadFunctionRef { instance, .. } = &mut instruction.kind {
                     *instance = forged;
                     replaced = true;
                 }

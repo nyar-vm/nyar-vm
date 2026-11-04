@@ -56,8 +56,12 @@ fn cmp_function() -> ExecutableFunction {
 ///
 /// `callee_type` 是函数值 SSA 的登记类型；fail-closed 测试用它注入缺事实形状。
 /// `referenced_instance` 是 `LoadFunctionRef` 引用的实例身份。
-fn main_function(callee_type: NyarType, referenced_instance: ItemInstanceId) -> ExecutableFunction {
-    let load = Instruction::from_kind(InstructionKind::LoadFunctionRef { instance: referenced_instance });
+fn main_function(callee_type: NyarType, referenced_instance: ItemInstanceId, environment: Option<Operand>, captured: Vec<String>) -> ExecutableFunction {
+    let load = Instruction::from_kind(InstructionKind::LoadFunctionRef {
+        instance: referenced_instance,
+        environment,
+        captured,
+    });
     let call = Instruction::from_kind(InstructionKind::Call {
         callee: Operand::Value(ValueRef(0)),
         arguments: vec![Operand::Constant(Constant::Int(3)), Operand::Constant(Constant::Int(5))],
@@ -96,11 +100,20 @@ fn cmp_instance() -> ItemInstanceId {
 }
 
 fn lower(callee_type: NyarType, referenced_instance: ItemInstanceId) -> nyar_emitter::Result<WasmBinaryModule> {
+    lower_with(callee_type, referenced_instance, None, Vec::new())
+}
+
+fn lower_with(
+    callee_type: NyarType,
+    referenced_instance: ItemInstanceId,
+    environment: Option<Operand>,
+    captured: Vec<String>,
+) -> nyar_emitter::Result<WasmBinaryModule> {
     let cmp_name = QualifiedName::new(vec![Identifier::new("cmp")]);
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([
         (cmp_name, cmp_function()),
-        (main_name.clone(), main_function(callee_type, referenced_instance)),
+        (main_name.clone(), main_function(callee_type, referenced_instance, environment, captured)),
     ]));
     plan.testing_module_name("function_value_exec").testing_entry_operation(main_name);
     let submission = FragmentSubmission::from_backend_plan(plan);
@@ -204,4 +217,19 @@ fn wasm_indirect_call_with_unregistered_signature_fails_closed() {
     let i64_ty = NyarType::Integer64 { signed: true };
     let error = lower(function_type(vec![i64_ty.clone(), i64_ty], I32), cmp_instance()).expect_err("未注册签名不得新造 typeidx");
     assert!(error.contains("functype"), "错误必须是结构化的类型注册缺失: {error}");
+}
+
+/// fail-closed：P4 之前 WASM 没有闭包环境载体，`environment: Some` 必须结构化失败，
+/// 并点名 lambda 实例与捕获名；无捕获路径的行为不受影响（见上方 happy path）。
+#[test]
+fn wasm_captured_lambda_environment_fails_closed() {
+    let error = lower_with(
+        function_type(vec![I32, I32], I32),
+        cmp_instance(),
+        Some(Operand::Constant(Constant::Int(0))),
+        vec!["result".to_string()],
+    )
+    .expect_err("WASM 捕获环境不得静默丢弃");
+    assert!(error.contains("闭包载体尚未落地"), "错误必须点名 WASM 尚未落地的闭包载体: {error}");
+    assert!(error.contains("result"), "错误必须点名被捕获的绑定: {error}");
 }

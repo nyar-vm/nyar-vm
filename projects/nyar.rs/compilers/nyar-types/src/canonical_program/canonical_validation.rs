@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use super::{
     canonical_mir::{
         CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalEffectKind, CanonicalMirError, CanonicalOperation,
-        CanonicalSemanticMir, CanonicalTerminator,
+        CanonicalOperand, CanonicalSemanticMir, CanonicalTerminator,
     },
     linked_program::{
         CanonicalPrimitiveType, CanonicalTypeKind, LinkedSemanticProgram, canonical_nominal_owner_matches, canonical_types_compatible,
@@ -379,7 +379,7 @@ impl CanonicalSemanticMir {
                             }
                             Vec::new()
                         }
-                        CanonicalOperation::LoadFunctionRef { instance } => {
+                        CanonicalOperation::LoadFunctionRef { instance, environment, .. } => {
                             // 函数作值只携带冻结实例身份：必须存在于已链接闭包，
                             // 结果必须恰好一个且为 Function 类型 kind；否则失败关闭。
                             if !linked.item_instances.contains_key(instance) {
@@ -397,7 +397,18 @@ impl CanonicalSemanticMir {
                                     CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
                                 });
                             }
-                            Vec::new()
+                            // 捕获环境是普通 SSA 聚合值，参与读集合；常量环境无 SSA 身份，
+                            // 视为操作数合同失败，不允许目标侧静默重造。
+                            match environment {
+                                Some(CanonicalOperand::Value(value)) => vec![*value],
+                                Some(CanonicalOperand::Constant(_)) => {
+                                    return Err(CanonicalMirError::FunctionEnvironmentNotValue {
+                                        function: *key,
+                                        instruction: instruction.id,
+                                    });
+                                }
+                                None => Vec::new(),
+                            }
                         }
                         CanonicalOperation::SumNew { nominal, variant, payload } => {
                             let Some(record) = linked.variants.get(&(*nominal, *variant))

@@ -767,7 +767,10 @@ impl MirBuilder {
                     return MirOperand::Constant(MirConstant::Unit);
                 };
                 let value = self.next_value(MirValueOrigin::Temporary);
-                self.push_instruction(MirOperation::LoadFunctionRef { instance }, vec![value]);
+                self.push_instruction(
+                    MirOperation::LoadFunctionRef { instance, environment: None, captured: Vec::new() },
+                    vec![value],
+                );
                 self.value_types.insert(value, ValkyrieType::Function(reference.signature.clone()));
                 MirOperand::Value(value)
             }

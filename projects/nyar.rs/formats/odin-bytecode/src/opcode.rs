@@ -19,8 +19,12 @@ pub const ODIN_MAGIC: u32 = 0x4E59_4152;
 /// v1 → v2：常量池新增 `Integer64`（0x12），旧版本模块由 `decode_module` 结构化拒绝。
 ///
 /// v2 → v3：新增 `CallIndirect` 头码（0x06），旧版本模块由 `decode_module` 结构化拒绝。
+///
+/// v3 → v4：`Function` 值载体从裸 `i32` 函数索引改为两槽闭包对象（槽 0 = code i32，
+/// 槽 1 = 捕获环境对象或 null）。指令编码不变，但函数值语义已变，旧缓存产物与新
+/// 产物混链会静默算错，因此版本递增、旧产物由 `decode_module` 结构化拒绝。
 #[allow(non_upper_case_globals)]
-pub const Odin_VERSION: u32 = 3;
+pub const Odin_VERSION: u32 = 4;
 
 /// Bytecode format contract version（S-W6 provenance / cache 键）。
 /// 与 [`Odin_VERSION`] 同步；格式破坏时两者一并递增。

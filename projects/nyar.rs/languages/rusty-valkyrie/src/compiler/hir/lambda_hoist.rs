@@ -12,7 +12,7 @@ use crate::compiler::types::{
     hir::{
         GenericType, HirBlock, HirCapture, HirDocumentation, HirExpr, HirExprKind, HirExtractorPattern, HirField, HirFunction,
         HirIdentifier, HirLambdaEnvironment, HirLambdaIdentity, HirMatchArm, HirModule, HirParam, HirPattern, HirStatement,
-        HirStatementKind, HirStruct, HirVisibility, ValkyrieType,
+        HirStatementKind, HirStruct, HirVisibility, HirWhereConstraint, ValkyrieType,
     },
 };
 
@@ -33,6 +33,13 @@ struct HoistContext {
     /// 当前 callable 的泛型参数：合成函数与环境聚合必须继承，否则捕获到的
     /// `T` 会变成自由泛型，泛型 owner 的每个实例都会共享同一环境类型。
     owner_generics: Vec<GenericType>,
+    /// 当前 callable 的 `where` 假设：lambda 是函数体词法域内的闭包，体内调用
+    /// 只能借助外层已成立的 witness 证据求解（如 `T: Equal & Hash` 才允许
+    /// `result.insert(value)`），合成函数不继承这组假设就会被误判为无解。
+    owner_where_constraints: Vec<HirWhereConstraint>,
+    /// 当前 impl 的冻结目标类型；捕获变量的 `SelfType` 必须落成具体名义类型，
+    /// 否则环境字段没有接收者类型，lambda 体内的成员调用无法解析。
+    owner_self_type: Option<ValkyrieType>,
     pending_functions: Vec<HirFunction>,
     pending_structs: Vec<HirStruct>,
 }
@@ -45,11 +52,26 @@ pub fn hoist_lambdas(module: &mut HirModule) {
         hoist_lambdas(submodule);
     }
 
-    let mut context =
-        HoistContext { namespace: module.name.parts().to_vec(), owner_generics: Vec::new(), pending_functions: Vec::new(), pending_structs: Vec::new() };
+    let mut context = HoistContext {
+        namespace: module.name.parts().to_vec(),
+        owner_generics: Vec::new(),
+        owner_where_constraints: Vec::new(),
+        owner_self_type: None,
+        pending_functions: Vec::new(),
+        pending_structs: Vec::new(),
+    };
+    // impl 头部的 `imply HashSet<T>` 泛型挂在**目标类型**上而不是 `implementation.generics`；
+    // 合成函数与环境必须继承目标声明的泛型，否则每个 owner 实例会共享同一个非泛型载体。
+    let struct_generics = module
+        .structs
+        .iter()
+        .map(|structure| (structure.name.clone(), structure.generics.clone()))
+        .collect::<BTreeMap<_, _>>();
 
     for function in &mut module.functions {
         context.owner_generics = function.generics.clone();
+        context.owner_where_constraints = function.where_constraints.clone();
+        context.owner_self_type = None;
         hoist_function(function, &mut context);
     }
     for structure in &mut module.structs {
@@ -57,15 +79,27 @@ pub fn hoist_lambdas(module: &mut HirModule) {
         let owner_generics = structure.generics.clone();
         for method in &mut structure.methods {
             context.owner_generics = merge_generics(&owner_generics, &method.generics);
+            context.owner_where_constraints = method.where_constraints.clone();
+            context.owner_self_type = Some(ValkyrieType::Named(class_name.clone()));
             let mut locals = locals_from_params(&method.params);
             locals.insert("self".to_string(), LocalBinding { ty: ValkyrieType::Named(class_name.clone()), is_mutable: true });
             hoist_function_body(method, &mut context, locals);
         }
     }
     for implementation in &mut module.impls {
-        let owner_generics = implementation.generics.clone();
+        let target_generics = match &implementation.target {
+            ValkyrieType::Apply(base, _) => match base.as_ref() {
+                ValkyrieType::Named(name) => struct_generics.get(name).cloned().unwrap_or_default(),
+                _ => Vec::new(),
+            },
+            ValkyrieType::Named(name) => struct_generics.get(name).cloned().unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        let impl_generics = merge_generics(&target_generics, &implementation.generics);
         for method in &mut implementation.methods {
-            context.owner_generics = merge_generics(&owner_generics, &method.generics);
+            context.owner_generics = merge_generics(&impl_generics, &method.generics);
+            context.owner_where_constraints = method.where_constraints.clone();
+            context.owner_self_type = Some(implementation.target.clone());
             let mut locals = locals_from_params(&method.params);
             locals.insert("self".to_string(), LocalBinding { ty: ValkyrieType::SelfType, is_mutable: true });
             hoist_function_body(method, &mut context, locals);
@@ -75,6 +109,8 @@ pub fn hoist_lambdas(module: &mut HirModule) {
         let owner_generics = trait_declaration.generics.clone();
         for method in trait_declaration.methods.iter_mut().chain(trait_declaration.default_methods.iter_mut()) {
             context.owner_generics = merge_generics(&owner_generics, &method.generics);
+            context.owner_where_constraints = method.where_constraints.clone();
+            context.owner_self_type = None;
             let mut locals = locals_from_params(&method.params);
             locals.insert("self".to_string(), LocalBinding { ty: ValkyrieType::SelfType, is_mutable: true });
             hoist_function_body(method, &mut context, locals);
@@ -82,6 +118,8 @@ pub fn hoist_lambdas(module: &mut HirModule) {
     }
     for singleton in &mut module.singletons {
         context.owner_generics.clear();
+        context.owner_where_constraints.clear();
+        context.owner_self_type = None;
         for method in &mut singleton.methods {
             hoist_function(method, &mut context);
         }
@@ -96,6 +134,8 @@ pub fn hoist_lambdas(module: &mut HirModule) {
         let owner_generics = widget.generics.clone();
         for method in &mut widget.methods {
             context.owner_generics = merge_generics(&owner_generics, &method.generics);
+            context.owner_where_constraints = method.where_constraints.clone();
+            context.owner_self_type = None;
             let mut locals = locals_from_params(&method.params);
             locals.insert("self".to_string(), LocalBinding { ty: ValkyrieType::SelfType, is_mutable: true });
             hoist_function_body(method, &mut context, locals);
@@ -103,10 +143,14 @@ pub fn hoist_lambdas(module: &mut HirModule) {
     }
     for type_function in &mut module.type_functions {
         context.owner_generics = type_function.generics.clone();
+        context.owner_where_constraints = type_function.where_constraints.clone();
+        context.owner_self_type = None;
         let mut locals = BTreeMap::new();
         hoist_block(&mut type_function.body, &mut context, &mut locals);
     }
     context.owner_generics.clear();
+    context.owner_where_constraints.clear();
+    context.owner_self_type = None;
     for statement in &mut module.statements {
         let mut locals = BTreeMap::new();
         hoist_statement(statement, &mut context, &mut locals);
@@ -333,7 +377,12 @@ fn hoist_lambda(
                 id: None,
                 name: environment_field_name(&capture.identifier.name),
                 doc: HirDocumentation::default(),
-                ty: capture.ty.clone(),
+                // 捕获变量的 `SelfType` 必须落成 impl 目标名义类型，环境字段才有
+                // 接收者类型，lambda 体内的成员调用才能在 HIR 解析期成立。
+                ty: match (&capture.ty, &context.owner_self_type) {
+                    (ValkyrieType::SelfType, Some(owner_self_type)) => owner_self_type.clone(),
+                    (ty, _) => ty.clone(),
+                },
                 visibility: HirVisibility::private(),
                 is_mutable: capture.is_write,
             })
@@ -376,7 +425,7 @@ fn hoist_lambda(
         doc: HirDocumentation::default(),
         annotations: Vec::new(),
         generics: synthetic_generics.clone(),
-        where_constraints: Vec::new(),
+        where_constraints: context.owner_where_constraints.clone(),
         params: synthetic_params,
         return_type: return_type.clone(),
         body: HirBlock { statements: Vec::new(), expr: None, span: body.span.clone() },
@@ -544,8 +593,12 @@ fn bind_lambda(
     };
 
     let mut body_shadowed = shadowed.clone();
-    bind_block(body, snapshot, updates, substitution.as_ref(), &mut body_shadowed);
-    updates.push((identity.function_name.clone(), body.clone()));
+    // 只在合成函数的副本上改写捕获名：lambda 表达式的原体仍嵌在外层函数里，
+    // 语义解析会用外层词法环境遍历它，改写成 `__nyar_env` 会让接收者脱离
+    // 该环境而无法求解。原体保持捕获名，合成函数拿到独立改写后的副本。
+    let mut bound_body = body.clone();
+    bind_block(&mut bound_body, snapshot, updates, substitution.as_ref(), &mut body_shadowed);
+    updates.push((identity.function_name.clone(), bound_body));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -607,6 +660,53 @@ fn bind_expr(
                 object: Box::new(HirExpr { kind: HirExprKind::Variable(environment), span }),
                 field,
                 field_id: Some(field_id),
+                tuple_index: None,
+            };
+        }
+        // parser 会把成员调用写成 `binding.member` 的多段路径而不是 `FieldAccess`。
+        // 捕获名出现在首段时同样必须改写为环境字段，否则合成函数里 `binding` 不在
+        // 局部环境，接收者类型无从求解，调用被判为无候选。
+        HirExprKind::Path(path) => {
+            let Some(head) = path.parts().first().cloned() else { return };
+            let head_name = head.to_string();
+            if shadowed.contains(head_name.as_str()) {
+                return;
+            }
+            let Some(substitution) = substitution else { return };
+            let Some((field, field_id)) = substitution.fields.get(head_name.as_str()) else { return };
+            let environment = substitution.environment.clone();
+            let field = field.clone();
+            let field_id = *field_id;
+            let span = expr.span.clone();
+            let parts = path.parts().to_vec();
+            let mut receiver = HirExpr {
+                kind: HirExprKind::FieldAccess {
+                    object: Box::new(HirExpr { kind: HirExprKind::Variable(environment), span: span.clone() }),
+                    field,
+                    field_id: Some(field_id),
+                    tuple_index: None,
+                },
+                span: span.clone(),
+            };
+            if parts.len() == 1 {
+                expr.kind = receiver.kind;
+                return;
+            }
+            for segment in &parts[1..parts.len() - 1] {
+                receiver = HirExpr {
+                    kind: HirExprKind::FieldAccess {
+                        object: Box::new(receiver),
+                        field: segment.clone(),
+                        field_id: None,
+                        tuple_index: None,
+                    },
+                    span: span.clone(),
+                };
+            }
+            expr.kind = HirExprKind::FieldAccess {
+                object: Box::new(receiver),
+                field: parts[parts.len() - 1].clone(),
+                field_id: None,
                 tuple_index: None,
             };
         }
@@ -803,6 +903,15 @@ fn collect_expr(expr: &HirExpr, analyzer: &mut CaptureAnalyzer, shadowed: &BTree
         HirExprKind::Variable(identifier) => {
             if !shadowed.contains(identifier.name.as_str()) {
                 analyzer.access_var(identifier.name.as_str(), false);
+            }
+        }
+        // parser 会把裸局部引用保留成单段 Path，把成员调用保留成多段 Path；
+        // 首段才是接收者绑定，末段是成员名。漏掉这两种形状会导致闭包不登记捕获，
+        // 合成函数里接收者无类型可解。
+        HirExprKind::Path(path) => {
+            let Some(head) = path.parts().first() else { return };
+            if !shadowed.contains(head.as_str()) {
+                analyzer.access_var(head.as_str(), false);
             }
         }
         HirExprKind::Assign { target, value } => {

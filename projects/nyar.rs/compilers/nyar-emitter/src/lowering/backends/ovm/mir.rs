@@ -523,9 +523,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.store_to_local(output);
                 }
             }
-            MirInstructionKind::LoadFunctionRef { instance } => {
+            MirInstructionKind::LoadFunctionRef { instance, environment, captured } => {
                 // 函数值 = 本模块 `module.functions` 的函数索引（i32）。跨模块/导入
                 // 实例没有稳定索引，只能结构化失败：不回落符号、不猜。
+                // 捕获环境由后续提交的 OVM 闭包载体承载；当前阶段必须结构化失败。
+                if environment.is_some() {
+                    return Err(format!(
+                        "OVM 闭包载体尚未落地：lambda instance={instance:?} captured=[{}]（symbol=`{}`）",
+                        captured.join(", "),
+                        self.mir_fn.symbol
+                    ));
+                }
                 let Some(index) = self.function_index_by_instance.get(instance).copied()
                 else {
                     return Err(format!(
@@ -824,8 +832,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         self.mir_fn.symbol
                     ));
                 }
-                // 先压实参、再压 callee：`CallIndirect` 只弹 callee，实参留在栈上
-                // 由新帧按 arity 消费（Odin 没有 swap，顺序错了取不出来）。
+                // 先压实参、最后压 callee：`CallIndirect` 只弹 callee，实参留在栈上。
+                // 环境槽由后续提交的闭包载体承载，当前阶段的 argc 只数可见实参。
                 for (index, argument) in arguments.iter().enumerate() {
                     let param_ty = signature.params.get(index);
                     match argument {
@@ -1641,6 +1649,13 @@ impl BytecodeEmitter<'_> {
     fn emit_const_bool(&mut self, value: bool) {
         let index = self.constants.len() as i32 + self.constants_base;
         self.constants.push(OdinConstant::Boolean(value));
+        self.emit_imm1(OdinHeadCode::Constant, index);
+    }
+
+    /// 压入 `null`：无捕获闭包的环境槽需要显式空引用，不能用 `i32 0` 冒充。
+    fn emit_const_null(&mut self) {
+        let index = self.constants.len() as i32 + self.constants_base;
+        self.constants.push(OdinConstant::Null);
         self.emit_imm1(OdinHeadCode::Constant, index);
     }
 }

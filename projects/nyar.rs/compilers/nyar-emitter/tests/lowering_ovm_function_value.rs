@@ -78,7 +78,14 @@ fn caller_function(instance: ItemInstanceId) -> ExecutableFunction {
             label: "entry".to_string(),
             parameters: Vec::new(),
             instructions: vec![
-                Instruction { results: vec![ValueRef(0)], ..Instruction::from_kind(InstructionKind::LoadFunctionRef { instance }) },
+                Instruction {
+                    results: vec![ValueRef(0)],
+                    ..Instruction::from_kind(InstructionKind::LoadFunctionRef {
+                        instance,
+                        environment: None,
+                        captured: Vec::new(),
+                    })
+                },
                 Instruction {
                     results: vec![ValueRef(1)],
                     ..Instruction::from_kind(InstructionKind::Call { callee: Operand::Value(ValueRef(0)), arguments: Vec::new() })

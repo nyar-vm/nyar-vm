@@ -19,8 +19,9 @@ use crate::compiler::{
     emitter::pipeline::{CompilerHostProviderBinding, host_provider_root_declarations},
     syntax::oak::ParseError,
     types::hir::{
-        HirBlock, HirExpr, HirExprKind, HirFunction, HirLiteral, HirMatchArm, HirModule, HirPattern, HirResolvedCall, HirStatement,
-        HirStatementKind, HirStringLiteral, HirWhereConstraint, ValkyrieType, parse_export_spec_from_annotations, resolve_attribute_id,
+        HirBlock, HirExpr, HirExprKind, HirFunction, HirInstantiatedCallable, HirLiteral, HirMatchArm, HirModule, HirPattern,
+        HirResolvedCall, HirStatement, HirStatementKind, HirStringLiteral, HirWhereConstraint, ValkyrieType,
+        parse_export_spec_from_annotations, resolve_attribute_id,
     },
 };
 
@@ -28,7 +29,8 @@ use crate::compiler::{
 ///
 /// `reachable_declarations` 是泛型实例化与 MIR 发射的 callable 声明门禁；
 /// `reachable_instances` 在单态化固定点之后由 [`HirMaterializationGate::finalize_instances`]
-/// 收口，覆盖铸造实例与 witness 消解后的 impl 实例。
+/// 收口，覆盖铸造实例与 witness 消解后的 impl 实例；同一固定点还要把「实例已达」的
+/// callable 声明补进声明集，使只经实例边被调用的实现与其顶层 callee 不被裁掉。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HirMaterializationGate {
     reachable_declarations: BTreeSet<ItemId>,
@@ -79,11 +81,32 @@ impl HirMaterializationGate {
         for module in modules {
             collect_instantiated_instances(module, self);
         }
-        // 实例集只增不减，按固定点收口。trait 默认体克隆到实现类型后，体内的
-        // 派发是逐层回填的（默认体 → impl 成员 → 其体内算子成员），一趟扫不完；
-        // 每轮把「声明可达或实例已可达」的 callable 体内已回填 callee 收进集合。
+        // 声明集与实例集只增不减，按同一固定点收口。
+        //
+        // 实例集：trait 默认体克隆到实现类型后，体内派发逐层回填（默认体 → impl 成员
+        // → 其体内算子成员），一趟扫不完；每轮把「声明可达或实例已可达」的 callable
+        // 体内已回填 callee 收进实例集。
+        //
+        // 声明集：witness/单态化副本把调用回填成实例身份时**不回填声明身份**，所以
+        // 实例已达的 callable 声明必须视为闭包根，再沿声明 callee 边补全。否则经该
+        // 实例边被调用的顶层实现不在声明集内，MIR 发射只按声明放行时会把整段实现裁掉，
+        // 最终在链接期报「调用实例 ... 没有定义或显式导入合同」。
         loop {
-            let before = self.reachable_instances.len();
+            let declarations_before = self.reachable_declarations.len();
+            let instances_before = self.reachable_instances.len();
+            let mut grower = ReachabilityWalker::growing();
+            for declaration in &self.reachable_declarations {
+                grower.mark(Some(*declaration));
+            }
+            for function in &callables {
+                if function.instance.is_some_and(|instance| self.permits_instance(Some(instance))) {
+                    grower.mark(function.declaration);
+                }
+            }
+            grower.index_callables(&callables);
+            grower.run();
+            self.reachable_declarations.extend(grower.declarations);
+
             for function in &callables {
                 if self.permits_declaration(function.declaration)
                     && let Some(instance) = function.instance
@@ -101,7 +124,7 @@ impl HirMaterializationGate {
                 collect_instantiated_body_instances(module, self, &mut walker);
             }
             self.reachable_instances.extend(walker.instances);
-            if self.reachable_instances.len() == before {
+            if self.reachable_declarations.len() == declarations_before && self.reachable_instances.len() == instances_before {
                 break;
             }
         }
@@ -176,10 +199,30 @@ fn collect_module_callables<'a>(module: &'a HirModule, out: &mut Vec<&'a HirFunc
     }
 }
 
-/// 铸造副本的实例登记：声明被允许即实例被允许。
+/// 铸造副本的实例登记：声明被允许且签名闭合时，实例才被允许。
+///
+/// §4 的实例身份含完整泛型替换；代入后仍指向开放 binder 的克隆体只是单态化固定点
+/// 的中间态，既不能发射 MIR，也不能进入依赖组导入清单——否则链接期会出现调用方
+/// （开放克隆）引用一个既无定义也无导入合同的实例。只有签名、返回与 owner 全部
+/// 落到具体类型的实例才放行。
 fn collect_instantiated_instances(module: &HirModule, gate: &mut HirMaterializationGate) {
     for callable in &module.instantiated_callables {
+        if std::env::var("INSTDEBUG").is_ok()
+            && callable.function.name.as_str() == "length"
+            && callable.function.instance.is_some_and(|i| (380..=500).contains(&i.index()))
+        {
+            eprintln!(
+                "CLOSED-DEBUG inst={:?} owner={:?} params={:?} ret={:?} closed={} decl_permit={}",
+                callable.function.instance.map(|i| i.index()),
+                callable.owner_type,
+                callable.function.params.iter().map(|p| &p.ty).collect::<Vec<_>>(),
+                callable.function.return_type,
+                instantiated_callable_is_closed(callable),
+                gate.permits_declaration(callable.function.declaration),
+            );
+        }
         if gate.permits_declaration(callable.function.declaration)
+            && instantiated_callable_is_closed(callable)
             && let Some(instance) = callable.function.instance
         {
             gate.reachable_instances.insert(instance);
@@ -188,6 +231,18 @@ fn collect_instantiated_instances(module: &HirModule, gate: &mut HirMaterializat
     for submodule in &module.submodules {
         collect_instantiated_instances(submodule, gate);
     }
+}
+
+/// 实例签名是否仍含开放 binder。
+fn instantiated_callable_is_closed(callable: &HirInstantiatedCallable) -> bool {
+    use crate::compiler::hir::overload::has_unresolved_generic_arguments;
+    let function = &callable.function;
+    if function.params.iter().any(|param| has_unresolved_generic_arguments(&param.ty))
+        || has_unresolved_generic_arguments(&function.return_type)
+    {
+        return false;
+    }
+    callable.owner_type.as_ref().is_none_or(|owner| !has_unresolved_generic_arguments(owner))
 }
 
 /// 可达声明的铸造克隆体同样携带物化事实：witness 消解到 impl 成员的实例只回填在

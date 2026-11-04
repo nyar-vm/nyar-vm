@@ -210,6 +210,10 @@ pub enum InstructionKind {
     LoadFunctionRef {
         /// 编译器冻结的可调用实例身份。
         instance: ItemInstanceId,
+        /// 闭包捕获环境的聚合值；无捕获 lambda 与具名函数引用均为 `None`。
+        environment: Option<Operand>,
+        /// 被捕获名清单，仅用于目标侧失败诊断。
+        captured: Vec<String>,
     },
     /// Construct a named aggregate / struct instance.
     StructNew {

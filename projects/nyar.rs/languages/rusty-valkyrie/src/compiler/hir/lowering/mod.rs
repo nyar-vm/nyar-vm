@@ -79,7 +79,9 @@ pub(crate) use generic_binders::{
     register_function_declarations,
 };
 
-pub(crate) use generic_instantiation::{instantiate_generic_callables, substitute_impl_self_declarations, unify_instantiation};
+pub(crate) use generic_instantiation::{
+    GenericInstantiationState, instantiate_generic_callables, substitute_impl_self_declarations, unify_instantiation,
+};
 #[doc(hidden)]
 pub use generic_instantiation::{MAX_FIXPOINT_ROUNDS, MAX_GENERIC_INSTANCES};
 
@@ -450,8 +452,33 @@ impl ValkyrieCompiler {
         // Resolver 绑定先给出泛型 provider 的播种映射：合同调用点的具体代入
         // 在固定点内同时铸造 provider 闭合副本，绑定配对才有同签名实现可指。
         let provider_seeds = crate::compiler::emitter::pipeline::host_provider_instantiation_seeds(&hir_groups, host_bindings)?;
-        instantiate_generic_callables(&mut hir_groups, Some(&gate), &provider_seeds)?;
-        gate.finalize_instances(&hir_groups);
+        // 声明集与实例集在单态化固定点内同口径收口：物化门在最终固定点才把
+        // 「实例已达」的 callable 声明补进声明集（witness/单态化副本不回填声明身份），
+        // 这些声明必须先回到泛型实例化再降 MIR。否则其体内调用点保留 `instance: None`，
+        // MIR 只会退化成 Unit 占位，直到链接期或合同校验才失败。
+        // 两个集合只增不减，按同一固定点迭代至稳定。
+        let mut rounds = 0usize;
+        let mut instantiation_state = generic_instantiation::GenericInstantiationState::default();
+        loop {
+            let declarations_before = gate.reachable_declarations().len();
+            let instances_before = gate.reachable_instances().len();
+            instantiate_generic_callables(&mut hir_groups, Some(&gate), &provider_seeds, &mut instantiation_state)?;
+            gate.finalize_instances(&hir_groups);
+            rounds += 1;
+            if gate.reachable_declarations().len() == declarations_before && gate.reachable_instances().len() == instances_before {
+                break;
+            }
+            if rounds >= MAX_FIXPOINT_ROUNDS {
+                return Err(HirError::GenericInstantiationLimitExceeded {
+                    kind: errors::GenericInstantiationLimitKind::Rounds,
+                    limit: MAX_FIXPOINT_ROUNDS,
+                    actual: rounds,
+                    top_growth: Vec::new(),
+                    source: plan_source(),
+                    span: plan_span(),
+                });
+            }
+        }
         for hir in &hir_groups {
             validate_extractor_patterns(hir)?;
             self.validate_hir_semantic_contract(hir)?;

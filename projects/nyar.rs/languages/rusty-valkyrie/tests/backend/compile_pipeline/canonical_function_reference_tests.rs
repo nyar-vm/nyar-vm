@@ -87,7 +87,7 @@ fn function_reference_survives_canonical_with_frozen_identity_and_function_type(
         .values()
         .flat_map(|block| &block.instructions)
         .find_map(|instruction| match &instruction.operation {
-            CanonicalOperation::LoadFunctionRef { instance } => Some((*instance, instruction.results.clone())),
+            CanonicalOperation::LoadFunctionRef { instance, .. } => Some((*instance, instruction.results.clone())),
             _ => None,
         })
         .expect("canonical 必须 1:1 保留 LoadFunctionRef");
@@ -123,7 +123,7 @@ fn generic_consumer_reaches_canonical_with_indirect_invoke() {
         .values()
         .flat_map(|block| &block.instructions)
         .find_map(|instruction| match &instruction.operation {
-            CanonicalOperation::LoadFunctionRef { instance } => Some(*instance),
+            CanonicalOperation::LoadFunctionRef { instance, .. } => Some(*instance),
             _ => None,
         })
         .expect("canonical 必须保留 LoadFunctionRef");
@@ -160,7 +160,7 @@ fn unlinked_function_ref_instance_fails_closed_in_canonical() {
     for function in &mut mir.functions {
         for block in &mut function.blocks {
             for instruction in &mut block.instructions {
-                if let MirOperation::LoadFunctionRef { instance } = &mut instruction.kind {
+                if let MirOperation::LoadFunctionRef { instance, .. } = &mut instruction.kind {
                     *instance = forged;
                     replaced = true;
                 }

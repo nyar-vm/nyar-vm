@@ -124,6 +124,9 @@ impl MirLowerer {
             .flat_map(|block| block.instructions.iter())
             .filter_map(|instruction| match &instruction.kind {
                 MirOperation::Call { callee: MirOperand::Callable(instance), .. } => Some(*instance),
+                // 函数作值（闭包代码指针）同样是宿主导入的真实引用，不能因不是静态
+                // `Call` 就丢掉其外部合同。
+                MirOperation::LoadFunctionRef { instance, .. } => Some(*instance),
                 _ => None,
             })
             .collect::<std::collections::BTreeSet<_>>();

@@ -13,7 +13,7 @@ GC, and JIT must not redefine opcodes or section layout elsewhere.
 | Constant                  | Meaning                                                                  |
 |:--------------------------|:-------------------------------------------------------------------------|
 | `ODIN_MAGIC`              | File magic `NYAR` (big-endian `0x4E594152`)                              |
-| `Odin_VERSION`            | Current format version (`3`)                                             |
+| `Odin_VERSION`            | Current format version (`4`)                                             |
 | `BYTECODE_FORMAT_VERSION` | Provenance / cache key alias, kept in sync with `Odin_VERSION`           |
 | `OBSOLETE_CALL_NATIVE`    | Retired v1 opcode (`0xD1`); v2 loaders must reject modules containing it |
 

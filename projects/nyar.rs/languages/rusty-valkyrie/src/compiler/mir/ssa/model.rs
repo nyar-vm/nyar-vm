@@ -643,6 +643,10 @@ pub enum MirOperation {
     LoadFunctionRef {
         /// HIR 冻结的 callable 实例身份。
         instance: ItemInstanceId,
+        /// 闭包捕获环境的聚合值；无捕获 lambda 与具名函数引用均为 `None`。
+        environment: Option<MirOperand>,
+        /// 被捕获名清单（顺序与 `HirCapture` 一致），仅供目标侧失败诊断使用。
+        captured: Vec<String>,
     },
     /// 值拷贝。
     Copy {

@@ -438,7 +438,7 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                     }
                 }
             }
-            if let MirOperation::LoadFunctionRef { instance } = &instruction.kind {
+            if let MirOperation::LoadFunctionRef { instance, environment, .. } = &instruction.kind {
                 // 函数作值只携带 HIR 冻结的实例身份：必须已登记在 Compiler identity 表，
                 // 缺失即结构化失败，禁止下游按短名回查。
                 if !module.contains_callable_instance(*instance) {
@@ -447,6 +447,16 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                         location.clone(),
                         "function reference identity is absent from the Compiler identity table".to_string(),
                     ));
+                }
+                // 环境聚合必须是已定义 SSA 值，禁止目标侧按常量/短名重造。
+                if let Some(environment) = environment {
+                    if value_type(environment).is_none() {
+                        return Err(error(
+                            "SMIR003",
+                            location.clone(),
+                            "function reference environment must be a defined SSA value".to_string(),
+                        ));
+                    }
                 }
             }
             if let MirOperation::Call { callee, arguments } = &instruction.kind {

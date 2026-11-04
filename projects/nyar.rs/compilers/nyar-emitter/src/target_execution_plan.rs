@@ -987,6 +987,13 @@ fn lower_operation(
     callees: &mut Vec<ItemInstanceId>,
 ) -> Result<InstructionKind> {
     let value = |id: nyar_types::MirValueId| Operand::Value(ValueRef(id.index()));
+    // 捕获环境必须携带 SSA 身份；常量环境没有身份，禁止目标侧重造。
+    let operand = |operand: &nyar_types::CanonicalOperand| -> Result<Operand> {
+        match operand {
+            nyar_types::CanonicalOperand::Value(id) => Ok(Operand::Value(ValueRef(id.index()))),
+            nyar_types::CanonicalOperand::Constant(_) => Err("闭包捕获环境必须是已定义的 SSA 值".to_string()),
+        }
+    };
     let layout_for_type = |type_id: nyar_types::TypeId, operation: &str| {
         program
             .linked
@@ -1017,12 +1024,16 @@ fn lower_operation(
         // 具名函数作值：实例身份由前端冻结，目标层只校验链接事实并保留身份。
         // 被作值引用的函数不出现在任何直接调用边上，可达性必须由本指令登记，
         // 否则单态化后的实现函数体会被可执行闭包漏掉。
-        CanonicalOperation::LoadFunctionRef { instance } => {
+        CanonicalOperation::LoadFunctionRef { instance, environment, captured } => {
             if !program.linked.item_instances.contains_key(instance) {
                 return Err(format!("函数值 identity `{instance:?}` 未解析"));
             }
             callees.push(*instance);
-            InstructionKind::LoadFunctionRef { instance: *instance }
+            InstructionKind::LoadFunctionRef {
+                instance: *instance,
+                environment: environment.as_ref().map(|environment| operand(environment)).transpose()?,
+                captured: captured.clone(),
+            }
         }
         CanonicalOperation::Copy { source } => InstructionKind::Copy { source: value(*source) },
         CanonicalOperation::StoreVar { name, value: stored, ty } => {

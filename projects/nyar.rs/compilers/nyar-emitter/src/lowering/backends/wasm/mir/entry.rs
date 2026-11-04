@@ -297,7 +297,15 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     for (_, mir_fn) in mir_operations.iter() {
         for block in &mir_fn.blocks {
             for instruction in &block.instructions {
-                if let MirInstructionKind::LoadFunctionRef { instance } = &instruction.kind {
+                if let MirInstructionKind::LoadFunctionRef { instance, environment, captured } = &instruction.kind {
+                    // WASM 在 P4 之前保持 i32 code 槽，没有闭包环境载体：捕获环境必须
+                    // 结构化失败并点名 lambda 实例与捕获名，不得静默丢弃。
+                    if environment.is_some() {
+                        return Err(format!(
+                            "WASM 闭包载体尚未落地：lambda instance `{instance:?}` 捕获 [{}]；WASM 当前只支持无捕获函数值",
+                            captured.join(", ")
+                        ));
+                    }
                     function_value_instances.insert(*instance);
                 }
             }

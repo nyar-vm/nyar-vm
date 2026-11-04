@@ -1106,6 +1106,15 @@ impl JvmMethodEmitter<'_> {
                     None => self.instructions.push(JvmInstruction::Pop),
                 }
             }
+            // 闭包捕获环境在 JVM 没有载体：必须点名 lambda 实例与捕获名结构化失败，
+            // 不得丢弃环境、把捕获提升为模块全局或用直调替代。
+            InstructionKind::LoadFunctionRef { instance, environment: Some(_), captured } => {
+                return Err(format!(
+                    "JVM 目标没有闭包载体：lambda instance `{instance:?}` 捕获 [{}]；function={}",
+                    captured.join(", "),
+                    self.function.symbol
+                ));
+            }
             other => {
                 return Err(format!("JVM 最小 lowering 尚不支持指令 `{}`：function={}", instruction_kind_name(other), self.function.symbol));
             }

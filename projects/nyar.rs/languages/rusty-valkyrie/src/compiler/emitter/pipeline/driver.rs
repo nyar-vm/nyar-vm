@@ -13,6 +13,12 @@ pub fn compile_linked_semantic_mir(module: &MirModule) -> StageResult<CompiledPr
         let message = format!("Semantic MIR 合同失败: function={}, location={}, detail={}", error.function, error.location, error.detail);
         return fail_stage(CompileStage::ValidateMir, error.code, &module.name, message);
     }
+    // 合同校验通过但 lowering 仍冻结了结构化诊断（如本阶段尚未支持的写捕获）：
+    // 这些构造已被替换成占位 Unit，不能当作成功载荷继续生产。
+    if let Some(diagnostic) = module.diagnostics.first() {
+        let error = crate::compiler::mir::validation::MirValidationError::DiagnosticRejected { diagnostic: diagnostic.clone() };
+        return fail_stage(CompileStage::ValidateMir, error.code(), &module.name, error.to_string());
+    }
     let canonical = canonical_program_from_semantic_mir(module)?;
     let representation = CanonicalRepresentationPlanner.plan(&canonical)?;
     match CompiledProgram::new(canonical, representation) {

@@ -93,6 +93,10 @@ pub enum CanonicalOperation {
     LoadFunctionRef {
         /// 已冻结的 callable 实例身份。
         instance: ItemInstanceId,
+        /// 闭包捕获环境的聚合值；无捕获 lambda 与具名函数引用均为 `None`。
+        environment: Option<CanonicalOperand>,
+        /// 被捕获名清单，仅用于目标侧失败诊断。
+        captured: Vec<String>,
     },
     /// 构造已解析的 sum variant。
     SumNew {
@@ -698,6 +702,13 @@ pub enum CanonicalMirError {
         function: ItemInstanceId,
         /// 合同不一致的 variant 身份。
         variant: VariantId,
+    },
+    /// 闭包捕获环境不是 SSA 值（常量没有身份，目标侧禁止按常量重造环境）。
+    FunctionEnvironmentNotValue {
+        /// 所在函数实例。
+        function: ItemInstanceId,
+        /// 违反合同的指令。
+        instruction: InstructionId,
     },
     /// 结构操作的结果类型与其声明合同不一致。
     OperationResultTypeMismatch {

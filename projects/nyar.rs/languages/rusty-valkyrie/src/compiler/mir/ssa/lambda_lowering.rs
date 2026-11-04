@@ -37,20 +37,24 @@ impl MirBuilder {
             return MirOperand::Constant(MirConstant::Unit);
         };
 
-        if !captures.is_empty() {
-            let instance = hoisted.and_then(|identity| identity.instance).map(|instance| instance.index().to_string());
-            let instance = instance.unwrap_or_else(|| "<unregistered>".to_string());
-            let names = captures.iter().map(|capture| capture.identifier.name.to_string()).collect::<Vec<_>>().join(", ");
+        let instance = hoisted.and_then(|identity| identity.instance);
+        let instance_label = instance.map(|instance| instance.index().to_string()).unwrap_or_else(|| "<unregistered>".to_string());
+        let captured_names = captures.iter().map(|capture| capture.identifier.name.to_string()).collect::<Vec<_>>();
+
+        if let Some(capture) = captures.iter().find(|capture| capture.is_write) {
+            // P3 之前可变捕获必须保持结构化失败：写入捕获需要 cell 物化，
+            // 只读环境聚合不能把写入静默丢弃。
             self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
                 span: span.clone(),
                 kind: format!(
-                    "lambda instance `{instance}` captures [{names}]; capture environments are not represented in MIR for this target"
+                    "lambda instance `{instance_label}` writes captured binding `{}`; mutable capture cells are not available in this phase",
+                    capture.identifier.name
                 ),
             });
             return MirOperand::Constant(MirConstant::Unit);
         }
 
-        let Some(instance) = hoisted.and_then(|identity| identity.instance) else {
+        let Some(instance) = instance else {
             self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
                 span: span.clone(),
                 kind: "lambda synthetic function identity is missing from HIR; MIR must not mint it".to_string(),
@@ -58,8 +62,93 @@ impl MirBuilder {
             return MirOperand::Constant(MirConstant::Unit);
         };
 
+        let environment = if captures.is_empty() {
+            None
+        } else {
+            let Some(identity) = hoisted else {
+                self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
+                    span: span.clone(),
+                    kind: format!("lambda instance `{instance_label}` captures [{}] but its HIR identity is missing", captured_names.join(", ")),
+                });
+                return MirOperand::Constant(MirConstant::Unit);
+            };
+            let Some(environment) = identity.environment.as_ref() else {
+                self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
+                    span: span.clone(),
+                    kind: format!(
+                        "lambda instance `{instance_label}` captures [{}] but no capture environment was hoisted",
+                        captured_names.join(", ")
+                    ),
+                });
+                return MirOperand::Constant(MirConstant::Unit);
+            };
+            let Some(ty) = environment.ty.clone() else {
+                self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
+                    span: span.clone(),
+                    kind: format!(
+                        "lambda instance `{instance_label}` capture environment `{}` has no frozen nominal type",
+                        environment.struct_name
+                    ),
+                });
+                return MirOperand::Constant(MirConstant::Unit);
+            };
+            if environment.field_ids.len() != captures.len() {
+                self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
+                    span: span.clone(),
+                    kind: format!(
+                        "lambda instance `{instance_label}` capture environment `{}` freezes {} field(s) for {} capture(s)",
+                        environment.struct_name,
+                        environment.field_ids.len(),
+                        captures.len()
+                    ),
+                });
+                return MirOperand::Constant(MirConstant::Unit);
+            }
+            let Some(declaration) = ty.nominal_declaration() else {
+                self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
+                    span: span.clone(),
+                    kind: format!(
+                        "lambda instance `{instance_label}` capture environment `{}` type is not nominal: {ty:?}",
+                        environment.struct_name
+                    ),
+                });
+                return MirOperand::Constant(MirConstant::Unit);
+            };
+            let Some(nominal) = self.nominal_identity_for_declaration(declaration) else {
+                self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
+                    span: span.clone(),
+                    kind: format!(
+                        "lambda instance `{instance_label}` capture environment `{}` has no nominal identity in MIR",
+                        environment.struct_name
+                    ),
+                });
+                return MirOperand::Constant(MirConstant::Unit);
+            };
+            let mut fields = Vec::with_capacity(captures.len());
+            for (capture, field_id) in captures.iter().zip(environment.field_ids.iter()) {
+                let Some(operand) = self.bindings.get(capture.identifier.name.as_str()).cloned() else {
+                    self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
+                        span: span.clone(),
+                        kind: format!(
+                            "lambda instance `{instance_label}` cannot read captured binding `{}` at its creation point",
+                            capture.identifier.name
+                        ),
+                    });
+                    return MirOperand::Constant(MirConstant::Unit);
+                };
+                fields.push((*field_id, operand));
+            }
+            let value = self.next_value(MirValueOrigin::Temporary);
+            self.push_instruction(MirOperation::StructNew { nominal, fields }, vec![value]);
+            self.value_types.insert(value, ty);
+            Some(MirOperand::Value(value))
+        };
+
         let value = self.next_value(MirValueOrigin::Temporary);
-        self.push_instruction(MirOperation::LoadFunctionRef { instance }, vec![value]);
+        self.push_instruction(
+            MirOperation::LoadFunctionRef { instance, environment, captured: captured_names },
+            vec![value],
+        );
         self.value_types.insert(value, ValkyrieType::Function(Box::new(signature)));
         MirOperand::Value(value)
     }

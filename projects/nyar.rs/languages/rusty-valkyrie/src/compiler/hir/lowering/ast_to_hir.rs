@@ -99,7 +99,13 @@ impl AstToHir {
         // 声明身份已冻结、实例留空，交由随后的单态化固定点自然铸造。
         crate::compiler::hir::lowering::collection_init::transform_collection_literals(&mut hir)?;
         resolve_hir_calls(&mut hir);
-        crate::compiler::hir::lowering::instantiate_generic_callables(std::slice::from_mut(&mut hir), None, &std::collections::BTreeMap::new())?;
+        let mut instantiation_state = crate::compiler::hir::lowering::GenericInstantiationState::default();
+        crate::compiler::hir::lowering::instantiate_generic_callables(
+            std::slice::from_mut(&mut hir),
+            None,
+            &std::collections::BTreeMap::new(),
+            &mut instantiation_state,
+        )?;
         validate_extractor_patterns(&hir)?;
         Ok(hir)
     }

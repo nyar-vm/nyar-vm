@@ -472,3 +472,72 @@ fn super_trait_evidence_closes_nested_impl_member_instance() {
     let owners = inners.iter().map(|callable| format!("{:?}", callable.owner_type)).collect::<Vec<_>>();
     assert!(closed, "至少一个 `inner` 实例的 owner 必须闭合: {owners:?}");
 }
+
+/// witness 实例边可达的 impl 成员体内调用的顶层实现：声明身份不在可达集，
+/// 只有实例身份被可达调用点引用。顶层函数也必须按同一判据放行，否则整段实现
+/// 被裁掉，链接期报「调用实例 ... 没有定义或显式导入合同」。
+/// 这是 `HashMap<utf8,V>::insert` → `utf8: Hash::hash` → `hash_utf8` 的骨架复现。
+const WITNESS_REACHED_TOP_LEVEL_IMPLEMENTATION: &str = r#"
+namespace app;
+
+trait Hasher {
+    micro hash(self) -> i64
+}
+
+class Thing { value: i64 }
+
+imply Thing {
+    micro new(value: i64): Self {
+        return Thing { value: value }
+    }
+}
+
+micro digest(value: i64) -> i64 {
+    return value
+}
+
+imply Thing: Hasher {
+    micro hash(self) -> i64 {
+        return digest(self.value)
+    }
+}
+
+class Holder<T> { _value: T }
+
+imply Holder<T> {
+    micro new(value: T): Self {
+        return Holder { _value: value }
+    }
+
+    micro peek(self) -> i64
+        where T: Hasher
+    {
+        return self._value.hash()
+    }
+}
+
+[export]
+micro entry() -> i64 {
+    let seed: i64 = 7
+    let holder: Holder<Thing> = Holder.new(Thing.new(seed))
+    return holder.peek()
+}
+"#;
+
+#[test]
+fn witness_reached_top_level_implementation_is_not_gated_out() {
+    let groups = vec![
+        core_group(),
+        CompilerSourceGroup::single_source("app", "app", WITNESS_REACHED_TOP_LEVEL_IMPLEMENTATION)
+            .as_entry()
+            .with_direct_dependencies(vec!["core".into()]),
+    ];
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], TEST_ARCH)
+        .expect("witness 实例边可达的顶层实现 `digest` 必须进入 MIR 并闭合链接");
+    let canonical = program.canonical();
+    assert!(
+        canonical.linked.callable_names.values().any(|name| name.parts().last().is_some_and(|part| part.as_str() == "digest")),
+        "`digest` 必须被物化；否则 `hash` 体内的调用会在链接期悬空"
+    );
+}

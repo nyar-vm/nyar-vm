@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallee, CanonicalConstant, CanonicalFunction,
-    CanonicalInstruction, CanonicalOperation, CanonicalTerminator, CanonicalWitness, FieldId, FieldRecord, ItemInstanceId, MirValueId,
+    CanonicalInstruction, CanonicalOperand, CanonicalOperation, CanonicalTerminator, CanonicalWitness, FieldId, FieldRecord, ItemInstanceId, MirValueId,
     NominalInstanceId, StructuredDiagnosticSet, TypeId, VariantId, canonical_program::CanonicalEffectKind,
 };
 
@@ -307,7 +307,11 @@ fn lower_operation(
         }
         MirOperation::LoadConstant { constant, .. } => Ok(CanonicalOperation::LoadConstant { constant: lower_constant(constant)? }),
         // 函数作值 1:1 保留冻结实例身份；结果 Function TypeId 由 value_types 表统一登记。
-        MirOperation::LoadFunctionRef { instance } => Ok(CanonicalOperation::LoadFunctionRef { instance: *instance }),
+        MirOperation::LoadFunctionRef { instance, environment, captured } => Ok(CanonicalOperation::LoadFunctionRef {
+            instance: *instance,
+            environment: environment.as_ref().map(|environment| Ok(CanonicalOperand::Value(value(environment)?))).transpose()?,
+            captured: captured.clone(),
+        }),
         MirOperation::ArrayGet { array, index } => Ok(CanonicalOperation::ArrayGet { array: value(array)?, index: value(index)? }),
         MirOperation::ArraySet { array, index, value: stored } => {
             Ok(CanonicalOperation::ArraySet { array: value(array)?, index: value(index)?, value: value(stored)? })
