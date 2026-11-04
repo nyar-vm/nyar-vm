@@ -250,9 +250,15 @@ namespace std.collection;
 
 class Array<T> {
     _typing: T
+}
 
+imply Array<T> {
     micro probe(self) -> bool { return true }
 }
+
+namespace app;
+
+micro run(list: [i32]) -> bool { return list.probe() }
 "#;
     let hir = ValkyrieCompiler::default().compile_source(source).expect("数组 owner 必须完成绑定");
     let mir = MirLowerer::lower_module_semantic(&hir);
@@ -269,8 +275,12 @@ class Array<T> {
         .map(|function| function.display_symbol.as_str())
         .collect();
     assert!(forged.is_empty(), "数组 owner 的签名不得回落到裸 `Named(Array)`，命中: {forged:?}");
-    let array_methods: Vec<&MirFunction> = mir.functions.iter().filter(|function| function.display_symbol.starts_with("Array.")).collect();
-    assert!(!array_methods.is_empty(), "守卫夹具必须产出 Array owner 的固有方法");
+    let array_methods: Vec<&MirFunction> = mir.functions.iter().filter(|function| function.display_symbol.contains("probe")).collect();
+    assert!(
+        !array_methods.is_empty(),
+        "守卫夹具必须产出 Array owner 的固有方法，现有函数: {:?}",
+        mir.functions.iter().map(|function| function.display_symbol.as_str()).collect::<Vec<_>>()
+    );
     for function in array_methods {
         assert!(
             matches!(function.param_types[0], ValkyrieType::Array(_)),

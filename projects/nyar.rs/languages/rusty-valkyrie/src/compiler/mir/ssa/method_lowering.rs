@@ -173,6 +173,9 @@ pub(super) fn lower_impl_method_functions(
         mir_function.display_symbol = format!("{}#{}", mir_function.display_symbol, instance.index());
         functions.push(mir_function);
     }
+    // 类/结构体声明体的方法已在 HIR 边界结构化拒绝，`HirStruct.methods` 恒为空。
+    // 断言守住“不得再给类体方法接一条 MIR 发射路径”。
+    debug_assert!(module.structs.iter().all(|item| item.methods.is_empty()), "HirStruct.methods 必须为空");
     for item in &module.structs {
         for method in item.methods.iter().filter(|method| {
             !method.is_abstract

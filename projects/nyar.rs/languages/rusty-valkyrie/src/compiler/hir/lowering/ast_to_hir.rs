@@ -554,6 +554,17 @@ impl AstToHir {
         methods: &[MethodDeclaration],
         is_value_type: bool,
     ) -> Result<HirStruct, HirError> {
+        // 声明体内不允许声明方法：固有方法只有 `imply Foo<T> { ... }` 一个载体。
+        // 必须在 HIR 边界结构化拒绝，不能降级进 `HirStruct.methods`——否则调用点会
+        // 在 MIR 跌成不可达的 `UnresolvedCallableIdentity`，且没有任何前端诊断。
+        if let Some(method) = methods.first() {
+            return Err(HirError::ClassBodyMethodDeclared {
+                aggregate: name.as_str().to_string(),
+                method: operator_member_name(&method.name, &method.annotations).as_str().to_string(),
+                source: nyar_types::DiagnosticSource { id: "<ast>".into(), revision: None },
+                span: nyar_types::DiagnosticSpan { start: method.name.span.start, end: method.name.span.end },
+            });
+        }
         Ok(HirStruct {
             constructor_declaration: None,
             constructor_instance: None,
@@ -563,7 +574,7 @@ impl AstToHir {
             generics: lower_generic_parameters(generics),
             parents: parents.iter().map(lower_parent).collect(),
             fields: fields.iter().map(lower_field).collect::<Result<Vec<_>, _>>()?,
-            methods: methods.iter().map(|method| self.lower_method(method)).collect::<Result<Vec<_>, _>>()?,
+            methods: Vec::new(),
             visibility: lower_visibility(annotations),
             is_value_type,
             is_abstract: has_modifier(annotations, "abstract"),

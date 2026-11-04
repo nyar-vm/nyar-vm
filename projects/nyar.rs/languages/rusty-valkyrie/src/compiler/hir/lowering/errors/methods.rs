@@ -89,6 +89,7 @@ impl HirError {
             Self::AutoConstructorAttributeOnNonUnityVariant { .. } => "valkyrie.hir.constructor_attribute_on_non_unity_variant",
             Self::AutoConstructorAttributeOnNonVariant { .. } => "valkyrie.hir.constructor_attribute_on_non_variant",
             Self::DuplicateAutoConstructorAttribute { .. } => "valkyrie.hir.duplicate_constructor_attribute",
+            Self::ClassBodyMethodDeclared { .. } => "valkyrie.hir.class_body_method_declared",
             Self::DuplicateTypeDefinition { .. } => "valkyrie.hir.duplicate_type_definition",
             Self::SourceGroupProducerMissing { .. } => "valkyrie.hir.source_group_producer_missing",
             Self::SourceGroupNotEntry { .. } => "valkyrie.hir.source_group_not_entry",

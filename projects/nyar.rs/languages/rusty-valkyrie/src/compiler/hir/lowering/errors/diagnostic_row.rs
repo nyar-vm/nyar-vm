@@ -204,6 +204,11 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("prior_kind", DiagnosticArg::String(prior_kind.clone()))
                     .with_arg("current_kind", DiagnosticArg::String(current_kind.clone()));
             }
+            HirError::ClassBodyMethodDeclared { aggregate, method, .. } => {
+                row = row
+                    .with_arg("aggregate", DiagnosticArg::Aggregate(aggregate.clone()))
+                    .with_arg("method", DiagnosticArg::CallableShort(method.clone()));
+            }
             HirError::SourceGroupProducerMissing { dependency_key, .. } => {
                 if let Some(dependency_key) = dependency_key {
                     row = row.with_arg("dependency_key", DiagnosticArg::DependencyKey(dependency_key.clone()));
@@ -589,6 +594,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::AutoConstructorAttributeOnNonVariant { source, .. } => source.clone(),
         HirError::DuplicateAutoConstructorAttribute { source, .. } => source.clone(),
         HirError::DuplicateTypeDefinition { source, .. } => source.clone(),
+        HirError::ClassBodyMethodDeclared { source, .. } => source.clone(),
         HirError::TryPropagateErrorTypeMismatch { source, .. } => source.clone(),
         HirError::BackendContractRejected(_) => DiagnosticSource { id: "<backend_contract>".into(), revision: None },
         HirError::SourceGroupProducerMissing { source, .. } => source.clone(),
@@ -669,6 +675,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::AutoConstructorAttributeOnNonVariant { span, .. } => span.clone(),
         HirError::DuplicateAutoConstructorAttribute { span, .. } => span.clone(),
         HirError::DuplicateTypeDefinition { span, .. } => span.clone(),
+        HirError::ClassBodyMethodDeclared { span, .. } => span.clone(),
         HirError::TryPropagateErrorTypeMismatch { span, .. } => span.clone(),
         HirError::BackendContractRejected(error) => error.span(),
         HirError::SourceGroupProducerMissing { span, .. } => span.clone(),

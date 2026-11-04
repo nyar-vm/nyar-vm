@@ -378,7 +378,9 @@ namespace std.collection;
 
 class Array<T> {
     _typing: T
+}
 
+imply Array<T> {
     micro probe(self) -> bool { return true }
 }
 "#;

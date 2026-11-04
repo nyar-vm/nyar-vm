@@ -182,6 +182,12 @@ impl std::fmt::Display for HirError {
             Self::DuplicateTypeDefinition { name, namespace, prior_kind, current_kind, .. } => {
                 write!(f, "duplicate definition of `{name}` in namespace `{namespace}`: {prior_kind} and {current_kind}")
             }
+            Self::ClassBodyMethodDeclared { aggregate, method, .. } => {
+                write!(
+                    f,
+                    "`{aggregate}` 的声明体不允许声明方法 `{method}`；固有方法请写在 `imply {aggregate}<T> {{ ... }}` 块里"
+                )
+            }
             Self::SourceGroupProducerMissing { dependency_key, .. } => {
                 write!(f, "generated source group has no producer identity")?;
                 match dependency_key {

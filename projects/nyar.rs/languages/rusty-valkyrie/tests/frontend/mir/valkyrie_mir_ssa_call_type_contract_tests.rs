@@ -57,11 +57,14 @@ fn same_method_names_keep_declared_result_types() {
     let hir = ValkyrieCompiler::default()
         .compile_source(
             r#"
-structure BooleanOwner {
+structure BooleanOwner { }
+structure IntegerOwner { }
+
+imply BooleanOwner {
     micro read() -> bool { return true }
 }
 
-structure IntegerOwner {
+imply IntegerOwner {
     micro read() -> i64 { return 7 }
 }
 
@@ -76,7 +79,7 @@ micro read_integer() -> i64 { return IntegerOwner.read() }
         let instance = mir
             .functions
             .iter()
-            .find(|function| function.display_symbol == owner)
+            .find(|function| function.display_symbol.starts_with(owner))
             .and_then(|function| function.instance)
             .expect("被调用方法实例");
         let mut matches = 0;

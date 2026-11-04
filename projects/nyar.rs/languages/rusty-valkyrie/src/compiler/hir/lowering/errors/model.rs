@@ -415,6 +415,17 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// 类/结构体的声明体内声明了方法；固有方法只能写在 `imply` 块里。
+    ClassBodyMethodDeclared {
+        /// 声明方法所在的聚合名。
+        aggregate: String,
+        /// 被声明的方法短名。
+        method: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 同一 namespace 下出现重复类型声明。
     DuplicateTypeDefinition {
         /// 重复声明的短名。
