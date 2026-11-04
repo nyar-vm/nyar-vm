@@ -956,6 +956,17 @@ fn call_resolver_is_unresolved_variant_reference(expr: &HirExpr, locals: &BTreeM
     crate::compiler::hir::overload::call_resolver::is_unresolved_variant_reference(expr, locals)
 }
 
+/// 成员链的声明短名：`Color`、`ns::Color`、`value.probe::Color` 都取最后一段。
+/// 根必须是未绑定局部的类型路径；否则是普通字段访问。
+fn qualified_owner_name(object: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> Option<Identifier> {
+    match &object.kind {
+        HirExprKind::Variable(identifier) if !locals.contains_key(identifier.name.as_str()) => Some(identifier.name.clone()),
+        HirExprKind::Path(path) => path.parts().last().filter(|part| !locals.contains_key(part.as_str())).cloned(),
+        HirExprKind::FieldAccess { object, field, .. } => qualified_owner_name(object, locals).map(|_| field.clone()),
+        _ => None,
+    }
+}
+
 fn try_resolve_nullary_variant_expr(
     expr: &mut HirExpr,
     candidates: &[OverloadCandidate],
@@ -965,22 +976,49 @@ fn try_resolve_nullary_variant_expr(
     singleton_names: &std::collections::BTreeSet<Identifier>,
     contextual_type: Option<&ValkyrieType>,
 ) {
-    let name = match &expr.kind {
-        HirExprKind::Variable(identifier) if !locals.contains_key(identifier.name.as_str()) => identifier.name.clone(),
-        HirExprKind::Path(path) if path.parts().len() == 1 && !locals.contains_key(path.parts()[0].as_str()) => path.parts()[0].clone(),
+    let (name, owner, construct_path) = match &expr.kind {
+        HirExprKind::Variable(identifier) if !locals.contains_key(identifier.name.as_str()) => {
+            (identifier.name.clone(), None, NamePath::new(vec![identifier.name.clone()]))
+        }
+        HirExprKind::Path(path) => match path.parts() {
+            [name] if !locals.contains_key(name.as_str()) => (name.clone(), None, NamePath::new(vec![name.clone()])),
+            // 限定变体值 `Color.Red` / `ns::Color.Red`：最后一段是变体，前一段是枚举声明短名。
+            // 仍汇入同一 Constructor 候选（`owner` + 单段变体符号），不造第二套身份。
+            [.., owner, name] if !locals.contains_key(owner.as_str()) => {
+                (name.clone(), Some(owner.clone()), NamePath::new(vec![owner.clone(), name.clone()]))
+            }
+            _ => return,
+        },
+        // 成员访问形态的限定变体值（`Color.Red` 被降成 `FieldAccess(Path([Color]), Red)`）。
+        HirExprKind::FieldAccess { object, field, .. } => {
+            let owner = qualified_owner_name(object, locals);
+            let Some(owner) = owner
+            else {
+                return;
+            };
+            (field.clone(), Some(owner.clone()), NamePath::new(vec![owner, field.clone()]))
+        }
         _ => return,
     };
-    if let Some(resolved) =
-        try_resolve_nullary_constructor(&name, contextual_type, candidates, type_relations, locals, struct_fields, singleton_names)
-    {
+    let narrowed = owner.as_ref().map(|owner| {
+        candidates
+            .iter()
+            .filter(|candidate| candidate.owner.as_ref() == Some(owner))
+            .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
+            .filter(|candidate| candidate.signature.params.is_empty())
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    let effective_candidates = narrowed.as_deref().unwrap_or(candidates);
+    // 显式限定（`Color.Red`）已由 owner 钉死声明身份，期望类型不再是收窄锚点；
+    // 传进去只会让外层返回类型（例如实参位置上的 `Unit`）误杀候选。
+    let contextual_type = if owner.is_none() { contextual_type } else { None };
+    let resolved =
+        try_resolve_nullary_constructor(&name, contextual_type, effective_candidates, type_relations, locals, struct_fields, singleton_names);
+    if let Some(resolved) = resolved {
         *expr = HirExpr {
             span: expr.span.clone(),
-            kind: HirExprKind::Construct {
-                path: NamePath::new(vec![name.clone()]),
-                generic_arguments: Vec::new(),
-                args: Vec::new(),
-                resolved: Some(resolved),
-            },
+            kind: HirExprKind::Construct { path: construct_path, generic_arguments: Vec::new(), args: Vec::new(), resolved: Some(resolved) },
         };
     }
 }
