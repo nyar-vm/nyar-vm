@@ -1203,10 +1203,12 @@ fn visit_module_calls(
             }
         }
     }
+    // 已铸造克隆体的可达性由铸造它的调用点决定，而该调用点本身已过门：克隆体只可能
+    // 从门内体内请求铸造，不能再按声明身份过滤。witness 消解出的 impl 成员声明在
+    // 代入闭合前对静态可达闭包不可见，声明身份不在可达集；若按声明拒绝，这些具体
+    // 克隆体（如 `ArrayIterator<i64>::has_next`）体内的嵌套调用永远拿不到实例。
     for callable in &mut module.instantiated_callables {
-        if permits(&callable.function) {
-            visit_block(&mut callable.function.body, visit);
-        }
+        visit_block(&mut callable.function.body, visit);
     }
     for submodule in &mut module.submodules {
         visit_module_calls(submodule, gate, visit);
