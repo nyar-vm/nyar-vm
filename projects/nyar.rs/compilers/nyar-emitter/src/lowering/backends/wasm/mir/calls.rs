@@ -42,7 +42,7 @@ impl<'a> WasmMirLowerer<'a> {
         if let Some(ReceiverPassingKind::ByAddress) = receiver_kind {
             // Confirm the receiver exists as the first argument; it is emitted below.
         }
-        let callee_return;
+        let mut callee_return;
         match dispatch {
             MirDispatchKind::Static => {
                 // `[wasm_operator]` 绑定的 provider 直接在调用点编码为目标指令；
@@ -58,6 +58,17 @@ impl<'a> WasmMirLowerer<'a> {
                     let param_types = self.resolve_callee_param_types(callee, Some(import_index))?;
                     self.emit_host_import_call_arguments(arguments, &param_types)?;
                     self.emit_call(import_index);
+                    // 宿主导入返回值边界（合同 §5）：冻结 ABI 返回 i32 宿主句柄，而结果
+                    // SSA 槽按已登记 gc struct layout 规划为 anyref 时，必须消费装配期
+                    // 冻结的句柄→managed 物化配方，禁止把计划槽降级或放宽槽位自检。
+                    if let Some(output) = output {
+                        if callee_return == Some(VALTYPE_I32) {
+                            if let Some(layout_id) = self.host_import_return_materialize_layout(output) {
+                                self.emit_utf8_host_handle_materialize(layout_id)?;
+                                callee_return = Some(WASM_GC_ANYREF);
+                            }
+                        }
+                    }
                 }
                 else if let Some(function_index) = self.resolve_callee_function_index(callee) {
                     // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
@@ -237,6 +248,19 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_get(len_local);
         self.emit_call(recipe.intern_import_index);
         Ok(())
+    }
+
+    /// 判定宿主导入返回值是否命中「i32 宿主句柄 → managed 字符串」边界：结果值类型是
+    /// 宿主字符串，且目标计划已按冻结 layout 把该 SSA 槽规划为 anyref。纯类型/布局
+    /// 事实判定，不按符号名特判；未命中即继续走原 i32 句柄 ABI。
+    fn host_import_return_materialize_layout(&self, output: MirValueRef) -> Option<LayoutId> {
+        if !self.mir_fn.value_types.get(&output).is_some_and(is_js_glue_host_string_type) {
+            return None;
+        }
+        if self.wasm_local_value_type(self.planned_value_local(output)) != WASM_GC_ANYREF {
+            return None;
+        }
+        self.mir_fn.value_layouts.get(&output).copied()
     }
 
     /// 编码阶段只验证预规划槽，不改变 SSA 表示。

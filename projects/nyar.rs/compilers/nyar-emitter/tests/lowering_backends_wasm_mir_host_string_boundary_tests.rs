@@ -263,3 +263,109 @@ fn wasm_library_export_without_frozen_abi_carrier_contract_fails_structured() {
             .expect_err("缺少冻结 ABI 载体合同的库导出物化必须结构化失败");
     assert!(error.contains("缺少冻结 ABI 载体合同"), "错误必须指明缺失的 ABI 载体合同: {error}");
 }
+
+fn utf8_concat_callee() -> ItemInstanceId {
+    ItemInstanceId::from_index(204).expect("测试 callee 身份")
+}
+
+/// provider micro 消费的宿主导入：`env::utf8_concat(a: Utf8, b: Utf8) -> Utf8`。
+/// import ABI 按 `wasm_import_type_for_field` 编译为 `[i32, i32] -> [i32]` 宿主句柄签名，
+/// 返回值在 managed 字符串槽上必须再物化为 anyref（崩溃现场 `host_concat` 的形状）。
+fn utf8_concat_import() -> BackendImport {
+    BackendImport {
+        index: ImportIndex::from_index(1).expect("导入下标"),
+        link: nyar::ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".into(), "utf8_concat".into()]),
+        parameter_types: vec![UTF8, UTF8],
+        return_type: UTF8,
+        target_operator: None,
+    }
+}
+
+/// `host_concat(value: Utf8, other: Utf8)`：%2 = `utf8_concat(%0, %1)`；return %2。
+/// `bound_layout` 决定形参与结果槽是否携带注册 gc struct layout。
+fn utf8_concat_call_main(bound_layout: Option<LayoutId>) -> ExecutableFunction {
+    let call = Instruction::from_kind(InstructionKind::Call {
+        callee: Operand::Item(utf8_concat_callee()),
+        arguments: vec![Operand::Value(ValueRef(0)), Operand::Value(ValueRef(1))],
+    });
+    let block = Block {
+        id: BlockRef(0),
+        label: "entry".to_string(),
+        parameters: vec![ValueRef(0), ValueRef(1)],
+        instructions: vec![Instruction { results: vec![ValueRef(2)], ..call }],
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(2))) },
+    };
+    ExecutableFunction {
+        symbol: "host_concat".to_string(),
+        return_type: UTF8,
+        param_types: vec![UTF8, UTF8],
+        value_types: BTreeMap::from([(ValueRef(0), UTF8), (ValueRef(1), UTF8), (ValueRef(2), UTF8)]),
+        value_layouts: bound_layout
+            .map(|id| BTreeMap::from([(ValueRef(0), id), (ValueRef(1), id), (ValueRef(2), id)]))
+            .unwrap_or_default(),
+        return_layout: bound_layout,
+        entry: BlockRef(0),
+        values: Vec::new(),
+        suspend_points: Vec::new(),
+        frame_layouts: Vec::new(),
+        continuations: Vec::new(),
+        case_chains: Vec::new(),
+        #[allow(deprecated)]
+        state_machine: None,
+        suspend_plan: None,
+        blocks: vec![block],
+        diagnostics: Vec::new(),
+    }
+}
+
+fn lower_concat(function: ExecutableFunction, layouts: AggregateLayoutPlan) -> nyar_emitter::Result<WasmBinaryModule> {
+    let main_name = QualifiedName::new(vec![Identifier::new("host_concat")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
+    plan.testing_module_name("host_string_boundary").testing_entry_operation(main_name);
+    plan.testing_aggregate_layouts(layouts);
+    plan.testing_register_import(utf8_concat_callee(), utf8_concat_import());
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    lower_fragment_to_wasm_mir_module(&submission, "host_concat")
+}
+
+/// 正向：宿主导入按冻结 ABI 返回 i32 句柄、结果 SSA 槽绑定 `Utf8Text` layout（anyref）
+/// 时，编码期必须消费冻结的句柄→managed 物化配方，槽位自检不得冲突。
+/// 修复前此处 `WASM 编码结果与预规划槽冲突: %2` 进程级 abort（`left: 110 right: 127`）。
+#[test]
+fn wasm_host_import_utf8_return_materializes_into_managed_slot() {
+    let module = lower_concat(utf8_concat_call_main(Some(UTF8_TEXT_LAYOUT_ID)), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()))
+        .expect("宿主导入返回值命中冻结物化配方时必须成功");
+    let imports = import_keys(&module);
+    assert!(imports.contains(&("env".to_string(), "utf8_concat".to_string())), "原宿主导入必须保留: {imports:?}");
+    assert!(
+        imports.contains(&("env".to_string(), "host_utf8_extract".to_string())),
+        "宿主导入返回值边界必须按需合成 `env::host_utf8_extract`: {imports:?}"
+    );
+    let type_indices = function_section_type_indices(&module);
+    let (params, results) = func_type(&module, type_indices[0]);
+    assert_eq!(params, vec![WasmValueType::AnyRef, WasmValueType::AnyRef], "managed 字符串形参槽必须是 anyref");
+    assert_eq!(results, vec![WasmValueType::AnyRef], "宿主导入返回值物化后函数返回槽必须是 anyref");
+}
+
+/// 按需：宿主导入返回值未绑定注册 layout 时仍走 i32 句柄 ABI，
+/// 不得凭空合成 `env::host_utf8_extract`，也不得把结果槽升级成 anyref。
+#[test]
+fn wasm_host_import_utf8_return_without_layout_keeps_i32_handle() {
+    let module = lower_concat(utf8_concat_call_main(None), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()))
+        .expect("未绑定 layout 的宿主导入返回值必须继续走 i32 ABI");
+    let imports = import_keys(&module);
+    assert!(!imports.contains(&("env".to_string(), "host_utf8_extract".to_string())), "无物化需求时不得合成 extract 导入: {imports:?}");
+    let type_indices = function_section_type_indices(&module);
+    let (params, results) = func_type(&module, type_indices[0]);
+    assert_eq!(params, vec![WasmValueType::I32, WasmValueType::I32]);
+    assert_eq!(results, vec![WasmValueType::I32]);
+}
+
+/// 负向：宿主导入返回值命中已注册 gc struct layout 但 layout 缺少整数字节数组字段时，
+/// 物化配方无法生成，必须在目标计划冻结期结构化失败（禁止 panic 或 i32 降级）。
+#[test]
+fn wasm_host_import_utf8_return_without_byte_array_field_fails_structured() {
+    let error = lower_concat(utf8_concat_call_main(Some(NO_BYTES_LAYOUT_ID)), layout_plan(NO_BYTES_LAYOUT_ID, "HostHandleText", long_array()))
+        .expect_err("缺少整数字节数组字段的宿主导入返回值边界必须在冻结期结构化失败");
+    assert!(error.contains("缺少整数字节数组字段"), "错误必须指明冻结失败的缺失事实: {error}");
+}

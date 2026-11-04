@@ -86,14 +86,15 @@ pub(in crate::lowering::backends::wasm) struct HostHandleToManagedUtf8Plan {
     pub(in crate::lowering::backends::wasm::mir) extract_import_index: u32,
 }
 
-/// 目标计划冻结的「宿主 i32 句柄 → managed 字符串」数组元素边界物化配方（合同 §5）。
+/// 目标计划冻结的「宿主 i32 句柄 → managed 字符串」物化配方（合同 §5）。
 ///
-/// `[utf8]` 数组按冻结合同登记为 `arraytype [i32]`（元素是宿主句柄），而元素 SSA
-/// 值携带已登记 gc struct layout 时物理槽是 anyref；`array.get` 取出的 i32 句柄
-/// 必须在编码期按配方物化为 managed 字符串 struct，不得按符号名特判，也不得把
-/// 计划槽降级为 i32。配方条目由模块装配预扫描（`entry.rs`）在 GC 类型注册表
-/// 冻结之后一次性生成；反方向（set）复用 `ManagedUtf8ToHostHandlePlan` 配方表。
-pub(in crate::lowering::backends::wasm) struct Utf8ArrayElementMaterializePlan {
+/// 覆盖两类产生 i32 句柄的边界：`[utf8]` 数组元素（`array.get` 结果）与宿主导入
+/// 返回值（`utf8_*` 宿主函数返回句柄）。这些值的 SSA 槽携带已登记 gc struct
+/// layout 时物理槽是 anyref，编码期必须按配方把 i32 句柄物化为 managed 字符串
+/// struct，不得按符号名特判，也不得把计划槽降级为 i32。配方条目由模块装配预扫描
+/// （`entry.rs`）在 GC 类型注册表冻结之后一次性生成；反方向（intern）复用
+/// `ManagedUtf8ToHostHandlePlan` 配方表。
+pub(in crate::lowering::backends::wasm) struct Utf8HostHandleMaterializePlan {
     /// managed 字符串 layout 对应的 wasm-gc structtype 条目。
     pub(in crate::lowering::backends::wasm::mir) struct_type_index: u32,
     /// 字节数组字段在 structtype 中的槽位（`Utf8Text._repr: [u8]`）。
@@ -133,7 +134,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
     function_value_table_slots: &BTreeMap<ItemInstanceId, u32>,
     type_index_by_signature: &BTreeMap<(Vec<u8>, Option<u8>), u32>,
     managed_utf8_to_host_handle: &BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
-    utf8_array_element_materialize: &BTreeMap<LayoutId, Utf8ArrayElementMaterializePlan>,
+    utf8_host_handle_materialize: &BTreeMap<LayoutId, Utf8HostHandleMaterializePlan>,
 ) -> crate::Result<Vec<u8>> {
     if let Err(error) = validate_pattern_matching_invariants(mir_fn) {
         // 合同违约必须是编译期结构化失败：`debug_assert!` 只在 debug 构建里 panic，
@@ -170,7 +171,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
         function_value_table_slots,
         type_index_by_signature,
         managed_utf8_to_host_handle,
-        utf8_array_element_materialize,
+        utf8_host_handle_materialize,
     );
     lowerer.emit_function_body()?;
     Ok(lowerer.finish())
@@ -240,7 +241,7 @@ pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
     /// 目标计划冻结的 managed 字符串 → 宿主 i32 句柄转换配方表（编码期只读消费）。
     pub(in crate::lowering::backends::wasm::mir) managed_utf8_to_host_handle: &'a BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
     /// 目标计划冻结的 `[utf8]` 数组元素边界「宿主 i32 句柄 → managed 字符串」物化配方表（编码期只读消费）。
-    pub(in crate::lowering::backends::wasm::mir) utf8_array_element_materialize: &'a BTreeMap<LayoutId, Utf8ArrayElementMaterializePlan>,
+    pub(in crate::lowering::backends::wasm::mir) utf8_host_handle_materialize: &'a BTreeMap<LayoutId, Utf8HostHandleMaterializePlan>,
     /// CFG 调度中的基本块索引。
     pub(in crate::lowering::backends::wasm::mir) pc_local: u32,
     /// 当前正在发射的指令身份。ABI 载体失配必须报出来源指令，禁止只报函数名。
@@ -278,7 +279,7 @@ impl<'a> WasmMirLowerer<'a> {
         function_value_table_slots: &'a BTreeMap<ItemInstanceId, u32>,
         type_index_by_signature: &'a BTreeMap<(Vec<u8>, Option<u8>), u32>,
         managed_utf8_to_host_handle: &'a BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
-        utf8_array_element_materialize: &'a BTreeMap<LayoutId, Utf8ArrayElementMaterializePlan>,
+        utf8_host_handle_materialize: &'a BTreeMap<LayoutId, Utf8HostHandleMaterializePlan>,
     ) -> Self {
         let block_order = collect_reachable_blocks(mir_fn);
         let block_index = block_order.iter().enumerate().map(|(index, block_id)| (*block_id, index)).collect();
@@ -327,7 +328,7 @@ impl<'a> WasmMirLowerer<'a> {
             function_value_table_slots,
             type_index_by_signature,
             managed_utf8_to_host_handle,
-            utf8_array_element_materialize,
+            utf8_host_handle_materialize,
             pc_local: 0,
             current_instruction_id: None,
         };

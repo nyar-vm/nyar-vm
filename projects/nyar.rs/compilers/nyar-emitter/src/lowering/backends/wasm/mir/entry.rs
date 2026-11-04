@@ -15,7 +15,7 @@ use super::{
         },
     },
     HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, MirInstructionKind, MirOperand, StorageKind, TargetOperatorBinding,
-    Utf8ArrayElementMaterializePlan, WASM_GC_EXTERNREF, WasmGcArrayOperation,
+    Utf8HostHandleMaterializePlan, WASM_GC_EXTERNREF, WasmGcArrayOperation,
     imports::{
         build_callee_import_index, build_callee_wasm_operator_index, build_string_literal_index, build_wasi_callee_import_index,
         collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index,
@@ -225,18 +225,20 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &host_import_signatures,
         )?
     };
-    // 合同 §5：`[utf8]` 数组元素边界。`array.get` 结果 SSA 值绑定已登记 gc struct
-    // layout 时物理槽是 anyref，而元素字节按冻结合同是 i32 宿主句柄；编码期必须按
-    // 配方把句柄物化为 managed 字符串，配方表同样在目标计划阶段冻结；合成导入
+    // 合同 §5：宿主 i32 句柄 → managed 字符串边界。产生句柄的两类站点是 `[utf8]`
+    // 数组元素（`array.get`）与宿主导入返回值（`utf8_*` 宿主函数）；结果 SSA 值绑定
+    // 已登记 gc struct layout 时物理槽是 anyref，编码期必须按配方把句柄物化为
+    // managed 字符串。配方表同样在目标计划阶段冻结；合成导入
     // `env::host_utf8_extract` 按需追加，`import_count` 因此在本冻结步之后再取。
-    let utf8_array_element_materialize = if wasi_mode {
+    let utf8_host_handle_materialize = if wasi_mode {
         BTreeMap::new()
     }
     else {
-        freeze_utf8_array_element_materialize_plans(
+        freeze_utf8_host_handle_materialize_plans(
             submission,
             &ctx,
             &callee_wasm_operator,
+            &callee_import_index,
             &gc_struct_type_indices,
             &mut gc_array_type_indices,
             &mut type_indices,
@@ -373,7 +375,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &function_value_table_slots,
             &type_index_by_signature,
             &managed_utf8_to_host_handle,
-            &utf8_array_element_materialize,
+            &utf8_host_handle_materialize,
         )?));
         mir_wasm_functions.push((wasm_index, full.clone()));
         if let Some(public_name) = submission.backend_plan.wasm_export_names().get(instance) {
@@ -891,22 +893,25 @@ fn freeze_host_handle_to_managed_utf8_plans(
     Ok(plans_by_instance)
 }
 
-/// 目标计划阶段冻结「宿主 i32 句柄 → managed 字符串」数组元素边界物化配方（合同 §5）。
+/// 目标计划阶段冻结「宿主 i32 句柄 → managed 字符串」物化配方（合同 §5）。
 ///
-/// `[utf8]` 数组按冻结合同登记为 `arraytype [i32]`（元素是宿主句柄），而 `array.get`
-/// 结果 SSA 值携带已登记 gc struct layout 时物理槽是 anyref；编码期必须按这张配方表
-/// 把取出的 i32 句柄物化为 managed 字符串 struct，禁止按符号名特判，也不得把计划槽
-/// 降级为 i32。扫描命中边界的 layout：MIR `ArrayGet` 臂与 `[wasm_operator("array.get")]`
-/// 冻结绑定调用，结果值为宿主字符串类型且 layout 已登记 gc struct。字节字段槽与
+/// 两类站点产生宿主 i32 句柄：`[utf8]` 数组元素（`array.get`，数组按冻结合同登记为
+/// `arraytype [i32]`）与宿主导入返回值（`utf8_*` 宿主函数按冻结 ABI 返回 i32 句柄）。
+/// 这些站点的结果 SSA 值携带已登记 gc struct layout 时物理槽是 anyref；编码期必须
+/// 按这张配方表把 i32 句柄物化为 managed 字符串 struct，禁止按符号名特判，也不得把
+/// 计划槽降级为 i32。扫描命中边界的 layout：MIR `ArrayGet` 臂与
+/// `[wasm_operator("array.get")]` 冻结绑定调用，以及 callee 已登记宿主导入下标的
+/// `Call`，其结果值为宿主字符串类型且 layout 已登记 gc struct。字节字段槽与
 /// arraytype 推导与库导出物化冻结同法；合成导入 `env::host_utf8_extract` 仅在确有
 /// 命中边界的 layout 时追加到导入表尾部。WASI 轨没有 `host_utf8_extract` 宿主能力，
 /// 装配侧不调用本函数（空表），编码期命中边界即结构化失败，与 WASI 既有 managed
 /// 字符串边界同口径。
 #[allow(clippy::too_many_arguments)]
-fn freeze_utf8_array_element_materialize_plans(
+fn freeze_utf8_host_handle_materialize_plans(
     submission: &FragmentSubmission,
     ctx: &ExecutableLoweringContext,
     callee_wasm_operator: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    callee_import_index: &BTreeMap<ItemInstanceId, u32>,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     gc_array_type_indices: &mut BTreeMap<String, u32>,
     type_indices: &mut Vec<Vec<u8>>,
@@ -914,7 +919,7 @@ fn freeze_utf8_array_element_materialize_plans(
     host_imports: &mut Vec<(String, String)>,
     import_type_entries: &mut Vec<u32>,
     host_import_signatures: &BTreeMap<(String, String), crate::BackendImport>,
-) -> crate::Result<BTreeMap<LayoutId, Utf8ArrayElementMaterializePlan>> {
+) -> crate::Result<BTreeMap<LayoutId, Utf8HostHandleMaterializePlan>> {
     let mut boundary_layouts = BTreeSet::new();
     for instance in submission.backend_plan.instances() {
         let Some(view) = submission.backend_plan.get_function(&instance)
@@ -924,15 +929,17 @@ fn freeze_utf8_array_element_materialize_plans(
         let mir_fn = &view.function;
         for block in &mir_fn.blocks {
             for instruction in &block.instructions {
-                let is_array_get = match &instruction.kind {
+                let is_handle_boundary_source = match &instruction.kind {
                     MirInstructionKind::ArrayGet { .. } => true,
-                    MirInstructionKind::Call { callee: MirOperand::Item(callee), .. } => matches!(
-                        callee_wasm_operator.get(callee),
-                        Some((_, TargetOperatorBinding::FrozenWasmGcArray(plan))) if plan.operation == WasmGcArrayOperation::Get
-                    ),
+                    MirInstructionKind::Call { callee: MirOperand::Item(callee), .. } => {
+                        matches!(
+                            callee_wasm_operator.get(callee),
+                            Some((_, TargetOperatorBinding::FrozenWasmGcArray(plan))) if plan.operation == WasmGcArrayOperation::Get
+                        ) || callee_import_index.contains_key(callee)
+                    }
                     _ => false,
                 };
-                if !is_array_get {
+                if !is_handle_boundary_source {
                     continue;
                 }
                 for result in &instruction.results {
@@ -1004,7 +1011,7 @@ fn freeze_utf8_array_element_materialize_plans(
         };
         plans.insert(
             layout_id,
-            Utf8ArrayElementMaterializePlan { struct_type_index, bytes_field_slot, bytes_array_type_index, extract_import_index },
+            Utf8HostHandleMaterializePlan { struct_type_index, bytes_field_slot, bytes_array_type_index, extract_import_index },
         );
     }
     Ok(plans)

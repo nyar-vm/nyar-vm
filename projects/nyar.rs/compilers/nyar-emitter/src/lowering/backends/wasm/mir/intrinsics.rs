@@ -79,9 +79,9 @@ impl<'a> WasmMirLowerer<'a> {
             // `[utf8]` 数组元素边界：元素按冻结合同是 i32 宿主句柄，而结果 SSA 值携带
             // 已登记 gc struct layout（计划槽 anyref）时，必须消费装配期冻结的物化配方
             // 把句柄物化为 managed 字符串 struct（合同 §5）；缺配方即结构化失败。
-            let materialize_layout = if element_stack_ty == VALTYPE_I32 { self.utf8_array_element_boundary_layout(output) } else { None };
+            let materialize_layout = if element_stack_ty == VALTYPE_I32 { self.utf8_host_handle_boundary_layout(output) } else { None };
             if let Some(layout_id) = materialize_layout {
-                self.emit_utf8_array_element_materialize(layout_id)?;
+                self.emit_utf8_host_handle_materialize(layout_id)?;
                 element_stack_ty = WASM_GC_ANYREF;
             }
             // 栈顶类型由 arraytype 元素决定（i32 / anyref），必须与 output 槽 valtype 一致；
@@ -131,7 +131,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 判定 `array.get` 结果值是否命中 `[utf8]` 数组元素边界：值类型是宿主字符串
     /// 且携带已登记 gc struct layout（计划槽 anyref）。纯类型/布局事实判定，
     /// 不按符号名特判。
-    fn utf8_array_element_boundary_layout(&self, value: MirValueRef) -> Option<LayoutId> {
+    fn utf8_host_handle_boundary_layout(&self, value: MirValueRef) -> Option<LayoutId> {
         if !self.mir_fn.value_types.get(&value).is_some_and(is_js_glue_host_string_type) {
             return None;
         }
@@ -142,11 +142,11 @@ impl<'a> WasmMirLowerer<'a> {
     /// `call env::host_utf8_extract` 取回 `(ptr, len)` → `array.new_default` →
     /// 逐字节 `i32.load8_u` + `array.set` → `struct.new_default` + `struct.set`。
     /// 栈效果：`[i32]` → `[anyref]`。与库导出物化 wrapper 同一构造序列。
-    fn emit_utf8_array_element_materialize(&mut self, layout_id: LayoutId) -> crate::Result<()> {
-        let Some(recipe) = self.utf8_array_element_materialize.get(&layout_id)
+    pub(super) fn emit_utf8_host_handle_materialize(&mut self, layout_id: LayoutId) -> crate::Result<()> {
+        let Some(recipe) = self.utf8_host_handle_materialize.get(&layout_id)
         else {
             return Err(format!(
-                "WASM 数组元素边界 (layout={layout_id:?}) 缺少目标计划冻结的宿主句柄→managed 物化配方: {}",
+                "WASM 宿主句柄边界 (layout={layout_id:?}) 缺少目标计划冻结的宿主句柄→managed 物化配方: {}",
                 self.mir_fn.symbol
             ));
         };
