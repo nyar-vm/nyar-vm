@@ -8,7 +8,8 @@ use crate::compiler::{
         self as frontend,
         ast::{
             AssociatedType, Attribute, ClassDeclaration, EnumVariant, Enums, FieldDeclaration, Flags, GenericParam, ImplyDeclaration,
-            MethodDeclaration, NamePath as AstNamePath, Param, Parent, SingletonDeclaration, StatementNode, StructureDeclaration,
+            MethodDeclaration, NamePath as AstNamePath, NamespaceDeclaration, Param, Parent, SingletonDeclaration, StatementNode,
+            StructureDeclaration,
             TermExpression, Trait, TypeExpression, TypeFunction, UsingDeclaration, WidgetDeclaration,
         },
     },
@@ -268,8 +269,8 @@ pub(crate) fn property_is_lazy(method: &MethodDeclaration) -> bool {
 }
 
 pub(crate) fn lower_using(using: &UsingDeclaration) -> Result<HirImport, HirError> {
-    // 解析层对无法识别的导入语法（如已废弃的 `using!`）不做诊断，只产出空路径
-    // `UsingDeclaration`；空路径不是合法导入，必须在此 fail-closed，不得静默产出空 `HirImport`。
+    // 只有真正缺 path 的畸形 `using` 在这里 fail-closed；`using!` 是主空间导入，
+    // 由 oak 正常产出非空 path，并通过 `primary` 身份进入 HIR，不再走这条拒绝路径。
     if using.path.parts.is_empty() {
         return Err(HirError::UnrecognizedImport {
             source: nyar_types::DiagnosticSource { id: "<ast>".into(), revision: None },
@@ -277,11 +278,63 @@ pub(crate) fn lower_using(using: &UsingDeclaration) -> Result<HirImport, HirErro
         });
     }
     Ok(HirImport {
+        primary: using_is_primary(using),
         path: lower_name_path(&using.path),
         alias: using.alias.as_ref().map(|alias| Identifier::new(&alias.name)),
         bindings: using.imports.iter().map(|item| HirImportBinding { name: Identifier::new(&item.name), alias: None }).collect(),
         glob: false,
     })
+}
+
+/// `using!` 的主空间身份：oak 新节点字段在 rev 重钉前置为占位。
+///
+/// 所有身份读取集中在这里，rev 重钉时只改这两个函数体，不散落字段访问。
+#[inline]
+pub(crate) fn using_is_primary(_using: &UsingDeclaration) -> bool {
+    false
+}
+
+/// `namespace!` 的主空间身份：与 [`using_is_primary`] 同一占位点。
+#[inline]
+pub(crate) fn namespace_is_primary(_namespace: &NamespaceDeclaration) -> bool {
+    false
+}
+
+/// 主空间声明的规范名字，只用于结构化诊断文本。
+pub(crate) fn lower_namespace_name(namespace: &NamespaceDeclaration) -> String {
+    namespace.name.parts.iter().map(|part| part.name.clone()).collect::<Vec<_>>().join("::")
+}
+
+/// 收集 `namespace { ... }` 体内的导入，并校验 `using!` 的放置。
+///
+/// `in_primary` 只表示当前 body 由 `namespace!` 引入；嵌套普通 namespace 不会继承主空间身份。
+pub(crate) fn lower_namespace_body_imports(
+    items: &[StatementNode],
+    in_primary: bool,
+    imports: &mut Vec<HirImport>,
+) -> Result<(), HirError> {
+    for item in items {
+        match item {
+            StatementNode::Using(using) => {
+                if using_is_primary(using) && !in_primary {
+                    return Err(HirError::PrimaryImportOutsidePrimaryNamespace {
+                        source: nyar_types::DiagnosticSource { id: "<ast>".into(), revision: None },
+                        span: nyar_types::DiagnosticSpan { start: using.span.start, end: using.span.end },
+                    });
+                }
+                imports.push(lower_using(using)?);
+            }
+            StatementNode::Namespace(namespace) if namespace.body.is_some() => {
+                lower_namespace_body_imports(
+                    crate::compiler::syntax::oak::namespace_items(namespace),
+                    namespace_is_primary(namespace),
+                    imports,
+                )?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn lower_trait_path_from_type(ty: &TypeExpression) -> NamePath {

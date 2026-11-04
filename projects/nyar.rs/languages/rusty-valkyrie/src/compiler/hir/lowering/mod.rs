@@ -466,6 +466,7 @@ impl ValkyrieCompiler {
             }
             .into());
         }
+        validate_primary_namespace_uniqueness(&prepared)?;
         let roots = prepared.iter().map(|(_, root)| root).collect::<Vec<_>>();
         let _type_alias_scope = crate::compiler::hir::ModuleTypeAliasScope::enter(visible_type_aliases(&roots, imported_semantic_exports));
         let _nominal_scope = crate::compiler::hir::NominalTypeScope::enter(visible_nominal_type_names(&roots, imported_semantic_exports));
@@ -571,5 +572,48 @@ impl ValkyrieCompiler {
         module_name: Option<NamePath>,
     ) -> Result<HirModule, HirError> {
         AstToHir::new(self.source_id).lower_root_with_semantic_exports_and_name(root, imported_semantic_exports, module_name)
+    }
+}
+
+/// `namespace!` 全工程唯一：同一源码组内出现多处主空间声明必须结构化失败。
+///
+/// 组内文件目前仍合并为一个 `HirModule`，因此唯一性只能在合并前按文件根的显式
+/// `namespace!` 身份统计，不能依赖模块名或文件顺序。
+fn validate_primary_namespace_uniqueness(
+    prepared: &[(&CompilerSourceFile, crate::compiler::syntax::oak::ValkyrieRoot)],
+) -> Result<(), HirError> {
+    let mut names = Vec::new();
+    let mut last: Option<(String, usize, usize)> = None;
+    for (file, root) in prepared {
+        collect_primary_namespaces(&root.items, &file.path, &mut names, &mut last);
+    }
+    if names.len() > 1 {
+        let (path, start, end) = last.unwrap_or_else(|| ("<ast>".into(), 0, 0));
+        return Err(HirError::DuplicatePrimaryNamespace {
+            namespaces: names,
+            source: nyar_types::DiagnosticSource { id: path, revision: None },
+            span: nyar_types::DiagnosticSpan { start, end },
+        });
+    }
+    Ok(())
+}
+
+fn collect_primary_namespaces(
+    items: &[crate::compiler::syntax::oak::ast::StatementNode],
+    file_path: &str,
+    names: &mut Vec<String>,
+    last: &mut Option<(String, usize, usize)>,
+) {
+    for item in items {
+        let crate::compiler::syntax::oak::ast::StatementNode::Namespace(namespace) = item else {
+            continue;
+        };
+        if crate::compiler::hir::lowering::attribute_lowering::namespace_is_primary(namespace) {
+            names.push(namespace.name.parts.iter().map(|part| part.name.clone()).collect::<Vec<_>>().join("::"));
+            *last = Some((file_path.to_string(), namespace.span.start, namespace.span.end));
+        }
+        if namespace.body.is_some() {
+            collect_primary_namespaces(crate::compiler::syntax::oak::namespace_items(namespace), file_path, names, last);
+        }
     }
 }

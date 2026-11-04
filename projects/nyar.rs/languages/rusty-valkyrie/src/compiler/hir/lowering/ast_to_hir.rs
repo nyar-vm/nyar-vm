@@ -134,12 +134,53 @@ impl AstToHir {
                 .unwrap_or_else(default_module_name)
         });
 
-        // 导入必须先经过 fail-closed 校验：解析层产出的空路径 `UsingDeclaration`（如旧
-        // `using!` 残留）不得被翻译成空 `HirImport` 混入物化结果。
+        // 导入必须先经过 fail-closed 校验：真正缺 path 的畸形 `using` 不得被翻译成空
+        // `HirImport`。`using!` 是主空间一等导入，只校验放置，不走空 path 拒绝路径。
         let mut imports = Vec::new();
+        let mut primary_namespace = false;
+        let mut primary_scope = false;
         for item in &root.items {
-            if let StatementNode::Using(using) = item {
-                imports.push(lower_using(using)?);
+            match item {
+                StatementNode::Namespace(namespace) if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) => {
+                    primary_scope = namespace_is_primary(namespace);
+                    if namespace_is_primary(namespace) {
+                        if primary_namespace {
+                            return Err(HirError::DuplicatePrimaryNamespace {
+                                namespaces: vec![lower_namespace_name(namespace)],
+                                source: nyar_types::DiagnosticSource { id: "<ast>".into(), revision: None },
+                                span: nyar_types::DiagnosticSpan { start: namespace.span.start, end: namespace.span.end },
+                            });
+                        }
+                        primary_namespace = true;
+                    }
+                }
+                StatementNode::Using(using) => {
+                    if using_is_primary(using) && !primary_scope {
+                        return Err(HirError::PrimaryImportOutsidePrimaryNamespace {
+                            source: nyar_types::DiagnosticSource { id: "<ast>".into(), revision: None },
+                            span: nyar_types::DiagnosticSpan { start: using.span.start, end: using.span.end },
+                        });
+                    }
+                    imports.push(lower_using(using)?);
+                }
+                StatementNode::Namespace(namespace) if namespace.body.is_some() => {
+                    if namespace_is_primary(namespace) {
+                        if primary_namespace {
+                            return Err(HirError::DuplicatePrimaryNamespace {
+                                namespaces: vec![lower_namespace_name(namespace)],
+                                source: nyar_types::DiagnosticSource { id: "<ast>".into(), revision: None },
+                                span: nyar_types::DiagnosticSpan { start: namespace.span.start, end: namespace.span.end },
+                            });
+                        }
+                        primary_namespace = true;
+                    }
+                    lower_namespace_body_imports(
+                        crate::compiler::syntax::oak::namespace_items(namespace),
+                        namespace_is_primary(namespace),
+                        &mut imports,
+                    )?;
+                }
+                _ => {}
             }
         }
 
@@ -201,6 +242,7 @@ impl AstToHir {
             name: module_name,
             dependency_key: String::new(),
             source_path: String::new(),
+            primary_namespace,
             doc: HirDocumentation::default(),
             imports,
             warnings: Vec::new(),

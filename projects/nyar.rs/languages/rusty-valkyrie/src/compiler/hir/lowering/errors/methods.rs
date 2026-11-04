@@ -110,6 +110,8 @@ impl HirError {
             Self::UnexpandedTemplateItem { .. } => "valkyrie.hir.unexpanded_template_item",
             Self::UnsupportedRootItem { .. } => "valkyrie.hir.unsupported_root_item",
             Self::UnrecognizedImport { .. } => "valkyrie.hir.unrecognized_import",
+            Self::PrimaryImportOutsidePrimaryNamespace { .. } => "valkyrie.hir.primary_import_outside_primary_namespace",
+            Self::DuplicatePrimaryNamespace { .. } => "valkyrie.hir.duplicate_primary_namespace",
             Self::PipelineRejected { .. } => "valkyrie.hir.pipeline_rejected",
             Self::LegacyBuiltinTypeAlias { .. } => "valkyrie.hir.legacy_builtin_type_alias",
             Self::AmbiguousTextTypeName { .. } => "valkyrie.hir.ambiguous_text_type_name",

@@ -21,6 +21,9 @@ pub struct HirModule {
     /// 本组主源码路径；与语义闭包 `DeclarationKey.source_path` 对齐。
     #[cfg_attr(feature = "serde", serde(default))]
     pub source_path: String,
+    /// 该文件是否由 `namespace!` 声明主空间。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub primary_namespace: bool,
     /// Documentation for the module.
     pub doc: HirDocumentation,
     /// Import statements in this module.
@@ -210,6 +213,11 @@ impl HirCallResolutionFailureKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirImport {
+    /// 是否为 `using!` 主空间导入（在所有 namespace 共享）。
+    ///
+    /// 与普通文件局部 `using` 是两个可区分身份，不得以空 `path` 或同名节点表达。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub primary: bool,
     /// Imported module path.
     pub path: NamePath,
     /// Optional module alias (`using path as Alias`).
@@ -269,6 +277,7 @@ impl Default for HirModule {
             name: NamePath::new(vec![Identifier::new("main")]),
             dependency_key: String::new(),
             source_path: String::new(),
+            primary_namespace: false,
             doc: HirDocumentation::default(),
             imports: Vec::new(),
             warnings: Vec::new(),

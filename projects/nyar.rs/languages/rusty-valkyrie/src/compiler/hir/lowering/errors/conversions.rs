@@ -258,6 +258,23 @@ impl std::fmt::Display for HirError {
             Self::UnrecognizedImport { source, span } => {
                 write!(f, "unrecognized import syntax at {}:{}..{}: the import declaration has no path", source.id, span.start, span.end)
             }
+            Self::PrimaryImportOutsidePrimaryNamespace { source, span } => {
+                write!(
+                    f,
+                    "`using!` at {}:{}..{} is outside `namespace!`: primary imports may only be declared in the project's primary namespace",
+                    source.id, span.start, span.end
+                )
+            }
+            Self::DuplicatePrimaryNamespace { namespaces, source, span } => {
+                write!(
+                    f,
+                    "duplicate `namespace!` declaration at {}:{}..{}: a compilation project may declare exactly one primary namespace, found [{}]",
+                    source.id,
+                    span.start,
+                    span.end,
+                    namespaces.join(", ")
+                )
+            }
             Self::PipelineRejected { codes, module, messages } => {
                 write!(f, "compile pipeline rejected module `{module}`")?;
                 if !codes.is_empty() {

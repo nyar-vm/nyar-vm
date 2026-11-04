@@ -624,6 +624,26 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// `using!` 出现在非主空间 `namespace!` 位置。
+    ///
+    /// `using!` 是主空间专属导入，只能放在 `namespace!` 内。
+    PrimaryImportOutsidePrimaryNamespace {
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 同一编译工程声明了多处 `namespace!`。
+    ///
+    /// `namespace!` 全工程唯一，不得取第一个或按文件顺序合并。
+    DuplicatePrimaryNamespace {
+        /// 已声明的主空间名字，按出现顺序。
+        namespaces: Vec<String>,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 下游 compile pipeline 拒绝已 lowering 的输入。
     ///
     /// 原样转发下游已冻结的诊断 code 与 module 身份，不在 HIR 侧重新拼装失败文本。
