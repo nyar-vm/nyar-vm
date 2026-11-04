@@ -848,12 +848,32 @@ impl ClrMethodEmitter<'_> {
                     self.emit_layout_field_write(&layout, output.0, slot as usize, value)?;
                 }
             }
-            // 本块只有指令与不可达分支：`TupleGet` 尚无生产者，接入前禁止静默退化为近似读。
             InstructionKind::TupleGet { object, layout_id, index } => {
-                return Err(format!(
-                    "CLR 后端尚未提供 TupleGet 的精确表示编码（object={object:?}, layout={layout_id:?}, index={index}，function={}）",
-                    self.function.symbol
-                ));
+                let layout = self.layout_by_id(*layout_id)?;
+                if (*index as usize) >= layout.fields.len() {
+                    return Err(format!(
+                        "CLR 最小 lowering：TupleGet 位置索引 {index} 越界（layout `{}` 长度 {}）: function={}",
+                        layout.name,
+                        layout.fields.len(),
+                        self.function.symbol
+                    ));
+                }
+                // 标签只在类型身份层；CLR 载体按冻结 layout 的字段槽读取。
+                let (_, field_kind) = self.layout_field_type(&layout, *index)?;
+                self.emit_operand(object, Some(ClrValueKind::Reference))?;
+                self.push_field_opcode(MsilOpcode::Ldfld, &clr_layout_type_name(&layout), &clr_layout_field_name(*index as usize));
+                match self.output_of(instruction)? {
+                    Some((output, output_kind)) => {
+                        if output_kind != field_kind {
+                            return Err(format!(
+                                "CLR 最小 lowering：TupleGet 位置 {index} 载体 {field_kind:?} 与结果槽 {output_kind:?} 不符: function={}",
+                                self.function.symbol
+                            ));
+                        }
+                        self.store_local(output);
+                    }
+                    None => self.emit_pop(),
+                }
             }
             InstructionKind::TupleNew { layout_id, fields } => {
                 let layout = self.layout_by_id(*layout_id)?;

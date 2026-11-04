@@ -928,12 +928,41 @@ impl JvmMethodEmitter<'_> {
                     self.emit_layout_field_write(&layout, output.0, slot as usize, value)?;
                 }
             }
-            // 本块只有指令与不可达分支：`TupleGet` 尚无生产者，接入前禁止静默退化为近似读。
             InstructionKind::TupleGet { object, layout_id, index } => {
-                return Err(format!(
-                    "JVM 后端尚未提供 TupleGet 的精确表示编码（object={object:?}, layout={layout_id:?}, index={index}，function={}）",
-                    self.function.symbol
-                ));
+                let layout = self.layout_by_id(*layout_id)?;
+                if (*index as usize) >= layout.fields.len() {
+                    return Err(format!(
+                        "JVM 最小 lowering：TupleGet 位置索引 {index} 越界（layout `{}` 长度 {}）: function={}",
+                        layout.name,
+                        layout.fields.len(),
+                        self.function.symbol
+                    ));
+                }
+                // 标签只在类型身份层；JVM 载体按冻结 layout 的字段槽读取。
+                let (descriptor, kind) = self.layout_field_descriptor(&layout, *index)?;
+                let field_ref = jvm_layout_field_ref(&layout, *index as usize, descriptor);
+                self.emit_operand(object, Some(JvmSlotKind::Reference))?;
+                self.instructions.push(JvmInstruction::GetField(field_ref));
+                match self.output_of(instruction)? {
+                    Some((output, output_kind)) => {
+                        if output_kind != kind {
+                            return Err(format!(
+                                "JVM 最小 lowering：TupleGet 位置 {index} 载体 {kind:?} 与结果槽 {output_kind:?} 不符: function={}",
+                                self.function.symbol
+                            ));
+                        }
+                        self.instructions.push(kind.store(output));
+                    }
+                    None => match kind {
+                        JvmSlotKind::Long | JvmSlotKind::Double => {
+                            return Err(format!(
+                                "JVM 最小 lowering：丢弃 2 槽 tuple 元素需要 `pop2` 编码，当前 JVM 指令模型不提供: function={}",
+                                self.function.symbol
+                            ));
+                        }
+                        _ => self.instructions.push(JvmInstruction::Pop),
+                    },
+                }
             }
             InstructionKind::TupleNew { layout_id, fields } => {
                 let layout = self.layout_by_id(*layout_id)?;

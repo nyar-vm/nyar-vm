@@ -114,12 +114,95 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
             }
-            // 本块只有指令与不可达分支：`TupleGet` 尚无生产者，接入前禁止静默退化为近似读。
             MirInstructionKind::TupleGet { object, layout_id, index } => {
-                return Err(format!(
-                    "WASM 后端尚未提供 TupleGet 的精确表示编码（object={object:?}, layout={layout_id:?}, index={index}，symbol=`{}`）",
-                    self.mir_fn.symbol
-                ));
+                let output = instruction_primary_result(instruction);
+                let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned()
+                else {
+                    return Err(format!(
+                        "WASM TupleGet 缺少 layout 身份 `{layout_id:?}` in `{}`（object={object:?}, index={index}）",
+                        self.mir_fn.symbol
+                    ));
+                };
+                let Some(field) = layout.fields.get(*index as usize).cloned()
+                else {
+                    return Err(format!(
+                        "WASM TupleGet 位置索引 {index} 越界：layout `{}` 长度 {}（in `{}`）",
+                        layout.name,
+                        layout.fields.len(),
+                        self.mir_fn.symbol
+                    ));
+                };
+                // 标签只在类型身份层存在，目标布局按位置排列；这里只按冻结 layout 的
+                // 槽位读值，不按标签名或源码顺序重新推导。
+                if self.layout_uses_gc_struct(&layout) {
+                    let Some(object_local) = self.operand_reference_local(object)
+                    else {
+                        return Err(format!(
+                            "WASM TupleGet 计划不一致: layout `{}` 已注册 gc struct，但对象槽不是引用 (in `{}`)",
+                            layout.name, self.mir_fn.symbol
+                        ));
+                    };
+                    let type_index = self.resolve_gc_struct_type_index(layout.id, &layout.name);
+                    self.emit_local_get(object_local);
+                    self.emit_ref_cast_struct(type_index);
+                    self.emit_struct_get(type_index, *index);
+                    if let Some(output) = output {
+                        let stack_ty = wasm_gc_field_type_byte_for_glue(&field.ty, self.js_glue_utf8_as_anyref);
+                        self.validate_output_slot_type(output, stack_ty);
+                        self.assign_output_local(output);
+                    }
+                    else {
+                        WasmOpcode::Drop.encode(&mut self.code);
+                    }
+                }
+                else if let Some(object_local) = self.operand_address_local(object) {
+                    self.emit_local_get(object_local);
+                    self.emit_i32_const(field.offset as i32);
+                    self.emit_i32_add();
+                    let field_is_inline_aggregate = type_is_inline_aggregate(self.ctx, &field.ty);
+                    if let Some(output) = output {
+                        if field_is_inline_aggregate {
+                            self.validate_output_slot_type(output, VALTYPE_I32);
+                            self.assign_output_local(output);
+                        }
+                        else {
+                            self.emit_load_at_field(&field);
+                            let stack_type = match field.ty {
+                                NyarType::Float64 => VALTYPE_F64,
+                                NyarType::Integer64 { .. } => VALTYPE_I64,
+                                _ => VALTYPE_I32,
+                            };
+                            self.validate_output_slot_type(output, stack_type);
+                            self.assign_output_local(output);
+                        }
+                    }
+                    else {
+                        if !field_is_inline_aggregate {
+                            self.emit_load_at_field(&field);
+                        }
+                        WasmOpcode::Drop.encode(&mut self.code);
+                    }
+                }
+                else if let Some(object_local) = self.operand_reference_local(object) {
+                    let type_index = self.resolve_gc_struct_type_index(layout.id, &layout.name);
+                    self.emit_local_get(object_local);
+                    self.emit_ref_cast_struct(type_index);
+                    self.emit_struct_get(type_index, *index);
+                    if let Some(output) = output {
+                        let stack_ty = wasm_gc_field_type_byte_for_glue(&field.ty, self.js_glue_utf8_as_anyref);
+                        self.validate_output_slot_type(output, stack_ty);
+                        self.assign_output_local(output);
+                    }
+                    else {
+                        WasmOpcode::Drop.encode(&mut self.code);
+                    }
+                }
+                else {
+                    return Err(format!(
+                        "WASM TupleGet 计划不一致: layout `{}` 的对象槽既不是地址也不是引用 (in `{}`)",
+                        layout.name, self.mir_fn.symbol
+                    ));
+                }
             }
             MirInstructionKind::TupleNew { layout_id, fields } => {
                 let Some(output) = instruction_primary_result(instruction)

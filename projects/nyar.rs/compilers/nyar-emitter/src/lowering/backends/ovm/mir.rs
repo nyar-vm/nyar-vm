@@ -557,12 +557,29 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
             }
-            // 本块只有指令与不可达分支：`TupleGet` 尚无生产者，接入前禁止静默退化为近似读。
             MirInstructionKind::TupleGet { object, layout_id, index } => {
-                return Err(format!(
-                    "OVM 后端尚未提供 TupleGet 的精确表示编码（object={object:?}, layout_id={layout_id:?}, index={index}，symbol=`{}`）",
-                    self.mir_fn.symbol
-                ));
+                let layout = self.ctx.layout_by_id(*layout_id).cloned().ok_or_else(|| {
+                    format!("OVM TupleGet 布局身份缺少布局合同：layout_id={layout_id:?}（symbol=`{}`）", self.mir_fn.symbol)
+                })?;
+                if (*index as usize) >= layout.fields.len() {
+                    return Err(format!(
+                        "OVM TupleGet 位置索引 {index} 越界：layout `{}` 长度 {}（symbol=`{}`）",
+                        layout.name,
+                        layout.fields.len(),
+                        self.mir_fn.symbol
+                    ));
+                }
+                let slot = i32::try_from(*index)
+                    .map_err(|_| format!("OVM TupleGet 位置索引 {index} 超出 i32 槽合同（symbol=`{}`）", self.mir_fn.symbol))?;
+                // 目标对象按位置槽读取；标签只在类型身份层，不能作为 OVM 槽位来源。
+                self.emit_operand(object)?;
+                self.emitter.emit_imm1(OdinHeadCode::FieldGet, slot);
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                }
+                else {
+                    self.emitter.emit_plain(OdinHeadCode::Pop);
+                }
             }
             MirInstructionKind::TupleNew { layout_id, fields } => {
                 let layout = self
