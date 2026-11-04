@@ -23,8 +23,14 @@ pub(crate) const FRAGMENT_TAG: &str = "asgard:fragment";
 
 /// 发射组件的 SSG 渲染源码；调用方必须先通过准入门。
 pub(crate) fn emit_ssg_source(component: &LoweredComponent) -> AsgardResult<String> {
-    let mut emitter =
-        Emitter { module: &component.render_ir, bindings: &component.script_bindings, lets: Vec::new(), body: String::new(), var_counter: 0 };
+    let mut emitter = Emitter {
+        module: &component.render_ir,
+        bindings: &component.script_bindings,
+        lets: Vec::new(),
+        body: String::new(),
+        var_counter: 0,
+        indent: 0,
+    };
     emitter.emit_roots()?;
     let mut source = String::from("using asgard.render;\n\n[export]\nmicro awsl_ssg_render(): HostElement {\n");
     for line in &emitter.lets {
@@ -41,6 +47,7 @@ struct Emitter<'a> {
     lets: Vec<String>,
     body: String,
     var_counter: u32,
+    indent: usize,
 }
 
 impl Emitter<'_> {
@@ -51,7 +58,8 @@ impl Emitter<'_> {
     }
 
     fn line(&mut self, text: impl AsRef<str>) {
-        writeln!(self.body, "    {}", text.as_ref()).expect("SSG 发射写入内存字符串不可失败");
+        let pad = "    ".repeat(self.indent + 1);
+        writeln!(self.body, "{pad}{}", text.as_ref()).expect("SSG 发射写入内存字符串不可失败");
     }
 
     fn emit_roots(&mut self) -> AsgardResult<()> {
@@ -143,10 +151,41 @@ impl Emitter<'_> {
                 }
                 Ok(Some(var))
             }
-            RenderNode::If(_) | RenderNode::Loop(_) | RenderNode::Component(_) => {
+            RenderNode::If(render_if) => {
+                // 条件经准入门校验为 E1 bool：预建透明容器，分支体内把内容挂进容器，
+                // 由 OVM 按组件初始状态静态取分支。用 if 语句而非 if 表达式，
+                // 与编译器已验证的语句形态保持一致。
+                let condition = self.module.expr_source(render_if.condition).to_string();
+                let condition_value = self.expr_value(&condition)?;
+                let var = self.next_var();
+                self.line(format!("let {var} = dom_create_element(\"{FRAGMENT_TAG}\")"));
+                self.line(format!("if {condition_value} {{"));
+                self.emit_if_branch(render_if.then_region, &var)?;
+                // 空 else 不发射分支块，避免产出空语句块。
+                if !region_nodes(self.module, render_if.else_region).is_empty() {
+                    self.line("} else {");
+                    self.emit_if_branch(render_if.else_region, &var)?;
+                }
+                self.line("}");
+                Ok(Some(var))
+            }
+            RenderNode::Loop(_) | RenderNode::Component(_) => {
                 Err(AsgardError::msg(report!("SSG 准入门放行后发射器遇到越界节点: {:?}", self.module.node(node_id))))
             }
         }
+    }
+
+    /// 发射 `if` 分支体：比外层深一级缩进，把分支内节点逐个挂进 `parent` 容器。
+    fn emit_if_branch(&mut self, region: crate::asgard::awsl::RenderRegionId, parent: &str) -> AsgardResult<()> {
+        self.indent += 1;
+        let children = region_nodes(self.module, region).to_vec();
+        for child_id in children {
+            if let Some(child) = self.emit_node(child_id)? {
+                self.line(format!("dom_append({parent}, {child})"));
+            }
+        }
+        self.indent -= 1;
+        Ok(())
     }
 
     fn attr_value(&mut self, value: &RenderAttrValue) -> AsgardResult<String> {

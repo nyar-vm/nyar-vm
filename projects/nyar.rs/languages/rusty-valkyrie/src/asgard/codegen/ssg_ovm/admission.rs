@@ -8,7 +8,8 @@
 use crate::asgard::{
     awsl::{
         LoweredComponent, RenderAttrValue, RenderModule, RenderNode, RenderNodeId, RenderRegionId, RenderTextSegment, ScriptBinding,
-        render_ir::region_nodes,
+        SignalValueType,
+        render_ir::{RenderIfNode, region_nodes},
     },
     codegen::v_render::{expr::normalize_js_string_literals, util::is_simple_identifier},
 };
@@ -36,6 +37,9 @@ pub enum AdmissionRule {
     MissingRequiredPropertyDefault,
     /// 模板嵌套超过准入上限。
     NestingDepthExceeded,
+    /// `each=`/`：each=` 魔法属性迭代写法：不是语言构造，任何时期硬拒绝。
+    /// 迭代只有 `<loop item="x" :each="{items}">` 一种语言形态。
+    MagicIterationAttribute,
 }
 
 impl AdmissionRule {
@@ -50,6 +54,7 @@ impl AdmissionRule {
             Self::UnsupportedBindingInit => "绑定初始表达式越出 SSG 准入子集",
             Self::MissingRequiredPropertyDefault => "必填属性缺省值缺失",
             Self::NestingDepthExceeded => "模板嵌套超过准入上限",
+            Self::MagicIterationAttribute => "不是语言构造",
         }
     }
 }
@@ -126,6 +131,17 @@ impl Gate<'_> {
         match self.module.node(node_id) {
             RenderNode::Element(element) => {
                 for attr in &element.attrs {
+                    // `each`/`：each` 魔法属性迭代写法不是语言构造：任何时期硬拒绝，点名唯一合法形态。
+                    if attr.name == "each" || attr.name == ":each" {
+                        self.reject(
+                            AdmissionRule::MagicIterationAttribute,
+                            format!(
+                                "`{}` 上的 `{}` 属性（迭代只有 `<loop item=\"x\" :each=\"{{items}}\">` 一种语言形态）",
+                                element.tag, attr.name
+                            ),
+                        );
+                        continue;
+                    }
                     if attr.is_event {
                         continue;
                     }
@@ -149,10 +165,59 @@ impl Gate<'_> {
                 }
             }
             RenderNode::Fragment(fragment) => self.check_region(fragment.children, depth + 1),
-            RenderNode::If(_) => self.reject(AdmissionRule::OutOfSubsetConstruct, "if"),
-            RenderNode::Loop(_) => self.reject(AdmissionRule::OutOfSubsetConstruct, "loop"),
-            RenderNode::Component(component) => self.reject(AdmissionRule::OutOfSubsetConstruct, format!("component `{}`", component.tag)),
+            RenderNode::If(render_if) => self.check_if_node(render_if, depth),
+            RenderNode::Loop(_) => self.reject(
+                AdmissionRule::OutOfSubsetConstruct,
+                "loop（合法语言构造；其 SSG 降低当前被编译器执行通道缺口阻挡：数组下标在循环合流处的 \
+                 类型身份不一致。聚合与迭代形态在通道修复后放行，勿改写为属性魔法迭代）",
+            ),
+            RenderNode::Component(component) => {
+                if component.attrs.iter().any(|attr| attr.name == "each" || attr.name == ":each") {
+                    self.reject(
+                        AdmissionRule::MagicIterationAttribute,
+                        format!(
+                            "component `{}` 上的 `each` 属性（迭代只有 `<loop item=\"x\" :each=\"{{items}}\">` 一种语言形态）",
+                            component.tag
+                        ),
+                    );
+                    return;
+                }
+                self.reject(AdmissionRule::OutOfSubsetConstruct, format!("component `{}`", component.tag));
+            }
         }
+    }
+
+    /// `<if>`/`<else>` 条件渲染：条件必须是 E1 表达式且求值为 `bool`
+    ///（`true`/`false` 字面量或 `bool` 类型绑定），两个分支按同一子集递归校验。
+    /// 其它类型的条件真值语义尚未进入合同，拒绝时点名原因与可用替代。
+    fn check_if_node(&mut self, render_if: &RenderIfNode, depth: usize) {
+        let condition = self.module.expr_source(render_if.condition);
+        self.check_expr(condition);
+        match classify_e1(condition, self.bindings) {
+            Ok(E1Expr::Literal(literal)) => {
+                if literal != "true" && literal != "false" {
+                    self.reject(
+                        AdmissionRule::OutOfSubsetConstruct,
+                        format!("if 条件 `{condition}`（条件必须求值为 `bool`：`true`/`false` 字面量或 `bool` 类型绑定）"),
+                    );
+                }
+            }
+            Ok(E1Expr::Binding(name)) => {
+                if let Some(binding) = self.bindings.iter().find(|binding| binding.name == name) {
+                    if binding.value_type != SignalValueType::Bool {
+                        self.reject(
+                            AdmissionRule::OutOfSubsetConstruct,
+                            format!(
+                                "if 条件 `{condition}`（绑定 `{name}` 不是 `bool` 类型；其它类型的真值语义尚未进入合同，请改用 bool 绑定）"
+                            ),
+                        );
+                    }
+                }
+            }
+            Err(_) => {}
+        }
+        self.check_region(render_if.then_region, depth + 1);
+        self.check_region(render_if.else_region, depth + 1);
     }
 
     fn check_segments(&mut self, segments: &[RenderTextSegment], what: &str) {

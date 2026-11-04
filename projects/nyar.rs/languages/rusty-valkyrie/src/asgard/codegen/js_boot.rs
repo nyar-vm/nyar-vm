@@ -411,18 +411,27 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     '__voa.rxBindPropBool': function (sigId, exprExport, dep1, dep2) {
       bindExpr(null, hostText(exprExport), dep1, dep2, function (_node, value) { sigSet(sigId, !!value); }, false);
     },
-    '__voa.rxBindIf': function (container, condExport, mountExport, dep1, dep2) {
-      var mounted = false;
+    '__voa.rxBindIf': function (container, condExport, mountExport, elseMountExport, dep1, dep2) {
+      var mounted = 0;
       var update = function () {
         var show = callWasm(hostText(condExport));
         var node = getDomHandle(container);
         if (!node) return;
-        if (show && !mounted) {
-          callWasm(hostText(mountExport), container);
-          mounted = true;
-        } else if (!show && mounted) {
+        if (show) {
+          if (mounted !== 1) {
+            if (mounted !== 0) node.textContent = '';
+            callWasm(hostText(mountExport), container);
+            mounted = 1;
+          }
+        } else if (elseMountExport) {
+          if (mounted !== 2) {
+            if (mounted !== 0) node.textContent = '';
+            callWasm(hostText(elseMountExport), container);
+            mounted = 2;
+          }
+        } else if (mounted !== 0) {
           node.textContent = '';
-          mounted = false;
+          mounted = 0;
         }
       };
       subscribeDeps([dep1, dep2], update);

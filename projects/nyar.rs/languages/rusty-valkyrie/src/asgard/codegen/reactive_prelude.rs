@@ -66,7 +66,7 @@ micro dom_mount_islands()
 micro dom_unmount_islands(): i32
 
 [js_builtin("__voa.rxBindIf")]
-micro rx_bind_if(container: i32, cond_export: utf8, mount_export: utf8, dep1: i32, dep2: i32)
+micro rx_bind_if(container: i32, cond_export: utf8, mount_export: utf8, else_mount_export: utf8, dep1: i32, dep2: i32)
 
 [js_builtin("__voa.rxBindLoop")]
 micro rx_bind_loop(container: i32, items_export: utf8, mount_export: utf8, key_export: utf8, dep1: i32, dep2: i32)

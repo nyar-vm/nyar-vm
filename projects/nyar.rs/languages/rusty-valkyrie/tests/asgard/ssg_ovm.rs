@@ -42,8 +42,13 @@ fn e1_subset_template_is_admitted() {
 }
 
 #[test]
-fn if_loop_and_component_are_rejected_as_out_of_subset() {
-    assert!(rules("<widget test><if cond=\"{a}\">x</if></widget>").contains(&AdmissionRule::OutOfSubsetConstruct));
+fn if_is_admitted_while_loop_and_component_are_rejected_as_out_of_subset() {
+    // `<if>`/`<else>` 已迁入准入子集：bool 条件（字面量或 bool 绑定）放行。
+    assert!(rules("<widget test><if cond=\"{true}\">x</if></widget>").is_empty());
+    assert!(
+        rules("<widget test><if cond=\"{flag}\">x</if></widget>\n<script>\nlet flag: bool = true\n</script>").is_empty(),
+        "<if> 的 bool 绑定条件必须准入"
+    );
     assert!(rules("<widget test><loop item=\"x\" :each=\"{items}\">x</loop></widget>").contains(&AdmissionRule::OutOfSubsetConstruct));
     assert!(rules("<widget test><Other /></widget>").contains(&AdmissionRule::OutOfSubsetConstruct));
 }

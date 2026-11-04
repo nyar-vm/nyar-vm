@@ -188,8 +188,15 @@ impl<'a> VRenderCodegen<'a> {
         let condition = self.module.expr_source(render_if.condition);
         let cond_export = self.register_bool_expr(condition);
         let mount_export = self.register_mount_export(render_if.then_region);
+        // else 分支非空时同样注册挂载导出，由运行时按条件取分支；空 else 传空串走纯卸载语义。
+        let else_export = if region_nodes(self.module, render_if.else_region).is_empty() {
+            String::new()
+        }
+        else {
+            self.register_mount_export(render_if.else_region)
+        };
         let (dep1, dep2) = self.dep_args(condition);
-        writeln!(self.out, "    rx_bind_if({container}, \"{cond_export}\", \"{mount_export}\", {dep1}, {dep2})").unwrap();
+        writeln!(self.out, "    rx_bind_if({container}, \"{cond_export}\", \"{mount_export}\", \"{else_export}\", {dep1}, {dep2})").unwrap();
         container
     }
 
