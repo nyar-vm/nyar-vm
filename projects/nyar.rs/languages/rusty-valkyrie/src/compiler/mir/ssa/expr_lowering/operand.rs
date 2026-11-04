@@ -2,7 +2,7 @@ use crate::compiler::{
     hir::is_nullable_type,
     types::{
         Identifier, NamePath,
-        hir::{FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
+        hir::{FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, HirTupleField, ValkyrieType},
     },
 };
 
@@ -163,7 +163,7 @@ impl MirBuilder {
                 // value via FieldGet, then `Call { dispatch: Indirect, callee: <value> }`.
                 // This lets backends emit `Delegate::DynamicInvoke` / `call_ref` etc.
                 // instead of treating the field name as a static method symbol.
-                if let HirExprKind::FieldAccess { object, field, field_id } = &callee.kind {
+                if let HirExprKind::FieldAccess { object, field, field_id, .. } = &callee.kind {
                     let receiver_operand = self.lower_expr_to_operand(object);
                     let field_ty = self.field_type_for_object_operand(&receiver_operand, field);
                     if matches!(field_ty, Some(ValkyrieType::Function(_))) {
@@ -431,6 +431,7 @@ impl MirBuilder {
                     .map(|(index, item)| {
                         let hint = expected_type.and_then(|ty| match ty {
                             ValkyrieType::Tuple(element_types) => element_types.get(index),
+                            ValkyrieType::LabeledTuple(tuple_fields) => tuple_fields.get(index).map(|field| &field.ty),
                             _ => None,
                         });
                         self.lower_expr_to_operand_with_hint(item, hint)
@@ -439,6 +440,21 @@ impl MirBuilder {
                 let tuple_type = match expected_type {
                     Some(ValkyrieType::Tuple(element_types)) if element_types.len() == items.len() => {
                         ValkyrieType::Tuple(element_types.clone())
+                    }
+                    // 字面量没有标签语法：标签只从期望类型取得，元素类型仍按实际字面量推断，
+                    // 让真正的类型不匹配留到后续校验，而不是被期望类型掩盖。
+                    Some(ValkyrieType::LabeledTuple(expected_fields)) if expected_fields.len() == items.len() => {
+                        ValkyrieType::LabeledTuple(
+                            expected_fields
+                                .iter()
+                                .zip(fields.iter())
+                                .map(|(field, operand)| HirTupleField {
+                                    name: field.name.clone(),
+                                    ty: infer_builder_operand_type(operand, &self.value_types)
+                                        .unwrap_or_else(|| field.ty.clone()),
+                                })
+                                .collect(),
+                        )
                     }
                     _ => ValkyrieType::Tuple(
                         fields
@@ -599,8 +615,33 @@ impl MirBuilder {
                 self.value_types.insert(value, result_type);
                 MirOperand::Value(value)
             }
-            HirExprKind::FieldAccess { object, field, field_id } => {
+            HirExprKind::FieldAccess { object, field, field_id, tuple_index } => {
                 let object_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
+                if let Some(index) = *tuple_index {
+                    // 带标签元组：位置由 `AggregateFieldIndex::resolve_field` 在 HIR 冻结，
+                    // 这里只消费位置事实，不重新按名字猜。
+                    let object_type = infer_builder_operand_type(&object_operand, &self.value_types);
+                    let Some(ValkyrieType::LabeledTuple(fields)) = object_type.as_ref() else {
+                        self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
+                        return MirOperand::Constant(MirConstant::Unit);
+                    };
+                    let Some(field_type) = fields.get(index as usize).map(|field| field.ty.clone()) else {
+                        self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
+                        return MirOperand::Constant(MirConstant::Unit);
+                    };
+                    let value = self.next_value(MirValueOrigin::Temporary);
+                    self.push_instruction(MirOperation::TupleGet { object: object_operand, index }, vec![value]);
+                    self.value_types.insert(value, field_type);
+                    return MirOperand::Value(value);
+                }
+                if let Some(object_type) = infer_builder_operand_type(&object_operand, &self.value_types) {
+                    if matches!(object_type, ValkyrieType::Tuple(_)) && field_id.is_none() {
+                        self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnlabeledTupleFieldAccess {
+                            field: field.to_string(),
+                        });
+                        return MirOperand::Constant(MirConstant::Unit);
+                    }
+                }
                 // 禁止按字段名 `length` 改写成 ArrayLength；数组长度只能来自
                 // 已解析的库调用合同 / 明确 ArrayLength 节点。
                 let Some(field_id) = *field_id

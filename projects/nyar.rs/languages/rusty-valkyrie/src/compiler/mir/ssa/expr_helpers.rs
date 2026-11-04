@@ -66,7 +66,12 @@ impl MirBuilder {
                 };
                 for field in &parts[1..parts.len() - 1] {
                     receiver_hir = HirExpr {
-                        kind: HirExprKind::FieldAccess { object: Box::new(receiver_hir), field: field.clone(), field_id: None },
+                        kind: HirExprKind::FieldAccess {
+                            object: Box::new(receiver_hir),
+                            field: field.clone(),
+                            field_id: None,
+                            tuple_index: None,
+                        },
                         span: span.clone(),
                     };
                 }

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::compiler::{
     hir::type_relation::TypeRelationContext,
-    mir::AggregateFieldIndex,
+    mir::{AggregateFieldIndex, FieldResolution},
     types::{
         Identifier,
         hir::{
@@ -95,11 +95,16 @@ pub(crate) fn field_identity_from_type(
     struct_fields.fields_of(object_type)?.iter().find(|item| item.name == *field)?.id
 }
 
+/// 成员类型查询：带标签元组走与位置解析相同的字段表，禁止另开按名分支。
 pub(crate) fn lookup_struct_field_type(
     object_type: &ValkyrieType,
     field: &Identifier,
     struct_fields: &AggregateFieldIndex,
 ) -> Option<ValkyrieType> {
+    // 带标签元组没有泛型代入：同名标签的字段类型就是位置类型。
+    if let ValkyrieType::LabeledTuple(fields) = object_type {
+        return fields.iter().find(|item| &item.name == field).map(|item| item.ty.clone());
+    }
     let declared = struct_fields.fields_of(object_type)?.iter().find(|item| item.name == *field)?.ty.clone();
     let generics = struct_fields.generics_of(object_type).unwrap_or(&[]);
     Some(instantiate_declared_type(&declared, generics, object_type.nominal_arguments()))
@@ -159,9 +164,21 @@ pub(crate) fn normalize_local_field_chain(expr: &mut HirExpr, locals: &BTreeMap<
         span: span.clone(),
     };
     for part in &parts[1..] {
-        let field_id = field_identity_from_type(&current_type, part, struct_fields);
-        current_type = lookup_struct_field_type(&current_type, part, struct_fields).unwrap_or(ValkyrieType::AutoType);
-        current = HirExpr { kind: HirExprKind::FieldAccess { object: Box::new(current), field: part.clone(), field_id }, span: span.clone() };
+        let resolution = struct_fields.resolve_field(&current_type, part);
+        let (field_id, tuple_index, next_type) = match resolution {
+            FieldResolution::Aggregate { field_id, .. } => (
+                field_id,
+                None,
+                lookup_struct_field_type(&current_type, part, struct_fields).unwrap_or(ValkyrieType::AutoType),
+            ),
+            FieldResolution::LabeledTuple { index, ty } => (None, Some(index), ty),
+            FieldResolution::UnlabeledTuple | FieldResolution::NotFound => (None, None, ValkyrieType::AutoType),
+        };
+        current_type = next_type;
+        current = HirExpr {
+            kind: HirExprKind::FieldAccess { object: Box::new(current), field: part.clone(), field_id, tuple_index },
+            span: span.clone(),
+        };
     }
     expr.kind = current.kind;
 }

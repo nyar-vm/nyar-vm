@@ -326,7 +326,7 @@ fn lower_term_expression_body(
                 kind
             }
             else {
-                HirExprKind::FieldAccess { object: Box::new(object), field: Identifier::new(member), field_id: None }
+                HirExprKind::FieldAccess { object: Box::new(object), field: Identifier::new(member), field_id: None, tuple_index: None }
             })
         })?,
         TermExpression::Index { receiver, index, .. } => lower_deferred(|| {
@@ -541,7 +541,9 @@ fn lower_binary_expression(
             let value = Box::new(lower_term_expression_with_context(rhs, source_id, fallback_span, false)?);
             match target.kind {
                 HirExprKind::Variable(identifier) => Ok(HirExprKind::Assign { target: identifier.name, value }),
-                HirExprKind::FieldAccess { object, field, field_id } => Ok(HirExprKind::StoreField { object, field, value, field_id }),
+                HirExprKind::FieldAccess { object, field, field_id, .. } => {
+                    Ok(HirExprKind::StoreField { object, field, value, field_id })
+                }
                 _ => panic!("Oak 已验证的赋值位置不能降低为其他表达式"),
             }
         }
@@ -794,7 +796,12 @@ fn lower_for_in_desugar(label: Option<Identifier>, pattern: HirPattern, iterator
     let dot_call = |object: HirExpr, member: &str, span: &SourceSpan| HirExpr {
         kind: HirExprKind::Call {
             callee: Box::new(HirExpr {
-                kind: HirExprKind::FieldAccess { object: Box::new(object), field: Identifier::new(member), field_id: None },
+                kind: HirExprKind::FieldAccess {
+                    object: Box::new(object),
+                    field: Identifier::new(member),
+                    field_id: None,
+                    tuple_index: None,
+                },
                 span: span.clone(),
             }),
             args: Vec::new(),

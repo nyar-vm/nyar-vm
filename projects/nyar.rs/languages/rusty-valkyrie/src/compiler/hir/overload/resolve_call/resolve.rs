@@ -462,7 +462,7 @@ fn resolve_expr_calls_at(
                 });
             }
         }
-        HirExprKind::FieldAccess { object, field, field_id } => {
+        HirExprKind::FieldAccess { object, field, field_id, .. } => {
             resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
             if field_id.is_none() {
                 *field_id = infer_scrutinee_type(object, locals, struct_fields, singleton_names)

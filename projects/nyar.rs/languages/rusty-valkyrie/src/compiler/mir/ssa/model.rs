@@ -54,6 +54,11 @@ pub enum MirDiagnostic {
         /// 仅用于诊断的表面类型名。
         type_name: String,
     },
+    /// 无标签元组按名访问：结构化失败，禁止退回按位置解析。
+    UnlabeledTupleFieldAccess {
+        /// 用户书写的字段名。
+        field: String,
+    },
     /// 字段操作缺少已冻结的字段身份。
     UnresolvedFieldIdentity {
         /// 仅用于诊断的字段名。

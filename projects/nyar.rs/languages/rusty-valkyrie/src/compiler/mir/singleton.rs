@@ -76,6 +76,75 @@ impl AggregateFieldIndex {
             _ => None,
         }
     }
+
+    /// 元组成员解析的唯一入口：只按对象类型类别分派，不按标签名硬编码。
+    ///
+    /// 该函数不依赖聚合字段表，因此 MIR lowering 与 HIR 解析共用同一位置事实。
+    pub fn resolve_tuple_field<'a>(object_type: &'a ValkyrieType, name: &Identifier) -> TupleFieldResolution<'a> {
+        match object_type {
+            ValkyrieType::LabeledTuple(fields) => match fields.iter().position(|field| &field.name == name) {
+                Some(index) => TupleFieldResolution::Labeled { index: index as u32, ty: &fields[index].ty },
+                None => TupleFieldResolution::NotFound,
+            },
+            ValkyrieType::Tuple(_) => TupleFieldResolution::Unlabeled,
+            _ => TupleFieldResolution::NotTuple,
+        }
+    }
+
+    /// 字段解析唯一门面：先按元组类别分派，再回落到名义/命名聚合字段表。
+    pub fn resolve_field(&self, object_type: &ValkyrieType, name: &Identifier) -> FieldResolution {
+        match Self::resolve_tuple_field(object_type, name) {
+            TupleFieldResolution::Labeled { index, ty } => FieldResolution::LabeledTuple { index, ty: ty.clone() },
+            TupleFieldResolution::Unlabeled => FieldResolution::UnlabeledTuple,
+            TupleFieldResolution::NotFound => FieldResolution::NotFound,
+            TupleFieldResolution::NotTuple => self
+                .fields_of(object_type)
+                .and_then(|fields| fields.iter().find(|field| &field.name == name))
+                .map(|field| FieldResolution::Aggregate { field_id: field.id, ty: field.ty.clone() })
+                .unwrap_or(FieldResolution::NotFound),
+        }
+    }
+}
+
+/// 元组成员解析结果；`Unlabeled` 是结构化失败，禁止退回按位置解析。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TupleFieldResolution<'a> {
+    /// 带标签元组的字段位置与类型。
+    Labeled {
+        /// 源码顺序位置。
+        index: u32,
+        /// 字段类型。
+        ty: &'a ValkyrieType,
+    },
+    /// 无标签元组：不允许按名访问。
+    Unlabeled,
+    /// 未找到同名标签。
+    NotFound,
+    /// 对象不是元组类别。
+    NotTuple,
+}
+
+/// 聚合/元组字段的统一解析结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldResolution {
+    /// 名义/命名聚合字段。
+    Aggregate {
+        /// 已冻结字段身份；未绑定阶段可能为空。
+        field_id: Option<nyar_types::FieldId>,
+        /// 字段类型。
+        ty: ValkyrieType,
+    },
+    /// 带标签元组字段。
+    LabeledTuple {
+        /// 源码顺序位置。
+        index: u32,
+        /// 字段类型。
+        ty: ValkyrieType,
+    },
+    /// 无标签元组按名访问：结构化失败。
+    UnlabeledTuple,
+    /// 未解析。
+    NotFound,
 }
 
 /// Collect struct + singleton field layouts for overload resolution and type inference.

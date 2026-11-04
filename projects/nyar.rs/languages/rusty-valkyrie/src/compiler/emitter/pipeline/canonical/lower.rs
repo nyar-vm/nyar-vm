@@ -330,12 +330,26 @@ fn lower_operation(
         MirOperation::TupleNew { fields } => Ok(CanonicalOperation::TupleNew {
             element_types: match results.first().and_then(|result| value_types.get(result)) {
                 Some(ValkyrieType::Tuple(types)) => types.iter().map(|ty| type_id(ids, ty)).collect::<Result<_, _>>()?,
+                Some(ValkyrieType::LabeledTuple(tuple_fields)) => {
+                    tuple_fields.iter().map(|field| type_id(ids, &field.ty)).collect::<Result<_, _>>()?
+                }
                 _ => {
-                    return Err(error_without_module("CAN017", "元组构造结果缺少完整 Tuple 类型"));
+                    return Err(error_without_module("CAN017", "元组构造结果缺少完整 Tuple / LabeledTuple 类型"));
                 }
             },
             fields: fields.iter().map(value).collect::<Result<_, _>>()?,
         }),
+        MirOperation::TupleGet { object, index } => {
+            let object_ty = match object {
+                MirOperand::Value(value_ref) => value_types.get(value_ref),
+                _ => None,
+            };
+            let Some(tuple_type) = object_ty.filter(|ty| matches!(ty, ValkyrieType::Tuple(_) | ValkyrieType::LabeledTuple(_)))
+            else {
+                return Err(error_without_module("CAN017", "元组读取对象缺少完整 Tuple / LabeledTuple 类型"));
+            };
+            Ok(CanonicalOperation::TupleGet { object: value(object)?, tuple_type: type_id(ids, tuple_type)?, index: *index })
+        }
         MirOperation::SumNew { nominal, variant, payload_type, payloads, .. } => {
             let result_ty = results.first().and_then(|result| value_types.get(result));
             let concrete = resolve_sum_nominal(*nominal, result_ty, ids, nominal_by_type)?;

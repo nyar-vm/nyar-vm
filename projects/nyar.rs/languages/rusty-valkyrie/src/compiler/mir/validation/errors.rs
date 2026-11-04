@@ -338,6 +338,7 @@ fn mir_diagnostic_args(row: DiagnosticRow, diagnostic: &MirDiagnostic) -> Diagno
             .with_arg("variant", DiagnosticArg::CallableShort(variant.clone())),
         MirDiagnostic::UnresolvedNominalIdentity { type_name } => row.with_arg("type_name", DiagnosticArg::TypeName(type_name.clone())),
         MirDiagnostic::UnresolvedFieldIdentity { field } => row.with_arg("field", DiagnosticArg::String(field.clone())),
+        MirDiagnostic::UnlabeledTupleFieldAccess { field } => row.with_arg("field", DiagnosticArg::String(field.clone())),
         MirDiagnostic::UnresolvedCallableIdentity { symbol } => row.with_arg("symbol", DiagnosticArg::CallableShort(symbol.clone())),
         MirDiagnostic::ConflictingCallableLabel { instance, existing, incoming } => row
             .with_arg("instance", DiagnosticArg::String(instance.to_string()))
@@ -367,6 +368,9 @@ fn mir_diagnostic_message(diagnostic: &MirDiagnostic) -> String {
         }
         MirDiagnostic::UnresolvedNominalIdentity { type_name } => format!("MIR lowering unresolved nominal identity `{type_name}`"),
         MirDiagnostic::UnresolvedFieldIdentity { field } => format!("MIR lowering unresolved field identity `{field}`"),
+        MirDiagnostic::UnlabeledTupleFieldAccess { field } => {
+            format!("MIR lowering rejected `.{field}` on an unlabeled tuple: positional tuples have no field labels")
+        }
         MirDiagnostic::UnresolvedCallableIdentity { symbol } => format!("MIR lowering unresolved callable identity `{symbol}`"),
         MirDiagnostic::ConflictingCallableLabel { instance, existing, incoming } => {
             format!("MIR lowering callable identity `{instance}` maps to both `{existing}` and `{incoming}`")

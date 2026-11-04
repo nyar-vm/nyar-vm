@@ -18,6 +18,7 @@ use crate::compiler::{
 };
 
 pub use singleton::{
+    FieldResolution, TupleFieldResolution,
     AggregateFieldIndex, SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR, SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD,
     SINGLETON_LAZY_ACCESSOR, SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan, SingletonWitnessEntries, collect_aggregate_field_map,
     collect_singleton_accessor_contracts, collect_singleton_instance_plans, collect_singleton_witness_entries, merge_singleton_field_layouts,

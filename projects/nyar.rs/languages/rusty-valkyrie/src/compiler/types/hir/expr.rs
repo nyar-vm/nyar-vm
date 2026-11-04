@@ -278,6 +278,10 @@ pub enum HirExprKind {
         /// HIR 绑定阶段冻结的字段身份；作为成员选择名时可以为 `None`。
         #[cfg_attr(feature = "serde", serde(default))]
         field_id: Option<nyar_types::FieldId>,
+        /// 带标签元组的位置访问；与 `field_id` 互斥，由
+        /// [`crate::compiler::mir::AggregateFieldIndex::resolve_field`] 冻结。
+        #[cfg_attr(feature = "serde", serde(default))]
+        tuple_index: Option<u32>,
     },
     /// 字段赋值表达式：`object.field = value`。
     ///
