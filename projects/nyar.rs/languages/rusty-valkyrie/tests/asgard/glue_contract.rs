@@ -135,6 +135,6 @@ fn glue_i64_rejects_lossy_number_parameter() {
     // JSON Number 无法承载超 2^53 的整数：marshal 必须显式拒绝，不得静默截断。
     let diagnostic =
         call_export_through_glue(&artifact, "echo", "[4611686018427387904]").expect_err("超出安全整数范围的 Number 必须被拒绝，不得静默截断");
-    assert!(diagnostic.contains("Cannot marshal I64 from Number"), "诊断必须指明 Number 承载不安全，实际：{diagnostic}");
+    assert!(diagnostic.contains("Cannot marshal I64 from number"), "诊断必须指明 Number 承载不安全，实际：{diagnostic}");
     assert!(diagnostic.contains("BigInt"), "诊断必须指明改用 BigInt，实际：{diagnostic}");
 }
