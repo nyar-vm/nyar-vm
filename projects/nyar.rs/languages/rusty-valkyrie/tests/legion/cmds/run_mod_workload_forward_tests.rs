@@ -98,6 +98,8 @@ fn is_fresh_rejects_stale_host_provider_compile_evidence() {
         bytecode_format_version: odin_bytecode::BYTECODE_FORMAT_VERSION,
         project_name: plan.project.name.clone(),
         target: plan.project.build_target.target.to_string(),
+        artifact_kind: plan.project.artifact_kind,
+        library_exports: Vec::new(),
         inputs,
         artifacts: vec![ExecutionArtifactDigest { path: "app.nyar".into(), hash: hash_file_sha256(&artifact_path).expect("artifact hash") }],
         run_contracts: vec![RunContract {
@@ -185,6 +187,8 @@ fn sample_execution_manifest(plan: &BuildPlan, artifact_path: &Path, evidence: C
         bytecode_format_version: odin_bytecode::BYTECODE_FORMAT_VERSION,
         project_name: plan.project.name.clone(),
         target: plan.project.build_target.target.to_string(),
+        artifact_kind: plan.project.artifact_kind,
+        library_exports: Vec::new(),
         inputs: collect_execution_input_digests(plan).expect("input digests"),
         artifacts: vec![ExecutionArtifactDigest { path: "app.nyar".into(), hash: hash_file_sha256(artifact_path).expect("artifact hash") }],
         run_contracts: vec![RunContract {

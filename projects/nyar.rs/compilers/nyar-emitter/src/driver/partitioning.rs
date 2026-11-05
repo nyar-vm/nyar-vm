@@ -58,6 +58,7 @@ pub(crate) fn merge_partition_reports(
         else {
             secondary_contracts.extend(report.run_contracts);
         }
+        merged.library_exports.extend(report.library_exports);
     }
     merged.run_contracts = primary_contracts;
     merged.run_contracts.extend(secondary_contracts);

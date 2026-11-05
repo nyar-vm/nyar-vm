@@ -2,7 +2,7 @@ use crate::legion::{
     cmds::error::{LegionError, LegionResult},
     workspace::{
         labeled_report_with_context,
-        manifest::RunnerBinding,
+        manifest::{ProjectArtifactKind, RunnerBinding},
         planner::{BuildPlan, BuildRequest, WorkspaceResolver},
         source_snapshot::compile_source_snapshot,
     },
@@ -34,9 +34,10 @@ const BACKEND_REQUEST_SNAPSHOT_FILE_NAME: &str = "backend-request.txt";
 /// 后端执行结果快照文件名，由构建流程写入，不属于交付产物。
 const BACKEND_RESULT_SNAPSHOT_FILE_NAME: &str = "backend-result.txt";
 const COMPILE_EVIDENCE_FILE_NAME: &str = "compile-evidence.txt";
-/// execution manifest 的 schema 版本；未正式发布前统一为 `0`（v0 基线），
-/// 旧 schema 的产物一律判为不新鲜并重建。
-const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 0;
+/// execution manifest 的 schema 版本；`1` 起 manifest 记录 `artifact_kind` 与
+/// 库导出索引，`0` 旧产物一律判为不新鲜并重建。读取侧靠 `serde(default)`
+/// 兼容缺少新字段的旧文件。
+const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 /// `legion run` 的命令参数。
 #[derive(Debug, Clone)]
@@ -99,6 +100,23 @@ impl From<&crate::compiler::emitter::pipeline::CompilerCompileEvidence> for Comp
     }
 }
 
+/// 库导出索引条目：逻辑导出名、物理产物、调用方式与 ABI digest。
+///
+/// 这是 `artifact: library` 的稳定消费面；与 [`RunContract`] 不同，它描述的是
+/// 可被外部宿主按名调用的导出，不要求存在可由 `legion run` 直接执行的入口。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LibraryExportIndexEntry {
+    /// 逻辑导出名（`[export]` 名称）。
+    pub logical_name: String,
+    /// 物理产物（相对输出目录的文件名）。
+    pub physical_artifact: String,
+    /// 调用方式（lane 的稳定调用合同，例如 `wasm callExport` / `ovm run --entry`）。
+    pub invocation: String,
+    /// 该导出的 ABI digest；lane 暂无 ABI 载体合同时为空串。
+    #[serde(default)]
+    pub abi_digest: String,
+}
+
 /// execution manifest：记录构建输入/产物摘要与运行契约，供 `run` 判断产物是否新鲜。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionManifest {
@@ -116,6 +134,12 @@ pub struct ExecutionManifest {
     pub project_name: String,
     /// 编译目标平台。
     pub target: String,
+    /// 产物种类：`binary` / `library`。旧 manifest 缺少该字段时按 `binary` 读取。
+    #[serde(default)]
+    pub artifact_kind: ProjectArtifactKind,
+    /// 库导出索引；非库产物为空。旧 manifest 缺少该字段时按空列表读取。
+    #[serde(default)]
+    pub library_exports: Vec<LibraryExportIndexEntry>,
     /// 参与构建的输入文件摘要。
     pub inputs: Vec<ExecutionInputDigest>,
     /// 落盘产物摘要。
@@ -190,6 +214,7 @@ impl ExecutionManifest {
     pub fn from_build_plan(
         plan: &BuildPlan,
         contracts: &[RunContract],
+        library_exports: &[LibraryExportIndexEntry],
         evidence: &crate::compiler::emitter::pipeline::CompilerCompileEvidence,
     ) -> LegionResult<Self> {
         Ok(Self {
@@ -200,6 +225,8 @@ impl ExecutionManifest {
             bytecode_format_version: odin_bytecode::BYTECODE_FORMAT_VERSION,
             project_name: plan.project.name.clone(),
             target: plan.project.build_target.target.to_string(),
+            artifact_kind: plan.project.artifact_kind,
+            library_exports: library_exports.to_vec(),
             inputs: collect_execution_input_digests(plan)?,
             artifacts: collect_execution_artifact_digests(&plan.output_dir)?,
             run_contracts: contracts.to_vec(),
@@ -225,11 +252,20 @@ impl ExecutionManifest {
         if self.target != plan.project.build_target.target.to_string() {
             return Ok(false);
         }
+        if self.artifact_kind != plan.project.artifact_kind {
+            return Ok(false);
+        }
         if self.inputs != collect_execution_input_digests(plan)? {
             return Ok(false);
         }
-        if self.run_contracts.is_empty() || self.artifacts.is_empty() {
+        // 库产物没有可执行入口，`run_contracts` 可以为空；它的新鲜度由导出索引承担。
+        if self.artifacts.is_empty() {
             return Ok(false);
+        }
+        match self.artifact_kind {
+            ProjectArtifactKind::Library if self.library_exports.is_empty() => return Ok(false),
+            ProjectArtifactKind::Binary if self.run_contracts.is_empty() => return Ok(false),
+            _ => {}
         }
 
         for artifact in &self.artifacts {

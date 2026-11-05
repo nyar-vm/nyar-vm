@@ -1,11 +1,10 @@
 use std::fs;
 
-use crate::{Result, nyar_backend_vm::emit_nyar_module};
+use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result, bundled_backend_capability_descriptor, nyar_backend_vm::emit_nyar_module};
 use nyar::{ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane};
 use odin_bytecode::{OdinExportKind, OdinModuleData};
 
 use super::BundledBackendCompiler;
-use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverRunContract, bundled_backend_capability_descriptor};
 
 pub(super) struct OvmFamilyCompiler;
 
@@ -23,11 +22,12 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
         let mut artifacts = ArtifactSet::default();
         let mut entry_symbol = None;
         let mut run_contracts = Vec::new();
+        let mut library_exports = Vec::new();
 
         fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
         if let Some(module) = input.nyar_module.as_ref() {
-            let entries = resolve_entry_symbols(module, &input.library_public_exports)?;
+            let entries = resolve_entry_symbols(module, &input.library_public_exports, request.library_mode)?;
             let nyar_name = format!("{}.nyar", request.artifact_name);
             let nyar_path = input.output_dir.join(&nyar_name);
             emit_nyar_module(module, &nyar_path)?;
@@ -41,17 +41,32 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
             });
 
             entry_symbol = entries.first().cloned();
+            if request.library_mode {
+                library_exports = entries
+                    .iter()
+                    .map(|entry| DriverLibraryExport {
+                        logical_name: entry.clone(),
+                        physical_artifact: format!("{}.nyar", request.artifact_name),
+                        invocation: "ovm run --entry".to_string(),
+                        // OVM 尚未冻结 ABI 载体合同；导出索引先记录调用面，digest 留空。
+                        abi_digest: String::new(),
+                    })
+                    .collect();
+            }
             for entry in entries {
                 run_contracts.push(ovm_run_contract(request.artifact_name, &entry));
             }
         }
 
-        Ok(DriverCompileReport { artifacts, entry_symbol, run_contracts, managed_abi: None })
+        Ok(DriverCompileReport { artifacts, entry_symbol, run_contracts, managed_abi: None, library_exports })
     }
 }
 
 #[doc(hidden)]
-pub fn resolve_entry_symbols(module: &OdinModuleData, library_public_exports: &[String]) -> Result<Vec<String>> {
+pub fn resolve_entry_symbols(module: &OdinModuleData, library_public_exports: &[String], library_mode: bool) -> Result<Vec<String>> {
+    if library_mode && library_public_exports.is_empty() {
+        return Err("`artifact: library` 要求至少一个已解析的 `[export]`；拒绝回落 `main`".to_string());
+    }
     let entries = if library_public_exports.is_empty() { vec!["main".to_owned()] } else { library_public_exports.to_vec() };
     for entry in &entries {
         let matches: Vec<_> =

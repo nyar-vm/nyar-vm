@@ -1,11 +1,10 @@
-use crate::{Result, bundled_backend_capability_descriptor, nyar_backend_clr::ClrBinaryBackend};
+use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result, bundled_backend_capability_descriptor, nyar_backend_clr::ClrBinaryBackend};
 use nyar::{
     BackendInputKind, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, TargetFamily, TargetLane,
     backends::TargetCodeGenBackend,
 };
 
 use super::BundledBackendCompiler;
-use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverRunContract};
 
 /// `CLR` 家族后端编译器：唯一宿主边界是 [`HostProjectionBoundary::Clr`]。
 pub(super) struct ClrFamilyCompiler;
@@ -50,6 +49,17 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
         let backend = ClrBinaryBackend::new();
         backend.validate(&input)?;
         let artifacts = backend.compile(input, request.options)?;
+        // 库产物必须有导出面：缺失 managed ABI 入口时结构化失败，不得回退 `main`
+        // 或静默返回空运行契约。
+        if request.library_mode {
+            match managed_abi.as_ref() {
+                None => return Err("`artifact: library` 的 `clr` 产物缺少 managed ABI 契约；拒绝回退 `main`".to_string()),
+                Some(contract) if contract.entries.is_empty() => {
+                    return Err("`artifact: library` 的 `clr` managed ABI 契约为空；拒绝产出空运行契约".to_string());
+                }
+                Some(_) => {}
+            }
+        }
         // managed ABI 入口逐个提供 argv 分发合同；无导出时才回退到单一 `main` 入口。
         let run_contracts = if !provided_contracts.is_empty() {
             provided_contracts
@@ -77,6 +87,23 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
         else {
             Vec::new()
         };
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi })
+        let library_exports = if request.library_mode {
+            managed_abi.as_ref().map(|contract| {
+                contract
+                    .entries
+                    .iter()
+                    .map(|entry| DriverLibraryExport {
+                        logical_name: entry.logical_entry.clone(),
+                        physical_artifact: artifact_file.clone(),
+                        invocation: "dotnet".to_string(),
+                        abi_digest: contract.contract_digest.clone(),
+                    })
+                    .collect()
+            }).unwrap_or_default()
+        }
+        else {
+            Vec::new()
+        };
+        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi, library_exports })
     }
 }

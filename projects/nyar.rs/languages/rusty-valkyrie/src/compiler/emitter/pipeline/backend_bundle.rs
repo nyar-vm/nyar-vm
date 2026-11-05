@@ -126,19 +126,20 @@ fn validate_artifact_surface(
     bundle: &CompilerBuildBundle,
     wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
 ) -> PipelineResult<()> {
-    if bundle.artifact_plan.target.to_profile(None).backend_family != TargetBackendFamily::Wasm {
-        return Ok(());
-    }
     let (export_count, entry_count) = bundle.surface_counts();
-    match wasm_package_kind {
-        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library if export_count == 0 => {
-            Err(PipelineError::Surface(ArtifactSurfaceError::LibraryMissingExport))
-        }
-        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary if entry_count == 0 => {
-            Err(PipelineError::Surface(ArtifactSurfaceError::BinaryMissingEntry))
-        }
-        _ => Ok(()),
+    // 「library 必须有导出面」是全 lane 合同：OVM / JVM / CLR 不得回落 `main`
+    // 或静默产出空运行契约。
+    if wasm_package_kind == nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library && export_count == 0 {
+        return Err(PipelineError::Surface(ArtifactSurfaceError::LibraryMissingExport));
     }
+    // binary 入口检查仍只约束 wasm（其余 lane 的 host 入口由各自后端决定）。
+    if bundle.artifact_plan.target.to_profile(None).backend_family == TargetBackendFamily::Wasm
+        && wasm_package_kind == nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary
+        && entry_count == 0
+    {
+        return Err(PipelineError::Surface(ArtifactSurfaceError::BinaryMissingEntry));
+    }
+    Ok(())
 }
 
 impl FrontendBuildBundle for CompilerBuildBundle {

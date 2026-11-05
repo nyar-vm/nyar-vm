@@ -211,7 +211,7 @@ pub mod testing {
     /// Re-export Nyar VM entry resolution for driver-family contract tests.
     #[cfg(feature = "ovm-lane")]
     pub fn resolve_nyar_entry_symbols(module: &odin_bytecode::OdinModuleData, library_public_exports: &[String]) -> crate::Result<Vec<String>> {
-        super::driver::families::ovm::resolve_entry_symbols(module, library_public_exports)
+        super::driver::families::ovm::resolve_entry_symbols(module, library_public_exports, false)
     }
 
     /// Compile a previously lowered backend input with bundled backends.
@@ -228,6 +228,7 @@ pub mod testing {
             input: input.into_driver_backend_input(),
             generate_runtime_config,
             options,
+            library_mode: false,
         })
     }
 }
@@ -676,6 +677,8 @@ pub(crate) struct DriverCompileRequest<'a> {
     pub generate_runtime_config: bool,
     /// 通用编译选项。
     pub options: &'a CompilationOptions,
+    /// 是否为 `artifact: library`（打包成可调用库，不是可执行程序或测试包）。
+    pub library_mode: bool,
 }
 
 /// 驱动层运行契约。
@@ -691,6 +694,22 @@ pub struct DriverRunContract {
     pub validate: String,
 }
 
+/// 驱动层库导出索引条目。
+///
+/// 只由 `artifact: library` 的构建产出，描述可被宿主按名调用的导出；
+/// `abi_digest` 在 lane 尚无 ABI 载体合同时为空串。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DriverLibraryExport {
+    /// 逻辑导出名。
+    pub logical_name: String,
+    /// 物理产物（文件名）。
+    pub physical_artifact: String,
+    /// 调用方式。
+    pub invocation: String,
+    /// ABI digest。
+    pub abi_digest: String,
+}
+
 /// 驱动层编译结果。
 #[derive(Debug, Default)]
 pub struct DriverCompileReport {
@@ -702,6 +721,8 @@ pub struct DriverCompileReport {
     pub run_contracts: Vec<DriverRunContract>,
     /// 导出入口的 managed ABI 契约（若有）。
     pub managed_abi: Option<ManagedAbiContract>,
+    /// 库导出索引（仅 `artifact: library`）。
+    pub library_exports: Vec<DriverLibraryExport>,
 }
 
 struct DriverPartitionCompileRequest<'a> {
@@ -750,6 +771,11 @@ pub fn compile_frontend_bundle_with_bundled_backends(
 fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileRequest<'_>) -> Result<DriverCompileReport> {
     let primary_partition_name = request.planned_partitions.primary_partition_name();
     let partition_count = request.planned_partitions.partition_count();
+    let test_entry_names = request.bundle.test_entry_names();
+    // `artifact: library` 与测试包都按 library 打包；测试包有自己的 `[test]` 入口，
+    // 不属于库导出面，因此不能把测试包当作库来校验/索引。
+    let library_mode =
+        request.bundle.wasm_package_kind() == nyar_backend_wasi::WasmPackageKind::Library && test_entry_names.is_empty();
     let mut reports = Vec::new();
 
     for partition_index in 0..partition_count {
@@ -787,16 +813,29 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
             input: driver_input,
             generate_runtime_config: request.generate_runtime_config,
             options: &options,
+            library_mode,
         })?;
         reports.push((partition.name.clone(), report));
     }
 
     let mut report = merge_partition_reports(reports, primary_partition_name.as_deref())?;
-    let test_entry_names = request.bundle.test_entry_names();
+    if library_mode {
+        mark_library_artifacts(&mut report);
+    }
     if !test_entry_names.is_empty() {
         emit_test_run_contracts(&mut report, request.output_dir, &test_entry_names)?;
     }
     Ok(report)
+}
+
+/// 把可执行/动态库产物改标为 `Library`：`artifact: library` 的产物是给宿主
+/// 按导出名调用的库，不是可直接启动的程序。
+fn mark_library_artifacts(report: &mut DriverCompileReport) {
+    for artifact in &mut report.artifacts.artifacts {
+        if matches!(artifact.kind, nyar::ArtifactKind::Executable | nyar::ArtifactKind::DynamicLibrary) {
+            artifact.kind = nyar::ArtifactKind::Library;
+        }
+    }
 }
 
 /// 为每个 `[test]` 入口生成独立 run contract。

@@ -70,6 +70,8 @@ pub enum ArtifactFormat {
 pub enum ArtifactKind {
     /// 可执行文件。
     Executable,
+    /// 可被宿主按导出名调用的库产物（`artifact: library`）。
+    Library,
     /// 动态库。
     DynamicLibrary,
     /// 静态目标文件。

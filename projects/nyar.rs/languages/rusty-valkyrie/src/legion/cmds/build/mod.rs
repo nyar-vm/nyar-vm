@@ -261,8 +261,11 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     }
 
     // Write execution manifest before collecting the artifact-set so restore can run.
-    if !artifact.driver.run_contracts.is_empty() {
-        write_execution_manifest(plan, &artifact.driver.run_contracts, &artifact.evidence)?;
+    // 库产物可能没有可执行 run contract（wasm 走 `callExport`），但仍必须写入
+    // 导出索引，因此库构建无条件写 manifest。
+    let is_library = plan.project.artifact_kind == ProjectArtifactKind::Library;
+    if is_library || !artifact.driver.run_contracts.is_empty() {
+        write_execution_manifest(plan, &artifact.driver.run_contracts, &artifact.driver.library_exports, &artifact.evidence)?;
     }
     else {
         ExecutionManifest::remove_from_output_dir(&plan.output_dir)?;
@@ -365,6 +368,7 @@ pub(super) fn print_artifacts(output_dir: &Path, artifacts: &ArtifactSet) {
 fn write_execution_manifest(
     plan: &crate::legion::workspace::planner::BuildPlan,
     specs: &[DriverRunContract],
+    library_exports: &[nyar_emitter::DriverLibraryExport],
     evidence: &crate::compiler::emitter::pipeline::CompilerCompileEvidence,
 ) -> LegionResult<()> {
     let contracts = specs
@@ -376,7 +380,16 @@ fn write_execution_manifest(
             validate: spec.validate.clone(),
         })
         .collect::<Vec<_>>();
-    ExecutionManifest::from_build_plan(plan, &contracts, evidence)?.write_to_output_dir(&plan.output_dir)
+    let exports = library_exports
+        .iter()
+        .map(|export| crate::legion::cmds::run::LibraryExportIndexEntry {
+            logical_name: export.logical_name.clone(),
+            physical_artifact: export.physical_artifact.clone(),
+            invocation: export.invocation.clone(),
+            abi_digest: export.abi_digest.clone(),
+        })
+        .collect::<Vec<_>>();
+    ExecutionManifest::from_build_plan(plan, &contracts, &exports, evidence)?.write_to_output_dir(&plan.output_dir)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

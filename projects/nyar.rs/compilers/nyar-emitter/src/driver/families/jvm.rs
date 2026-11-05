@@ -1,11 +1,10 @@
-use crate::{Result, bundled_backend_capability_descriptor, nyar_backend_jvm::JvmBinaryBackend};
+use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result, bundled_backend_capability_descriptor, nyar_backend_jvm::JvmBinaryBackend};
 use nyar::{
     BackendInputKind, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, TargetFamily, TargetLane,
     backends::TargetCodeGenBackend,
 };
 
 use super::BundledBackendCompiler;
-use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverRunContract};
 
 /// `JVM` 家族后端编译器：唯一宿主边界是 [`HostProjectionBoundary::Jvm`]。
 pub(super) struct JvmFamilyCompiler;
@@ -45,6 +44,17 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
         let backend = JvmBinaryBackend::new();
         backend.validate(&input)?;
         let artifacts = backend.compile(input, request.options)?;
+        // 库产物必须有导出面：缺失 managed ABI 入口时结构化失败，不得回退 `main`
+        // 或静默返回空运行契约。
+        if request.library_mode {
+            match managed_abi.as_ref() {
+                None => return Err("`artifact: library` 的 `jvm` 产物缺少 managed ABI 契约；拒绝回退 `main`".to_string()),
+                Some(contract) if contract.entries.is_empty() => {
+                    return Err("`artifact: library` 的 `jvm` managed ABI 契约为空；拒绝产出空运行契约".to_string());
+                }
+                Some(_) => {}
+            }
+        }
         // 库产物没有零参 `main` 时 `JvmBinaryBackend` 不补造 launcher；此时每个
         // managed ABI 入口各自持有可执行的 argv launcher 类与 run contract。
         let run_contracts = if !provided_contracts.is_empty() {
@@ -73,6 +83,23 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
         else {
             Vec::new()
         };
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi })
+        let library_exports = if request.library_mode {
+            managed_abi.as_ref().map(|contract| {
+                contract
+                    .entries
+                    .iter()
+                    .map(|entry| DriverLibraryExport {
+                        logical_name: entry.logical_entry.clone(),
+                        physical_artifact: format!("{}.jar", request.artifact_name),
+                        invocation: "java".to_string(),
+                        abi_digest: contract.contract_digest.clone(),
+                    })
+                    .collect()
+            }).unwrap_or_default()
+        }
+        else {
+            Vec::new()
+        };
+        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi, library_exports })
     }
 }

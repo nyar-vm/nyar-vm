@@ -1,8 +1,7 @@
-use crate::{Result, nyar_backend_wasi::WasmBinaryBackend};
+use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result, bundled_backend_capability_descriptor, nyar_backend_wasi::WasmBinaryBackend};
 use nyar::{HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, backends::TargetCodeGenBackend};
 
 use super::BundledBackendCompiler;
-use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverRunContract, bundled_backend_capability_descriptor};
 
 /// `WASM` 家族后端编译器，统一调度 `WasmJsGlue` 与 `WasiComponent` 两种宿主边界。
 pub(super) struct WasmFamilyCompiler;
@@ -29,12 +28,39 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
         backend.validate(&input)?;
         let package_as_wasi_command = input.package_as_wasi_command;
         let wasi_preview = input.wasi_preview;
-        let artifacts = backend.compile(input, request.options)?;
-        let run_contracts = match request.requirement.host_boundary {
-            HostProjectionBoundary::WasiComponent if !package_as_wasi_command => Vec::new(),
-            boundary => vec![wasm_run_contract(request.artifact_name, boundary, wasi_preview)],
+        // `artifact: library`：导出通过 glue 的 `callExport` 调用，不产生可执行
+        // run contract；同时记录每个导出的物理产物与 ABI digest。
+        let library_exports = if request.library_mode {
+            if input.library_wasm_exports.is_empty() {
+                return Err("`artifact: library` 的 `wasm` 产物没有导出面".to_string());
+            }
+            let abi_digest = library_invoke_digest(&input.module).unwrap_or_default();
+            let physical_name = wasm_physical_artifact_name(request.artifact_name);
+            input
+                .library_wasm_exports
+                .iter()
+                .map(|name| DriverLibraryExport {
+                    logical_name: name.clone(),
+                    physical_artifact: format!("{physical_name}.wasm"),
+                    invocation: "wasm callExport".to_string(),
+                    abi_digest: abi_digest.clone(),
+                })
+                .collect()
+        }
+        else {
+            Vec::new()
         };
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi: None })
+        let artifacts = backend.compile(input, request.options)?;
+        let run_contracts = if request.library_mode {
+            Vec::new()
+        }
+        else {
+            match request.requirement.host_boundary {
+                HostProjectionBoundary::WasiComponent if !package_as_wasi_command => Vec::new(),
+                boundary => vec![wasm_run_contract(request.artifact_name, boundary, wasi_preview)],
+            }
+        };
+        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi: None, library_exports })
     }
 }
 
@@ -65,6 +91,15 @@ fn wasm_run_contract(
         }
         other => unreachable!("unexpected wasm host boundary: {:?}", other),
     }
+}
+
+/// 从 `.wasm` 的 `nyar.library_invoke` 自定义段读取 ABI digest。
+///
+/// 该段由 lowering 在库模式下写入；本函数只读取已冻结事实，不重新推导。
+fn library_invoke_digest(module: &crate::nyar_backend_wasi::WasmBinaryModule) -> Option<String> {
+    let section = module.sections.iter().find(|section| section.name.as_deref() == Some("nyar.library_invoke"))?;
+    let payload: serde_json::Value = serde_json::from_slice(&section.bytes).ok()?;
+    payload.get("abi_digest")?.as_str().map(str::to_string)
 }
 
 /// 将逻辑产物名规范化为 `WASM` 物理产物名。

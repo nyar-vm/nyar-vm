@@ -315,7 +315,7 @@ fn coexisting_infix_eq_instances_export_unique_names() {
     let eq_exports = names.iter().filter(|name| name.starts_with("core::infix ==")).collect::<Vec<_>>();
     assert_eq!(eq_exports.len(), 2, "两个 `==` 实例都必须导出: {names:?}");
     assert!(eq_exports.iter().all(|name| name.contains('#')), "abi 派生名冲突时必须按实例下标消歧: {eq_exports:?}");
-    nyar_emitter::resolve_entry_symbols(&module, &entries).expect("库公开入口必须逐一解析到唯一函数导出");
+    nyar_emitter::resolve_entry_symbols(&module, &entries, true).expect("库公开入口必须逐一解析到唯一函数导出");
 }
 
 /// D15：单一 `==` 实例不触发冲突时，导出名保持 abi 原名，不得追加实例下标。
@@ -332,6 +332,6 @@ fn single_infix_eq_instance_keeps_unqualified_export_name() {
 fn unknown_entry_name_still_fails_closed() {
     let submission = d15_submission(&d15_groups(true));
     let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&submission).expect("共存 `==` 实例必须完成降低");
-    let error = nyar_emitter::resolve_entry_symbols(&module, &["core::missing".to_owned()]).expect_err("未知入口名必须结构化失败");
+    let error = nyar_emitter::resolve_entry_symbols(&module, &["core::missing".to_owned()], true).expect_err("未知入口名必须结构化失败");
     assert!(error.contains("必须对应唯一明确函数导出"), "{error}");
 }
