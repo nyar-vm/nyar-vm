@@ -7,7 +7,10 @@ use crate::compiler::{
     mir::AggregateFieldIndex,
     types::{
         Identifier,
-        hir::{GenericBinderId, HirAssociatedTypeBinding, HirParam, HirTraitBound, HirWhereConstraint, ValkyrieType},
+        hir::{
+            AssociatedType, FunctionType, GenericBinderId, HirAssociatedTypeBinding, HirParam, HirTraitBound, HirTupleField,
+            HirWhereConstraint, RowMethodType, RowType, TraitObject, TypeLambda, ValkyrieType,
+        },
     },
 };
 
@@ -79,52 +82,106 @@ pub(crate) fn specialize_method_param_type(
     substitute_type_self(ty, owner_type)
 }
 
+/// 对复合类型的直接子类型施加 `map` 并按同一构造重建。
+///
+/// 返回 `None` 表示该变体不携带任何子类型（叶子）。本函数对 [`ValkyrieType`]
+/// **全变体穷尽匹配**：新增变体必须在此明确它是叶子还是复合载体，否则
+/// non-exhaustive 编译错误会直接拦住，从结构上防止「新增复合载体漏递归」。
+/// 所有对类型做 Self/owner/泛型/关联类型代入的入口都必须经由本函数递归，
+/// 不得各自手写一份只覆盖部分变体的 match。
+fn rebuild_children(
+    ty: &ValkyrieType,
+    map: &mut impl FnMut(&ValkyrieType) -> ValkyrieType,
+) -> Option<ValkyrieType> {
+    fn map_all(map: &mut impl FnMut(&ValkyrieType) -> ValkyrieType, items: &[ValkyrieType]) -> Vec<ValkyrieType> {
+        items.iter().map(|item| map(item)).collect()
+    }
+
+    Some(match ty {
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
+            declaration: *declaration,
+            arguments: map_all(map, arguments),
+            primitive_identity: primitive_identity.clone(),
+        },
+        ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(Box::new(map(base)), map_all(map, arguments)),
+        ValkyrieType::Array(element) => ValkyrieType::Array(Box::new(map(element))),
+        ValkyrieType::FixedArray { element, length } => {
+            ValkyrieType::FixedArray { element: Box::new(map(element)), length: *length }
+        }
+        ValkyrieType::Function(function) => ValkyrieType::Function(Box::new(FunctionType {
+            params: map_all(map, &function.params),
+            return_type: map(&function.return_type),
+        })),
+        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(map_all(map, items)),
+        ValkyrieType::LabeledTuple(fields) => {
+            ValkyrieType::LabeledTuple(fields.iter().map(|field| HirTupleField { name: field.name.clone(), ty: map(&field.ty) }).collect())
+        }
+        ValkyrieType::Union(items) => ValkyrieType::Union(map_all(map, items)),
+        ValkyrieType::Intersection(items) => ValkyrieType::Intersection(map_all(map, items)),
+        ValkyrieType::Nullable(inner) => ValkyrieType::Nullable(Box::new(map(inner))),
+        ValkyrieType::Row(row) => ValkyrieType::Row(RowType {
+            methods: row
+                .methods
+                .iter()
+                .map(|method| RowMethodType {
+                    name: method.name.clone(),
+                    params: map_all(map, &method.params),
+                    return_type: map(&method.return_type),
+                })
+                .collect(),
+        }),
+        ValkyrieType::TypeLambda(lambda) => {
+            ValkyrieType::TypeLambda(Box::new(TypeLambda { params: lambda.params.clone(), body: map(&lambda.body) }))
+        }
+        ValkyrieType::TraitObject(object) => ValkyrieType::TraitObject(TraitObject {
+            trait_path: object.trait_path.clone(),
+            type_arguments: map_all(map, &object.type_arguments),
+        }),
+        ValkyrieType::Associated(associated) => ValkyrieType::Associated(Box::new(AssociatedType {
+            base: map(&associated.base),
+            name: associated.name.clone(),
+            type_arguments: map_all(map, &associated.type_arguments),
+        })),
+        // 叶子变体：不自带任何子类型（`Generic` 的 binder 由泛型代换单独处理）。
+        ValkyrieType::Void
+        | ValkyrieType::Unit
+        | ValkyrieType::Boolean
+        | ValkyrieType::Integer8 { .. }
+        | ValkyrieType::Integer16 { .. }
+        | ValkyrieType::Integer32 { .. }
+        | ValkyrieType::Integer64 { .. }
+        | ValkyrieType::Integer128 { .. }
+        | ValkyrieType::Float32
+        | ValkyrieType::Float64
+        | ValkyrieType::Character
+        | ValkyrieType::Utf8
+        | ValkyrieType::Utf16
+        | ValkyrieType::Named(_)
+        | ValkyrieType::QualifiedPath { .. }
+        | ValkyrieType::Generic(_)
+        | ValkyrieType::AutoType
+        | ValkyrieType::SelfType => return None,
+    })
+}
+
 /// 把类型中的 `SelfType` 替换为给定主体；外部测试入口。
 #[doc(hidden)]
 pub fn substitute_type_self(ty: &ValkyrieType, replacement: &ValkyrieType) -> ValkyrieType {
-    match ty {
-        ValkyrieType::SelfType => replacement.clone(),
-        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
-            declaration: *declaration,
-            arguments: arguments.iter().map(|argument| substitute_type_self(argument, replacement)).collect(),
-            primitive_identity: primitive_identity.clone(),
-        },
-        ValkyrieType::Array(inner) => ValkyrieType::Array(Box::new(substitute_type_self(inner, replacement))),
-        ValkyrieType::Apply(base, args) => ValkyrieType::Apply(
-            Box::new(substitute_type_self(base, replacement)),
-            args.iter().map(|arg| substitute_type_self(arg, replacement)).collect(),
-        ),
-        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| substitute_type_self(item, replacement)).collect()),
-        ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| substitute_type_self(item, replacement)).collect()),
-        ValkyrieType::Nullable(inner) => ValkyrieType::Nullable(Box::new(substitute_type_self(inner, replacement))),
-        ValkyrieType::Associated(associated) => ValkyrieType::Associated(Box::new(crate::compiler::types::hir::AssociatedType {
-            base: substitute_type_self(&associated.base, replacement),
-            name: associated.name.clone(),
-            type_arguments: associated.type_arguments.iter().map(|ty| substitute_type_self(ty, replacement)).collect(),
-        })),
-        other => other.clone(),
+    if matches!(ty, ValkyrieType::SelfType) {
+        return replacement.clone();
     }
+    rebuild_children(ty, &mut |child| substitute_type_self(child, replacement)).unwrap_or_else(|| ty.clone())
 }
 
 /// Replace `Self` with the imply/class owner so instance dispatch is nominal.
 pub(crate) fn substitute_self_type(ty: &ValkyrieType, owner: Option<&Identifier>) -> ValkyrieType {
-    match ty {
-        ValkyrieType::r#SelfType => match owner {
+    if matches!(ty, ValkyrieType::r#SelfType) {
+        return match owner {
             Some(owner) => ValkyrieType::Named(owner.clone()),
             None => ty.clone(),
-        },
-        ValkyrieType::Array(inner) => ValkyrieType::Array(Box::new(substitute_self_type(inner, owner))),
-        ValkyrieType::Apply(base, args) => {
-            ValkyrieType::Apply(Box::new(substitute_self_type(base, owner)), args.iter().map(|arg| substitute_self_type(arg, owner)).collect())
-        }
-        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| substitute_self_type(item, owner)).collect()),
-        ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| substitute_self_type(item, owner)).collect()),
-        ValkyrieType::Function(func) => ValkyrieType::Function(Box::new(crate::compiler::types::hir::FunctionType {
-            params: func.params.iter().map(|param| substitute_self_type(param, owner)).collect(),
-            return_type: substitute_self_type(&func.return_type, owner),
-        })),
-        other => other.clone(),
+        };
     }
+    rebuild_children(ty, &mut |child| substitute_self_type(child, owner)).unwrap_or_else(|| ty.clone())
 }
 
 /// 按关联类型等式替换 `Associated` 形状；外部测试入口。
@@ -134,59 +191,15 @@ pub fn substitute_associated_equations(
     constrained_type: &ValkyrieType,
     equations: &BTreeMap<Identifier, ValkyrieType>,
 ) -> ValkyrieType {
-    match ty {
-        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
-            declaration: *declaration,
-            arguments: arguments.iter().map(|argument| substitute_associated_equations(argument, constrained_type, equations)).collect(),
-            primitive_identity: primitive_identity.clone(),
-        },
-        ValkyrieType::Associated(associated) if &associated.base == constrained_type => {
-            equations.get(&associated.name).cloned().unwrap_or_else(|| {
-                ValkyrieType::Associated(Box::new(crate::compiler::types::hir::AssociatedType {
-                    base: substitute_associated_equations(&associated.base, constrained_type, equations),
-                    name: associated.name.clone(),
-                    type_arguments: associated
-                        .type_arguments
-                        .iter()
-                        .map(|argument| substitute_associated_equations(argument, constrained_type, equations))
-                        .collect(),
-                }))
-            })
+    if let ValkyrieType::Associated(associated) = ty {
+        if &associated.base == constrained_type {
+            if let Some(equation) = equations.get(&associated.name) {
+                return equation.clone();
+            }
         }
-        ValkyrieType::Associated(associated) => ValkyrieType::Associated(Box::new(crate::compiler::types::hir::AssociatedType {
-            base: substitute_associated_equations(&associated.base, constrained_type, equations),
-            name: associated.name.clone(),
-            type_arguments: associated
-                .type_arguments
-                .iter()
-                .map(|argument| substitute_associated_equations(argument, constrained_type, equations))
-                .collect(),
-        })),
-        ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(
-            Box::new(substitute_associated_equations(base, constrained_type, equations)),
-            arguments.iter().map(|argument| substitute_associated_equations(argument, constrained_type, equations)).collect(),
-        ),
-        ValkyrieType::Array(element) => ValkyrieType::Array(Box::new(substitute_associated_equations(element, constrained_type, equations))),
-        ValkyrieType::FixedArray { element, length } => ValkyrieType::FixedArray {
-            element: Box::new(substitute_associated_equations(element, constrained_type, equations)),
-            length: *length,
-        },
-        ValkyrieType::Tuple(items) => {
-            ValkyrieType::Tuple(items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect())
-        }
-        ValkyrieType::Union(items) => {
-            ValkyrieType::Union(items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect())
-        }
-        ValkyrieType::Intersection(items) => {
-            ValkyrieType::Intersection(items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect())
-        }
-        ValkyrieType::Nullable(inner) => ValkyrieType::Nullable(Box::new(substitute_associated_equations(inner, constrained_type, equations))),
-        ValkyrieType::Function(function) => ValkyrieType::Function(Box::new(crate::compiler::types::hir::FunctionType {
-            params: function.params.iter().map(|param| substitute_associated_equations(param, constrained_type, equations)).collect(),
-            return_type: substitute_associated_equations(&function.return_type, constrained_type, equations),
-        })),
-        other => other.clone(),
     }
+    rebuild_children(ty, &mut |child| substitute_associated_equations(child, constrained_type, equations))
+        .unwrap_or_else(|| ty.clone())
 }
 
 /// 用 bound 的 trait 声明、实参与关联等式实例化成员签名。
@@ -622,36 +635,254 @@ pub(crate) fn substitute_type_parameters(ty: &ValkyrieType, receiver: &ValkyrieT
 }
 
 pub(crate) fn substitute_type_vars(ty: &ValkyrieType, substitutions: &BTreeMap<GenericBinderId, ValkyrieType>) -> ValkyrieType {
-    match ty {
-        ValkyrieType::Generic(generic) => generic.binder.and_then(|binder| substitutions.get(&binder)).cloned().unwrap_or_else(|| ty.clone()),
-        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
-            declaration: *declaration,
-            arguments: arguments.iter().map(|arg| substitute_type_vars(arg, substitutions)).collect(),
-            primitive_identity: primitive_identity.clone(),
-        },
-        ValkyrieType::Apply(base, args) => ValkyrieType::Apply(
-            Box::new(substitute_type_vars(base, substitutions)),
-            args.iter().map(|arg| substitute_type_vars(arg, substitutions)).collect(),
-        ),
-        ValkyrieType::Array(inner) => ValkyrieType::Array(Box::new(substitute_type_vars(inner, substitutions))),
-        ValkyrieType::FixedArray { element, length } => {
-            ValkyrieType::FixedArray { element: Box::new(substitute_type_vars(element, substitutions)), length: *length }
+    if let ValkyrieType::Generic(generic) = ty {
+        return generic.binder.and_then(|binder| substitutions.get(&binder)).cloned().unwrap_or_else(|| ty.clone());
+    }
+    rebuild_children(ty, &mut |child| substitute_type_vars(child, substitutions)).unwrap_or_else(|| ty.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::compiler::types::hir::{GenericType, HirKind};
+
+    fn item_id(index: u32) -> nyar_types::ItemId {
+        nyar_types::ItemId::from_index(index).expect("测试 ItemId 必须可构造")
+    }
+
+    fn owner() -> ValkyrieType {
+        ValkyrieType::Nominal { declaration: item_id(42), arguments: vec![ValkyrieType::Integer64 { signed: true }], primitive_identity: None }
+    }
+
+    fn associated(name: &str) -> ValkyrieType {
+        ValkyrieType::Associated(Box::new(AssociatedType {
+            base: ValkyrieType::SelfType,
+            name: Identifier::new(name),
+            type_arguments: vec![ValkyrieType::SelfType],
+        }))
+    }
+
+    fn binder() -> GenericBinderId {
+        GenericBinderId { owner: item_id(900), ordinal: 0 }
+    }
+
+    fn generic() -> ValkyrieType {
+        ValkyrieType::Generic(GenericType { binder: Some(binder()), name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })
+    }
+
+    fn assert_no_self_type(ty: &ValkyrieType) {
+        assert!(!matches!(ty, ValkyrieType::SelfType), "SelfType 未被代入: {ty:?}");
+        let _ = rebuild_children(ty, &mut |child| {
+            assert_no_self_type(child);
+            child.clone()
+        });
+    }
+
+    /// 报告缺陷的最小形状：函数形参里 `Self::Item` 必须随 `Self` 一起代入。
+    #[test]
+    fn self_type_is_substituted_into_function_signature() {
+        let ty = ValkyrieType::Function(Box::new(FunctionType { params: vec![associated("Item")], return_type: ValkyrieType::Boolean }));
+        let substituted = substitute_type_self(&ty, &owner());
+        let equations = BTreeMap::from([(Identifier::new("Item"), ValkyrieType::Integer64 { signed: true })]);
+        assert_eq!(
+            substitute_associated_equations(&substituted, &owner(), &equations),
+            ValkyrieType::Function(Box::new(FunctionType {
+                params: vec![ValkyrieType::Integer64 { signed: true }],
+                return_type: ValkyrieType::Boolean,
+            }))
+        );
+    }
+
+    /// 所有复合载体都必须递归：这个清单与 `rebuild_children` 的复合分支一一对应。
+    #[test]
+    fn self_type_is_substituted_through_every_composite_carrier() {
+        let carriers = vec![
+            ValkyrieType::Nominal { declaration: item_id(7), arguments: vec![ValkyrieType::SelfType], primitive_identity: None },
+            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("F"))), vec![ValkyrieType::SelfType]),
+            ValkyrieType::Array(Box::new(ValkyrieType::SelfType)),
+            ValkyrieType::FixedArray { element: Box::new(ValkyrieType::SelfType), length: 3 },
+            ValkyrieType::Function(Box::new(FunctionType { params: vec![ValkyrieType::SelfType], return_type: ValkyrieType::SelfType })),
+            ValkyrieType::Tuple(vec![ValkyrieType::SelfType]),
+            ValkyrieType::LabeledTuple(vec![HirTupleField { name: Identifier::new("field"), ty: ValkyrieType::SelfType }]),
+            ValkyrieType::Union(vec![ValkyrieType::SelfType]),
+            ValkyrieType::Intersection(vec![ValkyrieType::SelfType]),
+            ValkyrieType::Nullable(Box::new(ValkyrieType::SelfType)),
+            ValkyrieType::Row(RowType {
+                methods: vec![RowMethodType {
+                    name: Identifier::new("m"),
+                    params: vec![ValkyrieType::SelfType],
+                    return_type: ValkyrieType::SelfType,
+                }],
+            }),
+            ValkyrieType::TypeLambda(Box::new(TypeLambda { params: vec![], body: ValkyrieType::SelfType })),
+            ValkyrieType::TraitObject(TraitObject { trait_path: Identifier::new("Trait"), type_arguments: vec![ValkyrieType::SelfType] }),
+            ValkyrieType::Associated(Box::new(AssociatedType {
+                base: ValkyrieType::SelfType,
+                name: Identifier::new("Item"),
+                type_arguments: vec![ValkyrieType::SelfType],
+            })),
+        ];
+        for carrier in carriers {
+            assert_no_self_type(&substitute_type_self(&carrier, &owner()));
         }
-        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| substitute_type_vars(item, substitutions)).collect()),
-        ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| substitute_type_vars(item, substitutions)).collect()),
-        ValkyrieType::Intersection(items) => {
-            ValkyrieType::Intersection(items.iter().map(|item| substitute_type_vars(item, substitutions)).collect())
-        }
-        ValkyrieType::Nullable(inner) => ValkyrieType::Nullable(Box::new(substitute_type_vars(inner, substitutions))),
-        ValkyrieType::Function(function) => ValkyrieType::Function(Box::new(crate::compiler::types::hir::FunctionType {
-            params: function.params.iter().map(|param| substitute_type_vars(param, substitutions)).collect(),
-            return_type: substitute_type_vars(&function.return_type, substitutions),
-        })),
-        ValkyrieType::Associated(associated) => ValkyrieType::Associated(Box::new(crate::compiler::types::hir::AssociatedType {
-            base: substitute_type_vars(&associated.base, substitutions),
-            name: associated.name.clone(),
-            type_arguments: associated.type_arguments.iter().map(|ty| substitute_type_vars(ty, substitutions)).collect(),
-        })),
-        other => other.clone(),
+    }
+
+    /// owner 代入与泛型代换同样必须进入复合类型（FixedArray / Function / Intersection 曾各有漏项）。
+    #[test]
+    fn self_owner_and_type_vars_recurse_into_compound_carriers() {
+        let function = ValkyrieType::Function(Box::new(FunctionType {
+            params: vec![ValkyrieType::FixedArray { element: Box::new(ValkyrieType::r#SelfType), length: 2 }],
+            return_type: ValkyrieType::Intersection(vec![ValkyrieType::r#SelfType, ValkyrieType::r#SelfType]),
+        }));
+        let expected_owner = ValkyrieType::Function(Box::new(FunctionType {
+            params: vec![ValkyrieType::FixedArray {
+                element: Box::new(ValkyrieType::Named(Identifier::new("Owner"))),
+                length: 2,
+            }],
+            return_type: ValkyrieType::Intersection(vec![
+                ValkyrieType::Named(Identifier::new("Owner")),
+                ValkyrieType::Named(Identifier::new("Owner")),
+            ]),
+        }));
+        assert_eq!(substitute_self_type(&function, Some(&Identifier::new("Owner"))), expected_owner);
+
+        let generic_function = ValkyrieType::Function(Box::new(FunctionType {
+            params: vec![ValkyrieType::FixedArray { element: Box::new(generic()), length: 2 }],
+            return_type: ValkyrieType::Intersection(vec![generic(), generic()]),
+        }));
+        let substitutions = BTreeMap::from([(binder(), ValkyrieType::Utf8)]);
+        assert_eq!(
+            substitute_type_vars(&generic_function, &substitutions),
+            ValkyrieType::Function(Box::new(FunctionType {
+                params: vec![ValkyrieType::FixedArray { element: Box::new(ValkyrieType::Utf8), length: 2 }],
+                return_type: ValkyrieType::Intersection(vec![ValkyrieType::Utf8, ValkyrieType::Utf8]),
+            }))
+        );
+    }
+
+    /// A/B 探针：trait 关联类型出现在值、`Option`、函数形参三种位置时，
+    /// 按具体 owner 实例化的成员签名都必须能匹配。
+    #[test]
+    fn associated_type_in_value_option_and_function_positions_resolves() {
+        let source = r#"
+unite Option<T> { Some { value: T }, None }
+
+trait Iterator {
+    type Item;
+    micro accept_item(self, value: Item) -> bool { return true }
+    micro accept_opt(self, value: Option<Item>) -> bool { return true }
+    micro accept_fn(self, pred: micro(Item) -> bool) -> bool { return true }
+}
+
+structure ArrayIterator { }
+
+imply ArrayIterator: Iterator { type Item = i64; }
+
+micro is_even(value: i64) -> bool { return true }
+
+micro probe(iter: ArrayIterator) -> bool {
+    let item: i64 = 2
+    let maybe: Option<i64> = None
+    return iter.accept_item(item) && iter.accept_opt(maybe) && iter.accept_fn(is_even)
+}
+"#;
+        crate::ValkyrieCompiler::default()
+            .compile_source(source)
+            .unwrap_or_else(|error| panic!("trait 关联类型在三种位置都必须匹配: {error}"));
+    }
+
+    fn filter_probe_source(filter_iterator_body: &str) -> String {
+        format!(
+            r#"
+unite Option<T> {{ Some {{ value: T }}, None }}
+
+trait Iterator {{
+    type Item;
+    micro has_next(self): bool
+    micro next(mut self): Option<Item>
+
+    micro filter(self, pred: micro(Item) -> bool) -> FilterIterator<Item, Self> {{
+        return FilterIterator {{ _iter: self, _predicate: pred }}
+    }}
+}}
+
+structure FilterIterator<T, I> {{
+    _iter: I
+    _predicate: micro(T) -> bool
+}}
+
+imply FilterIterator<T, I>: Iterator {{
+    type Item = T;
+{filter_iterator_body}
+}}
+
+structure ArrayIterator {{ _index: usize }}
+
+imply ArrayIterator: Iterator {{
+    type Item = i64;
+    micro has_next(self): bool {{ return true }}
+    micro next(mut self): Option<i64> {{ return None }}
+}}
+
+micro is_even(value: i64) -> bool {{ return true }}
+
+micro probe(iter: ArrayIterator) -> bool {{
+    iter.filter(is_even)
+    return true
+}}
+"#
+        )
+    }
+
+    /// 整程序管线（含基本类型声明，贴近 std 形态）里，trait 默认方法
+    /// 以函数值谓词调用具体接收者时必须能解析；这也是 wasm 探针的源形状。
+    #[test]
+    fn filter_default_method_compiles_through_program_pipeline() {
+        let source = r#"
+namespace app;
+trait Iterator {
+    type Item;
+    micro filter(self, pred: micro(Item) -> bool) -> bool { return true }
+}
+structure ArrayIterator { _flag: bool }
+imply ArrayIterator: Iterator { type Item = bool; }
+micro is_even(value: bool) -> bool { return true }
+[export(name: "run")]
+micro run() -> i32 {
+    let iter: ArrayIterator = ArrayIterator { _flag: true }
+    iter.filter(is_even)
+    return 7
+}
+"#;
+        let group = crate::compiler::hir::lowering::CompilerSourceGroup::from_source_files(
+            "app",
+            "app",
+            vec![
+                crate::compiler::hir::lowering::CompilerSourceFile {
+                    path: "core_primitive.v".into(),
+                    source: "[primitive(\"std::primitive::i32\")] structure i32 { }\n[primitive(\"std::primitive::i64\")] structure i64 { }".into(),
+                },
+                crate::compiler::hir::lowering::CompilerSourceFile { path: "main.v".into(), source: source.into() },
+            ],
+            Vec::new(),
+        )
+        .as_entry();
+        crate::ValkyrieCompiler::default()
+            .compile_source_groups_to_program(&[group])
+            .unwrap_or_else(|error| panic!("legion 形态探针: {error}"));
+    }
+
+    /// `arr.into_iterator().filter(is_even)` 的最小形状：函数值谓词的关联类型
+    /// 必须随 `Self` 代入后参与实参匹配。
+    #[test]
+    fn filter_on_concrete_iterator_resolves_with_function_predicate() {
+        let source = filter_probe_source(
+            "    micro has_next(self): bool { return true }\n    micro next(mut self): Option<T> { return None }",
+        );
+        crate::ValkyrieCompiler::default()
+            .compile_source(&source)
+            .unwrap_or_else(|error| panic!("filter 的谓词形参必须能匹配: {error}"));
     }
 }
