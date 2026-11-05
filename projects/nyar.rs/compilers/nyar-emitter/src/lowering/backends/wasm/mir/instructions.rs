@@ -777,6 +777,23 @@ const WASM_I64_EXTEND_I32_U: u8 = 0xAD;
 const WASM_I32_EXTEND8_S: u8 = 0xC0;
 /// `i32.extend16_s`。
 const WASM_I32_EXTEND16_S: u8 = 0xC1;
+/// `f64.convert_i32_s` / `f64.convert_i32_u`（32 位载体到 f64）。
+const WASM_F64_CONVERT_I32_S: u8 = 0xB7;
+const WASM_F64_CONVERT_I32_U: u8 = 0xB8;
+/// `f64.convert_i64_s` / `f64.convert_i64_u`（64 位载体到 f64）。
+const WASM_F64_CONVERT_I64_S: u8 = 0xB9;
+const WASM_F64_CONVERT_I64_U: u8 = 0xBA;
+/// `i32.trunc_f64_s` / `i32.trunc_f64_u`（f64 到 32 位载体）。
+const WASM_I32_TRUNC_F64_S: u8 = 0xAA;
+const WASM_I32_TRUNC_F64_U: u8 = 0xAB;
+/// `i64.trunc_f64_s` / `i64.trunc_f64_u`（f64 到 64 位载体）。
+const WASM_I64_TRUNC_F64_S: u8 = 0xB0;
+const WASM_I64_TRUNC_F64_U: u8 = 0xB1;
+
+/// `f32` / `f64` 在当前 wasm 后端共用 `VALTYPE_F64` 载体（见 `representation`）。
+fn is_float_carrier(ty: &NyarType) -> bool {
+    matches!(ty, NyarType::Float32 | NyarType::Float64)
+}
 
 /// 语言层 `as` 的数值表示转换配方。
 ///
@@ -792,6 +809,17 @@ const WASM_I32_EXTEND16_S: u8 = 0xC1;
 fn scalar_cast_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<ScalarCastStep>> {
     if source == target {
         return Ok(Vec::new());
+    }
+    // 浮点两端共用 `VALTYPE_F64`：`f32` 在该后端按既定降级放在 f64 载体上，
+    // 因此 `f32`↔`f64` 是载体恒等，不发射额外指令。
+    if is_float_carrier(source) {
+        return match target {
+            NyarType::Float32 | NyarType::Float64 => Ok(Vec::new()),
+            _ => float_to_integer_steps(target),
+        };
+    }
+    if is_float_carrier(target) {
+        return integer_to_float_steps(source, target);
     }
     match (source, target) {
         (NyarType::Integer64 { .. }, NyarType::Integer64 { .. }) => return Ok(Vec::new()),
@@ -814,21 +842,66 @@ fn scalar_cast_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<
         else {
             ScalarCastStep::Byte(WASM_I64_EXTEND_I32_U)
         }),
-        // 32 位与 `Character` 就是 i32 载体本身的值。
-        NyarType::Integer32 { .. } | NyarType::Character => {}
-        NyarType::Integer8 { signed: false } => {
-            steps.push(ScalarCastStep::I32Const(0xFF));
-            steps.push(ScalarCastStep::Opcode(WasmOpcode::I32And));
-        }
-        NyarType::Integer8 { signed: true } => steps.push(ScalarCastStep::Byte(WASM_I32_EXTEND8_S)),
-        NyarType::Integer16 { signed: false } => {
-            steps.push(ScalarCastStep::I32Const(0xFFFF));
-            steps.push(ScalarCastStep::Opcode(WasmOpcode::I32And));
-        }
-        NyarType::Integer16 { signed: true } => steps.push(ScalarCastStep::Byte(WASM_I32_EXTEND16_S)),
-        _ => return Err(unsupported_cast(source, target)),
+        other => steps.extend(normalize_i32_carrier_to_integer(other).ok_or_else(|| unsupported_cast(source, target))?),
     }
     Ok(steps)
+}
+
+/// i32 载体值落到目标整数类型的规范化配方（窄化掩码 / 符号扩展）。
+///
+/// 32 位目标与 `Character` 直接就是载体本身；`None` 表示目标不是 32 位以内的整数族。
+fn normalize_i32_carrier_to_integer(target: &NyarType) -> Option<Vec<ScalarCastStep>> {
+    Some(match target {
+        NyarType::Integer32 { .. } | NyarType::Character => Vec::new(),
+        NyarType::Integer8 { signed: false } => vec![ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
+        NyarType::Integer8 { signed: true } => vec![ScalarCastStep::Byte(WASM_I32_EXTEND8_S)],
+        NyarType::Integer16 { signed: false } => vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
+        NyarType::Integer16 { signed: true } => vec![ScalarCastStep::Byte(WASM_I32_EXTEND16_S)],
+        _ => return None,
+    })
+}
+
+/// 整数到浮点：按源的符号性选 `convert_i32_s/u` 或 `convert_i64_s/u`。
+///
+/// 源在 i32 载体上已是规范形态（无符号是掩码后的非负值，有符号是符号扩展值，
+/// `Character` 是码点），所以窄整数只需看 `signed` 位宽即可，无需先规范化。
+fn integer_to_float_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<ScalarCastStep>> {
+    let opcode = match source {
+        NyarType::Integer64 { signed: true } => WASM_F64_CONVERT_I64_S,
+        NyarType::Integer64 { signed: false } => WASM_F64_CONVERT_I64_U,
+        NyarType::Integer8 { signed } | NyarType::Integer16 { signed } | NyarType::Integer32 { signed } => {
+            if *signed {
+                WASM_F64_CONVERT_I32_S
+            }
+            else {
+                WASM_F64_CONVERT_I32_U
+            }
+        }
+        // Unicode 码点恒非负。
+        NyarType::Character => WASM_F64_CONVERT_I32_U,
+        _ => return Err(unsupported_cast(source, target)),
+    };
+    Ok(vec![ScalarCastStep::Byte(opcode)])
+}
+
+/// 浮点到整数：wasm `trunc` 语义（向零截断）。
+///
+/// `trunc_*` 在 NaN 与目标范围外会触发 wasm trap（`integer overflow`），这是
+/// 语言层 `as` 的 fail-closed 行为，不得换成静默饱和。
+fn float_to_integer_steps(target: &NyarType) -> crate::Result<Vec<ScalarCastStep>> {
+    match target {
+        NyarType::Integer64 { signed: true } => Ok(vec![ScalarCastStep::Byte(WASM_I64_TRUNC_F64_S)]),
+        NyarType::Integer64 { signed: false } => Ok(vec![ScalarCastStep::Byte(WASM_I64_TRUNC_F64_U)]),
+        NyarType::Integer8 { signed } | NyarType::Integer16 { signed } | NyarType::Integer32 { signed } => {
+            let trunc = if *signed { WASM_I32_TRUNC_F64_S } else { WASM_I32_TRUNC_F64_U };
+            let mut steps = vec![ScalarCastStep::Byte(trunc)];
+            steps.extend(normalize_i32_carrier_to_integer(target).expect("32 位整数族必须有规范化配方"));
+            Ok(steps)
+        }
+        // 码点恒非负，`trunc_u` 之后就是 `Character` 的规范形态。
+        NyarType::Character => Ok(vec![ScalarCastStep::Byte(WASM_I32_TRUNC_F64_U)]),
+        _ => Err(unsupported_cast(&NyarType::Float64, target)),
+    }
 }
 
 /// 源类型在 i32 载体上的值是否可能为负：决定宽化到 64 位时用符号扩展还是零扩展。
@@ -899,8 +972,48 @@ mod tests {
     }
 
     #[test]
+    fn integer_to_float_picks_opcode_by_signedness_and_carrier() {
+        // 64 位源：有符号与无符号必须选不同的 convert 指令。
+        assert_eq!(cast(NyarType::Integer64 { signed: true }, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I64_S)]);
+        assert_eq!(cast(NyarType::Integer64 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I64_U)]);
+        // 32 位载体同理。
+        assert_eq!(cast(NyarType::Integer32 { signed: true }, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I32_S)]);
+        assert_eq!(cast(NyarType::Integer32 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I32_U)]);
+        // 窄无符号在 i32 载体上已是掩码后的非负值，无需再规范化。
+        assert_eq!(cast(NyarType::Integer8 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I32_U)]);
+        // 码点恒非负。
+        assert_eq!(cast(NyarType::Character, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I32_U)]);
+    }
+
+    #[test]
+    fn float_to_integer_uses_trunc_then_target_normalization() {
+        assert_eq!(cast(NyarType::Float64, NyarType::Integer64 { signed: true }), vec![ScalarCastStep::Byte(WASM_I64_TRUNC_F64_S)]);
+        assert_eq!(cast(NyarType::Float64, NyarType::Integer64 { signed: false }), vec![ScalarCastStep::Byte(WASM_I64_TRUNC_F64_U)]);
+        assert_eq!(cast(NyarType::Float64, NyarType::Integer32 { signed: false }), vec![ScalarCastStep::Byte(WASM_I32_TRUNC_F64_U)]);
+        assert_eq!(
+            cast(NyarType::Float64, NyarType::Integer8 { signed: false }),
+            vec![ScalarCastStep::Byte(WASM_I32_TRUNC_F64_U), ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And),]
+        );
+        assert_eq!(
+            cast(NyarType::Float64, NyarType::Integer16 { signed: true }),
+            vec![ScalarCastStep::Byte(WASM_I32_TRUNC_F64_S), ScalarCastStep::Byte(WASM_I32_EXTEND16_S)]
+        );
+        assert_eq!(cast(NyarType::Float64, NyarType::Character), vec![ScalarCastStep::Byte(WASM_I32_TRUNC_F64_U)]);
+    }
+
+    #[test]
+    fn float32_and_float64_are_carrier_identical() {
+        // 当前 wasm 后端把 f32 也放在 f64 载体上，转换不发射额外指令。
+        assert_eq!(cast(NyarType::Float32, NyarType::Float64), Vec::new());
+        assert_eq!(cast(NyarType::Float64, NyarType::Float32), Vec::new());
+    }
+
+    #[test]
     fn unrepresentable_widths_fail_loudly() {
         assert!(scalar_cast_steps(&NyarType::Integer128 { signed: true }, &NyarType::Integer32 { signed: true }).is_err());
-        assert!(scalar_cast_steps(&NyarType::Float64, &NyarType::Integer32 { signed: true }).is_err());
+        // 布尔/文本与浮点之间没有冻结的 `as` 语义，必须结构化失败。
+        assert!(scalar_cast_steps(&NyarType::Boolean, &NyarType::Float64).is_err());
+        assert!(scalar_cast_steps(&NyarType::Float64, &NyarType::Boolean).is_err());
+        assert!(scalar_cast_steps(&NyarType::Utf8, &NyarType::Float64).is_err());
     }
 }
