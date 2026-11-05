@@ -73,7 +73,8 @@ pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetOperat
         "i32.xor" => binary(TargetOperandType::I32, TargetOperandType::I32, 0x73),
         "i32.shl" => binary(TargetOperandType::I32, TargetOperandType::I32, 0x74),
         "i32.shr_s" => binary(TargetOperandType::I32, TargetOperandType::I32, 0x75),
-        "i32.shr_u" => binary(TargetOperandType::I32, TargetOperandType::I32, 0x77),
+        // `i32.shr_u` 是 0x76；0x77 是 `i32.rotl`，绑定成 0x77 会把逻辑右移发射成左旋。
+        "i32.shr_u" => binary(TargetOperandType::I32, TargetOperandType::I32, 0x76),
         // i32 比较：结果固定为 i32（0/1）。
         "i32.eq" => binary(TargetOperandType::I32, TargetOperandType::I32, 0x46),
         "i32.ne" => binary(TargetOperandType::I32, TargetOperandType::I32, 0x47),

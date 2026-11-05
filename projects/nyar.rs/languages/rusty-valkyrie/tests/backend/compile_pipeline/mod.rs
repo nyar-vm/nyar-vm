@@ -16,6 +16,7 @@ mod backend_ovm_operator_freeze_tests;
 mod backend_ovm_where_super_trait_e2e_tests;
 mod backend_single_quote_literal_e2e_tests;
 mod backend_trait_witness_materialization_tests;
+mod backend_unsigned_shift_provider_e2e_tests;
 mod backend_wasm_array_provider_e2e_tests;
 mod canonical_function_reference_tests;
 #[cfg(false)] // 旧 builder bundle 合同，待按 emitter pipeline 适配
