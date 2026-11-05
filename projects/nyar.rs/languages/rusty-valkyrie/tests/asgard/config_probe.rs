@@ -382,9 +382,12 @@ micro configure() -> Target {
     assert!(failure.message.contains("actual=Unit"), "诊断必须指出变体构造被降低为 Unit：{}", failure.message);
 }
 
-/// 缺口固化：结构体字段持有 unite 类型时，canonical 布局无法解析该字段。
+/// 缺口固化：结构体字段持有 unite 类型时，聚合构造缺少该字段的布局元数据。
+///
+/// 首个拒绝面是 emitter 的 Semantic MIR 合同（`StructNew` 布局元数据校验，`SMIR010`）；
+/// canonical 阶段的 `CAN033` 只是其后的包装，不再是首个拒绝点。
 #[test]
-fn c0_gap_struct_field_with_unite_type_unresolved_in_canonical() {
+fn c0_gap_struct_field_with_unite_type_rejects_aggregate_layout() {
     let failure = build_probe_project(
         "asgard-c0-struct-unite-field",
         r#"unite Choice {
@@ -403,8 +406,13 @@ micro configure() -> Holder {
 }
 "#,
     )
-    .expect_err("unite 字段布局当前必须在 canonical 降低处失败");
-    assert!(failure.message.contains("CAN033"), "诊断必须携带合同代码：{}", failure.message);
+    .expect_err("unite 字段聚合当前必须在 Semantic MIR 合同处失败");
+    assert!(failure.message.contains("SMIR010"), "诊断必须携带合同代码：{}", failure.message);
+    assert!(
+        failure.message.contains("aggregate construction contract disagrees with declared layout metadata"),
+        "诊断必须指出聚合构造与布局元数据不一致：{}",
+        failure.message
+    );
 }
 
 /// 缺口固化：std 依赖在场时，类型位置的 `utf8` 解析到名义类型，与字符串字面量的
