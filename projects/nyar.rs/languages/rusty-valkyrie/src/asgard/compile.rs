@@ -180,7 +180,8 @@ pub fn compile_v_bundle(
 
     match backend {
         HostBackend::BrowserDom => {
-            let artifact_name = primary_artifact_name(report, ArtifactKind::Executable)?;
+            // 浏览器 UI 交付按 library 打包，产物合同为 `Library`而非 `Executable`。
+            let artifact_name = primary_artifact_name(report, ArtifactKind::Library)?;
             let safe_name = artifact_name.replace('.', "-");
             let wasm_report = WasmCompileReport { wasm_filename: format!("{safe_name}.wasm"), glue_filename: format!("{safe_name}.mjs") };
             copy_wasm_artifacts_to_dist(output_dir, &wasm_report)?;

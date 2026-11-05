@@ -86,7 +86,8 @@ pub(crate) fn compile_ssg_ovm_bundle(
         true,
         target_profile.artifact_policy.generate_runtime_config,
     )?;
-    let artifact_name = primary_artifact_name(&artifact.driver, ArtifactKind::Executable)?;
+    // SSG 以 library 形态编译 OVM 产物，产物合同为 `Library`而非 `Executable`。
+    let artifact_name = primary_artifact_name(&artifact.driver, ArtifactKind::Library)?;
     let extension = &target_profile.artifact_policy.primary_extension;
     let filename = if artifact_name.ends_with(extension.as_str()) { artifact_name } else { format!("{artifact_name}{extension}") };
     let artifact_path = scratch_dir.join(&filename);
