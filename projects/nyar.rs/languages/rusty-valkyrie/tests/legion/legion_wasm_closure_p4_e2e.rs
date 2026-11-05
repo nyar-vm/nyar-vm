@@ -485,6 +485,78 @@ micro bad() -> i64 {
     assert!(error.contains("IntoIterator"), "必须是缺 `IntoIterator` 的结构化诊断: {error}");
 }
 
+/// wasm 宿主 `trim` 必须与 std 的 Unicode `White_Space` 合同等价：删 U+0085，
+/// 不删 U+FEFF 与 U+200B。`String.prototype.trim` 的两个码点行为正好相反。
+#[test]
+fn wasm_utf8_trim_matches_std_white_space_contract() {
+    let Some(std_root) = valkyrie_v_std_root()
+    else {
+        eprintln!("skip: valkyrie.v not found (set VALKYRIE_V_ROOT or clone beside nyar-vm.rs)");
+        return;
+    };
+    let artifact = build_std_wasm(
+        "p4-wasm-utf8-trim",
+        &std_root,
+        r#"namespace app;
+
+micro wrap_right(code: u32) -> utf8 {
+    let mut builder: Utf8Builder = Utf8Builder::new(4)
+    builder.append(char::from(97))
+    builder.append(char::from(code))
+    return builder.build()
+}
+
+micro wrap_both(code: u32) -> utf8 {
+    let mut builder: Utf8Builder = Utf8Builder::new(4)
+    builder.append(char::from(code))
+    builder.append(char::from(97))
+    builder.append(char::from(code))
+    return builder.build()
+}
+
+[export(name: "trim_nel")]
+micro trim_nel() -> utf8 {
+    return wrap_both(133).trim()
+}
+
+[export(name: "trim_bom")]
+micro trim_bom() -> utf8 {
+    return wrap_right(65279).trim()
+}
+
+[export(name: "trim_zwsp")]
+micro trim_zwsp() -> utf8 {
+    return wrap_right(8203).trim()
+}
+
+# 首尾各一个 U+FEFF；长度在 wasm 内计算，避开宿主解码丢前导 BOM 的干扰。
+[export(name: "trim_bom_length")]
+micro trim_bom_length() -> i64 {
+    return wrap_both(65279).trim().length() as i64
+}
+
+[export(name: "replace_aaa")]
+micro replace_aaa() -> utf8 {
+    let text: utf8 = "aaa"
+    return text.replace("aa", "b")
+}
+"#,
+    );
+    assert_eq!(call_export(&artifact, "trim_nel"), r#""a""#, "U+0085 是 White_Space，必须被删去");
+    assert_eq!(
+        call_export(&artifact, "trim_bom"),
+        format!("\"a{}\"", "\u{feff}"),
+        "U+FEFF 不是 White_Space，尾部必须保留"
+    );
+    assert_eq!(
+        call_export(&artifact, "trim_zwsp"),
+        format!("\"a{}\"", "\u{200b}"),
+        "U+200B 不是 White_Space，尾部必须保留"
+    );
+    assert_eq!(call_export(&artifact, "trim_bom_length"), "3", "首尾 U+FEFF 都不是 White_Space，长度必须仍为 3");
+    assert_eq!(call_export(&artifact, "replace_aaa"), r#""ba""#, "非重叠从左到右替换：aaa 的 aa→b 得 ba");
+}
+
 fn valkyrie_v_std_root() -> Option<PathBuf> {
     if let Ok(root) = std::env::var("VALKYRIE_V_ROOT") {
         let path = PathBuf::from(root);

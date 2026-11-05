@@ -724,7 +724,8 @@ function hostLinearMemory() {{
 function hostInternUtf8Bytes(ptr, len) {{
     const memory = hostLinearMemory();
     const bytes = new Uint8Array(memory.buffer, ptr >>> 0, len >>> 0);
-    return hostIntern(new TextDecoder("utf-8").decode(bytes));
+    // ignoreBOM: a leading U+FEFF is string content for `Utf8Text`, not a byte-order marker.
+    return hostIntern(new TextDecoder("utf-8", {{ ignoreBOM: true }}).decode(bytes));
 }}
 
 // 库导出边界物化：把句柄字符串的 UTF-8 字节经 cabi_realloc 写入线性内存，
@@ -759,8 +760,25 @@ function hostUtf8Length(s) {{
     return hostUtf8Scalars(s).length;
 }}
 
+// Unicode `White_Space` (25 code points), the same set std `Utf8Text::trim` uses.
+// `String.prototype.trim` is not equivalent: it strips U+FEFF and keeps U+0085.
+const UTF8_WHITE_SPACE = new Set([
+    0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020, 0x0085, 0x00a0, 0x1680,
+    0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a,
+    0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
+]);
+
+function hostUtf8IsWhiteSpace(scalar) {{
+    return UTF8_WHITE_SPACE.has(scalar.codePointAt(0));
+}}
+
 function hostUtf8Trim(s) {{
-    return hostPathFromRef(s).trim();
+    const scalars = hostUtf8Scalars(s);
+    let start = 0;
+    let end = scalars.length;
+    while (start < end && hostUtf8IsWhiteSpace(scalars[start])) start += 1;
+    while (end > start && hostUtf8IsWhiteSpace(scalars[end - 1])) end -= 1;
+    return scalars.slice(start, end).join("");
 }}
 
 function hostUtf8ToLower(s) {{

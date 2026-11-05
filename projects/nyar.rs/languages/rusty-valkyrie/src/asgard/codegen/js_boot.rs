@@ -70,7 +70,8 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
 
   function hostInternUtf8Bytes(ptr, len) {
     var bytes = new Uint8Array(hostLinearMemory().buffer, ptr >>> 0, len >>> 0);
-    return hostIntern(new TextDecoder('utf-8').decode(bytes));
+    // ignoreBOM：前导 U+FEFF 对 `Utf8Text` 是正文，不是字节序标记。
+    return hostIntern(new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes));
   }
 
   function hostUtf8Extract(handle) {
@@ -84,7 +85,24 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
   function hostUtf8Scalars(s) { return [...hostText(s)]; }
   function hostUtf8Concat(a, b) { return hostIntern(hostText(a) + hostText(b)); }
   function hostUtf8Length(s) { return hostUtf8Scalars(s).length; }
-  function hostUtf8Trim(s) { return hostIntern(hostText(s).trim()); }
+  // Unicode `White_Space`（与 std `Utf8Text::trim` 同一集合）；`String.prototype.trim`
+  // 的集合不同：会删 U+FEFF、保留 U+0085。
+  var UTF8_WHITE_SPACE = new Set([
+    0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020, 0x0085, 0x00a0, 0x1680,
+    0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a,
+    0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
+  ]);
+  function hostUtf8IsWhiteSpace(scalar) {
+    return UTF8_WHITE_SPACE.has(scalar.codePointAt(0));
+  }
+  function hostUtf8Trim(s) {
+    var scalars = hostUtf8Scalars(s);
+    var start = 0;
+    var end = scalars.length;
+    while (start < end && hostUtf8IsWhiteSpace(scalars[start])) start += 1;
+    while (end > start && hostUtf8IsWhiteSpace(scalars[end - 1])) end -= 1;
+    return hostIntern(scalars.slice(start, end).join(''));
+  }
   function hostUtf8ToLower(s) { return hostIntern(hostText(s).toLowerCase()); }
   function hostUtf8ToUpper(s) { return hostIntern(hostText(s).toUpperCase()); }
   function hostUtf8Replace(s, oldValue, newValue) {
