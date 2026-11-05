@@ -402,6 +402,89 @@ micro bad() -> i64 {
     assert!(error.contains("`let` initializer"), "诊断必须指明 `let` 初始化位置: {error}");
 }
 
+/// `[T]` 的 `for-in`：固定数组经 std 的 `IntoIterator` 实现迭代，真跑断言求和值。
+#[test]
+fn wasm_array_forin_iterates_with_real_values() {
+    let Some(std_root) = valkyrie_v_std_root()
+    else {
+        eprintln!("skip: valkyrie.v not found (set VALKYRIE_V_ROOT or clone beside nyar-vm.rs)");
+        return;
+    };
+    let artifact = build_std_wasm(
+        "p4-wasm-array-forin",
+        &std_root,
+        r#"namespace app;
+
+[export(name: "sum")]
+micro sum(nums: [i64]) -> i64 {
+    let mut total: i64 = 0
+    loop value in nums {
+        total = total + value
+    }
+    return total
+}
+"#,
+    );
+    assert_eq!(
+        call_export_with_args(&artifact, "sum", r#"[["10", "20", "30"]]"#),
+        "60",
+        "`[i64]` 的 for-in 必须逐元素求和"
+    );
+}
+
+/// `utf8` 的 `for-in`：按码点（Unicode scalar）迭代，真跑断言元素个数。
+#[test]
+fn wasm_utf8_forin_iterates_with_real_values() {
+    let Some(std_root) = valkyrie_v_std_root()
+    else {
+        eprintln!("skip: valkyrie.v not found (set VALKYRIE_V_ROOT or clone beside nyar-vm.rs)");
+        return;
+    };
+    let artifact = build_std_wasm(
+        "p4-wasm-utf8-forin",
+        &std_root,
+        r#"namespace app;
+
+[export(name: "count")]
+micro count() -> i64 {
+    let text: utf8 = "héllo"
+    let mut total: i64 = 0
+    loop glyph in text {
+        total = total + 1
+    }
+    return total
+}
+"#,
+    );
+    assert_eq!(call_export(&artifact, "count"), "5", "`utf8` 的 for-in 必须按码点计数");
+}
+
+/// 非可迭代值被结构化拒绝：诊断必须说明缺 `IntoIterator`，不能是 panic。
+#[test]
+fn wasm_forin_rejects_non_iterable_with_structured_diagnostic() {
+    let Some(std_root) = valkyrie_v_std_root()
+    else {
+        eprintln!("skip: valkyrie.v not found (set VALKYRIE_V_ROOT or clone beside nyar-vm.rs)");
+        return;
+    };
+    let error = build_std_wasm_error(
+        "p4-wasm-forin-reject",
+        &std_root,
+        r#"namespace app;
+
+[export(name: "bad")]
+micro bad() -> i64 {
+    let mut total: i64 = 0
+    loop value in 42 {
+        total = total + value
+    }
+    return total
+}
+"#,
+    );
+    assert!(error.contains("IntoIterator"), "必须是缺 `IntoIterator` 的结构化诊断: {error}");
+}
+
 fn valkyrie_v_std_root() -> Option<PathBuf> {
     if let Ok(root) = std::env::var("VALKYRIE_V_ROOT") {
         let path = PathBuf::from(root);
