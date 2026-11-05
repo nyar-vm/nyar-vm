@@ -231,6 +231,88 @@ micro run() -> i32 {
     assert_eq!(call_export(&artifact, "run"), "3", "捕获 direction 的降序比较器必须把最大值排到首位");
 }
 
+/// 库导出返回 `utf8`（宿主字符串）：真构建 + Node 真跑，断言物化后的真实字符串值，
+/// 而不是断言导出符号或签名形态。修复前返回值未物化时宿主读到的是 anyref 槽。
+#[test]
+fn wasm_library_export_utf8_return_executes_with_real_value() {
+    let Some(std_root) = valkyrie_v_std_root()
+    else {
+        eprintln!("skip: valkyrie.v not found (set VALKYRIE_V_ROOT or clone beside nyar-vm.rs)");
+        return;
+    };
+    let artifact = build_std_wasm(
+        "p4-wasm-utf8-return",
+        &std_root,
+        r#"namespace app;
+
+[export(name: "hello")]
+micro hello() -> utf8 {
+    let mut builder: Utf8Builder = Utf8Builder::new(4)
+    builder.append(char::from(104))
+    builder.append(char::from(105))
+    return builder.build()
+}
+"#,
+    );
+    assert_eq!(call_export(&artifact, "hello"), "\"hi\"", "utf8 返回值必须物化为宿主可读的真实字符串");
+}
+
+/// `HashMap<utf8, i64>` 经导出边界进出：键的宿主 i32 句柄载体在容器内部到
+/// managed 字符串槽的单一边界点完成物化，真跑断言读回的整数值。
+#[test]
+fn wasm_hashmap_utf8_key_boundary_roundtrips_real_value() {
+    let Some(std_root) = valkyrie_v_std_root()
+    else {
+        eprintln!("skip: valkyrie.v not found (set VALKYRIE_V_ROOT or clone beside nyar-vm.rs)");
+        return;
+    };
+    let artifact = build_std_wasm(
+        "p4-wasm-utf8-hashmap",
+        &std_root,
+        r#"namespace app;
+
+using std.collection::HashMap;
+
+[export(name: "roundtrip")]
+micro roundtrip(key: utf8, value: i64) -> i64 {
+    let mut map: HashMap<utf8, i64> = HashMap::new(4)
+    map.insert(key, value)
+    return map.get(key).unwrap()
+}
+"#,
+    );
+    assert_eq!(call_export_with_args(&artifact, "roundtrip", r#"["k", "7"]"#), "7", "HashMap<utf8, _> 的键边界必须读写一致");
+}
+
+/// Node 经 JS glue 带实参调用导出函数（字符串实参按 UTF-8 句柄编组）。
+fn call_export_with_args(artifact: &WasmArtifact, export_name: &str, args_json: &str) -> String {
+    let runner_path = artifact.output_dir.join("p4_wasm_runner_args.mjs");
+    fs::write(
+        &runner_path,
+        r#"import { pathToFileURL } from "node:url";
+const glue = await import(pathToFileURL(process.argv[2]).href);
+const args = JSON.parse(process.argv[4] ?? "[]");
+const value = await glue.callExport(process.argv[3], ...args);
+process.stdout.write(typeof value === "bigint" ? value.toString() : JSON.stringify(value ?? null));
+"#,
+    )
+    .expect("写入 Node runner");
+    let output = Command::new("node")
+        .arg(&runner_path)
+        .arg(&artifact.glue_path)
+        .arg(export_name)
+        .arg(args_json)
+        .output()
+        .expect("Node 必须可用（主动交付线宿主）");
+    assert!(
+        output.status.success(),
+        "node callExport 失败 status={:?}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
 fn valkyrie_v_std_root() -> Option<PathBuf> {
     if let Ok(root) = std::env::var("VALKYRIE_V_ROOT") {
         let path = PathBuf::from(root);
