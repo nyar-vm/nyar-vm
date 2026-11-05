@@ -11,6 +11,20 @@ use crate::asgard::{
     },
 };
 
+/// 生成单元自带的标量声明。
+///
+/// 生成源码是封闭编译单元：HIR 只让生成组看到应用自身导出的声明，依赖包（std）
+/// 的 `[primitive]` 声明不进入可见面。生成代码却直接用 `i32`/`bool` 拼写并传字面量，
+/// 字面量只有落在 `[primitive]` 身份上才能参与重载匹配；缺少声明时 `sig_set_i32(sv, 0)`
+/// 这类调用会以「无可行重载」失败。这里声明生成单元实际用到的标量拼写。
+const GENERATED_SCALAR_PRELUDE: &str = r#"[primitive("std::primitive::i32")]
+structure i32 { }
+
+[primitive("std::primitive::bool")]
+structure bool { }
+
+"#;
+
 /// 从所有 AWSL 组件生成可编译的 V 源码（浏览器：DOM + reactive）。
 pub fn build_awsl_wasm_source(components: &[LoweredComponent]) -> String {
     build_awsl_source_with_prelude(components, DOM_PRELUDE, REACTIVE_PRELUDE)
@@ -109,7 +123,8 @@ fn emit_mp_component_init(out: &mut String, component: &LoweredComponent) {
 }
 
 fn build_awsl_source_with_prelude(components: &[LoweredComponent], dom_or_mobile: &str, reactive: &str) -> String {
-    let mut out = String::from(dom_or_mobile);
+    let mut out = String::from(GENERATED_SCALAR_PRELUDE);
+    out.push_str(dom_or_mobile);
     out.push_str(reactive);
     out.push_str("micro awsl_key_none(): utf8 { return \"\" }\n\n");
     let mut generated = String::new();

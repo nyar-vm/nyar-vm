@@ -1,10 +1,71 @@
 //! AWSL 降级与 JS 胶水测试（自包含样例，不读取外部语言语料）。
 
 use oak_awsl::AwslParser;
+use rusty_valkyrie::ValkyrieCompiler;
 use rusty_valkyrie::asgard::{
     awsl::{LoweringOptions, lower_component},
     codegen::{asgard_boot_script_tag, build_awsl_wasm_source, generate_boot_script, manifest_url_for_mode},
 };
+
+/// 生成单元（`awsl_hydrate_*` 一类宿主调用）的最小形态：签名用裸 `i32`/`utf8` 拼写，
+/// 调用点直接传整数字面量。生成单元不继承依赖包的语义导出，因此必须自带标量声明。
+const GENERATED_UNIT_SCALAR_SHAPE: &str = r#"[primitive("std::primitive::i32")]
+structure i32 { }
+
+[primitive("std::primitive::bool")]
+structure bool { }
+
+micro dom_create_text(text: utf8): i32 { }
+micro rx_bind_text_utf8(handle: i32, expr_export: utf8, dep1: i32, dep2: i32) { }
+
+[export]
+micro awsl_hydrate_index(): i32 {
+    let h2 = dom_create_text("")
+    rx_bind_text_utf8(h2, "awsl_expr_index_0", -1, -1)
+    return h2
+}
+"#;
+
+/// 正例：生成单元自带标量声明时，`-1` 这类字面量按 `[primitive]` 身份落型，调用可通过。
+#[test]
+fn generated_unit_scalar_declarations_allow_integer_literal_calls() {
+    let source = r#"<widget demo><Column><Text>{label}</Text></Column></widget>
+<script>
+let mut label: utf8 = ""
+</script>"#;
+    let root = AwslParser::parse_root(source).expect("parse");
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
+    let v_source = build_awsl_wasm_source(&[lowered]);
+    assert!(
+        v_source.contains("[primitive(\"std::primitive::i32\")]"),
+        "生成单元必须自带 `i32` 标量声明"
+    );
+    assert!(
+        v_source.contains("[primitive(\"std::primitive::bool\")]"),
+        "生成单元必须自带 `bool` 标量声明"
+    );
+    ValkyrieCompiler::default()
+        .compile_source(GENERATED_UNIT_SCALAR_SHAPE)
+        .expect("标量声明在场时生成单元必须编译通过");
+}
+
+/// 反例：剥掉标量声明后，同一调用点的字面量实参必须结构化失败，不得静默选型。
+#[test]
+fn generated_unit_without_scalar_declarations_rejects_literal_arguments() {
+    let without = GENERATED_UNIT_SCALAR_SHAPE.replacen(
+        "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[primitive(\"std::primitive::bool\")]\nstructure bool { }\n\n",
+        "",
+        1,
+    );
+    assert!(!without.contains("structure i32 { }"), "反例必须真正移除标量声明");
+    let error = ValkyrieCompiler::default()
+        .compile_source(&without)
+        .expect_err("缺少标量声明时字面量实参必须结构化失败");
+    let text = format!("{error:?}");
+    assert!(text.contains("UnresolvedCall"), "失败必须是调用解析诊断：{text}");
+    assert!(text.contains("rx_bind_text_utf8"), "诊断必须指向宿主调用：{text}");
+    assert!(text.contains("NoViableOverload"), "失败原因必须是无可行重载：{text}");
+}
 
 #[test]
 fn script_let_mut_emits_reactive_binding_in_wasm() {
