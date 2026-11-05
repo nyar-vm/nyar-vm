@@ -43,6 +43,12 @@ pub struct TargetExecutionPlan {
     /// 字段/容器桥需要从类型拼写回查冻结布局。索引只在 canonical 计划构建时
     /// 由 `aggregate_layout_by_type` 逐项 `lower_type` 生成，不按名字猜布局。
     aggregate_layout_by_nyar_type: BTreeMap<NyarType, nyar_types::LayoutId>,
+    /// 以结构化 `NyarType` 为键的 unite 布局索引。
+    ///
+    /// unite 没有 `LayoutId`，但库导出 ABI 需要按变体身份读回值。索引只在
+    /// canonical 计划构建时由 `sum_types` 的已冻结名义身份 `lower_type` 生成，
+    /// 不按名字猜布局。
+    sum_layout_by_nyar_type: BTreeMap<NyarType, nyar_types::SumTypeLayout>,
     flags_types: Vec<nyar_types::FlagsLayout>,
     singleton_instances: Vec<nyar_types::SingletonInstancePlan>,
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
@@ -328,6 +334,19 @@ impl TargetExecutionPlan {
                 aggregate_layout_by_nyar_type.insert(ty, *layout_id);
             }
         }
+        // unite 没有物理布局身份，只能按已冻结的名义实例类型回查；因此用
+        // `nominal_instances` 的声明 TypeId 逐一 `lower_type`，不按名字拼写匹配。
+        let mut sum_layout_by_nyar_type = BTreeMap::new();
+        for sum in &canonical.linked.sum_types {
+            if !sum.is_unite {
+                continue;
+            }
+            if let Some(record) = canonical.linked.nominal_instances.get(&sum.nominal) {
+                if let Ok(ty) = lower_type(canonical, record.ty) {
+                    sum_layout_by_nyar_type.insert(ty, sum.clone());
+                }
+            }
+        }
         let mut plan = Self {
             module_name: canonical.linked.module_name.clone(),
             fragment_id: fragment.id.clone(),
@@ -344,6 +363,7 @@ impl TargetExecutionPlan {
             aggregate_layout_by_field: canonical.linked.aggregate_layout_by_field.clone(),
             aggregate_layout_by_type: canonical.linked.aggregate_layout_by_type.clone(),
             aggregate_layout_by_nyar_type,
+            sum_layout_by_nyar_type,
             flags_types: canonical.linked.flags_types.clone(),
             singleton_instances: canonical.linked.singleton_instances.clone(),
             functions,
@@ -461,6 +481,13 @@ impl TargetExecutionPlan {
     /// 这是 `Apply(Named, args)` 唯一可用的布局身份来源；按名字回查布局被禁止。
     pub fn aggregate_layout_by_nyar_type(&self) -> &BTreeMap<NyarType, nyar_types::LayoutId> {
         &self.aggregate_layout_by_nyar_type
+    }
+
+    /// 返回结构化 `NyarType` 到 unite 布局的映射。
+    ///
+    /// unite 没有 `LayoutId`；库导出 ABI 的变体身份合同只能来自这份冻结索引。
+    pub fn sum_layout_by_nyar_type(&self) -> &BTreeMap<NyarType, nyar_types::SumTypeLayout> {
+        &self.sum_layout_by_nyar_type
     }
 
     /// 返回 flags 类型布局列表。

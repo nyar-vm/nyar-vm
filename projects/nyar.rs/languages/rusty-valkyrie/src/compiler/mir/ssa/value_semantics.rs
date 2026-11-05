@@ -221,18 +221,30 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
             enum_declarations.push((export.module.parts().to_vec(), hir_enum));
         }
     }
-    for (namespace, hir_enum) in &enum_declarations {
+    for (_, hir_enum) in &enum_declarations {
         let Some(declaration) = hir_enum.declaration
         else {
             continue;
         };
-        let qualified = if namespace.is_empty() {
-            hir_enum.name.as_str().to_string()
-        }
+        // sum 声明在 canonical `register_declaration_spellings` 中如实保留简单名
+        // （sum 没有 namespace 事实）；这里必须同口径，否则 `NyarType::Nominal`
+        // 的 spelling 与 `lower_type` 产出不一致，含 sum 字段的聚合在 SMIR010 处失败。
+        declaration_spellings.insert(declaration, hir_enum.name.as_str().to_string());
+    }
+    // sum 声明（enum/unite）的声明级 tagged 布局必须先于聚合字段解析登记：
+    // 含 sum 字段的聚合要与 canonical `lower_type` 同口径产出 `Nominal`，
+    // 否则字段元数据退化成无身份 `Named`，与构造值类型在 SMIR010 处不一致。
+    // 登记规则与 `ensure_unite_layouts_for_sums` 一致：unite 或非泛型声明才有
+    // 单一物理布局，泛型非 unite 声明仍是开放 binder。
+    for (_, hir_enum) in &enum_declarations {
+        let Some(declaration) = hir_enum.declaration
         else {
-            format!("{}.{}", namespace.iter().map(|id| id.as_str()).collect::<Vec<_>>().join("."), hir_enum.name.as_str())
+            continue;
         };
-        declaration_spellings.insert(declaration, qualified.replace('.', "::"));
+        if !hir_enum.is_unity && !hir_enum.generics.is_empty() {
+            continue;
+        }
+        ensure_unite_tagged_layout(&mut plan, declaration, hir_enum.name.as_str());
     }
     let facts = LayoutFacts { primitive_carriers, declaration_spellings, markers };
     // 已登记声明布局的 (结构体, 存储类) 清单：供第二遍在 declaration_to_layout

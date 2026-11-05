@@ -785,6 +785,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &ctx,
             &gc_struct_type_indices,
             &gc_array_type_indices,
+            &gc_sum_type_indices,
             js_glue_utf8_as_anyref,
             gc_i32_box_type_index,
             gc_i64_box_type_index,
@@ -1713,6 +1714,7 @@ fn emit_library_field_accessors<'name>(
     ctx: &ExecutableLoweringContext,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     gc_array_type_indices: &BTreeMap<String, u32>,
+    gc_sum_type_indices: &BTreeMap<nyar_types::NominalInstanceId, u32>,
     js_glue_utf8_as_anyref: bool,
     gc_i32_box_type_index: u32,
     gc_i64_box_type_index: u32,
@@ -1787,7 +1789,16 @@ fn emit_library_field_accessors<'name>(
     // 后端已注册的 `[i32]` / `[i64]` / `[f64]` box。只在这里收集**导出签名可达**的载荷，
     // 不按类型名或调用点外的事实猜。
     let mut option_payloads: BTreeSet<String> = BTreeSet::new();
+    // unite 变体身份桥：导出签名可达的零 payload unite 需要按判别 tag 读回。
+    // 索引来自 canonical 冻结的 `NyarType → SumTypeLayout`，不按名字识别。
+    let sums = submission.backend_plan.sum_layout_by_nyar_type();
+    let mut reachable_sums: BTreeMap<nyar_types::NominalInstanceId, nyar_types::SumTypeLayout> = BTreeMap::new();
     while let Some(ty) = worklist.pop() {
+        if let Some(sum) = sums.get(&ty) {
+            if sum.is_unite && sum.variants.iter().all(|variant| variant.payload_type.is_none()) {
+                reachable_sums.entry(sum.nominal).or_insert_with(|| sum.clone());
+            }
+        }
         if let NyarType::Nullable(inner) = &ty {
             let inner_schema = super::abi_schema::abi_schema_for_type(inner);
             if let Some(contract) = super::abi_schema::option_box_contract(&inner_schema) {
@@ -1890,6 +1901,23 @@ fn emit_library_field_accessors<'name>(
     }
     let option_name_start = name_store.len();
     name_store.extend(option_plans.iter().flat_map(|(new, get, _, _)| [new.clone(), get.clone()]));
+
+    // 阶段 9：unite tag accessor 计划。名字与 `abi_schema::sum_tag_accessor_export_name`
+    // 同源；每个可达 unite 必须已有后端注册的 GC sum 类型，否则结构化失败。
+    let mut sum_plans: Vec<(String, u32)> = Vec::new();
+    for (nominal, sum) in &reachable_sums {
+        let Some(sum_type_index) = gc_sum_type_indices.get(nominal).copied()
+        else {
+            return Err(format!("unite `{}`（nominal={nominal:?}）没有已注册的 GC sum 类型，无法发射变体 tag accessor", sum.name));
+        };
+        let name = super::abi_schema::sum_tag_accessor_export_name(sum);
+        if !emitted_names.insert(name.clone()) {
+            continue;
+        }
+        sum_plans.push((name, sum_type_index));
+    }
+    let sum_name_start = name_store.len();
+    name_store.extend(sum_plans.iter().map(|(name, _)| name.clone()));
 
     // 名字全部登记完成后才建立不可变切片；导出条目借用该切片。
     let names: &[String] = name_store.as_slice();
@@ -2054,6 +2082,22 @@ fn emit_library_field_accessors<'name>(
         let get_function_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
         code_bodies.push(wasm_function_body(get_body));
         exports.push((names[option_name_start + position * 2 + 1].as_str(), WasmExternalKind::Func.as_u8(), get_function_index));
+    }
+
+    // 阶段 9：发射 unite tag accessor：`(anyref) -> i32` = ref.cast + struct.get tag。
+    for (position, (_, sum_type_index)) in sum_plans.iter().enumerate() {
+        let mut body = Vec::new();
+        encode_uleb128(0, &mut body);
+        encode_local_get(0, &mut body);
+        encode_ref_cast_type_index(*sum_type_index, &mut body);
+        encode_struct_get(*sum_type_index, 0, &mut body);
+        WasmOpcode::End.encode(&mut body);
+        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_function_type(&[WASM_GC_ANYREF], &[VALTYPE_I32]));
+        function_indices.push(type_index);
+        let function_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
+        code_bodies.push(wasm_function_body(body));
+        exports.push((names[sum_name_start + position].as_str(), WasmExternalKind::Func.as_u8(), function_index));
     }
     Ok(())
 }

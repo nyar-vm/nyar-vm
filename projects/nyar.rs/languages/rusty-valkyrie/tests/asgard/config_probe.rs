@@ -337,14 +337,11 @@ micro configure() {
     );
 }
 
-/// 缺口固化：无载荷 unite 变体构造被降低为 `unit`，无法作为导出返回值。
-///
-/// 配置内的枚举式产物类型（如 `ArtifactTarget`）依赖 unite 值跨边界；
-/// 当前正式链在 Semantic MIR 合同处拒绝（返回操作数实际类型为 Unit）。
-/// 缺口闭合后本测试必须翻转为「构造并经 glue 读回变体身份」的正例。
+/// unite 变体读回合同：无载荷 unite 构造经正式链产出 GC sum 引用，
+/// glue 按冻结 sum 布局的 tag 映射读回变体身份。
 #[test]
 fn c0_gap_unite_value_construction_lowers_to_unit() {
-    let failure = build_probe_project(
+    let artifact = build_probe_project(
         "asgard-c0-unite",
         r#"unite Choice {
     On
@@ -357,15 +354,17 @@ micro configure() -> Choice {
 }
 "#,
     )
-    .expect_err("unite 值构造当前必须在 Semantic MIR 合同处失败");
-    assert!(failure.message.contains("SMIR007"), "诊断必须携带合同代码：{}", failure.message);
-    assert!(failure.message.contains("actual=Unit"), "诊断必须指出变体构造被降低为 Unit：{}", failure.message);
+    .unwrap_or_else(|failure| panic!("unite 值构造必须完成正式构建，实际失败：{}", failure.message));
+
+    let variant = call_export_through_glue(&artifact, "configure", "[]")
+        .unwrap_or_else(|diagnostic| panic!("unite 返回值必须经 glue 读回变体身份，实际失败：{diagnostic}"));
+    assert_eq!(variant, "\"On\"", "glue 读回的变体身份必须等于源码构造的变体名");
 }
 
-/// 缺口固化：单变体 unite（产物类型枚举的最小形态）同样被降低为 `unit`。
+/// 单变体 unite（产物类型枚举的最小形态）同样必须构造并读回变体身份。
 #[test]
 fn c0_gap_single_variant_unite_construction_lowers_to_unit() {
-    let failure = build_probe_project(
+    let artifact = build_probe_project(
         "asgard-c0-unite-single",
         r#"unite Target {
     Static
@@ -377,18 +376,18 @@ micro configure() -> Target {
 }
 "#,
     )
-    .expect_err("单变体 unite 构造当前必须在 Semantic MIR 合同处失败");
-    assert!(failure.message.contains("SMIR007"), "诊断必须携带合同代码：{}", failure.message);
-    assert!(failure.message.contains("actual=Unit"), "诊断必须指出变体构造被降低为 Unit：{}", failure.message);
+    .unwrap_or_else(|failure| panic!("单变体 unite 构造必须完成正式构建，实际失败：{}", failure.message));
+
+    let variant = call_export_through_glue(&artifact, "configure", "[]")
+        .unwrap_or_else(|diagnostic| panic!("单变体 unite 返回值必须经 glue 读回变体身份，实际失败：{diagnostic}"));
+    assert_eq!(variant, "\"Static\"", "glue 读回的变体身份必须等于源码构造的变体名");
 }
 
-/// 缺口固化：结构体字段持有 unite 类型时，聚合构造缺少该字段的布局元数据。
-///
-/// 首个拒绝面是 emitter 的 Semantic MIR 合同（`StructNew` 布局元数据校验，`SMIR010`）；
-/// canonical 阶段的 `CAN033` 只是其后的包装，不再是首个拒绝点。
+/// 结构体字段持有 unite 类型：字段布局元数据与构造值身份必须一致
+/// （`Nominal` + 声明级 tagged 布局），聚合构造经 SMIR010 闸门并读回字段变体身份。
 #[test]
-fn c0_gap_struct_field_with_unite_type_rejects_aggregate_layout() {
-    let failure = build_probe_project(
+fn c0_gap_struct_field_with_unite_type_resolves_aggregate_layout() {
+    let artifact = build_probe_project(
         "asgard-c0-struct-unite-field",
         r#"unite Choice {
     On
@@ -406,13 +405,11 @@ micro configure() -> Holder {
 }
 "#,
     )
-    .expect_err("unite 字段聚合当前必须在 Semantic MIR 合同处失败");
-    assert!(failure.message.contains("SMIR010"), "诊断必须携带合同代码：{}", failure.message);
-    assert!(
-        failure.message.contains("aggregate construction contract disagrees with declared layout metadata"),
-        "诊断必须指出聚合构造与布局元数据不一致：{}",
-        failure.message
-    );
+    .unwrap_or_else(|failure| panic!("unite 字段聚合必须完成正式构建，实际失败：{}", failure.message));
+
+    let value = call_export_through_glue(&artifact, "configure", "[]")
+        .unwrap_or_else(|diagnostic| panic!("聚合字段必须经 glue 读回变体身份，实际失败：{diagnostic}"));
+    assert_eq!(value, "{\"choice\":\"Off\"}", "聚合字段读回值必须携带源码构造的变体身份");
 }
 
 /// 缺口固化：std 依赖在场时，类型位置的 `utf8` 解析到名义类型，与字符串字面量的

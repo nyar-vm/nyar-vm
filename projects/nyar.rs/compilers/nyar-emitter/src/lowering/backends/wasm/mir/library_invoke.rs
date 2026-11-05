@@ -66,7 +66,8 @@ fn abi_carrier_name(schema: &super::abi_schema::WasmAbiType) -> Result<&'static 
         | WasmAbiType::FixedArray { .. }
         | WasmAbiType::Option { .. }
         | WasmAbiType::Tuple { .. }
-        | WasmAbiType::NamedAggregate { .. } => "handle",
+        | WasmAbiType::NamedAggregate { .. }
+        | WasmAbiType::Sum { .. } => "handle",
         WasmAbiType::Utf16 => return Err("Utf16 没有稳定的宿主 ABI 载体".to_string()),
         WasmAbiType::Unsupported { reason } => return Err(format!("类型没有 Wasm ABI 载体: {reason}")),
     })
@@ -121,6 +122,7 @@ fn schematize_function_abi(
     abi: &LibraryExportAbi,
     layouts: &nyar_types::AggregateLayoutPlan,
     layout_by_type: &std::collections::BTreeMap<nyar_types::NyarType, nyar_types::LayoutId>,
+    sums: &std::collections::BTreeMap<nyar_types::NyarType, nyar_types::SumTypeLayout>,
 ) -> Result<(Vec<serde_json::Value>, super::abi_schema::WasmAbiType)> {
     let identities = parameter_identities(instance_label, function)?;
     if abi.params.len() != function.param_types.len() {
@@ -132,7 +134,7 @@ fn schematize_function_abi(
     }
     let mut params_json = Vec::with_capacity(function.param_types.len());
     for (position, ty) in function.param_types.iter().enumerate() {
-        let schema = abi_schema_for_type_with_layouts(ty, layouts, layout_by_type);
+        let schema = abi_schema_for_type_with_layouts(ty, layouts, layout_by_type, sums);
         if let Some(reason) = schema.unsupported_reason() {
             return Err(format!("库导出 `{instance_label}` 参数 {position} 类型 `{ty}` 没有 Wasm ABI 合同: {reason}"));
         }
@@ -155,7 +157,7 @@ fn schematize_function_abi(
         }));
     }
 
-    let ret_schema = abi_schema_for_type_with_layouts(&function.return_type, layouts, layout_by_type);
+    let ret_schema = abi_schema_for_type_with_layouts(&function.return_type, layouts, layout_by_type, sums);
     if let Some(reason) = ret_schema.unsupported_reason() {
         return Err(format!("库导出 `{instance_label}` 返回类型 `{}` 没有 Wasm ABI 合同: {reason}", function.return_type));
     }
@@ -196,6 +198,7 @@ pub(super) fn append_library_invoke_section(
             abi,
             ctx.layouts,
             plan.aggregate_layout_by_nyar_type(),
+            plan.sum_layout_by_nyar_type(),
         )?;
 
         // 注意：WasmAbiType 的 serde(tag = "kind", rename_all = "PascalCase")
@@ -364,6 +367,7 @@ mod tests {
                 &abi,
                 &nyar_types::AggregateLayoutPlan::default(),
                 &std::collections::BTreeMap::new(),
+                &std::collections::BTreeMap::new(),
             )
             .expect("参数身份完整");
         assert_eq!(
@@ -392,6 +396,7 @@ mod tests {
                 &abi,
                 &nyar_types::AggregateLayoutPlan::default(),
                 &std::collections::BTreeMap::new(),
+                &std::collections::BTreeMap::new(),
             )
             .expect_err("参数名重复必须失败");
         assert!(error.contains("identity"), "error must carry the export name: {error}");
@@ -410,6 +415,7 @@ mod tests {
                 &abi,
                 &nyar_types::AggregateLayoutPlan::default(),
                 &std::collections::BTreeMap::new(),
+                &std::collections::BTreeMap::new(),
             )
             .expect_err("参数名缺失必须失败");
         assert!(error.contains("identity"), "error must carry the export name: {error}");
@@ -427,6 +433,7 @@ mod tests {
             &abi,
             &nyar_types::AggregateLayoutPlan::default(),
             &std::collections::BTreeMap::new(),
+            &std::collections::BTreeMap::new(),
         )
         .expect_err("身份数量不一致必须失败");
         assert!(error.contains("数量不一致"), "error must explain the count mismatch: {error}");
@@ -443,6 +450,7 @@ mod tests {
             &function,
             &abi,
             &nyar_types::AggregateLayoutPlan::default(),
+            &std::collections::BTreeMap::new(),
             &std::collections::BTreeMap::new(),
         )
         .expect_err("冻结核对不一致必须失败");

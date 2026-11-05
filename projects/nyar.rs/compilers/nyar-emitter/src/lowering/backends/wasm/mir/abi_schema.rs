@@ -172,6 +172,22 @@ pub enum WasmAbiType {
         constructor: Option<String>,
     },
 
+    /// 零 payload unite（`is_unite` sum）的变体身份合同。
+    ///
+    /// unite 在 Wasm 侧是 `[tag, payload]` GC struct；宿主拿到引用后经
+    /// `tag_accessor` 读出判别值，再按 `variants` 的 tag→名字映射回读变体身份。
+    /// 只有冻结布局证明 `is_unite` 且全部变体无 payload 时才生成此变体；
+    /// 带 payload 的 sum 仍保留 [`WasmAbiType::NamedAggregate`] 身份，宿主在
+    /// 边界失败闭合，而不是静默丢弃 payload。
+    Sum {
+        /// unite 的简单名（不含模块路径；canonical 目前没有 sum 的 namespace 事实）。
+        name: String,
+        /// 按声明顺序排列的变体身份。
+        variants: Vec<WasmAbiSumVariant>,
+        /// `(unite anyref) -> i32`：读出判别 tag 的 wasm 导出名。
+        tag_accessor: String,
+    },
+
     /// 不支持出现在库导出 ABI 位置的类型。
     ///
     /// # 何时产生
@@ -200,6 +216,15 @@ pub struct WasmAbiField {
     pub ty: WasmAbiType,
     /// 字段 accessor 的 wasm 导出名（布局身份确定性派生）。
     pub accessor: String,
+}
+
+/// unite 变体身份：判别 tag 与声明名逐一对应。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WasmAbiSumVariant {
+    /// 变体名（冻结 sum 布局，禁止按下标或拼写猜测）。
+    pub name: String,
+    /// 判别 tag（与 Wasm GC struct 的 tag 字段同源）。
+    pub tag: u32,
 }
 
 /// 物理 heap array 的读写操作导出名。
@@ -423,10 +448,19 @@ pub fn abi_schema_for_type_with_layouts(
     ty: &NyarType,
     layouts: &AggregateLayoutPlan,
     layout_by_type: &BTreeMap<NyarType, LayoutId>,
+    sums: &BTreeMap<NyarType, nyar_types::SumTypeLayout>,
 ) -> WasmAbiType {
+    // unite 没有物理布局身份，先按 canonical 冻结的 `NyarType` 索引查；
+    // 只有零 payload unite 才有变体身份合同——带 payload 的 sum 仍回落到
+    // `NamedAggregate` 身份，宿主在边界失败闭合，而不是静默丢弃 payload。
+    if let Some(sum) = sums.get(ty) {
+        if sum.is_unite && sum.variants.iter().all(|variant| variant.payload_type.is_none()) {
+            return sum_schema(sum);
+        }
+    }
     match ty {
         NyarType::Nominal { layout, spelling } => {
-            aggregate_schema(simple_name_of(spelling), module_path_of(spelling), *layout, layouts, layout_by_type)
+            aggregate_schema(simple_name_of(spelling), module_path_of(spelling), *layout, layouts, layout_by_type, sums)
         }
         // `Apply` 不携带 `LayoutId`；布局身份只能来自 canonical 计划冻结的
         // `NyarType → LayoutId` 索引。索引里没有就退回身份 schema（空字段、
@@ -434,28 +468,44 @@ pub fn abi_schema_for_type_with_layouts(
         NyarType::Apply(..) => match layout_by_type.get(ty) {
             Some(layout) => {
                 let (name, module_path, _) = flatten_apply_identity(ty);
-                aggregate_schema(name, module_path, *layout, layouts, layout_by_type)
+                aggregate_schema(name, module_path, *layout, layouts, layout_by_type, sums)
             }
             None => abi_schema_for_type(ty),
         },
         NyarType::Array(element) => WasmAbiType::Array {
-            element: Box::new(abi_schema_for_type_with_layouts(element, layouts, layout_by_type)),
+            element: Box::new(abi_schema_for_type_with_layouts(element, layouts, layout_by_type, sums)),
             ops: array_ops_export_names(element),
             container: None,
         },
         NyarType::FixedArray { element, length } => WasmAbiType::FixedArray {
-            element: Box::new(abi_schema_for_type_with_layouts(element, layouts, layout_by_type)),
+            element: Box::new(abi_schema_for_type_with_layouts(element, layouts, layout_by_type, sums)),
             length: *length,
         },
         NyarType::Nullable(inner) => {
-            let inner = Box::new(abi_schema_for_type_with_layouts(inner, layouts, layout_by_type));
+            let inner = Box::new(abi_schema_for_type_with_layouts(inner, layouts, layout_by_type, sums));
             let box_contract = option_box_contract(&inner).map(Box::new);
             WasmAbiType::Option { inner, box_contract }
         }
         NyarType::Tuple(fields) => WasmAbiType::Tuple {
-            fields: fields.iter().map(|field| abi_schema_for_type_with_layouts(field, layouts, layout_by_type)).collect(),
+            fields: fields
+                .iter()
+                .map(|field| abi_schema_for_type_with_layouts(field, layouts, layout_by_type, sums))
+                .collect(),
         },
         other => abi_schema_for_type(other),
+    }
+}
+
+/// 零 payload unite 的变体身份合同。
+fn sum_schema(sum: &nyar_types::SumTypeLayout) -> WasmAbiType {
+    WasmAbiType::Sum {
+        name: sum.name.clone(),
+        variants: sum
+            .variants
+            .iter()
+            .map(|variant| WasmAbiSumVariant { name: variant.name.clone(), tag: variant.tag })
+            .collect(),
+        tag_accessor: sum_tag_accessor_export_name(sum),
     }
 }
 
@@ -469,18 +519,19 @@ fn aggregate_schema(
     layout_id: LayoutId,
     layouts: &AggregateLayoutPlan,
     layout_by_type: &BTreeMap<NyarType, LayoutId>,
+    sums: &BTreeMap<NyarType, nyar_types::SumTypeLayout>,
 ) -> WasmAbiType {
     let Some(aggregate) = layouts.layouts.iter().find(|item| item.id == layout_id) else {
         return WasmAbiType::Unsupported {
             reason: format!("layout `{layout_id}` 未注册，无法派生字段访问合同"),
         };
     };
-    if let Some(sequence) = sequence_contract(aggregate, layouts, layout_by_type) {
+    if let Some(sequence) = sequence_contract(aggregate, layouts, layout_by_type, sums) {
         return sequence;
     }
     let mut fields = Vec::with_capacity(aggregate.fields.len());
     for (index, field) in aggregate.fields.iter().enumerate() {
-        let field_schema = abi_schema_for_type_with_layouts(&field.ty, layouts, layout_by_type);
+        let field_schema = abi_schema_for_type_with_layouts(&field.ty, layouts, layout_by_type, sums);
         if let Some(reason) = field_schema.unsupported_reason() {
             return WasmAbiType::Unsupported {
                 reason: format!(
@@ -513,6 +564,7 @@ fn sequence_contract(
     aggregate: &AggregateLayout,
     layouts: &AggregateLayoutPlan,
     layout_by_type: &BTreeMap<NyarType, LayoutId>,
+    sums: &BTreeMap<NyarType, nyar_types::SumTypeLayout>,
 ) -> Option<WasmAbiType> {
     if aggregate.storage != StorageKind::Reference || aggregate.fields.len() != 2 {
         return None;
@@ -525,7 +577,7 @@ fn sequence_contract(
     let NyarType::Array(element) = &aggregate.fields[items_index].ty else {
         return None;
     };
-    let element_schema = abi_schema_for_type_with_layouts(element, layouts, layout_by_type);
+    let element_schema = abi_schema_for_type_with_layouts(element, layouts, layout_by_type, sums);
     if let Some(reason) = element_schema.unsupported_reason() {
         return Some(WasmAbiType::Unsupported {
             reason: format!(
@@ -534,7 +586,7 @@ fn sequence_contract(
             ),
         });
     }
-    let length_schema = abi_schema_for_type_with_layouts(&aggregate.fields[length_index].ty, layouts, layout_by_type);
+    let length_schema = abi_schema_for_type_with_layouts(&aggregate.fields[length_index].ty, layouts, layout_by_type, sums);
     Some(WasmAbiType::Array {
         element: Box::new(element_schema),
         ops: array_ops_export_names(element),
@@ -572,7 +624,7 @@ pub fn aggregate_constructor_export_name(layout: &AggregateLayout) -> String {
 /// - `i64` 载体：`I64`；
 /// - `f64` 载体：`F64`。
 ///
-/// 引用载体（`Array` / `FixedArray` / `Tuple` / `NamedAggregate` / 嵌套 `Option`）
+/// 引用载体（`Array` / `FixedArray` / `Tuple` / `NamedAggregate` / `Sum` / 嵌套 `Option`）
 /// 本身就是可空 anyref 槽里的值，不需要合同；其余标量载体（`F32`）没有目标合同，
 /// 后端也没有注册对应 box struct，返回 `None`，由宿主结构化失败而不是现场造表示。
 pub fn option_box_contract(inner: &WasmAbiType) -> Option<WasmAbiOptionBox> {
@@ -634,6 +686,25 @@ pub fn field_accessor_export_name(layout: &AggregateLayout, field_index: usize) 
     let suffix = digest.get(..16).unwrap_or(&digest);
     let sanitize = |text: &str| text.chars().map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' }).collect::<String>();
     format!("nyar$field${}${}${}", sanitize(&layout.name), sanitize(&field.name), suffix)
+}
+
+/// unite 变体 tag accessor 的确定性导出名：只由冻结 sum 身份（类型名、
+/// `is_unite`、全部变体名与判别 tag）派生，不按类型名或下标猜测。
+///
+/// 同一 sum 在任意导出位置派生同一名字；变体形状不同的 unite 永不撞名。
+pub fn sum_tag_accessor_export_name(sum: &nyar_types::SumTypeLayout) -> String {
+    let mut facts = String::new();
+    facts.push_str(&sum.name);
+    facts.push('\n');
+    facts.push_str(if sum.is_unite { "unite" } else { "sum" });
+    facts.push('\n');
+    for variant in &sum.variants {
+        facts.push_str(&format!("{}:{}\n", variant.name, variant.tag));
+    }
+    let digest = combined_content_hash(&[&facts]);
+    let suffix = digest.get(..16).unwrap_or(&digest);
+    let sanitize = |text: &str| text.chars().map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' }).collect::<String>();
+    format!("nyar$sum$tag${}${}", sanitize(&sum.name), suffix)
 }
 
 /// 从 `Identifier` 提取简单名（丢掉模块路径前缀）。
@@ -883,7 +954,7 @@ mod tests {
         let mut plan = AggregateLayoutPlan::default();
         plan.layouts.push(layout);
         let ty = NyarType::Nominal { layout: 7, spelling: Identifier::new("app::ConfigArtifact") };
-        let schema = abi_schema_for_type_with_layouts(&ty, &plan, &BTreeMap::new());
+        let schema = abi_schema_for_type_with_layouts(&ty, &plan, &BTreeMap::new(), &BTreeMap::new());
         match schema {
             WasmAbiType::NamedAggregate { name, module_path, fields, .. } => {
                 assert_eq!(name, "ConfigArtifact");
@@ -914,7 +985,7 @@ mod tests {
     fn nominal_with_unregistered_layout_fails_closed() {
         let plan = AggregateLayoutPlan::default();
         let ty = NyarType::Nominal { layout: 99, spelling: Identifier::new("app::Ghost") };
-        let schema = abi_schema_for_type_with_layouts(&ty, &plan, &BTreeMap::new());
+        let schema = abi_schema_for_type_with_layouts(&ty, &plan, &BTreeMap::new(), &BTreeMap::new());
         assert!(schema.unsupported_reason().is_some(), "未注册 layout 不得派生字段桥");
     }
 
@@ -935,7 +1006,7 @@ mod tests {
         let mut plan = AggregateLayoutPlan::default();
         plan.layouts.push(layout);
         let ty = NyarType::Nominal { layout: 8, spelling: Identifier::new("app::Heavy") };
-        let schema = abi_schema_for_type_with_layouts(&ty, &plan, &BTreeMap::new());
+        let schema = abi_schema_for_type_with_layouts(&ty, &plan, &BTreeMap::new(), &BTreeMap::new());
         let reason = schema.unsupported_reason().expect("i128 字段必须使整个聚合失败闭合");
         assert!(reason.contains("big"), "got: {reason}");
     }

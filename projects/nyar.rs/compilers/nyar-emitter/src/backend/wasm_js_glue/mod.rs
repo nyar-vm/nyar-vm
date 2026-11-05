@@ -190,7 +190,7 @@ function abiKind(schema) {{
 // 不需要额外的 box/unbox 合同。标量内层必须由 schema 的 `box` 合同放行。
 function hasWasmHandleCarrier(schema) {{
     const kind = abiKind(schema);
-    return kind === "NamedAggregate" || kind === "Array" || kind === "FixedArray" || kind === "Tuple" || kind === "Option";
+    return kind === "NamedAggregate" || kind === "Array" || kind === "FixedArray" || kind === "Tuple" || kind === "Option" || kind === "Sum";
 }}
 
 // 从 param 条目提取 marshal 用的类型 schema。
@@ -379,6 +379,15 @@ function marshalLibraryArg(schema, value, path) {{
         return constructor(...ctorArgs);
     }}
 
+    // ── Sum（零 payload unite）：只有变体身份读回合同，没有构造桥 ──
+    // 入库方向的构造需要后端注册的 `struct.new` + tag 写入合同；当前冻结
+    // schema 不携带该合同，因此显式失败闭合，不按变体名现场造 GC 对象。
+    if (kind === "Sum") {{
+        throw new Error(
+            `[wasm-js-glue]${{describePath(path)}}: Cannot marshal Sum "${{schema.name}}": ABI schema carries no variant construction contract. Schema: ${{JSON.stringify(schema)}}`
+        );
+    }}
+
     // ── 未支持形状一律失败闭合 ──
     throw new Error(
         `[wasm-js-glue]${{describePath(path)}}: Cannot marshal schema kind "${{kind}}": no ABI bridge implemented. Schema: ${{JSON.stringify(schema)}}`
@@ -517,6 +526,35 @@ function demarshalLibraryReturn(schema, raw, path) {{
             aggregate[field.name] = demarshalLibraryReturn(field.type, accessor(raw), `${{path}}.${{field.name}}`);
         }}
         return aggregate;
+    }}
+
+    // ── Sum（零 payload unite）：经 tag accessor 读出判别值，映射回变体身份 ──
+    // 变体名与 tag 的对应关系来自冻结 sum 布局；tag 不在声明集合内即失败闭合，
+    // 不得按声明下标猜变体。
+    if (kind === "Sum") {{
+        if (raw == null) {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Sum "${{schema.name}}": wasm returned a null reference`);
+        }}
+        const variants = schema.variants;
+        if (!Array.isArray(variants) || variants.length === 0) {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Sum "${{schema.name}}": no variant identity contract in ABI schema. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        const readTag = bridgeExport(schema.tag_accessor, "sum tag accessor", path);
+        const tag = readTag(raw);
+        if (typeof tag !== "number" || !Number.isInteger(tag)) {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Sum "${{schema.name}}": tag accessor returned ${{describeValue(tag)}}, expected an integer tag`
+            );
+        }}
+        const variant = variants.find((item) => item.tag === tag);
+        if (!variant) {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Sum "${{schema.name}}": tag ${{tag}} is not declared. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        return variant.name;
     }}
 
     // ── 未支持形状一律失败闭合 ──
