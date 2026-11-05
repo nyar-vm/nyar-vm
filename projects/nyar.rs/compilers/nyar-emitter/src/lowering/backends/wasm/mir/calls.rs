@@ -105,12 +105,13 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_call_indirect(type_index, 0);
             }
             MirDispatchKind::Indirect => {
-                // callee 是函数值 SSA（i32 table 槽载体）。签名事实只来自该 SSA 值
-                // 冻结的 `NyarType::Function`：实参 coerce、`call_indirect` 的 typeidx
-                // 与返回载体全部由它决定；缺事实即结构化失败，禁止回落静态 callee。
+                // callee 是函数值 SSA（闭包对象 anyref，合同 §5.3）。签名事实来自该
+                // SSA 值冻结的 `NyarType::Function`：可见形参 coerce 与返回载体由它
+                // 决定，`call_indirect` 的 functype 固定为「可见形参 + 一个尾部 anyref」。
+                // 环境作为普通尾实参压栈，不占 callee 槽；缺事实即结构化失败。
                 let (param_types, return_type, type_index) = self.resolve_indirect_callee_signature(callee)?;
                 self.emit_call_arguments(arguments, &param_types)?;
-                self.emit_operand(callee)?;
+                self.emit_closure_callee(callee)?;
                 self.emit_call_indirect(type_index, 0);
                 callee_return = return_type;
             }
@@ -312,9 +313,10 @@ impl<'a> WasmMirLowerer<'a> {
             .copied()
     }
 
-    /// 间接调用的签名解析：callee SSA 值必须携带冻结的 `NyarType::Function`，
-    /// 其物理签名必须命中模块已注册的 functype（按签名字节反查 typeidx）。
-    /// 缺类型或缺注册条目都结构化失败，禁止按参数个数或候选顺序猜签名。
+    /// 间接调用的签名解析：callee SSA 值必须携带冻结的 `NyarType::Function`。
+    /// `call_indirect` 的 functype 固定为「可见形参 + 一个尾部 anyref」（环境槽），
+    /// 必须命中模块已注册的 functype（按签名字节反查 typeidx）。缺类型或缺注册
+    /// 条目都结构化失败，禁止按参数个数猜签名，也禁止退回无 env 的旧签名。
     pub(super) fn resolve_indirect_callee_signature(&self, callee: &MirOperand) -> crate::Result<(Vec<u8>, Option<u8>, u32)> {
         let MirOperand::Value(value) = callee
         else {
@@ -324,7 +326,7 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return Err(format!("WASM 间接调用 callee %{} 缺少冻结 Function 签名: {}", value.0, self.mir_fn.symbol));
         };
-        let param_types: Vec<u8> = signature
+        let visible_param_types: Vec<u8> = signature
             .params
             .iter()
             .map(|ty| wasm_param_value_type_for(self.ctx, ty, None, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref))
@@ -333,10 +335,29 @@ impl<'a> WasmMirLowerer<'a> {
             NyarType::Unit | NyarType::Bottom => None,
             other => Some(wasm_param_value_type_for(self.ctx, other, None, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref)),
         };
-        let type_index = *self.type_index_by_signature.get(&(param_types.clone(), return_type)).ok_or_else(|| {
-            format!("WASM 间接调用签名缺少已注册 functype（params={param_types:?} return={return_type:?}）: {}", self.mir_fn.symbol)
+        let mut indirect_param_types = visible_param_types.clone();
+        indirect_param_types.push(WASM_GC_ANYREF);
+        let type_index = *self.type_index_by_signature.get(&(indirect_param_types.clone(), return_type)).ok_or_else(|| {
+            format!(
+                "WASM 间接调用签名缺少含环境槽的已注册 functype（visible={visible_param_types:?} env={WASM_GC_ANYREF:#04X} return={return_type:?}）: {}",
+                self.mir_fn.symbol
+            )
         })?;
-        Ok((param_types, return_type, type_index))
+        Ok((visible_param_types, return_type, type_index))
+    }
+
+    /// 间接调用的 callee 操作数发射：闭包对象 → 环境尾实参 → code 槽位。
+    /// `call_indirect` 的栈序是 `实参..., env, code`（callee 下标最后压入）；
+    /// env 是普通实参，不占 callee 槽。闭包对象槽是 anyref，读取字段前必须
+    /// `ref.cast` 到冻结的闭包 structtype。
+    fn emit_closure_callee(&mut self, callee: &MirOperand) -> crate::Result<()> {
+        self.emit_operand_coerced(callee, WASM_GC_ANYREF)?;
+        self.emit_ref_cast_struct(self.gc_closure_type_index);
+        self.emit_struct_get(self.gc_closure_type_index, WASM_CLOSURE_ENV_FIELD);
+        self.emit_operand_coerced(callee, WASM_GC_ANYREF)?;
+        self.emit_ref_cast_struct(self.gc_closure_type_index);
+        self.emit_struct_get(self.gc_closure_type_index, WASM_CLOSURE_CODE_FIELD);
+        Ok(())
     }
 
     pub(super) fn operand_wasm_stack_type(&self, operand: &MirOperand) -> u8 {

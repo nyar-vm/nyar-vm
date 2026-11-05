@@ -1,9 +1,10 @@
-//! 具名函数作值的 Wasm 编码合同：`LoadFunctionRef` 降为 funcref table 槽位常量，
-//! `Invoke{callee: Value}` 降为类型化 `call_indirect`。
+//! 函数值闭包载体的 Wasm 编码合同：`LoadFunctionRef` 降为 gc struct
+//! `[code: i32 table 槽, env: anyref]`，`Invoke{callee: Value}` 降为带环境尾实参的
+//! 类型化 `call_indirect`。
 //!
 //! 验收面：happy path 模块含 table(4)/elem(9) 段且 Node 实际执行间接调用得到结果；
-//! fail-closed：引用实例没有函数体、callee 缺少冻结 Function 签名、签名未注册
-//! functype 三种缺事实形状都在编码前结构化失败，禁止猜测救活。
+//! fail-closed：引用实例没有函数体、callee 缺少冻结 Function 签名、物理签名无法
+//! 适配、环境缺少名义 layout 四种缺事实形状都在编码前结构化失败，禁止猜测救活。
 
 use acorn_wasm::{WasmBinaryModule, WasmOpcode};
 use nyar::{Identifier, QualifiedName};
@@ -210,26 +211,26 @@ fn wasm_indirect_call_without_frozen_signature_fails_closed() {
     assert!(error.contains("Function 签名"), "错误必须是结构化的签名缺失: {error}");
 }
 
-/// fail-closed：callee 签名没有命中模块已注册的 functype 时结构化失败，
-/// 禁止为间接调用新造类型条目。
+/// fail-closed：callee 的冻结签名与被引用实例的物理签名无法适配间接调用时结构化失败。
 #[test]
-fn wasm_indirect_call_with_unregistered_signature_fails_closed() {
+fn wasm_indirect_call_signature_mismatch_fails_closed() {
     let i64_ty = NyarType::Integer64 { signed: true };
-    let error = lower(function_type(vec![i64_ty.clone(), i64_ty], I32), cmp_instance()).expect_err("未注册签名不得新造 typeidx");
-    assert!(error.contains("functype"), "错误必须是结构化的类型注册缺失: {error}");
+    let error = lower(function_type(vec![i64_ty.clone(), i64_ty], I32), cmp_instance()).expect_err("签名不一致不得静默编码");
+    assert!(error.contains("物理签名"), "错误必须是结构化的签名适配失败: {error}");
 }
 
-/// fail-closed：P4 之前 WASM 没有闭包环境载体，`environment: Some` 必须结构化失败，
-/// 并点名 lambda 实例与捕获名；无捕获路径的行为不受影响（见上方 happy path）。
+/// fail-closed：`environment: Some` 的操作数缺少名义 layout 身份时结构化失败。
+/// 环境对象必须能强制登记 gc struct；常数或非 Nominal 载体无法跨间接调用存活，
+/// 不得退回线性内存环境或 i32 假载体。
 #[test]
-fn wasm_captured_lambda_environment_fails_closed() {
+fn wasm_closure_environment_without_nominal_identity_fails_closed() {
     let error = lower_with(
         function_type(vec![I32, I32], I32),
         cmp_instance(),
         Some(Operand::Constant(Constant::Int(0))),
         vec!["result".to_string()],
     )
-    .expect_err("WASM 捕获环境不得静默丢弃");
-    assert!(error.contains("闭包载体尚未落地"), "错误必须点名 WASM 尚未落地的闭包载体: {error}");
+    .expect_err("WASM 闭包环境缺少 layout 身份不得静默编码");
+    assert!(error.contains("闭包环境"), "错误必须点名闭包环境事实缺失: {error}");
     assert!(error.contains("result"), "错误必须点名被捕获的绑定: {error}");
 }

@@ -13,6 +13,10 @@ use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64};
 use nyar_types::AggregateLayout;
 use std::collections::BTreeMap;
 
+/// 闭包对象（合同 §5.3）的物理槽位：0 = funcref table 槽位（i32），1 = 捕获环境（anyref / null）。
+pub(in crate::lowering::backends::wasm) const WASM_CLOSURE_CODE_FIELD: u32 = 0;
+pub(in crate::lowering::backends::wasm) const WASM_CLOSURE_ENV_FIELD: u32 = 1;
+
 pub(super) fn is_js_glue_host_string_type(ty: &NyarType) -> bool {
     // Only the explicit language encoding reaches the JS glue ABI. Nominal
     // names are not evidence of text semantics.
@@ -70,6 +74,15 @@ pub(super) fn wasm_param_value_type_for(
     // anyref，与构造/字段读取点消费同一冻结事实。宿主字符串特判不得反向污染此处。
     if type_uses_gc_struct_param(ctx, layout_id, gc_struct_type_indices) {
         return WASM_GC_ANYREF;
+    }
+    // 未携带 `layout_id`（如 ABI 形参与合成 lambda 的环境槽）但类型本身是已登记
+    // gc struct 的名义实例时，仍必须按注册表返回 anyref。闭包环境 layout 由
+    // `LoadFunctionRef` 的 environment 操作数强制登记（见 `type_registry`），
+    // 否则跨间接调用的环境槽会被降成 i32，与构造点分叉。
+    if let NyarType::Nominal { layout, .. } = ty {
+        if gc_struct_type_indices.contains_key(layout) {
+            return WASM_GC_ANYREF;
+        }
     }
     // Node / JS-glue 宿主字符串在**未携带注册 gc struct layout** 时必须是 i32 句柄
     // （`cli_get_*` / `const_utf8`）；否则 call 实参会被 coerce 成 `ref.null`，丢掉句柄。
@@ -149,11 +162,11 @@ pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &NyarTy
     if matches!(ty, NyarType::Union(_)) {
         return WASM_GC_ANYREF;
     }
-    // 函数值的物理载体是 funcref table 槽位下标（i32）。共享存储闸门把 Function
-    // 归入 Reference 是为引用类聚合服务的；wasm 的 anyref 与 funcref 分属不同
-    // 引用塔，anyref 槽无法承载函数值，必须由本层显式选定 i32 载体。
+    // 函数值 = 闭包对象（gc struct `[code: i32, env: anyref]`），见合同 §5.3。
+    // 无捕获路径同样使用该载体（env 为 `ref.null anyref`），因此 SSA 槽一律 anyref；
+    // 不再把 funcref table 槽位下标当作函数值本身。
     if matches!(ty, NyarType::Function(_)) {
-        return VALTYPE_I32;
+        return WASM_GC_ANYREF;
     }
     // 引用类型参数用 anyref (VALTYPE_ANYREF) 传递;值类型参数仍用 i32 地址。
     if ctx.storage_for_type(ty) == StorageKind::Reference {

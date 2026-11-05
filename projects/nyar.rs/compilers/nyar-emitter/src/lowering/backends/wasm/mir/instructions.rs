@@ -582,29 +582,36 @@ impl<'a> WasmMirLowerer<'a> {
                     self.store_scalar(output);
                 }
             }
-            MirInstructionKind::LoadFunctionRef { instance, environment, captured } => {
-                // 函数值 = funcref table 槽位下标（i32 载体）。槽位只来自模块装配的
-                // 预扫描登记；未登记实例是计划事实缺失，结构化失败，禁止编码期补造 table 项。
-                // 捕获环境在 WASM 没有载体（P4 之前）：必须结构化失败，不得丢弃。
-                if environment.is_some() {
-                    return Err(format!(
-                        "WASM 闭包载体尚未落地：lambda instance `{instance:?}` 捕获 [{}]；function={}",
-                        captured.join(", "),
-                        self.mir_fn.symbol
-                    ));
-                }
+            MirInstructionKind::LoadFunctionRef { instance, environment, captured: _ } => {
+                // 函数值 = 闭包对象（合同 §5.3）：gc struct `[code: i32, env: anyref]`。
+                // code 槽只来自模块装配预扫描登记的 funcref table 槽位；未登记实例是
+                // 计划事实缺失，结构化失败，禁止编码期补造 table 项。无捕获路径同样
+                // 构造闭包对象，env 字段为 `ref.null anyref`。
                 let Some(slot) = self.function_value_table_slots.get(instance).copied()
                 else {
                     return Err(format!("WASM 函数值 `{instance:?}` 缺少已登记的 funcref table 槽位: {}", self.mir_fn.symbol));
                 };
-                self.emit_i32_const(i32::try_from(slot).expect("funcref table 槽位溢出"));
-                if let Some(output) = instruction_primary_result(instruction) {
-                    self.validate_output_slot_type(output, VALTYPE_I32);
-                    self.assign_output_local(output);
-                }
+                let Some(output) = instruction_primary_result(instruction)
                 else {
-                    WasmOpcode::Drop.encode(&mut self.code);
+                    return Err(format!("WASM 函数值 `{instance:?}` 缺少结果槽: {}", self.mir_fn.symbol));
+                };
+                self.validate_output_slot_type(output, WASM_GC_ANYREF);
+                // 闭包对象先落进结果槽，再按「local.get + ref.cast + 字段值 + struct.set」
+                // 逐槽写入：`struct.set` 会消费引用，不能让它留在栈上继续写下一槽。
+                let local = self.planned_value_local(output);
+                self.emit_struct_new_default(self.gc_closure_type_index);
+                self.emit_local_set(local);
+                self.emit_local_get(local);
+                self.emit_ref_cast_struct(self.gc_closure_type_index);
+                self.emit_i32_const(i32::try_from(slot).expect("funcref table 槽位溢出"));
+                self.emit_struct_set(self.gc_closure_type_index, WASM_CLOSURE_CODE_FIELD);
+                self.emit_local_get(local);
+                self.emit_ref_cast_struct(self.gc_closure_type_index);
+                match environment {
+                    Some(operand) => self.emit_operand_coerced(operand, WASM_GC_ANYREF)?,
+                    None => self.emit_ref_null_anyref(),
                 }
+                self.emit_struct_set(self.gc_closure_type_index, WASM_CLOSURE_ENV_FIELD);
             }
             MirInstructionKind::Call { callee, arguments } => {
                 // Slim Call 没有 dispatch 字段：路由只由 callee 操作数形态决定——

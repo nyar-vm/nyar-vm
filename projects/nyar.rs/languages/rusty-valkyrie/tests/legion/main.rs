@@ -28,6 +28,7 @@ mod legion_test_target_resolution;
 mod legion_valkyrie_v_leetcode_plan;
 mod legion_valkyrie_v_std_closure;
 mod legion_vcc_data_consumer_inventory;
+mod legion_wasm_closure_p4_e2e;
 mod package_module_boundary;
 mod support;
 mod variant_auto_constructor_option_e2e;

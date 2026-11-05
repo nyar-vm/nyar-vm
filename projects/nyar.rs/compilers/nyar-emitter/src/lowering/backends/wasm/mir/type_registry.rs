@@ -54,6 +54,16 @@ pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) 
                             }
                         }
                     }
+                    // 闭包环境 layout 强制登记 gc struct（合同 §5.3）。环境对象会跨
+                    // 间接调用存活，不能依赖「值型聚合走线性内存」的默认规则，
+                    // 否则调用方拿到的是悬垂地址；登记后构造点与 ABI 槽统一为 anyref。
+                    MirInstructionKind::LoadFunctionRef { environment: Some(operand), .. } => {
+                        if let MirOperand::Value(value) = operand {
+                            if let Some(layout) = view.function.value_layouts.get(value).copied() {
+                                ids.insert(layout);
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }

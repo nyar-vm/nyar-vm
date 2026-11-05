@@ -25,7 +25,7 @@ use super::{
     lowerer::lower_mir_function_to_wasm_bytes,
     representation::{
         is_js_glue_host_string_type, layout_needs_gc_struct, type_is_inline_aggregate, type_is_wasm_gc_heap_reference,
-        wasm_gc_field_type_byte_for_glue, wasm_param_types, wasm_return_value_type,
+        wasm_gc_field_type_byte_for_glue, wasm_param_types, wasm_param_value_type_for, wasm_return_value_type,
     },
     strings::{
         build_wasi_string_data_section, build_wasi_string_literal_offsets, wasi_string_data_section_size, wasm_function_type_param_bytes,
@@ -184,6 +184,14 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         type_indices.push(wasm_gc_struct_type(&[VALTYPE_F64]));
         type_index
     };
+    // 函数值闭包载体（合同 §5.3）：gc struct `[code: i32 funcref table 槽位, env: anyref]`。
+    // 无捕获路径同样使用该载体（env 字段为 `ref.null anyref`）；模块恒定注册一个条目，
+    // 与 `LoadFunctionRef` / `call_indirect` 的 `ref.cast` 指向同一条目。
+    let gc_closure_type_index = {
+        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_gc_struct_type(&[VALTYPE_I32, VALTYPE_ANYREF]));
+        type_index
+    };
     // 合同 §5：managed 字符串 → 宿主 i32 句柄的转换在目标计划阶段冻结，编码期只消费配方表。
     // `NyarType::Utf8` SSA 值携带已登记 gc struct layout 时，宿主导入边界必须按配方转换；
     // 合成导入 `env::host_intern_utf8` 仅在模块确有 managed 字符串时按需追加，因此
@@ -258,12 +266,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         )?
     };
     let import_count = u32::try_from(host_imports.len()).expect("import count overflow");
-    // 函数类型?structtype/arraytype/sumtype 之后开始追加?
-    // type_indices 当前?[main_type, structtype_1, ..., structtype_N]?
-    // 第一个函数类型应放在 N+1 处，对应 type_index = type_indices.len()?
-    // 若仍用硬编码 `index + 1`，函数声明会指向 structtype 条目?
-    // 导致 V8 ?`no signature at index 1 (N types)`?
-    let function_type_base = u32::try_from(type_indices.len()).expect("type index overflow");
     let string_literal_index = build_string_literal_index(&string_literals);
     // WASI 轨：构建字符串字面量到线性内存偏移量的映射，存入 data 段?
     let string_literal_offset = if wasi_mode { build_wasi_string_literal_offsets(&string_literals) } else { BTreeMap::new() };
@@ -277,56 +279,146 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         .collect();
     let base_function_index = import_count;
     let mut function_index_by_instance = BTreeMap::new();
-    let mut type_index_by_instance = BTreeMap::new();
     let mut param_types_by_function_index: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
     let mut return_types_by_function_index: BTreeMap<u32, Option<u8>> = BTreeMap::new();
     for (dense, (instance, mir_fn)) in mir_operations.iter().enumerate() {
         let wasm_idx = base_function_index + dense as u32;
-        let type_idx = function_type_base + dense as u32;
         let params = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
         let ret = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
         param_types_by_function_index.insert(wasm_idx, params);
         return_types_by_function_index.insert(wasm_idx, ret);
         function_index_by_instance.insert(*instance, wasm_idx);
-        type_index_by_instance.insert(*instance, type_idx);
     }
-    // 具名函数作值：预扫描全部可执行体，收集 `LoadFunctionRef` 引用的实例并按身份
-    // 顺序登记 funcref table 槽位；只有被作值引用的函数才进 table。引用的实例没有
-    // 函数体（导入或未生成）属于计划事实缺失，编码前结构化失败，禁止现场补造槽位。
-    let mut function_value_instances: BTreeSet<ItemInstanceId> = BTreeSet::new();
+    // 函数值/闭包预扫描（合同 §5.3）：收集 `LoadFunctionRef` 引用的实例、其冻结的
+    // 可见 Function 签名与环境事实。lambda 实例同样在此登记（不能因为带环境就跳过），
+    // 否则合成函数进不了 funcref table。引用的实例没有函数体属于计划事实缺失，
+    // 编码前结构化失败。
+    struct FunctionValuePlan {
+        visible_param_types: Vec<u8>,
+        return_type: Option<u8>,
+        has_environment: bool,
+        environment_layout: Option<LayoutId>,
+        environment_type: Option<NyarType>,
+    }
+    let mut function_value_plans: BTreeMap<ItemInstanceId, FunctionValuePlan> = BTreeMap::new();
     for (_, mir_fn) in mir_operations.iter() {
         for block in &mir_fn.blocks {
             for instruction in &block.instructions {
-                if let MirInstructionKind::LoadFunctionRef { instance, environment, captured } = &instruction.kind {
-                    // WASM 在 P4 之前保持 i32 code 槽，没有闭包环境载体：捕获环境必须
-                    // 结构化失败并点名 lambda 实例与捕获名，不得静默丢弃。
-                    if environment.is_some() {
-                        return Err(format!(
-                            "WASM 闭包载体尚未落地：lambda instance `{instance:?}` 捕获 [{}]；WASM 当前只支持无捕获函数值",
-                            captured.join(", ")
-                        ));
+                let MirInstructionKind::LoadFunctionRef { instance, environment, captured } = &instruction.kind
+                else {
+                    continue;
+                };
+                let Some(output) = instruction_primary_result(instruction)
+                else {
+                    return Err(format!("WASM 函数值 `{instance:?}` 缺少结果槽: {}", mir_fn.symbol));
+                };
+                let Some(NyarType::Function(signature)) = mir_fn.value_types.get(&output)
+                else {
+                    return Err(format!("WASM 函数值 `{instance:?}` 缺少冻结 Function 签名: {}", mir_fn.symbol));
+                };
+                let visible_param_types: Vec<u8> = signature
+                    .params
+                    .iter()
+                    .map(|ty| wasm_param_value_type_for(&ctx, ty, None, &gc_struct_type_indices, js_glue_utf8_as_anyref))
+                    .collect();
+                let return_type = match &signature.return_type {
+                    NyarType::Unit | NyarType::Bottom => None,
+                    other => {
+                        Some(wasm_param_value_type_for(&ctx, other, None, &gc_struct_type_indices, js_glue_utf8_as_anyref))
                     }
-                    function_value_instances.insert(*instance);
+                };
+                let (environment_layout, environment_type) = match environment {
+                    Some(MirOperand::Value(value)) => {
+                        // 泛型 lambda 的环境类型常是 `Apply(Nominal, args)`，不一定落在
+                        // `NyarType::Nominal`；layout 身份以计划冻结的 `value_layouts` 为准。
+                        let layout = mir_fn.value_layouts.get(value).copied().or_else(|| match mir_fn.value_types.get(value) {
+                            Some(NyarType::Nominal { layout, .. }) => Some(*layout),
+                            _ => None,
+                        });
+                        (layout, mir_fn.value_types.get(value).cloned())
+                    }
+                    Some(_) => (None, None),
+                    None => (None, None),
+                };
+                if environment.is_some() && environment_layout.is_none() {
+                    // 环境对象身份必须在计划里有 layout；缺身份时无法强制登记 gc struct，
+                    // 按结构化失败处理。
+                    return Err(format!(
+                        "WASM 闭包环境缺少名义 layout 身份：lambda instance `{instance:?}` 捕获 [{}]；function={}",
+                        captured.join(", "),
+                        mir_fn.symbol
+                    ));
+                }
+                let plan = FunctionValuePlan {
+                    visible_param_types,
+                    return_type,
+                    has_environment: environment.is_some(),
+                    environment_layout,
+                    environment_type,
+                };
+                match function_value_plans.entry(*instance) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        entry.insert(plan);
+                    }
+                    std::collections::btree_map::Entry::Occupied(entry) => {
+                        let existing = entry.get();
+                        if existing.visible_param_types != plan.visible_param_types
+                            || existing.return_type != plan.return_type
+                            || existing.has_environment != plan.has_environment
+                            || existing.environment_layout != plan.environment_layout
+                            || existing.environment_type != plan.environment_type
+                        {
+                            return Err(format!(
+                                "WASM 函数值 `{instance:?}` 的引用点签名不一致（已有 visible={:?} return={:?} env={}，本处 visible={:?} return={:?} env={}）",
+                                existing.visible_param_types,
+                                existing.return_type,
+                                existing.has_environment,
+                                plan.visible_param_types,
+                                plan.return_type,
+                                plan.has_environment
+                            ));
+                        }
+                    }
                 }
             }
         }
     }
-    let function_value_table_slots: BTreeMap<ItemInstanceId, u32> =
-        function_value_instances.iter().copied().enumerate().map(|(slot, instance)| (instance, slot as u32)).collect();
-    let function_value_table_functions: Vec<u32> = function_value_instances
-        .iter()
-        .map(|instance| {
-            function_index_by_instance.get(instance).copied().ok_or_else(|| format!("WASM 函数值 `{instance:?}` 引用的实例没有可执行函数体"))
-        })
-        .collect::<crate::Result<Vec<_>>>()?;
-    // 间接调用的 typeidx 只能反查模块已注册的 functype：按签名字节建表，
-    // 禁止为间接调用新造类型条目或按参数个数猜签名。
+    // 间接调用的 functype 固定为「可见形参 + 一个尾部 anyref 环境槽」（不再按目标
+    // 函数自身签名反查）。先登记这些条目，再确定 MIR 函数类型的 base；缺登记条目
+    // 时编码期结构化失败，禁止退回无 env 的旧签名。
     let mut type_index_by_signature: BTreeMap<(Vec<u8>, Option<u8>), u32> = BTreeMap::new();
+    for plan in function_value_plans.values() {
+        let mut indirect_param_types = plan.visible_param_types.clone();
+        indirect_param_types.push(WASM_GC_ANYREF);
+        let key = (indirect_param_types, plan.return_type);
+        if type_index_by_signature.contains_key(&key) {
+            continue;
+        }
+        let result_types: &[u8] = match &key.1 {
+            Some(byte) => std::slice::from_ref(byte),
+            None => &[],
+        };
+        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_function_type(&key.0, result_types));
+        type_index_by_signature.insert(key, type_index);
+    }
+    // 函数类型在 structtype/arraytype/sumtype/闭包签名之后开始追加：
+    // 第一个函数类型对应 type_index = type_indices.len()。
+    let function_type_base = u32::try_from(type_indices.len()).expect("type index overflow");
+    let mut type_index_by_instance = BTreeMap::new();
+    for (dense, (instance, _)) in mir_operations.iter().enumerate() {
+        type_index_by_instance.insert(*instance, function_type_base + dense as u32);
+    }
+    // 函数自身签名的 functype 反查表（静态调用/见证调用仍消费它）；间接调用签名
+    // 已在上面按「可见形参 + env」登记，两者按签名字节共用同一反查表。
     for (dense, (_, mir_fn)) in mir_operations.iter().enumerate() {
         let params = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
         let ret = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
         type_index_by_signature.entry((params, ret)).or_insert(function_type_base + dense as u32);
     }
+    let function_value_table_slots: BTreeMap<ItemInstanceId, u32> =
+        function_value_plans.keys().copied().enumerate().map(|(slot, instance)| (instance, slot as u32)).collect();
+
     // Node JS-glue：宿主字符串?anyref 传递；?`wasm_import_type_for_field` ?anyref 签名对齐?
     let param_types_by_instance = build_param_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref);
     let return_types_by_instance = build_return_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref);
@@ -383,6 +475,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             gc_i32_box_type_index,
             gc_i64_box_type_index,
             gc_f64_box_type_index,
+            gc_closure_type_index,
             &callee_import_index,
             &callee_wasm_operator,
             &host_imports,
@@ -401,6 +494,66 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         else if submission.backend_plan.entry_operation() == Some(*instance) {
             exports.push((export_name, WasmExternalKind::Func.as_u8(), wasm_index));
         }
+    }
+
+    // funcref table 项（合同 §5.3）：每个被作值引用的实例占一个槽。间接调用的
+    // functype 恒为「可见形参 + 尾部 anyref 环境槽」，因此 table 里的目标必须接受该
+    // 环境槽。捕获 lambda 的合成函数自身已带环境形参；具名函数/无捕获目标没有该
+    // 形参，必须合成一个忽略尾部 env 的转发适配器，否则 `call_indirect` 会在类型
+    // 校验处 trap。适配器只在 table 面出现，不改变原函数或导出 ABI。
+    let mut function_value_table_functions: Vec<u32> = Vec::with_capacity(function_value_plans.len());
+    for (instance, plan) in function_value_plans.iter() {
+        let Some(target_index) = function_index_by_instance.get(instance).copied()
+        else {
+            return Err(format!("WASM 函数值 `{instance:?}` 引用的实例没有可执行函数体"));
+        };
+        let target_params = param_types_by_function_index.get(&target_index).cloned().unwrap_or_default();
+        let mut expected_param_types = plan.visible_param_types.clone();
+        expected_param_types.push(WASM_GC_ANYREF);
+        if plan.has_environment {
+            // 捕获 lambda：目标必须真的把环境作为最后形参，且该形参与环境对象同型，
+            // 否则捕获状态会落进别的 anyref 形参（或根本没有槽）→ 结构化失败。
+            let target_mir_fn = mir_operations
+                .iter()
+                .find(|(candidate, _)| candidate == instance)
+                .map(|(_, mir_fn)| mir_fn)
+                .ok_or_else(|| format!("WASM 闭包 `{instance:?}` 的合成函数缺少 MIR 体"))?;
+            let environment_slot = plan.environment_type.as_ref().is_some_and(|environment_type| {
+                target_mir_fn.param_types.last() == Some(environment_type)
+            });
+            if target_params != expected_param_types || !environment_slot {
+                return Err(format!(
+                    "WASM 闭包环境槽缺失或不匹配：lambda instance `{instance:?}`，target params={target_params:?}，expected={expected_param_types:?}"
+                ));
+            }
+            function_value_table_functions.push(target_index);
+            continue;
+        }
+        if target_params == expected_param_types {
+            function_value_table_functions.push(target_index);
+            continue;
+        }
+        if target_params != plan.visible_param_types {
+            return Err(format!(
+                "WASM 函数值 `{instance:?}` 的物理签名无法适配间接调用：target={target_params:?}，visible={:?}，expected={expected_param_types:?}",
+                plan.visible_param_types
+            ));
+        }
+        let Some(table_type_index) = type_index_by_signature.get(&(expected_param_types.clone(), plan.return_type)).copied()
+        else {
+            return Err(format!("WASM 函数值 `{instance:?}` 缺少含环境槽的 table functype"));
+        };
+        let mut body = Vec::new();
+        encode_uleb128(0, &mut body);
+        for index in 0..plan.visible_param_types.len() {
+            encode_local_get(u32::try_from(index).expect("visible parameter index overflow"), &mut body);
+        }
+        encode_call(target_index, &mut body);
+        WasmOpcode::End.encode(&mut body);
+        let wrapper_index = import_count + u32::try_from(code_bodies.len()).expect("code body index overflow");
+        function_indices.push(table_type_index);
+        code_bodies.push(wasm_function_body(body));
+        function_value_table_functions.push(wrapper_index);
     }
 
     if exports.is_empty() {
