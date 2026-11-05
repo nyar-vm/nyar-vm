@@ -505,7 +505,14 @@ fn resolve_expr_calls_at(
         }
         HirExprKind::StoreField { object, field, value, field_id } => {
             resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
-            resolve_expr_calls(value, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
+            // 字段写入的值位于「接收位置」：期望类型是目标字段的声明类型，
+            // 不是外层表达式类型。`self.root = nullary_ctor()` 之类的写入必须靠
+            // 字段类型定下泛型/变体，否则 MIR 的 StoreField 值与声明不符。
+            let field_type = infer_scrutinee_type(object, locals, struct_fields, singleton_names)
+                .as_ref()
+                .and_then(|object_type| lookup_struct_field_type(object_type, field, struct_fields));
+            let value_context = field_type.as_ref().or(contextual_type);
+            resolve_expr_calls(value, candidates, type_relations, locals, struct_fields, singleton_names, value_context);
             if field_id.is_none() {
                 *field_id = infer_scrutinee_type(object, locals, struct_fields, singleton_names)
                     .as_ref()
@@ -739,7 +746,7 @@ fn resolve_pattern_calls(
                 else {
                     let canonical_callee = canonical_extractor_callee(name);
                     let resolved = try_resolve_pattern_extractor(&canonical_callee, actual_type, candidates, type_relations)
-                        .or_else(|| resolve_variant_pattern_constructor(&canonical_callee, actual_type, candidates));
+                        .or_else(|| resolve_variant_pattern_constructor(&canonical_callee, actual_type, candidates, type_relations));
                     if let Some(resolved) = resolved {
                         *pattern = HirPattern::Extractor(crate::compiler::types::hir::HirExtractorPattern::Constructor {
                             name: name.clone(),
@@ -754,7 +761,7 @@ fn resolve_pattern_calls(
         HirPattern::Extractor(crate::compiler::types::hir::HirExtractorPattern::Constructor { fields, canonical_callee, resolved, .. }) => {
             if let Some(actual_type) = scrutinee_type {
                 *resolved = try_resolve_pattern_extractor(canonical_callee, actual_type, candidates, type_relations)
-                    .or_else(|| resolve_variant_pattern_constructor(canonical_callee, actual_type, candidates));
+                    .or_else(|| resolve_variant_pattern_constructor(canonical_callee, actual_type, candidates, type_relations));
             }
             let field_scrutinee_types = resolved
                 .as_ref()
@@ -795,7 +802,7 @@ fn resolve_pattern_calls(
                     if let Some(actual_type) = scrutinee_type {
                         let canonical_callee = canonical_extractor_callee(&name_path);
                         let resolved = try_resolve_pattern_extractor(&canonical_callee, actual_type, candidates, type_relations)
-                            .or_else(|| resolve_variant_pattern_constructor(&canonical_callee, actual_type, candidates));
+                            .or_else(|| resolve_variant_pattern_constructor(&canonical_callee, actual_type, candidates, type_relations));
                         if resolved.is_some() {
                             let extractor_fields = fields.iter().map(|(_, field)| field.clone()).collect::<Vec<_>>();
                             *pattern = HirPattern::Extractor(crate::compiler::types::hir::HirExtractorPattern::Constructor {

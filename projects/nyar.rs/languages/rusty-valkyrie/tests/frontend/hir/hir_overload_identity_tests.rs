@@ -1424,3 +1424,61 @@ micro probe(holder: Holder, c: char): unit {
     assert!(message.contains("receiver type is unknown"), "必须报接收者类型未定，实际: {message}");
     assert!(message.contains("`append`") && message.contains("2 candidate(s)"), "诊断必须点名 `append` 候选集，实际: {message}");
 }
+
+/// 字段写入的值按「目标字段声明类型」解析，而不是外层表达式类型：
+/// `self.node = None` 必须解析成 `Option<K>` 的无载荷变体，过 SMIR006 合同校验。
+#[test]
+fn store_field_resolves_value_against_declared_field_type() {
+    let source = r#"
+namespace app;
+
+unite Option<T> {
+    Some { value: T },
+    None
+}
+
+class Holder<K> {
+    node: Option<K>
+}
+
+imply Holder<K> {
+    micro new(node: Option<K>): Self {
+        return Self { node: node }
+    }
+
+    micro clear(mut self): unit {
+        self.node = None
+    }
+}
+"#;
+    let mir = ValkyrieCompiler::default()
+        .compile_source_to_mir(source)
+        .expect("字段写入必须按字段声明类型解析 `None`，不得落到 SMIR006");
+    rusty_valkyrie::mir::validate_semantic_module(&mir).expect("StoreField 值类型必须与字段声明一致");
+}
+
+/// 反例：字段写入的值确实与声明类型不符时，SMIR006 仍须结构化报错。
+#[test]
+fn store_field_mismatch_still_reports_smir006() {
+    let source = r#"
+namespace app;
+
+class Holder {
+    count: i64
+}
+
+imply Holder {
+    micro new(count: i64): Self {
+        return Self { count: count }
+    }
+
+    micro bad(mut self, flag: bool): unit {
+        self.count = flag
+    }
+}
+"#;
+    let error = ValkyrieCompiler::default()
+        .compile_source_to_mir(source)
+        .expect_err("字段写入值类型不符必须报结构化失败");
+    assert!(error.to_string().contains("SMIR006"), "必须复用 SMIR006 合同码，实际: {error}");
+}
