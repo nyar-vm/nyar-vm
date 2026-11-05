@@ -1414,6 +1414,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 Some(NyarType::Integer64 { .. }) | None => {
                     self.emitter.emit_const_i64(*value);
                 }
+                // 窄整数（`u8`/`i8`/`u16`/`i16`）与字符码位槽在 OVM 里以 i32 载体承载；
+                // 位宽只影响后续转换，这里按 i32 常量发射（不得发 i64，运行期会拒绝）。
+                Some(other) if ovm_int_shape(other).is_some_and(|shape| shape.bits <= 32) => {
+                    let narrowed = i32::try_from(*value).map_err(|_| {
+                        format!(
+                            "OVM 整数常量 {value} 超出目标 {other} 槽的 i32 载体范围；symbol=`{}`",
+                            self.mir_fn.symbol
+                        )
+                    })?;
+                    self.emitter.emit_const_i32(narrowed);
+                }
                 Some(other) => {
                     return Err(format!(
                         "OVM 整数常量 {value} 与已规划槽类型不匹配：slot={other} symbol=`{}`；\

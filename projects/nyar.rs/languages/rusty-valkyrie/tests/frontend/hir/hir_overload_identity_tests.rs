@@ -1276,3 +1276,151 @@ micro main(counter: Counter) {
         assert!(message.contains("SMIR003") || message.contains("unresolved"), "unexpected failure: {message}");
     }
 }
+
+/// `Utf8Builder` 自己的 `append(char)` / `append(&Utf8Text)` 与集合
+/// `LiteralSequence<T>::append(T)` 同名时，成员解析必须先按接收者声明身份过滤，
+/// 再对剩余候选做实参特异性排序；`text.append(char)` 必须唯一命中 `append(char)`。
+#[test]
+fn member_call_filters_candidates_by_receiver_identity_before_specificity() {
+    let std = r#"
+namespace std.primitive;
+
+[primitive("std::primitive::u8")]
+structure u8 { }
+
+[primitive("std::primitive::usize")]
+structure usize { }
+
+namespace std.text;
+
+[primitive("std::text::char")]
+structure char { }
+
+class Utf8Text {
+}
+
+imply Utf8Text {
+    suffix `⁅ ⁆`(self, offset: usize): char {
+        return 'a'
+    }
+
+    micro from_bytes(bytes: [u8]): Self {
+        return Utf8Text { }
+    }
+}
+
+class Utf8Builder {
+    bytes: ArrayList<u8>
+}
+
+imply Utf8Builder {
+    micro append(mut self, c: char): unit {
+    }
+
+    micro append(mut self, text: &Utf8Text): unit {
+    }
+}
+
+namespace std.collection;
+
+trait LiteralSequence<T> {
+    micro append(mut self, value: T): unit
+}
+
+class ArrayList<T> {
+    capacity: usize
+}
+
+imply ArrayList<T>: LiteralSequence<T> {
+    micro append(mut self, value: T): unit {
+    }
+}
+
+class LinkedList<T> {
+    size: usize
+}
+
+imply LinkedList<T>: LiteralSequence<T> {
+    micro append(mut self, value: T): unit {
+    }
+}
+"#;
+    let direct = r#"
+namespace app;
+
+[export]
+micro probe(text: Utf8Builder, c: char): unit {
+    text.append(c)
+}
+"#;
+    let indexed = r#"
+namespace app;
+
+[export]
+micro probe(text: Utf8Builder, s: Utf8Text, at: usize): unit {
+    text.append(s⁅at⁆)
+}
+"#;
+    let by_value = r#"
+namespace app;
+
+using std.collection;
+
+[export]
+micro probe(text: Utf8Builder, s: Utf8Text): unit {
+    text.append(s)
+}
+"#;
+    let constructed = r#"
+namespace app;
+
+using std.collection;
+
+[export]
+micro probe(text: Utf8Builder): unit {
+    text.append(Utf8Text::from_bytes([104, 101]))
+}
+"#;
+    compile_operator_groups(std, direct).expect("`Utf8Builder.append(char)` 必须唯一命中");
+    compile_operator_groups(std, indexed).expect("下标取出的 `char` 必须解析到 `Utf8Builder.append(char)`");
+    compile_operator_groups(std, by_value).expect("`Utf8Text` 值实参必须解析到 `Utf8Builder.append(&Utf8Text)`");
+    compile_operator_groups(std, constructed).expect("构造实参必须解析到 `Utf8Builder.append(&Utf8Text)`");
+}
+
+/// 反例：接收者类型未知时不得静默选中第一个候选，诊断必须点名候选集。
+#[test]
+fn member_call_on_unknown_receiver_reports_named_candidates() {
+    let source = r#"
+namespace app;
+
+[primitive("std::text::char")]
+structure char { }
+
+class Utf8Builder {
+}
+
+imply Utf8Builder {
+    micro append(self, c: char): unit {
+    }
+}
+
+class Bag {
+}
+
+imply Bag {
+    micro append(self, c: char): unit {
+    }
+}
+
+class Holder {
+}
+
+micro probe(holder: Holder, c: char): unit {
+    holder.missing.append(c)
+}
+"#;
+    let error = ValkyrieCompiler::default().compile_source(source).expect_err("未知接收者的成员调用必须结构化失败");
+    let message = error.to_string();
+    assert!(message.contains("receiver type is unknown"), "必须报接收者类型未定，实际: {message}");
+    assert!(message.contains("`append`") && message.contains("2 candidate(s)"), "诊断必须点名 `append` 候选集，实际: {message}");
+}

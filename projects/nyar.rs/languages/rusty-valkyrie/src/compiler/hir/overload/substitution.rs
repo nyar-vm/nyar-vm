@@ -418,6 +418,28 @@ pub(crate) fn specialize_literal_expr_type(
         // String literals infer as `Utf8` but core APIs take `text`/`utf8`
         // (possibly behind an alias resolved to `Nominal{ItemId}`).
         HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::String(_)) if type_relations.is_text_formal(expected) => expected.clone(),
+        // 数组字面量的元素与调用实参同属「接收位置」：字面量元素按形式参数的元素类型
+        // 逐项特化（`[104, 101]` 绑定到 `[u8]`）。只有全部元素都能特化到同一元素类型
+        // 时才整体改写；任一元素（变量、浮点字面量等）特化不成即保留原推断，
+        // 交给统一阶段失败，不得在这里猜元素类型。
+        HirExprKind::ArrayLiteral { items } if !items.is_empty() && matches!(expected, ValkyrieType::Array(_)) => {
+            let ValkyrieType::Array(expected_item) = expected
+            else {
+                unreachable!()
+            };
+            let empty_locals = BTreeMap::new();
+            let items_specialized = items
+                .iter()
+                .map(|item| {
+                    crate::compiler::hir::overload::types::infer_expr_type(item, &empty_locals)
+                        .map(|item_actual| specialize_literal_expr_type(item, &item_actual, expected_item, type_relations))
+                })
+                .collect::<Option<Vec<_>>>();
+            match items_specialized {
+                Some(types) if types.iter().all(|ty| ty == expected_item.as_ref()) => expected.clone(),
+                _ => actual.clone(),
+            }
+        }
         // 空数组字面量没有自足类型，只能由形式参数类型提供上下文；保留 `None`
         // 交给统一阶段做形状校验，不得在这里猜元素类型。
         _ => actual.clone(),

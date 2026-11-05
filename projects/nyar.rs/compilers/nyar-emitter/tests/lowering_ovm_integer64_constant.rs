@@ -119,6 +119,16 @@ fn just_above_i32_max_uses_integer64_pool_entry() {
     assert!(pool_integer32(&module).is_empty(), "2147483648 不得回绕成 Integer32: {:?}", module.constants);
 }
 
+/// `u8`/`i8`/`u16`/`i16` 与字符槽在 OVM 运行期以 i32 载体承载：常量必须进
+/// `Integer32` 池，既不能发 `Integer64`（运行期会拒绝），也不能拓宽。
+#[test]
+fn narrow_integer_slot_constant_uses_i32_carrier() {
+    let module = try_lower(104, NyarType::Integer8 { signed: false }).expect("u8 槽可表示 104");
+    assert_eq!(pool_integer32(&module), vec![104], "u8 槽常量必须以 i32 进池: {:?}", module.constants);
+    assert!(pool_integer64(&module).is_empty(), "u8 槽常量不得进 Integer64 池: {:?}", module.constants);
+    assert!(!widens_through_host_import(&module), "u8 槽常量不得拓宽: {:?}", module.imports);
+}
+
 /// `i32` 边界值落在 `i64` 槽：载体仍是 `Integer32` 池 + `i32_to_i64` 拓宽（编码选择），
 /// 但决定「要不要拓宽」的是槽类型，不是字面量大小。
 #[test]

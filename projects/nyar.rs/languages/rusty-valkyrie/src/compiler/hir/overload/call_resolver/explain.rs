@@ -45,17 +45,19 @@ pub(crate) fn explain_unresolved_call(
         HirExprKind::FieldAccess { object, field, .. } => {
             let receiver =
                 infer_expr_type(object, locals).or_else(|| infer_scrutinee_type(object, locals, struct_fields, singleton_names));
+            // 同名候选集与接收者推断无关：接收者未定时同样要点名，便于区分
+            // 「没有该成员」与「有成员但接收者身份未定」。
+            let named = candidates
+                .iter()
+                .filter(|candidate| {
+                    matches!(candidate.domain, OverloadDomain::Function)
+                        && candidate_has_receiver_parameter(candidate)
+                        && (candidate_owned_method_matches(candidate, field) || candidate_trait_method_matches(candidate, field))
+                })
+                .count();
             match receiver {
-                None => HirCallResolutionFailureKind::ReceiverTypeUnknown { member: field.to_string() },
+                None => HirCallResolutionFailureKind::ReceiverTypeUnknown { member: field.to_string(), candidates: named },
                 Some(receiver_type) => {
-                    let named = candidates
-                        .iter()
-                        .filter(|candidate| {
-                            matches!(candidate.domain, OverloadDomain::Function)
-                                && candidate_has_receiver_parameter(candidate)
-                                && (candidate_owned_method_matches(candidate, field) || candidate_trait_method_matches(candidate, field))
-                        })
-                        .count();
                     if named == 0 {
                         HirCallResolutionFailureKind::NoMethodCandidate { member: field.to_string(), receiver: display_type(&receiver_type) }
                     }

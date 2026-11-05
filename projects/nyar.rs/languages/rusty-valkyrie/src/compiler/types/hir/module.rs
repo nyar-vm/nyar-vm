@@ -132,6 +132,8 @@ pub enum HirCallResolutionFailureKind {
     ReceiverTypeUnknown {
         /// 成员名。
         member: String,
+        /// 同名候选数：接收者未定时也必须点名候选集，不得静默选首个。
+        candidates: usize,
     },
     /// 候选集为空：接收者类型已知，但没有任何以该成员名注册的候选。
     NoMethodCandidate {
@@ -199,7 +201,9 @@ impl HirCallResolutionFailureKind {
     pub fn describe(&self) -> String {
         match self {
             Self::NameNotFound => "no callable with this name is in scope".to_string(),
-            Self::ReceiverTypeUnknown { member } => format!("receiver type is unknown, so member `{member}` cannot be resolved"),
+            Self::ReceiverTypeUnknown { member, candidates } => {
+                format!("receiver type is unknown, so member `{member}` cannot be resolved; {candidates} candidate(s) share the name")
+            }
             Self::NoMethodCandidate { member, receiver } => {
                 format!("no method candidate named `{member}` exists for receiver type `{receiver}`")
             }
