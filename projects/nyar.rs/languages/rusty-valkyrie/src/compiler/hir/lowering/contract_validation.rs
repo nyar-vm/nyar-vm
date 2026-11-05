@@ -3,7 +3,7 @@ use nyar_types::{DiagnosticArg, DiagnosticOwner, DiagnosticPhase, DiagnosticRow,
 use crate::compiler::{
     diagnostics::pending::{self, CompileDiagnostic},
     driver::validation::validate_semantic_module,
-    hir::{lowering::errors::HirError, overload::has_unresolved_generic_arguments},
+    hir::{lowering::errors::HirError, overload::{has_unresolved_generic_arguments, owner_type_generic_binders}},
     types::hir::{HirBlock, HirCallableDomain, HirExpr, HirExprKind, HirFunction, HirModule, HirResolvedCall, HirStatementKind},
 };
 
@@ -221,6 +221,26 @@ fn resolved_call_is_unclosed(resolved: Option<&HirResolvedCall>, require_closed_
     }
 }
 
+/// 克隆体里仍携带开放 binder 的已解析调用。
+///
+/// 单态化固定点只登记闭合实例；开放 binder 存留说明单体化没有把该 callee 落到具体
+/// 实例。此类调用若继续交给 MIR，会被降级成占位操作数（CAN006），既没有实例身份
+/// 也丢失捕获的泛型信息。此处要求在克隆体上 fail-closed，携带声明身份与开放 binder
+/// 一并结构化报错。
+fn resolved_call_leaves_open_binders(resolved: Option<&HirResolvedCall>, require_closed_instance: bool) -> bool {
+    let Some(call) = resolved
+    else {
+        return false;
+    };
+    require_closed_instance
+        && call.instance.is_none()
+        && call.trait_dispatch.is_none()
+        && call.declaration.is_some()
+        && !matches!(call.domain, HirCallableDomain::Constructor)
+        && (has_unresolved_generic_arguments(&call.return_type)
+            || call.parameter_types.iter().any(has_unresolved_generic_arguments))
+}
+
 /// 前序遍历表达式树，收集全部未解析调用/构造；顺序与旧的首次失败遍历一致，
 /// 因此收集版返回的首个错误与旧行为逐字节相同。
 fn collect_expr_call_contracts(
@@ -233,8 +253,23 @@ fn collect_expr_call_contracts(
 ) {
     match &expr.kind {
         HirExprKind::Call { callee, args, resolved, .. } => {
-            if resolved_call_is_unclosed(resolved.as_ref(), require_closed_instance) {
+            let residual_open = resolved_call_leaves_open_binders(resolved.as_ref(), require_closed_instance);
+            if resolved_call_is_unclosed(resolved.as_ref(), require_closed_instance) || residual_open {
                 let callee_name = callee.kind.callable_label();
+                // 残留开放 binder 的克隆体调用既没有实例身份，也不该静默降级成 MIR 占位
+                // 操作数；诊断必须点名被调声明与捕获的泛型 binder，便于直接定位单体化缺口。
+                let context = if residual_open {
+                    let call = resolved.as_ref().expect("residual open binder 只可能出现在已解析调用上");
+                    let binders = std::iter::once(owner_type_generic_binders(&call.return_type))
+                        .chain(call.parameter_types.iter().map(owner_type_generic_binders))
+                        .flatten()
+                        .map(|binder| format!("{binder:?}"))
+                        .collect::<Vec<_>>();
+                    format!("{function} [declaration={:?} captured={}]", call.declaration, binders.join(","))
+                }
+                else {
+                    function.to_string()
+                };
                 // 原因只取解析期登记的事实；克隆体与门面路径按结构化兜底补记，
                 // 任何分支都不得回退到占位符。
                 let reason = module
@@ -256,7 +291,7 @@ fn collect_expr_call_contracts(
                     });
                 errors.push(HirError::UnresolvedCall {
                     selector: callee_name,
-                    context: function.to_string(),
+                    context,
                     reason,
                     source: expr_diagnostic_source(module, expr, source),
                     span: expr_diagnostic_span(expr),

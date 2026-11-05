@@ -2,7 +2,7 @@
 
 use rusty_valkyrie::{
     CompilerSourceGroup, HirError, ValkyrieCompiler,
-    compiler::types::hir::{HirCallResolutionFailureKind, HirExprKind, HirFunction, HirResolvedCall, HirStatementKind},
+    compiler::types::hir::{HirBlock, HirCallResolutionFailureKind, HirExprKind, HirFunction, HirResolvedCall, HirStatementKind},
     hir::lowering::DEFAULT_COMPILE_ARCH,
     types::hir::ValkyrieType,
 };
@@ -121,6 +121,61 @@ fn collect_expr_calls<'a>(expression: &'a rusty_valkyrie::compiler::types::hir::
         }
         _ => {}
     }
+}
+
+/// 深遍历函数体全部已解析调用，覆盖聚合字面量字段里的调用。
+fn deep_body_calls(function: &HirFunction) -> Vec<&HirResolvedCall> {
+    fn walk_block<'a>(block: &'a HirBlock, calls: &mut Vec<&'a HirResolvedCall>) {
+        for statement in &block.statements {
+            match &statement.kind {
+                HirStatementKind::Let { initializer: Some(initializer), .. } => walk_expr(initializer, calls),
+                HirStatementKind::Expr(expr) => walk_expr(expr, calls),
+                _ => {}
+            }
+        }
+        if let Some(expr) = &block.expr {
+            walk_expr(expr, calls);
+        }
+    }
+    fn walk_expr<'a>(expr: &'a rusty_valkyrie::compiler::types::hir::HirExpr, calls: &mut Vec<&'a HirResolvedCall>) {
+        match &expr.kind {
+            HirExprKind::Call { callee, resolved, args } => {
+                if let Some(resolved) = resolved {
+                    calls.push(resolved);
+                }
+                walk_expr(callee, calls);
+                for arg in args {
+                    walk_expr(&arg.value, calls);
+                }
+            }
+            HirExprKind::Construct { args, .. } => {
+                for arg in args {
+                    walk_expr(arg, calls);
+                }
+            }
+            HirExprKind::FieldInit { value, .. } => walk_expr(value, calls),
+            HirExprKind::Block(block) => walk_block(block, calls),
+            HirExprKind::Return(Some(inner)) | HirExprKind::Yield(Some(inner)) => walk_expr(inner, calls),
+            HirExprKind::If { condition, then_branch, else_branch, .. } => {
+                walk_expr(condition, calls);
+                walk_block(then_branch, calls);
+                if let Some(branch) = else_branch {
+                    walk_block(branch, calls);
+                }
+            }
+            HirExprKind::IfLet { scrutinee, then_branch, else_branch, .. } => {
+                walk_expr(scrutinee, calls);
+                walk_block(then_branch, calls);
+                if let Some(branch) = else_branch {
+                    walk_block(branch, calls);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut calls = Vec::new();
+    walk_block(&function.body, &mut calls);
+    calls
 }
 
 /// 同一 trait 在两个 owner 上各有一个同名成员，泛型接收者实例化后必须按 owner 选中。
@@ -831,4 +886,146 @@ fn where_rejected_member_instance_stays_unclosed() {
         matches!(reason, HirCallResolutionFailureKind::InstanceNotClosed),
         "缺失 where 证据必须以 `InstanceNotClosed` 失败: {error:?}"
     );
+}
+
+const CONTAINER_MEMBER_SOURCE: &str = r#"
+namespace test.instance;
+
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+class Cell<T> {
+}
+
+class Bucket<K, V> {
+    keys: Cell<K>
+    values: Cell<V>
+}
+
+class Table<K, V> {
+    _root: Bucket<K, V>
+}
+
+imply Cell<T> {
+    micro make(): Self {
+        return Cell { }
+    }
+}
+
+imply Table<K, V> {
+    micro new(): Self {
+        let root: Bucket<K, V> = Bucket {
+            keys: Cell.make(),
+            values: Cell.make(),
+        }
+        return Table { _root: root }
+    }
+}
+
+[export]
+micro probe() -> i64 {
+    let table: Table<i64, i64> = Table.new()
+    return 0
+}
+"#;
+
+const OPEN_RESIDUAL_SOURCE: &str = r#"
+namespace test.instance;
+
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+class Cell<T> {
+}
+
+class Bucket<K, V> {
+    keys: Cell<K>
+    values: Cell<V>
+}
+
+class Table<K, V> {
+    _root: Bucket<K, V>
+}
+
+imply Cell<T> {
+    micro make(): Self {
+        return Cell { }
+    }
+}
+
+imply Table<K, V> {
+    micro new(): Self {
+        let root = Bucket {
+            keys: Cell.make(),
+            values: Cell.make(),
+        }
+        return Table { _root: root }
+    }
+}
+
+[export]
+micro probe() -> i64 {
+    let table: Table<i64, i64> = Table.new()
+    return 0
+}
+"#;
+
+/// 反向合同：克隆体里仍带开放 binder 的 callee 必须在 HIR 边界结构化失败，
+/// 点名被调声明与捕获的泛型，不得落成 MIR 占位操作数静默发射。
+#[test]
+fn open_residual_in_clone_fails_closed_with_captured_binders() {
+    let error = ValkyrieCompiler::default()
+        .compile_source(OPEN_RESIDUAL_SOURCE)
+        .expect_err("无标注聚合字面量留下的开放 binder 必须失败关闭");
+    let HirError::UnresolvedCall { selector, context, reason, .. } = &error
+    else {
+        panic!("必须是未闭合调用诊断: {error:?}");
+    };
+    assert!(
+        matches!(reason, HirCallResolutionFailureKind::InstanceNotClosed),
+        "开放残留必须以 `InstanceNotClosed` 失败: {reason:?}"
+    );
+    assert!(selector.contains("make"), "诊断必须点名被调 callee: {selector}");
+    assert!(context.contains("declaration="), "诊断必须点名被调声明: {context}");
+    assert!(context.contains("captured="), "诊断必须点名捕获的泛型 binder: {context}");
+}
+
+/// 泛型容器的成员体内构造另一个泛型容器：`Table<i64,i64>::new` 体内的
+/// `Cell.new` 必须落到 `Cell<i64>::new` 的闭合实例，而不是保留声明期的开放克隆。
+#[test]
+fn generic_container_member_body_call_lands_on_closed_instance() {
+    let hir = compile(CONTAINER_MEMBER_SOURCE);
+    let table = hir.structs.iter().find(|structure| structure.name.as_str() == "Table").expect("Table 类");
+    let table_new = hir
+        .impls
+        .iter()
+        .filter(|implementation| implementation.target.nominal_declaration() == table.constructor_declaration)
+        .flat_map(|implementation| implementation.methods.iter())
+        .find(|method| method.name.as_str() == "new")
+        .and_then(|method| method.declaration)
+        .expect("Table::new 声明身份");
+    let clone = hir
+        .instantiated_callables
+        .iter()
+        .find(|callable| callable.function.declaration == Some(table_new))
+        .expect("`Table<i64,i64>::new` 必须由固定点铸造");
+    assert_closed(&clone.function.return_type, "`Table::new` 实例返回类型");
+    let calls = deep_body_calls(&clone.function);
+    assert_eq!(calls.len(), 2, "`Table::new` 实例体内必须有两条 `Cell.new` 调用");
+    for call in &calls {
+        assert_closed(&call.return_type, "体内 `Cell.new` 返回类型");
+        for parameter in &call.parameter_types {
+            assert_closed(parameter, "体内 `Cell.new` 形参类型");
+        }
+        let instance = call.instance.expect("闭合的体内 callee 必须落到具体实例");
+        let callee = hir
+            .instantiated_callables
+            .iter()
+            .find(|callable| callable.function.instance == Some(instance))
+            .expect("被调 `Cell::new` 实例必须随固定点登记");
+        assert_closed(&callee.function.return_type, "被调 `Cell::new` 实例返回类型");
+        for parameter in &callee.function.params {
+            assert_closed(&parameter.ty, "被调 `Cell::new` 实例形参类型");
+        }
+    }
 }

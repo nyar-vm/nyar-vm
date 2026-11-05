@@ -78,8 +78,16 @@ impl HirMaterializationGate {
         for module in modules {
             collect_module_callables(module, &mut callables);
         }
+        // 先按「签名 + 体内已冻结 callee 实例」求克隆体闭合集：开放克隆是单态化
+        // 固定点的中间态，既不能发射 MIR，也不能当作已冻结的被调方回填。闭合集
+        // 先于实例放行计算，避免开放克隆经「声明可达的模板体」混进实例集。
+        let mut clones = BTreeMap::new();
         for module in modules {
-            collect_instantiated_instances(module, self);
+            collect_instantiated_clones(module, &mut clones);
+        }
+        let closed_clones = closed_instantiated_instances(&clones);
+        for module in modules {
+            collect_instantiated_instances(module, self, &closed_clones);
         }
         // 声明集与实例集只增不减，按同一固定点收口。
         //
@@ -123,7 +131,12 @@ impl HirMaterializationGate {
             for module in modules {
                 collect_instantiated_body_instances(module, self, &mut walker);
             }
-            self.reachable_instances.extend(walker.instances);
+            // 模板体（声明可达但从未具体化）里可能残留开放克隆的已回填实例；
+            // 这类实例没有定义也没有导入合同，必须挡在实例集之外，否则 MIR 会
+            // 照常发射调用，链接期才炸成「有 caller、无合同」。
+            self.reachable_instances.extend(walker.instances.into_iter().filter(|instance| {
+                !clones.contains_key(instance) || closed_clones.contains(instance)
+            }));
             if self.reachable_declarations.len() == declarations_before && self.reachable_instances.len() == instances_before {
                 break;
             }
@@ -205,18 +218,78 @@ fn collect_module_callables<'a>(module: &'a HirModule, out: &mut Vec<&'a HirFunc
 /// 的中间态，既不能发射 MIR，也不能进入依赖组导入清单——否则链接期会出现调用方
 /// （开放克隆）引用一个既无定义也无导入合同的实例。只有签名、返回与 owner 全部
 /// 落到具体类型的实例才放行。
-fn collect_instantiated_instances(module: &HirModule, gate: &mut HirMaterializationGate) {
+fn collect_instantiated_instances(
+    module: &HirModule,
+    gate: &mut HirMaterializationGate,
+    closed_clones: &BTreeSet<ItemInstanceId>,
+) {
     for callable in &module.instantiated_callables {
         if gate.permits_declaration(callable.function.declaration)
-            && instantiated_callable_is_closed(callable)
             && let Some(instance) = callable.function.instance
+            && closed_clones.contains(&instance)
         {
             gate.reachable_instances.insert(instance);
         }
     }
     for submodule in &module.submodules {
-        collect_instantiated_instances(submodule, gate);
+        collect_instantiated_instances(submodule, gate, closed_clones);
     }
+}
+
+/// 收集全部铸造副本（含子模块），以实例身份索引。
+fn collect_instantiated_clones<'a>(
+    module: &'a HirModule,
+    out: &mut BTreeMap<ItemInstanceId, &'a HirInstantiatedCallable>,
+) {
+    for callable in &module.instantiated_callables {
+        if let Some(instance) = callable.function.instance {
+            out.entry(instance).or_insert(callable);
+        }
+    }
+    for submodule in &module.submodules {
+        collect_instantiated_clones(submodule, out);
+    }
+}
+
+/// 闭合克隆集 = 签名闭合 ∧ 体内没有开放签名 callee ∧ 体内被调克隆全部闭合。
+///
+/// 采用最大固定点（先收全部签名闭合者，再剔除指向未闭合克隆的节点），这样自递归
+/// 与互递归克隆不会被最小固定点误判为开放。开放即不发射、不导入，调用点留给
+/// 具体克隆收口。
+fn closed_instantiated_instances(clones: &BTreeMap<ItemInstanceId, &HirInstantiatedCallable>) -> BTreeSet<ItemInstanceId> {
+    let mut closed = BTreeSet::new();
+    let mut edges = BTreeMap::<ItemInstanceId, BTreeSet<ItemInstanceId>>::new();
+    for (instance, callable) in clones {
+        let (callees, has_open_callee) = audit_body_callees(&callable.function);
+        if instantiated_callable_is_closed(callable) && !has_open_callee {
+            closed.insert(*instance);
+            edges.insert(*instance, callees);
+        }
+    }
+    loop {
+        let removing = edges
+            .iter()
+            .filter(|(instance, callees)| {
+                closed.contains(*instance)
+                    && callees.iter().any(|callee| clones.contains_key(callee) && !closed.contains(callee))
+            })
+            .map(|(instance, _)| *instance)
+            .collect::<Vec<_>>();
+        if removing.is_empty() {
+            break;
+        }
+        for instance in removing {
+            closed.remove(&instance);
+        }
+    }
+    closed
+}
+
+/// 审计 callable 体内的已冻结 callee：返回被调实例集合与「存在开放签名 callee」标记。
+fn audit_body_callees(function: &HirFunction) -> (BTreeSet<ItemInstanceId>, bool) {
+    let mut walker = ReachabilityWalker::auditing();
+    walker.visit_callable(function);
+    (walker.callee_instances, walker.has_open_callee)
 }
 
 /// 实例签名是否仍含开放 binder。
@@ -259,7 +332,8 @@ fn collect_singleton_roots(module: &HirModule, walker: &mut ReachabilityWalker<'
     }
 }
 
-/// 冻结调用图 BFS 行走器；`collecting` 模式只回收 resolved 实例身份。
+/// 冻结调用图 BFS 行走器；`collecting` 模式只回收 resolved 实例身份，
+/// `auditing` 模式只审计克隆体体内 callee 的闭合性。
 struct ReachabilityWalker<'a> {
     /// 声明身份 → 携带该声明的 callable（可能多个重载共享声明）。
     by_declaration: BTreeMap<ItemId, Vec<&'a HirFunction>>,
@@ -267,6 +341,12 @@ struct ReachabilityWalker<'a> {
     declarations: BTreeSet<ItemId>,
     instances: BTreeSet<ItemInstanceId>,
     collecting: bool,
+    /// 审计模式：只统计体内已冻结 callee 的实例与开放签名，不改变可达集。
+    audit: bool,
+    /// 审计模式：体内已冻结 callee 的实例集合。
+    callee_instances: BTreeSet<ItemInstanceId>,
+    /// 审计模式：体内是否存在签名仍含开放 binder 的已冻结 callee。
+    has_open_callee: bool,
 }
 
 impl<'a> ReachabilityWalker<'a> {
@@ -277,6 +357,9 @@ impl<'a> ReachabilityWalker<'a> {
             declarations: BTreeSet::new(),
             instances: BTreeSet::new(),
             collecting: false,
+            audit: false,
+            callee_instances: BTreeSet::new(),
+            has_open_callee: false,
         }
     }
 
@@ -287,6 +370,22 @@ impl<'a> ReachabilityWalker<'a> {
             declarations: BTreeSet::new(),
             instances: BTreeSet::new(),
             collecting: true,
+            audit: false,
+            callee_instances: BTreeSet::new(),
+            has_open_callee: false,
+        }
+    }
+
+    fn auditing() -> Self {
+        Self {
+            by_declaration: BTreeMap::new(),
+            pending: VecDeque::new(),
+            declarations: BTreeSet::new(),
+            instances: BTreeSet::new(),
+            collecting: true,
+            audit: true,
+            callee_instances: BTreeSet::new(),
+            has_open_callee: false,
         }
     }
 
@@ -447,6 +546,10 @@ impl<'a> ReachabilityWalker<'a> {
     }
 
     fn visit_resolved_call(&mut self, call: &HirResolvedCall) {
+        if self.audit {
+            self.audit_callee(call);
+            return;
+        }
         self.mark(call.declaration);
         self.note_instance(call.instance);
         if let Some(dispatch) = &call.trait_dispatch {
@@ -466,6 +569,22 @@ impl<'a> ReachabilityWalker<'a> {
         }
         if let Some(payload) = &call.extractor_payload_type {
             self.visit_type(payload);
+        }
+    }
+
+    /// 审计调用点：已回填实例身份时，callee 签名是否仍含开放 binder 决定该克隆体
+    /// 能否闭合；实例身份本身交给闭合固定点做链式判定。
+    fn audit_callee(&mut self, call: &HirResolvedCall) {
+        use crate::compiler::hir::overload::has_unresolved_generic_arguments;
+        let Some(instance) = call.instance
+        else {
+            return;
+        };
+        self.callee_instances.insert(instance);
+        if call.parameter_types.iter().any(has_unresolved_generic_arguments)
+            || has_unresolved_generic_arguments(&call.return_type)
+        {
+            self.has_open_callee = true;
         }
     }
 

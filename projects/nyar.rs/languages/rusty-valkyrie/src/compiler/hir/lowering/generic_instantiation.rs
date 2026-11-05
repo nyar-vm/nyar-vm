@@ -53,6 +53,15 @@ struct CallableDeclaration {
 /// `GenericBinderId` 到具体类型的代入。`BTreeMap` 保证 `(声明, 代入)` 的稳定序。
 type Substitution = BTreeMap<GenericBinderId, ValkyrieType>;
 
+/// 声明是否真的没有泛型 binder：函数自身与 impl owner 都不带 binder 时，空代入
+/// 才代表「所有类型本就具体」。impl 成员的泛型 binder 在 owner 上，不在
+/// `function.generics` 里；只看后者会把 `ArrayList<T>::new` 这类成员的声明期空代入
+/// 误判成具体实例，铸造出永远不会闭合的开放克隆。
+fn declaration_has_no_generic_binders(declaration: &CallableDeclaration) -> bool {
+    declaration.function.generics.is_empty()
+        && declaration.owner_type.as_ref().is_none_or(|owner| owner_type_generic_binders(owner).is_empty())
+}
+
 /// 一个固定点实例请求的完整身份。
 ///
 /// 普通声明由 `(声明, 代入)` 唯一确定；trait 默认方法没有 impl owner，同一默认方法
@@ -328,7 +337,7 @@ pub(crate) fn instantiate_generic_callables(
                         else {
                             return;
                         };
-                        if declarations.get(&index).is_some_and(|declaration| declaration.function.generics.is_empty()) {
+                        if declarations.get(&index).is_some_and(declaration_has_no_generic_binders) {
                             requests.insert(InstanceRequest { declaration: index, substitution: Substitution::new(), self_type: None });
                         }
                         return;
@@ -348,6 +357,9 @@ pub(crate) fn instantiate_generic_callables(
                         else {
                             return;
                         };
+                        if substitution.values().any(has_unresolved_generic_arguments) {
+                            return;
+                        }
                         requests.insert(InstanceRequest { declaration: index, substitution, self_type: None });
                         return;
                     }
@@ -359,7 +371,7 @@ pub(crate) fn instantiate_generic_callables(
                 // 非泛型 callable 的身份在声明期已冻结成唯一实例，固定点不得再铸造重复
                 // 实例；泛型声明的声明期种子只是占位，调用点的具体代入仍必须铸造真实例，
                 // 并在回填时覆盖它。witness 调用的 `instance` 恒为空，不受影响。
-                if call.instance.is_some() && declarations.get(&index).is_some_and(|declaration| declaration.function.generics.is_empty()) {
+                if call.instance.is_some() && declarations.get(&index).is_some_and(declaration_has_no_generic_binders) {
                     return;
                 }
                 // witness 的 declaration 是 trait 方法槽，不在 impl 成员表里；
@@ -373,7 +385,12 @@ pub(crate) fn instantiate_generic_callables(
                     else {
                         return;
                     };
-                    if !substitution.is_empty() || declaration.function.generics.is_empty() {
+                    let self_type_closed =
+                        self_type.as_ref().is_none_or(|self_type| !has_unresolved_generic_arguments(self_type));
+                    if (!substitution.is_empty() || declaration_has_no_generic_binders(declaration))
+                        && self_type_closed
+                        && !substitution.values().any(has_unresolved_generic_arguments)
+                    {
                         requests.insert(InstanceRequest { declaration: index, substitution, self_type });
                     }
                     return;
@@ -386,7 +403,11 @@ pub(crate) fn instantiate_generic_callables(
                     // 有泛型参数的函数：空 substitution 说明调用侧 binder 和声明侧是同一个
                     // （比如 imply 方法内部自调用），没有替换就不需要铸造实例。
                     // 无泛型函数：空 substitution 是合法的（所有类型本就具体），照常铸造。
-                    if !substitution.is_empty() || declaration.function.generics.is_empty() {
+                    // 代入仍指向开放 binder 时调用点处于声明模板上下文：开放克隆既不能
+                    // 发射，也不能进依赖导入清单，必须 fail-closed 留给具体调用点收口。
+                    if (!substitution.is_empty() || declaration_has_no_generic_binders(declaration))
+                        && !substitution.values().any(has_unresolved_generic_arguments)
+                    {
                         requests.insert(InstanceRequest { declaration: index, substitution, self_type: None });
                     }
                 }
@@ -437,6 +458,13 @@ pub(crate) fn instantiate_generic_callables(
             // 解析期对开放目标延后的义务必须在这里按具体代入结算：证据缺失则
             // 不铸造实例，调用点保持未闭合，由既有合同验证结构化失败。
             if !where_constraints_satisfied(declaration, substitution, self_type.as_ref(), &equations, relations.get(declaration.module)) {
+                continue;
+            }
+            // 铸造前再守一次闭合：开放代入说明调用方仍是泛型上下文，克隆体签名会
+            // 残留开放 binder，既不能发射也不能登记为合同；留给具体调用点收口。
+            if substitution.values().any(has_unresolved_generic_arguments)
+                || self_type.as_ref().is_some_and(has_unresolved_generic_arguments)
+            {
                 continue;
             }
             let Some(instance) = nyar_types::ItemInstanceId::from_index(*next_instance)
@@ -491,6 +519,9 @@ pub(crate) fn instantiate_generic_callables(
                         else {
                             return;
                         };
+                        if substitution.values().any(has_unresolved_generic_arguments) {
+                            return;
+                        }
                         if let Some(instance) =
                             instances.get(&InstanceRequest { declaration: index, substitution, self_type: None })
                         {
@@ -505,7 +536,7 @@ pub(crate) fn instantiate_generic_callables(
                 };
                 // 回填同样不得覆盖非泛型声明的冻结实例：与收集步保持同一守卫；
                 // 泛型声明的种子实例必须让位给具体代入铸造出的实例。
-                if call.instance.is_some() && declarations.get(&index).is_some_and(|declaration| declaration.function.generics.is_empty()) {
+                if call.instance.is_some() && declarations.get(&index).is_some_and(declaration_has_no_generic_binders) {
                     return;
                 }
                 if call.trait_dispatch.is_some() {
@@ -513,6 +544,13 @@ pub(crate) fn instantiate_generic_callables(
                     else {
                         return;
                     };
+                    // 开放代入/开放 self 类型说明还处在声明模板上下文：witness 尚未
+                    // 由具体实例偿清，保留 trait evidence 交给具体克隆闭合。
+                    if substitution.values().any(has_unresolved_generic_arguments)
+                        || self_type.as_ref().is_some_and(has_unresolved_generic_arguments)
+                    {
+                        return;
+                    }
                     if let Some(instance) = instances.get(&InstanceRequest { declaration: index, substitution, self_type }) {
                         // witness 义务已由具体 impl 实例偿清：继续把 trait evidence 传到后端
                         // 只会诱发「按签名挑一个实现」的后置猜测。
@@ -532,9 +570,13 @@ pub(crate) fn instantiate_generic_callables(
                 // 只有完全具体的代入才代表「按 where 证据结算后被拒绝」；空代入或
                 // 仍含开放 binder 的代入是声明体内的自递归/跨结构占位，留给后续
                 // 具体克隆闭合，不能在这里抹掉占位实例。
-                let concrete_attempt = !substitution.is_empty() && !substitution.values().any(has_unresolved_generic_arguments);
+                let concrete_attempt = (!substitution.is_empty() || declaration_has_no_generic_binders(declaration))
+                    && !substitution.values().any(has_unresolved_generic_arguments);
                 match instances.get(&InstanceRequest { declaration: index, substitution, self_type: None }) {
-                    Some(instance) => call.instance = Some(*instance),
+                    // 开放代入铸造出的实例签名带开放 binder：不能把它回填进调用点，
+                    // 否则调用方会被判成“已冻结”，而合同面因开放签名把该行剔掉。
+                    Some(instance) if concrete_attempt => call.instance = Some(*instance),
+                    Some(_) => {}
                     // 具体代入没有铸造出实例（where 证据不足被拒）时，调用点不得保留
                     // 解析期/声明种子留下的开放占位实例，否则缺失证据会被静默放行。
                     None if concrete_attempt => call.instance = None,
@@ -1058,11 +1100,22 @@ fn substitute_block(
     for statement in &mut block.statements {
         match &mut statement.kind {
             HirStatementKind::Let { ty, initializer, .. } => {
-                if let Some(ty) = ty {
+                let expected = ty.as_mut().map(|ty| {
                     *ty = instantiate_declared_type(ty, owner, substitution, equations);
-                }
+                    ty.clone()
+                });
                 if let Some(initializer) = initializer {
-                    substitute_expr(initializer, substitution, owner, equations);
+                    if let Some(expected) = expected {
+                        // 聚合字面量在声明体里以被构造类型自身的 binder 记录类型参数，
+                        // 外层声明代入覆盖不到这些跨结构 binder。用语句标注的具体类型
+                        // 补齐它们的映射，否则字面量体内的泛型 callee 永远停在开放克隆。
+                        let mut extended = substitution.clone();
+                        extend_substitution_from_expected_type(&mut extended, &expected, initializer, owner, substitution, equations);
+                        substitute_expr(initializer, &extended, owner, equations);
+                    }
+                    else {
+                        substitute_expr(initializer, substitution, owner, equations);
+                    }
                 }
             }
             HirStatementKind::Expr(expr) => substitute_expr(expr, substitution, owner, equations),
@@ -1070,6 +1123,36 @@ fn substitute_block(
     }
     if let Some(expr) = &mut block.expr {
         substitute_expr(expr, substitution, owner, equations);
+    }
+}
+
+/// 用语句标注的具体类型补齐聚合字面量/构造调用冻结签名里的跨结构 binder 映射。
+///
+/// `BTreeNode<K, V>` 这类字面量在声明体里被解析成「被构造类型自身的 binder」，
+/// 外层声明（`BTreeMap<K, V>`）的代入键覆盖不到它们，于是字面量字段初始化的泛型
+/// callee（`ArrayList::new`）在克隆体里始终带着开放 binder。标注类型已在代入后
+/// 具体化，可与字面量的已代入签名统一，得到这些 binder 的具体映射；只补充缺失项，
+/// 不覆盖外层代入已确定的映射。
+fn extend_substitution_from_expected_type(
+    extended: &mut Substitution,
+    expected: &ValkyrieType,
+    initializer: &HirExpr,
+    owner: Option<&ValkyrieType>,
+    substitution: &Substitution,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
+) {
+    let shape = match &initializer.kind {
+        HirExprKind::Construct { resolved: Some(resolved), .. } => &resolved.return_type,
+        HirExprKind::Call { resolved: Some(resolved), .. } => &resolved.return_type,
+        _ => return,
+    };
+    let declared = instantiate_declared_type(shape, owner, substitution, equations);
+    let mut extra = Substitution::new();
+    if !unify_instantiation(&declared, expected, &mut extra) {
+        return;
+    }
+    for (binder, ty) in extra {
+        extended.entry(binder).or_insert(ty);
     }
 }
 
