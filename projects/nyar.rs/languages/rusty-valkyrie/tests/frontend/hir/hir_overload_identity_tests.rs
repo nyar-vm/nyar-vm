@@ -1482,3 +1482,53 @@ imply Holder {
         .expect_err("字段写入值类型不符必须报结构化失败");
     assert!(error.to_string().contains("SMIR006"), "必须复用 SMIR006 合同码，实际: {error}");
 }
+
+const NESTED_CONSTRUCT_SOURCE: &str = r#"
+namespace app;
+
+class Inner<T> {
+    capacity: i64
+}
+
+imply Inner<T> {
+    micro new(capacity: i64): Self {
+        return Self { capacity: capacity }
+    }
+}
+
+class Outer<T> {
+    inner: Inner<T>
+}
+
+imply Outer<T> {
+    micro new(capacity: i64): Self {
+        return Self { inner: Inner::new(capacity) }
+    }
+
+    micro push(mut self, element: Inner<T>): unit {
+        self.inner = element
+    }
+}
+"#;
+
+/// 实参位置的期望类型逐槽下传：嵌套 `Inner::new` 的元素类型只能由外层 `push` 形参决定。
+#[test]
+fn nested_new_element_type_flows_from_argument_context() {
+    let source = format!(
+        "{NESTED_CONSTRUCT_SOURCE}\nmicro build(capacity: i64): i64 {{\n    let mut outer: Outer<i64> = Outer::new(capacity)\n    outer.push(Inner::new(capacity))\n    return capacity\n}}\n"
+    );
+    let mir = ValkyrieCompiler::default().compile_source_to_mir(&source).expect("嵌套构造的实参必须由形参槽类型定型");
+    rusty_valkyrie::mir::validate_semantic_module(&mir).expect("嵌套构造实参类型必须与形参槽一致");
+}
+
+/// 反例：实参与形参槽类型确实不符时，仍须结构化报出未解析调用。
+#[test]
+fn nested_new_rejects_argument_incompatible_with_slot() {
+    let source = format!(
+        "{NESTED_CONSTRUCT_SOURCE}\nmicro build(capacity: i64): i64 {{\n    let mut outer: Outer<i64> = Outer::new(capacity)\n    outer.push(capacity)\n    return capacity\n}}\n"
+    );
+    let error = ValkyrieCompiler::default().compile_source_to_mir(&source).expect_err("实参与形参槽不符必须结构化失败");
+    let message = error.to_string();
+    assert!(message.contains("unresolved call `outer.push`"), "必须点名未解析调用，实际: {message}");
+    assert!(message.contains("none matches"), "必须说明无一候选匹配，实际: {message}");
+}

@@ -437,13 +437,10 @@ fn resolve_expr_calls_at(
                 member_argument_contexts
             };
             for (index, arg) in args.iter_mut().enumerate() {
+                // 实参位置的期望类型必须逐槽下传：`adjacency.push(ArrayList::new(0))`
+                // 的实参自身没有自足元素类型，只能由 `push` 形参槽的类型决定。
                 let supplied = argument_contexts.get(index).and_then(|context| context.as_ref());
-                let context = if call_resolver_is_unresolved_variant_reference(&arg.value, locals) {
-                    supplied.or(contextual_type)
-                }
-                else {
-                    contextual_type
-                };
+                let context = supplied.or(contextual_type);
                 resolve_expr_calls(&mut arg.value, candidates, type_relations, locals, struct_fields, singleton_names, context);
                 rewrite_free_function_argument_to_reference(&mut arg.value, candidates, type_relations, locals, singleton_names);
             }
@@ -957,10 +954,6 @@ fn call_resolver_try_resolve_constructor(
         singleton_names,
         contextual_type,
     )
-}
-
-fn call_resolver_is_unresolved_variant_reference(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> bool {
-    crate::compiler::hir::overload::call_resolver::is_unresolved_variant_reference(expr, locals)
 }
 
 /// 成员链的声明短名：`Color`、`ns::Color`、`value.probe::Color` 都取最后一段。
