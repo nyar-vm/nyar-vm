@@ -111,6 +111,8 @@ fn create_std_workspace(std_root: &Path) -> (TempDir, PathBuf) {
     for (name, source_project) in [
         ("std", std_root.join("projects").join("std")),
         ("std.adaptor.ovm", std_root.join("projects").join("std.adaptors._").join("std.adaptor.ovm")),
+        ("unicode.types", std_root.join("projects").join("unicode._").join("unicode.types")),
+        ("unicode.case", std_root.join("projects").join("unicode._").join("unicode.case")),
     ] {
         let target = root.join(name);
         fs::create_dir_all(&target).expect("建依赖目录");
@@ -119,7 +121,7 @@ fn create_std_workspace(std_root: &Path) -> (TempDir, PathBuf) {
     }
     fs::write(
         root.join("legions.von"),
-        r#"{ name: "p2-closure", members: ["std", "std.adaptor.ovm", "app"] }"#,
+        r#"{ name: "p2-closure", members: ["std", "std.adaptor.ovm", "unicode.types", "unicode.case", "app"] }"#,
     )
     .expect("写 workspace 清单");
     let project_dir = root.join("app");
