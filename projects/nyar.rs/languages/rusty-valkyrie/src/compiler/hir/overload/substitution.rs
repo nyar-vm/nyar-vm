@@ -15,6 +15,7 @@ use crate::compiler::{
 };
 
 use super::diagnostics::OverloadCandidate;
+use super::r#trait::impl_nominal_type_name;
 
 /// 类型中是否仍有未代入的泛型 binder（含 nominal 实参中的 binder）。
 ///
@@ -295,6 +296,7 @@ pub(crate) fn unify_call_type_binders(
     actual: &ValkyrieType,
     binders: &std::collections::BTreeSet<GenericBinderId>,
     substitutions: &mut BTreeMap<GenericBinderId, ValkyrieType>,
+    type_relations: &TypeRelationContext,
 ) -> Option<()> {
     match expected {
         ValkyrieType::Generic(generic) => {
@@ -316,34 +318,60 @@ pub(crate) fn unify_call_type_binders(
             else {
                 return None;
             };
-            unify_call_type_binders(expected_element, actual_element, binders, substitutions)
+            unify_call_type_binders(expected_element, actual_element, binders, substitutions, type_relations)
         }
         ValkyrieType::Apply(expected_base, expected_args) => {
-            let ValkyrieType::Apply(actual_base, actual_args) = actual
-            else {
-                return None;
-            };
-            if expected_args.len() != actual_args.len() {
-                return None;
+            if let ValkyrieType::Apply(actual_base, actual_args) = actual {
+                if expected_args.len() != actual_args.len() {
+                    return None;
+                }
+                unify_call_type_binders(expected_base, actual_base, binders, substitutions, type_relations)?;
+                for (expected, actual) in expected_args.iter().zip(actual_args) {
+                    unify_call_type_binders(expected, actual, binders, substitutions, type_relations)?;
+                }
+                return Some(());
             }
-            unify_call_type_binders(expected_base, actual_base, binders, substitutions)?;
-            for (expected, actual) in expected_args.iter().zip(actual_args) {
-                unify_call_type_binders(expected, actual, binders, substitutions)?;
+            // 跨包导出的 impl owner 丢失 `constructor_declaration`，落成
+            // `Apply(Named("X"), [Generic])`；接收者仍冻结为 `Nominal{X}`。两者是同一
+            // 名义类型，必须按声明身份把泛型实参逐个绑定，不得用兜底分支放行。
+            if let ValkyrieType::Nominal { declaration, arguments: actual_args, .. } = actual
+                && let Some(base_name) = impl_nominal_type_name(expected_base)
+            {
+                let base_name = Identifier::new(base_name);
+                if !type_relations.owner_name_matches_declaration(&base_name, *declaration) || expected_args.len() != actual_args.len() {
+                    return None;
+                }
+                for (expected, actual) in expected_args.iter().zip(actual_args) {
+                    unify_call_type_binders(expected, actual, binders, substitutions, type_relations)?;
+                }
+                return Some(());
             }
-            Some(())
+            None
         }
         ValkyrieType::Nominal { declaration: expected_decl, arguments: expected_args, .. } => {
-            let ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args, .. } = actual
-            else {
-                return None;
-            };
-            if expected_decl != actual_decl || expected_args.len() != actual_args.len() {
-                return None;
+            if let ValkyrieType::Nominal { declaration: actual_decl, arguments: actual_args, .. } = actual {
+                if expected_decl != actual_decl || expected_args.len() != actual_args.len() {
+                    return None;
+                }
+                for (expected, actual) in expected_args.iter().zip(actual_args) {
+                    unify_call_type_binders(expected, actual, binders, substitutions, type_relations)?;
+                }
+                return Some(());
             }
-            for (expected, actual) in expected_args.iter().zip(actual_args) {
-                unify_call_type_binders(expected, actual, binders, substitutions)?;
+            if let ValkyrieType::Apply(actual_base, actual_args) = actual {
+                let Some(actual_name) = impl_nominal_type_name(actual_base).map(Identifier::new)
+                else {
+                    return None;
+                };
+                if !type_relations.owner_name_matches_declaration(&actual_name, *expected_decl) || expected_args.len() != actual_args.len() {
+                    return None;
+                }
+                for (expected, actual) in expected_args.iter().zip(actual_args) {
+                    unify_call_type_binders(expected, actual, binders, substitutions, type_relations)?;
+                }
+                return Some(());
             }
-            Some(())
+            None
         }
         // 函数类型逐项统一：形参 `micro(T, T) -> i32` 这类含 binder 的期望签名，
         // 必须由具名函数作值的冻结签名把 T 绑定出来，禁止宽松放行后留给后端猜。
@@ -356,9 +384,9 @@ pub(crate) fn unify_call_type_binders(
                 return None;
             }
             for (expected, actual) in expected_function.params.iter().zip(&actual_function.params) {
-                unify_call_type_binders(expected, actual, binders, substitutions)?;
+                unify_call_type_binders(expected, actual, binders, substitutions, type_relations)?;
             }
-            unify_call_type_binders(&expected_function.return_type, &actual_function.return_type, binders, substitutions)
+            unify_call_type_binders(&expected_function.return_type, &actual_function.return_type, binders, substitutions, type_relations)
         }
         _ => Some(()),
     }
@@ -511,7 +539,7 @@ pub(crate) fn member_call_argument_contexts(
             continue;
         };
         let mut substitutions = BTreeMap::new();
-        if unify_call_type_binders(self_param, &receiver_type, &candidate.generic_binders, &mut substitutions).is_none() {
+        if unify_call_type_binders(self_param, &receiver_type, &candidate.generic_binders, &mut substitutions, type_relations).is_none() {
             continue;
         }
         applicable = true;

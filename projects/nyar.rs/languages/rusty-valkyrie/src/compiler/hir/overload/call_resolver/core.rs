@@ -221,7 +221,7 @@ pub fn match_call_candidate(
             .or_else(|| infer_contextual_lambda_type(expr, &contextual_expected));
         match actual.as_ref() {
             Some(actual) => {
-                if unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions).is_none() {
+                if unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions, type_relations).is_none() {
                     return None;
                 }
             }

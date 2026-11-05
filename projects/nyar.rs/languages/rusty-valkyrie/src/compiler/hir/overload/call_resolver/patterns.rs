@@ -173,6 +173,7 @@ pub(crate) fn resolve_variant_pattern_constructor(
     canonical_callee: &NamePath,
     actual_type: &ValkyrieType,
     candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
 ) -> Option<HirResolvedCall> {
     let declaration = sum_declaration_of_type(actual_type)?;
     let variant_name = variant_segment_from_extractor_callee(canonical_callee)?;
@@ -182,7 +183,7 @@ pub(crate) fn resolve_variant_pattern_constructor(
         .filter(|candidate| candidate.sum_owner == Some(declaration))
         .find(|candidate| matches!(candidate.symbol.parts(), [name] if name == &variant_name))?;
     let mut substitutions = BTreeMap::new();
-    unify_call_type_binders(&candidate.signature.return_type, actual_type, &candidate.generic_binders, &mut substitutions)?;
+    unify_call_type_binders(&candidate.signature.return_type, actual_type, &candidate.generic_binders, &mut substitutions, type_relations)?;
     let parameter_types = candidate
         .signature
         .params

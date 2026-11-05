@@ -87,7 +87,7 @@ pub(crate) fn try_resolve_constructor_call(
         .filter_map(|candidate| {
             if let Some(context) = contextual_type {
                 if !matches!(&candidate.signature.return_type, ValkyrieType::Generic(_))
-                    && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
+                    && let Some(instantiated) = instantiate_candidate_for_context(candidate, context, type_relations)
                     && let Some(matched) =
                         match_call_candidate(&instantiated, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
                 {
@@ -131,7 +131,7 @@ pub(crate) fn try_resolve_constructor_call(
         .filter_map(|candidate| {
             if let Some(context) = contextual_type {
                 if !matches!(&candidate.signature.return_type, ValkyrieType::Generic(_))
-                    && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
+                    && let Some(instantiated) = instantiate_candidate_for_context(candidate, context, type_relations)
                     && let Some(matched) =
                         match_call_candidate(&instantiated, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
                 {
@@ -255,7 +255,7 @@ pub fn try_resolve_nullary_constructor(
                 return Some(candidate.clone());
             };
             let mut substitutions = BTreeMap::new();
-            unify_call_type_binders(&candidate.signature.return_type, context, &candidate.generic_binders, &mut substitutions)?;
+            unify_call_type_binders(&candidate.signature.return_type, context, &candidate.generic_binders, &mut substitutions, type_relations)?;
             let instantiated = substitute_type_vars(&candidate.signature.return_type, &substitutions);
             if matches!(type_relations.match_parameter(&instantiated, context), ParameterMatchResult::NoMatch { .. }) {
                 return None;
@@ -384,7 +384,7 @@ pub(crate) fn try_resolve_type_static_method(
         .filter(|candidate| candidate_owned_method_matches(candidate, method_name))
         .filter_map(|candidate| {
             if let Some(context) = contextual_type
-                && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
+                && let Some(instantiated) = instantiate_candidate_for_context(candidate, context, type_relations)
                 && let Some(matched) = match_call_candidate(&instantiated, args, &[], type_relations, locals, struct_fields, singleton_names)
             {
                 return Some(matched);

@@ -147,7 +147,11 @@ pub(crate) fn nominal_head_label(ty: &ValkyrieType) -> Option<NominalHeadLabel> 
     }
 }
 
-pub(crate) fn instantiate_candidate_for_context(candidate: &OverloadCandidate, contextual_type: &ValkyrieType) -> Option<OverloadCandidate> {
+pub(crate) fn instantiate_candidate_for_context(
+    candidate: &OverloadCandidate,
+    contextual_type: &ValkyrieType,
+    type_relations: &TypeRelationContext,
+) -> Option<OverloadCandidate> {
     // 防御：candidate.return_type 最外层是裸 Generic binder 时，禁止用外层
     // contextual_type 反推泛型。否则 Some(Option<T>) context 会把裸 T 绑定成
     // Option<T>，导致函数 appear 返回 Option<T>，再被 Some 包成 Option<Option<T>>。
@@ -156,7 +160,7 @@ pub(crate) fn instantiate_candidate_for_context(candidate: &OverloadCandidate, c
         return None;
     }
     let mut substitutions = BTreeMap::new();
-    unify_call_type_binders(&candidate.signature.return_type, contextual_type, &candidate.generic_binders, &mut substitutions)?;
+    unify_call_type_binders(&candidate.signature.return_type, contextual_type, &candidate.generic_binders, &mut substitutions, type_relations)?;
     let mut candidate = candidate.clone();
     candidate.signature.return_type = substitute_type_vars(&candidate.signature.return_type, &substitutions);
     candidate.signature.params = candidate.signature.params.iter().map(|param| substitute_type_vars(param, &substitutions)).collect();
@@ -220,7 +224,7 @@ pub fn try_resolve_constructor(
         .filter_map(|candidate| {
             if let Some(context) = contextual_type {
                 if !matches!(&candidate.signature.return_type, ValkyrieType::Generic(_))
-                    && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
+                    && let Some(instantiated) = instantiate_candidate_for_context(candidate, context, type_relations)
                     && let Some(matched) = match_call_candidate(
                         &instantiated,
                         &arguments,
