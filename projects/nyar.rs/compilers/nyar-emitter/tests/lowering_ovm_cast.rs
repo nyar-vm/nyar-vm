@@ -2,7 +2,9 @@
 //!
 //! 位宽 ≤ 32 以 `i32` 为载体（窄整数必须处于自身类型的规范形态），64 位以 `i64`
 //! 为载体。拓宽按源符号性做符号/零扩展，收窄按目标位宽截断，等宽换符号性保持位模式。
-//! 没有冻结语义的组合（浮点↔整数、布尔/文本↔数值）必须结构化失败，不许近似。
+//! 整数↔`f64` 用带符号性区分的宿主转换（无符号转换不得复用有符号指令），
+//! `f64`→整数走 checked 语义（朝零截断，NaN / 越界结构化失败）。
+//! 没有冻结语义的组合（`f32`、布尔/文本↔数值）必须结构化失败，不许近似。
 
 #![cfg(feature = "ovm-lane")]
 
@@ -328,19 +330,88 @@ fn boolean_to_integer_fails_structured() {
     assert!(error.contains("没有 `bool` → `i32`") && error.contains("确定转换语义"), "错误必须点名缺失的转换: {error}");
 }
 
-/// 浮点 → 整数没有精确的 `as` 合同（wasm 侧同样拒绝）：结构化失败。
+/// `i64 → f64`：有符号源必须走 `i64_to_f64`。
 #[test]
-fn float_to_integer_fails_structured() {
-    let error = try_lower(cast_function(NyarType::Float64, i64_(true))).expect_err("浮点→整数必须结构化失败");
-    assert!(error.contains("`f64` → `i64`"), "错误必须点名两端类型: {error}");
-    assert!(error.contains("不得退化为近似转换"), "错误必须声明禁止近似: {error}");
+fn i64_to_f64_uses_signed_conversion() {
+    let module = lower(i64_(true), NyarType::Float64);
+    assert_eq!(host_symbols(&module), vec!["i64_to_f64"], "有符号 64 位转 f64 必须走有符号转换");
 }
 
-/// 整数 → 浮点同样缺合同：不得靠宿主饱和转换糊过去。
+/// `u64 → f64`：必须走无符号转换，复用 `i64_to_f64` 会让 2^63 以上的值静默变负。
 #[test]
-fn integer_to_float_fails_structured() {
-    let error = try_lower(cast_function(i64_(true), NyarType::Float64)).expect_err("整数→浮点必须结构化失败");
-    assert!(error.contains("`i64` → `f64`"), "错误必须点名两端类型: {error}");
+fn u64_to_f64_uses_unsigned_conversion() {
+    let module = lower(i64_(false), NyarType::Float64);
+    assert_eq!(host_symbols(&module), vec!["u64_to_f64"], "无符号 64 位转 f64 必须走无符号转换");
+}
+
+/// `i32 → f64`：有符号 32 位源走 `i32_to_f64`。
+#[test]
+fn i32_to_f64_uses_signed_conversion() {
+    let module = lower(i32_(true), NyarType::Float64);
+    assert_eq!(host_symbols(&module), vec!["i32_to_f64"]);
+}
+
+/// `u32` / `Character → f64`：无符号 32 位载体走 `u32_to_f64`。
+#[test]
+fn u32_and_character_to_f64_use_unsigned_conversion() {
+    assert_eq!(host_symbols(&lower(i32_(false), NyarType::Float64)), vec!["u32_to_f64"]);
+    assert_eq!(host_symbols(&lower(NyarType::Character, NyarType::Float64)), vec!["u32_to_f64"]);
+}
+
+/// 窄无符号整数先在 `i32` 载体上掩码成非负，再走无符号转换。
+#[test]
+fn narrow_unsigned_to_f64_masks_before_conversion() {
+    let module = lower(i8_(false), NyarType::Float64);
+    assert!(unique_pool_integer32(&module).contains(&0xFF), "必须先掩掉高位: {:?}", module.constants);
+    assert!(codes(&module).contains(&OdinHeadCode::I32And), "掩码必须在转换前发射");
+    assert_eq!(host_symbols(&module), vec!["u32_to_f64"]);
+}
+
+/// `f64 → i64`：checked 语义（截断后越界/NaN 结构化失败，不饱和）。
+#[test]
+fn f64_to_i64_uses_checked_conversion() {
+    let module = lower(NyarType::Float64, i64_(true));
+    assert_eq!(host_symbols(&module), vec!["f64_to_i64_checked"], "`as` 不得复用饱和版 `f64_to_i64`");
+}
+
+/// `f64 → u64`：checked 无符号语义。
+#[test]
+fn f64_to_u64_uses_checked_unsigned_conversion() {
+    let module = lower(NyarType::Float64, i64_(false));
+    assert_eq!(host_symbols(&module), vec!["f64_to_u64_checked"]);
+}
+
+/// `f64 → u8`：先 checked 转 `u32`，再按目标位宽掩码（与整数收窄口径一致）。
+#[test]
+fn f64_to_u8_normalizes_after_checked_conversion() {
+    let module = lower(NyarType::Float64, i8_(false));
+    assert!(unique_pool_integer32(&module).contains(&0xFF), "窄目标必须掩掉高位: {:?}", module.constants);
+    assert!(codes(&module).contains(&OdinHeadCode::I32And), "掩码必须在 checked 转换之后发射");
+    assert_eq!(host_symbols(&module), vec!["f64_to_u32_checked"]);
+}
+
+/// `f64 → i16`：先 checked 转 `i32`，再做 16 位符号扩展。
+#[test]
+fn f64_to_i16_sign_extends_after_checked_conversion() {
+    let module = lower(NyarType::Float64, i16_(true));
+    assert!(codes(&module).contains(&OdinHeadCode::I32Shl) && codes(&module).contains(&OdinHeadCode::I32ShrS), "必须有符号扩展");
+    assert_eq!(host_symbols(&module), vec!["f64_to_i32_checked"]);
+}
+
+/// `f32` 没有进入 OVM 的浮点载体合同：双向都必须结构化失败。
+#[test]
+fn f32_casts_fail_structured() {
+    let error = try_lower(cast_function(NyarType::Float32, i64_(true))).expect_err("f32→整数必须结构化失败");
+    assert!(error.contains("`f32` → `i64`") && error.contains("不得退化为近似转换"), "错误必须点名缺失的转换: {error}");
+    let error = try_lower(cast_function(i64_(true), NyarType::Float32)).expect_err("整数→f32 必须结构化失败");
+    assert!(error.contains("`i64` → `f32`"), "错误必须点名两端类型: {error}");
+}
+
+/// 浮点 → 布尔/文本没有 `as` 合同：结构化失败。
+#[test]
+fn float_to_boolean_fails_structured() {
+    let error = try_lower(cast_function(NyarType::Float64, NyarType::Boolean)).expect_err("f64→bool 必须结构化失败");
+    assert!(error.contains("`f64` → `bool`"), "错误必须点名两端类型: {error}");
 }
 
 /// 整数 → 文本没有冻结语义：结构化失败。

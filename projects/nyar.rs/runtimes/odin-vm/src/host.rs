@@ -58,6 +58,18 @@ pub enum HostOp {
     F64ToI32,
     /// 64 位浮点转 64 位整数（饱和，NaN 转 0，与 wasm `trunc_sat` 同口径）。
     F64ToI64,
+    /// 32 位无符号整数转 64 位浮点（按 `u32` 位模式解释，全域精确）。
+    U32ToF64,
+    /// 64 位无符号整数转 64 位浮点（超过 2^53 的奇数按 IEEE-754 就近舍入）。
+    U64ToF64,
+    /// 64 位浮点转 32 位有符号整数（朝零截断；NaN / 越界结构化失败，不饱和）。
+    F64ToI32Checked,
+    /// 64 位浮点转 32 位无符号整数（朝零截断；NaN / 越界结构化失败，不饱和）。
+    F64ToU32Checked,
+    /// 64 位浮点转 64 位有符号整数（朝零截断；NaN / 越界结构化失败，不饱和）。
+    F64ToI64Checked,
+    /// 64 位浮点转 64 位无符号整数（朝零截断；NaN / 越界结构化失败，不饱和）。
+    F64ToU64Checked,
     /// 64 位浮点相等（IEEE-754：NaN 比较为 false，`+0.0` 与 `-0.0` 相等）。
     F64Eq,
     /// 64 位浮点不等（IEEE-754：NaN 与任何值不等，含 NaN 自身）。
@@ -224,6 +236,12 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "f64_neg" => HostOp::F64Neg,
         "f64_to_i32" => HostOp::F64ToI32,
         "f64_to_i64" => HostOp::F64ToI64,
+        "u32_to_f64" => HostOp::U32ToF64,
+        "u64_to_f64" => HostOp::U64ToF64,
+        "f64_to_i32_checked" => HostOp::F64ToI32Checked,
+        "f64_to_u32_checked" => HostOp::F64ToU32Checked,
+        "f64_to_i64_checked" => HostOp::F64ToI64Checked,
+        "f64_to_u64_checked" => HostOp::F64ToU64Checked,
         "f64_eq" => HostOp::F64Eq,
         "f64_ne" => HostOp::F64Ne,
         "f64_lt" => HostOp::F64Lt,
@@ -395,6 +413,18 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
         HostOp::F64Neg => Ok(Value::F64(-f64_arg(args, 0)?)),
         HostOp::F64ToI32 => Ok(Value::I32(f64_to_i32_saturating(f64_arg(args, 0)?))),
         HostOp::F64ToI64 => Ok(Value::I64(f64_to_i64_saturating(f64_arg(args, 0)?))),
+        // 无符号整数转 f64：按无符号位模式解释（`i32` / `i64` 载体本身可能为负）。
+        HostOp::U32ToF64 => match args.first() {
+            Some(Value::I32(value)) => Ok(Value::F64(*value as u32 as f64)),
+            Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
+            None => Err(OdinRuntimeError::StackUnderflow),
+        },
+        HostOp::U64ToF64 => Ok(Value::F64(i64_arg(args, 0)? as u64 as f64)),
+        // `as` 转换走 checked 版本：朝零截断，NaN / 越界结构化失败，不饱和成静默值。
+        HostOp::F64ToI32Checked => Ok(Value::I32(f64_to_i32_checked(f64_arg(args, 0)?)?)),
+        HostOp::F64ToU32Checked => Ok(Value::I32(f64_to_u32_checked(f64_arg(args, 0)?)?)),
+        HostOp::F64ToI64Checked => Ok(Value::I64(f64_to_i64_checked(f64_arg(args, 0)?)?)),
+        HostOp::F64ToU64Checked => Ok(Value::I64(f64_to_u64_checked(f64_arg(args, 0)?)?)),
         // 比较直接复用 Rust `f64` 运算符：NaN 参与的有序比较为 false，`!=` 为 true，
         // `==` 对 `+0.0`/`-0.0` 为 true（IEEE-754 相等，不是按位比较）。
         HostOp::F64Eq => Ok(Value::Bool(f64_arg(args, 0)? == f64_arg(args, 1)?)),
@@ -673,6 +703,59 @@ fn f64_to_i64_saturating(value: f64) -> i64 {
     else {
         truncated as i64
     }
+}
+
+/// 浮点转整数的 checked 前置：NaN 一律结构化失败，其余先朝零截断。
+///
+/// 与 wasm `trunc` 指令一致：NaN 是「invalid conversion to integer」，
+/// 有限值先截断再判界，避免把 `-2147483648.9` 这类截断后合法的值误判出界。
+fn checked_trunc(value: f64, operation: &'static str) -> Result<f64, OdinRuntimeError> {
+    if value.is_nan() {
+        return Err(OdinRuntimeError::ArithmeticOverflow { operation });
+    }
+    Ok(value.trunc())
+}
+
+/// `f64 → i32` 的 checked 语义：截断后落在 `[-2^31, 2^31)`，否则结构化失败。
+fn f64_to_i32_checked(value: f64) -> Result<i32, OdinRuntimeError> {
+    let truncated = checked_trunc(value, "host f64_to_i32_checked")?;
+    const I32_MIN_AS_F64: f64 = -2_147_483_648.0;
+    const I32_MAX_PLUS_ONE_AS_F64: f64 = 2_147_483_648.0;
+    if truncated < I32_MIN_AS_F64 || truncated >= I32_MAX_PLUS_ONE_AS_F64 {
+        return Err(OdinRuntimeError::ArithmeticOverflow { operation: "host f64_to_i32_checked" });
+    }
+    Ok(truncated as i32)
+}
+
+/// `f64 → u32` 的 checked 语义：截断后落在 `[0, 2^32)`，否则结构化失败。
+fn f64_to_u32_checked(value: f64) -> Result<i32, OdinRuntimeError> {
+    let truncated = checked_trunc(value, "host f64_to_u32_checked")?;
+    const U32_MAX_PLUS_ONE_AS_F64: f64 = 4_294_967_296.0;
+    if truncated < 0.0 || truncated >= U32_MAX_PLUS_ONE_AS_F64 {
+        return Err(OdinRuntimeError::ArithmeticOverflow { operation: "host f64_to_u32_checked" });
+    }
+    Ok(truncated as u32 as i32)
+}
+
+/// `f64 → i64` 的 checked 语义：截断后落在 `[-2^63, 2^63)`，否则结构化失败。
+fn f64_to_i64_checked(value: f64) -> Result<i64, OdinRuntimeError> {
+    let truncated = checked_trunc(value, "host f64_to_i64_checked")?;
+    const I64_MIN_AS_F64: f64 = -9_223_372_036_854_775_808.0;
+    const I64_MAX_PLUS_ONE_AS_F64: f64 = 9_223_372_036_854_775_808.0;
+    if truncated < I64_MIN_AS_F64 || truncated >= I64_MAX_PLUS_ONE_AS_F64 {
+        return Err(OdinRuntimeError::ArithmeticOverflow { operation: "host f64_to_i64_checked" });
+    }
+    Ok(truncated as i64)
+}
+
+/// `f64 → u64` 的 checked 语义：截断后落在 `[0, 2^64)`，否则结构化失败。
+fn f64_to_u64_checked(value: f64) -> Result<i64, OdinRuntimeError> {
+    let truncated = checked_trunc(value, "host f64_to_u64_checked")?;
+    const U64_MAX_PLUS_ONE_AS_F64: f64 = 18_446_744_073_709_551_616.0;
+    if truncated < 0.0 || truncated >= U64_MAX_PLUS_ONE_AS_F64 {
+        return Err(OdinRuntimeError::ArithmeticOverflow { operation: "host f64_to_u64_checked" });
+    }
+    Ok(truncated as u64 as i64)
 }
 
 /// 严格 UTF-16 取参：只接受码元固定数组（`Value::I32` 槽位，0..=0xFFFF）。

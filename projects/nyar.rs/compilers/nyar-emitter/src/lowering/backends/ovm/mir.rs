@@ -304,14 +304,9 @@ fn register_sum_layouts(submission: &FragmentSubmission, layouts: &mut Vec<OdinL
     }
     let mut map = BTreeMap::new();
     for nominal in nominals {
-        let sum = sums
-            .get(&nominal)
-            .ok_or_else(|| format!("OVM sum 表示缺失：nominal {nominal:?} 没有冻结的 SumTypeLayout"))?;
+        let sum = sums.get(&nominal).ok_or_else(|| format!("OVM sum 表示缺失：nominal {nominal:?} 没有冻结的 SumTypeLayout"))?;
         if sum.tag_width == 0 || sum.tag_width > 4 {
-            return Err(format!(
-                "OVM sum 表示只承诺 1..=4 字节 tag（nominal={nominal:?}, tag_width={}）",
-                sum.tag_width
-            ));
+            return Err(format!("OVM sum 表示只承诺 1..=4 字节 tag（nominal={nominal:?}, tag_width={}）", sum.tag_width));
         }
         let index = layouts.len() as i32;
         layouts.push(OdinLayout { field_count: 2 });
@@ -343,10 +338,7 @@ fn build_nyar_function_entry_arities(exec: &TargetExecutionPlan, operations: &[I
 ///
 /// 常量实参的位宽必须由它决定；计划侧没有这张表时，Call 操作数位只能回落到
 /// semantic MIR 合同（`Constant::Int` = Integer64），会把 i32 形参静默拓宽。
-fn build_nyar_function_param_types(
-    exec: &TargetExecutionPlan,
-    operations: &[ItemInstanceId],
-) -> crate::Result<BTreeMap<i32, Vec<NyarType>>> {
+fn build_nyar_function_param_types(exec: &TargetExecutionPlan, operations: &[ItemInstanceId]) -> crate::Result<BTreeMap<i32, Vec<NyarType>>> {
     let mut map = BTreeMap::new();
     for (index, instance) in operations.iter().enumerate() {
         let Some(view) = exec.get_function(instance)
@@ -534,7 +526,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         self.mir_fn.symbol
                     ));
                 };
-                let Some(output) = output else {
+                let Some(output) = output
+                else {
                     return Err(format!(
                         "OVM 闭包载体必须有结果槽：instance={instance:?} captured=[{}]（symbol=`{}`）",
                         captured.join(", "),
@@ -602,9 +595,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::StructNew { nominal, fields } => {
-                let layout = self.ctx.layout_by_nominal(*nominal).cloned().ok_or_else(|| {
-                    format!("OVM 聚合身份缺少布局合同：nominal {nominal:?} 不在计划的 AggregateLayoutPlan")
-                })?;
+                let layout = self
+                    .ctx
+                    .layout_by_nominal(*nominal)
+                    .cloned()
+                    .ok_or_else(|| format!("OVM 聚合身份缺少布局合同：nominal {nominal:?} 不在计划的 AggregateLayoutPlan"))?;
                 let layout_index = self.ensure_nyar_layout(&layout);
                 self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout_index);
                 let output = output.ok_or_else(|| format!("OVM StructNew 必须产出值槽（symbol=`{}`）", self.mir_fn.symbol))?;
@@ -618,9 +613,10 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::TupleGet { object, layout_id, index } => {
-                let layout = self.ctx.layout_by_id(*layout_id).cloned().ok_or_else(|| {
-                    format!("OVM TupleGet 布局身份缺少布局合同：layout_id={layout_id:?}（symbol=`{}`）", self.mir_fn.symbol)
-                })?;
+                let layout =
+                    self.ctx.layout_by_id(*layout_id).cloned().ok_or_else(|| {
+                        format!("OVM TupleGet 布局身份缺少布局合同：layout_id={layout_id:?}（symbol=`{}`）", self.mir_fn.symbol)
+                    })?;
                 if (*index as usize) >= layout.fields.len() {
                     return Err(format!(
                         "OVM TupleGet 位置索引 {index} 越界：layout `{}` 长度 {}（symbol=`{}`）",
@@ -1060,10 +1056,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     // 没有任何生产者把它约束在 i32 内，因此超界必须结构化失败，
                     // 不得发出一个永远匹配不上的错误常量。
                     let case_key = i32::try_from(*case_key).map_err(|_| {
-                        format!(
-                            "OVM StateDispatch 的 case_key {} 超出 i32 表示范围（symbol=`{}`）",
-                            *case_key, self.mir_fn.symbol
-                        )
+                        format!("OVM StateDispatch 的 case_key {} 超出 i32 表示范围（symbol=`{}`）", *case_key, self.mir_fn.symbol)
                     })?;
                     self.emit_operand(&MirOperand::Value(*state))?;
                     self.emitter.emit_const_i32(case_key);
@@ -1190,18 +1183,9 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     ///
     /// 位宽权威与内部调用同源（签名表），此处不按字面量值域猜测：签名表缺项时
     /// 结构化失败，绝不回落到 semantic MIR 的 `Integer64` 默认。
-    fn emit_external_arguments(
-        &mut self,
-        callee_name: &str,
-        instance: ItemInstanceId,
-        arguments: &[MirOperand],
-    ) -> crate::Result<()> {
+    fn emit_external_arguments(&mut self, callee_name: &str, instance: ItemInstanceId, arguments: &[MirOperand]) -> crate::Result<()> {
         let parameter_types = self.external_param_types_by_instance.get(&instance).cloned();
-        let import_symbol = self
-            .external_link_by_instance
-            .get(&instance)
-            .map(|link| link.locator_segments().join("::"))
-            .unwrap_or_default();
+        let import_symbol = self.external_link_by_instance.get(&instance).map(|link| link.locator_segments().join("::")).unwrap_or_default();
         for (index, argument) in arguments.iter().enumerate() {
             let actual = self.operand_actual_type(argument);
             let Some(expected) = parameter_types.as_ref().and_then(|types| types.get(index)).cloned()
@@ -1417,12 +1401,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 // 窄整数（`u8`/`i8`/`u16`/`i16`）与字符码位槽在 OVM 里以 i32 载体承载；
                 // 位宽只影响后续转换，这里按 i32 常量发射（不得发 i64，运行期会拒绝）。
                 Some(other) if ovm_int_shape(other).is_some_and(|shape| shape.bits <= 32) => {
-                    let narrowed = i32::try_from(*value).map_err(|_| {
-                        format!(
-                            "OVM 整数常量 {value} 超出目标 {other} 槽的 i32 载体范围；symbol=`{}`",
-                            self.mir_fn.symbol
-                        )
-                    })?;
+                    let narrowed = i32::try_from(*value)
+                        .map_err(|_| format!("OVM 整数常量 {value} 超出目标 {other} 槽的 i32 载体范围；symbol=`{}`", self.mir_fn.symbol))?;
                     self.emitter.emit_const_i32(narrowed);
                 }
                 Some(other) => {
@@ -1462,9 +1442,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     fn emit_operand_typed(&mut self, operand: &MirOperand, slot_ty: Option<&NyarType>) -> crate::Result<()> {
         match operand {
             MirOperand::Value(value) => {
-                let local = self.slots.value_locals.get(value).copied().ok_or_else(|| {
-                    format!("OVM SSA 值缺少预规划槽：%{}（symbol=`{}`）", value.0, self.mir_fn.symbol)
-                })?;
+                let local = self
+                    .slots
+                    .value_locals
+                    .get(value)
+                    .copied()
+                    .ok_or_else(|| format!("OVM SSA 值缺少预规划槽：%{}（symbol=`{}`）", value.0, self.mir_fn.symbol))?;
                 self.emit_load_local(local);
                 Ok(())
             }
@@ -1476,11 +1459,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
 
     /// SSA 值的物理槽类型（来自 `ExecutableSlotPlan` 的冻结类型）。
     fn value_slot_type(&self, value: MirValueRef) -> Option<NyarType> {
-        self.slots
-            .value_locals
-            .get(&value)
-            .and_then(|local| self.slots.local_types.get(usize::from(*local)))
-            .cloned()
+        self.slots.value_locals.get(&value).and_then(|local| self.slots.local_types.get(usize::from(*local))).cloned()
     }
 
     /// SSA 值的语义类型（操作数位常量回落用的同一张冻结表）。
@@ -1548,23 +1527,68 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
     /// `as` 的表示转换：只使用「源有符号性 + 目标位宽」的通用规则，不按类型名特判。
     ///
-    /// 整数（含 `Character` 的 32 位无符号码位）有确定语义；其余组合（浮点↔整数、
-    /// 布尔/文本↔数值）没有目标合同，必须结构化拒绝，禁止编造近似转换。
+    /// 整数↔整数（含 `Character` 的 32 位无符号码位）与整数↔`f64` 有确定语义；
+    /// `f32`、布尔/文本↔数值没有目标合同，必须结构化拒绝，禁止编造近似转换。
     fn emit_cast_conversion(&mut self, source_ty: &NyarType, target_ty: &NyarType) -> crate::Result<()> {
         if source_ty == target_ty {
             return Ok(());
+        }
+        if matches!(target_ty, NyarType::Float64) {
+            if let Some(source) = ovm_int_shape(source_ty) {
+                self.emit_int_to_f64(source);
+                return Ok(());
+            }
+        }
+        if matches!(source_ty, NyarType::Float64) {
+            if let Some(target) = ovm_int_shape(target_ty) {
+                self.emit_f64_to_int(target);
+                return Ok(());
+            }
         }
         let (Some(source), Some(target)) = (ovm_int_shape(source_ty), ovm_int_shape(target_ty))
         else {
             return Err(format!(
                 "OVM 后端没有 `{source_ty}` → `{target_ty}` 的确定转换语义（symbol=`{}`）：\
-                 当前只冻结整数↔整数（含 `Character`）的位宽/符号规则；\
-                 浮点与整数、布尔/文本与数值之间的 `as` 缺少目标合同，不得退化为近似转换",
+                 当前只冻结整数↔整数（含 `Character`）与整数↔`f64` 的位宽/符号/截断规则；\
+                 `f32`、布尔/文本与数值之间的 `as` 缺少目标合同，不得退化为近似转换",
                 self.mir_fn.symbol
             ));
         };
         self.emit_int_cast_steps(source, target);
         Ok(())
+    }
+
+    /// 整数 → `f64` 的落地序列。
+    ///
+    /// 无符号窄整数先在 `i32` 载体上规范化（掩码成非负），再按符号性选择
+    /// `i32_to_f64` / `u32_to_f64`，64 位同理选择 `i64_to_f64` / `u64_to_f64`。
+    /// 有符号与无符号必须分开：混用会让 `u64` 的 2^63 以上值静默变成负数。
+    fn emit_int_to_f64(&mut self, source: OvmIntShape) {
+        if source.bits < 32 {
+            self.emit_i32_canonicalize(source);
+        }
+        let symbol = match (source.bits == 64, source.signed) {
+            (true, true) => "i64_to_f64",
+            (true, false) => "u64_to_f64",
+            (false, true) => "i32_to_f64",
+            (false, false) => "u32_to_f64",
+        };
+        self.emitter.emit_call_import(symbol, 1);
+    }
+
+    /// `f64` → 整数的落地序列：checked 转换（朝零截断，NaN / 越界结构化失败），
+    /// 窄目标再按目标位宽规范化（与整数收窄的位截断口径一致）。
+    fn emit_f64_to_int(&mut self, target: OvmIntShape) {
+        let symbol = match (target.bits == 64, target.signed) {
+            (true, true) => "f64_to_i64_checked",
+            (true, false) => "f64_to_u64_checked",
+            (false, true) => "f64_to_i32_checked",
+            (false, false) => "f64_to_u32_checked",
+        };
+        self.emitter.emit_call_import(symbol, 1);
+        if target.bits < 32 {
+            self.emit_i32_canonicalize(target);
+        }
     }
 
     /// 整数表示转换的落地指令序列。

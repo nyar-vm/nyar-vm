@@ -60,10 +60,21 @@ fn run_import(symbol: &str, constants: Vec<OdinConstant>, argc: i32) -> Value {
     OdinVm::new().run(&module, "main", Vec::new()).expect("端到端执行必须成功")
 }
 
+fn run_import_err(symbol: &str, constants: Vec<OdinConstant>, argc: i32) -> OdinRuntimeError {
+    let module = import_module(symbol, constants, argc);
+    OdinVm::new().run(&module, "main", Vec::new()).expect_err("端到端执行必须结构化失败")
+}
+
 #[test]
 fn float_symbols_are_registered() {
     assert_eq!(parse_host_op("i32_to_f64"), Some(HostOp::I32ToF64));
     assert_eq!(parse_host_op("i64_to_f64"), Some(HostOp::I64ToF64));
+    assert_eq!(parse_host_op("u32_to_f64"), Some(HostOp::U32ToF64));
+    assert_eq!(parse_host_op("u64_to_f64"), Some(HostOp::U64ToF64));
+    assert_eq!(parse_host_op("f64_to_i32_checked"), Some(HostOp::F64ToI32Checked));
+    assert_eq!(parse_host_op("f64_to_u32_checked"), Some(HostOp::F64ToU32Checked));
+    assert_eq!(parse_host_op("f64_to_i64_checked"), Some(HostOp::F64ToI64Checked));
+    assert_eq!(parse_host_op("f64_to_u64_checked"), Some(HostOp::F64ToU64Checked));
     assert_eq!(parse_host_op("f64_add"), Some(HostOp::F64Add));
     assert_eq!(parse_host_op("f64_sub"), Some(HostOp::F64Sub));
     assert_eq!(parse_host_op("f64_mul"), Some(HostOp::F64Mul));
@@ -302,4 +313,155 @@ fn f64_to_i32_saturates_through_call_import() {
 fn f64_to_i64_saturates_through_call_import() {
     assert_eq!(run_import("f64_to_i64", vec![OdinConstant::Float64(-1.0e300)], 1), Value::I64(i64::MIN));
     assert_eq!(run_import("f64_to_i64", vec![OdinConstant::Float64(f64::INFINITY)], 1), Value::I64(i64::MAX));
+}
+
+// ---- 无符号整数转 f64：按无符号位模式解释 ----
+
+#[test]
+fn u32_to_f64_interprets_unsigned_bit_pattern() {
+    let convert = |value: i32| match run(HostOp::U32ToF64, &[Value::I32(value)]).expect("i32 全域必须可转") {
+        Value::F64(value) => value,
+        other => panic!("u32_to_f64 必须返回 F64，实际 {other:?}"),
+    };
+
+    assert_eq!(convert(0), 0.0);
+    assert_eq!(convert(-1), 4_294_967_295.0, "i32 位模式 -1 按 u32 解释是 u32::MAX");
+    assert_eq!(convert(i32::MIN), 2_147_483_648.0, "i32::MIN 按 u32 解释是 2^31");
+    assert_eq!(convert(i32::MAX), 2_147_483_647.0);
+    let error = run(HostOp::U32ToF64, &[Value::I64(1)]).expect_err("非 i32 载体必须结构化失败");
+    assert!(matches!(error, OdinRuntimeError::TypeMismatch { expected: "i32", .. }), "实际 {error:?}");
+}
+
+#[test]
+fn u64_to_f64_interprets_unsigned_bit_pattern() {
+    let convert = |value: i64| match run(HostOp::U64ToF64, &[Value::I64(value)]).expect("i64 载体全域必须可转") {
+        Value::F64(value) => value,
+        other => panic!("u64_to_f64 必须返回 F64，实际 {other:?}"),
+    };
+
+    assert_eq!(convert(0), 0.0);
+    assert_eq!(convert(1), 1.0);
+    assert_eq!(convert(i64::MIN), 9_223_372_036_854_775_808.0, "2^63 必须为正（无符号解释）");
+    assert_eq!(convert(-1), 18_446_744_073_709_551_616.0, "u64::MAX 就近舍入到 2^64");
+}
+
+#[test]
+fn u64_to_f64_executes_through_call_import() {
+    // `u64::MAX` 无法直接静态表示：用 `1 << 63` 构造 2^63（有符号解释会是 i64::MIN）。
+    let mut code = Vec::new();
+    emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+    emit_imm1(&mut code, OdinHeadCode::Constant, 1);
+    emit_imm2(&mut code, OdinHeadCode::CallImport, 0, 2); // i64_shl
+    emit_imm2(&mut code, OdinHeadCode::CallImport, 1, 1); // u64_to_f64
+    emit_plain(&mut code, OdinHeadCode::Return);
+    let data = OdinModuleData {
+        version: Odin_VERSION,
+        name: "u64_to_f64_e2e".to_string(),
+        constants: vec![OdinConstant::Integer32(1), OdinConstant::Integer32(63)],
+        functions: vec![OdinFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
+        imports: vec![
+            OdinImport { kind: OdinImportKind::Function, module_name: "nyar.host".to_string(), symbol_name: "i64_shl".to_string() },
+            OdinImport { kind: OdinImportKind::Function, module_name: "nyar.host".to_string(), symbol_name: "u64_to_f64".to_string() },
+        ],
+        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
+        witness_entries: Vec::new(),
+        code_bytes: code,
+        globals: Vec::new(),
+        init_function_indices: Vec::new(),
+        layouts: Vec::new(),
+    };
+    let module = LoadedModule::from_bytes(&encode_module(&data)).expect("模块必须加载成功");
+    assert_eq!(
+        OdinVm::new().run(&module, "main", Vec::new()).expect("端到端执行"),
+        Value::F64(9_223_372_036_854_775_808.0),
+        "2^63 走真实 CallImport 必须保持正号"
+    );
+}
+
+// ---- f64 → 整数 checked：朝零截断，NaN / 越界结构化失败 ----
+
+#[test]
+fn f64_to_i32_checked_truncates_and_fails_out_of_range() {
+    let convert = |value: f64| match run(HostOp::F64ToI32Checked, &[Value::F64(value)]).expect("界内必须成功") {
+        Value::I32(value) => value,
+        other => panic!("f64_to_i32_checked 必须返回 I32，实际 {other:?}"),
+    };
+
+    assert_eq!(convert(2.75), 2, "朝零截断");
+    assert_eq!(convert(-2.75), -2, "朝零截断（不是向下取整）");
+    assert_eq!(convert(2_147_483_647.9), i32::MAX, "截断后仍在界内的上边界");
+    assert_eq!(convert(-2_147_483_648.9), i32::MIN, "截断后落在闭区间下界");
+
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 2_147_483_648.0, -2_147_483_649.0, 1.0e300] {
+        let error = run(HostOp::F64ToI32Checked, &[Value::F64(bad)]).expect_err("NaN / 越界必须结构化失败");
+        assert!(matches!(error, OdinRuntimeError::ArithmeticOverflow { .. }), "{bad} 实际 {error:?}");
+    }
+}
+
+#[test]
+fn f64_to_u32_checked_rejects_negative_and_overflow() {
+    let convert = |value: f64| match run(HostOp::F64ToU32Checked, &[Value::F64(value)]).expect("界内必须成功") {
+        Value::I32(value) => value,
+        other => panic!("f64_to_u32_checked 必须返回 I32，实际 {other:?}"),
+    };
+
+    assert_eq!(convert(0.0), 0);
+    assert_eq!(convert(123.9), 123);
+    assert_eq!(convert(-0.5), 0, "朝零截断得到 -0，仍在无符号界内");
+    assert_eq!(convert(4_294_967_295.0), -1, "u32::MAX 以 i32 位模式 -1 承载");
+
+    for bad in [f64::NAN, -1.0, 4_294_967_296.0, f64::INFINITY, f64::NEG_INFINITY] {
+        let error = run(HostOp::F64ToU32Checked, &[Value::F64(bad)]).expect_err("负值 / 越界必须结构化失败");
+        assert!(matches!(error, OdinRuntimeError::ArithmeticOverflow { .. }), "{bad} 实际 {error:?}");
+    }
+}
+
+#[test]
+fn f64_to_i64_checked_truncates_and_fails_out_of_range() {
+    let convert = |value: f64| match run(HostOp::F64ToI64Checked, &[Value::F64(value)]).expect("界内必须成功") {
+        Value::I64(value) => value,
+        other => panic!("f64_to_i64_checked 必须返回 I64，实际 {other:?}"),
+    };
+
+    assert_eq!(convert(2.75), 2, "朝零截断");
+    assert_eq!(convert(-2.75), -2, "朝零截断（不是向下取整）");
+    assert_eq!(convert(-9_223_372_036_854_775_808.0), i64::MIN, "-2^63 恰在闭区间下界");
+    assert_eq!(convert(9_223_372_036_854_774_784.0), 9_223_372_036_854_774_784, "2^63 - 1024 是 f64 可表示的最大 i64 值");
+
+    for bad in [f64::NAN, 9_223_372_036_854_775_808.0, -1.0e300, 1.0e300, f64::INFINITY] {
+        let error = run(HostOp::F64ToI64Checked, &[Value::F64(bad)]).expect_err("NaN / 越界必须结构化失败");
+        assert!(matches!(error, OdinRuntimeError::ArithmeticOverflow { .. }), "{bad} 实际 {error:?}");
+    }
+}
+
+#[test]
+fn f64_to_u64_checked_rejects_negative_and_overflow() {
+    let convert = |value: f64| match run(HostOp::F64ToU64Checked, &[Value::F64(value)]).expect("界内必须成功") {
+        Value::I64(value) => value,
+        other => panic!("f64_to_u64_checked 必须返回 I64，实际 {other:?}"),
+    };
+
+    assert_eq!(convert(0.0), 0);
+    assert_eq!(convert(123.9), 123);
+    assert_eq!(convert(-0.5), 0, "朝零截断得到 -0，仍在无符号界内");
+    assert_eq!(convert(18_446_744_073_709_549_568.0), (18_446_744_073_709_549_568_u64) as i64, "2^64 - 2048 可表示");
+
+    for bad in [f64::NAN, -1.0, 18_446_744_073_709_551_616.0, 1.0e300, f64::NEG_INFINITY] {
+        let error = run(HostOp::F64ToU64Checked, &[Value::F64(bad)]).expect_err("负值 / 越界必须结构化失败");
+        assert!(matches!(error, OdinRuntimeError::ArithmeticOverflow { .. }), "{bad} 实际 {error:?}");
+    }
+}
+
+#[test]
+fn f64_to_i64_checked_executes_through_call_import() {
+    assert_eq!(run_import("f64_to_i64_checked", vec![OdinConstant::Float64(-2.75)], 1), Value::I64(-2));
+}
+
+#[test]
+fn f64_to_i64_checked_traps_out_of_range_through_call_import() {
+    let error = run_import_err("f64_to_i64_checked", vec![OdinConstant::Float64(1.0e30)], 1);
+    assert!(
+        matches!(error, OdinRuntimeError::ArithmeticOverflow { operation: "host f64_to_i64_checked" }),
+        "越界必须走结构化失败，实际 {error:?}"
+    );
 }
