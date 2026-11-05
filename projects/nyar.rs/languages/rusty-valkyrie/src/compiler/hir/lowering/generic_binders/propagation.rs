@@ -41,6 +41,11 @@ pub(crate) fn propagate_declared_generic_binders(ty: &mut ValkyrieType, generics
                 propagate_declared_generic_binders(argument, generics);
             }
         }
+        ValkyrieType::LabeledTuple(fields) => {
+            for field in fields {
+                propagate_declared_generic_binders(&mut field.ty, generics);
+            }
+        }
         ValkyrieType::Array(inner) | ValkyrieType::Nullable(inner) | ValkyrieType::FixedArray { element: inner, .. } => {
             propagate_declared_generic_binders(inner, generics);
         }

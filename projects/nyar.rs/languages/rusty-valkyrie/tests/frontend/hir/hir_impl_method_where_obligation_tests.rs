@@ -273,6 +273,72 @@ imply Box<U> {
 }
 
 #[test]
+fn labeled_tuple_associated_type_freezes_owner_generic_binder() {
+    let compiler = ValkyrieCompiler::default();
+    let module = compiler
+        .compile_source(
+            r#"
+trait Carrier { type Item; micro probe(self): i64 }
+structure Holder<T> { _value: T }
+imply Holder<T>: Carrier {
+    type Item = (ordinal: usize, value: T);
+    micro probe(self): i64 {
+        return 0
+    }
+}
+"#,
+        )
+        .expect("关联类型是命名元组时，冻结传播必须与冻结检测同样下钻到字段类型");
+
+    let implementation = &module.impls[0];
+    let ValkyrieType::Nominal { declaration, .. } = &implementation.target
+    else {
+        panic!("impl target 必须冻结为名义身份，got {:?}", implementation.target)
+    };
+    let declaration = *declaration;
+    let item = implementation
+        .associated_type_impls
+        .iter()
+        .find(|item| item.name.as_str() == "Item")
+        .expect("关联类型 `Item` 必须保留在 impl 里");
+    let ValkyrieType::LabeledTuple(fields) = &item.concrete_type
+    else {
+        panic!("关联类型 `Item` 必须仍是命名元组，got {:?}", item.concrete_type)
+    };
+    let value = fields.iter().find(|field| field.name.as_str() == "value").expect("命名元组必须有 `value` 字段");
+    let ValkyrieType::Generic(generic) = &value.ty
+    else {
+        panic!("`value` 字段类型必须冻结为泛型身份，got {:?}", value.ty)
+    };
+    let binder = generic.binder.expect("命名元组字段内的 owner 泛型必须有 binder");
+    assert_eq!(binder.owner, declaration, "命名元组字段 binder 必须指向 `Holder` 声明");
+    assert_eq!(binder.ordinal, 0, "`Holder` 的首个泛型参数 ordinal 为 0");
+}
+
+#[test]
+fn labeled_tuple_associated_type_with_unfrozen_generic_still_rejected() {
+    let compiler = ValkyrieCompiler::default();
+    let error = compiler
+        .compile_source(
+            r#"
+trait Carrier { type Item; micro probe(self): i64 }
+structure Holder<T> { _value: T }
+imply Holder<U>: Carrier {
+    type Item = (ordinal: usize, value: U);
+    micro probe(self): i64 {
+        return 0
+    }
+}
+"#,
+        )
+        .expect_err("命名元组字段内无法冻结的泛型仍须结构化失败，不得静默放行");
+
+    let rendered = error.to_string();
+    assert!(rendered.contains("Item"), "诊断必须点名关联类型，got {rendered}");
+    assert!(rendered.contains('U'), "诊断必须点名未绑定泛型，got {rendered}");
+}
+
+#[test]
 fn concrete_target_without_evidence_is_still_rejected() {
     let compiler = ValkyrieCompiler::default();
     assert!(
