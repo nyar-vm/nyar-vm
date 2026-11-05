@@ -35,6 +35,7 @@ const I32: NyarType = NyarType::Integer32 { signed: true };
 
 const UTF8_TEXT_LAYOUT_ID: LayoutId = 7;
 const NO_BYTES_LAYOUT_ID: LayoutId = 9;
+const HOLDER_LAYOUT_ID: LayoutId = 11;
 
 fn byte_array() -> NyarType {
     NyarType::Array(Box::new(NyarType::Integer8 { signed: false }))
@@ -157,6 +158,106 @@ fn wasm_host_string_handle_without_layout_does_not_synthesize_intern_import() {
 fn wasm_managed_layout_without_byte_array_field_fails_structured_at_freeze() {
     let error = lower(utf8_length_call_main(Some(NO_BYTES_LAYOUT_ID)), layout_plan(NO_BYTES_LAYOUT_ID, "HostHandleText", long_array()))
         .expect_err("缺少整数字节数组字段的 layout 必须在目标计划冻结期结构化失败");
+    assert!(error.contains("缺少整数字节数组字段"), "错误必须指明冻结失败的缺失事实: {error}");
+}
+
+fn reference_layout(id: LayoutId, name: &str, fields: Vec<FieldLayout>) -> AggregateLayout {
+    AggregateLayout { id, name: name.to_string(), namespace: String::new(), key: None, storage: StorageKind::Reference, size: 4, align: 4, fields }
+}
+
+fn holder_and_text_layouts() -> AggregateLayoutPlan {
+    AggregateLayoutPlan {
+        layouts: vec![
+            reference_layout(
+                UTF8_TEXT_LAYOUT_ID,
+                "Utf8Text",
+                vec![FieldLayout { name: "_repr".to_string(), ty: byte_array(), offset: 0, size: 4, align: 4 }],
+            ),
+            reference_layout(
+                HOLDER_LAYOUT_ID,
+                "Holder",
+                vec![FieldLayout { name: "key".to_string(), ty: UTF8, offset: 0, size: 4, align: 4 }],
+            ),
+        ],
+        ..Default::default()
+    }
+}
+
+/// `main(holder: Holder)`：`%1 = holder.key`（字段物理字节是 i32 宿主句柄）；
+/// `%2 = utf8_length(%1)`；return %2。`bound_layout` 决定字段读结果槽是否携带已登记
+/// gc struct layout——即容器字段读形态的触发开关。
+fn utf8_field_get_main(bound_layout: Option<LayoutId>) -> ExecutableFunction {
+    let holder = NyarType::Nominal { layout: HOLDER_LAYOUT_ID, spelling: Identifier::new("Holder") };
+    let tuple_get = Instruction::from_kind(InstructionKind::TupleGet {
+        object: Operand::Value(ValueRef(0)),
+        layout_id: HOLDER_LAYOUT_ID,
+        index: 0,
+    });
+    let call = Instruction::from_kind(InstructionKind::Call {
+        callee: Operand::Item(utf8_length_callee()),
+        arguments: vec![Operand::Value(ValueRef(1))],
+    });
+    let block = Block {
+        id: BlockRef(0),
+        label: "entry".to_string(),
+        parameters: vec![ValueRef(0)],
+        instructions: vec![Instruction { results: vec![ValueRef(1)], ..tuple_get }, Instruction { results: vec![ValueRef(2)], ..call }],
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(2))) },
+    };
+    ExecutableFunction {
+        symbol: "main".to_string(),
+        return_type: I32,
+        param_types: vec![holder.clone()],
+        value_types: BTreeMap::from([(ValueRef(0), holder), (ValueRef(1), UTF8), (ValueRef(2), I32)]),
+        value_layouts: bound_layout.map(|id| BTreeMap::from([(ValueRef(1), id)])).unwrap_or_default(),
+        return_layout: None,
+        entry: BlockRef(0),
+        values: Vec::new(),
+        suspend_points: Vec::new(),
+        frame_layouts: Vec::new(),
+        continuations: Vec::new(),
+        case_chains: Vec::new(),
+        #[allow(deprecated)]
+        state_machine: None,
+        suspend_plan: None,
+        blocks: vec![block],
+        diagnostics: Vec::new(),
+    }
+}
+
+/// 正向：聚合字段读（`TupleGet`）与数组元素读同属宿主 i32 句柄载体，字段结果槽绑定
+/// `Utf8Text` layout 时必须在目标计划阶段冻结物化配方，并按需合成
+/// `env::host_utf8_extract`。修复前该形态在编码期以「缺少物化配方」结构化失败。
+#[test]
+fn wasm_utf8_field_get_boundary_freezes_extract_recipe() {
+    let module = lower(utf8_field_get_main(Some(UTF8_TEXT_LAYOUT_ID)), holder_and_text_layouts())
+        .expect("utf8 字段读命中宿主 i32 句柄边界时必须冻结物化配方");
+    let imports = import_keys(&module);
+    assert!(
+        imports.contains(&("env".to_string(), "host_utf8_extract".to_string())),
+        "字段读边界必须按需合成 `env::host_utf8_extract`: {imports:?}"
+    );
+}
+
+/// 按需合成：字段读结果槽未绑定注册 layout 时仍走 i32 句柄直通，不得追加物化导入。
+#[test]
+fn wasm_utf8_field_get_boundary_without_layout_keeps_i32_handle() {
+    let module = lower(utf8_field_get_main(None), holder_and_text_layouts()).expect("未绑定 layout 的字段读必须保持 i32 句柄");
+    let imports = import_keys(&module);
+    assert!(
+        !imports.contains(&("env".to_string(), "host_utf8_extract".to_string())),
+        "无 managed 字段读边界时不得合成物化导入: {imports:?}"
+    );
+}
+
+/// 负向：字段读命中已登记 gc struct layout 但该 layout 缺少整数字节数组字段时，
+/// 物化配方无法冻结，必须结构化失败；禁止静默降级或留下运行期 trap。
+#[test]
+fn wasm_utf8_field_get_layout_without_byte_array_fails_structured() {
+    let mut layouts = holder_and_text_layouts();
+    layouts.layouts.extend(layout_plan(NO_BYTES_LAYOUT_ID, "HostHandleText", long_array()).layouts);
+    let error = lower(utf8_field_get_main(Some(NO_BYTES_LAYOUT_ID)), layouts)
+        .expect_err("缺少整数字节数组字段的字段读边界必须在冻结期结构化失败");
     assert!(error.contains("缺少整数字节数组字段"), "错误必须指明冻结失败的缺失事实: {error}");
 }
 

@@ -1149,8 +1149,9 @@ fn freeze_managed_utf8_return_to_host_handle_plans(
 /// 这些站点的结果 SSA 值携带已登记 gc struct layout 时物理槽是 anyref；编码期必须
 /// 按这张配方表把 i32 句柄物化为 managed 字符串 struct，禁止按符号名特判，也不得把
 /// 计划槽降级为 i32。扫描命中边界的 layout：MIR `ArrayGet` 臂与
-/// `[wasm_operator("array.get")]` 冻结绑定调用，以及 callee 已登记宿主导入下标的
-/// `Call`，其结果值为宿主字符串类型且 layout 已登记 gc struct。字节字段槽与
+/// `[wasm_operator("array.get")]` 冻结绑定调用，物理字节为 i32 的 `TupleGet` /
+/// `FieldGet` 聚合字段读，以及 callee 已登记宿主导入下标的 `Call`；这些站点的结果值
+/// 为宿主字符串类型且 layout 已登记 gc struct 时即命中。字节字段槽与
 /// arraytype 推导与库导出物化冻结同法；合成导入 `env::host_utf8_extract` 仅在确有
 /// 命中边界的 layout 时追加到导入表尾部。WASI 轨没有 `host_utf8_extract` 宿主能力，
 /// 装配侧不调用本函数（空表），编码期命中边界即结构化失败，与 WASI 既有 managed
@@ -1180,6 +1181,22 @@ fn freeze_utf8_host_handle_materialize_plans(
             for instruction in &block.instructions {
                 let is_handle_boundary_source = match &instruction.kind {
                     MirInstructionKind::ArrayGet { .. } => true,
+                    // 聚合字段读与数组元素读同属宿主 i32 句柄载体：字段物理字节是 i32
+                    // 时（`utf8`/`utf16` 已按同一编组合同落成句柄），结果 SSA 若带已登记
+                    // gc struct layout 就必须在编码期物化，配方要在这里一并冻结。
+                    MirInstructionKind::TupleGet { layout_id, index, .. } => {
+                        ctx.layout_by_id(*layout_id)
+                            .and_then(|layout| layout.fields.get(*index as usize))
+                            .map(|field| wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref))
+                            .transpose()?
+                            .is_some_and(|byte| byte == VALTYPE_I32)
+                    }
+                    MirInstructionKind::FieldGet { field, .. } => {
+                        ctx.field_layout_by_id(*field)
+                            .map(|(_, field_layout, _)| wasm_gc_field_type_byte_for_glue(&field_layout.ty, js_glue_utf8_as_anyref))
+                            .transpose()?
+                            .is_some_and(|byte| byte == VALTYPE_I32)
+                    }
                     MirInstructionKind::Call { callee: MirOperand::Item(callee), .. } => {
                         matches!(
                             callee_wasm_operator.get(callee),
