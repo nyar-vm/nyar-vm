@@ -171,19 +171,66 @@ pub enum OverloadResolutionError {
     },
 }
 
+/// 数字字面量对候选数值形参的绑定代价。
+///
+/// 只在同匹配类别候选并列时作为裁决输入，不改变单候选的绑定结果：`fits` 表示
+/// 实参字面量的值能否落入形参类型，`coercions` 表示相对字面量自然类型需要改绑的
+/// 宽度层数。两项仍不能唯一裁决时继续走声明身份 / inherent 规则，最后如实报歧义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NumericLiteralBinding {
+    /// 实参字面量的值是否都能落入候选的数值形参类型。
+    pub fits: bool,
+    /// 相对字面量自然类型需要改绑的宽度层数（越少越接近默认推导）。
+    pub coercions: usize,
+}
+
 /// 按匹配类别的既定优先级选出唯一候选；并列时报歧义。
 pub fn resolve_overload(candidates: &[OverloadCandidate]) -> Result<OverloadCandidate, OverloadResolutionError> {
+    resolve_overload_inner(candidates, None, None)
+}
+
+/// 与 [`resolve_overload`] 相同，但当全部并列候选都带数字字面量绑定代价时，
+/// 先按「值可落入形参类型 → 改绑层数最少」裁决；无法唯一裁决时回落既定规则。
+pub(crate) fn resolve_overload_with_numeric_literals(
+    candidates: &[OverloadCandidate],
+    bindings: &[Option<NumericLiteralBinding>],
+    contextual_type: Option<&ValkyrieType>,
+) -> Result<OverloadCandidate, OverloadResolutionError> {
+    resolve_overload_inner(candidates, Some(bindings), contextual_type)
+}
+
+fn resolve_overload_inner(
+    candidates: &[OverloadCandidate],
+    bindings: Option<&[Option<NumericLiteralBinding>]>,
+    contextual_type: Option<&ValkyrieType>,
+) -> Result<OverloadCandidate, OverloadResolutionError> {
     let best_rank = candidates.iter().map(|candidate| rank(&candidate.match_kind)).min().ok_or(OverloadResolutionError::NoMatch)?;
     let mut tied = Vec::new();
-    for candidate in candidates.iter().filter(|candidate| rank(&candidate.match_kind) == best_rank) {
+    let mut tied_bindings = Vec::new();
+    for (index, candidate) in candidates.iter().enumerate().filter(|(_, candidate)| rank(&candidate.match_kind) == best_rank) {
         if !tied.contains(&candidate) {
             tied.push(candidate);
+            tied_bindings.push(bindings.and_then(|bindings| bindings.get(index).copied().flatten()));
         }
     }
     match tied.as_slice() {
         [selected] => Ok((*selected).clone()),
         [] => Err(OverloadResolutionError::NoMatch),
         ambiguous => {
+            // 调用点期望类型是权威上下文：并列候选中恰有一个返回该类型时直接采用，
+            // 这比字面量默认宽度更可靠。
+            if let Some(contextual_type) = contextual_type
+                && let Some(selected) = select_by_return_context(ambiguous, contextual_type)
+            {
+                return Ok(selected.clone());
+            }
+            // 全部并列候选都能量化字面量绑定代价时才裁决；只要有一个无法比较，
+            // 就不得用不完整信息猜测，直接回落既定规则。
+            if tied_bindings.iter().all(Option::is_some)
+                && let Some(selected) = select_by_numeric_literal_binding(ambiguous, &tied_bindings)
+            {
+                return Ok(selected.clone());
+            }
             // 同优先级时携带声明身份的候选优先，而不是让两个权威并列。
             let declared = ambiguous.iter().filter(|candidate| candidate.declaration.is_some()).collect::<Vec<_>>();
             if let [selected] = declared.as_slice() {
@@ -202,11 +249,135 @@ pub fn resolve_overload(candidates: &[OverloadCandidate]) -> Result<OverloadCand
     }
 }
 
+/// 并列候选中恰有一个返回调用点期望类型时选中它；否则返回 `None`，不得猜测。
+fn select_by_return_context<'a>(
+    ambiguous: &[&'a OverloadCandidate],
+    contextual_type: &ValkyrieType,
+) -> Option<&'a OverloadCandidate> {
+    let matching = ambiguous
+        .iter()
+        .filter(|candidate| candidate.signature.return_type == *contextual_type)
+        .collect::<Vec<_>>();
+    match matching.as_slice() {
+        [selected] => Some(**selected),
+        _ => None,
+    }
+}
+
+/// 在并列候选中按数字字面量绑定代价选出唯一者：先要求字面量值能落入形参类型，
+/// 再取改绑层数最少者；仍不唯一则返回 `None`，交由上层继续按身份规则裁决。
+fn select_by_numeric_literal_binding<'a>(
+    ambiguous: &[&'a OverloadCandidate],
+    bindings: &[Option<NumericLiteralBinding>],
+) -> Option<&'a OverloadCandidate> {
+    let fitting = ambiguous
+        .iter()
+        .zip(bindings)
+        .filter(|(_, binding)| matches!(binding, Some(binding) if binding.fits))
+        .collect::<Vec<_>>();
+    let min_coercions = fitting.iter().filter_map(|(_, binding)| binding.as_ref().map(|binding| binding.coercions)).min()?;
+    let narrowed = fitting
+        .into_iter()
+        .filter(|(_, binding)| binding.as_ref().is_some_and(|binding| binding.coercions == min_coercions))
+        .collect::<Vec<_>>();
+    match narrowed.as_slice() {
+        [(selected, _)] => Some(**selected),
+        _ => None,
+    }
+}
+
 pub(crate) fn rank(match_kind: &OverloadMatchKind) -> (u8, usize) {
     match match_kind {
         OverloadMatchKind::NominalExact => (0, 0),
         OverloadMatchKind::NominalSubtype { distance } => (1, *distance),
         OverloadMatchKind::Trait => (2, 0),
         OverloadMatchKind::Row => (3, 0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn operator_candidate(owner: &str, ty: ValkyrieType) -> OverloadCandidate {
+        OverloadCandidate::new(
+            NamePath::new(vec![Identifier::new("infix"), Identifier::new(owner)]),
+            OverloadDomain::Function,
+            vec![ty.clone(), ty.clone()],
+            ty,
+            OverloadMatchKind::NominalExact,
+        )
+    }
+
+    fn selected_owner(resolved: Result<OverloadCandidate, OverloadResolutionError>) -> String {
+        resolved
+            .expect("数字字面量并列候选应能唯一裁决")
+            .symbol
+            .parts()
+            .last()
+            .expect("候选符号非空")
+            .as_str()
+            .to_owned()
+    }
+
+    #[test]
+    fn numeric_literal_binding_prefers_default_width() {
+        let candidates = vec![
+            operator_candidate("i32", ValkyrieType::Integer32 { signed: true }),
+            operator_candidate("i64", ValkyrieType::Integer64 { signed: true }),
+            operator_candidate("u32", ValkyrieType::Integer32 { signed: false }),
+        ];
+        let bindings = vec![
+            Some(NumericLiteralBinding { fits: true, coercions: 0 }),
+            Some(NumericLiteralBinding { fits: true, coercions: 2 }),
+            Some(NumericLiteralBinding { fits: true, coercions: 2 }),
+        ];
+        assert_eq!(selected_owner(resolve_overload_with_numeric_literals(&candidates, &bindings, None)), "i32");
+    }
+
+    #[test]
+    fn return_context_overrides_literal_default_width() {
+        let candidates = vec![
+            operator_candidate("i32", ValkyrieType::Integer32 { signed: true }),
+            operator_candidate("i64", ValkyrieType::Integer64 { signed: true }),
+            operator_candidate("u32", ValkyrieType::Integer32 { signed: false }),
+        ];
+        let bindings = vec![
+            Some(NumericLiteralBinding { fits: true, coercions: 0 }),
+            Some(NumericLiteralBinding { fits: true, coercions: 2 }),
+            Some(NumericLiteralBinding { fits: true, coercions: 2 }),
+        ];
+        let contextual = ValkyrieType::Integer64 { signed: true };
+        assert_eq!(
+            selected_owner(resolve_overload_with_numeric_literals(&candidates, &bindings, Some(&contextual))),
+            "i64"
+        );
+    }
+
+    #[test]
+    fn numeric_literal_binding_prefers_representable_wider_candidate() {
+        let candidates = vec![
+            operator_candidate("i32", ValkyrieType::Integer32 { signed: true }),
+            operator_candidate("i64", ValkyrieType::Integer64 { signed: true }),
+        ];
+        let bindings = vec![
+            Some(NumericLiteralBinding { fits: false, coercions: 1 }),
+            Some(NumericLiteralBinding { fits: true, coercions: 1 }),
+        ];
+        assert_eq!(selected_owner(resolve_overload_with_numeric_literals(&candidates, &bindings, None)), "i64");
+    }
+
+    #[test]
+    fn numeric_literal_binding_tie_stays_ambiguous() {
+        let candidates = vec![
+            operator_candidate("i32", ValkyrieType::Integer32 { signed: true }),
+            operator_candidate("i64", ValkyrieType::Integer64 { signed: true }),
+        ];
+        let bindings =
+            vec![Some(NumericLiteralBinding { fits: true, coercions: 1 }), Some(NumericLiteralBinding { fits: true, coercions: 1 })];
+        assert!(matches!(
+            resolve_overload_with_numeric_literals(&candidates, &bindings, None),
+            Err(OverloadResolutionError::Ambiguous { .. })
+        ));
     }
 }

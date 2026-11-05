@@ -22,7 +22,10 @@ use crate::compiler::{
 };
 
 use crate::compiler::hir::overload::{
-    diagnostics::{OverloadCandidate, OverloadDomain, OverloadMatchKind, OverloadResolutionError},
+    diagnostics::{
+        NumericLiteralBinding, OverloadCandidate, OverloadDomain, OverloadMatchKind, OverloadResolutionError,
+        resolve_overload_with_numeric_literals,
+    },
     resolve_call::pattern_extractor_receiver_type,
     substitution::{
         extract_singleton_type_name, instantiate_trait_bound_candidate, instantiate_trait_method_candidate, substitute_self_type,
@@ -414,6 +417,64 @@ pub(crate) fn try_resolve_type_static_method(
     })
 }
 
+/// 数字字面量实参相对候选数值形参的绑定代价。
+///
+/// 只在实际实参与形参一一对应且至少有一个可评分字面量时返回；任一非字面量实参
+/// 不影响其余槽位。形参不是数值/浮点/字符形参时跳过该槽，不把非数值槽算进代价。
+fn numeric_literal_binding(
+    candidate: &OverloadCandidate,
+    args: &[HirCallArgument],
+    type_relations: &TypeRelationContext,
+    locals: &BTreeMap<String, ValkyrieType>,
+) -> Option<NumericLiteralBinding> {
+    if candidate.signature.params.len() != args.len() {
+        return None;
+    }
+    let mut binding = NumericLiteralBinding { fits: true, coercions: 0 };
+    let mut scored = false;
+    for (arg, expected) in args.iter().zip(&candidate.signature.params) {
+        let HirExprKind::Literal(literal) = &arg.value.kind else {
+            continue;
+        };
+        let value = match literal {
+            HirLiteral::Integer64(value) if type_relations.is_numeric_type(expected) => Some(*value),
+            HirLiteral::Byte(value) if type_relations.is_numeric_type(expected) => Some(*value as i64),
+            HirLiteral::Character(value)
+                if type_relations.is_character_literal_formal(expected) || type_relations.is_numeric_type(expected) =>
+            {
+                Some(*value as i64)
+            }
+            HirLiteral::Float64(_) if type_relations.is_float_type(expected) => None,
+            _ => continue,
+        };
+        scored = true;
+        binding.fits &= value.map_or(true, |value| numeric_literal_value_fits(value, expected));
+        let natural = infer_expr_type(&arg.value, locals)?;
+        if natural != *expected {
+            binding.coercions += 1;
+        }
+    }
+    scored.then_some(binding)
+}
+
+/// 整数字面量的值是否落在候选数值形参类型内。
+///
+/// 表面别名 / 无参 `Nominal`（如 `usize`）的宽度在重载期不能从名字反推，按可表示
+/// 处理，交由形参绑定后的既有校验裁决；这里只硬性排除已知位宽装不下的候选。
+fn numeric_literal_value_fits(value: i64, expected: &ValkyrieType) -> bool {
+    match expected {
+        ValkyrieType::Integer8 { signed: true } => (i8::MIN as i64..=i8::MAX as i64).contains(&value),
+        ValkyrieType::Integer8 { signed: false } => (0..=u8::MAX as i64).contains(&value),
+        ValkyrieType::Integer16 { signed: true } => (i16::MIN as i64..=i16::MAX as i64).contains(&value),
+        ValkyrieType::Integer16 { signed: false } => (0..=u16::MAX as i64).contains(&value),
+        ValkyrieType::Integer32 { signed: true } => (i32::MIN as i64..=i32::MAX as i64).contains(&value),
+        ValkyrieType::Integer32 { signed: false } => (0..=u32::MAX as i64).contains(&value),
+        ValkyrieType::Integer64 { .. } | ValkyrieType::Integer128 { .. } | ValkyrieType::Float32 | ValkyrieType::Float64 => true,
+        ValkyrieType::Character => (0..=u16::MAX as i64).contains(&value),
+        _ => true,
+    }
+}
+
 /// 解析实例方法调用（`receiver.member(args)` / 值位置成员访问）。
 ///
 /// 返回结构化结果：无候选或形参失配是 `NoMatch`，多个同具体度候选并列是
@@ -428,6 +489,35 @@ pub(crate) fn try_resolve_instance_method(
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &AggregateFieldIndex,
     singleton_names: &std::collections::BTreeSet<Identifier>,
+) -> Result<HirResolvedCall, OverloadResolutionError> {
+    try_resolve_instance_method_with_context(
+        receiver,
+        method_name,
+        args,
+        candidates,
+        type_relations,
+        locals,
+        struct_fields,
+        singleton_names,
+        None,
+    )
+}
+
+/// 与 [`try_resolve_instance_method`] 相同，但把调用点期望类型交给候选并列裁决。
+///
+/// 运算符成员（`infix -` 等）由 `core` 的裸字面量分支调用此入口；期望类型存在时
+/// 它是权威上下文，优先于字面量默认宽度推断。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn try_resolve_instance_method_with_context(
+    receiver: &HirExpr,
+    method_name: &Identifier,
+    args: &[HirCallArgument],
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+    locals: &BTreeMap<String, ValkyrieType>,
+    struct_fields: &AggregateFieldIndex,
+    singleton_names: &std::collections::BTreeSet<Identifier>,
+    contextual_type: Option<&ValkyrieType>,
 ) -> Result<HirResolvedCall, OverloadResolutionError> {
     let receiver_arg = HirCallArgument::positional(receiver.clone());
     let mut full_args = Vec::with_capacity(args.len() + 1);
@@ -511,7 +601,9 @@ pub(crate) fn try_resolve_instance_method(
             }
         }
     }
-    let resolved = crate::compiler::hir::overload::diagnostics::resolve_overload(&filtered)?;
+    let literal_bindings =
+        filtered.iter().map(|candidate| numeric_literal_binding(candidate, &full_args, type_relations, locals)).collect::<Vec<_>>();
+    let resolved = resolve_overload_with_numeric_literals(&filtered, &literal_bindings, contextual_type)?;
     let has_receiver = candidate_has_receiver_parameter(&resolved);
     let mut call = HirResolvedCall {
         declaration: resolved.declaration,

@@ -41,7 +41,8 @@ use crate::compiler::{
 
 use super::{
     constructors::{
-        try_resolve_constructor_call, try_resolve_instance_method, try_resolve_qualified_free_function, try_resolve_singleton_method,
+        try_resolve_constructor_call, try_resolve_instance_method, try_resolve_instance_method_with_context,
+        try_resolve_qualified_free_function, try_resolve_singleton_method,
         try_resolve_type_static_method,
     },
     patterns::enrich_sum_variant_operation_facts,
@@ -516,7 +517,7 @@ pub(crate) fn try_resolve_call(
         else {
             &[]
         };
-        match try_resolve_instance_method(
+        match try_resolve_instance_method_with_context(
             &first.value,
             &callee_name,
             method_args,
@@ -525,6 +526,7 @@ pub(crate) fn try_resolve_call(
             locals,
             struct_fields,
             singleton_names,
+            contextual_type,
         ) {
             Ok(resolved) => return Some(resolved),
             // 运算符成员同为方法派发：同具体度并列必须按调用点冻结成结构化歧义，
