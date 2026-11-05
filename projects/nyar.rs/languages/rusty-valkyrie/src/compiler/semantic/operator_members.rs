@@ -79,6 +79,7 @@ pub(crate) fn infix_member_name(operator: &ValkyrieTokenType) -> String {
         ValkyrieTokenType::Pipe => "|",
         ValkyrieTokenType::Caret => "^",
         ValkyrieTokenType::DotDot => "..",
+        ValkyrieTokenType::DotDotEq => "..=",
         // `AndAnd` / `OrOr` / `Eq` 降低为控制流或赋值，不产生成员调用，调用方不会走到这里。
         _ => "+",
     };

@@ -135,12 +135,19 @@ fn parse_const_range_tokens(
     if tokens.is_empty() {
         return Err(template_failure(TemplateConstruct::Loop, TemplateFailure::LoopRangeMissing, header_span));
     }
-    if tokens.len() >= 3 && tokens[1].kind == ValkyrieTokenType::DotDot {
+    if tokens.len() >= 3 && matches!(tokens[1].kind, ValkyrieTokenType::DotDot | ValkyrieTokenType::DotDotEq) {
         let start = parse_const_int_token(source, &tokens[0])?;
         let end = parse_const_int_token(source, &tokens[2])?;
         if tokens.len() > 3 {
             return Err(template_failure(TemplateConstruct::Loop, TemplateFailure::LoopHeaderTrailingTokens, tokens_span(&tokens[3..])));
         }
+        // 编译期 `loop` 消费半开 `Range`；`..=` 把闭端点换算成开端点。
+        let end = if tokens[1].kind == ValkyrieTokenType::DotDotEq {
+            end.checked_add(1).ok_or_else(|| template_failure(TemplateConstruct::Loop, TemplateFailure::LoopRangeInvalid { start, end }, header_span.clone()))?
+        }
+        else {
+            end
+        };
         return Ok(start..end);
     }
     if tokens.len() == 1 {
