@@ -18,9 +18,9 @@ export const LANGUAGE = {
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url));
 
-/** 该语言 guest 模块的约定路径（`guest/tcl.nyar`，由 Nyar 构建管线产出）。 */
+/** 该语言 guest 模块的约定路径（`guest/tcl.odin`，由 Nyar 构建管线产出）。 */
 export function guestArtifact(): string {
-    return path.join(packageRoot, 'guest', `${LANGUAGE.id}.nyar`);
+    return path.join(packageRoot, 'guest', `${LANGUAGE.id}.odin`);
 }
 
 export {createNyarHost, resolveCollect} from '@nyar/nyar';

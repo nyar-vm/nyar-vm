@@ -142,7 +142,7 @@ pub fn legion_test(project_dir: String, target: Option<String>) -> LegionTestOut
     }
 }
 
-/// Legion 内嵌 OVM：列出 `.nyar` 导出（与 `legion test` / 元编程执行同栈）。
+/// Legion 内嵌 OVM：列出 `.odin` 导出（与 `legion test` / 元编程执行同栈）。
 #[napi]
 pub fn legion_list_ovm_exports(module: String) -> Result<Vec<String>> {
     let bytes = fs::read(&module).map_err(|error| Error::from_reason(format!("read module: {error}")))?;

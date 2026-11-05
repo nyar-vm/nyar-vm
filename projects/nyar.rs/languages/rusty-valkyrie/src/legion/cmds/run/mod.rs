@@ -128,7 +128,7 @@ pub struct ExecutionManifest {
     pub mir_contract_version: u32,
     /// RepresentationPlan / layout 合同版本。
     pub layout_plan_version: u32,
-    /// `.nyar` / `.legion` bytecode 格式版本。
+    /// `.odin` / `.legion` bytecode 格式版本。
     pub bytecode_format_version: u32,
     /// 项目名。
     pub project_name: String,

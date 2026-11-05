@@ -1,4 +1,4 @@
-//! Convert [`GenerateModule`] into `.nyar` bytes.
+//! Convert [`GenerateModule`] into `.odin` bytes.
 
 use miette::{Result, miette};
 use odin_bytecode::{
@@ -12,7 +12,7 @@ use super::generate::{GenerateConstant, GenerateExportKind, GenerateFunction, Ge
 pub struct NyarBytecodeCompiler;
 
 impl NyarBytecodeCompiler {
-    /// Compile a generate-time module into `.nyar` bytes.
+    /// Compile a generate-time module into `.odin` bytes.
     pub fn compile(&self, module: &GenerateModule) -> Result<Vec<u8>> {
         Ok(encode_module(&self.to_module_data(module)?))
     }
@@ -66,7 +66,7 @@ fn emit_operand(writer: &mut Vec<u8>, operand: &GenerateOperand, module: &Genera
             writer.extend_from_slice(&index.to_le_bytes())
         }
         GenerateOperand::Label { name } => {
-            return Err(miette!("unresolved label `{name}` in function `{}`: resolve labels before emitting `.nyar` bytecode", function.name));
+            return Err(miette!("unresolved label `{name}` in function `{}`: resolve labels before emitting `.odin` bytecode", function.name));
         }
         GenerateOperand::FuncRef { name } => {
             let Some(resolved) = module.resolve_function_id(name)
@@ -216,7 +216,7 @@ mod tests {
         module.add_function(function);
 
         let error = NyarBytecodeCompiler.compile(&module).expect_err("unresolved label must fail");
-        assert_eq!(format!("{error}"), "unresolved label `missing` in function `main`: resolve labels before emitting `.nyar` bytecode");
+        assert_eq!(format!("{error}"), "unresolved label `missing` in function `main`: resolve labels before emitting `.odin` bytecode");
     }
 
     /// 缺失函数引用在发射阶段结构化失败，不得回落成函数索引 0。

@@ -1,4 +1,4 @@
-//! OVM 闭包载体 P2 端到端：`legion build` 真构建 `.nyar`，再交 odin-vm 真跑。
+//! OVM 闭包载体 P2 端到端：`legion build` 真构建 `.odin`，再交 odin-vm 真跑。
 //!
 //! 验收面：无捕获 lambda 行为与 P1 之前一致；std `HashSet<i32>::from_list` 的内部
 //! 回调（捕获 `result`，只读绑定、经 receiver 修改对象）经 `iter(self, f)` 走
@@ -41,7 +41,7 @@ fn create_project(prefix: &str, manifest: &str, source: &str, primitives: Option
     Fixture { _temp_dir: temp_dir, project_dir }
 }
 
-/// 以 `ovm` 为目标构建夹具项目，返回仍持有临时目录的夹具与 `.nyar` 产物。
+/// 以 `ovm` 为目标构建夹具项目，返回仍持有临时目录的夹具与 `.odin` 产物。
 fn build_ovm(prefix: &str, manifest: &str, source: &str, primitives: Option<&str>) -> (Fixture, PathBuf) {
     let fixture = create_project(prefix, manifest, source, primitives);
     let output_dir = fixture.project_dir.join("dist").join("ovm");
@@ -57,16 +57,16 @@ fn build_ovm(prefix: &str, manifest: &str, source: &str, primitives: Option<&str
         .expect("读取产物目录")
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("nyar"))
-        .unwrap_or_else(|| panic!("产物目录缺少 `.nyar`：{}", output_dir.display()));
+        .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("odin"))
+        .unwrap_or_else(|| panic!("产物目录缺少 `.odin`：{}", output_dir.display()));
     (fixture, artifact)
 }
 
-/// 把 `.nyar` 交 odin-vm 加载并执行 `main`。
+/// 把 `.odin` 交 odin-vm 加载并执行 `main`。
 fn run_main(artifact: &Path) -> Value {
-    let bytes = fs::read(artifact).expect("读取 `.nyar` 产物");
+    let bytes = fs::read(artifact).expect("读取 `.odin` 产物");
     let mut vm = OdinVm::new();
-    let loaded = vm.load(&bytes).expect("`.nyar` 产物必须可被 odin-vm 加载");
+    let loaded = vm.load(&bytes).expect("`.odin` 产物必须可被 odin-vm 加载");
     let entry = loaded
         .exports
         .iter()
@@ -197,8 +197,8 @@ micro main() -> i32 {
         .expect("读取产物目录")
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("nyar"))
-        .unwrap_or_else(|| panic!("产物目录缺少 `.nyar`：{}", output_dir.display()));
+        .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("odin"))
+        .unwrap_or_else(|| panic!("产物目录缺少 `.odin`：{}", output_dir.display()));
     let value = run_main(&artifact);
     drop(temp_dir);
     assert_eq!(value, Value::I32(3), "捕获回调必须把去重后的 3 个元素写入 seen");
@@ -216,4 +216,39 @@ fn valkyrie_v_std_root() -> Option<PathBuf> {
         return Some(sibling);
     }
     None
+}
+
+/// 旧 `.nyar` 执行产物存在时必须结构化拒绝，不得静默覆盖或双读。
+#[test]
+fn ovm_build_refuses_to_overwrite_legacy_nyar_artifact() {
+    let fixture = create_project(
+        "ovm-legacy-output",
+        r#"{
+            name: "app",
+            build: [{ target: "ovm" }]
+        }"#,
+        r#"namespace app;
+
+[main]
+micro main() -> i32 {
+    return 0
+}
+"#,
+        Some(r#"[primitive("std::primitive::i32")] structure i32 { }"#),
+    );
+    let output_dir = fixture.project_dir.join("dist").join("ovm");
+    fs::create_dir_all(&output_dir).expect("建产物目录");
+    fs::write(output_dir.join("stale.nyar"), b"\x4E\x59\x41\x52").expect("写旧执行产物");
+
+    let error = run(&BuildArgs {
+        project_dir: fixture.project_dir.clone(),
+        target: CanonicalTarget::parse("ovm").expect("ovm target"),
+        output_dir: Some(output_dir.clone()),
+        debug_artifacts: false,
+    })
+    .expect_err("旧 `.nyar` 执行产物必须被拒绝");
+    let message = error.to_string();
+    assert!(message.contains(".nyar"), "拒绝必须指出旧产物身份: {message}");
+    assert!(message.contains(".odin"), "拒绝必须指出目标产物身份: {message}");
+    assert!(!output_dir.join("app.odin").is_file(), "拒绝后不得写出 `.odin` 产物");
 }

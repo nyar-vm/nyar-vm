@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 
-//! Nyar bytecode VM — language-agnostic `.nyar` / Nyar IR runtime.
+//! Nyar bytecode VM — language-agnostic `.odin` / Nyar IR runtime.
 //!
 //! # Layering
 //!
@@ -8,7 +8,7 @@
 //!   language ASTs or compilers.
 //! - Managed heap / GC live in **`nyar-gc`**; optional JIT lives in **`nyar-jit`**.
 //! - This crate owns the interpreter loop.
-//! - Concrete languages lower through `emitter` into `.nyar` bytes before this VM sees them.
+//! - Concrete languages lower through `emitter` into `.odin` bytes before this VM sees them.
 //!
 //! # Naming
 //!

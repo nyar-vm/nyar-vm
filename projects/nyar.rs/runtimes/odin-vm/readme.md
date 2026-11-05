@@ -1,12 +1,12 @@
 # odin-vm
 
-OVM bytecode virtual machine for `.nyar` modules produced from the OVM backend's `nyar-ir`. This IR is specific to OVM and is not a universal IR for other backends.
+OVM bytecode virtual machine for `.odin` modules produced from the OVM backend's `nyar-ir`. This IR is specific to OVM and is not a universal IR for other backends.
 
 ## Overview
 
 `odin-vm` is the authoritative runtime that loads encoded OVM modules, executes stack-based bytecode, coordinates
 optional JIT compilation, and exposes host import dispatch. Every guest language frontend lowers through an emitter into
-`.nyar` bytes before this crate sees the program. The VM must not import concrete language ASTs, parsers, or compiler
+`.odin` bytes before this crate sees the program. The VM must not import concrete language ASTs, parsers, or compiler
 pipelines.
 
 Package name: `odin-vm`. Rust import path: `odin_vm`.

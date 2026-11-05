@@ -5,10 +5,19 @@
 
 use crate::errors::OdinDecodeError;
 
-/// Magic value `NYAR` big-endian (`0x4E594152`).
-pub const ODIN_MAGIC: u32 = 0x4E59_4152;
+/// `.odin` 执行字节码 magic，大端写作 `ODIN`（`0x4F44494E`）。
+///
+/// `.odin` 是 Odin 后端的执行产物身份；与 `.nyar` 程序集身份不同，二者不互为别名。
+pub const ODIN_MAGIC: u32 = 0x4F44_494E;
 
-/// Current `.nyar` format version.
+/// `.nyar` 程序集（Assembly）保留 magic，大端写作 `NYAR`（`0x4E594152`）。
+///
+/// 程序集由 `.nyar` validator 负责读取，本 crate 不解析它。旧版执行字节码曾使用
+/// 同一 magic；`decode_module` 遇到它必须按 [`crate::OdinDecodeError::LegacyNyarMagic`]
+/// 结构化拒绝并提示重建为 `.odin`，不得双读。
+pub const NYAR_ASSEMBLY_MAGIC: u32 = 0x4E59_4152;
+
+/// Current `.odin` format version.
 ///
 /// 未正式发布前统一为 `0`（v0 基线）；旧版本的模块一律拒绝，不做兼容读取。
 /// 新增 `Trap` 头码（0x0C）属于格式扩展，v1 起生效：旧产物被拒绝、缓存随之失效。
@@ -23,8 +32,11 @@ pub const ODIN_MAGIC: u32 = 0x4E59_4152;
 /// v3 → v4：`Function` 值载体从裸 `i32` 函数索引改为两槽闭包对象（槽 0 = code i32，
 /// 槽 1 = 捕获环境对象或 null）。指令编码不变，但函数值语义已变，旧缓存产物与新
 /// 产物混链会静默算错，因此版本递增、旧产物由 `decode_module` 结构化拒绝。
+///
+/// v4 → v5：执行产物身份从 `.nyar` 迁到 `.odin`，文件 magic 由 `NYAR` 改为 `ODIN`；
+/// 旧 `.nyar` 执行产物按 `LegacyNyarMagic` 拒绝，缓存键随之包含格式版本。
 #[allow(non_upper_case_globals)]
-pub const Odin_VERSION: u32 = 4;
+pub const Odin_VERSION: u32 = 5;
 
 /// Bytecode format contract version（S-W6 provenance / cache 键）。
 /// 与 [`Odin_VERSION`] 同步；格式破坏时两者一并递增。

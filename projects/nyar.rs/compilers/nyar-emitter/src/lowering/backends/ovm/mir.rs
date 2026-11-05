@@ -163,7 +163,7 @@ impl<'a> BytecodeEmitter<'a> {
     }
 }
 
-/// Lower MIR-backed fragment operations into a `.nyar` module.
+/// Lower MIR-backed fragment operations into a `.odin` module.
 pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission) -> Result<OdinModuleData> {
     let mut module = OdinModuleData {
         version: Odin_VERSION,

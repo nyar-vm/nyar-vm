@@ -33,9 +33,9 @@ fn ovm_target() -> AsgardResult<CanonicalTarget> {
     CanonicalTarget::parse("ovm").map_err(|error| AsgardError::msg(report!("解析 OVM 目标失败: {error}")))
 }
 
-/// 编译 SSG 渲染源码为 `.nyar` 产物并返回字节。
+/// 编译 SSG 渲染源码为 `.odin` 产物并返回字节。
 ///
-/// `scratch_dir` 是构建期中间产物目录（`.nyar`、证据文件），不进交付产物树。
+/// `scratch_dir` 是构建期中间产物目录（`.odin`、证据文件），不进交付产物树。
 pub(crate) fn compile_ssg_ovm_bundle(
     project_dir: &Path,
     generated: GeneratedSource<'_>,

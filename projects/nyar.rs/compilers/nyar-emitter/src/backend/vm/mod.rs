@@ -1,4 +1,4 @@
-//! Emit `.nyar` bytecode modules for the Nyar VM backend.
+//! Emit `.odin` bytecode modules for the Nyar VM backend.
 
 use std::{fs, path::Path};
 
@@ -15,7 +15,7 @@ pub fn emit_nyar_module(module: &OdinModuleData, output_path: &Path) -> Result<(
         }
     }
 
-    fs::write(output_path, &bytes).map_err(|e| format!("failed to write nyar module: {}: {e}", output_path.display()))?;
+    fs::write(output_path, &bytes).map_err(|e| format!("failed to write odin module: {}: {e}", output_path.display()))?;
 
     Ok(())
 }

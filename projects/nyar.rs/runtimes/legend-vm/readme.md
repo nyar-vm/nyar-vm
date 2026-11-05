@@ -61,13 +61,13 @@ The substrate only sees: given a language id, call a function pointer. Adding a 
 ```text
 interpret subject ──specialize──► NativeResidualModule ──emit──► .exe (PE)
                                       │
-                                      └── NOT nyar-vm / `.nyar` (product)
+                                      └── NOT nyar-vm / `.odin` (product)
 ```
 
 - Guest residualizes interpreter match arms into `nyar_analyzer::residual::ResidualSink`.
 - Product sink: `compiler/native_residual.rs` (`NativeResidualSink` → `NativeResidualModule`).
 - Windows PE wrap: `compiler/pe.rs` (`PeCompiler`).
-- `StackResidualSink` / `.nyar` / `nyar-vm` are **probe-only** (e.g. JS/Python stubs), not the host-script PE destination.
+- `StackResidualSink` / `.odin` / `nyar-vm` are **probe-only** (e.g. JS/Python stubs), not the host-script PE destination.
 - `legend run` stays on interpret; `legend build --target native` (aliases `pe` / `exe`) is the specialize path.
 
 **Status:** Lua specialize → native residual is wired; full per-op x64 frame/stack codegen is still incomplete (integer exit-code fold / stub otherwise). Other host-script specialize paths may still be stubs.
@@ -77,8 +77,8 @@ interpret subject ──specialize──► NativeResidualModule ──emit─�
 - New shared `HostScript*` / `host_script` abstraction (guests stay concrete in their `rusty-<lang>` crates).
 - New full language tree-walks in this crate — add interpret in the `rusty-<lang>` crate, register a thin adapter here.
 - Lexer/parser copies (parsers live in `std-data`).
-- Treating `.nyar` / `nyar-vm` as the host-script PE product path.
-- Equating this path with a hand-written multi-backend (`CLR` / `JVM` / `WASM` / …) emitter chain — entering `.nyar` does **not** unlock that chain.
+- Treating `.odin` / `nyar-vm` as the host-script PE product path.
+- Equating this path with a hand-written multi-backend (`CLR` / `JVM` / `WASM` / …) emitter chain — entering `.odin` does **not** unlock that chain.
 
 ## Tests / guards
 

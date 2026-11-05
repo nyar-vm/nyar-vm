@@ -99,7 +99,7 @@ export function formatLegionSpawnError(label: string, outcome: LegionSpawnResult
     return `${label} failed (${outcome.route}): ${detail}`;
 }
 
-/** Legion 内嵌 OVM：列出 `.nyar` 导出。 */
+/** Legion 内嵌 OVM：列出 `.odin` 导出。 */
 export function legionListOvmExports(nyarPath: string): string[] {
     return loadNative().legionListOvmExports(nyarPath);
 }

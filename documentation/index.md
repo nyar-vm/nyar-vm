@@ -26,7 +26,7 @@ Nyar 是多语言前端与多后端编译平台。语言前端拥有自己的解
 | `nyar-optimizer` | `projects/nyar.rs/compilers/nyar-optimizer` | 对象代数与 E-Graph 优化 |
 | `nyar-emitter` | `projects/nyar.rs/compilers/nyar-emitter` | 各后端的目标降低与产物装配，AOT 产物由此产出 |
 | `nyar-types` | `projects/nyar.rs/compilers/nyar-types` | 跨前端/后端的中性身份与合同类型 |
-| `odin-bytecode` | `projects/nyar.rs/formats/odin-bytecode` | `.nyar` 磁盘字节码格式 |
+| `odin-bytecode` | `projects/nyar.rs/formats/odin-bytecode` | `.odin` 磁盘字节码格式 |
 | `odin-vm` | `projects/nyar.rs/runtimes/odin-vm` | OVM 字节码加载、校验与解释器 |
 | `legend-vm` | `projects/nyar.rs/runtimes/legend-vm` | 宿主脚本语言的解释与特化基底 |
 | `nyar-gc` | `projects/nyar.rs/runtimes/nyar-gc` | 托管堆与分代标记-清除回收 |

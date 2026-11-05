@@ -34,7 +34,7 @@ fn entry_path_sanitizes_triple() {
     let cache = WorkspaceCache::open(PathBuf::from(".cache"));
     let path = cache.entry_path("wasm32-unknown-browser", "abcd");
     assert!(path.to_string_lossy().contains("wasm32_unknown_browser"));
-    assert!(path.ends_with("abcd.nyar"));
+    assert!(path.ends_with(format!("abcd.v{}.odin", odin_bytecode::Odin_VERSION).as_str()));
 }
 
 #[test]

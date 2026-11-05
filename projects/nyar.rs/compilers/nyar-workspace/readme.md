@@ -4,7 +4,7 @@ Workspace-level content-addressed disk cache for Nyar tooling.
 
 ## Overview
 
-`nyar-workspace` stores typed binary payloads under `{cache_root}/{bucket}/{key_hash}.nyar`. Entries are wrapped with
+`nyar-workspace` stores typed binary payloads under `{cache_root}/{bucket}/{key_hash}.odin`. Entries are wrapped with
 `odin-bytecode::encode_module` so each blob carries a format version and a **type tag** (`NyarModuleData::name`)
 separate from the bucket name. Compilers and package tooling define semantic cache keys; this crate only provides safe
 paths, hashing helpers, and get/put IO.

@@ -1,7 +1,7 @@
 //! Architecture guards: bytecode VM must stay language-agnostic.
 //!
 //! Concrete language product logic belongs in the `rusty-<lang>` frontend crates. This crate only
-//! loads/executes Nyar IR (`.nyar`). Docs may discuss boundaries; imports must not.
+//! loads/executes Nyar IR (`.odin`). Docs may discuss boundaries; imports must not.
 
 use std::{
     fs,

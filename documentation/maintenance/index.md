@@ -5,7 +5,7 @@
 ## OdinVM
 
 - [odin-vm](../../projects/nyar.rs/runtimes/odin-vm/readme.md)：加载、校验并解释执行 `odin-bytecode` 模块。
-- [odin-bytecode](../../projects/nyar.rs/formats/odin-bytecode/readme.md)：`.nyar` 磁盘格式合同。
+- [odin-bytecode](../../projects/nyar.rs/formats/odin-bytecode/readme.md)：`.odin` 磁盘格式合同。
 - [nyar-gc](../../projects/nyar.rs/runtimes/nyar-gc/readme.md)：托管堆、`Value` 与分代标记-清除回收。
 - [nyar-jit](../../projects/nyar.rs/runtimes/nyar-jit/readme.md)：即时编译、栈图与去优化。
 - [nyar-types](../../projects/nyar.rs/compilers/nyar-types/readme.md)：跨前端/后端的中性身份与合同类型。

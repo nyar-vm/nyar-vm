@@ -786,3 +786,89 @@ fn add_dev_dependency_writes_dev_bucket() {
         assert_eq!(parsed.dev_dependencies.get("smoke.dev").and_then(|s| s.version_constraint()), Some("1.5.0"));
     });
 }
+
+fn pack_options_for_artifact(artifact_dir: &Path) -> nyar_package_manager::RegistryPackOptions {
+    nyar_package_manager::RegistryPackOptions {
+        artifact_dir: artifact_dir.to_path_buf(),
+        package_root: artifact_dir.join("package-root"),
+        registry: "npm".to_string(),
+        meta: nyar_package_manager::PackMeta {
+            name: "smoke.envelope".to_string(),
+            version: "0.1.0".to_string(),
+            description: String::new(),
+            license: None,
+        },
+        include_files: Vec::new(),
+        flat_layout: false,
+        layout: nyar_package_manager::ProjectLayout::neutral(),
+    }
+}
+
+#[test]
+fn npm_envelope_declares_odin_execution_identity() {
+    let dir = TempDir::new().expect("artifact dir");
+    std::fs::create_dir_all(dir.path()).expect("mkdir");
+    std::fs::write(dir.path().join("demo.odin"), b"\x4F\x44\x49\x4E").expect("odin");
+    std::fs::write(
+        dir.path().join("run-contracts.txt"),
+        r#"{
+    run_contracts: [
+        {
+            logical_entry: "demo::main",
+            physical_entry: "demo.odin",
+            invocation: "ovm",
+            validate: "ovm run demo.odin --entry main"
+        }
+    ]
+}
+"#,
+    )
+    .expect("contracts");
+
+    let packed = nyar_package_manager::pack_registry_artifact(&pack_options_for_artifact(dir.path())).expect("pack");
+    let package_json = tarball_package_json(&packed.tarball_data);
+    assert!(package_json.contains("\"kind\": \"execution\""), "envelope must declare execution artifact: {package_json}");
+    assert!(package_json.contains("\"format\": \"odin\""), "envelope must declare `.odin` format: {package_json}");
+    assert!(
+        package_json.contains(&format!("\"format_version\": {}", odin_bytecode::Odin_VERSION)),
+        "envelope must carry the bytecode format version: {package_json}"
+    );
+}
+
+#[test]
+fn npm_envelope_rejects_legacy_nyar_execution_artifact() {
+    let dir = TempDir::new().expect("artifact dir");
+    std::fs::create_dir_all(dir.path()).expect("mkdir");
+    std::fs::write(dir.path().join("demo.nyar"), b"\x4E\x59\x41\x52").expect("legacy nyar");
+    std::fs::write(
+        dir.path().join("run-contracts.txt"),
+        r#"{
+    run_contracts: [
+        {
+            logical_entry: "demo::main",
+            physical_entry: "demo.nyar",
+            invocation: "ovm",
+            validate: "ovm run demo.nyar --entry main"
+        }
+    ]
+}
+"#,
+    )
+    .expect("contracts");
+
+    let error = nyar_package_manager::pack_registry_artifact(&pack_options_for_artifact(dir.path())).expect_err("legacy `.nyar` must be rejected");
+    let message = error.to_string();
+    assert!(message.contains(".nyar") && message.contains(".odin"), "rejection must name both artifact identities: {message}");
+}
+
+#[test]
+fn npm_envelope_declares_assembly_identity_for_package_nyar() {
+    let dir = TempDir::new().expect("package dir");
+    std::fs::write(dir.path().join("package.nyar"), b"\x4E\x59\x41\x52").expect("assembly");
+    let packed = nyar_package_manager::pack(dir.path(), &pack_options_for_artifact(dir.path()).meta, nyar_package_manager::ProjectLayout::neutral())
+        .expect("pack");
+    let package_json = tarball_package_json(&packed.tarball_data);
+    assert!(!package_json.contains("\"kind\":\"execution\""), "`package.nyar` must not be declared as execution: {package_json}");
+    assert!(package_json.contains("\"kind\":\"assembly\""), "`package.nyar` must be declared as assembly: {package_json}");
+    assert!(!package_json.contains("\"format\":\"odin\""), "assembly transport must not claim `.odin` execution identity");
+}

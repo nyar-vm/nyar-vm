@@ -547,7 +547,7 @@ impl FragmentSubmission {
 /// First-class suspend backend input (ovm / native continuation runtime).
 #[derive(Debug, Clone)]
 pub struct OvmBackendInput {
-    /// Optional Nyar module payload to emit as `.nyar`.
+    /// Optional Nyar module payload to emit as `.odin`.
     pub nyar_module: Option<odin_bytecode::OdinModuleData>,
     /// 库模式公开导出名（与 wasm `wasm_export_names` 对齐），用于 run-contract 入口。
     pub library_public_exports: Vec<String>,

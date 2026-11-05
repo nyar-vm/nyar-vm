@@ -162,7 +162,7 @@ pub fn pack_registry_artifact(options: &RegistryPackOptions) -> Result<PackResul
             file_count += 1;
         }
 
-        let package_json = build_package_json(&options.meta, &bin_entries, &options.registry);
+        let package_json = build_package_json(&options.meta, &bin_entries, &options.registry)?;
         append_tar_bytes(&mut archive, "package.json", package_json.as_bytes(), options.flat_layout)?;
         file_count += 1;
 
@@ -211,6 +211,13 @@ pub fn pack(package_directory: &Path, meta: &PackMeta, layout: crate::ProjectLay
             "license": meta.license.clone().unwrap_or_else(|| "UNLICENSED".to_string()),
             "main": "package.nyar",
             "files": ["**/*"],
+            // `package.nyar` 是程序集（Assembly）运输身份，不是 Node 执行模块。
+            "nyar": {
+                "schema": 1,
+                "artifacts": [
+                    { "path": "package.nyar", "kind": "assembly", "format": "nyar-assembly" }
+                ],
+            },
         })
         .to_string();
         append_tar_bytes(&mut archive, "package.json", package_json.as_bytes(), false)?;
@@ -358,7 +365,39 @@ fn glob_segment_match(pattern: &str, segment: &str) -> bool {
     true
 }
 
-fn build_package_json(meta: &PackMeta, bins: &[RegistryBinEntry], registry: &str) -> String {
+/// npm 包外壳（envelope）schema 版本。
+const NYAR_ENVELOPE_SCHEMA: u32 = 1;
+
+/// 把单个发布产物归类为 envelope 声明。
+///
+/// `.odin` 是执行字节码身份；`.nyar` 只能作为程序集运输身份出现，出现在可执行入口时
+/// 必须结构化拒绝，不能当成 `.odin` 的别名发布。
+fn artifact_envelope_entry(relative: &str) -> Result<serde_json::Value> {
+    let extension = Path::new(relative).extension().and_then(|value| value.to_str()).unwrap_or_default().to_ascii_lowercase();
+    let (kind, format, format_version) = match extension.as_str() {
+        "odin" => ("execution", "odin", Some(odin_bytecode::Odin_VERSION)),
+        "wasm" => ("execution", "wasm", None),
+        "mjs" | "js" => ("host-module", "ecmascript", None),
+        "nyar" => {
+            return Err(crate::PackageManagerError::message(format!(
+                "拒绝打包：`{relative}` 是旧 `.nyar` 执行产物；执行产物必须重建为 `.odin`，程序集包必须声明为 `assembly`"
+            )));
+        }
+        _ => ("data", "raw", None),
+    };
+    let mut entry = serde_json::json!({ "path": relative, "kind": kind, "format": format });
+    if let Some(version) = format_version {
+        entry["format_version"] = serde_json::json!(version);
+    }
+    Ok(entry)
+}
+
+fn build_envelope(bins: &[RegistryBinEntry]) -> Result<serde_json::Value> {
+    let artifacts = bins.iter().map(|entry| artifact_envelope_entry(&entry.relative_path)).collect::<Result<Vec<_>>>()?;
+    Ok(serde_json::json!({ "schema": NYAR_ENVELOPE_SCHEMA, "artifacts": artifacts }))
+}
+
+fn build_package_json(meta: &PackMeta, bins: &[RegistryBinEntry], registry: &str) -> Result<String> {
     let mut bin_map = BTreeMap::new();
     let mut exports = BTreeMap::new();
     for entry in bins {
@@ -383,8 +422,9 @@ fn build_package_json(meta: &PackMeta, bins: &[RegistryBinEntry], registry: &str
     if registry.eq_ignore_ascii_case("npm") {
         doc["engines"] = serde_json::json!({ "node": ">=18" });
     }
+    doc["nyar"] = build_envelope(bins)?;
 
-    serde_json::to_string_pretty(&doc).unwrap_or_else(|_| doc.to_string())
+    Ok(serde_json::to_string_pretty(&doc).unwrap_or_else(|_| doc.to_string()))
 }
 
 fn build_jsr_json(meta: &PackMeta, bins: &[RegistryBinEntry]) -> String {

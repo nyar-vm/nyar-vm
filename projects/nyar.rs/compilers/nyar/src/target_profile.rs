@@ -697,7 +697,7 @@ impl CanonicalTarget {
     fn derive_artifact_policy(self, abi: CanonicalAbi) -> ArtifactPolicy {
         match self.arch {
             CanonicalArch::Ovm => ArtifactPolicy {
-                primary_extension: ".nyar".to_string(),
+                primary_extension: ".odin".to_string(),
                 default_publish_format: PublishFormat::Bundle,
                 supported_publish_formats: vec![PublishFormat::Bundle],
                 required_adaptors: vec!["std:ovm".to_string()],

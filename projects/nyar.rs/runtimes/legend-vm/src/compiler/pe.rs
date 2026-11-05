@@ -2,7 +2,7 @@
 //!
 //! This is the **native product** packaging step after Futamura specialization
 //! lowers a [`super::NativeResidualModule`] to x64 (subset today). It is unrelated
-//! to OVM / `.nyar`.
+//! to OVM / `.odin`.
 
 use std::{fs, path::Path};
 

@@ -1,4 +1,4 @@
-//! `.nyar` 模块解码：入口与各 section 解析器。
+//! `.odin` 模块解码：入口与各 section 解析器。
 
 use crate::{
     errors::OdinDecodeError,
@@ -6,16 +6,22 @@ use crate::{
         OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinGlobal, OdinImport, OdinImportKind, OdinLayout, OdinModuleData,
         OdinWitnessDispatchEntry,
     },
-    opcode::{HEADER_SIZE, ODIN_MAGIC, SECTION_HEADER_SIZE},
+    opcode::{HEADER_SIZE, NYAR_ASSEMBLY_MAGIC, ODIN_MAGIC, SECTION_HEADER_SIZE},
 };
 
-/// Decode a `.nyar` module from bytes.
+/// Decode a `.odin` module from bytes.
+///
+/// `.nyar` 程序集与 `.odin` 执行字节码是两个产物身份；带 `NYAR` magic 的输入一律按
+/// [`OdinDecodeError::LegacyNyarMagic`] 拒绝，不做双读。
 pub fn decode_module(data: &[u8]) -> Result<OdinModuleData, OdinDecodeError> {
     if data.len() < HEADER_SIZE {
         return Err(OdinDecodeError::TooShort);
     }
 
     let magic = u32::from_be_bytes(data[0..4].try_into().expect("header"));
+    if magic == NYAR_ASSEMBLY_MAGIC {
+        return Err(OdinDecodeError::LegacyNyarMagic);
+    }
     if magic != ODIN_MAGIC {
         return Err(OdinDecodeError::InvalidMagic(magic));
     }

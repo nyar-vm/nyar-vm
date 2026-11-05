@@ -27,7 +27,7 @@ does not duplicate selection algorithms).
 - `driver/families/jvm.rs` — JVM artifacts and run contract
 - `driver/families/wasm.rs` — WASM / WASI artifacts
 - `driver/families/native.rs` — native object files
-- `driver/families/ovm.rs` — `.nyar` sidecars and VM modules
+- `driver/families/ovm.rs` — `.odin` sidecars and VM modules
 - `driver/partitioning.rs` — partition → family mapping and report merge
 - `artifacts/suspend_sidecar.rs` — suspend sidecar serialization
 

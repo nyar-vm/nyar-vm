@@ -12,10 +12,10 @@
 
 ### `run`
 
-执行一个 `.nyar` 字节码文件或直接运行源码。
+执行一个 `.odin` 字节码文件或直接运行源码。
 
 ```bash
-nyar run hello.nyar
+nyar run hello.odin
 nyar run hello.java
 ```
 
@@ -29,10 +29,10 @@ nyar compile main.kt --target wasm --output main.wasm
 
 ### `dump`
 
-反汇编 `.nyar` 文件，用于检查生成的指令流。
+反汇编 `.odin` 文件，用于检查生成的指令流。
 
 ```bash
-nyar dump app.nyar
+nyar dump app.odin
 ```
 
 ### `repl`

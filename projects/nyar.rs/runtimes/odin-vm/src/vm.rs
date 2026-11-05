@@ -22,7 +22,7 @@ impl OdinVm {
         Self::default()
     }
 
-    /// Loads a `.nyar` module from bytes.
+    /// Loads a `.odin` module from bytes.
     pub fn load(&self, bytes: &[u8]) -> Result<LoadedModule, OdinRuntimeError> {
         LoadedModule::from_bytes(bytes)
     }

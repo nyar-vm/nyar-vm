@@ -1,4 +1,4 @@
-//! `.nyar` 模块编码：入口与各 section 序列化器。
+//! `.odin` 模块编码：入口与各 section 序列化器。
 
 use crate::{
     model::{
@@ -7,7 +7,7 @@ use crate::{
     opcode::{HEADER_SIZE, ODIN_MAGIC, SECTION_HEADER_SIZE},
 };
 
-/// Encode a minimal `.nyar` module.
+/// Encode a minimal `.odin` module.
 pub fn encode_module(data: &OdinModuleData) -> Vec<u8> {
     let mut sections: Vec<(OdinSectionKind, Vec<u8>)> = Vec::new();
 

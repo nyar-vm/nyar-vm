@@ -1,8 +1,8 @@
-//! **Probe-only** residual sink → [`StackCompiler`] / `.nyar` bytecode.
+//! **Probe-only** residual sink → [`StackCompiler`] / `.odin` bytecode.
 //!
 //! This is **not** the host-script PE product path. Product specialization is
 //! [`super::native_residual`] (`NativeResidualSink` → native / x64 / PE).
-//! Kept for JS/Python bytecode-pipe probes and temporary stack→`.nyar` experiments.
+//! Kept for JS/Python bytecode-pipe probes and temporary stack→`.odin` experiments.
 
 use nyar_analyzer::residual::ResidualSink;
 use odin_bytecode::OdinHeadCode;
@@ -12,7 +12,7 @@ use super::{GenerateModule, StackCompiler};
 /// 宿主导入模块名合同（与 OVM `nyar.host` 导入表一致）。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
 
-/// Probe [`ResidualSink`] backed by [`StackCompiler`] (`.nyar` / nyar-vm lane).
+/// Probe [`ResidualSink`] backed by [`StackCompiler`] (`.odin` / nyar-vm lane).
 ///
 /// Do **not** use this as the Lua / host-script PE destination — use
 /// [`super::NativeResidualSink`] instead.

@@ -1,7 +1,7 @@
 //! Futamura / partial-evaluation pipeline proofs.
 //!
 //! Host-script PE product path: specialize(interpret, program) → **native residual**
-//! → Windows PE (not OVM). `.nyar` / [`OdinVm`] remain probe-only for JS/Python stubs.
+//! → Windows PE (not OVM). `.odin` / [`OdinVm`] remain probe-only for JS/Python stubs.
 
 use std::collections::HashMap;
 
@@ -125,7 +125,7 @@ fn assert_native_pe_matches_interpret(source: &str, residual_ok: impl FnOnce(&Re
     assert_eq!(specialized.to_key(), legacy_key(&interpreted), "residual={specialized:?} interpret={interpreted:?}");
 
     let pe = legend_vm::compiler::emit_native_pe(&residual, None).expect("emit PE bytes");
-    assert!(pe.starts_with(b"MZ"), "product path must emit PE, not .nyar");
+    assert!(pe.starts_with(b"MZ"), "product path must emit PE, not .odin");
 }
 
 fn legacy_key(value: &LegacyValue) -> String {

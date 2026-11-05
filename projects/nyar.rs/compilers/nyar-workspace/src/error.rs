@@ -14,7 +14,7 @@ pub enum WorkspaceCacheError {
         /// 底层 I/O 错误。
         source: std::io::Error,
     },
-    /// Failed to encode a cache entry as `.nyar`.
+    /// Failed to encode a cache entry as `.odin`.
     #[error("failed to encode cache entry: {0}")]
     Encode(String),
     /// Failed to decode a cache entry.

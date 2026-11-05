@@ -19,7 +19,7 @@ fn bare_run_args() -> RunArgs {
 #[test]
 fn appends_workload_json_for_nyar_vm() {
     let mut command =
-        RunCommand { target: RunnerFamily::Ovm, artifact: PathBuf::from("out.nyar"), command: "odin-vm".into(), args: vec!["out.nyar".into()] };
+        RunCommand { target: RunnerFamily::Ovm, artifact: PathBuf::from("out.odin"), command: "odin-vm".into(), args: vec!["out.odin".into()] };
     let mut args = bare_run_args();
     args.workload_json = Some(r#"{"pause_budget_ms":5}"#.into());
     append_ovm_workload_args(&mut command, &args).expect("append");
@@ -86,7 +86,7 @@ fn is_fresh_rejects_stale_host_provider_compile_evidence() {
         },
     };
     fs::create_dir_all(&plan.output_dir).expect("output dir");
-    let artifact_path = plan.output_dir.join("app.nyar");
+    let artifact_path = plan.output_dir.join("app.odin");
     fs::write(&artifact_path, b"nyar-artifact-stub").expect("artifact");
     let expected = expected_resolver_compile_evidence(&plan).expect("expected evidence");
     let inputs = collect_execution_input_digests(&plan).expect("input digests");
@@ -101,11 +101,11 @@ fn is_fresh_rejects_stale_host_provider_compile_evidence() {
         artifact_kind: plan.project.artifact_kind,
         library_exports: Vec::new(),
         inputs,
-        artifacts: vec![ExecutionArtifactDigest { path: "app.nyar".into(), hash: hash_file_sha256(&artifact_path).expect("artifact hash") }],
+        artifacts: vec![ExecutionArtifactDigest { path: "app.odin".into(), hash: hash_file_sha256(&artifact_path).expect("artifact hash") }],
         run_contracts: vec![RunContract {
             logical_entry: "main".into(),
-            physical_entry: "app.nyar".into(),
-            invocation: "odin-vm app.nyar".into(),
+            physical_entry: "app.odin".into(),
+            invocation: "odin-vm app.odin".into(),
             validate: "exists".into(),
         }],
         compile_evidence: Some(CompileEvidenceDigest {
@@ -173,7 +173,7 @@ fn sample_freshness_plan() -> (tempfile::TempDir, BuildPlan, PathBuf) {
         },
     };
     fs::create_dir_all(&plan.output_dir).expect("output dir");
-    let artifact_path = plan.output_dir.join("app.nyar");
+    let artifact_path = plan.output_dir.join("app.odin");
     fs::write(&artifact_path, b"nyar-artifact-stub").expect("artifact");
     (directory, plan, artifact_path)
 }
@@ -190,11 +190,11 @@ fn sample_execution_manifest(plan: &BuildPlan, artifact_path: &Path, evidence: C
         artifact_kind: plan.project.artifact_kind,
         library_exports: Vec::new(),
         inputs: collect_execution_input_digests(plan).expect("input digests"),
-        artifacts: vec![ExecutionArtifactDigest { path: "app.nyar".into(), hash: hash_file_sha256(artifact_path).expect("artifact hash") }],
+        artifacts: vec![ExecutionArtifactDigest { path: "app.odin".into(), hash: hash_file_sha256(artifact_path).expect("artifact hash") }],
         run_contracts: vec![RunContract {
             logical_entry: "main".into(),
-            physical_entry: "app.nyar".into(),
-            invocation: "odin-vm app.nyar".into(),
+            physical_entry: "app.odin".into(),
+            invocation: "odin-vm app.odin".into(),
             validate: "exists".into(),
         }],
         compile_evidence: Some(evidence),

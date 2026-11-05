@@ -55,7 +55,7 @@ fn entry_contract_preserves_all_declared_library_exports() {
     assert_eq!(resolve_entry_symbols(&module, &entries).unwrap(), entries);
 }
 
-/// 沿 Compiler 产出的目标私有计划降低到 `.nyar`，不重放调用边。
+/// 沿 Compiler 产出的目标私有计划降低到 `.odin`，不重放调用边。
 fn try_lower_source_groups(groups: &[CompilerSourceGroup]) -> Result<OdinModuleData, String> {
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(groups, &[], &[], "native")

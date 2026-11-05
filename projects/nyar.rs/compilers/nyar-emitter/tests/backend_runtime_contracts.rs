@@ -2,7 +2,7 @@ use nyar_emitter::transitional::binary::{
     elf::{NativeElfImage, NativeElfWriter, SharedElfImage, SharedElfWriter, SharedObjectExport},
     pe::{NativePeImage, NativePeWriter},
 };
-use odin_bytecode::{OdinConstant, OdinFunction, OdinModuleData};
+use odin_bytecode::{OdinConstant, OdinFunction, OdinModuleData, Odin_VERSION};
 
 use nyar_emitter::{
     nyar_backend_native::{NativeExecutableKind, classify_native_executable},
@@ -13,7 +13,7 @@ use nyar_emitter::{
 #[test]
 fn emits_minimal_module_bytes() {
     let module = OdinModuleData {
-        version: 1,
+        version: Odin_VERSION,
         name: "demo".to_string(),
         constants: vec![OdinConstant::Integer32(0)],
         functions: vec![OdinFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: 1 }],
@@ -25,7 +25,7 @@ fn emits_minimal_module_bytes() {
         init_function_indices: Vec::new(),
         layouts: Vec::new(),
     };
-    let path = std::env::temp_dir().join(format!("nyar-backend-vm-{}.nyar", std::process::id()));
+    let path = std::env::temp_dir().join(format!("nyar-backend-vm-{}.odin", std::process::id()));
     emit_nyar_module(&module, &path).expect("emit");
     assert!(path.is_file());
     let _ = std::fs::remove_file(path);

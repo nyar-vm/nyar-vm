@@ -22,7 +22,7 @@ tclsh - < script.tcl
 ## 导出
 
 - `LANGUAGE`：语言 id 与源文件扩展名
-- `guestArtifact()`：该语言 guest 模块的约定路径 `guest/tcl.nyar`
+- `guestArtifact()`：该语言 guest 模块的约定路径 `guest/tcl.odin`
 - `createNyarHost()` / `resolveCollect` / `runHostScript`：来自 `@nyar/nyar` 的宿主入口
 
 ## License

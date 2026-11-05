@@ -112,7 +112,7 @@ impl LegendVmRunner {
         emit_native_pe(module, Some(output_path))
     }
 
-    /// Compile a generate-time probe module to `.nyar` bytes (not host-script PE).
+    /// Compile a generate-time probe module to `.odin` bytes (not host-script PE).
     pub fn compile_to_nyar(&self, module: &crate::compiler::GenerateModule) -> Result<Vec<u8>> {
         NyarBytecodeCompiler.compile(module)
     }

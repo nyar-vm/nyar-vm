@@ -162,11 +162,11 @@ fn ovm_library_exports_are_callable_by_entry() {
         .expect("读取产物目录")
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("nyar"))
-        .expect("产物目录缺少 `.nyar`");
-    let bytes = fs::read(&artifact).expect("读取 `.nyar`");
+        .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("odin"))
+        .expect("产物目录缺少 `.odin`");
+    let bytes = fs::read(&artifact).expect("读取 `.odin`");
     let mut vm = OdinVm::new();
-    let loaded = vm.load(&bytes).expect("`.nyar` 必须可被 odin-vm 加载");
+    let loaded = vm.load(&bytes).expect("`.odin` 必须可被 odin-vm 加载");
     let symbol_for = |name: &str| {
         loaded
             .exports

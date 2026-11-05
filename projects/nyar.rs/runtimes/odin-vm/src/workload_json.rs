@@ -1,6 +1,6 @@
 //! 将 JSON 工作负载意图解析为 [`nyar_gc::WorkloadIntent`]。
 //!
-//! 解析属于宿主边界；`.nyar` 外码不携带这些字段。
+//! 解析属于宿主边界；`.odin` 外码不携带这些字段。
 
 use nyar_gc::{GcMode, IntentError, IntentSource, ObjectLifetimeHint, WorkloadIntent};
 

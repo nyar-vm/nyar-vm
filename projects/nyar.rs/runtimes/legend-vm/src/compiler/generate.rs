@@ -9,7 +9,7 @@ pub enum GenerateConstant {
     Null,
     /// Boolean.
     Bool(bool),
-    /// Integer (encoded as `Integer32` in `.nyar`).
+    /// Integer (encoded as `Integer32` in `.odin`).
     Int64(i64),
     /// Float64.
     Float64(f64),
@@ -190,7 +190,7 @@ impl GenerateInstruction {
         Self { opcode, operands }
     }
 
-    /// Encoded size in the `.nyar` code stream.
+    /// Encoded size in the `.odin` code stream.
     pub fn encoded_size(&self) -> usize {
         self.opcode.code_size() as usize
     }

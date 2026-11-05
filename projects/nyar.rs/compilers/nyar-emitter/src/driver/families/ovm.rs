@@ -1,8 +1,8 @@
-use std::fs;
+use std::{fs, path::Path};
 
 use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result, bundled_backend_capability_descriptor, nyar_backend_vm::emit_nyar_module};
 use nyar::{ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane};
-use odin_bytecode::{OdinExportKind, OdinModuleData};
+use odin_bytecode::{OdinExportKind, OdinModuleData, decode_module};
 
 use super::BundledBackendCompiler;
 
@@ -28,12 +28,13 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
 
         if let Some(module) = input.nyar_module.as_ref() {
             let entries = resolve_entry_symbols(module, &input.library_public_exports, request.library_mode)?;
-            let nyar_name = format!("{}.nyar", request.artifact_name);
-            let nyar_path = input.output_dir.join(&nyar_name);
-            emit_nyar_module(module, &nyar_path)?;
+            reject_legacy_output(&input.output_dir, request.artifact_name)?;
+            let odin_name = format!("{}.odin", request.artifact_name);
+            let odin_path = input.output_dir.join(&odin_name);
+            emit_nyar_module(module, &odin_path)?;
             artifacts.push(ArtifactDescriptor {
-                name: nyar_name,
-                path: format!("{}.nyar", request.artifact_name),
+                name: odin_name,
+                path: format!("{}.odin", request.artifact_name),
                 kind: ArtifactKind::Executable,
                 format: ArtifactFormat::RawBinary,
                 target: request.options.target.clone(),
@@ -46,7 +47,7 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
                     .iter()
                     .map(|entry| DriverLibraryExport {
                         logical_name: entry.clone(),
-                        physical_artifact: format!("{}.nyar", request.artifact_name),
+                        physical_artifact: format!("{}.odin", request.artifact_name),
                         invocation: "ovm run --entry".to_string(),
                         // OVM 尚未冻结 ABI 载体合同；导出索引先记录调用面，digest 留空。
                         abi_digest: String::new(),
@@ -82,11 +83,33 @@ pub fn resolve_entry_symbols(module: &OdinModuleData, library_public_exports: &[
     Ok(entries)
 }
 
+/// 拒绝在旧产物之上静默重建：旧 `.nyar` 执行产物与不兼容的既有 `.odin` 都必须先移除。
+fn reject_legacy_output(output_dir: &Path, artifact_name: &str) -> Result<()> {
+    if let Ok(entries) = fs::read_dir(output_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("nyar") && path.is_file() {
+                return Err(format!(
+                    "拒绝重建：输出目录存在旧 `.nyar` 执行产物 `{}`；`.odin` 是不同产物身份，请删除旧产物后重建",
+                    path.display()
+                ));
+            }
+        }
+    }
+    let target = output_dir.join(format!("{artifact_name}.odin"));
+    if target.is_file() {
+        let bytes = fs::read(&target).map_err(|error| format!("读取既有 `.odin` 产物失败：{}: {error}", target.display()))?;
+        decode_module(&bytes)
+            .map_err(|error| format!("拒绝覆盖格式不兼容的既有 `.odin` 产物 `{}`：{error}；请删除后重建", target.display()))?;
+    }
+    Ok(())
+}
+
 fn ovm_run_contract(artifact_name: &str, entry: &str) -> DriverRunContract {
     DriverRunContract {
         logical_entry: entry.to_string(),
-        physical_entry: format!("{artifact_name}.nyar"),
+        physical_entry: format!("{artifact_name}.odin"),
         invocation: "ovm".to_string(),
-        validate: format!("ovm run {artifact_name}.nyar --entry {entry}"),
+        validate: format!("ovm run {artifact_name}.odin --entry {entry}"),
     }
 }

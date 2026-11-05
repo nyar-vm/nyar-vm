@@ -2,7 +2,7 @@
 //!
 //! guest 语言的 specialize 路径把解释器 match 分支残化为本契约的操作流；
 //! 宿主（`legend-vm`）实现产品级接收端（`NativeResidualSink` → x64 / Windows PE）。
-//! guest 前端不依赖 VM crate；栈式 `.nyar` 接收端仅可作为临时探针存在，
+//! guest 前端不依赖 VM crate；栈式 `.odin` 接收端仅可作为临时探针存在，
 //! 不是宿主脚本的 PE 目标。
 
 /// 把解释器针对某程序特化后产生的操作推入的目标接收端。

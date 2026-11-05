@@ -125,7 +125,7 @@ export function resolveNyarEntry(artifactDir: string): {
     physicalEntry: string;
     logicalEntry: string;
 } | null {
-    const nyarPath = findFileRecursive(artifactDir, (name) => name.endsWith('.nyar'));
+    const nyarPath = findFileRecursive(artifactDir, (name) => name.endsWith('.odin'));
     if (!nyarPath) {
         return null;
     }

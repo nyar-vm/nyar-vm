@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 
-//! Nyar `.nyar` 外码格式合同（储存码）。
+//! `.odin` 执行字节码外码格式合同（储存码）。
 //!
 //! 本 crate 是 opcode、section、encode/decode 与纯格式结构的唯一所有者。
 //! 内码、解释器、GC 与 JIT 不得在此定义运行时执行表示。
@@ -30,7 +30,10 @@ pub use crate::{
         OdinModuleData, OdinSectionKind, OdinWitnessDispatchEntry,
     },
     opcode::{
-        BYTECODE_FORMAT_VERSION, HEADER_SIZE, IntrinsicOpcode, OBSOLETE_CALL_NATIVE, ODIN_MAGIC, Odin_VERSION, OdinHeadCode, OdinInstruction,
-        OdinInstructionForm, SECTION_HEADER_SIZE, decode_at, emit_imm1, emit_imm2, emit_plain,
+        BYTECODE_FORMAT_VERSION, HEADER_SIZE, IntrinsicOpcode, NYAR_ASSEMBLY_MAGIC, OBSOLETE_CALL_NATIVE, ODIN_MAGIC, OdinHeadCode, OdinInstruction,
+        OdinInstructionForm, Odin_VERSION, SECTION_HEADER_SIZE, decode_at, emit_imm1, emit_imm2, emit_plain,
+
+
+
     },
 };

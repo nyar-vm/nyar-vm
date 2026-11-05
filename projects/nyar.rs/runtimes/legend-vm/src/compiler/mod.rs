@@ -1,7 +1,7 @@
 //! Legend VM compilers.
 //!
 //! Host-script PE product path: [`native_residual`] -> x64 / Windows PE.
-//! [`residual::StackResidualSink`] / [`bytecode`] are probe-only (`.nyar`).
+//! [`residual::StackResidualSink`] / [`bytecode`] are probe-only (`.odin`).
 
 mod bytecode;
 mod generate;

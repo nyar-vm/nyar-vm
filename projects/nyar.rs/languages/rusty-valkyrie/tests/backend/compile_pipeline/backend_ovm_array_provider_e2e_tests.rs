@@ -83,7 +83,7 @@ fn array_groups(main_body: &str) -> Vec<CompilerSourceGroup> {
     ]
 }
 
-/// 沿 Compiler 产出的目标私有计划降低到 `.nyar`，不重放调用边。
+/// 沿 Compiler 产出的目标私有计划降低到 `.odin`，不重放调用边。
 fn lower_with_bindings(groups: &[CompilerSourceGroup], bindings: &[CompilerHostProviderBinding]) -> Result<OdinModuleData, String> {
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(groups, bindings, &[], "native")

@@ -12,7 +12,7 @@ pub use nyar_jit::{
     materialize_interpreter_frames,
 };
 
-/// Builds a language-agnostic JIT request from a loaded `.nyar` module.
+/// Builds a language-agnostic JIT request from a loaded `.odin` module.
 pub fn compile_request(module: &LoadedModule, function_index: usize) -> Result<JitCompileRequest, JitError> {
     let function = module.functions.get(function_index).ok_or(JitError::InvalidFunctionIndex(function_index))?;
     let safepoint_indices = module.executable.get(function_index).map(|exec| exec.safepoints.clone()).unwrap_or_default();

@@ -1,4 +1,4 @@
-//! Generic `.nyar` bucket store under a cache root.
+//! Generic `.odin` bucket store under a cache root.
 
 use std::{
     fs,
@@ -22,9 +22,11 @@ impl WorkspaceCache {
         Self { root: cache_root.as_ref().to_path_buf() }
     }
 
-    /// Path for a single entry: `{root}/{safe_bucket}/{key_hash}.nyar`.
+    /// Path for a single entry: `{root}/{safe_bucket}/{key_hash}.v{format_version}.odin`.
+    ///
+    /// 产物格式版本进入缓存键：旧版本的条目既不会被读取，也不会被新版本复用。
     pub fn entry_path(&self, bucket: &str, key_hash: &str) -> PathBuf {
-        self.root.join(sanitize_bucket_name(bucket)).join(format!("{key_hash}.nyar"))
+        self.root.join(sanitize_bucket_name(bucket)).join(format!("{key_hash}.v{}.odin", Odin_VERSION))
     }
 
     /// Read a payload when the entry exists and its type tag matches.
@@ -43,6 +45,7 @@ impl WorkspaceCache {
 
         match decode_module(&raw) {
             Ok(module) if module.name == expected_type => Ok(Some(module.code_bytes)),
+            // 版本/magic 不匹配（含旧 `.odin` 执行产物）一律视为缓存未命中并重建。
             Ok(_) | Err(_) => Ok(None),
         }
     }

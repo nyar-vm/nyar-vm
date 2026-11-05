@@ -12,7 +12,7 @@ use nyar_emitter::{
 use odin_bytecode::{OdinHeadCode, OdinModuleData, decode_at};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
-/// 沿 Compiler 产出的目标私有计划降低到 `.nyar`，不重放调用边。
+/// 沿 Compiler 产出的目标私有计划降低到 `.odin`，不重放调用边。
 fn try_lower_source_groups(groups: &[CompilerSourceGroup]) -> Result<OdinModuleData, String> {
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(groups, &[], &[], "native")

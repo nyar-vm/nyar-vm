@@ -15,9 +15,25 @@ fn bytecode_format_version_tracks_nyar_version() {
     assert_eq!(BYTECODE_FORMAT_VERSION, Odin_VERSION);
     // v1：新增 `Trap` 头码（0x0C）。v2：新增 `Integer64` 常量（0x12）。
     // v3：新增 `CallIndirect` 头码（0x06）。v4：`Function` 值改为两槽闭包对象。
+    // v5：执行产物身份由 `.odin` 迁到 `.odin`（magic `NYAR` → `ODIN`）。
     // `decode_module` 对非当前版本一律 `InvalidVersion` 拒绝，旧缓存产物按缓存未命中处理。
-    // 递增格式必须同时抬 `NYAR_VERSION`。
-    assert_eq!(BYTECODE_FORMAT_VERSION, 4);
+    // 递增格式必须同时抬 `ODIN_VERSION`。
+    assert_eq!(BYTECODE_FORMAT_VERSION, 5);
+}
+
+#[test]
+fn odin_magic_is_a_distinct_artifact_identity() {
+    assert_eq!(ODIN_MAGIC, 0x4F44_494E);
+    assert_eq!(NYAR_ASSEMBLY_MAGIC, 0x4E59_4152);
+    assert_ne!(ODIN_MAGIC, NYAR_ASSEMBLY_MAGIC);
+}
+
+#[test]
+fn legacy_nyar_magic_is_rejected_structurally() {
+    let legacy = [0x4E, 0x59, 0x41, 0x52, 0x00, 0x00, 0x00, 0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let error = decode_module(&legacy).expect_err("`.nyar` magic must not decode as `.odin`");
+    assert_eq!(error, OdinDecodeError::LegacyNyarMagic);
+    assert!(error.to_string().contains(".nyar") && error.to_string().contains(".odin"));
 }
 
 #[test]

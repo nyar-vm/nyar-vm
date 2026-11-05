@@ -38,5 +38,5 @@ let mut gc = GarbageCollector::new();
 
 ## Boundaries
 
-- Does not load `.nyar` files or decode bytecode.
+- Does not load `.odin` files or decode bytecode.
 - Does not define language type systems or witness tables (those live in compilers / `nyar-types`).

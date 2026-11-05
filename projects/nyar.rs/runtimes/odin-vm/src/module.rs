@@ -1,4 +1,4 @@
-//! 已加载 `.nyar` 模块：函数表、常量池、导入解析与全局槽。
+//! 已加载 `.odin` 模块：函数表、常量池、导入解析与全局槽。
 
 use odin_bytecode::{
     OdinConstant, OdinExport, OdinFunction, OdinGlobal, OdinImport, OdinLayout, OdinModuleData, OdinWitnessDispatchEntry, decode_module,
@@ -38,7 +38,7 @@ impl ModuleGlobals {
     }
 }
 
-/// Runtime view of a loaded `.nyar` module.
+/// Runtime view of a loaded `.odin` module.
 #[derive(Debug, Clone)]
 pub struct LoadedModule {
     /// Module format version.
@@ -70,7 +70,7 @@ pub struct LoadedModule {
 }
 
 impl LoadedModule {
-    /// Loads a module from `.nyar` bytes.
+    /// Loads a module from `.odin` bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, OdinRuntimeError> {
         let data = decode_module(bytes).map_err(|error| OdinRuntimeError::ModuleLoad(error.to_string()))?;
         Self::from_data(data)

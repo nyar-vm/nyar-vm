@@ -135,7 +135,7 @@ fn ssg_build_binds_the_gated_provider() {
     let component = lower(E1_FIXTURE);
     render_static_ovm(&component, temp.path(), &scratch, "test").expect("SSG 构建必须选中门禁 provider");
     assert!(
-        scratch.join("test.nyar").exists() || scratch.read_dir().map(|mut entries| entries.next().is_some()).unwrap_or(false),
+        scratch.join("test.odin").exists() || scratch.read_dir().map(|mut entries| entries.next().is_some()).unwrap_or(false),
         "SSG 编译必须产生中间产物"
     );
 }
