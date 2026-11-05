@@ -56,7 +56,7 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                     callee_return = self.resolve_callee_return_type(callee, Some(import_index))?;
                     let param_types = self.resolve_callee_param_types(callee, Some(import_index))?;
-                    self.emit_abi_call_arguments(arguments, &param_types)?;
+                    self.emit_abi_call_arguments(arguments, &param_types, None)?;
                     self.emit_call(import_index);
                 }
                 else if let Some(function_index) = self.resolve_callee_function_index(callee) {
@@ -71,7 +71,8 @@ impl<'a> WasmMirLowerer<'a> {
                         .ok_or_else(|| format!("WASM 函数下标缺少参数签名: function_index={function_index} in `{}`", self.mir_fn.symbol))?
                         .clone();
                     callee_return = return_type;
-                    self.emit_abi_call_arguments(arguments, &param_types)?;
+                    let param_layouts = self.callee_param_layouts(callee);
+                    self.emit_abi_call_arguments(arguments, &param_types, param_layouts.as_deref())?;
                     self.emit_call(function_index);
                 }
                 else {
@@ -99,7 +100,7 @@ impl<'a> WasmMirLowerer<'a> {
                 // 决定，`call_indirect` 的 functype 固定为「可见形参 + 一个尾部 anyref」。
                 // 环境作为普通尾实参压栈，不占 callee 槽；缺事实即结构化失败。
                 let (param_types, return_type, type_index) = self.resolve_indirect_callee_signature(callee)?;
-                self.emit_abi_call_arguments(arguments, &param_types)?;
+                self.emit_abi_call_arguments(arguments, &param_types, None)?;
                 self.emit_closure_callee(callee)?;
                 self.emit_call_indirect(type_index, 0);
                 callee_return = return_type;
@@ -146,7 +147,12 @@ impl<'a> WasmMirLowerer<'a> {
     /// 已解析签名声明，只在两者分叉时按冻结配方转换。managed `Utf8`（gc struct
     /// anyref）进入声明 i32 的宿主/adaptor 槽时消费 managed→host 句柄配方；其余
     /// 组合保持既有 coerce 语义（宽度、装箱由目标计划承诺），未知分叉结构化失败。
-    fn emit_abi_call_arguments(&mut self, arguments: &[MirOperand], param_types: &[u8]) -> crate::Result<()> {
+    fn emit_abi_call_arguments(
+        &mut self,
+        arguments: &[MirOperand],
+        param_types: &[u8],
+        param_layouts: Option<&[Option<LayoutId>]>,
+    ) -> crate::Result<()> {
         if arguments.len() != param_types.len() {
             return Err(format!(
                 "WASM 调用实参与已解析签名不一致: 实参={} 形参={} in `{}`",
@@ -155,10 +161,23 @@ impl<'a> WasmMirLowerer<'a> {
                 self.mir_fn.symbol
             ));
         }
-        for (argument, expected) in arguments.iter().zip(param_types) {
-            self.emit_operand_coerced(argument, *expected)?;
+        for (index, (argument, expected)) in arguments.iter().zip(param_types).enumerate() {
+            let layout = param_layouts.and_then(|layouts| layouts.get(index).copied().flatten());
+            self.emit_operand_into_text_slot(argument, *expected, layout)?;
         }
         Ok(())
+    }
+
+    /// 语言函数被调方的形参 layout（entry 块参数上的冻结事实）。
+    /// 仅静态调用可解析；导入/间接调用没有本地函数体，返回 `None`。
+    fn callee_param_layouts(&self, callee: &MirOperand) -> Option<Vec<Option<LayoutId>>> {
+        let MirOperand::Item(instance) = callee
+        else {
+            return None;
+        };
+        let view = self.ctx.submission.backend_plan.get_function(instance)?;
+        let entry = view.function.blocks.iter().find(|block| block.id == view.function.entry)?;
+        Some(entry.parameters.iter().map(|parameter| view.function.value_layouts.get(parameter).copied()).collect())
     }
 
     /// 按冻结配方把 managed 字符串 gc struct 转为宿主 i32 句柄：

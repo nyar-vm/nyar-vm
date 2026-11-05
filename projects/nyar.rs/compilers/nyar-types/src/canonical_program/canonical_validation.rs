@@ -12,7 +12,8 @@ use super::{
         CanonicalOperand, CanonicalSemanticMir, CanonicalTerminator,
     },
     linked_program::{
-        CanonicalPrimitiveType, CanonicalTypeKind, LinkedSemanticProgram, canonical_nominal_owner_matches, canonical_types_compatible,
+        CanonicalPrimitiveType, CanonicalTypeKind, LinkedSemanticProgram, canonical_nominal_owner_matches,
+        canonical_text_encoding_compatible, canonical_types_compatible,
     },
 };
 
@@ -326,7 +327,13 @@ impl CanonicalSemanticMir {
                                 return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
                             }
                             if let Some(result) = instruction.results.first() {
-                                if function.value_types.get(result) != function.value_types.get(value) {
+                                let same_type = match (function.value_types.get(result), function.value_types.get(value)) {
+                                    (Some(result_ty), Some(value_ty)) => {
+                                        result_ty == value_ty || canonical_text_encoding_compatible(&linked, *result_ty, *value_ty)
+                                    }
+                                    _ => false,
+                                };
+                                if !same_type {
                                     return Err(CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id });
                                 }
                             }
@@ -694,11 +701,13 @@ impl CanonicalSemanticMir {
                                     CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
                                 });
                             }
-                            if elements.iter().any(|value| function.value_types.get(value) != Some(element)) {
+                            if elements.iter().any(|value| {
+                                function.value_types.get(value).is_some_and(|actual| !matches_declared_type(linked, *actual, *element))
+                            }) {
                                 return Err(CanonicalMirError::OperationOperandTypeMismatch {
                                     function: *key,
                                     instruction: instruction.id,
-                                    value: *elements.iter().find(|value| function.value_types.get(value) != Some(element)).unwrap(),
+                                    value: *elements.iter().find(|value| function.value_types.get(value).is_some_and(|actual| !matches_declared_type(linked, *actual, *element))).unwrap(),
                                 });
                             }
                             elements.clone()
@@ -981,7 +990,7 @@ fn unify_call_signature(
     bindings: &mut BTreeMap<(ItemId, u32), TypeId>,
     allow_new_bindings: bool,
 ) -> bool {
-    if actual == expected {
+    if actual == expected || canonical_text_encoding_compatible(linked, actual, expected) {
         return true;
     }
     let Some(expected_kind) = linked.types.get(&expected).map(|row| &row.kind)

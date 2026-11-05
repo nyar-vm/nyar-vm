@@ -25,7 +25,8 @@ impl<'a> WasmMirLowerer<'a> {
                 // 身份搬运值是这条指令的全部语义。
                 if let Some(output) = instruction_primary_result(instruction) {
                     let slot_ty = self.output_scalar_slot_type(output);
-                    self.emit_contract_operand(value, slot_ty)?;
+                    let slot_layout = self.mir_fn.value_layouts.get(&output).copied();
+                    self.emit_operand_into_text_slot(value, slot_ty, slot_layout)?;
                     self.assign_output_local(output);
                 }
                 else {
@@ -40,7 +41,8 @@ impl<'a> WasmMirLowerer<'a> {
                 // 否则出现 `local.set expected i32, found anyref`（func ?array 形参 Copy）?
                 if let Some(output) = instruction_primary_result(instruction) {
                     let slot_ty = self.output_scalar_slot_type(output);
-                    self.emit_contract_operand(source, slot_ty)?;
+                    let slot_layout = self.mir_fn.value_layouts.get(&output).copied();
+                    self.emit_operand_into_text_slot(source, slot_ty, slot_layout)?;
                     self.assign_output_local(output);
                 }
                 else {

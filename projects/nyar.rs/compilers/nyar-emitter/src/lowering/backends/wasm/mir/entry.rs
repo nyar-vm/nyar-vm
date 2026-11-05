@@ -1203,27 +1203,67 @@ fn freeze_utf8_host_handle_materialize_plans(
                             Some((_, TargetOperatorBinding::FrozenWasmGcArray(plan))) if plan.operation == WasmGcArrayOperation::Get
                         ) || callee_import_index.contains_key(callee)
                     }
+                    // 字符串常量 / `Utf8` SSA 值是宿主 i32 句柄；写入文本载体局部槽
+                    // （`StoreVar` / `Copy` 结果）时同样要在编码期物化。
+                    MirInstructionKind::StoreVar { .. } | MirInstructionKind::Copy { .. } => true,
                     _ => false,
                 };
-                if !is_handle_boundary_source {
-                    continue;
+                if is_handle_boundary_source {
+                    for result in &instruction.results {
+                        let Some(ty) = mir_fn.value_types.get(result)
+                        else {
+                            continue;
+                        };
+                        if !is_js_glue_host_string_type(ty) {
+                            continue;
+                        }
+                        let Some(layout_id) = mir_fn.value_layouts.get(result).copied()
+                        else {
+                            continue;
+                        };
+                        if gc_struct_type_indices.contains_key(&layout_id) {
+                            boundary_layouts.insert(layout_id);
+                        }
+                    }
                 }
-                for result in &instruction.results {
-                    let Some(ty) = mir_fn.value_types.get(result)
+                // 静态语言调用：宿主 i32 文本句柄实参进入被调方 managed 形参槽时，
+                // 物化配方按被调方 entry 块参数的 layout 冻结。
+                if let MirInstructionKind::Call { callee: MirOperand::Item(callee), arguments, .. } = &instruction.kind {
+                    let Some(view) = submission.backend_plan.get_function(callee)
                     else {
                         continue;
                     };
-                    if !is_js_glue_host_string_type(ty) {
-                        continue;
-                    }
-                    let Some(layout_id) = mir_fn.value_layouts.get(result).copied()
+                    let Some(entry) = view.function.blocks.iter().find(|block| block.id == view.function.entry)
                     else {
                         continue;
                     };
-                    if gc_struct_type_indices.contains_key(&layout_id) {
-                        boundary_layouts.insert(layout_id);
+                    for (argument, parameter) in arguments.iter().zip(entry.parameters.iter()) {
+                        let argument_is_host_handle = match argument {
+                            MirOperand::Constant(_) => true,
+                            MirOperand::Value(value) => {
+                                mir_fn.value_layouts.get(value).is_none()
+                                    && mir_fn.value_types.get(value).is_some_and(|ty| is_js_glue_host_string_type(ty))
+                            }
+                            _ => false,
+                        };
+                        if !argument_is_host_handle {
+                            continue;
+                        }
+                        let Some(layout_id) = view.function.value_layouts.get(parameter).copied()
+                        else {
+                            continue;
+                        };
+                        if gc_struct_type_indices.contains_key(&layout_id) {
+                            boundary_layouts.insert(layout_id);
+                        }
                     }
                 }
+            }
+        }
+        // 返回槽同理：函数体 `return` 的宿主 i32 文本句柄要物化到返回 layout。
+        if let Some(layout_id) = mir_fn.return_layout {
+            if is_js_glue_host_string_type(&mir_fn.return_type) && gc_struct_type_indices.contains_key(&layout_id) {
+                boundary_layouts.insert(layout_id);
             }
         }
     }

@@ -126,6 +126,33 @@ impl<'a> WasmMirLowerer<'a> {
         self.mir_fn.value_layouts.get(&value).copied()
     }
 
+    /// 把宿主 i32 文本句柄写入已登记 gc struct 的 managed 槽。
+    ///
+    /// 字符串常量/`Utf8` SSA 值在内部只在宿主边界以 i32 句柄出现；进入
+    /// `Nominal` 文本载体槽（形参、局部变量、返回槽）必须按冻结配方物化。
+    /// 其余组合保持既有 coerce 语义；缺 layout 或配方的分叉仍结构化失败。
+    pub(super) fn emit_operand_into_text_slot(
+        &mut self,
+        operand: &MirOperand,
+        slot_ty: u8,
+        slot_layout: Option<LayoutId>,
+    ) -> crate::Result<()> {
+        let actual = self.operand_wasm_stack_type(operand);
+        if slot_ty == WASM_GC_ANYREF
+            && actual == VALTYPE_I32
+            && self.operand_semantic_type(operand).is_some_and(is_js_glue_host_string_type)
+        {
+            if let Some(layout_id) = slot_layout {
+                if self.utf8_host_handle_materialize.contains_key(&layout_id) {
+                    self.emit_operand(operand)?;
+                    self.emit_utf8_host_handle_materialize(layout_id)?;
+                    return Ok(());
+                }
+            }
+        }
+        self.emit_operand_coerced(operand, slot_ty)
+    }
+
     /// 按冻结配方把 `array.get` 取出的宿主 i32 句柄物化为 managed 字符串 struct：
     /// `call env::host_utf8_extract` 取回 `(ptr, len)` → `array.new_default` →
     /// 逐字节 `i32.load8_u` + `array.set` → `struct.new_default` + `struct.set`。

@@ -46,6 +46,12 @@ pub struct LinkedSemanticProgram {
     pub type_surface_spellings: BTreeMap<TypeId, Identifier>,
     /// 可作为数组下标 / `ArrayLength` 结果的 TypeId（含 `Nominal{usize}`）；禁止把名义整数改写成 Primitive。
     pub array_index_types: BTreeSet<TypeId>,
+    /// 文本载体名义声明到语言文本编码基元的显式映射。
+    ///
+    /// 字符串常量在 MIR 中只携带编码基元（`Utf8` / `Utf16`），而 `utf8` / `utf16`
+    /// 是 std 中指向 `Utf8Text` / `Utf16Text` 的别名声明。前端把载体声明的 TypeId
+    /// 登记在这里；canonical 只认这份身份，不按拼写猜语言类型。
+    pub text_encoding_types: BTreeMap<TypeId, CanonicalPrimitiveType>,
     /// Compiler 解析出的聚合布局；装配与 backend 不得从旧 MIR 重建。
     pub aggregate_layouts: AggregateLayoutPlan,
     /// 已由 Compiler 绑定的名义身份到物理布局身份映射。
@@ -359,7 +365,7 @@ pub(crate) fn canonical_nominal_owner_matches(linked: &LinkedSemanticProgram, ac
 }
 
 pub(crate) fn canonical_types_compatible(linked: &LinkedSemanticProgram, actual: TypeId, expected: TypeId) -> bool {
-    if actual == expected {
+    if actual == expected || canonical_text_encoding_compatible(linked, actual, expected) {
         return true;
     }
     let (Some(actual_kind), Some(expected_kind)) =
@@ -403,6 +409,26 @@ pub(crate) fn canonical_types_compatible(linked: &LinkedSemanticProgram, actual:
             CanonicalTypeKind::Generic { owner: actual_owner, ordinal: actual_ordinal },
             CanonicalTypeKind::Generic { owner: expected_owner, ordinal: expected_ordinal },
         ) => actual_owner == expected_owner && actual_ordinal == expected_ordinal,
+        _ => false,
+    }
+}
+
+/// 文本编码基元与文本载体名义类型之间是否等价。
+///
+/// 只有前端显式登记进 [`LinkedSemanticProgram::text_encoding_types`] 的名义 TypeId
+/// 才参与判定；两种形态必须映射到同一编码（`Utf8` 或 `Utf16`），不同编码之间
+/// 没有隐式兼容。
+pub(crate) fn canonical_text_encoding_compatible(linked: &LinkedSemanticProgram, left: TypeId, right: TypeId) -> bool {
+    fn encoding(linked: &LinkedSemanticProgram, ty: TypeId) -> Option<CanonicalPrimitiveType> {
+        match linked.types.get(&ty).map(|record| &record.kind) {
+            Some(CanonicalTypeKind::Primitive(primitive @ (CanonicalPrimitiveType::Utf8 | CanonicalPrimitiveType::Utf16))) => {
+                Some(*primitive)
+            }
+            _ => linked.text_encoding_types.get(&ty).copied(),
+        }
+    }
+    match (encoding(linked, left), encoding(linked, right)) {
+        (Some(left), Some(right)) => left == right,
         _ => false,
     }
 }

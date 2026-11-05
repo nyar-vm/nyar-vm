@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use nyar_types::{
-    CanonicalProgram, CanonicalSemanticMir, Identifier, ImportCapability, ImportIndex, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram,
-    NominalInstanceRecord, QualifiedName, StructuredDiagnosticSet, TypeRecord,
+    CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, Identifier, ImportCapability, ImportIndex, ImportRecord,
+    ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord, QualifiedName, StructuredDiagnosticSet, TypeRecord,
     canonical_program::{EntryRecord, ExportRecord},
 };
 
@@ -113,6 +113,11 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         // ArrayGet/ArrayLength/ArrayNew 合同认整数形状（见 LinkedSemanticProgram::array_index_types）。
         if is_array_index_valkyrie_type(ty, module) {
             linked.array_index_types.insert(*id);
+        }
+        // 文本载体声明（`Utf8Text` / `Utf16Text`）登记编码身份；字符串常量只携带
+        // `Utf8` / `Utf16` 编码基元，canonical 靠这份显式映射判定等价。
+        if let Some(encoding) = text_carrier_encoding(ty, module) {
+            linked.text_encoding_types.insert(*id, encoding);
         }
     }
     for (nominal, (declaration, semantics)) in &nominals {
@@ -292,4 +297,28 @@ fn register_declaration_spellings(
 /// 依赖该分隔符拆出完整 module path，避免不同模块的同名 aggregate 在 JS glue 中混淆。
 fn canonical_surface_spelling(qualified_name: &str) -> String {
     qualified_name.replace('.', "::")
+}
+
+/// std 文本载体声明到语言文本编码基元的映射。
+///
+/// `utf8` / `utf16` 是 std 中指向 `Utf8Text` / `Utf16Text` 的别名声明；字符串
+/// 常量在 MIR 中只写 `Utf8` / `Utf16` 编码。登记只认 std.text 命名空间下的
+/// 文本载体声明，其他同名声明不参与等价判定。
+fn text_carrier_encoding(ty: &ValkyrieType, module: &MirModule) -> Option<CanonicalPrimitiveType> {
+    let ValkyrieType::Nominal { declaration, arguments, .. } = ty
+    else {
+        return None;
+    };
+    if !arguments.is_empty() {
+        return None;
+    }
+    let aggregate = module.structs.iter().find(|aggregate| aggregate.declaration == Some(*declaration))?;
+    if aggregate.namespace != "std.text" {
+        return None;
+    }
+    match aggregate.name.as_str() {
+        "Utf8Text" => Some(CanonicalPrimitiveType::Utf8),
+        "Utf16Text" => Some(CanonicalPrimitiveType::Utf16),
+        _ => None,
+    }
 }

@@ -56,7 +56,7 @@ impl<'a> WasmMirLowerer<'a> {
         match &block.terminator {
             MirTerminator::Return { value } => {
                 match (self.return_value_type, value) {
-                    (Some(expected), Some(value)) => self.emit_contract_operand(value, expected)?,
+                    (Some(expected), Some(value)) => self.emit_operand_into_text_slot(value, expected, self.mir_fn.return_layout)?,
                     (None, None) => {}
                     _ => panic!("WASM 返回值与已确定签名不一致: {}", self.mir_fn.symbol),
                 }
@@ -123,8 +123,9 @@ impl<'a> WasmMirLowerer<'a> {
         let target_block = self.mir_fn.blocks.iter().find(|block| block.id == target).expect("WASM 跳转目标不存在");
         assert_eq!(target_block.parameters.len(), arguments.len(), "WASM 块参数数量不一致");
         let destinations = target_block.parameters.iter().map(|parameter| self.planned_value_local(*parameter)).collect::<Vec<_>>();
-        for (argument, destination) in arguments.iter().zip(&destinations) {
-            self.emit_contract_operand(argument, self.wasm_local_value_type(*destination))?;
+        for ((argument, parameter), destination) in arguments.iter().zip(&target_block.parameters).zip(&destinations) {
+            let slot_layout = self.mir_fn.value_layouts.get(parameter).copied();
+            self.emit_operand_into_text_slot(argument, self.wasm_local_value_type(*destination), slot_layout)?;
         }
         for destination in destinations.into_iter().rev() {
             self.emit_local_set(destination);

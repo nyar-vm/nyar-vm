@@ -50,11 +50,32 @@ fn build_standalone_wasm(prefix: &str, source: &str) -> WasmArtifact {
 /// std 与 wasm SDK adaptor 需要同仓成员身份：在临时目录复刻最小 workspace，
 /// 只拷贝 manifest 与 `source/`，不改动 valkyrie.v。
 fn build_std_wasm(prefix: &str, std_root: &Path, source: &str) -> WasmArtifact {
+    let (temp_dir, project_dir) = write_std_workspace(prefix, std_root, source);
+    build_and_find_glue(temp_dir, project_dir)
+}
+
+/// 与 [`build_std_wasm`] 同一 std 工作区，但要求构建失败并返回结构化诊断文本。
+fn build_std_wasm_error(prefix: &str, std_root: &Path, source: &str) -> String {
+    let (temp_dir, project_dir) = write_std_workspace(prefix, std_root, source);
+    let output_dir = project_dir.join("dist").join("wasm");
+    let error = run(&BuildArgs {
+        project_dir,
+        target: CanonicalTarget::parse("wasm").expect("wasm target"),
+        output_dir: Some(output_dir),
+        debug_artifacts: false,
+    })
+    .expect_err("该源码必须被编译流水线结构化拒绝");
+    let _ = temp_dir;
+    error.to_string()
+}
+
+fn write_std_workspace(prefix: &str, std_root: &Path, source: &str) -> (TempDir, PathBuf) {
     let temp_dir = tempfile::Builder::new().prefix(prefix).tempdir().expect("临时目录");
     let root = temp_dir.path();
     for (name, source_project) in [
         ("std", std_root.join("projects").join("std")),
         ("std.adaptor.wasm", std_root.join("projects").join("std.adaptors._").join("std.adaptor.wasm")),
+        ("unicode.types", std_root.join("projects").join("unicode._").join("unicode.types")),
     ] {
         let target = root.join(name);
         fs::create_dir_all(&target).expect("建依赖目录");
@@ -63,7 +84,7 @@ fn build_std_wasm(prefix: &str, std_root: &Path, source: &str) -> WasmArtifact {
     }
     fs::write(
         root.join("legions.von"),
-        r#"{ name: "p4-wasm-std", members: ["std", "std.adaptor.wasm", "app"] }"#,
+        r#"{ name: "p4-wasm-std", members: ["std", "std.adaptor.wasm", "unicode.types", "app"] }"#,
     )
     .expect("写 workspace 清单");
     let project_dir = root.join("app");
@@ -79,7 +100,7 @@ fn build_std_wasm(prefix: &str, std_root: &Path, source: &str) -> WasmArtifact {
     )
     .expect("写项目清单");
     fs::write(project_dir.join("source").join("main.v"), source).expect("写入口源码");
-    build_and_find_glue(temp_dir, project_dir)
+    (temp_dir, project_dir)
 }
 
 fn build_and_find_glue(temp_dir: TempDir, project_dir: PathBuf) -> WasmArtifact {
@@ -311,6 +332,74 @@ process.stdout.write(typeof value === "bigint" ? value.toString() : JSON.stringi
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+/// `utf8` 别名/载体：字符串字面量进入 `utf8` 局部槽与形参槽、以及 `[utf8]` 返回，
+/// 全部真构建 + Node 真跑断言值（而不是只断言签名）。
+#[test]
+fn wasm_utf8_alias_literals_execute_with_real_values() {
+    let Some(std_root) = valkyrie_v_std_root()
+    else {
+        eprintln!("skip: valkyrie.v not found (set VALKYRIE_V_ROOT or clone beside nyar-vm.rs)");
+        return;
+    };
+    let artifact = build_std_wasm(
+        "p4-wasm-utf8-alias",
+        &std_root,
+        r#"namespace app;
+
+[export(name: "let_literal")]
+micro let_literal() -> i64 {
+    let text: utf8 = "abc"
+    return text.length() as i64
+}
+
+micro text_length(text: utf8) -> i64 {
+    return text.length() as i64
+}
+
+[export(name: "call_literal")]
+micro call_literal() -> i64 {
+    return text_length("abc")
+}
+
+[export(name: "words")]
+micro words() -> [utf8] {
+    return ["a", "bb", "ccc"]
+}
+"#,
+    );
+    assert_eq!(call_export(&artifact, "let_literal"), "3", "`let text: utf8 = \"abc\"` 必须真跑得到长度 3");
+    assert_eq!(call_export(&artifact, "call_literal"), "3", "字面量传 `utf8` 形参必须真跑得到长度 3");
+    assert_eq!(
+        call_export(&artifact, "words"),
+        r#"["a","bb","ccc"]"#,
+        "`[utf8]` 返回必须物化为宿主可读的真实字符串数组"
+    );
+}
+
+/// 文本编码兼容只覆盖同编码载体：整数不能落进 `utf8` 槽，且必须是结构化诊断而非 panic。
+#[test]
+fn wasm_utf8_alias_rejects_incompatible_initializer_with_structured_diagnostic() {
+    let Some(std_root) = valkyrie_v_std_root()
+    else {
+        eprintln!("skip: valkyrie.v not found (set VALKYRIE_V_ROOT or clone beside nyar-vm.rs)");
+        return;
+    };
+    let error = build_std_wasm_error(
+        "p4-wasm-utf8-reject",
+        &std_root,
+        r#"namespace app;
+
+[export(name: "bad")]
+micro bad() -> i64 {
+    let text: utf8 = 42
+    return 0
+}
+"#,
+    );
+    assert!(error.contains("incompatible with the declared type"), "必须是类型不兼容的结构化诊断: {error}");
+    assert!(error.contains("`let` initializer"), "诊断必须指明 `let` 初始化位置: {error}");
 }
 
 fn valkyrie_v_std_root() -> Option<PathBuf> {
