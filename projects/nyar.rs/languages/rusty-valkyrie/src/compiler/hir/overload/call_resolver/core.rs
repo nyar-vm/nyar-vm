@@ -199,21 +199,8 @@ pub fn match_call_candidate(
         })
         .collect::<Vec<_>>();
     let mut substitutions = BTreeMap::new();
-    // 从实际 receiver 的 owner 实参播种类泛型绑定：`DirectedGraph<utf8>` 上的
-    // `add_edge("a", "b")` 必须把 `N` 先钉到 `utf8`，否则开放 binder 会被字符串
-    // 字面量绑成编码类型 `Utf8`，随后的 `where N: Equal & Hash` 证据（登记在
-    // 别名解析后的名义上）必然拒绝。对齐按 declaration 身份与 ordinal，不按名字。
-    if let Some(ValkyrieType::Nominal { declaration: owner_declaration, arguments: owner_arguments, .. }) = &owner_type
-        && !owner_arguments.is_empty()
-    {
-        for binder in &candidate.generic_binders {
-            if binder.owner == *owner_declaration
-                && let Some(argument) = owner_arguments.get(binder.ordinal as usize)
-            {
-                substitutions.insert(binder.clone(), argument.clone());
-            }
-        }
-    }
+    // owner binder 由声明冻结期写定：self 槽已携带带 binder 的 owner 形态，
+    // 与 receiver 实参的统一即可钉住实参，调用点不再按 receiver 回填。
     if !explicit_generic_arguments.is_empty() {
         let binders = candidate.generic_binders.iter().cloned().collect::<Vec<_>>();
         if explicit_generic_arguments.len() != binders.len() {

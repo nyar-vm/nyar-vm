@@ -1,4 +1,4 @@
-use super::propagation::{propagate_declared_generic_binders, propagate_generic_binders_in_block};
+use super::propagation::propagate_declared_generic_binders;
 use crate::compiler::{
     hir::lowering::{
         diagnostics::{identity_duplicated, index_exhausted, plan_source, plan_span},
@@ -462,73 +462,39 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
         let namespace = NamePath::new(item.namespace.clone());
         for field in &mut item.fields {
             bind_type(&mut field.ty, &namespace, &structs, &enums)?;
-            propagate_declared_generic_binders(&mut field.ty, &item.generics);
         }
         let self_owner = SelfOwnerPath::from_struct(item);
         for function in &mut item.methods {
             bind_function(function, &structs, &enums, Some(&self_owner))?;
-            propagate_declared_generic_binders(&mut function.return_type, &item.generics);
-            for param in &mut function.params {
-                propagate_declared_generic_binders(&mut param.ty, &item.generics);
-            }
-            propagate_generic_binders_in_block(&mut function.body, &item.generics);
-            propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &item.generics);
         }
     }
     for enum_def in &mut module.enums {
         for variant in &mut enum_def.variants {
             for field in &mut variant.fields {
                 bind_type(&mut field.ty, &NamePath::default(), &structs, &enums)?;
-                propagate_declared_generic_binders(&mut field.ty, &enum_def.generics);
             }
             if let Some(result) = &mut variant.result_type {
                 bind_type(result, &NamePath::default(), &structs, &enums)?;
-                propagate_declared_generic_binders(result, &enum_def.generics);
             }
         }
     }
     for function in &mut module.functions {
         bind_function(function, &structs, &enums, None)?;
-        propagate_declared_generic_binders(&mut function.return_type, &function.generics);
-        for param in &mut function.params {
-            propagate_declared_generic_binders(&mut param.ty, &function.generics);
-        }
-        propagate_generic_binders_in_block(&mut function.body, &function.generics);
-        propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &function.generics);
     }
     for singleton in &mut module.singletons {
         let namespace = NamePath::new(singleton.namespace.clone());
         for field in &mut singleton.fields {
             bind_type(&mut field.ty, &namespace, &structs, &enums)?;
-            propagate_declared_generic_binders(&mut field.ty, &singleton.generics);
         }
         let self_owner = SelfOwnerPath::named(&singleton.namespace, &singleton.name);
         for function in &mut singleton.methods {
             bind_function(function, &structs, &enums, Some(&self_owner))?;
-            propagate_declared_generic_binders(&mut function.return_type, &singleton.generics);
-            for param in &mut function.params {
-                propagate_declared_generic_binders(&mut param.ty, &singleton.generics);
-            }
-            propagate_generic_binders_in_block(&mut function.body, &singleton.generics);
-            propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &singleton.generics);
         }
         if let Some(function) = &mut singleton.constructor {
             bind_function(function, &structs, &enums, Some(&self_owner))?;
-            propagate_declared_generic_binders(&mut function.return_type, &singleton.generics);
-            for param in &mut function.params {
-                propagate_declared_generic_binders(&mut param.ty, &singleton.generics);
-            }
-            propagate_generic_binders_in_block(&mut function.body, &singleton.generics);
-            propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &singleton.generics);
         }
         if let Some(function) = &mut singleton.finalizer {
             bind_function(function, &structs, &enums, Some(&self_owner))?;
-            propagate_declared_generic_binders(&mut function.return_type, &singleton.generics);
-            for param in &mut function.params {
-                propagate_declared_generic_binders(&mut param.ty, &singleton.generics);
-            }
-            propagate_generic_binders_in_block(&mut function.body, &singleton.generics);
-            propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &singleton.generics);
         }
     }
     for impl_block in &mut module.impls {
@@ -541,18 +507,11 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
     for trait_def in &mut module.traits {
         for function in trait_def.methods.iter_mut().chain(trait_def.default_methods.iter_mut()) {
             bind_function(function, &structs, &enums, None)?;
-            propagate_declared_generic_binders(&mut function.return_type, &trait_def.generics);
-            for param in &mut function.params {
-                propagate_declared_generic_binders(&mut param.ty, &trait_def.generics);
-            }
-            propagate_generic_binders_in_block(&mut function.body, &trait_def.generics);
-            propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &trait_def.generics);
         }
     }
     for submodule in &mut module.submodules {
         bind_declared_nominal_types(submodule)?;
     }
-    propagate_impl_owner_type_generics(module);
     revoke_open_impl_seed_instances(module);
     Ok(())
 }
@@ -560,9 +519,8 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
 /// 名义绑定完成后撤销开放 impl 成员的声明期种子实例。
 ///
 /// `register_function_declarations` 执行时 target 仍是 `Named`，无法判断 owner 是否开放；
-/// `bind_declared_nominal_types` 与 `propagate_impl_owner_type_generics` 之后，
-/// `combined_impl_generic_context` 才是结构化事实。开放成员的实例只能由调用点代入
-/// 在 frontend 单态化阶段铸造，声明本身保持 `instance` 为空。
+/// `bind_declared_nominal_types` 之后，`combined_impl_generic_context` 才是结构化事实。
+/// 开放成员的实例只能由调用点代入在 frontend 单态化阶段铸造，声明本身保持 `instance` 为空。
 fn revoke_open_impl_seed_instances(module: &mut HirModule) {
     let monomorphic =
         module.impls.iter().map(|implementation| combined_impl_generic_context(module, implementation).is_empty()).collect::<Vec<_>>();
@@ -683,32 +641,6 @@ pub(crate) fn propagate_generic_binders_in_where_constraints(constraints: &mut [
                 propagate_declared_generic_binders(&mut equation.ty, generics);
             }
         }
-    }
-}
-
-pub(crate) fn propagate_impl_owner_type_generics(module: &mut HirModule) {
-    let bindings = module.impls.iter().map(|implementation| combined_impl_generic_context(module, implementation)).collect::<Vec<_>>();
-    for (implementation, generics) in module.impls.iter_mut().zip(bindings) {
-        propagate_declared_generic_binders(&mut implementation.target, &generics);
-        // impl 头部声明的关联类型绑定（如 `type Item = T`）必须与 owner 的泛型
-        // binder 对齐：否则 `Item` 里的 `T` 一直是未绑定形态，关联等式代入后
-        // 会留下游离类型变量，`Iterator<Item = i32>` 这类义务永远解不出来。
-        for associated in &mut implementation.associated_type_impls {
-            propagate_declared_generic_binders(&mut associated.concrete_type, &generics);
-        }
-        for method in &mut implementation.methods {
-            propagate_declared_generic_binders(&mut method.return_type, &generics);
-            for param in &mut method.params {
-                propagate_declared_generic_binders(&mut param.ty, &generics);
-            }
-            // `imply Foo<K>` 的成员 `where K: Trait` 与形参 `K` 是同一个参数：
-            // 约束目标必须带上 owner 的 binder，否则调用点的代入与 evidence 查找永远对不上。
-            propagate_generic_binders_in_where_constraints(&mut method.where_constraints, &generics);
-            propagate_generic_binders_in_block(&mut method.body, &generics);
-        }
-    }
-    for submodule in &mut module.submodules {
-        propagate_impl_owner_type_generics(submodule);
     }
 }
 

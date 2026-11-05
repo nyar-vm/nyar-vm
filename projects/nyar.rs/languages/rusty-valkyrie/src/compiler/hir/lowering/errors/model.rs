@@ -427,6 +427,23 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// impl 成员声明面残留了无法对齐到 owner 声明的泛型 binder。
+    ///
+    /// 泛型 binder 必须在声明冻结期写定；调用点不得用 receiver 实参回填。
+    /// 出现本错误说明 impl 头部/成员签名里写的名字既不属于 impl 头、owner 声明，
+    /// 也不属于 trait 声明，身份无法冻结。
+    ImplGenericBinderUnresolved {
+        /// impl target 的 owner 声明名（无法识别时携带占位说明）。
+        declaration: String,
+        /// 残留未绑定泛型的成员位置（成员名或 impl 头位置）。
+        member: String,
+        /// 未绑定 binder 的泛型形参名。
+        generic: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 同一 namespace 下出现重复类型声明。
     DuplicateTypeDefinition {
         /// 重复声明的短名。

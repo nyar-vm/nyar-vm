@@ -188,6 +188,12 @@ impl std::fmt::Display for HirError {
                     "泛型声明体 `{aggregate}` 的成员方法 `{method}` 暂不支持；声明体方法目前只覆盖单态 owner，泛型 owner 的实例闭合尚未接入"
                 )
             }
+            Self::ImplGenericBinderUnresolved { declaration, member, generic, .. } => {
+                write!(
+                    f,
+                    "impl `{declaration}` 的成员 `{member}` 中泛型 `{generic}` 无法对齐到声明冻结期的 binder；成员泛型必须在声明期写定，不接受调用点回填"
+                )
+            }
             Self::SourceGroupProducerMissing { dependency_key, .. } => {
                 write!(f, "generated source group has no producer identity")?;
                 match dependency_key {

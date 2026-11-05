@@ -180,6 +180,99 @@ micro entry() -> i64 {
 }
 
 #[test]
+fn impl_member_signature_carries_owner_binder_without_call_site_seeding() {
+    let compiler = ValkyrieCompiler::default();
+    let module = compiler
+        .compile_source(
+            r#"
+trait Equal { micro equal(self, other: Self): bool }
+class Heap<T> { _value: T }
+imply Heap<T> {
+    micro sift(self, value: T) -> T where T: Equal {
+        return value
+    }
+}
+"#,
+        )
+        .expect("impl 成员的 owner binder 必须在声明冻结期写定");
+
+    let HirModule { impls, .. } = &module;
+    let implementation = &impls[0];
+    let ValkyrieType::Nominal { declaration, .. } = &implementation.target
+    else {
+        panic!("impl target 必须冻结为名义身份，got {:?}", implementation.target)
+    };
+    let declaration = *declaration;
+    let sift = impl_method(&module, "sift");
+
+    let owner_binder = |ty: &ValkyrieType| match ty {
+        ValkyrieType::Generic(generic) => generic.binder,
+        other => panic!("成员签名里的 `T` 必须冻结为泛型身份，got {other:?}"),
+    };
+    for param in &sift.params {
+        if let ValkyrieType::Generic(generic) = &param.ty {
+            assert_eq!(generic.binder.map(|binder| binder.owner), Some(declaration), "形参 owner binder 必须指向 `Heap`");
+        }
+    }
+    let return_binder = owner_binder(&sift.return_type).expect("返回类型 `T` 必须有 binder");
+    assert_eq!(return_binder.owner, declaration, "返回类型 owner binder 必须指向 `Heap`");
+    let where_binder = owner_binder(&sift.where_constraints[0].target).expect("where 目标 `T` 必须有 binder");
+    assert_eq!(where_binder.owner, declaration, "where 目标 owner binder 必须指向 `Heap`");
+    assert_eq!(where_binder.ordinal, 0, "`Heap` 的首个泛型参数 ordinal 为 0");
+    assert!(
+        !format!("{:?}", sift.params).contains("binder: None"),
+        "impl 成员路径上不得再出现 binder-less 泛型"
+    );
+}
+
+#[test]
+fn trait_member_where_target_carries_trait_declaration_binder() {
+    let compiler = ValkyrieCompiler::default();
+    let module = compiler
+        .compile_source(
+            r#"
+trait Equal { micro equal(self, other: Self): bool }
+trait Pool<T> {
+    micro take(self) -> T where T: Equal
+}
+"#,
+        )
+        .expect("trait 成员的 owner binder 必须在声明冻结期写定");
+
+    let pool = module.traits.iter().find(|item| item.name.as_str() == "Pool").expect("`Pool` 声明");
+    let declaration = pool.declaration.expect("trait 声明身份");
+    let take = pool.methods.first().expect("`Pool.take` 方法");
+    let ValkyrieType::Generic(generic) = &take.where_constraints[0].target
+    else {
+        panic!("trait 成员 where 目标必须是泛型身份，got {:?}", take.where_constraints[0].target)
+    };
+    let binder = generic.binder.expect("trait 成员 where 目标必须有 binder");
+    assert_eq!(binder.owner, declaration, "trait 成员 binder 必须指向 trait 声明");
+}
+
+#[test]
+fn unresolvable_impl_member_generic_names_declaration_and_member() {
+    let compiler = ValkyrieCompiler::default();
+    let error = compiler
+        .compile_source(
+            r#"
+class Box<T> { _value: T }
+imply Box<U> {
+    micro bad(self, value: U) -> U {
+        return value
+    }
+}
+"#,
+        )
+        .expect_err("impl 成员里无法冻结的泛型必须结构化失败，不得留下 binder-less 形态");
+
+    let rendered = error.to_string();
+    assert!(rendered.contains("Box"), "诊断必须点名 owner 声明，got {rendered}");
+    assert!(rendered.contains("bad"), "诊断必须点名成员，got {rendered}");
+    assert!(rendered.contains('U'), "诊断必须点名未绑定泛型，got {rendered}");
+}
+
+#[test]
 fn concrete_target_without_evidence_is_still_rejected() {
     let compiler = ValkyrieCompiler::default();
     assert!(

@@ -75,7 +75,7 @@ pub(crate) use generic_binders::{
     freeze_module_generic_binders, freeze_struct_generic_binders, freeze_trait_generic_binders, lookup_owner_generics_by_declaration,
     lower_trait_associated_type_references, lower_trait_method, max_hir_callable_instance_index, max_hir_declaration_index,
     propagate_declared_generic_binders, propagate_generic_binders_in_block, propagate_generic_binders_in_expr,
-    propagate_generic_binders_in_where_constraints, propagate_impl_owner_type_generics, register_field_declarations,
+    propagate_generic_binders_in_where_constraints, register_field_declarations,
     register_function_declarations,
 };
 
@@ -416,8 +416,9 @@ impl ValkyrieCompiler {
             // lambda 环境身份先回填、再冻结泛型 binder：环境实参以 `Named`
             // 占位书写，由外层 callable 的泛型声明在冻结期绑定同一 bearer。
             crate::compiler::hir::bind_lambda_environments(&mut hir_module);
-            freeze_module_generic_binders(&mut hir_module);
+            // 名义身份先于 binder 冻结：impl 成员的 owner binder 依赖已解析的 target。
             bind_declared_nominal_types(&mut hir_module)?;
+            freeze_module_generic_binders(&mut hir_module)?;
             trait_binding::bind_trait_declarations(&mut hir_module)?;
             // 集合字面量转换跑在 trait 绑定之后、本组导出快照与调用解析之前：
             // 依赖组的合同事实已经随 `dependency_exports` 进入 `imported_semantic_exports`，

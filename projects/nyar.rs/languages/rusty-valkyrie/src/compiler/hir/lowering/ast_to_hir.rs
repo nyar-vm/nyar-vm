@@ -91,8 +91,10 @@ impl AstToHir {
         // 由随后的 `freeze_module_generic_binders` 用外层 callable 的 bearer 冻结，
         // 单态化才能按具体实参代入环境类型。
         bind_lambda_environments(&mut hir);
-        freeze_module_generic_binders(&mut hir);
+        // 先冻结声明身份（含 impl target 的名义身份），再统一冻结泛型 binder：
+        // impl 成员的 owner binder 只有 target 已解析后才能按声明写定。
         crate::compiler::hir::lowering::generic_binders::bind_declared_nominal_types(&mut hir)?;
+        freeze_module_generic_binders(&mut hir)?;
         bind_trait_declarations(&mut hir)?;
         // 集合字面量转换跑在 trait 绑定之后、调用解析之前：
         // 字面量项仍需 `resolve_hir_calls` 解析调用，而 `CollectionInit` 两槽的
