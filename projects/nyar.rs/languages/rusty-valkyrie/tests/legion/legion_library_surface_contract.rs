@@ -7,13 +7,15 @@
 
 use std::{fs, path::PathBuf, process::ExitCode};
 
+use nyar::ArtifactKind;
 use odin_vm::{OdinVm, Value};
 use rusty_valkyrie::legion::{
     CanonicalTarget,
     cmds::{
-        build::{BuildArgs, run},
+        build::{BuildArgs, compile_plan, run},
         run::ExecutionManifest,
     },
+    workspace::planner::{BuildRequest, WorkspaceResolver},
 };
 use tempfile::TempDir;
 
@@ -137,6 +139,23 @@ fn ovm_library_exports_are_callable_by_entry() {
     assert!(
         manifest.library_exports.iter().all(|entry| entry.invocation.contains("--entry")),
         "OVM 导出调用方式必须记录 --entry"
+    );
+
+    // 产物描述符本身必须是 `ArtifactKind::Library`，不得只靠 manifest 旁路表达库语义。
+    let workspace = WorkspaceResolver::discover_for_project(&project_dir).expect("发现 workspace");
+    let plan = workspace
+        .build_plan(&BuildRequest {
+            project_dir: project_dir.clone(),
+            target: CanonicalTarget::parse("ovm").expect("target"),
+            output_dir: Some(output_dir.clone()),
+            ..Default::default()
+        })
+        .expect("构建计划");
+    let report = compile_plan(&plan, false).expect("复用缓存编译");
+    assert!(
+        report.artifacts.artifacts.iter().any(|artifact| artifact.kind == ArtifactKind::Library),
+        "OVM 库产物必须标记 ArtifactKind::Library: {:?}",
+        report.artifacts.artifacts
     );
 
     let artifact = fs::read_dir(&output_dir)
