@@ -149,7 +149,7 @@ impl MirBuilder {
 
         self.current_block = then_block;
         self.bindings = pre_if_bindings.clone();
-        let then_result = self.lower_branch_block_value_with_hint(then_branch, expected_type);
+        let then_result = self.lower_branch_block_value_with_hint(then_branch, expected_type, carry_value);
         let then_returns = self.terminator.is_some();
         let then_exit: BranchArmExit = (self.current_block, self.bindings.clone());
         if self.terminator.is_none() {
@@ -164,6 +164,9 @@ impl MirBuilder {
             };
             if merge_ty.is_some() {
                 self.ensure_branch_exit_parameter(merge_block, &mut exit_value, merge_ty.clone());
+                if let (true, Some(exit)) = (carry_value, exit_value) {
+                    self.report_branch_value_mismatch(&then_result, exit, then_branch.span.clone(), "then", "else");
+                }
             }
             self.terminate(MirTerminator::Jump {
                 target: merge_block,
@@ -175,12 +178,15 @@ impl MirBuilder {
         self.current_block = else_block;
         self.bindings = pre_if_bindings.clone();
         let (else_returns, else_exit): (bool, BranchArmExit) = if let Some(else_body) = else_branch {
-            let result = self.lower_branch_block_value_with_hint(else_body, expected_type);
+            let result = self.lower_branch_block_value_with_hint(else_body, expected_type, carry_value);
             let returns = self.terminator.is_some();
             let exit = (self.current_block, self.bindings.clone());
             if self.terminator.is_none() {
                 let merge_ty =
                     if carry_value { Self::branch_merge_type(&result, expected_type, &self.value_types) } else { None };
+                if let (true, Some(exit)) = (carry_value, exit_value) {
+                    self.report_branch_value_mismatch(&result, exit, else_body.span.clone(), "else", "then");
+                }
                 if merge_ty.is_some() {
                     self.ensure_branch_exit_parameter(merge_block, &mut exit_value, merge_ty.clone());
                 }
@@ -756,13 +762,14 @@ impl MirBuilder {
     }
 
     fn lower_branch_block_value(&mut self, body: &crate::compiler::hir::HirBlock) -> MirOperand {
-        self.lower_branch_block_value_with_hint(body, None)
+        self.lower_branch_block_value_with_hint(body, None, true)
     }
 
     fn lower_branch_block_value_with_hint(
         &mut self,
         body: &crate::compiler::hir::HirBlock,
         expected_type: Option<&ValkyrieType>,
+        carry_value: bool,
     ) -> MirOperand {
         for statement in &body.statements {
             self.lower_statement(statement);
@@ -773,10 +780,50 @@ impl MirBuilder {
         if self.terminator.is_some() {
             return MirOperand::Constant(MirConstant::Unit);
         }
-        body.expr
-            .as_ref()
-            .map(|expr| self.lower_expr_to_operand_with_hint(expr, expected_type))
-            .unwrap_or(MirOperand::Constant(MirConstant::Unit))
+        let Some(expr) = body.expr.as_ref()
+        else {
+            return MirOperand::Constant(MirConstant::Unit);
+        };
+        if !carry_value {
+            // 语句位置的 `if` / `else if` 链：臂尾值只作为语句执行，不得进入 merge phi。
+            // 嵌套 `else if` 在 HIR 里是 else 块的尾表达式，若按值表达式 lowering，
+            // 内层臂尾（如 `Option<T>` 与 `Option<usize>`）会被强行合并并触发 SMIR007。
+            match &expr.kind {
+                HirExprKind::If { condition, then_branch, else_branch } => {
+                    return self.lower_if_statement(condition, then_branch, else_branch);
+                }
+                _ => {
+                    return self.lower_expr_to_operand(expr);
+                }
+            }
+        }
+        self.lower_expr_to_operand_with_hint(expr, expected_type)
+    }
+
+    /// 臂尾值若与 merge 参数已冻结的类型不一致，给出带源码 span 与分支坐标的
+    /// 结构化诊断；而不是让 `Jump` 携带异类型实参后在控制流校验里退化成 SMIR007。
+    fn report_branch_value_mismatch(
+        &mut self,
+        arm: &MirOperand,
+        merged: super::MirValueRef,
+        span: crate::compiler::types::SourceSpan,
+        arm_name: &str,
+        other_name: &str,
+    ) {
+        let (Some(merged_ty), Some(arm_ty)) =
+            (self.value_types.get(&merged).cloned(), infer_builder_operand_type(arm, &self.value_types))
+        else {
+            return;
+        };
+        if merged_ty == arm_ty {
+            return;
+        }
+        self.diagnostics.push(super::MirDiagnostic::UnsupportedExpression {
+            span,
+            kind: format!(
+                "`if` 分支尾值类型不一致：{other_name} 臂合并为 `{merged_ty:?}`，{arm_name} 臂得到 `{arm_ty:?}`，无法形成同一 merge 值"
+            ),
+        });
     }
 
     pub(in crate::compiler::mir::ssa) fn ensure_branch_exit_parameter(

@@ -419,6 +419,64 @@ fn statement_if_discard_is_observable_at_runtime() {
     );
 }
 
+const ELSE_IF_TAIL_MISMATCH_SOURCE: &str = r#"
+micro bool_result(flag: bool) -> bool {
+    return flag
+}
+
+micro unit_result(flag: bool): unit {
+    let ignored: bool = flag
+}
+
+micro statement_else_if_discards_arms(a: bool, b: bool) -> bool {
+    if a {
+        bool_result(a)
+    } else if b {
+        bool_result(b)
+    } else {
+        unit_result(b)
+    }
+    return true
+}
+"#;
+
+/// 语句位置的 `else if` 链：内层 `if` 是 else 块的尾表达式，按值表达式 lowering 会把
+/// `bool` 与 `unit` 强并到同一 merge 参数（SMIR007 block N）。丢弃规则必须沿嵌套链
+/// 传递到内层 if，所有 merge 块都不得出现 `branch_result` 值参数。
+#[test]
+fn statement_else_if_chain_discards_nested_arm_values() {
+    let module = compile(ELSE_IF_TAIL_MISMATCH_SOURCE);
+    assert!(module.diagnostics.is_empty(), "语句位置 else-if 链不得产生 lowering 诊断：{:?}", module.diagnostics);
+    let function = function(&module, "statement_else_if_discards_arms");
+    for block in &function.blocks {
+        if block.label == "merge" {
+            assert!(
+                block.parameters.is_empty(),
+                "语句位置 else-if 的 merge 块不得有值参数：{} -> {:?}",
+                block.label,
+                block.parameters
+            );
+        }
+    }
+    rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&module)
+        .expect("语句位置 else-if 链必须通过 Canonical 合同");
+}
+
+/// 运行期：三条臂都执行到并正确汇合，返回值不受臂尾值类型差异影响。
+#[test]
+fn statement_else_if_discard_is_observable_at_runtime() {
+    run_in_node(
+        ELSE_IF_TAIL_MISMATCH_SOURCE,
+        "statement_else_if_discards_arms",
+        "import {readFileSync} from 'node:fs'; \
+         const mod=await WebAssembly.compile(readFileSync(process.argv[1])); const imports={}; for(const imp of WebAssembly.Module.imports(mod)){ if(!imports[imp.module]) imports[imp.module]={}; if(imp.kind==='function') imports[imp.module][imp.name]=()=>0; else if(imp.kind==='global') imports[imp.module][imp.name]=new WebAssembly.Global({value:'i32',mutable:true},0); else if(imp.kind==='memory') imports[imp.module][imp.name]=new WebAssembly.Memory({initial:1}); else imports[imp.module][imp.name]=new WebAssembly.Table({initial:0,element:'anyfunc'}); } \
+         const instance=await WebAssembly.instantiate(mod, imports); \
+         if(instance.exports.statement_else_if_discards_arms(1,1)!==1) throw new Error('a 为真必须走 then 臂'); \
+         if(instance.exports.statement_else_if_discards_arms(0,1)!==1) throw new Error('b 为真必须走 else-if 臂'); \
+         if(instance.exports.statement_else_if_discards_arms(0,0)!==1) throw new Error('两条都为假必须走 else 臂');",
+    );
+}
+
 const VALUE_IF_MISMATCH_SOURCE: &str = r#"
 micro bool_result(flag: bool) -> bool {
     return flag
@@ -435,17 +493,26 @@ micro value_if_with_unit_arm(flag: bool, value: bool) -> bool {
 "#;
 
 /// 反例：值位置的 `if` 仍要求两臂类型一致，`unit` 臂不得冒充 `bool`。
-/// 收紧语句位置的丢弃规则不能把值位置的类型检查一起放宽。
+/// 收紧语句位置的丢弃规则不能把值位置的类型检查一起放宽；失败必须是带源码 span
+/// 与分支坐标的 lowering 诊断，而不是只有 block 编号的 SMIR007。
 #[test]
-fn value_position_if_with_mismatched_arm_type_still_fails() {
+fn value_position_if_with_mismatched_arm_type_reports_structured_diagnostic() {
+    use rusty_valkyrie::compiler::mir::MirDiagnostic;
+    use rusty_valkyrie::compiler::mir::validation::MirValidationError;
+
     let module = compile(VALUE_IF_MISMATCH_SOURCE);
-    let error = rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&module)
+    let error = rusty_valkyrie::compiler::mir::validation::validate_module(&module)
         .expect_err("值位置 if 的 `unit` 臂不得冒充 `bool`");
-    let message = format!("{error:?}");
-    assert!(
-        message.contains("SMIR007") || message.contains("CAN010") || message.contains("arity") || message.contains("type"),
-        "必须保持结构化失败，实际：{message}"
-    );
+    let MirValidationError::DiagnosticRejected { diagnostic } = &error
+    else {
+        panic!("必须是 lowering 诊断而不是控制流合同失败：{error:?}");
+    };
+    let MirDiagnostic::UnsupportedExpression { span, kind } = diagnostic
+    else {
+        panic!("必须是 UnsupportedExpression 诊断：{diagnostic:?}");
+    };
+    assert!(kind.contains("分支尾值类型不一致"), "诊断必须点名分支尾值类型不一致：{kind}");
+    assert!(!span.span.is_empty(), "诊断必须携带非空源码 span：{:?}", span);
 }
 
 /// 反例：人为构造的跳边实参数量与目标块参数数量不一致时，Semantic MIR 校验必须拒绝。
