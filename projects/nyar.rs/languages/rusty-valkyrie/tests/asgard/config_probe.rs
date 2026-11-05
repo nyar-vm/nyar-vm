@@ -68,9 +68,15 @@ pub(crate) fn build_probe_project_with_std(prefix: &str, source: &str) -> Result
     let source_dir = project_dir.join("source");
     fs::create_dir_all(&source_dir).expect("创建探针工程源码目录");
     let std_path = crate::support::valkyrie_v_package(&["projects", "std"]);
+    // `std` 以 workspace 版本依赖 `unicode.types`（`projects/std/legion.von`），
+    // 工作区成员必须同时注册该底层包，否则规划阶段以
+    // `ForcedWorkspaceDependencyMissing { project: "std", dependency: "unicode.types" }` 失败。
+    let unicode_types_path = crate::support::valkyrie_v_package(&["projects", "unicode._", "unicode.types"]);
     fs::write(
         root.join("legions.von"),
-        format!("{{\n    name: \"asgard-config-probe\",\n    members: [\"{std_path}\", \"app\"]\n}}\n"),
+        format!(
+            "{{\n    name: \"asgard-config-probe\",\n    members: [\"{std_path}\", \"{unicode_types_path}\", \"app\"]\n}}\n"
+        ),
     )
     .expect("写入 workspace 清单");
     fs::write(
