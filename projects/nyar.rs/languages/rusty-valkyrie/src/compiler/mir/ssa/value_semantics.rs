@@ -604,17 +604,26 @@ pub fn ensure_unite_tagged_layout(plan: &mut AggregateLayoutPlan, declaration: n
     id
 }
 
-/// Ensure every unite in `sum_types` has a tagged aggregate layout for FieldGet contracts.
+/// Ensure every unite and every non-generic sum declaration has a tagged
+/// aggregate layout for FieldGet / target ABI contracts.
+///
+/// 非泛型 `enums`（如 `Ordering`）同样需要声明级布局身份：canonical 的
+/// `aggregate_layout_by_type` 只为已有布局的类型登记，缺项的枚举会退化成无身份
+/// `Named` 并被预发射门禁拒绝。泛型声明没有单一物理布局，仍按既有口径只为
+/// `is_unite` 保留声明级 tagged 布局。
 pub fn ensure_unite_layouts_for_sums(plan: &mut AggregateLayoutPlan, sum_types: &[super::MirSumDeclaration]) {
     for sum in sum_types {
-        if sum.is_unite {
-            let Some(declaration) = sum.declaration
-            else {
-                // 缺 declaration 不得按 sum.name 伪登记布局。
-                continue;
-            };
-            ensure_unite_tagged_layout(plan, declaration, &sum.name);
+        // 非泛型 sum（含 `enums`）的声明有唯一物理布局；泛型声明只有 unite
+        // 保留既有声明级 tagged 布局，避免把开放声明错误地单一布局化。
+        if !sum.is_unite && !sum.generics.is_empty() {
+            continue;
         }
+        let Some(declaration) = sum.declaration
+        else {
+            // 缺 declaration 不得按 sum.name 伪登记布局。
+            continue;
+        };
+        ensure_unite_tagged_layout(plan, declaration, &sum.name);
     }
 }
 

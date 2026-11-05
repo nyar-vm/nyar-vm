@@ -19,6 +19,30 @@ fn unite_tagged_layout_uses_strict_concretize() {
 }
 
 #[test]
+fn non_generic_enum_declaration_gets_tagged_layout_identity() {
+    let hir = ValkyrieCompiler::default()
+        .compile_source(
+            r#"
+enums Ordering {
+    Less
+    Equal
+    Greater
+    Unordered
+}
+"#,
+        )
+        .expect("enum declaration");
+    let declaration = hir.enums[0].declaration.expect("enum declaration identity");
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    let layout_id = mir.aggregate_layouts.declaration_to_layout.get(&declaration).copied().expect("enum declaration layout");
+    let layout = mir.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id).expect("layout record");
+    assert_eq!(layout.storage, MirStorageKind::Reference);
+    assert_eq!(layout.fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(), vec!["tag", "payload"]);
+    assert_eq!(layout.fields[0].ty, NyarType::Integer32 { signed: true });
+    assert_eq!(layout.fields[1].ty, NyarType::Utf8);
+}
+
+#[test]
 #[should_panic(expected = "无法严格 concretize")]
 fn layout_panics_on_unsubstituted_self_field() {
     let _ = build_aggregate_layout(
