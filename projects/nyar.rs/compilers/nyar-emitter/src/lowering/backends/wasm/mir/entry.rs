@@ -25,7 +25,8 @@ use super::{
     lowerer::lower_mir_function_to_wasm_bytes,
     representation::{
         is_js_glue_host_string_type, layout_needs_gc_struct, type_is_inline_aggregate, type_is_wasm_gc_heap_reference,
-        wasm_gc_field_type_byte_for_glue, wasm_param_types, wasm_param_value_type_for, wasm_return_value_type,
+        wasm_function_abi_value_type_for, wasm_gc_field_type_byte_for_glue, wasm_param_types, wasm_param_value_type_for,
+        wasm_return_value_type,
     },
     strings::{
         build_wasi_string_data_section, build_wasi_string_literal_offsets, wasi_string_data_section_size, wasm_function_type_param_bytes,
@@ -158,10 +159,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut code_bodies = Vec::new();
     let mut exports = Vec::new();
     // 语言规范：wasm/wasi 强制 wasm-gc。始终为引用 layout 注册 structtype?
-    let gc_struct_type_indices = register_gc_struct_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref);
+    let gc_struct_type_indices = register_gc_struct_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref)?;
     // ?heap array element_type 注册 wasm-gc arraytype（Node/V8 ?WASI/wasmtime 均支持）?
     // 必须?glue 感知路径：`[utf8]` →?i32 元，禁止 Named→anyref 误登记?
-    let mut gc_array_type_indices = register_gc_array_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref);
+    let mut gc_array_type_indices = register_gc_array_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref)?;
     // sum 的物理布局（tag + anyref payload）是后端私有决定，必须按 nominal identity 单独注册，
     // 让 `SumNew` 构造的对象与 `SumPayloadGet` / `SumVariantIs` 的 `ref.cast` 指向同一条目。
     let gc_sum_type_indices = register_gc_sum_types(&ctx, &mut type_indices);
@@ -319,12 +320,12 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 let visible_param_types: Vec<u8> = signature
                     .params
                     .iter()
-                    .map(|ty| wasm_param_value_type_for(&ctx, ty, None, &gc_struct_type_indices, js_glue_utf8_as_anyref))
+                    .map(|ty| wasm_function_abi_value_type_for(&ctx, ty, &gc_struct_type_indices, js_glue_utf8_as_anyref))
                     .collect();
                 let return_type = match &signature.return_type {
                     NyarType::Unit | NyarType::Bottom => None,
                     other => {
-                        Some(wasm_param_value_type_for(&ctx, other, None, &gc_struct_type_indices, js_glue_utf8_as_anyref))
+                        Some(wasm_function_abi_value_type_for(&ctx, other, &gc_struct_type_indices, js_glue_utf8_as_anyref))
                     }
                 };
                 let (environment_layout, environment_type) = match environment {
@@ -966,7 +967,7 @@ fn freeze_managed_utf8_to_host_handle_plans(
             Some(type_index) => type_index,
             None => {
                 let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
-                type_indices.push(wasm_gc_array_type(wasm_gc_field_type_byte_for_glue(&element_type, js_glue_utf8_as_anyref)));
+                type_indices.push(wasm_gc_array_type(wasm_gc_field_type_byte_for_glue(&element_type, js_glue_utf8_as_anyref)?));
                 gc_array_type_indices.insert(key, type_index);
                 type_index
             }
@@ -1055,7 +1056,7 @@ fn freeze_host_handle_to_managed_utf8_plans(
                 Some(type_index) => type_index,
                 None => {
                     let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
-                    type_indices.push(wasm_gc_array_type(wasm_gc_field_type_byte_for_glue(&element_type, js_glue_utf8_as_anyref)));
+                    type_indices.push(wasm_gc_array_type(wasm_gc_field_type_byte_for_glue(&element_type, js_glue_utf8_as_anyref)?));
                     gc_array_type_indices.insert(key, type_index);
                     type_index
                 }
@@ -1233,7 +1234,7 @@ fn freeze_utf8_host_handle_materialize_plans(
             Some(type_index) => type_index,
             None => {
                 let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
-                type_indices.push(wasm_gc_array_type(wasm_gc_field_type_byte_for_glue(&element_type, js_glue_utf8_as_anyref)));
+                type_indices.push(wasm_gc_array_type(wasm_gc_field_type_byte_for_glue(&element_type, js_glue_utf8_as_anyref)?));
                 gc_array_type_indices.insert(key, type_index);
                 type_index
             }
@@ -1808,7 +1809,7 @@ fn emit_library_field_accessors<'name>(
         else {
             return Err(format!("WASM 容器数组桥发射失败: 元素类型 `{element:?}` 未注册 gc arraytype（key={key}）"));
         };
-        let element_type = wasm_gc_field_type_byte_for_glue(element, js_glue_utf8_as_anyref);
+        let element_type = wasm_gc_field_type_byte_for_glue(element, js_glue_utf8_as_anyref)?;
         let ops = super::abi_schema::array_ops_export_names(element);
         array_plans.push(ArrayOpPlan { name: ops.length, array_type_index, element_type, kind: 0 });
         array_plans.push(ArrayOpPlan { name: ops.get, array_type_index, element_type, kind: 1 });
@@ -1843,7 +1844,7 @@ fn emit_library_field_accessors<'name>(
         let (param_types, result_type, body) = match plan.gc_struct_type_index {
             Some(struct_type_index) => {
                 // gc struct：(param anyref) → ref.cast + struct.get。
-                let result_type = wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref);
+                let result_type = wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref)?;
                 let mut body = Vec::new();
                 encode_uleb128(0, &mut body);
                 encode_local_get(0, &mut body);
@@ -1893,8 +1894,11 @@ fn emit_library_field_accessors<'name>(
     // 阶段 5：发射聚合构造函数体。
     for (position, (_, plan)) in constructor_plans.iter().enumerate() {
         let layout = ctx.layout_by_id(plan.layout_id).expect("可达布局已通过身份核对");
-        let param_types: Vec<u8> =
-            layout.fields.iter().map(|field| wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref)).collect();
+        let param_types: Vec<u8> = layout
+            .fields
+            .iter()
+            .map(|field| wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref))
+            .collect::<crate::Result<Vec<u8>>>()?;
         let mut body = Vec::new();
         encode_uleb128(0, &mut body);
         for field_index in 0..layout.fields.len() {

@@ -115,13 +115,32 @@ pub(super) fn wasm_param_types(
         .collect()
 }
 
-pub(super) fn wasm_gc_field_type_byte_for_glue(ty: &NyarType, js_glue_utf8_as_anyref: bool) -> u8 {
+pub(super) fn wasm_gc_field_type_byte_for_glue(ty: &NyarType, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
     // Node/WASI 宿主字符串默认是 i32 句柄（`const_utf8` / `utf8_*`）；
     // 仅当显式打开 js_glue_utf8_as_anyref 时才把 utf8/utf16 放进 anyref 字段/数组元。
     if is_js_glue_host_string_type(ty) {
-        return if js_glue_utf8_as_anyref { VALTYPE_ANYREF } else { VALTYPE_I32 };
+        return Ok(if js_glue_utf8_as_anyref { VALTYPE_ANYREF } else { VALTYPE_I32 });
     }
     wasm_gc_field_type_byte(ty)
+}
+
+/// 函数值签名的 ABI 载体：函数值跨 `call_indirect` 时只认托管形态。
+///
+/// 函数值自身是闭包对象（anyref），其 code 槽指向的函数体按托管约定接收
+/// `utf8`，因此 `NyarType::Function` 的可见形参/返回值必须与函数体同一张
+/// 载体表；宿主 i32 句柄只允许出现在真正的导入/导出边界，由边界物化点
+/// 转换。若此处仍按 `None` layout 推导成 i32，`is_less_or_equal` 等间接
+/// 调用点会与闭包体的 anyref 形参分叉。
+pub(super) fn wasm_function_abi_value_type_for(
+    ctx: &ExecutableLoweringContext,
+    ty: &NyarType,
+    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    js_glue_utf8_as_anyref: bool,
+) -> u8 {
+    if is_js_glue_host_string_type(ty) {
+        return WASM_GC_ANYREF;
+    }
+    wasm_param_value_type_for(ctx, ty, None, gc_struct_type_indices, js_glue_utf8_as_anyref)
 }
 
 /// wasm/wasi 强制 GC：heap `[T]` / fixed array 在 layout 里常为 Value，

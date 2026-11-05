@@ -25,7 +25,7 @@ impl<'a> WasmMirLowerer<'a> {
         };
         self.emit_contract_operand(length, VALTYPE_I32)?;
         self.emit_array_new_default(type_index);
-        self.validate_output_slot_type(output, WASM_GC_ANYREF);
+        self.validate_output_slot_type(output, WASM_GC_ANYREF)?;
         self.assign_output_local(output);
         Ok(())
     }
@@ -49,8 +49,10 @@ impl<'a> WasmMirLowerer<'a> {
         let element_type =
             self.infer_array_element_type(&arguments[0]).or_else(|| output.and_then(|value| self.mir_fn.value_types.get(&value).cloned()));
         let type_index = element_type.as_ref().and_then(|ty| self.resolve_gc_array_type_index(ty));
-        let mut element_stack_ty =
-            element_type.as_ref().map(|ty| wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref)).unwrap_or(VALTYPE_I32);
+        let mut element_stack_ty = match element_type.as_ref() {
+            Some(ty) => wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref)?,
+            None => VALTYPE_I32,
+        };
         // 无 arraytype 时禁止先 `ref.cast` receiver：误分 i32 会触
         // `expected anyref, found i32`（func564 嵌套 ArrayGet）。
         // 消费侧查不到已注册 arraytype 属于计划事实缺失（可执行合同不一致），
@@ -76,17 +78,9 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_unbox_i64_payload();
                 element_stack_ty = VALTYPE_I64;
             }
-            // `[utf8]` 数组元素边界：元素按冻结合同是 i32 宿主句柄，而结果 SSA 值携带
-            // 已登记 gc struct layout（计划槽 anyref）时，必须消费装配期冻结的物化配方
-            // 把句柄物化为 managed 字符串 struct（合同 §5）；缺配方即结构化失败。
-            let materialize_layout = if element_stack_ty == VALTYPE_I32 { self.utf8_host_handle_boundary_layout(output) } else { None };
-            if let Some(layout_id) = materialize_layout {
-                self.emit_utf8_host_handle_materialize(layout_id)?;
-                element_stack_ty = WASM_GC_ANYREF;
-            }
-            // 栈顶类型由 arraytype 元素决定（i32 / anyref），必须与 output 槽 valtype 一致；
-            // 禁止 `array.get`→i32 后 `local.set` 进 plan 阶段误分类的 anyref 槽。
-            self.validate_output_slot_type(output, element_stack_ty);
+            // 栈顶类型由 arraytype 元素决定（i32 / anyref），结果槽载体的物化与
+            // 校验统一由 `validate_output_slot_type` 承担（含 `[utf8]` 句柄→managed）。
+            self.validate_output_slot_type(output, element_stack_ty)?;
             self.assign_output_local(output);
         }
         Ok(())
@@ -110,20 +104,14 @@ impl<'a> WasmMirLowerer<'a> {
                 self.mir_fn.symbol
             ));
         };
-        let element_stack_ty =
-            element_type.as_ref().map(|ty| wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref)).unwrap_or(VALTYPE_I32);
+        let element_stack_ty = match element_type.as_ref() {
+            Some(ty) => wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref)?,
+            None => VALTYPE_I32,
+        };
         self.emit_operand_coerced(&arguments[0], WASM_GC_ANYREF)?;
         self.emit_ref_cast_array_type(type_index);
         self.emit_i32_operand(&arguments[1])?;
-        // `[utf8]` 数组元素边界：元素按冻结合同是 i32 宿主句柄，而实参槽是 managed
-        // anyref 时，必须消费目标计划冻结的 managed→host 句柄转换配方（合同 §5）；
-        // 缺配方即可执行合同不一致，结构化失败，禁止 coerce/占位掩盖 carrier 失配。
-        if element_stack_ty == VALTYPE_I32 && self.operand_wasm_stack_type(&arguments[2]) == WASM_GC_ANYREF {
-            self.emit_managed_utf8_to_host_handle(&arguments[2])?;
-        }
-        else {
-            self.emit_operand_coerced(&arguments[2], element_stack_ty)?;
-        }
+        self.emit_operand_coerced(&arguments[2], element_stack_ty)?;
         self.emit_array_set(type_index);
         Ok(())
     }
@@ -131,7 +119,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 判定 `array.get` 结果值是否命中 `[utf8]` 数组元素边界：值类型是宿主字符串
     /// 且携带已登记 gc struct layout（计划槽 anyref）。纯类型/布局事实判定，
     /// 不按符号名特判。
-    fn utf8_host_handle_boundary_layout(&self, value: MirValueRef) -> Option<LayoutId> {
+    pub(super) fn utf8_host_handle_boundary_layout(&self, value: MirValueRef) -> Option<LayoutId> {
         if !self.mir_fn.value_types.get(&value).is_some_and(is_js_glue_host_string_type) {
             return None;
         }

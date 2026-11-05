@@ -103,7 +103,13 @@ impl<'a> WasmMirLowerer<'a> {
         match operand {
             MirOperand::Value(value) => {
                 let local = self.planned_value_local(*value);
-                assert_eq!(self.wasm_local_value_type(local), expected, "WASM SSA 槽与目标合同不一致: {}", self.mir_fn.symbol);
+                let actual = self.wasm_local_value_type(local);
+                if actual != expected {
+                    return Err(format!(
+                        "WASM 目标合同槽位自检失败 in `{}`: operand=%{} local={} expected={} actual={}",
+                        self.mir_fn.symbol, value.0, local, expected, actual
+                    ));
+                }
                 self.emit_local_get(local);
                 Ok(())
             }

@@ -56,19 +56,8 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                     callee_return = self.resolve_callee_return_type(callee, Some(import_index))?;
                     let param_types = self.resolve_callee_param_types(callee, Some(import_index))?;
-                    self.emit_host_import_call_arguments(arguments, &param_types)?;
+                    self.emit_abi_call_arguments(arguments, &param_types)?;
                     self.emit_call(import_index);
-                    // 宿主导入返回值边界（合同 §5）：冻结 ABI 返回 i32 宿主句柄，而结果
-                    // SSA 槽按已登记 gc struct layout 规划为 anyref 时，必须消费装配期
-                    // 冻结的句柄→managed 物化配方，禁止把计划槽降级或放宽槽位自检。
-                    if let Some(output) = output {
-                        if callee_return == Some(VALTYPE_I32) {
-                            if let Some(layout_id) = self.host_import_return_materialize_layout(output) {
-                                self.emit_utf8_host_handle_materialize(layout_id)?;
-                                callee_return = Some(WASM_GC_ANYREF);
-                            }
-                        }
-                    }
                 }
                 else if let Some(function_index) = self.resolve_callee_function_index(callee) {
                     // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
@@ -82,7 +71,7 @@ impl<'a> WasmMirLowerer<'a> {
                         .ok_or_else(|| format!("WASM 函数下标缺少参数签名: function_index={function_index} in `{}`", self.mir_fn.symbol))?
                         .clone();
                     callee_return = return_type;
-                    self.emit_call_arguments(arguments, &param_types)?;
+                    self.emit_abi_call_arguments(arguments, &param_types)?;
                     self.emit_call(function_index);
                 }
                 else {
@@ -110,7 +99,7 @@ impl<'a> WasmMirLowerer<'a> {
                 // 决定，`call_indirect` 的 functype 固定为「可见形参 + 一个尾部 anyref」。
                 // 环境作为普通尾实参压栈，不占 callee 槽；缺事实即结构化失败。
                 let (param_types, return_type, type_index) = self.resolve_indirect_callee_signature(callee)?;
-                self.emit_call_arguments(arguments, &param_types)?;
+                self.emit_abi_call_arguments(arguments, &param_types)?;
                 self.emit_closure_callee(callee)?;
                 self.emit_call_indirect(type_index, 0);
                 callee_return = return_type;
@@ -128,7 +117,23 @@ impl<'a> WasmMirLowerer<'a> {
                 else {
                     return Err(format!("WASM 有 SSA 结果的调用缺少返回合同: {}", self.mir_fn.symbol));
                 };
-                self.validate_output_slot_type(output, return_type);
+                // 调用返回值边界：callee 的 ABI 返回 i32 宿主句柄，而结果 SSA 槽按
+                // 已登记 gc struct layout 规划为 anyref 时，与实参边界消费同一套
+                // 装配期冻结的句柄↔managed 配方。对所有调用形态（导入/静态/间接）
+                // 一致生效，禁止把计划槽降级或放宽槽位自检。
+                let return_type = if return_type == VALTYPE_I32 {
+                    match self.host_import_return_materialize_layout(output) {
+                        Some(layout_id) => {
+                            self.emit_utf8_host_handle_materialize(layout_id)?;
+                            WASM_GC_ANYREF
+                        }
+                        None => return_type,
+                    }
+                }
+                else {
+                    return_type
+                };
+                self.validate_output_slot_type(output, return_type)?;
                 self.assign_output_local(output);
             }
             None if callee_return.is_some() => WasmOpcode::Drop.encode(&mut self.code),
@@ -137,19 +142,21 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(())
     }
 
-    /// 宿主导入边界的实参发射：ABI 声明 i32 句柄而实参槽是 managed anyref 时，
-    /// 必须消费目标计划冻结的 managed→host 句柄转换配方（合同 §5）；缺配方即
-    /// 可执行合同不一致，结构化失败，禁止 coerce/占位掩盖 carrier 失配。
-    /// 其余组合保持既有 coerce 语义。
-    fn emit_host_import_call_arguments(&mut self, arguments: &[MirOperand], param_types: &[u8]) -> crate::Result<()> {
-        assert_eq!(arguments.len(), param_types.len(), "WASM 调用实参与已解析签名不一致");
+    /// 唯一 ABI 实参边界物化点（导入/静态/间接调用共用）：逐槽比较实际载体与
+    /// 已解析签名声明，只在两者分叉时按冻结配方转换。managed `Utf8`（gc struct
+    /// anyref）进入声明 i32 的宿主/adaptor 槽时消费 managed→host 句柄配方；其余
+    /// 组合保持既有 coerce 语义（宽度、装箱由目标计划承诺），未知分叉结构化失败。
+    fn emit_abi_call_arguments(&mut self, arguments: &[MirOperand], param_types: &[u8]) -> crate::Result<()> {
+        if arguments.len() != param_types.len() {
+            return Err(format!(
+                "WASM 调用实参与已解析签名不一致: 实参={} 形参={} in `{}`",
+                arguments.len(),
+                param_types.len(),
+                self.mir_fn.symbol
+            ));
+        }
         for (argument, expected) in arguments.iter().zip(param_types) {
-            if *expected == VALTYPE_I32 && self.operand_wasm_stack_type(argument) == WASM_GC_ANYREF {
-                self.emit_managed_utf8_to_host_handle(argument)?;
-            }
-            else {
-                self.emit_operand_coerced(argument, *expected)?;
-            }
+            self.emit_operand_coerced(argument, *expected)?;
         }
         Ok(())
     }
@@ -162,6 +169,17 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return Err(format!("WASM 宿主字符串边界操作数缺少 SSA 身份: {}", self.mir_fn.symbol));
         };
+        let Some(semantic_type) = self.mir_fn.value_types.get(value)
+        else {
+            return Err(format!("WASM ABI 边界 %{} 缺少语义类型身份: {}", value.0, self.mir_fn.symbol));
+        };
+        if !is_js_glue_host_string_type(semantic_type) {
+            return Err(format!(
+                "WASM ABI 载体失配 in `{}`: slot=i32 actual=anyref operand=%{} ({semantic_type:?}) 不属宿主字符串族，禁止按字符串配方转换",
+                self.mir_fn.symbol,
+                value.0
+            ));
+        }
         let Some(layout_id) = self.mir_fn.value_layouts.get(value).copied()
         else {
             return Err(format!("WASM 宿主字符串边界 %{} 缺少 layout 身份: {}", value.0, self.mir_fn.symbol));
@@ -264,10 +282,29 @@ impl<'a> WasmMirLowerer<'a> {
         self.mir_fn.value_layouts.get(&output).copied()
     }
 
-    /// 编码阶段只验证预规划槽，不改变 SSA 表示。
-    pub(super) fn validate_output_slot_type(&self, output: MirValueRef, stack_ty: u8) {
+    /// 结果槽载体物化的唯一入口：编码阶段只验证预规划槽，不改变 SSA 表示。
+    ///
+    /// 唯一例外是宿主字符串边界：线性内存/`[i32]` 数组/宿主句柄产生的 i32 句柄
+    /// 要落进已登记 managed `Utf8` layout 的 anyref 槽时，按装配期冻结的
+    /// 宿主句柄→managed 配方物化（与实参方向的 managed→host 配方互为逆）。
+    /// 其余槽位分歧是可执行合同分叉：返回结构化错误并点名函数、槽号、期望载体
+    /// 与实际载体，禁止 panic。
+    pub(super) fn validate_output_slot_type(&mut self, output: MirValueRef, stack_ty: u8) -> crate::Result<()> {
         let local = self.planned_value_local(output);
-        assert_eq!(self.wasm_local_value_type(local), stack_ty, "WASM 编码结果与预规划槽冲突: %{} in {}", output.0, self.mir_fn.symbol);
+        let actual_ty = self.wasm_local_value_type(local);
+        if actual_ty == stack_ty {
+            return Ok(());
+        }
+        if actual_ty == WASM_GC_ANYREF && stack_ty == VALTYPE_I32 {
+            if let Some(layout_id) = self.utf8_host_handle_boundary_layout(output) {
+                self.emit_utf8_host_handle_materialize(layout_id)?;
+                return Ok(());
+            }
+        }
+        Err(format!(
+            "WASM 编码结果与预规划槽冲突 in `{}`: operand=%{} local={} expected={} actual={}",
+            self.mir_fn.symbol, output.0, local, stack_ty, actual_ty
+        ))
     }
 
     pub(super) fn assign_output_local(&mut self, output: MirValueRef) {
@@ -329,11 +366,16 @@ impl<'a> WasmMirLowerer<'a> {
         let visible_param_types: Vec<u8> = signature
             .params
             .iter()
-            .map(|ty| wasm_param_value_type_for(self.ctx, ty, None, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref))
+            .map(|ty| wasm_function_abi_value_type_for(self.ctx, ty, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref))
             .collect();
         let return_type = match &signature.return_type {
             NyarType::Unit | NyarType::Bottom => None,
-            other => Some(wasm_param_value_type_for(self.ctx, other, None, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref)),
+            other => Some(wasm_function_abi_value_type_for(
+                self.ctx,
+                other,
+                self.gc_struct_type_indices,
+                self.js_glue_utf8_as_anyref,
+            )),
         };
         let mut indirect_param_types = visible_param_types.clone();
         indirect_param_types.push(WASM_GC_ANYREF);
@@ -407,6 +449,15 @@ impl<'a> WasmMirLowerer<'a> {
         // 即便表面分类成 i32 也不得用 ref.null 顶替。
         if expected == WASM_GC_ANYREF && self.operand_reference_local(operand).is_some() {
             return self.emit_operand(operand);
+        }
+        // 边界物化的唯一规则：managed 宿主字符串（`Utf8` gc struct，栈 anyref）进入
+        // 声明 i32 的槽（宿主/adaptor 形参、字段、数组元素、wasm_operator 配方）时，
+        // 一律消费装配期冻结的 managed→host 句柄配方。所有调用/存储形态共享此处，
+        // 禁止在导入名、字段或数组侧另立特判。
+        if expected == VALTYPE_I32 && actual == WASM_GC_ANYREF {
+            if self.operand_semantic_type(operand).is_some_and(is_js_glue_host_string_type) {
+                return self.emit_managed_utf8_to_host_handle(operand);
+            }
         }
         // 仅允许 TargetExecutionPlan 已承诺的显式宽度转换；禁止用 0 / null 掩盖 carrier 失配。
         if expected == VALTYPE_I64 && (actual == WASM_GC_ANYREF || actual == WASM_GC_EXTERNREF) {
@@ -505,7 +556,7 @@ impl<'a> WasmMirLowerer<'a> {
         match output {
             None => WasmOpcode::Drop.encode(&mut self.code),
             Some(output) => {
-                self.validate_output_slot_type(output, result_type);
+                self.validate_output_slot_type(output, result_type)?;
                 self.assign_output_local(output);
             }
         }
@@ -601,11 +652,12 @@ impl<'a> WasmMirLowerer<'a> {
         for argument in arguments {
             if let MirOperand::Value(_) = argument {
                 let actual = self.operand_wasm_stack_type(argument);
-                assert_eq!(
-                    actual, expected,
-                    "WASM `wasm_operator` 实参栈类型与目标绑定不一致: `{mnemonic}` expects {expected:#x} actual {actual:#x} in {}",
-                    self.mir_fn.symbol
-                );
+                if actual != expected {
+                    return Err(format!(
+                        "WASM `wasm_operator` 实参载体失配 in `{}`: mnemonic=`{mnemonic}` expected={expected} actual={actual}",
+                        self.mir_fn.symbol
+                    ));
+                }
             }
             self.emit_contract_operand(argument, expected)?;
         }
@@ -753,7 +805,7 @@ impl<'a> WasmMirLowerer<'a> {
 
         if let Some(out) = output {
             // console write →?unit；void≠unit，用 anyref null 占位?
-            self.validate_output_slot_type(out, VALTYPE_ANYREF);
+            self.validate_output_slot_type(out, VALTYPE_ANYREF)?;
             self.emit_ref_null_anyref();
             self.assign_output_local(out);
         }

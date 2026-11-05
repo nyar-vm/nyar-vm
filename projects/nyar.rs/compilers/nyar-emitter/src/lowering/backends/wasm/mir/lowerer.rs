@@ -801,8 +801,8 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
-    /// wasm-gc `struct.set` 字段值栈类型（与 `register_gc_struct_types` / `wasm_gc_field_type_byte` 一致）?
-    pub(super) fn gc_struct_field_stack_type(&self, field: &FieldLayout) -> u8 {
+    /// wasm-gc `struct.set` 字段值栈类型（与 `register_gc_struct_types` / `wasm_gc_field_type_byte` 一致）。
+    pub(super) fn gc_struct_field_stack_type(&self, field: &FieldLayout) -> crate::Result<u8> {
         wasm_gc_field_type_byte_for_glue(&field.ty, self.js_glue_utf8_as_anyref)
     }
 
@@ -812,26 +812,40 @@ impl<'a> WasmMirLowerer<'a> {
     /// For nested value-type fields, emits `memory.copy` to copy the inline contents
     /// from the source address (already on the stack) into the parent's field region.
     /// Stack at entry: `[dest_addr, source_value_or_addr]`.
-    pub(super) fn emit_store_at_field(&mut self, field: &FieldLayout) {
+    pub(super) fn emit_store_at_field(&mut self, field: &FieldLayout) -> crate::Result<()> {
         // 只有带字段的内联聚合才以地址形式存储；标量与零字段值布局直接存载体。
         if type_is_inline_aggregate(self.ctx, &field.ty) {
             // Stack: [dest_addr, source_addr] → memory.copy expects [dest, source, len]
             self.emit_i32_const(field.size as i32);
             self.emit_memory_copy();
-            return;
+            return Ok(());
         }
-        match field.ty {
-            NyarType::Float64 => encode_f64_store(3, 0, &mut self.code),
-            NyarType::Integer64 { .. } => encode_i64_store(3, 0, &mut self.code),
-            _ => encode_i32_store(2, 0, &mut self.code),
+        match self.gc_struct_field_stack_type(field)? {
+            VALTYPE_F64 => encode_f64_store(3, 0, &mut self.code),
+            VALTYPE_I64 => encode_i64_store(3, 0, &mut self.code),
+            VALTYPE_I32 => encode_i32_store(2, 0, &mut self.code),
+            other => {
+                return Err(format!(
+                    "WASM 线性内存字段槽不支持引用载体 {other}: `{}` (in `{}`)",
+                    field.name, self.mir_fn.symbol
+                ));
+            }
         }
+        Ok(())
     }
 
-    pub(super) fn emit_load_at_field(&mut self, field: &FieldLayout) {
-        match field.ty {
-            NyarType::Float64 => encode_f64_load(3, 0, &mut self.code),
-            NyarType::Integer64 { .. } => encode_i64_load(3, 0, &mut self.code),
-            _ => encode_i32_load(2, 0, &mut self.code),
+    pub(super) fn emit_load_at_field(&mut self, field: &FieldLayout) -> crate::Result<()> {
+        match self.gc_struct_field_stack_type(field)? {
+            VALTYPE_F64 => encode_f64_load(3, 0, &mut self.code),
+            VALTYPE_I64 => encode_i64_load(3, 0, &mut self.code),
+            VALTYPE_I32 => encode_i32_load(2, 0, &mut self.code),
+            other => {
+                return Err(format!(
+                    "WASM 线性内存字段槽不支持引用载体 {other}: `{}` (in `{}`)",
+                    field.name, self.mir_fn.symbol
+                ));
+            }
         }
+        Ok(())
     }
 }

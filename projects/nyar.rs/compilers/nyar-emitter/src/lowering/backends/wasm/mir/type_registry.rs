@@ -84,7 +84,7 @@ pub(super) fn register_gc_struct_types(
     ctx: &ExecutableLoweringContext,
     type_indices: &mut Vec<Vec<u8>>,
     js_glue_utf8_as_anyref: bool,
-) -> BTreeMap<LayoutId, u32> {
+) -> crate::Result<BTreeMap<LayoutId, u32>> {
     let mir_ref_layouts = collect_mir_reference_layout_ids(ctx);
     let mut map = BTreeMap::new();
     for layout in &ctx.layouts.layouts {
@@ -98,13 +98,16 @@ pub(super) fn register_gc_struct_types(
         if layout.storage != StorageKind::Reference && !has_ref_fields && !mir_uses_reference {
             continue;
         }
-        let field_types: Vec<u8> =
-            layout.fields.iter().map(|field| wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref)).collect();
+        let field_types: Vec<u8> = layout
+            .fields
+            .iter()
+            .map(|field| wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref))
+            .collect::<crate::Result<Vec<u8>>>()?;
         let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         type_indices.push(wasm_gc_struct_type(&field_types));
         map.insert(layout.id, type_index);
     }
-    map
+    Ok(map)
 }
 
 /// 为 heap `[T]` 的 element_type 注册 wasm-gc `arraytype` 条目,返回 element_type 字符串键 -> type_index 映射。
@@ -124,17 +127,18 @@ pub(super) fn register_gc_array_types(
     ctx: &ExecutableLoweringContext,
     type_indices: &mut Vec<Vec<u8>>,
     js_glue_utf8_as_anyref: bool,
-) -> BTreeMap<String, u32> {
+) -> crate::Result<BTreeMap<String, u32>> {
     let mut map = BTreeMap::new();
-    let mut ensure = |element_type: &NyarType, type_indices: &mut Vec<Vec<u8>>, map: &mut BTreeMap<String, u32>| {
+    let mut ensure = |element_type: &NyarType, type_indices: &mut Vec<Vec<u8>>, map: &mut BTreeMap<String, u32>| -> crate::Result<()> {
         let key = wasm_array_element_type_key(element_type);
         if map.contains_key(&key) {
-            return;
+            return Ok(());
         }
-        let field_type_byte = wasm_gc_field_type_byte_for_glue(element_type, js_glue_utf8_as_anyref);
+        let field_type_byte = wasm_gc_field_type_byte_for_glue(element_type, js_glue_utf8_as_anyref)?;
         let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         type_indices.push(wasm_gc_array_type(field_type_byte));
         map.insert(key, type_index);
+        Ok(())
     };
     {
         let exec = &ctx.submission.backend_plan;
@@ -146,7 +150,7 @@ pub(super) fn register_gc_array_types(
             for ty in view.function.param_types.iter().chain(view.function.value_types.values()) {
                 match ty {
                     NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
-                        ensure(element.as_ref(), type_indices, &mut map);
+                        ensure(element.as_ref(), type_indices, &mut map)?;
                     }
                     _ => {}
                 }
@@ -157,7 +161,7 @@ pub(super) fn register_gc_array_types(
                         MirInstructionKind::ArrayNew { array_type, .. } | MirInstructionKind::ArrayFromElements { array_type, .. } => {
                             match array_type {
                                 NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
-                                    ensure(element.as_ref(), type_indices, &mut map);
+                                    ensure(element.as_ref(), type_indices, &mut map)?;
                                 }
                                 _ => {}
                             }
@@ -169,7 +173,7 @@ pub(super) fn register_gc_array_types(
                                 if let Some(NyarType::Array(element) | NyarType::FixedArray { element, .. }) =
                                     view.function.value_types.get(receiver)
                                 {
-                                    ensure(element.as_ref(), type_indices, &mut map);
+                                    ensure(element.as_ref(), type_indices, &mut map)?;
                                 }
                             }
                         }
@@ -185,11 +189,11 @@ pub(super) fn register_gc_array_types(
     for layout in &ctx.layouts.layouts {
         for field in &layout.fields {
             if let NyarType::Array(element) = &field.ty {
-                ensure(element.as_ref(), type_indices, &mut map);
+                ensure(element.as_ref(), type_indices, &mut map)?;
             }
         }
     }
-    map
+    Ok(map)
 }
 
 /// 为 MIR 中实际出现的 sum nominal 注册 wasm-gc `structtype`。

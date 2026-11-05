@@ -63,7 +63,7 @@ impl<'a> WasmMirLowerer<'a> {
                 for step in &steps {
                     self.emit_scalar_cast_step(*step);
                 }
-                self.validate_output_slot_type(output, self.output_scalar_slot_type(output));
+                self.validate_output_slot_type(output, self.output_scalar_slot_type(output))?;
                 self.assign_output_local(output);
             }
             MirInstructionKind::StructNew { fields, nominal } => {
@@ -74,7 +74,7 @@ impl<'a> WasmMirLowerer<'a> {
                 let layout = self.resolve_layout(*nominal);
                 if self.layout_uses_gc_struct(&layout) {
                     let type_index = self.resolve_gc_struct_type_index(layout.id, &layout.name);
-                    self.validate_output_slot_type(output, WASM_GC_ANYREF);
+                    self.validate_output_slot_type(output, WASM_GC_ANYREF)?;
                     let local = self.planned_value_local(output);
                     self.emit_struct_new_default(type_index);
                     self.emit_local_set(local);
@@ -86,7 +86,7 @@ impl<'a> WasmMirLowerer<'a> {
                         let field = field_layout;
                         self.emit_local_get(local);
                         self.emit_ref_cast_struct(type_index);
-                        self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field))?;
+                        self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field)?)?;
                         self.emit_struct_set(type_index, field_index as u32);
                     }
                 }
@@ -110,7 +110,7 @@ impl<'a> WasmMirLowerer<'a> {
                         self.emit_i32_const(field.offset as i32);
                         self.emit_i32_add();
                         self.emit_operand_coerced(value, self.field_store_stack_type(field))?;
-                        self.emit_store_at_field(field);
+                        self.emit_store_at_field(field)?;
                     }
                 }
             }
@@ -147,8 +147,8 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_ref_cast_struct(type_index);
                     self.emit_struct_get(type_index, *index);
                     if let Some(output) = output {
-                        let stack_ty = wasm_gc_field_type_byte_for_glue(&field.ty, self.js_glue_utf8_as_anyref);
-                        self.validate_output_slot_type(output, stack_ty);
+                        let stack_ty = wasm_gc_field_type_byte_for_glue(&field.ty, self.js_glue_utf8_as_anyref)?;
+                        self.validate_output_slot_type(output, stack_ty)?;
                         self.assign_output_local(output);
                     }
                     else {
@@ -162,23 +162,19 @@ impl<'a> WasmMirLowerer<'a> {
                     let field_is_inline_aggregate = type_is_inline_aggregate(self.ctx, &field.ty);
                     if let Some(output) = output {
                         if field_is_inline_aggregate {
-                            self.validate_output_slot_type(output, VALTYPE_I32);
+                            self.validate_output_slot_type(output, VALTYPE_I32)?;
                             self.assign_output_local(output);
                         }
                         else {
-                            self.emit_load_at_field(&field);
-                            let stack_type = match field.ty {
-                                NyarType::Float64 => VALTYPE_F64,
-                                NyarType::Integer64 { .. } => VALTYPE_I64,
-                                _ => VALTYPE_I32,
-                            };
-                            self.validate_output_slot_type(output, stack_type);
+                            self.emit_load_at_field(&field)?;
+                            let stack_type = self.gc_struct_field_stack_type(&field)?;
+                            self.validate_output_slot_type(output, stack_type)?;
                             self.assign_output_local(output);
                         }
                     }
                     else {
                         if !field_is_inline_aggregate {
-                            self.emit_load_at_field(&field);
+                            self.emit_load_at_field(&field)?;
                         }
                         WasmOpcode::Drop.encode(&mut self.code);
                     }
@@ -189,8 +185,8 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_ref_cast_struct(type_index);
                     self.emit_struct_get(type_index, *index);
                     if let Some(output) = output {
-                        let stack_ty = wasm_gc_field_type_byte_for_glue(&field.ty, self.js_glue_utf8_as_anyref);
-                        self.validate_output_slot_type(output, stack_ty);
+                        let stack_ty = wasm_gc_field_type_byte_for_glue(&field.ty, self.js_glue_utf8_as_anyref)?;
+                        self.validate_output_slot_type(output, stack_ty)?;
                         self.assign_output_local(output);
                     }
                     else {
@@ -215,7 +211,7 @@ impl<'a> WasmMirLowerer<'a> {
                 };
                 if self.layout_uses_gc_struct(&layout) {
                     let type_index = self.resolve_gc_struct_type_index(layout.id, &layout.name);
-                    self.validate_output_slot_type(output, WASM_GC_ANYREF);
+                    self.validate_output_slot_type(output, WASM_GC_ANYREF)?;
                     let local = self.planned_value_local(output);
                     self.emit_struct_new_default(type_index);
                     self.emit_local_set(local);
@@ -226,7 +222,7 @@ impl<'a> WasmMirLowerer<'a> {
                         };
                         self.emit_local_get(local);
                         self.emit_ref_cast_struct(type_index);
-                        self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field))?;
+                        self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field)?)?;
                         self.emit_struct_set(type_index, index as u32);
                     }
                 }
@@ -248,7 +244,7 @@ impl<'a> WasmMirLowerer<'a> {
                         self.emit_i32_const(field.offset as i32);
                         self.emit_i32_add();
                         self.emit_operand_coerced(value, self.field_store_stack_type(field))?;
-                        self.emit_store_at_field(field);
+                        self.emit_store_at_field(field)?;
                     }
                 }
             }
@@ -307,7 +303,7 @@ impl<'a> WasmMirLowerer<'a> {
                             self.emit_i32_const(field.offset as i32);
                             self.emit_i32_add();
                             self.emit_operand_coerced(value, self.field_store_stack_type(field))?;
-                            self.emit_store_at_field(field);
+                            self.emit_store_at_field(field)?;
                         }
                         return Ok(());
                     }
@@ -324,7 +320,7 @@ impl<'a> WasmMirLowerer<'a> {
                         self.mir_fn.symbol
                     );
                 };
-                let element_stack_ty = wasm_gc_field_type_byte_for_glue(element_type, self.js_glue_utf8_as_anyref);
+                let element_stack_ty = wasm_gc_field_type_byte_for_glue(element_type, self.js_glue_utf8_as_anyref)?;
                 for value in elements {
                     self.emit_operand_coerced(value, element_stack_ty)?;
                 }
@@ -448,8 +444,8 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_struct_get(type_index, field_index as u32);
                     if let Some(output) = output {
                         let field_ty = &layout.fields[field_index as usize].ty;
-                        let stack_ty = wasm_gc_field_type_byte_for_glue(field_ty, self.js_glue_utf8_as_anyref);
-                        self.validate_output_slot_type(output, stack_ty);
+                        let stack_ty = wasm_gc_field_type_byte_for_glue(field_ty, self.js_glue_utf8_as_anyref)?;
+                        self.validate_output_slot_type(output, stack_ty)?;
                         self.assign_output_local(output);
                     }
                     else {
@@ -473,23 +469,19 @@ impl<'a> WasmMirLowerer<'a> {
                     let field_is_inline_aggregate = type_is_inline_aggregate(self.ctx, &field_layout.ty);
                     if let Some(output) = output {
                         if field_is_inline_aggregate {
-                            self.validate_output_slot_type(output, VALTYPE_I32);
+                            self.validate_output_slot_type(output, VALTYPE_I32)?;
                             self.assign_output_local(output);
                         }
                         else {
-                            self.emit_load_at_field(&field_layout);
-                            let stack_type = match field_layout.ty {
-                                NyarType::Float64 => VALTYPE_F64,
-                                NyarType::Integer64 { .. } => VALTYPE_I64,
-                                _ => VALTYPE_I32,
-                            };
-                            self.validate_output_slot_type(output, stack_type);
+                            self.emit_load_at_field(&field_layout)?;
+                            let stack_type = self.gc_struct_field_stack_type(&field_layout)?;
+                            self.validate_output_slot_type(output, stack_type)?;
                             self.assign_output_local(output);
                         }
                     }
                     else {
                         if !field_is_inline_aggregate {
-                            self.emit_load_at_field(&field_layout);
+                            self.emit_load_at_field(&field_layout)?;
                         }
                         WasmOpcode::Drop.encode(&mut self.code);
                     }
@@ -506,8 +498,8 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_struct_get(type_index, field_index as u32);
                     if let Some(output) = output {
                         let field_ty = &layout.fields[field_index as usize].ty;
-                        let stack_ty = wasm_gc_field_type_byte_for_glue(field_ty, self.js_glue_utf8_as_anyref);
-                        self.validate_output_slot_type(output, stack_ty);
+                        let stack_ty = wasm_gc_field_type_byte_for_glue(field_ty, self.js_glue_utf8_as_anyref)?;
+                        self.validate_output_slot_type(output, stack_ty)?;
                         self.assign_output_local(output);
                     }
                     else {
@@ -541,7 +533,7 @@ impl<'a> WasmMirLowerer<'a> {
                     let type_index = self.resolve_gc_struct_type_index(layout.id, &layout.name);
                     self.emit_local_get(object_local);
                     self.emit_ref_cast_struct(type_index);
-                    self.emit_operand_coerced(value, self.gc_struct_field_stack_type(&field_layout))?;
+                    self.emit_operand_coerced(value, self.gc_struct_field_stack_type(&field_layout)?)?;
                     self.emit_struct_set(type_index, field_index as u32);
                 }
                 else if let Some(object_local) = self.operand_address_local(object) {
@@ -553,7 +545,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_i32_const(field_layout.offset as i32);
                     self.emit_i32_add();
                     self.emit_operand_coerced(value, self.field_store_stack_type(&field_layout))?;
-                    self.emit_store_at_field(&field_layout);
+                    self.emit_store_at_field(&field_layout)?;
                 }
                 else {
                     return Err(format!("WASM FieldSet 找不到对象槽 in `{}`: layout=`{}` field=`{field}`", self.mir_fn.symbol, layout.name));
@@ -595,7 +587,7 @@ impl<'a> WasmMirLowerer<'a> {
                 else {
                     return Err(format!("WASM 函数值 `{instance:?}` 缺少结果槽: {}", self.mir_fn.symbol));
                 };
-                self.validate_output_slot_type(output, WASM_GC_ANYREF);
+                self.validate_output_slot_type(output, WASM_GC_ANYREF)?;
                 // 闭包对象先落进结果槽，再按「local.get + ref.cast + 字段值 + struct.set」
                 // 逐槽写入：`struct.set` 会消费引用，不能让它留在栈上继续写下一槽。
                 let local = self.planned_value_local(output);
@@ -653,7 +645,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 self.emit_local_get(object_local);
                 if let Some(output) = instruction_primary_result(instruction) {
-                    self.validate_output_slot_type(output, WASM_GC_ANYREF);
+                    self.validate_output_slot_type(output, WASM_GC_ANYREF)?;
                     self.assign_output_local(output);
                 }
                 else {
@@ -671,7 +663,7 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_ref_cast_struct(type_index);
                 self.emit_struct_get(type_index, SUM_PAYLOAD_FIELD);
                 self.emit_payload_from_anyref(target_stack_ty);
-                self.validate_output_slot_type(output, target_stack_ty);
+                self.validate_output_slot_type(output, target_stack_ty)?;
                 self.assign_output_local(output);
             }
             MirInstructionKind::SumVariantIs { nominal, variant, object } => {
