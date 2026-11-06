@@ -46,6 +46,16 @@ pub fn resolve_hir_calls(module: &mut HirModule) {
     resolve_submodule_calls(module, &candidates, &type_relations, &struct_fields, &singleton_names);
 }
 
+/// 成员体的调用点身份必须与候选符号同源。
+///
+/// 无限定自由调用的候选符号由声明自身的 namespace 生成（`stable_hir_function_name_path`
+/// 优先取非空 `declaring_namespace`），而声明体成员没有自己的 `declaring_namespace`，
+/// 只能由所属聚合代入。聚合声明在具体 namespace 时按该 namespace 解析；声明在全局
+/// 作用域时保持模块级上下文（全局声明在符号侧同样回退到模块名的既有口径）。
+fn member_relations(base: &TypeRelationContext, namespace: &[Identifier]) -> Option<TypeRelationContext> {
+    (!namespace.is_empty()).then(|| base.with_enclosing_module(&NamePath::new(namespace.to_vec())))
+}
+
 fn resolve_submodule_calls(
     module: &mut HirModule,
     candidates: &[OverloadCandidate],
@@ -64,22 +74,26 @@ fn resolve_submodule_calls(
         for item in &mut module.structs {
             use crate::compiler::hir::overload::types::struct_apply_type;
             let owner_type = struct_apply_type(item, array_owner);
+            let scoped = member_relations(type_relations, &item.namespace);
+            let relations = scoped.as_ref().unwrap_or(type_relations);
             for method in &mut item.methods {
-                resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+                resolve_function_calls(method, candidates, relations, struct_fields, singleton_names, Some(&owner_type));
             }
         }
         for item in &mut module.singletons {
+            let scoped = member_relations(type_relations, &item.namespace);
+            let relations = scoped.as_ref().unwrap_or(type_relations);
             for method in &mut item.methods {
                 let owner_type = ValkyrieType::Named(item.name.clone());
-                resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+                resolve_function_calls(method, candidates, relations, struct_fields, singleton_names, Some(&owner_type));
             }
             if let Some(constructor) = &mut item.constructor {
                 let owner_type = ValkyrieType::Named(item.name.clone());
-                resolve_function_calls(constructor, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+                resolve_function_calls(constructor, candidates, relations, struct_fields, singleton_names, Some(&owner_type));
             }
             if let Some(finalizer) = &mut item.finalizer {
                 let owner_type = ValkyrieType::Named(item.name.clone());
-                resolve_function_calls(finalizer, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+                resolve_function_calls(finalizer, candidates, relations, struct_fields, singleton_names, Some(&owner_type));
             }
         }
         for item in &mut module.traits {
