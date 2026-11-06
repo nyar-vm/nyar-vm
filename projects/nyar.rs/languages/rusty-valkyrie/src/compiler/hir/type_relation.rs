@@ -499,8 +499,9 @@ impl TypeRelationContext {
                     return relation_type_is_open_obligation(&target);
                 };
                 bound.associated_types.iter().all(|equation| {
-                    let expected = substitute_relation_type(&equation.ty, substitutions);
-                    witness.associated_types.get(&equation.name).is_some_and(|actual| actual == &expected)
+                    let expected = self.traits.canonical_member_type(&substitute_relation_type(&equation.ty, substitutions));
+                    let actual = witness.associated_types.get(&equation.name).map(|actual| self.traits.canonical_member_type(actual));
+                    actual.as_ref() == Some(&expected)
                 })
             })
         })

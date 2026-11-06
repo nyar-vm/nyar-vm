@@ -11,11 +11,13 @@ use crate::compiler::{
         lowering::unify_instantiation,
         overload::substitution::{substitute_associated_equations, substitute_type_self, substitute_type_vars},
         row::{RowMethodSignature, RowRequirement, RowRequirementError},
+        type_lowering::canonical_builtin_type,
     },
     types::{
         Identifier, NamePath,
         hir::{
-            GenericBinderId, HirImpl, HirModule, HirStruct, HirTrait, HirTraitBound, ValkyrieType, ValkyrieType as HirType,
+            GenericBinderId, HirEnum, HirImpl, HirModule, HirStruct, HirTrait, HirTraitBound, ValkyrieType,
+            ValkyrieType as HirType, primitive_identity_builtin_type,
         },
         witness::{MethodEntry, MethodId, MethodPath, ModuleId, TraitId, TypeId, TypeMetadata, WitnessTable, WitnessTableBuilder},
     },
@@ -175,6 +177,7 @@ pub struct TraitModuleView {
     traits: BTreeMap<Identifier, HirTrait>,
     declarations: BTreeMap<nyar_types::ItemId, HirTrait>,
     structs: BTreeMap<Identifier, HirStruct>,
+    enums: BTreeMap<Identifier, HirEnum>,
     impls: Vec<HirImpl>,
 }
 
@@ -185,6 +188,7 @@ impl TraitModuleView {
             traits: module.traits.iter().map(|item| (item.name.clone(), item.clone())).collect(),
             declarations: BTreeMap::new(),
             structs: module.structs.iter().map(|item| (item.name.clone(), item.clone())).collect(),
+            enums: module.enums.iter().map(|item| (item.name.clone(), item.clone())).collect(),
             impls: Vec::new(),
         };
         fn collect(module: &HirModule, view: &mut TraitModuleView) {
@@ -359,6 +363,71 @@ fn normalize_trait_member_type(
     substitute_associated_equations(&substitute_type_self(ty, target), target, associated_types)
 }
 
+    /// 关联等式判等前把 `Named` 表面名归一到已冻结的 `Nominal` 表示。
+    ///
+    /// 只有唯一可解、且声明身份存在时才归一：struct 取构造器声明身份（携带
+    /// `[primitive]` 自举身份时折叠为内建类型），enum 取枚举声明身份；
+    /// 同名 struct/enum 并存、跨包不可见、缺声明身份的一律保留 `Named`，
+    /// 由调用方按 `Named` 与 `Nominal` 不等失败闭合。
+    pub(crate) fn canonical_member_type(&self, ty: &HirType) -> HirType {
+        match ty {
+            HirType::Named(name) => self.canonical_named_type(name).unwrap_or_else(|| ty.clone()),
+            HirType::Nominal { declaration, arguments, primitive_identity } => HirType::Nominal {
+                declaration: *declaration,
+                arguments: arguments.iter().map(|argument| self.canonical_member_type(argument)).collect(),
+                primitive_identity: primitive_identity.clone(),
+            },
+            HirType::Apply(callee, arguments) => HirType::Apply(
+                Box::new(self.canonical_member_type(callee)),
+                arguments.iter().map(|argument| self.canonical_member_type(argument)).collect(),
+            ),
+            HirType::Tuple(elements) => {
+                HirType::Tuple(elements.iter().map(|element| self.canonical_member_type(element)).collect())
+            }
+            HirType::Array(element) => HirType::Array(Box::new(self.canonical_member_type(element))),
+            HirType::FixedArray { element, length } => {
+                HirType::FixedArray { element: Box::new(self.canonical_member_type(element)), length: *length }
+            }
+            HirType::Nullable(inner) => HirType::Nullable(Box::new(self.canonical_member_type(inner))),
+            HirType::Union(members) => {
+                HirType::Union(members.iter().map(|member| self.canonical_member_type(member)).collect())
+            }
+            HirType::Intersection(members) => {
+                HirType::Intersection(members.iter().map(|member| self.canonical_member_type(member)).collect())
+            }
+            _ => ty.clone(),
+        }
+    }
+
+    /// 短名 → 唯一已冻结名义身份；同名 struct/enum 并存或不可解时返回 `None`。
+    fn canonical_named_type(&self, name: &Identifier) -> Option<HirType> {
+        let struct_type = self.structs.get(name).and_then(|item| {
+            if let Some(builtin) = item.primitive_identity.as_deref().and_then(primitive_identity_builtin_type) {
+                return Some(builtin);
+            }
+            item.constructor_declaration.map(|declaration| HirType::Nominal {
+                declaration,
+                arguments: Vec::new(),
+                primitive_identity: item.primitive_identity.clone(),
+            })
+        });
+        let enum_type = self.enums.get(name).and_then(|item| {
+            item.declaration.map(|declaration| HirType::Nominal {
+                declaration,
+                arguments: Vec::new(),
+                primitive_identity: None,
+            })
+        });
+        let primitive_type = canonical_builtin_type(name.as_str());
+        // 多来源只有在解析出同一个值时才折叠：同名 `[primitive]` struct 与内建是同一身份
+        // 的两种表示；任一来源给出不同身份（真歧义）就保持 `Named`，由调用方判不等。
+        let resolved = [struct_type, enum_type, primitive_type].into_iter().flatten().collect::<Vec<_>>();
+        match resolved.first() {
+            Some(first) if resolved.iter().all(|found| found == first) => Some(first.clone()),
+            _ => None,
+        }
+    }
+
     /// 按已解析的目标类型与 trait 声明身份检查显式实现；允许 primitive 等非结构类型参与 evidence。
     pub fn satisfy_explicit_type(&self, candidate: &ValkyrieType, bound: &HirTraitBound) -> Result<NamedTraitWitness, TraitModuleError> {
         self.satisfy_explicit_type_at(candidate, bound, 0)
@@ -463,15 +532,23 @@ fn normalize_trait_member_type(
             let actual_params = candidate_method
                 .params
                 .iter()
-                .map(|param| Self::normalize_impl_member_type(&param.ty, candidate, &substitution, &associated_types))
+                .map(|param| {
+                    self.canonical_member_type(&Self::normalize_impl_member_type(
+                        &param.ty,
+                        candidate,
+                        &substitution,
+                        &associated_types,
+                    ))
+                })
                 .collect::<Vec<_>>();
             let expected_params = method
                 .params
                 .iter()
-                .map(|param| Self::normalize_trait_member_type(&param.ty, candidate, &associated_types))
+                .map(|param| self.canonical_member_type(&Self::normalize_trait_member_type(&param.ty, candidate, &associated_types)))
                 .collect::<Vec<_>>();
-            let actual_return = Self::normalize_impl_member_type(&candidate_method.return_type, candidate, &substitution, &associated_types);
-            let expected_return = Self::normalize_trait_member_type(&method.return_type, candidate, &associated_types);
+            let actual_return =
+                self.canonical_member_type(&Self::normalize_impl_member_type(&candidate_method.return_type, candidate, &substitution, &associated_types));
+            let expected_return = self.canonical_member_type(&Self::normalize_trait_member_type(&method.return_type, candidate, &associated_types));
             if candidate_method.declaration.is_none()
                 || candidate_method.is_abstract
                 || actual_params != expected_params
@@ -483,8 +560,9 @@ fn normalize_trait_member_type(
             }
         }
         for equation in &bound.associated_types {
-            let expected = Self::normalize_trait_member_type(&equation.ty, candidate, &associated_types);
-            if associated_types.get(&equation.name) != Some(&expected) {
+            let expected = self.canonical_member_type(&Self::normalize_trait_member_type(&equation.ty, candidate, &associated_types));
+            let actual = associated_types.get(&equation.name).map(|actual| self.canonical_member_type(actual));
+            if actual.as_ref() != Some(&expected) {
                 return Err(TraitModuleError::Satisfaction {
                     error: TraitSatisfactionError::MissingAssociatedTypeBinding {
                         trait_path: bound.trait_path.clone(),
