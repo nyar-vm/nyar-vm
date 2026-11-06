@@ -27,7 +27,7 @@ use crate::{
             IslandPackageOptions, StaticRenderResult, asgard_boot_script_tag, asgard_boot_stylesheet_tag, build_awsl_wasm_source,
             package_browser_islands, ssg_ovm::render_static_ovm,
         },
-        compile::{GeneratedEntrySurface, GeneratedSource, resolve_project_source_groups},
+        compile::{GeneratedEntrySurface, GeneratedSource, dependency_keys_for_packages, resolve_project_source_groups},
         error::{AsgardError, AsgardResult},
         ssg::generate_static_page_full,
         wasm::{compile_wasm_bundle, copy_wasm_artifacts_to_dist},
@@ -144,6 +144,9 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
     let resolved = resolve_project_source_groups(&project_root, &target)
         .map_err(|error| AsgardError::msg(report!("解析项目源码组失败（静态交付要求可解析的 Legion 工程）: {error}")))?;
     let module_stem = resolved.project_name.replace('.', "-");
+    // 生成代码引用 `usize` 别名与 `Array` 合同（`<loop>` 的条目数量与下标）：
+    // 按包名显式挂接 `std`，不泛化挂接整个 workspace 或整个 std 快照。
+    let extra_dependency_keys = dependency_keys_for_packages(&resolved.groups, &["std"]);
 
     let wasm_report = compile_wasm_bundle(
         &resolved.groups,
@@ -152,6 +155,9 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
         &module_stem,
         &target,
         GeneratedEntrySurface::GeneratedOnly,
+        &extra_dependency_keys,
+        &resolved.host_provider_bindings,
+        &resolved.gated_out_host_providers,
     )
     .map_err(|error| AsgardError::msg(report!("WASM 编译失败: {error}")))?;
     copy_wasm_artifacts_to_dist(&output_dir, &wasm_report)?;

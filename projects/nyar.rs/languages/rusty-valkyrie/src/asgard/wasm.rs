@@ -1,15 +1,15 @@
 //! WASM 编译：复用 `compile_v_bundle`（仅 browser）。
 use crate::{
-    asgard::error::{AsgardError, AsgardResult},
+    asgard::{
+        compile::{GeneratedEntrySurface, GeneratedSource, HostArtifactKind, compile_v_bundle},
+        error::{AsgardError, AsgardResult},
+        host_backend::HostBackend,
+    },
+    compiler::emitter::pipeline::{CompilerGatedOutHostProvider, CompilerHostProviderBinding},
     legion::CanonicalTarget,
 };
 use nyar_types::compiler_input::CompilerSourceGroup;
 use std::path::Path;
-
-use crate::asgard::{
-    compile::{GeneratedEntrySurface, GeneratedSource, HostArtifactKind, compile_v_bundle},
-    host_backend::HostBackend,
-};
 
 /// WASM 编译报告。
 #[derive(Debug, Clone)]
@@ -28,8 +28,22 @@ pub fn compile_wasm_bundle(
     module_name: &str,
     target: &CanonicalTarget,
     surface: GeneratedEntrySurface,
+    extra_dependency_keys: &[String],
+    host_provider_bindings: &[CompilerHostProviderBinding],
+    gated_out_host_providers: &[CompilerGatedOutHostProvider],
 ) -> AsgardResult<WasmCompileReport> {
-    let report = compile_v_bundle(source_groups, generated, output_dir, module_name, target, HostBackend::BrowserDom, surface)?;
+    let report = compile_v_bundle(
+        source_groups,
+        generated,
+        output_dir,
+        module_name,
+        target,
+        HostBackend::BrowserDom,
+        surface,
+        extra_dependency_keys,
+        host_provider_bindings,
+        gated_out_host_providers,
+    )?;
     if report.kind != HostArtifactKind::Wasm {
         return Err(AsgardError::msg(report!("预期 WASM 制品")));
     }

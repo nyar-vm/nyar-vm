@@ -13,7 +13,7 @@ use std::{
 use crate::asgard::{
     awsl::{LoweringOptions, compile_awsl_source},
     codegen::{IslandPackageOptions, asgard_boot_script_tag, asgard_boot_stylesheet_tag, build_awsl_wasm_source, package_browser_islands},
-    compile::{GeneratedSource, resolve_project_source_groups},
+    compile::{GeneratedSource, dependency_keys_for_packages, resolve_project_source_groups},
     ssg::project::read_project_source,
     wasm::{compile_wasm_bundle, copy_wasm_artifacts_to_dist},
 };
@@ -64,6 +64,9 @@ pub fn emit_report_chart_islands(
     let wasm_stem = module_stem.replace('.', "-");
     let awsl_v = build_awsl_wasm_source(&components);
     let resolved = resolve_project_source_groups(project_dir, &CanonicalTarget::browser())?;
+    // 生成代码引用 `usize` 别名与 `Array` 合同（`<loop>` 的条目数量与下标）：
+    // 按包名显式挂接 `std`，不泛化挂接整个 workspace 或整个 std 快照。
+    let extra_dependency_keys = dependency_keys_for_packages(&resolved.groups, &["std"]);
     let generated = GeneratedSource { producer: "asgard.awsl.report-island", source: &awsl_v };
     // 报告图表岛走非入口执行路径：岛包源码组只作为依赖，入口身份唯一来自生成组的显式 `[export]`。
     let wasm_built = match compile_wasm_bundle(
@@ -73,6 +76,9 @@ pub fn emit_report_chart_islands(
         module_stem,
         &CanonicalTarget::browser(),
         crate::asgard::compile::GeneratedEntrySurface::GeneratedOnly,
+        &extra_dependency_keys,
+        &resolved.host_provider_bindings,
+        &resolved.gated_out_host_providers,
     ) {
         Ok(report) => {
             copy_wasm_artifacts_to_dist(output_dir, &report)

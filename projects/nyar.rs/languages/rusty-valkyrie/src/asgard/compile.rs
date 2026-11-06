@@ -3,10 +3,12 @@ use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{fs, path::Path};
 
 use crate::{
-    compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts},
+    compiler::emitter::pipeline::{
+        CompilerBuildContext, CompilerGatedOutHostProvider, CompilerHostProviderBinding, compile_source_groups_to_artifacts,
+    },
     legion::workspace::{
         compile_source_snapshot,
-        planner::{BuildRequest, WorkspaceResolver},
+        planner::{BuildRequest, WorkspaceResolver, compiler_gated_out_host_providers, compiler_host_provider_bindings},
     },
 };
 use nyar::{ArtifactKind, CanonicalTarget};
@@ -45,6 +47,10 @@ pub struct ResolvedCompilerSources {
     pub project_name: String,
     /// 按依赖顺序排列的源码组。
     pub groups: Vec<CompilerSourceGroup>,
+    /// 已选 host provider 绑定（与 `legion build` 同源）。
+    pub host_provider_bindings: Vec<CompilerHostProviderBinding>,
+    /// 被 feature gate 排除的 provider 事实（编译边界闭合用）。
+    pub gated_out_host_providers: Vec<CompilerGatedOutHostProvider>,
 }
 
 /// 从 manifest 与当前源码闭包形成 Compiler 输入。
@@ -55,7 +61,23 @@ pub fn resolve_project_source_groups(project_dir: &Path, target: &CanonicalTarge
         .map_err(|error| report!("解析项目构建计划失败: {error}"))?;
     let project_name = plan.project.name.clone();
     let groups = compile_source_snapshot(&plan.project.semantic_source_groups).map_err(|error| report!("读取项目源码快照失败: {error}"))?;
-    Ok(ResolvedCompilerSources { project_name, groups })
+    let host_provider_bindings = compiler_host_provider_bindings(&plan.project.selected_host_providers)
+        .map_err(|error| AsgardError::msg(report!("解析 host provider 绑定失败: {error}")))?;
+    let gated_out_host_providers = compiler_gated_out_host_providers(&plan.project.gated_out_host_providers);
+    Ok(ResolvedCompilerSources { project_name, groups, host_provider_bindings, gated_out_host_providers })
+}
+
+/// 按包名从源码快照取生成单元的显式依赖键。
+///
+/// 生成单元默认只见应用入口组；它真正引用的依赖包必须由调用点逐项列名，
+/// 不从整个 workspace 或整个 `std` 泛化挂接。包不在快照内时不产生键，
+/// 由编译期名称解析对缺失声明失败闭合。
+pub fn dependency_keys_for_packages(source_groups: &[CompilerSourceGroup], package_names: &[&str]) -> Vec<String> {
+    source_groups
+        .iter()
+        .filter(|group| package_names.contains(&group.name.as_str()))
+        .map(|group| group.dependency_key.clone())
+        .collect()
 }
 
 /// 终端 TUI 运行时的唯一来源：项目依赖闭包中 `std` 包的 `terminal/tui.v`。
@@ -154,6 +176,9 @@ pub fn compile_v_bundle(
     target: &CanonicalTarget,
     backend: HostBackend,
     surface: GeneratedEntrySurface,
+    extra_dependency_keys: &[String],
+    host_provider_bindings: &[CompilerHostProviderBinding],
+    gated_out_host_providers: &[CompilerGatedOutHostProvider],
 ) -> AsgardResult<HostCompileReport> {
     let compiler = crate::compiler::hir::lowering::ValkyrieCompiler::default();
     let target_profile = target.to_profile(None);
@@ -165,8 +190,10 @@ pub fn compile_v_bundle(
         HostBackend::BrowserDom => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library,
         _ => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     };
-    let build_context = CompilerBuildContext::new(target.arch.as_str(), target.clone(), nyar::ClrSuspendStrategy::default(), wasm_package_kind);
-    let input = compiler_input_for(source_groups, generated, surface)?;
+    let build_context = CompilerBuildContext::new(target.arch.as_str(), target.clone(), nyar::ClrSuspendStrategy::default(), wasm_package_kind)
+        .with_selected_host_providers(host_provider_bindings.to_vec())
+        .with_gated_out_host_providers(gated_out_host_providers.to_vec());
+    let input = compiler_input_for_with_dependencies(source_groups, generated, surface, extra_dependency_keys)?;
     let artifact = compile_source_groups_to_artifacts(
         &compiler,
         &input,
