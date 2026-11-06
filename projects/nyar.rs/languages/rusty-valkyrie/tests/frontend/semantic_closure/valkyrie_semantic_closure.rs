@@ -70,7 +70,14 @@ fn entry_group_without_entry_declaration_is_structured_failure() {
         files: groups[0].2.as_slice(),
     }];
     let error = plan_semantic_closure(&inputs, "wasm32").expect_err("entry group without `[export]`/`[main]` must fail");
-    assert_eq!(error, SemanticClosureError::MissingEntryDeclaration { dependency_key: "app".to_string(), unindexed_source_files: Vec::new() });
+    assert_eq!(
+        error,
+        SemanticClosureError::MissingEntryDeclaration {
+            dependency_key: "app".to_string(),
+            unindexed_source_files: Vec::new(),
+            unseeded_member_families: Vec::new(),
+        }
+    );
 }
 
 #[test]
@@ -92,6 +99,53 @@ fn main_annotation_is_an_entry_seed() {
     let closure = plan_from_groups(&groups);
     assert!(closure.demanded_declarations.iter().any(|key| key.name == "start"));
     assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["main.v".into()]));
+}
+
+#[test]
+fn witness_member_export_is_an_entry_seed() {
+    // 第 1 层：`imply` witness 与声明体成员共用同一条入口注解规则。
+    // `[export]` 挂在 witness 上同样是导出根，不得因外层是 `imply` 而丢失 seed。
+    let groups = [(
+        "app",
+        true,
+        vec![file(
+            "source/widget.v",
+            "namespace app;\nstructure Widget { }\nimply Widget {\n    [export] micro probe() -> bool { return true }\n}",
+        )],
+    )];
+    let closure = plan_from_groups(&groups);
+    assert!(
+        closure.demanded_declarations.iter().any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "probe"),
+        "witness `[export]` 必须进入需求闭包: {:?}",
+        closure.demanded_declarations
+    );
+    assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["source/widget.v".into()]));
+}
+
+#[test]
+fn witness_member_families_without_surface_annotation_are_named_in_the_failure() {
+    // 反例：整组没有任何表面注解时仍是结构化失败，但诊断必须指名现有 witness 成员族，
+    // 不得把「成员族缺表面注解」与「程序合同缺失」混成同一句无信息量的报错。
+    let files = vec![file(
+        "source/widget.v",
+        "namespace app;\nstructure Widget { }\nimply Widget {\n    micro new() { }\n    micro probe() -> bool { return true }\n}",
+    )];
+    let inputs = [ClosureGroupInput {
+        dependency_key: "app",
+        module_name: "app",
+        direct_dependencies: &[],
+        is_entry: true,
+        files: files.as_slice(),
+    }];
+    let error = plan_semantic_closure(&inputs, "wasm32").expect_err("没有表面注解的入口组必须失败");
+    let expected_family = "`imply Widget { new, probe }` (source/widget.v)".to_string();
+    match &error {
+        SemanticClosureError::MissingEntryDeclaration { unseeded_member_families, .. } => {
+            assert_eq!(unseeded_member_families, &vec![expected_family]);
+        }
+        other => panic!("必须是 `MissingEntryDeclaration` 而不是其它失败: {other:?}"),
+    }
+    assert!(error.to_string().contains("witness member families declared without a surface annotation"), "{error}");
 }
 
 #[test]

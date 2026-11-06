@@ -84,6 +84,11 @@ pub enum SemanticClosureError {
         dependency_key: String,
         /// 入口组内未能建立索引的文件（路径、原因）；为空表示文件可解析但没有入口注解。
         unindexed_source_files: Vec<(String, String)>,
+        /// 入口组内没有表面注解的 witness 成员族（`imply X { ... }`，路径）。
+        ///
+        /// 只为诊断指名：成员族本身不是入口 seed，实例入口形态属于表面合同决策，
+        /// 这里不得按文件或拥有者提升成入口。
+        unseeded_member_families: Vec<String>,
     },
     /// 同一编译内出现重名 `[test]` 入口：测试名是 run contract 身份，重名无法归属结果。
     DuplicateTestEntry {
@@ -123,12 +128,18 @@ pub enum SemanticClosureError {
 impl std::fmt::Display for SemanticClosureError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MissingEntryDeclaration { dependency_key, unindexed_source_files } => {
+            Self::MissingEntryDeclaration { dependency_key, unindexed_source_files, unseeded_member_families } => {
                 write!(formatter, "entry source group `{dependency_key}` declares no `[export]`, `[main]` or `[test]` entry")?;
                 if !unindexed_source_files.is_empty() {
                     write!(formatter, "; unindexed sources:")?;
                     for (path, reason) in unindexed_source_files {
                         write!(formatter, " {path}: {reason};")?;
+                    }
+                }
+                if !unseeded_member_families.is_empty() {
+                    write!(formatter, "; witness member families declared without a surface annotation:")?;
+                    for family in unseeded_member_families {
+                        write!(formatter, " {family};")?;
                     }
                 }
                 Ok(())

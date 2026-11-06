@@ -163,7 +163,10 @@ fn collect_imply(builder: &mut FileBuilder, namespace: &[String], imply: &ast::I
         collect_method(method, &mut references);
         let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
         let link = owner_reference.clone().map(DeclarationLink::MemberOwner);
-        builder.register(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref(), link, None, references);
+        // witness 方法与声明体成员共用同一条入口注解规则：`[export]`/`[main]`/`[test]`
+        // 挂在 witness 上同样是入口根，闭包收集不得因外层是 `imply` 就把它降成普通 witness。
+        let entry_point = entry_point_annotation(&method.annotations);
+        builder.register(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref(), link, entry_point, references);
     }
 }
 

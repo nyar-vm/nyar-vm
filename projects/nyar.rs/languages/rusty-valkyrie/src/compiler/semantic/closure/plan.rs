@@ -228,6 +228,7 @@ pub fn plan_semantic_closure_with_host_bindings(
             return Err(SemanticClosureError::MissingEntryDeclaration {
                 dependency_key: group.dependency_key.to_string(),
                 unindexed_source_files,
+                unseeded_member_families: unseeded_member_families(group, &indexed_files),
             });
         }
     }
@@ -377,6 +378,34 @@ fn enqueue_selected_host_providers(
         queue.push_back(binding.provider.clone());
     }
     Ok(())
+}
+
+/// 入口组内没有入口注解、但声明了 witness 成员族的 `imply`（按文件 + 拥有者归组）。
+///
+/// 诊断要指名这些族，让「整组没有入口注解」与「实例成员族缺少表面注解」不再混为一谈：
+/// 前者是程序合同缺失，后者是实例入口形态尚未进入表面合同（ABI 决策点）。
+fn unseeded_member_families(group: &ClosureGroupInput<'_>, indexed_files: &BTreeMap<(String, String), IndexedFile>) -> Vec<String> {
+    let mut families = BTreeMap::<(String, String), BTreeSet<String>>::new();
+    for (path, _) in group.files.iter() {
+        let Some(indexed) = indexed_files.get(&(group.dependency_key.to_string(), path.clone()))
+        else {
+            continue;
+        };
+        for entry in &indexed.declarations {
+            if entry.key.kind != DeclarationKind::ImplyMethod {
+                continue;
+            }
+            let Some(owner) = entry.key.owner.as_deref()
+            else {
+                continue;
+            };
+            families.entry((path.clone(), owner.to_string())).or_default().insert(entry.key.name.clone());
+        }
+    }
+    families
+        .into_iter()
+        .map(|((path, owner), names)| format!("`imply {owner} {{ {} }}` ({path})", names.into_iter().collect::<Vec<_>>().join(", ")))
+        .collect()
 }
 
 /// 合并共享同一 `DeclarationKey` 的多条声明索引事实。
