@@ -373,12 +373,39 @@ fn rewrite_script_decls_for_signals(script: &str, bindings: &[ScriptBinding]) ->
 }
 
 fn rewrite_micro_body_for_signals(block: &str, bindings: &[ScriptBinding]) -> String {
+    // 参数与函数体内局部绑定会遮蔽同名顶层绑定，按块过滤，避免内联改写越过作用域。
+    let scoped = scoped_bindings(block, bindings);
     let mut out = String::new();
     for line in block.lines() {
-        out.push_str(&rewrite_micro_source_line(line, bindings));
+        out.push_str(&rewrite_micro_source_line(line, &scoped));
         out.push('\n');
     }
     out
+}
+
+fn scoped_bindings(block: &str, bindings: &[ScriptBinding]) -> Vec<ScriptBinding> {
+    let mut shadowed = Vec::new();
+    if let Some(header) = block.lines().next() {
+        if let (Some(open), Some(close)) = (header.find('('), header.find(')')) {
+            for param in header[open + 1..close].split(',') {
+                let name = param.split(':').next().unwrap_or("").trim();
+                if !name.is_empty() {
+                    shadowed.push(name.to_string());
+                }
+            }
+        }
+    }
+    for line in block.lines().skip(1) {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("let ") {
+            let rest = rest.strip_prefix("mut ").unwrap_or(rest);
+            let name = rest.split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_')).next().unwrap_or("");
+            if !name.is_empty() {
+                shadowed.push(name.to_string());
+            }
+        }
+    }
+    bindings.iter().filter(|binding| !shadowed.iter().any(|name| name == &binding.name)).cloned().collect()
 }
 
 fn rewrite_micro_source_line(line: &str, bindings: &[ScriptBinding]) -> String {
@@ -412,7 +439,7 @@ fn rewrite_signal_statement(statement: &str, bindings: &[ScriptBinding]) -> Opti
         let prefix = format!("{} =", binding.name);
         if trimmed.starts_with(&prefix) {
             let rhs = trimmed[prefix.len()..].trim();
-            let rhs = substitute_reactive_reads(rhs, bindings);
+            let rhs = substitute_binding_reads(rhs, bindings, &mut Vec::new());
             let setter = match binding.value_type {
                 SignalValueType::I32 => format!("sig_set_i32(sig_named(\"{}\"), {rhs});", binding.sig_var),
                 SignalValueType::Utf8 => format!("sig_set_utf8(sig_named(\"{}\"), {rhs});", binding.sig_var),
@@ -429,13 +456,26 @@ fn substitute_reactive_reads_in_line(line: &str, bindings: &[ScriptBinding]) -> 
     if trimmed.starts_with("micro ") || trimmed.starts_with("class ") || trimmed.starts_with("trait ") {
         return line.to_string();
     }
-    substitute_reactive_reads(line, bindings)
+    substitute_binding_reads(line, bindings, &mut Vec::new())
 }
 
-fn substitute_reactive_reads(expr: &str, bindings: &[ScriptBinding]) -> String {
+/// 替换生成源码中的绑定读取：响应式绑定取信号槽，非响应式绑定内联其 init 表达式。
+///
+/// 生成源码没有模块级 `let`（HIR 会静默丢弃模块级绑定），因此非响应式绑定在模板表达式与
+/// `micro` 函数体内都必须按使用点展开；环引用时保留原名，由编译诊断兜底。
+fn substitute_binding_reads(expr: &str, bindings: &[ScriptBinding], visiting: &mut Vec<String>) -> String {
     let mut out = expr.to_string();
     for binding in bindings.iter().filter(|binding| binding.reactive) {
         out = replace_binding_ident(&out, &binding.name, &binding.read_expr());
+    }
+    for binding in bindings.iter().filter(|binding| !binding.reactive && !binding.init_expr.trim().is_empty()) {
+        if visiting.iter().any(|name| name == &binding.name) {
+            continue;
+        }
+        visiting.push(binding.name.clone());
+        let inlined = substitute_binding_reads(&binding.init_expr, bindings, visiting);
+        visiting.pop();
+        out = replace_binding_ident(&out, &binding.name, &format!("({inlined})"));
     }
     out
 }
