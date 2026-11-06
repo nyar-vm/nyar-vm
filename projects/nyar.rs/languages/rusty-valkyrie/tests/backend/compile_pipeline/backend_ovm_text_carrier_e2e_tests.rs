@@ -30,7 +30,12 @@ const ARRAY_PROVIDER_SOURCE: &str = r#"[host_provider(demo::array_length)]
 micro ovm_array_length<T>(xs: [T]): usize"#;
 
 /// 最小文本载体夹具：方法读取自身 `class` 布局字段 `_repr`。
-const APP_SOURCE: &str = r#"class Utf8Text {
+///
+/// `Utf8Text` 必须声明在 `std.text`：canonical 只用这份显式命名空间事实把
+/// 文本载体登记进 `text_encoding_types`，字符串常量与名义类型才被判等价。
+const APP_SOURCE: &str = r#"namespace std.text;
+
+class Utf8Text {
     _repr: [u8]
 }
 
@@ -53,7 +58,7 @@ micro main() -> usize {
 
 fn bindings() -> Vec<CompilerHostProviderBinding> {
     vec![CompilerHostProviderBinding {
-        contract: micro_declaration_key("app", "demo.v", &[], "length"),
+        contract: micro_declaration_key("app", "demo.v", &["std".to_owned(), "text".to_owned()], "length"),
         provider: micro_declaration_key("adaptor", "adaptor.v", &[], "ovm_array_length"),
         required_capabilities: vec![],
         foreign_bindings: vec![],
