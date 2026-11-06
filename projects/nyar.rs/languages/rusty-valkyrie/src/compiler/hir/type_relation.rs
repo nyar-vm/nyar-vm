@@ -554,40 +554,45 @@ impl TypeRelationContext {
                 if bound.associated_types.is_empty() {
                     continue;
                 }
-                if open {
-                    // 目标仍是调用方的刚性泛型参数时，impl witness 不存在；但若调用方
-                    // 已声明的 where 约束对同一目标携带同一 trait 的关联等式，投影结果
-                    // 已由该声明唯一确定（`where A: Iterator<Item = char>` 下
-                    // `<A as Iterator>::Item` 就是 `char`），据此补出关联 binder。
-                    self.infer_from_declared_equation(&target, bound, substitutions, binders);
-                    continue;
-                }
                 let bound_without_equations = HirTraitBound {
                     declaration: bound.declaration,
                     trait_path: bound.trait_path.clone(),
                     type_arguments: bound.type_arguments.iter().map(|ty| substitute_relation_type(ty, substitutions)).collect(),
                     associated_types: Vec::new(),
                 };
-                let Ok(witness) = self.traits.satisfy_explicit_type(&target, &bound_without_equations)
-                else {
-                    continue;
-                };
-                for equation in &bound.associated_types {
-                    let expected = substitute_relation_type(&equation.ty, substitutions);
-                    let ValkyrieType::Generic(generic) = &expected
-                    else {
-                        continue;
-                    };
-                    let Some(binder) = generic.binder
-                    else {
-                        continue;
-                    };
-                    if !binders.contains(&binder) || substitutions.contains_key(&binder) {
+                // 目标头部已是具体构造（`Nominal`/元组/固定数组等）时，即使实参里还含
+                // 调用方刚性 binder，impl 选择仍是结构性的，witness 的关联类型就是投影
+                // 结果（`ArrayIterator<K>::Item` 即 `K`）。只有目标是裸刚性参数或关联
+                // 投影时，才没有可选的 impl。
+                let witness_target = !matches!(&target, ValkyrieType::Generic(_) | ValkyrieType::Associated(_));
+                if witness_target {
+                    if let Ok(witness) = self.traits.satisfy_explicit_type(&target, &bound_without_equations) {
+                        for equation in &bound.associated_types {
+                            let expected = substitute_relation_type(&equation.ty, substitutions);
+                            let ValkyrieType::Generic(generic) = &expected
+                            else {
+                                continue;
+                            };
+                            let Some(binder) = generic.binder
+                            else {
+                                continue;
+                            };
+                            if !binders.contains(&binder) || substitutions.contains_key(&binder) {
+                                continue;
+                            }
+                            if let Some(actual) = witness.associated_types.get(&equation.name) {
+                                substitutions.insert(binder, actual.clone());
+                            }
+                        }
                         continue;
                     }
-                    if let Some(actual) = witness.associated_types.get(&equation.name) {
-                        substitutions.insert(binder, actual.clone());
-                    }
+                }
+                if open {
+                    // 目标仍是调用方的刚性泛型参数时，impl witness 不存在；但若调用方
+                    // 已声明的 where 约束对同一目标携带同一 trait 的关联等式，投影结果
+                    // 已由该声明唯一确定（`where A: Iterator<Item = char>` 下
+                    // `<A as Iterator>::Item` 就是 `char`），据此补出关联 binder。
+                    self.infer_from_declared_equation(&target, bound, substitutions, binders);
                 }
             }
         }
