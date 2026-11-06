@@ -18,13 +18,13 @@ const FIXTURE: &str = r#"<widget index>
 <Column class="hero">
     <Text class="hero-title">{greeting}</Text>
     <Text class="state">{mode}</Text>
-    <Text class="bump" @click="toggle">toggle</Text>
+    <Text class="bump" @click="toggle('on')">toggle</Text>
 </Column>
 </widget>
 <script>
 let greeting: utf8 = "交互产物"
 let mut mode: utf8 = "off"
-micro toggle() {
+micro toggle(key: utf8) {
     mode = "on"
 }
 </script>
