@@ -48,8 +48,8 @@ const LIBRARY_INVOKE_SCHEMA_VERSION: u64 = 0;
 ///
 /// 本函数**只用于与 plan 冻结载体交叉核对**，不是载体事实源；`carrier` 字段
 /// 只能取 [`LibraryExportAbi`] 的冻结值。标量按 Wasm 原生槽位，容器（数组 /
-/// Option / Tuple / 具名聚合）统一走 `handle`。`Unsupported` 不应出现在参数位，
-/// 出现即失败。
+/// Option / Tuple / 具名聚合）与引用存储名义实例（`InstanceHandle`，共享 GC
+/// 引用）统一走 `handle`。`Unsupported` 不应出现在参数位，出现即失败。
 fn abi_carrier_name(schema: &super::abi_schema::WasmAbiType) -> Result<&'static str> {
     use super::abi_schema::WasmAbiType;
     Ok(match schema {
@@ -62,6 +62,7 @@ fn abi_carrier_name(schema: &super::abi_schema::WasmAbiType) -> Result<&'static 
         // Utf8 在 JS glue 轨是 host-intern i32 句柄。
         WasmAbiType::Utf8 => "i32",
         WasmAbiType::Unit => "void",
+        WasmAbiType::InstanceHandle { .. } => "handle",
         WasmAbiType::Array { .. }
         | WasmAbiType::FixedArray { .. }
         | WasmAbiType::Option { .. }

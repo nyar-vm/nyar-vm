@@ -172,6 +172,22 @@ pub enum WasmAbiType {
         constructor: Option<String>,
     },
 
+    /// `class` 等引用存储名义实例的**不透明宿主句柄**。
+    ///
+    /// 冻结布局的存储类是 [`StorageKind::Reference`] 且不是序列视图时，
+    /// 该 nominal 在跨 ABI 位置是 GC 引用本身：语义是同一实例的共享身份，
+    /// 不是字段快照。宿主必须原样保留该引用（JS glue 包装成不透明句柄对象），
+    /// 不能按字段逐一复制；否则 `mut self` 方法会改在副本上，跨调用不可见。
+    ///
+    /// 实例由语言侧构造函数创建（例如 `[export]` 的 `new`），宿主不得按字段
+    /// 现场重建；`name` / `module_path` 只作身份核对，字段合同不在本变体中。
+    InstanceHandle {
+        /// 名义类型的简单名（不含模块路径）。
+        name: String,
+        /// 类型所属的完整命名空间路径。
+        module_path: String,
+    },
+
     /// 零 payload unite（`is_unite` sum）的变体身份合同。
     ///
     /// unite 在 Wasm 侧是 `[tag, payload]` GC struct；宿主拿到引用后经
@@ -514,7 +530,9 @@ fn sum_schema(sum: &nyar_types::SumTypeLayout) -> WasmAbiType {
 /// 已知布局身份的聚合 schema。
 ///
 /// 序列形状（一个 heap array 字段 + 一个整数计数字段、Reference 存储）投影为
-/// `Array<T>` 加容器构造合同；其余形状保留字段访问合同。两者都由布局事实派生。
+/// `Array<T>` 加容器构造合同；其余 Reference 存储名义实例投影为
+/// [`WasmAbiType::InstanceHandle`]（共享引用，不按字段复制）；Value 存储聚合
+/// 保留字段访问合同。三者都由布局事实派生。
 fn aggregate_schema(
     name: String,
     module_path: String,
@@ -530,6 +548,11 @@ fn aggregate_schema(
     };
     if let Some(sequence) = sequence_contract(aggregate, layouts, layout_by_type, sums) {
         return sequence;
+    }
+    // 引用存储的非序列名义实例是共享身份，不是字段快照：宿主必须拿到同一
+    // GC 引用。按字段复制会让 `mut self` 方法改在副本上，跨调用丢状态。
+    if aggregate.storage == StorageKind::Reference {
+        return WasmAbiType::InstanceHandle { name, module_path };
     }
     let mut fields = Vec::with_capacity(aggregate.fields.len());
     for (index, field) in aggregate.fields.iter().enumerate() {
@@ -970,6 +993,29 @@ mod tests {
             }
             other => panic!("Expected NamedAggregate, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn reference_nominal_with_registered_layout_derives_instance_handle() {
+        // `class` 是引用存储：宿主拿到的是同一 GC 引用，不是字段快照。
+        // schema 只保留名义身份，不导出字段访问合同；字段级复制会让
+        // `mut self` 方法改在副本上，跨调用丢状态。
+        let mut layout = config_layout();
+        layout.name = "Counter".to_string();
+        layout.namespace = "demo".to_string();
+        layout.storage = nyar_types::StorageKind::Reference;
+        let mut plan = AggregateLayoutPlan::default();
+        plan.layouts.push(layout);
+        let ty = NyarType::Nominal { layout: 7, spelling: Identifier::new("demo::Counter") };
+        let schema = abi_schema_for_type_with_layouts(&ty, &plan, &BTreeMap::new(), &BTreeMap::new());
+        assert_eq!(
+            schema,
+            WasmAbiType::InstanceHandle { name: "Counter".to_string(), module_path: "demo".to_string() },
+            "引用存储名义实例必须投影为不透明实例句柄"
+        );
+        let json = serde_json::to_string(&schema).unwrap();
+        assert!(json.contains("\"kind\":\"InstanceHandle\""), "got: {json}");
+        assert!(!json.contains("fields"), "实例句柄不得携带字段合同: {json}");
     }
 
     #[test]

@@ -190,7 +190,33 @@ function abiKind(schema) {{
 // 不需要额外的 box/unbox 合同。标量内层必须由 schema 的 `box` 合同放行。
 function hasWasmHandleCarrier(schema) {{
     const kind = abiKind(schema);
-    return kind === "NamedAggregate" || kind === "Array" || kind === "FixedArray" || kind === "Tuple" || kind === "Option" || kind === "Sum";
+    return kind === "NamedAggregate" || kind === "InstanceHandle" || kind === "Array" || kind === "FixedArray" || kind === "Tuple" || kind === "Option" || kind === "Sum";
+}}
+
+// ── 引用存储名义实例：不透明宿主句柄 ─────────────────────────────────────
+// `class` 实例在 ABI 位置是同一个 GC 引用，不是字段快照。宿主只能用构造函数
+// 产出的句柄，不能按字段重建（那会让 `mut self` 改在副本上，跨调用丢状态）。
+// 句柄用 symbol 键包装：不可 JSON 序列化，也不会被普通对象误认。
+const INSTANCE_HANDLE = Symbol("nyar.instanceHandle");
+function wrapInstanceHandle(schema, raw) {{
+    return {{ [INSTANCE_HANDLE]: {{ name: schema.name, module_path: schema.module_path, raw }} }};
+}}
+function unwrapInstanceHandle(schema, value, path) {{
+    if (value === null || typeof value !== "object" || !(INSTANCE_HANDLE in value)) {{
+        throw new Error(
+            `[wasm-js-glue]${{describePath(path)}}: Cannot marshal InstanceHandle "${{schema.name}}": expected the opaque handle returned by this module's constructor export; field objects and raw references are not accepted.`
+        );
+    }}
+    const handle = value[INSTANCE_HANDLE];
+    if (handle.name !== schema.name || handle.module_path !== schema.module_path) {{
+        throw new Error(
+            `[wasm-js-glue]${{describePath(path)}}: Cannot marshal InstanceHandle "${{schema.module_path}}::${{schema.name}}": the handle belongs to "${{handle.module_path}}::${{handle.name}}".`
+        );
+    }}
+    if (handle.raw == null) {{
+        throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot marshal InstanceHandle "${{schema.name}}": the handle carries no reference.`);
+    }}
+    return handle.raw;
 }}
 
 // 从 param 条目提取 marshal 用的类型 schema。
@@ -359,6 +385,13 @@ function marshalLibraryArg(schema, value, path) {{
         return constructor(...ctorArgs);
     }}
 
+    // ── InstanceHandle：不透明实例句柄原样透传 ─────────────────────────────
+    // 引用存储名义实例的语义是共享身份；这里只校验句柄身份并取出 GC 引用，
+    // 绝不按字段重建实例。
+    if (kind === "InstanceHandle") {{
+        return unwrapInstanceHandle(schema, value, path);
+    }}
+
     // ── NamedAggregate：按布局派生的字段构造合同逐字段编组 ──
     // 只有非序列形状走到这里。字段名/构造器名都来自 schema；缺字段合同或
     // 缺 `struct.new` 包装导出都失败闭合，不默认回填字段。
@@ -498,6 +531,19 @@ function demarshalLibraryReturn(schema, raw, path) {{
             output[i] = demarshalLibraryReturn(schema.element, get(raw, i), `${{path}}[${{i}}]`);
         }}
         return output;
+    }}
+
+    // ── InstanceHandle：不透明实例句柄 ─────────────────────────────────────
+    // 引用存储名义实例返回后保持同一 GC 引用；空引用一律失败闭合，不降级成
+    // 字段对象或 `null`。
+    if (kind === "InstanceHandle") {{
+        if (raw == null) {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal InstanceHandle "${{schema.name}}": wasm returned a null reference`);
+        }}
+        if (typeof raw !== "object" && typeof raw !== "function") {{
+            throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal InstanceHandle "${{schema.name}}": expected a managed wasm reference, got ${{describeValue(raw)}}`);
+        }}
+        return wrapInstanceHandle(schema, raw);
     }}
 
     // ── NamedAggregate：按布局派生的字段访问合同逐字段读回 ──

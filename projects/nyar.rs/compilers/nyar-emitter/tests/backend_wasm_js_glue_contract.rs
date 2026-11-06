@@ -1,7 +1,7 @@
 //! Node JS glue 合同层覆盖：`build_node_launcher`（library 模式）生成的 `.mjs`
 //! 是交付产物本体，本文件按 marshal/demarshal 各形态锁定其真实合同——
-//! 标量、Utf8 句柄、Option 空引用、handle 载体规则、无 ABI 桥复合类型的
-//! 失败闭合与导入表渲染。
+//! 标量、Utf8 句柄、Option 空引用、handle 载体规则、引用实例的不透明句柄、
+//! 无 ABI 桥复合类型的失败闭合与导入表渲染。
 //!
 //! 与 `backend_wasm_js_glue.rs`（launcher 骨架/CLI 隔离）互补：本文件只覆盖
 //! library 模式的 ABI 桥合同。端到端行为（真实构建 + Node 调用）在
@@ -74,11 +74,31 @@ fn glue_named_aggregate_demarshal_follows_field_access_contract() {
 }
 
 #[test]
+fn glue_instance_handle_preserves_reference_identity_across_calls() {
+    // 引用存储名义实例（class）是共享身份：demarshal 用不透明句柄包装原 GC
+    // 引用，marshal 只校验身份并取出引用，绝不按字段重建。空引用、字段对象
+    // 或原始引用都必须结构化失败，不降级成副本。
+    let glue = launcher_for(&spec(
+        r#"{"make":{"params":[],"returns":{"kind":"InstanceHandle","name":"Counter","module_path":"demo::counter"}},"bump":{"params":[{"index":0,"name":"self","type":{"kind":"InstanceHandle","name":"Counter","module_path":"demo::counter"},"carrier":"handle"}],"returns":{"kind":"Unit"}}}"#,
+    ));
+    assert!(glue.contains("function wrapInstanceHandle("), "InstanceHandle 返回必须包装成不透明句柄:\n{glue}");
+    assert!(glue.contains("function unwrapInstanceHandle("), "InstanceHandle 入参必须从 opaque 句柄取出原引用:\n{glue}");
+    assert!(glue.contains("const INSTANCE_HANDLE = Symbol("), "句柄必须用不可序列化标记，防止 JSON 往返失身份:\n{glue}");
+    assert!(
+        glue.contains("expected the opaque handle returned by this module's constructor export"),
+        "字段对象/裸引用冒充实例句柄必须失败闭合:\n{glue}"
+    );
+    assert!(glue.contains("the handle belongs to"), "跨名义类型的句柄必须按身份拒绝:\n{glue}");
+    assert!(glue.contains("the handle carries no reference"), "空引用句柄必须失败闭合:\n{glue}");
+}
+
+#[test]
 fn glue_handle_carrier_set_matches_backend_abi() {
     // JS 侧判定「自带 Wasm handle 载体」的集合必须与后端 abi_carrier_name 的
-    // handle 分支一致：NamedAggregate / Array / FixedArray / Tuple / Option。
+    // handle 分支一致：NamedAggregate / InstanceHandle / Array / FixedArray /
+    // Tuple / Option。
     let glue = launcher_for(&spec(r#"{"noop":{"params":[],"returns":{"kind":"Unit"}}}"#));
-    for kind in ["NamedAggregate", "Array", "FixedArray", "Tuple", "Option"] {
+    for kind in ["NamedAggregate", "InstanceHandle", "Array", "FixedArray", "Tuple", "Option"] {
         assert!(glue.contains(&format!(r#"kind === "{kind}""#)), "handle 载体集合必须包含 {kind}:\n{glue}");
     }
 }
