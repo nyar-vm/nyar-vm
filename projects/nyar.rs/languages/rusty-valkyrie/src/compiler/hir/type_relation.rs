@@ -509,7 +509,8 @@ impl TypeRelationContext {
 
     /// 关联类型驱动的 binder 推断：`where I: Iterator<Item = T>` 中 `I` 已由接收者
     /// 确定、`T` 只出现在关联等式右侧时，用 impl witness 冻结的关联类型补出 `T`。
-    /// 目标仍含未绑定 binder 时不做（那是调用方尚未履行的义务，留给实例化结算）。
+    /// 目标仍是开放刚性参数时，只从调用方已声明且携带关联等式的 where 约束取解；
+    /// 没有这条声明依据时不做（那是调用方尚未履行的义务，留给实例化结算）。
     pub fn infer_associated_binders(
         &self,
         constraints: &[HirWhereConstraint],
@@ -518,11 +519,17 @@ impl TypeRelationContext {
     ) {
         for constraint in constraints {
             let target = substitute_relation_type(&constraint.target, substitutions);
-            if relation_type_is_open_obligation(&target) {
-                continue;
-            }
+            let open = relation_type_is_open_obligation(&target);
             for bound in &constraint.bounds {
                 if bound.associated_types.is_empty() {
+                    continue;
+                }
+                if open {
+                    // 目标仍是调用方的刚性泛型参数时，impl witness 不存在；但若调用方
+                    // 已声明的 where 约束对同一目标携带同一 trait 的关联等式，投影结果
+                    // 已由该声明唯一确定（`where A: Iterator<Item = char>` 下
+                    // `<A as Iterator>::Item` 就是 `char`），据此补出关联 binder。
+                    self.infer_from_declared_equation(&target, bound, substitutions, binders);
                     continue;
                 }
                 let bound_without_equations = HirTraitBound {
@@ -552,6 +559,57 @@ impl TypeRelationContext {
                         substitutions.insert(binder, actual.clone());
                     }
                 }
+            }
+        }
+    }
+
+    /// 从调用方已声明的 where 约束取关联等式补解。
+    ///
+    /// 只接受「同一目标的已声明约束 + 同一 trait 声明 + 实参逐项一致 + 同名关联等式」
+    /// 这一条来源；同一 binder 已有绑定时不覆盖，由后续合并按 fail-closed 判定冲突。
+    fn infer_from_declared_equation(
+        &self,
+        target: &ValkyrieType,
+        required: &HirTraitBound,
+        substitutions: &mut BTreeMap<GenericBinderId, ValkyrieType>,
+        binders: &BTreeSet<GenericBinderId>,
+    ) {
+        let Some(context) =
+            self.callable_constraints.iter().find(|context| substitute_relation_type(&context.target, substitutions) == *target)
+        else {
+            return;
+        };
+        for provided in &context.bounds {
+            if provided.declaration.is_none() || provided.declaration != required.declaration {
+                continue;
+            }
+            if provided.type_arguments.len() != required.type_arguments.len() {
+                continue;
+            }
+            if !provided.type_arguments.iter().zip(&required.type_arguments).all(|(provided, required)| {
+                normalize_context_type(provided, &self.callable_constraints, substitutions)
+                    == normalize_context_type(required, &self.callable_constraints, substitutions)
+            }) {
+                continue;
+            }
+            for required_equation in &required.associated_types {
+                let Some(provided_equation) = provided.associated_types.iter().find(|equation| equation.name == required_equation.name) else {
+                    continue;
+                };
+                let expected = substitute_relation_type(&required_equation.ty, substitutions);
+                let ValkyrieType::Generic(generic) = &expected
+                else {
+                    continue;
+                };
+                let Some(binder) = generic.binder
+                else {
+                    continue;
+                };
+                if !binders.contains(&binder) || substitutions.contains_key(&binder) {
+                    continue;
+                }
+                let solution = normalize_context_type(&provided_equation.ty, &self.callable_constraints, substitutions);
+                substitutions.insert(binder, solution);
             }
         }
     }
