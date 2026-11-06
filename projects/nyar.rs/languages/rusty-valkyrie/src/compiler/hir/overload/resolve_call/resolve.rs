@@ -423,6 +423,7 @@ fn resolve_expr_calls_at(
             );
             let member_argument_contexts = crate::compiler::hir::overload::substitution::member_call_argument_contexts(
                 callee,
+                args,
                 candidates,
                 type_relations,
                 locals,

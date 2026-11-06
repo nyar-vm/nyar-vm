@@ -26,6 +26,7 @@ mod hir_lowering_vx_tests;
 mod hir_materialization_gate_tests;
 mod hir_fine_constructor_resolution_tests;
 mod hir_free_call_argument_context_tests;
+mod hir_operator_literal_argument_context_tests;
 mod hir_overload_identity_tests;
 mod hir_primitive_builtin_identity_tests;
 mod hir_scalar_comparison_tests;

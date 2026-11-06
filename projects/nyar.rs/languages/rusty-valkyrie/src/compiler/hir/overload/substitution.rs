@@ -8,8 +8,8 @@ use crate::compiler::{
     types::{
         Identifier,
         hir::{
-            AssociatedType, FunctionType, GenericBinderId, HirAssociatedTypeBinding, HirParam, HirTraitBound, HirTupleField,
-            HirWhereConstraint, RowMethodType, RowType, TraitObject, TypeLambda, ValkyrieType,
+            AssociatedType, FunctionType, GenericBinderId, HirAssociatedTypeBinding, HirCallArgument, HirParam, HirTraitBound,
+            HirTupleField, HirWhereConstraint, RowMethodType, RowType, TraitObject, TypeLambda, ValkyrieType,
         },
     },
 };
@@ -477,6 +477,7 @@ pub(crate) fn specialize_literal_expr_type(
 /// 成员调用的实参上下文类型（不含接收者槽）。
 pub(crate) fn member_call_argument_contexts(
     callee: &crate::compiler::types::hir::HirExpr,
+    args: &[HirCallArgument],
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
     locals: &BTreeMap<String, ValkyrieType>,
@@ -488,11 +489,14 @@ pub(crate) fn member_call_argument_contexts(
 
     // 成员调用有两种等价表示：`FieldAccess` callee，以及解析器保留的扁平
     // `Path([receiver, ..fields, method])`；后者根必须是本地绑定。
-    let (receiver_type, field) = match &callee.kind {
+    //
+    // 运算符调用（`a == b` / `-a` / `a[b]`）是第三种形态：callee 为单段运算符成员名，
+    // 接收者作为第一个实参出现。`receiver_in_args` 记录该形态，后续按实参位对齐槽位。
+    let (receiver_type, field, receiver_in_args) = match &callee.kind {
         HirExprKind::FieldAccess { object, field, .. } => {
             let receiver_type = crate::compiler::hir::overload::types::infer_expr_type(object, locals)
                 .or_else(|| crate::compiler::hir::overload::types::infer_scrutinee_type(object, locals, struct_fields, singleton_names));
-            (receiver_type, field.clone())
+            (receiver_type, field.clone(), false)
         }
         HirExprKind::Path(path) if path.parts().len() >= 2 && locals.contains_key(path.parts()[0].as_str()) => {
             let mut receiver_type = locals.get(path.parts()[0].as_str()).cloned();
@@ -500,7 +504,21 @@ pub(crate) fn member_call_argument_contexts(
                 receiver_type = receiver_type
                     .and_then(|ty| crate::compiler::hir::overload::types::lookup_struct_field_type(&ty, field_name, struct_fields));
             }
-            (receiver_type, path.parts().last().cloned().unwrap_or_default())
+            (receiver_type, path.parts().last().cloned().unwrap_or_default(), false)
+        }
+        HirExprKind::Path(path)
+            if path.parts().len() == 1
+                && crate::compiler::semantic::operator_members::is_operator_member_name(path.parts()[0].as_str()) =>
+        {
+            // 运算符接收者没有自足类型时不供给上下文：候选跨数值宽度时槽位冲突，
+            // 交给统一阶段结构化失败，不在这里猜。
+            let Some(receiver) = args.first()
+            else {
+                return Vec::new()
+            };
+            let receiver_type = crate::compiler::hir::overload::types::infer_expr_type(&receiver.value, locals)
+                .or_else(|| crate::compiler::hir::overload::types::infer_scrutinee_type(&receiver.value, locals, struct_fields, singleton_names));
+            (receiver_type, path.parts()[0].clone(), true)
         }
         _ => return Vec::new(),
     };
@@ -543,9 +561,12 @@ pub(crate) fn member_call_argument_contexts(
             continue;
         }
         applicable = true;
-        for (index, ty) in candidate.signature.params.iter().enumerate().skip(1) {
+        // 运算符调用的实参已包含接收者（`args[0]`），参数位与实参位一一对应；
+        // 普通成员调用的实参不含接收者，参数位相对实参位右移一格。
+        let (skip, offset): (usize, usize) = if receiver_in_args { (0, 0) } else { (1, 1) };
+        for (index, ty) in candidate.signature.params.iter().enumerate().skip(skip) {
             let context = substitute_type_vars(ty, &substitutions);
-            let slot = index - 1;
+            let slot = index - offset;
             if contexts.len() <= slot {
                 contexts.resize(slot + 1, None);
                 conflicted.resize(slot + 1, false);
