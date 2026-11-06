@@ -60,14 +60,15 @@ pub(super) fn build_param_types_by_instance(
     submission: &FragmentSubmission,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
-) -> BTreeMap<ItemInstanceId, Vec<u8>> {
+) -> crate::Result<BTreeMap<ItemInstanceId, Vec<u8>>> {
     submission
         .backend_plan
         .instances()
         .into_iter()
         .map(|instance| {
             let view = submission.backend_plan.get_function(&instance).expect("Compiler 实例必须有函数体");
-            (instance, wasm_param_types(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref))
+            let params = wasm_param_types(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+            Ok((instance, params))
         })
         .collect()
 }
@@ -77,14 +78,15 @@ pub(super) fn build_return_types_by_instance(
     submission: &FragmentSubmission,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
-) -> BTreeMap<ItemInstanceId, Option<u8>> {
+) -> crate::Result<BTreeMap<ItemInstanceId, Option<u8>>> {
     submission
         .backend_plan
         .instances()
         .into_iter()
         .map(|instance| {
             let view = submission.backend_plan.get_function(&instance).expect("Compiler 实例必须有函数体");
-            (instance, wasm_return_value_type(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref))
+            let return_type = wasm_return_value_type(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+            Ok((instance, return_type))
         })
         .collect()
 }
@@ -284,8 +286,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut return_types_by_function_index: BTreeMap<u32, Option<u8>> = BTreeMap::new();
     for (dense, (instance, mir_fn)) in mir_operations.iter().enumerate() {
         let wasm_idx = base_function_index + dense as u32;
-        let params = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
-        let ret = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
+        let params = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+        let ret = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
         param_types_by_function_index.insert(wasm_idx, params);
         return_types_by_function_index.insert(wasm_idx, ret);
         function_index_by_instance.insert(*instance, wasm_idx);
@@ -321,11 +323,11 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                     .params
                     .iter()
                     .map(|ty| wasm_function_abi_value_type_for(&ctx, ty, &gc_struct_type_indices, js_glue_utf8_as_anyref))
-                    .collect();
+                    .collect::<crate::Result<Vec<u8>>>()?;
                 let return_type = match &signature.return_type {
                     NyarType::Unit | NyarType::Bottom => None,
                     other => {
-                        Some(wasm_function_abi_value_type_for(&ctx, other, &gc_struct_type_indices, js_glue_utf8_as_anyref))
+                        Some(wasm_function_abi_value_type_for(&ctx, other, &gc_struct_type_indices, js_glue_utf8_as_anyref)?)
                     }
                 };
                 let (environment_layout, environment_type) = match environment {
@@ -413,16 +415,16 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 函数自身签名的 functype 反查表（静态调用/见证调用仍消费它）；间接调用签名
     // 已在上面按「可见形参 + env」登记，两者按签名字节共用同一反查表。
     for (dense, (_, mir_fn)) in mir_operations.iter().enumerate() {
-        let params = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
-        let ret = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
+        let params = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+        let ret = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
         type_index_by_signature.entry((params, ret)).or_insert(function_type_base + dense as u32);
     }
     let function_value_table_slots: BTreeMap<ItemInstanceId, u32> =
         function_value_plans.keys().copied().enumerate().map(|(slot, instance)| (instance, slot as u32)).collect();
 
     // Node JS-glue：宿主字符串?anyref 传递；?`wasm_import_type_for_field` ?anyref 签名对齐?
-    let param_types_by_instance = build_param_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref);
-    let return_types_by_instance = build_return_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref);
+    let param_types_by_instance = build_param_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+    let return_types_by_instance = build_return_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
     let import_param_types: Vec<Vec<u8>> = host_imports
         .iter()
         .map(|(module, field)| -> crate::Result<Vec<u8>> {
@@ -443,10 +445,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
 
     for (dense, (instance, mir_fn)) in mir_operations.iter().enumerate() {
         let full = submission.backend_plan.abi_name_for_instance(*instance).ok_or_else(|| format!("函数实例缺少 ABI 标签"))?.to_string();
-        let param_types = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
+        let param_types = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
         // 每个函数独立计算返回类型,取代旧的模块?`returns_i32`?
         // 引用返回类型 →?anyref (VALTYPE_ANYREF)；i32 →?VALTYPE_I32；void →?空?
-        let return_value_type = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
+        let return_value_type = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
         let result_types: &[u8] = match &return_value_type {
             Some(byte) => std::slice::from_ref(byte),
             None => &[],

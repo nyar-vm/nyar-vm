@@ -568,7 +568,9 @@ fn freeze_abi_carrier(ty: &NyarType) -> Result<AbiCarrier> {
         NyarType::Array(_) | NyarType::FixedArray { .. } | NyarType::Nullable(_) | NyarType::Tuple(_) => AbiCarrier::Handle,
         NyarType::Named(_) | NyarType::Nominal { .. } | NyarType::Apply(_, _) => AbiCarrier::Handle,
         NyarType::Integer128 { .. } => return Err("Integer128 没有原生 Wasm 载体，需要显式拆分合同".to_string()),
-        NyarType::Utf16 => return Err("Utf16 在当前 JS glue 轨没有稳定的宿主 ABI 合同".to_string()),
+        NyarType::Utf16 => {
+            return Err(crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string());
+        }
         NyarType::Bottom => return Err("`void` / bottom 类型不能出现在库导出 ABI 位置".to_string()),
         NyarType::Function(_) => return Err("函数类型不能出现在库导出 ABI 位置".to_string()),
         NyarType::TraitObject(_) => return Err("TraitObject（dynamic dispatch）没有稳定的 Wasm 载体".to_string()),

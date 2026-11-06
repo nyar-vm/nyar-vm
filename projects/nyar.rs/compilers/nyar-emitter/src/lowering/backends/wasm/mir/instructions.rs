@@ -111,7 +111,8 @@ impl<'a> WasmMirLowerer<'a> {
                         self.emit_local_get(local);
                         self.emit_i32_const(field.offset as i32);
                         self.emit_i32_add();
-                        self.emit_operand_coerced(value, self.field_store_stack_type(field))?;
+                        let expected = self.field_store_stack_type(field)?;
+                        self.emit_operand_coerced(value, expected)?;
                         self.emit_store_at_field(field)?;
                     }
                 }
@@ -245,7 +246,8 @@ impl<'a> WasmMirLowerer<'a> {
                         self.emit_local_get(local);
                         self.emit_i32_const(field.offset as i32);
                         self.emit_i32_add();
-                        self.emit_operand_coerced(value, self.field_store_stack_type(field))?;
+                        let expected = self.field_store_stack_type(field)?;
+                        self.emit_operand_coerced(value, expected)?;
                         self.emit_store_at_field(field)?;
                     }
                 }
@@ -304,7 +306,8 @@ impl<'a> WasmMirLowerer<'a> {
                             self.emit_local_get(local);
                             self.emit_i32_const(field.offset as i32);
                             self.emit_i32_add();
-                            self.emit_operand_coerced(value, self.field_store_stack_type(field))?;
+                            let expected = self.field_store_stack_type(field)?;
+                            self.emit_operand_coerced(value, expected)?;
                             self.emit_store_at_field(field)?;
                         }
                         return Ok(());
@@ -546,7 +549,8 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
                     self.emit_i32_add();
-                    self.emit_operand_coerced(value, self.field_store_stack_type(&field_layout))?;
+                    let expected = self.field_store_stack_type(&field_layout)?;
+                    self.emit_operand_coerced(value, expected)?;
                     self.emit_store_at_field(&field_layout)?;
                 }
                 else {
@@ -701,7 +705,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 载荷槽统一是 `anyref`，所以标量必须先装箱成 `[i32]` / `[i64]`；直接放标量
     /// 会让 `struct.set` 在 V8 校验阶段失败。引用载荷原样透传。
     fn emit_payload_to_anyref(&mut self, payload: &MirOperand) -> crate::Result<()> {
-        let stack_ty = self.operand_wasm_stack_type(payload);
+        let stack_ty = self.operand_wasm_stack_type(payload)?;
         let box_ty = match stack_ty {
             WASM_GC_ANYREF => {
                 self.emit_contract_operand(payload, WASM_GC_ANYREF)?;

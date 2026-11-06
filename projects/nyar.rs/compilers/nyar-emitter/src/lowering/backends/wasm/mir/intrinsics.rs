@@ -137,7 +137,7 @@ impl<'a> WasmMirLowerer<'a> {
         slot_ty: u8,
         slot_layout: Option<LayoutId>,
     ) -> crate::Result<()> {
-        let actual = self.operand_wasm_stack_type(operand);
+        let actual = self.operand_wasm_stack_type(operand)?;
         if slot_ty == WASM_GC_ANYREF
             && actual == VALTYPE_I32
             && self.operand_semantic_type(operand).is_some_and(is_js_glue_host_string_type)

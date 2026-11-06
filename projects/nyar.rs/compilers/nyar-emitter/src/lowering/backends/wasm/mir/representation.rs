@@ -69,11 +69,11 @@ pub(super) fn wasm_param_value_type_for(
     layout_id: Option<LayoutId>,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
-) -> u8 {
+) -> crate::Result<u8> {
     // 注册表是对象槽的唯一权威：值携带已登记 gc struct 的 layout 时，槽必须是
     // anyref，与构造/字段读取点消费同一冻结事实。宿主字符串特判不得反向污染此处。
     if type_uses_gc_struct_param(ctx, layout_id, gc_struct_type_indices) {
-        return WASM_GC_ANYREF;
+        return Ok(WASM_GC_ANYREF);
     }
     // 未携带 `layout_id`（如 ABI 形参与合成 lambda 的环境槽）但类型本身是已登记
     // gc struct 的名义实例时，仍必须按注册表返回 anyref。闭包环境 layout 由
@@ -81,13 +81,13 @@ pub(super) fn wasm_param_value_type_for(
     // 否则跨间接调用的环境槽会被降成 i32，与构造点分叉。
     if let NyarType::Nominal { layout, .. } = ty {
         if gc_struct_type_indices.contains_key(layout) {
-            return WASM_GC_ANYREF;
+            return Ok(WASM_GC_ANYREF);
         }
     }
     // Node / JS-glue 宿主字符串在**未携带注册 gc struct layout** 时必须是 i32 句柄
     // （`cli_get_*` / `const_utf8`）；否则 call 实参会被 coerce 成 `ref.null`，丢掉句柄。
     if is_js_glue_host_string_type(ty) {
-        return VALTYPE_I32;
+        return Ok(VALTYPE_I32);
     }
     wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)
 }
@@ -97,7 +97,7 @@ pub(super) fn wasm_param_types(
     mir_fn: &MirFunction,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
-) -> Vec<u8> {
+) -> crate::Result<Vec<u8>> {
     mir_fn
         .param_types
         .iter()
@@ -136,9 +136,9 @@ pub(super) fn wasm_function_abi_value_type_for(
     ty: &NyarType,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
-) -> u8 {
+) -> crate::Result<u8> {
     if is_js_glue_host_string_type(ty) {
-        return WASM_GC_ANYREF;
+        return Ok(WASM_GC_ANYREF);
     }
     wasm_param_value_type_for(ctx, ty, None, gc_struct_type_indices, js_glue_utf8_as_anyref)
 }
@@ -164,38 +164,44 @@ pub(super) fn type_is_inline_aggregate(ctx: &ExecutableLoweringContext, ty: &Nya
 }
 
 /// Maps a MIR parameter type to its WASM value-type byte.
-pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &NyarType, js_glue_utf8_as_anyref: bool) -> u8 {
+pub(super) fn wasm_param_value_type(
+    ctx: &ExecutableLoweringContext,
+    ty: &NyarType,
+    js_glue_utf8_as_anyref: bool,
+) -> crate::Result<u8> {
     let _ = js_glue_utf8_as_anyref;
-    if matches!(ty, NyarType::Utf16) {
-        panic!("WASM lowering requires an explicit UTF-16 ABI contract; it must not use the UTF-8/JS-string path")
+    if let Some(reason) = crate::lowering::features::physical_contract::unresolved_text_abi_reason(ty) {
+        // 载体事实只有一个来源：`physical_contract::declared_text_projection`。
+        // `utf16` 尚未在该边界落地载体，禁止借用 `utf8` 的 i32 宿主句柄。
+        return Err(reason.to_string());
     }
     if is_js_glue_host_string_type(ty) {
-        return VALTYPE_I32;
+        return Ok(VALTYPE_I32);
     }
     if type_is_wasm_gc_heap_reference(ty) {
-        return WASM_GC_ANYREF;
+        return Ok(WASM_GC_ANYREF);
     }
     // Aggregates carrying references are represented by wasm-gc structs.
     // Keep their ABI as anyref even when stale nominal layout metadata says
     // Value; otherwise callers ref.cast an i32 return and trap.
     if matches!(ty, NyarType::Union(_)) {
-        return WASM_GC_ANYREF;
+        return Ok(WASM_GC_ANYREF);
     }
     // 函数值 = 闭包对象（gc struct `[code: i32, env: anyref]`），见合同 §5.3。
     // 无捕获路径同样使用该载体（env 为 `ref.null anyref`），因此 SSA 槽一律 anyref；
     // 不再把 funcref table 槽位下标当作函数值本身。
     if matches!(ty, NyarType::Function(_)) {
-        return WASM_GC_ANYREF;
+        return Ok(WASM_GC_ANYREF);
     }
     // 引用类型参数用 anyref (VALTYPE_ANYREF) 传递;值类型参数仍用 i32 地址。
     if ctx.storage_for_type(ty) == StorageKind::Reference {
-        return WASM_GC_ANYREF;
+        return Ok(WASM_GC_ANYREF);
     }
-    match ty {
+    Ok(match ty {
         NyarType::Float64 | NyarType::Float32 => VALTYPE_F64,
         NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => VALTYPE_I64,
         _ => VALTYPE_I32,
-    }
+    })
 }
 
 /// 计算 MIR 函数返回值对应的 WASM 值类型字节。
@@ -204,10 +210,10 @@ pub(super) fn wasm_return_value_type(
     mir_fn: &MirFunction,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
-) -> Option<u8> {
+) -> crate::Result<Option<u8>> {
     match &mir_fn.return_type {
-        NyarType::Unit | NyarType::Bottom => None,
-        other => Some(wasm_param_value_type_for(ctx, other, mir_fn.return_layout, gc_struct_type_indices, js_glue_utf8_as_anyref)),
+        NyarType::Unit | NyarType::Bottom => Ok(None),
+        other => Ok(Some(wasm_param_value_type_for(ctx, other, mir_fn.return_layout, gc_struct_type_indices, js_glue_utf8_as_anyref)?)),
     }
 }
 

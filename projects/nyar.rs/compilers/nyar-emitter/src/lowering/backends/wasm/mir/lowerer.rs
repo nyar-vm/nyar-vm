@@ -175,7 +175,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
         type_index_by_signature,
         managed_utf8_to_host_handle,
         utf8_host_handle_materialize,
-    );
+    )?;
     lowerer.emit_function_body()?;
     Ok(lowerer.finish())
 }
@@ -286,7 +286,7 @@ impl<'a> WasmMirLowerer<'a> {
         type_index_by_signature: &'a BTreeMap<(Vec<u8>, Option<u8>), u32>,
         managed_utf8_to_host_handle: &'a BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
         utf8_host_handle_materialize: &'a BTreeMap<LayoutId, Utf8HostHandleMaterializePlan>,
-    ) -> Self {
+    ) -> crate::Result<Self> {
         let block_order = collect_reachable_blocks(mir_fn);
         let block_index = block_order.iter().enumerate().map(|(index, block_id)| (*block_id, index)).collect();
         // wasm 函数参数占据 local 0..param_count-1，声明局部从 param_count 开始?
@@ -351,7 +351,7 @@ impl<'a> WasmMirLowerer<'a> {
                     mir_fn.value_layouts.get(param).copied(),
                     gc_struct_type_indices,
                     js_glue_utf8_as_anyref,
-                );
+                )?;
                 let local = if block.id == mir_fn.entry {
                     assert_eq!(ty, &mir_fn.param_types[param_slot], "WASM 入口 SSA 类型与函数参数不一致");
                     u32::try_from(param_slot).expect("WASM 参数索引溢出")
@@ -373,7 +373,7 @@ impl<'a> WasmMirLowerer<'a> {
                 lowerer.plan_instruction(instruction);
             }
         }
-        lowerer
+        Ok(lowerer)
     }
 
     pub(super) fn storage_for_type(&self, ty: &NyarType) -> MirStorageKind {
@@ -458,7 +458,10 @@ impl<'a> WasmMirLowerer<'a> {
                 self.mir_fn.value_layouts.get(parameter).copied(),
                 self.gc_struct_type_indices,
                 self.js_glue_utf8_as_anyref,
-            );
+            )
+            // 该函数处于已通过 `validate_text_encoding_projection` 的降级路径，
+            // `utf16` 形参槽不会到达这里；不可解析只可能是合同被上游改写。
+            .expect("WASM 形参槽载体在文本 ABI 验证后必须可解析");
         }
         let declared = usize::try_from(local_index - self.stack_ptr_local).expect("WASM local 索引溢出");
         let valtype = self.local_valtypes.get(declared).expect("WASM local 未预规划");
@@ -534,6 +537,8 @@ impl<'a> WasmMirLowerer<'a> {
             self.gc_struct_type_indices,
             self.js_glue_utf8_as_anyref,
         )
+        // 预规划阶段在文本 ABI 验证之后，`utf16` 结果槽不会到达这里。
+        .expect("WASM 结果槽载体在文本 ABI 验证后必须可解析")
     }
 
     pub(super) fn alloc_value_local(&mut self, stack_type: u8) -> u32 {
@@ -761,7 +766,11 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_ref_null_anyref();
             }
             MirConstant::Utf16(_) => {
-                return Err(format!("WASM lowering requires an explicit UTF-16 ABI contract: `{}`", self.mir_fn.symbol));
+                return Err(format!(
+                    "{}: `{}`",
+                    crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI,
+                    self.mir_fn.symbol
+                ));
             }
         }
         Ok(())
@@ -787,14 +796,14 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
-    pub(super) fn field_store_stack_type(&self, field: &FieldLayout) -> u8 {
+    pub(super) fn field_store_stack_type(&self, field: &FieldLayout) -> crate::Result<u8> {
         if self.storage_for_type(&field.ty) == StorageKind::Reference {
             // 引用字段在线性内存中不存 GC 引用，用 i32 占位。
-            VALTYPE_I32
+            Ok(VALTYPE_I32)
         }
         else if type_is_inline_aggregate(self.ctx, &field.ty) {
             // 内联聚合字段的源操作数是地址；标量字段（含零字段值布局）的源是载体本身。
-            VALTYPE_I32
+            Ok(VALTYPE_I32)
         }
         else {
             wasm_param_value_type(self.ctx, &field.ty, self.js_glue_utf8_as_anyref)

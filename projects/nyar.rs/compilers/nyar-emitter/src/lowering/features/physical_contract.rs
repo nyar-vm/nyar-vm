@@ -45,13 +45,108 @@ pub struct PhysicalCallContract {
     pub parameters: Vec<PhysicalValueCategory>,
 }
 
-/// 后端私有文本投影占位。
+/// 文本 ABI 的编码身份：只来自声明的 `NyarType`，不看函数名或包名。
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhysicalTextEncoding {
+    Utf8,
+    Utf16,
+}
+
+/// 文本 ABI 的宿主边界。
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhysicalTextBoundary {
+    WasmJsGlue,
+    WasiComponent,
+}
+
+/// 该边界上已经落地的宿主载体。
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhysicalTextCarrier {
+    /// `utf8`：i32 宿主字符串句柄（`hostIntern` / `const_utf8`）。
+    JsStringHandle,
+    /// WASI canonical ABI：UTF-8 字节列表偏移。
+    CanonicalUtf8Bytes,
+}
+
+/// 单个文本 ABI 位置的冻结事实：编码 × 边界 × 载体。
 ///
-/// Semantic MIR 不再携带 TextConvert / TextEncoding God 字段。
+/// `carrier == None` 表示该编码在该边界还没有已声明的载体。所有物理落点必须
+/// 结构化失败并复用同一条理由，禁止借用其它编码的载体。
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhysicalTextProjection {
-    pub authorized: bool,
+    pub encoding: PhysicalTextEncoding,
+    pub boundary: PhysicalTextBoundary,
+    pub carrier: Option<PhysicalTextCarrier>,
+}
+
+/// `utf16` 在所有 wasm 边界上的统一拒绝理由。
+#[doc(hidden)]
+pub const UTF16_UNRESOLVED_TEXT_ABI: &str =
+    "`utf16` 没有已声明的文本 ABI 载体：canonical ABI 的字符串是 UTF-8 字节列表，\
+     该边界不存在 `utf16` 的 canonical 表示，必须由显式 UTF-16 文本 ABI 契约提供载体";
+
+/// 宿主边界到文本 ABI 边界的唯一映射。
+pub(crate) fn text_abi_boundary(backend: PhysicalBackend) -> Option<PhysicalTextBoundary> {
+    match backend {
+        PhysicalBackend::WasmJsGlue => Some(PhysicalTextBoundary::WasmJsGlue),
+        PhysicalBackend::WasiComponent => Some(PhysicalTextBoundary::WasiComponent),
+        PhysicalBackend::Jvm | PhysicalBackend::Clr | PhysicalBackend::WasmCore => None,
+    }
+}
+
+/// 文本 ABI 事实的唯一查询点：编码来自声明的 `NyarType`，载体来自该边界。
+pub(crate) fn declared_text_projection(boundary: PhysicalTextBoundary, ty: &NyarType) -> Option<PhysicalTextProjection> {
+    let encoding = match ty {
+        NyarType::Utf8 => PhysicalTextEncoding::Utf8,
+        NyarType::Utf16 => PhysicalTextEncoding::Utf16,
+        _ => return None,
+    };
+    let carrier = match (encoding, boundary) {
+        (PhysicalTextEncoding::Utf8, PhysicalTextBoundary::WasmJsGlue) => Some(PhysicalTextCarrier::JsStringHandle),
+        (PhysicalTextEncoding::Utf8, PhysicalTextBoundary::WasiComponent) => Some(PhysicalTextCarrier::CanonicalUtf8Bytes),
+        (PhysicalTextEncoding::Utf16, _) => None,
+    };
+    Some(PhysicalTextProjection { encoding, boundary, carrier })
+}
+
+/// 未落地文本 ABI 载体的统一拒绝理由。
+pub(crate) fn unresolved_text_abi_reason(ty: &NyarType) -> Option<&'static str> {
+    match ty {
+        NyarType::Utf16 => Some(UTF16_UNRESOLVED_TEXT_ABI),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod text_abi_tests {
+    use super::*;
+
+    #[test]
+    fn text_abi_fact_binds_encoding_boundary_and_carrier_from_declared_type() {
+        let js_utf8 = declared_text_projection(PhysicalTextBoundary::WasmJsGlue, &NyarType::Utf8)
+            .expect("`utf8` 必须已有冻结载体");
+        assert_eq!(js_utf8.encoding, PhysicalTextEncoding::Utf8);
+        assert_eq!(js_utf8.boundary, PhysicalTextBoundary::WasmJsGlue);
+        assert_eq!(js_utf8.carrier, Some(PhysicalTextCarrier::JsStringHandle));
+
+        for boundary in [PhysicalTextBoundary::WasmJsGlue, PhysicalTextBoundary::WasiComponent] {
+            let projection = declared_text_projection(boundary, &NyarType::Utf16)
+                .expect("`utf16` 的编码身份必须由声明类型决定");
+            assert_eq!(projection.encoding, PhysicalTextEncoding::Utf16);
+            assert_eq!(projection.boundary, boundary);
+            assert_eq!(projection.carrier, None, "`utf16` 不得借用其它编码的载体");
+        }
+        assert_eq!(
+            unresolved_text_abi_reason(&NyarType::Utf16),
+            Some(UTF16_UNRESOLVED_TEXT_ABI)
+        );
+        assert_eq!(unresolved_text_abi_reason(&NyarType::Utf8), None);
+        assert_eq!(declared_text_projection(PhysicalTextBoundary::WasmJsGlue, &NyarType::Unit), None);
+    }
 }
 
 /// 单个函数的物理类别计划（集成测试专用）。
@@ -285,11 +380,21 @@ fn constant_nyar_type(constant: &crate::contracts::Constant) -> NyarType {
 }
 
 fn collect_text_projections(
-    _function: &ExecutableFunction,
-    _backend: PhysicalBackend,
+    function: &ExecutableFunction,
+    backend: PhysicalBackend,
 ) -> Result<(BTreeSet<ExecutableValueRef>, BTreeMap<ExecutableValueRef, PhysicalTextProjection>), PhysicalPlanError> {
-    // TextConvert deleted from Semantic MIR; Utf8/Utf16 identity lives on NyarType.
-    Ok((BTreeSet::new(), BTreeMap::new()))
+    // Utf8/Utf16 identity lives on NyarType. 编码 × 边界 × 载体只在这里冻结，
+    // 物理落点不得各自重新推断。
+    let Some(boundary) = text_abi_boundary(backend) else {
+        return Ok((BTreeSet::new(), BTreeMap::new()));
+    };
+    let projections: BTreeMap<ExecutableValueRef, PhysicalTextProjection> = function
+        .value_types
+        .iter()
+        .filter_map(|(value, ty)| declared_text_projection(boundary, ty).map(|projection| (*value, projection)))
+        .collect();
+    let text_values = projections.keys().copied().collect();
+    Ok((text_values, projections))
 }
 
 fn physical_category(

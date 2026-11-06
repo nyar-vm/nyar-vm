@@ -83,7 +83,8 @@ impl<'a> WasmMirLowerer<'a> {
             MirDispatchKind::Witness => {
                 callee_return = self.resolve_callee_return_type(callee, None)?;
                 for argument in arguments {
-                    self.emit_operand_coerced(argument, self.operand_wasm_stack_type(argument))?;
+                    let expected = self.operand_wasm_stack_type(argument)?;
+                    self.emit_operand_coerced(argument, expected)?;
                 }
                 // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
                 let Some(witness_operand) = witness
@@ -386,7 +387,7 @@ impl<'a> WasmMirLowerer<'a> {
             .params
             .iter()
             .map(|ty| wasm_function_abi_value_type_for(self.ctx, ty, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref))
-            .collect();
+            .collect::<crate::Result<Vec<u8>>>()?;
         let return_type = match &signature.return_type {
             NyarType::Unit | NyarType::Bottom => None,
             other => Some(wasm_function_abi_value_type_for(
@@ -394,7 +395,7 @@ impl<'a> WasmMirLowerer<'a> {
                 other,
                 self.gc_struct_type_indices,
                 self.js_glue_utf8_as_anyref,
-            )),
+            )?),
         };
         let mut indirect_param_types = visible_param_types.clone();
         indirect_param_types.push(WASM_GC_ANYREF);
@@ -421,13 +422,13 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(())
     }
 
-    pub(super) fn operand_wasm_stack_type(&self, operand: &MirOperand) -> u8 {
-        match operand {
+    pub(super) fn operand_wasm_stack_type(&self, operand: &MirOperand) -> crate::Result<u8> {
+        Ok(match operand {
             MirOperand::Value(value) => self.wasm_local_value_type(self.planned_value_local(*value)),
             MirOperand::Constant(constant) => match constant {
                 MirConstant::Utf8(_) => VALTYPE_I32,
                 MirConstant::Utf16(_) => {
-                    panic!("WASM lowering requires an explicit UTF-16 ABI contract")
+                    return Err(crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string())
                 }
                 MirConstant::Unit => WASM_GC_ANYREF,
                 // 可空空值是空引用，与 nullable 槽的 anyref 载体一致。
@@ -439,7 +440,7 @@ impl<'a> WasmMirLowerer<'a> {
             MirOperand::Item(_) => {
                 panic!("WASM callable identity cannot be used as a value operand")
             }
-        }
+        })
     }
 
     /// 操作数在计划中冻结的语义类型；显式 `as` 的转换语义必须由此决定，
@@ -460,7 +461,7 @@ impl<'a> WasmMirLowerer<'a> {
         if let MirOperand::Constant(constant) = operand {
             return self.emit_load_constant_for_slot(constant, expected);
         }
-        let actual = self.operand_wasm_stack_type(operand);
+        let actual = self.operand_wasm_stack_type(operand)?;
         if actual == expected {
             return self.emit_operand(operand);
         }
@@ -670,7 +671,7 @@ impl<'a> WasmMirLowerer<'a> {
     fn emit_wasm_operator_operands(&mut self, mnemonic: &str, expected: u8, arguments: &[MirOperand]) -> crate::Result<()> {
         for argument in arguments {
             if let MirOperand::Value(_) = argument {
-                let actual = self.operand_wasm_stack_type(argument);
+                let actual = self.operand_wasm_stack_type(argument)?;
                 if actual != expected {
                     return Err(format!(
                         "WASM `wasm_operator` 实参载体失配 in `{}`: mnemonic=`{mnemonic}` expected={expected} actual={actual}",

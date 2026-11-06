@@ -68,7 +68,9 @@ fn abi_carrier_name(schema: &super::abi_schema::WasmAbiType) -> Result<&'static 
         | WasmAbiType::Tuple { .. }
         | WasmAbiType::NamedAggregate { .. }
         | WasmAbiType::Sum { .. } => "handle",
-        WasmAbiType::Utf16 => return Err("Utf16 没有稳定的宿主 ABI 载体".to_string()),
+        WasmAbiType::Utf16 => {
+            return Err(crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string());
+        }
         WasmAbiType::Unsupported { reason } => return Err(format!("类型没有 Wasm ABI 载体: {reason}")),
     })
 }

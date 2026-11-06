@@ -367,7 +367,9 @@ pub fn abi_schema_for_type(ty: &NyarType) -> WasmAbiType {
         NyarType::Float64 => WasmAbiType::F64,
 
         NyarType::Utf8 => WasmAbiType::Utf8,
-        NyarType::Utf16 => WasmAbiType::Unsupported { reason: "Utf16 在当前 JS glue 轨没有稳定的宿主 ABI 合同".to_string() },
+        NyarType::Utf16 => WasmAbiType::Unsupported {
+            reason: crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string(),
+        },
 
         NyarType::Array(element) => WasmAbiType::Array {
             element: Box::new(abi_schema_for_type(element)),

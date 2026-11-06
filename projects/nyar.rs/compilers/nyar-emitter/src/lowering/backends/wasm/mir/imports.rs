@@ -264,13 +264,17 @@ pub(super) fn wasm_import_type_from_backend_import(
     ctx: &ExecutableLoweringContext,
     import: &BackendImport,
     js_glue_utf8_as_anyref: bool,
-) -> Vec<u8> {
-    let params = import.parameter_types.iter().map(|ty| wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)).collect::<Vec<_>>();
+) -> crate::Result<Vec<u8>> {
+    let params = import
+        .parameter_types
+        .iter()
+        .map(|ty| wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref))
+        .collect::<crate::Result<Vec<_>>>()?;
     let results = match &import.return_type {
         NyarType::Unit | NyarType::Bottom => Vec::new(),
-        ty => vec![wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)],
+        ty => vec![wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)?],
     };
-    wasm_function_type(&params, &results)
+    Ok(wasm_function_type(&params, &results))
 }
 
 pub(super) fn wasm_import_type_bytes_for_host(
@@ -286,7 +290,7 @@ pub(super) fn wasm_import_type_bytes_for_host(
     // 字段名表只是历史快照，不得越过 plan 改写已声明的导入签名。
     let key = (module.to_string(), field.to_string());
     if let Some(import) = signature_index.get(&key) {
-        return Ok(wasm_import_type_from_backend_import(ctx, import, js_glue_utf8_as_anyref));
+        return wasm_import_type_from_backend_import(ctx, import, js_glue_utf8_as_anyref);
     }
     // fallback 只服务 plan 不存在的合成宿主导入（`env::const_utf8`、`NODE_UTF8_HOST_IMPORT_FIELDS`
     // 里的 utf8_* 辅助、WASI 预演化的 stream 内建等）；它不得覆盖 plan 已声明的事实。
