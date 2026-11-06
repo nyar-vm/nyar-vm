@@ -298,6 +298,14 @@ pub(crate) fn unify_call_type_binders(
     substitutions: &mut BTreeMap<GenericBinderId, ValkyrieType>,
     type_relations: &TypeRelationContext,
 ) -> Option<()> {
+    // 实参类型未知（未标注形参等 `AutoType`）时没有可绑定的类型形参；与
+    // `trivially_compatible` 的 `actual AutoType` 规则同源，这里不得提前否定候选。
+    if matches!(actual, ValkyrieType::AutoType) {
+        return Some(());
+    }
+    if type_relations.text_encoding_matches_nominal(actual, expected) {
+        return Some(());
+    }
     match expected {
         ValkyrieType::Generic(generic) => {
             let binder = generic.binder?;
@@ -955,5 +963,18 @@ micro run() -> i32 {
         crate::ValkyrieCompiler::default()
             .compile_source(&source)
             .unwrap_or_else(|error| panic!("filter 的谓词形参必须能匹配: {error}"));
+    }
+
+    /// 未标注形参在 HIR 里是 `AutoType`：候选统一不得因此否定候选
+    /// （与 `TypeRelationContext::match_parameter` 的 `actual AutoType` 规则同源）。
+    #[test]
+    fn auto_type_actual_is_not_rejected_during_binder_unification() {
+        let relations = TypeRelationContext::from_module(&crate::compiler::types::hir::HirModule::default());
+        let expected = ValkyrieType::Nominal { declaration: item_id(40), arguments: vec![], primitive_identity: None };
+        let binders = std::collections::BTreeSet::new();
+        let mut substitutions = BTreeMap::new();
+        assert_eq!(unify_call_type_binders(&expected, &ValkyrieType::AutoType, &binders, &mut substitutions, &relations), Some(()));
+        // 未知实参不是「任意名义类型都已匹配」：跨声明仍必须 fail-closed。
+        assert_eq!(unify_call_type_binders(&expected, &ValkyrieType::Utf16, &binders, &mut substitutions, &relations), None);
     }
 }

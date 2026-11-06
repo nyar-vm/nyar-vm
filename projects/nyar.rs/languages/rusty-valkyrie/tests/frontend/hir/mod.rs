@@ -32,6 +32,7 @@ mod hir_export_case_tests;
 mod hir_primitive_builtin_identity_tests;
 mod hir_same_file_overload_tests;
 mod hir_scalar_comparison_tests;
+mod hir_text_encoding_equivalence_tests;
 #[cfg(false)] // AstToHir 已移除、类型签名变化（架构迁移）
 mod hir_overload_singleton_tests;
 mod hir_single_quote_literal_tests;

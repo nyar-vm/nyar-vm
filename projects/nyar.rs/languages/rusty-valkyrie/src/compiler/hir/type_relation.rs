@@ -281,6 +281,31 @@ impl TypeRelationContext {
         }
     }
 
+    /// 内建文本编码 carrier 与源码别名锚定的文本名义声明之间的身份归一。
+    ///
+    /// 源码 `type utf8 = Utf8Text` 把编码锚定到名义声明上；生成组按 §4 规则不回填
+    /// 该别名，`utf8` 位置回落到内建 carrier `Utf8`（`utf16` 同理）。两者是同一值空间，
+    /// 与 MIR 的 `text_encoding_matches_nominal` 同源。只归一同一编码：`Utf8` 不接受
+    /// `Utf16Text`，反之亦然；带泛型实参的名义声明不在此列。
+    pub(crate) fn text_encoding_matches_nominal(&self, actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
+        let ValkyrieType::Nominal { declaration, arguments, .. } = expected else {
+            return false;
+        };
+        if !arguments.is_empty() {
+            return false;
+        }
+        let Some(item) = self.structs_by_declaration.get(declaration) else {
+            return false;
+        };
+        let name = item.name.as_str();
+        match actual {
+            // 与 MIR `text_encoding_matches_nominal` 同一名集：`text` 是两种编码共享的载体。
+            ValkyrieType::Utf8 => matches!(name, "text" | "utf8" | "Utf8Text" | "std::text::text" | "std.text.text"),
+            ValkyrieType::Utf16 => matches!(name, "text" | "utf16" | "Utf16Text" | "std::text::text" | "std.text.text"),
+            _ => false,
+        }
+    }
+
     /// 字符字面量可特化到的形参类型：`char` 自身，或任意数值形参（码位值参与比较/算术）。
     ///
     /// 与整数字面量同源：值域校验（码位 ≤ 0xFFFF）已在 HIR lowering 完成，
@@ -319,6 +344,11 @@ impl TypeRelationContext {
     /// 统一形参匹配入口：按 nominal、trait、row 的既定优先级返回结果。
     pub fn match_parameter(&self, actual: &ValkyrieType, expected: &ValkyrieType) -> ParameterMatchResult {
         if trivially_compatible(actual, expected) {
+            return ParameterMatchResult::NominalExact;
+        }
+
+        // 生成组的内建编码 carrier 与依赖侧 `type utf8 = Utf8Text` 锚定的名义声明同一值空间。
+        if self.text_encoding_matches_nominal(actual, expected) {
             return ParameterMatchResult::NominalExact;
         }
 
