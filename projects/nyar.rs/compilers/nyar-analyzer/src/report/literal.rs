@@ -2,34 +2,73 @@
 
 use super::spec::ColSeriesItem;
 
-/// 图表 series 元素在 V 侧的契约类型（`asgard.plotter` 的 `ColSeriesItem`）。
-///
-/// 注入脚本在全局命名空间生成，元素必须带完整构造式类型名，否则 VX 解析只能
-/// 看到裸 `{ ... }`（不是 primary），词法失败后整个脚本 ABI 提取为空。
-pub const SERIES_ITEM_V_TYPE: &str = "asgard.plotter::ColSeriesItem";
-
-/// 将 series 序列化为带元素类型的构造式字面量（用于 `let series: list = …`）。
-///
-/// 容器本身由注入点声明；每个元素显式构造 `ColSeriesItem { ... }`，让后续
-/// `series[index]` / `item.field` 的类型在 V 侧可判定。
-pub fn series_to_init_literal(series: &[ColSeriesItem]) -> String {
-    if series.is_empty() {
-        return "[]".to_string();
-    }
-    let items: Vec<String> = series.iter().map(item_to_literal).collect();
-    format!("[{}]", items.join(", "))
+/// [`series_to_init_literal`] 的失败原因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReportLiteralError {
+    /// 调用方无法给出 `series` 的元素类型，或给出的不是合法 VX 类型路径。
+    MissingElementType,
 }
 
-fn item_to_literal(item: &ColSeriesItem) -> String {
+impl std::fmt::Display for ReportLiteralError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingElementType => write!(f, "无法为 `series` 确定元素类型"),
+        }
+    }
+}
+
+impl std::error::Error for ReportLiteralError {}
+
+/// 将 series 序列化为具名结构字面量列表（用于 `let series: [T] = …`）。
+///
+/// `element_type` 是 `series` 声明里逐字写出的元素类型路径，由持有该声明的调用方提供。
+/// 本函数不推导、也不猜测类型名：缺失或不是合法类型路径时失败闭合，绝不退化成匿名结构
+/// 字面量——匿名结构字面量会让 oak-vx 的 ABI 提取整体失败，进而丢掉 `series` 绑定。
+pub fn series_to_init_literal(series: &[ColSeriesItem], element_type: &str) -> Result<String, ReportLiteralError> {
+    if !is_vx_type_path(element_type) {
+        return Err(ReportLiteralError::MissingElementType);
+    }
+    if series.is_empty() {
+        return Ok("[]".to_string());
+    }
+    let items: Vec<String> = series.iter().map(|item| item_to_literal(item, element_type)).collect();
+    Ok(format!("[{}]", items.join(", ")))
+}
+
+fn item_to_literal(item: &ColSeriesItem, element_type: &str) -> String {
     format!(
-        "{ty} {{ key: {}, label: {}, value_text: {}, fill: {}, height_pct: {} }}",
+        "{element_type} {{ key: {}, label: {}, value_text: {}, fill: {}, height_pct: {} }}",
         vx_text_literal(&item.key),
         vx_text_literal(&item.label),
         vx_text_literal(&item.value_text),
         vx_text_literal(&item.fill),
         f64_literal(item.height_pct),
-        ty = SERIES_ITEM_V_TYPE,
     )
+}
+
+/// 接受 `Type`、`package::Type` 与 `package.path::Type` 形态的类型路径。
+fn is_vx_type_path(path: &str) -> bool {
+    let path = path.trim();
+    if path.is_empty() {
+        return false;
+    }
+    path.split("::").all(is_dotted_identifier_path)
+}
+
+fn is_dotted_identifier_path(part: &str) -> bool {
+    !part.is_empty() && part.split('.').all(is_vx_identifier)
+}
+
+fn is_vx_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next()
+    else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
 /// VX 字符串字面量编码。

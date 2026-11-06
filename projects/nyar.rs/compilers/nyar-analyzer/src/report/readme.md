@@ -30,4 +30,6 @@ this module.
 ## Presentation helper
 
 `series_to_init_literal` serializes a `ColSeriesItem` list into an AWSL `<script>`-injectable list literal (no business
-logic).
+logic). Each element is emitted as a named structure literal; the element type path is passed in by the caller from the
+`series` declaration that will receive the literal. A missing or malformed type path fails closed instead of degrading
+to an anonymous structure literal.

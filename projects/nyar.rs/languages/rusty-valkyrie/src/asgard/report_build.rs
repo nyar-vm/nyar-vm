@@ -3,7 +3,7 @@ use crate::{
     asgard::error::{AsgardError, AsgardResult},
     legion::CanonicalTarget,
 };
-use nyar_analyzer::report::{HydratedChartSpec, SERIES_ITEM_V_TYPE, series_to_init_literal};
+use nyar_analyzer::report::{HydratedChartSpec, series_to_init_literal};
 use oak_awsl::widget_name_from_stem;
 use std::{
     fs,
@@ -39,20 +39,21 @@ pub fn emit_report_chart_islands(
 
     let mut components = Vec::new();
     let mut slots = Vec::new();
+    // 注入的 `series` 字面量必须是具名结构字面量：元素类型逐字取自 wrapper 的
+    // `let series: [package::Type]` 声明，其所属包随后按名挂接为生成组的显式依赖。
     let mut series_packages = std::collections::BTreeSet::new();
 
     for chart in charts {
         let wrapper = read_project_source(project_dir, &format!("charts/{}.awsl", chart.route))?;
-        // 容器元素类型默认由注入侧的构造式字面量决定（`SERIES_ITEM_V_TYPE`）；
-        // wrapper 显式声明 `let series: [pkg::Type]` 时以 wrapper 为准。
-        let element_package = extract_title_series_lets(&wrapper)
-            .ok()
-            .and_then(|(_, series_line)| series_element_package(&series_line))
-            .unwrap_or_else(series_item_package);
-        series_packages.insert(element_package);
+        // 生成期的唯一元素类型来源是 wrapper 的 `let series: [package::Type]` 声明；
+        // 声明缺失、形态不符或类型路径非法时闭合失败，不由生成器猜类型名。
+        let (_, series_declaration) = extract_title_series_lets(&wrapper)?;
+        let series_element = parse_series_element_type(&series_declaration, &chart.route)?;
+        series_packages.insert(series_element.package);
         let title_lit = encode_v_text_literal(&chart.title)
             .map_err(|error| AsgardError::msg(report!("chart {}: {error}", chart.route)))?;
-        let series_lit = series_to_init_literal(&chart.series);
+        let series_lit = series_to_init_literal(&chart.series, &series_element.path)
+            .map_err(|error| AsgardError::msg(report!("chart {}: {error}", chart.route)))?;
         let filled = fill_chart_placeholders(&wrapper, &title_lit, &series_lit);
         let awsl = expand_interactive_col_plot(&filled, &icp_awsl, &chart.route)?;
         let component = compile_awsl_source(&awsl, &chart.route, &format!("{}.awsl", chart.route), &LoweringOptions::default())
@@ -75,11 +76,18 @@ pub fn emit_report_chart_islands(
     let resolved = resolve_project_source_groups(project_dir, &CanonicalTarget::browser())?;
     // 生成代码引用 `usize` 别名与 `Array` 合同（`<loop>` 的条目数量与下标）：
     // 按包名显式挂接 `std`，不泛化挂接整个 workspace 或整个 std 快照。
-    // series 元素类型所声明的包还必须作为生成组的直接依赖，否则 `[pkg::Type]`
-    // 在生成单元里不可见（例如 `ColSeriesItem`）。
-    let mut dependency_packages = vec!["std"];
-    dependency_packages.extend(series_packages.iter().map(String::as_str));
-    let extra_dependency_keys = dependency_keys_for_packages(&resolved.groups, &dependency_packages);
+    let mut extra_dependency_keys = dependency_keys_for_packages(&resolved.groups, &["std"]);
+    // 具名结构字面量在生成组里构造 `series` 条目，类型所属包必须是生成组的显式依赖，
+    // 否则名称解析必然失败。包缺席时闭合失败，不回退到匿名字面量。
+    for package in &series_packages {
+        let keys = dependency_keys_for_packages(&resolved.groups, &[package.as_str()]);
+        if keys.len() != 1 {
+            return Err(AsgardError::msg(report!(
+                "chart `series` element type belongs to package `{package}`, which is not in the project dependency closure"
+            )));
+        }
+        extra_dependency_keys.extend(keys);
+    }
     let generated = GeneratedSource { producer: "asgard.awsl.report-island", source: &awsl_v };
     // 报告图表岛走非入口执行路径：岛包源码组只作为依赖，入口身份唯一来自生成组的显式 `[export]`。
     let wasm_built = match compile_wasm_bundle(
@@ -226,9 +234,8 @@ fn encode_v_text_body(text: &str) -> String {
 
 fn expand_interactive_col_plot(wrapper: &str, icp_awsl: &str, route: &str) -> AsgardResult<String> {
     let (title_line, series_line) = extract_title_series_lets(wrapper)?;
-    // 注入字面量是构造式元素（`ColSeriesItem { ... }`），容器必须声明元素类型，
-    // 否则 `series[i]` / `item.field` 在生成单元里没有可判定的元素类型。
-    let series_line = series_declaration_with_element_type(&series_line);
+    // `series` 声明逐字来自 wrapper，元素类型已由 `parse_series_element_type` 闭合校验；
+    // 生成器不再改写声明，注入的字面量与声明的元素类型一一对应。
     let widget_name = widget_name_from_stem(route);
     let mut out = icp_awsl.replacen("<widget interactive_col_plot>", &format!("<widget {widget_name}>"), 1);
     if !out.contains(&format!("<widget {widget_name}>")) {
@@ -239,23 +246,63 @@ fn expand_interactive_col_plot(wrapper: &str, icp_awsl: &str, route: &str) -> As
     Ok(out)
 }
 
-/// 把 wrapper 的 `let series: list = …` 声明补成 `let series: [pkg::Type] = …`。
-///
-/// 只在类型位置是 `list` 时补；wrapper 已显式声明数组元素类型时保持原样。
-fn series_declaration_with_element_type(declaration: &str) -> String {
-    let Some(eq) = declaration.find('=') else {
-        return declaration.to_string();
-    };
-    let (type_part, rest) = declaration.split_at(eq);
-    if type_part.contains('[') || !type_part.contains(": list") {
-        return declaration.to_string();
-    }
-    format!("{}{}", type_part.replace(": list", &format!(": [{}] ", SERIES_ITEM_V_TYPE)), rest)
+/// `series` 声明携带的元素类型。
+struct SeriesElementType {
+    /// 声明里逐字写出的类型路径，作为生成结构字面量的构造名。
+    path: String,
+    /// 类型所属包名（`path` 最后一个 `::` 之前的部分），用于按名挂接生成组依赖。
+    package: String,
 }
 
-/// `SERIES_ITEM_V_TYPE` 的所属包名（`asgard.plotter`）。
-fn series_item_package() -> String {
-    SERIES_ITEM_V_TYPE.rsplit_once("::").map(|(package, _)| package.to_string()).unwrap_or_default()
+/// 从 wrapper 的 `let series: [package::Type] = …` 声明里取出元素类型。
+///
+/// 生成期的唯一类型来源就是这条声明：`ColSeriesItem` 自身不携带 VX 身份，ABI 派生绑定
+/// 也没有元素类型。声明缺失、未写类型、不是 `[T]` 形态或不是包限定路径时闭合失败，
+/// 不允许生成器自行猜一个类型名。
+fn parse_series_element_type(declaration: &str, route: &str) -> AsgardResult<SeriesElementType> {
+    let rest = declaration
+        .trim()
+        .strip_prefix("let series")
+        .ok_or_else(|| AsgardError::msg(report!("chart {route}: `let series` declaration missing")))?
+        .trim_start();
+    let rest = rest
+        .strip_prefix(':')
+        .ok_or_else(|| AsgardError::msg(report!("chart {route}: `let series` declaration must carry an element type `[package::Type]`")))?
+        .trim_start();
+    let array = rest
+        .strip_prefix('[')
+        .ok_or_else(|| AsgardError::msg(report!("chart {route}: `let series` declaration must use array element type `[T]`, found `{rest}`")))?;
+    let close = array
+        .find(']')
+        .ok_or_else(|| AsgardError::msg(report!("chart {route}: `let series` array element type is not closed")))?;
+    let element = array[..close].trim();
+    let tail = array[close + 1..].trim_start();
+    if !(tail.is_empty() || tail.starts_with('=')) {
+        return Err(AsgardError::msg(report!("chart {route}: `let series` declaration has trailing text after the element type: `{tail}`")));
+    }
+    let Some((package, name)) = element.rsplit_once("::")
+    else {
+        return Err(AsgardError::msg(report!(
+            "chart {route}: `let series` element type `{element}` must be package-qualified (`package::Type`) because the generated island group is a separate package"
+        )));
+    };
+    if !is_package_path(package) || !is_type_identifier(name) {
+        return Err(AsgardError::msg(report!("chart {route}: `let series` element type `{element}` is not a valid package-qualified type path")));
+    }
+    Ok(SeriesElementType { path: element.to_string(), package: package.to_string() })
+}
+
+fn is_package_path(path: &str) -> bool {
+    !path.is_empty() && path.split('.').all(is_type_identifier)
+}
+
+fn is_type_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next()
+    else {
+        return false;
+    };
+    (first.is_ascii_alphabetic() || first == '_') && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
 fn extract_title_series_lets(wrapper: &str) -> AsgardResult<(String, String)> {
@@ -274,18 +321,6 @@ fn extract_title_series_lets(wrapper: &str) -> AsgardResult<(String, String)> {
         (Some(t), Some(s)) => Ok((t, s)),
         _ => Err(AsgardError::msg(report!("chart wrapper missing let title / let series"))),
     }
-}
-
-/// 从 `let series: [package::Type] = ...` 声明里取出元素类型所属包名。
-///
-/// 仅用于闭包诊断：取不出包名时返回 `None`，不改变编译路径。
-fn series_element_package(declaration: &str) -> Option<String> {
-    let open = declaration.find('[')?;
-    let close = declaration[open..].find(']')? + open;
-    let element = declaration[open + 1..close].trim();
-    let (package, _) = element.rsplit_once("::")?;
-    let package = package.trim();
-    (!package.is_empty()).then(|| package.to_string())
 }
 
 fn replace_let_line(source: &str, name: &str, replacement: &str) -> AsgardResult<String> {
