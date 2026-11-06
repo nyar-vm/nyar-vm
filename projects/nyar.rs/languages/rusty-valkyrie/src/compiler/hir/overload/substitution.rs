@@ -476,6 +476,33 @@ pub(crate) fn specialize_literal_expr_type(
                 _ => actual.clone(),
             }
         }
+        // 元组字面量没有标签语法，标签只能由形式参数提供。只有形式参数是
+        // `LabeledTuple`、实参确实是元组字面量、且逐位置类型（嵌套字面量先按
+        // 对应字段特化）完全一致时，才把整个字面量精化为该带标签类型。
+        // 位置类型不等或形式参数不是 `LabeledTuple` 时保留原推断，交给统一
+        // 阶段失败，不得把 `Tuple` 与 `LabeledTuple` 全局视为兼容而擦掉标签。
+        HirExprKind::TupleLiteral { items } => {
+            let ValkyrieType::LabeledTuple(fields) = expected else {
+                return actual.clone();
+            };
+            let ValkyrieType::Tuple(actual_items) = actual else {
+                return actual.clone();
+            };
+            if items.len() != fields.len() || actual_items.len() != fields.len() {
+                return actual.clone();
+            }
+            let specialized = items
+                .iter()
+                .zip(actual_items.iter())
+                .zip(fields.iter())
+                .map(|((item, item_actual), field)| specialize_literal_expr_type(item, item_actual, &field.ty, type_relations))
+                .collect::<Vec<_>>();
+            if specialized.iter().zip(fields.iter()).all(|(ty, field)| ty == &field.ty) {
+                expected.clone()
+            } else {
+                actual.clone()
+            }
+        }
         // 空数组字面量没有自足类型，只能由形式参数类型提供上下文；保留 `None`
         // 交给统一阶段做形状校验，不得在这里猜元素类型。
         _ => actual.clone(),

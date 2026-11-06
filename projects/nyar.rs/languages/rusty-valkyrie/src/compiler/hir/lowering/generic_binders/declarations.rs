@@ -199,6 +199,14 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
                     bind_type(item, namespace, structs, enums)?;
                 }
             }
+            // 带标签元组的字段类型同样待冻结：标签是身份，字段类型仍要按声明身份
+            // 把 `Named` 绑成 `Nominal`/内建载体，否则字面量精化的逐位置比较会把
+            // 同一类型的表面名与冻结身份判成不等。
+            ValkyrieType::LabeledTuple(fields) => {
+                for field in fields {
+                    bind_type(&mut field.ty, namespace, structs, enums)?;
+                }
+            }
             ValkyrieType::Function(function) => {
                 for param in &mut function.params {
                     bind_type(param, namespace, structs, enums)?;
