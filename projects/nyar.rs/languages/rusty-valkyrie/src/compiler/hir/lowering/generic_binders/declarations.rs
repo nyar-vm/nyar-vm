@@ -499,6 +499,12 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
     }
     for impl_block in &mut module.impls {
         bind_type(&mut impl_block.target, &NamePath::default(), &structs, &enums)?;
+        // impl 关联类型等式与成员签名同属声明面冻结：`type Item = char` 必须在
+        // 这里绑定为唯一内建载体，否则等式以 `Named` 进入 witness 与 canonical。
+        let namespace = impl_block.declaring_namespace.clone();
+        for associated in &mut impl_block.associated_type_impls {
+            bind_type(&mut associated.concrete_type, &namespace, &structs, &enums)?;
+        }
         let self_owner = impl_self_owner(&impl_block.target, &structs, &enums);
         for function in &mut impl_block.methods {
             bind_function(function, &structs, &enums, self_owner.as_ref())?;
