@@ -22,6 +22,7 @@ mod layout_contract;
 mod list_each_shape;
 mod pipeline_discover;
 mod product_page;
+mod primitive_identity_e2e;
 mod serve;
 mod serve_static_build;
 mod server_runtime;
