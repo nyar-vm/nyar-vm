@@ -385,10 +385,17 @@ fn build_nyar_function_param_types(exec: &TargetExecutionPlan, operations: &[Ite
     Ok(map)
 }
 
-/// 被调函数入口形参的冻结布局表（与入口块 SSA 形参同源）。
+/// 被调函数入口形参槽的冻结布局身份表。
 ///
-/// `Some(layout)` 表示该槽按托管对象传递，`None` 表示计划没有冻结布局身份。
-/// 文本形参的载体转换只消费这张冻结事实，不按形参名字或调用点猜探。
+/// 槽布局有两个已冻结来源：`value_layouts` 只登记按 SSA 值类型（TypeId）能找到
+/// 聚合布局的值；文本载体在签名里常被折叠成基类型（`utf8` 形参的 TypeId 是
+/// 折叠后的 `NyarType::Utf8`），该 TypeId 本身没有 `aggregate_layout_by_type`
+/// 条目，但同一载体布局仍以折叠后类型为键冻结在
+/// `aggregate_layout_by_nyar_type`。
+///
+/// 两处都查不到表示目标计划**没有**为该槽冻结托管布局身份（纯 raw 片段不编译
+/// `std.text` 文本聚合，字面量直传），此时 `None` 就是槽的冻结事实：raw 宿主串
+/// 槽，不是缺布局错误。
 fn build_nyar_function_param_layouts(exec: &TargetExecutionPlan, operations: &[ItemInstanceId]) -> BTreeMap<i32, Vec<Option<LayoutId>>> {
     let mut map = BTreeMap::new();
     for (index, instance) in operations.iter().enumerate() {
@@ -397,8 +404,20 @@ fn build_nyar_function_param_layouts(exec: &TargetExecutionPlan, operations: &[I
             continue;
         };
         let mir_fn = &view.function;
+        let slots = ExecutableSlotPlan::plan_nyar(mir_fn);
         let parameters = mir_fn.blocks.get(mir_fn.entry.0 as usize).map(|block| block.parameters.as_slice()).unwrap_or(&[]);
-        let layouts = parameters.iter().map(|parameter| mir_fn.value_layouts.get(parameter).copied()).collect();
+        let layouts = parameters
+            .iter()
+            .map(|parameter| {
+                mir_fn.value_layouts.get(parameter).copied().or_else(|| {
+                    slots
+                        .value_locals
+                        .get(parameter)
+                        .and_then(|local| slots.local_types.get(usize::from(*local)))
+                        .and_then(|ty| exec.aggregate_layout_by_nyar_type().get(ty).copied())
+                })
+            })
+            .collect();
         map.insert(index as i32, layouts);
     }
     map
@@ -1321,15 +1340,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             if param_ty.as_ref() == Some(&NyarType::Utf8) {
                 let slot_layout =
                     self.param_layouts_by_function_index.get(&function_index).and_then(|layouts| layouts.get(index)).copied().flatten();
-                let Some(slot_layout) = slot_layout
-                else {
+                // 入口槽没有布局身份，只有目标计划本身也没冻结任何 `utf8` 聚合布局
+                // 才是合法的 raw 槽事实（纯 raw 片段：字面量直传，不编译文本载体）。
+                // 计划已登记 `Utf8` 布局而本槽解析不到，说明查表链断了，必须失败关闭。
+                if slot_layout.is_none() && self.ctx.submission.backend_plan.aggregate_layout_by_nyar_type().contains_key(&NyarType::Utf8) {
                     return Err(format!(
-                        "OVM 内部调用 `{path:?}`（function index={function_index}）的文本实参 #{index} 缺少被调函数冻结的入口 layout：\
-                         目标计划必须为 `utf8` 形参给出布局身份，禁止按宿主 raw 串传参"
+                        "OVM 内部调用 `{path:?}`（function index={function_index}）的文本实参 #{index} 未能解析入口槽的冻结 layout：\
+                         目标计划已登记 `utf8` 聚合布局身份，同一签名槽必须解析到该身份"
                     ));
-                };
+                }
                 let site = format!("内部调用 `{path:?}` 实参 #{index}");
-                self.emit_text_boundary_operand(argument, &NyarType::Utf8, Some(slot_layout), &site)?;
+                self.emit_text_boundary_operand(argument, &NyarType::Utf8, slot_layout, &site)?;
                 continue;
             }
             match argument {

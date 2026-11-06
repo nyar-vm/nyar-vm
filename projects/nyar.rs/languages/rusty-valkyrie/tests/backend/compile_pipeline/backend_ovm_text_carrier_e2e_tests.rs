@@ -11,7 +11,7 @@
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan};
 use odin_vm::Value;
 use rusty_valkyrie::{
-    CompilerSourceGroup, ValkyrieCompiler,
+    CompilerSourceFile, CompilerSourceGroup, ValkyrieCompiler,
     compiler::{emitter::pipeline::CompilerHostProviderBinding, semantic::closure::micro_declaration_key},
 };
 
@@ -112,4 +112,60 @@ fn utf8_receiver_is_materialized_before_field_access() {
         module.imports
     );
     assert_eq!(run_main(&module), Value::I32(3), "`self._repr` 必须读到托管文本对象的 `[u8]` 槽长度");
+}
+
+/// 与 std 同形的泛型 panic：文本实参经泛型单态化成为 `utf8` 形参。
+const PANIC_DECLARATION_SOURCE: &str = r#"namespace std.types;
+
+micro panic<T>(message: T): void {
+    raise message
+}"#;
+
+/// 纯 raw 片段：只把 `utf8` 字面量直传给泛型 `panic`，不声明任何 `std.text`
+/// 文本载体聚合。目标计划因此不会登记文本布局 identity——这正是 bitset 等
+/// 工程里 `std::types::panic("...")` 的冻结事实，不能当成「缺布局」失败。
+const PANIC_APP_SOURCE: &str = r#"namespace demo.app;
+
+[main]
+micro main() -> void {
+    std::types::panic("boom")
+}"#;
+
+fn panic_source_groups() -> Vec<CompilerSourceGroup> {
+    let files = vec![
+        CompilerSourceFile {
+            path: "types.v".into(),
+            source: PANIC_DECLARATION_SOURCE.into(),
+        },
+        CompilerSourceFile {
+            path: "app.v".into(),
+            source: PANIC_APP_SOURCE.into(),
+        },
+    ];
+    vec![
+        CompilerSourceGroup::single_source("core", "core", CORE_PRIMITIVE_SOURCE),
+        CompilerSourceGroup::from_source_files("app", "app", files, Vec::new())
+            .as_entry()
+            .with_direct_dependencies(vec!["core".into()]),
+    ]
+}
+
+fn lower_panic() -> Result<odin_bytecode::OdinModuleData, String> {
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&panic_source_groups())
+        .map_err(|error| error.to_string())?;
+    let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
+    let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
+    let plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
+        .map_err(|error| error.to_string())?;
+    nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
+        .map_err(|error| error.to_string())
+}
+
+/// 纯 raw 片段里的 `std::types::panic` 文本实参：目标计划没有登记文本布局时，
+/// 入口槽的冻结事实就是 raw 宿主串，降低必须成功；只有计划已冻结 `Utf8` 布局
+/// 而槽解析不到时才允许失败关闭。
+#[test]
+fn panic_text_argument_follows_frozen_slot_carrier() {
+    lower_panic().expect("纯 raw 片段中的 `panic` 文本实参必须按冻结 raw 槽完成降低");
 }
