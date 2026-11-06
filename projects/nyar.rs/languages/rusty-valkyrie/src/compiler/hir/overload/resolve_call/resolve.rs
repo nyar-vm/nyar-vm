@@ -496,9 +496,23 @@ fn resolve_expr_calls_at(
         | HirExprKind::BlockOn(callee)
         | HirExprKind::YieldFrom(callee)
         | HirExprKind::Raise(callee)
-        | HirExprKind::Resume(callee)
-        | HirExprKind::Assign { value: callee, .. } => {
+        | HirExprKind::Resume(callee) => {
             resolve_expr_calls(callee, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
+        }
+        HirExprKind::Assign { target, value } => {
+            // 赋值值位置：期望类型是左值的声明类型（对照 `StoreField` 的字段写入），
+            // 不是外层表达式类型。`seen = HashMap::new(0)` 这类泛型构造必须靠左值类型
+            // 定下实例，否则 MIR 因缺少可调用实例把调用降为 Unit。
+            let target_type = locals.get(target.as_str()).cloned();
+            resolve_expr_calls(
+                value,
+                candidates,
+                type_relations,
+                locals,
+                struct_fields,
+                singleton_names,
+                target_type.as_ref().or(contextual_type),
+            )
         }
         HirExprKind::StoreField { object, field, value, field_id } => {
             resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);

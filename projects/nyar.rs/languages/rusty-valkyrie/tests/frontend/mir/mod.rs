@@ -12,6 +12,7 @@ mod mir_ssa_integer_literal_identity_tests;
 mod mir_ssa_labeled_tuple_tests;
 mod mir_ssa_match_lowering_bottom_type_tests;
 mod mir_ssa_nullable_null_tests;
+mod mir_ssa_assign_constructor_context_tests;
 mod mir_ssa_primitive_identity_carrier_tests;
 mod mir_ssa_single_quote_literal_tests;
 mod mir_ssa_overloaded_callable_label_tests;
