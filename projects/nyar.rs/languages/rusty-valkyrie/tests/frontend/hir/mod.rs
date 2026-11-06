@@ -29,6 +29,7 @@ mod hir_free_call_argument_context_tests;
 mod hir_operator_literal_argument_context_tests;
 mod hir_overload_identity_tests;
 mod hir_primitive_builtin_identity_tests;
+mod hir_same_file_overload_tests;
 mod hir_scalar_comparison_tests;
 #[cfg(false)] // AstToHir 已移除、类型签名变化（架构迁移）
 mod hir_overload_singleton_tests;

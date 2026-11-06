@@ -88,9 +88,15 @@ pub fn plan_semantic_closure_with_host_bindings(
         for (path, source) in group.files.iter() {
             match index_source_file(group.dependency_key, path, source, arch) {
                 Ok(indexed) => {
-                    for entry in &indexed.declarations {
+                    for entry in indexed.declarations.iter().cloned() {
+                        let key = entry.key.clone();
                         indexes.register(entry.clone());
-                        declaration_index.insert(entry.key.clone(), entry.clone());
+                        match declaration_index.get_mut(&key) {
+                            Some(existing) => merge_declaration_entry(existing, entry),
+                            None => {
+                                declaration_index.insert(key, entry);
+                            }
+                        }
                     }
                     for (variant, owner) in &indexed.variant_members {
                         indexes.register_variant(variant, owner);
@@ -371,6 +377,27 @@ fn enqueue_selected_host_providers(
         queue.push_back(binding.provider.clone());
     }
     Ok(())
+}
+
+/// 合并共享同一 `DeclarationKey` 的多条声明索引事实。
+///
+/// `DeclarationKey` 只编码「依赖组 + 文件 + namespace + 种类 + owner + 名字」，不含签名：
+/// 同一文件内的同名同 arity 顶层 `micro` 重载组（以及同 owner 的同名不同 arity 成员）
+/// 因此共享一个身份。需求展开按身份进行，同一身份下每条声明的引用/选择名事实都是
+/// 「目标模块能看见哪些声明」的上界来源，必须并集保留。只保留任一条会让其余重载
+/// 签名与体内的引用从闭包事实中消失（`std.math.abs(f64)` 的 `f64` 类型引用被同文件
+/// `abs(i64)` 覆盖），仅被它引用的聚合连同其运算符实现一起被裁掉，最终在下游降成
+/// 同文件同名候选无匹配的伪重载失败。
+fn merge_declaration_entry(existing: &mut DeclarationIndexEntry, incoming: DeclarationIndexEntry) {
+    existing.references.extend(incoming.references);
+    existing.selectors.extend(incoming.selectors);
+    existing.import_paths.extend(incoming.import_paths);
+    if existing.entry_point.is_none() {
+        existing.entry_point = incoming.entry_point;
+    }
+    if existing.link.is_none() {
+        existing.link = incoming.link;
+    }
 }
 
 /// 构造顶层 `micro` 的冻结声明身份。

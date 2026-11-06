@@ -139,6 +139,29 @@ fn namespace_chain_does_not_pull_same_name_from_other_namespace() {
 }
 
 #[test]
+fn same_file_same_name_micros_union_declaration_references() {
+    // 同一文件内同名同 arity 的顶层 `micro` 共享一个声明身份（身份不含签名）。
+    // 需求展开按身份进行，因此组内每条声明的引用事实都必须并集保留；否则只被
+    // 另一重载引用的类型会从闭包上界消失（同文件 `abs(i64)` 覆盖 `abs(f64)`）。
+    let groups = [
+        (
+            "std",
+            false,
+            vec![file(
+                "source/math/basic.v",
+                "namespace std.math;\nmicro abs(value: f64): f64 { return value }\nmicro abs(value: i64): i64 { return value }",
+            )],
+        ),
+        ("app", true, vec![file("solution.v", "namespace app;\n[export] micro probe(x: i64) -> i64 { return std::math::abs(x) }")]),
+    ];
+    let closure = plan_from_groups(&groups);
+    let abs = closure.declaration_index.values().find(|entry| entry.key.name == "abs").expect("`abs` 必须进入声明索引");
+    let references = abs.references.iter().map(|reference| reference.join("::")).collect::<BTreeSet<_>>();
+    assert!(references.contains("f64"), "同文件重载组必须保留 `f64` 签名引用: {references:?}");
+    assert!(references.contains("i64"), "同文件重载组必须保留 `i64` 签名引用: {references:?}");
+}
+
+#[test]
 fn member_reference_resolves_within_namespace_before_global_fallback() {
     let groups = [
         (
