@@ -924,6 +924,8 @@ pub enum TemplateConstruct {
     Match,
     /// 块内模板片段展开。
     BlockFragment,
+    /// 声明体（class / structure / singleton / trait）模板成员展开。
+    DeclarationBody,
 }
 
 /// TGrammar 模板展开的结构化失败原因。
@@ -975,6 +977,11 @@ pub enum TemplateFailure {
     FragmentNotMicroDeclaration {
         /// 重新解析产出的顶层项数量。
         produced_items: usize,
+    },
+    /// 声明体模板展开结果不是可保留的 `micro` 成员。
+    DeclarationMemberUnsupportedNode {
+        /// 无法保留的节点类别（稳定短名，不是 `Debug` 输出）。
+        kind: String,
     },
 }
 

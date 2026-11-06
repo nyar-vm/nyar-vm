@@ -3,7 +3,10 @@
 use crate::compiler::{
     hir::lowering::HirError,
     syntax::oak::{
-        ast::{Block, Statement, StatementNode, TemplateIf, TemplateLoop, TemplateMatch, TemplateNode, ValkyrieRoot},
+        ast::{
+            Block, MethodDeclaration, MicroDeclaration, Statement, StatementNode, StructureBody, TemplateIf, TemplateLoop, TemplateMatch,
+            TemplateNode, ValkyrieRoot,
+        },
         parse_source_with_language_and_identity, production_language,
     },
 };
@@ -40,13 +43,13 @@ fn expand_declaration_bodies(items: &mut [StatementNode], source: &str, arch: &s
         match item {
             StatementNode::Micro(micro) => expand_block(&mut micro.body, source, arch)?,
 
-            StatementNode::Class(class) => {
-                for method in &mut class.body.methods {
-                    if let Some(body) = &mut method.body {
-                        expand_block(body, source, arch)?;
-                    }
-                }
-            }
+            StatementNode::Class(class) => expand_structure_body(&mut class.body, source, arch)?,
+
+            StatementNode::Structure(structure) => expand_structure_body(&mut structure.body, source, arch)?,
+
+            StatementNode::Singleton(singleton) => expand_structure_body(&mut singleton.body, source, arch)?,
+
+            StatementNode::Trait(trait_declaration) => expand_structure_body(&mut trait_declaration.body, source, arch)?,
 
             StatementNode::Imply(imply) => {
                 for method in &mut imply.methods {
@@ -67,6 +70,63 @@ fn expand_declaration_bodies(items: &mut [StatementNode], source: &str, arch: &s
     }
 
     Ok(())
+}
+
+fn expand_structure_body(body: &mut StructureBody, source: &str, arch: &str) -> Result<(), HirError> {
+    let templates = std::mem::take(&mut body.templates);
+
+    // 模板成员与显式成员分列 AST 两处。模板分支体由 Oak 从片段文本重新解析，
+    // 分支成员的 span 是片段内偏移；能代表源码位置的是模板节点自身的 span。
+    // 因此以显式成员 span 与模板节点 span 为锚点分组，再按锚点恢复源码顺序。
+    let mut members: Vec<(usize, Vec<MethodDeclaration>)> =
+        std::mem::take(&mut body.methods).into_iter().map(|method| (method.span.start, vec![method])).collect();
+
+    for template in &templates {
+        let span = template_span(template);
+
+        let mut expanded = Vec::new();
+
+        for member in expand_template_to_statement_nodes(template, source, arch)? {
+            match member {
+                StatementNode::Micro(micro) => expanded.push(micro_to_method(*micro)),
+
+                other => {
+                    return Err(HirError::template_expansion_failed(
+                        TemplateConstruct::DeclarationBody,
+                        TemplateFailure::DeclarationMemberUnsupportedNode { kind: statement_node_kind(&other).to_string() },
+                        span.clone(),
+                    ));
+                }
+            }
+        }
+
+        members.push((span.start, expanded));
+    }
+
+    members.sort_by_key(|(start, _)| *start);
+
+    body.methods = members.into_iter().flat_map(|(_, methods)| methods).collect();
+
+    for method in &mut body.methods {
+        if let Some(method_body) = &mut method.body {
+            expand_block(method_body, source, arch)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn micro_to_method(micro: MicroDeclaration) -> MethodDeclaration {
+    MethodDeclaration {
+        name: micro.name,
+        generics: micro.generics,
+        parameters: micro.params,
+        return_type: micro.return_type,
+        where_constraints: micro.where_constraints,
+        body: if micro.is_abstract { None } else { Some(micro.body) },
+        annotations: micro.annotations,
+        span: micro.span,
+    }
 }
 
 fn expand_block(block: &mut Block, source: &str, arch: &str) -> Result<(), HirError> {

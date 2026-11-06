@@ -3,7 +3,7 @@ use rusty_valkyrie::compiler::syntax::oak::{
     parse_source,
 };
 
-use rusty_valkyrie::compiler::hir::lowering::expand_templates_in_root;
+use rusty_valkyrie::compiler::hir::lowering::{HirError, expand_templates_in_root};
 
 #[test]
 
@@ -231,4 +231,82 @@ return 1
         panic!("expected micro")
     };
     assert!(micro.body.statements.is_empty());
+}
+
+#[test]
+fn expands_trait_body_template_members_in_source_order() {
+    let source = r#"trait T {
+    micro before(self) -> bool
+<% match arch %>
+<% case "wasm32" %>
+    micro inside(self) -> bool
+<% end %>
+    micro after(self) -> bool
+}"#;
+    let mut root = parse_source(source).expect("parse");
+    expand_templates_in_root(&mut root, source, "wasm32").expect("expand");
+    let StatementNode::Trait(trait_declaration) = &root.items[0]
+    else {
+        panic!("expected trait")
+    };
+    assert!(trait_declaration.body.templates.is_empty(), "body templates should be consumed");
+    let names: Vec<&str> = trait_declaration.body.methods.iter().map(|method| method.name.name.as_str()).collect();
+    assert_eq!(names, ["before", "inside", "after"], "template member must be restored at its source position");
+}
+
+#[test]
+fn expands_gated_iterator_style_trait_template_for_non_clr_arch() {
+    let source = r#"namespace std.iterator;
+trait Iterator {
+    type Item;
+    micro has_next(self): bool
+    micro next(mut self): Option<Item>
+    <% match arch %>
+    <% case "clr" %>
+    <% else %>
+    micro map<U>(self, f: micro(Item) -> U) -> MapIterator<Item, U, Self> {
+        return MapIterator { _iter: self, _mapper: f }
+    }
+    micro filter(self, pred: micro(Item) -> bool) -> FilterIterator<Item, Self> {
+        return FilterIterator { _iter: self, _predicate: pred }
+    }
+    micro filter_map<U>(self, f: micro(Item) -> Option<U>) -> FilterMapIterator<Item, U, Self> {
+        return FilterMapIterator { _iter: self, _mapper: f }
+    }
+    micro skip_while(self, pred: micro(Item) -> bool) -> SkipWhileIterator<Item, Self> {
+        return SkipWhileIterator { _iter: self, _predicate: pred, _skipped: false }
+    }
+    micro take_while(self, pred: micro(Item) -> bool) -> TakeWhileIterator<Item, Self> {
+        return TakeWhileIterator { _iter: self, _predicate: pred, _done: false }
+    }
+    <% end %>
+}"#;
+    let mut root = parse_source(source).expect("parse");
+    expand_templates_in_root(&mut root, source, "ovm").expect("expand");
+    let trait_declaration = root
+        .items
+        .iter()
+        .find_map(|item| match item {
+            StatementNode::Trait(trait_declaration) => Some(trait_declaration.as_ref()),
+            _ => None,
+        })
+        .expect("trait");
+    let names: Vec<&str> = trait_declaration.body.methods.iter().map(|method| method.name.name.as_str()).collect();
+    assert_eq!(names, ["has_next", "next", "map", "filter", "filter_map", "skip_while", "take_while"]);
+}
+
+#[test]
+fn rejects_non_micro_template_member_in_trait_body() {
+    let source = r#"trait T {
+<% match arch %>
+<% case "wasm32" %>
+structure S { x: i32 }
+<% end %>
+}"#;
+    let mut root = parse_source(source).expect("parse");
+    let error = expand_templates_in_root(&mut root, source, "wasm32").expect_err("non-micro template member must fail");
+    assert!(matches!(error, HirError::TemplateExpansionFailed { .. }));
+    let message = error.to_string();
+    assert!(message.contains("declaration body"), "unexpected message: {message}");
+    assert!(message.contains("structure"), "unexpected message: {message}");
 }

@@ -84,6 +84,9 @@ impl From<HirError> for DiagnosticRow {
                 if let TemplateFailure::FragmentNotMicroDeclaration { produced_items } = failure {
                     row = row.with_arg("produced_items", DiagnosticArg::Int(*produced_items as i64));
                 }
+                if let TemplateFailure::DeclarationMemberUnsupportedNode { kind } = failure {
+                    row = row.with_arg("node_kind", DiagnosticArg::String(kind.clone()));
+                }
             }
             HirError::MatchRecoveryFailed { stage, pattern, .. } => {
                 row = row.with_arg("stage", DiagnosticArg::String(match_recovery_stage_name(*stage).to_string()));
@@ -414,6 +417,7 @@ pub(super) fn template_construct_name(construct: TemplateConstruct) -> &'static 
         TemplateConstruct::Loop => "loop",
         TemplateConstruct::Match => "match",
         TemplateConstruct::BlockFragment => "block_fragment",
+        TemplateConstruct::DeclarationBody => "declaration_body",
     }
 }
 
@@ -438,6 +442,7 @@ pub(super) fn template_failure_name(failure: &TemplateFailure) -> &'static str {
         TemplateFailure::NonArchScrutinee => "non_arch_scrutinee",
         TemplateFailure::BlockFragmentUnsupportedNode { .. } => "block_fragment_unsupported_node",
         TemplateFailure::FragmentNotMicroDeclaration { .. } => "fragment_not_micro_declaration",
+        TemplateFailure::DeclarationMemberUnsupportedNode { .. } => "declaration_member_unsupported_node",
     }
 }
 
@@ -463,6 +468,9 @@ pub(super) fn template_failure_message(failure: &TemplateFailure) -> String {
         TemplateFailure::BlockFragmentUnsupportedNode { kind } => return format!("expanded `{kind}` cannot be kept inside a block"),
         TemplateFailure::FragmentNotMicroDeclaration { produced_items } => {
             return format!("expanded meta expression produced {produced_items} top-level items instead of one `micro` declaration");
+        }
+        TemplateFailure::DeclarationMemberUnsupportedNode { kind } => {
+            return format!("expanded `{kind}` cannot be kept inside a declaration body");
         }
     }
     .to_string()
