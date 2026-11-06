@@ -636,3 +636,69 @@ fn unbound_contract_error_stays_structured_and_does_not_degrade() {
     };
     assert!(with_facts.to_string().contains("is gated out"), "有事实时必须追加 gate 提示: {with_facts}");
 }
+
+#[test]
+fn provider_forwarding_to_dependency_body_rewrites_nested_contract_call() {
+    // 回归（`Utf8Case` 形态）：provider 体转发到依赖组内**有体普通函数**，该普通函数
+    // 再调用无体 `[host_contract]`。首轮链接看不到被转发实现，绑定阶段的调用改写也只
+    // 覆盖消费模块内函数；被转发实现只能由二次链接迁入。链接器必须用规范化后的副本
+    // 扫边与入栈，否则未改写的合同调用会以空 `host()` 链接进入 canonical，后端拒绝编码。
+    let library = "namespace demo;\n\
+        [host_contract] micro lower(value: i32): i32\n\
+        [host_contract] micro shift(a: i32, b: i32): i32\n\
+        micro passthrough(value: i32) -> i32 { return shift(value, 1) }\n\
+        [host_provider(demo::lower)] micro host_lower(value: i32) -> i32 { return passthrough(value) }\n\
+        [host_provider(demo::shift)] [wasm_operator(\"i32.add\")] micro i32_shift(a: i32, b: i32): i32";
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source("lib", "demo", library).with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "app",
+            "app",
+            "namespace app;\nusing demo::{lower, shift};\n[main] micro main() -> i32 { return shift(lower(1), 2) }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into(), "lib".into()]),
+    ];
+    let namespace = ["demo".to_string()];
+    let bindings = vec![
+        CompilerHostProviderBinding {
+            contract: micro_declaration_key("lib", "demo.v", &namespace, "lower"),
+            provider: micro_declaration_key("lib", "demo.v", &namespace, "host_lower"),
+            required_capabilities: vec![],
+            foreign_bindings: vec![],
+        },
+        CompilerHostProviderBinding {
+            contract: micro_declaration_key("lib", "demo.v", &namespace, "shift"),
+            provider: micro_declaration_key("lib", "demo.v", &namespace, "i32_shift"),
+            required_capabilities: vec![],
+            foreign_bindings: vec![],
+        },
+    ];
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
+        .expect("provider 转发体内的无体合同必须经二次链接改写，不得残留空 host 链接");
+    let canonical = program.canonical();
+    assert_eq!(user_linked_import_count(canonical), 1, "二次链接只应保留 provider 自身的目标绑定导入");
+    let user_import = canonical
+        .linked
+        .imports
+        .values()
+        .find(|import| {
+            let label = import.capability.to_string();
+            !label.ends_with("::begin_phase") && !label.ends_with("::end_phase")
+        })
+        .expect("provider 目标绑定导入必须存在");
+    assert!(user_import.link.matches_platform_tag("wasm-operator"), "link={:?}", user_import.link);
+    assert_eq!(user_import.link.locator_segments(), &["i32.add"]);
+    assert!(
+        !canonical
+            .linked
+            .imports
+            .values()
+            .any(|import| import.link.matches_boundary("host")
+                && import.link.platform_tag.is_none()
+                && import.link.locator_segments.is_empty()),
+        "二次链接不得把被转发实现里的无体合同残留为空 host 链接"
+    );
+}

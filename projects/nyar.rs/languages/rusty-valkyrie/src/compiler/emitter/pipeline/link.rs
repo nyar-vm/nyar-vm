@@ -157,7 +157,21 @@ pub fn link_reachable_dependency_mir_with_hir(
             continue;
         }
         if let Some((module, function)) = definitions.get(&instance) {
-            for block in &function.blocks {
+            // 依赖原件仍持有绑定前的调用图：先按已生效改写表规范化，再用同一副本扫边。
+            // 只做 push 侧的聚合重映射不足以阻断 BFS——它仍会沿合同边把 `host()` 空链接
+            // 原样推进 external_calls，后端随后拒绝编码。consumer 自有函数已由
+            // `apply_host_provider_bindings` 改写，二次套用会搬移已冻结的聚合身份。
+            let from_dependency = !std::ptr::eq(*module, &*consumer);
+            let mut normalized = (*function).clone();
+            if from_dependency {
+                let module_index = std::iter::once(&*consumer)
+                    .chain(dependency_mirs)
+                    .position(|candidate| std::ptr::eq(candidate, *module))
+                    .ok_or_else(|| ParseError::Invalid { message: "依赖模块身份不在当前源码闭包中".into(), span: None })?;
+                remap_function_aggregates(&mut normalized, &remaps[module_index])?;
+                remap_call_targets(&mut normalized, host_binding_remaps);
+            }
+            for block in &normalized.blocks {
                 for instruction in &block.instructions {
                     match &instruction.kind {
                         MirOperation::Call { callee: MirOperand::Callable(callee), .. } => pending.push(*callee),
@@ -166,18 +180,12 @@ pub fn link_reachable_dependency_mir_with_hir(
                     }
                 }
             }
-            if !std::ptr::eq(*module, &*consumer) {
-                let symbol = format!("{}#{}", function.display_symbol, instance.index());
+            if from_dependency {
+                let symbol = format!("{}#{}", normalized.display_symbol, instance.index());
                 if let Err(detail) = linked.register_callable_symbol(instance, symbol) {
                     return Err(ParseError::Invalid { message: detail, span: None });
                 }
-                let module_index = std::iter::once(&*consumer)
-                    .chain(dependency_mirs)
-                    .position(|candidate| std::ptr::eq(candidate, *module))
-                    .ok_or_else(|| ParseError::Invalid { message: "依赖模块身份不在当前源码闭包中".into(), span: None })?;
-                let mut function = (*function).clone();
-                remap_function_aggregates(&mut function, &remaps[module_index])?;
-                linked.functions.push(function);
+                linked.functions.push(normalized);
             }
         }
         else if let Some(contract) = imports.get(&instance) {
