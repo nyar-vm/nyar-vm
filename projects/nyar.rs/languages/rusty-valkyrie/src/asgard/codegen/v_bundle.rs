@@ -14,14 +14,14 @@ use crate::asgard::{
 /// 生成单元自带的标量声明。
 ///
 /// 生成源码是封闭编译单元：HIR 只让生成组看到应用自身导出的声明，依赖包（std）
-/// 的 `[primitive]` 声明不进入可见面。生成代码却直接用 `i32`/`bool` 拼写并传字面量，
+/// 的 `[primitive]` 声明不进入可见面。生成代码却直接用 `i32` 拼写并传字面量，
 /// 字面量只有落在 `[primitive]` 身份上才能参与重载匹配；缺少声明时 `sig_set_i32(sv, 0)`
-/// 这类调用会以「无可行重载」失败。这里声明生成单元实际用到的标量拼写。
+/// 这类调用会以「无可行重载」失败。这里只声明数值标量 `i32`。
+///
+/// `bool` 不在这里声明：它是语言编码型内建（类型名解析时 `encoding_builtin_type` 优先于
+/// 同名声明），本地声明只会成为同一身份的重复载体；移除必须与跨 surface 别名登记同批。
 const GENERATED_SCALAR_PRELUDE: &str = r#"[primitive("std::primitive::i32")]
 structure i32 { }
-
-[primitive("std::primitive::bool")]
-structure bool { }
 
 "#;
 

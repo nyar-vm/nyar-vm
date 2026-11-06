@@ -8,12 +8,10 @@ use rusty_valkyrie::asgard::{
 };
 
 /// 生成单元（`awsl_hydrate_*` 一类宿主调用）的最小形态：签名用裸 `i32`/`utf8` 拼写，
-/// 调用点直接传整数字面量。生成单元不继承依赖包的语义导出，因此必须自带标量声明。
+/// 调用点直接传整数字面量。生成单元不继承依赖包的语义导出，因此必须自带数值标量声明；
+/// `bool` 是编码型内建，不需要也不应重声明。
 const GENERATED_UNIT_SCALAR_SHAPE: &str = r#"[primitive("std::primitive::i32")]
 structure i32 { }
-
-[primitive("std::primitive::bool")]
-structure bool { }
 
 micro dom_create_text(text: utf8): i32 { }
 micro rx_bind_text_utf8(handle: i32, expr_export: utf8, dep1: i32, dep2: i32) { }
@@ -41,8 +39,8 @@ let mut label: utf8 = ""
         "生成单元必须自带 `i32` 标量声明"
     );
     assert!(
-        v_source.contains("[primitive(\"std::primitive::bool\")]"),
-        "生成单元必须自带 `bool` 标量声明"
+        !v_source.contains("structure bool"),
+        "`bool` 是编码型内建，生成单元不得重声明"
     );
     ValkyrieCompiler::default()
         .compile_source(GENERATED_UNIT_SCALAR_SHAPE)
@@ -53,7 +51,7 @@ let mut label: utf8 = ""
 #[test]
 fn generated_unit_without_scalar_declarations_rejects_literal_arguments() {
     let without = GENERATED_UNIT_SCALAR_SHAPE.replacen(
-        "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[primitive(\"std::primitive::bool\")]\nstructure bool { }\n\n",
+        "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n",
         "",
         1,
     );

@@ -111,7 +111,9 @@ pub fn plan_semantic_closure_with_host_bindings(
     }
     // Primitive 自举身份表必须在可见性与需求展开之前建立：`[primitive("…")]` 的意义就是
     // 让 std 尚未进入闭包时，编译器仍能按声明携带的身份识别类型、分配 carrier 布局。
-    // 重复或畸形身份在这里结构化失败，不允许下游按短名回退放行。
+    // 记录自带 `DeclarationKey.dependency_key`，即声明所属可见面：同一依赖组内重复身份
+    // 在这里结构化失败，不允许下游按短名回退放行；跨依赖组同一身份是别名载体
+    //（封闭生成单元为宿主调用重声明自己用到的标量拼写），规范 owner 优先非生成组。
     let primitive_identities = super::primitive_identity::build_primitive_identity_table(
         indexed_files.values().flat_map(|file| file.primitive_identities.iter().cloned()),
     )?;

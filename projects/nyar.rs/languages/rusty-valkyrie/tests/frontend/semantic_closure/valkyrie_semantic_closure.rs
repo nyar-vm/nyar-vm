@@ -569,8 +569,42 @@ fn primitive_annotations_register_bootstrap_identities_before_visibility() {
 }
 
 #[test]
+fn cross_surface_primitive_identity_is_alias_with_non_generated_owner() {
+    // 封闭生成单元（`asgard.generated`）为宿主调用重声明自己用到的标量拼写：它与 std 的
+    // `[primitive]` 声明同身份但不是第二个 primitive。跨 surface（不同依赖组）同身份必须
+    // 登记为别名载体，规范 owner 是 std；inventory 按依赖组键排序，生成组先登记，
+    // 因此这条同时证明「生成组让位给非生成组」而不是先到先得。
+    let groups = [
+        (
+            "std",
+            false,
+            vec![
+                file("source/primitive/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }"),
+                file("source/primitive/bool.v", "namespace std.primitive;\n[primitive(\"std::primitive::bool\")]\nstructure bool { }"),
+            ],
+        ),
+        (
+            "asgard.generated",
+            true,
+            vec![file(
+                "asgard/generated.v",
+                "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[primitive(\"std::primitive::bool\")]\nstructure bool { }\n\n[export] micro run() -> i32 { return 0 }",
+            )],
+        ),
+    ];
+    // 生成组只依赖应用入口组，std 不在其可见面；身份登记与可见性无关，跨组同身份仍须收成别名。
+    let closure = plan_with_visibility(&groups, &[&[], &[]]);
+    assert_eq!(closure.primitive_identities.len(), 2, "每个身份只保留规范 owner 一条记录");
+    for identity in ["std::primitive::i32", "std::primitive::bool"] {
+        let entry = closure.primitive_identities.get(identity).unwrap_or_else(|| panic!("`{identity}` 必须登记"));
+        assert_eq!(entry.declaration.dependency_key, "std", "`{identity}` 的规范 owner 必须是非生成组: {:?}", entry.declaration);
+        assert_eq!(closure.primitive_identities.identity_of(&entry.declaration), Some(identity));
+    }
+}
+
+#[test]
 fn duplicate_primitive_identity_is_structured_failure() {
-    // 同一编译内两个声明携带同一自举身份：不得择一登记。
+    // 同一 surface（同一依赖组）内两个声明携带同一自举身份：不得择一登记。
     let groups = [
         (
             "core",

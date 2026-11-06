@@ -5,7 +5,10 @@
 //! 判定——这正是 `[primitive(...)]` 注解存在的意义（解决先有鸡还是先有蛋）。
 //!
 //! 本表在闭包源码索引完成后、可见性与需求展开之前建立：键是声明携带的身份字符串
-//! （不是短名），同一编译内身份必须唯一。重复或畸形身份结构化失败，不允许名字表放行。
+//! （不是短名）。身份唯一性按可见面（依赖组）成立：同一依赖组（`DeclarationKey.dependency_key`）
+//! 内重复或畸形身份结构化失败，不允许名字表放行；跨依赖组携带同一身份是别名载体——
+//! 封闭生成单元会为宿主调用重声明自己用到的标量拼写，它不是依赖包声明的第二个 primitive，
+//! 规范 owner 优先非生成组。
 
 use std::collections::BTreeMap;
 
@@ -86,18 +89,45 @@ pub(crate) fn primitive_annotation_identity(annotations: &[ast::Attribute]) -> O
     None
 }
 
-/// 校验身份字符串形态并登记成表；重复或畸形身份结构化失败。
+/// 封闭生成单元的依赖组键（`asgard::compile::compiler_input_for` 分配的组身份）。
+///
+/// 生成源码组不能继承依赖包的语义导出，会为重声明自己用到的标量拼写；这类声明是
+/// 同一 primitive 身份的生成侧载体，登记时让位于非生成组的规范 owner。
+const GENERATED_SOURCE_GROUP_KEY: &str = "asgard.generated";
+
+/// 声明是否属于封闭生成单元。
+fn is_generated_source_group(declaration: &DeclarationKey) -> bool {
+    declaration.dependency_key == GENERATED_SOURCE_GROUP_KEY
+}
+
+/// 校验身份字符串形态并登记成表。
+///
+/// 同一依赖组（同一可见面）内重复身份结构化失败，不得择一登记；跨依赖组携带同一身份
+/// 是别名载体，规范 owner 优先非生成组（已有记录是生成组且候选不是时改登记候选）。
+/// 两个非生成组跨组登记时保持先登记：inventory 按依赖组键有序遍历，结果确定。
 pub(crate) fn build_primitive_identity_table(
     records: impl IntoIterator<Item = (DeclarationKey, String)>,
 ) -> Result<PrimitiveIdentityTable, SemanticClosureError> {
     let mut table = PrimitiveIdentityTable::default();
     for (declaration, identity) in records {
         validate_primitive_identity_format(&declaration, &identity)?;
-        if let Some(existing) = table.by_identity.get(&identity) {
-            return Err(SemanticClosureError::DuplicatePrimitiveIdentity {
-                identity,
-                declarations: vec![existing.declaration.encoded(), declaration.encoded()],
-            });
+        // 先取出已有记录的 surface 事实，避免持有表内引用时改写表。
+        let existing = table.by_identity.get(&identity).map(|item| {
+            (item.declaration.dependency_key.clone(), item.declaration.encoded(), is_generated_source_group(&item.declaration))
+        });
+        if let Some((surface, encoded, existing_is_generated)) = existing {
+            if surface == declaration.dependency_key {
+                return Err(SemanticClosureError::DuplicatePrimitiveIdentity {
+                    identity,
+                    declarations: vec![encoded, declaration.encoded()],
+                });
+            }
+            // 跨 surface：别名载体。只有「生成组让位给非生成组」会改写规范 owner，
+            // 其余跨组登记保持先登记，别名声明不进入本表。
+            if existing_is_generated && !is_generated_source_group(&declaration) {
+                table.by_identity.insert(identity.clone(), PrimitiveIdentity { identity, declaration });
+            }
+            continue;
         }
         table.by_identity.insert(identity.clone(), PrimitiveIdentity { identity, declaration });
     }
