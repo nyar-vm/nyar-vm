@@ -151,12 +151,82 @@ fn emit_component_call_wrappers(out: &mut String, component: &LoweredComponent) 
         if let Some(rest) = trimmed.strip_prefix("micro ") {
             if let Some(micro_name) = rest.split(|c: char| c.is_whitespace() || c == '(').next() {
                 if !micro_name.is_empty() {
-                    writeln!(out, "micro awsl_call_{micro_name}() {{\n    {micro_name}()\n}}\n").unwrap();
+                    let Some((params, forwarded)) = mirror_micro_parameters(rest)
+                    else {
+                        continue;
+                    };
+                    writeln!(out, "micro awsl_call_{micro_name}({params}) {{\n    {micro_name}({forwarded})\n}}\n").unwrap();
                 }
             }
         }
     }
     let _ = component.route_name.as_str();
+}
+
+/// 提取 `micro` 头部形参文本并按名生成转发实参。
+///
+/// 事件生成侧按 `awsl_call_{handler}(arg)` 调用包装器，包装器必须镜像原 micro
+/// 的形参并逐个转发，否则包装体内会退化成 0 实参调用。形参无法解析时返回
+/// `None`：调用方跳过包装，让缺失的 `awsl_call_*` 在调用点硬失败，禁止生成
+/// 一个静默丢参的包装。
+fn mirror_micro_parameters(rest: &str) -> Option<(&str, String)> {
+    let open = rest.find('(')?;
+    // 形参括号必须出现在函数体之前：函数体里的调用括号不是签名。
+    if let Some(brace) = rest.find('{') {
+        if brace < open {
+            return None;
+        }
+    }
+    let mut depth = 0usize;
+    let mut close = None;
+    for (offset, ch) in rest[open..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    close = Some(open + offset);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let params = rest[open + 1..close?].trim();
+    if params.is_empty() {
+        return Some((params, String::new()));
+    }
+    let mut forwarded = Vec::new();
+    for part in split_top_level_commas(params) {
+        let part = part.trim();
+        let name = part.split(':').next().unwrap_or("").trim();
+        let name = name.strip_prefix("mut ").unwrap_or(name).trim();
+        if name.is_empty() {
+            return None;
+        }
+        forwarded.push(name.to_string());
+    }
+    Some((params, forwarded.join(", ")))
+}
+
+/// 按顶层逗号切分形参，括号/方括号/花括号/尖括号内的逗号不参与切分。
+fn split_top_level_commas(params: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (index, ch) in params.char_indices() {
+        match ch {
+            '(' | '[' | '{' | '<' => depth += 1,
+            ')' | ']' | '}' | '>' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(&params[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&params[start..]);
+    parts
 }
 
 fn emit_component_sig_exports(out: &mut String, component: &LoweredComponent) {
