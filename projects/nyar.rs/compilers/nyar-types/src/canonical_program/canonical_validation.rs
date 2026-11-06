@@ -819,8 +819,16 @@ impl CanonicalSemanticMir {
                             else {
                                 return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
                             };
-                            if instruction.results.len() != 1
-                                || !matches!(linked.types.get(result).map(|row| &row.kind), Some(CanonicalTypeKind::Tuple(members)) if members == element_types)
+                            // 标签属于类型身份，`TupleNew` 只按位置构造：结果允许
+                            // `LabeledTuple`，但元素类型必须与 `element_types` 逐一相等。
+                            let kind_matches = match linked.types.get(result).map(|row| &row.kind) {
+                                Some(CanonicalTypeKind::Tuple(members)) => members == element_types,
+                                Some(CanonicalTypeKind::LabeledTuple { fields }) => {
+                                    fields.iter().map(|(_, ty)| ty).eq(element_types.iter())
+                                }
+                                _ => false,
+                            };
+                            if instruction.results.len() != 1 || !kind_matches
                             {
                                 return Err(if instruction.results.len() == 1 {
                                     CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }

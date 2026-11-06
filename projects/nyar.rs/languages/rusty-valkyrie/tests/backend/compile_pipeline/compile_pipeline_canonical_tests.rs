@@ -3,7 +3,10 @@ use rusty_valkyrie::{
     MirConstant, MirFunction, MirOperand, MirOperation, MirTerminator, MirValueOrigin,
     compiler::emitter::pipeline::canonical_program_from_semantic_mir,
     mir::{AggregateLayoutPlan, MirBlock, MirBlockRef, MirExternalCallContract, MirInstruction, MirModule, MirValue, MirValueRef},
-    types::{Identifier, NamePath, hir::ValkyrieType},
+    types::{
+        Identifier, NamePath,
+        hir::{HirTupleField, ValkyrieType},
+    },
 };
 use std::collections::BTreeMap;
 
@@ -581,4 +584,114 @@ micro __i32_pow(lhs: i32, rhs: i32): i32 {
 }"#,
         )
         .expect("__i32_pow must reach canonical with mutable loop locals");
+}
+
+fn labeled_tuple_new_module(element_types: Vec<ValkyrieType>) -> MirModule {
+    let first = MirValueRef(0);
+    let second = MirValueRef(1);
+    let result = MirValueRef(2);
+    let result_ty = ValkyrieType::LabeledTuple(vec![
+        HirTupleField { name: Identifier::new("ordinal"), ty: ValkyrieType::Integer32 { signed: true } },
+        HirTupleField { name: Identifier::new("value"), ty: ValkyrieType::Integer32 { signed: true } },
+    ]);
+    let value_types = BTreeMap::from([(first, element_types[0].clone()), (second, element_types[1].clone()), (result, result_ty.clone())]);
+    let mut module = MirModule {
+        name: "demo".into(),
+        functions: vec![MirFunction {
+            display_symbol: "demo::main".into(),
+            symbol: NamePath::new(vec![Identifier::new("demo"), Identifier::new("main")]),
+            declaration: Some(ItemId::from_index(0).unwrap()),
+            instance: Some(ItemInstanceId::from_index(0).unwrap()),
+            return_type: result_ty.clone(),
+            param_types: element_types.clone(),
+            value_types,
+            entry: MirBlockRef(0),
+            values: vec![
+                MirValue { id: first, origin: MirValueOrigin::Parameter { index: 0, name: "ordinal".into() } },
+                MirValue { id: second, origin: MirValueOrigin::Parameter { index: 1, name: "value".into() } },
+                MirValue { id: result, origin: MirValueOrigin::CallResult },
+            ],
+            blocks: vec![MirBlock {
+                id: MirBlockRef(0),
+                label: "entry".into(),
+                parameters: vec![first, second],
+                instructions: vec![MirInstruction::from_operation_with_results(
+                    MirOperation::TupleNew { fields: vec![MirOperand::Value(first), MirOperand::Value(second)] },
+                    vec![result],
+                )],
+                terminator: MirTerminator::Return { value: Some(MirOperand::Value(result)) },
+            }],
+        }],
+        structs: Vec::new(),
+        imports: Vec::new(),
+        external_calls: Vec::new(),
+        exports: Vec::new(),
+        entries: Vec::new(),
+        callable_symbols: BTreeMap::from([(ItemInstanceId::from_index(0).unwrap(), "demo::main".to_owned())]),
+        type_identities: BTreeMap::new(),
+        aggregate_layouts: AggregateLayoutPlan::default(),
+        sum_types: Vec::new(),
+        flags_types: Vec::new(),
+        singleton_instances: Vec::new(),
+        semantic_fragments: Vec::new(),
+        diagnostics: Vec::new(),
+    };
+    module.type_identities =
+        rusty_valkyrie::compiler::mir::ssa::type_identity_table(&module.functions, &module.external_calls, &module.structs, &module.sum_types);
+    module
+}
+
+fn labeled_tuple_labels(program: &nyar_types::CanonicalProgram) -> Option<Vec<String>> {
+    program.linked.types.values().find_map(|record| match &record.kind {
+        CanonicalTypeKind::LabeledTuple { fields } => Some(fields.iter().map(|(name, _)| name.to_string()).collect()),
+        _ => None,
+    })
+}
+
+#[test]
+fn labeled_tuple_registers_labels_in_canonical_type_table() {
+    let output = rusty_valkyrie::ValkyrieCompiler::default()
+        .compile_source_to_program(
+            r#"[primitive("std::primitive::i32")]
+structure i32 { }
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+micro pair(p: (ordinal: i32, value: i64)) -> (ordinal: i32, value: i64) {
+    return p
+}"#,
+        )
+        .expect("带标签元组必须完成 canonical 登记");
+    assert_eq!(
+        labeled_tuple_labels(output.canonical()),
+        Some(vec!["ordinal".to_owned(), "value".to_owned()]),
+        "标签是类型身份的一部分，不得按位置降级成 Tuple"
+    );
+}
+
+#[test]
+fn tuple_new_with_labeled_tuple_result_registers_labels_and_validates_by_position() {
+    let module = labeled_tuple_new_module(vec![ValkyrieType::Integer32 { signed: true }, ValkyrieType::Integer32 { signed: true }]);
+    let program = canonical_program_from_semantic_mir(&module).expect("带标签元组的 TupleNew 应按位置通过元素合同");
+    assert_eq!(labeled_tuple_labels(&program), Some(vec!["ordinal".to_owned(), "value".to_owned()]));
+    assert!(
+        program
+            .mir
+            .functions
+            .values()
+            .flat_map(|function| function.blocks.values())
+            .flat_map(|block| block.instructions.iter())
+            .any(|instruction| matches!(instruction.operation, CanonicalOperation::TupleNew { .. }))
+    );
+}
+
+#[test]
+fn tuple_new_rejects_labeled_tuple_with_mismatched_field_types() {
+    let module = labeled_tuple_new_module(vec![ValkyrieType::Integer32 { signed: true }, ValkyrieType::Utf8]);
+    let error = canonical_program_from_semantic_mir(&module).expect_err("字段类型不匹配不得被静默按位置擦除");
+    assert_eq!(error.records[0].code, "CAN015", "字段类型不匹配不得被静默按位置擦除：{error:?}");
+    assert!(
+        error.records[0].message.contains("OperationOperandTypeMismatch"),
+        "字段类型不匹配必须定位到具体操作数，而不是退化成类型登记失败：{error:?}"
+    );
 }

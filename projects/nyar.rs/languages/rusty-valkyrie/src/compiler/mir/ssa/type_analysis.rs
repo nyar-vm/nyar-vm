@@ -18,6 +18,7 @@ pub(super) fn type_contains_placeholder(ty: &ValkyrieType, include_generic_binde
         ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
             items.iter().any(|item| type_contains_placeholder(item, include_generic_binders))
         }
+        ValkyrieType::LabeledTuple(fields) => fields.iter().any(|field| type_contains_placeholder(&field.ty, include_generic_binders)),
         ValkyrieType::Function(function) => {
             function.params.iter().any(|param| type_contains_placeholder(param, include_generic_binders))
                 || type_contains_placeholder(&function.return_type, include_generic_binders)
@@ -82,6 +83,7 @@ pub fn type_identity_table(
             ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
                 items.iter().any(contains_unresolved_type_ref)
             }
+            ValkyrieType::LabeledTuple(fields) => fields.iter().any(|field| contains_unresolved_type_ref(&field.ty)),
             ValkyrieType::Function(f) => {
                 f.params.iter().any(|p| contains_unresolved_type_ref(p)) || contains_unresolved_type_ref(&f.return_type)
             }
@@ -112,6 +114,11 @@ pub fn type_identity_table(
             ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
                 for item in items {
                     collect(set, item, strict);
+                }
+            }
+            ValkyrieType::LabeledTuple(fields) => {
+                for field in fields {
+                    collect(set, &field.ty, strict);
                 }
             }
             ValkyrieType::Function(function) => {

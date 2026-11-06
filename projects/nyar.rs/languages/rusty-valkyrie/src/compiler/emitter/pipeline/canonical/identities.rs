@@ -379,6 +379,11 @@ fn intern_type(ids: &mut BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType, next
                 intern_type(ids, argument, next)?;
             }
         }
+        ValkyrieType::LabeledTuple(fields) => {
+            for field in fields {
+                intern_type(ids, &field.ty, next)?;
+            }
+        }
         ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => intern_type(ids, element, next)?,
         ValkyrieType::FixedArray { element, .. } => intern_type(ids, element, next)?,
         ValkyrieType::Function(function) => {
@@ -537,6 +542,15 @@ pub(crate) fn canonical_type_kind(
             ));
         }
         ValkyrieType::Tuple(items) => CanonicalTypeKind::Tuple(items.iter().map(id).collect::<Result<_, _>>()?),
+        // 标签是类型身份的一部分：`LabeledTuple` 登记为独立 kind，不折成 `Tuple`。
+        // 字段顺序即位置身份，与 `CanonicalTypeKind::LabeledTuple` 的定义逐字段一致。
+        ValkyrieType::LabeledTuple(fields) => {
+            let mut labeled = Vec::with_capacity(fields.len());
+            for field in fields {
+                labeled.push((field.name.clone(), id(&field.ty)?));
+            }
+            CanonicalTypeKind::LabeledTuple { fields: labeled }
+        }
         ValkyrieType::Array(element) => CanonicalTypeKind::Array { element: id(element)?, length: None },
         ValkyrieType::FixedArray { element, length } => CanonicalTypeKind::Array { element: id(element)?, length: Some(*length as u64) },
         ValkyrieType::Nullable(element) => CanonicalTypeKind::Nullable(id(element)?),

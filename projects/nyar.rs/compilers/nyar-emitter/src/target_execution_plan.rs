@@ -1125,7 +1125,11 @@ fn lower_operation(
         CanonicalOperation::TupleNew { fields, element_types } => {
             let result = instruction.results.first().copied().ok_or_else(|| format!("TupleNew 缺少结果值"))?;
             let result_type = value_type(result)?;
-            if !matches!(program.linked.types.get(&result_type).map(|row| &row.kind), Some(nyar_types::CanonicalTypeKind::Tuple(_))) {
+            // 标签只属于 canonical 身份；目标布局按位置，带标签元组与位置元组共享同一构造合同。
+            if !matches!(
+                program.linked.types.get(&result_type).map(|row| &row.kind),
+                Some(nyar_types::CanonicalTypeKind::Tuple(_) | nyar_types::CanonicalTypeKind::LabeledTuple { .. })
+            ) {
                 return Err(format!("TupleNew 结果不是 tuple 类型: {result_type:?}"));
             }
             if fields.len() != element_types.len() {
