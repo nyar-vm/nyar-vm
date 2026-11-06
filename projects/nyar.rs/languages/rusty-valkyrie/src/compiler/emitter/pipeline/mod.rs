@@ -35,7 +35,7 @@ pub use evidence::{CompilerCompileEvidence, generated_source_hash, host_provider
 pub use host_bindings::{
     ResolvedHostProviderBinding, apply_host_provider_bindings, prune_unselected_host_provider_external_calls, resolve_host_provider_bindings,
 };
-pub(crate) use host_bindings::{host_provider_instantiation_seeds, host_provider_root_declarations};
+pub(crate) use host_bindings::{enforce_resolved_host_contract_bindings, host_provider_instantiation_seeds, host_provider_root_declarations};
 pub use link::{link_reachable_dependency_mir, link_reachable_dependency_mir_with_hir, merge_aggregate_layouts, merge_entry_group_surface};
 pub use representation::CanonicalRepresentationPlanner;
 

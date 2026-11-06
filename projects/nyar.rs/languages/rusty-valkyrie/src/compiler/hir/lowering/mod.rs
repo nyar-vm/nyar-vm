@@ -349,6 +349,11 @@ impl ValkyrieCompiler {
                 &host_binding_remaps,
             )?;
         }
+        // 二次链接会把 provider 转发体可达的依赖实现重新迁入消费模块；这些函数体不在
+        // `apply_host_provider_bindings` 的改写范围内。门禁必须在链接后重跑：残留的空
+        // host 链接要以带合同名与实例号的结构化错误暴露，而不是落到后端 panic。
+        // 判据与本门禁唯一实现同源，不另设平行口径。
+        crate::compiler::emitter::pipeline::enforce_resolved_host_contract_bindings(&final_mir, gated_out_host_providers)?;
         crate::compiler::emitter::pipeline::compile_linked_semantic_mir(&final_mir).map_err(pipeline_rejected)
     }
 

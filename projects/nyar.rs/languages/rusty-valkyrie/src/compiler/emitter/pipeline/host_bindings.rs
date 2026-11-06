@@ -463,7 +463,7 @@ pub fn apply_host_provider_bindings(
 /// 说明实现来源缺失，禁止静默编码成空体或默认值。
 /// 闭包提升但从未被可达代码调用的合同不在此失败——链接 BFS 不会把
 /// 不可达成员与合同并入 consumer。
-fn enforce_resolved_host_contract_bindings(module: &MirModule, gated_out: &[CompilerGatedOutHostProvider]) -> Result<(), ParseError> {
+pub(crate) fn enforce_resolved_host_contract_bindings(module: &MirModule, gated_out: &[CompilerGatedOutHostProvider]) -> Result<(), ParseError> {
     let unbound: BTreeMap<ItemInstanceId, &MirExternalCallContract> = module
         .external_calls
         .iter()

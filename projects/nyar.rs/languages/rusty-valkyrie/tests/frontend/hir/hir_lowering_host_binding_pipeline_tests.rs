@@ -702,3 +702,40 @@ fn provider_forwarding_to_dependency_body_rewrites_nested_contract_call() {
         "二次链接不得把被转发实现里的无体合同残留为空 host 链接"
     );
 }
+
+#[test]
+fn nested_contract_reached_only_by_relink_without_provider_fails_closed() {
+    // 反例（`Utf8Case` 漏绑定）：被转发实现里的无体合同在第一次链接时不可达，
+    // 绑定阶段门禁看不到它，只有二次链接把它带入消费模块。此时必须在链接后门禁
+    // 以带合同名与实例号的结构化错误失败，而不是把空 `host()` 链接留给后端 panic。
+    let library = "namespace demo;\n\
+        [host_contract] micro lower(value: i32): i32\n\
+        [host_contract] micro shift(a: i32, b: i32): i32\n\
+        micro passthrough(value: i32) -> i32 { return shift(value, 1) }\n\
+        [host_provider(demo::lower)] micro host_lower(value: i32) -> i32 { return passthrough(value) }";
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source("lib", "demo", library).with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "app",
+            "app",
+            "namespace app;\nusing demo::lower;\n[main] micro main() -> i32 { return lower(1) }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into(), "lib".into()]),
+    ];
+    let namespace = ["demo".to_string()];
+    let bindings = vec![CompilerHostProviderBinding {
+        contract: micro_declaration_key("lib", "demo.v", &namespace, "lower"),
+        provider: micro_declaration_key("lib", "demo.v", &namespace, "host_lower"),
+        required_capabilities: vec![],
+        foreign_bindings: vec![],
+    }];
+    let error = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
+        .expect_err("二次链接引入的无体合同调用缺少 provider 时必须 fail-closed");
+    let message = error.to_string();
+    assert!(message.contains("host contract `demo::shift`"), "失败必须点名合同限定名: {message}");
+    assert!(message.contains("no host provider is bound"), "必须保持 unbound-contract 门禁语义: {message}");
+    assert!(message.contains("instance `ItemInstanceId("), "失败必须带冻结实例号: {message}");
+}
