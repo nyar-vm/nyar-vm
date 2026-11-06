@@ -122,6 +122,26 @@ let mut label: utf8 = ""
 }
 
 #[test]
+fn script_micro_call_wrapper_mirrors_parameters() {
+    let source = r#"<widget index><Column><Text @click="toggle('on')">toggle</Text></Column></widget>
+<script>
+let mut mode: utf8 = "off"
+micro toggle(key: utf8) {
+    mode = "on"
+}
+micro pair(a: i32, b: utf8) { }
+micro noop() { }
+</script>"#;
+    let root = AwslParser::parse_root(source).expect("parse");
+    let lowered = lower_component(&root, "index", "index.awsl", &LoweringOptions::default()).expect("lower");
+    let v_source = build_awsl_wasm_source(&[lowered]);
+    assert!(v_source.contains("micro awsl_call_toggle(key: utf8) {\n    toggle(key)\n}"), "包装器必须镜像形参并逐个转发：{v_source}");
+    assert!(v_source.contains("micro awsl_call_pair(a: i32, b: utf8) {\n    pair(a, b)\n}"), "多形参包装器必须完整转发：{v_source}");
+    assert!(v_source.contains("micro awsl_call_noop() {\n    noop()\n}"), "零形参包装器不得被改成带实参：{v_source}");
+    assert!(v_source.contains("awsl_call_toggle(\"on\")"), "事件侧带实参调用包装器：{v_source}");
+}
+
+#[test]
 fn abi_property_and_event_extracted_from_script() {
     let source = r#"<widget demo><Child :theme="theme" /></widget>
 <script>
