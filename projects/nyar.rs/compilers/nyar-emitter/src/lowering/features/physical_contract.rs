@@ -65,7 +65,8 @@ pub enum PhysicalTextBoundary {
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PhysicalTextCarrier {
-    /// `utf8`：i32 宿主字符串句柄（`hostIntern` / `const_utf8`）。
+    /// `utf8` / `utf16`：共享的 i32 JS string 句柄（`hostIntern` / `const_utf8`）。
+    /// 句柄不携带编码标签，编码身份由 `PhysicalTextProjection` 记录提供。
     JsStringHandle,
     /// WASI canonical ABI：UTF-8 字节列表偏移。
     CanonicalUtf8Bytes,
@@ -73,8 +74,9 @@ pub enum PhysicalTextCarrier {
 
 /// 单个文本 ABI 位置的冻结事实：编码 × 边界 × 载体。
 ///
-/// `carrier == None` 表示该编码在该边界还没有已声明的载体。所有物理落点必须
-/// 结构化失败并复用同一条理由，禁止借用其它编码的载体。
+/// 同一载体可以被多个编码共用（JS string 句柄不携带编码标签），编码身份只存在于
+/// 本记录。`WasiComponent` + `utf16` 不存在 canonical 表示，因此不产生 projection；
+/// 编码在边界上没有 carrier 的形态也不产生 projection。
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhysicalTextProjection {
@@ -111,8 +113,9 @@ pub(crate) fn declared_text_projection(boundary: PhysicalTextBoundary, ty: &Nyar
         // `WasiComponent` 的 canonical ABI 只有 UTF-8 字节列表，没有 `utf16` 的
         // canonical 表示，因此该边界不存在 `utf16` 的文本 ABI 事实。
         (PhysicalTextEncoding::Utf16, PhysicalTextBoundary::WasiComponent) => return None,
-        // `WasmJsGlue` 已冻结 `utf16` 的编码身份，共享 JS string 载体尚未接入。
-        (PhysicalTextEncoding::Utf16, PhysicalTextBoundary::WasmJsGlue) => None,
+        // `WasmJsGlue` 与 `utf8` 共用同一张 JS string 句柄表：JS 只有一种字符串
+        // 类型，`utf8` 与 `utf16` 的差异只在入表前是否解码，句柄本身不携带编码标签。
+        (PhysicalTextEncoding::Utf16, PhysicalTextBoundary::WasmJsGlue) => Some(PhysicalTextCarrier::JsStringHandle),
     };
     Some(PhysicalTextProjection { encoding, boundary, carrier })
 }
@@ -140,12 +143,16 @@ mod text_abi_tests {
         for boundary in [PhysicalTextBoundary::WasmJsGlue, PhysicalTextBoundary::WasiComponent] {
             let projection = declared_text_projection(boundary, &NyarType::Utf16);
             match boundary {
-                // `WasmJsGlue` 已声明编码身份，但共享 JS string 载体尚未接入。
+                // `WasmJsGlue` 已冻结编码身份与共享载体，但 lowering 仍未接入该载体。
                 PhysicalTextBoundary::WasmJsGlue => {
                     let projection = projection.expect("`WasmJsGlue` 的 `utf16` 编码身份必须已冻结");
                     assert_eq!(projection.encoding, PhysicalTextEncoding::Utf16);
                     assert_eq!(projection.boundary, boundary);
-                    assert_eq!(projection.carrier, None, "`utf16` 不得借用其它编码的载体");
+                    assert_eq!(
+                        projection.carrier,
+                        Some(PhysicalTextCarrier::JsStringHandle),
+                        "`utf16` 与 `utf8` 共用一个 JS string 句柄表"
+                    );
                 }
                 // canonical ABI 没有 `utf16` 表示，该边界不存在文本 ABI 事实。
                 PhysicalTextBoundary::WasiComponent => assert_eq!(projection, None),
