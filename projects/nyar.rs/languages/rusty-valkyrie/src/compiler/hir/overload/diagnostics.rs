@@ -1,6 +1,6 @@
 //! 重载域、候选签名与匹配类别。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::types::{
     Identifier, NamePath,
@@ -65,6 +65,9 @@ pub struct OverloadCandidate {
     pub imported_dependency_export: bool,
     /// 该构造候选是否来自带 `[constructor]` 的 `unite` 变体，决定括号调用入口是否可见。
     pub is_auto_constructor: bool,
+    /// 调用点已结算的泛型 binder 代入；只有经 where 校验通过的候选才有值，
+    /// 未经过该路径的候选保持空表，由单态化侧按既有 fail-closed 处理。
+    pub associated_binder_solutions: BTreeMap<GenericBinderId, ValkyrieType>,
 }
 
 impl OverloadCandidate {
@@ -93,6 +96,7 @@ impl OverloadCandidate {
             where_constraints: Vec::new(),
             imported_dependency_export: false,
             is_auto_constructor: false,
+            associated_binder_solutions: BTreeMap::new(),
         }
     }
 
@@ -139,6 +143,7 @@ impl OverloadCandidate {
             where_constraints: Vec::new(),
             imported_dependency_export: false,
             is_auto_constructor: false,
+            associated_binder_solutions: BTreeMap::new(),
         }
     }
 }

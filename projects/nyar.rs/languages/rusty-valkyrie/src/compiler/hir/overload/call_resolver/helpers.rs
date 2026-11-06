@@ -257,5 +257,6 @@ pub fn try_resolve_constructor(
         parameter_types: resolved.signature.params,
         has_receiver: false,
         extractor_payload_type: None,
+        associated_binder_solutions: resolved.associated_binder_solutions,
     })
 }

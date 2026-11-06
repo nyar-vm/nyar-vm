@@ -810,6 +810,19 @@ fn derive_substitution(declaration: &CallableDeclaration, call: &HirResolvedCall
     if !unify_instantiation(&declared_return, &call.return_type, &mut substitution) {
         return None;
     }
+    // 调用点已结算的 binder 解只用来**增补**签名统一无法推出的 binder
+    // （典型是 `where I: Iterator<Item = T>` 里只由关联等式决定的 `T`）。
+    // 已有绑定且值不同即失败，不允许用调用点解覆盖签名统一结果；空表保持今天的路径，
+    // 不把「缺失」解释成「无需证据」。
+    for (binder, solution) in &call.associated_binder_solutions {
+        match substitution.get(binder) {
+            Some(existing) if existing != solution => return None,
+            Some(_) => {}
+            None => {
+                substitution.insert(binder.clone(), solution.clone());
+            }
+        }
+    }
     // 不再检查 substitution 是否为空。空 substitution 有两种合法情况：
     // (a) 声明侧和调用侧共享同一个 binder（同结构泛型调用，不需要跨 binder 替换）；
     // (b) 声明本身就不是泛型，所有类型完全具体。
@@ -1173,6 +1186,11 @@ fn substitute_resolved_call(
         let self_type = instantiate_declared_type(&dispatch.self_type, owner, substitution, equations);
         *dispatch =
             HirTraitDispatch { trait_declaration: dispatch.trait_declaration, method_declaration: dispatch.method_declaration, self_type };
+    }
+    // 调用点解在刚性泛型体内可能仍是开放 binder，实例体代入时必须一并闭合，
+    // 否则单态化侧会按未闭合代入失败关闭。
+    for solution in call.associated_binder_solutions.values_mut() {
+        *solution = instantiate_declared_type(solution, owner, substitution, equations);
     }
 }
 

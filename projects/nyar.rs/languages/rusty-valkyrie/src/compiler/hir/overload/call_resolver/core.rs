@@ -97,6 +97,8 @@ fn function_value_call(symbol: NamePath, func: &crate::compiler::types::hir::Fun
         parameter_types: func.params.clone(),
         has_receiver: false,
         extractor_payload_type: None,
+        // 函数值没有声明级 where 义务，不存在需要携带的 binder 解。
+        associated_binder_solutions: BTreeMap::new(),
     }
 }
 
@@ -250,6 +252,12 @@ pub fn match_call_candidate(
         .map(|(actual, expected)| actual.clone().unwrap_or_else(|| expected.clone()))
         .collect::<Vec<_>>();
     let match_kind = compute_call_match_kind(type_relations, &matched_actual_types, &expected_params)?;
+    // 只携带该候选自己的 binder；值可能是刚性泛型体里的开放 binder，实例化侧代入后才可用。
+    let associated_binder_solutions = candidate
+        .generic_binders
+        .iter()
+        .filter_map(|binder| substitutions.get(binder).cloned().map(|solution| (binder.clone(), solution)))
+        .collect::<BTreeMap<_, _>>();
     Some(OverloadCandidate {
         declaration: candidate.declaration,
         instance: candidate.instance,
@@ -270,6 +278,7 @@ pub fn match_call_candidate(
         where_constraints: candidate.where_constraints.clone(),
         imported_dependency_export: candidate.imported_dependency_export,
         is_auto_constructor: candidate.is_auto_constructor,
+        associated_binder_solutions,
     })
 }
 
@@ -360,6 +369,7 @@ pub(crate) fn try_resolve_call(
                     parameter_types: matched.signature.params,
                     has_receiver: false,
                     extractor_payload_type: None,
+                    associated_binder_solutions: matched.associated_binder_solutions,
                 };
                 // 泛型静态 trait 调用没有实例身份：把「哪个 trait 的哪个方法槽必须在
                 // subject 上成立」冻结成 evidence，不在此处单态化，也不伪造实例。
@@ -579,6 +589,7 @@ pub(crate) fn try_resolve_call(
         parameter_types: resolved.signature.params,
         has_receiver,
         extractor_payload_type: None,
+        associated_binder_solutions: resolved.associated_binder_solutions,
     };
     Some(call)
 }

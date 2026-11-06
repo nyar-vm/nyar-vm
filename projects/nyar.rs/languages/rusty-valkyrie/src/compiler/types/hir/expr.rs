@@ -1,7 +1,10 @@
 //! Expression, capture, and capture mode definitions for HIR.
 
+use std::collections::BTreeMap;
+
 use super::{
-    FunctionType, GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent, HirPattern, ValkyrieType,
+    FunctionType, GenericBinderId, GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent, HirPattern,
+    ValkyrieType,
 };
 use crate::compiler::types::{Identifier, NamePath, SourceSpan};
 
@@ -155,6 +158,11 @@ pub struct HirResolvedCall {
     /// Payload type after peeling nullable `T?` extractor returns.
     #[cfg_attr(feature = "serde", serde(default))]
     pub extractor_payload_type: Option<ValkyrieType>,
+    /// 调用点已结算的泛型 binder 代入（含 `where I: Iterator<Item = T>` 的关联等式推断）。
+    ///
+    /// 单态化侧只允许用它**增补尚未绑定**的 binder：同 binder 已有绑定且值不同即失败，
+    /// 空表维持既有路径，不表示「无需证据」。目前只有 trait 分派 witness 路径尚未接入。
+    pub associated_binder_solutions: BTreeMap<GenericBinderId, ValkyrieType>,
 }
 
 /// 具名函数作值：重载解析把「函数名直接作实参」冻结成引用节点。

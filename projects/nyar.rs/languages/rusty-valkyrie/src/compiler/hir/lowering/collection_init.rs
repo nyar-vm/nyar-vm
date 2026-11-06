@@ -263,6 +263,9 @@ fn build_collection_init(
         parameter_types: fact.with_length.params.iter().map(|param| substitute_type(&param.ty, substitution)).collect(),
         has_receiver: has_self_receiver(&fact.with_length),
         extractor_payload_type: None,
+        // 合同 fact 按签名形状合成，不经候选解析与 where 校验，没有关联 binder 解可携带；
+        // 该路径的关联等式义务仍由单态化侧失败关闭。
+        associated_binder_solutions: BTreeMap::new(),
     };
     let append = HirResolvedCall {
         declaration: fact.append.declaration,
@@ -276,6 +279,7 @@ fn build_collection_init(
         parameter_types: vec![expected.clone(), element_type.clone()],
         has_receiver: true,
         extractor_payload_type: None,
+        associated_binder_solutions: BTreeMap::new(),
     };
     let mut built_items = Vec::with_capacity(items.len());
     for item in items {

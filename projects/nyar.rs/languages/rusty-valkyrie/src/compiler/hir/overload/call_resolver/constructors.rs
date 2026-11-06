@@ -184,6 +184,7 @@ pub(crate) fn build_constructor_resolved_call(
         parameter_types: resolved.signature.params,
         has_receiver,
         extractor_payload_type: None,
+        associated_binder_solutions: resolved.associated_binder_solutions,
     };
     enrich_unite_variant_constructor_facts(callee, args, &mut call, contextual_type, candidates, locals, struct_fields, singleton_names);
     call
@@ -229,6 +230,7 @@ pub(crate) fn try_resolve_qualified_free_function(
         parameter_types: resolved.signature.params,
         has_receiver: false,
         extractor_payload_type: None,
+        associated_binder_solutions: resolved.associated_binder_solutions,
     })
 }
 
@@ -364,6 +366,9 @@ pub(crate) fn try_resolve_singleton_method(
         parameter_types,
         has_receiver,
         extractor_payload_type: None,
+        // 无接收者 singleton 方法走 `match_singleton_method_candidate`，不跑 where 校验，
+        // 也没有关联 binder 解可携带；该路径的关联等式义务仍由单态化侧失败关闭。
+        associated_binder_solutions: BTreeMap::new(),
     })
 }
 
@@ -413,6 +418,7 @@ pub(crate) fn try_resolve_type_static_method(
         parameter_types: resolved.signature.params.iter().map(|ty| substitute_self_type(ty, Some(type_owner))).collect(),
         has_receiver: candidate_has_receiver_parameter(&resolved),
         extractor_payload_type: None,
+        associated_binder_solutions: resolved.associated_binder_solutions,
     })
 }
 
@@ -616,6 +622,7 @@ pub(crate) fn try_resolve_instance_method_with_context(
         parameter_types: resolved.signature.params,
         has_receiver,
         extractor_payload_type: None,
+        associated_binder_solutions: resolved.associated_binder_solutions,
     };
     // 泛型接收者上的 trait 方法没有实例身份：把「哪个 trait 的哪个方法槽必须在
     // 该 self 类型上成立」冻结成 evidence，不在此处单态化，也不伪造实例。

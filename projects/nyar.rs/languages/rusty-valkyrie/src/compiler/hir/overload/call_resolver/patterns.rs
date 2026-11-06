@@ -113,6 +113,9 @@ pub(crate) fn try_resolve_pattern_extractor(
         parameter_types,
         has_receiver,
         extractor_payload_type: Some(payload_type),
+        // extractor 候选由 `filter_map` 直接 clone 并手设 match_kind，不经 `match_call_candidate`，
+        // 没有关联 binder 解可携带；该路径的关联等式义务仍由单态化侧失败关闭。
+        associated_binder_solutions: resolved.associated_binder_solutions,
     })
 }
 
@@ -172,6 +175,9 @@ pub(crate) fn resolve_variant_pattern_constructor(
         parameter_types,
         has_receiver: false,
         extractor_payload_type: Some(payload_type),
+        // 变体模式构造直接从候选表取声明并按返回类型统一，不跑 where 校验，
+        // 因此没有关联 binder 解；该路径仍由单态化侧失败关闭。
+        associated_binder_solutions: candidate.associated_binder_solutions.clone(),
     })
 }
 
@@ -202,5 +208,7 @@ pub(crate) fn try_resolve_try_propagate_ok_variant(operand_type: &ValkyrieType, 
         parameter_types: vec![operand_type.clone()],
         has_receiver: false,
         extractor_payload_type: payload_type,
+        // `?` 传播的 OK 变体由操作数类型合成，`declaration: None`，没有声明级 where 义务。
+        associated_binder_solutions: BTreeMap::new(),
     })
 }
