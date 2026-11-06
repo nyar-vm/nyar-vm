@@ -1532,3 +1532,89 @@ fn nested_new_rejects_argument_incompatible_with_slot() {
     assert!(message.contains("unresolved call `outer.push`"), "必须点名未解析调用，实际: {message}");
     assert!(message.contains("none matches"), "必须说明无一候选匹配，实际: {message}");
 }
+
+/// 同一 `imply` 块内同名构造按 arity 区分：零参与一参都必须各自命中自己的候选。
+///
+/// 回归点：零参候选曾对一参调用「空匹配」（实参绑定结果被 `zip` 静默截断），
+/// 与真正匹配的候选并列判 Ambiguous，最终退化成「无一候选」。
+#[test]
+fn same_owner_constructors_with_distinct_arity_both_resolve() {
+    let source = r#"
+namespace app;
+
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+class Bag<T> {
+    capacity: i64
+}
+
+imply Bag<T> {
+    micro new(): Self {
+        return Self { capacity: 0 }
+    }
+
+    micro new(capacity: i64): Self {
+        return Self { capacity: capacity }
+    }
+}
+
+micro build(): i64 {
+    let zero: Bag<i64> = Bag::new()
+    let one: Bag<i64> = Bag::new(7)
+    return one.capacity
+}
+"#;
+    let hir = ValkyrieCompiler::default().compile_source(source).expect("两种 arity 的构造都必须解析");
+    let build = hir.functions.iter().find(|function| function.name.as_str() == "build").expect("build");
+    let resolved = build
+        .body
+        .statements
+        .iter()
+        .filter_map(|statement| match &statement.kind {
+            HirStatementKind::Let { initializer: Some(value), .. } => match &value.kind {
+                HirExprKind::Call { resolved, .. } => resolved.as_ref(),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(resolved.len(), 2, "两次构造都必须带解析结果");
+    assert!(resolved[0].parameter_types.is_empty(), "零参构造必须绑定零参签名: {:?}", resolved[0]);
+    assert_eq!(
+        resolved[1].parameter_types,
+        vec![ValkyrieType::Integer64 { signed: true }],
+        "一参构造必须绑定 `i64` 形参签名"
+    );
+}
+
+/// 反例：零参构造收到一参调用时，必须在 HIR 调用边界结构化失败，
+/// 不得让空匹配混入候选集后退化成候选歧义，也不得漏到 SMIR 才报 arity。
+#[test]
+fn nullary_constructor_rejects_extra_argument_at_call_boundary() {
+    let source = r#"
+namespace app;
+
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+class Bag<T> {
+    capacity: i64
+}
+
+imply Bag<T> {
+    micro new(): Self {
+        return Self { capacity: 0 }
+    }
+}
+
+micro build(value: i64): i64 {
+    let bag: Bag<i64> = Bag::new(value)
+    return bag.capacity
+}
+"#;
+    let error = ValkyrieCompiler::default().compile_source(source).expect_err("零参构造收到实参必须失败");
+    assert!(matches!(error, rusty_valkyrie::HirError::UnresolvedCall { .. }), "必须在调用边界报 UnresolvedCall: {error:?}");
+    let message = error.to_string();
+    assert!(message.contains("`Bag.new`") && message.contains("none matches"), "诊断必须点名候选与匹配失败，实际: {message}");
+}

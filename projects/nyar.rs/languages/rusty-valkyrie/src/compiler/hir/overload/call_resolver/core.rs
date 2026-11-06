@@ -199,6 +199,13 @@ pub fn match_call_candidate(
             }
         })
         .collect::<Vec<_>>();
+    // 实参绑定结果与签名槽位必须等长：带 `param_specs` 的候选由 `bind_call_arguments`
+    // 补齐默认 / rest 后恒等长；无 `param_specs` 的候选（unite 变体构造）直接取实参。
+    // 不设这道守卫时，后面的 `zip` 会静默截断，让零参候选对多参调用「空匹配」，
+    // 与真正匹配的候选并列后判 Ambiguous，最终退化成「无一候选」。
+    if bound_exprs.len() != expected_params.len() {
+        return None;
+    }
     let mut substitutions = BTreeMap::new();
     // owner binder 由声明冻结期写定：self 槽已携带带 binder 的 owner 形态，
     // 与 receiver 实参的统一即可钉住实参，调用点不再按 receiver 回填。
