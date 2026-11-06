@@ -459,10 +459,10 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
         var node = getDomHandle(container);
         if (!node) return;
         while (node.firstChild) node.removeChild(node.firstChild);
-        var items = callWasm(hostText(itemsExport)) || [];
-        if (!Array.isArray(items)) items = [];
-        for (var i = 0; i < items.length; i++) {
-          callWasm(hostText(mountExport), container, i);
+        // 元素内容留在 wasm：`itemsExport` 只返回条目数量，`mount` 按 1 基序号按下标重取元素。
+        var count = Number(callWasm(hostText(itemsExport))) || 0;
+        for (var i = 0; i < count; i++) {
+          callWasm(hostText(mountExport), container, i + 1);
         }
       };
       subscribeDeps([dep1, dep2], update);

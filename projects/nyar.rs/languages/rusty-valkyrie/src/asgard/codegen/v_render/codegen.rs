@@ -222,7 +222,8 @@ impl<'a> VRenderCodegen<'a> {
     fn register_list_expr(&mut self, expr: &str) -> String {
         let name = self.next_export_id("items");
         let rewritten = self.rewrite_expr(expr);
-        self.aux.push(format!("micro {name}(): list {{\n    return {rewritten}\n}}"));
+        // 宿主只消费条目数量：元素内容不离开 wasm，`loop_mount` 按下标重取元素。
+        self.aux.push(format!("micro {name}(): usize {{\n    return ({rewritten}).length()\n}}"));
         name
     }
 
@@ -278,6 +279,7 @@ impl<'a> VRenderCodegen<'a> {
         let child = inner.emit_node_ids(region_nodes(self.module, render_loop.body_region));
         self.var_counter = inner.var_counter;
         let item_var = &frame.item_var;
+        // `index` 是 1 基序号：Array 的 `[ ]` 是 std `Ordinal` 后缀（1 基），宿主按 `i + 1` 调用。
         self.aux.push(format!(
             "micro {name}(container: i32, index: i32): i32 {{\n    let {item_var} = {items_rewrite}[index]\n{mount_body}    let child = {child}\n    dom_append(container, child)\n    return child\n}}"
         ));

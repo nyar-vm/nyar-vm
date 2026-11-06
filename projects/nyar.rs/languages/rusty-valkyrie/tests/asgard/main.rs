@@ -19,6 +19,7 @@ mod css_chunks;
 mod glue_contract;
 mod interactive_artifact;
 mod layout_contract;
+mod list_count_abi;
 mod list_each_shape;
 mod pipeline_discover;
 mod product_page;
