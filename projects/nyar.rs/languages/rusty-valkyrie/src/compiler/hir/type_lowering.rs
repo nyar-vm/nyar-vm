@@ -24,7 +24,7 @@ use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 use super::lowering::errors::{ArrayExtentFailure, TupleLabelingFailure};
 
 thread_local! {
-    static MODULE_TYPE_ALIASES: RefCell<Vec<BTreeMap<String, ModuleTypeAliasEntry>>> = RefCell::new(Vec::new());
+    static MODULE_TYPE_ALIASES: RefCell<Vec<ModuleTypeAliasFrame>> = RefCell::new(Vec::new());
     /// 当前 lowering 词法作用域声明的泛型形参与 trait 关联类型短名。
     ///
     /// 只有声明域本身拥有的名字进入这里；引用 `T` 或 `Item` 时不得再按拼写猜测。
@@ -65,6 +65,22 @@ struct ModuleTypeAliasEntry {
     namespace: Vec<String>,
     params: Vec<String>,
     target: Option<ValkyrieType>,
+    /// 该条目是否来自依赖组导出的别名（`VisibleTypeAlias::target: Some`）。
+    ///
+    /// 本组（或本根）自身的 `type` 声明在 `enter` 时目标尚未填入，显式记为 `false`；
+    /// 之后 `register_alias` 填目标也保持 `false`。生成组据此区分「依赖包别名」与「自己的声明」。
+    imported: bool,
+}
+
+/// 一层模块类型别名作用域：可见别名表 + 该层是否收窄「依赖导出内建同名别名的短名遮蔽」。
+#[derive(Debug)]
+struct ModuleTypeAliasFrame {
+    aliases: BTreeMap<String, ModuleTypeAliasEntry>,
+    /// 仅生成源码组（`GeneratedOnly` 入口）启用。
+    ///
+    /// 生成单元的类型位置是它自己生成的宿主 ABI 面，不该被依赖包别名改写；
+    /// 普通应用组仍经依赖可见性拿到别名，不受影响。
+    suppress_imported_builtin_short_names: bool,
 }
 
 /// 管理当前 lowering 过程中的模块 `type` 别名作用域。
@@ -79,13 +95,19 @@ impl ModuleTypeAliasScope {
     ///
     /// 调用方把依赖导出（`target: Some`）与本组待填目标的声明（`target: None`）一起传入；
     /// 本组声明在依赖导出之后插入，故同名时以本组声明为准。
-    pub(crate) fn enter(visible: Vec<VisibleTypeAlias>) -> Self {
+    ///
+    /// `suppress_imported_builtin_short_names` 只由生成源码组（`GeneratedOnly` 入口）传入
+    /// `true`：依赖导出的别名若与既有内建同名，则不参与短名遮蔽（判据见
+    /// [`short_alias_entry`]）。普通应用组传 `false`，保持既有的依赖可见性合同。
+    pub(crate) fn enter(visible: Vec<VisibleTypeAlias>, suppress_imported_builtin_short_names: bool) -> Self {
         let mut aliases = BTreeMap::new();
         for alias in visible {
-            aliases.insert(alias.name, ModuleTypeAliasEntry { namespace: alias.namespace, params: alias.params, target: alias.target });
+            let imported = alias.target.is_some();
+            let entry = ModuleTypeAliasEntry { namespace: alias.namespace, params: alias.params, target: alias.target, imported };
+            aliases.insert(alias.name, entry);
         }
         MODULE_TYPE_ALIASES.with(|stack| {
-            stack.borrow_mut().push(aliases);
+            stack.borrow_mut().push(ModuleTypeAliasFrame { aliases, suppress_imported_builtin_short_names });
         });
         Self
     }
@@ -94,7 +116,7 @@ impl ModuleTypeAliasScope {
     pub(crate) fn register_alias(name: &str, namespace: Vec<String>, params: Vec<String>, target: ValkyrieType) {
         MODULE_TYPE_ALIASES.with(|stack| {
             if let Some(top) = stack.borrow_mut().last_mut() {
-                top.insert(name.to_string(), ModuleTypeAliasEntry { namespace, params, target: Some(target) });
+                top.aliases.insert(name.to_string(), ModuleTypeAliasEntry { namespace, params, target: Some(target), imported: false });
             }
         });
     }
@@ -513,11 +535,34 @@ pub(crate) fn numeric_builtin_cast_type(name: &str) -> Option<ValkyrieType> {
     }
 }
 
+/// 该短名在既有内建表中有身份（`bool`/`char`/`utf8`/`utf16`/`c_str`/`unit`/`void`）。
+///
+/// 两张表都查：`encoding_builtin_type` 覆盖 `bool`/`unit`/`void` 的编码载体，
+/// `canonical_builtin_type` 覆盖文本编码与 `char`/`c_str`。这里只问「有没有内建身份」，
+/// 不列名字清单；`usize`/`isize` 等无内建身份的声明族不在此列。
+fn has_builtin_type_identity(name: &str) -> bool {
+    canonical_builtin_type(name).is_some() || encoding_builtin_type(name).is_some()
+}
+
+/// 当前帧里该短名的可见别名条目。
+///
+/// 生成源码组内，来自依赖导出的别名若与既有内建同名（如 `std.text` 的
+/// `type utf8 = Utf8Text`），不参与短名遮蔽：该短名回落到内建事实。只收窄短名解析；
+/// 本组自身声明（`imported: false`）照常遮蔽，显式限定路径仍按声明身份解析。
+fn short_alias_entry(frame: &ModuleTypeAliasFrame, name: &str) -> Option<ModuleTypeAliasEntry> {
+    let entry = frame.aliases.get(name)?.clone();
+    if frame.suppress_imported_builtin_short_names && entry.imported && has_builtin_type_identity(name) {
+        return None;
+    }
+    Some(entry)
+}
+
 /// 当前作用域内是否声明了该短名的 `type` 别名（含目标尚未填入的本组声明）。
 ///
 /// 这是内建遮蔽的唯一事实来源：源码声明 `type utf8 = Utf8Text` 之后，`utf8` 就不再是内建编码类型。
+/// 生成组内依赖导出的同名内建别名按 [`short_alias_entry`] 的判据不参与遮蔽。
 fn has_module_type_alias(name: &str) -> bool {
-    MODULE_TYPE_ALIASES.with(|stack| stack.borrow().last().is_some_and(|aliases| aliases.contains_key(name)))
+    MODULE_TYPE_ALIASES.with(|stack| stack.borrow().last().and_then(|frame| short_alias_entry(frame, name)).is_some())
 }
 
 /// 单段类型名的唯一解析顺序：作用域别名 → 当前声明域泛型形参 → 当前 trait 作用域关联名
@@ -667,7 +712,7 @@ fn expand_module_type_alias(name: &str, arguments: &[ValkyrieType], visiting: &m
         return None;
     }
     MODULE_TYPE_ALIASES.with(|stack| {
-        let entry = stack.borrow().last().and_then(|aliases| aliases.get(name).cloned())?;
+        let entry = short_alias_entry(stack.borrow().last()?, name)?;
         if entry.params.len() != arguments.len() {
             return None;
         }
@@ -696,8 +741,8 @@ fn expand_qualified_module_type_alias(parts: &[&str], arguments: &[ValkyrieType]
         return None;
     }
     MODULE_TYPE_ALIASES.with(|stack| {
-        let entry = stack.borrow().iter().rev().find_map(|aliases| {
-            aliases.get(*name).filter(|entry| entry.namespace.iter().map(String::as_str).eq(namespace.iter().copied())).cloned()
+        let entry = stack.borrow().iter().rev().find_map(|frame| {
+            frame.aliases.get(*name).filter(|entry| entry.namespace.iter().map(String::as_str).eq(namespace.iter().copied())).cloned()
         })?;
         if entry.params.len() != arguments.len() {
             return None;

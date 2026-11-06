@@ -180,7 +180,15 @@ pub fn compile_v_bundle(
     host_provider_bindings: &[CompilerHostProviderBinding],
     gated_out_host_providers: &[CompilerGatedOutHostProvider],
 ) -> AsgardResult<HostCompileReport> {
-    let compiler = crate::compiler::hir::lowering::ValkyrieCompiler::default();
+    // 静态站/报告图表岛以 `GeneratedOnly` 入口编译：生成单元的类型位置是它自己生成的
+    // 宿主 ABI 面，依赖导出的内建同身份别名（如 `std.text` 的 `utf8`）不参与短名遮蔽。
+    let compiler = if surface == GeneratedEntrySurface::GeneratedOnly {
+        crate::compiler::hir::lowering::ValkyrieCompiler::default().with_suppressed_imported_builtin_short_names()
+    }
+    else
+    {
+        crate::compiler::hir::lowering::ValkyrieCompiler::default()
+    };
     let target_profile = target.to_profile(None);
     fs::create_dir_all(output_dir).map_err(|e| AsgardError::msg(format!("{e}: {}", "failed to create output directory")))?;
     // 浏览器 UI 交付是「宿主按名调用导出」的库形态：JS 宿主（boot.js / 小程序运行时）

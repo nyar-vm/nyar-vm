@@ -78,7 +78,7 @@ pub(crate) fn compile_ssg_ovm_bundle(
     fs::create_dir_all(scratch_dir)
         .map_err(|error| AsgardError::msg(report!("创建 SSG 中间产物目录失败 {}: {error}", scratch_dir.display())))?;
     let artifact = compile_source_groups_to_artifacts(
-        &ValkyrieCompiler::default(),
+        &ValkyrieCompiler::default().with_suppressed_imported_builtin_short_names(),
         &input,
         &build_context,
         scratch_dir,

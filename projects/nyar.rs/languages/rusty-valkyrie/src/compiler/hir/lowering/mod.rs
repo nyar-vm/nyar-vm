@@ -122,6 +122,10 @@ pub use vx::enhance_vx_widgets;
 pub struct ValkyrieCompiler {
     /// Source id attached to synthesized spans during lowering.
     pub source_id: SourceID,
+    /// 生成源码组（`GeneratedOnly` 入口）内，依赖导出的内建同身份别名不参与短名遮蔽。
+    ///
+    /// 见 [`Self::with_suppressed_imported_builtin_short_names`]；普通应用组保持既有依赖可见性。
+    suppress_imported_builtin_short_names: bool,
 }
 
 impl Default for ValkyrieCompiler {
@@ -133,7 +137,17 @@ impl Default for ValkyrieCompiler {
 impl ValkyrieCompiler {
     /// Creates a compiler facade bound to a source id.
     pub fn new(source_id: SourceID) -> Self {
-        Self { source_id }
+        Self { source_id, suppress_imported_builtin_short_names: false }
+    }
+
+    /// 生成源码组（`GeneratedOnly` 入口）专用：依赖导出的内建同身份别名不参与短名遮蔽。
+    ///
+    /// 生成单元的类型位置是它自己生成的宿主 ABI 面，不该被依赖包别名改写；普通应用组
+    /// 仍经依赖可见性拿到别名。无内建身份的依赖别名（`usize`/`isize` 等指针宽度别名）
+    /// 不受此收窄影响，照常可见。判据见 `type_lowering::short_alias_entry`。
+    pub(crate) fn with_suppressed_imported_builtin_short_names(mut self) -> Self {
+        self.suppress_imported_builtin_short_names = true;
+        self
     }
 
     /// Validates an already materialized HIR module before it crosses into
@@ -526,7 +540,10 @@ impl ValkyrieCompiler {
         }
         validate_primary_namespace_uniqueness(&prepared)?;
         let roots = prepared.iter().map(|(_, root)| root).collect::<Vec<_>>();
-        let _type_alias_scope = crate::compiler::hir::ModuleTypeAliasScope::enter(visible_type_aliases(&roots, imported_semantic_exports));
+        let _type_alias_scope = crate::compiler::hir::ModuleTypeAliasScope::enter(
+            visible_type_aliases(&roots, imported_semantic_exports),
+            self.suppress_imported_builtin_short_names && group.is_entry,
+        );
         let _nominal_scope = crate::compiler::hir::NominalTypeScope::enter(visible_nominal_type_names(&roots, imported_semantic_exports));
         register_root_type_alias_targets(&roots)?;
         let mut merged: Option<HirModule> = None;

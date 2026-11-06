@@ -119,7 +119,8 @@ impl AstToHir {
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name_override: Option<NamePath>,
     ) -> Result<HirModule, HirError> {
-        let _type_alias_scope = crate::compiler::hir::ModuleTypeAliasScope::enter(visible_type_aliases(&[root], imported_semantic_exports));
+        let _type_alias_scope =
+            crate::compiler::hir::ModuleTypeAliasScope::enter(visible_type_aliases(&[root], imported_semantic_exports), false);
         let _nominal_scope = NominalTypeScope::enter(visible_nominal_type_names(&[root], imported_semantic_exports));
         register_root_type_alias_targets(&[root])?;
         self.lower_prepared_root(root, imported_semantic_exports, module_name_override)
