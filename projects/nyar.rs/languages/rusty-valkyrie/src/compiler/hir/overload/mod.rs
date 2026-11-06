@@ -64,7 +64,7 @@ pub(crate) use symbol_match::{
 
 // call_resolver 里的 shim/辅助（被 resolve_call 直接引用）
 pub(crate) use call_resolver::{
-    build_constructor_resolved_call, candidate_has_receiver_parameter, enrich_sum_variant_operation_facts, overload_symbol_path,
+    build_constructor_resolved_call, candidate_has_receiver_parameter, overload_symbol_path,
     peel_explicit_generic_arguments, try_resolve_constructor_call, try_resolve_instance_method, try_resolve_singleton_method,
     try_resolve_type_static_method,
 };

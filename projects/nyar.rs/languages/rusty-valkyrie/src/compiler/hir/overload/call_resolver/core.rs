@@ -45,7 +45,6 @@ use super::{
         try_resolve_qualified_free_function, try_resolve_singleton_method,
         try_resolve_type_static_method,
     },
-    patterns::enrich_sum_variant_operation_facts,
 };
 
 /// 候选是否以 `self` 为首个形参。
@@ -581,9 +580,5 @@ pub(crate) fn try_resolve_call(
         has_receiver,
         extractor_payload_type: None,
     };
-    if matches!(callee_name.as_str(), "unwrap" | "is_some") {
-        let receiver_type = args.first().and_then(|arg| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names));
-        enrich_sum_variant_operation_facts(&mut call, receiver_type.as_ref(), candidates);
-    }
     Some(call)
 }

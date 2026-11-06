@@ -47,7 +47,6 @@ use super::{
         NominalHeadLabel, enrich_unite_variant_constructor_facts, instantiate_candidate_for_context, nominal_head_label,
         try_resolve_constructor,
     },
-    patterns::enrich_sum_variant_operation_facts,
 };
 
 /// Constructor domain 专属解析路径。
@@ -618,7 +617,6 @@ pub(crate) fn try_resolve_instance_method_with_context(
         has_receiver,
         extractor_payload_type: None,
     };
-    enrich_sum_variant_operation_facts(&mut call, Some(&receiver_type), candidates);
     // 泛型接收者上的 trait 方法没有实例身份：把「哪个 trait 的哪个方法槽必须在
     // 该 self 类型上成立」冻结成 evidence，不在此处单态化，也不伪造实例。
     if call.instance.is_none()

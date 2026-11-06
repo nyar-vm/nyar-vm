@@ -495,9 +495,8 @@ mod legacy_internals {
     use std::collections::{BTreeMap, BTreeSet};
 
     use rusty_valkyrie::compiler::hir::overload::{
-        enrich_sum_variant_operation_facts, extract_callable_name, infer_expr_type, infer_scrutinee_type, match_call_candidate,
-        match_singleton_method_candidate, substitute_associated_equations, substitute_type_self, try_resolve_constructor,
-        try_resolve_nullary_constructor,
+        extract_callable_name, infer_expr_type, infer_scrutinee_type, match_call_candidate, match_singleton_method_candidate,
+        substitute_associated_equations, substitute_type_self, try_resolve_constructor, try_resolve_nullary_constructor,
     };
 
     fn test_binder(owner: u32, ordinal: u32) -> rusty_valkyrie::compiler::types::hir::GenericBinderId {
@@ -1067,30 +1066,6 @@ micro get<T>(array: [T], ordinal: i64): T {
         assert_eq!(resolved.sum_owner, nyar_types::ItemId::from_index(1));
         assert!(resolved.sum_variant.is_some());
         assert_eq!(resolved.domain, HirCallableDomain::Constructor);
-    }
-
-    #[test]
-    fn enrich_sum_variant_operation_facts_attaches_option_some_for_unwrap() {
-        let option_some = nullary_variant_constructor("Option", "Some", 1);
-        let option_ty = test_sum_nominal(1, vec![ValkyrieType::Integer32 { signed: true }]);
-        let mut call = HirResolvedCall {
-            declaration: None,
-            instance: None,
-            intrinsic: None,
-            sum_owner: None,
-            sum_variant: None,
-            symbol: NamePath::new(vec![Identifier::new("unwrap")]),
-            domain: HirCallableDomain::Function,
-            return_type: ValkyrieType::Integer32 { signed: true },
-            parameter_types: vec![option_ty.clone()],
-            has_receiver: true,
-            extractor_payload_type: None,
-        };
-        enrich_sum_variant_operation_facts(&mut call, Some(&option_ty), &[option_some]);
-        assert!(call.sum_owner.is_some());
-        assert!(call.sum_variant.is_some());
-        assert_eq!(call.domain, HirCallableDomain::Extractor);
-        assert_eq!(call.extractor_payload_type, Some(ValkyrieType::Integer32 { signed: true }));
     }
 
     fn nullary_variant_constructor(owner: &str, variant: &str, sum_owner_index: u32) -> OverloadCandidate {

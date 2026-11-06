@@ -63,41 +63,6 @@ fn enriched_sum_owner_variant(
         .find_map(|candidate| candidate.sum_owner.zip(candidate.sum_variant))
 }
 
-pub(crate) fn enrich_sum_variant_operation_facts(
-    call: &mut HirResolvedCall,
-    receiver_type: Option<&ValkyrieType>,
-    candidates: &[OverloadCandidate],
-) {
-    if call.sum_owner.is_some() && call.sum_variant.is_some() {
-        return;
-    }
-    let Some(receiver_type) = receiver_type
-    else {
-        return;
-    };
-    let method_name = call.symbol.parts().last().map(|part| part.as_str());
-    let variant_name = match method_name {
-        Some("unwrap") | Some("is_some") if is_option_apply_type(receiver_type) => "Some",
-        _ => return,
-    };
-    let Some(declaration) = sum_declaration_of_type(receiver_type)
-    else {
-        return;
-    };
-    let Some((owner, variant)) = enriched_sum_owner_variant(candidates, declaration, variant_name)
-    else {
-        return;
-    };
-    call.sum_owner = Some(owner);
-    call.sum_variant = Some(variant);
-    if method_name == Some("unwrap") {
-        call.domain = HirCallableDomain::Extractor;
-        if call.extractor_payload_type.is_none() {
-            call.extractor_payload_type = option_apply_payload_type(receiver_type).or_else(|| nullable_payload_type(&call.return_type));
-        }
-    }
-}
-
 pub(crate) fn try_resolve_pattern_extractor(
     canonical_callee: &NamePath,
     actual_type: &ValkyrieType,
