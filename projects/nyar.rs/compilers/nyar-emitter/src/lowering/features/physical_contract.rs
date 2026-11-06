@@ -108,7 +108,11 @@ pub(crate) fn declared_text_projection(boundary: PhysicalTextBoundary, ty: &Nyar
     let carrier = match (encoding, boundary) {
         (PhysicalTextEncoding::Utf8, PhysicalTextBoundary::WasmJsGlue) => Some(PhysicalTextCarrier::JsStringHandle),
         (PhysicalTextEncoding::Utf8, PhysicalTextBoundary::WasiComponent) => Some(PhysicalTextCarrier::CanonicalUtf8Bytes),
-        (PhysicalTextEncoding::Utf16, _) => None,
+        // `WasiComponent` 的 canonical ABI 只有 UTF-8 字节列表，没有 `utf16` 的
+        // canonical 表示，因此该边界不存在 `utf16` 的文本 ABI 事实。
+        (PhysicalTextEncoding::Utf16, PhysicalTextBoundary::WasiComponent) => return None,
+        // `WasmJsGlue` 已冻结 `utf16` 的编码身份，共享 JS string 载体尚未接入。
+        (PhysicalTextEncoding::Utf16, PhysicalTextBoundary::WasmJsGlue) => None,
     };
     Some(PhysicalTextProjection { encoding, boundary, carrier })
 }
@@ -134,11 +138,18 @@ mod text_abi_tests {
         assert_eq!(js_utf8.carrier, Some(PhysicalTextCarrier::JsStringHandle));
 
         for boundary in [PhysicalTextBoundary::WasmJsGlue, PhysicalTextBoundary::WasiComponent] {
-            let projection = declared_text_projection(boundary, &NyarType::Utf16)
-                .expect("`utf16` 的编码身份必须由声明类型决定");
-            assert_eq!(projection.encoding, PhysicalTextEncoding::Utf16);
-            assert_eq!(projection.boundary, boundary);
-            assert_eq!(projection.carrier, None, "`utf16` 不得借用其它编码的载体");
+            let projection = declared_text_projection(boundary, &NyarType::Utf16);
+            match boundary {
+                // `WasmJsGlue` 已声明编码身份，但共享 JS string 载体尚未接入。
+                PhysicalTextBoundary::WasmJsGlue => {
+                    let projection = projection.expect("`WasmJsGlue` 的 `utf16` 编码身份必须已冻结");
+                    assert_eq!(projection.encoding, PhysicalTextEncoding::Utf16);
+                    assert_eq!(projection.boundary, boundary);
+                    assert_eq!(projection.carrier, None, "`utf16` 不得借用其它编码的载体");
+                }
+                // canonical ABI 没有 `utf16` 表示，该边界不存在文本 ABI 事实。
+                PhysicalTextBoundary::WasiComponent => assert_eq!(projection, None),
+            }
         }
         assert_eq!(
             unresolved_text_abi_reason(&NyarType::Utf16),

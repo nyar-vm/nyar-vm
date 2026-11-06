@@ -30,6 +30,8 @@ use crate::{
 };
 use nyar::{HostProjectionBoundary, NyarType};
 
+use crate::lowering::features::physical_contract::PhysicalTextBoundary;
+
 /// 将片段降低为指定宿主边界的 wasm 模块（默认 WASI Preview2 打包链，集成测试专用）。
 ///
 /// Lower a fragment for a wasm host boundary (default WASI Preview2 package train).
@@ -104,13 +106,14 @@ pub fn lower_fragment_to_wasm_module_for(
     Ok((module, imports))
 }
 
-/// The current JS-glue and WASI component ABIs have an explicit UTF-8 carrier
-/// only.  Keep UTF-16 out of both paths until each has its own declared ABI
-/// projection; an i32 handle, JS string, or canonical ABI string is not proof
-/// of the language encoding it represents.
+/// 文本 ABI 站点的准入守卫：编码身份只由声明的 `NyarType` 与 `host_boundary`
+/// 决定（`physical_contract::declared_text_projection`），不看函数名或包名。
+/// 只有直接位于 ABI 位置的 `utf16` 才有冻结契约；嵌套在聚合中的 `utf16` 与
+/// `utf16` 字面量没有声明位置，仍按原错误拒绝。
 #[doc(hidden)]
 pub fn validate_text_encoding_projection(submission: &FragmentSubmission, host_boundary: HostProjectionBoundary) -> Result<()> {
     let executable = &submission.backend_plan;
+    let text_abi_boundary = host_text_abi_boundary(host_boundary);
     for operation in executable.instances() {
         let Some(view) = executable.get_function(&operation)
         else {
@@ -121,7 +124,7 @@ pub fn validate_text_encoding_projection(submission: &FragmentSubmission, host_b
         sites.extend(function.param_types.iter().enumerate().map(|(index, ty)| (format!("parameter {index}"), ty)));
         sites.extend(function.value_types.iter().map(|(value, ty)| (format!("SSA value {}", value.0), ty)));
         for (site, ty) in sites {
-            if type_contains_utf16(ty) {
+            if text_abi_site_denied(ty, text_abi_boundary) {
                 return Err(format!(
                     "WASM pre-emission verifier: {} function `{}` {site} requires an explicit UTF-16 ABI contract; {:?} must not use the UTF-8 carrier",
                     boundary_name(host_boundary),
@@ -144,6 +147,29 @@ pub fn validate_text_encoding_projection(submission: &FragmentSubmission, host_b
         }
     }
     Ok(())
+}
+
+fn host_text_abi_boundary(host_boundary: HostProjectionBoundary) -> Option<PhysicalTextBoundary> {
+    match host_boundary {
+        HostProjectionBoundary::WasmJsGlue => Some(PhysicalTextBoundary::WasmJsGlue),
+        HostProjectionBoundary::WasiComponent => Some(PhysicalTextBoundary::WasiComponent),
+        _ => None,
+    }
+}
+
+fn text_abi_site_denied(ty: &NyarType, boundary: Option<PhysicalTextBoundary>) -> bool {
+    if !type_contains_utf16(ty) {
+        return false;
+    }
+    match ty {
+        // 只有直接位于 ABI 位置的 `utf16` 才查冻结事实；聚合内的 `utf16`
+        // 没有独立的 ABI 位置，保持原有拒绝。
+        NyarType::Utf16 => match boundary {
+            Some(boundary) => crate::lowering::features::physical_contract::declared_text_projection(boundary, ty).is_none(),
+            None => true,
+        },
+        _ => true,
+    }
 }
 
 fn type_contains_utf16(ty: &NyarType) -> bool {
