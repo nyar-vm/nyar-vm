@@ -13,6 +13,7 @@ mod backend_match_null_payload_e2e_tests;
 mod backend_ovm_array_provider_e2e_tests;
 mod backend_ovm_match_tail_value_tests;
 mod backend_ovm_operator_freeze_tests;
+mod backend_ovm_text_carrier_e2e_tests;
 mod backend_ovm_where_super_trait_e2e_tests;
 mod backend_single_quote_literal_e2e_tests;
 mod backend_trait_witness_materialization_tests;

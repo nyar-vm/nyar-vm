@@ -75,6 +75,14 @@ pub fn from_utf16(units: &[u16], operation: &'static str) -> Result<String, Odin
     Ok(text)
 }
 
+/// 字节数组 → UTF-8：按完整内容解码，不要求终止 NUL，也不丢弃任何字节。
+pub fn from_bytes(bytes: &[u8], operation: &'static str) -> Result<String, OdinRuntimeError> {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => Ok(text.to_string()),
+        Err(_) => Err(OdinRuntimeError::InvalidUtf8 { operation }),
+    }
+}
+
 /// UTF-8 → C 字符串字节：末尾补终止 NUL；内嵌 NUL 拒绝而不是截断。
 pub fn to_c_str(text: &str, operation: &'static str) -> Result<Vec<u8>, OdinRuntimeError> {
     if text.contains('\0') {

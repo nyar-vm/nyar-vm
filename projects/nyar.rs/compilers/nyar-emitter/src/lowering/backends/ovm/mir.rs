@@ -28,6 +28,25 @@ use crate::{
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
 
+/// OVM 私有文本载体桥：raw 宿主串 → `[u8]` 字节数组（不补 NUL、不截断）。
+const TEXT_TO_BYTES_IMPORT: &str = "utf8.to_bytes";
+
+/// OVM 私有文本载体桥：`[u8]` 字节数组 → raw 宿主串（不要求 NUL 终止）。
+const TEXT_FROM_BYTES_IMPORT: &str = "utf8.from_bytes";
+
+/// `utf8` 槽在 OVM 上的两种物理载体。
+///
+/// 目标计划用 `value_layouts` / `return_layout` 冻结「这个槽是托管文本对象」；
+/// 宿主导入的返回值与字面量仍是 raw 串。只在边界按冻结事实转换，运行期不看
+/// `Value` 的实际类型兜底。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TextCarrier {
+    /// 宿主 ABI raw 串（`Value::String`）。
+    Raw,
+    /// 托管文本对象（`Value::Object`），携带计划冻结的布局身份。
+    Managed(LayoutId),
+}
+
 /// 整数取负没有原生头码：计划显式冻结 `0 - x` 的发射配方。
 const I32_NEGATE_STEPS: &[TargetOperandStep] =
     &[TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value: 0 }, TargetOperandStep::Arguments];
@@ -224,6 +243,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
         }
         let function_entry_arities = build_nyar_function_entry_arities(exec.as_ref(), &operations);
         let param_types_by_function_index = build_nyar_function_param_types(exec.as_ref(), &operations)?;
+        let param_layouts_by_function_index = build_nyar_function_param_layouts(exec.as_ref(), &operations);
 
         for instance in operations {
             let Some(view) = exec.get_function(&instance)
@@ -242,6 +262,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 &function_index_by_instance,
                 &function_entry_arities,
                 &param_types_by_function_index,
+                &param_layouts_by_function_index,
                 &external_link_by_instance,
                 &external_param_types_by_instance,
                 &external_opcode_by_instance,
@@ -364,6 +385,39 @@ fn build_nyar_function_param_types(exec: &TargetExecutionPlan, operations: &[Ite
     Ok(map)
 }
 
+/// 被调函数入口形参的冻结布局表（与入口块 SSA 形参同源）。
+///
+/// `Some(layout)` 表示该槽按托管对象传递，`None` 表示计划没有冻结布局身份。
+/// 文本形参的载体转换只消费这张冻结事实，不按形参名字或调用点猜探。
+fn build_nyar_function_param_layouts(exec: &TargetExecutionPlan, operations: &[ItemInstanceId]) -> BTreeMap<i32, Vec<Option<LayoutId>>> {
+    let mut map = BTreeMap::new();
+    for (index, instance) in operations.iter().enumerate() {
+        let Some(view) = exec.get_function(instance)
+        else {
+            continue;
+        };
+        let mir_fn = &view.function;
+        let parameters = mir_fn.blocks.get(mir_fn.entry.0 as usize).map(|block| block.parameters.as_slice()).unwrap_or(&[]);
+        let layouts = parameters.iter().map(|parameter| mir_fn.value_layouts.get(parameter).copied()).collect();
+        map.insert(index as i32, layouts);
+    }
+    map
+}
+
+/// 当前函数内 SSA 值 → 定义指令。载体分类沿 `StoreVar`/`Copy` 链走到源头，
+/// 只消费语义 MIR 的冻结定义，不在运行期观察 `Value` 的实际类型。
+fn build_nyar_value_definitions<'a>(mir_fn: &'a MirFunction, slots: &ExecutableSlotPlan) -> BTreeMap<MirValueRef, &'a MirInstruction> {
+    let mut map = BTreeMap::new();
+    for block in &mir_fn.blocks {
+        for instruction in &block.instructions {
+            if let Some(output) = slots.instruction_output(instruction) {
+                map.insert(output, instruction);
+            }
+        }
+    }
+    map
+}
+
 /// 库模式只导出用户 `[export]` / `exported_operations`；闭包内 std 辅助函数保持内部 `Call` 可见性。
 fn nyar_should_export_operation(submission: &FragmentSubmission, operation: ItemInstanceId) -> bool {
     if submission.backend_plan.wasm_export_names().contains_key(&operation) {
@@ -435,6 +489,7 @@ fn lower_mir_function_to_bytecode(
     function_index_by_instance: &BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &BTreeMap<i32, usize>,
     param_types_by_function_index: &BTreeMap<i32, Vec<NyarType>>,
+    param_layouts_by_function_index: &BTreeMap<i32, Vec<Option<LayoutId>>>,
     external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
     external_param_types_by_instance: &BTreeMap<ItemInstanceId, Vec<NyarType>>,
     external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
@@ -447,16 +502,19 @@ fn lower_mir_function_to_bytecode(
     let ctx = ExecutableLoweringContext::new(submission);
     let slots = ExecutableSlotPlan::plan_nyar(mir_fn);
     let block_order = collect_reachable_blocks(mir_fn);
+    let value_definitions = build_nyar_value_definitions(mir_fn, &slots);
 
     let mut lowerer = NyarMirLowerer {
         submission,
         ctx,
         mir_fn,
         slots,
+        value_definitions,
         emitter,
         function_index_by_instance,
         function_entry_arities,
         param_types_by_function_index,
+        param_layouts_by_function_index,
         external_link_by_instance,
         external_param_types_by_instance,
         external_opcode_by_instance,
@@ -480,10 +538,13 @@ struct NyarMirLowerer<'a, 'e> {
     ctx: ExecutableLoweringContext<'a>,
     mir_fn: &'a MirFunction,
     slots: ExecutableSlotPlan,
+    /// SSA 值 → 定义它的指令；文本载体分类沿定义链判定，不看运行期 `Value` 类型。
+    value_definitions: BTreeMap<MirValueRef, &'a MirInstruction>,
     emitter: &'a mut BytecodeEmitter<'e>,
     function_index_by_instance: &'a BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &'a BTreeMap<i32, usize>,
     param_types_by_function_index: &'a BTreeMap<i32, Vec<NyarType>>,
+    param_layouts_by_function_index: &'a BTreeMap<i32, Vec<Option<LayoutId>>>,
     external_link_by_instance: &'a BTreeMap<ItemInstanceId, ExternalImportLink>,
     external_param_types_by_instance: &'a BTreeMap<ItemInstanceId, Vec<NyarType>>,
     external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
@@ -938,7 +999,20 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 if let Some(value) = value {
                     // 返回槽类型是函数签名的冻结事实；常量必须按它选位宽。
                     let return_ty = self.mir_fn.return_type.clone();
-                    self.emit_operand_typed(value, Some(&return_ty))?;
+                    if matches!(return_ty, NyarType::Utf8) {
+                        let Some(return_layout) = self.mir_fn.return_layout
+                        else {
+                            return Err(format!(
+                                "OVM 文本返回值缺少目标计划冻结的 `return_layout`（函数 `{}`，返回类型 `{return_ty}`）：\
+                                 `utf8` 返回值必须按冻结布局物化，禁止把宿主 raw 串直接逃逸出函数边界",
+                                self.mir_fn.symbol
+                            ));
+                        };
+                        self.emit_text_boundary_operand(value, &return_ty, Some(return_layout), "返回值")?;
+                    }
+                    else {
+                        self.emit_operand_typed(value, Some(&return_ty))?;
+                    }
                 }
                 else {
                     // Call 约定固定压回 1 个返回值；unit / void 用 i32(0) 占位，供调用方 Pop。
@@ -1196,6 +1270,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                      禁止回落到 semantic MIR 的 `Integer64` 默认"
                 ));
             };
+            if matches!(expected, NyarType::Utf8) {
+                let site = format!("OVM 外部调用 `{callee_name}`（import={import_symbol} instance={instance:?}）的实参 #{index}");
+                self.emit_text_boundary_operand(argument, &expected, None, &site)?;
+                continue;
+            }
             match argument {
                 MirOperand::Value(_) => {
                     if !self.emit_call_operand(argument)? {
@@ -1238,14 +1317,28 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         for (index, argument) in arguments.iter().enumerate() {
             // 常量实参的位宽来自被调函数已冻结的入口形参槽类型；没有该槽时
             // 才回落到 semantic MIR 合同，绝不按字面量大小选位宽。
-            let param_ty = self.param_types_by_function_index.get(&function_index).and_then(|types| types.get(index));
+            let param_ty = self.param_types_by_function_index.get(&function_index).and_then(|types| types.get(index)).cloned();
+            if param_ty.as_ref() == Some(&NyarType::Utf8) {
+                let slot_layout =
+                    self.param_layouts_by_function_index.get(&function_index).and_then(|layouts| layouts.get(index)).copied().flatten();
+                let Some(slot_layout) = slot_layout
+                else {
+                    return Err(format!(
+                        "OVM 内部调用 `{path:?}`（function index={function_index}）的文本实参 #{index} 缺少被调函数冻结的入口 layout：\
+                         目标计划必须为 `utf8` 形参给出布局身份，禁止按宿主 raw 串传参"
+                    ));
+                };
+                let site = format!("内部调用 `{path:?}` 实参 #{index}");
+                self.emit_text_boundary_operand(argument, &NyarType::Utf8, Some(slot_layout), &site)?;
+                continue;
+            }
             match argument {
                 MirOperand::Value(_) => {
                     if !self.emit_call_operand(argument)? {
                         panic!("unmaterialized Nyar call operand in `{path:?}`: {argument:?}");
                     }
                 }
-                _ => self.emit_operand_typed(argument, param_ty)?,
+                _ => self.emit_operand_typed(argument, param_ty.as_ref())?,
             }
         }
         self.emitter.emit_imm1(OdinHeadCode::Call, function_index);
@@ -1465,6 +1558,142 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     /// SSA 值的语义类型（操作数位常量回落用的同一张冻结表）。
     fn value_semantic_type(&self, value: MirValueRef) -> Option<NyarType> {
         self.mir_fn.value_types.get(&value).cloned()
+    }
+
+    /// 该 SSA 值是否按 `utf8` 文本语义使用。
+    fn value_is_text(&self, value: MirValueRef) -> bool {
+        matches!(self.value_semantic_type(value), Some(NyarType::Utf8))
+    }
+
+    /// 文本操作数的冻结载体；非文本操作数返回 `None`。
+    ///
+    /// 分类只消费语义 MIR 定义链与目标计划的 `value_layouts`，不看运行期
+    /// `Value` 的实际类型。
+    fn operand_text_carrier(&self, operand: &MirOperand) -> Option<TextCarrier> {
+        self.operand_text_carrier_at_depth(operand, 0)
+    }
+
+    fn operand_text_carrier_at_depth(&self, operand: &MirOperand, depth: u32) -> Option<TextCarrier> {
+        match operand {
+            MirOperand::Value(value) => self.value_text_carrier_at_depth(*value, depth),
+            MirOperand::Constant(MirConstant::Utf8(_)) => Some(TextCarrier::Raw),
+            _ => None,
+        }
+    }
+
+    /// 沿 SSA 定义链判定文本载体：
+    /// - 字面量与宿主导入输出是 raw（宿主 ABI 形态）；
+    /// - `StoreVar`/`Copy` 只跟源，本相不在槽内改载体；
+    /// - 其余带冻结 `value_layouts` 的文本值是托管对象，缺布局则视为 raw。
+    fn value_text_carrier_at_depth(&self, value: MirValueRef, depth: u32) -> Option<TextCarrier> {
+        if !self.value_is_text(value) || depth > 8 {
+            return None;
+        }
+        if let Some(instruction) = self.value_definitions.get(&value) {
+            match &instruction.kind {
+                MirInstructionKind::LoadConstant { constant: MirConstant::Utf8(_), .. } => return Some(TextCarrier::Raw),
+                MirInstructionKind::StoreVar { value: source, .. } | MirInstructionKind::Copy { source } => {
+                    return self.operand_text_carrier_at_depth(source, depth + 1);
+                }
+                MirInstructionKind::Call { callee: MirOperand::Item(instance), .. }
+                    if self.external_link_by_instance.contains_key(instance) =>
+                {
+                    return Some(TextCarrier::Raw);
+                }
+                _ => {}
+            }
+        }
+        Some(self.mir_fn.value_layouts.get(&value).copied().map(TextCarrier::Managed).unwrap_or(TextCarrier::Raw))
+    }
+
+    /// 在文本边界（内部调用实参 / `Return` / 宿主导入实参）按冻结事实发射。
+    ///
+    /// `slot_layout = Some(layout)` 表示目标槽是托管对象：raw 必须物化为该布局，
+    /// 已托管对象必须与该布局同一身份。`None` 表示目标槽是宿主 raw：托管对象必须
+    /// 抽取成 raw 串。
+    fn emit_text_boundary_operand(
+        &mut self,
+        operand: &MirOperand,
+        expected: &NyarType,
+        slot_layout: Option<LayoutId>,
+        site: &str,
+    ) -> crate::Result<()> {
+        if !matches!(expected, NyarType::Utf8) {
+            return self.emit_operand_typed(operand, Some(expected));
+        }
+        let Some(carrier) = self.operand_text_carrier(operand)
+        else {
+            return Err(format!(
+                "OVM 文本边界要求 `utf8` 操作数，实际类型 {}（{site}，symbol=`{}`）：\
+                 raw 宿主串与文本对象只在冻结的 `utf8` 载体边界上互转，禁止按名字或运行期类型猜探",
+                self.operand_actual_type(operand),
+                self.mir_fn.symbol
+            ));
+        };
+        match (slot_layout, carrier) {
+            (Some(target), TextCarrier::Raw) => self.emit_text_materialize(target, operand, site),
+            (Some(target), TextCarrier::Managed(actual)) if actual == target => self.emit_text_raw_operand(operand, site),
+            (Some(target), TextCarrier::Managed(actual)) => Err(format!(
+                "OVM 文本载体布局不匹配：{} 的冻结 layout 是 {actual:?}，目标槽冻结 layout 是 {target:?}（{site}，symbol=`{}`）；\
+                 不同文本布局不得跨边界直接传递",
+                self.operand_actual_type(operand),
+                self.mir_fn.symbol
+            )),
+            (None, TextCarrier::Managed(_)) => self.emit_text_extract(operand, site),
+            (None, TextCarrier::Raw) => self.emit_text_raw_operand(operand, site),
+        }
+    }
+
+    /// 发射 raw 载体操作数（Value 读槽，常量按 `Utf8` 发射）。
+    fn emit_text_raw_operand(&mut self, operand: &MirOperand, _site: &str) -> crate::Result<()> {
+        self.emit_operand_typed(operand, Some(&NyarType::Utf8))
+    }
+
+    /// raw → 托管：`ObjectNew(layout)` → raw 串 → `utf8.to_bytes` → `FieldSet 0`。
+    fn emit_text_materialize(&mut self, layout_id: LayoutId, operand: &MirOperand, site: &str) -> crate::Result<()> {
+        let layout = self.ctx.layout_by_id(layout_id).cloned().ok_or_else(|| {
+            format!(
+                "OVM 文本载体 layout id={layout_id:?} 不在目标计划的布局表（{site}，symbol=`{}`）：\
+                 物化配方必须来自冻结布局，禁止猜测物理槽形状",
+                self.mir_fn.symbol
+            )
+        })?;
+        let layout_index = self.ensure_text_repr_layout(&layout, site)?;
+        self.emitter.emit_imm1(OdinHeadCode::ObjectNew, layout_index);
+        self.emit_text_raw_operand(operand, site)?;
+        self.emitter.emit_call_import(TEXT_TO_BYTES_IMPORT, 1);
+        self.emitter.emit_imm1(OdinHeadCode::FieldSet, 0);
+        Ok(())
+    }
+
+    /// 托管 → raw：操作数 → `FieldGet 0` → `utf8.from_bytes`。
+    fn emit_text_extract(&mut self, operand: &MirOperand, site: &str) -> crate::Result<()> {
+        self.emit_text_raw_operand(operand, site)?;
+        self.emitter.emit_imm1(OdinHeadCode::FieldGet, 0);
+        self.emitter.emit_call_import(TEXT_FROM_BYTES_IMPORT, 1);
+        Ok(())
+    }
+
+    /// 校验并登记文本布局：唯一冻结配方是单个 `[u8]` 字段槽，返回 OVM 布局下标。
+    fn ensure_text_repr_layout(&mut self, layout: &AggregateLayout, site: &str) -> crate::Result<i32> {
+        let is_byte_slice = matches!(
+            layout.fields.as_slice(),
+            [field]
+                if matches!(
+                    &field.ty,
+                    NyarType::Array(element) | NyarType::FixedArray { element, .. }
+                        if matches!(element.as_ref(), NyarType::Integer8 { signed: false })
+                )
+        );
+        if !is_byte_slice {
+            let shape = layout.fields.iter().map(|field| format!("{}:{}", field.name, field.ty)).collect::<Vec<_>>().join(", ");
+            return Err(format!(
+                "OVM 文本载体 layout `{}`（id={:?}）缺少冻结的单一 `[u8]` 槽配方：实际 fields=[{shape}]（{site}，symbol=`{}`）；\
+                 禁止用非冻结形状物化或抽取文本",
+                layout.name, layout.id, self.mir_fn.symbol
+            ));
+        }
+        Ok(self.ensure_nyar_layout(layout))
     }
 
     /// 制品字段的冻结类型；Odin 槽无类型，常量位宽只能由布局合同给出。

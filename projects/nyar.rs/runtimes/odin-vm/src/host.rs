@@ -100,6 +100,10 @@ pub enum HostOp {
     Utf16ToUtf8,
     /// UTF-16 码元计数（代理对算 2，不是码点数）。
     Utf16Length,
+    /// UTF-8 转完整字节数组：不补 NUL、不截断，内嵌 NUL 原样保留。
+    Utf8ToBytes,
+    /// 完整字节数组转 UTF-8：不要求终止 NUL，非法 UTF-8 结构化失败。
+    Utf8FromBytes,
     /// UTF-8 转 C 字符串：末尾补终止 NUL，内嵌 NUL 拒绝。
     Utf8ToCStr,
     /// C 字符串转 UTF-8：按首个 NUL 终止取内容，缺 NUL 或非法 UTF-8 结构化失败。
@@ -257,6 +261,8 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "utf8_to_utf16" => HostOp::Utf8ToUtf16,
         "utf16_to_utf8" => HostOp::Utf16ToUtf8,
         "utf16_length" => HostOp::Utf16Length,
+        "utf8.to_bytes" => HostOp::Utf8ToBytes,
+        "utf8.from_bytes" => HostOp::Utf8FromBytes,
         "utf8_to_c_str" => HostOp::Utf8ToCStr,
         "c_str_to_utf8" => HostOp::CStrToUtf8,
         "utf16_to_c_str" => HostOp::Utf16ToCStr,
@@ -458,6 +464,14 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             Ok(Value::String(text_runtime::from_utf16(&units, "utf16_to_utf8")?))
         }
         HostOp::Utf16Length => Ok(Value::I32(text_runtime::utf16_length(&u16_array_arg(heap, args, 0)?))),
+        HostOp::Utf8ToBytes => {
+            let bytes = utf8_arg(args, 0, "utf8")?.as_bytes().to_vec();
+            Ok(build_byte_array(heap, &bytes))
+        }
+        HostOp::Utf8FromBytes => {
+            let bytes = bytes_arg(heap, args, 0, "utf8 byte array", "utf8 byte")?;
+            Ok(Value::String(text_runtime::from_bytes(&bytes, "utf8.from_bytes")?))
+        }
         HostOp::Utf8ToCStr => {
             let bytes = text_runtime::to_c_str(utf8_arg(args, 0, "utf8")?, "utf8_to_c_str")?;
             Ok(build_byte_array(heap, &bytes))
@@ -788,15 +802,26 @@ fn build_u16_array(heap: &mut ObjectHeap, units: &[u16]) -> Value {
 
 /// 严格 C 字符串取参：只接受字节固定数组（`Value::I32` 槽位，0..=255）。
 fn byte_array_arg(heap: &ObjectHeap, args: &[Value], index: usize) -> Result<Vec<u8>, OdinRuntimeError> {
+    bytes_arg(heap, args, index, "c_str byte array", "c_str byte")
+}
+
+/// 字节固定数组取参：`array_what` 用于非数组载体，`element_what` 用于非法元素。
+fn bytes_arg(
+    heap: &ObjectHeap,
+    args: &[Value],
+    index: usize,
+    array_what: &'static str,
+    element_what: &'static str,
+) -> Result<Vec<u8>, OdinRuntimeError> {
     let value = args.get(index).ok_or(OdinRuntimeError::StackUnderflow)?;
     let Value::Object(object_id) = value
     else {
-        return Err(OdinRuntimeError::TypeMismatch { expected: "c_str byte array", actual: value.type_name().to_string() });
+        return Err(OdinRuntimeError::TypeMismatch { expected: array_what, actual: value.type_name().to_string() });
     };
     let slots = match heap.get(*object_id) {
         Some(ObjectPayload::LayoutObject { slots, .. }) => slots,
         Some(_) => {
-            return Err(OdinRuntimeError::TypeMismatch { expected: "c_str byte array", actual: "non-layout object".to_string() });
+            return Err(OdinRuntimeError::TypeMismatch { expected: array_what, actual: "non-layout object".to_string() });
         }
         None => return Err(OdinRuntimeError::ModuleLoad(format!("invalid object id {object_id}"))),
     };
@@ -804,7 +829,7 @@ fn byte_array_arg(heap: &ObjectHeap, args: &[Value], index: usize) -> Result<Vec
         .iter()
         .map(|element| match element {
             Value::I32(byte) if (0..=0xFF).contains(byte) => Ok(*byte as u8),
-            other => Err(OdinRuntimeError::TypeMismatch { expected: "c_str byte", actual: other.type_name().to_string() }),
+            other => Err(OdinRuntimeError::TypeMismatch { expected: element_what, actual: other.type_name().to_string() }),
         })
         .collect()
 }
