@@ -5,6 +5,9 @@ use crate::compiler::types::{Identifier, NamePath};
 use nyar_types::{AttributeId, AttributeRegistry, LibraryGlueOperation, builtin_attribute};
 use std::sync::{Mutex, OnceLock};
 
+/// `[export(case: ...)]` 合同允许的取值集合（唯一事实来源）。
+pub const EXPORT_CASES: [&str; 2] = ["camelCase", "snake_case"];
+
 /// CLR / wasm / Nyar 模块表面上的导出分区与可选重命名。
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -144,10 +147,13 @@ pub fn parse_export_spec_from_annotations(annotations: &[HirAttribute]) -> Optio
                 else {
                     return None;
                 };
-                match value.as_str() {
-                    "camelCase" | "snake_case" => export_case = Some(value),
-                    // 非法 case：整条 export 合同失败闭合，禁止把拼写当导出名。
-                    _ => return None,
+                if EXPORT_CASES.contains(&value.as_str()) {
+                    export_case = Some(value);
+                }
+                else {
+                    // 非法 case：整条 export 合同失败闭合，禁止把拼写当导出名；
+                    // 注解处的结构化诊断由 `invalid_export_case_argument` 提供。
+                    return None;
                 }
             }
             else {
@@ -166,6 +172,26 @@ pub fn parse_export_spec_from_annotations(annotations: &[HirAttribute]) -> Optio
     }
 
     Some(HirExportSpec { partitions, export_name, export_case })
+}
+
+/// 提取 `[export(case: ...)]` 中不在合同枚举内的取值及其实参表达式。
+///
+/// 返回 `None` 表示没有 `[export]` 注解或 `case` 实参合法。字符串字面量逐字返回，
+/// 非字符串实参记为 `<non-string literal>`；调用方在注解处结构化失败，禁止因为
+/// `parse_export_spec_from_annotations` 静默返回 `None` 而退化成下游缺少导出错误。
+pub fn invalid_export_case_argument(annotations: &[HirAttribute]) -> Option<(String, &HirExpr)> {
+    let attribute = annotations.iter().find(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::export()))?;
+
+    for argument in &attribute.arguments {
+        if argument.key.as_ref().map(|key| key.as_str()) != Some("case") {
+            continue;
+        }
+        let value = argument_string_literal(argument).unwrap_or_else(|| "<non-string literal>".to_string());
+        if !EXPORT_CASES.contains(&value.as_str()) {
+            return Some((value, &argument.value));
+        }
+    }
+    None
 }
 
 fn argument_string_literal(argument: &HirArgument) -> Option<String> {

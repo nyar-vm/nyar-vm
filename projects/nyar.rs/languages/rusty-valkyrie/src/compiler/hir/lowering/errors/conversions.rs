@@ -415,6 +415,13 @@ impl std::fmt::Display for HirError {
                     }
                 }
             }
+            Self::InvalidExportCase { value, span, .. } => {
+                write!(
+                    f,
+                    "`[export]` annotation `case` value `{value}` is not in the contract set; allowed values are `camelCase` and `snake_case` (at {}..{})",
+                    span.start, span.end
+                )
+            }
         }
     }
 }

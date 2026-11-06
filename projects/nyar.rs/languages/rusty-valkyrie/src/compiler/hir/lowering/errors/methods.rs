@@ -129,6 +129,7 @@ impl HirError {
             Self::IntegerLiteralOutOfRange { .. } => "valkyrie.hir.integer_literal_out_of_range",
             Self::InvalidTupleLabeling { .. } => "valkyrie.hir.invalid_tuple_labeling",
             Self::InvalidArrayExtent { .. } => "valkyrie.hir.invalid_array_extent",
+            Self::InvalidExportCase { .. } => "valkyrie.hir.invalid_export_case",
         }
     }
 }

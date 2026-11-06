@@ -359,6 +359,11 @@ impl From<HirError> for DiagnosticRow {
                     row = row.with_arg("count", DiagnosticArg::Int(*count as i64));
                 }
             }
+            HirError::InvalidExportCase { value, .. } => {
+                row = row
+                    .with_arg("value", DiagnosticArg::String(value.clone()))
+                    .with_arg("allowed", DiagnosticArg::String(crate::compiler::types::hir::EXPORT_CASES.join(",")));
+            }
             HirError::InvalidSingleQuoteLiteral { failure, .. } => {
                 row = row.with_arg("failure", DiagnosticArg::String(single_quote_literal_failure_name(failure).to_string()));
                 match failure {
@@ -645,6 +650,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::IntegerLiteralOutOfRange { source, .. } => source.clone(),
         HirError::InvalidTupleLabeling { source, .. } => source.clone(),
         HirError::InvalidArrayExtent { source, .. } => source.clone(),
+        HirError::InvalidExportCase { source, .. } => source.clone(),
     }
 }
 
@@ -728,6 +734,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::IntegerLiteralOutOfRange { span, .. } => span.clone(),
         HirError::InvalidTupleLabeling { span, .. } => span.clone(),
         HirError::InvalidArrayExtent { span, .. } => span.clone(),
+        HirError::InvalidExportCase { span, .. } => span.clone(),
     }
 }
 

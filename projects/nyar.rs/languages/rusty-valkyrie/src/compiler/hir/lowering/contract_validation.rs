@@ -4,7 +4,10 @@ use crate::compiler::{
     diagnostics::pending::{self, CompileDiagnostic},
     driver::validation::validate_semantic_module,
     hir::{lowering::errors::HirError, overload::{has_unresolved_generic_arguments, owner_type_generic_binders}},
-    types::hir::{HirBlock, HirCallableDomain, HirExpr, HirExprKind, HirFunction, HirModule, HirResolvedCall, HirStatementKind},
+    types::hir::{
+        EXPORT_CASES, HirBlock, HirCallableDomain, HirExpr, HirExprKind, HirFunction, HirModule, HirResolvedCall, HirStatementKind,
+        invalid_export_case_argument,
+    },
 };
 
 /// 调用合同失败必须指向真实源码身份：模块 `source_path` 是 HIR 侧唯一可用的文件事实。
@@ -42,9 +45,91 @@ fn expr_diagnostic_source(module: &HirModule, expr: &HirExpr, inherited: &Diagno
 
 /// 前端统一验证调用身份、枚举判别与完整语义合同，不按错误文本放行。
 pub(crate) fn validate_hir_contract(hir: &HirModule) -> Result<(), HirError> {
+    validate_export_case_annotations(hir)?;
     validate_resolved_call_contracts(hir)?;
     crate::compiler::hir::lowering::nominal_declarations::validate_enum_discriminators(hir)?;
     validate_semantic_module(hir)
+}
+
+/// `[export(case: ...)]` 的取值只接受固定枚举；非法值必须在注解处结构化失败。
+///
+/// `parse_export_spec_from_annotations` 对非法 `case` 返回 `None` 是失败闭合，但若不在
+/// 注解处报出，下游只会看到「库缺少已解析导出」的二级错误：数量、定位与原因都已失真
+/// （63 个题解曾因此被误记为导出缺失）。诊断逐条进入暂存汇，控制流仍返回首个错误。
+pub(crate) fn validate_export_case_annotations(hir: &HirModule) -> Result<(), HirError> {
+    let mut errors = Vec::new();
+    collect_module_export_cases(hir, &module_source(hir), &mut errors);
+    let mut errors = errors.into_iter();
+    let Some(first) = errors.next()
+    else {
+        return Ok(());
+    };
+    for error in std::iter::once(&first).chain(errors.as_slice()) {
+        let HirError::InvalidExportCase { value, source, span } = error
+        else {
+            unreachable!("the collector above only produces export-case failures");
+        };
+        let row = DiagnosticRow::new(
+            error.code(),
+            DiagnosticSeverity::Error,
+            DiagnosticPhase::Hir,
+            DiagnosticOwner::frontend("rusty-valkyrie"),
+            source.clone(),
+            span.clone(),
+        )
+        .with_arg("value", DiagnosticArg::String(value.clone()))
+        .with_arg("allowed", DiagnosticArg::String(EXPORT_CASES.join(",")));
+        // 定位由渲染层从 `source` + `span` 展开，展示文本不再重复定位后缀。
+        let message = format!(
+            "`[export]` annotation `case` value `{value}` is not in the contract set; allowed values are `camelCase` and `snake_case`"
+        );
+        pending::push_compile_diagnostic(CompileDiagnostic::new(row, message));
+    }
+    Err(first)
+}
+
+fn collect_module_export_cases(hir: &HirModule, source: &DiagnosticSource, errors: &mut Vec<HirError>) {
+    for submodule in &hir.submodules {
+        collect_module_export_cases(submodule, &inherited_source(submodule, source), errors);
+    }
+    for singleton in &hir.singletons {
+        for function in &singleton.methods {
+            collect_function_export_case(hir, function, source, errors);
+        }
+    }
+    for function in &hir.functions {
+        collect_function_export_case(hir, function, source, errors);
+    }
+    for structure in &hir.structs {
+        for function in &structure.methods {
+            collect_function_export_case(hir, function, source, errors);
+        }
+    }
+    for trait_def in &hir.traits {
+        for function in trait_def.methods.iter().chain(&trait_def.default_methods) {
+            collect_function_export_case(hir, function, source, errors);
+        }
+    }
+    for implementation in &hir.impls {
+        for function in &implementation.methods {
+            collect_function_export_case(hir, function, source, errors);
+        }
+    }
+    for callable in &hir.instantiated_callables {
+        collect_function_export_case(hir, &callable.function, source, errors);
+    }
+}
+
+fn collect_function_export_case(module: &HirModule, function: &HirFunction, source: &DiagnosticSource, errors: &mut Vec<HirError>) {
+    let Some((value, expr)) = invalid_export_case_argument(&function.annotations)
+    else {
+        return;
+    };
+    errors.push(HirError::InvalidExportCase {
+        value,
+        source: expr_diagnostic_source(module, expr, source),
+        span: expr_diagnostic_span(expr),
+    });
 }
 
 /// Semantic MIR may only be produced from calls carrying an overload-selected

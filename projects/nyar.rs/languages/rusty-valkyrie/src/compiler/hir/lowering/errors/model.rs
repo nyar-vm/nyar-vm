@@ -828,6 +828,18 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// `[export(case: ...)]` 的 `case` 取值不在合同枚举内。
+    ///
+    /// 合法取值集合与当前非法值都进入诊断参数，定位落在 `case` 实参表达式上：
+    /// 非法值不得因整条导出合同静默返回 `None` 而退化成下游「缺少导出」的二级错误。
+    InvalidExportCase {
+        /// 注解给出的原始取值文本（非字符串字面量记为 `<non-string literal>`）。
+        value: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span（`case` 实参表达式）。
+        span: DiagnosticSpan,
+    },
 }
 
 /// 固定数组 extent 的结构化失败原因。

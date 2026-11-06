@@ -22,7 +22,8 @@ pub use types::{AccessLevel, *};
 pub use context::RenameContext;
 pub use r#enum::{HirEnum, HirFlagMember, HirFlags, HirVariant};
 pub use export_spec::{
-    HirExportSpec, parse_export_spec_from_annotations, parse_workload_phase_from_annotations, resolve_attribute_id, snake_case_to_camel_case,
+    EXPORT_CASES, HirExportSpec, invalid_export_case_argument, parse_export_spec_from_annotations, parse_workload_phase_from_annotations,
+    resolve_attribute_id, snake_case_to_camel_case,
 };
 pub use expr::{
     CaptureMode, CaptureStorage, HirCallArgument, HirCallableDomain, HirCapture, HirExpr, HirExprKind, HirFunctionReference, HirLambdaEnvironment,
