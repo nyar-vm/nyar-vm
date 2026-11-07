@@ -47,6 +47,17 @@ const fn unary(operand_type: TargetOperandType, opcode: u8) -> TargetOperatorPla
     }
 }
 
+/// 单实参、结果载体与实参载体不同的目标指令（如位模式重解释）。
+const fn unary_to(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: u8) -> TargetOperatorPlan {
+    TargetOperatorPlan {
+        arity: 1,
+        operand_type,
+        result_type,
+        recipe: TargetOperatorRecipe::Operands,
+        encoding: TargetOperatorEncoding::Wasm(opcode),
+    }
+}
+
 const fn integer_negate(operand_type: TargetOperandType, steps: &'static [TargetOperandStep], sub_opcode: u8) -> TargetOperatorPlan {
     TargetOperatorPlan {
         arity: 1,
@@ -133,6 +144,10 @@ pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetOperat
         "f64.ge" => binary(TargetOperandType::F64, TargetOperandType::I32, 0x66),
         // 浮点 neg 必须保留 -0.0，走原生 f64.neg 而不是 `0.0 - x`。
         "f64.neg" => unary(TargetOperandType::F64, 0x9A),
+        // 位模式重解释：只搬位，不做数值转换，因此实参/结果载体不同且 arity 为 1。
+        // `i64.reinterpret_f64` 是无损 bitcast，NaN payload 与 -0.0 的符号位原样保留。
+        "i64.reinterpret_f64" => unary_to(TargetOperandType::F64, TargetOperandType::I64, 0xBD),
+        "f64.reinterpret_i64" => unary_to(TargetOperandType::I64, TargetOperandType::F64, 0xBF),
 
         _ => return None,
     })
@@ -146,5 +161,35 @@ pub(super) fn emit_opcode(byte: u8, code: &mut Vec<u8>) {
     match WasmOpcode::from_u8(byte) {
         Some(opcode) => opcode.encode(code),
         None => code.push(byte),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 位重解释是结构性单指令配方：`F64 -> I64` / `I64 -> F64`，不允许按函数名特判。
+    #[test]
+    fn reinterpret_mnemonics_freeze_cross_carrier_unary_plans() {
+        let to_bits = freeze_wasm_numeric_binding("i64.reinterpret_f64").expect("`i64.reinterpret_f64` 必须在助记符表内");
+        assert_eq!(to_bits.arity, 1, "bitcast 只接受一个实参");
+        assert_eq!(to_bits.operand_type, TargetOperandType::F64, "`f64.to_bits` 的实参必须是 f64 载体");
+        assert_eq!(to_bits.result_type, TargetOperandType::I64, "`f64.to_bits` 必须产生 64 位整数载体");
+        assert_eq!(to_bits.recipe, TargetOperatorRecipe::Operands, "bitcast 不得套用数值转换配方");
+        assert_eq!(to_bits.encoding, TargetOperatorEncoding::Wasm(0xBD), "`i64.reinterpret_f64` 的标准 opcode 是 0xBD");
+
+        let from_bits = freeze_wasm_numeric_binding("f64.reinterpret_i64").expect("`f64.reinterpret_i64` 必须在助记符表内");
+        assert_eq!(from_bits.arity, 1, "bitcast 只接受一个实参");
+        assert_eq!(from_bits.operand_type, TargetOperandType::I64, "`f64.from_bits` 的实参必须是 64 位整数载体");
+        assert_eq!(from_bits.result_type, TargetOperandType::F64, "`f64.from_bits` 必须产生 f64 载体");
+        assert_eq!(from_bits.recipe, TargetOperatorRecipe::Operands, "bitcast 不得套用数值转换配方");
+        assert_eq!(from_bits.encoding, TargetOperatorEncoding::Wasm(0xBF), "`f64.reinterpret_i64` 的标准 opcode 是 0xBF");
+    }
+
+    /// 未知助记符不得猜默认指令。
+    #[test]
+    fn unknown_mnemonic_stays_unfrozen() {
+        assert!(freeze_wasm_numeric_binding("i64.reinterpret_f32").is_none());
+        assert!(freeze_wasm_numeric_binding("f64.to_bits").is_none());
     }
 }

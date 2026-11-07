@@ -1288,10 +1288,10 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 })
                 .flatten()
             else {
-                panic!(
+                return Err(format!(
                     "Nyar 目标不支持外部调用 `{callee_name}`：链接合同 {link}（contract/tag）不是已绑定的目标 provider；\
                      需要 host 边界 + 目标标签 `ovm-operator` + 恰好一段符号，未绑定目标 provider 不得回落"
-                );
+                ));
             };
             self.emit_external_arguments(&callee_name, instance, arguments)?;
             self.emitter.emit_call_import(symbol, arguments.len() as i32);
