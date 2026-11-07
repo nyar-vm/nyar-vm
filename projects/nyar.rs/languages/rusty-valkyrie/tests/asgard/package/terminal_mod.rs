@@ -20,7 +20,7 @@ fn demo_component() -> LoweredComponent {
 #[test]
 fn terminal_package_has_all_artifacts() {
     let component = demo_component();
-    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME), "app", &[]);
+    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME).expect("generate terminal source"), "app", &[]);
     assert!(out.files.iter().any(|(n, _)| n == "manifest.toml"), "missing manifest.toml");
     assert!(out.files.iter().any(|(n, _)| n == "app.v"), "missing app.v");
     let exe_count = out.files.iter().filter(|(n, _)| n.starts_with("app")).count();
@@ -30,7 +30,7 @@ fn terminal_package_has_all_artifacts() {
 #[test]
 fn app_v_contains_widget_runtime() {
     let component = demo_component();
-    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME), "app", &[]);
+    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME).expect("generate terminal source"), "app", &[]);
     let (_, artifact) = out.files.iter().find(|(n, _)| n == "app.v").expect("app.v");
     let text = match artifact {
         PackageArtifact::Text(text) => text,
@@ -43,7 +43,7 @@ fn app_v_contains_widget_runtime() {
 #[test]
 fn manifest_declares_terminal_platform() {
     let component = demo_component();
-    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME), "app", &[]);
+    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME).expect("generate terminal source"), "app", &[]);
     let (_, artifact) = out.files.iter().find(|(n, _)| n == "manifest.toml").expect("manifest.toml");
     let text = match artifact {
         PackageArtifact::Text(text) => text,
@@ -55,7 +55,7 @@ fn manifest_declares_terminal_platform() {
 #[test]
 fn no_desktop_or_mobile_artifacts() {
     let component = demo_component();
-    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME), "app", &[]);
+    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME).expect("generate terminal source"), "app", &[]);
     for (name, _) in &out.files {
         let lower = name.to_ascii_lowercase();
         assert!(!lower.contains("index.html"), "unexpected index.html: {name}");
@@ -68,7 +68,7 @@ fn no_desktop_or_mobile_artifacts() {
 #[test]
 fn app_v_has_host_contract_declarations() {
     let component = demo_component();
-    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME), "app", &[]);
+    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME).expect("generate terminal source"), "app", &[]);
     let (_, artifact) = out.files.iter().find(|(n, _)| n == "app.v").expect("app.v");
     let text = match artifact {
         PackageArtifact::Text(text) => text,
@@ -81,7 +81,7 @@ fn app_v_has_host_contract_declarations() {
 #[test]
 fn manifest_declares_app_v_source() {
     let component = demo_component();
-    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME), "app", &[]);
+    let out = package_terminal_project(build_awsl_terminal_source(&[component], TEST_RUNTIME).expect("generate terminal source"), "app", &[]);
     let (_, artifact) = out.files.iter().find(|(n, _)| n == "manifest.toml").expect("manifest.toml");
     let text = match artifact {
         PackageArtifact::Text(text) => text,

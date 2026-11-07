@@ -9,6 +9,7 @@ use serde_json::Value;
 use crate::asgard::{
     awsl::{LoweringOptions, compile_awsl_source},
     codegen::html_render::{StaticRenderResult, render_static_ir},
+    error::AsgardResult,
 };
 
 /// 将页面 HTML 注入 layout 的 `<slot />` 占位符。
@@ -17,9 +18,11 @@ pub fn wrap_with_layout(layout_source: &str, body_html: &str) -> String {
 }
 
 /// 解析 AWSL 源码并静态渲染。
-pub fn render_awsl_static(source: &str, component_name: &str, source_path: &str, data: &Value) -> StaticRenderResult {
-    let component = compile_awsl_source(source, component_name, source_path, &LoweringOptions::default()).expect("awsl compile failed");
-    render_static_ir(&component, data)
+///
+/// 编译错误（含 ABI 与脚本不一致）向上传播，不在 SSG 里把失败转成 panic。
+pub fn render_awsl_static(source: &str, component_name: &str, source_path: &str, data: &Value) -> AsgardResult<StaticRenderResult> {
+    let component = compile_awsl_source(source, component_name, source_path, &LoweringOptions::default())?;
+    Ok(render_static_ir(&component, data))
 }
 
 /// 生成完整静态 HTML 页面（无 `asgard-runtime.js`）。

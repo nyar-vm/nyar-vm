@@ -3,12 +3,13 @@
 use std::fmt::Write as _;
 
 use crate::asgard::{
-    awsl::{LoweredComponent, ScriptBinding, SignalValueType},
+    awsl::{LoweredComponent, ScriptBinding, SignalValueType, prepare_components_for_generation},
     codegen::{
         mobile_prelude::MOBILE_HOST_PRELUDE, mp_prelude::MP_SIG_PRELUDE, reactive_prelude::REACTIVE_PRELUDE,
         terminal_prelude::terminal_prelude, terminal_v_render::render_terminal_component_v, ui_host_abi::resolve_sig_export,
         v_prelude::DOM_PRELUDE, v_render::render_component_v,
     },
+    error::AsgardResult,
 };
 
 /// 生成单元自带的标量声明。
@@ -26,13 +27,18 @@ structure i32 { }
 "#;
 
 /// 从所有 AWSL 组件生成可编译的 V 源码（浏览器：DOM + reactive）。
-pub fn build_awsl_wasm_source(components: &[LoweredComponent]) -> String {
-    build_awsl_source_with_prelude(components, DOM_PRELUDE, REACTIVE_PRELUDE)
+///
+/// 生成入口统一做“先校验、后降级”：ABI 错误在产出任何 V 之前失败，
+/// 不允许漂到 V 编译期。
+pub fn build_awsl_wasm_source(components: &[LoweredComponent]) -> AsgardResult<String> {
+    let prepared = prepare_components_for_generation(components)?;
+    Ok(build_awsl_source_with_prelude(&prepared, DOM_PRELUDE, REACTIVE_PRELUDE))
 }
 
 /// 从所有 AWSL 组件生成移动端/桌面宿主 V 源码（原生 patch/event FFI）。
-pub fn build_awsl_host_source(components: &[LoweredComponent]) -> String {
-    build_awsl_source_with_prelude(components, MOBILE_HOST_PRELUDE, REACTIVE_PRELUDE)
+pub fn build_awsl_host_source(components: &[LoweredComponent]) -> AsgardResult<String> {
+    let prepared = prepare_components_for_generation(components)?;
+    Ok(build_awsl_source_with_prelude(&prepared, MOBILE_HOST_PRELUDE, REACTIVE_PRELUDE))
 }
 
 /// 从所有 AWSL 组件生成终端 TUI 宿主 V 源码（纯 Valkyrie widget_* 调用）。
@@ -40,41 +46,48 @@ pub fn build_awsl_host_source(components: &[LoweredComponent]) -> String {
 /// 终端路径是纯 V 实现：host_contract 原语 + `tui_runtime`（项目依赖闭包中的
 /// `std.terminal.tui.v`）+ AWSL 降低的 widget 构建代码合并为单一 `app.v`。
 /// 不依赖 DOM / 信号系统，状态由 TuiRuntime 绑定存储管理。
-pub fn build_awsl_terminal_source(components: &[LoweredComponent], tui_runtime: &str) -> String {
+pub fn build_awsl_terminal_source(components: &[LoweredComponent], tui_runtime: &str) -> AsgardResult<String> {
+    let components = prepare_components_for_generation(components)?;
     let mut out = terminal_prelude(tui_runtime);
     out.push_str("namespace std.terminal;\n\n");
     let mut generated = String::new();
-    for component in components {
+    for component in &components {
         generated.push_str(&render_terminal_component_v(component));
         generated.push('\n');
     }
     push_host_callable_micros(&mut out, &generated);
-    out
+    Ok(out)
 }
 
 /// 小程序逻辑 WASM：signal host + script / `awsl_call_*` / `awsl_sig_*`，无 DOM hydrate。
-pub fn build_awsl_mp_source(components: &[LoweredComponent]) -> String {
+pub fn build_awsl_mp_source(components: &[LoweredComponent]) -> AsgardResult<String> {
+    let components = prepare_components_for_generation(components)?;
     let mut out = String::from(MP_SIG_PRELUDE);
     out.push_str("micro awsl_key_none(): utf8 { return \"\" }\n\n");
+    let mut script_section = String::new();
     let mut generated = String::new();
-    for component in components {
-        emit_module_level_signal_slots(&mut generated, component);
+    for component in &components {
+        emit_module_level_signal_slots(&mut out, component);
         emit_mp_component_init(&mut generated, component);
+        // 脚本段是模块内部实现（信号重写后的 micro），永远不进宿主导出面。
         if !component.synthetic_v.trim().is_empty() {
-            generated.push_str(&component.synthetic_v);
-            generated.push('\n');
+            script_section.push_str(&component.synthetic_v);
+            script_section.push('\n');
         }
         emit_component_call_wrappers(&mut generated, component);
         emit_mp_sig_value_exports(&mut generated, component);
     }
+    out.push_str(&script_section);
     push_host_callable_micros(&mut out, &generated);
-    out
+    Ok(out)
 }
 
 /// 生成源码的顶层 `micro` 是宿主 ABI 的一部分：JS / 原生宿主按名字直接调用，
 /// 因此每条都必须显式 `[export]`。缺注解时编译虽然成功，但调用会静默落空。
 ///
 /// 只处理生成段，不处理静态 prelude：prelude 里的辅助函数不是宿主调用表面。
+/// 脚本段（`synthetic_v`）也不经过这里：用户脚本 micro 由 `awsl_call_*` 包装器
+/// 转接，不是宿主入口；带自由名的脚本 micro 更不能被导出。
 fn push_host_callable_micros(out: &mut String, generated: &str) {
     for line in generated.lines() {
         if line.starts_with("micro ") {
@@ -127,13 +140,15 @@ fn build_awsl_source_with_prelude(components: &[LoweredComponent], dom_or_mobile
     out.push_str(dom_or_mobile);
     out.push_str(reactive);
     out.push_str("micro awsl_key_none(): utf8 { return \"\" }\n\n");
+    let mut script_section = String::new();
     let mut generated = String::new();
     for component in components {
         // 浏览器路径禁止模块级 `let`（HIR 静默丢弃模块级绑定）：响应式状态全部
         // 经宿主按名信号表（`sig_named`）寻址，非响应式绑定在使用点内联展开。
+        // 脚本段单独落盘，避免被 `push_host_callable_micros` 当成宿主入口导出。
         if !component.synthetic_v.trim().is_empty() {
-            generated.push_str(&component.synthetic_v);
-            generated.push('\n');
+            script_section.push_str(&component.synthetic_v);
+            script_section.push('\n');
         }
         emit_component_call_wrappers(&mut generated, component);
         emit_component_sig_exports(&mut generated, component);
@@ -141,6 +156,7 @@ fn build_awsl_source_with_prelude(components: &[LoweredComponent], dom_or_mobile
         generated.push_str(&render_component_v(&component.route_name, &component.script_bindings, &script_body, &component.render_ir));
         generated.push('\n');
     }
+    out.push_str(&script_section);
     push_host_callable_micros(&mut out, &generated);
     out
 }

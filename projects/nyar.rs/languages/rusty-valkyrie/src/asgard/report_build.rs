@@ -69,7 +69,7 @@ pub fn emit_report_chart_islands(
     }
 
     let wasm_stem = module_stem.replace('.', "-");
-    let awsl_v = build_awsl_wasm_source(&components);
+    let awsl_v = build_awsl_wasm_source(&components)?;
     let resolved = resolve_project_source_groups(project_dir, &CanonicalTarget::browser())?;
     // 生成代码引用 `usize` 别名与 `Array` 合同（`<loop>` 的条目数量与下标）：
     // 按包名显式挂接 `std`，不泛化挂接整个 workspace 或整个 std 快照。

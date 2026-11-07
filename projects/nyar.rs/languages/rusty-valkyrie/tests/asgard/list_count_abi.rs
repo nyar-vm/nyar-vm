@@ -18,7 +18,7 @@ let series = ["第一条", "第二条", "第三条"]
 fn generated_source() -> String {
     let root = AwslParser::parse_root(FIXTURE).expect("parse loop fixture");
     let lowered = lower_component(&root, "index", "index.awsl", &LoweringOptions::default()).expect("lower loop fixture");
-    build_awsl_wasm_source(&[lowered])
+    build_awsl_wasm_source(&[lowered]).expect("generate loop fixture")
 }
 
 fn items_export_block(source: &str) -> &str {

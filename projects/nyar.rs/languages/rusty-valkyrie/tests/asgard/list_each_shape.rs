@@ -11,7 +11,7 @@ use rusty_valkyrie::asgard::{
 use serde_json::{Value, json};
 
 fn render(source: &str, data: &Value) -> rusty_valkyrie::asgard::codegen::StaticRenderResult {
-    render_awsl_static(source, "Test", "test.awsl", data)
+    render_awsl_static(source, "Test", "test.awsl", data).expect("render awsl static")
 }
 
 /// 最小复现：内层 `each` 引用的属性在部分条目上缺失。

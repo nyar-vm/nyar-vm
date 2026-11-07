@@ -9,7 +9,7 @@ fn hub_template_renders() {
         "doc_href": "doc/index.html",
         "doc_desc": "测试",
     });
-    let result = rusty_valkyrie::asgard::ssg::render_awsl_static(assets::embedded_hub_awsl(), "hub", "hub.awsl", &data);
+    let result = rusty_valkyrie::asgard::ssg::render_awsl_static(assets::embedded_hub_awsl(), "hub", "hub.awsl", &data).expect("render awsl static");
     assert!(result.html.contains("doc/index.html"));
 }
 

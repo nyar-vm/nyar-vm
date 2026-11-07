@@ -99,7 +99,7 @@ fn write_project(project: &std::path::Path, root: &std::path::Path) {
 fn generated_source() -> String {
     let root = AwslParser::parse_root(FIXTURE).expect("parse awsl");
     let lowered = lower_component(&root, "index", "source/index.awsl", &LoweringOptions::default()).expect("lower awsl component");
-    build_awsl_wasm_source(&[lowered])
+    build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source")
 }
 
 #[test]
