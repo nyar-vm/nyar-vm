@@ -457,7 +457,13 @@ pub(crate) fn instantiate_generic_callables(
             let equations = self_type.as_ref().map_or_else(BTreeMap::new, |self_type| declaration_equations(declaration, self_type, &trait_views));
             // 解析期对开放目标延后的义务必须在这里按具体代入结算：证据缺失则
             // 不铸造实例，调用点保持未闭合，由既有合同验证结构化失败。
-            if !where_constraints_satisfied(declaration, substitution, self_type.as_ref(), &equations, relations.get(declaration.module)) {
+            // 证据按整个程序闭包结算，不按声明所在模块结算：调用点所属模块先看到
+            // 了同一份证据（重载决胜已判过），声明模块（如 std）看不到调用方模块
+            // 的 impl；克隆体内嵌套的 where 义务也由铸造它的调用点证据担保。
+            if !relations
+                .iter()
+                .any(|relations| where_constraints_satisfied(declaration, substitution, self_type.as_ref(), &equations, Some(&relations)))
+            {
                 continue;
             }
             // 铸造前再守一次闭合：开放代入说明调用方仍是泛型上下文，克隆体签名会
