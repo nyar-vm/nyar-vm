@@ -684,7 +684,12 @@ impl MirBuilder {
             HirExprKind::Return(value) => {
                 let return_ty = self.current_return_type.clone();
                 let terminand = value.as_deref().map(|e| self.lower_expr_to_operand_with_hint(e, Some(&return_ty)));
-                self.lower_explicit_return(terminand);
+                // 被返回的表达式本身已发散（例如所有臂都 `return` 的 `match`）时，
+                // 控制流不会走到这里；再发 `Return { Unit }` 会把发散改写成
+                // `actual=Unit` 的值返回（SMIR007）。
+                if self.terminator.is_none() {
+                    self.lower_explicit_return(terminand);
+                }
                 MirOperand::Constant(MirConstant::Unit)
             }
             HirExprKind::Assign { target, value } => {

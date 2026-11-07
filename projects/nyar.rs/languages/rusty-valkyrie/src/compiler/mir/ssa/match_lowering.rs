@@ -220,19 +220,11 @@ impl MirBuilder {
         self.instructions.clear();
         self.terminator = None;
         if produce_value {
-            // Arms that all `return` never call `ensure_match_exit_parameter`, leaving
-            // match_exit with 0 params. The no_match edge still used to jump with Unit
-            // (arity 1) → SMIR007. Ensure the exit slot exists first; exhaustive matches
-            // never take this edge at runtime.
-            if exit_value.is_none() {
-                self.ensure_match_exit_parameter(exit_block, &mut exit_value, Some(crate::compiler::hir::ValkyrieType::Unit));
-                self.terminate(MirTerminator::Jump { target: exit_block, arguments: vec![MirOperand::Constant(MirConstant::Unit)] });
-            }
-            else {
-                // Prior arms already fixed the merge slot type (`bool`, `Option<T>`, …).
-                // Feeding `Unit` into that phi triggers SMIR007 on the no_match edge.
-                self.terminate(MirTerminator::Unreachable);
-            }
+            // The fallthrough edge never carries a merge value: either previous arms
+            // already fixed the merge slot type (`bool`, `Option<T>`, …) or every arm
+            // diverged and there is no value to merge at all. Feeding `Unit` into the
+            // exit phi would pollute the merge type (SMIR007).
+            self.terminate(MirTerminator::Unreachable);
         }
         else {
             let arguments = self.exit_binding_arguments(exit_block, &saved_bindings);
@@ -240,10 +232,15 @@ impl MirBuilder {
         }
         self.flush_block(no_match_label);
 
+        let all_arms_diverge = produce_value && exit_value.is_none();
         self.current_block = exit_block;
         self.current_label = exit_label.to_string();
         self.instructions.clear();
-        self.terminator = None;
+        // 所有臂都发散（`return` / `panic` / `raise`）时，`match` 没有值可合流，
+        // 合流点也不可达。把发散状态留在当前块上，调用方（函数尾、`return match …`）
+        // 才不会再拿 `Unit` 占位符伪造一个返回值。这与 `if` 的 then/else 均发散时
+        // 在 merge 块留下 `Unreachable` 是同一模型，不按臂数或“是否 return”特判。
+        self.terminator = all_arms_diverge.then_some(MirTerminator::Unreachable);
         self.case_chains.push(MirCaseChain {
             dispatch_block: entry_block,
             first_arm: arm_blocks[0],
