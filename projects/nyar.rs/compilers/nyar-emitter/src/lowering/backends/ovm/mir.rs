@@ -500,12 +500,10 @@ fn build_nyar_value_definitions<'a>(mir_fn: &'a MirFunction, slots: &ExecutableS
     map
 }
 
-/// 库模式只导出用户 `[export]` / `exported_operations`；闭包内 std 辅助函数保持内部 `Call` 可见性。
+/// 库模式只导出**声明导出面**（`[export]` 名 ∪ 程序入口）；闭包内辅助函数保持内部 `Call` 可见性。
+/// 判据与 wasm 共用同一派生点，禁止按「可达即导出」重算。
 fn nyar_should_export_operation(submission: &FragmentSubmission, operation: ItemInstanceId) -> bool {
-    if submission.backend_plan.wasm_export_names().contains_key(&operation) {
-        return true;
-    }
-    submission.backend_plan.exported_operations().iter().any(|exported| *exported == operation)
+    crate::lowering::shared::export_surface::contains(&submission.backend_plan, operation)
 }
 
 fn nyar_mir_export_name(submission: &FragmentSubmission, operation: ItemInstanceId) -> String {
@@ -519,16 +517,14 @@ fn nyar_mir_export_name(submission: &FragmentSubmission, operation: ItemInstance
         .unwrap_or_else(|| panic!("函数实例缺少 ABI 标签: {operation:?}"))
 }
 
-/// 片段内导出符号的实例 → 名称映射：公共导出名（`wasm_export_names`）保持原样；
-/// abi 派生名在同一片段绑定多个实例时按实例下标消歧，导出表与入口决议共用同一映射。
+/// 导出面的实例 → 名称映射：公共导出名（`wasm_export_names`）保持原样；
+/// abi 派生名在同一导出面绑定多个实例时按实例下标消歧，导出表与入口决议共用同一映射。
+/// 集合来源是共享派生点 [`crate::lowering::shared::export_surface`]，内部 callee 不参与。
 fn nyar_export_name_map(submission: &FragmentSubmission) -> BTreeMap<ItemInstanceId, String> {
     let plan = &submission.backend_plan;
     let mut bases: BTreeMap<ItemInstanceId, String> = BTreeMap::new();
-    for operation in plan.exported_operations().iter().copied().chain(plan.entry_operation()) {
+    for operation in crate::lowering::shared::export_surface::export_surface(plan) {
         bases.entry(operation).or_insert_with(|| nyar_mir_export_name(submission, operation));
-    }
-    for operation in plan.wasm_export_names().keys() {
-        bases.entry(*operation).or_insert_with(|| nyar_mir_export_name(submission, *operation));
     }
     let mut groups: BTreeMap<String, Vec<ItemInstanceId>> = BTreeMap::new();
     for (operation, name) in &bases {
@@ -555,17 +551,16 @@ fn nyar_export_name_map(submission: &FragmentSubmission) -> BTreeMap<ItemInstanc
 
 /// 库导出面的 `(实例身份, 逻辑导出名)`：与模块内 `NyarExport.symbol_name` 同一映射。
 ///
-/// 有 `[export]` 时按导出顺序；无 `[export]` 时只含入口（非库模式）。ABI 合同与
-/// run-contract 入口决议共用这份事实，避免两处各自拼名字。
+/// 集合来自共享派生点 [`crate::lowering::shared::export_surface::export_surface`]：
+/// `[export]` 冻结名 ∪ 程序入口。可达闭包不是导出面，内部带函数类型形参的辅助函数
+/// 因此不会进入 ABI 派生。ABI 合同与 run-contract 入口决议共用这份事实，避免两处各自拼名字。
 pub(crate) fn nyar_library_export_pairs(submission: &FragmentSubmission) -> Vec<(ItemInstanceId, String)> {
     let plan = &submission.backend_plan;
     let names = nyar_export_name_map(submission);
-    if plan.exported_operations().is_empty() {
-        plan.entry_operation().and_then(|entry| names.get(&entry).cloned().map(|name| (entry, name))).into_iter().collect()
-    }
-    else {
-        plan.exported_operations().iter().filter_map(|operation| names.get(operation).cloned().map(|name| (*operation, name))).collect()
-    }
+    crate::lowering::shared::export_surface::export_surface(plan)
+        .into_iter()
+        .filter_map(|operation| names.get(&operation).cloned().map(|name| (operation, name)))
+        .collect()
 }
 
 /// Nyar VM run-contract 入口必须与模块内 `NyarExport.symbol_name` 一致；不能假定裸 `main`。

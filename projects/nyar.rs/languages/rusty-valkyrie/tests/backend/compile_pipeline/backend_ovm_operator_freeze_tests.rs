@@ -301,30 +301,58 @@ fn d15_submission(groups: &[CompilerSourceGroup]) -> FragmentSubmission {
     FragmentSubmission::from_backend_plan(plan)
 }
 
-/// D15：共存 `i64 ==` 与 `bool ==` 时，ovm 导出名必须按实例身份消歧，入口逐一可解析，
-/// 公共导出名保持原样。
+/// 内部 operator 实例（`imply bool { infix == }`）不是声明导出面：即使多个实例
+/// 共享同一 ABI 名，也不得进入 `.odin` 导出表，更不该逼出「按实例下标消歧」。
 #[test]
-fn coexisting_infix_eq_instances_export_unique_names() {
+fn internal_operator_instances_stay_outside_the_export_surface() {
     let submission = d15_submission(&d15_groups(true));
-    let entries = nyar_emitter::lowering::backends::ovm::library_public_export_names(&submission);
-    let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&submission).expect("共存 `==` 实例必须完成降低");
+    let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&submission).expect("内部 `==` 实例不得阻断降低");
     let names = module.exports.iter().map(|export| export.symbol_name.clone()).collect::<Vec<_>>();
-    let unique = names.iter().collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(names.len(), unique.len(), "ovm 导出名必须按实例身份唯一: {names:?}");
-    assert!(names.iter().any(|name| name == "probe"), "公共导出名必须保持原样: {names:?}");
-    let eq_exports = names.iter().filter(|name| name.starts_with("core::infix ==")).collect::<Vec<_>>();
-    assert_eq!(eq_exports.len(), 2, "两个 `==` 实例都必须导出: {names:?}");
-    assert!(eq_exports.iter().all(|name| name.contains('#')), "abi 派生名冲突时必须按实例下标消歧: {eq_exports:?}");
+    assert_eq!(names, vec!["probe".to_owned()], "只有声明的 `[export]` 进入导出面: {names:?}");
+    let entries = nyar_emitter::lowering::backends::ovm::library_public_export_names(&submission);
+    assert_eq!(entries, vec!["probe".to_owned()], "库公开入口只来自声明导出面");
     nyar_emitter::resolve_entry_symbols(&module, &entries, true).expect("库公开入口必须逐一解析到唯一函数导出");
 }
 
-/// D15：单一 `==` 实例不触发冲突时，导出名保持 abi 原名，不得追加实例下标。
+/// 导出面里仍可能出现 abi 派生名与公共导出名同名的冲突（入口不是 `[export]` 时）。
+/// 公共名是 run-contract 的稳定表面，只有非公共（入口）名追加实例下标。
 #[test]
-fn single_infix_eq_instance_keeps_unqualified_export_name() {
-    let submission = d15_submission(&d15_groups(false));
-    let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&submission).expect("单一 `==` 实例必须完成降低");
+fn entry_abi_name_colliding_with_public_export_name_gains_instance_index() {
+    let groups = d15_groups(false);
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], "native")
+        .expect("源码闭包必须完成 Compiler 链路");
+    let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
+    let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
+    let mut plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots).expect("计划必须可构造");
+    let eq = program
+        .canonical()
+        .linked
+        .callable_names
+        .iter()
+        .find(|(_, name)| name.to_string().contains("infix =="))
+        .map(|(instance, _)| *instance)
+        .expect("bool `==` 实例");
+    let probe = program
+        .canonical()
+        .linked
+        .callable_names
+        .iter()
+        .find(|(_, name)| name.to_string().ends_with("probe"))
+        .map(|(instance, _)| *instance)
+        .expect("probe 实例");
+    let eq_abi_name = plan.abi_name_for_instance(eq).expect("`==` 必须有 ABI 名");
+    let eq_abi = eq_abi_name.to_string();
+    plan.testing_wasm_export_names_mut().insert(probe, eq_abi.clone());
+    plan.testing_entry_operation(eq_abi_name);
+    plan.testing_freeze_library_export_abis().expect("冲突夹具的导出 ABI 必须冻结");
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&submission).expect("冲突导出面必须完成降低");
     let names = module.exports.iter().map(|export| export.symbol_name.clone()).collect::<Vec<_>>();
-    assert!(names.iter().any(|name| name == "core::infix =="), "无冲突时导出名必须保持 abi 原名: {names:?}");
+    assert!(names.iter().any(|name| name == &eq_abi), "公共导出名必须保持原样: {names:?}");
+    assert!(names.iter().any(|name| name == &format!("{eq_abi}#{}", eq.index())), "非公共入口名必须按实例下标消歧: {names:?}");
+    nyar_emitter::resolve_entry_symbols(&module, &nyar_emitter::lowering::backends::ovm::library_public_export_names(&submission), true)
+        .expect("冲突消歧后每个公开入口仍必须唯一可解析");
 }
 
 /// D15 反例：不存在的入口名仍然必须按「唯一明确函数导出」失败闭合。

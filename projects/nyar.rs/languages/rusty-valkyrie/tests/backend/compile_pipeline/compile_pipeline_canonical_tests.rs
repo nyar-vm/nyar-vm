@@ -31,6 +31,51 @@ fn source_instances_reach_canonical_without_a_name_binding_table() {
     assert!(program.linked.entries.contains_key(&instance));
 }
 
+/// 导出面只来自声明面：`[export]` 与程序入口。可达的内部 callee 只能出现在
+/// `internal_call_edges`，不得被写回 `exported_operations`——否则 OVM 会把带函数
+/// 类型形参的内部辅助函数当成库导出根，命中「`Function` 不许过边界」误报。
+#[test]
+fn canonical_export_surface_stays_declared_and_callees_stay_internal_edges() {
+    let source = "[primitive(\"std::primitive::i32\")] structure i32 { } \
+                  micro helper(value: i32) -> i32 { return value } \
+                  [export(name: \"answer\")] micro answer() -> i32 { return helper(23) } \
+                  [main] micro main() -> i32 { return helper(7) }";
+    let hir = rusty_valkyrie::ValkyrieCompiler::default().compile_source(source).expect("源码必须完成前端分析");
+    let module = rusty_valkyrie::compiler::mir::MirLowerer::lower_module_semantic(&hir);
+    let instance_of = |suffix: &str| {
+        module
+            .functions
+            .iter()
+            .find(|function| function.display_symbol.ends_with(suffix))
+            .and_then(|function| function.instance)
+            .unwrap_or_else(|| panic!("缺少 {suffix} 的 Compiler 实例"))
+    };
+    let helper = instance_of("helper");
+    let answer = instance_of("answer");
+    let main = instance_of("main");
+    let program = canonical_program_from_semantic_mir(&module).expect("canonical");
+    let fragments = program.linked.fragments.values().collect::<Vec<_>>();
+    assert!(!fragments.is_empty(), "测试程序具有片段");
+    let export_fragment = fragments
+        .iter()
+        .find(|fragment| fragment.exported_operations.contains(&answer))
+        .expect("`[export]` 声明的符号必须在导出面");
+    assert_eq!(export_fragment.wasm_export_names.get(&answer), Some(&"answer".to_owned()), "`[export]` 冻结名必须与导出面同源");
+    let entry_fragment = fragments
+        .iter()
+        .find(|fragment| fragment.entry_operation == Some(main))
+        .expect("程序入口必须由 `entry_operation` 单独登记");
+    assert!(entry_fragment.exported_operations.contains(&main), "程序入口是声明导出面的一部分");
+    assert!(
+        !fragments.iter().any(|fragment| fragment.exported_operations.contains(&helper)),
+        "可达 callee 不是导出面成员"
+    );
+    assert!(
+        fragments.iter().any(|fragment| fragment.internal_call_edges.iter().any(|edge| edge.callee == helper)),
+        "内部 callee 必须只留在内部调用图"
+    );
+}
+
 #[test]
 fn source_export_and_entry_diagnostic_names_cannot_rebind_instances() {
     let mut module = source_surface_module();

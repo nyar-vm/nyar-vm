@@ -77,8 +77,9 @@ pub fn lower_fragment_to_wasm_module_for(
         ));
     }
     let executable = &submission.backend_plan;
-    for operation in submission.backend_plan.wasm_export_names().keys().chain(submission.backend_plan.entry_operation().iter()) {
-        if executable.get_function(operation).is_none() {
+    // 导出面判据与 OVM 共用同一派生点：声明的 `[export]` 名 ∪ 程序入口，可达闭包不算。
+    for operation in crate::lowering::shared::export_surface::export_surface(executable) {
+        if executable.get_function(&operation).is_none() {
             return Err(format!("WASM callable `{operation}` has no Compiler-owned executable body"));
         }
     }

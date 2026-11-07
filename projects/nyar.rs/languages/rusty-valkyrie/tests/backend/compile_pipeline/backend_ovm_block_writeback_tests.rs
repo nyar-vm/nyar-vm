@@ -143,12 +143,28 @@ fn compile_app() -> Result<nyar_types::CompiledProgram, String> {
         .map_err(|error| error.to_string())
 }
 
+/// 宿主只能调用**声明导出面**的成员；被测函数不是入口，因此这里用集成测试钩子
+/// 显式把它登记为导出（不是「可达即导出」）。冻结 ABI 与正式导出走同一合同。
+fn declare_test_export(plan: &mut TargetExecutionPlan, program: &nyar_types::CompiledProgram, symbol_suffix: &str) {
+    let instance = program
+        .canonical()
+        .linked
+        .callable_names
+        .iter()
+        .find(|(_, name)| name.to_string().ends_with(symbol_suffix))
+        .map(|(instance, _)| *instance)
+        .unwrap_or_else(|| panic!("缺少 `{symbol_suffix}` 的 callable 实例"));
+    plan.testing_wasm_export_names_mut().insert(instance, symbol_suffix.to_string());
+    plan.testing_freeze_library_export_abis().expect("测试显式登记的导出必须冻结 ABI 载体");
+}
+
 fn run_export(program: &nyar_types::CompiledProgram, name: &str, seed: bool) -> Value {
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
-    let plan = TargetExecutionPlan::from_compiled_program(program, &fragment, nyar::TheoryBundle::default(), &roots)
+    let mut plan = TargetExecutionPlan::from_compiled_program(program, &fragment, nyar::TheoryBundle::default(), &roots)
         .map_err(|error| error.to_string())
         .expect("ovm 目标计划");
+    declare_test_export(&mut plan, program, name);
     let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
         .expect("ovm 模块必须完成降低");
     let entry = module

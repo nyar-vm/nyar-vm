@@ -14,6 +14,7 @@ mod backend_match_null_payload_e2e_tests;
 mod backend_multifield_variant_e2e_tests;
 mod backend_object_pattern_binding_tests;
 mod backend_ovm_array_provider_e2e_tests;
+mod backend_ovm_export_surface_tests;
 mod backend_ovm_match_tail_value_tests;
 mod backend_ovm_operator_freeze_tests;
 mod backend_ovm_text_carrier_e2e_tests;

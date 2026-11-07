@@ -19,7 +19,11 @@ pub(crate) fn canonical_fragments(
 ) -> Result<BTreeMap<Identifier, CanonicalFragment>, StructuredDiagnosticSet> {
     let mut result = BTreeMap::new();
     for fragment in fragments {
-        let mut exported_operations = fragment.exported_operations.clone();
+        // 导出面只来自声明的导出面（`[export]` 冻结名与程序入口）。下面的可达遍历
+        // 只构建内部调用图（`internal_call_edges`），绝不把 callee 回写进导出面：
+        // 否则带函数类型形参的内部辅助函数会被 OVM 当成库导出根，撞上
+        // 「`Function` 不许过边界」而误报。
+        let exported_operations = fragment.exported_operations.clone();
         let wasm_export_names = fragment.wasm_export_names.clone();
         for instance in &exported_operations {
             if !linked.item_instances.contains_key(instance) {
@@ -95,9 +99,6 @@ pub(crate) fn canonical_fragments(
                     }
                     internal_call_edges.push(CanonicalCallEdge { caller, callee: *callee });
                     pending.push(*callee);
-                    if !exported_operations.contains(callee) {
-                        exported_operations.push(*callee);
-                    }
                 }
             }
         }

@@ -258,14 +258,28 @@ fn provider_bindings() -> Vec<rusty_valkyrie::compiler::emitter::pipeline::Compi
 fn lower(
     groups: &[CompilerSourceGroup],
     bindings: &[rusty_valkyrie::compiler::emitter::pipeline::CompilerHostProviderBinding],
+    test_exports: &[&str],
 ) -> Result<odin_bytecode::OdinModuleData, String> {
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(groups, bindings, &[], "native")
         .map_err(|error| error.to_string())?;
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
-    let plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
+    let mut plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
         .map_err(|error| error.to_string())?;
+    // 宿主只能调用声明导出面的成员；被测内部函数由测试显式登记为导出，而不是靠可达闭包。
+    for symbol in test_exports {
+        let instance = program
+            .canonical()
+            .linked
+            .callable_names
+            .iter()
+            .find(|(_, name)| name.to_string().ends_with(symbol))
+            .map(|(instance, _)| *instance)
+            .ok_or_else(|| format!("缺少 `{symbol}` 的 callable 实例"))?;
+        plan.testing_wasm_export_names_mut().insert(instance, (*symbol).to_string());
+    }
+    plan.testing_freeze_library_export_abis()?;
     nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
         .map_err(|error| error.to_string())
 }
@@ -284,7 +298,7 @@ fn run_export(module: &odin_bytecode::OdinModuleData, symbol_suffix: &str) -> Va
 
 #[test]
 fn array_contract_provider_chain_executes_in_ovm() {
-    let module = lower(&source_groups(true), &provider_bindings()).expect("合同与 provider 齐备时必须完成降低");
+    let module = lower(&source_groups(true), &provider_bindings(), &["sized"]).expect("合同与 provider 齐备时必须完成降低");
     assert_eq!(run_export(&module, "main"), Value::I32(42), "new→set→get 必须读回写入的元素");
     assert_eq!(run_export(&module, "sized"), Value::I32(5), "new→length 必须返回分配长度");
 }
@@ -315,13 +329,13 @@ fn array_contract_ovm_direct_provider_form_executes_in_ovm() {
         CompilerSourceGroup::single_source("adaptor", "adaptor", PROVIDERS_OVM_DIRECT).with_direct_dependencies(vec!["core".into()]),
         CompilerSourceGroup::single_source("app", "demo", APP).as_entry().with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
     ];
-    let module = lower(&groups, &provider_bindings()).expect("形制 2（`[ovm]` 直挂无体 provider）必须完成降低");
+    let module = lower(&groups, &provider_bindings(), &["sized"]).expect("形制 2（`[ovm]` 直挂无体 provider）必须完成降低");
     assert_eq!(run_export(&module, "main"), Value::I32(42), "形制 2: new→set→get 必须读回写入的元素");
     assert_eq!(run_export(&module, "sized"), Value::I32(5), "形制 2: new→length 必须返回分配长度");
 }
 
 #[test]
 fn array_contract_without_provider_fails_structurally() {
-    let error = lower(&source_groups(false), &[]).expect_err("缺 provider 的合同调用必须结构化失败，不得空体成功");
+    let error = lower(&source_groups(false), &[], &[]).expect_err("缺 provider 的合同调用必须结构化失败，不得空体成功");
     assert!(error.contains("demo") && error.contains("array"), "错误必须指向未绑定 provider 的合同: {error}");
 }
