@@ -8,11 +8,12 @@ pub mod lower;
 pub mod render_ir;
 
 pub use abi_index::{
-    ComponentAbiIndex, component_abi_index_from_components, extract_abi_for_script, refine_component_attr_flags, validate_component_abi,
+    ComponentAbiIndex, component_abi_index_from_components, extract_abi_for_script, prepare_components_for_generation,
+    refine_component_attr_flags, validate_compilation_unit, validate_component_abi,
 };
 pub use compile::compile_awsl_source;
 pub use expr_deps::{extract_expr_idents, reactive_deps};
-pub use lower::{BindingKind, LoweredComponent, LoweringOptions, ScriptBinding, SignalValueType, lower_component, script_let_prelude};
+pub use lower::{BindingKind, LoweredComponent, LoweringOptions, ScriptBinding, SignalValueType, lower_component};
 pub use render_ir::{
     RenderAttr, RenderAttrValue, RenderExprId, RenderIfNode, RenderIr, RenderLoopNode, RenderModule, RenderNode, RenderNodeId, RenderRegionId,
     RenderTextSegment, SurfaceAttr, SurfaceAttrValue, SurfaceIf, SurfaceIr, SurfaceLoop, SurfaceNode, SurfaceTextPart, TemplateNodeKind,

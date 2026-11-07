@@ -140,7 +140,7 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
     // 浏览器交付产物：WASM chunk、浏览器 glue、组件胶水、boot 与 manifest。
     // 命名、URL 形态与初始化顺序都由产物所有者决定，本层只编排调用次序。
     let target = CanonicalTarget::browser();
-    let generated_source = build_awsl_wasm_source(std::slice::from_ref(&component));
+    let generated_source = build_awsl_wasm_source(std::slice::from_ref(&component))?;
     let resolved = resolve_project_source_groups(&project_root, &target)
         .map_err(|error| AsgardError::msg(report!("解析项目源码组失败（静态交付要求可解析的 Legion 工程）: {error}")))?;
     let module_stem = resolved.project_name.replace('.', "-");

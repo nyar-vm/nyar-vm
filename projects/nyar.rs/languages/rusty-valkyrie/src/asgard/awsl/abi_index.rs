@@ -6,6 +6,7 @@ use oak_awsl::{
 };
 
 use super::{LoweredComponent, RenderAttr, RenderIr, RenderModule, RenderNode, render_ir::region_nodes};
+use crate::asgard::error::{AsgardError, AsgardResult};
 
 pub use oak_awsl::ComponentAbiIndex;
 
@@ -48,7 +49,7 @@ fn validate_node(module: &RenderModule, node_id: super::render_ir::RenderNodeId,
                         if abi.property(&prop_name).is_none() {
                             issues.push(AbiIssue {
                                 kind: AbiIssueKind::PropertyOnNonLet,
-                                message: format!("`:{prop_name}` is not declared on component `{target}`"),
+                                message: format!("`:{prop_name}` 未在组件 `{target}` 的 ABI 中声明（期望 `{target}` 脚本里有该属性）"),
                                 span: None,
                                 severity: AbiSeverity::Error,
                             });
@@ -69,7 +70,7 @@ fn validate_node(module: &RenderModule, node_id: super::render_ir::RenderNodeId,
                         if abi.event(&event_name).is_none() {
                             issues.push(AbiIssue {
                                 kind: AbiIssueKind::EventOnNonMicro,
-                                message: format!("`@{event_name}` is not declared on component `{target}`"),
+                                message: format!("`@{event_name}` 未在组件 `{target}` 的 ABI 中声明（期望 `{target}` 脚本里有该事件）"),
                                 span: None,
                                 severity: AbiSeverity::Error,
                             });
@@ -111,4 +112,53 @@ pub fn refine_component_attr_flags(tag: &str, attr: &mut RenderAttr, index: Opti
     let (is_prop, is_event) = oak_awsl::refine_binding_kind(tag, &attr.name, attr.is_event, index);
     attr.is_prop = is_prop;
     attr.is_event = is_event;
+}
+
+/// 单元级 ABI 校验：把脚本提取诊断与跨文件 `:prop` / `@event` 校验合并成生成阶段错误。
+///
+/// 错误语义固定为“组件 `X` 的 ABI 与脚本/模板对不上”，并带出属性/事件名。
+pub fn validate_compilation_unit(components: &[LoweredComponent]) -> AsgardResult<()> {
+    let index = component_abi_index_from_components(components);
+    let mut errors = Vec::new();
+    for component in components {
+        for issue in validate_component_abi(&index, component) {
+            if !matches!(issue.severity, AbiSeverity::Error) {
+                continue;
+            }
+            errors.push(format!("组件 `{}`（{}）：{}", component.name, component.source_path, issue.message));
+        }
+    }
+    if errors.is_empty() {
+        return Ok(());
+    }
+    Err(AsgardError::msg(report!(
+        "组件 ABI 与脚本/模板对不上：\n{}",
+        errors.join("\n")
+    )))
+}
+
+/// 生成前统一的“先校验、后降级”入口。
+///
+/// 顺序理由：`validate_component_abi` 必须看到模板里**原样书写**的绑定种类
+/// （`:prop` / `@event`）。`refine_component_attr_flags` 会把目标 ABI 未声明的
+/// 绑定降级为普通属性，若先 refine 再校验，未声明的 `:prop` / `@event` 会被
+/// 静默吞掉，校验形同虚设。因此先按书写语义拒绝非法绑定，再按目标 ABI 修正
+/// 生成期的绑定种类。
+///
+/// 跨文件校验依赖全单元 ABI 索引，单文件 `compile_awsl_source` 阶段拿不到，
+/// 只能在这里（全部组件已降级、任何 V 尚未生成）执行。
+pub fn prepare_components_for_generation(components: &[LoweredComponent]) -> AsgardResult<Vec<LoweredComponent>> {
+    validate_compilation_unit(components)?;
+    let mut prepared = components.to_vec();
+    let index = component_abi_index_from_components(&prepared);
+    for component in prepared.iter_mut() {
+        for node in component.render_ir.nodes.iter_mut() {
+            if let RenderNode::Component(node) = node {
+                for attr in node.attrs.iter_mut() {
+                    refine_component_attr_flags(&node.tag, attr, Some(&index));
+                }
+            }
+        }
+    }
+    Ok(prepared)
 }

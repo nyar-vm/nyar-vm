@@ -114,7 +114,7 @@ fn ovm_render_matches_legacy_oracle_byte_for_byte() {
 
     let component = lower(E1_FIXTURE);
     let rendered = render_static_ovm(&component, temp.path(), &scratch, "test").expect("OVM SSG 渲染必须成功");
-    let oracle = render_awsl_static(E1_FIXTURE, "Test", "test.awsl", &serde_json::Value::Null);
+    let oracle = render_awsl_static(E1_FIXTURE, "Test", "test.awsl", &serde_json::Value::Null).expect("render awsl static");
 
     assert_eq!(rendered.html, oracle.html, "新旧路径页体必须逐字节一致");
     assert_eq!(rendered.css, oracle.css, "样式必须一致");

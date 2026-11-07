@@ -44,5 +44,5 @@ pub fn render_project_awsl_static(
     data: &Value,
 ) -> AsgardResult<StaticRenderResult> {
     let source = read_project_source(project_dir, source_relative)?;
-    Ok(render_awsl_static(&source, component_name, source_relative, data))
+    render_awsl_static(&source, component_name, source_relative, data)
 }

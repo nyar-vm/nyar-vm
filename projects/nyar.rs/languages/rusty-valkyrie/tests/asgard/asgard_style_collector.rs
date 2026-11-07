@@ -19,7 +19,7 @@ fn style_codegen_uses_class_binding() {
     let source = r#"<widget><div @style="flex w-4"></div></widget>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
-    let v_source = build_awsl_wasm_source(&[lowered]);
+    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
     assert!(v_source.contains("rx_bind_class_utf8"));
     assert!(!v_source.contains("rx_bind_attr_utf8") || !v_source.contains("\"style\""));
 }

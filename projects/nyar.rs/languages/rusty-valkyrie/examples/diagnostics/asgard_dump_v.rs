@@ -10,8 +10,8 @@ fn main() {
     let path = roots[0].join("projects/asgard._/projects/asgard.plotter/source/components/interactive-col-plot.awsl");
     let source = std::fs::read_to_string(&path).unwrap();
     let root = AwslParser::parse_root(&source).unwrap();
-    let lowered = lower_component(&root, "interactive-col-plot", "interactive-col-plot.awsl", &LoweringOptions::default());
-    let v_source = build_awsl_wasm_source(&[lowered]);
+    let lowered = lower_component(&root, "interactive-col-plot", "interactive-col-plot.awsl", &LoweringOptions::default()).expect("lower awsl");
+    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
     let pos = 8365usize;
     let start = pos.saturating_sub(120);
     let end = (pos + 120).min(v_source.len());

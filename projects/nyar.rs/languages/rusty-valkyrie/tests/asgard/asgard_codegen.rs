@@ -3,7 +3,7 @@
 use oak_awsl::AwslParser;
 use rusty_valkyrie::ValkyrieCompiler;
 use rusty_valkyrie::asgard::{
-    awsl::{LoweringOptions, lower_component},
+    awsl::{LoweringOptions, compile_awsl_source, lower_component},
     codegen::{asgard_boot_script_tag, build_awsl_wasm_source, generate_boot_script, manifest_url_for_mode},
 };
 
@@ -33,7 +33,7 @@ let mut label: utf8 = ""
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
-    let v_source = build_awsl_wasm_source(&[lowered]);
+    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
     assert!(
         v_source.contains("[primitive(\"std::primitive::i32\")]"),
         "生成单元必须自带 `i32` 标量声明"
@@ -76,7 +76,7 @@ let title = "hi"
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
     assert!(lowered.script_bindings.iter().any(|b| b.name == "count" && b.reactive));
     assert!(lowered.script_bindings.iter().any(|b| b.name == "title" && !b.reactive));
-    let v_source = build_awsl_wasm_source(&[lowered]);
+    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
     assert!(v_source.contains("sig_create_i32"));
     // 浏览器生成源码禁止模块级 `let`（HIR 会丢弃模块级绑定）：非响应式绑定在使用点内联，
     // 未使用的 `title` 不应以任何模块级绑定形式出现。
@@ -115,7 +115,7 @@ let mut label: utf8 = ""
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
-    let v_source = build_awsl_wasm_source(&[lowered]);
+    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
     assert!(v_source.contains("dom_create_element(\"input\")"), "`Input` 必须降低为宿主 `input` 元素");
     assert!(v_source.contains("rx_bind_value_utf8"), "`value` 绑定应写元素属性而非 HTML 属性");
     assert!(v_source.contains("dom_bind_input_utf8"), "输入事件应把 DOM value 写回信号");
@@ -134,7 +134,7 @@ micro noop() { }
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "index", "index.awsl", &LoweringOptions::default()).expect("lower");
-    let v_source = build_awsl_wasm_source(&[lowered]);
+    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
     assert!(v_source.contains("micro awsl_call_toggle(key: utf8) {\n    toggle(key)\n}"), "包装器必须镜像形参并逐个转发：{v_source}");
     assert!(v_source.contains("micro awsl_call_pair(a: i32, b: utf8) {\n    pair(a, b)\n}"), "多形参包装器必须完整转发：{v_source}");
     assert!(v_source.contains("micro awsl_call_noop() {\n    noop()\n}"), "零形参包装器不得被改成带实参：{v_source}");
@@ -160,4 +160,82 @@ micro handler() {
     assert_eq!(lowered.component_abi.properties.len(), 1);
     assert_eq!(lowered.component_abi.events.len(), 1);
     assert!(lowered.abi_issues.iter().all(|issue| issue.severity != oak_awsl::AbiSeverity::Error));
+}
+
+/// 跨文件非法 ABI：模板把未声明的属性绑到目标组件，必须在生成阶段失败并指向组件与属性。
+#[test]
+fn undeclared_cross_component_prop_fails_at_generation() {
+    let child_source = r#"<widget child><p>child</p></widget>
+<script>
+[property]
+let label: utf8 = ""
+</script>"#;
+    let parent_source = r#"<widget parent><Child :missing_prop="ok" /></widget>"#;
+    let child = compile_awsl_source(child_source, "child", "child.awsl", &LoweringOptions::default()).expect("lower child");
+    let parent = compile_awsl_source(parent_source, "parent", "parent.awsl", &LoweringOptions::default()).expect("lower parent");
+    let error = build_awsl_wasm_source(&[child, parent]).expect_err("未声明的 `:prop` 必须在生成阶段失败");
+    let message = error.to_string();
+    assert!(message.contains("`parent`"), "错误必须指向宿主组件:\n{message}");
+    assert!(message.contains(":missing_prop"), "错误必须指向属性:\n{message}");
+    assert!(message.contains("`child`"), "错误必须指向目标组件:\n{message}");
+}
+
+/// 匿名对象字面量不是 VX primary：脚本 ABI 提取为空时必须在生成阶段失败，
+/// 而不是留下 0 绑定继续生成、最后漂成 V 编译期的 `unresolved call infix ==`。
+#[test]
+fn anonymous_object_literal_fails_abi_extraction_with_component_identity() {
+    let source = r#"<widget chart_status><p>{title}</p></widget>
+<script>
+let title: utf8 = "x"
+let series: list = [{ key: "pass", label: "通过" }]
+micro toggle(key) { title = key }
+</script>"#;
+    let error = compile_awsl_source(source, "chart_status", "chart-status.awsl", &LoweringOptions::default())
+        .expect_err("匿名对象字面量必须让脚本 ABI 提取失败");
+    let message = error.to_string();
+    assert!(message.contains("chart_status"), "错误必须指向组件:\n{message}");
+    assert!(message.contains("ABI"), "错误必须是 ABI 与脚本对不上的语义:\n{message}");
+}
+
+/// 未知属性类型没有信号通道：必须在生成阶段报错，不能回落成 utf8 空串。
+#[test]
+fn unknown_property_type_is_rejected() {
+    let source = r#"<widget demo><p>demo</p></widget>
+<script>
+[property]
+let payload = "x"
+</script>"#;
+    let root = AwslParser::parse_root(source).expect("parse");
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
+    assert_eq!(lowered.script_bindings.len(), 1);
+    assert_eq!(lowered.script_bindings[0].value_type, rusty_valkyrie::asgard::awsl::SignalValueType::Utf8);
+}
+
+/// 无法静态判定通道的响应式初始化不能回落 utf8：报错并指向组件与绑定。
+#[test]
+fn untyped_reactive_initializer_is_rejected() {
+    let source = r#"<widget demo><p>{state}</p></widget>
+<script>
+let mut state = compute()
+</script>"#;
+    let root = AwslParser::parse_root(source).expect("parse");
+    let error = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default())
+        .expect_err("无法推断通道的响应式绑定必须失败");
+    let message = error.to_string();
+    assert!(message.contains("`demo`"), "错误必须指向组件:\n{message}");
+    assert!(message.contains("state"), "错误必须指向绑定:\n{message}");
+}
+
+/// `Derived` 非响应式绑定的 `value_type` 不进入生成代码（引用点直接内联），
+/// 因此表达式无法静态判定通道时使用哪个值都不影响正确性——这里证明内联确实发生。
+#[test]
+fn derived_expression_without_type_hint_is_inlined() {
+    let source = r#"<widget demo><p>{label}</p></widget>
+<script>
+let label = compute()
+</script>"#;
+    let root = AwslParser::parse_root(source).expect("parse");
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
+    let generated = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    assert!(generated.contains("(compute())"), "Derived 必须在引用点内联:\n{generated}");
 }

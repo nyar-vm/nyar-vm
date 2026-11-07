@@ -21,7 +21,7 @@ micro show(index) {
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "index", "index.awsl", &LoweringOptions::default()).expect("lower");
-    let generated = build_awsl_wasm_source(&[lowered]);
+    let generated = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
     let start = generated.find("micro show").expect("script micro 必须生成");
     let end = start + generated[start..].find("\n}\n").expect("script micro 必须闭合");
     let block = &generated[start..end];
@@ -46,6 +46,6 @@ micro show(index: usize) {
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "index", "index.awsl", &LoweringOptions::default()).expect("lower");
-    let generated = build_awsl_wasm_source(&[lowered]);
+    let generated = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
     assert!(generated.contains("⁅index⁆"), "非 ASCII 运算符必须按 UTF-8 原样保留:\n{generated}");
 }

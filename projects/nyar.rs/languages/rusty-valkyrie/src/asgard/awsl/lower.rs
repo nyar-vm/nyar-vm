@@ -1,10 +1,12 @@
 //! AWSL 前端降级：AST → synthetic V + RenderIR。
 
 use oak_awsl::{
-    AwslAttributeValue, AwslDirectiveKind, AwslElement, AwslRoot, AwslTemplateNode, AwslTextPart, ComponentAbi, widget_name_from_stem,
+    AbiSeverity, AwslAttributeValue, AwslDirectiveKind, AwslElement, AwslRoot, AwslTemplateNode, AwslTextPart, ComponentAbi,
+    widget_name_from_stem,
 };
 
 use super::abi_index::extract_abi_for_script;
+use crate::asgard::error::{AsgardError, AsgardResult};
 
 use super::render_ir::{
     SurfaceAttr, SurfaceAttrValue, SurfaceIf, SurfaceIr, SurfaceLoop, SurfaceNode, SurfaceTextPart, TemplateNodeKind, ThemeRegistryOptions,
@@ -107,19 +109,25 @@ pub enum SignalValueType {
     Bool,
 }
 
-/// 将 AWSL 根节点降级；样式合同解析与布局绑定收集在此 fail-closed。
+/// 将 AWSL 根节点降级；样式合同解析、布局绑定收集与脚本 ABI 提取在此 fail-closed。
+///
+/// 脚本 ABI 提取失败时返回错误而不是把 issues 挂在结构体上：绑定解析结果为空却继续
+/// 生成，会让脚本里的自由名漂到 V 编译期（例如 `unresolved call infix ==`），错误
+/// 语义丢失。这里统一报“组件 `X` 的 ABI 与脚本对不上”。
 pub fn lower_component(
     root: &AwslRoot,
     component_name: &str,
     source_path: &str,
     options: &LoweringOptions,
-) -> Result<LoweredComponent, crate::asgard::style::StyleContractError> {
+) -> AsgardResult<LoweredComponent> {
     let name = widget_name_from_stem(component_name);
     // 公共样式块按声明顺序合并为一张合同；带 `target` 的块是独立分表，当前合同尚未承载。
     let mut public_style = String::new();
     for block in &root.styles {
         if let Some(targets) = &block.target {
-            return Err(crate::asgard::style::StyleContractError::TargetSheetUnsupported { targets: targets.clone() });
+            return Err(
+                crate::asgard::style::StyleContractError::TargetSheetUnsupported { targets: targets.clone() }.report()
+            );
         }
         let content = block.content.trim();
         if content.is_empty() {
@@ -130,8 +138,10 @@ pub fn lower_component(
         }
         public_style.push_str(content);
     }
-    let style_contract =
-        (!public_style.is_empty()).then(|| crate::asgard::style::parse_style_contract(&public_style)).transpose()?;
+    let style_contract = (!public_style.is_empty())
+        .then(|| crate::asgard::style::parse_style_contract(&public_style))
+        .transpose()
+        .map_err(|error| error.report())?;
     let mut surface = wrap_widget_roots_in_fragment(lower_template_nodes(&root.template));
     let layout = collect_layout_bindings(&mut surface, style_contract.as_ref());
     let (component_abi, abi_issues) = root
@@ -139,11 +149,17 @@ pub fn lower_component(
         .as_deref()
         .map(|script| extract_abi_for_script(script, &name))
         .unwrap_or_else(|| (ComponentAbi { widget_name: name.clone(), ..Default::default() }, Vec::new()));
-    let mut script_bindings = abi_to_script_bindings(&component_abi);
+    fail_on_abi_errors(&name, source_path, &abi_issues)?;
+    let mut script_bindings = abi_to_script_bindings(&component_abi, &name)?;
+    if root.script.as_deref().is_some_and(script_has_top_level_let) && script_bindings.is_empty() {
+        return Err(AsgardError::msg(report!(
+            "组件 `{name}` 的脚本声明了顶层 `let`，但 ABI 解析得到 0 个绑定（{source_path}）：脚本与组件 ABI 不一致"
+        )));
+    }
     finalize_signal_slots(&mut script_bindings, component_name);
     let mut render_ir = canonicalize_surface(surface, &script_bindings);
     run_default_passes(&mut render_ir, ThemeRegistryOptions { single_theme: None, single_mode: None });
-    let synthetic_v = generate_synthetic_v(&name, root, &script_bindings);
+    let synthetic_v = generate_synthetic_v(&name, root, &script_bindings)?;
     Ok(LoweredComponent {
         name,
         route_name: component_name.to_string(),
@@ -160,6 +176,43 @@ pub fn lower_component(
         source_path: source_path.to_string(),
         script_source: root.script.clone(),
     })
+}
+
+/// ABI 提取的 Error 级诊断在降级阶段直接失败，并带上组件与源文件。
+fn fail_on_abi_errors(component: &str, source_path: &str, issues: &[oak_awsl::AbiIssue]) -> AsgardResult<()> {
+    let Some(first) = issues.iter().find(|issue| matches!(issue.severity, AbiSeverity::Error))
+    else {
+        return Ok(());
+    };
+    let extra = issues
+        .iter()
+        .filter(|issue| matches!(issue.severity, AbiSeverity::Error))
+        .count()
+        .saturating_sub(1);
+    let suffix = if extra > 0 { format!("（另有 {extra} 条 Error）") } else { String::new() };
+    Err(AsgardError::msg(report!(
+        "组件 `{component}` 的 ABI 与脚本对不上（{source_path}）：{}{suffix}",
+        first.message
+    )))
+}
+
+/// 脚本是否存在顶层 `let` / `let mut`（这些声明会被信号重写删除）。
+fn script_has_top_level_let(script: &str) -> bool {
+    let mut depth = 0i32;
+    for line in script.lines() {
+        let trimmed = line.trim();
+        if depth == 0 && (trimmed.starts_with("let ") || trimmed == "let") {
+            return true;
+        }
+        for ch in line.chars() {
+            match ch {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+    }
+    false
 }
 
 /// 合同句柄类分配 + 布局/度量绑定收集。
@@ -311,19 +364,20 @@ fn static_text_of(nodes: &SurfaceIr, handle: &str) -> Option<String> {
     None
 }
 
-fn generate_synthetic_v(name: &str, root: &AwslRoot, bindings: &[ScriptBinding]) -> String {
+fn generate_synthetic_v(name: &str, root: &AwslRoot, bindings: &[ScriptBinding]) -> AsgardResult<String> {
     let Some(script) = &root.script
     else {
-        return String::new();
+        return Ok(String::new());
     };
-    let decls = rewrite_script_decls_for_signals(script, bindings);
+    let decls = rewrite_script_decls_for_signals(script, bindings)
+        .map_err(|reason| AsgardError::msg(report!("组件 `{name}` 的信号重写失败：{reason}")))?;
     if decls.trim().is_empty() {
-        return String::new();
+        return Ok(String::new());
     }
     let mut out = format!("# awsl script decls: {name}\n");
     out.push_str(&decls);
     out.push('\n');
-    out
+    Ok(out)
 }
 
 /// 信号槽命名：`{route}_{name}_sig`。
@@ -348,7 +402,12 @@ fn sanitize_key(name: &str) -> String {
         .to_ascii_lowercase()
 }
 
-fn rewrite_script_decls_for_signals(script: &str, bindings: &[ScriptBinding]) -> String {
+/// 把脚本 block 重写为信号读写；模块级 `let` 全部删除。
+///
+/// 删除前必须确认该名字出现在绑定表里：`let` 只在绑定表覆盖时才可能被改写成
+/// `sig_get_*` / 内联常量。未覆盖就删，等于静默丢掉声明并留下自由名，错误会漂到
+/// V 编译期。因此这里对未覆盖的顶层 `let` 直接返回错误。
+fn rewrite_script_decls_for_signals(script: &str, bindings: &[ScriptBinding]) -> Result<String, String> {
     let lines: Vec<&str> = script.lines().collect();
     let mut out = String::new();
     let mut index = 0usize;
@@ -364,12 +423,29 @@ fn rewrite_script_decls_for_signals(script: &str, bindings: &[ScriptBinding]) ->
             continue;
         }
         if trimmed.starts_with("let ") {
+            let name = module_let_name(trimmed)
+                .ok_or_else(|| format!("无法解析顶层 `let` 声明的绑定名：`{trimmed}`"))?;
+            if !bindings.iter().any(|binding| binding.name == name) {
+                return Err(format!(
+                    "顶层 `let {name}` 没有被 ABI 解析为绑定，删除会丢失声明并留下自由名（脚本与组件 ABI 不一致）"
+                ));
+            }
             index += 1;
             continue;
         }
         index += 1;
     }
-    out
+    Ok(out)
+}
+
+/// 从顶层 `let` / `let mut` 行提取绑定名；解构模式不在此支持。
+fn module_let_name(line: &str) -> Option<&str> {
+    let mut rest = line.strip_prefix("let ")?.trim_start();
+    if let Some(after_mut) = rest.strip_prefix("mut ") {
+        rest = after_mut.trim_start();
+    }
+    let end = rest.find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_')).unwrap_or(rest.len());
+    (end > 0).then_some(&rest[..end])
 }
 
 fn rewrite_micro_body_for_signals(block: &str, bindings: &[ScriptBinding]) -> String {
@@ -516,27 +592,6 @@ fn is_ident_char(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
-/// 提取 script 块中的顶层 `micro` / `class` / `trait` 声明（含完整函数体）。
-fn extract_module_declarations(script: &str) -> String {
-    let lines: Vec<&str> = script.lines().collect();
-    let mut out = String::new();
-    let mut index = 0usize;
-    while index < lines.len() {
-        let trimmed = lines[index].trim();
-        if trimmed.starts_with("micro ") || trimmed.starts_with("class ") || trimmed.starts_with("trait ") {
-            let (block, next) = take_braced_block(&lines, index);
-            out.push_str(&block);
-            if !block.ends_with('\n') {
-                out.push('\n');
-            }
-            index = next;
-            continue;
-        }
-        index += 1;
-    }
-    out
-}
-
 fn take_braced_block(lines: &[&str], start: usize) -> (String, usize) {
     let mut out = String::new();
     let mut depth = 0i32;
@@ -559,12 +614,6 @@ fn take_braced_block(lines: &[&str], start: usize) -> (String, usize) {
         }
     }
     (out, index)
-}
-
-/// 从 script 块提取可放入 render 函数体的 `let` / `let mut` 绑定。
-pub fn script_let_prelude(script: Option<&str>) -> String {
-    let bindings = script.map(|source| abi_to_script_bindings(&extract_abi_for_script(source, "script").0)).unwrap_or_default();
-    bindings.iter().map(ScriptBinding::as_v_let_line).collect::<Vec<_>>().join("\n    ")
 }
 
 fn lower_template_nodes(nodes: &[AwslTemplateNode]) -> SurfaceIr {
@@ -898,86 +947,138 @@ fn parse_loop_element_attrs(attrs: &[oak_awsl::AwslAttribute]) -> Option<(String
     Some((items_expr?, item_var?, key_expr))
 }
 
-fn abi_to_script_bindings(abi: &ComponentAbi) -> Vec<ScriptBinding> {
+fn abi_to_script_bindings(abi: &ComponentAbi, component: &str) -> AsgardResult<Vec<ScriptBinding>> {
     let mut out = Vec::new();
     for property in &abi.properties {
-        let init_expr = property.default_expr.clone().unwrap_or_else(|| default_expr_for_type(property.type_hint.as_deref()));
+        let init_expr = match &property.default_expr {
+            Some(expr) => expr.clone(),
+            None => default_expr_for_type(property.type_hint.as_deref()).map_err(|reason| {
+                AsgardError::msg(report!("组件 `{component}` 属性 `{}`：{reason}", property.name))
+            })?,
+        };
         // Property 是父组件 `rx_bind_prop_*` 的写入目标：必须有宿主信号句柄。
-        // list 类型没有信号 ABI（sig 仅 i32/utf8/bool），保持内联常量降级。
+        // list 类型没有信号 ABI（sig 仅 i32/utf8/bool），保持内联常量降级；内联绑定不读 `value_type`。
         let signal_backed = !is_list_like(property.type_hint.as_deref(), &init_expr);
+        let value_type = if signal_backed {
+            infer_signal_type(property.type_hint.as_deref(), &init_expr).map_err(|reason| {
+                AsgardError::msg(report!("组件 `{component}` 属性 `{}`：{reason}", property.name))
+            })?
+        }
+        else {
+            SignalValueType::Utf8
+        };
         out.push(ScriptBinding {
             name: property.name.clone(),
-            init_expr: init_expr.clone(),
+            init_expr,
             kind: BindingKind::Property { required: property.required },
             reactive: signal_backed,
             sig_var: String::new(),
-            value_type: infer_signal_type(property.type_hint.as_deref(), &init_expr),
+            value_type,
         });
     }
     for state in &abi.states {
-        let init_expr = state.init_expr.clone().unwrap_or_else(|| "false".into());
+        let Some(init_expr) = state.init_expr.clone()
+        else {
+            return Err(AsgardError::msg(report!(
+                "组件 `{component}` 状态 `{}` 缺少初始化表达式，无法生成信号初值",
+                state.name
+            )));
+        };
+        let value_type = infer_signal_type(None, &init_expr)
+            .map_err(|reason| AsgardError::msg(report!("组件 `{component}` 状态 `{}`：{reason}", state.name)))?;
         out.push(ScriptBinding {
             name: state.name.clone(),
             init_expr,
             kind: BindingKind::ReactiveState,
             reactive: true,
             sig_var: String::new(),
-            value_type: infer_signal_type(None, &state.init_expr.clone().unwrap_or_default()),
+            value_type,
         });
     }
     for derived in &abi.derived {
+        // `Derived` 非响应式：引用点直接内联，`value_type` 不进入生成代码。
+        // 因此表达式即便无法静态判定通道也不影响正确性（有回归 `derived_expression_without_type_hint_is_inlined`）。
+        let value_type = infer_signal_type(None, &derived.expr).unwrap_or(SignalValueType::Utf8);
         out.push(ScriptBinding {
             name: derived.name.clone(),
             init_expr: derived.expr.clone(),
             kind: BindingKind::Derived,
             reactive: false,
             sig_var: String::new(),
-            value_type: infer_signal_type(None, &derived.expr),
+            value_type,
         });
     }
     for memo in &abi.memoized {
+        let value_type = infer_signal_type(None, &memo.expr)
+            .map_err(|reason| AsgardError::msg(report!("组件 `{component}` memoized 绑定 `{}`：{reason}", memo.name)))?;
         out.push(ScriptBinding {
             name: memo.name.clone(),
             init_expr: memo.expr.clone(),
             kind: BindingKind::Memoized,
             reactive: false,
             sig_var: String::new(),
-            value_type: infer_signal_type(None, &memo.expr),
+            value_type,
         });
     }
-    out
+    Ok(out)
 }
 
 fn is_list_like(type_hint: Option<&str>, init_expr: &str) -> bool {
-    type_hint.map(|hint| hint.contains("list")).unwrap_or(false) || init_expr.trim() == "[]"
+    type_hint.map(is_list_type).unwrap_or(false) || init_expr.trim() == "[]"
 }
 
-fn default_expr_for_type(type_hint: Option<&str>) -> String {
-    match type_hint {
-        Some(hint) if hint.contains("bool") => "false".into(),
-        Some(hint) if hint.contains("i32") || hint.contains("int") => "0".into(),
-        Some(hint) if hint.contains("list") => "[]".into(),
-        _ => "\"\"".into(),
+/// `list` 或带元素类型的容器 `[pkg::Type]`。
+fn is_list_type(hint: &str) -> bool {
+    let hint = hint.trim();
+    hint.contains("list") || (hint.starts_with('[') && hint.ends_with(']'))
+}
+
+/// 属性无默认值时的信号初值。
+///
+/// 类型标注缺失时没有可判定的通道，直接报错：VX 解析当前也拒绝无初始化的顶层
+/// `let`，这里是防御性 fail-closed，避免将来解析器放宽后回落成 utf8 空串。
+fn default_expr_for_type(type_hint: Option<&str>) -> Result<String, String> {
+    match type_hint.map(str::trim) {
+        Some("bool") => Ok("false".into()),
+        Some("i32") | Some("int") => Ok("0".into()),
+        Some(hint) if is_list_type(hint) => Ok("[]".into()),
+        Some("utf8") | Some("string") | Some("text") => Ok("\"\"".into()),
+        Some(hint) => Err(format!("属性类型 `{hint}` 没有可生成的信号初值（仅支持 bool/i32/list/utf8）")),
+        None => Err("属性没有类型标注也没有默认值，无法确定信号通道".into()),
     }
 }
 
-fn infer_signal_type(type_hint: Option<&str>, init_expr: &str) -> SignalValueType {
+/// 推断信号通道（`sig` 只有 i32/utf8/bool 三种）。
+///
+/// 有类型标注时以标注为准；无标注时只接受可静态判定的表达式（布尔字面量、i32 字面量、
+/// 字符串字面量），其余情况报错而不是回落 utf8：回落会让 `sig_create_utf8(sig, 42)`
+/// 这类错误漂到 V 编译期。
+fn infer_signal_type(type_hint: Option<&str>, init_expr: &str) -> Result<SignalValueType, String> {
     if let Some(hint) = type_hint {
-        if hint.contains("bool") {
-            return SignalValueType::Bool;
-        }
-        if hint.contains("i32") || hint.contains("int") {
-            return SignalValueType::I32;
+        let hint = hint.trim();
+        match hint {
+            "bool" => return Ok(SignalValueType::Bool),
+            "i32" | "int" => return Ok(SignalValueType::I32),
+            "utf8" | "string" | "text" => return Ok(SignalValueType::Utf8),
+            _ => return Err(format!("类型 `{hint}` 没有可用的信号通道（仅 i32/utf8/bool）")),
         }
     }
     let trimmed = init_expr.trim();
     if trimmed == "true" || trimmed == "false" {
-        return SignalValueType::Bool;
+        return Ok(SignalValueType::Bool);
     }
     if trimmed.parse::<i32>().is_ok() {
-        return SignalValueType::I32;
+        return Ok(SignalValueType::I32);
     }
-    SignalValueType::Utf8
+    if is_string_literal(trimmed) {
+        return Ok(SignalValueType::Utf8);
+    }
+    Err(format!("无法从初始化表达式 `{trimmed}` 推断信号通道（仅 i32/utf8/bool；请给绑定加类型标注）"))
+}
+
+/// 单行/多行 V 字符串字面量。
+fn is_string_literal(expr: &str) -> bool {
+    expr.starts_with('"') && expr.ends_with('"') && expr.len() >= 2
 }
 
 impl ScriptBinding {
