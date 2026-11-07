@@ -29,7 +29,8 @@ pub(crate) fn wasm_gc_value_carrier_valtype(ty: &NyarType) -> Option<u8> {
         // （句柄不携带编码身份），也不得默认落线性内存 i32。只有显式声明的
         // `WasmJsGlue` ABI 位置才由 `wasm_js_glue_value_carrier_valtype` 放行。
         NyarType::Utf16 => return None,
-        NyarType::Float64 | NyarType::Float32 => VALTYPE_F64,
+        NyarType::Float32 => return None,
+        NyarType::Float64 => VALTYPE_F64,
         NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => VALTYPE_I64,
         // 引用语义族统一 anyref：`Apply` 是已代入的泛型实例级布局，`Function` 是
         // 闭包对象（code + env），两者若落 i32 会与构造/调用点的 anyref 槽分叉。
@@ -78,6 +79,9 @@ pub(crate) fn wasm_gc_field_type_byte(ty: &NyarType) -> crate::Result<u8> {
              也不能默认落线性内存 i32；需要显式 UTF-16 文本 ABI 契约为该槽提供载体"
                 .to_string()
         }
+        NyarType::Float32 => "WASM GC 字段/元素槽没有 `f32` 的冻结载体：`f32` 不得静默拓宽到 64 位 `VALTYPE_F64` 载体\
+             （32 位承诺与 64 位载荷矛盾）；需要独立的 `VALTYPE_F32` 载体与精度/舍入合同"
+            .to_string(),
         other => format!("WASM GC 字段/元素载体映射缺少类型分支: {other:?}"),
     })
 }
@@ -102,6 +106,18 @@ mod tests {
             wasm_gc_field_type_byte(&NyarType::Utf8).expect("`utf8` 载体未变"),
             VALTYPE_I32
         );
+    }
+
+    #[test]
+    fn f32_has_no_frozen_gc_carrier() {
+        assert_eq!(wasm_gc_value_carrier_valtype(&NyarType::Float32), None);
+        assert_eq!(wasm_js_glue_value_carrier_valtype(&NyarType::Float32), None);
+        assert_eq!(wasm_gc_value_carrier_valtype(&NyarType::Float64), Some(VALTYPE_F64));
+
+        let error = wasm_gc_field_type_byte(&NyarType::Float32).expect_err("`f32` 字段/元素槽必须 fail-closed");
+        assert!(error.contains("f32"), "{error}");
+        assert!(error.contains("VALTYPE_F32"), "{error}");
+        assert!(!error.contains("缺少类型分支"), "诊断必须点名 `f32` 缺口，不能落到模糊分支: {error}");
     }
 
     #[test]

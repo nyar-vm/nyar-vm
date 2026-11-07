@@ -1498,7 +1498,8 @@ pub(super) fn emit_wasi_entry_default_arg(ty: &NyarType, gc_array_type_indices: 
                 panic!("WASI entry array parameter `{key}` 缺少已注册的 array type");
             }
         }
-        NyarType::Float64 | NyarType::Float32 => encode_f64_const(0.0, body),
+        NyarType::Float64 => encode_f64_const(0.0, body),
+        NyarType::Float32 => panic!("WASI entry 参数 `f32` 没有冻结载体：不得按 `f64` 载体补默认值"),
         NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => encode_i64_const(0, body),
         NyarType::Unit => encode_ref_null_anyref(body),
         NyarType::Bottom => encode_i32_const(0, body),

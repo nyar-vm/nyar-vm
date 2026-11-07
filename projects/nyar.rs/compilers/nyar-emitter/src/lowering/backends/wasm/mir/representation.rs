@@ -215,11 +215,39 @@ pub(super) fn wasm_param_value_type(
     if ctx.storage_for_type(ty) == StorageKind::Reference {
         return Ok(WASM_GC_ANYREF);
     }
-    Ok(match ty {
-        NyarType::Float64 | NyarType::Float32 => VALTYPE_F64,
-        NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => VALTYPE_I64,
-        _ => VALTYPE_I32,
-    })
+    Ok(wasm_scalar_value_type(ty)?)
+}
+
+/// 标量 `NyarType` 的 wasm 载体映射。
+///
+/// 只有 `f64` 有冻结的 `VALTYPE_F64` 载体；`f32` 没有冻结载体，必须失败闭合，
+/// 不得静默拓宽到 64 位——那会让「32 位类型」实际承载 64 位载荷，位宽与 NaN
+/// payload 宽度都对外失真。全量 f32（独立 `VALTYPE_F32`、精度与舍入合同）另立任务。
+fn wasm_scalar_value_type(ty: &NyarType) -> crate::Result<u8> {
+    match ty {
+        NyarType::Float64 => Ok(VALTYPE_F64),
+        NyarType::Float32 => Err(
+            "WASM 参数/返回值没有 `f32` 的冻结载体：`f32` 不得静默拓宽到 64 位 `VALTYPE_F64` 载体\
+             （32 位承诺与 64 位载荷矛盾）；需要独立的 `VALTYPE_F32` 载体与精度/舍入合同"
+                .to_string(),
+        ),
+        NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => Ok(VALTYPE_I64),
+        _ => Ok(VALTYPE_I32),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 回归：`f32` 不得映射到 64 位载体，必须给出点名 `f32` 的结构化失败。
+    #[test]
+    fn f32_has_no_frozen_wasm_carrier() {
+        let error = wasm_scalar_value_type(&NyarType::Float32).expect_err("`f32` 必须 fail-closed");
+        assert!(error.contains("f32"), "{error}");
+        assert!(error.contains("VALTYPE_F32"), "{error}");
+        assert_eq!(wasm_scalar_value_type(&NyarType::Float64).expect("`f64` 载体未变"), VALTYPE_F64);
+    }
 }
 
 /// 计算 MIR 函数返回值对应的 WASM 值类型字节。

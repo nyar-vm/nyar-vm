@@ -794,9 +794,9 @@ const WASM_I32_TRUNC_F64_U: u8 = 0xAB;
 const WASM_I64_TRUNC_F64_S: u8 = 0xB0;
 const WASM_I64_TRUNC_F64_U: u8 = 0xB1;
 
-/// `f32` / `f64` 在当前 wasm 后端共用 `VALTYPE_F64` 载体（见 `representation`）。
+/// 只有 `f64` 有冻结的 `VALTYPE_F64` 载体；`f32` 没有载体，不在此列。
 fn is_float_carrier(ty: &NyarType) -> bool {
-    matches!(ty, NyarType::Float32 | NyarType::Float64)
+    matches!(ty, NyarType::Float64)
 }
 
 /// 语言层 `as` 的数值表示转换配方。
@@ -814,13 +814,16 @@ fn scalar_cast_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<
     if source == target {
         return Ok(Vec::new());
     }
-    // 浮点两端共用 `VALTYPE_F64`：`f32` 在该后端按既定降级放在 f64 载体上，
-    // 因此 `f32`↔`f64` 是载体恒等，不发射额外指令。
+    // `f32` 没有冻结载体：任何涉及 `f32` 的表示转换都必须失败闭合，不得按
+    // 「与 f64 共用 64 位载体」静默恒等——那正是位宽谎言的来源。
+    if matches!(source, NyarType::Float32) || matches!(target, NyarType::Float32) {
+        return Err("WASM 后端没有 `f32` 的冻结载体：`f32` 不得与 `f64` 共用 `VALTYPE_F64`，\
+             涉及 `f32` 的 `as` 转换必须失败闭合；需要独立的 `VALTYPE_F32` 载体与精度/舍入合同"
+            .to_string());
+    }
+    // `f64` 在 `VALTYPE_F64` 上：`f64` 同型已在上面返回，跨型转换按整数/浮点配方走。
     if is_float_carrier(source) {
-        return match target {
-            NyarType::Float32 | NyarType::Float64 => Ok(Vec::new()),
-            _ => float_to_integer_steps(target),
-        };
+        return float_to_integer_steps(target);
     }
     if is_float_carrier(target) {
         return integer_to_float_steps(source, target);
@@ -1006,10 +1009,14 @@ mod tests {
     }
 
     #[test]
-    fn float32_and_float64_are_carrier_identical() {
-        // 当前 wasm 后端把 f32 也放在 f64 载体上，转换不发射额外指令。
-        assert_eq!(cast(NyarType::Float32, NyarType::Float64), Vec::new());
-        assert_eq!(cast(NyarType::Float64, NyarType::Float32), Vec::new());
+    fn float32_has_no_frozen_carrier() {
+        // `f32` 没有冻结载体：与 `f64` 的任何方向转换都必须失败闭合，
+        // 不得静默当作 `VALTYPE_F64` 恒等。
+        for (source, target) in [(NyarType::Float32, NyarType::Float64), (NyarType::Float64, NyarType::Float32)] {
+            let error = scalar_cast_steps(&source, &target).expect_err("`f32` 转换必须 fail-closed");
+            assert!(error.contains("f32"), "{error}");
+            assert!(error.contains("VALTYPE_F32"), "{error}");
+        }
     }
 
     #[test]
