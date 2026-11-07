@@ -347,10 +347,18 @@ micro f64_neg(value: f64): f64
         }
     }
 
-    /// 普通值 / 最小次正规数：往返位模式与 wasm 逐位一致。
+    /// 普通值 / 次正规数 / 最小正规数：往返位模式与 wasm 逐位一致。
     #[test]
     fn f64_bits_round_trip_matches_wasm() {
-        for bits in [1.5f64.to_bits(), 3.75f64.to_bits(), f64::MIN_POSITIVE.to_bits(), 1] {
+        let cases = [
+            1.5f64.to_bits(),
+            3.75f64.to_bits(),
+            // 最小次正规数（5e-324）与最大次正规数。
+            1,
+            0x000f_ffff_ffff_ffff,
+            f64::MIN_POSITIVE.to_bits(),
+        ];
+        for bits in cases {
             let source = format!("    return __f64_to_bits(__f64_from_bits({bits}))");
             assert_eq!(run_ovm_bits(&source), bits, "OVM 往返必须位模式恒等（bits={bits:#x}）");
             assert_eq!(run_ovm_bits(&source), run_bits(&source), "OVM 与 wasm 必须给出同一位模式（bits={bits:#x}）");
