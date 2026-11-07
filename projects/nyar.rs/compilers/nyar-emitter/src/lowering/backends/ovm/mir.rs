@@ -58,6 +58,10 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
 /// 映射在 `TargetExecutionPlan` 构造时写入计划；未知助记符返回 `None`，由计划
 /// 冻结为 `TargetOperatorBinding::Unfrozen`，emit 结构化失败，禁止回落到宿主导入
 /// 或默认指令。
+///
+/// 位模式重解释（`i64.reinterpret_f64` / `f64.reinterpret_i64`）也刻意不登记：
+/// OVM 既无对应头码也无 host op，该合同在 OVM 上只会结构化失败闭合，不会降级成
+/// 数值转换，也不会静默回流到宿主。
 pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
     let (arity, recipe, code) = match mnemonic {
         "i32.add" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Add),
