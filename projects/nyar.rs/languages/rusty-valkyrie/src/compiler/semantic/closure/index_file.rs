@@ -20,6 +20,8 @@ pub(crate) struct IndexedFile {
     pub(crate) module_references: BTreeSet<ScopedReference>,
     /// 文件级语句的成员选择名；与声明级选择名一样只参与成员提升。
     pub(crate) module_selectors: BTreeSet<String>,
+    /// 首参为 `self` 的自由 `micro` 声明身份：方法位置调用的候选来源。
+    pub(crate) extension_functions: BTreeSet<DeclarationKey>,
 }
 
 pub(crate) fn index_source_file(dependency_key: &str, path: &str, source: &str, arch: &str) -> Result<IndexedFile, String> {
@@ -49,6 +51,7 @@ pub(crate) fn index_parsed_root(
         primitive_identities: builder.primitive_identities,
         module_references: builder.module_references,
         module_selectors: builder.module_selectors,
+        extension_functions: builder.extension_functions,
     }
 }
 
@@ -63,6 +66,7 @@ pub(crate) struct FileBuilder {
     module_references: BTreeSet<ScopedReference>,
     module_selectors: BTreeSet<String>,
     import_paths: BTreeSet<String>,
+    pub(crate) extension_functions: BTreeSet<DeclarationKey>,
 }
 
 impl FileBuilder {
@@ -97,6 +101,12 @@ impl FileBuilder {
             import_paths: references.imports,
         });
         key
+    }
+
+    /// 登记首参为 `self` 的自由 `micro`：它只能被方法位置调用命中，
+    /// 名字引用图无法从 `.name()` 得到这条声明，必须由闭包按选择名单独提升。
+    pub(crate) fn register_extension_function(&mut self, key: DeclarationKey) {
+        self.extension_functions.insert(key);
     }
 
     /// 登记声明携带的 `[primitive("…")]` 自举身份。

@@ -86,7 +86,10 @@ fn collect_item(builder: &mut FileBuilder, namespace: &[String], item: &ast::Sta
             let mut references = References::default();
             collect_micro(micro, &mut references);
             let entry_point = entry_point_annotation(&micro.annotations);
-            builder.register(namespace, DeclarationKind::Micro, &micro.name.name, None, None, entry_point, references);
+            let key = builder.register(namespace, DeclarationKind::Micro, &micro.name.name, None, None, entry_point, references);
+            if micro.params.first().is_some_and(|param| param.name.name == "self") {
+                builder.register_extension_function(key);
+            }
         }
         ast::StatementNode::TypeAlias(alias) => {
             let mut references = References::default();
