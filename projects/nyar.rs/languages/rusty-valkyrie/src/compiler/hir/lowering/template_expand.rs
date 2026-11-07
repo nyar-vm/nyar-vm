@@ -378,7 +378,11 @@ fn select_arch_match_body(match_node: &TemplateMatch, source: &str, arch: &str, 
         }
     }
 
-    Ok(Vec::new())
+    Err(HirError::template_expansion_failed(
+        TemplateConstruct::Match,
+        TemplateFailure::NoMatchingArchArm { arch: arch.to_string() },
+        span,
+    ))
 }
 
 fn is_arch_scrutinee(source: &str, header: &[oak_core::Token<ValkyrieTokenType>]) -> bool {

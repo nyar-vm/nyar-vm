@@ -983,6 +983,11 @@ pub enum TemplateFailure {
         /// 无法保留的节点类别（稳定短名，不是 `Debug` 输出）。
         kind: String,
     },
+    /// `match arch` 没有命中分支，也没有兜底分支。
+    NoMatchingArchArm {
+        /// 当前编译架构。
+        arch: String,
+    },
 }
 
 /// 单态化固定点超限的类别。

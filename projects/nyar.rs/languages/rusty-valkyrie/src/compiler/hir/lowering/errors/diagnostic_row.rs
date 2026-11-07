@@ -87,6 +87,9 @@ impl From<HirError> for DiagnosticRow {
                 if let TemplateFailure::DeclarationMemberUnsupportedNode { kind } = failure {
                     row = row.with_arg("node_kind", DiagnosticArg::String(kind.clone()));
                 }
+                if let TemplateFailure::NoMatchingArchArm { arch } = failure {
+                    row = row.with_arg("arch", DiagnosticArg::String(arch.clone()));
+                }
             }
             HirError::MatchRecoveryFailed { stage, pattern, .. } => {
                 row = row.with_arg("stage", DiagnosticArg::String(match_recovery_stage_name(*stage).to_string()));
@@ -443,6 +446,7 @@ pub(super) fn template_failure_name(failure: &TemplateFailure) -> &'static str {
         TemplateFailure::BlockFragmentUnsupportedNode { .. } => "block_fragment_unsupported_node",
         TemplateFailure::FragmentNotMicroDeclaration { .. } => "fragment_not_micro_declaration",
         TemplateFailure::DeclarationMemberUnsupportedNode { .. } => "declaration_member_unsupported_node",
+        TemplateFailure::NoMatchingArchArm { .. } => "no_matching_arch_arm",
     }
 }
 
@@ -471,6 +475,9 @@ pub(super) fn template_failure_message(failure: &TemplateFailure) -> String {
         }
         TemplateFailure::DeclarationMemberUnsupportedNode { kind } => {
             return format!("expanded `{kind}` cannot be kept inside a declaration body");
+        }
+        TemplateFailure::NoMatchingArchArm { arch } => {
+            return format!("no `match arch` arm matches `{arch}` and no fallback arm is present");
         }
     }
     .to_string()
