@@ -539,9 +539,10 @@ impl TargetExecutionPlan {
 /// 目标不得把本表直接当作自己的边界载体。
 ///
 /// `utf8` 的 `I32` 尤其只是 wasm JS glue 的 intern 句柄槽（宿主字符串表），
-/// 不是“文本是 i32 标量”。OVM 的文本边界由冻结文本布局事实决定（托管文本
-/// 对象或 raw 宿主串），必须从 `value_layouts` / `return_layout` /
-/// `aggregate_layout_by_nyar_type` 派生，不得复用本表的 `I32`。
+/// 不是“文本是 i32 标量”。OVM 的文本边界由**逐槽**冻结事实决定（入口形参取
+/// `value_layouts` / 折叠槽类型回查，返回取 `return_layout`），并在
+/// [`crate::ovm_abi::OvmTextRepresentation`] 里显式记录托管文本对象或 raw 宿主串；
+/// 宿主按合同取，不得复用本表的 `I32`，也不得运行时探测值类型。
 ///
 /// 没有稳定 Wasm 载体的类型（`Integer128` / `Utf16` / `Bottom` / `Function` /
 /// `TraitObject` / `Union`）在此结构化失败，不得回落为默认载体。

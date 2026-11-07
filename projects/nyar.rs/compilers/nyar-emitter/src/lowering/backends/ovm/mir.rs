@@ -441,21 +441,9 @@ fn build_nyar_function_param_layouts(exec: &TargetExecutionPlan, operations: &[I
         else {
             continue;
         };
-        let mir_fn = &view.function;
-        let slots = ExecutableSlotPlan::plan_nyar(mir_fn);
-        let parameters = mir_fn.blocks.get(mir_fn.entry.0 as usize).map(|block| block.parameters.as_slice()).unwrap_or(&[]);
-        let layouts = parameters
-            .iter()
-            .map(|parameter| {
-                mir_fn.value_layouts.get(parameter).copied().or_else(|| {
-                    slots
-                        .value_locals
-                        .get(parameter)
-                        .and_then(|local| slots.local_types.get(usize::from(*local)))
-                        .and_then(|ty| exec.aggregate_layout_by_nyar_type().get(ty).copied())
-                })
-            })
-            .collect();
+        // 与 OVM ABI 合同共用同一派生点：合同与 lowering 的实际槽布局必须同源，
+        // 禁止在这里另写一份回落。
+        let layouts = crate::ovm_abi::frozen_entry_parameter_layouts(exec, &view.function);
         map.insert(index as i32, layouts);
     }
     map

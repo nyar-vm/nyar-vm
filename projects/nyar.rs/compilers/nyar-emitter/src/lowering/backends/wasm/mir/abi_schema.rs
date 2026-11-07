@@ -481,10 +481,10 @@ fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Op
         S::InstanceHandle { name, module_path, .. } => {
             WasmAbiType::InstanceHandle { name: name.clone(), module_path: module_path.clone() }
         }
-        S::Unite { name, variants, .. } => WasmAbiType::Sum {
+        S::Unite { identity, name, variants, .. } => WasmAbiType::Sum {
             name: name.clone(),
             variants: variants.iter().map(|variant| WasmAbiSumVariant { name: variant.name.clone(), tag: variant.tag }).collect(),
-            tag_accessor: sum_tag_accessor_name(name, true, variants),
+            tag_accessor: sum_tag_accessor_name(name, identity),
         },
         S::Unsupported { reason } => WasmAbiType::Unsupported { reason: reason.clone() },
     }
@@ -596,13 +596,19 @@ pub fn field_accessor_export_name(layout: &AggregateLayout, field_index: usize) 
 ///
 /// 同一 sum 在任意导出位置派生同一名字；变体形状不同的 unite 永不撞名。
 pub fn sum_tag_accessor_export_name(sum: &nyar_types::SumTypeLayout) -> String {
-    sum_tag_accessor_name(&sum.name, sum.is_unite, &crate::abi_structure::sum_variants_of(sum))
+    // 与 `AbiStructure::Unite` 构造点共用同一身份函数，tag accessor 与
+    // （阶段三的）variant payload accessor 都从这条事实派生。
+    let identity = crate::abi_structure::sum_identity_facts(
+        &sum.name,
+        sum.is_unite,
+        &crate::abi_structure::sum_variants_of(sum),
+    );
+    sum_tag_accessor_name(&sum.name, &identity)
 }
 
 /// 由共享结构身份派生 unite tag accessor 名字；wasm 是唯一需要这个物理名字的目标。
-fn sum_tag_accessor_name(name: &str, is_unite: bool, variants: &[crate::abi_structure::AbiVariant]) -> String {
-    let facts = crate::abi_structure::sum_identity_facts(name, is_unite, variants);
-    let digest = combined_content_hash(&[&facts]);
+fn sum_tag_accessor_name(name: &str, identity: &str) -> String {
+    let digest = combined_content_hash(&[identity]);
     let suffix = digest.get(..16).unwrap_or(&digest);
     let sanitize = |text: &str| text.chars().map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' }).collect::<String>();
     format!("nyar$sum$tag${}${}", sanitize(name), suffix)

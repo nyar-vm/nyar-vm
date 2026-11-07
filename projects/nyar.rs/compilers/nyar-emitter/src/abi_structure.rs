@@ -11,7 +11,8 @@
 //! - ovm：结构 → `OvmAbiType`，附加模块布局下标与无类型槽位事实。
 //!
 //! 结构派生规则（与 `freeze_abi_carrier` 冻结的载体合同一一对应）：
-//! - 标量与 `utf8` 直接过界；
+//! - 标量直接过界；`utf8` 是文本值，其物理边界由各目标投影显式声明（wasm 是
+//!   intern `i32` 句柄，OVM 是托管文本对象或 raw 宿主串）；
 //! - `Array` / `FixedArray` / `Nullable` / `Tuple` / 具名聚合 / 泛型实例一律
 //!   按冻结布局递归展开；
 //! - `Integer128` / `Utf16` / `Bottom` / `Function` / `TraitObject` / `Union`
@@ -90,6 +91,11 @@ pub enum AbiStructure {
         nominal: NominalInstanceId,
         /// sum 简单名。
         name: String,
+        /// 由同一份 `SumTypeLayout` 派生的身份事实（名字、`is_unite`、变体名与 tag）。
+        ///
+        /// tag accessor 与（阶段三的）variant payload accessor 都只从这条事实
+        /// 派生，禁止一路读布局、另一路按名字拼。
+        identity: String,
         /// 按声明顺序排列的变体。
         variants: Vec<AbiVariant>,
     },
@@ -247,10 +253,12 @@ pub fn abi_structure_for_type_with_layouts(
     // 带 payload 的 sum 仍回落具名聚合身份，由目标层在边界失败闭合。
     if let Some(sum) = sums.get(ty) {
         if sum.is_unite && sum.variants.iter().all(|variant| variant.payload_type.is_none()) {
+            let variants = sum_variants_of(sum);
             return AbiStructure::Unite {
                 nominal: sum.nominal,
                 name: sum.name.clone(),
-                variants: sum.variants.iter().map(|variant| AbiVariant { name: variant.name.clone(), tag: variant.tag }).collect(),
+                identity: sum_identity_facts(&sum.name, sum.is_unite, &variants),
+                variants,
             };
         }
     }
