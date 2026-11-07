@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use rusty_valkyrie::legion::{CanonicalTarget, PlanRequest, WorkspaceResolver, workspace::planner::BuildRequest};
+use rusty_valkyrie::legion::{CanonicalTarget, WorkspaceResolver, workspace::planner::BuildRequest};
 
 fn valkyrie_v_root() -> Option<PathBuf> {
     if let Ok(root) = std::env::var("VALKYRIE_V_ROOT") {
@@ -31,23 +31,6 @@ fn leetcode_browser_wasm_plan_injects_wasm_adaptor_js_random_providers() {
     };
 
     let project_dir = valkyrie_v.join("examples").join("leetcode_browser_wasm");
-    let random_source = valkyrie_v
-        .join("projects")
-        .join("std.adaptors._")
-        .join("std.adaptor.wasm")
-        .join("source")
-        .join("random")
-        .join("Random.browser.v");
-    // `[js(...)]` 已退役；语料仍停留在旧通道时能力表为空，规划断言必然失败。
-    // 这是语料版本前置条件，不是本仓实现缺陷：显式跳过并提示需重新固定已迁移的语料 rev。
-    let migrated = std::fs::read_to_string(&random_source).map(|text| text.contains("js_builtin")).unwrap_or(false);
-    if !migrated {
-        eprintln!(
-            "skip: {} 仍使用已退役的 `[js(...)]`，需将 valkyrie.v 语料固定到已迁移 `[js_builtin]` 的 rev",
-            random_source.display()
-        );
-        return;
-    }
     let workspace = WorkspaceResolver::discover_for_project(&project_dir).expect("discover leetcode example workspace");
     let plan = workspace
         .build_plan(&BuildRequest {
@@ -88,40 +71,35 @@ fn leetcode_browser_wasm_plan_injects_wasm_adaptor_js_random_providers() {
         .project
         .host_provider_candidates
         .iter()
-        .filter(|provider| {
-            provider.source_file.to_string_lossy().contains("Random.browser.v")
-                && provider.required_capabilities.iter().any(|cap| cap == "js.random")
-        })
+        .filter(|provider| provider.source_file.to_string_lossy().contains("Random.browser.v"))
         .collect::<Vec<_>>();
     assert!(
         !browser_random_candidates.is_empty(),
-        "Random.browser.v must register js.random providers: {:?}",
+        "Random.browser.v must register browser glue providers: {:?}",
         plan.project.host_provider_candidates
     );
 
-    let selected_random =
-        plan.project.selected_host_providers.iter().filter(|provider| provider.contract.contains("random::Random::")).collect::<Vec<_>>();
+    // 新合同：browser glue 只声明 `[host_provider(std::random::entropy)]`，`js.random`
+    // 来自它体内真实调用的 `[js_builtin("random")]` glue，必须经调用边闭包进入能力表。
+    let browser_entropy = browser_random_candidates
+        .iter()
+        .find(|provider| provider.symbol.ends_with("host_entropy"))
+        .expect("Random.browser.v must declare host_entropy provider");
     assert!(
-        selected_random.iter().any(|provider| provider.contract.contains("with_seed")),
-        "entry must select with_seed provider: {:?}",
-        selected_random
+        browser_entropy.contract.contains("random::entropy"),
+        "host_entropy contract must stay on the new `std.random.entropy` contract: {:?}",
+        browser_entropy
     );
     assert!(
-        selected_random.iter().any(|provider| provider.contract.contains("next_i32")),
-        "entry must select next_i32 provider: {:?}",
-        selected_random
+        browser_entropy.required_capabilities.iter().any(|capability| capability == "js.random"),
+        "host_entropy must inherit `js.random` from its called `[js_builtin]` glue: {:?}",
+        browser_entropy.required_capabilities
     );
     assert!(
-        selected_random.iter().all(|provider| provider.required_capabilities.iter().any(|cap| cap == "js.random")),
-        "browser wasm Random providers must be js.random: {:?}",
-        selected_random
+        browser_entropy.foreign_bindings.is_empty(),
+        "host_entropy itself declares no foreign binding; capability must come from the body call edge: {:?}",
+        browser_entropy.foreign_bindings
     );
-
-    let api_plan =
-        rusty_valkyrie::legion::plan(PlanRequest { project_dir: project_dir.clone(), target: CanonicalTarget::browser(), output_dir: None })
-            .expect("api plan");
-    assert!(api_plan.selected_host_provider_count >= 2);
-    assert!(api_plan.host_required_capabilities.iter().any(|cap| cap == "js.random"));
 }
 
 #[test]
@@ -152,10 +130,20 @@ fn leetcode_miniprogram_wasm_plan_selects_wechat_when_files() {
     assert!(source_paths_contain(&wasm_group.source_files, "fetch.wechat.v"));
     assert!(!source_paths_contain(&wasm_group.source_files, "fetch.browser.v"));
 
-    let selected_random = plan.project.selected_host_providers.iter().filter(|p| p.contract.contains("random::Random::")).collect::<Vec<_>>();
+    let wechat_entropy = plan
+        .project
+        .host_provider_candidates
+        .iter()
+        .find(|provider| provider.source_file.to_string_lossy().contains("Random.wechat.v") && provider.symbol.ends_with("host_entropy"))
+        .expect("Random.wechat.v must declare host_entropy provider");
     assert!(
-        selected_random.iter().all(|p| p.required_capabilities.iter().any(|c| c == "js.random")),
-        "miniprogram Random providers: {:?}",
-        selected_random
+        wechat_entropy.contract.contains("random::entropy"),
+        "wechat host_entropy contract must stay on the new `std.random.entropy` contract: {:?}",
+        wechat_entropy
+    );
+    assert!(
+        wechat_entropy.required_capabilities.iter().any(|capability| capability == "js.random"),
+        "wechat host_entropy must inherit `js.random` from its called `[js_builtin]` glue: {:?}",
+        wechat_entropy.required_capabilities
     );
 }
