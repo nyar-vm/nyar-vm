@@ -7,7 +7,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 编译器仓 | `nyar-vm.rs`，`dev` `6ab54e39`（本次工作树在其上加 `e0e9e283`） |
+| 编译器仓 | `nyar-vm.rs`，`dev` `c9eca2d7`（基线实测于 `6ab54e39` + `e0e9e283`，legion 代码未变） |
 | 消费方仓 | `valkyrie.v`，`dev` `3f65d7c` |
 | 环境变量 | `VALKYRIE_V_ROOT=E:\victory 胜利女神\.wt-plotter-browser` |
 | 命令 | `cargo test -q -p rusty-valkyrie --test legion`（cwd=`projects/nyar.rs`） |
@@ -51,6 +51,20 @@ the declared `ovm` export surface）关掉，复跑已通过：
   （原失败：`库导出 \`app::apply\` 参数 0 类型 \`fn(i64) -> i64\` 没有库导出 ABI 载体`）
 - `legion_ovm_closure_p2_e2e::ovm_hashset_from_list_callback_with_capture_executes`
   （原失败：`库导出 \`std::iter#189\` 参数 1 类型 \`fn(i32) -> unit\` 没有库导出 ABI 载体`）
+
+## D. 遗留缺口（不是本基线红点，归 X16 宿主边界序列化/物化）
+
+`config_probe` 翻转项（`tests/asgard/config_probe.rs` 的
+`c0_gap_std_option_struct_constructor_resolves_but_payload_readback_is_pending`）实测：
+
+- `Option<Endpoint>` 按冻结布局派生为引用存储名义实例 `InstanceHandle("Option")`，
+  `Some` 返回不透明 GC 引用，payload **未物化**；JS glue 只能投影成空对象，读不到字段。
+- `None` 在同一载体下**不**失败闭合：同样经 glue 读回空对象，与 `Some` 不可区分
+  （wasm 侧 `None` 也是非空 sum 引用，不是空引用）。
+- 因此该测试不断言空对象形状，只断言 `Some` 非空引用；TODO 坐标写在测试文档注释里
+  （`tests/asgard/config_probe.rs:501`，缺口落地后改为
+  `assert_eq!(value, r#"{"host":"127.0.0.1","port":3000}"#)`）。
+- 按纪律不为该失败闭合/不闭合行为新开固化测试；缺口落地后随上述断言翻转一起验证。
 
 ## 验收判据
 

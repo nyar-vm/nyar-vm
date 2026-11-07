@@ -454,16 +454,21 @@ micro with_value() -> Option<utf8> {
 
 /// 已闭合缺口（原 C0 固化项翻转）：dev `e9f0aa75` 冻结 ABI 载体后，std 依赖在场时
 /// `Option<结构体>` 的 `Some` 构造与 `[export]` 返回位置完成正式构建，构造出的变体
-/// 在 wasm 语义里确实是 `Some`。
+/// 在 wasm 语义里确实是 `Some`（`is_some` 经 Node + glue 读回 `true`）。
 ///
-/// 产物载体事实：`Option<Endpoint>` 按冻结布局派生为**引用存储名义实例**
-/// （`InstanceHandle("Option")`），返回值是共享的不透明引用而不是字段快照；
-/// JS glue 只能把 symbol 键句柄 JSON 投影成空对象。字段级读回不在冻结载体合同内，
-/// 归属 ABI 载体线（`export_surface` / `type_relation` 身份判定不在本线修改）。
-/// 该载体下空引用（`None`）会按 `InstanceHandle` 合同失败闭合，因此读回成功本身
-/// 就证明 `Some` 返回了活的非空引用。
+/// 已知缺口（X16 宿主边界序列化/物化一族）：`Option<Endpoint>` 的 payload **尚未物化**。
+/// 冻结布局把它派生为引用存储名义实例 `InstanceHandle("Option")`，`Some` 与 `None`
+/// 都返回不透明 GC 引用；JS glue 只能把 symbol 键句柄 JSON 投影成空对象，既读不到
+/// 字段，也区分不出变体（`None` 在本载体下同样读回空对象，**不**失败闭合）。
+/// 因此本测试不断言该形状——那会把缺陷固化成规格；当前只断言读回成功且不是 `null`。
+///
+/// TODO(X16 宿主边界序列化/物化)：payload 物化落地后，把本测试里的占位断言
+/// （`tests/asgard/config_probe.rs` 中 `assert_ne!(value, "null", ..)` 那行，第 501 行）
+/// 换成真实字段断言：
+///   `assert_eq!(value, r#"{"host":"127.0.0.1","port":3000}"#)`（Option wire：
+///   `None → null`、`Some(v) → v`）
 #[test]
-fn c0_gap_std_option_struct_constructor_is_resolved() {
+fn c0_gap_std_option_struct_constructor_resolves_but_payload_readback_is_pending() {
     let artifact = build_probe_project_with_std(
         "asgard-c0-std-option-struct",
         r#"using std::types::{Option, Some, None};
@@ -490,9 +495,10 @@ micro has_value() -> bool {
         .unwrap_or_else(|diagnostic| panic!("`Option<结构体>` 的 `is_some` 必须经 glue 读回，实际失败：{diagnostic}"));
     assert_eq!(has_value, "true", "构造 `Some(Endpoint {{ .. }})` 后 `is_some` 必须是 `true`");
 
+    // payload 物化未实现：只验证 `Some` 产出非空引用，不断言不透明句柄的 JSON 形状。
     let value = call_export_through_glue(&artifact, "with_value", "[]")
         .unwrap_or_else(|diagnostic| panic!("`Option<结构体>` 必须经 glue 读回，实际失败：{diagnostic}"));
-    assert_eq!(value, "{}", "`Option<结构体>` 的冻结载体是不透明引用句柄，JSON 投影为空对象；载荷字段读回不在本轮合同内");
+    assert_ne!(value, "null", "`Some` 必须读回非空引用；payload 物化未实现，不透明句柄形状不作断言");
 }
 
 /// 缺口固化：裸对象字面量不是合法表达式，模块尾表达式作者形态尚不可解析。
