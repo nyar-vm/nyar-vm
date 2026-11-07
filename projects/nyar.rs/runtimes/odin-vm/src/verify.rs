@@ -701,6 +701,14 @@ fn stack_transfer(
             types.push(StackKind::I32);
             Ok(vec![edge(fallthrough, after_lhs + 1, *coroutine)])
         }
+        OdinHeadCode::I64ReinterpretF64 | OdinHeadCode::F64ReinterpretI64 => {
+            // 位模式重解释只搬位：栈高度不变，两侧都是标量 `Any`（f64/i64 在
+            // verifier 中没有独立 `StackKind`，常量池与局部槽同样登记为 `Any`）。
+            require_height(function_index, pc, height, 1)?;
+            let after = pop_any_stack(function_index, pc, types, height, coroutine)?;
+            types.push(StackKind::Any);
+            Ok(vec![edge(fallthrough, after + 1, *coroutine)])
+        }
         OdinHeadCode::FieldGet => {
             require_height(function_index, pc, height, 1)?;
             let after = pop_typed_stack(function_index, pc, types, StackKind::Ref, height, coroutine)?;

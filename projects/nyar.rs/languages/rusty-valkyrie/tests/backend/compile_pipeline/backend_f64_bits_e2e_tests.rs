@@ -127,10 +127,14 @@ fn f32_bindings() -> Vec<rusty_valkyrie::compiler::emitter::pipeline::CompilerHo
 }
 
 fn f64_groups(return_type: &str, statements: &str) -> Vec<CompilerSourceGroup> {
+    f64_groups_with(return_type, statements, PROVIDERS)
+}
+
+fn f64_groups_with(return_type: &str, statements: &str, providers: &str) -> Vec<CompilerSourceGroup> {
     let app = format!("namespace demo.primitive.f64_bits;\n\n[main]\nmicro main() -> {return_type} {{\n{statements}\n}}\n");
     vec![
         CompilerSourceGroup::single_source("core", "core", CONTRACTS),
-        CompilerSourceGroup::single_source("adaptor", "adaptor", PROVIDERS).with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source("adaptor", "adaptor", providers).with_direct_dependencies(vec!["core".into()]),
         CompilerSourceGroup::single_source("app", "demo", &app).as_entry().with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
     ]
 }
@@ -145,8 +149,17 @@ fn f32_groups(app: &str) -> Vec<CompilerSourceGroup> {
 }
 
 fn compile_f64(return_type: &str, statements: &str) -> Result<nyar_types::CompiledProgram, String> {
+    compile_f64_with(return_type, statements, PROVIDERS)
+}
+
+fn compile_f64_with(return_type: &str, statements: &str, providers: &str) -> Result<nyar_types::CompiledProgram, String> {
     ValkyrieCompiler::default()
-        .compile_source_groups_to_program_with_host_bindings(&f64_groups(return_type, statements), &f64_bindings(), &[], "native")
+        .compile_source_groups_to_program_with_host_bindings(
+            &f64_groups_with(return_type, statements, providers),
+            &f64_bindings(),
+            &[],
+            "native",
+        )
         .map_err(|error| error.to_string())
 }
 
@@ -270,18 +283,112 @@ fn f64_bits_lower_to_inline_wasm_opcodes() {
     assert!(bytes.contains(&0xBF), "必须包含 `f64.reinterpret_i64` (0xBF)");
 }
 
-/// OVM 没有位重解释目标 provider：必须结构化失败，不得 panic 或回落为宿主导入。
+/// 只有 wasm provider、没有 OVM provider：OVM 必须结构化失败，不得 panic 或回落为宿主导入。
 #[test]
-fn f64_bits_fail_closed_on_ovm_target() {
+fn f64_bits_without_ovm_provider_fail_closed() {
     use nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module;
     let program = compile_f64("u64", "    return __f64_to_bits(__f64_from_bits(1))").expect("编译");
     let plan = plan_for(&program).expect("计划");
     let error = lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
         .map(|_| ())
-        .expect_err("OVM 缺少位重解释 provider，必须结构化失败");
+        .expect_err("OVM 缺少 `[ovm_operator]` provider，必须结构化失败");
     let error = error.to_string();
     assert!(error.contains("未绑定目标 provider"), "诊断必须点名未绑定目标 provider，实际：{error}");
     assert!(error.contains("wasm-operator"), "诊断必须暴露实际链接目标标签，实际：{error}");
+}
+
+/// OVM 位重解释：`[ovm_operator]` 冻结为 `I64ReinterpretF64` / `F64ReinterpretI64`
+/// 头码，在 OVM 解释器上真实执行；同一份源码必须与 wasm 给出同一位模式。
+#[cfg(feature = "ovm-lane")]
+mod ovm {
+    use super::*;
+    use odin_bytecode::{OdinExportKind, encode_module};
+    use odin_vm::{executor::Executor, module::LoadedModule, value::Value};
+
+    /// 与 `std.adaptor.ovm` 正式形制一致：位重解释走 `[ovm_operator]`，
+    /// `f64_neg` 仍走既有 `[ovm]` 宿主导入（用于制造 `-0.0`）。
+    const OVM_PROVIDERS: &str = r#"
+namespace demo.adaptor.f64_bits;
+
+[host_provider(demo::primitive::f64_bits::__f64_to_bits)]
+[ovm_operator("i64.reinterpret_f64")]
+micro f64_to_bits(value: f64): u64
+
+[host_provider(demo::primitive::f64_bits::__f64_from_bits)]
+[ovm_operator("f64.reinterpret_i64")]
+micro f64_from_bits(bits: u64): f64
+
+[host_provider(demo::primitive::f64_bits::__f64_neg)]
+[ovm("f64_neg")]
+micro f64_neg(value: f64): f64
+"#;
+
+    fn lower_ovm(statements: &str) -> Result<odin_bytecode::OdinModuleData, String> {
+        let program = compile_f64_with("u64", statements, OVM_PROVIDERS)?;
+        let plan = plan_for(&program)?;
+        nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
+            .map_err(|error| error.to_string())
+    }
+
+    /// 在 OVM 解释器里执行 `main`，返回 64 位位模式。
+    fn run_ovm_bits(statements: &str) -> u64 {
+        let module = lower_ovm(statements).expect("OVM 位重解释必须完成降低");
+        let bytes = encode_module(&module);
+        let loaded = LoadedModule::from_bytes(&bytes).expect("位重解释模块必须通过加载校验");
+        let entry = loaded
+            .exports
+            .iter()
+            .find(|export| export.kind == OdinExportKind::Function && export.symbol_name.ends_with("main"))
+            .expect("导出表必须包含 main");
+        let mut executor = Executor::new();
+        match executor.run(&loaded, entry.function_index as usize, Vec::new()).expect("OVM 必须完成位重解释") {
+            Value::I64(bits) => bits as u64,
+            other => panic!("`to_bits` 必须返回 i64 位模式，实际 {other:?}"),
+        }
+    }
+
+    /// 普通值 / 最小次正规数：往返位模式与 wasm 逐位一致。
+    #[test]
+    fn f64_bits_round_trip_matches_wasm() {
+        for bits in [1.5f64.to_bits(), 3.75f64.to_bits(), f64::MIN_POSITIVE.to_bits(), 1] {
+            let source = format!("    return __f64_to_bits(__f64_from_bits({bits}))");
+            assert_eq!(run_ovm_bits(&source), bits, "OVM 往返必须位模式恒等（bits={bits:#x}）");
+            assert_eq!(run_ovm_bits(&source), run_bits(&source), "OVM 与 wasm 必须给出同一位模式（bits={bits:#x}）");
+        }
+    }
+
+    /// `-0.0` 的符号位在两个 target 上都必须保留。
+    #[test]
+    fn f64_negative_zero_matches_wasm() {
+        let expected = (-0.0f64).to_bits();
+        for source in ["    return __f64_to_bits(__f64_neg(0.0))", "    return __f64_to_bits(__f64_from_bits(__f64_to_bits(__f64_neg(0.0))))"] {
+            assert_eq!(run_ovm_bits(source), expected, "OVM 必须保留 `-0.0` 的符号位");
+            assert_eq!(run_ovm_bits(source), run_bits(source), "OVM 与 wasm 的 `-0.0` 位模式必须一致");
+        }
+    }
+
+    /// NaN payload 不得塌成固定规范值：qNaN / sNaN 在两个 target 上逐位一致。
+    #[test]
+    fn f64_nan_payload_matches_wasm() {
+        for bits in [0x7ff8_0000_0000_0001u64, 0x7ff0_0000_0000_0001u64] {
+            let source = format!("    return __f64_to_bits(__f64_from_bits({bits}))");
+            assert_eq!(run_ovm_bits(&source), bits, "OVM 必须逐位保留 NaN payload（bits={bits:#x}）");
+            assert_eq!(run_ovm_bits(&source), run_bits(&source), "OVM 与 wasm 的 NaN payload 必须一致（bits={bits:#x}）");
+        }
+    }
+
+    /// 结构性事实：位重解释必须是头码 0x60/0x61，不得产生任何 `nyar.host` 导入
+    /// （即不新增 capability）。
+    ///
+    /// 位模式字面量取 1.5 的 64 位值（超出 i32），确保常量走 `Integer64` 池，
+    /// 不掺入既有 `i32_to_i64` 载体辅助导入，从而严格断言 reinterpret 路径零导入。
+    #[test]
+    fn f64_bits_use_ovm_head_codes_without_host_imports() {
+        let module = lower_ovm("    return __f64_to_bits(__f64_from_bits(4609434218613702656))").expect("OVM 位重解释必须完成降低");
+        assert!(module.code_bytes.contains(&0x60), "必须发射 `I64ReinterpretF64` (0x60)");
+        assert!(module.code_bytes.contains(&0x61), "必须发射 `F64ReinterpretI64` (0x61)");
+        assert!(module.imports.is_empty(), "位重解释不得引入宿主导入/capability: {:?}", module.imports);
+    }
 }
 
 /// 类型错误负例：`f32.to_bits` 的 `u32` 结果不得静默当 `u64` 用。

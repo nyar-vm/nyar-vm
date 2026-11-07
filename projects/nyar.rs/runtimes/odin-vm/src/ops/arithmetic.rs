@@ -76,6 +76,26 @@ pub fn execute_arithmetic(instruction: OdinInstruction, frame: &mut Frame, stack
             };
             stack.push(Value::Bool(result));
         }
+        OdinHeadCode::I64ReinterpretF64 => {
+            let value = match stack.pop()? {
+                Value::F64(value) => value,
+                other => {
+                    return Err(OdinRuntimeError::TypeMismatch { expected: "f64", actual: other.type_name().to_string() });
+                }
+            };
+            // 只搬位：`to_bits` 保留符号位、次正规数与 NaN payload，不做数值转换。
+            stack.push(Value::I64(value.to_bits() as i64));
+        }
+        OdinHeadCode::F64ReinterpretI64 => {
+            let bits = match stack.pop()? {
+                Value::I64(bits) => bits as u64,
+                other => {
+                    return Err(OdinRuntimeError::TypeMismatch { expected: "i64", actual: other.type_name().to_string() });
+                }
+            };
+            // 只搬位：`from_bits` 逐位重建，含 `-0.0`、次正规数与 NaN payload。
+            stack.push(Value::F64(f64::from_bits(bits)));
+        }
         _ => return Err(OdinRuntimeError::UnknownOpcode(instruction.code as u8)),
     }
 

@@ -59,10 +59,18 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
 /// 冻结为 `TargetOperatorBinding::Unfrozen`，emit 结构化失败，禁止回落到宿主导入
 /// 或默认指令。
 ///
-/// 位模式重解释（`i64.reinterpret_f64` / `f64.reinterpret_i64`）也刻意不登记：
-/// OVM 既无对应头码也无 host op，该合同在 OVM 上只会结构化失败闭合，不会降级成
-/// 数值转换，也不会静默回流到宿主。
+/// 位模式重解释（`i64.reinterpret_f64` / `f64.reinterpret_i64`）登记为
+/// `I64ReinterpretF64` / `F64ReinterpretI64` 头码：语义是纯位搬运，属于指令层，
+/// 不引入宿主函数、不新增 capability；载体按声明签名冻结（`f64 ↔ i64`），不得降级
+/// 成数值转换，也不得回流到宿主。
 pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
+    // 位重解释跨载体：`to_bits` 是 f64 → i64，`from_bits` 是 i64 → f64。
+    // 其余既有助记符两侧都是 i32。
+    let (operand_type, result_type) = match mnemonic {
+        "i64.reinterpret_f64" => (TargetOperandType::F64, TargetOperandType::I64),
+        "f64.reinterpret_i64" => (TargetOperandType::I64, TargetOperandType::F64),
+        _ => (TargetOperandType::I32, TargetOperandType::I32),
+    };
     let (arity, recipe, code) = match mnemonic {
         "i32.add" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Add),
         "i32.sub" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Sub),
@@ -86,15 +94,11 @@ pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "i32.gt_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GtU),
         "i32.ge_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GeU),
         "i32.neg" => (1, TargetOperatorRecipe::Steps(I32_NEGATE_STEPS), OdinHeadCode::I32Sub),
+        "i64.reinterpret_f64" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::I64ReinterpretF64),
+        "f64.reinterpret_i64" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::F64ReinterpretI64),
         _ => return None,
     };
-    Some(TargetOperatorPlan {
-        arity,
-        operand_type: TargetOperandType::I32,
-        result_type: TargetOperandType::I32,
-        recipe,
-        encoding: TargetOperatorEncoding::Ovm(code),
-    })
+    Some(TargetOperatorPlan { arity, operand_type, result_type, recipe, encoding: TargetOperatorEncoding::Ovm(code) })
 }
 
 struct BytecodeEmitter<'a> {

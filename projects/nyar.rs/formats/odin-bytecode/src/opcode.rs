@@ -35,8 +35,12 @@ pub const NYAR_ASSEMBLY_MAGIC: u32 = 0x4E59_4152;
 ///
 /// v4 → v5：执行产物身份从 `.nyar` 迁到 `.odin`，文件 magic 由 `NYAR` 改为 `ODIN`；
 /// 旧 `.nyar` 执行产物按 `LegacyNyarMagic` 拒绝，缓存键随之包含格式版本。
+///
+/// v5 → v6：新增 `I64ReinterpretF64`（0x60）与 `F64ReinterpretI64`（0x61）头码。
+/// 位模式重解释属于指令层，不再是宿主导入；旧运行时读到这两个字节会结构化拒绝，
+/// 新产物不得被旧缓存混链，因此版本递增。
 #[allow(non_upper_case_globals)]
-pub const Odin_VERSION: u32 = 5;
+pub const Odin_VERSION: u32 = 6;
 
 /// Bytecode format contract version（S-W6 provenance / cache 键）。
 /// 与 [`Odin_VERSION`] 同步；格式破坏时两者一并递增。
@@ -160,6 +164,15 @@ pub enum OdinHeadCode {
     FieldGet = 0x51,
     /// 按字段槽写入（operand1 = field_slot）；栈：`[obj, value] -> [obj]`。
     FieldSet = 0x52,
+    /// `f64` 位模式重解释为 64 位整数：栈 `[f64] -> [i64]`，只搬位、不做数值转换。
+    ///
+    /// 语义与 Wasm `i64.reinterpret_f64` 一致：符号位、指数、次正规数与 NaN payload
+    /// 原样保留；无立即数。
+    I64ReinterpretF64 = 0x60,
+    /// 64 位整数位模式重解释为 `f64`：栈 `[i64] -> [f64]`，只搬位、不做数值转换。
+    ///
+    /// 语义与 Wasm `f64.reinterpret_i64` 一致；无立即数。
+    F64ReinterpretI64 = 0x61,
 }
 
 impl OdinHeadCode {
@@ -212,6 +225,8 @@ impl OdinHeadCode {
             0x50 => Some(Self::ObjectNew),
             0x51 => Some(Self::FieldGet),
             0x52 => Some(Self::FieldSet),
+            0x60 => Some(Self::I64ReinterpretF64),
+            0x61 => Some(Self::F64ReinterpretI64),
             _ => None,
         }
     }
@@ -326,7 +341,9 @@ impl OdinHeadCode {
             | Self::I32GtS
             | Self::I32GtU
             | Self::I32GeS
-            | Self::I32GeU => OdinInstructionForm::Plain,
+            | Self::I32GeU
+            | Self::I64ReinterpretF64
+            | Self::F64ReinterpretI64 => OdinInstructionForm::Plain,
         }
     }
 

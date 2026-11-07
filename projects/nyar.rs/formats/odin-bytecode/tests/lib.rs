@@ -16,9 +16,10 @@ fn bytecode_format_version_tracks_nyar_version() {
     // v1：新增 `Trap` 头码（0x0C）。v2：新增 `Integer64` 常量（0x12）。
     // v3：新增 `CallIndirect` 头码（0x06）。v4：`Function` 值改为两槽闭包对象。
     // v5：执行产物身份由 `.odin` 迁到 `.odin`（magic `NYAR` → `ODIN`）。
+    // v6：新增 `I64ReinterpretF64`（0x60）/ `F64ReinterpretI64`（0x61）位重解释头码。
     // `decode_module` 对非当前版本一律 `InvalidVersion` 拒绝，旧缓存产物按缓存未命中处理。
     // 递增格式必须同时抬 `ODIN_VERSION`。
-    assert_eq!(BYTECODE_FORMAT_VERSION, 5);
+    assert_eq!(BYTECODE_FORMAT_VERSION, 6);
 }
 
 #[test]
