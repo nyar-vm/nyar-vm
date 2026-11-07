@@ -505,14 +505,6 @@ impl MirBuilder {
                             .or_else(|| resolved.as_ref().and_then(|call| call.parameter_types.get(arg_index).cloned()))
                             .map(|ty| crate::compiler::mir::ssa::resolve_self_type_with_owner(&ty, self.impl_owner_type.as_ref()));
                         let value_operand = self.lower_expr_to_operand_with_hint(value, field_ty.as_ref());
-                        // StructNew SMIR010 compares operand `value_types` (after
-                        // concretize) to aggregate layout field types.  Hints steer
-                        // `[]` element typing but do not update `value_types`; without
-                        // this, `ArrayList { _items: [] }` stays `i32[]` while layout
-                        // keeps `Array(Generic(T))`.
-                        if let (Some(declared_ty), MirOperand::Value(value_ref)) = (&field_ty, &value_operand) {
-                            self.value_types.insert(*value_ref, declared_ty.clone());
-                        }
                         // 字段身份：优先用 HIR 已分配的 field_id；缺失时 fallback
                         // 到 field_declarations 按字段名查找（generic class 内部
                         // Construct 的 FieldInit 在 HIR 阶段不会分配 field_id），
