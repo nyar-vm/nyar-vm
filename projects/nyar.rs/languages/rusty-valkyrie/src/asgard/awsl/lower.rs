@@ -497,10 +497,19 @@ fn replace_binding_ident(expr: &str, name: &str, replacement: &str) -> String {
                 continue;
             }
         }
-        out.push(bytes[index] as char);
-        index += 1;
+        let next = next_char_boundary(expr, index);
+        out.push_str(&expr[index..next]);
+        index = next;
     }
     out
+}
+
+fn next_char_boundary(text: &str, index: usize) -> usize {
+    let mut next = index + 1;
+    while next < text.len() && !text.is_char_boundary(next) {
+        next += 1;
+    }
+    next
 }
 
 fn is_ident_char(byte: u8) -> bool {

@@ -28,3 +28,24 @@ micro show(index) {
     assert!(!block.contains("series"), "`micro` 体内不得残留未声明的非响应式绑定:\n{block}");
     assert!(block.contains("\"第一条\""), "`micro` 体内必须内联绑定初始化表达式:\n{block}");
 }
+
+/// 绑定替换按字节扫描目标表达式，但复制时必须按 UTF-8 字符边界前进。
+/// 逐字节 `as char` 重编码会把 `⁅`/`⁆`、中文等非 ASCII 文本破坏成乱码。
+#[test]
+fn non_ascii_expression_survives_binding_inlining() {
+    let source = r#"<widget index>
+<Column>
+    <Text>{series[0]}</Text>
+</Column>
+</widget>
+<script>
+let series = ["1", "2"]
+micro show(index: usize) {
+    return series⁅index⁆
+}
+</script>"#;
+    let root = AwslParser::parse_root(source).expect("parse");
+    let lowered = lower_component(&root, "index", "index.awsl", &LoweringOptions::default()).expect("lower");
+    let generated = build_awsl_wasm_source(&[lowered]);
+    assert!(generated.contains("⁅index⁆"), "非 ASCII 运算符必须按 UTF-8 原样保留:\n{generated}");
+}
