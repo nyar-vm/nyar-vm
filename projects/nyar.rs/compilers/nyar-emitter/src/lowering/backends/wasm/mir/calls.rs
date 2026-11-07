@@ -832,7 +832,7 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(true)
     }
 
-    fn find_host_import_index(&self, module: &str, field: &str) -> Option<u32> {
+    pub(super) fn find_host_import_index(&self, module: &str, field: &str) -> Option<u32> {
         self.host_imports.iter().position(|(m, f)| m == module && f == field).map(|index| index as u32)
     }
 }

@@ -1,6 +1,6 @@
 //! Wasm CFG 调度只消费已验证的块、SSA 槽和返回合同。
 
-use super::{MirBlock, MirBlockRef, MirOperand, MirTerminator, MirValueRef, WasmMirLowerer};
+use super::{MirBlock, MirBlockRef, MirConstant, MirOperand, MirTerminator, MirValueRef, WasmMirLowerer, is_js_glue_host_string_type};
 use crate::lowering::backends::wasm::sections::encode_uleb128;
 use acorn_wasm::{BLOCKTYPE_EMPTY, VALTYPE_I32, WasmOpcode, encode_return, encode_unreachable};
 
@@ -82,12 +82,46 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_br_depth(continue_depth);
             }
             MirTerminator::Unreachable => encode_unreachable(&mut self.code),
-            // `Raise` 的 wasm 目标合同：未捕获 raise 等价于 trap。payload 已由前置指令
-            // 完成求值，终止符本身不再消费；resume 块在 wasm 上永不可达（trap 不会返回），
+            // `Raise` 的 wasm 目标合同：payload 已由前置指令完成求值。Node 宿主声明了
+            // `env::host_raise` 且 payload 是文本时，先把文本句柄交给宿主抛出结构化异常；
+            // `unreachable` 只是永不返回的兜底。非文本 payload（结构化 effect 值）没有
+            // 文本 ABI，仍按 trap 终止。resume 块在 wasm 上永不可达（trap 不会返回），
             // 仍保留在调度表中以保持块身份与验证器一致。
-            MirTerminator::PerformEffect { effect: crate::contracts::EffectKind::Raise, .. } => encode_unreachable(&mut self.code),
+            MirTerminator::PerformEffect { effect: crate::contracts::EffectKind::Raise, payload, .. } => {
+                self.emit_host_raise(payload)?;
+                encode_unreachable(&mut self.code);
+            }
             other => panic!("WASM 不支持此终结符 {:?}: {}", std::mem::discriminant(other), self.mir_fn.symbol),
         }
+        Ok(())
+    }
+
+    /// 未捕获 `raise` 的宿主边界：文本 payload 以结构化宿主异常呈现。
+    ///
+    /// 只消费 Node 宿主声明的合成导入 `env::host_raise`；WASI 轨与结构化 effect
+    /// 值（没有文本 ABI）保持既有 trap 合同。必须发射真实 payload 句柄，禁止用
+    /// 空字符串或 `0` 占位。
+    fn emit_host_raise(&mut self, payload: &Option<MirOperand>) -> crate::Result<()> {
+        if self.wasi_mode {
+            return Ok(());
+        }
+        let Some(payload) = payload.as_ref()
+        else {
+            return Ok(());
+        };
+        let is_text = match payload {
+            MirOperand::Constant(MirConstant::Utf8(_)) => true,
+            _ => self.operand_semantic_type(payload).is_some_and(is_js_glue_host_string_type),
+        };
+        if !is_text {
+            return Ok(());
+        }
+        let Some(index) = self.find_host_import_index("env", "host_raise")
+        else {
+            return Ok(());
+        };
+        self.emit_operand_coerced(payload, VALTYPE_I32)?;
+        self.emit_call(index);
         Ok(())
     }
 

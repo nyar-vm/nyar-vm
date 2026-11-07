@@ -91,6 +91,9 @@ fn js_import_impl(field: &str) -> String {
         "utf8_slice" => "(s, start, count) => hostIntern(hostUtf8Slice(s, start, count))".to_string(),
         "host_intern_utf8" => "(ptr, len) => hostInternUtf8Bytes(ptr, len)".to_string(),
         "host_utf8_extract" => "(handle) => hostUtf8Extract(handle)".to_string(),
+        // 未捕获 `raise`：把 guest 的文本 payload 还原成宿主 Error，让用户代码错误
+        // 以结构化异常呈现，而不是把整个调用塌缩成 `RuntimeError: unreachable`。
+        "host_raise" => "(handle) => { throw new Error(hostResolve(handle)); }".to_string(),
         _ => "() => 0".to_string(),
     }
 }

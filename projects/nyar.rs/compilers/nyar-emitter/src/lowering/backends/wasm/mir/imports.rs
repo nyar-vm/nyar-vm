@@ -43,7 +43,7 @@ pub(super) fn collect_wasm_host_imports(submission: &FragmentSubmission, synthes
             imports.push(key);
         }
     }
-    for field in NODE_UTF8_HOST_IMPORT_FIELDS {
+    for field in NODE_HOST_IMPORT_FIELDS {
         let key = ("env".to_string(), (*field).to_string());
         if seen.insert(key.clone()) {
             imports.push(key);
@@ -53,7 +53,9 @@ pub(super) fn collect_wasm_host_imports(submission: &FragmentSubmission, synthes
     imports
 }
 
-pub(super) const NODE_UTF8_HOST_IMPORT_FIELDS: &[&str] = &[
+pub(super) const NODE_HOST_IMPORT_FIELDS: &[&str] = &[
+    // 未捕获 `raise` 的文本 payload 转成宿主结构化错误，而非裸 wasm trap。
+    "host_raise",
     "utf8_trim",
     "utf8_length",
     "utf8_concat",
@@ -196,6 +198,8 @@ pub(super) fn wasm_import_type_for_field(field: &str) -> Option<Vec<u8>> {
         "host_intern_utf8" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
         // 目标计划合成的 host 句柄→managed 字符串物化入口：handle → (linear_ptr, len) 多值返回。
         "host_utf8_extract" => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32, VALTYPE_I32]),
+        // 未捕获 raise 的宿主边界：文本句柄 → 抛出宿主错误，无返回值。
+        "host_raise" => wasm_function_type(&[VALTYPE_I32], &[]),
         "cli_get_project" | "cli_get_target" | "cli_get_output" => wasm_function_type(&[], &[VALTYPE_I32]),
         "get_current_directory" | "get_input" | "read_source_byte" => wasm_function_type(&[], &[VALTYPE_I32]),
         "read_file_text" => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
@@ -292,7 +296,7 @@ pub(super) fn wasm_import_type_bytes_for_host(
     if let Some(import) = signature_index.get(&key) {
         return wasm_import_type_from_backend_import(ctx, import, js_glue_utf8_as_anyref);
     }
-    // fallback 只服务 plan 不存在的合成宿主导入（`env::const_utf8`、`NODE_UTF8_HOST_IMPORT_FIELDS`
+    // fallback 只服务 plan 不存在的合成宿主导入（`env::const_utf8`、`NODE_HOST_IMPORT_FIELDS`
     // 里的 utf8_* 辅助、WASI 预演化的 stream 内建等）；它不得覆盖 plan 已声明的事实。
     let fallback = if wasi_mode { wasi_import_type_for_field(module, field) } else { wasm_import_type_for_field(field) };
     fallback.ok_or_else(|| format!("host import `{module}::{field}` has no frozen ABI signature"))
