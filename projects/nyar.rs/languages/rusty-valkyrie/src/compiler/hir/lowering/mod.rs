@@ -390,6 +390,16 @@ impl ValkyrieCompiler {
         self.resolve_source_groups_with_materialization_gate(groups, host_bindings, arch).map(|(modules, _gate)| modules)
     }
 
+    /// 源码组名是点分包名（如 `std.adaptor.wasm`）；HIR 名称路径逐段保存。
+    ///
+    /// 组作用域的前缀比较按段进行，把点分包名塞进单个 `Identifier` 会让
+    /// `std.adaptor.wasm` 与声明 namespace 的 `std` 永远不相等，同包不同
+    /// namespace 的无限定调用因此不可见。这里统一在入口处拆段。
+    fn source_group_name_path(name: &str) -> NamePath {
+        let parts = name.split('.').filter(|segment| !segment.is_empty()).map(Identifier::new).collect::<Vec<_>>();
+        NamePath::new(parts)
+    }
+
     /// 构建语义闭包并返回物化可达性门。
     ///
     /// 门在调用解析之后、单态化之前于 HIR 冻结调用图上求根可达闭包；
@@ -429,7 +439,7 @@ impl ValkyrieCompiler {
                 group,
                 selection,
                 &dependency_exports,
-                Some(NamePath::new(vec![Identifier::new(&group.name)])),
+                Some(Self::source_group_name_path(&group.name)),
                 arch,
             )?;
             hir_module.dependency_key = group.dependency_key.clone();
@@ -448,7 +458,7 @@ impl ValkyrieCompiler {
             // 而本组 export 尚未构建，转换只改体内表达式、不扰动声明面导出事实。
             collection_init::transform_collection_literals(&mut hir_module)?;
             let export = HirDependencySemanticExport {
-                module: NamePath::new(vec![Identifier::new(&group.name)]),
+                module: Self::source_group_name_path(&group.name),
                 functions: exportable_dependency_functions(&hir_module.functions),
                 structs: hir_module.structs.clone(),
                 enums: hir_module.enums.clone(),

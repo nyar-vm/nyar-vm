@@ -175,6 +175,16 @@ pub enum HirCallResolutionFailureKind {
         /// 并列的显式 impl 候选数。
         candidates: usize,
     },
+    /// 同一短名下多个自由函数候选同具体度并列，无法选出唯一目标。
+    ///
+    /// 同包不同 namespace 各自声明同名顶层函数时，组作用域会把它们一并拉进
+    /// 候选池；解析器不得按声明顺序静默取首个，必须按调用点冻结成结构化歧义。
+    AmbiguousFreeFunctionCandidates {
+        /// 调用名。
+        name: String,
+        /// 并列的候选数。
+        candidates: usize,
+    },
     /// 解析器未留下失败事实：出现即表示诊断链路自身有缺口，而不是用户代码的新类别。
     FailureUnrecorded,
 }
@@ -193,6 +203,7 @@ impl HirCallResolutionFailureKind {
             Self::InstanceNotClosed => "instance-not-closed",
             Self::ForInProtocolUnsatisfied { .. } => "for-in-protocol-unsatisfied",
             Self::AmbiguousExplicitImpls { .. } => "ambiguous-explicit-impls",
+            Self::AmbiguousFreeFunctionCandidates { .. } => "ambiguous-free-function-candidates",
             Self::FailureUnrecorded => "failure-unrecorded",
         }
     }
@@ -225,6 +236,11 @@ impl HirCallResolutionFailureKind {
             ),
             Self::AmbiguousExplicitImpls { candidates } => {
                 format!("{candidates} explicit impl candidates share the same specificity, so no unique witness can be selected")
+            }
+            Self::AmbiguousFreeFunctionCandidates { name, candidates } => {
+                format!(
+                    "{candidates} callable candidates named `{name}` share the same specificity in package scope, so no unique target can be selected; qualify the call or keep a single declaration"
+                )
             }
             Self::FailureUnrecorded => {
                 "the resolver rejected this call without recording a reason; this is a diagnostics gap in the compiler".to_string()

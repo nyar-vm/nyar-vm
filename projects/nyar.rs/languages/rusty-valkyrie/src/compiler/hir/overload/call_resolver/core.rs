@@ -607,7 +607,24 @@ pub(crate) fn try_resolve_call(
             match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
         })
         .collect::<Vec<_>>();
-    let resolved = crate::compiler::hir::overload::diagnostics::resolve_overload(&filtered).ok()?;
+    // 自由函数候选同样不得把同具体度并列折算成「无一候选」：组作用域会把
+    // 同包不同 namespace 的同名声明一并拉进候选池，必须按调用点冻结成
+    // 结构化歧义，不能按声明顺序静默挑一个。
+    let resolved = match crate::compiler::hir::overload::diagnostics::resolve_overload(&filtered) {
+        Ok(resolved) => resolved,
+        Err(OverloadResolutionError::Ambiguous { candidates }) => {
+            record_failure(HirCallResolutionFailure {
+                span: call_span.clone(),
+                callee: callee.kind.callable_label(),
+                reason: HirCallResolutionFailureKind::AmbiguousFreeFunctionCandidates {
+                    name: callee_name.to_string(),
+                    candidates: candidates.len(),
+                },
+            });
+            return None;
+        }
+        Err(OverloadResolutionError::NoMatch) => return None,
+    };
     let has_receiver = candidate_has_receiver_parameter(&resolved);
     let symbol = overload_symbol_path(&resolved);
     let return_type = resolved.signature.return_type;

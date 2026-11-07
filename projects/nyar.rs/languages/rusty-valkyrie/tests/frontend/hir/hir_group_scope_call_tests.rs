@@ -104,3 +104,66 @@ fn class_method_unknown_symbol_still_reports_no_callable_in_scope() {
     let error = compile(&package_group(files)).expect_err("方法体内不存在的名字必须 fail-closed");
     assert!(error.contains("no callable with this name is in scope"), "unexpected diagnostic: {error}");
 }
+
+/// 点分包名（`std.adaptor.wasm`）必须按 `.` 拆段参与组作用域前缀比较。
+///
+/// 组名被塞进单个 `Identifier` 时，`std.adaptor.wasm` 与声明 namespace 的
+/// `std` 永不相等，同包不同 namespace 的无限定调用会被误判成不可见。
+fn dotted_group(files: Vec<CompilerSourceFile>) -> Vec<CompilerSourceGroup> {
+    vec![CompilerSourceGroup::from_source_files("std.adaptor.wasm", "std.adaptor.wasm", files, Vec::new()).as_entry()]
+}
+
+#[test]
+fn dotted_group_name_cross_namespace_call_is_visible() {
+    let files = vec![
+        CompilerSourceFile {
+            path: "text/conv.v".into(),
+            source: "namespace std.adaptor.wasm.text;\nmicro convert(value: i32): i32 { return value }\n".into(),
+        },
+        CompilerSourceFile {
+            path: "console/_.v".into(),
+            source: "namespace std.adaptor.wasm.console;\n[test]\nmicro write(value: i32): void { convert(value) }\n".into(),
+        },
+    ];
+    compile(&dotted_group(files)).expect("点分包名组内跨 namespace 的无限定调用必须可见");
+}
+
+#[test]
+fn dotted_group_name_explicit_using_does_not_conflict() {
+    let files = vec![
+        CompilerSourceFile {
+            path: "text/conv.v".into(),
+            source: "namespace std.adaptor.wasm.text;\nmicro convert(value: i32): i32 { return value }\n".into(),
+        },
+        CompilerSourceFile {
+            path: "console/_.v".into(),
+            source: "namespace std.adaptor.wasm.console;\nusing std.adaptor.wasm.text::{convert};\n[test]\nmicro write(value: i32): void { convert(value) }\n".into(),
+        },
+    ];
+    compile(&dotted_group(files)).expect("显式 using 与组作用域命中同一候选时不得变成重复导入冲突");
+}
+
+/// 同包内两个 namespace 各自声明同名顶层函数时，组作用域会把两者一并拉进
+/// 候选池。解析器必须按调用点冻结成结构化歧义，不得按声明顺序静默挑一个。
+#[test]
+fn dotted_group_name_same_name_in_two_namespaces_reports_structured_ambiguity() {
+    let files = vec![
+        CompilerSourceFile {
+            path: "text/conv.v".into(),
+            source: "namespace std.adaptor.wasm.text;\nmicro convert(value: i32): i32 { return value }\n".into(),
+        },
+        CompilerSourceFile {
+            path: "console/_.v".into(),
+            source: "namespace std.adaptor.wasm.console;\nmicro convert(value: i32): i32 { return value }\n".into(),
+        },
+        CompilerSourceFile {
+            path: "app/entry.v".into(),
+            source: "namespace std.adaptor.wasm.app;\n[test]\nmicro run(): void { let value: i32 = 1 convert(value) }\n".into(),
+        },
+    ];
+    let error = compile(&dotted_group(files)).expect_err("同包不同 namespace 的同名声明必须报结构化歧义");
+    assert!(
+        error.contains("2 callable candidates named `convert` share the same specificity"),
+        "unexpected diagnostic: {error}"
+    );
+}
