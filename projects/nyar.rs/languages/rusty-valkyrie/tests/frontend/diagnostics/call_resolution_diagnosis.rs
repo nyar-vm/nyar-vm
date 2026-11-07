@@ -91,3 +91,30 @@ fn no_diagnostic_contains_internal_placeholder() {
         assert!(!selector.contains("<computed>"), "占位符不得出现在诊断: {diagnostics:?}");
     }
 }
+
+/// turbofish 失败时诊断标签必须保留 peel 后的 callee 与显式实参，不得只剩 `<fn value>`。
+#[test]
+fn turbofish_failure_label_keeps_callee_and_explicit_arguments() {
+    let diagnostics = unresolved_calls(
+        "namespace std;",
+        "namespace app;\n[export] micro probe() -> i64 {\n    return no_such::<i64>(1)\n}\n",
+    );
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    let (selector, reason, source) = &diagnostics[0];
+    assert_eq!(selector, "no_such::<i64>", "callee 必须显示 peel 后的名字与显式实参");
+    assert_eq!(reason, "name-not-found");
+    assert_eq!(source, "app.v");
+}
+
+/// 显式泛型实参数量不符必须自成一类结构化原因，不得退化成笼统的「无一候选」。
+#[test]
+fn explicit_generic_arity_mismatch_is_its_own_reason() {
+    let diagnostics = unresolved_calls(
+        "namespace std;\nmicro take<T>(value: T) -> T { return value }",
+        "namespace app;\n[export] micro probe() -> i64 {\n    return take::<i64, bool>(1)\n}\n",
+    );
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    let (selector, reason, _) = &diagnostics[0];
+    assert_eq!(selector, "take::<i64, bool>");
+    assert_eq!(reason, "explicit-generic-arguments-mismatch");
+}

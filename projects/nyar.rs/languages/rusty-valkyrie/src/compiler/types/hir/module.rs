@@ -156,6 +156,18 @@ pub enum HirCallResolutionFailureKind {
     },
     /// 显式泛型实参未结算（仍含开放 binder），无法代入候选。
     GenericsUnresolved,
+    /// 显式泛型实参数量与声明 binder 数量不一致。
+    ///
+    /// 该分类只在同名候选的 binder 数量一致时登记：直接给出期望 binder 数量/种类
+    /// 与实际实参，不允许退化成笼统的「同名候选无一存活」。
+    ExplicitGenericArgumentsMismatch {
+        /// 期望的 binder 数量。
+        expected_binders: usize,
+        /// 期望的 binder 种类，按 binder 身份顺序（声明顺序优先）；声明种类不可观察时为空。
+        expected_kinds: Vec<String>,
+        /// 实际显式泛型实参的用户可读形态。
+        actual_arguments: Vec<String>,
+    },
     /// callee 是计算得到的函数值，没有可命名符号。
     ComputedCallee,
     /// 候选已绑定，但 `where` 证据拒绝具体代入，实例未闭合（合同校验期补记）。
@@ -199,6 +211,7 @@ impl HirCallResolutionFailureKind {
             Self::NoViableOverload { .. } => "no-viable-overload",
             Self::MixedScalarComparison { .. } => "mixed-scalar-comparison",
             Self::GenericsUnresolved => "generics-unresolved",
+            Self::ExplicitGenericArgumentsMismatch { .. } => "explicit-generic-arguments-mismatch",
             Self::ComputedCallee => "computed-callee",
             Self::InstanceNotClosed => "instance-not-closed",
             Self::ForInProtocolUnsatisfied { .. } => "for-in-protocol-unsatisfied",
@@ -227,6 +240,19 @@ impl HirCallResolutionFailureKind {
                 )
             }
             Self::GenericsUnresolved => "explicit generic arguments still contain open binders".to_string(),
+            Self::ExplicitGenericArgumentsMismatch { expected_binders, expected_kinds, actual_arguments } => {
+                let actual = if actual_arguments.is_empty() { "none".to_string() } else { actual_arguments.join(", ") };
+                let kinds = if expected_kinds.is_empty() {
+                    String::new()
+                }
+                else {
+                    format!(" ({})", expected_kinds.join(", "))
+                };
+                format!(
+                    "explicit generic arguments do not match the declaration: expected {expected_binders} binder(s){kinds}, got {} explicit argument(s) ({actual})",
+                    actual_arguments.len()
+                )
+            }
             Self::ComputedCallee => "callee is a computed function value without a nameable symbol".to_string(),
             Self::InstanceNotClosed => {
                 "candidate is bound, but `where` evidence rejected the concrete substitution, so the instance never closed".to_string()

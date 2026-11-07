@@ -41,6 +41,7 @@ mod hir_single_quote_literal_tests;
 mod hir_trait_dispatch_evidence_tests;
 mod hir_trait_default_self_scope_tests;
 mod hir_trait_system_impl_identity_tests;
+mod hir_turbofish_dependency_instance_tests;
 mod hir_expression_nesting_guard_tests;
 mod hir_type_lowering_tests;
 mod valkyrie_frontend_contract_nyar_type;

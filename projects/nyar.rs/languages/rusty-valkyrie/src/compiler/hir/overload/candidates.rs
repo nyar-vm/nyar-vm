@@ -32,9 +32,7 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction, impo
     candidate.declaration = function.declaration;
     candidate.instance = function.instance;
     for generic in &function.generics {
-        if let Some(binder) = generic.binder {
-            candidate = candidate.with_generic_binder(binder);
-        }
+        candidate = candidate.with_generic_parameter(generic);
     }
     candidate.with_where_constraints(function.where_constraints.clone())
 }
@@ -74,9 +72,7 @@ fn build_struct_constructor_candidate(item: &HirStruct, array_owner: Option<nyar
     )
     .with_param_specs(param_specs);
     for generic in &item.generics {
-        if let Some(binder) = generic.binder {
-            candidate = candidate.with_generic_binder(binder);
-        }
+        candidate = candidate.with_generic_parameter(generic);
     }
     candidate.declaration = item.constructor_declaration;
     candidate.instance = item.constructor_instance;
@@ -103,9 +99,7 @@ fn build_variant_constructor_candidate(variant: &HirVariant, enum_def: &HirEnum)
         OverloadMatchKind::Row,
     );
     for generic in &enum_def.generics {
-        if let Some(binder) = generic.binder {
-            candidate = candidate.with_generic_binder(binder);
-        }
+        candidate = candidate.with_generic_parameter(generic);
     }
     candidate.declaration = variant.declaration;
     candidate.instance = variant.instance;
@@ -175,17 +169,13 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, tra
     candidate.declaration = function.declaration;
     candidate.instance = function.instance;
     for generic in &function.generics {
-        if let Some(binder) = generic.binder {
-            candidate = candidate.with_generic_binder(binder);
-        }
+        candidate = candidate.with_generic_parameter(generic);
     }
     let mut candidate = candidate.with_where_constraints(function.where_constraints.clone());
     candidate.trait_owner = trait_owner.and_then(|owner| owner.declaration);
     if let Some(owner) = trait_owner {
         for generic in &owner.generics {
-            if let Some(binder) = generic.binder {
-                candidate.generic_binders.insert(binder);
-            }
+            candidate = candidate.with_generic_parameter(generic);
         }
     }
     candidate
@@ -220,9 +210,7 @@ pub(crate) fn specialize_method_candidate(
         })
         .collect();
     for generic in owner_generics {
-        if let Some(binder) = generic.binder {
-            candidate = candidate.with_generic_binder(binder);
-        }
+        candidate = candidate.with_generic_parameter(generic);
     }
     for generic in owner_type_generic_binders(owner_type) {
         candidate = candidate.with_generic_binder(generic);
