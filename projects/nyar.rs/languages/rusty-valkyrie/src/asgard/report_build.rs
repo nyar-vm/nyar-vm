@@ -3,7 +3,7 @@ use crate::{
     asgard::error::{AsgardError, AsgardResult},
     legion::CanonicalTarget,
 };
-use nyar_analyzer::report::{HydratedChartSpec, series_to_init_literal};
+use nyar_analyzer::report::{HydratedChartSpec, SERIES_ITEM_V_TYPE, series_to_init_literal};
 use oak_awsl::widget_name_from_stem;
 use std::{
     fs,
@@ -43,11 +43,13 @@ pub fn emit_report_chart_islands(
 
     for chart in charts {
         let wrapper = read_project_source(project_dir, &format!("charts/{}.awsl", chart.route))?;
-        if let Ok((_, series_line)) = extract_title_series_lets(&wrapper) {
-            if let Some(package) = series_element_package(&series_line) {
-                series_packages.insert(package);
-            }
-        }
+        // 容器元素类型默认由注入侧的构造式字面量决定（`SERIES_ITEM_V_TYPE`）；
+        // wrapper 显式声明 `let series: [pkg::Type]` 时以 wrapper 为准。
+        let element_package = extract_title_series_lets(&wrapper)
+            .ok()
+            .and_then(|(_, series_line)| series_element_package(&series_line))
+            .unwrap_or_else(series_item_package);
+        series_packages.insert(element_package);
         let title_lit = encode_v_text_literal(&chart.title)
             .map_err(|error| AsgardError::msg(report!("chart {}: {error}", chart.route)))?;
         let series_lit = series_to_init_literal(&chart.series);
@@ -73,7 +75,11 @@ pub fn emit_report_chart_islands(
     let resolved = resolve_project_source_groups(project_dir, &CanonicalTarget::browser())?;
     // 生成代码引用 `usize` 别名与 `Array` 合同（`<loop>` 的条目数量与下标）：
     // 按包名显式挂接 `std`，不泛化挂接整个 workspace 或整个 std 快照。
-    let extra_dependency_keys = dependency_keys_for_packages(&resolved.groups, &["std"]);
+    // series 元素类型所声明的包还必须作为生成组的直接依赖，否则 `[pkg::Type]`
+    // 在生成单元里不可见（例如 `ColSeriesItem`）。
+    let mut dependency_packages = vec!["std"];
+    dependency_packages.extend(series_packages.iter().map(String::as_str));
+    let extra_dependency_keys = dependency_keys_for_packages(&resolved.groups, &dependency_packages);
     let generated = GeneratedSource { producer: "asgard.awsl.report-island", source: &awsl_v };
     // 报告图表岛走非入口执行路径：岛包源码组只作为依赖，入口身份唯一来自生成组的显式 `[export]`。
     let wasm_built = match compile_wasm_bundle(
@@ -220,6 +226,9 @@ fn encode_v_text_body(text: &str) -> String {
 
 fn expand_interactive_col_plot(wrapper: &str, icp_awsl: &str, route: &str) -> AsgardResult<String> {
     let (title_line, series_line) = extract_title_series_lets(wrapper)?;
+    // 注入字面量是构造式元素（`ColSeriesItem { ... }`），容器必须声明元素类型，
+    // 否则 `series[i]` / `item.field` 在生成单元里没有可判定的元素类型。
+    let series_line = series_declaration_with_element_type(&series_line);
     let widget_name = widget_name_from_stem(route);
     let mut out = icp_awsl.replacen("<widget interactive_col_plot>", &format!("<widget {widget_name}>"), 1);
     if !out.contains(&format!("<widget {widget_name}>")) {
@@ -228,6 +237,25 @@ fn expand_interactive_col_plot(wrapper: &str, icp_awsl: &str, route: &str) -> As
     out = replace_let_line(&out, "title", &title_line)?;
     out = replace_let_line(&out, "series", &series_line)?;
     Ok(out)
+}
+
+/// 把 wrapper 的 `let series: list = …` 声明补成 `let series: [pkg::Type] = …`。
+///
+/// 只在类型位置是 `list` 时补；wrapper 已显式声明数组元素类型时保持原样。
+fn series_declaration_with_element_type(declaration: &str) -> String {
+    let Some(eq) = declaration.find('=') else {
+        return declaration.to_string();
+    };
+    let (type_part, rest) = declaration.split_at(eq);
+    if type_part.contains('[') || !type_part.contains(": list") {
+        return declaration.to_string();
+    }
+    format!("{}{}", type_part.replace(": list", &format!(": [{}] ", SERIES_ITEM_V_TYPE)), rest)
+}
+
+/// `SERIES_ITEM_V_TYPE` 的所属包名（`asgard.plotter`）。
+fn series_item_package() -> String {
+    SERIES_ITEM_V_TYPE.rsplit_once("::").map(|(package, _)| package.to_string()).unwrap_or_default()
 }
 
 fn extract_title_series_lets(wrapper: &str) -> AsgardResult<(String, String)> {

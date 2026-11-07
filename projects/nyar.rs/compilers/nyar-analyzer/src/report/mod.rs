@@ -5,5 +5,5 @@ mod literal;
 mod spec;
 
 pub use island::{IslandKind, awsl_island_kind};
-pub use literal::series_to_init_literal;
+pub use literal::{SERIES_ITEM_V_TYPE, series_to_init_literal};
 pub use spec::{ColSeriesItem, HydratedChartSpec, StaticPageSpec};
