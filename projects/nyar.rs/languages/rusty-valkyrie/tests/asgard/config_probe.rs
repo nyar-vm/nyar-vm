@@ -412,14 +412,12 @@ micro configure() -> Holder {
     assert_eq!(value, "{\"choice\":\"Off\"}", "聚合字段读回值必须携带源码构造的变体身份");
 }
 
-/// 缺口固化：std 依赖在场时，类型位置的 `utf8` 解析到名义类型，与字符串字面量的
-/// 原始 `utf8` 不一致，返回类型检查在 Semantic MIR 合同处失败。
-///
-/// 配置 SDK 的字段全部是 `utf8`；该缺口闭合前，依赖 std 的配置模块无法完成
-/// 真实类型求值。缺口闭合后本测试必须翻转为正例。
+/// 已闭合缺口（原 C0 固化项翻转）：std 依赖在场时，类型位置的 `utf8` 与字符串
+/// 字面量的原始 `utf8` 归一到同一文本载体身份，返回类型检查通过并完成正式构建，
+/// 导出的文本值经 Node + JS glue 原样读回。
 #[test]
 fn c0_gap_std_dependency_drifts_utf8_type_resolution() {
-    let failure = build_probe_project_with_std(
+    let artifact = build_probe_project_with_std(
         "asgard-c0-std-utf8",
         r#"[export(name: "title")]
 micro title() -> utf8 {
@@ -427,9 +425,11 @@ micro title() -> utf8 {
 }
 "#,
     )
-    .expect_err("std 在场时 utf8 返回类型当前必须与字面量类型不一致");
-    assert!(failure.message.contains("SMIR007"), "诊断必须携带合同代码：{}", failure.message);
-    assert!(failure.message.contains("actual=Utf8"), "诊断必须保留字面量侧的原始 utf8 事实：{}", failure.message);
+    .unwrap_or_else(|failure| panic!("std 在场时 utf8 返回类型必须归一到同一载体身份，实际失败：{}", failure.message));
+
+    let value = call_export_through_glue(&artifact, "title", "[]")
+        .unwrap_or_else(|diagnostic| panic!("std 在场时 utf8 返回值必须经 glue 读回，实际失败：{diagnostic}"));
+    assert_eq!(value, "\"asgard\"", "glue 读回的文本配置值必须是导出函数返回的字符串");
 }
 
 /// 缺口固化：`Option<utf8>`（配置内 `output` / `base` / `assets` 的形态）在
