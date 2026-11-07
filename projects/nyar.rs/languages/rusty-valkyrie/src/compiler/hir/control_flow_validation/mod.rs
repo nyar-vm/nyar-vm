@@ -21,7 +21,7 @@ use crate::compiler::{
 
 use nyar_types::{DiagnosticSource, DiagnosticSpan};
 
-mod compatibility;
+pub(crate) mod compatibility;
 mod module_walk;
 mod pattern;
 mod state;

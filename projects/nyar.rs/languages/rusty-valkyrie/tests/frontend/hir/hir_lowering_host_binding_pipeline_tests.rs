@@ -336,7 +336,7 @@ fn imply_method_host_contract_binds_provider_and_retires_contract_body() {
                 "namespace std.text;\n",
                 "structure Utf8Text { _repr: i32 }\n",
                 "imply Utf8Text {\n",
-                "   [host_contract] micro length(self) -> i32 { return self._repr }\n",
+                "   [host_contract] micro length(self) -> i32 { }\n",
                 "}"
             ),
         )
@@ -388,6 +388,132 @@ fn imply_method_host_contract_binds_provider_and_retires_contract_body() {
     );
     let bound_provider_instance = *resolved[0].provider_pairs.values().next().expect("闭合合同实例必须配到 provider 实例");
     assert!(canonical.mir.functions.contains_key(&bound_provider_instance), "provider 实现必须进入编译产物");
+}
+
+#[test]
+fn unreached_contract_with_drifted_provider_signature_does_not_block_compilation() {
+    // 回归：provider 已登记但与合同签名漂移，且合同从未被可达代码调用。
+    // resolve 只记录 unpaired，不得让无关合同连坐整个构建。
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "std",
+            "std",
+            concat!(
+                "namespace std.text;\n",
+                "structure Utf8Text { _repr: i32 }\n",
+                "imply Utf8Text {\n",
+                "   [host_contract] micro length(self) -> i32 { }\n",
+                "}"
+            ),
+        )
+        .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "namespace std.adaptor.wasm.text;\n\
+             using std.text.{Utf8Text};\n\
+             [host_provider(std::text::Utf8Text::length)] micro host_length(value: Utf8Text): i64 {\n\
+                 let probe: i32 = value.length();\n\
+                 return 0\n\
+             }",
+        )
+        .with_direct_dependencies(vec!["core".into(), "std".into()]),
+        CompilerSourceGroup::single_source("app", "demo", "[main] micro main() -> i32 { return 0 }")
+            .as_entry()
+            .with_direct_dependencies(vec!["core".into(), "std".into(), "adaptor".into()]),
+    ];
+    let bindings = vec![CompilerHostProviderBinding {
+        contract: DeclarationKey {
+            dependency_key: "std".into(),
+            source_path: "std.v".into(),
+            namespace: vec!["std".into(), "text".into()],
+            kind: DeclarationKind::ImplyMethod,
+            owner: Some("Utf8Text".into()),
+            name: "length".into(),
+        },
+        provider: micro_declaration_key("adaptor", "adaptor.v", &["std".into(), "adaptor".into(), "wasm".into(), "text".into()], "host_length"),
+        required_capabilities: vec![],
+        foreign_bindings: vec![],
+    }];
+    let hirs = ValkyrieCompiler::default()
+        .resolve_source_groups_with_host_bindings(&groups, &bindings, TEST_ARCH)
+        .expect("签名漂移的 provider 组必须完成 HIR 物化");
+    let refs = hirs.iter().collect::<Vec<_>>();
+    let resolved = resolve_host_provider_bindings(&refs, &bindings).expect("未达合同的签名漂移不得 abort resolve");
+    assert_eq!(resolved.len(), 1, "绑定必须保留但只记录 unpaired");
+    assert!(resolved[0].provider_pairs.is_empty(), "漂移签名不得产生配对");
+    assert_eq!(resolved[0].unpaired.len(), 1, "合同实例必须记录未配对事实");
+    let unpaired = resolved[0].unpaired.values().next().expect("unpaired 必须带诊断事实");
+    assert_eq!(unpaired.provider_declaration.name, "host_length");
+    assert_eq!(unpaired.provider_signatures.len(), 1, "provider 闭合签名必须被记录以自证漂移");
+    let unpaired_instance = *resolved[0].unpaired.keys().next().expect("unpaired 实例必须存在");
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
+        .expect("未被可达代码调用的合同不得连坐构建");
+    assert!(
+        !program.canonical().mir.functions.contains_key(&unpaired_instance),
+        "未达合同实例不得进入编译产物"
+    );
+}
+
+#[test]
+fn resolved_call_to_drifted_provider_signature_fails_at_boundary() {
+    // 反例：同一签名漂移一旦被可达调用引用，必须在链接后门禁结构化失败，
+    // 且同时打出合同侧与 provider 侧签名，不得退化成静默通过或后端悬空调用。
+    let groups = [
+        core_group(),
+        CompilerSourceGroup::single_source(
+            "std",
+            "std",
+            concat!(
+                "namespace std.text;\n",
+                "structure Utf8Text { _repr: i32 }\n",
+                "imply Utf8Text {\n",
+                "   [host_contract] micro length(self) -> i32 { }\n",
+                "}"
+            ),
+        )
+        .with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "namespace std.adaptor.wasm.text;\n\
+             using std.text.{Utf8Text};\n\
+             [host_provider(std::text::Utf8Text::length)] micro host_length(value: Utf8Text): i64 { return 0 }",
+        )
+        .with_direct_dependencies(vec!["core".into(), "std".into()]),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "namespace demo;\n\
+             using std.text.{Utf8Text};\n\
+             [main] micro main() -> i32 { let t = Utf8Text { _repr: 5 }; return t.length() }",
+        )
+        .as_entry()
+        .with_direct_dependencies(vec!["core".into(), "std".into(), "adaptor".into()]),
+    ];
+    let bindings = vec![CompilerHostProviderBinding {
+        contract: DeclarationKey {
+            dependency_key: "std".into(),
+            source_path: "std.v".into(),
+            namespace: vec!["std".into(), "text".into()],
+            kind: DeclarationKind::ImplyMethod,
+            owner: Some("Utf8Text".into()),
+            name: "length".into(),
+        },
+        provider: micro_declaration_key("adaptor", "adaptor.v", &["std".into(), "adaptor".into(), "wasm".into(), "text".into()], "host_length"),
+        required_capabilities: vec![],
+        foreign_bindings: vec![],
+    }];
+    let error = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, &[], TEST_ARCH)
+        .expect_err("可达调用指向签名漂移的 provider 必须 fail-closed");
+    let message = error.to_string();
+    for needle in ["no host provider is bound", "length", "contract signature", "host_length", "-> i32", "-> i64"] {
+        assert!(message.contains(needle), "missing `{needle}` in boundary failure: {message}");
+    }
+    assert!(!message.contains("同签名的 provider 实例"), "旧 resolve 期错误必须消失: {message}");
 }
 
 #[test]

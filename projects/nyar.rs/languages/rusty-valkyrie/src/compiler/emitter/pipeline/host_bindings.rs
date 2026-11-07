@@ -9,7 +9,7 @@ use nyar_types::{ItemId, ItemInstanceId};
 
 use crate::compiler::{
     emitter::backend_contract::interop::function_host_provider_target,
-    hir::overload::has_unresolved_generic_arguments,
+    hir::{control_flow_validation::compatibility::display_type, overload::has_unresolved_generic_arguments},
     mir::{MirExternalCallContract, MirFunction, MirModule, MirOperand, MirOperation},
     semantic::closure::{DeclarationKey, DeclarationKind},
     syntax::oak::ParseError,
@@ -101,6 +101,25 @@ pub struct ResolvedHostProviderBinding {
     /// 签名与实现全部来自声明与 provider 本身，不存在按名回落或开放实例兜底。
     /// 开放合同实例不配对，仅随族退役。
     pub provider_pairs: BTreeMap<ItemInstanceId, ItemInstanceId>,
+    /// 闭合合同实例在 provider 族中找不到同签名实例时的诊断事实。
+    ///
+    /// 记录而不是立即失败：是否真的缺实现由链接后门禁按「真实 callee」判定，
+    /// 未被可达代码调用的合同不得连坐整个构建；一旦可达，门禁用这里的双面签名
+    /// 自证漂移。
+    pub unpaired: BTreeMap<ItemInstanceId, UnpairedHostContract>,
+}
+
+/// 一个闭合合同实例未能配到同签名 provider 实例的冻结事实。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnpairedHostContract {
+    /// 合同声明身份，用于在门禁报错时给出全名（依赖组声明的合同没有外部导入记录）。
+    pub contract_declaration: DeclarationKey,
+    /// 合同侧冻结签名（形参表 + 返回类型）。
+    pub contract_signature: (Vec<ValkyrieType>, ValkyrieType),
+    /// Resolver 选中的 provider 声明身份。
+    pub provider_declaration: DeclarationKey,
+    /// provider 族内全部闭合实例签名，用于在门禁报错时自证签名漂移。
+    pub provider_signatures: Vec<(Vec<ValkyrieType>, ValkyrieType)>,
 }
 
 struct PlannedBinding {
@@ -142,10 +161,13 @@ pub fn resolve_host_provider_bindings(
             continue;
         }
         // provider 配对按具体签名逐项进行：泛型 provider 的声明级实例签名开放，
-        // 只有与闭合合同副本逐项同签名的单态化闭合副本能承接调用；闭合合同实例
-        // 找不到同签名 provider 实例即结构化失败，禁止把调用重映射回开放声明级
-        // 实例（其体内宿主导入从未闭合）。开放合同实例不配对，只随族退役。
+        // 只有与闭合合同副本逐项同签名的单态化闭合副本能承接调用，禁止把调用
+        // 重映射回开放声明级实例（其体内宿主导入从未闭合）。找不到同签名 provider
+        // 的闭合合同实例在此只记录、不 abort：是否真的缺实现由链接后门禁按
+        // 「真实 callee」判定，未被可达代码调用的合同不得连坐整个构建。
+        // 开放合同实例不配对，只随族退役。
         let mut provider_pairs = BTreeMap::new();
+        let mut unpaired = BTreeMap::new();
         for contract_instance in &contract_family.instances {
             let Some(signature) = contract_family.signatures.get(contract_instance)
             else {
@@ -176,17 +198,27 @@ pub fn resolve_host_provider_bindings(
             }
             let Some(provider_instance) = matched
             else {
-                return Err(ParseError::Invalid {
-                    message: format!(
-                        "host provider 声明 `{}` 没有与闭合合同实例 `{contract_instance}` 同签名的 provider 实例（provider 声明为泛型时，其具体代入由合同调用点在单态化播种中铸造）",
-                        binding.provider.encoded()
-                    ),
-                    span: None,
-                });
+                let provider_signatures = provider_family
+                    .instances
+                    .iter()
+                    .filter_map(|instance| provider_family.signatures.get(instance))
+                    .filter(|candidate| !host_signature_is_open(candidate))
+                    .cloned()
+                    .collect();
+                unpaired.insert(
+                    *contract_instance,
+                    UnpairedHostContract {
+                        contract_declaration: binding.contract.clone(),
+                        contract_signature: signature.clone(),
+                        provider_declaration: binding.provider.clone(),
+                        provider_signatures,
+                    },
+                );
+                continue;
             };
             provider_pairs.insert(*contract_instance, provider_instance);
         }
-        resolved.push(ResolvedHostProviderBinding { contract_instances: contract_family.instances, provider_pairs });
+        resolved.push(ResolvedHostProviderBinding { contract_instances: contract_family.instances, provider_pairs, unpaired });
     }
     Ok(resolved)
 }
@@ -450,8 +482,16 @@ pub fn apply_host_provider_bindings(
     bindings: &[ResolvedHostProviderBinding],
     gated_out: &[CompilerGatedOutHostProvider],
 ) -> Result<BTreeMap<ItemInstanceId, ItemInstanceId>, ParseError> {
-    let remaps = if bindings.is_empty() { BTreeMap::new() } else { remap_bound_host_contracts(module, dependency_mirs, bindings)? };
-    enforce_resolved_host_contract_bindings(module, gated_out)?;
+    let (remaps, retired_contracts) = if bindings.is_empty() {
+        (BTreeMap::new(), BTreeSet::new())
+    }
+    else {
+        remap_bound_host_contracts(module, dependency_mirs, bindings)?
+    };
+    // 门禁必须在合同族退役之前执行：先退役会删掉未配对合同的 `external_calls`，
+    // 门禁就失去合同身份，可达调用会变成后端悬空调用而不是结构化失败。
+    enforce_resolved_host_contract_bindings(module, gated_out, bindings)?;
+    retire_bound_host_contracts(module, &retired_contracts);
     Ok(remaps)
 }
 
@@ -463,7 +503,16 @@ pub fn apply_host_provider_bindings(
 /// 说明实现来源缺失，禁止静默编码成空体或默认值。
 /// 闭包提升但从未被可达代码调用的合同不在此失败——链接 BFS 不会把
 /// 不可达成员与合同并入 consumer。
-pub(crate) fn enforce_resolved_host_contract_bindings(module: &MirModule, gated_out: &[CompilerGatedOutHostProvider]) -> Result<(), ParseError> {
+pub(crate) fn enforce_resolved_host_contract_bindings(
+    module: &MirModule,
+    gated_out: &[CompilerGatedOutHostProvider],
+    bindings: &[ResolvedHostProviderBinding],
+) -> Result<(), ParseError> {
+    // 依赖组声明的 `[host_contract]` 不在 `external_calls` 里（依赖 MIR 不带宿主合同
+    // 导入），只有 Resolver 记录的未配对事实知道它的身份；两条路径都必须参与门禁，
+    // 否则可达调用会静默落到空合同体。
+    let unpaired: BTreeMap<ItemInstanceId, &UnpairedHostContract> =
+        bindings.iter().flat_map(|binding| binding.unpaired.iter()).map(|(instance, fact)| (*instance, fact)).collect();
     let unbound: BTreeMap<ItemInstanceId, &MirExternalCallContract> = module
         .external_calls
         .iter()
@@ -472,7 +521,7 @@ pub(crate) fn enforce_resolved_host_contract_bindings(module: &MirModule, gated_
         })
         .filter_map(|contract| contract.instance.map(|instance| (instance, contract)))
         .collect();
-    if unbound.is_empty() {
+    if unpaired.is_empty() && unbound.is_empty() {
         return Ok(());
     }
     for function in &module.functions {
@@ -480,10 +529,19 @@ pub(crate) fn enforce_resolved_host_contract_bindings(module: &MirModule, gated_
             for instruction in &block.instructions {
                 if let MirOperation::Call { callee, arguments } = &instruction.kind {
                     for operand in std::iter::once(callee).chain(arguments.iter()) {
-                        if let MirOperand::Callable(instance) = operand
-                            && let Some(contract) = unbound.get(instance)
-                        {
-                            return Err(ParseError::Invalid { message: unbound_contract_message(contract, *instance, gated_out), span: None });
+                        if let MirOperand::Callable(instance) = operand {
+                            if let Some(fact) = unpaired.get(instance) {
+                                return Err(ParseError::Invalid {
+                                    message: unpaired_contract_message(fact, *instance), span: None
+                                });
+                            }
+                            let Some(contract) = unbound.get(instance) else {
+                                continue;
+                            };
+                            return Err(ParseError::Invalid {
+                                message: unbound_contract_message(contract, *instance, gated_out),
+                                span: None,
+                            });
                         }
                     }
                 }
@@ -503,28 +561,71 @@ fn unbound_contract_message(
 ) -> String {
     let contract_name = contract.symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
     let base = format!("host contract `{contract_name}` (instance `{instance}`) has a resolved call but no host provider is bound");
+    let mut details = Vec::new();
     let exclusions = gated_out.iter().filter(|exclusion| exclusion.contract == contract_name).collect::<Vec<_>>();
-    if exclusions.is_empty() {
+    if !exclusions.is_empty() {
+        details.push(
+            exclusions
+                .iter()
+                .map(|exclusion| format!("provider `{}` is gated out: feature `{}` is not enabled", exclusion.provider, exclusion.feature))
+                .collect::<Vec<_>>()
+                .join("; "),
+        );
+    }
+    if details.is_empty() {
         return base;
     }
-    let details = exclusions
-        .iter()
-        .map(|exclusion| format!("provider `{}` is gated out: feature `{}` is not enabled", exclusion.provider, exclusion.feature))
-        .collect::<Vec<_>>()
-        .join("; ");
-    format!("{base}; {details}")
+    format!("{base}; {}", details.join("; "))
+}
+
+/// 渲染「可达调用指向未配对合同」的失败：合同全名与实例身份之外，同时打出
+/// 合同侧签名与 provider 族的闭合签名，让日志本身自证是签名漂移，
+/// 而不是“host 通道从未实例化”。
+fn unpaired_contract_message(fact: &UnpairedHostContract, instance: ItemInstanceId) -> String {
+    let provider_signatures = if fact.provider_signatures.is_empty() {
+        "none".to_string()
+    }
+    else {
+        fact.provider_signatures.iter().map(render_host_signature).collect::<Vec<_>>().join(", ")
+    };
+    format!(
+        "host contract `{}` (instance `{instance}`) has a resolved call but no host provider is bound; \
+         contract signature `{}` has no same-signature closed instance of provider `{}` (provider closed signatures: {provider_signatures})",
+        declaration_full_name(&fact.contract_declaration),
+        render_host_signature(&fact.contract_signature),
+        declaration_full_name(&fact.provider_declaration),
+    )
+}
+
+/// 声明全名：namespace + owner + name，供诊断使用（编码身份不适合人读）。
+fn declaration_full_name(key: &DeclarationKey) -> String {
+    let mut parts: Vec<&str> = key.namespace.iter().map(String::as_str).collect();
+    if let Some(owner) = key.owner.as_deref() {
+        parts.push(owner);
+    }
+    parts.push(key.name.as_str());
+    parts.join("::")
+}
+
+fn render_host_signature(signature: &(Vec<ValkyrieType>, ValkyrieType)) -> String {
+    format!(
+        "micro({}) -> {}",
+        signature.0.iter().map(display_type).collect::<Vec<_>>().join(", "),
+        display_type(&signature.1)
+    )
 }
 
 /// 按 Resolver 绑定把合同调用逐对重映射到 provider，并安装 provider 定义/导入。
 ///
 /// 合同身份覆盖整个实例族：闭合实例按签名配对重定向到 provider 闭合副本，
 /// 族内全部合同体与导入（声明体与实例化副本）一并退役，不得留下进入后端的孤儿。
-/// 返回实际生效的合同→provider 改写表。
+/// 返回实际生效的合同→provider 改写表与待退役合同实例集；退役必须等
+/// `enforce_resolved_host_contract_bindings` 裁决完 still-called 合同之后执行。
 fn remap_bound_host_contracts(
     module: &mut MirModule,
     dependency_mirs: &[MirModule],
     bindings: &[ResolvedHostProviderBinding],
-) -> Result<BTreeMap<ItemInstanceId, ItemInstanceId>, ParseError> {
+) -> Result<(BTreeMap<ItemInstanceId, ItemInstanceId>, BTreeSet<ItemInstanceId>), ParseError> {
     let modules: Vec<&MirModule> = std::iter::once(&*module).chain(dependency_mirs.iter()).collect();
     let mut plans = Vec::new();
 
@@ -598,7 +699,7 @@ fn remap_bound_host_contracts(
     }
 
     if remaps.is_empty() {
-        return Ok(remaps);
+        return Ok((remaps, BTreeSet::new()));
     }
 
     for function in &mut module.functions {
@@ -606,20 +707,22 @@ fn remap_bound_host_contracts(
     }
 
     // 退役整个绑定合同族（不只配对成功的实例）：开放声明级合同若被 BFS 拉入，
-    // 残留导入或定义同样会成为后端孤儿。
-    for plan in &plans {
-        for contract_instance in &plan.contract_instances {
-            module.callable_symbols.remove(contract_instance);
-            module.external_calls.retain(|contract| contract.instance != Some(*contract_instance));
-            // 合同体退役（含实例化副本）：调用已全部重映射到 provider 后，合同实现不再
-            // 有任何调用身份；链接 BFS 在重映射之前已把合同体与铸造副本拉入 linked 模块，
-            // 若不在此移除，它们将作为孤儿定义留在模块中并进入后端校验（其聚合字段指令
-            // 与 provider 表示不一致即被拒绝）。
-            module.functions.retain(|function| function.instance != Some(*contract_instance));
-        }
-    }
+    // 残留导入或定义同样会成为后端孤儿。退役本身延后到门禁之后执行。
+    let retired_contracts = plans.iter().flat_map(|plan| plan.contract_instances.iter().copied()).collect();
+    Ok((remaps, retired_contracts))
+}
 
-    Ok(remaps)
+/// 退役绑定合同族：门禁已确认没有 still-called 的未配对合同后才可执行。
+fn retire_bound_host_contracts(module: &mut MirModule, retired_contracts: &BTreeSet<ItemInstanceId>) {
+    for contract_instance in retired_contracts {
+        module.callable_symbols.remove(contract_instance);
+        module.external_calls.retain(|contract| contract.instance != Some(*contract_instance));
+        // 合同体退役（含实例化副本）：调用已全部重映射到 provider 后，合同实现不再
+        // 有任何调用身份；链接 BFS 在重映射之前已把合同体与铸造副本拉入 linked 模块，
+        // 若不在此移除，它们将作为孤儿定义留在模块中并进入后端校验（其聚合字段指令
+        // 与 provider 表示不一致即被拒绝）。
+        module.functions.retain(|function| function.instance != Some(*contract_instance));
+    }
 }
 
 fn callable_present(modules: &[&MirModule], instance: ItemInstanceId) -> bool {
