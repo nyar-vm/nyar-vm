@@ -1273,6 +1273,7 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
                 .type_surface_spellings
                 .get(if *declaration == id { &id } else { declaration })
                 .or_else(|| program.linked.type_surface_spellings.get(&id));
+            let layout = program.linked.aggregate_layout_by_type.get(&id).copied();
             if let Some(name) = spelling {
                 if let Some(primitive) = NyarType::from_surface_primitive(name.as_str()) {
                     return Ok(primitive);
@@ -1280,7 +1281,7 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
                 // 已冻结实例级布局的零实参 nominal 铸造为携带身份的 `Nominal`：
                 // 存储类/GC 字段/ABI 由 `layout` 身份解析，拼写仅诊断显示。
                 // 未登记布局仍产出裸 `Named` 残差，由预发射门禁结构化拒绝。
-                if let Some(layout) = program.linked.aggregate_layout_by_type.get(&id).copied() {
+                if let Some(layout) = layout {
                     return Ok(NyarType::Nominal { layout, spelling: name.clone() });
                 }
                 if program.linked.nominal_instances.values().any(|record| record.ty == id) {
@@ -1291,7 +1292,23 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
             if *declaration != id {
                 return lower_type(program, *declaration);
             }
-            Err(format!("canonical 类型尚无目标合同: Nominal {{ declaration: {declaration:?}, arguments: [] }}"))
+            // canonical 合成名义记录（多字段变体 payload）没有源面拼写：源码里不存在
+            // 这个名字，只有变体声明身份。布局已冻结时目标身份由布局决定，拼写从布局
+            // 限定名派生，仅作诊断显示；不得为它要求一条不存在的 surface spelling。
+            if let Some(layout_id) = layout {
+                let spelling = match program.linked.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id) {
+                    Some(layout) if !layout.namespace.is_empty() => {
+                        format!("{}::{}", layout.namespace.replace('.', "::"), layout.name)
+                    }
+                    Some(layout) => layout.name.clone(),
+                    None => format!("Nominal({id:?})"),
+                };
+                return Ok(NyarType::Nominal { layout: layout_id, spelling: nyar_types::Identifier::new(&spelling) });
+            }
+            Err(format!(
+                "canonical 类型尚无目标合同: Nominal {{ declaration: {declaration:?}, arguments: [], {} }}",
+                nominal_contract_context(program, id, *declaration)
+            ))
         }
         CanonicalTypeKind::Function { parameters, return_type } => Ok(NyarType::Function(Box::new(NyarFunctionType {
             params: parameters.iter().map(|parameter| lower_type(program, *parameter)).collect::<Result<Vec<_>>>()?,
@@ -1348,6 +1365,46 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
             ));
         }
     }
+}
+
+/// 失败闭合诊断的定位信息：声明拼写、名义实例与字段槽位。
+///
+/// 只打印 `TypeId` 无法区分「哪个声明/哪个字段」缺合同；这里优先用已冻结的
+/// surface spelling，其次用名义实例的字段槽位名（布局已登记时），最后才退回
+/// `FieldId`。
+fn nominal_contract_context(program: &CanonicalProgram, id: nyar_types::TypeId, declaration: nyar_types::TypeId) -> String {
+    let mut parts = Vec::new();
+    if let Some(name) = program.linked.type_surface_spellings.get(&declaration) {
+        parts.push(format!("spelling={name}"));
+    }
+    if let Some((nominal, record)) = program.linked.nominal_instances.iter().find(|(_, record)| record.ty == id) {
+        parts.push(format!("nominal={nominal:?}"));
+        if !record.fields.is_empty() {
+            let fields = record
+                .fields
+                .iter()
+                .map(|field| {
+                    program
+                        .linked
+                        .aggregate_layout_by_field
+                        .get(field)
+                        .and_then(|(layout_id, index)| {
+                            program
+                                .linked
+                                .aggregate_layouts
+                                .layouts
+                                .iter()
+                                .find(|layout| layout.id == *layout_id)
+                                .and_then(|layout| layout.fields.get(*index as usize))
+                                .map(|slot| slot.name.clone())
+                        })
+                        .unwrap_or_else(|| format!("FieldId({})", field.index()))
+                })
+                .collect::<Vec<_>>();
+            parts.push(format!("fields=[{}]", fields.join(", ")));
+        }
+    }
+    if parts.is_empty() { "无已登记拼写或布局".to_string() } else { parts.join(", ") }
 }
 
 #[cfg(test)]
