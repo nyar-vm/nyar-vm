@@ -15,15 +15,19 @@ pub(crate) fn wasm_gc_array_type(element_type: u8) -> Vec<u8> {
     encode_arraytype_raw(element_type)
 }
 
-/// 单一值载体映射：字段槽、数组元素、形参与返回值都消费这一张表。
+/// GC 聚合字段槽/数组元素的载体映射。
 ///
 /// `None` 表示该语义类型没有已冻结的 wasm 载体；调用点必须结构化失败并点名
 /// 类型，禁止回落到 i32 假载体。新增 `NyarType` 分支时只改这里。
-pub(crate) fn wasm_value_carrier_valtype(ty: &NyarType) -> Option<u8> {
+///
+/// 边界语义：本表只服务 GC 聚合槽。`WasmJsGlue` 的 ABI 位置另有
+/// [`wasm_js_glue_value_carrier_valtype`]；`utf16` 在这里保持拒绝，避免宿主句柄
+/// 混进聚合字段。
+pub(crate) fn wasm_gc_value_carrier_valtype(ty: &NyarType) -> Option<u8> {
     Some(match ty {
-        // `utf16` 没有已冻结的 wasm 载体：它不得与 `utf8` 共用 i32 宿主句柄（句柄
-        // 不携带编码身份），也不得默认落线性内存 i32。宿主边界携带 `utf16` 必须由
-        // 显式声明的文本 ABI 契约提供载体；在此之前该槽结构化失败，禁止静默放行。
+        // `utf16` 没有已冻结的 wasm 聚合槽载体：它不得与 `utf8` 共用 i32 宿主句柄
+        // （句柄不携带编码身份），也不得默认落线性内存 i32。只有显式声明的
+        // `WasmJsGlue` ABI 位置才由 `wasm_js_glue_value_carrier_valtype` 放行。
         NyarType::Utf16 => return None,
         NyarType::Float64 | NyarType::Float32 => VALTYPE_F64,
         NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => VALTYPE_I64,
@@ -51,11 +55,24 @@ pub(crate) fn wasm_value_carrier_valtype(ty: &NyarType) -> Option<u8> {
     })
 }
 
+/// `WasmJsGlue` 边界上的值载体映射：`utf8` 与 `utf16` 共用 i32 宿主句柄。
+///
+/// 只有真正位于 JS-glue ABI 位置（形参、返回值、宿主导入签名）的 `utf16` 才消费
+/// 本表；GC 聚合字段槽继续走 [`wasm_gc_value_carrier_valtype`] 并保持拒绝。
+/// `WasiComponent` 的 `utf16` 没有冻结载体，仍由
+/// `physical_contract::declared_text_projection` 在 verifier 处 fail-closed。
+pub(crate) fn wasm_js_glue_value_carrier_valtype(ty: &NyarType) -> Option<u8> {
+    match ty {
+        NyarType::Utf8 | NyarType::Utf16 => Some(VALTYPE_I32),
+        other => wasm_gc_value_carrier_valtype(other),
+    }
+}
+
 /// 将 NyarType 映射到 wasm-gc 字段/元素值类型字节。
 ///
 /// 缺失分支是计划事实缺失：返回结构化错误并点名类型，不退回 i32。
 pub(crate) fn wasm_gc_field_type_byte(ty: &NyarType) -> crate::Result<u8> {
-    wasm_value_carrier_valtype(ty).ok_or_else(|| match ty {
+    wasm_gc_value_carrier_valtype(ty).ok_or_else(|| match ty {
         NyarType::Utf16 => {
             "WASM GC 字段/元素槽没有 `utf16` 的冻结载体：`utf16` 不得借用 `utf8` 的 i32 宿主句柄（句柄不携带编码身份），\
              也不能默认落线性内存 i32；需要显式 UTF-16 文本 ABI 契约为该槽提供载体"
@@ -72,10 +89,10 @@ mod tests {
     #[test]
     fn utf8_keeps_host_handle_carrier_but_utf16_has_no_frozen_carrier() {
         assert_eq!(
-            wasm_value_carrier_valtype(&NyarType::Utf8),
+            wasm_gc_value_carrier_valtype(&NyarType::Utf8),
             Some(VALTYPE_I32)
         );
-        assert_eq!(wasm_value_carrier_valtype(&NyarType::Utf16), None);
+        assert_eq!(wasm_gc_value_carrier_valtype(&NyarType::Utf16), None);
 
         let error = wasm_gc_field_type_byte(&NyarType::Utf16)
             .expect_err("`utf16` 字段/元素槽必须 fail-closed");
@@ -85,5 +102,13 @@ mod tests {
             wasm_gc_field_type_byte(&NyarType::Utf8).expect("`utf8` 载体未变"),
             VALTYPE_I32
         );
+    }
+
+    #[test]
+    fn js_glue_boundary_admits_utf16_without_touching_gc_field_slots() {
+        assert_eq!(wasm_js_glue_value_carrier_valtype(&NyarType::Utf16), Some(VALTYPE_I32));
+        assert_eq!(wasm_js_glue_value_carrier_valtype(&NyarType::Utf8), Some(VALTYPE_I32));
+        // 边界入口只是委托：非文本类型仍按 GC 聚合表。
+        assert_eq!(wasm_js_glue_value_carrier_valtype(&NyarType::Boolean), Some(VALTYPE_I32));
     }
 }

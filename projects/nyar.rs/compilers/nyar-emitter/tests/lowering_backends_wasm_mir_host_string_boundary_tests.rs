@@ -31,6 +31,7 @@ use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, ImportIndex,
 use std::collections::BTreeMap;
 
 const UTF8: NyarType = NyarType::Utf8;
+const UTF16: NyarType = NyarType::Utf16;
 const I32: NyarType = NyarType::Integer32 { signed: true };
 
 const UTF8_TEXT_LAYOUT_ID: LayoutId = 7;
@@ -113,12 +114,70 @@ fn utf8_length_call_main(bound_layout: Option<LayoutId>) -> ExecutableFunction {
     }
 }
 
+/// `main(text: Utf16)`：%1 = `utf16_length(%0)`；return %1。
+fn utf16_length_call_main() -> ExecutableFunction {
+    let call = Instruction::from_kind(InstructionKind::Call {
+        callee: Operand::Item(utf16_length_callee()),
+        arguments: vec![Operand::Value(ValueRef(0))],
+    });
+    let block = Block {
+        id: BlockRef(0),
+        label: "entry".to_string(),
+        parameters: vec![ValueRef(0)],
+        instructions: vec![Instruction { results: vec![ValueRef(1)], ..call }],
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(1))) },
+    };
+    ExecutableFunction {
+        symbol: "main".to_string(),
+        return_type: I32,
+        param_types: vec![UTF16],
+        value_types: BTreeMap::from([(ValueRef(0), UTF16), (ValueRef(1), I32)]),
+        value_layouts: BTreeMap::new(),
+        return_layout: None,
+        entry: BlockRef(0),
+        values: Vec::new(),
+        suspend_points: Vec::new(),
+        frame_layouts: Vec::new(),
+        continuations: Vec::new(),
+        case_chains: Vec::new(),
+        #[allow(deprecated)]
+        state_machine: None,
+        suspend_plan: None,
+        blocks: vec![block],
+        diagnostics: Vec::new(),
+    }
+}
+
+fn utf16_length_callee() -> ItemInstanceId {
+    ItemInstanceId::from_index(204).expect("测试 callee 身份")
+}
+
+/// `env::utf16_length(text: Utf16) -> i32`。
+fn utf16_length_import() -> BackendImport {
+    BackendImport {
+        index: ImportIndex::from_index(0).expect("导入下标"),
+        link: nyar::ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".into(), "utf16_length".into()]),
+        parameter_types: vec![UTF16],
+        return_type: I32,
+        target_operator: None,
+    }
+}
+
 fn lower(function: ExecutableFunction, layouts: AggregateLayoutPlan) -> nyar_emitter::Result<WasmBinaryModule> {
+    lower_with_import(function, layouts, utf8_length_callee(), utf8_length_import())
+}
+
+fn lower_with_import(
+    function: ExecutableFunction,
+    layouts: AggregateLayoutPlan,
+    callee: ItemInstanceId,
+    import: BackendImport,
+) -> nyar_emitter::Result<WasmBinaryModule> {
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
     plan.testing_module_name("host_string_boundary").testing_entry_operation(main_name);
     plan.testing_aggregate_layouts(layouts);
-    plan.testing_register_import(utf8_length_callee(), utf8_length_import());
+    plan.testing_register_import(callee, import);
     let submission = FragmentSubmission::from_backend_plan(plan);
     lower_fragment_to_wasm_mir_module(&submission, "main")
 }
@@ -159,6 +218,35 @@ fn wasm_managed_layout_without_byte_array_field_fails_structured_at_freeze() {
     let error = lower(utf8_length_call_main(Some(NO_BYTES_LAYOUT_ID)), layout_plan(NO_BYTES_LAYOUT_ID, "HostHandleText", long_array()))
         .expect_err("缺少整数字节数组字段的 layout 必须在目标计划冻结期结构化失败");
     assert!(error.contains("缺少整数字节数组字段"), "错误必须指明冻结失败的缺失事实: {error}");
+}
+
+/// 正向：`WasmJsGlue` ABI 位置的 `utf16` 与 `utf8` 共用 i32 宿主句柄。
+/// 宿主导入 `env::utf16_length(text: Utf16) -> i32` 必须编译成 `[i32] -> [i32]`，
+/// 且不得合成 `host_intern_utf8`（那是 managed `Utf8Text` 的转换配方）。
+/// GC 聚合字段槽仍拒绝 `utf16`，由 `wasm_gc_field_type_byte` 负责。
+#[test]
+fn wasm_js_glue_utf16_host_import_uses_i32_handle_signature() {
+    let module = lower_with_import(
+        utf16_length_call_main(),
+        layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()),
+        utf16_length_callee(),
+        utf16_length_import(),
+    )
+    .expect("JS-glue 边界的 `utf16` 宿主导入必须降为 i32 宿主句柄");
+    let import = parse_import_section(&module)
+        .into_iter()
+        .find(|item| item.module == "env" && item.field == "utf16_length")
+        .expect("`env::utf16_length` 导入必须存在");
+    assert_eq!(import.kind, WasmExternalKind::Func);
+    assert_eq!(
+        func_type(&module, import.type_index),
+        (vec![WasmValueType::I32], vec![WasmValueType::I32]),
+        "`utf16` 形参/返回值必须与 `utf8` 一样是 i32 宿主句柄"
+    );
+    assert!(
+        !import_keys(&module).contains(&("env".to_string(), "host_intern_utf8".to_string())),
+        "i32 句柄直通时不得合成 managed 字符串转换导入"
+    );
 }
 
 fn reference_layout(id: LayoutId, name: &str, fields: Vec<FieldLayout>) -> AggregateLayout {

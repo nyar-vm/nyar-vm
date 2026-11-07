@@ -85,7 +85,8 @@ pub struct PhysicalTextProjection {
     pub carrier: Option<PhysicalTextCarrier>,
 }
 
-/// `utf16` 在所有 wasm 边界上的统一拒绝理由。
+/// 物理槽没有冻结 `utf16` 载体时的统一拒绝理由（GC 聚合槽、`WasiComponent` 边界等）。
+/// `WasmJsGlue` 的 ABI 位置已冻结 `JsStringHandle`，不消费该理由。
 #[doc(hidden)]
 pub const UTF16_UNRESOLVED_TEXT_ABI: &str =
     "`utf16` 没有已声明的文本 ABI 载体：canonical ABI 的字符串是 UTF-8 字节列表，\

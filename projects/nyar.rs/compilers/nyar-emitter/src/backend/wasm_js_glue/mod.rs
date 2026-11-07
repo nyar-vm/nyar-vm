@@ -89,6 +89,23 @@ fn js_import_impl(field: &str) -> String {
         "utf8_equals" => "(a, b) => hostUtf8Equals(a, b)".to_string(),
         "utf8_index_of" => "(s, other) => hostUtf8IndexOf(s, other)".to_string(),
         "utf8_slice" => "(s, start, count) => hostIntern(hostUtf8Slice(s, start, count))".to_string(),
+        // `utf16` 在 JS-glue 边界与 `utf8` 共用同一张宿主句柄表；区别是索引/长度
+        // 按 UTF-16 code unit 语义（原生 JS 字符串），不做 scalar 展开。
+        "const_utf16" => "(index) => hostIntern(hostConstUtf16(index))".to_string(),
+        "utf8_to_utf16" => "(s) => hostIntern(hostPathFromRef(s))".to_string(),
+        "utf16_to_utf8" => "(s) => hostIntern(hostPathFromRef(s))".to_string(),
+        "utf16_concat" => "(a, b) => hostUtf16Concat(a, b)".to_string(),
+        "utf16_length" => "(s) => hostUtf16Length(s)".to_string(),
+        "utf16_trim" => "(s) => hostUtf16Trim(s)".to_string(),
+        "utf16_to_lower" => "(s) => hostUtf16ToLower(s)".to_string(),
+        "utf16_to_upper" => "(s) => hostUtf16ToUpper(s)".to_string(),
+        "utf16_replace" => "(s, oldValue, newValue) => hostUtf16Replace(s, oldValue, newValue)".to_string(),
+        "utf16_starts_with" => "(s, prefix) => hostUtf16StartsWith(s, prefix)".to_string(),
+        "utf16_ends_with" => "(s, suffix) => hostUtf16EndsWith(s, suffix)".to_string(),
+        "utf16_contains" => "(s, other) => hostUtf16Contains(s, other)".to_string(),
+        "utf16_equals" => "(a, b) => hostUtf16Equals(a, b)".to_string(),
+        "utf16_index_of" => "(s, other) => hostUtf16IndexOf(s, other)".to_string(),
+        "utf16_slice" => "(s, start, count) => hostUtf16Slice(s, start, count)".to_string(),
         "host_intern_utf8" => "(ptr, len) => hostInternUtf8Bytes(ptr, len)".to_string(),
         "host_utf8_extract" => "(handle) => hostUtf8Extract(handle)".to_string(),
         // 未捕获 `raise`：把 guest 的文本 payload 还原成宿主 Error，让用户代码错误
@@ -920,6 +937,84 @@ function hostUtf8Slice(s, start, count) {{
     const from = Math.max(0, start | 0);
     const len = Math.max(0, count | 0);
     return chars.slice(from, from + len).join("");
+}}
+
+// env.utf16_* index contract (matches std Utf16Text): **UTF-16 code units**, i.e.
+// native JS string indexing/`.length`. No scalar iteration: a lone surrogate
+// stays one code unit and must not be replaced by U+FFFD. This is exactly what
+// the utf8 helpers above would lose if they were reused here.
+
+function hostUtf16Text(s) {{
+    return hostPathFromRef(s);
+}}
+
+// `nyar.strings` 是编码无关的文本字面量表；同一份文本既可作 utf8 句柄，也可作
+// utf16 句柄（JS 字符串本身就是 UTF-16 存储）。
+function hostConstUtf16(index) {{
+    return UTF8_LITERALS[index] ?? "";
+}}
+
+function hostUtf16Length(s) {{
+    return hostUtf16Text(s).length;
+}}
+
+function hostUtf16Concat(a, b) {{
+    return hostIntern(hostUtf16Text(a) + hostUtf16Text(b));
+}}
+
+function hostUtf16Slice(s, start, count) {{
+    const text = hostUtf16Text(s);
+    const from = Math.max(0, start | 0);
+    const len = Math.max(0, count | 0);
+    return hostIntern(text.slice(from, from + len));
+}}
+
+// JS `indexOf` returns a UTF-16 code-unit index — the std contract.
+function hostUtf16IndexOf(s, other) {{
+    return hostUtf16Text(s).indexOf(hostUtf16Text(other));
+}}
+
+// 与 `Utf8Text::trim` 同一份 `White_Space` 集合，但按 code unit 前进：代理项
+// 不在集合内，因此 lone surrogate 会被保留。
+function hostUtf16Trim(s) {{
+    const text = hostUtf16Text(s);
+    let start = 0;
+    let end = text.length;
+    while (start < end && UTF8_WHITE_SPACE.has(text.codePointAt(start))) start += 1;
+    while (end > start && UTF8_WHITE_SPACE.has(text.codePointAt(end - 1))) end -= 1;
+    return hostIntern(text.slice(start, end));
+}}
+
+function hostUtf16ToLower(s) {{
+    return hostIntern(hostUtf16Text(s).toLowerCase());
+}}
+
+function hostUtf16ToUpper(s) {{
+    return hostIntern(hostUtf16Text(s).toUpperCase());
+}}
+
+function hostUtf16Replace(s, oldValue, newValue) {{
+    const text = hostUtf16Text(s);
+    const needle = hostUtf16Text(oldValue);
+    const replacement = hostUtf16Text(newValue);
+    if (needle.length === 0) return hostIntern(text);
+    return hostIntern(text.split(needle).join(replacement));
+}}
+
+function hostUtf16StartsWith(s, prefix) {{
+    return hostUtf16Text(s).startsWith(hostUtf16Text(prefix)) ? 1 : 0;
+}}
+
+function hostUtf16EndsWith(s, suffix) {{
+    return hostUtf16Text(s).endsWith(hostUtf16Text(suffix)) ? 1 : 0;
+}}
+
+function hostUtf16Contains(s, other) {{
+    return hostUtf16Text(s).includes(hostUtf16Text(other)) ? 1 : 0;
+}}
+
+function hostUtf16Equals(a, b) {{
+    return hostUtf16Text(a) === hostUtf16Text(b) ? 1 : 0;
 }}
 
 async function wasmResolveInstance(wasmBytes, importObject) {{

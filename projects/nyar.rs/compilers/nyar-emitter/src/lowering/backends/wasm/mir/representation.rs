@@ -8,7 +8,7 @@
 //! Zero-logic extract from the former monolithic lowerer (B4 seam).
 
 use super::{ExecutableLoweringContext, LayoutId, MirFunction, MirStorageKind, NyarType, StorageKind, WASM_GC_ANYREF};
-use crate::lowering::backends::wasm::gc::wasm_gc_field_type_byte;
+use crate::lowering::backends::wasm::gc::{wasm_gc_field_type_byte, wasm_js_glue_value_carrier_valtype};
 use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64};
 use nyar_types::AggregateLayout;
 use std::collections::BTreeMap;
@@ -88,6 +88,24 @@ pub(super) fn wasm_param_value_type_for(
     // （`cli_get_*` / `const_utf8`）；否则 call 实参会被 coerce 成 `ref.null`，丢掉句柄。
     if is_js_glue_host_string_type(ty) {
         return Ok(VALTYPE_I32);
+    }
+    wasm_js_glue_abi_value_type(ctx, ty, js_glue_utf8_as_anyref)
+}
+
+/// `WasmJsGlue` ABI 位置的载体：`utf16` 与 `utf8` 共用 i32 宿主句柄。
+///
+/// 边界准入已由 `validate_text_encoding_projection` 按
+/// `declared_text_projection` 判定（`WasiComponent` 在到达这里前被拒绝）。
+/// GC 聚合字段槽仍走 `wasm_gc_field_type_byte`，继续拒绝 `utf16`。
+pub(super) fn wasm_js_glue_abi_value_type(
+    ctx: &ExecutableLoweringContext,
+    ty: &NyarType,
+    js_glue_utf8_as_anyref: bool,
+) -> crate::Result<u8> {
+    if matches!(ty, NyarType::Utf16) {
+        return wasm_js_glue_value_carrier_valtype(ty).ok_or_else(|| {
+            crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string()
+        });
     }
     wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)
 }
