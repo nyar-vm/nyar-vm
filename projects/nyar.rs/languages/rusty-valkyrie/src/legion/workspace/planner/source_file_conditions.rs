@@ -143,7 +143,7 @@ mod tests {
 namespace std.adaptor.wasm;
 
 [host_provider(std::math::random_next_i32)]
-[js("random")]
+[js_builtin("random")]
 micro js_random_next_i32(seed: i32): i32
 "#;
         assert!(source_file_active_for_target(source, CanonicalTarget::browser()));
@@ -156,7 +156,7 @@ micro js_random_next_i32(seed: i32): i32
 
 [when(target.specification == "browser")]
 [host_provider(std::math::random_next_i32)]
-[js("random")]
+[js_builtin("random")]
 micro js_random_next_i32(seed: i32): i32
 "#;
         assert!(file_level_condition_items(source).is_none());

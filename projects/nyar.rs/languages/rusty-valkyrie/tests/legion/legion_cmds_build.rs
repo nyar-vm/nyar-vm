@@ -49,13 +49,13 @@ micro main() -> i64 {
     .unwrap();
 
     assert_eq!(status, ExitCode::SUCCESS);
-    let nyar_artifacts: Vec<_> = fs::read_dir(&output_dir)
+    let odin_artifacts: Vec<_> = fs::read_dir(&output_dir)
         .expect("list nyar-vm output")
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("nyar"))
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("odin"))
         .collect();
-    assert!(!nyar_artifacts.is_empty(), "expected at least one `.nyar` artifact under {}", output_dir.display());
+    assert!(!odin_artifacts.is_empty(), "expected at least one `.odin` artifact under {}", output_dir.display());
 }
 
 #[test]
@@ -97,7 +97,7 @@ micro identity(x: bool) -> bool {
     assert_eq!(status, ExitCode::SUCCESS);
 
     let manifest = ExecutionManifest::read_from_output_dir(&output_dir).expect("read execution manifest").expect("execution manifest present");
-    assert_eq!(manifest.schema_version, 0);
+    assert_eq!(manifest.schema_version, 1);
     let evidence = manifest.compile_evidence.as_ref().expect("compile evidence in manifest");
     assert!(!evidence.semantic_closure_hash.is_empty());
     assert!(!evidence.canonical_surface_hash.is_empty());

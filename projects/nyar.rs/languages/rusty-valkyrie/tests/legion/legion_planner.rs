@@ -2182,7 +2182,7 @@ micro main() {
 namespace std.adaptor.wasm.fetch;
 
 [host_provider(std::net::fetch)]
-[js("fetch")]
+[js_builtin("fetch")]
 micro browser_fetch(url: utf8): utf8 {
     return ""
 }
@@ -2195,7 +2195,7 @@ micro browser_fetch(url: utf8): utf8 {
 namespace std.adaptor.wasm.fetch;
 
 [host_provider(std::net::fetch)]
-[js("wx.request")]
+[js_builtin("wx.request")]
 micro wechat_fetch(url: utf8): utf8 {
     return ""
 }
@@ -2310,14 +2310,14 @@ micro main() {
 
 [when(target.specification == "browser")]
 [host_provider(std::net::get)]
-[js("fetch")]
+[js_builtin("fetch")]
 micro browser_get(url: utf8): utf8 {
     return ""
 }
 
 [when(target.vendor == "wechat")]
 [host_provider(std::net::get)]
-[js("wx.request")]
+[js_builtin("wx.request")]
 micro miniprogram_get(url: utf8): utf8 {
     return ""
 }
@@ -2435,7 +2435,7 @@ micro main() -> i32 {
 namespace std.adaptor.wasm;
 
 [host_provider(std::math::random_next_i32)]
-[js("random")]
+[js_builtin("random")]
 micro js_random_next_i32(seed: i32): i32 {
     return 0
 }
@@ -2452,7 +2452,7 @@ micro js_random_next_i32(seed: i32): i32 {
         plan.project.selected_host_providers.iter().find(|provider| provider.contract.contains("random_next_i32")).expect("random provider");
     assert_eq!(selected.symbol, "std::adaptor::wasm::js_random_next_i32");
     assert_eq!(selected.required_capabilities, vec!["js.random".to_string()]);
-    assert_eq!(selected.foreign_bindings, vec![r#"js("random")"#.to_string()]);
+    assert_eq!(selected.foreign_bindings, vec![r#"js_builtin("random")"#.to_string()]);
 }
 
 #[test]
@@ -2713,11 +2713,11 @@ micro main() -> i32 {
         r#"namespace std.adaptor.wasm;
 
 [host_provider(std::math::random_next_i32)]
-[js("random")]
+[js_builtin("random")]
 micro js_random_next_i32(seed: i32): i32 { return 0 }
 
 [host_provider(std::net::fetch)]
-[js("fetch")]
+[js_builtin("fetch")]
 micro browser_fetch(url: utf8): utf8 { return "" }
 "#,
     )
@@ -2812,11 +2812,11 @@ micro main() {
         r#"namespace std.adaptor.wasm;
 
 [host_provider(std::net::fetch)]
-[js("fetch")]
+[js_builtin("fetch")]
 micro fetch_a(url: utf8): utf8 { return "" }
 
 [host_provider(std::net::fetch)]
-[js("fetch")]
+[js_builtin("fetch")]
 micro fetch_b(url: utf8): utf8 { return "" }
 "#,
     )
@@ -2905,7 +2905,7 @@ micro main() -> i32 {
         r#"namespace std.adaptor.wasm;
 
 [host_provider(std::math::random_next_i32)]
-[js("random")]
+[js_builtin("random")]
 micro js_random_next_i32(seed: i32): i32 { return 0 }
 "#,
     )
@@ -3000,12 +3000,12 @@ micro main() {
         r#"namespace std.adaptor.wasm.fetch;
 
 [host_provider(std::net::fetch)]
-[js("fetch")]
+[js_builtin("fetch")]
 micro fetch_uncfg(url: utf8): utf8 { return "" }
 
 [when(target.specification == "browser")]
 [host_provider(std::net::fetch)]
-[js("fetch")]
+[js_builtin("fetch")]
 micro fetch_browser(url: utf8): utf8 { return "" }
 "#,
     )

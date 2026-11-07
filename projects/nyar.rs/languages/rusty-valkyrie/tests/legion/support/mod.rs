@@ -118,7 +118,7 @@ micro random_next_i32(seed: i32): i32
 namespace std.adaptor.wasm;
 
 [host_provider(std::math::random_next_i32)]
-[js("random")]
+[js_builtin("random")]
 micro js_random_next_i32(seed: i32): i32
 "#,
     )
@@ -358,11 +358,11 @@ micro fetch_i32_stub(path: i32): i32
         r#"namespace std.adaptor.wasm;
 
 [host_provider(std::hooks::fetch_i32_stub)]
-[js("fetch")]
+[js_builtin("fetch")]
 micro js_fetch_i32_stub(path: i32): i32
 
 [host_provider(std::math::random_next_i32)]
-[js("random")]
+[js_builtin("random")]
 micro js_random_next_i32(seed: i32): i32
 "#,
     )

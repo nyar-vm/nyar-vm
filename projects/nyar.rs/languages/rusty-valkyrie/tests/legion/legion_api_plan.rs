@@ -42,7 +42,7 @@ fn plan_api_reports_js_random_host_provider_for_entry_closure() {
 
     assert_eq!(build_plan.selected_host_provider_count, 1);
     assert_eq!(build_plan.selected_host_providers[0].required_capabilities, vec!["js.random".to_string()]);
-    assert_eq!(build_plan.selected_host_providers[0].foreign_bindings, vec![r#"js("random")"#.to_string()]);
+    assert_eq!(build_plan.selected_host_providers[0].foreign_bindings, vec![r#"js_builtin("random")"#.to_string()]);
     assert_eq!(build_plan.host_required_capabilities, vec!["js.random".to_string()]);
 }
 
