@@ -42,7 +42,8 @@ pub fn emit_report_chart_islands(
 
     for chart in charts {
         let wrapper = read_project_source(project_dir, &format!("charts/{}.awsl", chart.route))?;
-        let title_lit = utf8_literal(&chart.title);
+        let title_lit = encode_v_text_literal(&chart.title)
+            .map_err(|error| AsgardError::msg(report!("chart {}: {error}", chart.route)))?;
         let series_lit = series_to_init_literal(&chart.series);
         let filled = fill_chart_placeholders(&wrapper, &title_lit, &series_lit);
         let awsl = expand_interactive_col_plot(&filled, &icp_awsl, &chart.route)?;
@@ -135,18 +136,62 @@ fn fill_chart_placeholders(wrapper: &str, title_lit: &str, series_lit: &str) -> 
     wrapper.replace("__TITLE__", title_lit).replace("__SERIES__", series_lit)
 }
 
-fn utf8_literal(text: &str) -> String {
-    let mut out = String::from("\"");
-    for ch in text.chars() {
+/// 把图表标题编码成可解析的 VX 字符串字面量。
+///
+/// VX 词法没有反斜杠转义（`\n`/`\u{..}`/`\"` 都不成立），字符串由引号 run 定界：
+/// - `{` 开插值，必须写成 `\{`；`}` 原样输出；
+/// - `\` 只在紧跟 `{`/`}` 时被剥离，此时双写；其余位置原样；
+/// - 内容里的 `"` 由更大的引号 run 容纳（run 长度必须小于定界符个数）；
+/// - 首/尾 `"` 无法在单个字面量里表示，而浏览器闭包里文本 `concat` 实例化不了
+///   （`std.adaptor.wasm` 的文本 host provider 没有播种），因此这类标题闭合失败。
+///
+/// 其余无法还原的形态（除 `\n`/`\t` 外的控制字符）同样闭合失败，不生成语义漂移的字面量。
+#[doc(hidden)]
+pub fn encode_v_text_literal(text: &str) -> AsgardResult<String> {
+    if let Some(ch) = text.chars().find(|ch| ch.is_control() && !matches!(ch, '\n' | '\t')) {
+        return Err(AsgardError::msg(report!(
+            "chart title contains control character U+{:04X}, which has no VX literal form",
+            ch as u32
+        )));
+    }
+    if text.starts_with('"') || text.ends_with('"') {
+        return Err(AsgardError::msg(report!(
+            "chart title starts or ends with `\"`, which VX cannot represent in a single literal and browser-closure text concat is not instantiable"
+        )));
+    }
+    let longest_quote_run = text
+        .chars()
+        .fold((0usize, 0usize), |(longest, current), ch| {
+            if ch == '"' {
+                let next = current + 1;
+                (longest.max(next), next)
+            } else {
+                (longest, 0)
+            }
+        })
+        .0;
+    let quote_count = if longest_quote_run == 0 { 1 } else { (longest_quote_run + 1).max(3) };
+    let delimiter = "\"".repeat(quote_count);
+    Ok(format!("{delimiter}{}{delimiter}", encode_v_text_body(text)))
+}
+
+/// 只编码实测可还原的转义：`{` → `\{`，`\` 紧跟 `{`/`}` 时双写，其余原样。
+fn encode_v_text_body(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
         match ch {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
+            '{' => out.push_str("\\{"),
+            '\\' => match chars.peek() {
+                Some('{') | Some('}') => {
+                    out.push_str("\\\\");
+                    out.push(chars.next().expect("peeked character must be present"));
+                }
+                _ => out.push('\\'),
+            },
             _ => out.push(ch),
         }
     }
-    out.push('"');
     out
 }
 

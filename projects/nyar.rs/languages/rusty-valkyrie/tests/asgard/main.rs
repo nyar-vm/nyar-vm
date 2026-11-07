@@ -24,6 +24,7 @@ mod list_each_shape;
 mod pipeline_discover;
 mod product_page;
 mod primitive_identity_e2e;
+mod report_text_literal;
 mod script_binding_inline;
 mod serve;
 mod serve_static_build;
