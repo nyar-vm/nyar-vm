@@ -9,6 +9,19 @@ pub(crate) fn rewrite_utf8_expr_body(expr: &str, bindings: &[ScriptBinding], loo
     rewrite_utf8_expr_body_guarded(expr, bindings, loops, &mut Vec::new())
 }
 
+/// 文本位置的类型投影：一律落 `Display` 合同的 `display()` 方法调用。
+///
+/// 历史上这里发 `utf8(<expr>)`，但 `utf8` 从来不是可调用声明（探针实测
+/// `unresolved call utf8`）。std 已落 `Display`（整数 / `bool` / `char` / `utf8`）
+/// 与 `display()`，生成端只发方法调用，不再造第二套转换面。
+///
+/// 括号包住接收者：`5.display()` 会被词法读成浮点字面量 `5.` 加成员。
+/// 没有 `Display` 实现的类型在这里没有兜底（不拼字符串、不回退 `format`）：
+/// 调用点以成员解析失败闭合，诊断自带类型名。
+fn display_of(expr: &str) -> String {
+    format!("({expr}).display()")
+}
+
 fn rewrite_utf8_expr_body_guarded(expr: &str, bindings: &[ScriptBinding], loops: &[LoopFrame], visiting: &mut Vec<String>) -> String {
     let trimmed = expr.trim();
     if let Some(expanded) = expand_awsl_fstring(trimmed) {
@@ -26,7 +39,7 @@ fn rewrite_utf8_expr_body_guarded(expr: &str, bindings: &[ScriptBinding], loops:
         if binding.reactive && trimmed == binding.name {
             return match binding.value_type {
                 SignalValueType::Utf8 => binding.read_expr(),
-                SignalValueType::I32 | SignalValueType::Bool => format!("utf8({})", binding.read_expr()),
+                SignalValueType::I32 | SignalValueType::Bool => display_of(&binding.read_expr()),
             };
         }
     }
@@ -46,7 +59,7 @@ fn rewrite_utf8_expr_body_guarded(expr: &str, bindings: &[ScriptBinding], loops:
         return out;
     }
     if out.parse::<i32>().is_ok() {
-        return format!("utf8({out})");
+        return display_of(&out);
     }
     if out == "true" || out == "false" {
         return format!("\"{out}\"");
@@ -55,13 +68,13 @@ fn rewrite_utf8_expr_body_guarded(expr: &str, bindings: &[ScriptBinding], loops:
         return out;
     }
     if is_loop_field_access(&out, loops) {
-        return format!("utf8({out})");
+        return display_of(&out);
     }
     if out.contains('+') {
         return out.split('+').map(|part| rewrite_utf8_expr_body(part.trim(), bindings, loops)).collect::<Vec<_>>().join(" + ");
     }
     if out.contains('(') || out.contains('.') {
-        return format!("utf8({})", normalize_awsl_js_ops(&out));
+        return display_of(&normalize_awsl_js_ops(&out));
     }
     awsl_expr_to_v(&out)
 }
@@ -231,5 +244,5 @@ fn awsl_expr_to_v(expr: &str) -> String {
     if is_simple_identifier(&trimmed) {
         return trimmed;
     }
-    format!("utf8({})", normalize_awsl_js_ops(&trimmed))
+    display_of(&normalize_awsl_js_ops(&trimmed))
 }

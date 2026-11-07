@@ -226,6 +226,33 @@ let mut state = compute()
     assert!(message.contains("state"), "错误必须指向绑定:\n{message}");
 }
 
+/// 文本投影必须落既有 `Display` 合同，并显式声明来源。
+///
+/// 生成单元从 `utf8(<expr>)` 改成 `<expr>.display()` 后，`display` 的可见性不能赌
+/// 依赖包的隐式传播：生成源码要自带 `using std.text;`，方法调用点才解析到
+/// `std.text` 具体 `imply` 成员。没有 `Display` 的类型则由 V 的成员解析失败闭合，
+/// 生成端不提供拼字符串或 `format` 兜底。
+#[test]
+fn text_positions_project_through_explicit_display_contract() {
+    let source = r#"<widget demo><Column><Text>{count}</Text><Text>{label}</Text></Column></widget>
+<script>
+let mut count = 0
+let label = "hi"
+</script>"#;
+    let root = AwslParser::parse_root(source).expect("parse");
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
+    let generated = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    assert!(generated.starts_with("using std.text;\n\n"), "生成单元必须显式导入文本合同:\n{generated}");
+    assert!(
+        generated.contains(r#"return (sig_get_i32(sig_named("demo_count_sig"))).display()"#),
+        "整数文本位置必须投影成接收者 `display()` 调用:\n{generated}"
+    );
+    assert!(
+        !generated.lines().any(|line| line.trim_start().starts_with("return utf8(")),
+        "生成端不得再发可调用形态的 `utf8(...)` 转换:\n{generated}"
+    );
+}
+
 /// `Derived` 非响应式绑定的 `value_type` 不进入生成代码（引用点直接内联），
 /// 因此表达式无法静态判定通道时使用哪个值都不影响正确性——这里证明内联确实发生。
 #[test]

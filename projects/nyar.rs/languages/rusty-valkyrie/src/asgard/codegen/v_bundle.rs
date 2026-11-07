@@ -26,6 +26,14 @@ structure i32 { }
 
 "#;
 
+/// 生成单元显式导入的 std 合同。
+///
+/// 文本投影（`<expr>.display()`）依赖 `std.text` 的 `Display` 与 `format` 声明。
+/// 生成源码是封闭编译单元，不继承依赖包的语义导出，也不赌隐式可见性：`display`
+/// 必须经这条 `using` 解析到 `std.text` 的具体 `imply` 成员，否则调用点以成员解析
+/// 失败闭合（诊断带接收者类型名），绝不回退字符串拼接或 `format` 兜底。
+const GENERATED_STD_TEXT_IMPORT: &str = "using std.text;\n\n";
+
 /// 从所有 AWSL 组件生成可编译的 V 源码（浏览器：DOM + reactive）。
 ///
 /// 生成入口统一做“先校验、后降级”：ABI 错误在产出任何 V 之前失败，
@@ -48,7 +56,8 @@ pub fn build_awsl_host_source(components: &[LoweredComponent]) -> AsgardResult<S
 /// 不依赖 DOM / 信号系统，状态由 TuiRuntime 绑定存储管理。
 pub fn build_awsl_terminal_source(components: &[LoweredComponent], tui_runtime: &str) -> AsgardResult<String> {
     let components = prepare_components_for_generation(components)?;
-    let mut out = terminal_prelude(tui_runtime);
+    let mut out = GENERATED_STD_TEXT_IMPORT.to_string();
+    out.push_str(&terminal_prelude(tui_runtime));
     out.push_str("namespace std.terminal;\n\n");
     let mut generated = String::new();
     for component in &components {
@@ -62,7 +71,8 @@ pub fn build_awsl_terminal_source(components: &[LoweredComponent], tui_runtime: 
 /// 小程序逻辑 WASM：signal host + script / `awsl_call_*` / `awsl_sig_*`，无 DOM hydrate。
 pub fn build_awsl_mp_source(components: &[LoweredComponent]) -> AsgardResult<String> {
     let components = prepare_components_for_generation(components)?;
-    let mut out = String::from(MP_SIG_PRELUDE);
+    let mut out = GENERATED_STD_TEXT_IMPORT.to_string();
+    out.push_str(MP_SIG_PRELUDE);
     out.push_str("micro awsl_key_none(): utf8 { return \"\" }\n\n");
     let mut script_section = String::new();
     let mut generated = String::new();
@@ -136,7 +146,8 @@ fn emit_mp_component_init(out: &mut String, component: &LoweredComponent) {
 }
 
 fn build_awsl_source_with_prelude(components: &[LoweredComponent], dom_or_mobile: &str, reactive: &str) -> String {
-    let mut out = String::from(GENERATED_SCALAR_PRELUDE);
+    let mut out = GENERATED_STD_TEXT_IMPORT.to_string();
+    out.push_str(GENERATED_SCALAR_PRELUDE);
     out.push_str(dom_or_mobile);
     out.push_str(reactive);
     out.push_str("micro awsl_key_none(): utf8 { return \"\" }\n\n");

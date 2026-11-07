@@ -659,6 +659,67 @@ fn member_owner_link_is_gated_by_owner_group_visibility() {
     assert!(hidden.demanded_declarations.iter().any(|key| key.kind == DeclarationKind::Structure && key.name == "i64"));
 }
 
+/// 生成端文本投影探针：`expr.rs` 把文本位置从 `utf8(<expr>)` 改成 `<expr>.display()` 后，
+/// 生成单元必须在源码里显式 `using std.text;`（`v_bundle::GENERATED_STD_TEXT_IMPORT`），
+/// 该 import + 注释里的名字必须解析到 `std.text` 的具体 `imply` 成员，而不是靠隐式传播：
+/// `display` 命中 `imply i32: Display` / `imply Utf8Text: Display`，`item.key == key`
+/// （名义 receiver + 内建参数）命中 `Utf8Text` 的 `infix ==`。
+#[test]
+fn generated_display_projection_requires_explicit_std_text_import() {
+    let std_files = || {
+        vec![
+            file("source/primitive/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")] structure i32 { }"),
+            file("source/text/Utf8Text.v", "namespace std.text;\nclass Utf8Text { _repr: [u8] }"),
+            file("source/text/_.v", "namespace std.text;\ntype utf8 = Utf8Text;"),
+            file(
+                "source/text/format.v",
+                "namespace std.text;\ntrait Display { micro display(self) -> utf8 }\n\
+                 imply i32: Display { micro display(self) -> utf8 { return \"0\" } }\n\
+                 imply Utf8Text: Display { micro display(self) -> utf8 { return self } }",
+            ),
+            file(
+                "source/text/Utf8TextEqual.v",
+                r#"namespace std.text;
+class Item { key: utf8 }
+imply Utf8Text { infix `==`(self, other: utf8): bool { return true } }"#,
+            ),
+        ]
+    };
+    let app_source = |import: &str| {
+        file(
+            "asgard/generated.v",
+            &format!(
+                "{import}[export] micro probe(value: i32) -> utf8 {{ return (value).display() }}\n\
+                 [export] micro probe_text(text: utf8) -> utf8 {{ return (text).display() }}\n\
+                 [export] micro same(item: Item, key: utf8) -> bool {{ return item.key == key }}"
+            ),
+        )
+    };
+    let closure = plan_from_groups(&[
+        ("std", false, std_files()),
+        ("asgard.generated", true, vec![app_source("using std.text;\n")]),
+    ]);
+    let demanded = &closure.demanded_declarations;
+    assert!(
+        demanded
+            .iter()
+            .any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "display" && key.owner.as_deref() == Some("i32")),
+        "`display` 必须解析到 `std.text` 的具体 `imply i32: Display` 成员: {demanded:?}"
+    );
+    assert!(
+        demanded
+            .iter()
+            .any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "display" && key.owner.as_deref() == Some("Utf8Text")),
+        "文本 receiver 的 `display` 必须解析到 `imply Utf8Text: Display` 成员: {demanded:?}"
+    );
+    assert!(
+        demanded.iter().any(|key| key.kind == DeclarationKind::ImplyMethod
+            && key.name == "infix =="
+            && key.owner.as_deref() == Some("Utf8Text")),
+        "`item.key == key` 必须解析到 `Utf8Text` 的 `infix ==` 成员: {demanded:?}"
+    );
+}
+
 #[test]
 fn two_test_annotations_become_two_test_entries() {
     let groups = [(
