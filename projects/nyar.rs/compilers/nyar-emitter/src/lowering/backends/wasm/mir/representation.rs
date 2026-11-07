@@ -8,7 +8,7 @@
 //! Zero-logic extract from the former monolithic lowerer (B4 seam).
 
 use super::{ExecutableLoweringContext, LayoutId, MirFunction, MirStorageKind, NyarType, StorageKind, WASM_GC_ANYREF};
-use crate::lowering::backends::wasm::gc::{wasm_gc_field_type_byte, wasm_js_glue_value_carrier_valtype};
+use crate::lowering::backends::wasm::gc::{VALTYPE_F32, wasm_gc_field_type_byte, wasm_js_glue_value_carrier_valtype};
 use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64};
 use nyar_types::AggregateLayout;
 use std::collections::BTreeMap;
@@ -220,17 +220,17 @@ pub(super) fn wasm_param_value_type(
 
 /// 标量 `NyarType` 的 wasm 载体映射。
 ///
-/// 只有 `f64` 有冻结的 `VALTYPE_F64` 载体；`f32` 没有冻结载体，必须失败闭合，
-/// 不得静默拓宽到 64 位——那会让「32 位类型」实际承载 64 位载荷，位宽与 NaN
-/// payload 宽度都对外失真。全量 f32（独立 `VALTYPE_F32`、精度与舍入合同）另立任务。
+/// 载体按语义宽度一一对应：`f32 → VALTYPE_F32`（`0x7D`，真实 4 字节）、
+/// `f64 → VALTYPE_F64`。`f32` 不得落到 `VALTYPE_F64` 或 `VALTYPE_I32`：
+/// 那会让 32 位类型承载 64 位载荷（或把浮点当整数搬运），位宽、NaN payload
+/// 宽度与 `-0.0` 语义都会对外失真。
+///
+/// 转换只允许显式指令：`f64.promote_f32` / `f32.demote_f64`（RNE）。本表不做
+/// 任何隐式拓宽或收窄，调用点也不得自行补转换。
 fn wasm_scalar_value_type(ty: &NyarType) -> crate::Result<u8> {
     match ty {
+        NyarType::Float32 => Ok(VALTYPE_F32),
         NyarType::Float64 => Ok(VALTYPE_F64),
-        NyarType::Float32 => Err(
-            "WASM 参数/返回值没有 `f32` 的冻结载体：`f32` 不得静默拓宽到 64 位 `VALTYPE_F64` 载体\
-             （32 位承诺与 64 位载荷矛盾）；需要独立的 `VALTYPE_F32` 载体与精度/舍入合同"
-                .to_string(),
-        ),
         NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => Ok(VALTYPE_I64),
         _ => Ok(VALTYPE_I32),
     }
@@ -240,13 +240,17 @@ fn wasm_scalar_value_type(ty: &NyarType) -> crate::Result<u8> {
 mod tests {
     use super::*;
 
-    /// 回归：`f32` 不得映射到 64 位载体，必须给出点名 `f32` 的结构化失败。
+    /// 回归：`f32` 必须有独立的 32 位载体，不得落到 64 位或整数假载体。
     #[test]
-    fn f32_has_no_frozen_wasm_carrier() {
-        let error = wasm_scalar_value_type(&NyarType::Float32).expect_err("`f32` 必须 fail-closed");
-        assert!(error.contains("f32"), "{error}");
-        assert!(error.contains("VALTYPE_F32"), "{error}");
+    fn f32_has_independent_wasm_carrier() {
+        assert_eq!(wasm_scalar_value_type(&NyarType::Float32).expect("`f32` 必须有载体"), VALTYPE_F32);
         assert_eq!(wasm_scalar_value_type(&NyarType::Float64).expect("`f64` 载体未变"), VALTYPE_F64);
+        assert_ne!(
+            wasm_scalar_value_type(&NyarType::Float32).expect("`f32` 载体"),
+            wasm_scalar_value_type(&NyarType::Float64).expect("`f64` 载体"),
+            "`f32` 不得复用 `f64` 槽"
+        );
+        assert_ne!(wasm_scalar_value_type(&NyarType::Float32).expect("`f32` 载体"), VALTYPE_I32, "`f32` 不得借 i32 假载体");
     }
 }
 

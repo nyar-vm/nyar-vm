@@ -39,8 +39,12 @@ pub const NYAR_ASSEMBLY_MAGIC: u32 = 0x4E59_4152;
 /// v5 → v6：新增 `I64ReinterpretF64`（0x60）与 `F64ReinterpretI64`（0x61）头码。
 /// 位模式重解释属于指令层，不再是宿主导入；旧运行时读到这两个字节会结构化拒绝，
 /// 新产物不得被旧缓存混链，因此版本递增。
+///
+/// v6 → v7：新增 f32 载体指令——`I32ReinterpretF32`（0x62）、`F32ReinterpretI32`（0x63）
+/// 与 f32 算术/比较/转换块（0x64–0x6C）。f32 是独立载体（`Value::F32`），
+/// 不是 f64 的别名，也不借用 i32/f64 槽；旧运行时读到这些字节会结构化拒绝。
 #[allow(non_upper_case_globals)]
-pub const Odin_VERSION: u32 = 6;
+pub const Odin_VERSION: u32 = 7;
 
 /// Bytecode format contract version（S-W6 provenance / cache 键）。
 /// 与 [`Odin_VERSION`] 同步；格式破坏时两者一并递增。
@@ -173,6 +177,38 @@ pub enum OdinHeadCode {
     ///
     /// 语义与 Wasm `f64.reinterpret_i64` 一致；无立即数。
     F64ReinterpretI64 = 0x61,
+    /// `f32` 位模式重解释为 32 位整数：栈 `[f32] -> [i32]`。
+    ///
+    /// 语义与 Wasm `i32.reinterpret_f32` 一致：32 位宽度、NaN payload 23 位与
+    /// `-0.0`/次正规位模式原样保留；无立即数。禁止经 f64 中转。
+    I32ReinterpretF32 = 0x62,
+    /// 32 位整数位模式重解释为 `f32`：栈 `[i32] -> [f32]`。
+    ///
+    /// 语义与 Wasm `f32.reinterpret_i32` 一致；无立即数。
+    F32ReinterpretI32 = 0x63,
+    /// 单精度加法：栈 `[f32, f32] -> [f32]`。
+    ///
+    /// 运算在单精度上完成，不提升到 f64 再降回（那会引入 double rounding）。
+    F32Add = 0x64,
+    /// 单精度减法：栈 `[f32, f32] -> [f32]`。
+    F32Sub = 0x65,
+    /// 单精度乘法：栈 `[f32, f32] -> [f32]`。
+    F32Mul = 0x66,
+    /// 单精度除法：栈 `[f32, f32] -> [f32]`。
+    F32Div = 0x67,
+    /// 单精度取负：栈 `[f32] -> [f32]`。
+    ///
+    /// 必须保留 `-0.0` 与 NaN 符号，不得实现成 `0.0 - x`。
+    F32Neg = 0x68,
+    /// 单精度相等比较：栈 `[f32, f32] -> [i32]`，结果为 `0`/`1`。
+    F32Eq = 0x69,
+    /// 单精度小于比较：栈 `[f32, f32] -> [i32]`，结果为 `0`/`1`；NaN 参与时恒为 `0`。
+    F32Lt = 0x6A,
+    /// `f64` 收窄为 `f32`：栈 `[f64] -> [f32]`，round-to-nearest-even，
+    /// 溢出到 `inf`、下溢到 0 或次正规。单步完成，不经过其他精度。
+    F32DemoteF64 = 0x6B,
+    /// `f32` 拓宽为 `f64`：栈 `[f32] -> [f64]`，精确无损。
+    F64PromoteF32 = 0x6C,
 }
 
 impl OdinHeadCode {
@@ -227,6 +263,17 @@ impl OdinHeadCode {
             0x52 => Some(Self::FieldSet),
             0x60 => Some(Self::I64ReinterpretF64),
             0x61 => Some(Self::F64ReinterpretI64),
+            0x62 => Some(Self::I32ReinterpretF32),
+            0x63 => Some(Self::F32ReinterpretI32),
+            0x64 => Some(Self::F32Add),
+            0x65 => Some(Self::F32Sub),
+            0x66 => Some(Self::F32Mul),
+            0x67 => Some(Self::F32Div),
+            0x68 => Some(Self::F32Neg),
+            0x69 => Some(Self::F32Eq),
+            0x6A => Some(Self::F32Lt),
+            0x6B => Some(Self::F32DemoteF64),
+            0x6C => Some(Self::F64PromoteF32),
             _ => None,
         }
     }
@@ -343,7 +390,18 @@ impl OdinHeadCode {
             | Self::I32GeS
             | Self::I32GeU
             | Self::I64ReinterpretF64
-            | Self::F64ReinterpretI64 => OdinInstructionForm::Plain,
+            | Self::F64ReinterpretI64
+            | Self::I32ReinterpretF32
+            | Self::F32ReinterpretI32
+            | Self::F32Add
+            | Self::F32Sub
+            | Self::F32Mul
+            | Self::F32Div
+            | Self::F32Neg
+            | Self::F32Eq
+            | Self::F32Lt
+            | Self::F32DemoteF64
+            | Self::F64PromoteF32 => OdinInstructionForm::Plain,
         }
     }
 

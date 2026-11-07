@@ -16,6 +16,7 @@ fn wasm_stack_type(operand_type: TargetOperandType) -> u8 {
     match operand_type {
         TargetOperandType::I32 => VALTYPE_I32,
         TargetOperandType::I64 => VALTYPE_I64,
+        TargetOperandType::F32 => VALTYPE_F32,
         TargetOperandType::F64 => VALTYPE_F64,
     }
 }
@@ -653,7 +654,7 @@ impl<'a> WasmMirLowerer<'a> {
                     match operand_type {
                         TargetOperandType::I32 => self.emit_i32_const(*value),
                         TargetOperandType::I64 => self.emit_i64_const(i64::from(*value)),
-                        TargetOperandType::F64 => {
+                        TargetOperandType::F32 | TargetOperandType::F64 => {
                             return Err(format!(
                                 "WASM `wasm_operator` 绑定 `{mnemonic}` 冻结了浮点常量配方，但配方只支持整数常量: function={}",
                                 self.mir_fn.symbol

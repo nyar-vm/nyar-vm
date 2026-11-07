@@ -287,14 +287,10 @@ mod ovm {
     }
 }
 
-/// 反例：`Float{bits:32}` 仍未登记，f32 必须在计划期结构化失败并点名该 primitive。
-///
-/// 这里只做编译 + 计划，不要求 f32 有运行能力；断言是诊断字符串而不是 panic。
+/// `Float{bits:32}` 已登记目标合同：计划期不得再以「无目标合同」拒绝，
+/// 且 f32 的独立载体不得在计划期丢弃。
 #[test]
-fn f32_fails_closed_at_the_unregistered_primitive() {
-    // 失败点在**计划期**：canonical 能表示 `Float{bits:32}`，但 `lower_type` 未登记它。
+fn f32_has_registered_target_contract() {
     let program = compile("f64", "    let narrowed = __i32_to_f32(3)\n    return 1.5").expect("f32 源必须能编译到 canonical");
-    let error = plan_for(&program).expect_err("f32 本轮仍无目标合同，必须失败闭合");
-    assert!(error.contains("Float { bits: 32 }"), "诊断必须点名未登记的 f32 目标合同，实际：{error}");
-    assert!(error.contains("primitive 尚无目标合同"), "诊断必须是计划期结构化失败，实际：{error}");
+    plan_for(&program).expect("`Float { bits: 32 }` 必须已登记目标合同，不得在计划期失败");
 }

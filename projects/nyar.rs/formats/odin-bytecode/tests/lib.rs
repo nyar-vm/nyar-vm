@@ -17,9 +17,10 @@ fn bytecode_format_version_tracks_nyar_version() {
     // v3：新增 `CallIndirect` 头码（0x06）。v4：`Function` 值改为两槽闭包对象。
     // v5：执行产物身份由 `.odin` 迁到 `.odin`（magic `NYAR` → `ODIN`）。
     // v6：新增 `I64ReinterpretF64`（0x60）/ `F64ReinterpretI64`（0x61）位重解释头码。
+    // v7：新增 f32 独立载体指令（0x62–0x6C）：32 位位重解释、f32 算术/比较与 f32↔f64 转换。
     // `decode_module` 对非当前版本一律 `InvalidVersion` 拒绝，旧缓存产物按缓存未命中处理。
     // 递增格式必须同时抬 `ODIN_VERSION`。
-    assert_eq!(BYTECODE_FORMAT_VERSION, 6);
+    assert_eq!(BYTECODE_FORMAT_VERSION, 7);
 }
 
 #[test]

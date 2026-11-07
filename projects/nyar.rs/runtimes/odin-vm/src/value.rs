@@ -1,4 +1,9 @@
 //! Runtime values — re-exported from `nyar-gc` with bytecode constant lowering.
+//!
+//! f32 载体合同：运行时 f32 只存在于 `Value::F32`，是独立变体，不是 `F64`/`I32` 别名。
+//! 常量池当前没有 `Float32` 变体（语言层没有 f32 字面量），f32 值只能由
+//! `F32ReinterpretI32` 头码按位构造或由 f64 经 `F32DemoteF64` 收窄；
+//! 因此这里不存在、也不得新增「把 Float64 装进 f32」的隐式映射。
 
 pub use nyar_gc::{CoroutineState, ObjectId, Value};
 

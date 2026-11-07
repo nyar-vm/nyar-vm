@@ -63,12 +63,25 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
 /// `I64ReinterpretF64` / `F64ReinterpretI64` 头码：语义是纯位搬运，属于指令层，
 /// 不引入宿主函数、不新增 capability；载体按声明签名冻结（`f64 ↔ i64`），不得降级
 /// 成数值转换，也不得回流到宿主。
+///
+/// f32 同样走指令层，且**载体独立**：
+///
+/// 1. **载体身份**：f32 助记符的操作数/结果载体是 `TargetOperandType::F32`，
+///    运行时值只存在于 `Value::F32`；禁止借 `I32` 或 `F64` 槽。
+/// 2. **转换规则**：`f32.demote_f64` / `f64.promote_f32` 分别是 `F32DemoteF64` /
+///    `F64PromoteF32` 单步头码（RNE / 精确）；本表不冻结隐式拓宽。
+/// 3. **运算与位模式**：f32 算术/比较在单精度上做；`i32.reinterpret_f32` /
+///    `f32.reinterpret_i32` 是 32 位 `i32` 载体的纯位搬运，NaN payload 23 位保位。
 pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
-    // 位重解释跨载体：`to_bits` 是 f64 → i64，`from_bits` 是 i64 → f64。
-    // 其余既有助记符两侧都是 i32。
+    // 跨载体助记符显式点名两侧载体；其余既有助记符两侧都是 i32。
     let (operand_type, result_type) = match mnemonic {
         "i64.reinterpret_f64" => (TargetOperandType::F64, TargetOperandType::I64),
         "f64.reinterpret_i64" => (TargetOperandType::I64, TargetOperandType::F64),
+        "i32.reinterpret_f32" => (TargetOperandType::F32, TargetOperandType::I32),
+        "f32.reinterpret_i32" => (TargetOperandType::I32, TargetOperandType::F32),
+        "f64.promote_f32" => (TargetOperandType::F32, TargetOperandType::F64),
+        "f32.demote_f64" => (TargetOperandType::F64, TargetOperandType::F32),
+        m if m.starts_with("f32.") => (TargetOperandType::F32, TargetOperandType::F32),
         _ => (TargetOperandType::I32, TargetOperandType::I32),
     };
     let (arity, recipe, code) = match mnemonic {
@@ -96,7 +109,23 @@ pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "i32.neg" => (1, TargetOperatorRecipe::Steps(I32_NEGATE_STEPS), OdinHeadCode::I32Sub),
         "i64.reinterpret_f64" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::I64ReinterpretF64),
         "f64.reinterpret_i64" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::F64ReinterpretI64),
+        "i32.reinterpret_f32" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::I32ReinterpretF32),
+        "f32.reinterpret_i32" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::F32ReinterpretI32),
+        "f32.add" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Add),
+        "f32.sub" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Sub),
+        "f32.mul" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Mul),
+        "f32.div" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Div),
+        "f32.neg" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::F32Neg),
+        "f32.eq" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Eq),
+        "f32.lt" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Lt),
+        "f32.demote_f64" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::F32DemoteF64),
+        "f64.promote_f32" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::F64PromoteF32),
         _ => return None,
+    };
+    // 比较结果固定为 i32 布尔：载体身份由助记符语义决定，不靠默认 i32 蒙混。
+    let result_type = match mnemonic {
+        "f32.eq" | "f32.lt" => TargetOperandType::I32,
+        _ => result_type,
     };
     Some(TargetOperatorPlan { arity, operand_type, result_type, recipe, encoding: TargetOperatorEncoding::Ovm(code) })
 }
@@ -1819,11 +1848,42 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
     /// `as` 的表示转换：只使用「源有符号性 + 目标位宽」的通用规则，不按类型名特判。
     ///
-    /// 整数↔整数（含 `Character` 的 32 位无符号码位）与整数↔`f64` 有确定语义；
-    /// `f32`、布尔/文本↔数值没有目标合同，必须结构化拒绝，禁止编造近似转换。
+    /// 整数↔整数（含 `Character` 的 32 位无符号码位）、整数↔`f64` 与 `f32`↔`f64`
+    /// 有确定语义；布尔/文本↔数值与整数↔`f32` 没有目标合同，必须结构化拒绝，
+    /// 禁止编造近似转换或借另一宽度载体中转。
     fn emit_cast_conversion(&mut self, source_ty: &NyarType, target_ty: &NyarType) -> crate::Result<()> {
         if source_ty == target_ty {
             return Ok(());
+        }
+        // 浮点宽度之间的转换是显式单步头码，不是载体恒等：
+        // `f64 → f32` 用 `F32DemoteF64`（RNE，溢出 `inf`、下溢 0/次正规）；
+        // `f32 → f64` 用 `F64PromoteF32`（精确无损）。两者都不经过其他精度。
+        match (source_ty, target_ty) {
+            (NyarType::Float32, NyarType::Float64) => {
+                self.emitter.emit_plain(OdinHeadCode::F64PromoteF32);
+                return Ok(());
+            }
+            (NyarType::Float64, NyarType::Float32) => {
+                self.emitter.emit_plain(OdinHeadCode::F32DemoteF64);
+                return Ok(());
+            }
+            // 整数↔f32 的 `as` 需要独立的转换指令/宿主合同，本轮未冻结；
+            // 必须响亮失败，不得先转 f64 再降（double rounding）或借 i32 载体冒充。
+            (_, NyarType::Float32) => {
+                return Err(format!(
+                    "OVM 后端没有 `{source_ty}` → `f32` 的确定转换语义（symbol=`{}`）：\
+                     整数→`f32` 的精确单步转换尚未冻结，禁止先转 `f64` 再降回（double rounding）",
+                    self.mir_fn.symbol
+                ));
+            }
+            (NyarType::Float32, _) => {
+                return Err(format!(
+                    "OVM 后端没有 `f32` → `{target_ty}` 的确定转换语义（symbol=`{}`）：\
+                     `f32` 是独立载体，禁止借 `f64` 中转或按 i32 位模式冒充数值转换",
+                    self.mir_fn.symbol
+                ));
+            }
+            _ => {}
         }
         if matches!(target_ty, NyarType::Float64) {
             if let Some(source) = ovm_int_shape(source_ty) {
@@ -1841,8 +1901,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         else {
             return Err(format!(
                 "OVM 后端没有 `{source_ty}` → `{target_ty}` 的确定转换语义（symbol=`{}`）：\
-                 当前只冻结整数↔整数（含 `Character`）与整数↔`f64` 的位宽/符号/截断规则；\
-                 `f32`、布尔/文本与数值之间的 `as` 缺少目标合同，不得退化为近似转换",
+                 当前只冻结整数↔整数（含 `Character`）、整数↔`f64` 与 `f32`↔`f64` 的位宽/符号/截断规则；\
+                 布尔/文本与数值之间的 `as` 缺少目标合同，不得退化为近似转换",
                 self.mir_fn.symbol
             ));
         };

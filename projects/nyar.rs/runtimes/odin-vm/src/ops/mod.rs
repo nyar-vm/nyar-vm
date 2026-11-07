@@ -185,7 +185,18 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
         | OdinHeadCode::I32GeS
         | OdinHeadCode::I32GeU
         | OdinHeadCode::I64ReinterpretF64
-        | OdinHeadCode::F64ReinterpretI64 => execute_arithmetic(op.as_instruction(), frame, ctx.stack),
+        | OdinHeadCode::F64ReinterpretI64
+        | OdinHeadCode::I32ReinterpretF32
+        | OdinHeadCode::F32ReinterpretI32
+        | OdinHeadCode::F32Add
+        | OdinHeadCode::F32Sub
+        | OdinHeadCode::F32Mul
+        | OdinHeadCode::F32Div
+        | OdinHeadCode::F32Neg
+        | OdinHeadCode::F32Eq
+        | OdinHeadCode::F32Lt
+        | OdinHeadCode::F32DemoteF64
+        | OdinHeadCode::F64PromoteF32 => execute_arithmetic(op.as_instruction(), frame, ctx.stack),
         OdinHeadCode::ObjectNew | OdinHeadCode::FieldGet | OdinHeadCode::FieldSet => execute_object(op.as_instruction(), frame, ctx),
     }
 }

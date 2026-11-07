@@ -701,13 +701,35 @@ fn stack_transfer(
             types.push(StackKind::I32);
             Ok(vec![edge(fallthrough, after_lhs + 1, *coroutine)])
         }
-        OdinHeadCode::I64ReinterpretF64 | OdinHeadCode::F64ReinterpretI64 => {
-            // 位模式重解释只搬位：栈高度不变，两侧都是标量 `Any`（f64/i64 在
-            // verifier 中没有独立 `StackKind`，常量池与局部槽同样登记为 `Any`）。
+        OdinHeadCode::I64ReinterpretF64
+        | OdinHeadCode::F64ReinterpretI64
+        | OdinHeadCode::I32ReinterpretF32
+        | OdinHeadCode::F32ReinterpretI32
+        | OdinHeadCode::F32Neg
+        | OdinHeadCode::F32DemoteF64
+        | OdinHeadCode::F64PromoteF32 => {
+            // 位重解释与一元浮点转换只搬载体：栈高度不变，两侧都是标量 `Any`
+            // （f32/f64/i64 在 verifier 中没有独立 `StackKind`，常量池与局部槽同样登记为 `Any`）。
             require_height(function_index, pc, height, 1)?;
             let after = pop_any_stack(function_index, pc, types, height, coroutine)?;
             types.push(StackKind::Any);
             Ok(vec![edge(fallthrough, after + 1, *coroutine)])
+        }
+        OdinHeadCode::F32Add | OdinHeadCode::F32Sub | OdinHeadCode::F32Mul | OdinHeadCode::F32Div => {
+            // 二元单精度算术：`[f32, f32] -> [f32]`，运算宽度不改变栈高度。
+            require_height(function_index, pc, height, 2)?;
+            let after_rhs = pop_any_stack(function_index, pc, types, height, coroutine)?;
+            let after_lhs = pop_any_stack(function_index, pc, types, after_rhs, coroutine)?;
+            types.push(StackKind::Any);
+            Ok(vec![edge(fallthrough, after_lhs + 1, *coroutine)])
+        }
+        OdinHeadCode::F32Eq | OdinHeadCode::F32Lt => {
+            // 单精度比较：`[f32, f32] -> [i32]`（0/1 布尔）。
+            require_height(function_index, pc, height, 2)?;
+            let after_rhs = pop_any_stack(function_index, pc, types, height, coroutine)?;
+            let after_lhs = pop_any_stack(function_index, pc, types, after_rhs, coroutine)?;
+            types.push(StackKind::I32);
+            Ok(vec![edge(fallthrough, after_lhs + 1, *coroutine)])
         }
         OdinHeadCode::FieldGet => {
             require_height(function_index, pc, height, 1)?;

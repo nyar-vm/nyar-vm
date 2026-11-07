@@ -814,6 +814,7 @@ fn operand_carrier(ty: &NyarType) -> Option<TargetOperandType> {
         // 等值/比较配方按零扩展后的码位判定，不引入截断语义。
         NyarType::Character => Some(TargetOperandType::I32),
         NyarType::Integer64 { .. } => Some(TargetOperandType::I64),
+        NyarType::Float32 => Some(TargetOperandType::F32),
         NyarType::Float64 => Some(TargetOperandType::F64),
         _ => None,
     }
@@ -1259,8 +1260,9 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
             nyar_types::CanonicalPrimitiveType::Integer { bits: 16, signed } => Ok(NyarType::Integer16 { signed: *signed }),
             nyar_types::CanonicalPrimitiveType::Integer { bits: 32, signed } => Ok(NyarType::Integer32 { signed: *signed }),
             nyar_types::CanonicalPrimitiveType::Integer { bits: 64, signed } => Ok(NyarType::Integer64 { signed: *signed }),
-            // `Float64` 与整数同构：`Value` 已有独立 `F64` 载体，不降成 `i64` 位模式。
-            // f32 仍无目标合同（不属于本轮），继续走 `unsupported` 分支。
+            // 浮点各自保留独立载体：`Value` 有 `F64` 与 `F32` 两个变体，
+            // `bits: 32` 不得落到 64 位槽（那会让「32 位类型」实际承载 64 位载荷）。
+            nyar_types::CanonicalPrimitiveType::Float { bits: 32 } => Ok(NyarType::Float32),
             nyar_types::CanonicalPrimitiveType::Float { bits: 64 } => Ok(NyarType::Float64),
             nyar_types::CanonicalPrimitiveType::Character => Ok(NyarType::Character),
             nyar_types::CanonicalPrimitiveType::Utf8 => Ok(NyarType::Utf8),
@@ -1487,17 +1489,20 @@ mod tests {
         assert_eq!(lower_type(&program, type_id(2)).expect("Character"), NyarType::Character);
     }
 
-    /// `Float{bits:64}` 必须有目标合同：f64 的宿主符号（算术/比较/转换）都以它为前提。
-    /// `Float{bits:32}` 仍未登记，必须继续失败闭合——本测试只锁定事实，不替 f32 开合同。
+    /// 浮点宽度与目标载体一一对应：`Float{bits:32}` 必须登记为独立的 `NyarType::Float32`
+    /// 与 `AbiCarrier::F32` / `TargetOperandType::F32`，不得静默并入 64 位载体。
     #[test]
-    fn float64_primitive_has_target_contract_while_float32_stays_unsupported() {
+    fn float_primitive_registers_width_matched_target_contract() {
         let program = program_with_types(vec![
             (type_id(0), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Float { bits: 64 })),
             (type_id(1), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Float { bits: 32 })),
         ]);
         assert_eq!(lower_type(&program, type_id(0)).expect("f64 必须有目标合同"), NyarType::Float64);
-        let error = lower_type(&program, type_id(1)).expect_err("f32 本轮仍无目标合同");
-        assert!(error.contains("Float { bits: 32 }"), "诊断必须点名未登记的 f32，实际：{error}");
+        let float32 = lower_type(&program, type_id(1)).expect("f32 必须有目标合同");
+        assert_eq!(float32, NyarType::Float32);
+        assert_eq!(freeze_abi_carrier(&float32).expect("f32 有独立 ABI 载体"), AbiCarrier::F32);
+        assert_eq!(operand_carrier(&float32), Some(TargetOperandType::F32));
+        assert_ne!(operand_carrier(&float32), operand_carrier(&NyarType::Float64), "f32 不得复用 f64 载体");
     }
 
     /// canonical 用 `u64` 位模式承载 float64，计划层必须按位重建：`-0.0` 的符号位

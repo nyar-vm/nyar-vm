@@ -37,6 +37,32 @@ pub(super) use crate::backend_plan_views::{
     ExecutableValueRef as MirValueRef, NyarType,
 };
 
+/// `f32` 在 wasm 侧的唯一 valtype 常量（`0x7D`）；权威定义见 `wasm::gc::VALTYPE_F32`。
+pub(super) use crate::lowering::backends::wasm::gc::VALTYPE_F32;
+
+/// `f32.const`（opcode `0x43` + 4 字节小端位模式）。
+///
+/// `acorn_wasm` 未导出 f32 编码器，这里是唯一发射点。必须直接用 `f32::to_bits`
+/// 写 4 字节：不得经 f64 往返，否则 NaN payload 低 29 位与次正规位模式会被改写。
+pub(super) fn encode_f32_const(value: f32, code: &mut Vec<u8>) {
+    code.push(0x43);
+    code.extend_from_slice(&value.to_bits().to_le_bytes());
+}
+
+/// `f32.load`（opcode `0x2A`，4 字节字段，自然对齐 log2 = 2）。
+pub(super) fn encode_f32_load(align_log2: u32, offset: u32, code: &mut Vec<u8>) {
+    code.push(0x2A);
+    crate::lowering::backends::wasm::sections::encode_uleb128(align_log2, code);
+    crate::lowering::backends::wasm::sections::encode_uleb128(offset, code);
+}
+
+/// `f32.store`（opcode `0x38`，4 字节字段，自然对齐 log2 = 2）。
+pub(super) fn encode_f32_store(align_log2: u32, offset: u32, code: &mut Vec<u8>) {
+    code.push(0x38);
+    crate::lowering::backends::wasm::sections::encode_uleb128(align_log2, code);
+    crate::lowering::backends::wasm::sections::encode_uleb128(offset, code);
+}
+
 pub(super) use super::super::executable::ExecutableLoweringContext;
 pub(super) use nyar_types::{LayoutId, NominalInstanceId, VariantId};
 

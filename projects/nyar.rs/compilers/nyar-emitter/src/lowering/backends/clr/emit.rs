@@ -49,6 +49,7 @@ impl ClrValueKind {
         match operand_type {
             TargetOperandType::I32 => Self::Int32,
             TargetOperandType::I64 => Self::Int64,
+            TargetOperandType::F32 => Self::Float32,
             TargetOperandType::F64 => Self::Float64,
         }
     }

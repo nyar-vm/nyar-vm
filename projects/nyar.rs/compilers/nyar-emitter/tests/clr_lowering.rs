@@ -123,6 +123,7 @@ fn lower_single_operator_call(
     let result_value_type = match result_type {
         TargetOperandType::I64 => LONG,
         TargetOperandType::I32 => BOOLEAN,
+        TargetOperandType::F32 => NyarType::Float32,
         TargetOperandType::F64 => NyarType::Float64,
     };
     let mut fixture = function("clr.fixture", return_type, vec![LONG, LONG]);

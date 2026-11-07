@@ -19,6 +19,7 @@ use super::{
         wasm_param_value_type, wasm_param_value_type_for,
     },
     type_registry::wasm_array_element_type_key,
+    VALTYPE_F32, encode_f32_load, encode_f32_store,
 };
 use crate::{
     FragmentSubmission,
@@ -426,11 +427,20 @@ impl<'a> WasmMirLowerer<'a> {
         local
     }
 
-    /// 按栈上标?valtype 分配 local（i64/f64/i32）。引用类型请?`alloc_anyref_local`?
+    /// 分配真实 4 字节 `f32` local。`f32` 不得借用 i32/f64 槽。
+    pub(super) fn alloc_f32_local(&mut self) -> u32 {
+        let local = self.next_local;
+        self.next_local += 1;
+        self.local_valtypes.push(vec![VALTYPE_F32]);
+        local
+    }
+
+    /// 按栈上标量 valtype 分配 local（i64/i32 系、f64、f32）。引用类型请用 `alloc_anyref_local`。
     pub(super) fn alloc_scalar_local_for_stack_type(&mut self, stack_ty: u8) -> u32 {
         match stack_ty {
             VALTYPE_I64 => self.alloc_i64_local(),
             VALTYPE_F64 => self.alloc_f64_local(),
+            VALTYPE_F32 => self.alloc_f32_local(),
             _ => self.alloc_i32_local(),
         }
     }
@@ -474,6 +484,7 @@ impl<'a> WasmMirLowerer<'a> {
         match valtype {
             VALTYPE_I32 => "i32".to_string(),
             VALTYPE_I64 => "i64".to_string(),
+            VALTYPE_F32 => "f32".to_string(),
             VALTYPE_F64 => "f64".to_string(),
             WASM_GC_ANYREF => "anyref".to_string(),
             WASM_GC_EXTERNREF => "externref".to_string(),
@@ -544,7 +555,10 @@ impl<'a> WasmMirLowerer<'a> {
     pub(super) fn alloc_value_local(&mut self, stack_type: u8) -> u32 {
         let local = self.next_local;
         self.next_local = self.next_local.checked_add(1).expect("WASM local 索引溢出");
-        assert!(matches!(stack_type, VALTYPE_I32 | VALTYPE_I64 | VALTYPE_F64 | WASM_GC_ANYREF | WASM_GC_EXTERNREF), "WASM 不支持此槽类型");
+        assert!(
+            matches!(stack_type, VALTYPE_I32 | VALTYPE_I64 | VALTYPE_F32 | VALTYPE_F64 | WASM_GC_ANYREF | WASM_GC_EXTERNREF),
+            "WASM 不支持此槽类型"
+        );
         self.local_valtypes.push(vec![stack_type]);
         local
     }
@@ -830,6 +844,7 @@ impl<'a> WasmMirLowerer<'a> {
             return Ok(());
         }
         match self.gc_struct_field_stack_type(field)? {
+            VALTYPE_F32 => encode_f32_store(2, 0, &mut self.code),
             VALTYPE_F64 => encode_f64_store(3, 0, &mut self.code),
             VALTYPE_I64 => encode_i64_store(3, 0, &mut self.code),
             VALTYPE_I32 => encode_i32_store(2, 0, &mut self.code),
@@ -845,6 +860,7 @@ impl<'a> WasmMirLowerer<'a> {
 
     pub(super) fn emit_load_at_field(&mut self, field: &FieldLayout) -> crate::Result<()> {
         match self.gc_struct_field_stack_type(field)? {
+            VALTYPE_F32 => encode_f32_load(2, 0, &mut self.code),
             VALTYPE_F64 => encode_f64_load(3, 0, &mut self.code),
             VALTYPE_I64 => encode_i64_load(3, 0, &mut self.code),
             VALTYPE_I32 => encode_i32_load(2, 0, &mut self.code),

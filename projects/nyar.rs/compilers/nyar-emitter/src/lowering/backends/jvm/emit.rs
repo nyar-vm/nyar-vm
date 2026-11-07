@@ -84,6 +84,7 @@ impl JvmSlotKind {
         match operand_type {
             TargetOperandType::I32 => Self::Int,
             TargetOperandType::I64 => Self::Long,
+            TargetOperandType::F32 => Self::Float,
             TargetOperandType::F64 => Self::Double,
         }
     }

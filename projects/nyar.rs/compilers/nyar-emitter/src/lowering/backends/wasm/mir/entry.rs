@@ -33,6 +33,7 @@ use super::{
         wasm_function_type_result_byte,
     },
     type_registry::{register_gc_array_types, register_gc_struct_types, register_gc_sum_types, wasm_array_element_type_key},
+    VALTYPE_F32, encode_f32_const, encode_f32_load,
 };
 use crate::{
     FragmentSubmission,
@@ -628,6 +629,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                     for &param_ty in &entry_wasm_params {
                         match param_ty {
                             VALTYPE_I64 => encode_i64_const(0, &mut body),
+                            VALTYPE_F32 => encode_f32_const(0.0, &mut body),
                             VALTYPE_F64 => encode_f64_const(0.0, &mut body),
                             VALTYPE_ANYREF | WASM_GC_ANYREF => {
                                 if let Some(array_ty) = argv_array_ty {
@@ -1499,7 +1501,8 @@ pub(super) fn emit_wasi_entry_default_arg(ty: &NyarType, gc_array_type_indices: 
             }
         }
         NyarType::Float64 => encode_f64_const(0.0, body),
-        NyarType::Float32 => panic!("WASI entry 参数 `f32` 没有冻结载体：不得按 `f64` 载体补默认值"),
+        // f32 有独立载体：默认值按真实 f32 位模式发射（+0.0），不得借 f64 载体。
+        NyarType::Float32 => encode_f32_const(0.0, body),
         NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => encode_i64_const(0, body),
         NyarType::Unit => encode_ref_null_anyref(body),
         NyarType::Bottom => encode_i32_const(0, body),
@@ -1950,6 +1953,7 @@ fn emit_library_field_accessors<'name>(
                 }
                 else {
                     match field.ty {
+                        NyarType::Float32 => VALTYPE_F32,
                         NyarType::Float64 => VALTYPE_F64,
                         NyarType::Integer64 { .. } => VALTYPE_I64,
                         _ => VALTYPE_I32,
@@ -1962,6 +1966,7 @@ fn emit_library_field_accessors<'name>(
                 encode_i32_add(&mut body);
                 if !inline_aggregate {
                     match field.ty {
+                        NyarType::Float32 => encode_f32_load(2, 0, &mut body),
                         NyarType::Float64 => encode_f64_load(3, 0, &mut body),
                         NyarType::Integer64 { .. } => encode_i64_load(3, 0, &mut body),
                         _ => encode_i32_load(2, 0, &mut body),
