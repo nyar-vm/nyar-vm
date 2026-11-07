@@ -29,7 +29,7 @@ use crate::compiler::{
 use crate::compiler::hir::lowering::{
     diagnostics::{CompileWarningScope, plan_source, plan_span, take_compile_warnings},
     errors::HirError,
-    generic_binders::{freeze_module_generic_binders, register_field_declarations, register_function_declarations},
+    generic_binders::{freeze_module_generic_binders, register_field_declarations, register_function_declarations, synthesize_parent_fields},
     nominal_declarations::validate_enum_discriminators,
     source_group::{
         register_root_type_alias_targets, root_type_alias_declarations, validate_source_groups, visible_nominal_type_names,
@@ -86,6 +86,8 @@ impl AstToHir {
             });
         }
         register_function_declarations(&mut hir, &mut 0, &mut 0)?;
+        // 父类槽位必须在字段身份登记之前合成：它和声明体字段共用同一 `FieldId` 空间与冻结路径。
+        synthesize_parent_fields(&mut hir)?;
         register_field_declarations(&mut hir, &mut 0)?;
         // 环境身份必须在 binder 冻结之前回填：环境聚合的实参先落 `Named` 占位，
         // 由随后的 `freeze_module_generic_binders` 用外层 callable 的 bearer 冻结，

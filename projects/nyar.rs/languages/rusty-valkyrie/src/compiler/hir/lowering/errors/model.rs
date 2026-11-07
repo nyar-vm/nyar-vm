@@ -459,6 +459,21 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// 继承合成的父类槽位与其它父类槽位或自身声明字段同名。
+    ///
+    /// 父类槽位在 HIR 字段空间中有正式身份，因此重名不允许静默覆盖。
+    ParentSlotConflict {
+        /// 发生冲突的聚合短名。
+        aggregate: String,
+        /// 冲突的槽位名。
+        slot: String,
+        /// 冲突种类：`duplicate_parent_slot` 或 `field_shadows_parent_slot`。
+        conflict: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 生成源码组缺少显式 producer 身份。
     SourceGroupProducerMissing {
         /// 涉及的源码组依赖身份（未知时为 `None`）。

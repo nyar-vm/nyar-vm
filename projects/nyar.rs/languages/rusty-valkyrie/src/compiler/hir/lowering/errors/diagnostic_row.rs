@@ -210,6 +210,12 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("prior_kind", DiagnosticArg::String(prior_kind.clone()))
                     .with_arg("current_kind", DiagnosticArg::String(current_kind.clone()));
             }
+            HirError::ParentSlotConflict { aggregate, slot, conflict, .. } => {
+                row = row
+                    .with_arg("aggregate", DiagnosticArg::Aggregate(aggregate.clone()))
+                    .with_arg("slot", DiagnosticArg::String(slot.clone()))
+                    .with_arg("conflict", DiagnosticArg::String(conflict.clone()));
+            }
             HirError::ClassBodyMethodDeclared { aggregate, method, .. } => {
                 row = row
                     .with_arg("aggregate", DiagnosticArg::Aggregate(aggregate.clone()))
@@ -626,6 +632,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::AutoConstructorAttributeOnNonVariant { source, .. } => source.clone(),
         HirError::DuplicateAutoConstructorAttribute { source, .. } => source.clone(),
         HirError::DuplicateTypeDefinition { source, .. } => source.clone(),
+        HirError::ParentSlotConflict { source, .. } => source.clone(),
         HirError::ClassBodyMethodDeclared { source, .. } => source.clone(),
         HirError::ImplGenericBinderUnresolved { source, .. } => source.clone(),
         HirError::TryPropagateErrorTypeMismatch { source, .. } => source.clone(),
@@ -710,6 +717,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::AutoConstructorAttributeOnNonVariant { span, .. } => span.clone(),
         HirError::DuplicateAutoConstructorAttribute { span, .. } => span.clone(),
         HirError::DuplicateTypeDefinition { span, .. } => span.clone(),
+        HirError::ParentSlotConflict { span, .. } => span.clone(),
         HirError::ClassBodyMethodDeclared { span, .. } => span.clone(),
         HirError::ImplGenericBinderUnresolved { span, .. } => span.clone(),
         HirError::TryPropagateErrorTypeMismatch { span, .. } => span.clone(),

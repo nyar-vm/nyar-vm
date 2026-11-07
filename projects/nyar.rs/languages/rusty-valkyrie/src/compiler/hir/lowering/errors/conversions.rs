@@ -182,6 +182,16 @@ impl std::fmt::Display for HirError {
             Self::DuplicateTypeDefinition { name, namespace, prior_kind, current_kind, .. } => {
                 write!(f, "duplicate definition of `{name}` in namespace `{namespace}`: {prior_kind} and {current_kind}")
             }
+            Self::ParentSlotConflict { aggregate, slot, conflict, .. } => match conflict.as_str() {
+                "duplicate_parent_slot" => write!(
+                    f,
+                    "duplicate inherited slot `{slot}` on `{aggregate}`: multiple parents normalize to the same slot name; add an alias to disambiguate"
+                ),
+                _ => write!(
+                    f,
+                    "field `{slot}` on `{aggregate}` conflicts with the inherited slot for a parent; rename the field or alias the parent"
+                ),
+            },
             Self::ClassBodyMethodDeclared { aggregate, method, .. } => {
                 write!(
                     f,
