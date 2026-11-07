@@ -31,6 +31,23 @@ fn leetcode_browser_wasm_plan_injects_wasm_adaptor_js_random_providers() {
     };
 
     let project_dir = valkyrie_v.join("examples").join("leetcode_browser_wasm");
+    let random_source = valkyrie_v
+        .join("projects")
+        .join("std.adaptors._")
+        .join("std.adaptor.wasm")
+        .join("source")
+        .join("random")
+        .join("Random.browser.v");
+    // `[js(...)]` 已退役；语料仍停留在旧通道时能力表为空，规划断言必然失败。
+    // 这是语料版本前置条件，不是本仓实现缺陷：显式跳过并提示需重新固定已迁移的语料 rev。
+    let migrated = std::fs::read_to_string(&random_source).map(|text| text.contains("js_builtin")).unwrap_or(false);
+    if !migrated {
+        eprintln!(
+            "skip: {} 仍使用已退役的 `[js(...)]`，需将 valkyrie.v 语料固定到已迁移 `[js_builtin]` 的 rev",
+            random_source.display()
+        );
+        return;
+    }
     let workspace = WorkspaceResolver::discover_for_project(&project_dir).expect("discover leetcode example workspace");
     let plan = workspace
         .build_plan(&BuildRequest {

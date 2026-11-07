@@ -6,10 +6,19 @@
 
 use std::path::PathBuf;
 
+/// `valkyrie.v` 语料根：优先 `VALKYRIE_V_ROOT`，否则取本仓兄弟检出。
+///
+/// 与 `tests/legion` 的语料定位同一纪律：CI 在仓库根旁检出固定 rev 的语料，
+/// 本地开发者可直接指向任意干净快照。
+pub fn valkyrie_v_root() -> PathBuf {
+    std::env::var("VALKYRIE_V_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../..").join("valkyrie.v"))
+}
+
 /// `valkyrie.v` 兄弟检出中的包绝对路径（正斜杠形态，供清单/工作区成员引用）。
 pub fn valkyrie_v_package(parts: &[&str]) -> String {
-    let path =
-        parts.iter().fold(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../..").join("valkyrie.v"), |path, part| path.join(part));
+    let path = parts.iter().fold(valkyrie_v_root(), |path, part| path.join(part));
     path.to_string_lossy().replace('\\', "/")
 }
 

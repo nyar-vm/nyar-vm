@@ -81,6 +81,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: projects/nyar.rs
+      # 集成夹具读取仓库根旁的 `valkyrie.v` 语料（asgard SSG 合同、std 包与示例工程）。
+      # 固定完整 rev，避免上游漂移把集成门槛变成随机红灯。
+      - name: Checkout valkyrie.v corpus
+        working-directory: .
+        run: |
+          git init ../valkyrie.v
+          git -C ../valkyrie.v remote add origin https://github.com/valkyrie-language/valkyrie.v.git
+          git -C ../valkyrie.v fetch --depth 1 origin cc203e0687f68f7b2df8def811edad4e761cb8ca
+          git -C ../valkyrie.v checkout --detach FETCH_HEAD
       - name: Integration tests
         run: cargo test --workspace --tests --no-fail-fast
       - name: Host capability smoke (planner + browser-wasm build fixtures)
