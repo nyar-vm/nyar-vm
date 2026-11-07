@@ -2,7 +2,7 @@ use crate::compiler::types::hir::{HirMatchArm, ValkyrieType};
 
 use super::{
     MirBlockRef, MirBuilder, MirCaseArm, MirCaseChain, MirConstant, MirOperand, MirTerminator, control_flow_context::MirFallthroughContext,
-    infer_builder_operand_type,
+    control_flow_lowering::BranchArmExit, infer_builder_operand_type,
 };
 
 fn is_never_type(ty: &ValkyrieType) -> bool {
@@ -24,6 +24,29 @@ pub fn arm_contributes_to_match_merge(
     true
 }
 impl MirBuilder {
+    /// `no_match` 入边回填分支前的变量值：该入边只在 `match` 未命中时可达，
+    /// 语义上等于保持进入分支前的绑定。
+    fn exit_binding_arguments(
+        &self,
+        exit_block: MirBlockRef,
+        pre_bindings: &std::collections::BTreeMap<String, MirOperand>,
+    ) -> Vec<MirOperand> {
+        self.blocks[exit_block.0 as usize]
+            .parameters
+            .iter()
+            .map(|parameter| {
+                self.values
+                    .iter()
+                    .find(|value| value.id == *parameter)
+                    .and_then(|value| match &value.origin {
+                        super::MirValueOrigin::BlockParameter { name, .. } => pre_bindings.get(name).cloned(),
+                        _ => None,
+                    })
+                    .unwrap_or(MirOperand::Constant(MirConstant::Unit))
+            })
+            .collect()
+    }
+
     pub(super) fn lower_match_expr(
         &mut self,
         scrutinee: &crate::compiler::hir::HirExpr,
@@ -76,6 +99,7 @@ impl MirBuilder {
         let exit_label = if produce_value { "match_exit" } else { "case_exit" };
         let no_match_label = if produce_value { "match_no_match" } else { "case_no_match" };
         let mut chain_arms = Vec::with_capacity(arms.len());
+        let mut arm_exits: Vec<BranchArmExit> = Vec::with_capacity(arms.len());
 
         for (index, arm) in arms.iter().enumerate() {
             let arm_block = arm_blocks[index];
@@ -169,6 +193,11 @@ impl MirBuilder {
                     self.terminate(MirTerminator::Jump { target: exit_block, arguments: Vec::new() });
                 }
             }
+            if !produce_value {
+                // 语句位置的 `match` 臂内赋值也要在 exit 块合并成 phi；否则
+                // 后继续读取会拿到最后一条臂的 SSA 值（CAN015 TerminatorUseBeforeDefinition）。
+                arm_exits.push((self.current_block, self.bindings.clone()));
+            }
             let current_arm_label = self.current_label.clone();
             self.flush_block(&current_arm_label);
             chain_arms.push(MirCaseArm {
@@ -180,6 +209,10 @@ impl MirBuilder {
                 exit_target: exit_block,
                 fallthrough_target: arm_blocks.get(index + 1).copied(),
             });
+        }
+
+        if !produce_value {
+            self.materialize_branch_bindings(exit_block, &saved_bindings, &arm_exits);
         }
 
         self.current_block = no_match_block;
@@ -202,7 +235,8 @@ impl MirBuilder {
             }
         }
         else {
-            self.terminate(MirTerminator::Jump { target: exit_block, arguments: Vec::new() });
+            let arguments = self.exit_binding_arguments(exit_block, &saved_bindings);
+            self.terminate(MirTerminator::Jump { target: exit_block, arguments });
         }
         self.flush_block(no_match_label);
 

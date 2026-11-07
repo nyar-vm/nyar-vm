@@ -13,7 +13,7 @@ use super::{
 /// 两条 arm 都从分支前的绑定出发 lowering，赋值只改各自 arm 的 `bindings`；
 /// 合并时必须把这些差异变成 merge 块的 phi 参数，否则 merge 处恢复分支前绑定，
 /// arm 内的赋值对后继读取不可见。
-type BranchArmExit = (MirBlockRef, std::collections::BTreeMap<String, MirOperand>);
+pub(super) type BranchArmExit = (MirBlockRef, std::collections::BTreeMap<String, MirOperand>);
 
 impl MirBuilder {
     /// `loop pat in coll` 的索引 lowering 必须先获得比较与自增的 callable 合同。
@@ -50,7 +50,7 @@ impl MirBuilder {
     /// 只处理分支前已存在的绑定（arm 内新声明不泄漏到 merge）；某条 arm 改变了
     /// 绑定就为该名字追加一个 merge 参数，未改变该名字的另一条 arm 传入分支前的值。
     /// arm 必须以 `Jump { merge }` 结束，`return` / `break` / `continue` 入边不参与合并。
-    fn materialize_branch_bindings(
+    pub(super) fn materialize_branch_bindings(
         &mut self,
         merge_block: MirBlockRef,
         pre_bindings: &std::collections::BTreeMap<String, MirOperand>,
