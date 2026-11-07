@@ -76,7 +76,7 @@ pub(crate) use generic_binders::{
     lower_trait_associated_type_references, lower_trait_method, max_hir_callable_instance_index, max_hir_declaration_index,
     propagate_declared_generic_binders, propagate_generic_binders_in_block, propagate_generic_binders_in_expr,
     propagate_generic_binders_in_where_constraints, register_field_declarations,
-    register_function_declarations,
+    register_function_declarations, synthesize_parent_fields,
 };
 
 pub(crate) use generic_instantiation::{
@@ -445,6 +445,8 @@ impl ValkyrieCompiler {
             hir_module.dependency_key = group.dependency_key.clone();
             hir_module.source_path = group.sources.first().map(|file| file.path.clone()).unwrap_or_else(|| format!("{}.v", group.name));
             register_function_declarations(&mut hir_module, &mut next_declaration, &mut next_instance)?;
+            // 父类槽位先于字段身份登记合成，保证 `parent_declarations` 与 HIR 字段空间同口径。
+            synthesize_parent_fields(&mut hir_module)?;
             register_field_declarations(&mut hir_module, &mut next_field)?;
             // lambda 环境身份先回填、再冻结泛型 binder：环境实参以 `Named`
             // 占位书写，由外层 callable 的泛型声明在冻结期绑定同一 bearer。

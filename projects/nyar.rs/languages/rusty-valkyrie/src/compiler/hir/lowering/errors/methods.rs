@@ -92,6 +92,7 @@ impl HirError {
             Self::ClassBodyMethodDeclared { .. } => "valkyrie.hir.class_body_method_declared",
             Self::ImplGenericBinderUnresolved { .. } => "valkyrie.hir.impl_generic_binder_unresolved",
             Self::DuplicateTypeDefinition { .. } => "valkyrie.hir.duplicate_type_definition",
+            Self::ParentSlotConflict { .. } => "valkyrie.hir.parent_slot_conflict",
             Self::SourceGroupProducerMissing { .. } => "valkyrie.hir.source_group_producer_missing",
             Self::SourceGroupNotEntry { .. } => "valkyrie.hir.source_group_not_entry",
             Self::SourceGroupIdentityInvalid { .. } => "valkyrie.hir.source_group_identity_invalid",

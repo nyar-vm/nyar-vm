@@ -8,9 +8,9 @@ use crate::compiler::{
     types::{
         Identifier, NamePath,
         hir::{
-            GenericBinderId, GenericType, HirBlock, HirEnum, HirExpr, HirExprKind, HirField, HirFlagMember, HirFunction, HirImpl, HirModule,
-            HirSingleton, HirStatementKind, HirStruct, HirTrait, HirVariant, HirWhereConstraint, ValkyrieType,
-            primitive_identity_builtin_type,
+            GenericBinderId, GenericType, HirBlock, HirDocumentation, HirEnum, HirExpr, HirExprKind, HirField, HirFlagMember, HirFunction,
+            HirImpl, HirModule, HirParent, HirSingleton, HirStatementKind, HirStruct, HirTrait, HirVariant, HirVisibility,
+            HirWhereConstraint, ValkyrieType, primitive_identity_builtin_type,
         },
     },
 };
@@ -882,6 +882,69 @@ pub(crate) fn register_function_declarations(module: &mut HirModule, next: &mut 
     }
     for submodule in &mut module.submodules {
         register_function_declarations(submodule, next, next_instance)?;
+    }
+    Ok(())
+}
+
+/// 每层父类占用一个可访问的存储槽位，类型与声明体字段同路径：
+/// `Named`（带实参时 `Apply`）由随后的 `bind_declared_nominal_types` 冻结为 `Nominal`。
+fn parent_slot_field_type(parent: &HirParent) -> ValkyrieType {
+    let qualified = parent.name.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join(".");
+    let named = ValkyrieType::Named(Identifier::new(&qualified));
+    if parent.generics.is_empty() {
+        return named;
+    }
+    ValkyrieType::Apply(Box::new(named), parent.generics.clone())
+}
+
+/// 把 `parents` 合成为真实 [`HirField`]，与声明体字段共用同一条身份登记路径。
+///
+/// 顺序是确定的：父类槽位按继承声明自上而下在前，自身声明字段原序在后。
+/// 合成前先拒绝槽位重名（多父类归一到同一槽位、或自身字段遮蔽父类槽位），
+/// 不允许后写入静默覆盖。
+pub(crate) fn synthesize_parent_fields(module: &mut HirModule) -> Result<(), HirError> {
+    fn conflict(aggregate: &HirStruct, slot: Identifier, kind: &str) -> HirError {
+        HirError::ParentSlotConflict {
+            aggregate: aggregate.name.to_string(),
+            slot: slot.to_string(),
+            conflict: kind.to_string(),
+            source: plan_source(),
+            span: plan_span(),
+        }
+    }
+    fn synthesize(structure: &mut HirStruct) -> Result<(), HirError> {
+        if structure.parents.is_empty() {
+            return Ok(());
+        }
+        // 冲突判定必须先于合成：一旦父槽位字段进入 `fields`，它就会与自身字段同集合比较。
+        if let Some(slot) = structure.duplicate_parent_slots().into_iter().next() {
+            return Err(conflict(structure, slot, "duplicate_parent_slot"));
+        }
+        if let Some(slot) = structure.parent_slot_field_conflicts().into_iter().next() {
+            return Err(conflict(structure, slot, "field_shadows_parent_slot"));
+        }
+        let inherited = structure
+            .parents
+            .iter()
+            .map(|parent| HirField {
+                id: None,
+                name: parent.slot_name(),
+                doc: HirDocumentation::default(),
+                ty: parent_slot_field_type(parent),
+                // 父类槽位按声明体字段的默认可见性暴露：`obj.base` 是规范访问面。
+                visibility: HirVisibility::public(),
+                is_mutable: false,
+            })
+            .collect::<Vec<_>>();
+        let declared = std::mem::take(&mut structure.fields);
+        structure.fields = inherited.into_iter().chain(declared).collect();
+        Ok(())
+    }
+    for structure in &mut module.structs {
+        synthesize(structure)?;
+    }
+    for submodule in &mut module.submodules {
+        synthesize_parent_fields(submodule)?;
     }
     Ok(())
 }
