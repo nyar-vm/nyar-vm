@@ -452,10 +452,19 @@ micro with_value() -> Option<utf8> {
     assert!(failure.message.contains("SMIR"), "拒绝必须落在 Semantic MIR 合同层：{}", failure.message);
 }
 
-/// 缺口固化：`Option<结构体>` 的构造在 std 在场时仍失败闭合（同位移纪律）。
+/// 已闭合缺口（原 C0 固化项翻转）：dev `e9f0aa75` 冻结 ABI 载体后，std 依赖在场时
+/// `Option<结构体>` 的 `Some` 构造与 `[export]` 返回位置完成正式构建，构造出的变体
+/// 在 wasm 语义里确实是 `Some`。
+///
+/// 产物载体事实：`Option<Endpoint>` 按冻结布局派生为**引用存储名义实例**
+/// （`InstanceHandle("Option")`），返回值是共享的不透明引用而不是字段快照；
+/// JS glue 只能把 symbol 键句柄 JSON 投影成空对象。字段级读回不在冻结载体合同内，
+/// 归属 ABI 载体线（`export_surface` / `type_relation` 身份判定不在本线修改）。
+/// 该载体下空引用（`None`）会按 `InstanceHandle` 合同失败闭合，因此读回成功本身
+/// 就证明 `Some` 返回了活的非空引用。
 #[test]
-fn c0_gap_std_option_struct_constructor_unresolved() {
-    let failure = build_probe_project_with_std(
+fn c0_gap_std_option_struct_constructor_is_resolved() {
+    let artifact = build_probe_project_with_std(
         "asgard-c0-std-option-struct",
         r#"using std::types::{Option, Some, None};
 
@@ -468,10 +477,22 @@ structure Endpoint {
 micro with_value() -> Option<Endpoint> {
     return Some(Endpoint { host: "127.0.0.1", port: 3000 })
 }
+
+[export(name: "has_value")]
+micro has_value() -> bool {
+    return with_value().is_some()
+}
 "#,
     )
-    .expect_err("Option<结构体> 构造当前必须失败闭合");
-    assert!(failure.message.contains("SMIR"), "拒绝必须落在 Semantic MIR 合同层：{}", failure.message);
+    .unwrap_or_else(|failure| panic!("`Option<结构体>` 构造必须完成正式构建，实际失败：{}", failure.message));
+
+    let has_value = call_export_through_glue(&artifact, "has_value", "[]")
+        .unwrap_or_else(|diagnostic| panic!("`Option<结构体>` 的 `is_some` 必须经 glue 读回，实际失败：{diagnostic}"));
+    assert_eq!(has_value, "true", "构造 `Some(Endpoint {{ .. }})` 后 `is_some` 必须是 `true`");
+
+    let value = call_export_through_glue(&artifact, "with_value", "[]")
+        .unwrap_or_else(|diagnostic| panic!("`Option<结构体>` 必须经 glue 读回，实际失败：{diagnostic}"));
+    assert_eq!(value, "{}", "`Option<结构体>` 的冻结载体是不透明引用句柄，JSON 投影为空对象；载荷字段读回不在本轮合同内");
 }
 
 /// 缺口固化：裸对象字面量不是合法表达式，模块尾表达式作者形态尚不可解析。
