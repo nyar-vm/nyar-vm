@@ -37,7 +37,11 @@ impl Display for OdinDecodeError {
                 "legacy `.nyar` execution artifact rejected: `.odin` is a distinct artifact identity; rebuild it as `.odin`"
             ),
             Self::InvalidVersion(version) => {
-                write!(f, "unsupported .odin format version: {version} (expected {})", crate::Odin_VERSION)
+                write!(
+                    f,
+                    "unsupported .odin format version: found {version}, expected {} (rebuild the artifact)",
+                    crate::Odin_VERSION
+                )
             }
             Self::InvalidConstantKind(kind) => write!(f, "invalid constant kind: {kind}"),
             Self::InvalidImportKind(kind) => write!(f, "invalid import kind: {kind}"),
