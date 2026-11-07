@@ -5,10 +5,17 @@ impl MirBuilder {
         type_declaration: Option<nyar_types::ItemId>,
         fields: &[(Identifier, HirPattern)],
         field_ids: &[Option<nyar_types::FieldId>],
+        named_fields: bool,
         value: MirOperand,
     ) -> MirOperand {
-        let fallback =
-            || HirPattern::Object { name: name.clone(), type_declaration, fields: fields.to_vec(), field_ids: field_ids.to_vec(), rest: None };
+        let fallback = || HirPattern::Object {
+            name: name.clone(),
+            type_declaration,
+            fields: fields.to_vec(),
+            field_ids: field_ids.to_vec(),
+            named_fields,
+            rest: None,
+        };
         let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
         else {
             return self.lower_fallback_pattern_match(fallback(), value);

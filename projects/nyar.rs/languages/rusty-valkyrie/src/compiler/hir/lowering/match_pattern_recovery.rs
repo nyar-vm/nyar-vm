@@ -11,7 +11,10 @@ use crate::compiler::{
         ast::{MatchArm, StatementNode, TermExpression},
         parse_source_with_identity,
     },
-    types::hir::{HirLiteral, HirPattern},
+    types::{
+        Identifier, NamePath, SourceSpan,
+        hir::{HirIdentifier, HirLiteral, HirPattern},
+    },
 };
 
 use super::errors::MatchRecoveryStage;
@@ -78,6 +81,162 @@ fn extract_case_pattern_text(arm_text: &str) -> Option<String> {
         return None;
     }
     Some(after_case[..colon].trim().to_string())
+}
+
+/// 从 arm 源码恢复 Oak 丢失的对象模式字段名。
+///
+/// Oak 的 `parse_match_pattern` 把花括号字段名当作裸标识符消费，builder 只保留首个标识符，
+/// 字段整体丢失（`Pattern::Class` 退化成 `Pattern::Type`）。这里只替换模式，不重解析臂体；
+/// 字段名按源码写法保留，供 HIR 按声明字段名绑定。
+pub fn recover_arm_object_pattern(source: &str, arm: &MatchArm, span: SourceSpan) -> Option<HirPattern> {
+    if !matches!(arm.pattern, oak_valkyrie::ast::Pattern::Type(_)) {
+        return None;
+    }
+    let pattern_text = source.get(arm.span.start..arm.span.end).and_then(extract_case_pattern_text)?;
+    parse_recovered_object_pattern(&pattern_text, &span)
+}
+
+fn parse_recovered_object_pattern(text: &str, span: &SourceSpan) -> Option<HirPattern> {
+    let text = text.trim();
+    let open = text.find('{')?;
+    let close = text.rfind('}')?;
+    if close < open {
+        return None;
+    }
+    let head = text[..open].trim();
+    if !is_name_path_text(head) {
+        return None;
+    }
+    let mut fields = Vec::new();
+    for raw_field in split_top_level(&text[open + 1..close], ',') {
+        let raw_field = raw_field.trim();
+        if raw_field.is_empty() {
+            return None;
+        }
+        let (field_name, nested) = match find_top_level(raw_field, ':') {
+            Some(index) => (raw_field[..index].trim(), Some(raw_field[index + 1..].trim())),
+            None => (raw_field, None),
+        };
+        if !is_plain_identifier(field_name) {
+            return None;
+        }
+        let identifier = Identifier::new(field_name);
+        let pattern = match nested {
+            Some(nested) if !nested.is_empty() => parse_recovered_field_pattern(nested, span)?,
+            _ => HirPattern::Variable(HirIdentifier { name: identifier.clone(), shadow_index: 0, span: span.clone() }),
+        };
+        fields.push((identifier, pattern));
+    }
+    if fields.is_empty() {
+        return None;
+    }
+    let field_ids = vec![None; fields.len()];
+    Some(HirPattern::Object {
+        name: Some(NamePath::new(head.split('.').map(Identifier::new).collect())),
+        type_declaration: None,
+        fields,
+        field_ids,
+        named_fields: true,
+        rest: None,
+    })
+}
+
+fn parse_recovered_field_pattern(text: &str, span: &SourceSpan) -> Option<HirPattern> {
+    let text = text.trim();
+    if text == "_" {
+        return Some(HirPattern::Wildcard);
+    }
+    if text.contains('{') {
+        return parse_recovered_object_pattern(text, span);
+    }
+    if let Some(literal) = parse_hir_literal(text) {
+        return Some(HirPattern::Literal(literal));
+    }
+    if is_plain_identifier(text) {
+        let name = Identifier::new(text);
+        if text.chars().next().is_some_and(|ch| ch.is_ascii_uppercase()) {
+            return Some(HirPattern::Name(NamePath::new(vec![name])));
+        }
+        return Some(HirPattern::Variable(HirIdentifier { name, shadow_index: 0, span: span.clone() }));
+    }
+    None
+}
+
+fn is_name_path_text(text: &str) -> bool {
+    !text.is_empty() && text.split('.').all(is_plain_identifier)
+}
+
+fn is_plain_identifier(text: &str) -> bool {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(ch) if ch.is_ascii_alphabetic() || ch == '_' => {}
+        _ => return false,
+    }
+    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
+/// 按顶层分隔符切分，跳过括号/花括号/方括号与引号内的分隔符。
+fn split_top_level(text: &str, separator: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut start = 0usize;
+    for (index, ch) in text.char_indices() {
+        if let Some(active) = quote {
+            if escaped {
+                escaped = false;
+            }
+            else if ch == '\\' {
+                escaped = true;
+            }
+            else if ch == active {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' if depth > 0 => depth -= 1,
+            _ if depth == 0 && ch == separator => {
+                parts.push(&text[start..index]);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(&text[start..]);
+    parts
+}
+
+/// 顶层首个分隔符位置（忽略括号与引号内部）。
+fn find_top_level(text: &str, separator: char) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (index, ch) in text.char_indices() {
+        if let Some(active) = quote {
+            if escaped {
+                escaped = false;
+            }
+            else if ch == '\\' {
+                escaped = true;
+            }
+            else if ch == active {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' if depth > 0 => depth -= 1,
+            _ if depth == 0 && ch == separator => return Some(index),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn broken_wildcard_arm(source: &str, arm: &MatchArm) -> bool {

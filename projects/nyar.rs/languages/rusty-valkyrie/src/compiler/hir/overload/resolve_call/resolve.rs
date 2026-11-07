@@ -15,9 +15,9 @@ use crate::compiler::{
             substitution::{substitute_type_vars, unify_call_type_binders},
             symbol_match::{aggregate_constructor_matches_name, symbol_matches_unqualified_free_call},
             types::{
-                canonical_extractor_callee, field_identity_from_type, infer_catch_scrutinee_type, infer_expr_type, infer_scrutinee_type,
-                lookup_struct_field_type, normalize_local_field_chain, object_field_scrutinee_type, payload_field_scrutinee_types,
-                should_resolve_name_pattern_as_type,
+                canonical_extractor_callee, extractor_payload_field_names, field_identity_from_type, infer_catch_scrutinee_type,
+                infer_expr_type, infer_scrutinee_type, lookup_struct_field_type, normalize_local_field_chain, object_field_scrutinee_type,
+                payload_field_scrutinee_types, should_resolve_name_pattern_as_type,
             },
         },
         type_relation::TypeRelationContext,
@@ -846,20 +846,34 @@ fn resolve_pattern_calls(
                 resolve_pattern_calls(item, candidates, type_relations, scrutinee_type, struct_fields);
             }
         }
-        HirPattern::Object { name, type_declaration, fields, field_ids, rest, .. } => {
+        HirPattern::Object { name, type_declaration, fields, field_ids, named_fields, rest, .. } => {
             if rest.is_none() {
                 if let Some(name_path) = name.clone() {
                     if let Some(actual_type) = scrutinee_type {
                         let canonical_callee = canonical_extractor_callee(&name_path);
                         let resolved = try_resolve_pattern_extractor(&canonical_callee, actual_type, candidates, type_relations)
                             .or_else(|| resolve_variant_pattern_constructor(&canonical_callee, actual_type, candidates, type_relations));
-                        if resolved.is_some() {
-                            let extractor_fields = fields.iter().map(|(_, field)| field.clone()).collect::<Vec<_>>();
+                        if let Some(resolved_call) = resolved {
+                            // 对象模式的字段名必须保留：位置槽位按声明字段顺序排布，
+                            // 否则倒序/乱序写法会被后续按 index 取值的绑定静默绑错。
+                            let extractor_fields = if *named_fields {
+                                let payload = resolved_call
+                                    .extractor_payload_type
+                                    .clone()
+                                    .or_else(|| crate::compiler::hir::try_propagate::nullable_payload_type(actual_type));
+                                payload
+                                    .as_ref()
+                                    .and_then(|payload| object_pattern_field_slots(fields, &resolved_call, payload, struct_fields))
+                                    .map(|slots| reorder_object_pattern_fields(fields, &slots))
+                            } else {
+                                None
+                            }
+                            .unwrap_or_else(|| fields.iter().map(|(_, field)| field.clone()).collect());
                             *pattern = HirPattern::Extractor(crate::compiler::types::hir::HirExtractorPattern::Constructor {
                                 name: name_path.clone(),
                                 canonical_callee,
                                 fields: extractor_fields,
-                                resolved,
+                                resolved: Some(resolved_call),
                             });
                             if let HirPattern::Extractor(crate::compiler::types::hir::HirExtractorPattern::Constructor {
                                 fields,
@@ -916,6 +930,31 @@ fn resolve_pattern_calls(
     }
 }
 
+/// 对象模式字段名到载荷槽位的映射；仅在载荷有声明字段名时成立。
+fn object_pattern_field_slots(
+    fields: &[(Identifier, HirPattern)],
+    resolved: &HirResolvedCall,
+    payload: &ValkyrieType,
+    struct_fields: &AggregateFieldIndex,
+) -> Option<Vec<usize>> {
+    let declared = extractor_payload_field_names(Some(resolved), payload, struct_fields)?;
+    let mut slots = Vec::with_capacity(fields.len());
+    for (field_name, _) in fields {
+        slots.push(declared.iter().position(|declared_name| declared_name == field_name)?);
+    }
+    Some(slots)
+}
+
+/// 把对象模式字段重排到声明槽位；缺省字段用通配符占位，保持槽位对齐。
+fn reorder_object_pattern_fields(fields: &[(Identifier, HirPattern)], slots: &[usize]) -> Vec<HirPattern> {
+    let len = slots.iter().copied().max().map_or(0, |slot| slot + 1);
+    let mut ordered = vec![HirPattern::Wildcard; len];
+    for ((_, field), slot) in fields.iter().zip(slots.iter().copied()) {
+        ordered[slot] = field.clone();
+    }
+    ordered
+}
+
 pub(crate) fn bind_pattern_type(pattern: &HirPattern, ty: &ValkyrieType, locals: &mut BTreeMap<String, ValkyrieType>) {
     match pattern {
         HirPattern::Variable(identifier) => {
@@ -947,6 +986,7 @@ pub(crate) fn bind_pattern_type(pattern: &HirPattern, ty: &ValkyrieType, locals:
                 for (index, field) in fields.iter().enumerate() {
                     let field_ty = match &payload {
                         ValkyrieType::Tuple(items) => items.get(index).cloned(),
+                        ValkyrieType::LabeledTuple(items) => items.get(index).map(|field| field.ty.clone()),
                         _ if index == 0 => Some(payload.clone()),
                         _ => None,
                     };

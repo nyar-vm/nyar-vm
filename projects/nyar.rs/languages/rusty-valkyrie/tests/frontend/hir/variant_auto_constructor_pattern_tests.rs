@@ -135,9 +135,80 @@ fn multi_field_pattern_binds_fields_in_declaration_order() {
 }
 
 #[test]
-#[ignore = "blocked: Semantic MIR 尚未建模多字段 unite 载荷的 tuple projection"]
 fn multi_field_pattern_reaches_semantic_mir() {
     compile_to_mir(MULTI_FIELD_SOURCE);
+}
+
+const NAMED_FIELD_ORDER_SOURCE: &str = r#"
+unite Pair {
+    [constructor]
+    Both {
+        left: bool,
+        right: utf8,
+    },
+    Neither,
+}
+
+micro forward(input: Pair) -> bool {
+    match input {
+        case Both { left, right }:
+            left
+        case Neither:
+            false
+    }
+}
+
+micro reversed(input: Pair) -> bool {
+    match input {
+        case Both { right, left }:
+            left
+        case Neither:
+            false
+    }
+}
+
+micro text_of(input: Pair) -> utf8 {
+    match input {
+        case Both { right, left }:
+            right
+        case Neither:
+            ""
+    }
+}
+"#;
+
+/// 对象模式按声明字段名绑定，与书写顺序无关。
+///
+/// `reversed` 与 `text_of` 都以逆序书写对象模式，但槽位仍必须按声明顺序排列：
+/// 槽位 0 得到 `left: bool`，槽位 1 得到 `right: utf8`。
+/// 若退化为按书写位置绑定，`reversed` 里的 `left` 会被推断成 `utf8`、
+/// `text_of` 里的 `right` 会被推断成 `bool`，返回值类型立即失配。
+#[test]
+fn named_object_pattern_binds_by_declared_field_name_regardless_of_order() {
+    let module = compile(NAMED_FIELD_ORDER_SOURCE);
+    for function in ["forward", "reversed", "text_of"] {
+        let both = variant_pattern(&match_arms(&module, function)[0], "Both");
+        let fields = pattern_fields(both);
+        assert_eq!(fields.len(), 2, "{function}: 对象模式必须绑定两个字段");
+        assert!(
+            matches!(&fields[0], HirPattern::Variable(name) if name.name.as_str() == "left"),
+            "{function}: 槽位 0 必须绑定声明字段 `left`，实际 {:?}",
+            fields[0]
+        );
+        assert!(
+            matches!(&fields[1], HirPattern::Variable(name) if name.name.as_str() == "right"),
+            "{function}: 槽位 1 必须绑定声明字段 `right`，实际 {:?}",
+            fields[1]
+        );
+        assert_eq!(
+            pattern_payload(both),
+            &ValkyrieType::Tuple(vec![ValkyrieType::Boolean, ValkyrieType::Utf8]),
+            "{function}: 槽位类型必须按声明顺序 left=bool, right=utf8"
+        );
+    }
+    // 类型级闭环：`reversed` 从 `left` 返回 bool，`text_of` 从 `right` 返回 utf8。
+    // 若按书写位置绑定，两个函数的返回类型都会失配，MIR lowering 必须失败。
+    compile_to_mir(NAMED_FIELD_ORDER_SOURCE);
 }
 
 #[test]

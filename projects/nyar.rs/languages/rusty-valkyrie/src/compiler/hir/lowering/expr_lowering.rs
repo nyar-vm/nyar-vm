@@ -203,7 +203,7 @@ fn lower_class_pattern(pattern: &ClassPattern, source_id: SourceID, span: Source
         fields.push((Identifier::new(&field.name), field_pattern));
     }
     let field_ids = vec![None; fields.len()];
-    Ok(HirPattern::Object { name: Some(name), type_declaration: None, fields, field_ids, rest: None })
+    Ok(HirPattern::Object { name: Some(name), type_declaration: None, fields, field_ids, named_fields: false, rest: None })
 }
 
 fn parse_pattern_literal(literal: &LiteralPattern) -> Result<HirLiteral, HirError> {
@@ -715,9 +715,13 @@ fn lower_match_arms(
             }
         }
     }
+    let source_snapshot = super::source_context::hir_lower_source();
     arms.iter()
         .map(|arm| -> Result<_, HirError> {
-            let pattern = lower_pattern(&arm.pattern, source_id, span.clone())?;
+            let pattern = source_snapshot
+                .as_deref()
+                .and_then(|source| super::match_pattern_recovery::recover_arm_object_pattern(source, arm, span.clone()))
+                .map_or_else(|| lower_pattern(&arm.pattern, source_id, span.clone()), Ok)?;
             let guard = arm
                 .guard
                 .as_ref()

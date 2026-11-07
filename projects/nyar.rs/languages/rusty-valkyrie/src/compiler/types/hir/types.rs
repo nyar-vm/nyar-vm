@@ -768,6 +768,10 @@ pub enum HirPattern {
         /// 与 `fields` 一一对应的字段身份；HIR 绑定阶段冻结，MIR 只按 `FieldId` 读取。
         #[cfg_attr(feature = "serde", serde(default))]
         field_ids: Vec<Option<nyar_types::FieldId>>,
+        /// 字段名来自源码花括号写法（真名字段，按声明字段名绑定）；
+        /// `false` 表示位置解构（按书写槽位绑定）。
+        #[cfg_attr(feature = "serde", serde(default))]
+        named_fields: bool,
         /// 剩余字段绑定（若有）。
         rest: Option<HirIdentifier>,
     },

@@ -223,8 +223,8 @@ impl MirBuilder {
             HirPattern::TypedBind { identifier, ty } => {
                 self.lower_fallback_pattern_match(HirPattern::TypedBind { identifier: identifier.clone(), ty: ty.clone() }, value)
             }
-            HirPattern::Object { name, type_declaration, fields, field_ids, .. } => {
-                self.lower_object_pattern_match_operand(name, *type_declaration, fields, field_ids, value)
+            HirPattern::Object { name, type_declaration, fields, field_ids, named_fields, .. } => {
+                self.lower_object_pattern_match_operand(name, *type_declaration, fields, field_ids, *named_fields, value)
             }
             HirPattern::Or(patterns) => self.lower_or_pattern_match_operand(patterns, value),
             HirPattern::Bind { pattern, .. } => self.lower_pattern_match_operand(pattern, value),

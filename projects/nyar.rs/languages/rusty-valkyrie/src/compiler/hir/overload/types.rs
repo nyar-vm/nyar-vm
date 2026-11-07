@@ -133,6 +133,7 @@ fn instantiate_declared_type(declared: &ValkyrieType, generics: &[GenericType], 
 pub(crate) fn payload_field_scrutinee_types(payload: &ValkyrieType, struct_fields: &AggregateFieldIndex) -> Vec<Option<ValkyrieType>> {
     match payload {
         ValkyrieType::Tuple(items) => items.iter().map(|item| Some(item.clone())).collect(),
+        ValkyrieType::LabeledTuple(items) => items.iter().map(|item| Some(item.ty.clone())).collect(),
         ValkyrieType::Array(inner) => vec![Some(inner.as_ref().clone())],
         ValkyrieType::Named(_) | ValkyrieType::Nominal { .. } | ValkyrieType::Apply(_, _) => match struct_fields.fields_of(payload) {
             Some(fields) if !fields.is_empty() => fields.iter().map(|field| Some(field.ty.clone())).collect(),
@@ -140,6 +141,31 @@ pub(crate) fn payload_field_scrutinee_types(payload: &ValkyrieType, struct_field
         },
         other => vec![Some(other.clone())],
     }
+}
+
+/// 提取器载荷的声明字段名顺序；`Tuple` 这类无名字载荷返回 `None`。
+///
+/// 多字段 unite/enum 变体的字段名登记在变体声明身份上（不是可解析类型名），
+/// 因此优先按 `resolved.sum_variant` 取声明字段。
+pub(crate) fn extractor_payload_field_names(
+    resolved: Option<&crate::compiler::types::hir::HirResolvedCall>,
+    payload: &ValkyrieType,
+    struct_fields: &AggregateFieldIndex,
+) -> Option<Vec<Identifier>> {
+    if let Some(declaration) = resolved.and_then(|call| call.sum_variant) {
+        let declared = ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: None };
+        if let Some(fields) = struct_fields.fields_of(&declared) {
+            if !fields.is_empty() {
+                return Some(fields.iter().map(|field| field.name.clone()).collect());
+            }
+        }
+    }
+    let names: Vec<Identifier> = match payload {
+        ValkyrieType::LabeledTuple(fields) => fields.iter().map(|field| field.name.clone()).collect(),
+        ValkyrieType::Tuple(_) => return None,
+        other => struct_fields.fields_of(other)?.iter().map(|field| field.name.clone()).collect(),
+    };
+    (!names.is_empty()).then_some(names)
 }
 
 /// 查找 object pattern 字段的 scrutinee 类型。
