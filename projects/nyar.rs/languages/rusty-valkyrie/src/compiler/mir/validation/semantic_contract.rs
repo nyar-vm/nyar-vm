@@ -516,7 +516,7 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                 else {
                     return Err(error("SMIR001", location, "return operand has no SSA type".to_string()));
                 };
-                if !mir_return_operand_type_compatible(&actual, &function.return_type) {
+                if !mir_return_operand_type_compatible(&actual, &function.return_type, &module.structs) {
                     return Err(error(
                         "SMIR007",
                         location,

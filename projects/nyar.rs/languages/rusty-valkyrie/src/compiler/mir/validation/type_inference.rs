@@ -69,13 +69,20 @@ pub(super) fn generator_source_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
 ///
 /// 同时允许 primitive numeric 的两种表示形式等价：
 /// `Named("i32")`（前端声明）↔ `Integer32 { signed: true }`（底层 canonical 变体）。
-pub(super) fn mir_return_operand_type_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
+pub(super) fn mir_return_operand_type_compatible(
+    actual: &ValkyrieType,
+    expected: &ValkyrieType,
+    structs: &[crate::compiler::mir::MirStruct],
+) -> bool {
     actual == expected
         || primitive_named_equivalent(actual, expected)
         || primitive_named_equivalent(expected, actual)
         || bare_named_matches_generic_apply_return(expected, actual)
+        // 文本常量只携带编码（`Utf8`/`Utf16`），声明侧 `utf8` 是锚定该编码的名义别名：
+        // 返回值同口径归一，跨族编码与非文本名义仍失败闭合。
+        || text_encoding_matches_nominal(expected, actual, structs)
         // `T` 可隐式提升为 `T?`：非空值就是同一引用的 Some 侧，不构造名义 Option 包装。
-        || matches!(expected, ValkyrieType::Nullable(inner) if mir_return_operand_type_compatible(actual, inner))
+        || matches!(expected, ValkyrieType::Nullable(inner) if mir_return_operand_type_compatible(actual, inner, structs))
 }
 
 /// Seed callable signatures stay generic in `MirFunction`, while HIR call sites carry instantiated types.
