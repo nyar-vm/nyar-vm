@@ -594,6 +594,31 @@ pub(crate) fn try_resolve_call(
     }
 
     let enclosing_module = type_relations.enclosing_module();
+    // 裸无载荷变体实参（`f(None)`）没有自足类型，其身份只能由实参槽上下文收窄。
+    // 同名候选在该槽给出不同形参类型时上下文已置空：此时按任一候选的形参收窄
+    // 都是猜测，必须失败闭合，交由调用合同报 `UnresolvedCall`。
+    let argument_contexts =
+        crate::compiler::hir::overload::substitution::free_call_argument_contexts(callee, candidates, type_relations, locals, singleton_names);
+    let conflicted_unit_variant_argument = argument_contexts.iter().enumerate().any(|(index, context)| {
+        if context.is_some() {
+            return false;
+        }
+        let Some(argument) = args.get(index)
+        else {
+            return false;
+        };
+        let name = match &argument.value.kind {
+            HirExprKind::Variable(identifier) => &identifier.name,
+            HirExprKind::Path(path) if path.parts().len() == 1 => &path.parts()[0],
+            _ => return false,
+        };
+        candidates.iter().any(|candidate| {
+            candidate.signature.params.get(index).is_some_and(|expected| type_relations.is_unit_variant_of(expected, name))
+        })
+    });
+    if conflicted_unit_variant_argument {
+        return None;
+    }
     let filtered = candidates
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Function && candidate.owner.is_none())
