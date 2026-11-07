@@ -16,6 +16,9 @@ fn witness_groups() -> Vec<CompilerSourceGroup> {
             r#"
 namespace std.operator;
 
+[primitive("std::primitive::i64")]
+structure i64 { }
+
 trait Length {
     micro length(self): i64
 }

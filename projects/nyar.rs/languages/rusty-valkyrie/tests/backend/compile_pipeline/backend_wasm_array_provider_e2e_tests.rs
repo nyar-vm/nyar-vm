@@ -175,23 +175,20 @@ micro main() -> i32 {
 const CONTRACTS: &str = r#"
 namespace demo.collection.array;
 
-[primitive("std::primitive::usize")]
-structure usize { }
-
 [primitive("std::primitive::i32")]
 structure i32 { }
 
 [host_contract]
-micro new<T>(length: usize): [T]
+micro new<T>(length: i32): [T]
 
 [host_contract]
-micro length<T>(array: [T]): usize
+micro length<T>(array: [T]): i32
 
 [host_contract]
-micro get<T>(array: [T], index: usize): T
+micro get<T>(array: [T], index: i32): T
 
 [host_contract]
-micro set<T>(array: [T], index: usize, value: T): unit
+micro set<T>(array: [T], index: i32, value: T): unit
 "#;
 
 // 形制 1：`[host_provider]` 包装体调用无体 `[wasm_operator]` micro。
@@ -201,36 +198,36 @@ const PROVIDERS_WRAPPER: &str = r#"
 namespace demo.adaptor.collection;
 
 [host_provider(demo::collection::array::new)]
-private micro array_host_new<T>(length: usize): [T] {
+private micro array_host_new<T>(length: i32): [T] {
     return __array_wasm_new::<T>(length)
 }
 
 [host_provider(demo::collection::array::length)]
-private micro array_host_length<T>(array: [T]): usize {
+private micro array_host_length<T>(array: [T]): i32 {
     return __array_wasm_length::<T>(array)
 }
 
 [host_provider(demo::collection::array::get)]
-private micro array_host_get<T>(array: [T], index: usize): T {
+private micro array_host_get<T>(array: [T], index: i32): T {
     return __array_wasm_get::<T>(array, index)
 }
 
 [host_provider(demo::collection::array::set)]
-private micro array_host_set<T>(array: [T], index: usize, value: T): unit {
+private micro array_host_set<T>(array: [T], index: i32, value: T): unit {
     __array_wasm_set::<T>(array, index, value)
 }
 
 [wasm_operator("array.new"), pure]
-private micro __array_wasm_new<T>(length: usize): [T] { }
+private micro __array_wasm_new<T>(length: i32): [T] { }
 
 [wasm_operator("array.length"), pure]
-private micro __array_wasm_length<T>(array: [T]): usize { }
+private micro __array_wasm_length<T>(array: [T]): i32 { }
 
 [wasm_operator("array.get"), pure]
-private micro __array_wasm_get<T>(array: [T], index: usize): T { }
+private micro __array_wasm_get<T>(array: [T], index: i32): T { }
 
 [wasm_operator("array.set")]
-private micro __array_wasm_set<T>(array: [T], index: usize, value: T): unit { }
+private micro __array_wasm_set<T>(array: [T], index: i32, value: T): unit { }
 "#;
 
 // 形制 2：`[wasm_operator]` 直接挂在无体 `[host_provider]` micro 上（无包装体），
@@ -239,16 +236,16 @@ const PROVIDERS_DIRECT: &str = r#"
 namespace demo.adaptor.collection;
 
 [host_provider(demo::collection::array::new), wasm_operator("array.new"), pure]
-private micro array_host_new<T>(length: usize): [T] { }
+private micro array_host_new<T>(length: i32): [T] { }
 
 [host_provider(demo::collection::array::length), wasm_operator("array.length"), pure]
-private micro array_host_length<T>(array: [T]): usize { }
+private micro array_host_length<T>(array: [T]): i32 { }
 
 [host_provider(demo::collection::array::get), wasm_operator("array.get"), pure]
-private micro array_host_get<T>(array: [T], index: usize): T { }
+private micro array_host_get<T>(array: [T], index: i32): T { }
 
 [host_provider(demo::collection::array::set), wasm_operator("array.set")]
-private micro array_host_set<T>(array: [T], index: usize, value: T): unit { }
+private micro array_host_set<T>(array: [T], index: i32, value: T): unit { }
 "#;
 
 // 应用与合同同命名空间并使用无限定 turbofish：限定路径 + `::<T>` 的解析
@@ -262,7 +259,7 @@ micro pick_two() -> i32 {
     return get(xs, 1)
 }
 
-micro sized() -> usize {
+micro sized() -> i32 {
     let xs: [i32] = new::<i32>(5)
     return length(xs)
 }
@@ -348,16 +345,16 @@ fn array_contract_wasm_unknown_mnemonic_fails_structurally() {
 namespace demo.adaptor.collection;
 
 [host_provider(demo::collection::array::new), wasm_operator("array.push"), pure]
-private micro array_host_new<T>(length: usize): [T] { }
+private micro array_host_new<T>(length: i32): [T] { }
 
 [host_provider(demo::collection::array::length), wasm_operator("array.length"), pure]
-private micro array_host_length<T>(array: [T]): usize { }
+private micro array_host_length<T>(array: [T]): i32 { }
 
 [host_provider(demo::collection::array::get), wasm_operator("array.get"), pure]
-private micro array_host_get<T>(array: [T], index: usize): T { }
+private micro array_host_get<T>(array: [T], index: i32): T { }
 
 [host_provider(demo::collection::array::set), wasm_operator("array.set")]
-private micro array_host_set<T>(array: [T], index: usize, value: T): unit { }
+private micro array_host_set<T>(array: [T], index: i32, value: T): unit { }
 "#;
     let error = lower(&groups_for(providers), &provider_bindings()).expect_err("未知数组助记符必须落 `Unfrozen` 并在 emit 结构化失败");
     assert!(error.contains("array.push") && error.contains("可编码"), "错误必须指向未冻结的助记符: {error}");
@@ -371,9 +368,6 @@ fn array_contract_wasm_signature_shape_mismatch_fails_structurally() {
     let contracts = r#"
 namespace demo.collection.array;
 
-[primitive("std::primitive::usize")]
-structure usize { }
-
 [primitive("std::primitive::i32")]
 structure i32 { }
 
@@ -381,7 +375,7 @@ structure i32 { }
 structure i64 { }
 
 [host_contract]
-micro new<T>(length: usize): [T]
+micro new<T>(length: i32): [T]
 
 [host_contract]
 micro length<T>(array: [T]): i64
@@ -390,7 +384,7 @@ micro length<T>(array: [T]): i64
 namespace demo.adaptor.collection;
 
 [host_provider(demo::collection::array::new), wasm_operator("array.new"), pure]
-private micro array_host_new<T>(length: usize): [T] { }
+private micro array_host_new<T>(length: i32): [T] { }
 
 [host_provider(demo::collection::array::length), wasm_operator("array.length"), pure]
 private micro array_host_length<T>(array: [T]): i64 { }
