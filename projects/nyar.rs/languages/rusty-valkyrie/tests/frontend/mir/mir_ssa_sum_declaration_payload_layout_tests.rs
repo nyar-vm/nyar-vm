@@ -1,0 +1,74 @@
+//! 声明级 sum 布局与具体实例共用同一条 payload 结算链路。
+//!
+//! `utf8` 在 std 里是 `type utf8 = Utf8Text` 别名，`Utf8Text` 是文本载体声明。非泛型
+//! `unite` 的单字段名义 payload 曾经只能在实例级按已冻结声明拼写结算，声明级仍走严格
+//! `concretize_type` 并以 `CAN054` 拒绝（`at DecodedPart::Plain`）。回归要求两侧同一
+//! 结果：平台载体是 `NyarType::Utf8`，语义身份仍指向文本载体，不留 Named 短名残差。
+
+use nyar::NyarType;
+use nyar_types::CanonicalPrimitiveType;
+use rusty_valkyrie::{
+    MirLowerer, ValkyrieCompiler,
+    compiler::{emitter::pipeline::canonical_program_from_semantic_mir, mir::ssa::MirModule},
+};
+
+/// decode-string 触发形状：单字段 `Plain { text: utf8 }` 与多字段
+/// `Repeated { text: utf8, times: i64 }` 同在一个非泛型 `unite` 上。
+const DECODE_STRING_SHAPE: &str = r#"
+namespace std.text;
+
+class Utf8Text {
+    _repr: [u8]
+}
+
+type utf8 = Utf8Text;
+
+unite DecodedPart {
+    [constructor]
+    Plain { text: utf8 }
+    [constructor]
+    Repeated { text: utf8, times: i64 }
+}
+
+micro render(part: DecodedPart) -> utf8 {
+    match part {
+        case Plain(text):
+            return text
+        case Repeated(text, times):
+            return text
+    }
+}
+"#;
+
+fn compile() -> MirModule {
+    let hir = ValkyrieCompiler::default().compile_source(DECODE_STRING_SHAPE).expect("fixture 必须完成 HIR 分析");
+    MirLowerer::lower_module_semantic(&hir)
+}
+
+/// 回归：声明级布局必须结算单字段名义 payload，不得因严格 concretize 失败关闭。
+#[test]
+fn declaration_level_sum_layout_resolves_nominal_text_payload() {
+    let module = compile();
+    let program = canonical_program_from_semantic_mir(&module).expect("声明级 sum payload 必须完成实例化");
+    let layout = program.linked.sum_types.iter().find(|sum| sum.name == "DecodedPart").expect("DecodedPart 声明级布局");
+    let plain = layout.variants.iter().find(|variant| variant.name == "Plain").expect("Plain variant");
+    assert_eq!(plain.payload_type, Some(NyarType::Utf8), "`utf8` payload 必须结算为平台 Utf8 载体，不得退化成 Named 短名");
+    let repeated = layout.variants.iter().find(|variant| variant.name == "Repeated").expect("Repeated variant");
+    assert!(repeated.payload_type.is_some(), "多字段 payload 必须由已登记变体记录布局给出");
+}
+
+/// 回归：布局结算不改写语义身份——单字段 payload 仍指向文本载体声明。
+#[test]
+fn nominal_text_payload_keeps_carrier_identity() {
+    let module = compile();
+    let program = canonical_program_from_semantic_mir(&module).expect("声明级 sum payload 必须完成实例化");
+    let layout = program.linked.sum_types.iter().find(|sum| sum.name == "DecodedPart").expect("DecodedPart 声明级布局");
+    let plain = layout.variants.iter().find(|variant| variant.name == "Plain").expect("Plain variant");
+    let record = program.linked.variants.get(&(layout.nominal, plain.id)).expect("Plain payload 合同");
+    let payload = record.payload_type.expect("Plain 必须携带 payload 类型");
+    assert_eq!(
+        program.linked.text_encoding_types.get(&payload),
+        Some(&CanonicalPrimitiveType::Utf8),
+        "payload 的语义身份必须仍是文本载体编码，不得被布局拼写改写"
+    );
+}

@@ -72,12 +72,8 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             linked.aggregate_layout_by_field.insert(field.id, (layout_id, index as u32));
         }
     }
-    linked.sum_types = module
-        .sum_types
-        .iter()
-        .map(|sum| sum.physical_layout(&module.aggregate_layouts))
-        .collect::<Result<_, _>>()
-        .map_err(|failure| error(module, "CAN054", format!("sum 物理 payload 类型未完成实例化: {failure}")))?;
+    // sum 布局统一由 `register_sum_nominal_instances` 派生：声明级与具体实例共用同一条
+    // payload 结算链路，避免声明级按严格 concretize 拒绝 Nominal 载体、实例级却能结算。
     linked.flags_types = module.flags_types.clone();
     linked.singleton_instances = module.singleton_instances.clone();
     for (instance, symbol, display) in module

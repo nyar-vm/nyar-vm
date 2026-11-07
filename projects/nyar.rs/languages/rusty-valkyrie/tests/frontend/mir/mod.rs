@@ -7,6 +7,7 @@ mod mir_loop_break_binding_tests;
 mod mir_match_diverging_arms_tests;
 mod mir_match_payload_deferral_tests;
 mod mir_operator_two_operands_resolution_tests;
+mod mir_ssa_sum_declaration_payload_layout_tests;
 mod mir_ssa_aggregate_layout_nominal_fields_tests;
 mod mir_ssa_collection_init_tests;
 mod mir_ssa_integer_literal_identity_tests;

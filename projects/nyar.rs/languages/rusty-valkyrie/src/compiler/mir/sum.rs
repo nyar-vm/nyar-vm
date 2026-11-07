@@ -131,74 +131,11 @@ impl MirSumDeclaration {
             .collect::<Option<BTreeMap<_, _>>>()?;
         Some(variant.fields.iter().map(|field| crate::compiler::hir::overload::substitute_type_vars(&field.ty, &substitutions)).collect())
     }
-
-    /// 向下投影目标布局；该结果不得作为语义 lowering 的输入。
-    ///
-    /// 开放泛型声明不携带未代入 payload（避免 binder 进入布局）；
-    /// 具体 `Nominal{ItemId, args}` 实例的布局由 Canonical 注册。
-    /// 多字段 payload 只有**已登记**的变体记录布局能过；未登记的 Nominal 仍失败关闭，
-    /// 不得按名字猜偏移。`SumVariantLayout.payload_type` 仍为 `NyarType`；语义身份
-    /// 以 `VariantRecord` 的 `TypeId` 为准。
-    pub(crate) fn physical_layout(
-        &self,
-        layouts: &AggregateLayoutPlan,
-    ) -> Result<nyar_types::SumTypeLayout, crate::compiler::emitter::frontend_contract::ConcretizeError> {
-        Ok(nyar_types::SumTypeLayout {
-            nominal: self.nominal,
-            name: self.name.clone(),
-            is_unite: self.is_unite,
-            tag_width: 4,
-            variants: self
-                .variants
-                .iter()
-                .map(|variant| {
-                    let payload_type = if self.generics.is_empty() {
-                        match variant.fields.len() {
-                            // 单字段 payload 直接是字段类型，与既有口径一致。
-                            0 => None,
-                            // 位置补到 `Enum::Variant`，与布局诊断同口径，便于定位缺别名来源。
-                            1 => Some(
-                                crate::compiler::emitter::frontend_contract::concretize_type(&variant.fields[0].ty)
-                                    .map_err(|error| error.at(format!("{}::{}", self.name, variant.name)))?,
-                            ),
-                            // 多字段 payload 是变体记录：只认已登记布局。
-                            _ => Some(variant_record_layout(variant, layouts)?),
-                        }
-                    }
-                    else {
-                        None
-                    };
-                    Ok(nyar_types::SumVariantLayout { id: variant.id, name: variant.name.clone(), tag: variant.tag, payload_type })
-                })
-                .collect::<Result<_, crate::compiler::emitter::frontend_contract::ConcretizeError>>()?,
-        })
-    }
-}
-
-/// 变体记录在布局侧的 `NyarType` 表示。
-///
-/// 只有 `module.aggregate_layouts` 已登记的记录声明才能产出布局；未登记的 Nominal
-/// （包括把普通名义类型塞进 payload 的非法情形）一律失败关闭，确保
-/// `SumPayloadGet` 的偏移仍来自 layout → offset 这条唯一链路。
-fn variant_record_layout(
-    variant: &MirSumVariant,
-    layouts: &AggregateLayoutPlan,
-) -> Result<NyarType, crate::compiler::emitter::frontend_contract::ConcretizeError> {
-    let Some(declaration) = variant.declaration
-    else {
-        return Err(crate::compiler::emitter::frontend_contract::ConcretizeError {
-            message: format!("变体 `{}` 缺少冻结 declaration，无法登记 payload 记录", variant.name),
-        });
-    };
-    let record = ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: None };
-    record_payload_layout(&record, layouts).ok_or_else(|| crate::compiler::emitter::frontend_contract::ConcretizeError {
-        message: format!("变体记录 `{}` 未登记布局，禁止按名字猜 payload 偏移", variant.name),
-    })
 }
 
 /// 变体记录 payload 的唯一布局口径：声明身份 → 已登记 `AggregateLayout` → 限定名。
 ///
-/// Canonical 实例登记与 `physical_layout` 共用这条链路，避免两套拼写口径。
+/// Canonical 的声明级与实例级 sum 布局共用这条链路，避免两套拼写口径。
 /// 未登记（含泛型实例尚未生成记录布局）一律返回 `None`，由调用方失败关闭。
 pub(crate) fn record_payload_layout(record: &ValkyrieType, layouts: &AggregateLayoutPlan) -> Option<NyarType> {
     let ValkyrieType::Nominal { declaration, .. } = record

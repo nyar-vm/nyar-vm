@@ -687,10 +687,19 @@ pub(crate) fn register_sum_nominal_instances(
             semantics: existing_semantics,
             fields: Vec::new(),
         });
-        // 开放/泛型声明侧不登记未代入 payload；具体实例下方补齐。
+        // 声明级 sum 布局同样走 `sum_variant_layout_payload`：单字段名义 payload（`utf8` 即
+        // `Utf8Text` 声明）按已冻结声明拼写结算，与具体实例共用同一条派生链路。
+        // 开放泛型声明不携带未代入 payload（避免 binder 进入布局）。
+        let mut layout_variants = Vec::with_capacity(sum.variants.len());
         for variant in &sum.variants {
-            let payload_type =
-                if sum.generics.is_empty() { variant.payload_type().map(|ty| type_id(type_values, &ty)).transpose()? } else { None };
+            let instantiated = if sum.generics.is_empty() {
+                sum.instantiate_payload(variant, &[])
+                    .ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 实例化 payload 失败", sum.name)))?
+            }
+            else {
+                None
+            };
+            let payload_type = instantiated.as_ref().map(|ty| type_id(type_values, ty)).transpose()?;
             linked.variants.insert((sum.nominal, variant.id), nyar_types::VariantRecord { payload_type });
             // 多字段 payload 是变体记录：声明记录进类型表、字段进 field_by_owner，并由记录布局生成 TypeDef。
             if sum.generics.is_empty() {
@@ -711,7 +720,28 @@ pub(crate) fn register_sum_nominal_instances(
                     variant_records.insert((sum.nominal, variant.id), binding);
                 }
             }
+            let layout_payload = match instantiated.as_ref() {
+                Some(ty) => {
+                    Some(sum_variant_layout_payload(variant, ty, type_values, declaration_spellings, &linked.aggregate_layouts).ok_or_else(
+                        || error_without_module("CAN054", format!("sum `{}` 变体 `{}` 的 payload 类型未完成实例化", sum.name, variant.name)),
+                    )?)
+                }
+                None => None,
+            };
+            layout_variants.push(nyar_types::SumVariantLayout {
+                id: variant.id,
+                name: variant.name.clone(),
+                tag: variant.tag,
+                payload_type: layout_payload,
+            });
         }
+        linked.sum_types.push(nyar_types::SumTypeLayout {
+            nominal: sum.nominal,
+            name: sum.name.clone(),
+            is_unite: sum.is_unite,
+            tag_width: 4,
+            variants: layout_variants,
+        });
         by_type.insert(declaration, sum.nominal);
     }
     for (ty, concrete_ty) in type_values {
@@ -767,17 +797,12 @@ pub(crate) fn register_sum_nominal_instances(
                 variant_records.insert((nominal, variant.id), binding);
             }
             // 布局侧仍写 NyarType；语义身份只认上方 VariantRecord 的 TypeId。
-            // 多字段 payload 走变体记录已登记布局（`physical_layout` 同口径）；单字段
-            // 名义 payload（`usize`、`SwissTableEntry<K, V>` 等）没有结构化目标形状，
-            // 按声明身份已冻结的 surface spelling 表示，与 emitter `lower_type` 同口径。
-            let layout_payload = instantiated.as_ref().and_then(|ty| {
-                if variant.fields.len() > 1 {
-                    crate::compiler::mir::record_payload_layout(ty, &linked.aggregate_layouts)
-                }
-                else {
-                    sum_payload_layout(ty, type_values, declaration_spellings)
-                }
-            });
+            // 多字段 payload 走变体记录已登记布局；单字段名义 payload（`usize`、
+            // `SwissTableEntry<K, V>` 等）没有结构化目标形状，按声明身份已冻结的
+            // surface spelling 表示，与 emitter `lower_type` 同口径。
+            let layout_payload = instantiated
+                .as_ref()
+                .and_then(|ty| sum_variant_layout_payload(variant, ty, type_values, declaration_spellings, &linked.aggregate_layouts));
             layout_variants.push(nyar_types::SumVariantLayout {
                 id: variant.id,
                 name: variant.name.clone(),
@@ -799,7 +824,26 @@ pub(crate) fn register_sum_nominal_instances(
     Ok(by_type)
 }
 
-/// sum variant payload 的布局侧形状。
+/// sum variant payload 的布局侧形状：声明级与具体实例共用的唯一派生点。
+///
+/// 多字段 payload 是变体记录，只认已登记布局；单字段 payload 按已冻结声明拼写结算，
+/// 两者都不在调用点按分支补特判。返回 `None` 由调用方失败关闭。
+fn sum_variant_layout_payload(
+    variant: &MirSumVariant,
+    instantiated: &ValkyrieType,
+    type_values: &BTreeMap<ValkyrieType, TypeId>,
+    declaration_spellings: &BTreeMap<TypeId, Identifier>,
+    layouts: &nyar_types::AggregateLayoutPlan,
+) -> Option<nyar_types::NyarType> {
+    if variant.fields.len() > 1 {
+        crate::compiler::mir::record_payload_layout(instantiated, layouts)
+    }
+    else {
+        sum_payload_layout(instantiated, type_values, declaration_spellings)
+    }
+}
+
+/// 单字段 payload 的布局拼写结算（`sum_variant_layout_payload` 的单字段分支）。
 ///
 /// 语义身份只认 `VariantRecord::payload_type`；这里只回答 RepresentationPlan 与物理
 /// 布局需要的 `NyarType`。结构化 payload 走严格 `concretize_type`；名义 payload
