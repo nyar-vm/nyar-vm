@@ -1,6 +1,9 @@
 use std::{fs, path::Path};
 
-use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result, bundled_backend_capability_descriptor, nyar_backend_vm::emit_nyar_module};
+use crate::{
+    DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, OvmAbiSidecar, Result,
+    bundled_backend_capability_descriptor, nyar_backend_vm::emit_nyar_module,
+};
 use nyar::{ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane};
 use odin_bytecode::{OdinExportKind, OdinModuleData, decode_module};
 
@@ -23,6 +26,7 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
         let mut entry_symbol = None;
         let mut run_contracts = Vec::new();
         let mut library_exports = Vec::new();
+        let mut ovm_abi = None;
 
         fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
@@ -32,8 +36,11 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
             let odin_name = format!("{}.odin", request.artifact_name);
             let odin_path = input.output_dir.join(&odin_name);
             emit_nyar_module(module, &odin_path)?;
+            // sidecar 冻结产物**整体**哈希：布局表、常量池与代码段都参与 ABI 解释，
+            // 挑字段计算迟早漏掉参与解释的内容。
+            let odin_bytes = fs::read(&odin_path).map_err(|error| format!("读取刚写出的 `.odin` 产物失败：{}: {error}", odin_path.display()))?;
             artifacts.push(ArtifactDescriptor {
-                name: odin_name,
+                name: odin_name.clone(),
                 path: format!("{}.odin", request.artifact_name),
                 kind: ArtifactKind::Executable,
                 format: ArtifactFormat::RawBinary,
@@ -59,12 +66,17 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
                     })
                     .collect();
             }
+            // sidecar 与 `.odin` 同目录落盘；宿主读取时先按整份产物重算哈希。
+            ovm_abi = input
+                .abi_contract
+                .as_ref()
+                .map(|contract| OvmAbiSidecar::new(contract.clone(), odin_name.clone(), &odin_bytes));
             for entry in entries {
                 run_contracts.push(ovm_run_contract(request.artifact_name, &entry));
             }
         }
 
-        Ok(DriverCompileReport { artifacts, entry_symbol, run_contracts, managed_abi: None, library_exports })
+        Ok(DriverCompileReport { artifacts, entry_symbol, run_contracts, managed_abi: None, ovm_abi, library_exports })
     }
 }
 

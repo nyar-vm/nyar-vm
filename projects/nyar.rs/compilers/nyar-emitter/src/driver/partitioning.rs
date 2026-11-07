@@ -41,6 +41,7 @@ pub(crate) fn merge_partition_reports(
     let mut primary_contracts = Vec::new();
     let mut secondary_contracts = Vec::new();
     let mut managed_abi: Option<(String, crate::ManagedAbiContract)> = None;
+    let mut ovm_abi: Option<(String, crate::OvmAbiSidecar)> = None;
     for (partition_name, report) in reports {
         merged.artifacts.artifacts.extend(report.artifacts.artifacts);
         if merged.entry_symbol.is_none() {
@@ -51,6 +52,14 @@ pub(crate) fn merge_partition_reports(
                 return Err(format!("多个分区同时产出 managed ABI 契约：`{existing_partition}` 与 `{partition_name}`；拒绝合并歧义契约"));
             }
             managed_abi = Some((partition_name.clone(), contract));
+        }
+        if let Some(sidecar) = report.ovm_abi {
+            if let Some((existing_partition, _)) = &ovm_abi {
+                return Err(format!(
+                    "多个分区同时产出 OVM ABI sidecar：`{existing_partition}` 与 `{partition_name}`；拒绝合并歧义 ABI 合同"
+                ));
+            }
+            ovm_abi = Some((partition_name.clone(), sidecar));
         }
         if primary_partition_name == Some(partition_name.as_str()) {
             primary_contracts.extend(report.run_contracts);
@@ -63,5 +72,6 @@ pub(crate) fn merge_partition_reports(
     merged.run_contracts = primary_contracts;
     merged.run_contracts.extend(secondary_contracts);
     merged.managed_abi = managed_abi.map(|(_, contract)| contract);
+    merged.ovm_abi = ovm_abi.map(|(_, sidecar)| sidecar);
     Ok(merged)
 }

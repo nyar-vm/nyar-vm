@@ -22,7 +22,7 @@ pub use error::{EmitterError, Result};
 
 pub mod managed_abi;
 pub use managed_abi::{MANAGED_ABI_SCHEMA_VERSION, ManagedAbiContract, ManagedAbiEntry};
-pub use ovm_abi::{OVM_ABI_SCHEMA_VERSION, OvmAbiContract};
+pub use ovm_abi::{OVM_ABI_SCHEMA_VERSION, OVM_ABI_SIDECAR_FILE, OvmAbiContract, OvmAbiSidecar};
 
 use std::{
     path::{Path, PathBuf},
@@ -726,6 +726,8 @@ pub struct DriverCompileReport {
     pub run_contracts: Vec<DriverRunContract>,
     /// 导出入口的 managed ABI 契约（若有）。
     pub managed_abi: Option<ManagedAbiContract>,
+    /// OVM 库导出 sidecar（合同 + `.odin` 整体哈希，若有）。
+    pub ovm_abi: Option<OvmAbiSidecar>,
     /// 库导出索引（仅 `artifact: library`）。
     pub library_exports: Vec<DriverLibraryExport>,
 }

@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use nyar_types::{AggregateLayoutPlan, ItemInstanceId, LayoutId, NominalInstanceId, NyarType, combined_content_hash};
 use odin_bytecode::OdinLayout;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::abi_structure::{
     AbiStructure, AggregateStructure, SequenceStructure, abi_structure_for_type_with_layouts, canonical_parameter_identities,
@@ -243,6 +244,54 @@ pub enum OvmOptionBoxing {
         /// 载荷槽位（冻结配方恒为 1）。
         payload_slot: usize,
     },
+}
+
+/// OVM 库导出 sidecar 的固定产物名。
+pub const OVM_ABI_SIDECAR_FILE: &str = "ovm-abi.json";
+
+/// OVM 库导出 sidecar（`ovm-abi.json`）：合同 + 它所描述 `.odin` 产物的整体哈希。
+///
+/// 哈希覆盖产物**全部字节**，不挑字段计算：`.odin` 的布局表、常量池、代码段都
+/// 参与 ABI 解释，挑字段迟早漏。宿主读取 sidecar 后必须先按整份产物重算哈希，
+/// 对不上即失败闭合，禁止按未校验的布局解释内存。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OvmAbiSidecar {
+    /// 导出 ABI 合同。
+    pub contract: OvmAbiContract,
+    /// 产物文件名（例如 `app.odin`）。
+    pub artifact: String,
+    /// 产物整体哈希（`sha256-<hex>`）。
+    pub artifact_sha256: String,
+}
+
+impl OvmAbiSidecar {
+    /// 以产物全部字节冻结 sidecar；哈希算法与 [`Self::verify_against`] 唯一。
+    pub fn new(contract: OvmAbiContract, artifact: String, artifact_bytes: &[u8]) -> Self {
+        Self { contract, artifact, artifact_sha256: artifact_sha256(artifact_bytes) }
+    }
+
+    /// 用实际产物字节校验 sidecar；不一致即失败闭合。
+    pub fn verify_against(&self, artifact_bytes: &[u8]) -> Result<()> {
+        let actual = artifact_sha256(artifact_bytes);
+        if actual != self.artifact_sha256 {
+            return Err(format!(
+                "OVM ABI sidecar 与产物 `{}` 哈希不一致：合同 `{}`，实际 `{actual}`；\
+                 拒绝按未校验的 ABI 布局解释内存",
+                self.artifact, self.artifact_sha256
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// `.odin` 产物整体 SHA-256（`sha256-<hex>`）。
+fn artifact_sha256(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    format!("sha256-{hex}")
 }
 
 impl OvmAbiContract {
@@ -1105,6 +1154,19 @@ mod tests {
             .verify_against_layouts(&[OdinLayout { field_count: 2 }])
             .expect_err("合同与运行时布局不一致必须失败闭合");
         assert!(error.contains("不一致"), "got: {error}");
+    }
+
+    #[test]
+    fn sidecar_hash_covers_whole_artifact() {
+        let plan = plan("first", function(&[(0, "left", nyar("i32"))], nyar("i32")));
+        let contract = derive(&plan).expect("合同");
+        let bytes = b"odin-artifact-bytes";
+        let sidecar = OvmAbiSidecar::new(contract, "app.odin".to_string(), bytes);
+        assert!(sidecar.artifact_sha256.starts_with("sha256-"), "哈希必须带算法前缀: {}", sidecar.artifact_sha256);
+        sidecar.verify_against(bytes).expect("同一份产物字节必须通过");
+        let mut tampered = bytes.to_vec();
+        tampered.push(0);
+        assert!(sidecar.verify_against(&tampered).is_err(), "产物字节改动后必须失败闭合");
     }
 
     #[test]

@@ -165,6 +165,27 @@ fn ovm_library_exports_are_callable_by_entry() {
         .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("odin"))
         .expect("产物目录缺少 `.odin`");
     let bytes = fs::read(&artifact).expect("读取 `.odin`");
+
+    // sidecar 必须按整份 `.odin` 哈希校验；对不上 fail-closed，且合同 digest 与
+    // manifest 的库导出 ABI digest 同源。
+    let sidecar_path = output_dir.join(nyar_emitter::OVM_ABI_SIDECAR_FILE);
+    let sidecar: nyar_emitter::OvmAbiSidecar =
+        serde_json::from_slice(&fs::read(&sidecar_path).expect("缺 `ovm-abi.json` sidecar")).expect("sidecar JSON");
+    assert_eq!(sidecar.artifact, artifact.file_name().expect("文件名").to_string_lossy().to_string());
+    sidecar.verify_against(&bytes).expect("sidecar 必须与 `.odin` 整体哈希一致");
+    assert_eq!(
+        sidecar.contract.digest, manifest.library_exports[0].abi_digest,
+        "sidecar 合同 digest 必须与 manifest 库导出 ABI digest 同源"
+    );
+    let sidecar_names = sidecar.contract.exports.iter().map(|export| export.logical_name.as_str()).collect::<Vec<_>>();
+    assert_eq!(sidecar_names, vec!["first", "second"], "sidecar 合同必须覆盖两个导出");
+    let mut tampered = bytes.clone();
+    tampered.push(0);
+    assert!(
+        sidecar.verify_against(&tampered).is_err(),
+        "产物字节被改动后 sidecar 校验必须失败闭合"
+    );
+
     let mut vm = OdinVm::new();
     let loaded = vm.load(&bytes).expect("`.odin` 必须可被 odin-vm 加载");
     let symbol_for = |name: &str| {

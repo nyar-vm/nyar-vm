@@ -60,7 +60,7 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
                 boundary => vec![wasm_run_contract(request.artifact_name, boundary, wasi_preview)],
             }
         };
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi: None, library_exports })
+        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi: None, ovm_abi: None, library_exports })
     }
 }
 
