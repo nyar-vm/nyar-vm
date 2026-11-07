@@ -61,8 +61,8 @@ fn labeled_tuple_field_access_lowers_to_positional_tuple_get() {
     assert_eq!(
         got,
         vec![
-            ("main.first".to_string(), 0, ValkyrieType::Named(Identifier::new("i32"))),
-            ("main.second".to_string(), 1, ValkyrieType::Named(Identifier::new("i64"))),
+            ("main.first".to_string(), 0, ValkyrieType::Integer32 { signed: true }),
+            ("main.second".to_string(), 1, ValkyrieType::Integer64 { signed: true }),
         ],
         "标签解析必须冻结成位置索引，且结果类型取字段类型"
     );
@@ -123,8 +123,9 @@ fn implicit_assignment_from_labeled_to_positional_tuple_is_rejected() {
 }
 
 fn labeled_pair() -> ValkyrieType {
+    // `[primitive]` 声明绑定到数值载体身份，带标签元组的字段类型同样按载体收敛。
     ValkyrieType::LabeledTuple(vec![
-        HirTupleField { name: Identifier::new("ordinal"), ty: ValkyrieType::Named(Identifier::new("i32")) },
-        HirTupleField { name: Identifier::new("value"), ty: ValkyrieType::Named(Identifier::new("i64")) },
+        HirTupleField { name: Identifier::new("ordinal"), ty: ValkyrieType::Integer32 { signed: true } },
+        HirTupleField { name: Identifier::new("value"), ty: ValkyrieType::Integer64 { signed: true } },
     ])
 }

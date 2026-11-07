@@ -49,6 +49,9 @@ fn maps_abstract_syscall_binding_and_call_edge() {
     let module = compiler
         .compile_source(
             r#"
+[primitive("std::primitive::i32")] structure i32 { }
+[primitive("std::primitive::i64")] structure i64 { }
+
 [syscall(1)]
 micro console_write(message: utf8): i32;
 
@@ -68,6 +71,9 @@ micro main() -> i64 {
     let build_output = compiler
         .compile_source_to_program(
             r#"
+[primitive("std::primitive::i32")] structure i32 { }
+[primitive("std::primitive::i64")] structure i64 { }
+
 [syscall(1)]
 micro console_write(message: utf8): i32;
 

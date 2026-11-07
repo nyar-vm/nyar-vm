@@ -83,14 +83,14 @@ mod ovm {
         assert_eq!(value, Value::I64(2_147_483_648), "`2147483648` 必须是精确的 2^31");
     }
 
-    /// `i32` 边界仍走既有 `Integer32` 形状且数值精确。
+    /// `i32` 边界数值精确。
     ///
-    /// OVM 是未类型化栈：`i32` 范围内的常量由 `emit_load_constant` 直接发 `Integer32`，
-    /// 返回槽的声明类型 `i64` 不会补一次拓宽，因此运行时载体是 `I32`。这是本轮之前
-    /// 就有的形状，不是截断修复引入的；此处按实际形状断言，数值必须精确。
+    /// OVM 是未类型化栈；门禁要求返回操作数与函数声明返回类型一致，因此 `i64` 返回槽
+    /// 承载的常量以 `I64` 到达运行时（`emit_load_constant` 先发 `Integer32`，
+    /// 返回边界再按槽类型拓宽）。数值必须精确。
     #[test]
     fn i32_boundaries_stay_exact() {
-        assert_eq!(run_main("    return 2147483647").expect("i32::MAX 必须可运行"), Value::I32(2_147_483_647));
-        assert_eq!(run_main("    return -2147483648").expect("i32::MIN 必须可运行"), Value::I32(-2_147_483_648));
+        assert_eq!(run_main("    return 2147483647").expect("i32::MAX 必须可运行"), Value::I64(2_147_483_647));
+        assert_eq!(run_main("    return -2147483648").expect("i32::MIN 必须可运行"), Value::I64(-2_147_483_648));
     }
 }

@@ -20,7 +20,9 @@ use nyar_types::{
 };
 use odin_bytecode::{decode_at, OdinConstant, OdinHeadCode, OdinInstruction, OdinModuleData};
 
-const SUM_TYPE: NyarType = NyarType::Utf8;
+// 返回类型只起「非 unit」占位作用；文本 carrier 在 OVM 返回边界要求冻结的
+// `return_layout`（`d3a8f0b7`），与 sum 表示无关，故用整型载体。
+const SUM_TYPE: NyarType = NyarType::Integer32 { signed: true };
 const I32: NyarType = NyarType::Integer32 { signed: true };
 
 fn nominal() -> NominalInstanceId {
