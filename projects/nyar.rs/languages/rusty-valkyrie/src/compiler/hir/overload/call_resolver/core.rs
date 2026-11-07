@@ -140,6 +140,30 @@ fn infer_contextual_lambda_type(expr: &HirExpr, expected: &ValkyrieType) -> Opti
     })))
 }
 
+/// 上下文相关的裸变体名实参类型（`None` / `Word` / `Mark`）。
+///
+/// 无载荷变体名本身没有自足类型：`infer_scrutinee_type` 对它返回 `None`，实参循环
+/// 便在结构化淘汰里丢掉候选。只有形参槽位已冻结为具体 `unite` 声明、且该声明含同名
+/// 无载荷变体时，才把槽位类型当作实参类型。局部绑定、单例名、带载荷变体以及仍是
+/// 开放 binder 的槽位一律不参与，保持原有「未知即淘汰」。
+fn infer_contextual_variant_type(
+    expr: &HirExpr,
+    expected: &ValkyrieType,
+    locals: &BTreeMap<String, ValkyrieType>,
+    singleton_names: &std::collections::BTreeSet<Identifier>,
+    type_relations: &TypeRelationContext,
+) -> Option<ValkyrieType> {
+    let name = match &expr.kind {
+        HirExprKind::Variable(identifier) => &identifier.name,
+        HirExprKind::Path(path) if path.parts().len() == 1 => &path.parts()[0],
+        _ => return None,
+    };
+    if locals.contains_key(name.as_str()) || singleton_names.contains(name) {
+        return None;
+    }
+    type_relations.is_unit_variant_of(expected, name).then(|| expected.clone())
+}
+
 /// 以实参类型判定单个候选是否匹配；外部测试入口。
 #[doc(hidden)]
 pub fn match_call_candidate(
@@ -227,7 +251,8 @@ pub fn match_call_candidate(
             .map(|actual| {
                 crate::compiler::hir::overload::substitution::specialize_literal_expr_type(expr, actual, &contextual_expected, type_relations)
             })
-            .or_else(|| infer_contextual_lambda_type(expr, &contextual_expected));
+            .or_else(|| infer_contextual_lambda_type(expr, &contextual_expected))
+            .or_else(|| infer_contextual_variant_type(expr, &contextual_expected, locals, singleton_names, type_relations));
         match actual.as_ref() {
             Some(actual) => {
                 if unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions, type_relations).is_none() {

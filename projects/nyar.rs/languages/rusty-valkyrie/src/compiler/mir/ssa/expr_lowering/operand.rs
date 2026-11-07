@@ -60,6 +60,9 @@ impl MirBuilder {
                 if let Some(bound) = self.bindings.get(identifier.name.as_str()).cloned() {
                     return bound;
                 }
+                if let Some(operand) = self.lower_unit_variant_path(identifier.name.as_str(), expected_type) {
+                    return operand;
+                }
                 // 防御性断言：HIR 提升已把捕获名改写为环境形参的 `FieldAccess`，
                 // 正常路径不应到达这里；保留该检查避免任何影子局部静默兜底。
                 if self.captured_bindings.contains(identifier.name.as_str()) {
@@ -77,6 +80,11 @@ impl MirBuilder {
                 MirOperand::Constant(MirConstant::Unit)
             }
             HirExprKind::Path(path) => {
+                if let [identifier] = path.parts() {
+                    if let Some(operand) = self.lower_unit_variant_path(identifier.as_str(), expected_type) {
+                        return operand;
+                    }
+                }
                 let value = self.next_value(MirValueOrigin::Path);
                 let _ = path;
                 MirOperand::Value(value)
@@ -805,6 +813,28 @@ impl MirBuilder {
                 MirOperand::Value(value)
             }
         }
+    }
+
+    /// 裸零字段变体名（`None` / `Word`）按调用点冻结的期望类型降成 `SumNew`。
+    ///
+    /// HIR 已把该形参槽位定型为某个 sum 声明；MIR 只按 `sum_owner` 声明身份与
+    /// `variant.declaration` 取变体，不按拼写猜。期望类型不是已冻结的 sum、声明里
+    /// 没有同名零字段变体时一律返回 `None`，保留原路径降级语义。
+    fn lower_unit_variant_path(&mut self, name: &str, expected: Option<&ValkyrieType>) -> Option<MirOperand> {
+        let expected = expected?;
+        let declaration = expected.nominal_declaration()?;
+        let sum = crate::compiler::mir::ssa::MirSumDeclaration::find_by_declaration(&self.sum_types, declaration)?;
+        let variant = sum.variants.iter().find(|variant| variant.name == name && variant.fields.is_empty())?;
+        let variant_declaration = variant.declaration?;
+        let (nominal, variant_id) = self.sum_identity_by_declarations(declaration, variant_declaration)?;
+        let type_args = type_args_from_sum_shaped(expected);
+        let value = self.next_value(MirValueOrigin::Path);
+        self.push_instruction(
+            MirOperation::SumNew { nominal, type_args, variant: variant_id, payload_type: None, payloads: Vec::new() },
+            vec![value],
+        );
+        self.value_types.insert(value, expected.clone());
+        Some(MirOperand::Value(value))
     }
 }
 

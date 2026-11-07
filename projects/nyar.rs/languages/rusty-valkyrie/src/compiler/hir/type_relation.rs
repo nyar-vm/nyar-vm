@@ -253,6 +253,20 @@ impl TypeRelationContext {
             || self.enums_by_declaration.get(&declaration).is_some_and(|item| item.name == *owner)
     }
 
+    /// 形参槽位是否为「声明含同名无载荷变体」的具体 `unite` 类型。
+    ///
+    /// 只认已冻结的声明身份与已解析的短名：`Generic` / `AutoType` 等开放槽位没有
+    /// 可判定的变体清单，必须返回 `false`，由调用方保持结构化失败。
+    pub fn is_unit_variant_of(&self, expected: &ValkyrieType, name: &Identifier) -> bool {
+        let item = match expected {
+            ValkyrieType::Nominal { declaration, .. } => self.enums_by_declaration.get(declaration),
+            ValkyrieType::Named(type_name) => self.enums.get(type_name),
+            ValkyrieType::Apply(base, _) => return self.is_unit_variant_of(base, name),
+            _ => return false,
+        };
+        item.is_some_and(|item| item.variants.iter().any(|variant| &variant.name == name && variant.fields.is_empty()))
+    }
+
     /// 字面量特化用：数值形参只认已冻结的 `[primitive]` 身份。
     ///
     /// 短名不参与判定：名叫 `i32` 的普通 class 不是数值类型；未结算别名的
