@@ -546,7 +546,12 @@ impl TargetExecutionPlan {
 ///
 /// 没有稳定 Wasm 载体的类型（`Integer128` / `Utf16` / `Bottom` / `Function` /
 /// `TraitObject` / `Union`）在此结构化失败，不得回落为默认载体。
-fn freeze_library_export_abi(function: &ExecutableFunction) -> Result<LibraryExportAbi> {
+///
+/// 这是载体冻结的**唯一派生点**。`library_export_abis` 只是 wasm 导出面的预冻结
+/// 缓存；OVM 的导出面（`exported_operations` / 程序入口）不在该缓存里时，必须调用
+/// 本函数现场冻结，不能把“未登记”当成“不可携带”：零参数 / `Void` 边界应产出
+/// `params: []` 加 `Void` 的空合同，只有真正没有载体的类型才失败。
+pub(crate) fn freeze_library_export_abi(function: &ExecutableFunction) -> Result<LibraryExportAbi> {
     let mut params = Vec::with_capacity(function.param_types.len());
     for (index, ty) in function.param_types.iter().enumerate() {
         let carrier = freeze_abi_carrier(ty)

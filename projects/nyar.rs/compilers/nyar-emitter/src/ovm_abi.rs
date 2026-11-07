@@ -7,7 +7,8 @@
 //! 失败闭合是设计的一部分：
 //! - 未注册布局、`i128`、`Utf16`、`TraitObject`、未知/不支持结构一律返回错误；
 //! - 任何 `Unsupported` 都不会进入 JSON，也不会被降级成“先跑再说”的兜底；
-//! - 参数/返回的物理载体必须与 plan 冻结的 [`LibraryExportAbi`] 一致，不一致即失败。
+//! - 参数/返回的物理载体必须与同一冻结派生点产出的 [`LibraryExportAbi`] 一致，
+//!   不一致即失败；零参数 / `Void` 边界是合法的空合同，不算缺合同。
 //!
 //! digest 覆盖规范化 JSON 里的 `schema_version` 与全部导出（按逻辑名排序），
 //! 同一布局事实在任意导出位置派生同一 digest。
@@ -325,14 +326,13 @@ impl OvmAbiContract {
             let view = plan
                 .get_function(instance)
                 .ok_or_else(|| format!("库导出 `{logical_name}` 缺少 Compiler 函数体，无法派生 OVM ABI 合同"))?;
-            let abi = plan
-                .library_export_abi(instance)
-                .ok_or_else(|| format!("库导出 `{logical_name}` 缺少冻结 ABI 载体合同，无法派生 OVM ABI 合同"))?;
+            let abi = export_abi(plan, instance, &view.function)
+                .map_err(|reason| format!("库导出 `{logical_name}` 的边界类型无法表达为 OVM ABI 合同: {reason}"))?;
             entries.push(derive_export(
                 plan,
                 logical_name,
                 &view.function,
-                abi,
+                &abi,
                 module_layouts,
                 layout_indices,
                 sum_layout_indices,
@@ -420,6 +420,21 @@ pub(crate) fn frozen_entry_parameter_layouts(plan: &TargetExecutionPlan, functio
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// 取导出面的冻结载体。
+///
+/// wasm 导出面的预冻结缓存（[`TargetExecutionPlan::library_export_abi`]）是首选
+/// 事实；OVM 的 `exported_operations` / 程序入口不在该缓存里时，按同一冻结派生点
+/// [`crate::target_execution_plan::freeze_library_export_abi`] 现场冻结。
+///
+/// “未登记”不等于“不可携带”：零参数、`Void` 返回或完全无可携带内容的边界必须
+/// 产出 `params: []` 的空合同；只有边界上真的出现没有载体的类型才失败闭合。
+fn export_abi(plan: &TargetExecutionPlan, instance: &ItemInstanceId, function: &ExecutableFunction) -> Result<LibraryExportAbi> {
+    match plan.library_export_abi(instance) {
+        Some(abi) => Ok(abi.clone()),
+        None => crate::target_execution_plan::freeze_library_export_abi(function),
+    }
 }
 
 fn derive_export(
@@ -1291,6 +1306,45 @@ mod tests {
             let mut plan = plan_with("bad", function(&[(0, "value", nyar("i64"))], ty));
             let error = plan.testing_freeze_library_export_abis().expect_err("不支持的导出类型必须失败");
             assert!(error.contains("冻结 ABI 载体合同失败"), "got: {error}");
+        }
+    }
+
+    #[test]
+    fn empty_boundary_exports_get_a_contract_with_stable_digest() {
+        // OVM 的导出面来自 `exported_operations` / 程序入口，不在 wasm 冻结缓存里。
+        // 零参数、`Void` 返回或完全无可携带内容都必须拿到**空的但存在**的合同，
+        // 不能把“没有需要携带的东西”误判成“缺少载体合同”。
+        let cases: [(&str, Vec<(usize, &str, NyarType)>, NyarType, usize, &str); 3] = [
+            ("zero_void", Vec::new(), nyar("unit"), 0, "void"),
+            ("zero_i64", Vec::new(), nyar("i64"), 0, "i64"),
+            ("arg_void", vec![(0, "value", nyar("i64"))], nyar("unit"), 1, "void"),
+        ];
+        for (name, params, returns, param_count, returns_carrier) in cases {
+            let build = || {
+                let plan = plan_with(name, function(&params, returns.clone()));
+                derive_with_layouts(&plan).expect("空边界必须有合同")
+            };
+            let (contract, layouts) = build();
+            let export = export_of(&contract);
+            assert!(layouts.is_empty(), "空边界不得凭空登记布局: {layouts:?}");
+            assert_eq!(export.params.len(), param_count, "{name} 的参数槽数必须与声明一致");
+            assert_eq!(export.returns_carrier, returns_carrier, "{name} 的返回载体");
+            assert!(contract.digest.starts_with("sha256-"), "{name} digest: {}", contract.digest);
+            let (again, _) = build();
+            assert_eq!(contract.digest, again.digest, "{name} 相同边界事实必须派生稳定 digest");
+        }
+    }
+
+    #[test]
+    fn unsupported_export_types_fail_derive_without_wasm_freeze() {
+        for ty in [
+            nyar("i128"),
+            NyarType::Utf16,
+            NyarType::TraitObject(nyar_types::WitnessObject { trait_path: Identifier::new("demo::Shape"), type_arguments: Vec::new() }),
+        ] {
+            let plan = plan_with("bad", function(&[(0, "value", nyar("i64"))], ty));
+            let error = derive(&plan).expect_err("不可携带类型必须结构化失败");
+            assert!(error.contains("无法表达为 OVM ABI 合同"), "got: {error}");
         }
     }
 
