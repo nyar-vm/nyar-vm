@@ -12,6 +12,7 @@ use crate::compiler::{
             },
             diagnostics::{OverloadCandidate, OverloadDomain, OverloadResolutionError},
             expr_position::ExprPosition,
+            substitution::{substitute_type_vars, unify_call_type_binders},
             symbol_match::{aggregate_constructor_matches_name, symbol_matches_unqualified_free_call},
             types::{
                 canonical_extractor_callee, field_identity_from_type, infer_catch_scrutinee_type, infer_expr_type, infer_scrutinee_type,
@@ -564,19 +565,42 @@ fn resolve_expr_calls_at(
         }
         HirExprKind::Construct { path, generic_arguments, args, resolved } => {
             let constructor_name = path.parts().last().cloned();
+            // 字段值的期望类型必须先按构造点的外层期望投影：声明期字段类型里的
+            // 泛型 binder 属于聚合声明本身，直接拿来当上下文会把 `None` 这类空变体
+            // 冻结成声明 binder，后面构造匹配再把同一泛型当成两个 rigid binder。
+            let field_substitutions = contextual_type.and_then(|context| {
+                candidates
+                    .iter()
+                    .filter(|candidate| aggregate_constructor_matches_name(candidate, path))
+                    .find_map(|candidate| {
+                        let mut substitutions = BTreeMap::new();
+                        unify_call_type_binders(
+                            &candidate.signature.return_type,
+                            context,
+                            &candidate.generic_binders,
+                            &mut substitutions,
+                            type_relations,
+                        )?;
+                        Some(substitutions)
+                    })
+            });
             for arg in args.iter_mut() {
-                let field_context = match &arg.kind {
+                let declared_field_type = match &arg.kind {
                     HirExprKind::FieldInit { name: field_name, .. } => constructor_name
                         .as_ref()
                         .and_then(|name| struct_fields.fields_of(&ValkyrieType::Named(name.clone())))
-                        .and_then(|fields| fields.iter().find(|field| field.name == *field_name).map(|field| &field.ty))
+                        .and_then(|fields| fields.iter().find(|field| field.name == *field_name).map(|field| field.ty.clone()))
                         .or_else(|| {
                             candidates.iter().filter(|candidate| aggregate_constructor_matches_name(candidate, path)).find_map(|candidate| {
-                                candidate.param_specs.iter().find(|param| param.name.name == *field_name).map(|param| &param.ty)
+                                candidate.param_specs.iter().find(|param| param.name.name == *field_name).map(|param| param.ty.clone())
                             })
                         }),
                     _ => None,
                 };
+                let field_context = declared_field_type.map(|ty| match &field_substitutions {
+                    Some(substitutions) if !substitutions.is_empty() => substitute_type_vars(&ty, substitutions),
+                    _ => ty,
+                });
                 if let HirExprKind::FieldInit { value, .. } = &mut arg.kind {
                     resolve_expr_calls(
                         value,
@@ -585,7 +609,7 @@ fn resolve_expr_calls_at(
                         locals,
                         struct_fields,
                         singleton_names,
-                        field_context.or(contextual_type),
+                        field_context.as_ref().or(contextual_type),
                     );
                 }
                 else {
