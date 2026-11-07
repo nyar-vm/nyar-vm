@@ -1,10 +1,12 @@
 //! 从 Oak AST 收集 host contract / provider inventory（禁止文本行扫描）。
 
-use std::path::Path;
+use std::{collections::BTreeSet, path::Path};
 
 use crate::compiler::{
     semantic::{
-        closure::{DeclarationKey, DeclarationKind, imply_owner_name, name_path_segments},
+        closure::{
+            DeclarationKey, DeclarationKind, ReferencePath, References, collect_method, collect_micro, imply_owner_name, name_path_segments,
+        },
         operator_members,
     },
     syntax::oak::{
@@ -188,13 +190,18 @@ fn register_method_hosts(
     inventory: &mut HostInventory,
 ) {
     let annotations = &method.annotations;
-    if !has_host_contract_attribute(annotations) && host_provider_contract_targets(annotations, source).is_empty() {
-        return;
-    }
 
     let name = operator_members::declared_member_name(&method.name.name, annotations);
     let kind = if owner_kind == DeclarationKind::ImplyMethod { DeclarationKind::ImplyMethod } else { DeclarationKind::Method };
     let key = declaration_key(dependency_key, source_path, namespace, owner, kind, &name);
+    let mut references = References::default();
+    collect_method(method, &mut references);
+    record_declaration_capabilities(&key, annotations, references.calls, inventory);
+
+    if !has_host_contract_attribute(annotations) && host_provider_contract_targets(annotations, source).is_empty() {
+        return;
+    }
+
     let qualified = qualified_declaration_name(namespace, owner, &name);
     let line = line_number(source, &method.span);
 
@@ -237,12 +244,17 @@ fn register_micro_hosts(
     inventory: &mut HostInventory,
 ) {
     let annotations = &micro.annotations;
+
+    let name = operator_members::declared_member_name(&micro.name.name, annotations);
+    let key = declaration_key(dependency_key, source_path, namespace, owner, kind, &name);
+    let mut references = References::default();
+    collect_micro(micro, &mut references);
+    record_declaration_capabilities(&key, annotations, references.calls, inventory);
+
     if !has_host_contract_attribute(annotations) && host_provider_contract_targets(annotations, source).is_empty() {
         return;
     }
 
-    let name = operator_members::declared_member_name(&micro.name.name, annotations);
-    let key = declaration_key(dependency_key, source_path, namespace, owner, kind, &name);
     let qualified = qualified_declaration_name(namespace, owner, &name);
     let line = line_number(source, &micro.span);
 
@@ -307,6 +319,25 @@ fn register_providers_for_declaration(
             when_attributes: when_attributes.clone(),
             gate_attributes: gate_attributes.clone(),
         });
+    }
+}
+
+/// 记录声明的能力来源与真实调用边，供装配层在完整 inventory 上做传递闭包。
+///
+/// 这里保存的是**声明事实**：自身 foreign binding 与体内 callee 路径。解析与可见性
+/// 由同一份 `DeclarationIndexes` 完成，与语义闭包共享，不在本层做名字白名单。
+fn record_declaration_capabilities(
+    key: &DeclarationKey,
+    annotations: &[crate::compiler::syntax::oak::ast::Attribute],
+    calls: BTreeSet<ReferencePath>,
+    inventory: &mut HostInventory,
+) {
+    let capabilities = required_capabilities_from_foreign_bindings(&foreign_bindings_from_attributes(annotations));
+    if !capabilities.is_empty() {
+        inventory.declaration_capabilities.insert(key.clone(), capabilities.into_iter().collect());
+    }
+    if !calls.is_empty() {
+        inventory.declaration_calls.insert(key.clone(), calls);
     }
 }
 

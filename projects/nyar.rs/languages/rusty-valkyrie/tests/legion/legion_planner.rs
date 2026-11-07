@@ -3288,3 +3288,113 @@ micro host_dom_create_element(tag: utf8): unit
     assert_eq!(plan.project.selected_host_providers[0].contract, "demo::dom_create_element");
     assert!(plan.project.gated_out_host_providers.is_empty(), "selected provider must not be recorded as excluded");
 }
+
+#[test]
+fn provider_capability_closure_follows_real_call_edges_only() {
+    let temp_dir = Builder::new().prefix("legion-provider-capability-closure").tempdir().unwrap();
+    let root = temp_dir.path();
+    let app_dir = root.join("app");
+    let wasm_dir = root.join("std.adaptor.wasm");
+    let std_dir = root.join("std");
+
+    fs::create_dir_all(app_dir.join("source")).unwrap();
+    fs::create_dir_all(wasm_dir.join("source")).unwrap();
+    fs::create_dir_all(std_dir.join("source")).unwrap();
+
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "planner-provider-capability-closure",
+    members: ["app", "std.adaptor.wasm", "std"]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("legion.von"),
+        r#"{
+    name: "std",
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        std_dir.join("source").join("api.v"),
+        r#"namespace std.math;
+[host_contract]
+micro random_next_i32(seed: i32): i32
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("legion.von"),
+        r#"{
+    name: "app",
+    dependencies: {
+        "std": "workspace",
+        "std.adaptor.wasm": "workspace"
+    },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("source").join("main.v"),
+        r#"namespace std.math;
+[main]
+micro main() -> i32 {
+    return random_next_i32(0)
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("legion.von"),
+        r#"{
+    name: "std.adaptor.wasm",
+    dependencies: { "std": "workspace" },
+    build: [{ target: "wasm32-unknown-browser-wasm" }]
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        wasm_dir.join("source").join("_.v"),
+        r#"namespace std.adaptor.wasm;
+
+[host_provider(std::math::random_next_i32)]
+micro host_random(seed: i32): i32 {
+    return __random_bridge(seed)
+}
+
+micro __random_bridge(seed: i32): i32 {
+    return __random_js_entropy() as i32
+}
+
+[js_builtin("random")]
+private micro __random_js_entropy(): i32
+
+[js_builtin("timer")]
+private micro __unused_timer_glue(): i32
+"#,
+    )
+    .unwrap();
+
+    let workspace = WorkspaceResolver::discover(&app_dir).unwrap();
+    let plan = workspace
+        .build_plan(&BuildRequest { project_dir: app_dir.clone(), target: CanonicalTarget::browser(), output_dir: None, ..Default::default() })
+        .unwrap();
+
+    let selected = plan.project.selected_host_providers.iter().find(|provider| provider.symbol.ends_with("host_random")).expect("host_random provider");
+    assert_eq!(
+        selected.required_capabilities,
+        vec!["js.random".to_string()],
+        "能力必须沿 provider 体内真实调用边传递，且两跳可达；未被调用的同文件 glue 不得贡献能力"
+    );
+    assert!(
+        !selected.required_capabilities.iter().any(|capability| capability == "js.timer"),
+        "未调用的 `__unused_timer_glue` 不是可达 callee"
+    );
+}

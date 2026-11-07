@@ -3,7 +3,10 @@ use std::{
     fs,
 };
 
-use crate::compiler::{semantic::closure::DeclarationKey, syntax::oak::parse_source_with_identity};
+use crate::compiler::{
+    semantic::closure::{DeclarationIndexEntry, DeclarationIndexes, DeclarationKey, ReferencePath, index_parsed_root},
+    syntax::oak::parse_source_with_identity,
+};
 use nyar::CanonicalTarget;
 
 use super::{
@@ -20,6 +23,12 @@ pub(crate) struct HostInventory {
     pub(crate) selected_providers: Vec<PlannedHostProvider>,
     /// 因 feature gate 未启用而被排除的 provider（编译期诊断事实）。
     pub(crate) gated_out_providers: Vec<PlannedHostProviderExclusion>,
+    /// 声明自身 foreign binding 给出的能力（仅非空项），按冻结声明身份索引。
+    pub(crate) declaration_capabilities: BTreeMap<DeclarationKey, BTreeSet<String>>,
+    /// 声明体内真实调用点的 callee 路径；与语义闭包共用同一份 AST 引用收集。
+    pub(crate) declaration_calls: BTreeMap<DeclarationKey, BTreeSet<ReferencePath>>,
+    /// 本次 inventory 的声明索引原稿：调用边按与语义闭包相同的可见性合同解析。
+    pub(crate) declaration_entries: Vec<DeclarationIndexEntry>,
 }
 
 pub(crate) fn collect_host_inventory(
@@ -46,6 +55,10 @@ pub(crate) fn collect_host_inventory(
             let source = fs::read_to_string(source_file)?;
             let root = parse_source_with_identity(&source, &source_path)
                 .map_err(|error| PlannerError::CompileFailed { message: error.to_string() })?;
+            // 与 host inventory 共用同一棵解析树建声明索引：能力闭包的调用边解析
+            // 与语义闭包的名字事实一致，不另造第二份名字表。
+            let indexed = index_parsed_root(&group.dependency_key, &source_path, &source, &root);
+            inventory.declaration_entries.extend(indexed.declarations);
             collect_host_inventory_from_root(&group.dependency_key, &source_path, source_file, &source, &root, &mut inventory);
         }
     }
@@ -62,11 +75,80 @@ pub(crate) fn collect_host_inventory(
             .then(left.line.cmp(&right.line))
     });
     inventory.providers.dedup_by(|left, right| left.key == right.key && left.contract == right.contract);
+    apply_capability_closure(&mut inventory, groups);
     let (selected, gated_out) =
         select_host_providers(&inventory.contracts, &inventory.providers, demanded_declaration_keys, target, enabled_features)?;
     inventory.selected_providers = selected;
     inventory.gated_out_providers = gated_out;
     Ok(inventory)
+}
+
+/// 把 provider 的 required capabilities 扩展为「声明属性 ∪ 体内可达调用边闭包」。
+///
+/// provider 常把宿主能力藏在同文件的私有 glue 里（`host_provider` 本体只做转接，
+/// `[js_builtin]` 在它调用的 glue 声明上）。能力归属必须沿真实 callee 传播：
+///
+/// - 边来自 [`References::calls`]，即 AST 遍历中 `ApplyCall` 的 callee，不是「文件里
+///   提到了某个名字」；未被调用的同文件 glue 不会贡献能力。
+/// - 解析复用 [`DeclarationIndexes`] 与 `direct_dependencies` 可见性，和语义闭包的
+///   `source_group_closure_with_host_bindings` 是同一套名字事实。
+/// - 这是编译期 host binding 的前置上界：`host_callable_instances` 与
+///   `resolve_host_provider_bindings` 在 HIR 物化后按实例身份重新判定「谁被真调用」，
+///   本层只负责让 provider 的候选能力与它体内的调用边一致。
+fn apply_capability_closure(inventory: &mut HostInventory, groups: &[PlannedSemanticSourceGroup]) {
+    let inventory_keys = groups.iter().map(|group| group.dependency_key.as_str()).collect::<BTreeSet<_>>();
+    let visibility = groups
+        .iter()
+        .map(|group| {
+            let mut visible = BTreeSet::from([group.dependency_key.clone()]);
+            visible.extend(group.direct_dependencies.iter().filter(|dependency| inventory_keys.contains(dependency.as_str())).cloned());
+            (group.dependency_key.clone(), visible)
+        })
+        .collect::<BTreeMap<String, BTreeSet<String>>>();
+    let mut indexes = DeclarationIndexes::default();
+    for entry in std::mem::take(&mut inventory.declaration_entries) {
+        indexes.register(entry);
+    }
+    indexes.link(&visibility);
+
+    let resolved = inventory
+        .providers
+        .iter()
+        .map(|provider| {
+            reachable_capabilities(&provider.key, &inventory.declaration_capabilities, &inventory.declaration_calls, &indexes, &visibility)
+        })
+        .collect::<Vec<_>>();
+    for (provider, capabilities) in inventory.providers.iter_mut().zip(resolved) {
+        provider.required_capabilities = capabilities.into_iter().collect();
+    }
+}
+
+/// 从声明本体出发，沿真实 callee 边收集可达声明的能力标签。
+fn reachable_capabilities(
+    seed: &DeclarationKey,
+    declaration_capabilities: &BTreeMap<DeclarationKey, BTreeSet<String>>,
+    declaration_calls: &BTreeMap<DeclarationKey, BTreeSet<ReferencePath>>,
+    indexes: &DeclarationIndexes,
+    visibility: &BTreeMap<String, BTreeSet<String>>,
+) -> BTreeSet<String> {
+    let empty_visible = BTreeSet::new();
+    let empty_calls = BTreeSet::new();
+    let mut capabilities = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    let mut frontier = vec![seed.clone()];
+    while let Some(key) = frontier.pop() {
+        if !visited.insert(key.clone()) {
+            continue;
+        }
+        if let Some(own) = declaration_capabilities.get(&key) {
+            capabilities.extend(own.iter().cloned());
+        }
+        let visible = visibility.get(&key.dependency_key).unwrap_or(&empty_visible);
+        for reference in declaration_calls.get(&key).unwrap_or(&empty_calls) {
+            frontier.extend(indexes.resolve(reference, &key.namespace, visible));
+        }
+    }
+    capabilities
 }
 
 fn select_host_providers(

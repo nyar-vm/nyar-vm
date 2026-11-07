@@ -223,7 +223,7 @@ fn entry_point_annotation(annotations: &[ast::Attribute]) -> Option<EntryPointKi
     entry_point
 }
 
-fn collect_micro(micro: &ast::MicroDeclaration, references: &mut References) {
+pub(crate) fn collect_micro(micro: &ast::MicroDeclaration, references: &mut References) {
     for param in &micro.params {
         if let Some(ty) = &param.ty {
             collect_type_expression(ty, references);
@@ -236,7 +236,7 @@ fn collect_micro(micro: &ast::MicroDeclaration, references: &mut References) {
     collect_block(&micro.body, references);
 }
 
-fn collect_method(method: &ast::MethodDeclaration, references: &mut References) {
+pub(crate) fn collect_method(method: &ast::MethodDeclaration, references: &mut References) {
     for param in &method.parameters {
         if let Some(ty) = &param.ty {
             collect_type_expression(ty, references);
@@ -485,11 +485,16 @@ fn extract_term_path(term: &ast::TermExpression) -> Option<Vec<String>> {
 
 fn collect_call_target(callee: &ast::TermExpression, references: &mut References) {
     match callee {
-        ast::TermExpression::NamePath(path) => collect_name_path(path, references),
+        ast::TermExpression::NamePath(path) => {
+            let segments = name_path_segments(path);
+            references.calls.insert(segments.clone());
+            collect_name_path(path, references);
+        }
         ast::TermExpression::DotCall { receiver, field, .. } => {
             // 先把完整的 qualified path 放进 paths（demand 图沿它解析），
             // 再保留 receiver 的收集（类型引用、副作用等）和 field 的 selector。
             if let Some(full_path) = extract_term_path(callee) {
+                references.calls.insert(full_path.clone());
                 references.paths.insert(full_path);
             }
             collect_term(receiver, references);

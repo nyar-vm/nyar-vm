@@ -27,16 +27,29 @@ pub(crate) fn index_source_file(dependency_key: &str, path: &str, source: &str, 
     // TGrammar 模板分支必须按编译架构展开后再建索引：入口声明可能只在某个分支里，
     // 直接索引模板节点会让 `[export]` / `[main]` 在索引阶段不可见。
     crate::compiler::hir::lowering::template_expand::expand_templates_in_root(&mut root, source, arch).map_err(|error| error.to_string())?;
+    Ok(index_parsed_root(dependency_key, path, source, &root))
+}
+
+/// 对已解析的 AST 建档，供装配层在解析 host inventory 的同一棵树上复用声明索引事实。
+///
+/// 与 [`index_source_file`] 的区别只在入口：模板展开由调用方决定。装配层的 provider
+/// 库存本就按未展开 AST 收集，调用边闭包与它保持同一棵树，避免「库存看到 A、索引看到 B」。
+pub(crate) fn index_parsed_root(
+    dependency_key: &str,
+    path: &str,
+    source: &str,
+    root: &crate::compiler::syntax::oak::ValkyrieRoot,
+) -> IndexedFile {
     let mut builder = FileBuilder::new(dependency_key, path);
     collect_items(&mut builder, &[], &root.items);
-    Ok(IndexedFile {
+    IndexedFile {
         source_digest: combined_content_hash(&[source]),
         declarations: builder.declarations,
         variant_members: builder.variant_members,
         primitive_identities: builder.primitive_identities,
         module_references: builder.module_references,
         module_selectors: builder.module_selectors,
-    })
+    }
 }
 
 /// 单个文件索引过程中收集到的声明与文件级引用。
@@ -107,6 +120,11 @@ impl FileBuilder {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct References {
     pub(crate) paths: BTreeSet<ReferencePath>,
+    /// 真实调用点的 callee 路径；与 `paths` 同一次遍历产生，但不含类型/名字出现。
+    ///
+    /// 装配层的宿主能力闭包沿这张表传播：能力只来自「被调用」的声明，不来自
+    /// 「被提到」的声明。解析仍由同一个声明索引与可见性合同完成。
+    pub(crate) calls: BTreeSet<ReferencePath>,
     /// 成员选择名；只能与拥有聚合身份结合参与成员提升，不参与自由名解析。
     pub(crate) selectors: BTreeSet<String>,
     pub(crate) imports: BTreeSet<String>,
