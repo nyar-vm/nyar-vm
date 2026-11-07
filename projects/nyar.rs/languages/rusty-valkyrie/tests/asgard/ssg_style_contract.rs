@@ -26,6 +26,14 @@ fn ssg_templates_compile_under_style_contract() {
 /// 真实报告渲染路径：`legion test` 生成报告时不得在模板编译处 panic。
 ///
 /// 依赖 `valkyrie.v` 源码库的页面模板；CI 无该兄弟仓时跳过。
+///
+/// 已知缺口（等 AWSL 生成链修复后打开）：注入图表岛后该路径会命中
+/// `infix ==` 无候选。根因在 AWSL 生成链当前 fail-open：注入的初始值是匿名对象字面量，
+/// `extract_component_abi_from_script` 报 `widget not found`，`compile_awsl_source`
+/// 吞掉 `abi_issues` 使 `script_bindings` 为 0，`rewrite_script_decls_for_signals`
+/// 随后删掉模块级 `let` 却无从改写成信号读写。该链路由 AWSL 生成链修复线负责，
+/// 本线不动。因此修复落地前不要给 CI 设置 `VALKYRIE_V_ROOT`（否则本用例长期真红）；
+/// 修复落地后应一次性设 env、把本用例转为真实执行，并同时解开报告渲染用例的同类跳过。
 #[test]
 fn live_report_render_does_not_fail_on_templates() {
     let Ok(roots) = rusty_valkyrie::asgard::valkyrie_v_roots() else {
