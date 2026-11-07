@@ -128,6 +128,29 @@ fn dotted_group_name_cross_namespace_call_is_visible() {
     compile(&dotted_group(files)).expect("点分包名组内跨 namespace 的无限定调用必须可见");
 }
 
+/// 反例：另一个包的 namespace 与组名共享前几段时，无限定调用仍必须不可见。
+///
+/// 拆段后的前缀比较必须按段对齐，`std.adaptor` 是共有前缀但不是同一包；
+/// 未声明依赖的跨包符号不得借共享前缀进入候选集。
+#[test]
+fn dotted_group_name_does_not_leak_sibling_package_call() {
+    let groups = [
+        CompilerSourceGroup::single_source(
+            "std.adaptor.jvm",
+            "std.adaptor.jvm",
+            "namespace std.adaptor.jvm.text;\nmicro convert(value: i32): i32 { return value }\n",
+        ),
+        CompilerSourceGroup::single_source(
+            "std.adaptor.wasm",
+            "std.adaptor.wasm",
+            "namespace std.adaptor.wasm.console;\n[test]\nmicro write(value: i32): void { convert(value) }\n",
+        )
+        .as_entry(),
+    ];
+    let error = compile(&groups).expect_err("未声明依赖的跨包符号不得借共享前缀进入候选集");
+    assert!(error.contains("no callable with this name is in scope"), "unexpected diagnostic: {error}");
+}
+
 #[test]
 fn dotted_group_name_explicit_using_does_not_conflict() {
     let files = vec![
