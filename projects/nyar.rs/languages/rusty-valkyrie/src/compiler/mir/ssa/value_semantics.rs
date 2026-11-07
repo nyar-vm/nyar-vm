@@ -503,6 +503,13 @@ fn layout_field_type(
         ValkyrieType::Union(items) => Some(nyar_types::NyarType::Union(
             items.iter().map(|item| layout_field_type(item, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
         )),
+        // 函数类型字段的实参可能含名义类型（如 `BinaryHeap<T>._cmp: micro(T, T) -> i32`）：
+        // `concretize_type` 在 Nominal 处失败关闭，这里按同一口径递归代入参数与返回，
+        // 载体仍是平台函数形状，不许退化成裸引用槽。
+        ValkyrieType::Function(function) => Some(nyar_types::NyarType::Function(Box::new(nyar_types::NyarFunctionType {
+            params: function.params.iter().map(|param| layout_field_type(param, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
+            return_type: layout_field_type(&function.return_type, declaration_spellings, plan)?,
+        }))),
         _ => None,
     }
 }
