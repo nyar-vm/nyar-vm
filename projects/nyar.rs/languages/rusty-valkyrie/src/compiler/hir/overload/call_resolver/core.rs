@@ -309,6 +309,7 @@ pub fn match_call_candidate(
         match_kind,
         param_specs: candidate.param_specs.clone(),
         generic_binders: candidate.generic_binders.clone(),
+        generic_binder_kinds: candidate.generic_binder_kinds.clone(),
         where_constraints: candidate.where_constraints.clone(),
         imported_dependency_export: candidate.imported_dependency_export,
         is_auto_constructor: candidate.is_auto_constructor,

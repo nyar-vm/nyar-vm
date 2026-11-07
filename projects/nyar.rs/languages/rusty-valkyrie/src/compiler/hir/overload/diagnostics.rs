@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::types::{
     Identifier, NamePath,
-    hir::{GenericBinderId, HirParam, HirWhereConstraint, ValkyrieType},
+    hir::{GenericBinderId, HirKind, HirParam, HirWhereConstraint, ValkyrieType},
 };
 
 /// 候选所属的重载域。
@@ -59,6 +59,10 @@ pub struct OverloadCandidate {
     pub param_specs: Vec<HirParam>,
     /// Formal type variables which must be bound from actual arguments.
     pub generic_binders: BTreeSet<GenericBinderId>,
+    /// 每个 binder 声明的形参种类；只来自声明处 `GenericType`，用于显式泛型实参
+    /// 诊断如实列出期望种类。集合里出现但没有登记种类的 binder（例如从 owner 类型
+    /// 实参里收集到的 binder）不在诊断里虚构种类。
+    pub generic_binder_kinds: BTreeMap<GenericBinderId, HirKind>,
     /// 声明级 where 合同；实参代入后必须取得对应 witness。
     pub where_constraints: Vec<HirWhereConstraint>,
     /// 来自 `imported_semantic_exports` 的顶层函数；无限定调用按导出名匹配，不按 consumer 模块路径。
@@ -93,6 +97,7 @@ impl OverloadCandidate {
             match_kind,
             param_specs: Vec::new(),
             generic_binders: BTreeSet::new(),
+            generic_binder_kinds: BTreeMap::new(),
             where_constraints: Vec::new(),
             imported_dependency_export: false,
             is_auto_constructor: false,
@@ -109,6 +114,15 @@ impl OverloadCandidate {
     /// 登记一个必须由实参绑定的形式类型变量。
     pub fn with_generic_binder(mut self, binder: GenericBinderId) -> Self {
         self.generic_binders.insert(binder);
+        self
+    }
+
+    /// 登记声明处的泛型形参：binder 身份与形参种类同时来自同一份 `GenericType`。
+    pub fn with_generic_parameter(mut self, generic: &crate::compiler::types::hir::GenericType) -> Self {
+        if let Some(binder) = generic.binder {
+            self.generic_binders.insert(binder);
+            self.generic_binder_kinds.insert(binder, generic.kind.clone());
+        }
         self
     }
 
@@ -140,6 +154,7 @@ impl OverloadCandidate {
             match_kind,
             param_specs: Vec::new(),
             generic_binders: BTreeSet::new(),
+            generic_binder_kinds: BTreeMap::new(),
             where_constraints: Vec::new(),
             imported_dependency_export: false,
             is_auto_constructor: false,

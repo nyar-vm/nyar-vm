@@ -6,6 +6,7 @@ use super::{
     FunctionType, GenericBinderId, GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent, HirPattern,
     ValkyrieType,
 };
+use crate::compiler::hir::control_flow_validation::display_type;
 use crate::compiler::types::{Identifier, NamePath, SourceSpan};
 
 /// A call argument with optional keyword name.
@@ -575,13 +576,18 @@ impl HirExprKind {
     /// 用户可读的 callee 形态标签，供调用诊断展示。
     ///
     /// 变量、路径与成员访问链给出源码形态（`next`、`std::collection::push`、
-    /// `set.is_empty`）；计算得到的函数值没有可命名符号，统一渲染 `<fn value>`。
+    /// `set.is_empty`）；显式泛型应用保留 peel 后的 callee 与实参（`f::<i64>`），
+    /// 只有计算得到的函数值没有可命名符号，才渲染 `<fn value>`。
     /// 任何分支都不得输出内部占位符。
     pub fn callable_label(&self) -> String {
         match self {
             HirExprKind::Variable(identifier) => identifier.name.to_string(),
             HirExprKind::Path(path) => path.to_string(),
             HirExprKind::FieldAccess { object, field, .. } => format!("{}.{}", object.kind.callable_label(), field),
+            HirExprKind::GenericApply { callee, arguments } => {
+                let rendered = arguments.iter().map(display_type).collect::<Vec<_>>().join(", ");
+                format!("{}::<{}>", callee.kind.callable_label(), rendered)
+            }
             _ => "<fn value>".to_string(),
         }
     }
