@@ -40,10 +40,13 @@ impl<'a> VRenderCodegen<'a> {
     }
 
     fn dep_args(&self, expr: &str) -> (String, String) {
+        // 浏览器路径没有模块级信号槽位：绑定函数在 mount 作用域里直接求值，
+        // 依赖 id 必须按名寻址（`sig_named("...")`），不能发裸槽位名——那会变成
+        // 未声明标识符，让整个岛在 V 编译期失败。
         let mut ids: Vec<String> = reactive_deps(expr, self.bindings)
             .iter()
             .filter_map(|name| self.bindings.iter().find(|b| b.name == *name))
-            .map(|b| b.sig_id_expr())
+            .map(|b| format!("sig_named(\"{}\")", b.sig_var))
             .collect();
         if (expr.contains("get_") || expr.contains("count_") || expr.contains("todos(")) && ids.len() < 2 {
             ids.push("-2".into());
