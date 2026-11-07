@@ -203,6 +203,23 @@ pub fn substitute_associated_equations(
         .unwrap_or_else(|| ty.clone())
 }
 
+/// 按外部提供的见证逐层重写 `Associated` 形状；见证返回 `None` 的投影保持原样。
+///
+/// 与 [`substitute_associated_equations`] 的区别是解来源不预先给定等式表：调用方
+/// 可以在回调里按投影基类型查 trait 实现的关联类型见证，投影基类型仍是开放 binder
+/// 时由回调拒绝解析，保持 fail-closed。
+pub(crate) fn rewrite_associated_projections(
+    ty: &ValkyrieType,
+    resolve: &mut impl FnMut(&AssociatedType) -> Option<ValkyrieType>,
+) -> ValkyrieType {
+    if let ValkyrieType::Associated(associated) = ty {
+        if let Some(resolved) = resolve(associated) {
+            return rewrite_associated_projections(&resolved, resolve);
+        }
+    }
+    rebuild_children(ty, &mut |child| rewrite_associated_projections(child, resolve)).unwrap_or_else(|| ty.clone())
+}
+
 /// 用 bound 的 trait 声明、实参与关联等式实例化成员签名。
 pub(crate) fn instantiate_trait_bound_candidate(
     candidate: &OverloadCandidate,

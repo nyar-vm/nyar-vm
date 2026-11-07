@@ -663,6 +663,54 @@ impl TypeRelationContext {
         }
     }
 
+    /// 形参/返回槽位上的关联投影解析：`L::Settings` 这类投影在 `L` 已由实参实例化为
+    /// 具体类型后，由候选自身 `where` 约束声明的 trait 实现的关联类型见证给出具体值。
+    ///
+    /// 只接受「同一目标 + 满足该 bound 的唯一 explicit impl 见证」这一条来源；基类型仍是
+    /// 开放 binder、没有见证、或不同 bound 给出不同解时保持投影原样，交由匹配阶段淘汰，
+    /// 不在解析阶段挑 impl 猜测。
+    pub fn resolve_associated_projections(
+        &self,
+        ty: &ValkyrieType,
+        constraints: &[HirWhereConstraint],
+        substitutions: &BTreeMap<GenericBinderId, ValkyrieType>,
+    ) -> ValkyrieType {
+        let ty = substitute_relation_type(ty, substitutions);
+        let mut resolve = |associated: &crate::compiler::types::hir::AssociatedType| {
+            let base = substitute_relation_type(&associated.base, substitutions);
+            if relation_type_is_open_obligation(&base) {
+                return None;
+            }
+            let mut solutions = Vec::new();
+            for constraint in constraints {
+                if substitute_relation_type(&constraint.target, substitutions) != base {
+                    continue;
+                }
+                for bound in &constraint.bounds {
+                    let bound = HirTraitBound {
+                        declaration: bound.declaration,
+                        trait_path: bound.trait_path.clone(),
+                        type_arguments: bound.type_arguments.iter().map(|ty| substitute_relation_type(ty, substitutions)).collect(),
+                        associated_types: Vec::new(),
+                    };
+                    let Ok(witness) = self.traits.satisfy_explicit_type(&base, &bound)
+                    else {
+                        continue;
+                    };
+                    let Some(solution) = witness.associated_types.get(&associated.name) else {
+                        continue;
+                    };
+                    let solution = substitute_relation_type(solution, substitutions);
+                    if !solutions.contains(&solution) {
+                        solutions.push(solution);
+                    }
+                }
+            }
+            (solutions.len() == 1).then(|| solutions.remove(0))
+        };
+        super::overload::substitution::rewrite_associated_projections(&ty, &mut resolve)
+    }
+
     /// 校验具名类型是否满足匿名 row 的方法要求。
     pub fn match_row_requirement(&self, actual_name: &Identifier, requirement: &RowRequirement) -> ParameterMatchResult {
         let Some(candidate) = self.structs.get(actual_name)

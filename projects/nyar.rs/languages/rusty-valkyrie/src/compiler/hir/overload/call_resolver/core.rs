@@ -267,7 +267,12 @@ pub fn match_call_candidate(
     // `where I: Iterator<Item = T>` 里 `T` 可能只出现在关联等式右侧：接收者已锁定 `I`
     // 后，用 impl witness 的关联类型补出 `T`，再按常规路径核对 where 证据。
     type_relations.infer_associated_binders(&candidate.where_constraints, &mut substitutions, &candidate.generic_binders);
-    let expected_params = expected_params.iter().map(|ty| substitute_type_vars(ty, &substitutions)).collect::<Vec<_>>();
+    // 形参槽位可能是关联投影（`L::Settings`）：binder 由实参钉住后，用候选自身
+    // where 约束的 trait 实现见证把投影落成具体类型，再参与常规匹配。
+    let expected_params = expected_params
+        .iter()
+        .map(|ty| type_relations.resolve_associated_projections(ty, &candidate.where_constraints, &substitutions))
+        .collect::<Vec<_>>();
     if !type_relations.satisfies_where_constraints(&candidate.where_constraints, &substitutions) {
         return None;
     }
@@ -295,7 +300,11 @@ pub fn match_call_candidate(
         domain: candidate.domain.clone(),
         signature: crate::compiler::hir::overload::diagnostics::OverloadSignature {
             params: expected_params,
-            return_type: substitute_type_vars(&candidate.signature.return_type, &substitutions),
+            return_type: type_relations.resolve_associated_projections(
+                &candidate.signature.return_type,
+                &candidate.where_constraints,
+                &substitutions,
+            ),
         },
         match_kind,
         param_specs: candidate.param_specs.clone(),
