@@ -533,10 +533,18 @@ impl TargetExecutionPlan {
 
 /// 冻结一个库导出函数的参数与返回载体。
 ///
-/// 参数按 `param_types` 声明顺序逐个映射；返回值按 `return_type` 映射。映射语义
-/// 必须与 `nyar.library_invoke` section 序列化消费的 `WasmAbiType` 载体保持一一对应。没有稳定 Wasm
-/// 载体的类型（`Integer128` / `Utf16` / `Bottom` / `Function` / `TraitObject` /
-/// `Union`）在此结构化失败，不得回落为默认载体。
+/// 参数按 `param_types` 声明顺序逐个映射；返回值按 `return_type` 映射。这里的
+/// 载体是 **Wasm 物理投影**，必须与 `nyar.library_invoke` section 消费的
+/// `WasmAbiType` 载体保持一一对应；它不是跨目标中立的“标量/句柄”分类，其它
+/// 目标不得把本表直接当作自己的边界载体。
+///
+/// `utf8` 的 `I32` 尤其只是 wasm JS glue 的 intern 句柄槽（宿主字符串表），
+/// 不是“文本是 i32 标量”。OVM 的文本边界由冻结文本布局事实决定（托管文本
+/// 对象或 raw 宿主串），必须从 `value_layouts` / `return_layout` /
+/// `aggregate_layout_by_nyar_type` 派生，不得复用本表的 `I32`。
+///
+/// 没有稳定 Wasm 载体的类型（`Integer128` / `Utf16` / `Bottom` / `Function` /
+/// `TraitObject` / `Union`）在此结构化失败，不得回落为默认载体。
 fn freeze_library_export_abi(function: &ExecutableFunction) -> Result<LibraryExportAbi> {
     let mut params = Vec::with_capacity(function.param_types.len());
     for (index, ty) in function.param_types.iter().enumerate() {
@@ -556,6 +564,10 @@ fn freeze_library_export_abi(function: &ExecutableFunction) -> Result<LibraryExp
 ///
 /// 语义与 `abi_schema_for_type` + `abi_carrier_name` 的组合结果一致：标量按 Wasm
 /// 原生槽位，容器与具名聚合统一为宿主句柄。
+///
+/// `Utf8 → I32` 只表示 wasm 边界的 JS intern 句柄，不表示文本是标量：OVM 的
+/// 文本载体由 [`crate::ovm_abi::OvmAbiType::Text`] 的冻结表示声明（托管文本
+/// 对象布局或 raw 宿主串），不复用这里的 `I32`。
 fn freeze_abi_carrier(ty: &NyarType) -> Result<AbiCarrier> {
     Ok(match ty {
         NyarType::Unit => AbiCarrier::Void,

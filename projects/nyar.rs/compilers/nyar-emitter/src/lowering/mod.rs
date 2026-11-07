@@ -135,9 +135,10 @@ pub fn lower_fragment_to_driver_input(
         }
         #[cfg(feature = "ovm-lane")]
         TargetBackendFamily::Ovm => {
-            let nyar_module = Some(ovm::lower_fragment_to_nyar_module(submission)?);
+            let (module, abi_contract) = ovm::lower_fragment_to_nyar_module_with_abi(submission)?;
             Ok(DriverBackendInput::Ovm(OvmBackendInput {
-                nyar_module,
+                nyar_module: Some(module),
+                abi_contract,
                 library_public_exports: self::backends::ovm_mir::nyar_library_public_export_names(submission),
                 output_dir,
             }))

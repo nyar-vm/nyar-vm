@@ -27,10 +27,11 @@
 //! }
 //! ```
 
-use nyar_types::{ValueOrigin, combined_content_hash};
+use nyar_types::combined_content_hash;
 
 use crate::{
     FragmentSubmission, LibraryExportAbi, Result,
+    abi_structure::canonical_parameter_identities,
     backend_plan_views::ExecutableFunction,
     nyar_backend_wasi::{WasmBinaryModule, WasmPackageKind, WasmSection},
 };
@@ -76,42 +77,6 @@ fn abi_carrier_name(schema: &super::abi_schema::WasmAbiType) -> Result<&'static 
     })
 }
 
-/// 从函数 SSA 值提取入口参数身份 `(声明下标, canonical 参数名)`。
-///
-/// 身份必须来自 `ValueOrigin::Parameter`，数量必须与 `param_types` 一致，
-/// 下标必须连续且从 0 开始，参数名必须非空且不重复；任何偏离都在此结构化失败。
-fn parameter_identities<'a>(instance_label: &str, function: &'a ExecutableFunction) -> Result<Vec<(usize, &'a str)>> {
-    let mut identities = function
-        .values
-        .iter()
-        .filter_map(|value| match &value.origin {
-            ValueOrigin::Parameter { index, name } => Some((*index, name.as_str())),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if identities.len() != function.param_types.len() {
-        return Err(format!(
-            "库导出 `{instance_label}` 的入口参数身份数量与参数类型数量不一致: parameter_origins={} param_types={}",
-            identities.len(),
-            function.param_types.len()
-        ));
-    }
-    identities.sort_by_key(|(index, _)| *index);
-    let mut names = std::collections::BTreeSet::new();
-    for (position, (index, name)) in identities.iter().enumerate() {
-        if *index != position {
-            return Err(format!("库导出 `{instance_label}` 参数下标不连续: position={position} index={index}"));
-        }
-        if name.trim().is_empty() {
-            return Err(format!("库导出 `{instance_label}` 参数 {index} 缺少 canonical 参数名"));
-        }
-        if !names.insert(*name) {
-            return Err(format!("库导出 `{instance_label}` 参数 {index} 的参数名 `{name}` 重复"));
-        }
-    }
-    Ok(identities)
-}
-
 /// 把函数的参数/返回类型提升为 `WasmAbiType` schema，并同时产出带参数身份的
 /// `params` JSON 条目。
 ///
@@ -127,7 +92,7 @@ fn schematize_function_abi(
     layout_by_type: &std::collections::BTreeMap<nyar_types::NyarType, nyar_types::LayoutId>,
     sums: &std::collections::BTreeMap<nyar_types::NyarType, nyar_types::SumTypeLayout>,
 ) -> Result<(Vec<serde_json::Value>, super::abi_schema::WasmAbiType)> {
-    let identities = parameter_identities(instance_label, function)?;
+    let identities = canonical_parameter_identities(instance_label, function)?;
     if abi.params.len() != function.param_types.len() {
         return Err(format!(
             "库导出 `{instance_label}` 的冻结 ABI 参数载体数量与参数类型数量不一致: plan_params={} param_types={}",
@@ -273,7 +238,7 @@ fn abi_contract_digest(version: u64, exports: &serde_json::Value) -> String {
 mod tests {
     use super::*;
     use crate::{AbiCarrier, LibraryExportAbi, TargetExecutionPlan};
-    use nyar_types::NyarType;
+    use nyar_types::{NyarType, ValueOrigin};
 
     fn nyar(s: &str) -> NyarType {
         NyarType::from_surface_primitive(s).expect("surface primitive")

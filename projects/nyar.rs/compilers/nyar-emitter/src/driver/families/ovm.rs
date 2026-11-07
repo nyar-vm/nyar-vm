@@ -43,14 +43,19 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
 
             entry_symbol = entries.first().cloned();
             if request.library_mode {
+                // 库导出面必须携带冻结的 ABI 合同；缺失即失败闭合，绝不写出
+                // 无合同的导出索引让宿主按未校验的布局解释内存。
+                let contract = input
+                    .abi_contract
+                    .as_ref()
+                    .ok_or_else(|| "`artifact: library` 缺少 OVM ABI 合同；拒绝产出无合同的库导出面".to_string())?;
                 library_exports = entries
                     .iter()
                     .map(|entry| DriverLibraryExport {
                         logical_name: entry.clone(),
                         physical_artifact: format!("{}.odin", request.artifact_name),
                         invocation: "ovm run --entry".to_string(),
-                        // OVM 尚未冻结 ABI 载体合同；导出索引先记录调用面，digest 留空。
-                        abi_digest: String::new(),
+                        abi_digest: contract.digest.clone(),
                     })
                     .collect();
             }

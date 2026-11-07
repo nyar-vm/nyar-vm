@@ -183,7 +183,24 @@ impl<'a> BytecodeEmitter<'a> {
 }
 
 /// Lower MIR-backed fragment operations into a `.odin` module.
+///
+/// 只发射模块本身；库导出 ABI 合同由 [`lower_fragment_mir_to_nyar_module_with_abi`]
+/// 派生（测试 / 发射形状断言不经过合同，避免把 ABI 失败混进布局断言）。
 pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission) -> Result<OdinModuleData> {
+    lower_fragment_mir_to_nyar_module_impl(submission, false).map(|(module, _)| module)
+}
+
+/// 同时派生 OVM 库导出 ABI 合同（生产路径）。
+pub(crate) fn lower_fragment_mir_to_nyar_module_with_abi(
+    submission: &FragmentSubmission,
+) -> Result<(OdinModuleData, Option<crate::ovm_abi::OvmAbiContract>)> {
+    lower_fragment_mir_to_nyar_module_impl(submission, true)
+}
+
+fn lower_fragment_mir_to_nyar_module_impl(
+    submission: &FragmentSubmission,
+    derive_abi_contract: bool,
+) -> Result<(OdinModuleData, Option<crate::ovm_abi::OvmAbiContract>)> {
     let mut module = OdinModuleData {
         version: Odin_VERSION,
         name: format!(
@@ -294,7 +311,28 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
         }
     }
 
-    Ok(module)
+    // OVM 库导出 ABI 合同：只由计划冻结的签名 / 布局 / sum 事实派生；任何不支持
+    // 的类型都在这里结构化失败，绝不降级成“先跑再说”。只有存在 `[export]` 面
+    // （库模式）时才派生；无导出面由驱动层的 library 检查失败闭合。
+    let abi_contract = if derive_abi_contract {
+        let exports = nyar_library_export_pairs(submission);
+        if exports.is_empty() {
+            None
+        }
+        else {
+            Some(crate::ovm_abi::OvmAbiContract::derive(
+                submission.backend_plan.as_ref(),
+                &exports,
+                &mut module.layouts,
+                &mut layout_index_by_id,
+                &sum_layout_index_by_nominal,
+            )?)
+        }
+    }
+    else {
+        None
+    };
+    Ok((module, abi_contract))
 }
 
 /// 为模块内出现过的 nominal sum 铸造后端私有物理布局，返回 nominal → 布局下标。
@@ -490,16 +528,24 @@ fn nyar_export_name_map(submission: &FragmentSubmission) -> BTreeMap<ItemInstanc
     resolved
 }
 
-/// Nyar VM run-contract 入口必须与模块内 `NyarExport.symbol_name` 一致；不能假定裸 `main`。
-pub(crate) fn nyar_library_public_export_names(submission: &FragmentSubmission) -> Vec<String> {
+/// 库导出面的 `(实例身份, 逻辑导出名)`：与模块内 `NyarExport.symbol_name` 同一映射。
+///
+/// 有 `[export]` 时按导出顺序；无 `[export]` 时只含入口（非库模式）。ABI 合同与
+/// run-contract 入口决议共用这份事实，避免两处各自拼名字。
+pub(crate) fn nyar_library_export_pairs(submission: &FragmentSubmission) -> Vec<(ItemInstanceId, String)> {
     let plan = &submission.backend_plan;
     let names = nyar_export_name_map(submission);
     if plan.exported_operations().is_empty() {
-        plan.entry_operation().and_then(|entry| names.get(&entry).cloned()).map(|name| vec![name]).unwrap_or_default()
+        plan.entry_operation().and_then(|entry| names.get(&entry).cloned().map(|name| (entry, name))).into_iter().collect()
     }
     else {
-        plan.exported_operations().iter().filter_map(|operation| names.get(operation).cloned()).collect()
+        plan.exported_operations().iter().filter_map(|operation| names.get(operation).cloned().map(|name| (*operation, name))).collect()
     }
+}
+
+/// Nyar VM run-contract 入口必须与模块内 `NyarExport.symbol_name` 一致；不能假定裸 `main`。
+pub(crate) fn nyar_library_public_export_names(submission: &FragmentSubmission) -> Vec<String> {
+    nyar_library_export_pairs(submission).into_iter().map(|(_, name)| name).collect()
 }
 
 fn lower_mir_function_to_bytecode(

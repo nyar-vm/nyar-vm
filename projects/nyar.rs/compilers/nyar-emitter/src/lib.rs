@@ -5,6 +5,7 @@ pub mod transitional;
 
 mod artifacts;
 mod assembly;
+mod abi_structure;
 #[doc(hidden)]
 pub mod backend;
 pub mod backend_plan_views;
@@ -12,6 +13,7 @@ pub mod contracts;
 mod driver;
 #[doc(hidden)]
 pub mod lowering;
+pub mod ovm_abi;
 mod target_execution_plan;
 pub mod target_operator;
 
@@ -20,6 +22,7 @@ pub use error::{EmitterError, Result};
 
 pub mod managed_abi;
 pub use managed_abi::{MANAGED_ABI_SCHEMA_VERSION, ManagedAbiContract, ManagedAbiEntry};
+pub use ovm_abi::{OVM_ABI_SCHEMA_VERSION, OvmAbiContract};
 
 use std::{
     path::{Path, PathBuf},
@@ -549,6 +552,8 @@ impl FragmentSubmission {
 pub struct OvmBackendInput {
     /// Optional Nyar module payload to emit as `.odin`.
     pub nyar_module: Option<odin_bytecode::OdinModuleData>,
+    /// 库导出 ABI 合同（含稳定 digest）；无导出面时为 `None`。
+    pub abi_contract: Option<OvmAbiContract>,
     /// 库模式公开导出名（与 wasm `wasm_export_names` 对齐），用于 run-contract 入口。
     pub library_public_exports: Vec<String>,
     /// Output directory.

@@ -16,10 +16,7 @@
 
 use std::collections::BTreeMap;
 
-use nyar_types::{
-    AggregateLayout, AggregateLayoutPlan, FieldLayout, Identifier, LayoutId, NyarType, StorageKind,
-    combined_content_hash,
-};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, LayoutId, NyarType, combined_content_hash};
 use serde::{Deserialize, Serialize};
 
 /// 结构化 Wasm ABI schema。
@@ -174,7 +171,7 @@ pub enum WasmAbiType {
 
     /// `class` 等引用存储名义实例的**不透明宿主句柄**。
     ///
-    /// 冻结布局的存储类是 [`StorageKind::Reference`] 且不是序列视图时，
+    /// 冻结布局的存储类是 [`nyar_types::StorageKind::Reference`] 且不是序列视图时，
     /// 该 nominal 在跨 ABI 位置是 GC 引用本身：语义是同一实例的共享身份，
     /// 不是字段快照。宿主必须原样保留该引用（JS glue 包装成不透明句柄对象），
     /// 不能按字段逐一复制；否则 `mut self` 方法会改在副本上，跨调用不可见。
@@ -364,95 +361,132 @@ impl WasmAbiType {
 /// | `Function` / `TraitObject`   | `Unsupported`                                  | 不能跨 ABI 边界                                |
 /// | `Union([...])`               | `Unsupported`                                  | ABI 合同未定义                                 |
 pub fn abi_schema_for_type(ty: &NyarType) -> WasmAbiType {
-    match ty {
-        NyarType::Bottom => WasmAbiType::Unsupported { reason: "`void` / bottom type 不能出现在库导出 ABI 位置".to_string() },
-        NyarType::Unit => WasmAbiType::Unit,
+    // 结构推导与 ovm 共用 `crate::abi_structure`，本函数只做 wasm 物理投影。
+    project_structure(&crate::abi_structure::abi_structure_for_type(ty), None)
+}
 
-        NyarType::Boolean => WasmAbiType::Bool,
-        NyarType::Character => WasmAbiType::Char,
-
-        // 所有 <= 32-bit 整数统一映射到 I32 carrier；signedness 在 Wasm 层通过
-        // 有符号/无符号指令区分，ABI carrier 本身无符号属性。
-        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } => WasmAbiType::I32,
-        NyarType::Integer64 { .. } => WasmAbiType::I64,
-        NyarType::Integer128 { .. } => {
-            WasmAbiType::Unsupported { reason: "Integer128 没有原生 Wasm carrier，需要显式拆分合同".to_string() }
-        }
-
-        NyarType::Float32 => WasmAbiType::F32,
-        NyarType::Float64 => WasmAbiType::F64,
-
-        NyarType::Utf8 => WasmAbiType::Utf8,
-        NyarType::Utf16 => WasmAbiType::Unsupported {
-            reason: crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string(),
-        },
-
-        NyarType::Array(element) => WasmAbiType::Array {
-            element: Box::new(abi_schema_for_type(element)),
-            ops: array_ops_export_names(element),
+/// wasm 物理投影：把目标中立结构投影成 `WasmAbiType`。
+///
+/// 目标差异只在这里体现：字段 accessor / `struct.new` / 数组操作导出名由冻结
+/// 布局身份派生；结构本身（字段、槽位、变体 tag）来自共享结构层。
+fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Option<&AggregateLayoutPlan>) -> WasmAbiType {
+    use crate::abi_structure::AbiStructure as S;
+    match structure {
+        S::Unit => WasmAbiType::Unit,
+        S::I32 => WasmAbiType::I32,
+        S::I64 => WasmAbiType::I64,
+        S::F32 => WasmAbiType::F32,
+        S::F64 => WasmAbiType::F64,
+        S::Bool => WasmAbiType::Bool,
+        S::Char => WasmAbiType::Char,
+        S::Utf8 => WasmAbiType::Utf8,
+        S::Array { element, element_key } => WasmAbiType::Array {
+            element: Box::new(project_structure(element, layouts)),
+            ops: array_ops_export_names_from_key(element_key),
             container: None,
         },
-        NyarType::FixedArray { element, length } => {
-            WasmAbiType::FixedArray { element: Box::new(abi_schema_for_type(element)), length: *length }
+        S::FixedArray { element, length } => {
+            WasmAbiType::FixedArray { element: Box::new(project_structure(element, layouts)), length: *length }
         }
-
-        NyarType::Nullable(inner) => {
-            let inner = Box::new(abi_schema_for_type(inner));
+        S::Option { inner } => {
+            let inner = Box::new(project_structure(inner, layouts));
             let box_contract = option_box_contract(&inner).map(Box::new);
             WasmAbiType::Option { inner, box_contract }
         }
-
-        NyarType::Tuple(fields) => WasmAbiType::Tuple { fields: fields.iter().map(abi_schema_for_type).collect() },
-
-        // 名义类型：把 Identifier 展开成简单名字 + 模块路径；generic_args 为空。
-        NyarType::Named(id) => WasmAbiType::NamedAggregate {
-            name: simple_name_of(id),
-            module_path: module_path_of(id),
-            generic_args: Vec::new(),
-            fields: Vec::new(),
-            constructor: None,
-        },
-        // 携带身份的名义类型：schema 显示仍用冻结拼写；字段桥需要布局事实，
-        // 走 `abi_schema_for_type_with_layouts`，本函数只给身份。
-        NyarType::Nominal { spelling, .. } => WasmAbiType::NamedAggregate {
-            name: simple_name_of(spelling),
-            module_path: module_path_of(spelling),
-            generic_args: Vec::new(),
-            fields: Vec::new(),
-            constructor: None,
-        },
-
-        // 泛型应用：`Apply(Base, [T1, T2, ...])`
-        // 把 Base（通常是 Named）的语义名字和模块路径提取出来，递归映射泛型参数。
-        NyarType::Apply(base, args) => {
-            let (name, module_path, base_generic_args) = match base.as_ref() {
-                NyarType::Named(id) => (simple_name_of(id), module_path_of(id), Vec::new()),
-                NyarType::Nominal { spelling, .. } => (simple_name_of(spelling), module_path_of(spelling), Vec::new()),
-                NyarType::Apply(_, _) => {
-                    // 嵌套 Apply：展平到最顶层 Named
-                    flatten_apply_identity(base.as_ref())
+        S::Tuple { fields } => {
+            WasmAbiType::Tuple { fields: fields.iter().map(|field| project_structure(field, layouts)).collect() }
+        }
+        S::Aggregate(aggregate) => match aggregate.layout {
+            // 身份模式（无布局事实）：只给身份，不给字段桥与构造合同，
+            // 宿主必须失败闭合而不是按名字猜字段。
+            None => WasmAbiType::NamedAggregate {
+                name: aggregate.name.clone(),
+                module_path: aggregate.module_path.clone(),
+                generic_args: aggregate.generic_args.iter().map(|arg| project_structure(arg, layouts)).collect(),
+                fields: Vec::new(),
+                constructor: None,
+            },
+            Some(layout_id) => {
+                let Some(aggregate_layout) =
+                    layouts.and_then(|plan| plan.layouts.iter().find(|item| item.id == layout_id))
+                else {
+                    return WasmAbiType::Unsupported { reason: format!("layout `{layout_id}` 未注册，无法派生字段访问合同") };
+                };
+                let mut fields = Vec::with_capacity(aggregate.fields.len());
+                for (index, field) in aggregate.fields.iter().enumerate() {
+                    let field_schema = project_structure(&field.ty, layouts);
+                    if let Some(reason) = field_schema.unsupported_reason() {
+                        return WasmAbiType::Unsupported {
+                            reason: format!(
+                                "聚合 `{}::{}` 字段 `{}` 没有 Wasm ABI 合同: {reason}",
+                                aggregate_layout.namespace, aggregate_layout.name, field.name
+                            ),
+                        };
+                    }
+                    fields.push(WasmAbiField {
+                        name: field.name.clone(),
+                        ty: field_schema,
+                        accessor: field_accessor_export_name(aggregate_layout, index),
+                    });
                 }
-                other => {
-                    return WasmAbiType::Unsupported {
-                        reason: format!("Apply 的 Base 必须是 Named 或 Apply，实际是 {other:?}——无法提取语义 identity"),
-                    };
+                WasmAbiType::NamedAggregate {
+                    name: aggregate.name.clone(),
+                    module_path: aggregate.module_path.clone(),
+                    generic_args: Vec::new(),
+                    fields,
+                    constructor: Some(aggregate_constructor_export_name(aggregate_layout)),
                 }
+            }
+        },
+        S::Sequence(sequence) => {
+            let Some(aggregate_layout) =
+                layouts.and_then(|plan| plan.layouts.iter().find(|item| item.id == sequence.layout))
+            else {
+                return WasmAbiType::Unsupported {
+                    reason: format!("layout `{}` 未注册，无法派生序列构造合同", sequence.layout),
+                };
             };
-            let mut generic_args: Vec<WasmAbiType> = base_generic_args.iter().map(|t| abi_schema_for_type(t)).collect();
-            generic_args.extend(args.iter().map(abi_schema_for_type));
-            WasmAbiType::NamedAggregate { name, module_path, generic_args, fields: Vec::new(), constructor: None }
+            let element = project_structure(&sequence.element, layouts);
+            if let Some(reason) = element.unsupported_reason() {
+                return WasmAbiType::Unsupported {
+                    reason: format!(
+                        "序列容器 `{}::{}` 的元素类型没有 Wasm ABI 合同: {reason}",
+                        aggregate_layout.namespace, aggregate_layout.name
+                    ),
+                };
+            }
+            let length_type = project_structure(&sequence.length_ty, layouts);
+            if let Some(reason) = length_type.unsupported_reason() {
+                return WasmAbiType::Unsupported {
+                    reason: format!(
+                        "序列容器 `{}::{}` 的计数字段没有 Wasm ABI 合同: {reason}",
+                        aggregate_layout.namespace, aggregate_layout.name
+                    ),
+                };
+            }
+            WasmAbiType::Array {
+                element: Box::new(element),
+                ops: array_ops_export_names_from_key(&sequence.element_key),
+                container: Some(Box::new(WasmAbiSequence {
+                    constructor: aggregate_constructor_export_name(aggregate_layout),
+                    items_field_index: sequence.items_slot,
+                    length_field_index: sequence.length_slot,
+                    items_accessor: field_accessor_export_name(aggregate_layout, sequence.items_slot),
+                    length_accessor: field_accessor_export_name(aggregate_layout, sequence.length_slot),
+                    field_count: sequence.field_count,
+                    length_type: Box::new(length_type),
+                })),
+            }
         }
-
-        // 函数类型不能跨 ABI 边界（宿主和 Wasm 的函数指针合同尚未定义）。
-        NyarType::Function(_) => WasmAbiType::Unsupported { reason: "函数类型不能出现在库导出 ABI 位置".to_string() },
-
-        // 动态分发的 trait object 没有稳定的 Wasm carrier。
-        NyarType::TraitObject(_) => {
-            WasmAbiType::Unsupported { reason: "TraitObject（dynamic dispatch）没有稳定的 Wasm carrier".to_string() }
+        S::InstanceHandle { name, module_path, .. } => {
+            WasmAbiType::InstanceHandle { name: name.clone(), module_path: module_path.clone() }
         }
-
-        // 匿名 tagged union 的 ABI 合同（tag 放在哪？payload 如何对齐？）未定义。
-        NyarType::Union(_) => WasmAbiType::Unsupported { reason: "匿名 union 的 Wasm ABI 合同尚未定义".to_string() },
+        S::Unite { name, variants, .. } => WasmAbiType::Sum {
+            name: name.clone(),
+            variants: variants.iter().map(|variant| WasmAbiSumVariant { name: variant.name.clone(), tag: variant.tag }).collect(),
+            tag_accessor: sum_tag_accessor_name(name, true, variants),
+        },
+        S::Unsupported { reason } => WasmAbiType::Unsupported { reason: reason.clone() },
     }
 }
 
@@ -468,169 +502,9 @@ pub fn abi_schema_for_type_with_layouts(
     layout_by_type: &BTreeMap<NyarType, LayoutId>,
     sums: &BTreeMap<NyarType, nyar_types::SumTypeLayout>,
 ) -> WasmAbiType {
-    // unite 没有物理布局身份，先按 canonical 冻结的 `NyarType` 索引查；
-    // 只有零 payload unite 才有变体身份合同——带 payload 的 sum 仍回落到
-    // `NamedAggregate` 身份，宿主在边界失败闭合，而不是静默丢弃 payload。
-    if let Some(sum) = sums.get(ty) {
-        if sum.is_unite && sum.variants.iter().all(|variant| variant.payload_type.is_none()) {
-            return sum_schema(sum);
-        }
-    }
-    match ty {
-        NyarType::Nominal { layout, spelling } => {
-            aggregate_schema(simple_name_of(spelling), module_path_of(spelling), *layout, layouts, layout_by_type, sums)
-        }
-        // `Apply` 不携带 `LayoutId`；布局身份只能来自 canonical 计划冻结的
-        // `NyarType → LayoutId` 索引。索引里没有就退回身份 schema（空字段、
-        // 无构造合同），宿主会在边界结构化失败，而不是按名字猜布局。
-        NyarType::Apply(..) => match layout_by_type.get(ty) {
-            Some(layout) => {
-                let (name, module_path, _) = flatten_apply_identity(ty);
-                aggregate_schema(name, module_path, *layout, layouts, layout_by_type, sums)
-            }
-            None => abi_schema_for_type(ty),
-        },
-        NyarType::Array(element) => WasmAbiType::Array {
-            element: Box::new(abi_schema_for_type_with_layouts(element, layouts, layout_by_type, sums)),
-            ops: array_ops_export_names(element),
-            container: None,
-        },
-        NyarType::FixedArray { element, length } => WasmAbiType::FixedArray {
-            element: Box::new(abi_schema_for_type_with_layouts(element, layouts, layout_by_type, sums)),
-            length: *length,
-        },
-        NyarType::Nullable(inner) => {
-            let inner = Box::new(abi_schema_for_type_with_layouts(inner, layouts, layout_by_type, sums));
-            let box_contract = option_box_contract(&inner).map(Box::new);
-            WasmAbiType::Option { inner, box_contract }
-        }
-        NyarType::Tuple(fields) => WasmAbiType::Tuple {
-            fields: fields
-                .iter()
-                .map(|field| abi_schema_for_type_with_layouts(field, layouts, layout_by_type, sums))
-                .collect(),
-        },
-        other => abi_schema_for_type(other),
-    }
-}
-
-/// 零 payload unite 的变体身份合同。
-fn sum_schema(sum: &nyar_types::SumTypeLayout) -> WasmAbiType {
-    WasmAbiType::Sum {
-        name: sum.name.clone(),
-        variants: sum
-            .variants
-            .iter()
-            .map(|variant| WasmAbiSumVariant { name: variant.name.clone(), tag: variant.tag })
-            .collect(),
-        tag_accessor: sum_tag_accessor_export_name(sum),
-    }
-}
-
-/// 已知布局身份的聚合 schema。
-///
-/// 序列形状（一个 heap array 字段 + 一个整数计数字段、Reference 存储）投影为
-/// `Array<T>` 加容器构造合同；其余 Reference 存储名义实例投影为
-/// [`WasmAbiType::InstanceHandle`]（共享引用，不按字段复制）；Value 存储聚合
-/// 保留字段访问合同。三者都由布局事实派生。
-fn aggregate_schema(
-    name: String,
-    module_path: String,
-    layout_id: LayoutId,
-    layouts: &AggregateLayoutPlan,
-    layout_by_type: &BTreeMap<NyarType, LayoutId>,
-    sums: &BTreeMap<NyarType, nyar_types::SumTypeLayout>,
-) -> WasmAbiType {
-    let Some(aggregate) = layouts.layouts.iter().find(|item| item.id == layout_id) else {
-        return WasmAbiType::Unsupported {
-            reason: format!("layout `{layout_id}` 未注册，无法派生字段访问合同"),
-        };
-    };
-    if let Some(sequence) = sequence_contract(aggregate, layouts, layout_by_type, sums) {
-        return sequence;
-    }
-    // 引用存储的非序列名义实例是共享身份，不是字段快照：宿主必须拿到同一
-    // GC 引用。按字段复制会让 `mut self` 方法改在副本上，跨调用丢状态。
-    if aggregate.storage == StorageKind::Reference {
-        return WasmAbiType::InstanceHandle { name, module_path };
-    }
-    let mut fields = Vec::with_capacity(aggregate.fields.len());
-    for (index, field) in aggregate.fields.iter().enumerate() {
-        let field_schema = abi_schema_for_type_with_layouts(&field.ty, layouts, layout_by_type, sums);
-        if let Some(reason) = field_schema.unsupported_reason() {
-            return WasmAbiType::Unsupported {
-                reason: format!(
-                    "聚合 `{}::{}` 字段 `{}` 没有 Wasm ABI 合同: {reason}",
-                    aggregate.namespace, aggregate.name, field.name
-                ),
-            };
-        }
-        fields.push(WasmAbiField {
-            name: field.name.clone(),
-            ty: field_schema,
-            accessor: field_accessor_export_name(aggregate, index),
-        });
-    }
-    WasmAbiType::NamedAggregate {
-        name,
-        module_path,
-        generic_args: Vec::new(),
-        fields,
-        constructor: Some(aggregate_constructor_export_name(aggregate)),
-    }
-}
-
-/// 从冻结布局形状派生序列视图。
-///
-/// 条件是纯结构的：`Reference` 存储、恰好两个字段、一个 heap `Array<T>` 字段
-/// 和一个整数字段。满足时 backing array 的物理读写契约与容器构造契约都来自
-/// 布局事实；不满足时返回 `None`，绝不按类型名特判 `ArrayList`。
-fn sequence_contract(
-    aggregate: &AggregateLayout,
-    layouts: &AggregateLayoutPlan,
-    layout_by_type: &BTreeMap<NyarType, LayoutId>,
-    sums: &BTreeMap<NyarType, nyar_types::SumTypeLayout>,
-) -> Option<WasmAbiType> {
-    if aggregate.storage != StorageKind::Reference || aggregate.fields.len() != 2 {
-        return None;
-    }
-    let items_index = aggregate.fields.iter().position(|field| matches!(field.ty, NyarType::Array(_)))?;
-    let length_index = aggregate.fields.iter().position(|field| is_integer_type(&field.ty))?;
-    if items_index == length_index {
-        return None;
-    }
-    let NyarType::Array(element) = &aggregate.fields[items_index].ty else {
-        return None;
-    };
-    let element_schema = abi_schema_for_type_with_layouts(element, layouts, layout_by_type, sums);
-    if let Some(reason) = element_schema.unsupported_reason() {
-        return Some(WasmAbiType::Unsupported {
-            reason: format!(
-                "序列容器 `{}::{}` 的元素类型没有 Wasm ABI 合同: {reason}",
-                aggregate.namespace, aggregate.name
-            ),
-        });
-    }
-    let length_schema = abi_schema_for_type_with_layouts(&aggregate.fields[length_index].ty, layouts, layout_by_type, sums);
-    Some(WasmAbiType::Array {
-        element: Box::new(element_schema),
-        ops: array_ops_export_names(element),
-        container: Some(Box::new(WasmAbiSequence {
-            constructor: aggregate_constructor_export_name(aggregate),
-            items_field_index: items_index,
-            length_field_index: length_index,
-            items_accessor: field_accessor_export_name(aggregate, items_index),
-            length_accessor: field_accessor_export_name(aggregate, length_index),
-            field_count: aggregate.fields.len(),
-            length_type: Box::new(length_schema),
-        })),
-    })
-}
-
-fn is_integer_type(ty: &NyarType) -> bool {
-    matches!(
-        ty,
-        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } | NyarType::Integer64 { .. }
+    project_structure(
+        &crate::abi_structure::abi_structure_for_type_with_layouts(ty, layouts, layout_by_type, sums),
+        Some(layouts),
     )
 }
 
@@ -670,8 +544,12 @@ pub fn option_box_contract(inner: &WasmAbiType) -> Option<WasmAbiOptionBox> {
 
 /// 物理数组操作导出的确定性名字：由元素类型的结构化拼写派生。
 pub fn array_ops_export_names(element: &NyarType) -> WasmAbiArrayOps {
-    let key = format!("{element:?}");
-    let digest = combined_content_hash(&[&key]);
+    array_ops_export_names_from_key(&crate::abi_structure::canonical_type_spelling(element))
+}
+
+/// 同 [`array_ops_export_names`]，但使用共享结构层的 canonical 元素拼写种子。
+fn array_ops_export_names_from_key(key: &str) -> WasmAbiArrayOps {
+    let digest = combined_content_hash(&[key]);
     let suffix = digest.get(..16).unwrap_or(&digest).to_string();
     WasmAbiArrayOps {
         length: format!("nyar$array$length${suffix}"),
@@ -718,73 +596,22 @@ pub fn field_accessor_export_name(layout: &AggregateLayout, field_index: usize) 
 ///
 /// 同一 sum 在任意导出位置派生同一名字；变体形状不同的 unite 永不撞名。
 pub fn sum_tag_accessor_export_name(sum: &nyar_types::SumTypeLayout) -> String {
-    let mut facts = String::new();
-    facts.push_str(&sum.name);
-    facts.push('\n');
-    facts.push_str(if sum.is_unite { "unite" } else { "sum" });
-    facts.push('\n');
-    for variant in &sum.variants {
-        facts.push_str(&format!("{}:{}\n", variant.name, variant.tag));
-    }
+    sum_tag_accessor_name(&sum.name, sum.is_unite, &crate::abi_structure::sum_variants_of(sum))
+}
+
+/// 由共享结构身份派生 unite tag accessor 名字；wasm 是唯一需要这个物理名字的目标。
+fn sum_tag_accessor_name(name: &str, is_unite: bool, variants: &[crate::abi_structure::AbiVariant]) -> String {
+    let facts = crate::abi_structure::sum_identity_facts(name, is_unite, variants);
     let digest = combined_content_hash(&[&facts]);
     let suffix = digest.get(..16).unwrap_or(&digest);
     let sanitize = |text: &str| text.chars().map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' }).collect::<String>();
-    format!("nyar$sum$tag${}${}", sanitize(&sum.name), suffix)
-}
-
-/// 从 `Identifier` 提取简单名（丢掉模块路径前缀）。
-fn simple_name_of(id: &Identifier) -> String {
-    let full = id.as_str();
-    full.rsplit_once("::")
-        .map(|(_, last)| last.to_string())
-        .or_else(|| full.rsplit_once('.').map(|(_, last)| last.to_string()))
-        .unwrap_or_else(|| full.to_string())
-}
-
-/// 从 `Identifier` 提取模块路径（丢掉最终简单名）。
-///
-/// - `"std::collections::ArrayList"` → `"std::collections"`
-/// - `"std.collections.ArrayList"` → `"std.collections"`
-/// - `"ArrayList"` → `""`（简单名无路径前缀）
-///
-/// 空返回值只在**上游如实无路径事实**时出现：canonical 已为每个 struct 声明
-/// 登记 `MirStruct::qualified_name()`；没有路径的只剩无 namespace 的 sum 声明
-/// 和顶层（无名空间）声明。不要用简单名拼 package path 来填补空值。
-fn module_path_of(id: &Identifier) -> String {
-    let full = id.as_str();
-    if let Some((prefix, _)) = full.rsplit_once("::") {
-        prefix.to_string()
-    }
-    else if let Some((prefix, _)) = full.rsplit_once('.') {
-        prefix.to_string()
-    }
-    else {
-        String::new()
-    }
-}
-
-/// 把嵌套的 `Apply(Apply(Named("A"), ...), ...)` 展平，提取最顶层
-/// 语义名、模块路径和最底层的 generic_args 残留（极罕见场景）。
-fn flatten_apply_identity(mut ty: &NyarType) -> (String, String, Vec<NyarType>) {
-    let mut accumulated: Vec<NyarType> = Vec::new();
-    loop {
-        match ty {
-            NyarType::Named(id) => return (simple_name_of(id), module_path_of(id), accumulated),
-            NyarType::Nominal { spelling, .. } => return (simple_name_of(spelling), module_path_of(spelling), accumulated),
-            NyarType::Apply(base, args) => {
-                accumulated.extend(args.iter().cloned());
-                ty = base.as_ref();
-            }
-            other => {
-                return (format!("<unexpected:{other:?}>"), String::new(), accumulated);
-            }
-        }
-    }
+    format!("nyar$sum$tag${}${}", sanitize(name), suffix)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nyar_types::{FieldLayout, Identifier};
 
     fn nyar(s: &str) -> NyarType {
         NyarType::from_surface_primitive(s).expect("surface primitive")
