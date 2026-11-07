@@ -39,9 +39,15 @@ pub fn emit_report_chart_islands(
 
     let mut components = Vec::new();
     let mut slots = Vec::new();
+    let mut series_packages = std::collections::BTreeSet::new();
 
     for chart in charts {
         let wrapper = read_project_source(project_dir, &format!("charts/{}.awsl", chart.route))?;
+        if let Ok((_, series_line)) = extract_title_series_lets(&wrapper) {
+            if let Some(package) = series_element_package(&series_line) {
+                series_packages.insert(package);
+            }
+        }
         let title_lit = encode_v_text_literal(&chart.title)
             .map_err(|error| AsgardError::msg(report!("chart {}: {error}", chart.route)))?;
         let series_lit = series_to_init_literal(&chart.series);
@@ -86,11 +92,28 @@ pub fn emit_report_chart_islands(
                 .map_err(|e| AsgardError::msg(format!("{e}: {}", "报告图表岛 WASM 产物复制失败")))?;
             true
         }
-        Err(error) if cfg!(debug_assertions) => {
-            eprintln!("warning: report chart wasm skipped in debug build: {error}");
-            false
+        Err(error) => {
+            // 图表岛按各图表 `let series` 声明的元素类型编译；元素类型所属包必须
+            // 在当前 target 的依赖闭包内。包缺席时的原始诊断只会指向下游的
+            // 名字解析失败（例如 `infix ==` 无候选），这里补上缺席包与闭包清单，
+            // 让人能直接判断是闭包缺口而不是别处坏了。
+            let closure = resolved.groups.iter().map(|group| group.name.as_str()).collect::<Vec<_>>().join(", ");
+            let missing = series_packages
+                .iter()
+                .filter(|package| dependency_keys_for_packages(&resolved.groups, &[package.as_str()]).is_empty())
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            let closure_note = if missing.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "（图表岛闭包缺少 series 元素类型所属包 `{}`；当前依赖闭包为：{closure}。\
+                     需要该包支持当前 target，或把契约类型移入可构建包）",
+                    missing.join("`、`")
+                )
+            };
+            Err(AsgardError::msg(format!("报告图表岛 WASM 编译失败{closure_note}: {error}")))?
         }
-        Err(error) => Err(AsgardError::msg(format!("报告图表岛 WASM 编译失败: {error}")))?,
     };
 
     let opts = IslandPackageOptions {
@@ -223,6 +246,18 @@ fn extract_title_series_lets(wrapper: &str) -> AsgardResult<(String, String)> {
         (Some(t), Some(s)) => Ok((t, s)),
         _ => Err(AsgardError::msg(report!("chart wrapper missing let title / let series"))),
     }
+}
+
+/// 从 `let series: [package::Type] = ...` 声明里取出元素类型所属包名。
+///
+/// 仅用于闭包诊断：取不出包名时返回 `None`，不改变编译路径。
+fn series_element_package(declaration: &str) -> Option<String> {
+    let open = declaration.find('[')?;
+    let close = declaration[open..].find(']')? + open;
+    let element = declaration[open + 1..close].trim();
+    let (package, _) = element.rsplit_once("::")?;
+    let package = package.trim();
+    (!package.is_empty()).then(|| package.to_string())
 }
 
 fn replace_let_line(source: &str, name: &str, replacement: &str) -> AsgardResult<String> {
