@@ -6,8 +6,10 @@ use super::{
     FunctionType, GenericBinderId, GenericType, HirBlock, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirParam, HirParent, HirPattern,
     ValkyrieType,
 };
-use crate::compiler::hir::control_flow_validation::display_type;
-use crate::compiler::types::{Identifier, NamePath, SourceSpan};
+use crate::compiler::{
+    hir::control_flow_validation::display_type,
+    types::{Identifier, NamePath, SourceSpan},
+};
 
 /// A call argument with optional keyword name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -588,6 +590,7 @@ impl HirExprKind {
                 let rendered = arguments.iter().map(display_type).collect::<Vec<_>>().join(", ");
                 format!("{}::<{}>", callee.kind.callable_label(), rendered)
             }
+            HirExprKind::Call { callee, .. } => format!("{}(...)", callee.kind.callable_label()),
             _ => "<fn value>".to_string(),
         }
     }

@@ -109,6 +109,10 @@ pub fn plan_semantic_closure_with_host_bindings(
             }
         }
     }
+    // 首参为 `self` 的自由 `micro` 只能由方法位置调用命中：`.collect()` 只登记
+    // selector，不产生名字引用，因此必须按选择名单独提升，否则依赖组裁剪后
+    // consumer 的候选池里根本没有该声明。
+    let extension_functions = indexed_files.values().flat_map(|file| file.extension_functions.iter().cloned()).collect::<BTreeSet<_>>();
     // Primitive 自举身份表必须在可见性与需求展开之前建立：`[primitive("…")]` 的意义就是
     // 让 std 尚未进入闭包时，编译器仍能按声明携带的身份识别类型、分配 carrier 布局。
     // 记录自带 `DeclarationKey.dependency_key`，即声明所属可见面：同一依赖组内重复身份
@@ -284,6 +288,21 @@ pub fn plan_semantic_closure_with_host_bindings(
                 if !demanded.contains(&member) {
                     promoted.insert(member);
                 }
+            }
+        }
+        // 方法位置的扩展函数保留：`.collect()` 这类成员调用只在索引阶段贡献
+        // selector，接收者类型不可知，既不能产生名字引用，也不属于任何聚合的成员。
+        // 保留条件仍是两条声明面事实：选择名确实出现在闭包需求中，且该声明所在
+        // 依赖组对某个已需求声明可见。是否真正匹配由 HIR 调用解析按接收者类型决定。
+        for extension in &extension_functions {
+            if !selectors.contains(&extension.name) || demanded.contains(extension) {
+                continue;
+            }
+            let visible_from_demanded = demanded.iter().any(|demanded_key| {
+                visibility.get(&demanded_key.dependency_key).is_some_and(|visible| visible.contains(&extension.dependency_key))
+            });
+            if visible_from_demanded {
+                promoted.insert(extension.clone());
             }
         }
         // 证据驱动的 impl 保留：`T: Equal` 这类 where 证据在 HIR 调用解析时必须能看到
