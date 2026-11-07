@@ -253,6 +253,32 @@ let label = "hi"
     );
 }
 
+/// 无 `Display` 实现的类型必须在文本位置失败闭合，且诊断点名接收者类型。
+///
+/// 生成端只发 `<expr>.display()`，没有拼字符串或 `format` 兜底；因此缺口必须
+/// 表现为成员调用解析失败，并让作者能直接从错误里看到是哪个类型缺实现。
+/// `f64` 是当前 std 明确未落 `Display` 的标量，正是图表 `height_pct` 文本位置的形态。
+#[test]
+fn missing_display_projection_fails_closed_with_receiver_type() {
+    let source = r#"[primitive("std::primitive::i32")]
+structure i32 { }
+
+class Label { _repr: [u8] }
+type utf8 = Label
+trait Display { micro display(self) -> utf8 }
+imply i32: Display { micro display(self) -> utf8 { return "0" } }
+
+[export]
+micro probe(x: f64) -> utf8 {
+    return (x).display()
+}
+"#;
+    let error = ValkyrieCompiler::default().compile_source(source).expect_err("`f64` 没有 `Display` 实现，文本投影必须失败闭合");
+    let text = error.to_string();
+    assert!(text.contains("unresolved call `x.display`"), "失败必须指向投影调用点：{text}");
+    assert!(text.contains("receiver type `f64`"), "诊断必须点名接收者类型：{text}");
+}
+
 /// `Derived` 非响应式绑定的 `value_type` 不进入生成代码（引用点直接内联），
 /// 因此表达式无法静态判定通道时使用哪个值都不影响正确性——这里证明内联确实发生。
 #[test]

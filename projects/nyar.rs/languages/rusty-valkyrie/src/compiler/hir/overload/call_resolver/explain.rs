@@ -65,7 +65,7 @@ pub(crate) fn explain_unresolved_call(
                         HirCallResolutionFailureKind::NoMethodCandidate { member: field.to_string(), receiver: display_type(&receiver_type) }
                     }
                     else {
-                        HirCallResolutionFailureKind::NoViableOverload { candidates: named }
+                        HirCallResolutionFailureKind::NoViableOverload { candidates: named, receiver: Some(display_type(&receiver_type)) }
                     }
                 }
             }
@@ -179,7 +179,12 @@ fn name_based_explanation(
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function))
         .filter(|candidate| named_free_candidate_matches(candidate, name, type_relations))
         .count();
-    if named == 0 { HirCallResolutionFailureKind::NameNotFound } else { HirCallResolutionFailureKind::NoViableOverload { candidates: named } }
+    if named == 0 {
+        HirCallResolutionFailureKind::NameNotFound
+    }
+    else {
+        HirCallResolutionFailureKind::NoViableOverload { candidates: named, receiver: None }
+    }
 }
 
 fn is_comparison_operator(name: &str) -> bool {

@@ -146,6 +146,8 @@ pub enum HirCallResolutionFailureKind {
     NoViableOverload {
         /// 同名候选数。
         candidates: usize,
+        /// 成员调用的接收者类型（用户可读形态）；空候选的自由函数调用没有接收者。
+        receiver: Option<String>,
     },
     /// 标量族混比：`char`/`u8` 一侧与整型一侧直接比较，没有隐式统一。
     MixedScalarComparison {
@@ -231,7 +233,10 @@ impl HirCallResolutionFailureKind {
             Self::NoMethodCandidate { member, receiver } => {
                 format!("no method candidate named `{member}` exists for receiver type `{receiver}`")
             }
-            Self::NoViableOverload { candidates } => {
+            Self::NoViableOverload { candidates, receiver: Some(receiver) } => {
+                format!("{candidates} candidate(s) share the name, but none matches the argument types for receiver type `{receiver}`")
+            }
+            Self::NoViableOverload { candidates, receiver: None } => {
                 format!("{candidates} candidate(s) share the name, but none matches the argument types")
             }
             Self::MixedScalarComparison { left, right } => {
