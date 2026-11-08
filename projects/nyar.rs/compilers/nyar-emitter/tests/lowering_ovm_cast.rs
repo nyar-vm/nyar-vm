@@ -398,13 +398,40 @@ fn f64_to_i16_sign_extends_after_checked_conversion() {
     assert_eq!(host_symbols(&module), vec!["f64_to_i32_checked"]);
 }
 
-/// `f32` 没有进入 OVM 的浮点载体合同：双向都必须结构化失败。
+/// `f32` 是独立的 OVM 浮点载体：`f32`↔`f64` 走专用单步头码，不得借另一精度中转。
 #[test]
-fn f32_casts_fail_structured() {
+fn f32_f64_conversions_use_dedicated_codes() {
+    let promote = lower(NyarType::Float32, NyarType::Float64);
+    assert!(host_symbols(&promote).is_empty(), "f32→f64 不得产生宿主调用: {:?}", host_symbols(&promote));
+    assert!(
+        codes(&promote).contains(&OdinHeadCode::F64PromoteF32),
+        "f32→f64 必须走 `F64PromoteF32`: {:?}",
+        codes(&promote)
+    );
+
+    let demote = lower(NyarType::Float64, NyarType::Float32);
+    assert!(host_symbols(&demote).is_empty(), "f64→f32 不得产生宿主调用: {:?}", host_symbols(&demote));
+    assert!(
+        codes(&demote).contains(&OdinHeadCode::F32DemoteF64),
+        "f64→f32 必须走 `F32DemoteF64`: {:?}",
+        codes(&demote)
+    );
+}
+
+/// 整数↔`f32` 的单步精确转换尚未冻结：双向都必须结构化失败，
+/// 不得借 `f64` 中转（double rounding）或用 `i32` 位模式冒充数值转换。
+#[test]
+fn integer_f32_casts_fail_structured() {
     let error = try_lower(cast_function(NyarType::Float32, i64_(true))).expect_err("f32→整数必须结构化失败");
-    assert!(error.contains("`f32` → `i64`") && error.contains("不得退化为近似转换"), "错误必须点名缺失的转换: {error}");
+    assert!(
+        error.contains("`f32` → `i64`") && error.contains("`f32` 是独立载体") && error.contains("禁止借 `f64` 中转"),
+        "错误必须点名缺失的转换与独立载体约束: {error}"
+    );
     let error = try_lower(cast_function(i64_(true), NyarType::Float32)).expect_err("整数→f32 必须结构化失败");
-    assert!(error.contains("`i64` → `f32`"), "错误必须点名两端类型: {error}");
+    assert!(
+        error.contains("`i64` → `f32`") && error.contains("尚未冻结"),
+        "错误必须点名两端类型与未冻结的单步转换: {error}"
+    );
 }
 
 /// 浮点 → 布尔/文本没有 `as` 合同：结构化失败。
