@@ -3,7 +3,8 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-pub(crate) fn select_artifact<'entry>(
+#[doc(hidden)]
+pub fn select_artifact<'entry>(
     output_dir: &Path,
     entries: impl Iterator<Item = &'entry str>,
     artifact_override: Option<&Path>,

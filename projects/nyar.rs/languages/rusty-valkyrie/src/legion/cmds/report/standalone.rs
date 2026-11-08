@@ -155,6 +155,7 @@ fn load_wasm_bytes(report_dir: &Path, manifest: &Value) -> LegionResult<Vec<u8>>
 }
 
 /// Prevent `</script>` in inlined JS from terminating the outer script element.
-fn escape_script_body(source: &str) -> String {
+#[doc(hidden)]
+pub fn escape_script_body(source: &str) -> String {
     source.replace("</script>", "<\\/script>").replace("</SCRIPT>", "<\\/SCRIPT>")
 }

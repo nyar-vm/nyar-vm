@@ -2,9 +2,11 @@
 
 // 未接线的旧私有实现测试已移出 `tests/`，见 crate 根 `pending-tests/readme.md`。
 mod cache;
+mod cmds;
 #[path = "../support/primitives.rs"]
 pub(crate) mod primitives;
 mod associated_projection_param_slots_e2e;
+mod forward;
 mod generic_struct_construct_context_e2e;
 #[path = "../frontend/hir/hir_lowering_host_binding_pipeline_tests.rs"]
 mod hir_lowering_host_binding_pipeline_tests;
@@ -38,5 +40,6 @@ mod legion_vcc_data_consumer_inventory;
 mod legion_wasm_closure_p4_e2e;
 mod package_module_boundary;
 mod support;
+mod unity_export;
 mod variant_auto_constructor_option_e2e;
 mod workspace;

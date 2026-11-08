@@ -270,7 +270,8 @@ pub fn read_export_manifest_for_status(path: &Path) -> LegionResult<ParsedExport
     read_export_manifest(path)
 }
 
-fn artifact_destination_name(artifact: &ValkyrieExportArtifact) -> String {
+#[doc(hidden)]
+pub fn artifact_destination_name(artifact: &ValkyrieExportArtifact) -> String {
     match artifact.role.as_str() {
         "plugin-runtime" => "Valkyrie.Unity.Runtime.dll".to_string(),
         "plugin-editor" => "Valkyrie.Unity.Editor.dll".to_string(),
@@ -278,7 +279,8 @@ fn artifact_destination_name(artifact: &ValkyrieExportArtifact) -> String {
     }
 }
 
-fn artifact_from_dll_name(project_name: &str, dll_name: &str) -> Option<ValkyrieExportArtifact> {
+#[doc(hidden)]
+pub fn artifact_from_dll_name(project_name: &str, dll_name: &str) -> Option<ValkyrieExportArtifact> {
     let stem = dll_name.strip_suffix(".dll")?;
     let marker = format!("{project_name}__");
     let suffix = stem.strip_prefix(&marker)?;

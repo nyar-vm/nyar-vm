@@ -19,7 +19,8 @@ pub fn generate_page_wxss(component: &LoweredComponent) -> Option<MpWxssOutput> 
     Some(MpWxssOutput { relative_path: format!("pages/{route}/{route}.wxss"), content: px_to_rpx(&css) })
 }
 
-fn px_to_rpx(source: &str) -> String {
+#[doc(hidden)]
+pub fn px_to_rpx(source: &str) -> String {
     let mut out = String::with_capacity(source.len());
     let chars: Vec<char> = source.chars().collect();
     let mut index = 0;

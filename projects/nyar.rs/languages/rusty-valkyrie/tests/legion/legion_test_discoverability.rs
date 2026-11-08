@@ -13,7 +13,11 @@ use std::{
 /// ignore 属性总数上限，只许降不许升。
 ///
 /// 实测基线：19 处带理由的 ignore 属性 + 1 处条件编译 ignore 属性（Windows 下 seed 启动不稳定）。
-const IGNORE_BASELINE: usize = 20;
+///
+/// 2026-11-08 由 20 上调至 22：`tests/asgard/codegen/android_compose_pack.rs:35/43` 两处
+/// maintainer ignore 随 `src/asgard/codegen` 内嵌测试迁入 `tests/` 后才进入守卫统计，
+/// 不是新增 ignore；二者会写入 `vendor/android-compose/**`，默认门禁不可执行。
+const IGNORE_BASELINE: usize = 22;
 
 /// 属性文本前缀用片段拼接，避免守卫源自身命中扫描。
 const IGNORE_ATTRIBUTE_PREFIX: &str = concat!("#", "[ignore");
@@ -250,6 +254,51 @@ fn ignore_attributes_stay_within_baseline() {
         IGNORE_BASELINE,
         "ignore 基线可下调：当前 {total} < {IGNORE_BASELINE}，请把 `IGNORE_BASELINE` 改为 {total} 以保持棘轮。\n  {}",
         sites.join("\n  ")
+    );
+}
+
+/// 递归收集 crate 内 `tests/` 与 `src/` 之外含测试声明的 `.rs`。
+fn collect_stray_test_sources(current: &Path, tests_dir: &Path, out: &mut Vec<String>) {
+    let entries = fs::read_dir(current).unwrap_or_else(|error| panic!("读取 {} 失败：{error}", current.display()));
+    for entry in entries {
+        let path = entry.expect("读取目录项").path();
+        if path.is_dir() {
+            if path == tests_dir || path.file_name().and_then(|name| name.to_str()) == Some("src") {
+                continue;
+            }
+            if path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with('.')) {
+                continue;
+            }
+            collect_stray_test_sources(&path, tests_dir, out);
+        } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
+            let source = fs::read_to_string(&path).expect("读取 Rust 源");
+            let is_test_source = source.lines().any(|line| {
+                let line = uncommented(line);
+                line.contains("#[test") || line.contains("cfg(test)") || line.contains("cfg_attr")
+            });
+            if is_test_source {
+                out.push(path.display().to_string());
+            }
+        }
+    }
+}
+
+#[test]
+fn no_test_sources_outside_tests() {
+    let dir = crate_dir();
+    assert!(
+        !dir.join("pending-tests").exists(),
+        "不允许把测试源挪出 `tests/` 伪造接线状态；`pending-tests/` 必须不存在"
+    );
+
+    let tests_dir = dir.join("tests");
+    let mut stray = Vec::new();
+    collect_stray_test_sources(&dir, &tests_dir, &mut stray);
+    stray.sort();
+    assert!(
+        stray.is_empty(),
+        "以下 `tests/` 之外（且不在 `src/`）的 `.rs` 含测试声明，无法被任何 harness 执行（未接线 = 永远不运行）：\n  {}\n请迁入 `tests/` 并接线，或删除",
+        stray.join("\n  ")
     );
 }
 

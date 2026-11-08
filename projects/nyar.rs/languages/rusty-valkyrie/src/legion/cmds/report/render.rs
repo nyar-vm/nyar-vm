@@ -15,7 +15,8 @@ use super::{
     write::atomic_write_all_text,
 };
 
-const CHART_STATUS: &str = "LEGION_CHART_STATUS";
+#[doc(hidden)]
+pub const CHART_STATUS: &str = "LEGION_CHART_STATUS";
 const CHART_COVERAGE_BALANCE: &str = "LEGION_CHART_COVERAGE_BALANCE";
 const CHART_COVERAGE_FEATURES: &str = "LEGION_CHART_COVERAGE_FEATURES";
 const CHART_BENCH_RUNTIME: &str = "LEGION_CHART_BENCH_RUNTIME";

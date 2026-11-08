@@ -1,9 +1,12 @@
 //! `legion doc` — 用户文档静态站点生成（Asgard static renderer）。
 
-mod assets;
+#[doc(hidden)]
+pub mod assets;
 mod discover;
-mod markdown;
-mod nav;
+#[doc(hidden)]
+pub mod markdown;
+#[doc(hidden)]
+pub mod nav;
 mod render;
 use crate::legion::cmds::error::{LegionError, LegionResult};
 use serde_json::json;

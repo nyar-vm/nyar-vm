@@ -415,7 +415,8 @@ pub fn host_executable_with_embedded_ui(platform: &str, components: &[LoweredCom
     out
 }
 
-fn write_bindings(out: &mut Vec<u8>, bindings: &[ScriptBinding]) {
+#[doc(hidden)]
+pub fn write_bindings(out: &mut Vec<u8>, bindings: &[ScriptBinding]) {
     out.extend_from_slice(&(bindings.len() as u32).to_le_bytes());
     for binding in bindings {
         write_string(out, &binding.name);
@@ -433,7 +434,8 @@ fn signal_type_tag(ty: SignalValueType) -> u8 {
     }
 }
 
-fn write_ir(out: &mut Vec<u8>, module: &RenderModule) {
+#[doc(hidden)]
+pub fn write_ir(out: &mut Vec<u8>, module: &RenderModule) {
     write_region(out, module, &module.roots);
 }
 
@@ -534,7 +536,8 @@ fn write_text_segments(out: &mut Vec<u8>, module: &RenderModule, segments: &[Ren
     }
 }
 
-fn write_string(out: &mut Vec<u8>, value: &str) {
+#[doc(hidden)]
+pub fn write_string(out: &mut Vec<u8>, value: &str) {
     let bytes = value.as_bytes();
     out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
     out.extend_from_slice(bytes);

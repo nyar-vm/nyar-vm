@@ -1,13 +1,18 @@
 //! Legion 报告生成（AWSL SSG + asgard hydrate 图表岛）。
 
 mod assets;
-mod codegen;
+#[doc(hidden)]
+pub mod codegen;
 mod islands;
-mod models;
+#[doc(hidden)]
+pub mod models;
 mod project;
-mod render;
-mod standalone;
-mod write;
+#[doc(hidden)]
+pub mod render;
+#[doc(hidden)]
+pub mod standalone;
+#[doc(hidden)]
+pub mod write;
 
 pub use models::{BenchReport, BenchResultRow, CoverageFeatureEntry, CoverageReport, TestResultEntry};
 pub use project::{legion_report_project_dir, report_roots};

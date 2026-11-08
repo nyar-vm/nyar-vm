@@ -30,7 +30,8 @@ pub fn discover_test_functions(test_files: &[impl AsRef<Path>]) -> Vec<Discovere
     functions
 }
 
-fn discover_in_content(content: &str, compile_only: bool, functions: &mut Vec<DiscoveredFunction>) {
+#[doc(hidden)]
+pub fn discover_in_content(content: &str, compile_only: bool, functions: &mut Vec<DiscoveredFunction>) {
     let mut pending_attr = "";
     let mut pending_modifier = "";
 

@@ -24,7 +24,8 @@ pub fn desktop_runtime_asset_name(platform: &str) -> &'static str {
     }
 }
 
-fn generate_linux_native_runtime() -> String {
+#[doc(hidden)]
+pub fn generate_linux_native_runtime() -> String {
     let ui_magic = magic_bytes_literal(UI_BIN_MAGIC);
     let native_magic = magic_bytes_literal(HOST_NATIVE_MAGIC);
     format!(
@@ -129,7 +130,8 @@ void asgard_patch_native(const char* key, const char* value) {{
     )
 }
 
-fn generate_winui_runtime() -> String {
+#[doc(hidden)]
+pub fn generate_winui_runtime() -> String {
     let ui_magic = magic_bytes_literal(UI_BIN_MAGIC);
     let native_magic = magic_bytes_literal(HOST_NATIVE_MAGIC);
     format!(
@@ -369,6 +371,7 @@ namespace Asgard.Runtime
     )
 }
 
-fn generate_macos_swiftui_runtime() -> String {
+#[doc(hidden)]
+pub fn generate_macos_swiftui_runtime() -> String {
     generate_swiftui_runtime(SwiftUiProfile::Desktop)
 }

@@ -4,7 +4,7 @@ mod discover;
 mod session;
 mod targets;
 
-pub use discover::{DiscoveredFunction, discover_project_tests, discover_test_functions, extract_function_name};
+pub use discover::{DiscoveredFunction, discover_in_content, discover_project_tests, discover_test_functions, extract_function_name};
 pub use session::{
     EXTERNAL_RUNNER_TIMEOUT, ExternalRunFailure, ExternalTestSession, RunOutcome, bench_project, compile_external_test_session,
     execute_external_runner, run_external_test_in_session, run_tests_for_project,

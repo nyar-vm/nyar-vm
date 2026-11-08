@@ -22,7 +22,8 @@ use std::{
 
 use crate::legion::cmds::build::{BuildArgs, compile_arch, run as run_build};
 
-mod artifact_selection;
+#[doc(hidden)]
+pub mod artifact_selection;
 pub(crate) use artifact_selection::select_artifact;
 
 const EXECUTION_MANIFEST_FILE_NAME: &str = "run-contracts.txt";
@@ -33,11 +34,13 @@ const COMPILE_PLAN_SNAPSHOT_FILE_NAME: &str = "compile-plan.txt";
 const BACKEND_REQUEST_SNAPSHOT_FILE_NAME: &str = "backend-request.txt";
 /// 后端执行结果快照文件名，由构建流程写入，不属于交付产物。
 const BACKEND_RESULT_SNAPSHOT_FILE_NAME: &str = "backend-result.txt";
-const COMPILE_EVIDENCE_FILE_NAME: &str = "compile-evidence.txt";
+#[doc(hidden)]
+pub const COMPILE_EVIDENCE_FILE_NAME: &str = "compile-evidence.txt";
 /// execution manifest 的 schema 版本；`1` 起 manifest 记录 `artifact_kind` 与
 /// 库导出索引，`0` 旧产物一律判为不新鲜并重建。读取侧靠 `serde(default)`
 /// 兼容缺少新字段的旧文件。
-const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 1;
+#[doc(hidden)]
+pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 /// `legion run` 的命令参数。
 #[derive(Debug, Clone)]
@@ -313,14 +316,16 @@ fn read_compile_evidence_digest(output_dir: &Path) -> LegionResult<Option<Compil
     Ok(Some(CompileEvidenceDigest::from(&evidence)))
 }
 
-fn expected_resolver_compile_evidence(plan: &BuildPlan) -> LegionResult<CompileEvidenceDigest> {
+#[doc(hidden)]
+pub fn expected_resolver_compile_evidence(plan: &BuildPlan) -> LegionResult<CompileEvidenceDigest> {
     let groups = compile_source_snapshot(&plan.project.semantic_source_groups)?;
     let host_bindings = crate::legion::workspace::planner::compiler_host_provider_bindings(&plan.project.selected_host_providers)?;
     Ok(expected_resolver_compile_evidence_from_groups(&groups, &host_bindings, compile_arch(plan)))
 }
 
 /// 与 build 阶段共用同一架构键，保证 compile evidence 可比较。
-fn expected_resolver_compile_evidence_from_groups(
+#[doc(hidden)]
+pub fn expected_resolver_compile_evidence_from_groups(
     groups: &[nyar_types::compiler_input::CompilerSourceGroup],
     host_bindings: &[crate::compiler::emitter::pipeline::CompilerHostProviderBinding],
     arch: &str,
@@ -353,11 +358,16 @@ struct RunnerTemplate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct RunCommand {
-    target: RunnerFamily,
-    artifact: PathBuf,
-    command: String,
-    args: Vec<String>,
+#[doc(hidden)]
+pub struct RunCommand {
+    #[doc(hidden)]
+    pub target: RunnerFamily,
+    #[doc(hidden)]
+    pub artifact: PathBuf,
+    #[doc(hidden)]
+    pub command: String,
+    #[doc(hidden)]
+    pub args: Vec<String>,
 }
 
 /// 执行 `legion run`。
@@ -405,7 +415,8 @@ pub fn run(args: &RunArgs) -> LegionResult<ExitCode> {
 }
 
 /// 将 legion 侧工作负载意图参数转发给 `odin-vm` runner。
-fn append_ovm_workload_args(command: &mut RunCommand, args: &RunArgs) -> LegionResult<()> {
+#[doc(hidden)]
+pub fn append_ovm_workload_args(command: &mut RunCommand, args: &RunArgs) -> LegionResult<()> {
     if args.workload_json.is_none() && args.workload_file.is_none() {
         return Ok(());
     }
@@ -658,7 +669,8 @@ fn strip_verbatim_prefix(path: &str) -> &str {
     path.strip_prefix(r"\\?\").unwrap_or(path)
 }
 
-fn collect_execution_input_digests(plan: &BuildPlan) -> LegionResult<Vec<ExecutionInputDigest>> {
+#[doc(hidden)]
+pub fn collect_execution_input_digests(plan: &BuildPlan) -> LegionResult<Vec<ExecutionInputDigest>> {
     let mut inputs = Vec::new();
     for source_path in &plan.project.source_files {
         inputs.push(ExecutionInputDigest {
@@ -738,7 +750,8 @@ fn workspace_relative_path_text(workspace_root: &Path, path: &Path) -> String {
     path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_else(|| normalized_path_text(path))
 }
 
-fn hash_file_sha256(path: &Path) -> LegionResult<String> {
+#[doc(hidden)]
+pub fn hash_file_sha256(path: &Path) -> LegionResult<String> {
     let bytes = fs::read(path).map_err(|e| LegionError::msg(format!("failed to read '{}': {e}", path.display())))?;
     let mut hasher = Sha256::new();
     hasher.update(bytes);
