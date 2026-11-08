@@ -1,6 +1,7 @@
 //! legion integration tests.
 
-// TODO: mod cache; mod cmds; mod forward; mod unity_export; — 私有实现测试，待公开 API 后再在 main 里 `mod` 接线
+// TODO: mod cmds; mod forward; mod unity_export; — 私有实现测试，待公开 API 后再在 main 里 `mod` 接线
+mod cache;
 #[path = "../support/primitives.rs"]
 pub(crate) mod primitives;
 mod associated_projection_param_slots_e2e;
