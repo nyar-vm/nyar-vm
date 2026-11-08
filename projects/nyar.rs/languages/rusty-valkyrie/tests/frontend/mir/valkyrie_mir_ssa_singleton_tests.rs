@@ -373,7 +373,7 @@ singleton TodoStore {
 }
 
 #[test]
-#[ignore = "依赖 == / unwrap / hash 等 stdlib 操作符，超出 identity pipeline 范围"]
+#[ignore = "依赖 == / unwrap / hash 等 stdlib 操作符，超出 identity pipeline 范围；fixture 未建模这些运算符"]
 fn swiss_table_find_slot_passes_semantic_mir_contract() {
     let mir = compile_mir(
         r#"

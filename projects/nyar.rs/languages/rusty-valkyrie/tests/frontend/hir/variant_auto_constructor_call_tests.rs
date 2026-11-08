@@ -243,7 +243,7 @@ micro produce() {{
 /// 但 `AccessControlChecker` / `VisibilityChecker` 目前没有任何调用点，字面量构造路径
 /// 尚无可见性门禁。这里如实记录缺口：不发明可见性机制、不伪造通过。
 #[test]
-#[ignore = "blocked: 私有载荷字段的字面量构造尚无可见性语义支撑（`HirField.visibility` 已建模，`AccessControlChecker`/`VisibilityChecker` 无调用点）"]
+#[ignore = "blocked: 私有载荷字段的字面量构造尚无可见性语义支撑（`HirField.visibility` 已建模，`AccessControlChecker`/`VisibilityChecker` 无调用点；06 条目 30）"]
 fn private_payload_field_literal_construction_is_rejected() {
     let error = compile_error(
         r#"

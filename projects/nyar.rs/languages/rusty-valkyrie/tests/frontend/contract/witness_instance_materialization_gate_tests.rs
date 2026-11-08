@@ -414,7 +414,7 @@ micro main() {
 /// `DirectedGraph<utf8>` 的同构形态：双 bound（`Equal & Hash`）+ 字符串字面量，
 /// receiver 必须把 `N` 钉到 `text`，字面量按文本形参特化，双份证据都按 declaration 结算。
 #[test]
-#[ignore = "HIR 已通过；剩余 CAN015 文本字面量与名义文本类型的 MIR 身份差异属族 I（HIR 显式转换节点）"]
+#[ignore = "HIR 已通过；剩余 CAN015 文本字面量与名义文本类型的 MIR 身份差异属族 I（HIR 显式转换节点；06 条目 3）"]
 fn receiver_seeded_binder_specializes_text_literal_with_two_bounds() {
     ValkyrieCompiler::default()
         .compile_source_groups_to_program(&source_groups(TEXT_GRAPH, APP_TEXT_GRAPH))

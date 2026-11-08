@@ -241,7 +241,7 @@ fn producer_rejects_semantic_mir_lowering_diagnostics() {
 }
 
 #[test]
-#[ignore = "contract-gate: singleton 聚合的 declaration ItemId 由前端 MIR lowering 生产（src/compiler/mir/singleton.rs 未冻结该事实，CAN018）；归属 singleton 生命周期组，canonical 生产者不得代造"]
+#[ignore = "contract-gate: singleton 聚合的 declaration ItemId 由前端 MIR lowering 生产（src/compiler/mir/singleton.rs 未冻结该事实，CAN018）；归属 singleton 生命周期组，canonical 生产者不得代造（06 条目 28）"]
 fn producer_carries_singleton_lifecycle_contract() {
     let output = rusty_valkyrie::ValkyrieCompiler::default()
         .compile_source_to_program(&with_primitives(

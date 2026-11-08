@@ -35,7 +35,6 @@ fn source_bare_declaration_cannot_supply_an_executable_call_target() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn source_entry_declaration_requires_a_function_body() {
     // Oak 允许无函数体的 `micro` 作为声明（HIR 标记 abstract），但入口必须能产生可执行体；
     // 该声明不得成为可执行程序。

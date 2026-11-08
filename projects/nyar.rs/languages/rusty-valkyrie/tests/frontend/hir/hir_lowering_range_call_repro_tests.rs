@@ -452,7 +452,7 @@ micro Some<T>(value: T) -> Option<T> {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "blocked: 预链接 orphan 检查未计 `[wasm_operator]` 抽象调用（06 条目 29）"]
 fn cross_package_array_host_get_links_without_orphan_callable() {
     // 对齐 std.adaptor.wasm Array.v：数组宿主合同经 `[host_provider]` 声明绑定，跨包调用
     // 不得留下无合同 Call；`usize` 按真实 std 形状是 `u64` 的别名。

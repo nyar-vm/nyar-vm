@@ -279,7 +279,6 @@ micro demo(value: u32): u32 {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn some_short_name_without_sum_identity_fails_closed() {
     let mut hir = ValkyrieCompiler::default()
         .compile_fixture_source(
