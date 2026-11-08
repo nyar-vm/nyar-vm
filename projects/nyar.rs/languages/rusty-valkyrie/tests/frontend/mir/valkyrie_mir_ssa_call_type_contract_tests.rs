@@ -282,8 +282,8 @@ micro demo(value: u32): u32 {
 #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn some_short_name_without_sum_identity_fails_closed() {
     let mut hir = ValkyrieCompiler::default()
-        .compile_source(
-            "unite Option<T> { Some { value: T }, None } \
+        .compile_fixture_source(
+            "unite Option<T> { [constructor] Some { value: T }, None } \
              micro wrap(value: utf8) -> Option<utf8> { return Some(value) }",
         )
         .expect("Option/Some 源码必须完成 HIR");

@@ -8,6 +8,7 @@ use rusty_valkyrie::{
         hir::{HirTupleField, ValkyrieType},
     },
 };
+use crate::primitives::with_primitives;
 use std::collections::BTreeMap;
 
 fn source_surface_module() -> MirModule {
@@ -243,11 +244,11 @@ fn producer_rejects_semantic_mir_lowering_diagnostics() {
 #[ignore = "contract-gate: singleton 聚合的 declaration ItemId 由前端 MIR lowering 生产（src/compiler/mir/singleton.rs 未冻结该事实，CAN018）；归属 singleton 生命周期组，canonical 生产者不得代造"]
 fn producer_carries_singleton_lifecycle_contract() {
     let output = rusty_valkyrie::ValkyrieCompiler::default()
-        .compile_source_to_program(
+        .compile_source_to_program(&with_primitives(
             r#"lazy singleton Counter {
     total: i64 = 0
 }"#,
-        )
+        ))
         .expect("singleton 源码必须产生完整 Canonical 合同");
     let plans = &output.canonical().linked.singleton_instances;
     assert_eq!(plans.len(), 1);

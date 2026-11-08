@@ -639,7 +639,16 @@ fn builds_valkyrie_v_leetcode_browser_wasm_smoke() {
     })
     .expect("legion build");
     assert_eq!(status, ExitCode::SUCCESS);
-    assert!(output_dir.join("main.wasm").is_file(), "expected wasm artifact");
+    // browser 目标按入口/导出拆分产物（例如 `main__functions.wasm`），不再产出
+    // node 目标那样的单一 `main.wasm`；断言按合同只要求至少一个 wasm 产物。
+    let wasm_artifacts: Vec<_> = fs::read_dir(&output_dir)
+        .expect("list browser wasm output")
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("wasm"))
+        .collect();
+    assert!(!wasm_artifacts.is_empty(), "expected at least one `.wasm` artifact under {}", output_dir.display());
+    assert!(output_dir.join("run-contracts.txt").is_file(), "browser build must emit run contracts");
 }
 
 fn valkyrie_v_hashmap_probe_dir() -> Option<std::path::PathBuf> {

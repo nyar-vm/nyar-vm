@@ -454,7 +454,8 @@ micro Some<T>(value: T) -> Option<T> {
 #[test]
 #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn cross_package_array_host_get_links_without_orphan_callable() {
-    // 对齐 std.adaptor.wasm Array.v：`builtin.array.length` / `array::[i]` / Some/None 不得留下无合同 Call。
+    // 对齐 std.adaptor.wasm Array.v：数组宿主合同经 `[host_provider]` 声明绑定，跨包调用
+    // 不得留下无合同 Call；`usize` 按真实 std 形状是 `u64` 的别名。
     let groups = vec![
         CompilerSourceGroup {
             dependency_key: "core".into(),
@@ -463,9 +464,10 @@ fn cross_package_array_host_get_links_without_orphan_callable() {
                 path: "core.v".into(),
                 source: r#"
 namespace std::primitive;
-[primitive("std::primitive::usize")]
-structure usize { }
-imply usize {
+[primitive("std::primitive::u64")]
+structure u64 { }
+type usize = u64;
+imply u64 {
     infix `==`(self, rhs: Self): bool { return true }
     infix `>`(self, rhs: Self): bool { return true }
     infix `-`(self, rhs: Self): Self { return self }
@@ -489,19 +491,37 @@ micro Some<T>(value: T) -> Option<T> {
                 path: "std.adaptor.wasm.v".into(),
                 source: r#"
 namespace std.adaptor.wasm.collection;
-[export] micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
-    let item_count: usize = builtin.array.length(array)
+[host_provider(std::collection::array::length)]
+private micro array_host_length<T>(array: [T]): usize {
+    return __array_wasm_length::<T>(array)
+}
+[host_provider(std::collection::array::get)]
+private micro array_host_get<T>(array: [T], index: usize): T {
+    return __array_wasm_get::<T>(array, index)
+}
+[host_provider(std::collection::array::set)]
+private micro array_host_set<T>(mut array: [T], index: usize, value: T): unit {
+    __array_wasm_set::<T>(array, index, value)
+}
+[wasm_operator("array.length"), pure]
+private micro __array_wasm_length<T>(array: [T]): usize { }
+[wasm_operator("array.get"), pure]
+private micro __array_wasm_get<T>(array: [T], index: usize): T { }
+[wasm_operator("array.set")]
+private micro __array_wasm_set<T>(mut array: [T], index: usize, value: T): unit { }
+[export] micro array_host_get_or_none<T>(array: [T], ordinal: usize): Option<T> {
+    let item_count: usize = array_host_length(array)
     if ordinal == 0 || ordinal > item_count {
         return None
     }
-    return Some(array::[ordinal - 1])
+    return Some(array_host_get(array, ordinal - 1))
 }
-micro array_host_set<T>(mut array: [T], ordinal: usize, value: T): unit {
-    let item_count: usize = builtin.array.length(array)
+micro array_host_update<T>(mut array: [T], ordinal: usize, value: T): unit {
+    let item_count: usize = array_host_length(array)
     if ordinal == 0 || ordinal > item_count {
         return
     }
-    array::[ordinal - 1] = value
+    array_host_set(array, ordinal - 1, value)
 }
 "#
                 .into(),

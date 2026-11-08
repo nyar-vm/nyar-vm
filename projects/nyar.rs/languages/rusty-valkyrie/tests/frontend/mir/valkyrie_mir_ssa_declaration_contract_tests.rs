@@ -37,8 +37,15 @@ fn source_bare_declaration_cannot_supply_an_executable_call_target() {
 #[test]
 #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn source_entry_declaration_requires_a_function_body() {
-    let error = ValkyrieCompiler::default().compile_source("[main] micro entry() -> i32;").expect_err("Oak 前端要求 micro 必须带函数体");
-    assert!(error.to_string().contains("body") || error.to_string().contains("Missing"));
+    // Oak 允许无函数体的 `micro` 作为声明（HIR 标记 abstract），但入口必须能产生可执行体；
+    // 该声明不得成为可执行程序。
+    let error = ValkyrieCompiler::default()
+        .compile_source_to_program(&crate::primitives::with_primitives("[main] micro entry() -> i32;"))
+        .expect_err("入口声明没有函数体不得产生可执行程序");
+    assert!(
+        error.to_string().contains("CAN042") && error.to_string().contains("callable"),
+        "无函数体的入口必须因缺少 callable 合同而结构化失败: {error}"
+    );
 }
 
 #[test]

@@ -1,5 +1,6 @@
 //! 泛型 callable 单态化：`imply X<T>` 成员的实例只由调用点代入产生。
 
+use crate::primitives::SourceFixtureCompile;
 use rusty_valkyrie::{
     CompilerSourceGroup, HirError, ValkyrieCompiler,
     compiler::types::hir::{HirBlock, HirCallResolutionFailureKind, HirExprKind, HirFunction, HirResolvedCall, HirStatementKind},
@@ -69,7 +70,9 @@ micro probe() -> i32 {
     return boom::<i32>(1)
 }
 "#;
-    let failure = ValkyrieCompiler::default().compile_source(source).expect_err("不收敛的固定点必须结构化失败");
+    let failure = ValkyrieCompiler::default()
+        .compile_fixture_source(source)
+        .expect_err("不收敛的固定点必须结构化失败");
     let HirError::GenericInstantiationLimitExceeded { kind, limit, top_growth, .. } = failure
     else {
         panic!("必须是单态化上限诊断: {failure}");
