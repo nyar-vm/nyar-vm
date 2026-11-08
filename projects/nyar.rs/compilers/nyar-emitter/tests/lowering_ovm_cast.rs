@@ -403,19 +403,11 @@ fn f64_to_i16_sign_extends_after_checked_conversion() {
 fn f32_f64_conversions_use_dedicated_codes() {
     let promote = lower(NyarType::Float32, NyarType::Float64);
     assert!(host_symbols(&promote).is_empty(), "f32→f64 不得产生宿主调用: {:?}", host_symbols(&promote));
-    assert!(
-        codes(&promote).contains(&OdinHeadCode::F64PromoteF32),
-        "f32→f64 必须走 `F64PromoteF32`: {:?}",
-        codes(&promote)
-    );
+    assert!(codes(&promote).contains(&OdinHeadCode::F64PromoteF32), "f32→f64 必须走 `F64PromoteF32`: {:?}", codes(&promote));
 
     let demote = lower(NyarType::Float64, NyarType::Float32);
     assert!(host_symbols(&demote).is_empty(), "f64→f32 不得产生宿主调用: {:?}", host_symbols(&demote));
-    assert!(
-        codes(&demote).contains(&OdinHeadCode::F32DemoteF64),
-        "f64→f32 必须走 `F32DemoteF64`: {:?}",
-        codes(&demote)
-    );
+    assert!(codes(&demote).contains(&OdinHeadCode::F32DemoteF64), "f64→f32 必须走 `F32DemoteF64`: {:?}", codes(&demote));
 }
 
 /// 整数↔`f32` 的单步精确转换尚未冻结：双向都必须结构化失败，
@@ -428,10 +420,7 @@ fn integer_f32_casts_fail_structured() {
         "错误必须点名缺失的转换与独立载体约束: {error}"
     );
     let error = try_lower(cast_function(i64_(true), NyarType::Float32)).expect_err("整数→f32 必须结构化失败");
-    assert!(
-        error.contains("`i64` → `f32`") && error.contains("尚未冻结"),
-        "错误必须点名两端类型与未冻结的单步转换: {error}"
-    );
+    assert!(error.contains("`i64` → `f32`") && error.contains("尚未冻结"), "错误必须点名两端类型与未冻结的单步转换: {error}");
 }
 
 /// 浮点 → 布尔/文本没有 `as` 合同：结构化失败。
