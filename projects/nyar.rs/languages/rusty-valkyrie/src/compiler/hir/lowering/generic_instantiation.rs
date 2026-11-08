@@ -29,8 +29,7 @@ use crate::compiler::{
         hir::{
             AssociatedType, FunctionType, GenericBinderId, GenericType, HirBlock, HirExpr, HirExprKind, HirFunction,
             HirFunctionReference, HirInstantiatedCallable, HirLambdaIdentity, HirModule, HirParam, HirResolvedCall, HirStatementKind,
-            HirTraitDispatch, HirWhereConstraint, ValkyrieType, export_spec::parse_library_glue_operation,
-            parse_export_spec_from_annotations,
+            HirTraitDispatch, HirWhereConstraint, ValkyrieType,
         },
     },
 };
@@ -426,9 +425,6 @@ pub(crate) fn instantiate_generic_callables(
                 }
             });
         }
-        // 2. 导出面种子：导出函数签名里的具体聚合实例，必须带上该聚合的全部
-        //    `[library_glue]` 成员；这些成员可能没有任何调用点。
-        seed_export_surface_requests(modules, gate, &declarations, &mut requests);
         if requests.is_empty() {
             return Ok(());
         }
@@ -593,110 +589,6 @@ pub(crate) fn instantiate_generic_callables(
         if instances.len() == before {
             return Ok(());
         }
-    }
-}
-
-/// 导出面种子：导出函数签名里出现了哪个具体聚合实例，就必须实例化该聚合声明的
-/// 全部 `[library_glue]` 成员。
-///
-/// 这些成员由宿主 glue 按导出名直通调用，函数体里可能没有任何调用点，只靠调用点
-/// 固定点永远到不了。归属仍只由「声明标注 + owner 类型合一」决定，不按成员名猜。
-/// 幂等：同一 (声明, 代入) 重复插入由 `BTreeSet` 与实例表去重。
-fn seed_export_surface_requests(
-    modules: &[HirModule],
-    gate: Option<&crate::compiler::hir::reachability::HirMaterializationGate>,
-    declarations: &BTreeMap<u32, CallableDeclaration>,
-    requests: &mut BTreeSet<InstanceRequest>,
-) {
-    let mut concretes = BTreeSet::new();
-    for module in modules {
-        collect_exported_concrete_nominals(module, &mut concretes);
-    }
-    if concretes.is_empty() {
-        return;
-    }
-    for declaration in declarations.values() {
-        // 只有声明标注给出角色的成员才是宿主直通操作。
-        if parse_library_glue_operation(&declaration.function.annotations).is_none() {
-            continue;
-        }
-        // 物化可达性门已按导出面标记 glue 根；门外声明不得铸造实例。
-        if gate.is_some_and(|gate| !gate.permits_declaration(declaration.function.declaration)) {
-            continue;
-        }
-        let Some(owner) = declaration.owner_type.as_ref()
-        else {
-            continue;
-        };
-        // 无泛型的聚合成员由声明本身闭合，不需要按导出面铸造实例。
-        if !has_unresolved_generic_arguments(owner) {
-            continue;
-        }
-        for concrete in &concretes {
-            let mut substitution = Substitution::new();
-            if !unify_instantiation(owner, concrete, &mut substitution) {
-                continue;
-            }
-            // 代入必须闭合：owner 的每个 binder 都要落到具体类型。
-            if owner_type_generic_binders(owner).iter().any(|binder| !substitution.contains_key(binder)) {
-                continue;
-            }
-            if substitution.values().any(has_unresolved_generic_arguments) {
-                continue;
-            }
-            requests.insert(InstanceRequest { declaration: declaration.index, substitution, self_type: None });
-        }
-    }
-}
-
-/// 收集导出函数签名里出现的完全具体名义实例；含嵌套实参（`ArrayList<ArrayList<i64>>` 收两层）。
-fn collect_exported_concrete_nominals(module: &HirModule, out: &mut BTreeSet<ValkyrieType>) {
-    for function in &module.functions {
-        // 只有已实例化的导出函数才代表对外签名。
-        if function.instance.is_none() || parse_export_spec_from_annotations(&function.annotations).is_none() {
-            continue;
-        }
-        for param in &function.params {
-            collect_concrete_nominals(&param.ty, out);
-        }
-        collect_concrete_nominals(&function.return_type, out);
-    }
-    for submodule in &module.submodules {
-        collect_exported_concrete_nominals(submodule, out);
-    }
-}
-
-/// 递归收集类型里所有完全具体的名义实例；仍含开放 binder 的形状一律跳过。
-fn collect_concrete_nominals(ty: &ValkyrieType, out: &mut BTreeSet<ValkyrieType>) {
-    match ty {
-        ValkyrieType::Nominal { arguments, .. } => {
-            if !arguments.is_empty() && !has_unresolved_generic_arguments(ty) {
-                out.insert(ty.clone());
-            }
-            for argument in arguments {
-                collect_concrete_nominals(argument, out);
-            }
-        }
-        ValkyrieType::Apply(base, arguments) => {
-            collect_concrete_nominals(base, out);
-            for argument in arguments {
-                collect_concrete_nominals(argument, out);
-            }
-        }
-        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => collect_concrete_nominals(element, out),
-        ValkyrieType::FixedArray { element, .. } => collect_concrete_nominals(element, out),
-        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
-            for item in items {
-                collect_concrete_nominals(item, out);
-            }
-        }
-        ValkyrieType::Function(function) => {
-            for param in &function.params {
-                collect_concrete_nominals(param, out);
-            }
-            collect_concrete_nominals(&function.return_type, out);
-        }
-        _ => {}
     }
 }
 

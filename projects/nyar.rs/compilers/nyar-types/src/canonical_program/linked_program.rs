@@ -95,50 +95,6 @@ pub struct CanonicalFragment {
     pub wasm_export_names: BTreeMap<ItemInstanceId, String>,
 }
 
-/// 库导出聚合的宿主直通操作种类。
-///
-/// 角色由语言声明标注给出（见 std `ArrayList` 的 `[library_glue]`），不是目标
-/// 私有事实，因此留在 canonical；目标层只按函数签名冻结物理载体。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LibraryGlueOperation {
-    /// 以容量构造聚合句柄。
-    Construct,
-    /// 向聚合句柄追加元素。
-    Push,
-    /// 读取聚合长度。
-    Length,
-    /// 按序数读取元素。
-    At,
-}
-
-impl LibraryGlueOperation {
-    /// 语言声明上的角色标注名（`[library_glue(construct)]`）。
-    ///
-    /// 闭包规划、HIR 解析与目标冻结都必须用同一个名字事实，不得各自复制字符串。
-    pub const ATTRIBUTE_NAME: &str = "library_glue";
-
-    /// 返回 glue 合同中的 operation 名称。
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Construct => "construct",
-            Self::Push => "push",
-            Self::Length => "length",
-            Self::At => "at",
-        }
-    }
-
-    /// 解析声明标注里的角色名；未知角色返回 `None`（失败闭合，不猜默认）。
-    pub fn from_role_name(name: &str) -> Option<Self> {
-        match name {
-            "construct" => Some(Self::Construct),
-            "push" => Some(Self::Push),
-            "length" => Some(Self::Length),
-            "at" => Some(Self::At),
-            _ => None,
-        }
-    }
-}
-
 /// Canonical 片段内的内部调用边。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CanonicalCallEdge {

@@ -33,6 +33,6 @@ pub use diagnostics::{
 };
 pub use linked_program::{
     CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, EntryRecord, EvidenceRecord,
-    ExportRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LibraryGlueOperation, LinkedSemanticProgram, NominalInstanceRecord,
+    ExportRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord,
     NominalValueSemantics, TypeRecord, VariantRecord,
 };

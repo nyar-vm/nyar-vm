@@ -9,7 +9,7 @@ pub use self::{
         CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
         CanonicalWitness, CompileResult, CompileStage, CompiledProgram, CompiledProgramError, DiagnosticArg, DiagnosticOwner,
         DiagnosticOwnerClass, DiagnosticPhase, DiagnosticRecord, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan,
-        EvidenceRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LibraryGlueOperation, LinkedSemanticProgram, NominalInstanceRecord,
+        EvidenceRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord,
         NominalValueSemantics, StageResult, StructuredDiagnosticSet, TypeRecord, VariantRecord, pipeline,
     },
     compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath},
