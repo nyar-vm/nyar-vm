@@ -86,6 +86,16 @@ impl HirMaterializationGate {
             collect_instantiated_clones(module, &mut clones);
         }
         let closed_clones = closed_instantiated_instances(&clones);
+        // 区间模式的比较调用由 MIR 合成，HIR 调用图没有 callee 边；这里把
+        // 「程序里存在区间模式」所需的内建整数 `infix <` 实例补进可达集。
+        // 否则该实现会被门禁裁掉，链接期报「调用实例 ... 没有定义或显式导入合同」。
+        if modules_use_range_pattern(modules) {
+            let mut pattern_instances = BTreeSet::new();
+            for module in modules {
+                collect_integer_comparison_instances(module, &mut pattern_instances);
+            }
+            self.reachable_instances.extend(pattern_instances);
+        }
         for module in modules {
             collect_instantiated_instances(module, self, &closed_clones);
         }
@@ -209,6 +219,72 @@ fn collect_module_callables<'a>(module: &'a HirModule, out: &mut Vec<&'a HirFunc
     }
     for submodule in &module.submodules {
         collect_module_callables(submodule, out);
+    }
+}
+
+/// 模块（含子模块）内是否出现区间模式。
+fn modules_use_range_pattern(modules: &[HirModule]) -> bool {
+    let mut callables = Vec::new();
+    for module in modules {
+        collect_module_callables(module, &mut callables);
+    }
+    let mut walker = ReachabilityWalker::collecting();
+    for function in &callables {
+        walker.visit_callable(function);
+    }
+    walker.uses_range_pattern
+}
+
+/// 收集内建整数类型固有 `infix <` 的实例：区间模式在 MIR 侧只合成 `<` 调用。
+///
+/// 只取无 trait 声明（固有 impl）且 target 是整数 primitive 的成员，避免把泛型
+/// 开放克隆或非整数类型的比较实现误放进门禁。
+fn collect_integer_comparison_instances(module: &HirModule, out: &mut BTreeSet<ItemInstanceId>) {
+    // 成员名只认 `operator_members` 的唯一事实源：HIR 里是 `infix <`，不是词素 `<`。
+    let member = crate::compiler::semantic::operator_members::infix_member_name(
+        &oak_valkyrie::lexer::token_type::ValkyrieTokenType::LessThan,
+    );
+    for implementation in &module.impls {
+        if implementation.trait_declaration.is_some() || !is_integer_primitive_type(&implementation.target) {
+            continue;
+        }
+        for method in &implementation.methods {
+            if method.name.as_str() == member
+                && let Some(instance) = method.instance
+            {
+                out.insert(instance);
+            }
+        }
+    }
+    for submodule in &module.submodules {
+        collect_integer_comparison_instances(submodule, out);
+    }
+}
+
+/// target 是否为整数 primitive（`i8..i128` / `u8..u128`）。
+fn is_integer_primitive_type(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Integer8 { .. }
+        | ValkyrieType::Integer16 { .. }
+        | ValkyrieType::Integer32 { .. }
+        | ValkyrieType::Integer64 { .. }
+        | ValkyrieType::Integer128 { .. } => true,
+        ValkyrieType::Nominal { arguments, primitive_identity, .. } if arguments.is_empty() => {
+            primitive_identity
+                .as_deref()
+                .and_then(crate::compiler::types::hir::primitive_identity_builtin_type)
+                .is_some_and(|builtin| {
+                    matches!(
+                        builtin,
+                        ValkyrieType::Integer8 { .. }
+                            | ValkyrieType::Integer16 { .. }
+                            | ValkyrieType::Integer32 { .. }
+                            | ValkyrieType::Integer64 { .. }
+                            | ValkyrieType::Integer128 { .. }
+                    )
+                })
+        }
+        _ => false,
     }
 }
 
@@ -347,6 +423,8 @@ struct ReachabilityWalker<'a> {
     callee_instances: BTreeSet<ItemInstanceId>,
     /// 审计模式：体内是否存在签名仍含开放 binder 的已冻结 callee。
     has_open_callee: bool,
+    /// 体内是否出现区间模式（其比较调用由 MIR 合成，需额外放行算子实例）。
+    uses_range_pattern: bool,
 }
 
 impl<'a> ReachabilityWalker<'a> {
@@ -360,6 +438,7 @@ impl<'a> ReachabilityWalker<'a> {
             audit: false,
             callee_instances: BTreeSet::new(),
             has_open_callee: false,
+            uses_range_pattern: false,
         }
     }
 
@@ -373,6 +452,7 @@ impl<'a> ReachabilityWalker<'a> {
             audit: false,
             callee_instances: BTreeSet::new(),
             has_open_callee: false,
+            uses_range_pattern: false,
         }
     }
 
@@ -386,6 +466,7 @@ impl<'a> ReachabilityWalker<'a> {
             audit: true,
             callee_instances: BTreeSet::new(),
             has_open_callee: false,
+            uses_range_pattern: false,
         }
     }
 
@@ -493,7 +574,8 @@ impl<'a> ReachabilityWalker<'a> {
 
     fn visit_pattern(&mut self, pattern: &HirPattern) {
         match pattern {
-            HirPattern::Wildcard | HirPattern::Variable(_) | HirPattern::Literal(_) | HirPattern::Range { .. } | HirPattern::Name(_) => {}
+            HirPattern::Range { .. } => self.uses_range_pattern = true,
+            HirPattern::Wildcard | HirPattern::Variable(_) | HirPattern::Literal(_) | HirPattern::Name(_) => {}
             HirPattern::Tuple(items) | HirPattern::Or(items) => {
                 for item in items {
                     self.visit_pattern(item);

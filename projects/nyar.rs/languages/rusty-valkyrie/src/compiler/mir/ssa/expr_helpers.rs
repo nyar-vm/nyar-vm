@@ -212,6 +212,42 @@ fn is_numeric_primitive_identity(identity: Option<&str>) -> bool {
         .is_some_and(|builtin| crate::compiler::hir::type_relation::is_numeric_type_name_of(&builtin))
 }
 
+/// 区间模式可用的 scrutinee 类型：只认整型。
+///
+/// `is_integer_literal_formal_type` 为字面量特化也接受浮点，但区间模式对浮点没有
+/// 语义；这里排除浮点，才能让 `case 2..=8` 落在 `f64`/文本/布尔 scrutinee 时
+/// 给出结构化诊断，而不是静默做数值比较。
+pub(super) fn is_integer_range_scrutinee_type(ty: &ValkyrieType, structs: &[super::MirStruct]) -> bool {
+    match ty {
+        ValkyrieType::Integer8 { .. }
+        | ValkyrieType::Integer16 { .. }
+        | ValkyrieType::Integer32 { .. }
+        | ValkyrieType::Integer64 { .. }
+        | ValkyrieType::Integer128 { .. } => true,
+        ValkyrieType::Nominal { declaration, arguments, .. } if arguments.is_empty() => {
+            super::MirStruct::find_by_declaration(structs, *declaration)
+                .is_some_and(|item| is_integer_primitive_identity(item.primitive_identity.as_deref()))
+        }
+        _ => false,
+    }
+}
+
+/// 声明身份是否为整型 primitive：`[primitive("std::primitive::i*/u*")]` 折叠出的载体。
+fn is_integer_primitive_identity(identity: Option<&str>) -> bool {
+    identity
+        .and_then(crate::compiler::types::hir::primitive_identity_builtin_type)
+        .is_some_and(|builtin| {
+            matches!(
+                builtin,
+                ValkyrieType::Integer8 { .. }
+                    | ValkyrieType::Integer16 { .. }
+                    | ValkyrieType::Integer32 { .. }
+                    | ValkyrieType::Integer64 { .. }
+                    | ValkyrieType::Integer128 { .. }
+            )
+        })
+}
+
 /// 字符字面量可特化到的形参类型：`char`（内建变体、源码短名或 `[primitive("std::text::char")]`
 /// 的 `Nominal`）或任意带数值 primitive 身份的形参；缺表与未结算别名一律 `false`。
 pub(super) fn is_character_literal_formal_type(ty: &ValkyrieType, structs: &[super::MirStruct]) -> bool {

@@ -593,8 +593,12 @@ impl MirBuilder {
             return self.lower_fallback_pattern_match(HirPattern::Range { start: start.cloned(), end: end.cloned(), inclusive_end }, value);
         };
 
-        if !crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(&actual_type, &self.field_declarations) {
-            return self.lower_fallback_pattern_match(HirPattern::Range { start: start.cloned(), end: end.cloned(), inclusive_end }, value);
+        if !crate::compiler::mir::ssa::expr_helpers::is_integer_range_scrutinee_type(&actual_type, &self.field_declarations) {
+            self.diagnostics.push(MirDiagnostic::PatternLoweringFailed {
+                pattern: HirPattern::Range { start: start.cloned(), end: end.cloned(), inclusive_end },
+                reason: "区间模式只能用于整型 scrutinee；浮点/文本/布尔 scrutinee 需改用字面量模式或显式比较".to_string(),
+            });
+            return MirOperand::Constant(MirConstant::Bool(false));
         }
 
         let mut accumulated: Option<MirOperand> = None;

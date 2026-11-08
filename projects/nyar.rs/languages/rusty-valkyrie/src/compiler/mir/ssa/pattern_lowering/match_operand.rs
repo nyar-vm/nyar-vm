@@ -302,6 +302,25 @@ impl MirBuilder {
         MirOperand::Constant(MirConstant::Unit)
     }
 
+    /// 把作为控制流操作数的布尔常量落到 SSA 值上。
+    ///
+    /// 规范化后端要求 `Branch` 条件与 `Jump` 实参都是 SSA 值（CAN010 拒绝常量），
+    /// 而模式比较的短路 helpers 会直接产生 `true`/`false` 终结符操作数，
+    /// 因此统一经 `LoadConstant` 物化，不在终结符里携带常量。
+    fn materialize_control_operand(&mut self, operand: MirOperand) -> MirOperand {
+        match operand {
+            MirOperand::Constant(MirConstant::Bool(value)) => {
+                self.materialize_pattern_constant_operand(MirConstant::Bool(value), &ValkyrieType::Boolean)
+            }
+            other => other,
+        }
+    }
+
+    /// 物化一个布尔常量并返回其 SSA 值操作数。
+    fn materialize_bool_operand(&mut self, value: bool) -> MirOperand {
+        self.materialize_pattern_constant_operand(MirConstant::Bool(value), &ValkyrieType::Boolean)
+    }
+
     /// Short-circuit `!value`: `if value { false } else { true }`.
     pub(crate) fn lower_logical_not_operand(&mut self, value: MirOperand) -> MirOperand {
         let pre_bindings = self.bindings.clone();
@@ -312,19 +331,22 @@ impl MirBuilder {
         let mut exit_value = None;
 
         self.current_block = cond_block;
-        self.terminate(MirTerminator::Branch { condition: value, then_target: then_block, else_target: else_block });
+        let condition = self.materialize_control_operand(value);
+        self.terminate(MirTerminator::Branch { condition, then_target: then_block, else_target: else_block });
         self.flush_block("not_cond");
 
         self.current_block = then_block;
         self.bindings = pre_bindings.clone();
         self.ensure_branch_exit_parameter(merge_block, &mut exit_value, Some(ValkyrieType::Boolean));
-        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![MirOperand::Constant(MirConstant::Bool(false))] });
+        let taken = self.materialize_bool_operand(false);
+        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![taken] });
         self.flush_block("not_then");
 
         self.current_block = else_block;
         self.bindings = pre_bindings.clone();
         self.ensure_branch_exit_parameter(merge_block, &mut exit_value, Some(ValkyrieType::Boolean));
-        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![MirOperand::Constant(MirConstant::Bool(true))] });
+        let taken = self.materialize_bool_operand(true);
+        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![taken] });
         self.flush_block("not_else");
 
         self.current_block = merge_block;
@@ -342,19 +364,22 @@ impl MirBuilder {
         let mut exit_value = None;
 
         self.current_block = cond_block;
-        self.terminate(MirTerminator::Branch { condition: lhs, then_target: then_block, else_target: else_block });
+        let condition = self.materialize_control_operand(lhs);
+        self.terminate(MirTerminator::Branch { condition, then_target: then_block, else_target: else_block });
         self.flush_block("and_cond");
 
         self.current_block = then_block;
         self.bindings = pre_bindings.clone();
         self.ensure_branch_exit_parameter(merge_block, &mut exit_value, Some(ValkyrieType::Boolean));
-        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![rhs] });
+        let taken = self.materialize_control_operand(rhs);
+        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![taken] });
         self.flush_block("and_then");
 
         self.current_block = else_block;
         self.bindings = pre_bindings.clone();
         self.ensure_branch_exit_parameter(merge_block, &mut exit_value, Some(ValkyrieType::Boolean));
-        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![MirOperand::Constant(MirConstant::Bool(false))] });
+        let taken = self.materialize_bool_operand(false);
+        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![taken] });
         self.flush_block("and_else");
 
         self.current_block = merge_block;
@@ -372,19 +397,22 @@ impl MirBuilder {
         let mut exit_value = None;
 
         self.current_block = cond_block;
-        self.terminate(MirTerminator::Branch { condition: lhs, then_target: then_block, else_target: else_block });
+        let condition = self.materialize_control_operand(lhs);
+        self.terminate(MirTerminator::Branch { condition, then_target: then_block, else_target: else_block });
         self.flush_block("or_cond");
 
         self.current_block = then_block;
         self.bindings = pre_bindings.clone();
         self.ensure_branch_exit_parameter(merge_block, &mut exit_value, Some(ValkyrieType::Boolean));
-        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![MirOperand::Constant(MirConstant::Bool(true))] });
+        let taken = self.materialize_bool_operand(true);
+        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![taken] });
         self.flush_block("or_then");
 
         self.current_block = else_block;
         self.bindings = pre_bindings.clone();
         self.ensure_branch_exit_parameter(merge_block, &mut exit_value, Some(ValkyrieType::Boolean));
-        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![rhs] });
+        let taken = self.materialize_control_operand(rhs);
+        self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![taken] });
         self.flush_block("or_else");
 
         self.current_block = merge_block;
