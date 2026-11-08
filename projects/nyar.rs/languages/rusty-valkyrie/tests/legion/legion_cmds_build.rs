@@ -642,6 +642,45 @@ fn builds_valkyrie_v_leetcode_browser_wasm_smoke() {
     assert!(output_dir.join("main.wasm").is_file(), "expected wasm artifact");
 }
 
+fn valkyrie_v_hashmap_probe_dir() -> Option<std::path::PathBuf> {
+    if let Ok(root) = std::env::var("VALKYRIE_V_ROOT") {
+        let path = std::path::PathBuf::from(root).join("examples").join("hashmap-probe");
+        if path.join("legion.von").is_file() {
+            return Some(path);
+        }
+    }
+    let sibling = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../../valkyrie.v/examples/hashmap-probe");
+    if sibling.join("legion.von").is_file() {
+        return Some(sibling);
+    }
+    None
+}
+
+/// `std::hash` 族最小复现：`HashMap<utf8, V>` 的 `hash_utf8` 调用 `Utf8Text.length`
+/// 合同成员，依赖组导入清单必须承载该调用，否则链接报「没有定义或显式导入合同」。
+#[test]
+fn builds_valkyrie_v_hashmap_probe_ovm_smoke() {
+    if std::env::var("LEGION_BUILD_VALKYRIE_V").as_deref() != Ok("1") {
+        eprintln!("skip: set LEGION_BUILD_VALKYRIE_V=1 to run valkyrie.v hashmap-probe legion build");
+        return;
+    }
+    let Some(project_dir) = valkyrie_v_hashmap_probe_dir()
+    else {
+        eprintln!("skip: valkyrie.v hashmap-probe not found");
+        return;
+    };
+    let output_dir = std::env::temp_dir().join("nyar-hashmap-probe-ovm");
+    let _ = fs::remove_dir_all(&output_dir);
+    let status = run(&BuildArgs {
+        project_dir,
+        target: CanonicalTarget::parse("ovm").expect("ovm target"),
+        output_dir: Some(output_dir),
+        debug_artifacts: true,
+    })
+    .expect("legion build");
+    assert_eq!(status, ExitCode::SUCCESS);
+}
+
 fn command_exists(command: &str) -> bool {
     std::env::var_os("PATH").is_some_and(|path| {
         std::env::split_paths(&path).any(|dir| {
