@@ -167,6 +167,17 @@ pub fn validate_storage_identities(submission: &FragmentSubmission) -> Result<()
             }
         }
     }
+    for sum in plan.sum_layouts() {
+        for variant in &sum.variants {
+            if let Some(ty) = variant.payload_type.as_ref().and_then(|payload| named_residual(payload, &registered_layouts)) {
+                return Err(UnresolvedStorageIdentity {
+                    function: String::new(),
+                    site: format!("unite layout `{}` variant `{}` payload", sum.name, variant.name),
+                    ty,
+                });
+            }
+        }
+    }
     Ok(())
 }
 

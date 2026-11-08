@@ -133,7 +133,7 @@ impl MirSumDeclaration {
     }
 }
 
-/// 变体记录 payload 的唯一布局口径：声明身份 → 已登记 `AggregateLayout` → 限定名。
+/// 变体记录 payload 的唯一布局口径：声明身份 → 已登记 `AggregateLayout` → 携带 `LayoutId` 的 `Nominal`。
 ///
 /// Canonical 的声明级与实例级 sum 布局共用这条链路，避免两套拼写口径。
 /// 未登记（含泛型实例尚未生成记录布局）一律返回 `None`，由调用方失败关闭。
@@ -151,5 +151,5 @@ pub(crate) fn record_payload_layout(record: &ValkyrieType, layouts: &AggregateLa
     else {
         format!("{}::{}", layout.namespace.replace('.', "::"), layout.name)
     };
-    Some(NyarType::Named(Identifier::new(&qualified)))
+    Some(NyarType::Nominal { layout: layout_id, spelling: Identifier::new(&qualified) })
 }

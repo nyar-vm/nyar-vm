@@ -472,6 +472,11 @@ impl TargetExecutionPlan {
         &self.aggregate_layouts
     }
 
+    /// 返回已冻结的 unite 布局。
+    pub fn sum_layouts(&self) -> impl Iterator<Item = &nyar_types::SumTypeLayout> + '_ {
+        self.sum_layout_by_nyar_type.values()
+    }
+
     /// 返回 nominal 实例到布局 ID 的映射。
     pub fn aggregate_layout_by_nominal(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId> {
         &self.aggregate_layout_by_nominal

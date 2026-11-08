@@ -826,8 +826,9 @@ pub(crate) fn register_sum_nominal_instances(
 
 /// sum variant payload 的布局侧形状：声明级与具体实例共用的唯一派生点。
 ///
-/// 多字段 payload 是变体记录，只认已登记布局；单字段 payload 按已冻结声明拼写结算，
-/// 两者都不在调用点按分支补特判。返回 `None` 由调用方失败关闭。
+/// 多字段 payload 是变体记录，只认已登记布局；单字段 payload 优先按已登记声明布局
+/// 携带 `LayoutId`，未登记时按已冻结声明拼写保留残差。两者都不在调用点按分支补特判。
+/// 返回 `None` 由调用方失败关闭。
 fn sum_variant_layout_payload(
     variant: &MirSumVariant,
     instantiated: &ValkyrieType,
@@ -839,7 +840,7 @@ fn sum_variant_layout_payload(
         crate::compiler::mir::record_payload_layout(instantiated, layouts)
     }
     else {
-        sum_payload_layout(instantiated, type_values, declaration_spellings)
+        sum_payload_layout(instantiated, type_values, declaration_spellings, layouts)
     }
 }
 
@@ -847,12 +848,13 @@ fn sum_variant_layout_payload(
 ///
 /// 语义身份只认 `VariantRecord::payload_type`；这里只回答 RepresentationPlan 与物理
 /// 布局需要的 `NyarType`。结构化 payload 走严格 `concretize_type`；名义 payload
-/// （`usize`、`SwissTableEntry<K, V>` 等）没有平台 Nominal 形状，按声明 TypeId 已冻结的
-/// surface spelling 表示，与 emitter `lower_type` 同口径，不按名字猜实现。
+/// 优先查已登记的声明布局并携带 `LayoutId`，未登记时才保留 surface spelling 残差，
+/// 由预发射门禁拒绝，不按名字猜实现。
 fn sum_payload_layout(
     ty: &ValkyrieType,
     type_values: &BTreeMap<ValkyrieType, TypeId>,
     declaration_spellings: &BTreeMap<TypeId, Identifier>,
+    layouts: &nyar_types::AggregateLayoutPlan,
 ) -> Option<nyar_types::NyarType> {
     if let Ok(concrete) = concretize_type(ty) {
         return Some(concrete);
@@ -864,14 +866,21 @@ fn sum_payload_layout(
     let declaration_id =
         type_values.get(&ValkyrieType::Nominal { declaration: *declaration, arguments: Vec::new(), primitive_identity: primitive_identity.clone() })?;
     let spelling = declaration_spellings.get(declaration_id)?;
+    if arguments.is_empty() {
+        // 名义声明若已有冻结布局，必须带 `LayoutId`；裸短名会被预发射门禁拒绝。
+        if let Some(primitive) = nyar_types::NyarType::from_surface_primitive(spelling.as_str()) {
+            return Some(primitive);
+        }
+        if let Some(layout) = crate::compiler::mir::layout_id_for_type(ty, layouts) {
+            return Some(nyar_types::NyarType::Nominal { layout, spelling: spelling.clone() });
+        }
+        return Some(nyar_types::NyarType::Named(spelling.clone()));
+    }
     let layout =
         nyar_types::NyarType::from_surface_primitive(spelling.as_str()).unwrap_or_else(|| nyar_types::NyarType::Named(spelling.clone()));
-    if arguments.is_empty() {
-        return Some(layout);
-    }
     Some(nyar_types::NyarType::Apply(
         Box::new(layout),
-        arguments.iter().map(|argument| sum_payload_layout(argument, type_values, declaration_spellings)).collect::<Option<Vec<_>>>()?,
+        arguments.iter().map(|argument| sum_payload_layout(argument, type_values, declaration_spellings, layouts)).collect::<Option<Vec<_>>>()?,
     ))
 }
 
