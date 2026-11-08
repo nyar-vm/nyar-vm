@@ -2,6 +2,7 @@ use nyar_types::{
     CanonicalProgram, CanonicalSemanticMir, CanonicalTypeKind, NominalValueSemantics, ValueIdentity, layout_choice::ValueRepresentation,
     pipeline::RepresentationPlanStage,
 };
+use nyar_types::layout::{AggregateLayout, AggregateLayoutPlan, FieldLayout, StorageKind};
 use rusty_valkyrie::{compiler::emitter::pipeline::CanonicalRepresentationPlanner, *};
 use std::collections::BTreeSet;
 
@@ -154,4 +155,99 @@ fn source_function_values_keep_their_owners_through_representation_planning() {
     let error = CanonicalRepresentationPlanner.plan(&invalid).expect_err("缺类型必须在表示规划前失败");
     assert_eq!(error.records[0].code, "PLAN001");
     assert_eq!(error.records[0].stage, nyar_types::CompileStage::ValidateMir);
+}
+
+fn layout_item(index: u32) -> nyar_types::ItemId {
+    nyar_types::ItemId::from_index(index).expect("ItemId")
+}
+
+fn inner_layout(id: u32, size: u32) -> AggregateLayout {
+    AggregateLayout {
+        id,
+        name: "Inner".into(),
+        namespace: "example".into(),
+        key: None,
+        storage: StorageKind::Value,
+        size,
+        align: 8,
+        fields: Vec::new(),
+    }
+}
+
+fn record_layout(id: u32, inner_id: u32) -> AggregateLayout {
+    AggregateLayout {
+        id,
+        name: "Record".into(),
+        namespace: "example".into(),
+        key: None,
+        storage: StorageKind::Value,
+        size: 8,
+        align: 8,
+        fields: vec![FieldLayout {
+            name: "inner".into(),
+            ty: nyar_types::NyarType::Nominal { layout: inner_id, spelling: nyar_types::Identifier::new("Inner") },
+            offset: 0,
+            size: 8,
+            align: 8,
+        }],
+    }
+}
+
+fn modular_layout_consumer() -> rusty_valkyrie::mir::MirModule {
+    let hir = rusty_valkyrie::ValkyrieCompiler::default()
+        .compile_source("micro entry() -> unit { return }")
+        .expect("源码解析");
+    let mut consumer = rusty_valkyrie::compiler::mir::MirLowerer::lower_module_semantic(&hir);
+    consumer.name = "consumer".into();
+    consumer.aggregate_layouts = AggregateLayoutPlan::default();
+    // consumer 本地编号：Record=5 的字段引用 Inner=7。
+    consumer.aggregate_layouts.layouts.push(record_layout(5, 7));
+    consumer.aggregate_layouts.layouts.push(inner_layout(7, 8));
+    consumer.aggregate_layouts.declaration_to_layout.insert(layout_item(1), 5);
+    consumer.aggregate_layouts.declaration_to_layout.insert(layout_item(2), 7);
+    consumer.aggregate_layouts.value_type_declarations.insert(layout_item(1));
+    consumer
+}
+
+#[test]
+fn repeated_layout_declaration_merges_by_identity_with_remapped_local_ids() {
+    let consumer = modular_layout_consumer();
+    let mut dependency = consumer.clone();
+    dependency.name = "dependency".into();
+    dependency.aggregate_layouts = AggregateLayoutPlan::default();
+    // 依赖本地编号不同：Record=1 的字段引用 Inner=3，但声明身份相同。
+    dependency.aggregate_layouts.layouts.push(record_layout(1, 3));
+    dependency.aggregate_layouts.layouts.push(inner_layout(3, 8));
+    dependency.aggregate_layouts.declaration_to_layout.insert(layout_item(1), 1);
+    dependency.aggregate_layouts.declaration_to_layout.insert(layout_item(2), 3);
+    dependency.aggregate_layouts.value_type_declarations.insert(layout_item(1));
+
+    let merged = rusty_valkyrie::compiler::emitter::pipeline::merge_aggregate_layouts(&consumer, &[dependency])
+        .expect("同一声明合同必须合并");
+    assert_eq!(merged.layouts.len(), 2);
+    assert_eq!(merged.declaration_to_layout[&layout_item(2)], 7);
+    let record = merged.layouts.iter().find(|layout| layout.id == 5).expect("consumer Record 保留");
+    assert!(
+        matches!(&record.fields[0].ty, nyar_types::NyarType::Nominal { layout: 7, .. }),
+        "依赖侧本地布局编号必须重写到合并身份：{:?}",
+        record.fields[0].ty
+    );
+}
+
+#[test]
+fn layout_contract_conflict_across_modules_still_fails() {
+    let consumer = modular_layout_consumer();
+    let mut dependency = consumer.clone();
+    dependency.name = "dependency".into();
+    dependency.aggregate_layouts = AggregateLayoutPlan::default();
+    // 同一 declaration，依赖侧 Inner 物理尺寸不同 —— 真实合同冲突仍必须闭合。
+    dependency.aggregate_layouts.layouts.push(record_layout(1, 3));
+    dependency.aggregate_layouts.layouts.push(inner_layout(3, 16));
+    dependency.aggregate_layouts.declaration_to_layout.insert(layout_item(1), 1);
+    dependency.aggregate_layouts.declaration_to_layout.insert(layout_item(2), 3);
+    dependency.aggregate_layouts.value_type_declarations.insert(layout_item(1));
+
+    let error = rusty_valkyrie::compiler::emitter::pipeline::merge_aggregate_layouts(&consumer, &[dependency])
+        .expect_err("尺寸不同不能合并");
+    assert!(error.to_string().contains("合同冲突"), "实际错误：{error}");
 }

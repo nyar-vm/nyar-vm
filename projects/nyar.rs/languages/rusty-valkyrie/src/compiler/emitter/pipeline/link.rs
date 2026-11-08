@@ -10,8 +10,8 @@ use crate::compiler::{
     types::hir::HirModule,
 };
 use nyar_types::{
-    FieldId, ItemInstanceId, NominalInstanceId,
-    layout::{AggregateLayout, AggregateLayoutPlan},
+    FieldId, ItemInstanceId, NyarFunctionType, NyarType, NominalInstanceId, WitnessObject,
+    layout::{AggregateLayout, AggregateLayoutPlan, LayoutId},
 };
 
 use super::host_bindings::remap_call_targets;
@@ -293,45 +293,52 @@ pub fn merge_entry_group_surface(consumer: &mut MirModule, entry: &MirModule) ->
 pub fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> Result<AggregateLayoutPlan, ParseError> {
     let mut merged = consumer.aggregate_layouts.clone();
     for module in dependencies {
+        let mut local_to_merged = BTreeMap::new();
+        let mut next_id = merged.layouts.iter().map(|layout| layout.id).max().unwrap_or(0).saturating_add(1);
         for layout in &module.aggregate_layouts.layouts {
             let owner = declaration_for_layout(module, layout);
-            if let Some(item) = owner {
-                if let Some(existing_id) = merged.declaration_to_layout.get(&item).copied()
-                    && let Some(existing) = merged.layouts.iter().find(|candidate| candidate.id == existing_id)
-                {
-                    if layout_contract_differs(existing, layout) {
-                        return Err(ParseError::Invalid {
-                            message: format!("布局 `{}` 合同冲突", layout_diagnostic_label(layout)),
-                            span: None,
-                        });
-                    }
-                    continue;
-                }
-            }
-            else if let Some(key) = layout.key.as_ref() {
-                // 合成 tuple / fixedarray 以结构键认亲；键相同即同一物理形状。
-                if let Some(existing_id) = merged.synthetic_layouts.get(key).copied() {
-                    let existing = merged.layouts.iter().find(|candidate| candidate.id == existing_id);
-                    if let Some(existing) = existing {
-                        if layout_contract_differs(existing, layout) {
-                            return Err(ParseError::Invalid { message: format!("布局键 `{key:?}` 合同冲突"), span: None });
-                        }
-                        continue;
-                    }
-                }
-            }
-            else {
+            let existing_id = match owner {
+                Some(item) => merged.declaration_to_layout.get(&item).copied(),
+                None => layout.key.as_ref().and_then(|key| merged.synthetic_layouts.get(key).copied()),
+            };
+            if owner.is_none() && layout.key.is_none() {
                 return Err(ParseError::Invalid {
                     message: format!("布局 `{}` 缺少 declaration identity，禁止按名合并", layout_diagnostic_label(layout)),
                     span: None,
                 });
             }
-            let new_id = merged.layouts.iter().map(|candidate| candidate.id).max().unwrap_or(0).saturating_add(1);
-            let mut copied = layout.clone();
-            copied.id = new_id;
+            let merged_id = match existing_id {
+                Some(id) => id,
+                None => {
+                    let id = next_id;
+                    next_id = next_id.saturating_add(1);
+                    id
+                }
+            };
+            local_to_merged.insert(layout.id, merged_id);
+        }
+        for layout in &module.aggregate_layouts.layouts {
+            let merged_id = local_to_merged.get(&layout.id).copied().ok_or_else(|| ParseError::Invalid {
+                message: format!("布局 `{}` 本地身份未登记", layout_diagnostic_label(layout)),
+                span: None,
+            })?;
+            let normalized = normalize_layout_references(layout, &local_to_merged)?;
+            if let Some(existing) = merged.layouts.iter().find(|candidate| candidate.id == merged_id) {
+                if layout_contract_differs(existing, &normalized) {
+                    let label = match layout.key.as_ref() {
+                        Some(key) => format!("布局键 `{key:?}`"),
+                        None => format!("布局 `{}`", layout_diagnostic_label(layout)),
+                    };
+                    return Err(ParseError::Invalid { message: format!("{label} 合同冲突"), span: None });
+                }
+                continue;
+            }
+            let owner = declaration_for_layout(module, layout);
+            let mut copied = normalized;
+            copied.id = merged_id;
             if let Some(item) = owner {
                 // 只按声明身份合并；名称或物理形状相同不能补出语义身份。
-                if merged.declaration_to_layout.insert(item, new_id).is_some() {
+                if merged.declaration_to_layout.insert(item, merged_id).is_some() {
                     return Err(ParseError::Invalid {
                         message: format!("布局 `{}` declaration identity 重复", layout_diagnostic_label(layout)),
                         span: None,
@@ -342,7 +349,7 @@ pub fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule])
                 }
             }
             else if let Some(key) = layout.key.clone() {
-                if merged.synthetic_layouts.insert(key, new_id).is_some() {
+                if merged.synthetic_layouts.insert(key, merged_id).is_some() {
                     return Err(ParseError::Invalid { message: format!("布局键 `{:?}` 重复", layout.key), span: None });
                 }
             }
@@ -365,6 +372,76 @@ fn layout_contract_differs(existing: &AggregateLayout, incoming: &AggregateLayou
 
 fn layout_diagnostic_label(layout: &AggregateLayout) -> String {
     if layout.namespace.is_empty() { layout.name.clone() } else { format!("{}.{}", layout.namespace, layout.name) }
+}
+
+/// 把依赖模块本地 `LayoutId` 重写为合并后的布局身份。
+///
+/// 布局 id 只在单个模块的 plan 内稠密有效，不是跨模块身份。链接后字段里的
+/// `Nominal { layout }` 必须指向合并 plan 的身份：否则同一声明会因两边本地
+/// 编号不同被误判成合同冲突，后端也会按错误身份解析嵌套字段。
+fn normalize_layout_references(
+    layout: &AggregateLayout,
+    local_to_merged: &BTreeMap<LayoutId, LayoutId>,
+) -> Result<AggregateLayout, ParseError> {
+    let mut normalized = layout.clone();
+    let label = layout_diagnostic_label(layout);
+    for field in &mut normalized.fields {
+        field.ty = remap_layout_references(&field.ty, local_to_merged, &label)?;
+    }
+    Ok(normalized)
+}
+
+fn remap_layout_references(
+    ty: &NyarType,
+    local_to_merged: &BTreeMap<LayoutId, LayoutId>,
+    label: &str,
+) -> Result<NyarType, ParseError> {
+    let missing = |layout: LayoutId| ParseError::Invalid {
+        message: format!("布局 `{label}` 字段类型引用未登记布局 #{layout}"),
+        span: None,
+    };
+    Ok(match ty {
+        NyarType::Nominal { layout, spelling } => NyarType::Nominal {
+            layout: *local_to_merged.get(layout).ok_or_else(|| missing(*layout))?,
+            spelling: spelling.clone(),
+        },
+        NyarType::Apply(base, arguments) => NyarType::Apply(
+            Box::new(remap_layout_references(base, local_to_merged, label)?),
+            arguments
+                .iter()
+                .map(|argument| remap_layout_references(argument, local_to_merged, label))
+                .collect::<Result<_, _>>()?,
+        ),
+        NyarType::Function(function) => NyarType::Function(Box::new(NyarFunctionType {
+            params: function
+                .params
+                .iter()
+                .map(|param| remap_layout_references(param, local_to_merged, label))
+                .collect::<Result<_, _>>()?,
+            return_type: remap_layout_references(&function.return_type, local_to_merged, label)?,
+        })),
+        NyarType::Tuple(items) => NyarType::Tuple(
+            items.iter().map(|item| remap_layout_references(item, local_to_merged, label)).collect::<Result<_, _>>()?,
+        ),
+        NyarType::Array(element) => NyarType::Array(Box::new(remap_layout_references(element, local_to_merged, label)?)),
+        NyarType::FixedArray { element, length } => NyarType::FixedArray {
+            element: Box::new(remap_layout_references(element, local_to_merged, label)?),
+            length: *length,
+        },
+        NyarType::TraitObject(witness) => NyarType::TraitObject(WitnessObject {
+            trait_path: witness.trait_path.clone(),
+            type_arguments: witness
+                .type_arguments
+                .iter()
+                .map(|argument| remap_layout_references(argument, local_to_merged, label))
+                .collect::<Result<_, _>>()?,
+        }),
+        NyarType::Nullable(inner) => NyarType::Nullable(Box::new(remap_layout_references(inner, local_to_merged, label)?)),
+        NyarType::Union(items) => NyarType::Union(
+            items.iter().map(|item| remap_layout_references(item, local_to_merged, label)).collect::<Result<_, _>>()?,
+        ),
+        other => other.clone(),
+    })
 }
 
 #[derive(Default)]
