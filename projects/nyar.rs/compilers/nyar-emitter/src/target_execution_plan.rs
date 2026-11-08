@@ -1309,18 +1309,27 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
                 .type_surface_spellings
                 .get(if *declaration == id { &id } else { declaration })
                 .or_else(|| program.linked.type_surface_spellings.get(&id));
-            let layout = program.linked.aggregate_layout_by_type.get(&id).copied();
+            // 零实参 nominal 的布局可能登记在声明 `TypeId` 上（`Self` 别名与声明
+            // 使用不同 `TypeId`），只能按声明身份回退，禁止按短名回查。
+            let layout = program
+                .linked
+                .aggregate_layout_by_type
+                .get(&id)
+                .or_else(|| program.linked.aggregate_layout_by_type.get(declaration))
+                .copied();
             if let Some(name) = spelling {
                 if let Some(primitive) = NyarType::from_surface_primitive(name.as_str()) {
                     return Ok(primitive);
                 }
                 // 已冻结实例级布局的零实参 nominal 铸造为携带身份的 `Nominal`：
                 // 存储类/GC 字段/ABI 由 `layout` 身份解析，拼写仅诊断显示。
-                // 未登记布局仍产出裸 `Named` 残差，由预发射门禁结构化拒绝。
+                // 泛型声明本身没有物理布局，只作为 `Apply` 基的构造器拼写保留；
+                // 闭合 nominal 有实例记录却无任何布局绑定时必须失败关闭，
+                // 不得压回裸 `Named` 让下游按名字猜实现。
                 if let Some(layout) = layout {
                     return Ok(NyarType::Nominal { layout, spelling: name.clone() });
                 }
-                if program.linked.nominal_instances.values().any(|record| record.ty == id) {
+                if is_generic_declaration(program, *declaration) {
                     return Ok(NyarType::Named(name.clone()));
                 }
                 return Err(format!("nominal type `{name}` 缺少目标 layout 或 carrier 合同"));
@@ -1401,6 +1410,19 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
             ));
         }
     }
+}
+
+/// 判定 `declaration` 是否为泛型声明：存在以该声明为 owner 的具实参 nominal 实例。
+///
+/// 泛型声明本身没有物理布局，只能作为 `Apply` 基的构造器拼写保留；闭合 nominal
+/// 缺少布局是合同缺口，必须失败闭合，二者不能共用裸 `Named` 回落。
+fn is_generic_declaration(program: &CanonicalProgram, declaration: nyar_types::TypeId) -> bool {
+    program.linked.types.values().any(|record| {
+        matches!(
+            &record.kind,
+            CanonicalTypeKind::Nominal { declaration: owner, arguments } if *owner == declaration && !arguments.is_empty()
+        )
+    })
 }
 
 /// 失败闭合诊断的定位信息：声明拼写、名义实例与字段槽位。
@@ -1503,6 +1525,94 @@ mod tests {
         assert_eq!(lower_type(&program, type_id(0)).expect("u8"), NyarType::Integer8 { signed: false });
         assert_eq!(lower_type(&program, type_id(1)).expect("i16"), NyarType::Integer16 { signed: true });
         assert_eq!(lower_type(&program, type_id(2)).expect("Character"), NyarType::Character);
+    }
+
+    /// 零实参 nominal 的 `Self` 别名 `TypeId` 未持有布局时，必须按声明身份回退；
+    /// 有实例记录但无任何布局绑定时必须失败关闭，不得压回裸 `Named`。
+    #[test]
+    fn zero_argument_nominal_resolves_layout_through_declaration_identity() {
+        let alias = type_id(0);
+        let declaration = type_id(1);
+        let mut program = program_with_types(vec![
+            (alias, CanonicalTypeKind::Nominal { declaration, arguments: Vec::new() }),
+            (declaration, CanonicalTypeKind::Nominal { declaration, arguments: Vec::new() }),
+        ]);
+        program.linked.type_surface_spellings.insert(declaration, nyar_types::Identifier::new("Endpoint"));
+        program.linked.aggregate_layout_by_type.insert(declaration, 0);
+        program.linked.aggregate_layouts.layouts.push(nyar_types::AggregateLayout {
+            id: 0,
+            name: "Endpoint".into(),
+            namespace: String::new(),
+            key: None,
+            storage: nyar_types::StorageKind::Value,
+            size: 8,
+            align: 8,
+            fields: vec![nyar_types::FieldLayout {
+                name: "code".into(),
+                ty: NyarType::Integer64 { signed: true },
+                offset: 0,
+                size: 8,
+                align: 8,
+            }],
+        });
+        program.linked.nominal_instances.insert(
+            nyar_types::NominalInstanceId::from_index(0).expect("测试名义实例身份"),
+            nyar_types::NominalInstanceRecord {
+                declaration,
+                ty: alias,
+                semantics: nyar_types::NominalValueSemantics::Value,
+                fields: Vec::new(),
+            },
+        );
+        assert_eq!(
+            lower_type(&program, alias).expect("声明身份布局"),
+            NyarType::Nominal { layout: 0, spelling: nyar_types::Identifier::new("Endpoint") }
+        );
+    }
+
+    #[test]
+    fn nominal_instance_without_any_layout_fails_closed() {
+        let alias = type_id(0);
+        let declaration = type_id(1);
+        let mut program = program_with_types(vec![
+            (alias, CanonicalTypeKind::Nominal { declaration, arguments: Vec::new() }),
+            (declaration, CanonicalTypeKind::Nominal { declaration, arguments: Vec::new() }),
+        ]);
+        program.linked.type_surface_spellings.insert(declaration, nyar_types::Identifier::new("Endpoint"));
+        program.linked.nominal_instances.insert(
+            nyar_types::NominalInstanceId::from_index(0).expect("测试名义实例身份"),
+            nyar_types::NominalInstanceRecord {
+                declaration,
+                ty: alias,
+                semantics: nyar_types::NominalValueSemantics::Value,
+                fields: Vec::new(),
+            },
+        );
+        let error = lower_type(&program, alias).expect_err("无布局必须失败关闭");
+        assert!(error.contains("缺少目标 layout"), "{error}");
+    }
+
+    #[test]
+    fn generic_declaration_without_layout_keeps_constructor_spelling() {
+        let declaration = type_id(0);
+        let integer = type_id(1);
+        let instance = type_id(2);
+        let mut program = program_with_types(vec![
+            (declaration, CanonicalTypeKind::Nominal { declaration, arguments: Vec::new() }),
+            (integer, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 64, signed: true })),
+            (instance, CanonicalTypeKind::Nominal { declaration, arguments: vec![integer] }),
+        ]);
+        program.linked.type_surface_spellings.insert(declaration, nyar_types::Identifier::new("ArrayList"));
+        program.linked.nominal_instances.insert(
+            nyar_types::NominalInstanceId::from_index(0).expect("测试名义实例身份"),
+            nyar_types::NominalInstanceRecord {
+                declaration,
+                ty: declaration,
+                semantics: nyar_types::NominalValueSemantics::Reference,
+                fields: Vec::new(),
+            },
+        );
+        assert_eq!(lower_type(&program, declaration).expect("泛型声明拼写"), NyarType::Named(nyar_types::Identifier::new("ArrayList")));
     }
 
     /// 浮点宽度与目标载体一一对应：`Float{bits:32}` 必须登记为独立的 `NyarType::Float32`
