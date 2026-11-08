@@ -40,7 +40,4 @@ mod static_site;
 mod support;
 mod symbols_tests;
 
-// Private implementation tests on disk under awsl/, codegen/, etc. — wire when using public API.
-// TODO: mod deploy;
-// TODO: mod host; mod host_backend; mod host_validation;
-// TODO: mod awsl; mod codegen; mod package; mod platform_contract; mod tailwind;
+// 未接线的旧私有实现测试已移出 `tests/`，见 crate 根 `pending-tests/readme.md`。

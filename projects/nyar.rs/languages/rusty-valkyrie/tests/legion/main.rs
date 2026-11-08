@@ -1,6 +1,6 @@
 //! legion integration tests.
 
-// TODO: mod cmds; mod forward; mod unity_export; — 私有实现测试，待公开 API 后再在 main 里 `mod` 接线
+// 未接线的旧私有实现测试已移出 `tests/`，见 crate 根 `pending-tests/readme.md`。
 mod cache;
 #[path = "../support/primitives.rs"]
 pub(crate) mod primitives;
@@ -29,6 +29,7 @@ mod legion_pack_bootstrap_aliases;
 mod legion_planner;
 mod legion_production_lane_build_contract;
 mod legion_production_lane_contract;
+mod legion_test_discoverability;
 mod legion_test_ovm_builtin_e2e;
 mod legion_test_target_resolution;
 mod legion_valkyrie_v_leetcode_plan;

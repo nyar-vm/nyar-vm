@@ -8,7 +8,7 @@ use rusty_valkyrie::legion::cmds::report::{
 use std::path::PathBuf;
 
 /// 报告渲染依赖 `valkyrie.v` 的 asgard.plotter 资产；未配置 `VALKYRIE_V_ROOT` 时跳过，
-/// 与 `tests/legion/cmds/report_render.rs` 保持同一约定。
+/// 与 `pending-tests/legion/cmds/report_render.rs` 保持同一约定。
 fn report_roots() -> Option<Vec<PathBuf>> {
     match rusty_valkyrie::asgard::valkyrie_v_roots() {
         Ok(roots) => Some(roots),
