@@ -295,14 +295,20 @@ impl TypeRelationContext {
         }
     }
 
-    /// 内建文本编码 carrier 与源码别名锚定的文本名义声明之间的身份归一。
+    /// 文本载体等价：内建编码 carrier 与源码别名锚定的文本名义声明之间的身份归一。
     ///
     /// 源码 `type utf8 = Utf8Text` 把编码锚定到名义声明上；生成组按 §4 规则不回填
     /// 该别名，`utf8` 位置回落到内建 carrier `Utf8`（`utf16` 同理）。两者是同一值空间，
-    /// 与 MIR 的 `text_encoding_matches_nominal` 同源。只归一同一编码：`Utf8` 不接受
-    /// `Utf16Text`，反之亦然；带泛型实参的名义声明不在此列。
-    pub(crate) fn text_encoding_matches_nominal(&self, actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
-        let ValkyrieType::Nominal { declaration, arguments, .. } = expected else {
+    /// 与 MIR 的 `text_carriers_equivalent` 同源。关系对称：生成单元的 ABI 形参
+    /// 按内建 carrier 解析、实参来自名义字段，依赖侧则是名义形参收编码实参，两侧同一判定。
+    /// 只归一同一编码：`Utf8` 不接受 `Utf16Text`，反之亦然；带泛型实参的名义声明不在此列。
+    pub(crate) fn text_carriers_equivalent(&self, left: &ValkyrieType, right: &ValkyrieType) -> bool {
+        self.text_builtin_anchors_declaration(left, right) || self.text_builtin_anchors_declaration(right, left)
+    }
+
+    /// 一侧是内建编码 carrier、另一侧是锚定该编码的名义声明时成立。
+    fn text_builtin_anchors_declaration(&self, builtin: &ValkyrieType, declaration: &ValkyrieType) -> bool {
+        let ValkyrieType::Nominal { declaration, arguments, .. } = declaration else {
             return false;
         };
         if !arguments.is_empty() {
@@ -312,12 +318,7 @@ impl TypeRelationContext {
             return false;
         };
         let name = item.name.as_str();
-        match actual {
-            // 与 MIR `text_encoding_matches_nominal` 同一名集：`text` 是两种编码共享的载体。
-            ValkyrieType::Utf8 => matches!(name, "text" | "utf8" | "Utf8Text" | "std::text::text" | "std.text.text"),
-            ValkyrieType::Utf16 => matches!(name, "text" | "utf16" | "Utf16Text" | "std::text::text" | "std.text.text"),
-            _ => false,
-        }
+        crate::compiler::text_carrier::carrier_matches_declaration_name(builtin, name)
     }
 
     /// 字符字面量可特化到的形参类型：`char` 自身，或任意数值形参（码位值参与比较/算术）。
@@ -361,8 +362,9 @@ impl TypeRelationContext {
             return ParameterMatchResult::NominalExact;
         }
 
-        // 生成组的内建编码 carrier 与依赖侧 `type utf8 = Utf8Text` 锚定的名义声明同一值空间。
-        if self.text_encoding_matches_nominal(actual, expected) {
+        // 内建编码 carrier 与 `type utf8 = Utf8Text` 锚定的名义声明是同一值空间的两个拼写，
+        // 判定方向无关：生成单元的 ABI 形参走内建 carrier、实参来自名义字段时同样匹配。
+        if self.text_carriers_equivalent(actual, expected) {
             return ParameterMatchResult::NominalExact;
         }
 

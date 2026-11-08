@@ -320,7 +320,7 @@ pub(crate) fn unify_call_type_binders(
     if matches!(actual, ValkyrieType::AutoType) {
         return Some(());
     }
-    if type_relations.text_encoding_matches_nominal(actual, expected) {
+    if type_relations.text_carriers_equivalent(actual, expected) {
         return Some(());
     }
     match expected {

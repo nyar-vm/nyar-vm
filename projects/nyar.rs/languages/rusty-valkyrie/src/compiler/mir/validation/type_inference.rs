@@ -80,7 +80,7 @@ pub(super) fn mir_return_operand_type_compatible(
         || bare_named_matches_generic_apply_return(expected, actual)
         // 文本常量只携带编码（`Utf8`/`Utf16`），声明侧 `utf8` 是锚定该编码的名义别名：
         // 返回值同口径归一，跨族编码与非文本名义仍失败闭合。
-        || text_encoding_matches_nominal(expected, actual, structs)
+        || text_carriers_equivalent(expected, actual, structs)
         // `T` 可隐式提升为 `T?`：非空值就是同一引用的 Some 侧，不构造名义 Option 包装。
         || matches!(expected, ValkyrieType::Nullable(inner) if mir_return_operand_type_compatible(actual, inner, structs))
 }
@@ -96,9 +96,20 @@ pub(super) fn call_site_type_compatible(declared: &ValkyrieType, actual: &Valkyr
 /// 文本编码与名义声明的调用边界兼容：字符串常量按 SMIR007 文本常量条款只携带
 /// 编码类型（`Utf8`/`Utf16`），源级 `type utf8 = Utf8Text` 别名把该编码锚定到名义
 /// 声明上，因此编码实参与同族文本名义形参兼容；跨族（`Utf16` 实参对 `utf8` 形参）
-/// 与非文本名义依旧失败闭合。
-pub(super) fn text_encoding_matches_nominal(declared: &ValkyrieType, actual: &ValkyrieType, structs: &[crate::compiler::mir::MirStruct]) -> bool {
-    let ValkyrieType::Nominal { declaration, arguments, .. } = declared
+/// 与非文本名义依旧失败闭合。判定方向无关：HIR 的 `text_carriers_equivalent` 同一
+/// 名集，生成单元里形参是内建 carrier、实参来自名义字段时同样成立。
+pub(super) fn text_carriers_equivalent(declared: &ValkyrieType, actual: &ValkyrieType, structs: &[crate::compiler::mir::MirStruct]) -> bool {
+    text_builtin_anchors_nominal_declaration(declared, actual, structs)
+        || text_builtin_anchors_nominal_declaration(actual, declared, structs)
+}
+
+/// 一侧是内建编码 carrier、另一侧是锚定该编码的名义声明时成立。
+fn text_builtin_anchors_nominal_declaration(
+    builtin: &ValkyrieType,
+    declaration: &ValkyrieType,
+    structs: &[crate::compiler::mir::MirStruct],
+) -> bool {
+    let ValkyrieType::Nominal { declaration, arguments, .. } = declaration
     else {
         return false;
     };
@@ -110,11 +121,7 @@ pub(super) fn text_encoding_matches_nominal(declared: &ValkyrieType, actual: &Va
         return false;
     };
     let name = item.name.as_str();
-    match actual {
-        ValkyrieType::Utf8 => matches!(name, "text" | "utf8" | "Utf8Text" | "std::text::text" | "std.text.text"),
-        ValkyrieType::Utf16 => matches!(name, "text" | "utf16" | "Utf16Text" | "std::text::text" | "std.text.text"),
-        _ => false,
-    }
+    crate::compiler::text_carrier::carrier_matches_declaration_name(builtin, name)
 }
 
 /// 检查两个类型是否是同一个 primitive numeric 的不同表示形式：

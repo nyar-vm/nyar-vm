@@ -2,7 +2,7 @@
 
 use super::type_inference::{
     bare_named_matches_generic_apply_return, call_site_type_compatible, infer_operand_static_type, mir_return_operand_type_compatible,
-    text_encoding_matches_nominal,
+    text_carriers_equivalent,
 };
 use crate::compiler::{
     mir::{MirConstant, MirFunction, MirModule, MirOperand, MirOperation, MirTerminator},
@@ -486,7 +486,7 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                     for (argument, expected) in arguments.iter().zip(parameter_types) {
                         let actual = value_type(argument)
                             .ok_or_else(|| error("SMIR001", location.clone(), "call argument has no semantic type".to_owned()))?;
-                        if !call_site_type_compatible(expected, &actual) && !text_encoding_matches_nominal(expected, &actual, &module.structs) {
+                        if !call_site_type_compatible(expected, &actual) && !text_carriers_equivalent(expected, &actual, &module.structs) {
                             return Err(error(
                                 "SMIR007",
                                 location.clone(),
