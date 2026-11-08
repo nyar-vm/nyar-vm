@@ -18,10 +18,15 @@ pub fn arm_contributes_to_match_merge(
     if actual_type.is_some_and(is_never_type) {
         return false;
     }
-    if matches!(arm_result, MirOperand::Constant(MirConstant::Unit)) {
-        return expected_type.is_none_or(|expected| matches!(expected, ValkyrieType::Unit));
+    // `unit` 没有可物化值槽：无论期望类型是否写成 `unit`，都不建立 merge 参数。
+    // 与 `branch_merge_type` 过滤 `Unit` 是同一模型，避免把 `Constant(Unit)` 当成 phi 实参。
+    if actual_type.is_some_and(|ty| matches!(ty, ValkyrieType::Unit)) {
+        return false;
     }
-    true
+    if expected_type.is_some_and(|ty| matches!(ty, ValkyrieType::Unit)) {
+        return false;
+    }
+    !matches!(arm_result, MirOperand::Constant(MirConstant::Unit))
 }
 impl MirBuilder {
     /// `no_match` 入边回填分支前的变量值：该入边只在 `match` 未命中时可达，
@@ -96,6 +101,7 @@ impl MirBuilder {
         let saved_bindings = self.bindings.clone();
         let saved_static_bindings = self.static_bindings.clone();
         let mut exit_value = None;
+        let mut any_arm_joins_exit = false;
         let exit_label = if produce_value { "match_exit" } else { "case_exit" };
         let no_match_label = if produce_value { "match_no_match" } else { "case_no_match" };
         let mut chain_arms = Vec::with_capacity(arms.len());
@@ -182,11 +188,18 @@ impl MirBuilder {
                         let exit_parameter = self.ensure_match_exit_parameter(exit_block, &mut exit_value, ty);
                         debug_assert_eq!(self.blocks[exit_block.0 as usize].parameters.first().copied(), Some(exit_parameter));
                         self.terminate(MirTerminator::Jump { target: exit_block, arguments: vec![arm_result] });
+                        any_arm_joins_exit = true;
+                    }
+                    else if ty.as_ref().is_some_and(is_never_type) || expected_type.is_some_and(|expected| !matches!(expected, ValkyrieType::Unit)) {
+                        // `panic` / `raise` arms resume on `Never`, or the arm produced a `Unit`
+                        // placeholder for a non-`Unit` signature: they never reach the join.
+                        self.terminate(MirTerminator::Unreachable);
                     }
                     else {
-                        // `panic` / `raise` arms resume on `Never` or lower to `Unit` placeholders.
-                        // They must not feed the typed match merge (`T`, `bool`, …).
-                        self.terminate(MirTerminator::Unreachable);
+                        // `Unit` 臂正常完成但不携带值：续接到 exit，不能当成分散臂。
+                        // 否则 `match` 之后的正常控制流会被错误地标成不可达。
+                        self.terminate(MirTerminator::Jump { target: exit_block, arguments: Vec::new() });
+                        any_arm_joins_exit = true;
                     }
                 }
                 else {
@@ -232,7 +245,7 @@ impl MirBuilder {
         }
         self.flush_block(no_match_label);
 
-        let all_arms_diverge = produce_value && exit_value.is_none();
+        let all_arms_diverge = produce_value && !any_arm_joins_exit;
         self.current_block = exit_block;
         self.current_label = exit_label.to_string();
         self.instructions.clear();
