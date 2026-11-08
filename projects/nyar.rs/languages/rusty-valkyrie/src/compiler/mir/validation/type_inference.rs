@@ -1,6 +1,7 @@
 //! 操作数静态类型推断与调用类型兼容判定。
 
 use crate::compiler::{
+    hir::type_lowering::primitive_surface_type,
     mir::{MirConstant, MirEffectKind, MirFunction, MirOperand, MirValueOrigin},
     types::hir::ValkyrieType,
 };
@@ -124,34 +125,15 @@ fn text_builtin_anchors_nominal_declaration(
     crate::compiler::text_carrier::carrier_matches_declaration_name(builtin, name)
 }
 
-/// 检查两个类型是否是同一个 primitive numeric 的不同表示形式：
+/// 检查两个类型是否是同一个 primitive 的不同表示形式：
 /// `Named("i32")` ↔ `Integer32 { .. }`、`Named("f64")` ↔ `Float64` 等。
+///
+/// 归一表唯一产生点在 `hir::type_lowering::primitive_surface_type`；本函数只比较归一秒。
 fn primitive_named_equivalent(a: &ValkyrieType, b: &ValkyrieType) -> bool {
-    fn offset_of(ty: &ValkyrieType) -> Option<u32> {
-        Some(match ty {
-            ValkyrieType::Boolean => 0,
-            ValkyrieType::Integer8 { .. } => 1,
-            ValkyrieType::Integer16 { .. } => 2,
-            ValkyrieType::Integer32 { .. } => 3,
-            ValkyrieType::Integer64 { .. } => 4,
-            ValkyrieType::Integer128 { .. } => 5,
-            ValkyrieType::Float32 => 6,
-            ValkyrieType::Float64 => 7,
-            ValkyrieType::Named(name) => match name.as_str() {
-                "boolean" | "Bool" | "bool" => 0,
-                "i8" => 1,
-                "i16" => 2,
-                "i32" | "int" | "Int" => 3,
-                "i64" | "long" | "Long" => 4,
-                "i128" => 5,
-                "f32" | "float" | "Float" => 6,
-                "f64" | "double" | "Double" => 7,
-                _ => return None,
-            },
-            _ => return None,
-        })
+    match (primitive_surface_type(a), primitive_surface_type(b)) {
+        (Some(left), Some(right)) => left == right,
+        _ => false,
     }
-    offset_of(a).is_some_and(|off_a| offset_of(b).is_some_and(|off_b| off_a == off_b))
 }
 
 pub(super) fn bare_named_matches_generic_apply_return(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {

@@ -8,6 +8,7 @@ use crate::compiler::{
             errors::{ControlFlowOp, LoopJumpOperation, PropagateProtocol, RequiredContext},
         },
         nullable_payload_type,
+        type_lowering::primitive_surface_type,
     },
     semantic::control_flow::{ControlFlowContext, TryScopeData},
     types::{
@@ -46,36 +47,21 @@ pub fn control_flow_value_type_compatible_with_primitives(
         || state.is_some_and(|state| primitive_boolean_compatible(expected, actual, state))
 }
 
-/// 检查两个类型是否是同一个 primitive numeric 的不同表示形式：
+/// 检查两个类型是否是同一个 primitive 的不同表示形式：
 /// `Named("i32")` ↔ `Integer32 { .. }`、`Named("f64")` ↔ `Float64` 等。
 ///
-/// 身份键带上有符号性：`i32` 与 `u32` 是同一宽度的不同名义类型，不得因表示形式合并。
-/// `bool` 不在表内：布尔的名义等价只承认 `boolean_declarations` 证据
+/// 身份键是 `hir::type_lowering::primitive_surface_type` 的归一秒（唯一产生点），
+/// 自带符号性：`i32` 与 `u32` 不得因表示形式合并。
+/// `bool` 不在本判定内：布尔的名义等价只承认 `boolean_declarations` 证据
 /// （见 `primitive_boolean_compatible`），未绑定声明的 `Named("bool")` 不得顶替 builtin Boolean。
 fn primitive_named_equivalent(a: &ValkyrieType, b: &ValkyrieType) -> bool {
-    fn identity_of(ty: &ValkyrieType) -> Option<(u32, Option<bool>)> {
-        Some(match ty {
-            ValkyrieType::Integer8 { signed } => (1, Some(*signed)),
-            ValkyrieType::Integer16 { signed } => (2, Some(*signed)),
-            ValkyrieType::Integer32 { signed } => (3, Some(*signed)),
-            ValkyrieType::Integer64 { signed } => (4, Some(*signed)),
-            ValkyrieType::Integer128 { signed } => (5, Some(*signed)),
-            ValkyrieType::Float32 => (6, None),
-            ValkyrieType::Float64 => (7, None),
-            ValkyrieType::Named(name) => match name.as_str() {
-                "i8" => (1, Some(true)),
-                "i16" => (2, Some(true)),
-                "i32" | "int" | "Int" => (3, Some(true)),
-                "i64" | "long" | "Long" => (4, Some(true)),
-                "i128" => (5, Some(true)),
-                "f32" | "float" | "Float" => (6, None),
-                "f64" | "double" | "Double" => (7, None),
-                _ => return None,
-            },
-            _ => return None,
-        })
+    let numeric = |ty: &ValkyrieType| {
+        primitive_surface_type(ty).filter(|canonical| !matches!(canonical, ValkyrieType::Boolean | ValkyrieType::Character))
+    };
+    match (numeric(a), numeric(b)) {
+        (Some(left), Some(right)) => left == right,
+        _ => false,
     }
-    identity_of(a).is_some_and(|identity_a| identity_of(b).is_some_and(|identity_b| identity_a == identity_b))
 }
 
 pub fn primitive_boolean_compatible(expected: &ValkyrieType, actual: &ValkyrieType, state: &HirValidationState) -> bool {

@@ -14,6 +14,7 @@ use crate::compiler::{
         row::{RowMethodSignature, RowRequirement, RowRequirementError},
         trait_system::{NamedTraitWitness, TraitModuleError, TraitModuleView},
     },
+    text_carrier,
     types::{
         Identifier, NamePath,
         hir::{GenericBinderId, HirAssociatedTypeBinding, HirEnum, HirModule, HirStruct, HirTraitBound, HirWhereConstraint, RowType, TraitObject, ValkyrieType, primitive_identity_builtin_type},
@@ -285,13 +286,22 @@ impl TypeRelationContext {
 
     /// 字符串字面量可特化到的形参类型：`Utf8`/`Utf16` 原语、`Named` 文本拼写，
     /// 以及经别名解析后的 `Nominal{ItemId}`（`type utf8 = Utf8Text` 的目标声明）。
-    /// 与 `is_numeric_type` 同源：名字集合按 declaration 冻结身份核对，不按拼写猜。
+    /// 名字集合唯一产生点是 `text_carrier::carrier_matches_declaration_name`：本函数只查表，
+    /// 不再另立文本名集合；字面量可落在任一编码，故两族 carrier 都查询。
     pub fn is_text_formal(&self, ty: &ValkyrieType) -> bool {
         match ty {
-            ValkyrieType::Nominal { declaration, .. } => {
-                self.structs_by_declaration.get(declaration).is_some_and(|item| is_text_type_name(item.name.as_str()))
+            ValkyrieType::Nominal { declaration, .. } => self.structs_by_declaration.get(declaration).is_some_and(|item| {
+                let name = item.name.as_str();
+                text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, name)
+                    || text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf16, name)
+            }),
+            ValkyrieType::Utf8 | ValkyrieType::Utf16 => true,
+            ValkyrieType::Named(name) => {
+                let name = name.as_str();
+                text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, name)
+                    || text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf16, name)
             }
-            other => crate::compiler::hir::overload::types::is_text_type(other),
+            _ => false,
         }
     }
 
@@ -868,11 +878,6 @@ pub(crate) fn is_numeric_type_name(name: &str) -> bool {
             | "std::primitive::usize"
             | "std::primitive::isize"
     )
-}
-
-/// 文本名集合：字符串字面量特化只认这些名字（含 `type utf8 = Utf8Text` 的别名目标）。
-pub(crate) fn is_text_type_name(name: &str) -> bool {
-    matches!(name.as_ref(), "text" | "utf8" | "Utf8Text" | "utf16" | "Utf16Text" | "std::text::text" | "std.text.text")
 }
 
 /// 浮点名集合：浮点字面量只认这几个名字，整数名不在其中。

@@ -489,6 +489,70 @@ pub fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
     }
 }
 
+/// 数值 primitive 的拼写到唯一内建变体的映射。
+///
+/// 这是**唯一**的数值身份表：`HIR` 签名的 `Named` 拼写、`MIR` 归一、canonical 表回退
+/// 都必须经 [`primitive_surface_type`] 查询，不得再各自建别名表。
+pub fn primitive_numeric_type(name: &str) -> Option<ValkyrieType> {
+    match name {
+        "i8" => Some(ValkyrieType::Integer8 { signed: true }),
+        "u8" => Some(ValkyrieType::Integer8 { signed: false }),
+        "i16" => Some(ValkyrieType::Integer16 { signed: true }),
+        "u16" => Some(ValkyrieType::Integer16 { signed: false }),
+        "i32" => Some(ValkyrieType::Integer32 { signed: true }),
+        "u32" => Some(ValkyrieType::Integer32 { signed: false }),
+        "i64" => Some(ValkyrieType::Integer64 { signed: true }),
+        "u64" => Some(ValkyrieType::Integer64 { signed: false }),
+        "i128" => Some(ValkyrieType::Integer128 { signed: true }),
+        "u128" => Some(ValkyrieType::Integer128 { signed: false }),
+        "f32" => Some(ValkyrieType::Float32),
+        "f64" => Some(ValkyrieType::Float64),
+        _ => None,
+    }
+}
+
+/// 把 primitive 的 surface 拼写（内建变体本身、legacy 别名、或规范拼写）归一到
+/// 唯一内建变体；非 primitive 返回 `None`。
+///
+/// 唯一产生点：数值身份 = [`primitive_numeric_type`]，编码/bool/char 身份 =
+/// [`canonical_builtin_type`]，legacy 拼写 = [`legacy_builtin_type_alias`]。
+/// 下游（`HIR` 证据、`MIR` 归一、canonical 表回退）只查询本函数，不再持有别名表。
+pub fn primitive_surface_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
+    match ty {
+        ValkyrieType::Boolean
+        | ValkyrieType::Character
+        | ValkyrieType::Integer8 { .. }
+        | ValkyrieType::Integer16 { .. }
+        | ValkyrieType::Integer32 { .. }
+        | ValkyrieType::Integer64 { .. }
+        | ValkyrieType::Integer128 { .. }
+        | ValkyrieType::Float32
+        | ValkyrieType::Float64 => Some(ty.clone()),
+        ValkyrieType::Named(name) => {
+            let spelling = name.as_str();
+            let canonical = legacy_builtin_type_alias(spelling).or_else(|| seed_primitive_alias(spelling)).unwrap_or(spelling);
+            canonical_builtin_type(canonical).or_else(|| primitive_numeric_type(canonical))
+        }
+        _ => None,
+    }
+}
+
+/// 种子签名里的 primitive surface 拼写（大写首字母一类），与源码 legacy 拼写分开：
+/// 源码侧这些名字仍按未声明类型报错，不能借本表悄悄接受。
+fn seed_primitive_alias(name: &str) -> Option<&'static str> {
+    match name {
+        "Bool" => Some("bool"),
+        "Int" => Some("i32"),
+        "UInt" => Some("u32"),
+        "Long" => Some("i64"),
+        "ULong" => Some("u64"),
+        "Float" => Some("f32"),
+        "Double" => Some("f64"),
+        "float32" => Some("f32"),
+        _ => None,
+    }
+}
+
 /// 该名字是否为**语言编码型内建**：语言层已有固定 carrier，源码里的同名
 /// `[primitive(…)] structure` 只是编码声明的载体，**不建立名义身份**。
 ///

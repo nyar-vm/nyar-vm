@@ -5,6 +5,7 @@ use nyar_types::{
 };
 
 use crate::compiler::{
+    hir::type_lowering::primitive_surface_type,
     mir::{MirFunction, MirModule},
     types::hir::ValkyrieType,
 };
@@ -36,28 +37,11 @@ pub(crate) fn type_id(ids: &BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType) -
         .ok_or_else(|| error_without_module("CAN014", format!("类型事实未进入 canonical table: {ty:?}")))
 }
 
-/// 把 primitive numeric 的 Named surface name 归一到底层 primitive 变体。
-/// 其他类型原样返回。
+/// 把 primitive 的 surface 拼写归一到唯一内建身份；其他类型原样返回。
+///
+/// 归一表唯一产生点在 `hir::type_lowering::primitive_surface_type`，这里不复制别名表。
 fn canonical_normalize_named_primitive(ty: &ValkyrieType) -> ValkyrieType {
-    match ty {
-        ValkyrieType::Named(name) => match name.as_str() {
-            "boolean" | "Bool" | "bool" => ValkyrieType::Boolean,
-            "i8" => ValkyrieType::Integer8 { signed: true },
-            "u8" | "byte" => ValkyrieType::Integer8 { signed: false },
-            "i16" => ValkyrieType::Integer16 { signed: true },
-            "u16" => ValkyrieType::Integer16 { signed: false },
-            "i32" | "int" | "Int" => ValkyrieType::Integer32 { signed: true },
-            "u32" | "uint" | "UInt" => ValkyrieType::Integer32 { signed: false },
-            "i64" | "long" | "Long" => ValkyrieType::Integer64 { signed: true },
-            "u64" | "ulong" => ValkyrieType::Integer64 { signed: false },
-            "i128" => ValkyrieType::Integer128 { signed: true },
-            "u128" => ValkyrieType::Integer128 { signed: false },
-            "f32" | "float32" => ValkyrieType::Float32,
-            "f64" | "float" | "Float" | "double" | "Double" => ValkyrieType::Float64,
-            _ => ty.clone(),
-        },
-        _ => ty.clone(),
-    }
+    primitive_surface_type(ty).unwrap_or_else(|| ty.clone())
 }
 fn item_id(index: u32) -> ItemId {
     ItemId::from_index(index).expect("item identity overflow")

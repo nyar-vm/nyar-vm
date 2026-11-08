@@ -49,7 +49,7 @@ pub(crate) use r#trait::impl_nominal_type_name;
 // types
 pub(crate) use types::{
     accepts_array_shape, canonical_extractor_callee, compute_call_match_kind, enum_apply_type, extract_callable_name, infer_expr_type,
-    infer_scrutinee_type, is_empty_array_literal, is_text_type, normalize_local_field_chain, pattern_type_declaration,
+    infer_scrutinee_type, is_empty_array_literal, normalize_local_field_chain, pattern_type_declaration,
     should_resolve_name_pattern_as_type, struct_apply_type, variant_payload_type,
 };
 

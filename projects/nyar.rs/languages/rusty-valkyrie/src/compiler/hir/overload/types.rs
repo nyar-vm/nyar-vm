@@ -71,15 +71,6 @@ pub(crate) fn nullable_union_type(payload: ValkyrieType) -> ValkyrieType {
     ValkyrieType::Nullable(Box::new(payload))
 }
 
-/// String literals infer as `Utf8` but core APIs take `text`.
-pub(crate) fn is_text_type(ty: &ValkyrieType) -> bool {
-    match ty {
-        ValkyrieType::Utf8 | ValkyrieType::Utf16 => true,
-        ValkyrieType::Named(name) => crate::compiler::hir::type_relation::is_text_type_name(name.as_str()),
-        _ => false,
-    }
-}
-
 /// 空数组字面量：自身没有元素类型事实，只能由调用形式的参数类型定型。
 pub(crate) fn is_empty_array_literal(expr: &HirExpr) -> bool {
     matches!(&expr.kind, HirExprKind::ArrayLiteral { items } if items.is_empty())
