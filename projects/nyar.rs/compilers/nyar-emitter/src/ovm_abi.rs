@@ -247,10 +247,15 @@ pub enum OvmOptionBoxing {
     },
 }
 
-/// OVM 库导出 sidecar 的固定产物名。
-pub const OVM_ABI_SIDECAR_FILE: &str = "ovm-abi.json";
+/// OVM 库导出 sidecar 的文件名后缀：每个物理产物各持一份。
+pub const OVM_ABI_SIDECAR_SUFFIX: &str = ".ovm-abi.json";
 
-/// OVM 库导出 sidecar（`ovm-abi.json`）：合同 + 它所描述 `.odin` 产物的整体哈希。
+/// 物理产物对应的 sidecar 文件名（`app.odin` → `app.odin.ovm-abi.json`）。
+pub fn ovm_abi_sidecar_file(artifact: &str) -> String {
+    format!("{artifact}{OVM_ABI_SIDECAR_SUFFIX}")
+}
+
+/// OVM 库导出 sidecar：合同 + 它所描述 `.odin` 产物的整体哈希；一个物理产物一份。
 ///
 /// 哈希覆盖产物**全部字节**，不挑字段计算：`.odin` 的布局表、常量池、代码段都
 /// 参与 ABI 解释，挑字段迟早漏。宿主读取 sidecar 后必须先按整份产物重算哈希，

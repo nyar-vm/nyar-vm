@@ -26,7 +26,7 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
         let mut entry_symbol = None;
         let mut run_contracts = Vec::new();
         let mut library_exports = Vec::new();
-        let mut ovm_abi = None;
+        let mut ovm_abi = Vec::new();
 
         fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
@@ -66,11 +66,10 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
                     })
                     .collect();
             }
-            // sidecar 与 `.odin` 同目录落盘；宿主读取时先按整份产物重算哈希。
-            ovm_abi = input
-                .abi_contract
-                .as_ref()
-                .map(|contract| OvmAbiSidecar::new(contract.clone(), odin_name.clone(), &odin_bytes));
+            // sidecar 与 `.odin` 同目录落盘，每个物理产物各持一份；宿主读取时先按整份产物重算哈希。
+            if let Some(contract) = input.abi_contract.as_ref() {
+                ovm_abi.push(OvmAbiSidecar::new(contract.clone(), odin_name.clone(), &odin_bytes));
+            }
             for entry in entries {
                 run_contracts.push(ovm_run_contract(request.artifact_name, &entry));
             }

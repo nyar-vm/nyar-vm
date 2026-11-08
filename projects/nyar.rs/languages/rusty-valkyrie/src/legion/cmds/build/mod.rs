@@ -256,7 +256,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     if let Some(managed_abi) = &artifact.driver.managed_abi {
         write_managed_abi(&plan.output_dir, managed_abi)?;
     }
-    if let Some(ovm_abi) = &artifact.driver.ovm_abi {
+    for ovm_abi in &artifact.driver.ovm_abi {
         write_ovm_abi(&plan.output_dir, ovm_abi)?;
     }
     if verbose {
@@ -342,9 +342,11 @@ fn write_managed_abi(output_dir: &Path, contract: &nyar_emitter::ManagedAbiContr
 
 /// 将 OVM ABI sidecar 落盘为确定性 pretty JSON：合同 + `.odin` 产物整体哈希。
 ///
-/// 宿主读取后必须先用实际 `.odin` 字节重算哈希，再按合同解释；不一致 fail-closed。
+/// 每个物理产物一份 sidecar，文件名由产物名唯一派生（`app.odin` →
+/// `app.odin.ovm-abi.json`）；宿主读取后必须先用实际 `.odin` 字节重算哈希，
+/// 再按合同解释，不一致 fail-closed。
 fn write_ovm_abi(output_dir: &Path, sidecar: &nyar_emitter::OvmAbiSidecar) -> LegionResult<()> {
-    let output_path = output_dir.join(nyar_emitter::OVM_ABI_SIDECAR_FILE);
+    let output_path = output_dir.join(nyar_emitter::ovm_abi_sidecar_file(&sidecar.artifact));
     let content = serde_json::to_string_pretty(sidecar)
         .map_err(|error| LegionError::msg(format!("序列化 OVM ABI sidecar 失败 {}: {error}", output_path.display())))?;
     fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", output_dir.display())))?;

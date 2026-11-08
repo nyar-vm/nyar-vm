@@ -41,7 +41,7 @@ pub(crate) fn merge_partition_reports(
     let mut primary_contracts = Vec::new();
     let mut secondary_contracts = Vec::new();
     let mut managed_abi: Option<(String, crate::ManagedAbiContract)> = None;
-    let mut ovm_abi: Option<(String, crate::OvmAbiSidecar)> = None;
+    let mut ovm_abi: Vec<(String, crate::OvmAbiSidecar)> = Vec::new();
     for (partition_name, report) in reports {
         merged.artifacts.artifacts.extend(report.artifacts.artifacts);
         if merged.entry_symbol.is_none() {
@@ -53,13 +53,16 @@ pub(crate) fn merge_partition_reports(
             }
             managed_abi = Some((partition_name.clone(), contract));
         }
-        if let Some(sidecar) = report.ovm_abi {
-            if let Some((existing_partition, _)) = &ovm_abi {
+        // 每个物理产物各持一份 ABI sidecar；不同分区各自拥有产物是合法的，只有
+        // 两个分区声称同一物理产物时才是不可合并的歧义（产物归属/哈希无法唯一）。
+        for sidecar in report.ovm_abi {
+            if let Some((existing_partition, existing)) = ovm_abi.iter().find(|(_, existing)| existing.artifact == sidecar.artifact) {
                 return Err(format!(
-                    "多个分区同时产出 OVM ABI sidecar：`{existing_partition}` 与 `{partition_name}`；拒绝合并歧义 ABI 合同"
+                    "多个分区同时声称同一物理产物 `{}` 的 OVM ABI sidecar：`{existing_partition}` 与 `{partition_name}`；拒绝合并歧义 ABI 合同",
+                    existing.artifact
                 ));
             }
-            ovm_abi = Some((partition_name.clone(), sidecar));
+            ovm_abi.push((partition_name.clone(), sidecar));
         }
         if primary_partition_name == Some(partition_name.as_str()) {
             primary_contracts.extend(report.run_contracts);
@@ -72,6 +75,6 @@ pub(crate) fn merge_partition_reports(
     merged.run_contracts = primary_contracts;
     merged.run_contracts.extend(secondary_contracts);
     merged.managed_abi = managed_abi.map(|(_, contract)| contract);
-    merged.ovm_abi = ovm_abi.map(|(_, sidecar)| sidecar);
+    merged.ovm_abi = ovm_abi.into_iter().map(|(_, sidecar)| sidecar).collect();
     Ok(merged)
 }

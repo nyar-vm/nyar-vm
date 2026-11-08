@@ -168,10 +168,11 @@ fn ovm_library_exports_are_callable_by_entry() {
 
     // sidecar 必须按整份 `.odin` 哈希校验；对不上 fail-closed，且合同 digest 与
     // manifest 的库导出 ABI digest 同源。
-    let sidecar_path = output_dir.join(nyar_emitter::OVM_ABI_SIDECAR_FILE);
+    let artifact_name = artifact.file_name().expect("文件名").to_string_lossy().to_string();
+    let sidecar_path = output_dir.join(nyar_emitter::ovm_abi_sidecar_file(&artifact_name));
     let sidecar: nyar_emitter::OvmAbiSidecar =
-        serde_json::from_slice(&fs::read(&sidecar_path).expect("缺 `ovm-abi.json` sidecar")).expect("sidecar JSON");
-    assert_eq!(sidecar.artifact, artifact.file_name().expect("文件名").to_string_lossy().to_string());
+        serde_json::from_slice(&fs::read(&sidecar_path).expect("缺按产物命名的 `.ovm-abi.json` sidecar")).expect("sidecar JSON");
+    assert_eq!(sidecar.artifact, artifact_name);
     sidecar.verify_against(&bytes).expect("sidecar 必须与 `.odin` 整体哈希一致");
     assert_eq!(
         sidecar.contract.digest, manifest.library_exports[0].abi_digest,

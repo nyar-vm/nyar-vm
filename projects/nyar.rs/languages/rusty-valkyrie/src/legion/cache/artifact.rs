@@ -113,9 +113,7 @@ pub fn compute_artifact_hash(
 pub fn collect_build_bundle(output_dir: &Path, report: &DriverCompileReport) -> std::result::Result<CachedBuildBundle, String> {
     let mut paths = report.artifacts.artifacts.iter().map(|artifact| artifact.path.clone()).collect::<Vec<_>>();
     paths.extend(report.run_contracts.iter().map(|contract| contract.physical_entry.clone()));
-    if report.ovm_abi.is_some() {
-        paths.push(nyar_emitter::OVM_ABI_SIDECAR_FILE.to_string());
-    }
+    paths.extend(report.ovm_abi.iter().map(|sidecar| nyar_emitter::ovm_abi_sidecar_file(&sidecar.artifact)));
     paths.sort();
     paths.dedup();
     let mut files = Vec::with_capacity(paths.len());

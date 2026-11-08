@@ -104,6 +104,6 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
         else {
             Vec::new()
         };
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi, ovm_abi: None, library_exports })
+        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi, ovm_abi: Vec::new(), library_exports })
     }
 }
