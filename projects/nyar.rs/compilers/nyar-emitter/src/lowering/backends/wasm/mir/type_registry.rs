@@ -227,6 +227,27 @@ pub(super) fn register_gc_sum_types(ctx: &ExecutableLoweringContext, type_indice
             }
         }
     }
+    // 导出签名可达的 sum 也必须注册：宿主可能只在返回/参数位观察变体身份，
+    // 函数体里没有任何 `Sum*` 指令；tag / payload accessor 的 `ref.cast` 必须
+    // 指向同一份已注册类型，否则发射期无法闭合并只能失败。
+    // 递归展开走目标中立的 `AbiStructure`，不在本模块复制类型形状推导。
+    for (instance, _) in exec.wasm_export_names() {
+        let Some(view) = exec.get_function(instance)
+        else {
+            continue;
+        };
+        let mut pending: Vec<NyarType> = view.function.param_types.clone();
+        pending.push(view.function.return_type.clone());
+        for ty in pending {
+            let structure = crate::abi_structure::abi_structure_for_type_with_layouts(
+                &ty,
+                exec.aggregate_layouts(),
+                exec.aggregate_layout_by_nyar_type(),
+                exec.sum_layout_by_nyar_type(),
+            );
+            collect_boundary_sums(&structure, &mut nominals);
+        }
+    }
     let mut map = BTreeMap::new();
     for nominal in nominals {
         let sum = &sums[&nominal];
@@ -240,6 +261,31 @@ pub(super) fn register_gc_sum_types(ctx: &ExecutableLoweringContext, type_indice
         map.insert(nominal, type_index);
     }
     map
+}
+
+/// 从共享 ABI 结构收集导出边界可达的 sum nominal（含变体载荷里的嵌套 sum）。
+fn collect_boundary_sums(structure: &crate::abi_structure::AbiStructure, nominals: &mut BTreeSet<NominalInstanceId>) {
+    use crate::abi_structure::AbiStructure;
+    match structure {
+        AbiStructure::Unite { nominal, payloads, .. } => {
+            nominals.insert(*nominal);
+            for payload in payloads.iter().flatten() {
+                collect_boundary_sums(payload, nominals);
+            }
+        }
+        AbiStructure::Array { element, .. }
+        | AbiStructure::FixedArray { element, .. }
+        | AbiStructure::Option { inner: element } => collect_boundary_sums(element, nominals),
+        AbiStructure::Tuple { fields } => fields.iter().for_each(|field| collect_boundary_sums(field, nominals)),
+        AbiStructure::Aggregate(aggregate) => {
+            aggregate.fields.iter().for_each(|field| collect_boundary_sums(&field.ty, nominals))
+        }
+        AbiStructure::Sequence(sequence) => {
+            collect_boundary_sums(&sequence.element, nominals);
+            collect_boundary_sums(&sequence.length_ty, nominals);
+        }
+        _ => {}
+    }
 }
 
 /// 为 heap array element_type 生成稳定字符串键,用于 `gc_array_type_indices` 查找。

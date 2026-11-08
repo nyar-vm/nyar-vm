@@ -85,7 +85,7 @@ pub enum AbiStructure {
         /// 完整命名空间路径。
         module_path: String,
     },
-    /// 零 payload unite 的变体身份。
+    /// unite / sum 的变体身份与载荷结构。
     Unite {
         /// 冻结 sum 名义实例身份（目标层据此解析物理 sum 布局）。
         nominal: NominalInstanceId,
@@ -93,11 +93,13 @@ pub enum AbiStructure {
         name: String,
         /// 由同一份 `SumTypeLayout` 派生的身份事实（名字、`is_unite`、变体名与 tag）。
         ///
-        /// tag accessor 与（阶段三的）variant payload accessor 都只从这条事实
-        /// 派生，禁止一路读布局、另一路按名字拼。
+        /// tag accessor 与 variant payload accessor 都只从这条事实派生，禁止一路
+        /// 读布局、另一路按名字拼。
         identity: String,
-        /// 按声明顺序排列的变体。
+        /// 按声明顺序排列的变体身份。
         variants: Vec<AbiVariant>,
+        /// 与 [`Self::variants`] 一一对应的载荷结构；零载荷变体为 `None`。
+        payloads: Vec<Option<Box<AbiStructure>>>,
     },
     /// 不能出现在库导出边界、或缺少冻结布局事实的类型。
     Unsupported {
@@ -249,18 +251,45 @@ pub fn abi_structure_for_type_with_layouts(
     layout_by_type: &BTreeMap<NyarType, LayoutId>,
     sums: &BTreeMap<NyarType, SumTypeLayout>,
 ) -> AbiStructure {
-    // unite 没有物理布局身份：只有零 payload unite 才有纯变体身份合同；
-    // 带 payload 的 sum 仍回落具名聚合身份，由目标层在边界失败闭合。
+    abi_structure_with_depth(ty, layouts, layout_by_type, sums, 0)
+}
+
+/// 递归深度上限：递归 sum（例如 `Cons(head, tail)`）的载荷会再次命中同一个
+/// `SumTypeLayout`，没有上限会无限展开。超过上限结构化失败，不静默截断。
+const ABI_STRUCTURE_MAX_DEPTH: usize = 32;
+
+fn abi_structure_with_depth(
+    ty: &NyarType,
+    layouts: &AggregateLayoutPlan,
+    layout_by_type: &BTreeMap<NyarType, LayoutId>,
+    sums: &BTreeMap<NyarType, SumTypeLayout>,
+    depth: usize,
+) -> AbiStructure {
+    if depth > ABI_STRUCTURE_MAX_DEPTH {
+        return AbiStructure::Unsupported {
+            reason: format!("ABI 结构递归超过 {ABI_STRUCTURE_MAX_DEPTH} 层，拒绝无界展开 `{ty:?}`"),
+        };
+    }
+    // sum 的物理布局是 lowering 冻结的 `[i32 tag, anyref payload]`：零载荷与带
+    // 载荷变体都由同一份 `SumTypeLayout` 派生，目标层据此解析真实 sum 布局。
     if let Some(sum) = sums.get(ty) {
-        if sum.is_unite && sum.variants.iter().all(|variant| variant.payload_type.is_none()) {
-            let variants = sum_variants_of(sum);
-            return AbiStructure::Unite {
-                nominal: sum.nominal,
-                name: sum.name.clone(),
-                identity: sum_identity_facts(&sum.name, sum.is_unite, &variants),
-                variants,
-            };
-        }
+        let variants = sum_variants_of(sum);
+        let payloads = sum
+            .variants
+            .iter()
+            .map(|variant| {
+                variant.payload_type.as_ref().map(|payload| {
+                    Box::new(abi_structure_with_depth(payload, layouts, layout_by_type, sums, depth + 1))
+                })
+            })
+            .collect();
+        return AbiStructure::Unite {
+            nominal: sum.nominal,
+            name: sum.name.clone(),
+            identity: sum_identity_facts(&sum.name, sum.is_unite, &variants),
+            variants,
+            payloads,
+        };
     }
     match ty {
         NyarType::Nominal { layout, spelling } => {
@@ -277,18 +306,21 @@ pub fn abi_structure_for_type_with_layouts(
             None => abi_structure_for_type(ty),
         },
         NyarType::Array(element) => AbiStructure::Array {
-            element: Box::new(abi_structure_for_type_with_layouts(element, layouts, layout_by_type, sums)),
+            element: Box::new(abi_structure_with_depth(element, layouts, layout_by_type, sums, depth + 1)),
             element_key: canonical_type_spelling(element),
         },
         NyarType::FixedArray { element, length } => AbiStructure::FixedArray {
-            element: Box::new(abi_structure_for_type_with_layouts(element, layouts, layout_by_type, sums)),
+            element: Box::new(abi_structure_with_depth(element, layouts, layout_by_type, sums, depth + 1)),
             length: *length,
         },
         NyarType::Nullable(inner) => AbiStructure::Option {
-            inner: Box::new(abi_structure_for_type_with_layouts(inner, layouts, layout_by_type, sums)),
+            inner: Box::new(abi_structure_with_depth(inner, layouts, layout_by_type, sums, depth + 1)),
         },
         NyarType::Tuple(fields) => AbiStructure::Tuple {
-            fields: fields.iter().map(|field| abi_structure_for_type_with_layouts(field, layouts, layout_by_type, sums)).collect(),
+            fields: fields
+                .iter()
+                .map(|field| abi_structure_with_depth(field, layouts, layout_by_type, sums, depth + 1))
+                .collect(),
         },
         other => abi_structure_for_type(other),
     }

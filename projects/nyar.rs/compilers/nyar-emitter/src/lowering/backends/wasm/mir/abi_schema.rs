@@ -185,13 +185,12 @@ pub enum WasmAbiType {
         module_path: String,
     },
 
-    /// 零 payload unite（`is_unite` sum）的变体身份合同。
+    /// unite / sum 的变体身份合同。
     ///
-    /// unite 在 Wasm 侧是 `[tag, payload]` GC struct；宿主拿到引用后经
-    /// `tag_accessor` 读出判别值，再按 `variants` 的 tag→名字映射回读变体身份。
-    /// 只有冻结布局证明 `is_unite` 且全部变体无 payload 时才生成此变体；
-    /// 带 payload 的 sum 仍保留 [`WasmAbiType::NamedAggregate`] 身份，宿主在
-    /// 边界失败闭合，而不是静默丢弃 payload。
+    /// sum 在 Wasm 侧是 `[tag, payload]` GC struct；宿主拿到引用后经
+    /// `tag_accessor` 读出判别值，再按 `variants` 的 tag→名字映射回读变体身份；
+    /// 带载荷变体再用该变体的 `payload_accessor` 读出只属于匹配变体的载荷。
+    /// 宿主不得把未匹配变体的 payload 槽当作本变体载荷解释。
     Sum {
         /// unite 的简单名（不含模块路径；canonical 目前没有 sum 的 namespace 事实）。
         name: String,
@@ -231,13 +230,20 @@ pub struct WasmAbiField {
     pub accessor: String,
 }
 
-/// unite 变体身份：判别 tag 与声明名逐一对应。
+/// 变体身份与载荷合同：判别 tag、声明名、以及只属于该变体的载荷结构。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WasmAbiSumVariant {
     /// 变体名（冻结 sum 布局，禁止按下标或拼写猜测）。
     pub name: String,
     /// 判别 tag（与 Wasm GC struct 的 tag 字段同源）。
     pub tag: u32,
+    /// 非零载荷结构；零载荷变体为 `None`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<Box<WasmAbiType>>,
+    /// `(unite anyref) -> payload carrier`：按 tag 匹配后读出该变体载荷的 wasm
+    /// 导出名。与 `tag_accessor` 从同一份 sum 身份派生。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_accessor: Option<String>,
 }
 
 /// 物理 heap array 的读写操作导出名。
@@ -390,6 +396,15 @@ fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Op
         }
         S::Option { inner } => {
             let inner = Box::new(project_structure(inner, layouts));
+            // wasm 物理降级只有「空引用 = None」这一种 niche；嵌套 Option 没有
+            // 冻结的 box 配方，`Some(None)` 与外层 `None` 会塌陷成同一空引用。
+            // 这里结构化失败，禁止把不可区分的物理形态交给宿主猜。
+            if matches!(*inner, WasmAbiType::Option { .. }) {
+                return WasmAbiType::Unsupported {
+                    reason: "嵌套 Option 没有 wasm 物理 box 合同：`Some(None)` 与外层 `None` 会塌陷成同一空引用"
+                        .to_string(),
+                };
+            }
             let box_contract = option_box_contract(&inner).map(Box::new);
             WasmAbiType::Option { inner, box_contract }
         }
@@ -481,11 +496,36 @@ fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Op
         S::InstanceHandle { name, module_path, .. } => {
             WasmAbiType::InstanceHandle { name: name.clone(), module_path: module_path.clone() }
         }
-        S::Unite { identity, name, variants, .. } => WasmAbiType::Sum {
-            name: name.clone(),
-            variants: variants.iter().map(|variant| WasmAbiSumVariant { name: variant.name.clone(), tag: variant.tag }).collect(),
-            tag_accessor: sum_tag_accessor_name(name, identity),
-        },
+        S::Unite { identity, name, variants, payloads, .. } => {
+            let mut projected = Vec::with_capacity(variants.len());
+            for (variant, payload) in variants.iter().zip(payloads.iter()) {
+                let Some(payload_structure) = payload else {
+                    projected.push(WasmAbiSumVariant {
+                        name: variant.name.clone(),
+                        tag: variant.tag,
+                        payload: None,
+                        payload_accessor: None,
+                    });
+                    continue;
+                };
+                let payload_schema = project_structure(payload_structure, layouts);
+                if let Some(reason) = payload_schema.unsupported_reason() {
+                    return WasmAbiType::Unsupported {
+                        reason: format!(
+                            "sum `{name}` 变体 `{}` 的载荷没有 Wasm ABI 合同: {reason}",
+                            variant.name
+                        ),
+                    };
+                }
+                projected.push(WasmAbiSumVariant {
+                    name: variant.name.clone(),
+                    tag: variant.tag,
+                    payload: Some(Box::new(payload_schema)),
+                    payload_accessor: Some(sum_payload_accessor_name(name, identity, &variant.name, variant.tag)),
+                });
+            }
+            WasmAbiType::Sum { name: name.clone(), variants: projected, tag_accessor: sum_tag_accessor_name(name, identity) }
+        }
         S::Unsupported { reason } => WasmAbiType::Unsupported { reason: reason.clone() },
     }
 }
@@ -612,6 +652,31 @@ fn sum_tag_accessor_name(name: &str, identity: &str) -> String {
     let suffix = digest.get(..16).unwrap_or(&digest);
     let sanitize = |text: &str| text.chars().map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' }).collect::<String>();
     format!("nyar$sum$tag${}${}", sanitize(name), suffix)
+}
+
+/// 由**同一份** sum 身份（外加变体名与 tag）派生 variant payload accessor 名字。
+///
+/// 与 [`sum_tag_accessor_name`] 同源：两者都只读 `identity` 与变体事实，绝不
+/// 一路读布局、另一路按名字拼。
+pub fn sum_payload_accessor_name(name: &str, identity: &str, variant_name: &str, tag: u32) -> String {
+    let digest = combined_content_hash(&[identity, &format!("{variant_name}:{tag}")]);
+    let suffix = digest.get(..16).unwrap_or(&digest);
+    let sanitize = |text: &str| text.chars().map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' }).collect::<String>();
+    format!("nyar$sum$payload${}${}", sanitize(name), suffix)
+}
+
+/// 从冻结 sum 布局派生 variant payload accessor 的确定性导出名。
+///
+/// 与 [`sum_tag_accessor_export_name`] 共用同一份 `SumTypeLayout` 身份：发射端
+/// （`entry.rs`）与合同端（`abi_schema::WasmAbiSumVariant::payload_accessor`）
+/// 都只调用本函数，禁止各自拼名字。
+pub fn sum_payload_accessor_export_name(sum: &nyar_types::SumTypeLayout, variant: &nyar_types::SumVariantLayout) -> String {
+    let identity = crate::abi_structure::sum_identity_facts(
+        &sum.name,
+        sum.is_unite,
+        &crate::abi_structure::sum_variants_of(sum),
+    );
+    sum_payload_accessor_name(&sum.name, &identity, &variant.name, variant.tag)
 }
 
 #[cfg(test)]

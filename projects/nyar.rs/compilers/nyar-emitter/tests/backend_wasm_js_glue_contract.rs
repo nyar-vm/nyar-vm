@@ -103,6 +103,26 @@ fn glue_handle_carrier_set_matches_backend_abi() {
     }
 }
 
+#[test]
+fn glue_sum_demarshal_reads_only_the_matched_variant_payload() {
+    // Sum 反编组：先按 tag accessor 选出变体身份，再只经**该变体自己的**
+    // payload accessor 读取载荷。零载荷变体只返回身份名；带载荷变体返回
+    // `{variant, payload}`，不得把未匹配变体的 payload 槽当本变体解释。
+    let glue = launcher_for(&spec(
+        r#"{"pick":{"params":[],"returns":{"kind":"Sum","name":"Maybe","tag_accessor":"nyar$sum$tag$Maybe$aaa","variants":[{"name":"None","tag":0},{"name":"Some","tag":1,"payload":{"kind":"I64"},"payload_accessor":"nyar$sum$payload$Maybe$bbb"}]}}}"#,
+    ));
+    assert!(glue.contains("no payload accessor contract"), "带载荷变体缺 payload accessor 必须失败闭合:\n{glue}");
+    assert!(
+        glue.contains(r#"const readPayload = bridgeExport(variant.payload_accessor, "sum payload accessor", path);"#),
+        "载荷必须经该变体的 payload accessor 读取:\n{glue}"
+    );
+    assert!(glue.contains("if (!variant.payload) return variant.name;"), "零载荷变体只返回身份名:\n{glue}");
+    assert!(
+        glue.contains("payload: demarshalLibraryReturn(variant.payload, readPayload(raw), `${path}.payload`)"),
+        "载荷必须按变体自带的 payload schema 递归反编组:\n{glue}"
+    );
+}
+
 // ── 调用面：callExport 查找与规格驱动 marshal ─────────────────────────────
 
 #[test]

@@ -237,6 +237,17 @@ impl TargetExecutionPlan {
         self
     }
 
+    /// 登记 unite 的冻结 sum 布局索引（集成测试专用）。
+    #[doc(hidden)]
+    pub fn testing_register_sum_layout(
+        &mut self,
+        ty: NyarType,
+        sum: nyar_types::SumTypeLayout,
+    ) -> &mut Self {
+        self.sum_layout_by_nyar_type.insert(ty, sum);
+        self
+    }
+
     /// 登记 nominal sum 的冻结表示合同（集成测试专用）。
     #[doc(hidden)]
     pub fn testing_register_sum_representation(

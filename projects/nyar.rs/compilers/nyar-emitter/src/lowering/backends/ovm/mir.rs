@@ -352,12 +352,22 @@ fn lower_fragment_mir_to_nyar_module_impl(
     // 的类型都在这里结构化失败，绝不降级成“先跑再说”。只有存在 `[export]` 面
     // （库模式）时才派生；无导出面由驱动层的 library 检查失败闭合。
     let abi_contract = if derive_abi_contract {
-        let exports = nyar_library_export_pairs(submission);
+        // 库导出 ABI 面必须与 wasm 的 `library_invoke` 同源：只覆盖 `[export]` 公共
+        // 导出面。`exported_operations` 还包含被链接进来的泛型 std 实例（例如
+        // `std::get#401`），它们的签名尚未实例化、本来就没有可冻结的结构；把
+        // 它们拉进 ABI 合同只会让整个模块无法产出，而不是让调用更安全。
+        let export_names = nyar_export_name_map(submission);
+        let exports = submission
+            .backend_plan
+            .wasm_export_names()
+            .keys()
+            .filter_map(|instance| export_names.get(instance).map(|name| (*instance, name.clone())))
+            .collect::<Vec<_>>();
         if exports.is_empty() {
             None
         }
         else {
-            Some(crate::ovm_abi::OvmAbiContract::derive(
+            Some(crate::ovm_abi::derive_contract(
                 submission.backend_plan.as_ref(),
                 &exports,
                 &mut module.layouts,

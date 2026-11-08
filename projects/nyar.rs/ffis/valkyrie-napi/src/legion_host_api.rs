@@ -1,9 +1,10 @@
 //! LeetCode / harness：execution manifest、`legion test` 与内嵌 OVM 调用（不经 argv、不定位外部 CLI）。
 
-use std::{fs, path::PathBuf};
+use std::{fs, path::Path, path::PathBuf};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use odin_bytecode::{OvmAbiSidecar, ovm_abi_sidecar_file};
 use odin_vm::{OdinVm, json_bridge};
 use rusty_valkyrie::legion::{
     CanonicalTarget,
@@ -150,16 +151,44 @@ pub fn legion_list_ovm_exports(module: String) -> Result<Vec<String>> {
     Ok(loaded.exports.iter().map(|export| export.symbol_name.clone()).collect())
 }
 
+/// 读取并校验产物旁的 ABI sidecar；缺失或哈希不符都失败闭合。
+///
+/// 结构物化只允许按“与这枚 `.odin` 字节一一对应”的合同进行：sidecar 缺失、
+/// 解析失败或产物哈希不一致时宁可拒绝调用，也不按猜测的布局解释堆内存。
+fn load_ovm_abi_sidecar(module: &str, artifact_bytes: &[u8]) -> Result<OvmAbiSidecar> {
+    let module_path = Path::new(module);
+    let artifact = module_path.file_name().and_then(|name| name.to_str()).unwrap_or(module);
+    let sidecar_path = module_path.with_file_name(ovm_abi_sidecar_file(artifact));
+    let sidecar_bytes = fs::read(&sidecar_path).map_err(|error| {
+        Error::from_reason(format!(
+            "OVM ABI 合同缺失：`{}`（{error}）；拒绝在无合同的情况下物化结构参数/返回值",
+            sidecar_path.display()
+        ))
+    })?;
+    let sidecar: OvmAbiSidecar = serde_json::from_slice(&sidecar_bytes)
+        .map_err(|error| Error::from_reason(format!("解析 OVM ABI 合同 `{}`: {error}", sidecar_path.display())))?;
+    sidecar
+        .verify_against(artifact_bytes)
+        .map_err(|error| Error::from_reason(format!("校验 OVM ABI 合同 `{}`: {error}", sidecar_path.display())))?;
+    Ok(sidecar)
+}
+
 /// Legion 内嵌 OVM：调用导出并返回 JSON（`args_json` 为 JSON 数组）。
 #[napi]
 pub fn legion_invoke_ovm_export(module: String, entry: String, args_json: String) -> Result<String> {
     let bytes = fs::read(&module).map_err(|error| Error::from_reason(format!("read module: {error}")))?;
+    let sidecar = load_ovm_abi_sidecar(&module, &bytes)?;
+    let export = sidecar.contract.export(&entry).ok_or_else(|| {
+        Error::from_reason(format!(
+            "OVM ABI 合同没有导出 `{entry}`；拒绝按未声明的结构物化参数/返回值"
+        ))
+    })?;
     let mut vm = OdinVm::new();
     let loaded = vm.load(&bytes).map_err(|error| Error::from_reason(format!("load module: {error}")))?;
-    let args = json_bridge::parse_call_args_json_with_heap(&args_json, vm.heap_mut())
+    let args = json_bridge::parse_call_args_json_with_contract(&args_json, export, vm.heap_mut())
         .map_err(|error| Error::from_reason(format!("parse args-json: {error}")))?;
     let result = vm.run(&loaded, &entry, args).map_err(|error| Error::from_reason(format!("run entry `{entry}`: {error}")))?;
-    let json = json_bridge::value_to_json_with_heap(&result, Some(vm.heap()))
+    let json = json_bridge::value_to_json_with_contract(&result, &export.returns, vm.heap())
         .map_err(|error| Error::from_reason(format!("serialize result: {error}")))?;
     serde_json::to_string(&json).map_err(|error| Error::from_reason(format!("encode result json: {error}")))
 }

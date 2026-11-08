@@ -12,9 +12,11 @@
 //! - [`errors`]：解码错误类型。
 //! - [`decode`]：模块入口与各 section 解析器。
 //! - [`encode`]：模块入口与各 section 序列化器。
+//! - [`abi`]：`ovm-abi.json` sidecar 的共享合同 schema。
 //!
 //! 根模块只做导出，不承载格式细节。
 
+pub mod abi;
 mod decode;
 mod encode;
 mod errors;
@@ -22,6 +24,10 @@ mod model;
 mod opcode;
 
 pub use crate::{
+    abi::{
+        OVM_ABI_SCHEMA_VERSION, OVM_ABI_SIDECAR_SUFFIX, OvmAbiContract, OvmAbiExport, OvmAbiField, OvmAbiParam, OvmAbiSidecar, OvmAbiType,
+        OvmAbiVariant, OvmOptionBoxing, OvmTextRepresentation, artifact_sha256, ovm_abi_sidecar_file,
+    },
     decode::decode_module,
     encode::encode_module,
     errors::OdinDecodeError,

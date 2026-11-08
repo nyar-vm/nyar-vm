@@ -1795,15 +1795,21 @@ fn emit_library_field_accessors<'name>(
     // 后端已注册的 `[i32]` / `[i64]` / `[f64]` box。只在这里收集**导出签名可达**的载荷，
     // 不按类型名或调用点外的事实猜。
     let mut option_payloads: BTreeSet<String> = BTreeSet::new();
-    // unite 变体身份桥：导出签名可达的零 payload unite 需要按判别 tag 读回。
+    // unite 变体身份桥：导出签名可达的全部 sum（零载荷与带载荷）都需要按判别
+    // tag 读回；带载荷变体再按同一份 sum 身份派生 payload accessor。
     // 索引来自 canonical 冻结的 `NyarType → SumTypeLayout`，不按名字识别。
     let sums = submission.backend_plan.sum_layout_by_nyar_type();
     let mut reachable_sums: BTreeMap<nyar_types::NominalInstanceId, nyar_types::SumTypeLayout> = BTreeMap::new();
+    // 类型工作列表按类型去重：递归 sum 的载荷会再次命中自身，没有去重会无限展开。
+    let mut visited_types: BTreeSet<NyarType> = BTreeSet::new();
     while let Some(ty) = worklist.pop() {
+        if !visited_types.insert(ty.clone()) {
+            continue;
+        }
         if let Some(sum) = sums.get(&ty) {
-            if sum.is_unite && sum.variants.iter().all(|variant| variant.payload_type.is_none()) {
-                reachable_sums.entry(sum.nominal).or_insert_with(|| sum.clone());
-            }
+            reachable_sums.entry(sum.nominal).or_insert_with(|| sum.clone());
+            // 变体载荷也是 ABI 边界的一部分：嵌套 sum / 聚合 / 数组必须一起可达。
+            worklist.extend(sum.variants.iter().filter_map(|variant| variant.payload_type.clone()));
         }
         if let NyarType::Nullable(inner) = &ty {
             let inner_schema = super::abi_schema::abi_schema_for_type(inner);
@@ -1911,11 +1917,13 @@ fn emit_library_field_accessors<'name>(
     // 阶段 9：unite tag accessor 计划。名字与 `abi_schema::sum_tag_accessor_export_name`
     // 同源；每个可达 unite 必须已有后端注册的 GC sum 类型，否则结构化失败。
     let mut sum_plans: Vec<(String, u32)> = Vec::new();
+    let mut reachable_sum_type_indices: BTreeMap<nyar_types::NominalInstanceId, u32> = BTreeMap::new();
     for (nominal, sum) in &reachable_sums {
         let Some(sum_type_index) = gc_sum_type_indices.get(nominal).copied()
         else {
             return Err(format!("unite `{}`（nominal={nominal:?}）没有已注册的 GC sum 类型，无法发射变体 tag accessor", sum.name));
         };
+        reachable_sum_type_indices.insert(*nominal, sum_type_index);
         let name = super::abi_schema::sum_tag_accessor_export_name(sum);
         if !emitted_names.insert(name.clone()) {
             continue;
@@ -1924,6 +1932,46 @@ fn emit_library_field_accessors<'name>(
     }
     let sum_name_start = name_store.len();
     name_store.extend(sum_plans.iter().map(|(name, _)| name.clone()));
+
+    // 阶段 9b：variant payload accessor 计划。每个带载荷变体一个导出：
+    // `(unite anyref) -> payload carrier`。载体与函数体 `SumNew` 的 payload 槽
+    // 物理配方一致（标量先装箱成 `[i32]`/`[i64]`/`[f64]`）；名字与 tag accessor
+    // 从同一份 `SumTypeLayout` 身份派生。
+    struct SumPayloadPlan {
+        name: String,
+        sum_type_index: u32,
+        box_type_index: Option<u32>,
+        carrier: u8,
+    }
+    let mut sum_payload_plans: Vec<SumPayloadPlan> = Vec::new();
+    for (nominal, sum) in &reachable_sums {
+        let sum_type_index = reachable_sum_type_indices[nominal];
+        for variant in &sum.variants {
+            let Some(payload_ty) = &variant.payload_type else {
+                continue;
+            };
+            let carrier = wasm_param_value_type_for(ctx, payload_ty, None, gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+            let box_type_index = match carrier {
+                WASM_GC_ANYREF => None,
+                VALTYPE_I32 => Some(gc_i32_box_type_index),
+                VALTYPE_I64 => Some(gc_i64_box_type_index),
+                VALTYPE_F64 => Some(gc_f64_box_type_index),
+                other => {
+                    return Err(format!(
+                        "sum `{}` 变体 `{}` 的载荷载体 {other} 没有冻结的装箱配方，拒绝发射 payload accessor",
+                        sum.name, variant.name
+                    ))
+                }
+            };
+            let name = super::abi_schema::sum_payload_accessor_export_name(sum, variant);
+            if !emitted_names.insert(name.clone()) {
+                continue;
+            }
+            sum_payload_plans.push(SumPayloadPlan { name, sum_type_index, box_type_index, carrier });
+        }
+    }
+    let sum_payload_name_start = name_store.len();
+    name_store.extend(sum_payload_plans.iter().map(|plan| plan.name.clone()));
 
     // 名字全部登记完成后才建立不可变切片；导出条目借用该切片。
     let names: &[String] = name_store.as_slice();
@@ -2106,6 +2154,28 @@ fn emit_library_field_accessors<'name>(
         let function_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
         code_bodies.push(wasm_function_body(body));
         exports.push((names[sum_name_start + position].as_str(), WasmExternalKind::Func.as_u8(), function_index));
+    }
+
+    // 阶段 10：发射 variant payload accessor：`(anyref) -> payload carrier` =
+    // ref.cast sum + struct.get payload；标量载荷再按同一箱型拆箱。
+    // 只读匹配 tag 的载荷槽；宿主必须先按 tag accessor 选变体再调用本函数。
+    for (position, plan) in sum_payload_plans.iter().enumerate() {
+        let mut body = Vec::new();
+        encode_uleb128(0, &mut body);
+        encode_local_get(0, &mut body);
+        encode_ref_cast_type_index(plan.sum_type_index, &mut body);
+        encode_struct_get(plan.sum_type_index, 1, &mut body);
+        if let Some(box_type_index) = plan.box_type_index {
+            encode_ref_cast_type_index(box_type_index, &mut body);
+            encode_struct_get(box_type_index, 0, &mut body);
+        }
+        WasmOpcode::End.encode(&mut body);
+        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_function_type(&[WASM_GC_ANYREF], &[plan.carrier]));
+        function_indices.push(type_index);
+        let function_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
+        code_bodies.push(wasm_function_body(body));
+        exports.push((names[sum_payload_name_start + position].as_str(), WasmExternalKind::Func.as_u8(), function_index));
     }
     Ok(())
 }

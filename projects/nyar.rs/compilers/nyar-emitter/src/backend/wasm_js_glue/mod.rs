@@ -620,7 +620,19 @@ function demarshalLibraryReturn(schema, raw, path) {{
                 `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Sum "${{schema.name}}": tag ${{tag}} is not declared. Schema: ${{JSON.stringify(schema)}}`
             );
         }}
-        return variant.name;
+        // 零载荷变体只有身份；带载荷变体必须经该变体自己的 payload accessor
+        // 读出只属于它的载荷，绝不把未匹配变体的载荷槽当本变体解释。
+        if (!variant.payload) return variant.name;
+        if (typeof variant.payload_accessor !== "string") {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal Sum "${{schema.name}}" variant "${{variant.name}}": no payload accessor contract. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        const readPayload = bridgeExport(variant.payload_accessor, "sum payload accessor", path);
+        return {{
+            variant: variant.name,
+            payload: demarshalLibraryReturn(variant.payload, readPayload(raw), `${{path}}.payload`)
+        }};
     }}
 
     // ── 未支持形状一律失败闭合 ──
