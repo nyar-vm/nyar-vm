@@ -475,6 +475,15 @@ pub enum CanonicalMirError {
         /// 非法原生标量类型。
         ty: TypeId,
     },
+    /// 已有冻结布局或载体身份的类型仍以 `Named` 短名残留在 canonical 成功值中。
+    ShadowedNamedResidue {
+        /// 产生残留的 canonical 阶段。
+        stage: String,
+        /// 残留所在布局或变体 owner。
+        owner: String,
+        /// 被压回短名的残留拼写。
+        name: String,
+    },
     /// 表键与函数内部实例身份不一致。
     FunctionKeyMismatch {
         /// 函数表键。

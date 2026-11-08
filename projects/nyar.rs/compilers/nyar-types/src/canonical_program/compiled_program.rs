@@ -21,6 +21,7 @@ pub struct CanonicalProgram {
 impl CanonicalProgram {
     /// 验证链接闭包与 Semantic MIR 后，才允许进入 processing half。
     pub fn validate(&self) -> Result<(), CanonicalMirError> {
+        self.linked.validate_named_residues()?;
         self.mir.validate(&self.linked)
     }
 }

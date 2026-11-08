@@ -398,6 +398,98 @@ impl LinkedSemanticProgram {
         matches!(self.types.get(&ty).map(|row| &row.kind), Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. })))
     }
 
+    /// 拒绝「已有冻结布局或载体身份，却仍以 `Named` 短名残留」的类型。
+    ///
+    /// `Named` 只允许表示尚无身份的名义拼写。同一声明一旦已有
+    /// `aggregate_layout_by_type`、文本载体登记或原生标量身份，残留就会让下游
+    /// 只能按名字猜实现。命中即结构化失败，并点名阶段与 owner，不降级为告警。
+    pub fn validate_named_residues(&self) -> Result<(), CanonicalMirError> {
+        for layout in &self.aggregate_layouts.layouts {
+            for field in &layout.fields {
+                if let Some(name) = self.shadowed_named_residue(&field.ty) {
+                    return Err(CanonicalMirError::ShadowedNamedResidue {
+                        stage: "canonical::aggregate_layouts".into(),
+                        owner: format!("{}::{}.{}", layout.namespace, layout.name, field.name),
+                        name: name.as_str().into(),
+                    });
+                }
+            }
+        }
+        for sum in &self.sum_types {
+            for variant in &sum.variants {
+                if let Some(name) = variant.payload_type.as_ref().and_then(|payload| self.shadowed_named_residue(payload)) {
+                    return Err(CanonicalMirError::ShadowedNamedResidue {
+                        stage: "canonical::sum_layouts".into(),
+                        owner: format!("{}.{}", sum.name, variant.name),
+                        name: name.as_str().into(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// 递归返回第一个与已登记身份同名的 `Named` 残留。
+    fn shadowed_named_residue<'a>(&self, ty: &'a crate::NyarType) -> Option<&'a Identifier> {
+        use crate::NyarType;
+        match ty {
+            NyarType::Named(name) if self.shadows_registered_identity(name) => Some(name),
+            NyarType::Named(_) => None,
+            // `Apply` 的基是泛型构造器拼写（声明名），不是值位类型；身份由参数与整体
+            // 应用承载。只检查实参，避免把合法的 `Apply(Named("Option"), …)` 误判为残留。
+            NyarType::Apply(_, arguments) => arguments.iter().find_map(|argument| self.shadowed_named_residue(argument)),
+            NyarType::Function(function) => function
+                .params
+                .iter()
+                .find_map(|parameter| self.shadowed_named_residue(parameter))
+                .or_else(|| self.shadowed_named_residue(&function.return_type)),
+            NyarType::Tuple(elements) | NyarType::Union(elements) => elements.iter().find_map(|element| self.shadowed_named_residue(element)),
+            NyarType::Array(element) | NyarType::Nullable(element) => self.shadowed_named_residue(element),
+            NyarType::FixedArray { element, .. } => self.shadowed_named_residue(element),
+            NyarType::TraitObject(object) => object.type_arguments.iter().find_map(|argument| self.shadowed_named_residue(argument)),
+            NyarType::Bottom
+            | NyarType::Unit
+            | NyarType::Boolean
+            | NyarType::Integer8 { .. }
+            | NyarType::Integer16 { .. }
+            | NyarType::Integer32 { .. }
+            | NyarType::Integer64 { .. }
+            | NyarType::Integer128 { .. }
+            | NyarType::Float32
+            | NyarType::Float64
+            | NyarType::Character
+            | NyarType::Utf8
+            | NyarType::Utf16
+            | NyarType::Nominal { .. } => None,
+        }
+    }
+
+    /// 该拼写是否属于已登记身份（布局 / 文本载体 / 原生标量）。
+    ///
+    /// 只比对**声明级**身份：泛型实例的 `TypeId` 同样带拼写与布局，但裸 `Named`
+    /// 指向的是声明拼写（如 `Apply(Named("Option"), …)` 的基），把它按实例匹配会
+    /// 把合法的泛型基误判为残留。
+    fn shadows_registered_identity(&self, name: &Identifier) -> bool {
+        let spelling = name.as_str();
+        let short = spelling.rsplit("::").next().unwrap_or(spelling);
+        self.types.iter().any(|(id, record)| {
+            let registered = self.aggregate_layout_by_type.contains_key(id)
+                || self.text_encoding_types.contains_key(id)
+                || matches!(record.kind, CanonicalTypeKind::Primitive(_));
+            let declaration_identity = match &record.kind {
+                CanonicalTypeKind::Nominal { arguments, .. } => arguments.is_empty(),
+                CanonicalTypeKind::Primitive(_) => true,
+                _ => false,
+            };
+            registered
+                && declaration_identity
+                && self.type_surface_spellings.get(id).is_some_and(|registered_spelling| {
+                    let registered_spelling = registered_spelling.as_str();
+                    registered_spelling == spelling || registered_spelling.rsplit("::").next() == Some(short)
+                })
+        })
+    }
+
     /// 验证整个类型闭包，不限于当前函数引用到的行。
     pub fn validate_types(&self) -> Result<(), CanonicalMirError> {
         for (owner, record) in &self.types {

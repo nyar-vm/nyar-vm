@@ -85,6 +85,87 @@ fn structured_diagnostic_set_rejects_empty() {
     assert!(StructuredDiagnosticSet::from_records(Vec::new()).is_none());
 }
 
+fn aggregate_layout_with_field(ty: NyarType) -> AggregateLayout {
+    AggregateLayout {
+        id: 0,
+        name: "Endpoint".into(),
+        namespace: String::new(),
+        key: None,
+        storage: StorageKind::Value,
+        size: 4,
+        align: 4,
+        fields: vec![FieldLayout { name: "host".into(), ty, offset: 0, size: 4, align: 4 }],
+    }
+}
+
+#[test]
+fn canonical_program_rejects_named_residue_shadowing_registered_layout() {
+    let ty = TypeId::from_index(0).unwrap();
+    let mut linked = LinkedSemanticProgram::default();
+    linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Nominal { declaration: ty, arguments: Vec::new() } });
+    linked.type_surface_spellings.insert(ty, Identifier::new("Endpoint"));
+    linked.aggregate_layout_by_type.insert(ty, 0);
+    linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(NyarType::Named(Identifier::new("Endpoint"))));
+    match linked.validate_named_residues() {
+        Err(CanonicalMirError::ShadowedNamedResidue { stage, owner, name }) => {
+            assert_eq!(stage, "canonical::aggregate_layouts");
+            assert!(owner.contains("Endpoint"), "{owner}");
+            assert_eq!(name, "Endpoint");
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn canonical_program_allows_named_spelling_without_registered_identity() {
+    let ty = TypeId::from_index(0).unwrap();
+    let mut linked = LinkedSemanticProgram::default();
+    linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Generic { owner: ItemId::from_index(0).unwrap(), ordinal: 0 } });
+    linked.type_surface_spellings.insert(ty, Identifier::new("T"));
+    linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(NyarType::Named(Identifier::new("usize"))));
+    linked.validate_named_residues().expect("无冻结身份的名义拼写允许保留");
+}
+
+#[test]
+fn canonical_program_rejects_named_residue_shadowing_primitive_carrier() {
+    let ty = TypeId::from_index(0).unwrap();
+    let mut linked = LinkedSemanticProgram::default();
+    linked
+        .types
+        .insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 64, signed: true }) });
+    linked.type_surface_spellings.insert(ty, Identifier::new("std::primitive::i64"));
+    linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(NyarType::Named(Identifier::new("i64"))));
+    assert!(matches!(linked.validate_named_residues(), Err(CanonicalMirError::ShadowedNamedResidue { .. })));
+}
+
+#[test]
+fn canonical_program_rejects_named_residue_in_sum_payload() {
+    let ty = TypeId::from_index(0).unwrap();
+    let mut linked = LinkedSemanticProgram::default();
+    linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Nominal { declaration: ty, arguments: Vec::new() } });
+    linked.type_surface_spellings.insert(ty, Identifier::new("Endpoint"));
+    linked.aggregate_layout_by_type.insert(ty, 0);
+    linked.sum_types.push(SumTypeLayout {
+        nominal: NominalInstanceId::from_index(0).unwrap(),
+        name: "Option".into(),
+        is_unite: true,
+        tag_width: 8,
+        variants: vec![SumVariantLayout {
+            id: VariantId::from_index(0).unwrap(),
+            name: "Some".into(),
+            tag: 0,
+            payload_type: Some(NyarType::Named(Identifier::new("Endpoint"))),
+        }],
+    });
+    match linked.validate_named_residues() {
+        Err(CanonicalMirError::ShadowedNamedResidue { stage, owner, .. }) => {
+            assert_eq!(stage, "canonical::sum_layouts");
+            assert!(owner.contains("Option") && owner.contains("Some"), "{owner}");
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
 #[test]
 fn canonical_array_contract_checks_inputs_and_results_before_planning() {
     let instance = ItemInstanceId::from_index(0).unwrap();
