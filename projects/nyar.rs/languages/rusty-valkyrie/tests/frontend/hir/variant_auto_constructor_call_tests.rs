@@ -262,3 +262,65 @@ micro produce() {
     );
     assert!(format!("{error:?}").contains("private"), "私有载荷字段的具名字面量构造必须结构化拒绝（当前尚无可见性门禁）: {error:?}");
 }
+
+#[test]
+fn same_package_unite_named_construction_with_annotation_resolves() {
+    let module = compile(
+        r#"
+unite Code {
+    [constructor]
+    Span {
+        code: i64,
+    },
+}
+micro produce() {
+    let value: Code = Span { code: 2 }
+}
+"#,
+    );
+    let calls = resolved_calls_in_function(&module, "produce");
+    assert_eq!(calls.len(), 1, "`Span {{ code: 2 }}` 必须产生一次已解析构造");
+    assert_eq!(calls[0].domain, HirCallableDomain::Constructor);
+    assert!(calls[0].sum_owner.is_some() && calls[0].sum_variant.is_some(), "具名构造必须携带 sum_owner/sum_variant");
+    let function = module.functions.iter().find(|function| function.name.as_str() == "produce").expect("缺少 produce");
+    let HirStatementKind::Let { initializer: Some(initializer), .. } = &function.body.statements[0].kind else {
+        panic!("首个语句必须是带初始化的 let");
+    };
+    let HirExprKind::Construct { args, .. } = &initializer.kind else {
+        panic!("初始化器必须是具名构造");
+    };
+    assert!(
+        args.iter().all(|arg| matches!(&arg.kind, HirExprKind::FieldInit { field_id: Some(_), .. })),
+        "具名构造的字段身份必须在解析期写回 `FieldInit.field_id`"
+    );
+}
+
+#[test]
+fn bare_variant_argument_gets_constructor_identity() {
+    let module = compile(
+        r#"
+unite Outcome<T, E> {
+    [constructor]
+    Good {
+        value: T,
+    },
+    [constructor]
+    Bad {
+        value: E,
+    },
+}
+unite MathError {
+    DivisionByZero,
+    Overflow,
+}
+micro produce() -> Outcome<i64, MathError> {
+    let outcome: Outcome<i64, MathError> = Bad(DivisionByZero)
+    return outcome
+}
+"#,
+    );
+    let calls = resolved_calls_in_function(&module, "produce");
+    let last = |name: &str| calls.iter().any(|call| call.symbol.parts().last().map(|part| part.as_str()) == Some(name));
+    assert!(last("Bad"), "外层 `Bad(...)` 必须解析成功: {calls:?}");
+    assert!(last("DivisionByZero"), "裸变体实参必须被改写成带 resolved 的构造: {calls:?}");
+}

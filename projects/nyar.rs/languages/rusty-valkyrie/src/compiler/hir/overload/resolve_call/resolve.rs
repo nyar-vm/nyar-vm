@@ -353,7 +353,25 @@ fn resolve_expr_calls(
     singleton_names: &std::collections::BTreeSet<Identifier>,
     contextual_type: Option<&ValkyrieType>,
 ) {
-    resolve_expr_calls_at(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type, ExprPosition::Value);
+    resolve_expr_calls_at(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type, ExprPosition::Value, false);
+}
+
+/// 解析实参位置的表达式。
+///
+/// 实参会继承外层返回类型作为期望类型；裸变体自身声明身份足以闭合，外层类型
+/// 与之不符时不应把候选全部误杀。该重试只对实参开启，避免把普通表达式位置
+/// （例如 `return None` 的返回槽）的既有合同改成另一种失败形态。
+#[allow(clippy::too_many_arguments)]
+fn resolve_argument_expr(
+    expr: &mut HirExpr,
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+    locals: &mut BTreeMap<String, ValkyrieType>,
+    struct_fields: &AggregateFieldIndex,
+    singleton_names: &std::collections::BTreeSet<Identifier>,
+    contextual_type: Option<&ValkyrieType>,
+) {
+    resolve_expr_calls_at(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type, ExprPosition::Value, true);
 }
 
 /// 裸名实参唯一命中非泛型自由函数声明时改写为 `FunctionReference`。
@@ -414,8 +432,18 @@ fn resolve_expr_calls_at(
     singleton_names: &std::collections::BTreeSet<Identifier>,
     contextual_type: Option<&ValkyrieType>,
     position: ExprPosition,
+    allow_context_free_variant_retry: bool,
 ) {
-    try_resolve_nullary_variant_expr(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
+    try_resolve_nullary_variant_expr(
+        expr,
+        candidates,
+        type_relations,
+        locals,
+        struct_fields,
+        singleton_names,
+        contextual_type,
+        allow_context_free_variant_retry,
+    );
     normalize_local_field_chain(expr, locals, struct_fields);
     if position == ExprPosition::Value
         && try_resolve_value_member_access(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
@@ -435,6 +463,7 @@ fn resolve_expr_calls_at(
                 singleton_names,
                 contextual_type,
                 ExprPosition::Callee,
+                false,
             );
             let member_argument_contexts = crate::compiler::hir::overload::substitution::member_call_argument_contexts(
                 callee,
@@ -457,7 +486,7 @@ fn resolve_expr_calls_at(
                 // 的实参自身没有自足元素类型，只能由 `push` 形参槽的类型决定。
                 let supplied = argument_contexts.get(index).and_then(|context| context.as_ref());
                 let context = supplied.or(contextual_type);
-                resolve_expr_calls(&mut arg.value, candidates, type_relations, locals, struct_fields, singleton_names, context);
+                resolve_argument_expr(&mut arg.value, candidates, type_relations, locals, struct_fields, singleton_names, context);
                 rewrite_free_function_argument_to_reference(&mut arg.value, candidates, type_relations, locals, singleton_names);
             }
             *resolved = call_resolver_try_resolve_call(
@@ -505,6 +534,7 @@ fn resolve_expr_calls_at(
             singleton_names,
             contextual_type,
             ExprPosition::Callee,
+            false,
         ),
         HirExprKind::FieldInit { value: callee, .. }
         | HirExprKind::Await(callee)
@@ -602,7 +632,7 @@ fn resolve_expr_calls_at(
                     _ => ty,
                 });
                 if let HirExprKind::FieldInit { value, .. } = &mut arg.kind {
-                    resolve_expr_calls(
+                    resolve_argument_expr(
                         value,
                         candidates,
                         type_relations,
@@ -613,7 +643,7 @@ fn resolve_expr_calls_at(
                     );
                 }
                 else {
-                    resolve_expr_calls(arg, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
+                    resolve_argument_expr(arg, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
                 }
             }
             if resolved.is_none() {
@@ -628,6 +658,22 @@ fn resolve_expr_calls_at(
                     singleton_names,
                     contextual_type,
                 );
+            }
+            // 解析成功后把字段身份写回 `FieldInit`：字段身份是解析期已算出的
+            // 声明事实，必须随节点保存；下游不得再按字段名回查。
+            if let Some(call) = resolved.as_ref() {
+                if let Some(declaration) = call.declaration {
+                    if let Some(fields) = struct_fields.fields_by_declaration(declaration) {
+                        for arg in args.iter_mut() {
+                            if let HirExprKind::FieldInit { name, field_id, .. } = &mut arg.kind {
+                                if field_id.is_none() {
+                                    *field_id =
+                                        fields.iter().find(|field| field.name.as_str() == name.as_str()).and_then(|field| field.id);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         HirExprKind::Cast { expr, .. } => {
@@ -1068,6 +1114,7 @@ fn try_resolve_nullary_variant_expr(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &std::collections::BTreeSet<Identifier>,
     contextual_type: Option<&ValkyrieType>,
+    allow_context_free_retry: bool,
 ) {
     let (name, owner, construct_path) = match &expr.kind {
         HirExprKind::Variable(identifier) if !locals.contains_key(identifier.name.as_str()) => {
@@ -1108,6 +1155,18 @@ fn try_resolve_nullary_variant_expr(
     let contextual_type = if owner.is_none() { contextual_type } else { None };
     let resolved =
         try_resolve_nullary_constructor(&name, contextual_type, effective_candidates, type_relations, locals, struct_fields, singleton_names);
+    // 实参位置会继承外层返回类型作为期望类型；裸变体自身的声明身份足以确定
+    // 构造器，外层类型若与变体返回类型不同（如 `Bad(DivisionByZero)` 的实参
+    // 继承 `Outcome<…>`）不应把候选全部误杀。带期望类型失败后去掉这层收窄
+    // 重试；仍有歧义时由 `resolve_overload` 失败闭合，不按名字猜。
+    let resolved = resolved.or_else(|| {
+        if !allow_context_free_retry {
+            return None;
+        }
+        contextual_type.and_then(|_| {
+            try_resolve_nullary_constructor(&name, None, effective_candidates, type_relations, locals, struct_fields, singleton_names)
+        })
+    });
     if let Some(resolved) = resolved {
         *expr = HirExpr {
             span: expr.span.clone(),

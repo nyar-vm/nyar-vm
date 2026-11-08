@@ -63,6 +63,15 @@ impl AggregateFieldIndex {
         }
     }
 
+    /// 按声明身份取字段表：`Nominal` 解析出的声明 `ItemId` 直接命中冻结字段。
+    ///
+    /// struct 用 `constructor_declaration`、多字段变体用 `variant.declaration` 登记；
+    /// 构造点已拿到 [`HirResolvedCall::declaration`] 时，字段身份只认这份声明，
+    /// 不再按字段名回查或按短名猜。
+    pub fn fields_by_declaration(&self, declaration: nyar_types::ItemId) -> Option<&[HirField]> {
+        self.by_declaration.get(&declaration).map(Vec::as_slice)
+    }
+
     /// 按对象类型取声明泛型形参；身份口径与 [`Self::fields_of`] 一致。
     ///
     /// 字段类型是按声明泛型形参写出的，例如 `Entry<K, V>` 的 `key: K`；
