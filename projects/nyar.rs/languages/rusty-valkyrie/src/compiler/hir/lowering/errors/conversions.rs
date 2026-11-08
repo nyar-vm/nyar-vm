@@ -381,6 +381,9 @@ impl std::fmt::Display for HirError {
             Self::IntegerLiteralOutOfRange { literal, magnitude, range, .. } => {
                 write!(f, "integer literal `{literal}` (magnitude {magnitude}) is out of range `{range}`")
             }
+            Self::InvalidRangePattern { pattern, reason, .. } => {
+                write!(f, "invalid range pattern `{pattern}`: {reason}")
+            }
             Self::InvalidSingleQuoteLiteral { failure, span, .. } => {
                 use super::model::SingleQuoteLiteralFailure;
                 match failure {

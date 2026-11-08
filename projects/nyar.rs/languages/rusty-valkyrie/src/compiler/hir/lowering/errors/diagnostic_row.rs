@@ -359,6 +359,10 @@ impl From<HirError> for DiagnosticRow {
                 row = row.with_arg("magnitude", DiagnosticArg::String(magnitude.clone()));
                 row = row.with_arg("range", DiagnosticArg::String(range.clone()));
             }
+            HirError::InvalidRangePattern { pattern, reason, .. } => {
+                row = row.with_arg("pattern", DiagnosticArg::String(pattern.clone()));
+                row = row.with_arg("reason", DiagnosticArg::String(reason.clone()));
+            }
             HirError::InvalidTupleLabeling { failure, .. } => {
                 row = row.with_arg("failure", DiagnosticArg::String(tuple_labeling_failure_name(failure).to_string()));
                 if let TupleLabelingFailure::DuplicateLabel { name } = failure {
@@ -670,6 +674,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
         HirError::InvalidSingleQuoteLiteral { source, .. } => source.clone(),
         HirError::IntegerLiteralOutOfRange { source, .. } => source.clone(),
+        HirError::InvalidRangePattern { source, .. } => source.clone(),
         HirError::InvalidTupleLabeling { source, .. } => source.clone(),
         HirError::InvalidArrayExtent { source, .. } => source.clone(),
         HirError::InvalidExportCase { source, .. } => source.clone(),
@@ -755,6 +760,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
         HirError::InvalidSingleQuoteLiteral { span, .. } => span.clone(),
         HirError::IntegerLiteralOutOfRange { span, .. } => span.clone(),
+        HirError::InvalidRangePattern { span, .. } => span.clone(),
         HirError::InvalidTupleLabeling { span, .. } => span.clone(),
         HirError::InvalidArrayExtent { span, .. } => span.clone(),
         HirError::InvalidExportCase { span, .. } => span.clone(),

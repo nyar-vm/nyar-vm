@@ -818,6 +818,20 @@ pub enum HirError {
         /// 诊断定位 span（指向整个字面量）。
         span: DiagnosticSpan,
     },
+    /// 区间模式（`2..=8` / `2..8`）的形态不合法。
+    ///
+    /// 端点必须能按整数字面量解释：`2..=8.5`、`true..=8` 等种类不一致或
+    /// 非整数端点必须在 HIR 阶段结构化拒绝，不得带进 MIR 静默比较。
+    InvalidRangePattern {
+        /// 源码写出的区间形态（`2..=8.5`）。
+        pattern: String,
+        /// 结构化失败原因。
+        reason: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断定位 span（指向整个区间模式）。
+        span: DiagnosticSpan,
+    },
     /// 元组类型表达式的标签形态不合法。
     ///
     /// 元组要么全命名、要么全不命名；部分命名会让类型身份里出现无名占位，

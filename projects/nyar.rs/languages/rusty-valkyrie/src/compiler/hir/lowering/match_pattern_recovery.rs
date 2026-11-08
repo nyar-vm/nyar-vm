@@ -33,36 +33,10 @@ pub fn match_needs_source_recovery(source: &str, match_span: Range<usize>, arms:
     if arms.iter().any(|arm| broken_wildcard_arm(source, arm) || oak_lost_case_pattern(source, arm)) {
         return true;
     }
-    // 带守卫的臂无法靠 `recover_match_arms` 保留 guard；不为区间模式触发整体恢复。
-    arms.iter().all(|arm| arm.guard.is_none()) && source_has_range_pattern(source, match_span)
+    false
 }
 
-/// 源码中的 `case` 模式是否为区间。
-///
-/// Oak 的 `Pattern` 没有区间变体：`case 2..=8` 的三个 token 被逐个按字面量处理，
-/// 最后一个端点覆盖成 `Literal`，arm 的 span 也随之收缩到该端点（如 `8: 1`），
-/// 因此不能按 arm span 判定，只能按 match 块内的源码文本判定。
-fn source_has_range_pattern(source: &str, match_span: Range<usize>) -> bool {
-    extract_match_block_interior(source, match_span)
-        .map(|interior| split_match_arms(&interior).into_iter().any(|(pattern, _)| is_range_pattern_text(&pattern)))
-        .unwrap_or(false)
-}
-
-/// 判定要求两端都解析为已知字面量（空端点为开放区间），避免把含 `..` 的字符串
-/// 字面量误判成区间。
-fn is_range_pattern_text(text: &str) -> bool {
-    let Some((start, end, _)) = parse_range_pattern(text) else {
-        return false;
-    };
-    let start = start.filter(|text| !text.is_empty());
-    let end = end.filter(|text| !text.is_empty());
-    if start.is_none() && end.is_none() {
-        return false;
-    }
-    start.is_none_or(|text| parse_hir_literal(text).is_some()) && end.is_none_or(|text| parse_hir_literal(text).is_some())
-}
-
-/// Oak `parse_match_pattern` 尚未覆盖字面量/区间，`case 7` 等会落成 Wildcard。
+/// Oak `parse_match_pattern` 对个别原子仍可能落成 Wildcard，`case 7` 等需按源码恢复。
 fn oak_lost_case_pattern(source: &str, arm: &MatchArm) -> bool {
     if !matches!(arm.pattern, oak_valkyrie::ast::Pattern::Wildcard(_)) {
         return false;
@@ -257,8 +231,15 @@ pub fn recover_match_arms(source: &str, match_span: Range<usize>) -> Result<Vec<
         .into_iter()
         .map(|(pattern_text, body_text)| {
             let span = DiagnosticSpan { start: match_span.start, end: match_span.end };
-            let pattern = parse_recovered_pattern(&pattern_text)
-                .ok_or_else(|| HirError::match_recovery_failed(MatchRecoveryStage::Pattern, Some(pattern_text.clone()), span.clone()))?;
+            let pattern = match parse_recovered_pattern(&pattern_text) {
+                Some(pattern) => pattern,
+                None => {
+                    if let Some(error) = invalid_range_pattern_error(&pattern_text, span.clone()) {
+                        return Err(error);
+                    }
+                    return Err(HirError::match_recovery_failed(MatchRecoveryStage::Pattern, Some(pattern_text.clone()), span.clone()));
+                }
+            };
             let body = parse_arm_body_expression(&body_text, span)?;
             Ok((pattern, body))
         })
@@ -432,13 +413,42 @@ fn parse_recovered_pattern(text: &str) -> Option<HirPattern> {
         return Some(HirPattern::Else);
     }
     if let Some((start, end, inclusive_end)) = parse_range_pattern(text) {
-        return Some(HirPattern::Range {
-            start: start.and_then(|value| parse_hir_literal(value)),
-            end: end.and_then(|value| parse_hir_literal(value)),
-            inclusive_end,
-        });
+        // 区间端点与 HIR lowering 同一契约：只接受整数形态，否则整体恢复失败。
+        let start = parse_range_endpoint(start)?;
+        let end = parse_range_endpoint(end)?;
+        return Some(HirPattern::Range { start, end, inclusive_end });
     }
     parse_hir_literal(text).map(HirPattern::Literal)
+}
+
+fn parse_range_endpoint(text: Option<&str>) -> Option<Option<HirLiteral>> {
+    let Some(text) = text.map(str::trim).filter(|text| !text.is_empty())
+    else {
+        return Some(None);
+    };
+    match parse_hir_literal(text) {
+        Some(literal @ HirLiteral::Integer64(_)) => Some(Some(literal)),
+        _ => None,
+    }
+}
+
+/// 区间模式端点不合法时给出结构化诊断。
+///
+/// Oak 的 `Pattern` 没有区间变体，区间只能在源码恢复阶段识别；端点必须按整数字面量
+/// 解释，`2..=8.5`、`true..=8` 等种类不一致或非整数端点在这里拒绝。
+fn invalid_range_pattern_error(pattern_text: &str, span: DiagnosticSpan) -> Option<HirError> {
+    let (start, end, _) = parse_range_pattern(pattern_text)?;
+    let endpoint = [start, end]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|text| !text.is_empty() && !matches!(parse_hir_literal(text), Some(HirLiteral::Integer64(_))))?;
+    Some(HirError::InvalidRangePattern {
+        pattern: pattern_text.to_string(),
+        reason: format!("endpoint `{endpoint}` is not an integer literal"),
+        source: nyar_types::DiagnosticSource { id: "<hir_lowering>".into(), revision: None },
+        span,
+    })
 }
 
 fn parse_range_pattern(text: &str) -> Option<(Option<&str>, Option<&str>, bool)> {
