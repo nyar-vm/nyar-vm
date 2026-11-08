@@ -10,12 +10,15 @@ use rusty_valkyrie::{
     hir::lowering::DEFAULT_COMPILE_ARCH,
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 fn compile_source(source: &str) -> HirModule {
-    ValkyrieCompiler::default().compile_source(source).expect("turbofish 源码必须完成 HIR")
+    ValkyrieCompiler::default().compile_fixture_source(source).expect("turbofish 源码必须完成 HIR")
 }
 
 fn compile_groups(groups: &[CompilerSourceGroup]) -> Vec<HirModule> {
-    ValkyrieCompiler::default().resolve_source_groups(groups, DEFAULT_COMPILE_ARCH).expect("跨组 turbofish 调用必须完成 HIR")
+    let groups = crate::primitives::groups_with_primitives(groups.to_vec());
+    ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("跨组 turbofish 调用必须完成 HIR")
 }
 
 fn find_function<'a>(module: &'a HirModule, name: &str) -> &'a HirFunction {
@@ -224,7 +227,7 @@ micro wrap<T>(value: T) -> T {
 #[test]
 fn explicit_generic_arity_mismatch_reports_expected_and_actual() {
     let error = ValkyrieCompiler::default()
-        .compile_source(
+        .compile_source(&crate::primitives::with_primitives(
             r#"
 namespace probe;
 
@@ -243,7 +246,7 @@ micro option_none<T>() -> Option<T> {
     return option_none::<i64, bool>()
 }
 "#,
-        )
+        ))
         .expect_err("显式实参数量不符必须失败闭合");
     let HirError::UnresolvedCall { selector, reason, .. } = &error
     else {

@@ -23,10 +23,12 @@ fn clean_removes_dist_and_cache() {
 fn lint_accepts_valid_source() {
     let fixture = create_smoke_project_with_source(
         "legion-lint",
-        r#"micro main() -> i64 {
+        &crate::primitives::with_primitives(
+            r#"micro main() -> i64 {
     return 0;
 }
 "#,
+        ),
     );
 
     assert_eq!(

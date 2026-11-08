@@ -11,9 +11,11 @@ use rusty_valkyrie::{
     *,
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 fn nominals() -> (TypeRelationContext, [(ValkyrieType, &'static str); 3]) {
     let hir = ValkyrieCompiler::default()
-        .compile_source("structure Utf8Text { _repr: i32 }\nstructure Utf16Text { _repr: i32 }\nstructure Widget { value: i32 }")
+        .compile_fixture_source("structure Utf8Text { _repr: i32 }\nstructure Utf16Text { _repr: i32 }\nstructure Widget { value: i32 }")
         .expect("测试名义声明必须解析");
     let context = TypeRelationContext::from_module(&hir);
     let nominal = |name: &str| {

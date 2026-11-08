@@ -16,7 +16,7 @@ use rusty_valkyrie::{
 
 fn lower_without_call_resolution(source: &str) -> HirModule {
     ValkyrieCompiler::default()
-        .parse_source_group_without_call_resolution(source, &[], None, DEFAULT_COMPILE_ARCH)
+        .parse_source_group_without_call_resolution(&crate::primitives::with_primitives(source), &[], None, DEFAULT_COMPILE_ARCH)
         .unwrap_or_else(|error| panic!("源码必须完成 HIR 物化: {error}"))
 }
 
@@ -106,7 +106,9 @@ micro first_or_zero(data: [i64]) -> i64 {
     }
 }
 "#;
-    let error = ValkyrieCompiler::default().compile_source(source).expect_err("未声明 `Array.extractor` 的数组模式必须结构化失败");
+    let error = ValkyrieCompiler::default()
+        .compile_source(&crate::primitives::with_primitives(source))
+        .expect_err("未声明 `Array.extractor` 的数组模式必须结构化失败");
     assert!(error.to_string().contains("Array.extractor"), "失败必须指名缺失的 extractor: {error}");
     let collected = pending::take_pending_diagnostics();
     assert!(

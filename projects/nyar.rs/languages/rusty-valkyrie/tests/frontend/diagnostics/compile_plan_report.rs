@@ -25,6 +25,9 @@ fn create_multi_error_project(prefix: &str, source: &str) -> (tempfile::TempDir,
         "{\n    name: \"app\",\n    dependencies: {\n        \"std\": false,\n        \"core\": false\n    },\n    build: [\n        { target: \"ovm\" }\n    ]\n}\n",
     )
     .expect("write project manifest");
+    // 该 fixture 关闭 std/core 依赖，primitive 声明只能由本包源码提供：
+    // 与真实 std 包同形，使用测试侧唯一前导而不是逐文件抄写。
+    std::fs::write(source_dir.join("primitives.v"), crate::primitives::PRIMITIVES).expect("write primitive declarations");
     std::fs::write(source_dir.join("main.v"), source).expect("write source");
     (temp_dir, project_dir)
 }

@@ -14,7 +14,8 @@ fn single_group(files: Vec<CompilerSourceFile>) -> Vec<CompilerSourceGroup> {
 }
 
 fn compile(groups: &[CompilerSourceGroup]) -> Result<(), String> {
-    ValkyrieCompiler::default().resolve_source_groups(groups, DEFAULT_COMPILE_ARCH).map(|_| ()).map_err(|error| format!("{error}"))
+    let groups = crate::primitives::groups_with_primitives(groups.to_vec());
+    ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).map(|_| ()).map_err(|error| format!("{error}"))
 }
 
 #[test]

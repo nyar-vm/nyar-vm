@@ -10,8 +10,10 @@ use rusty_valkyrie::{
     types::hir::{HirExpr, HirExprKind, HirFunction, HirModule, HirResolvedCall, ValkyrieType},
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 fn compile(source: &str) -> HirModule {
-    ValkyrieCompiler::default().compile_source(source).expect("trait 默认体必须完成 HIR")
+    ValkyrieCompiler::default().compile_fixture_source(source).expect("trait 默认体必须完成 HIR")
 }
 
 fn trait_default<'a>(module: &'a HirModule, name: &str) -> &'a HirFunction {
@@ -122,7 +124,7 @@ imply i32: Comparable {
 #[test]
 fn default_body_self_unknown_member_is_still_unresolved() {
     let failure = ValkyrieCompiler::default()
-        .compile_source(
+        .compile_source(&crate::primitives::with_primitives(
             r#"
 trait Meter {
     micro value(self): i64
@@ -131,7 +133,7 @@ trait Meter {
     }
 }
 "#,
-        )
+        ))
         .expect_err("本 trait 不存在的方法必须解析失败");
     let message = format!("{failure}");
     assert!(message.contains("unresolved"), "必须是 unresolved 结构化诊断，实际: {message}");

@@ -1,8 +1,9 @@
 use rusty_valkyrie::{
-    HirError, SourceID, ValkyrieCompiler,
+    CompilerSourceGroup, HirError, SourceID, ValkyrieCompiler,
     frontend::ast::{Identifier, NamePath, TypeExpression, type_nodes::TypeUnaryNode},
     hir::type_lowering::{canonical_builtin_type, lower_type_expression, validate_type_expression},
     hir::lowering::errors::{ArrayExtentFailure, TupleLabelingFailure},
+    hir::lowering::DEFAULT_COMPILE_ARCH,
     types::{
         Identifier as HirIdentifier,
         hir::{HirModule, HirStruct, ValkyrieType},
@@ -299,23 +300,43 @@ micro index(n: u64) -> u64 {
     assert_eq!(index.return_type, ValkyrieType::Integer64 { signed: false });
 }
 
-/// 反例：没有可见声明时不得凭名字获得 carrier；HIR 只保留待绑定引用，
-/// 未绑定 `Named` 会由 canonical 以结构化诊断拒绝，而不是默认成 `Integer32`/`Float64`。
+/// 反例：没有可见 `[primitive]` 声明时，引用处的 primitive 拼写必须在绑定期
+/// 结构化失败，而不是残留 `Named("i32")` 让下游身份表按短名接住。
 #[test]
-fn undeclared_numeric_primitive_does_not_gain_carrier() {
-    let hir = compile(
+fn undeclared_numeric_primitive_fails_without_carrier() {
+    let error = compile(
         r#"
 micro probe(x: i32) -> i32 {
     return x
 }
 "#,
     )
-    .expect("HIR 阶段只冻结已解析事实");
+    .expect_err("未声明 primitive 不得放行");
 
-    let probe = hir.functions.iter().find(|function| function.name.as_str() == "probe").expect("缺少 `probe`");
-    assert_eq!(probe.params[0].ty, ValkyrieType::Named(HirIdentifier::new("i32")));
-    assert_eq!(probe.return_type, ValkyrieType::Named(HirIdentifier::new("i32")));
-    assert_ne!(probe.params[0].ty, ValkyrieType::Integer32 { signed: true });
+    assert!(matches!(error, HirError::TypeNotFound { ref name, .. } if name == "i32"), "error={error:?}");
+}
+
+/// 真实形态证明：primitive 声明由依赖组（std 包）提供，入口组自身零 `[primitive]` 声明，
+/// 仍能按 carrier 身份编译。声明随依赖组语义导出进入消费组，见
+/// `hir/lowering/mod.rs` 的 `HirDependencySemanticExport` 装配；入口组不需要逐文件自备。
+#[test]
+fn dependency_group_primitive_declaration_reaches_entry_without_local_spelling() {
+    let groups = [
+        CompilerSourceGroup::single_source("std", "std", crate::primitives::PRIMITIVES),
+        CompilerSourceGroup::single_source("app", "app", "[export] micro probe(x: i32) -> i32 { return x }")
+            .as_entry()
+            .with_direct_dependencies(vec!["std".into()]),
+    ];
+    let modules = ValkyrieCompiler::default()
+        .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
+        .expect("依赖组声明的 primitive 必须可供入口组使用");
+    let probe = modules
+        .iter()
+        .flat_map(|module| module.functions.iter())
+        .find(|function| function.name.as_str() == "probe")
+        .expect("入口组函数必须完成 HIR");
+    assert_eq!(probe.params[0].ty, ValkyrieType::Integer32 { signed: true });
+    assert_eq!(probe.return_type, ValkyrieType::Integer32 { signed: true });
 }
 
 fn int_literal(value: &str) -> TypeExtent {

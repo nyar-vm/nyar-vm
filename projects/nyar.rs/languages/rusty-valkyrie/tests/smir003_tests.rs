@@ -1,6 +1,9 @@
 //! Standalone SMIR003 test harness.
 //! 只引入 contract-gate ignore 标记涉及的 MIR / backend 测试。
 
+#[path = "support/primitives.rs"]
+pub(crate) mod primitives;
+
 #[path = "frontend/mir/valkyrie_mir_ssa_singleton_tests.rs"]
 mod valkyrie_mir_ssa_singleton_tests;
 

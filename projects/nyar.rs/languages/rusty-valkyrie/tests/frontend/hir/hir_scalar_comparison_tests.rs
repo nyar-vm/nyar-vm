@@ -162,10 +162,10 @@ imply Bag<T> {
 
 fn compile(consumer: &str) -> Result<(), String> {
     pending::clear_pending_diagnostics();
-    let groups = [
+    let groups = crate::primitives::groups_with_primitives(vec![
         CompilerSourceGroup::single_source("std", "std", STD),
         CompilerSourceGroup::single_source("app", "app", consumer).as_entry().with_direct_dependencies(vec!["std".into()]),
-    ];
+    ]);
     let result = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH);
     let collected = pending::take_pending_diagnostics();
     match result {

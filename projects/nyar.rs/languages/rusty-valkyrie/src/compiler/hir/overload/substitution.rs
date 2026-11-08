@@ -885,6 +885,9 @@ mod tests {
         );
     }
 
+    /// 测试侧唯一 primitive 声明来源（与 `tests/support/primitives.v` 同一份文本）。
+    const TEST_PRIMITIVES: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/primitives.v"));
+
     /// A/B 探针：trait 关联类型出现在值、`Option`、函数形参三种位置时，
     /// 按具体 owner 实例化的成员签名都必须能匹配。
     #[test]
@@ -912,7 +915,7 @@ micro probe(iter: ArrayIterator) -> bool {
 }
 "#;
         crate::ValkyrieCompiler::default()
-            .compile_source(source)
+            .compile_source(&format!("{source}\n{TEST_PRIMITIVES}"))
             .unwrap_or_else(|error| panic!("trait 关联类型在三种位置都必须匹配: {error}"));
     }
 
@@ -1005,7 +1008,7 @@ micro run() -> i32 {
             "    micro has_next(self): bool { return true }\n    micro next(mut self): Option<T> { return None }",
         );
         crate::ValkyrieCompiler::default()
-            .compile_source(&source)
+            .compile_source(&format!("{source}\n{TEST_PRIMITIVES}"))
             .unwrap_or_else(|error| panic!("filter 的谓词形参必须能匹配: {error}"));
     }
 

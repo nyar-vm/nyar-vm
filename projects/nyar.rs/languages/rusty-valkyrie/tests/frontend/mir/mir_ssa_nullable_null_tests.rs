@@ -10,8 +10,10 @@ use rusty_valkyrie::compiler::{
     types::{SourceID, hir::ValkyrieType},
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 fn compile(source: &str) -> MirModule {
-    let hir = ValkyrieCompiler::new(SourceID { version_id: 9901 }).compile_source(source).expect("fixture 必须完成 HIR 分析");
+    let hir = ValkyrieCompiler::new(SourceID { version_id: 9901 }).compile_fixture_source(source).expect("fixture 必须完成 HIR 分析");
     MirLowerer::lower_module_semantic(&hir)
 }
 

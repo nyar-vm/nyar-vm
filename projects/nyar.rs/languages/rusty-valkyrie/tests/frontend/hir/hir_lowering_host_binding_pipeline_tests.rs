@@ -7,9 +7,10 @@ use rusty_valkyrie::compiler::{
 
 const TEST_ARCH: &str = "native";
 
-/// 组模式下 `i32` 必须由依赖组声明为 primitive 结构；否则残留 `Named("i32")`
-/// 会以 CAN003 拒绝进入 canonical 类型表。
-const CORE_PRIMITIVE_SOURCE: &str = "namespace std::primitive; [primitive(\"std::primitive::i32\")] structure i32 { }";
+/// 组模式下 numeric primitive 必须由依赖组声明为 primitive 结构；否则残留
+/// `Named("i32")` 会以 CAN003 拒绝进入 canonical 类型表。声明文本统一来自测试侧
+/// 共享前导，不在此处另抄一份。
+const CORE_PRIMITIVE_SOURCE: &str = crate::primitives::PRIMITIVES;
 
 fn core_group() -> CompilerSourceGroup {
     CompilerSourceGroup::single_source("core", "core", CORE_PRIMITIVE_SOURCE)

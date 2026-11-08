@@ -13,12 +13,14 @@ use rusty_valkyrie::compiler::{
     hir::lowering::ValkyrieCompiler,
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 #[test]
 fn syntax_error_is_recorded_as_structured_parse_diagnostic() {
     pending::clear_pending_diagnostics();
     let source = "micro main() -> i64 {\n    @@@\n    return 0\n}\n";
     // 根循环恢复后 item 级语法错误不再致命：坏 item 被丢弃，编译在恢复模块上继续。
-    ValkyrieCompiler::default().compile_source(source).expect("recovery must keep the pipeline alive");
+    ValkyrieCompiler::default().compile_fixture_source(source).expect("recovery must keep the pipeline alive");
 
     let collected = pending::take_pending_diagnostics();
     // `@@@` 触发失败后根循环在 `@` 边界重试，第二次失败同样如实记录：两条诊断 @[26, 43]。
@@ -46,7 +48,7 @@ fn syntax_error_is_recorded_as_structured_parse_diagnostic() {
 fn multiple_broken_items_record_multiple_parse_diagnostics() {
     pending::clear_pending_diagnostics();
     let source = "micro a() { + }\nclass B {\n  micro c() { [1, 2 }\nmicro d() {}\n";
-    let module = ValkyrieCompiler::default().compile_source(source).expect("recovery must keep the pipeline alive");
+    let module = ValkyrieCompiler::default().compile_fixture_source(source).expect("recovery must keep the pipeline alive");
 
     let collected = pending::take_pending_diagnostics();
     assert_eq!(collected.total(), 2, "each broken item records exactly one parse diagnostic: {collected:?}");
@@ -62,7 +64,7 @@ fn multiple_broken_items_record_multiple_parse_diagnostics() {
 fn broken_expression_records_diagnostic_and_keeps_sibling_item() {
     pending::clear_pending_diagnostics();
     let source = "micro a() { + }\nmicro b() {}\n";
-    let module = ValkyrieCompiler::default().compile_source(source).expect("recovery must keep the pipeline alive");
+    let module = ValkyrieCompiler::default().compile_fixture_source(source).expect("recovery must keep the pipeline alive");
 
     let collected = pending::take_pending_diagnostics();
     assert_eq!(collected.total(), 1, "broken expression records exactly one parse diagnostic: {collected:?}");
@@ -75,7 +77,7 @@ fn broken_expression_records_diagnostic_and_keeps_sibling_item() {
 fn unterminated_item_with_garbage_records_diagnostic_and_recovers() {
     pending::clear_pending_diagnostics();
     let source = "micro a() { [1, 2\n$$$\nmicro b() {}\n";
-    let module = ValkyrieCompiler::default().compile_source(source).expect("recovery must keep the pipeline alive");
+    let module = ValkyrieCompiler::default().compile_fixture_source(source).expect("recovery must keep the pipeline alive");
 
     let collected = pending::take_pending_diagnostics();
     assert_eq!(collected.total(), 1, "unterminated item records exactly one parse diagnostic: {collected:?}");
@@ -87,7 +89,7 @@ fn unterminated_item_with_garbage_records_diagnostic_and_recovers() {
 fn clean_source_records_no_parse_diagnostic() {
     pending::clear_pending_diagnostics();
     let source = "micro main() -> i64 {\n    return 0\n}\n";
-    ValkyrieCompiler::default().compile_source(source).expect("clean source compiles");
+    ValkyrieCompiler::default().compile_fixture_source(source).expect("clean source compiles");
     assert!(pending::pending_diagnostics_is_empty());
 }
 
@@ -100,7 +102,7 @@ fn clean_source_records_no_parse_diagnostic() {
 fn from_as_field_name_parses_and_compiles() {
     pending::clear_pending_diagnostics();
     let source = "class Edge {\n    from: i32\n}\n[main]\nmicro main() -> i64 {\n    let edge = Edge { from: 1 }\n    return edge.from\n}\n";
-    let module = ValkyrieCompiler::default().compile_source(source).expect("field named `from` must compile");
+    let module = ValkyrieCompiler::default().compile_fixture_source(source).expect("field named `from` must compile");
     assert!(module.structs.iter().any(|item| item.name.as_str() == "Edge"), "class must survive: {:?}", module.structs);
     assert!(pending::pending_diagnostics_is_empty(), "no parse diagnostics expected for `from` field");
 }
@@ -109,7 +111,7 @@ fn from_as_field_name_parses_and_compiles() {
 fn from_as_local_variable_name_parses_and_compiles() {
     pending::clear_pending_diagnostics();
     let source = "[main]\nmicro main() -> i64 {\n    let from: i64 = 1\n    return from\n}\n";
-    ValkyrieCompiler::default().compile_source(source).expect("local variable named `from` must compile");
+    ValkyrieCompiler::default().compile_fixture_source(source).expect("local variable named `from` must compile");
     assert!(pending::pending_diagnostics_is_empty(), "no parse diagnostics expected for `from` binding");
 }
 
@@ -117,7 +119,7 @@ fn from_as_local_variable_name_parses_and_compiles() {
 fn from_as_function_name_parses_and_compiles() {
     pending::clear_pending_diagnostics();
     let source = "micro from() -> i64 {\n    return 1\n}\n[main]\nmicro main() -> i64 {\n    return from()\n}\n";
-    let module = ValkyrieCompiler::default().compile_source(source).expect("function named `from` must compile");
+    let module = ValkyrieCompiler::default().compile_fixture_source(source).expect("function named `from` must compile");
     assert!(module.functions.iter().any(|function| function.name.as_str() == "from"), "function `from` must survive: {:?}", module.functions);
     assert!(pending::pending_diagnostics_is_empty(), "no parse diagnostics expected for `from` function");
 }

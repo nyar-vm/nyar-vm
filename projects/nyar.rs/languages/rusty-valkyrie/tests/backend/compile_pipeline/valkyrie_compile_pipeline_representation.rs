@@ -5,20 +5,22 @@ use nyar_types::{
 use rusty_valkyrie::{compiler::emitter::pipeline::CanonicalRepresentationPlanner, *};
 use std::collections::BTreeSet;
 
+use crate::primitives::with_primitives;
+
 #[test]
 fn source_aggregate_semantics_reach_the_representation_plan_without_construction() {
     let output = rusty_valkyrie::ValkyrieCompiler::default()
-        .compile_source_to_program(
+        .compile_source_to_program(&with_primitives(
             "structure Point { value: i32 } class Node { value: i32 } \
              micro value_identity(value: Point) -> Point { return value } \
              micro reference_identity(value: Node) -> Node { return value }",
-        )
+        ))
         .expect("声明与参数源码必须完成编译，不依赖构造指令补布局");
     let program = output.canonical();
     let plan = output.representation();
     assert_eq!(program.linked.nominal_instances.len(), 2);
     assert_eq!(plan.adt_reps.len(), 2);
-    let semantic_mir = rusty_valkyrie::compiler::mir::MirLowerer::lower_module_semantic(&rusty_valkyrie::ValkyrieCompiler::default().compile_source("structure Point { value: i32 } class Node { value: i32 } micro value_identity(value: Point) -> Point { return value } micro reference_identity(value: Node) -> Node { return value }").expect("source for representation test"));
+    let semantic_mir = rusty_valkyrie::compiler::mir::MirLowerer::lower_module_semantic(&rusty_valkyrie::ValkyrieCompiler::default().compile_source(&with_primitives("structure Point { value: i32 } class Node { value: i32 } micro value_identity(value: Point) -> Point { return value } micro reference_identity(value: Node) -> Node { return value }")).expect("source for representation test"));
     for aggregate in &semantic_mir.structs {
         // canonical 类型表按前端冻结的 `Nominal { declaration }` 形状收录聚合，禁止按短名回查。
         let item = aggregate.declaration.expect("structure/class 声明必须在前端冻结 declaration ItemId");
@@ -68,10 +70,10 @@ fn planner_requires_each_complete_nominal_type_before_representation() {
     use nyar_types::{NominalInstanceId, TypeId, TypeRecord};
 
     let output = rusty_valkyrie::ValkyrieCompiler::default()
-        .compile_source_to_program(
+        .compile_source_to_program(&with_primitives(
             "class Node {} micro first(value: Node, tag: bool) -> Node { return value } \
              micro second(value: Node, tag: i32) -> Node { return value }",
-        )
+        ))
         .expect("源码声明与函数合同必须完成编译");
     let mut program = output.canonical().clone();
     let original = program.linked.nominal_instances.values().next().unwrap().clone();

@@ -2,6 +2,8 @@
 
 use rusty_valkyrie::{HirError, ValkyrieCompiler, compiler::hir::lowering::MAX_EXPRESSION_LOWERING_DEPTH};
 
+use crate::primitives::SourceFixtureCompile;
+
 fn nested_source(depth: usize) -> String {
     let mut source = String::from("micro deep(): i64 {\n    return ");
     source.push_str(&"(".repeat(depth));
@@ -15,7 +17,7 @@ fn nested_source(depth: usize) -> String {
 #[test]
 fn shallow_expression_lowers() {
     let source = nested_source(3);
-    ValkyrieCompiler::default().compile_source(&source).expect("浅层嵌套表达式必须成功");
+    ValkyrieCompiler::default().compile_fixture_source(&source).expect("浅层嵌套表达式必须成功");
 }
 
 /// 反例：超过深度上限必须返回结构化 `ExpressionNestingExceeded`，不得栈溢出。

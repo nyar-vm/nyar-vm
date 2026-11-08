@@ -5,12 +5,14 @@ use rusty_valkyrie::{
     types::hir::{HirBlock, HirCallableDomain, HirExpr, HirExprKind, HirModule, HirResolvedCall, HirStatementKind, ValkyrieType},
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 fn compile(source: &str) -> HirModule {
-    ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("源码必须完成 HIR lowering: {error}"))
+    ValkyrieCompiler::default().compile_fixture_source(source).unwrap_or_else(|error| panic!("源码必须完成 HIR lowering: {error}"))
 }
 
 fn compile_error(source: &str) -> HirError {
-    ValkyrieCompiler::default().compile_source(source).expect_err("该源码必须在 HIR 合同边界结构化失败")
+    ValkyrieCompiler::default().compile_fixture_source(source).expect_err("该源码必须在 HIR 合同边界结构化失败")
 }
 
 fn resolved_calls_in_function<'a>(module: &'a HirModule, name: &str) -> Vec<&'a HirResolvedCall> {

@@ -6,11 +6,13 @@ use rusty_valkyrie::{
     function_interop_contract, *,
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 #[test]
 fn maps_c_binding_attribute_to_win32_host_link() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 900 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 [c("kernel32", "WriteFile")]
 micro helper(message: utf8): unit {
@@ -28,7 +30,7 @@ micro helper(message: utf8): unit {
 fn maps_syscall_binding_to_neutral_host_link() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 901 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 [syscall(1)]
 micro helper(message: utf8): unit {
@@ -47,7 +49,7 @@ micro helper(message: utf8): unit {
 fn maps_abstract_syscall_binding_and_call_edge() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 902 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 [primitive("std::primitive::i32")] structure i32 { }
 [primitive("std::primitive::i64")] structure i64 { }
@@ -94,7 +96,7 @@ micro main() -> i64 {
 fn bare_abstract_declaration_has_no_import_contract() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 903 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 micro declaration(message: utf8): unit;
 "#,
@@ -105,7 +107,7 @@ micro declaration(message: utf8): unit;
     assert!(function_interop_contract(declaration).is_none());
     let output = compiler.compile_source_to_program("micro declaration(message: utf8): unit;").expect("declaration output");
     let semantic_mir = rusty_valkyrie::compiler::mir::MirLowerer::lower_module_semantic(
-        &compiler.compile_source("micro declaration(message: utf8): unit;").expect("declaration source"),
+        &compiler.compile_fixture_source("micro declaration(message: utf8): unit;").expect("declaration source"),
     );
     assert!(semantic_mir.external_calls.is_empty());
 }
@@ -114,7 +116,7 @@ micro declaration(message: utf8): unit;
 fn host_contract_requires_explicit_annotation() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 904 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 [host_contract]
 micro declaration(message: utf8): unit;
@@ -128,7 +130,7 @@ micro declaration(message: utf8): unit;
     let output =
         compiler.compile_source_to_program("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration output");
     let semantic_mir = rusty_valkyrie::compiler::mir::MirLowerer::lower_module_semantic(
-        &compiler.compile_source("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration source"),
+        &compiler.compile_fixture_source("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration source"),
     );
     assert_eq!(
         semantic_mir.external_calls.iter().filter(|contract| contract.symbol.name().as_str() == "declaration").count(),
@@ -141,7 +143,7 @@ micro declaration(message: utf8): unit;
 fn maps_c_libc_binding_to_linux_gnu_host_link() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 910 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 [c("libc", "write")]
 micro helper(message: utf8): unit {
@@ -159,7 +161,7 @@ micro helper(message: utf8): unit {
 fn maps_c_libsystem_binding_to_darwin_host_link() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 911 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 [c("libSystem", "write")]
 micro helper(message: utf8): unit {
@@ -187,7 +189,7 @@ fn collapses_host_import_shapes_into_same_neutral_contract() {
     ] {
         let compiler = ValkyrieCompiler::new(SourceID { version_id });
         let module = compiler
-            .compile_source(&format!(
+            .compile_fixture_source(&format!(
                 r#"
 [{tag}({arguments})]
 micro helper(message: utf16) {{
@@ -208,7 +210,7 @@ micro helper(message: utf16) {{
 fn maps_wasm_operator_binding_to_wasm_operator_host_link() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 912 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 [wasm_operator("i32.add")]
 micro i32_add(a: i32, b: i32): i32;
@@ -226,7 +228,7 @@ fn rejects_wasm_operator_binding_with_non_single_segment_locator() {
     for (version_id, argument) in [(913, r#""i32", "add""#), (914, "32")] {
         let compiler = ValkyrieCompiler::new(SourceID { version_id });
         let module = compiler
-            .compile_source(&format!(
+            .compile_fixture_source(&format!(
                 r#"
 [wasm_operator({argument})]
 micro i32_add(a: i32, b: i32): i32;
@@ -244,7 +246,7 @@ micro i32_add(a: i32, b: i32): i32;
 fn maps_ovm_operator_binding_to_ovm_operator_host_link() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 915 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 [ovm_operator("i32.add")]
 micro i32_add(a: i32, b: i32): i32;
@@ -262,7 +264,7 @@ fn rejects_ovm_operator_binding_with_non_single_segment_locator() {
     for (version_id, argument) in [(916, r#""i32", "add""#), (917, "32")] {
         let compiler = ValkyrieCompiler::new(SourceID { version_id });
         let module = compiler
-            .compile_source(&format!(
+            .compile_fixture_source(&format!(
                 r#"
 [ovm_operator({argument})]
 micro i32_add(a: i32, b: i32): i32;
@@ -280,7 +282,7 @@ micro i32_add(a: i32, b: i32): i32;
 fn maps_jvm_operator_binding_to_jvm_operator_host_link() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 920 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 [jvm_operator("long.divide")]
 micro i64_div(a: i64, b: i64): i64;
@@ -297,7 +299,7 @@ micro i64_div(a: i64, b: i64): i64;
 fn maps_clr_operator_binding_to_clr_operator_host_link() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 921 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 [clr_operator("i64.div")]
 micro i64_div(a: i64, b: i64): i64;
@@ -317,7 +319,7 @@ fn rejects_jvm_and_clr_operator_bindings_with_non_single_segment_locator() {
     {
         let compiler = ValkyrieCompiler::new(SourceID { version_id });
         let module = compiler
-            .compile_source(&format!(
+            .compile_fixture_source(&format!(
                 r#"
 [{attribute}({argument})]
 micro numeric_add(a: i64, b: i64): i64;
@@ -337,7 +339,7 @@ fn legacy_opcode_attributes_do_not_bind_target_contracts() {
     for (version_id, attribute) in [(918, "wasm_opcode"), (919, "vm_opcode")] {
         let compiler = ValkyrieCompiler::new(SourceID { version_id });
         let module = compiler
-            .compile_source(&format!(
+            .compile_fixture_source(&format!(
                 r#"
 [{attribute}("i32.add")]
 micro i32_add(a: i32, b: i32): i32;
@@ -353,7 +355,7 @@ micro i32_add(a: i32, b: i32): i32;
 fn vm_surface_tag_does_not_bind_host_contract() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 920 });
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 [vm("i64_add")]
 micro i64_add(a: i64, b: i64): i64;
@@ -407,7 +409,7 @@ micro helper(): i64 {
     ];
     for (version_id, source) in sources {
         let compiler = ValkyrieCompiler::new(SourceID { version_id });
-        let error = compiler.compile_source(source).expect_err("携带 `[intrinsic]` 注解的声明必须失败关闭");
+        let error = compiler.compile_fixture_source(source).expect_err("携带 `[intrinsic]` 注解的声明必须失败关闭");
         assert!(
             matches!(error, HirError::BackendContractRejected(BackendContractError::IntrinsicAnnotationRetired { .. })),
             "version_id={version_id} 必须命中 IntrinsicAnnotationRetired，got {error:?}"
@@ -446,7 +448,7 @@ micro console_read(message: utf8): unit;
         ),
     ] {
         let compiler = ValkyrieCompiler::new(SourceID { version_id });
-        let error = compiler.compile_source(source).expect_err("preview1 fd I/O should be rejected");
+        let error = compiler.compile_fixture_source(source).expect_err("preview1 fd I/O should be rejected");
         let row: nyar_types::DiagnosticRow = error.into();
         assert!(
             row.code.contains("lowering_failed") || row.code.contains("unresolved") || row.code.contains("contract"),

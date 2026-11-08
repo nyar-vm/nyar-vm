@@ -174,11 +174,11 @@ fn producer_carries_export_and_entry_contracts_by_callable_identity() {
 #[test]
 fn source_entry_contract_rejects_missing_reordered_and_invalid_parameters() {
     let output = rusty_valkyrie::ValkyrieCompiler::default()
-        .compile_source_to_program("micro select(value: bool, other: i32) -> bool { return value }")
+        .compile_source_to_program(&crate::primitives::with_primitives("micro select(value: bool, other: i32) -> bool { return value }"))
         .expect("源码必须完成前端分析");
     let module = rusty_valkyrie::compiler::mir::MirLowerer::lower_module_semantic(
         &rusty_valkyrie::ValkyrieCompiler::default()
-            .compile_source("micro select(value: bool, other: i32) -> bool { return value }")
+            .compile_source(&crate::primitives::with_primitives("micro select(value: bool, other: i32) -> bool { return value }"))
             .expect("source for canonical test"),
     );
     canonical_program_from_semantic_mir(&module).expect("合法入口必须产生 CanonicalProgram");

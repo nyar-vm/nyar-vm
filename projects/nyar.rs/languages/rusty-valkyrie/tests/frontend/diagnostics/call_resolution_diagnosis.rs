@@ -22,10 +22,10 @@ fn string_arg<'a>(diagnostic: &'a rusty_valkyrie::compiler::diagnostics::pending
 /// 编译（必然失败）并取回全部未解析调用诊断的 (selector, reason, source_id)。
 fn unresolved_calls(lib: &str, app: &str) -> Vec<(String, String, String)> {
     pending::clear_pending_diagnostics();
-    let groups = [
+    let groups = crate::primitives::groups_with_primitives(vec![
         CompilerSourceGroup::single_source("std", "std", lib),
         CompilerSourceGroup::single_source("app", "app", app).as_entry().with_direct_dependencies(vec!["std".into()]),
-    ];
+    ]);
     let _ = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH);
     let collected = pending::take_pending_diagnostics();
     collected

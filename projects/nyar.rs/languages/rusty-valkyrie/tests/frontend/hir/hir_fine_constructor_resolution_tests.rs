@@ -3,6 +3,8 @@
 
 use rusty_valkyrie::{CompilerSourceGroup, HirError, ValkyrieCompiler, hir::lowering::DEFAULT_COMPILE_ARCH};
 
+use crate::primitives::{SourceFixtureCompile, groups_with_primitives};
+
 const RESULT_DECL: &str = r#"
 [tag(ResultKind)]
 unite Result<T, E> {
@@ -16,7 +18,7 @@ unite Result<T, E> {
 "#;
 
 fn compile(source: &str) -> Result<(), HirError> {
-    ValkyrieCompiler::default().compile_source(source).map(|_| ())
+    ValkyrieCompiler::default().compile_fixture_source(source).map(|_| ())
 }
 
 #[test]
@@ -83,10 +85,10 @@ unite Result<T, E> {
 "#;
 
 fn compile_groups(consumer: &str) -> Result<(), String> {
-    let groups = [
+    let groups = groups_with_primitives(vec![
         CompilerSourceGroup::single_source("std", "std", STD_GROUP),
         CompilerSourceGroup::single_source("app", "app", consumer).as_entry().with_direct_dependencies(vec!["std".into()]),
-    ];
+    ]);
     ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).map(|_| ()).map_err(|error| format!("{error}"))
 }
 
@@ -238,10 +240,10 @@ micro severity_is_error(diagnostic: Diagnostic) -> bool {
     return true
 }
 "#;
-    let groups = [
+    let groups = groups_with_primitives(vec![
         CompilerSourceGroup::single_source("std.diagnostic", "std.diagnostic", diagnostic),
         CompilerSourceGroup::single_source("std.data", "std.data", source).as_entry().with_direct_dependencies(vec!["std.diagnostic".into()]),
-    ];
+    ]);
     ValkyrieCompiler::default()
         .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
         .map(|_| ())
@@ -326,10 +328,10 @@ micro data_outcome_of<T>(value: T) -> DataOutcome<T> {
     return Fine { value: value }
 }
 "#;
-    let groups = [
+    let groups = groups_with_primitives(vec![
         CompilerSourceGroup::single_source("std.types", "std.types", std_types),
         CompilerSourceGroup::single_source("std.data", "std.data", std_data).as_entry().with_direct_dependencies(vec!["std.types".into()]),
-    ];
+    ]);
     ValkyrieCompiler::default()
         .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
         .map(|_| ())
@@ -366,10 +368,10 @@ structure LocalTriple { a: i64, b: i64, c: i64 }
     return data_outcome_of(payload)
 }
 "#;
-    let groups = [
+    let groups = groups_with_primitives(vec![
         CompilerSourceGroup::single_source("std", "std", std_group),
         CompilerSourceGroup::single_source("app", "app", consumer).as_entry().with_direct_dependencies(vec!["std".into()]),
-    ];
+    ]);
     ValkyrieCompiler::default()
         .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
         .map(|_| ())

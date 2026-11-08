@@ -265,10 +265,10 @@ micro probe(a: u64, b: u64): bool {
 fn compile_operator_groups(std: &str, app: &str) -> Result<(), String> {
     use rusty_valkyrie::{CompilerSourceGroup, compiler::diagnostics::pending, hir::lowering::DEFAULT_COMPILE_ARCH};
     pending::clear_pending_diagnostics();
-    let groups = [
+    let groups = crate::primitives::groups_with_primitives(vec![
         CompilerSourceGroup::single_source("std", "std", std),
         CompilerSourceGroup::single_source("app", "app", app).as_entry().with_direct_dependencies(vec!["std".into()]),
-    ];
+    ]);
     let result = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH);
     let collected = pending::take_pending_diagnostics();
     match result {
@@ -312,7 +312,9 @@ micro probe(items: [i32]): bool {
     return false
 }
 "#;
-    let hir = ValkyrieCompiler::default().compile_source(source).expect("同名 Array 不得导致绑定失败");
+    let hir = ValkyrieCompiler::default()
+        .compile_source(&crate::primitives::with_primitives(source))
+        .expect("同名 Array 不得导致绑定失败");
     let wrap = hir.functions.iter().find(|function| function.name.as_str() == "wrap").unwrap();
     assert!(
         matches!(wrap.params[0].ty, ValkyrieType::Nominal { .. }),
@@ -470,10 +472,10 @@ class Counter {
 fn compile_groups(std: &str, app: &str) -> Result<Vec<rusty_valkyrie::types::hir::HirModule>, String> {
     use rusty_valkyrie::{CompilerSourceGroup, compiler::diagnostics::pending, hir::lowering::DEFAULT_COMPILE_ARCH};
     pending::clear_pending_diagnostics();
-    let groups = [
+    let groups = crate::primitives::groups_with_primitives(vec![
         CompilerSourceGroup::single_source("std.collection", "std.collection", std),
         CompilerSourceGroup::single_source("app", "app", app).as_entry().with_direct_dependencies(vec!["std.collection".into()]),
-    ];
+    ]);
     ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).map_err(|error| error.to_string())
 }
 
@@ -1453,7 +1455,7 @@ imply Holder {
 }
 "#;
     let error = ValkyrieCompiler::default()
-        .compile_source_to_mir(source)
+        .compile_source_to_mir(&crate::primitives::with_primitives(source))
         .expect_err("字段写入值类型不符必须报结构化失败");
     assert!(error.to_string().contains("SMIR006"), "必须复用 SMIR006 合同码，实际: {error}");
 }
@@ -1492,7 +1494,9 @@ fn nested_new_element_type_flows_from_argument_context() {
     let source = format!(
         "{NESTED_CONSTRUCT_SOURCE}\nmicro build(capacity: i64): i64 {{\n    let mut outer: Outer<i64> = Outer::new(capacity)\n    outer.push(Inner::new(capacity))\n    return capacity\n}}\n"
     );
-    let mir = ValkyrieCompiler::default().compile_source_to_mir(&source).expect("嵌套构造的实参必须由形参槽类型定型");
+    let mir = ValkyrieCompiler::default()
+        .compile_source_to_mir(&crate::primitives::with_primitives(&source))
+        .expect("嵌套构造的实参必须由形参槽类型定型");
     rusty_valkyrie::mir::validate_semantic_module(&mir).expect("嵌套构造实参类型必须与形参槽一致");
 }
 
@@ -1502,7 +1506,9 @@ fn nested_new_rejects_argument_incompatible_with_slot() {
     let source = format!(
         "{NESTED_CONSTRUCT_SOURCE}\nmicro build(capacity: i64): i64 {{\n    let mut outer: Outer<i64> = Outer::new(capacity)\n    outer.push(capacity)\n    return capacity\n}}\n"
     );
-    let error = ValkyrieCompiler::default().compile_source_to_mir(&source).expect_err("实参与形参槽不符必须结构化失败");
+    let error = ValkyrieCompiler::default()
+        .compile_source_to_mir(&crate::primitives::with_primitives(&source))
+        .expect_err("实参与形参槽不符必须结构化失败");
     let message = error.to_string();
     assert!(message.contains("unresolved call `outer.push`"), "必须点名未解析调用，实际: {message}");
     assert!(message.contains("none matches"), "必须说明无一候选匹配，实际: {message}");

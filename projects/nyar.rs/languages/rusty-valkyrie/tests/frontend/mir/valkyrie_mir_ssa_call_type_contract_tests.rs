@@ -5,10 +5,12 @@ use rusty_valkyrie::{
     types::hir::{HirExprKind, HirLiteral, HirPattern, ValkyrieType},
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 #[test]
 fn missing_hir_static_contract_cannot_be_reconstructed_from_spelling() {
     let mut hir = ValkyrieCompiler::default()
-        .compile_source("micro answer() -> i64 { 7 } micro caller() -> i64 { answer() }")
+        .compile_fixture_source("micro answer() -> i64 { 7 } micro caller() -> i64 { answer() }")
         .expect("源码必须先完成解析");
     let caller = hir.functions.iter_mut().find(|function| function.name.as_str() == "caller").unwrap();
     let HirExprKind::Call { resolved, .. } = &mut caller.body.expr.as_mut().unwrap().kind
@@ -28,7 +30,7 @@ fn missing_hir_static_contract_cannot_be_reconstructed_from_spelling() {
 #[test]
 fn resolved_callable_identity_survives_diagnostic_name_changes() {
     let mut hir = ValkyrieCompiler::default()
-        .compile_source("micro answer() -> i64 { 7 } micro caller() -> i64 { answer() }")
+        .compile_fixture_source("micro answer() -> i64 { 7 } micro caller() -> i64 { answer() }")
         .expect("源码必须先完成解析");
     let caller = hir.functions.iter_mut().find(|function| function.name.as_str() == "caller").unwrap();
     let HirExprKind::Call { resolved: Some(resolved), .. } = &mut caller.body.expr.as_mut().unwrap().kind
@@ -55,7 +57,7 @@ fn resolved_callable_identity_survives_diagnostic_name_changes() {
 #[test]
 fn same_method_names_keep_declared_result_types() {
     let hir = ValkyrieCompiler::default()
-        .compile_source(
+        .compile_fixture_source(
             r#"
 structure BooleanOwner { }
 structure IntegerOwner { }
@@ -74,7 +76,7 @@ micro read_integer() -> i64 { return IntegerOwner.read() }
         )
         .expect("同名不同 owner 的静态方法必须完成 HIR 解析");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    for (owner, expected) in [("BooleanOwner.read", ValkyrieType::Boolean), ("IntegerOwner.read", ValkyrieType::Named(Identifier::new("i64")))]
+    for (owner, expected) in [("BooleanOwner.read", ValkyrieType::Boolean), ("IntegerOwner.read", ValkyrieType::Integer64 { signed: true })]
     {
         let instance = mir
             .functions

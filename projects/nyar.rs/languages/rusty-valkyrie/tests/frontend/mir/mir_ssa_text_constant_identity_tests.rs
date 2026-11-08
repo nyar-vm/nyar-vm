@@ -50,11 +50,13 @@ fn app(source: &str) -> CompilerSourceGroup {
 }
 
 fn resolve(groups: &[CompilerSourceGroup]) -> Vec<HirModule> {
-    ValkyrieCompiler::default().resolve_source_groups(groups, DEFAULT_COMPILE_ARCH).expect("文本载体身份必须完成 HIR 冻结")
+    let groups = crate::primitives::groups_with_primitives(groups.to_vec());
+    ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("文本载体身份必须完成 HIR 冻结")
 }
 
 fn compile(groups: &[CompilerSourceGroup]) -> Result<(), String> {
-    ValkyrieCompiler::default().compile_source_groups_to_program(groups).map(|_| ()).map_err(|error| format!("{error:?}"))
+    let groups = crate::primitives::groups_with_primitives(groups.to_vec());
+    ValkyrieCompiler::default().compile_source_groups_to_program(&groups).map(|_| ()).map_err(|error| format!("{error:?}"))
 }
 
 fn declaration(modules: &[HirModule], group_key: &str, name: &str) -> nyar_types::ItemId {

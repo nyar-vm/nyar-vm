@@ -36,9 +36,9 @@ using std.collection;
 
 #[test]
 fn imported_namespace_single_segment_call_resolves_item_and_generic_binder() {
-    let groups = [
+    let groups = crate::primitives::groups_with_primitives(vec![
         CompilerSourceGroup::single_source("std", "std", LIBRARY),
         CompilerSourceGroup::single_source("app", "app", CONSUMER).as_entry().with_direct_dependencies(vec!["std".into()]),
-    ];
+    ]);
     ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("`using` 引入的依赖函数必须能以单段短名解析");
 }

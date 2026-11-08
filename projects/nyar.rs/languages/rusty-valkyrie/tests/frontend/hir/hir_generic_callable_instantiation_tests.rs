@@ -501,10 +501,10 @@ fn missing_witness_fails_at_call_site_instead_of_borrowing_another_owner() {
 
 #[test]
 fn cross_namespace_same_trait_name_does_not_provide_witness() {
-    let groups = [
+    let groups = crate::primitives::groups_with_primitives(vec![
         CompilerSourceGroup::single_source("lib", "lib", CROSS_NAMESPACE_LIBRARY),
         CompilerSourceGroup::single_source("app", "app", CROSS_NAMESPACE_APP).as_entry().with_direct_dependencies(vec!["lib".into()]),
-    ];
+    ]);
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("两个命名空间必须完成 HIR");
     let app = modules
         .iter()

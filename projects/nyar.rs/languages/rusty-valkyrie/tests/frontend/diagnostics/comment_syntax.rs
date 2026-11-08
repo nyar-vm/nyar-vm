@@ -6,10 +6,12 @@
 
 use rusty_valkyrie::compiler::{diagnostics::pending, hir::lowering::ValkyrieCompiler};
 
+use crate::primitives::SourceFixtureCompile;
+
 /// 编译并断言零诊断；失败时把诊断打进 panic 消息便于定位。
 fn assert_clean(source: &str) {
     pending::clear_pending_diagnostics();
-    ValkyrieCompiler::default().compile_source(source).expect("source must compile");
+    ValkyrieCompiler::default().compile_fixture_source(source).expect("source must compile");
     let collected = pending::take_pending_diagnostics();
     assert!(collected.total() == 0, "expected zero diagnostics, got: {collected:?}");
 }

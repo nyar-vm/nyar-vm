@@ -90,7 +90,7 @@ micro return_plain_array() -> [u32] {
 "#;
 
 fn compile(source: &str) -> Result<HirModule, HirError> {
-    ValkyrieCompiler::default().compile_source(source)
+    crate::primitives::SourceFixtureCompile::compile_fixture_source(&ValkyrieCompiler::default(), source)
 }
 
 fn function<'a>(module: &'a HirModule, name: &str) -> &'a HirFunction {

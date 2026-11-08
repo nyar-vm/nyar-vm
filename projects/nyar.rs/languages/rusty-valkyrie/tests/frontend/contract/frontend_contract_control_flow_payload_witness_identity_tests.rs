@@ -2,9 +2,11 @@ use rusty_valkyrie::{ValkyrieCompiler, compiler::types::hir::HirModule};
 
 use rusty_valkyrie::compiler::emitter::frontend_contract::control_flow_payload::{collect_witness_binding, resolved_witness_binding};
 
+use crate::primitives::SourceFixtureCompile;
+
 fn module() -> HirModule {
     ValkyrieCompiler::default()
-        .compile_source(
+        .compile_fixture_source(
             r#"
 class Task { }
 trait Future {

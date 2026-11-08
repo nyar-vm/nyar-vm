@@ -60,9 +60,9 @@ fn generated_unit_without_scalar_declarations_rejects_literal_arguments() {
         .compile_source(&without)
         .expect_err("缺少标量声明时字面量实参必须结构化失败");
     let text = format!("{error:?}");
-    assert!(text.contains("UnresolvedCall"), "失败必须是调用解析诊断：{text}");
-    assert!(text.contains("rx_bind_text_utf8"), "诊断必须指向宿主调用：{text}");
-    assert!(text.contains("NoViableOverload"), "失败原因必须是无可行重载：{text}");
+    // 缺少标量声明时在声明绑定阶段即 fail-closed：字面量没有载体，不再进入调用解析。
+    assert!(text.contains("TypeNotFound"), "缺少标量声明必须在绑定阶段结构化失败：{text}");
+    assert!(text.contains("i32"), "诊断必须点名未绑定的标量拼写：{text}");
 }
 
 #[test]
@@ -260,9 +260,8 @@ let label = "hi"
 /// `f64` 是当前 std 明确未落 `Display` 的标量，正是图表 `height_pct` 文本位置的形态。
 #[test]
 fn missing_display_projection_fails_closed_with_receiver_type() {
-    let source = r#"[primitive("std::primitive::i32")]
-structure i32 { }
-
+    let source = crate::primitives::with_primitives(
+        r#"
 class Label { _repr: [u8] }
 type utf8 = Label
 trait Display { micro display(self) -> utf8 }
@@ -272,8 +271,9 @@ imply i32: Display { micro display(self) -> utf8 { return "0" } }
 micro probe(x: f64) -> utf8 {
     return (x).display()
 }
-"#;
-    let error = ValkyrieCompiler::default().compile_source(source).expect_err("`f64` 没有 `Display` 实现，文本投影必须失败闭合");
+"#,
+    );
+    let error = ValkyrieCompiler::default().compile_source(&source).expect_err("`f64` 没有 `Display` 实现，文本投影必须失败闭合");
     let text = error.to_string();
     assert!(text.contains("unresolved call `x.display`"), "失败必须指向投影调用点：{text}");
     assert!(text.contains("receiver type `f64`"), "诊断必须点名接收者类型：{text}");

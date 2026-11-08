@@ -40,8 +40,10 @@ micro render(part: DecodedPart) -> utf8 {
 }
 "#;
 
+use crate::primitives::SourceFixtureCompile;
+
 fn compile() -> MirModule {
-    let hir = ValkyrieCompiler::default().compile_source(DECODE_STRING_SHAPE).expect("fixture 必须完成 HIR 分析");
+    let hir = ValkyrieCompiler::default().compile_fixture_source(DECODE_STRING_SHAPE).expect("fixture 必须完成 HIR 分析");
     MirLowerer::lower_module_semantic(&hir)
 }
 

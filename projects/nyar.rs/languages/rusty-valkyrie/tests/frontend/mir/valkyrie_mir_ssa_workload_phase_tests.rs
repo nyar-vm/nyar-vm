@@ -13,8 +13,10 @@ fn host_call_instance(mir: &MirModule, name: &str) -> ItemInstanceId {
         .unwrap_or_else(|| panic!("missing host contract `{name}`"))
 }
 
+use crate::primitives::SourceFixtureCompile;
+
 fn compile_mir(source: &str) -> MirModule {
-    let hir = ValkyrieCompiler::new(SourceID { version_id: 9501 }).compile_source(source).expect("compile");
+    let hir = ValkyrieCompiler::new(SourceID { version_id: 9501 }).compile_fixture_source(source).expect("compile");
     MirLowerer::lower_module_semantic(&hir)
 }
 

@@ -4,11 +4,13 @@ use rusty_valkyrie::{
     *,
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 // 对齐 `valkyrie.v` core：`Range`/`TextSpan` 字段为 `usize`，跨 namespace 构造须冻结 Nominal。
 // 禁止用 `i32` 规避或只 `eprintln` 打印 HIR 冒充通过。
 
 fn compile(source: &str) -> Result<HirModule, HirError> {
-    ValkyrieCompiler::new(SourceID::default()).compile_source(source)
+    ValkyrieCompiler::new(SourceID::default()).compile_fixture_source(source)
 }
 
 fn find_struct<'a>(hir: &'a HirModule, name: &str) -> &'a HirStruct {
@@ -577,7 +579,9 @@ micro host_length(value: utf16): isize {
 [wasm("env", "utf16_length")]
 private micro __js_utf16_length(s: utf16): isize
 "#;
-    ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("同模块 private wasm host 调用必须解析: {error}"));
+    ValkyrieCompiler::default()
+        .compile_source(&crate::primitives::with_primitives(source))
+        .unwrap_or_else(|error| panic!("同模块 private wasm host 调用必须解析: {error}"));
 }
 
 #[test]
@@ -591,7 +595,9 @@ micro host_length(value: std.text.utf16): isize {
 [wasm("env", "utf16_length")]
 private micro __js_utf16_length(s: utf16): isize
 "#;
-    ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("Oak NamePath 须保留 std.text.utf16: {error}"));
+    ValkyrieCompiler::default()
+        .compile_source(&crate::primitives::with_primitives(source))
+        .unwrap_or_else(|error| panic!("Oak NamePath 须保留 std.text.utf16: {error}"));
 }
 
 #[test]
@@ -602,7 +608,9 @@ micro time_ms(value: f64): i64 {
     return i64(value)
 }
 "#;
-    let module = ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("数值类型名调用必须降为 Cast: {error}"));
+    let module = ValkyrieCompiler::default()
+        .compile_source(&crate::primitives::with_primitives(source))
+        .unwrap_or_else(|error| panic!("数值类型名调用必须降为 Cast: {error}"));
     let function = module.functions.iter().find(|item| item.name.as_str() == "time_ms").expect("time_ms");
     let Some(expr) = function.body.expr.as_ref()
     else {
@@ -628,7 +636,9 @@ micro get<T>(array: [T], ordinal: usize): T {
     return array::[ordinal]
 }
 "#;
-    let error = ValkyrieCompiler::default().compile_source(source).expect_err("裸 [T] 下标缺声明候选必须失败关闭");
+    let error = ValkyrieCompiler::default()
+        .compile_source(&crate::primitives::with_primitives(source))
+        .expect_err("裸 [T] 下标缺声明候选必须失败关闭");
     assert!(matches!(error, HirError::UnresolvedCall { .. }), "期望 UnresolvedCall，got {error:?}");
     let rendered = format!("{error:?}");
     assert!(rendered.contains("get"), "失败必须定位到出错函数: {rendered}");
@@ -654,7 +664,9 @@ micro Some<T>(value: T) -> Option<T> {
     return Some(item)
 }
 "#;
-    let error = ValkyrieCompiler::default().compile_source(source).expect_err("裸 [T] 下标缺声明候选必须失败关闭");
+    let error = ValkyrieCompiler::default()
+        .compile_source(&crate::primitives::with_primitives(source))
+        .expect_err("裸 [T] 下标缺声明候选必须失败关闭");
     assert!(matches!(error, HirError::UnresolvedCall { .. }), "期望 UnresolvedCall，got {error:?}");
     let rendered = format!("{error:?}");
     assert!(rendered.contains("array_host_get"), "失败必须定位到出错函数: {rendered}");
@@ -672,6 +684,7 @@ fn unresolved_call_diagnostic_points_at_real_module_source() {
         direct_dependencies: Vec::new(),
         is_entry: true,
     }];
+    let groups = crate::primitives::groups_with_primitives(groups);
     let error =
         ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect_err("未解析调用必须在 HIR 合同边界失败");
     let HirError::UnresolvedCall { selector, context, source, span, .. } = &error

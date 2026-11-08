@@ -4,6 +4,8 @@ use rusty_valkyrie::{
     *,
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 #[test]
 fn unresolved_primitive_and_array_spellings_do_not_create_type_equivalence() {
     let context = TypeRelationContext::from_module(&HirModule::default());
@@ -22,9 +24,12 @@ fn unresolved_primitive_and_array_spellings_do_not_create_type_equivalence() {
 
 #[test]
 fn unresolved_name_cannot_match_a_bound_nominal_declaration() {
-    let hir = rusty_valkyrie::ValkyrieCompiler::default().compile_source("structure Record { value: i32 }").expect("结构声明解析");
+    let hir = rusty_valkyrie::ValkyrieCompiler::default()
+        .compile_fixture_source("structure Record { value: i32 }")
+        .expect("结构声明解析");
     let context = TypeRelationContext::from_module(&hir);
-    let item = hir.structs.first().expect("结构声明");
+    // 共享 primitive 前导也在 `structs` 里，必须按声明名取被测结构而不是取首项。
+    let item = hir.structs.iter().find(|item| item.name.as_str() == "Record").expect("`Record` 声明");
     let nominal = ValkyrieType::Nominal {
         declaration: item.constructor_declaration.expect("冻结声明身份"),
         arguments: vec![],

@@ -32,9 +32,11 @@ imply i64 {
 private micro __i64_add(lhs: i64, rhs: i64): i64
 "#;
 
+use crate::primitives::SourceFixtureCompile;
+
 /// Compiles source text into semantic MIR for singleton lowering inspection.
 fn compile_mir(source: &str) -> MirModule {
-    let hir = ValkyrieCompiler::new(SourceID { version_id: 9400 }).compile_source(source).expect("compile");
+    let hir = ValkyrieCompiler::new(SourceID { version_id: 9400 }).compile_fixture_source(source).expect("compile");
     MirLowerer::lower_module_semantic(&hir)
 }
 

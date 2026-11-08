@@ -13,6 +13,8 @@
 
 use rusty_valkyrie::{hir::*, HirError, SourceID, ValkyrieCompiler};
 
+use crate::primitives::SourceFixtureCompile;
+
 const PRELUDE: &str = r#"
 namespace app;
 
@@ -31,7 +33,7 @@ fn with_prelude(body: &str) -> String {
 }
 
 fn compile(source: &str) -> Result<HirModule, HirError> {
-    ValkyrieCompiler::new(SourceID::default()).compile_source(source)
+    ValkyrieCompiler::new(SourceID::default()).compile_fixture_source(source)
 }
 
 fn compile_ok(body: &str) -> HirModule {

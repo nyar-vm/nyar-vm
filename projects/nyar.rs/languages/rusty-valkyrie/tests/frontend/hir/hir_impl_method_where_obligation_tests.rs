@@ -10,6 +10,8 @@ use rusty_valkyrie::{
     types::hir::{HirExpr, HirExprKind, HirFunction, HirModule, HirStatementKind, ValkyrieType},
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 fn impl_method<'a>(module: &'a HirModule, name: &str) -> &'a HirFunction {
     module
         .impls
@@ -32,7 +34,7 @@ fn first_statement_expr(method: &HirFunction) -> &HirExpr {
 fn impl_method_resolves_bounded_sibling_on_open_generic_target() {
     let compiler = ValkyrieCompiler::default();
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 trait Equal { micro equal(self, other: Self): bool }
 trait Hash { micro hash(self): usize }
@@ -75,7 +77,7 @@ imply Table<K, V> {
 fn generic_field_projection_substitutes_declaration_arguments() {
     let compiler = ValkyrieCompiler::default();
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 trait Equal { infix `==`(self, rhs: Self): bool }
 structure Entry<K, V> {
@@ -109,7 +111,7 @@ imply Table<K, V> {
 fn concrete_super_trait_evidence_closes_where_witness() {
     let compiler = ValkyrieCompiler::default();
     compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 trait Base { micro base(self) -> i64 }
 trait Tagged: Base { micro tag(self) -> i64 }
@@ -148,7 +150,7 @@ fn concrete_super_trait_without_base_impl_stays_rejected() {
     let compiler = ValkyrieCompiler::default();
     assert!(
         compiler
-            .compile_source(
+            .compile_fixture_source(
                 r#"
 trait Base { micro base(self) -> i64 }
 trait Tagged: Base { micro tag(self) -> i64 }
@@ -183,7 +185,7 @@ micro entry() -> i64 {
 fn impl_member_signature_carries_owner_binder_without_call_site_seeding() {
     let compiler = ValkyrieCompiler::default();
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 trait Equal { micro equal(self, other: Self): bool }
 class Heap<T> { _value: T }
@@ -229,7 +231,7 @@ imply Heap<T> {
 fn trait_member_where_target_carries_trait_declaration_binder() {
     let compiler = ValkyrieCompiler::default();
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 trait Equal { micro equal(self, other: Self): bool }
 trait Pool<T> {
@@ -254,7 +256,7 @@ trait Pool<T> {
 fn unresolvable_impl_member_generic_names_declaration_and_member() {
     let compiler = ValkyrieCompiler::default();
     let error = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 class Box<T> { _value: T }
 imply Box<U> {
@@ -276,7 +278,7 @@ imply Box<U> {
 fn labeled_tuple_associated_type_freezes_owner_generic_binder() {
     let compiler = ValkyrieCompiler::default();
     let module = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 trait Carrier { type Item; micro probe(self): i64 }
 structure Holder<T> { _value: T }
@@ -319,7 +321,7 @@ imply Holder<T>: Carrier {
 fn labeled_tuple_associated_type_with_unfrozen_generic_still_rejected() {
     let compiler = ValkyrieCompiler::default();
     let error = compiler
-        .compile_source(
+        .compile_fixture_source(
             r#"
 trait Carrier { type Item; micro probe(self): i64 }
 structure Holder<T> { _value: T }
@@ -343,7 +345,7 @@ fn concrete_target_without_evidence_is_still_rejected() {
     let compiler = ValkyrieCompiler::default();
     assert!(
         compiler
-            .compile_source(
+            .compile_fixture_source(
                 r#"
 trait Equal { micro equal(self, other: Self): bool }
 trait Hash { micro hash(self): usize }

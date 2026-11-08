@@ -1,5 +1,8 @@
 //! asgard integration tests.
 
+#[path = "../support/primitives.rs"]
+pub(crate) mod primitives;
+
 mod asgard_asgard_ui_golden;
 mod asgard_codegen;
 mod asgard_platform_contract;

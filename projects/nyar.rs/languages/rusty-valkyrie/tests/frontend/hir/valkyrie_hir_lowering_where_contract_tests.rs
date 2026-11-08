@@ -7,9 +7,11 @@ use rusty_valkyrie::{
     },
 };
 
+use crate::primitives::SourceFixtureCompile;
+
 #[test]
 fn return_type_is_independent_of_multiple_qualified_bounds() {
-    let module = ValkyrieCompiler::default().compile_source(
+    let module = ValkyrieCompiler::default().compile_fixture_source(
         "micro present<T, U>(value: T, other: U): utf8 where T: first::Display + second.Display, U: Mapper<i32, bool, Item = utf8> { return \"ok\" }"
     ).expect("结构化约束必须保留");
     let function = &module.functions[0];
@@ -22,24 +24,23 @@ fn return_type_is_independent_of_multiple_qualified_bounds() {
     assert_eq!(first.bounds[1].trait_path.parts(), &[Identifier::new("second"), Identifier::new("Display")]);
     let second = &function.where_constraints[1];
     assert_eq!(second.target, function.params[1].ty);
-    // 当前身份合同：未声明的数值短名冻结为 `Named`，不折叠成内建标量 `Integer32`
-    // （`type_lowering.rs` 的编码内建只含 unit/void/bool；数值 carrier 映射是后续工作包）。
-    // 本用例锁定的是 bound 型实参按声明位置逐 bound 保留，与叶子表示形态正交。
-    assert_eq!(second.bounds[0].type_arguments, vec![ValkyrieType::Named(Identifier::new("i32")), ValkyrieType::Boolean]);
+    // 已声明的 numeric primitive 在绑定期折叠成载体 `Integer32`，不再以 `Named("i32")`
+    // 参与身份判定。本用例锁定的是 bound 型实参按声明位置逐 bound 保留，与叶子表示形态正交。
+    assert_eq!(second.bounds[0].type_arguments, vec![ValkyrieType::Integer32 { signed: true }, ValkyrieType::Boolean]);
     assert_eq!(second.bounds[0].associated_types, vec![HirAssociatedTypeBinding { name: Identifier::new("Item"), ty: ValkyrieType::Utf8 }]);
 }
 
 #[test]
 fn repeated_traits_keep_equations_attached_to_each_bound() {
     let module = ValkyrieCompiler::default()
-        .compile_source("micro present<T>(value: T): utf8 where T: Mapper<i32, Item = utf8> + Mapper<bool, Item = i32> { return \"ok\" }")
+        .compile_fixture_source("micro present<T>(value: T): utf8 where T: Mapper<i32, Item = utf8> + Mapper<bool, Item = i32> { return \"ok\" }")
         .expect("同名 bound 不能覆盖彼此的参数或等式");
     let bounds = &module.functions[0].where_constraints[0].bounds;
     assert_eq!(bounds.len(), 2);
     assert_ne!(bounds[0].type_arguments, bounds[1].type_arguments);
     assert_eq!(bounds[0].associated_types[0].ty, ValkyrieType::Utf8);
-    // 同上：`i32` 按当前合同冻结为 `Named`，等式的逐 bound 归属才是本用例的合同。
-    assert_eq!(bounds[1].associated_types[0].ty, ValkyrieType::Named(Identifier::new("i32")));
+    // 同上：已声明的 `i32` 折叠为 `Integer32`，等式的逐 bound 归属才是本用例的合同。
+    assert_eq!(bounds[1].associated_types[0].ty, ValkyrieType::Integer32 { signed: true });
 }
 
 #[test]
