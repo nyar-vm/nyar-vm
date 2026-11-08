@@ -1,9 +1,12 @@
 use super::propagation::propagate_declared_generic_binders;
 use crate::compiler::{
-    hir::lowering::{
-        diagnostics::{identity_duplicated, index_exhausted, plan_source, plan_span},
-        errors::{DiscriminatorFailure, HirError, IndexSpace},
-        source_group::SelfOwnerPath,
+    hir::{
+        lowering::{
+            diagnostics::{identity_duplicated, index_exhausted, plan_source, plan_span},
+            errors::{DiscriminatorFailure, HirError, IndexSpace},
+            source_group::SelfOwnerPath,
+        },
+        type_relation::is_numeric_type_name,
     },
     types::{
         Identifier, NamePath,
@@ -14,6 +17,21 @@ use crate::compiler::{
         },
     },
 };
+
+/// 数值 primitive 拼写与编码型内建拼写都必须在绑定期折叠成载体。
+///
+/// 声明不可见时残留的 `Named("i64")` 是上游漏绑，不是一种可接受的类型形态：
+/// 结构化拒绝，禁止下游身份判定按拼写把它接成 primitive。`char`/`bool`/文本编码
+/// 在 `resolve_named_type` 阶段已由 `canonical_builtin_type` 折叠，这里只作闭环口径。
+fn reject_unbound_primitive_spelling(name: &Identifier) -> Result<(), HirError> {
+    let requires_carrier = is_numeric_type_name(name.as_str())
+        || crate::compiler::hir::type_lowering::canonical_builtin_type(name.as_str())
+            .is_some_and(|builtin| !matches!(builtin, ValkyrieType::Named(_)));
+    if !requires_carrier {
+        return Ok(());
+    }
+    Err(HirError::TypeNotFound { name: name.to_string(), source: plan_source(), span: plan_span() })
+}
 
 /// 模块可见的全部聚合声明：本地声明、依赖语义导出的声明与子模块递归。
 fn collect_visible_structs(module: &HirModule, out: &mut Vec<HirStruct>) {
@@ -162,6 +180,8 @@ pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), 
                         arguments: Vec::new(),
                         primitive_identity,
                     });
+                } else {
+                    reject_unbound_primitive_spelling(name)?;
                 }
             }
             ValkyrieType::Apply(base, args) => {

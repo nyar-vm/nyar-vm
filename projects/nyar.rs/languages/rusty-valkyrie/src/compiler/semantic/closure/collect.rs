@@ -76,7 +76,13 @@ fn collect_item(builder: &mut FileBuilder, namespace: &[String], item: &ast::Sta
             builder.register(namespace, DeclarationKind::Flags, &flags.name.name, None, None, None, References::default());
         }
         ast::StatementNode::Enums(enums) => {
-            let key = builder.register(namespace, DeclarationKind::Enum, &enums.name.name, None, None, None, References::default());
+            // 变体载荷字段是声明面引用：`Failed { diagnostics: i64 }` 的 `i64` 必须进入闭包，
+            // 否则依赖组里的 primitive 声明会被需求裁剪掉，消费组在声明绑定期拿不到载体。
+            let mut signature = References::default();
+            for variant in &enums.variants {
+                collect_signature_fields(&variant.fields, &mut signature);
+            }
+            let key = builder.register(namespace, DeclarationKind::Enum, &enums.name.name, None, None, None, signature);
             for variant in &enums.variants {
                 builder.variant_members.push((variant.name.name.clone(), key.clone()));
             }
