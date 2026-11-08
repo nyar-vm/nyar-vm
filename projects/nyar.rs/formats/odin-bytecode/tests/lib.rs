@@ -266,17 +266,21 @@ fn float64_constant_round_trips_bit_exactly() {
     }
 }
 
-/// 上一个版本（v5）的产物必须给出明确诊断：同时点名实际版本与期望版本，
+/// 上一个版本的产物必须给出明确诊断：同时点名实际版本与期望版本，
 /// 不得被误解析，也不得落到模糊错误。
+///
+/// 上一个版本由当前 `Odin_VERSION` 推导，诊断文案也必须按同一推导值断言：
+/// 写死历史阶段数值会在格式 revision 递增后变成过期断言。
 #[test]
 fn previous_version_artifact_reports_found_and_expected() {
+    let previous = Odin_VERSION.checked_sub(1).expect("格式 revision 必须存在上一个版本");
     let mut data = module_with_constants(Vec::new());
-    data.version = Odin_VERSION - 1;
-    let error = decode_module(&encode_module(&data)).expect_err("v5 产物必须被拒绝");
-    assert_eq!(error, OdinDecodeError::InvalidVersion(Odin_VERSION - 1), "必须落到结构化版本错误，不能是别的错误");
+    data.version = previous;
+    let error = decode_module(&encode_module(&data)).expect_err("上一版本产物必须被拒绝");
+    assert_eq!(error, OdinDecodeError::InvalidVersion(previous), "必须落到结构化版本错误，不能是别的错误");
     let text = error.to_string();
-    assert!(text.contains("found 5"), "诊断必须点名实际版本 5，实际：{text}");
-    assert!(text.contains("expected 6"), "诊断必须点名期望版本 6，实际：{text}");
+    assert!(text.contains(&format!("found {previous}")), "诊断必须点名实际版本 {previous}，实际：{text}");
+    assert!(text.contains(&format!("expected {Odin_VERSION}")), "诊断必须点名期望版本 {Odin_VERSION}，实际：{text}");
 }
 
 /// 旧产物（版本 0/1）与未来产物必须结构化拒绝：常量种类编号随版本变化，兼容读取会静默错解。
