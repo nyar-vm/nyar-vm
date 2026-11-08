@@ -191,3 +191,36 @@ fn dotted_group_name_same_name_in_two_namespaces_reports_structured_ambiguity() 
         "unexpected diagnostic: {error}"
     );
 }
+
+/// 依赖组：命名空间内声明一个泛型自由函数。
+const IMPORTED_LIBRARY: &str = r#"
+namespace std.collection;
+
+structure Crate<T> { }
+
+micro arrange<T>(items: Crate<T>, compare: micro(T, T) -> i32): unit {
+    return
+}
+"#;
+
+/// consumer：`using` 引入命名空间，单段短名调用依赖组的泛型函数，
+/// 并把函数类型形参原样转发（该实参有局部类型，因此不依赖函数引用表达式）。
+const IMPORTED_CONSUMER: &str = r#"
+namespace app;
+
+using std.collection;
+
+[export] micro run(items: Crate<i64>, compare: micro(i64, i64) -> i32): unit {
+    arrange(items, compare)
+    return
+}
+"#;
+
+#[test]
+fn imported_namespace_single_segment_call_resolves_item_and_generic_binder() {
+    let groups = vec![
+        CompilerSourceGroup::single_source("std", "std", IMPORTED_LIBRARY),
+        CompilerSourceGroup::single_source("app", "app", IMPORTED_CONSUMER).as_entry().with_direct_dependencies(vec!["std".into()]),
+    ];
+    compile(&groups).expect("`using` 引入的依赖函数必须能以单段短名解析");
+}
