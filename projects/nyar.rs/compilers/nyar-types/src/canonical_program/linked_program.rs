@@ -402,13 +402,15 @@ impl LinkedSemanticProgram {
     ///
     /// `Named` 只允许表示尚无身份的名义拼写。同一声明一旦已有
     /// `aggregate_layout_by_type`、文本载体登记或原生标量身份，残留就会让下游
-    /// 只能按名字猜实现。命中即结构化失败，并点名阶段与 owner，不降级为告警。
+    /// 只能按名字猜实现。命中即结构化失败，并点名阶段、产生函数与 owner，
+    /// 不降级为告警。
     pub fn validate_named_residues(&self) -> Result<(), CanonicalMirError> {
         for layout in &self.aggregate_layouts.layouts {
             for field in &layout.fields {
                 if let Some(name) = self.shadowed_named_residue(&field.ty) {
                     return Err(CanonicalMirError::ShadowedNamedResidue {
                         stage: "canonical::aggregate_layouts".into(),
+                        function: "value_semantics::layout_for_struct / value_semantics::instance_layout_for_type".into(),
                         owner: format!("{}::{}.{}", layout.namespace, layout.name, field.name),
                         name: name.as_str().into(),
                     });
@@ -420,6 +422,7 @@ impl LinkedSemanticProgram {
                 if let Some(name) = variant.payload_type.as_ref().and_then(|payload| self.shadowed_named_residue(payload)) {
                     return Err(CanonicalMirError::ShadowedNamedResidue {
                         stage: "canonical::sum_layouts".into(),
+                        function: "canonical::identities::sum_payload_layout / canonical::identities::record_payload_layout".into(),
                         owner: format!("{}.{}", sum.name, variant.name),
                         name: name.as_str().into(),
                     });

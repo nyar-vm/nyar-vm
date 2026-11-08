@@ -107,8 +107,10 @@ fn canonical_program_rejects_named_residue_shadowing_registered_layout() {
     linked.aggregate_layout_by_type.insert(ty, 0);
     linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(NyarType::Named(Identifier::new("Endpoint"))));
     match linked.validate_named_residues() {
-        Err(CanonicalMirError::ShadowedNamedResidue { stage, owner, name }) => {
+        Err(CanonicalMirError::ShadowedNamedResidue { stage, function, owner, name }) => {
             assert_eq!(stage, "canonical::aggregate_layouts");
+            assert!(function.contains("layout_for_struct"), "{function}");
+            assert!(function.contains("instance_layout_for_type"), "{function}");
             assert!(owner.contains("Endpoint"), "{owner}");
             assert_eq!(name, "Endpoint");
         }
@@ -158,8 +160,9 @@ fn canonical_program_rejects_named_residue_in_sum_payload() {
         }],
     });
     match linked.validate_named_residues() {
-        Err(CanonicalMirError::ShadowedNamedResidue { stage, owner, .. }) => {
+        Err(CanonicalMirError::ShadowedNamedResidue { stage, function, owner, .. }) => {
             assert_eq!(stage, "canonical::sum_layouts");
+            assert!(function.contains("sum_payload_layout"), "{function}");
             assert!(owner.contains("Option") && owner.contains("Some"), "{owner}");
         }
         other => panic!("unexpected {other:?}"),

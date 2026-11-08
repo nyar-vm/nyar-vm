@@ -479,6 +479,8 @@ pub enum CanonicalMirError {
     ShadowedNamedResidue {
         /// 产生残留的 canonical 阶段。
         stage: String,
+        /// 产生残留的 canonical 函数。
+        function: String,
         /// 残留所在布局或变体 owner。
         owner: String,
         /// 被压回短名的残留拼写。
