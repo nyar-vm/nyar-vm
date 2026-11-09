@@ -963,7 +963,11 @@ impl CanonicalSemanticMir {
                     }
                     if let CanonicalTerminator::Jump { arguments, .. } = &block.terminator {
                         for (value, (_, expected)) in arguments.iter().zip(&target_block.parameters) {
-                            if function.value_types.get(value) != Some(expected) {
+                            // 文本 carrier 的内建编码与名义声明是同一值空间：与本校验器其余站点
+                            // （调用签名、`StoreVar`、`Return`）共用 `canonical_text_encoding_compatible`
+                            // 事实，SSA 合并块的块参数与入边实参不得因两种文本表示判为类型不符。
+                            let actual = function.value_types.get(value);
+                            if actual != Some(expected) && !actual.is_some_and(|actual| canonical_text_encoding_compatible(linked, *actual, *expected)) {
                                 return Err(CanonicalMirError::BlockParameterTypeMismatch { function: *key, block: target, value: *value });
                             }
                         }

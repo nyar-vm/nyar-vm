@@ -190,6 +190,55 @@ micro probe() -> bool {
 }
 
 #[test]
+fn value_if_merges_literal_and_nominal_text_carrier() {
+    // 值位置 `if` 的一臂是字符串字面量（编码载体 `Utf8`），另一臂是返回 `utf8` 的调用
+    // （名义声明 `Utf8Text`）。二者同处文本值空间，SSA 合并块参数与两条入边必须按
+    // 01 §5.4 的同一冻结编码身份判等，不得在 MIR 合同或 canonical block-parameter 处
+    // 报 SMIR007 / CAN015。
+    let groups = [
+        core(),
+        app(r#"
+namespace demo;
+
+using std.text::{utf8}
+
+micro wrap(value: utf8) -> utf8 {
+    return value
+}
+
+[export]
+micro probe(flag: bool) -> utf8 {
+    let base: utf8 = "x"
+    let merged: utf8 = if flag { "" } else { wrap(base) }
+    return merged
+}
+"#),
+    ];
+    compile(&groups).expect("文本字面量与名义文本载体的值合并必须同型");
+}
+
+#[test]
+fn value_if_rejects_text_and_integer_merge() {
+    // 反向：文本臂与整数臂不属同一值空间，合并必须失败关闭，证明放行只针对文本 carrier，
+    // 没有把块参数/入边类型合同整体放宽。
+    let groups = [
+        core(),
+        app(r#"
+namespace demo;
+
+using std.text::{utf8}
+
+[export]
+micro probe(flag: bool) -> utf8 {
+    let merged: utf8 = if flag { "" } else { 1 }
+    return merged
+}
+"#),
+    ];
+    compile(&groups).expect_err("文本与整数不得合并为同一 SSA 值");
+}
+
+#[test]
 fn other_class_constant_is_not_a_text_carrier() {
     let identity_groups = [
         core(),

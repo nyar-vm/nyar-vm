@@ -7,6 +7,7 @@ use super::{
     MirBlockRef, MirBuilder, MirConstant, MirOperand, MirOperation, MirTerminator, MirValueOrigin, MirValueRef,
     control_flow_context::MirLoopContext, infer_builder_operand_type,
 };
+use crate::compiler::mir::validation::text_carriers_equivalent;
 
 /// 分支 arm 的出口事实：arm 结束时所在的块与该处的变量绑定快照。
 ///
@@ -815,7 +816,10 @@ impl MirBuilder {
         else {
             return;
         };
-        if merged_ty == arm_ty {
+        // 文本 carrier 的两种表示（内建编码 `Utf8`/`Utf16` 与源级 `type utf8 = Utf8Text`
+        // 名义声明）是同一值空间，与 MIR 校验、canonical 共用 `text_carriers_equivalent` 口径；
+        // 值位置 `if` 的一臂取字符串字面量、另一臂取文本算子结果时不得误报分支不一致。
+        if merged_ty == arm_ty || text_carriers_equivalent(&merged_ty, &arm_ty, &self.field_declarations) {
             return;
         }
         self.diagnostics.push(super::MirDiagnostic::UnsupportedExpression {

@@ -544,7 +544,13 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                     else {
                         return Err(error("SMIR001", location.clone(), "jump target block parameter has no SSA type".to_string()));
                     };
-                    if actual != *expected && !bare_named_matches_generic_apply_return(expected, &actual) {
+                    // 块参数与入边实参同处文本值空间时（内建编码 carrier ↔ `type utf8 = Utf8Text`
+                    // 名义声明），按调用点同一 `text_carriers_equivalent` 口径放行，与 canonical
+                    // block-parameter 校验共用事实，不让 SSA 合并块的两种文本表示误判为合同失败。
+                    if actual != *expected
+                        && !bare_named_matches_generic_apply_return(expected, &actual)
+                        && !text_carriers_equivalent(expected, &actual, &module.structs)
+                    {
                         return Err(error(
                             "SMIR007",
                             location,

@@ -22,3 +22,6 @@ mod type_inference;
 pub use errors::MirValidationError;
 pub use module_validation::validate_module;
 pub use semantic_contract::{SemanticMirContractError, semantic_observation, validate_semantic_module};
+// SSA lowering 与 MIR 校验共用同一文本 carrier 归一口径（`type utf8 = Utf8Text` 名义声明
+// 与内建编码 carrier 是同一值空间），故对 `mir` 内部再导出，避免 lowering 另立判定。
+pub(in crate::compiler::mir) use type_inference::text_carriers_equivalent;

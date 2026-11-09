@@ -99,7 +99,11 @@ pub(super) fn call_site_type_compatible(declared: &ValkyrieType, actual: &Valkyr
 /// 声明上，因此编码实参与同族文本名义形参兼容；跨族（`Utf16` 实参对 `utf8` 形参）
 /// 与非文本名义依旧失败闭合。判定方向无关：HIR 的 `text_carriers_equivalent` 同一
 /// 名集，生成单元里形参是内建 carrier、实参来自名义字段时同样成立。
-pub(super) fn text_carriers_equivalent(declared: &ValkyrieType, actual: &ValkyrieType, structs: &[crate::compiler::mir::MirStruct]) -> bool {
+pub(in crate::compiler::mir) fn text_carriers_equivalent(
+    declared: &ValkyrieType,
+    actual: &ValkyrieType,
+    structs: &[crate::compiler::mir::MirStruct],
+) -> bool {
     text_builtin_anchors_nominal_declaration(declared, actual, structs)
         || text_builtin_anchors_nominal_declaration(actual, declared, structs)
 }
