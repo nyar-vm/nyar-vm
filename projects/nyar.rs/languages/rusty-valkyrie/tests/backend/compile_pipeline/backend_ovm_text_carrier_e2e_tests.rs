@@ -114,6 +114,95 @@ fn utf8_receiver_is_materialized_before_field_access() {
     assert_eq!(run_main(&module), Value::I32(3), "`self._repr` 必须读到托管文本对象的 `[u8]` 槽长度");
 }
 
+/// 值位置 `if` 合并 fixture：一臂是 raw 字面量 `"abc"`，另一臂是托管文本对象
+/// （`from_bytes`）。SSA 合并块参数按目标计划冻结为托管文本布局；走 raw 臂时，
+/// 块参数入边必须物化，否则下游 `self._repr` 以 `expected object, got string` 崩溃。
+const MERGE_APP_SOURCE: &str = r#"namespace std.text;
+
+class Utf8Text {
+    _repr: [u8]
+}
+
+type utf8 = Utf8Text
+
+[host_contract]
+micro length<T>(xs: [T]): usize
+
+imply Utf8Text {
+    micro from_bytes(bytes: [u8]) -> Self {
+        return Self { _repr: bytes }
+    }
+
+    micro repr_byte_length(self) -> usize {
+        return length(self._repr)
+    }
+}
+
+[main]
+micro main(flag: bool) -> usize {
+    let text: utf8 = if flag { "abc" } else { Utf8Text::from_bytes([104, 105]) }
+    return text.repr_byte_length()
+}"#;
+
+fn merge_bindings() -> Vec<CompilerHostProviderBinding> {
+    vec![CompilerHostProviderBinding {
+        contract: micro_declaration_key("app", "demo.v", &["std".to_owned(), "text".to_owned()], "length"),
+        provider: micro_declaration_key("adaptor", "adaptor.v", &[], "ovm_array_length"),
+        required_capabilities: vec![],
+        foreign_bindings: vec![],
+    }]
+}
+
+fn merge_source_groups() -> Vec<CompilerSourceGroup> {
+    vec![
+        CompilerSourceGroup::single_source("core", "core", CORE_PRIMITIVE_SOURCE),
+        CompilerSourceGroup::single_source("adaptor", "adaptor", ARRAY_PROVIDER_SOURCE).with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source("app", "demo", MERGE_APP_SOURCE)
+            .as_entry()
+            .with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
+    ]
+}
+
+fn lower_merge() -> Result<odin_bytecode::OdinModuleData, String> {
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(&merge_source_groups(), &merge_bindings(), &[], "native")
+        .map_err(|error| error.to_string())?;
+    let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
+    let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
+    let plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
+        .map_err(|error| error.to_string())?;
+    nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
+        .map_err(|error| error.to_string())
+}
+
+fn run_main_with_args(module: &odin_bytecode::OdinModuleData, args: Vec<Value>) -> Value {
+    let entry = module
+        .exports
+        .iter()
+        .map(|export| export.symbol_name.clone())
+        .find(|name| name.ends_with("main"))
+        .unwrap_or_else(|| panic!("必须导出 main 入口: {:?}", module.exports));
+    let bytes = odin_bytecode::encode_module(module);
+    let mut vm = odin_vm::OdinVm::new();
+    let loaded = vm.load(&bytes).expect("编码后的模块必须可加载");
+    vm.run(&loaded, &entry, args).expect("main 必须在内置 OVM 运行时执行成功")
+}
+
+/// 不带块参数物化时该用例必然失败：raw `"abc"` 臂流入托管合并块参数，
+/// `text.repr_byte_length()` 的 `self._repr` 以 `expected object, got string` 拒绝。
+#[test]
+fn value_if_merge_materializes_raw_text_into_block_parameter() {
+    let module = lower_merge().expect("值合并文本边界必须完成降低");
+    assert!(
+        module.imports.iter().any(|import| import.module_name == "nyar.host" && import.symbol_name == "utf8.to_bytes"),
+        "raw 文本臂进入托管合并块参数前必须走 `utf8.to_bytes` 物化桥: {:?}",
+        module.imports
+    );
+    assert_eq!(run_main_with_args(&module, vec![Value::Bool(true)]), Value::I32(3), "raw `\"abc\"` 臂必须物化为托管文本对象后读到 3 字节");
+    // 托管臂（`from_bytes([104,105])`）走同一块参数槽，读到 2 字节。
+    assert_eq!(run_main_with_args(&module, vec![Value::Bool(false)]), Value::I32(2), "托管文本臂必须按同一合并块参数槽读到 2 字节");
+}
+
 /// 与 std 同形的泛型 panic：文本实参经泛型单态化成为 `utf8` 形参。
 const PANIC_DECLARATION_SOURCE: &str = r#"namespace std.types;
 

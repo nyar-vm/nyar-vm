@@ -1557,7 +1557,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         for (index, argument) in arguments.iter().enumerate() {
             let param_local = self.slots.block_param_locals[&(target, index)];
             let param_ty = self.slots.local_types[usize::from(param_local)].clone();
-            self.emit_operand_typed(argument, Some(&param_ty))?;
+            // SSA 合并块参数是文本载体边界的一种：值位置 `if` 的一臂给 raw 字面量、另一臂给
+            // 拼接产出的托管文本对象时，块参数槽按目标计划冻结的 layout 决定其物理载体。与
+            // `Return`／内部调用实参共用 `emit_text_boundary_operand`，让 raw 入边物化为托管对象，
+            // 否则下游 `self._repr` 字段访问会以 `expected object, got string` 崩溃。
+            if matches!(param_ty, NyarType::Utf8) {
+                let slot_layout = self.mir_fn.value_layouts.get(&target_block.parameters[index]).copied();
+                self.emit_text_boundary_operand(argument, &param_ty, slot_layout, "块参数")?;
+            }
+            else {
+                self.emit_operand_typed(argument, Some(&param_ty))?;
+            }
         }
         for index in (0..arguments.len()).rev() {
             let param_local = self.slots.block_param_locals[&(target, index)];
