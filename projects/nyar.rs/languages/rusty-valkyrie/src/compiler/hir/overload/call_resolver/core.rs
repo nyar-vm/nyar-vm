@@ -10,8 +10,8 @@ use crate::compiler::{
             diagnostics::{OverloadCandidate, OverloadDomain, OverloadResolutionError},
             resolve_call::{pattern_extractor_receiver_type, record_failure},
             substitution::{
-                extract_singleton_type_name, instantiate_trait_bound_candidate, instantiate_trait_method_candidate, substitute_self_type,
-                substitute_type_parameters, substitute_type_self, substitute_type_vars, unify_call_type_binders,
+                extract_singleton_type_name, instantiate_trait_bound_candidate, instantiate_trait_method_candidate, owner_type_generic_binders,
+                substitute_self_type, substitute_type_parameters, substitute_type_self, substitute_type_vars, unify_call_type_binders,
             },
             symbol_match::{
                 aggregate_constructor_matches_name, candidate_extractor_path_matches, candidate_owned_method_matches,
@@ -273,6 +273,39 @@ pub fn match_call_candidate(
         .iter()
         .map(|ty| type_relations.resolve_associated_projections(ty, &candidate.where_constraints, &substitutions))
         .collect::<Vec<_>>();
+    // 泛型闭合门：显式泛型实参与实参统一完成后，候选自身声明的 binder 仍残留
+    // 在签名中时，区分两种残留。其一，实参位置曾触达该 binder（含空数组字面量
+    // 按数组形状规则延迟统一的情形），或候选带 owner、或本次调用带实参——残留
+    // binder 仍可由上下文期望类型或后续材料化解析（如
+    // `let map: HashMap<i64, i64> = HashMap::new(0)` 的 owner 级 `K`/`V`），放行。
+    // 其二，无实参的自由函数调用，binder 只出现在返回形状且没有任何实参位置触达
+    // 它，本次调用缺少完成实例化的信息：在此 fail-closed，交给结构化
+    // `UnresolvedCall` 诊断；禁止把无来源的 `Generic(T)` 泄漏进已解析调用与
+    // `let` 绑定类型，也禁止由外围上下文替调用点猜类型。
+    // 构造域候选不适用：聚合/变体构造的 binder 由 owner 形态与实例化侧闭合，
+    // 零字段构造（`Cell { }`）与类型位构造调用（`Cell.make()`）必须走既有
+    // 构造解析合同，不在调用匹配阶段提前拒绝。
+    if candidate.domain != OverloadDomain::Constructor && !candidate.generic_binders.is_empty() {
+        let return_shape =
+            type_relations.resolve_associated_projections(&candidate.signature.return_type, &candidate.where_constraints, &substitutions);
+        let mut residual_binders = owner_type_generic_binders(&return_shape);
+        for param in &expected_params {
+            residual_binders.extend(owner_type_generic_binders(param));
+        }
+        let mut touched_binders = std::collections::BTreeSet::new();
+        for expected in expected_params.iter().take(bound_exprs.len()) {
+            touched_binders.extend(owner_type_generic_binders(expected));
+        }
+        if residual_binders.iter().any(|binder| {
+            candidate.generic_binders.contains(binder)
+                && !substitutions.contains_key(binder)
+                && !touched_binders.contains(binder)
+                && candidate.owner.is_none()
+                && bound_exprs.is_empty()
+        }) {
+            return None;
+        }
+    }
     if !type_relations.satisfies_where_constraints(&candidate.where_constraints, &substitutions) {
         return None;
     }

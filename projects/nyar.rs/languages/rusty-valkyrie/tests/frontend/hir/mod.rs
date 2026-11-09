@@ -44,6 +44,7 @@ mod hir_trait_system_impl_identity_tests;
 mod hir_turbofish_dependency_instance_tests;
 mod hir_expression_nesting_guard_tests;
 mod hir_type_lowering_tests;
+mod let_binding_contextual_inference_tests;
 mod valkyrie_frontend_contract_nyar_type;
 mod valkyrie_frontend_error;
 mod valkyrie_frontend_naming;
