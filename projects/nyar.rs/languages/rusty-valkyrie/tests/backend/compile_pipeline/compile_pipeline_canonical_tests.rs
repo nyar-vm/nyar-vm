@@ -1,3 +1,4 @@
+use crate::primitives::with_primitives;
 use nyar_types::{CanonicalOperation, CanonicalPrimitiveType, CanonicalTypeKind, ImportIndex, ItemId, ItemInstanceId};
 use rusty_valkyrie::{
     MirConstant, MirFunction, MirOperand, MirOperation, MirTerminator, MirValueOrigin,
@@ -8,7 +9,6 @@ use rusty_valkyrie::{
         hir::{HirTupleField, ValkyrieType},
     },
 };
-use crate::primitives::with_primitives;
 use std::collections::BTreeMap;
 
 fn source_surface_module() -> MirModule {
@@ -57,20 +57,13 @@ fn canonical_export_surface_stays_declared_and_callees_stay_internal_edges() {
     let program = canonical_program_from_semantic_mir(&module).expect("canonical");
     let fragments = program.linked.fragments.values().collect::<Vec<_>>();
     assert!(!fragments.is_empty(), "测试程序具有片段");
-    let export_fragment = fragments
-        .iter()
-        .find(|fragment| fragment.exported_operations.contains(&answer))
-        .expect("`[export]` 声明的符号必须在导出面");
+    let export_fragment =
+        fragments.iter().find(|fragment| fragment.exported_operations.contains(&answer)).expect("`[export]` 声明的符号必须在导出面");
     assert_eq!(export_fragment.wasm_export_names.get(&answer), Some(&"answer".to_owned()), "`[export]` 冻结名必须与导出面同源");
-    let entry_fragment = fragments
-        .iter()
-        .find(|fragment| fragment.entry_operation == Some(main))
-        .expect("程序入口必须由 `entry_operation` 单独登记");
+    let entry_fragment =
+        fragments.iter().find(|fragment| fragment.entry_operation == Some(main)).expect("程序入口必须由 `entry_operation` 单独登记");
     assert!(entry_fragment.exported_operations.contains(&main), "程序入口是声明导出面的一部分");
-    assert!(
-        !fragments.iter().any(|fragment| fragment.exported_operations.contains(&helper)),
-        "可达 callee 不是导出面成员"
-    );
+    assert!(!fragments.iter().any(|fragment| fragment.exported_operations.contains(&helper)), "可达 callee 不是导出面成员");
     assert!(
         fragments.iter().any(|fragment| fragment.internal_call_edges.iter().any(|edge| edge.callee == helper)),
         "内部 callee 必须只留在内部调用图"
@@ -137,6 +130,49 @@ fn module_with(operation: MirOperation, return_value: Option<MirValueRef>, value
     module.type_identities =
         rusty_valkyrie::compiler::mir::ssa::type_identity_table(&module.functions, &module.external_calls, &module.structs, &module.sum_types);
     module
+}
+
+#[test]
+fn producer_rejects_unbound_primitive_spellings_in_signatures() {
+    for name in ["bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "i128", "u128", "f32", "f64"] {
+        let mut module = source_surface_module();
+        module.functions[0].return_type = ValkyrieType::Named(Identifier::new(name));
+        module.type_identities = rusty_valkyrie::compiler::mir::ssa::type_identity_table(
+            &module.functions,
+            &module.external_calls,
+            &module.structs,
+            &module.sum_types,
+        );
+        let error = canonical_program_from_semantic_mir(&module)
+            .expect_err("canonical must reject unresolved names even when their spelling resembles a primitive");
+        assert_eq!(error.records[0].code, "CAN003", "unbound {name}: {error:?}");
+    }
+}
+
+#[test]
+fn source_bound_primitive_and_ordinary_same_spelling_keep_distinct_kinds() {
+    let bound = canonical_program_from_semantic_mir(&source_surface_module()).expect("bound primitive declaration");
+    assert!(
+        bound
+            .linked
+            .types
+            .values()
+            .any(|record| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true })))
+    );
+
+    let hir = rusty_valkyrie::ValkyrieCompiler::default()
+        .compile_source("structure i32 {} [export] micro identity(value: i32) -> i32 { return value }")
+        .expect("ordinary declaration with primitive-like spelling");
+    let module = rusty_valkyrie::MirLowerer::lower_module_semantic(&hir);
+    let ordinary = canonical_program_from_semantic_mir(&module).expect("ordinary nominal declaration");
+    assert!(ordinary.linked.types.values().any(|record| matches!(record.kind, CanonicalTypeKind::Nominal { .. })));
+    assert!(
+        !ordinary
+            .linked
+            .types
+            .values()
+            .any(|record| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true })))
+    );
 }
 
 #[test]

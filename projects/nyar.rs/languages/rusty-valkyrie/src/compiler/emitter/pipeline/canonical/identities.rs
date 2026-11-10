@@ -301,8 +301,7 @@ pub(crate) fn intern_variant_record_types(
                 else {
                     continue;
                 };
-                let record =
-                    ValkyrieType::Nominal { declaration: record_declaration, arguments: arguments.clone(), primitive_identity: None };
+                let record = ValkyrieType::Nominal { declaration: record_declaration, arguments: arguments.clone(), primitive_identity: None };
                 let Some(fields) = sum.instantiate_field_types(variant, arguments)
                 else {
                     continue;
@@ -319,7 +318,6 @@ pub(crate) fn intern_variant_record_types(
     }
     Ok(())
 }
-
 
 ///
 /// 为每个聚合声明显式登记零实参 Nominal 类型到 type_values。
@@ -442,7 +440,6 @@ pub(crate) fn is_array_index_valkyrie_type(ty: &ValkyrieType, module: &MirModule
         | ValkyrieType::Integer32 { .. }
         | ValkyrieType::Integer64 { .. }
         | ValkyrieType::Integer128 { .. } => true,
-        ValkyrieType::Named(name) => is_array_index_surface_name(name.as_str()),
         // 身份驱动：数组下标只认声明携带的 `[primitive]` 整数身份。
         // 类型自身缺身份时回查声明侧 `MirStruct`（同一注解事实），禁止按名字认。
         ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.is_empty() => {
@@ -453,51 +450,6 @@ pub(crate) fn is_array_index_valkyrie_type(ty: &ValkyrieType, module: &MirModule
         }
         _ => false,
     }
-}
-
-fn is_array_index_surface_name(name: &str) -> bool {
-    matches!(
-        name,
-        "usize"
-            | "isize"
-            | "u8"
-            | "u16"
-            | "u32"
-            | "u64"
-            | "u128"
-            | "i8"
-            | "i16"
-            | "i32"
-            | "i64"
-            | "i128"
-            | "std.primitive.usize"
-            | "std.primitive.isize"
-            | "std::primitive::usize"
-            | "std::primitive::isize"
-    )
-}
-
-/// 把 primitive numeric 的 Named surface name 映射到 canonical primitive kind。
-/// 返回 `None` 表示不是 primitive numeric，应继续走 CAN003 报错路径。
-pub(crate) fn canonical_primitive_from_named(name: &str) -> Option<CanonicalPrimitiveType> {
-    Some(match name {
-        // 只认 std 正式声明的拼写。`int`/`Int`/`long`/`double`/`boolean`/`byte` 等
-        // 规范里不存在的别名不允许在此被翻译成 primitive：残留 `Named` 必须走 CAN003。
-        "bool" => CanonicalPrimitiveType::Bool,
-        "i8" => CanonicalPrimitiveType::Integer { bits: 8, signed: true },
-        "u8" => CanonicalPrimitiveType::Integer { bits: 8, signed: false },
-        "i16" => CanonicalPrimitiveType::Integer { bits: 16, signed: true },
-        "u16" => CanonicalPrimitiveType::Integer { bits: 16, signed: false },
-        "i32" => CanonicalPrimitiveType::Integer { bits: 32, signed: true },
-        "u32" => CanonicalPrimitiveType::Integer { bits: 32, signed: false },
-        "i64" => CanonicalPrimitiveType::Integer { bits: 64, signed: true },
-        "u64" => CanonicalPrimitiveType::Integer { bits: 64, signed: false },
-        "i128" => CanonicalPrimitiveType::Integer { bits: 128, signed: true },
-        "u128" => CanonicalPrimitiveType::Integer { bits: 128, signed: false },
-        "f32" => CanonicalPrimitiveType::Float { bits: 32 },
-        "f64" => CanonicalPrimitiveType::Float { bits: 64 },
-        _ => return None,
-    })
 }
 
 pub(crate) fn canonical_type_kind(
@@ -520,19 +472,17 @@ pub(crate) fn canonical_type_kind(
         ValkyrieType::Utf8 => CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Utf8),
         ValkyrieType::Utf16 => CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Utf16),
         ValkyrieType::Nominal { declaration: item, arguments, primitive_identity } => {
-            let declaration_ty = ValkyrieType::Nominal { declaration: *item, arguments: Vec::new(), primitive_identity: primitive_identity.clone() };
+            let declaration_ty =
+                ValkyrieType::Nominal { declaration: *item, arguments: Vec::new(), primitive_identity: primitive_identity.clone() };
             let declaration = type_id(ids, &declaration_ty)?;
             CanonicalTypeKind::Nominal { declaration, arguments: arguments.iter().map(id).collect::<Result<_, _>>()? }
         }
-        ValkyrieType::Named(name) => match canonical_primitive_from_named(name.as_str()) {
-            Some(kind) => CanonicalTypeKind::Primitive(kind),
-            None => {
-                return Err(error_without_module(
-                    "CAN003",
-                    format!("未绑定的类型名 `{name}` 进入 canonical 类型表；必须在 HIR 绑定阶段冻结为 Nominal 或返回前端 TypeError"),
-                ));
-            }
-        },
+        ValkyrieType::Named(name) => {
+            return Err(error_without_module(
+                "CAN003",
+                format!("未绑定的类型名 `{name}` 进入 canonical 类型表；必须在 HIR 绑定阶段冻结为 Nominal 或返回前端 TypeError"),
+            ));
+        }
         // `Apply` 必须在 HIR 绑定阶段折成唯一结构形态（`Nominal` / `Array` / `FixedArray`）。
         // 到达 canonical 说明上游漏折，按缺陷拒绝，不在本层兜成 `Nominal`。
         ValkyrieType::Apply(base, _) => {
@@ -608,16 +558,15 @@ fn register_variant_record(
     if variant.fields.len() < 2 {
         return Ok(None);
     }
-    let declaration = variant
-        .declaration
-        .ok_or_else(|| error_without_module("CAN018", format!("变体 `{}` 缺少 declaration ItemId", variant.name)))?;
+    let declaration =
+        variant.declaration.ok_or_else(|| error_without_module("CAN018", format!("变体 `{}` 缺少 declaration ItemId", variant.name)))?;
     let record_ty = ValkyrieType::Nominal { declaration, arguments: arguments.to_vec(), primitive_identity: None };
     let record_type = type_id(type_values, &record_ty)?;
     let field_types = sum
         .instantiate_field_types(variant, arguments)
         .ok_or_else(|| error_without_module("CAN018", format!("变体 `{}` 的记录字段无法按枚举实参代入", variant.name)))?;
-    let record = NominalInstanceId::from_index(*next_nominal)
-        .ok_or_else(|| error_without_module("CAN020", "变体记录 instance identity 溢出"))?;
+    let record =
+        NominalInstanceId::from_index(*next_nominal).ok_or_else(|| error_without_module("CAN020", "变体记录 instance identity 溢出"))?;
     *next_nominal = (*next_nominal).checked_add(1).ok_or_else(|| error_without_module("CAN020", "变体记录 instance identity 溢出"))?;
     nominals.insert(record, (record_type, NominalValueSemantics::Value));
     let layout_id = layout_id_for_type(&record_ty, &linked.aggregate_layouts);
@@ -626,10 +575,7 @@ fn register_variant_record(
         let id = FieldId::from_index(*next_field).ok_or_else(|| error_without_module("CAN022", "变体记录字段 identity 溢出"))?;
         *next_field = (*next_field).checked_add(1).ok_or_else(|| error_without_module("CAN022", "变体记录字段 identity 溢出"))?;
         if field_records.insert(id, FieldRecord { owner: record, ty: type_id(type_values, ty)? }).is_some() {
-            return Err(error_without_module(
-                "CAN022",
-                format!("变体记录字段 identity 冲突: {}::{}.{}", sum.name, variant.name, field.name),
-            ));
+            return Err(error_without_module("CAN022", format!("变体记录字段 identity 冲突: {}::{}.{}", sum.name, variant.name, field.name)));
         }
         field_by_owner.insert((record, field.id), id);
         if let Some(layout_id) = layout_id {
@@ -863,8 +809,11 @@ fn sum_payload_layout(
     else {
         return None;
     };
-    let declaration_id =
-        type_values.get(&ValkyrieType::Nominal { declaration: *declaration, arguments: Vec::new(), primitive_identity: primitive_identity.clone() })?;
+    let declaration_id = type_values.get(&ValkyrieType::Nominal {
+        declaration: *declaration,
+        arguments: Vec::new(),
+        primitive_identity: primitive_identity.clone(),
+    })?;
     let spelling = declaration_spellings.get(declaration_id)?;
     if arguments.is_empty() {
         // 名义声明若已有冻结布局，必须带 `LayoutId`；裸短名会被预发射门禁拒绝。
@@ -880,7 +829,10 @@ fn sum_payload_layout(
         nyar_types::NyarType::from_surface_primitive(spelling.as_str()).unwrap_or_else(|| nyar_types::NyarType::Named(spelling.clone()));
     Some(nyar_types::NyarType::Apply(
         Box::new(layout),
-        arguments.iter().map(|argument| sum_payload_layout(argument, type_values, declaration_spellings, layouts)).collect::<Option<Vec<_>>>()?,
+        arguments
+            .iter()
+            .map(|argument| sum_payload_layout(argument, type_values, declaration_spellings, layouts))
+            .collect::<Option<Vec<_>>>()?,
     ))
 }
 
