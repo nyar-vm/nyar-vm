@@ -16,6 +16,11 @@ use crate::compiler::mir::validation::text_carriers_equivalent;
 /// arm 内的赋值对后继读取不可见。
 pub(super) type BranchArmExit = (MirBlockRef, std::collections::BTreeMap<String, MirOperand>);
 
+/// 分支前已存在、且被某条 arm 改写的绑定名（按名称序，保证 phi 参数与入边实参同序）。
+fn branch_binding_names(pre_bindings: &std::collections::BTreeMap<String, MirOperand>, arms: &[BranchArmExit]) -> Vec<String> {
+    pre_bindings.keys().filter(|name| arms.iter().any(|(_, bindings)| bindings.get(*name) != pre_bindings.get(*name))).cloned().collect()
+}
+
 impl MirBuilder {
     /// `loop pat in coll` 的索引 lowering 必须先获得比较与自增的 callable 合同。
     ///
@@ -64,11 +69,7 @@ impl MirBuilder {
             return;
         }
 
-        let names: Vec<String> = pre_bindings
-            .keys()
-            .filter(|name| arms.iter().any(|(_, bindings)| bindings.get(*name) != pre_bindings.get(*name)))
-            .cloned()
-            .collect();
+        let names = branch_binding_names(pre_bindings, arms);
         let mut parameters: Vec<MirValueRef> = Vec::with_capacity(names.len());
         for name in &names {
             let ty = pre_bindings.get(name).and_then(|operand| infer_builder_operand_type(operand, &self.value_types));
@@ -100,6 +101,54 @@ impl MirBuilder {
         for (name, parameter) in names.iter().zip(parameters) {
             self.bindings.insert(name.clone(), MirOperand::Value(parameter));
         }
+    }
+
+    /// 为 `match` 的臂内绑定写回建立独立 phi 块，再续接到值 exit 块。
+    ///
+    /// `match` 的 exit 块只承载结果槽：`unit` 结果的臂不得为它建立参数。臂内对既有
+    /// 绑定的写回仍必须合流，否则合流后的读取会指向某条臂块内的 SSA 值——该值既不
+    /// 支配 exit，也会以 CAN015 `TerminatorUseBeforeDefinition` 被 canonical 拒绝。
+    /// 因此绑定 phi 落在 exit 之前的合并块：arm 出边带着结果实参汇入该块，参数次序
+    /// 先迁移来的结果槽、再按 `pre_bindings` 键序追加绑定；该块再以 `Jump` 进入
+    /// 已无参数的结果 exit 块，合流后的绑定读取由此获得支配关系。
+    pub(super) fn materialize_match_binding_merge(
+        &mut self,
+        exit_block: MirBlockRef,
+        pre_bindings: &std::collections::BTreeMap<String, MirOperand>,
+        arms: &[BranchArmExit],
+        label: &str,
+    ) {
+        self.bindings = pre_bindings.clone();
+        let joins_exit = |terminator: &MirTerminator| matches!(terminator, MirTerminator::Jump { target, .. } if *target == exit_block);
+        if !arms.iter().any(|(block, _)| joins_exit(&self.blocks[block.0 as usize].terminator)) {
+            return;
+        }
+        if branch_binding_names(pre_bindings, arms).is_empty() {
+            return;
+        }
+        let merge_block = self.new_block(label);
+        // 结果槽参数整体迁入合并块：arm 出边只能有一个落点，结果实参与绑定实参必须
+        // 在同一入边上按同一顺序给出；exit 退回纯续接块。
+        let inherited: Vec<MirValueRef> = self.blocks[exit_block.0 as usize].parameters.drain(..).collect();
+        for value in &inherited {
+            if let Some(record) = self.values.iter_mut().find(|record| record.id == *value)
+                && let MirValueOrigin::BlockParameter { block, .. } = &mut record.origin
+            {
+                *block = merge_block;
+            }
+        }
+        self.blocks[merge_block.0 as usize].parameters.extend(inherited.iter().copied());
+        for (block, _) in arms {
+            let MirTerminator::Jump { target, .. } = &mut self.blocks[block.0 as usize].terminator
+            else {
+                continue;
+            };
+            if *target == exit_block {
+                *target = merge_block;
+            }
+        }
+        self.materialize_branch_bindings(merge_block, pre_bindings, arms);
+        self.blocks[merge_block.0 as usize].terminator = MirTerminator::Jump { target: exit_block, arguments: Vec::new() };
     }
 
     pub(super) fn lower_if_expr(

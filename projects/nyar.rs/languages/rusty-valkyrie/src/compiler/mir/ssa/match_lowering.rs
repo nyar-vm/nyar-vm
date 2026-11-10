@@ -206,11 +206,9 @@ impl MirBuilder {
                     self.terminate(MirTerminator::Jump { target: exit_block, arguments: Vec::new() });
                 }
             }
-            if !produce_value {
-                // 语句位置的 `match` 臂内赋值也要在 exit 块合并成 phi；否则
-                // 后继续读取会拿到最后一条臂的 SSA 值（CAN015 TerminatorUseBeforeDefinition）。
-                arm_exits.push((self.current_block, self.bindings.clone()));
-            }
+            // 臂内对既有绑定的写回必须合流：语句位置直接合到 exit 块，值位置由
+            // `materialize_match_binding_merge` 合到 exit 之前的独立 phi 块。
+            arm_exits.push((self.current_block, self.bindings.clone()));
             let current_arm_label = self.current_label.clone();
             self.flush_block(&current_arm_label);
             chain_arms.push(MirCaseArm {
@@ -224,7 +222,12 @@ impl MirBuilder {
             });
         }
 
-        if !produce_value {
+        if produce_value {
+            // 值位置的 `match` exit 只承载结果槽；臂内绑定写回在 exit 之前的独立
+            // phi 块合流，使合流后的绑定值支配后续读取。
+            self.materialize_match_binding_merge(exit_block, &saved_bindings, &arm_exits, "match_bindings");
+        }
+        else {
             self.materialize_branch_bindings(exit_block, &saved_bindings, &arm_exits);
         }
 
