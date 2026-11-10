@@ -27,9 +27,9 @@ use crate::compiler::{
     types::{
         Identifier,
         hir::{
-            AssociatedType, FunctionType, GenericBinderId, GenericType, HirBlock, HirExpr, HirExprKind, HirFunction,
-            HirFunctionReference, HirInstantiatedCallable, HirLambdaIdentity, HirModule, HirParam, HirResolvedCall, HirStatementKind,
-            HirTraitDispatch, HirWhereConstraint, ValkyrieType,
+            AssociatedType, FunctionType, GenericBinderId, GenericType, HirBlock, HirExpr, HirExprKind, HirExtractorPattern, HirFunction,
+            HirFunctionReference, HirInstantiatedCallable, HirLambdaIdentity, HirModule, HirParam, HirPattern, HirResolvedCall,
+            HirStatementKind, HirTraitDispatch, HirWhereConstraint, ValkyrieType,
         },
     },
 };
@@ -1002,6 +1002,49 @@ pub(crate) fn substitute_impl_self_declarations(block: &mut HirBlock, owner: &Va
     substitute_block(block, &substitution, Some(owner), &equations);
 }
 
+/// 模式里冻结的解析事实随实例代入一起闭合。
+///
+/// 构造器/数组提取器携带 `HirResolvedCall`（含 `extractor_payload_type`）；这些
+/// 载荷类型是模式绑定变量的类型来源。只替换表达式而不替换模式，会让实例体里的
+/// 解构绑定保留声明 binder（`Option<Option<T>>` 拆出的 `value` 仍是 `Option<T>`），
+/// 与已代入的返回槽不一致。
+fn substitute_pattern(
+    pattern: &mut HirPattern,
+    substitution: &Substitution,
+    owner: Option<&ValkyrieType>,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
+) {
+    match pattern {
+        HirPattern::Tuple(items) | HirPattern::Or(items) => {
+            for item in items {
+                substitute_pattern(item, substitution, owner, equations);
+            }
+        }
+        HirPattern::Extractor(HirExtractorPattern::Constructor { fields, resolved, .. }) => {
+            for field in fields {
+                substitute_pattern(field, substitution, owner, equations);
+            }
+            if let Some(resolved) = resolved {
+                substitute_resolved_call(resolved, substitution, owner, equations);
+            }
+        }
+        HirPattern::Extractor(HirExtractorPattern::Array { prefix, suffix, .. }) => {
+            for item in prefix.iter_mut().chain(suffix.iter_mut()) {
+                substitute_pattern(item, substitution, owner, equations);
+            }
+        }
+        HirPattern::Object { fields, .. } => {
+            for (_, field) in fields {
+                substitute_pattern(field, substitution, owner, equations);
+            }
+        }
+        HirPattern::Bind { pattern, .. } | HirPattern::Mut(pattern) | HirPattern::Pin { pattern, .. } => {
+            substitute_pattern(pattern, substitution, owner, equations);
+        }
+        _ => {}
+    }
+}
+
 fn substitute_block(
     block: &mut HirBlock,
     substitution: &Substitution,
@@ -1158,8 +1201,9 @@ fn substitute_expr(
                 substitute_block(branch, substitution, owner, equations);
             }
         }
-        HirExprKind::IfLet { scrutinee, then_branch, else_branch, .. } => {
+        HirExprKind::IfLet { pattern, scrutinee, then_branch, else_branch, .. } => {
             substitute_expr(scrutinee, substitution, owner, equations);
+            substitute_pattern(pattern, substitution, owner, equations);
             substitute_block(then_branch, substitution, owner, equations);
             if let Some(branch) = else_branch {
                 substitute_block(branch, substitution, owner, equations);
@@ -1221,6 +1265,7 @@ fn substitute_expr(
         HirExprKind::Match { scrutinee, arms, .. } | HirExprKind::Case { scrutinee, arms, .. } => {
             substitute_expr(scrutinee, substitution, owner, equations);
             for arm in arms {
+                substitute_pattern(&mut arm.pattern, substitution, owner, equations);
                 if let Some(guard) = &mut arm.guard {
                     substitute_expr(guard, substitution, owner, equations);
                 }
@@ -1239,6 +1284,7 @@ fn substitute_expr(
         HirExprKind::Catch { expr: inner, arms } => {
             substitute_expr(inner, substitution, owner, equations);
             for arm in arms {
+                substitute_pattern(&mut arm.pattern, substitution, owner, equations);
                 if let Some(guard) = &mut arm.guard {
                     substitute_expr(guard, substitution, owner, equations);
                 }
