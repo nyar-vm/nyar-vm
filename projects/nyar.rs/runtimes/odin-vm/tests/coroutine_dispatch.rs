@@ -76,6 +76,38 @@ fn yield_resume_roundtrip_returns_resumed_value() {
 }
 
 #[test]
+fn normal_coroutine_return_is_completed_but_entry_yield_is_suspended() {
+    let mut module = build_yield_resume_module();
+    let main_offset = module.functions[1].code_offset as usize;
+    module.code_bytes.truncate(main_offset);
+    emit_imm1(&mut module.code_bytes, OdinHeadCode::Call, 0);
+    emit_plain(&mut module.code_bytes, OdinHeadCode::Return);
+    module.functions[1].code_length = (module.code_bytes.len() - main_offset) as i32;
+    module.exports.push(OdinExport { kind: OdinExportKind::Function, symbol_name: "gen".to_string(), function_index: 0 });
+    let mut vm = OdinVm::new();
+    let loaded = vm.load(&encode_module(&module)).expect("load module");
+    assert!(matches!(vm.run_outcome(&loaded, "main", Vec::new()), Ok(odin_vm::ExecutionOutcome::Completed(Value::Coroutine(_)))));
+    assert!(matches!(vm.run(&loaded, "main", Vec::new()), Ok(Value::Coroutine(_))));
+    assert!(matches!(vm.run_outcome(&loaded, "gen", Vec::new()), Ok(odin_vm::ExecutionOutcome::Suspended { .. })));
+    assert!(matches!(vm.run(&loaded, "gen", Vec::new()), Err(odin_vm::OdinRuntimeError::ExecutionSuspended { .. })));
+}
+
+#[test]
+fn suspended_initializer_never_marks_initialization_done_or_runs_entry() {
+    let mut module = build_yield_resume_module();
+    module.init_function_indices = vec![0];
+    let mut vm = OdinVm::new();
+    let loaded = vm.load(&encode_module(&module)).expect("load module");
+    let mut globals = odin_vm::ModuleGlobals::new(&loaded);
+    for _ in 0..2 {
+        assert!(matches!(
+            vm.run_outcome_with_globals(&loaded, &mut globals, "main", Vec::new()),
+            Err(odin_vm::OdinRuntimeError::ExecutionSuspended { function }) if function == "gen"
+        ));
+    }
+}
+
+#[test]
 fn yield_without_call_returns_coroutine_at_top_level() {
     // When the top-level function itself yields, there is no parent frame to resume it.
     // The executor must return the captured coroutine value instead of looping forever.
@@ -101,10 +133,10 @@ fn yield_without_call_returns_coroutine_at_top_level() {
     let bytes = encode_module(&module);
     let mut vm = OdinVm::new();
     let loaded = vm.load(&bytes).expect("load module");
-    let result = vm.run(&loaded, "gen", Vec::new()).expect("execute gen");
+    let result = vm.run_outcome(&loaded, "gen", Vec::new()).expect("execute gen");
 
     let coroutine_id = match result {
-        Value::Coroutine(id) => id,
+        odin_vm::ExecutionOutcome::Suspended { coroutine } => coroutine,
         other => panic!("expected coroutine, got {other:?}"),
     };
     let state = vm.heap().get_coroutine(coroutine_id).expect("coroutine in heap");
@@ -281,9 +313,9 @@ fn top_level_yield_captures_operand_stack_fragment() {
     let bytes = encode_module(&module);
     let mut vm = OdinVm::new();
     let loaded = vm.load(&bytes).expect("load module");
-    let result = vm.run(&loaded, "gen", Vec::new()).expect("execute gen");
+    let result = vm.run_outcome(&loaded, "gen", Vec::new()).expect("execute gen");
     let coroutine_id = match result {
-        Value::Coroutine(id) => id,
+        odin_vm::ExecutionOutcome::Suspended { coroutine } => coroutine,
         other => panic!("expected coroutine, got {other:?}"),
     };
     let state = vm.heap().get_coroutine(coroutine_id).expect("coroutine in heap");

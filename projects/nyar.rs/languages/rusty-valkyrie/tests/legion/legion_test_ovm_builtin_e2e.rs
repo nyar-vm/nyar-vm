@@ -5,7 +5,7 @@
 //! 外部 runner 覆盖对 OVM 家族一律无效。
 
 use rusty_valkyrie::legion::{
-    cmds::test_engine::{compile_external_test_session, discover_test_functions, run_external_test_in_session},
+    cmds::test_engine::{ExternalRunFailure, compile_external_test_session, discover_test_functions, run_external_test_in_session},
     workspace::planner::WorkspaceResolver,
 };
 
@@ -295,4 +295,87 @@ fn discovery_keeps_test_when_trivia_sits_between_attribute_and_declaration() {
         vec!["first".to_string(), "second".to_string()],
         "空白行/注释属于 trivia，不得切断 `[test]` 与其声明的配对"
     );
+}
+
+#[test]
+fn ovm_unconditional_panic_is_a_runtime_failure() {
+    let fixture = create_smoke_project_with_manifest(
+        "legion-test-ovm-panic",
+        r#"{ name: "ovm_panic_app", build: [ { target: "ovm" } ] }"#,
+        "micro panic<T>(message: T): void { raise message }\nmicro main() -> i64 { return 0 }",
+    );
+    let test_dir = fixture.project_dir.join("test");
+    std::fs::create_dir_all(&test_dir).unwrap();
+    std::fs::write(test_dir.join("suite.v"), "[test]\nmicro always_panics() -> unit {\n    panic(\"boom\")\n}\n").unwrap();
+    let workspace = WorkspaceResolver::discover_for_project(&fixture.project_dir).expect("discover workspace");
+    let session = compile_external_test_session(&workspace, &fixture.project_dir, "legion").expect("compile panic test");
+    let outcome = run_external_test_in_session(&workspace, &session, "always_panics", &[], false);
+    assert!(!outcome.success, "unconditional panic must never pass");
+    assert!(!outcome.is_compile_error, "panic is a runtime failure: {:?}", outcome.error);
+    assert_eq!(outcome.failure, Some(ExternalRunFailure::RuntimeError));
+}
+
+#[test]
+fn ovm_runner_classifies_bytecode_completion_suspension_and_trap() {
+    use odin_bytecode::{
+        Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1, emit_plain,
+        encode_module,
+    };
+    use rusty_valkyrie::legion::cmds::{run::RunContract, test_engine::ExternalTestSession};
+
+    let fixture = create_smoke_project_with_manifest(
+        "legion-test-ovm-outcomes",
+        r#"{ name: "ovm_outcomes_app", build: [ { target: "ovm" } ] }"#,
+        "micro main() -> i64 { return 0 }",
+    );
+    let workspace = WorkspaceResolver::discover_for_project(&fixture.project_dir).expect("discover workspace");
+    let session = ExternalTestSession {
+        target: "legion".to_string(),
+        output_dir: fixture.project_dir.clone(),
+        run_contracts: vec![RunContract {
+            logical_entry: "probe".to_string(),
+            physical_entry: "probe.odin".to_string(),
+            invocation: String::new(),
+            validate: String::new(),
+        }],
+    };
+    for (terminator, expected_failure) in [
+        (OdinHeadCode::Return, None),
+        (OdinHeadCode::Yield, Some(ExternalRunFailure::ExecutionSuspended)),
+        (OdinHeadCode::Trap, Some(ExternalRunFailure::RuntimeError)),
+    ] {
+        let mut code = Vec::new();
+        emit_imm1(&mut code, OdinHeadCode::Constant, 0);
+        if terminator == OdinHeadCode::Yield {
+            emit_imm1(&mut code, terminator, 0);
+            emit_plain(&mut code, OdinHeadCode::Return);
+        }
+        else {
+            emit_plain(&mut code, terminator);
+        }
+        let module = OdinModuleData {
+            version: Odin_VERSION,
+            name: "runner_outcome".to_string(),
+            constants: vec![OdinConstant::Integer32(42)],
+            functions: vec![OdinFunction {
+                name: "probe".to_string(),
+                arity: 0,
+                local_count: 0,
+                code_offset: 0,
+                code_length: code.len() as i32,
+            }],
+            imports: Vec::new(),
+            exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "probe".to_string(), function_index: 0 }],
+            witness_entries: Vec::new(),
+            code_bytes: code,
+            globals: Vec::new(),
+            init_function_indices: Vec::new(),
+            layouts: Vec::new(),
+        };
+        std::fs::write(session.output_dir.join("probe.odin"), encode_module(&module)).unwrap();
+        let outcome = run_external_test_in_session(&workspace, &session, "probe", &[], false);
+        assert!(!outcome.is_compile_error, "bytecode must load: {:?}", outcome.error);
+        assert_eq!(outcome.failure, expected_failure);
+        assert_eq!(outcome.success, expected_failure.is_none());
+    }
 }

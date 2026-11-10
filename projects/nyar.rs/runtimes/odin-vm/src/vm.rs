@@ -2,7 +2,7 @@
 
 use crate::{
     error::OdinRuntimeError,
-    executor::{Executor, validate_argument_count},
+    executor::{ExecutionOutcome, Executor, validate_argument_count},
     jit::{JitCompiledArtifact, JitCompiler, JitError},
     module::{LoadedModule, ModuleGlobals},
     random_runtime,
@@ -49,10 +49,19 @@ impl OdinVm {
         random_runtime::set_seed(seed);
     }
 
-    /// Runs an exported function with arguments.
+    /// Runs an exported function to completion; yielding is an execution error.
     pub fn run(&mut self, module: &LoadedModule, entry: &str, args: Vec<Value>) -> Result<Value, OdinRuntimeError> {
         let mut globals = ModuleGlobals::new(module);
         self.run_with_globals(module, &mut globals, entry, args)
+    }
+
+    /// Runs an exported function, distinguishing entry suspension from normal return.
+    ///
+    /// A normal return may itself contain a coroutine value. Module initializers must
+    /// complete before the entry can execute, even when the entry supports suspension.
+    pub fn run_outcome(&mut self, module: &LoadedModule, entry: &str, args: Vec<Value>) -> Result<ExecutionOutcome, OdinRuntimeError> {
+        let mut globals = ModuleGlobals::new(module);
+        self.run_outcome_with_globals(module, &mut globals, entry, args)
     }
 
     /// Runs an exported function while preserving module global slots (singleton instances).
@@ -63,6 +72,17 @@ impl OdinVm {
         entry: &str,
         args: Vec<Value>,
     ) -> Result<Value, OdinRuntimeError> {
+        self.run_outcome_with_globals(module, globals, entry, args)?.require_completed(entry)
+    }
+
+    /// Runs an entry with persistent global slots and an explicit completion/suspension outcome.
+    pub fn run_outcome_with_globals(
+        &mut self,
+        module: &LoadedModule,
+        globals: &mut ModuleGlobals,
+        entry: &str,
+        args: Vec<Value>,
+    ) -> Result<ExecutionOutcome, OdinRuntimeError> {
         let function_index = module.export_index(entry).ok_or_else(|| OdinRuntimeError::EntryNotFound(entry.to_string()))?;
         let function = module.functions.get(function_index).ok_or(OdinRuntimeError::FunctionIndexOutOfRange(function_index as i32))?;
         validate_argument_count(function, args.len())?;
@@ -75,7 +95,7 @@ impl OdinVm {
             globals.mark_init_done();
         }
 
-        self.executor.run_function_frame(module, function_index, args, globals.slots_mut())
+        self.executor.run_function_frame_outcome(module, function_index, args, globals.slots_mut())
     }
 
     /// Whether the installed JIT backend is enabled.

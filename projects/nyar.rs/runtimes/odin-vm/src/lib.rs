@@ -41,6 +41,7 @@ pub use crate::{
     deopt_value::{decode_value_from_deopt, decode_value_from_deopt_with_roots, encode_value_for_deopt, encode_value_for_deopt_pinned},
     error::OdinRuntimeError,
     executable::{ExecOp, ExecutableFunction, InstructionIndex},
+    executor::ExecutionOutcome,
     module::ModuleGlobals,
     nj1_runtime::{execute_nj1_blob, execute_scalar_program},
     value::{CoroutineState, ObjectId, Value},

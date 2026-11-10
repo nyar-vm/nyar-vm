@@ -93,6 +93,20 @@ pub enum OdinRuntimeError {
         /// 触发时的指令下标（函数内 pc）。
         ip: u32,
     },
+    /// An effect was performed without a matching handler in the execution contract.
+    UnhandledEffect {
+        /// Language-neutral effect identity carried by the bytecode constant pool.
+        effect: String,
+        /// Function performing the effect.
+        function: String,
+        /// Instruction index at the effect site.
+        ip: u32,
+    },
+    /// A completion-only invocation yielded instead of returning.
+    ExecutionSuspended {
+        /// Function required to complete.
+        function: String,
+    },
     /// 单次调用执行步数超预算：把"挂死"变成可归因的结构化失败。
     StepBudgetExceeded {
         /// 触发时正在执行的函数名。
@@ -138,6 +152,10 @@ impl Display for OdinRuntimeError {
             Self::TrapExecuted { function, ip } => {
                 write!(f, "reached unreachable trap in function `{function}` at pc {ip}")
             }
+            Self::UnhandledEffect { effect, function, ip } => {
+                write!(f, "unhandled effect `{effect}` in function `{function}` at pc {ip}")
+            }
+            Self::ExecutionSuspended { function } => write!(f, "function `{function}` suspended before completion"),
             Self::StepBudgetExceeded { function, ip, limit } => {
                 write!(f, "step budget exceeded in function `{function}` at pc {ip}: limit {limit} instructions per call")
             }

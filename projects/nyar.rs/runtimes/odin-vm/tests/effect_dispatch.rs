@@ -10,7 +10,7 @@ use odin_bytecode::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, OdinWitnessDispatchEntry, emit_imm1,
     emit_plain, encode_module,
 };
-use odin_vm::{OdinVm, Value};
+use odin_vm::{OdinRuntimeError, OdinVm, Value};
 
 /// Builds a module with:
 ///   function 0 "raiser": Const effect_payload, PerformEffect(method_name="raise"), Const 999, Return
@@ -120,9 +120,7 @@ fn perform_effect_invokes_handler_from_witness_entries() {
 }
 
 #[test]
-fn perform_effect_without_witness_entry_falls_back_to_suspend() {
-    // When witness_entries is empty, PerformEffect must degrade to the old
-    // Yield-alias behavior (Suspend) so existing modules keep working.
+fn perform_effect_without_witness_entry_is_an_execution_error() {
     let mut code = Vec::new();
     emit_imm1(&mut code, OdinHeadCode::Constant, 0); // 42
     emit_imm1(&mut code, OdinHeadCode::PerformEffect, 1); // constant pool[1] = "raise"
@@ -145,17 +143,24 @@ fn perform_effect_without_witness_entry_falls_back_to_suspend() {
     let bytes = encode_module(&module);
     let mut vm = OdinVm::new();
     let loaded = vm.load(&bytes).expect("load module");
-    let result = vm.run(&loaded, "raiser", Vec::new()).expect("execute raiser");
+    assert!(matches!(
+        vm.run(&loaded, "raiser", Vec::new()),
+        Err(OdinRuntimeError::UnhandledEffect { effect, function, .. }) if effect == "raise" && function == "raiser"
+    ));
+}
 
-    // No witness entry -> PerformEffect degrades to Suspend -> top-level returns coroutine
-    match result {
-        Value::Coroutine(id) => {
-            let state = vm.heap().get_coroutine(id).expect("coroutine in heap");
-            assert!(!state.done, "suspended coroutine must not be done");
-            assert_eq!(state.yielded_value, Value::I32(42), "yielded value must be effect payload");
-        }
-        other => panic!("expected coroutine (fallback Suspend), got {other:?}"),
-    }
+#[test]
+fn unhandled_effect_in_nested_call_cannot_return_to_caller() {
+    let mut module = build_effect_handler_module();
+    module.witness_entries[0].method_name = "unrelated.handler".to_string();
+    module.constants[1] = OdinConstant::String("arbitrary.domain.effect".to_string());
+    let mut vm = OdinVm::new();
+    let loaded = vm.load(&encode_module(&module)).expect("load module");
+    assert!(matches!(
+        vm.run_outcome(&loaded, "main", Vec::new()),
+        Err(OdinRuntimeError::UnhandledEffect { effect, function, .. })
+            if effect == "arbitrary.domain.effect" && function == "raiser"
+    ));
 }
 
 #[test]

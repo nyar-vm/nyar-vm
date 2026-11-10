@@ -142,7 +142,10 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
             let effect_name_index = op.operand1;
             let effect_name = match ctx.module.constant_at(effect_name_index) {
                 Some(odin_bytecode::OdinConstant::String(name)) => name.as_str(),
-                _ => "raise",
+                Some(other) => {
+                    return Err(OdinRuntimeError::TypeMismatch { expected: "effect name string", actual: format!("{other:?}") });
+                }
+                None => return Err(OdinRuntimeError::ConstantIndexOutOfRange(effect_name_index)),
             };
 
             let handler_entry = ctx.module.witness_entries.iter().find(|entry| entry.method_name == effect_name);
@@ -151,7 +154,11 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
                 Some(entry) if entry.function_index >= 0 => {
                     Ok(StepResult::InvokeHandler { handler_function_index: entry.function_index as usize, effect_value })
                 }
-                _ => Ok(StepResult::Suspend { yielded_value: effect_value }),
+                _ => Err(OdinRuntimeError::UnhandledEffect {
+                    effect: effect_name.to_string(),
+                    function: ctx.module.functions.get(frame.function_index).map(|function| function.name.clone()).unwrap_or_default(),
+                    ip: (frame.ip - 1) as u32,
+                }),
             }
         }
         OdinHeadCode::Call | OdinHeadCode::CallStatic => execute_call(op.as_instruction(), frame, ctx.module),

@@ -14,7 +14,28 @@ use crate::{
     stack::ValueStack,
     value::{CoroutineState, Value},
 };
-use nyar_gc::{GarbageCollector, GcRoots, LayoutDescriptor, ObjectHeap};
+use nyar_gc::{GarbageCollector, GcRoots, LayoutDescriptor, ObjectHeap, ObjectId};
+
+/// An invocation's control outcome, independent of the type of its return value.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExecutionOutcome {
+    /// The entry returned normally, possibly returning a coroutine as an ordinary value.
+    Completed(Value),
+    /// The entry yielded before returning; the captured continuation lives in the VM heap.
+    Suspended {
+        /// Heap identity of the suspended entry's continuation.
+        coroutine: ObjectId,
+    },
+}
+
+impl ExecutionOutcome {
+    pub(crate) fn require_completed(self, function: &str) -> Result<Value, OdinRuntimeError> {
+        match self {
+            Self::Completed(value) => Ok(value),
+            Self::Suspended { .. } => Err(OdinRuntimeError::ExecutionSuspended { function: function.to_string() }),
+        }
+    }
+}
 
 /// NJ1 编译缓存键：`(module.version, module.name, function_index)`。
 type Nj1CacheKey = (u32, String, usize);
@@ -234,12 +255,12 @@ impl Executor {
         self.heap.last_promotion_failure()
     }
 
-    /// Executes a function in `module` and returns its result value.
+    /// Executes a function to completion; an entry yield returns an execution error.
     pub fn run(&mut self, module: &LoadedModule, function_index: usize, args: Vec<Value>) -> Result<Value, OdinRuntimeError> {
         self.run_with_globals(module, function_index, args, &mut vec![Value::Null; module.globals.len()])
     }
 
-    /// Executes a function using caller-provided global storage (for repeated runs on the same module).
+    /// Executes to completion using caller-provided global storage (for repeated runs on the same module).
     pub fn run_with_globals(
         &mut self,
         module: &LoadedModule,
@@ -270,6 +291,17 @@ impl Executor {
         args: Vec<Value>,
         globals: &mut [Value],
     ) -> Result<Value, OdinRuntimeError> {
+        let function_name = module.functions.get(function_index).map(|function| function.name.as_str()).unwrap_or_default();
+        self.run_function_frame_outcome(module, function_index, args, globals)?.require_completed(function_name)
+    }
+
+    pub(crate) fn run_function_frame_outcome(
+        &mut self,
+        module: &LoadedModule,
+        function_index: usize,
+        args: Vec<Value>,
+        globals: &mut [Value],
+    ) -> Result<ExecutionOutcome, OdinRuntimeError> {
         if function_index >= module.functions.len() {
             return Err(OdinRuntimeError::FunctionIndexOutOfRange(function_index as i32));
         }
@@ -317,7 +349,7 @@ impl Executor {
                     self.apply_relocate_map(&relocate, globals);
                     frame = self.frames.pop().expect("nj1 pressure frame");
                 }
-                return crate::nj1_runtime::execute_nj1_blob(&blob, &frame.locals);
+                return crate::nj1_runtime::execute_nj1_blob(&blob, &frame.locals).map(ExecutionOutcome::Completed);
             }
         }
 
@@ -394,7 +426,7 @@ impl Executor {
                     self.apply_relocate_map(&relocate, globals);
                     if self.frames.is_empty() {
                         self.last_steps = executed_steps;
-                        return self.stack.pop().or(Ok(Value::Null));
+                        return Ok(ExecutionOutcome::Completed(self.stack.pop().unwrap_or(Value::Null)));
                     }
                 }
                 StepResult::Call { function_index } => {
@@ -430,7 +462,8 @@ impl Executor {
                     self.stack.push(Value::Coroutine(coroutine_id));
                     if self.frames.is_empty() {
                         self.last_steps = executed_steps;
-                        return self.stack.pop().or(Ok(Value::Null));
+                        self.stack.pop()?;
+                        return Ok(ExecutionOutcome::Suspended { coroutine: coroutine_id });
                     }
                 }
                 StepResult::ResumeCoroutine { coroutine_id, state, resume_value } => {
@@ -473,7 +506,7 @@ impl Executor {
             }
         }
 
-        Ok(Value::Null)
+        Ok(ExecutionOutcome::Completed(Value::Null))
     }
 
     /// 压力 safepoint：顶帧按 stack map 收窄 local 根后回收。

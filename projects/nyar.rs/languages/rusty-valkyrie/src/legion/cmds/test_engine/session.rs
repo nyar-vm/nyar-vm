@@ -27,10 +27,9 @@ use super::{
     targets::parse_target_label,
 };
 
-/// 外部 runner 的结构化失败分类。
+/// 测试 runner 的结构化失败分类。
 ///
-/// 外部 runner 必须 fail-closed：运行时缺失、产物格式不符、执行超时、退出码非零
-/// 都要归入可诊断类别，禁止静默跳过或当作通过。
+/// 外部进程失败与内置运行时的错误、挂起、预算耗尽分别归类，禁止静默跳过或当作通过。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExternalRunFailure {
     /// runner 命令未安装或不在 `PATH` 上，无法启动。
@@ -41,6 +40,12 @@ pub enum ExternalRunFailure {
     ExecutionTimeout,
     /// 进程以非零退出码结束，或退出码为零但 `stderr` 非空。
     NonZeroExit,
+    /// 内置运行时入口挂起，尚未完成测试函数。
+    ExecutionSuspended,
+    /// 内置运行时报告执行错误（包括未处理 effect 与 trap）。
+    RuntimeError,
+    /// 内置运行时执行预算耗尽。
+    StepBudgetExceeded,
 }
 
 impl ExternalRunFailure {
@@ -51,6 +56,9 @@ impl ExternalRunFailure {
             Self::ArtifactFormatMismatch => "artifact-format-mismatch",
             Self::ExecutionTimeout => "execution-timeout",
             Self::NonZeroExit => "non-zero-exit",
+            Self::ExecutionSuspended => "execution-suspended",
+            Self::RuntimeError => "runtime-error",
+            Self::StepBudgetExceeded => "step-budget-exceeded",
         }
     }
 }
@@ -263,8 +271,8 @@ fn drain_pipe(mut pipe: impl Read) -> String {
 
 /// 用 legion 内置 OVM 运行时进程内执行单个测试入口。
 ///
-/// 加载与执行失败一律 fail-closed；`vm.run` 返回 `Ok` 即记为通过，
-/// runner 不猜测、不特判 VM 语义（例如无 handler 的 `raise` 挂起行为）。
+/// 仅运行时正式报告入口完成才通过；挂起与运行期错误保持独立分类。
+/// 返回值的类型与具体 effect 名不参与 runner 的成功判定。
 fn run_builtin_ovm_test(artifact: &Path, function_name: &str, verbose: bool) -> RunOutcome {
     let bytes = match std::fs::read(artifact) {
         Ok(bytes) => bytes,
@@ -289,17 +297,27 @@ fn run_builtin_ovm_test(artifact: &Path, function_name: &str, verbose: bool) -> 
             };
         }
     };
-    match vm.run(&loaded, function_name, Vec::new()) {
-        Ok(value) => {
+    match vm.run_outcome(&loaded, function_name, Vec::new()) {
+        Ok(odin_vm::ExecutionOutcome::Completed(value)) => {
             if verbose {
                 println!("      ovm: {value:?}");
             }
             RunOutcome { success: true, is_compile_error: false, failure: None, error: None }
         }
+        Ok(odin_vm::ExecutionOutcome::Suspended { .. }) => RunOutcome {
+            success: false,
+            is_compile_error: false,
+            failure: Some(ExternalRunFailure::ExecutionSuspended),
+            error: Some(format!("OVM 测试 `{function_name}` 挂起，尚未完成")),
+        },
         Err(error) => RunOutcome {
             success: false,
             is_compile_error: false,
-            failure: Some(ExternalRunFailure::NonZeroExit),
+            failure: Some(match error {
+                odin_vm::OdinRuntimeError::StepBudgetExceeded { .. } => ExternalRunFailure::StepBudgetExceeded,
+                odin_vm::OdinRuntimeError::ExecutionSuspended { .. } => ExternalRunFailure::ExecutionSuspended,
+                _ => ExternalRunFailure::RuntimeError,
+            }),
             error: Some(format!("OVM 执行 `{function_name}` 失败: {error}")),
         },
     }
