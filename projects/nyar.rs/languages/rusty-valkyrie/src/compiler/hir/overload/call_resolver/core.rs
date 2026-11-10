@@ -321,6 +321,14 @@ pub fn match_call_candidate(
         .iter()
         .filter_map(|binder| substitutions.get(binder).cloned().map(|solution| (binder.clone(), solution)))
         .collect::<BTreeMap<_, _>>();
+    // 已完成结算的 binder 必须写进合同签名：调用点冻结的是「本次调用的类型」，
+    // 不是声明模板。仍保持开放的 binder（本次调用无证据触达）原样保留，由上下文
+    // 收敛或单态化继续闭合，不在调用匹配阶段猜类型。
+    let signature_params = expected_params.iter().map(|ty| substitute_type_vars(ty, &substitutions)).collect::<Vec<_>>();
+    let signature_return_type = substitute_type_vars(
+        &type_relations.resolve_associated_projections(&candidate.signature.return_type, &candidate.where_constraints, &substitutions),
+        &substitutions,
+    );
     Some(OverloadCandidate {
         declaration: candidate.declaration,
         instance: candidate.instance,
@@ -332,12 +340,8 @@ pub fn match_call_candidate(
         trait_owner: candidate.trait_owner.clone(),
         domain: candidate.domain.clone(),
         signature: crate::compiler::hir::overload::diagnostics::OverloadSignature {
-            params: expected_params,
-            return_type: type_relations.resolve_associated_projections(
-                &candidate.signature.return_type,
-                &candidate.where_constraints,
-                &substitutions,
-            ),
+            params: signature_params,
+            return_type: signature_return_type,
         },
         match_kind,
         param_specs: candidate.param_specs.clone(),
@@ -467,7 +471,19 @@ pub(crate) fn try_resolve_call(
     }
 
     if let HirExprKind::FieldAccess { object, field, .. } = &callee.kind {
-        return match try_resolve_instance_method(object, field, args, candidates, type_relations, locals, struct_fields, singleton_names) {
+        // 成员方法的调用点期望类型必须下传：返回形状里的 binder（`collect` 的集合
+        // 类型）只能由它收敛，不能因为 callee 是字段访问形态就丢掉。
+        return match try_resolve_instance_method_with_context(
+            object,
+            field,
+            args,
+            candidates,
+            type_relations,
+            locals,
+            struct_fields,
+            singleton_names,
+            contextual_type,
+        ) {
             Ok(call) => Some(call),
             // 方法层确实没有候选时，字段类型为函数值的成员按函数值调用结算；
             // 字段不是函数值仍返回 `None`，由上层给出结构化「无候选」。

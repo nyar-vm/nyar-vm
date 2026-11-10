@@ -68,6 +68,39 @@ pub(crate) fn owner_type_generic_binders(ty: &ValkyrieType) -> std::collections:
     binders
 }
 
+/// 用调用点期望类型收敛已解析调用中仍开放的 binder（典型是 `collect<I, T, C> -> C`
+/// 里只出现在返回形状的 `C`）。
+///
+/// 只消费**完全具体**的期望类型：含开放 binder 的上下文（例如无标注 `let` 继承的
+/// 外层返回类型）不是本次调用的求解证据，绑定它会把两个不同作用域的 binder 混为
+/// 一谈。收敛结果写回合同签名与 binder 解，供单态化与后续校验直接消费。
+pub(crate) fn converge_call_with_context(
+    call: &mut crate::compiler::types::hir::HirResolvedCall,
+    contextual_type: &ValkyrieType,
+    type_relations: &TypeRelationContext,
+) {
+    if has_unresolved_generic_arguments(contextual_type) || !has_unresolved_generic_arguments(&call.return_type) {
+        return;
+    }
+    let binders = owner_type_generic_binders(&call.return_type);
+    if binders.is_empty() {
+        return;
+    }
+    let mut substitutions = BTreeMap::new();
+    if unify_call_type_binders(&call.return_type, contextual_type, &binders, &mut substitutions, type_relations).is_none()
+        || substitutions.is_empty()
+    {
+        return;
+    }
+    call.return_type = substitute_type_vars(&call.return_type, &substitutions);
+    for parameter in &mut call.parameter_types {
+        *parameter = substitute_type_vars(parameter, &substitutions);
+    }
+    for (binder, solution) in substitutions {
+        call.associated_binder_solutions.entry(binder).or_insert(solution);
+    }
+}
+
 /// `self` 上的 `AutoType`/`Self` 必须在候选阶段换成完整 owner（可为 `Nominal{ItemId}`）。
 /// 禁止留给 `match_call_candidate` 再收成 `Named(短名)`，否则与已绑定字段类型对不上。
 pub(crate) fn specialize_method_param_type(
