@@ -71,7 +71,7 @@ impl<'a> WasmMirLowerer<'a> {
             MirInstructionKind::StructNew { fields, nominal } => {
                 let Some(output) = instruction_primary_result(instruction)
                 else {
-                    panic!("WASM StructNew 缺少结果槽: {}", self.mir_fn.symbol);
+                    return Err(format!("WASM StructNew 缺少结果槽: {}", self.mir_fn.symbol));
                 };
                 let layout = self.resolve_layout(*nominal);
                 if self.layout_uses_gc_struct(&layout) {
@@ -95,12 +95,12 @@ impl<'a> WasmMirLowerer<'a> {
                 else {
                     // 未注册的 layout 只能走线性内存；若计划把它放进了 anyref 槽，
                     // 说明注册条件与 MIR 引用使用不一致，必须失败而不是静默不发射。
-                    let &local = self.value_locals.get(&output).unwrap_or_else(|| {
-                        panic!(
+                    let local = *self.value_locals.get(&output).ok_or_else(|| {
+                        format!(
                             "WASM StructNew 计划不一致: layout `{}` 未注册 gc struct，但结果槽不是线性内存地址 (in `{}`)",
                             layout.name, self.mir_fn.symbol
                         )
-                    });
+                    })?;
                     self.bump_allocate(layout.size, layout.align);
                     self.emit_local_set(local);
                     for (field_id, value) in fields {
@@ -206,11 +206,11 @@ impl<'a> WasmMirLowerer<'a> {
             MirInstructionKind::TupleNew { layout_id, fields } => {
                 let Some(output) = instruction_primary_result(instruction)
                 else {
-                    panic!("WASM TupleNew 缺少结果槽: {}", self.mir_fn.symbol);
+                    return Err(format!("WASM TupleNew 缺少结果槽: {}", self.mir_fn.symbol));
                 };
                 let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned()
                 else {
-                    panic!("WASM TupleNew 缺少 layout 身份 `{layout_id:?}` in `{}`", self.mir_fn.symbol);
+                    return Err(format!("WASM TupleNew 缺少 layout 身份 `{layout_id:?}` in `{}`", self.mir_fn.symbol));
                 };
                 if self.layout_uses_gc_struct(&layout) {
                     let type_index = self.resolve_gc_struct_type_index(layout.id, &layout.name);
@@ -230,12 +230,12 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
                 else {
-                    let &local = self.value_locals.get(&output).unwrap_or_else(|| {
-                        panic!(
+                    let local = *self.value_locals.get(&output).ok_or_else(|| {
+                        format!(
                             "WASM TupleNew 计划不一致: layout `{}` 未注册 gc struct，但结果槽不是线性内存地址 (in `{}`)",
                             layout.name, self.mir_fn.symbol
                         )
-                    });
+                    })?;
                     self.bump_allocate(layout.size, layout.align);
                     self.emit_local_set(local);
                     for (index, value) in fields.iter().enumerate() {
@@ -263,10 +263,10 @@ impl<'a> WasmMirLowerer<'a> {
                 };
                 let Some(element_type) = array_element_type(array_type)
                 else {
-                    panic!(
+                    return Err(format!(
                         "WASM ArrayNew expects Array/FixedArray in `{}` (got {array_type:?}); refusing runtime trap placeholders",
                         self.mir_fn.symbol
-                    );
+                    ));
                 };
                 let _ = local;
                 match initialization {
@@ -284,10 +284,10 @@ impl<'a> WasmMirLowerer<'a> {
                 };
                 let Some(element_type) = array_element_type(array_type)
                 else {
-                    panic!(
+                    return Err(format!(
                         "WASM ArrayFromElements expects Array/FixedArray in `{}` (got {array_type:?}); refusing runtime trap placeholders",
                         self.mir_fn.symbol
-                    );
+                    ));
                 };
                 if matches!(array_type, NyarType::FixedArray { .. }) {
                     // Fixed value aggregate: linear layout when available.
@@ -319,11 +319,11 @@ impl<'a> WasmMirLowerer<'a> {
                 };
                 let Some(type_index) = self.resolve_gc_array_type_index(element_type)
                 else {
-                    panic!(
+                    return Err(format!(
                         "WASM ArrayFromElements missing gc arraytype in `{}` (element={element_type:?}); \
                          RepresentationPlan must register arraytype — refusing runtime trap placeholders",
                         self.mir_fn.symbol
-                    );
+                    ));
                 };
                 let element_stack_ty = wasm_gc_field_type_byte_for_glue(element_type, self.js_glue_utf8_as_anyref)?;
                 for value in elements {
