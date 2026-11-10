@@ -8,7 +8,7 @@ use crate::compiler::{
     types::{
         Identifier, NamePath,
         hir::{
-            AssociatedType, FunctionType, GenericBinderId, HirAssociatedTypeBinding, HirCallArgument, HirParam, HirTraitBound,
+            AssociatedType, FunctionType, GenericBinderId, HirAssociatedTypeBinding, HirCallArgument, HirLiteral, HirParam, HirTraitBound,
             HirTupleField, HirWhereConstraint, RowMethodType, RowType, TraitObject, TypeLambda, ValkyrieType,
         },
     },
@@ -602,6 +602,15 @@ pub(crate) fn member_call_argument_contexts(
             else {
                 return Vec::new()
             };
+            // 裸数值字面量接收者没有自足宽度：它的类型必须由调用点期望类型决定。
+            // 用默认宽度推断出的接收者类型去回填实参槽，会把它升格成权威上下文，
+            // 反向锁死外层候选宽度（`let x: i64 = 7 / y` 会退化成 i32）。
+            if matches!(
+                &receiver.value.kind,
+                HirExprKind::Literal(HirLiteral::Integer64(_) | HirLiteral::Float64(_))
+            ) {
+                return Vec::new();
+            }
             let receiver_type = crate::compiler::hir::overload::types::infer_expr_type(&receiver.value, locals)
                 .or_else(|| crate::compiler::hir::overload::types::infer_scrutinee_type(&receiver.value, locals, struct_fields, singleton_names));
             (receiver_type, path.parts()[0].clone(), true)
