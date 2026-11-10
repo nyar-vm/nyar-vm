@@ -700,7 +700,7 @@ fn lower_match_arms(
 ) -> Result<Vec<HirMatchArm>, HirError> {
     if let Some(source) = super::source_context::hir_lower_source() {
         if super::match_pattern_recovery::match_needs_source_recovery(&source, match_span.clone(), arms) {
-            if let Ok(recovered) = super::match_pattern_recovery::recover_match_arms(&source, match_span) {
+            if let Ok(recovered) = super::match_pattern_recovery::recover_match_arms(&source, match_span.clone()) {
                 let result: Result<Vec<_>, _> = recovered
                     .into_iter()
                     .map(|(pattern, body)| -> Result<_, HirError> {
@@ -716,12 +716,28 @@ fn lower_match_arms(
         }
     }
     let source_snapshot = super::source_context::hir_lower_source();
+    // 区间臂的源码文本必须从 match 整体切分获得：`case 2..=8:` 的 arm span 从 `8`
+    // 起算，`2..=` 已丢，无法按 `arm.span` 恢复。只有列表与臂数一致时才按索引采用。
+    let range_texts = source_snapshot
+        .as_deref()
+        .and_then(|source| super::match_pattern_recovery::recovered_range_pattern_texts(source, match_span.clone()))
+        .filter(|texts| texts.len() == arms.len());
     arms.iter()
-        .map(|arm| -> Result<_, HirError> {
-            let pattern = source_snapshot
-                .as_deref()
-                .and_then(|source| super::match_pattern_recovery::recover_arm_object_pattern(source, arm, span.clone()))
-                .map_or_else(|| lower_pattern(&arm.pattern, source_id, span.clone()), Ok)?;
+        .enumerate()
+        .map(|(index, arm)| -> Result<_, HirError> {
+            let range_text = range_texts.as_ref().and_then(|texts| texts.get(index)).and_then(Option::as_deref);
+            let pattern = if let Some(text) = range_text {
+                match super::match_pattern_recovery::range_pattern_from_text(text) {
+                    Some(pattern) => pattern,
+                    None => lower_pattern(&arm.pattern, source_id, span.clone())?,
+                }
+            }
+            else {
+                source_snapshot
+                    .as_deref()
+                    .and_then(|source| super::match_pattern_recovery::recover_arm_object_pattern(source, arm, span.clone()))
+                    .map_or_else(|| lower_pattern(&arm.pattern, source_id, span.clone()), Ok)?
+            };
             let guard = arm
                 .guard
                 .as_ref()

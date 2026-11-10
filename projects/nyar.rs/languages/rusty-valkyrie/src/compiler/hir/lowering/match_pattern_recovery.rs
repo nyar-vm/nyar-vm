@@ -33,7 +33,33 @@ pub fn match_needs_source_recovery(source: &str, match_span: Range<usize>, arms:
     if arms.iter().any(|arm| broken_wildcard_arm(source, arm) || oak_lost_case_pattern(source, arm)) {
         return true;
     }
-    false
+    // Oak 的 `Pattern` 没有区间变体，且 `case 2..=8:` 的 arm span 会从 `8` 起算
+    // （`2..=` 被解析器当作前导表达式吞掉），不能靠 `arm.span` 判定；必须直接从 match
+    // 源码切分臂文本。区间必须进源码恢复，否则会退化成等值比较。
+    source_match_has_range_pattern(source, match_span)
+}
+
+/// 直接按 match 源码切分臂文本，判定是否存在区间模式。
+fn source_match_has_range_pattern(source: &str, match_span: Range<usize>) -> bool {
+    let Some(interior) = extract_match_block_interior(source, match_span)
+    else {
+        return false;
+    };
+    split_match_arms(&interior).into_iter().any(|(pattern, _)| parse_range_pattern(&pattern).is_some())
+}
+
+/// 按 match 源码顺序返回每臂的区间模式文本（`None` 表示该臂不是区间）。
+///
+/// 逐臂路径不能用 `arm.span`：`case 2..=8:` 的 span 从 `8` 起算，前导 `2..=` 丢失。
+/// 返回列表长度与源码臂数一致；调用方只有在它与 Oak `arms` 等长时才按索引采用。
+pub fn recovered_range_pattern_texts(source: &str, match_span: Range<usize>) -> Option<Vec<Option<String>>> {
+    let interior = extract_match_block_interior(source, match_span)?;
+    Some(
+        split_match_arms(&interior)
+            .into_iter()
+            .map(|(pattern, _)| if parse_range_pattern(&pattern).is_some() { Some(pattern) } else { None })
+            .collect(),
+    )
 }
 
 /// Oak `parse_match_pattern` 对个别原子仍可能落成 Wildcard，`case 7` 等需按源码恢复。
@@ -399,6 +425,16 @@ fn default_arm_marker(rest: &str) -> Option<usize> {
         index += 1;
     }
     if rest.as_bytes().get(index) == Some(&b':') { Some(index + 1) } else { None }
+}
+
+/// 从源码切分得到的区间模式文本恢复区间模式。
+///
+/// 端点契约与整体恢复一致：只接受整数字面量。非区间文本返回 `None`。
+pub fn range_pattern_from_text(text: &str) -> Option<HirPattern> {
+    let (start, end, inclusive_end) = parse_range_pattern(text)?;
+    let start = parse_range_endpoint(start)?;
+    let end = parse_range_endpoint(end)?;
+    Some(HirPattern::Range { start, end, inclusive_end })
 }
 
 fn parse_recovered_pattern(text: &str) -> Option<HirPattern> {
