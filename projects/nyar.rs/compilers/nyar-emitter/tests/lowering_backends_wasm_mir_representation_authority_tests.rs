@@ -21,8 +21,8 @@ use nyar_emitter::{
     },
     testing::lower_fragment_to_wasm_mir_module,
 };
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, LayoutId, NyarType, StorageKind};
-use std::collections::BTreeMap;
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, LayoutId, NominalInstanceId, NyarType, StorageKind};
+use std::{collections::BTreeMap, process::Command};
 
 const UTF8: NyarType = NyarType::Utf8;
 
@@ -371,4 +371,202 @@ fn wasm_field_bearing_aggregate_assignment_still_uses_memory_copy() {
     );
     let bodies = code_bodies(&module);
     assert!(body_contains_memory_copy(&bodies[0]), "带字段的内联聚合赋值必须 memory.copy: {:#x?}", bodies[0]);
+}
+
+// ── `structure` 值复制：`AggregateCopy`（Value 布局）必须产生真实独立副本 ──────
+
+const I32: NyarType = NyarType::Integer32 { signed: true };
+const POINT_LAYOUT_ID: LayoutId = 12;
+
+/// `structure Point { x: i32, y: i32 }`：纯值布局（无引用字段）。
+fn point_layout() -> AggregateLayout {
+    AggregateLayout {
+        id: POINT_LAYOUT_ID,
+        name: "Point".to_string(),
+        namespace: std::string::String::new(),
+        key: None,
+        storage: StorageKind::Value,
+        size: 8,
+        align: 4,
+        fields: vec![
+            FieldLayout { name: "x".to_string(), ty: I32, offset: 0, size: 4, align: 4 },
+            FieldLayout { name: "y".to_string(), ty: I32, offset: 4, size: 4, align: 4 },
+        ],
+    }
+}
+
+fn point_function() -> ExecutableFunction {
+    let point_type = named_layout_type(POINT_LAYOUT_ID, "Point");
+    let mut function = base_function("main", I32, Vec::new());
+    function.value_types.insert(ValueRef(0), point_type.clone());
+    function.value_types.insert(ValueRef(1), point_type.clone());
+    function.value_types.insert(ValueRef(2), I32);
+    function.value_layouts.insert(ValueRef(0), POINT_LAYOUT_ID);
+    function.value_layouts.insert(ValueRef(1), POINT_LAYOUT_ID);
+    function
+}
+
+fn lower_point_plan(function: ExecutableFunction) -> nyar_emitter::Result<WasmBinaryModule> {
+    let main_name = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
+    plan.testing_module_name("value_aggregate_copy").testing_entry_operation(main_name);
+    plan.testing_aggregate_layouts(AggregateLayoutPlan { layouts: vec![point_layout()], ..Default::default() });
+    let nominal = NominalInstanceId::from_index(0).expect("nominal id");
+    plan.testing_register_nominal_layout(nominal, point_layout());
+    plan.testing_register_field(FieldId::from_index(0).expect("x field id"), POINT_LAYOUT_ID, 0);
+    plan.testing_register_field(FieldId::from_index(1).expect("y field id"), POINT_LAYOUT_ID, 1);
+    lower_fragment_to_wasm_mir_module(&FragmentSubmission::from_backend_plan(plan), "main")
+}
+
+/// Instantiate with Node (Wasm GC capable) and read `exports.main()` as i32.
+/// 与 CFG 调度合同测试同一执行轨：字节存在不等于语义成立。
+fn execute_main_i32(module: &WasmBinaryModule) -> i32 {
+    let bytes = module.to_bytes().expect("encode wasm module");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm_path = dir.path().join("aggregate_copy.wasm");
+    let script_path = dir.path().join("run.mjs");
+    std::fs::write(&wasm_path, &bytes).expect("write wasm");
+    std::fs::write(
+        &script_path,
+        r#"
+import { readFileSync } from "node:fs";
+const buf = readFileSync(process.argv[2]);
+const mod = await WebAssembly.compile(buf);
+const importObject = {};
+for (const imp of WebAssembly.Module.imports(mod)) {
+  if (!importObject[imp.module]) importObject[imp.module] = {};
+  if (imp.kind === "function") {
+    importObject[imp.module][imp.name] = () => 0;
+  } else if (imp.kind === "global") {
+    importObject[imp.module][imp.name] = new WebAssembly.Global({ value: "i32", mutable: true }, 0);
+  } else if (imp.kind === "memory") {
+    importObject[imp.module][imp.name] = new WebAssembly.Memory({ initial: 1 });
+  } else if (imp.kind === "table") {
+    importObject[imp.module][imp.name] = new WebAssembly.Table({ initial: 0, element: "anyfunc" });
+  }
+}
+const inst = await WebAssembly.instantiate(mod, importObject);
+const fn = inst.exports.main ?? inst.exports.run;
+if (typeof fn !== "function") {
+  console.error("missing main/run export; have=" + Object.keys(inst.exports).join(","));
+  process.exit(2);
+}
+const value = fn();
+if (typeof value !== "number") {
+  console.error("export did not return number: " + typeof value);
+  process.exit(3);
+}
+process.stdout.write(String(value | 0));
+"#,
+    )
+    .expect("write script");
+    let output = Command::new("node").arg(&script_path).arg(&wasm_path).output().expect("spawn node to execute wasm");
+    if !output.status.success() {
+        panic!(
+            "node wasm execute failed status={:?}\nstdout={}\nstderr={}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    text.parse::<i32>().unwrap_or_else(|_| panic!("expected i32 stdout, got {text:?}"))
+}
+
+/// 线性地址表示（未注册 gc struct 的 Value 布局）：`AggregateCopy` 的 dest 必须
+/// bump 分配一块独立新区域，再 `memory.copy` 复制 source 字节。旧实现直接消费
+/// dest 槽的未初始化值当地址，拷贝退化且不落独立内存。
+#[test]
+fn wasm_value_aggregate_copy_allocates_independent_linear_address() {
+    let nominal = NominalInstanceId::from_index(0).expect("nominal id");
+    let field_x = FieldId::from_index(0).expect("x field id");
+    let field_y = FieldId::from_index(1).expect("y field id");
+    let mut function = point_function();
+    function.blocks.push(Block {
+        id: BlockRef(0),
+        label: "entry".to_string(),
+        parameters: Vec::new(),
+        instructions: vec![
+            Instruction {
+                results: vec![ValueRef(0)],
+                ..Instruction::from_kind(InstructionKind::StructNew {
+                    nominal,
+                    fields: vec![
+                        (field_x, Operand::Constant(Constant::Int(1))),
+                        (field_y, Operand::Constant(Constant::Int(2))),
+                    ],
+                })
+            },
+            Instruction {
+                results: vec![ValueRef(1)],
+                ..Instruction::from_kind(InstructionKind::AggregateCopy {
+                    layout_id: POINT_LAYOUT_ID,
+                    source: Operand::Value(ValueRef(0)),
+                    dest: Operand::Value(ValueRef(1)),
+                })
+            },
+            Instruction {
+                results: vec![ValueRef(2)],
+                ..Instruction::from_kind(InstructionKind::TupleGet { object: Operand::Value(ValueRef(1)), layout_id: POINT_LAYOUT_ID, index: 0 })
+            },
+        ],
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(2))) },
+    });
+    let module = lower_point_plan(function).expect("线性 Value 布局 AggregateCopy lowering 必须成功");
+    let bodies = code_bodies(&module);
+    assert!(body_contains_memory_copy(&bodies[0]), "Value 聚合拷贝必须 memory.copy 字节复制: {:#x?}", bodies[0]);
+    // `global.get 0` 是 bump 分配器读堆游标的唯一入口：StructNew 一次 + dest 新区域一次。
+    let bump_count = bodies[0].windows(2).filter(|window| *window == [0x23, 0x00]).count();
+    assert_eq!(bump_count, 2, "AggregateCopy 必须为 dest bump 分配独立新地址（StructNew + dest 共两次堆游标分配）: {:#x?}", bodies[0]);
+    assert_eq!(execute_main_i32(&module), 1, "拷贝副本的字段必须读出源值");
+}
+
+/// gc struct 表示（Value 布局被 Field* 扫描登记为 anyref 槽——`assignmentSharing`
+/// 场景的真实形状）：`AggregateCopy` 必须深拷贝产生新对象。旧实现做浅 anyref 搬运，
+/// 两个绑定别名到同一堆对象，`b.x = 9` 同步改写 `a.x`，运行期返回 9（共享）而非 1。
+#[test]
+fn wasm_registered_value_aggregate_copy_produces_independent_object() {
+    let nominal = NominalInstanceId::from_index(0).expect("nominal id");
+    let field_x = FieldId::from_index(0).expect("x field id");
+    let field_y = FieldId::from_index(1).expect("y field id");
+    let mut function = point_function();
+    function.blocks.push(Block {
+        id: BlockRef(0),
+        label: "entry".to_string(),
+        parameters: Vec::new(),
+        instructions: vec![
+            Instruction {
+                results: vec![ValueRef(0)],
+                ..Instruction::from_kind(InstructionKind::StructNew {
+                    nominal,
+                    fields: vec![
+                        (field_x, Operand::Constant(Constant::Int(1))),
+                        (field_y, Operand::Constant(Constant::Int(2))),
+                    ],
+                })
+            },
+            Instruction {
+                results: vec![ValueRef(1)],
+                ..Instruction::from_kind(InstructionKind::AggregateCopy {
+                    layout_id: POINT_LAYOUT_ID,
+                    source: Operand::Value(ValueRef(0)),
+                    dest: Operand::Value(ValueRef(1)),
+                })
+            },
+            // FieldSet/FieldGet 使注册表把该 Value layout 登记为 gc struct，
+            // 两个 SSA 槽都规划成 anyref——这正是浅拷贝别名化的触发形状。
+            Instruction::from_kind(InstructionKind::FieldSet {
+                object: Operand::Value(ValueRef(1)),
+                field: field_x,
+                value: Operand::Constant(Constant::Int(9)),
+            }),
+            Instruction {
+                results: vec![ValueRef(2)],
+                ..Instruction::from_kind(InstructionKind::FieldGet { object: Operand::Value(ValueRef(0)), field: field_x })
+            },
+        ],
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(2))) },
+    });
+    let module = lower_point_plan(function).expect("gc struct Value 布局 AggregateCopy lowering 必须成功");
+    assert_eq!(execute_main_i32(&module), 1, "值复制后改写副本字段不得回写源对象（返回 9 即别名共享）");
 }

@@ -21,9 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 /// - `FieldGet` / `FieldSet`：凡带 layout_id 均登记（含 MIR `storage=Value` 但
 ///   object 已在 anyref 的路径，如 `SwissTableEntry` 作为 sum payload / 数组元素）
 /// - `AggregateCopy`：仅 `storage == Reference`。`storage=Value` 的聚合拷贝是
-///   `memory.copy` 或 anyref 浅拷贝，不需要也绝不能凭空登记成 structtype：
-///   注册表是物理表示的唯一权威，误登记（如标量 `usize`）会让 ABI 把标量槽
-///   提升成 anyref，常量发射随即失败。
+///   `memory.copy`（线性地址槽）或 gc struct 深拷贝（已被 Field* 扫描登记的槽），
+///   不需要也绝不能凭空登记成 structtype：注册表是物理表示的唯一权威，误登记
+///   （如标量 `usize`）会让 ABI 把标量槽提升成 anyref，常量发射随即失败。
 pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) -> BTreeSet<LayoutId> {
     let mut ids = BTreeSet::new();
     let exec = &ctx.submission.backend_plan;

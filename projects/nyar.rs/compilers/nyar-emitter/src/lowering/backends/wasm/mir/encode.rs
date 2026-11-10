@@ -188,7 +188,7 @@ impl<'a> WasmMirLowerer<'a> {
         encode_struct_get(type_index, field_index, &mut self.code);
     }
 
-    /// 发射 `struct.set` <type_index> <field_index>；栈顺序?`[field_value, struct_ref]`?
+    /// 发射 `struct.set` <type_index> <field_index>；栈顺序 `[struct_ref, field_value]`（value 在栈顶）。
     pub(super) fn emit_struct_set(&mut self, type_index: u32, field_index: u32) {
         encode_struct_set(type_index, field_index, &mut self.code);
     }

@@ -347,8 +347,11 @@ impl<'a> WasmMirLowerer<'a> {
                 let dest_in_ref = if let MirOperand::Value(vref) = dest { self.reference_locals.contains_key(vref) } else { false };
                 let use_gc_struct = source_in_ref || dest_in_ref || layout.storage == StorageKind::Reference;
                 if use_gc_struct {
-                    // 引用类型聚合:深拷贝。struct.new_with_default + 逐字段 struct.get/set。
-                    // 注意:这是语义上的"值拷贝",即产生新对象而非共享引用。
+                    // gc struct 表示的聚合（含 Value 存储被注册表判成 anyref 的路径）：
+                    // 深拷贝。struct.new_default + 逐字段 struct.get/set。
+                    // Value 存储同样必须产生新对象：浅 anyref 搬运会把两个绑定别名到
+                    // 同一堆对象，违反 `structure` 值复制裁决；引用字段按引用语义
+                    // 继续共享，标量与地址槽字段逐槽复制。
                     let Some(dest_local) = self.operand_reference_local(dest)
                     else {
                         return Ok(());
@@ -357,25 +360,25 @@ impl<'a> WasmMirLowerer<'a> {
                     else {
                         return Ok(());
                     };
-                    // Physical unite/Result rule: Value-storage payloads that
-                    // already live in anyref slots keep payload identity via
-                    // shallow anyref copy. Never ref.cast them into a sibling
-                    // aggregate layout (that is the Fine/Fail cross-cast trap).
-                    if layout.storage == StorageKind::Value {
-                        self.emit_local_get(source_local);
-                        self.emit_local_set(dest_local);
-                        return Ok(());
-                    }
-                    let layout_hint = layout.name.clone();
-                    let type_index = self.resolve_gc_struct_type_index(layout.id, &layout_hint);
+                    // 源/目标槽已按注册表规划成引用，而本 layout 未注册 structtype 是
+                    // 注册表与使用点分叉：失败闭合，禁止回退成别名搬运掩盖不一致。
+                    let Some(&type_index) = self.gc_struct_type_indices.get(&layout.id)
+                    else {
+                        return Err(format!(
+                            "WASM AggregateCopy 计划不一致: layout `{}` 未注册 gc struct，但源/目标槽已规划为引用 (in `{}`)",
+                            layout.name, self.mir_fn.symbol
+                        ));
+                    };
                     // 先构造 dest 对象(字段全默认),再逐字段从 source 拷入。
                     self.emit_struct_new_default(type_index);
                     self.emit_local_set(dest_local);
                     for field_index in 0..layout.fields.len() {
-                        // struct.set 期望 [ref, value]：先压 dest_ref，再从 source 读字段值。
-                        self.emit_local_get(source_local);
-                        self.emit_ref_cast_struct(type_index);
+                        // struct.set 期望 [ref, value]（value 在栈顶）：先压 dest_ref，
+                        // 再压 source_ref 并 `struct.get` 读出字段值，最后 `struct.set`
+                        // 写入 dest。压栈顺序颠倒会把 source 清零并把默认值留在 dest。
                         self.emit_local_get(dest_local);
+                        self.emit_ref_cast_struct(type_index);
+                        self.emit_local_get(source_local);
                         self.emit_ref_cast_struct(type_index);
                         self.emit_struct_get(type_index, field_index as u32);
                         self.emit_struct_set(type_index, field_index as u32);
@@ -394,11 +397,15 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_local_set(dest_local);
                 }
                 else {
-                    // 非空值类型聚合：memory.copy 复制线性内存字节。
+                    // 非空值类型聚合：dest 必须先获得一块独立的线性内存区域，再以
+                    // memory.copy 复制 source 字节。直接消费 dest 槽的旧值会把未初始化
+                    // 的 0 当地址写入，或与 source 共享同一区域，两者都不满足值复制合同。
                     match (self.operand_address_local(source), self.operand_address_local(dest)) {
                         (Some(source_local), Some(dest_local)) => {
                             let size = layout.size;
                             if size > 0 {
+                                self.bump_allocate(size, layout.align);
+                                self.emit_local_set(dest_local);
                                 self.emit_local_get(dest_local);
                                 self.emit_local_get(source_local);
                                 self.emit_i32_const(size as i32);
