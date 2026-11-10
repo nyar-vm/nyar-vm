@@ -456,7 +456,7 @@ impl MirBuilder {
             }
         }
         if let Some(tail) = &body.expr {
-            let _ = self.lower_expr_to_operand(tail);
+            let _ = self.lower_discarded_tail(tail);
         }
 
         if self.terminator.is_none() {
@@ -650,7 +650,7 @@ impl MirBuilder {
             self.lower_statement(statement);
         }
         if let Some(tail) = &body.expr {
-            let _ = self.lower_expr_to_operand(tail);
+            let _ = self.lower_discarded_tail(tail);
         }
 
         let loop_context = self.control_flow.pop_loop();
@@ -835,19 +835,23 @@ impl MirBuilder {
             return MirOperand::Constant(MirConstant::Unit);
         };
         if !carry_value {
-            // 语句位置的 `if` / `else if` 链：臂尾值只作为语句执行，不得进入 merge phi。
-            // 嵌套 `else if` 在 HIR 里是 else 块的尾表达式，若按值表达式 lowering，
-            // 内层臂尾（如 `Option<T>` 与 `Option<usize>`）会被强行合并并触发 SMIR007。
-            match &expr.kind {
-                HirExprKind::If { condition, then_branch, else_branch } => {
-                    return self.lower_if_statement(condition, then_branch, else_branch);
-                }
-                _ => {
-                    return self.lower_expr_to_operand(expr);
-                }
-            }
+            return self.lower_discarded_tail(expr);
         }
         self.lower_expr_to_operand_with_hint(expr, expected_type)
+    }
+
+    /// 语句位置的块尾表达式：值被丢弃，`if`/`else if` 链不得为 merge 建结果 phi。
+    ///
+    /// `while` body 的块尾表达式（无分号）结果虽不用，但 lowering 若走值路径，会让
+    /// then 臂尾（如 `Option<T>`）为 merge 建结果参数、else 臂（unit）不建；随后
+    /// `materialize_branch_bindings` 追加绑定参数时两条入边不等长，触发 SMIR007
+    /// `jump arity differs`。语句位置统一走 `lower_if_statement`（`carry_value=false`），
+    /// 臂内副作用照常执行。
+    fn lower_discarded_tail(&mut self, expr: &crate::compiler::hir::HirExpr) -> MirOperand {
+        match &expr.kind {
+            HirExprKind::If { condition, then_branch, else_branch } => self.lower_if_statement(condition, then_branch, else_branch),
+            _ => self.lower_expr_to_operand(expr),
+        }
     }
 
     /// 臂尾值若与 merge 参数已冻结的类型不一致，给出带源码 span 与分支坐标的
