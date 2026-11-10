@@ -305,6 +305,25 @@ pub fn plan_semantic_closure_with_host_bindings(
                 promoted.insert(extension.clone());
             }
         }
+        // trait 方法槽随 trait 身份保留：`C: Trait` 这类 bound 在 HIR 解析静态 trait
+        // 调用与 witness 分派时必须看到方法声明槽。只保留空 trait 会让候选表没有槽位，
+        // 调用退化成按末段名字撞实现成员的伪歧义。方法槽是声明事实，方法体的可达性
+        // 仍由物化门控制，不因本条扩大 body 集合。
+        for key in &demanded {
+            if key.kind != DeclarationKind::Trait {
+                continue;
+            }
+            for candidate in declaration_index.keys() {
+                if candidate.kind == DeclarationKind::Method
+                    && candidate.dependency_key == key.dependency_key
+                    && candidate.namespace == key.namespace
+                    && candidate.owner.as_deref() == Some(key.name.as_str())
+                    && !demanded.contains(candidate)
+                {
+                    promoted.insert(candidate.clone());
+                }
+            }
+        }
         // 证据驱动的 impl 保留：`T: Equal` 这类 where 证据在 HIR 调用解析时必须能看到
         // 目标聚合的实现，即使没有任何调用点以成员形式选中 witness 方法。保留条件要求
         // 两条声明面事实同时成立——目标聚合已被需求，且 impl 实现的 trait 本身已被需求
