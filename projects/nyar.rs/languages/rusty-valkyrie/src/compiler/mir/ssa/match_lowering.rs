@@ -120,6 +120,11 @@ impl MirBuilder {
             let mut check_block = None;
             let mut guard_block = None;
             let mut extractor_payload = None;
+            // 判别探针返回的原始载荷。物化必须落在「指令与值同块」的位置：有 guard 时
+            // check 块的指令缓冲会被清空重建，若在清空前物化，载荷值会失去生产指令而
+            // 悬空（CAN015 `UseBeforeDefinition`）。因此这里只保存原始载荷，延后到
+            // 确认所属块之后再物化。
+            let mut probe_payload = None;
 
             self.current_block = arm_block;
             self.current_label = arm_label.clone();
@@ -148,7 +153,7 @@ impl MirBuilder {
                 self.static_bindings = saved_static_bindings.clone();
                 // sum 载荷延后在判别成功的后继块物化：check 块只承担 tag 判定，
                 // nullary 变体的 null 载荷槽不会在未匹配路径被读（wasm `ref.cast` trap）。
-                extractor_payload = payload.map(|payload| self.materialize_probe_payload(payload));
+                probe_payload = payload;
             }
 
             if let Some(guard) = &arm.guard {
@@ -162,6 +167,8 @@ impl MirBuilder {
                 self.terminator = None;
                 self.bindings = saved_bindings.clone();
                 self.static_bindings = saved_static_bindings.clone();
+                // guard 块指令缓冲已重建，载荷在此时此块物化，保证生产指令与使用同块。
+                extractor_payload = probe_payload.take().map(|payload| self.materialize_probe_payload(payload));
                 self.bind_pattern_from_operand_with_payload(&arm.pattern, scrutinee_operand.clone(), None, extractor_payload.clone());
                 let guard_value = self.lower_expr_to_operand(guard);
                 self.terminate(MirTerminator::Branch { condition: guard_value, then_target: body_block, else_target: next_target });
@@ -171,6 +178,10 @@ impl MirBuilder {
                 self.current_label = format!("{arm_label}_body");
                 self.instructions.clear();
                 self.terminator = None;
+            }
+            else if probe_payload.is_some() {
+                // 无 guard：check 块就是 arm body 所在块，载荷在此块物化。
+                extractor_payload = probe_payload.take().map(|payload| self.materialize_probe_payload(payload));
             }
 
             let body_block = self.current_block;
