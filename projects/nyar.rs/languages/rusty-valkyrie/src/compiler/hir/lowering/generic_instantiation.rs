@@ -183,6 +183,17 @@ fn discharge_trait_witness(
         if declaration.trait_declaration != Some(dispatch.trait_declaration) {
             return None;
         }
+        // 默认方法派发优先覆盖：声明期默认体里的 `self.method()` 冻结在 trait 自身的
+        // 默认槽（无 owner）；实例化到具体 self 后，若该类型对同 trait 同名成员存在
+        // impl 覆盖，必须改用覆盖，否则默认体永远调用 trait 默认实现而非 impl 实现。
+        // 多个覆盖同时匹配时失败闭合，不回退默认体。
+        if declaration.owner_type.is_none() {
+            match resolve_trait_default_override(declarations, trait_members, dispatch, call) {
+                Some(Some(resolved)) => return Some(resolved),
+                Some(None) => return None,
+                None => {}
+            }
+        }
         let equations = declaration_equations(declaration, &dispatch.self_type, trait_views);
         let substitution = derive_witness_substitution(declaration, call, &equations)?;
         // 默认方法没有 impl owner：具体 self 类型就是它的实现身份，必须进实例键。
@@ -209,6 +220,38 @@ fn discharge_trait_witness(
         matched = Some((declaration.index, substitution, None));
     }
     matched
+}
+
+/// 默认方法派发的 impl 覆盖查找。
+///
+/// witness 冻结的声明是 trait 默认方法（无 owner）时，按同 trait、同成员名搜索
+/// 带 owner 的 impl 成员，并与调用合同做精确代入。返回 `Some(Some(..))` 表示唯一
+/// 覆盖；`Some(None)` 表示多个覆盖同时匹配（歧义，失败闭合）；`None` 表示没有
+/// 覆盖事实（成员名不可解或无 impl 成员命中），由调用方回落到 trait 默认体。
+fn resolve_trait_default_override(
+    declarations: &BTreeMap<u32, CallableDeclaration>,
+    trait_members: &BTreeMap<u32, String>,
+    dispatch: &HirTraitDispatch,
+    call: &HirResolvedCall,
+) -> Option<Option<(u32, Substitution, Option<ValkyrieType>)>> {
+    let member_name = trait_members.get(&dispatch.method_declaration.index())?;
+    let mut matched: Option<(u32, Substitution, Option<ValkyrieType>)> = None;
+    for declaration in declarations.values() {
+        if declaration.trait_declaration != Some(dispatch.trait_declaration) || declaration.owner_type.is_none() {
+            continue;
+        }
+        if declaration.function.name.as_str() != member_name.as_str() {
+            continue;
+        }
+        let Some(substitution) = derive_witness_substitution(declaration, call, &BTreeMap::new()) else {
+            continue;
+        };
+        if matched.is_some() {
+            return Some(None);
+        }
+        matched = Some((declaration.index, substitution, None));
+    }
+    Some(matched)
 }
 
 /// 具体 self 类型上该声明所属 trait 的关联类型等式。
