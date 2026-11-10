@@ -16,7 +16,7 @@ use crate::compiler::{
     types::{
         Identifier, NamePath,
         hir::{
-            GenericBinderId, HirEnum, HirImpl, HirModule, HirStruct, HirTrait, HirTraitBound, ValkyrieType,
+            GenericBinderId, GenericType, HirEnum, HirImpl, HirModule, HirStruct, HirTrait, HirTraitBound, ValkyrieType,
             ValkyrieType as HirType, primitive_identity_builtin_type,
         },
         witness::{MethodEntry, MethodId, MethodPath, ModuleId, TraitId, TypeId, TypeMetadata, WitnessTable, WitnessTableBuilder},
@@ -363,6 +363,29 @@ fn normalize_trait_member_type(
     substitute_associated_equations(&substitute_type_self(ty, target), target, associated_types)
 }
 
+/// 方法级泛型 binder 的 alpha 归一映射。
+///
+/// 泛型形参的身份只在其声明作用域内有效：impl 成员的 `<I>` 与 trait 方法槽的
+/// `<I>` 是同一方法模板的两份声明，binder owner 不同并不代表类型不同。签名
+/// 核对前把各自方法声明的类型形参换成同名、同种类的无名占位，再按结构比较。
+fn alpha_method_binder_substitution(generics: &[GenericType]) -> BTreeMap<GenericBinderId, ValkyrieType> {
+    generics
+        .iter()
+        .filter_map(|generic| {
+            let binder = generic.binder?;
+            Some((
+                binder,
+                ValkyrieType::Generic(GenericType {
+                    binder: None,
+                    name: generic.name.clone(),
+                    kind: generic.kind.clone(),
+                    bounds: generic.bounds.clone(),
+                }),
+            ))
+        })
+        .collect()
+}
+
     /// 关联等式判等前把 `Named` 表面名归一到已冻结的 `Nominal` 表示。
     ///
     /// 只有唯一可解、且声明身份存在时才归一：struct 取构造器声明身份（携带
@@ -529,26 +552,39 @@ fn normalize_trait_member_type(
                     error: TraitSatisfactionError::MissingMethodBinding { trait_path: bound.trait_path.clone(), name: method.name.clone() },
                 });
             };
+            // 方法级泛型在 impl 成员与 trait 方法槽里各有独立的 binder 身份，
+            // 签名核对是比较方法模板：先分别按各自声明的泛型集合做 alpha 归一，
+            // 否则同一 `<I>` 会因声明身份不同而被判成两个类型。
+            let impl_alpha = Self::alpha_method_binder_substitution(&candidate_method.generics);
+            let trait_alpha = Self::alpha_method_binder_substitution(&method.generics);
             let actual_params = candidate_method
                 .params
                 .iter()
                 .map(|param| {
-                    self.canonical_member_type(&Self::normalize_impl_member_type(
-                        &param.ty,
-                        candidate,
-                        &substitution,
-                        &associated_types,
+                    self.canonical_member_type(&substitute_type_vars(
+                        &Self::normalize_impl_member_type(&param.ty, candidate, &substitution, &associated_types),
+                        &impl_alpha,
                     ))
                 })
                 .collect::<Vec<_>>();
             let expected_params = method
                 .params
                 .iter()
-                .map(|param| self.canonical_member_type(&Self::normalize_trait_member_type(&param.ty, candidate, &associated_types)))
+                .map(|param| {
+                    self.canonical_member_type(&substitute_type_vars(
+                        &Self::normalize_trait_member_type(&param.ty, candidate, &associated_types),
+                        &trait_alpha,
+                    ))
+                })
                 .collect::<Vec<_>>();
-            let actual_return =
-                self.canonical_member_type(&Self::normalize_impl_member_type(&candidate_method.return_type, candidate, &substitution, &associated_types));
-            let expected_return = self.canonical_member_type(&Self::normalize_trait_member_type(&method.return_type, candidate, &associated_types));
+            let actual_return = self.canonical_member_type(&substitute_type_vars(
+                &Self::normalize_impl_member_type(&candidate_method.return_type, candidate, &substitution, &associated_types),
+                &impl_alpha,
+            ));
+            let expected_return = self.canonical_member_type(&substitute_type_vars(
+                &Self::normalize_trait_member_type(&method.return_type, candidate, &associated_types),
+                &trait_alpha,
+            ));
             if candidate_method.declaration.is_none()
                 || candidate_method.is_abstract
                 || actual_params != expected_params
