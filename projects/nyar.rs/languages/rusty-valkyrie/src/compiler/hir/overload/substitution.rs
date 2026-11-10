@@ -6,7 +6,7 @@ use crate::compiler::{
     hir::type_relation::{ParameterMatchResult, TypeRelationContext},
     mir::AggregateFieldIndex,
     types::{
-        Identifier,
+        Identifier, NamePath,
         hir::{
             AssociatedType, FunctionType, GenericBinderId, HirAssociatedTypeBinding, HirCallArgument, HirParam, HirTraitBound,
             HirTupleField, HirWhereConstraint, RowMethodType, RowType, TraitObject, TypeLambda, ValkyrieType,
@@ -14,8 +14,9 @@ use crate::compiler::{
     },
 };
 
-use super::diagnostics::OverloadCandidate;
+use super::diagnostics::{OverloadCandidate, OverloadDomain};
 use super::r#trait::impl_nominal_type_name;
+use super::symbol_match::aggregate_constructor_matches_name;
 
 /// 类型中是否仍有未代入的泛型 binder（含 nominal 实参中的 binder）。
 ///
@@ -677,49 +678,83 @@ pub(crate) fn member_call_argument_contexts(
 
 /// 自由函数调用的实参上下文类型（裸名 callee，不含接收者槽）。
 ///
-/// 与 `member_call_argument_contexts` 同口径、覆盖互补的 callee 形态：callee 为
-/// 单段名字且不是局部绑定或 singleton 时，按同名自由函数候选的形参类型逐槽供给
-/// 上下文；多个候选在同一槽给出不同类型时该槽置 `None`（冲突不猜）。无接收者、
-/// 无可代入证据，因此不做 binder 代入——上下文只为无自足类型的实参（裸 `None`
-/// 这类 nullary 变体引用）提供收窄锚点，最终类型正确性仍由候选匹配与
-/// `try_resolve_nullary_constructor` 的精确 unify 判定。
+/// 位置实参逐槽期望类型的统一来源：callee 为名字或构造路径且不是局部绑定或
+/// singleton 时，匹配同名自由函数候选与已冻结构造候选的形参槽；多个候选在同一
+/// 槽给出不同类型时该槽置 `None`（冲突不猜）。
+///
+/// 槽位类型必须按调用点期望类型代入候选 binder：`Some(Some(5))` 的外层载荷槽
+/// 只有代入后才是 `Option<i64>`，否则内层拿到的是开放 binder，字面量退化成默认
+/// 宽度（`Option<i32>`）。代入只消费已冻结的候选签名与调用点上下文，不猜名字。
 pub(crate) fn free_call_argument_contexts(
     callee: &crate::compiler::types::hir::HirExpr,
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
     locals: &BTreeMap<String, ValkyrieType>,
     singleton_names: &std::collections::BTreeSet<Identifier>,
+    contextual_type: Option<&ValkyrieType>,
 ) -> Vec<Option<ValkyrieType>> {
     use crate::compiler::types::hir::HirExprKind;
 
-    let name = match &callee.kind {
-        HirExprKind::Variable(identifier) => identifier.name.clone(),
-        HirExprKind::Path(path) if path.parts().len() == 1 => path.parts()[0].clone(),
-        _ => return Vec::new(),
+    // 位置实参的期望类型来自**被调可调用声明**的形参槽，与调用语法形态无关：
+    // 自由函数按未限定短名对齐，构造器（含变体）按已冻结的构造路径对齐。
+    // 只收自由函数会让 `Some(Some(5))` 的内层实参失去载荷槽类型，退化成按
+    // 字面量默认宽度推断（`Option<i32>`）。
+    let free_name = match &callee.kind {
+        HirExprKind::Variable(identifier) => Some(identifier.name.clone()),
+        HirExprKind::Path(path) if path.parts().len() == 1 => Some(path.parts()[0].clone()),
+        _ => None,
     };
-    if locals.contains_key(name.as_str()) || singleton_names.contains(&name) {
+    let constructor_path = match &callee.kind {
+        HirExprKind::Variable(identifier) => Some(NamePath::new(vec![identifier.name.clone()])),
+        HirExprKind::Path(path) if !path.parts().is_empty() => Some(path.clone()),
+        _ => None,
+    };
+    let Some(callee_name) = free_name.clone().or_else(|| constructor_path.as_ref().and_then(|path| path.parts().last().cloned()))
+    else {
+        return Vec::new();
+    };
+    if locals.contains_key(callee_name.as_str()) || singleton_names.contains(&callee_name) {
         return Vec::new();
     }
     let enclosing_module = type_relations.enclosing_module();
     let mut contexts: Vec<Option<ValkyrieType>> = Vec::new();
     let mut conflicted: Vec<bool> = Vec::new();
     let mut applicable = false;
-    for candidate in candidates
-        .iter()
-        .filter(|candidate| matches!(candidate.domain, super::diagnostics::OverloadDomain::Function))
-        .filter(|candidate| candidate.owner.is_none())
-        .filter(|candidate| {
-            // 候选身份必须与 `try_resolve_call` 的自由函数通道同口径，否则导入来的
-            // 被调函数拿不到形参期望类型，裸变体实参会被外层返回类型误杀。
-            super::symbol_match::symbol_matches_unqualified_free_call(&candidate.symbol, &name, enclosing_module)
-                || super::symbol_match::symbol_matches_imported_dependency_export(candidate, &name)
-                || type_relations.symbol_matches_import(&candidate.symbol, &name)
-                || type_relations.symbol_matches_group_scope(&candidate.symbol, &name)
-        })
-    {
+    for candidate in candidates.iter().filter(|candidate| {
+        let free_function = matches!(candidate.domain, OverloadDomain::Function)
+            && candidate.owner.is_none()
+            && free_name.as_ref().is_some_and(|name| {
+                // 候选身份必须与 `try_resolve_call` 的自由函数通道同口径，否则导入来的
+                // 被调函数拿不到形参期望类型，裸变体实参会被外层返回类型误杀。
+                super::symbol_match::symbol_matches_unqualified_free_call(&candidate.symbol, name, enclosing_module)
+                    || super::symbol_match::symbol_matches_imported_dependency_export(candidate, name)
+                    || type_relations.symbol_matches_import(&candidate.symbol, name)
+                    || type_relations.symbol_matches_group_scope(&candidate.symbol, name)
+            });
+        let constructor = candidate.domain == OverloadDomain::Constructor
+            && constructor_path.as_ref().is_some_and(|path| aggregate_constructor_matches_name(candidate, path));
+        free_function || constructor
+    }) {
         applicable = true;
+        // 候选返回类型与调用点期望类型统一出的代入，用于把形参槽里的声明 binder
+        // 落成该调用点的具体类型；统一失败或没有上下文时不代入，保持原槽位。
+        let mut candidate_substitutions = BTreeMap::new();
+        if let Some(contextual_type) = contextual_type {
+            let mut substitutions = BTreeMap::new();
+            if unify_call_type_binders(
+                &candidate.signature.return_type,
+                contextual_type,
+                &candidate.generic_binders,
+                &mut substitutions,
+                type_relations,
+            )
+            .is_some()
+            {
+                candidate_substitutions = substitutions;
+            }
+        }
         for (slot, param) in candidate.signature.params.iter().enumerate() {
-            let context = param.clone();
+            let context = substitute_type_vars(param, &candidate_substitutions);
             if contexts.len() <= slot {
                 contexts.resize(slot + 1, None);
                 conflicted.resize(slot + 1, false);

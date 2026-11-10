@@ -532,7 +532,14 @@ fn resolve_expr_calls_at(
             // 成员调用形态供给为空时，按自由函数 callee 补同样的逐槽形参上下文；
             // 两种 callee 形态互斥，不叠加。
             let argument_contexts = if member_argument_contexts.is_empty() {
-                crate::compiler::hir::overload::substitution::free_call_argument_contexts(callee, candidates, type_relations, locals, singleton_names)
+                crate::compiler::hir::overload::substitution::free_call_argument_contexts(
+                    callee,
+                    candidates,
+                    type_relations,
+                    locals,
+                    singleton_names,
+                    context.ty,
+                )
             } else {
                 member_argument_contexts
             };
@@ -718,8 +725,8 @@ fn resolve_expr_calls_at(
                         Some(substitutions)
                     })
             });
-            for arg in args.iter_mut() {
-                let declared_field_type = match &arg.kind {
+            for (index, arg) in args.iter_mut().enumerate() {
+                let declared_parameter_type = match &arg.kind {
                     HirExprKind::FieldInit { name: field_name, .. } => constructor_name
                         .as_ref()
                         .and_then(|name| struct_fields.fields_of(&ValkyrieType::Named(name.clone())))
@@ -729,9 +736,15 @@ fn resolve_expr_calls_at(
                                 candidate.param_specs.iter().find(|param| param.name.name == *field_name).map(|param| param.ty.clone())
                             })
                         }),
-                    _ => None,
+                    // 位置实参的期望类型同样来自构造声明形参槽：嵌套构造
+                    // （`Some(Some(5))`）的内层实参只能由外层的载荷槽类型定宽，
+                    // 否则会退化成字面量默认宽度。
+                    _ => candidates
+                        .iter()
+                        .filter(|candidate| aggregate_constructor_matches_name(candidate, path))
+                        .find_map(|candidate| candidate.signature.params.get(index).cloned()),
                 };
-                let field_context = declared_field_type.map(|ty| match &field_substitutions {
+                let field_context = declared_parameter_type.map(|ty| match &field_substitutions {
                     Some(substitutions) if !substitutions.is_empty() => substitute_type_vars(&ty, substitutions),
                     _ => ty,
                 });
@@ -743,6 +756,10 @@ fn resolve_expr_calls_at(
                     resolve_argument_expr(value, candidates, type_relations, locals, struct_fields, singleton_names, field_context);
                 }
                 else {
+                    let positional_context = match field_context.as_ref() {
+                        Some(field_context) => context.expected(Some(field_context)),
+                        None => context.hint(context.ty),
+                    };
                     resolve_argument_expr(
                         arg,
                         candidates,
@@ -750,7 +767,7 @@ fn resolve_expr_calls_at(
                         locals,
                         struct_fields,
                         singleton_names,
-                        context.hint(context.ty),
+                        positional_context,
                     );
                 }
             }

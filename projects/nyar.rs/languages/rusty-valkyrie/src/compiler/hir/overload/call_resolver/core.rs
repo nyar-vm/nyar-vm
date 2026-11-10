@@ -648,7 +648,7 @@ pub(crate) fn try_resolve_call(
     // 同名候选在该槽给出不同形参类型时上下文已置空：此时按任一候选的形参收窄
     // 都是猜测，必须失败闭合，交由调用合同报 `UnresolvedCall`。
     let argument_contexts =
-        crate::compiler::hir::overload::substitution::free_call_argument_contexts(callee, candidates, type_relations, locals, singleton_names);
+        crate::compiler::hir::overload::substitution::free_call_argument_contexts(callee, candidates, type_relations, locals, singleton_names, contextual_type);
     let conflicted_unit_variant_argument = argument_contexts.iter().enumerate().any(|(index, context)| {
         if context.is_some() {
             return false;
