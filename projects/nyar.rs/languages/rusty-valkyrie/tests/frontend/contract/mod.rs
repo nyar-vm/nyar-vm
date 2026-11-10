@@ -2,6 +2,7 @@
 
 mod array_declaration_contract_tests;
 mod cross_group_qualified_turbofish_generic_call_tests;
+mod enum_equality_infix_resolution_tests;
 #[cfg(false)] // MirFunction 旧字段、executable_provider 已移除（架构迁移）
 mod case_chain_validation;
 mod frontend_contract_control_flow_payload_witness_identity_tests;
