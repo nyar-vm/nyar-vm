@@ -75,18 +75,29 @@ impl MirBuilder {
                 let operand_ty = infer_builder_operand_type(&operand, &self.value_types);
                 // Prefer a concrete SSA type on the operand over a generic unite parameter
                 // hint such as `Named("E")` from HIR extractor_payload_type.
-                let inferred_type = match (ty.clone(), operand_ty) {
+                let inferred_type = match (ty.clone(), operand_ty.clone()) {
                     (Some(hint), Some(concrete)) if is_generic_parameter(&hint) => Some(concrete),
                     (hint, concrete) => hint.or(concrete),
                 };
                 if let Some(ref inferred_type) = inferred_type {
-                    if storage_kind_for_type(inferred_type, &self.aggregate_layouts.value_type_declarations) == MirStorageKind::Value {
-                        if let Some(layout_id) = ensure_layout_for_type(&mut self.aggregate_layouts, inferred_type) {
-                            self.push_instruction(MirOperation::AggregateCopy { source: operand, dest: MirOperand::Value(value) }, vec![value]);
-                            self.value_types.insert(value, inferred_type.clone());
-                            self.bindings.insert(name, MirOperand::Value(value));
-                            return;
-                        }
+                    // 拷贝判据优先取 operand 的已冻结类型：`let b: Point = a` 把注解降成
+                    // 表面名 `Named("Point")` 时没有 declaration 身份，不能据此把值类型
+                    // 判成引用；操作数上的 `Nominal{Point}` 才是可判事实。操作数仍是开放
+                    // binder 时才回退到注解。
+                    let mut copy_type = None;
+                    if let Some(operand_ty) = operand_ty.as_ref()
+                        && value_copy_supported(&mut self.aggregate_layouts, operand_ty)
+                    {
+                        copy_type = Some(operand_ty.clone());
+                    }
+                    if copy_type.is_none() && value_copy_supported(&mut self.aggregate_layouts, inferred_type) {
+                        copy_type = Some(inferred_type.clone());
+                    }
+                    if let Some(copy_type) = copy_type {
+                        self.push_instruction(MirOperation::AggregateCopy { source: operand, dest: MirOperand::Value(value) }, vec![value]);
+                        self.value_types.insert(value, copy_type);
+                        self.bindings.insert(name, MirOperand::Value(value));
+                        return;
                     }
                 }
                 // 绑定注解为 `Nominal{usize}` 而 RHS（如 ArrayLength）仍为另一整数 TypeId 时，

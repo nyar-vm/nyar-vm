@@ -39,6 +39,25 @@ pub fn storage_kind_for_type(ty: &ValkyrieType, value_type_declarations: &BTreeS
     }
 }
 
+/// 值存储类型是否可以按值复制。
+///
+/// 判据只含已冻结事实：`structure` 的值语义（声明级属性）与类型物理闭合（不含
+/// 开放 binder）。合成 tuple / 定长数组需要就地登记布局；名义值类型的具体实例
+/// 布局由下游按冻结声明构造，Semantic MIR 不以「本模块是否预登记布局 id」作为
+/// 值语义开关，否则跨模块泛型实例会静默退化为引用共享。
+pub fn value_copy_supported(plan: &mut AggregateLayoutPlan, ty: &ValkyrieType) -> bool {
+    if storage_kind_for_type(ty, &plan.value_type_declarations) != MirStorageKind::Value {
+        return false;
+    }
+    if crate::compiler::hir::overload::has_unresolved_generic_arguments(ty) {
+        return false;
+    }
+    match ty {
+        ValkyrieType::Tuple(_) | ValkyrieType::FixedArray { .. } => ensure_layout_for_type(plan, ty).is_some(),
+        _ => true,
+    }
+}
+
 /// 为合成 tuple / fixed array 类型生成结构化布局键；名义类型返回 `None`。
 ///
 /// 键只由平台类型身份构成；元素类型无法严格 concretize 时不产生键，
@@ -251,6 +270,13 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
     // 完整后重解字段身份，消除登记顺序对字段载体的影响。
     let mut registered: Vec<(&HirStruct, MirStorageKind)> = Vec::new();
     for hir_struct in structs {
+        // 值语义是**声明属性**，与能否立即生成平台布局无关：泛型 `structure` 的
+        // 具体实例同样按值复制，声明身份必须先进入值类型集合。
+        if hir_struct.is_value_type
+            && let Some(declaration) = hir_struct.constructor_declaration
+        {
+            plan.value_type_declarations.insert(declaration);
+        }
         // 开放泛型声明不得生成平台布局（字段仍是 binder）；与 SumTypeLayout 同口径。
         if !hir_struct.generics.is_empty() {
             continue;
@@ -271,6 +297,11 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
     // so TextSpan{start,stop} is not erased by std.text TextSpan{offset,length}.
     for export in &module.imported_semantic_exports {
         for hir_struct in &export.structs {
+            if hir_struct.is_value_type
+                && let Some(declaration) = hir_struct.constructor_declaration
+            {
+                plan.value_type_declarations.insert(declaration);
+            }
             if hir_struct.fields.is_empty() || !hir_struct.generics.is_empty() {
                 continue;
             }

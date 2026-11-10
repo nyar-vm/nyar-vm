@@ -7,10 +7,10 @@ use crate::compiler::{
 };
 
 use crate::compiler::mir::ssa::{
-    MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirValueOrigin, callee_name_matches,
+    MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirValueOrigin, callee_name_matches,
     expr_helpers::{is_array_shaped_valkyrie_type, lower_resolved_callee, named_type_name, peel_generic_apply},
     infer_builder_operand_type, lower_callee_operand,
-    value_semantics::{ensure_layout_for_type, layout_id_for_type, storage_kind_for_type},
+    value_semantics::{layout_id_for_type, value_copy_supported},
 };
 
 use super::{
@@ -709,18 +709,15 @@ impl MirBuilder {
                 let expected = existing.as_ref().and_then(|operand| infer_builder_operand_type(operand, &self.value_types));
                 let operand = self.lower_expr_to_operand_with_hint(value, expected.as_ref());
                 if let Some(ty) = infer_builder_operand_type(&operand, &self.value_types) {
-                    if self.storage_for_type(&ty) == MirStorageKind::Value {
-                        let layout_id = ensure_layout_for_type(&mut self.aggregate_layouts, &ty);
-                        if let Some(layout_id) = layout_id {
-                            let dest = self.next_value(MirValueOrigin::LetBinding { name: name.clone() });
-                            self.push_instruction(
-                                MirOperation::AggregateCopy { source: operand.clone(), dest: MirOperand::Value(dest) },
-                                vec![dest],
-                            );
-                            self.value_types.insert(dest, ty);
-                            self.bindings.insert(name, MirOperand::Value(dest));
-                            return MirOperand::Constant(MirConstant::Unit);
-                        }
+                    if value_copy_supported(&mut self.aggregate_layouts, &ty) {
+                        let dest = self.next_value(MirValueOrigin::LetBinding { name: name.clone() });
+                        self.push_instruction(
+                            MirOperation::AggregateCopy { source: operand.clone(), dest: MirOperand::Value(dest) },
+                            vec![dest],
+                        );
+                        self.value_types.insert(dest, ty);
+                        self.bindings.insert(name, MirOperand::Value(dest));
+                        return MirOperand::Constant(MirConstant::Unit);
                     }
                 }
                 let new_value = self.next_value(MirValueOrigin::LetBinding { name: name.clone() });
