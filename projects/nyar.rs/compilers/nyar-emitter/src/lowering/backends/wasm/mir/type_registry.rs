@@ -37,7 +37,20 @@ pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) 
                 match &instruction.kind {
                     MirInstructionKind::StructNew { nominal, .. } => {
                         if let Some(layout) = ctx.layout_by_nominal(*nominal) {
-                            if layout.storage == StorageKind::Reference {
+                            // 注册条件必须与槽规划同源：槽规划按 `ctx.storage_for_type`
+                            // 决定 anyref，而泛型实例（`NyarType::Apply`，如
+                            // `EnumerateItem<K>`）在类型层是 Reference、在声明级
+                            // `layout.storage` 却可能是 Value。只看后者会让槽规划出
+                            // anyref、注册表却缺该 layout，构造点随即报「未注册 gc
+                            // struct 但结果槽不是线性地址」。因此结果槽被判为引用时
+                            // 必须登记，保证构造与消费共用同一冻结事实。
+                            let declared_reference = layout.storage == StorageKind::Reference;
+                            let slot_reference = instruction
+                                .results
+                                .first()
+                                .and_then(|output| view.function.value_types.get(output))
+                                .is_some_and(|ty| ctx.storage_for_type(ty) == StorageKind::Reference);
+                            if declared_reference || slot_reference {
                                 ids.insert(layout.id);
                             }
                         }
