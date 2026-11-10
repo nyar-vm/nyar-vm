@@ -1625,9 +1625,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 let index = self.emitter.intern_string(text);
                 self.emitter.emit_imm1(OdinHeadCode::Constant, index);
             }
-            MirConstant::Utf16(_) => panic!("ovm lowering has no explicit UTF-16 text ABI"),
+            MirConstant::Utf16(_) => {
+                return Err("OVM 常量 Utf16 缺少显式 UTF-16 文本 ABI 合同".to_string());
+            }
             // OVM 目标没有可空空引用的 ABI 合同；不得用 i32 0 冒充 null。
-            MirConstant::Null => panic!("ovm lowering has no nullable reference ABI"),
+            // 缺合同必须在 backend 边界结构化失败，不得 panic 击穿进程。
+            MirConstant::Null => {
+                return Err("OVM 常量 Null 缺少可空引用 ABI 合同；禁止用 i32 0 冒充 null".to_string());
+            }
             MirConstant::Unit => {
                 self.emitter.emit_const_i32(0);
             }
