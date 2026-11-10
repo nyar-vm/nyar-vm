@@ -324,6 +324,56 @@ pub fn plan_semantic_closure_with_host_bindings(
                 }
             }
         }
+        // 默认方法的选择名提升：成员调用的 selector 已在闭包需求里，但 trait 自身可能
+        // 只以 impl 证据存在。若被需求聚合的 impl 方法引用了某个 trait，且该 trait
+        // 声明了同名方法，则该 trait 必须随方法槽进入闭包；后续「trait 方法槽随 trait
+        // 身份保留」会带入声明槽，「证据驱动 impl 保留」会带入实现外壳与默认方法体。
+        for aggregate in &demanded {
+            let Some(impl_methods) = impl_evidence_by_owner.get(aggregate)
+            else {
+                continue;
+            };
+            for method in impl_methods {
+                let Some(entry) = declaration_index.get(method)
+                else {
+                    continue;
+                };
+                let visible = visibility.get(&method.dependency_key).unwrap_or(&empty_visibility);
+                for reference in &entry.references {
+                    for resolved in indexes.resolve(reference, &method.namespace, visible) {
+                        let trait_key = if resolved.kind == DeclarationKind::TypeAlias {
+                            declaration_index.get(&resolved).and_then(|alias| match &alias.link {
+                                Some(DeclarationLink::AliasTarget(target)) => indexes
+                                    .resolve(target, &resolved.namespace, visible)
+                                    .into_iter()
+                                    .find(|key| key.kind == DeclarationKind::Trait),
+                                _ => None,
+                            })
+                        }
+                        else {
+                            Some(resolved.clone())
+                        };
+                        let Some(trait_key) = trait_key
+                        else {
+                            continue;
+                        };
+                        if trait_key.kind != DeclarationKind::Trait || demanded.contains(&trait_key) {
+                            continue;
+                        }
+                        let declares_selected_method = declaration_index.keys().any(|candidate| {
+                            candidate.kind == DeclarationKind::Method
+                                && candidate.dependency_key == trait_key.dependency_key
+                                && candidate.namespace == trait_key.namespace
+                                && candidate.owner.as_deref() == Some(trait_key.name.as_str())
+                                && selectors.contains(&candidate.name)
+                        });
+                        if declares_selected_method {
+                            promoted.insert(trait_key);
+                        }
+                    }
+                }
+            }
+        }
         // 证据驱动的 impl 保留：`T: Equal` 这类 where 证据在 HIR 调用解析时必须能看到
         // 目标聚合的实现，即使没有任何调用点以成员形式选中 witness 方法。保留条件要求
         // 两条声明面事实同时成立——目标聚合已被需求，且 impl 实现的 trait 本身已被需求
