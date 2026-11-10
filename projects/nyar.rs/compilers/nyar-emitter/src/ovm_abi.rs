@@ -19,12 +19,12 @@ use nyar_types::{AggregateLayoutPlan, ItemInstanceId, LayoutId, NominalInstanceI
 use odin_bytecode::OdinLayout;
 use serde::Serialize;
 
-use crate::abi_structure::{
-    AbiStructure, AggregateStructure, SequenceStructure, abi_structure_for_type_with_layouts, canonical_parameter_identities,
+use crate::{
+    AbiCarrier, LibraryExportAbi, Result, TargetExecutionPlan,
+    abi_structure::{AbiStructure, AggregateStructure, abi_structure_for_type_with_layouts, canonical_parameter_identities},
+    backend_plan_views::ExecutableFunction,
+    lowering::shared::executable::slots::ExecutableSlotPlan,
 };
-use crate::backend_plan_views::ExecutableFunction;
-use crate::lowering::shared::executable::slots::ExecutableSlotPlan;
-use crate::{AbiCarrier, LibraryExportAbi, Result, TargetExecutionPlan};
 
 // 合同类型定义在格式 crate，编译器与运行时共用同一份 schema；本模块只保留派生。
 pub use odin_bytecode::abi::{
@@ -64,9 +64,7 @@ pub fn derive_contract(
     let mut option_box_indices = BTreeMap::new();
     let mut entries = Vec::with_capacity(ordered.len());
     for (instance, logical_name) in ordered {
-        let view = plan
-            .get_function(instance)
-            .ok_or_else(|| format!("库导出 `{logical_name}` 缺少 Compiler 函数体，无法派生 OVM ABI 合同"))?;
+        let view = plan.get_function(instance).ok_or_else(|| format!("库导出 `{logical_name}` 缺少 Compiler 函数体，无法派生 OVM ABI 合同"))?;
         let abi = export_abi(plan, instance, &view.function)
             .map_err(|reason| format!("库导出 `{logical_name}` 的边界类型无法表达为 OVM ABI 合同: {reason}"))?;
         entries.push(derive_export(
@@ -86,7 +84,6 @@ pub fn derive_contract(
     contract.verify_against_layouts(module_layouts)?;
     Ok(contract)
 }
-
 
 /// `utf8` 槽的文本表示事实来源。
 #[derive(Clone, Copy, Debug)]
@@ -160,41 +157,26 @@ fn derive_export(
 ) -> Result<OvmAbiExport> {
     let identities = canonical_parameter_identities(logical_name, function)?;
     if abi.params.len() != identities.len() {
-        return Err(format!(
-            "库导出 `{logical_name}` 冻结载体数（{}）与参数身份数（{}）不一致",
-            abi.params.len(),
-            identities.len()
-        ));
+        return Err(format!("库导出 `{logical_name}` 冻结载体数（{}）与参数身份数（{}）不一致", abi.params.len(), identities.len()));
     }
     let entry_layouts = frozen_entry_parameter_layouts(plan, function);
-    let mut projection = Projection {
-        plan,
-        function,
-        entry_layouts: &entry_layouts,
-        module_layouts,
-        layout_indices,
-        sum_layout_indices,
-        option_box_indices,
-    };
+    let mut projection =
+        Projection { plan, function, entry_layouts: &entry_layouts, module_layouts, layout_indices, sum_layout_indices, option_box_indices };
     let mut params = Vec::with_capacity(identities.len());
     for (position, (_, name)) in identities.iter().enumerate() {
-        let ty = function
-            .param_types
-            .get(position)
-            .ok_or_else(|| format!("库导出 `{logical_name}` 参数 {position} 缺少类型事实"))?;
-        let structure =
-            abi_structure_for_type_with_layouts(ty, plan.aggregate_layouts(), plan.aggregate_layout_by_nyar_type(), plan.sum_layout_by_nyar_type());
+        let ty = function.param_types.get(position).ok_or_else(|| format!("库导出 `{logical_name}` 参数 {position} 缺少类型事实"))?;
+        let structure = abi_structure_for_type_with_layouts(
+            ty,
+            plan.aggregate_layouts(),
+            plan.aggregate_layout_by_nyar_type(),
+            plan.sum_layout_by_nyar_type(),
+        );
         let projected = projection
             .project(&structure, TextSlot::Parameter(position))
             .map_err(|reason| format!("库导出 `{logical_name}` 参数 `{name}` 没有 OVM ABI 合同: {reason}"))?;
         verify_carrier(abi.params[position], &projected)
             .map_err(|reason| format!("库导出 `{logical_name}` 参数 `{name}` 载体合同不一致: {reason}"))?;
-        params.push(OvmAbiParam {
-            index: position,
-            name: name.to_string(),
-            carrier: carrier_label(&projected).to_string(),
-            ty: projected,
-        });
+        params.push(OvmAbiParam { index: position, name: name.to_string(), carrier: carrier_label(&projected).to_string(), ty: projected });
     }
     let return_structure = abi_structure_for_type_with_layouts(
         &function.return_type,
@@ -205,14 +187,8 @@ fn derive_export(
     let returns = projection
         .project(&return_structure, TextSlot::Return)
         .map_err(|reason| format!("库导出 `{logical_name}` 返回类型没有 OVM ABI 合同: {reason}"))?;
-    verify_carrier(abi.returns, &returns)
-        .map_err(|reason| format!("库导出 `{logical_name}` 返回载体合同不一致: {reason}"))?;
-    Ok(OvmAbiExport {
-        logical_name: logical_name.to_string(),
-        params,
-        returns_carrier: carrier_label(&returns).to_string(),
-        returns,
-    })
+    verify_carrier(abi.returns, &returns).map_err(|reason| format!("库导出 `{logical_name}` 返回载体合同不一致: {reason}"))?;
+    Ok(OvmAbiExport { logical_name: logical_name.to_string(), params, returns_carrier: carrier_label(&returns).to_string(), returns })
 }
 
 /// 结构 → OVM 物理投影。
@@ -252,16 +228,16 @@ impl Projection<'_> {
                 // 必须显式 box，否则 `Some(None)` 与外层 `None` 塌陷成同一物理值。
                 let boxing = if matches!(inner, OvmAbiType::Option { .. }) {
                     OvmOptionBoxing::Boxed { layout: self.option_box_layout(&inner)?, tag_slot: 0, payload_slot: 1 }
-                } else {
+                }
+                else {
                     OvmOptionBoxing::Niche
                 };
                 OvmAbiType::Option { inner: Box::new(inner), boxing }
             }
-            AbiStructure::Tuple { fields } => OvmAbiType::Tuple {
-                fields: fields.iter().map(|field| self.project(field, TextSlot::Nested)).collect::<Result<Vec<_>>>()?,
-            },
+            AbiStructure::Tuple { fields } => {
+                OvmAbiType::Tuple { fields: fields.iter().map(|field| self.project(field, TextSlot::Nested)).collect::<Result<Vec<_>>>()? }
+            }
             AbiStructure::Aggregate(aggregate) => self.project_aggregate(aggregate)?,
-            AbiStructure::Sequence(sequence) => self.project_sequence(sequence)?,
             AbiStructure::InstanceHandle { layout, name, module_path } => {
                 let aggregate = self
                     .plan
@@ -279,9 +255,10 @@ impl Projection<'_> {
             AbiStructure::Unite { nominal, name, variants, payloads, .. } => {
                 // 物理 sum 布局由 lowering 已登记的 nominal → 模块下标映射给出；
                 // 缺失即失败闭合，绝不在合同里留“未知布局”。
-                let layout = *self.sum_layout_indices.get(nominal).ok_or_else(|| {
-                    format!("sum nominal `{nominal:?}` 没有已登记的 OVM 模块布局，拒绝按未知布局解释内存")
-                })?;
+                let layout = *self
+                    .sum_layout_indices
+                    .get(nominal)
+                    .ok_or_else(|| format!("sum nominal `{nominal:?}` 没有已登记的 OVM 模块布局，拒绝按未知布局解释内存"))?;
                 let variants = variants
                     .iter()
                     .zip(payloads.iter())
@@ -377,9 +354,9 @@ impl Projection<'_> {
         for field in &aggregate.fields {
             fields.push(OvmAbiField {
                 name: field.name.clone(),
-                ty: self.project(&field.ty, TextSlot::Nested).map_err(|reason| {
-                    format!("聚合 `{namespace}::{layout_name}` 字段 `{}` 没有 OVM ABI 合同: {reason}", field.name)
-                })?,
+                ty: self
+                    .project(&field.ty, TextSlot::Nested)
+                    .map_err(|reason| format!("聚合 `{namespace}::{layout_name}` 字段 `{}` 没有 OVM ABI 合同: {reason}", field.name))?,
             });
         }
         if fields.len() != layout.fields.len() {
@@ -396,42 +373,10 @@ impl Projection<'_> {
             fields,
         })
     }
-
-    fn project_sequence(&mut self, sequence: &SequenceStructure) -> Result<OvmAbiType> {
-        let layout = find_layout(self.plan.aggregate_layouts(), sequence.layout)?;
-        if !layout.storage.is_reference() {
-            return Err(format!(
-                "序列容器 `{}::{}` 的冻结布局不是引用存储，拒绝派生序列投影",
-                layout.namespace, layout.name
-            ));
-        }
-        if layout.fields.len() != sequence.field_count {
-            return Err(format!(
-                "序列容器 `{}::{}` 的合同字段数（{}）与冻结布局字段数（{}）不一致",
-                layout.namespace,
-                layout.name,
-                sequence.field_count,
-                layout.fields.len()
-            ));
-        }
-        Ok(OvmAbiType::Sequence {
-            layout: layout_index(sequence.layout, layout.fields.len(), self.module_layouts, self.layout_indices)?,
-            name: sequence.name.clone(),
-            module_path: sequence.module_path.clone(),
-            items_slot: sequence.items_slot,
-            length_slot: sequence.length_slot,
-            field_count: sequence.field_count,
-            element: Box::new(self.project(&sequence.element, TextSlot::Nested)?),
-            length_type: Box::new(self.project(&sequence.length_ty, TextSlot::Nested)?),
-        })
-    }
 }
 
 fn find_layout(plan: &AggregateLayoutPlan, layout_id: LayoutId) -> Result<&nyar_types::AggregateLayout> {
-    plan.layouts
-        .iter()
-        .find(|item| item.id == layout_id)
-        .ok_or_else(|| format!("layout `{layout_id}` 未注册，无法派生 OVM 物理投影"))
+    plan.layouts.iter().find(|item| item.id == layout_id).ok_or_else(|| format!("layout `{layout_id}` 未注册，无法派生 OVM 物理投影"))
 }
 
 /// 把 canonical 布局身份解析为 `.odin` 模块布局下标；尚未登记的布局按冻结
@@ -496,7 +441,6 @@ fn carrier_of(ty: &OvmAbiType) -> AbiCarrier {
         | OvmAbiType::Option { .. }
         | OvmAbiType::Tuple { .. }
         | OvmAbiType::Aggregate { .. }
-        | OvmAbiType::Sequence { .. }
         | OvmAbiType::InstanceHandle { .. }
         | OvmAbiType::Unite { .. } => AbiCarrier::Handle,
     }
@@ -531,18 +475,13 @@ mod tests {
 
     #[allow(deprecated)]
     fn function(parameters: &[(usize, &str, NyarType)], return_type: NyarType) -> ExecutableFunction {
-        let parameter_values = parameters
-            .iter()
-            .map(|(index, _, _)| ValueRef(u32::try_from(*index).expect("测试参数下标")))
-            .collect::<Vec<_>>();
+        let parameter_values =
+            parameters.iter().map(|(index, _, _)| ValueRef(u32::try_from(*index).expect("测试参数下标"))).collect::<Vec<_>>();
         ExecutableFunction {
             symbol: "exported".to_string(),
             return_type,
             param_types: parameters.iter().map(|(_, _, ty)| ty.clone()).collect(),
-            value_types: parameters
-                .iter()
-                .map(|(index, _, ty)| (ValueRef(u32::try_from(*index).expect("测试参数下标")), ty.clone()))
-                .collect(),
+            value_types: parameters.iter().map(|(index, _, ty)| (ValueRef(u32::try_from(*index).expect("测试参数下标")), ty.clone())).collect(),
             value_layouts: BTreeMap::new(),
             return_layout: None,
             entry: BlockRef(0),
@@ -640,10 +579,7 @@ mod tests {
             storage,
             size: 0,
             align: 1,
-            fields: fields
-                .into_iter()
-                .map(|(name, ty)| FieldLayout { name: name.to_string(), ty, offset: 0, size: 0, align: 1 })
-                .collect(),
+            fields: fields.into_iter().map(|(name, ty)| FieldLayout { name: name.to_string(), ty, offset: 0, size: 0, align: 1 }).collect(),
         }
     }
 
@@ -671,12 +607,10 @@ mod tests {
     fn named_struct_projects_layout_slots() {
         let ty = NyarType::Nominal { layout: 7, spelling: Identifier::new("demo::Point") };
         let mut plan = plan("point", function(&[(0, "point", ty.clone())], ty.clone()));
-        plan.testing_register_type_layout(
-            ty,
-            layout(7, "Point", StorageKind::Value, vec![("x", nyar("i64")), ("y", nyar("i64"))]),
-        );
+        plan.testing_register_type_layout(ty, layout(7, "Point", StorageKind::Value, vec![("x", nyar("i64")), ("y", nyar("i64"))]));
         let contract = derive(&plan).expect("具名聚合必须有 OVM 合同");
-        let OvmAbiType::Aggregate { layout: index, name, module_path, fields } = &export_of(&contract).params[0].ty else {
+        let OvmAbiType::Aggregate { layout: index, name, module_path, fields } = &export_of(&contract).params[0].ty
+        else {
             panic!("具名 struct 必须投影为 Aggregate")
         };
         assert_eq!(*index, 0, "首个 ABI 布局登记为下标 0");
@@ -693,16 +627,18 @@ mod tests {
         let inner_ty = NyarType::Nominal { layout: 8, spelling: Identifier::new("demo::Inner") };
         let outer_ty = NyarType::Nominal { layout: 7, spelling: Identifier::new("demo::Outer") };
         let mut plan = plan("outer", function(&[(0, "value", outer_ty.clone())], outer_ty.clone()));
-        plan.testing_register_type_layout(inner_ty.clone(), layout(8, "Inner", StorageKind::Value, vec![("value", nyar("i64")), ("tag", nyar("i32"))]));
         plan.testing_register_type_layout(
-            outer_ty,
-            layout(7, "Outer", StorageKind::Value, vec![("inner", inner_ty), ("count", nyar("i32"))]),
+            inner_ty.clone(),
+            layout(8, "Inner", StorageKind::Value, vec![("value", nyar("i64")), ("tag", nyar("i32"))]),
         );
+        plan.testing_register_type_layout(outer_ty, layout(7, "Outer", StorageKind::Value, vec![("inner", inner_ty), ("count", nyar("i32"))]));
         let contract = derive(&plan).expect("嵌套聚合必须有 OVM 合同");
-        let OvmAbiType::Aggregate { fields, .. } = &export_of(&contract).params[0].ty else {
+        let OvmAbiType::Aggregate { fields, .. } = &export_of(&contract).params[0].ty
+        else {
             panic!("外层必须是 Aggregate")
         };
-        let OvmAbiType::Aggregate { layout: inner_index, fields: inner_fields, .. } = &fields[0].ty else {
+        let OvmAbiType::Aggregate { layout: inner_index, fields: inner_fields, .. } = &fields[0].ty
+        else {
             panic!("嵌套字段必须是 Aggregate")
         };
         assert_eq!(*inner_index, 0);
@@ -711,28 +647,21 @@ mod tests {
     }
 
     #[test]
-    fn generic_sequence_instance_projects_items_and_length_slots() {
+    fn generic_reference_instance_keeps_identity_despite_array_and_integer_fields() {
         let list = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")]);
         let mut plan = plan("list", function(&[(0, "values", list.clone())], list.clone()));
         plan.testing_register_type_layout(
             list,
-            layout(
-                9,
-                "ArrayList",
-                StorageKind::Reference,
-                vec![("_items", NyarType::Array(Box::new(nyar("i64")))), ("_length", nyar("i32"))],
-            ),
+            layout(9, "ArrayList", StorageKind::Reference, vec![("_items", NyarType::Array(Box::new(nyar("i64")))), ("_length", nyar("i32"))]),
         );
         let contract = derive(&plan).expect("泛型实例必须有 OVM 合同");
-        let OvmAbiType::Sequence { layout: index, items_slot, length_slot, field_count, element, length_type, .. } =
-            &export_of(&contract).params[0].ty
+        let OvmAbiType::InstanceHandle { layout: index, name, .. } = &export_of(&contract).params[0].ty
         else {
-            panic!("序列形状必须投影为 Sequence")
+            panic!("引用存储实例必须保留 InstanceHandle 身份")
         };
         assert_eq!(*index, 0);
-        assert_eq!((*items_slot, *length_slot, *field_count), (0, 1, 2));
-        assert_eq!(*element.as_ref(), OvmAbiType::I64);
-        assert_eq!(*length_type.as_ref(), OvmAbiType::I32);
+        assert_eq!(name, "ArrayList");
+        assert_eq!(export_of(&contract).returns, export_of(&contract).params[0].ty);
     }
 
     #[test]
@@ -768,11 +697,7 @@ mod tests {
         plan.testing_aggregate_layouts(nyar_types::AggregateLayoutPlan { layouts: vec![text_layout], ..Default::default() });
         for instance in plan.instances() {
             if plan.abi_name_for_instance(instance).map(|name| name.to_string()).as_deref() == Some("managed") {
-                plan.testing_functions_mut()
-                    .get_mut(&instance)
-                    .expect("函数体")
-                    .value_layouts
-                    .insert(ValueRef(0), 11u32);
+                plan.testing_functions_mut().get_mut(&instance).expect("函数体").value_layouts.insert(ValueRef(0), 11u32);
             }
         }
         plan.testing_freeze_library_export_abis().expect("载体冻结");
@@ -798,9 +723,7 @@ mod tests {
         );
         let (contract, _) = derive_with_layouts(&plan).expect("合同");
         // 模拟 `.odin` 布局表与合同声明不一致：托管文本槽声明 1 槽，产物却是 2 槽。
-        let error = contract
-            .verify_against_layouts(&[OdinLayout { field_count: 2 }])
-            .expect_err("合同与运行时布局不一致必须失败闭合");
+        let error = contract.verify_against_layouts(&[OdinLayout { field_count: 2 }]).expect_err("合同与运行时布局不一致必须失败闭合");
         assert!(error.contains("不一致"), "got: {error}");
     }
 
@@ -822,10 +745,7 @@ mod tests {
         let ty = NyarType::Nullable(Box::new(nyar("i64")));
         let plan = plan("maybe", function(&[(0, "value", ty.clone())], ty));
         let contract = derive(&plan).expect("`i64?` 必须有 OVM 合同");
-        assert_eq!(
-            export_of(&contract).params[0].ty,
-            OvmAbiType::Option { inner: Box::new(OvmAbiType::I64), boxing: OvmOptionBoxing::Niche }
-        );
+        assert_eq!(export_of(&contract).params[0].ty, OvmAbiType::Option { inner: Box::new(OvmAbiType::I64), boxing: OvmOptionBoxing::Niche });
     }
 
     #[test]
@@ -834,10 +754,12 @@ mod tests {
         let plan = plan("maybe", function(&[(0, "value", ty.clone())], ty));
         let (contract, _) = derive_with_layouts(&plan).expect("`i64??` 必须有 OVM 合同");
         let returns = &export_of(&contract).returns;
-        let OvmAbiType::Option { inner, boxing } = returns else {
+        let OvmAbiType::Option { inner, boxing } = returns
+        else {
             panic!("外层必须是 Option")
         };
-        let OvmOptionBoxing::Boxed { layout, tag_slot, payload_slot } = *boxing else {
+        let OvmOptionBoxing::Boxed { layout, tag_slot, payload_slot } = *boxing
+        else {
             panic!("嵌套 Option 必须显式 box，禁止 Niche 塌陷")
         };
         assert_eq!((layout, tag_slot, payload_slot), (0, 0, 1), "box 的冻结配方");
@@ -855,7 +777,8 @@ mod tests {
         let plan = plan("maybe", function(&[(0, "value", ty.clone())], ty));
         let (mut contract, layouts) = derive_with_layouts(&plan).expect("合同");
         // 人为把外层退回 `Niche`：这正是 `Some(None)` 与 `None` 物理同形的塌陷合同。
-        let OvmAbiType::Option { boxing, .. } = &mut export_of_mut(&mut contract).returns else {
+        let OvmAbiType::Option { boxing, .. } = &mut export_of_mut(&mut contract).returns
+        else {
             panic!("外层必须是 Option")
         };
         *boxing = OvmOptionBoxing::Niche;
@@ -865,7 +788,8 @@ mod tests {
 
     /// 按合同编码 `None` / `Some(None)` / `Some(Some(x))`；只看合同，不看运行期类型。
     fn encode_option_shapes(ty: &OvmAbiType) -> [String; 3] {
-        let OvmAbiType::Option { boxing, .. } = ty else {
+        let OvmAbiType::Option { boxing, .. } = ty
+        else {
             panic!("必须是 Option")
         };
         match boxing {
@@ -909,10 +833,7 @@ mod tests {
         let ty = NyarType::Nominal { layout: 7, spelling: Identifier::new("demo::Point") };
         let build = || {
             let mut plan = plan("point", function(&[(0, "point", ty.clone())], ty.clone()));
-            plan.testing_register_type_layout(
-                ty.clone(),
-                layout(7, "Point", StorageKind::Value, vec![("x", nyar("i64")), ("y", nyar("i64"))]),
-            );
+            plan.testing_register_type_layout(ty.clone(), layout(7, "Point", StorageKind::Value, vec![("x", nyar("i64")), ("y", nyar("i64"))]));
             derive(&plan).expect("合同")
         };
         let first = build();

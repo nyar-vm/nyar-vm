@@ -148,13 +148,8 @@ fn set_slot(heap: &mut ObjectHeap, id: nyar_gc::ObjectId, slot: usize, value: Va
 ///
 /// 每个参数只按 sidecar 记录的结构物化；合同缺失或形状不符即失败闭合，
 /// 禁止退化成“看起来像字符串就按 raw、看起来像对象就按托管”的运行时探测。
-pub fn parse_call_args_json_with_contract(
-    source: &str,
-    export: &OvmAbiExport,
-    heap: &mut ObjectHeap,
-) -> Result<Vec<Value>, OdinRuntimeError> {
-    let json: JsonValue = serde_json::from_str(source)
-        .map_err(|error| contract_failure("JSON args array", format!("{error}")))?;
+pub fn parse_call_args_json_with_contract(source: &str, export: &OvmAbiExport, heap: &mut ObjectHeap) -> Result<Vec<Value>, OdinRuntimeError> {
+    let json: JsonValue = serde_json::from_str(source).map_err(|error| contract_failure("JSON args array", format!("{error}")))?;
     let JsonValue::Array(items) = json
     else {
         return Err(contract_failure("JSON args array", json_kind(&json).to_string()));
@@ -167,9 +162,8 @@ pub fn parse_call_args_json_with_contract(
     }
     let mut args = Vec::with_capacity(items.len());
     for (item, param) in items.iter().zip(export.params.iter()) {
-        let value = materialize_value(item, &param.ty, heap).map_err(|error| {
-            contract_failure("declared parameter contract", format!("`{}` (index {}): {error}", param.name, param.index))
-        })?;
+        let value = materialize_value(item, &param.ty, heap)
+            .map_err(|error| contract_failure("declared parameter contract", format!("`{}` (index {}): {error}", param.name, param.index)))?;
         args.push(value);
     }
     Ok(args)
@@ -215,14 +209,12 @@ fn materialize_value(json: &JsonValue, ty: &OvmAbiType, heap: &mut ObjectHeap) -
                 None => Err(contract_failure("raw utf8 JSON string", json_kind(json).to_string())),
             },
             OvmTextRepresentation::Managed { layout, field_count, byte_slot } => {
-                let Some(text) = json.as_str() else {
+                let Some(text) = json.as_str()
+                else {
                     return Err(contract_failure("managed utf8 JSON string", json_kind(json).to_string()));
                 };
                 if *byte_slot >= *field_count {
-                    return Err(contract_failure(
-                        "managed utf8 byte slot",
-                        format!("byte_slot {byte_slot} outside field_count {field_count}"),
-                    ));
+                    return Err(contract_failure("managed utf8 byte slot", format!("byte_slot {byte_slot} outside field_count {field_count}")));
                 }
                 let bytes = text.as_bytes().iter().map(|byte| Value::I32(*byte as i32)).collect::<Vec<_>>();
                 let bytes = array_runtime::build_fixed_array(heap, 0, &bytes);
@@ -232,26 +224,22 @@ fn materialize_value(json: &JsonValue, ty: &OvmAbiType, heap: &mut ObjectHeap) -
             }
         },
         OvmAbiType::Array { element } => {
-            let Some(items) = json.as_array() else {
+            let Some(items) = json.as_array()
+            else {
                 return Err(contract_failure("array JSON array", json_kind(json).to_string()));
             };
-            let elements = items
-                .iter()
-                .map(|item| materialize_value(item, element, heap))
-                .collect::<Result<Vec<_>, _>>()?;
+            let elements = items.iter().map(|item| materialize_value(item, element, heap)).collect::<Result<Vec<_>, _>>()?;
             Ok(array_runtime::build_fixed_array(heap, 0, &elements))
         }
         OvmAbiType::FixedArray { element, length } => {
-            let Some(items) = json.as_array() else {
+            let Some(items) = json.as_array()
+            else {
                 return Err(contract_failure("fixed array JSON array", json_kind(json).to_string()));
             };
             if items.len() != *length {
                 return Err(contract_failure("fixed array length", format!("expected {length}, got {}", items.len())));
             }
-            let elements = items
-                .iter()
-                .map(|item| materialize_value(item, element, heap))
-                .collect::<Result<Vec<_>, _>>()?;
+            let elements = items.iter().map(|item| materialize_value(item, element, heap)).collect::<Result<Vec<_>, _>>()?;
             Ok(array_runtime::build_fixed_array(heap, 0, &elements))
         }
         OvmAbiType::Option { inner, boxing } => {
@@ -277,17 +265,15 @@ fn materialize_value(json: &JsonValue, ty: &OvmAbiType, heap: &mut ObjectHeap) -
             }
         }
         OvmAbiType::Tuple { fields } => {
-            let Some(items) = json.as_array() else {
+            let Some(items) = json.as_array()
+            else {
                 return Err(contract_failure("tuple JSON array", json_kind(json).to_string()));
             };
             if items.len() != fields.len() {
                 return Err(contract_failure("tuple arity", format!("expected {}, got {}", fields.len(), items.len())));
             }
-            let elements = items
-                .iter()
-                .zip(fields.iter())
-                .map(|(item, field)| materialize_value(item, field, heap))
-                .collect::<Result<Vec<_>, _>>()?;
+            let elements =
+                items.iter().zip(fields.iter()).map(|(item, field)| materialize_value(item, field, heap)).collect::<Result<Vec<_>, _>>()?;
             Ok(array_runtime::build_fixed_array(heap, 0, &elements))
         }
         OvmAbiType::Aggregate { layout, name, fields, .. } => {
@@ -312,31 +298,9 @@ fn materialize_value(json: &JsonValue, ty: &OvmAbiType, heap: &mut ObjectHeap) -
             }
             Ok(Value::Object(id))
         }
-        OvmAbiType::Sequence { layout, name, items_slot, length_slot, field_count, element, length_type, .. } => {
-            let Some(items) = json.as_array() else {
-                return Err(contract_failure("sequence JSON array", json_kind(json).to_string()));
-            };
-            if items_slot.max(length_slot) >= field_count {
-                return Err(contract_failure(
-                    "sequence slot layout",
-                    format!("`{name}` slots ({items_slot}, {length_slot}) outside field_count {field_count}"),
-                ));
-            }
-            let elements = items
-                .iter()
-                .map(|item| materialize_value(item, element, heap))
-                .collect::<Result<Vec<_>, _>>()?;
-            let backing = array_runtime::build_fixed_array(heap, 0, &elements);
-            let length = sequence_length_value(items.len(), length_type)?;
-            let id = heap.alloc_layout_object(layout_index(*layout, "sequence layout")?, *field_count);
-            set_slot(heap, id, *items_slot, backing)?;
-            set_slot(heap, id, *length_slot, length)?;
-            Ok(Value::Object(id))
+        OvmAbiType::InstanceHandle { name, .. } => {
+            Err(contract_failure("instance handle construction contract", format!("`{name}` 只能由语言侧构造函数创建，宿主不得按字段重建")))
         }
-        OvmAbiType::InstanceHandle { name, .. } => Err(contract_failure(
-            "instance handle construction contract",
-            format!("`{name}` 只能由语言侧构造函数创建，宿主不得按字段重建"),
-        )),
         OvmAbiType::Unite { layout, name, tag_slot, payload_slot, variants } => {
             let (variant, payload) = match json {
                 // 零载荷变体在线格式上只有身份名，与带载荷变体的对象形态可区分。
@@ -354,9 +318,10 @@ fn materialize_value(json: &JsonValue, ty: &OvmAbiType, heap: &mut ObjectHeap) -
                     (variant, Value::Null)
                 }
                 JsonValue::Object(map) => {
-                    let variant_name = map.get("variant").and_then(JsonValue::as_str).ok_or_else(|| {
-                        contract_failure("unite variant name", format!("`{name}` 缺少字符串 `variant` 键"))
-                    })?;
+                    let variant_name = map
+                        .get("variant")
+                        .and_then(JsonValue::as_str)
+                        .ok_or_else(|| contract_failure("unite variant name", format!("`{name}` 缺少字符串 `variant` 键")))?;
                     let Some(variant) = variants.iter().find(|variant| variant.name == variant_name)
                     else {
                         return Err(contract_failure("declared unite variant name", format!("`{name}` 没有变体 `{variant_name}`")));
@@ -373,10 +338,7 @@ fn materialize_value(json: &JsonValue, ty: &OvmAbiType, heap: &mut ObjectHeap) -
                         return Err(contract_failure("unite payload presence", format!("`{name}.{variant_name}` 缺少 `payload` 键")));
                     };
                     if map.len() != 2 {
-                        return Err(contract_failure(
-                            "unite wire keys",
-                            format!("`{name}` 只接受 `variant` + `payload`，收到额外键"),
-                        ));
+                        return Err(contract_failure("unite wire keys", format!("`{name}` 只接受 `variant` + `payload`，收到额外键")));
                     }
                     (variant, materialize_value(payload_json, payload_ty, heap)?)
                 }
@@ -390,30 +352,8 @@ fn materialize_value(json: &JsonValue, ty: &OvmAbiType, heap: &mut ObjectHeap) -
     }
 }
 
-fn sequence_length_value(length: usize, ty: &OvmAbiType) -> Result<Value, OdinRuntimeError> {
-    match ty {
-        OvmAbiType::I32 => {
-            i32::try_from(length).map(Value::I32).map_err(|_| contract_failure("sequence length i32", format!("{length} overflows i32")))
-        }
-        OvmAbiType::I64 => Ok(Value::I64(length as i64)),
-        _ => Err(contract_failure("sequence length integer contract", "length_type 必须是 i32 或 i64".to_owned())),
-    }
-}
-
-fn sequence_length_usize(value: &Value, what: &'static str) -> Result<usize, OdinRuntimeError> {
-    match value {
-        Value::I32(length) if *length >= 0 => Ok(*length as usize),
-        Value::I64(length) if *length >= 0 => Ok(*length as usize),
-        other => Err(contract_failure(what, other.type_name().to_string())),
-    }
-}
-
 /// 严格按合同序列化导出返回值。
-pub fn value_to_json_with_contract(
-    value: &Value,
-    returns: &OvmAbiType,
-    heap: &ObjectHeap,
-) -> Result<JsonValue, OdinRuntimeError> {
+pub fn value_to_json_with_contract(value: &Value, returns: &OvmAbiType, heap: &ObjectHeap) -> Result<JsonValue, OdinRuntimeError> {
     match returns {
         OvmAbiType::Unit => match value {
             Value::Null => Ok(JsonValue::Null),
@@ -457,18 +397,14 @@ pub fn value_to_json_with_contract(
                     .ok_or_else(|| contract_failure("managed utf8 byte slot", format!("slot {byte_slot} out of range")))?;
                 let bytes = byte_array(heap, bytes_value)?;
                 Ok(JsonValue::String(
-                    text_runtime::from_bytes(&bytes, "utf8 managed contract").map_err(|error| {
-                        contract_failure("managed utf8 byte payload", error.to_string())
-                    })?,
+                    text_runtime::from_bytes(&bytes, "utf8 managed contract")
+                        .map_err(|error| contract_failure("managed utf8 byte payload", error.to_string()))?,
                 ))
             }
         },
         OvmAbiType::Array { element } => {
             let slots = object_slots(heap, value, "array return")?;
-            let items = slots
-                .iter()
-                .map(|item| value_to_json_with_contract(item, element, heap))
-                .collect::<Result<Vec<_>, _>>()?;
+            let items = slots.iter().map(|item| value_to_json_with_contract(item, element, heap)).collect::<Result<Vec<_>, _>>()?;
             Ok(JsonValue::Array(items))
         }
         OvmAbiType::FixedArray { element, length } => {
@@ -476,10 +412,7 @@ pub fn value_to_json_with_contract(
             if slots.len() != *length {
                 return Err(contract_failure("fixed array return length", format!("expected {length}, got {}", slots.len())));
             }
-            let items = slots
-                .iter()
-                .map(|item| value_to_json_with_contract(item, element, heap))
-                .collect::<Result<Vec<_>, _>>()?;
+            let items = slots.iter().map(|item| value_to_json_with_contract(item, element, heap)).collect::<Result<Vec<_>, _>>()?;
             Ok(JsonValue::Array(items))
         }
         OvmAbiType::Option { inner, boxing } => {
@@ -532,40 +465,16 @@ pub fn value_to_json_with_contract(
             }
             Ok(JsonValue::Object(map))
         }
-        OvmAbiType::Sequence { name, items_slot, length_slot, element, .. } => {
-            let slots = object_slots(heap, value, "sequence return")?;
-            let items = slots
-                .get(*items_slot)
-                .ok_or_else(|| contract_failure("sequence items slot", format!("`{name}` items_slot {items_slot} out of range")))?;
-            let length_value = slots
-                .get(*length_slot)
-                .ok_or_else(|| contract_failure("sequence length slot", format!("`{name}` length_slot {length_slot} out of range")))?;
-            let length = sequence_length_usize(length_value, "sequence length return")?;
-            let backing = object_slots(heap, items, "sequence backing array")?;
-            if length > backing.len() {
-                return Err(contract_failure(
-                    "sequence length return",
-                    format!("`{name}` declares {length} items but backing array has {}", backing.len()),
-                ));
-            }
-            let items = backing[..length]
-                .iter()
-                .map(|item| value_to_json_with_contract(item, element, heap))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(JsonValue::Array(items))
+        OvmAbiType::InstanceHandle { name, .. } => {
+            Err(contract_failure("instance handle serialization contract", format!("`{name}` 是不透明实例句柄，不能序列化成字段快照")))
         }
-        OvmAbiType::InstanceHandle { name, .. } => Err(contract_failure(
-            "instance handle serialization contract",
-            format!("`{name}` 是不透明实例句柄，不能序列化成字段快照"),
-        )),
         OvmAbiType::Unite { name, tag_slot, payload_slot, variants, .. } => {
             if matches!(value, Value::Null) {
                 return Err(contract_failure("unite return", "null".to_owned()));
             }
             let slots = object_slots(heap, value, "unite return")?;
-            let tag = slots
-                .get(*tag_slot)
-                .ok_or_else(|| contract_failure("unite tag slot", format!("`{name}` tag_slot {tag_slot} out of range")))?;
+            let tag =
+                slots.get(*tag_slot).ok_or_else(|| contract_failure("unite tag slot", format!("`{name}` tag_slot {tag_slot} out of range")))?;
             let Value::I32(tag) = tag
             else {
                 return Err(contract_failure("unite tag return", format!("`{name}` tag slot holds {}", tag.type_name())));
@@ -625,26 +534,19 @@ mod tests {
     #[test]
     fn raw_and_managed_text_follow_the_recorded_contract() {
         let raw = OvmAbiType::Text { representation: OvmTextRepresentation::Raw };
-        let managed = OvmAbiType::Text {
-            representation: OvmTextRepresentation::Managed { layout: 3, field_count: 1, byte_slot: 0 },
-        };
+        let managed = OvmAbiType::Text { representation: OvmTextRepresentation::Managed { layout: 3, field_count: 1, byte_slot: 0 } };
         let mut heap = ObjectHeap::new();
-        let args = parse_call_args_json_with_contract("[\"abc\"]", &export(raw.clone(), raw.clone()), &mut heap)
-            .expect("raw utf8 参数");
+        let args = parse_call_args_json_with_contract("[\"abc\"]", &export(raw.clone(), raw.clone()), &mut heap).expect("raw utf8 参数");
         assert_eq!(args[0], Value::String("abc".to_string()), "Raw 槽必须保持宿主串");
         // 同一 JSON 在 Managed 合同下必须是托管对象，而不是被探测成 raw 串。
         let mut heap = ObjectHeap::new();
-        let args = parse_call_args_json_with_contract("[\"abc\"]", &export(managed.clone(), managed.clone()), &mut heap)
-            .expect("managed utf8 参数");
+        let args =
+            parse_call_args_json_with_contract("[\"abc\"]", &export(managed.clone(), managed.clone()), &mut heap).expect("managed utf8 参数");
         assert!(matches!(args[0], Value::Object(_)), "Managed 槽必须是托管对象");
-        assert_eq!(
-            value_to_json_with_contract(&args[0], &managed, &heap).expect("托管串序列化"),
-            JsonValue::String("abc".to_string())
-        );
+        assert_eq!(value_to_json_with_contract(&args[0], &managed, &heap).expect("托管串序列化"), JsonValue::String("abc".to_string()));
         // Managed 合同收到裸串必须失败闭合：不许“当 Object 不行再当 String”。
         let mut heap = ObjectHeap::new();
-        let error = parse_call_args_json_with_contract("[[1]]", &export(managed, raw), &mut heap)
-            .expect_err("宿主裸串不是托管文本");
+        let error = parse_call_args_json_with_contract("[[1]]", &export(managed, raw), &mut heap).expect_err("宿主裸串不是托管文本");
         assert!(error.to_string().contains("managed utf8 JSON string"), "got: {error}");
     }
 
@@ -661,28 +563,19 @@ mod tests {
             ],
         };
         assert_eq!(roundtrip(&unite, "\"None\""), JsonValue::String("None".to_string()));
-        assert_eq!(
-            roundtrip(&unite, "{\"variant\":\"Some\",\"payload\":42}"),
-            serde_json::json!({ "variant": "Some", "payload": 42 })
-        );
+        assert_eq!(roundtrip(&unite, "{\"variant\":\"Some\",\"payload\":42}"), serde_json::json!({ "variant": "Some", "payload": 42 }));
         // 零载荷变体不接受 payload 键，带载荷变体必须携带 payload。
         let mut heap = ObjectHeap::new();
-        let error = parse_call_args_json_with_contract(
-            "[{\"variant\":\"None\",\"payload\":1}]",
-            &export(unite.clone(), unite.clone()),
-            &mut heap,
-        )
-        .expect_err("零载荷变体不得伪造载荷");
+        let error =
+            parse_call_args_json_with_contract("[{\"variant\":\"None\",\"payload\":1}]", &export(unite.clone(), unite.clone()), &mut heap)
+                .expect_err("零载荷变体不得伪造载荷");
         assert!(error.to_string().contains("零载荷变体"), "got: {error}");
     }
 
     #[test]
     fn boxed_option_keeps_some_none_distinguishable_from_none() {
         let option = OvmAbiType::Option {
-            inner: Box::new(OvmAbiType::Option {
-                inner: Box::new(OvmAbiType::I64),
-                boxing: OvmOptionBoxing::Niche,
-            }),
+            inner: Box::new(OvmAbiType::Option { inner: Box::new(OvmAbiType::I64), boxing: OvmOptionBoxing::Niche }),
             boxing: OvmOptionBoxing::Boxed { layout: 9, tag_slot: 0, payload_slot: 1 },
         };
         let mut heap = ObjectHeap::new();
@@ -691,12 +584,7 @@ mod tests {
             &OvmAbiExport {
                 logical_name: "entry".to_string(),
                 params: (0..3)
-                    .map(|index| OvmAbiParam {
-                        index,
-                        name: format!("value{index}"),
-                        ty: option.clone(),
-                        carrier: "handle".to_string(),
-                    })
+                    .map(|index| OvmAbiParam { index, name: format!("value{index}"), ty: option.clone(), carrier: "handle".to_string() })
                     .collect(),
                 returns: option.clone(),
                 returns_carrier: "handle".to_string(),
@@ -708,13 +596,7 @@ mod tests {
         assert!(matches!(args[1], Value::Object(_)), "Some(None) 必须是 box 对象，不能塌陷成 null");
         assert!(matches!(args[2], Value::Object(_)), "Some(Some(7))");
         assert_eq!(value_to_json_with_contract(&args[0], &option, &heap).expect("None"), JsonValue::Null);
-        assert_eq!(
-            value_to_json_with_contract(&args[1], &option, &heap).expect("Some(None)"),
-            serde_json::json!({ "$some": null })
-        );
-        assert_eq!(
-            value_to_json_with_contract(&args[2], &option, &heap).expect("Some(Some(7))"),
-            serde_json::json!({ "$some": 7 })
-        );
+        assert_eq!(value_to_json_with_contract(&args[1], &option, &heap).expect("Some(None)"), serde_json::json!({ "$some": null }));
+        assert_eq!(value_to_json_with_contract(&args[2], &option, &heap).expect("Some(Some(7))"), serde_json::json!({ "$some": 7 }));
     }
 }

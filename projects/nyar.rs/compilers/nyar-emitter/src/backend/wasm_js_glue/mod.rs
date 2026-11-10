@@ -371,9 +371,6 @@ function marshalLibraryArg(schema, value, path) {{
         return boxNew(marshalLibraryArg(schema.inner, value, path));
     }}
 
-    // ── Array / 序列视图：JS 数组 → VM 物理数组，必要时再装配成容器聚合 ──
-    // 构造只走 wasm 导出（`array.new_default` / `array.set` / `struct.new`
-    // 包装），宿主不复刻布局；schema 里的 ops/container 合同是唯一调度依据。
     if (kind === "Array") {{
         if (!Array.isArray(value)) {{
             throw new Error(
@@ -392,17 +389,7 @@ function marshalLibraryArg(schema, value, path) {{
         for (let i = 0; i < value.length; i++) {{
             set(items, i, marshalLibraryArg(schema.element, value[i], `${{path}}[${{i}}]`));
         }}
-        if (!schema.container) return items;
-        const seq = schema.container;
-        const constructor = bridgeExport(seq.constructor, "container constructor", path);
-        const ctorArgs = new Array(seq.field_count).fill(null);
-        ctorArgs[seq.items_field_index] = items;
-        ctorArgs[seq.length_field_index] = marshalLibraryArg(
-            seq.length_type,
-            abiKind(seq.length_type) === "I64" ? BigInt(value.length) : value.length,
-            `${{path}}.length`
-        );
-        return constructor(...ctorArgs);
+        return items;
     }}
 
     // ── InstanceHandle：不透明实例句柄原样透传 ─────────────────────────────
@@ -413,7 +400,7 @@ function marshalLibraryArg(schema, value, path) {{
     }}
 
     // ── NamedAggregate：按布局派生的字段构造合同逐字段编组 ──
-    // 只有非序列形状走到这里。字段名/构造器名都来自 schema；缺字段合同或
+    // 值存储聚合的字段名/构造器名来自 schema；缺字段合同或
     // 缺 `struct.new` 包装导出都失败闭合，不默认回填字段。
     if (kind === "NamedAggregate") {{
         const fields = schema.fields;
@@ -515,9 +502,6 @@ function demarshalLibraryReturn(schema, raw, path) {{
         return demarshalLibraryReturn(schema.inner, boxGet(raw), path);
     }}
 
-    // ── Array / 序列视图：物理数组 → JS 数组；序列容器先读回字段再投影 ──
-    // 序列容器只经 schema 声明的 accessor/ops 读取，按冻结布局事实定位
-    // backing array 与计数；不按类型名识别 ArrayList。
     if (kind === "Array") {{
         if (raw == null) {{
             throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: wasm returned a null reference`);
@@ -527,22 +511,6 @@ function demarshalLibraryReturn(schema, raw, path) {{
             throw new Error(
                 `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: ABI schema has no physical array ops contract. Schema: ${{JSON.stringify(schema)}}`
             );
-        }}
-        if (schema.container) {{
-            const seq = schema.container;
-            const readItems = bridgeExport(seq.items_accessor, "container items accessor", path);
-            const readLength = bridgeExport(seq.length_accessor, "container length accessor", path);
-            const items = readItems(raw);
-            if (items == null) {{
-                throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: container backing array is a null reference`);
-            }}
-            const length = Number(demarshalLibraryReturn(seq.length_type, readLength(raw), `${{path}}.length`));
-            const get = bridgeExport(ops.get, "array.get", path);
-            const output = new Array(length);
-            for (let i = 0; i < length; i++) {{
-                output[i] = demarshalLibraryReturn(schema.element, get(items, i), `${{path}}[${{i}}]`);
-            }}
-            return output;
         }}
         const length = Number(bridgeExport(ops.length, "array.len", path)(raw));
         const get = bridgeExport(ops.get, "array.get", path);

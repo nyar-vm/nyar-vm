@@ -32,3 +32,41 @@ fn json_array_requires_heap() {
     let result = value_from_json(&serde_json::json!([1, 2]));
     assert!(matches!(result, Err(OdinRuntimeError::TypeMismatch { .. })));
 }
+
+fn echo_contract(ty: odin_bytecode::OvmAbiType) -> odin_bytecode::OvmAbiExport {
+    odin_bytecode::OvmAbiExport {
+        logical_name: "echo".to_string(),
+        params: vec![odin_bytecode::OvmAbiParam { index: 0, name: "value".to_string(), ty: ty.clone(), carrier: "handle".to_string() }],
+        returns: ty,
+        returns_carrier: "handle".to_string(),
+    }
+}
+
+#[test]
+fn reference_instance_cannot_be_rebuilt_from_an_array_or_field_snapshot() {
+    use odin_bytecode::OvmAbiType;
+    use odin_vm::json_bridge::{parse_call_args_json_with_contract, value_to_json_with_contract};
+
+    let contract = echo_contract(OvmAbiType::InstanceHandle { layout: 0, name: "Measurement".to_string(), module_path: "demo".to_string() });
+    let mut heap = ObjectHeap::new();
+    for input in ["[[1, 2]]", r#"[{"samples":[1,2],"version":99}]"#] {
+        let error = parse_call_args_json_with_contract(input, &contract, &mut heap).expect_err("引用实例不接受宿主重建");
+        assert!(error.to_string().contains("instance handle construction contract"), "{error}");
+    }
+    let samples = heap.alloc_layout_object(1, 2);
+    let instance = heap.alloc(nyar_gc::ObjectPayload::LayoutObject { layout_id: 0, slots: vec![Value::Object(samples), Value::I64(99)] });
+    let error = value_to_json_with_contract(&Value::Object(instance), &contract.returns, &heap).expect_err("引用实例不允许序列化字段快照");
+    assert!(error.to_string().contains("instance handle serialization contract"), "{error}");
+}
+
+#[test]
+fn declared_arrays_roundtrip_elements_without_nominal_layout() {
+    use odin_bytecode::OvmAbiType;
+    use odin_vm::json_bridge::{parse_call_args_json_with_contract, value_to_json_with_contract};
+
+    let contract = echo_contract(OvmAbiType::Array { element: Box::new(OvmAbiType::Array { element: Box::new(OvmAbiType::I64) }) });
+    let mut heap = ObjectHeap::new();
+    let values = parse_call_args_json_with_contract("[[[1,2],[],[3]]]", &contract, &mut heap).expect("声明数组按元素合同物化");
+    let output = value_to_json_with_contract(&values[0], &contract.returns, &heap).expect("声明数组往返");
+    assert_eq!(output, serde_json::json!([[1, 2], [], [3]]));
+}

@@ -114,8 +114,8 @@ pub(super) fn register_gc_struct_types(
 ///
 /// 收集来源（与 V 侧 `wasm_module_ensure_array_type` 在 NewArr/ArrayGet/ArraySet 上登记同构）：
 /// - `ArrayNew` / `ArrayLiteral` 指令的 element_type
-/// - 函数 `param_types` / `value_types` 中的 `Array` / `FixedArray` 元素类型
-///   （覆盖仅经 ArrayGet 使用、无 ArrayNew 的路径，如 `Utf8Iterator.next` 的 `Integer8`）
+/// - 函数参数、返回值、局部值以及冻结字段与 sum 载荷中的数组
+/// - 递归遍历数组、Nullable、Tuple 等结构，确保嵌套数组的每层物理类型都注册
 ///
 /// 注意:tuple 走线性内存；FixedArray 在 wasm-gc 强制轨同样需要 arraytype。
 ///
@@ -128,70 +128,52 @@ pub(super) fn register_gc_array_types(
     type_indices: &mut Vec<Vec<u8>>,
     js_glue_utf8_as_anyref: bool,
 ) -> crate::Result<BTreeMap<String, u32>> {
-    let mut map = BTreeMap::new();
-    let mut ensure = |element_type: &NyarType, type_indices: &mut Vec<Vec<u8>>, map: &mut BTreeMap<String, u32>| -> crate::Result<()> {
-        let key = wasm_array_element_type_key(element_type);
-        if map.contains_key(&key) {
-            return Ok(());
-        }
-        let field_type_byte = wasm_gc_field_type_byte_for_glue(element_type, js_glue_utf8_as_anyref)?;
-        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
-        type_indices.push(wasm_gc_array_type(field_type_byte));
-        map.insert(key, type_index);
-        Ok(())
-    };
-    {
-        let exec = &ctx.submission.backend_plan;
-        for operation in exec.instances() {
-            let Some(view) = exec.get_function(&operation)
-            else {
-                continue;
-            };
-            for ty in view.function.param_types.iter().chain(view.function.value_types.values()) {
-                match ty {
-                    NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
-                        ensure(element.as_ref(), type_indices, &mut map)?;
-                    }
-                    _ => {}
-                }
-            }
-            for block in &view.function.blocks {
-                for instruction in &block.instructions {
-                    match &instruction.kind {
-                        MirInstructionKind::ArrayNew { array_type, .. } | MirInstructionKind::ArrayFromElements { array_type, .. } => {
-                            match array_type {
-                                NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
-                                    ensure(element.as_ref(), type_indices, &mut map)?;
-                                }
-                                _ => {}
-                            }
-                        }
-                        MirInstructionKind::ArrayGet { array, .. }
-                        | MirInstructionKind::ArraySet { array, .. }
-                        | MirInstructionKind::ArrayLength { array } => {
-                            if let MirOperand::Value(receiver) = array {
-                                if let Some(NyarType::Array(element) | NyarType::FixedArray { element, .. }) =
-                                    view.function.value_types.get(receiver)
-                                {
-                                    ensure(element.as_ref(), type_indices, &mut map)?;
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
+    let mut pending = Vec::new();
+    let exec = &ctx.submission.backend_plan;
+    for operation in exec.instances() {
+        let Some(view) = exec.get_function(&operation)
+        else {
+            continue;
+        };
+        pending.extend(view.function.param_types.iter().cloned());
+        pending.extend(view.function.value_types.values().cloned());
+        pending.push(view.function.return_type.clone());
+        for block in &view.function.blocks {
+            for instruction in &block.instructions {
+                if let MirInstructionKind::ArrayNew { array_type, .. } | MirInstructionKind::ArrayFromElements { array_type, .. } =
+                    &instruction.kind
+                {
+                    pending.push(array_type.clone());
                 }
             }
         }
     }
-    // 容器桥：布局字段里的 backing array 不一定出现在 MIR 指令里（例如
-    // `ArrayList<T>` 的 `_items: [T]` 只作为入参容器的一部分被宿主构造）。
-    // 按冻结布局补齐 arraytype，否则容器桥导出无法 `ref.cast`。
-    for layout in &ctx.layouts.layouts {
-        for field in &layout.fields {
-            if let NyarType::Array(element) = &field.ty {
-                ensure(element.as_ref(), type_indices, &mut map)?;
-            }
+    // 字段与 sum 载荷是已冻结的类型事实；它们的数组类型不一定出现在指令中。
+    pending.extend(ctx.layouts.layouts.iter().flat_map(|layout| layout.fields.iter().map(|field| field.ty.clone())));
+    pending
+        .extend(exec.sum_layout_by_nyar_type().values().flat_map(|sum| sum.variants.iter().filter_map(|variant| variant.payload_type.clone())));
+    let mut visited = BTreeSet::new();
+    let mut elements = BTreeSet::new();
+    while let Some(ty) = pending.pop() {
+        if !visited.insert(ty.clone()) {
+            continue;
         }
+        match ty {
+            NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
+                elements.insert(element.as_ref().clone());
+                pending.push(*element);
+            }
+            NyarType::Nullable(inner) => pending.push(*inner),
+            NyarType::Tuple(fields) | NyarType::Union(fields) => pending.extend(fields),
+            _ => {}
+        }
+    }
+    let mut map = BTreeMap::new();
+    for element_type in elements {
+        let field_type_byte = wasm_gc_field_type_byte_for_glue(&element_type, js_glue_utf8_as_anyref)?;
+        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_gc_array_type(field_type_byte));
+        map.insert(wasm_array_element_type_key(&element_type), type_index);
     }
     Ok(map)
 }
@@ -273,17 +255,11 @@ fn collect_boundary_sums(structure: &crate::abi_structure::AbiStructure, nominal
                 collect_boundary_sums(payload, nominals);
             }
         }
-        AbiStructure::Array { element, .. }
-        | AbiStructure::FixedArray { element, .. }
-        | AbiStructure::Option { inner: element } => collect_boundary_sums(element, nominals),
+        AbiStructure::Array { element, .. } | AbiStructure::FixedArray { element, .. } | AbiStructure::Option { inner: element } => {
+            collect_boundary_sums(element, nominals)
+        }
         AbiStructure::Tuple { fields } => fields.iter().for_each(|field| collect_boundary_sums(field, nominals)),
-        AbiStructure::Aggregate(aggregate) => {
-            aggregate.fields.iter().for_each(|field| collect_boundary_sums(&field.ty, nominals))
-        }
-        AbiStructure::Sequence(sequence) => {
-            collect_boundary_sums(&sequence.element, nominals);
-            collect_boundary_sums(&sequence.length_ty, nominals);
-        }
+        AbiStructure::Aggregate(aggregate) => aggregate.fields.iter().for_each(|field| collect_boundary_sums(&field.ty, nominals)),
         _ => {}
     }
 }

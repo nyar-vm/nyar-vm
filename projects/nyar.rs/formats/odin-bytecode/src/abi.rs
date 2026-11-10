@@ -62,8 +62,8 @@ pub struct OvmAbiParam {
 
 /// OVM 物理投影后的 ABI 类型。
 ///
-/// 标量保留语义身份，宿主按该身份编解码；聚合与序列携带模块布局下标与槽位，
-/// 宿主据此在 OVM 堆上装配同一形状的对象。所有槽位都是声明顺序事实。
+/// 标量保留语义身份，宿主按该身份编解码；值聚合携带模块布局下标与声明顺序槽位。
+/// 引用实例保留不透明身份，宿主不得根据字段形状重建。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "PascalCase")]
 pub enum OvmAbiType {
@@ -122,25 +122,6 @@ pub enum OvmAbiType {
         /// 按声明顺序排列的字段；字段在对象里的槽位等于其下标。
         fields: Vec<OvmAbiField>,
     },
-    /// 序列容器视图（冻结布局派生的 `items + length` 形状）。
-    Sequence {
-        /// 容器模块布局下标。
-        layout: i32,
-        /// 容器简单名。
-        name: String,
-        /// 容器完整命名空间路径。
-        module_path: String,
-        /// backing array 字段槽位。
-        items_slot: usize,
-        /// 计数字段槽位。
-        length_slot: usize,
-        /// 容器字段总数。
-        field_count: usize,
-        /// backing array 元素结构。
-        element: Box<OvmAbiType>,
-        /// 计数字段结构。
-        length_type: Box<OvmAbiType>,
-    },
     /// 引用存储名义实例的共享身份（不是字段快照）。
     InstanceHandle {
         /// 模块布局下标。
@@ -176,7 +157,6 @@ impl OvmAbiType {
                 | Self::Option { .. }
                 | Self::Tuple { .. }
                 | Self::Aggregate { .. }
-                | Self::Sequence { .. }
                 | Self::InstanceHandle { .. }
                 | Self::Unite { .. }
         )
@@ -332,10 +312,7 @@ impl OvmAbiContract {
     /// 任何一项不满足都失败闭合，禁止宿主按另一种解释继续。
     pub fn verify_against_layouts(&self, layouts: &[OdinLayout]) -> Result<(), String> {
         if self.schema_version != OVM_ABI_SCHEMA_VERSION {
-            return Err(format!(
-                "OVM ABI 合同 schema 版本 {} 与当前支持的 {OVM_ABI_SCHEMA_VERSION} 不一致",
-                self.schema_version
-            ));
+            return Err(format!("OVM ABI 合同 schema 版本 {} 与当前支持的 {OVM_ABI_SCHEMA_VERSION} 不一致", self.schema_version));
         }
         for export in &self.exports {
             for param in &export.params {
@@ -351,25 +328,17 @@ impl OvmAbiContract {
 fn verify_type(ty: &OvmAbiType, layouts: &[OdinLayout], site: &str) -> Result<(), String> {
     let check_layout = |index: i32, expected: usize, role: &str| -> Result<(), String> {
         let position = usize::try_from(index).map_err(|_| format!("{site} 的 {role} 布局下标 `{index}` 为负"))?;
-        let layout = layouts
-            .get(position)
-            .ok_or_else(|| format!("{site} 的 {role} 布局下标 `{index}` 超出 `.odin` 布局表（{} 项）", layouts.len()))?;
+        let layout =
+            layouts.get(position).ok_or_else(|| format!("{site} 的 {role} 布局下标 `{index}` 超出 `.odin` 布局表（{} 项）", layouts.len()))?;
         if usize::try_from(layout.field_count) != Ok(expected) {
-            return Err(format!(
-                "{site} 的 {role} 声明字段数 {expected} 与 `.odin` 布局 `{index}` 的字段数 {} 不一致",
-                layout.field_count
-            ));
+            return Err(format!("{site} 的 {role} 声明字段数 {expected} 与 `.odin` 布局 `{index}` 的字段数 {} 不一致", layout.field_count));
         }
         Ok(())
     };
     match ty {
-        OvmAbiType::Unit
-        | OvmAbiType::I32
-        | OvmAbiType::I64
-        | OvmAbiType::F32
-        | OvmAbiType::F64
-        | OvmAbiType::Bool
-        | OvmAbiType::Char => Ok(()),
+        OvmAbiType::Unit | OvmAbiType::I32 | OvmAbiType::I64 | OvmAbiType::F32 | OvmAbiType::F64 | OvmAbiType::Bool | OvmAbiType::Char => {
+            Ok(())
+        }
         OvmAbiType::Text { representation: OvmTextRepresentation::Raw } => Ok(()),
         OvmAbiType::Text { representation: OvmTextRepresentation::Managed { layout, field_count, byte_slot } } => {
             check_layout(*layout, *field_count, "托管文本")?;
@@ -410,17 +379,9 @@ fn verify_type(ty: &OvmAbiType, layouts: &[OdinLayout], site: &str) -> Result<()
             }
             Ok(())
         }
-        OvmAbiType::Sequence { layout, field_count, element, length_type, name, .. } => {
-            check_layout(*layout, *field_count, &format!("序列 `{name}`"))?;
-            verify_type(element, layouts, site)?;
-            verify_type(length_type, layouts, site)
-        }
         OvmAbiType::InstanceHandle { layout, name, .. } => {
-            let position =
-                usize::try_from(*layout).map_err(|_| format!("{site} 的引用实例 `{name}` 布局下标 `{layout}` 为负"))?;
-            layouts
-                .get(position)
-                .ok_or_else(|| format!("{site} 的引用实例 `{name}` 布局下标 `{layout}` 超出 `.odin` 布局表"))?;
+            let position = usize::try_from(*layout).map_err(|_| format!("{site} 的引用实例 `{name}` 布局下标 `{layout}` 为负"))?;
+            layouts.get(position).ok_or_else(|| format!("{site} 的引用实例 `{name}` 布局下标 `{layout}` 超出 `.odin` 布局表"))?;
             Ok(())
         }
         OvmAbiType::Unite { layout, name, tag_slot, payload_slot, variants } => {

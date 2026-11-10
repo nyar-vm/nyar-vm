@@ -74,19 +74,11 @@ pub enum WasmAbiType {
     ///
     /// 在 Wasm GC backend 里对应 `arraytype`（若元素是 reference）
     /// 或线性内存 buffer（若元素是纯 value）。
-    ///
-    /// 该变体同时用作**序列视图**：布局形状是「一个 heap array 字段 + 一个整数
-    /// 计数字段」的 nominal 聚合（例如 `ArrayList<T>` 的 `_items` + `_length`）
-    /// 在 ABI 位置投影为 `Array<T>`，并在 `container` 里携带把 JS 数组装配回
-    /// VM 聚合所需的构造合同。投影只由冻结布局形状派生，不看类型名。
     Array {
         /// 元素类型的 ABI schema。
         element: Box<WasmAbiType>,
         /// 物理数组读写操作（wasm 导出名，按元素类型确定性派生）。
         ops: WasmAbiArrayOps,
-        /// 序列视图的容器构造合同；普通 `[T]` 为 `None`。
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        container: Option<Box<WasmAbiSequence>>,
     },
 
     /// Fixed-length stack array `[T; N]`。
@@ -263,39 +255,11 @@ pub struct WasmAbiArrayOps {
     pub set: String,
 }
 
-/// 序列视图的容器构造合同。
-///
-/// 派生条件（全部来自冻结布局，不看类型名）：
-/// - 布局存储类是 `Reference`（跨 ABI 位置是 GC 句柄）；
-/// - 恰好两个字段：一个 heap `Array<T>` 字段，一个整数字段；
-/// - 有已注册的 GC struct 类型，因此能发射 `struct.new` 构造函数。
-///
-/// `items_field_index` / `length_field_index` 是构造参数顺序事实；宿主按
-/// `field_count` 组参数，不按字段名猜测。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct WasmAbiSequence {
-    /// `struct.new` 包装导出名（布局身份确定性派生）。
-    pub constructor: String,
-    /// backing array 字段在构造参数里的下标。
-    pub items_field_index: usize,
-    /// 计数字段在构造参数里的下标。
-    pub length_field_index: usize,
-    /// backing array accessor 导出名（从容器句柄读出数组句柄）。
-    pub items_accessor: String,
-    /// 计数字段 accessor 导出名。
-    pub length_accessor: String,
-    /// 构造参数总数（当前恒为 2）。
-    pub field_count: usize,
-    /// 计数字段的 ABI schema（`i32` 或 `i64`）。
-    pub length_type: Box<WasmAbiType>,
-}
-
 /// `Option<标量>` 的装箱合同。
 ///
 /// 派生自 Wasm 物理降级事实：标量载荷在 anyref 槽里的唯一合法表示是后端已注册的
 /// `[i32]` / `[i64]` box struct。`new` / `get` 是模块导出的 `struct.new` /
-/// `ref.cast` + `struct.get` 包装；名字由载荷载体确定性派生，与
-/// [`WasmAbiSequence::constructor`] 同源（布局/载体身份，不看类型名）。
+/// `ref.cast` + `struct.get` 包装；名字由载荷载体确定性派生，不看类型名。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WasmAbiOptionBox {
     /// `(payload 载体) -> anyref`：`struct.new` 包装导出名。
@@ -386,11 +350,9 @@ fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Op
         S::Bool => WasmAbiType::Bool,
         S::Char => WasmAbiType::Char,
         S::Utf8 => WasmAbiType::Utf8,
-        S::Array { element, element_key } => WasmAbiType::Array {
-            element: Box::new(project_structure(element, layouts)),
-            ops: array_ops_export_names_from_key(element_key),
-            container: None,
-        },
+        S::Array { element, element_key } => {
+            WasmAbiType::Array { element: Box::new(project_structure(element, layouts)), ops: array_ops_export_names_from_key(element_key) }
+        }
         S::FixedArray { element, length } => {
             WasmAbiType::FixedArray { element: Box::new(project_structure(element, layouts)), length: *length }
         }
@@ -401,16 +363,13 @@ fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Op
             // 这里结构化失败，禁止把不可区分的物理形态交给宿主猜。
             if matches!(*inner, WasmAbiType::Option { .. }) {
                 return WasmAbiType::Unsupported {
-                    reason: "嵌套 Option 没有 wasm 物理 box 合同：`Some(None)` 与外层 `None` 会塌陷成同一空引用"
-                        .to_string(),
+                    reason: "嵌套 Option 没有 wasm 物理 box 合同：`Some(None)` 与外层 `None` 会塌陷成同一空引用".to_string(),
                 };
             }
             let box_contract = option_box_contract(&inner).map(Box::new);
             WasmAbiType::Option { inner, box_contract }
         }
-        S::Tuple { fields } => {
-            WasmAbiType::Tuple { fields: fields.iter().map(|field| project_structure(field, layouts)).collect() }
-        }
+        S::Tuple { fields } => WasmAbiType::Tuple { fields: fields.iter().map(|field| project_structure(field, layouts)).collect() },
         S::Aggregate(aggregate) => match aggregate.layout {
             // 身份模式（无布局事实）：只给身份，不给字段桥与构造合同，
             // 宿主必须失败闭合而不是按名字猜字段。
@@ -422,8 +381,7 @@ fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Op
                 constructor: None,
             },
             Some(layout_id) => {
-                let Some(aggregate_layout) =
-                    layouts.and_then(|plan| plan.layouts.iter().find(|item| item.id == layout_id))
+                let Some(aggregate_layout) = layouts.and_then(|plan| plan.layouts.iter().find(|item| item.id == layout_id))
                 else {
                     return WasmAbiType::Unsupported { reason: format!("layout `{layout_id}` 未注册，无法派生字段访问合同") };
                 };
@@ -453,68 +411,19 @@ fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Op
                 }
             }
         },
-        S::Sequence(sequence) => {
-            let Some(aggregate_layout) =
-                layouts.and_then(|plan| plan.layouts.iter().find(|item| item.id == sequence.layout))
-            else {
-                return WasmAbiType::Unsupported {
-                    reason: format!("layout `{}` 未注册，无法派生序列构造合同", sequence.layout),
-                };
-            };
-            let element = project_structure(&sequence.element, layouts);
-            if let Some(reason) = element.unsupported_reason() {
-                return WasmAbiType::Unsupported {
-                    reason: format!(
-                        "序列容器 `{}::{}` 的元素类型没有 Wasm ABI 合同: {reason}",
-                        aggregate_layout.namespace, aggregate_layout.name
-                    ),
-                };
-            }
-            let length_type = project_structure(&sequence.length_ty, layouts);
-            if let Some(reason) = length_type.unsupported_reason() {
-                return WasmAbiType::Unsupported {
-                    reason: format!(
-                        "序列容器 `{}::{}` 的计数字段没有 Wasm ABI 合同: {reason}",
-                        aggregate_layout.namespace, aggregate_layout.name
-                    ),
-                };
-            }
-            WasmAbiType::Array {
-                element: Box::new(element),
-                ops: array_ops_export_names_from_key(&sequence.element_key),
-                container: Some(Box::new(WasmAbiSequence {
-                    constructor: aggregate_constructor_export_name(aggregate_layout),
-                    items_field_index: sequence.items_slot,
-                    length_field_index: sequence.length_slot,
-                    items_accessor: field_accessor_export_name(aggregate_layout, sequence.items_slot),
-                    length_accessor: field_accessor_export_name(aggregate_layout, sequence.length_slot),
-                    field_count: sequence.field_count,
-                    length_type: Box::new(length_type),
-                })),
-            }
-        }
-        S::InstanceHandle { name, module_path, .. } => {
-            WasmAbiType::InstanceHandle { name: name.clone(), module_path: module_path.clone() }
-        }
+        S::InstanceHandle { name, module_path, .. } => WasmAbiType::InstanceHandle { name: name.clone(), module_path: module_path.clone() },
         S::Unite { identity, name, variants, payloads, .. } => {
             let mut projected = Vec::with_capacity(variants.len());
             for (variant, payload) in variants.iter().zip(payloads.iter()) {
-                let Some(payload_structure) = payload else {
-                    projected.push(WasmAbiSumVariant {
-                        name: variant.name.clone(),
-                        tag: variant.tag,
-                        payload: None,
-                        payload_accessor: None,
-                    });
+                let Some(payload_structure) = payload
+                else {
+                    projected.push(WasmAbiSumVariant { name: variant.name.clone(), tag: variant.tag, payload: None, payload_accessor: None });
                     continue;
                 };
                 let payload_schema = project_structure(payload_structure, layouts);
                 if let Some(reason) = payload_schema.unsupported_reason() {
                     return WasmAbiType::Unsupported {
-                        reason: format!(
-                            "sum `{name}` 变体 `{}` 的载荷没有 Wasm ABI 合同: {reason}",
-                            variant.name
-                        ),
+                        reason: format!("sum `{name}` 变体 `{}` 的载荷没有 Wasm ABI 合同: {reason}", variant.name),
                     };
                 }
                 projected.push(WasmAbiSumVariant {
@@ -542,10 +451,7 @@ pub fn abi_schema_for_type_with_layouts(
     layout_by_type: &BTreeMap<NyarType, LayoutId>,
     sums: &BTreeMap<NyarType, nyar_types::SumTypeLayout>,
 ) -> WasmAbiType {
-    project_structure(
-        &crate::abi_structure::abi_structure_for_type_with_layouts(ty, layouts, layout_by_type, sums),
-        Some(layouts),
-    )
+    project_structure(&crate::abi_structure::abi_structure_for_type_with_layouts(ty, layouts, layout_by_type, sums), Some(layouts))
 }
 
 /// `struct.new` 包装导出的确定性名字：由冻结布局身份派生。
@@ -638,11 +544,7 @@ pub fn field_accessor_export_name(layout: &AggregateLayout, field_index: usize) 
 pub fn sum_tag_accessor_export_name(sum: &nyar_types::SumTypeLayout) -> String {
     // 与 `AbiStructure::Unite` 构造点共用同一身份函数，tag accessor 与
     // （阶段三的）variant payload accessor 都从这条事实派生。
-    let identity = crate::abi_structure::sum_identity_facts(
-        &sum.name,
-        sum.is_unite,
-        &crate::abi_structure::sum_variants_of(sum),
-    );
+    let identity = crate::abi_structure::sum_identity_facts(&sum.name, sum.is_unite, &crate::abi_structure::sum_variants_of(sum));
     sum_tag_accessor_name(&sum.name, &identity)
 }
 
@@ -671,11 +573,7 @@ pub fn sum_payload_accessor_name(name: &str, identity: &str, variant_name: &str,
 /// （`entry.rs`）与合同端（`abi_schema::WasmAbiSumVariant::payload_accessor`）
 /// 都只调用本函数，禁止各自拼名字。
 pub fn sum_payload_accessor_export_name(sum: &nyar_types::SumTypeLayout, variant: &nyar_types::SumVariantLayout) -> String {
-    let identity = crate::abi_structure::sum_identity_facts(
-        &sum.name,
-        sum.is_unite,
-        &crate::abi_structure::sum_variants_of(sum),
-    );
+    let identity = crate::abi_structure::sum_identity_facts(&sum.name, sum.is_unite, &crate::abi_structure::sum_variants_of(sum));
     sum_payload_accessor_name(&sum.name, &identity, &variant.name, variant.tag)
 }
 
@@ -706,14 +604,15 @@ mod tests {
         let arr = NyarType::Array(Box::new(element.clone()));
         assert_eq!(
             abi_schema_for_type(&arr),
-            WasmAbiType::Array { element: Box::new(WasmAbiType::I64), ops: array_ops_export_names(&element), container: None }
+            WasmAbiType::Array { element: Box::new(WasmAbiType::I64), ops: array_ops_export_names(&element) }
         );
     }
 
     #[test]
     fn nullable_becomes_option() {
         let opt = NyarType::Nullable(Box::new(nyar("i32")));
-        let WasmAbiType::Option { inner, box_contract } = abi_schema_for_type(&opt) else {
+        let WasmAbiType::Option { inner, box_contract } = abi_schema_for_type(&opt)
+        else {
             panic!("Nullable(i32) 必须投影为 Option")
         };
         assert_eq!(*inner, WasmAbiType::I32);
@@ -726,7 +625,8 @@ mod tests {
     #[test]
     fn nullable_handle_payload_has_no_box_contract() {
         let opt = NyarType::Nullable(Box::new(NyarType::Array(Box::new(nyar("i64")))));
-        let WasmAbiType::Option { box_contract, .. } = abi_schema_for_type(&opt) else {
+        let WasmAbiType::Option { box_contract, .. } = abi_schema_for_type(&opt)
+        else {
             panic!("Nullable([i64]) 必须投影为 Option")
         };
         assert!(box_contract.is_none(), "引用载荷直接复用可空槽引用，不得要求装箱");
@@ -828,11 +728,7 @@ mod tests {
 
     #[test]
     fn serde_roundtrip_array() {
-        let schema = WasmAbiType::Array {
-            element: Box::new(WasmAbiType::I64),
-            ops: array_ops_export_names(&nyar("i64")),
-            container: None,
-        };
+        let schema = WasmAbiType::Array { element: Box::new(WasmAbiType::I64), ops: array_ops_export_names(&nyar("i64")) };
         let json = serde_json::to_string(&schema).unwrap();
         let back: WasmAbiType = serde_json::from_str(&json).unwrap();
         assert_eq!(back, schema);

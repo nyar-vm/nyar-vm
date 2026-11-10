@@ -1,11 +1,8 @@
-//! `ArrayList<T>` 容器 ABI 桥的真实 wasm 端到端验证。
+//! 语言数组 ABI 桥与名义引用边界的真实 wasm 端到端验证。
 //!
-//! 这里不走字符串断言：每个用例都真实发射 wasm 库模块（`nyar.library_invoke`
-//! section + `struct.new`/`array.*` 导出 + JS glue 启动壳），再交给 Node 执行
-//! `callExport`。只有 Node 里跑通「JS 数组 → VM 容器 → JS 数组」的往返才算通过。
-//!
-//! 正向覆盖：`ArrayList<i64>`、嵌套 `ArrayList<ArrayList<i64>>`、`ArrayList<utf8>`。
-//! 反向覆盖：wire 形状错、元素类型错、i64 用 Number、i64 越界——全部必须结构化失败。
+//! 每个用例发射真实 wasm 库模块与 JS glue，再经 Node 调用导出。
+//! 数组覆盖标量、嵌套、Option 与严格的元素校验；名义引用实例不因
+//! 数组与整数字段的布局形状获得宿主数组投影或字段重建授权。
 
 use std::{collections::BTreeMap, process::Command};
 
@@ -23,23 +20,23 @@ const I64: NyarType = NyarType::Integer64 { signed: true };
 const I32: NyarType = NyarType::Integer32 { signed: true };
 const UTF8: NyarType = NyarType::Utf8;
 
-fn arraylist_of(element: NyarType) -> NyarType {
-    NyarType::Apply(Box::new(NyarType::Named(Identifier::new("std::collection::ArrayList"))), vec![element])
+fn array_of(element: NyarType) -> NyarType {
+    NyarType::Array(Box::new(element))
 }
 
-/// 两字段序列布局：一个 heap `Array<T>` + 一个整数计数（与 `ArrayList<T>` 形状一致）。
-fn sequence_layout(id: u32, element: NyarType, length_ty: NyarType) -> AggregateLayout {
+/// 数组字段和整数字段只是物理布局，不声明任何序列协议。
+fn reference_layout(id: u32, name: &str) -> AggregateLayout {
     AggregateLayout {
         id,
-        name: "ArrayList".to_string(),
-        namespace: "std::collection".to_string(),
+        name: name.to_string(),
+        namespace: "demo".to_string(),
         key: None,
         storage: StorageKind::Reference,
         size: 16,
         align: 8,
         fields: vec![
-            FieldLayout { name: "_items".to_string(), ty: NyarType::Array(Box::new(element)), offset: 0, size: 8, align: 8 },
-            FieldLayout { name: "_length".to_string(), ty: length_ty, offset: 8, size: 8, align: 8 },
+            FieldLayout { name: "samples".to_string(), ty: array_of(I64), offset: 0, size: 8, align: 8 },
+            FieldLayout { name: "version".to_string(), ty: I64, offset: 8, size: 8, align: 8 },
         ],
     }
 }
@@ -94,7 +91,7 @@ fn emit_bridge(layouts: &[(NyarType, AggregateLayout)]) -> EmittedBridge {
     let submission = FragmentSubmission::from_backend_plan(plan);
     let (module, imports) =
         lower_fragment_to_wasm_module_for(&submission, HostProjectionBoundary::WasmJsGlue, WasiPreview::Preview2, WasmPackageKind::Library)
-            .expect("发射 ArrayList 库模块");
+            .expect("发射库模块");
     let spec = module
         .sections
         .iter()
@@ -156,16 +153,31 @@ fn spec_exports(spec: &str) -> serde_json::Value {
 }
 
 #[test]
-fn arraylist_i64_roundtrips_through_vm_memory() {
-    let ty = arraylist_of(I64);
-    let bridge = emit_bridge(&[(ty, sequence_layout(1, I64, I32))]);
+fn array_and_integer_fields_do_not_authorize_reference_reconstruction() {
+    for (index, name) in ["ArrayList", "Measurement"].iter().enumerate() {
+        let ty = NyarType::Nominal { layout: (index + 1) as u32, spelling: Identifier::new(&format!("demo::{name}")) };
+        let bridge = emit_bridge(&[(ty, reference_layout((index + 1) as u32, name))]);
+        let exports = spec_exports(&bridge.spec);
+        let schema = &exports["echo"]["params"][0]["type"];
+        assert_eq!(schema["kind"], "InstanceHandle", "字段形状不能声明序列语义: {schema}");
+        assert_eq!(exports["echo"]["returns"]["kind"], "InstanceHandle");
+        for value in ["[1n, 2n]", "{ samples: [1n], version: 99n }"] {
+            let message = call_error(&bridge, value);
+            assert!(message.contains("at arg0"), "拒绝必须包含入参路径: {message}");
+            assert!(message.contains("expected the opaque handle"), "宿主不得按数组或字段重建引用实例: {message}");
+        }
+    }
+}
+
+#[test]
+fn array_i64_roundtrips_through_vm_memory() {
+    let ty = array_of(I64);
+    let bridge = emit_plain(ty);
     let exports = spec_exports(&bridge.spec);
     let echo = &exports["echo"]["params"][0]["type"];
-    assert_eq!(echo["kind"], "Array", "ArrayList<i64> 必须投影为 Array: {echo}");
+    assert_eq!(echo["kind"], "Array", "Array<i64> 必须投影为 Array: {echo}");
     assert_eq!(echo["element"]["kind"], "I64");
-    assert_eq!(echo["container"]["items_field_index"], 0);
-    assert_eq!(echo["container"]["length_field_index"], 1);
-    assert_eq!(echo["container"]["length_type"]["kind"], "I32");
+    assert!(echo.get("container").is_none(), "数组 ABI 不携带名义对象重建合同: {echo}");
 
     let stdout = run_in_node(
         &bridge,
@@ -179,15 +191,15 @@ catch (error) { out.error = String(error && error.message ? error.message : erro
 process.stdout.write(JSON.stringify(out));"#,
     );
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
-    assert!(parsed["error"].is_null(), "ArrayList<i64> 往返不得失败: {stdout}");
+    assert!(parsed["error"].is_null(), "Array<i64> 往返不得失败: {stdout}");
     assert_eq!(parsed["value"], serde_json::json!(["1", "2", "3"]));
 }
 
 #[test]
-fn arraylist_arraylist_i64_roundtrips_nested() {
-    let inner = arraylist_of(I64);
-    let outer = arraylist_of(inner.clone());
-    let bridge = emit_bridge(&[(outer.clone(), sequence_layout(2, inner.clone(), I32)), (inner, sequence_layout(1, I64, I32))]);
+fn nested_arrays_i64_roundtrip() {
+    let inner = array_of(I64);
+    let outer = array_of(inner.clone());
+    let bridge = emit_plain(outer);
     let exports = spec_exports(&bridge.spec);
     let echo = &exports["echo"]["params"][0]["type"];
     assert_eq!(echo["kind"], "Array");
@@ -206,14 +218,14 @@ catch (error) { out.error = String(error && error.message ? error.message : erro
 process.stdout.write(JSON.stringify(out));"#,
     );
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
-    assert!(parsed["error"].is_null(), "嵌套 ArrayList 往返不得失败: {stdout}");
+    assert!(parsed["error"].is_null(), "嵌套 Array 往返不得失败: {stdout}");
     assert_eq!(parsed["value"], serde_json::json!([["1", "2"], ["3"], []]));
 }
 
 #[test]
-fn arraylist_utf8_roundtrips() {
-    let ty = arraylist_of(UTF8);
-    let bridge = emit_bridge(&[(ty, sequence_layout(1, UTF8, I32))]);
+fn array_utf8_roundtrips() {
+    let ty = array_of(UTF8);
+    let bridge = emit_plain(ty);
     let exports = spec_exports(&bridge.spec);
     assert_eq!(exports["echo"]["params"][0]["type"]["element"]["kind"], "Utf8");
 
@@ -228,7 +240,7 @@ catch (error) { out.error = String(error && error.message ? error.message : erro
 process.stdout.write(JSON.stringify(out));"#,
     );
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("driver JSON");
-    assert!(parsed["error"].is_null(), "ArrayList<utf8> 往返不得失败: {stdout}");
+    assert!(parsed["error"].is_null(), "Array<utf8> 往返不得失败: {stdout}");
     assert_eq!(parsed["value"], serde_json::json!(["alpha", "beta", ""]));
 }
 
@@ -291,8 +303,8 @@ process.stdout.write(JSON.stringify(out));"#,
 
 #[test]
 fn wire_shape_mismatch_fails_at_boundary_with_path() {
-    let ty = arraylist_of(I64);
-    let bridge = emit_bridge(&[(ty, sequence_layout(1, I64, I32))]);
+    let ty = array_of(I64);
+    let bridge = emit_plain(ty);
     let stdout = run_in_node(
         &bridge,
         r#"const out = {};
@@ -308,8 +320,8 @@ process.stdout.write(JSON.stringify(out));"#,
 
 #[test]
 fn element_type_mismatch_fails_at_boundary_with_element_path() {
-    let ty = arraylist_of(I64);
-    let bridge = emit_bridge(&[(ty, sequence_layout(1, I64, I32))]);
+    let ty = array_of(I64);
+    let bridge = emit_plain(ty);
     let stdout = run_in_node(
         &bridge,
         r#"const out = {};
@@ -325,8 +337,8 @@ process.stdout.write(JSON.stringify(out));"#,
 
 #[test]
 fn i64_as_number_fails_instead_of_being_coerced() {
-    let ty = arraylist_of(I64);
-    let bridge = emit_bridge(&[(ty, sequence_layout(1, I64, I32))]);
+    let ty = array_of(I64);
+    let bridge = emit_plain(ty);
     let stdout = run_in_node(
         &bridge,
         r#"const out = {};
@@ -342,8 +354,8 @@ process.stdout.write(JSON.stringify(out));"#,
 
 #[test]
 fn i64_out_of_range_fails_at_boundary() {
-    let ty = arraylist_of(I64);
-    let bridge = emit_bridge(&[(ty, sequence_layout(1, I64, I32))]);
+    let ty = array_of(I64);
+    let bridge = emit_plain(ty);
     let stdout = run_in_node(
         &bridge,
         r#"const out = {};
@@ -358,8 +370,8 @@ process.stdout.write(JSON.stringify(out));"#,
 
 // ── 标量元素：缺值 / 类型不符必须带路径与期望类型失败闭合 ─────────────────────
 
-fn arraylist_case(element: NyarType) -> EmittedBridge {
-    emit_bridge(&[(arraylist_of(element.clone()), sequence_layout(1, element, I32))])
+fn array_case(element: NyarType) -> EmittedBridge {
+    emit_plain(array_of(element))
 }
 
 /// 调用 `echo`，把抛出的错误消息交回 Rust（空串表示没有报错）。
@@ -377,7 +389,7 @@ process.stdout.write(JSON.stringify(out));"#
 
 #[test]
 fn i32_element_null_fails_with_path_and_expected_type() {
-    let bridge = arraylist_case(I32);
+    let bridge = array_case(I32);
     let message = call_error(&bridge, "[1, null, 3]");
     assert!(message.contains("arg0[1]"), "失败信息必须定位到元素: {message}");
     assert!(message.contains("I32"), "失败信息必须带期望类型: {message}");
@@ -386,7 +398,7 @@ fn i32_element_null_fails_with_path_and_expected_type() {
 
 #[test]
 fn f64_element_string_fails_with_path_and_expected_type() {
-    let bridge = arraylist_case(NyarType::Float64);
+    let bridge = array_case(NyarType::Float64);
     let message = call_error(&bridge, "[1.5, \"2.5\"]");
     assert!(message.contains("arg0[1]"), "失败信息必须定位到元素: {message}");
     assert!(message.contains("F64"), "失败信息必须带期望类型: {message}");
@@ -395,7 +407,7 @@ fn f64_element_string_fails_with_path_and_expected_type() {
 
 #[test]
 fn char_element_multi_codepoint_fails_with_path_and_expected_type() {
-    let bridge = arraylist_case(NyarType::Character);
+    let bridge = array_case(NyarType::Character);
     let message = call_error(&bridge, "[\"ab\"]");
     assert!(message.contains("arg0[0]"), "失败信息必须定位到元素: {message}");
     assert!(message.contains("Char"), "失败信息必须带期望类型: {message}");
@@ -404,7 +416,7 @@ fn char_element_multi_codepoint_fails_with_path_and_expected_type() {
 
 #[test]
 fn undefined_element_fails_with_path_and_expected_type() {
-    let bridge = arraylist_case(I32);
+    let bridge = array_case(I32);
     let message = call_error(&bridge, "[undefined]");
     assert!(message.contains("arg0[0]"), "失败信息必须定位到元素: {message}");
     assert!(message.contains("undefined"), "失败信息必须区分缺值: {message}");
@@ -454,7 +466,7 @@ process.stdout.write(JSON.stringify(out));"#,
 
 #[test]
 fn option_i64_container_elements_roundtrip_mixed_none_and_some() {
-    let bridge = arraylist_case(nullable_of(I64));
+    let bridge = array_case(nullable_of(I64));
     let exports = spec_exports(&bridge.spec);
     let element = &exports["echo"]["params"][0]["type"]["element"];
     assert_eq!(element["kind"], "Option");
@@ -462,7 +474,7 @@ fn option_i64_container_elements_roundtrip_mixed_none_and_some() {
     assert_eq!(element["box"]["payload"], "i64", "容器元素同样必须携带装箱合同: {element}");
 
     let parsed = call_value(&bridge, "[null, 5n, null, 7n]");
-    assert!(parsed["error"].is_null(), "ArrayList<Option<i64>> 往返不得失败: {parsed}");
+    assert!(parsed["error"].is_null(), "Array<Option<i64>> 往返不得失败: {parsed}");
     assert_eq!(parsed["value"], serde_json::json!([null, "5", null, "7"]));
 }
 
@@ -492,9 +504,9 @@ process.stdout.write(JSON.stringify(out));"#,
 
 #[test]
 fn option_utf8_container_elements_roundtrip_mixed() {
-    let bridge = arraylist_case(nullable_of(UTF8));
+    let bridge = array_case(nullable_of(UTF8));
     let parsed = call_value(&bridge, "[\"中文😀\", null, \"\"]");
-    assert!(parsed["error"].is_null(), "ArrayList<Option<utf8>> 往返不得失败: {parsed}");
+    assert!(parsed["error"].is_null(), "Array<Option<utf8>> 往返不得失败: {parsed}");
     assert_eq!(parsed["value"], serde_json::json!(["中文😀", null, ""]));
 }
 
@@ -518,7 +530,7 @@ fn option_inner_type_mismatch_fails_at_arg_path() {
 
 #[test]
 fn option_container_element_mismatch_fails_at_element_path() {
-    let bridge = arraylist_case(nullable_of(I64));
+    let bridge = array_case(nullable_of(I64));
     let message = call_error(&bridge, "[null, 5n, \"oops\"]");
     assert!(message.contains("arg0[2]"), "失败信息必须定位到元素: {message}");
     assert!(message.contains("I64"), "失败信息必须带内层期望类型: {message}");
@@ -597,7 +609,7 @@ process.stdout.write(JSON.stringify(out));"#,
 
 #[test]
 fn option_f64_container_elements_roundtrip_mixed_none_and_some() {
-    let bridge = arraylist_case(nullable_of(NyarType::Float64));
+    let bridge = array_case(nullable_of(NyarType::Float64));
     let exports = spec_exports(&bridge.spec);
     let element = &exports["echo"]["params"][0]["type"]["element"];
     assert_eq!(element["kind"], "Option");
@@ -605,13 +617,13 @@ fn option_f64_container_elements_roundtrip_mixed_none_and_some() {
     assert_eq!(element["box"]["payload"], "f64", "容器元素同样必须携带 [f64] 装箱合同: {element}");
 
     let parsed = call_value(&bridge, "[null, 2.5, null, -0.75]");
-    assert!(parsed["error"].is_null(), "ArrayList<Option<F64>> 往返不得失败: {parsed}");
+    assert!(parsed["error"].is_null(), "Array<Option<F64>> 往返不得失败: {parsed}");
     assert_eq!(parsed["value"], serde_json::json!([null, 2.5, null, -0.75]));
 }
 
 #[test]
 fn option_f64_inner_type_mismatch_fails_at_element_path() {
-    let bridge = arraylist_case(nullable_of(NyarType::Float64));
+    let bridge = array_case(nullable_of(NyarType::Float64));
     let message = call_error(&bridge, "[null, 2.5, \"oops\"]");
     assert!(message.contains("arg0[2]"), "失败信息必须定位到元素: {message}");
     assert!(message.contains("F64"), "失败信息必须带内层期望类型: {message}");

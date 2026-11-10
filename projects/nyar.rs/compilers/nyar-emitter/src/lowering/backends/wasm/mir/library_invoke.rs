@@ -328,16 +328,15 @@ mod tests {
         let list = arraylist_i64();
         let function = abi_function(&[(0, "nums", list.clone()), (1, "target", nyar("i64"))], list.clone());
         let abi = frozen_abi(vec![AbiCarrier::Handle, AbiCarrier::I64], AbiCarrier::Handle);
-        let (params_json, returns) =
-            schematize_function_abi(
-                "twoSum",
-                &function,
-                &abi,
-                &nyar_types::AggregateLayoutPlan::default(),
-                &std::collections::BTreeMap::new(),
-                &std::collections::BTreeMap::new(),
-            )
-            .expect("参数身份完整");
+        let (params_json, returns) = schematize_function_abi(
+            "twoSum",
+            &function,
+            &abi,
+            &nyar_types::AggregateLayoutPlan::default(),
+            &std::collections::BTreeMap::new(),
+            &std::collections::BTreeMap::new(),
+        )
+        .expect("参数身份完整");
         assert_eq!(
             params_json,
             vec![
@@ -357,16 +356,15 @@ mod tests {
     fn schematize_rejects_duplicate_parameter_names() {
         let function = abi_function(&[(0, "value", nyar("i64")), (1, "value", nyar("i64"))], nyar("i64"));
         let abi = frozen_abi(vec![AbiCarrier::I64, AbiCarrier::I64], AbiCarrier::I64);
-        let error =
-            schematize_function_abi(
-                "identity",
-                &function,
-                &abi,
-                &nyar_types::AggregateLayoutPlan::default(),
-                &std::collections::BTreeMap::new(),
-                &std::collections::BTreeMap::new(),
-            )
-            .expect_err("参数名重复必须失败");
+        let error = schematize_function_abi(
+            "identity",
+            &function,
+            &abi,
+            &nyar_types::AggregateLayoutPlan::default(),
+            &std::collections::BTreeMap::new(),
+            &std::collections::BTreeMap::new(),
+        )
+        .expect_err("参数名重复必须失败");
         assert!(error.contains("identity"), "error must carry the export name: {error}");
         assert!(error.contains("index=1") || error.contains("参数 1"), "error must carry the parameter index: {error}");
         assert!(error.contains("重复"), "error must explain the duplicate name: {error}");
@@ -376,16 +374,15 @@ mod tests {
     fn schematize_rejects_missing_parameter_name() {
         let function = abi_function(&[(0, "", nyar("i64"))], nyar("i64"));
         let abi = frozen_abi(vec![AbiCarrier::I64], AbiCarrier::I64);
-        let error =
-            schematize_function_abi(
-                "identity",
-                &function,
-                &abi,
-                &nyar_types::AggregateLayoutPlan::default(),
-                &std::collections::BTreeMap::new(),
-                &std::collections::BTreeMap::new(),
-            )
-            .expect_err("参数名缺失必须失败");
+        let error = schematize_function_abi(
+            "identity",
+            &function,
+            &abi,
+            &nyar_types::AggregateLayoutPlan::default(),
+            &std::collections::BTreeMap::new(),
+            &std::collections::BTreeMap::new(),
+        )
+        .expect_err("参数名缺失必须失败");
         assert!(error.contains("identity"), "error must carry the export name: {error}");
         assert!(error.contains("缺少 canonical 参数名"), "error must explain the missing name: {error}");
     }
@@ -462,7 +459,6 @@ mod tests {
                     new: String::new(),
                     set: String::new(),
                 },
-                container: None,
             },
             WasmAbiType::FixedArray { element: Box::new(WasmAbiType::I64), length: 2 },
             WasmAbiType::Option { inner: Box::new(WasmAbiType::I64), box_contract: None },

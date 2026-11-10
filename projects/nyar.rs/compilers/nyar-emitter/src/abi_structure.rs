@@ -1,6 +1,6 @@
 //! 目标中立的结构化库导出 ABI schema。
 //!
-//! 本模块只描述**语义结构**：哪些类型可以跨越库导出边界，以及聚合 / 序列 /
+//! 本模块只描述**语义结构**：哪些类型可以跨越库导出边界，以及聚合 /
 //! sum 的内部结构（字段名、声明顺序槽位、判别 tag）。它不携带任何目标物理
 //! 投影（wasm 导出名、OVM 布局下标），因此 wasm 与 ovm 两个后端都从同一份
 //! 结构递归派生，禁止各自复制一份推导逻辑。
@@ -13,8 +13,8 @@
 //! 结构派生规则（与 `freeze_abi_carrier` 冻结的载体合同一一对应）：
 //! - 标量直接过界；`utf8` 是文本值，其物理边界由各目标投影显式声明（wasm 是
 //!   intern `i32` 句柄，OVM 是托管文本对象或 raw 宿主串）；
-//! - `Array` / `FixedArray` / `Nullable` / `Tuple` / 具名聚合 / 泛型实例一律
-//!   按冻结布局递归展开；
+//! - `Array` / `FixedArray` / `Nullable` / `Tuple` / 值存储聚合按冻结事实递归展开；
+//!   引用存储名义实例保留不透明共享身份，不按字段形状推断容器语义；
 //! - `Integer128` / `Utf16` / `Bottom` / `Function` / `TraitObject` / `Union`
 //!   与未注册布局都是 `Unsupported`，由各目标结构化失败。
 //!
@@ -22,11 +22,9 @@
 
 use std::collections::BTreeMap;
 
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, Identifier, LayoutId, NominalInstanceId, NyarType, StorageKind, SumTypeLayout};
+use nyar_types::{AggregateLayoutPlan, Identifier, LayoutId, NominalInstanceId, NyarType, StorageKind, SumTypeLayout};
 
-use crate::Result;
-use crate::backend_plan_views::ExecutableFunction;
-use crate::contracts::ValueOrigin;
+use crate::{Result, backend_plan_views::ExecutableFunction, contracts::ValueOrigin};
 
 /// 目标中立的 ABI 语义结构。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,8 +72,6 @@ pub enum AbiStructure {
     },
     /// 具名 / 泛型聚合（值存储）。
     Aggregate(AggregateStructure),
-    /// 冻结布局形状派生的序列容器视图（例如 `ArrayList<T>`）。
-    Sequence(SequenceStructure),
     /// 引用存储名义实例的共享身份（不是字段快照）。
     InstanceHandle {
         /// 冻结布局身份。
@@ -132,29 +128,6 @@ pub struct AbiField {
     pub ty: AbiStructure,
 }
 
-/// 序列容器视图的共享结构事实。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SequenceStructure {
-    /// 容器冻结布局身份。
-    pub layout: LayoutId,
-    /// 容器简单名。
-    pub name: String,
-    /// 容器完整命名空间路径。
-    pub module_path: String,
-    /// backing array 字段的声明槽位。
-    pub items_slot: usize,
-    /// 计数字段的声明槽位。
-    pub length_slot: usize,
-    /// 容器字段总数。
-    pub field_count: usize,
-    /// backing array 元素结构。
-    pub element: Box<AbiStructure>,
-    /// 元素类型 canonical 拼写（目标派生物理名字的稳定身份种子）。
-    pub element_key: String,
-    /// 计数字段结构（整数）。
-    pub length_ty: Box<AbiStructure>,
-}
-
 /// sum 变体身份：名字与判别 tag。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AbiVariant {
@@ -196,9 +169,9 @@ pub fn abi_structure_for_type(ty: &NyarType) -> AbiStructure {
         NyarType::Float64 => AbiStructure::F64,
 
         NyarType::Utf8 => AbiStructure::Utf8,
-        NyarType::Utf16 => AbiStructure::Unsupported {
-            reason: crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string(),
-        },
+        NyarType::Utf16 => {
+            AbiStructure::Unsupported { reason: crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string() }
+        }
 
         NyarType::Array(element) => {
             AbiStructure::Array { element: Box::new(abi_structure_for_type(element)), element_key: canonical_type_spelling(element) }
@@ -267,7 +240,7 @@ fn abi_structure_with_depth(
 ) -> AbiStructure {
     if depth > ABI_STRUCTURE_MAX_DEPTH {
         return AbiStructure::Unsupported {
-            reason: format!("ABI 结构递归超过 {ABI_STRUCTURE_MAX_DEPTH} 层，拒绝无界展开 `{ty:?}`"),
+            reason: format!("ABI 结构递归超过 {ABI_STRUCTURE_MAX_DEPTH} 层，拒绝无界展开 `{ty:?}`")
         };
     }
     // sum 的物理布局是 lowering 冻结的 `[i32 tag, anyref payload]`：零载荷与带
@@ -278,9 +251,10 @@ fn abi_structure_with_depth(
             .variants
             .iter()
             .map(|variant| {
-                variant.payload_type.as_ref().map(|payload| {
-                    Box::new(abi_structure_with_depth(payload, layouts, layout_by_type, sums, depth + 1))
-                })
+                variant
+                    .payload_type
+                    .as_ref()
+                    .map(|payload| Box::new(abi_structure_with_depth(payload, layouts, layout_by_type, sums, depth + 1)))
             })
             .collect();
         return AbiStructure::Unite {
@@ -313,14 +287,11 @@ fn abi_structure_with_depth(
             element: Box::new(abi_structure_with_depth(element, layouts, layout_by_type, sums, depth + 1)),
             length: *length,
         },
-        NyarType::Nullable(inner) => AbiStructure::Option {
-            inner: Box::new(abi_structure_with_depth(inner, layouts, layout_by_type, sums, depth + 1)),
-        },
+        NyarType::Nullable(inner) => {
+            AbiStructure::Option { inner: Box::new(abi_structure_with_depth(inner, layouts, layout_by_type, sums, depth + 1)) }
+        }
         NyarType::Tuple(fields) => AbiStructure::Tuple {
-            fields: fields
-                .iter()
-                .map(|field| abi_structure_with_depth(field, layouts, layout_by_type, sums, depth + 1))
-                .collect(),
+            fields: fields.iter().map(|field| abi_structure_with_depth(field, layouts, layout_by_type, sums, depth + 1)).collect(),
         },
         other => abi_structure_for_type(other),
     }
@@ -332,9 +303,8 @@ fn identity_aggregate(name: String, module_path: String, generic_args: Vec<AbiSt
 
 /// 已知布局身份的聚合结构。
 ///
-/// 序列形状（一个 heap array 字段 + 一个整数计数字段、Reference 存储）投影为
-/// 序列视图；其余 Reference 存储名义实例是共享身份；Value 存储聚合保留字段
-/// 结构。三者都由冻结布局事实派生，不看类型名。
+/// 引用存储名义实例保留共享身份；值存储聚合按字段结构投影。
+/// 物理字段形状不构成序列协议或宿主构造授权。
 fn aggregate_structure(
     name: String,
     module_path: String,
@@ -343,15 +313,11 @@ fn aggregate_structure(
     layout_by_type: &BTreeMap<NyarType, LayoutId>,
     sums: &BTreeMap<NyarType, SumTypeLayout>,
 ) -> AbiStructure {
-    let Some(aggregate) = layouts.layouts.iter().find(|item| item.id == layout_id) else {
-        return AbiStructure::Unsupported {
-            reason: format!("layout `{layout_id}` 未注册，无法派生字段访问合同"),
-        };
+    let Some(aggregate) = layouts.layouts.iter().find(|item| item.id == layout_id)
+    else {
+        return AbiStructure::Unsupported { reason: format!("layout `{layout_id}` 未注册，无法派生字段访问合同") };
     };
-    if let Some(sequence) = sequence_structure(aggregate, name.clone(), module_path.clone(), layouts, layout_by_type, sums) {
-        return sequence;
-    }
-    // 引用存储的非序列名义实例是共享身份，不是字段快照：宿主必须拿到同一
+    // 引用存储名义实例是共享身份，不是字段快照：宿主必须拿到同一
     // 引用，按字段复制会让 `mut self` 方法改在副本上。
     if aggregate.storage == StorageKind::Reference {
         return AbiStructure::InstanceHandle { layout: layout_id, name, module_path };
@@ -367,57 +333,6 @@ fn aggregate_structure(
         fields.push(AbiField { name: field.name.clone(), ty: field_structure });
     }
     AbiStructure::Aggregate(AggregateStructure { layout: Some(layout_id), name, module_path, generic_args: Vec::new(), fields })
-}
-
-/// 从冻结布局形状派生序列视图。
-///
-/// 条件是纯结构的：`Reference` 存储、恰好两个字段、一个 heap `Array<T>` 字段
-/// 和一个整数字段。满足时 backing array 与计数槽位都来自布局事实；不满足时
-/// 返回 `None`，绝不按类型名特判 `ArrayList`。
-fn sequence_structure(
-    aggregate: &AggregateLayout,
-    name: String,
-    module_path: String,
-    layouts: &AggregateLayoutPlan,
-    layout_by_type: &BTreeMap<NyarType, LayoutId>,
-    sums: &BTreeMap<NyarType, SumTypeLayout>,
-) -> Option<AbiStructure> {
-    if aggregate.storage != StorageKind::Reference || aggregate.fields.len() != 2 {
-        return None;
-    }
-    let items_slot = aggregate.fields.iter().position(|field| matches!(field.ty, NyarType::Array(_)))?;
-    let length_slot = aggregate.fields.iter().position(|field| is_integer_type(&field.ty))?;
-    if items_slot == length_slot {
-        return None;
-    }
-    let NyarType::Array(element) = &aggregate.fields[items_slot].ty else {
-        return None;
-    };
-    let element_structure = abi_structure_for_type_with_layouts(element, layouts, layout_by_type, sums);
-    if let Some(reason) = element_structure.unsupported_reason() {
-        return Some(AbiStructure::Unsupported {
-            reason: format!("序列容器 `{}::{}` 的元素类型没有 ABI 合同: {reason}", aggregate.namespace, aggregate.name),
-        });
-    }
-    let length_ty = abi_structure_for_type_with_layouts(&aggregate.fields[length_slot].ty, layouts, layout_by_type, sums);
-    Some(AbiStructure::Sequence(SequenceStructure {
-        layout: aggregate.id,
-        name,
-        module_path,
-        items_slot,
-        length_slot,
-        field_count: aggregate.fields.len(),
-        element: Box::new(element_structure),
-        element_key: canonical_type_spelling(element),
-        length_ty: Box::new(length_ty),
-    }))
-}
-
-fn is_integer_type(ty: &NyarType) -> bool {
-    matches!(
-        ty,
-        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } | NyarType::Integer64 { .. }
-    )
 }
 
 /// 类型 canonical 拼写：目标层派生数组物理名字的稳定身份种子。
@@ -597,7 +512,8 @@ mod tests {
     #[test]
     fn identity_aggregate_does_not_guess_fields() {
         let ty = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")]);
-        let AbiStructure::Aggregate(aggregate) = abi_structure_for_type(&ty) else {
+        let AbiStructure::Aggregate(aggregate) = abi_structure_for_type(&ty)
+        else {
             panic!("Apply 必须有身份结构")
         };
         assert_eq!(aggregate.name, "ArrayList");
