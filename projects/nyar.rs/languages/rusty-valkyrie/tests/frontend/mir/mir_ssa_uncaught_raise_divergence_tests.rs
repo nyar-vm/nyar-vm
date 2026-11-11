@@ -1,4 +1,4 @@
-//! 未捕获 `raise` 的底类型建模：恢复块以 `Unreachable` 终结，不冒充值返回。
+//! 未捕获 `raise` 的底类型建模：当前块直接以 `Unreachable` 终结，不冒充值返回。
 //!
 //! 正例：值返回函数的尾 `raise` 必须完成编译，且 MIR 中不得出现把 `Unit` 常量当
 //! 返回值的 `Return`。
@@ -67,25 +67,17 @@ fn function<'a>(module: &'a MirModule, name: &str) -> &'a rusty_valkyrie::compil
     module.functions.iter().find(|function| function.display_symbol.contains(name)).unwrap_or_else(|| panic!("fixture 缺少 `{name}`"))
 }
 
-/// 断言该函数的未捕获 `raise` 恢复块不可达，且没有任何 `Unit` 返回值。
+/// 断言该函数的未捕获 `raise` 以 `Unreachable` 终结，且没有任何 `Unit` 返回值，
+/// 也不保留 `PerformEffect { Raise }`（那会要求尚未验证的 suspend 合同）。
 fn assert_uncaught_raise_diverges(module: &MirModule, name: &str) {
     let function = function(module, name);
     assert_eq!(function.return_type, ValkyrieType::Integer64 { signed: true }, "`{name}` 必须保持声明返回类型");
-    let mut raise_effects = 0usize;
+    let mut unreachable_blocks = 0usize;
     for block in &function.blocks {
         match &block.terminator {
-            MirTerminator::PerformEffect { effect: rusty_valkyrie::MirEffectKind::Raise, resume_target, .. } => {
-                raise_effects += 1;
-                let resume = function
-                    .blocks
-                    .iter()
-                    .find(|candidate| candidate.id == *resume_target)
-                    .unwrap_or_else(|| panic!("`{name}` 缺少 raise 恢复块"));
-                assert!(
-                    matches!(resume.terminator, MirTerminator::Unreachable),
-                    "`{name}` 的 raise 恢复块必须不可达，实际 {:?}",
-                    resume.terminator
-                );
+            MirTerminator::Unreachable => unreachable_blocks += 1,
+            MirTerminator::PerformEffect { effect: rusty_valkyrie::MirEffectKind::Raise, .. } => {
+                panic!("`{name}` 的未捕获 raise 不得保留 suspend 通道");
             }
             MirTerminator::Return { value: Some(MirOperand::Constant(MirConstant::Unit)) } => {
                 panic!("`{name}` 不得把 `Unit` 常量当返回值");
@@ -93,7 +85,7 @@ fn assert_uncaught_raise_diverges(module: &MirModule, name: &str) {
             _ => {}
         }
     }
-    assert_eq!(raise_effects, 1, "`{name}` 必须发射恰好一个 `PerformEffect {{ Raise }}`");
+    assert!(unreachable_blocks >= 1, "`{name}` 的未捕获 raise 必须终止为 `Unreachable`");
 }
 
 /// 值返回函数的尾 `raise` 必须编译通过：`Unit` 常量不得作为返回值进入 `Return`。

@@ -270,7 +270,10 @@ pub(super) fn collect_semantic_fragments(
         if let Some(export) = export {
             fragment.wasm_export_names.insert(instance, export.exported_name.clone());
         }
-        if crate::compiler::hir::control_flow_validation::function_needs_suspend_fragment(&function.body)
+        // suspend 能力只由真正的挂起效果（yield/await/awake/block_on）决定。
+        // 未捕获 `raise` 现在在 MIR 里直接终止为 `Unreachable`（目标后端落 trap），
+        // `catch`/`resume` 也在函数内同步处理；它们不要求尚未验证的 suspend 合同。
+        if crate::compiler::hir::control_flow_validation::function_has_suspend_effects(&function.body)
             && !fragment.required_capabilities.iter().any(|capability| capability.as_str() == "suspend")
         {
             fragment.required_capabilities.push(CapabilityTag::new("suspend"));

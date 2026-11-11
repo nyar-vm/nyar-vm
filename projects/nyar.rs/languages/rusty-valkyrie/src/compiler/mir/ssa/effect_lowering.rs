@@ -331,20 +331,12 @@ impl MirBuilder {
     }
 
     pub(super) fn lower_uncaught_raise(&mut self, payload: Option<MirOperand>) -> MirOperand {
-        let carrier_type = payload.as_ref().and_then(|operand| infer_builder_operand_type(operand, &self.value_types));
-        let resume_parameter_type = self.default_raise_resume_type(&carrier_type);
-        // `Resume = !`（never）的恢复通道不会回灌任何值：resume 块不声明形参，
-        // 否则该形参带着 `void`（never）类型落进物理槽位校验（BPHYS001）。
-        if matches!(resume_parameter_type, Some(ValkyrieType::Void)) {
-            self.lower_perform_effect_without_resume_parameter("raise_resume", MirEffectKind::Raise, payload);
-        }
-        else {
-            let _ = self.lower_perform_effect("raise_resume", MirEffectKind::Raise, payload, resume_parameter_type);
-        }
-        // 未捕获 `raise` 是底类型：控制流不会回到本函数。恢复块因此以 `Unreachable`
-        // 终结，而不是让 `Unit` 常量走 `Return`（SMIR007 会把 `Unit` 当成值返回）。
-        // 表达式位置仍返回 `Unit` 常量（「无正常值」），但外层 lowering 看到已冻结的
-        // 终结符后不会再向该块追加 `Return` 或后续语句。
+        // 未捕获 `raise` 是底类型：本函数内没有 handler，当前也没有已验证的跨函数
+        // suspend/恢复合同。直接在当前块终止为 `Unreachable`（目标后端落 trap）：
+        // - 不再把恢复块的形参或 `Unit` 当成真实返回值（SMIR007）；
+        // - 不产生 `PerformEffect`，因此 wasm 导出不会被要求提供尚未验证的 suspend 合同。
+        // 若未来实现跨函数 effect 传播，由 handler/effect 合同在此分支前接管。
+        let _ = payload;
         self.terminate(MirTerminator::Unreachable);
         MirOperand::Constant(MirConstant::Unit)
     }
