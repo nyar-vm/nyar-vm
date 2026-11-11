@@ -16,6 +16,8 @@ use crate::asgard::awsl::{
     render_ir::{attr_value_source, region_nodes},
 };
 
+use super::v_render::util::encode_v_text_literal;
+
 /// 将组件 RenderIR 生成为终端 V 源码（init + mount + handlers + main）。
 pub fn render_terminal_component_v(component: &LoweredComponent) -> String {
     let route = sanitize(&component.route_name);
@@ -63,8 +65,10 @@ fn emit_init(route: &str, bindings: &[ScriptBinding]) -> String {
     writeln!(out, "# 绑定初始化：注册所有 let mut 变量到 TuiRuntime").unwrap();
     writeln!(out, "micro awsl_init_{route}() {{").unwrap();
     for b in bindings.iter().filter(|b| b.reactive) {
-        let init = sanitize_v_string(&b.init_expr);
-        writeln!(out, "    tui_register_binding(\"{}\", \"{init}\")", b.name).unwrap();
+        // 初始化表达式作为运行时文本登记，必须按合法定界编码，`{`/`}` 不得变成插值。
+        let name = encode_v_text_literal(&b.name);
+        let init = encode_v_text_literal(&b.init_expr);
+        writeln!(out, "    tui_register_binding({name}, {init})").unwrap();
     }
     writeln!(out, "}}\n").unwrap();
     out
@@ -282,12 +286,12 @@ fn build_text_expr(module: &RenderModule, segments: &[RenderTextSegment], bindin
         match segment {
             RenderTextSegment::Static(text) => {
                 if !text.is_empty() {
-                    parts.push(format!("\"{}\"", sanitize_v_string(text)));
+                    parts.push(encode_v_text_literal(text));
                 }
             }
             RenderTextSegment::Expr(expr_id) => {
-                let name = module.expr_source(*expr_id).trim();
-                parts.push(format!("tui_binding_get(\"{name}\")"));
+                let name = encode_v_text_literal(module.expr_source(*expr_id).trim());
+                parts.push(format!("tui_binding_get({name})"));
             }
         }
     }
@@ -391,8 +395,4 @@ fn sanitize(name: &str) -> String {
         .collect::<String>()
         .trim_matches('_')
         .to_ascii_lowercase()
-}
-
-fn sanitize_v_string(text: &str) -> String {
-    text.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
 }
