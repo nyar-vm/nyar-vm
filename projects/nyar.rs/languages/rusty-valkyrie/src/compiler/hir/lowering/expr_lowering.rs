@@ -215,7 +215,7 @@ fn parse_pattern_literal(literal: &LiteralPattern) -> Result<HirLiteral, HirErro
     if let Some(literal) = quote_literal::split_pattern_capture(value, literal_range.start) {
         let prefix_name = literal.prefix.as_ref().map(|prefix| prefix.name.as_str());
         let decoded = quote_literal::decode_quote_capture(&literal, false)?;
-        return quote_literal::pattern_literal_value(decoded, prefix_name, literal.quote_count);
+        return quote_literal::pattern_literal_value(decoded, prefix_name, literal.quote, literal.quote_count);
     }
     if let Ok(value) = value.parse::<i64>() {
         return Ok(HirLiteral::Integer64(value));
@@ -226,6 +226,7 @@ fn parse_pattern_literal(literal: &LiteralPattern) -> Result<HirLiteral, HirErro
     Ok(HirLiteral::String(crate::compiler::types::hir::HirStringLiteral {
         prefix: None,
         quote_count: 1,
+        quote: crate::compiler::types::hir::HirQuoteKind::Double,
         segments: vec![crate::compiler::types::hir::HirStringSegment::Text(value.to_string())],
     }))
 }
@@ -951,11 +952,13 @@ fn lower_quote_literal_kind(literal: &QuoteLiteral, source_id: SourceID) -> Resu
         quote_literal::DecodedQuoteCapture::PlainText(text) => HirLiteral::String(crate::compiler::types::hir::HirStringLiteral {
             prefix,
             quote_count: literal.quote_count,
+            quote: quote_literal::hir_quote_kind(literal.quote),
             segments: vec![crate::compiler::types::hir::HirStringSegment::Text(text)],
         }),
         quote_literal::DecodedQuoteCapture::Template(parts) => HirLiteral::String(crate::compiler::types::hir::HirStringLiteral {
             prefix,
             quote_count: literal.quote_count,
+            quote: quote_literal::hir_quote_kind(literal.quote),
             segments: parts
                 .into_iter()
                 .map(|part| -> Result<_, HirError> {

@@ -25,11 +25,19 @@ use crate::compiler::{
     },
     types::{
         Identifier,
-        hir::{HirLiteral, HirStringLiteral, HirStringSegment},
+        hir::{HirLiteral, HirQuoteKind, HirStringLiteral, HirStringSegment},
     },
 };
 
 use super::errors::{HirError, QuoteLiteralFailure};
+
+/// Oak 引号种类映射为 HIR 语法元数据。
+pub(crate) fn hir_quote_kind(quote: QuoteKind) -> HirQuoteKind {
+    match quote {
+        QuoteKind::Single => HirQuoteKind::Single,
+        QuoteKind::Double => HirQuoteKind::Double,
+    }
+}
 
 /// 模板片段：解码文本或待绑定插值。
 #[derive(Debug)]
@@ -108,13 +116,14 @@ fn is_valid_prefix_identifier(text: &str) -> bool {
 }
 
 /// 把模式位的解码结果落到 HIR 字面量；插值段在常量位已被拒绝。
-pub(crate) fn pattern_literal_value(decoded: DecodedQuoteCapture, prefix: Option<&str>, quote_count: u8) -> Result<HirLiteral, HirError> {
+pub(crate) fn pattern_literal_value(decoded: DecodedQuoteCapture, prefix: Option<&str>, quote: QuoteKind, quote_count: u8) -> Result<HirLiteral, HirError> {
     match decoded {
         DecodedQuoteCapture::Character(value) => Ok(HirLiteral::Character(value)),
         DecodedQuoteCapture::Byte(value) => Ok(HirLiteral::Byte(value)),
         DecodedQuoteCapture::PlainText(text) => Ok(HirLiteral::String(HirStringLiteral {
             prefix: prefix.map(Identifier::new),
             quote_count,
+            quote: hir_quote_kind(quote),
             segments: vec![HirStringSegment::Text(text)],
         })),
         DecodedQuoteCapture::Template(parts) => {

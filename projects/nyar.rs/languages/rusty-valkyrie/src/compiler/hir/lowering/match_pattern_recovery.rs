@@ -510,7 +510,7 @@ fn parse_hir_literal(text: &str) -> Option<HirLiteral> {
     if let Some(literal) = super::quote_literal::split_pattern_capture(text, 0) {
         let prefix_name = literal.prefix.as_ref().map(|prefix| prefix.name.as_str());
         let decoded = super::quote_literal::decode_quote_capture(&literal, false).ok()?;
-        return Some(super::quote_literal::pattern_literal_value(decoded, prefix_name, literal.quote_count).ok()?);
+        return Some(super::quote_literal::pattern_literal_value(decoded, prefix_name, literal.quote, literal.quote_count).ok()?);
     }
     if let Ok(value) = text.parse::<i64>() {
         return Some(HirLiteral::Integer64(value));

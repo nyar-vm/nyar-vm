@@ -3,7 +3,7 @@ use rusty_valkyrie::{
     types::hir::{
         HirArgument, HirAttribute, HirExpr, HirExprKind, parse_export_spec_from_annotations, parse_workload_phase_from_annotations,
         resolve_attribute_id, snake_case_to_camel_case,
-        types::{HirLiteral, HirStringLiteral, HirStringSegment},
+        types::{HirLiteral, HirQuoteKind, HirStringLiteral, HirStringSegment},
     },
     *,
 };
@@ -46,6 +46,7 @@ fn workload_phase_parses_positional_and_named() {
             kind: HirExprKind::Literal(HirLiteral::String(HirStringLiteral {
                 prefix: None,
                 quote_count: 1,
+                quote: HirQuoteKind::Double,
                 segments: vec![HirStringSegment::Text("request".into())],
             })),
             span: SourceSpan { source: rusty_valkyrie::compiler::types::SourceID { version_id: 0 }, span: (0..0).into() },
@@ -60,6 +61,7 @@ fn workload_phase_parses_positional_and_named() {
             kind: HirExprKind::Literal(HirLiteral::String(HirStringLiteral {
                 prefix: None,
                 quote_count: 1,
+                quote: HirQuoteKind::Double,
                 segments: vec![HirStringSegment::Text("batch".into())],
             })),
             span: SourceSpan { source: rusty_valkyrie::compiler::types::SourceID { version_id: 0 }, span: (0..0).into() },
@@ -77,6 +79,7 @@ fn workload_phase_rejects_empty_name() {
             kind: HirExprKind::Literal(HirLiteral::String(HirStringLiteral {
                 prefix: None,
                 quote_count: 1,
+                quote: HirQuoteKind::Double,
                 segments: vec![HirStringSegment::Text(String::new())],
             })),
             span: SourceSpan { source: rusty_valkyrie::compiler::types::SourceID { version_id: 0 }, span: (0..0).into() },
@@ -94,6 +97,7 @@ fn illegal_export_case_fails_closed() {
             kind: HirExprKind::Literal(HirLiteral::String(HirStringLiteral {
                 prefix: None,
                 quote_count: 1,
+                quote: HirQuoteKind::Double,
                 segments: vec![HirStringSegment::Text("PascalCase".into())],
             })),
             span: SourceSpan { source: rusty_valkyrie::compiler::types::SourceID { version_id: 0 }, span: (0..0).into() },

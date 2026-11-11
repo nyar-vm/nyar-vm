@@ -848,6 +848,16 @@ pub enum HirStringSegment {
     },
 }
 
+/// 引号捕获的引号种类（§4.10 A：语法元数据，不是已定型值；只在无约束默认时使用）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum HirQuoteKind {
+    /// `'` 捕获。
+    Single,
+    /// `"` 捕获。
+    Double,
+}
+
 /// HIR 字符串字面量。
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -856,6 +866,8 @@ pub struct HirStringLiteral {
     pub prefix: Option<Identifier>,
     /// 引号个数。
     pub quote_count: u8,
+    /// 引号种类。
+    pub quote: HirQuoteKind,
     /// 字符串片段列表。
     pub segments: Vec<HirStringSegment>,
 }
