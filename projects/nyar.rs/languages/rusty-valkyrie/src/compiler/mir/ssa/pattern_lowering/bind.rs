@@ -168,21 +168,15 @@ impl MirBuilder {
                             let Some((field_id, field_type)) =
                                 payload_ty.as_ref().and_then(|payload_ty| self.variant_record_field_by_name(payload_ty, field_name))
                             else {
-                                self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity {
-                                    field: field_name.to_string(),
-                                });
+                                self.diagnostics
+                                    .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity { field: field_name.to_string() });
                                 self.bind_unknown_pattern_bindings(field_pattern);
                                 continue;
                             };
                             let output = self.next_value(MirValueOrigin::Temporary);
                             self.push_instruction(MirOperation::FieldGet { object: payload.clone(), field: field_id }, vec![output]);
                             self.value_types.insert(output, field_type);
-                            self.bind_pattern_from_operand_with_payload(
-                                field_pattern,
-                                MirOperand::Value(output),
-                                None,
-                                None,
-                            );
+                            self.bind_pattern_from_operand_with_payload(field_pattern, MirOperand::Value(output), None, None);
                         }
                     }
                     if let Some(rest) = rest {
@@ -617,7 +611,13 @@ impl MirBuilder {
 
         let mut accumulated: Option<MirOperand> = None;
         if let Some(start_literal) = start {
-            let Ok((start_constant, _)) = lower_literal(start_literal, Some(&actual_type), &self.field_declarations) else {
+            let Ok((start_constant, _)) = lower_literal(start_literal, Some(&actual_type), &self.field_declarations)
+            else {
+                // 端点无法编码进 MIR 时不得静默变成「不匹配」：非法程序必须结构化失败。
+                self.diagnostics.push(MirDiagnostic::PatternLoweringFailed {
+                    pattern: HirPattern::Range { start: start.cloned(), end: end.cloned(), inclusive_end },
+                    reason: "区间模式起点无法按 scrutinee 类型编码为常量".to_string(),
+                });
                 return MirOperand::Constant(MirConstant::Bool(false));
             };
             // value >= start ? !(value < start)
@@ -626,7 +626,13 @@ impl MirBuilder {
             accumulated = Some(self.merge_pattern_match_operands(accumulated, lower_bound));
         }
         if let Some(end_literal) = end {
-            let Ok((end_constant, _)) = lower_literal(end_literal, Some(&actual_type), &self.field_declarations) else {
+            let Ok((end_constant, _)) = lower_literal(end_literal, Some(&actual_type), &self.field_declarations)
+            else {
+                // 与起点同一门：端点编码失败必须留下诊断，不能被当作「不匹配」。
+                self.diagnostics.push(MirDiagnostic::PatternLoweringFailed {
+                    pattern: HirPattern::Range { start: start.cloned(), end: end.cloned(), inclusive_end },
+                    reason: "区间模式终点无法按 scrutinee 类型编码为常量".to_string(),
+                });
                 return MirOperand::Constant(MirConstant::Bool(false));
             };
             let upper_bound = if inclusive_end {
