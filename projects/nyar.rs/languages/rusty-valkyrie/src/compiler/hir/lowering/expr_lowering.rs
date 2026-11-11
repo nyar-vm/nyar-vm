@@ -13,7 +13,7 @@ use crate::compiler::{
         self as frontend,
         ast::{
             AnonymousClass, AnonymousMicro, AnonymousStructure, ArrayPattern, Block, Break, ClassPattern, Continue, LiteralPattern, MatchArm, Pattern,
-            Raise, Resume, Return, Statement, StringLiteral, StringSegment, TermBinaryNode, TermExpression, TermUnaryNode, TextSegment,
+            QuoteKind, QuoteLiteral, Raise, Resume, Return, Statement, TermBinaryNode, TermExpression, TermUnaryNode,
             VariablePattern, WildcardPattern, pattern_nodes::ElsePattern,
         },
     },
@@ -212,10 +212,10 @@ fn parse_pattern_literal(literal: &LiteralPattern) -> Result<HirLiteral, HirErro
         return Ok(HirLiteral::Bool(value == "true"));
     }
     let literal_range = frontend::std_range(&literal.span);
-    if let Some((prefix, content, content_start)) = single_quote_literal::split_single_quote_capture(value, literal_range.start) {
-        let prefix_name = prefix.as_ref().map(|(name, _)| *name);
-        let decoded = single_quote_literal::decode_single_quote_literal(prefix, content, &literal_range, content_start)?;
-        return Ok(single_quote_literal::single_quote_literal_value(decoded, prefix_name));
+    if let Some(literal) = quote_literal::split_pattern_capture(value, literal_range.start) {
+        let prefix_name = literal.prefix.as_ref().map(|prefix| prefix.name.as_str());
+        let decoded = quote_literal::decode_quote_capture(&literal, false)?;
+        return quote_literal::pattern_literal_value(decoded, prefix_name, literal.quote_count);
     }
     if let Ok(value) = value.parse::<i64>() {
         return Ok(HirLiteral::Integer64(value));
@@ -281,7 +281,7 @@ fn lower_term_expression_body(
             })
         })?,
         TermExpression::NamePath(path) => lower_name_expression(path, span.clone()),
-        TermExpression::StringLiteral(literal) => lower_string_literal_kind(literal, source_id, span_range.clone())?,
+        TermExpression::QuoteLiteral(literal) => lower_quote_literal_kind(literal, source_id)?,
         TermExpression::IntegerLiteral { value, .. } => {
             HirExprKind::Literal(HirLiteral::Integer64(integer_literal_value(value, false, span_range.clone())?))
         }
@@ -290,20 +290,6 @@ fn lower_term_expression_body(
             HirExprKind::Literal(HirLiteral::Float64(OrderedFloat(parsed)))
         }
         TermExpression::BooleanLiteral { value, .. } => HirExprKind::Literal(HirLiteral::Bool(*value)),
-        TermExpression::SingleQuoteLiteral { prefix, quote_count, content, span: literal_span } => {
-            // 捕获事实来自 Oak：内容未解码，前缀是紧邻标识符；字符/字节/raw 归属与
-            // 转义解码由 `single_quote_literal` 模块按合同完成，失败结构化带 span。
-            let literal_range = frontend::std_range(literal_span);
-            let capture_start = prefix.as_ref().map_or(literal_range.start, |prefix| prefix.span.end);
-            let content_start = capture_start + *quote_count as usize;
-            let decoded = single_quote_literal::decode_single_quote_literal(
-                prefix.as_ref().map(|prefix| (prefix.name.as_str(), prefix.span.start..prefix.span.end)),
-                content,
-                &literal_range,
-                content_start,
-            )?;
-            single_quote_literal::single_quote_literal_kind(decoded, prefix.as_ref())
-        }
         TermExpression::Unary(node) => lower_unary_expression(node, source_id, span_range.clone(), span.clone())?,
         TermExpression::Binary(node) => lower_binary_expression(node, source_id, span_range.clone(), span.clone())?,
         TermExpression::Cast { expr, ty, .. } => lower_deferred(|| {
@@ -954,8 +940,38 @@ fn lower_name_expression(path: &frontend::ast::NamePath, span: SourceSpan) -> Hi
     }
 }
 
-fn lower_string_literal_kind(literal: &StringLiteral, source_id: SourceID, fallback_span: Range<usize>) -> Result<HirExprKind, HirError> {
-    Ok(HirExprKind::Literal(HirLiteral::String(lower_string_literal(literal, source_id, fallback_span)?)))
+fn lower_quote_literal_kind(literal: &QuoteLiteral, source_id: SourceID) -> Result<HirExprKind, HirError> {
+    // 捕获事实来自 Oak：内容未解码、模板未分段；前缀解释、转义解码与模板解析
+    // 由 `quote_literal` 模块按合同完成，失败结构化带原始源区间。
+    let decoded = quote_literal::decode_quote_capture(literal, true)?;
+    let prefix = literal.prefix.as_ref().map(|prefix| Identifier::new(&prefix.name));
+    Ok(HirExprKind::Literal(match decoded {
+        quote_literal::DecodedQuoteCapture::Character(value) => HirLiteral::Character(value),
+        quote_literal::DecodedQuoteCapture::Byte(value) => HirLiteral::Byte(value),
+        quote_literal::DecodedQuoteCapture::PlainText(text) => HirLiteral::String(crate::compiler::types::hir::HirStringLiteral {
+            prefix,
+            quote_count: literal.quote_count,
+            segments: vec![crate::compiler::types::hir::HirStringSegment::Text(text)],
+        }),
+        quote_literal::DecodedQuoteCapture::Template(parts) => HirLiteral::String(crate::compiler::types::hir::HirStringLiteral {
+            prefix,
+            quote_count: literal.quote_count,
+            segments: parts
+                .into_iter()
+                .map(|part| -> Result<_, HirError> {
+                    match part {
+                        quote_literal::QuoteTemplatePart::Text(text) => Ok(crate::compiler::types::hir::HirStringSegment::Text(text)),
+                        quote_literal::QuoteTemplatePart::Interpolation { expr, is_fluent, span } => {
+                            Ok(crate::compiler::types::hir::HirStringSegment::Interpolation {
+                                expr: lower_term_expression_with_context(&expr, source_id, span, false)?,
+                                is_fluent,
+                            })
+                        }
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
+    }))
 }
 
 /// 整数字面量按"符号 + 量级"解释：量级用 `u64` 承载，符号在结合时应用，
@@ -1003,31 +1019,6 @@ fn parse_integer_literal_magnitude(text: &str) -> Result<u64, ()> {
     text.parse::<u64>().map_err(|_| ())
 }
 
-fn lower_string_literal(
-    literal: &StringLiteral,
-    source_id: SourceID,
-    fallback_span: Range<usize>,
-) -> Result<crate::compiler::types::hir::HirStringLiteral, HirError> {
-    let segments = literal
-        .segments
-        .iter()
-        .map(|segment| -> Result<_, HirError> {
-            match segment {
-                StringSegment::Text(text) => Ok(crate::compiler::types::hir::HirStringSegment::Text(text.content.clone())),
-                StringSegment::Interpolation(interpolation) => Ok(crate::compiler::types::hir::HirStringSegment::Interpolation {
-                    expr: lower_term_expression_with_context(&interpolation.expr, source_id, fallback_span.clone(), false)?,
-                    is_fluent: interpolation.is_locale,
-                }),
-            }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(crate::compiler::types::hir::HirStringLiteral {
-        prefix: literal.prefix.as_ref().map(|prefix| Identifier::new(&prefix.name)),
-        quote_count: literal.quote_count,
-        segments,
-    })
-}
-
 pub(super) fn extract_name_path(expression: &TermExpression) -> Option<NamePath> {
     match expression {
         TermExpression::NamePath(path) => Some(lower_name_path(path)),
@@ -1036,8 +1027,8 @@ pub(super) fn extract_name_path(expression: &TermExpression) -> Option<NamePath>
             parts.push(Identifier::new(&field.name));
             Some(NamePath::new(parts))
         }
-        TermExpression::StringLiteral(literal) => {
-            let raw = plain_string_literal_text(literal)?;
+        TermExpression::QuoteLiteral(literal) if literal.quote == QuoteKind::Double => {
+            let raw = plain_quote_capture_text(literal)?;
             Some(NamePath::new(raw.split("::").filter(|part| !part.is_empty()).map(Identifier::new).collect()))
         }
         _ => None,
@@ -1056,12 +1047,9 @@ fn lower_optional_term_expression(
     }
 }
 
-fn plain_string_literal_text(literal: &StringLiteral) -> Option<&str> {
-    if literal.segments.len() != 1 {
-        return None;
-    }
-    match &literal.segments[0] {
-        StringSegment::Text(text) => Some(text.content.as_str()),
-        StringSegment::Interpolation(_) => None,
+fn plain_quote_capture_text(literal: &QuoteLiteral) -> Option<String> {
+    match quote_literal::decode_quote_capture(literal, false).ok()? {
+        quote_literal::DecodedQuoteCapture::PlainText(text) => Some(text),
+        _ => None,
     }
 }

@@ -1,15 +1,18 @@
-//! 单引号捕获字面量（字符/字节/raw）的 HIR lowering 与类型归属测试。
+//! 引号捕获字面量（字符/字节/raw/模板）的 HIR lowering 与归属测试。
 //!
-//! 合同：词法只按等量引号串捕获（oak 侧），语义判定在 HIR lowering：
-//! - 无前缀 cooked：解码 `\n \t \r \0 \\ \' \" \u{...}`，一字符归 `char`，多字符归 `Utf8`。
-//! - `r` 前缀：raw 不解码；`b` 前缀：字节字面量（`\xNN` 可用），必须恰好一个字节。
-//! - 字符/字节字面量对形参的提升规则与整数字面量同源，比较/算术不要求调用方写 `as`。
+//! 合同（§4.10，2026-11-11 用户裁定）：词法只按等量引号串捕获（oak 侧），
+//! 语义判定在 HIR lowering，单双引号共用同一管线：
+//! - 无前缀 cooked：标准转义集 `\" \\ \/ \b \f \n \r \t \uXXXX` 与 `\'`、`\{`、`\}`；
+//!   未知/残缺转义与模板语法错误结构化报错。
+//! - `r` 前缀：raw 不解码、不插值；`b` 前缀：字节字面量（`\xNN` 可用），必须恰好一个字节。
+//! - 反斜杠不救定界符：`'\''`、`"\""` 非法；`"'"`、`'"'` 是引号字符的正确写法。
+//! - 过渡归属：无插值时单引号恰好一字符归 `char`，其余归文本；完整上下文定型门另行落地。
 
 use rusty_valkyrie::{
     HirError, ValkyrieCompiler,
     compiler::{
         diagnostics::pending,
-        hir::lowering::errors::SingleQuoteLiteralFailure,
+        hir::lowering::errors::QuoteLiteralFailure,
     },
     types::hir::{HirExprKind, HirLiteral, HirStatementKind, types::ValkyrieType},
 };
@@ -53,26 +56,28 @@ fn assert_byte(source: &str, expected: u8) {
     }
 }
 
-fn assert_text(source: &str, expected: &str) {
-    match first_let_initializer_kind(source) {
-        HirExprKind::Literal(HirLiteral::String(literal)) => {
-            assert_eq!(literal.segments.len(), 1, "源码 {source} 必须是单段文本");
-            let rusty_valkyrie::types::hir::HirStringSegment::Text(text) = &literal.segments[0]
-            else {
-                panic!("源码 {source} 必须是文本段")
-            };
-            assert_eq!(text, expected, "源码 {source}");
-        }
-        other => panic!("源码 {source} 必须归字符串字面量，实际 {other:?}"),
+fn plain_text_of(kind: &HirExprKind) -> Vec<rusty_valkyrie::types::hir::HirStringSegment> {
+    match kind {
+        HirExprKind::Literal(HirLiteral::String(literal)) => literal.segments.clone(),
+        other => panic!("必须归字符串字面量，实际 {other:?}"),
     }
 }
 
-/// 反例：编译必须失败且是结构化 `InvalidSingleQuoteLiteral`，返回失败原因与 span。
-fn expect_literal_failure(source: &str) -> (SingleQuoteLiteralFailure, usize, usize) {
+fn assert_text(source: &str, expected: &str) {
+    let segments = plain_text_of(&first_let_initializer_kind(source));
+    assert_eq!(segments.len(), 1, "源码 {source} 必须是单段文本");
+    let rusty_valkyrie::types::hir::HirStringSegment::Text(text) = &segments[0] else {
+        panic!("源码 {source} 必须是文本段")
+    };
+    assert_eq!(text, expected, "源码 {source}");
+}
+
+/// 反例：编译必须失败且是结构化 `InvalidQuoteLiteral`，返回失败原因与 span。
+fn expect_literal_failure(source: &str) -> (QuoteLiteralFailure, usize, usize) {
     let error = ValkyrieCompiler::default().compile_source(source).expect_err(&format!("源码 {source} 必须失败"));
     match error {
-        HirError::InvalidSingleQuoteLiteral { failure, span, .. } => (failure, span.start, span.end),
-        other => panic!("源码 {source} 必须是 InvalidSingleQuoteLiteral，实际 {other:?}"),
+        HirError::InvalidQuoteLiteral { failure, span, .. } => (failure, span.start, span.end),
+        other => panic!("源码 {source} 必须是 InvalidQuoteLiteral，实际 {other:?}"),
     }
 }
 
@@ -90,18 +95,40 @@ fn escaped_character_literals_decode() {
     assert_character("micro probe() { let tab: char = '\\t' }", 9);
     assert_character("micro probe() { let newline: char = '\\n' }", 10);
     assert_character("micro probe() { let cr: char = '\\r' }", 13);
-    assert_character("micro probe() { let zero: char = '\\0' }", 0);
+    assert_character("micro probe() { let backspace: char = '\\b' }", 8);
+    assert_character("micro probe() { let feed: char = '\\f' }", 12);
     assert_character("micro probe() { let slash: char = '\\\\' }", 92);
+    assert_character("micro probe() { let solidus: char = '\\/' }", 47);
     assert_character("micro probe() { let quote: char = '\\\"' }", 34);
-    assert_character("micro probe() { let alpha: char = '\\u{41}' }", 65);
+    assert_character("micro probe() { let alpha: char = '\\u0041' }", 65);
+}
+
+#[test]
+fn brace_escapes_decode_to_literal_braces() {
+    // `\{`、`\}` 是字面花括号的唯一写法；解码后花括号不再开启插值。
+    assert_text("micro probe() { let text = 'a\\{b\\}c' }", "a{b}c");
+    assert_text("micro probe() { let text = \"x\\{y\\}\" }", "x{y}");
+}
+
+#[test]
+fn cooked_capture_interpolates_real_expression() {
+    // 插值在两种引号下同形；旧实现把 `1` 整段当名字，新管线必须给出真实表达式。
+    let segments = plain_text_of(&first_let_initializer_kind("micro probe() { let t = 'x{1}y' }"));
+    assert_eq!(segments.len(), 3, "期望 Text/Interpolation/Text 三段");
+    assert!(matches!(&segments[2], rusty_valkyrie::types::hir::HirStringSegment::Text(text) if text == "y"));
+    let rusty_valkyrie::types::hir::HirStringSegment::Interpolation { expr, .. } = &segments[1] else {
+        panic!("中段必须是插值")
+    };
+    assert!(matches!(expr.kind, HirExprKind::Literal(HirLiteral::Integer64(1))), "插值必须是真实表达式树，不是名字路径：{:?}", expr.kind);
 }
 
 #[test]
 fn raw_single_quote_literal_skips_escapes() {
     // raw 不解析转义：`r'\'` 是单个反斜杠字符。
     assert_character("micro probe() { let slash: char = r'\\' }", 92);
-    // raw 长内容归字符串，内容原样保留反斜杠。
+    // raw 长内容归字符串，内容原样保留反斜杠，也不解析插值。
     assert_text("micro probe() { let text = r'a\\nb' }", "a\\nb");
+    assert_text("micro probe() { let text = r'x{1}y' }", "x{1}y");
 }
 
 #[test]
@@ -134,57 +161,73 @@ fn byte_literals_decode_to_u8() {
 #[test]
 fn empty_byte_literal_fails() {
     let (failure, _, _) = expect_literal_failure("micro probe() { let bad = b'' }");
-    assert!(matches!(failure, SingleQuoteLiteralFailure::EmptyByteLiteral));
+    assert!(matches!(failure, QuoteLiteralFailure::EmptyByteLiteral));
 }
 
 #[test]
 fn multi_byte_literal_fails() {
     let (failure, _, _) = expect_literal_failure("micro probe() { let bad = b'ab' }");
-    assert!(matches!(failure, SingleQuoteLiteralFailure::ByteLiteralNotSingleByte { count: 2 }));
+    assert!(matches!(failure, QuoteLiteralFailure::ByteLiteralNotSingleByte { count: 2 }));
 }
 
 #[test]
 fn non_ascii_byte_literal_fails() {
     let (failure, _, _) = expect_literal_failure("micro probe() { let bad = b'é' }");
-    assert!(matches!(failure, SingleQuoteLiteralFailure::ByteLiteralNotAscii { .. }));
+    assert!(matches!(failure, QuoteLiteralFailure::ByteLiteralNotAscii { .. }));
 }
 
 #[test]
 fn unicode_escape_in_byte_literal_fails() {
-    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = b'\\u{41}' }");
-    assert!(matches!(failure, SingleQuoteLiteralFailure::UnicodeEscapeInByteLiteral));
+    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = b'\\u0041' }");
+    assert!(matches!(failure, QuoteLiteralFailure::UnicodeEscapeInByteLiteral));
 }
 
 #[test]
 fn invalid_escape_fails_with_span() {
     let source = "micro probe() { let bad = '\\q' }";
     let (failure, start, end) = expect_literal_failure(source);
-    assert!(matches!(failure, SingleQuoteLiteralFailure::InvalidEscapeSequence { .. }));
+    assert!(matches!(failure, QuoteLiteralFailure::InvalidEscapeSequence { .. }));
     // span 必须定位到 `\\q` 序列本身，而不是整个函数。
     assert_eq!(&source[start..end], "\\q");
 }
 
 #[test]
+fn zero_and_braced_unicode_escapes_are_not_in_the_set() {
+    // `\0` 与 `\u{...}` 不在标准集内：按未知转义/模板语法拒绝，不静默保留。
+    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = '\\0' }");
+    assert!(matches!(failure, QuoteLiteralFailure::InvalidEscapeSequence { escape } if escape == "\\0"));
+    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = '\\u{41}' }");
+    assert!(matches!(failure, QuoteLiteralFailure::InvalidUnicodeEscape { .. }));
+}
+
+#[test]
 fn invalid_unicode_escape_fails() {
-    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = '\\u{}' }");
-    assert!(matches!(failure, SingleQuoteLiteralFailure::InvalidUnicodeEscape { .. }));
-    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = '\\u{110000}' }");
-    assert!(matches!(failure, SingleQuoteLiteralFailure::InvalidUnicodeEscape { .. }));
+    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = '\\uZZZZ' }");
+    assert!(matches!(failure, QuoteLiteralFailure::InvalidUnicodeEscape { .. }));
+    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = '\\uD800' }");
+    assert!(matches!(failure, QuoteLiteralFailure::InvalidUnicodeEscape { .. }));
+    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = '\\u41' }");
+    assert!(matches!(failure, QuoteLiteralFailure::InvalidUnicodeEscape { .. }));
 }
 
 #[test]
 fn character_beyond_bmp_fails() {
-    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = '\\u{1F600}' }");
-    assert!(matches!(failure, SingleQuoteLiteralFailure::CharacterBeyondBmp { value: 0x1F600 }));
-    // 裸写超出 BMP 的字符同样拒绝，不静默截断。
+    // 裸写超出 BMP 的字符拒绝，不静默截断。
     let (failure, _, _) = expect_literal_failure("micro probe() { let bad = '🙂' }");
-    assert!(matches!(failure, SingleQuoteLiteralFailure::CharacterBeyondBmp { .. }));
+    assert!(matches!(failure, QuoteLiteralFailure::CharacterBeyondBmp { value: 0x1F642 }));
 }
 
 #[test]
 fn unknown_prefix_fails() {
     let (failure, _, _) = expect_literal_failure("micro probe() { let bad = x'0' }");
-    assert!(matches!(failure, SingleQuoteLiteralFailure::UnknownPrefix { .. }));
+    assert!(matches!(failure, QuoteLiteralFailure::UnknownPrefix { .. }));
+}
+
+#[test]
+fn bare_closing_brace_fails_closed() {
+    // 字面花括号必须写 `\{`/`\}`；裸 `}` 是模板语法错误，不悄悄保留。
+    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = \"a}b\" }");
+    assert!(matches!(failure, QuoteLiteralFailure::TemplateSyntax { .. }));
 }
 
 #[test]

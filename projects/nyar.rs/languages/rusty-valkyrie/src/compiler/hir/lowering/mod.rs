@@ -34,7 +34,7 @@ mod generic_instantiation;
 mod macro_expand;
 mod match_pattern_recovery;
 mod nominal_declarations;
-pub(crate) mod single_quote_literal;
+pub(crate) mod quote_literal;
 mod source_context;
 mod source_group;
 mod template_const;

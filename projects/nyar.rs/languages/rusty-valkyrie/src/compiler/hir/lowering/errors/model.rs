@@ -796,10 +796,10 @@ pub enum HirError {
     /// backend contract 拒绝声明面的互操作能力。
     /// 直接携带 backend contract 事实，不在 lowering 阶段重拼失败文本。
     BackendContractRejected(crate::compiler::emitter::backend_contract::interop::BackendContractError),
-    /// 单引号捕获字面量的语义判定失败（字符/字节/raw 归属与转义解码）。
-    InvalidSingleQuoteLiteral {
+    /// 引号捕获字面量的语义判定失败（前缀解释、转义解码、模板语法与 char/文本归属）。
+    InvalidQuoteLiteral {
         /// 结构化失败原因。
-        failure: SingleQuoteLiteralFailure,
+        failure: QuoteLiteralFailure,
         /// 诊断引用的源码或 artifact 身份。
         source: DiagnosticSource,
         /// 诊断主定位 span（指向出错的转义序列或整个字面量）。
@@ -901,13 +901,18 @@ pub enum TupleLabelingFailure {
     },
 }
 
-/// 单引号捕获字面量的结构化失败原因。
+/// 引号捕获字面量的结构化失败原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SingleQuoteLiteralFailure {
-    /// 未识别的前缀标识符：单引号捕获只定义 `r`（raw）与 `b`（字节）。
+pub enum QuoteLiteralFailure {
+    /// 未识别的前缀标识符：引号捕获只定义 `r`（raw）与 `b`（字节）。
     UnknownPrefix {
         /// 源码写出的前缀。
         prefix: String,
+    },
+    /// 模板语法错误：Oak 有边界模板解析拒绝（空插值、缺结束括号、残余 token 等）。
+    TemplateSyntax {
+        /// 上游结构化诊断文本。
+        message: String,
     },
     /// 空字节字面量 `b''`。
     EmptyByteLiteral,
@@ -921,16 +926,16 @@ pub enum SingleQuoteLiteralFailure {
         /// 源码写出的字符。
         character: String,
     },
-    /// 字节字面量不接受 `\u{...}` 转义，请写 `\xNN`。
+    /// 字节字面量不接受 `\uXXXX` 转义，请写 `\xNN`。
     UnicodeEscapeInByteLiteral,
-    /// 非法转义序列（如 `\q`）。
+    /// 非法转义序列（如 `\q`）；标准转义集之外的写法一律拒绝。
     InvalidEscapeSequence {
         /// 出错的转义文本（含反斜杠）。
         escape: String,
     },
-    /// `\u{...}` 转义不是合法 Unicode 码位（空、非十六进制或超过 0x10FFFF）。
+    /// `\uXXXX` 转义不是合法 Unicode 码位（不足四位、非十六进制、代理位或超过 0x10FFFF）。
     InvalidUnicodeEscape {
-        /// 出错的转义文本（含 `\u{` 与 `}`）。
+        /// 出错的转义文本（含 `\u` 与十六进制位）。
         escape: String,
     },
     /// 内容以孤立反斜杠结束；按捕获优先语义，转义不能跨界救定界符。

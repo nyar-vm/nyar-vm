@@ -384,42 +384,45 @@ impl std::fmt::Display for HirError {
             Self::InvalidRangePattern { pattern, reason, .. } => {
                 write!(f, "invalid range pattern `{pattern}`: {reason}")
             }
-            Self::InvalidSingleQuoteLiteral { failure, span, .. } => {
-                use super::model::SingleQuoteLiteralFailure;
+            Self::InvalidQuoteLiteral { failure, span, .. } => {
+                use super::model::QuoteLiteralFailure;
                 match failure {
-                    SingleQuoteLiteralFailure::UnknownPrefix { prefix } => {
+                    QuoteLiteralFailure::UnknownPrefix { prefix } => {
                         write!(
                             f,
-                            "unknown single-quote literal prefix `{prefix}` at {}..{} (only `r` and `b` are defined)",
+                            "unknown quote literal prefix `{prefix}` at {}..{} (only `r` and `b` are defined)",
                             span.start, span.end
                         )
                     }
-                    SingleQuoteLiteralFailure::EmptyByteLiteral => {
+                    QuoteLiteralFailure::TemplateSyntax { message } => {
+                        write!(f, "invalid quote template at {}..{}: {message}", span.start, span.end)
+                    }
+                    QuoteLiteralFailure::EmptyByteLiteral => {
                         write!(f, "empty byte literal `b''` at {}..{}", span.start, span.end)
                     }
-                    SingleQuoteLiteralFailure::ByteLiteralNotSingleByte { count } => {
+                    QuoteLiteralFailure::ByteLiteralNotSingleByte { count } => {
                         write!(f, "byte literal must decode to exactly one byte, got {count} at {}..{}", span.start, span.end)
                     }
-                    SingleQuoteLiteralFailure::ByteLiteralNotAscii { character } => {
+                    QuoteLiteralFailure::ByteLiteralNotAscii { character } => {
                         write!(
                             f,
                             "byte literal character `{character}` is not ASCII; write a `\\xNN` escape instead (at {}..{})",
                             span.start, span.end
                         )
                     }
-                    SingleQuoteLiteralFailure::UnicodeEscapeInByteLiteral => {
-                        write!(f, "byte literal does not accept `\\u{{...}}`; write `\\xNN` instead (at {}..{})", span.start, span.end)
+                    QuoteLiteralFailure::UnicodeEscapeInByteLiteral => {
+                        write!(f, "byte literal does not accept `\\uXXXX`; write `\\xNN` instead (at {}..{})", span.start, span.end)
                     }
-                    SingleQuoteLiteralFailure::InvalidEscapeSequence { escape } => {
+                    QuoteLiteralFailure::InvalidEscapeSequence { escape } => {
                         write!(f, "invalid escape sequence `{escape}` at {}..{}", span.start, span.end)
                     }
-                    SingleQuoteLiteralFailure::InvalidUnicodeEscape { escape } => {
+                    QuoteLiteralFailure::InvalidUnicodeEscape { escape } => {
                         write!(f, "invalid unicode escape `{escape}` at {}..{}", span.start, span.end)
                     }
-                    SingleQuoteLiteralFailure::DanglingEscape => {
+                    QuoteLiteralFailure::DanglingEscape => {
                         write!(f, "dangling backslash at the end of the captured literal at {}..{}", span.start, span.end)
                     }
-                    SingleQuoteLiteralFailure::CharacterBeyondBmp { value } => {
+                    QuoteLiteralFailure::CharacterBeyondBmp { value } => {
                         write!(
                             f,
                             "character literal U+{value:X} is beyond the BMP: `char` is a u16 code unit (at {}..{})",

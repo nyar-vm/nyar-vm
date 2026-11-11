@@ -39,6 +39,15 @@ pub fn production_language() -> ValkyrieLanguage {
 /// 匿名源码的稳定诊断身份：测试夹具与合成包装没有可归属的文件路径。
 pub const ANONYMOUS_SOURCE_ID: &str = "<frontend>";
 
+/// 请求 Oak 对已捕获引号区间做有边界模板语法解析。
+///
+/// 这是 Oak 的语法能力：文本段保留原始字节（转义候选不解码），插值段用普通
+/// 表达式解析器生成真实表达式树与绝对区间。前缀解释（`r` 不进入模板）由
+/// 调用方决定，本函数不识别 prefix。
+pub fn parse_quote_template(content: &str, content_start: usize) -> Result<Vec<ast::StringSegment>, oak_core::OakError> {
+    ValkyrieBuilder::new(&production_language()).parse_quote_template(content, content_start)
+}
+
 /// 使用 Oak 解析匿名源码；失败时返回结构化 `ParseError`，禁止回退旧 parser。
 ///
 /// 匿名入口只为单源码测试夹具与无法归属的合成包装服务，诊断落 [`ANONYMOUS_SOURCE_ID`]；

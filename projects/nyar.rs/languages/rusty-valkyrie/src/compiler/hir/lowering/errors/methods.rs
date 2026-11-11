@@ -126,7 +126,7 @@ impl HirError {
             Self::SourceGroupClosureFailed(_) => "valkyrie.hir.source_group_closure_failed",
             Self::DeriveResolutionFailed { .. } => "valkyrie.hir.derive_resolution_failed",
             Self::BackendContractRejected(_) => "backend.contract.rejected",
-            Self::InvalidSingleQuoteLiteral { .. } => "valkyrie.hir.invalid_single_quote_literal",
+            Self::InvalidQuoteLiteral { .. } => "valkyrie.hir.invalid_quote_literal",
             Self::IntegerLiteralOutOfRange { .. } => "valkyrie.hir.integer_literal_out_of_range",
             Self::InvalidRangePattern { .. } => "valkyrie.hir.invalid_range_pattern",
             Self::InvalidTupleLabeling { .. } => "valkyrie.hir.invalid_tuple_labeling",

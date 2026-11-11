@@ -73,18 +73,17 @@ pub(crate) fn primitive_annotation_identity(annotations: &[ast::Attribute]) -> O
         if argument.key.is_some() {
             return None;
         }
-        let ast::TermExpression::StringLiteral(string) = &argument.value
+        let ast::TermExpression::QuoteLiteral(literal) = &argument.value
         else {
             return None;
         };
-        let mut content = String::new();
-        for segment in &string.segments {
-            match segment {
-                ast::StringSegment::Text(text) => content.push_str(&text.content),
-                ast::StringSegment::Interpolation(_) => return None,
-            }
-        }
-        return Some(content);
+        // 符号身份要求常量文本：与表达式位同一套捕获解码，含插值即拒绝。
+        use crate::compiler::hir::lowering::quote_literal::{DecodedQuoteCapture, decode_quote_capture};
+        return match decode_quote_capture(literal, false).ok()? {
+            DecodedQuoteCapture::PlainText(text) => Some(text),
+            DecodedQuoteCapture::Character(value) => Some(char::try_from(u32::from(value)).expect("char value is a valid scalar").to_string()),
+            _ => None,
+        };
     }
     None
 }

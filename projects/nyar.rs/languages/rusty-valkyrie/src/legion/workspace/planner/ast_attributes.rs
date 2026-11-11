@@ -1,6 +1,6 @@
 //! 从 Oak `Attribute` 读取 planner 事实（不渲染 attribute 文本、不做二次 parse）。
 
-use crate::compiler::syntax::oak::ast::{Attribute, StringLiteral, StringSegment, TermExpression};
+use crate::compiler::syntax::oak::ast::{Attribute, QuoteLiteral, TermExpression};
 
 use super::{
     capability::ForeignBinding,
@@ -59,7 +59,7 @@ pub(crate) fn host_provider_contract_targets(attributes: &[Attribute], source: &
 /// `host_provider` 参数：字符串字面量走 AST 解码，其余用表达式 span 在源码中的切片（不拼 attribute 文本）。
 pub(crate) fn host_provider_contract_reference(expr: &TermExpression, source: &str) -> Option<String> {
     match expr {
-        TermExpression::StringLiteral(literal) => string_literal_value(literal),
+        TermExpression::QuoteLiteral(literal) => quote_capture_value(literal),
         expr => {
             let span = expr.span();
             source.get(span.start..span.end).map(str::trim).filter(|text| !text.is_empty()).map(str::to_string)
@@ -69,18 +69,17 @@ pub(crate) fn host_provider_contract_reference(expr: &TermExpression, source: &s
 
 pub(crate) fn term_string_literal(expr: &TermExpression) -> Option<String> {
     match expr {
-        TermExpression::StringLiteral(literal) => string_literal_value(literal),
+        TermExpression::QuoteLiteral(literal) => quote_capture_value(literal),
         _ => None,
     }
 }
 
-fn string_literal_value(literal: &StringLiteral) -> Option<String> {
-    let mut value = String::new();
-    for segment in &literal.segments {
-        match segment {
-            StringSegment::Text(text) => value.push_str(&text.content),
-            StringSegment::Interpolation(_) => return None,
-        }
+/// 常量位使用与表达式位同一套捕获解码；含插值即非常量，返回 `None`。
+fn quote_capture_value(literal: &QuoteLiteral) -> Option<String> {
+    use crate::compiler::hir::lowering::quote_literal::{DecodedQuoteCapture, decode_quote_capture};
+    match decode_quote_capture(literal, false).ok()? {
+        DecodedQuoteCapture::PlainText(text) => Some(text),
+        DecodedQuoteCapture::Character(value) => Some(char::try_from(u32::from(value)).expect("char value is a valid scalar").to_string()),
+        _ => None,
     }
-    Some(value)
 }

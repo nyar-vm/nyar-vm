@@ -212,20 +212,16 @@ pub fn encode_v_text_literal(text: &str) -> AsgardResult<String> {
     Ok(format!("{delimiter}{}{delimiter}", encode_v_text_body(text)))
 }
 
-/// 只编码实测可还原的转义：`{` → `\{`，`\` 紧跟 `{`/`}` 时双写，其余原样。
+/// 编码到捕获解码的往返：`{` → `\{`、`}` → `\}`、`\` → `\\`，其余原样。
+/// 反斜杠必须全量双写——解码侧把 `\` 与后继字符视为转义候选对，单写会让后续
+/// 字符失去结构身份或落入未知转义。
 fn encode_v_text_body(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(ch) = chars.next() {
+    for ch in text.chars() {
         match ch {
             '{' => out.push_str("\\{"),
-            '\\' => match chars.peek() {
-                Some('{') | Some('}') => {
-                    out.push_str("\\\\");
-                    out.push(chars.next().expect("peeked character must be present"));
-                }
-                _ => out.push('\\'),
-            },
+            '}' => out.push_str("\\}"),
+            '\\' => out.push_str("\\\\"),
             _ => out.push(ch),
         }
     }

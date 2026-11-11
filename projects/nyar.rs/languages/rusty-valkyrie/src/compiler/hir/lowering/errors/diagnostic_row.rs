@@ -380,28 +380,31 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("value", DiagnosticArg::String(value.clone()))
                     .with_arg("allowed", DiagnosticArg::String(crate::compiler::types::hir::EXPORT_CASES.join(",")));
             }
-            HirError::InvalidSingleQuoteLiteral { failure, .. } => {
-                row = row.with_arg("failure", DiagnosticArg::String(single_quote_literal_failure_name(failure).to_string()));
+            HirError::InvalidQuoteLiteral { failure, .. } => {
+                row = row.with_arg("failure", DiagnosticArg::String(quote_literal_failure_name(failure).to_string()));
                 match failure {
-                    SingleQuoteLiteralFailure::UnknownPrefix { prefix } => {
+                    QuoteLiteralFailure::UnknownPrefix { prefix } => {
                         row = row.with_arg("prefix", DiagnosticArg::String(prefix.clone()));
                     }
-                    SingleQuoteLiteralFailure::ByteLiteralNotSingleByte { count } => {
+                    QuoteLiteralFailure::TemplateSyntax { message } => {
+                        row = row.with_arg("message", DiagnosticArg::String(message.clone()));
+                    }
+                    QuoteLiteralFailure::ByteLiteralNotSingleByte { count } => {
                         row = row.with_arg("count", DiagnosticArg::Int(*count as i64));
                     }
-                    SingleQuoteLiteralFailure::ByteLiteralNotAscii { character } => {
+                    QuoteLiteralFailure::ByteLiteralNotAscii { character } => {
                         row = row.with_arg("character", DiagnosticArg::String(character.clone()));
                     }
-                    SingleQuoteLiteralFailure::InvalidEscapeSequence { escape }
-                    | SingleQuoteLiteralFailure::InvalidUnicodeEscape { escape } => {
+                    QuoteLiteralFailure::InvalidEscapeSequence { escape }
+                    | QuoteLiteralFailure::InvalidUnicodeEscape { escape } => {
                         row = row.with_arg("escape", DiagnosticArg::String(escape.clone()));
                     }
-                    SingleQuoteLiteralFailure::CharacterBeyondBmp { value } => {
+                    QuoteLiteralFailure::CharacterBeyondBmp { value } => {
                         row = row.with_arg("value", DiagnosticArg::Int(*value as i64));
                     }
-                    SingleQuoteLiteralFailure::EmptyByteLiteral
-                    | SingleQuoteLiteralFailure::UnicodeEscapeInByteLiteral
-                    | SingleQuoteLiteralFailure::DanglingEscape => {}
+                    QuoteLiteralFailure::EmptyByteLiteral
+                    | QuoteLiteralFailure::UnicodeEscapeInByteLiteral
+                    | QuoteLiteralFailure::DanglingEscape => {}
                 }
             }
         }
@@ -672,7 +675,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
-        HirError::InvalidSingleQuoteLiteral { source, .. } => source.clone(),
+        HirError::InvalidQuoteLiteral { source, .. } => source.clone(),
         HirError::IntegerLiteralOutOfRange { source, .. } => source.clone(),
         HirError::InvalidRangePattern { source, .. } => source.clone(),
         HirError::InvalidTupleLabeling { source, .. } => source.clone(),
@@ -758,7 +761,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
-        HirError::InvalidSingleQuoteLiteral { span, .. } => span.clone(),
+        HirError::InvalidQuoteLiteral { span, .. } => span.clone(),
         HirError::IntegerLiteralOutOfRange { span, .. } => span.clone(),
         HirError::InvalidRangePattern { span, .. } => span.clone(),
         HirError::InvalidTupleLabeling { span, .. } => span.clone(),
@@ -786,17 +789,18 @@ pub(super) fn tuple_labeling_failure_name(failure: &TupleLabelingFailure) -> &'s
     }
 }
 
-/// 单引号字面量失败原因的稳定短名（用于诊断参数）。
-pub(super) fn single_quote_literal_failure_name(failure: &SingleQuoteLiteralFailure) -> &'static str {
+/// 引号捕获字面量失败原因的稳定短名（用于诊断参数）。
+pub(super) fn quote_literal_failure_name(failure: &QuoteLiteralFailure) -> &'static str {
     match failure {
-        SingleQuoteLiteralFailure::UnknownPrefix { .. } => "unknown_prefix",
-        SingleQuoteLiteralFailure::EmptyByteLiteral => "empty_byte_literal",
-        SingleQuoteLiteralFailure::ByteLiteralNotSingleByte { .. } => "byte_literal_not_single_byte",
-        SingleQuoteLiteralFailure::ByteLiteralNotAscii { .. } => "byte_literal_not_ascii",
-        SingleQuoteLiteralFailure::UnicodeEscapeInByteLiteral => "unicode_escape_in_byte_literal",
-        SingleQuoteLiteralFailure::InvalidEscapeSequence { .. } => "invalid_escape_sequence",
-        SingleQuoteLiteralFailure::InvalidUnicodeEscape { .. } => "invalid_unicode_escape",
-        SingleQuoteLiteralFailure::DanglingEscape => "dangling_escape",
-        SingleQuoteLiteralFailure::CharacterBeyondBmp { .. } => "character_beyond_bmp",
+        QuoteLiteralFailure::UnknownPrefix { .. } => "unknown_prefix",
+        QuoteLiteralFailure::TemplateSyntax { .. } => "template_syntax",
+        QuoteLiteralFailure::EmptyByteLiteral => "empty_byte_literal",
+        QuoteLiteralFailure::ByteLiteralNotSingleByte { .. } => "byte_literal_not_single_byte",
+        QuoteLiteralFailure::ByteLiteralNotAscii { .. } => "byte_literal_not_ascii",
+        QuoteLiteralFailure::UnicodeEscapeInByteLiteral => "unicode_escape_in_byte_literal",
+        QuoteLiteralFailure::InvalidEscapeSequence { .. } => "invalid_escape_sequence",
+        QuoteLiteralFailure::InvalidUnicodeEscape { .. } => "invalid_unicode_escape",
+        QuoteLiteralFailure::DanglingEscape => "dangling_escape",
+        QuoteLiteralFailure::CharacterBeyondBmp { .. } => "character_beyond_bmp",
     }
 }
