@@ -251,7 +251,11 @@ fn resolve_trait_default_override(
         }
         matched = Some((declaration.index, substitution, None));
     }
-    Some(matched)
+    // 「没有覆盖」必须与「覆盖歧义」区分开：前者回落 trait 默认体（按具体 self 类型
+    // 铸造默认方法实例），后者保持 witness 由后端精确失败。把两者都报成
+    // `Some(None)` 会让默认方法调默认方法的调用点永远不铸造实例，witness 只能以
+    // 「缺少 declaration 实例」存活到目标私有计划。
+    matched.map(Some)
 }
 
 /// 具体 self 类型上该声明所属 trait 的关联类型等式。

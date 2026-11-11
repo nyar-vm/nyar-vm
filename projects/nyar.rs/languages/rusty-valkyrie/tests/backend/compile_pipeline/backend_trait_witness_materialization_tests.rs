@@ -75,3 +75,139 @@ fn concrete_receiver_trait_member_witness_materializes_into_target_plan() {
     TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
         .expect("具体接收者的 trait 成员 witness 必须物化进目标私有计划");
 }
+
+const DEFAULT_METHOD_CORE: &str = r#"
+namespace demo.traits;
+
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+trait Sum {
+    micro base(self): i64
+
+    micro bonus(self): i64 {
+        return self.base()
+    }
+
+    micro total(self): i64 {
+        let direct: i64 = self.base()
+        let derived: i64 = self.bonus()
+        return direct
+    }
+}
+
+structure Sample {
+    seed: i64
+}
+
+imply Sample: Sum {
+    micro base(self): i64 {
+        return self.seed
+    }
+}
+"#;
+
+const DEFAULT_METHOD_APP: &str = r#"
+namespace demo.app;
+
+using demo.traits::{Sample}
+
+[export]
+micro probe(sample: Sample) -> i64 {
+    return sample.total()
+}
+"#;
+
+/// 默认方法体（`total`）调用同 trait 的必实现成员（`base`）与另一个默认方法
+/// （`bonus`）时，具体 `structure` 接收者必须各自铸造闭合实例；witness 不得以
+/// `(trait 默认槽, 具体 self 类型)` 存活到目标私有计划。
+#[test]
+fn default_method_body_on_concrete_structure_self_materializes() {
+    let groups = vec![
+        CompilerSourceGroup::single_source("core", "core", DEFAULT_METHOD_CORE),
+        CompilerSourceGroup::single_source("app", "demo", DEFAULT_METHOD_APP).as_entry().with_direct_dependencies(vec!["core".into()]),
+    ];
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&groups)
+        .expect("默认方法体 witness 闭包必须完成 Compiler 链路");
+    let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
+    let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
+    TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
+        .expect("默认方法体的具体 self witness 必须物化进目标私有计划");
+}
+
+const SORT_CORE: &str = r#"
+namespace demo.collection;
+
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+trait Comparable {
+    micro compare(self, other: Self): bool
+
+    micro less(self, other: Self): bool {
+        return self.compare(other)
+    }
+}
+
+structure Rank {
+    value: i64
+}
+
+imply Rank: Comparable {
+    micro compare(self, other: Rank): bool {
+        return true
+    }
+}
+
+class ArrayList<T> {
+    first: T
+    second: T
+}
+
+imply ArrayList<T> {
+    micro new(first: T, second: T): Self {
+        return ArrayList { first: first, second: second }
+    }
+}
+
+[export]
+micro sort<X>(items: ArrayList<X>): X
+    where X: Comparable
+{
+    if items.first.less(items.second) {
+        return items.first
+    }
+    return items.second
+}
+"#;
+
+const SORT_APP: &str = r#"
+namespace demo.app;
+
+using demo.collection::{ArrayList, Rank, sort}
+
+[export]
+micro probe(rank: Rank) -> Rank {
+    let items: ArrayList<Rank> = ArrayList.new(rank, rank)
+    return sort(items)
+}
+"#;
+
+/// 泛型 `sort<T>(items: ArrayList<T>) where T: Comparable` 的体内经 trait 默认方法
+/// `less` 派发到必实现成员 `compare`；`T = Rank` 闭包后默认方法实例与体内 witness
+/// 都必须按具体 self 类型物化，不得以「trait witness 缺少 declaration 实例」失败。
+#[test]
+fn generic_sort_default_method_witness_materializes_for_concrete_t() {
+    let groups = vec![
+        CompilerSourceGroup::single_source("core", "core", SORT_CORE),
+        CompilerSourceGroup::single_source("app", "demo", SORT_APP).as_entry().with_direct_dependencies(vec!["core".into()]),
+    ];
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&groups)
+        .expect("泛型 sort 的 witness 闭包必须完成 Compiler 链路");
+    let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
+    let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
+    TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
+        .expect("`sort<Rank>` 的默认方法 witness 必须物化进目标私有计划");
+}
