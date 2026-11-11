@@ -126,6 +126,7 @@ structure bool { }
 [primitive("std::text::char")]
 structure char { }
 
+[primitive("std::text::utf8")]
 class Utf8Text { }
 
 type utf8 = Utf8Text;
@@ -585,6 +586,7 @@ structure bool { }
 [primitive("std::text::char")]
 structure char { }
 
+[primitive("std::text::utf8")]
 structure Utf8Text { }
 
 structure Builder {
@@ -659,6 +661,7 @@ structure u8 { }
 [primitive("std::primitive::i64")]
 structure i64 { }
 
+[primitive("std::text::utf8")]
 class Utf8Text { _repr: [u8] }
 
 trait Display {

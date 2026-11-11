@@ -15,8 +15,10 @@ structure i32 { }
 [primitive("std::text::char")]
 structure char { }
 
+[primitive("std::text::utf8")]
 class Utf8Text { }
 
+[primitive("std::text::utf16")]
 class Utf16Text { }
 
 type utf8 = Utf8Text;

@@ -132,7 +132,7 @@ pub fn scalar_literal_binds_to(expected: &ValkyrieType, value: Option<&HirExpr>,
                 crate::compiler::hir::lowering::quote_literal::CaptureTargetKind::Char
             }
             else if is_text_expected(expected, state) {
-                crate::compiler::hir::lowering::quote_literal::CaptureTargetKind::Text(text_encoding_of_expected(expected))
+                crate::compiler::hir::lowering::quote_literal::CaptureTargetKind::Text(text_encoding_of_expected(expected, state))
             }
             else if numeric_expected {
                 crate::compiler::hir::lowering::quote_literal::CaptureTargetKind::Numeric
@@ -146,27 +146,24 @@ pub fn scalar_literal_binds_to(expected: &ValkyrieType, value: Option<&HirExpr>,
     }
 }
 
-/// 校验侧文本期望的编码载体：`Utf16` 内建与 `utf16`/`Utf16Text` 短名落 `Utf16`，
-/// 其余文本身份按共享载体默认 `Utf8`；与 `TypeRelationContext::text_encoding_of` 同口径。
-fn text_encoding_of_expected(ty: &ValkyrieType) -> crate::compiler::types::hir::HirTextEncoding {
+/// 校验侧文本期望的编码载体：`Utf16` 内建落 `Utf16`，其余按声明身份登记的编码；
+/// 与 `TypeRelationContext::text_encoding_of` 同源，不读拼写。
+fn text_encoding_of_expected(ty: &ValkyrieType, state: &HirValidationState) -> crate::compiler::types::hir::HirTextEncoding {
     match ty {
         ValkyrieType::Utf16 => crate::compiler::types::hir::HirTextEncoding::Utf16,
-        ValkyrieType::Named(name) if matches!(name.as_str(), "utf16" | "Utf16Text") => crate::compiler::types::hir::HirTextEncoding::Utf16,
+        ValkyrieType::Nominal { declaration, .. } => {
+            state.text_declarations.get(declaration).copied().unwrap_or(crate::compiler::types::hir::HirTextEncoding::Utf8)
+        }
         _ => crate::compiler::types::hir::HirTextEncoding::Utf8,
     }
 }
 
-/// 校验侧文本期望判定：内建编码 carrier、`Named` 文本拼写，或本模块声明身份在
-/// `text_declarations` 中的 `Nominal`（名集与 `text_carrier` 同源）。
+/// 校验侧文本期望判定：内建编码 carrier，或本模块声明身份在 `text_declarations` 中的
+/// `Nominal`（身份事实与 `text_carrier` 同源）。未解析的 `Named` 拼写不放行。
 fn is_text_expected(ty: &ValkyrieType, state: &HirValidationState) -> bool {
     match ty {
         ValkyrieType::Utf8 | ValkyrieType::Utf16 => true,
-        ValkyrieType::Named(name) => {
-            let name = name.as_str();
-            crate::compiler::text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, name)
-                || crate::compiler::text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf16, name)
-        }
-        ValkyrieType::Nominal { declaration, .. } => state.text_declarations.contains(declaration),
+        ValkyrieType::Nominal { declaration, .. } => state.text_declarations.contains_key(declaration),
         _ => false,
     }
 }

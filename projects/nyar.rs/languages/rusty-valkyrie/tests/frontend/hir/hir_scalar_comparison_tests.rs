@@ -90,6 +90,7 @@ imply u8: std::operator::Equal {
     infix `!=`(self, rhs: Self): bool { return true }
 }
 
+[primitive("std::text::utf8")]
 structure Utf8Text {
     _repr: [u8]
 }

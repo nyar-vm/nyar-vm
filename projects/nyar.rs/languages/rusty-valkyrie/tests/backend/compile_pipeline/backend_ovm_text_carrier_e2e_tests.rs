@@ -35,6 +35,7 @@ micro ovm_array_length<T>(xs: [T]): usize"#;
 /// 文本载体登记进 `text_encoding_types`，字符串常量与名义类型才被判等价。
 const APP_SOURCE: &str = r#"namespace std.text;
 
+[primitive("std::text::utf8")]
 class Utf8Text {
     _repr: [u8]
 }
@@ -119,6 +120,7 @@ fn utf8_receiver_is_materialized_before_field_access() {
 /// 块参数入边必须物化，否则下游 `self._repr` 以 `expected object, got string` 崩溃。
 const MERGE_APP_SOURCE: &str = r#"namespace std.text;
 
+[primitive("std::text::utf8")]
 class Utf8Text {
     _repr: [u8]
 }

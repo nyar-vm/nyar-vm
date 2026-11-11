@@ -125,8 +125,11 @@ fn text_builtin_anchors_nominal_declaration(
     else {
         return false;
     };
-    let name = item.name.as_str();
-    crate::compiler::text_carrier::carrier_matches_declaration_name(builtin, name)
+    let Some(identity) = item.primitive_identity.as_deref()
+    else {
+        return false;
+    };
+    crate::compiler::text_carrier::text_primitive_family(identity).is_some_and(|family| family.anchors(builtin))
 }
 
 /// 检查两个类型是否是同一个 primitive 的不同表示形式：

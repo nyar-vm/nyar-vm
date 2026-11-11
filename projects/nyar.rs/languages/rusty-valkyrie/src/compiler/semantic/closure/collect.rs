@@ -37,7 +37,12 @@ fn collect_item(builder: &mut FileBuilder, namespace: &[String], item: &ast::Sta
         ast::StatementNode::Class(class) => {
             let mut signature = References::default();
             collect_signature_fields(&class.body.fields, &mut signature);
-            builder.register(namespace, DeclarationKind::Class, &class.name.name, None, None, None, signature);
+            let key = builder.register(namespace, DeclarationKind::Class, &class.name.name, None, None, None, signature);
+            // `[primitive("…")]` 自举身份与 `structure` 同通道：class 声明同样要在可见性
+            // 展开前登记，身份表的同组唯一性校验才对两种声明一视同仁。
+            if let Some(identity) = super::primitive_identity::primitive_annotation_identity(&class.annotations) {
+                builder.register_primitive_identity(key, identity);
+            }
             collect_members(builder, namespace, &class.name.name, &class.body.methods);
         }
         ast::StatementNode::Structure(structure) => {

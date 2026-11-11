@@ -284,25 +284,26 @@ impl TypeRelationContext {
         }
     }
 
-    /// 字符串字面量可特化到的形参类型：`Utf8`/`Utf16` 原语、`Named` 文本拼写，
-    /// 以及经别名解析后的 `Nominal{ItemId}`（`type utf8 = Utf8Text` 的目标声明）。
-    /// 名字集合唯一产生点是 `text_carrier::carrier_matches_declaration_name`：本函数只查表，
-    /// 不再另立文本名集合；字面量可落在任一编码，故两族 carrier 都查询。
+    /// 字符串字面量可特化到的形参类型：`Utf8`/`Utf16` 原语，以及经别名解析后的
+    /// `Nominal{ItemId}`（`type utf8 = Utf8Text` 的目标声明）。
+    /// 文本身份唯一产生点是声明的 `[primitive("std::text::…")]` 自举身份：本函数只查
+    /// `text_carrier` 映射，未解析的 `Named` 拼写不放行；字面量可落在任一编码。
     pub fn is_text_formal(&self, ty: &ValkyrieType) -> bool {
         match ty {
-            ValkyrieType::Nominal { declaration, .. } => self.structs_by_declaration.get(declaration).is_some_and(|item| {
-                let name = item.name.as_str();
-                text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, name)
-                    || text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf16, name)
-            }),
             ValkyrieType::Utf8 | ValkyrieType::Utf16 => true,
-            ValkyrieType::Named(name) => {
-                let name = name.as_str();
-                text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, name)
-                    || text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf16, name)
+            ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.is_empty() => {
+                self.text_primitive_family(*declaration, primitive_identity.as_deref()).is_some()
             }
             _ => false,
         }
+    }
+
+    /// `Nominal` 的文本家族：优先查声明身份表，退回类型上已冻结的同一事实。
+    ///
+    /// 两处都来自 `[primitive("std::text::…")]`，不读声明名。
+    fn text_primitive_family(&self, declaration: nyar_types::ItemId, carried: Option<&str>) -> Option<text_carrier::TextPrimitiveFamily> {
+        let identity = self.structs_by_declaration.get(&declaration).and_then(|item| item.primitive_identity.as_deref()).or(carried)?;
+        text_carrier::text_primitive_family(identity)
     }
 
     /// 文本载体等价：内建编码 carrier 与源码别名锚定的文本名义声明之间的身份归一。
@@ -318,17 +319,14 @@ impl TypeRelationContext {
 
     /// 一侧是内建编码 carrier、另一侧是锚定该编码的名义声明时成立。
     fn text_builtin_anchors_declaration(&self, builtin: &ValkyrieType, declaration: &ValkyrieType) -> bool {
-        let ValkyrieType::Nominal { declaration, arguments, .. } = declaration else {
+        let ValkyrieType::Nominal { declaration, arguments, primitive_identity } = declaration
+        else {
             return false;
         };
         if !arguments.is_empty() {
             return false;
         }
-        let Some(item) = self.structs_by_declaration.get(declaration) else {
-            return false;
-        };
-        let name = item.name.as_str();
-        crate::compiler::text_carrier::carrier_matches_declaration_name(builtin, name)
+        self.text_primitive_family(*declaration, primitive_identity.as_deref()).is_some_and(|family| family.anchors(builtin))
     }
 
     /// 字符字面量可特化到的形参类型：`char` 自身，或任意数值形参（码位值参与比较/算术）。
@@ -375,31 +373,17 @@ impl TypeRelationContext {
         }
     }
 
-    /// 目标若为编码文本身份则返回其载体；与 `is_text_formal` 同一份名集，不另立白名单。
+    /// 目标若为编码文本身份则返回其载体；与 `is_text_formal` 同源，只认声明自举身份。
     ///
-    /// `text` 是两种编码共享的载体名，默认落 `Utf8`；`utf16`/`Utf16Text` 落 `Utf16`。
-    pub(crate) fn text_encoding_of(&self, ty: &ValkyrieType) -> Option<HirTextEncoding> {
+    /// 共享载体 `std::text::text` 默认落 `Utf8`；未解析的 `Named` 拼写不产生编码事实。
+    pub fn text_encoding_of(&self, ty: &ValkyrieType) -> Option<HirTextEncoding> {
         match ty {
             ValkyrieType::Utf8 => Some(HirTextEncoding::Utf8),
             ValkyrieType::Utf16 => Some(HirTextEncoding::Utf16),
-            ValkyrieType::Named(name) => Self::text_encoding_of_name(name.as_str()),
-            ValkyrieType::Nominal { declaration, arguments, .. } if arguments.is_empty() => self
-                .structs_by_declaration
-                .get(declaration)
-                .and_then(|item| Self::text_encoding_of_name(item.name.as_str())),
+            ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.is_empty() => {
+                self.text_primitive_family(*declaration, primitive_identity.as_deref()).map(text_carrier::TextPrimitiveFamily::encoding)
+            }
             _ => None,
-        }
-    }
-
-    fn text_encoding_of_name(name: &str) -> Option<HirTextEncoding> {
-        let utf8 = text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, name);
-        let utf16 = text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf16, name);
-        match (utf8, utf16) {
-            (true, false) => Some(HirTextEncoding::Utf8),
-            (false, true) => Some(HirTextEncoding::Utf16),
-            // `text` 共享载体：编码由默认规则落 `Utf8`，不猜 `Utf16`。
-            (true, true) => Some(HirTextEncoding::Utf8),
-            (false, false) => None,
         }
     }
 

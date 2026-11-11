@@ -14,7 +14,7 @@ use crate::compiler::{
         Identifier, NamePath,
         hir::{
             HirBlock, HirExpr, HirExprKind, HirFunction, HirLiteral, HirMatchArm, HirModule, HirPattern, HirStatement, HirStatementKind,
-            ValkyrieType,
+            HirTextEncoding, ValkyrieType,
         },
     },
 };
@@ -53,8 +53,8 @@ pub struct HirValidationState {
     /// `std::primitive::bool` 的声明身份；字面量与注解 `bool` 的 `Boolean` 形态与之等价。
     pub(crate) boolean_declarations: BTreeSet<nyar_types::ItemId>,
     /// 本模块内已冻结为声明身份的文本 primitive（`std::text` 的 `utf8`/`utf16`/`text` 载体）。
-    /// 只有这份声明事实能判定「期望类型是文本」；不得改成对调用点写的类型名做特判。
-    pub(crate) text_declarations: BTreeSet<nyar_types::ItemId>,
+    /// 值是该身份的编码家族；只有这份声明事实能判定「期望类型是文本」与「哪一族编码」。
+    pub(crate) text_declarations: BTreeMap<nyar_types::ItemId, HirTextEncoding>,
 }
 
 pub type LoopValidationContext = crate::compiler::semantic::control_flow::LoopScopeData;
@@ -104,26 +104,29 @@ pub fn boolean_declarations_in_module(module: &HirModule) -> BTreeSet<nyar_types
 
 /// 模块内文本 primitive 的声明身份集合（`utf8`/`utf16`/`text` 载体）。
 ///
-/// 判定口径复用 `text_carrier::carrier_matches_declaration_name`，与 HIR `is_text_formal`
-/// 共用同一份名集，不另立白名单。
-pub fn text_declarations_in_module(module: &HirModule) -> BTreeSet<nyar_types::ItemId> {
-    fn collect(module: &HirModule, out: &mut BTreeSet<nyar_types::ItemId>) {
+/// 编码身份只认声明携带的 `[primitive("std::text::…")]` 自举注解，与 HIR `is_text_formal`
+/// 共用 `text_carrier` 映射，不按声明名或调用点拼写判定。
+pub fn text_declarations_in_module(module: &HirModule) -> BTreeMap<nyar_types::ItemId, HirTextEncoding> {
+    fn collect(module: &HirModule, out: &mut BTreeMap<nyar_types::ItemId, HirTextEncoding>) {
         let structs = module.structs.iter().chain(module.imported_semantic_exports.iter().flat_map(|export| export.structs.iter()));
         for item in structs {
-            let name = item.name.as_str();
-            if crate::compiler::text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, name)
-                || crate::compiler::text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf16, name)
-            {
-                if let Some(declaration) = item.constructor_declaration {
-                    out.insert(declaration);
-                }
+            let Some(identity) = item.primitive_identity.as_deref()
+            else {
+                continue;
+            };
+            let Some(family) = crate::compiler::text_carrier::text_primitive_family(identity)
+            else {
+                continue;
+            };
+            if let Some(declaration) = item.constructor_declaration {
+                out.insert(declaration, family.encoding());
             }
         }
         for submodule in &module.submodules {
             collect(submodule, out);
         }
     }
-    let mut declarations = BTreeSet::new();
+    let mut declarations = BTreeMap::new();
     collect(module, &mut declarations);
     declarations
 }
@@ -131,7 +134,7 @@ pub fn text_declarations_in_module(module: &HirModule) -> BTreeSet<nyar_types::I
 pub fn validation_state(
     numeric_declarations: &BTreeSet<nyar_types::ItemId>,
     boolean_declarations: &BTreeSet<nyar_types::ItemId>,
-    text_declarations: &BTreeSet<nyar_types::ItemId>,
+    text_declarations: &BTreeMap<nyar_types::ItemId, HirTextEncoding>,
 ) -> HirValidationState {
     HirValidationState {
         numeric_declarations: numeric_declarations.clone(),
