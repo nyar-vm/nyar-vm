@@ -1,14 +1,11 @@
 use crate::compiler::{
     hir::is_nullable_type,
-    types::{
-        Identifier, NamePath,
-        hir::{FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
-    },
+    types::hir::{HirLiteral, HirResolvedCall, HirTextEncoding, ValkyrieType},
 };
 
-use crate::compiler::mir::ssa::{MirConstant, MirOperand, expr_helpers::named_type_name, infer_builder_operand_type};
+use crate::compiler::mir::ssa::{MirConstant, MirOperand, infer_builder_operand_type};
 
-use crate::compiler::mir::ssa::expr_helpers::{is_char_formal_type, is_character_literal_formal_type, is_integer_literal_formal_type, is_utf8_formal_type};
+use crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type;
 
 pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&ValkyrieType>, structs: &[crate::compiler::mir::ssa::MirStruct]) -> Result<(MirConstant, Option<ValkyrieType>), String> {
     Ok(match literal {
@@ -28,34 +25,9 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
             }),
         ),
         HirLiteral::Float64(value) => (MirConstant::Float64(*value), Some(ValkyrieType::Float64)),
-        // 字符字面量：文本期望按单码位 `utf8` 文本落常量（§4.10 B：`let t: utf8 = 'x'`）；
-        // 否则形参为 `char` 或整数类型时写形参类型（overload 已特化），默认 `char`；
-        // 值为已校验的 u32 码位（§4.12 字符合同），按整数常量编码。
-        HirLiteral::Character(value) => {
-            if expected_type.is_some_and(|ty| is_utf8_formal_type(ty, structs)) {
-                let text = char::from_u32(*value).map(|character| character.to_string()).unwrap_or_default();
-                (MirConstant::Utf8(text), Some(ValkyrieType::Utf8))
-            }
-            else {
-                (
-                    MirConstant::Int(i64::from(*value)),
-                    Some(match expected_type {
-                        Some(
-                            ty @ (ValkyrieType::Character
-                            | ValkyrieType::Integer8 { .. }
-                            | ValkyrieType::Integer16 { .. }
-                            | ValkyrieType::Integer32 { .. }
-                            | ValkyrieType::Integer64 { .. }
-                            | ValkyrieType::Integer128 { .. }),
-                        ) => ty.clone(),
-                        Some(ty @ (ValkyrieType::Named(_) | ValkyrieType::Nominal { .. })) if is_character_literal_formal_type(ty, &[]) => {
-                            ty.clone()
-                        }
-                        _ => ValkyrieType::Character,
-                    }),
-                )
-            }
-        }
+        // 字符字面量：定型已由 HIR settle 冻结为 `char`（u32 码位，§4.12 字符合同），
+        // MIR 只编码既定值——整数常量 + `Character` 类型，不再按期望形参重选 char/text。
+        HirLiteral::Character(value) => (MirConstant::Int(i64::from(*value)), Some(ValkyrieType::Character)),
         // 字节字面量：形参为整数类型时写形参类型，否则默认 `u8`。
         HirLiteral::Byte(value) => (
             MirConstant::Int(*value as i64),
@@ -73,11 +45,14 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
         ),
         HirLiteral::Bool(value) => (MirConstant::Bool(*value), Some(ValkyrieType::Boolean)),
         HirLiteral::String(value) => {
-            // 插值段必须经已绑定的 display/formatter 实例脱糖为普通调用；本轮无冻结实例，
-            // 结构化失败，绝不渲染 `${...}` 占位文本（§4.10 E/G）。
+            // 插值必须在 HIR 脱糖为已绑定的 display 调用树；MIR 不渲染 `${...}` 或任何占位文本。
             if !value.is_plain_text() {
-                return Err("string interpolation requires a bound display/formatter instance; no such instance is frozen in this phase".to_string());
+                return Err("internal invariant: string interpolation reached MIR without HIR desugaring".to_string());
             }
+            let Some(encoding) = value.text_encoding
+            else {
+                return Err("internal invariant: string literal reached MIR without a settled text encoding".to_string());
+            };
             let text = value
                 .segments
                 .iter()
@@ -86,28 +61,9 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
                     crate::compiler::types::hir::HirStringSegment::Interpolation { .. } => "",
                 })
                 .collect::<String>();
-            // 恰好一个码位的文本捕获在 `char` 期望下按码位落常量（§4.10 B：`let c: char = "x"`）。
-            if let Some(code) = value.as_single_char()
-                && expected_type.is_some_and(|ty| is_char_formal_type(ty, structs))
-            {
-                return Ok((MirConstant::Int(i64::from(code)), Some(ValkyrieType::Character)));
-            }
-            let is_char_expected = expected_type.is_some_and(|ty| is_char_formal_type(ty, structs));
-            let is_utf8_expected = expected_type.is_some_and(|ty| is_utf8_formal_type(ty, structs));
-            match (value.quote, expected_type, is_char_expected, is_utf8_expected) {
-                // 文本捕获落在 `char` 期望但内容非单码位：无法表示为 char，结构化失败。
-                (_, _, true, _) => {
-                    return Err("text capture is not representable as `char`: expected exactly one code point".to_string());
-                }
-                // 无约束单引号捕获默认 `char`，但内容非单字符：表示错误，不回退文本（§4.10 B）。
-                (crate::compiler::types::hir::HirQuoteKind::Single, None, _, _) => {
-                    return Err("unconstrained single-quote capture defaults to `char` but its content is not a single character".to_string());
-                }
-                (crate::compiler::types::hir::HirQuoteKind::Single | crate::compiler::types::hir::HirQuoteKind::Double, _, _, true) => {
-                    (MirConstant::Utf8(text), Some(ValkyrieType::Utf8))
-                }
-                // 其余（双引号无约束、名义文本等）按 `utf8` 文本常量处理。
-                _ => (MirConstant::Utf8(text), Some(ValkyrieType::Utf8)),
+            match encoding {
+                HirTextEncoding::Utf8 => (MirConstant::Utf8(text), Some(ValkyrieType::Utf8)),
+                HirTextEncoding::Utf16 => (MirConstant::Utf16(text), Some(ValkyrieType::Utf16)),
             }
         }
         HirLiteral::Null => (

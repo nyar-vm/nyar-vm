@@ -105,7 +105,7 @@ pub fn boolean_declarations_in_module(module: &HirModule) -> BTreeSet<nyar_types
 /// 模块内文本 primitive 的声明身份集合（`utf8`/`utf16`/`text` 载体）。
 ///
 /// 判定口径复用 `text_carrier::carrier_matches_declaration_name`，与 HIR `is_text_formal`
-/// 和 MIR `is_utf8_formal_type` 共用同一份名集，不另立白名单。
+/// 共用同一份名集，不另立白名单。
 pub fn text_declarations_in_module(module: &HirModule) -> BTreeSet<nyar_types::ItemId> {
     fn collect(module: &HirModule, out: &mut BTreeSet<nyar_types::ItemId>) {
         let structs = module.structs.iter().chain(module.imported_semantic_exports.iter().flat_map(|export| export.structs.iter()));

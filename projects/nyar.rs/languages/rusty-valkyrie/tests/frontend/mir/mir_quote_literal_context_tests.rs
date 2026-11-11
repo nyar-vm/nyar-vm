@@ -96,6 +96,22 @@ fn int_char_constants(module: &rusty_valkyrie::compiler::mir::ssa::MirModule, na
         .collect()
 }
 
+fn utf16_constants(module: &rusty_valkyrie::compiler::mir::ssa::MirModule, name: &str) -> Vec<String> {
+    module
+        .functions
+        .iter()
+        .find(|function| function.display_symbol.contains(name))
+        .expect("probe 函数")
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter_map(|instruction| match &instruction.kind {
+            MirOperation::LoadConstant { constant: rusty_valkyrie::compiler::mir::ssa::MirConstant::Utf16(text), .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// probe 函数体内的调用指令数；插值必须落成真实 Invoke，而不是常量占位。
 fn call_count(module: &rusty_valkyrie::compiler::mir::ssa::MirModule, name: &str) -> usize {
     module
@@ -215,4 +231,13 @@ fn interpolation_without_display_fails_with_display_diagnostic() {
     let error = compile_checked("micro probe(w: Missing): utf8 { return \"{ w }\" }").expect_err("缺少 Display 实例必须失败");
     assert!(error.contains("display"), "必须点名 display：{error}");
     assert!(!error.contains("${"), "不得渲染 dollar-brace 占位：{error}");
+}
+
+// ---------- 正例：文本编码按已冻结载体落常量 ----------
+
+#[test]
+fn settled_utf16_text_encoding_lowers_to_utf16_constant() {
+    // HIR settle 冻结的 `text_encoding` 是 MIR 唯一依据：utf16 上下文必须落 Utf16 常量。
+    let module = lower("micro probe(): i32 { let t: utf16 = \"x\" return 0 }");
+    assert!(utf16_constants(&module, "probe").contains(&"x".to_string()), "utf16 文本必须落 Utf16 常量");
 }
