@@ -88,6 +88,14 @@ pub fn toolchain_fingerprint() -> String {
     )
 }
 
+/// 从工具链指纹解析 `compiler=` 段（产出该构建的编译器构建身份）。
+///
+/// 身份本身不含 `;` 与 `=`，段定位唯一；缺失或为空返回 `None`，消费者据此
+/// 判旧构建产物不可信复用，不得伪造身份。
+pub fn compiler_build_id_from_fingerprint(fingerprint: &str) -> Option<&str> {
+    fingerprint.split(';').find_map(|segment| segment.strip_prefix("compiler=")).filter(|value| !value.is_empty())
+}
+
 /// Compute artifact cache hash from sources + target + build flags + enabled features
 /// + provider set + toolchain.
 ///

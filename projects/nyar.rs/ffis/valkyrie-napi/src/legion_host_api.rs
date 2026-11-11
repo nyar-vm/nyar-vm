@@ -33,6 +33,9 @@ pub struct LegionExecutionManifestView {
     pub primary_physical_entry: Option<String>,
     /// 首个 run contract 逻辑入口。
     pub primary_logical_entry: Option<String>,
+    /// 产出该构建的编译器构建身份（manifest 工具链指纹 `compiler=` 段）；
+    /// 旧构建 manifest 指纹缺少该段时为 `null`。
+    pub compiler_build_identity: Option<String>,
 }
 
 /// 产物新鲜度检查结果。
@@ -81,7 +84,20 @@ pub fn legion_read_execution_manifest(output_dir: String) -> Option<LegionExecut
         host_provider_binding_hash: evidence.map(|e| e.host_provider_binding_hash.clone()),
         primary_physical_entry: contract.map(|c| c.physical_entry.clone()),
         primary_logical_entry: contract.map(|c| c.logical_entry.clone()),
+        compiler_build_identity: rusty_valkyrie::legion::cache::compiler_build_id_from_fingerprint(&manifest.toolchain_fingerprint).map(str::to_string),
     })
+}
+
+/// 本 addon 内嵌的编译器构建身份（与 `toolchain_fingerprint()` 的 `compiler=` 段一致）。
+#[napi]
+pub fn legion_compiler_build_identity() -> String {
+    rusty_valkyrie::legion::cache::compiler_build_id().to_string()
+}
+
+/// 本 addon 的完整 toolchain fingerprint（缓存键组成部分），供消费者交叉核对。
+#[napi]
+pub fn legion_toolchain_fingerprint() -> String {
+    rusty_valkyrie::legion::cache::toolchain_fingerprint()
 }
 
 const FRESHNESS_LEVEL_FULLY: &str = "fully-verified";

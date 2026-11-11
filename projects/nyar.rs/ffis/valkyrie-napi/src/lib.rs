@@ -18,8 +18,8 @@ mod stdio_capture;
 pub use asgard_api::{AsgardStaticBuildOptions, AsgardStaticBuildOutcome};
 
 pub use legion_host_api::{
-    LegionArtifactFreshness, LegionExecutionManifestView, LegionTestOutcome, legion_check_artifact_fresh, legion_invoke_ovm_export,
-    legion_list_ovm_exports, legion_read_execution_manifest, legion_test,
+    LegionArtifactFreshness, LegionExecutionManifestView, LegionTestOutcome, legion_check_artifact_fresh, legion_compiler_build_identity,
+    legion_invoke_ovm_export, legion_list_ovm_exports, legion_read_execution_manifest, legion_test, legion_toolchain_fingerprint,
 };
 pub use product_api::{LegionBuildOptions, LegionBuildOutcome, LegionPlanOptions, LegionPlanOutcome, LegionSemanticGroupItem};
 pub use rusty_valkyrie::{asgard, legion};
