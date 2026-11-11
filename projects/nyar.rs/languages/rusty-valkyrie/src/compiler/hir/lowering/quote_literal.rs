@@ -295,18 +295,27 @@ fn decode_byte_literal(literal: &QuoteLiteral) -> Result<u8, HirError> {
             '\'' => bytes_out.push(b'\''),
             '"' => bytes_out.push(b'"'),
             'x' => {
+                // 恰好两位十六进制 ASCII 数字；按字符边界收集，诊断切片不得落在 UTF-8
+                // 字符内部（与 `\u` 同一 panic 边界）。
                 let hex_start = index + 2;
-                let hex_end = hex_start + 2;
-                let value = content.get(hex_start..hex_end).and_then(|digits| u8::from_str_radix(digits, 16).ok());
-                let Some(value) = value
-                else {
-                    let escape = content[index..hex_end.min(content.len())].to_string();
+                let rest = &content[hex_start..];
+                let mut digits = String::new();
+                let mut consumed = 0;
+                for digit in rest.chars() {
+                    if digits.len() == 2 || !digit.is_ascii_hexdigit() {
+                        break;
+                    }
+                    digits.push(digit);
+                    consumed += digit.len_utf8();
+                }
+                if digits.len() != 2 {
+                    let end = hex_start + consumed;
                     return Err(quote_literal_error(
-                        QuoteLiteralFailure::InvalidEscapeSequence { escape },
-                        escape_span(content_start, index, hex_end.min(content.len())),
+                        QuoteLiteralFailure::InvalidEscapeSequence { escape: content[index..end].to_string() },
+                        escape_span(content_start, index, end),
                     ));
-                };
-                bytes_out.push(value);
+                }
+                bytes_out.push(u8::from_str_radix(&digits, 16).unwrap_or_else(|_| unreachable!("两位十六进制必可解析")));
                 characters.next();
                 characters.next();
             }

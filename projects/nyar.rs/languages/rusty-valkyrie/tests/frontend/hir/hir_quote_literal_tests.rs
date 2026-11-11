@@ -186,6 +186,15 @@ fn unicode_escape_in_byte_literal_fails() {
 }
 
 #[test]
+fn invalid_hex_escape_with_non_ascii_suffix_does_not_panic() {
+    // 与 `\u` 同一 panic 边界：`\x1é` 的两位十六进制只收到 1 位便遇非 ASCII；旧实现按
+    // 任意字节 `hex_end` 切片会落在 `é` 的 UTF-8 字符内部 panic。现在结构化报
+    // `InvalidEscapeSequence`，不得越界切片。
+    let (failure, _, _) = expect_literal_failure(r#"micro probe() { let bad = b'\x1é' }"#);
+    assert!(matches!(failure, QuoteLiteralFailure::InvalidEscapeSequence { .. }));
+}
+
+#[test]
 fn invalid_escape_fails_with_span() {
     let source = "micro probe() { let bad = '\\q' }";
     let (failure, start, end) = expect_literal_failure(source);
