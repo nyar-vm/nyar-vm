@@ -170,12 +170,17 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 let field_types_match = expected_fields.as_ref().is_some_and(|expected| {
                     expected.len() == payloads.len()
                         && payloads.iter().zip(expected).all(|(operand, expected)| match operand {
-                            MirOperand::Value(value) => function.value_types.get(value) == Some(expected),
+                            MirOperand::Value(value) => {
+                                sum_slot_matches(function.value_types.get(value), Some(expected), &module.structs)
+                            }
                             _ => false,
                         })
                 });
                 let output_type = instruction.results.first().and_then(|output| function.value_types.get(output));
-                if output_type != expected_result.as_ref() || payload_type != &expected_payload || !field_types_match {
+                if !sum_slot_matches(output_type, expected_result.as_ref(), &module.structs)
+                    || !sum_slot_matches(payload_type.as_ref(), expected_payload.as_ref(), &module.structs)
+                    || !field_types_match
+                {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.display_symbol.clone(),
@@ -296,6 +301,23 @@ pub(super) fn validate_nominal_structs(module: &MirModule) -> Result<(), Semanti
         }
     }
     Ok(())
+}
+
+/// sum 槽位类型匹配：同一类型，或「内建文本 carrier ↔ 锚定该编码的名义声明」。
+///
+/// 与 SMIR007 的调用实参口径一致：`type utf8 = Utf8Text` 让文本字面量落在内建
+/// `Utf8`，而声明字段类型经替换后是名义 `Utf8Text`；两者是同一值空间的不同形态，
+/// 不是 sum 构造合同冲突。非文本类型仍逐字段严格相等。
+fn sum_slot_matches(
+    actual: Option<&ValkyrieType>,
+    expected: Option<&ValkyrieType>,
+    structs: &[crate::compiler::mir::MirStruct],
+) -> bool {
+    match (actual, expected) {
+        (Some(actual), Some(expected)) => actual == expected || text_carriers_equivalent(expected, actual, structs),
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 pub(super) fn declared_variant<'a>(

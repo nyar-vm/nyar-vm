@@ -437,7 +437,14 @@ impl CanonicalSemanticMir {
                                 });
                             }
                             match (record.payload_type, payload) {
-                                (Some(expected), Some(value)) if function.value_types.get(value) == Some(&expected) => {
+                                // 文本载荷允许「内建编码基元 ↔ 登记载体名义类型」：两者是同一值空间
+                                // 的不同形态（`type utf8 = Utf8Text`），与调用实参合同同口径。
+                                (Some(expected), Some(value))
+                                    if function
+                                        .value_types
+                                        .get(value)
+                                        .is_some_and(|actual| *actual == expected || canonical_text_encoding_compatible(linked, *actual, expected)) =>
+                                {
                                     vec![*value]
                                 }
                                 (None, None) => Vec::new(),
@@ -455,7 +462,11 @@ impl CanonicalSemanticMir {
                                 return Err(CanonicalMirError::VariantPayloadMismatch { function: *key, variant: *variant });
                             }
                             if instruction.results.len() != 1
-                                || instruction.results.first().and_then(|value| function.value_types.get(value)) != record.payload_type.as_ref()
+                                || !instruction.results.first().and_then(|value| function.value_types.get(value)).is_some_and(|actual| {
+                                    record.payload_type.as_ref().is_some_and(|expected| {
+                                        actual == expected || canonical_text_encoding_compatible(linked, *actual, *expected)
+                                    })
+                                })
                             {
                                 return Err(if instruction.results.len() == 1 {
                                     CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }

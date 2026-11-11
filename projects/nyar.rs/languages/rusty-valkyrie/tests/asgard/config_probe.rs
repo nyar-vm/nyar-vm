@@ -432,13 +432,12 @@ micro title() -> utf8 {
     assert_eq!(value, "\"asgard\"", "glue 读回的文本配置值必须是导出函数返回的字符串");
 }
 
-/// 缺口固化：`Option<utf8>`（配置内 `output` / `base` / `assets` 的形态）在
-/// std 在场时仍失败闭合。拒绝坐标（HIR 类型检查 / Semantic MIR 合同）会随
-/// 编译器线推进漂移，锁定「失败闭合 + 拒绝落在 Semantic MIR 合同层」；
-/// 缺口闭合后本测试必须翻转为正例。
+/// 已闭合缺口（原 C0 固化项翻转）：`Option<utf8>`（配置内 `output` / `base` /
+/// `assets` 的形态）在 std 在场时完成正式构建。`Some` 载荷按文本载体同一值空间
+/// 接受内建 `Utf8` 实参，导出值经 Node + JS glue 按 sum 投影读回变体与载荷。
 #[test]
-fn c0_gap_std_option_utf8_is_incoherent() {
-    let failure = build_probe_project_with_std(
+fn c0_gap_std_option_utf8_resolves_after_carrier_equivalence() {
+    let artifact = build_probe_project_with_std(
         "asgard-c0-std-option-utf8",
         r#"using std::types::{Option, Some, None};
 
@@ -448,8 +447,11 @@ micro with_value() -> Option<utf8> {
 }
 "#,
     )
-    .expect_err("Option<utf8> 当前必须失败闭合");
-    assert!(failure.message.contains("SMIR"), "拒绝必须落在 Semantic MIR 合同层：{}", failure.message);
+    .unwrap_or_else(|failure| panic!("`Option<utf8>` 的 `Some` 构造必须完成正式构建，实际失败：{}", failure.message));
+
+    let value = call_export_through_glue(&artifact, "with_value", "[]")
+        .unwrap_or_else(|diagnostic| panic!("`Option<utf8>` 导出值必须经 glue 读回，实际失败：{diagnostic}"));
+    assert_eq!(value, r#"{"variant":"Some","payload":"dist"}"#, "`Some` 变体身份与文本载荷都必须读回");
 }
 
 /// 已闭合缺口（原 C0 固化项翻转）：dev `e9f0aa75` 冻结 ABI 载体后，std 依赖在场时
