@@ -24,6 +24,7 @@ mod mir_ssa_overloaded_callable_label_tests;
 mod mir_ssa_platform_width_named_alias_tests;
 mod mir_ssa_trait_dispatch_witness_tests;
 mod mir_ssa_type_level_marker_fields_tests;
+mod mir_ssa_uncaught_raise_divergence_tests;
 mod mir_ssa_value_semantics_strict_layout_tests;
 mod valkyrie_mir_analysis_contract_tests;
 mod valkyrie_mir_ssa_call_type_contract_tests;

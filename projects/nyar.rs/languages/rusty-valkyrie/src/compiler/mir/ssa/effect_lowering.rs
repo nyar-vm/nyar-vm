@@ -335,12 +335,18 @@ impl MirBuilder {
         let resume_parameter_type = self.default_raise_resume_type(&carrier_type);
         // `Resume = !`（never）的恢复通道不会回灌任何值：resume 块不声明形参，
         // 否则该形参带着 `void`（never）类型落进物理槽位校验（BPHYS001）。
-        // 表达式值以 `Unit` 常量给出，与「正常值不可得」同义。
         if matches!(resume_parameter_type, Some(ValkyrieType::Void)) {
             self.lower_perform_effect_without_resume_parameter("raise_resume", MirEffectKind::Raise, payload);
-            return MirOperand::Constant(MirConstant::Unit);
         }
-        self.lower_perform_effect("raise_resume", MirEffectKind::Raise, payload, resume_parameter_type)
+        else {
+            let _ = self.lower_perform_effect("raise_resume", MirEffectKind::Raise, payload, resume_parameter_type);
+        }
+        // 未捕获 `raise` 是底类型：控制流不会回到本函数。恢复块因此以 `Unreachable`
+        // 终结，而不是让 `Unit` 常量走 `Return`（SMIR007 会把 `Unit` 当成值返回）。
+        // 表达式位置仍返回 `Unit` 常量（「无正常值」），但外层 lowering 看到已冻结的
+        // 终结符后不会再向该块追加 `Return` 或后续语句。
+        self.terminate(MirTerminator::Unreachable);
+        MirOperand::Constant(MirConstant::Unit)
     }
 
     /// `raise` 载体的恢复类型。
@@ -551,12 +557,10 @@ impl MirBuilder {
             self.lower_handler_raise(handler_index, payload)
         }
         else {
-            self.lower_uncaught_raise(payload);
-            // An uncaught raise has no language-level result. The generated
-            // resume block is a runtime continuation carrying `Never`; keep
-            // the enclosing Unit function from returning that carrier as a
-            // normal value.
-            MirOperand::Constant(MirConstant::Unit)
+            // An uncaught raise has no language-level result: `lower_uncaught_raise`
+            // freezes the resume block as `Unreachable`, so the `Unit` placeholder
+            // returned here can never reach a `Return`.
+            self.lower_uncaught_raise(payload)
         }
     }
 
