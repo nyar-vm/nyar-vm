@@ -3,8 +3,11 @@
 use std::{env, process::Command};
 
 fn main() {
-    // 源文件或 HEAD 变化都要重新生成身份；外部注入变量变化同样重跑。
+    // 源文件、HEAD 或分支 ref 变化都要重新生成身份；外部注入变量变化同样重跑。
+    // 路径缺失时 Cargo 会按每次变化处理，仍能保证身份不过期。
     println!("cargo:rerun-if-changed=.");
+    println!("cargo:rerun-if-changed=../../../../.git/HEAD");
+    println!("cargo:rerun-if-changed=../../../../.git/refs/heads/dev");
     println!("cargo:rerun-if-env-changed=NYAR_COMPILER_BUILD_ID");
     let build_id = env::var("NYAR_COMPILER_BUILD_ID")
         .ok()
