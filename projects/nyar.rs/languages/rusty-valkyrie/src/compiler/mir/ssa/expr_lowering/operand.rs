@@ -514,33 +514,10 @@ impl MirBuilder {
                             .or_else(|| resolved.as_ref().and_then(|call| call.parameter_types.get(arg_index).cloned()))
                             .map(|ty| crate::compiler::mir::ssa::resolve_self_type_with_owner(&ty, self.impl_owner_type.as_ref()));
                         let value_operand = self.lower_expr_to_operand_with_hint(value, field_ty.as_ref());
-                        // 字段身份：优先用 HIR 已分配的 field_id；缺失时 fallback
-                        // 到 field_declarations 按字段名查找（generic class 内部
-                        // Construct 的 FieldInit 在 HIR 阶段不会分配 field_id），
-                        // 同时也检查 sum variant fields（unite/enum 构造器）。
-                        let field_id = field_id.or_else(|| {
-                            let decl_id = owner.nominal_declaration()?;
-                            // 先查 struct declarations
-                            if let Some(struct_decl) = self.field_declarations.iter().find(|s| s.declaration == Some(decl_id)) {
-                                if let Some(f) = struct_decl.fields.iter().find(|f| f.name == field_name.as_str()) {
-                                    return Some(f.id);
-                                }
-                            }
-                            // 再查 sum variant fields —— unite/enum 构造器的字段身份在 sum_types 里
-                            if let Some(call) = resolved.as_ref() {
-                                if let (Some(sum_decl), Some(variant_decl)) = (call.sum_owner, call.sum_variant) {
-                                    if let Some(sum) = self.sum_types.iter().find(|s| s.declaration == Some(sum_decl)) {
-                                        if let Some(variant) = sum.variants.iter().find(|v| v.declaration == Some(variant_decl)) {
-                                            if let Some(f) = variant.fields.iter().find(|f| f.name == field_name.as_str()) {
-                                                return Some(f.id);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            None
-                        });
-                        let Some(field_id) = field_id
+                        // 字段身份只消费 HIR 解析期已写回的 `field_id`；MIR 不再按
+                        // owner + 字段名回查声明（原名拼写兜底已清退），缺失即
+                        // 结构化诊断拒绝进入 canonical。
+                        let Some(field_id) = *field_id
                         else {
                             self.diagnostics
                                 .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity { field: field_name.to_string() });

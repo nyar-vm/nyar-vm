@@ -138,11 +138,19 @@ impl MirBuilder {
         };
         let Some(payload_type) = payload_type
         else {
-            panic!("try-propagate sum payload 缺少 sum_owner/sum_variant 代入结果");
+            // 缺事实 fail-closed：payload 代入必须由 HIR 冻结的 sum_owner/sum_variant
+            // 与实例实参闭合，MIR 不猜类型、不 panic，诊断非空即拒绝进入 canonical。
+            self.diagnostics.push(MirDiagnostic::UnresolvedValueType {
+                context: format!("try-propagate sum payload 缺少 sum_owner {owner:?} × variant {variant:?} 的代入结果"),
+            });
+            return MirOperand::Constant(MirConstant::Unit);
         };
         let type_args = object_ty.as_ref().map(super::expr_lowering::type_args_from_sum_shaped).unwrap_or_default();
         let Some((nominal, variant_id)) = self.sum_identity_by_declarations(owner, variant)
         else {
+            self.diagnostics.push(MirDiagnostic::UnresolvedValueType {
+                context: format!("try-propagate sum payload 的 nominal 身份缺失：owner {owner:?} variant {variant:?}"),
+            });
             return MirOperand::Constant(MirConstant::Unit);
         };
         let output = self.next_value(MirValueOrigin::Temporary);

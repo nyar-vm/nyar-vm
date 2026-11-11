@@ -9,8 +9,8 @@ use crate::compiler::mir::ssa::{
 };
 
 use super::{
-    apply_payload_to_sum_type_args, concretize_variant_constructor_types, instantiated_payload_for_call, refine_auto_apply_type,
-    refine_auto_sum_instantiation_args, type_args_from_sum_shaped, unresolved_variant_labels,
+    apply_payload_to_sum_type_args, concretize_variant_constructor_types, instantiated_payload_for_call, type_args_from_sum_shaped,
+    unresolved_variant_labels,
 };
 
 impl MirBuilder {
@@ -49,43 +49,7 @@ impl MirBuilder {
         Some(ValkyrieType::Nominal { declaration, arguments: type_args.to_vec(), primitive_identity: None })
     }
 
-    /// 仅从 impl 实参或 sum declaration 的 Generic binder 补全 Result 类型参数；禁止发明 `Named(T/E)`。
-    pub(crate) fn pad_result_type_args(&self, type_args: Vec<ValkyrieType>) -> Vec<ValkyrieType> {
-        if type_args.len() >= 2 {
-            return type_args;
-        }
-        let error_arg = self.impl_type_arguments.get(1).cloned().or_else(|| {
-            self.result_declaration.and_then(|declaration| {
-                crate::compiler::mir::ssa::MirSumDeclaration::find_by_declaration(&self.sum_types, declaration)
-                    .and_then(|sum| sum.generics.get(1).map(|generic| ValkyrieType::Generic(generic.clone())))
-            })
-        });
-        match type_args.len() {
-            0 => {
-                if self.impl_type_arguments.len() >= 2 {
-                    self.impl_type_arguments.clone()
-                }
-                else if let Some(declaration) = self.result_declaration {
-                    crate::compiler::mir::ssa::MirSumDeclaration::find_by_declaration(&self.sum_types, declaration)
-                        .map(|sum| sum.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect())
-                        .unwrap_or_default()
-                }
-                else {
-                    Vec::new()
-                }
-            }
-            1 => {
-                if let Some(error) = error_arg {
-                    vec![type_args[0].clone(), error]
-                }
-                else {
-                    type_args
-                }
-            }
-            _ => type_args,
-        }
-    }
-
+    /// sum 实例化实参只来自显式类型实参、上下文形状或声明 binder 全集，不补不造。
     pub(crate) fn sum_instantiation_args(
         &self,
         declaration: nyar_types::ItemId,
@@ -224,7 +188,9 @@ impl MirBuilder {
         let payload_hint = call.parameter_types.first().cloned().or_else(|| instantiated_payload_for_call(&self.sum_types, call, &contextual));
         let payload_operand = self.lower_expr_to_operand_with_hint(payload_expr, payload_hint.as_ref());
         let payload_type = infer_builder_operand_type(&payload_operand, &self.value_types).or(payload_hint);
-        let mut emitted_type_args = self.pad_result_type_args(self.sum_instantiation_args(owner, &contextual, &[]));
+        // 类型实参只消费上下文/声明已闭合的形状；缺额即结构化诊断，禁止按
+        // 参数数量或第二个 binder 补造（原 `pad_result_type_args` 兜底已清退）。
+        let mut emitted_type_args = self.sum_instantiation_args(owner, &contextual, &[]);
         if let Some(payload) = payload_type.as_ref() {
             if let Some(sum) = crate::compiler::mir::ssa::MirSumDeclaration::find_by_declaration(&self.sum_types, owner) {
                 if let Some(variant_decl) = sum.variants.iter().find(|item| item.declaration == Some(variant_declaration)) {
@@ -240,12 +206,19 @@ impl MirBuilder {
         };
         let (return_type, payload_type) =
             concretize_variant_constructor_types(&return_type, payload_type, expected_type, &[payload_operand.clone()], &self.value_types);
-        let emitted_type_args = self.pad_result_type_args(if type_args_from_sum_shaped(&return_type).is_empty() {
-            emitted_type_args
+        let emitted_type_args =
+            if type_args_from_sum_shaped(&return_type).is_empty() { emitted_type_args } else { type_args_from_sum_shaped(&return_type) };
+        // 准入门前移：实参数量与声明泛型表不一致说明 HIR 未闭合实例化事实，
+        // 结构化诊断拒绝，不再由 MIR 补造。
+        if let Some(sum) = crate::compiler::mir::ssa::MirSumDeclaration::find_by_declaration(&self.sum_types, owner) {
+            if sum.generics.len() != emitted_type_args.len() {
+                let declared = sum.generics.len();
+                self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedValueType {
+                    context: format!("Result 构造缺少完整类型实参：声明 {declared} 个 binder，实收 {} 个", emitted_type_args.len()),
+                });
+                return Some(MirOperand::Constant(MirConstant::Unit));
+            }
         }
-        else {
-            type_args_from_sum_shaped(&return_type)
-        });
         let value = self.next_value(MirValueOrigin::CallResult);
         self.push_instruction(
             MirOperation::SumNew {
@@ -280,20 +253,23 @@ impl MirBuilder {
             .cloned()
             .or_else(|| payload_type.as_ref().and_then(|payload| self.sum_apply_type(owner, &[payload.clone()])))
             .unwrap_or_else(|| call.return_type.clone());
-        let contextual = refine_auto_apply_type(&contextual, payload_type.as_ref());
-        let type_args = refine_auto_sum_instantiation_args(&self.sum_instantiation_args(owner, &contextual, &[]), payload_type.as_ref());
+        // `AutoType` 必须由 HIR 单态化闭合；MIR 不再用 payload 填实例化实参
+        // （原 `refine_auto_sum_instantiation_args`/`refine_auto_apply_type` 兜底已清退），
+        // 缺事实即结构化诊断拒绝进入 canonical。
+        let type_args = self.sum_instantiation_args(owner, &contextual, &[]);
+        if type_args.iter().any(|arg| matches!(arg, ValkyrieType::AutoType)) {
+            self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedValueType {
+                context: "Some 构造的类型实参仍含 `AutoType`：HIR 未闭合单态化实例".to_string(),
+            });
+            return Some(MirOperand::Constant(MirConstant::Unit));
+        }
         let return_type = if type_args_from_sum_shaped(&contextual).is_empty() && !type_args.is_empty() {
-            self.sum_apply_type(owner, &type_args).unwrap_or_else(|| refine_auto_apply_type(&contextual, payload_type.as_ref()))
+            self.sum_apply_type(owner, &type_args).unwrap_or_else(|| contextual.clone())
         }
         else {
-            refine_auto_apply_type(&contextual, payload_type.as_ref())
+            contextual.clone()
         };
-        let emitted_type_args = if !type_args.is_empty() {
-            type_args
-        }
-        else {
-            refine_auto_sum_instantiation_args(&type_args_from_sum_shaped(&return_type), payload_type.as_ref())
-        };
+        let emitted_type_args = if !type_args.is_empty() { type_args } else { type_args_from_sum_shaped(&return_type) };
         let value = self.next_value(MirValueOrigin::CallResult);
         self.push_instruction(
             MirOperation::SumNew {

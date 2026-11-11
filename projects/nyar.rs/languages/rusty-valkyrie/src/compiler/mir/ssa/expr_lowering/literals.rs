@@ -238,29 +238,3 @@ pub(crate) fn type_args_from_sum_shaped(ty: &ValkyrieType) -> Vec<ValkyrieType> 
         _ => Vec::new(),
     }
 }
-
-/// ?????? overload ????`Apply(Option, [AutoType])`?? payload ??????
-pub(crate) fn refine_auto_sum_instantiation_args(type_args: &[ValkyrieType], payload_type: Option<&ValkyrieType>) -> Vec<ValkyrieType> {
-    type_args
-        .iter()
-        .map(|arg| if matches!(arg, ValkyrieType::AutoType) { payload_type.cloned().unwrap_or_else(|| arg.clone()) } else { arg.clone() })
-        .collect()
-}
-
-pub(crate) fn refine_auto_apply_type(ty: &ValkyrieType, payload_type: Option<&ValkyrieType>) -> ValkyrieType {
-    match ty {
-        ValkyrieType::Nominal { declaration, arguments, primitive_identity }
-            if arguments.iter().any(|arg| matches!(arg, ValkyrieType::AutoType)) =>
-        {
-            ValkyrieType::Nominal {
-                declaration: *declaration,
-                arguments: refine_auto_sum_instantiation_args(arguments, payload_type),
-                primitive_identity: primitive_identity.clone(),
-            }
-        }
-        ValkyrieType::Apply(base, args) if args.iter().any(|arg| matches!(arg, ValkyrieType::AutoType)) => {
-            ValkyrieType::Apply(base.clone(), refine_auto_sum_instantiation_args(args, payload_type))
-        }
-        _ => ty.clone(),
-    }
-}
