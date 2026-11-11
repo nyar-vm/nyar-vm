@@ -492,7 +492,10 @@ pub(crate) fn specialize_literal_expr_type(
         // Character literals are representation-polymorphic like integer literals: a `char`
         // formal binds directly, a numeric formal binds the code point value, so
         // `code_point == ' '` (u32 vs char literal) needs no `as` cast at the call site.
-        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Character(_)) if type_relations.is_character_literal_formal(expected) => {
+        // A text formal also accepts a char literal as a one-character text (§4.10 B).
+        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Character(_))
+            if type_relations.is_character_literal_formal(expected) || type_relations.is_text_formal(expected) =>
+        {
             expected.clone()
         }
         // Byte literals bind to numeric formals (`b' '` in a `u32` comparison), same rule
@@ -502,6 +505,15 @@ pub(crate) fn specialize_literal_expr_type(
         // integer, so it must not be silently accepted for `i32`/`usize`. Only `f32`/`f64`
         // accept Float64 literals in source (e.g. `1000000.0`).
         HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Float64(_)) if type_relations.is_float_type(expected) => expected.clone(),
+        // A text capture that decodes to exactly one BMP char binds to a `char` formal
+        // (§4.10 B: `takes_char("x")`). It binds only to `char`, never to a numeric formal:
+        // a text capture is not a numeric representation (only a `char` literal carries a
+        // code-point value), so `take_i32("x")` must stay unresolved.
+        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::String(literal))
+            if literal.as_single_bmp_char().is_some() && crate::compiler::hir::type_relation::is_character_type_name_of(expected) =>
+        {
+            expected.clone()
+        }
         // String literals infer as `Utf8` but core APIs take `text`/`utf8`
         // (possibly behind an alias resolved to `Nominal{ItemId}`).
         HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::String(_)) if type_relations.is_text_formal(expected) => expected.clone(),

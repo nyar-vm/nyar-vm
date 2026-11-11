@@ -112,15 +112,8 @@ fn route_from_method(method: &HirFunction) -> Option<(String, String)> {
 fn attr_string_arg(attr: &HirAttribute) -> Option<String> {
     let first = attr.arguments.first()?;
     match &*first.value {
-        HirExpr { kind: crate::compiler::types::hir::HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::String(lit)), .. } => {
-            let mut out = String::new();
-            for seg in &lit.segments {
-                if let crate::compiler::types::hir::HirStringSegment::Text(t) = seg {
-                    out.push_str(t);
-                }
-            }
-            Some(out)
-        }
+        // 常量文本走统一渲染：纯文本捕获与单字符 `char` 字面量同源，插值段拒绝（§4.10 B/E）。
+        HirExpr { kind: crate::compiler::types::hir::HirExprKind::Literal(literal), .. } => literal.as_constant_text(),
         HirExpr { kind: crate::compiler::types::hir::HirExprKind::Path(path), .. } => path.parts().last().map(|p| format!("/{}", p.as_str())),
         _ => None,
     }

@@ -1,6 +1,6 @@
 //! `[export(..)]` 注解在 HIR 项上的元数据。
 
-use super::{HirArgument, HirAttribute, HirExpr, HirExprKind, HirLiteral, HirStringSegment};
+use super::{HirArgument, HirAttribute, HirExpr, HirExprKind};
 use crate::compiler::types::{Identifier, NamePath};
 use nyar_types::{AttributeId, AttributeRegistry, builtin_attribute};
 use std::sync::{Mutex, OnceLock};
@@ -162,35 +162,15 @@ pub fn invalid_export_case_argument(annotations: &[HirAttribute]) -> Option<(Str
 }
 
 fn argument_string_literal(argument: &HirArgument) -> Option<String> {
-    let HirExprKind::Literal(HirLiteral::String(literal)) = &argument.value.kind
-    else {
+    let HirExprKind::Literal(literal) = &argument.value.kind else {
         return None;
     };
-
-    let mut rendered = String::new();
-    for segment in &literal.segments {
-        let HirStringSegment::Text(text) = segment
-        else {
-            return None;
-        };
-        rendered.push_str(text);
-    }
-    Some(rendered)
+    literal.as_constant_text()
 }
 
 fn export_arg_to_partition(expr: &HirExpr) -> Option<String> {
     match &expr.kind {
-        HirExprKind::Literal(HirLiteral::String(literal)) => {
-            let mut rendered = String::new();
-            for segment in &literal.segments {
-                let HirStringSegment::Text(text) = segment
-                else {
-                    return None;
-                };
-                rendered.push_str(text);
-            }
-            Some(rendered)
-        }
+        HirExprKind::Literal(literal) => literal.as_constant_text(),
         HirExprKind::Path(path) => Some(path_to_partition(path)),
         _ => None,
     }

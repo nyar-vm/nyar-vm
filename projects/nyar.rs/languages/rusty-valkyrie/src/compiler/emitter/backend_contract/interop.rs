@@ -3,7 +3,7 @@ use nyar_types::DiagnosticSpan;
 
 use crate::compiler::types::{
     NamePath,
-    hir::{HirArgument, HirAttribute, HirExprKind, HirFunction, HirLiteral, HirModule, HirStringSegment},
+    hir::{HirArgument, HirAttribute, HirExprKind, HirFunction, HirLiteral, HirModule},
 };
 
 /// backend contract 对声明面互操作能力的事实。
@@ -435,35 +435,18 @@ fn attribute_name(attribute: &HirAttribute) -> Option<&str> {
 }
 
 fn argument_string_literal(argument: &HirArgument) -> Option<String> {
-    let HirExprKind::Literal(HirLiteral::String(literal)) = &argument.value.kind
-    else {
+    let HirExprKind::Literal(literal) = &argument.value.kind else {
         return None;
     };
-
-    let mut rendered = String::new();
-    for segment in &literal.segments {
-        let HirStringSegment::Text(text) = segment
-        else {
-            return None;
-        };
-        rendered.push_str(text);
-    }
-    Some(rendered)
+    literal.as_constant_text()
 }
 
-/// 从属性坂数中杝坖陝定坝，支挝路径表达弝和字符串字面針两秝形弝。
+/// 从属性实参中解析限定名，支持路径表达式和字符串字面量两种形态。
 fn argument_qualified_name(argument: &HirArgument) -> Option<QualifiedName> {
     match &argument.value.kind {
         HirExprKind::Path(path) => Some(qualified_name_from_path(path)),
-        HirExprKind::Literal(HirLiteral::String(literal)) => {
-            let mut rendered = String::new();
-            for segment in &literal.segments {
-                let HirStringSegment::Text(text) = segment
-                else {
-                    return None;
-                };
-                rendered.push_str(text);
-            }
+        HirExprKind::Literal(literal) => {
+            let rendered = literal.as_constant_text()?;
             let parts = rendered.split("::").map(Identifier::new).collect::<Vec<_>>();
             Some(QualifiedName::new(parts))
         }

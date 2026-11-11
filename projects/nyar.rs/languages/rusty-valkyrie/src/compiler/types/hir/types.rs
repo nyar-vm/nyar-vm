@@ -872,6 +872,27 @@ pub struct HirStringLiteral {
     pub segments: Vec<HirStringSegment>,
 }
 
+impl HirStringLiteral {
+    /// 是否为无插值的纯文本捕获。
+    pub fn is_plain_text(&self) -> bool {
+        self.segments.iter().all(|segment| matches!(segment, HirStringSegment::Text(_)))
+    }
+
+    /// 恰好一个 BMP 字符的纯文本捕获返回其码元；含插值、空、多字符或超 BMP 返回 `None`。
+    ///
+    /// 用于上下文定型：`char` 期望只接受这一形态，其余按文本处理。
+    pub fn as_single_bmp_char(&self) -> Option<u16> {
+        let [HirStringSegment::Text(text)] = self.segments.as_slice() else {
+            return None;
+        };
+        let mut characters = text.chars();
+        match (characters.next(), characters.next()) {
+            (Some(single), None) => u16::try_from(u32::from(single)).ok(),
+            _ => None,
+        }
+    }
+}
+
 /// HIR 字面量值。
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -892,4 +913,30 @@ pub enum HirLiteral {
     Null,
     /// 单元值 `()`。
     Unit,
+}
+
+impl HirLiteral {
+    /// 常量文本渲染：纯文本捕获逐段拼接，单字符 `char` 字面量按单字符文本处理
+    /// （§4.10 B/E：引号不预定类型，插值段不得混入符号身份）。
+    ///
+    /// 含插值或非文本字面量返回 `None`，调用方据此拒绝常量资格。
+    pub fn as_constant_text(&self) -> Option<String> {
+        match self {
+            HirLiteral::String(literal) => {
+                if !literal.is_plain_text() {
+                    return None;
+                }
+                let mut rendered = String::new();
+                for segment in &literal.segments {
+                    let HirStringSegment::Text(text) = segment else {
+                        return None;
+                    };
+                    rendered.push_str(text);
+                }
+                Some(rendered)
+            }
+            HirLiteral::Character(value) => char::from_u32(u32::from(*value)).map(|character| character.to_string()),
+            _ => None,
+        }
+    }
 }
