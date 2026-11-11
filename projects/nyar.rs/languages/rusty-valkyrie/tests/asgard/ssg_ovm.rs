@@ -67,7 +67,10 @@ fn unknown_identifier_fails_closed_instead_of_silent_null() {
 #[test]
 fn operators_ternary_and_calls_are_out_of_subset_expressions() {
     assert!(rules("<widget test><Text>{!a}</Text></widget>").contains(&AdmissionRule::UnsupportedExpression));
-    assert!(rules("<widget test><Text>{a ? \"x\" : \"y\"}</Text></widget>").contains(&AdmissionRule::UnsupportedExpression));
+    // 三元不是 V 表达式：插值内容必须由共享表达式解析器给出真实表达式树，
+    // 非法写法在解析期结构化失败，不得产出半成品 AST（§4.10 E）。
+    let ternary = oak_awsl::AwslParser::parse_root(r#"<widget test><Text>{a ? "x" : "y"}</Text></widget>"#);
+    assert!(ternary.is_err(), "非法插值表达式必须在解析期失败");
     assert!(rules("<widget test><Text>{a + \"!\"}</Text></widget>").contains(&AdmissionRule::UnsupportedExpression));
     assert!(rules("<widget test><Text>{user.name}</Text></widget>").contains(&AdmissionRule::UnsupportedExpression));
 }

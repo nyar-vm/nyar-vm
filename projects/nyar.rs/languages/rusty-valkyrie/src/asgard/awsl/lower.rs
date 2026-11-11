@@ -725,11 +725,7 @@ fn lower_element(element: &AwslElement) -> SurfaceNode {
             }
             AwslDirectiveKind::Style => {
                 if let Some(expr) = &directive.value {
-                    let class_value = match lower_literal_attr_value(expr) {
-                        SurfaceAttrValue::Static(text) if text.contains('?') => SurfaceAttrValue::Dynamic(expr.clone()),
-                        other => other,
-                    };
-                    merge_class_attr(&mut attrs, class_value, is_component_usage);
+                    merge_class_attr(&mut attrs, lower_directive_template_value(expr), is_component_usage);
                 }
             }
             _ => {}
@@ -811,7 +807,9 @@ fn split_if_else_children(children: &[AwslTemplateNode]) -> (Vec<AwslTemplateNod
 
 fn lower_attr_value(value: &AwslAttributeValue) -> SurfaceAttrValue {
     match value {
-        AwslAttributeValue::Literal(text) => lower_literal_attr_value(text),
+        // Oak 已按共享模板规则完成分段（§4.10 F）：Literal 不再含结构花括号，
+        // 插值只可能来自 Expression/Mixed，本层不得再扫描花括号。
+        AwslAttributeValue::Literal(text) => SurfaceAttrValue::Static(text.clone()),
         AwslAttributeValue::Expression(expr) => SurfaceAttrValue::Dynamic(expr.clone()),
         AwslAttributeValue::Mixed(parts) => SurfaceAttrValue::Mixed(
             parts
@@ -826,91 +824,41 @@ fn lower_attr_value(value: &AwslAttributeValue) -> SurfaceAttrValue {
 }
 
 fn lower_class_directive_value(expr: &str) -> SurfaceAttrValue {
-    if expr.contains('{') {
-        return lower_literal_attr_value(expr);
-    }
+    lower_directive_template_value(expr)
+}
+
+/// `@class`/`@style` 指令文本值按共享模板规则分段（§4.10 F）：`{ expr }` 是插值、
+/// `\{`/`\}` 是原样花括号；纯 CSS 类名表是静态文本，其余无花括号写法按表达式上下文处理。
+/// 表达式解析失败时保留原文，由下游 V 编译给出真实诊断，不在此伪造结构。
+fn lower_directive_template_value(expr: &str) -> SurfaceAttrValue {
     if is_plain_css_class_list(expr) {
         return SurfaceAttrValue::Static(expr.to_string());
     }
-    SurfaceAttrValue::Dynamic(expr.to_string())
+    if !expr.contains('{') && !expr.contains('}') {
+        return SurfaceAttrValue::Dynamic(expr.to_string());
+    }
+    let Ok(segments) = crate::compiler::syntax::oak::parse_quote_template(expr, 0) else {
+        return SurfaceAttrValue::Dynamic(expr.to_string());
+    };
+    let parts: Vec<SurfaceTextPart> = segments
+        .into_iter()
+        .map(|segment| match segment {
+            crate::compiler::syntax::oak::ast::StringSegment::Text(text) => SurfaceTextPart::Static(text.content),
+            crate::compiler::syntax::oak::ast::StringSegment::Interpolation(interpolation) => {
+                SurfaceTextPart::Dynamic(expr[interpolation.span.start + 1..interpolation.span.end - 1].trim().to_string())
+            }
+        })
+        .collect();
+    match parts.as_slice() {
+        [SurfaceTextPart::Static(text)] => SurfaceAttrValue::Static(text.clone()),
+        [SurfaceTextPart::Dynamic(inner)] => SurfaceAttrValue::Dynamic(inner.clone()),
+        _ => SurfaceAttrValue::Mixed(parts),
+    }
 }
 
 fn is_plain_css_class_list(expr: &str) -> bool {
     let trimmed = expr.trim();
     !trimmed.is_empty() && trimmed.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_' | ':'))
-}
-
-fn lower_literal_attr_value(text: &str) -> SurfaceAttrValue {
-    // Support both `{{expr}}` (SSG style) and `{expr}` (AWSL attribute interpolations).
-    if !text.contains('{') {
-        return SurfaceAttrValue::Static(text.to_string());
-    }
-    let mut parts = Vec::new();
-    let mut rest = text;
-    while let Some(start) = rest.find('{') {
-        if start > 0 {
-            parts.push(SurfaceTextPart::Static(rest[..start].to_string()));
-        }
-        let double = rest[start + 1..].starts_with('{');
-        let open_len = if double { 2 } else { 1 };
-        let after = &rest[start + open_len..];
-        let end = if double { after.find("}}") } else { find_single_brace_expr_end(after) };
-        let Some(end) = end
-        else {
-            return SurfaceAttrValue::Static(text.to_string());
-        };
-        parts.push(SurfaceTextPart::Dynamic(after[..end].trim().to_string()));
-        rest = &after[end + if double { 2 } else { 1 }..];
-    }
-    if !rest.is_empty() {
-        parts.push(SurfaceTextPart::Static(rest.to_string()));
-    }
-    if parts.len() == 1 {
-        return match &parts[0] {
-            SurfaceTextPart::Static(s) => SurfaceAttrValue::Static(s.clone()),
-            SurfaceTextPart::Dynamic(e) => SurfaceAttrValue::Dynamic(e.clone()),
-        };
-    }
-    SurfaceAttrValue::Mixed(parts)
-}
-
-/// Index of the `}` that closes a `{expr}`, respecting strings and nested braces.
-fn find_single_brace_expr_end(after: &str) -> Option<usize> {
-    let mut depth = 0i32;
-    let mut in_string = None::<char>;
-    let mut index = 0usize;
-    while index < after.len() {
-        let ch = after[index..].chars().next()?;
-        let ch_len = ch.len_utf8();
-        if let Some(quote) = in_string {
-            if ch == '\\' {
-                index += ch_len + after[index + ch_len..].chars().next().map(|c| c.len_utf8()).unwrap_or(0);
-                continue;
-            }
-            if ch == quote {
-                in_string = None;
-            }
-            index += ch_len;
-            continue;
-        }
-        if ch == '"' || ch == '\'' {
-            in_string = Some(ch);
-            index += ch_len;
-            continue;
-        }
-        match ch {
-            '{' => depth += 1,
-            '}' => {
-                if depth == 0 {
-                    return Some(index);
-                }
-                depth -= 1;
-            }
-            _ => {}
-        }
-        index += ch_len;
-    }
-    None
 }
 
 fn attr_value_expr(value: &AwslAttributeValue) -> String {
