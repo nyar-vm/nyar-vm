@@ -70,6 +70,7 @@ pub(crate) fn fixed_member_name(fixity: &str, lexeme: &str) -> String {
 pub(crate) fn infix_member_name(operator: &ValkyrieTokenType) -> String {
     let lexeme = match operator {
         ValkyrieTokenType::Plus => "+",
+        ValkyrieTokenType::PlusPlus => "++",
         ValkyrieTokenType::Minus => "-",
         ValkyrieTokenType::Star => "*",
         ValkyrieTokenType::Slash => "/",

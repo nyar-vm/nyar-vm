@@ -4,7 +4,7 @@
 //! `char` 上下文接受恰好一个码位的双引号捕获；确无上下文时单引号默认
 //! `char`、双引号默认 `utf8`，`''`/`'ab'` 无约束即表示错误，不按长度回退；
 //! `char` 为 u32 码位（§4.12 字符合同），非 BMP 单引号捕获是合法 `char`。
-//! 插值在 HIR 脱糖为普通 `display` / `infix +` 调用，MIR 只编码调用与常量。
+//! 插值在 HIR 脱糖为普通 `display` / `infix ++` 调用，MIR 只编码调用与常量。
 
 use rusty_valkyrie::{MirLowerer, ValkyrieCompiler, compiler::mir::ssa::MirOperation};
 
@@ -43,7 +43,7 @@ imply i32 {
 }
 
 imply Utf8Text {
-    infix `+`(self, other: utf8): utf8 { return self }
+    infix `++`(self, other: utf8): utf8 { return self }
 }
 "#;
 
@@ -212,7 +212,7 @@ fn interpolation_lowers_to_display_call_not_placeholder() {
 
 #[test]
 fn interpolation_multi_segment_keeps_left_to_right_calls() {
-    // `"a{ x }b"`：`display` + 两次 `infix +`，文本段仍按源码顺序落常量。
+    // `"a{ x }b"`：`display` + 两次 `infix ++`，文本段仍按源码顺序落常量。
     let module = lower("micro probe(x: i32): utf8 { let t = \"a{ x }b\" return t }");
     assert!(call_count(&module, "probe") >= 3, "多段模板必须保留 display 与两次字符串连接调用");
     let texts = utf8_constants(&module, "probe");

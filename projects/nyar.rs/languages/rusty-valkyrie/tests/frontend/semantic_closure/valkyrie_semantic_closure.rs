@@ -720,7 +720,7 @@ imply Utf8Text { infix `==`(self, other: utf8): bool { return true } }"#,
     );
 }
 
-/// 插值捕获在调用解析前脱糖为 `<expr>.display()` 与 `infix +` 连接，这些选择名不出现在
+/// 插值捕获在调用解析前脱糖为 `<expr>.display()` 与 `infix ++` 连接，这些选择名不出现在
 /// 源码里。闭包必须按同一合同登记成员需求，否则依赖组的 formatter/连接声明被裁掉，
 /// 脱糖后的调用点在 HIR 无候选可解析。
 #[test]
@@ -733,7 +733,7 @@ fn interpolated_capture_demands_formatter_and_concat_members() {
                 "source/text/Utf8Text.v",
                 r#"namespace std.text;
 class Utf8Text { _repr: [u8] }
-imply Utf8Text { infix `+`(self, other: utf8): utf8 { return self } }"#,
+imply Utf8Text { infix `++`(self, other: utf8): utf8 { return self } }"#,
             ),
             file("source/text/Template.v", "namespace std.text;\ntrait Display { micro display(self): utf8 }"),
             file(
@@ -767,8 +767,8 @@ micro bump(counter: i64) -> i64 { return counter }
     assert!(
         demanded
             .iter()
-            .any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "infix +" && key.owner.as_deref() == Some("Utf8Text")),
-        "多段插值必须提升 `Utf8Text` 的 `infix +` 成员: {demanded:?}"
+            .any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "infix ++" && key.owner.as_deref() == Some("Utf8Text")),
+        "多段插值必须提升 `Utf8Text` 的 `infix ++` 成员: {demanded:?}"
     );
     assert!(
         demanded.iter().any(|key| key.kind == DeclarationKind::Micro && key.name == "bump"),

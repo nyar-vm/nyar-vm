@@ -602,7 +602,7 @@ impl<'a> WasmMirLowerer<'a> {
     pub(super) fn utf8_method_receiver_ok(&self, method: &str, arguments: &[MirOperand]) -> bool {
         match method {
             "length" => self.operand_is_utf8_host_string(arguments.first()),
-            "concat" | "infix +" | "equals" | "infix ==" => {
+            "concat" | "infix +" | "infix ++" | "equals" | "infix ==" => {
                 self.operand_is_utf8_host_string(arguments.first()) && self.operand_is_utf8_host_string(arguments.get(1))
             }
             _ => true,

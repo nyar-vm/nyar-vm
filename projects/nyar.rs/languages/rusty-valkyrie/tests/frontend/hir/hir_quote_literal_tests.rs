@@ -156,7 +156,7 @@ imply i32 {
 }
 
 imply Utf8Text {
-    infix `+`(self, other: utf8): utf8 { return self }
+    infix `++`(self, other: utf8): utf8 { return self }
 }
 "#;
 
@@ -229,16 +229,16 @@ fn interpolation_single_slot_binds_display_call() {
 
 #[test]
 fn interpolation_segments_concatenate_left_to_right() {
-    // `"a{ x }b"` 改写为 `("a" + x.display()) + "b"`，段顺序与源码一致。
+    // `"a{ x }b"` 改写为 `("a" ++ x.display()) ++ "b"`，段顺序与源码一致。
     let hir = compile_with_interpolation_fixture(r#"micro probe(x: i32): utf8 { return "a{ x }b" }"#).expect("多段模板必须完成 HIR 解析");
     let expr = function_return_expression(&hir, "probe");
     let outer = resolved_call(expr);
-    assert_eq!(outer.symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix +"));
+    assert_eq!(outer.symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix ++"));
     let outer_args = call_arguments(expr);
     assert_eq!(outer_args.len(), 2);
     assert_eq!(text_segment(&outer_args[1].value), "b", "右端文本段必须是源码后段");
     let inner = &outer_args[0].value;
-    assert_eq!(resolved_call(inner).symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix +"));
+    assert_eq!(resolved_call(inner).symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix ++"));
     let inner_args = call_arguments(inner);
     assert_eq!(text_segment(&inner_args[0].value), "a");
     let display = &inner_args[1].value;
@@ -677,7 +677,7 @@ imply Utf8Text: Display {
 }
 
 imply Utf8Text {
-    infix `+`(self, other: utf8): utf8 { return self }
+    infix `++`(self, other: utf8): utf8 { return self }
 }
 "#;
 
@@ -690,13 +690,13 @@ fn compile_builtin_text_interpolation(source: &str) -> HirModule {
 #[test]
 fn interpolation_resolves_formatter_without_source_text_alias() {
     // `name`/`suffix` 的 `utf8` 是内建载体：`display` 必须命中 `imply Utf8Text: Display`，
-    // 段间连接必须命中 `imply Utf8Text: infix +`，两者都不靠源码别名拼写。
+    // 段间连接必须命中 `imply Utf8Text: infix ++`，两者都不靠源码别名拼写。
     let hir = compile_builtin_text_interpolation(r#"micro probe(name: utf8, suffix: utf8): utf8 { return "{ name }{ suffix }" }"#);
     let expr = function_return_expression(&hir, "probe");
     let concat = resolved_call(expr);
-    assert_eq!(concat.symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix +"));
+    assert_eq!(concat.symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix ++"));
     let operands = call_arguments(expr);
-    assert_eq!(operands.len(), 2, "两个插值段必须由一次 `infix +` 连接");
+    assert_eq!(operands.len(), 2, "两个插值段必须由一次 `infix ++` 连接");
     for operand in operands {
         let display = resolved_call(&operand.value);
         assert_eq!(display.symbol.parts().last().map(|identifier| identifier.as_str()), Some("display"));
@@ -715,9 +715,9 @@ micro probe(): utf8 { return "x{ bump(1) }" }"#,
     );
     let expr = function_return_expression(&hir, "probe");
     let concat = resolved_call(expr);
-    assert_eq!(concat.symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix +"));
+    assert_eq!(concat.symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix ++"));
     let operands = call_arguments(expr);
-    assert_eq!(operands.len(), 2, "文本段与插值段必须由 `infix +` 连接");
+    assert_eq!(operands.len(), 2, "文本段与插值段必须由 `infix ++` 连接");
     let display = resolved_call(&operands[1].value);
     assert_eq!(display.symbol.parts().last().map(|identifier| identifier.as_str()), Some("display"));
     assert_eq!(display.return_type, ValkyrieType::Utf8);

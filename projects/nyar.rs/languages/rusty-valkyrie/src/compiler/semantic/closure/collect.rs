@@ -483,7 +483,7 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
 /// 普通引号捕获的插值需求。
 ///
 /// 插值在 HIR 下降期脱糖为普通调用树——每个插值段是 `<expr>.display()`，非空段之间用
-/// `infix +` 左结合连接（[`crate::compiler::hir::lowering::interpolation`]）。这些选择名
+/// `infix ++` 左结合连接（[`crate::compiler::hir::lowering::interpolation`]）。这些选择名
 /// 不出现在源码里，闭包必须按同一合同登记为需求上界，否则脱糖后的调用点在依赖组里
 /// 找不到 formatter 与文本连接声明。`r` 内容不插值、`b` 是字节字面量；模板语法错误
 /// 由 HIR 结构化报错，此处不重复诊断。
@@ -514,9 +514,9 @@ fn collect_quote_literal(literal: &ast::QuoteLiteral, references: &mut Reference
             }
         }
     }
-    // 单段直接返回该段；只有多段才产生 `infix +` 连接调用。
+    // 单段直接返回该段；只有多段才产生 `infix ++` 连接调用。
     if has_interpolation && produced_segments > 1 {
-        references.selectors.insert(operator_members::fixed_member_name("infix", "+"));
+        references.selectors.insert(operator_members::fixed_member_name("infix", "++"));
     }
 }
 

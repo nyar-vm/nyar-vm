@@ -5,7 +5,7 @@
 //! - 文本段冻结为 `text_encoding: Some(Utf8)` 的文本字面量；
 //! - 插值段改写为接收者 `display` 成员调用，由既有 `resolve_hir_calls` 按接收者类型
 //!   绑定 `std.text::Display::display`，本 pass 不写候选匹配或类型名白名单；
-//! - 段与段之间用普通 `infix +` 调用左结合连接，单段直接返回该段。
+//! - 段与段之间用普通 `infix ++` 调用左结合连接，单段直接返回该段。
 //!
 //! 改写保持源码顺序，每个插值表达式恰好出现一次；`is_fluent` 没有冻结的 locale
 //! 合同，带源区间结构化失败，不按 Display 静默处理。解析失败（如类型没有 Display
@@ -25,7 +25,7 @@ use crate::compiler::{
 /// 把模块（含子模块）内全部带插值的引号捕获脱糖为普通调用树。
 ///
 /// 必须与 `collection_init::transform_collection_literals` 在同一阶段运行：调用解析
-/// 之前，这样新增的 `display` 与 `infix +` 调用能被正常冻结。
+/// 之前，这样新增的 `display` 与 `infix ++` 调用能被正常冻结。
 pub(crate) fn desugar_string_interpolations(module: &mut HirModule) -> Result<(), HirError> {
     transform_module(module)
 }
@@ -428,10 +428,10 @@ fn display_call_kind(object: HirExpr, span: &SourceSpan) -> HirExprKind {
     }
 }
 
-/// 段连接 → `infix +` 普通调用，形状与 `lower_operator_member_call` 一致。
+/// 段连接 → `infix ++` 普通调用，形状与 `lower_operator_member_call` 一致。
 fn concat_call_kind(lhs: HirExpr, rhs: HirExpr, span: &SourceSpan) -> HirExprKind {
     HirExprKind::Call {
-        callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("infix +")])), span: span.clone() }),
+        callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("infix ++")])), span: span.clone() }),
         args: vec![HirCallArgument::positional(lhs), HirCallArgument::positional(rhs)],
         resolved: None,
     }
