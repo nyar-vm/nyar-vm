@@ -417,6 +417,10 @@ fn settle_capture(
     pass: &SettlePass,
     span: Range<usize>,
 ) -> Result<Option<SettledCapture>, HirError> {
+    // 已冻结编码的文本段（插值脱糖合成的文本段）不再按上下文或引号默认重结算。
+    if let Some(encoding) = capture.text_encoding {
+        return Ok(Some(SettledCapture::Text(encoding)));
+    }
     let Some(target) = expected else {
         return default_capture(capture, span);
     };

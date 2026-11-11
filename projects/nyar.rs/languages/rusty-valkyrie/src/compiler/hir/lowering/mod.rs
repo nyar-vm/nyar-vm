@@ -31,6 +31,7 @@ pub mod errors;
 mod expr_lowering;
 mod generic_binders;
 mod generic_instantiation;
+mod interpolation;
 mod macro_expand;
 mod match_pattern_recovery;
 mod nominal_declarations;
@@ -461,6 +462,9 @@ impl ValkyrieCompiler {
             // 依赖组的合同事实已经随 `dependency_exports` 进入 `imported_semantic_exports`，
             // 而本组 export 尚未构建，转换只改体内表达式、不扰动声明面导出事实。
             collection_init::transform_collection_literals(&mut hir_module)?;
+            // 插值脱糖与集合字面量同阶段：都在调用解析之前把语法糖改写成普通调用，
+            // 新增的 `display` / `infix +` 调用由随后的统一解析冻结身份。
+            interpolation::desugar_string_interpolations(&mut hir_module)?;
             let export = HirDependencySemanticExport {
                 module: Self::source_group_name_path(&group.name),
                 functions: exportable_dependency_functions(&hir_module.functions),

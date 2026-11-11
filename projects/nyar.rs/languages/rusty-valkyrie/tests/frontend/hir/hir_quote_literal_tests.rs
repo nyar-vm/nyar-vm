@@ -13,11 +13,11 @@
 
 use rusty_valkyrie::{
     HirError, ValkyrieCompiler,
-    compiler::{
-        diagnostics::pending,
-        hir::lowering::errors::QuoteLiteralFailure,
+    compiler::{diagnostics::pending, hir::lowering::errors::QuoteLiteralFailure},
+    types::hir::{
+        HirCallResolutionFailureKind, HirExpr, HirExprKind, HirLiteral, HirModule, HirResolvedCall, HirStatementKind, HirTextEncoding,
+        types::ValkyrieType,
     },
-    types::hir::{HirCallResolutionFailureKind, HirExprKind, HirLiteral, HirStatementKind, types::ValkyrieType},
 };
 
 /// 数值/文本原始类型不是语言内建，必须绑定到源码声明身份。
@@ -114,16 +114,190 @@ fn brace_escapes_decode_to_literal_braces() {
     assert_text("micro probe() { let text = \"x\\{y\\}\" }", "x{y}");
 }
 
-#[test]
-fn cooked_capture_interpolates_real_expression() {
-    // 插值在两种引号下同形；旧实现把 `1` 整段当名字，新管线必须给出真实表达式。
-    let segments = plain_text_of(&first_let_initializer_kind("micro probe() { let t = 'x{1}y' }"));
-    assert_eq!(segments.len(), 3, "期望 Text/Interpolation/Text 三段");
-    assert!(matches!(&segments[2], rusty_valkyrie::types::hir::HirStringSegment::Text(text) if text == "y"));
-    let rusty_valkyrie::types::hir::HirStringSegment::Interpolation { expr, .. } = &segments[1] else {
-        panic!("中段必须是插值")
+/// 插值脱糖只用既有正式声明：Display trait、文本载体与 `infix +` 都是普通 V 声明，
+/// 编译器不按类型名白名单识别 formatter。
+const INTERPOLATION_FIXTURE: &str = r#"
+[primitive("std::primitive::i32")]
+structure i32 { }
+
+[primitive("std::primitive::bool")]
+structure bool { }
+
+[primitive("std::text::char")]
+structure char { }
+
+class Utf8Text { }
+
+type utf8 = Utf8Text;
+
+class Widget { value: i32 }
+
+class Missing { }
+
+trait Display {
+    micro display(self): utf8
+}
+
+imply i32: Display {
+    micro display(self): utf8 { return "0" }
+}
+
+imply Utf8Text: Display {
+    micro display(self): utf8 { return self }
+}
+
+imply Widget: Display {
+    micro display(self): utf8 { return "widget" }
+}
+
+imply i32 {
+    infix `+`(self, rhs: Self): Self { return self }
+}
+
+imply Utf8Text {
+    infix `+`(self, other: utf8): utf8 { return self }
+}
+"#;
+
+fn compile_with_interpolation_fixture(source: &str) -> Result<HirModule, HirError> {
+    ValkyrieCompiler::default().compile_source(&format!("{INTERPOLATION_FIXTURE}\n{source}"))
+}
+
+fn function_return_expression<'a>(hir: &'a HirModule, name: &str) -> &'a HirExpr {
+    let function = hir.functions.iter().find(|function| function.name.as_str() == name).unwrap_or_else(|| panic!("缺少 {name} 函数"));
+    let HirExprKind::Return(Some(value)) = &function.body.expr.as_ref().unwrap_or_else(|| panic!("{name} 缺少尾表达式")).kind
+    else {
+        panic!("{name} 必须以 return 收尾")
     };
-    assert!(matches!(expr.kind, HirExprKind::Literal(HirLiteral::Integer64(1))), "插值必须是真实表达式树，不是名字路径：{:?}", expr.kind);
+    value.as_ref()
+}
+
+fn resolved_call(expr: &HirExpr) -> &HirResolvedCall {
+    let HirExprKind::Call { resolved: Some(call), .. } = &expr.kind
+    else {
+        panic!("表达式必须是已解析调用，实际 {:?}", expr.kind)
+    };
+    call
+}
+
+fn text_segment(expr: &HirExpr) -> &str {
+    let HirExprKind::Literal(HirLiteral::String(literal)) = &expr.kind
+    else {
+        panic!("段必须是文本字面量，实际 {:?}", expr.kind)
+    };
+    assert_eq!(literal.text_encoding, Some(HirTextEncoding::Utf8), "文本段必须冻结 utf8 编码");
+    let [rusty_valkyrie::types::hir::HirStringSegment::Text(text)] = literal.segments.as_slice()
+    else {
+        panic!("文本段必须是单一文本片段，实际 {:?}", literal.segments)
+    };
+    text
+}
+
+fn call_arguments(expr: &HirExpr) -> &[rusty_valkyrie::types::hir::HirCallArgument] {
+    let HirExprKind::Call { args, .. } = &expr.kind
+    else {
+        panic!("表达式必须是调用，实际 {:?}", expr.kind)
+    };
+    args
+}
+
+#[test]
+fn interpolation_single_slot_binds_display_call() {
+    // `"{ 1 }"` 没有文本段，直接返回 `1.display()`；不再是字符串字面量或占位文本。
+    let hir = compile_with_interpolation_fixture(r#"micro probe(): utf8 { return "{ 1 }" }"#).expect("单插值必须完成 HIR 解析");
+    let expr = function_return_expression(&hir, "probe");
+    let call = resolved_call(expr);
+    assert_eq!(
+        call.symbol.parts().last().map(|identifier| identifier.as_str()),
+        Some("display"),
+        "必须绑定声明身份 `display`，实际 {}",
+        call.symbol
+    );
+    assert!(call_arguments(expr).is_empty(), "display 的显式实参为空，接收者由成员调用承载");
+    let HirExprKind::Call { callee, .. } = &expr.kind
+    else {
+        unreachable!()
+    };
+    let HirExprKind::FieldAccess { object, field, .. } = &callee.kind
+    else {
+        panic!("display 必须以成员选择为 callee，实际 {:?}", callee.kind)
+    };
+    assert_eq!(field.as_str(), "display");
+    assert!(matches!(object.kind, HirExprKind::Literal(HirLiteral::Integer64(1))), "插值表达式必须是真实表达式树");
+}
+
+#[test]
+fn interpolation_segments_concatenate_left_to_right() {
+    // `"a{ x }b"` 改写为 `("a" + x.display()) + "b"`，段顺序与源码一致。
+    let hir = compile_with_interpolation_fixture(r#"micro probe(x: i32): utf8 { return "a{ x }b" }"#).expect("多段模板必须完成 HIR 解析");
+    let expr = function_return_expression(&hir, "probe");
+    let outer = resolved_call(expr);
+    assert_eq!(outer.symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix +"));
+    let outer_args = call_arguments(expr);
+    assert_eq!(outer_args.len(), 2);
+    assert_eq!(text_segment(&outer_args[1].value), "b", "右端文本段必须是源码后段");
+    let inner = &outer_args[0].value;
+    assert_eq!(resolved_call(inner).symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix +"));
+    let inner_args = call_arguments(inner);
+    assert_eq!(text_segment(&inner_args[0].value), "a");
+    let display = &inner_args[1].value;
+    let display_call = resolved_call(display);
+    assert_eq!(display_call.symbol.parts().last().map(|identifier| identifier.as_str()), Some("display"));
+    let HirExprKind::Call { callee, .. } = &display.kind
+    else {
+        unreachable!()
+    };
+    let HirExprKind::FieldAccess { object, .. } = &callee.kind
+    else {
+        unreachable!()
+    };
+    assert!(matches!(&object.kind, HirExprKind::Variable(identifier) if identifier.name.as_str() == "x"), "插值段必须保留原变量");
+}
+
+#[test]
+fn interpolation_arithmetic_uses_declared_operator() {
+    // `"{ 3 + 1 }"` 的插值表达式是已解析的 `i32.infix +` 调用，不折叠成文本。
+    let hir = compile_with_interpolation_fixture(r#"micro probe(): utf8 { return "{ 3 + 1 }" }"#).expect("算术插值必须完成 HIR 解析");
+    let expr = function_return_expression(&hir, "probe");
+    let display_call = resolved_call(expr);
+    assert_eq!(display_call.symbol.parts().last().map(|identifier| identifier.as_str()), Some("display"));
+    let HirExprKind::Call { callee, .. } = &expr.kind
+    else {
+        unreachable!()
+    };
+    let HirExprKind::FieldAccess { object, .. } = &callee.kind
+    else {
+        unreachable!()
+    };
+    let addition = resolved_call(object);
+    assert_eq!(addition.symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix +"), "插值必须先解出声明运算符");
+    let operands = call_arguments(object);
+    assert_eq!(operands.len(), 2);
+    assert!(matches!(operands[0].value.kind, HirExprKind::Literal(HirLiteral::Integer64(3))));
+    assert!(matches!(operands[1].value.kind, HirExprKind::Literal(HirLiteral::Integer64(1))));
+}
+
+#[test]
+fn interpolation_binds_user_defined_display() {
+    // 用户声明身份上的 Display 实现与内建类型走同一解析路径。
+    let hir = compile_with_interpolation_fixture(r#"micro probe(w: Widget): utf8 { return "{ w }" }"#).expect("自定义 Display 必须可解析");
+    let call = resolved_call(function_return_expression(&hir, "probe"));
+    assert_eq!(call.symbol.parts().last().map(|identifier| identifier.as_str()), Some("display"));
+    assert!(call.instance.is_some(), "具体 impl 成员必须冻结实例身份");
+}
+
+#[test]
+fn interpolation_without_display_fails_closed() {
+    // 没有 Display 实例时由既有调用解析结构化失败，错误点名 `display`，不得产出占位文本。
+    let error =
+        compile_with_interpolation_fixture(r#"micro probe(w: Missing): utf8 { return "{ w }" }"#).expect_err("缺少 Display 实例必须失败");
+    let rendered = error.to_string();
+    assert!(rendered.contains("display"), "失败必须点名 display：{rendered}");
+    assert!(!rendered.contains("${"), "不得渲染 dollar-brace 占位：{rendered}");
+    match error {
+        HirError::UnresolvedCall { span, .. } => assert!(span.start < span.end, "失败必须带源区间"),
+        other => panic!("必须是结构化未解析调用，实际 {other:?}"),
+    }
 }
 
 #[test]

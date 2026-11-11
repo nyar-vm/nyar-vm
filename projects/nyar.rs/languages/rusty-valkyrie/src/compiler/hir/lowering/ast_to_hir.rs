@@ -102,6 +102,9 @@ impl AstToHir {
         // 字面量项仍需 `resolve_hir_calls` 解析调用，而 `CollectionInit` 两槽的
         // 声明身份已冻结、实例留空，交由随后的单态化固定点自然铸造。
         crate::compiler::hir::lowering::collection_init::transform_collection_literals(&mut hir)?;
+        // 插值脱糖与集合字面量同阶段：都在调用解析之前把语法糖改写成普通调用，
+        // 新增的 `display` / `infix +` 调用由随后的统一解析冻结身份。
+        crate::compiler::hir::lowering::interpolation::desugar_string_interpolations(&mut hir)?;
         resolve_hir_calls(&mut hir);
         // 调用合同冻结后立即执行 HIR 唯一定型：引号捕获在进单态化与 MIR 之前
         // 全部结算为最终字面量形态（§4.10 B / §4.12 前端闭合门）。
