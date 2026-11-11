@@ -499,7 +499,10 @@ impl MirBuilder {
 
     pub(crate) fn lower_literal_pattern_match_operand(&mut self, literal: &HirLiteral, value: MirOperand) -> MirOperand {
         let actual_type_hint = infer_builder_operand_type(&value, &self.value_types);
-        let (constant, expected_type) = lower_literal(literal, actual_type_hint.as_ref());
+        let (constant, expected_type) = match lower_literal(literal, actual_type_hint.as_ref(), &self.field_declarations) {
+            Ok(pair) => pair,
+            Err(_) => return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value),
+        };
         match literal {
             HirLiteral::Bool(expected) => {
                 let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
@@ -614,14 +617,18 @@ impl MirBuilder {
 
         let mut accumulated: Option<MirOperand> = None;
         if let Some(start_literal) = start {
-            let (start_constant, _) = lower_literal(start_literal, Some(&actual_type));
+            let Ok((start_constant, _)) = lower_literal(start_literal, Some(&actual_type), &self.field_declarations) else {
+                return MirOperand::Constant(MirConstant::Bool(false));
+            };
             // value >= start ? !(value < start)
             let lt_start = self.lower_lt_constant_operand(value.clone(), start_constant, &actual_type);
             let lower_bound = self.lower_logical_not_operand(lt_start);
             accumulated = Some(self.merge_pattern_match_operands(accumulated, lower_bound));
         }
         if let Some(end_literal) = end {
-            let (end_constant, _) = lower_literal(end_literal, Some(&actual_type));
+            let Ok((end_constant, _)) = lower_literal(end_literal, Some(&actual_type), &self.field_declarations) else {
+                return MirOperand::Constant(MirConstant::Bool(false));
+            };
             let upper_bound = if inclusive_end {
                 // value <= end ? !(end < value)
                 let end_operand = self.materialize_pattern_constant_operand(end_constant, &actual_type);

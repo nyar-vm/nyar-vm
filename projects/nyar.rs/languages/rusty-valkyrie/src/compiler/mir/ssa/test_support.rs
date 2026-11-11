@@ -155,7 +155,7 @@ pub fn block(statements: Vec<HirStatement>, expr: Option<HirExpr>) -> HirBlock {
 
 /// 降低单个字面量，便于验证常量承载形状。
 pub fn lower_test_literal(literal: &HirLiteral, expected_type: Option<&ValkyrieType>) -> (MirConstant, Option<ValkyrieType>) {
-    lower_literal(literal, expected_type)
+    lower_literal(literal, expected_type, &[]).expect("test literal must lower without a declaration table")
 }
 
 /// 构造一个最小函数并降低为 `MIR`。

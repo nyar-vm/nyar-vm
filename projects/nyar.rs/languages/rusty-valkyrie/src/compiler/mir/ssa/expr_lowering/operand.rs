@@ -25,7 +25,16 @@ impl MirBuilder {
     pub(crate) fn lower_expr_to_operand_with_hint(&mut self, expr: &HirExpr, expected_type: Option<&ValkyrieType>) -> MirOperand {
         match &expr.kind {
             HirExprKind::Literal(literal) => {
-                let (constant, ty) = lower_literal(literal, expected_type);
+                let (constant, ty) = match lower_literal(literal, expected_type, &self.field_declarations) {
+                    Ok(pair) => pair,
+                    Err(reason) => {
+                        self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnsupportedExpression {
+                            span: expr.span.clone(),
+                            kind: reason,
+                        });
+                        return MirOperand::Constant(MirConstant::Unit);
+                    }
+                };
                 // 调用点形参为 `Nominal{usize}` 时，overload 已特化字面量；MIR 必须写出同一类型，
                 // 否则 SMIR007 仍见 Integer32 vs Nominal。
                 let ty = match (literal, expected_type) {

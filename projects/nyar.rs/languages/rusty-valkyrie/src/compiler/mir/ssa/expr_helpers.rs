@@ -269,6 +269,36 @@ pub(super) fn is_character_literal_formal_type(ty: &ValkyrieType, structs: &[sup
     }
 }
 
+/// 形参是否为 `char` 名义类型（不含数值）：文本捕获只绑 `char`，不绑数值形参。
+pub(super) fn is_char_formal_type(ty: &ValkyrieType, structs: &[super::MirStruct]) -> bool {
+    match ty {
+        ValkyrieType::Character => true,
+        ValkyrieType::Named(name) => name.as_str() == "char",
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.is_empty() => {
+            primitive_identity.as_deref() == Some("std::text::char")
+                || super::MirStruct::find_by_declaration(structs, *declaration).is_some_and(|item| item.name.as_str() == "char")
+        }
+        _ => false,
+    }
+}
+
+/// 形参是否为 `utf8` 编码文本类型（内建 carrier、源码短名或别名锚定的名义声明）。
+///
+/// 名集唯一来源是 `text_carrier::carrier_matches_declaration_name`，与 HIR `is_text_formal` 同源；
+/// 本轮只落 `utf8` 方向，`utf16` 保持既有失败路径，不在此偷偷强转。
+pub(super) fn is_utf8_formal_type(ty: &ValkyrieType, structs: &[super::MirStruct]) -> bool {
+    use crate::compiler::text_carrier;
+    match ty {
+        ValkyrieType::Utf8 => true,
+        ValkyrieType::Named(name) => text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, name.as_str()),
+        ValkyrieType::Nominal { declaration, arguments, .. } if arguments.is_empty() => {
+            super::MirStruct::find_by_declaration(structs, *declaration)
+                .is_some_and(|item| text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, item.name.as_str()))
+        }
+        _ => false,
+    }
+}
+
 pub(super) fn named_type_name(ty: &ValkyrieType) -> Option<&str> {
     match ty {
         ValkyrieType::Named(name) => Some(name.as_str()),

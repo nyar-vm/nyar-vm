@@ -8,8 +8,10 @@ use crate::compiler::{
 
 use crate::compiler::mir::ssa::{MirConstant, MirOperand, expr_helpers::named_type_name, infer_builder_operand_type};
 
-pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&ValkyrieType>) -> (MirConstant, Option<ValkyrieType>) {
-    match literal {
+use crate::compiler::mir::ssa::expr_helpers::{is_char_formal_type, is_character_literal_formal_type, is_integer_literal_formal_type, is_utf8_formal_type};
+
+pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&ValkyrieType>, structs: &[crate::compiler::mir::ssa::MirStruct]) -> Result<(MirConstant, Option<ValkyrieType>), String> {
+    Ok(match literal {
         HirLiteral::Integer64(value) => (
             MirConstant::Int(*value),
             Some(match expected_type {
@@ -26,27 +28,34 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
             }),
         ),
         HirLiteral::Float64(value) => (MirConstant::Float64(*value), Some(ValkyrieType::Float64)),
-        // 字符字面量：形参为 `char` 或整数类型时写形参类型（overload 已特化），
-        // 否则默认 `char`；值为已校验的 u16 码元，按整数常量编码。
-        HirLiteral::Character(value) => (
-            MirConstant::Int(*value as i64),
-            Some(match expected_type {
-                Some(
-                    ty @ (ValkyrieType::Character
-                    | ValkyrieType::Integer8 { .. }
-                    | ValkyrieType::Integer16 { .. }
-                    | ValkyrieType::Integer32 { .. }
-                    | ValkyrieType::Integer64 { .. }
-                    | ValkyrieType::Integer128 { .. }),
-                ) => ty.clone(),
-                Some(ty @ (ValkyrieType::Named(_) | ValkyrieType::Nominal { .. }))
-                    if crate::compiler::mir::ssa::expr_helpers::is_character_literal_formal_type(ty, &[]) =>
-                {
-                    ty.clone()
-                }
-                _ => ValkyrieType::Character,
-            }),
-        ),
+        // 字符字面量：文本期望按单字符 `utf8` 文本落常量（§4.10 B：`let t: utf8 = 'x'`）；
+        // 否则形参为 `char` 或整数类型时写形参类型（overload 已特化），默认 `char`；
+        // 值为已校验的 u16 码元，按整数常量编码。
+        HirLiteral::Character(value) => {
+            if expected_type.is_some_and(|ty| is_utf8_formal_type(ty, structs)) {
+                let text = char::from_u32(u32::from(*value)).map(|character| character.to_string()).unwrap_or_default();
+                (MirConstant::Utf8(text), Some(ValkyrieType::Utf8))
+            }
+            else {
+                (
+                    MirConstant::Int(*value as i64),
+                    Some(match expected_type {
+                        Some(
+                            ty @ (ValkyrieType::Character
+                            | ValkyrieType::Integer8 { .. }
+                            | ValkyrieType::Integer16 { .. }
+                            | ValkyrieType::Integer32 { .. }
+                            | ValkyrieType::Integer64 { .. }
+                            | ValkyrieType::Integer128 { .. }),
+                        ) => ty.clone(),
+                        Some(ty @ (ValkyrieType::Named(_) | ValkyrieType::Nominal { .. })) if is_character_literal_formal_type(ty, &[]) => {
+                            ty.clone()
+                        }
+                        _ => ValkyrieType::Character,
+                    }),
+                )
+            }
+        }
         // 字节字面量：形参为整数类型时写形参类型，否则默认 `u8`。
         HirLiteral::Byte(value) => (
             MirConstant::Int(*value as i64),
@@ -58,30 +67,49 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
                     | ValkyrieType::Integer64 { .. }
                     | ValkyrieType::Integer128 { .. }),
                 ) => ty.clone(),
-                Some(ty @ (ValkyrieType::Named(_) | ValkyrieType::Nominal { .. }))
-                    if crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(ty, &[]) =>
-                {
-                    ty.clone()
-                }
+                Some(ty @ (ValkyrieType::Named(_) | ValkyrieType::Nominal { .. })) if is_integer_literal_formal_type(ty, &[]) => ty.clone(),
                 _ => ValkyrieType::Integer8 { signed: false },
             }),
         ),
         HirLiteral::Bool(value) => (MirConstant::Bool(*value), Some(ValkyrieType::Boolean)),
-        HirLiteral::String(value) => (
-            MirConstant::Utf8(
-                value
-                    .segments
-                    .iter()
-                    .map(|segment| match segment {
-                        crate::compiler::types::hir::HirStringSegment::Text(text) => text.clone(),
-                        crate::compiler::types::hir::HirStringSegment::Interpolation { expr, .. } => {
-                            format!("${{{}}}", render_interpolation_expr(expr))
-                        }
-                    })
-                    .collect::<String>(),
-            ),
-            Some(ValkyrieType::Utf8),
-        ),
+        HirLiteral::String(value) => {
+            // 插值段必须经已绑定的 display/formatter 实例脱糖为普通调用；本轮无冻结实例，
+            // 结构化失败，绝不渲染 `${...}` 占位文本（§4.10 E/G）。
+            if !value.is_plain_text() {
+                return Err("string interpolation requires a bound display/formatter instance; no such instance is frozen in this phase".to_string());
+            }
+            let text = value
+                .segments
+                .iter()
+                .map(|segment| match segment {
+                    crate::compiler::types::hir::HirStringSegment::Text(text) => text.as_str(),
+                    crate::compiler::types::hir::HirStringSegment::Interpolation { .. } => "",
+                })
+                .collect::<String>();
+            // 恰好一个 BMP 字符的文本捕获在 `char` 期望下按码元落常量（§4.10 B：`let c: char = "x"`）。
+            if let Some(code) = value.as_single_bmp_char()
+                && expected_type.is_some_and(|ty| is_char_formal_type(ty, structs))
+            {
+                return Ok((MirConstant::Int(code as i64), Some(ValkyrieType::Character)));
+            }
+            let is_char_expected = expected_type.is_some_and(|ty| is_char_formal_type(ty, structs));
+            let is_utf8_expected = expected_type.is_some_and(|ty| is_utf8_formal_type(ty, structs));
+            match (value.quote, expected_type, is_char_expected, is_utf8_expected) {
+                // 文本捕获落在 `char` 期望但内容非单字符：无法表示为 char，结构化失败。
+                (_, _, true, _) => {
+                    return Err("text capture is not representable as `char`: expected exactly one BMP character".to_string());
+                }
+                // 无约束单引号捕获默认 `char`，但内容非单字符：表示错误，不回退文本（§4.10 B）。
+                (crate::compiler::types::hir::HirQuoteKind::Single, None, _, _) => {
+                    return Err("unconstrained single-quote capture defaults to `char` but its content is not a single character".to_string());
+                }
+                (crate::compiler::types::hir::HirQuoteKind::Single | crate::compiler::types::hir::HirQuoteKind::Double, _, _, true) => {
+                    (MirConstant::Utf8(text), Some(ValkyrieType::Utf8))
+                }
+                // 其余（双引号无约束、名义文本等）按 `utf8` 文本常量处理。
+                _ => (MirConstant::Utf8(text), Some(ValkyrieType::Utf8)),
+            }
+        }
         HirLiteral::Null => (
             MirConstant::Null,
             // 空值的 SSA 类型只能来自上下文 `T?`；没有 nullable 上下文时保持未定型，
@@ -89,26 +117,7 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
             expected_type.filter(|ty| is_nullable_type(ty)).cloned(),
         ),
         HirLiteral::Unit => (MirConstant::Unit, Some(ValkyrieType::Unit)),
-    }
-}
-
-fn render_interpolation_expr(expr: &HirExpr) -> String {
-    match &expr.kind {
-        HirExprKind::Variable(identifier) => identifier.name.to_string(),
-        HirExprKind::Path(path) => path.to_string(),
-        HirExprKind::Literal(HirLiteral::Integer64(value)) => value.to_string(),
-        HirExprKind::Literal(HirLiteral::Bool(value)) => value.to_string(),
-        HirExprKind::Literal(HirLiteral::String(value)) => value
-            .segments
-            .iter()
-            .map(|segment| match segment {
-                crate::compiler::types::hir::HirStringSegment::Text(text) => text.clone(),
-                crate::compiler::types::hir::HirStringSegment::Interpolation { .. } => "${...}".to_string(),
-            })
-            .collect(),
-        HirExprKind::Call { callee, .. } => format!("{}(...)", render_interpolation_expr(callee)),
-        _ => "...".to_string(),
-    }
+    })
 }
 
 /// Prefer the contextual sum apply when both sides already share Nominal declaration identity.
