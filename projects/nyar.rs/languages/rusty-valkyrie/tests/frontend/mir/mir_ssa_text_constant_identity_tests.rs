@@ -108,11 +108,7 @@ micro probe() -> Label {
     let modules = resolve(&groups);
     assert_eq!(
         field_type(&modules, "app", "Label", "text"),
-        ValkyrieType::Nominal {
-            declaration: declaration(&modules, "app", "Utf8Text"),
-            arguments: Vec::new(),
-            primitive_identity: Some(Box::from("std::text::utf8")),
-        }
+        ValkyrieType::Nominal { declaration: declaration(&modules, "app", "Utf8Text"), arguments: Vec::new(), primitive_identity: None }
     );
     compile(&groups).expect("`utf8` 别名常量必须与文本载体同一身份");
 }
@@ -139,11 +135,7 @@ micro probe() -> Label {
     let modules = resolve(&groups);
     assert_eq!(
         field_type(&modules, "app", "Label", "text"),
-        ValkyrieType::Nominal {
-            declaration: declaration(&modules, "core", "Utf8Text"),
-            arguments: Vec::new(),
-            primitive_identity: Some(Box::from("std::text::utf8")),
-        }
+        ValkyrieType::Nominal { declaration: declaration(&modules, "core", "Utf8Text"), arguments: Vec::new(), primitive_identity: None }
     );
     compile(&groups).expect("显式 `Utf8Text` 常量必须与文本载体同一身份");
 }
@@ -171,11 +163,7 @@ micro probe() -> Label {
     // 三种写法落到同一冻结声明身份：跨包别名展开后仍是 `Utf8Text` 声明。
     assert_eq!(
         field_type(&modules, "app", "Label", "text"),
-        ValkyrieType::Nominal {
-            declaration: declaration(&modules, "core", "Utf8Text"),
-            arguments: Vec::new(),
-            primitive_identity: Some(Box::from("std::text::utf8")),
-        }
+        ValkyrieType::Nominal { declaration: declaration(&modules, "core", "Utf8Text"), arguments: Vec::new(), primitive_identity: None }
     );
     compile(&groups).expect("跨包 `using` 的 `utf8` 常量必须与文本载体同一身份");
 }

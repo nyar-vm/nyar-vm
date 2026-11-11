@@ -167,7 +167,11 @@ fn settle_expr(
                 }
             }
         }
-        HirExprKind::Call { args, resolved, .. } => {
+        HirExprKind::Call { callee, args, resolved } => {
+            // 接收者表达式本身也可能承载未定型捕获：`receiver.method("x")` 的接收者链是
+            // 嵌套调用，只走 `args` 会漏掉内层实参，使字面量到 MIR 仍未定型。接收者位置
+            // 没有外层约束，内层调用按自己的形参合同结算。
+            settle_expr(callee, pass, locals, None, return_type.clone())?;
             let offset = usize::from(resolved.as_ref().is_some_and(|call| call.has_receiver));
             for (index, arg) in args.iter_mut().enumerate() {
                 let formal = resolved.as_ref().and_then(|call| call.parameter_types.get(index + offset).cloned());

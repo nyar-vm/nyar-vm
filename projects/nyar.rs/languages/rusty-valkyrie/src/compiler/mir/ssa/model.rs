@@ -257,6 +257,8 @@ pub struct MirStruct {
     pub parent_declarations: Vec<nyar_types::ItemId>,
     /// 声明携带的 `[primitive("…")]` 自举身份（规范身份，不是短名）；自 `HirStruct` 透传。
     pub primitive_identity: Option<Box<str>>,
+    /// 声明级文本编码身份；自 `HirStruct` 透传，不进入类型身份。
+    pub text_carrier_identity: Option<Box<str>>,
 }
 
 impl MirStruct {

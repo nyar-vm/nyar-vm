@@ -186,6 +186,7 @@ fn variant_record_as_struct(namespace: &[Identifier], hir_enum: &HirEnum, varian
         derives: Vec::new(),
         annotations: Vec::new(),
         primitive_identity: None,
+        text_carrier_identity: None,
     }
 }
 

@@ -205,8 +205,17 @@ pub struct HirStruct {
     ///
     /// 由 HIR 下降期从声明注解读出；绑定期把它冻结到引用该声明的
     /// [`crate::compiler::types::hir::ValkyrieType::Nominal`] 上。
+    ///
+    /// 文本编码身份不走本字段：它不进入类型身份（否则改变类型相等），
+    /// 只登记在 [`Self::text_carrier_identity`]。
     #[cfg_attr(feature = "serde", serde(default))]
     pub primitive_identity: Option<Box<str>>,
+    /// 声明级文本编码身份（`std::text::utf8` / `std::text::utf16` / `std::text::text`）。
+    ///
+    /// 与数值等 primitive 身份同一注解来源，但只作为声明事实供文本判定消费，
+    /// 不得冻结到 [`crate::compiler::types::hir::ValkyrieType::Nominal`] 上。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub text_carrier_identity: Option<Box<str>>,
     /// 声明级特性注解（如 `[jvm("…")]` / `[clr("…", "…")]` / `[js("…")]` 目标类型映射）。
     ///
     /// 函数级注解承载调用约定（`ExternalImportLink`），类型级注解承载**类型身份**，

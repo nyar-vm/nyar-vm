@@ -291,18 +291,16 @@ impl TypeRelationContext {
     pub fn is_text_formal(&self, ty: &ValkyrieType) -> bool {
         match ty {
             ValkyrieType::Utf8 | ValkyrieType::Utf16 => true,
-            ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.is_empty() => {
-                self.text_primitive_family(*declaration, primitive_identity.as_deref()).is_some()
-            }
+            ValkyrieType::Nominal { declaration, arguments, .. } if arguments.is_empty() => self.text_primitive_family(*declaration).is_some(),
             _ => false,
         }
     }
 
-    /// `Nominal` 的文本家族：优先查声明身份表，退回类型上已冻结的同一事实。
+    /// `Nominal` 的文本家族：只查声明身份的 `text_carrier_identity`。
     ///
-    /// 两处都来自 `[primitive("std::text::…")]`，不读声明名。
-    fn text_primitive_family(&self, declaration: nyar_types::ItemId, carried: Option<&str>) -> Option<text_carrier::TextPrimitiveFamily> {
-        let identity = self.structs_by_declaration.get(&declaration).and_then(|item| item.primitive_identity.as_deref()).or(carried)?;
+    /// 该事实来自 `[primitive("std::text::…")]`，不在类型上，也不读声明名。
+    fn text_primitive_family(&self, declaration: nyar_types::ItemId) -> Option<text_carrier::TextPrimitiveFamily> {
+        let identity = self.structs_by_declaration.get(&declaration)?.text_carrier_identity.as_deref()?;
         text_carrier::text_primitive_family(identity)
     }
 
@@ -319,14 +317,14 @@ impl TypeRelationContext {
 
     /// 一侧是内建编码 carrier、另一侧是锚定该编码的名义声明时成立。
     fn text_builtin_anchors_declaration(&self, builtin: &ValkyrieType, declaration: &ValkyrieType) -> bool {
-        let ValkyrieType::Nominal { declaration, arguments, primitive_identity } = declaration
+        let ValkyrieType::Nominal { declaration, arguments, .. } = declaration
         else {
             return false;
         };
         if !arguments.is_empty() {
             return false;
         }
-        self.text_primitive_family(*declaration, primitive_identity.as_deref()).is_some_and(|family| family.anchors(builtin))
+        self.text_primitive_family(*declaration).is_some_and(|family| family.anchors(builtin))
     }
 
     /// 字符字面量可特化到的形参类型：`char` 自身，或任意数值形参（码位值参与比较/算术）。
@@ -380,8 +378,8 @@ impl TypeRelationContext {
         match ty {
             ValkyrieType::Utf8 => Some(HirTextEncoding::Utf8),
             ValkyrieType::Utf16 => Some(HirTextEncoding::Utf16),
-            ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.is_empty() => {
-                self.text_primitive_family(*declaration, primitive_identity.as_deref()).map(text_carrier::TextPrimitiveFamily::encoding)
+            ValkyrieType::Nominal { declaration, arguments, .. } if arguments.is_empty() => {
+                self.text_primitive_family(*declaration).map(text_carrier::TextPrimitiveFamily::encoding)
             }
             _ => None,
         }

@@ -104,13 +104,14 @@ pub fn boolean_declarations_in_module(module: &HirModule) -> BTreeSet<nyar_types
 
 /// 模块内文本 primitive 的声明身份集合（`utf8`/`utf16`/`text` 载体）。
 ///
-/// 编码身份只认声明携带的 `[primitive("std::text::…")]` 自举注解，与 HIR `is_text_formal`
-/// 共用 `text_carrier` 映射，不按声明名或调用点拼写判定。
+/// 编码身份只认声明携带的 `[primitive("std::text::…")]` 自举注解（声明级
+/// `text_carrier_identity`，不进入类型身份），与 HIR `is_text_formal` 共用
+/// `text_carrier` 映射，不按声明名或调用点拼写判定。
 pub fn text_declarations_in_module(module: &HirModule) -> BTreeMap<nyar_types::ItemId, HirTextEncoding> {
     fn collect(module: &HirModule, out: &mut BTreeMap<nyar_types::ItemId, HirTextEncoding>) {
         let structs = module.structs.iter().chain(module.imported_semantic_exports.iter().flat_map(|export| export.structs.iter()));
         for item in structs {
-            let Some(identity) = item.primitive_identity.as_deref()
+            let Some(identity) = item.text_carrier_identity.as_deref()
             else {
                 continue;
             };

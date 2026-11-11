@@ -370,6 +370,7 @@ pub fn singleton_as_struct(singleton: &HirSingleton) -> HirStruct {
         annotations: Vec::new(),
         // singleton 视图不是 `[primitive]` 声明，没有自举身份。
         primitive_identity: None,
+        text_carrier_identity: None,
     }
 }
 

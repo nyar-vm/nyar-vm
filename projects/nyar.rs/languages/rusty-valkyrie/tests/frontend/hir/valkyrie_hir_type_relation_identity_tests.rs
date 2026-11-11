@@ -76,6 +76,9 @@ fn primitive_text_declaration_carries_encoding_identity() {
         };
         assert!(context.is_text_formal(&nominal), "`{identity}` 必须被识别为文本形参");
         assert_eq!(context.text_encoding_of(&nominal), Some(encoding), "`{identity}` 编码");
+        // 文本身份是声明级事实，不进入类型身份：文本声明的 `Nominal` 不得携带 primitive 身份。
+        assert_eq!(nominal.primitive_identity(), None, "文本身份不得进入 `Nominal`");
+        assert_eq!(item.text_carrier_identity.as_deref(), Some(identity), "声明级文本身份必须保留");
         assert_eq!(context.text_encoding_of(&carrier), Some(encoding));
     }
 }

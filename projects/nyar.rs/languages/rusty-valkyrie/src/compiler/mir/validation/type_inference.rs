@@ -125,7 +125,7 @@ fn text_builtin_anchors_nominal_declaration(
     else {
         return false;
     };
-    let Some(identity) = item.primitive_identity.as_deref()
+    let Some(identity) = item.text_carrier_identity.as_deref()
     else {
         return false;
     };

@@ -78,6 +78,7 @@ pub(super) fn lower_struct(
         is_value_type: hir_struct.is_value_type,
         parent_declarations: resolve_parent_declarations(module, &hir_struct.parents),
         primitive_identity: hir_struct.primitive_identity.clone(),
+        text_carrier_identity: hir_struct.text_carrier_identity.clone(),
     }
 }
 
@@ -128,6 +129,7 @@ pub(super) fn collect_field_declarations(module: &HirModule, diagnostics: &mut V
                 is_value_type: false,
                 parent_declarations: Vec::new(),
                 primitive_identity: None,
+                text_carrier_identity: None,
             });
             *next_nominal += 1;
         }

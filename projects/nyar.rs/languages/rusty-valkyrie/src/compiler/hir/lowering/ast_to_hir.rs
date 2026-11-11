@@ -598,6 +598,14 @@ impl AstToHir {
         else {
             Vec::new()
         };
+        // `[primitive("…")]` 是自举身份的唯一来源：下降期从声明注解读出。
+        // 文本编码身份只作为声明级事实保存，不冻结到 `Nominal`（否则改变类型相等）；
+        // 其余 primitive 身份维持原通道，绑定期冻结到类型上。
+        let declared_identity = crate::compiler::semantic::closure::primitive_annotation_identity(annotations);
+        let (primitive_identity, text_carrier_identity) = match declared_identity {
+            Some(identity) if crate::compiler::text_carrier::text_primitive_family(&identity).is_some() => (None, Some(Box::from(identity))),
+            other => (other.map(Box::from), None),
+        };
         Ok(HirStruct {
             constructor_declaration: None,
             constructor_instance: None,
@@ -616,9 +624,8 @@ impl AstToHir {
             is_open: has_modifier(annotations, "open"),
             abstract_methods: Vec::new(),
             derives: lower_derives(annotations),
-            // `[primitive("…")]` 是自举身份的唯一来源：下降期从声明注解读出，
-            // 绑定期再冻结到引用该声明的 `ValkyrieType::Nominal` 上。
-            primitive_identity: crate::compiler::semantic::closure::primitive_annotation_identity(annotations).map(Box::from),
+            primitive_identity,
+            text_carrier_identity,
             annotations: hir_annotations,
         })
     }
