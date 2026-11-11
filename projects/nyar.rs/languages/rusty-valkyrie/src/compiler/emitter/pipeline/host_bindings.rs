@@ -640,12 +640,21 @@ fn remap_bound_host_contracts(
                     message: format!("host provider `{}` 未在源码闭包中定义", provider_instance), span: None
                 });
             }
-            if let Some(function) = modules
-                .iter()
-                .flat_map(|dependency| dependency.functions.iter())
-                .find(|function| function.instance == Some(*provider_instance))
-                .cloned()
-            {
+            let found = modules.iter().enumerate().find_map(|(module_index, dependency)| {
+                dependency
+                    .functions
+                    .iter()
+                    .find(|function| function.instance == Some(*provider_instance))
+                    .cloned()
+                    .map(|function| (module_index, function))
+            });
+            if let Some((module_index, mut function)) = found {
+                // provider 体副本携带来源模块的本地聚合身份；安装进消费模块前必须
+                // 按来源模块 remap 归一到消费模块已冻结的全局 sum/variant/名义身份，
+                // 否则后续链接会把它指到另一个声明（SMIR006 undeclared variant）。
+                if module_index != 0 {
+                    super::link::remap_installed_provider_aggregates(module, dependency_mirs, module_index, &mut function)?;
+                }
                 provider_functions.push((*provider_instance, function));
             }
         }

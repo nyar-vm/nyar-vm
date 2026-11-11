@@ -627,6 +627,27 @@ fn claim_field_identity(owners: &mut BTreeMap<FieldId, String>, id: FieldId, own
     }
 }
 
+/// 把将要安装进消费模块的依赖函数体副本，按其**来源模块**的 aggregate remap 归一。
+///
+/// provider 体在自身模块 lowering，`SumNew`/`SumPayloadGet`/`SumVariantIs`/`StructNew`
+/// 携带的是来源模块的本地 `NominalInstanceId`/`VariantId`。安装进消费模块后，链接阶段
+/// 只套消费模块自己的 remap；本地编号一旦不同就会指向另一个声明，表现为 SMIR006
+/// 「undeclared variant」。安装前先用来源模块的重映射归一到消费模块已冻结的全局身份，
+/// 再用同一组身份进入后续链接。
+pub(super) fn remap_installed_provider_aggregates(
+    consumer: &MirModule,
+    dependencies: &[MirModule],
+    source_module_index: usize,
+    function: &mut MirFunction,
+) -> Result<(), ParseError> {
+    let (_, _, remaps) = freeze_aggregate_identities(consumer, dependencies)?;
+    let remap = remaps.get(source_module_index).ok_or_else(|| ParseError::Invalid {
+        message: "provider 来源模块身份不在当前源码闭包中".into(),
+        span: None,
+    })?;
+    remap_function_aggregates(function, remap)
+}
+
 fn remap_function_aggregates(function: &mut MirFunction, remap: &AggregateRemap) -> Result<(), ParseError> {
     for block in &mut function.blocks {
         for instruction in &mut block.instructions {
