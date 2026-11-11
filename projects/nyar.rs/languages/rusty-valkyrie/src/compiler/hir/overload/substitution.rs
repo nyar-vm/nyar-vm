@@ -505,18 +505,14 @@ pub(crate) fn specialize_literal_expr_type(
         // integer, so it must not be silently accepted for `i32`/`usize`. Only `f32`/`f64`
         // accept Float64 literals in source (e.g. `1000000.0`).
         HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Float64(_)) if type_relations.is_float_type(expected) => expected.clone(),
-        // A text capture that decodes to exactly one code point binds to a `char` formal
-        // (§4.10 B: `takes_char("x")`). It binds only to `char`, never to a numeric formal:
-        // a text capture is not a numeric representation (only a `char` literal carries a
-        // code-point value), so `take_i32("x")` must stay unresolved.
+        // 未定型引号捕获按唯一绑定规则结算到形参（§4.10 B）：char 形参接受恰好一个
+        // 码位（两种引号均可），文本形参接受任意捕获，数值形参只接受单引号单码位。
+        // 规则本体在 `quote_literal::capture_binds`，此处不按引号/长度另立分支。
         HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::String(literal))
-            if literal.as_single_char().is_some() && crate::compiler::hir::type_relation::is_character_type_name_of(expected) =>
+            if crate::compiler::hir::lowering::quote_literal::capture_binds(literal, type_relations.capture_target_kind(expected)).is_some() =>
         {
             expected.clone()
         }
-        // String literals infer as `Utf8` but core APIs take `text`/`utf8`
-        // (possibly behind an alias resolved to `Nominal{ItemId}`).
-        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::String(_)) if type_relations.is_text_formal(expected) => expected.clone(),
         // 数组字面量的元素与调用实参同属「接收位置」：字面量元素按形式参数的元素类型
         // 逐项特化（`[104, 101]` 绑定到 `[u8]`）。只有全部元素都能特化到同一元素类型
         // 时才整体改写；任一元素（变量、浮点字面量等）特化不成即保留原推断，

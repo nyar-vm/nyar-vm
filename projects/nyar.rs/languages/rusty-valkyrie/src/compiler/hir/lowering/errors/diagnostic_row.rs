@@ -402,6 +402,10 @@ impl From<HirError> for DiagnosticRow {
                     QuoteLiteralFailure::EmptyByteLiteral
                     | QuoteLiteralFailure::UnicodeEscapeInByteLiteral
                     | QuoteLiteralFailure::DanglingEscape => {}
+                    QuoteLiteralFailure::CharDefaultNotRepresentable { reason }
+                    | QuoteLiteralFailure::CharContextNotRepresentable { reason } => {
+                        row = row.with_arg("reason", DiagnosticArg::String(reason.clone()));
+                    }
                 }
             }
         }
@@ -798,5 +802,7 @@ pub(super) fn quote_literal_failure_name(failure: &QuoteLiteralFailure) -> &'sta
         QuoteLiteralFailure::InvalidEscapeSequence { .. } => "invalid_escape_sequence",
         QuoteLiteralFailure::InvalidUnicodeEscape { .. } => "invalid_unicode_escape",
         QuoteLiteralFailure::DanglingEscape => "dangling_escape",
+        QuoteLiteralFailure::CharDefaultNotRepresentable { .. } => "char_default_not_representable",
+        QuoteLiteralFailure::CharContextNotRepresentable { .. } => "char_context_not_representable",
     }
 }

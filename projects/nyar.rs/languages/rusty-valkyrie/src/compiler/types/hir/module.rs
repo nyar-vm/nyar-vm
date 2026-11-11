@@ -10,7 +10,7 @@ use crate::compiler::types::{Identifier, NamePath, SourceSpan};
 ///
 /// 新增字段必须递增本版本：反序列化的旧报文缺少版本字段（缺省为 `0`）或版本
 /// 与本常量不符时，必须在语义合同校验处结构化拒绝，不许静默接收。
-pub const HIR_WIRE_VERSION: u32 = 3;
+pub const HIR_WIRE_VERSION: u32 = 4;
 
 /// A module in HIR.
 ///

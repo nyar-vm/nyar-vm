@@ -451,15 +451,8 @@ fn numeric_literal_binding(
             {
                 Some(*value as i64)
             }
-            // 单码位文本捕获同样能落到 `char` 形参（§4.10 B 的对称引号规则）。它与
-            // 文本形参都合法时，用绑定代价区分「原样类型」与跨表示改写，让精确形参
-            // 胜出，而不是把两个合法候选一律判成歧义。
-            HirLiteral::String(literal)
-                if literal.as_single_char().is_some()
-                    && (crate::compiler::hir::type_relation::is_character_type_name_of(expected) || type_relations.is_text_formal(expected)) =>
-            {
-                None
-            }
+            // 未定型引号捕获不参与数值绑定代价打分（§4.10 B：禁止按引号/长度为候选
+            // 排序）；捕获与形参的相容性只由统一绑定规则裁决，多个合法候选报歧义。
             HirLiteral::Float64(_) if type_relations.is_float_type(expected) => None,
             _ => continue,
         };

@@ -35,6 +35,7 @@ mod macro_expand;
 mod match_pattern_recovery;
 mod nominal_declarations;
 pub(crate) mod quote_literal;
+mod quote_settle;
 mod source_context;
 mod source_group;
 mod template_const;
@@ -59,6 +60,7 @@ pub(crate) use contract_validation::{
 
 #[doc(hidden)]
 pub use nominal_declarations::validate_enum_discriminators;
+pub(crate) use quote_settle::settle_quote_literal_captures;
 pub(crate) use nominal_declarations::{
     collect_flags_layouts, collect_sum_declarations, compute_nominal_declarations, resolve_sum_variant_tag, validate_sum_type_discriminators,
 };
@@ -479,6 +481,8 @@ impl ValkyrieCompiler {
         }
         for hir in &mut hir_groups {
             resolve_hir_calls(hir);
+            // 与单模块入口同一 HIR 唯一定型门：形参合同冻结后、单态化之前结算引号捕获。
+            settle_quote_literal_captures(hir)?;
         }
         // 各组源文件解析与 HIR 物化完成后的第二阶段边界：同上，带 Error 级诊断即收口。
         HirError::reject_pending_errors()?;

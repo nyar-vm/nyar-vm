@@ -124,11 +124,35 @@ pub fn scalar_literal_binds_to(expected: &ValkyrieType, value: Option<&HirExpr>,
             // （§4.10 B：`let t: utf8 = 'x'` 成立，引号不预定类型）。
             numeric_expected || crate::compiler::hir::type_relation::is_character_type_name_of(expected) || is_text_expected(expected, state)
         }
-        // 恰好一个码位的文本捕获可绑定到 char 期望（§4.10 B：`let c: char = "x"`）。
-        Some(HirExprKind::Literal(HirLiteral::String(literal))) if literal.as_single_char().is_some() => {
-            crate::compiler::hir::type_relation::is_character_type_name_of(expected)
+        // 未定型文本捕获按唯一绑定规则判定（§4.10 B）：char 期望接受恰好一个码位
+        // （两种引号均可），文本期望接受任意捕获，数值期望只接受单引号单码位。
+        // 规则本体与 overload/结算共用 `quote_literal::capture_binds`，不另立分支。
+        Some(HirExprKind::Literal(HirLiteral::String(literal))) => {
+            let kind = if crate::compiler::hir::type_relation::is_character_type_name_of(expected) {
+                crate::compiler::hir::lowering::quote_literal::CaptureTargetKind::Char
+            }
+            else if is_text_expected(expected, state) {
+                crate::compiler::hir::lowering::quote_literal::CaptureTargetKind::Text(text_encoding_of_expected(expected))
+            }
+            else if numeric_expected {
+                crate::compiler::hir::lowering::quote_literal::CaptureTargetKind::Numeric
+            }
+            else {
+                crate::compiler::hir::lowering::quote_literal::CaptureTargetKind::Other
+            };
+            crate::compiler::hir::lowering::quote_literal::capture_binds(literal, kind).is_some()
         }
         _ => false,
+    }
+}
+
+/// 校验侧文本期望的编码载体：`Utf16` 内建与 `utf16`/`Utf16Text` 短名落 `Utf16`，
+/// 其余文本身份按共享载体默认 `Utf8`；与 `TypeRelationContext::text_encoding_of` 同口径。
+fn text_encoding_of_expected(ty: &ValkyrieType) -> crate::compiler::types::hir::HirTextEncoding {
+    match ty {
+        ValkyrieType::Utf16 => crate::compiler::types::hir::HirTextEncoding::Utf16,
+        ValkyrieType::Named(name) if matches!(name.as_str(), "utf16" | "Utf16Text") => crate::compiler::types::hir::HirTextEncoding::Utf16,
+        _ => crate::compiler::types::hir::HirTextEncoding::Utf8,
     }
 }
 

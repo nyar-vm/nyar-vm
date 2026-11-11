@@ -858,6 +858,18 @@ pub enum HirQuoteKind {
     Double,
 }
 
+/// 文本捕获结算后的编码载体（§4.12 字符合同：`Utf8Text` 索引码点、`Utf16Text` 索引码元）。
+///
+/// 由 HIR 唯一定型 pass 按上下文或引号默认冻结；MIR 只按该事实编码常量，不再读引号。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum HirTextEncoding {
+    /// UTF-8 载体。
+    Utf8,
+    /// UTF-16 载体。
+    Utf16,
+}
+
 /// HIR 字符串字面量。
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -870,6 +882,8 @@ pub struct HirStringLiteral {
     pub quote: HirQuoteKind,
     /// 字符串片段列表。
     pub segments: Vec<HirStringSegment>,
+    /// 定型后的编码载体；`None` 表示尚未结算（未定型捕获），不得进入 MIR。
+    pub text_encoding: Option<HirTextEncoding>,
 }
 
 impl HirStringLiteral {

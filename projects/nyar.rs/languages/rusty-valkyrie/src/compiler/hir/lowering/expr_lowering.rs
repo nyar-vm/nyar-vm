@@ -228,6 +228,7 @@ fn parse_pattern_literal(literal: &LiteralPattern) -> Result<HirLiteral, HirErro
         quote_count: 1,
         quote: crate::compiler::types::hir::HirQuoteKind::Double,
         segments: vec![crate::compiler::types::hir::HirStringSegment::Text(value.to_string())],
+        text_encoding: None,
     }))
 }
 
@@ -947,18 +948,21 @@ fn lower_quote_literal_kind(literal: &QuoteLiteral, source_id: SourceID) -> Resu
     let decoded = quote_literal::decode_quote_capture(literal, true)?;
     let prefix = literal.prefix.as_ref().map(|prefix| Identifier::new(&prefix.name));
     Ok(HirExprKind::Literal(match decoded {
-        quote_literal::DecodedQuoteCapture::Character(value) => HirLiteral::Character(value),
         quote_literal::DecodedQuoteCapture::Byte(value) => HirLiteral::Byte(value),
+        // 退役变体无构造点；透传仅保持穷尽匹配（定型已移交 `quote_settle`）。
+        quote_literal::DecodedQuoteCapture::Character(value) => HirLiteral::Character(value),
         quote_literal::DecodedQuoteCapture::PlainText(text) => HirLiteral::String(crate::compiler::types::hir::HirStringLiteral {
             prefix,
             quote_count: literal.quote_count,
             quote: quote_literal::hir_quote_kind(literal.quote),
             segments: vec![crate::compiler::types::hir::HirStringSegment::Text(text)],
+            text_encoding: None,
         }),
         quote_literal::DecodedQuoteCapture::Template(parts) => HirLiteral::String(crate::compiler::types::hir::HirStringLiteral {
             prefix,
             quote_count: literal.quote_count,
             quote: quote_literal::hir_quote_kind(literal.quote),
+            text_encoding: None,
             segments: parts
                 .into_iter()
                 .map(|part| -> Result<_, HirError> {

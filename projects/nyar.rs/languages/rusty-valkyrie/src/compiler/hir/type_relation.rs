@@ -17,7 +17,7 @@ use crate::compiler::{
     text_carrier,
     types::{
         Identifier, NamePath,
-        hir::{GenericBinderId, HirAssociatedTypeBinding, HirEnum, HirModule, HirStruct, HirTraitBound, HirWhereConstraint, RowType, TraitObject, ValkyrieType, primitive_identity_builtin_type},
+        hir::{GenericBinderId, HirAssociatedTypeBinding, HirEnum, HirModule, HirStruct, HirTextEncoding, HirTraitBound, HirWhereConstraint, RowType, TraitObject, ValkyrieType, primitive_identity_builtin_type},
     },
 };
 
@@ -333,10 +333,74 @@ impl TypeRelationContext {
 
     /// 字符字面量可特化到的形参类型：`char` 自身，或任意数值形参（码位值参与比较/算术）。
     ///
-    /// 与整数字面量同源：值域校验（码位 ≤ 0xFFFF）已在 HIR lowering 完成，
+    /// 与整数字面量同源：值域校验（码位 ≤ 0x10FFFF）已在 HIR lowering 完成，
     /// 窄形参（如 `u8`）是否容得下具体值沿用整数字面量同一缺口，不在此特判。
     pub fn is_character_literal_formal(&self, ty: &ValkyrieType) -> bool {
         is_character_type_name_of(ty) || self.is_numeric_type(ty)
+    }
+
+    /// 未定型引号捕获进入约束求解时的唯一目标分类（§4.10 B）。
+    ///
+    /// `char` 身份：内建 `Character`、`std::text::char` 短名或 `[primitive("std::text::char")]`
+    /// 折叠出的名义声明；文本身份：内建编码 carrier 或锚定该编码的名义声明（`text`
+    /// 共享载体默认 `Utf8`）；数值身份沿用 `is_numeric_type` 的已冻结 `[primitive]` 口径。
+    /// `Nullable` 收窄到内层。其余目标捕获一律不绑定。
+    pub(crate) fn capture_target_kind(&self, ty: &ValkyrieType) -> crate::compiler::hir::lowering::quote_literal::CaptureTargetKind {
+        use crate::compiler::hir::lowering::quote_literal::CaptureTargetKind;
+        if let ValkyrieType::Nullable(inner) = ty {
+            return self.capture_target_kind(inner);
+        }
+        if self.is_char_identity(ty) {
+            return CaptureTargetKind::Char;
+        }
+        if let Some(encoding) = self.text_encoding_of(ty) {
+            return CaptureTargetKind::Text(encoding);
+        }
+        if self.is_numeric_type(ty) {
+            return CaptureTargetKind::Numeric;
+        }
+        CaptureTargetKind::Other
+    }
+
+    /// 目标是否为 `char` 身份（含 `[primitive("std::text::char")]` 折叠的名义声明）。
+    fn is_char_identity(&self, ty: &ValkyrieType) -> bool {
+        match ty {
+            ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.is_empty() => {
+                let declared_identity = primitive_identity.as_deref().or_else(|| {
+                    self.structs_by_declaration.get(declaration).and_then(|item| item.primitive_identity.as_deref())
+                });
+                declared_identity == Some("std::text::char")
+            }
+            other => crate::compiler::hir::type_relation::is_character_type_name_of(other),
+        }
+    }
+
+    /// 目标若为编码文本身份则返回其载体；与 `is_text_formal` 同一份名集，不另立白名单。
+    ///
+    /// `text` 是两种编码共享的载体名，默认落 `Utf8`；`utf16`/`Utf16Text` 落 `Utf16`。
+    pub(crate) fn text_encoding_of(&self, ty: &ValkyrieType) -> Option<HirTextEncoding> {
+        match ty {
+            ValkyrieType::Utf8 => Some(HirTextEncoding::Utf8),
+            ValkyrieType::Utf16 => Some(HirTextEncoding::Utf16),
+            ValkyrieType::Named(name) => Self::text_encoding_of_name(name.as_str()),
+            ValkyrieType::Nominal { declaration, arguments, .. } if arguments.is_empty() => self
+                .structs_by_declaration
+                .get(declaration)
+                .and_then(|item| Self::text_encoding_of_name(item.name.as_str())),
+            _ => None,
+        }
+    }
+
+    fn text_encoding_of_name(name: &str) -> Option<HirTextEncoding> {
+        let utf8 = text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, name);
+        let utf16 = text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf16, name);
+        match (utf8, utf16) {
+            (true, false) => Some(HirTextEncoding::Utf8),
+            (false, true) => Some(HirTextEncoding::Utf16),
+            // `text` 共享载体：编码由默认规则落 `Utf8`，不猜 `Utf16`。
+            (true, true) => Some(HirTextEncoding::Utf8),
+            (false, false) => None,
+        }
     }
 
     /// 字面量特化用：只有浮点形参接受浮点字面量。

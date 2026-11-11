@@ -422,6 +422,16 @@ impl std::fmt::Display for HirError {
                     QuoteLiteralFailure::DanglingEscape => {
                         write!(f, "dangling backslash at the end of the captured literal at {}..{}", span.start, span.end)
                     }
+                    QuoteLiteralFailure::CharDefaultNotRepresentable { reason } => {
+                        write!(
+                            f,
+                            "unconstrained single-quote capture defaults to `char` but its content is not representable as `char`: {reason} (at {}..{})",
+                            span.start, span.end
+                        )
+                    }
+                    QuoteLiteralFailure::CharContextNotRepresentable { reason } => {
+                        write!(f, "text capture is not representable as `char`: {reason} (at {}..{})", span.start, span.end)
+                    }
                 }
             }
             Self::InvalidExportCase { value, span, .. } => {

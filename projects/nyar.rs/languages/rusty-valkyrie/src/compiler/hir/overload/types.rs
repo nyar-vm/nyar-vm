@@ -273,11 +273,19 @@ pub fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) 
             }
             crate::compiler::types::hir::HirLiteral::Integer64(_) => ValkyrieType::Integer64 { signed: true },
             crate::compiler::types::hir::HirLiteral::Float64(_) => ValkyrieType::Float64,
-            // 字符字面量默认归 `char`（u16 code unit），字节字面量默认归 `u8`；
+            // 字符字面量默认归 `char`（u32 码位），字节字面量默认归 `u8`；
             // 形参特化在 `specialize_literal_expr_type` 完成。
             crate::compiler::types::hir::HirLiteral::Character(_) => ValkyrieType::Character,
             crate::compiler::types::hir::HirLiteral::Byte(_) => ValkyrieType::Integer8 { signed: false },
-            crate::compiler::types::hir::HirLiteral::String(_) => ValkyrieType::Utf8,
+            // 已结算文本按冻结载体；未结算捕获的自然型即引号默认（单→char、双→utf8），
+            // 与 `quote_literal::capture_quote_default` 同一口径。
+            crate::compiler::types::hir::HirLiteral::String(literal) => match (literal.text_encoding, literal.quote) {
+                (Some(crate::compiler::types::hir::HirTextEncoding::Utf16), _) => ValkyrieType::Utf16,
+                (Some(crate::compiler::types::hir::HirTextEncoding::Utf8), _) | (None, crate::compiler::types::hir::HirQuoteKind::Double) => {
+                    ValkyrieType::Utf8
+                }
+                (None, crate::compiler::types::hir::HirQuoteKind::Single) => ValkyrieType::Character,
+            },
             crate::compiler::types::hir::HirLiteral::Bool(_) => ValkyrieType::Boolean,
             crate::compiler::types::hir::HirLiteral::Unit => ValkyrieType::Unit,
             // 空值没有独立名义类型；其 `T?` 来自使用位置的上下文。

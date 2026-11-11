@@ -10,10 +10,10 @@
 //! - `b` 前缀：字节字面量，独立转义集（`\n \t \r \0 \\ \' \" \xNN`），必须恰好一个字节。
 //! - 其它前缀：结构化报错，不按默认字符串成功。
 //!
-//! 引号种类与定界长度不改变捕获后的处理管线。归属遵循 §4.10 B：只有单引号且
-//! 解码结果恰好为一个码位（§4.12 字符合同：`char` 为 u32 码位，非 BMP 合法）时按
-//! `char` 默认落 `Character`；其余捕获保持未定型文本形态，由上下文约束求解定型，
-//! 确无上下文时才按引号默认（单→`char`、双→`utf8`）在最终消费点结算，不提供长度回退。
+//! 引号种类与定界长度不改变捕获后的处理管线。捕获解码后保持未定型形态：单双引号
+//! 进入同一字面量约束求解（§4.10 B），由 `quote_settle` 在 HIR 内唯一定型——注解、
+//! 形参、返回、字段、容器元素与泛型约束先行联合求解，引号默认（单→`char`、
+//! 双→`utf8`）最后且只用一次；无约束 `''`/`'ab'` 默认 char 后报表示错误，不提供长度回退。
 
 use std::ops::Range;
 
@@ -26,7 +26,7 @@ use crate::compiler::{
     },
     types::{
         Identifier,
-        hir::{HirLiteral, HirQuoteKind, HirStringLiteral, HirStringSegment},
+        hir::{HirLiteral, HirQuoteKind, HirStringLiteral, HirStringSegment, HirTextEncoding},
     },
 };
 
@@ -56,23 +56,91 @@ pub(crate) enum QuoteTemplatePart {
     },
 }
 
-/// 引号捕获解释后的值形态。
+/// 引号捕获解释后的值形态。捕获保持未定型：字符/文本归属由 `quote_settle` 按上下文
+/// 约束或引号默认结算（§4.10 B），decode 不再提前构造 `Character`。
 #[derive(Debug)]
 pub(crate) enum DecodedQuoteCapture {
-    /// 单引号、无插值、解码后恰好一个码位（§4.12 字符合同：`char` 为 u32 码位，非 BMP 合法）。
+    /// 退役变体：定型已移交 `quote_settle`，本 crate 内无构造点。
+    /// 边界外的 `legion::workspace::planner::ast_attributes` 仍显式匹配它，待其 owner
+    /// 删除该 arm 后随之下线；`PlainText` 已覆盖原语义。
     Character(u32),
     /// `b` 前缀字节字面量。
     Byte(u8),
-    /// 无插值文本（已解码）。
+    /// 无插值文本（已解码，未定型）。
     PlainText(String),
     /// 含插值的模板；文本段已解码。
     Template(Vec<QuoteTemplatePart>),
 }
 
+/// 未定型捕获可结算成的最终形态（§4.10 B 唯一绑定规则的输出）。
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SettledCapture {
+    /// 恰好一个码位的 `char`（§4.12 字符合同：u32 码位，非 BMP 合法）。
+    Char(u32),
+    /// 编码文本；载体由上下文或引号默认决定。
+    Text(HirTextEncoding),
+}
+
+/// 目标类型对未定型捕获呈现的约束族。分类唯一入口是
+/// `TypeRelationContext::capture_target_kind`，各消费点不得另立规则。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CaptureTargetKind {
+    /// `char` 身份目标：接受恰好一个码位（两种引号均可）。
+    Char,
+    /// 编码文本目标：接受任意捕获（含空与多码位）。
+    Text(HirTextEncoding),
+    /// 数值目标：只接受 char 自然型（单引号）且恰好一个码位。
+    Numeric,
+    /// 其它目标：捕获不绑定。
+    Other,
+}
+
+/// 唯一绑定规则（§4.10 B）：给定未定型捕获与目标约束族，判定能否绑定及最终形态。
+/// 引号与码位数只在此处参与判定，禁止在下游按引号/长度为候选打分。
+pub(crate) fn capture_binds(capture: &HirStringLiteral, target: CaptureTargetKind) -> Option<SettledCapture> {
+    match target {
+        CaptureTargetKind::Char => capture.as_single_char().map(SettledCapture::Char),
+        CaptureTargetKind::Numeric => {
+            if capture.quote == HirQuoteKind::Single { capture.as_single_char().map(SettledCapture::Char) } else { None }
+        }
+        CaptureTargetKind::Text(encoding) => Some(SettledCapture::Text(encoding)),
+        CaptureTargetKind::Other => None,
+    }
+}
+
+/// 引号默认（最后、只用一次）：纯文本单引号默认 `char`（非单码位返回 `None`，由调用方
+/// 报表示错误，不提供长度回退）；双引号与动态模板默认 `utf8` 文本（§4.10 E）。
+pub(crate) fn capture_quote_default(capture: &HirStringLiteral) -> Option<SettledCapture> {
+    if !capture.is_plain_text() {
+        return Some(SettledCapture::Text(HirTextEncoding::Utf8));
+    }
+    match capture.quote {
+        HirQuoteKind::Single => capture.as_single_char().map(SettledCapture::Char),
+        HirQuoteKind::Double => Some(SettledCapture::Text(HirTextEncoding::Utf8)),
+    }
+}
+
+/// 纯文本捕获的码位数；含插值返回 `None`（表示错误文案用）。
+pub(crate) fn capture_code_points(capture: &HirStringLiteral) -> Option<usize> {
+    if !capture.is_plain_text() {
+        return None;
+    }
+    Some(
+        capture
+            .segments
+            .iter()
+            .map(|segment| match segment {
+                HirStringSegment::Text(text) => text.chars().count(),
+                HirStringSegment::Interpolation { .. } => 0,
+            })
+            .sum(),
+    )
+}
+
 /// 解释 Oak 引号捕获；`allow_interpolation` 为 false 时常量位（模式等）拒绝插值段。
 pub(crate) fn decode_quote_capture(literal: &QuoteLiteral, allow_interpolation: bool) -> Result<DecodedQuoteCapture, HirError> {
     match literal.prefix.as_ref().map(|prefix| prefix.name.as_str()) {
-        Some("r") => Ok(classify(literal, literal.content.clone())),
+        Some("r") => Ok(DecodedQuoteCapture::PlainText(literal.content.clone())),
         Some("b") => decode_byte_literal(literal).map(DecodedQuoteCapture::Byte),
         Some(name) => {
             let span = literal.prefix.as_ref().map_or_else(|| literal.span.start..literal.span.end, |prefix| prefix.span.start..prefix.span.end);
@@ -116,16 +184,19 @@ fn is_valid_prefix_identifier(text: &str) -> bool {
         && characters.all(|character| character == '_' || character.is_alphanumeric())
 }
 
-/// 把模式位的解码结果落到 HIR 字面量；插值段在常量位已被拒绝。
+/// 把模式位的解码结果落到 HIR 字面量；插值段在常量位已被拒绝。捕获保持未定型，
+/// 字符/文本归属由 `quote_settle` 按被检类型或引号默认结算。
 pub(crate) fn pattern_literal_value(decoded: DecodedQuoteCapture, prefix: Option<&str>, quote: QuoteKind, quote_count: u8) -> Result<HirLiteral, HirError> {
     match decoded {
-        DecodedQuoteCapture::Character(value) => Ok(HirLiteral::Character(value)),
         DecodedQuoteCapture::Byte(value) => Ok(HirLiteral::Byte(value)),
+        // 退役变体无构造点；透传仅保持穷尽匹配，待边界外 legion arm 清退后一并下线。
+        DecodedQuoteCapture::Character(value) => Ok(HirLiteral::Character(value)),
         DecodedQuoteCapture::PlainText(text) => Ok(HirLiteral::String(HirStringLiteral {
             prefix: prefix.map(Identifier::new),
             quote_count,
             quote: hir_quote_kind(quote),
             segments: vec![HirStringSegment::Text(text)],
+            text_encoding: None,
         })),
         DecodedQuoteCapture::Template(parts) => {
             let span = parts
@@ -176,22 +247,7 @@ fn decode_cooked_capture(literal: &QuoteLiteral, allow_interpolation: bool) -> R
         }
     }
 
-    if has_interpolation { Ok(DecodedQuoteCapture::Template(parts)) } else { Ok(classify(literal, plain)) }
-}
-
-/// 归属：单引号且解码结果恰好为一个码位时按 `char` 默认落 `Character`（u32 码位，
-/// 非 BMP 合法；lone surrogate 无法来自合法 UTF-8 源文，`\uXXXX` 代理位在
-/// `parse_unicode_escape` 已按非法标量带源区间拒绝）；
-/// 其余捕获（空、多字符、双引号）一律保持未定型文本捕获，由上下文约束
-/// 求解或最终默认决定（§4.10 B），不按长度回退、不提前报表示拒绝。
-fn classify(literal: &QuoteLiteral, decoded: String) -> DecodedQuoteCapture {
-    if literal.quote == QuoteKind::Single {
-        let mut characters = decoded.chars();
-        if let (Some(single), None) = (characters.next(), characters.next()) {
-            return DecodedQuoteCapture::Character(u32::from(single));
-        }
-    }
-    DecodedQuoteCapture::PlainText(decoded)
+    if has_interpolation { Ok(DecodedQuoteCapture::Template(parts)) } else { Ok(DecodedQuoteCapture::PlainText(plain)) }
 }
 
 /// 解码 cooked 文本段（标准转义集；未知/残缺一律结构化报错）。
@@ -347,4 +403,9 @@ fn quote_literal_error(failure: QuoteLiteralFailure, span: Range<usize>) -> HirE
         source: DiagnosticSource { id: "<hir_lowering>".into(), revision: None },
         span: DiagnosticSpan { start: span.start, end: span.end },
     }
+}
+
+/// 结算阶段（`quote_settle`）的结构化表示错误：带捕获原文源区间，不静默降级。
+pub(crate) fn settle_quote_error(failure: QuoteLiteralFailure, span: Range<usize>) -> HirError {
+    quote_literal_error(failure, span)
 }

@@ -6,9 +6,10 @@
 //!   未知/残缺转义与模板语法错误结构化报错。
 //! - `r` 前缀：raw 不解码、不插值；`b` 前缀：字节字面量（`\xNN` 可用），必须恰好一个字节。
 //! - 反斜杠不救定界符：`'\''`、`"\""` 非法；`"'"`、`'"'` 是引号字符的正确写法。
-//! - 归属（§4.10 B / §4.12 字符合同）：单引号恰好一个码位（u32 码位，非 BMP 合法）
-//!   按 `char` 默认落 Character；其余捕获保持
-//!   未定型文本形态，由上下文定型，无约束默认在 MIR 结算，不提供长度回退。
+//! - 归属（§4.10 B / §4.12 字符合同）：捕获解码后一律保持未定型形态，由 HIR 结算
+//!   pass 按上下文唯一型定：char 目标落 `Character`（u32 码位，非 BMP 合法），
+//!   文本目标冻结编码载体；无约束 `''`/`'ab'` 按 `char` 默认后报表示错误，不提供
+//!   长度回退。
 
 use rusty_valkyrie::{
     HirError, ValkyrieCompiler,
@@ -16,7 +17,7 @@ use rusty_valkyrie::{
         diagnostics::pending,
         hir::lowering::errors::QuoteLiteralFailure,
     },
-    types::hir::{HirExprKind, HirLiteral, HirStatementKind, types::ValkyrieType},
+    types::hir::{HirCallResolutionFailureKind, HirExprKind, HirLiteral, HirStatementKind, types::ValkyrieType},
 };
 
 /// 数值/文本原始类型不是语言内建，必须绑定到源码声明身份。
@@ -108,7 +109,8 @@ fn escaped_character_literals_decode() {
 #[test]
 fn brace_escapes_decode_to_literal_braces() {
     // `\{`、`\}` 是字面花括号的唯一写法；解码后花括号不再开启插值。
-    assert_text("micro probe() { let text = 'a\\{b\\}c' }", "a{b}c");
+    // 多码位单引号捕获无约束即表示错误，文本位必须显式注解（§4.10 B）。
+    assert_text("micro probe() { let text: utf8 = 'a\\{b\\}c' }", "a{b}c");
     assert_text("micro probe() { let text = \"x\\{y\\}\" }", "x{y}");
 }
 
@@ -128,24 +130,31 @@ fn cooked_capture_interpolates_real_expression() {
 fn raw_single_quote_literal_skips_escapes() {
     // raw 不解析转义：`r'\'` 是单个反斜杠字符。
     assert_character("micro probe() { let slash: char = r'\\' }", 92);
-    // raw 长内容归字符串，内容原样保留反斜杠，也不解析插值。
-    assert_text("micro probe() { let text = r'a\\nb' }", "a\\nb");
-    assert_text("micro probe() { let text = r'x{1}y' }", "x{1}y");
+    // raw 长内容归字符串（文本位显式注解），内容原样保留反斜杠，也不解析插值。
+    assert_text("micro probe() { let text: utf8 = r'a\\nb' }", "a\\nb");
+    assert_text("micro probe() { let text: utf8 = r'x{1}y' }", "x{1}y");
 }
 
 #[test]
 fn cross_quote_forms_are_legal() {
-    // 要表达单引号用 `"'"`，要表达两个双引号用 `'""'`。
+    // 要表达单引号用 `"'"`，要表达两个双引号用 `'""'`（文本位显式注解）。
     assert_text("micro probe() { let quote = \"'\" }", "'");
-    assert_text("micro probe() { let quotes = '\"\"' }", "\"\"");
+    assert_text("micro probe() { let quotes: utf8 = '\"\"' }", "\"\"");
 }
 
 #[test]
-fn multi_and_empty_single_quote_stay_untyped_capture() {
-    // §4.10 B：无上下文时不按长度回退文本；`'ab'`/`''` 在 HIR 仍是未定型文本捕获，
-    // 无约束 char 默认的表示错误在 MIR 结算（见 mir_quote_literal_context_tests）。
-    assert_text("micro probe() { let text = 'ab' }", "ab");
-    assert_text("micro probe() { let empty = '' }", "");
+fn unconstrained_multi_and_empty_single_quote_fail_at_hir_settle() {
+    // §4.10 B：无约束 `''`/`'ab'` 按 char 默认后报表示错误；定型是 HIR 唯一门，
+    // 不再放行到 MIR，也不按长度回退文本。
+    for source in ["micro probe() { let text = 'ab' }", "micro probe() { let empty = '' }"] {
+        let error = ValkyrieCompiler::default().compile_source(source).expect_err(&format!("源码 {source} 必须在 HIR 结算失败"));
+        match error {
+            HirError::InvalidQuoteLiteral { failure, .. } => {
+                assert!(matches!(failure, QuoteLiteralFailure::CharDefaultNotRepresentable { .. }), "源码 {source} 实际 {failure:?}");
+            }
+            other => panic!("源码 {source} 必须是 InvalidQuoteLiteral，实际 {other:?}"),
+        }
+    }
 }
 
 // ---------- 正例：字节字面量 ----------
@@ -390,10 +399,11 @@ fn let_annotation_binds_literal_without_cast() {
         .expect("let 注解必须直接绑定字符/字节字面量");
 }
 
-// ---------- 重载裁决：对称引号下的精确形参优先 ----------
+// ---------- 重载裁决：多合法候选报歧义，不按引号/长度打分 ----------
 
 /// `char` 与文本形参并存的 `append` 组；两种引号在 §4.10 B 下都能落到文本形参，
-/// 因此必须靠字面量绑定代价区分「原样类型」与跨表示改写，而不是判成歧义。
+/// 单码位捕获也能落到 `char` 形参，因此多个合法候选必须报歧义，禁止按引号/长度
+/// 为候选打分（旧「绑定代价」旁路已清退）。
 const OVERLOAD_APPEND_FIXTURE: &str = r#"
 [primitive("std::primitive::bool")]
 structure bool { }
@@ -418,6 +428,27 @@ imply Builder {
 }
 "#;
 
+/// 断言 `builder.append(<argument>)` 在 char/文本双合法时报歧义，不得静默选一个。
+fn assert_append_ambiguous(argument: &str) {
+    let source = format!(
+        "{OVERLOAD_APPEND_FIXTURE}\nmicro probe(): bool {{ let builder: Builder = Builder {{ flag: true }} return builder.append({argument}) }}"
+    );
+    let error = ValkyrieCompiler::default()
+        .compile_source(&source)
+        .expect_err(&format!("实参 {argument} 对 char/文本双形参必须报歧义"));
+    // 断言结构化歧义语义，不匹配消息字符串：char/文本两个同具体度候选并列，
+    // 解析器冻结 `AmbiguousExplicitImpls`，不得静默选一个。
+    match error {
+        HirError::UnresolvedCall { reason, .. } => {
+            assert!(
+                matches!(reason, HirCallResolutionFailureKind::AmbiguousExplicitImpls { candidates: 2 }),
+                "实参 {argument} 必须冻结为双候选歧义，实际 {reason:?}"
+            );
+        }
+        other => panic!("实参 {argument} 必须是未解析调用歧义，实际 {other:?}"),
+    }
+}
+
 /// 返回 `probe` 尾表达式 `return builder.append(...)` 的冻结形参表（含 receiver）。
 fn resolved_append_formal_types(argument: &str) -> Vec<ValkyrieType> {
     let source = format!(
@@ -436,30 +467,18 @@ fn resolved_append_formal_types(argument: &str) -> Vec<ValkyrieType> {
     call.parameter_types.clone()
 }
 
-fn is_char_formal(ty: &ValkyrieType) -> bool {
-    matches!(ty, ValkyrieType::Character) || matches!(ty, ValkyrieType::Named(name) if name.as_str() == "char")
-}
-
 #[test]
-fn character_literal_prefers_exact_char_formal() {
-    let formal = resolved_append_formal_types("'a'").get(1).cloned().expect("append 必须有字符形参");
-    assert!(is_char_formal(&formal), "字符字面量必须选精确 `char` 形参，实际 {formal:?}");
-}
-
-#[test]
-fn escaped_character_literal_prefers_exact_char_formal() {
-    let formal = resolved_append_formal_types("'\\n'").get(1).cloned().expect("append 必须有字符形参");
-    assert!(is_char_formal(&formal), "转义字符字面量必须选精确 `char` 形参，实际 {formal:?}");
-}
-
-#[test]
-fn single_character_text_literal_prefers_text_formal() {
-    let formal = resolved_append_formal_types("\"a\"").get(1).cloned().expect("append 必须有文本形参");
-    assert!(!is_char_formal(&formal), "单字符文本捕获必须选文本形参而不是 `char`，实际 {formal:?}");
+fn single_code_point_captures_are_ambiguous_over_char_and_text() {
+    // `'a'` 与 `"a"` 对 char/文本两个形参都是合法候选：报歧义，不按引号或长度打分。
+    assert_append_ambiguous("'a'");
+    assert_append_ambiguous("\"a\"");
+    assert_append_ambiguous("'\\n'");
 }
 
 #[test]
 fn multi_character_text_literal_prefers_text_formal() {
+    // 多码位捕获只配得上文本形参：唯一合法候选正常解析，且冻结形参不是 char。
     let formal = resolved_append_formal_types("\"ab\"").get(1).cloned().expect("append 必须有文本形参");
-    assert!(!is_char_formal(&formal), "多字符文本捕获必须选文本形参，实际 {formal:?}");
+    let is_char_formal = matches!(&formal, ValkyrieType::Character) || matches!(&formal, ValkyrieType::Named(name) if name.as_str() == "char");
+    assert!(!is_char_formal, "多字符文本捕获必须选文本形参，实际 {formal:?}");
 }

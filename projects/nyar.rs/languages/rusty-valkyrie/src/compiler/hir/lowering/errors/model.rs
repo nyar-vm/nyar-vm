@@ -940,6 +940,17 @@ pub enum QuoteLiteralFailure {
     },
     /// 内容以孤立反斜杠结束；按捕获优先语义，转义不能跨界救定界符。
     DanglingEscape,
+    /// 无约束单引号捕获默认 `char`，但内容不是恰好一个码位（§4.10 B 用户裁定：
+    /// 不提供长度回退，默认后报表示错误）。
+    CharDefaultNotRepresentable {
+        /// 结构化原因（码位数或「含插值」）。
+        reason: String,
+    },
+    /// 显式 `char` 上下文收到无法表示为 char 的捕获（非单码位或动态模板）。
+    CharContextNotRepresentable {
+        /// 结构化原因（码位数或「含插值」）。
+        reason: String,
+    },
 }
 
 /// TGrammar 模板构造类别。

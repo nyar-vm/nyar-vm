@@ -103,6 +103,9 @@ impl AstToHir {
         // 声明身份已冻结、实例留空，交由随后的单态化固定点自然铸造。
         crate::compiler::hir::lowering::collection_init::transform_collection_literals(&mut hir)?;
         resolve_hir_calls(&mut hir);
+        // 调用合同冻结后立即执行 HIR 唯一定型：引号捕获在进单态化与 MIR 之前
+        // 全部结算为最终字面量形态（§4.10 B / §4.12 前端闭合门）。
+        crate::compiler::hir::lowering::settle_quote_literal_captures(&mut hir)?;
         let mut instantiation_state = crate::compiler::hir::lowering::GenericInstantiationState::default();
         crate::compiler::hir::lowering::instantiate_generic_callables(
             std::slice::from_mut(&mut hir),
