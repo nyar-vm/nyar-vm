@@ -214,6 +214,23 @@ fn invalid_unicode_escape_fails() {
 }
 
 #[test]
+fn invalid_unicode_escape_with_non_ascii_suffix_does_not_panic() {
+    // S5 panic 边界：`\u123é` 的十六进制位只收集到 3 位便遇非 ASCII；旧实现按任意字节
+    // `end` 切片，`end` 落在 `é` 的 UTF-8 字符内部会 panic。现在必须结构化报
+    // `InvalidUnicodeEscape`，不得越界切片。
+    let (failure, _, _) = expect_literal_failure(r#"micro probe() { let bad = "\u123éx" }"#);
+    assert!(matches!(failure, QuoteLiteralFailure::InvalidUnicodeEscape { .. }));
+    let (failure, _, _) = expect_literal_failure(r#"micro probe() { let bad = "\u12é" }"#);
+    assert!(matches!(failure, QuoteLiteralFailure::InvalidUnicodeEscape { .. }));
+}
+
+#[test]
+fn valid_unicode_escape_followed_by_non_ascii_decodes() {
+    // 合法 `\uXXXX` 后紧跟非 ASCII 文本仍正常解码：十六进制位不被后缀多字节字符污染。
+    assert_text(r#"micro probe() { let text = "\u00e9é" }"#, "éé");
+}
+
+#[test]
 fn character_beyond_bmp_stays_untyped_capture() {
     // §4.10 B：超 BMP 不在 lowering 提前拒绝，避免把本可成为 utf8 的内容误拒为 char；
     // 单引号 `🙂` 保持未定型文本捕获，无约束时的 char 默认表示错误在 MIR 结算。

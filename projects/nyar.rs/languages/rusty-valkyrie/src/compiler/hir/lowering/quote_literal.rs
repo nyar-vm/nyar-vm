@@ -236,18 +236,31 @@ fn decode_text_segment(text: &str, base: usize) -> Result<String, HirError> {
 }
 
 /// 解析 `\uXXXX`：恰好四位十六进制，且必须是合法 Unicode 标量（代理位拒绝）。
-/// 返回解码字符与十六进制位之后的字节下标。
+/// 返回解码字符与十六进制位之后的字节下标。十六进制位按字符边界收集，诊断切片
+/// 只落在字符边界上，非 ASCII 非法输入不得在 UTF-8 字符内部断开（S5 panic 边界）。
 fn parse_unicode_escape(text: &str, backslash_index: usize, base: usize) -> Result<(char, usize), HirError> {
     let digits_start = backslash_index + 2;
-    let digits_end = digits_start + 4;
-    let invalid = |end: usize| {
-        let escape = text[backslash_index..end.min(text.len())].to_string();
-        quote_literal_error(QuoteLiteralFailure::InvalidUnicodeEscape { escape }, base + backslash_index..base + end.min(text.len()))
+    let rest = &text[digits_start..];
+    // 收集至多四位十六进制 ASCII 数字；遇非十六进制或结尾即停。`end` 始终是字符边界。
+    let mut digits = String::new();
+    let mut end = digits_start;
+    for (offset, character) in rest.char_indices() {
+        if digits.len() == 4 || !character.is_ascii_hexdigit() {
+            break;
+        }
+        digits.push(character);
+        end = digits_start + offset + character.len_utf8();
+    }
+    let invalid = || {
+        let escape = text[backslash_index..end].to_string();
+        quote_literal_error(QuoteLiteralFailure::InvalidUnicodeEscape { escape }, base + backslash_index..base + end)
     };
-    let digits = text.get(digits_start..digits_end).ok_or_else(|| invalid(digits_end))?;
-    let value = u32::from_str_radix(digits, 16).map_err(|_| invalid(digits_end))?;
-    let character = char::from_u32(value).ok_or_else(|| invalid(digits_end))?;
-    Ok((character, digits_end))
+    if digits.len() != 4 {
+        return Err(invalid());
+    }
+    let value = u32::from_str_radix(&digits, 16).map_err(|_| invalid())?;
+    let character = char::from_u32(value).ok_or_else(|| invalid())?;
+    Ok((character, end))
 }
 
 /// 解码字节字面量（`\n \t \r \0 \\ \' \" \xNN`）；必须恰好一个字节。
