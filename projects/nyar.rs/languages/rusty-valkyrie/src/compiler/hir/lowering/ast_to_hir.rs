@@ -431,11 +431,11 @@ impl AstToHir {
                 Ok(())
             }
             StatementNode::Enums(enum_decl) => {
-                enums.push(self.lower_enums(enum_decl)?);
+                enums.push(self.lower_enums(enum_decl, namespace)?);
                 Ok(())
             }
             StatementNode::Variant(variant_decl) => {
-                enums.push(self.lower_variant_decl(variant_decl)?);
+                enums.push(self.lower_variant_decl(variant_decl, namespace)?);
                 Ok(())
             }
             StatementNode::Flags(flags_decl) => {
@@ -768,12 +768,13 @@ impl AstToHir {
         })
     }
 
-    fn lower_enums(&self, enum_decl: &Enums) -> Result<HirEnum, HirError> {
+    fn lower_enums(&self, enum_decl: &Enums, namespace: &NamePath) -> Result<HirEnum, HirError> {
         let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&enum_decl.generics), &[]);
         let mut enum_def = match enum_decl.kind {
             EnumsKind::Unity => HirEnum::new_unity(oak_identifier(&enum_decl.name)),
             EnumsKind::Enums | EnumsKind::Enum => HirEnum::new(oak_identifier(&enum_decl.name)),
         };
+        enum_def.namespace = namespace.parts().to_vec();
         enum_def.doc = lower_documentation(&enum_decl.annotations);
         enum_def.visibility = lower_visibility(&enum_decl.annotations);
         enum_def.generics = lower_generic_parameters(&enum_decl.generics);
@@ -783,9 +784,10 @@ impl AstToHir {
         Ok(enum_def)
     }
 
-    fn lower_variant_decl(&self, variant_decl: &Variant) -> Result<HirEnum, HirError> {
+    fn lower_variant_decl(&self, variant_decl: &Variant, namespace: &NamePath) -> Result<HirEnum, HirError> {
         let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&variant_decl.generics), &[]);
         let mut enum_def = HirEnum::new_unity(oak_identifier(&variant_decl.name));
+        enum_def.namespace = namespace.parts().to_vec();
         enum_def.doc = lower_documentation(&variant_decl.annotations);
         enum_def.visibility = lower_visibility(&variant_decl.annotations);
         enum_def.generics = lower_generic_parameters(&variant_decl.generics);

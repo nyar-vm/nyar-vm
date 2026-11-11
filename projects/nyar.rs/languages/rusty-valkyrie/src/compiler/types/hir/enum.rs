@@ -30,6 +30,13 @@ pub struct HirEnum {
     pub declaration: Option<nyar_types::ItemId>,
     /// The name of the enum.
     pub name: Identifier,
+    /// Declaring namespace segments, excluding the enum name itself.
+    ///
+    /// Qualified type references (`std.operator.Ordering`) must match against this
+    /// structured identity instead of the last path segment alone; without it a
+    /// consumer can only fall back to name-only lookup.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub namespace: Vec<Identifier>,
     /// Documentation for the enum.
     pub doc: HirDocumentation,
     /// Generic parameters for the enum.
@@ -153,6 +160,7 @@ impl Default for HirEnum {
         Self {
             declaration: None,
             name: Identifier::new(""),
+            namespace: Vec::new(),
             doc: HirDocumentation::default(),
             generics: Vec::new(),
             variants: Vec::new(),

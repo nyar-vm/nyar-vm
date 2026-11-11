@@ -225,8 +225,12 @@ pub(crate) fn visible_nominal_type_names(
         for item in export.structs.iter() {
             names.push(VisibleNominalType { namespace: item.namespace.iter().map(ToString::to_string).collect(), name: item.name.to_string() });
         }
+        // 枚举与结构体同口径：按声明 namespace 逐段匹配。`std::operator::Ordering`
+        // 这类限定类型名必须能按完整路径命中，否则消费者在类型位置引用枚举会得到
+        // `TypeNotFound`。导出模块 ≠ 声明 namespace（一个 source group 可含多个
+        // namespace），因此只用 `HirEnum.namespace`。
         for item in export.enums.iter() {
-            names.push(VisibleNominalType { namespace: Vec::new(), name: item.name.to_string() });
+            names.push(VisibleNominalType { namespace: item.namespace.iter().map(ToString::to_string).collect(), name: item.name.to_string() });
         }
     }
     for root in roots {
