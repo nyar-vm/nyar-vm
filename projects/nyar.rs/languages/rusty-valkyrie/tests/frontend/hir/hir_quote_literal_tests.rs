@@ -6,7 +6,8 @@
 //!   未知/残缺转义与模板语法错误结构化报错。
 //! - `r` 前缀：raw 不解码、不插值；`b` 前缀：字节字面量（`\xNN` 可用），必须恰好一个字节。
 //! - 反斜杠不救定界符：`'\''`、`"\""` 非法；`"'"`、`'"'` 是引号字符的正确写法。
-//! - 过渡归属：无插值时单引号恰好一字符归 `char`，其余归文本；完整上下文定型门另行落地。
+//! - 归属（§4.10 B）：单引号恰好一 BMP 字符按 `char` 默认落 Character；其余捕获保持
+//!   未定型文本形态，由上下文定型，无约束默认在 MIR 结算，不提供长度回退。
 
 use rusty_valkyrie::{
     HirError, ValkyrieCompiler,
@@ -211,10 +212,10 @@ fn invalid_unicode_escape_fails() {
 }
 
 #[test]
-fn character_beyond_bmp_fails() {
-    // 裸写超出 BMP 的字符拒绝，不静默截断。
-    let (failure, _, _) = expect_literal_failure("micro probe() { let bad = '🙂' }");
-    assert!(matches!(failure, QuoteLiteralFailure::CharacterBeyondBmp { value: 0x1F642 }));
+fn character_beyond_bmp_stays_untyped_capture() {
+    // §4.10 B：超 BMP 不在 lowering 提前拒绝，避免把本可成为 utf8 的内容误拒为 char；
+    // 单引号 `🙂` 保持未定型文本捕获，无约束时的 char 默认表示错误在 MIR 结算。
+    assert_text("micro probe() { let emoji = '\u{1F642}' }", "\u{1F642}");
 }
 
 #[test]

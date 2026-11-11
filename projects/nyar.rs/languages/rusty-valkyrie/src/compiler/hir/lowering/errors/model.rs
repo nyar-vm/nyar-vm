@@ -940,11 +940,6 @@ pub enum QuoteLiteralFailure {
     },
     /// 内容以孤立反斜杠结束；按捕获优先语义，转义不能跨界救定界符。
     DanglingEscape,
-    /// 字符字面量超出 BMP：`char` 是 u16 code unit，不能静默截断。
-    CharacterBeyondBmp {
-        /// 解码得到的码位。
-        value: u32,
-    },
 }
 
 /// TGrammar 模板构造类别。

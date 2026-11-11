@@ -399,9 +399,6 @@ impl From<HirError> for DiagnosticRow {
                     | QuoteLiteralFailure::InvalidUnicodeEscape { escape } => {
                         row = row.with_arg("escape", DiagnosticArg::String(escape.clone()));
                     }
-                    QuoteLiteralFailure::CharacterBeyondBmp { value } => {
-                        row = row.with_arg("value", DiagnosticArg::Int(*value as i64));
-                    }
                     QuoteLiteralFailure::EmptyByteLiteral
                     | QuoteLiteralFailure::UnicodeEscapeInByteLiteral
                     | QuoteLiteralFailure::DanglingEscape => {}
@@ -801,6 +798,5 @@ pub(super) fn quote_literal_failure_name(failure: &QuoteLiteralFailure) -> &'sta
         QuoteLiteralFailure::InvalidEscapeSequence { .. } => "invalid_escape_sequence",
         QuoteLiteralFailure::InvalidUnicodeEscape { .. } => "invalid_unicode_escape",
         QuoteLiteralFailure::DanglingEscape => "dangling_escape",
-        QuoteLiteralFailure::CharacterBeyondBmp { .. } => "character_beyond_bmp",
     }
 }

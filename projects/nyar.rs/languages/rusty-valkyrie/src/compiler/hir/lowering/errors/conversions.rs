@@ -422,13 +422,6 @@ impl std::fmt::Display for HirError {
                     QuoteLiteralFailure::DanglingEscape => {
                         write!(f, "dangling backslash at the end of the captured literal at {}..{}", span.start, span.end)
                     }
-                    QuoteLiteralFailure::CharacterBeyondBmp { value } => {
-                        write!(
-                            f,
-                            "character literal U+{value:X} is beyond the BMP: `char` is a u16 code unit (at {}..{})",
-                            span.start, span.end
-                        )
-                    }
                 }
             }
             Self::InvalidExportCase { value, span, .. } => {

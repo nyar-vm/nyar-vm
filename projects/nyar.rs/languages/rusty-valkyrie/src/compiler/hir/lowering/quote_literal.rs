@@ -10,9 +10,10 @@
 //! - `b` 前缀：字节字面量，独立转义集（`\n \t \r \0 \\ \' \" \xNN`），必须恰好一个字节。
 //! - 其它前缀：结构化报错，不按默认字符串成功。
 //!
-//! 引号种类与定界长度不改变捕获后的处理管线。当前归属规则是上下文定型门
-//! （§4.10 B 完整约束求解）之前的过渡形态：无插值时单引号解码后恰好一个字符
-//! 归 `char`（超出 BMP 结构化失败），其余归文本；有插值一律文本。
+//! 引号种类与定界长度不改变捕获后的处理管线。归属遵循 §4.10 B：只有单引号且
+//! 解码结果恰好为一个 BMP 字符时按 `char` 默认落 `Character`；其余捕获保持未定型
+//! 文本形态，由上下文约束求解定型，确无上下文时才按引号默认（单→`char`、
+//! 双→`utf8`）在最终消费点结算，不提供长度回退。
 
 use std::ops::Range;
 
@@ -71,7 +72,7 @@ pub(crate) enum DecodedQuoteCapture {
 /// 解释 Oak 引号捕获；`allow_interpolation` 为 false 时常量位（模式等）拒绝插值段。
 pub(crate) fn decode_quote_capture(literal: &QuoteLiteral, allow_interpolation: bool) -> Result<DecodedQuoteCapture, HirError> {
     match literal.prefix.as_ref().map(|prefix| prefix.name.as_str()) {
-        Some("r") => classify(literal, literal.content.clone()),
+        Some("r") => Ok(classify(literal, literal.content.clone())),
         Some("b") => decode_byte_literal(literal).map(DecodedQuoteCapture::Byte),
         Some(name) => {
             let span = literal.prefix.as_ref().map_or_else(|| literal.span.start..literal.span.end, |prefix| prefix.span.start..prefix.span.end);
@@ -175,25 +176,22 @@ fn decode_cooked_capture(literal: &QuoteLiteral, allow_interpolation: bool) -> R
         }
     }
 
-    if has_interpolation { Ok(DecodedQuoteCapture::Template(parts)) } else { classify(literal, plain) }
+    if has_interpolation { Ok(DecodedQuoteCapture::Template(parts)) } else { Ok(classify(literal, plain)) }
 }
 
-/// 归属：单引号无插值且解码后恰好一个字符归 `char`（BMP 内），其余归文本。
-fn classify(literal: &QuoteLiteral, decoded: String) -> Result<DecodedQuoteCapture, HirError> {
+/// 归属：单引号且解码结果恰好为一个 BMP 字符时按 `char` 默认落 `Character`；
+/// 其余捕获（空、多字符、超 BMP、双引号）一律保持未定型文本捕获，由上下文约束
+/// 求解或最终默认决定（§4.10 B），不按长度回退、不提前报表示拒绝。
+fn classify(literal: &QuoteLiteral, decoded: String) -> DecodedQuoteCapture {
     if literal.quote == QuoteKind::Single {
         let mut characters = decoded.chars();
-        match (characters.next(), characters.next()) {
-            (Some(single), None) => {
-                let value = single as u32;
-                if value > 0xFFFF {
-                    return Err(quote_literal_error(QuoteLiteralFailure::CharacterBeyondBmp { value }, literal.span.start..literal.span.end));
-                }
-                return Ok(DecodedQuoteCapture::Character(value as u16));
-            }
-            _ => {}
+        if let (Some(single), None) = (characters.next(), characters.next())
+            && let Ok(value) = u16::try_from(u32::from(single))
+        {
+            return DecodedQuoteCapture::Character(value);
         }
     }
-    Ok(DecodedQuoteCapture::PlainText(decoded))
+    DecodedQuoteCapture::PlainText(decoded)
 }
 
 /// 解码 cooked 文本段（标准转义集；未知/残缺一律结构化报错）。
