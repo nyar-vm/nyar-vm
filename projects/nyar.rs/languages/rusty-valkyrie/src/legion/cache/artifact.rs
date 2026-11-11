@@ -66,14 +66,24 @@ impl From<&CachedRunContract> for DriverRunContract {
     }
 }
 
+/// 编译器构建身份：`build.rs` 生成的 Git 修订（tracked 改动时带 `-dirty`），
+/// 或构建时注入的 `NYAR_COMPILER_BUILD_ID`。同版本不同构建因此可区分。
+pub fn compiler_build_id() -> &'static str {
+    option_env!("NYAR_COMPILER_BUILD_ID").unwrap_or("unknown")
+}
+
 /// Toolchain id embedded in artifact keys (invalidates cache on legion upgrades
 /// and on identity / MIR / layout / bytecode contract version bumps).
+///
+/// `compiler=` 承载实际编译器构建身份，避免同版本不同构建共享缓存身份或无法由
+/// 消费者证据区分。
 pub fn toolchain_fingerprint() -> String {
     format!(
-        "legion={};{};bytecode={}",
+        "legion={};{};bytecode={};compiler={}",
         env!("CARGO_PKG_VERSION"),
         nyar_types::contract_version_fingerprint(),
         odin_bytecode::BYTECODE_FORMAT_VERSION,
+        compiler_build_id(),
     )
 }
 

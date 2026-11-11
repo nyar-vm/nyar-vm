@@ -21,6 +21,14 @@ fn artifact_hash_changes_when_manifest_changes() {
 }
 
 #[test]
+fn toolchain_fingerprint_carries_compiler_build_identity() {
+    let build_id = rusty_valkyrie::legion::cache::compiler_build_id();
+    assert!(!build_id.trim().is_empty(), "编译器构建身份不得为空");
+    let fingerprint = toolchain_fingerprint();
+    assert!(fingerprint.contains(&format!("compiler={build_id}")), "工具链指纹必须携带构建身份：{fingerprint}");
+}
+
+#[test]
 fn cache_ignores_unreported_output_files() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("old.mjs"), "stale").unwrap();
