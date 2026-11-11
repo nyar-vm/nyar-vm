@@ -16,6 +16,7 @@ mod hir_impl_method_where_obligation_tests;
 mod hir_imply_super_trait_cycle_tests;
 mod hir_import_syntax_tests;
 mod hir_iterator_collect_resolution_tests;
+mod hir_iterator_chain_fold_resolution_tests;
 mod hir_lambda_capture_tests;
 mod hir_labeled_tuple_literal_context_tests;
 mod hir_lowering_host_binding_pipeline_tests;

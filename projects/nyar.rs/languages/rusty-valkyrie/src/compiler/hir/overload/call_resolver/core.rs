@@ -67,6 +67,17 @@ pub(crate) fn overload_symbol_path(candidate: &OverloadCandidate) -> NamePath {
     }
 }
 
+/// 实参是否为「表示待定」的数值字面量（整数字面量与字节字面量）。
+///
+/// 这类字面量没有自足类型：形参给定时按形参定型，无约束时才取默认宽度。因此它们
+/// 不能先于同一调用点的其它实参给开放 binder 定型。
+fn is_untyped_numeric_literal(expr: &HirExpr) -> bool {
+    matches!(
+        &expr.kind,
+        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Integer64(_) | crate::compiler::types::hir::HirLiteral::Byte(_))
+    )
+}
+
 pub(crate) fn is_unresolved_variant_reference(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> bool {
     match &expr.kind {
         HirExprKind::Variable(identifier) => !locals.contains_key(identifier.name.as_str()),
@@ -244,7 +255,12 @@ pub fn match_call_candidate(
         }
     }
     let mut matched_actual_types = Vec::with_capacity(bound_exprs.len());
-    for (expr, (expected, actual)) in bound_exprs.iter().zip(expected_params.iter().zip(actual_types.iter())) {
+    // 未定型数值字面量在仍开放的 binder 槽位上延后定型：`fold(0, micro(i64, i64) -> i64)`
+    // 的 `U` 必须由闭包签名这类有信息的实参解出，不能让 `0` 的默认宽度先把 `U` 钉成
+    // `i32`。这里只延后统一，不跳过实参；全部实参结算后再按已解出的形参特化字面量，
+    // 仍无其它实参触达该 binder 时才落字面量默认（§4.10 B：先解约束，最后才默认）。
+    let mut deferred_numeric_literals: Vec<usize> = Vec::new();
+    for (index, (expr, (expected, actual))) in bound_exprs.iter().zip(expected_params.iter().zip(actual_types.iter())).enumerate() {
         let contextual_expected = substitute_type_vars(expected, &substitutions);
         let actual = actual
             .as_ref()
@@ -255,7 +271,14 @@ pub fn match_call_candidate(
             .or_else(|| infer_contextual_variant_type(expr, &contextual_expected, locals, singleton_names, type_relations));
         match actual.as_ref() {
             Some(actual) => {
-                if unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions, type_relations).is_none() {
+                if is_untyped_numeric_literal(expr)
+                    && owner_type_generic_binders(&contextual_expected)
+                        .iter()
+                        .any(|binder| candidate.generic_binders.contains(binder) && !substitutions.contains_key(binder))
+                {
+                    deferred_numeric_literals.push(index);
+                }
+                else if unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions, type_relations).is_none() {
                     return None;
                 }
             }
@@ -269,6 +292,31 @@ pub fn match_call_candidate(
     type_relations.infer_associated_binders(&candidate.where_constraints, &mut substitutions, &candidate.generic_binders);
     // 形参槽位可能是关联投影（`L::Settings`）：binder 由实参钉住后，用候选自身
     // where 约束的 trait 实现见证把投影落成具体类型，再参与常规匹配。
+    let expected_params = expected_params
+        .iter()
+        .map(|ty| type_relations.resolve_associated_projections(ty, &candidate.where_constraints, &substitutions))
+        .collect::<Vec<_>>();
+    // 延后的数值字面量此时才按已解出的形参特化并统一：其它实参已把 binder 解成
+    // 具体类型时字面量跟随该类型，仍未解时统一把 binder 绑到字面量默认宽度。
+    for index in deferred_numeric_literals {
+        let (Some(expected), Some(Some(actual))) = (expected_params.get(index), matched_actual_types.get(index).cloned())
+        else {
+            return None;
+        };
+        let contextual_expected = substitute_type_vars(expected, &substitutions);
+        let actual = crate::compiler::hir::overload::substitution::specialize_literal_expr_type(
+            &bound_exprs[index],
+            &actual,
+            &contextual_expected,
+            type_relations,
+        );
+        if unify_call_type_binders(expected, &actual, &candidate.generic_binders, &mut substitutions, type_relations).is_none() {
+            return None;
+        }
+        matched_actual_types[index] = Some(actual);
+    }
+    // 延后统一可能新解出 binder（`fold(0, f)` 的 `U`），形参槽位必须按最新代入
+    // 重算，否则 `compute_call_match_kind` 仍拿开放 binder 与已定型实参比较。
     let expected_params = expected_params
         .iter()
         .map(|ty| type_relations.resolve_associated_projections(ty, &candidate.where_constraints, &substitutions))
