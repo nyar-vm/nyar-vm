@@ -12,6 +12,8 @@ export type LegionExecutionManifestView = {
     hostProviderBindingHash: string | null;
     primaryPhysicalEntry: string | null;
     primaryLogicalEntry: string | null;
+    /** 产出该构建的编译器构建身份；旧 manifest 缺少该字段时为 null。 */
+    compilerBuildIdentity: string | null;
 };
 
 export type LegionArtifactFreshness = {
@@ -102,6 +104,8 @@ type ValkyrieNativeAddon = {
     legionTest(projectDir: string, target?: string): LegionTestOutcome;
     legionCheckArtifactFresh(outputDir: string, expectedTarget: string, projectDir?: string): LegionArtifactFreshness;
     legionReadExecutionManifest(outputDir: string): LegionExecutionManifestView | null;
+    legionCompilerBuildIdentity(): string;
+    legionToolchainFingerprint(): string;
     legionListOvmExports(module: string): string[];
     legionInvokeOvmExport(module: string, entry: string, argsJson: string): string;
 };

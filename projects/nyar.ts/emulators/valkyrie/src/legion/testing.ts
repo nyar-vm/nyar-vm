@@ -20,6 +20,7 @@ export function resolveArtifactDir(buildOutputDir: string, _target: string): str
 export function readExecutionManifest(artifactDir: string): {
     schema_version: number;
     target: string;
+    compiler_build_identity?: string;
     compile_evidence?: {
         semantic_closure_hash?: string;
         canonical_surface_hash?: string;
@@ -34,6 +35,7 @@ export function readExecutionManifest(artifactDir: string): {
     return {
         schema_version: view.schemaVersion,
         target: view.target,
+        compiler_build_identity: view.compilerBuildIdentity ?? undefined,
         compile_evidence: {
             semantic_closure_hash: view.semanticClosureHash ?? undefined,
             canonical_surface_hash: view.canonicalSurfaceHash ?? undefined,

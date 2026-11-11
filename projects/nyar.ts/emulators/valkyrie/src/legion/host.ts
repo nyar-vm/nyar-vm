@@ -21,6 +21,16 @@ export function legionNativePath(): string | null {
     }
 }
 
+/** 当前 addon 内嵌的编译器构建身份（git rev 或确定性回退摘要）。 */
+export function legionCompilerBuildIdentity(): string {
+    return loadNative().legionCompilerBuildIdentity();
+}
+
+/** 当前 addon 的完整 toolchain fingerprint（产物缓存键的 toolchain 段）。 */
+export function legionToolchainFingerprint(): string {
+    return loadNative().legionToolchainFingerprint();
+}
+
 export function legionNativeSkipReason(): string | null {
     if (legionNativeReady()) {
         return null;
