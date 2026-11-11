@@ -445,9 +445,20 @@ fn numeric_literal_binding(
             HirLiteral::Integer64(value) if type_relations.is_numeric_type(expected) => Some(*value),
             HirLiteral::Byte(value) if type_relations.is_numeric_type(expected) => Some(*value as i64),
             HirLiteral::Character(value)
-                if type_relations.is_character_literal_formal(expected) || type_relations.is_numeric_type(expected) =>
+                if type_relations.is_character_literal_formal(expected)
+                    || type_relations.is_numeric_type(expected)
+                    || type_relations.is_text_formal(expected) =>
             {
                 Some(*value as i64)
+            }
+            // 单字符文本捕获同样能落到 `char` 形参（§4.10 B 的对称引号规则）。它与
+            // 文本形参都合法时，用绑定代价区分「原样类型」与跨表示改写，让精确形参
+            // 胜出，而不是把两个合法候选一律判成歧义。
+            HirLiteral::String(literal)
+                if literal.as_single_bmp_char().is_some()
+                    && (crate::compiler::hir::type_relation::is_character_type_name_of(expected) || type_relations.is_text_formal(expected)) =>
+            {
+                None
             }
             HirLiteral::Float64(_) if type_relations.is_float_type(expected) => None,
             _ => continue,
@@ -455,7 +466,10 @@ fn numeric_literal_binding(
         scored = true;
         binding.fits &= value.map_or(true, |value| numeric_literal_value_fits(value, expected));
         let natural = infer_expr_type(&arg.value, locals)?;
-        if natural != *expected {
+        let exact = natural == *expected
+            || type_relations.text_carriers_equivalent(&natural, expected)
+            || (matches!(literal, HirLiteral::Character(_)) && type_relations.is_character_literal_formal(expected));
+        if !exact {
             binding.coercions += 1;
         }
     }

@@ -362,3 +362,77 @@ fn let_annotation_binds_literal_without_cast() {
         .compile_source(&format!("{PRIMITIVES}\n{}", "micro probe() { let space: u32 = ' ' let tab: u8 = b'\\t' let mark: char = '#' }"))
         .expect("let 注解必须直接绑定字符/字节字面量");
 }
+
+// ---------- 重载裁决：对称引号下的精确形参优先 ----------
+
+/// `char` 与文本形参并存的 `append` 组；两种引号在 §4.10 B 下都能落到文本形参，
+/// 因此必须靠字面量绑定代价区分「原样类型」与跨表示改写，而不是判成歧义。
+const OVERLOAD_APPEND_FIXTURE: &str = r#"
+[primitive("std::primitive::bool")]
+structure bool { }
+
+[primitive("std::text::char")]
+structure char { }
+
+structure Utf8Text { }
+
+structure Builder {
+    flag: bool
+}
+
+imply Builder {
+    micro append(self, c: char): bool {
+        return true
+    }
+
+    micro append(self, text: Utf8Text): bool {
+        return false
+    }
+}
+"#;
+
+/// 返回 `probe` 尾表达式 `return builder.append(...)` 的冻结形参表（含 receiver）。
+fn resolved_append_formal_types(argument: &str) -> Vec<ValkyrieType> {
+    let source = format!(
+        "{OVERLOAD_APPEND_FIXTURE}\nmicro probe(): bool {{ let builder: Builder = Builder {{ flag: true }} return builder.append({argument}) }}"
+    );
+    let hir = ValkyrieCompiler::default().compile_source(&source).expect("字面量实参必须完成重载解析");
+    let probe = hir.functions.iter().find(|function| function.name.as_str() == "probe").expect("缺少 probe 函数");
+    let HirExprKind::Return(Some(result)) = &probe.body.expr.as_ref().expect("probe 缺少尾表达式").kind
+    else {
+        panic!("probe 必须 return 调用")
+    };
+    let HirExprKind::Call { resolved: Some(call), .. } = &result.kind
+    else {
+        panic!("return 必须是已解析调用，实际 {:?}", result.kind)
+    };
+    call.parameter_types.clone()
+}
+
+fn is_char_formal(ty: &ValkyrieType) -> bool {
+    matches!(ty, ValkyrieType::Character) || matches!(ty, ValkyrieType::Named(name) if name.as_str() == "char")
+}
+
+#[test]
+fn character_literal_prefers_exact_char_formal() {
+    let formal = resolved_append_formal_types("'a'").get(1).cloned().expect("append 必须有字符形参");
+    assert!(is_char_formal(&formal), "字符字面量必须选精确 `char` 形参，实际 {formal:?}");
+}
+
+#[test]
+fn escaped_character_literal_prefers_exact_char_formal() {
+    let formal = resolved_append_formal_types("'\\n'").get(1).cloned().expect("append 必须有字符形参");
+    assert!(is_char_formal(&formal), "转义字符字面量必须选精确 `char` 形参，实际 {formal:?}");
+}
+
+#[test]
+fn single_character_text_literal_prefers_text_formal() {
+    let formal = resolved_append_formal_types("\"a\"").get(1).cloned().expect("append 必须有文本形参");
+    assert!(!is_char_formal(&formal), "单字符文本捕获必须选文本形参而不是 `char`，实际 {formal:?}");
+}
+
+#[test]
+fn multi_character_text_literal_prefers_text_formal() {
+    let formal = resolved_append_formal_types("\"ab\"").get(1).cloned().expect("append 必须有文本形参");
+    assert!(!is_char_formal(&formal), "多字符文本捕获必须选文本形参，实际 {formal:?}");
+}
