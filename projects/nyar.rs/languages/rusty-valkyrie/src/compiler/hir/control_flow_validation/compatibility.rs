@@ -122,7 +122,7 @@ pub fn scalar_literal_binds_to(expected: &ValkyrieType, value: Option<&HirExpr>,
         Some(HirExprKind::Literal(HirLiteral::Character(_))) => {
             // 字符字面量在 char/数值期望按码元绑定；文本期望按单字符文本绑定
             // （§4.10 B：`let t: utf8 = 'x'` 成立，引号不预定类型）。
-            numeric_expected || crate::compiler::hir::type_relation::is_character_type_name_of(expected) || is_text_expected(expected)
+            numeric_expected || crate::compiler::hir::type_relation::is_character_type_name_of(expected) || is_text_expected(expected, state)
         }
         // 恰好一个 BMP 字符的文本捕获可绑定到 char 期望（§4.10 B：`let c: char = "x"`）。
         Some(HirExprKind::Literal(HirLiteral::String(literal))) if literal.as_single_bmp_char().is_some() => {
@@ -132,10 +132,9 @@ pub fn scalar_literal_binds_to(expected: &ValkyrieType, value: Option<&HirExpr>,
     }
 }
 
-/// 校验侧文本期望判定：内建编码 carrier 或 `Named` 文本拼写（与 `text_carrier` 名集同源）。
-///
-/// 校验状态不带声明表，`Nominal{ItemId}` 文本由 `control_flow_value_type_compatible` 名义路径处理。
-fn is_text_expected(ty: &ValkyrieType) -> bool {
+/// 校验侧文本期望判定：内建编码 carrier、`Named` 文本拼写，或本模块声明身份在
+/// `text_declarations` 中的 `Nominal`（名集与 `text_carrier` 同源）。
+fn is_text_expected(ty: &ValkyrieType, state: &HirValidationState) -> bool {
     match ty {
         ValkyrieType::Utf8 | ValkyrieType::Utf16 => true,
         ValkyrieType::Named(name) => {
@@ -143,6 +142,7 @@ fn is_text_expected(ty: &ValkyrieType) -> bool {
             crate::compiler::text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, name)
                 || crate::compiler::text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf16, name)
         }
+        ValkyrieType::Nominal { declaration, .. } => state.text_declarations.contains(declaration),
         _ => false,
     }
 }

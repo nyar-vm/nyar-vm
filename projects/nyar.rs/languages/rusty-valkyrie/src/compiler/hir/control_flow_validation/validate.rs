@@ -272,7 +272,7 @@ pub fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_c
                 validate_hir_expr(value, state, true)?;
             }
             for method in methods {
-                validate_hir_function(method, &mut validation_state(&state.numeric_declarations, &state.boolean_declarations))?;
+                validate_hir_function(method, &mut validation_state(&state.numeric_declarations, &state.boolean_declarations, &state.text_declarations))?;
             }
         }
         HirExprKind::If { condition, then_branch, else_branch } => {
@@ -517,6 +517,7 @@ pub fn lambda_validation_state(parent: &HirValidationState, _body: &HirBlock) ->
         current_function: parent.current_function.clone(),
         numeric_declarations: parent.numeric_declarations.clone(),
         boolean_declarations: parent.boolean_declarations.clone(),
+        text_declarations: parent.text_declarations.clone(),
     }
 }
 

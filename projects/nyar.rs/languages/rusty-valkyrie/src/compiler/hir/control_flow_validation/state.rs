@@ -52,6 +52,9 @@ pub struct HirValidationState {
     pub(crate) numeric_declarations: BTreeSet<nyar_types::ItemId>,
     /// `std::primitive::bool` 的声明身份；字面量与注解 `bool` 的 `Boolean` 形态与之等价。
     pub(crate) boolean_declarations: BTreeSet<nyar_types::ItemId>,
+    /// 本模块内已冻结为声明身份的文本 primitive（`std::text` 的 `utf8`/`utf16`/`text` 载体）。
+    /// 只有这份声明事实能判定「期望类型是文本」；不得改成对调用点写的类型名做特判。
+    pub(crate) text_declarations: BTreeSet<nyar_types::ItemId>,
 }
 
 pub type LoopValidationContext = crate::compiler::semantic::control_flow::LoopScopeData;
@@ -99,13 +102,41 @@ pub fn boolean_declarations_in_module(module: &HirModule) -> BTreeSet<nyar_types
     declarations
 }
 
+/// 模块内文本 primitive 的声明身份集合（`utf8`/`utf16`/`text` 载体）。
+///
+/// 判定口径复用 `text_carrier::carrier_matches_declaration_name`，与 HIR `is_text_formal`
+/// 和 MIR `is_utf8_formal_type` 共用同一份名集，不另立白名单。
+pub fn text_declarations_in_module(module: &HirModule) -> BTreeSet<nyar_types::ItemId> {
+    fn collect(module: &HirModule, out: &mut BTreeSet<nyar_types::ItemId>) {
+        let structs = module.structs.iter().chain(module.imported_semantic_exports.iter().flat_map(|export| export.structs.iter()));
+        for item in structs {
+            let name = item.name.as_str();
+            if crate::compiler::text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf8, name)
+                || crate::compiler::text_carrier::carrier_matches_declaration_name(&ValkyrieType::Utf16, name)
+            {
+                if let Some(declaration) = item.constructor_declaration {
+                    out.insert(declaration);
+                }
+            }
+        }
+        for submodule in &module.submodules {
+            collect(submodule, out);
+        }
+    }
+    let mut declarations = BTreeSet::new();
+    collect(module, &mut declarations);
+    declarations
+}
+
 pub fn validation_state(
     numeric_declarations: &BTreeSet<nyar_types::ItemId>,
     boolean_declarations: &BTreeSet<nyar_types::ItemId>,
+    text_declarations: &BTreeSet<nyar_types::ItemId>,
 ) -> HirValidationState {
     HirValidationState {
         numeric_declarations: numeric_declarations.clone(),
         boolean_declarations: boolean_declarations.clone(),
+        text_declarations: text_declarations.clone(),
         ..Default::default()
     }
 }

@@ -16,6 +16,7 @@ mod mir_ssa_nullable_null_tests;
 mod mir_ssa_assign_constructor_context_tests;
 mod mir_ssa_primitive_identity_carrier_tests;
 mod mir_ssa_single_quote_literal_tests;
+mod mir_quote_literal_context_tests;
 mod mir_ssa_text_constant_identity_tests;
 mod mir_ssa_overloaded_callable_label_tests;
 mod mir_ssa_platform_width_named_alias_tests;

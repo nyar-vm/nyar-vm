@@ -140,7 +140,9 @@ fn cross_quote_forms_are_legal() {
 }
 
 #[test]
-fn multi_character_capture_becomes_text() {
+fn multi_and_empty_single_quote_stay_untyped_capture() {
+    // §4.10 B：无上下文时不按长度回退文本；`'ab'`/`''` 在 HIR 仍是未定型文本捕获，
+    // 无约束 char 默认的表示错误在 MIR 结算（见 mir_quote_literal_context_tests）。
     assert_text("micro probe() { let text = 'ab' }", "ab");
     assert_text("micro probe() { let empty = '' }", "");
 }
