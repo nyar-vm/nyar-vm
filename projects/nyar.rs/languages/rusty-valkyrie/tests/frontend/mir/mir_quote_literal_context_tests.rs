@@ -1,8 +1,9 @@
 //! 引号字面量的上下文定型与无约束默认（§4.10 B/D/E，2026-11-11 裁定）。
 //!
 //! 上下文先解约束、最后才默认：文本上下文接受单引号捕获（任意长度），
-//! `char` 上下文接受恰好一个 BMP 字符的双引号捕获；确无上下文时单引号默认
-//! `char`、双引号默认 `utf8`，`''`/`'ab'`/超 BMP 无约束即表示错误，不按长度回退。
+//! `char` 上下文接受恰好一个码位的双引号捕获；确无上下文时单引号默认
+//! `char`、双引号默认 `utf8`，`''`/`'ab'` 无约束即表示错误，不按长度回退；
+//! `char` 为 u32 码位（§4.12 字符合同），非 BMP 单引号捕获是合法 `char`。
 //! 插值段不得渲染 `${...}` 占位，必须结构化失败点名缺 formatter 实例。
 
 use rusty_valkyrie::{MirLowerer, ValkyrieCompiler, compiler::mir::ssa::MirOperation};
@@ -85,7 +86,7 @@ fn text_context_accepts_single_quote_multi_and_empty() {
     assert!(utf8_constants(&empty, "probe").contains(&String::new()), "空单引号在文本上下文是空文本");
 }
 
-// ---------- 正例：char 上下文接受恰好一个 BMP 字符的双引号捕获 ----------
+// ---------- 正例：char 上下文接受恰好一个码位的双引号捕获 ----------
 
 #[test]
 fn char_context_accepts_single_char_double_quote() {
@@ -127,8 +128,11 @@ fn unconstrained_empty_single_quote_is_char_default_error() {
 }
 
 #[test]
-fn unconstrained_beyond_bmp_single_quote_is_char_default_error() {
-    compile_checked("micro probe(): i32 { let t = '\u{1F642}' return 0 }").expect_err("无约束超 BMP 单引号默认 char 必须表示错误");
+fn unconstrained_beyond_bmp_single_quote_binds_char() {
+    // §4.12 字符合同：`char` 为 u32 码位，非 BMP 单引号捕获按 char 默认合法定型，
+    // 不再是表示错误（旧 BMP-only 拒绝合同已退役）。
+    let module = lower("micro probe(): i32 { let t = '\u{1F642}' return 0 }");
+    assert!(int_char_constants(&module, "probe").contains(&128578), "非 BMP 单引号必须按 u32 码位落 char 常量");
 }
 
 // ---------- 反例：char 上下文收到非单字符文本 ----------

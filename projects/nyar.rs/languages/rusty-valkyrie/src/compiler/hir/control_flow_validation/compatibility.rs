@@ -109,7 +109,7 @@ pub fn array_types_compatible(expected: &ValkyrieType, actual: &ValkyrieType) ->
 }
 /// 标量字面量按期望类型绑定：整数字面量（默认宽度 `i64`）只认数值期望；字节字面量
 /// 同源（值域 `u8` 已在 lowering 校验）；字符字面量接受 `char`、数值与文本期望；
-/// 恰好一个 BMP 字符的文本捕获接受 `char` 期望（§4.10 B 上下文定型，引号不预定类型）。
+/// 恰好一个码位的文本捕获接受 `char` 期望（§4.10 B 上下文定型，引号不预定类型）。
 /// 判定与 `overload.rs::specialize_call_literal_exprs` 完全同源：同一份数值名集合
 /// （`Named("i32")` 与 `Nominal{ItemId}` 都算数值），同一条件（仅标量字面量）。
 pub fn scalar_literal_binds_to(expected: &ValkyrieType, value: Option<&HirExpr>, state: &HirValidationState) -> bool {
@@ -120,12 +120,12 @@ pub fn scalar_literal_binds_to(expected: &ValkyrieType, value: Option<&HirExpr>,
     match value.map(|value| &value.kind) {
         Some(HirExprKind::Literal(HirLiteral::Integer64(_) | HirLiteral::Byte(_))) => numeric_expected,
         Some(HirExprKind::Literal(HirLiteral::Character(_))) => {
-            // 字符字面量在 char/数值期望按码元绑定；文本期望按单字符文本绑定
+            // 字符字面量在 char/数值期望按码位绑定；文本期望按单字符文本绑定
             // （§4.10 B：`let t: utf8 = 'x'` 成立，引号不预定类型）。
             numeric_expected || crate::compiler::hir::type_relation::is_character_type_name_of(expected) || is_text_expected(expected, state)
         }
-        // 恰好一个 BMP 字符的文本捕获可绑定到 char 期望（§4.10 B：`let c: char = "x"`）。
-        Some(HirExprKind::Literal(HirLiteral::String(literal))) if literal.as_single_bmp_char().is_some() => {
+        // 恰好一个码位的文本捕获可绑定到 char 期望（§4.10 B：`let c: char = "x"`）。
+        Some(HirExprKind::Literal(HirLiteral::String(literal))) if literal.as_single_char().is_some() => {
             crate::compiler::hir::type_relation::is_character_type_name_of(expected)
         }
         _ => false,

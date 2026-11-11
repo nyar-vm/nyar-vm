@@ -11,9 +11,9 @@
 //! - 其它前缀：结构化报错，不按默认字符串成功。
 //!
 //! 引号种类与定界长度不改变捕获后的处理管线。归属遵循 §4.10 B：只有单引号且
-//! 解码结果恰好为一个 BMP 字符时按 `char` 默认落 `Character`；其余捕获保持未定型
-//! 文本形态，由上下文约束求解定型，确无上下文时才按引号默认（单→`char`、
-//! 双→`utf8`）在最终消费点结算，不提供长度回退。
+//! 解码结果恰好为一个码位（§4.12 字符合同：`char` 为 u32 码位，非 BMP 合法）时按
+//! `char` 默认落 `Character`；其余捕获保持未定型文本形态，由上下文约束求解定型，
+//! 确无上下文时才按引号默认（单→`char`、双→`utf8`）在最终消费点结算，不提供长度回退。
 
 use std::ops::Range;
 
@@ -59,8 +59,8 @@ pub(crate) enum QuoteTemplatePart {
 /// 引号捕获解释后的值形态。
 #[derive(Debug)]
 pub(crate) enum DecodedQuoteCapture {
-    /// 单引号、无插值、解码后恰好一个 BMP 字符。
-    Character(u16),
+    /// 单引号、无插值、解码后恰好一个码位（§4.12 字符合同：`char` 为 u32 码位，非 BMP 合法）。
+    Character(u32),
     /// `b` 前缀字节字面量。
     Byte(u8),
     /// 无插值文本（已解码）。
@@ -179,16 +179,16 @@ fn decode_cooked_capture(literal: &QuoteLiteral, allow_interpolation: bool) -> R
     if has_interpolation { Ok(DecodedQuoteCapture::Template(parts)) } else { Ok(classify(literal, plain)) }
 }
 
-/// 归属：单引号且解码结果恰好为一个 BMP 字符时按 `char` 默认落 `Character`；
-/// 其余捕获（空、多字符、超 BMP、双引号）一律保持未定型文本捕获，由上下文约束
+/// 归属：单引号且解码结果恰好为一个码位时按 `char` 默认落 `Character`（u32 码位，
+/// 非 BMP 合法；lone surrogate 无法来自合法 UTF-8 源文，`\uXXXX` 代理位在
+/// `parse_unicode_escape` 已按非法标量带源区间拒绝）；
+/// 其余捕获（空、多字符、双引号）一律保持未定型文本捕获，由上下文约束
 /// 求解或最终默认决定（§4.10 B），不按长度回退、不提前报表示拒绝。
 fn classify(literal: &QuoteLiteral, decoded: String) -> DecodedQuoteCapture {
     if literal.quote == QuoteKind::Single {
         let mut characters = decoded.chars();
-        if let (Some(single), None) = (characters.next(), characters.next())
-            && let Ok(value) = u16::try_from(u32::from(single))
-        {
-            return DecodedQuoteCapture::Character(value);
+        if let (Some(single), None) = (characters.next(), characters.next()) {
+            return DecodedQuoteCapture::Character(u32::from(single));
         }
     }
     DecodedQuoteCapture::PlainText(decoded)

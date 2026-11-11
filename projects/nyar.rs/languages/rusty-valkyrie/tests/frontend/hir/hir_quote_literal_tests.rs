@@ -6,7 +6,8 @@
 //!   未知/残缺转义与模板语法错误结构化报错。
 //! - `r` 前缀：raw 不解码、不插值；`b` 前缀：字节字面量（`\xNN` 可用），必须恰好一个字节。
 //! - 反斜杠不救定界符：`'\''`、`"\""` 非法；`"'"`、`'"'` 是引号字符的正确写法。
-//! - 归属（§4.10 B）：单引号恰好一 BMP 字符按 `char` 默认落 Character；其余捕获保持
+//! - 归属（§4.10 B / §4.12 字符合同）：单引号恰好一个码位（u32 码位，非 BMP 合法）
+//!   按 `char` 默认落 Character；其余捕获保持
 //!   未定型文本形态，由上下文定型，无约束默认在 MIR 结算，不提供长度回退。
 
 use rusty_valkyrie::{
@@ -42,7 +43,7 @@ fn first_let_initializer_kind(source: &str) -> HirExprKind {
     initializer.kind.clone()
 }
 
-fn assert_character(source: &str, expected: u16) {
+fn assert_character(source: &str, expected: u32) {
     match first_let_initializer_kind(source) {
         HirExprKind::Literal(HirLiteral::Character(value)) => assert_eq!(value, expected, "源码 {source}"),
         other => panic!("源码 {source} 必须归字符字面量，实际 {other:?}"),
@@ -240,10 +241,10 @@ fn valid_unicode_escape_followed_by_non_ascii_decodes() {
 }
 
 #[test]
-fn character_beyond_bmp_stays_untyped_capture() {
-    // §4.10 B：超 BMP 不在 lowering 提前拒绝，避免把本可成为 utf8 的内容误拒为 char；
-    // 单引号 `🙂` 保持未定型文本捕获，无约束时的 char 默认表示错误在 MIR 结算。
-    assert_text("micro probe() { let emoji = '\u{1F642}' }", "\u{1F642}");
+fn character_beyond_bmp_binds_char() {
+    // §4.12 字符合同：`char` 为 u32 码位，非 BMP 单引号捕获是合法 `char` 字面量，
+    // 按 `char` 默认落 Character，不再保持未定型文本捕获（旧 BMP-only 合同已退役）。
+    assert_character("micro probe() { let emoji = '\u{1F642}' }", 0x1F642);
 }
 
 #[test]

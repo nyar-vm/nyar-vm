@@ -28,17 +28,17 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
             }),
         ),
         HirLiteral::Float64(value) => (MirConstant::Float64(*value), Some(ValkyrieType::Float64)),
-        // 字符字面量：文本期望按单字符 `utf8` 文本落常量（§4.10 B：`let t: utf8 = 'x'`）；
+        // 字符字面量：文本期望按单码位 `utf8` 文本落常量（§4.10 B：`let t: utf8 = 'x'`）；
         // 否则形参为 `char` 或整数类型时写形参类型（overload 已特化），默认 `char`；
-        // 值为已校验的 u16 码元，按整数常量编码。
+        // 值为已校验的 u32 码位（§4.12 字符合同），按整数常量编码。
         HirLiteral::Character(value) => {
             if expected_type.is_some_and(|ty| is_utf8_formal_type(ty, structs)) {
-                let text = char::from_u32(u32::from(*value)).map(|character| character.to_string()).unwrap_or_default();
+                let text = char::from_u32(*value).map(|character| character.to_string()).unwrap_or_default();
                 (MirConstant::Utf8(text), Some(ValkyrieType::Utf8))
             }
             else {
                 (
-                    MirConstant::Int(*value as i64),
+                    MirConstant::Int(i64::from(*value)),
                     Some(match expected_type {
                         Some(
                             ty @ (ValkyrieType::Character
@@ -86,18 +86,18 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
                     crate::compiler::types::hir::HirStringSegment::Interpolation { .. } => "",
                 })
                 .collect::<String>();
-            // 恰好一个 BMP 字符的文本捕获在 `char` 期望下按码元落常量（§4.10 B：`let c: char = "x"`）。
-            if let Some(code) = value.as_single_bmp_char()
+            // 恰好一个码位的文本捕获在 `char` 期望下按码位落常量（§4.10 B：`let c: char = "x"`）。
+            if let Some(code) = value.as_single_char()
                 && expected_type.is_some_and(|ty| is_char_formal_type(ty, structs))
             {
-                return Ok((MirConstant::Int(code as i64), Some(ValkyrieType::Character)));
+                return Ok((MirConstant::Int(i64::from(code)), Some(ValkyrieType::Character)));
             }
             let is_char_expected = expected_type.is_some_and(|ty| is_char_formal_type(ty, structs));
             let is_utf8_expected = expected_type.is_some_and(|ty| is_utf8_formal_type(ty, structs));
             match (value.quote, expected_type, is_char_expected, is_utf8_expected) {
-                // 文本捕获落在 `char` 期望但内容非单字符：无法表示为 char，结构化失败。
+                // 文本捕获落在 `char` 期望但内容非单码位：无法表示为 char，结构化失败。
                 (_, _, true, _) => {
-                    return Err("text capture is not representable as `char`: expected exactly one BMP character".to_string());
+                    return Err("text capture is not representable as `char`: expected exactly one code point".to_string());
                 }
                 // 无约束单引号捕获默认 `char`，但内容非单字符：表示错误，不回退文本（§4.10 B）。
                 (crate::compiler::types::hir::HirQuoteKind::Single, None, _, _) => {

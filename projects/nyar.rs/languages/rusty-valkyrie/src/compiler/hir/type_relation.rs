@@ -904,8 +904,8 @@ pub(crate) fn is_numeric_type_name_of(ty: &ValkyrieType) -> bool {
 
 /// 字符类型判定（字符字面量特化与值位置绑定共用同一份口径）。
 ///
-/// `char` 是 u16 code unit 的编码型内建；声明面已折叠成 `Character`，未绑定声明
-/// 只可能以源码短名出现。
+/// `char` 是 u32 码位的编码型内建（§4.12 字符合同）；声明面已折叠成 `Character`，
+/// 未绑定声明只可能以源码短名出现。
 pub(crate) fn is_character_type_name_of(ty: &ValkyrieType) -> bool {
     match ty {
         ValkyrieType::Character => true,

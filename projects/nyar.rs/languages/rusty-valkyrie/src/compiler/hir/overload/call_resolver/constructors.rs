@@ -451,11 +451,11 @@ fn numeric_literal_binding(
             {
                 Some(*value as i64)
             }
-            // 单字符文本捕获同样能落到 `char` 形参（§4.10 B 的对称引号规则）。它与
+            // 单码位文本捕获同样能落到 `char` 形参（§4.10 B 的对称引号规则）。它与
             // 文本形参都合法时，用绑定代价区分「原样类型」与跨表示改写，让精确形参
             // 胜出，而不是把两个合法候选一律判成歧义。
             HirLiteral::String(literal)
-                if literal.as_single_bmp_char().is_some()
+                if literal.as_single_char().is_some()
                     && (crate::compiler::hir::type_relation::is_character_type_name_of(expected) || type_relations.is_text_formal(expected)) =>
             {
                 None
@@ -489,7 +489,7 @@ fn numeric_literal_value_fits(value: i64, expected: &ValkyrieType) -> bool {
         ValkyrieType::Integer32 { signed: true } => (i32::MIN as i64..=i32::MAX as i64).contains(&value),
         ValkyrieType::Integer32 { signed: false } => (0..=u32::MAX as i64).contains(&value),
         ValkyrieType::Integer64 { .. } | ValkyrieType::Integer128 { .. } | ValkyrieType::Float32 | ValkyrieType::Float64 => true,
-        ValkyrieType::Character => (0..=u16::MAX as i64).contains(&value),
+        ValkyrieType::Character => (0..=u32::from(char::MAX) as i64).contains(&value),
         _ => true,
     }
 }

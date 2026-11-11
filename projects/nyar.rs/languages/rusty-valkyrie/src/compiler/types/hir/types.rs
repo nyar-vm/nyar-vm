@@ -878,16 +878,17 @@ impl HirStringLiteral {
         self.segments.iter().all(|segment| matches!(segment, HirStringSegment::Text(_)))
     }
 
-    /// 恰好一个 BMP 字符的纯文本捕获返回其码元；含插值、空、多字符或超 BMP 返回 `None`。
+    /// 恰好一个码位的纯文本捕获返回其 `u32` 码位（§4.12 字符合同：`char` 为码位）；
+    /// 含插值、空或多码位返回 `None`。
     ///
     /// 用于上下文定型：`char` 期望只接受这一形态，其余按文本处理。
-    pub fn as_single_bmp_char(&self) -> Option<u16> {
+    pub fn as_single_char(&self) -> Option<u32> {
         let [HirStringSegment::Text(text)] = self.segments.as_slice() else {
             return None;
         };
         let mut characters = text.chars();
         match (characters.next(), characters.next()) {
-            (Some(single), None) => u16::try_from(u32::from(single)).ok(),
+            (Some(single), None) => Some(u32::from(single)),
             _ => None,
         }
     }
@@ -901,8 +902,8 @@ pub enum HirLiteral {
     Integer64(i64),
     /// 64 位浮点数。
     Float64(ordered_float::OrderedFloat<f64>),
-    /// 字符字面量（`'x'`）：`char` 是 u16 code unit，值已在 lowering 校验于 BMP 内。
-    Character(u16),
+    /// 字符字面量（`'x'`）：`char` 是 u32 码位（§4.12 字符合同），值已在 lowering 校验为合法标量。
+    Character(u32),
     /// 字节字面量（`b'x'`）：值域 `u8`。
     Byte(u8),
     /// 字符串字面量。
@@ -935,7 +936,7 @@ impl HirLiteral {
                 }
                 Some(rendered)
             }
-            HirLiteral::Character(value) => char::from_u32(u32::from(*value)).map(|character| character.to_string()),
+            HirLiteral::Character(value) => char::from_u32(*value).map(|character| character.to_string()),
             _ => None,
         }
     }

@@ -505,12 +505,12 @@ pub(crate) fn specialize_literal_expr_type(
         // integer, so it must not be silently accepted for `i32`/`usize`. Only `f32`/`f64`
         // accept Float64 literals in source (e.g. `1000000.0`).
         HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Float64(_)) if type_relations.is_float_type(expected) => expected.clone(),
-        // A text capture that decodes to exactly one BMP char binds to a `char` formal
+        // A text capture that decodes to exactly one code point binds to a `char` formal
         // (§4.10 B: `takes_char("x")`). It binds only to `char`, never to a numeric formal:
         // a text capture is not a numeric representation (only a `char` literal carries a
         // code-point value), so `take_i32("x")` must stay unresolved.
         HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::String(literal))
-            if literal.as_single_bmp_char().is_some() && crate::compiler::hir::type_relation::is_character_type_name_of(expected) =>
+            if literal.as_single_char().is_some() && crate::compiler::hir::type_relation::is_character_type_name_of(expected) =>
         {
             expected.clone()
         }
