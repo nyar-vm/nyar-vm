@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 use crate::{EmitterError, Result};
 use nyar::{ExternalImportLink, QualifiedName};
 use nyar_types::{
-    CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalOperation, CanonicalProgram, CanonicalTerminator,
-    CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarFunctionType, NyarType, Operand,
+    CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram,
+    CanonicalTerminator, CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarFunctionType, NyarType,
+    Operand,
     Terminator, Value, ValueOrigin,
     layout_choice::{InvokeLowering, ValueRepresentation},
 };
@@ -343,6 +344,25 @@ impl TargetExecutionPlan {
             // 它们不会成为容器元素或导出位置。
             if let Ok(ty) = lower_type(canonical, *type_id) {
                 aggregate_layout_by_nyar_type.insert(ty, *layout_id);
+            }
+            // 文本载体声明（`std.text::Utf8Text`/`Utf16Text`）在签名里折叠成编码基元，
+            // 槽类型是 `NyarType::Utf8`/`Utf16` 而不是名义拼写；托管布局必须同时以
+            // 折叠后的编码身份为键登记，否则按编码身份取槽的 ABI 派生点查不到布局，
+            // 会把托管槽误解释成 raw 串。键来源是 canonical 已冻结的
+            // `text_encoding_types`（01 §5.4：文本身份只来自唯一已冻结编码身份），
+            // 不按名字拼写回查。
+            if let Some(encoding) = canonical.linked.text_encoding_types.get(type_id) {
+                let folded = match encoding {
+                    CanonicalPrimitiveType::Utf8 => NyarType::Utf8,
+                    CanonicalPrimitiveType::Utf16 => NyarType::Utf16,
+                    other => return Err(format!("文本载体 `TypeId` 登记了非文本编码身份: {other:?}")),
+                };
+                if let Some(existing) = aggregate_layout_by_nyar_type.get(&folded).copied() {
+                    if existing != *layout_id {
+                        return Err(format!("文本编码身份 `{folded:?}` 登记了冲突的托管布局: {existing:?} vs {layout_id:?}"));
+                    }
+                }
+                aggregate_layout_by_nyar_type.insert(folded, *layout_id);
             }
         }
         // unite 没有物理布局身份，只能按已冻结的名义实例类型回查；因此用

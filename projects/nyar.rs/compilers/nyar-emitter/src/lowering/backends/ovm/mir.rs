@@ -1047,7 +1047,13 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 let index_ty = NyarType::Integer32 { signed: true };
                 self.emit_operand_typed(index, Some(&index_ty))?;
                 let value_ty = self.array_element_type(array);
-                self.emit_operand_typed(value, value_ty.as_ref())?;
+                // 数组元素槽是嵌套文本槽：托管实参先抽取成 raw 再入槽。
+                if value_ty.as_ref() == Some(&NyarType::Utf8) {
+                    self.emit_text_boundary_operand(value, &NyarType::Utf8, None, "数组元素槽")?;
+                }
+                else {
+                    self.emit_operand_typed(value, value_ty.as_ref())?;
+                }
                 self.emitter.emit_call_intrinsic(IntrinsicOpcode::ArraySet, 3);
                 self.emitter.emit_plain(OdinHeadCode::Pop);
             }
@@ -1546,7 +1552,15 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         value_ty: Option<&NyarType>,
     ) -> crate::Result<()> {
         self.emit_operand(object)?;
-        self.emit_operand_typed(value, value_ty)?;
+        // 嵌套槽是 raw 宿主串：托管文本实参入槽前必须抽取成 raw，与读取侧
+        // `value_text_carrier_at_depth` 对嵌套读取按 raw 的分类同源；否则字段槽
+        // 里混入托管对象，读取方按 raw 解释就会在运行期炸出类型错。
+        if value_ty == Some(&NyarType::Utf8) {
+            self.emit_text_boundary_operand(value, &NyarType::Utf8, None, "嵌套文本槽")?;
+        }
+        else {
+            self.emit_operand_typed(value, value_ty)?;
+        }
         self.emitter.emit_imm1(OdinHeadCode::FieldSet, field_slot);
         Ok(())
     }
@@ -1712,6 +1726,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 {
                     return Some(TextCarrier::Raw);
                 }
+                // 嵌套槽（聚合字段 / 元组位 / 数组元素 / sum 载荷）在 OVM ABI 里冻结为
+                // raw 宿主串（`ovm_abi::Projection::project_text` 的 `TextSlot::Nested`
+                // 显式落 raw，绝不回查全局布局）：读取必须按 raw 分类，不得因为槽类型
+                // 带聚合布局就把运行期字符串当成托管文本对象透传。
+                MirInstructionKind::FieldGet { .. } | MirInstructionKind::TupleGet { .. } | MirInstructionKind::ArrayGet { .. }
+                | MirInstructionKind::SumPayloadGet { .. } => return Some(TextCarrier::Raw),
                 _ => {}
             }
         }
