@@ -415,7 +415,12 @@ fn desugar_interpolated_capture(capture: HirStringLiteral, span: &SourceSpan) ->
 fn display_call_kind(object: HirExpr, span: &SourceSpan) -> HirExprKind {
     HirExprKind::Call {
         callee: Box::new(HirExpr {
-            kind: HirExprKind::FieldAccess { object: Box::new(object), field: Identifier::new("display"), field_id: None, tuple_index: None },
+            kind: HirExprKind::FieldAccess {
+                object: Box::new(object),
+                field: Identifier::new(crate::compiler::semantic::operator_members::INTERPOLATION_DISPLAY_MEMBER),
+                field_id: None,
+                tuple_index: None,
+            },
             span: span.clone(),
         }),
         args: Vec::new(),

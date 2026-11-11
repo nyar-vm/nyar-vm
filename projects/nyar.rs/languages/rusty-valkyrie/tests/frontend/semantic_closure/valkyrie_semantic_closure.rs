@@ -720,6 +720,67 @@ imply Utf8Text { infix `==`(self, other: utf8): bool { return true } }"#,
     );
 }
 
+/// 插值捕获在调用解析前脱糖为 `<expr>.display()` 与 `infix +` 连接，这些选择名不出现在
+/// 源码里。闭包必须按同一合同登记成员需求，否则依赖组的 formatter/连接声明被裁掉，
+/// 脱糖后的调用点在 HIR 无候选可解析。
+#[test]
+fn interpolated_capture_demands_formatter_and_concat_members() {
+    let std_files = || {
+        vec![
+            file("source/primitive/i64.v", "namespace std.primitive;\n[primitive(\"std::primitive::i64\")] structure i64 { }"),
+            file("source/text/_.v", "namespace std.text;\ntype utf8 = Utf8Text;"),
+            file(
+                "source/text/Utf8Text.v",
+                r#"namespace std.text;
+class Utf8Text { _repr: [u8] }
+imply Utf8Text { infix `+`(self, other: utf8): utf8 { return self } }"#,
+            ),
+            file("source/text/Template.v", "namespace std.text;\ntrait Display { micro display(self): utf8 }"),
+            file(
+                "source/text/format.v",
+                "namespace std.text;\nimply i64: Display { micro display(self): utf8 { return \"0\" } }\n\
+                 imply Utf8Text: Display { micro display(self): utf8 { return self } }",
+            ),
+        ]
+    };
+    let app = file(
+        "solution.v",
+        r#"using std.text;
+namespace app;
+micro bump(counter: i64) -> i64 { return counter }
+[export] micro probe(name: utf8, suffix: utf8) -> utf8 { return "{ name }{ bump(0) }{ suffix }" }"#,
+    );
+    let closure = plan_from_groups(&[("std", false, std_files()), ("app", true, vec![app])]);
+    let demanded = &closure.demanded_declarations;
+    assert!(
+        demanded
+            .iter()
+            .any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "display" && key.owner.as_deref() == Some("Utf8Text")),
+        "文本插值段必须提升 `imply Utf8Text: Display` 成员: {demanded:?}"
+    );
+    assert!(
+        demanded
+            .iter()
+            .any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "display" && key.owner.as_deref() == Some("i64")),
+        "调用结果插值段必须提升 `imply i64: Display` 成员: {demanded:?}"
+    );
+    assert!(
+        demanded
+            .iter()
+            .any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "infix +" && key.owner.as_deref() == Some("Utf8Text")),
+        "多段插值必须提升 `Utf8Text` 的 `infix +` 成员: {demanded:?}"
+    );
+    assert!(
+        demanded.iter().any(|key| key.kind == DeclarationKind::Micro && key.name == "bump"),
+        "插值表达式里的普通调用必须进入需求: {demanded:?}"
+    );
+    assert!(
+        closure.groups[0].body_lowering_source_paths.contains("source/text/format.v"),
+        "formatter 成员所在源文件必须进入 body lowering: {:?}",
+        closure.groups[0].body_lowering_source_paths
+    );
+}
+
 #[test]
 fn two_test_annotations_become_two_test_entries() {
     let groups = [(

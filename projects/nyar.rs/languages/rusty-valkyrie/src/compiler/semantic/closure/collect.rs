@@ -435,6 +435,7 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
             }
         }
         ast::TermExpression::NamePath(path) => collect_name_path(path, references),
+        ast::TermExpression::QuoteLiteral(literal) => collect_quote_literal(literal, references),
         ast::TermExpression::Return(node) => {
             if let Some(expr) = &node.base {
                 collect_term(expr, references);
@@ -471,6 +472,46 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
             collect_block(body, references);
         }
         _ => {}
+    }
+}
+
+/// 普通引号捕获的插值需求。
+///
+/// 插值在 HIR 下降期脱糖为普通调用树——每个插值段是 `<expr>.display()`，非空段之间用
+/// `infix +` 左结合连接（[`crate::compiler::hir::lowering::interpolation`]）。这些选择名
+/// 不出现在源码里，闭包必须按同一合同登记为需求上界，否则脱糖后的调用点在依赖组里
+/// 找不到 formatter 与文本连接声明。`r` 内容不插值、`b` 是字节字面量；模板语法错误
+/// 由 HIR 结构化报错，此处不重复诊断。
+fn collect_quote_literal(literal: &ast::QuoteLiteral, references: &mut References) {
+    if literal.prefix.is_some() || !literal.content.contains('{') {
+        return;
+    }
+    let Ok(segments) = crate::compiler::syntax::oak::parse_quote_template(&literal.content, literal.content_span.start)
+    else {
+        return;
+    };
+    let mut produced_segments = 0usize;
+    let mut has_interpolation = false;
+    for segment in &segments {
+        match segment {
+            ast::StringSegment::Text(text) => {
+                // HIR 脱糖跳过空文本段，需求上界与产物段数保持同一口径。
+                if !text.content.is_empty() {
+                    produced_segments += 1;
+                }
+            }
+            ast::StringSegment::Interpolation(interpolation) => {
+                has_interpolation = true;
+                produced_segments += 1;
+                references.selectors.insert(operator_members::INTERPOLATION_DISPLAY_MEMBER.to_string());
+                // 插值表达式本身是普通表达式：它的调用与选择名同样进入需求。
+                collect_term(&interpolation.expr, references);
+            }
+        }
+    }
+    // 单段直接返回该段；只有多段才产生 `infix +` 连接调用。
+    if has_interpolation && produced_segments > 1 {
+        references.selectors.insert(operator_members::fixed_member_name("infix", "+"));
     }
 }
 

@@ -649,6 +649,88 @@ fn single_code_point_captures_are_ambiguous_over_char_and_text() {
     assert_append_ambiguous("'\\n'");
 }
 
+/// 真实 std 的文本模板形态：源码没有 `type utf8 = Utf8Text` 别名，formatter 与文本连接
+/// 都由 `imply` 提供。调用解析必须按声明身份把内建 `Utf8` 载体与 `Utf8Text` 候选归一，
+/// 不得依赖别名拼写或短名表。
+const BUILTIN_TEXT_INTERPOLATION_FIXTURE: &str = r#"
+[primitive("std::primitive::u8")]
+structure u8 { }
+
+[primitive("std::primitive::i64")]
+structure i64 { }
+
+class Utf8Text { _repr: [u8] }
+
+trait Display {
+    micro display(self): utf8
+}
+
+imply i64: Display {
+    micro display(self): utf8 { return "0" }
+}
+
+imply Utf8Text: Display {
+    micro display(self): utf8 { return self }
+}
+
+imply Utf8Text {
+    infix `+`(self, other: utf8): utf8 { return self }
+}
+"#;
+
+fn compile_builtin_text_interpolation(source: &str) -> HirModule {
+    ValkyrieCompiler::default()
+        .compile_source(&format!("{BUILTIN_TEXT_INTERPOLATION_FIXTURE}\n{source}"))
+        .expect("内建文本载体上的插值必须完成 HIR 解析")
+}
+
+#[test]
+fn interpolation_resolves_formatter_without_source_text_alias() {
+    // `name`/`suffix` 的 `utf8` 是内建载体：`display` 必须命中 `imply Utf8Text: Display`，
+    // 段间连接必须命中 `imply Utf8Text: infix +`，两者都不靠源码别名拼写。
+    let hir = compile_builtin_text_interpolation(r#"micro probe(name: utf8, suffix: utf8): utf8 { return "{ name }{ suffix }" }"#);
+    let expr = function_return_expression(&hir, "probe");
+    let concat = resolved_call(expr);
+    assert_eq!(concat.symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix +"));
+    let operands = call_arguments(expr);
+    assert_eq!(operands.len(), 2, "两个插值段必须由一次 `infix +` 连接");
+    for operand in operands {
+        let display = resolved_call(&operand.value);
+        assert_eq!(display.symbol.parts().last().map(|identifier| identifier.as_str()), Some("display"));
+        assert_eq!(display.return_type, ValkyrieType::Utf8, "formatter 返回类型必须冻结为文本载体");
+        assert!(display.instance.is_some(), "具体 impl 成员必须冻结实例身份");
+    }
+}
+
+#[test]
+fn interpolation_call_result_concatenates_with_text_segment() {
+    // 插值段是调用结果时，`bump()` 先作为普通调用结束求值，再进入 `display()` 与文本连接；
+    // 连接候选必须按已冻结返回类型 `i64`/`utf8` 命中，而不是要求插值段是变量。
+    let hir = compile_builtin_text_interpolation(
+        r#"micro bump(counter: i64): i64 { return counter }
+micro probe(): utf8 { return "x{ bump(1) }" }"#,
+    );
+    let expr = function_return_expression(&hir, "probe");
+    let concat = resolved_call(expr);
+    assert_eq!(concat.symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix +"));
+    let operands = call_arguments(expr);
+    assert_eq!(operands.len(), 2, "文本段与插值段必须由 `infix +` 连接");
+    let display = resolved_call(&operands[1].value);
+    assert_eq!(display.symbol.parts().last().map(|identifier| identifier.as_str()), Some("display"));
+    assert_eq!(display.return_type, ValkyrieType::Utf8);
+    let HirExprKind::Call { callee, .. } = &operands[1].value.kind
+    else {
+        panic!("插值段必须是 display 调用")
+    };
+    let HirExprKind::FieldAccess { object, .. } = &callee.kind
+    else {
+        panic!("display 必须以成员选择为 callee")
+    };
+    let bump = resolved_call(object);
+    assert_eq!(bump.symbol.parts().last().map(|identifier| identifier.as_str()), Some("bump"));
+    assert_eq!(bump.return_type, ValkyrieType::Integer64 { signed: true }, "`bump` 的返回类型必须先冻结");
+}
+
 #[test]
 fn multi_character_text_literal_prefers_text_formal() {
     // 多码位捕获只配得上文本形参：唯一合法候选正常解析，且冻结形参不是 char。

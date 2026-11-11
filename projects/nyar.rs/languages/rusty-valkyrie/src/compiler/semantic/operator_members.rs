@@ -43,6 +43,13 @@ pub(crate) const FOR_IN_UNWRAP_MEMBER: &str = "unwrap";
 pub(crate) const FOR_IN_PROTOCOL_SELECTORS: [&str; 4] =
     [FOR_IN_INTO_ITERATOR_MEMBER, FOR_IN_HAS_NEXT_MEMBER, FOR_IN_NEXT_MEMBER, FOR_IN_UNWRAP_MEMBER];
 
+/// 字符串插值脱糖 `<expr>.display()` 的成员名（§4.10 E）。
+///
+/// 插值段在 HIR 下降期改写为普通成员调用，调用名不出现在源码里；语义闭包必须按同一
+/// 成员名把 formatter witness 纳入需求，否则脱糖后的调用点没有声明可解析。闭包规划与
+/// HIR 脱糖共用本常量，不各写一份拼写。
+pub(crate) const INTERPOLATION_DISPLAY_MEMBER: &str = "display";
+
 /// for-in 迭代协议 trait 的规范命名空间（语言规范 `std.iterator`）。
 ///
 /// 协议义务的身份是 trait 声明本身，不是接收者上的同名成员：for-in 必须以
