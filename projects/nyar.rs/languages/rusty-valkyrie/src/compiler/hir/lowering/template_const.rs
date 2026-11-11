@@ -1,6 +1,9 @@
 //! TGrammar 编译期常量求值（`arch` 谓词、字面量、整数范围）。
 
-use super::errors::{TemplateConstruct, TemplateFailure};
+use super::{
+    errors::{TemplateConstruct, TemplateFailure},
+    quote_literal::{decode_quoted_token, encode_text_capture},
+};
 use crate::compiler::hir::HirError;
 use nyar_types::DiagnosticSpan;
 use oak_core::{Token, TokenType};
@@ -60,9 +63,11 @@ fn token_span(token: &Token<ValkyrieTokenType>) -> DiagnosticSpan {
     DiagnosticSpan { start: token.span.start, end: token.span.end }
 }
 
-pub(super) fn const_value_to_source(value: &ConstantValue) -> String {
-    match value {
-        ConstantValue::Utf8(text) => format!("\"{}\"", escape_string(text)),
+pub(super) fn const_value_to_source(value: &ConstantValue, span: &DiagnosticSpan) -> Result<String, HirError> {
+    Ok(match value {
+        ConstantValue::Utf8(text) => encode_text_capture(text).map_err(|reason| {
+            template_failure(TemplateConstruct::MetaExpression, TemplateFailure::TextLiteralNotEncodable { reason }, span.clone())
+        })?,
         ConstantValue::Integer64(value) => value.to_string(),
         ConstantValue::Boolean(value) => {
             if *value {
@@ -72,7 +77,7 @@ pub(super) fn const_value_to_source(value: &ConstantValue) -> String {
                 "false".to_string()
             }
         }
-    }
+    })
 }
 
 /// `loop _ in start..end` 的半开整数区间 `[start, end)`。
@@ -109,20 +114,6 @@ fn token_text(source: &str, token: &Token<ValkyrieTokenType>) -> String {
     source[token.span.clone()].trim().to_string()
 }
 
-fn decode_quoted(text: &str) -> String {
-    let text = text.trim();
-    if (text.starts_with('"') && text.ends_with('"')) || (text.starts_with('\'') && text.ends_with('\'')) {
-        text[1..text.len().saturating_sub(1)].to_string()
-    }
-    else {
-        text.to_string()
-    }
-}
-
-fn escape_string(text: &str) -> String {
-    text.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
 fn is_discard_binding(source: &str, token: &Token<ValkyrieTokenType>) -> bool {
     token.kind == ValkyrieTokenType::Underscore || (token.kind == ValkyrieTokenType::Identifier && token_text(source, token) == "_")
 }
@@ -143,7 +134,9 @@ fn parse_const_range_tokens(
         }
         // 编译期 `loop` 消费半开 `Range`；`..=` 把闭端点换算成开端点。
         let end = if tokens[1].kind == ValkyrieTokenType::DotDotEq {
-            end.checked_add(1).ok_or_else(|| template_failure(TemplateConstruct::Loop, TemplateFailure::LoopRangeInvalid { start, end }, header_span.clone()))?
+            end.checked_add(1).ok_or_else(|| {
+                template_failure(TemplateConstruct::Loop, TemplateFailure::LoopRangeInvalid { start, end }, header_span.clone())
+            })?
         }
         else {
             end
@@ -262,7 +255,9 @@ impl ConstExprParser<'_> {
         self.index += 1;
         match token.kind {
             ValkyrieTokenType::BoolLiteral => Ok(ConstantValue::Boolean(token_text(self.source, &token) == "true")),
-            ValkyrieTokenType::StringLiteral => Ok(ConstantValue::Utf8(decode_quoted(&token_text(self.source, &token)))),
+            ValkyrieTokenType::StringLiteral => {
+                Ok(ConstantValue::Utf8(decode_quoted_token(&token_text(self.source, &token), token.span.start)?))
+            }
             ValkyrieTokenType::IntegerLiteral => token_text(self.source, &token)
                 .parse::<i64>()
                 .map(ConstantValue::Integer64)

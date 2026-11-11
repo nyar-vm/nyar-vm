@@ -328,7 +328,7 @@ fn expand_fragment(
     arch: &str,
     span: DiagnosticSpan,
 ) -> Result<Vec<StatementNode>, HirError> {
-    let snippet = const_value_to_source(&eval_const_expr(source, tokens, arch)?);
+    let snippet = const_value_to_source(&eval_const_expr(source, tokens, arch)?, &span)?;
     if snippet.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -366,7 +366,7 @@ fn select_arch_match_body(match_node: &TemplateMatch, source: &str, arch: &str, 
 
     for arm in &match_node.arms {
         if let Some(pattern) = &arm.pattern {
-            if pattern_token_text(source, pattern) == arch {
+            if pattern_token_text(source, pattern)? == arch {
                 return Ok(arm.body.clone());
             }
         }
@@ -378,38 +378,26 @@ fn select_arch_match_body(match_node: &TemplateMatch, source: &str, arch: &str, 
         }
     }
 
-    Err(HirError::template_expansion_failed(
-        TemplateConstruct::Match,
-        TemplateFailure::NoMatchingArchArm { arch: arch.to_string() },
-        span,
-    ))
+    Err(HirError::template_expansion_failed(TemplateConstruct::Match, TemplateFailure::NoMatchingArchArm { arch: arch.to_string() }, span))
 }
 
 fn is_arch_scrutinee(source: &str, header: &[oak_core::Token<ValkyrieTokenType>]) -> bool {
-    pattern_token_text(source, header) == "arch"
+    pattern_token_text(source, header).is_ok_and(|text| text == "arch")
 }
 
-fn pattern_token_text(source: &str, tokens: &[oak_core::Token<ValkyrieTokenType>]) -> String {
+/// 架构匹配的 pattern 文本：字符串 pattern 必须走统一捕获解码，不再只剥首尾引号。
+fn pattern_token_text(source: &str, tokens: &[oak_core::Token<ValkyrieTokenType>]) -> Result<String, HirError> {
     let meaningful: Vec<_> = tokens.iter().filter(|token| !token.kind.is_ignored()).collect();
 
-    match meaningful.as_slice() {
-        [token] if token.kind == ValkyrieTokenType::StringLiteral => decode_quoted(source[token.span.clone()].trim()),
+    Ok(match meaningful.as_slice() {
+        [token] if token.kind == ValkyrieTokenType::StringLiteral => {
+            crate::compiler::hir::lowering::quote_literal::decode_quoted_token(&source[token.span.clone()].trim(), token.span.start)?
+        }
 
         [token] if token.kind == ValkyrieTokenType::Identifier => source[token.span.clone()].trim().to_string(),
 
         _ => {
             tokens.iter().filter(|token| !token.kind.is_ignored()).map(|token| source[token.span.clone()].trim()).collect::<Vec<_>>().join(" ")
         }
-    }
-}
-
-fn decode_quoted(text: &str) -> String {
-    let text = text.trim();
-
-    if (text.starts_with('"') && text.ends_with('"')) || (text.starts_with('\'') && text.ends_with('\'')) {
-        text[1..text.len().saturating_sub(1)].to_string()
-    }
-    else {
-        text.to_string()
-    }
+    })
 }

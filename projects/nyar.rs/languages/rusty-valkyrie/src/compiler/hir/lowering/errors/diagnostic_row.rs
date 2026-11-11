@@ -395,8 +395,7 @@ impl From<HirError> for DiagnosticRow {
                     QuoteLiteralFailure::ByteLiteralNotAscii { character } => {
                         row = row.with_arg("character", DiagnosticArg::String(character.clone()));
                     }
-                    QuoteLiteralFailure::InvalidEscapeSequence { escape }
-                    | QuoteLiteralFailure::InvalidUnicodeEscape { escape } => {
+                    QuoteLiteralFailure::InvalidEscapeSequence { escape } | QuoteLiteralFailure::InvalidUnicodeEscape { escape } => {
                         row = row.with_arg("escape", DiagnosticArg::String(escape.clone()));
                     }
                     QuoteLiteralFailure::EmptyByteLiteral
@@ -447,6 +446,7 @@ pub(super) fn template_failure_name(failure: &TemplateFailure) -> &'static str {
         TemplateFailure::UnclosedParenthesis => "unclosed_parenthesis",
         TemplateFailure::UnevaluableToken => "unevaluable_token",
         TemplateFailure::IntegerLiteralUnparsable => "integer_literal_unparsable",
+        TemplateFailure::TextLiteralNotEncodable { .. } => "text_literal_not_encodable",
         TemplateFailure::IncompatibleComparisonOperands => "incompatible_comparison_operands",
         TemplateFailure::LoopHeaderTooShort => "loop_header_too_short",
         TemplateFailure::LoopBindingNotDiscard => "loop_binding_not_discard",
@@ -473,6 +473,9 @@ pub(super) fn template_failure_message(failure: &TemplateFailure) -> String {
         TemplateFailure::UnclosedParenthesis => "meta expression parenthesis is not closed",
         TemplateFailure::UnevaluableToken => "meta expression contains an unevaluable token",
         TemplateFailure::IntegerLiteralUnparsable => "integer literal cannot be parsed as `i64`",
+        TemplateFailure::TextLiteralNotEncodable { reason } => {
+            return format!("text literal cannot be encoded as a legal quoted capture: {reason}");
+        }
         TemplateFailure::IncompatibleComparisonOperands => "comparison operands have incompatible types",
         TemplateFailure::LoopHeaderTooShort => "`loop` header must be `_ in start..end`",
         TemplateFailure::LoopBindingNotDiscard => "`loop` only supports the discard binding `_`",

@@ -101,7 +101,12 @@ pub(crate) fn capture_binds(capture: &HirStringLiteral, target: CaptureTargetKin
     match target {
         CaptureTargetKind::Char => capture.as_single_char().map(SettledCapture::Char),
         CaptureTargetKind::Numeric => {
-            if capture.quote == HirQuoteKind::Single { capture.as_single_char().map(SettledCapture::Char) } else { None }
+            if capture.quote == HirQuoteKind::Single {
+                capture.as_single_char().map(SettledCapture::Char)
+            }
+            else {
+                None
+            }
         }
         CaptureTargetKind::Text(encoding) => Some(SettledCapture::Text(encoding)),
         CaptureTargetKind::Other => None,
@@ -143,7 +148,8 @@ pub(crate) fn decode_quote_capture(literal: &QuoteLiteral, allow_interpolation: 
         Some("r") => Ok(DecodedQuoteCapture::PlainText(literal.content.clone())),
         Some("b") => decode_byte_literal(literal).map(DecodedQuoteCapture::Byte),
         Some(name) => {
-            let span = literal.prefix.as_ref().map_or_else(|| literal.span.start..literal.span.end, |prefix| prefix.span.start..prefix.span.end);
+            let span =
+                literal.prefix.as_ref().map_or_else(|| literal.span.start..literal.span.end, |prefix| prefix.span.start..prefix.span.end);
             Err(quote_literal_error(QuoteLiteralFailure::UnknownPrefix { prefix: name.to_string() }, span))
         }
         None => decode_cooked_capture(literal, allow_interpolation),
@@ -165,8 +171,12 @@ pub(crate) fn split_pattern_capture(raw: &str, literal_start: usize) -> Option<Q
         return None;
     }
     let content = &body[..body.len() - quote_count];
-    let prefix =
-        if prefix_text.is_empty() { None } else { Some(OakIdentifier { name: prefix_text.to_string(), span: oak_core::Range { start: literal_start, end: literal_start + quote_index } }) };
+    let prefix = if prefix_text.is_empty() {
+        None
+    }
+    else {
+        Some(OakIdentifier { name: prefix_text.to_string(), span: oak_core::Range { start: literal_start, end: literal_start + quote_index } })
+    };
     let content_start = literal_start + quote_index + quote_count;
     Some(QuoteLiteral {
         prefix,
@@ -184,9 +194,128 @@ fn is_valid_prefix_identifier(text: &str) -> bool {
         && characters.all(|character| character == '_' || character.is_alphanumeric())
 }
 
+/// 从任意引号捕获的原始 token 文本（可带 `r`/`b` 前缀，单双引号与多引号均可）
+/// 拆出 `QuoteLiteral`；不是完整捕获形态时返回 `None`。
+fn split_quote_capture(raw: &str, literal_start: usize) -> Option<QuoteLiteral> {
+    let text = raw.trim();
+    let trim_offset = raw.len() - raw.trim_start().len();
+    let quote_index = text.find(['\'', '"'])?;
+    let prefix_text = &text[..quote_index];
+    if !prefix_text.is_empty() && !is_valid_prefix_identifier(prefix_text) {
+        return None;
+    }
+    let after_prefix = &text[quote_index..];
+    let quote = match after_prefix.chars().next()? {
+        '\'' => QuoteKind::Single,
+        '"' => QuoteKind::Double,
+        _ => return None,
+    };
+    let quote_char = after_prefix.chars().next()?;
+    let quote_count = after_prefix.chars().take_while(|character| *character == quote_char).count();
+    let body = &after_prefix[quote_count..];
+    let closing: String = quote_char.to_string().repeat(quote_count);
+    if body.len() < quote_count || !body.ends_with(&closing) {
+        return None;
+    }
+    let content = &body[..body.len() - quote_count];
+    let prefix = if prefix_text.is_empty() {
+        None
+    }
+    else {
+        Some(OakIdentifier {
+            name: prefix_text.to_string(),
+            span: oak_core::Range { start: literal_start + trim_offset, end: literal_start + trim_offset + quote_index },
+        })
+    };
+    let content_start = literal_start + trim_offset + quote_index + quote_count;
+    Some(QuoteLiteral {
+        prefix,
+        quote,
+        quote_count: quote_count as u8,
+        content: content.to_string(),
+        content_span: oak_core::Range { start: content_start, end: content_start + content.len() },
+        span: oak_core::Range { start: literal_start + trim_offset, end: literal_start + trim_offset + text.len() },
+    })
+}
+
+/// 统一解码入口：把字符串 token 的原始文本（含定界与前缀）解成文本值。
+///
+/// 模板常量求值、架构匹配等非表达式入口必须消费本函数，不得只剥首尾引号；
+/// 转义集、`\{`/`\}` 与未知/残缺转义诊断与表达式捕获完全同源。
+pub(crate) fn decode_quoted_token(raw: &str, base: usize) -> Result<String, HirError> {
+    let span = base..base + raw.len();
+    let Some(literal) = split_quote_capture(raw, base)
+    else {
+        return Err(quote_literal_error(QuoteLiteralFailure::TemplateSyntax { message: "not a complete quoted capture".to_string() }, span));
+    };
+    match decode_quote_capture(&literal, false)? {
+        DecodedQuoteCapture::PlainText(text) => Ok(text),
+        DecodedQuoteCapture::Byte(_) => {
+            Err(quote_literal_error(QuoteLiteralFailure::TemplateSyntax { message: "byte literal is not text".to_string() }, span))
+        }
+        DecodedQuoteCapture::Character(_) => {
+            Err(quote_literal_error(QuoteLiteralFailure::TemplateSyntax { message: "character capture is not text".to_string() }, span))
+        }
+        DecodedQuoteCapture::Template(_) => {
+            Err(quote_literal_error(QuoteLiteralFailure::TemplateSyntax { message: "interpolation is not a constant text".to_string() }, span))
+        }
+    }
+}
+
+/// 把文本编码成可被本模块解码回原文的引号捕获（合法定界 + 标准转义）。
+///
+/// 定界符只选内容首尾都不是的引号种类，内部同种引号用更长的引号 run 容纳；
+/// 首尾同时被两种引号占用时无法用单个捕获表达，返回失败原因，由调用方带源区间报错。
+pub(crate) fn encode_text_capture(text: &str) -> Result<String, String> {
+    let delimiter = if !text.starts_with('"') && !text.ends_with('"') {
+        '"'
+    }
+    else if !text.starts_with('\'') && !text.ends_with('\'') {
+        '\''
+    }
+    else {
+        return Err("text starts and ends with quote characters that no single capture can delimit".to_string());
+    };
+    let longest_run = text
+        .chars()
+        .fold((0usize, 0usize), |(longest, current), character| {
+            if character == delimiter {
+                let next = current + 1;
+                (longest.max(next), next)
+            }
+            else {
+                (longest, 0)
+            }
+        })
+        .0;
+    let quote_count = if longest_run == 0 { 1 } else { (longest_run + 1).max(3) };
+    let mut body = String::with_capacity(text.len());
+    for character in text.chars() {
+        match character {
+            '\\' => body.push_str("\\\\"),
+            '{' => body.push_str("\\{"),
+            '}' => body.push_str("\\}"),
+            '\n' => body.push_str("\\n"),
+            '\r' => body.push_str("\\r"),
+            '\t' => body.push_str("\\t"),
+            '\u{8}' => body.push_str("\\b"),
+            '\u{C}' => body.push_str("\\f"),
+            other if other.is_control() => body.push_str(&format!("\\u{:04X}", other as u32)),
+            other => body.push(other),
+        }
+    }
+    let delimiter = delimiter.to_string().repeat(quote_count);
+    Ok(format!("{delimiter}{body}{delimiter}"))
+}
+
 /// 把模式位的解码结果落到 HIR 字面量；插值段在常量位已被拒绝。捕获保持未定型，
 /// 字符/文本归属由 `quote_settle` 按被检类型或引号默认结算。
-pub(crate) fn pattern_literal_value(decoded: DecodedQuoteCapture, prefix: Option<&str>, quote: QuoteKind, quote_count: u8) -> Result<HirLiteral, HirError> {
+pub(crate) fn pattern_literal_value(
+    decoded: DecodedQuoteCapture,
+    prefix: Option<&str>,
+    quote: QuoteKind,
+    quote_count: u8,
+) -> Result<HirLiteral, HirError> {
     match decoded {
         DecodedQuoteCapture::Byte(value) => Ok(HirLiteral::Byte(value)),
         // 退役变体无构造点；透传仅保持穷尽匹配，待边界外 legion arm 清退后一并下线。
@@ -206,7 +335,10 @@ pub(crate) fn pattern_literal_value(decoded: DecodedQuoteCapture, prefix: Option
                     _ => None,
                 })
                 .unwrap_or(0..0);
-            Err(quote_literal_error(QuoteLiteralFailure::TemplateSyntax { message: "interpolation is not a constant pattern".to_string() }, span))
+            Err(quote_literal_error(
+                QuoteLiteralFailure::TemplateSyntax { message: "interpolation is not a constant pattern".to_string() },
+                span,
+            ))
         }
     }
 }
@@ -284,7 +416,10 @@ fn decode_text_segment(text: &str, base: usize) -> Result<String, HirError> {
             }
             _ => {
                 let escape = text[index..index + 1 + escaped.len_utf8()].to_string();
-                return Err(quote_literal_error(QuoteLiteralFailure::InvalidEscapeSequence { escape }, base + index..base + index + 1 + escaped.len_utf8()));
+                return Err(quote_literal_error(
+                    QuoteLiteralFailure::InvalidEscapeSequence { escape },
+                    base + index..base + index + 1 + escaped.len_utf8(),
+                ));
             }
         }
     }

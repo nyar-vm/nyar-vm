@@ -62,3 +62,35 @@ fn eval_arch_equality_predicate() {
     assert!(eval_const_condition(source, &tokens, "wasm32").expect("eval"));
     assert!(!eval_const_condition(source, &tokens, "native").expect("eval"));
 }
+
+/// 模板常量位置必须与表达式捕获消费同一套转义解码，不能只剥首尾引号。
+fn eval_arch_predicate_with_literal(literal: &str, arch: &str) -> Result<bool, rusty_valkyrie::HirError> {
+    let source = format!("arch == {literal}");
+    let literal_start = source.find(literal).expect("literal in source");
+    let tokens = tokens_from(
+        &source,
+        &[
+            (ValkyrieTokenType::Identifier, 0..4),
+            (ValkyrieTokenType::EqEq, 5..7),
+            (ValkyrieTokenType::StringLiteral, literal_start..literal_start + literal.len()),
+        ],
+    );
+    eval_const_condition(&source, &tokens, arch)
+}
+
+#[test]
+fn eval_arch_equality_decodes_unicode_escapes() {
+    // 只剥引号的旧实现会把 `\u0033\u0032` 当字面文本，永远匹配不上 `wasm32`。
+    assert!(eval_arch_predicate_with_literal(r#""wasm\u0033\u0032""#, "wasm32").expect("eval"));
+    assert!(!eval_arch_predicate_with_literal(r#""wasm\u0033\u0032""#, "wasm").expect("eval"));
+}
+
+#[test]
+fn eval_arch_equality_decodes_brace_escapes() {
+    assert!(eval_arch_predicate_with_literal(r#""a\{b\}""#, "a{b}").expect("eval"));
+}
+
+#[test]
+fn eval_arch_equality_rejects_invalid_escape() {
+    assert!(eval_arch_predicate_with_literal(r#""a\q""#, "a\\q").is_err(), "未知转义必须结构化失败，不得原样比较");
+}

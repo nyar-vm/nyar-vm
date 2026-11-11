@@ -983,6 +983,11 @@ pub enum TemplateFailure {
     UnevaluableToken,
     /// 整数字面量无法解析成 `i64`。
     IntegerLiteralUnparsable,
+    /// 常量文本无法编码成合法引号捕获（首尾同时被两种引号占用等）。
+    TextLiteralNotEncodable {
+        /// 无法编码的具体原因。
+        reason: String,
+    },
     /// 比较两侧类型不兼容。
     IncompatibleComparisonOperands,
     /// `loop` 头部短于 `_ in start..end`。
