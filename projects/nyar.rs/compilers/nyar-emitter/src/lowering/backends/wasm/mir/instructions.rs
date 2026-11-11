@@ -1,5 +1,6 @@
 //! Split from `lowerer.rs`.
 use super::*;
+use nyar_types::AggregateLayout;
 
 impl<'a> WasmMirLowerer<'a> {
     pub(super) fn emit_instruction(&mut self, instruction: &MirInstruction) -> crate::Result<()> {
@@ -369,20 +370,9 @@ impl<'a> WasmMirLowerer<'a> {
                             layout.name, self.mir_fn.symbol
                         ));
                     };
-                    // 先构造 dest 对象(字段全默认),再逐字段从 source 拷入。
-                    self.emit_struct_new_default(type_index);
-                    self.emit_local_set(dest_local);
-                    for field_index in 0..layout.fields.len() {
-                        // struct.set 期望 [ref, value]（value 在栈顶）：先压 dest_ref，
-                        // 再压 source_ref 并 `struct.get` 读出字段值，最后 `struct.set`
-                        // 写入 dest。压栈顺序颠倒会把 source 清零并把默认值留在 dest。
-                        self.emit_local_get(dest_local);
-                        self.emit_ref_cast_struct(type_index);
-                        self.emit_local_get(source_local);
-                        self.emit_ref_cast_struct(type_index);
-                        self.emit_struct_get(type_index, field_index as u32);
-                        self.emit_struct_set(type_index, field_index as u32);
-                    }
+                    // 先构造 dest 对象(字段全默认),再逐字段从 source 拷入；
+                    // 值语义的嵌套聚合字段继续递归成新对象，引用语义字段保持共享。
+                    self.emit_gc_struct_value_copy(&layout, type_index, source_local, dest_local, 0)?;
                 }
                 else if layout.fields.is_empty() {
                     // 零字段值布局（如 `[primitive(...)] structure usize { }`）在运行期
@@ -705,6 +695,87 @@ impl<'a> WasmMirLowerer<'a> {
             }
         }
         Ok(())
+    }
+
+    /// `structure` 值复制在 gc struct 承载下必须逐层产生新对象。
+    ///
+    /// 只按冻结事实判定：字段类型能按身份解析到 layout、该 layout 的声明存储类为
+    /// 值语义、非空字段且已登记 gc struct；满足时递归复制，否则按引用语义共享
+    /// （数组、闭包、联合、`class` 等）。禁止按类型名/字段名特判。
+    fn emit_gc_struct_value_copy(
+        &mut self,
+        layout: &AggregateLayout,
+        type_index: u32,
+        source_local: u32,
+        dest_local: u32,
+        depth: u32,
+    ) -> crate::Result<()> {
+        // 值语义聚合不允许无界递归；超限属布局事实自相矛盾，失败闭合而非挂死编译器。
+        const MAX_VALUE_AGGREGATE_DEPTH: u32 = 32;
+        if depth > MAX_VALUE_AGGREGATE_DEPTH {
+            return Err(format!(
+                "WASM AggregateCopy 值聚合嵌套超过 {MAX_VALUE_AGGREGATE_DEPTH} 层（layout `{}` in `{}`）",
+                layout.name, self.mir_fn.symbol
+            ));
+        }
+        self.emit_struct_new_default(type_index);
+        self.emit_local_set(dest_local);
+        for (field_index, field) in layout.fields.iter().enumerate() {
+            let field_index = u32::try_from(field_index).expect("WASM 聚合字段序号溢出");
+            let Some((nested_layout_id, nested_type_index)) = self.nested_value_aggregate_layout(&field.ty)
+            else {
+                // struct.set 期望 [ref, value]（value 在栈顶）：先压 dest_ref，
+                // 再压 source_ref 并 `struct.get` 读出字段值，最后 `struct.set`
+                // 写入 dest。压栈顺序颠倒会把 source 清零并把默认值留在 dest。
+                self.emit_local_get(dest_local);
+                self.emit_ref_cast_struct(type_index);
+                self.emit_local_get(source_local);
+                self.emit_ref_cast_struct(type_index);
+                self.emit_struct_get(type_index, field_index);
+                self.emit_struct_set(type_index, field_index);
+                continue;
+            };
+            // 嵌套值聚合：先取出源字段对象，再递归复制成独立对象。字段为 null
+            //（默认初始化后未写入）时保持 null，避免对 null 做 `ref.cast`。
+            let nested_source = self.alloc_anyref_local();
+            self.emit_local_get(source_local);
+            self.emit_ref_cast_struct(type_index);
+            self.emit_struct_get(type_index, field_index);
+            self.emit_local_set(nested_source);
+            let nested_dest = self.alloc_anyref_local();
+            self.emit_local_get(nested_source);
+            WasmOpcode::RefIsNull.encode(&mut self.code);
+            WasmOpcode::If.encode(&mut self.code);
+            self.code.push(BLOCKTYPE_EMPTY);
+            self.emit_ref_null_anyref();
+            self.emit_local_set(nested_dest);
+            WasmOpcode::Else.encode(&mut self.code);
+            let nested_layout = self
+                .ctx
+                .layout_by_id(nested_layout_id)
+                .cloned()
+                .ok_or_else(|| format!("WASM AggregateCopy 嵌套值聚合 layout `{nested_layout_id:?}` 未登记 in `{}`", self.mir_fn.symbol))?;
+            self.emit_gc_struct_value_copy(&nested_layout, nested_type_index, nested_source, nested_dest, depth + 1)?;
+            WasmOpcode::End.encode(&mut self.code);
+            self.emit_local_get(dest_local);
+            self.emit_ref_cast_struct(type_index);
+            self.emit_local_get(nested_dest);
+            self.emit_struct_set(type_index, field_index);
+        }
+        Ok(())
+    }
+
+    /// 嵌套字段是否是需要递归复制的值语义聚合（返回其 layout 身份与 gc struct 类型索引）。
+    fn nested_value_aggregate_layout(&self, ty: &NyarType) -> Option<(LayoutId, u32)> {
+        // 字段槽必须是引用载体，否则没有可递归的堆对象。
+        if wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref).ok() != Some(WASM_GC_ANYREF) {
+            return None;
+        }
+        let layout = self.ctx.layout_for_nyar_type(ty)?;
+        if layout.storage != StorageKind::Value || layout.fields.is_empty() {
+            return None;
+        }
+        self.gc_struct_type_indices.get(&layout.id).map(|type_index| (layout.id, *type_index))
     }
 
     /// 把 payload 操作数放进 sum 的 `anyref` 载荷槽。

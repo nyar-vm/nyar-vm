@@ -570,3 +570,125 @@ fn wasm_registered_value_aggregate_copy_produces_independent_object() {
     let module = lower_point_plan(function).expect("gc struct Value 布局 AggregateCopy lowering 必须成功");
     assert_eq!(execute_main_i32(&module), 1, "值复制后改写副本字段不得回写源对象（返回 9 即别名共享）");
 }
+
+// ── 值语义聚合的嵌套布局字段必须递归复制 ─────────────────────────────────────
+
+const INNER_VALUE_LAYOUT_ID: LayoutId = 13;
+const OUTER_VALUE_LAYOUT_ID: LayoutId = 14;
+
+/// `structure Inner { x: i32, y: i32 }`：纯值布局。
+fn inner_value_layout() -> AggregateLayout {
+    AggregateLayout {
+        id: INNER_VALUE_LAYOUT_ID,
+        name: "Inner".to_string(),
+        namespace: std::string::String::new(),
+        key: None,
+        storage: StorageKind::Value,
+        size: 8,
+        align: 4,
+        fields: vec![
+            FieldLayout { name: "x".to_string(), ty: I32, offset: 0, size: 4, align: 4 },
+            FieldLayout { name: "y".to_string(), ty: I32, offset: 4, size: 4, align: 4 },
+        ],
+    }
+}
+
+/// `structure Outer { nested: Inner }`：字段本身是值语义聚合（anyref 槽）。
+fn outer_value_layout() -> AggregateLayout {
+    AggregateLayout {
+        id: OUTER_VALUE_LAYOUT_ID,
+        name: "Outer".to_string(),
+        namespace: std::string::String::new(),
+        key: None,
+        storage: StorageKind::Value,
+        size: 8,
+        align: 4,
+        fields: vec![FieldLayout {
+            name: "nested".to_string(),
+            ty: named_layout_type(INNER_VALUE_LAYOUT_ID, "Inner"),
+            offset: 0,
+            size: 8,
+            align: 4,
+        }],
+    }
+}
+
+/// 嵌套 `structure` 字段（第二个泛型适配器层）在 `AggregateCopy` 后必须得到独立
+/// 的内层对象：改写副本的内层字段不得回写源对象。旧实现只复制外层壳，内层字段
+/// 仍别名共享，运行期返回 9。
+#[test]
+fn wasm_nested_value_aggregate_copy_deep_copies_inner_structure() {
+    let inner_nominal = NominalInstanceId::from_index(0).expect("nominal id");
+    let outer_nominal = NominalInstanceId::from_index(1).expect("nominal id");
+    let nested_field = FieldId::from_index(0).expect("nested field id");
+    let inner_x = FieldId::from_index(1).expect("x field id");
+    let inner_y = FieldId::from_index(2).expect("y field id");
+    let inner_type = named_layout_type(INNER_VALUE_LAYOUT_ID, "Inner");
+    let outer_type = named_layout_type(OUTER_VALUE_LAYOUT_ID, "Outer");
+    let mut function = base_function("main", I32, Vec::new());
+    function.value_types.insert(ValueRef(0), inner_type.clone());
+    function.value_types.insert(ValueRef(1), outer_type.clone());
+    function.value_types.insert(ValueRef(2), outer_type);
+    function.value_types.insert(ValueRef(3), inner_type.clone());
+    function.value_types.insert(ValueRef(4), inner_type);
+    function.value_types.insert(ValueRef(5), I32);
+    function.blocks.push(Block {
+        id: BlockRef(0),
+        label: "entry".to_string(),
+        parameters: Vec::new(),
+        instructions: vec![
+            Instruction {
+                results: vec![ValueRef(0)],
+                ..Instruction::from_kind(InstructionKind::StructNew {
+                    nominal: inner_nominal,
+                    fields: vec![(inner_x, Operand::Constant(Constant::Int(1))), (inner_y, Operand::Constant(Constant::Int(2)))],
+                })
+            },
+            Instruction {
+                results: vec![ValueRef(1)],
+                ..Instruction::from_kind(InstructionKind::StructNew {
+                    nominal: outer_nominal,
+                    fields: vec![(nested_field, Operand::Value(ValueRef(0)))],
+                })
+            },
+            Instruction {
+                results: vec![ValueRef(2)],
+                ..Instruction::from_kind(InstructionKind::AggregateCopy {
+                    layout_id: OUTER_VALUE_LAYOUT_ID,
+                    source: Operand::Value(ValueRef(1)),
+                    dest: Operand::Value(ValueRef(2)),
+                })
+            },
+            Instruction {
+                results: vec![ValueRef(3)],
+                ..Instruction::from_kind(InstructionKind::FieldGet { object: Operand::Value(ValueRef(2)), field: nested_field })
+            },
+            Instruction::from_kind(InstructionKind::FieldSet {
+                object: Operand::Value(ValueRef(3)),
+                field: inner_x,
+                value: Operand::Constant(Constant::Int(9)),
+            }),
+            Instruction {
+                results: vec![ValueRef(4)],
+                ..Instruction::from_kind(InstructionKind::FieldGet { object: Operand::Value(ValueRef(1)), field: nested_field })
+            },
+            Instruction {
+                results: vec![ValueRef(5)],
+                ..Instruction::from_kind(InstructionKind::FieldGet { object: Operand::Value(ValueRef(4)), field: inner_x })
+            },
+        ],
+        terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(5))) },
+    });
+    let main_name = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
+    plan.testing_module_name("nested_value_aggregate_copy").testing_entry_operation(main_name);
+    plan.testing_aggregate_layouts(AggregateLayoutPlan { layouts: vec![inner_value_layout(), outer_value_layout()], ..Default::default() });
+    plan.testing_register_nominal_layout(inner_nominal, inner_value_layout());
+    plan.testing_register_nominal_layout(outer_nominal, outer_value_layout());
+    plan.testing_register_field(nested_field, OUTER_VALUE_LAYOUT_ID, 0);
+    plan.testing_register_field(inner_x, INNER_VALUE_LAYOUT_ID, 0);
+    plan.testing_register_field(inner_y, INNER_VALUE_LAYOUT_ID, 1);
+    let module = lower_fragment_to_wasm_mir_module(&FragmentSubmission::from_backend_plan(plan), "main")
+        .expect("嵌套值聚合 AggregateCopy lowering 必须成功");
+    assert_eq!(execute_main_i32(&module), 1, "嵌套值聚合复制后改写副本内层字段不得回写源对象（返回 9 即内层别名共享）");
+}
