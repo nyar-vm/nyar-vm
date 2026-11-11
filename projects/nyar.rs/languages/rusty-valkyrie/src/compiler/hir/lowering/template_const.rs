@@ -173,7 +173,8 @@ fn parse_const_int_token(source: &str, token: &Token<ValkyrieTokenType>) -> Resu
         }
         _ => return Err(endpoint_failure()),
     }
-    token_text(source, token).parse::<i64>().map_err(|_| endpoint_failure())
+    let text = token_text(source, token);
+    super::expr_lowering::split_numeric_type_suffix(&text).0.parse::<i64>().map_err(|_| endpoint_failure())
 }
 
 struct ConstExprParser<'a> {

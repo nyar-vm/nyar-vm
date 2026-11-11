@@ -217,10 +217,10 @@ fn parse_pattern_literal(literal: &LiteralPattern) -> Result<HirLiteral, HirErro
         let decoded = quote_literal::decode_quote_capture(&literal, false)?;
         return quote_literal::pattern_literal_value(decoded, prefix_name, literal.quote, literal.quote_count);
     }
-    if let Ok(value) = value.parse::<i64>() {
+    if let Ok(value) = split_numeric_type_suffix(value).0.parse::<i64>() {
         return Ok(HirLiteral::Integer64(value));
     }
-    if let Ok(value) = value.parse::<f64>() {
+    if let Ok(value) = split_numeric_type_suffix(value).0.parse::<f64>() {
         return Ok(HirLiteral::Float64(OrderedFloat(value)));
     }
     Ok(HirLiteral::String(crate::compiler::types::hir::HirStringLiteral {
@@ -285,10 +285,11 @@ fn lower_term_expression_body(
         TermExpression::NamePath(path) => lower_name_expression(path, span.clone()),
         TermExpression::QuoteLiteral(literal) => lower_quote_literal_kind(literal, source_id)?,
         TermExpression::IntegerLiteral { value, .. } => {
-            HirExprKind::Literal(HirLiteral::Integer64(integer_literal_value(value, false, span_range.clone())?))
+            HirExprKind::Literal(HirLiteral::Integer64(integer_literal_value(split_numeric_type_suffix(value).0, false, span_range.clone())?))
         }
         TermExpression::FloatLiteral { value, .. } => {
-            let parsed = value.parse::<f64>().unwrap_or_else(|error| panic!("illegal float literal `{value}`: {error}"));
+            let digits = split_numeric_type_suffix(value).0;
+            let parsed = digits.parse::<f64>().unwrap_or_else(|error| panic!("illegal float literal `{value}`: {error}"));
             HirExprKind::Literal(HirLiteral::Float64(OrderedFloat(parsed)))
         }
         TermExpression::BooleanLiteral { value, .. } => HirExprKind::Literal(HirLiteral::Bool(*value)),
@@ -979,6 +980,25 @@ fn lower_quote_literal_kind(literal: &QuoteLiteral, source_id: SourceID) -> Resu
                 .collect::<Result<Vec<_>, _>>()?,
         }),
     }))
+}
+
+/// 拆掉数字字面量尾部的类型后缀（`0.1f64` → `0.1`、`42i64` → `42`）。
+///
+/// 后缀由 lexer 只在数字 token 内接受；HIR 只做剥离，不改数值。当前字面量载体
+/// 只有 `Integer64`/`Float64`，因此只识别 `i64`/`f64`；十六进制/二进制/八进制
+/// 前缀内的字母不是后缀，不能剥离。
+pub(crate) fn split_numeric_type_suffix(text: &str) -> (&str, Option<&'static str>) {
+    if text.starts_with("0x") || text.starts_with("0X") || text.starts_with("0b") || text.starts_with("0B") || text.starts_with("0o") || text.starts_with("0O") {
+        return (text, None);
+    }
+    for suffix in ["f64", "i64"] {
+        if let Some(digits) = text.strip_suffix(suffix)
+            && !digits.is_empty()
+        {
+            return (digits, Some(suffix));
+        }
+    }
+    (text, None)
 }
 
 /// 整数字面量按"符号 + 量级"解释：量级用 `u64` 承载，符号在结合时应用，
