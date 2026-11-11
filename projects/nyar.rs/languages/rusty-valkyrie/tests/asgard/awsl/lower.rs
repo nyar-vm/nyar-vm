@@ -2,8 +2,8 @@
 
 use rusty_valkyrie::asgard::awsl::lower::*;
 
-use rusty_valkyrie::asgard::awsl::is_fragment_root;
 use oak_awsl::{AwslElement, AwslParser, AwslTemplateNode};
+use rusty_valkyrie::asgard::awsl::is_fragment_root;
 
 fn expect_element<'a>(node: &'a AwslTemplateNode) -> &'a AwslElement {
     match node {
@@ -157,6 +157,30 @@ fn explicit_fragment_tag_lowers_transparently() {
 }
 
 #[test]
+fn directive_template_decodes_capture_escapes() {
+    let lowered = lower_source(
+        r#"<widget>
+<div @class="ui-\{size\} active"></div>
+</widget>"#,
+    );
+    let attrs = first_element_attrs(&lowered.render_ir);
+    let class = attrs.iter().find(|a| a.name == "class").expect("class");
+    match &class.value {
+        RenderAttrValue::Static(text) => assert_eq!(text, "ui-{size} active"),
+        other => panic!("expected decoded static class, got {other:?}"),
+    }
+}
+
+#[test]
+fn invalid_directive_template_fails_with_source_span() {
+    let root = AwslParser::parse_root(r#"<widget><div @class="ui-{size"></div></widget>"#).expect("parse");
+    let error = lower_component(&root, "Test", "test.awsl", &LoweringOptions::default()).expect_err("未闭合插值必须结构化失败");
+    let message = error.to_string();
+    assert!(message.contains("指令模板无效"), "失败必须点名指令模板：{message}");
+    assert!(message.contains("span"), "失败必须携带源区间：{message}");
+}
+
+#[test]
 fn rejects_loop_without_item_in_header() {
     let lowered = lower_source(
         r#"<widget>
@@ -167,4 +191,3 @@ fn rejects_loop_without_item_in_header() {
     );
     assert!(!has_loop(&lowered.render_ir));
 }
-

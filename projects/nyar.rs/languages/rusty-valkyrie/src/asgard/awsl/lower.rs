@@ -114,20 +114,13 @@ pub enum SignalValueType {
 /// 脚本 ABI 提取失败时返回错误而不是把 issues 挂在结构体上：绑定解析结果为空却继续
 /// 生成，会让脚本里的自由名漂到 V 编译期（例如 `unresolved call infix ==`），错误
 /// 语义丢失。这里统一报“组件 `X` 的 ABI 与脚本对不上”。
-pub fn lower_component(
-    root: &AwslRoot,
-    component_name: &str,
-    source_path: &str,
-    options: &LoweringOptions,
-) -> AsgardResult<LoweredComponent> {
+pub fn lower_component(root: &AwslRoot, component_name: &str, source_path: &str, options: &LoweringOptions) -> AsgardResult<LoweredComponent> {
     let name = widget_name_from_stem(component_name);
     // 公共样式块按声明顺序合并为一张合同；带 `target` 的块是独立分表，当前合同尚未承载。
     let mut public_style = String::new();
     for block in &root.styles {
         if let Some(targets) = &block.target {
-            return Err(
-                crate::asgard::style::StyleContractError::TargetSheetUnsupported { targets: targets.clone() }.report()
-            );
+            return Err(crate::asgard::style::StyleContractError::TargetSheetUnsupported { targets: targets.clone() }.report());
         }
         let content = block.content.trim();
         if content.is_empty() {
@@ -142,7 +135,7 @@ pub fn lower_component(
         .then(|| crate::asgard::style::parse_style_contract(&public_style))
         .transpose()
         .map_err(|error| error.report())?;
-    let mut surface = wrap_widget_roots_in_fragment(lower_template_nodes(&root.template));
+    let mut surface = wrap_widget_roots_in_fragment(lower_template_nodes(&root.template)?);
     let layout = collect_layout_bindings(&mut surface, style_contract.as_ref());
     let (component_abi, abi_issues) = root
         .script
@@ -184,16 +177,9 @@ fn fail_on_abi_errors(component: &str, source_path: &str, issues: &[oak_awsl::Ab
     else {
         return Ok(());
     };
-    let extra = issues
-        .iter()
-        .filter(|issue| matches!(issue.severity, AbiSeverity::Error))
-        .count()
-        .saturating_sub(1);
+    let extra = issues.iter().filter(|issue| matches!(issue.severity, AbiSeverity::Error)).count().saturating_sub(1);
     let suffix = if extra > 0 { format!("（另有 {extra} 条 Error）") } else { String::new() };
-    Err(AsgardError::msg(report!(
-        "组件 `{component}` 的 ABI 与脚本对不上（{source_path}）：{}{suffix}",
-        first.message
-    )))
+    Err(AsgardError::msg(report!("组件 `{component}` 的 ABI 与脚本对不上（{source_path}）：{}{suffix}", first.message)))
 }
 
 /// 脚本是否存在顶层 `let` / `let mut`（这些声明会被信号重写删除）。
@@ -220,7 +206,10 @@ fn script_has_top_level_let(script: &str) -> bool {
 /// 句柄映射：组件根节点 → `sc-root`；`slot="name"` 元素 → `sc-slot-<name>`；
 /// `id="name"` 元素 → `sc-id-<name>`。度量只接受纯静态文本目标；动态文本的
 /// 度量请求记为 `MeasureRejected`，由降级阶段 fail-closed。
-fn collect_layout_bindings(surface: &mut SurfaceIr, contract: Option<&crate::asgard::style::StyleContract>) -> Vec<crate::asgard::layout::LayoutBinding> {
+fn collect_layout_bindings(
+    surface: &mut SurfaceIr,
+    contract: Option<&crate::asgard::style::StyleContract>,
+) -> Vec<crate::asgard::layout::LayoutBinding> {
     let mut bindings = Vec::new();
     let Some(contract) = contract
     else {
@@ -259,7 +248,8 @@ fn collect_layout_bindings(surface: &mut SurfaceIr, contract: Option<&crate::asg
                         font: crate::asgard::layout::measure::FontId("stage1-system-stack".into()),
                         size: crate::asgard::layout::Points(font_size as f32),
                     };
-                    let metrics = crate::asgard::layout::measure::measure_run(&run, max_width, &crate::asgard::layout::measure::StubFontMetrics);
+                    let metrics =
+                        crate::asgard::layout::measure::measure_run(&run, max_width, &crate::asgard::layout::measure::StubFontMetrics);
                     bindings.push(crate::asgard::layout::LayoutBinding::MeasuredText { class: handle, metrics });
                 }
                 None => bindings.push(crate::asgard::layout::LayoutBinding::MeasureRejected {
@@ -318,7 +308,12 @@ fn merge_handle_classes(attrs: &mut Vec<SurfaceAttr>, handles: Vec<String>) {
                 *existing = merged;
             }
         }
-        None => attrs.push(SurfaceAttr { name: "class".into(), value: SurfaceAttrValue::Static(handles.join(" ")), is_event: false, is_prop: false }),
+        None => attrs.push(SurfaceAttr {
+            name: "class".into(),
+            value: SurfaceAttrValue::Static(handles.join(" ")),
+            is_event: false,
+            is_prop: false,
+        }),
     }
 }
 
@@ -328,7 +323,8 @@ fn static_text_of(nodes: &SurfaceIr, handle: &str) -> Option<String> {
         match node {
             SurfaceNode::Tag { attrs, children, .. } => {
                 let has_handle = attrs.iter().any(|attr| {
-                    attr.name == "class" && matches!(&attr.value, SurfaceAttrValue::Static(value) if value.split_whitespace().any(|part| part == handle))
+                    attr.name == "class"
+                        && matches!(&attr.value, SurfaceAttrValue::Static(value) if value.split_whitespace().any(|part| part == handle))
                 });
                 if has_handle {
                     let mut text = String::new();
@@ -423,12 +419,9 @@ fn rewrite_script_decls_for_signals(script: &str, bindings: &[ScriptBinding]) ->
             continue;
         }
         if trimmed.starts_with("let ") {
-            let name = module_let_name(trimmed)
-                .ok_or_else(|| format!("无法解析顶层 `let` 声明的绑定名：`{trimmed}`"))?;
+            let name = module_let_name(trimmed).ok_or_else(|| format!("无法解析顶层 `let` 声明的绑定名：`{trimmed}`"))?;
             if !bindings.iter().any(|binding| binding.name == name) {
-                return Err(format!(
-                    "顶层 `let {name}` 没有被 ABI 解析为绑定，删除会丢失声明并留下自由名（脚本与组件 ABI 不一致）"
-                ));
+                return Err(format!("顶层 `let {name}` 没有被 ABI 解析为绑定，删除会丢失声明并留下自由名（脚本与组件 ABI 不一致）"));
             }
             index += 1;
             continue;
@@ -616,8 +609,14 @@ fn take_braced_block(lines: &[&str], start: usize) -> (String, usize) {
     (out, index)
 }
 
-fn lower_template_nodes(nodes: &[AwslTemplateNode]) -> SurfaceIr {
-    nodes.iter().filter_map(lower_template_node).collect()
+fn lower_template_nodes(nodes: &[AwslTemplateNode]) -> AsgardResult<SurfaceIr> {
+    let mut lowered = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        if let Some(node) = lower_template_node(node)? {
+            lowered.push(node);
+        }
+    }
+    Ok(lowered)
 }
 
 /// widget 下多个并列根节点时自动包一层 fragment（不增加 DOM 包裹标签）。
@@ -643,40 +642,40 @@ fn node_span(node: &SurfaceNode) -> &std::ops::Range<usize> {
     }
 }
 
-fn lower_template_node(node: &AwslTemplateNode) -> Option<SurfaceNode> {
+fn lower_template_node(node: &AwslTemplateNode) -> AsgardResult<Option<SurfaceNode>> {
     match node {
-        AwslTemplateNode::Element(element) => Some(lower_element(element)),
+        AwslTemplateNode::Element(element) => lower_element(element).map(Some),
         AwslTemplateNode::Text { content, span } => {
             if content.trim().is_empty() {
-                return None;
+                return Ok(None);
             }
-            Some(SurfaceNode::Text { parts: vec![SurfaceTextPart::Static(content.clone())], span: span.clone() })
+            Ok(Some(SurfaceNode::Text { parts: vec![SurfaceTextPart::Static(content.clone())], span: span.clone() }))
         }
         AwslTemplateNode::Interpolation { expr, span } => {
-            Some(SurfaceNode::Text { parts: vec![SurfaceTextPart::Dynamic(expr.clone())], span: span.clone() })
+            Ok(Some(SurfaceNode::Text { parts: vec![SurfaceTextPart::Dynamic(expr.clone())], span: span.clone() }))
         }
     }
 }
 
-fn lower_element(element: &AwslElement) -> SurfaceNode {
+fn lower_element(element: &AwslElement) -> AsgardResult<SurfaceNode> {
     for directive in &element.directives {
         if let AwslDirectiveKind::If = directive.kind {
             let condition = directive.value.clone().unwrap_or_else(|| "true".into());
-            let then_branch = lower_template_nodes(&element.children);
-            return SurfaceNode::If(SurfaceIf { condition, then_branch, else_branch: Vec::new(), span: element.span.clone() });
+            let then_branch = lower_template_nodes(&element.children)?;
+            return Ok(SurfaceNode::If(SurfaceIf { condition, then_branch, else_branch: Vec::new(), span: element.span.clone() }));
         }
     }
 
     if element.tag == "loop" {
         if let Some((items_expr, item_var, key_expr)) = parse_loop_element_attrs(&element.attributes) {
-            return SurfaceNode::Loop(SurfaceLoop {
+            return Ok(SurfaceNode::Loop(SurfaceLoop {
                 items_expr,
                 item_var,
                 index_var: "__idx".into(),
                 key_expr,
-                body: lower_template_nodes(&element.children),
+                body: lower_template_nodes(&element.children)?,
                 span: element.span.clone(),
-            });
+            }));
         }
     }
 
@@ -688,16 +687,16 @@ fn lower_element(element: &AwslElement) -> SurfaceNode {
             .map(|attr| attr_value_expr(&attr.value))
             .unwrap_or_else(|| "true".into());
         let (then_nodes, else_nodes) = split_if_else_children(&element.children);
-        return SurfaceNode::If(SurfaceIf {
+        return Ok(SurfaceNode::If(SurfaceIf {
             condition,
-            then_branch: lower_template_nodes(&then_nodes),
-            else_branch: lower_template_nodes(&else_nodes),
+            then_branch: lower_template_nodes(&then_nodes)?,
+            else_branch: lower_template_nodes(&else_nodes)?,
             span: element.span.clone(),
-        });
+        }));
     }
 
     if matches!(element.tag.as_str(), "fragment") {
-        return SurfaceNode::Fragment { children: lower_template_nodes(&element.children), span: element.span.clone() };
+        return Ok(SurfaceNode::Fragment { children: lower_template_nodes(&element.children)?, span: element.span.clone() });
     }
 
     let kind = classify_tag(&element.tag, element.is_component());
@@ -720,20 +719,22 @@ fn lower_element(element: &AwslElement) -> SurfaceNode {
             }
             AwslDirectiveKind::Class => {
                 if let Some(expr) = &directive.value {
-                    merge_class_attr(&mut attrs, lower_class_directive_value(expr), is_component_usage);
+                    let value = lower_directive_template_value(expr, &directive.span)?;
+                    merge_class_attr(&mut attrs, value, is_component_usage);
                 }
             }
             AwslDirectiveKind::Style => {
                 if let Some(expr) = &directive.value {
-                    merge_class_attr(&mut attrs, lower_directive_template_value(expr), is_component_usage);
+                    let value = lower_directive_template_value(expr, &directive.span)?;
+                    merge_class_attr(&mut attrs, value, is_component_usage);
                 }
             }
             _ => {}
         }
     }
 
-    let children = lower_template_nodes(&element.children);
-    SurfaceNode::Tag { tag: element.tag.clone(), kind, attrs, children, span: element.span.clone() }
+    let children = lower_template_nodes(&element.children)?;
+    Ok(SurfaceNode::Tag { tag: element.tag.clone(), kind, attrs, children, span: element.span.clone() })
 }
 
 fn classify_tag(tag: &str, is_pascal_component: bool) -> TemplateNodeKind {
@@ -823,37 +824,64 @@ fn lower_attr_value(value: &AwslAttributeValue) -> SurfaceAttrValue {
     }
 }
 
-fn lower_class_directive_value(expr: &str) -> SurfaceAttrValue {
-    lower_directive_template_value(expr)
-}
-
 /// `@class`/`@style` 指令文本值按共享模板规则分段（§4.10 F）：`{ expr }` 是插值、
 /// `\{`/`\}` 是原样花括号；纯 CSS 类名表是静态文本，其余无花括号写法按表达式上下文处理。
-/// 表达式解析失败时保留原文，由下游 V 编译给出真实诊断，不在此伪造结构。
-fn lower_directive_template_value(expr: &str) -> SurfaceAttrValue {
+/// 模板语法失败或文本段转义非法一律带源区间失败，不再把原文塞回 Dynamic 继续传递。
+fn lower_directive_template_value(expr: &str, span: &std::ops::Range<usize>) -> AsgardResult<SurfaceAttrValue> {
     if is_plain_css_class_list(expr) {
-        return SurfaceAttrValue::Static(expr.to_string());
+        return Ok(SurfaceAttrValue::Static(expr.to_string()));
     }
     if !expr.contains('{') && !expr.contains('}') {
-        return SurfaceAttrValue::Dynamic(expr.to_string());
+        return Ok(SurfaceAttrValue::Dynamic(expr.to_string()));
     }
-    let Ok(segments) = crate::compiler::syntax::oak::parse_quote_template(expr, 0) else {
-        return SurfaceAttrValue::Dynamic(expr.to_string());
-    };
+    let segments =
+        crate::compiler::syntax::oak::parse_quote_template(expr, 0).map_err(|error| directive_template_error(span, error.to_string()))?;
     let parts: Vec<SurfaceTextPart> = segments
         .into_iter()
         .map(|segment| match segment {
-            crate::compiler::syntax::oak::ast::StringSegment::Text(text) => SurfaceTextPart::Static(text.content),
+            crate::compiler::syntax::oak::ast::StringSegment::Text(text) => {
+                decode_text_segment(&text.content, span).map(SurfaceTextPart::Static)
+            }
             crate::compiler::syntax::oak::ast::StringSegment::Interpolation(interpolation) => {
-                SurfaceTextPart::Dynamic(expr[interpolation.span.start + 1..interpolation.span.end - 1].trim().to_string())
+                let body = expr
+                    .get(interpolation.span.start + 1..interpolation.span.end - 1)
+                    .ok_or_else(|| directive_template_error(span, "插值区间不在指令值内".to_string()))?;
+                Ok(SurfaceTextPart::Dynamic(body.trim().to_string()))
             }
         })
-        .collect();
+        .collect::<AsgardResult<Vec<_>>>()?;
     match parts.as_slice() {
-        [SurfaceTextPart::Static(text)] => SurfaceAttrValue::Static(text.clone()),
-        [SurfaceTextPart::Dynamic(inner)] => SurfaceAttrValue::Dynamic(inner.clone()),
-        _ => SurfaceAttrValue::Mixed(parts),
+        [SurfaceTextPart::Static(text)] => Ok(SurfaceAttrValue::Static(text.clone())),
+        [SurfaceTextPart::Dynamic(inner)] => Ok(SurfaceAttrValue::Dynamic(inner.clone())),
+        _ => Ok(SurfaceAttrValue::Mixed(parts)),
     }
+}
+
+/// 文本段与 HIR 引号捕获共用同一解码集（`\{`/`\}`、标准转义、`\uXXXX`）：
+/// 构造等价的 cooked 捕获交给唯一解码入口，不在生成端另持转换表。
+fn decode_text_segment(text: &str, span: &std::ops::Range<usize>) -> AsgardResult<String> {
+    use crate::compiler::{
+        hir::lowering::quote_literal::{DecodedQuoteCapture, decode_quote_capture},
+        syntax::oak::ast::{QuoteKind, QuoteLiteral},
+    };
+
+    let literal = QuoteLiteral {
+        prefix: None,
+        quote: QuoteKind::Double,
+        quote_count: 1,
+        content: text.to_string(),
+        content_span: oak_core::Range { start: span.start, end: span.end },
+        span: oak_core::Range { start: span.start, end: span.end },
+    };
+    match decode_quote_capture(&literal, false) {
+        Ok(DecodedQuoteCapture::PlainText(decoded)) => Ok(decoded),
+        Ok(_) => Err(directive_template_error(span, format!("文本段 `{text}` 不是纯文本"))),
+        Err(error) => Err(directive_template_error(span, error.to_string())),
+    }
+}
+
+fn directive_template_error(span: &std::ops::Range<usize>, detail: String) -> AsgardError {
+    AsgardError::msg(report!("指令模板无效（span {}..{}）：{detail}", span.start, span.end))
 }
 
 fn is_plain_css_class_list(expr: &str) -> bool {
@@ -900,17 +928,15 @@ fn abi_to_script_bindings(abi: &ComponentAbi, component: &str) -> AsgardResult<V
     for property in &abi.properties {
         let init_expr = match &property.default_expr {
             Some(expr) => expr.clone(),
-            None => default_expr_for_type(property.type_hint.as_deref()).map_err(|reason| {
-                AsgardError::msg(report!("组件 `{component}` 属性 `{}`：{reason}", property.name))
-            })?,
+            None => default_expr_for_type(property.type_hint.as_deref())
+                .map_err(|reason| AsgardError::msg(report!("组件 `{component}` 属性 `{}`：{reason}", property.name)))?,
         };
         // Property 是父组件 `rx_bind_prop_*` 的写入目标：必须有宿主信号句柄。
         // list 类型没有信号 ABI（sig 仅 i32/utf8/bool），保持内联常量降级；内联绑定不读 `value_type`。
         let signal_backed = !is_list_like(property.type_hint.as_deref(), &init_expr);
         let value_type = if signal_backed {
-            infer_signal_type(property.type_hint.as_deref(), &init_expr).map_err(|reason| {
-                AsgardError::msg(report!("组件 `{component}` 属性 `{}`：{reason}", property.name))
-            })?
+            infer_signal_type(property.type_hint.as_deref(), &init_expr)
+                .map_err(|reason| AsgardError::msg(report!("组件 `{component}` 属性 `{}`：{reason}", property.name)))?
         }
         else {
             SignalValueType::Utf8
@@ -927,10 +953,7 @@ fn abi_to_script_bindings(abi: &ComponentAbi, component: &str) -> AsgardResult<V
     for state in &abi.states {
         let Some(init_expr) = state.init_expr.clone()
         else {
-            return Err(AsgardError::msg(report!(
-                "组件 `{component}` 状态 `{}` 缺少初始化表达式，无法生成信号初值",
-                state.name
-            )));
+            return Err(AsgardError::msg(report!("组件 `{component}` 状态 `{}` 缺少初始化表达式，无法生成信号初值", state.name)));
         };
         let value_type = infer_signal_type(None, &init_expr)
             .map_err(|reason| AsgardError::msg(report!("组件 `{component}` 状态 `{}`：{reason}", state.name)))?;
