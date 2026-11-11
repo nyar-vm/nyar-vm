@@ -1,10 +1,12 @@
 //! AWSL 降级与 JS 胶水测试（自包含样例，不读取外部语言语料）。
 
 use oak_awsl::AwslParser;
-use rusty_valkyrie::ValkyrieCompiler;
-use rusty_valkyrie::asgard::{
-    awsl::{LoweringOptions, compile_awsl_source, lower_component},
-    codegen::{asgard_boot_script_tag, build_awsl_wasm_source, generate_boot_script, manifest_url_for_mode},
+use rusty_valkyrie::{
+    ValkyrieCompiler,
+    asgard::{
+        awsl::{LoweringOptions, compile_awsl_source, lower_component},
+        codegen::{asgard_boot_script_tag, build_awsl_wasm_source, generate_boot_script, manifest_url_for_mode},
+    },
 };
 
 /// 生成单元（`awsl_hydrate_*` 一类宿主调用）的最小形态：签名用裸 `i32`/`utf8` 拼写，
@@ -34,31 +36,17 @@ let mut label: utf8 = ""
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
     let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
-    assert!(
-        v_source.contains("[primitive(\"std::primitive::i32\")]"),
-        "生成单元必须自带 `i32` 标量声明"
-    );
-    assert!(
-        !v_source.contains("structure bool"),
-        "`bool` 是编码型内建，生成单元不得重声明"
-    );
-    ValkyrieCompiler::default()
-        .compile_source(GENERATED_UNIT_SCALAR_SHAPE)
-        .expect("标量声明在场时生成单元必须编译通过");
+    assert!(v_source.contains("[primitive(\"std::primitive::i32\")]"), "生成单元必须自带 `i32` 标量声明");
+    assert!(!v_source.contains("structure bool"), "`bool` 是编码型内建，生成单元不得重声明");
+    ValkyrieCompiler::default().compile_source(GENERATED_UNIT_SCALAR_SHAPE).expect("标量声明在场时生成单元必须编译通过");
 }
 
 /// 反例：剥掉标量声明后，同一调用点的字面量实参必须结构化失败，不得静默选型。
 #[test]
 fn generated_unit_without_scalar_declarations_rejects_literal_arguments() {
-    let without = GENERATED_UNIT_SCALAR_SHAPE.replacen(
-        "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n",
-        "",
-        1,
-    );
+    let without = GENERATED_UNIT_SCALAR_SHAPE.replacen("[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n", "", 1);
     assert!(!without.contains("structure i32 { }"), "反例必须真正移除标量声明");
-    let error = ValkyrieCompiler::default()
-        .compile_source(&without)
-        .expect_err("缺少标量声明时字面量实参必须结构化失败");
+    let error = ValkyrieCompiler::default().compile_source(&without).expect_err("缺少标量声明时字面量实参必须结构化失败");
     let text = format!("{error:?}");
     // 缺少标量声明时在声明绑定阶段即 fail-closed：字面量没有载体，不再进入调用解析。
     assert!(text.contains("TypeNotFound"), "缺少标量声明必须在绑定阶段结构化失败：{text}");
@@ -219,8 +207,7 @@ fn untyped_reactive_initializer_is_rejected() {
 let mut state = compute()
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
-    let error = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default())
-        .expect_err("无法推断通道的响应式绑定必须失败");
+    let error = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect_err("无法推断通道的响应式绑定必须失败");
     let message = error.to_string();
     assert!(message.contains("`demo`"), "错误必须指向组件:\n{message}");
     assert!(message.contains("state"), "错误必须指向绑定:\n{message}");
@@ -251,6 +238,22 @@ let label = "hi"
         !generated.lines().any(|line| line.trim_start().starts_with("return utf8(")),
         "生成端不得再发可调用形态的 `utf8(...)` 转换:\n{generated}"
     );
+}
+
+/// 未定型的文本位置表达式一律走 `Display`，生成端不按字面量形状猜数字/布尔/拼接。
+#[test]
+fn non_literal_text_expressions_route_through_display() {
+    let source = r#"<widget demo><Column><Text>{1 + 2}</Text><Text>{true}</Text><Text>{greeting}</Text></Column></widget>
+<script>
+let greeting = "hi"
+</script>"#;
+    let root = AwslParser::parse_root(source).expect("parse");
+    let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
+    let generated = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    assert!(generated.contains("return (1 + 2).display()"), "算术表达式必须整体投影：\n{generated}");
+    assert!(generated.contains("return (true).display()"), "布尔字面量必须走 `Display`：\n{generated}");
+    assert!(generated.contains("return \"hi\""), "字符串字面量按合法捕获输出：\n{generated}");
+    assert!(!generated.contains("\"1\" + \"2\""), "生成端不得把 `+` 拆成文本拼接：\n{generated}");
 }
 
 /// 无 `Display` 实现的类型必须在文本位置失败闭合，且诊断点名接收者类型。

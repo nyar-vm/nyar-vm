@@ -14,7 +14,7 @@ use super::{
     loop_frame::LoopFrame,
     reactive::region_uses_reactive,
     routes::hydrate_name_for_route,
-    util::{escape_v_string, is_simple_identifier, map_awsl_component_to_host, sanitize_export},
+    util::{encode_v_text_literal, is_simple_identifier, map_awsl_component_to_host, sanitize_export},
 };
 
 pub(crate) struct VRenderCodegen<'a> {
@@ -373,8 +373,8 @@ impl<'a> VRenderCodegen<'a> {
 
     fn register_utf8_literal(&mut self, text: &str) -> String {
         let name = self.next_export_id("expr");
-        let escaped = escape_v_string(text);
-        self.aux.push(format!("micro {name}(): utf8 {{\n    return \"{escaped}\"\n}}"));
+        let literal = encode_v_text_literal(text);
+        self.aux.push(format!("micro {name}(): utf8 {{\n    return {literal}\n}}"));
         name
     }
 
@@ -390,7 +390,7 @@ impl<'a> VRenderCodegen<'a> {
                 let expr = segments
                     .iter()
                     .map(|segment| match segment {
-                        RenderTextSegment::Static(text) => format!("\"{}\"", escape_v_string(text)),
+                        RenderTextSegment::Static(text) => encode_v_text_literal(text),
                         RenderTextSegment::Expr(expr_id) => {
                             rewrite_utf8_expr_body(self.module.expr_source(*expr_id), self.bindings, &self.loop_stack)
                         }
@@ -412,14 +412,16 @@ impl<'a> VRenderCodegen<'a> {
         }
         match &attr.value {
             RenderAttrValue::Static(text) => {
-                writeln!(self.out, "    dom_set_attr({handle}, \"{}\", \"{text}\")", attr.name).unwrap();
+                let name = encode_v_text_literal(&attr.name);
+                let value = encode_v_text_literal(text);
+                writeln!(self.out, "    dom_set_attr({handle}, {name}, {value})").unwrap();
             }
             RenderAttrValue::Expr(expr_id) => self.emit_dynamic_attr(handle, &attr.name, self.module.expr_source(*expr_id)),
             RenderAttrValue::Template(segments) => {
                 let expr = segments
                     .iter()
                     .map(|segment| match segment {
-                        RenderTextSegment::Static(text) => format!("\"{}\"", escape_v_string(text)),
+                        RenderTextSegment::Static(text) => encode_v_text_literal(text),
                         RenderTextSegment::Expr(expr_id) => {
                             rewrite_utf8_expr_body(self.module.expr_source(*expr_id), self.bindings, &self.loop_stack)
                         }
@@ -427,7 +429,8 @@ impl<'a> VRenderCodegen<'a> {
                     .collect::<Vec<_>>()
                     .join(" + ");
                 if !self.loop_stack.is_empty() {
-                    writeln!(self.out, "    dom_set_attr({handle}, \"{}\", {expr})", attr.name).unwrap();
+                    let name = encode_v_text_literal(&attr.name);
+                    writeln!(self.out, "    dom_set_attr({handle}, {name}, {expr})").unwrap();
                 }
                 else {
                     self.emit_dynamic_attr(handle, &attr.name, &expr);
@@ -505,8 +508,8 @@ impl<'a> VRenderCodegen<'a> {
 
     fn emit_text_v(&mut self, text: &str) -> String {
         let var = self.next_var();
-        let escaped = escape_v_string(text);
-        writeln!(self.out, "    let {var} = dom_create_text(\"{escaped}\")").unwrap();
+        let literal = encode_v_text_literal(text);
+        writeln!(self.out, "    let {var} = dom_create_text({literal})").unwrap();
         var
     }
 }

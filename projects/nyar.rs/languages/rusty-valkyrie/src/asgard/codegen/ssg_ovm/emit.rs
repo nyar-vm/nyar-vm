@@ -13,7 +13,7 @@ use crate::asgard::{
     },
     codegen::{
         ssg_ovm::admission::{self, E1Expr},
-        v_render::util::{escape_v_string, is_simple_identifier},
+        v_render::util::{encode_v_text_literal, is_simple_identifier},
     },
     error::{AsgardError, AsgardResult},
 };
@@ -89,7 +89,7 @@ impl Emitter<'_> {
                 }
                 let host_tag = map_host_tag(tag, element.kind);
                 let var = self.next_var();
-                self.line(format!("let {var} = dom_create_element(\"{}\")", escape_v_string(&host_tag)));
+                self.line(format!("let {var} = dom_create_element({})", encode_v_text_literal(&host_tag)));
                 for attr in &element.attrs {
                     if attr.is_event {
                         continue;
@@ -99,7 +99,7 @@ impl Emitter<'_> {
                         continue;
                     };
                     let value = self.attr_value(&attr.value)?;
-                    self.line(format!("dom_set_attr({var}, \"{}\", {value})", escape_v_string(&name)));
+                    self.line(format!("dom_set_attr({var}, {}, {value})", encode_v_text_literal(&name)));
                 }
                 let children = region_nodes(self.module, element.children).to_vec();
                 for child_id in children {
@@ -112,7 +112,7 @@ impl Emitter<'_> {
             RenderNode::Text(text) => {
                 if text.segments.len() == 1 {
                     let value = match &text.segments[0] {
-                        RenderTextSegment::Static(text) => format!("\"{}\"", escape_v_string(text)),
+                        RenderTextSegment::Static(text) => encode_v_text_literal(text),
                         RenderTextSegment::Expr(expr_id) => {
                             let source = self.module.expr_source(*expr_id).to_string();
                             self.expr_value(&source)?
@@ -128,7 +128,7 @@ impl Emitter<'_> {
                 self.line(format!("let {frag} = dom_create_element(\"{FRAGMENT_TAG}\")"));
                 for segment in &text.segments {
                     let value = match segment {
-                        RenderTextSegment::Static(text) => format!("\"{}\"", escape_v_string(text)),
+                        RenderTextSegment::Static(text) => encode_v_text_literal(text),
                         RenderTextSegment::Expr(expr_id) => {
                             let source = self.module.expr_source(*expr_id).to_string();
                             self.expr_value(&source)?
@@ -190,7 +190,7 @@ impl Emitter<'_> {
 
     fn attr_value(&mut self, value: &RenderAttrValue) -> AsgardResult<String> {
         match value {
-            RenderAttrValue::Static(text) => Ok(format!("\"{}\"", escape_v_string(text))),
+            RenderAttrValue::Static(text) => Ok(encode_v_text_literal(text)),
             RenderAttrValue::Expr(expr_id) => self.expr_value(self.module.expr_source(*expr_id)),
             RenderAttrValue::Template(segments) => self.text_value(segments),
         }
@@ -199,7 +199,7 @@ impl Emitter<'_> {
     fn text_value(&mut self, segments: &[RenderTextSegment]) -> AsgardResult<String> {
         if segments.len() == 1 {
             return match &segments[0] {
-                RenderTextSegment::Static(text) => Ok(format!("\"{}\"", escape_v_string(text))),
+                RenderTextSegment::Static(text) => Ok(encode_v_text_literal(text)),
                 RenderTextSegment::Expr(expr_id) => {
                     let source = self.module.expr_source(*expr_id).to_string();
                     self.expr_value(&source)
@@ -215,7 +215,7 @@ impl Emitter<'_> {
                 }
             }
         }
-        Ok(format!("\"{}\"", escape_v_string(&merged)))
+        Ok(encode_v_text_literal(&merged))
     }
 
     fn expr_value(&mut self, source: &str) -> AsgardResult<String> {
