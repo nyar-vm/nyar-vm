@@ -106,3 +106,79 @@ fn wasm_aggregate_copy_without_address_slot_fails_structured() {
     .expect_err("非地址型 AggregateCopy 缺地址槽必须返回 Err，不得静默跳过");
     assert!(error.contains("非地址型聚合缺少地址槽"), "错误必须指明 AggregateCopy 地址槽缺失: {error}");
 }
+
+/// fail-closed：`AggregateCopy` 缺 layout 时不能编 `unreachable` 后返回成功
+/// （把计划缺事实伪装成运行期 trap），必须发射前结构化拒绝并带值/槽坐标。
+#[test]
+fn wasm_aggregate_copy_without_layout_fails_structured() {
+    let load = Instruction::from_kind(InstructionKind::LoadConstant { constant: Constant::Int(1), ty: Some(I32) });
+    let copy = Instruction::from_kind(InstructionKind::AggregateCopy {
+        layout_id: 7,
+        source: Operand::Value(ValueRef(0)),
+        dest: Operand::Value(ValueRef(0)),
+    });
+    // layouts 传 None：layout_id=7 未登记，缺 layout 属缺事实。
+    let error = lower(function(vec![Instruction { results: vec![ValueRef(0)], ..load }, copy], BTreeMap::from([(ValueRef(0), I32)])), None)
+        .expect_err("缺 layout 的 AggregateCopy 必须返回 Err，不得编 unreachable 伪装成功");
+    assert!(error.contains("AggregateCopy 缺少 layout 身份"), "错误必须指明 layout 缺失: {error}");
+    assert!(error.contains("source=") && error.contains("dest="), "错误必须携带源/目标坐标: {error}");
+}
+
+/// fail-closed：gc struct 深拷贝路径缺引用槽时不能静默返回成功，
+/// 必须结构化拒绝并点名缺失的 dest/source 槽。
+#[test]
+fn wasm_aggregate_copy_gc_missing_reference_slot_fails_structured() {
+    let layout_id: LayoutId = 0;
+    let layout = AggregateLayout {
+        id: layout_id,
+        name: "FixtureRef".to_string(),
+        namespace: String::new(),
+        key: None,
+        storage: StorageKind::Reference,
+        size: 8,
+        align: 4,
+        fields: vec![FieldLayout { name: "payload".to_string(), ty: I32, offset: 0, size: 4, align: 4 }],
+    };
+    let load = Instruction::from_kind(InstructionKind::LoadConstant { constant: Constant::Int(1), ty: Some(I32) });
+    // dest 是 I32 标量槽（非引用），storage=Reference 触发 gc struct 分支 → 缺 dest 引用槽。
+    let copy = Instruction::from_kind(InstructionKind::AggregateCopy {
+        layout_id,
+        source: Operand::Value(ValueRef(0)),
+        dest: Operand::Value(ValueRef(0)),
+    });
+    let error = lower(
+        function(vec![Instruction { results: vec![ValueRef(0)], ..load }, copy], BTreeMap::from([(ValueRef(0), I32)])),
+        Some(AggregateLayoutPlan { layouts: vec![layout], ..Default::default() }),
+    )
+    .expect_err("gc struct 分支缺引用槽必须返回 Err，不得静默返回成功");
+    assert!(error.contains("gc struct 分支缺少 dest 引用槽"), "错误必须指明 dest 引用槽缺失: {error}");
+}
+
+/// fail-closed：零字段值布局缺 dest 地址槽时不能静默返回成功。
+#[test]
+fn wasm_aggregate_copy_zero_field_missing_dest_slot_fails_structured() {
+    let layout_id: LayoutId = 0;
+    let layout = AggregateLayout {
+        id: layout_id,
+        name: "FixtureEmpty".to_string(),
+        namespace: String::new(),
+        key: None,
+        storage: StorageKind::Value,
+        size: 0,
+        align: 4,
+        fields: Vec::new(),
+    };
+    let load = Instruction::from_kind(InstructionKind::LoadConstant { constant: Constant::Int(1), ty: Some(I32) });
+    // dest 是常量 → operand_address_local 返回 None → 缺 dest 地址槽。
+    let copy = Instruction::from_kind(InstructionKind::AggregateCopy {
+        layout_id,
+        source: Operand::Constant(Constant::Int(2)),
+        dest: Operand::Constant(Constant::Int(3)),
+    });
+    let error = lower(
+        function(vec![Instruction { results: vec![ValueRef(0)], ..load }, copy], BTreeMap::from([(ValueRef(0), I32)])),
+        Some(AggregateLayoutPlan { layouts: vec![layout], ..Default::default() }),
+    )
+    .expect_err("零字段值布局缺 dest 地址槽必须返回 Err，不得静默返回成功");
+    assert!(error.contains("零字段值布局缺少 dest 地址槽"), "错误必须指明 dest 地址槽缺失: {error}");
+}

@@ -254,13 +254,14 @@ impl<'a> WasmMirLowerer<'a> {
                 }
             }
             MirInstructionKind::ArrayNew { array_type, length, initialization } => {
+                // 缺结果槽/引用槽是缺事实：分配无处安放即计划不一致，发射前拒绝。
                 let Some(output) = instruction_primary_result(instruction)
                 else {
-                    return Ok(());
+                    return Err(format!("WASM ArrayNew 缺少结果槽 in `{}`; refusing runtime trap placeholders", self.mir_fn.symbol));
                 };
                 let Some(&local) = self.reference_locals.get(&output)
                 else {
-                    return Ok(());
+                    return Err(format!("WASM ArrayNew 缺少引用槽 in `{}`: output={output:?}", self.mir_fn.symbol));
                 };
                 let Some(element_type) = array_element_type(array_type)
                 else {
@@ -279,9 +280,10 @@ impl<'a> WasmMirLowerer<'a> {
                 }
             }
             MirInstructionKind::ArrayFromElements { layout_id, array_type, elements } => {
+                // 缺结果槽是缺事实：构造结果无处安放即计划不一致，发射前拒绝。
                 let Some(output) = instruction_primary_result(instruction)
                 else {
-                    return Ok(());
+                    return Err(format!("WASM ArrayFromElements 缺少结果槽 in `{}`; refusing runtime trap placeholders", self.mir_fn.symbol));
                 };
                 let Some(element_type) = array_element_type(array_type)
                 else {
@@ -293,9 +295,10 @@ impl<'a> WasmMirLowerer<'a> {
                 if matches!(array_type, NyarType::FixedArray { .. }) {
                     // Fixed value aggregate: linear layout when available.
                     if let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned() {
+                        // 缺值槽是缺事实，发射前拒绝。
                         let Some(&local) = self.value_locals.get(&output)
                         else {
-                            return Ok(());
+                            return Err(format!("WASM ArrayFromElements 定长数组缺少值槽 in `{}`: output={output:?}", self.mir_fn.symbol));
                         };
                         self.bump_allocate(layout.size, layout.align);
                         self.emit_local_set(local);
@@ -316,7 +319,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 let Some(&local) = self.reference_locals.get(&output)
                 else {
-                    return Ok(());
+                    return Err(format!("WASM ArrayFromElements 缺少引用槽 in `{}`: output={output:?}", self.mir_fn.symbol));
                 };
                 let Some(type_index) = self.resolve_gc_array_type_index(element_type)
                 else {
@@ -334,10 +337,14 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_local_set(local);
             }
             MirInstructionKind::AggregateCopy { layout_id, source, dest } => {
+                // 缺 layout 是缺事实，不是"合法无需复制"：必须在发射前结构化拒绝，
+                // 禁止编 `unreachable` 把计划缺陷伪装成运行期 trap 后返回成功。
                 let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned()
                 else {
-                    encode_unreachable(&mut self.code);
-                    return Ok(());
+                    return Err(format!(
+                        "WASM AggregateCopy 缺少 layout 身份 `{layout_id:?}` in `{}`: source={source:?} dest={dest:?}; refusing runtime trap placeholders",
+                        self.mir_fn.symbol
+                    ));
                 };
                 // 判定是否走 gc_struct 深拷贝路径。
                 // 不能只靠 `gc_struct_type_indices.contains_key`——Value layout 也可能
@@ -353,13 +360,21 @@ impl<'a> WasmMirLowerer<'a> {
                     // Value 存储同样必须产生新对象：浅 anyref 搬运会把两个绑定别名到
                     // 同一堆对象，违反 `structure` 值复制裁决；引用字段按引用语义
                     // 继续共享，标量与地址槽字段逐槽复制。
+                    // 引用槽是预规划事实：缺失即注册表与使用点分叉，发射前拒绝，
+                    // 不得静默返回成功把 dest 槽留在旧值上。
                     let Some(dest_local) = self.operand_reference_local(dest)
                     else {
-                        return Ok(());
+                        return Err(format!(
+                            "WASM AggregateCopy gc struct 分支缺少 dest 引用槽 in `{}`: dest={dest:?}",
+                            self.mir_fn.symbol
+                        ));
                     };
                     let Some(source_local) = self.operand_reference_local(source)
                     else {
-                        return Ok(());
+                        return Err(format!(
+                            "WASM AggregateCopy gc struct 分支缺少 source 引用槽 in `{}`: source={source:?}",
+                            self.mir_fn.symbol
+                        ));
                     };
                     // 源/目标槽已按注册表规划成引用，而本 layout 未注册 structtype 是
                     // 注册表与使用点分叉：失败闭合，禁止回退成别名搬运掩盖不一致。
@@ -379,9 +394,13 @@ impl<'a> WasmMirLowerer<'a> {
                     // 就是标量/空载体：值槽直接持有载体本身，不是线性内存地址。
                     // 对这类赋值必须做标量值拷贝；走 `memory.copy` 会把载体数值当地址用，
                     // 产生静默错误结果（空结构共享同一地址不可观测，同样安全）。
+                    // 缺 dest 地址槽是缺事实，发射前拒绝，不得静默返回成功。
                     let Some(dest_local) = self.operand_address_local(dest)
                     else {
-                        return Ok(());
+                        return Err(format!(
+                            "WASM AggregateCopy 零字段值布局缺少 dest 地址槽 in `{}`: dest={dest:?}",
+                            self.mir_fn.symbol
+                        ));
                     };
                     self.emit_contract_operand(source, self.wasm_local_value_type(dest_local))?;
                     self.emit_local_set(dest_local);
@@ -491,7 +510,11 @@ impl<'a> WasmMirLowerer<'a> {
                 else if let Some(object_local) = self.operand_reference_local(object) {
                     let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field)
                     else {
-                        return Ok(());
+                        // 与地址分支同理：二次查表失败是计划自相矛盾，禁止静默丢弃结果槽。
+                        return Err(format!(
+                            "WASM FieldGet 字段 layout 二次查表不一致（引用分支）: field=`{field}`（symbol=`{}`）",
+                            self.mir_fn.symbol
+                        ));
                     };
                     let layout_hint = layout.name.clone();
                     let type_index = self.resolve_gc_struct_type_index(layout.id, &layout_hint);
@@ -509,7 +532,12 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
                 else {
-                    encode_unreachable(&mut self.code);
+                    // 对象槽既非地址也非引用是可执行合同不一致，禁止编 `unreachable`
+                    // 伪装成运行期 trap 后返回成功；发射前结构化拒绝。
+                    return Err(format!(
+                        "WASM FieldGet 计划不一致: layout `{}` 的对象槽既不是地址也不是引用 (in `{}`): object={object:?}",
+                        layout.name, self.mir_fn.symbol
+                    ));
                 }
             }
             MirInstructionKind::FieldSet { object, field, value } => {
@@ -530,7 +558,10 @@ impl<'a> WasmMirLowerer<'a> {
                     };
                     let Some((_, field_layout, field_index)) = self.ctx.field_layout_by_id(*field)
                     else {
-                        return Ok(());
+                        return Err(format!(
+                            "WASM FieldSet 字段 layout 二次查表不一致（gc struct 分支）: field=`{field}`（symbol=`{}`）",
+                            self.mir_fn.symbol
+                        ));
                     };
                     let type_index = self.resolve_gc_struct_type_index(layout.id, &layout.name);
                     self.emit_local_get(object_local);
@@ -541,7 +572,10 @@ impl<'a> WasmMirLowerer<'a> {
                 else if let Some(object_local) = self.operand_address_local(object) {
                     let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field)
                     else {
-                        return Ok(());
+                        return Err(format!(
+                            "WASM FieldSet 字段 layout 二次查表不一致（地址分支）: field=`{field}`（symbol=`{}`）",
+                            self.mir_fn.symbol
+                        ));
                     };
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
