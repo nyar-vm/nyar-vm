@@ -26,6 +26,22 @@ fn toolchain_fingerprint_carries_compiler_build_identity() {
     assert!(!build_id.trim().is_empty(), "编译器构建身份不得为空");
     let fingerprint = toolchain_fingerprint();
     assert!(fingerprint.contains(&format!("compiler={build_id}")), "工具链指纹必须携带构建身份：{fingerprint}");
+    // 消费者（N-API manifest view）从指纹提取身份必须与构建身份一致。
+    assert_eq!(compiler_build_id_from_fingerprint(&fingerprint), Some(build_id));
+}
+
+#[test]
+fn compiler_build_id_extraction_distinguishes_same_version_builds() {
+    // 同版本不同构建：仅 `compiler=` 段不同（dirty 内容摘要不同）也必须提取出不同身份。
+    let base = toolchain_fingerprint();
+    let prefix = base.split(";compiler=").next().expect("fingerprint carries compiler segment");
+    let build_a = format!("{prefix};compiler=abcdef123456-dirty000000000001");
+    let build_b = format!("{prefix};compiler=abcdef123456-dirty000000000002");
+    assert_eq!(compiler_build_id_from_fingerprint(&build_a), Some("abcdef123456-dirty000000000001"));
+    assert_eq!(compiler_build_id_from_fingerprint(&build_b), Some("abcdef123456-dirty000000000002"));
+    // 旧构建指纹缺少 `compiler=` 段或段值为空：提取失败返回 None，消费者不得伪造身份。
+    assert_eq!(compiler_build_id_from_fingerprint("legion=0.1.0;identity=3;bytecode=7"), None);
+    assert_eq!(compiler_build_id_from_fingerprint(&format!("{prefix};compiler=")), None);
 }
 
 #[test]
