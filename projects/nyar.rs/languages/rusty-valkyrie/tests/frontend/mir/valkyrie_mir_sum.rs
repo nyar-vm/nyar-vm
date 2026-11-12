@@ -184,7 +184,6 @@ fn multi_field_variant_payload_is_record_and_binds_non_first_field() {
 fn zero_field_and_single_field_variants_keep_payload_shapes_through_canonical() {
     let source = r#"
 unite Flag {
-    [constructor]
     On,
     Off,
 }

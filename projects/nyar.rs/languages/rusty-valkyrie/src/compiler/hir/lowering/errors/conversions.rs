@@ -173,6 +173,12 @@ impl std::fmt::Display for HirError {
             Self::AutoConstructorAttributeOnNonUnityVariant { aggregate, variant, declared_kind, .. } => {
                 write!(f, "`[constructor]` on `{aggregate}` variant `{variant}` requires a `unite`, but the aggregate is `{declared_kind}`")
             }
+            Self::AutoConstructorAttributeOnFieldlessUnityVariant { aggregate, variant, .. } => {
+                write!(
+                    f,
+                    "`[constructor]` on `{aggregate}` variant `{variant}` requires a named-field variant body; a bare `unite` variant is an illegal declaration"
+                )
+            }
             Self::AutoConstructorAttributeOnNonVariant { target_kind, name, .. } => {
                 write!(f, "`[constructor]` is only valid on `unite` variants, but found on {target_kind} `{name}`")
             }

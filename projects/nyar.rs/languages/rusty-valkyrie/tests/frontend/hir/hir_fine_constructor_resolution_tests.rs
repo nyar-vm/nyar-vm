@@ -259,7 +259,6 @@ structure i64 { }
 unite DataCacheSlot<T> {
     [constructor]
     Filled { value: T },
-    [constructor]
     Empty,
 }
 

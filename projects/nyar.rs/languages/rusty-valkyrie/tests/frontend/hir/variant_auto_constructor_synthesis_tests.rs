@@ -93,27 +93,25 @@ unite Pair {
     assert_nominal_return(&candidate.signature.return_type, pair.declaration.expect("Pair declaration"), 0);
 }
 
+/// 01 §4.11：`[constructor]` 标注无字段体裸变体是非法声明，必须 fail-closed；
+/// 零载荷变体的构造 callable 合成合同已退役，不另发明裸变体构造/调用语法。
 #[test]
-fn zero_payload_variant_synthesizes_nullary_constructor() {
-    let module = compile(
-        r#"
+fn zero_payload_variant_constructor_synthesis_is_retired() {
+    let error = ValkyrieCompiler::default()
+        .compile_source(
+            r#"
 unite Flag {
     [constructor]
     Off,
     On,
 }
 "#,
+        )
+        .expect_err("裸变体 [constructor] 必须 fail-closed");
+    assert!(
+        matches!(error, rusty_valkyrie::HirError::AutoConstructorAttributeOnFieldlessUnityVariant { .. }),
+        "期望 AutoConstructorAttributeOnFieldlessUnityVariant，got {error:?}"
     );
-    let candidates = collect_module_candidates(&module);
-    let flag = enum_named(&module, "Flag");
-    let off = &flag.variants[0];
-    let candidate = variant_auto_constructor(&candidates, "Flag", "Off");
-
-    assert!(candidate.is_auto_constructor);
-    assert!(candidate.signature.params.is_empty(), "零载荷变体的构造参数必须为空");
-    assert_eq!(candidate.sum_owner, flag.declaration);
-    assert_eq!(candidate.sum_variant, off.declaration);
-    assert_nominal_return(&candidate.signature.return_type, flag.declaration.expect("Flag declaration"), 0);
 }
 
 #[test]

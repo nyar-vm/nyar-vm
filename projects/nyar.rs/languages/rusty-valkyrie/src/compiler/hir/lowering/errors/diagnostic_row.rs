@@ -193,6 +193,11 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("variant", DiagnosticArg::CallableShort(variant.clone()))
                     .with_arg("declared_kind", DiagnosticArg::String(declared_kind.clone()));
             }
+            HirError::AutoConstructorAttributeOnFieldlessUnityVariant { aggregate, variant, .. } => {
+                row = row
+                    .with_arg("aggregate", DiagnosticArg::Aggregate(aggregate.clone()))
+                    .with_arg("variant", DiagnosticArg::CallableShort(variant.clone()));
+            }
             HirError::AutoConstructorAttributeOnNonVariant { target_kind, name, .. } => {
                 row = row
                     .with_arg("target_kind", DiagnosticArg::String(target_kind.clone()))
@@ -640,6 +645,7 @@ pub(super) fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::SemanticCheckViolations { source, .. } => source.clone(),
         HirError::CopyDisciplineViolations { source, .. } => source.clone(),
         HirError::AutoConstructorAttributeOnNonUnityVariant { source, .. } => source.clone(),
+        HirError::AutoConstructorAttributeOnFieldlessUnityVariant { source, .. } => source.clone(),
         HirError::AutoConstructorAttributeOnNonVariant { source, .. } => source.clone(),
         HirError::DuplicateAutoConstructorAttribute { source, .. } => source.clone(),
         HirError::DuplicateTypeDefinition { source, .. } => source.clone(),
@@ -726,6 +732,7 @@ pub(super) fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::SemanticCheckViolations { span, .. } => span.clone(),
         HirError::CopyDisciplineViolations { span, .. } => span.clone(),
         HirError::AutoConstructorAttributeOnNonUnityVariant { span, .. } => span.clone(),
+        HirError::AutoConstructorAttributeOnFieldlessUnityVariant { span, .. } => span.clone(),
         HirError::AutoConstructorAttributeOnNonVariant { span, .. } => span.clone(),
         HirError::DuplicateAutoConstructorAttribute { span, .. } => span.clone(),
         HirError::DuplicateTypeDefinition { span, .. } => span.clone(),

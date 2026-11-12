@@ -393,6 +393,17 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// `[constructor]` 标注落在 `unite` 中没有字段体的裸变体上。
+    AutoConstructorAttributeOnFieldlessUnityVariant {
+        /// 变体所属聚合名。
+        aggregate: String,
+        /// 被标注的变体名。
+        variant: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// `[constructor]` 标注落在变体以外的声明上。
     AutoConstructorAttributeOnNonVariant {
         /// 被标注声明的类别。

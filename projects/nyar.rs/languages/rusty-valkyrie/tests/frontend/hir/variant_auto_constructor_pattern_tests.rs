@@ -215,7 +215,6 @@ fn named_object_pattern_binds_by_declared_field_name_regardless_of_order() {
 fn zero_payload_pattern_matches_by_tag_and_reaches_semantic_mir() {
     let source = r#"
 unite Flag {
-    [constructor]
     Off,
     On,
 }

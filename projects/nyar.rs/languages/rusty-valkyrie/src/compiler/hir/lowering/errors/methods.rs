@@ -87,6 +87,7 @@ impl HirError {
             Self::SemanticCheckViolations { .. } => "valkyrie.hir.semantic_check_violations",
             Self::CopyDisciplineViolations { .. } => "valkyrie.hir.copy_discipline_violations",
             Self::AutoConstructorAttributeOnNonUnityVariant { .. } => "valkyrie.hir.constructor_attribute_on_non_unity_variant",
+            Self::AutoConstructorAttributeOnFieldlessUnityVariant { .. } => "valkyrie.hir.constructor_attribute_on_fieldless_unity_variant",
             Self::AutoConstructorAttributeOnNonVariant { .. } => "valkyrie.hir.constructor_attribute_on_non_variant",
             Self::DuplicateAutoConstructorAttribute { .. } => "valkyrie.hir.duplicate_constructor_attribute",
             Self::ClassBodyMethodDeclared { .. } => "valkyrie.hir.class_body_method_declared",

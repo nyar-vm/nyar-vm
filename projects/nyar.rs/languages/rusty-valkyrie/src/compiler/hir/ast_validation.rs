@@ -17,7 +17,10 @@ pub(crate) fn validate_ast_root(root: &ValkyrieRoot) -> Result<(), HirError> {
     validate_duplicate_type_names(&root.items, &[])
 }
 
-/// `[constructor]` 只允许出现在 `unite` 变体上，且每个变体最多一次。
+/// `[constructor]` 只允许出现在 `unite` 的具名字段变体上，且每个变体最多一次。
+///
+/// 无字段体的裸变体（如 `[constructor] Null`）是非法声明：必须带源区间报错并阻止
+/// 成功编译，不得降级为 warning 或忽略注解后继续（01 §4.11）。
 fn validate_auto_constructor_attributes(items: &[StatementNode]) -> Result<(), HirError> {
     for item in items {
         match item {
@@ -48,6 +51,14 @@ fn validate_auto_constructor_attributes(items: &[StatementNode]) -> Result<(), H
                             aggregate: enums.name.name.clone(),
                             variant: variant.name.name.clone(),
                             declared_kind: declared_kind.to_string(),
+                            source: ast_source(),
+                            span: ast_span(&variant.span),
+                        });
+                    }
+                    if count == 1 && enums.kind == EnumsKind::Unity && variant.fields.is_empty() {
+                        return Err(HirError::AutoConstructorAttributeOnFieldlessUnityVariant {
+                            aggregate: enums.name.name.clone(),
+                            variant: variant.name.name.clone(),
                             source: ast_source(),
                             span: ast_span(&variant.span),
                         });

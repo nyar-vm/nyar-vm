@@ -59,6 +59,34 @@ fn constructor_attribute_on_type_enum_variant_is_rejected() {
 }
 
 #[test]
+fn constructor_attribute_on_fieldless_unity_variant_is_rejected() {
+    let error = ValkyrieCompiler::default()
+        .compile_source("unite Nullable { [constructor] Null, Present { value: i32 } }")
+        .expect_err("unite 裸变体上的 [constructor] 必须 fail-closed，不得忽略注解后继续成功");
+    match error {
+        HirError::AutoConstructorAttributeOnFieldlessUnityVariant { aggregate, variant, span, .. } => {
+            assert_eq!(aggregate, "Nullable");
+            assert_eq!(variant, "Null");
+            assert!(span.start < span.end, "诊断必须带非退化源区间，got {span:?}");
+        }
+        other => panic!("期望 AutoConstructorAttributeOnFieldlessUnityVariant，got {other:?}"),
+    }
+}
+
+#[test]
+fn constructor_attribute_on_named_field_variant_is_accepted() {
+    let module = ValkyrieCompiler::default()
+        .compile_source("unite Flag { [constructor] Boolean { value: bool }, Null }")
+        .expect("具名字段变体上的 [constructor] 是合法声明");
+    let flag = module.enums.iter().find(|item| item.name.to_string() == "Flag").expect("Flag 声明");
+    assert_eq!(flag.variants[0].name.to_string(), "Boolean");
+    assert!(flag.variants[0].is_auto_constructor);
+    assert_eq!(flag.variants[0].fields.len(), 1);
+    assert_eq!(flag.variants[0].fields[0].name.to_string(), "value");
+    assert!(!flag.variants[1].is_auto_constructor);
+}
+
+#[test]
 fn duplicate_constructor_attribute_is_rejected() {
     let error = ValkyrieCompiler::default()
         .compile_source("unite Wrapped { [constructor] [constructor] Empty }")
