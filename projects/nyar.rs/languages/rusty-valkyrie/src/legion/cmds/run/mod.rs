@@ -227,12 +227,17 @@ pub struct ManifestVerificationContext<'a> {
     pub expected_evidence: Option<&'a CompileEvidenceDigest>,
 }
 
-/// compiler build identity 为 `unknown`（无 Git）或空时给出不可复用理由。
-/// 正式复用不得接受无法绑定实际构建的身份。
+/// compiler build identity 不可信时给出拒绝理由：空串、`unknown`（无 Git 或
+/// 身份生成显式失败）、裸 `-dirty` 后缀（未绑定 dirty 内容摘要）。
+/// 正式复用不得接受无法绑定实际构建内容的身份；裸 `-dirty` 不区分同修订的
+/// 不同未提交内容，即使来自旧构建或外部注入也一律拒绝。
 #[doc(hidden)]
-pub fn unknown_compiler_identity_reason(current_id: &str) -> Option<String> {
+pub fn untrusted_compiler_identity_reason(current_id: &str) -> Option<String> {
     if current_id.is_empty() || current_id == "unknown" {
-        Some(format!("compiler build identity is `{current_id}` (no git); formal reuse refused"))
+        Some(format!("compiler build identity is `{current_id}` (no git or failed generation); formal reuse refused"))
+    }
+    else if current_id.ends_with("-dirty") {
+        Some(format!("compiler build identity `{current_id}` is a bare `-dirty` suffix without a content digest; formal reuse refused"))
     }
     else {
         None
@@ -331,7 +336,7 @@ impl ExecutionManifest {
         if self.toolchain_fingerprint.is_empty() {
             return Ok(ManifestVerdict::Stale("manifest missing toolchain fingerprint".into()));
         }
-        if let Some(reason) = unknown_compiler_identity_reason(crate::legion::cache::compiler_build_id()) {
+        if let Some(reason) = untrusted_compiler_identity_reason(crate::legion::cache::compiler_build_id()) {
             return Ok(ManifestVerdict::Stale(reason));
         }
         let current = crate::legion::cache::toolchain_fingerprint();

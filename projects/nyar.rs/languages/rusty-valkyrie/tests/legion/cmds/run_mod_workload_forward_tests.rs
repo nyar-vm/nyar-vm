@@ -394,15 +394,45 @@ fn verify_output_dir_rejects_missing_or_stale_toolchain_fingerprint() {
 #[test]
 fn unknown_compiler_build_identity_is_not_reusable() {
     // 无 Git 构建的 `unknown` 身份必须被权威核心判不可复用（正式复用拒绝）。
-    assert!(unknown_compiler_identity_reason("unknown").is_some(), "`unknown` identity must be refused");
-    assert!(unknown_compiler_identity_reason("").is_some(), "empty identity must be refused");
-    assert!(unknown_compiler_identity_reason("efbc884c1234-dirty0123456789").is_none(), "git-derived identity is acceptable");
+    assert!(untrusted_compiler_identity_reason("unknown").is_some(), "`unknown` identity must be refused");
+    assert!(untrusted_compiler_identity_reason("").is_some(), "empty identity must be refused");
+    // 裸 `-dirty`（无内容摘要）不区分同修订的不同未提交内容，一律拒绝可信复用。
+    assert!(untrusted_compiler_identity_reason("efbc884c1234-dirty").is_some(), "bare `-dirty` suffix without digest must be refused");
+    // 正常路径：dirty 身份必须绑定内容摘要，绑定后才可信。
+    assert!(
+        untrusted_compiler_identity_reason("efbc884c1234-dirty0123456789").is_none(),
+        "git-derived dirty identity with content digest is acceptable"
+    );
+    assert!(untrusted_compiler_identity_reason("efbc884c1234").is_none(), "clean git revision identity is acceptable");
     // 运行时读取当前构建身份：正式复用环境（cargo/git 检出）不得是 `unknown`。
     let current = rusty_valkyrie::legion::cache::compiler_build_id();
     assert!(!current.is_empty(), "compiler build id must be present in a git checkout");
-    if unknown_compiler_identity_reason(current).is_none() {
+    if untrusted_compiler_identity_reason(current).is_none() {
         assert!(rusty_valkyrie::legion::cache::toolchain_fingerprint().contains(&format!("compiler={current}")));
     }
+}
+
+#[test]
+fn verify_with_plan_context_rejects_changed_sources() {
+    // 源码变化：manifest 记录的输入摘要与当前 workspace 重算不一致 → 不可信复用。
+    let (_directory, plan, artifact_path) = sample_freshness_plan();
+    let evidence = matching_evidence(&plan);
+    write_test_compile_evidence(&plan.output_dir, &evidence);
+    let manifest = sample_execution_manifest(&plan, &artifact_path, evidence);
+    let stale_inputs = manifest.inputs.clone();
+    std::fs::write(plan.project.source_files.first().expect("source file"), "// edited after build\n").expect("edit source");
+    let current_inputs = collect_execution_input_digests(&plan).expect("recomputed input digests");
+    assert_ne!(stale_inputs, current_inputs, "source edit must change recomputed input digests");
+    let target = plan.project.build_target.target.to_string();
+    let context = ManifestVerificationContext {
+        expected_project: Some((plan.project.name.as_str(), target.as_str(), plan.project.artifact_kind)),
+        current_inputs: Some(&current_inputs),
+        expected_evidence: Some(&expected_resolver_compile_evidence(&plan).expect("expected evidence")),
+    };
+    let verdict = manifest.verify(&plan.output_dir, &context).expect("verify");
+    let reason = verdict.stale_reason().unwrap_or_else(|| panic!("changed sources must invalidate reuse, got {verdict:?}"));
+    assert!(reason.contains("input digests differ"), "unexpected reason: {reason}");
+    assert!(!manifest.is_fresh_for_plan(&plan).expect("freshness check"), "changed sources must not be reusable");
 }
 
 #[test]
