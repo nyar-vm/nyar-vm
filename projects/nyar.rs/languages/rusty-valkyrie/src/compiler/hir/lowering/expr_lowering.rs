@@ -163,6 +163,15 @@ fn lower_pattern(pattern: &Pattern, source_id: SourceID, span: SourceSpan) -> Re
         Pattern::Type(type_pattern) => HirPattern::Name(lower_name_path(&type_pattern.name)),
         Pattern::Class(class_pattern) => lower_class_pattern(class_pattern, source_id, span)?,
         Pattern::Else(_) => HirPattern::Else,
+        // 备选模式 `A | B`：HIR 的 `Or` 是既有模式形态，MIR 与类型检查均已消费；
+        // 这里只按源码顺序降低每个分支，不复制 arm body、不另设匹配语义。
+        Pattern::Alternative(alternative) => HirPattern::Or(
+            alternative
+                .patterns
+                .iter()
+                .map(|nested| lower_pattern(nested, source_id, span.clone()))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
         Pattern::Array(array_pattern) => lower_array_pattern(array_pattern, source_id, span)?,
     })
 }
@@ -303,6 +312,13 @@ fn lower_term_expression_body(
             Ok(HirExprKind::GenericApply {
                 callee: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)?),
                 arguments: arguments.iter().map(super::lower_type_expression).collect::<Result<Vec<_>, _>>()?,
+            })
+        })?,
+        // `expr?`：HIR 的 `TryPropagate` 是既有语义节点，ok 变体由后续 HIR 校验阶段解析。
+        TermExpression::TryPropagate { expr, .. } => lower_deferred(|| {
+            Ok(HirExprKind::TryPropagate {
+                inner: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)?),
+                resolved_ok_variant: None,
             })
         })?,
         TermExpression::ApplyCall { callee, args, .. } => lower_call_expression(callee, args, source_id, span_range.clone(), span.clone())?,
