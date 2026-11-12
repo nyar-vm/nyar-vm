@@ -124,8 +124,16 @@ fn assert_native_pe_matches_interpret(source: &str, residual_ok: impl FnOnce(&Re
     assert!(residual_ok(&specialized), "residual result unexpected: {specialized:?}; interpret={interpreted:?}");
     assert_eq!(specialized.to_key(), legacy_key(&interpreted), "residual={specialized:?} interpret={interpreted:?}");
 
-    let pe = legend_vm::compiler::emit_native_pe(&residual, None).expect("emit PE bytes");
-    assert!(pe.starts_with(b"MZ"), "product path must emit PE, not .odin");
+    if matches!(specialized, ResidualValue::Int(_)) {
+        let pe = legend_vm::compiler::emit_native_pe(&residual, None).expect("emit PE bytes");
+        assert!(pe.starts_with(b"MZ"), "product path must emit PE, not .odin");
+    }
+    else {
+        // Non-integer residuals have no x64 lowering yet: the product path must
+        // fail closed instead of emitting a success-shaped exit-0 stub PE.
+        let error = legend_vm::compiler::emit_native_pe(&residual, None).expect_err("non-integer residual must fail closed");
+        assert!(error.to_string().contains("not implemented"), "unexpected error: {error}");
+    }
 }
 
 fn legacy_key(value: &LegacyValue) -> String {

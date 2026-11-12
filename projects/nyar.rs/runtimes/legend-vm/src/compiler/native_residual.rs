@@ -4,8 +4,10 @@
 //! sink records ops for **native / x64 → Windows PE**, not NyarVM bytecode.
 //!
 //! Full x64 lowering is still incomplete; specialization always produces a
-//! [`NativeResidualModule`], and [`emit_native_pe`] wraps a minimal PE (exit-code
-//! when the residual main is a pure integer result, otherwise exit-0 stub).
+//! [`NativeResidualModule`], and [`emit_native_pe`] wraps a minimal PE whose exit
+//! code comes from a residual `main` that evaluates to an integer. Anything the
+//! lowering cannot honestly represent — evaluation failure or a non-integer
+//! result — is an explicit error, never a success-shaped empty body.
 
 use std::collections::HashMap;
 
@@ -487,16 +489,19 @@ fn display_value(value: &ResidualValue) -> String {
 /// Lower a native residual to raw x64 bytes suitable for [`PeCompiler`].
 ///
 /// Subset: when `main` evaluates to an integer, emit `mov rax, imm` so the PE
-/// epilog exits with that code. Otherwise emit an empty body (exit 0 stub) —
-/// residual ops remain the source of truth for future full codegen.
+/// epilog exits with that code. Residuals the subset cannot represent fail
+/// closed: a non-integer result is an explicit "not implemented" error (an
+/// empty body would masquerade as a working exit-0 product), and an evaluation
+/// error propagates with its message. Residual ops remain the source of truth
+/// for future full codegen.
 pub fn lower_native_residual_to_x64(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
     if !module.is_native_bound() {
         return Err("residual is not native-bound".into());
     }
     match eval_native_residual(module) {
         Ok(ResidualValue::Int(value)) => Ok(encode_mov_rax_imm64(value as u64)),
-        Ok(_) => Ok(Vec::new()),
-        Err(_) => Ok(Vec::new()),
+        Ok(other) => Err(format!("full x64 lowering is not implemented for non-integer residual results (got {other:?})")),
+        Err(error) => Err(format!("native residual evaluation failed: {error}")),
     }
 }
 
@@ -516,5 +521,44 @@ pub fn emit_native_pe(module: &NativeResidualModule, output_path: Option<&std::p
     match output_path {
         Some(path) => compiler.compile("main", &x64, path),
         None => compiler.compile_to_bytes(&x64),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn residual_main(ops: Vec<NativeResidualOp>) -> NativeResidualModule {
+        NativeResidualModule {
+            name: "t".into(),
+            target: NativeResidualTarget::Native,
+            functions: vec![NativeResidualFunction { name: "main".into(), parameters: Vec::new(), ops }],
+        }
+    }
+
+    #[test]
+    fn integer_result_lowers_to_mov_rax_encoding() {
+        let module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
+        let text = lower_native_residual_to_x64(&module).expect("integer residual must lower");
+        let mut expected = vec![0x48, 0xB8];
+        expected.extend_from_slice(&42u64.to_le_bytes());
+        assert_eq!(text, expected);
+    }
+
+    #[test]
+    fn non_integer_result_fails_closed_instead_of_empty_body() {
+        let module = residual_main(vec![NativeResidualOp::PushString("n:5".into()), NativeResidualOp::Ret]);
+        let error = lower_native_residual_to_x64(&module).expect_err("non-integer residual must not report success");
+        assert!(error.contains("not implemented"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn evaluation_failure_propagates_instead_of_empty_body() {
+        // `main` calls a missing function → `eval_native_residual` errors.
+        let mut module = residual_main(vec![NativeResidualOp::Call { name: "absent".into(), argc: 0 }, NativeResidualOp::Ret]);
+        module.functions.push(NativeResidualFunction { name: "other".into(), parameters: Vec::new(), ops: vec![NativeResidualOp::PushI64(0), NativeResidualOp::Ret] });
+        let error = lower_native_residual_to_x64(&module).expect_err("evaluation failure must not report success");
+        assert!(error.contains("evaluation failed"), "unexpected error: {error}");
+        assert!(error.contains("absent"), "evaluation message must be carried: {error}");
     }
 }
