@@ -86,14 +86,6 @@ pub fn legion_spy_run(mode: String, options: SpyTargetRunOptions) -> Result<Legi
     Ok(LegionRunOutcome { status: status as u32, stdout, stderr })
 }
 
-/// 返回当前编译器工具链指纹，含 `compiler=` 构建身份。
-///
-/// 消费者用它核对 addon 与本次验收的源码修订是否对应，不能只凭包版本判断。
-#[napi]
-pub fn valkyrie_toolchain_identity() -> String {
-    rusty_valkyrie::legion::cache::toolchain_fingerprint()
-}
-
 fn exit_code_to_i32(code: ExitCode) -> i32 {
     if code == ExitCode::SUCCESS { 0 } else { 1 }
 }

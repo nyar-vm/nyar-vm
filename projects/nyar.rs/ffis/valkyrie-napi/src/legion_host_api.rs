@@ -84,7 +84,8 @@ pub fn legion_read_execution_manifest(output_dir: String) -> Option<LegionExecut
         host_provider_binding_hash: evidence.map(|e| e.host_provider_binding_hash.clone()),
         primary_physical_entry: contract.map(|c| c.physical_entry.clone()),
         primary_logical_entry: contract.map(|c| c.logical_entry.clone()),
-        compiler_build_identity: rusty_valkyrie::legion::cache::compiler_build_id_from_fingerprint(&manifest.toolchain_fingerprint).map(str::to_string),
+        compiler_build_identity: rusty_valkyrie::legion::cache::compiler_build_id_from_fingerprint(&manifest.toolchain_fingerprint)
+            .map(str::to_string),
     })
 }
 
