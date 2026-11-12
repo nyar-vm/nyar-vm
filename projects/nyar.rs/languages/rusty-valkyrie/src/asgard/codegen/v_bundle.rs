@@ -67,7 +67,7 @@ pub fn build_awsl_terminal_source(components: &[LoweredComponent]) -> AsgardResu
     out.push_str(TERMINAL_GENERATED_NAMESPACE);
     let mut generated = String::new();
     for component in &components {
-        generated.push_str(&render_terminal_component_v(component));
+        generated.push_str(&render_terminal_component_v(component)?);
         generated.push('\n');
     }
     push_host_callable_micros(&mut out, &generated);
