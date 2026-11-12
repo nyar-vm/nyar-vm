@@ -376,3 +376,68 @@ structure LocalTriple { a: i64, b: i64, c: i64 }
         .map(|_| ())
         .expect("跨包泛型字段初始化构造必须解析");
 }
+
+#[test]
+fn nested_variant_constructor_narrows_by_outer_field_type_when_names_collide() {
+    // `decode_char_at` 的真实形态：多个 unite 都有 `EndOfInput`，外层 `Fail { error: ... }`
+    // 的字段类型（`E = Utf8DecodeError`）必须把内层构造收窄到唯一候选；
+    // 变体字段签名缺失时同名变体并列成歧义。
+    let std_types = r#"
+namespace std.types;
+
+unite Result<T, E> {
+    [constructor]
+    Fine { value: T },
+    [constructor]
+    Fail { error: E },
+}
+
+unite Utf8DecodeError {
+    [constructor]
+    EndOfInput { position: u64 },
+    [constructor]
+    Truncated { position: u64 },
+}
+
+unite Utf16DecodeError {
+    [constructor]
+    EndOfInput { position: u64 },
+}
+"#;
+    let consumer = r#"
+namespace app;
+
+using std.types::{Result, Fine, Fail, Utf8DecodeError};
+
+[export] micro decode(start: u64) -> Result<i64, Utf8DecodeError> {
+    return Fail { error: EndOfInput { position: start } }
+}
+"#;
+    let groups = groups_with_primitives(vec![
+        CompilerSourceGroup::single_source("std.types", "std.types", std_types),
+        CompilerSourceGroup::single_source("app", "app", consumer).as_entry().with_direct_dependencies(vec!["std.types".into()]),
+    ]);
+    ValkyrieCompiler::default()
+        .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
+        .map(|_| ())
+        .expect("同名内层变体必须按外层字段类型收窄到唯一候选");
+}
+
+#[test]
+fn tuple_literal_argument_binds_each_formal_slot_type() {
+    // `(first as char, 1)` 的整型字面量位必须由形式参数的元组槽类型（`u64`）定型，
+    // 否则字面量默认宽度会让返回类型与声明不一致。
+    let source = r#"
+unite Result<T, E> {
+    [constructor]
+    Fine { value: T },
+    [constructor]
+    Fail { error: E },
+}
+
+micro decode(first: u32) -> Result<(char, u64), i64> {
+    return Fine { value: (first as char, 1) }
+}
+"#;
+    compile(source).expect("元组字面量实参必须逐位置按形式参数槽类型定型");
+}

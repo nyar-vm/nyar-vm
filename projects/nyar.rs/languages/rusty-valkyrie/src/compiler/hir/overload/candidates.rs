@@ -37,8 +37,8 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction, impo
     candidate.with_where_constraints(function.where_constraints.clone())
 }
 
-fn synthetic_field_params(item: &HirStruct) -> Vec<HirParam> {
-    item.fields
+fn synthetic_field_params(fields: &[crate::compiler::types::hir::HirField]) -> Vec<HirParam> {
+    fields
         .iter()
         .map(|field| HirParam {
             name: crate::compiler::types::hir::HirIdentifier {
@@ -62,7 +62,7 @@ fn struct_constructor_path(item: &HirStruct) -> NamePath {
 }
 
 fn build_struct_constructor_candidate(item: &HirStruct, array_owner: Option<nyar_types::ItemId>) -> OverloadCandidate {
-    let param_specs = synthetic_field_params(item);
+    let param_specs = synthetic_field_params(&item.fields);
     let mut candidate = OverloadCandidate::new(
         struct_constructor_path(item),
         OverloadDomain::Constructor,
@@ -97,7 +97,8 @@ fn build_variant_constructor_candidate(variant: &HirVariant, enum_def: &HirEnum)
         variant_constructor_param_types(variant),
         return_type,
         OverloadMatchKind::Row,
-    );
+    )
+    .with_param_specs(synthetic_field_params(&variant.fields));
     for generic in &enum_def.generics {
         candidate = candidate.with_generic_parameter(generic);
     }
