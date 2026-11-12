@@ -21,10 +21,10 @@ fn param(name: &str, binding_kind: HirParameterBindingKind) -> HirParam {
     }
 }
 
-fn param_with_default(name: &str, binding_kind: HirParameterBindingKind, default: i64) -> HirParam {
+fn param_with_default(name: &str, binding_kind: HirParameterBindingKind, default: i128) -> HirParam {
     HirParam {
         default: Some(HirExpr {
-            kind: rusty_valkyrie::compiler::types::hir::HirExprKind::Literal(rusty_valkyrie::compiler::types::hir::HirLiteral::Integer64(
+            kind: rusty_valkyrie::compiler::types::hir::HirExprKind::Literal(rusty_valkyrie::compiler::types::hir::HirLiteral::Integer(
                 default,
             )),
             span: SourceSpan::new(SourceID::default(), 0, 0),
@@ -33,20 +33,18 @@ fn param_with_default(name: &str, binding_kind: HirParameterBindingKind, default
     }
 }
 
-fn positional(value: i64) -> HirCallArgument {
+fn positional(value: i128) -> HirCallArgument {
     HirCallArgument::positional(HirExpr {
-        kind: rusty_valkyrie::compiler::types::hir::HirExprKind::Literal(rusty_valkyrie::compiler::types::hir::HirLiteral::Integer64(value)),
+        kind: rusty_valkyrie::compiler::types::hir::HirExprKind::Literal(rusty_valkyrie::compiler::types::hir::HirLiteral::Integer(value)),
         span: SourceSpan::new(SourceID::default(), 0, 0),
     })
 }
 
-fn keyword(name: &str, value: i64) -> HirCallArgument {
+fn keyword(name: &str, value: i128) -> HirCallArgument {
     HirCallArgument {
         name: Some(Identifier::new(name)),
         value: HirExpr {
-            kind: rusty_valkyrie::compiler::types::hir::HirExprKind::Literal(rusty_valkyrie::compiler::types::hir::HirLiteral::Integer64(
-                value,
-            )),
+            kind: rusty_valkyrie::compiler::types::hir::HirExprKind::Literal(rusty_valkyrie::compiler::types::hir::HirLiteral::Integer(value)),
             span: SourceSpan::new(SourceID::default(), 0, 0),
         },
     }

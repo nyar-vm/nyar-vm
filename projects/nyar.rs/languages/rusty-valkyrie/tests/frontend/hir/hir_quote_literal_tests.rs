@@ -69,7 +69,8 @@ fn plain_text_of(kind: &HirExprKind) -> Vec<rusty_valkyrie::types::hir::HirStrin
 fn assert_text(source: &str, expected: &str) {
     let segments = plain_text_of(&first_let_initializer_kind(source));
     assert_eq!(segments.len(), 1, "源码 {source} 必须是单段文本");
-    let rusty_valkyrie::types::hir::HirStringSegment::Text(text) = &segments[0] else {
+    let rusty_valkyrie::types::hir::HirStringSegment::Text(text) = &segments[0]
+    else {
         panic!("源码 {source} 必须是文本段")
     };
     assert_eq!(text, expected, "源码 {source}");
@@ -224,7 +225,7 @@ fn interpolation_single_slot_binds_display_call() {
         panic!("display 必须以成员选择为 callee，实际 {:?}", callee.kind)
     };
     assert_eq!(field.as_str(), "display");
-    assert!(matches!(object.kind, HirExprKind::Literal(HirLiteral::Integer64(1))), "插值表达式必须是真实表达式树");
+    assert!(matches!(object.kind, HirExprKind::Literal(HirLiteral::Integer(1))), "插值表达式必须是真实表达式树");
 }
 
 #[test]
@@ -274,8 +275,8 @@ fn interpolation_arithmetic_uses_declared_operator() {
     assert_eq!(addition.symbol.parts().last().map(|identifier| identifier.as_str()), Some("infix +"), "插值必须先解出声明运算符");
     let operands = call_arguments(object);
     assert_eq!(operands.len(), 2);
-    assert!(matches!(operands[0].value.kind, HirExprKind::Literal(HirLiteral::Integer64(3))));
-    assert!(matches!(operands[1].value.kind, HirExprKind::Literal(HirLiteral::Integer64(1))));
+    assert!(matches!(operands[0].value.kind, HirExprKind::Literal(HirLiteral::Integer(3))));
+    assert!(matches!(operands[1].value.kind, HirExprKind::Literal(HirLiteral::Integer(1))));
 }
 
 #[test]
@@ -609,9 +610,7 @@ fn assert_append_ambiguous(argument: &str) {
     let source = format!(
         "{OVERLOAD_APPEND_FIXTURE}\nmicro probe(): bool {{ let builder: Builder = Builder {{ flag: true }} return builder.append({argument}) }}"
     );
-    let error = ValkyrieCompiler::default()
-        .compile_source(&source)
-        .expect_err(&format!("实参 {argument} 对 char/文本双形参必须报歧义"));
+    let error = ValkyrieCompiler::default().compile_source(&source).expect_err(&format!("实参 {argument} 对 char/文本双形参必须报歧义"));
     // 断言结构化歧义语义，不匹配消息字符串：char/文本两个同具体度候选并列，
     // 解析器冻结 `AmbiguousExplicitImpls`，不得静默选一个。
     match error {

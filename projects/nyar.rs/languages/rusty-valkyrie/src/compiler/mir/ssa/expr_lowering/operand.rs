@@ -28,17 +28,15 @@ impl MirBuilder {
                 let (constant, ty) = match lower_literal(literal, expected_type, &self.field_declarations) {
                     Ok(pair) => pair,
                     Err(reason) => {
-                        self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnsupportedExpression {
-                            span: expr.span.clone(),
-                            kind: reason,
-                        });
+                        self.diagnostics
+                            .push(crate::compiler::mir::ssa::MirDiagnostic::UnsupportedExpression { span: expr.span.clone(), kind: reason });
                         return MirOperand::Constant(MirConstant::Unit);
                     }
                 };
                 // 调用点形参为 `Nominal{usize}` 时，overload 已特化字面量；MIR 必须写出同一类型，
                 // 否则 SMIR007 仍见 Integer32 vs Nominal。
                 let ty = match (literal, expected_type) {
-                    (HirLiteral::Integer64(_), Some(expected))
+                    (HirLiteral::Integer(_), Some(expected))
                         if crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(expected, &self.field_declarations) =>
                     {
                         Some(expected.clone())
@@ -441,7 +439,7 @@ impl MirBuilder {
                 // 长度实参类型取冻结合同首形参（`usize`），与普通调用形参 hint 同一口径。
                 let length_hint = with_length.parameter_types.first().cloned();
                 let length_operand = self.lower_expr_to_operand_with_hint(
-                    &HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(items.len() as i64)), span: expr.span.clone() },
+                    &HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer(items.len() as i128)), span: expr.span.clone() },
                     length_hint.as_ref(),
                 );
                 let container = self.push_call_returning(with_length_callee, vec![length_operand], with_length.return_type.clone());
@@ -472,19 +470,16 @@ impl MirBuilder {
                     }
                     // 字面量没有标签语法：标签只从期望类型取得，元素类型仍按实际字面量推断，
                     // 让真正的类型不匹配留到后续校验，而不是被期望类型掩盖。
-                    Some(ValkyrieType::LabeledTuple(expected_fields)) if expected_fields.len() == items.len() => {
-                        ValkyrieType::LabeledTuple(
-                            expected_fields
-                                .iter()
-                                .zip(fields.iter())
-                                .map(|(field, operand)| HirTupleField {
-                                    name: field.name.clone(),
-                                    ty: infer_builder_operand_type(operand, &self.value_types)
-                                        .unwrap_or_else(|| field.ty.clone()),
-                                })
-                                .collect(),
-                        )
-                    }
+                    Some(ValkyrieType::LabeledTuple(expected_fields)) if expected_fields.len() == items.len() => ValkyrieType::LabeledTuple(
+                        expected_fields
+                            .iter()
+                            .zip(fields.iter())
+                            .map(|(field, operand)| HirTupleField {
+                                name: field.name.clone(),
+                                ty: infer_builder_operand_type(operand, &self.value_types).unwrap_or_else(|| field.ty.clone()),
+                            })
+                            .collect(),
+                    ),
                     _ => ValkyrieType::Tuple(
                         fields
                             .iter()
@@ -540,17 +535,14 @@ impl MirBuilder {
                             // 「变体 declaration × 枚举实参」的记录身份，不取首字段类型。
                             let multi_payload = {
                                 let sum = self.sum_types.iter().find(|item| item.declaration == Some(owner));
-                                let variant = sum.and_then(|sum| {
-                                    sum.variants.iter().find(|item| item.declaration == Some(variant_declaration))
-                                });
+                                let variant =
+                                    sum.and_then(|sum| sum.variants.iter().find(|item| item.declaration == Some(variant_declaration)));
                                 variant.filter(|variant| variant.fields.len() > 1).and_then(|variant| {
                                     let record_type = sum.and_then(|sum| sum.instantiate_payload(variant, &type_args)).flatten();
                                     let ordered = variant
                                         .fields
                                         .iter()
-                                        .map(|declared| {
-                                            fields.iter().find(|(id, _)| *id == declared.id).map(|(_, operand)| operand.clone())
-                                        })
+                                        .map(|declared| fields.iter().find(|(id, _)| *id == declared.id).map(|(_, operand)| operand.clone()))
                                         .collect::<Option<Vec<_>>>()?;
                                     Some((record_type, ordered))
                                 })
@@ -703,9 +695,7 @@ impl MirBuilder {
                 if !self.bindings.contains_key(&name) && self.captured_bindings.contains(&name) {
                     self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnsupportedExpression {
                         span: expr.span.clone(),
-                        kind: format!(
-                            "lambda writes outer binding `{name}`: capture environments are not represented in Semantic MIR"
-                        ),
+                        kind: format!("lambda writes outer binding `{name}`: capture environments are not represented in Semantic MIR"),
                     });
                     return MirOperand::Constant(MirConstant::Unit);
                 }
@@ -773,10 +763,7 @@ impl MirBuilder {
                     return MirOperand::Constant(MirConstant::Unit);
                 };
                 let value = self.next_value(MirValueOrigin::Temporary);
-                self.push_instruction(
-                    MirOperation::LoadFunctionRef { instance, environment: None, captured: Vec::new() },
-                    vec![value],
-                );
+                self.push_instruction(MirOperation::LoadFunctionRef { instance, environment: None, captured: Vec::new() }, vec![value]);
                 self.value_types.insert(value, ValkyrieType::Function(reference.signature.clone()));
                 MirOperand::Value(value)
             }
@@ -844,7 +831,7 @@ pub(crate) fn infer_array_literal_element_type(items: &[HirExpr], hint: Option<&
         Some(HirExprKind::Literal(HirLiteral::Bool(_))) => ValkyrieType::Boolean,
         Some(HirExprKind::Literal(HirLiteral::String(_))) => ValkyrieType::Utf8,
         Some(HirExprKind::Literal(HirLiteral::Float64(_))) => ValkyrieType::Float64,
-        Some(HirExprKind::Literal(HirLiteral::Integer64(_))) => ValkyrieType::Integer32 { signed: true },
+        Some(HirExprKind::Literal(HirLiteral::Integer(_))) => ValkyrieType::Integer32 { signed: true },
         _ => ValkyrieType::Integer32 { signed: true },
     }
 }

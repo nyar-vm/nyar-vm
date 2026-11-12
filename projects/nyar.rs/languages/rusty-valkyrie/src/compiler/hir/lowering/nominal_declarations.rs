@@ -127,7 +127,7 @@ pub(crate) fn collect_sum_declarations(
 
 fn integer_literal_u32(expr: &HirExpr) -> Option<u32> {
     match &expr.kind {
-        HirExprKind::Literal(HirLiteral::Integer64(value)) if *value >= 0 => u32::try_from(*value).ok(),
+        HirExprKind::Literal(HirLiteral::Integer(value)) if *value >= 0 => u32::try_from(*value).ok(),
         _ => None,
     }
 }

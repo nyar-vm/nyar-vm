@@ -1,8 +1,10 @@
-//! 整数字面量按"符号 + 量级"建模的边界测试。
+//! 整数字面量的符号/量级建模与上下文结算边界测试。
 //!
-//! 旧实现在取负之前按 `i64` 解析量级，`9223372036854775808` 先溢出并 panic。
-//! 合同：量级用 `u64` 承载，符号在结合时应用，最后做 `i64` 范围检查；
-//! `-2^63` 合法，`+2^63` 与 `-2^64` 都是结构化诊断。
+//! 合同（架构归属 HIR）：
+//! - 字面量在 HIR 中以 `i128` 精确承载符号与量级，构造时只拒绝超出 `u64` 的
+//!   量级；目标宽度与有符号性由上下文在 `integer_literal::settle_integer` 一次结算。
+//! - `i64` 上下文装不下时给出结构化诊断；`u64` 上下文可承载完整正半域。
+//! - 无上下文时默认宽度为「能容纳该值的最小有符号宽度，否则 `u64`」。
 
 use rusty_valkyrie::{
     HirError, ValkyrieCompiler,
@@ -21,10 +23,10 @@ fn first_let_initializer_kind(source: &str) -> HirExprKind {
     initializer.kind.clone()
 }
 
-fn assert_i64(source: &str, expected: i64) {
+fn assert_integer(source: &str, expected: i128) {
     match first_let_initializer_kind(source) {
-        HirExprKind::Literal(HirLiteral::Integer64(value)) => assert_eq!(value, expected, "源码 {source}"),
-        other => panic!("源码 {source} 必须归 i64 字面量，实际 {other:?}"),
+        HirExprKind::Literal(HirLiteral::Integer(value)) => assert_eq!(value, expected, "源码 {source}"),
+        other => panic!("源码 {source} 必须归未定型整数字面量，实际 {other:?}"),
     }
 }
 
@@ -32,54 +34,57 @@ fn assert_i64(source: &str, expected: i64) {
 fn expect_out_of_range(source: &str) -> (String, String, String, usize, usize) {
     let error = ValkyrieCompiler::default().compile_source(source).expect_err(&format!("源码 {source} 必须是结构化诊断"));
     match error {
-        HirError::IntegerLiteralOutOfRange { literal, magnitude, range, span, .. } => {
-            (literal, magnitude, range, span.start, span.end)
-        }
+        HirError::IntegerLiteralOutOfRange { literal, magnitude, range, span, .. } => (literal, magnitude, range, span.start, span.end),
         other => panic!("源码 {source} 必须是 IntegerLiteralOutOfRange，实际 {other:?}"),
     }
 }
 
-// ---------- 正例：符号与量级结合后落在 `i64` 内 ----------
+// ---------- 正例：符号与量级在 HIR 中精确保留 ----------
 
-/// `i64::MIN` 的源码写法必须合法：量级是 `2^63`，取负后正好是 `i64::MIN`。
+/// `i64::MIN` 的源码写法保持精确。
 #[test]
 fn lowest_i64_literal_is_negative_power_of_two() {
-    assert_i64("micro probe() { let value = -9223372036854775808 }", i64::MIN);
+    assert_integer("micro probe() { let value = -9223372036854775808 }", i64::MIN as i128);
 }
 
 /// `i64::MAX` 仍按位精确。
 #[test]
 fn highest_i64_literal_is_exact() {
-    assert_i64("micro probe() { let value = 9223372036854775807 }", i64::MAX);
+    assert_integer("micro probe() { let value = 9223372036854775807 }", i64::MAX as i128);
 }
 
 /// `i32` 边界经同一路径仍正常。
 #[test]
 fn i32_boundary_literal_stays_exact() {
-    assert_i64("micro probe() { let value = -2147483648 }", -2_147_483_648);
+    assert_integer("micro probe() { let value = -2147483648 }", -2_147_483_648);
 }
 
-// ---------- 反例：量级先于符号承载，失败是结构化诊断 ----------
-
-/// 不带负号的 `2^63` 超出 `i64::MAX`：量级可被 `u64` 承载，范围检查失败。
+/// `2^63` 超出 `i64::MAX`，但仍在 `u64` 正半域：HIR 不提前拒绝，
+/// 是否可行由上下文结算（`u64` 合法，`i64` 报范围诊断）。
 #[test]
-fn positive_two_pow_63_is_out_of_range() {
-    let (literal, magnitude, range, start, end) = expect_out_of_range("micro probe() { let value = 9223372036854775808 }");
-    assert_eq!(literal, "9223372036854775808");
-    assert_eq!(magnitude, "9223372036854775808");
-    assert_eq!(range, "signed_64");
-    assert!(end > start, "诊断必须带真实 span，实际 {start}..{end}");
+fn positive_two_pow_63_is_preserved_until_context_settles() {
+    assert_integer("micro probe() { let value = 9223372036854775808 }", 9_223_372_036_854_775_808);
 }
 
-/// `-2^63 - 1` 超出 `i64::MIN`：量级仍可承载，范围检查失败。
+/// `-2^63 - 1` 比 `i64::MIN` 更小，但 `i128` 可精确承载；上下文为 `i64` 时再拒绝。
 #[test]
-fn below_lowest_i64_is_out_of_range() {
-    let (literal, magnitude, range, start, end) = expect_out_of_range("micro probe() { let value = -9223372036854775809 }");
-    assert_eq!(literal, "-9223372036854775809");
-    assert_eq!(magnitude, "9223372036854775809");
-    assert_eq!(range, "signed_64");
-    assert!(end > start, "诊断必须带真实 span，实际 {start}..{end}");
+fn below_lowest_i64_is_preserved_until_context_settles() {
+    assert_integer("micro probe() { let value = -9223372036854775809 }", -9_223_372_036_854_775_809);
 }
+
+/// `u64::MAX` 是完整正半域的上界，HIR 必须精确保留。
+#[test]
+fn highest_u64_literal_is_preserved() {
+    assert_integer("micro probe() { let value = 18446744073709551615 }", u64::MAX as i128);
+}
+
+/// 大十六进制常量不再需要拆高低位。
+#[test]
+fn high_bit_hex_literal_is_preserved() {
+    assert_integer("micro probe() { let value = 0xD807AA98A3030242 }", 0xD807AA98A3030242_u64 as i128);
+}
+
+// ---------- 反例：量级超出 u64，在构造处结构化失败 ----------
 
 /// `-2^64` 连量级都超出 `u64`：失败发生在量级承载侧，仍是结构化诊断。
 #[test]

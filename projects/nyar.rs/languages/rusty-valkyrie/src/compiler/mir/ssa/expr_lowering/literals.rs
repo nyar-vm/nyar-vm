@@ -1,5 +1,5 @@
 use crate::compiler::{
-    hir::is_nullable_type,
+    hir::{is_nullable_type, lowering::integer_literal::settle_integer},
     types::hir::{HirLiteral, HirResolvedCall, HirTextEncoding, ValkyrieType},
 };
 
@@ -7,23 +7,18 @@ use crate::compiler::mir::ssa::{MirConstant, MirOperand, infer_builder_operand_t
 
 use crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type;
 
-pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&ValkyrieType>, structs: &[crate::compiler::mir::ssa::MirStruct]) -> Result<(MirConstant, Option<ValkyrieType>), String> {
+pub(crate) fn lower_literal(
+    literal: &HirLiteral,
+    expected_type: Option<&ValkyrieType>,
+    structs: &[crate::compiler::mir::ssa::MirStruct],
+) -> Result<(MirConstant, Option<ValkyrieType>), String> {
     Ok(match literal {
-        HirLiteral::Integer64(value) => (
-            MirConstant::Int(*value),
-            Some(match expected_type {
-                Some(
-                    ty @ (ValkyrieType::Integer8 { .. }
-                    | ValkyrieType::Integer16 { .. }
-                    | ValkyrieType::Integer32 { .. }
-                    | ValkyrieType::Integer64 { .. }
-                    | ValkyrieType::Integer128 { .. }),
-                ) => ty.clone(),
-                // 未结算别名（`Named("usize")` 等）不再按名字特化；名义形参由调用方用声明表覆盖。
-                _ if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 => ValkyrieType::Integer32 { signed: true },
-                _ => ValkyrieType::Integer64 { signed: true },
-            }),
-        ),
+        HirLiteral::Integer(value) => {
+            // 宽度、有符号性与范围由 HIR 的 `integer_literal` 唯一结算；
+            // MIR 只消费已冻结的「位模式 + 类型」，不在此另写默认宽度规则。
+            let (bits, ty) = settle_integer(*value, expected_type)?;
+            (MirConstant::Int(bits), Some(ty))
+        }
         HirLiteral::Float64(value) => (MirConstant::Float64(*value), Some(ValkyrieType::Float64)),
         // 字符字面量：定型已由 HIR settle 冻结为 `char`（u32 码位，§4.12 字符合同），
         // MIR 只编码既定值——整数常量 + `Character` 类型，不再按期望形参重选 char/text。
@@ -177,12 +172,7 @@ pub(crate) fn sum_new_parts_from_constructor(
     // 多字段变体的 payload 是名义变体记录：全部实参按声明顺序构成记录字段，
     // payload 类型只能由声明 + 枚举实参代入，不能取首个字段类型伪装。
     let multi_field = variant.fields.len() > 1;
-    let payload_type = if multi_field {
-        sum.instantiate_payload(variant, &type_args).flatten()
-    }
-    else {
-        call.parameter_types.first().cloned()
-    };
+    let payload_type = if multi_field { sum.instantiate_payload(variant, &type_args).flatten() } else { call.parameter_types.first().cloned() };
     Some((sum_type, type_args, variant.name.clone(), payload_type, arguments.to_vec(), multi_field))
 }
 

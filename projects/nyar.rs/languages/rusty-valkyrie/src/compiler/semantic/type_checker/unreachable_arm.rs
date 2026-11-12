@@ -216,7 +216,7 @@ struct CoveredSet {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum LiteralKey {
     /// 整数字面量。
-    Int(i64),
+    Int(i128),
     /// 布尔字面量。
     Bool(bool),
     /// unit 字面量。
@@ -226,7 +226,7 @@ enum LiteralKey {
 /// 将 `HirLiteral` 归一化为可比较键，无法识别时返回 None。
 fn literal_key(lit: &HirLiteral) -> Option<LiteralKey> {
     match lit {
-        HirLiteral::Integer64(n) => Some(LiteralKey::Int(*n)),
+        HirLiteral::Integer(n) => Some(LiteralKey::Int(*n)),
         HirLiteral::Bool(b) => Some(LiteralKey::Bool(*b)),
         HirLiteral::Unit => Some(LiteralKey::Unit),
         _ => None,

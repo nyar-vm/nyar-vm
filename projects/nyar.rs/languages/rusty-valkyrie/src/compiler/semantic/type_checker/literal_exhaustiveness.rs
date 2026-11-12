@@ -354,7 +354,7 @@ enum LiteralItem {
 /// 将 HirLiteral 转换为 i128，仅处理整数与布尔字面量。
 fn literal_to_i128(lit: &HirLiteral) -> Option<i128> {
     match lit {
-        HirLiteral::Integer64(n) => Some(*n as i128),
+        HirLiteral::Integer(n) => Some(*n as i128),
         HirLiteral::Bool(b) => Some(if *b { 1 } else { 0 }),
         _ => None,
     }

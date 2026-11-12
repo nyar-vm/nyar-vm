@@ -181,7 +181,7 @@ fn contract_missing(expected: &ValkyrieType, span: &SourceSpan, source: &Diagnos
 /// 字面量项与期望元素类型的口径不符时拒绝；标签与 `let` 初始化类型诊断同源。
 fn literal_item_mismatch(literal: &HirLiteral, element_type: &ValkyrieType, span: &SourceSpan, source: &DiagnosticSource) -> HirError {
     let actual = match literal {
-        HirLiteral::Integer64(_) => display_type(&ValkyrieType::Integer64 { signed: true }),
+        HirLiteral::Integer(_) => display_type(&ValkyrieType::Integer64 { signed: true }),
         HirLiteral::Float64(_) => display_type(&ValkyrieType::Float64),
         HirLiteral::Bool(_) => display_type(&ValkyrieType::Boolean),
         other => display_type(&infer_literal_type(other)),
@@ -290,7 +290,7 @@ fn build_collection_init(
                     .ok_or_else(|| contract_missing(&element_type, &item_span, &context.source))?;
                 built_items.push(build_collection_init(&element_type, nested, nested_fact, &nested_substitution, &item_span, context)?);
             }
-            kind @ (HirExprKind::Literal(HirLiteral::Integer64(_)) | HirExprKind::Literal(HirLiteral::Float64(_))) => {
+            kind @ (HirExprKind::Literal(HirLiteral::Integer(_)) | HirExprKind::Literal(HirLiteral::Float64(_))) => {
                 if !numeric_element_accepts(&element_type, context.numeric) {
                     let HirExprKind::Literal(literal) = &kind
                     else {

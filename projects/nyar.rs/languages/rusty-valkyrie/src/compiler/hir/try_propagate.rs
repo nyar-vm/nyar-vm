@@ -104,7 +104,7 @@ fn result_err_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
 fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> Option<ValkyrieType> {
     match &expr.kind {
         HirExprKind::Literal(literal) => Some(match literal {
-            crate::compiler::types::hir::HirLiteral::Integer64(_) => ValkyrieType::Integer64 { signed: true },
+            crate::compiler::types::hir::HirLiteral::Integer(_) => ValkyrieType::Integer64 { signed: true },
             crate::compiler::types::hir::HirLiteral::Float64(_) => ValkyrieType::Float64,
             crate::compiler::types::hir::HirLiteral::Character(_) => ValkyrieType::Character,
             crate::compiler::types::hir::HirLiteral::Byte(_) => ValkyrieType::Integer8 { signed: false },

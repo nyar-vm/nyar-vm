@@ -17,11 +17,11 @@ use crate::compiler::{
     types::{
         Identifier, NamePath, SourceID,
         hir::{
-            HIR_WIRE_VERSION, HirAssociatedTypeImpl, HirAttribute, HirBlock, HirCompileWarning, HirDependencySemanticExport,
-            HirDocumentation, HirEnum, HirExpr, HirExprKind, HirField, HirFileScope, HirFlagMember, HirFlags, HirFunction, HirImpl, HirImport,
-            HirImportBinding, HirKind, HirLiteral, HirModule, HirParam, HirParameterBindingKind, HirSingleton, HirStatement,
-            HirStatementKind, HirStruct, HirTrait, HirTraitBound, HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant, HirVisibility,
-            HirWhereConstraint, HirWidget, HirWidgetLifecycle, ValkyrieType,
+            HIR_WIRE_VERSION, HirAssociatedTypeImpl, HirAttribute, HirBlock, HirCompileWarning, HirDependencySemanticExport, HirDocumentation,
+            HirEnum, HirExpr, HirExprKind, HirField, HirFileScope, HirFlagMember, HirFlags, HirFunction, HirImpl, HirImport, HirImportBinding,
+            HirKind, HirLiteral, HirModule, HirParam, HirParameterBindingKind, HirSingleton, HirStatement, HirStatementKind, HirStruct,
+            HirTrait, HirTraitBound, HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant, HirVisibility, HirWhereConstraint, HirWidget,
+            HirWidgetLifecycle, ValkyrieType,
         },
     },
 };
@@ -661,12 +661,8 @@ impl AstToHir {
 
     fn lower_singleton(&self, singleton: &SingletonDeclaration, namespace: &NamePath) -> Result<HirSingleton, HirError> {
         let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&singleton.generics), &[]);
-        let all_methods: Vec<HirFunction> = singleton
-            .body
-            .methods
-            .iter()
-            .map(|method| self.lower_method(method))
-            .collect::<Result<Vec<_>, _>>()?;
+        let all_methods: Vec<HirFunction> =
+            singleton.body.methods.iter().map(|method| self.lower_method(method)).collect::<Result<Vec<_>, _>>()?;
         let mut constructor: Option<Box<HirFunction>> = None;
         let mut finalizer: Option<Box<HirFunction>> = None;
         let mut ordinary_methods: Vec<HirFunction> = Vec::with_capacity(all_methods.len());
@@ -720,7 +716,7 @@ impl AstToHir {
                 .as_ref()
                 .map(|expr| lower_term_expression(expr, self.source_id, span.clone()))
                 .transpose()?
-                .unwrap_or_else(|| HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(0)), span: with_source(&span, self.source_id) }),
+                .unwrap_or_else(|| HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer(0)), span: with_source(&span, self.source_id) }),
             is_combined: false,
         })
     }
@@ -734,8 +730,7 @@ impl AstToHir {
         let mut methods = Vec::new();
         let mut default_methods = Vec::new();
         for method in &trait_decl.body.methods {
-            let lowered =
-                crate::compiler::hir::lowering::generic_binders::lower_trait_method(self.lower_method(method)?, &associated_names);
+            let lowered = crate::compiler::hir::lowering::generic_binders::lower_trait_method(self.lower_method(method)?, &associated_names);
             if lowered.is_abstract {
                 methods.push(lowered);
             }
@@ -758,11 +753,7 @@ impl AstToHir {
                 .map(|item| lower_trait_associated_type(item, self.source_id))
                 .collect::<Result<Vec<_>, _>>()?,
             associated_constants: Vec::new(),
-            super_traits: trait_decl
-                .super_traits
-                .iter()
-                .map(crate::compiler::hir::lower_type_expression)
-                .collect::<Result<Vec<_>, _>>()?,
+            super_traits: trait_decl.super_traits.iter().map(crate::compiler::hir::lower_type_expression).collect::<Result<Vec<_>, _>>()?,
             default_methods,
             visibility: lower_visibility(&trait_decl.annotations),
         })
@@ -824,20 +815,12 @@ impl AstToHir {
             let span = frontend::std_range(&item.span);
             // 同一 impl 重复声明同一关联类型无法确定唯一等式：拒绝失败闭合，禁止后者覆盖前者。
             if !seen_associated.insert(name.clone()) {
-                return Err(frontend::ParseError::Invalid {
-                    message: format!("impl 重复声明关联类型：{name}"),
-                    span: Some(span),
-                }
-                .into());
+                return Err(frontend::ParseError::Invalid { message: format!("impl 重复声明关联类型：{name}"), span: Some(span) }.into());
             }
             let Some(equation) = item.default.as_ref()
             else {
                 // `type Item`（无 `= T`）在 impl 里没有等式，是结构损坏而不是可推断的缺省。
-                return Err(frontend::ParseError::Invalid {
-                    message: format!("impl 关联类型缺少等式：{name}"),
-                    span: Some(span),
-                }
-                .into());
+                return Err(frontend::ParseError::Invalid { message: format!("impl 关联类型缺少等式：{name}"), span: Some(span) }.into());
             };
             let concrete_type = crate::compiler::hir::lower_type_expression(equation)?;
             let concrete_type = crate::compiler::hir::overload::substitution::substitute_type_self(&concrete_type, &target);

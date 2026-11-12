@@ -90,8 +90,15 @@ pub(crate) fn try_resolve_constructor_call(
             if let Some(context) = contextual_type {
                 if !matches!(&candidate.signature.return_type, ValkyrieType::Generic(_))
                     && let Some(instantiated) = instantiate_candidate_for_context(candidate, context, type_relations)
-                    && let Some(matched) =
-                        match_call_candidate(&instantiated, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
+                    && let Some(matched) = match_call_candidate(
+                        &instantiated,
+                        args,
+                        &explicit_generic_arguments,
+                        type_relations,
+                        locals,
+                        struct_fields,
+                        singleton_names,
+                    )
                 {
                     return Some(matched);
                 }
@@ -134,8 +141,15 @@ pub(crate) fn try_resolve_constructor_call(
             if let Some(context) = contextual_type {
                 if !matches!(&candidate.signature.return_type, ValkyrieType::Generic(_))
                     && let Some(instantiated) = instantiate_candidate_for_context(candidate, context, type_relations)
-                    && let Some(matched) =
-                        match_call_candidate(&instantiated, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
+                    && let Some(matched) = match_call_candidate(
+                        &instantiated,
+                        args,
+                        &explicit_generic_arguments,
+                        type_relations,
+                        locals,
+                        struct_fields,
+                        singleton_names,
+                    )
                 {
                     return Some(matched);
                 }
@@ -438,18 +452,19 @@ fn numeric_literal_binding(
     let mut binding = NumericLiteralBinding { fits: true, coercions: 0 };
     let mut scored = false;
     for (arg, expected) in args.iter().zip(&candidate.signature.params) {
-        let HirExprKind::Literal(literal) = &arg.value.kind else {
+        let HirExprKind::Literal(literal) = &arg.value.kind
+        else {
             continue;
         };
         let value = match literal {
-            HirLiteral::Integer64(value) if type_relations.is_numeric_type(expected) => Some(*value),
-            HirLiteral::Byte(value) if type_relations.is_numeric_type(expected) => Some(*value as i64),
+            HirLiteral::Integer(value) if type_relations.is_numeric_type(expected) => Some(*value),
+            HirLiteral::Byte(value) if type_relations.is_numeric_type(expected) => Some(*value as i128),
             HirLiteral::Character(value)
                 if type_relations.is_character_literal_formal(expected)
                     || type_relations.is_numeric_type(expected)
                     || type_relations.is_text_formal(expected) =>
             {
-                Some(*value as i64)
+                Some(*value as i128)
             }
             // 未定型引号捕获不参与数值绑定代价打分（§4.10 B：禁止按引号/长度为候选
             // 排序）；捕获与形参的相容性只由统一绑定规则裁决，多个合法候选报歧义。
@@ -473,16 +488,18 @@ fn numeric_literal_binding(
 ///
 /// 表面别名 / 无参 `Nominal`（如 `usize`）的宽度在重载期不能从名字反推，按可表示
 /// 处理，交由形参绑定后的既有校验裁决；这里只硬性排除已知位宽装不下的候选。
-fn numeric_literal_value_fits(value: i64, expected: &ValkyrieType) -> bool {
+fn numeric_literal_value_fits(value: i128, expected: &ValkyrieType) -> bool {
     match expected {
-        ValkyrieType::Integer8 { signed: true } => (i8::MIN as i64..=i8::MAX as i64).contains(&value),
-        ValkyrieType::Integer8 { signed: false } => (0..=u8::MAX as i64).contains(&value),
-        ValkyrieType::Integer16 { signed: true } => (i16::MIN as i64..=i16::MAX as i64).contains(&value),
-        ValkyrieType::Integer16 { signed: false } => (0..=u16::MAX as i64).contains(&value),
-        ValkyrieType::Integer32 { signed: true } => (i32::MIN as i64..=i32::MAX as i64).contains(&value),
-        ValkyrieType::Integer32 { signed: false } => (0..=u32::MAX as i64).contains(&value),
-        ValkyrieType::Integer64 { .. } | ValkyrieType::Integer128 { .. } | ValkyrieType::Float32 | ValkyrieType::Float64 => true,
-        ValkyrieType::Character => (0..=u32::from(char::MAX) as i64).contains(&value),
+        ValkyrieType::Integer8 { signed: true } => (i8::MIN as i128..=i8::MAX as i128).contains(&value),
+        ValkyrieType::Integer8 { signed: false } => (0..=u8::MAX as i128).contains(&value),
+        ValkyrieType::Integer16 { signed: true } => (i16::MIN as i128..=i16::MAX as i128).contains(&value),
+        ValkyrieType::Integer16 { signed: false } => (0..=u16::MAX as i128).contains(&value),
+        ValkyrieType::Integer32 { signed: true } => (i32::MIN as i128..=i32::MAX as i128).contains(&value),
+        ValkyrieType::Integer32 { signed: false } => (0..=u32::MAX as i128).contains(&value),
+        ValkyrieType::Integer64 { signed: true } => (i64::MIN as i128..=i64::MAX as i128).contains(&value),
+        ValkyrieType::Integer64 { signed: false } => (0..=u64::MAX as i128).contains(&value),
+        ValkyrieType::Integer128 { .. } | ValkyrieType::Float32 | ValkyrieType::Float64 => true,
+        ValkyrieType::Character => (0..=u32::from(char::MAX) as i128).contains(&value),
         _ => true,
     }
 }

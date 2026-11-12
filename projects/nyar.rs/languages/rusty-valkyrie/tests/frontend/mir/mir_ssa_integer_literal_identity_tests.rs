@@ -17,6 +17,51 @@ fn compiles_clean(source: &str) -> bool {
     }
 }
 
+fn mir_diagnostic_messages(source: &str) -> Vec<String> {
+    let hir = ValkyrieCompiler::default().compile_source(source).expect("源码必须先完成 HIR lowering");
+    MirLowerer::lower_module_semantic(&hir).diagnostics.iter().map(|diagnostic| format!("{diagnostic:?}")).collect()
+}
+
+/// `u64` 上下文的字面量保留完整 64 位正半域（`u64::MAX` 不再是 `signed_64` 范围错误）。
+#[test]
+fn u64_max_literal_settles_inside_unsigned_64_context() {
+    let source = r#"
+namespace std::primitive;
+[primitive("std::primitive::u64")] structure u64 { }
+
+micro probe(): unit {
+    let value: std::primitive::u64 = 18446744073709551615
+}
+"#;
+    assert!(compiles_clean(source), "u64 上下文必须承载 u64::MAX：{:?}", mir_diagnostic_messages(source));
+}
+
+/// `i64` 上下文装不下 `u64::MAX`：结算处给出结构化范围诊断，不静默截断。
+#[test]
+fn i64_context_rejects_u64_max_literal() {
+    let source = r#"
+namespace std::primitive;
+[primitive("std::primitive::i64")] structure i64 { }
+
+micro probe(): unit {
+    let value: std::primitive::i64 = 18446744073709551615
+}
+"#;
+    let messages = mir_diagnostic_messages(source);
+    assert!(messages.iter().any(|message| message.contains("out of range")), "i64 上下文必须报告范围诊断，实际 {messages:?}");
+}
+
+/// 无注解时不回落到 `i64` 截断：默认宽度取能容纳该值的最小有符号宽度，否则 `u64`。
+#[test]
+fn context_free_u64_max_literal_defaults_to_unsigned_64() {
+    let source = r#"
+micro probe(): unit {
+    let value = 18446744073709551615
+}
+"#;
+    assert!(compiles_clean(source), "无注解的 u64::MAX 必须默认 u64 而非截断：{:?}", mir_diagnostic_messages(source));
+}
+
 /// 反例 1：`class i32` 没有 primitive 身份，整数字面量不得按名字被当成数值实参。
 #[test]
 fn class_named_i32_is_not_a_numeric_formal() {

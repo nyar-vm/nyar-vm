@@ -76,8 +76,7 @@ micro read_integer() -> i64 { return IntegerOwner.read() }
         )
         .expect("同名不同 owner 的静态方法必须完成 HIR 解析");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    for (owner, expected) in [("BooleanOwner.read", ValkyrieType::Boolean), ("IntegerOwner.read", ValkyrieType::Integer64 { signed: true })]
-    {
+    for (owner, expected) in [("BooleanOwner.read", ValkyrieType::Boolean), ("IntegerOwner.read", ValkyrieType::Integer64 { signed: true })] {
         let instance = mir
             .functions
             .iter()
@@ -163,7 +162,7 @@ fn pattern_range_compare_uses_dispatch_bound_infix_lt() {
     let mut builder = TestMirBuilder::new();
     builder.register_member_dispatch(owner.clone(), "infix <", lt_instance);
     let value = builder.typed_value_operand(owner.clone());
-    let pattern = HirPattern::Range { start: Some(HirLiteral::Integer64(2)), end: Some(HirLiteral::Integer64(8)), inclusive_end: true };
+    let pattern = HirPattern::Range { start: Some(HirLiteral::Integer(2)), end: Some(HirLiteral::Integer(8)), inclusive_end: true };
     let _ = builder.lower_pattern_match_operand(&pattern, value);
     let lt_calls = builder
         .call_callees()

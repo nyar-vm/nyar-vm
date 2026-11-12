@@ -463,7 +463,7 @@ fn parse_range_endpoint(text: Option<&str>) -> Option<Option<HirLiteral>> {
         return Some(None);
     };
     match parse_hir_literal(text) {
-        Some(literal @ HirLiteral::Integer64(_)) => Some(Some(literal)),
+        Some(literal @ HirLiteral::Integer(_)) => Some(Some(literal)),
         _ => None,
     }
 }
@@ -478,7 +478,7 @@ fn invalid_range_pattern_error(pattern_text: &str, span: DiagnosticSpan) -> Opti
         .into_iter()
         .flatten()
         .map(str::trim)
-        .find(|text| !text.is_empty() && !matches!(parse_hir_literal(text), Some(HirLiteral::Integer64(_))))?;
+        .find(|text| !text.is_empty() && !matches!(parse_hir_literal(text), Some(HirLiteral::Integer(_))))?;
     Some(HirError::InvalidRangePattern {
         pattern: pattern_text.to_string(),
         reason: format!("endpoint `{endpoint}` is not an integer literal"),
@@ -512,8 +512,8 @@ fn parse_hir_literal(text: &str) -> Option<HirLiteral> {
         let decoded = super::quote_literal::decode_quote_capture(&literal, false).ok()?;
         return Some(super::quote_literal::pattern_literal_value(decoded, prefix_name, literal.quote, literal.quote_count).ok()?);
     }
-    if let Ok(value) = super::expr_lowering::split_numeric_type_suffix(text).0.parse::<i64>() {
-        return Some(HirLiteral::Integer64(value));
+    if let Ok(value) = super::expr_lowering::split_numeric_type_suffix(text).0.parse::<i128>() {
+        return Some(HirLiteral::Integer(value));
     }
     if let Ok(value) = super::expr_lowering::split_numeric_type_suffix(text).0.parse::<f64>() {
         return Some(HirLiteral::Float64(OrderedFloat(value)));

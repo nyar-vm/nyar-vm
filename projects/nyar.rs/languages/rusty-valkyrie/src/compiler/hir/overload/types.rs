@@ -194,11 +194,9 @@ pub(crate) fn normalize_local_field_chain(expr: &mut HirExpr, locals: &BTreeMap<
     for part in &parts[1..] {
         let resolution = struct_fields.resolve_field(&current_type, part);
         let (field_id, tuple_index, next_type) = match resolution {
-            FieldResolution::Aggregate { field_id, .. } => (
-                field_id,
-                None,
-                lookup_struct_field_type(&current_type, part, struct_fields).unwrap_or(ValkyrieType::AutoType),
-            ),
+            FieldResolution::Aggregate { field_id, .. } => {
+                (field_id, None, lookup_struct_field_type(&current_type, part, struct_fields).unwrap_or(ValkyrieType::AutoType))
+            }
             FieldResolution::LabeledTuple { index, ty } | FieldResolution::TuplePositional { index, ty } => (None, Some(index), ty),
             FieldResolution::UnlabeledTuple | FieldResolution::TupleIndexOutOfRange { .. } | FieldResolution::NotFound => {
                 (None, None, ValkyrieType::AutoType)
@@ -271,12 +269,10 @@ pub fn extract_callable_name(callee: &HirExpr) -> Option<Identifier> {
 pub fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> Option<ValkyrieType> {
     match &expr.kind {
         HirExprKind::Literal(literal) => Some(match literal {
-            // Unsuffixed integer literals default to signed i32 when they fit;
-            // matches MIR `lower_literal` and `return -1` (`prefix -` of `1`).
-            crate::compiler::types::hir::HirLiteral::Integer64(value) if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 => {
-                ValkyrieType::Integer32 { signed: true }
+            // 未定型整数的默认宽度与 MIR/HIR 结算共用同一规则（单一事实源）。
+            crate::compiler::types::hir::HirLiteral::Integer(value) => {
+                crate::compiler::hir::lowering::integer_literal::default_integer_type(*value)
             }
-            crate::compiler::types::hir::HirLiteral::Integer64(_) => ValkyrieType::Integer64 { signed: true },
             crate::compiler::types::hir::HirLiteral::Float64(_) => ValkyrieType::Float64,
             // 字符字面量默认归 `char`（u32 码位），字节字面量默认归 `u8`；
             // 形参特化在 `specialize_literal_expr_type` 完成。

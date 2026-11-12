@@ -897,7 +897,8 @@ impl HirStringLiteral {
     ///
     /// 用于上下文定型：`char` 期望只接受这一形态，其余按文本处理。
     pub fn as_single_char(&self) -> Option<u32> {
-        let [HirStringSegment::Text(text)] = self.segments.as_slice() else {
+        let [HirStringSegment::Text(text)] = self.segments.as_slice()
+        else {
             return None;
         };
         let mut characters = text.chars();
@@ -912,8 +913,10 @@ impl HirStringLiteral {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirLiteral {
-    /// 64 位整数。
-    Integer64(i64),
+    /// 未定型整数字面量：`i128` 精确承载符号与量级（覆盖完整 `u64` 正半域）。
+    /// 目标宽度与有符号性由上下文在 `hir::lowering::integer_literal` 中一次结算，
+    /// 构造与 HIR 侧不做目标范围判断。
+    Integer(i128),
     /// 64 位浮点数。
     Float64(ordered_float::OrderedFloat<f64>),
     /// 字符字面量（`'x'`）：`char` 是 u32 码位（§4.12 字符合同），值已在 lowering 校验为合法标量。
@@ -943,7 +946,8 @@ impl HirLiteral {
                 }
                 let mut rendered = String::new();
                 for segment in &literal.segments {
-                    let HirStringSegment::Text(text) = segment else {
+                    let HirStringSegment::Text(text) = segment
+                    else {
                         return None;
                     };
                     rendered.push_str(text);

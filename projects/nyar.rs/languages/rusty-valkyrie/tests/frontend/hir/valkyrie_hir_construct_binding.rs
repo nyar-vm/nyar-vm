@@ -15,12 +15,12 @@ fn field(name: &str) -> HirField {
     }
 }
 
-fn field_init(name: &str, value: i64) -> HirExpr {
+fn field_init(name: &str, value: i128) -> HirExpr {
     HirExpr {
         kind: HirExprKind::FieldInit {
             name: Identifier::new(name),
             value: Box::new(HirExpr {
-                kind: HirExprKind::Literal(rusty_valkyrie::compiler::types::hir::HirLiteral::Integer64(value)),
+                kind: HirExprKind::Literal(rusty_valkyrie::compiler::types::hir::HirLiteral::Integer(value)),
                 span: rusty_valkyrie::compiler::types::SourceSpan::new(rusty_valkyrie::compiler::types::SourceID::default(), 0, 0),
             }),
             field_id: None,

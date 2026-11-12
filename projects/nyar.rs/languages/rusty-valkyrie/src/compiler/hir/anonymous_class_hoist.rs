@@ -280,7 +280,7 @@ fn bind_pattern_local(pattern: &crate::compiler::types::hir::HirPattern, ty: &Va
 fn infer_simple_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> Option<ValkyrieType> {
     match &expr.kind {
         HirExprKind::Literal(literal) => Some(match literal {
-            crate::compiler::types::hir::HirLiteral::Integer64(_) => ValkyrieType::Integer64 { signed: true },
+            crate::compiler::types::hir::HirLiteral::Integer(_) => ValkyrieType::Integer64 { signed: true },
             crate::compiler::types::hir::HirLiteral::Float64(_) => ValkyrieType::Float64,
             crate::compiler::types::hir::HirLiteral::Bool(_) => ValkyrieType::Boolean,
             crate::compiler::types::hir::HirLiteral::Unit => ValkyrieType::Unit,

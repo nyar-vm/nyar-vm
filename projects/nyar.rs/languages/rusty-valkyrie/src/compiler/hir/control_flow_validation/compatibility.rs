@@ -118,7 +118,7 @@ pub fn scalar_literal_binds_to(expected: &ValkyrieType, value: Option<&HirExpr>,
         other => crate::compiler::hir::type_relation::is_numeric_type_name_of(other),
     };
     match value.map(|value| &value.kind) {
-        Some(HirExprKind::Literal(HirLiteral::Integer64(_) | HirLiteral::Byte(_))) => numeric_expected,
+        Some(HirExprKind::Literal(HirLiteral::Integer(_) | HirLiteral::Byte(_))) => numeric_expected,
         Some(HirExprKind::Literal(HirLiteral::Character(_))) => {
             // 字符字面量在 char/数值期望按码位绑定；文本期望按单字符文本绑定
             // （§4.10 B：`let t: utf8 = 'x'` 成立，引号不预定类型）。
@@ -282,10 +282,9 @@ pub fn display_type(ty: &ValkyrieType) -> String {
             display_type(&function.return_type)
         ),
         ValkyrieType::Tuple(items) => format!("({})", items.iter().map(display_type).collect::<Vec<_>>().join(", ")),
-        ValkyrieType::LabeledTuple(fields) => format!(
-            "({})",
-            fields.iter().map(|field| format!("{}: {}", field.name, display_type(&field.ty))).collect::<Vec<_>>().join(", ")
-        ),
+        ValkyrieType::LabeledTuple(fields) => {
+            format!("({})", fields.iter().map(|field| format!("{}: {}", field.name, display_type(&field.ty))).collect::<Vec<_>>().join(", "))
+        }
         ValkyrieType::Row(row) => format!(
             "{{ {} }}",
             row.methods

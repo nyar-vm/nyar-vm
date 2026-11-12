@@ -272,7 +272,10 @@ pub fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_c
                 validate_hir_expr(value, state, true)?;
             }
             for method in methods {
-                validate_hir_function(method, &mut validation_state(&state.numeric_declarations, &state.boolean_declarations, &state.text_declarations))?;
+                validate_hir_function(
+                    method,
+                    &mut validation_state(&state.numeric_declarations, &state.boolean_declarations, &state.text_declarations),
+                )?;
             }
         }
         HirExprKind::If { condition, then_branch, else_branch } => {
@@ -716,7 +719,7 @@ pub fn infer_static_match_type(scrutinee: &HirExpr, arms: &[HirMatchArm], state:
 
 pub fn infer_literal_type(literal: &HirLiteral) -> Option<ValkyrieType> {
     match literal {
-        HirLiteral::Integer64(_) => Some(ValkyrieType::Integer64 { signed: true }),
+        HirLiteral::Integer(_) => Some(ValkyrieType::Integer64 { signed: true }),
         HirLiteral::Float64(_) => Some(ValkyrieType::Float64),
         HirLiteral::Bool(_) => Some(ValkyrieType::Boolean),
         HirLiteral::Unit => Some(ValkyrieType::Unit),

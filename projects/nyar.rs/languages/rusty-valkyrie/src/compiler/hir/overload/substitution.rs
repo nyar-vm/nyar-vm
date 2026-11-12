@@ -14,9 +14,11 @@ use crate::compiler::{
     },
 };
 
-use super::diagnostics::{OverloadCandidate, OverloadDomain};
-use super::r#trait::impl_nominal_type_name;
-use super::symbol_match::aggregate_constructor_matches_name;
+use super::{
+    diagnostics::{OverloadCandidate, OverloadDomain},
+    symbol_match::aggregate_constructor_matches_name,
+    r#trait::impl_nominal_type_name,
+};
 
 /// 类型中是否仍有未代入的泛型 binder（含 nominal 实参中的 binder）。
 ///
@@ -124,10 +126,7 @@ pub(crate) fn specialize_method_param_type(
 /// non-exhaustive 编译错误会直接拦住，从结构上防止「新增复合载体漏递归」。
 /// 所有对类型做 Self/owner/泛型/关联类型代入的入口都必须经由本函数递归，
 /// 不得各自手写一份只覆盖部分变体的 match。
-fn rebuild_children(
-    ty: &ValkyrieType,
-    map: &mut impl FnMut(&ValkyrieType) -> ValkyrieType,
-) -> Option<ValkyrieType> {
+fn rebuild_children(ty: &ValkyrieType, map: &mut impl FnMut(&ValkyrieType) -> ValkyrieType) -> Option<ValkyrieType> {
     fn map_all(map: &mut impl FnMut(&ValkyrieType) -> ValkyrieType, items: &[ValkyrieType]) -> Vec<ValkyrieType> {
         items.iter().map(|item| map(item)).collect()
     }
@@ -140,13 +139,10 @@ fn rebuild_children(
         },
         ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(Box::new(map(base)), map_all(map, arguments)),
         ValkyrieType::Array(element) => ValkyrieType::Array(Box::new(map(element))),
-        ValkyrieType::FixedArray { element, length } => {
-            ValkyrieType::FixedArray { element: Box::new(map(element)), length: *length }
+        ValkyrieType::FixedArray { element, length } => ValkyrieType::FixedArray { element: Box::new(map(element)), length: *length },
+        ValkyrieType::Function(function) => {
+            ValkyrieType::Function(Box::new(FunctionType { params: map_all(map, &function.params), return_type: map(&function.return_type) }))
         }
-        ValkyrieType::Function(function) => ValkyrieType::Function(Box::new(FunctionType {
-            params: map_all(map, &function.params),
-            return_type: map(&function.return_type),
-        })),
         ValkyrieType::Tuple(items) => ValkyrieType::Tuple(map_all(map, items)),
         ValkyrieType::LabeledTuple(fields) => {
             ValkyrieType::LabeledTuple(fields.iter().map(|field| HirTupleField { name: field.name.clone(), ty: map(&field.ty) }).collect())
@@ -233,8 +229,7 @@ pub fn substitute_associated_equations(
             }
         }
     }
-    rebuild_children(ty, &mut |child| substitute_associated_equations(child, constrained_type, equations))
-        .unwrap_or_else(|| ty.clone())
+    rebuild_children(ty, &mut |child| substitute_associated_equations(child, constrained_type, equations)).unwrap_or_else(|| ty.clone())
 }
 
 /// 按外部提供的见证逐层重写 `Associated` 形状；见证返回 `None` 的投影保持原样。
@@ -486,7 +481,7 @@ pub(crate) fn specialize_literal_expr_type(
         // Integer literals are representation-polymorphic: bind to the formal
         // numeric type (`usize`, `i32`, …), same as constructor literals.
         // `Nominal{ItemId}` 的 primitive 也必须认，不能只认 `Named("usize")`。
-        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Integer64(_)) if type_relations.is_numeric_type(expected) => {
+        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Integer(_)) if type_relations.is_numeric_type(expected) => {
             expected.clone()
         }
         // Character literals are representation-polymorphic like integer literals: a `char`
@@ -509,7 +504,8 @@ pub(crate) fn specialize_literal_expr_type(
         // 码位（两种引号均可），文本形参接受任意捕获，数值形参只接受单引号单码位。
         // 规则本体在 `quote_literal::capture_binds`，此处不按引号/长度另立分支。
         HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::String(literal))
-            if crate::compiler::hir::lowering::quote_literal::capture_binds(literal, type_relations.capture_target_kind(expected)).is_some() =>
+            if crate::compiler::hir::lowering::quote_literal::capture_binds(literal, type_relations.capture_target_kind(expected))
+                .is_some() =>
         {
             expected.clone()
         }
@@ -601,26 +597,23 @@ pub(crate) fn member_call_argument_contexts(
             (receiver_type, path.parts().last().cloned().unwrap_or_default(), false)
         }
         HirExprKind::Path(path)
-            if path.parts().len() == 1
-                && crate::compiler::semantic::operator_members::is_operator_member_name(path.parts()[0].as_str()) =>
+            if path.parts().len() == 1 && crate::compiler::semantic::operator_members::is_operator_member_name(path.parts()[0].as_str()) =>
         {
             // 运算符接收者没有自足类型时不供给上下文：候选跨数值宽度时槽位冲突，
             // 交给统一阶段结构化失败，不在这里猜。
             let Some(receiver) = args.first()
             else {
-                return Vec::new()
+                return Vec::new();
             };
             // 裸数值字面量接收者没有自足宽度：它的类型必须由调用点期望类型决定。
             // 用默认宽度推断出的接收者类型去回填实参槽，会把它升格成权威上下文，
             // 反向锁死外层候选宽度（`let x: i64 = 7 / y` 会退化成 i32）。
-            if matches!(
-                &receiver.value.kind,
-                HirExprKind::Literal(HirLiteral::Integer64(_) | HirLiteral::Float64(_))
-            ) {
+            if matches!(&receiver.value.kind, HirExprKind::Literal(HirLiteral::Integer(_) | HirLiteral::Float64(_))) {
                 return Vec::new();
             }
-            let receiver_type = crate::compiler::hir::overload::types::infer_expr_type(&receiver.value, locals)
-                .or_else(|| crate::compiler::hir::overload::types::infer_scrutinee_type(&receiver.value, locals, struct_fields, singleton_names));
+            let receiver_type = crate::compiler::hir::overload::types::infer_expr_type(&receiver.value, locals).or_else(|| {
+                crate::compiler::hir::overload::types::infer_scrutinee_type(&receiver.value, locals, struct_fields, singleton_names)
+            });
             (receiver_type, path.parts()[0].clone(), true)
         }
         _ => return Vec::new(),
@@ -945,10 +938,7 @@ mod tests {
             return_type: ValkyrieType::Intersection(vec![ValkyrieType::r#SelfType, ValkyrieType::r#SelfType]),
         }));
         let expected_owner = ValkyrieType::Function(Box::new(FunctionType {
-            params: vec![ValkyrieType::FixedArray {
-                element: Box::new(ValkyrieType::Named(Identifier::new("Owner"))),
-                length: 2,
-            }],
+            params: vec![ValkyrieType::FixedArray { element: Box::new(ValkyrieType::Named(Identifier::new("Owner"))), length: 2 }],
             return_type: ValkyrieType::Intersection(vec![
                 ValkyrieType::Named(Identifier::new("Owner")),
                 ValkyrieType::Named(Identifier::new("Owner")),
@@ -1073,7 +1063,8 @@ micro run() -> i32 {
             vec![
                 crate::compiler::hir::lowering::CompilerSourceFile {
                     path: "core_primitive.v".into(),
-                    source: "[primitive(\"std::primitive::i32\")] structure i32 { }\n[primitive(\"std::primitive::i64\")] structure i64 { }".into(),
+                    source: "[primitive(\"std::primitive::i32\")] structure i32 { }\n[primitive(\"std::primitive::i64\")] structure i64 { }"
+                        .into(),
                 },
                 crate::compiler::hir::lowering::CompilerSourceFile { path: "main.v".into(), source: source.into() },
             ],
@@ -1089,9 +1080,7 @@ micro run() -> i32 {
     /// 必须随 `Self` 代入后参与实参匹配。
     #[test]
     fn filter_on_concrete_iterator_resolves_with_function_predicate() {
-        let source = filter_probe_source(
-            "    micro has_next(self): bool { return true }\n    micro next(mut self): Option<T> { return None }",
-        );
+        let source = filter_probe_source("    micro has_next(self): bool { return true }\n    micro next(mut self): Option<T> { return None }");
         crate::ValkyrieCompiler::default()
             .compile_source(&format!("{source}\n{TEST_PRIMITIVES}"))
             .unwrap_or_else(|error| panic!("filter 的谓词形参必须能匹配: {error}"));

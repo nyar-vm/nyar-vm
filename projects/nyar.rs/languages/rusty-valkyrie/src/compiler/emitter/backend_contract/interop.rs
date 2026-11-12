@@ -405,7 +405,7 @@ fn syscall_attribute_to_interop_contract(attribute: &HirAttribute) -> Option<Ext
 fn argument_locator_token(argument: &HirArgument) -> Option<String> {
     match &argument.value.kind {
         HirExprKind::Literal(HirLiteral::String(_)) => argument_string_literal(argument),
-        HirExprKind::Literal(HirLiteral::Integer64(value)) => Some(value.to_string()),
+        HirExprKind::Literal(HirLiteral::Integer(value)) => Some(value.to_string()),
         _ => None,
     }
 }
@@ -435,7 +435,8 @@ fn attribute_name(attribute: &HirAttribute) -> Option<&str> {
 }
 
 fn argument_string_literal(argument: &HirArgument) -> Option<String> {
-    let HirExprKind::Literal(literal) = &argument.value.kind else {
+    let HirExprKind::Literal(literal) = &argument.value.kind
+    else {
         return None;
     };
     literal.as_constant_text()

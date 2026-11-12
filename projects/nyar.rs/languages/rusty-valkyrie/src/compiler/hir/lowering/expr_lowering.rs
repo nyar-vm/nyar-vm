@@ -5,16 +5,15 @@ use ordered_float::OrderedFloat;
 use super::*;
 use crate::compiler::{
     semantic::operator_members::{
-        CARDINAL_SUBSCRIPT_ASSIGN_MEMBER, CARDINAL_SUBSCRIPT_MEMBER, DEREF_READ_MEMBER, FOR_IN_HAS_NEXT_MEMBER,
-        FOR_IN_INTO_ITERATOR_MEMBER, FOR_IN_NEXT_MEMBER, FOR_IN_UNWRAP_MEMBER, SUBSCRIPT_ASSIGN_MEMBER, SUBSCRIPT_MEMBER, infix_member_name,
-        prefix_member_name,
+        CARDINAL_SUBSCRIPT_ASSIGN_MEMBER, CARDINAL_SUBSCRIPT_MEMBER, DEREF_READ_MEMBER, FOR_IN_HAS_NEXT_MEMBER, FOR_IN_INTO_ITERATOR_MEMBER,
+        FOR_IN_NEXT_MEMBER, FOR_IN_UNWRAP_MEMBER, SUBSCRIPT_ASSIGN_MEMBER, SUBSCRIPT_MEMBER, infix_member_name, prefix_member_name,
     },
     syntax::oak::{
         self as frontend,
         ast::{
-            AnonymousClass, AnonymousMicro, AnonymousStructure, ArrayPattern, Block, Break, ClassPattern, Continue, LiteralPattern, MatchArm, Pattern,
-            QuoteKind, QuoteLiteral, Raise, Resume, Return, Statement, TermBinaryNode, TermExpression, TermUnaryNode,
-            VariablePattern, WildcardPattern, pattern_nodes::ElsePattern,
+            AnonymousClass, AnonymousMicro, AnonymousStructure, ArrayPattern, Block, Break, ClassPattern, Continue, LiteralPattern, MatchArm,
+            Pattern, QuoteKind, QuoteLiteral, Raise, Resume, Return, Statement, TermBinaryNode, TermExpression, TermUnaryNode, VariablePattern,
+            WildcardPattern, pattern_nodes::ElsePattern,
         },
     },
     types::hir::{CaptureMode, CaptureStorage, HirCapture},
@@ -172,11 +171,9 @@ fn lower_array_pattern(pattern: &ArrayPattern, source_id: SourceID, span: Source
     // 内置数组类型 `[T]` 的名义 owner 名是 `Array`（`impl_nominal_type_name`），
     // extractor 路径遵循 `<Owner>.extractor` 约定（`canonical_extractor_callee`）。
     let canonical_callee = crate::compiler::types::NamePath::new(vec![Identifier::new("Array"), Identifier::new("extractor")]);
-    let prefix =
-        pattern.prefix.iter().map(|item| lower_pattern(item, source_id, span.clone())).collect::<Result<Vec<_>, _>>()?;
+    let prefix = pattern.prefix.iter().map(|item| lower_pattern(item, source_id, span.clone())).collect::<Result<Vec<_>, _>>()?;
     let rest = pattern.rest.as_ref().map(|rest| lower_array_rest_binding(rest, source_id, span.clone()));
-    let suffix =
-        pattern.suffix.iter().map(|item| lower_pattern(item, source_id, span.clone())).collect::<Result<Vec<_>, _>>()?;
+    let suffix = pattern.suffix.iter().map(|item| lower_pattern(item, source_id, span.clone())).collect::<Result<Vec<_>, _>>()?;
     Ok(HirPattern::Extractor(HirExtractorPattern::Array { canonical_callee, prefix, rest, suffix, resolved: None }))
 }
 
@@ -217,8 +214,8 @@ fn parse_pattern_literal(literal: &LiteralPattern) -> Result<HirLiteral, HirErro
         let decoded = quote_literal::decode_quote_capture(&literal, false)?;
         return quote_literal::pattern_literal_value(decoded, prefix_name, literal.quote, literal.quote_count);
     }
-    if let Ok(value) = split_numeric_type_suffix(value).0.parse::<i64>() {
-        return Ok(HirLiteral::Integer64(value));
+    if let Ok(value) = split_numeric_type_suffix(value).0.parse::<i128>() {
+        return Ok(HirLiteral::Integer(value));
     }
     if let Ok(value) = split_numeric_type_suffix(value).0.parse::<f64>() {
         return Ok(HirLiteral::Float64(OrderedFloat(value)));
@@ -285,7 +282,7 @@ fn lower_term_expression_body(
         TermExpression::NamePath(path) => lower_name_expression(path, span.clone()),
         TermExpression::QuoteLiteral(literal) => lower_quote_literal_kind(literal, source_id)?,
         TermExpression::IntegerLiteral { value, .. } => {
-            HirExprKind::Literal(HirLiteral::Integer64(integer_literal_value(split_numeric_type_suffix(value).0, false, span_range.clone())?))
+            HirExprKind::Literal(HirLiteral::Integer(integer_literal_value(split_numeric_type_suffix(value).0, false, span_range.clone())?))
         }
         TermExpression::FloatLiteral { value, .. } => {
             let digits = split_numeric_type_suffix(value).0;
@@ -478,7 +475,7 @@ fn lower_term_expression_body(
                 .map(HirCallArgument::positional)
                 .collect();
             Ok(lower_canonical_call_arguments(callee, arg_exprs))
-        })?
+        })?,
     })
 }
 
@@ -491,10 +488,10 @@ fn lower_unary_expression(
 ) -> Result<HirExprKind, HirError> {
     if matches!(node.operator, ValkyrieTokenType::Minus) {
         if let TermExpression::IntegerLiteral { value, .. } = &node.base {
-            // 按"符号 + 量级"结合：量级先以 `u64` 承载，取负后再做 `i64` 范围检查，
-            // 因此 `-2^63` 合法，而 `+2^63` 与 `-2^64` 都是结构化诊断。
+            // 按"符号 + 量级"结合：量级先以 `u64` 承载，结果保持未定型 `i128`，
+            // 目标宽度在上下文处一次结算；本层不提前收窄到 `i64`。
             let folded = integer_literal_value(value, true, frontend::std_range(&node.base.span()))?;
-            return Ok(HirExprKind::Literal(HirLiteral::Integer64(folded)));
+            return Ok(HirExprKind::Literal(HirLiteral::Integer(folded)));
         }
     }
     if matches!(node.operator, ValkyrieTokenType::Star) {
@@ -532,9 +529,7 @@ fn lower_binary_expression(
             let value = Box::new(lower_term_expression_with_context(rhs, source_id, fallback_span, false)?);
             match target.kind {
                 HirExprKind::Variable(identifier) => Ok(HirExprKind::Assign { target: identifier.name, value }),
-                HirExprKind::FieldAccess { object, field, field_id, .. } => {
-                    Ok(HirExprKind::StoreField { object, field, value, field_id })
-                }
+                HirExprKind::FieldAccess { object, field, field_id, .. } => Ok(HirExprKind::StoreField { object, field, value, field_id }),
                 _ => panic!("Oak 已验证的赋值位置不能降低为其他表达式"),
             }
         }
@@ -808,12 +803,7 @@ fn lower_for_in_desugar(label: Option<Identifier>, pattern: HirPattern, iterator
     let dot_call = |object: HirExpr, member: &str, span: &SourceSpan| HirExpr {
         kind: HirExprKind::Call {
             callee: Box::new(HirExpr {
-                kind: HirExprKind::FieldAccess {
-                    object: Box::new(object),
-                    field: Identifier::new(member),
-                    field_id: None,
-                    tuple_index: None,
-                },
+                kind: HirExprKind::FieldAccess { object: Box::new(object), field: Identifier::new(member), field_id: None, tuple_index: None },
                 span: span.clone(),
             }),
             args: Vec::new(),
@@ -988,7 +978,13 @@ fn lower_quote_literal_kind(literal: &QuoteLiteral, source_id: SourceID) -> Resu
 /// 只有 `Integer64`/`Float64`，因此只识别 `i64`/`f64`；十六进制/二进制/八进制
 /// 前缀内的字母不是后缀，不能剥离。
 pub(crate) fn split_numeric_type_suffix(text: &str) -> (&str, Option<&'static str>) {
-    if text.starts_with("0x") || text.starts_with("0X") || text.starts_with("0b") || text.starts_with("0B") || text.starts_with("0o") || text.starts_with("0O") {
+    if text.starts_with("0x")
+        || text.starts_with("0X")
+        || text.starts_with("0b")
+        || text.starts_with("0B")
+        || text.starts_with("0o")
+        || text.starts_with("0O")
+    {
         return (text, None);
     }
     for suffix in ["f64", "i64"] {
@@ -1001,27 +997,17 @@ pub(crate) fn split_numeric_type_suffix(text: &str) -> (&str, Option<&'static st
     (text, None)
 }
 
-/// 整数字面量按"符号 + 量级"解释：量级用 `u64` 承载，符号在结合时应用，
-/// 最后对带符号值做 `i64` 范围检查。失败是结构化诊断，不 panic。
-fn integer_literal_value(text: &str, negative: bool, span: Range<usize>) -> Result<i64, HirError> {
+/// 整数字面量按"符号 + 量级"解释：量级用 `u64` 承载，符号在结合时应用。
+/// 结果以 `i128` 精确返回，覆盖完整 `u64` 正半域；目标宽度与范围由上下文
+/// 在 `integer_literal::settle_integer` 一次结算，本函数不做 `i64` 收窄。
+fn integer_literal_value(text: &str, negative: bool, span: Range<usize>) -> Result<i128, HirError> {
     let magnitude = parse_integer_literal_magnitude(text)
         .map_err(|()| integer_literal_out_of_range(text, negative, None, "unsigned_64_magnitude", span.clone()))?;
     let signed = if negative { -(magnitude as i128) } else { magnitude as i128 };
-    if signed >= i64::MIN as i128 && signed <= i64::MAX as i128 {
-        Ok(signed as i64)
-    }
-    else {
-        Err(integer_literal_out_of_range(text, negative, Some(magnitude), "signed_64", span))
-    }
+    Ok(signed)
 }
 
-fn integer_literal_out_of_range(
-    text: &str,
-    negative: bool,
-    magnitude: Option<u64>,
-    range: &'static str,
-    span: Range<usize>,
-) -> HirError {
+fn integer_literal_out_of_range(text: &str, negative: bool, magnitude: Option<u64>, range: &'static str, span: Range<usize>) -> HirError {
     let literal = if negative { format!("-{text}") } else { text.to_string() };
     let magnitude = magnitude.map_or_else(|| text.to_string(), |value| value.to_string());
     HirError::IntegerLiteralOutOfRange {

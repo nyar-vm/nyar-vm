@@ -338,7 +338,7 @@ enums Status {
 #[test]
 fn rejects_duplicate_discriminators_in_imported_semantic_export_enums() {
     let compiler = ValkyrieCompiler::new(SourceID::default());
-    let duplicate_tag = |value: i64| HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(value)), span: test_span() };
+    let duplicate_tag = |value: i64| HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer(value)), span: test_span() };
     let bad_enum = HirEnum {
         declaration: None,
         name: Identifier::new("Status"),

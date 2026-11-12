@@ -71,7 +71,7 @@ impl TypeInference {
     /// 推断表达式类型；无法处理的形态返回 `UnsupportedExpression`。
     pub fn infer(&mut self, expr: &HirExpr) -> Result<HirType, TypeError> {
         match &expr.kind {
-            HirExprKind::Literal(HirLiteral::Integer64(_)) => Ok(signed_int64_type()),
+            HirExprKind::Literal(HirLiteral::Integer(_)) => Ok(signed_int64_type()),
             HirExprKind::Literal(HirLiteral::Float64(_)) => Ok(HirType::Float64),
             HirExprKind::Literal(HirLiteral::String(_)) => Ok(HirType::Utf8),
             HirExprKind::Literal(HirLiteral::Bool(_)) => Ok(bool_type()),

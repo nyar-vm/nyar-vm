@@ -4,15 +4,17 @@
 //! 同一 HIR 冻结事实中产生。本模块只铸造并回填身份，不引入新的语言类型，也不做
 //! 目标侧环境传递；MIR 只消费这里冻结的 `ItemInstanceId` / `FieldId`。
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use crate::compiler::types::{
     Identifier, NamePath, SourceSpan,
     hir::{
-        GenericType, HirBlock, HirCapture, HirDocumentation, HirExpr, HirExprKind, HirExtractorPattern, HirField, HirFunction,
-        HirIdentifier, HirLambdaEnvironment, HirLambdaIdentity, HirMatchArm, HirModule, HirParam, HirPattern, HirStatement,
-        HirStatementKind, HirStruct, HirVisibility, HirWhereConstraint, ValkyrieType,
+        GenericType, HirBlock, HirCapture, HirDocumentation, HirExpr, HirExprKind, HirExtractorPattern, HirField, HirFunction, HirIdentifier,
+        HirLambdaEnvironment, HirLambdaIdentity, HirMatchArm, HirModule, HirParam, HirPattern, HirStatement, HirStatementKind, HirStruct,
+        HirVisibility, HirWhereConstraint, ValkyrieType,
     },
 };
 
@@ -62,11 +64,8 @@ pub fn hoist_lambdas(module: &mut HirModule) {
     };
     // impl 头部的 `imply HashSet<T>` 泛型挂在**目标类型**上而不是 `implementation.generics`；
     // 合成函数与环境必须继承目标声明的泛型，否则每个 owner 实例会共享同一个非泛型载体。
-    let struct_generics = module
-        .structs
-        .iter()
-        .map(|structure| (structure.name.clone(), structure.generics.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let struct_generics =
+        module.structs.iter().map(|structure| (structure.name.clone(), structure.generics.clone())).collect::<BTreeMap<_, _>>();
 
     for function in &mut module.functions {
         context.owner_generics = function.generics.clone();
@@ -369,7 +368,8 @@ fn hoist_lambda(
 
     let environment = if captures.is_empty() {
         None
-    } else {
+    }
+    else {
         let struct_name = Identifier::new(&format!("__lambda_env_{id}"));
         let fields = captures
             .iter()
@@ -404,7 +404,8 @@ fn hoist_lambda(
         // 绑定期会把它冻结成带实参的 `Nominal`，而不是缺实参的裸声明。
         let environment_ty = if owner_generics.is_empty() {
             ValkyrieType::Named(environment.struct_name.clone())
-        } else {
+        }
+        else {
             ValkyrieType::Apply(
                 Box::new(ValkyrieType::Named(environment.struct_name.clone())),
                 owner_generics.iter().map(|generic| ValkyrieType::Named(generic.name.clone())).collect(),
@@ -525,20 +526,13 @@ struct BindSnapshot {
 
 impl BindSnapshot {
     fn new(module: &HirModule) -> Self {
-        let functions = module
-            .functions
-            .iter()
-            .map(|function| (function.name.to_string(), (function.declaration, function.instance)))
-            .collect();
+        let functions =
+            module.functions.iter().map(|function| (function.name.to_string(), (function.declaration, function.instance))).collect();
         let environments = module
             .structs
             .iter()
             .map(|structure| {
-                let fields = structure
-                    .fields
-                    .iter()
-                    .filter_map(|field| field.id.map(|id| (field.name.to_string(), id)))
-                    .collect();
+                let fields = structure.fields.iter().filter_map(|field| field.id.map(|id| (field.name.to_string(), id))).collect();
                 (structure.name.to_string(), (structure.constructor_declaration, structure.generics.clone(), fields))
             })
             .collect();
@@ -560,7 +554,10 @@ fn bind_lambda(
     updates: &mut Vec<(Identifier, HirBlock)>,
     shadowed: &BTreeSet<String>,
 ) {
-    let Some(identity) = hoisted else { return };
+    let Some(identity) = hoisted
+    else {
+        return;
+    };
     if let Some((declaration, instance)) = snapshot.functions.get(identity.function_name.as_str()) {
         identity.declaration = *declaration;
         identity.instance = *instance;
@@ -574,10 +571,8 @@ fn bind_lambda(
                 let arguments = generics.iter().map(|generic| ValkyrieType::Named(generic.name.clone())).collect();
                 environment.ty = Some(ValkyrieType::Nominal { declaration, arguments, primitive_identity: None });
             }
-            environment.field_ids = captures
-                .iter()
-                .filter_map(|capture| fields.get(environment_field_name(&capture.identifier.name).as_str()).copied())
-                .collect();
+            environment.field_ids =
+                captures.iter().filter_map(|capture| fields.get(environment_field_name(&capture.identifier.name).as_str()).copied()).collect();
         }
         let fields = captures
             .iter()
@@ -588,7 +583,8 @@ fn bind_lambda(
             environment: HirIdentifier { name: Identifier::new(ENV_PARAMETER), shadow_index: 0, span: body.span.clone() },
             fields,
         })
-    } else {
+    }
+    else {
         None
     };
 
@@ -650,8 +646,14 @@ fn bind_expr(
             if shadowed.contains(name.as_str()) {
                 return;
             }
-            let Some(substitution) = substitution else { return };
-            let Some((field, field_id)) = substitution.fields.get(name.as_str()) else { return };
+            let Some(substitution) = substitution
+            else {
+                return;
+            };
+            let Some((field, field_id)) = substitution.fields.get(name.as_str())
+            else {
+                return;
+            };
             let environment = substitution.environment.clone();
             let field = field.clone();
             let field_id = *field_id;
@@ -667,13 +669,22 @@ fn bind_expr(
         // 捕获名出现在首段时同样必须改写为环境字段，否则合成函数里 `binding` 不在
         // 局部环境，接收者类型无从求解，调用被判为无候选。
         HirExprKind::Path(path) => {
-            let Some(head) = path.parts().first().cloned() else { return };
+            let Some(head) = path.parts().first().cloned()
+            else {
+                return;
+            };
             let head_name = head.to_string();
             if shadowed.contains(head_name.as_str()) {
                 return;
             }
-            let Some(substitution) = substitution else { return };
-            let Some((field, field_id)) = substitution.fields.get(head_name.as_str()) else { return };
+            let Some(substitution) = substitution
+            else {
+                return;
+            };
+            let Some((field, field_id)) = substitution.fields.get(head_name.as_str())
+            else {
+                return;
+            };
             let environment = substitution.environment.clone();
             let field = field.clone();
             let field_id = *field_id;
@@ -694,12 +705,7 @@ fn bind_expr(
             }
             for segment in &parts[1..parts.len() - 1] {
                 receiver = HirExpr {
-                    kind: HirExprKind::FieldAccess {
-                        object: Box::new(receiver),
-                        field: segment.clone(),
-                        field_id: None,
-                        tuple_index: None,
-                    },
+                    kind: HirExprKind::FieldAccess { object: Box::new(receiver), field: segment.clone(), field_id: None, tuple_index: None },
                     span: span.clone(),
                 };
             }
@@ -716,8 +722,14 @@ fn bind_expr(
             if shadowed.contains(name.as_str()) {
                 return;
             }
-            let Some(substitution) = substitution else { return };
-            let Some((field, field_id)) = substitution.fields.get(name.as_str()) else { return };
+            let Some(substitution) = substitution
+            else {
+                return;
+            };
+            let Some((field, field_id)) = substitution.fields.get(name.as_str())
+            else {
+                return;
+            };
             let environment = substitution.environment.clone();
             let field = field.clone();
             let field_id = *field_id;
@@ -909,7 +921,10 @@ fn collect_expr(expr: &HirExpr, analyzer: &mut CaptureAnalyzer, shadowed: &BTree
         // 首段才是接收者绑定，末段是成员名。漏掉这两种形状会导致闭包不登记捕获，
         // 合成函数里接收者无类型可解。
         HirExprKind::Path(path) => {
-            let Some(head) = path.parts().first() else { return };
+            let Some(head) = path.parts().first()
+            else {
+                return;
+            };
             if !shadowed.contains(head.as_str()) {
                 analyzer.access_var(head.as_str(), false);
             }
@@ -1096,7 +1111,7 @@ fn environment_field_name(name: &Identifier) -> Identifier {
 fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, LocalBinding>) -> Option<ValkyrieType> {
     match &expr.kind {
         HirExprKind::Literal(literal) => Some(match literal {
-            crate::compiler::types::hir::HirLiteral::Integer64(_) => ValkyrieType::Integer64 { signed: true },
+            crate::compiler::types::hir::HirLiteral::Integer(_) => ValkyrieType::Integer64 { signed: true },
             crate::compiler::types::hir::HirLiteral::Float64(_) => ValkyrieType::Float64,
             crate::compiler::types::hir::HirLiteral::Bool(_) => ValkyrieType::Boolean,
             crate::compiler::types::hir::HirLiteral::Unit => ValkyrieType::Unit,

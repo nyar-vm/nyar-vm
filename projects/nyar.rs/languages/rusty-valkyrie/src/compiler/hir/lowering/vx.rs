@@ -42,7 +42,7 @@ pub fn lower_xml_markup_to_element_expr(node_count: usize, span: crate::compiler
                 span: span.clone(),
             }),
             args: vec![HirCallArgument::positional(HirExpr {
-                kind: HirExprKind::Literal(HirLiteral::Integer64(node_count as i64)),
+                kind: HirExprKind::Literal(HirLiteral::Integer(node_count as i128)),
                 span: span.clone(),
             })],
             resolved: None,

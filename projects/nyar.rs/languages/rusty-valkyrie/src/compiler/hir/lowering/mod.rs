@@ -31,6 +31,7 @@ pub mod errors;
 mod expr_lowering;
 mod generic_binders;
 mod generic_instantiation;
+pub(crate) mod integer_literal;
 mod interpolation;
 mod macro_expand;
 mod match_pattern_recovery;
@@ -61,10 +62,10 @@ pub(crate) use contract_validation::{
 
 #[doc(hidden)]
 pub use nominal_declarations::validate_enum_discriminators;
-pub(crate) use quote_settle::settle_quote_literal_captures;
 pub(crate) use nominal_declarations::{
     collect_flags_layouts, collect_sum_declarations, compute_nominal_declarations, resolve_sum_variant_tag, validate_sum_type_discriminators,
 };
+pub(crate) use quote_settle::settle_quote_literal_captures;
 
 pub(crate) use source_group::{
     SelfOwnerPath, compiled_program_from_hir_module, exportable_dependency_functions, register_root_type_alias_targets,
@@ -73,13 +74,12 @@ pub(crate) use source_group::{
 pub use source_group::{build_generated_group, build_source_input_with_generated, compose_source_input_groups, validate_source_groups};
 
 pub(crate) use generic_binders::{
-    array_owner_declaration, bind_declared_nominal_types, combined_impl_generic_context,
-    freeze_enum_generic_binders, freeze_function_generic_binders, freeze_generic_binders, freeze_impl_generic_binders,
-    freeze_module_generic_binders, freeze_struct_generic_binders, freeze_trait_generic_binders, lookup_owner_generics_by_declaration,
-    lower_trait_associated_type_references, lower_trait_method, max_hir_callable_instance_index, max_hir_declaration_index,
-    propagate_declared_generic_binders, propagate_generic_binders_in_block, propagate_generic_binders_in_expr,
-    propagate_generic_binders_in_where_constraints, register_field_declarations,
-    register_function_declarations, synthesize_parent_fields,
+    array_owner_declaration, bind_declared_nominal_types, combined_impl_generic_context, freeze_enum_generic_binders,
+    freeze_function_generic_binders, freeze_generic_binders, freeze_impl_generic_binders, freeze_module_generic_binders,
+    freeze_struct_generic_binders, freeze_trait_generic_binders, lookup_owner_generics_by_declaration, lower_trait_associated_type_references,
+    lower_trait_method, max_hir_callable_instance_index, max_hir_declaration_index, propagate_declared_generic_binders,
+    propagate_generic_binders_in_block, propagate_generic_binders_in_expr, propagate_generic_binders_in_where_constraints,
+    register_field_declarations, register_function_declarations, synthesize_parent_fields,
 };
 
 pub(crate) use generic_instantiation::{
@@ -302,22 +302,11 @@ impl ValkyrieCompiler {
         let mut mir_groups = hir_groups
             .iter()
             .map(|hir| {
-                crate::compiler::mir::MirLowerer::lower_module_semantic_with_host(
-                    hir,
-                    Some(&host_runtime),
-                    false,
-                    &dispatch,
-                    Some(&gate),
-                )
+                crate::compiler::mir::MirLowerer::lower_module_semantic_with_host(hir, Some(&host_runtime), false, &dispatch, Some(&gate))
             })
             .collect::<Vec<_>>();
-        let mut final_mir = crate::compiler::mir::MirLowerer::lower_module_semantic_with_host(
-            &final_hir,
-            Some(&host_runtime),
-            true,
-            &dispatch,
-            Some(&gate),
-        );
+        let mut final_mir =
+            crate::compiler::mir::MirLowerer::lower_module_semantic_with_host(&final_hir, Some(&host_runtime), true, &dispatch, Some(&gate));
         for index in entry_indices {
             if index != final_index {
                 crate::compiler::emitter::pipeline::merge_entry_group_surface(&mut final_mir, &mir_groups[index])?;
@@ -708,7 +697,8 @@ fn collect_primary_namespaces(
     last: &mut Option<(String, usize, usize)>,
 ) {
     for item in items {
-        let crate::compiler::syntax::oak::ast::StatementNode::Namespace(namespace) = item else {
+        let crate::compiler::syntax::oak::ast::StatementNode::Namespace(namespace) = item
+        else {
             continue;
         };
         if crate::compiler::hir::lowering::attribute_lowering::namespace_is_primary(namespace) {

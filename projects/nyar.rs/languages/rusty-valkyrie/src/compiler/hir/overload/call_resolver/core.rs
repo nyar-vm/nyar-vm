@@ -39,12 +39,9 @@ use crate::compiler::{
     },
 };
 
-use super::{
-    constructors::{
-        try_resolve_constructor_call, try_resolve_instance_method, try_resolve_instance_method_with_context,
-        try_resolve_qualified_free_function, try_resolve_singleton_method,
-        try_resolve_type_static_method,
-    },
+use super::constructors::{
+    try_resolve_constructor_call, try_resolve_instance_method, try_resolve_instance_method_with_context, try_resolve_qualified_free_function,
+    try_resolve_singleton_method, try_resolve_type_static_method,
 };
 
 /// 候选是否以 `self` 为首个形参。
@@ -74,7 +71,7 @@ pub(crate) fn overload_symbol_path(candidate: &OverloadCandidate) -> NamePath {
 fn is_untyped_numeric_literal(expr: &HirExpr) -> bool {
     matches!(
         &expr.kind,
-        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Integer64(_) | crate::compiler::types::hir::HirLiteral::Byte(_))
+        HirExprKind::Literal(crate::compiler::types::hir::HirLiteral::Integer(_) | crate::compiler::types::hir::HirLiteral::Byte(_))
     )
 }
 
@@ -122,8 +119,7 @@ fn function_typed_field_call(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &std::collections::BTreeSet<Identifier>,
 ) -> Option<HirResolvedCall> {
-    let object_type = infer_expr_type(object, locals)
-        .or_else(|| infer_scrutinee_type(object, locals, struct_fields, singleton_names))?;
+    let object_type = infer_expr_type(object, locals).or_else(|| infer_scrutinee_type(object, locals, struct_fields, singleton_names))?;
     let ValkyrieType::Function(func) = lookup_struct_field_type(&object_type, field, struct_fields)?
     else {
         return None;
@@ -695,8 +691,14 @@ pub(crate) fn try_resolve_call(
     // 裸无载荷变体实参（`f(None)`）没有自足类型，其身份只能由实参槽上下文收窄。
     // 同名候选在该槽给出不同形参类型时上下文已置空：此时按任一候选的形参收窄
     // 都是猜测，必须失败闭合，交由调用合同报 `UnresolvedCall`。
-    let argument_contexts =
-        crate::compiler::hir::overload::substitution::free_call_argument_contexts(callee, candidates, type_relations, locals, singleton_names, contextual_type);
+    let argument_contexts = crate::compiler::hir::overload::substitution::free_call_argument_contexts(
+        callee,
+        candidates,
+        type_relations,
+        locals,
+        singleton_names,
+        contextual_type,
+    );
     let conflicted_unit_variant_argument = argument_contexts.iter().enumerate().any(|(index, context)| {
         if context.is_some() {
             return false;
@@ -710,9 +712,9 @@ pub(crate) fn try_resolve_call(
             HirExprKind::Path(path) if path.parts().len() == 1 => &path.parts()[0],
             _ => return false,
         };
-        candidates.iter().any(|candidate| {
-            candidate.signature.params.get(index).is_some_and(|expected| type_relations.is_unit_variant_of(expected, name))
-        })
+        candidates
+            .iter()
+            .any(|candidate| candidate.signature.params.get(index).is_some_and(|expected| type_relations.is_unit_variant_of(expected, name)))
     });
     if conflicted_unit_variant_argument {
         return None;

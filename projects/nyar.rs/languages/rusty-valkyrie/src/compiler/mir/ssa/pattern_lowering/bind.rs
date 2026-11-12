@@ -516,7 +516,7 @@ impl MirBuilder {
                 }
                 if *expected { value } else { self.lower_logical_not_operand(value) }
             }
-            HirLiteral::Integer64(_) | HirLiteral::Float64(_) => {
+            HirLiteral::Integer(_) | HirLiteral::Float64(_) => {
                 let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
                 else {
                     return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value);
