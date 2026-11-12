@@ -1,6 +1,6 @@
 //! 编译器构建身份：由 Git 修订或外部注入值生成，供工具链指纹与消费者报告读取。
 
-use std::{env, process::Command};
+use std::{env, io::Write, process::Command};
 
 fn main() {
     // 源文件、HEAD 或分支 ref 变化都要重新生成身份；外部注入变量变化同样重跑。
@@ -17,7 +17,10 @@ fn main() {
     println!("cargo:rustc-env=NYAR_COMPILER_BUILD_ID={build_id}");
 }
 
-/// 取当前仓库修订；工作区有 tracked 改动时追加 `-dirty`。Git 不可用时回退 `unknown`。
+/// 干净树取完整 rev；dirty 树把 tracked 改动的可复现内容摘要并入身份
+/// （`git status --porcelain` + `git diff HEAD` 经 `git hash-object` 取 blob 摘要），
+/// 不同 dirty 内容不再共享同一 `-dirty` 身份。全程只读，不写 index/refs/工作树。
+/// Git 不可用时回退 `unknown`，该身份会被权威 freshness 核心判为不可复用。
 fn git_build_id() -> String {
     let revision = Command::new("git").args(["rev-parse", "--short=12", "HEAD"]).output();
     let Ok(revision) = revision
@@ -31,9 +34,46 @@ fn git_build_id() -> String {
     if revision.is_empty() {
         return "unknown".to_string();
     }
-    let dirty = Command::new("git").args(["status", "--porcelain", "--untracked-files=no"]).output();
-    match dirty {
-        Ok(status) if status.status.success() && !status.stdout.is_empty() => format!("{revision}-dirty"),
+    let status = Command::new("git").args(["status", "--porcelain", "--untracked-files=no"]).output();
+    match status {
+        Ok(out) if out.status.success() && !out.stdout.is_empty() => {
+            // dirty：身份绑定实际内容。`git diff HEAD` 同时覆盖已暂存与未暂存的
+            // tracked 改动；status 清单补齐重命名/新增路径。diff 失败时只按清单摘要，
+            // hash-object 失败时退回裸 `-dirty` 后缀（仍优于无标记）。
+            let mut digest_input = out.stdout;
+            let diff = Command::new("git").args(["diff", "HEAD"]).output();
+            if let Ok(d) = diff {
+                if d.status.success() {
+                    digest_input.extend_from_slice(&d.stdout);
+                }
+            }
+            match git_blob_digest(&digest_input) {
+                Some(digest) => format!("{revision}-dirty{}", &digest[..12]),
+                None => format!("{revision}-dirty"),
+            }
+        }
         _ => revision,
     }
+}
+
+/// `git hash-object -t blob --stdin --no-filters`：对输入字节取 git blob 摘要（40 位十六进制）。
+/// 不带 `-w`，只计算不写入对象库；同内容同摘要，Windows/CI 下可复现。
+fn git_blob_digest(content: &[u8]) -> Option<String> {
+    let mut child = Command::new("git")
+        .args(["hash-object", "-t", "blob", "--stdin", "--no-filters"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    child.stdin.as_mut()?.write_all(content).ok()?;
+    let out = child.wait_with_output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let digest = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if digest.len() < 12 {
+        return None;
+    }
+    Some(digest)
 }
