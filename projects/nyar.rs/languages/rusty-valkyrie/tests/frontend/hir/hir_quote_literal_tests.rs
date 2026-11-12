@@ -446,24 +446,14 @@ fn bare_closing_brace_fails_closed() {
 }
 
 #[test]
-fn delimiter_escape_cannot_be_rescued() {
-    // `'\''` 非法：捕获在第二个引号处闭合，残余引号未闭合；必须报未闭合，不得救转义。
-    // 根循环恢复后失败不再致命：坏 item 被丢弃，未闭合原因记入诊断汇。
+fn delimiter_escape_is_supported() {
+    // cooked 单引号串里 `\` 保护定界符：`'\''` 是单引号字符，`"\""` 是单引号文本。
+    // raw 前缀（`r'…'`）不参与该保护，仍按逐字闭合（见 `raw_single_quote_literal_skips_escapes`）。
     pending::clear_pending_diagnostics();
-    ValkyrieCompiler::default().compile_source("micro probe() { let bad = '\\'' }").expect("恢复后编译在恢复模块上继续");
+    assert_character("micro probe() { let quote = '\\'' }", 0x27);
+    assert_text("micro probe() { let text = \"\\\"\" }", "\"");
     let collected = pending::take_pending_diagnostics();
-    assert!(
-        collected.diagnostics.iter().any(|diagnostic| diagnostic.message.contains("unterminated quoted literal")),
-        "必须报未闭合捕获：{collected:?}"
-    );
-    // `"\""` 同理。
-    pending::clear_pending_diagnostics();
-    ValkyrieCompiler::default().compile_source("micro probe() { let bad = \"\\\"\" }").expect("恢复后编译在恢复模块上继续");
-    let collected = pending::take_pending_diagnostics();
-    assert!(
-        collected.diagnostics.iter().any(|diagnostic| diagnostic.message.contains("unterminated quoted literal")),
-        "必须报未闭合捕获：{collected:?}"
-    );
+    assert!(collected.diagnostics.is_empty(), "定界符转义不得产生恢复诊断：{collected:?}");
 }
 
 #[test]

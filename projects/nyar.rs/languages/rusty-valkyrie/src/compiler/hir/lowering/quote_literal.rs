@@ -345,6 +345,12 @@ pub(crate) fn pattern_literal_value(
 
 /// cooked 捕获：模板结构解析 + 文本段转义解码。
 fn decode_cooked_capture(literal: &QuoteLiteral, allow_interpolation: bool) -> Result<DecodedQuoteCapture, HirError> {
+    // 插值是双引号字符串的能力（见语言文档 lexical-structure：普通双引号字符串支持转义与插值）。
+    // 单引号捕获是字符/文本捕获，内容里的花括号是数据，不参与模板结构解析。
+    if matches!(literal.quote, QuoteKind::Single) {
+        let decoded = decode_text_segment(&literal.content, literal.content_span.start)?;
+        return Ok(DecodedQuoteCapture::PlainText(decoded));
+    }
     let segments = parse_quote_template(&literal.content, literal.content_span.start).map_err(|error| {
         let span = error.source_offset().map_or_else(|| literal.span.start..literal.span.end, |offset| offset..offset + 1);
         quote_literal_error(QuoteLiteralFailure::TemplateSyntax { message: error.to_string() }, span)
