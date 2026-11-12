@@ -19,7 +19,7 @@ use odin_bytecode::{
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
 use crate::{
-    FragmentSubmission, Result, TargetExecutionPlan,
+    FragmentSubmission, ProgramTextRepresentation, Result, TargetExecutionPlan,
     target_operator::{
         TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
     },
@@ -56,7 +56,7 @@ enum TextCarrier {
 /// [`freeze_nyar_text_representations`] 在发射前拒绝。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum TextSlotTarget {
-    /// 目标槽是宿主 raw 串：嵌套槽目标合同 / 宿主导入实参 / 纯 raw 片段形参槽。
+    /// 目标槽是宿主 raw 串：嵌套槽目标合同 / 宿主导入实参 / 程序级显式 raw 计划事实的形参槽。
     Raw,
     /// 目标槽是托管文本对象，布局身份由计划冻结。
     Managed(LayoutId),
@@ -493,9 +493,9 @@ fn build_nyar_function_param_types(exec: &TargetExecutionPlan, operations: &[Ite
 /// 条目，但同一载体布局仍以折叠后类型为键冻结在
 /// `aggregate_layout_by_nyar_type`。
 ///
-/// 两处都查不到表示目标计划**没有**为该槽冻结托管布局身份（纯 raw 片段不编译
-/// `std.text` 文本聚合，字面量直传），此时 `None` 就是槽的冻结事实：raw 宿主串
-/// 槽，不是缺布局错误。
+/// 两处都查不到表示目标计划**没有**为该槽冻结托管布局身份；`None` 只有在程序级
+/// 表示计划显式声明 raw（[`TargetExecutionPlan::program_text_representation`]）时
+/// 才是合法 raw 宿主串槽事实，否则是 missing，由发射前拒收，不得解释为 raw。
 fn build_nyar_function_param_layouts(exec: &TargetExecutionPlan, operations: &[ItemInstanceId]) -> BTreeMap<i32, Vec<Option<LayoutId>>> {
     let mut map = BTreeMap::new();
     for (index, instance) in operations.iter().enumerate() {
@@ -537,13 +537,13 @@ fn build_nyar_value_definitions<'a>(mir_fn: &'a MirFunction, slots: &ExecutableS
 ///    嵌套槽由目标合同固定为 raw 宿主串，不是发射器推断；
 /// 3. 外部宿主导入调用结果 → `Raw`（宿主边界 ABI 事实）；
 /// 4. 入口形参槽 → 与 OVM ABI 合同同一派生点 [`crate::ovm_abi::frozen_entry_parameter_layouts`]：
-///    解析到布局 → `Managed`；目标计划没有登记任何 `utf8` 托管布局（纯 raw 片段）→ `Raw`；
-///    计划已登记 `utf8` 布局而该槽解析不到 → 合同与运行时布局分叉，`missing`；
+///    解析到布局 → `Managed`；程序级表示计划显式声明 raw → `Raw`；
+///    未显式声明 raw 而该槽解析不到布局 → `missing`，发射前拒收；
 /// 5. `value_layouts` 已登记 → `Managed(layout)`（前端类型身份事实：构造/调用产出的
 ///    托管对象槽）；
 /// 6. `Copy`/`StoreVar`/恒等 `Cast` → 继承源操作数事实（搬运不改载体，迭代至不动点）；
-/// 7. 纯 raw 片段（计划未登记任何 `utf8` 托管布局）→ 其余 `utf8` 值一律 `Raw`
-///    （程序级显式 raw 事实）；
+/// 7. 程序级表示计划显式声明 raw（[`TargetExecutionPlan::program_text_representation`]）
+///    → 其余 `utf8` 值一律 `Raw`；布局注册表为空**不是**该事实的来源；
 /// 8. 其余 `utf8` 值是 `missing`：发射前结构化错误，不得解释为 raw
 ///    （对齐 wasm 后端 `32c5081e` 的缺事实拒收先例）。
 fn freeze_nyar_text_representations(
@@ -552,8 +552,9 @@ fn freeze_nyar_text_representations(
     value_definitions: &BTreeMap<MirValueRef, &MirInstruction>,
     external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
 ) -> crate::Result<BTreeMap<MirValueRef, TextCarrier>> {
-    // 程序级显式 raw 事实：目标计划没有冻结任何 `utf8` 托管布局（纯 raw 片段）。
-    let pure_raw = !exec.aggregate_layout_by_nyar_type().contains_key(&NyarType::Utf8);
+    // 程序级 raw 模式只来自正式表示计划事实：计划显式声明 raw 才授权 raw 槽。
+    // 禁止由布局注册表为空反推——上游漏登记整类布局时 missing 会被吸收成合法表示。
+    let program_raw = exec.program_text_representation() == Some(ProgramTextRepresentation::Raw);
     let text_values: Vec<MirValueRef> =
         mir_fn.value_types.iter().filter(|(_, ty)| matches!(**ty, NyarType::Utf8)).map(|(value, _)| *value).collect();
     let entry_parameters: Vec<MirValueRef> =
@@ -599,13 +600,13 @@ fn freeze_nyar_text_representations(
                 Some(layout) => {
                     table.insert(*value, TextCarrier::Managed(layout));
                 }
-                None if pure_raw => {
+                None if program_raw => {
                     table.insert(*value, TextCarrier::Raw);
                 }
                 None => {
                     return Err(format!(
-                        "OVM 文本表示计划分叉：入口形参 #{position}（%{}，symbol=`{}`）的 `utf8` 槽没有解析到目标计划已冻结的文本布局，\
-                         而计划已登记 `utf8` 托管布局身份；合同与运行时布局不一致，missing 事实不得解释为 raw",
+                        "OVM 文本表示计划缺少 raw 事实：入口形参 #{position}（%{}，symbol=`{}`）的 `utf8` 槽没有解析到目标计划已冻结的文本布局，\
+                         程序级表示计划也没有显式声明 raw 表示；缺登记不是「程序选择 raw」的证据，missing 事实不得解释为 raw",
                         value.0, mir_fn.symbol
                     ));
                 }
@@ -617,7 +618,8 @@ fn freeze_nyar_text_representations(
             table.insert(*value, TextCarrier::Managed(layout));
         }
     }
-    if pure_raw {
+    // 规则 7：程序级显式 raw 计划事实兜底其余文本值；未经声明不得吸收成 raw。
+    if program_raw {
         for value in &text_values {
             table.entry(*value).or_insert(TextCarrier::Raw);
         }
@@ -1582,13 +1584,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             if param_ty.as_ref() == Some(&NyarType::Utf8) {
                 let slot_layout =
                     self.param_layouts_by_function_index.get(&function_index).and_then(|layouts| layouts.get(index)).copied().flatten();
-                // 入口槽没有布局身份，只有目标计划本身也没冻结任何 `utf8` 聚合布局
-                // 才是合法的 raw 槽事实（纯 raw 片段：字面量直传，不编译文本载体）。
-                // 计划已登记 `Utf8` 布局而本槽解析不到，说明查表链断了，必须失败关闭。
-                if slot_layout.is_none() && self.ctx.submission.backend_plan.aggregate_layout_by_nyar_type().contains_key(&NyarType::Utf8) {
+                // 入口槽没有布局身份时，只有程序级表示计划显式声明 raw 才是合法的
+                // raw 槽事实；布局注册表为空不是「程序选择 raw」的证据，必须失败关闭。
+                if slot_layout.is_none()
+                    && self.ctx.submission.backend_plan.program_text_representation() != Some(ProgramTextRepresentation::Raw)
+                {
                     return Err(format!(
                         "OVM 内部调用 `{path:?}`（function index={function_index}）的文本实参 #{index} 未能解析入口槽的冻结 layout：\
-                         目标计划已登记 `utf8` 聚合布局身份，同一签名槽必须解析到该身份"
+                         程序级表示计划没有显式声明 raw 表示，同一签名槽必须解析到已冻结的托管布局身份，missing 事实不得解释为 raw"
                     ));
                 }
                 let target = match slot_layout {

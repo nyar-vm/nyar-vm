@@ -20,7 +20,7 @@ use odin_bytecode::OdinLayout;
 use serde::Serialize;
 
 use crate::{
-    AbiCarrier, LibraryExportAbi, Result, TargetExecutionPlan,
+    AbiCarrier, LibraryExportAbi, ProgramTextRepresentation, Result, TargetExecutionPlan,
     abi_structure::{AbiStructure, AggregateStructure, abi_structure_for_type_with_layouts, canonical_parameter_identities},
     backend_plan_views::ExecutableFunction,
     lowering::shared::executable::slots::ExecutableSlotPlan,
@@ -107,8 +107,9 @@ enum TextSlot {
 /// 1. `value_layouts` 按 SSA 值冻结的布局；
 /// 2. 折叠后的槽类型 → `aggregate_layout_by_nyar_type`。
 ///
-/// 两处都没有 = 目标计划没有为该槽冻结托管布局，槽是 raw 宿主串（`None` 是
-/// 事实，不是缺布局）。
+/// 两处都没有 = 目标计划没有为该槽冻结托管布局；`None` 只有在程序级表示计划
+/// 显式声明 raw（[`TargetExecutionPlan::program_text_representation`]）时才是
+/// 合法 raw 宿主串事实，否则由 [`Projection::project_text`] 与 lowering 失败闭合。
 pub(crate) fn frozen_entry_parameter_layouts(plan: &TargetExecutionPlan, function: &ExecutableFunction) -> Vec<Option<LayoutId>> {
     let slots = ExecutableSlotPlan::plan_nyar(function);
     let entry = function.blocks.iter().find(|block| block.id == function.entry);
@@ -278,18 +279,18 @@ impl Projection<'_> {
     ///
     /// 每个槽的表示都是显式事实：
     /// - 入口参数只认 [`frozen_entry_parameter_layouts`] 的逐槽结果，且与 lowering
-    ///   同源；若计划里已冻结 `utf8` 布局而该槽解析不到，说明合同与运行时布局
-    ///   分叉，直接失败闭合；
+    ///   同源；该槽解析不到托管布局时，只有程序级表示计划显式声明 raw 才是合法
+    ///   raw 串，否则说明合同与运行时布局分叉，直接失败闭合；
     /// - 返回槽只认 `return_layout`（lowering 要求 `utf8` 返回必须是托管对象）；
     /// - 嵌套槽没有逐槽事实，显式落到 raw 宿主串，绝不回查全局布局猜测。
     fn project_text(&mut self, slot: TextSlot) -> Result<OvmAbiType> {
         let layout_id = match slot {
             TextSlot::Parameter(position) => {
                 let layout = self.entry_layouts.get(position).copied().flatten();
-                if layout.is_none() && self.plan.aggregate_layout_by_nyar_type().contains_key(&NyarType::Utf8) {
+                if layout.is_none() && self.plan.program_text_representation() != Some(ProgramTextRepresentation::Raw) {
                     return Err(format!(
                         "导出参数 #{position} 的 `utf8` 槽没有解析到目标计划已冻结的文本布局：\
-                         合同与运行时实际布局不一致，拒绝按 raw 串解释"
+                         程序级表示计划没有显式声明 raw 表示，缺登记不是「程序选择 raw」的证据，拒绝按 raw 串解释"
                     ));
                 }
                 layout
@@ -668,7 +669,9 @@ mod tests {
     #[test]
     fn raw_utf8_parameter_uses_host_text_carrier() {
         let ty = nyar("utf8");
-        let plan = plan("greet", function(&[(0, "name", ty)], nyar("unit")));
+        let mut plan = plan("greet", function(&[(0, "name", ty)], nyar("unit")));
+        // raw 槽的合法性来自程序级表示计划的显式声明，不是布局表为空的反推。
+        plan.freeze_program_text_representation(ProgramTextRepresentation::Raw);
         let contract = derive(&plan).expect("`utf8` 必须有 OVM 合同");
         let export = export_of(&contract);
         assert_eq!(export.params[0].ty, OvmAbiType::Text { representation: OvmTextRepresentation::Raw });
@@ -677,10 +680,23 @@ mod tests {
         assert_eq!(export.returns_carrier, "void");
     }
 
+    /// 反例：布局表为空且程序级表示计划未显式声明 raw——缺登记不是「程序选择
+    /// raw」的证据，合同派生必须失败闭合，不得把 missing 吸收成 raw 串。
+    #[test]
+    fn utf8_parameter_without_explicit_raw_fact_fails_closed() {
+        let ty = nyar("utf8");
+        let plan = plan("greet", function(&[(0, "name", ty)], nyar("unit")));
+        let error = derive(&plan).expect_err("布局表为空不得反推 raw，缺程序级显式事实必须失败闭合");
+        assert!(error.contains("拒绝按 raw 串解释"), "错误必须点名禁止 raw 吸收，实际: {error}");
+        assert!(error.contains("没有显式声明 raw"), "错误必须点名缺失的程序级显式声明，实际: {error}");
+    }
+
     #[test]
     fn utf8_return_without_frozen_layout_fails_closed() {
         let ty = nyar("utf8");
-        let plan = plan("greet", function(&[(0, "name", ty.clone())], ty));
+        let mut plan = plan("greet", function(&[(0, "name", ty.clone())], ty));
+        // 形参 raw 槽由程序级显式声明授权，让断言聚焦返回槽自己的失败闭合。
+        plan.freeze_program_text_representation(ProgramTextRepresentation::Raw);
         let error = derive(&plan).expect_err("`utf8` 返回槽没有 return_layout 必须失败闭合");
         assert!(error.contains("return_layout"), "got: {error}");
     }
@@ -694,7 +710,9 @@ mod tests {
             ("managed", function(&[(0, "name", text_ty.clone())], nyar("unit"))),
         ]);
         // 只登记布局表、不登记 `aggregate_layout_by_nyar_type`：托管表示只来自
-        // 该槽自己的 `value_layouts` 事实，另一槽保持 raw。
+        // 该槽自己的 `value_layouts` 事实；raw 槽由程序级显式 raw 声明授权，
+        // 不是布局表为空的反推。
+        plan.freeze_program_text_representation(ProgramTextRepresentation::Raw);
         plan.testing_aggregate_layouts(nyar_types::AggregateLayoutPlan { layouts: vec![text_layout], ..Default::default() });
         for instance in plan.instances() {
             if plan.abi_name_for_instance(instance).map(|name| name.to_string()).as_deref() == Some("managed") {
