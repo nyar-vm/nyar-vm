@@ -1,17 +1,14 @@
 use crate::compiler::{
-    hir::{is_nullable_type, lowering::integer_literal::settle_integer},
+    hir::{
+        is_nullable_type,
+        lowering::integer_literal::{settle_byte, settle_integer},
+    },
     types::hir::{HirLiteral, HirResolvedCall, HirTextEncoding, ValkyrieType},
 };
 
 use crate::compiler::mir::ssa::{MirConstant, MirOperand, infer_builder_operand_type};
 
-use crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type;
-
-pub(crate) fn lower_literal(
-    literal: &HirLiteral,
-    expected_type: Option<&ValkyrieType>,
-    structs: &[crate::compiler::mir::ssa::MirStruct],
-) -> Result<(MirConstant, Option<ValkyrieType>), String> {
+pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&ValkyrieType>) -> Result<(MirConstant, Option<ValkyrieType>), String> {
     Ok(match literal {
         HirLiteral::Integer(value) => {
             // 宽度、有符号性与范围由 HIR 的 `integer_literal` 唯一结算；
@@ -23,21 +20,12 @@ pub(crate) fn lower_literal(
         // 字符字面量：定型已由 HIR settle 冻结为 `char`（u32 码位，§4.12 字符合同），
         // MIR 只编码既定值——整数常量 + `Character` 类型，不再按期望形参重选 char/text。
         HirLiteral::Character(value) => (MirConstant::Int(i64::from(*value)), Some(ValkyrieType::Character)),
-        // 字节字面量：形参为整数类型时写形参类型，否则默认 `u8`。
-        HirLiteral::Byte(value) => (
-            MirConstant::Int(*value as i64),
-            Some(match expected_type {
-                Some(
-                    ty @ (ValkyrieType::Integer8 { .. }
-                    | ValkyrieType::Integer16 { .. }
-                    | ValkyrieType::Integer32 { .. }
-                    | ValkyrieType::Integer64 { .. }
-                    | ValkyrieType::Integer128 { .. }),
-                ) => ty.clone(),
-                Some(ty @ (ValkyrieType::Named(_) | ValkyrieType::Nominal { .. })) if is_integer_literal_formal_type(ty, &[]) => ty.clone(),
-                _ => ValkyrieType::Integer8 { signed: false },
-            }),
-        ),
+        // 字节字面量：目标类型由 HIR `integer_literal::settle_byte` 唯一结算；
+        // MIR 不再按上下文形状或范围另选字节类型。
+        HirLiteral::Byte(value) => {
+            let (bits, ty) = settle_byte(*value, expected_type)?;
+            (MirConstant::Int(bits), Some(ty))
+        }
         HirLiteral::Bool(value) => (MirConstant::Bool(*value), Some(ValkyrieType::Boolean)),
         HirLiteral::String(value) => {
             // 插值必须在 HIR 脱糖为已绑定的 display 调用树；MIR 不渲染 `${...}` 或任何占位文本。
@@ -72,20 +60,17 @@ pub(crate) fn lower_literal(
 }
 
 /// Prefer the contextual sum apply when both sides already share Nominal declaration identity.
-/// payload 须由调用方经 `parameter_types` / `instantiate_payload` 提供，禁止变体短名认亲。
+/// payload 只投影调用方经 `parameter_types` / `instantiate_payload` 已结算的事实；
+/// 禁止变体短名认亲，也禁止从实参操作数的推断类型回填 payload。
 pub(crate) fn concretize_variant_constructor_types(
     ctor_return: &ValkyrieType,
     payload_type: Option<ValkyrieType>,
     expected_type: Option<&ValkyrieType>,
-    arguments: &[MirOperand],
-    value_types: &std::collections::BTreeMap<crate::compiler::mir::ssa::MirValueRef, ValkyrieType>,
 ) -> (ValkyrieType, Option<ValkyrieType>) {
     let return_type = match expected_type {
         Some(expected) if same_sum_owner(ctor_return, expected) => expected.clone(),
         _ => ctor_return.clone(),
     };
-    let from_argument = arguments.first().and_then(|argument| infer_builder_operand_type(argument, value_types));
-    let payload_type = payload_type.or(from_argument);
     (return_type, payload_type)
 }
 
@@ -102,54 +87,6 @@ pub(crate) fn unresolved_variant_labels(resolved: Option<&HirResolvedCall>) -> (
     let variant =
         resolved.and_then(|call| call.sum_variant).map_or_else(|| "<unresolved sum variant>".to_string(), |variant| variant.to_string());
     (sum_type, variant)
-}
-
-/// 按 sum_owner + sum_variant + 已冻结实参代入 payload；禁止 Fine/Some/Fail 拼写选槽。
-pub(crate) fn instantiated_payload_for_call(
-    sum_types: &[crate::compiler::mir::ssa::MirSumDeclaration],
-    call: &HirResolvedCall,
-    sum_type: &ValkyrieType,
-) -> Option<ValkyrieType> {
-    let owner = call.sum_owner?;
-    let variant_declaration = call.sum_variant?;
-    let sum = crate::compiler::mir::ssa::MirSumDeclaration::find_by_declaration(sum_types, owner)?;
-    let variant = sum.variants.iter().find(|item| item.declaration == Some(variant_declaration))?;
-    let args = type_args_from_sum_shaped(sum_type);
-    if args.is_empty() {
-        return call.parameter_types.first().cloned().or_else(|| variant.payload_type());
-    }
-    match sum.instantiate_payload(variant, &args) {
-        Some(payload) => payload.or_else(|| call.parameter_types.first().cloned()),
-        None => call.parameter_types.first().cloned(),
-    }
-}
-
-/// 将构造器 payload 写回其声明 binder 对应的 type arg 槽位。
-pub(crate) fn apply_payload_to_sum_type_args(
-    sum: &crate::compiler::mir::ssa::MirSumDeclaration,
-    variant: &crate::compiler::mir::MirSumVariant,
-    type_args: &mut Vec<ValkyrieType>,
-    payload: &ValkyrieType,
-) {
-    let Some(declared_payload) = variant.payload_type()
-    else {
-        return;
-    };
-    let ValkyrieType::Generic(generic) = declared_payload
-    else {
-        return;
-    };
-    let Some(binder) = generic.binder
-    else {
-        return;
-    };
-    let Some(index) = sum.generics.iter().position(|item| item.binder == Some(binder))
-    else {
-        return;
-    };
-    if index < type_args.len() {
-        type_args[index] = payload.clone();
-    }
 }
 
 /// Map a resolved unite/enum constructor call onto `SumNew` parts.

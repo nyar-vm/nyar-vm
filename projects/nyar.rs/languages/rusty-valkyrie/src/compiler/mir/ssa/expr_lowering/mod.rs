@@ -18,6 +18,5 @@ mod literals;
 mod operand;
 
 pub(crate) use literals::{
-    apply_payload_to_sum_type_args, concretize_variant_constructor_types, instantiated_payload_for_call, lower_literal,
-    sum_new_parts_from_constructor, type_args_from_sum_shaped, unresolved_variant_labels,
+    concretize_variant_constructor_types, lower_literal, sum_new_parts_from_constructor, type_args_from_sum_shaped, unresolved_variant_labels,
 };

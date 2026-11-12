@@ -25,7 +25,7 @@ impl MirBuilder {
     pub(crate) fn lower_expr_to_operand_with_hint(&mut self, expr: &HirExpr, expected_type: Option<&ValkyrieType>) -> MirOperand {
         match &expr.kind {
             HirExprKind::Literal(literal) => {
-                let (constant, ty) = match lower_literal(literal, expected_type, &self.field_declarations) {
+                let (constant, ty) = match lower_literal(literal, expected_type) {
                     Ok(pair) => pair,
                     Err(reason) => {
                         self.diagnostics
@@ -114,22 +114,18 @@ impl MirBuilder {
                         return operand;
                     }
                 }
-                // 一元 payload 变体构造：只认已冻结 sum_owner/sum_variant；按 owner binder 元数分流，禁止 Some/Fine/Fail 短名入口。
+                // 一元 payload 变体构造：只认已冻结 sum_owner/sum_variant，禁止 Some/Fine/Fail
+                // 短名入口。不再按 owner binder 元数分流 Result/Option——构造合同对二者同形，
+                // 差异事实（实参表、payload 形参类型）由 HIR 结算，MIR 统一投影。
                 if args.len() == 1 {
                     if let Some(call) = resolved.as_ref() {
-                        if call.domain == crate::compiler::types::hir::HirCallableDomain::Constructor {
-                            if let Some(owner) = call.sum_owner.filter(|_| call.sum_variant.is_some()) {
-                                let binary = crate::compiler::mir::ssa::MirSumDeclaration::find_by_declaration(&self.sum_types, owner)
-                                    .is_some_and(|sum| sum.generics.len() == 2);
-                                return if binary {
-                                    self.try_lower_result_variant_constructor("", &args[0].value, resolved.as_ref(), expected_type)
-                                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref()))
-                                }
-                                else {
-                                    self.try_lower_option_some_constructor(&args[0].value, resolved.as_ref(), expected_type)
-                                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref()))
-                                };
-                            }
+                        if call.domain == crate::compiler::types::hir::HirCallableDomain::Constructor
+                            && call.sum_owner.is_some()
+                            && call.sum_variant.is_some()
+                        {
+                            return self
+                                .try_lower_payload_variant_constructor(&args[0].value, resolved.as_ref(), expected_type)
+                                .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref()));
                         }
                     }
                 }
@@ -277,7 +273,7 @@ impl MirBuilder {
                     if call.domain == HirCallableDomain::Constructor {
                         if args.is_empty() {
                             if let Some(operand) =
-                                self.try_lower_option_none_constructor(Some(call), expected_type, &explicit_generic_arguments)
+                                self.try_lower_option_none_constructor(Some(call), expected_type, &explicit_generic_arguments, &expr.span)
                             {
                                 return operand;
                             }
@@ -299,13 +295,7 @@ impl MirBuilder {
                             else {
                                 return MirOperand::Constant(MirConstant::Unit);
                             };
-                            let concretized = concretize_variant_constructor_types(
-                                &call.return_type,
-                                payload_type.clone(),
-                                expected_type,
-                                &arguments,
-                                &self.value_types,
-                            );
+                            let concretized = concretize_variant_constructor_types(&call.return_type, payload_type.clone(), expected_type);
                             let return_type = concretized.0;
                             // 多字段变体：payload 类型必须保持变体记录身份，不能被首字段类型覆盖。
                             let payload_type = if multi_field { payload_type } else { concretized.1 };
@@ -531,6 +521,22 @@ impl MirBuilder {
                             let value = self.next_value(MirValueOrigin::CallResult);
                             let ctor_return = call.return_type.clone();
                             let type_args = type_args_from_sum_shaped(&ctor_return);
+                            // 实例化实参必须是 HIR 已结算的完整事实：数量与声明 binder 表
+                            // 不一致即缺事实，带 source/span 结构化诊断拒绝，禁止从 binder 表合成。
+                            if let Some(sum) = self.sum_types.iter().find(|item| item.declaration == Some(owner))
+                                && sum.generics.len() != type_args.len()
+                            {
+                                self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedSumInstanceFacts {
+                                    span: expr.span.clone(),
+                                    context: format!(
+                                        "变体构造 `{}` 的实例化实参未由 HIR 结算完整：声明 {} 个 binder，实收 {} 个",
+                                        call.symbol,
+                                        sum.generics.len(),
+                                        type_args.len()
+                                    ),
+                                });
+                                return MirOperand::Constant(MirConstant::Unit);
+                            }
                             // 多字段变体：按声明顺序收集全部字段操作数，payload 类型取
                             // 「变体 declaration × 枚举实参」的记录身份，不取首字段类型。
                             let multi_payload = {
@@ -566,13 +572,7 @@ impl MirBuilder {
                                     .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
                                 return MirOperand::Constant(MirConstant::Unit);
                             };
-                            let concretized = concretize_variant_constructor_types(
-                                &ctor_return,
-                                payload_type.clone(),
-                                expected_type,
-                                &field_values,
-                                &self.value_types,
-                            );
+                            let concretized = concretize_variant_constructor_types(&ctor_return, payload_type.clone(), expected_type);
                             let return_type = concretized.0;
                             let payload_type = if has_record_payload { payload_type } else { concretized.1 };
                             self.push_instruction(

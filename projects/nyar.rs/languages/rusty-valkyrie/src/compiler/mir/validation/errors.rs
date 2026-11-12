@@ -333,6 +333,9 @@ fn mir_diagnostic_args(row: DiagnosticRow, diagnostic: &MirDiagnostic) -> Diagno
             .with_arg("kind", DiagnosticArg::String(kind.clone()))
             .with_arg("span", DiagnosticArg::Span(DiagnosticSpan { start: span.span.start as usize, end: span.span.end as usize })),
         MirDiagnostic::UnresolvedValueType { context } => row.with_arg("context", DiagnosticArg::String(context.clone())),
+        MirDiagnostic::UnresolvedSumInstanceFacts { span, context } => row
+            .with_arg("context", DiagnosticArg::String(context.clone()))
+            .with_arg("span", DiagnosticArg::Span(DiagnosticSpan { start: span.span.start as usize, end: span.span.end as usize })),
         MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant } => row
             .with_arg("sum_type", DiagnosticArg::Aggregate(sum_type.clone()))
             .with_arg("variant", DiagnosticArg::CallableShort(variant.clone())),
@@ -358,7 +361,9 @@ fn mir_diagnostic_args(row: DiagnosticRow, diagnostic: &MirDiagnostic) -> Diagno
 /// 从 MIR 诊断中提取可定位的源码 span。
 fn mir_diagnostic_span(diagnostic: &MirDiagnostic) -> DiagnosticSpan {
     match diagnostic {
-        MirDiagnostic::UnsupportedExpression { span, .. } => DiagnosticSpan { start: span.span.start as usize, end: span.span.end as usize },
+        MirDiagnostic::UnsupportedExpression { span, .. } | MirDiagnostic::UnresolvedSumInstanceFacts { span, .. } => {
+            DiagnosticSpan { start: span.span.start as usize, end: span.span.end as usize }
+        }
         _ => DiagnosticSpan { start: 0, end: 0 },
     }
 }
@@ -371,6 +376,9 @@ fn mir_diagnostic_message(diagnostic: &MirDiagnostic) -> String {
             format!("MIR lowering rejected unsupported HIR expression `{kind}` at source span {span:?}")
         }
         MirDiagnostic::UnresolvedValueType { context } => format!("MIR lowering missing value type fact: {context}"),
+        MirDiagnostic::UnresolvedSumInstanceFacts { span, context } => {
+            format!("MIR lowering rejected unsettled sum instance facts at source span {span:?}: {context}")
+        }
         MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant } => {
             format!("MIR lowering unresolved variant identity `{sum_type}::{variant}`")
         }

@@ -62,6 +62,21 @@ pub(crate) fn settle_integer(value: i128, expected: Option<&ValkyrieType>) -> Re
     Ok((value as i64, ty))
 }
 
+/// 字节字面量的唯一定型：整数目标按该类型检查范围并采纳目标类型；无整数目标时
+/// 保持字节固有载体 `u8`。与 [`settle_integer`] 同属 HIR 结算，MIR 只消费结果。
+pub(crate) fn settle_byte(value: u8, expected: Option<&ValkyrieType>) -> Result<(i64, ValkyrieType), String> {
+    if let Some(expected) = expected
+        && integer_type_fits(i128::from(value), expected) == Some(false)
+    {
+        return Err(format!("byte literal `{value}` is out of range `{}`", type_name(expected)));
+    }
+    let ty = match expected {
+        Some(expected) if integer_type_fits(i128::from(value), expected) == Some(true) => expected.clone(),
+        _ => ValkyrieType::Integer8 { signed: false },
+    };
+    Ok((i64::from(value), ty))
+}
+
 fn type_name(ty: &ValkyrieType) -> String {
     match ty {
         ValkyrieType::Integer8 { signed: true } => "i8".to_string(),

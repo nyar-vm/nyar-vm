@@ -501,7 +501,7 @@ impl MirBuilder {
 
     pub(crate) fn lower_literal_pattern_match_operand(&mut self, literal: &HirLiteral, value: MirOperand) -> MirOperand {
         let actual_type_hint = infer_builder_operand_type(&value, &self.value_types);
-        let (constant, expected_type) = match lower_literal(literal, actual_type_hint.as_ref(), &self.field_declarations) {
+        let (constant, expected_type) = match lower_literal(literal, actual_type_hint.as_ref()) {
             Ok(pair) => pair,
             Err(_) => return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value),
         };
@@ -619,7 +619,7 @@ impl MirBuilder {
 
         let mut accumulated: Option<MirOperand> = None;
         if let Some(start_literal) = start {
-            let Ok((start_constant, _)) = lower_literal(start_literal, Some(&actual_type), &self.field_declarations)
+            let Ok((start_constant, _)) = lower_literal(start_literal, Some(&actual_type))
             else {
                 // 端点无法编码进 MIR 时不得静默变成「不匹配」：非法程序必须结构化失败。
                 self.diagnostics.push(MirDiagnostic::PatternLoweringFailed {
@@ -634,7 +634,7 @@ impl MirBuilder {
             accumulated = Some(self.merge_pattern_match_operands(accumulated, lower_bound));
         }
         if let Some(end_literal) = end {
-            let Ok((end_constant, _)) = lower_literal(end_literal, Some(&actual_type), &self.field_declarations)
+            let Ok((end_constant, _)) = lower_literal(end_literal, Some(&actual_type))
             else {
                 // 与起点同一门：端点编码失败必须留下诊断，不能被当作「不匹配」。
                 self.diagnostics.push(MirDiagnostic::PatternLoweringFailed {

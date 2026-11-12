@@ -9,6 +9,7 @@ mod mir_operator_two_operands_resolution_tests;
 mod mir_provider_sum_identity_tests;
 mod result_text_payload_contract_tests;
 mod mir_ssa_sum_declaration_payload_layout_tests;
+mod mir_ssa_sum_projection_tests;
 mod mir_ssa_aggregate_layout_nominal_fields_tests;
 mod mir_ssa_binding_integer_identity_tests;
 mod mir_ssa_collection_init_tests;

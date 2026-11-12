@@ -42,6 +42,14 @@ pub enum MirDiagnostic {
         /// 缺失类型事实的语义位置。
         context: String,
     },
+    /// sum 实例化事实未在 HIR 结算完整：MIR 只投影已结算事实，不从 payload 回填类型实参、
+    /// 不按 binder 元数分流、不从声明 binder 表合成实参，缺事实即结构化拒绝。
+    UnresolvedSumInstanceFacts {
+        /// 触发诊断的构造位置源码区间。
+        span: crate::compiler::types::SourceSpan,
+        /// 缺失事实的描述。
+        context: String,
+    },
     /// 语义 sum registry 中不存在 lowering 请求的 variant。
     UnresolvedVariantIdentity {
         /// 声明的 sum owner。
