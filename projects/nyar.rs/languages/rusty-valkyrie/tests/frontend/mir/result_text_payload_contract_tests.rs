@@ -33,6 +33,8 @@ imply Result<T, E> {
     }
 }
 
+namespace std.primitive;
+
 [primitive("std::primitive::i64")]
 structure i64 { }
 

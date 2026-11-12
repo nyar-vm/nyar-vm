@@ -9,12 +9,6 @@ use rusty_valkyrie::{
 };
 
 const BOX_SOURCE: &str = r#"
-[primitive("std::primitive::i32")]
-structure i32 { }
-
-[primitive("std::primitive::f64")]
-structure f64 { }
-
 class Box<T> {
     _value: T
 }
@@ -40,6 +34,14 @@ micro run() -> i32 {
     let real: f64 = scaled.get()
     return value
 }
+
+namespace std.primitive;
+
+[primitive("std::primitive::i32")]
+structure i32 { }
+
+[primitive("std::primitive::f64")]
+structure f64 { }
 "#;
 
 fn compile(source: &str) -> rusty_valkyrie::types::hir::HirModule {
@@ -682,10 +684,12 @@ fn instantiation_is_deterministic_across_compilations() {
 /// 解析期重载决胜已选定 impl 成员，witness 冻结的是成员自身声明而不是 trait 方法槽；
 /// 固定点必须承认这种身份并闭合代入、铸造实例，否则 witness 存活到后端计划层失败。
 const CONCRETE_RECEIVER_TRAIT_CORE: &str = r#"
-namespace std.operator;
+namespace std.primitive;
 
 [primitive("std::primitive::i64")]
 structure i64 { }
+
+namespace std.operator;
 
 trait Length {
     micro length(self): i64

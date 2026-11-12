@@ -13,10 +13,12 @@ fn hashmap_insert_groups() -> Vec<CompilerSourceGroup> {
             "core",
             "core",
             r#"
-namespace std.collection;
+namespace std.primitive;
 
 [primitive("std::primitive::i64")]
 structure i64 { }
+
+namespace std.collection;
 
 class HashMap<K, V> {
     _capacity: i64

@@ -113,19 +113,21 @@ pub fn plan_semantic_closure_with_host_bindings(
     // selector，不产生名字引用，因此必须按选择名单独提升，否则依赖组裁剪后
     // consumer 的候选池里根本没有该声明。
     let extension_functions = indexed_files.values().flat_map(|file| file.extension_functions.iter().cloned()).collect::<BTreeSet<_>>();
-    // Primitive 自举身份表必须在可见性与需求展开之前建立：`[primitive("…")]` 的意义就是
-    // 让 std 尚未进入闭包时，编译器仍能按声明携带的身份识别类型、分配 carrier 布局。
-    // 记录自带 `DeclarationKey.dependency_key`，即声明所属可见面：同一依赖组内重复身份
-    // 在这里结构化失败，不允许下游按短名回退放行；跨依赖组同一身份按可验证的规范 owner
-    // 引用裁决：声明全称恰好等于身份引用的唯一声明是规范 owner，其余是别名载体
-    //（封闭生成单元为宿主调用重声明自己用到的标量拼写），并列冒领结构化拒绝。
-    let primitive_identities = super::primitive_identity::build_primitive_identity_table(
-        indexed_files.values().flat_map(|file| file.primitive_identities.iter().cloned()),
-    )?;
     // 聚合身份与成员身份、别名与目标的关联必须在整个 inventory 索引完成后统一按声明身份建立：
     // 聚合与它的成员可以在同组的不同文件里，也可以跨依赖组（std 的 `imply i64: Hash` 与 core 的
     // `structure i64`），按文件边界或「短名 + namespace」连接都是名字近似。
     indexes.link(&visibility);
+    // Primitive 自举身份表必须在需求展开之前建立：`[primitive("…")]` 的意义就是让 std
+    // 尚未进入需求闭包时，编译器仍能按声明携带的身份识别类型、分配 carrier 布局。
+    // owner/aliases 不靠字符串相等认领：每个携带者的身份引用由声明索引（Resolver）在其
+    // 可见面内按绝对限定位置解析出来源声明，来源恰为自身的是规范 owner，来源为 owner 的
+    // 是别名载体（封闭生成单元为宿主调用重声明自己用到的标量拼写，须能看到规范声明）。
+    // 同一依赖组内重复、来源落空、位置歧义与并列冒领都在此结构化失败（fail-closed）。
+    let primitive_identities = super::primitive_identity::build_primitive_identity_table(
+        indexed_files.values().flat_map(|file| file.primitive_identities.iter().cloned()),
+        &indexes,
+        &visibility,
+    )?;
 
     // `imply` 块是目标聚合的声明面事实：where 证据（`T: Equal`）在 HIR 调用解析时
     // 必须能在 trait 视图里看到实现，与「是否有调用点以成员形式选中 witness 方法」

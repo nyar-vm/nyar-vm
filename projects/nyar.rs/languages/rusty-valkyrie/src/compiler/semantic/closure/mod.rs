@@ -50,8 +50,9 @@ pub struct SemanticClosure {
     pub test_entries: Vec<String>,
     /// Primitive 自举身份表：`[primitive("std::primitive::i32")]` 注解的唯一消费产物。
     ///
-    /// 在可见性与需求展开之前从源码 inventory 建立；键是声明携带的身份字符串，不是短名。
-    /// 下游的类型识别、carrier 布局与数值/字面量判定必须查这张表，不得再按名字放行。
+    /// 在需求展开之前从源码 inventory 建立，owner/aliases 以 Resolver 可验证来源引用登记；
+    /// 键是声明携带的身份字符串，不是短名。下游的类型识别、carrier 布局与数值/字面量判定
+    /// 必须查这张表，不得再按名字放行。
     pub primitive_identities: PrimitiveIdentityTable,
     /// 未能建立声明索引的 inventory 文件（`依赖组::路径` → 失败原因）。
     pub unindexed_source_files: BTreeMap<String, String>,
@@ -109,13 +110,33 @@ pub enum SemanticClosureError {
         /// 命中的声明身份（依赖组::路径::种类::namespace::拥有者::名字）。
         declarations: Vec<String>,
     },
-    /// 同一 primitive 自举身份被同一可见面的两个声明携带，或跨可见面携带却没有唯一
-    /// 规范 owner 引用（多个全称命中、或多个携带者而无人持有全称）：不得择一登记。
+    /// 同一 primitive 自举身份被同一可见面的两个声明携带，或多个携带者在各自可见面内
+    /// 并列自命中规范位置（独立声明冒领同一规范 owner）：不得择一登记。
     DuplicatePrimitiveIdentity {
         /// 重复的 `[primitive(...)]` 身份字符串。
         identity: String,
         /// 携带该身份的声明身份。
         declarations: Vec<String>,
+    },
+    /// `[primitive(...)]` 携带者的身份引用无法证明同源：在其可见面内解析落空，或解析
+    /// 命中的来源声明不是规范 owner。来源不可证明即显式拒绝，不得静默授予（fail-closed）。
+    UnprovenPrimitiveIdentitySource {
+        /// 携带者声明的 `[primitive(...)]` 身份字符串。
+        identity: String,
+        /// 无法证明来源的携带者声明身份。
+        declaration: String,
+        /// 引用解析命中的来源声明身份；解析落空时为 `None`。
+        resolved_source: Option<String>,
+    },
+    /// `[primitive(...)]` 身份引用在携带者可见面内的同一绝对限定位置命中多个声明：
+    /// 来源歧义，无法证明是哪一条声明的投影，显式拒绝。
+    AmbiguousPrimitiveIdentitySource {
+        /// 携带者声明的 `[primitive(...)]` 身份字符串。
+        identity: String,
+        /// 来源歧义的携带者声明身份。
+        declaration: String,
+        /// 引用命中的全部来源声明身份。
+        sources: Vec<String>,
     },
     /// `[primitive(...)]` 身份字符串不是合法的 `::` 限定名：自举身份没有可校验形态。
     MalformedPrimitiveIdentity {
@@ -156,6 +177,16 @@ impl std::fmt::Display for SemanticClosureError {
             }
             Self::DuplicatePrimitiveIdentity { identity, declarations } => {
                 write!(formatter, "primitive identity `{identity}` 被多个声明携带: {declarations:?}")
+            }
+            Self::UnprovenPrimitiveIdentitySource { identity, declaration, resolved_source } => {
+                write!(formatter, "声明 `{declaration}` 的 `[primitive]` 身份 `{identity}` 无法证明同源声明")?;
+                match resolved_source {
+                    Some(source) => write!(formatter, ": 身份引用解析到非规范 owner 的声明 `{source}`"),
+                    None => write!(formatter, ": 身份引用在携带者可见面内解析落空"),
+                }
+            }
+            Self::AmbiguousPrimitiveIdentitySource { identity, declaration, sources } => {
+                write!(formatter, "声明 `{declaration}` 的 `[primitive]` 身份 `{identity}` 来源歧义: {sources:?}")
             }
             Self::MalformedPrimitiveIdentity { declaration, identity } => {
                 write!(formatter, "声明 `{declaration}` 的 `[primitive]` 身份 `{identity}` 不是合法的 `::` 限定名")

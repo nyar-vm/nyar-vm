@@ -71,9 +71,9 @@ fn clean_group_compile_is_not_affected_by_the_boundary() {
     let groups = vec![entry_group(vec![
         file(
             "source/a.v",
-            "[primitive(\"std::primitive::i64\")] structure i64 { }\n[main]\nmicro main() -> i64 {\n    return 0\n}\n",
+            "namespace std.primitive;\n\n[primitive(\"std::primitive::i64\")] structure i64 { }\n\nnamespace app;\n\nusing std.primitive;\n\n[main]\nmicro main() -> i64 {\n    return 0\n}\n",
         ),
-        file("source/c.v", "micro helper() -> i64 {\n    return 1\n}\n"),
+        file("source/c.v", "namespace app;\n\nusing std.primitive;\n\nmicro helper() -> i64 {\n    return 1\n}\n"),
     ])];
     ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect("干净工程必须照常编译");
     assert!(pending::pending_diagnostics_is_empty());
@@ -94,11 +94,17 @@ fn create_three_file_project(prefix: &str, broken: bool) -> (tempfile::TempDir, 
     .expect("write project manifest");
     std::fs::write(
         source_dir.join("a.v"),
-        "[primitive(\"std::primitive::i64\")] structure i64 { }\n[main]\nmicro main() -> i64 {\n    return 0\n}\n",
+        "namespace std.primitive;\n\n[primitive(\"std::primitive::i64\")] structure i64 { }\n\nnamespace app;\n\nusing std.primitive;\n\n[main]\nmicro main() -> i64 {\n    return 0\n}\n",
     )
     .expect("write a.v");
-    std::fs::write(source_dir.join("c.v"), "micro helper() -> i64 {\n    return 1\n}\n").expect("write c.v");
-    let b_source = if broken { "micro broken() {\n    +\n}\n" } else { "micro fine() -> i64 {\n    return 2\n}\n" };
+    std::fs::write(source_dir.join("c.v"), "namespace app;\n\nusing std.primitive;\n\nmicro helper() -> i64 {\n    return 1\n}\n")
+        .expect("write c.v");
+    let b_source = if broken {
+        "micro broken() {\n    +\n}\n"
+    }
+    else {
+        "using std.primitive;\n\nmicro fine() -> i64 {\n    return 2\n}\n"
+    };
     std::fs::write(source_dir.join("b.v"), b_source).expect("write b.v");
     (temp_dir, project_dir)
 }

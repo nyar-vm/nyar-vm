@@ -71,8 +71,8 @@ fn method_on_known_receiver_without_candidate_reports_no_method_candidate() {
 #[test]
 fn unresolved_call_in_second_file_reports_second_file_identity() {
     let diagnostics = unresolved_calls(
-        "namespace std;\n[primitive(\"std::primitive::i64\")] structure i64 { }\nmicro helper(x: i64) -> i64 { return x }",
-        "namespace app;\nusing std;\n[export] micro probe() -> i64 {\n    let seed: i64 = helper(1)\n    return no_such_fn(seed)\n}\n",
+        "namespace std.primitive;\n[primitive(\"std::primitive::i64\")] structure i64 { }\n\nnamespace std;\nmicro helper(x: i64) -> i64 { return x }",
+        "namespace app;\nusing std;\nusing std.primitive;\n[export] micro probe() -> i64 {\n    let seed: i64 = helper(1)\n    return no_such_fn(seed)\n}\n",
     );
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
     let (selector, reason, source) = &diagnostics[0];

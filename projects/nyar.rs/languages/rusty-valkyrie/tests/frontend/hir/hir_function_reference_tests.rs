@@ -7,8 +7,14 @@ use rusty_valkyrie::{
     types::hir::ValkyrieType,
 };
 
+/// 规范位置的标量声明：primitive 自举身份必须解析到携带它的声明，声明因而落在
+/// `std::primitive` 的绝对限定位置。namespace 是文件级事实，故声明与消费源码同文件
+/// 前置——夹具的 `micro` 因此也归入该 namespace，符号断言按实际 namespace 前缀书写。
+const PRIMITIVES: &str = "namespace std.primitive;\n\n[primitive(\"std::primitive::i64\")]\nstructure i64 { }\n\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }";
+
 fn compile(source: &str) -> rusty_valkyrie::types::hir::HirModule {
-    ValkyrieCompiler::default().compile_source(source).expect("函数作值源码必须完成 HIR")
+    let source = format!("{PRIMITIVES}\n{source}");
+    ValkyrieCompiler::default().compile_source(&source).expect("函数作值源码必须完成 HIR")
 }
 
 fn function<'a>(module: &'a rusty_valkyrie::types::hir::HirModule, name: &str) -> &'a HirFunction {
@@ -38,12 +44,6 @@ fn reference(expression: &rusty_valkyrie::compiler::types::hir::HirExpr) -> &Hir
 }
 
 const GENERIC_CONSUMER_SOURCE: &str = r#"
-[primitive("std::primitive::i64")]
-structure i64 { }
-
-[primitive("std::primitive::i32")]
-structure i32 { }
-
 micro cmp_i64(a: i64, b: i64) -> i32 {
     return 0
 }
@@ -57,12 +57,10 @@ micro run() -> i32 {
     let y: i64 = 5
     return choose(x, y, cmp_i64)
 }
+
 "#;
 
 const NON_GENERIC_CONSUMER_SOURCE: &str = r#"
-[primitive("std::primitive::i32")]
-structure i32 { }
-
 micro cmp_i32(a: i32, b: i32) -> i32 {
     return 0
 }
@@ -77,12 +75,6 @@ micro run() -> i32 {
 "#;
 
 const GENERIC_REFERENCE_REJECTED_SOURCE: &str = r#"
-[primitive("std::primitive::i64")]
-structure i64 { }
-
-[primitive("std::primitive::i32")]
-structure i32 { }
-
 micro choose<T>(a: T, b: T, cmp: micro(T, T) -> i32) -> i32 {
     return cmp(a, b)
 }
@@ -94,15 +86,10 @@ micro apply(f: micro(i64, i64) -> i32) -> i32 {
 micro run() -> i32 {
     return apply(choose)
 }
+
 "#;
 
 const LOCAL_SHADOW_SOURCE: &str = r#"
-[primitive("std::primitive::i64")]
-structure i64 { }
-
-[primitive("std::primitive::i32")]
-structure i32 { }
-
 micro cmp_i64(a: i64, b: i64) -> i32 {
     return 0
 }
@@ -114,6 +101,7 @@ micro apply(a: i64, b: i64, cmp: micro(i64, i64) -> i32) -> i32 {
 micro run(cmp: micro(i64, i64) -> i32) -> i32 {
     return apply(3, 5, cmp)
 }
+
 "#;
 
 #[test]
@@ -124,7 +112,7 @@ fn bare_name_argument_freezes_declaration_and_signature() {
     let reference = reference(argument);
     let cmp_declaration = function(&hir, "cmp_i32").declaration.expect("cmp_i32 声明身份");
     assert_eq!(reference.declaration, Some(cmp_declaration), "引用必须冻结被引用函数的声明身份");
-    assert_eq!(reference.symbol.to_string(), "main.cmp_i32");
+    assert_eq!(reference.symbol.to_string(), "std.primitive.cmp_i32");
     // 引用的冻结签名必须与调用合同闭合出的函数类型形参逐项一致。
     let expected = match resolved.parameter_types.last() {
         Some(ValkyrieType::Function(function)) => function,
@@ -155,7 +143,7 @@ fn generic_binder_is_bound_from_function_reference_signature() {
     let run = function(&hir, "run");
     let (resolved, argument) = outer_call(run);
     let reference = reference(argument);
-    assert_eq!(reference.symbol.to_string(), "main.cmp_i64");
+    assert_eq!(reference.symbol.to_string(), "std.primitive.cmp_i64");
     // `choose<T>` 的 T 由 `cmp_i64` 的冻结签名与实参 `x: i64` 共同闭合：
     // 合同第 3 项必须是与引用签名一致的函数类型。
     let expected = match resolved.parameter_types.get(2) {
@@ -172,7 +160,8 @@ fn generic_binder_is_bound_from_function_reference_signature() {
 #[test]
 fn generic_function_as_value_stays_unresolved_instead_of_guessing_instantiation() {
     // 泛型声明没有唯一代入：不改写、不铸造，调用沿既有路径结构化失败。
-    let error = ValkyrieCompiler::default().compile_source(GENERIC_REFERENCE_REJECTED_SOURCE).expect_err("泛型函数作值不得按短名猜一个代入");
+    let source = format!("{PRIMITIVES}\n{GENERIC_REFERENCE_REJECTED_SOURCE}");
+    let error = ValkyrieCompiler::default().compile_source(&source).expect_err("泛型函数作值不得按短名猜一个代入");
     assert!(matches!(error, HirError::UnresolvedCall { .. }), "必须保持 UnresolvedCall fail-closed: {error:?}");
 }
 
@@ -202,13 +191,15 @@ fn instantiation_is_deterministic_across_compilations() {
 fn cross_module_free_function_reference_is_not_rewritten() {
     // 非当前模块的裸名不满足无限定自由调用对齐：保持现状，沿既有失败路径。
     const LIBRARY: &str = r#"
-namespace lib;
+namespace std.primitive;
 
 [primitive("std::primitive::i64")]
 structure i64 { }
 
 [primitive("std::primitive::i32")]
 structure i32 { }
+
+namespace lib;
 
 micro cmp_i64(a: i64, b: i64) -> i32 {
     return 0

@@ -42,8 +42,12 @@ structure f128 { }
 [primitive("std::primitive::bool")]
 structure bool { }
 
+namespace std.text;
+
 [primitive("std::text::char")]
 structure char { }
+
+namespace std.primitive;
 
 type usize = u64;
 type isize = i64;

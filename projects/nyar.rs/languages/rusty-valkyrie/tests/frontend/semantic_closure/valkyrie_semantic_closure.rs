@@ -570,10 +570,10 @@ fn primitive_annotations_register_bootstrap_identities_before_visibility() {
 
 #[test]
 fn cross_surface_primitive_identity_resolves_canonical_by_qualified_reference() {
-    // 封闭生成单元（`asgard.generated`）为宿主调用重声明自己用到的标量拼写：它与 std 的
-    // `[primitive]` 声明同身份但不是第二个 primitive。规范 owner 由身份引用本身裁决：
-    // 声明全称（namespace 段 + 短名）恰好等于身份的 std 声明是规范 owner，生成组声明
-    // 全称不等于身份，登记为别名载体。裁决不看组名，也不依赖登记顺序。
+    // 合法同源投影的正向合同：封闭生成单元（`asgard.generated`）为宿主调用重声明自己用到的
+    // 标量拼写，它必须把规范包声明为直接依赖，身份引用才能在其可见面内解析到 std 的规范声明。
+    // 来源恰为规范声明的载体登记为别名；std 声明在自身可见面内自命中，是规范 owner。
+    // 裁决不看组名，也不依赖登记顺序。
     let std_files = || {
         vec![
             file("source/primitive/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }"),
@@ -586,18 +586,24 @@ fn cross_surface_primitive_identity_resolves_canonical_by_qualified_reference() 
             "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[primitive(\"std::primitive::bool\")]\nstructure bool { }\n\n[export] micro run() -> i32 { return 0 }",
         )]
     };
-    for groups in [
-        [("std".to_string(), false, std_files()), ("asgard.generated".to_string(), true, generated_files())],
+    let cases = [
+        (
+            [("std".to_string(), false, std_files()), ("asgard.generated".to_string(), true, generated_files())],
+            [&[][..], &["std"][..]],
+        ),
         // 反序输入：结果必须逐条一致，证明 owner 不来自先到先得。
-        [("asgard.generated".to_string(), true, generated_files()), ("std".to_string(), false, std_files())],
-    ] {
+        (
+            [("asgard.generated".to_string(), true, generated_files()), ("std".to_string(), false, std_files())],
+            [&["std"][..], &[][..]],
+        ),
+    ];
+    for (groups, visibility) in cases {
         let typed = groups.iter().map(|(key, is_entry, files)| (key.as_str(), *is_entry, files.clone())).collect::<Vec<_>>();
-        // 生成组只依赖应用入口组，std 不在其可见面；身份登记与可见性无关，跨组同身份仍须收成别名。
-        let closure = plan_with_visibility(&typed, &[&[], &[]]);
+        let closure = try_plan_with_visibility(&typed, &visibility).expect("生成组声明对 std 的可见性后，同源投影必须登记成表");
         assert_eq!(closure.primitive_identities.len(), 2, "每个身份只保留规范 owner 一条记录");
         for identity in ["std::primitive::i32", "std::primitive::bool"] {
             let entry = closure.primitive_identities.get(identity).unwrap_or_else(|| panic!("`{identity}` 必须登记"));
-            assert_eq!(entry.declaration.dependency_key, "std", "`{identity}` 的规范 owner 必须是全称命中的声明: {:?}", entry.declaration);
+            assert_eq!(entry.declaration.dependency_key, "std", "`{identity}` 的规范 owner 必须是自命中规范位置的声明: {:?}", entry.declaration);
             assert_eq!(closure.primitive_identities.identity_of(&entry.declaration), Some(identity));
             assert_eq!(entry.aliases.len(), 1, "`{identity}` 必须登记唯一的生成侧别名载体: {:?}", entry.aliases);
             assert_eq!(entry.aliases[0].dependency_key, "asgard.generated");
@@ -606,9 +612,55 @@ fn cross_surface_primitive_identity_resolves_canonical_by_qualified_reference() 
 }
 
 #[test]
+fn identity_spelling_through_transparent_type_alias_owns_the_carrier() {
+    // 拼写与声明分离的正向合同：std 用 `type utf8 = Utf8Text` 给载体一个透明拼写，
+    // 注解写在载体声明上而身份字符串命名别名。别名不是第二个声明，穿透 Resolver 记录的
+    // 别名目标后来源恰为携带者自身，必须登记为规范 owner，而不是按字符串认领或拒绝。
+    let groups = [
+        (
+            "core",
+            false,
+            vec![file(
+                "source/text/std.text.v",
+                "namespace std.text;\n\n[primitive(\"std::text::utf8\")]\nclass Utf8Text {\n    _repr: [u8]\n}\n\ntype utf8 = Utf8Text;",
+            )],
+        ),
+        ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return 0 }")]),
+    ];
+    let closure = try_plan_with_visibility(&groups, &[&[], &[]]).expect("别名拼写必须解析到携带者声明");
+    let entry = closure.primitive_identities.get("std::text::utf8").expect("`std::text::utf8` 必须登记");
+    assert_eq!(entry.declaration.name, "Utf8Text", "规范 owner 是载体声明，不是别名声明: {:?}", entry.declaration);
+    assert!(entry.aliases.is_empty(), "别名拼写不产生第二个携带者: {:?}", entry.aliases);
+    assert_eq!(closure.primitive_identities.identity_of(&entry.declaration), Some("std::text::utf8"));
+}
+
+#[test]
+fn cross_surface_carrier_without_visible_canonical_source_is_rejected() {
+    // 独立声明冒领身份的反向合同：std 在输入里持有规范声明，但生成组没有声明对 std 的
+    // 可见性——它的身份引用在自己的可见面内解析落空，字符串相同不能证明同源，必须拒绝。
+    let groups = [
+        ("std", false, vec![file("source/primitive/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }")]),
+        (
+            "asgard.generated",
+            true,
+            vec![file("asgard/generated.v", "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[export] micro run() -> i32 { return 0 }")],
+        ),
+    ];
+    let error = try_plan_with_visibility(&groups, &[&[], &[]]).expect_err("不可见规范声明的重声明必须失败");
+    match error {
+        SemanticClosureError::UnprovenPrimitiveIdentitySource { identity, declaration, resolved_source } => {
+            assert_eq!(identity, "std::primitive::i32");
+            assert!(declaration.contains("asgard.generated"), "失败必须指名无法证明来源的携带者: {declaration}");
+            assert_eq!(resolved_source, None, "可见面内解析落空: {resolved_source:?}");
+        }
+        other => panic!("expected UnprovenPrimitiveIdentitySource, got {other}"),
+    }
+}
+
+#[test]
 fn independent_owners_claiming_canonical_qualified_name_are_rejected() {
-    // 两个独立 owner 在各自依赖组里都持有恰好等于身份的全称声明：并列冒领，结构化拒绝，
-    // 不得按组名或遍历顺序择一。
+    // 两个独立 owner 在各自依赖组里都持有恰好占据身份规范位置的声明：并列自命中冒领同一
+    // 规范 owner，结构化拒绝，不得按组名或遍历顺序择一。
     let groups = [
         ("std.one", false, vec![file("source/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }")]),
         ("std.two", false, vec![file("source/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }")]),
@@ -626,41 +678,116 @@ fn independent_owners_claiming_canonical_qualified_name_are_rejected() {
 
 #[test]
 fn cross_surface_claims_without_canonical_reference_are_rejected() {
-    // 多个携带者而无人持有身份全称：没有任何声明能证明自己是规范 owner，结构化拒绝。
+    // 多个携带者而无人占据身份规范位置：每个携带者的引用解析都落空，没有任何声明能
+    // 证明自己是规范 owner，第一个携带者（声明身份序）即被结构化拒绝。
     let carrier = |key: &'static str, path: &str| (key, false, vec![file(path, "[primitive(\"std::primitive::i32\")]\nstructure i32 { }")]);
     let groups = [
         carrier("island.a", "a.v"),
         carrier("island.b", "b.v"),
         ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return 0 }")]),
     ];
-    let error = try_plan_with_visibility(&groups, &[&[], &[], &[]]).expect_err("无人持有全称的多携带者必须失败");
+    let error = try_plan_with_visibility(&groups, &[&[], &[], &[]]).expect_err("无人占据规范位置的多携带者必须失败");
     match error {
-        SemanticClosureError::DuplicatePrimitiveIdentity { identity, declarations } => {
+        SemanticClosureError::UnprovenPrimitiveIdentitySource { identity, declaration, resolved_source } => {
             assert_eq!(identity, "std::primitive::i32");
-            assert_eq!(declarations.len(), 2, "两个携带者都必须出现在诊断里: {declarations:?}");
+            assert!(declaration.contains("island.a"), "失败必须指名首个无法证明来源的携带者: {declaration}");
+            assert_eq!(resolved_source, None, "可见面内解析落空: {resolved_source:?}");
         }
-        other => panic!("expected DuplicatePrimitiveIdentity, got {other}"),
+        other => panic!("expected UnprovenPrimitiveIdentitySource, got {other}"),
     }
 }
 
 #[test]
-fn single_carrier_without_canonical_reference_owns_identity_for_bootstrap() {
-    // 唯一携带者没有竞争者：规范包尚未进入输入时（bootstrap/封闭生成单元单独构建），
-    // 它按身份登记为规范 owner，别名表为空。
+fn single_carrier_without_canonical_reference_is_rejected() {
+    // 唯一携带者没有豁免：规范包未进入输入、声明全称又不占据身份位置时，字符串相同
+    // 无法证明同源声明，必须显式拒绝（fail-closed），不得静默授予 owner。
     let groups = [(
         "generated.only",
         true,
         vec![file("generated.v", "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[export] micro run() -> i32 { return 0 }")],
     )];
+    let error = try_plan_with_visibility(&groups, &[&[]]).expect_err("唯一携带者的全称冒领必须失败");
+    match error {
+        SemanticClosureError::UnprovenPrimitiveIdentitySource { identity, declaration, resolved_source } => {
+            assert_eq!(identity, "std::primitive::i32");
+            assert!(declaration.contains("generated.only"), "失败必须指名携带者: {declaration}");
+            assert_eq!(resolved_source, None, "可见面内解析落空: {resolved_source:?}");
+        }
+        other => panic!("expected UnprovenPrimitiveIdentitySource, got {other}"),
+    }
+}
+
+#[test]
+fn standalone_carrier_at_canonical_location_owns_identity_for_bootstrap() {
+    // 合法 bootstrap 的正向合同：封闭单元单独构建时，只要它自己占据身份的规范位置
+    // （namespace 段 + 短名按声明索引解析自命中），来源即可验证，登记为规范 owner。
+    let groups = [(
+        "generated.only",
+        true,
+        vec![file(
+            "generated.v",
+            "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[export] micro run() -> i32 { return 0 }",
+        )],
+    )];
     let closure = plan_with_visibility(&groups, &[&[]]);
-    let entry = closure.primitive_identities.get("std::primitive::i32").expect("唯一携带者必须登记");
+    let entry = closure.primitive_identities.get("std::primitive::i32").expect("自命中规范位置的携带者必须登记");
     assert_eq!(entry.declaration.dependency_key, "generated.only");
     assert!(entry.aliases.is_empty(), "无竞争者时不得登记别名: {:?}", entry.aliases);
 }
 
 #[test]
+fn carrier_projecting_to_non_claiming_declaration_is_rejected() {
+    // 携带者的身份引用解析到规范位置上不携带 `[primitive]` 注解的声明：来源不是任何
+    // 身份声明的投影，无法证明同源，结构化拒绝，并把命中的来源声明写进诊断。
+    let groups = [
+        ("std", false, vec![file("source/i32.v", "namespace std.primitive;\nstructure i32 { }")]),
+        (
+            "carrier",
+            true,
+            vec![file("carrier.v", "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[export] micro run() -> i32 { return 0 }")],
+        ),
+    ];
+    let error = try_plan_with_visibility(&groups, &[&[], &["std"]]).expect_err("来源不携带身份的投影必须失败");
+    match error {
+        SemanticClosureError::UnprovenPrimitiveIdentitySource { identity, declaration, resolved_source } => {
+            assert_eq!(identity, "std::primitive::i32");
+            assert!(declaration.contains("carrier"), "失败必须指名携带者: {declaration}");
+            let source = resolved_source.expect("引用命中了不携带身份的声明");
+            assert!(source.contains("std"), "诊断必须给出命中的来源声明: {source}");
+        }
+        other => panic!("expected UnprovenPrimitiveIdentitySource, got {other}"),
+    }
+}
+
+#[test]
+fn ambiguous_canonical_location_is_rejected() {
+    // 携带者可见面内同一绝对限定位置命中多个声明：来源歧义，无法证明是哪一条声明的
+    // 投影，结构化拒绝并列出全部候选来源。
+    let canonical = |key: &'static str| (key, false, vec![file("source/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }")]);
+    let groups = [
+        canonical("std.one"),
+        canonical("std.two"),
+        (
+            "app",
+            true,
+            vec![file("app.v", "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[export] micro run() -> i32 { return 0 }")],
+        ),
+    ];
+    let error = try_plan_with_visibility(&groups, &[&[], &[], &["std.one", "std.two"]]).expect_err("来源位置歧义必须失败");
+    match error {
+        SemanticClosureError::AmbiguousPrimitiveIdentitySource { identity, declaration, sources } => {
+            assert_eq!(identity, "std::primitive::i32");
+            assert!(declaration.contains("app"), "失败必须指名携带者: {declaration}");
+            assert_eq!(sources.len(), 2, "两个候选来源都必须出现在诊断里: {sources:?}");
+        }
+        other => panic!("expected AmbiguousPrimitiveIdentitySource, got {other}"),
+    }
+}
+
+#[test]
 fn alias_rename_does_not_move_canonical_owner() {
-    // 别名载体改名（短名不再是身份末段）不改变规范 owner；载体仍按身份引用登记为别名。
+    // 别名载体改名（短名不再是身份末段）不改变规范 owner；载体身份引用在可见面内解析
+    // 命中 std 的规范声明，仍按可验证来源登记为别名。
     let groups = [
         ("std", false, vec![file("source/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }")]),
         (
@@ -672,7 +799,7 @@ fn alias_rename_does_not_move_canonical_owner() {
             )],
         ),
     ];
-    let closure = plan_with_visibility(&groups, &[&[], &[]]);
+    let closure = plan_with_visibility(&groups, &[&[], &["std"]]);
     let entry = closure.primitive_identities.get("std::primitive::i32").expect("身份必须登记");
     assert_eq!(entry.declaration.dependency_key, "std", "规范 owner 不随载体改名移动: {:?}", entry.declaration);
     assert_eq!(entry.aliases.len(), 1);
@@ -681,8 +808,8 @@ fn alias_rename_does_not_move_canonical_owner() {
 
 #[test]
 fn canonical_rename_breaks_the_reference_and_is_rejected() {
-    // 规范声明改名（全称不再命中身份）后，它与载体并列为「无全称携带者」：
-    // 身份引用失去规范 owner，结构化拒绝，不得静默把载体升格。
+    // 规范声明改名（不再占据身份规范位置）后，载体与它的引用解析都落空：身份失去可
+    // 验证来源，结构化拒绝，不得静默把载体升格。
     let groups = [
         ("std", false, vec![file("source/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32_renamed { }")]),
         (
@@ -691,13 +818,14 @@ fn canonical_rename_breaks_the_reference_and_is_rejected() {
             vec![file("carrier.v", "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[export] micro run() -> i32 { return 0 }")],
         ),
     ];
-    let error = try_plan_with_visibility(&groups, &[&[], &[]]).expect_err("身份引用失去规范 owner 必须失败");
+    let error = try_plan_with_visibility(&groups, &[&[], &["std"]]).expect_err("身份引用失去规范 owner 必须失败");
     match error {
-        SemanticClosureError::DuplicatePrimitiveIdentity { identity, declarations } => {
+        SemanticClosureError::UnprovenPrimitiveIdentitySource { identity, declaration, resolved_source } => {
             assert_eq!(identity, "std::primitive::i32");
-            assert_eq!(declarations.len(), 2, "{declarations:?}");
+            assert!(declaration.contains("carrier"), "失败必须指名首个携带者: {declaration}");
+            assert_eq!(resolved_source, None, "改名后规范位置为空: {resolved_source:?}");
         }
-        other => panic!("expected DuplicatePrimitiveIdentity, got {other}"),
+        other => panic!("expected UnprovenPrimitiveIdentitySource, got {other}"),
     }
 }
 

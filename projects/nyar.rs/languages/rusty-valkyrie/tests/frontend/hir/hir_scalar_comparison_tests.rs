@@ -15,10 +15,12 @@ use rusty_valkyrie::{
 
 /// 模拟 std：比较/索引算子与文本类型，全部按裁定形态声明。
 const STD: &str = r#"
-namespace std.operator;
+namespace std.primitive;
 
 [primitive("std::primitive::i32")]
 structure i32 { }
+
+namespace std.operator;
 
 trait Equal {
     infix `==`(self, other: Self): bool
@@ -79,6 +81,8 @@ imply char: std::operator::Equal {
     infix `!=`(self, rhs: Self): bool { return true }
 }
 
+namespace std.primitive;
+
 [primitive("std::primitive::u8")]
 structure u8 {
 
@@ -89,6 +93,8 @@ imply u8: std::operator::Equal {
 
     infix `!=`(self, rhs: Self): bool { return true }
 }
+
+namespace std.text;
 
 [primitive("std::text::utf8")]
 structure Utf8Text {

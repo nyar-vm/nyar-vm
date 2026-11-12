@@ -12,10 +12,12 @@ fn groups(main_source: &str) -> Vec<CompilerSourceGroup> {
             "core",
             "core",
             r#"
-namespace std.collection;
+namespace std.primitive;
 
 [primitive("std::primitive::i64")]
 structure i64 { }
+
+namespace std.collection;
 
 class Holder<K, V> {
     _capacity: i64

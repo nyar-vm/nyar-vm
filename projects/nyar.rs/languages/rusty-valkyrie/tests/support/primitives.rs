@@ -86,26 +86,47 @@ fn primitive_spellings() -> BTreeSet<String> {
 }
 
 /// 只为缺失的拼写生成声明前导；全部已可用时返回空串。
+///
+/// 声明必须落在各自身份的规范位置（`std::primitive::*` 在 `namespace std.primitive;`、
+/// `std::text::char` 在 `namespace std.text;`），闭包身份来源门才认得出可验证来源；
+/// 前导按块跟踪当前 namespace，切换时输出对应的 `namespace` 头。
 fn prelude_for(missing: &BTreeSet<String>) -> String {
-    let mut pieces = Vec::new();
+    let mut pieces: Vec<(&str, &str)> = Vec::new();
+    let mut active_namespace = "std.primitive";
     for block in PRIMITIVES.split("\n\n") {
+        if let Some(header) = block.lines().next().and_then(|line| line.trim_start().strip_prefix("namespace ")) {
+            active_namespace = header.trim().trim_end_matches(';').trim();
+            // 纯 namespace 头块：只切换位置，不产出声明。
+            if block.lines().filter_map(declaration_name).next().is_none() {
+                continue;
+            }
+        }
         let names: Vec<&str> = block.lines().filter_map(declaration_name).collect();
         if names.is_empty() {
-            // `namespace std.primitive;` 头，由本函数统一输出。
             continue;
         }
         if names.len() == block.lines().count() {
             // 每行一条 `type` 别名，按行补齐。
-            pieces.extend(block.lines().filter(|line| declaration_name(line).is_some_and(|name| missing.contains(name))));
+            pieces.extend(block.lines().filter(|line| declaration_name(line).is_some_and(|name| missing.contains(name))).map(|line| (active_namespace, line)));
         }
         else if missing.contains(names[0]) {
-            pieces.push(block);
+            pieces.push((active_namespace, block));
         }
     }
     if pieces.is_empty() {
         return String::new();
     }
-    format!("namespace std.primitive;\n\n{}\n", pieces.join("\n\n"))
+    let mut out = String::new();
+    let mut emitted_namespace: Option<&str> = None;
+    for (namespace, piece) in pieces {
+        if emitted_namespace != Some(namespace) {
+            out.push_str(&format!("namespace {namespace};\n\n"));
+            emitted_namespace = Some(namespace);
+        }
+        out.push_str(piece);
+        out.push_str("\n\n");
+    }
+    out
 }
 
 /// 一组源文件里已经声明过的拼写。
@@ -139,10 +160,11 @@ pub(crate) fn with_primitives(source: &str) -> String {
 /// 同一可见面会出现两个同名候选（`nominal `i64` is ambiguous`）。因此只有
 /// 直接依赖不落在本次输入里的组才补——它没有可继承的声明来源。
 ///
-/// 同一依赖组内重复登记同一身份是结构化错误；跨依赖组携带同一身份时，规范 owner
-/// 是声明全称（namespace 段 + 短名）恰好等于 `::` 身份引用的唯一声明，其余携带者
-/// 登记为别名载体；多个全称命中、或多个携带者而无人持有全称（独立 owner 冒领）
-/// 结构化拒绝（见 `closure/primitive_identity.rs`）。
+/// 同一依赖组内重复登记同一身份是结构化错误；跨依赖组携带同一身份时，每个携带者的
+/// `::` 身份引用必须在自身可见面内按绝对限定位置解析出来源声明：来源恰为自身的是
+/// 规范 owner，来源为 owner 的是别名载体（同一声明的投影）。来源落空、位置歧义或
+/// 并列自命中（独立 owner 冒领）都结构化拒绝（见 `closure/primitive_identity.rs`），
+/// 因此注入的声明必须落在身份的规范 namespace，消费组必须能看到规范声明的依赖组。
 pub(crate) fn groups_with_primitives(mut groups: Vec<CompilerSourceGroup>) -> Vec<CompilerSourceGroup> {
     // 每组注入后实际持有的拼写：本地声明 ∪ 本地引用（引用缺失的会被注入补齐）。
     let declared: BTreeMap<String, BTreeSet<String>> = groups

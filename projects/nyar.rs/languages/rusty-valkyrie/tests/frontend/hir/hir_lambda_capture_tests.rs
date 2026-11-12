@@ -78,6 +78,8 @@ fn environment_arguments(environment: &rusty_valkyrie::types::hir::HirLambdaEnvi
 }
 
 const WRITE_CAPTURE_SOURCE: &str = r#"
+namespace std.primitive;
+
 [primitive("std::primitive::i32")]
 structure i32 { }
 
@@ -121,6 +123,8 @@ fn lambda_captures_record_write_flag() {
 }
 
 const READ_CAPTURE_SOURCE: &str = r#"
+namespace std.primitive;
+
 [primitive("std::primitive::i32")]
 structure i32 { }
 
@@ -150,6 +154,8 @@ fn lambda_readonly_capture_is_not_write() {
 }
 
 const TWO_CAPTURE_SOURCE: &str = r#"
+namespace std.primitive;
+
 [primitive("std::primitive::i32")]
 structure i32 { }
 
@@ -185,6 +191,8 @@ fn lambda_environment_declaration_is_unique_per_lambda() {
 }
 
 const CAPTURE_FREE_SOURCE: &str = r#"
+namespace std.primitive;
+
 [primitive("std::primitive::i32")]
 structure i32 { }
 
@@ -216,6 +224,8 @@ fn capture_free_lambda_has_no_environment() {
 }
 
 const GENERIC_OWNER_SOURCE: &str = r#"
+namespace std.primitive;
+
 [primitive("std::primitive::i32")]
 structure i32 { }
 
@@ -276,6 +286,8 @@ fn generic_owner_instances_do_not_share_environment_type() {
 }
 
 const INDIRECT_LAMBDA_SOURCE: &str = r#"
+namespace std.primitive;
+
 [primitive("std::primitive::i32")]
 structure i32 { }
 

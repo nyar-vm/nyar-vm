@@ -120,6 +120,53 @@ impl DeclarationIndexes {
         keys.iter().filter(|key| visible.contains(&key.dependency_key)).cloned().collect()
     }
 
+    /// 按绝对限定位置解析一条来源引用：只命中可见面内占据该位置的声明。
+    ///
+    /// 与 [`Self::resolve`] 的引用解析不同，这里没有 namespace 前缀、短名回退或成员
+    /// 兜底——来源引用必须指名唯一位置；namespace 段按 `.` 展开与声明身份同一口径。
+    /// 命中集合就是可验证来源：空集与多义集都由调用方结构化拒绝（fail-closed）。
+    pub(crate) fn resolve_qualified(&self, reference: &[String], visible: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
+        let mut hits = BTreeSet::new();
+        for ((namespace, name), keys) in &self.names {
+            let mut qualified = namespace.iter().flat_map(|segment| segment.split('.')).chain(std::iter::once(name.as_str()));
+            if qualified.eq(reference.iter().map(String::as_str)) {
+                hits.extend(self.retain_visible(keys, visible));
+            }
+        }
+        hits
+    }
+
+    /// 按身份引用解析到「终止声明」：绝对限定位置命中后穿透类型别名目标，返回别名链
+    /// 末端的声明集合。
+    ///
+    /// `type utf8 = Utf8Text` 这类别名是同一冻结声明身份的透明拼写，不是第二个声明；
+    /// 穿透依据是 Resolver 记录的别名目标链接，不是短名近似。绝对限定位置只认最初
+    /// 的身份引用，别名目标按其自身 namespace 解析。别名链断裂或末端不唯一时返回空集
+    /// 或多义集，由调用方 fail-closed。
+    pub(crate) fn resolve_identity_source(&self, reference: &[String], visible: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
+        let mut terminals = BTreeSet::new();
+        let mut frontier: Vec<(Vec<String>, Option<Vec<String>>)> = vec![(reference.to_vec(), None)];
+        let mut visited = BTreeSet::new();
+        while let Some((reference, alias_namespace)) = frontier.pop() {
+            if !visited.insert((reference.clone(), alias_namespace.clone())) {
+                continue;
+            }
+            let hits = match &alias_namespace {
+                None => self.resolve_qualified(&reference, visible),
+                Some(namespace) => self.resolve(&reference, namespace, visible),
+            };
+            for key in hits {
+                match self.alias_targets.get(&key) {
+                    Some((namespace, target)) => frontier.push((target.clone(), Some(namespace.clone()))),
+                    None => {
+                        terminals.insert(key);
+                    }
+                }
+            }
+        }
+        terminals
+    }
+
     /// 解析单个名字路径引用，返回命中的声明身份集合。
     ///
     /// 命中规则与 `path-resolution.md` 一致：限定路径先按绝对路径，再按当前 namespace 逐级前缀；

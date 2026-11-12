@@ -111,10 +111,12 @@ fn consumer_primitive_annotation_folds_to_builtin_identity() {
 }
 
 const SAME_MODULE: &str = r#"
-namespace demo.same;
+namespace std.primitive;
 
 [primitive("std::primitive::f64")]
 structure f64 { }
+
+namespace demo.same;
 
 micro one() -> f64 {
     return 1.0
