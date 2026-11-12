@@ -14,6 +14,7 @@ mod mir_ssa_binding_integer_identity_tests;
 mod mir_ssa_collection_init_tests;
 mod mir_ssa_integer_literal_identity_tests;
 mod mir_ssa_labeled_tuple_tests;
+mod mir_ssa_tuple_position_tests;
 mod mir_ssa_match_lowering_bottom_type_tests;
 mod mir_ssa_nullable_null_tests;
 mod mir_ssa_assign_constructor_context_tests;

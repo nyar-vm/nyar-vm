@@ -616,14 +616,16 @@ impl MirBuilder {
             HirExprKind::FieldAccess { object, field, field_id, tuple_index } => {
                 let object_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
                 if let Some(index) = *tuple_index {
-                    // 带标签元组：位置由 `AggregateFieldIndex::resolve_field` 在 HIR 冻结，
-                    // 这里只消费位置事实，不重新按名字猜。
+                    // 元组位置由 `AggregateFieldIndex::resolve_field` 在 HIR 冻结
+                    // （带标签按标签、无标签按 `.0` 位置），这里只消费位置事实，不重新按名字猜。
                     let object_type = infer_builder_operand_type(&object_operand, &self.value_types);
-                    let Some(ValkyrieType::LabeledTuple(fields)) = object_type.as_ref() else {
-                        self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
-                        return MirOperand::Constant(MirConstant::Unit);
+                    let field_type = match object_type.as_ref() {
+                        Some(ValkyrieType::LabeledTuple(fields)) => fields.get(index as usize).map(|field| field.ty.clone()),
+                        Some(ValkyrieType::Tuple(fields)) => fields.get(index as usize).cloned(),
+                        _ => None,
                     };
-                    let Some(field_type) = fields.get(index as usize).map(|field| field.ty.clone()) else {
+                    let Some(field_type) = field_type
+                    else {
                         self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
                         return MirOperand::Constant(MirConstant::Unit);
                     };
@@ -634,9 +636,25 @@ impl MirBuilder {
                 }
                 if let Some(object_type) = infer_builder_operand_type(&object_operand, &self.value_types) {
                     if matches!(object_type, ValkyrieType::Tuple(_)) && field_id.is_none() {
-                        self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnlabeledTupleFieldAccess {
-                            field: field.to_string(),
-                        });
+                        // HIR 未冻结位置的无名元组读取：纯数字成员名是越界（结构化错误），
+                        // 其余按名访问保持结构化失败，禁止退回按位置解析。
+                        match crate::compiler::mir::AggregateFieldIndex::resolve_tuple_field(&object_type, field) {
+                            crate::compiler::mir::TupleFieldResolution::IndexOutOfRange { index, arity } => {
+                                self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::TupleIndexOutOfRange {
+                                    field: field.to_string(),
+                                    index,
+                                    arity,
+                                });
+                            }
+                            crate::compiler::mir::TupleFieldResolution::Positional { .. } => {
+                                self.diagnostics
+                                    .push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
+                            }
+                            _ => {
+                                self.diagnostics
+                                    .push(crate::compiler::mir::ssa::MirDiagnostic::UnlabeledTupleFieldAccess { field: field.to_string() });
+                            }
+                        }
                         return MirOperand::Constant(MirConstant::Unit);
                     }
                 }

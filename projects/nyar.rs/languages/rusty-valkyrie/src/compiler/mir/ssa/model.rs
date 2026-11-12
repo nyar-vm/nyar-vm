@@ -59,6 +59,15 @@ pub enum MirDiagnostic {
         /// 用户书写的字段名。
         field: String,
     },
+    /// 无标签元组位置索引越界：结构化失败，不得静默。
+    TupleIndexOutOfRange {
+        /// 用户书写的成员名。
+        field: String,
+        /// 请求的位置。
+        index: u64,
+        /// 元组长度。
+        arity: usize,
+    },
     /// 字段操作缺少已冻结的字段身份。
     UnresolvedFieldIdentity {
         /// 仅用于诊断的字段名。

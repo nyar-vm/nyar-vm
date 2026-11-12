@@ -587,13 +587,16 @@ fn resolve_expr_calls_at(
                 context.hint(context.ty),
             );
             if field_id.is_none() && tuple_index.is_none() {
-                // 字段解析统一走 `resolve_field`：带标签元组冻结成位置索引，
-                // 名义聚合冻结成字段身份；无名元组与未命中都保持未解析，交给下游结构化失败。
+                // 字段解析统一走 `resolve_field`：带标签元组按标签、无标签元组按 `.0` 位置
+                // 都冻结成位置索引，名义聚合冻结成字段身份；越界与普通名字访问保持未解析，
+                // 交给下游结构化失败。
                 if let Some(object_type) = infer_scrutinee_type(object, locals, struct_fields, singleton_names) {
                     match struct_fields.resolve_field(&object_type, field) {
-                        crate::compiler::mir::FieldResolution::LabeledTuple { index, .. } => *tuple_index = Some(index),
+                        crate::compiler::mir::FieldResolution::LabeledTuple { index, .. }
+                        | crate::compiler::mir::FieldResolution::TuplePositional { index, .. } => *tuple_index = Some(index),
                         crate::compiler::mir::FieldResolution::Aggregate { field_id: resolved, .. } => *field_id = resolved,
                         crate::compiler::mir::FieldResolution::UnlabeledTuple
+                        | crate::compiler::mir::FieldResolution::TupleIndexOutOfRange { .. }
                         | crate::compiler::mir::FieldResolution::NotFound => {}
                     }
                 }

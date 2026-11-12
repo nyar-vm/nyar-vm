@@ -95,7 +95,13 @@ impl AggregateFieldIndex {
                 Some(index) => TupleFieldResolution::Labeled { index: index as u32, ty: &fields[index].ty },
                 None => TupleFieldResolution::NotFound,
             },
-            ValkyrieType::Tuple(_) => TupleFieldResolution::Unlabeled,
+            ValkyrieType::Tuple(fields) => match parse_tuple_position(name.as_str()) {
+                Some(index) => match usize::try_from(index).ok().and_then(|position| fields.get(position)) {
+                    Some(ty) => TupleFieldResolution::Positional { index: index as u32, ty },
+                    None => TupleFieldResolution::IndexOutOfRange { index, arity: fields.len() },
+                },
+                None => TupleFieldResolution::Unlabeled,
+            },
             _ => TupleFieldResolution::NotTuple,
         }
     }
@@ -104,6 +110,8 @@ impl AggregateFieldIndex {
     pub fn resolve_field(&self, object_type: &ValkyrieType, name: &Identifier) -> FieldResolution {
         match Self::resolve_tuple_field(object_type, name) {
             TupleFieldResolution::Labeled { index, ty } => FieldResolution::LabeledTuple { index, ty: ty.clone() },
+            TupleFieldResolution::Positional { index, ty } => FieldResolution::TuplePositional { index, ty: ty.clone() },
+            TupleFieldResolution::IndexOutOfRange { index, arity } => FieldResolution::TupleIndexOutOfRange { index, arity },
             TupleFieldResolution::Unlabeled => FieldResolution::UnlabeledTuple,
             TupleFieldResolution::NotFound => FieldResolution::NotFound,
             TupleFieldResolution::NotTuple => self
@@ -115,7 +123,21 @@ impl AggregateFieldIndex {
     }
 }
 
-/// 元组成员解析结果；`Unlabeled` 是结构化失败，禁止退回按位置解析。
+/// 元组位置成员名：只接受非空纯 ASCII 数字（无符号、无下划线、无类型后缀）。
+///
+/// 语法层把 `pair.0` 的 `0` 冻结成成员名文本；这里把它解析成位置事实，
+/// 超出 `u64` 的名字按越界处理，不静默丢弃。
+pub fn parse_tuple_position(name: &str) -> Option<u64> {
+    if name.is_empty() || !name.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    match name.parse::<u64>() {
+        Ok(index) => Some(index),
+        Err(_) => Some(u64::MAX),
+    }
+}
+
+/// 元组成员解析结果；`Unlabeled` 是结构化失败，禁止把普通名字放宽成位置。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TupleFieldResolution<'a> {
     /// 带标签元组的字段位置与类型。
@@ -125,7 +147,21 @@ pub enum TupleFieldResolution<'a> {
         /// 字段类型。
         ty: &'a ValkyrieType,
     },
-    /// 无标签元组：不允许按名访问。
+    /// 无标签元组的位置成员（`.0` 形态）：位置与元素类型。
+    Positional {
+        /// 源码书写的位置索引。
+        index: u32,
+        /// 元素类型。
+        ty: &'a ValkyrieType,
+    },
+    /// 无标签元组位置索引越界：结构化失败，不得静默。
+    IndexOutOfRange {
+        /// 请求的位置。
+        index: u64,
+        /// 元组长度。
+        arity: usize,
+    },
+    /// 无标签元组按名访问：不允许。
     Unlabeled,
     /// 未找到同名标签。
     NotFound,
@@ -198,6 +234,20 @@ pub enum FieldResolution {
         index: u32,
         /// 字段类型。
         ty: ValkyrieType,
+    },
+    /// 无标签元组位置成员（`.0` 形态）：冻结位置与元素类型。
+    TuplePositional {
+        /// 源码书写的位置索引。
+        index: u32,
+        /// 元素类型。
+        ty: ValkyrieType,
+    },
+    /// 无标签元组位置索引越界：结构化失败。
+    TupleIndexOutOfRange {
+        /// 请求的位置。
+        index: u64,
+        /// 元组长度。
+        arity: usize,
     },
     /// 无标签元组按名访问：结构化失败。
     UnlabeledTuple,

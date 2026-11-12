@@ -50,11 +50,11 @@ acorn-dex = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbe
 acorn-mach-o = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
 acorn-host = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
 # Oak parser frontend (`examples/oak-voc` publishes crate `oak-awsl`). Bump `rev` with oak.rs releases.
-oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "c8e8b26d80f39936781ebe0d94c2c17a1c8aa706" }
-oak-testing = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "c8e8b26d80f39936781ebe0d94c2c17a1c8aa706" }
-oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "c8e8b26d80f39936781ebe0d94c2c17a1c8aa706", features = ["serde"] }
-oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "c8e8b26d80f39936781ebe0d94c2c17a1c8aa706" }
-oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "c8e8b26d80f39936781ebe0d94c2c17a1c8aa706" }
+oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "caa852676e499756765dee02ef5ba6c15bce6a9d" }
+oak-testing = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "caa852676e499756765dee02ef5ba6c15bce6a9d" }
+oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "caa852676e499756765dee02ef5ba6c15bce6a9d", features = ["serde"] }
+oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "caa852676e499756765dee02ef5ba6c15bce6a9d" }
+oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "caa852676e499756765dee02ef5ba6c15bce6a9d" }
 # Legion corpora (`valkyrie.rs`). Bump `rev` after corpus changes land on that repo.
 legion-fixtures = { git = "https://github.com/valkyrie-language/valkyrie.rs", rev = "bb09bbc6c2f011262bb0330a0c874a42a9b05985" }
 # Nyar Compiler 编译期组件

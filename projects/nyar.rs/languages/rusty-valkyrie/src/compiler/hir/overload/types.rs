@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::compiler::{
     hir::type_relation::TypeRelationContext,
-    mir::{AggregateFieldIndex, FieldResolution},
+    mir::{AggregateFieldIndex, FieldResolution, TupleFieldResolution},
     types::{
         Identifier,
         hir::{
@@ -100,9 +100,12 @@ pub(crate) fn lookup_struct_field_type(
     field: &Identifier,
     struct_fields: &AggregateFieldIndex,
 ) -> Option<ValkyrieType> {
-    // 带标签元组没有泛型代入：同名标签的字段类型就是位置类型。
-    if let ValkyrieType::LabeledTuple(fields) = object_type {
-        return fields.iter().find(|item| &item.name == field).map(|item| item.ty.clone());
+    // 元组没有泛型代入：带标签元组按标签、无标签元组按 `.0` 位置投影元素类型；
+    // 越界与普通名字访问都是 None（结构化失败由下游诊断承担）。
+    match AggregateFieldIndex::resolve_tuple_field(object_type, field) {
+        TupleFieldResolution::Labeled { ty, .. } | TupleFieldResolution::Positional { ty, .. } => return Some(ty.clone()),
+        TupleFieldResolution::Unlabeled | TupleFieldResolution::IndexOutOfRange { .. } | TupleFieldResolution::NotFound => return None,
+        TupleFieldResolution::NotTuple => {}
     }
     let declared = struct_fields.fields_of(object_type)?.iter().find(|item| item.name == *field)?.ty.clone();
     let generics = struct_fields.generics_of(object_type).unwrap_or(&[]);
@@ -196,8 +199,10 @@ pub(crate) fn normalize_local_field_chain(expr: &mut HirExpr, locals: &BTreeMap<
                 None,
                 lookup_struct_field_type(&current_type, part, struct_fields).unwrap_or(ValkyrieType::AutoType),
             ),
-            FieldResolution::LabeledTuple { index, ty } => (None, Some(index), ty),
-            FieldResolution::UnlabeledTuple | FieldResolution::NotFound => (None, None, ValkyrieType::AutoType),
+            FieldResolution::LabeledTuple { index, ty } | FieldResolution::TuplePositional { index, ty } => (None, Some(index), ty),
+            FieldResolution::UnlabeledTuple | FieldResolution::TupleIndexOutOfRange { .. } | FieldResolution::NotFound => {
+                (None, None, ValkyrieType::AutoType)
+            }
         };
         current_type = next_type;
         current = HirExpr {

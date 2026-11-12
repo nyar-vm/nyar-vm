@@ -339,6 +339,10 @@ fn mir_diagnostic_args(row: DiagnosticRow, diagnostic: &MirDiagnostic) -> Diagno
         MirDiagnostic::UnresolvedNominalIdentity { type_name } => row.with_arg("type_name", DiagnosticArg::TypeName(type_name.clone())),
         MirDiagnostic::UnresolvedFieldIdentity { field } => row.with_arg("field", DiagnosticArg::String(field.clone())),
         MirDiagnostic::UnlabeledTupleFieldAccess { field } => row.with_arg("field", DiagnosticArg::String(field.clone())),
+        MirDiagnostic::TupleIndexOutOfRange { field, index, arity } => row
+            .with_arg("field", DiagnosticArg::String(field.clone()))
+            .with_arg("index", DiagnosticArg::String(index.to_string()))
+            .with_arg("arity", DiagnosticArg::String(arity.to_string())),
         MirDiagnostic::UnresolvedCallableIdentity { symbol } => row.with_arg("symbol", DiagnosticArg::CallableShort(symbol.clone())),
         MirDiagnostic::BindingAnnotationTypeMismatch { name, annotation, source } => row
             .with_arg("name", DiagnosticArg::String(name.clone()))
@@ -374,6 +378,9 @@ fn mir_diagnostic_message(diagnostic: &MirDiagnostic) -> String {
         MirDiagnostic::UnresolvedFieldIdentity { field } => format!("MIR lowering unresolved field identity `{field}`"),
         MirDiagnostic::UnlabeledTupleFieldAccess { field } => {
             format!("MIR lowering rejected `.{field}` on an unlabeled tuple: positional tuples have no field labels")
+        }
+        MirDiagnostic::TupleIndexOutOfRange { field, index, arity } => {
+            format!("MIR lowering rejected `.{field}`: tuple index {index} is out of range for a tuple of arity {arity}")
         }
         MirDiagnostic::UnresolvedCallableIdentity { symbol } => format!("MIR lowering unresolved callable identity `{symbol}`"),
         MirDiagnostic::BindingAnnotationTypeMismatch { name, annotation, source } => format!(
