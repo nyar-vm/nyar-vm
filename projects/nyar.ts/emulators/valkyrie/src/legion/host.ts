@@ -21,12 +21,24 @@ export function legionNativePath(): string | null {
     }
 }
 
-/** 当前 addon 内嵌的编译器构建身份（git rev 或确定性回退摘要）。 */
+/**
+ * 当前 addon 内嵌的编译器构建身份，供消费者与产物 execution manifest 记录的
+ * `compiler_build_identity` 交叉核对（pinned runner 消费合同）。
+ *
+ * 取值由 Rust build script 生成：干净树为 git 修订；有未提交改动时为
+ * `<修订>-dirty<内容摘要>`（不同 dirty 内容身份不同）；Git 不可用或身份生成
+ * 显式失败时为 `unknown`。`unknown`/空串表示当前构建不可信复用，消费者不得
+ * 把产物归因到可信构建，也不得自行伪造身份。
+ */
 export function legionCompilerBuildIdentity(): string {
     return loadNative().legionCompilerBuildIdentity();
 }
 
-/** 当前 addon 的完整 toolchain fingerprint（产物缓存键的 toolchain 段）。 */
+/**
+ * 当前 addon 的完整 toolchain fingerprint（产物缓存键的 toolchain 段，末段为
+ * `compiler=<构建身份>`）。消费者可用它交叉核对产物 manifest 的
+ * `toolchain_fingerprint`，任何一段不一致都意味着产物出自另一枚构建。
+ */
 export function legionToolchainFingerprint(): string {
     return loadNative().legionToolchainFingerprint();
 }

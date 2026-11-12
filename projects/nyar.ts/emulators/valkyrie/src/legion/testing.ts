@@ -17,6 +17,14 @@ export function resolveArtifactDir(buildOutputDir: string, _target: string): str
     return buildOutputDir;
 }
 
+/**
+ * 读取产物 execution manifest 摘要（pinned runner 消费合同）。
+ *
+ * `compiler_build_identity` 由 Rust 侧从 manifest `toolchain_fingerprint` 的
+ * `compiler=` 段派生：与 {@link legionCompilerBuildIdentity} 交叉核对即可判定
+ * 产物是否出自当前编译器构建。`undefined` 表示旧构建产物（指纹缺段）或 manifest
+ * 不可读，消费者不得复用，也不得伪造身份放行。
+ */
 export function readExecutionManifest(artifactDir: string): {
     schema_version: number;
     target: string;
@@ -62,6 +70,14 @@ export function freshnessFromNativeOutcome(outcome: LegionArtifactFreshness | nu
     return {fresh: true};
 }
 
+/**
+ * 权威 freshness 校验入口（pinned runner 消费合同）。
+ *
+ * `projectDir` 是正式复用的必需上下文：Rust 权威核心据此重算 workspace 输入摘要
+ * 与 compile evidence，只有 `fully-verified` 才返回 fresh。不传 `projectDir` 时
+ * 核心最高只到 `artifact-self-consistent`，本函数一律拒绝——消费者不得省略项目
+ * 上下文求宽松判定，也不得在本层加任何降级放行。
+ */
 export function isArtifactCacheFresh(artifactDir: string, expectedTarget: string, projectDir?: string): FreshnessResult {
     let native: ReturnType<typeof loadNative>;
     try {

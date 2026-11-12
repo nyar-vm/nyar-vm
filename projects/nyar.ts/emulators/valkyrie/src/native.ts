@@ -12,7 +12,7 @@ export type LegionExecutionManifestView = {
     hostProviderBindingHash: string | null;
     primaryPhysicalEntry: string | null;
     primaryLogicalEntry: string | null;
-    /** 产出该构建的编译器构建身份；旧 manifest 缺少该字段时为 null。 */
+    /** 产出该构建的编译器构建身份（manifest 工具链指纹 `compiler=` 段）；旧构建指纹缺少该段时为 null。 */
     compilerBuildIdentity: string | null;
 };
 
