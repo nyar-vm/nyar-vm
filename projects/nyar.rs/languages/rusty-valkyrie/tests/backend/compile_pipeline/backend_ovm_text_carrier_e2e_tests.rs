@@ -15,7 +15,9 @@ use rusty_valkyrie::{
     compiler::{emitter::pipeline::CompilerHostProviderBinding, semantic::closure::micro_declaration_key},
 };
 
-const CORE_PRIMITIVE_SOURCE: &str = r#"[primitive("std::primitive::i32")]
+const CORE_PRIMITIVE_SOURCE: &str = r#"namespace std.primitive;
+
+[primitive("std::primitive::i32")]
 structure i32 { }
 
 [primitive("std::primitive::u8")]
@@ -213,8 +215,8 @@ micro panic<T>(message: T): void {
 }"#;
 
 /// 纯 raw 片段：只把 `utf8` 字面量直传给泛型 `panic`，不声明任何 `std.text`
-/// 文本载体聚合。目标计划因此不会登记文本布局 identity——这正是 bitset 等
-/// 工程里 `std::types::panic("...")` 的冻结事实，不能当成「缺布局」失败。
+/// 文本载体聚合。正式表示计划据此把程序级文本表示事实声明为 raw——这正是
+/// bitset 等工程里 `std::types::panic("...")` 的冻结事实，不能当成「缺布局」失败。
 const PANIC_APP_SOURCE: &str = r#"namespace demo.app;
 
 [main]
@@ -241,10 +243,12 @@ fn panic_source_groups() -> Vec<CompilerSourceGroup> {
     ]
 }
 
+fn compile_panic() -> Result<nyar_types::CompiledProgram, String> {
+    ValkyrieCompiler::default().compile_source_groups_to_program(&panic_source_groups()).map_err(|error| error.to_string())
+}
+
 fn lower_panic() -> Result<odin_bytecode::OdinModuleData, String> {
-    let program = ValkyrieCompiler::default()
-        .compile_source_groups_to_program(&panic_source_groups())
-        .map_err(|error| error.to_string())?;
+    let program = compile_panic()?;
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
     let plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
@@ -253,10 +257,33 @@ fn lower_panic() -> Result<odin_bytecode::OdinModuleData, String> {
         .map_err(|error| error.to_string())
 }
 
-/// 纯 raw 片段里的 `std::types::panic` 文本实参：目标计划没有登记文本布局时，
-/// 入口槽的冻结事实就是 raw 宿主串，降低必须成功；只有计划已冻结 `Utf8` 布局
-/// 而槽解析不到时才允许失败关闭。
+/// 纯 raw 片段里的 `std::types::panic` 文本实参：正式表示计划在没有声明任何
+/// `std.text` 载体时显式声明程序级 raw，目标计划从这份事实冻结 raw 槽，
+/// 降低必须成功；布局注册表为空不再参与判定。
 #[test]
 fn panic_text_argument_follows_frozen_slot_carrier() {
+    let program = compile_panic().expect("纯 raw 片段必须完成编译");
+    assert_eq!(
+        program.representation().text_representation,
+        Some(nyar_types::layout_choice::TextRepresentation::Raw),
+        "未声明任何文本载体的片段必须由正式表示计划显式声明 raw"
+    );
     lower_panic().expect("纯 raw 片段中的 `panic` 文本实参必须按冻结 raw 槽完成降低");
+}
+
+/// 反向合同：同一份已冻结计划若没有程序级文本表示事实，`utf8` 槽是 missing
+/// 事实，必须在发射前结构化拒收，不得把「布局表没有托管布局」解释为 raw。
+#[test]
+fn undeclared_program_text_representation_is_rejected() {
+    let program = compile_panic().expect("纯 raw 片段必须完成编译");
+    let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
+    let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
+    let mut plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
+        .expect("正式计划必须冻结程序级文本表示事实");
+    assert_eq!(plan.program_text_representation(), Some(nyar_emitter::ProgramTextRepresentation::Raw));
+    // 刻意清掉程序级事实：raw 必须来自声明，不能由「没有托管布局」反推。
+    plan.testing_clear_program_text_representation();
+    let error = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
+        .expect_err("没有程序级文本表示事实的 `utf8` 槽必须结构化拒收");
+    assert!(error.contains("不得解释为 raw"), "错误必须点名禁止 raw 回落，实际: {error}");
 }

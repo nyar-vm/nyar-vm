@@ -6,10 +6,9 @@ use crate::{EmitterError, Result};
 use nyar::{ExternalImportLink, QualifiedName};
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram,
-    CanonicalTerminator, CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarFunctionType, NyarType,
-    Operand,
-    Terminator, Value, ValueOrigin,
-    layout_choice::{InvokeLowering, ValueRepresentation},
+    CanonicalTerminator, CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarFunctionType,
+    NyarType, Operand, Terminator, Value, ValueOrigin,
+    layout_choice::{InvokeLowering, TextRepresentation as PlannedTextRepresentation, ValueRepresentation},
 };
 
 use crate::{
@@ -418,10 +417,13 @@ impl TargetExecutionPlan {
             abi_names,
             imports,
             sum_reps: program.representation().sum_reps.clone(),
-            // 正式表示计划（`RepresentationPlan`）尚无程序级文本表示字段，生产侧无法声明
-            // raw/managed 选择；保持 `None` 即 fail-closed，禁止在这里按布局注册表是否含
-            // `utf8` 反推模式。需前端身份线沿 `RepresentationPlan` 补齐该事实后接入。
-            program_text_representation: None,
+            // 程序级文本表示模式只来自正式表示计划的显式事实（`RepresentationPlan`）；
+            // 计划未声明时保持 `None`，后端按 managed 语义 fail-closed，禁止在这里
+            // 按布局注册表是否含 `utf8` 反推模式。
+            program_text_representation: program.representation().text_representation.map(|representation| match representation {
+                PlannedTextRepresentation::Raw => ProgramTextRepresentation::Raw,
+                PlannedTextRepresentation::Managed => ProgramTextRepresentation::Managed,
+            }),
         };
         plan.freeze_library_export_abis()?;
         Ok(plan)
@@ -549,6 +551,15 @@ impl TargetExecutionPlan {
     /// 发射期只读，禁止由布局注册表为空反推 raw。
     pub fn freeze_program_text_representation(&mut self, representation: ProgramTextRepresentation) -> &mut Self {
         self.program_text_representation = Some(representation);
+        self
+    }
+
+    /// 清除程序级文本表示事实（集成测试专用）。
+    ///
+    /// 只用于验证「未声明该事实时后端必须失败闭合」；生产管线不得调用。
+    #[doc(hidden)]
+    pub fn testing_clear_program_text_representation(&mut self) -> &mut Self {
+        self.program_text_representation = None;
         self
     }
 
