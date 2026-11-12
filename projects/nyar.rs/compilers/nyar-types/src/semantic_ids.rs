@@ -504,6 +504,20 @@ pub mod layout_choice {
         BoxedFrame,
     }
 
+    /// 程序级文本值载体表示事实。
+    ///
+    /// 文本值空间只有两种正式来源：源程序在 `std.text` 下声明并登记了 canonical
+    /// 文本载体（`LinkedSemanticProgram::text_encoding_types`）时为托管对象；未登记
+    /// 任何载体时，`utf8` / `utf16` 值就是宿主编码基元本身。规划器只按这份声明与
+    /// 值类型事实物化选择，目标后端只消费本事实，禁止按布局注册表是否为空反推。
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum TextRepresentation {
+        /// raw 宿主串。
+        Raw,
+        /// 托管文本对象。
+        Managed,
+    }
+
     /// 与目标无关的稀疏计划。
     #[derive(Debug, Clone, Default, PartialEq, Eq)]
     pub struct RepresentationPlan {
@@ -519,5 +533,7 @@ pub mod layout_choice {
         pub sum_reps: BTreeMap<NominalInstanceId, SumRepresentation>,
         /// 按效应位点的延续布局。
         pub effect_reps: BTreeMap<EffectSiteId, EffectRepresentation>,
+        /// 程序级文本值载体表示；`None` 表示规划器尚未声明，后端必须失败闭合。
+        pub text_representation: Option<TextRepresentation>,
     }
 }
