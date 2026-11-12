@@ -42,8 +42,38 @@ export function readExecutionManifest(artifactDir: string): {
     };
 }
 
+/** native `legionCheckArtifactFresh` 缺失时的回退判定所需的最小 manifest 视图字段。 */
+export type LegionManifestFreshnessView = {
+    target: string;
+    semanticClosureHash?: string | null;
+    canonicalSurfaceHash?: string | null;
+    hostProviderBindingHash?: string | null;
+};
+
+/**
+ * 回退新鲜度判定：manifest 视图必须可读、target 一致且 compile evidence 字段齐全。
+ * 禁止“文件存在即 fresh”；无法判定时一律 fail-closed。
+ */
+export function freshnessFromManifestView(view: LegionManifestFreshnessView | null, expectedTarget: string): FreshnessResult {
+    if (!view) {
+        return {fresh: false, reason: 'execution manifest unreadable'};
+    }
+    if (view.target !== expectedTarget) {
+        return {fresh: false, reason: `manifest target \`${view.target}\` != expected \`${expectedTarget}\``};
+    }
+    if (!view.semanticClosureHash || !view.canonicalSurfaceHash || !view.hostProviderBindingHash) {
+        return {fresh: false, reason: 'manifest missing compile evidence hashes'};
+    }
+    return {fresh: true};
+}
+
 export function isArtifactCacheFresh(artifactDir: string, expectedTarget: string): FreshnessResult {
-    const native = loadNative();
+    let native: ReturnType<typeof loadNative>;
+    try {
+        native = loadNative();
+    } catch (error) {
+        return {fresh: false, reason: `native addon unavailable: ${error instanceof Error ? error.message : String(error)}`};
+    }
     if (native.legionCheckArtifactFresh) {
         const outcome = native.legionCheckArtifactFresh(artifactDir, expectedTarget);
         return {fresh: outcome.fresh, reason: outcome.reason ?? undefined};
@@ -52,7 +82,8 @@ export function isArtifactCacheFresh(artifactDir: string, expectedTarget: string
     if (!existsSync(manifestPath)) {
         return {fresh: false, reason: 'missing run-contracts.txt'};
     }
-    return {fresh: true};
+    const view = native.legionReadExecutionManifest?.(artifactDir) ?? null;
+    return freshnessFromManifestView(view, expectedTarget);
 }
 
 /** 用 manifest 内 target 做新鲜度校验（避免硬编码 canonical triple）。 */
