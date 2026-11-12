@@ -143,6 +143,16 @@ pub(crate) fn compiler_input_for_with_dependencies(
     surface: GeneratedEntrySurface,
     extra_dependency_keys: &[String],
 ) -> AsgardResult<CompilerSourceInput> {
+    // 生成组显式依赖 std 时，std 的规范 primitive 声明进入可见面：生成单元必须退化为
+    // 同源投影（根命名空间重声明），否则规范位置上的第二条声明会与 std 并列冒领同一身份。
+    let std_visible = extra_dependency_keys
+        .iter()
+        .any(|key| source_groups.iter().any(|group| &group.dependency_key == key && group.name == "std"));
+    let projected = std_visible.then(|| crate::asgard::codegen::project_generated_scalars_onto_visible_owner(generated.source));
+    let generated = match projected.as_deref() {
+        Some(source) => GeneratedSource { producer: generated.producer, source },
+        None => generated,
+    };
     let mut input = compiler_input_for(source_groups, generated, surface)?;
     for generated_group in &mut input.generated {
         for key in extra_dependency_keys {

@@ -229,7 +229,10 @@ let label = "hi"
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
     let generated = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
-    assert!(generated.starts_with("using std.text;\n\n"), "生成单元必须显式导入文本合同:\n{generated}");
+    assert!(
+        generated.starts_with("namespace std.primitive;\n\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\nusing std.text;\n\n"),
+        "生成单元必须在规范位置自举标量身份并显式导入文本合同:\n{generated}"
+    );
     assert!(
         generated.contains(r#"return (sig_get_i32(sig_named("demo_count_sig"))).display()"#),
         "整数文本位置必须投影成接收者 `display()` 调用:\n{generated}"

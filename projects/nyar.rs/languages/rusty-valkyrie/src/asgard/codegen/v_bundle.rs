@@ -20,10 +20,29 @@ use crate::asgard::{
 ///
 /// `bool` 不在这里声明：它是语言编码型内建（类型名解析时 `encoding_builtin_type` 优先于
 /// 同名声明），本地声明只会成为同一身份的重复载体；移除必须与跨 surface 别名登记同批。
-const GENERATED_SCALAR_PRELUDE: &str = r#"[primitive("std::primitive::i32")]
+///
+/// 载体必须占据身份的规范位置（`namespace std.primitive;`）：封闭单元见不到 std 的
+/// 规范声明，身份引用 `std::primitive::i32` 只能在自身可见面内自命中；根命名空间下的
+/// 重声明无法证明同源，会被闭包身份来源门结构化拒绝。
+const GENERATED_SCALAR_PRELUDE: &str = r#"namespace std.primitive;
+
+[primitive("std::primitive::i32")]
 structure i32 { }
 
 "#;
+
+/// 生成组显式依赖 std 时，把自举声明退化为同源投影。
+///
+/// std 的规范声明进入可见面后，规范位置上的第二条同名声明会与 std 并列冒领同一身份
+/// （来源歧义）；去掉命名空间让载体落在根命名空间，身份引用按绝对限定名解析到 std
+/// 的规范 owner，由闭包登记为唯一别名载体。
+pub fn project_generated_scalars_onto_visible_owner(source: &str) -> String {
+    let bootstrap_namespace = "namespace std.primitive;\n\n";
+    match source.strip_prefix(bootstrap_namespace) {
+        Some(rest) => rest.to_string(),
+        None => source.to_string(),
+    }
+}
 
 /// 生成单元显式导入的 std 合同。
 ///
@@ -152,8 +171,9 @@ fn emit_mp_component_init(out: &mut String, component: &LoweredComponent) {
 }
 
 fn build_awsl_source_with_prelude(components: &[LoweredComponent], dom_or_mobile: &str, reactive: &str) -> String {
-    let mut out = GENERATED_STD_TEXT_IMPORT.to_string();
-    out.push_str(GENERATED_SCALAR_PRELUDE);
+    // 规范命名空间必须位于所有 `using` 与声明之前。
+    let mut out = GENERATED_SCALAR_PRELUDE.to_string();
+    out.push_str(GENERATED_STD_TEXT_IMPORT);
     out.push_str(dom_or_mobile);
     out.push_str(reactive);
     out.push_str("micro awsl_key_none(): utf8 { return \"\" }\n\n");

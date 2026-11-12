@@ -12,7 +12,7 @@ use oak_awsl::AwslParser;
 use rusty_valkyrie::{
     asgard::{
         awsl::{LoweringOptions, lower_component},
-        codegen::build_awsl_wasm_source,
+        codegen::{build_awsl_wasm_source, project_generated_scalars_onto_visible_owner},
         static_site::{StaticSiteOptions, build_static_site},
     },
     legion::CanonicalTarget,
@@ -128,7 +128,14 @@ fn std_sources_and_generated_unit_compile_together_with_std_identity_owner() {
         .iter()
         .map(|group| group.direct_dependencies.iter().map(String::as_str).collect::<Vec<_>>())
         .collect::<Vec<_>>();
-    let generated_files = vec![("asgard/generated.v".to_string(), generated.clone())];
+    // 生产组装在生成组显式依赖 std 时把自举声明退化为同源投影（见 `compiler_input_for_with_dependencies`），
+    // 闭包镜像必须同口径：投影文本 + 入口组与 std 组直接依赖。
+    let projected_generated = project_generated_scalars_onto_visible_owner(&generated);
+    let mut generated_dependencies: Vec<String> =
+        resolved.groups.iter().filter(|group| group.is_entry).map(|group| group.dependency_key.clone()).collect();
+    generated_dependencies.extend(resolved.groups.iter().filter(|group| group.name == "std").map(|group| group.dependency_key.clone()));
+    let generated_dependency_refs: Vec<&str> = generated_dependencies.iter().map(String::as_str).collect();
+    let generated_files = vec![("asgard/generated.v".to_string(), projected_generated.clone())];
     let mut inputs = resolved
         .groups
         .iter()
@@ -147,7 +154,7 @@ fn std_sources_and_generated_unit_compile_together_with_std_identity_owner() {
     inputs.push(ClosureGroupInput {
         dependency_key: GENERATED_GROUP_KEY,
         module_name: GENERATED_GROUP_KEY,
-        direct_dependencies: &[],
+        direct_dependencies: generated_dependency_refs.as_slice(),
         is_entry: true,
         files: generated_files.as_slice(),
     });

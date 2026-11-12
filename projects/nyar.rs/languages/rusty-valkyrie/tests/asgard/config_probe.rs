@@ -27,6 +27,7 @@ use std::{
 /// 夹具项目源级 `std/primitive` 声明族，与 `tests/legion/support` 同一合同：
 /// 数值原始类型名不是语言内建，必须绑定到源码声明身份。
 const CORE_PRIMITIVE_DECLARATIONS: &str = concat!(
+    "namespace std.primitive;\n",
     "[primitive(\"std::primitive::i8\")] structure i8 { }\n",
     "[primitive(\"std::primitive::i16\")] structure i16 { }\n",
     "[primitive(\"std::primitive::i32\")] structure i32 { }\n",
