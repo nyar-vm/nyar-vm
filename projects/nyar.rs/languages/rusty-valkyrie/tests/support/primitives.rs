@@ -139,8 +139,10 @@ pub(crate) fn with_primitives(source: &str) -> String {
 /// 同一可见面会出现两个同名候选（`nominal `i64` is ambiguous`）。因此只有
 /// 直接依赖不落在本次输入里的组才补——它没有可继承的声明来源。
 ///
-/// 同一依赖组内重复登记同一身份是结构化错误；跨依赖组携带同一身份是允许的
-/// 别名载体（见 `closure/primitive_identity.rs`）。
+/// 同一依赖组内重复登记同一身份是结构化错误；跨依赖组携带同一身份时，规范 owner
+/// 是声明全称（namespace 段 + 短名）恰好等于 `::` 身份引用的唯一声明，其余携带者
+/// 登记为别名载体；多个全称命中、或多个携带者而无人持有全称（独立 owner 冒领）
+/// 结构化拒绝（见 `closure/primitive_identity.rs`）。
 pub(crate) fn groups_with_primitives(mut groups: Vec<CompilerSourceGroup>) -> Vec<CompilerSourceGroup> {
     // 每组注入后实际持有的拼写：本地声明 ∪ 本地引用（引用缺失的会被注入补齐）。
     let declared: BTreeMap<String, BTreeSet<String>> = groups
