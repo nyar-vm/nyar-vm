@@ -57,6 +57,9 @@ pub struct TargetExecutionPlan {
     abi_names: BTreeMap<ItemInstanceId, QualifiedName>,
     imports: BTreeMap<ItemInstanceId, BackendImport>,
     sum_reps: BTreeMap<nyar_types::NominalInstanceId, nyar_types::layout_choice::SumRepresentation>,
+    /// 程序级文本表示模式；`None` 表示计划生产者尚未声明该事实，
+    /// 后端按托管语义 fail-closed，绝不由布局注册表为空回落成 raw。
+    program_text_representation: Option<ProgramTextRepresentation>,
 }
 
 /// 已由 Compiler 绑定身份、签名和链接合同的导入。
@@ -115,6 +118,19 @@ pub struct LibraryExportAbi {
     pub params: Vec<AbiCarrier>,
     /// 返回值载体；无返回值时为 [`AbiCarrier::Void`]。
     pub returns: AbiCarrier,
+}
+
+/// 程序级文本载体表示模式：表示计划的正式事实。
+///
+/// raw/managed 的选择必须由计划生产者显式声明并冻结进目标计划，发射期与
+/// ABI 合同只认这份声明；禁止由「布局注册表里没有 `utf8` 托管布局」反推
+/// 程序选择了 raw——上游漏登记整类布局时，missing 会被吸收成合法表示。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgramTextRepresentation {
+    /// 程序显式选择 raw 宿主串表示；未逐槽冻结托管布局的文本槽才是合法 raw。
+    Raw,
+    /// 程序选择托管文本表示；没有逐值/逐槽载体事实的文本槽一律按 missing 拒收。
+    Managed,
 }
 
 impl TargetExecutionPlan {
@@ -402,6 +418,10 @@ impl TargetExecutionPlan {
             abi_names,
             imports,
             sum_reps: program.representation().sum_reps.clone(),
+            // 正式表示计划（`RepresentationPlan`）尚无程序级文本表示字段，生产侧无法声明
+            // raw/managed 选择；保持 `None` 即 fail-closed，禁止在这里按布局注册表是否含
+            // `utf8` 反推模式。需前端身份线沿 `RepresentationPlan` 补齐该事实后接入。
+            program_text_representation: None,
         };
         plan.freeze_library_export_abis()?;
         Ok(plan)
@@ -517,6 +537,19 @@ impl TargetExecutionPlan {
     /// 这是 `Apply(Named, args)` 唯一可用的布局身份来源；按名字回查布局被禁止。
     pub fn aggregate_layout_by_nyar_type(&self) -> &BTreeMap<NyarType, nyar_types::LayoutId> {
         &self.aggregate_layout_by_nyar_type
+    }
+
+    /// 程序级文本表示模式；`None` 表示计划未声明该事实，后端按托管语义 fail-closed。
+    pub fn program_text_representation(&self) -> Option<ProgramTextRepresentation> {
+        self.program_text_representation
+    }
+
+    /// 冻结程序级文本表示模式：正式表示计划事实的唯一写入通道，
+    /// 由计划生产者（Compiler 管线 / 测试夹具）在构造期显式声明；
+    /// 发射期只读，禁止由布局注册表为空反推 raw。
+    pub fn freeze_program_text_representation(&mut self, representation: ProgramTextRepresentation) -> &mut Self {
+        self.program_text_representation = Some(representation);
+        self
     }
 
     /// 返回结构化 `NyarType` 到 unite 布局的映射。
