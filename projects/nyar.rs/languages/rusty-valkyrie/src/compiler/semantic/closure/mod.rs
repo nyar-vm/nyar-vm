@@ -109,7 +109,8 @@ pub enum SemanticClosureError {
         /// 命中的声明身份（依赖组::路径::种类::namespace::拥有者::名字）。
         declarations: Vec<String>,
     },
-    /// 同一 primitive 自举身份被两个声明携带：身份必须唯一，不得择一登记。
+    /// 同一 primitive 自举身份被同一可见面的两个声明携带，或跨可见面携带却没有唯一
+    /// 规范 owner 引用（多个全称命中、或多个携带者而无人持有全称）：不得择一登记。
     DuplicatePrimitiveIdentity {
         /// 重复的 `[primitive(...)]` 身份字符串。
         identity: String,

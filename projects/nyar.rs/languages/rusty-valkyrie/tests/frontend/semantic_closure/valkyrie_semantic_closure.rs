@@ -569,36 +569,135 @@ fn primitive_annotations_register_bootstrap_identities_before_visibility() {
 }
 
 #[test]
-fn cross_surface_primitive_identity_is_alias_with_non_generated_owner() {
+fn cross_surface_primitive_identity_resolves_canonical_by_qualified_reference() {
     // 封闭生成单元（`asgard.generated`）为宿主调用重声明自己用到的标量拼写：它与 std 的
-    // `[primitive]` 声明同身份但不是第二个 primitive。跨 surface（不同依赖组）同身份必须
-    // 登记为别名载体，规范 owner 是 std；inventory 按依赖组键排序，生成组先登记，
-    // 因此这条同时证明「生成组让位给非生成组」而不是先到先得。
+    // `[primitive]` 声明同身份但不是第二个 primitive。规范 owner 由身份引用本身裁决：
+    // 声明全称（namespace 段 + 短名）恰好等于身份的 std 声明是规范 owner，生成组声明
+    // 全称不等于身份，登记为别名载体。裁决不看组名，也不依赖登记顺序。
+    let std_files = || {
+        vec![
+            file("source/primitive/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }"),
+            file("source/primitive/bool.v", "namespace std.primitive;\n[primitive(\"std::primitive::bool\")]\nstructure bool { }"),
+        ]
+    };
+    let generated_files = || {
+        vec![file(
+            "asgard/generated.v",
+            "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[primitive(\"std::primitive::bool\")]\nstructure bool { }\n\n[export] micro run() -> i32 { return 0 }",
+        )]
+    };
+    for groups in [
+        [("std".to_string(), false, std_files()), ("asgard.generated".to_string(), true, generated_files())],
+        // 反序输入：结果必须逐条一致，证明 owner 不来自先到先得。
+        [("asgard.generated".to_string(), true, generated_files()), ("std".to_string(), false, std_files())],
+    ] {
+        let typed = groups.iter().map(|(key, is_entry, files)| (key.as_str(), *is_entry, files.clone())).collect::<Vec<_>>();
+        // 生成组只依赖应用入口组，std 不在其可见面；身份登记与可见性无关，跨组同身份仍须收成别名。
+        let closure = plan_with_visibility(&typed, &[&[], &[]]);
+        assert_eq!(closure.primitive_identities.len(), 2, "每个身份只保留规范 owner 一条记录");
+        for identity in ["std::primitive::i32", "std::primitive::bool"] {
+            let entry = closure.primitive_identities.get(identity).unwrap_or_else(|| panic!("`{identity}` 必须登记"));
+            assert_eq!(entry.declaration.dependency_key, "std", "`{identity}` 的规范 owner 必须是全称命中的声明: {:?}", entry.declaration);
+            assert_eq!(closure.primitive_identities.identity_of(&entry.declaration), Some(identity));
+            assert_eq!(entry.aliases.len(), 1, "`{identity}` 必须登记唯一的生成侧别名载体: {:?}", entry.aliases);
+            assert_eq!(entry.aliases[0].dependency_key, "asgard.generated");
+        }
+    }
+}
+
+#[test]
+fn independent_owners_claiming_canonical_qualified_name_are_rejected() {
+    // 两个独立 owner 在各自依赖组里都持有恰好等于身份的全称声明：并列冒领，结构化拒绝，
+    // 不得按组名或遍历顺序择一。
     let groups = [
+        ("std.one", false, vec![file("source/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }")]),
+        ("std.two", false, vec![file("source/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }")]),
+        ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return 0 }")]),
+    ];
+    let error = try_plan_with_visibility(&groups, &[&[], &[], &[]]).expect_err("并列全称命中必须失败");
+    match error {
+        SemanticClosureError::DuplicatePrimitiveIdentity { identity, declarations } => {
+            assert_eq!(identity, "std::primitive::i32");
+            assert_eq!(declarations.len(), 2, "两个冒领者都必须出现在诊断里: {declarations:?}");
+        }
+        other => panic!("expected DuplicatePrimitiveIdentity, got {other}"),
+    }
+}
+
+#[test]
+fn cross_surface_claims_without_canonical_reference_are_rejected() {
+    // 多个携带者而无人持有身份全称：没有任何声明能证明自己是规范 owner，结构化拒绝。
+    let carrier = |key: &'static str, path: &str| (key, false, vec![file(path, "[primitive(\"std::primitive::i32\")]\nstructure i32 { }")]);
+    let groups = [
+        carrier("island.a", "a.v"),
+        carrier("island.b", "b.v"),
+        ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return 0 }")]),
+    ];
+    let error = try_plan_with_visibility(&groups, &[&[], &[], &[]]).expect_err("无人持有全称的多携带者必须失败");
+    match error {
+        SemanticClosureError::DuplicatePrimitiveIdentity { identity, declarations } => {
+            assert_eq!(identity, "std::primitive::i32");
+            assert_eq!(declarations.len(), 2, "两个携带者都必须出现在诊断里: {declarations:?}");
+        }
+        other => panic!("expected DuplicatePrimitiveIdentity, got {other}"),
+    }
+}
+
+#[test]
+fn single_carrier_without_canonical_reference_owns_identity_for_bootstrap() {
+    // 唯一携带者没有竞争者：规范包尚未进入输入时（bootstrap/封闭生成单元单独构建），
+    // 它按身份登记为规范 owner，别名表为空。
+    let groups = [(
+        "generated.only",
+        true,
+        vec![file("generated.v", "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[export] micro run() -> i32 { return 0 }")],
+    )];
+    let closure = plan_with_visibility(&groups, &[&[]]);
+    let entry = closure.primitive_identities.get("std::primitive::i32").expect("唯一携带者必须登记");
+    assert_eq!(entry.declaration.dependency_key, "generated.only");
+    assert!(entry.aliases.is_empty(), "无竞争者时不得登记别名: {:?}", entry.aliases);
+}
+
+#[test]
+fn alias_rename_does_not_move_canonical_owner() {
+    // 别名载体改名（短名不再是身份末段）不改变规范 owner；载体仍按身份引用登记为别名。
+    let groups = [
+        ("std", false, vec![file("source/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }")]),
         (
-            "std",
-            false,
-            vec![
-                file("source/primitive/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }"),
-                file("source/primitive/bool.v", "namespace std.primitive;\n[primitive(\"std::primitive::bool\")]\nstructure bool { }"),
-            ],
-        ),
-        (
-            "asgard.generated",
+            "carrier",
             true,
             vec![file(
-                "asgard/generated.v",
-                "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[primitive(\"std::primitive::bool\")]\nstructure bool { }\n\n[export] micro run() -> i32 { return 0 }",
+                "carrier.v",
+                "[primitive(\"std::primitive::i32\")]\nstructure i32_carrier { }\n\n[export] micro run() -> i32 { return 0 }",
             )],
         ),
     ];
-    // 生成组只依赖应用入口组，std 不在其可见面；身份登记与可见性无关，跨组同身份仍须收成别名。
     let closure = plan_with_visibility(&groups, &[&[], &[]]);
-    assert_eq!(closure.primitive_identities.len(), 2, "每个身份只保留规范 owner 一条记录");
-    for identity in ["std::primitive::i32", "std::primitive::bool"] {
-        let entry = closure.primitive_identities.get(identity).unwrap_or_else(|| panic!("`{identity}` 必须登记"));
-        assert_eq!(entry.declaration.dependency_key, "std", "`{identity}` 的规范 owner 必须是非生成组: {:?}", entry.declaration);
-        assert_eq!(closure.primitive_identities.identity_of(&entry.declaration), Some(identity));
+    let entry = closure.primitive_identities.get("std::primitive::i32").expect("身份必须登记");
+    assert_eq!(entry.declaration.dependency_key, "std", "规范 owner 不随载体改名移动: {:?}", entry.declaration);
+    assert_eq!(entry.aliases.len(), 1);
+    assert_eq!(entry.aliases[0].name, "i32_carrier");
+}
+
+#[test]
+fn canonical_rename_breaks_the_reference_and_is_rejected() {
+    // 规范声明改名（全称不再命中身份）后，它与载体并列为「无全称携带者」：
+    // 身份引用失去规范 owner，结构化拒绝，不得静默把载体升格。
+    let groups = [
+        ("std", false, vec![file("source/i32.v", "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32_renamed { }")]),
+        (
+            "carrier",
+            true,
+            vec![file("carrier.v", "[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\n[export] micro run() -> i32 { return 0 }")],
+        ),
+    ];
+    let error = try_plan_with_visibility(&groups, &[&[], &[]]).expect_err("身份引用失去规范 owner 必须失败");
+    match error {
+        SemanticClosureError::DuplicatePrimitiveIdentity { identity, declarations } => {
+            assert_eq!(identity, "std::primitive::i32");
+            assert_eq!(declarations.len(), 2, "{declarations:?}");
+        }
+        other => panic!("expected DuplicatePrimitiveIdentity, got {other}"),
     }
 }
 

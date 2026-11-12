@@ -6,9 +6,12 @@
 //!
 //! 本表在闭包源码索引完成后、可见性与需求展开之前建立：键是声明携带的身份字符串
 //! （不是短名）。身份唯一性按可见面（依赖组）成立：同一依赖组（`DeclarationKey.dependency_key`）
-//! 内重复或畸形身份结构化失败，不允许名字表放行；跨依赖组携带同一身份是别名载体——
-//! 封闭生成单元会为宿主调用重声明自己用到的标量拼写，它不是依赖包声明的第二个 primitive，
-//! 规范 owner 优先非生成组。
+//! 内重复或畸形身份结构化失败，不允许名字表放行。跨依赖组携带同一身份时，规范 owner 由
+//! 身份引用本身裁决：身份是 `::` 限定名，声明全称（namespace 段 + 短名）恰好等于身份的
+//! 声明才是规范 owner，其余携带者是别名载体（封闭生成单元为宿主调用重声明自己用到的
+//! 标量拼写，它不是依赖包声明的第二个 primitive）。没有唯一规范 owner 的并列冒领——
+//! 多个全称命中，或多个携带者而无人持有全称——结构化拒绝；裁决只看声明自身事实，
+//! 不依赖组名或登记顺序。
 
 use std::collections::BTreeMap;
 
@@ -18,13 +21,15 @@ use crate::compiler::syntax::oak::ast;
 
 use super::SemanticClosureError;
 
-/// 一条 primitive 自举身份：身份字符串 → 携带它的声明身份。
+/// 一条 primitive 自举身份：身份字符串 → 规范 owner 与其别名载体。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrimitiveIdentity {
     /// 注解冻结的身份字符串，例如 `std::primitive::i32`。
     pub identity: String,
-    /// 携带 `[primitive(...)]` 注解的声明身份。
+    /// 规范 owner 声明身份：声明全称恰好等于身份引用；唯一携带者无竞争者时即规范 owner。
     pub declaration: DeclarationKey,
+    /// 别名载体：跨可见面携带同一身份引用、但自身全称不等于身份的声明（按声明身份有序）。
+    pub aliases: Vec<DeclarationKey>,
 }
 
 /// 可见性与需求展开之前从源码 inventory 建立的自举身份表。
@@ -88,49 +93,61 @@ pub(crate) fn primitive_annotation_identity(annotations: &[ast::Attribute]) -> O
     None
 }
 
-/// 封闭生成单元的依赖组键（`asgard::compile::compiler_input_for` 分配的组身份）。
+/// 校验身份字符串形态并按可验证的规范 owner 引用登记成表。
 ///
-/// 生成源码组不能继承依赖包的语义导出，会为重声明自己用到的标量拼写；这类声明是
-/// 同一 primitive 身份的生成侧载体，登记时让位于非生成组的规范 owner。
-const GENERATED_SOURCE_GROUP_KEY: &str = "asgard.generated";
-
-/// 声明是否属于封闭生成单元。
-fn is_generated_source_group(declaration: &DeclarationKey) -> bool {
-    declaration.dependency_key == GENERATED_SOURCE_GROUP_KEY
-}
-
-/// 校验身份字符串形态并登记成表。
-///
-/// 同一依赖组（同一可见面）内重复身份结构化失败，不得择一登记；跨依赖组携带同一身份
-/// 是别名载体，规范 owner 优先非生成组（已有记录是生成组且候选不是时改登记候选）。
-/// 两个非生成组跨组登记时保持先登记：inventory 按依赖组键有序遍历，结果确定。
+/// 同一依赖组（同一可见面）内重复身份结构化失败，不得择一登记。跨依赖组携带同一身份
+/// 时，规范 owner 是「声明全称恰好等于身份引用」的唯一声明，其余携带者登记为别名载体；
+/// 多个全称命中、或多个携带者而无人持有全称，都是独立 owner 冒领同一身份，结构化拒绝。
+/// 先按身份聚合再裁决，结果与输入登记顺序无关。
 pub(crate) fn build_primitive_identity_table(
     records: impl IntoIterator<Item = (DeclarationKey, String)>,
 ) -> Result<PrimitiveIdentityTable, SemanticClosureError> {
-    let mut table = PrimitiveIdentityTable::default();
+    let mut claims: BTreeMap<String, Vec<DeclarationKey>> = BTreeMap::new();
     for (declaration, identity) in records {
         validate_primitive_identity_format(&declaration, &identity)?;
-        // 先取出已有记录的 surface 事实，避免持有表内引用时改写表。
-        let existing = table.by_identity.get(&identity).map(|item| {
-            (item.declaration.dependency_key.clone(), item.declaration.encoded(), is_generated_source_group(&item.declaration))
-        });
-        if let Some((surface, encoded, existing_is_generated)) = existing {
-            if surface == declaration.dependency_key {
+        claims.entry(identity).or_default().push(declaration);
+    }
+    let mut table = PrimitiveIdentityTable::default();
+    for (identity, mut declarations) in claims {
+        declarations.sort();
+        // 同一可见面内重复携带：无论全称是否命中，都不允许择一。
+        let mut surfaces: BTreeMap<&str, Vec<&DeclarationKey>> = BTreeMap::new();
+        for declaration in &declarations {
+            surfaces.entry(declaration.dependency_key.as_str()).or_default().push(declaration);
+        }
+        if let Some(duplicates) = surfaces.values().find(|items| items.len() > 1) {
+            return Err(SemanticClosureError::DuplicatePrimitiveIdentity {
+                identity,
+                declarations: duplicates.iter().map(|declaration| declaration.encoded()).collect(),
+            });
+        }
+        let canonical: Vec<&DeclarationKey> =
+            declarations.iter().filter(|declaration| declaration_qualifies_as(*declaration, &identity)).collect();
+        let owner = match canonical.len() {
+            1 => canonical[0],
+            // 唯一携带者没有竞争者：bootstrap 场景（规范包尚未进入输入）它即规范 owner。
+            0 if declarations.len() == 1 => &declarations[0],
+            // 多个全称命中，或多个携带者而无人持有全称：独立 owner 冒领同一身份。
+            _ => {
                 return Err(SemanticClosureError::DuplicatePrimitiveIdentity {
                     identity,
-                    declarations: vec![encoded, declaration.encoded()],
+                    declarations: declarations.iter().map(DeclarationKey::encoded).collect(),
                 });
             }
-            // 跨 surface：别名载体。只有「生成组让位给非生成组」会改写规范 owner，
-            // 其余跨组登记保持先登记，别名声明不进入本表。
-            if existing_is_generated && !is_generated_source_group(&declaration) {
-                table.by_identity.insert(identity.clone(), PrimitiveIdentity { identity, declaration });
-            }
-            continue;
-        }
-        table.by_identity.insert(identity.clone(), PrimitiveIdentity { identity, declaration });
+        };
+        let aliases = declarations.iter().filter(|declaration| *declaration != owner).cloned().collect();
+        table.by_identity.insert(identity.clone(), PrimitiveIdentity { identity, declaration: owner.clone(), aliases });
     }
     Ok(table)
+}
+
+/// 声明全称（namespace 段按 `.` 展开 + 短名）是否恰好等于身份引用。
+fn declaration_qualifies_as(declaration: &DeclarationKey, identity: &str) -> bool {
+    let Some((namespace, name)) = identity.rsplit_once("::")
+    else {
+        return false;
+    };
+    declaration.name == name && declaration.namespace.iter().flat_map(|segment| segment.split('.')).eq(namespace.split("::"))
 }
 
 /// 身份字符串必须是 `::` 分隔的限定名：至少两段，每段为非空标识符。

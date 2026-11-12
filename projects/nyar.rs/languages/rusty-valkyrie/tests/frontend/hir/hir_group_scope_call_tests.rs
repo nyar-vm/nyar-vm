@@ -135,17 +135,27 @@ fn dotted_group_name_cross_namespace_call_is_visible() {
 /// 未声明依赖的跨包符号不得借共享前缀进入候选集。
 #[test]
 fn dotted_group_name_does_not_leak_sibling_package_call() {
+    // primitive 身份由共享的 `core` 组唯一持有：两个兄弟包各自携带同一 `[primitive]`
+    // 全称声明就是独立 owner 冒领同一身份，闭包在建表处结构化拒绝（见
+    // `closure/primitive_identity.rs`），不该混进本用例要验证的作用域泄漏判据。
     let groups = [
+        CompilerSourceGroup::single_source(
+            "core",
+            "core",
+            "namespace std.primitive;\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n",
+        ),
         CompilerSourceGroup::single_source(
             "std.adaptor.jvm",
             "std.adaptor.jvm",
             "namespace std.adaptor.jvm.text;\nmicro convert(value: i32): i32 { return value }\n",
-        ),
+        )
+        .with_direct_dependencies(vec!["core".into()]),
         CompilerSourceGroup::single_source(
             "std.adaptor.wasm",
             "std.adaptor.wasm",
             "namespace std.adaptor.wasm.console;\n[test]\nmicro write(value: i32): void { convert(value) }\n",
         )
+        .with_direct_dependencies(vec!["core".into()])
         .as_entry(),
     ];
     let error = compile(&groups).expect_err("未声明依赖的跨包符号不得借共享前缀进入候选集");
