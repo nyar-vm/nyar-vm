@@ -34,16 +34,31 @@ const TEXT_TO_BYTES_IMPORT: &str = "utf8.to_bytes";
 /// OVM 私有文本载体桥：`[u8]` 字节数组 → raw 宿主串（不要求 NUL 终止）。
 const TEXT_FROM_BYTES_IMPORT: &str = "utf8.from_bytes";
 
-/// `utf8` 槽在 OVM 上的两种物理载体。
+/// `utf8` 槽在 OVM 上的物理载体事实。
 ///
-/// 目标计划用 `value_layouts` / `return_layout` 冻结「这个槽是托管文本对象」；
-/// 宿主导入的返回值与字面量仍是 raw 串。只在边界按冻结事实转换，运行期不看
-/// `Value` 的实际类型兜底。
+/// 每个 `utf8` SSA 值的载体由 [`freeze_nyar_text_representations`] 在发射前逐行
+/// 冻结为显式计划事实：托管布局、入口形参槽、字面量 ABI、嵌套槽目标合同与宿主
+/// 边界各归各的规则；分类不到的值是 `missing` 事实——发射前结构化错误，绝不
+/// 解释为 raw。边界发射只读冻结表，运行期不看 `Value` 的实际类型兜底。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum TextCarrier {
     /// 宿主 ABI raw 串（`Value::String`）。
     Raw,
     /// 托管文本对象（`Value::Object`），携带计划冻结的布局身份。
+    Managed(LayoutId),
+}
+
+/// 文本边界目标槽的冻结表示事实。
+///
+/// `Raw` 与 `Managed` 都是显式声明：嵌套槽（字段/元素/载荷）与宿主边界由目标
+/// 合同固定 raw 串（与 `ovm_abi::Projection::project_text` 的 `TextSlot::Nested`
+/// 同源）；托管槽携带计划冻结的布局身份。「没有事实」不允许到达发射，由
+/// [`freeze_nyar_text_representations`] 在发射前拒绝。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TextSlotTarget {
+    /// 目标槽是宿主 raw 串：嵌套槽目标合同 / 宿主导入实参 / 纯 raw 片段形参槽。
+    Raw,
+    /// 目标槽是托管文本对象，布局身份由计划冻结。
     Managed(LayoutId),
 }
 
@@ -496,8 +511,8 @@ fn build_nyar_function_param_layouts(exec: &TargetExecutionPlan, operations: &[I
     map
 }
 
-/// 当前函数内 SSA 值 → 定义指令。载体分类沿 `StoreVar`/`Copy` 链走到源头，
-/// 只消费语义 MIR 的冻结定义，不在运行期观察 `Value` 的实际类型。
+/// 当前函数内 SSA 值 → 定义指令。仅供发射前的表示冻结扫描定义形态，
+/// 发射期不得沿定义链恢复载体。
 fn build_nyar_value_definitions<'a>(mir_fn: &'a MirFunction, slots: &ExecutableSlotPlan) -> BTreeMap<MirValueRef, &'a MirInstruction> {
     let mut map = BTreeMap::new();
     for block in &mir_fn.blocks {
@@ -508,6 +523,145 @@ fn build_nyar_value_definitions<'a>(mir_fn: &'a MirFunction, slots: &ExecutableS
         }
     }
     map
+}
+
+/// OVM 后端私有计划：为函数内每个 `utf8` SSA 值逐行冻结载体事实（raw/managed）。
+///
+/// 每条规则都是显式计划事实，发射期不得再沿 SSA 定义链恢复载体。定义形态事实
+/// 先于类型登记事实：字面量、嵌套槽读取与宿主导入返回的物理内容就是 raw 宿主串，
+/// 不因该值的 `TypeId` 在布局注册表里有托管布局而改写。
+/// 1. 字面量定义（`LoadConstant Utf8`）→ `Raw`（OVM 常量 ABI：字面量编码为
+///    `OdinConstant::String` 宿主 raw 串）；
+/// 2. 嵌套槽读取定义（`FieldGet`/`TupleGet`/`ArrayGet`/`SumPayloadGet`/`NullUnwrap`）→ `Raw`，
+///    与 `ovm_abi::Projection::project_text` 对 `TextSlot::Nested` 的显式声明同源：
+///    嵌套槽由目标合同固定为 raw 宿主串，不是发射器推断；
+/// 3. 外部宿主导入调用结果 → `Raw`（宿主边界 ABI 事实）；
+/// 4. 入口形参槽 → 与 OVM ABI 合同同一派生点 [`crate::ovm_abi::frozen_entry_parameter_layouts`]：
+///    解析到布局 → `Managed`；目标计划没有登记任何 `utf8` 托管布局（纯 raw 片段）→ `Raw`；
+///    计划已登记 `utf8` 布局而该槽解析不到 → 合同与运行时布局分叉，`missing`；
+/// 5. `value_layouts` 已登记 → `Managed(layout)`（前端类型身份事实：构造/调用产出的
+///    托管对象槽）；
+/// 6. `Copy`/`StoreVar`/恒等 `Cast` → 继承源操作数事实（搬运不改载体，迭代至不动点）；
+/// 7. 纯 raw 片段（计划未登记任何 `utf8` 托管布局）→ 其余 `utf8` 值一律 `Raw`
+///    （程序级显式 raw 事实）；
+/// 8. 其余 `utf8` 值是 `missing`：发射前结构化错误，不得解释为 raw
+///    （对齐 wasm 后端 `32c5081e` 的缺事实拒收先例）。
+fn freeze_nyar_text_representations(
+    exec: &TargetExecutionPlan,
+    mir_fn: &MirFunction,
+    value_definitions: &BTreeMap<MirValueRef, &MirInstruction>,
+    external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
+) -> crate::Result<BTreeMap<MirValueRef, TextCarrier>> {
+    // 程序级显式 raw 事实：目标计划没有冻结任何 `utf8` 托管布局（纯 raw 片段）。
+    let pure_raw = !exec.aggregate_layout_by_nyar_type().contains_key(&NyarType::Utf8);
+    let text_values: Vec<MirValueRef> =
+        mir_fn.value_types.iter().filter(|(_, ty)| matches!(**ty, NyarType::Utf8)).map(|(value, _)| *value).collect();
+    let entry_parameters: Vec<MirValueRef> =
+        mir_fn.blocks.iter().find(|block| block.id == mir_fn.entry).map(|block| block.parameters.clone()).unwrap_or_default();
+    let entry_layouts = crate::ovm_abi::frozen_entry_parameter_layouts(exec, mir_fn);
+
+    let mut table: BTreeMap<MirValueRef, TextCarrier> = BTreeMap::new();
+    let mut pending_moves: Vec<MirValueRef> = Vec::new();
+    for value in &text_values {
+        // 规则 1-3：定义形态的显式 raw 事实先于类型登记事实。
+        match value_definitions.get(value).map(|instruction| &instruction.kind) {
+            Some(MirInstructionKind::LoadConstant { constant: MirConstant::Utf8(_), .. }) => {
+                table.insert(*value, TextCarrier::Raw);
+                continue;
+            }
+            Some(
+                MirInstructionKind::FieldGet { .. }
+                | MirInstructionKind::TupleGet { .. }
+                | MirInstructionKind::ArrayGet { .. }
+                | MirInstructionKind::SumPayloadGet { .. }
+                | MirInstructionKind::NullUnwrap { .. },
+            ) => {
+                table.insert(*value, TextCarrier::Raw);
+                continue;
+            }
+            Some(MirInstructionKind::Call { callee: MirOperand::Item(instance), .. }) if external_link_by_instance.contains_key(instance) => {
+                table.insert(*value, TextCarrier::Raw);
+                continue;
+            }
+            Some(MirInstructionKind::Copy { .. } | MirInstructionKind::StoreVar { .. }) => {
+                pending_moves.push(*value);
+                continue;
+            }
+            Some(MirInstructionKind::Cast { ty, .. }) if matches!(ty, NyarType::Utf8) => {
+                pending_moves.push(*value);
+                continue;
+            }
+            _ => {}
+        }
+        // 规则 4：入口形参槽与 OVM ABI 合同同一派生点。
+        if let Some(position) = entry_parameters.iter().position(|parameter| parameter == value) {
+            match entry_layouts.get(position).copied().flatten() {
+                Some(layout) => {
+                    table.insert(*value, TextCarrier::Managed(layout));
+                }
+                None if pure_raw => {
+                    table.insert(*value, TextCarrier::Raw);
+                }
+                None => {
+                    return Err(format!(
+                        "OVM 文本表示计划分叉：入口形参 #{position}（%{}，symbol=`{}`）的 `utf8` 槽没有解析到目标计划已冻结的文本布局，\
+                         而计划已登记 `utf8` 托管布局身份；合同与运行时布局不一致，missing 事实不得解释为 raw",
+                        value.0, mir_fn.symbol
+                    ));
+                }
+            }
+            continue;
+        }
+        // 规则 5：类型身份登记的托管对象槽。
+        if let Some(layout) = mir_fn.value_layouts.get(value).copied() {
+            table.insert(*value, TextCarrier::Managed(layout));
+        }
+    }
+    if pure_raw {
+        for value in &text_values {
+            table.entry(*value).or_insert(TextCarrier::Raw);
+        }
+    }
+    // 规则 6：搬运事实不动点传播；源操作数先于目标分类（SSA 定义先于使用）。
+    loop {
+        let before = table.len();
+        let mut unresolved = Vec::new();
+        for value in std::mem::take(&mut pending_moves) {
+            let source = match value_definitions.get(&value).map(|instruction| &instruction.kind) {
+                Some(MirInstructionKind::Copy { source }) | Some(MirInstructionKind::StoreVar { value: source, .. }) => source,
+                Some(MirInstructionKind::Cast { source, .. }) => source,
+                _ => {
+                    unresolved.push(value);
+                    continue;
+                }
+            };
+            match source {
+                MirOperand::Value(origin) => match table.get(origin).copied() {
+                    Some(carrier) => {
+                        table.insert(value, carrier);
+                    }
+                    None => unresolved.push(value),
+                },
+                MirOperand::Constant(MirConstant::Utf8(_)) => {
+                    table.insert(value, TextCarrier::Raw);
+                }
+                _ => unresolved.push(value),
+            }
+        }
+        pending_moves = unresolved;
+        if table.len() == before {
+            break;
+        }
+    }
+    let missing: Vec<u32> = text_values.iter().filter(|value| !table.contains_key(value)).map(|value| value.0).collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "OVM 文本表示计划缺少载体事实：`utf8` SSA 值 {missing:?}（symbol=`{}`）没有已冻结的 raw/managed 行；\
+             缺布局是 missing 事实，发射前结构化拒收，不得解释为 raw（对齐 wasm 后端缺事实拒收先例）",
+            mir_fn.symbol
+        ));
+    }
+    Ok(table)
 }
 
 /// 库模式只导出**声明导出面**（`[export]` 名 ∪ 程序入口）；闭包内辅助函数保持内部 `Call` 可见性。
@@ -598,13 +752,17 @@ fn lower_mir_function_to_bytecode(
     let slots = ExecutableSlotPlan::plan_nyar(mir_fn);
     let block_order = collect_reachable_blocks(mir_fn);
     let value_definitions = build_nyar_value_definitions(mir_fn, &slots);
+    // 发射前冻结文本表示计划：缺载体事实的 `utf8` 值在此结构化拒收，
+    // 发射期只读冻结表，不再沿 SSA 定义链恢复载体。
+    let text_representations =
+        freeze_nyar_text_representations(&submission.backend_plan, mir_fn, &value_definitions, &external_link_by_instance)?;
 
     let mut lowerer = NyarMirLowerer {
         submission,
         ctx,
         mir_fn,
         slots,
-        value_definitions,
+        text_representations,
         emitter,
         function_index_by_instance,
         function_entry_arities,
@@ -633,8 +791,9 @@ struct NyarMirLowerer<'a, 'e> {
     ctx: ExecutableLoweringContext<'a>,
     mir_fn: &'a MirFunction,
     slots: ExecutableSlotPlan,
-    /// SSA 值 → 定义它的指令；文本载体分类沿定义链判定，不看运行期 `Value` 类型。
-    value_definitions: BTreeMap<MirValueRef, &'a MirInstruction>,
+    /// 发射前由 `freeze_nyar_text_representations` 冻结的逐值文本载体事实；
+    /// 边界发射只读这张表，不看 SSA 定义链，也不看运行期 `Value` 类型。
+    text_representations: BTreeMap<MirValueRef, TextCarrier>,
     emitter: &'a mut BytecodeEmitter<'e>,
     function_index_by_instance: &'a BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &'a BTreeMap<i32, usize>,
@@ -1047,9 +1206,9 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 let index_ty = NyarType::Integer32 { signed: true };
                 self.emit_operand_typed(index, Some(&index_ty))?;
                 let value_ty = self.array_element_type(array);
-                // 数组元素槽是嵌套文本槽：托管实参先抽取成 raw 再入槽。
+                // 数组元素槽是嵌套文本槽：目标合同固定 raw 宿主串，托管实参先抽取成 raw 再入槽。
                 if value_ty.as_ref() == Some(&NyarType::Utf8) {
-                    self.emit_text_boundary_operand(value, &NyarType::Utf8, None, "数组元素槽")?;
+                    self.emit_text_boundary_operand(value, &NyarType::Utf8, TextSlotTarget::Raw, "数组元素槽")?;
                 }
                 else {
                     self.emit_operand_typed(value, value_ty.as_ref())?;
@@ -1109,7 +1268,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                                 self.mir_fn.symbol
                             ));
                         };
-                        self.emit_text_boundary_operand(value, &return_ty, Some(return_layout), "返回值")?;
+                        self.emit_text_boundary_operand(value, &return_ty, TextSlotTarget::Managed(return_layout), "返回值")?;
                     }
                     else {
                         self.emit_operand_typed(value, Some(&return_ty))?;
@@ -1373,7 +1532,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             };
             if matches!(expected, NyarType::Utf8) {
                 let site = format!("OVM 外部调用 `{callee_name}`（import={import_symbol} instance={instance:?}）的实参 #{index}");
-                self.emit_text_boundary_operand(argument, &expected, None, &site)?;
+                // 宿主边界 ABI：实参槽是 raw 宿主串，托管文本必须先抽取成 raw。
+                self.emit_text_boundary_operand(argument, &expected, TextSlotTarget::Raw, &site)?;
                 continue;
             }
             match argument {
@@ -1431,8 +1591,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                          目标计划已登记 `utf8` 聚合布局身份，同一签名槽必须解析到该身份"
                     ));
                 }
+                let target = match slot_layout {
+                    Some(layout) => TextSlotTarget::Managed(layout),
+                    None => TextSlotTarget::Raw,
+                };
                 let site = format!("内部调用 `{path:?}` 实参 #{index}");
-                self.emit_text_boundary_operand(argument, &NyarType::Utf8, slot_layout, &site)?;
+                self.emit_text_boundary_operand(argument, &NyarType::Utf8, target, &site)?;
                 continue;
             }
             match argument {
@@ -1552,11 +1716,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         value_ty: Option<&NyarType>,
     ) -> crate::Result<()> {
         self.emit_operand(object)?;
-        // 嵌套槽是 raw 宿主串：托管文本实参入槽前必须抽取成 raw，与读取侧
-        // `value_text_carrier_at_depth` 对嵌套读取按 raw 的分类同源；否则字段槽
-        // 里混入托管对象，读取方按 raw 解释就会在运行期炸出类型错。
+        // 嵌套槽是 raw 宿主串（目标合同显式声明，读取侧由表示冻结规则 2 同源分类）：
+        // 托管文本实参入槽前必须抽取成 raw；否则字段槽里混入托管对象，读取方按
+        // raw 解释就会在运行期炸出类型错。
         if value_ty == Some(&NyarType::Utf8) {
-            self.emit_text_boundary_operand(value, &NyarType::Utf8, None, "嵌套文本槽")?;
+            self.emit_text_boundary_operand(value, &NyarType::Utf8, TextSlotTarget::Raw, "嵌套文本槽")?;
         }
         else {
             self.emit_operand_typed(value, value_ty)?;
@@ -1572,12 +1736,23 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             let param_local = self.slots.block_param_locals[&(target, index)];
             let param_ty = self.slots.local_types[usize::from(param_local)].clone();
             // SSA 合并块参数是文本载体边界的一种：值位置 `if` 的一臂给 raw 字面量、另一臂给
-            // 拼接产出的托管文本对象时，块参数槽按目标计划冻结的 layout 决定其物理载体。与
+            // 拼接产出的托管文本对象时，块参数槽按目标计划冻结的载体事实决定其物理表示。与
             // `Return`／内部调用实参共用 `emit_text_boundary_operand`，让 raw 入边物化为托管对象，
             // 否则下游 `self._repr` 字段访问会以 `expected object, got string` 崩溃。
             if matches!(param_ty, NyarType::Utf8) {
-                let slot_layout = self.mir_fn.value_layouts.get(&target_block.parameters[index]).copied();
-                self.emit_text_boundary_operand(argument, &param_ty, slot_layout, "块参数")?;
+                let parameter = target_block.parameters[index];
+                let target = match self.text_representations.get(&parameter).copied() {
+                    Some(TextCarrier::Managed(layout)) => TextSlotTarget::Managed(layout),
+                    Some(TextCarrier::Raw) => TextSlotTarget::Raw,
+                    None => {
+                        return Err(format!(
+                            "OVM 块参数 %{} 缺少冻结的文本载体事实（symbol=`{}`）：表示计划必须为每个 `utf8` 槽给出 raw/managed 行，\
+                             missing 事实不得解释为 raw",
+                            parameter.0, self.mir_fn.symbol
+                        ));
+                    }
+                };
+                self.emit_text_boundary_operand(argument, &param_ty, target, "块参数")?;
             }
             else {
                 self.emit_operand_typed(argument, Some(&param_ty))?;
@@ -1687,68 +1862,31 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         self.mir_fn.value_types.get(&value).cloned()
     }
 
-    /// 该 SSA 值是否按 `utf8` 文本语义使用。
-    fn value_is_text(&self, value: MirValueRef) -> bool {
-        matches!(self.value_semantic_type(value), Some(NyarType::Utf8))
-    }
-
     /// 文本操作数的冻结载体；非文本操作数返回 `None`。
     ///
-    /// 分类只消费语义 MIR 定义链与目标计划的 `value_layouts`，不看运行期
-    /// `Value` 的实际类型。
+    /// 只读发射前 `freeze_nyar_text_representations` 冻结的逐值事实表，不沿
+    /// SSA 定义链恢复载体，也不看运行期 `Value` 的实际类型。字面量操作数本身
+    /// 就是 OVM 常量 ABI 的宿主 raw 串（`OdinConstant::String`），不是定义链推断。
     fn operand_text_carrier(&self, operand: &MirOperand) -> Option<TextCarrier> {
-        self.operand_text_carrier_at_depth(operand, 0)
-    }
-
-    fn operand_text_carrier_at_depth(&self, operand: &MirOperand, depth: u32) -> Option<TextCarrier> {
         match operand {
-            MirOperand::Value(value) => self.value_text_carrier_at_depth(*value, depth),
+            MirOperand::Value(value) => self.text_representations.get(value).copied(),
             MirOperand::Constant(MirConstant::Utf8(_)) => Some(TextCarrier::Raw),
             _ => None,
         }
     }
 
-    /// 沿 SSA 定义链判定文本载体：
-    /// - 字面量与宿主导入输出是 raw（宿主 ABI 形态）；
-    /// - `StoreVar`/`Copy` 只跟源，本相不在槽内改载体；
-    /// - 其余带冻结 `value_layouts` 的文本值是托管对象，缺布局则视为 raw。
-    fn value_text_carrier_at_depth(&self, value: MirValueRef, depth: u32) -> Option<TextCarrier> {
-        if !self.value_is_text(value) || depth > 8 {
-            return None;
-        }
-        if let Some(instruction) = self.value_definitions.get(&value) {
-            match &instruction.kind {
-                MirInstructionKind::LoadConstant { constant: MirConstant::Utf8(_), .. } => return Some(TextCarrier::Raw),
-                MirInstructionKind::StoreVar { value: source, .. } | MirInstructionKind::Copy { source } => {
-                    return self.operand_text_carrier_at_depth(source, depth + 1);
-                }
-                MirInstructionKind::Call { callee: MirOperand::Item(instance), .. }
-                    if self.external_link_by_instance.contains_key(instance) =>
-                {
-                    return Some(TextCarrier::Raw);
-                }
-                // 嵌套槽（聚合字段 / 元组位 / 数组元素 / sum 载荷）在 OVM ABI 里冻结为
-                // raw 宿主串（`ovm_abi::Projection::project_text` 的 `TextSlot::Nested`
-                // 显式落 raw，绝不回查全局布局）：读取必须按 raw 分类，不得因为槽类型
-                // 带聚合布局就把运行期字符串当成托管文本对象透传。
-                MirInstructionKind::FieldGet { .. } | MirInstructionKind::TupleGet { .. } | MirInstructionKind::ArrayGet { .. }
-                | MirInstructionKind::SumPayloadGet { .. } => return Some(TextCarrier::Raw),
-                _ => {}
-            }
-        }
-        Some(self.mir_fn.value_layouts.get(&value).copied().map(TextCarrier::Managed).unwrap_or(TextCarrier::Raw))
-    }
-
-    /// 在文本边界（内部调用实参 / `Return` / 宿主导入实参）按冻结事实发射。
+    /// 在文本边界（字段 / 数组元素 / sum 载荷 / 块参数 / 内部调用实参 / `Return` /
+    /// 宿主导入实参）按冻结事实发射。
     ///
-    /// `slot_layout = Some(layout)` 表示目标槽是托管对象：raw 必须物化为该布局，
-    /// 已托管对象必须与该布局同一身份。`None` 表示目标槽是宿主 raw：托管对象必须
-    /// 抽取成 raw 串。
+    /// `target = Managed(layout)` 表示目标槽是托管对象：raw 必须物化为该布局，
+    /// 已托管对象必须与该布局同一身份。`target = Raw` 表示目标槽由目标合同固定为
+    /// 宿主 raw 串：托管对象必须抽取成 raw。两种目标事实都必须显式给出，
+    /// 「没有事实」在发射前的表示冻结里已结构化拒收。
     fn emit_text_boundary_operand(
         &mut self,
         operand: &MirOperand,
         expected: &NyarType,
-        slot_layout: Option<LayoutId>,
+        target: TextSlotTarget,
         site: &str,
     ) -> crate::Result<()> {
         if !matches!(expected, NyarType::Utf8) {
@@ -1763,17 +1901,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.mir_fn.symbol
             ));
         };
-        match (slot_layout, carrier) {
-            (Some(target), TextCarrier::Raw) => self.emit_text_materialize(target, operand, site),
-            (Some(target), TextCarrier::Managed(actual)) if actual == target => self.emit_text_raw_operand(operand, site),
-            (Some(target), TextCarrier::Managed(actual)) => Err(format!(
+        match (target, carrier) {
+            (TextSlotTarget::Managed(target), TextCarrier::Raw) => self.emit_text_materialize(target, operand, site),
+            (TextSlotTarget::Managed(target), TextCarrier::Managed(actual)) if actual == target => self.emit_text_raw_operand(operand, site),
+            (TextSlotTarget::Managed(target), TextCarrier::Managed(actual)) => Err(format!(
                 "OVM 文本载体布局不匹配：{} 的冻结 layout 是 {actual:?}，目标槽冻结 layout 是 {target:?}（{site}，symbol=`{}`）；\
                  不同文本布局不得跨边界直接传递",
                 self.operand_actual_type(operand),
                 self.mir_fn.symbol
             )),
-            (None, TextCarrier::Managed(_)) => self.emit_text_extract(operand, site),
-            (None, TextCarrier::Raw) => self.emit_text_raw_operand(operand, site),
+            (TextSlotTarget::Raw, TextCarrier::Managed(_)) => self.emit_text_extract(operand, site),
+            (TextSlotTarget::Raw, TextCarrier::Raw) => self.emit_text_raw_operand(operand, site),
         }
     }
 

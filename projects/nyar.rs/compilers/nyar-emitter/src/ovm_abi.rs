@@ -92,7 +92,8 @@ enum TextSlot {
     Parameter(usize),
     /// 返回槽；只认 `return_layout`。
     Return,
-    /// 嵌套槽（字段 / 元素 / 载荷）；没有逐槽冻结事实时显式落到 raw 宿主串。
+    /// 嵌套槽（字段 / 元素 / 载荷）；目标合同显式声明固定为 raw 宿主串，
+    /// 与 lowering 侧 `freeze_nyar_text_representations` 的嵌套读取规则同源。
     Nested,
 }
 
