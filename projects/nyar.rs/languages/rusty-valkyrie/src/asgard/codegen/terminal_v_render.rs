@@ -304,10 +304,9 @@ fn build_text_expr(module: &RenderModule, segments: &[RenderTextSegment], bindin
     parts.join(" ++ ")
 }
 
-/// 文本位置的表达式求值：响应式布尔/选项绑定读当前会话的类型化槽（经运行帧按显示名
-/// 换取句柄，与控件构造共享同一登记），非响应式绑定内联其 init 表达式；其余表达式
-/// 直接作为 V 代码求值并按 `Display` 合同投影为文本。整数响应式绑定在冻结会话模型中
-/// 没有类型化槽：保持原名，由编译面失败闭合，不伪造第二状态通道。
+/// 文本位置的表达式求值：响应式绑定（布尔/选项/整数）读当前会话的类型化槽（经运行帧
+/// 按显示名换取句柄，与控件构造共享同一登记），非响应式绑定内联其 init 表达式；其余
+/// 表达式直接作为 V 代码求值并按 `Display` 合同投影为文本。
 fn eval_text_expr(expr: &str, bindings: &[ScriptBinding]) -> String {
     eval_text_expr_guarded(expr, bindings, &mut Vec::new())
 }
@@ -372,7 +371,8 @@ fn substitute_terminal_reads(expr: &str, bindings: &[ScriptBinding]) -> String {
 }
 
 /// 响应式绑定的类型化槽读取表达式：布尔走 `FlagBinding` 槽，单选组走 `ChoiceBinding`
-/// 槽，句柄经当前运行帧按显示名换取（与 `awsl_checkbox` / `awsl_radio` 同一登记身份）。
+/// 槽，整数走 `IntBinding` 槽，句柄经当前运行帧按显示名换取（与 `awsl_checkbox` /
+/// `awsl_radio` 同一登记身份；整数槽的补丁通道为 `asgard_terminal_patch_int`）。
 fn terminal_slot_read(binding: &ScriptBinding) -> String {
     let name_lit = encode_v_text_literal(&binding.name);
     match binding.value_type {
@@ -384,8 +384,10 @@ fn terminal_slot_read(binding: &ScriptBinding) -> String {
             let initial = choice_init(&binding.init_expr);
             format!("session.choice(AsgardTuiBindings.choice(session, {name_lit}, {initial}))")
         }
-        // 冻结会话模型没有整数槽：保持原名，编译面失败闭合。
-        SignalValueType::I32 => binding.name.clone(),
+        SignalValueType::I32 => {
+            let initial = int_init(&binding.init_expr);
+            format!("session.int(AsgardTuiBindings.int(session, {name_lit}, {initial}))")
+        }
     }
 }
 
@@ -406,6 +408,12 @@ fn bool_init(init_expr: &str) -> String {
 fn choice_init(init_expr: &str) -> String {
     let trimmed = init_expr.trim();
     if trimmed.is_empty() { "\"\"".to_string() } else { trimmed.to_string() }
+}
+
+/// 整数槽初值：脚本绑定声明的初始表达式（可为负字面量），缺省时为 `0`。
+fn int_init(init_expr: &str) -> String {
+    let trimmed = init_expr.trim();
+    if trimmed.is_empty() { "0".to_string() } else { trimmed.to_string() }
 }
 
 fn extract_event(module: &RenderModule, attrs: &[RenderAttr]) -> Option<String> {
@@ -459,7 +467,11 @@ fn emit_handlers(handler_names: &[String]) -> String {
         let original = full_name.strip_prefix("awsl_call_").unwrap_or(full_name);
         writeln!(out, "# 事件处理函数 `{original}`：函数值回调，接收当前会话的可变引用。").unwrap();
         writeln!(out, "micro {full_name}(session: mut TuiSession) -> unit {{").unwrap();
-        writeln!(out, "    # 用户逻辑：经 asgard_terminal_patch_flag / asgard_terminal_patch_choice 按显示名更新类型化槽，").unwrap();
+        writeln!(
+            out,
+            "    # 用户逻辑：经 asgard_terminal_patch_flag / asgard_terminal_patch_choice / asgard_terminal_patch_int 按显示名更新类型化槽，"
+        )
+        .unwrap();
         writeln!(out, "    # 或 asgard_terminal_remount(session, awsl_build_*) 重建控件树后由事件循环继续。").unwrap();
         writeln!(out, "}}\n").unwrap();
     }

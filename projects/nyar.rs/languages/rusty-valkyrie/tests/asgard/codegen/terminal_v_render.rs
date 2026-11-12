@@ -52,8 +52,26 @@ let mut count: i32 = 0
     );
     let v = render_terminal_component_v(&component);
     assert!(!v.contains("tui_binding_get"), "旧绑定字符串读取通道未清退: {v}");
-    // 冻结会话模型没有整数槽：保持原名直接求值，由编译面失败闭合，不伪造状态通道。
-    assert!(v.contains("(count).display()"), "展示文本应直接求值并走 Display 投影: {v}");
+    // 整数响应式绑定读 `IntBinding` 类型化槽（经运行帧按显示名换取），再走 Display 投影。
+    assert!(
+        v.contains("awsl_text(\"Count: \" ++ (session.int(AsgardTuiBindings.int(session, \"count\", 0))).display())"),
+        "整数绑定文本应经类型化整数槽读取: {v}"
+    );
+}
+
+#[test]
+fn int_binding_text_reads_typed_session_slot_with_negative_initial() {
+    let component = lower(
+        r#"<widget><Text>{offset}</Text></widget>
+<script>
+let mut offset: i32 = -7
+</script>"#,
+    );
+    let v = render_terminal_component_v(&component);
+    assert!(
+        v.contains("(session.int(AsgardTuiBindings.int(session, \"offset\", -7))).display()"),
+        "整数槽初值须承载负字面量（带符号 i32 合同）: {v}"
+    );
 }
 
 #[test]
@@ -172,7 +190,7 @@ let mut color: utf8 = "red"
 #[test]
 fn golden_session_shaped_component() {
     let component = lower(
-        r#"<widget><Column><Text>Counter</Text><Button @click="on_add">Add</Button></Column></widget>
+        r#"<widget><Column><Text>Count: {count}</Text><Button @click="on_add">Add</Button></Column></widget>
 <script>
 let mut count: i32 = 0
 </script>"#,
@@ -182,7 +200,7 @@ let mut count: i32 = 0
 micro awsl_build_test(session: mut TuiSession) -> ArrayList<Widget> {
     let roots: ArrayList<Widget> = ArrayList::new(16)
     let children_0: ArrayList<Widget> = ArrayList::new(8)
-    let w1: Widget = awsl_text("Counter")
+    let w1: Widget = awsl_text("Count: " ++ (session.int(AsgardTuiBindings.int(session, "count", 0))).display())
     children_0.push(w1)
     let w2: Widget = awsl_button("Add", awsl_call_on_add)
     children_0.push(w2)
@@ -193,7 +211,7 @@ micro awsl_build_test(session: mut TuiSession) -> ArrayList<Widget> {
 
 # 事件处理函数 `on_add`：函数值回调，接收当前会话的可变引用。
 micro awsl_call_on_add(session: mut TuiSession) -> unit {
-    # 用户逻辑：经 asgard_terminal_patch_flag / asgard_terminal_patch_choice 按显示名更新类型化槽，
+    # 用户逻辑：经 asgard_terminal_patch_flag / asgard_terminal_patch_choice / asgard_terminal_patch_int 按显示名更新类型化槽，
     # 或 asgard_terminal_remount(session, awsl_build_*) 重建控件树后由事件循环继续。
 }
 
