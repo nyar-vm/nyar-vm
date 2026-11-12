@@ -6,8 +6,7 @@ use crate::asgard::{
     awsl::{LoweredComponent, ScriptBinding, SignalValueType, prepare_components_for_generation},
     codegen::{
         mobile_prelude::MOBILE_HOST_PRELUDE, mp_prelude::MP_SIG_PRELUDE, reactive_prelude::REACTIVE_PRELUDE,
-        terminal_prelude::terminal_prelude, terminal_v_render::render_terminal_component_v, ui_host_abi::resolve_sig_export,
-        v_prelude::DOM_PRELUDE, v_render::render_component_v,
+        terminal_v_render::render_terminal_component_v, ui_host_abi::resolve_sig_export, v_prelude::DOM_PRELUDE, v_render::render_component_v,
     },
     error::AsgardResult,
 };
@@ -49,16 +48,23 @@ pub fn build_awsl_host_source(components: &[LoweredComponent]) -> AsgardResult<S
     Ok(build_awsl_source_with_prelude(&prepared, MOBILE_HOST_PRELUDE, REACTIVE_PRELUDE))
 }
 
-/// 从所有 AWSL 组件生成终端 TUI 宿主 V 源码（纯 Valkyrie widget_* 调用）。
+/// 终端生成段的命名空间与显式导入。
 ///
-/// 终端路径是纯 V 实现：host_contract 原语 + `tui_runtime`（项目依赖闭包中的
-/// `std.terminal.tui.v`）+ AWSL 降低的 widget 构建代码合并为单一 `app.v`。
-/// 不依赖 DOM / 信号系统，状态由 TuiRuntime 绑定存储管理。
-pub fn build_awsl_terminal_source(components: &[LoweredComponent], tui_runtime: &str) -> AsgardResult<String> {
+/// 生成代码是 `asgard.generated` 命名空间下的纯消费方：类型与句柄来自 `std.terminal`
+/// （冻结会话外形），控件构造原语与运行入口来自 `asgard.terminal`（产品模块）。
+/// host_contract 声明归 `std.terminal` 唯一所有，生成单元不复制、不携带任何标准库
+/// 或产品运行时源码副本；两者必须由项目依赖闭包提供，缺失即编译面失败闭合。
+const TERMINAL_GENERATED_NAMESPACE: &str = "namespace asgard.generated;\n\nusing std.terminal;\nusing asgard.terminal;\n\n";
+
+/// 从所有 AWSL 组件生成终端 TUI 宿主 V 源码（冻结 session 外形的控件树构造）。
+///
+/// 终端路径消费 `std.terminal` 显式会话与 `asgard.terminal` 产品入口：生成代码只含
+/// 带 session 参数的控件树构造函数、函数值事件回调与交给 `asgard_terminal_run` 的
+/// 入口调用；不依赖 DOM / 信号系统，不内嵌运行时源码，也没有全局绑定存储通道。
+pub fn build_awsl_terminal_source(components: &[LoweredComponent]) -> AsgardResult<String> {
     let components = prepare_components_for_generation(components)?;
     let mut out = GENERATED_STD_TEXT_IMPORT.to_string();
-    out.push_str(&terminal_prelude(tui_runtime));
-    out.push_str("namespace std.terminal;\n\n");
+    out.push_str(TERMINAL_GENERATED_NAMESPACE);
     let mut generated = String::new();
     for component in &components {
         generated.push_str(&render_terminal_component_v(component));

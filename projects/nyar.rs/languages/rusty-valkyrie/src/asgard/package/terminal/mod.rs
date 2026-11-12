@@ -1,9 +1,9 @@
 //! 终端 TUI 打包：纯 V 源码（app.v）+ 原生可执行文件。
 //!
-//! 终端路径是完全纯 Valkyrie 实现：所有 TUI 业务逻辑（widget 树构建、绑定存储、
-//! 焦点导航、渲染调度、事件循环）由 V 源码承担，宿主只提供字符级 I/O 原语
-//!（`host_contract`）。本模块把已生成的 `app.v`（含 package graph 提供的 tui.v 运行时）
-//! 与原生可执行文件骨架一起打包（V→native 编译器补全后接入）。
+//! 终端路径是完全纯 Valkyrie 实现：会话、控件模型与事件循环由 `std.terminal` 承担，
+//! 控件构造原语与运行入口由 `asgard.terminal` 产品模块承担，宿主只提供字符级 I/O
+//! 原语（`host_contract`）。本模块把已生成的 `app.v`（仅含 `asgard.generated` 生成段，
+//! 运行时经项目依赖闭包解析）与原生可执行文件骨架一起打包（V→native 编译器补全后接入）。
 
 use crate::asgard::package::artifact::PackageArtifact;
 use acorn_host::host_exe::build_host_executable;

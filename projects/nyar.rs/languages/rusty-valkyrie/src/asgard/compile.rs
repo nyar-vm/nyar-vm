@@ -80,19 +80,6 @@ pub fn dependency_keys_for_packages(source_groups: &[CompilerSourceGroup], packa
         .collect()
 }
 
-/// 终端 TUI 运行时的唯一来源：项目依赖闭包中 `std` 包的 `terminal/tui.v`。
-///
-/// asgard 不携带标准库源码。终端 `app.v` 的运行时前导必须从已解析的源码组读取；
-/// 缺失时返回结构化失败，由 package graph 补齐依赖，而不是在 CLI 内嵌一份副本。
-pub fn terminal_runtime_source(groups: &[CompilerSourceGroup]) -> AsgardResult<&str> {
-    groups
-        .iter()
-        .flat_map(|group| group.sources.iter())
-        .find(|file| file.path.replace('\\', "/").ends_with("terminal/tui.v"))
-        .map(|file| file.source.as_str())
-        .ok_or_else(|| AsgardError::msg(report!("项目依赖闭包缺少 std.terminal 运行时源码 terminal/tui.v")))
-}
-
 /// 独立生成源码：唯一生成器身份与生成文本。
 ///
 /// 生成文本由 Asgard 从 AWSL 降低产生，作为 Compiler 的独立生成输入参与闭包；

@@ -26,7 +26,6 @@ pub mod reactive_prelude;
 pub mod section_framing;
 pub mod ssg_ovm;
 pub mod tailwind;
-pub mod terminal_prelude;
 pub mod terminal_v_render;
 pub mod ui_host_abi;
 pub mod v_bundle;

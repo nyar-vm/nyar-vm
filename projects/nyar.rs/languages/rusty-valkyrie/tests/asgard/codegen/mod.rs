@@ -15,6 +15,5 @@ mod mp_ir_runtime;
 mod mp_render;
 mod mp_style;
 mod section_framing;
-mod terminal_prelude;
 mod terminal_v_render;
 mod ui_host_abi;
