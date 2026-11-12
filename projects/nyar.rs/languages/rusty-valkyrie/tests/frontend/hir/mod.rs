@@ -40,6 +40,7 @@ mod hir_text_encoding_equivalence_tests;
 #[cfg(false)] // AstToHir 已移除、类型签名变化（架构迁移）
 mod hir_overload_singleton_tests;
 mod hir_quote_literal_tests;
+mod hir_unit_literal_tests;
 mod hir_trait_dispatch_evidence_tests;
 mod hir_trait_default_self_scope_tests;
 mod hir_trait_system_impl_identity_tests;

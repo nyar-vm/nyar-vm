@@ -281,6 +281,7 @@ fn lower_term_expression_body(
         })?,
         TermExpression::NamePath(path) => lower_name_expression(path, span.clone()),
         TermExpression::QuoteLiteral(literal) => lower_quote_literal_kind(literal, source_id)?,
+        TermExpression::UnitLiteral { .. } => HirExprKind::Literal(HirLiteral::Unit),
         TermExpression::IntegerLiteral { value, .. } => {
             HirExprKind::Literal(HirLiteral::Integer(integer_literal_value(split_numeric_type_suffix(value).0, false, span_range.clone())?))
         }
