@@ -100,15 +100,23 @@ impl MirBuilder {
                         return;
                     }
                 }
-                // 绑定注解为 `Nominal{usize}` 而 RHS（如 ArrayLength）仍为另一整数 TypeId 时，
-                // 以注解为准改写源值类型，避免 StoreVar result≠value（CAN015）。
+                // 绑定注解与源值类型比较前先按声明冻结的 primitive 身份归一表示
+                // （别名解析到同一载体身份），使同一身份的两种表示自然相等；归一后
+                // 仍不同且双方都是整数字面量形参口径，就是真正不同的数值类型，必须
+                // 结构化诊断拒绝，绝不改写源值类型规避 `StoreVar` 校验（CAN015）。
                 if let (Some(hint), MirOperand::Value(source)) = (&inferred_type, &operand) {
                     if let Some(concrete) = self.value_types.get(source).cloned() {
-                        if &concrete != hint
-                            && crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(hint, &self.field_declarations)
+                        let hint = crate::compiler::mir::ssa::expr_helpers::normalize_primitive_nominal(hint, &self.field_declarations);
+                        let concrete = crate::compiler::mir::ssa::expr_helpers::normalize_primitive_nominal(&concrete, &self.field_declarations);
+                        if hint != concrete
+                            && crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(&hint, &self.field_declarations)
                             && crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(&concrete, &self.field_declarations)
                         {
-                            self.value_types.insert(*source, hint.clone());
+                            self.diagnostics.push(MirDiagnostic::BindingAnnotationTypeMismatch {
+                                name: name.clone(),
+                                annotation: format!("{hint:?}"),
+                                source: format!("{concrete:?}"),
+                            });
                         }
                     }
                 }

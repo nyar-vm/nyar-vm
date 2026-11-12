@@ -69,6 +69,16 @@ pub enum MirDiagnostic {
         /// 上游解析保留的限定名称，仅用于诊断。
         symbol: String,
     },
+    /// 绑定注解类型与源值已记录类型是真正不同的数值类型：按声明冻结的 primitive
+    /// 身份归一表示后仍不相等，必须结构化拒绝，不得改写源值类型规避 `StoreVar` 校验。
+    BindingAnnotationTypeMismatch {
+        /// 绑定名。
+        name: String,
+        /// 绑定注解侧的类型渲染。
+        annotation: String,
+        /// 源值记录侧的类型渲染。
+        source: String,
+    },
     /// 同一 callable 实例被登记了两个不同的 ABI 诊断标签。
     ///
     /// 这是真实身份矛盾：一个 `ItemInstanceId` 只能对应一个可读标签。

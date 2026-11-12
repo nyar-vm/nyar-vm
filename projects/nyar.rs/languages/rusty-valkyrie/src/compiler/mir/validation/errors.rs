@@ -340,6 +340,10 @@ fn mir_diagnostic_args(row: DiagnosticRow, diagnostic: &MirDiagnostic) -> Diagno
         MirDiagnostic::UnresolvedFieldIdentity { field } => row.with_arg("field", DiagnosticArg::String(field.clone())),
         MirDiagnostic::UnlabeledTupleFieldAccess { field } => row.with_arg("field", DiagnosticArg::String(field.clone())),
         MirDiagnostic::UnresolvedCallableIdentity { symbol } => row.with_arg("symbol", DiagnosticArg::CallableShort(symbol.clone())),
+        MirDiagnostic::BindingAnnotationTypeMismatch { name, annotation, source } => row
+            .with_arg("name", DiagnosticArg::String(name.clone()))
+            .with_arg("annotation", DiagnosticArg::String(annotation.clone()))
+            .with_arg("source", DiagnosticArg::String(source.clone())),
         MirDiagnostic::ConflictingCallableLabel { instance, existing, incoming } => row
             .with_arg("instance", DiagnosticArg::String(instance.to_string()))
             .with_arg("existing", DiagnosticArg::CallableShort(existing.clone()))
@@ -372,6 +376,9 @@ fn mir_diagnostic_message(diagnostic: &MirDiagnostic) -> String {
             format!("MIR lowering rejected `.{field}` on an unlabeled tuple: positional tuples have no field labels")
         }
         MirDiagnostic::UnresolvedCallableIdentity { symbol } => format!("MIR lowering unresolved callable identity `{symbol}`"),
+        MirDiagnostic::BindingAnnotationTypeMismatch { name, annotation, source } => format!(
+            "MIR lowering rejected binding `{name}`: annotation type `{annotation}` and source value type `{source}` are distinct numeric types; the source type must not be rewritten to satisfy the store contract"
+        ),
         MirDiagnostic::ConflictingCallableLabel { instance, existing, incoming } => {
             format!("MIR lowering callable identity `{instance}` maps to both `{existing}` and `{incoming}`")
         }

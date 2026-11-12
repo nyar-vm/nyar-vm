@@ -205,6 +205,25 @@ pub(super) fn is_integer_literal_formal_type(ty: &ValkyrieType, structs: &[super
     }
 }
 
+/// 把无参 `Nominal` 的表示归一到声明冻结的 `[primitive]` 身份：类型侧缺身份而声明侧
+/// 携带身份时按声明补齐，使同一 primitive 身份的两种表示在比较前自然相等。
+/// 只补表示、不改声明归属；类型侧已携带身份时原样返回，身份矛盾留给结构化诊断。
+pub(super) fn normalize_primitive_nominal(ty: &ValkyrieType, structs: &[super::MirStruct]) -> ValkyrieType {
+    match ty {
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity: None } if arguments.is_empty() => {
+            match super::MirStruct::find_by_declaration(structs, *declaration) {
+                Some(structure) => ValkyrieType::Nominal {
+                    declaration: *declaration,
+                    arguments: Vec::new(),
+                    primitive_identity: structure.primitive_identity.clone(),
+                },
+                None => ty.clone(),
+            }
+        }
+        _ => ty.clone(),
+    }
+}
+
 /// 声明身份是否为数值 primitive：只认 `[primitive("std::primitive::…")]` 折叠出的载体。
 fn is_numeric_primitive_identity(identity: Option<&str>) -> bool {
     identity
