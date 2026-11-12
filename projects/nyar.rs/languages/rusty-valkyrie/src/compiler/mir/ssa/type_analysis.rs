@@ -223,6 +223,14 @@ pub fn type_identity_table(
             if let Some(result) = &variant.result_type {
                 collect(&mut types, result, true);
             }
+            // 多字段变体的 payload 是变体声明身份上的记录类型
+            // （`instantiate_payload` 的唯一派生口径）。canonical 登记 sum 布局时必须
+            // 直接查这张表，因此声明级记录类型在类型事实里不能缺席：只有值位置恰好
+            // 构造过该变体时才由 `SumNew.payload_type` 补进来，不可达变体会漏。
+            // 泛型 sum 的声明级布局不携带未代入 payload，实例记录由使用位置登记。
+            if let Some(Some(payload)) = sum.instantiate_payload(variant, &[]) {
+                collect(&mut types, &payload, true);
+            }
         }
     }
 
