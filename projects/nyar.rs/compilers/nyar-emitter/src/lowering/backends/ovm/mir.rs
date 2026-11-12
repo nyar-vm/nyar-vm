@@ -1642,10 +1642,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             MirConstant::Utf16(_) => {
                 return Err("OVM 常量 Utf16 缺少显式 UTF-16 文本 ABI 合同".to_string());
             }
-            // OVM 目标没有可空空引用的 ABI 合同；不得用 i32 0 冒充 null。
-            // 缺合同必须在 backend 边界结构化失败，不得 panic 击穿进程。
+            // 可空引用 ABI 合同已成立：`OdinConstant::Null` 编码/解码齐备，VM 物化为
+            // `Value::Null`，`IsNull`/`UnwrapNull` 内在指令与 JSON 桥双向 null 序列化均已接线。
+            // 仍禁止 `i32 0` 冒充 null；非空消费者拿到 `Value::Null` 会按运行期类型错误失败闭合。
             MirConstant::Null => {
-                return Err("OVM 常量 Null 缺少可空引用 ABI 合同；禁止用 i32 0 冒充 null".to_string());
+                self.emitter.emit_const_null();
             }
             MirConstant::Unit => {
                 self.emitter.emit_const_i32(0);
