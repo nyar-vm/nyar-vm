@@ -123,6 +123,7 @@ fn is_fresh_rejects_stale_host_provider_compile_evidence() {
             host_provider_binding_hash: "stale-host-provider-hash".into(),
             generated_source_hash: String::new(),
         }),
+        toolchain_fingerprint: rusty_valkyrie::legion::cache::toolchain_fingerprint(),
     };
     assert!(!manifest.is_fresh_for_plan(&plan).expect("freshness check"), "stale host provider evidence must invalidate execution manifest");
 }
@@ -211,6 +212,7 @@ fn sample_execution_manifest(plan: &BuildPlan, artifact_path: &Path, evidence: C
             validate: "exists".into(),
         }],
         compile_evidence: Some(evidence),
+        toolchain_fingerprint: rusty_valkyrie::legion::cache::toolchain_fingerprint(),
     }
 }
 
@@ -266,6 +268,92 @@ fn is_fresh_rejects_mismatched_compile_evidence_sidecar() {
         !manifest.is_fresh_for_plan(&plan).expect("freshness check"),
         "mismatched compile-evidence sidecar must invalidate execution manifest"
     );
+}
+
+fn matching_evidence(plan: &BuildPlan) -> CompileEvidenceDigest {
+    let expected = expected_resolver_compile_evidence(plan).expect("expected evidence");
+    CompileEvidenceDigest {
+        semantic_closure_hash: expected.semantic_closure_hash,
+        canonical_surface_hash: "canonical-surface-digest".into(),
+        host_provider_binding_hash: expected.host_provider_binding_hash,
+        generated_source_hash: String::new(),
+    }
+}
+
+#[test]
+fn verify_output_dir_accepts_self_consistent_manifest_round_trip() {
+    let (_directory, plan, artifact_path) = sample_freshness_plan();
+    let evidence = matching_evidence(&plan);
+    write_test_compile_evidence(&plan.output_dir, &evidence);
+    let manifest = sample_execution_manifest(&plan, &artifact_path, evidence);
+    manifest.write_to_output_dir(&plan.output_dir).expect("write manifest");
+    let reread = ExecutionManifest::read_from_output_dir(&plan.output_dir).expect("read manifest").expect("manifest present");
+    assert_eq!(reread.toolchain_fingerprint, rusty_valkyrie::legion::cache::toolchain_fingerprint(), "toolchain fingerprint must round-trip through VON");
+    assert_eq!(reread.verify_against_output_dir(&plan.output_dir).expect("verify"), None, "self-consistent manifest must verify fresh");
+}
+
+#[test]
+fn verify_output_dir_rejects_tampered_artifact_bytes() {
+    let (_directory, plan, artifact_path) = sample_freshness_plan();
+    let evidence = matching_evidence(&plan);
+    write_test_compile_evidence(&plan.output_dir, &evidence);
+    let manifest = sample_execution_manifest(&plan, &artifact_path, evidence);
+    std::fs::write(&artifact_path, b"tampered-artifact-bytes").expect("tamper artifact");
+    let reason = manifest.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    assert!(reason.contains("digest mismatch"), "unexpected reason: {reason}");
+}
+
+#[test]
+fn verify_output_dir_rejects_missing_artifact_file() {
+    let (_directory, plan, artifact_path) = sample_freshness_plan();
+    let evidence = matching_evidence(&plan);
+    write_test_compile_evidence(&plan.output_dir, &evidence);
+    let manifest = sample_execution_manifest(&plan, &artifact_path, evidence);
+    std::fs::remove_file(&artifact_path).expect("remove artifact");
+    let reason = manifest.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    assert!(reason.contains("missing from output dir"), "unexpected reason: {reason}");
+}
+
+#[test]
+fn verify_output_dir_rejects_missing_or_stale_toolchain_fingerprint() {
+    let (_directory, plan, artifact_path) = sample_freshness_plan();
+    let evidence = matching_evidence(&plan);
+    write_test_compile_evidence(&plan.output_dir, &evidence);
+    let base = sample_execution_manifest(&plan, &artifact_path, evidence);
+
+    let missing = ExecutionManifest { toolchain_fingerprint: String::new(), ..base.clone() };
+    let reason = missing.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    assert!(reason.contains("missing toolchain fingerprint"), "unexpected reason: {reason}");
+
+    let stale = ExecutionManifest { toolchain_fingerprint: "legion=0.0.0;compiler=deadbeef".into(), ..base };
+    let reason = stale.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    assert!(reason.contains("toolchain fingerprint"), "unexpected reason: {reason}");
+}
+
+#[test]
+fn verify_output_dir_rejects_missing_evidence_fields_and_sidecar() {
+    let (_directory, plan, artifact_path) = sample_freshness_plan();
+    let evidence = matching_evidence(&plan);
+    write_test_compile_evidence(&plan.output_dir, &evidence);
+    let base = sample_execution_manifest(&plan, &artifact_path, evidence);
+
+    let no_evidence = ExecutionManifest { compile_evidence: None, ..base.clone() };
+    let reason = no_evidence.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    assert!(reason.contains("missing compile_evidence"), "unexpected reason: {reason}");
+
+    let no_inputs = ExecutionManifest { inputs: Vec::new(), ..base.clone() };
+    let reason = no_inputs.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    assert!(reason.contains("input digests"), "unexpected reason: {reason}");
+
+    let no_artifacts = ExecutionManifest { artifacts: Vec::new(), ..base.clone() };
+    let reason = no_artifacts.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    assert!(reason.contains("artifact digests"), "unexpected reason: {reason}");
+
+    let (_directory2, plan2, artifact_path2) = sample_freshness_plan();
+    let evidence2 = matching_evidence(&plan2);
+    let manifest2 = sample_execution_manifest(&plan2, &artifact_path2, evidence2);
+    let reason = manifest2.verify_against_output_dir(&plan2.output_dir).expect("verify").expect("stale");
+    assert!(reason.contains("compile evidence sidecar"), "unexpected reason: {reason}");
 }
 
 #[test]

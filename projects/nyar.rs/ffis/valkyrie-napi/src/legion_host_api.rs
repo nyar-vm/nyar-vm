@@ -78,7 +78,11 @@ pub fn legion_read_execution_manifest(output_dir: String) -> Option<LegionExecut
     })
 }
 
-/// 判断输出目录中的 execution manifest 是否匹配目标且含编译证据。
+/// 判断输出目录中的 execution manifest 是否可信复用：target 匹配后，复用 Rust 侧
+/// `ExecutionManifest::verify_against_output_dir` 做真实摘要校验——schema/合同版本与
+/// 工具链指纹（含 compiler build identity）须与当前构建一致，输入/产物摘要字段须齐全，
+/// 落盘产物字节须与摘要一致，compile evidence 旁文件须与 manifest 记录一致。
+/// 缺字段、摘要不符、产物消失一律 `fresh:false` 并带 reason，不得只看 manifest 存在。
 #[napi]
 pub fn legion_check_artifact_fresh(output_dir: String, expected_target: String) -> LegionArtifactFreshness {
     let path = PathBuf::from(&output_dir);
@@ -98,10 +102,11 @@ pub fn legion_check_artifact_fresh(output_dir: String, expected_target: String) 
             reason: Some(format!("manifest target `{}` != expected `{}`", manifest.target, expected_target)),
         };
     }
-    if manifest.compile_evidence.is_none() {
-        return LegionArtifactFreshness { fresh: false, reason: Some("manifest missing compile_evidence".into()) };
+    match manifest.verify_against_output_dir(&path) {
+        Ok(None) => LegionArtifactFreshness { fresh: true, reason: None },
+        Ok(Some(reason)) => LegionArtifactFreshness { fresh: false, reason: Some(reason) },
+        Err(error) => LegionArtifactFreshness { fresh: false, reason: Some(format!("manifest verification failed: {error}")) },
     }
-    LegionArtifactFreshness { fresh: true, reason: None }
 }
 
 /// 运行 `legion test`（结构化；不经 argv）。

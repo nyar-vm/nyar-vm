@@ -151,6 +151,10 @@ pub struct ExecutionManifest {
     pub run_contracts: Vec<RunContract>,
     /// Compiler 成功路径的可复现证据（schema v3+）。
     pub compile_evidence: Option<CompileEvidenceDigest>,
+    /// 写入 manifest 时编译器的完整工具链指纹（含 compiler build identity）。
+    /// 旧 manifest 缺少该字段时按空串读取，新鲜度校验必须判 stale，不得静默放行。
+    #[serde(default)]
+    pub toolchain_fingerprint: String,
 }
 
 /// 单个构建输入的摘要（角色 + 相对路径 + 哈希）。
@@ -234,6 +238,7 @@ impl ExecutionManifest {
             artifacts: collect_execution_artifact_digests(&plan.output_dir)?,
             run_contracts: contracts.to_vec(),
             compile_evidence: Some(CompileEvidenceDigest::from(evidence)),
+            toolchain_fingerprint: crate::legion::cache::toolchain_fingerprint(),
         })
     }
 
@@ -302,6 +307,64 @@ impl ExecutionManifest {
         }
 
         Ok(true)
+    }
+
+    /// 不依赖 `BuildPlan` 的产物自洽校验，复用 [`Self::is_fresh_for_plan`] 的摘要核对逻辑：
+    /// schema/合同版本、工具链指纹（含 compiler build identity）与当前构建一致，输入/产物
+    /// 摘要字段齐全，落盘产物字节与摘要一致，compile evidence 旁文件与 manifest 记录一致。
+    ///
+    /// 返回 `Ok(None)` 表示可信复用；`Ok(Some(reason))` 指出第一处不可信事实。缺字段、
+    /// 摘要不符、产物消失一律给出 reason，不得返回成功形状。输入摘要在无 workspace 根
+    /// 时只能做结构核对，同版本换实现由工具链指纹兜底拒绝。
+    pub fn verify_against_output_dir(&self, output_dir: &Path) -> LegionResult<Option<String>> {
+        if self.schema_version != EXECUTION_MANIFEST_SCHEMA_VERSION {
+            return Ok(Some(format!("manifest schema_version {} != current {EXECUTION_MANIFEST_SCHEMA_VERSION}", self.schema_version)));
+        }
+        if self.identity_schema_version != nyar_types::IDENTITY_SCHEMA_VERSION
+            || self.mir_contract_version != nyar_types::MIR_CONTRACT_VERSION
+            || self.layout_plan_version != nyar_types::LAYOUT_PLAN_VERSION
+            || self.bytecode_format_version != odin_bytecode::BYTECODE_FORMAT_VERSION
+        {
+            return Ok(Some("manifest contract versions differ from current compiler contract versions".into()));
+        }
+        if self.toolchain_fingerprint.is_empty() {
+            return Ok(Some("manifest missing toolchain fingerprint".into()));
+        }
+        let current = crate::legion::cache::toolchain_fingerprint();
+        if self.toolchain_fingerprint != current {
+            return Ok(Some(format!("manifest toolchain fingerprint `{}` != current `{current}`", self.toolchain_fingerprint)));
+        }
+        if self.inputs.is_empty() {
+            return Ok(Some("manifest missing input digests".into()));
+        }
+        if self.inputs.iter().any(|input| input.role.is_empty() || input.path.is_empty() || input.hash.is_empty()) {
+            return Ok(Some("manifest input digest missing role/path/hash fields".into()));
+        }
+        if self.artifacts.is_empty() {
+            return Ok(Some("manifest missing artifact digests".into()));
+        }
+        for artifact in &self.artifacts {
+            if artifact.path.is_empty() || artifact.hash.is_empty() {
+                return Ok(Some("manifest artifact digest missing path/hash fields".into()));
+            }
+            let artifact_path = output_dir.join(PathBuf::from(&artifact.path));
+            if !artifact_path.is_file() {
+                return Ok(Some(format!("artifact `{}` missing from output dir", artifact.path)));
+            }
+            if hash_file_sha256(&artifact_path)? != artifact.hash {
+                return Ok(Some(format!("artifact `{}` digest mismatch", artifact.path)));
+            }
+        }
+        let Some(stored) = &self.compile_evidence else {
+            return Ok(Some("manifest missing compile_evidence".into()));
+        };
+        let Some(file_evidence) = read_compile_evidence_digest(output_dir)? else {
+            return Ok(Some(format!("compile evidence sidecar `{COMPILE_EVIDENCE_FILE_NAME}` missing")));
+        };
+        if file_evidence != *stored {
+            return Ok(Some("compile evidence sidecar does not match manifest compile_evidence".into()));
+        }
+        Ok(None)
     }
 }
 
