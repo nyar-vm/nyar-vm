@@ -14,7 +14,12 @@ export type LegionExecutionManifestView = {
     primaryLogicalEntry: string | null;
 };
 
-export type LegionArtifactFreshness = {fresh: boolean; reason: string | null};
+export type LegionArtifactFreshness = {
+    fresh: boolean;
+    reason: string | null;
+    /** 权威校验级别；正式复用只接受 `fully-verified`。 */
+    level: 'fully-verified' | 'artifact-self-consistent' | 'stale';
+};
 
 export type LegionTestOutcome = {
     ok: boolean;
@@ -95,7 +100,7 @@ type ValkyrieNativeAddon = {
     legionPlan(options: LegionPlanOptions): LegionPlanOutcome;
     legionBuild(options: LegionBuildOptions): LegionBuildOutcome;
     legionTest(projectDir: string, target?: string): LegionTestOutcome;
-    legionCheckArtifactFresh(outputDir: string, expectedTarget: string): LegionArtifactFreshness;
+    legionCheckArtifactFresh(outputDir: string, expectedTarget: string, projectDir?: string): LegionArtifactFreshness;
     legionReadExecutionManifest(outputDir: string): LegionExecutionManifestView | null;
     legionListOvmExports(module: string): string[];
     legionInvokeOvmExport(module: string, entry: string, argsJson: string): string;

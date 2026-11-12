@@ -8,7 +8,10 @@ use odin_bytecode::{OvmAbiSidecar, ovm_abi_sidecar_file};
 use odin_vm::{OdinVm, json_bridge};
 use rusty_valkyrie::legion::{
     CanonicalTarget,
+    cmds::error::LegionResult,
+    cmds::run::{ManifestVerificationContext, ManifestVerificationLevel, ManifestVerdict, collect_execution_input_digests, expected_resolver_compile_evidence},
     cmds::test::{TestArgs, run as run_test},
+    workspace::planner::{BuildRequest, WorkspaceResolver},
 };
 
 const EXECUTION_MANIFEST_FILE: &str = "run-contracts.txt";
@@ -35,10 +38,13 @@ pub struct LegionExecutionManifestView {
 /// 产物新鲜度检查结果。
 #[napi(object)]
 pub struct LegionArtifactFreshness {
-    /// 是否可信复用。
+    /// 是否可信复用；只有 `level == "fully-verified"` 才为 `true`。
     pub fresh: bool,
     /// 失败原因。
     pub reason: Option<String>,
+    /// 权威校验级别：`fully-verified` / `artifact-self-consistent` / `stale`。
+    /// 正式复用消费者只能对 `fully-verified` 放行。
+    pub level: String,
 }
 
 /// `legion test` 结构化结果。
@@ -78,35 +84,95 @@ pub fn legion_read_execution_manifest(output_dir: String) -> Option<LegionExecut
     })
 }
 
-/// 判断输出目录中的 execution manifest 是否可信复用：target 匹配后，复用 Rust 侧
-/// `ExecutionManifest::verify_against_output_dir` 做真实摘要校验——schema/合同版本与
-/// 工具链指纹（含 compiler build identity）须与当前构建一致，输入/产物摘要字段须齐全，
+const FRESHNESS_LEVEL_FULLY: &str = "fully-verified";
+const FRESHNESS_LEVEL_SELF_CONSISTENT: &str = "artifact-self-consistent";
+const FRESHNESS_LEVEL_STALE: &str = "stale";
+
+fn stale_freshness(reason: String) -> LegionArtifactFreshness {
+    LegionArtifactFreshness { fresh: false, reason: Some(reason), level: FRESHNESS_LEVEL_STALE.into() }
+}
+
+fn verdict_to_freshness(verdict: LegionResult<ManifestVerdict>) -> LegionArtifactFreshness {
+    match verdict {
+        Ok(ManifestVerdict::Verified(ManifestVerificationLevel::FullyVerified)) => {
+            LegionArtifactFreshness { fresh: true, reason: None, level: FRESHNESS_LEVEL_FULLY.into() }
+        }
+        Ok(ManifestVerdict::Verified(ManifestVerificationLevel::ArtifactSelfConsistent)) => LegionArtifactFreshness {
+            fresh: false,
+            reason: Some("artifact self-consistent only: inputs not verified against current workspace; pass projectDir for formal reuse".into()),
+            level: FRESHNESS_LEVEL_SELF_CONSISTENT.into(),
+        },
+        Ok(ManifestVerdict::Stale(reason)) => stale_freshness(reason),
+        Err(error) => stale_freshness(format!("manifest verification failed: {error}")),
+    }
+}
+
+/// 判断输出目录中的 execution manifest 是否可信复用：target 匹配后，走 Rust 侧唯一
+/// 权威核心 [`ExecutionManifest::verify`] 做真实摘要校验——schema/合同版本与工具链
+/// 指纹（含 compiler build identity）须与当前构建一致，输入/产物摘要字段须齐全，
 /// 落盘产物字节须与摘要一致，compile evidence 旁文件须与 manifest 记录一致。
+///
 /// 缺字段、摘要不符、产物消失一律 `fresh:false` 并带 reason，不得只看 manifest 存在。
+///
+/// `project_dir` 提供时，核心会重算当前 workspace 输入摘要与 resolver compile
+/// evidence，达到 `fully-verified`；不提供时最高只能达到 `artifact-self-consistent`，
+/// 正式复用消费者不得放行。
 #[napi]
-pub fn legion_check_artifact_fresh(output_dir: String, expected_target: String) -> LegionArtifactFreshness {
+pub fn legion_check_artifact_fresh(output_dir: String, expected_target: String, project_dir: Option<String>) -> LegionArtifactFreshness {
     let path = PathBuf::from(&output_dir);
     let manifest_path = path.join(EXECUTION_MANIFEST_FILE);
     if !manifest_path.is_file() {
-        return LegionArtifactFreshness { fresh: false, reason: Some("missing run-contracts.txt".into()) };
+        return stale_freshness("missing run-contracts.txt".into());
     }
     let manifest = match read_manifest(&path) {
         Some(m) => m,
         None => {
-            return LegionArtifactFreshness { fresh: false, reason: Some("failed to parse run-contracts.txt".into()) };
+            return stale_freshness("failed to parse run-contracts.txt".into());
         }
     };
     if manifest.target != expected_target {
-        return LegionArtifactFreshness {
-            fresh: false,
-            reason: Some(format!("manifest target `{}` != expected `{}`", manifest.target, expected_target)),
-        };
+        return stale_freshness(format!("manifest target `{}` != expected `{}`", manifest.target, expected_target));
     }
-    match manifest.verify_against_output_dir(&path) {
-        Ok(None) => LegionArtifactFreshness { fresh: true, reason: None },
-        Ok(Some(reason)) => LegionArtifactFreshness { fresh: false, reason: Some(reason) },
-        Err(error) => LegionArtifactFreshness { fresh: false, reason: Some(format!("manifest verification failed: {error}")) },
-    }
+    let verdict = match &project_dir {
+        Some(dir) => {
+            let target = match CanonicalTarget::parse(&expected_target) {
+                Ok(parsed) => parsed,
+                Err(error) => return stale_freshness(format!("invalid expected target `{expected_target}`: {error}")),
+            };
+            let project_path = PathBuf::from(dir);
+            let workspace = match WorkspaceResolver::discover_for_project(&project_path) {
+                Ok(w) => w,
+                Err(error) => return stale_freshness(format!("workspace discovery failed for `{dir}`: {error}")),
+            };
+            let request = BuildRequest {
+                project_dir: project_path,
+                target,
+                output_dir: Some(path.clone()),
+                ..Default::default()
+            };
+            let plan = match workspace.build_plan(&request) {
+                Ok(p) => p,
+                Err(error) => return stale_freshness(format!("build plan failed for `{dir}`: {error}")),
+            };
+            let inputs = match collect_execution_input_digests(&plan) {
+                Ok(v) => v,
+                Err(error) => return stale_freshness(format!("input digests: {error}")),
+            };
+            let expected = match expected_resolver_compile_evidence(&plan) {
+                Ok(v) => v,
+                Err(error) => return stale_freshness(format!("expected evidence: {error}")),
+            };
+            let plan_target = plan.project.build_target.target.to_string();
+            let context = ManifestVerificationContext {
+                expected_project: Some((plan.project.name.as_str(), plan_target.as_str(), plan.project.artifact_kind)),
+                current_inputs: Some(&inputs),
+                expected_evidence: Some(&expected),
+            };
+            manifest.verify(&path, &context)
+        }
+        None => manifest.verify_against_output_dir(&path),
+    };
+    verdict_to_freshness(verdict)
 }
 
 /// 运行 `legion test`（结构化；不经 argv）。

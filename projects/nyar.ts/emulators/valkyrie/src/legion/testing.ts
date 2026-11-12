@@ -1,7 +1,7 @@
 import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 
-import {loadNative} from '../native.ts';
+import {loadNative, type LegionArtifactFreshness} from '../native.ts';
 
 export const NODE_WASM_TARGET = 'wasm32-node-unknown-wasm';
 
@@ -42,57 +42,45 @@ export function readExecutionManifest(artifactDir: string): {
     };
 }
 
-/** native `legionCheckArtifactFresh` 缺失时的回退判定所需的最小 manifest 视图字段。 */
-export type LegionManifestFreshnessView = {
-    target: string;
-    semanticClosureHash?: string | null;
-    canonicalSurfaceHash?: string | null;
-    hostProviderBindingHash?: string | null;
-};
-
 /**
- * 回退新鲜度判定：manifest 视图必须可读、target 一致且 compile evidence 字段齐全。
- * 禁止“文件存在即 fresh”；无法判定时一律 fail-closed。
+ * native 权威校验结果 → 消费者判定。唯一放行条件是 `fully-verified`：
+ * 产物自洽（缺当前 workspace 输入上下文）与 stale 一律拒绝复用；
+ * validator 结果缺失同样拒绝，不得降级成“target 相同 + hash 非空即 fresh”。
  */
-export function freshnessFromManifestView(view: LegionManifestFreshnessView | null, expectedTarget: string): FreshnessResult {
-    if (!view) {
-        return {fresh: false, reason: 'execution manifest unreadable'};
+export function freshnessFromNativeOutcome(outcome: LegionArtifactFreshness | null | undefined): FreshnessResult {
+    if (!outcome) {
+        return {fresh: false, reason: 'native validator legionCheckArtifactFresh unavailable; refusing artifact reuse'};
     }
-    if (view.target !== expectedTarget) {
-        return {fresh: false, reason: `manifest target \`${view.target}\` != expected \`${expectedTarget}\``};
-    }
-    if (!view.semanticClosureHash || !view.canonicalSurfaceHash || !view.hostProviderBindingHash) {
-        return {fresh: false, reason: 'manifest missing compile evidence hashes'};
+    if (outcome.level !== 'fully-verified' || !outcome.fresh) {
+        return {
+            fresh: false,
+            reason: outcome.reason ?? `native freshness verdict \`${outcome.level}\` is not fully-verified; refusing artifact reuse`,
+        };
     }
     return {fresh: true};
 }
 
-export function isArtifactCacheFresh(artifactDir: string, expectedTarget: string): FreshnessResult {
+export function isArtifactCacheFresh(artifactDir: string, expectedTarget: string, projectDir?: string): FreshnessResult {
     let native: ReturnType<typeof loadNative>;
     try {
         native = loadNative();
     } catch (error) {
         return {fresh: false, reason: `native addon unavailable: ${error instanceof Error ? error.message : String(error)}`};
     }
-    if (native.legionCheckArtifactFresh) {
-        const outcome = native.legionCheckArtifactFresh(artifactDir, expectedTarget);
-        return {fresh: outcome.fresh, reason: outcome.reason ?? undefined};
+    const validator = native.legionCheckArtifactFresh;
+    if (!validator) {
+        return {fresh: false, reason: 'native validator legionCheckArtifactFresh unavailable; refusing artifact reuse'};
     }
-    const manifestPath = join(artifactDir, 'run-contracts.txt');
-    if (!existsSync(manifestPath)) {
-        return {fresh: false, reason: 'missing run-contracts.txt'};
-    }
-    const view = native.legionReadExecutionManifest?.(artifactDir) ?? null;
-    return freshnessFromManifestView(view, expectedTarget);
+    return freshnessFromNativeOutcome(validator.call(native, artifactDir, expectedTarget, projectDir));
 }
 
 /** 用 manifest 内 target 做新鲜度校验（避免硬编码 canonical triple）。 */
-export function isArtifactCacheFreshForBuild(artifactDir: string): FreshnessResult {
+export function isArtifactCacheFreshForBuild(artifactDir: string, projectDir?: string): FreshnessResult {
     const manifest = readExecutionManifest(artifactDir);
     if (!manifest?.target) {
         return {fresh: false, reason: 'missing execution manifest target'};
     }
-    return isArtifactCacheFresh(artifactDir, manifest.target);
+    return isArtifactCacheFresh(artifactDir, manifest.target, projectDir);
 }
 
 export function listWasmModuleExports(wasmPath: string): string[] {

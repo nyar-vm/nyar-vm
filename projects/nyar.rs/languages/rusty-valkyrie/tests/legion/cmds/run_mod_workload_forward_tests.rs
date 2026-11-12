@@ -280,8 +280,16 @@ fn matching_evidence(plan: &BuildPlan) -> CompileEvidenceDigest {
     }
 }
 
+fn stale_reason(manifest: &ExecutionManifest, output_dir: &Path) -> String {
+    let verdict = manifest.verify_against_output_dir(output_dir).expect("verify");
+    match verdict {
+        ManifestVerdict::Stale(reason) => reason,
+        other => panic!("expected stale verdict, got {other:?}"),
+    }
+}
+
 #[test]
-fn verify_output_dir_accepts_self_consistent_manifest_round_trip() {
+fn verify_output_accepts_self_consistent_manifest_only_at_artifact_level() {
     let (_directory, plan, artifact_path) = sample_freshness_plan();
     let evidence = matching_evidence(&plan);
     write_test_compile_evidence(&plan.output_dir, &evidence);
@@ -289,7 +297,60 @@ fn verify_output_dir_accepts_self_consistent_manifest_round_trip() {
     manifest.write_to_output_dir(&plan.output_dir).expect("write manifest");
     let reread = ExecutionManifest::read_from_output_dir(&plan.output_dir).expect("read manifest").expect("manifest present");
     assert_eq!(reread.toolchain_fingerprint, rusty_valkyrie::legion::cache::toolchain_fingerprint(), "toolchain fingerprint must round-trip through VON");
-    assert_eq!(reread.verify_against_output_dir(&plan.output_dir).expect("verify"), None, "self-consistent manifest must verify fresh");
+    // 无当前 workspace 输入上下文时，自洽 manifest 最高只到"仅产物自洽"，不得给出可复用的 fresh。
+    assert_eq!(
+        reread.verify_against_output_dir(&plan.output_dir).expect("verify"),
+        ManifestVerdict::Verified(ManifestVerificationLevel::ArtifactSelfConsistent),
+        "plan-free verification must cap at artifact-self-consistent"
+    );
+    assert!(!reread.verify_against_output_dir(&plan.output_dir).expect("verify").is_fully_verified(), "artifact-self-consistent is not fully verified");
+}
+
+#[test]
+fn verify_with_plan_context_reaches_fully_verified() {
+    let (_directory, plan, artifact_path) = sample_freshness_plan();
+    let evidence = matching_evidence(&plan);
+    write_test_compile_evidence(&plan.output_dir, &evidence);
+    let manifest = sample_execution_manifest(&plan, &artifact_path, evidence);
+    let inputs = collect_execution_input_digests(&plan).expect("input digests");
+    let expected = expected_resolver_compile_evidence(&plan).expect("expected evidence");
+    let target = plan.project.build_target.target.to_string();
+    let context = ManifestVerificationContext {
+        expected_project: Some((plan.project.name.as_str(), target.as_str(), plan.project.artifact_kind)),
+        current_inputs: Some(&inputs),
+        expected_evidence: Some(&expected),
+    };
+    assert_eq!(
+        manifest.verify(&plan.output_dir, &context).expect("verify"),
+        ManifestVerdict::Verified(ManifestVerificationLevel::FullyVerified),
+        "full workspace input context must reach fully-verified"
+    );
+}
+
+#[test]
+fn verify_rejects_manifest_from_different_compiler_build() {
+    // 同 manifest 换构建身份（dirty 内容变化会改变 compiler= 段）→ stale。
+    let (_directory, plan, artifact_path) = sample_freshness_plan();
+    let evidence = matching_evidence(&plan);
+    write_test_compile_evidence(&plan.output_dir, &evidence);
+    let manifest = sample_execution_manifest(&plan, &artifact_path, evidence);
+    let inputs = collect_execution_input_digests(&plan).expect("input digests");
+    let expected = expected_resolver_compile_evidence(&plan).expect("expected evidence");
+    let target = plan.project.build_target.target.to_string();
+    let context = ManifestVerificationContext {
+        expected_project: Some((plan.project.name.as_str(), target.as_str(), plan.project.artifact_kind)),
+        current_inputs: Some(&inputs),
+        expected_evidence: Some(&expected),
+    };
+    let current = rusty_valkyrie::legion::cache::toolchain_fingerprint();
+    let other_build = ExecutionManifest {
+        toolchain_fingerprint: format!("{current};compiler=ffffffffffff-dirty0123456"),
+        ..manifest.clone()
+    };
+    let verdict = other_build.verify(&plan.output_dir, &context).expect("verify");
+    let reason = verdict.stale_reason().unwrap_or_else(|| panic!("different compiler build must be stale, got {verdict:?}"));
+    assert!(reason.contains("toolchain fingerprint"), "unexpected reason: {reason}");
+    assert!(!other_build.is_fresh_for_plan(&plan).expect("freshness check"), "is_fresh_for_plan must reject foreign compiler build identity");
 }
 
 #[test]
@@ -299,7 +360,7 @@ fn verify_output_dir_rejects_tampered_artifact_bytes() {
     write_test_compile_evidence(&plan.output_dir, &evidence);
     let manifest = sample_execution_manifest(&plan, &artifact_path, evidence);
     std::fs::write(&artifact_path, b"tampered-artifact-bytes").expect("tamper artifact");
-    let reason = manifest.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    let reason = stale_reason(&manifest, &plan.output_dir);
     assert!(reason.contains("digest mismatch"), "unexpected reason: {reason}");
 }
 
@@ -310,7 +371,7 @@ fn verify_output_dir_rejects_missing_artifact_file() {
     write_test_compile_evidence(&plan.output_dir, &evidence);
     let manifest = sample_execution_manifest(&plan, &artifact_path, evidence);
     std::fs::remove_file(&artifact_path).expect("remove artifact");
-    let reason = manifest.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    let reason = stale_reason(&manifest, &plan.output_dir);
     assert!(reason.contains("missing from output dir"), "unexpected reason: {reason}");
 }
 
@@ -322,12 +383,26 @@ fn verify_output_dir_rejects_missing_or_stale_toolchain_fingerprint() {
     let base = sample_execution_manifest(&plan, &artifact_path, evidence);
 
     let missing = ExecutionManifest { toolchain_fingerprint: String::new(), ..base.clone() };
-    let reason = missing.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    let reason = stale_reason(&missing, &plan.output_dir);
     assert!(reason.contains("missing toolchain fingerprint"), "unexpected reason: {reason}");
 
     let stale = ExecutionManifest { toolchain_fingerprint: "legion=0.0.0;compiler=deadbeef".into(), ..base };
-    let reason = stale.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    let reason = stale_reason(&stale, &plan.output_dir);
     assert!(reason.contains("toolchain fingerprint"), "unexpected reason: {reason}");
+}
+
+#[test]
+fn unknown_compiler_build_identity_is_not_reusable() {
+    // 无 Git 构建的 `unknown` 身份必须被权威核心判不可复用（正式复用拒绝）。
+    assert!(unknown_compiler_identity_reason("unknown").is_some(), "`unknown` identity must be refused");
+    assert!(unknown_compiler_identity_reason("").is_some(), "empty identity must be refused");
+    assert!(unknown_compiler_identity_reason("efbc884c1234-dirty0123456789").is_none(), "git-derived identity is acceptable");
+    // 运行时读取当前构建身份：正式复用环境（cargo/git 检出）不得是 `unknown`。
+    let current = rusty_valkyrie::legion::cache::compiler_build_id();
+    assert!(!current.is_empty(), "compiler build id must be present in a git checkout");
+    if unknown_compiler_identity_reason(current).is_none() {
+        assert!(rusty_valkyrie::legion::cache::toolchain_fingerprint().contains(&format!("compiler={current}")));
+    }
 }
 
 #[test]
@@ -338,21 +413,21 @@ fn verify_output_dir_rejects_missing_evidence_fields_and_sidecar() {
     let base = sample_execution_manifest(&plan, &artifact_path, evidence);
 
     let no_evidence = ExecutionManifest { compile_evidence: None, ..base.clone() };
-    let reason = no_evidence.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    let reason = stale_reason(&no_evidence, &plan.output_dir);
     assert!(reason.contains("missing compile_evidence"), "unexpected reason: {reason}");
 
     let no_inputs = ExecutionManifest { inputs: Vec::new(), ..base.clone() };
-    let reason = no_inputs.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    let reason = stale_reason(&no_inputs, &plan.output_dir);
     assert!(reason.contains("input digests"), "unexpected reason: {reason}");
 
     let no_artifacts = ExecutionManifest { artifacts: Vec::new(), ..base.clone() };
-    let reason = no_artifacts.verify_against_output_dir(&plan.output_dir).expect("verify").expect("stale");
+    let reason = stale_reason(&no_artifacts, &plan.output_dir);
     assert!(reason.contains("artifact digests"), "unexpected reason: {reason}");
 
     let (_directory2, plan2, artifact_path2) = sample_freshness_plan();
     let evidence2 = matching_evidence(&plan2);
     let manifest2 = sample_execution_manifest(&plan2, &artifact_path2, evidence2);
-    let reason = manifest2.verify_against_output_dir(&plan2.output_dir).expect("verify").expect("stale");
+    let reason = stale_reason(&manifest2, &plan2.output_dir);
     assert!(reason.contains("compile evidence sidecar"), "unexpected reason: {reason}");
 }
 

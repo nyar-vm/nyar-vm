@@ -66,8 +66,9 @@ impl From<&CachedRunContract> for DriverRunContract {
     }
 }
 
-/// 编译器构建身份：`build.rs` 生成的 Git 修订（tracked 改动时带 `-dirty`），
-/// 或构建时注入的 `NYAR_COMPILER_BUILD_ID`。同版本不同构建因此可区分。
+/// 编译器构建身份：`build.rs` 生成的 Git 修订（tracked 改动时带 `-dirty<内容摘要>`，
+/// 不同 dirty 内容身份不同），或构建时注入的 `NYAR_COMPILER_BUILD_ID`。同版本不同
+/// 构建因此可区分；`unknown`（无 Git）身份被权威 freshness 核心判为不可复用。
 pub fn compiler_build_id() -> &'static str {
     option_env!("NYAR_COMPILER_BUILD_ID").unwrap_or("unknown")
 }

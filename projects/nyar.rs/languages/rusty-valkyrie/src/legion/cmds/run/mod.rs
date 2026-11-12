@@ -177,6 +177,68 @@ pub struct ExecutionArtifactDigest {
     pub hash: String,
 }
 
+/// 权威新鲜度校验达到的可信级别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManifestVerificationLevel {
+    /// 完全验证：核心规则与当前 workspace 输入摘要、预期 compile evidence 全部一致。
+    /// 只有这一级可被正式复用放行。
+    FullyVerified,
+    /// 仅产物自洽：核心规则一致，但缺少当前 workspace 输入上下文，无法核对输入事实。
+    /// 正式复用不得据此放行。
+    ArtifactSelfConsistent,
+}
+
+/// 权威新鲜度校验结论：可信级别，或第一处不可信事实。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManifestVerdict {
+    /// 可信，携带达到的级别。
+    Verified(ManifestVerificationLevel),
+    /// 不可信，携带第一处不可信事实的说明。
+    Stale(String),
+}
+
+impl ManifestVerdict {
+    /// 是否达到"完全验证"——正式复用唯一可放行的级别。
+    pub fn is_fully_verified(&self) -> bool {
+        matches!(self, ManifestVerdict::Verified(ManifestVerificationLevel::FullyVerified))
+    }
+
+    /// 不可信事实说明；可信时为 `None`。
+    pub fn stale_reason(&self) -> Option<&str> {
+        match self {
+            ManifestVerdict::Stale(reason) => Some(reason),
+            _ => None,
+        }
+    }
+}
+
+/// 传给唯一权威 freshness 核心的当前 workspace 上下文。
+///
+/// `current_inputs` 与 `expected_evidence` 由调用方从当前 workspace / `BuildPlan`
+/// 重算；缺省时核心只能做产物自洽核对，最高只能达到
+/// [`ManifestVerificationLevel::ArtifactSelfConsistent`]。
+#[derive(Default)]
+pub struct ManifestVerificationContext<'a> {
+    /// 期望项目身份（name / target / artifact kind）；提供时逐项核对。
+    pub expected_project: Option<(&'a str, &'a str, ProjectArtifactKind)>,
+    /// 从当前 workspace 重算的输入摘要；提供时与 manifest 记录逐项核对。
+    pub current_inputs: Option<&'a [ExecutionInputDigest]>,
+    /// 从当前 workspace 重算的 resolver compile evidence；提供时与 manifest 记录核对。
+    pub expected_evidence: Option<&'a CompileEvidenceDigest>,
+}
+
+/// compiler build identity 为 `unknown`（无 Git）或空时给出不可复用理由。
+/// 正式复用不得接受无法绑定实际构建的身份。
+#[doc(hidden)]
+pub fn unknown_compiler_identity_reason(current_id: &str) -> Option<String> {
+    if current_id.is_empty() || current_id == "unknown" {
+        Some(format!("compiler build identity is `{current_id}` (no git); formal reuse refused"))
+    }
+    else {
+        None
+    }
+}
+
 impl ExecutionManifest {
     /// 将 execution manifest 写入输出目录中的 `run-contracts.txt`。
     pub fn write_to_output_dir(&self, output_dir: &Path) -> LegionResult<()> {
@@ -242,129 +304,138 @@ impl ExecutionManifest {
         })
     }
 
-    /// 校验当前 execution manifest 是否仍与 `BuildPlan` 及产物目录匹配。
-    pub fn is_fresh_for_plan(&self, plan: &BuildPlan) -> LegionResult<bool> {
-        if self.schema_version != EXECUTION_MANIFEST_SCHEMA_VERSION {
-            return Ok(false);
-        }
-        if self.identity_schema_version != nyar_types::IDENTITY_SCHEMA_VERSION
-            || self.mir_contract_version != nyar_types::MIR_CONTRACT_VERSION
-            || self.layout_plan_version != nyar_types::LAYOUT_PLAN_VERSION
-            || self.bytecode_format_version != odin_bytecode::BYTECODE_FORMAT_VERSION
-        {
-            return Ok(false);
-        }
-        if self.project_name != plan.project.name {
-            return Ok(false);
-        }
-        if self.target != plan.project.build_target.target.to_string() {
-            return Ok(false);
-        }
-        if self.artifact_kind != plan.project.artifact_kind {
-            return Ok(false);
-        }
-        if self.inputs != collect_execution_input_digests(plan)? {
-            return Ok(false);
-        }
-        // 库产物没有可执行入口，`run_contracts` 可以为空；它的新鲜度由导出索引承担。
-        if self.artifacts.is_empty() {
-            return Ok(false);
-        }
-        match self.artifact_kind {
-            ProjectArtifactKind::Library if self.library_exports.is_empty() => return Ok(false),
-            ProjectArtifactKind::Binary if self.run_contracts.is_empty() => return Ok(false),
-            _ => {}
-        }
-
-        for artifact in &self.artifacts {
-            let artifact_path = plan.output_dir.join(PathBuf::from(&artifact.path));
-            if !artifact_path.exists() {
-                return Ok(false);
-            }
-            if hash_file_sha256(&artifact_path)? != artifact.hash {
-                return Ok(false);
-            }
-        }
-
-        let Some(stored) = &self.compile_evidence
-        else {
-            return Ok(false);
-        };
-        let expected = expected_resolver_compile_evidence(plan)?;
-        if stored.semantic_closure_hash != expected.semantic_closure_hash
-            || stored.host_provider_binding_hash != expected.host_provider_binding_hash
-            || stored.generated_source_hash != expected.generated_source_hash
-        {
-            return Ok(false);
-        }
-
-        let Some(file_evidence) = read_compile_evidence_digest(&plan.output_dir)?
-        else {
-            return Ok(false);
-        };
-        if file_evidence != *stored {
-            return Ok(false);
-        }
-
-        Ok(true)
-    }
-
-    /// 不依赖 `BuildPlan` 的产物自洽校验，复用 [`Self::is_fresh_for_plan`] 的摘要核对逻辑：
-    /// schema/合同版本、工具链指纹（含 compiler build identity）与当前构建一致，输入/产物
-    /// 摘要字段齐全，落盘产物字节与摘要一致，compile evidence 旁文件与 manifest 记录一致。
+    /// 唯一权威 freshness 核心：所有消费者（CLI [`Self::is_fresh_for_plan`]、
+    /// test engine、N-API `legion_check_artifact_fresh`）都必须经此入口，
+    /// 不得存在"某入口少查一项"的平行实现。
     ///
-    /// 返回 `Ok(None)` 表示可信复用；`Ok(Some(reason))` 指出第一处不可信事实。缺字段、
-    /// 摘要不符、产物消失一律给出 reason，不得返回成功形状。输入摘要在无 workspace 根
-    /// 时只能做结构核对，同版本换实现由工具链指纹兜底拒绝。
-    pub fn verify_against_output_dir(&self, output_dir: &Path) -> LegionResult<Option<String>> {
+    /// 规则：schema/合同版本一致；manifest 记录的工具链指纹（含
+    /// `NYAR_COMPILER_BUILD_ID`）非空、非 `unknown` 且与当前构建一致，不一致即
+    /// stale；输入/产物摘要字段齐全，落盘产物字节与摘要一致；compile evidence
+    /// 旁文件与 manifest 记录一致。`context` 提供当前 workspace 输入上下文时逐项
+    /// 核对输入摘要与预期证据，达到 `FullyVerified`；无法验证输入时最高只能给出
+    /// `ArtifactSelfConsistent`，不得给出可复用的 fresh。
+    pub fn verify(&self, output_dir: &Path, context: &ManifestVerificationContext<'_>) -> LegionResult<ManifestVerdict> {
         if self.schema_version != EXECUTION_MANIFEST_SCHEMA_VERSION {
-            return Ok(Some(format!("manifest schema_version {} != current {EXECUTION_MANIFEST_SCHEMA_VERSION}", self.schema_version)));
+            return Ok(ManifestVerdict::Stale(format!(
+                "manifest schema_version {} != current {EXECUTION_MANIFEST_SCHEMA_VERSION}",
+                self.schema_version
+            )));
         }
         if self.identity_schema_version != nyar_types::IDENTITY_SCHEMA_VERSION
             || self.mir_contract_version != nyar_types::MIR_CONTRACT_VERSION
             || self.layout_plan_version != nyar_types::LAYOUT_PLAN_VERSION
             || self.bytecode_format_version != odin_bytecode::BYTECODE_FORMAT_VERSION
         {
-            return Ok(Some("manifest contract versions differ from current compiler contract versions".into()));
+            return Ok(ManifestVerdict::Stale("manifest contract versions differ from current compiler contract versions".into()));
         }
         if self.toolchain_fingerprint.is_empty() {
-            return Ok(Some("manifest missing toolchain fingerprint".into()));
+            return Ok(ManifestVerdict::Stale("manifest missing toolchain fingerprint".into()));
+        }
+        if let Some(reason) = unknown_compiler_identity_reason(crate::legion::cache::compiler_build_id()) {
+            return Ok(ManifestVerdict::Stale(reason));
         }
         let current = crate::legion::cache::toolchain_fingerprint();
         if self.toolchain_fingerprint != current {
-            return Ok(Some(format!("manifest toolchain fingerprint `{}` != current `{current}`", self.toolchain_fingerprint)));
+            return Ok(ManifestVerdict::Stale(format!("manifest toolchain fingerprint `{}` != current `{current}`", self.toolchain_fingerprint)));
+        }
+        if let Some((name, target, kind)) = context.expected_project {
+            if self.project_name != name {
+                return Ok(ManifestVerdict::Stale(format!("manifest project `{}` != current `{name}`", self.project_name)));
+            }
+            if self.target != target {
+                return Ok(ManifestVerdict::Stale(format!("manifest target `{}` != expected `{target}`", self.target)));
+            }
+            if self.artifact_kind != kind {
+                return Ok(ManifestVerdict::Stale("manifest artifact_kind differs from current project artifact_kind".into()));
+            }
         }
         if self.inputs.is_empty() {
-            return Ok(Some("manifest missing input digests".into()));
+            return Ok(ManifestVerdict::Stale("manifest missing input digests".into()));
         }
         if self.inputs.iter().any(|input| input.role.is_empty() || input.path.is_empty() || input.hash.is_empty()) {
-            return Ok(Some("manifest input digest missing role/path/hash fields".into()));
+            return Ok(ManifestVerdict::Stale("manifest input digest missing role/path/hash fields".into()));
+        }
+        if let Some(current_inputs) = context.current_inputs {
+            if self.inputs != current_inputs {
+                return Ok(ManifestVerdict::Stale("manifest input digests differ from current workspace inputs".into()));
+            }
         }
         if self.artifacts.is_empty() {
-            return Ok(Some("manifest missing artifact digests".into()));
+            return Ok(ManifestVerdict::Stale("manifest missing artifact digests".into()));
         }
         for artifact in &self.artifacts {
             if artifact.path.is_empty() || artifact.hash.is_empty() {
-                return Ok(Some("manifest artifact digest missing path/hash fields".into()));
+                return Ok(ManifestVerdict::Stale("manifest artifact digest missing path/hash fields".into()));
             }
             let artifact_path = output_dir.join(PathBuf::from(&artifact.path));
             if !artifact_path.is_file() {
-                return Ok(Some(format!("artifact `{}` missing from output dir", artifact.path)));
+                return Ok(ManifestVerdict::Stale(format!("artifact `{}` missing from output dir", artifact.path)));
             }
             if hash_file_sha256(&artifact_path)? != artifact.hash {
-                return Ok(Some(format!("artifact `{}` digest mismatch", artifact.path)));
+                return Ok(ManifestVerdict::Stale(format!("artifact `{}` digest mismatch", artifact.path)));
             }
         }
+        // 库产物没有可执行入口，`run_contracts` 可以为空；它的新鲜度由导出索引承担。
+        match self.artifact_kind {
+            ProjectArtifactKind::Library if self.library_exports.is_empty() => {
+                return Ok(ManifestVerdict::Stale("library manifest missing library_exports".into()));
+            }
+            ProjectArtifactKind::Binary if self.run_contracts.is_empty() => {
+                return Ok(ManifestVerdict::Stale("binary manifest missing run_contracts".into()));
+            }
+            _ => {}
+        }
         let Some(stored) = &self.compile_evidence else {
-            return Ok(Some("manifest missing compile_evidence".into()));
+            return Ok(ManifestVerdict::Stale("manifest missing compile_evidence".into()));
         };
+        if let Some(expected) = context.expected_evidence {
+            if stored.semantic_closure_hash != expected.semantic_closure_hash
+                || stored.host_provider_binding_hash != expected.host_provider_binding_hash
+                || stored.generated_source_hash != expected.generated_source_hash
+            {
+                return Ok(ManifestVerdict::Stale("manifest compile_evidence differs from current resolver evidence".into()));
+            }
+        }
         let Some(file_evidence) = read_compile_evidence_digest(output_dir)? else {
-            return Ok(Some(format!("compile evidence sidecar `{COMPILE_EVIDENCE_FILE_NAME}` missing")));
+            return Ok(ManifestVerdict::Stale(format!("compile evidence sidecar `{COMPILE_EVIDENCE_FILE_NAME}` missing")));
         };
         if file_evidence != *stored {
-            return Ok(Some("compile evidence sidecar does not match manifest compile_evidence".into()));
+            return Ok(ManifestVerdict::Stale("compile evidence sidecar does not match manifest compile_evidence".into()));
         }
-        Ok(None)
+        Ok(ManifestVerdict::Verified(if context.current_inputs.is_some() {
+            ManifestVerificationLevel::FullyVerified
+        }
+        else {
+            ManifestVerificationLevel::ArtifactSelfConsistent
+        }))
+    }
+
+    /// 校验当前 execution manifest 是否仍与 `BuildPlan` 及产物目录匹配。
+    ///
+    /// 走 [`Self::verify`] 同一权威核心，携带完整 workspace 输入上下文；只有
+    /// `FullyVerified` 才判 fresh，工具链指纹（含 compiler build identity）与当前
+    /// 构建不一致一律 stale。
+    pub fn is_fresh_for_plan(&self, plan: &BuildPlan) -> LegionResult<bool> {
+        let inputs = collect_execution_input_digests(plan)?;
+        let expected = expected_resolver_compile_evidence(plan)?;
+        let target = plan.project.build_target.target.to_string();
+        let context = ManifestVerificationContext {
+            expected_project: Some((plan.project.name.as_str(), target.as_str(), plan.project.artifact_kind)),
+            current_inputs: Some(&inputs),
+            expected_evidence: Some(&expected),
+        };
+        Ok(self.verify(&plan.output_dir, &context)?.is_fully_verified())
+    }
+
+    /// 不依赖 `BuildPlan` 的产物自洽校验：核对 schema/合同版本、工具链指纹（含
+    /// compiler build identity）与当前构建一致、输入/产物摘要字段齐全、落盘产物
+    /// 字节与摘要一致、compile evidence 旁文件与 manifest 记录一致。
+    ///
+    /// 无当前 workspace 输入上下文，可信结果最高只到
+    /// [`ManifestVerificationLevel::ArtifactSelfConsistent`]；正式复用消费者只能
+    /// 对 [`Self::verify`] 的 `FullyVerified` 放行。
+    pub fn verify_against_output_dir(&self, output_dir: &Path) -> LegionResult<ManifestVerdict> {
+        self.verify(output_dir, &ManifestVerificationContext::default())
     }
 }
 
