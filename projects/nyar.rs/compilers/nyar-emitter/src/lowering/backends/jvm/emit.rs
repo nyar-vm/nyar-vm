@@ -20,7 +20,10 @@ use crate::{
         ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, NyarType,
     },
     contracts::{Constant, InstructionKind, Operand, Terminator},
-    lowering::shared::executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
+    lowering::shared::{
+        executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
+        value_copy::{MAX_VALUE_AGGREGATE_COPY_DEPTH, nested_value_aggregate_layout, value_aggregate_copy_depth},
+    },
     managed_abi::{ManagedAbiContract, ManagedAbiEntry},
     target_operator::{
         TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
@@ -806,6 +809,11 @@ struct JvmMethodEmitter<'a> {
     /// 无符号 `u64` 比较展开使用的 scratch `long` 槽（2 槽宽），仅当函数实际引用
     /// `LongCompareLessThanUnsigned` 时在 `max_locals` 尾部预留；未预留即未引用。
     scratch_long_slot: Option<u16>,
+    /// 值聚合递归复制使用的临时引用槽：每层复制占 2 槽（源/目标），
+    /// 依据冻结布局的嵌套深度在 `max_locals` 尾部预留。
+    copy_scratch: Vec<u16>,
+    /// 编译器内部标签序号（递归复制空值分支使用）。
+    label_ordinal: usize,
 }
 
 fn lower_function(
@@ -844,6 +852,28 @@ fn lower_function(
         None
     };
 
+    // 值聚合递归复制：按冻结布局的嵌套深度预留 2 槽/层的临时引用槽。
+    let layout_plan = submission.backend_plan.aggregate_layouts();
+    let mut copy_depth = 0u32;
+    for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
+        if let InstructionKind::AggregateCopy { layout_id, .. } = &instruction.kind
+            && let Some(layout) = layout_plan.layouts.iter().find(|candidate| candidate.id == *layout_id)
+        {
+            copy_depth = copy_depth.max(value_aggregate_copy_depth(layout_plan, layout));
+        }
+    }
+    if copy_depth > MAX_VALUE_AGGREGATE_COPY_DEPTH {
+        return Err(format!(
+            "JVM 最小 lowering：值聚合复制嵌套 {copy_depth} 层超过上限 {MAX_VALUE_AGGREGATE_COPY_DEPTH}: function={}",
+            function.symbol
+        ));
+    }
+    let mut copy_scratch = Vec::with_capacity((copy_depth as usize).saturating_mul(2));
+    for _ in 0..(copy_depth as usize).saturating_mul(2) {
+        copy_scratch.push(local_count);
+        local_count = local_count.saturating_add(1);
+    }
+
     let mut emitter = JvmMethodEmitter {
         submission,
         internal_name,
@@ -857,6 +887,8 @@ fn lower_function(
         current_block: function.entry,
         comparison_ordinal: 0,
         scratch_long_slot,
+        copy_scratch,
+        label_ordinal: 0,
     };
 
     for block_id in collect_reachable_blocks(function) {
@@ -1005,20 +1037,7 @@ impl JvmMethodEmitter<'_> {
                 else {
                     let dest_slot = self.reference_operand_slot(dest)?;
                     let source_slot = self.reference_operand_slot(source)?;
-                    let class_name = jvm_layout_class_name(&layout);
-                    self.instructions.push(JvmInstruction::New(class_name.clone()));
-                    self.instructions.push(JvmInstruction::Dup);
-                    self.instructions.push(JvmInstruction::InvokeSpecial(jvm_constructor_ref(&class_name)));
-                    self.instructions.push(JvmInstruction::AStore(dest_slot));
-                    for slot in 0..layout.fields.len() {
-                        let (descriptor, _) = self.layout_field_descriptor(&layout, u32::try_from(slot).unwrap_or(u32::MAX))?;
-                        let field_ref = jvm_layout_field_ref(&layout, slot, descriptor);
-                        // `putfield` 栈序是 `object, value`：先压目标对象，再从源对象读字段。
-                        self.instructions.push(JvmInstruction::ALoad(dest_slot));
-                        self.instructions.push(JvmInstruction::ALoad(source_slot));
-                        self.instructions.push(JvmInstruction::GetField(field_ref.clone()));
-                        self.instructions.push(JvmInstruction::PutField(field_ref));
-                    }
+                    self.emit_value_aggregate_copy(&layout, source_slot, dest_slot, 0)?;
                 }
             }
             InstructionKind::FieldGet { object, field } => {
@@ -1711,14 +1730,77 @@ impl JvmMethodEmitter<'_> {
         Ok(())
     }
 
+    /// 递归复制值语义聚合：目标槽得到独立对象，嵌套值聚合逐层新建。
+    ///
+    /// 引用语义字段（`class`、数组、闭包、引用 sum 等）按共享分类直接搬运；
+    /// 空嵌套字段保持 `null`。分类事实来自共享 `value_copy` 模块，不在本后端
+    /// 按类型名或字段名特判。
+    fn emit_value_aggregate_copy(&mut self, layout: &AggregateLayout, source_slot: u16, dest_slot: u16, depth: u32) -> Result<()> {
+        if depth > MAX_VALUE_AGGREGATE_COPY_DEPTH {
+            return Err(format!(
+                "JVM 最小 lowering：值聚合复制嵌套 {depth} 层超过上限 {MAX_VALUE_AGGREGATE_COPY_DEPTH}: function={}",
+                self.function.symbol
+            ));
+        }
+        let class_name = jvm_layout_class_name(layout);
+        self.instructions.push(JvmInstruction::New(class_name.clone()));
+        self.instructions.push(JvmInstruction::Dup);
+        self.instructions.push(JvmInstruction::InvokeSpecial(jvm_constructor_ref(&class_name)));
+        self.instructions.push(JvmInstruction::AStore(dest_slot));
+        for slot in 0..layout.fields.len() {
+            let (descriptor, _) = self.layout_field_descriptor(layout, u32::try_from(slot).unwrap_or(u32::MAX))?;
+            let field_ref = jvm_layout_field_ref(layout, slot, descriptor);
+            let Some(nested_id) = nested_value_aggregate_layout(self.submission.backend_plan.aggregate_layouts(), &layout.fields[slot].ty)
+            else {
+                // `putfield` 栈序是 `object, value`：先压目标对象，再从源对象读字段。
+                self.instructions.push(JvmInstruction::ALoad(dest_slot));
+                self.instructions.push(JvmInstruction::ALoad(source_slot));
+                self.instructions.push(JvmInstruction::GetField(field_ref.clone()));
+                self.instructions.push(JvmInstruction::PutField(field_ref));
+                continue;
+            };
+            let nested_layout = self.layout_by_id(nested_id)?;
+            let nested_source = self.copy_scratch_slot(depth, 0)?;
+            let nested_dest = self.copy_scratch_slot(depth, 1)?;
+            self.instructions.push(JvmInstruction::ALoad(dest_slot));
+            self.instructions.push(JvmInstruction::ALoad(source_slot));
+            self.instructions.push(JvmInstruction::GetField(field_ref.clone()));
+            self.instructions.push(JvmInstruction::AStore(nested_source));
+            let null_label = self.fresh_copy_label("null");
+            let end_label = self.fresh_copy_label("end");
+            self.instructions.push(JvmInstruction::ALoad(nested_source));
+            self.instructions.push(JvmInstruction::IfNull(null_label.clone()));
+            self.emit_value_aggregate_copy(&nested_layout, nested_source, nested_dest, depth + 1)?;
+            self.instructions.push(JvmInstruction::ALoad(nested_dest));
+            self.instructions.push(JvmInstruction::Goto(end_label.clone()));
+            self.instructions.push(JvmInstruction::Label(null_label));
+            self.instructions.push(JvmInstruction::AConstNull);
+            self.instructions.push(JvmInstruction::Label(end_label));
+            self.instructions.push(JvmInstruction::PutField(field_ref));
+        }
+        Ok(())
+    }
+
+    fn copy_scratch_slot(&self, depth: u32, offset: usize) -> Result<u16> {
+        let index = (depth as usize).saturating_mul(2).saturating_add(offset);
+        self.copy_scratch
+            .get(index)
+            .copied()
+            .ok_or_else(|| format!("JVM 最小 lowering：值聚合复制临时槽 {index} 未预留: function={}", self.function.symbol))
+    }
+
+    fn fresh_copy_label(&mut self, suffix: &str) -> String {
+        self.label_ordinal = self.label_ordinal.saturating_add(1);
+        format!("copy_{suffix}_{}", self.label_ordinal)
+    }
+
     fn emit_sum_new(
         &mut self,
         instruction: &MirInstruction,
         nominal: NominalInstanceId,
         variant: VariantId,
         payload: &Option<Operand>,
-    ) -> Result<()> {
-        let Some(sum) = self.submission.backend_plan.sum_representations().get(&nominal).cloned()
+    ) -> Result<()> {        let Some(sum) = self.submission.backend_plan.sum_representations().get(&nominal).cloned()
         else {
             return Err(format!(
                 "JVM 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`: function={}",

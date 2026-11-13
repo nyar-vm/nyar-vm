@@ -462,3 +462,68 @@ fn bare_named_residual_is_rejected_structurally() {
     let error = lower_fragment_to_clr_module(&submission).expect_err("bare `Named` residual must fail");
     assert!(error.contains("缺少该形状的 CLR 载体合同"), "{error}");
 }
+
+fn nested_value_layout_plan() -> AggregateLayoutPlan {
+    AggregateLayoutPlan {
+        layouts: vec![
+            AggregateLayout {
+                id: 0,
+                name: "Inner".to_string(),
+                namespace: "demo".to_string(),
+                key: None,
+                storage: StorageKind::Value,
+                size: 4,
+                align: 4,
+                fields: vec![FieldLayout { name: "value".to_string(), ty: NyarType::Integer32 { signed: true }, offset: 0, size: 4, align: 4 }],
+            },
+            AggregateLayout {
+                id: 1,
+                name: "Outer".to_string(),
+                namespace: "demo".to_string(),
+                key: None,
+                storage: StorageKind::Value,
+                size: 4,
+                align: 4,
+                fields: vec![FieldLayout {
+                    name: "inner".to_string(),
+                    ty: NyarType::Nominal { layout: 0, spelling: Identifier::new("Inner") },
+                    offset: 0,
+                    size: 4,
+                    align: 4,
+                }],
+            },
+        ],
+        ..AggregateLayoutPlan::default()
+    }
+}
+
+/// 嵌套值聚合复制必须为外层与内层各新建一个对象，而不是共享内层引用。
+#[test]
+fn aggregate_copy_recurses_into_nested_value_layouts() {
+    let outer = NyarType::Nominal { layout: 1, spelling: Identifier::new("Outer") };
+    let mut fixture = function("demo.nested_copy", outer.clone(), vec![outer.clone(), outer.clone()]);
+    fixture.blocks[0].instructions.push(instr(
+        InstructionKind::AggregateCopy { layout_id: 1, source: Operand::Value(ValueRef(0)), dest: Operand::Value(ValueRef(1)) },
+        Vec::new(),
+    ));
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(1))) };
+
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("clr_nested_copy").testing_entry_operation(main);
+    plan.testing_aggregate_layouts(nested_value_layout_plan());
+    let module = lower_fragment_to_clr_module(&FragmentSubmission::from_backend_plan(plan)).expect("嵌套值聚合复制必须可降低");
+
+    let method = module.global_methods.first().expect("entry method");
+    assert_eq!(
+        method.instructions.iter().filter(|instruction| instruction.opcode == MsilOpcode::Newobj).count(),
+        2,
+        "外层与嵌套值聚合都必须新建对象，不得共享内层引用: {:?}",
+        method.instructions
+    );
+    assert!(
+        method.instructions.iter().any(|instruction| instruction.opcode == MsilOpcode::Brfalse),
+        "嵌套字段为空时必须保留 null 而不是复制空对象: {:?}",
+        method.instructions
+    );
+}

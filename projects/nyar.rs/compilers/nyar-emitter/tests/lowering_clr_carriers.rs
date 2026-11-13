@@ -44,9 +44,9 @@ fn array_of_integer8_uses_int8_carrier() {
 }
 
 #[test]
-fn array_of_character_uses_char_carrier() {
+fn array_of_character_uses_32_bit_code_point_carrier() {
     let ty = msil_type(&reference_layout_plan(), &array_of(NyarType::Character)).expect("char array");
-    assert_eq!(ty, MsilType::sz_array(MsilType::Char));
+    assert_eq!(ty, MsilType::sz_array(MsilType::Int32 { signed: false }), "V 的 char 是 u32 码位，载体必须是 32 位而不是宿主 Char");
 }
 
 #[test]

@@ -17,7 +17,10 @@ use crate::{
         ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, NyarType,
     },
     contracts::{ArrayInitialization, Constant, InstructionKind, Operand, Terminator},
-    lowering::shared::executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
+    lowering::shared::{
+        executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
+        value_copy::{MAX_VALUE_AGGREGATE_COPY_DEPTH, nested_value_aggregate_layout, value_aggregate_copy_depth},
+    },
     managed_abi::{ManagedAbiContract, ManagedAbiEntry},
     target_operator::{
         TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
@@ -715,6 +718,10 @@ struct ClrMethodEmitter<'a> {
     method_plans: &'a BTreeMap<ItemInstanceId, ClrMethodPlan>,
     operator_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
     instructions: Vec<MsilInstruction>,
+    /// 值聚合递归复制使用的临时引用局部：每层复制占 2 槽（源/目标）。
+    copy_scratch: Vec<u16>,
+    /// 编译器内部标签序号（递归复制空值分支使用）。
+    label_ordinal: usize,
 }
 
 fn lower_function(
@@ -726,8 +733,31 @@ fn lower_function(
     is_entry_point: bool,
 ) -> Result<MsilMethodBody> {
     let slots = ExecutableSlotPlan::plan_nyar(function);
-    let locals =
+    let mut locals =
         slots.local_types.iter().map(|ty| msil_parameter_type(submission.backend_plan.aggregate_layouts(), ty)).collect::<Result<Vec<_>>>()?;
+
+    // 值聚合递归复制：按冻结布局的嵌套深度预留 2 槽/层的临时引用局部。
+    let layout_plan = submission.backend_plan.aggregate_layouts();
+    let mut copy_depth = 0u32;
+    for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
+        if let InstructionKind::AggregateCopy { layout_id, .. } = &instruction.kind
+            && let Some(layout) = layout_plan.layouts.iter().find(|candidate| candidate.id == *layout_id)
+        {
+            copy_depth = copy_depth.max(value_aggregate_copy_depth(layout_plan, layout));
+        }
+    }
+    if copy_depth > MAX_VALUE_AGGREGATE_COPY_DEPTH {
+        return Err(format!(
+            "CLR 最小 lowering：值聚合复制嵌套 {copy_depth} 层超过上限 {MAX_VALUE_AGGREGATE_COPY_DEPTH}: function={}",
+            function.symbol
+        ));
+    }
+    let mut copy_scratch = Vec::with_capacity((copy_depth as usize).saturating_mul(2));
+    for _ in 0..(copy_depth as usize).saturating_mul(2) {
+        copy_scratch.push(u16::try_from(locals.len()).map_err(|_| format!("CLR 局部槽数量溢出: function={}", function.symbol))?);
+        locals.push(MsilType::Object);
+    }
+
     let mut emitter = ClrMethodEmitter {
         submission,
         function,
@@ -736,6 +766,8 @@ fn lower_function(
         method_plans,
         operator_by_instance,
         instructions: Vec::new(),
+        copy_scratch,
+        label_ordinal: 0,
     };
     emitter.emit_entry_parameter_prologue()?;
     for block_id in collect_reachable_blocks(function) {
@@ -904,13 +936,7 @@ impl ClrMethodEmitter<'_> {
                 else {
                     let dest_slot = self.reference_operand_slot(dest)?;
                     let source_slot = self.reference_operand_slot(source)?;
-                    self.emit_layout_new(&layout, (dest_slot, ClrValueKind::Reference))?;
-                    for slot in 0..layout.fields.len() {
-                        self.load_local(dest_slot);
-                        self.load_local(source_slot);
-                        self.push_field_opcode(MsilOpcode::Ldfld, &clr_layout_type_name(&layout), &clr_layout_field_name(slot));
-                        self.push_field_opcode(MsilOpcode::Stfld, &clr_layout_type_name(&layout), &clr_layout_field_name(slot));
-                    }
+                    self.emit_value_aggregate_copy(&layout, source_slot, dest_slot, 0)?;
                 }
             }
             InstructionKind::FieldGet { object, field } => {
@@ -1429,6 +1455,70 @@ impl ClrMethodEmitter<'_> {
         self.push_newobj(&clr_layout_type_name(layout));
         self.store_local(output.0);
         Ok(())
+    }
+
+    /// 递归复制值语义聚合：目标槽得到独立对象，嵌套值聚合逐层新建。
+    ///
+    /// 引用语义字段按共享分类直接搬运；空嵌套字段保持 `null`。分类事实来自
+    /// 共享 `value_copy` 模块，不在本后端按类型名或字段名特判。
+    fn emit_value_aggregate_copy(&mut self, layout: &AggregateLayout, source_slot: u16, dest_slot: u16, depth: u32) -> Result<()> {
+        if depth > MAX_VALUE_AGGREGATE_COPY_DEPTH {
+            return Err(format!(
+                "CLR 最小 lowering：值聚合复制嵌套 {depth} 层超过上限 {MAX_VALUE_AGGREGATE_COPY_DEPTH}: function={}",
+                self.function.symbol
+            ));
+        }
+        self.emit_layout_new(layout, (dest_slot, ClrValueKind::Reference))?;
+        let type_name = clr_layout_type_name(layout);
+        for slot in 0..layout.fields.len() {
+            let field_name = clr_layout_field_name(slot);
+            let Some(nested_id) = nested_value_aggregate_layout(self.submission.backend_plan.aggregate_layouts(), &layout.fields[slot].ty)
+            else {
+                self.load_local(dest_slot);
+                self.load_local(source_slot);
+                self.push_field_opcode(MsilOpcode::Ldfld, &type_name, &field_name);
+                self.push_field_opcode(MsilOpcode::Stfld, &type_name, &field_name);
+                continue;
+            };
+            let nested_layout = self.layout_by_id(nested_id)?;
+            let nested_source = self.copy_scratch_slot(depth, 0)?;
+            let nested_dest = self.copy_scratch_slot(depth, 1)?;
+            self.load_local(source_slot);
+            self.push_field_opcode(MsilOpcode::Ldfld, &type_name, &field_name);
+            self.store_local(nested_source);
+            let null_label = self.fresh_copy_label("null");
+            let end_label = self.fresh_copy_label("end");
+            self.load_local(nested_source);
+            self.push_branch(MsilOpcode::Brfalse, null_label.clone());
+            self.emit_value_aggregate_copy(&nested_layout, nested_source, nested_dest, depth + 1)?;
+            self.load_local(dest_slot);
+            self.load_local(nested_dest);
+            self.push_field_opcode(MsilOpcode::Stfld, &type_name, &field_name);
+            self.push_branch(MsilOpcode::Br, end_label.clone());
+            self.push_label(null_label);
+            self.load_local(dest_slot);
+            self.push_opcode(MsilOpcode::Ldnull);
+            self.push_field_opcode(MsilOpcode::Stfld, &type_name, &field_name);
+            self.push_label(end_label);
+        }
+        Ok(())
+    }
+
+    fn copy_scratch_slot(&self, depth: u32, offset: usize) -> Result<u16> {
+        let index = (depth as usize).saturating_mul(2).saturating_add(offset);
+        self.copy_scratch
+            .get(index)
+            .copied()
+            .ok_or_else(|| format!("CLR 最小 lowering：值聚合复制临时槽 {index} 未预留: function={}", self.function.symbol))
+    }
+
+    fn fresh_copy_label(&mut self, suffix: &str) -> String {
+        self.label_ordinal = self.label_ordinal.saturating_add(1);
+        format!("copy_{suffix}_{}", self.label_ordinal)
+    }
+
+    fn push_label(&mut self, label: String) {
+        self.instructions.push(MsilInstruction { label: Some(label), opcode: MsilOpcode::Nop, operand: None });
     }
 
     fn emit_layout_field_write(&mut self, layout: &AggregateLayout, output_slot: u16, slot: usize, value: &Operand) -> Result<()> {
