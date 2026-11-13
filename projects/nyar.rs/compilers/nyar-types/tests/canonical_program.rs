@@ -899,3 +899,116 @@ fn stage_order_is_one_way() {
     assert_eq!(pipeline::STAGE_ORDER[0], CompileStage::Ast);
     assert_eq!(*pipeline::STAGE_ORDER.last().unwrap(), CompileStage::Emit);
 }
+
+/// 按 canonical 事实补全除文本表示外的全部稀疏表示，供文本合同正反用例使用。
+fn complete_representation_plan(program: &CanonicalProgram, text: Option<layout_choice::TextRepresentation>) -> RepresentationPlan {
+    let mut plan = RepresentationPlan::default();
+    plan.text_representation = text;
+    for nominal in program.linked.nominal_instances.keys() {
+        plan.adt_reps.insert(*nominal, layout_choice::AdtRepresentation::TypedAggregate);
+    }
+    for function in program.mir.functions.values() {
+        for value in function.value_types.keys() {
+            plan.value_reps.insert(ValueIdentity::new(function.instance, *value), layout_choice::ValueRepresentation::Specialized);
+        }
+        for block in function.blocks.values() {
+            for instruction in &block.instructions {
+                if matches!(&instruction.operation, CanonicalOperation::Invoke { .. }) {
+                    plan.invoke_lowerings.insert(instruction.id, layout_choice::InvokeLowering::Direct);
+                }
+            }
+        }
+    }
+    plan
+}
+
+/// 无文本值的程序：唯一合法事实是 `None`，凭空声明 `Some(Raw)` 必须在构造期失败。
+#[test]
+fn compiled_program_rejects_text_representation_without_text_values() {
+    let program = typed_call_program();
+    assert_eq!(declared_text_representation(&program), None);
+    CompiledProgram::new(program.clone(), complete_representation_plan(&program, None)).expect("无文本值的程序必须接受 `None` 事实");
+    let error = CompiledProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Raw)))
+        .expect_err("无文本值却声明 raw 必须在构造期失败");
+    assert_eq!(
+        error,
+        CompiledProgramError::TextRepresentationMismatch { expected: None, actual: Some(layout_choice::TextRepresentation::Raw) }
+    );
+    assert_eq!(error.to_string(), "TextRepresentationMismatch(expected=none, actual=raw)");
+}
+
+/// 只有文本字面量、没有载体声明的程序：`Raw` 是唯一合法事实，`None` / `Managed` 被拒。
+fn text_literal_program() -> CanonicalProgram {
+    let instance = ItemInstanceId::from_index(0).unwrap();
+    let text = TypeId::from_index(0).unwrap();
+    let literal = MirValueId::from_index(0).unwrap();
+    let mut linked = LinkedSemanticProgram::default();
+    linked.module_name = "text".into();
+    linked.types.insert(text, TypeRecord { declaration: text, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Utf8) });
+    linked.item_instances.insert(
+        instance,
+        ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: Vec::new(), return_type: text },
+    );
+    let function = CanonicalFunction {
+        instance,
+        parameters: Vec::new(),
+        parameter_names: Vec::new(),
+        return_type: text,
+        value_types: BTreeMap::from([(literal, text)]),
+        entry: CanonicalBlockId(0),
+        blocks: BTreeMap::from([(
+            CanonicalBlockId(0),
+            CanonicalBlock {
+                id: CanonicalBlockId(0),
+                parameters: Vec::new(),
+                instructions: vec![CanonicalInstruction {
+                    id: InstructionId::from_index(0).unwrap(),
+                    results: vec![literal],
+                    operation: CanonicalOperation::LoadConstant { constant: CanonicalConstant::Utf8("abc".into()) },
+                }],
+                terminator: CanonicalTerminator::Return { value: Some(literal) },
+            },
+        )]),
+    };
+    CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "text".into(), functions: BTreeMap::from([(instance, function)]) } }
+}
+
+#[test]
+fn compiled_program_requires_raw_for_text_literals_without_carrier() {
+    let program = text_literal_program();
+    program.validate().expect("文本字面量夹具必须是完整 canonical 程序");
+    assert_eq!(declared_text_representation(&program), Some(layout_choice::TextRepresentation::Raw));
+    CompiledProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Raw)))
+        .expect("无载体的文本值必须接受 `Raw` 事实");
+    for actual in [None, Some(layout_choice::TextRepresentation::Managed)] {
+        let error = CompiledProgram::new(program.clone(), complete_representation_plan(&program, actual))
+            .expect_err("无载体的文本值不得缺声明或声明为托管");
+        assert_eq!(
+            error,
+            CompiledProgramError::TextRepresentationMismatch { expected: Some(layout_choice::TextRepresentation::Raw), actual }
+        );
+    }
+}
+
+/// 登记了 canonical 文本载体的程序：`Managed` 是唯一合法事实，`Raw` / `None` 被拒。
+#[test]
+fn compiled_program_requires_managed_for_registered_text_carrier() {
+    let carrier = TypeId::from_index(0).unwrap();
+    let mut program = CanonicalProgram { linked: LinkedSemanticProgram::default(), mir: CanonicalSemanticMir::default() };
+    program
+        .linked
+        .types
+        .insert(carrier, TypeRecord { declaration: carrier, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Utf8) });
+    program.linked.text_encoding_types.insert(carrier, CanonicalPrimitiveType::Utf8);
+    assert_eq!(declared_text_representation(&program), Some(layout_choice::TextRepresentation::Managed));
+    CompiledProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Managed)))
+        .expect("已登记载体的程序必须接受 `Managed` 事实");
+    for actual in [None, Some(layout_choice::TextRepresentation::Raw)] {
+        let error = CompiledProgram::new(program.clone(), complete_representation_plan(&program, actual))
+            .expect_err("已登记载体不得缺声明或声明为 raw");
+        assert_eq!(
+            error,
+            CompiledProgramError::TextRepresentationMismatch { expected: Some(layout_choice::TextRepresentation::Managed), actual }
+        );
+    }
+}

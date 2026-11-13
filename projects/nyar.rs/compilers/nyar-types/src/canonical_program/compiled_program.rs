@@ -7,7 +7,10 @@ use super::{
     canonical_mir::{CanonicalMirError, CanonicalOperation, CanonicalSemanticMir},
     linked_program::LinkedSemanticProgram,
 };
-use crate::semantic_ids::{InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, ValueIdentity, layout_choice::RepresentationPlan};
+use crate::semantic_ids::{
+    InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, ValueIdentity,
+    layout_choice::{RepresentationPlan, TextRepresentation},
+};
 
 /// Top-level canonical success bundle after link + MIR validation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -91,6 +94,16 @@ pub enum CompiledProgramError {
         /// 多余的调用表示指令身份。
         instruction: InstructionId,
     },
+    /// 程序级文本表示与 canonical 声明 / 值类型事实不一致。
+    ///
+    /// 缺失（该有 `Some` 却是 `None`，或该是 `None` 却有值）与矛盾（声明了文本载体
+    /// 却计划为 `Raw`，或没有载体却计划为 `Managed`）都在构造期失败。
+    TextRepresentationMismatch {
+        /// 由 canonical 事实判定的期望表示。
+        expected: Option<TextRepresentation>,
+        /// 表示计划声明的实际表示。
+        actual: Option<TextRepresentation>,
+    },
 }
 
 /// 错误的渲染归错误自身所有：消费方只能拿到结构化字段的稳定文本，不得自己
@@ -113,7 +126,21 @@ impl std::fmt::Display for CompiledProgramError {
                 write!(formatter, "ExtraValueRepresentation(function={function}, value={value})")
             }
             Self::ExtraInvokeRepresentation { instruction } => write!(formatter, "ExtraInvokeRepresentation(instruction={instruction})"),
+            Self::TextRepresentationMismatch { expected, actual } => write!(
+                formatter,
+                "TextRepresentationMismatch(expected={}, actual={})",
+                text_representation_label(*expected),
+                text_representation_label(*actual)
+            ),
         }
+    }
+}
+
+fn text_representation_label(value: Option<TextRepresentation>) -> &'static str {
+    match value {
+        None => "none",
+        Some(TextRepresentation::Raw) => "raw",
+        Some(TextRepresentation::Managed) => "managed",
     }
 }
 
@@ -121,6 +148,13 @@ impl CompiledProgram {
     /// 只从完整 CanonicalProgram 与同一程序生成的 RepresentationPlan 构造。
     pub fn new(canonical: CanonicalProgram, representation: RepresentationPlan) -> Result<Self, CompiledProgramError> {
         canonical.validate().map_err(CompiledProgramError::Canonical)?;
+        let declared_text = super::declared_text_representation(&canonical);
+        if representation.text_representation != declared_text {
+            return Err(CompiledProgramError::TextRepresentationMismatch {
+                expected: declared_text,
+                actual: representation.text_representation,
+            });
+        }
         for nominal in canonical.linked.nominal_instances.keys() {
             if !representation.adt_reps.contains_key(nominal) {
                 return Err(CompiledProgramError::MissingAdtRepresentation { nominal: *nominal });
