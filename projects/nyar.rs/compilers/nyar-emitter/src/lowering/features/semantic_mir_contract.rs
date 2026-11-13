@@ -100,6 +100,75 @@ fn validate_aggregate_layouts(submission: &FragmentSubmission) -> Result<(), Sem
     Ok(())
 }
 
+/// 解析一个冻结类型形态的物理布局身份。
+///
+/// `Nominal` 自带 `LayoutId`；构造器形态（`Apply` / `Named`）由计划冻结的
+/// `NyarType → LayoutId` 索引解析。索引同时登记结算、归一键与未结算三种形态，
+/// 因此同一实例的不同冻结形态命中同一布局；都不命中即无布局身份，不做名字回查。
+fn resolve_layout_identity(submission: &FragmentSubmission, ty: &NyarType) -> Option<nyar_types::LayoutId> {
+    if let NyarType::Nominal { layout, .. } = ty {
+        return Some(*layout);
+    }
+    let index = submission.backend_plan.aggregate_layout_by_nyar_type();
+    if let Some(layout) = index.get(ty).or_else(|| index.get(&crate::target_execution_plan::contract_type_key(ty))).copied() {
+        return Some(layout);
+    }
+    // 泛型实例在 SSA 侧已结算成不带实参的 `Nominal { layout }`（实参身份在布局
+    // 层被吸收），声明侧的构造器形态只能回落到基结构的布局身份。基结构仍须是
+    // 已冻结布局，`Named` 基不提供身份，失败闭合。
+    match ty {
+        NyarType::Apply(base, _) => resolve_layout_identity(submission, base),
+        _ => None,
+    }
+}
+
+/// 同一字段在两份冻结事实中的类型判等。
+///
+/// 字段声明值类型的布局身份已由 canonical 冻结在计划里（`field_type_layouts`）。
+/// 声明是聚合时只比较布局身份；声明不是聚合（标量 / 合成容器 / 函数）时按结构
+/// 逐层比较，名义叶子仍按布局身份判等。两侧都不得按拼写或名字回查。
+fn same_frozen_field_type(submission: &FragmentSubmission, field: &nyar_types::FieldId, declared: &NyarType, actual: &NyarType) -> bool {
+    if declared == actual {
+        return true;
+    }
+    if let Some(declared_layout) = submission.backend_plan.field_type_layouts().get(field) {
+        return resolve_layout_identity(submission, actual) == Some(*declared_layout);
+    }
+    same_frozen_shape(submission, declared, actual)
+}
+
+/// 无字段身份可用时的结构化比较：容器逐层展开，名义叶子按布局身份判等。
+fn same_frozen_shape(submission: &FragmentSubmission, declared: &NyarType, actual: &NyarType) -> bool {
+    if declared == actual {
+        return true;
+    }
+    match (declared, actual) {
+        (NyarType::Array(declared), NyarType::Array(actual)) => same_frozen_shape(submission, declared, actual),
+        (
+            NyarType::FixedArray { element: declared, length: declared_length },
+            NyarType::FixedArray { element: actual, length: actual_length },
+        ) => declared_length == actual_length && same_frozen_shape(submission, declared, actual),
+        (NyarType::Tuple(declared), NyarType::Tuple(actual)) => {
+            declared.len() == actual.len()
+                && declared.iter().zip(actual).all(|(declared, actual)| same_frozen_shape(submission, declared, actual))
+        }
+        (NyarType::Nullable(declared), NyarType::Nullable(actual)) => same_frozen_shape(submission, declared, actual),
+        (NyarType::Union(declared), NyarType::Union(actual)) => {
+            declared.len() == actual.len()
+                && declared.iter().zip(actual).all(|(declared, actual)| same_frozen_shape(submission, declared, actual))
+        }
+        (NyarType::Function(declared), NyarType::Function(actual)) => {
+            declared.params.len() == actual.params.len()
+                && declared.params.iter().zip(&actual.params).all(|(declared, actual)| same_frozen_shape(submission, declared, actual))
+                && same_frozen_shape(submission, &declared.return_type, &actual.return_type)
+        }
+        _ => {
+            let declared = resolve_layout_identity(submission, declared);
+            declared.is_some() && declared == resolve_layout_identity(submission, actual)
+        }
+    }
+}
+
 /// Aggregate field instructions are Semantic MIR, not a request for a backend
 /// to discover an owner from a field spelling or physical object carrier.
 fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function: &ExecutableFunction) -> Result<(), SemanticMirContractError> {
@@ -126,29 +195,45 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                     });
                 };
                 // 实例字段类型已由上游冻结；backend 不再推导 substitution 或平台别名。
-                let fields_match = fields.len() == layout.fields.len()
-                    && fields.iter().all(|(field_id, value)| {
-                        submission.backend_plan.aggregate_layout_by_field().get(field_id).is_some_and(|(owner_layout, slot)| {
-                            *owner_layout == layout_id
-                                && layout.fields.get(*slot as usize).is_some_and(|field| {
-                                    let declared = &field.ty;
-                                    matches!(
-                                        value,
-                                        ExecutableOperand::Value(value)
-                                            if function
-                                                .value_types
-                                                .get(value)
-                                                .is_some_and(|actual| actual == declared)
-                                    )
-                                })
-                        })
-                    });
-                if !fields_match {
+                let mismatch = if fields.len() != layout.fields.len() {
+                    Some(format!("field count {} != declared layout fields {}", fields.len(), layout.fields.len()))
+                }
+                else {
+                    fields.iter().find_map(|(field_id, value)| {
+                        let Some((owner_layout, slot)) = submission.backend_plan.aggregate_layout_by_field().get(field_id)
+                        else {
+                            return Some(format!("field `{field_id:?}` is not registered in the layout field index"));
+                        };
+                        if *owner_layout != layout_id {
+                            return Some(format!(
+                                "field `{field_id:?}` belongs to layout `{owner_layout:?}`, not construction layout `{layout_id:?}`"
+                            ));
+                        }
+                        let Some(field) = layout.fields.get(*slot as usize)
+                        else {
+                            return Some(format!("field `{field_id:?}` slot {slot} is out of declared layout bounds"));
+                        };
+                        let declared = &field.ty;
+                        let actual = match value {
+                            ExecutableOperand::Value(value) => function.value_types.get(value),
+                            _ => None,
+                        };
+                        if !actual.is_some_and(|actual| same_frozen_field_type(submission, field_id, declared, actual)) {
+                            return Some(format!(
+                                "field `{}` slot {slot} declared `{declared}` ({declared:?}), operand type `{}` ({actual:?})",
+                                field.name,
+                                actual.map_or_else(|| "<non-value operand>".to_string(), |ty| format!("{ty}"))
+                            ));
+                        }
+                        None
+                    })
+                };
+                if let Some(mismatch) = mismatch {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),
                         location,
-                        detail: "aggregate construction contract disagrees with declared layout metadata".to_string(),
+                        detail: format!("aggregate construction contract disagrees with declared layout metadata: {mismatch}"),
                     });
                 }
                 continue;
@@ -211,17 +296,20 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 });
             };
             if let Some(output) = crate::contracts::instruction_primary_result(instruction) {
-                if function.value_types.get(&output).is_none_or(|actual| actual != &declared.ty) {
+                if function.value_types.get(&output).is_none_or(|actual| !same_frozen_field_type(submission, field, &declared.ty, actual)) {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),
                         location,
-                        detail: "FieldGet result type differs from declared aggregate field type".to_string(),
+                        detail: format!(
+                            "FieldGet result type differs from declared aggregate field type (declared={declared:?}, actual={:?})",
+                            function.value_types.get(&output)
+                        ),
                     });
                 }
             }
             if let Some(ExecutableOperand::Value(value)) = value {
-                if function.value_types.get(value).is_none_or(|actual| actual != &declared.ty) {
+                if function.value_types.get(value).is_none_or(|actual| !same_frozen_field_type(submission, field, &declared.ty, actual)) {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),

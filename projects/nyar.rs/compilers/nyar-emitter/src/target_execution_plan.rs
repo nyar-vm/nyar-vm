@@ -36,6 +36,12 @@ pub struct TargetExecutionPlan {
     aggregate_layouts: nyar_types::AggregateLayoutPlan,
     aggregate_layout_by_nominal: BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId>,
     aggregate_layout_by_field: BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)>,
+    /// 字段声明值类型（canonical `TypeId`）已冻结的布局身份。
+    ///
+    /// 布局计划字段记录的是**构造器形态**（`Apply(Named(declaration), args)`），
+    /// 而 SSA 槽是**结算形态**（`Nominal { layout }`）。字段合同以声明侧冻结的
+    /// 布局身份判等，不比较拼写或结构形态；声明值类型不是聚合时无此项。
+    field_type_layouts: BTreeMap<nyar_types::FieldId, nyar_types::LayoutId>,
     aggregate_layout_by_type: BTreeMap<nyar_types::TypeId, nyar_types::LayoutId>,
     /// 以结构化 `NyarType` 为键布局索引。
     ///
@@ -375,11 +381,27 @@ impl TargetExecutionPlan {
             functions.insert(instance, lowered);
         }
         let mut aggregate_layout_by_nyar_type = BTreeMap::new();
+        // 字段声明侧的身份：布局计划只记构造器拼写，SSA 记结算布局；字段合同
+        // 必须以 canonical 为两侧冻结的同一布局身份比对，而不是比较拼写形态。
+        let mut field_type_layouts = BTreeMap::new();
+        for (field_id, record) in &canonical.linked.fields {
+            if let Some(layout_id) = canonical.linked.aggregate_layout_by_type.get(&record.ty) {
+                field_type_layouts.insert(*field_id, *layout_id);
+            }
+        }
         for (type_id, layout_id) in &canonical.linked.aggregate_layout_by_type {
             // lower_type 只对“可执行类型”有结果；函数签名等非值类型跳过即可，
             // 它们不会成为容器元素或导出位置。
             if let Ok(ty) = lower_type(canonical, *type_id) {
-                aggregate_layout_by_nyar_type.insert(ty, *layout_id);
+                aggregate_layout_by_nyar_type.insert(ty.clone(), *layout_id);
+                // 同一实例类型有两种冻结形态：SSA/签名已结算为携带布局身份的
+                // `Nominal`，而布局计划的字段事实仍以未结算的 `Apply` 记录。
+                // 两者必须指向同一布局，否则字段合同会因形态差异误判为不同类型。
+                // 键按 `contract_type_key` 归一（抹掉诊断拼写），两侧同一键即同一类型。
+                aggregate_layout_by_nyar_type.insert(contract_type_key(&ty), *layout_id);
+                if let Ok(unsettled) = lower_unsettled_contract_key(canonical, *type_id) {
+                    aggregate_layout_by_nyar_type.insert(unsettled, *layout_id);
+                }
             }
             // 文本载体声明（`std.text::Utf8Text`/`Utf16Text`）在签名里折叠成编码基元，
             // 槽类型是 `NyarType::Utf8`/`Utf16` 而不是名义拼写；托管布局必须同时以
@@ -428,6 +450,7 @@ impl TargetExecutionPlan {
             aggregate_layouts: canonical.linked.aggregate_layouts.clone(),
             aggregate_layout_by_nominal: canonical.linked.aggregate_layout_by_nominal.clone(),
             aggregate_layout_by_field: canonical.linked.aggregate_layout_by_field.clone(),
+            field_type_layouts,
             aggregate_layout_by_type: canonical.linked.aggregate_layout_by_type.clone(),
             aggregate_layout_by_nyar_type,
             sum_layout_by_nyar_type,
@@ -547,6 +570,14 @@ impl TargetExecutionPlan {
     /// 返回字段 ID 到布局槽位的映射。
     pub fn aggregate_layout_by_field(&self) -> &BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)> {
         &self.aggregate_layout_by_field
+    }
+
+    /// 返回字段声明值类型到冻结布局身份的映射。
+    ///
+    /// 只登记声明值类型本身是聚合的字段；标量/合成容器字段没有布局身份，
+    /// 由结构化形状比较处理。
+    pub fn field_type_layouts(&self) -> &BTreeMap<nyar_types::FieldId, nyar_types::LayoutId> {
+        &self.field_type_layouts
     }
 
     /// 返回类型 ID 到布局 ID 的映射。
@@ -1366,6 +1397,65 @@ fn canonical_primitive_carrier(spelling: &str) -> Option<NyarType> {
         "void" => NyarType::Bottom,
         _ => return None,
     })
+}
+
+/// 合同判等键：抹掉仅用于诊断的 nominal 拼写，保留布局身份与结构。
+///
+/// 布局计划以未结算 `Apply` 记录字段事实，SSA/签名以结算 `Nominal` 记录同一实例；
+/// 两者经本函数归一后键相同，即为同一冻结类型。
+pub(crate) fn contract_type_key(ty: &NyarType) -> NyarType {
+    match ty {
+        NyarType::Nominal { layout, .. } => NyarType::Nominal { layout: *layout, spelling: nyar_types::Identifier::new("") },
+        NyarType::Apply(base, arguments) => {
+            NyarType::Apply(Box::new(contract_type_key(base)), arguments.iter().map(contract_type_key).collect())
+        }
+        NyarType::Array(element) => NyarType::Array(Box::new(contract_type_key(element))),
+        NyarType::FixedArray { element, length } => NyarType::FixedArray { element: Box::new(contract_type_key(element)), length: *length },
+        NyarType::Tuple(items) => NyarType::Tuple(items.iter().map(contract_type_key).collect()),
+        NyarType::Nullable(element) => NyarType::Nullable(Box::new(contract_type_key(element))),
+        NyarType::Union(items) => NyarType::Union(items.iter().map(contract_type_key).collect()),
+        other => other.clone(),
+    }
+}
+
+/// 按 canonical 类型图重建布局计划使用的**未结算**类型形态（`Nominal` 基 + `Apply` 实参）。
+fn lower_unsettled_contract_key(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<NyarType> {
+    let kind = &program.linked.types.get(&id).ok_or_else(|| "canonical 类型事实缺失".to_string())?.kind;
+    match kind {
+        CanonicalTypeKind::Nominal { declaration, arguments } => {
+            let base = match program.linked.aggregate_layout_by_type.get(declaration) {
+                Some(layout) => NyarType::Nominal { layout: *layout, spelling: nyar_types::Identifier::new("") },
+                None => contract_type_key(&lower_type(program, *declaration)?),
+            };
+            if arguments.is_empty() {
+                Ok(base)
+            }
+            else {
+                Ok(NyarType::Apply(
+                    Box::new(base),
+                    arguments.iter().map(|argument| lower_unsettled_contract_key(program, *argument)).collect::<Result<Vec<_>>>()?,
+                ))
+            }
+        }
+        CanonicalTypeKind::Array { element, length } => {
+            let element = lower_unsettled_contract_key(program, *element)?;
+            Ok(match length {
+                None => NyarType::Array(Box::new(element)),
+                Some(length) => NyarType::FixedArray {
+                    element: Box::new(element),
+                    length: usize::try_from(*length).map_err(|_| "固定数组长度溢出".to_string())?,
+                },
+            })
+        }
+        CanonicalTypeKind::Tuple(items) => {
+            Ok(NyarType::Tuple(items.iter().map(|item| lower_unsettled_contract_key(program, *item)).collect::<Result<Vec<_>>>()?))
+        }
+        CanonicalTypeKind::Nullable(element) => Ok(NyarType::Nullable(Box::new(lower_unsettled_contract_key(program, *element)?))),
+        CanonicalTypeKind::Union(items) => {
+            Ok(NyarType::Union(items.iter().map(|item| lower_unsettled_contract_key(program, *item)).collect::<Result<Vec<_>>>()?))
+        }
+        _ => Ok(contract_type_key(&lower_type(program, id)?)),
+    }
 }
 
 fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<NyarType> {
