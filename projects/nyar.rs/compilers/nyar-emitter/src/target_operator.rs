@@ -73,8 +73,11 @@ pub enum TargetOperatorEncoding {
     Jvm(crate::lowering::backends::jvm::JvmOperatorCode),
     /// CLR MSIL opcode（与数值载体无关，载体差异已冻结在配方中）。
     Clr(crate::transitional::msil::MsilOpcode),
-    /// Native x86-64 冻结算子码（算术/位/比较；载体差异已冻结在配方中）。
-    Native(crate::lowering::backends::native::NativeOperatorCode),
+    /// x86-64 冻结算子码（算术/位/比较；载体差异已冻结在配方中）。
+    ///
+    /// 编码按 ISA 冻结，不按「native」命名：`native` / `node` / `python` 只是同一
+    /// 规范目标四元组上的产物与宿主形态，指令编码由四元组的 `arch` 决定。
+    X86_64(crate::lowering::backends::native::x86_64::X86_64OperatorCode),
 }
 
 /// 一个已冻结的目标 operator 计划。

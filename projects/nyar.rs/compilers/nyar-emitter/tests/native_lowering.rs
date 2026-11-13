@@ -1,19 +1,23 @@
-//! Native 最小 lowering 的结构化验证与真实运行证据。
+//! 原生镜像最低 lowering 的结构化验证与真实运行证据。
 //!
-//! 用例直接构造已冻结的片段计划（不经前端），验证 Win64 参数传参、同片段调用、
-//! 冻结 native 算子、条件分支与 `Return` 生成的 `PE32+`；在 Windows 上真实运行
-//! 生成的 `.exe`，用进程退出码作为运行时证据。未冻结或超出边界的形状必须
-//! 结构化失败，不得生成占位镜像。
+//! native 不是平台：用例显式给出规范目标四元组 `x86_64-pc-windows-msvc`，验证
+//! Win64 参数传参、同片段调用、冻结 x86-64 算子、条件分支与 `Return` 生成的
+//! `PE32+`；在 Windows 上真实运行生成的 `.exe`，用进程退出码作为运行时证据。
+//! 未闭合的目标四元组、未冻结绑定或超出边界的形状必须结构化失败，不得生成
+//! 占位镜像或借用其他平台的编码与容器。
 
 use std::{collections::BTreeMap, process::Command};
 
-use nyar::{ExternalImportLink, Identifier, QualifiedName, abstractions::BinaryArch};
+use nyar::{
+    ExternalImportLink, Identifier, QualifiedName,
+    abstractions::{BinaryArch, CanonicalTarget},
+};
 use nyar_emitter::{
     BackendImport, FragmentSubmission, TargetExecutionPlan,
-    lowering::backends::native::NativeOperatorCode,
+    lowering::backends::native::x86_64::X86_64OperatorCode,
     nyar_backend_native::{NativeExecutableKind, classify_native_image},
     target_operator::{TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
-    testing::lower_fragment_to_native_executable,
+    testing::lower_fragment_to_native_image,
 };
 use nyar_types::{
     Block, BlockRef, Constant, ExecutableFunction, ImportIndex, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator,
@@ -29,6 +33,15 @@ const OPERATOR_INSTANCE_BASE: u32 = 100;
 const HOST_IMPORT_INSTANCE: u32 = 200;
 /// 失败闭合用例使用的未知调用身份。
 const UNKNOWN_CALLEE: u32 = 150;
+
+/// 本切片闭合的规范目标四元组。
+fn windows_x64() -> CanonicalTarget {
+    CanonicalTarget::parse("x86_64-pc-windows-msvc").expect("canonical target")
+}
+
+fn lower_windows_x64(submission: &FragmentSubmission) -> nyar_emitter::Result<nyar_emitter::lowering::backends::native::NativeLoweredFragment> {
+    lower_fragment_to_native_image(submission, windows_x64())
+}
 
 fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
     let value_types = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
@@ -74,18 +87,18 @@ fn integer(value: i64) -> Operand {
     Operand::Constant(Constant::Int(value))
 }
 
-fn operator_plan(code: NativeOperatorCode) -> TargetOperatorPlan {
+fn operator_plan(code: X86_64OperatorCode) -> TargetOperatorPlan {
     let result_type = if code.is_comparison() { TargetOperandType::I32 } else { TargetOperandType::I64 };
     TargetOperatorPlan {
         arity: code.arity(),
         operand_type: TargetOperandType::I64,
         result_type,
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::Native(code),
+        encoding: TargetOperatorEncoding::X86_64(code),
     }
 }
 
-fn operator_import(code: NativeOperatorCode, return_type: NyarType) -> BackendImport {
+fn operator_import(code: X86_64OperatorCode, return_type: NyarType) -> BackendImport {
     BackendImport {
         index: ImportIndex::from_index(0).expect("import index"),
         link: ExternalImportLink::host(Some(Identifier::new("native-operator")), vec![format!("{code:?}")]),
@@ -166,9 +179,9 @@ fn parameters_calls_and_frozen_operator_run_natively() {
     with_function_mut(&mut plan, "main", |function| {
         function.blocks[0].instructions.push(call(add_instance, vec![integer(40), integer(2)], vec![ValueRef(0)]));
     });
-    plan.testing_register_import(operator_instance(0), operator_import(NativeOperatorCode::I64Add, LONG));
+    plan.testing_register_import(operator_instance(0), operator_import(X86_64OperatorCode::I64Add, LONG));
 
-    let lowered = lower_fragment_to_native_executable(&FragmentSubmission::from_backend_plan(plan)).expect("native 纵切必须生成 PE");
+    let lowered = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect("native 纵切必须生成 PE");
     expect_pe(&lowered.executable);
     assert!(lowered.text_len > 0, "`.text` 必须包含真实机器码");
 
@@ -220,11 +233,11 @@ fn branch_through_frozen_compare_runs_natively() {
     with_function_mut(&mut plan, "main", |function| {
         function.blocks[0].instructions.push(call(choose_instance, vec![integer(3), integer(4)], vec![ValueRef(0)]));
     });
-    plan.testing_register_import(operator_instance(1), operator_import(NativeOperatorCode::I64CompareLessThan, INTEGER));
-    plan.testing_register_import(operator_instance(2), operator_import(NativeOperatorCode::I64Add, LONG));
-    plan.testing_register_import(operator_instance(3), operator_import(NativeOperatorCode::I64Subtract, LONG));
+    plan.testing_register_import(operator_instance(1), operator_import(X86_64OperatorCode::I64CompareLessThan, INTEGER));
+    plan.testing_register_import(operator_instance(2), operator_import(X86_64OperatorCode::I64Add, LONG));
+    plan.testing_register_import(operator_instance(3), operator_import(X86_64OperatorCode::I64Subtract, LONG));
 
-    let lowered = lower_fragment_to_native_executable(&FragmentSubmission::from_backend_plan(plan)).expect("分支纵切必须生成 PE");
+    let lowered = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect("分支纵切必须生成 PE");
     expect_pe(&lowered.executable);
 
     #[cfg(windows)]
@@ -238,7 +251,7 @@ fn unit_return_exits_zero() {
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), main)]));
     plan.testing_module_name("native_lowering").testing_entry_operation(main_name);
 
-    let lowered = lower_fragment_to_native_executable(&FragmentSubmission::from_backend_plan(plan)).expect("unit 入口必须生成 PE");
+    let lowered = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect("unit 入口必须生成 PE");
     expect_pe(&lowered.executable);
 
     #[cfg(windows)]
@@ -271,14 +284,14 @@ fn host_import_without_binding_is_rejected() {
         },
     );
 
-    let error = lower_fragment_to_native_executable(&FragmentSubmission::from_backend_plan(plan)).expect_err("宿主导入必须失败闭合");
+    let error = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect_err("宿主导入必须失败闭合");
     assert!(error.contains("宿主导入"), "错误必须点名宿主导入边界: {error}");
 }
 
 #[test]
 fn unfrozen_operator_binding_is_rejected() {
     let submission = single_operator_submission(TargetOperatorBinding::Unfrozen, LONG);
-    let error = lower_fragment_to_native_executable(&submission).expect_err("未冻结绑定必须失败");
+    let error = lower_windows_x64(&submission).expect_err("未冻结绑定必须失败");
     assert!(error.contains("未冻结"), "错误必须点名未冻结绑定: {error}");
 }
 
@@ -294,8 +307,8 @@ fn non_native_operator_encoding_is_rejected() {
         }),
         LONG,
     );
-    let error = lower_fragment_to_native_executable(&submission).expect_err("非 native 编码必须失败");
-    assert!(error.contains("非 native"), "错误必须点名非 native 编码: {error}");
+    let error = lower_windows_x64(&submission).expect_err("非 x86-64 编码必须失败");
+    assert!(error.contains("非 x86-64 编码"), "错误必须点名非 x86-64 编码: {error}");
 }
 
 /// 构造 `main() = operator(10, 3)`：调用指定绑定的一次算子。
@@ -329,7 +342,7 @@ fn entry_with_parameters_is_rejected() {
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), main)]));
     plan.testing_module_name("native_lowering").testing_entry_operation(main_name);
 
-    let error = lower_fragment_to_native_executable(&FragmentSubmission::from_backend_plan(plan)).expect_err("带参入口必须失败");
+    let error = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect_err("带参入口必须失败");
     assert!(error.contains("必须无参数"), "错误必须说明 PE 入口不能带形参: {error}");
 }
 
@@ -348,6 +361,24 @@ fn call_to_unknown_instance_is_rejected() {
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), main)]));
     plan.testing_module_name("native_lowering").testing_entry_operation(main_name);
 
-    let error = lower_fragment_to_native_executable(&FragmentSubmission::from_backend_plan(plan)).expect_err("未知调用目标必须失败");
+    let error = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect_err("未知调用目标必须失败");
     assert!(error.contains("不在可达函数集"), "错误必须点名不可达调用目标: {error}");
+}
+
+/// 未闭合的规范目标四元组必须失败闭合，不得把 Windows `PE` 编码借给其他平台。
+#[test]
+fn unclosed_canonical_targets_are_rejected() {
+    let main = function("main", NyarType::Unit, Vec::new());
+    let main_name = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), main)]));
+    plan.testing_module_name("native_lowering").testing_entry_operation(main_name);
+    let submission = FragmentSubmission::from_backend_plan(plan);
+
+    let linux = CanonicalTarget::parse("x86_64-unknown-linux-gnu").expect("linux quad");
+    let error = lower_fragment_to_native_image(&submission, linux).expect_err("ELF 容器未实现必须失败");
+    assert!(error.contains("容器实现"), "错误必须点名缺失的容器实现: {error}");
+
+    let aarch64 = CanonicalTarget::parse("aarch64-unknown-linux-gnu").expect("aarch64 quad");
+    let error = lower_fragment_to_native_image(&submission, aarch64).expect_err("aarch64 未实现必须失败");
+    assert!(error.contains("尚未实现架构 `aarch64`"), "错误必须点名未实现的 ISA: {error}");
 }

@@ -162,11 +162,12 @@ pub mod testing {
         super::lowering::testing_lower_fragment_to_clr_managed_surface(submission)
     }
 
-    /// Lower a fragment submission to a real x86-64 Windows PE executable.
-    pub fn lower_fragment_to_native_executable(
+    /// Lower a fragment submission to a native image for a resolved canonical target.
+    pub fn lower_fragment_to_native_image(
         submission: &FragmentSubmission,
+        target: nyar::abstractions::CanonicalTarget,
     ) -> Result<super::lowering::backends::native::NativeLoweredFragment> {
-        super::lowering::testing_lower_fragment_to_native_executable(submission)
+        super::lowering::testing_lower_fragment_to_native_image(submission, target)
     }
 
     /// Decode one WASM uleb128 integer (test helper for section parsing).
