@@ -129,7 +129,7 @@ micro on_add() {
     let v = render(&component);
     // 处理器体必须是真实状态变更：句柄登记 + 类型化槽补丁 + 重挂载刷新展示文本。
     assert!(v.contains("let slot_count: IntBinding = AsgardTuiBindings.int(session, \"count\", 0)"), "处理器必须经运行帧换取类型化槽句柄: {v}");
-    assert!(v.contains("session.patch_int(slot_count, (session.int(slot_count)) + 1)"), "处理器必须生成真实整数槽补丁: {v}");
+    assert!(v.contains("session.patch_int(slot_count, session.int(slot_count) + 1)"), "处理器必须生成真实整数槽补丁: {v}");
     assert!(v.contains("asgard_terminal_remount(session, awsl_build_test)"), "处理器必须重挂载刷新展示文本: {v}");
     assert!(!v.contains("# 用户逻辑"), "注释桩假实现未清退: {v}");
 }
@@ -379,7 +379,7 @@ micro awsl_build_test(session: mut TuiSession) -> ArrayList<Widget> {
 # 事件处理函数 `on_add`：真实状态变更——经运行帧句柄写类型化槽，随后重挂载刷新展示文本。
 micro awsl_call_on_add(session: mut TuiSession) -> unit {
     let slot_count: IntBinding = AsgardTuiBindings.int(session, "count", 0)
-    session.patch_int(slot_count, (session.int(slot_count)) + 1)
+    session.patch_int(slot_count, session.int(slot_count) + 1)
     asgard_terminal_remount(session, awsl_build_test)
 }
 
