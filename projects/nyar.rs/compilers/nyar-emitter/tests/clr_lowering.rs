@@ -375,7 +375,10 @@ fn option_char_flow_lowers_with_erased_reference_carrier() {
     let module = lower_fragment_to_clr_module(&submission).expect("Option<char> reference carrier must lower");
 
     let method = module.global_methods.iter().find(|method| method.method.name == "main").expect("entry method");
-    assert_eq!(method.method.signature, MsilMethodSignature::new(MsilType::Object, vec![MsilType::Object, MsilType::Char]));
+    assert_eq!(
+        method.method.signature,
+        MsilMethodSignature::new(MsilType::Object, vec![MsilType::Object, MsilType::Int32 { signed: false }])
+    );
     assert!(method.instructions.iter().any(|instruction| instruction.opcode == MsilOpcode::Ret), "{:?}", method.instructions);
     let body = MethodBodyEncoder::encode(method, 0x1100_0001).expect("method body encoding");
     assert!(!body.is_empty());

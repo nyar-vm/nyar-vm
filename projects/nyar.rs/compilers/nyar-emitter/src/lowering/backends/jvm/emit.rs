@@ -677,7 +677,9 @@ fn jvm_array_element_descriptor(layouts: &AggregateLayoutPlan, element: &NyarTyp
         NyarType::Integer8 { .. } => JvmTypeDescriptor::Byte,
         NyarType::Integer16 { .. } => JvmTypeDescriptor::Short,
         NyarType::Integer32 { .. } => JvmTypeDescriptor::Int,
-        NyarType::Character => JvmTypeDescriptor::Char,
+        // V 的 `char` 是 u32 码位载体；JVM `char` 只有 16 位，会把 U+10000 以上截断。
+        // 物理载体固定为 32 位 int，UTF-16 code unit 转换只在显式编码边界发生。
+        NyarType::Character => JvmTypeDescriptor::Int,
         NyarType::Integer64 { .. } => JvmTypeDescriptor::Object("java/lang/Long".to_string()),
         NyarType::Float32 => JvmTypeDescriptor::Object("java/lang/Float".to_string()),
         NyarType::Float64 => JvmTypeDescriptor::Object("java/lang/Double".to_string()),
@@ -720,7 +722,8 @@ pub(crate) fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) 
     Ok(match ty {
         NyarType::Bottom | NyarType::Unit => JvmTypeDescriptor::Void,
         NyarType::Boolean => JvmTypeDescriptor::Boolean,
-        NyarType::Character => JvmTypeDescriptor::Char,
+        // V 的 `char` 是 u32 码位，载体固定 32 位；不得用宿主 16 位 `Char`。
+        NyarType::Character => JvmTypeDescriptor::Int,
         NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } => JvmTypeDescriptor::Int,
         NyarType::Integer64 { .. } => JvmTypeDescriptor::Long,
         NyarType::Float32 => JvmTypeDescriptor::Float,

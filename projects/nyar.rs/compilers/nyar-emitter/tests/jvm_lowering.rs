@@ -767,7 +767,7 @@ fn option_char_flow_lowers_with_erased_reference_carrier() {
     assert_eq!(
         method.descriptor,
         JvmMethodDescriptor::new(
-            vec![JvmTypeDescriptor::Object("java/lang/Object".to_string()), JvmTypeDescriptor::Char],
+            vec![JvmTypeDescriptor::Object("java/lang/Object".to_string()), JvmTypeDescriptor::Int],
             JvmTypeDescriptor::Object("java/lang/Object".to_string())
         )
     );

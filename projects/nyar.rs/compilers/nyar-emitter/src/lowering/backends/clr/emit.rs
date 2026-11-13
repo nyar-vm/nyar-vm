@@ -610,7 +610,8 @@ fn msil_array_element_type(layouts: &AggregateLayoutPlan, element: &NyarType) ->
         NyarType::Integer8 { signed } => MsilType::Int8 { signed: *signed },
         NyarType::Integer16 { signed } => MsilType::Int16 { signed: *signed },
         NyarType::Integer32 { signed } => MsilType::Int32 { signed: *signed },
-        NyarType::Character => MsilType::Char,
+        // V 的 `char` 是 u32 码位载体；CLR `Char` 只有 16 位，物理载体固定 32 位 int32。
+        NyarType::Character => MsilType::Int32 { signed: false },
         NyarType::Integer64 { signed } => MsilType::Int64 { signed: *signed },
         NyarType::Float32 => MsilType::Float32,
         NyarType::Float64 => MsilType::Float64,
@@ -651,7 +652,8 @@ pub(crate) fn msil_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<
     Ok(match ty {
         NyarType::Bottom | NyarType::Unit => MsilType::Void,
         NyarType::Boolean => MsilType::Bool,
-        NyarType::Character => MsilType::Char,
+        // V 的 `char` 是 u32 码位，载体固定 32 位；不得用宿主 16 位 `Char`。
+        NyarType::Character => MsilType::Int32 { signed: false },
         NyarType::Integer8 { signed } => MsilType::Int8 { signed: *signed },
         NyarType::Integer16 { signed } => MsilType::Int16 { signed: *signed },
         NyarType::Integer32 { signed } => MsilType::Int32 { signed: *signed },
