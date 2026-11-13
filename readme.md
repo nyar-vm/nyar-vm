@@ -36,7 +36,7 @@ graph TD
         direction LR
         subgraph Odin ["OdinVM"]
             direction TB
-            BYTECODE["odin-bytecode (.nyar)"]:::vm
+            BYTECODE["acorn-odin (.odin)"]:::vm
             OVM["odin-vm 解释器"]:::vm
             JIT["nyar-jit 即时编译"]:::engine
             GC["nyar-gc 托管堆"]:::vm
@@ -69,7 +69,7 @@ graph TD
 
 ## ⚙️ OdinVM
 
-OdinVM 执行 OVM 后端的产出：前端语义闭合后，经 Nyar 平台降低为 `nyar-ir`，再由 `nyar-emitter` 装配成 `odin-bytecode` 模块。运行时只看到已编码、已验证的模块，不接触任何语言的 AST 或解析器。
+OdinVM 执行 OVM 后端的产出：前端语义闭合后，经 Nyar 平台降低为 `nyar-ir`，再由 `nyar-emitter` 装配成 `acorn-odin` 模块。运行时只看到已编码、已验证的模块，不接触任何语言的 AST 或解析器。
 
 ### 执行模型
 
@@ -78,7 +78,7 @@ graph LR
     classDef core fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px;
     classDef engine fill:#e8f5e9,stroke:#4caf50,stroke-width:2px;
 
-    Module["odin-bytecode (.nyar)"] --> Loader["加载与校验"]
+    Module["acorn-odin (.odin)"] --> Loader["加载与校验"]
     Loader --> Exec["解释器 (Executor)"]:::core
     Exec <--> JIT["nyar-jit"]:::engine
     Exec --- GC["nyar-gc"]:::core
@@ -208,4 +208,4 @@ graph LR
 - [LegendVM](./projects/nyar.rs/runtimes/legend-vm/readme.md)
 - [nyar-gc](./projects/nyar.rs/runtimes/nyar-gc/readme.md)
 - [nyar-jit](./projects/nyar.rs/runtimes/nyar-jit/readme.md)
-- [odin-bytecode](./projects/nyar.rs/formats/odin-bytecode/readme.md)
+- [acorn-odin](https://github.com/yggdrasil-language/acorn.rs/tree/dev/examples/acorn-odin)

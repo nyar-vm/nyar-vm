@@ -7,7 +7,7 @@
 | 路径 | 角色 |
 |------|------|
 | `compilers/` | Nyar 编译栈：`nyar`、`nyar-types`、`nyar-analyzer`、`nyar-optimizer`、`nyar-emitter`、`nyar-runner`、`nyar-workspace`、包管理与注册表 |
-| `formats/` | 磁盘字节码合同（`odin-bytecode`） |
+| `formats/` | 已迁出：`.odin` 磁盘字节码合同由上游 Acorn 的 `acorn-odin` crate 持有，本仓以 git `rev` 消费 |
 | `runtimes/` | `odin-vm`（VM）、`legend-vm`（legacy lanes）、`nyar-gc`、`nyar-jit` |
 | `languages/` | 主链 `rusty-valkyrie` 是单包，含 `legion`/`asgard` 产品模块与两个 bin；workspace 内另有 5 个 guest 前端 `rusty-{bash,c,lua,powershell,tcl}`，其余 `rusty-*` 目录不在 workspace |
 | `ffis/` | 宿主绑定：`nyar-napi`（通用）、`nyar-wasm`（占位）、`valkyrie-napi`（Valkyrie 产品） |

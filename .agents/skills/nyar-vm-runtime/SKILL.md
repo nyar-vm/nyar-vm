@@ -2,7 +2,7 @@
 name: nyar-vm-runtime
 description: >-
   改 nyar-vm 的运行时层：OdinVM（odin-vm）、LegendVM（legend-vm）、nyar-gc、
-  nyar-jit、odin-bytecode。用户要求修解释器、GC、JIT、协程/代数效应、字节码格式、
+  nyar-jit、acorn-odin。用户要求修解释器、GC、JIT、协程/代数效应、字节码格式、
   guest 语言接入或运行时架构守卫时加载。
 ---
 
@@ -13,7 +13,7 @@ description: >-
 | crate | 职责 |
 |-------|------|
 | `runtimes/odin-vm` | OVM 字节码加载、校验、解释执行、宿主导入、JIT 注入 |
-| `formats/odin-bytecode` | `.nyar` 磁盘格式的编解码合同 |
+| `acorn-odin`（上游 Acorn） | `.odin` 磁盘格式的编解码合同；本仓以 git `rev` 消费 |
 | `runtimes/legend-vm` | 语言无关的 PE / Futamura 基底、guest 注册与分发 |
 | `runtimes/nyar-gc` | 托管堆、`Value`、分代标记-清除回收、写屏障 |
 | `runtimes/nyar-jit` | `JitCompiler`、栈图、标量快路径、去优化 |
@@ -22,9 +22,9 @@ description: >-
 
 ## OdinVM 不变量
 
-- `odin-vm` 只消费 `odin-bytecode`，不解析源码，不导入 `rusty-<lang>` 的 AST、parser 或编译流水线。
+- `odin-vm` 只消费 `acorn-odin`，不解析源码，不导入 `rusty-<lang>` 的 AST、parser 或编译流水线。
 - 模块加载必须校验结构、导出与常量池；损坏输入返回错误，不进入解释循环。
-- 新增或修改字节码指令时，同时改 `odin-bytecode` 的编码/解码、`odin-vm` 的 `ops`/`verify`、以及两端测试。
+- 新增或修改字节码指令时，同时改上游 `acorn-odin` 的编码/解码（先在上游提交并 pin `rev`）、`odin-vm` 的 `ops`/`verify`、以及两端测试。
 - 代数效应、协程与异步走 `PerformEffect` / `Yield` / `Resume` 与 `CoroutineState`；恢复点使用内码 `ExecOp` 下标。
 - JIT 只通过 `Executor::with_jit` 注入，假设失效必须能经栈图去优化回解释器。
 - `tests/architecture_guards.rs` 是边界守卫：为了通过测试而放宽导入限制属于反架构操作，应改实现而不是改守卫。
@@ -55,7 +55,6 @@ cargo test -p odin-vm
 cargo test -p legend-vm
 cargo test -p nyar-gc
 cargo test -p nyar-jit
-cargo test -p odin-bytecode
 cargo test -p odin-vm --test architecture_guards
 ```
 

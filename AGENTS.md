@@ -31,7 +31,6 @@
 ```text
 projects/nyar.rs/
 ├── compilers/     语言无关的规划、分析、优化、降低与产物装配
-├── formats/       odin-bytecode：.nyar 磁盘格式合同
 ├── runtimes/      odin-vm、legend-vm、nyar-gc、nyar-jit
 ├── languages/     rusty-valkyrie（主链单包）与 5 个 guest 前端
 └── ffis/          nyar-napi、nyar-wasm、valkyrie-napi
@@ -129,7 +128,7 @@ gitignore），不要提交。
   目录不参与构建。
 - `documentation/` 的旧页面可能仍写 `nyar-aot`、`nyar-tools`、`ProjectChomsky` 或 `examples/rusty-*`；这些是历史内容，不代表当前代码。
 - `legend-vm` 的原生产物路径是 Futamura 特化 → `NativeResidualModule` → PE；`.nyar` / OdinVM 只作探针，不是宿主脚本产品路径。
-- `odin-vm` 只消费 `odin-bytecode`，不解析源码，也不拥有 `.nyar` 的磁盘格式合同。
+- `odin-vm` 只消费 `acorn-odin`，不解析源码，也不拥有 `.odin` 的磁盘格式合同。
 - `projects/nyar.rs/.cargo/config.toml` 是本机文件，永远不要提交。
 - npm 平台包命名固定为 `@nyar/<包名>-<平台>`，不要加 `cli`、`gnu`、`musl` 等额外后缀。
 

@@ -32,7 +32,7 @@ description: >-
 | `compilers/nyar` | 分区、后端选择、验证与编译编排 |
 | `compilers/nyar-emitter` | 各后端 family 的目标降低与产物装配（CLR / JVM / WASM / native / OVM） |
 | `compilers/nyar-types` | 跨前端/后端的中性身份与合同类型 |
-| `formats/odin-bytecode` | `.nyar` 磁盘格式，仅 OVM 后端 |
+| `acorn-odin`（上游 Acorn） | `.odin` 磁盘格式，仅 OVM 后端 |
 
 ## 不变量
 
