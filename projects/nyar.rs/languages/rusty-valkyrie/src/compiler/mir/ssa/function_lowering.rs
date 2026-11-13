@@ -49,13 +49,21 @@ pub(super) fn lower_function_semantic(
     builder.field_declarations = field_declarations;
     // Imply/struct methods declare `: Self`; keep MIR return/params on the owner
     // so SMIR007 compares against `isize`/`i32` (etc.), not unsubstituted `Self`.
-    let resolved_return_type = impl_method_return_type(
-        &function.return_type,
-        &function.generics,
-        impl_owner_type.as_ref(),
-        &builder.impl_type_arguments,
-        &builder.sum_types,
-    );
+    // 返回类型只消费 HIR 已冻结的 `Self` 代入；缺泛型实参即结构化失败，
+    // 不得在 MIR 按 owner 泛型数量或方法泛型位置补造。
+    let resolved_return_type = match impl_method_return_type(&function.return_type, impl_owner_type.as_ref()) {
+        Some(return_type) => return_type,
+        None => {
+            diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedSumInstanceFacts {
+                span: function.span.clone(),
+                context: format!(
+                    "impl 方法 `{}` 的返回类型是 owner 声明的零实参名义形态，但 impl target 该声明带泛型实参；MIR 不得按数量或位置补齐",
+                    function.name.as_str()
+                ),
+            });
+            ValkyrieType::Void
+        }
+    };
     builder.current_return_type = resolved_return_type.clone();
 
     // 为函数参数分配 SSA 值，并登记到绑定表与入口块 `parameters`。

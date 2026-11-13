@@ -133,75 +133,39 @@ pub(super) fn impl_receiver_type(
     ValkyrieType::Nominal { declaration, arguments: type_args, primitive_identity }
 }
 
-/// imply 方法返回类型：只消费已冻结的 `Nominal{ItemId}` / Self 代入。
-/// 禁止按 `Named("Option"|"Result")` 短名在 MIR 补 declaration。
-pub(super) fn impl_method_return_type(
-    ty: &ValkyrieType,
-    function_generics: &[crate::compiler::types::hir::GenericType],
-    impl_owner_type: Option<&ValkyrieType>,
-    impl_type_arguments: &[ValkyrieType],
-    sum_types: &[super::MirSumDeclaration],
-) -> ValkyrieType {
+/// impl 方法返回类型：只消费 HIR 已冻结的 `Self` 代入与名义实参。
+///
+/// `Self` 代入直接复用 impl target（它已携带泛型实参）。若返回类型是 owner 声明的
+/// 零实参名义形态，而 impl target 该声明带实参，说明源码写了缺参的裸 owner 名：
+/// 这是事实缺失，返回 `None` 让调用方结构化诊断。禁止按 owner 泛型数量、方法泛型
+/// 位置或 `.last()` 补造返回类型——任意二参数 sum 并不天然具有 `map<T,E> → map<U,E>`
+/// 的语义，方法末位泛型也不天然是返回容器的元素类型。
+pub(super) fn impl_method_return_type(ty: &ValkyrieType, impl_owner_type: Option<&ValkyrieType>) -> Option<ValkyrieType> {
     let resolved = resolve_self_type_with_owner(ty, impl_owner_type);
-    let Some(owner_declaration) = impl_owner_type.and_then(|owner| owner.nominal_declaration())
+    let ValkyrieType::Nominal { declaration, arguments, .. } = &resolved
     else {
-        return resolved;
+        return Some(resolved);
     };
-    let Some(owner_sum) = MirSumDeclaration::find_by_declaration(sum_types, owner_declaration)
-    else {
-        return resolved;
-    };
-    // 返回类型已是 owner 自身的无参 Nominal 时，按 imply 实参补齐 binder（仍不查短名）。
-    match resolved {
-        ValkyrieType::Nominal { declaration, arguments, primitive_identity } if declaration == owner_declaration && arguments.is_empty() => {
-            let type_args = if owner_sum.generics.len() == 2 {
-                result_method_return_type_args(function_generics, impl_type_arguments, owner_sum)
-            }
-            else {
-                sum_method_return_type_args(function_generics, impl_type_arguments, owner_sum)
-            };
-            if type_args.is_empty() {
-                ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: primitive_identity.clone() }
-            }
-            else {
-                ValkyrieType::Nominal { declaration, arguments: type_args, primitive_identity: primitive_identity.clone() }
-            }
-        }
-        other => other,
+    if !arguments.is_empty() {
+        return Some(resolved);
     }
+    let Some(owner_arguments) = impl_owner_arguments(impl_owner_type, *declaration)
+    else {
+        return Some(resolved);
+    };
+    // 非泛型 owner 的零实参返回是完整事实；泛型 owner 出现零实参才判定缺参。
+    if owner_arguments.is_empty() {
+        return Some(resolved);
+    }
+    None
 }
 
-pub(super) fn result_method_return_type_args(
-    function_generics: &[crate::compiler::types::hir::GenericType],
-    impl_type_arguments: &[ValkyrieType],
-    owner_sum: &MirSumDeclaration,
-) -> Vec<ValkyrieType> {
-    if let Some(generic) = function_generics.last() {
-        let mut args = vec![ValkyrieType::Generic(generic.clone())];
-        if let Some(error) = impl_type_arguments.get(1) {
-            args.push(error.clone());
-        }
-        else if let Some(error_generic) = owner_sum.generics.get(1) {
-            args.push(ValkyrieType::Generic(error_generic.clone()));
-        }
-        return args;
-    }
-    sum_method_return_type_args(function_generics, impl_type_arguments, owner_sum)
-}
-
-pub(super) fn sum_method_return_type_args(
-    function_generics: &[crate::compiler::types::hir::GenericType],
-    impl_type_arguments: &[ValkyrieType],
-    owner_sum: &MirSumDeclaration,
-) -> Vec<ValkyrieType> {
-    if let Some(generic) = function_generics.last() {
-        vec![ValkyrieType::Generic(generic.clone())]
-    }
-    else if !impl_type_arguments.is_empty() {
-        impl_type_arguments.to_vec()
-    }
-    else {
-        owner_sum.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect()
+/// 取 impl target 中给定声明的实参切片；声明不同或形态无法确定时返回 `None`。
+fn impl_owner_arguments<'a>(impl_owner_type: Option<&'a ValkyrieType>, declaration: nyar_types::ItemId) -> Option<&'a [ValkyrieType]> {
+    match impl_owner_type? {
+        ValkyrieType::Nominal { declaration: owner_declaration, arguments, .. } if *owner_declaration == declaration => Some(arguments),
+        ValkyrieType::Apply(base, arguments) if base.nominal_declaration() == Some(declaration) => Some(arguments),
+        _ => None,
     }
 }
 
