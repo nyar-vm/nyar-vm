@@ -10,7 +10,7 @@ pub use self::{
         CanonicalWitness, CompileResult, CompileStage, CompiledProgram, CompiledProgramError, DiagnosticArg, DiagnosticOwner,
         DiagnosticOwnerClass, DiagnosticPhase, DiagnosticRecord, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan,
         EvidenceRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord,
-        NominalValueSemantics, StageResult, StructuredDiagnosticSet, TypeRecord, VariantRecord, pipeline,
+        NominalValueSemantics, StageResult, StructuredDiagnosticSet, TypeRecord, VariantRecord, declared_text_representation, pipeline,
     },
     compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath},
     contract_versions::{IDENTITY_SCHEMA_VERSION, LAYOUT_PLAN_VERSION, MIR_CONTRACT_VERSION, contract_version_fingerprint},

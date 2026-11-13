@@ -10,6 +10,7 @@
 //! - `canonical_mir`：Canonical Semantic MIR 结构与其合同错误。
 //! - `canonical_validation`：M2 验证器，只拒绝不合法 MIR。
 //! - `compiled_program`：CanonicalProgram / CompiledProgram 成功载荷。
+//! - `text_representation`：程序级文本表示事实的唯一判定。
 //! - `pipeline`：单向编译流的阶段 trait 合同。
 //!
 //! 根模块只声明子模块并重导出公共类型，不承载实现。
@@ -19,6 +20,7 @@ mod canonical_validation;
 mod compiled_program;
 mod diagnostics;
 mod linked_program;
+mod text_representation;
 
 pub mod pipeline;
 
@@ -36,3 +38,4 @@ pub use linked_program::{
     ExportRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord,
     NominalValueSemantics, TypeRecord, VariantRecord,
 };
+pub use text_representation::declared_text_representation;

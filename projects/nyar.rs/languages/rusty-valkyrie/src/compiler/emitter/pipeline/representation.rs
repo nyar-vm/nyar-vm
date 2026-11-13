@@ -3,12 +3,8 @@
 use std::collections::BTreeSet;
 
 use nyar_types::{
-    CanonicalConstant, CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalTypeKind, NominalValueSemantics, StageResult,
-    ValueIdentity,
-    layout_choice::{
-        AdtRepresentation, InvokeLowering, RepresentationPlan, SumRepresentation, SumVariantRepresentation, TextRepresentation,
-        ValueRepresentation,
-    },
+    CanonicalOperation, CanonicalProgram, CanonicalTypeKind, NominalValueSemantics, StageResult, ValueIdentity,
+    layout_choice::{AdtRepresentation, InvokeLowering, RepresentationPlan, SumRepresentation, SumVariantRepresentation, ValueRepresentation},
     pipeline::RepresentationPlanStage,
 };
 
@@ -32,7 +28,7 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
         })?;
 
         let mut plan = RepresentationPlan::default();
-        plan.text_representation = plan_text_representation(program);
+        plan.text_representation = nyar_types::declared_text_representation(program);
         for nominal in program.linked.nominal_instances.keys() {
             plan.adt_reps.insert(*nominal, AdtRepresentation::TypedAggregate);
         }
@@ -150,38 +146,4 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
         }
         Ok(plan)
     }
-}
-
-/// 程序级文本表示事实的唯一规划点。
-///
-/// 文本值空间只有两种正式来源：源程序在 `std.text` 下声明并登记了 canonical
-/// 文本载体（`text_encoding_types`）时，文本值由该载体布局承载，规划为
-/// [`TextRepresentation::Managed`]；未声明任何载体时，`utf8` / `utf16` 值就是
-/// 宿主编码基元本身，规划为 [`TextRepresentation::Raw`]。判定只读声明与值类型
-/// 事实，不读布局注册表——布局缺失必须作为目标层的 missing 事实失败闭合，
-/// 不能反过来成为 raw 的依据。程序没有任何文本值时保持 `None`。
-fn plan_text_representation(program: &CanonicalProgram) -> Option<TextRepresentation> {
-    if !program.linked.text_encoding_types.is_empty() {
-        return Some(TextRepresentation::Managed);
-    }
-    let is_text_type = |type_id: nyar_types::TypeId| {
-        matches!(
-            program.linked.types.get(&type_id).map(|record| &record.kind),
-            Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Utf8 | CanonicalPrimitiveType::Utf16))
-        )
-    };
-    let has_text_values = program.mir.functions.values().any(|function| {
-        function.value_types.values().any(|ty| is_text_type(*ty))
-            || function.parameters.iter().any(|(_, ty)| is_text_type(*ty))
-            || is_text_type(function.return_type)
-            || function.blocks.values().any(|block| {
-                block.instructions.iter().any(|instruction| {
-                    matches!(
-                        &instruction.operation,
-                        CanonicalOperation::LoadConstant { constant: CanonicalConstant::Utf8(_) | CanonicalConstant::Utf16(_) }
-                    )
-                })
-            })
-    });
-    has_text_values.then_some(TextRepresentation::Raw)
 }
