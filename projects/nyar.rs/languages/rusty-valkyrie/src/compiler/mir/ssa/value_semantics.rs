@@ -731,7 +731,7 @@ fn apply_primitive_carriers(ty: &ValkyrieType, carriers: &BTreeMap<nyar_types::I
 ///
 /// 数值短名（`i32`/`usize`/`byte` …）即使拼写与内建同名也不得经此桥，
 /// 数值载体只认规范身份；`usize`/`isize` 由 std 的指针宽度别名结算成定宽整数。
-fn encoding_spelling_carrier(spelling: &str) -> Option<nyar_types::NyarType> {
+pub(crate) fn encoding_spelling_carrier(spelling: &str) -> Option<nyar_types::NyarType> {
     match nyar_types::NyarType::from_surface_primitive(spelling) {
         Some(carrier @ (nyar_types::NyarType::Utf8 | nyar_types::NyarType::Utf16 | nyar_types::NyarType::Character)) => Some(carrier),
         _ => None,

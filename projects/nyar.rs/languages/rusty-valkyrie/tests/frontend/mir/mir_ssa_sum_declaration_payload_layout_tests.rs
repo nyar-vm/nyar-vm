@@ -47,6 +47,37 @@ fn compile() -> MirModule {
     MirLowerer::lower_module_semantic(&hir)
 }
 
+/// 反例（本次修复的观测点）：无 `[primitive]` 身份、与内建数值同名的声明不得借
+/// 短名变成整数载体。
+///
+/// 修复前 `sum_payload_layout` 先调用 `from_surface_primitive(spelling)`，把
+/// `acme::u32` 按末段 `u32` 结算成 `Integer32 { signed: true }`；修复后只认声明
+/// 身份与已登记布局，同名无身份声明保留自己的名义布局。
+#[test]
+fn identity_less_numeric_payload_name_does_not_become_integer_carrier() {
+    const NUMERIC_NAME_SHAPE: &str = r#"
+namespace acme;
+
+structure u32 {
+}
+
+unite Wrap {
+    [constructor]
+    Value { inner: u32 }
+}
+"#;
+    let hir = ValkyrieCompiler::default().compile_fixture_source(NUMERIC_NAME_SHAPE).expect("fixture 必须完成 HIR 分析");
+    let module = MirLowerer::lower_module_semantic(&hir);
+    let program = canonical_program_from_semantic_mir(&module).expect("声明级 sum payload 必须完成实例化");
+    let layout = program.linked.sum_types.iter().find(|sum| sum.name == "Wrap").expect("Wrap 声明级布局");
+    let value = layout.variants.iter().find(|variant| variant.name == "Value").expect("Value variant");
+    assert!(
+        !matches!(value.payload_type, Some(NyarType::Integer32 { .. })),
+        "无 primitive 身份的 `u32` 不得按短名变成整数载体: {:?}",
+        value.payload_type
+    );
+}
+
 /// 回归：声明级布局必须结算单字段名义 payload，不得因严格 concretize 失败关闭。
 #[test]
 fn declaration_level_sum_layout_resolves_nominal_text_payload() {

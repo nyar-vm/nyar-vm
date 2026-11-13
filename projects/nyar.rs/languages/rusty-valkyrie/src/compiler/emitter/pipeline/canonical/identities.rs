@@ -793,9 +793,9 @@ fn sum_variant_layout_payload(
 /// 单字段 payload 的布局拼写结算（`sum_variant_layout_payload` 的单字段分支）。
 ///
 /// 语义身份只认 `VariantRecord::payload_type`；这里只回答 RepresentationPlan 与物理
-/// 布局需要的 `NyarType`。结构化 payload 走严格 `concretize_type`；名义 payload
-/// 优先查已登记的声明布局并携带 `LayoutId`，未登记时才保留 surface spelling 残差，
-/// 由预发射门禁拒绝，不按名字猜实现。
+/// 布局需要的 `NyarType`。顺序固定为：严格 `concretize_type` → 声明 `[primitive]`
+/// 身份载体 → 已登记声明布局 → 文本编码名桥 → 残差。拼写只用于显示与残差，
+/// 不再决定 signedness、指针宽度或 nominal/scalar 分类；缺事实返回 `None`。
 fn sum_payload_layout(
     ty: &ValkyrieType,
     type_values: &BTreeMap<ValkyrieType, TypeId>,
@@ -809,26 +809,31 @@ fn sum_payload_layout(
     else {
         return None;
     };
-    let declaration_id = type_values.get(&ValkyrieType::Nominal {
-        declaration: *declaration,
-        arguments: Vec::new(),
-        primitive_identity: primitive_identity.clone(),
-    })?;
+    let declaration_ty =
+        ValkyrieType::Nominal { declaration: *declaration, arguments: Vec::new(), primitive_identity: primitive_identity.clone() };
+    let declaration_id = type_values.get(&declaration_ty)?;
     let spelling = declaration_spellings.get(declaration_id)?;
+    // 载体先由声明身份结算；无身份的编码名桥只认文本载体（`Utf8Text` 这类），
+    // 数值短名不得借桥。已登记布局排在文本桥之后、拼写残差之前。
+    let base = match primitive_identity.as_deref() {
+        Some(identity) => crate::compiler::types::hir::primitive_identity_builtin_type(identity)
+            .and_then(|builtin| concretize_type(&builtin).ok())
+            .or_else(|| {
+                crate::compiler::mir::layout_id_for_type(&declaration_ty, layouts)
+                    .map(|layout| nyar_types::NyarType::Nominal { layout, spelling: spelling.clone() })
+            })?,
+        None => crate::compiler::mir::ssa::encoding_spelling_carrier(spelling.as_str())
+            .or_else(|| {
+                crate::compiler::mir::layout_id_for_type(&declaration_ty, layouts)
+                    .map(|layout| nyar_types::NyarType::Nominal { layout, spelling: spelling.clone() })
+            })
+            .unwrap_or_else(|| nyar_types::NyarType::Named(spelling.clone())),
+    };
     if arguments.is_empty() {
-        // 名义声明若已有冻结布局，必须带 `LayoutId`；裸短名会被预发射门禁拒绝。
-        if let Some(primitive) = nyar_types::NyarType::from_surface_primitive(spelling.as_str()) {
-            return Some(primitive);
-        }
-        if let Some(layout) = crate::compiler::mir::layout_id_for_type(ty, layouts) {
-            return Some(nyar_types::NyarType::Nominal { layout, spelling: spelling.clone() });
-        }
-        return Some(nyar_types::NyarType::Named(spelling.clone()));
+        return Some(base);
     }
-    let layout =
-        nyar_types::NyarType::from_surface_primitive(spelling.as_str()).unwrap_or_else(|| nyar_types::NyarType::Named(spelling.clone()));
     Some(nyar_types::NyarType::Apply(
-        Box::new(layout),
+        Box::new(base),
         arguments
             .iter()
             .map(|argument| sum_payload_layout(argument, type_values, declaration_spellings, layouts))

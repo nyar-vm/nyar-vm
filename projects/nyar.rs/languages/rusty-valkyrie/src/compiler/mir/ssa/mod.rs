@@ -33,6 +33,7 @@ pub use value_semantics::{
     SumVariantLayout, compute_aggregate_layout_plan, ensure_layout_for_type, instance_layout_for_type, instantiate_fields, layout_id_for_type,
     storage_kind_for_type,
 };
+pub(crate) use value_semantics::encoding_spelling_carrier;
 
 // 集成测试入口：仅暴露被迁移的 `tests/` 目标所需的最小内部 item。
 #[doc(hidden)]

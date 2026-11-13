@@ -119,6 +119,11 @@ impl Default for NyarType {
 
 impl NyarType {
     /// Map a frozen surface primitive spelling to a concrete platform type.
+    ///
+    /// This is a diagnostic/legacy bridge only. Production representation must come
+    /// from the declaration's `[primitive]` identity and the frozen target layout;
+    /// `usize`/`isize` are pointer-width aliases settled by the standard library and
+    /// are deliberately absent here so no helper pins them to 32 bits.
     pub fn from_surface_primitive(name: &str) -> Option<Self> {
         let simple = name.rsplit([':', '.']).next().unwrap_or(name);
         Some(match simple {
@@ -127,10 +132,12 @@ impl NyarType {
             "sbyte" | "i8" => NyarType::Integer8 { signed: true },
             "u16" => NyarType::Integer16 { signed: false },
             "i16" => NyarType::Integer16 { signed: true },
-            "usize" | "u32" | "i32" => NyarType::Integer32 { signed: true },
-            "isize" => NyarType::Integer32 { signed: true },
-            "u64" | "i64" => NyarType::Integer64 { signed: true },
-            "u128" | "i128" => NyarType::Integer128 { signed: true },
+            "u32" => NyarType::Integer32 { signed: false },
+            "i32" => NyarType::Integer32 { signed: true },
+            "u64" => NyarType::Integer64 { signed: false },
+            "i64" => NyarType::Integer64 { signed: true },
+            "u128" => NyarType::Integer128 { signed: false },
+            "i128" => NyarType::Integer128 { signed: true },
             "f32" => NyarType::Float32,
             "f64" => NyarType::Float64,
             // `f128` 没有 carrier：宁可失败关闭，也不静默降精度成 `Float64`。

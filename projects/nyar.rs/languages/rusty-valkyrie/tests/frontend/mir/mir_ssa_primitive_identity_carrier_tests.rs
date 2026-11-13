@@ -38,6 +38,22 @@ fn holder_field(module: &MirModule) -> &nyar_types::FieldLayout {
     &layout(module, "Holder").fields[0]
 }
 
+/// 反例（本次修复的观测点）：公共拼写桥不得改写 signedness，也不得把指针宽度别名
+/// 固定成 32 位。
+///
+/// 修复前 `usize` 与 `u32` 都被映射为 `Integer32 { signed: true }`，`u64`/`u128`
+/// 落到有符号载体。拼写只用于诊断显示，载体由声明身份结算；`usize`/`isize`
+/// 是指针宽度别名，必须由 std 结算，公共 helper 不得给它们定宽。
+#[test]
+fn surface_primitive_bridge_keeps_signedness_and_pointer_width_honest() {
+    assert_eq!(NyarType::from_surface_primitive("u32"), Some(NyarType::Integer32 { signed: false }), "u32 不得映射成有符号载体");
+    assert_eq!(NyarType::from_surface_primitive("u64"), Some(NyarType::Integer64 { signed: false }), "u64 不得映射成有符号载体");
+    assert_eq!(NyarType::from_surface_primitive("u128"), Some(NyarType::Integer128 { signed: false }), "u128 不得映射成有符号载体");
+    assert_eq!(NyarType::from_surface_primitive("i32"), Some(NyarType::Integer32 { signed: true }), "i32 保持有符号载体");
+    assert!(NyarType::from_surface_primitive("usize").is_none(), "usize 是指针宽度别名，公共桥不得固定为 32 位");
+    assert!(NyarType::from_surface_primitive("isize").is_none(), "isize 是指针宽度别名，公共桥不得固定为 32 位");
+}
+
 /// 反例（本次修复的观测点）：用户 struct 与内建载体同名 `i32`，但身份是 `acme::i32`。
 ///
 /// 修复前字段按名字拿到 `Integer32` 载体（size 4）；修复后必须落在 `acme::i32`
