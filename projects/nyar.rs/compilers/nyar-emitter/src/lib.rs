@@ -938,7 +938,7 @@ pub use backend::wasi::component::{
 #[doc(hidden)]
 pub use backend::wasi::{WasiPreview, canonical_wasm_artifact_stem as wasm_physical_artifact_name};
 #[doc(hidden)]
-pub use backend::wasm_js_glue::{build_node_launcher, collect_import_bindings};
+pub use backend::wasm_js_glue::{build_node_launcher, collect_import_bindings, try_build_node_launcher};
 #[doc(hidden)]
 pub use driver::families::driver_compiler_names;
 #[cfg(feature = "ovm-lane")]

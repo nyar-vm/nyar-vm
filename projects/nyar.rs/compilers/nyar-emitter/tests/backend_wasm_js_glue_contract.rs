@@ -176,7 +176,7 @@ fn glue_library_mode_never_auto_runs_or_exits() {
 // ── 导入表：只渲染声明的导入，按模块分组，非标识符字段加引号 ───────────────
 
 #[test]
-fn glue_import_object_groups_by_module_and_quotes_non_identifier_fields() {
+fn glue_import_object_keeps_module_identity_for_unknown_fields() {
     let imports = vec![
         ("env".to_string(), "add".to_string()),
         ("env".to_string(), "add".to_string()),
@@ -185,19 +185,20 @@ fn glue_import_object_groups_by_module_and_quotes_non_identifier_fields() {
     let bindings = collect_import_bindings(&imports);
     assert_eq!(bindings.len(), 2, "重复导入必须去重");
 
+    // Node 宿主壳只实现 `env` 下的内建能力；其他 module 的字段不是同一导入，
+    // 必须生成带 `module::field` 身份的显式抛错桩，不能按字段名套用 `env` 实现。
     let glue = build_node_launcher("demo", &imports, &[], false, None);
     assert!(glue.contains("env: {"), "导入表必须按模块分组:\n{glue}");
-    assert!(glue.contains(r#""std.text": {"#), "非标识符模块名必须加引号:\n{glue}");
-    assert!(glue.contains(r#""utf8 concat":"#) || glue.contains(r#""utf8 concat": "#), "非标识符字段名必须加引号:\n{glue}");
     assert!(glue.contains("add: (a, b) => (a + b) | 0"), "已声明字段必须有宿主实现:\n{glue}");
+    assert!(glue.contains("host import `std.text::utf8 concat`"), "非 env 导入必须保留模块身份并显式抛错:\n{glue}");
 }
 
 #[test]
-fn glue_unknown_import_field_falls_back_to_zero_impl() {
-    // 现状锁定：未认识的导入字段生成 `() => 0` 占位实现（导入表按字段名查实现，
-    // 未知字段不阻断产物生成）。这是当前真实合同；若未来改为编译期拒绝未映射
-    // 导入，本用例转红并升级为拒绝断言。
+fn glue_unknown_import_field_is_not_silently_zero() {
+    // 未知导入字段不得退化为 `() => 0`：否则缺失能力会被伪装成正常零值，
+    // void 调用的副作用随之静默消失。必须生成带身份的显式抛错桩。
     let imports = vec![("env".to_string(), "mystery_import".to_string())];
     let glue = build_node_launcher("demo", &imports, &[], false, None);
-    assert!(glue.contains("mystery_import: () => 0"), "未知导入字段当前必须落 () => 0:\n{glue}");
+    assert!(glue.contains("host import `env::mystery_import`"), "未知导入必须点名身份:\n{glue}");
+    assert!(!glue.contains("mystery_import: () => 0"), "未知导入不得伪装成零值:\n{glue}");
 }

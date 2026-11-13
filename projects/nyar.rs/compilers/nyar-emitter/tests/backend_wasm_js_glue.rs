@@ -173,3 +173,37 @@ fn cli_target_default_is_runner_concern_not_compile_target() {
     assert!(!non_cli_launcher.contains("command === \"build\""), "非 CLI 模式不应生成 build 命令分派——cli_target 默认值存在 ≠ 启用 CLI 模式");
     assert!(!non_cli_launcher.contains("cli_target = args[++i]"), "非 CLI 模式不应生成 --target 参数解析逻辑");
 }
+
+/// 未知导入必须生成带身份的显式抛错桩：不得用 `() => 0` 把缺失能力伪装成正常零值。
+#[test]
+fn unknown_host_import_gets_explicit_throwing_stub() {
+    let imports = vec![("env".to_string(), "totally_unknown_host_capability".to_string())];
+    let glue = nyar_emitter::try_build_node_launcher("demo", &imports, &[], false, None).expect("生成壳本身不因未知导入成功");
+    assert!(
+        glue.contains("host import `env::totally_unknown_host_capability` is not implemented by this launcher"),
+        "未知导入必须生成带 module::field 身份的显式抛错桩: {glue}"
+    );
+    assert!(!glue.contains("totally_unknown_host_capability: () => 0"), "不得把未知导入伪装成零值");
+}
+
+/// 同一字段名在不同 module 下仍是不同导入；实现表只认 `env`。
+#[test]
+fn known_host_import_still_renders_per_module() {
+    let imports = vec![("env".to_string(), "emit_byte".to_string()), ("other".to_string(), "ut8_length".to_string())];
+    let glue = nyar_emitter::try_build_node_launcher("demo", &imports, &[], false, None).expect("生成壳");
+    assert!(glue.contains("emit_byte: (b) =>"), "`env::emit_byte` 必须有实现: {glue}");
+    assert!(glue.contains("host import `other::ut8_length`"), "非 env 模块不得借用同名字段实现: {glue}");
+}
+
+/// library/browser 产物由消费者运行时提供导入；未知字段必须生成显式抛错桩，
+/// 不得退化为 `() => 0` 伪成功。
+#[test]
+fn library_consumer_unknown_import_gets_throwing_stub() {
+    let imports = vec![("env".to_string(), "Element.appendChild".to_string())];
+    let glue = nyar_emitter::try_build_node_launcher("demo", &imports, &[], true, None).expect("library 壳不应在生成期阻断消费者运行时导入");
+    assert!(
+        glue.contains("host import `env::Element.appendChild` is not implemented by this launcher"),
+        "未知导入必须生成带身份的显式抛错桩:\n{glue}"
+    );
+    assert!(!glue.contains("Element.appendChild: () => 0"), "不得把未知导入伪装成零值:\n{glue}");
+}

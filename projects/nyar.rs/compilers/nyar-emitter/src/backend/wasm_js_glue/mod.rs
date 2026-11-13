@@ -6,7 +6,7 @@
 
 use std::{fs, path::Path};
 
-use crate::{EmitterError, Result};
+use crate::Result;
 use acorn_wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
 use nyar::{
     abstractions::ArtifactFormat,
@@ -32,7 +32,7 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
             WasmPackageKind::Binary => false,
         };
         let library_invoke = if library_mode { read_library_invoke_spec(&wasm_path) } else { None };
-        let launcher = build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode, library_invoke.as_deref());
+        let launcher = try_build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode, library_invoke.as_deref())?;
         fs::write(&launcher_path, launcher).map_err(|e| format!("写入 Node 启动壳失败：{}: {e}", launcher_path.display()))?;
 
         Ok(vec![ArtifactDescriptor {
@@ -49,9 +49,14 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
 /// 为指定导入字段生成 `JS` 实现表达式。
 ///
 /// 仅消费 `WASM` 模块真实声明的导入字段，不注入伪导入。
-/// `cli_get_*` 系列字段返回安全默认值，不依赖任何 `CLI` 状态。
-fn js_import_impl(field: &str) -> String {
-    match field {
+/// 未登记字段返回 `None`：宿主壳没有实现该能力时必须生成前失败，
+/// 不得用 `() => 0` 把未知能力伪装成正常零值（void 调用的副作用会直接消失）。
+fn js_import_impl(module: &str, field: &str) -> Option<String> {
+    // Node 宿主壳只实现 `env` 下的内建能力；其他 module 的同名 field 不是同一导入。
+    if module != "env" {
+        return None;
+    }
+    Some(match field {
         "get_input" => "() => input_value".to_string(),
         "read_source_byte" => "() => { if (source_pos < source_bytes.length) { return source_bytes[source_pos++]; } return -1; }".to_string(),
         "emit_byte" => "(b) => { output_bytes.push(b & 0xFF); }".to_string(),
@@ -111,8 +116,8 @@ fn js_import_impl(field: &str) -> String {
         // 未捕获 `raise`：把 guest 的文本 payload 还原成宿主 Error，让用户代码错误
         // 以结构化异常呈现，而不是把整个调用塌缩成 `RuntimeError: unreachable`。
         "host_raise" => "(handle) => { throw new Error(hostResolve(handle)); }".to_string(),
-        _ => "() => 0".to_string(),
-    }
+        _ => return None,
+    })
 }
 
 /// 将字段名格式化为合法的 `JS` 对象键。
@@ -145,6 +150,10 @@ pub fn collect_import_bindings(imports: &[(String, String)]) -> Vec<(String, Str
 }
 
 /// 将导入绑定渲染为 `JS` 对象字面量字符串（集成测试专用）。
+///
+/// 未登记的导入生成显式抛错桩（带 `module::field` 身份），不得退化为
+/// `() => 0` 把缺失能力伪装成正常零值。浏览器 boot 等消费者运行时另有自己的
+/// 导入实现，因此这里不在生成期阻断。
 #[doc(hidden)]
 pub fn render_import_object_literal(imports: &[(String, String)]) -> String {
     let bindings = collect_import_bindings(imports);
@@ -152,13 +161,19 @@ pub fn render_import_object_literal(imports: &[(String, String)]) -> String {
     for (module, field) in bindings {
         by_module.entry(module).or_default().push(field);
     }
-    let modules: Vec<String> = by_module
-        .iter()
-        .map(|(module, fields)| {
-            let entries: Vec<String> = fields.iter().map(|field| format!("    {}: {}", js_object_key(field), js_import_impl(field))).collect();
-            format!("  {}: {{\n{}\n  }}", js_object_key(module), entries.join(",\n"))
-        })
-        .collect();
+    let mut modules = Vec::with_capacity(by_module.len());
+    for (module, fields) in by_module {
+        let mut entries = Vec::with_capacity(fields.len());
+        for field in fields {
+            let implementation = js_import_impl(&module, &field).unwrap_or_else(|| {
+                format!(
+                    "(...) => {{ throw new Error(\"[wasm-js-glue] host import `{module}::{field}` is not implemented by this launcher; the consumer runtime must provide it\"); }}"
+                )
+            });
+            entries.push(format!("    {}: {implementation}", js_object_key(&field)));
+        }
+        modules.push(format!("  {}: {{\n{}\n  }}", js_object_key(&module), entries.join(",\n")));
+    }
     format!("{{\n{}\n}}", modules.join(",\n"))
 }
 
@@ -613,22 +628,23 @@ function demarshalLibraryReturn(schema, raw, path) {{
     )
 }
 
-/// 构建 `Node` 启动壳（`.mjs`）。
+/// 构建 `Node` 启动壳（`.mjs`），未登记的导入返回结构化错误。
 ///
 /// 启动壳只做三件事：读取 `WASM` 字节码、按声明的导入构造 `importObject`、
 /// 调用 `exports.main ?? exports._start`。不输出 banner、不解析 CLI 子命令、
 /// 不注入伪导入，确保非 CLI 产物的 `stdout` 不被污染。
-#[doc(hidden)]
-pub fn build_node_launcher(
+pub fn try_build_node_launcher(
     artifact_name: &str,
     imports: &[(String, String)],
     utf8_literals: &[String],
     library_mode: bool,
     library_invoke: Option<&str>,
-) -> String {
+) -> Result<String> {
     let utf8_literals_json = serde_json::to_string(utf8_literals).unwrap_or_else(|_| "[]".to_string());
     let has_imports = !imports.is_empty();
     let has_read_source = imports.iter().any(|(_, field)| field == "read_source_byte");
+    // 未登记导入生成显式抛错桩；Node 可执行壳与浏览器 boot 的导入所有权由各自
+    // 宿主绑定合同决定，这里不按 consumer 猜测在生成期阻断。
     let smoke_import_object_literal = render_import_object_literal(imports);
     // ── CLI 模式开关：仅基于 import 名存在性 ────────────────────────────
     // 注意：这里只看 `"cli_get_target"` / `"cli_get_project"` / `"cli_get_output"`
@@ -758,7 +774,7 @@ if (command === "build") {
         ""
     };
 
-    format!(
+    Ok(format!(
         r#"import {{ readFileSync, writeFileSync, readdirSync, mkdirSync, accessSync, constants as fsConstants }} from "node:fs";
 import {{ resolve as pathResolve, join as pathJoin }} from "node:path";
 import {{ cwd }} from "node:process";
@@ -1136,7 +1152,22 @@ if (typeof entry === "function") {{
         },
         utf8_literals_json = utf8_literals_json,
         library_mode = if library_mode { "true" } else { "false" },
-    )
+    ))
+}
+
+/// 构建 `Node` 启动壳（`.mjs`）的集成测试入口。
+///
+/// 生产路径使用 [`try_build_node_launcher`]；测试传入未登记导入会直接 panic，
+/// 以免把「宿主缺实现」误当成可通过的产物。
+#[doc(hidden)]
+pub fn build_node_launcher(
+    artifact_name: &str,
+    imports: &[(String, String)],
+    utf8_literals: &[String],
+    library_mode: bool,
+    library_invoke: Option<&str>,
+) -> String {
+    try_build_node_launcher(artifact_name, imports, utf8_literals, library_mode, library_invoke).unwrap_or_else(|error| panic!("{error}"))
 }
 
 /// 从 `WASM` 自定义段读取 `UTF-8` 字面量表。
