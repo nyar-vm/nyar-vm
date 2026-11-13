@@ -96,6 +96,35 @@ fn boot_script_exposes_unmount_and_unbinds_listeners() {
 }
 
 #[test]
+fn boot_script_provides_every_synthesized_env_import() {
+    // 发射期会为「未捕获 `raise` 且 payload 是文本」合成 `env::host_raise`
+    // （`NODE_HOST_IMPORT_FIELDS`），宿主实现缺任何一项都会让整个产物在
+    // `WebAssembly.instantiate` 阶段以 `LinkError: function import requires a callable`
+    // 失败——这类失败发生在产物交付之后，不是编译期错误，必须由宿主侧测试钉住。
+    let boot = generate_boot_script("asgard-app", manifest_url_for_mode(true));
+    for field in [
+        "const_utf8",
+        "host_intern_utf8",
+        "host_utf8_extract",
+        "host_raise",
+        "utf8_concat",
+        "utf8_length",
+        "utf8_trim",
+        "utf8_to_lower",
+        "utf8_to_upper",
+        "utf8_replace",
+        "utf8_starts_with",
+        "utf8_ends_with",
+        "utf8_contains",
+        "utf8_equals",
+        "utf8_index_of",
+        "utf8_slice",
+    ] {
+        assert!(boot.contains(&format!("{field}:")), "boot.js 的 `env` 缺少导入实现 `{field}`");
+    }
+}
+
+#[test]
 fn input_intrinsic_emits_two_way_value_binding() {
     let source = r#"<widget><Column><Input value="{label}" /></Column></widget>
 <script>

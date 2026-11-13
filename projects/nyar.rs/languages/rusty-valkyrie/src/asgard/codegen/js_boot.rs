@@ -295,6 +295,10 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     const_utf8: function (index) { return hostIntern(UTF8_LITERALS[index] ?? ''); },
     host_intern_utf8: hostInternUtf8Bytes,
     host_utf8_extract: hostUtf8Extract,
+    // 未捕获 `raise` 的文本 payload 还原成宿主结构化错误：发射期会合成
+    // `env::host_raise` 导入（`NODE_HOST_IMPORT_FIELDS`），宿主必须提供同名实现，
+    // 缺失会以 `LinkError: function import requires a callable` 让整个产物无法实例化。
+    host_raise: function (handle) { throw new Error(hostText(handle)); },
     utf8_concat: hostUtf8Concat,
     utf8_length: hostUtf8Length,
     utf8_trim: hostUtf8Trim,
