@@ -69,6 +69,10 @@ pub(crate) fn testing_lower_fragment_to_clr_managed_surface(
     Ok((lowered.module, lowered.managed_abi))
 }
 
+pub(crate) fn testing_lower_fragment_to_native_executable(submission: &FragmentSubmission) -> Result<backends::native::NativeLoweredFragment> {
+    backends::native::lower_fragment_to_native_executable(submission)
+}
+
 pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
     wasm::decode_uleb128(bytes, pos)
 }

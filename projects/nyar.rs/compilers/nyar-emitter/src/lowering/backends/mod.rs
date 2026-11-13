@@ -18,3 +18,5 @@ pub mod wasm;
 pub mod clr;
 #[doc(hidden)]
 pub mod jvm;
+#[doc(hidden)]
+pub mod native;

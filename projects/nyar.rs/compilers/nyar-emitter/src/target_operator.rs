@@ -73,6 +73,8 @@ pub enum TargetOperatorEncoding {
     Jvm(crate::lowering::backends::jvm::JvmOperatorCode),
     /// CLR MSIL opcode（与数值载体无关，载体差异已冻结在配方中）。
     Clr(crate::transitional::msil::MsilOpcode),
+    /// Native x86-64 冻结算子码（算术/位/比较；载体差异已冻结在配方中）。
+    Native(crate::lowering::backends::native::NativeOperatorCode),
 }
 
 /// 一个已冻结的目标 operator 计划。
