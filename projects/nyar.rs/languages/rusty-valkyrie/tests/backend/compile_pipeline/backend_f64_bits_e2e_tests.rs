@@ -15,8 +15,10 @@ use nyar::TheoryBundle;
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan, testing::lower_fragment_to_wasm_mir_module};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
-const CONTRACTS: &str = r#"
-namespace demo.primitive.f64_bits;
+// primitive 身份门：载体声明必须落在 `namespace std.primitive;`，身份引用才能
+// 在携带者可见面内解析；demo 名空间经 `using std.primitive;` 引用载体类型。
+const STD_PRIMITIVES: &str = r#"
+namespace std.primitive;
 
 [primitive("std::primitive::bool")]
 structure bool { }
@@ -27,11 +29,23 @@ structure i32 { }
 [primitive("std::primitive::i64")]
 structure i64 { }
 
+[primitive("std::primitive::u32")]
+structure u32 { }
+
 [primitive("std::primitive::u64")]
 structure u64 { }
 
+[primitive("std::primitive::f32")]
+structure f32 { }
+
 [primitive("std::primitive::f64")]
 structure f64 { }
+"#;
+
+const CONTRACTS: &str = r#"
+using std.primitive;
+
+namespace demo.primitive.f64_bits;
 
 [host_contract]
 micro __f64_to_bits(value: f64): u64
@@ -60,25 +74,9 @@ micro f64_neg(value: f64): f64
 "#;
 
 const F32_CONTRACTS: &str = r#"
+using std.primitive;
+
 namespace demo.primitive.f32_bits;
-
-[primitive("std::primitive::bool")]
-structure bool { }
-
-[primitive("std::primitive::i32")]
-structure i32 { }
-
-[primitive("std::primitive::u32")]
-structure u32 { }
-
-[primitive("std::primitive::u64")]
-structure u64 { }
-
-[primitive("std::primitive::f32")]
-structure f32 { }
-
-[primitive("std::primitive::f64")]
-structure f64 { }
 
 [host_contract]
 micro __f32_to_bits(value: f32): u32
@@ -174,11 +172,12 @@ fn f64_groups(return_type: &str, statements: &str) -> Vec<CompilerSourceGroup> {
 }
 
 fn f64_groups_with(return_type: &str, statements: &str, providers: &str) -> Vec<CompilerSourceGroup> {
-    let app = format!("namespace demo.primitive.f64_bits;\n\n[main]\nmicro main() -> {return_type} {{\n{statements}\n}}\n");
+    let app = format!("using std.primitive;\n\nnamespace demo.primitive.f64_bits;\n\n[main]\nmicro main() -> {return_type} {{\n{statements}\n}}\n");
     vec![
-        CompilerSourceGroup::single_source("core", "core", CONTRACTS),
-        CompilerSourceGroup::single_source("adaptor", "adaptor", providers).with_direct_dependencies(vec!["core".into()]),
-        CompilerSourceGroup::single_source("app", "demo", &app).as_entry().with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
+        CompilerSourceGroup::single_source("std", "std", STD_PRIMITIVES),
+        CompilerSourceGroup::single_source("core", "core", CONTRACTS).with_direct_dependencies(vec!["std".into()]),
+        CompilerSourceGroup::single_source("adaptor", "adaptor", providers).with_direct_dependencies(vec!["std".into(), "core".into()]),
+        CompilerSourceGroup::single_source("app", "demo", &app).as_entry().with_direct_dependencies(vec!["std".into(), "core".into(), "adaptor".into()]),
     ]
 }
 
@@ -191,11 +190,12 @@ fn f32_groups_with(statements: &str, providers: &str) -> Vec<CompilerSourceGroup
 }
 
 fn f32_groups_with_return(statements: &str, providers: &str, return_type: &str) -> Vec<CompilerSourceGroup> {
-    let app = format!("namespace demo.primitive.f32_bits;\n\n[main]\nmicro main() -> {return_type} {{\n{statements}\n}}\n");
+    let app = format!("using std.primitive;\n\nnamespace demo.primitive.f32_bits;\n\n[main]\nmicro main() -> {return_type} {{\n{statements}\n}}\n");
     vec![
-        CompilerSourceGroup::single_source("core", "core", F32_CONTRACTS),
-        CompilerSourceGroup::single_source("adaptor", "adaptor", providers).with_direct_dependencies(vec!["core".into()]),
-        CompilerSourceGroup::single_source("app", "demo", &app).as_entry().with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
+        CompilerSourceGroup::single_source("std", "std", STD_PRIMITIVES),
+        CompilerSourceGroup::single_source("core", "core", F32_CONTRACTS).with_direct_dependencies(vec!["std".into()]),
+        CompilerSourceGroup::single_source("adaptor", "adaptor", providers).with_direct_dependencies(vec!["std".into(), "core".into()]),
+        CompilerSourceGroup::single_source("app", "demo", &app).as_entry().with_direct_dependencies(vec!["std".into(), "core".into(), "adaptor".into()]),
     ]
 }
 

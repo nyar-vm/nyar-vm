@@ -128,11 +128,10 @@ fn planner_accepts_only_validated_canonical_program() {
 #[test]
 fn source_function_values_keep_their_owners_through_representation_planning() {
     let output = rusty_valkyrie::ValkyrieCompiler::default()
-        .compile_source_to_program(
-            "[primitive(\"std::primitive::i32\")] structure i32 { } \
-                 micro boolean_identity(value: bool) -> bool { return value } \
+        .compile_source_to_program(&with_primitives(
+            "micro boolean_identity(value: bool) -> bool { return value } \
                  micro integer_identity(value: i32) -> i32 { return value }",
-        )
+        ))
         .expect("源码必须完成前端分析");
     let program = output.canonical();
     let plan = CanonicalRepresentationPlanner.plan(&program).expect("完整语义合同必须完成表示规划");

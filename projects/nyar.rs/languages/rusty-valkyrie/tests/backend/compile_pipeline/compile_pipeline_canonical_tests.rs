@@ -13,10 +13,9 @@ use std::collections::BTreeMap;
 
 fn source_surface_module() -> MirModule {
     let hir = rusty_valkyrie::ValkyrieCompiler::default()
-        .compile_source(
-            "[primitive(\"std::primitive::i32\")] structure i32 { } \
-             [export(name: \"answer\")] [main] micro answer() -> i32 { return 23 }",
-        )
+        .compile_source(&with_primitives(
+            "[export(name: \"answer\")] [main] micro answer() -> i32 { return 23 }",
+        ))
         .expect("源码导出及入口合同");
     rusty_valkyrie::MirLowerer::lower_module_semantic(&hir)
 }
@@ -37,11 +36,12 @@ fn source_instances_reach_canonical_without_a_name_binding_table() {
 /// 类型形参的内部辅助函数当成库导出根，命中「`Function` 不许过边界」误报。
 #[test]
 fn canonical_export_surface_stays_declared_and_callees_stay_internal_edges() {
-    let source = "[primitive(\"std::primitive::i32\")] structure i32 { } \
-                  micro helper(value: i32) -> i32 { return value } \
-                  [export(name: \"answer\")] micro answer() -> i32 { return helper(23) } \
-                  [main] micro main() -> i32 { return helper(7) }";
-    let hir = rusty_valkyrie::ValkyrieCompiler::default().compile_source(source).expect("源码必须完成前端分析");
+    let source = with_primitives(
+        "micro helper(value: i32) -> i32 { return value } \
+         [export(name: \"answer\")] micro answer() -> i32 { return helper(23) } \
+         [main] micro main() -> i32 { return helper(7) }",
+    );
+    let hir = rusty_valkyrie::ValkyrieCompiler::default().compile_source(&source).expect("源码必须完成前端分析");
     let module = rusty_valkyrie::compiler::mir::MirLowerer::lower_module_semantic(&hir);
     let instance_of = |suffix: &str| {
         module
@@ -639,11 +639,8 @@ fn null_intrinsic_operations_canonicalize_without_symbol_call() {
 #[test]
 fn i32_pow_while_loop_canonicalizes_with_mutable_locals() {
     rusty_valkyrie::ValkyrieCompiler::default()
-        .compile_source_to_program(
-            r#"[primitive("std::primitive::i32")]
-structure i32 { }
-
-imply i32 {
+        .compile_source_to_program(&with_primitives(
+            r#"imply i32 {
     infix `>`(self, rhs: Self): bool { return true }
     infix `%`(self, rhs: Self): Self { return rhs }
     infix `==`(self, rhs: Self): bool { return true }
@@ -664,7 +661,7 @@ micro __i32_pow(lhs: i32, rhs: i32): i32 {
     }
     return acc
 }"#,
-        )
+        ))
         .expect("__i32_pow must reach canonical with mutable loop locals");
 }
 
@@ -733,16 +730,11 @@ fn labeled_tuple_labels(program: &nyar_types::CanonicalProgram) -> Option<Vec<St
 #[test]
 fn labeled_tuple_registers_labels_in_canonical_type_table() {
     let output = rusty_valkyrie::ValkyrieCompiler::default()
-        .compile_source_to_program(
-            r#"[primitive("std::primitive::i32")]
-structure i32 { }
-[primitive("std::primitive::i64")]
-structure i64 { }
-
-micro pair(p: (ordinal: i32, value: i64)) -> (ordinal: i32, value: i64) {
+        .compile_source_to_program(&with_primitives(
+            r#"micro pair(p: (ordinal: i32, value: i64)) -> (ordinal: i32, value: i64) {
     return p
 }"#,
-        )
+        ))
         .expect("带标签元组必须完成 canonical 登记");
     assert_eq!(
         labeled_tuple_labels(output.canonical()),

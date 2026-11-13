@@ -14,10 +14,12 @@ fn witness_groups() -> Vec<CompilerSourceGroup> {
             "core",
             "core",
             r#"
-namespace std.operator;
+namespace std.primitive;
 
 [primitive("std::primitive::i64")]
 structure i64 { }
+
+namespace std.operator;
 
 trait Length {
     micro length(self): i64
@@ -77,10 +79,12 @@ fn concrete_receiver_trait_member_witness_materializes_into_target_plan() {
 }
 
 const DEFAULT_METHOD_CORE: &str = r#"
-namespace demo.traits;
+namespace std.primitive;
 
 [primitive("std::primitive::i64")]
 structure i64 { }
+
+namespace demo.traits;
 
 trait Sum {
     micro base(self): i64
@@ -137,10 +141,12 @@ fn default_method_body_on_concrete_structure_self_materializes() {
 }
 
 const SORT_CORE: &str = r#"
-namespace demo.collection;
+namespace std.primitive;
 
 [primitive("std::primitive::i64")]
 structure i64 { }
+
+namespace demo.collection;
 
 trait Comparable {
     micro compare(self, other: Self): bool

@@ -6,7 +6,7 @@ use rusty_valkyrie::{
     function_interop_contract, *,
 };
 
-use crate::primitives::SourceFixtureCompile;
+use crate::primitives::{SourceFixtureCompile, with_primitives};
 
 #[test]
 fn maps_c_binding_attribute_to_win32_host_link() {
@@ -51,9 +51,6 @@ fn maps_abstract_syscall_binding_and_call_edge() {
     let module = compiler
         .compile_fixture_source(
             r#"
-[primitive("std::primitive::i32")] structure i32 { }
-[primitive("std::primitive::i64")] structure i64 { }
-
 [syscall(1)]
 micro console_write(message: utf8): i32;
 
@@ -71,11 +68,8 @@ micro main() -> i64 {
     assert_eq!(contract.locator_segments(), &["syscall", "1"]);
 
     let build_output = compiler
-        .compile_source_to_program(
+        .compile_source_to_program(&with_primitives(
             r#"
-[primitive("std::primitive::i32")] structure i32 { }
-[primitive("std::primitive::i64")] structure i64 { }
-
 [syscall(1)]
 micro console_write(message: utf8): i32;
 
@@ -85,7 +79,7 @@ micro main() -> i64 {
     return 0;
 }
 "#,
-        )
+        ))
         .unwrap();
     let fragment = build_output.canonical().linked.fragments.values().next().expect("Canonical 片段");
     assert_eq!(fragment.external_imports.len(), 1, "links={:?}", fragment.external_imports);
@@ -388,9 +382,6 @@ micro __f64_add(lhs: f64, rhs: f64): f64;
         (
             923,
             r#"
-[primitive("std::primitive::i64")] structure i64 { }
-[primitive("std::primitive::usize")] structure usize { }
-
 [intrinsic("builtin.array.length")]
 micro frozen_length(xs: [i64]): usize {
     return frozen_length(xs)

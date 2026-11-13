@@ -15,7 +15,9 @@ pub struct SmokeProject {
 /// 源级 `std/primitive` 声明族：数值原始类型名不是语言内建，必须绑定到源码声明身份。
 /// 夹具项目声明 `"core": false`，因此在 `source/` 下写入等价声明文件；属性值给出
 /// `std::primitive::*` 身份，与内联编译测试的 `PRIMITIVE_I32` 保持同一合同。
+/// 身份门要求声明落在 `namespace std.primitive;`，身份引用才能在携带者可见面内解析。
 const CORE_PRIMITIVE_DECLARATIONS: &str = concat!(
+    "namespace std.primitive;\n",
     "[primitive(\"std::primitive::i8\")] structure i8 { }\n",
     "[primitive(\"std::primitive::i16\")] structure i16 { }\n",
     "[primitive(\"std::primitive::i32\")] structure i32 { }\n",

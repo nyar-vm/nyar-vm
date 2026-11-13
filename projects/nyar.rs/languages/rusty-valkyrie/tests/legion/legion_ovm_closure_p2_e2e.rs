@@ -98,7 +98,8 @@ micro main() -> i64 {
     })
 }
 "#,
-        Some(r#"[primitive("std::primitive::i64")] structure i64 { }"#),
+        Some(r#"namespace std.primitive;
+[primitive("std::primitive::i64")] structure i64 { }"#),
     );
     assert_eq!(run_main(&artifact), Value::I64(41), "无捕获 lambda 间接调用必须返回 41");
 }
@@ -234,7 +235,8 @@ micro main() -> i32 {
     return 0
 }
 "#,
-        Some(r#"[primitive("std::primitive::i32")] structure i32 { }"#),
+        Some(r#"namespace std.primitive;
+[primitive("std::primitive::i32")] structure i32 { }"#),
     );
     let output_dir = fixture.project_dir.join("dist").join("ovm");
     fs::create_dir_all(&output_dir).expect("建产物目录");

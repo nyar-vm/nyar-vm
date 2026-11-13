@@ -12,8 +12,12 @@ use rusty_valkyrie::{
 /// 生成单元（`awsl_hydrate_*` 一类宿主调用）的最小形态：签名用裸 `i32`/`utf8` 拼写，
 /// 调用点直接传整数字面量。生成单元不继承依赖包的语义导出，因此必须自带数值标量声明；
 /// `bool` 是编码型内建，不需要也不应重声明。
-const GENERATED_UNIT_SCALAR_SHAPE: &str = r#"[primitive("std::primitive::i32")]
+const GENERATED_UNIT_SCALAR_SHAPE: &str = r#"namespace std.primitive;
+
+[primitive("std::primitive::i32")]
 structure i32 { }
+
+namespace demo.generated;
 
 micro dom_create_text(text: utf8): i32 { }
 micro rx_bind_text_utf8(handle: i32, expr_export: utf8, dep1: i32, dep2: i32) { }

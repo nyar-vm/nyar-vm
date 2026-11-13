@@ -19,7 +19,7 @@ use rusty_valkyrie::legion::{
 };
 use tempfile::TempDir;
 
-const PRIMITIVES: &str = r#"namespace app;
+const PRIMITIVES: &str = r#"namespace std.primitive;
 
 [primitive("std::primitive::i32")] structure i32 { }
 [primitive("std::primitive::i64")] structure i64 { }

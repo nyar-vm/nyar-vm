@@ -14,7 +14,9 @@ use rusty_valkyrie::{
     compiler::{emitter::pipeline::CompilerHostProviderBinding, semantic::closure::micro_declaration_key},
 };
 
-const CORE_PRIMITIVE_SOURCE: &str = r#"[primitive("std::primitive::i32")]
+const CORE_PRIMITIVE_SOURCE: &str = r#"namespace std.primitive;
+
+[primitive("std::primitive::i32")]
 structure i32 { }"#;
 
 /// 泛型数组 provider：无体，目标事实由 `[ovm("array.*")]` 宿主导入携带。
@@ -147,10 +149,12 @@ fn resolved_generic_array_contract_without_provider_fails_at_boundary() {
 }
 
 const CONTRACTS: &str = r#"
-namespace demo.collection.array;
+namespace std.primitive;
 
 [primitive("std::primitive::i32")]
 structure i32 { }
+
+namespace demo.collection.array;
 
 [host_contract]
 micro new<T>(length: i32): [T]

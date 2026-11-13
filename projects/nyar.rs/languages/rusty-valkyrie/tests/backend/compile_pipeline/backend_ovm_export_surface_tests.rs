@@ -7,7 +7,9 @@ use nyar_emitter::{FragmentSubmission, TargetExecutionPlan};
 use odin_vm::{OdinVm, Value};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
-const PRIMITIVES: &str = r#"[primitive("std::primitive::i32")]
+const PRIMITIVES: &str = r#"namespace std.primitive;
+
+[primitive("std::primitive::i32")]
 structure i32 { }"#;
 
 fn source_groups(app: &str) -> Vec<CompilerSourceGroup> {

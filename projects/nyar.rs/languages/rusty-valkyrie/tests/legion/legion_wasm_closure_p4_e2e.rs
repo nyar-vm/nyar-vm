@@ -40,7 +40,8 @@ fn build_standalone_wasm(prefix: &str, source: &str) -> WasmArtifact {
     fs::write(project_dir.join("source").join("main.v"), source).expect("写入口源码");
     fs::write(
         project_dir.join("source").join("core_primitive.v"),
-        r#"[primitive("std::primitive::i32")] structure i32 { }
+        r#"namespace std.primitive;
+[primitive("std::primitive::i32")] structure i32 { }
 [primitive("std::primitive::i64")] structure i64 { }"#,
     )
     .expect("写原始类型声明");
@@ -235,6 +236,7 @@ fn wasm_sorted_by_with_closure_comparator_executes() {
         r#"namespace app;
 
 using std.collection::{ArrayList, sorted_by};
+using std.operator::{Ordering, Less, Equal, Greater};
 
 [export(name: "run")]
 micro run() -> i32 {
@@ -242,9 +244,16 @@ micro run() -> i32 {
     items.push(1)
     items.push(3)
     items.push(2)
-    let direction: i32 = -1
-    let sorted: ArrayList<i32> = sorted_by(items, micro(a: i32, b: i32) -> i32 {
-        return (a - b) * direction
+    let descending: bool = true
+    let sorted: ArrayList<i32> = sorted_by(items, micro(a: i32, b: i32) -> Ordering {
+        if descending {
+            if a < b { return Greater }
+            if b < a { return Less }
+            return Equal
+        }
+        if a < b { return Less }
+        if b < a { return Greater }
+        return Equal
     })
     return sorted.get(1).unwrap()
 }

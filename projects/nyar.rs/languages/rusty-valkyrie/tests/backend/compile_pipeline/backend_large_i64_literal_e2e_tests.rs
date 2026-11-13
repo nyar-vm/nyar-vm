@@ -8,7 +8,7 @@ use nyar_emitter::{FragmentSubmission, TargetExecutionPlan};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
 const PRIMITIVES: &str = r#"
-namespace demo.primitive.i64_literal;
+namespace std.primitive;
 
 [primitive("std::primitive::i64")]
 structure i64 { }

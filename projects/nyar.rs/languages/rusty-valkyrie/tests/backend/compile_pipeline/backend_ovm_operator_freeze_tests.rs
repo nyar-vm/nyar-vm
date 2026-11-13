@@ -42,7 +42,9 @@ fn operator_groups(mnemonic: &str, provider: &str) -> Vec<CompilerSourceGroup> {
         CompilerSourceGroup::single_source(
             "core",
             "core",
-            r#"[primitive("std::primitive::i32")]
+            r#"namespace std.primitive;
+
+[primitive("std::primitive::i32")]
 structure i32 { }"#,
         ),
         CompilerSourceGroup::single_source(
@@ -120,7 +122,9 @@ fn ovm_operator_arity_mismatch_fails_structurally() {
         CompilerSourceGroup::single_source(
             "core",
             "core",
-            r#"[primitive("std::primitive::i32")]
+            r#"namespace std.primitive;
+
+[primitive("std::primitive::i32")]
 structure i32 { }"#,
         ),
         CompilerSourceGroup::single_source(
@@ -151,7 +155,9 @@ fn source_groups(mnemonic: &str) -> Vec<CompilerSourceGroup> {
         CompilerSourceGroup::single_source(
             "core",
             "core",
-            r#"[primitive("std::primitive::i32")]
+            r#"namespace std.primitive;
+
+[primitive("std::primitive::i32")]
 structure i32 { }"#,
         ),
         CompilerSourceGroup::single_source(
@@ -254,11 +260,15 @@ imply i64 {
             "core",
             &format!(
                 r#"
+namespace std.primitive;
+
 [primitive("std::primitive::i64")]
 structure i64 {{ }}
 
 [primitive("std::primitive::bool")]
 structure bool {{ }}
+
+namespace demo;
 
 imply bool {{
     prefix `!`(self): bool {{ return false }}

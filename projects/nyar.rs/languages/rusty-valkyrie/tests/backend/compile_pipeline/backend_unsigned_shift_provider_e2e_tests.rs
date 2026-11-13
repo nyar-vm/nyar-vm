@@ -5,6 +5,7 @@
 //! 断言逐值精确；`i32.rotl`（0x77）不得出现在无符号右移的代码里。
 //! 反向：未知助记符必须结构化失败，不得静默降级成别的指令。
 
+use crate::primitives::with_primitives;
 use acorn_wasm::WasmBinaryModule;
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan, testing::lower_fragment_to_wasm_mir_module};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
@@ -15,7 +16,7 @@ const I32_ROTL: u8 = 0x77;
 const I64_SHR_U: u8 = 0x88;
 
 fn compile_to_wasm(source: &str, entry: &str) -> Result<WasmBinaryModule, String> {
-    let groups = vec![CompilerSourceGroup::single_source("app", "demo", source).as_entry()];
+    let groups = vec![CompilerSourceGroup::single_source("app", "demo", &with_primitives(source)).as_entry()];
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], "native")
         .map_err(|error| error.to_string())?;
@@ -80,9 +81,6 @@ process.stdout.write(JSON.stringify(results));
 }
 
 const U32_SOURCE: &str = r#"
-[primitive("std::primitive::u32")]
-structure u32 { }
-
 imply u32 {
     infix `>>`(self, rhs: Self): Self {
         u32_shr(self, rhs)
@@ -100,9 +98,6 @@ micro main(a: u32, b: u32): u32 {
 "#;
 
 const U64_SOURCE: &str = r#"
-[primitive("std::primitive::u64")]
-structure u64 { }
-
 imply u64 {
     infix `>>`(self, rhs: Self): Self {
         u64_shr(self, rhs)
@@ -120,9 +115,6 @@ micro main(a: u64, b: u64): u64 {
 "#;
 
 const USIZE_SOURCE: &str = r#"
-[primitive("std::primitive::u32")]
-structure u32 { }
-
 type usize = u32;
 
 imply u32 {
@@ -142,9 +134,6 @@ micro main(a: usize, b: usize): usize {
 "#;
 
 const I32_SIGNED_SOURCE: &str = r#"
-[primitive("std::primitive::i32")]
-structure i32 { }
-
 imply i32 {
     infix `>>`(self, rhs: Self): Self {
         i32_shr(self, rhs)
@@ -162,9 +151,6 @@ micro main(a: i32, b: i32): i32 {
 "#;
 
 const I64_SIGNED_SOURCE: &str = r#"
-[primitive("std::primitive::i64")]
-structure i64 { }
-
 imply i64 {
     infix `>>`(self, rhs: Self): Self {
         i64_shr(self, rhs)

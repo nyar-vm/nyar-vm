@@ -14,9 +14,9 @@ use rusty_valkyrie::{
     types::hir::{HirExprKind, HirModule},
 };
 
-const NON_GENERIC_CONSUMER_SOURCE: &str = r#"
-[primitive("std::primitive::i32")] structure i32 { }
+use crate::primitives::with_primitives;
 
+const NON_GENERIC_CONSUMER_SOURCE: &str = r#"
 micro cmp_i32(a: i32, b: i32) -> i32 {
     return 0
 }
@@ -31,9 +31,6 @@ micro run() -> i32 {
 "#;
 
 const GENERIC_CONSUMER_SOURCE: &str = r#"
-[primitive("std::primitive::i64")] structure i64 { }
-[primitive("std::primitive::i32")] structure i32 { }
-
 micro cmp_i64(a: i64, b: i64) -> i32 {
     return 0
 }
@@ -50,7 +47,7 @@ micro run() -> i32 {
 "#;
 
 fn compile(source: &str) -> HirModule {
-    ValkyrieCompiler::default().compile_source(source).expect("函数作值源码必须完成 HIR")
+    ValkyrieCompiler::default().compile_source(&with_primitives(source)).expect("函数作值源码必须完成 HIR")
 }
 
 /// 取 `run` 尾调用最后一个实参上 HIR 冻结的实例身份。

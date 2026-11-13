@@ -14,8 +14,10 @@ use nyar::TheoryBundle;
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
-const CONTRACTS: &str = r#"
-namespace demo.primitive.f64_ops;
+// primitive 身份门：载体声明必须落在 `namespace std.primitive;`，身份引用才能
+// 在携带者可见面内解析；demo 名空间经 `using std.primitive;` 引用载体类型。
+const STD_PRIMITIVES: &str = r#"
+namespace std.primitive;
 
 [primitive("std::primitive::bool")]
 structure bool { }
@@ -31,6 +33,12 @@ structure f32 { }
 
 [primitive("std::primitive::f64")]
 structure f64 { }
+"#;
+
+const CONTRACTS: &str = r#"
+using std.primitive;
+
+namespace demo.primitive.f64_ops;
 
 [host_contract]
 micro __i64_to_f64(value: i64): f64
@@ -118,16 +126,17 @@ fn provider_bindings() -> Vec<rusty_valkyrie::compiler::emitter::pipeline::Compi
 }
 
 fn app(return_type: &str, statements: &str) -> String {
-    format!("namespace demo.primitive.f64_ops;\n\n[main]\nmicro main() -> {return_type} {{\n{statements}\n}}\n")
+    format!("using std.primitive;\n\nnamespace demo.primitive.f64_ops;\n\n[main]\nmicro main() -> {return_type} {{\n{statements}\n}}\n")
 }
 
 fn groups(return_type: &str, statements: &str) -> Vec<CompilerSourceGroup> {
-    let core = CompilerSourceGroup::single_source("core", "core", CONTRACTS);
-    let adaptor = CompilerSourceGroup::single_source("adaptor", "adaptor", PROVIDERS).with_direct_dependencies(vec!["core".into()]);
+    let std = CompilerSourceGroup::single_source("std", "std", STD_PRIMITIVES);
+    let core = CompilerSourceGroup::single_source("core", "core", CONTRACTS).with_direct_dependencies(vec!["std".into()]);
+    let adaptor = CompilerSourceGroup::single_source("adaptor", "adaptor", PROVIDERS).with_direct_dependencies(vec!["std".into(), "core".into()]);
     let app = CompilerSourceGroup::single_source("app", "demo", &app(return_type, statements))
         .as_entry()
-        .with_direct_dependencies(vec!["core".into(), "adaptor".into()]);
-    vec![core, adaptor, app]
+        .with_direct_dependencies(vec!["std".into(), "core".into(), "adaptor".into()]);
+    vec![std, core, adaptor, app]
 }
 
 fn compile(return_type: &str, statements: &str) -> Result<nyar_types::CompiledProgram, String> {

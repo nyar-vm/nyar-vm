@@ -17,13 +17,15 @@ use odin_vm::{OdinVm, Value, executor::Executor, module::LoadedModule};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
 const PRIMITIVES: &str = r#"
-namespace demo.collection;
+namespace std.primitive;
 
 [primitive("std::primitive::i32")]
 structure i32 { }
 
 [primitive("std::primitive::bool")]
 structure bool { }
+
+namespace demo.collection;
 
 [host_contract]
 [ovm_operator("i32.lt")]

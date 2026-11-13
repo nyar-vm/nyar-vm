@@ -19,7 +19,9 @@ const ARRAY_SET: [u8; 2] = [0xFB, 0x0E];
 const ARRAY_LEN: [u8; 2] = [0xFB, 0x0F];
 const I32_ADD: u8 = 0x6A;
 
-const CORE_PRIMITIVE_SOURCE: &str = r#"[primitive("std::primitive::i32")]
+const CORE_PRIMITIVE_SOURCE: &str = r#"namespace std.primitive;
+
+[primitive("std::primitive::i32")]
 structure i32 { }"#;
 
 /// 数组 operator 直接由合同携带：数值加法走数值冻结表，数组操作走数组冻结表。
@@ -115,7 +117,9 @@ fn wasm_array_operator_signature_mismatch_fails_at_plan_construction() {
         CompilerSourceGroup::single_source(
             "core",
             "core",
-            r#"[primitive("std::primitive::i32")]
+            r#"namespace std.primitive;
+
+[primitive("std::primitive::i32")]
 structure i32 { }
 [primitive("std::primitive::i64")]
 structure i64 { }"#,
@@ -173,10 +177,12 @@ micro main() -> i32 {
 }
 
 const CONTRACTS: &str = r#"
-namespace demo.collection.array;
+namespace std.primitive;
 
 [primitive("std::primitive::i32")]
 structure i32 { }
+
+namespace demo.collection.array;
 
 [host_contract]
 micro new<T>(length: i32): [T]
@@ -366,13 +372,15 @@ fn array_contract_wasm_signature_shape_mismatch_fails_structurally() {
     // 合同同签名配对成功后，计划构造期必须按声明签名与冻结计划不符结构化失败，
     // 不得让后端发射后再改写。
     let contracts = r#"
-namespace demo.collection.array;
+namespace std.primitive;
 
 [primitive("std::primitive::i32")]
 structure i32 { }
 
 [primitive("std::primitive::i64")]
 structure i64 { }
+
+namespace demo.collection.array;
 
 [host_contract]
 micro new<T>(length: i32): [T]

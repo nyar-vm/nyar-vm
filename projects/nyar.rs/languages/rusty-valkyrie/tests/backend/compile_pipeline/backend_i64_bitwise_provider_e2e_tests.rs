@@ -10,11 +10,16 @@
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan, testing::lower_fragment_to_wasm_mir_module};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
-const CONTRACTS: &str = r#"
-namespace demo.primitive.i64_ops;
+// primitive 身份门：载体声明必须落在 `namespace std.primitive;`。
+const STD_PRIMITIVES: &str = r#"
+namespace std.primitive;
 
 [primitive("std::primitive::i64")]
 structure i64 { }
+"#;
+
+const CONTRACTS: &str = r#"
+namespace demo.primitive.i64_ops;
 
 [host_contract]
 micro __i64_and(a: i64, b: i64): i64
@@ -114,9 +119,10 @@ fn provider_bindings() -> Vec<rusty_valkyrie::compiler::emitter::pipeline::Compi
 
 fn groups_for(providers: &str) -> Vec<CompilerSourceGroup> {
     vec![
-        CompilerSourceGroup::single_source("core", "core", CONTRACTS),
-        CompilerSourceGroup::single_source("adaptor", "adaptor", providers).with_direct_dependencies(vec!["core".into()]),
-        CompilerSourceGroup::single_source("app", "demo", APP).as_entry().with_direct_dependencies(vec!["core".into(), "adaptor".into()]),
+        CompilerSourceGroup::single_source("std", "std", STD_PRIMITIVES),
+        CompilerSourceGroup::single_source("core", "core", CONTRACTS).with_direct_dependencies(vec!["std".into()]),
+        CompilerSourceGroup::single_source("adaptor", "adaptor", providers).with_direct_dependencies(vec!["std".into(), "core".into()]),
+        CompilerSourceGroup::single_source("app", "demo", APP).as_entry().with_direct_dependencies(vec!["std".into(), "core".into(), "adaptor".into()]),
     ]
 }
 
@@ -164,8 +170,9 @@ fn i64_bitwise_wasm_provider_lowers_shift_without_narrowing() {
 #[test]
 fn i64_bitwise_wasm_without_provider_fails_structurally() {
     let groups = vec![
-        CompilerSourceGroup::single_source("core", "core", CONTRACTS),
-        CompilerSourceGroup::single_source("app", "demo", APP).as_entry().with_direct_dependencies(vec!["core".into()]),
+        CompilerSourceGroup::single_source("std", "std", STD_PRIMITIVES),
+        CompilerSourceGroup::single_source("core", "core", CONTRACTS).with_direct_dependencies(vec!["std".into()]),
+        CompilerSourceGroup::single_source("app", "demo", APP).as_entry().with_direct_dependencies(vec!["std".into(), "core".into()]),
     ];
     let error = lower_wasm(&groups, &[]).expect_err("缺 provider 的合同调用必须结构化失败，不得空体成功");
     assert!(error.contains("demo") && error.contains("i64"), "错误必须指向未绑定 provider 的合同: {error}");
@@ -243,8 +250,9 @@ mod ovm {
     #[test]
     fn i64_bitwise_ovm_without_provider_fails_structurally() {
         let groups = vec![
-            CompilerSourceGroup::single_source("core", "core", CONTRACTS),
-            CompilerSourceGroup::single_source("app", "demo", APP).as_entry().with_direct_dependencies(vec!["core".into()]),
+            CompilerSourceGroup::single_source("std", "std", STD_PRIMITIVES),
+            CompilerSourceGroup::single_source("core", "core", CONTRACTS).with_direct_dependencies(vec!["std".into()]),
+            CompilerSourceGroup::single_source("app", "demo", APP).as_entry().with_direct_dependencies(vec!["std".into(), "core".into()]),
         ];
         let error = lower_ovm(&groups, &[]).expect_err("缺 provider 的合同调用必须结构化失败，不得空体成功");
         assert!(error.contains("demo") && error.contains("i64"), "错误必须指向未绑定 provider 的合同: {error}");

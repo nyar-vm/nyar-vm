@@ -12,10 +12,23 @@ use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler, compiler::emitter::p
 
 /// 最小 primitive 闭包：bool 的 `!` 是纯 V 实现，不需要宿主 provider。
 const PRIMITIVES: &str = r#"
-namespace demo.primitive;
+namespace std.primitive;
 
 [primitive("std::primitive::bool")]
 structure bool { }
+
+[primitive("std::primitive::i32")]
+structure i32 { }
+
+[primitive("std::primitive::u32")]
+structure u32 { }
+
+namespace std.text;
+
+[primitive("std::text::char")]
+structure char { }
+
+namespace demo.primitive;
 
 imply bool {
     prefix `!`(self): bool {
@@ -25,15 +38,6 @@ imply bool {
         return true
     }
 }
-
-[primitive("std::primitive::i32")]
-structure i32 { }
-
-[primitive("std::primitive::u32")]
-structure u32 { }
-
-[primitive("std::text::char")]
-structure char { }
 "#;
 
 /// 等值合同：无体，实现来源只能是 Resolver 选定的 provider。
