@@ -56,7 +56,7 @@ oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "1c3f84e
 oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "1c3f84ed064dbe3c853c9704097e02c27c87f6c6" }
 oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "1c3f84ed064dbe3c853c9704097e02c27c87f6c6" }
 # Legion corpora (`valkyrie.rs`). Bump `rev` after corpus changes land on that repo.
-legion-fixtures = { git = "https://github.com/valkyrie-language/valkyrie.rs", rev = "bb09bbc6c2f011262bb0330a0c874a42a9b05985" }
+legion-fixtures = { git = "https://github.com/valkyrie-language/valkyrie.rs", rev = "9090e026" }
 # Nyar Compiler 编译期组件
 nyar = { path = "compilers/nyar" }
 nyar-analyzer = { path = "compilers/nyar-analyzer" }
