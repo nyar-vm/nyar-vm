@@ -1066,7 +1066,9 @@ micro run() -> i32 {
             vec![
                 crate::compiler::hir::lowering::CompilerSourceFile {
                     path: "core_primitive.v".into(),
-                    source: "[primitive(\"std::primitive::i32\")] structure i32 { }\n[primitive(\"std::primitive::i64\")] structure i64 { }"
+                    // primitive 身份门：声明必须落在 `namespace std.primitive;`，
+                    // 身份引用 `std::primitive::i32` 才能在携带者可见面内解析。
+                    source: "namespace std.primitive;\n[primitive(\"std::primitive::i32\")] structure i32 { }\n[primitive(\"std::primitive::i64\")] structure i64 { }"
                         .into(),
                 },
                 crate::compiler::hir::lowering::CompilerSourceFile { path: "main.v".into(), source: source.into() },
