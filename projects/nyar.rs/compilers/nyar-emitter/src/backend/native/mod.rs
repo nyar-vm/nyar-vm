@@ -51,8 +51,8 @@ impl NativeBinaryBackend {
                 input_kind: BackendInputKind::CoffObject,
                 supported_targets: vec![
                     BinaryTarget::new(TargetFamily::Native, BinaryArch::X64, BinaryFlavor::Native),
+                    // Arm64 仅对 ELF 共享库可识别；PE ARM64 不在解析支持集内。
                     BinaryTarget::new(TargetFamily::Native, BinaryArch::Arm64, BinaryFlavor::Native),
-                    BinaryTarget::new(TargetFamily::Native, BinaryArch::X86, BinaryFlavor::Native),
                 ],
             },
         }

@@ -167,6 +167,18 @@ fn pe_dll_accepts_node_extension_as_dynamic_library() {
     let _ = std::fs::remove_dir_all(output_dir);
 }
 
+/// 包装层不得声明自己无法识别的目标架构。
+#[test]
+fn native_descriptor_does_not_advertise_unrecognized_architecture() {
+    let backend = NativeBinaryBackend::new();
+    let descriptor = backend.descriptor();
+    assert!(
+        descriptor.supported_targets.iter().all(|target| target.arch != BinaryArch::X86),
+        "X86 镜像无法被解析，不得出现在支持目标中: {:?}",
+        descriptor.supported_targets
+    );
+}
+
 /// 可执行镜像不得声明共享库扩展名：宿主会加载失败。
 #[test]
 fn node_extension_on_executable_image_is_rejected() {
