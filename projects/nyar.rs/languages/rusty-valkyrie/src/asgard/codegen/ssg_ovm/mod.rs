@@ -41,7 +41,7 @@ pub fn render_static_ovm(
     let source = emit::emit_ssg_source(component)?;
     let bytes = compile::compile_ssg_ovm_bundle(
         project_dir,
-        GeneratedSource { producer: "asgard.ssg-ovm", source: &source },
+        GeneratedSource { producer: "asgard.ssg-ovm", source: &source, extra_sources: &[] },
         scratch_dir,
         module_name,
     )?;

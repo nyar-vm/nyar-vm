@@ -15,6 +15,7 @@ use nyar::{ArtifactKind, CanonicalTarget};
 use nyar_types::compiler_input::{CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup};
 
 use crate::asgard::{
+    codegen::ScalarBootstrap,
     host_backend::HostBackend,
     wasm::{WasmCompileReport, copy_wasm_artifacts_to_dist},
 };
@@ -80,16 +81,29 @@ pub fn dependency_keys_for_packages(source_groups: &[CompilerSourceGroup], packa
         .collect()
 }
 
-/// 独立生成源码：唯一生成器身份与生成文本。
+/// 独立生成源码：唯一生成器身份、生成文本与随组提交的附加源文件。
 ///
 /// 生成文本由 Asgard 从 AWSL 降低产生，作为 Compiler 的独立生成输入参与闭包；
-/// 它不会写回应用源码组，也不会在 Compiler 内部被再次拼接或重解析。
+/// 它不会写回应用源码组，也不会在 Compiler 内部被再次拼接或重解析。附加源文件
+/// （封闭单元的标量载体）同样是生成组自己的声明，不借用应用组或 std 的可见面。
 #[derive(Debug, Clone, Copy)]
 pub struct GeneratedSource<'a> {
     /// 生成器稳定身份；进入 Compiler 证据与 freshness 比对。
     pub producer: &'a str,
     /// 生成源码文本。
     pub source: &'a str,
+    /// 随生成组提交的附加源文件。
+    pub extra_sources: &'a [CompilerSourceFile],
+}
+
+/// 生成单元的标量载体形态：判定 `std` 是否进入生成组的显式依赖。
+///
+/// 事实来源与依赖挂接同一处（`extra_dependency_keys` 指向的源码组）。必须在构建
+/// 生成源码之前判定一次：源码与该形态绑定的附加文件随后一并产出，不再事后裁剪。
+pub fn scalar_bootstrap_for(source_groups: &[CompilerSourceGroup], extra_dependency_keys: &[String]) -> ScalarBootstrap {
+    let std_visible =
+        extra_dependency_keys.iter().any(|key| source_groups.iter().any(|group| &group.dependency_key == key && group.name == "std"));
+    if std_visible { ScalarBootstrap::StdVisible } else { ScalarBootstrap::ClosedUnit }
 }
 
 /// 生成源码组的入口面来源。
@@ -124,10 +138,12 @@ pub(crate) fn compiler_input_for(
             group.is_entry = false;
         }
     }
+    let mut sources = vec![CompilerSourceFile { path: "asgard/generated.v".into(), source: generated.source.into() }];
+    sources.extend(generated.extra_sources.iter().cloned());
     let group = CompilerSourceGroup {
         dependency_key: "asgard.generated".into(),
         name: "asgard.generated".into(),
-        sources: vec![CompilerSourceFile { path: "asgard/generated.v".into(), source: generated.source.into() }],
+        sources,
         direct_dependencies: project_keys,
         is_entry: true,
     };
@@ -143,16 +159,6 @@ pub(crate) fn compiler_input_for_with_dependencies(
     surface: GeneratedEntrySurface,
     extra_dependency_keys: &[String],
 ) -> AsgardResult<CompilerSourceInput> {
-    // 生成组显式依赖 std 时，std 的规范 primitive 声明进入可见面：生成单元必须退化为
-    // 同源投影（根命名空间重声明），否则规范位置上的第二条声明会与 std 并列冒领同一身份。
-    let std_visible = extra_dependency_keys
-        .iter()
-        .any(|key| source_groups.iter().any(|group| &group.dependency_key == key && group.name == "std"));
-    let projected = std_visible.then(|| crate::asgard::codegen::project_generated_scalars_onto_visible_owner(generated.source));
-    let generated = match projected.as_deref() {
-        Some(source) => GeneratedSource { producer: generated.producer, source },
-        None => generated,
-    };
     let mut input = compiler_input_for(source_groups, generated, surface)?;
     for generated_group in &mut input.generated {
         for key in extra_dependency_keys {

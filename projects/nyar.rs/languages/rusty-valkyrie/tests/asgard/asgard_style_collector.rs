@@ -3,7 +3,7 @@
 use oak_awsl::AwslParser;
 use rusty_valkyrie::asgard::{
     awsl::{LoweringOptions, RenderNode, lower_component},
-    codegen::build_awsl_wasm_source,
+    codegen::{ScalarBootstrap, build_awsl_wasm_source},
 };
 
 fn first_element_class_attr(lowered: &rusty_valkyrie::asgard::awsl::LoweredComponent) -> Option<&rusty_valkyrie::asgard::awsl::RenderAttr> {
@@ -19,7 +19,7 @@ fn style_codegen_uses_class_binding() {
     let source = r#"<widget><div @style="flex w-4"></div></widget>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
-    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    let v_source = build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate awsl wasm source").source;
     assert!(v_source.contains("rx_bind_class_utf8"));
     assert!(!v_source.contains("rx_bind_attr_utf8") || !v_source.contains("\"style\""));
 }

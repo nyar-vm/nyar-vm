@@ -1,7 +1,7 @@
 use oak_awsl::AwslParser;
 use rusty_valkyrie::asgard::{
     awsl::{LoweringOptions, lower_component},
-    codegen::{build_awsl_wasm_source, generate_boot_script, manifest_url_for_mode},
+    codegen::{ScalarBootstrap, build_awsl_wasm_source, generate_boot_script, manifest_url_for_mode},
 };
 
 const FIXTURE: &str = r#"<widget index>
@@ -18,7 +18,7 @@ let series = ["第一条", "第二条", "第三条"]
 fn generated_source() -> String {
     let root = AwslParser::parse_root(FIXTURE).expect("parse loop fixture");
     let lowered = lower_component(&root, "index", "index.awsl", &LoweringOptions::default()).expect("lower loop fixture");
-    build_awsl_wasm_source(&[lowered]).expect("generate loop fixture")
+    build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate loop fixture").source
 }
 
 fn items_export_block(source: &str) -> &str {

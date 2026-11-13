@@ -2,7 +2,7 @@ use nyar_analyzer::report::{ColSeriesItem, series_to_init_literal};
 use oak_awsl::AwslParser;
 use rusty_valkyrie::asgard::{
     awsl::{LoweringOptions, lower_component},
-    codegen::build_awsl_wasm_source,
+    codegen::{ScalarBootstrap, build_awsl_wasm_source},
 };
 
 fn chart_script(series_literal: &str) -> String {
@@ -41,7 +41,7 @@ fn named_series_literal_keeps_derived_binding() {
         "具名字面量必须保留 `series` 派生绑定，实际绑定: {:?}",
         lowered.script_bindings.iter().map(|binding| binding.name.as_str()).collect::<Vec<_>>()
     );
-    let generated = build_awsl_wasm_source(std::slice::from_ref(&lowered)).expect("生成 V 源码");
+    let generated = build_awsl_wasm_source(std::slice::from_ref(&lowered), ScalarBootstrap::ClosedUnit).expect("生成 V 源码").source;
     assert!(
         generated.contains("asgard.plotter::ColSeriesItem {"),
         "生成的 V 源码必须保留具名结构字面量（绑定按使用点内联）"
@@ -83,7 +83,7 @@ micro show(index) {
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "index", "index.awsl", &LoweringOptions::default()).expect("lower");
-    let generated = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    let generated = build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate awsl wasm source").source;
     let start = generated.find("micro show").expect("script micro 必须生成");
     let end = start + generated[start..].find("\n}\n").expect("script micro 必须闭合");
     let block = &generated[start..end];
@@ -108,6 +108,6 @@ micro show(index: usize) {
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "index", "index.awsl", &LoweringOptions::default()).expect("lower");
-    let generated = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    let generated = build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate awsl wasm source").source;
     assert!(generated.contains("⁅index⁆"), "非 ASCII 运算符必须按 UTF-8 原样保留:\n{generated}");
 }

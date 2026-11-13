@@ -1,7 +1,7 @@
 use oak_awsl::AwslParser;
 use rusty_valkyrie::asgard::{
     awsl::{LoweringOptions, lower_component},
-    codegen::build_awsl_wasm_source,
+    codegen::{ScalarBootstrap, build_awsl_wasm_source},
     ssg::project::valkyrie_v_roots,
 };
 
@@ -11,7 +11,7 @@ fn main() {
     let source = std::fs::read_to_string(&path).unwrap();
     let root = AwslParser::parse_root(&source).unwrap();
     let lowered = lower_component(&root, "interactive-col-plot", "interactive-col-plot.awsl", &LoweringOptions::default()).expect("lower awsl");
-    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    let v_source = build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate awsl wasm source").source;
     let pos = 8365usize;
     let start = pos.saturating_sub(120);
     let end = (pos + 120).min(v_source.len());

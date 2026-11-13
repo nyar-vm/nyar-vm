@@ -13,7 +13,7 @@ use std::{
 use crate::asgard::{
     awsl::{LoweringOptions, compile_awsl_source},
     codegen::{IslandPackageOptions, asgard_boot_script_tag, asgard_boot_stylesheet_tag, build_awsl_wasm_source, package_browser_islands},
-    compile::{GeneratedSource, dependency_keys_for_packages, resolve_project_source_groups},
+    compile::{GeneratedSource, dependency_keys_for_packages, resolve_project_source_groups, scalar_bootstrap_for},
     ssg::project::read_project_source,
     wasm::{compile_wasm_bundle, copy_wasm_artifacts_to_dist},
 };
@@ -72,7 +72,6 @@ pub fn emit_report_chart_islands(
     }
 
     let wasm_stem = module_stem.replace('.', "-");
-    let awsl_v = build_awsl_wasm_source(&components)?;
     let resolved = resolve_project_source_groups(project_dir, &CanonicalTarget::browser())?;
     // 生成代码引用 `usize` 别名与 `Array` 合同（`<loop>` 的条目数量与下标）：
     // 按包名显式挂接 `std`，不泛化挂接整个 workspace 或整个 std 快照。
@@ -88,7 +87,10 @@ pub fn emit_report_chart_islands(
         }
         extra_dependency_keys.extend(keys);
     }
-    let generated = GeneratedSource { producer: "asgard.awsl.report-island", source: &awsl_v };
+    // 标量载体形态先于生成源码判定：std 可见时生成单元只导入，否则随组提交独立载体文件。
+    let awsl_v = build_awsl_wasm_source(&components, scalar_bootstrap_for(&resolved.groups, &extra_dependency_keys))?;
+    let generated =
+        GeneratedSource { producer: "asgard.awsl.report-island", source: &awsl_v.source, extra_sources: &awsl_v.extra_sources };
     // 报告图表岛走非入口执行路径：岛包源码组只作为依赖，入口身份唯一来自生成组的显式 `[export]`。
     let wasm_built = match compile_wasm_bundle(
         &resolved.groups,

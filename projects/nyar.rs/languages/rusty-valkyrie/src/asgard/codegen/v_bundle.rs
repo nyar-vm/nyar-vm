@@ -2,6 +2,8 @@
 
 use std::fmt::Write as _;
 
+use nyar_types::compiler_input::CompilerSourceFile;
+
 use crate::asgard::{
     awsl::{LoweredComponent, ScriptBinding, SignalValueType, prepare_components_for_generation},
     codegen::{
@@ -11,37 +13,69 @@ use crate::asgard::{
     error::AsgardResult,
 };
 
-/// 生成单元自带的标量声明。
+/// 生成单元标量载体的形态。
 ///
-/// 生成源码是封闭编译单元：HIR 只让生成组看到应用自身导出的声明，依赖包（std）
-/// 的 `[primitive]` 声明不进入可见面。生成代码却直接用 `i32` 拼写并传字面量，
-/// 字面量只有落在 `[primitive]` 身份上才能参与重载匹配；缺少声明时 `sig_set_i32(sv, 0)`
-/// 这类调用会以「无可行重载」失败。这里只声明数值标量 `i32`。
-///
-/// `bool` 不在这里声明：它是语言编码型内建（类型名解析时 `encoding_builtin_type` 优先于
-/// 同名声明），本地声明只会成为同一身份的重复载体；移除必须与跨 surface 别名登记同批。
+/// 生成代码直接用 `i32` 拼写并传字面量：字面量只有落在 `[primitive]` 身份上才能参与
+/// 重载匹配，缺少载体时 `sig_set_i32(sv, 0)` 这类调用会以「无可行重载」失败。
+/// 载体来源由生成组可见性唯一决定，生成器先判定形态再产出源码，不在文本上事后裁剪。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScalarBootstrap {
+    /// 生成组显式依赖 std：std 的规范 `[primitive]` 声明已进入可见面，生成源码只经
+    /// `using std.primitive;` 消费它，不重声明、不投影。
+    StdVisible,
+    /// 封闭生成单元（std 不可见）：载体作为独立源文件随生成组提交。
+    ///
+    /// 该文件的文件级 `namespace std.primitive;` 只约束它自身，生成代码文件留在根命名空间。
+    ClosedUnit,
+}
+
+/// 生成单元消费 std 标量声明的显式导入（与既有 `using std.text;` 并列）。
+const GENERATED_STD_PRIMITIVE_IMPORT: &str = "using std.primitive;\n\n";
+
+/// 封闭生成单元的标量载体源文件身份。
+const GENERATED_SCALARS_PATH: &str = "asgard/generated.scalars.v";
+
+/// 封闭生成单元的标量载体文本。
 ///
 /// 载体必须占据身份的规范位置（`namespace std.primitive;`）：封闭单元见不到 std 的
 /// 规范声明，身份引用 `std::primitive::i32` 只能在自身可见面内自命中；根命名空间下的
-/// 重声明无法证明同源，会被闭包身份来源门结构化拒绝。
-const GENERATED_SCALAR_PRELUDE: &str = r#"namespace std.primitive;
+/// 重声明无法证明同源，会被闭包身份来源门结构化拒绝。这里只声明数值标量 `i32`。
+///
+/// `bool` 不在这里声明：它是语言编码型内建（类型名解析时 `encoding_builtin_type` 优先于
+/// 同名声明），本地声明只会成为同一身份的重复载体；移除必须与跨 surface 别名登记同批。
+const GENERATED_SCALARS_SOURCE: &str = r#"namespace std.primitive;
 
 [primitive("std::primitive::i32")]
 structure i32 { }
-
 "#;
 
-/// 生成组显式依赖 std 时，把自举声明退化为同源投影。
-///
-/// std 的规范声明进入可见面后，规范位置上的第二条同名声明会与 std 并列冒领同一身份
-/// （来源歧义）；去掉命名空间让载体落在根命名空间，身份引用按绝对限定名解析到 std
-/// 的规范 owner，由闭包登记为唯一别名载体。
-pub fn project_generated_scalars_onto_visible_owner(source: &str) -> String {
-    let bootstrap_namespace = "namespace std.primitive;\n\n";
-    match source.strip_prefix(bootstrap_namespace) {
-        Some(rest) => rest.to_string(),
-        None => source.to_string(),
+impl ScalarBootstrap {
+    /// 生成代码文件开头的标量导入；封闭单元的载体在独立文件里，主文件不写。
+    fn prelude(self) -> &'static str {
+        match self {
+            Self::StdVisible => GENERATED_STD_PRIMITIVE_IMPORT,
+            Self::ClosedUnit => "",
+        }
     }
+
+    /// 随生成组提交的附加源文件。
+    fn extra_sources(self) -> Vec<CompilerSourceFile> {
+        match self {
+            Self::StdVisible => Vec::new(),
+            Self::ClosedUnit => {
+                vec![CompilerSourceFile { path: GENERATED_SCALARS_PATH.into(), source: GENERATED_SCALARS_SOURCE.into() }]
+            }
+        }
+    }
+}
+
+/// 生成单元：主源码与随生成组提交的附加源文件。
+#[derive(Debug, Clone)]
+pub struct GeneratedVSource {
+    /// 生成代码文件（`asgard/generated.v`）文本。
+    pub source: String,
+    /// 生成组内的附加源文件（封闭单元的标量载体）；std 可见时为空。
+    pub extra_sources: Vec<CompilerSourceFile>,
 }
 
 /// 生成单元显式导入的 std 合同。
@@ -55,16 +89,17 @@ const GENERATED_STD_TEXT_IMPORT: &str = "using std.text;\n\n";
 /// 从所有 AWSL 组件生成可编译的 V 源码（浏览器：DOM + reactive）。
 ///
 /// 生成入口统一做“先校验、后降级”：ABI 错误在产出任何 V 之前失败，
-/// 不允许漂到 V 编译期。
-pub fn build_awsl_wasm_source(components: &[LoweredComponent]) -> AsgardResult<String> {
+/// 不允许漂到 V 编译期。`bootstrap` 决定标量载体形态，由调用方在构建前按生成组
+/// 可见性判定一次。
+pub fn build_awsl_wasm_source(components: &[LoweredComponent], bootstrap: ScalarBootstrap) -> AsgardResult<GeneratedVSource> {
     let prepared = prepare_components_for_generation(components)?;
-    Ok(build_awsl_source_with_prelude(&prepared, DOM_PRELUDE, REACTIVE_PRELUDE))
+    Ok(build_awsl_source_with_prelude(&prepared, DOM_PRELUDE, REACTIVE_PRELUDE, bootstrap))
 }
 
 /// 从所有 AWSL 组件生成移动端/桌面宿主 V 源码（原生 patch/event FFI）。
-pub fn build_awsl_host_source(components: &[LoweredComponent]) -> AsgardResult<String> {
+pub fn build_awsl_host_source(components: &[LoweredComponent], bootstrap: ScalarBootstrap) -> AsgardResult<GeneratedVSource> {
     let prepared = prepare_components_for_generation(components)?;
-    Ok(build_awsl_source_with_prelude(&prepared, MOBILE_HOST_PRELUDE, REACTIVE_PRELUDE))
+    Ok(build_awsl_source_with_prelude(&prepared, MOBILE_HOST_PRELUDE, REACTIVE_PRELUDE, bootstrap))
 }
 
 /// 终端生成段的命名空间与显式导入。
@@ -80,9 +115,10 @@ const TERMINAL_GENERATED_NAMESPACE: &str = "namespace asgard.generated;\n\nusing
 /// 终端路径消费 `std.terminal` 显式会话与 `asgard.terminal` 产品入口：生成代码只含
 /// 带 session 参数的控件树构造函数、函数值事件回调与交给 `asgard_terminal_run` 的
 /// 入口调用；不依赖 DOM / 信号系统，不内嵌运行时源码，也没有全局绑定存储通道。
-pub fn build_awsl_terminal_source(components: &[LoweredComponent]) -> AsgardResult<String> {
+pub fn build_awsl_terminal_source(components: &[LoweredComponent], bootstrap: ScalarBootstrap) -> AsgardResult<GeneratedVSource> {
     let components = prepare_components_for_generation(components)?;
-    let mut out = GENERATED_STD_TEXT_IMPORT.to_string();
+    let mut out = bootstrap.prelude().to_string();
+    out.push_str(GENERATED_STD_TEXT_IMPORT);
     out.push_str(TERMINAL_GENERATED_NAMESPACE);
     let mut generated = String::new();
     for component in &components {
@@ -90,13 +126,14 @@ pub fn build_awsl_terminal_source(components: &[LoweredComponent]) -> AsgardResu
         generated.push('\n');
     }
     push_host_callable_micros(&mut out, &generated);
-    Ok(out)
+    Ok(GeneratedVSource { source: out, extra_sources: bootstrap.extra_sources() })
 }
 
 /// 小程序逻辑 WASM：signal host + script / `awsl_call_*` / `awsl_sig_*`，无 DOM hydrate。
-pub fn build_awsl_mp_source(components: &[LoweredComponent]) -> AsgardResult<String> {
+pub fn build_awsl_mp_source(components: &[LoweredComponent], bootstrap: ScalarBootstrap) -> AsgardResult<GeneratedVSource> {
     let components = prepare_components_for_generation(components)?;
-    let mut out = GENERATED_STD_TEXT_IMPORT.to_string();
+    let mut out = bootstrap.prelude().to_string();
+    out.push_str(GENERATED_STD_TEXT_IMPORT);
     out.push_str(MP_SIG_PRELUDE);
     out.push_str("micro awsl_key_none(): utf8 { return \"\" }\n\n");
     let mut script_section = String::new();
@@ -114,7 +151,7 @@ pub fn build_awsl_mp_source(components: &[LoweredComponent]) -> AsgardResult<Str
     }
     out.push_str(&script_section);
     push_host_callable_micros(&mut out, &generated);
-    Ok(out)
+    Ok(GeneratedVSource { source: out, extra_sources: bootstrap.extra_sources() })
 }
 
 /// 生成源码的顶层 `micro` 是宿主 ABI 的一部分：JS / 原生宿主按名字直接调用，
@@ -170,9 +207,14 @@ fn emit_mp_component_init(out: &mut String, component: &LoweredComponent) {
     writeln!(out, "}}\n").unwrap();
 }
 
-fn build_awsl_source_with_prelude(components: &[LoweredComponent], dom_or_mobile: &str, reactive: &str) -> String {
+fn build_awsl_source_with_prelude(
+    components: &[LoweredComponent],
+    dom_or_mobile: &str,
+    reactive: &str,
+    bootstrap: ScalarBootstrap,
+) -> GeneratedVSource {
     // 规范命名空间必须位于所有 `using` 与声明之前。
-    let mut out = GENERATED_SCALAR_PRELUDE.to_string();
+    let mut out = bootstrap.prelude().to_string();
     out.push_str(GENERATED_STD_TEXT_IMPORT);
     out.push_str(dom_or_mobile);
     out.push_str(reactive);
@@ -195,7 +237,7 @@ fn build_awsl_source_with_prelude(components: &[LoweredComponent], dom_or_mobile
     }
     out.push_str(&script_section);
     push_host_callable_micros(&mut out, &generated);
-    out
+    GeneratedVSource { source: out, extra_sources: bootstrap.extra_sources() }
 }
 
 fn emit_component_call_wrappers(out: &mut String, component: &LoweredComponent) {

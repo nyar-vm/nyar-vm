@@ -12,7 +12,7 @@ use oak_awsl::AwslParser;
 use rusty_valkyrie::{
     asgard::{
         awsl::{LoweringOptions, lower_component},
-        codegen::{build_awsl_wasm_source, project_generated_scalars_onto_visible_owner},
+        codegen::{GeneratedVSource, ScalarBootstrap, build_awsl_wasm_source},
         static_site::{StaticSiteOptions, build_static_site},
     },
     legion::CanonicalTarget,
@@ -96,10 +96,10 @@ fn write_project(project: &std::path::Path, root: &std::path::Path) {
     fs::write(project.join("source").join("index.awsl"), FIXTURE).expect("写入入口文件失败");
 }
 
-fn generated_source() -> String {
+fn generated_source() -> GeneratedVSource {
     let root = AwslParser::parse_root(FIXTURE).expect("parse awsl");
     let lowered = lower_component(&root, "index", "source/index.awsl", &LoweringOptions::default()).expect("lower awsl component");
-    build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source")
+    build_awsl_wasm_source(&[lowered], ScalarBootstrap::StdVisible).expect("generate awsl wasm source")
 }
 
 #[test]
@@ -114,7 +114,10 @@ fn std_sources_and_generated_unit_compile_together_with_std_identity_owner() {
     write_project(project, &root);
     let target = CanonicalTarget::browser();
     let generated = generated_source();
-    assert!(!generated.contains("structure bool"), "生成单元不得重声明 `bool`：{generated}");
+    assert!(!generated.source.contains("structure bool"), "生成单元不得重声明 `bool`：{}", generated.source);
+    assert!(generated.source.contains("using std.primitive;"), "std 可见时生成单元必须只导入标量声明：{}", generated.source);
+    assert!(!generated.source.contains("[primitive("), "std 可见时生成单元不得再造标量载体：{}", generated.source);
+    assert!(generated.extra_sources.is_empty(), "std 可见时生成组不得附带标量载体文件");
 
     // 身份表 owner：真实 std 组的声明必须是规范 owner，生成组只是别名载体。
     let resolved = rusty_valkyrie::asgard::compile::resolve_project_source_groups(project, &target).expect("解析真实项目源码组");
@@ -128,14 +131,13 @@ fn std_sources_and_generated_unit_compile_together_with_std_identity_owner() {
         .iter()
         .map(|group| group.direct_dependencies.iter().map(String::as_str).collect::<Vec<_>>())
         .collect::<Vec<_>>();
-    // 生产组装在生成组显式依赖 std 时把自举声明退化为同源投影（见 `compiler_input_for_with_dependencies`），
-    // 闭包镜像必须同口径：投影文本 + 入口组与 std 组直接依赖。
-    let projected_generated = project_generated_scalars_onto_visible_owner(&generated);
+    // 生成组显式依赖 std：标量声明只经 `using std.primitive;` 消费，规范 owner 唯一落在 std 组。
+    let mut generated_files = vec![("asgard/generated.v".to_string(), generated.source.clone())];
+    generated_files.extend(generated.extra_sources.iter().map(|file| (file.path.clone(), file.source.clone())));
     let mut generated_dependencies: Vec<String> =
         resolved.groups.iter().filter(|group| group.is_entry).map(|group| group.dependency_key.clone()).collect();
     generated_dependencies.extend(resolved.groups.iter().filter(|group| group.name == "std").map(|group| group.dependency_key.clone()));
     let generated_dependency_refs: Vec<&str> = generated_dependencies.iter().map(String::as_str).collect();
-    let generated_files = vec![("asgard/generated.v".to_string(), projected_generated.clone())];
     let mut inputs = resolved
         .groups
         .iter()

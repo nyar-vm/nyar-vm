@@ -36,6 +36,7 @@ mod platform_contract;
 mod product_page;
 mod primitive_identity_e2e;
 mod report_text_literal;
+mod scalar_bootstrap;
 mod script_binding_inline;
 mod serve;
 mod serve_static_build;

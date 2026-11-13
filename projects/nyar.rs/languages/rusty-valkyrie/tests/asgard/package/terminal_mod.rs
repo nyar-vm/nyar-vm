@@ -1,7 +1,7 @@
 //! Migrated from `src/package/terminal/mod.rs` (`tests`).
 
 use rusty_valkyrie::asgard::{
-    codegen::build_awsl_terminal_source,
+    codegen::{ScalarBootstrap, build_awsl_terminal_source},
     package::{PackageArtifact, terminal::*},
 };
 
@@ -16,7 +16,7 @@ fn demo_component() -> LoweredComponent {
 
 fn demo_app_v() -> String {
     let component = demo_component();
-    let out = package_terminal_project(build_awsl_terminal_source(&[component]).expect("generate terminal source"), "app", &[]);
+    let out = package_terminal_project(build_awsl_terminal_source(&[component], ScalarBootstrap::ClosedUnit).expect("generate terminal source").source, "app", &[]);
     let (_, artifact) = out.files.iter().find(|(n, _)| n == "app.v").expect("app.v");
     match artifact {
         PackageArtifact::Text(text) => text.clone(),
@@ -27,7 +27,7 @@ fn demo_app_v() -> String {
 #[test]
 fn terminal_package_has_all_artifacts() {
     let component = demo_component();
-    let out = package_terminal_project(build_awsl_terminal_source(&[component]).expect("generate terminal source"), "app", &[]);
+    let out = package_terminal_project(build_awsl_terminal_source(&[component], ScalarBootstrap::ClosedUnit).expect("generate terminal source").source, "app", &[]);
     assert!(out.files.iter().any(|(n, _)| n == "manifest.toml"), "missing manifest.toml");
     assert!(out.files.iter().any(|(n, _)| n == "app.v"), "missing app.v");
     let exe_count = out.files.iter().filter(|(n, _)| n.starts_with("app")).count();
@@ -59,7 +59,7 @@ fn app_v_uses_frozen_terminal_namespaces() {
 #[test]
 fn manifest_declares_terminal_platform() {
     let component = demo_component();
-    let out = package_terminal_project(build_awsl_terminal_source(&[component]).expect("generate terminal source"), "app", &[]);
+    let out = package_terminal_project(build_awsl_terminal_source(&[component], ScalarBootstrap::ClosedUnit).expect("generate terminal source").source, "app", &[]);
     let (_, artifact) = out.files.iter().find(|(n, _)| n == "manifest.toml").expect("manifest.toml");
     let text = match artifact {
         PackageArtifact::Text(text) => text,
@@ -71,7 +71,7 @@ fn manifest_declares_terminal_platform() {
 #[test]
 fn no_desktop_or_mobile_artifacts() {
     let component = demo_component();
-    let out = package_terminal_project(build_awsl_terminal_source(&[component]).expect("generate terminal source"), "app", &[]);
+    let out = package_terminal_project(build_awsl_terminal_source(&[component], ScalarBootstrap::ClosedUnit).expect("generate terminal source").source, "app", &[]);
     for (name, _) in &out.files {
         let lower = name.to_ascii_lowercase();
         assert!(!lower.contains("index.html"), "unexpected index.html: {name}");
@@ -84,7 +84,7 @@ fn no_desktop_or_mobile_artifacts() {
 #[test]
 fn manifest_declares_app_v_source() {
     let component = demo_component();
-    let out = package_terminal_project(build_awsl_terminal_source(&[component]).expect("generate terminal source"), "app", &[]);
+    let out = package_terminal_project(build_awsl_terminal_source(&[component], ScalarBootstrap::ClosedUnit).expect("generate terminal source").source, "app", &[]);
     let (_, artifact) = out.files.iter().find(|(n, _)| n == "manifest.toml").expect("manifest.toml");
     let text = match artifact {
         PackageArtifact::Text(text) => text,

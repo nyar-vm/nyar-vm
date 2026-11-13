@@ -27,7 +27,7 @@ use crate::{
             IslandPackageOptions, StaticRenderResult, asgard_boot_script_tag, asgard_boot_stylesheet_tag, build_awsl_wasm_source,
             package_browser_islands, ssg_ovm::render_static_ovm,
         },
-        compile::{GeneratedEntrySurface, GeneratedSource, dependency_keys_for_packages, resolve_project_source_groups},
+        compile::{GeneratedEntrySurface, GeneratedSource, dependency_keys_for_packages, resolve_project_source_groups, scalar_bootstrap_for},
         error::{AsgardError, AsgardResult},
         ssg::generate_static_page_full,
         wasm::{compile_wasm_bundle, copy_wasm_artifacts_to_dist},
@@ -140,17 +140,23 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
     // 浏览器交付产物：WASM chunk、浏览器 glue、组件胶水、boot 与 manifest。
     // 命名、URL 形态与初始化顺序都由产物所有者决定，本层只编排调用次序。
     let target = CanonicalTarget::browser();
-    let generated_source = build_awsl_wasm_source(std::slice::from_ref(&component))?;
     let resolved = resolve_project_source_groups(&project_root, &target)
         .map_err(|error| AsgardError::msg(report!("解析项目源码组失败（静态交付要求可解析的 Legion 工程）: {error}")))?;
     let module_stem = resolved.project_name.replace('.', "-");
     // 生成代码引用 `usize` 别名与 `Array` 合同（`<loop>` 的条目数量与下标）：
     // 按包名显式挂接 `std`，不泛化挂接整个 workspace 或整个 std 快照。
     let extra_dependency_keys = dependency_keys_for_packages(&resolved.groups, &["std"]);
+    // 标量载体形态先于生成源码判定：std 可见时生成单元只导入，否则随组提交独立载体文件。
+    let bootstrap = scalar_bootstrap_for(&resolved.groups, &extra_dependency_keys);
+    let generated_source = build_awsl_wasm_source(std::slice::from_ref(&component), bootstrap)?;
 
     let wasm_report = compile_wasm_bundle(
         &resolved.groups,
-        GeneratedSource { producer: "asgard.awsl.static-site", source: &generated_source },
+        GeneratedSource {
+            producer: "asgard.awsl.static-site",
+            source: &generated_source.source,
+            extra_sources: &generated_source.extra_sources,
+        },
         &output_dir,
         &module_stem,
         &target,

@@ -5,7 +5,7 @@ use rusty_valkyrie::{
     ValkyrieCompiler,
     asgard::{
         awsl::{LoweringOptions, compile_awsl_source, lower_component},
-        codegen::{asgard_boot_script_tag, build_awsl_wasm_source, generate_boot_script, manifest_url_for_mode},
+        codegen::{ScalarBootstrap, asgard_boot_script_tag, build_awsl_wasm_source, generate_boot_script, manifest_url_for_mode},
     },
 };
 
@@ -35,9 +35,13 @@ let mut label: utf8 = ""
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
-    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
-    assert!(v_source.contains("[primitive(\"std::primitive::i32\")]"), "生成单元必须自带 `i32` 标量声明");
-    assert!(!v_source.contains("structure bool"), "`bool` 是编码型内建，生成单元不得重声明");
+    let v_source = build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate awsl wasm source");
+    assert!(
+        v_source.extra_sources.iter().any(|file| file.source.contains("[primitive(\"std::primitive::i32\")]")),
+        "封闭生成单元必须随组提交 `i32` 标量载体"
+    );
+    assert!(!v_source.source.contains("[primitive("), "标量载体不得再写进生成代码文件:\n{}", v_source.source);
+    assert!(!v_source.source.contains("structure bool"), "`bool` 是编码型内建，生成单元不得重声明");
     ValkyrieCompiler::default().compile_source(GENERATED_UNIT_SCALAR_SHAPE).expect("标量声明在场时生成单元必须编译通过");
 }
 
@@ -64,7 +68,7 @@ let title = "hi"
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
     assert!(lowered.script_bindings.iter().any(|b| b.name == "count" && b.reactive));
     assert!(lowered.script_bindings.iter().any(|b| b.name == "title" && !b.reactive));
-    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    let v_source = build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate awsl wasm source").source;
     assert!(v_source.contains("sig_create_i32"));
     // 浏览器生成源码禁止模块级 `let`（HIR 会丢弃模块级绑定）：非响应式绑定在使用点内联，
     // 未使用的 `title` 不应以任何模块级绑定形式出现。
@@ -132,7 +136,7 @@ let mut label: utf8 = ""
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
-    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    let v_source = build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate awsl wasm source").source;
     assert!(v_source.contains("dom_create_element(\"input\")"), "`Input` 必须降低为宿主 `input` 元素");
     assert!(v_source.contains("rx_bind_value_utf8"), "`value` 绑定应写元素属性而非 HTML 属性");
     assert!(v_source.contains("dom_bind_input_utf8"), "输入事件应把 DOM value 写回信号");
@@ -151,7 +155,7 @@ micro noop() { }
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "index", "index.awsl", &LoweringOptions::default()).expect("lower");
-    let v_source = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    let v_source = build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate awsl wasm source").source;
     assert!(v_source.contains("micro awsl_call_toggle(key: utf8) {\n    toggle(key)\n}"), "包装器必须镜像形参并逐个转发：{v_source}");
     assert!(v_source.contains("micro awsl_call_pair(a: i32, b: utf8) {\n    pair(a, b)\n}"), "多形参包装器必须完整转发：{v_source}");
     assert!(v_source.contains("micro awsl_call_noop() {\n    noop()\n}"), "零形参包装器不得被改成带实参：{v_source}");
@@ -190,7 +194,7 @@ let label: utf8 = ""
     let parent_source = r#"<widget parent><Child :missing_prop="ok" /></widget>"#;
     let child = compile_awsl_source(child_source, "child", "child.awsl", &LoweringOptions::default()).expect("lower child");
     let parent = compile_awsl_source(parent_source, "parent", "parent.awsl", &LoweringOptions::default()).expect("lower parent");
-    let error = build_awsl_wasm_source(&[child, parent]).expect_err("未声明的 `:prop` 必须在生成阶段失败");
+    let error = build_awsl_wasm_source(&[child, parent], ScalarBootstrap::ClosedUnit).expect_err("未声明的 `:prop` 必须在生成阶段失败");
     let message = error.to_string();
     assert!(message.contains("`parent`"), "错误必须指向宿主组件:\n{message}");
     assert!(message.contains(":missing_prop"), "错误必须指向属性:\n{message}");
@@ -257,10 +261,10 @@ let label = "hi"
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
-    let generated = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    let generated = build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate awsl wasm source").source;
     assert!(
-        generated.starts_with("namespace std.primitive;\n\n[primitive(\"std::primitive::i32\")]\nstructure i32 { }\n\nusing std.text;\n\n"),
-        "生成单元必须在规范位置自举标量身份并显式导入文本合同:\n{generated}"
+        generated.starts_with("using std.text;\n\n"),
+        "封闭生成单元的标量载体在独立文件里，主文件只显式导入文本合同:\n{generated}"
     );
     assert!(
         generated.contains(r#"return (sig_get_i32(sig_named("demo_count_sig"))).display()"#),
@@ -281,7 +285,7 @@ let greeting = "hi"
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
-    let generated = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    let generated = build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate awsl wasm source").source;
     assert!(generated.contains("return (1 + 2).display()"), "算术表达式必须整体投影：\n{generated}");
     assert!(generated.contains("return (true).display()"), "布尔字面量必须走 `Display`：\n{generated}");
     assert!(generated.contains("return \"hi\""), "字符串字面量按合法捕获输出：\n{generated}");
@@ -324,6 +328,6 @@ let label = compute()
 </script>"#;
     let root = AwslParser::parse_root(source).expect("parse");
     let lowered = lower_component(&root, "demo", "demo.awsl", &LoweringOptions::default()).expect("lower demo");
-    let generated = build_awsl_wasm_source(&[lowered]).expect("generate awsl wasm source");
+    let generated = build_awsl_wasm_source(&[lowered], ScalarBootstrap::ClosedUnit).expect("generate awsl wasm source").source;
     assert!(generated.contains("(compute())"), "Derived 必须在引用点内联:\n{generated}");
 }
