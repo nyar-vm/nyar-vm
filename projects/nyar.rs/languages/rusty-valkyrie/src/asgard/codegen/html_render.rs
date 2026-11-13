@@ -14,7 +14,7 @@ use crate::asgard::{
     awsl::{
         LoweredComponent, RenderAttr, RenderAttrValue, RenderLoopNode, RenderModule, RenderNode, RenderNodeId, RenderRegionId,
         RenderTextSegment, ScriptBinding, TemplateNodeKind,
-        render_ir::{attr_value_source, region_nodes},
+        render_ir::{IntrinsicWidget, attr_value_source, region_nodes},
     },
     codegen::expr_eval::{EvalDiagnostic, EvalDiagnosticKind, ExprContext},
 };
@@ -100,7 +100,7 @@ impl<'a> HtmlRenderCtx<'a> {
                 if tag.eq_ignore_ascii_case("head") || tag.eq_ignore_ascii_case("script") {
                     return;
                 }
-                let html_tag = map_html_tag(tag, kind);
+                let html_tag = map_html_tag(element.widget, tag, kind);
                 write!(out, "<{html_tag}").unwrap();
                 self.emit_attrs(out, module, &element.attrs);
                 let children = region_nodes(module, element.children);
@@ -114,7 +114,7 @@ impl<'a> HtmlRenderCtx<'a> {
                 }
             }
             RenderNode::Component(component) => {
-                let html_tag = map_html_tag(&component.tag, TemplateNodeKind::Component);
+                let html_tag = map_html_tag(None, &component.tag, TemplateNodeKind::Component);
                 write!(out, "<{html_tag}").unwrap();
                 self.emit_attrs(out, module, &component.attrs);
                 write!(out, ">").unwrap();
@@ -194,17 +194,15 @@ fn node_label(module: &RenderModule, node_id: RenderNodeId) -> String {
     }
 }
 
-fn map_html_tag(tag: &str, kind: TemplateNodeKind) -> String {
+/// 标签投影：只按 RenderIR 已冻结的身份/种类选择宿主元素，不重新按标签字符串分类。
+///
+/// intrinsic 组件走 [`IntrinsicWidget::html_element`] 的共享 Web 投影；组件与
+/// 宿主视图的兜底行为保持原样。
+fn map_html_tag(widget: Option<IntrinsicWidget>, tag: &str, kind: TemplateNodeKind) -> String {
     match kind {
         TemplateNodeKind::Component if tag.eq_ignore_ascii_case("link") => "a".into(),
         TemplateNodeKind::Component => "div".into(),
-        TemplateNodeKind::Intrinsic => match tag {
-            "Text" | "text" => "span".into(),
-            "Button" | "button" => "button".into(),
-            "Column" | "column" | "Box" | "box" | "Row" | "row" | "Flex" | "flex" => "div".into(),
-            "Slot" | "slot" => "div".into(),
-            other => other.to_ascii_lowercase(),
-        },
+        TemplateNodeKind::Intrinsic => widget.map_or_else(|| tag.to_ascii_lowercase(), |widget| widget.html_element().to_string()),
         TemplateNodeKind::HostView => tag.to_ascii_lowercase(),
     }
 }

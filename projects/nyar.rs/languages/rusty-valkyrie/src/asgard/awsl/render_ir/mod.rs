@@ -7,6 +7,7 @@ pub mod expr;
 pub mod ids;
 pub mod passes;
 pub mod surface;
+pub mod widget;
 
 pub use backend::{attr_value_source, node_children_region, node_kind, region_nodes, text_segments_source, walk_region};
 pub use canonical::{
@@ -18,3 +19,4 @@ pub use expr::{RenderBinding, RenderDiagnostic, RenderEvent, RenderExpr, RenderE
 pub use ids::{RenderBindingId, RenderEventId, RenderExprId, RenderNodeId, RenderRegionId};
 pub use passes::{RenderPass, ThemeRegistryOptions, run_default_passes, theme_registry_pass};
 pub use surface::{SurfaceAttr, SurfaceAttrValue, SurfaceIf, SurfaceIr, SurfaceLoop, SurfaceNode, SurfaceTextPart, TemplateNodeKind};
+pub use widget::IntrinsicWidget;

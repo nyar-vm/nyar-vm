@@ -3,8 +3,25 @@
 use rusty_valkyrie::asgard::codegen::html_render::*;
 
 use rusty_valkyrie::asgard::awsl::{LoweringOptions, lower_component};
+use rusty_valkyrie::asgard::awsl::render_ir::IntrinsicWidget;
 use oak_awsl::AwslParser;
 use serde_json::Value;
+
+#[test]
+fn intrinsic_widget_identity_is_the_single_tag_table() {
+    assert_eq!(IntrinsicWidget::from_tag("Column"), Some(IntrinsicWidget::Column));
+    assert_eq!(IntrinsicWidget::from_tag("column"), Some(IntrinsicWidget::Column));
+    assert_eq!(IntrinsicWidget::from_tag("RadioGroup"), Some(IntrinsicWidget::RadioGroup));
+    assert_eq!(IntrinsicWidget::from_tag("radiogroup"), Some(IntrinsicWidget::RadioGroup));
+    assert_eq!(IntrinsicWidget::from_tag("div"), None);
+}
+
+#[test]
+fn intrinsic_widget_projects_shared_web_host_elements() {
+    assert_eq!(IntrinsicWidget::Text.html_element(), "span");
+    assert_eq!(IntrinsicWidget::Column.html_element(), "div");
+    assert_eq!(IntrinsicWidget::RadioGroup.html_element(), "radiogroup");
+}
 
 #[test]
 fn static_render_simple_component() {

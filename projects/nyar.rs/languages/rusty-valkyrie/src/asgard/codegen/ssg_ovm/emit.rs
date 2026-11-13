@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 use crate::asgard::{
     awsl::{
         LoweredComponent, RenderAttrValue, RenderModule, RenderNode, RenderNodeId, RenderTextSegment, ScriptBinding, TemplateNodeKind,
-        render_ir::region_nodes,
+        render_ir::{IntrinsicWidget, region_nodes},
     },
     codegen::{
         ssg_ovm::admission::{self, E1Expr},
@@ -87,7 +87,7 @@ impl Emitter<'_> {
                 if matches!(element.kind, TemplateNodeKind::Intrinsic) && tag.eq_ignore_ascii_case("slot") {
                     return Ok(None);
                 }
-                let host_tag = map_host_tag(tag, element.kind);
+                let host_tag = map_host_tag(element.widget, tag, element.kind);
                 let var = self.next_var();
                 self.line(format!("let {var} = dom_create_element({})", encode_v_text_literal(&host_tag)));
                 for attr in &element.attrs {
@@ -246,18 +246,14 @@ impl Emitter<'_> {
     }
 }
 
-/// 标签映射：与退役期 `html_render::map_html_tag` 的 adapter 事实保持一致；
-/// 组件识别与语义不在这里（组件构造已被准入门拒绝）。
-fn map_host_tag(tag: &str, kind: TemplateNodeKind) -> String {
+/// 标签投影：与 HTML 发射器共用 [`IntrinsicWidget::html_element`] 的 Web 宿主事实。
+///
+/// 组件识别与语义不在这里（组件构造已被准入门拒绝）；只按 RenderIR 已冻结的
+/// intrinsic 身份选择宿主元素。
+fn map_host_tag(widget: Option<IntrinsicWidget>, tag: &str, kind: TemplateNodeKind) -> String {
     match kind {
-        TemplateNodeKind::Intrinsic => match tag {
-            "Text" | "text" => "span".into(),
-            "Button" | "button" => "button".into(),
-            "Column" | "column" | "Box" | "box" | "Row" | "row" | "Flex" | "flex" => "div".into(),
-            other => other.to_ascii_lowercase(),
-        },
-        TemplateNodeKind::HostView => tag.to_ascii_lowercase(),
-        TemplateNodeKind::Component => tag.to_ascii_lowercase(),
+        TemplateNodeKind::Intrinsic => widget.map_or_else(|| tag.to_ascii_lowercase(), |widget| widget.html_element().to_string()),
+        TemplateNodeKind::HostView | TemplateNodeKind::Component => tag.to_ascii_lowercase(),
     }
 }
 

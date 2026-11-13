@@ -121,34 +121,9 @@ pub fn is_fragment_root(ir: &SurfaceIr) -> bool {
 }
 
 /// 判断标签是否属于 intrinsic 内置标签集合。
+///
+/// 身份表归 [`IntrinsicWidget`](super::widget::IntrinsicWidget) 所有；本函数只是
+/// lowering 侧的便捷判定，不另持表。
 pub fn is_intrinsic_tag(tag: &str) -> bool {
-    matches!(
-        tag,
-        "Column"
-            | "Box"
-            | "Row"
-            | "Text"
-            | "Button"
-            | "Input"
-            | "Flex"
-            | "Slot"
-            | "List"
-            | "Item"
-            | "Checkbox"
-            | "Radio"
-            | "RadioGroup"
-            | "column"
-            | "box"
-            | "row"
-            | "text"
-            | "button"
-            | "input"
-            | "flex"
-            | "slot"
-            | "list"
-            | "item"
-            | "checkbox"
-            | "radio"
-            | "radiogroup"
-    )
+    super::widget::IntrinsicWidget::from_tag(tag).is_some()
 }

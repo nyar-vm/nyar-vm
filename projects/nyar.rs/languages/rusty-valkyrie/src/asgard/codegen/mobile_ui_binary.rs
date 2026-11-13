@@ -208,7 +208,13 @@ impl WireIrDecoder {
                     RenderNode::Component(crate::asgard::awsl::render_ir::RenderComponentNode { tag, attrs, children, span: 0..0 })
                 }
                 else {
-                    RenderNode::Element(crate::asgard::awsl::render_ir::RenderElement { tag, kind: node_kind, attrs, children, span: 0..0 })
+                    let widget = if node_kind == TemplateNodeKind::Intrinsic {
+                        crate::asgard::awsl::render_ir::IntrinsicWidget::from_tag(&tag)
+                    }
+                    else {
+                        None
+                    };
+                    RenderNode::Element(crate::asgard::awsl::render_ir::RenderElement { tag, kind: node_kind, widget, attrs, children, span: 0..0 })
                 };
                 self.module.nodes.push(node);
             }

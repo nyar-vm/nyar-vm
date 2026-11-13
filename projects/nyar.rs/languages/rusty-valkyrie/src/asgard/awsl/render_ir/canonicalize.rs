@@ -10,6 +10,7 @@ use super::{
     expr::{RenderBinding, RenderEvent, RenderExpr, RenderExprKind, RenderPurity, RenderValueKind},
     ids::{RenderBindingId, RenderEventId, RenderExprId, RenderNodeId, RenderRegionId},
     surface::{SurfaceAttr, SurfaceAttrValue, SurfaceIf, SurfaceIr, SurfaceLoop, SurfaceNode, SurfaceTextPart, TemplateNodeKind},
+    widget::IntrinsicWidget,
 };
 use crate::asgard::awsl::{ScriptBinding, SignalValueType, lower::BindingKind};
 
@@ -60,7 +61,11 @@ impl Canonicalizer {
                         RenderNode::Component(RenderComponentNode { tag, attrs: lowered_attrs, children: child_region, span })
                     }
                     TemplateNodeKind::Intrinsic | TemplateNodeKind::HostView => {
-                        RenderNode::Element(RenderElement { tag, kind, attrs: lowered_attrs, children: child_region, span })
+                        let widget = match kind {
+                            TemplateNodeKind::Intrinsic => IntrinsicWidget::from_tag(&tag),
+                            _ => None,
+                        };
+                        RenderNode::Element(RenderElement { tag, kind, widget, attrs: lowered_attrs, children: child_region, span })
                     }
                 };
                 let id = RenderNodeId(self.module.nodes.len() as u32);

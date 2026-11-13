@@ -4,7 +4,7 @@ use crate::asgard::awsl::{
     RenderAttr, RenderAttrValue, RenderIfNode, RenderLoopNode, RenderModule, RenderNode, RenderNodeId, RenderRegionId, RenderTextSegment,
     ScriptBinding,
     expr_deps::reactive_deps,
-    render_ir::{attr_value_source, region_nodes},
+    render_ir::{IntrinsicWidget, attr_value_source, region_nodes},
 };
 
 use super::{
@@ -173,6 +173,11 @@ impl<'a> VRenderCodegen<'a> {
                 frag
             }
             RenderNode::Element(element) => {
+                // 内置组件按 RenderIR 已冻结的身份投影；遗留 PascalCase 组件映射
+                // 只覆盖未进入 intrinsic 身份表的宿主替代项。
+                if let Some(widget) = element.widget {
+                    return self.emit_view_tag(v_render_host_tag(widget, &element.tag), &element.attrs, element.children);
+                }
                 if let Some(intrinsic) = map_awsl_component_to_host(&element.tag) {
                     return self.emit_view_tag(intrinsic, &element.attrs, element.children);
                 }
@@ -289,14 +294,11 @@ impl<'a> VRenderCodegen<'a> {
         name
     }
 
-    fn emit_view_tag(&mut self, tag: &str, attrs: &[RenderAttr], children: RenderRegionId) -> String {
-        let host_tag = match tag {
-            "Text" | "text" => "span",
-            "Column" | "Box" | "Row" | "Flex" | "column" | "box" | "row" | "flex" => "div",
-            "Button" | "button" => "button",
-            "Input" | "input" => "input",
-            other => other,
-        };
+    /// 发射一个宿主元素节点。
+    ///
+    /// `host_tag` 必须已经是由 RenderIR 身份或遗留组件映射投影后的宿主标签；
+    /// 本函数不再按标签字符串二次分类。
+    fn emit_view_tag(&mut self, host_tag: &str, attrs: &[RenderAttr], children: RenderRegionId) -> String {
         let var = self.next_var();
         writeln!(self.out, "    let {var} = dom_create_element(\"{host_tag}\")").unwrap();
         // `<input value="{信号}">` 是双向绑定：信号 → `value` 属性，用户输入 → 信号。
@@ -511,5 +513,19 @@ impl<'a> VRenderCodegen<'a> {
         let literal = encode_v_text_literal(text);
         writeln!(self.out, "    let {var} = dom_create_text({literal})").unwrap();
         var
+    }
+}
+
+/// VRender 的宿主投影：只按已冻结的内置组件身份选择元素。
+///
+/// 与 HTML/SSG 的共享投影不同，VRender 对尚未有宿主原语的组件保留源码标签
+/// （既有 DOM 事实），因此这里只映射已有确定宿主元素的身份。
+fn v_render_host_tag(widget: IntrinsicWidget, tag: &str) -> &str {
+    match widget {
+        IntrinsicWidget::Text => "span",
+        IntrinsicWidget::Column | IntrinsicWidget::Box | IntrinsicWidget::Row | IntrinsicWidget::Flex => "div",
+        IntrinsicWidget::Button => "button",
+        IntrinsicWidget::Input => "input",
+        _ => tag,
     }
 }

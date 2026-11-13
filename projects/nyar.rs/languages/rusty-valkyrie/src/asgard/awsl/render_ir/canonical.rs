@@ -6,6 +6,7 @@ use super::{
     expr::{RenderBinding, RenderDiagnostic, RenderEvent, RenderExpr},
     ids::{RenderBindingId, RenderEventId, RenderExprId, RenderNodeId, RenderRegionId},
     surface::TemplateNodeKind,
+    widget::IntrinsicWidget,
 };
 
 /// Canonical RenderIR module (side tables + rooted node forest).
@@ -58,6 +59,10 @@ pub struct RenderElement {
     pub tag: String,
     /// 模板节点种类（组件 / intrinsic / host view）。
     pub kind: TemplateNodeKind,
+    /// 已冻结的内置组件身份；`kind` 为 `Intrinsic` 时必然存在。
+    ///
+    /// codegen 只按该身份投影宿主原语，不重新按标签字符串分类。
+    pub widget: Option<IntrinsicWidget>,
     /// 元素属性列表。
     pub attrs: Vec<RenderAttr>,
     /// 子节点区域 id。
