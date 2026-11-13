@@ -148,6 +148,29 @@ fn export_without_lowered_method_is_rejected_structurally() {
 }
 
 #[test]
+fn unsigned_logical_entry_is_rejected_instead_of_signed_remap() {
+    // `u64` 在物理上可以合法承载于 JVM `Long`，但 launcher 只有 `parseLong`
+    // 有符号解析器；不得因此把逻辑 ABI 类型改写成 `i64`。
+    let unsigned = NyarType::Integer64 { signed: false };
+    let mut fixture = function("managed.abi.unsigned", unsigned.clone(), vec![unsigned.clone()]);
+    fixture.value_types.insert(ValueRef(1), unsigned.clone());
+    fixture.blocks[0].instructions.push(instruction(InstructionKind::Copy { source: Operand::Value(ValueRef(0)) }, vec![ValueRef(1)]));
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(1))) };
+
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("managed_abi_jvm").testing_entry_operation(main);
+    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "unsigned".to_string());
+    let submission = FragmentSubmission::from_backend_plan(plan);
+
+    let error = match lower_fragment_to_jvm_managed_surface(&submission) {
+        Ok(_) => panic!("unsigned 入口没有编组能力时必须结构化拒绝，不得改成 signed"),
+        Err(error) => error,
+    };
+    assert!(error.contains("unsigned"), "错误必须说明缺少 unsigned 编组能力: {error}");
+}
+
+#[test]
 fn unsupported_return_type_does_not_fabricate_entry() {
     let fixture = function("managed.abi.aggregate", NyarType::Tuple(vec![LONG]), Vec::new());
 

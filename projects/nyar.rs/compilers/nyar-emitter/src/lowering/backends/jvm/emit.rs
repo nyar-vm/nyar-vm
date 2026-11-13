@@ -149,8 +149,10 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
 
     let mut used_names = BTreeMap::<String, ()>::new();
     let mut method_plans = BTreeMap::<ItemInstanceId, JvmMethodPlan>::new();
+    let mut logical_signatures = BTreeMap::<ItemInstanceId, (Vec<NyarType>, NyarType)>::new();
     for (ordinal, instance) in operations.iter().enumerate() {
         let view = plan.get_function(instance).ok_or_else(|| format!("JVM 最小 lowering：可达操作 `{instance:?}` 缺少函数体"))?;
+        logical_signatures.insert(*instance, (view.function.param_types.clone(), view.function.return_type.clone()));
         let base = plan
             .wasm_export_names()
             .get(instance)
@@ -184,7 +186,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
         class_file.methods.push(lower_function(submission, &internal_name, &view.function, &method, &method_plans, &operator_by_instance)?);
     }
 
-    let (launcher_classes, managed_abi) = build_managed_abi_surface(&class_file, plan.wasm_export_names(), &method_plans)?;
+    let (launcher_classes, managed_abi) = build_managed_abi_surface(&class_file, plan.wasm_export_names(), &method_plans, &logical_signatures)?;
     let mut companion_classes = build_layout_classes(plan.aggregate_layouts())?;
     companion_classes.extend(build_sum_classes(submission)?);
     companion_classes.extend(launcher_classes);
@@ -208,6 +210,7 @@ fn build_managed_abi_surface(
     class_file: &JvmClassFile,
     export_names: &BTreeMap<ItemInstanceId, String>,
     method_plans: &BTreeMap<ItemInstanceId, JvmMethodPlan>,
+    logical_signatures: &BTreeMap<ItemInstanceId, (Vec<NyarType>, NyarType)>,
 ) -> Result<(Vec<JvmClassFile>, Option<ManagedAbiContract>)> {
     let mut entries = Vec::with_capacity(export_names.len());
     let mut companion_classes = Vec::with_capacity(export_names.len());
@@ -227,8 +230,13 @@ fn build_managed_abi_surface(
                 method.name
             ));
         }
-        let parameter_types = method.descriptor.parameter_types.iter().map(managed_scalar_type_name).collect::<Result<Vec<_>>>()?;
-        let return_type = managed_scalar_type_name(&method.descriptor.return_type)?;
+        // 逻辑 ABI 类型来自冻结的 `NyarType` 签名，物理 descriptor 另存；不得从
+        // 已擦除 signedness 的 descriptor 反推作者声明的逻辑类型。
+        let (logical_params, logical_return) = logical_signatures
+            .get(instance)
+            .ok_or_else(|| format!("JVM managed ABI：导出入口 `{logical_entry}` 的实例 `{instance:?}` 缺少冻结逻辑签名"))?;
+        let parameter_types = logical_params.iter().map(managed_logical_type_name).collect::<Result<Vec<_>>>()?;
+        let return_type = managed_logical_type_name(logical_return)?;
         let launcher_class = managed_launcher_internal_name(logical_entry, &mut used_launcher_names)?;
         let launcher = build_managed_launcher_class(&launcher_class, &class_file.internal_name, method)?;
         entries.push(ManagedAbiEntry {
@@ -252,22 +260,25 @@ fn build_managed_abi_surface(
     Ok((companion_classes, managed_abi))
 }
 
-/// managed ABI 只接受冻结的标量类型：`i64` / `i32` / `f64` / `bool` / `void`。
-fn managed_scalar_type_name(descriptor: &JvmTypeDescriptor) -> Result<String> {
-    Ok(match descriptor {
-        JvmTypeDescriptor::Long => "i64",
-        JvmTypeDescriptor::Int | JvmTypeDescriptor::Byte | JvmTypeDescriptor::Char | JvmTypeDescriptor::Short => "i32",
-        JvmTypeDescriptor::Double => "f64",
-        JvmTypeDescriptor::Boolean => "bool",
-        JvmTypeDescriptor::Void => "void",
-        JvmTypeDescriptor::Float => {
-            return Err("JVM managed ABI 不支持 `float` (f32) 载体：缺少对应 managed 标量类型名".to_string());
+/// managed ABI 的逻辑标量类型名：只来自冻结的 `NyarType` 签名，保留 signedness。
+///
+/// 没有 unsigned 编组能力时明确拒绝，禁止用有符号解析器冒充 unsigned；
+/// 物理 descriptor 单独保存在 `signature` 字段，不参与逻辑类型推断。
+fn managed_logical_type_name(ty: &NyarType) -> Result<String> {
+    Ok(match ty {
+        NyarType::Bottom | NyarType::Unit => "void",
+        NyarType::Boolean => "bool",
+        NyarType::Integer32 { signed: true } => "i32",
+        NyarType::Integer64 { signed: true } => "i64",
+        NyarType::Float64 => "f64",
+        NyarType::Integer32 { signed: false } | NyarType::Integer64 { signed: false } => {
+            return Err(format!("JVM managed ABI 没有 unsigned 编组能力（`{ty}`）：拒绝生成 argv launcher，不得用有符号解析器冒充"));
         }
-        JvmTypeDescriptor::Object(name) => {
-            return Err(format!("JVM managed ABI 不支持引用类型 `{name}`：缺少 managed 标量契约"));
+        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer128 { .. } => {
+            return Err(format!("JVM managed ABI 入口不支持 `{ty}`：只接受 i32 / i64 / f64 / bool / void"));
         }
-        JvmTypeDescriptor::Array(item) => {
-            return Err(format!("JVM managed ABI 不支持数组类型 `[{item}`：缺少 managed 标量契约"));
+        other => {
+            return Err(format!("JVM managed ABI 不支持 `{other}` 作为入口标量：缺少 managed 标量契约"));
         }
     }
     .to_string())
