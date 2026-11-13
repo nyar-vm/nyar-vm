@@ -78,6 +78,42 @@ unite Wrap {
     );
 }
 
+/// 反例（本次修复的观测点）：泛型 impl 方法返回裸 owner 名时不得在 MIR 补造实参。
+///
+/// 修复前 `impl_method_return_type` 对二参数 owner 会把方法末位泛型放到返回容器
+/// 首位、impl 第二个实参放到第二位；`-> Pair` 因此可能被补成 `Pair<U, E>`。
+/// 现有前端已在返回值合同处拒绝缺参的裸 owner 名，MIR 不得再获得按形状补造的机会。
+#[test]
+fn generic_impl_method_with_bare_owner_return_is_not_patched_in_mir() {
+    const BARE_OWNER_RETURN: &str = r#"
+namespace demo;
+
+unite Pair<T, E> {
+    [constructor]
+    Both { left: T, right: E }
+}
+
+imply Pair<i32, i32> {
+    micro broken(self) -> Pair {
+        return self
+    }
+}
+
+[export]
+micro probe(pair: Pair<i32, i32>) -> Pair<i32, i32> {
+    return pair.broken()
+}
+"#;
+    let error = ValkyrieCompiler::default()
+        .compile_fixture_source(BARE_OWNER_RETURN)
+        .expect_err("裸 owner 返回类型缺少泛型实参，必须在返回合同处结构化拒绝");
+    let rendered = format!("{error:?}");
+    assert!(
+        rendered.contains("ReturnValueTypeMismatch") || rendered.contains("UnresolvedSumInstanceFacts"),
+        "拒绝必须来自完整签名合同，而不是 MIR 按形状补造: {rendered}"
+    );
+}
+
 /// 回归：声明级布局必须结算单字段名义 payload，不得因严格 concretize 失败关闭。
 #[test]
 fn declaration_level_sum_layout_resolves_nominal_text_payload() {

@@ -51,7 +51,7 @@ pub(super) fn lower_function_semantic(
     // so SMIR007 compares against `isize`/`i32` (etc.), not unsubstituted `Self`.
     // 返回类型只消费 HIR 已冻结的 `Self` 代入；缺泛型实参即结构化失败，
     // 不得在 MIR 按 owner 泛型数量或方法泛型位置补造。
-    let resolved_return_type = match impl_method_return_type(&function.return_type, impl_owner_type.as_ref()) {
+    let resolved_return_type = match impl_method_return_type(&function.return_type, impl_owner_type.as_ref(), &builder.impl_type_arguments) {
         Some(return_type) => return_type,
         None => {
             diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnresolvedSumInstanceFacts {

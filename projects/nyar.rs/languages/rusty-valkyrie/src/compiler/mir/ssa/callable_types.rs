@@ -140,7 +140,11 @@ pub(super) fn impl_receiver_type(
 /// 这是事实缺失，返回 `None` 让调用方结构化诊断。禁止按 owner 泛型数量、方法泛型
 /// 位置或 `.last()` 补造返回类型——任意二参数 sum 并不天然具有 `map<T,E> → map<U,E>`
 /// 的语义，方法末位泛型也不天然是返回容器的元素类型。
-pub(super) fn impl_method_return_type(ty: &ValkyrieType, impl_owner_type: Option<&ValkyrieType>) -> Option<ValkyrieType> {
+pub(super) fn impl_method_return_type(
+    ty: &ValkyrieType,
+    impl_owner_type: Option<&ValkyrieType>,
+    impl_type_arguments: &[ValkyrieType],
+) -> Option<ValkyrieType> {
     let resolved = resolve_self_type_with_owner(ty, impl_owner_type);
     let ValkyrieType::Nominal { declaration, arguments, .. } = &resolved
     else {
@@ -153,9 +157,10 @@ pub(super) fn impl_method_return_type(ty: &ValkyrieType, impl_owner_type: Option
     else {
         return Some(resolved);
     };
-    // 非泛型 owner 的零实参返回是完整事实；泛型 owner 出现零实参才判定缺参。
+    // impl 头部声明了泛型就必须出现在返回类型里；零实参说明 HIR 未把 binder
+    // 代入冻结进签名，这是缺参事实，不得在 MIR 补。
     if owner_arguments.is_empty() {
-        return Some(resolved);
+        return if impl_type_arguments.is_empty() { Some(resolved) } else { None };
     }
     None
 }
