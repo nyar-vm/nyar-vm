@@ -4,7 +4,7 @@
 //! 生成的表示计划一起交给后续阶段。
 
 use super::{
-    canonical_mir::{CanonicalMirError, CanonicalOperation, CanonicalSemanticMir},
+    canonical_mir::{CanonicalCallee, CanonicalMirError, CanonicalOperation, CanonicalSemanticMir, CanonicalWitness},
     linked_program::LinkedSemanticProgram,
 };
 use crate::semantic_ids::{
@@ -22,6 +22,71 @@ pub struct CanonicalProgram {
 }
 
 impl CanonicalProgram {
+    /// 在实例化固定点把具体 witness 分派消去为冻结的 `ItemInstanceId`。
+    ///
+    /// 消去只认已冻结事实：`(method_declaration, self_type)` 必须对应唯一个
+    /// `linked.item_instances` 记录。开放 self、缺实现或多候选都返回结构化错误；
+    /// 目标层不得再扫描语义实例库决定调用谁。消去后由现有 `Item` 校验路径执行
+    /// 等价的完整调用签名验证。
+    pub fn resolve_witness_dispatch(&mut self) -> Result<(), CanonicalMirError> {
+        let mut dispatched: Vec<(CanonicalWitness, ItemInstanceId)> = Vec::new();
+        for function in self.mir.functions.values() {
+            for block in function.blocks.values() {
+                for instruction in &block.instructions {
+                    if let CanonicalOperation::Invoke { callee: CanonicalCallee::Witness(witness), .. } = &instruction.operation
+                        && !dispatched.iter().any(|(known, _)| known == witness)
+                    {
+                        let instance = self.resolve_witness_instance(witness)?;
+                        dispatched.push((*witness, instance));
+                    }
+                }
+            }
+        }
+        if dispatched.is_empty() {
+            return Ok(());
+        }
+        for function in self.mir.functions.values_mut() {
+            for block in function.blocks.values_mut() {
+                for instruction in &mut block.instructions {
+                    if let CanonicalOperation::Invoke { callee, .. } = &mut instruction.operation
+                        && let CanonicalCallee::Witness(witness) = callee
+                        && let Some((_, instance)) = dispatched.iter().find(|(known, _)| known == witness)
+                    {
+                        *callee = CanonicalCallee::Item(*instance);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn resolve_witness_instance(&self, witness: &CanonicalWitness) -> Result<ItemInstanceId, CanonicalMirError> {
+        let unresolved = |candidates: usize| CanonicalMirError::UnresolvedWitnessDispatch {
+            trait_declaration: witness.trait_declaration,
+            method_declaration: witness.method_declaration,
+            self_type: witness.self_type,
+            candidates,
+        };
+        let Some(self_type) = witness.self_type
+        else {
+            return Err(unresolved(0));
+        };
+        let mut matching = self
+            .linked
+            .item_instances
+            .iter()
+            .filter(|(_, record)| record.declaration == witness.method_declaration && record.parameter_types.first() == Some(&self_type));
+        let Some((instance, _)) = matching.next()
+        else {
+            return Err(unresolved(0));
+        };
+        let remaining = matching.count();
+        if remaining != 0 {
+            return Err(unresolved(1 + remaining));
+        }
+        Ok(*instance)
+    }
+
     /// 验证链接闭包与 Semantic MIR 后，才允许进入 processing half。
     pub fn validate(&self) -> Result<(), CanonicalMirError> {
         self.linked.validate_named_residues()?;

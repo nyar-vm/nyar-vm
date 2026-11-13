@@ -1,6 +1,6 @@
 //! 泛型接收者的 trait 方法调用在 Semantic MIR 必须表示为 witness 分派义务，不得退回 `Unit`。
 
-use nyar_types::{CanonicalCallee, CanonicalOperation, CanonicalTypeKind, ItemId, ItemInstanceId};
+use nyar_types::{ItemId, ItemInstanceId};
 use rusty_valkyrie::{
     ValkyrieCompiler,
     compiler::types::hir::ValkyrieType,
@@ -71,29 +71,17 @@ fn witness_call_satisfies_semantic_mir_contract() {
 }
 
 #[test]
-fn canonical_witness_slot_carries_dispatch_identity() {
-    // canonical 必须保留 witness 的稳定身份（trait 声明 + 方法槽 + 已具体化 self 类型），
-    // 不得整体拒绝，也不得按名字猜实现。
+fn canonical_rejects_witness_without_frozen_instance() {
+    // 具体 witness 必须在实例化固定点消去为冻结 `ItemInstanceId`。这个合成模块
+    // 没有登记 `method_declaration` 对应的实现实例，canonical 必须结构化拒绝，
+    // 不得保留 `Witness` 让目标层扫描实例库决定调用谁。
     let self_type = ValkyrieType::Integer32 { signed: true };
     let module = concrete_witness_module(self_type.clone());
-    let expected_self = *module.type_identities.get(&self_type).expect("self 类型必须进入 identity 表");
 
-    let program = rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&module)
-        .expect("已具体化 self 的 witness 分派必须进入 canonical");
-    let function = program.mir.functions.values().next().expect("canonical 必须保留函数体");
-    let witness = function
-        .blocks
-        .values()
-        .flat_map(|block| block.instructions.iter())
-        .find_map(|instruction| match &instruction.operation {
-            nyar_types::CanonicalOperation::Invoke { callee: nyar_types::CanonicalCallee::Witness(witness), .. } => Some(*witness),
-            _ => None,
-        })
-        .expect("witness 分派必须保留在 canonical Invoke 上");
-
-    assert_eq!(witness.trait_declaration, ItemId::from_index(1).expect("trait 声明身份"));
-    assert_eq!(witness.method_declaration, ItemId::from_index(2).expect("方法槽身份"));
-    assert_eq!(witness.self_type, Some(expected_self), "已具体化的 self 类型必须以 TypeId 进入 canonical");
+    let error = rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&module)
+        .expect_err("缺少冻结实现实例的 witness 必须在 canonical 失败闭合");
+    let rendered = format!("{error:?}");
+    assert!(rendered.contains("UnresolvedWitnessDispatch"), "拒绝必须指出未消去的 witness 分派: {rendered}");
 }
 
 /// 构造一个非泛型函数体，其中唯一的调用是已具体化 self 的 trait 方法槽 witness。
@@ -160,6 +148,48 @@ fn concrete_witness_module(self_type: ValkyrieType) -> rusty_valkyrie::mir::MirM
     module
 }
 
+const CONCRETE_DISPATCH_SOURCE: &str = r#"
+namespace test.dispatch;
+
+trait Echo {
+    micro echo(self) -> bool
+}
+
+structure Counter {
+    flag: bool
+}
+
+imply Counter: Echo {
+    micro echo(self) -> bool {
+        return true
+    }
+}
+
+micro use_echo<T>(value: T) -> bool where T: Echo {
+    return value.echo()
+}
+
+[export]
+micro run() -> bool {
+    return use_echo(Counter { flag: true })
+}
+"#;
+
+#[test]
+fn concrete_self_without_frozen_instance_is_rejected_not_resolved_later() {
+    // 具体 self 类型不足以消去 witness：必须同时存在冻结的实现实例。
+    // 这个 fixture 的 impl 成员没有进入实例库，canonical 必须结构化拒绝，
+    // 不得把「按 self 类型再找一次实现」推迟到目标层。
+    let hir = ValkyrieCompiler::default().compile_source(CONCRETE_DISPATCH_SOURCE).expect("具体 trait 实现必须通过 HIR 分析");
+    let mir = MirLowerer::lower_module_semantic(&hir);
+
+    let error = rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&mir)
+        .expect_err("没有冻结实现实例的具体 witness 必须失败闭合");
+    let rendered = format!("{error:?}");
+    assert!(rendered.contains("UnresolvedWitnessDispatch"), "拒绝必须指出未消去的 witness 分派: {rendered}");
+    assert!(rendered.contains("candidates: 0"), "缺实例必须报告候选数为 0: {rendered}");
+}
+
 const OPERATOR_SOURCE: &str = r#"
 namespace test.dispatch;
 
@@ -206,13 +236,12 @@ fn operator_trait_call_keeps_witness_dispatch() {
 }
 
 #[test]
-fn generic_signature_enters_canonical_as_binder_identity() {
-    // 泛型形参是前端冻结的 binder 身份：canonical 接受参数化签名，不再整体拒绝；
-    // witness 的 self 类型实参落在同一形参身份上，也不按名字猜实现。
+fn open_generic_witness_is_rejected_at_canonical() {
+    // 泛型形参是前端冻结的 binder 身份（MIR 层事实）；但开放 self 的 witness
+    // 没有唯一实现实例，canonical 必须在实例化固定点结构化拒绝，不得保留它让
+    // 目标层扫描实例库，也不得按名字猜实现。
     let hir = ValkyrieCompiler::default().compile_source(SOURCE).expect("源码必须通过 HIR 分析");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let program =
-        rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&mir).expect("带 binder 的泛型签名必须进入 canonical");
 
     let (generic, binder) = mir
         .type_identities
@@ -223,24 +252,27 @@ fn generic_signature_enters_canonical_as_binder_identity() {
         })
         .expect("形参 T 必须进入 Compiler 类型身份表");
     let binder = binder.expect("形参 T 必须携带 binder 身份");
-    let type_id = mir.type_identities[&generic];
-    match &program.linked.types[&type_id].kind {
-        CanonicalTypeKind::Generic { owner, ordinal } => {
-            assert_eq!((*owner, *ordinal), (binder.owner, binder.ordinal), "canonical 形参身份必须来自 binder，不得按名字重建");
+    // MIR 层：witness 的 self 类型就是带同一声明 binder 的形参，不按名字重建。
+    let function = mir.functions.iter().find(|function| function.display_symbol.contains("use_echo")).expect("use_echo MIR");
+    let witness_self = function
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|instruction| match &instruction.kind {
+            MirOperation::Call { callee: MirOperand::Witness(witness), .. } => Some(witness.self_type.clone()),
+            _ => None,
+        })
+        .expect("use_echo 必须保留 witness 分派");
+    match witness_self {
+        ValkyrieType::Generic(generic) => {
+            assert_eq!(generic.binder, Some(binder), "witness self 必须落在声明 binder 身份上，而不是按名字重建");
+            assert_eq!(generic.name.as_str(), "T");
         }
-        other => panic!("expected CanonicalTypeKind::Generic, got {other:?}"),
+        other => panic!("expected Generic(T), got {other:?}"),
     }
 
-    let mut witnesses = 0;
-    for function in program.mir.functions.values() {
-        for block in function.blocks.values() {
-            for instruction in &block.instructions {
-                if let CanonicalOperation::Invoke { callee: CanonicalCallee::Witness(witness), .. } = &instruction.operation {
-                    assert_eq!(witness.self_type, Some(type_id), "witness self 类型实参必须落在形参身份上");
-                    witnesses += 1;
-                }
-            }
-        }
-    }
-    assert!(witnesses >= 1, "`use_echo` 的 `value.echo()` 必须保留 witness 调用");
+    let error = rusty_valkyrie::compiler::emitter::pipeline::canonical_program_from_semantic_mir(&mir)
+        .expect_err("开放 self 的 witness 必须在 canonical 失败闭合");
+    let rendered = format!("{error:?}");
+    assert!(rendered.contains("UnresolvedWitnessDispatch"), "拒绝必须指出未消去的 witness 分派: {rendered}");
 }

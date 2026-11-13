@@ -1078,34 +1078,17 @@ fn canonical_sum_operations(instruction: &nyar_types::CanonicalInstruction) -> V
 /// 开放的 witness，因此这里只允许按已冻结的 `(method declaration, self 类型)`
 /// 精确匹配唯一实例。不得按名字、候选顺序或「第一个参数看起来一样」猜实现——
 /// 猜错会把 `Hash::hash` 绑到 `i64.infix -` 这种签名不同的算子上。
-fn resolve_witness_to_item(program: &CanonicalProgram, witness: &nyar_types::CanonicalWitness) -> Result<ItemInstanceId> {
-    let Some(self_type) = witness.self_type
-    else {
-        return Err(format!(
-            "trait witness self_type 仍开放泛型，无法在 target_execution_plan 消去: trait={:?} method={:?}",
-            witness.trait_declaration, witness.method_declaration
-        ));
-    };
-    let mut matching = program
-        .linked
-        .item_instances
-        .iter()
-        .filter(|(_, record)| record.declaration == witness.method_declaration)
-        .filter(|(_, record)| record.parameter_types.first() == Some(&self_type));
-    let Some((instance, _)) = matching.next()
-    else {
-        return Err(format!(
-            "trait witness 缺少 declaration={:?} self_type={self_type:?} 的实例: trait={:?}",
-            witness.method_declaration, witness.trait_declaration
-        ));
-    };
-    if matching.next().is_some() {
-        return Err(format!(
-            "trait witness declaration={:?} self_type={self_type:?} 对应多个实例；实例身份必须由前端冻结",
-            witness.method_declaration
-        ));
-    }
-    Ok(*instance)
+/// 目标层不得为 witness 分派扫描语义实例库。
+///
+/// 具体 witness 必须在 canonical 实例化固定点消去为 `CanonicalCallee::Item`；
+/// 走到目标层仍保留 `Witness` 说明上游未闭合，必须结构化失败而不是按
+/// `(method declaration, self 类型)` 在这里再选一次实现。
+fn resolve_witness_to_item(_program: &CanonicalProgram, witness: &nyar_types::CanonicalWitness) -> Result<ItemInstanceId> {
+    Err(format!(
+        "canonical 未消去的 trait witness 分派到达目标层：trait={:?} method={:?} self_type={:?}；\
+         具体 witness 必须在实例化固定点冻结 `ItemInstanceId`",
+        witness.trait_declaration, witness.method_declaration, witness.self_type
+    ))
 }
 
 fn lower_operation(

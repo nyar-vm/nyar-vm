@@ -228,13 +228,15 @@ impl CanonicalSemanticMir {
                                     }
                                 }
                                 CanonicalCallee::Witness(witness) => {
-                                    // witness 没有已解析的静态签名：参数与结果类型义务由 Semantic MIR
-                                    // 合同持有。canonical 只检查已具体化的 self 类型身份存在。
-                                    if let Some(ty) = witness.self_type
-                                        && !linked.types.contains_key(&ty)
-                                    {
-                                        return Err(CanonicalMirError::UnknownType { function: *key, ty });
-                                    }
+                                    // 具体 witness 必须在实例化固定点消去为 `Item`；走到
+                                    // canonical 校验说明上游未闭合，按未消去分派失败关闭。
+                                    // 目标层不得再扫描实例库补做这一步。
+                                    return Err(CanonicalMirError::UnresolvedWitnessDispatch {
+                                        trait_declaration: witness.trait_declaration,
+                                        method_declaration: witness.method_declaration,
+                                        self_type: witness.self_type,
+                                        candidates: 0,
+                                    });
                                 }
                                 CanonicalCallee::Value(callee) => {
                                     let Some(callee_type) = function.value_types.get(callee)

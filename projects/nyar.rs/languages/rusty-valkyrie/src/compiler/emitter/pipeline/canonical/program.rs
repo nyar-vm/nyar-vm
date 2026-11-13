@@ -242,7 +242,9 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         })
         .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     linked.fragments = canonical_fragments(module, &linked, &functions, &module.semantic_fragments)?;
-    let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
+    let mut program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
+    // 具体 witness 分派必须在实例化固定点消去为冻结实例身份；目标层不再扫描实例库。
+    program.resolve_witness_dispatch().map_err(|error| canonical_error(module, &program, error))?;
     program.validate().map_err(|error| canonical_error(module, &program, error))?;
     Ok(program)
 }

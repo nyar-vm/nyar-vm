@@ -505,6 +505,21 @@ pub enum CanonicalMirError {
         /// 未链接的 callee 实例。
         callee: ItemInstanceId,
     },
+    /// 具体 witness 分派无法在实例化固定点唯一消去。
+    ///
+    /// `candidates` 为 0 表示 self 仍开放泛型或没有对应实现实例；大于 1 表示
+    /// `(method_declaration, self_type)` 对应多个实例。两种都必须结构化拒绝，
+    /// 不允许目标层扫描实例库猜实现。
+    UnresolvedWitnessDispatch {
+        /// trait 声明身份。
+        trait_declaration: ItemId,
+        /// trait 方法槽声明身份。
+        method_declaration: ItemId,
+        /// 已具体化的 self 类型；`None` 表示仍是开放泛型。
+        self_type: Option<TypeId>,
+        /// 匹配到的实例数量。
+        candidates: usize,
+    },
     /// 类型身份未进入 canonical type table。
     UnknownType {
         /// 所在函数实例。
