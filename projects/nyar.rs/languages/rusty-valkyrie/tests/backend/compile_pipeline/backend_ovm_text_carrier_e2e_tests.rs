@@ -272,18 +272,27 @@ fn panic_text_argument_follows_frozen_slot_carrier() {
 }
 
 /// 反向合同：同一份已冻结计划若没有程序级文本表示事实，`utf8` 槽是 missing
-/// 事实，必须在发射前结构化拒收，不得把「布局表没有托管布局」解释为 raw。
+/// 事实，必须在 `CompiledProgram` 构造期结构化拒收，不得把「布局表没有托管布局」
+/// 解释为 raw，也不得留到目标层。
 #[test]
 fn undeclared_program_text_representation_is_rejected() {
     let program = compile_panic().expect("纯 raw 片段必须完成编译");
-    let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
-    let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
-    let mut plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
-        .expect("正式计划必须冻结程序级文本表示事实");
-    assert_eq!(plan.program_text_representation(), Some(nyar_emitter::ProgramTextRepresentation::Raw));
+    assert_eq!(
+        program.representation().text_representation,
+        Some(nyar_types::layout_choice::TextRepresentation::Raw),
+        "未声明任何文本载体的片段必须由正式表示计划显式声明 raw"
+    );
     // 刻意清掉程序级事实：raw 必须来自声明，不能由「没有托管布局」反推。
-    plan.testing_clear_program_text_representation();
-    let error = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
-        .expect_err("没有程序级文本表示事实的 `utf8` 槽必须结构化拒收");
-    assert!(error.contains("不得解释为 raw"), "错误必须点名禁止 raw 回落，实际: {error}");
+    let mut representation = program.representation().clone();
+    representation.text_representation = None;
+    let error = nyar_types::CompiledProgram::new(program.canonical().clone(), representation)
+        .expect_err("没有程序级文本表示事实的 `utf8` 程序必须结构化拒收");
+    assert_eq!(
+        error,
+        nyar_types::CompiledProgramError::TextRepresentationMismatch {
+            expected: Some(nyar_types::layout_choice::TextRepresentation::Raw),
+            actual: None,
+        }
+    );
+    assert!(error.to_string().contains("TextRepresentationMismatch"), "错误必须点名构造期合同，实际: {error}");
 }
