@@ -91,8 +91,8 @@ pub struct CanonicalFragment {
     pub external_call_edges: Vec<CanonicalExternalCallEdge>,
     /// 已绑定身份的内部调用边。
     pub internal_call_edges: Vec<CanonicalCallEdge>,
-    /// callable identity 到公开 Wasm 名称的映射。
-    pub wasm_export_names: BTreeMap<ItemInstanceId, String>,
+    /// callable identity 到公开 ABI 名称的映射（目标中立；wasm lane 直接用作导出名）。
+    pub export_names: BTreeMap<ItemInstanceId, String>,
 }
 
 /// Canonical 片段内的内部调用边。

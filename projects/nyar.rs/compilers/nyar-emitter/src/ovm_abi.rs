@@ -16,7 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_types::{AggregateLayoutPlan, ItemInstanceId, LayoutId, NominalInstanceId, NyarType, combined_content_hash};
-use odin_bytecode::OdinLayout;
+use acorn_odin::OdinLayout;
 use serde::Serialize;
 
 use crate::{
@@ -27,15 +27,15 @@ use crate::{
 };
 
 // 合同类型定义在格式 crate，编译器与运行时共用同一份 schema；本模块只保留派生。
-pub use odin_bytecode::abi::{
+pub use acorn_odin::abi::{
     OVM_ABI_SCHEMA_VERSION, OVM_ABI_SIDECAR_SUFFIX, OvmAbiContract, OvmAbiExport, OvmAbiField, OvmAbiParam, OvmAbiSidecar, OvmAbiType,
     OvmAbiVariant, OvmOptionBoxing, OvmTextRepresentation, ovm_abi_sidecar_file,
 };
 
-// 合同类型（含 `OvmAbiType`）由 `odin_bytecode::abi` 定义并在上方重导出。
+// 合同类型（含 `OvmAbiType`）由 `acorn_odin::abi` 定义并在上方重导出。
 
 // `OvmAbiField` / `OvmTextRepresentation` / `OvmAbiVariant` / `OvmOptionBoxing`
-// 以及 `OvmAbiSidecar` 同样由 `odin_bytecode::abi` 定义。
+// 以及 `OvmAbiSidecar` 同样由 `acorn_odin::abi` 定义。
 
 /// 从冻结计划派生合同。
 ///
@@ -472,7 +472,7 @@ mod tests {
     use crate::contracts::{Block, BlockRef, Terminator, Value, ValueRef};
 
     fn nyar(s: &str) -> NyarType {
-        NyarType::from_surface_primitive(s).expect("surface primitive")
+        crate::test_canonical_primitive(s)
     }
 
     #[allow(deprecated)]
@@ -515,7 +515,7 @@ mod tests {
         let name = QualifiedName::new(vec![Identifier::new(export)]);
         let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(name, function)]));
         for instance in plan.instances() {
-            plan.testing_wasm_export_names_mut().insert(instance, export.to_string());
+            plan.testing_export_names_mut().insert(instance, export.to_string());
         }
         plan
     }
@@ -535,7 +535,7 @@ mod tests {
             .collect::<BTreeMap<_, _>>();
         let mut plan = TargetExecutionPlan::from_functions(functions);
         for (instance, name) in plan.instances().into_iter().zip(names) {
-            plan.testing_wasm_export_names_mut().insert(instance, name.to_string());
+            plan.testing_export_names_mut().insert(instance, name.to_string());
         }
         plan
     }

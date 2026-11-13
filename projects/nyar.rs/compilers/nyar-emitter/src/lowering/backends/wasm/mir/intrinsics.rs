@@ -138,10 +138,7 @@ impl<'a> WasmMirLowerer<'a> {
         slot_layout: Option<LayoutId>,
     ) -> crate::Result<()> {
         let actual = self.operand_wasm_stack_type(operand)?;
-        if slot_ty == WASM_GC_ANYREF
-            && actual == VALTYPE_I32
-            && self.operand_semantic_type(operand).is_some_and(is_js_glue_host_string_type)
-        {
+        if slot_ty == WASM_GC_ANYREF && actual == VALTYPE_I32 && self.operand_semantic_type(operand).is_some_and(is_js_glue_host_string_type) {
             if let Some(layout_id) = slot_layout {
                 if self.utf8_host_handle_materialize.contains_key(&layout_id) {
                     self.emit_operand(operand)?;
@@ -181,27 +178,27 @@ impl<'a> WasmMirLowerer<'a> {
         // 逐字节拷贝：i32.load8_u(ptr + i) → array.set(bytes, i, …)
         self.emit_i32_const(0);
         self.emit_local_set(index_local);
-        encode_block_empty(&mut self.code);
-        encode_loop_empty(&mut self.code);
+        self.emit_block_type(WasmOpcode::Block);
+        self.emit_block_type(WasmOpcode::Loop);
         self.emit_local_get(index_local);
         self.emit_local_get(len_local);
-        WasmOpcode::I32GeU.encode(&mut self.code);
-        encode_br_if(1, &mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32GeU));
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::BrIf, operand: 1 });
         self.emit_local_get(array_local);
         self.emit_ref_cast_array_type(recipe.bytes_array_type_index);
         self.emit_local_get(index_local);
         self.emit_local_get(ptr_local);
         self.emit_local_get(index_local);
         self.emit_i32_add();
-        encode_memarg(WasmOpcode::I32Load8U, 0, 0, &mut self.code);
+        self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::I32Load8U, align: 0, offset: 0 });
         self.emit_array_set(recipe.bytes_array_type_index);
         self.emit_local_get(index_local);
         self.emit_i32_const(1);
         self.emit_i32_add();
         self.emit_local_set(index_local);
-        encode_br(0, &mut self.code);
-        WasmOpcode::End.encode(&mut self.code); // loop
-        WasmOpcode::End.encode(&mut self.code); // block
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Br, operand: 0 });
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End)); // loop
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End)); // block
         // managed struct：_repr 字段装入字节数组（与库导出物化 wrapper 同一构造序列）。
         self.emit_struct_new_default(recipe.struct_type_index);
         self.emit_local_set(object_local);

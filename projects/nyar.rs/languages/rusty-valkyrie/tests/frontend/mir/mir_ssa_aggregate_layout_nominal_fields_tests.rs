@@ -73,13 +73,16 @@ fn nominal_generic_and_array_fields_lower_without_panic() {
         NyarType::Apply(Box::new(NyarType::Named(Identifier::new("std::primitive::ArrayList"))), vec![NyarType::Integer8 { signed: false }]),
         "ArrayList<u8> 必须按声明拼写解析为 Apply，实参经 primitive 载体代入"
     );
-    assert_eq!(builder_layout.fields[0].size, 8, "引用语义泛型实例字段按引用槽计量");
+    // 语言层只冻结引用语义与完整类型；引用槽宽度属于目标数据布局，
+    // 由各平台表示计划解析，这里保持无目标占位。
+    assert_eq!(builder_layout.fields[0].size, 0, "语言层不决定引用槽宽度");
+    assert_eq!(builder_layout.fields[0].align, 1, "语言层不决定引用槽对齐");
     assert_eq!(
         builder_layout.fields[1].ty,
         NyarType::Integer64 { signed: false },
         "usize 必须由 std 的指针宽度别名结算成 u64，不能再按拼写降到 4 字节整数"
     );
-    assert_eq!(builder_layout.fields[1].size, 8, "64 位目标上 usize 字段按 8 字节计量");
+    assert_eq!(builder_layout.fields[1].size, 0, "语言层不决定字段字节宽度");
 
     let text_layout = module.aggregate_layouts.layouts.iter().find(|layout| layout.name == "Utf8Text").expect("Utf8Text 布局");
     assert_eq!(text_layout.fields[0].ty, NyarType::Array(Box::new(NyarType::Integer8 { signed: false })), "[u8] 元素必须递归映射到平台载体");

@@ -583,7 +583,7 @@ mod tests {
     use nyar_types::{FieldLayout, Identifier};
 
     fn nyar(s: &str) -> NyarType {
-        NyarType::from_surface_primitive(s).expect("surface primitive")
+        crate::test_canonical_primitive(s)
     }
 
     #[test]

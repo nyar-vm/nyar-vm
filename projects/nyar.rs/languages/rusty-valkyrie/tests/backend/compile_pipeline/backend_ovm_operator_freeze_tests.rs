@@ -9,7 +9,7 @@ use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
     target_operator::{TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorRecipe},
 };
-use odin_bytecode::{OdinHeadCode, OdinModuleData, decode_at};
+use acorn_odin::{OdinHeadCode, OdinModuleData, decode_at};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
 /// 沿 Compiler 产出的目标私有计划降低到 `.odin`，不重放调用边。
@@ -29,7 +29,7 @@ fn decoded_codes(module: &OdinModuleData) -> Vec<OdinHeadCode> {
     let mut codes = Vec::new();
     let mut position = 0;
     while position < module.code_bytes.len() {
-        let instruction = odin_bytecode::decode_at(&module.code_bytes, position);
+        let instruction = acorn_odin::decode_at(&module.code_bytes, position);
         assert!(instruction.size > 0, "字节码必须可解码");
         codes.push(instruction.code);
         position += instruction.size as usize;
@@ -353,7 +353,7 @@ fn entry_abi_name_colliding_with_public_export_name_gains_instance_index() {
         .expect("probe 实例");
     let eq_abi_name = plan.abi_name_for_instance(eq).expect("`==` 必须有 ABI 名");
     let eq_abi = eq_abi_name.to_string();
-    plan.testing_wasm_export_names_mut().insert(probe, eq_abi.clone());
+    plan.testing_export_names_mut().insert(probe, eq_abi.clone());
     plan.testing_entry_operation(eq_abi_name);
     plan.testing_freeze_library_export_abis().expect("冲突夹具的导出 ABI 必须冻结");
     let submission = FragmentSubmission::from_backend_plan(plan);

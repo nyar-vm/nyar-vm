@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use odin_bytecode::{Odin_VERSION, OdinModuleData, decode_module, encode_module};
+use acorn_odin::{Odin_VERSION, OdinModuleData, decode_module, encode_module};
 
 use crate::{Result, WorkspaceCacheError, sanitize_bucket_name};
 

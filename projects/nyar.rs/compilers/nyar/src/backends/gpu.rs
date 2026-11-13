@@ -2,7 +2,7 @@
 
 use crate::{
     abstractions::{ArtifactFormat, BackendInputKind},
-    backends::{BackendDescriptor, BackendResult, CompilationOptions},
+    backends::{BackendDescriptor, BackendError, BackendResult, CompilationOptions},
     packaging::{ArtifactSet, TargetLane},
 };
 
@@ -37,7 +37,7 @@ impl GpuSpirvBackend {
     /// 返回空产物集会把「没有实现」伪装成「编译成功且无产物」，调用方无法区分
     /// 能力缺口与真实空产物；GPU lane 在正式 lowering/driver 闭合前不得宣称成功。
     pub fn compile_placeholder(&self, _options: &CompilationOptions) -> BackendResult<ArtifactSet> {
-        Err(format!("{} 的正式 lowering 尚未接入：GPU placeholder 不得宣称编译成功", Self::NAME))
+        Err(BackendError::for_backend(Self::NAME, "正式 lowering 尚未接入：GPU placeholder 不得宣称编译成功"))
     }
 }
 
@@ -69,7 +69,7 @@ impl GpuDxilBackend {
 
     /// 占位 compile：正式 lowering 未接入时必须失败闭合，不得返回空产物集。
     pub fn compile_placeholder(&self, _options: &CompilationOptions) -> BackendResult<ArtifactSet> {
-        Err(format!("{} 的正式 lowering 尚未接入：GPU placeholder 不得宣称编译成功", Self::NAME))
+        Err(BackendError::for_backend(Self::NAME, "正式 lowering 尚未接入：GPU placeholder 不得宣称编译成功"))
     }
 }
 

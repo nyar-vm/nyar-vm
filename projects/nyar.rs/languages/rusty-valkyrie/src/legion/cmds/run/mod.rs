@@ -296,7 +296,7 @@ impl ExecutionManifest {
             identity_schema_version: nyar_types::IDENTITY_SCHEMA_VERSION,
             mir_contract_version: nyar_types::MIR_CONTRACT_VERSION,
             layout_plan_version: nyar_types::LAYOUT_PLAN_VERSION,
-            bytecode_format_version: odin_bytecode::BYTECODE_FORMAT_VERSION,
+            bytecode_format_version: acorn_odin::BYTECODE_FORMAT_VERSION,
             project_name: plan.project.name.clone(),
             target: plan.project.build_target.target.to_string(),
             artifact_kind: plan.project.artifact_kind,
@@ -329,7 +329,7 @@ impl ExecutionManifest {
         if self.identity_schema_version != nyar_types::IDENTITY_SCHEMA_VERSION
             || self.mir_contract_version != nyar_types::MIR_CONTRACT_VERSION
             || self.layout_plan_version != nyar_types::LAYOUT_PLAN_VERSION
-            || self.bytecode_format_version != odin_bytecode::BYTECODE_FORMAT_VERSION
+            || self.bytecode_format_version != acorn_odin::BYTECODE_FORMAT_VERSION
         {
             return Ok(ManifestVerdict::Stale("manifest contract versions differ from current compiler contract versions".into()));
         }

@@ -27,7 +27,7 @@ pub(super) fn lower_function_semantic(
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> (MirFunction, Vec<MirFunction>) {
-    let effectful_inline_targets = effect_lowering::collect_effectful_inline_targets(module);
+    let effectful_callees = effect_lowering::collect_effectful_callees(module);
     let field_declarations = collect_field_declarations(module, diagnostics);
     let nominal_offset = u32::try_from(field_declarations.len()).expect("aggregate nominal identity overflow");
     let (sum_types, _) = crate::compiler::hir::lowering::compute_nominal_declarations(module, nominal_offset, diagnostics);
@@ -35,7 +35,7 @@ pub(super) fn lower_function_semantic(
     let mut builder = MirBuilder::new(
         aggregate_layouts.clone(),
         singleton_accessor_instances.clone(),
-        effectful_inline_targets,
+        effectful_callees,
         callable_returns.clone(),
         member_dispatch.to_vec(),
         impl_owner_type.clone(),

@@ -19,13 +19,14 @@ impl MirBuilder {
         }
     }
 
+    /// 只展开真正的静态字面量（数组/元组）。
+    ///
+    /// 名为 `array(...)` 的普通调用不是字面量：它的 callable 身份、返回类型与
+    /// 副作用合同只有 HIR 能结算，MIR 不得按名称把它拆成实参列表。
     pub(super) fn resolve_static_iterable_items(&self, expr: &HirExpr) -> Option<Vec<HirExpr>> {
         let resolved = self.resolve_static_expr(expr)?;
         match resolved.kind {
             HirExprKind::ArrayLiteral { items } => Some(items),
-            HirExprKind::Call { callee, args, .. } if callee_name_matches(&callee.kind, "array") => {
-                Some(args.iter().map(|arg| arg.value.clone()).collect())
-            }
             HirExprKind::TupleLiteral { items } => Some(items.clone()),
             _ => None,
         }
@@ -374,19 +375,6 @@ fn callee_binding_name(kind: &HirExprKind) -> Option<&str> {
         HirExprKind::Path(path) if path.parts().len() == 1 => Some(path.parts()[0].as_str()),
         _ => None,
     }
-}
-
-/// When overload leaves `Option` unapplied but the call site already has `Option<T>`, keep the Apply shape.
-pub(super) fn refine_call_return_type(actual: ValkyrieType, hint: Option<&ValkyrieType>) -> ValkyrieType {
-    match hint {
-        Some(expected @ ValkyrieType::Apply(base, _)) if matches!(base.as_ref(), ValkyrieType::Named(_)) => {
-            if matches!(&actual, ValkyrieType::Named(name) if super::nominal_type_name(expected) == Some(name.as_str())) {
-                return expected.clone();
-            }
-        }
-        _ => {}
-    }
-    actual
 }
 
 pub(super) fn lower_callee_operand(

@@ -29,11 +29,8 @@ pub(super) fn collect_wasm_host_imports(submission: &FragmentSubmission, synthes
     let mut seen = BTreeSet::new();
     // 计划声明的导入是权威集合：`external_import_links` 与 `imports` 在完整流水线里
     // 应当同源，但测试夹具可能只登记其一；两边都收集，按 `(module, field)` 去重。
-    let declared_links = submission
-        .backend_plan
-        .external_import_links()
-        .values()
-        .chain(submission.backend_plan.imports().values().map(|import| &import.link));
+    let declared_links =
+        submission.backend_plan.external_import_links().values().chain(submission.backend_plan.imports().values().map(|import| &import.link));
     for link in declared_links {
         let Some(target) = wasm_or_js_glue_host_import_target(link)
         else {
@@ -50,7 +47,7 @@ pub(super) fn collect_wasm_host_imports(submission: &FragmentSubmission, synthes
             imports.push(key);
         }
     }
-    for field in NODE_HOST_IMPORT_FIELDS {
+    for field in crate::nyar_backend_wasm_js_glue::SYNTHETIC_NODE_IMPORT_FIELDS {
         let key = ("env".to_string(), (*field).to_string());
         if seen.insert(key.clone()) {
             imports.push(key);
@@ -59,23 +56,6 @@ pub(super) fn collect_wasm_host_imports(submission: &FragmentSubmission, synthes
     imports.sort();
     imports
 }
-
-pub(super) const NODE_HOST_IMPORT_FIELDS: &[&str] = &[
-    // 未捕获 `raise` 的文本 payload 转成宿主结构化错误，而非裸 wasm trap。
-    "host_raise",
-    "utf8_trim",
-    "utf8_length",
-    "utf8_concat",
-    "utf8_starts_with",
-    "utf8_ends_with",
-    "utf8_contains",
-    "utf8_equals",
-    "utf8_replace",
-    "utf8_index_of",
-    "utf8_slice",
-    "utf8_to_lower",
-    "utf8_to_upper",
-];
 
 pub(super) fn collect_wasi_host_imports(submission: &FragmentSubmission, preview: WasiPreview) -> Vec<(String, String)> {
     let mut imports = Vec::new();
@@ -105,29 +85,8 @@ pub(super) fn collect_wasi_host_imports(submission: &FragmentSubmission, preview
         }
     }
     imports.sort();
-    expand_wasi_cli_stream_intrinsics(&mut imports);
+    crate::nyar_backend_wasi::expand_wasi_cli_stream_imports(&mut imports);
     imports
-}
-
-pub(super) fn expand_wasi_cli_stream_intrinsics(imports: &mut Vec<(String, String)>) {
-    let modules: Vec<String> = imports
-        .iter()
-        .filter(|(module, field)| field == "write-via-stream" && (module.contains("stdout") || module.contains("stderr")))
-        .map(|(module, _)| module.clone())
-        .collect();
-    for module in modules {
-        for field in [
-            "[stream-new-0]write-via-stream",
-            "[stream-write-0]write-via-stream",
-            "[stream-drop-writable-0]write-via-stream",
-            "[future-drop-readable-1]write-via-stream",
-        ] {
-            let key = (module.clone(), field.to_string());
-            if !imports.iter().any(|item| item == &key) {
-                imports.push(key);
-            }
-        }
-    }
 }
 
 pub(super) fn collect_mir_string_literals(submission: &FragmentSubmission, operations: &[ItemInstanceId]) -> Vec<String> {
@@ -197,63 +156,17 @@ pub(super) fn build_string_literal_index(literals: &[String]) -> BTreeMap<String
     literals.iter().enumerate().map(|(index, text)| (text.clone(), index as u32)).collect()
 }
 
+/// `env` 合成宿主导入的物理签名。
+///
+/// 签名事实由 JS glue 协议所有者（[`crate::nyar_backend_wasm_js_glue`]）声明；
+/// 本层只做 wasm 指令类型编码，不自行维护字段名匹配表。
 pub(super) fn wasm_import_type_for_field(field: &str) -> Option<Vec<u8>> {
-    let signature = match field {
-        "cli_get_verbose" => wasm_function_type(&[], &[VALTYPE_I32]),
-        "const_utf8" => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
-        // 目标计划合成的 managed→host 句柄转换入口：(linear_ptr, len) → host i32 handle。
-        "host_intern_utf8" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
-        // 目标计划合成的 host 句柄→managed 字符串物化入口：handle → (linear_ptr, len) 多值返回。
-        "host_utf8_extract" => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32, VALTYPE_I32]),
-        // 未捕获 raise 的宿主边界：文本句柄 → 抛出宿主错误，无返回值。
-        "host_raise" => wasm_function_type(&[VALTYPE_I32], &[]),
-        "cli_get_project" | "cli_get_target" | "cli_get_output" => wasm_function_type(&[], &[VALTYPE_I32]),
-        "get_current_directory" | "get_input" | "read_source_byte" => wasm_function_type(&[], &[VALTYPE_I32]),
-        "read_file_text" => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
-        "file_exists" | "directory_exists" | "create_directory" => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
-        "write_file_text" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
-        "get_files" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
-        "utf8_length" => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
-        "utf8_index_of" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
-        "utf8_trim" | "utf8_to_lower" | "utf8_to_upper" => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
-        "utf8_concat" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
-        "utf8_starts_with" | "utf8_ends_with" | "utf8_contains" | "utf8_equals" => {
-            wasm_function_type(&[VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32])
-        }
-        "utf8_replace" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
-        "utf8_slice" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
-        "emit_byte" => wasm_function_type(&[VALTYPE_I32], &[]),
-        "System.Console" | "System.Diagnostics.Process" => wasm_function_type(&[VALTYPE_I32], &[]),
-        _ => return None,
-    };
-    Some(signature)
+    crate::nyar_backend_wasm_js_glue::glue_import_signature(field).map(|(params, results)| wasm_function_type(params, results))
 }
 
-pub(super) fn wasi_import_type_for_field(_module: &str, field: &str) -> Option<Vec<u8>> {
-    let signature = match field {
-        "get-arguments" | "get-environment" => wasm_function_type(&[VALTYPE_I32], &[]),
-        "exit" => wasm_function_type(&[VALTYPE_I32], &[]),
-        "now" | "resolution" | "get-resolution" if _module.contains("monotonic-clock") => wasm_function_type(&[], &[VALTYPE_I64]),
-        "now" | "resolution" | "get-resolution" if _module.contains("wall-clock") || _module.contains("system-clock") => {
-            wasm_function_type(&[], &[VALTYPE_I64, VALTYPE_I32])
-        }
-        "get-random-u64" | "get-insecure-random-u64" => wasm_function_type(&[], &[VALTYPE_I64]),
-        "get-random-bytes" | "get-insecure-random-bytes" => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32, VALTYPE_I32]),
-        "insecure-seed" if _module.contains("wasi:random/insecure-seed") => wasm_function_type(&[], &[VALTYPE_I64, VALTYPE_I64]),
-        "write-via-stream" if _module.contains("wasi:cli/stdout") || _module.contains("wasi:cli/stderr") => {
-            wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32])
-        }
-        field if field.starts_with("[stream-new-") => wasm_function_type(&[], &[VALTYPE_I64]),
-        field if field.starts_with("[stream-write-") || field.starts_with("[async][stream-write-") => {
-            wasm_function_type(&[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32])
-        }
-        field if field.starts_with("[stream-drop-writable-") => wasm_function_type(&[VALTYPE_I32], &[]),
-        field if field.starts_with("[future-drop-readable-") => wasm_function_type(&[VALTYPE_I32], &[]),
-        "read-via-stream" if _module.contains("wasi:cli/stdin") => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
-        "blocking-write-and-flush" | "blocking-read-and-skip" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
-        _ => return None,
-    };
-    Some(signature)
+/// WASI core 导入的物理签名，事实由 WASI 协议所有者（[`crate::nyar_backend_wasi`]）声明。
+pub(super) fn wasi_import_type_for_field(module: &str, field: &str) -> Option<Vec<u8>> {
+    crate::nyar_backend_wasi::wasi_import_signature(module, field).map(|(params, results)| wasm_function_type(params, results))
 }
 
 /// `(module, field)` → 已在 `TargetExecutionPlan` 绑定的导入签名（`[js]` / `[wasm]` 等）。

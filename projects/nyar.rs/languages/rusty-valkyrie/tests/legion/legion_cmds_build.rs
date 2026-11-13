@@ -105,7 +105,7 @@ micro identity(x: bool) -> bool {
     assert_eq!(manifest.identity_schema_version, nyar_types::IDENTITY_SCHEMA_VERSION);
     assert_eq!(manifest.mir_contract_version, nyar_types::MIR_CONTRACT_VERSION);
     assert_eq!(manifest.layout_plan_version, nyar_types::LAYOUT_PLAN_VERSION);
-    assert_eq!(manifest.bytecode_format_version, odin_bytecode::BYTECODE_FORMAT_VERSION);
+    assert_eq!(manifest.bytecode_format_version, acorn_odin::BYTECODE_FORMAT_VERSION);
     assert!(
         manifest.run_contracts.iter().any(|contract| {
             contract.logical_entry == "main"

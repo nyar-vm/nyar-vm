@@ -3,7 +3,7 @@
 //! 索引空间合同：UTF-8 的 `length_chars` / `slice` 按 Unicode 码点；`slice` 是半开区间
 //! `[start, end)`，越界结构化失败（不 clamp）。非法编码 fail-closed。
 
-use odin_bytecode::{
+use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData, emit_imm1,
     emit_imm2, emit_plain, encode_module,
 };

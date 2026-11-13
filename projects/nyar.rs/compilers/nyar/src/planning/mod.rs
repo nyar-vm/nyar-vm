@@ -110,7 +110,7 @@ pub struct SemanticFragment {
     /// 片段等式理论。
     pub rewrite_theory: RewriteTheory,
     /// 实例到公开 ABI 名称的映射。
-    pub wasm_export_names: BTreeMap<nyar_types::ItemInstanceId, String>,
+    pub export_names: BTreeMap<nyar_types::ItemInstanceId, String>,
 }
 
 /// 从 Canonical 闭包派生的优化器事实视图，不是前端成功合同。

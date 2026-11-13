@@ -1,5 +1,5 @@
 //! OVM 导出面判据回归：导出只来自**声明的导出面**（`[export]` 冻结名 ∪ 程序入口），
-//! 与 wasm 的 `wasm_export_names` 同源；可达闭包内带函数类型形参的内部辅助函数
+//! 与 wasm 的 `export_names` 同源；可达闭包内带函数类型形参的内部辅助函数
 //! 不得被当成库导出根，而真正声明为 `[export]` 的函数类型成员仍失败闭合并点名成员。
 #![cfg(feature = "ovm-lane")]
 
@@ -29,17 +29,17 @@ fn backend_plan(groups: &[CompilerSourceGroup]) -> Result<TargetExecutionPlan, S
         .map_err(|error| error.to_string())
 }
 
-fn lower(plan: TargetExecutionPlan) -> Result<odin_bytecode::OdinModuleData, String> {
+fn lower(plan: TargetExecutionPlan) -> Result<acorn_odin::OdinModuleData, String> {
     nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
         .map_err(|error| error.to_string())
 }
 
-fn export_names(module: &odin_bytecode::OdinModuleData) -> Vec<String> {
+fn export_names(module: &acorn_odin::OdinModuleData) -> Vec<String> {
     module.exports.iter().map(|export| export.symbol_name.clone()).collect()
 }
 
-fn run_export(module: &odin_bytecode::OdinModuleData, name: &str) -> Value {
-    let bytes = odin_bytecode::encode_module(module);
+fn run_export(module: &acorn_odin::OdinModuleData, name: &str) -> Value {
+    let bytes = acorn_odin::encode_module(module);
     let mut vm = OdinVm::new();
     let loaded = vm.load(&bytes).expect("编码后的模块必须可加载");
     vm.run(&loaded, name, Vec::new()).expect("导出入口必须在内置 OVM 运行时执行成功")
@@ -59,7 +59,7 @@ micro main() -> i32 {
     return apply(micro(value: i32) -> i32 { return value })
 }"#;
     let plan = backend_plan(&source_groups(app)).expect("内部函数类型形参不得阻断目标计划");
-    assert!(plan.wasm_export_names().is_empty(), "无 `[export]` 时不得有公共导出名");
+    assert!(plan.export_names().is_empty(), "无 `[export]` 时不得有公共导出名");
     assert!(plan.entry_operation().is_some(), "程序入口必须由独立字段登记");
     let module = lower(plan).expect("内部函数类型形参不得阻断 OVM 降低");
     let names = export_names(&module);
@@ -82,7 +82,12 @@ micro apply(f: micro(i32) -> i32) -> i32 {
 micro main() -> i32 {
     return apply(micro(value: i32) -> i32 { return value })
 }"#;
-    let error = backend_plan(&source_groups(app)).expect_err("函数类型形参在库导出边界必须失败闭合");
+    // 公共目标计划只登记逻辑导出身份与签名，不再先套用 Wasm ABI 资格规则。
+    let plan = backend_plan(&source_groups(app)).expect("公共计划不得替目标决定导出载体资格");
+    let error = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module_with_abi_for_testing(
+        &FragmentSubmission::from_backend_plan(plan),
+    )
+    .expect_err("函数类型形参在 OVM 导出 ABI 边界必须失败闭合");
     assert!(error.contains("apply"), "错误必须点名导出成员: {error}");
     assert!(error.contains("函数类型") || error.contains("库导出"), "错误必须说明函数类型不可过边界: {error}");
 }
@@ -98,7 +103,7 @@ micro first(value: i32) -> i32 { return value }
 [export(name: "second")]
 micro second(value: i32) -> i32 { return value }"#;
     let plan = backend_plan(&source_groups(app)).expect("两个标量导出必须冻结 ABI");
-    let mut declared = plan.wasm_export_names().values().cloned().collect::<Vec<_>>();
+    let mut declared = plan.export_names().values().cloned().collect::<Vec<_>>();
     if let Some(entry) = plan.entry_operation() {
         declared.push(plan.abi_name_for_instance(entry).expect("入口必须有 ABI 名").to_string());
     }

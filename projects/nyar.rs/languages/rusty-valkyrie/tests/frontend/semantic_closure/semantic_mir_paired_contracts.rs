@@ -898,7 +898,11 @@ fn rust_missing_entry_submission() -> FragmentSubmission {
     rust_submission(vec![("fixture.entry", function)])
 }
 
-fn driver_error(submission: &FragmentSubmission, family: TargetBackendFamily, boundary: HostProjectionBoundary) -> String {
+fn driver_error(
+    submission: &FragmentSubmission,
+    family: TargetBackendFamily,
+    boundary: HostProjectionBoundary,
+) -> nyar_emitter::FragmentLoweringError {
     nyar_emitter::lowering::lower_fragment_to_driver_input(
         submission,
         family,
@@ -922,7 +926,7 @@ fn formal_backend_entries_fail_closed_before_emission() {
     ] {
         let error = driver_error(&submission, family, boundary);
         assert!(
-            error.contains("SMIR009"),
+            matches!(&error, nyar_emitter::FragmentLoweringError::SemanticContract(contract) if contract.code == "SMIR009"),
             "formal backend entry `{family:?}`/`{boundary:?}` bypassed the semantic MIR gate: {error}"
         );
     }

@@ -116,7 +116,7 @@ fn declare_test_export(plan: &mut TargetExecutionPlan, program: &nyar_types::Com
         .find(|(_, name)| name.to_string().ends_with(symbol_suffix))
         .map(|(instance, _)| *instance)
         .unwrap_or_else(|| panic!("缺少 `{symbol_suffix}` 的 callable 实例"));
-    plan.testing_wasm_export_names_mut().insert(instance, symbol_suffix.to_string());
+    plan.testing_export_names_mut().insert(instance, symbol_suffix.to_string());
     plan.testing_freeze_library_export_abis().expect("测试显式登记的导出必须冻结 ABI 载体");
 }
 
@@ -134,7 +134,7 @@ fn run_export(program: &nyar_types::CompiledProgram, name: &str) -> i32 {
         .map(|export| export.symbol_name.clone())
         .find(|symbol| symbol.ends_with(name))
         .unwrap_or_else(|| panic!("必须导出 `{name}`"));
-    let bytes = odin_bytecode::encode_module(&module);
+    let bytes = acorn_odin::encode_module(&module);
     let mut vm = OdinVm::new();
     let loaded = vm.load(&bytes).expect("对象模式绑定模块必须通过加载期校验");
     let value = vm.run(&loaded, &entry, Vec::new()).expect("被测函数必须在 OVM 内真实执行成功");

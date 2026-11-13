@@ -4,7 +4,7 @@
 //! 最高位为 1 的操作数（有符号/无符号唯一分歧区间）与零除数，并走一次真实
 //! `CallImport` 端到端路径。
 
-use odin_bytecode::{
+use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData, emit_imm1,
     emit_imm2, emit_plain, encode_module,
 };

@@ -42,8 +42,8 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
             contract.set_artifact(format!("{}.jar", request.artifact_name));
         }
         let backend = JvmBinaryBackend::new();
-        backend.validate(&input)?;
-        let artifacts = backend.compile(input, request.options)?;
+        backend.validate(&input).map_err(|error| error.to_string())?;
+        let artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
         // 库产物必须有导出面：缺失 managed ABI 入口时结构化失败，不得回退 `main`
         // 或静默返回空运行契约。
         if request.library_mode {

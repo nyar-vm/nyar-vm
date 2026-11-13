@@ -59,7 +59,7 @@ fn unknown_fragment_identity_fails_before_backend_preparation() {
     let missing = nyar::Identifier::new("missing_fragment");
     let error = TargetExecutionPlan::from_compiled_program(&program, &missing, nyar::TheoryBundle::default(), &[])
         .expect_err("片段必须来自同一 Canonical 程序，不能按根或顺序猜测");
-    assert!(error.to_string().contains("不存在"), "{error}");
+    assert_eq!(error, nyar_emitter::TargetPlanError::UnknownFragment { fragment: "missing_fragment".to_string() });
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn unknown_root_identity_fails_before_function_projection() {
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段");
     let error = TargetExecutionPlan::from_compiled_program(&program, fragment, nyar::TheoryBundle::default(), &[unknown])
         .expect_err("闭包外根身份必须失败，不能改按名称寻找其他函数");
-    assert!(error.to_string().contains("缺少 canonical 函数体"), "{error}");
+    assert_eq!(error, nyar_emitter::TargetPlanError::UnknownRoot { instance: unknown });
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn duplicate_abi_labels_preserve_wasm_export_and_call_targets() {
     }
     let program = CompiledProgram::new(canonical, source.representation().clone()).expect("标签不改变语义合同");
     let mut plan = prepare(&program).expect("独立实例必须可准备");
-    *plan.testing_wasm_export_names_mut() =
+    *plan.testing_export_names_mut() =
         exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect();
     let submission = FragmentSubmission::from_backend_plan(plan);
     let (module, _) =
@@ -143,7 +143,7 @@ fn scalar_library_exports_do_not_require_collection_name_or_layout_glue() {
     let program = source_program_from("micro identity(value: i64) -> i64 { return value }");
     let exports = program.canonical().linked.callable_names.clone();
     let mut plan = prepare(&program).expect("标量导出有完整实例合同");
-    *plan.testing_wasm_export_names_mut() =
+    *plan.testing_export_names_mut() =
         exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect();
     plan.testing_freeze_library_export_abis().expect("登记导出名后必须补齐 ABI 载体冻结");
     let submission = FragmentSubmission::from_backend_plan(plan);
@@ -184,7 +184,7 @@ fn duplicate_abi_labels_do_not_redirect_nyar_calls_or_exports() {
     let program = CompiledProgram::new(canonical, source.representation().clone()).expect("诊断名不能改变实例身份");
     let mut plan = prepare(&program).expect("相同标签的函数必须保留独立实例");
     *plan.testing_exported_operations_mut() = instances.clone();
-    *plan.testing_wasm_export_names_mut() =
+    *plan.testing_export_names_mut() =
         instances.iter().enumerate().map(|(index, instance)| (*instance, format!("export_{index}"))).collect();
     let submission = FragmentSubmission::from_backend_plan(plan);
     let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&submission).expect("只允许沿已绑定实例发射");
@@ -197,9 +197,9 @@ fn duplicate_abi_labels_do_not_redirect_nyar_calls_or_exports() {
     let mut calls = Vec::new();
     let mut position = 0;
     while position < module.code_bytes.len() {
-        let instruction = odin_bytecode::decode_at(&module.code_bytes, position);
+        let instruction = acorn_odin::decode_at(&module.code_bytes, position);
         assert!(instruction.size > 0, "字节码必须可解码");
-        if instruction.code == odin_bytecode::OdinHeadCode::Call {
+        if instruction.code == acorn_odin::OdinHeadCode::Call {
             calls.push(instruction.operand1);
         }
         position += instruction.size as usize;

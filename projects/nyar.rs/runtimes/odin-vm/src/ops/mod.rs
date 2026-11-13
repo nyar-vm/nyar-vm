@@ -1,6 +1,6 @@
 //! 内码操作分派：算术、控制流、对象与宿主调用。
 
-use odin_bytecode::OdinHeadCode;
+use acorn_odin::OdinHeadCode;
 
 use crate::{
     error::OdinRuntimeError,
@@ -141,7 +141,7 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
 
             let effect_name_index = op.operand1;
             let effect_name = match ctx.module.constant_at(effect_name_index) {
-                Some(odin_bytecode::OdinConstant::String(name)) => name.as_str(),
+                Some(acorn_odin::OdinConstant::String(name)) => name.as_str(),
                 Some(other) => {
                     return Err(OdinRuntimeError::TypeMismatch { expected: "effect name string", actual: format!("{other:?}") });
                 }

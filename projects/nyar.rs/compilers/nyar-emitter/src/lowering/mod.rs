@@ -6,7 +6,7 @@ use crate::{
 };
 use nyar::{HostProjectionBoundary, TargetBackendFamily};
 #[cfg(feature = "ovm-lane")]
-use odin_bytecode::OdinModuleData;
+use acorn_odin::OdinModuleData;
 
 #[cfg(feature = "ovm-lane")]
 use crate::OvmBackendInput;
@@ -109,6 +109,9 @@ pub(crate) fn testing_singleton_metadata_line(plan: &nyar_types::SingletonInstan
 }
 
 /// 将已完成语义装配的片段降低为驱动层目标输入（集成测试专用）。
+///
+/// 公共边界返回结构化 [`crate::FragmentLoweringError`]：Semantic MIR 合同门禁
+/// 有独立变体，其余目标降低/装配原因保留细节文本。
 #[doc(hidden)]
 pub fn lower_fragment_to_driver_input(
     submission: &FragmentSubmission,
@@ -117,9 +120,20 @@ pub fn lower_fragment_to_driver_input(
     output_dir: PathBuf,
     host_flavor: &str,
     wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
+) -> std::result::Result<DriverBackendInput, crate::FragmentLoweringError> {
+    features::semantic_mir_contract::validate_submission(submission).map_err(crate::FragmentLoweringError::SemanticContract)?;
+    build_driver_input(submission, backend_family, host_boundary, output_dir, host_flavor, wasm_package_kind)
+        .map_err(crate::FragmentLoweringError::from)
+}
+
+fn build_driver_input(
+    submission: &FragmentSubmission,
+    backend_family: TargetBackendFamily,
+    host_boundary: HostProjectionBoundary,
+    output_dir: PathBuf,
+    host_flavor: &str,
+    wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
 ) -> Result<DriverBackendInput> {
-    features::semantic_mir_contract::validate_submission(submission)
-        .map_err(|error| format!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
     match backend_family {
         TargetBackendFamily::Wasm => {
             let wasi_preview = crate::nyar_backend_wasi::WasiPreview::from_host_flavor(host_flavor);
@@ -136,7 +150,7 @@ pub fn lower_fragment_to_driver_input(
                 imports,
                 package_as_wasi_command,
                 wasi_preview,
-                library_wasm_exports: submission.backend_plan.wasm_export_names().values().cloned().collect(),
+                library_wasm_exports: submission.backend_plan.export_names().values().cloned().collect(),
                 wasm_package_kind,
             }))
         }

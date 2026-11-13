@@ -53,12 +53,15 @@ pub fn validate_semantic_module(module: &MirModule) -> Result<(), SemanticMirCon
     validate_nominal_sums(module)?;
     validate_nominal_structs(module)?;
     for layout in &module.aggregate_layouts.layouts {
-        if layout.name.is_empty() || layout.align == 0 || layout.size == 0 {
+        // 语言 MIR 的布局只冻结语义事实（字段身份/完整类型/存储类）。
+        // 字节偏移、宽度与对齐属于目标数据布局，由各平台自己的表示计划计算；
+        // 这里不得把「无目标物理尺寸」当成合同违约。
+        if layout.name.is_empty() || layout.align == 0 {
             return Err(SemanticMirContractError {
                 code: "SMIR010",
                 function: layout.name.clone(),
                 location: "aggregate layout".to_string(),
-                detail: "aggregate layout requires name, non-zero size, and non-zero alignment".to_string(),
+                detail: "aggregate layout requires a name and non-zero alignment".to_string(),
             });
         }
         if layout.fields.iter().any(|field| field.name.is_empty())

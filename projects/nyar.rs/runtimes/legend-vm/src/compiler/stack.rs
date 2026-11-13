@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use odin_bytecode::OdinHeadCode;
+use acorn_odin::OdinHeadCode;
 
 use super::generate::{GenerateFunction, GenerateInstruction, GenerateModule, GenerateOperand};
 

@@ -1,7 +1,7 @@
 //! Convert [`GenerateModule`] into `.odin` bytes.
 
 use miette::{Result, miette};
-use odin_bytecode::{
+use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinImport, OdinImportKind, OdinModuleData, encode_module,
 };
 
@@ -135,7 +135,7 @@ fn convert_exports(exports: &[super::generate::GenerateModuleExport]) -> Vec<Odi
 mod tests {
     use super::*;
     use crate::compiler::generate::{GenerateFunction, GenerateInstruction, GenerateOperand};
-    use odin_bytecode::OdinHeadCode;
+    use acorn_odin::OdinHeadCode;
 
     fn hex(bytes: &[u8]) -> String {
         bytes.iter().map(|byte| format!("{byte:02x}")).collect::<Vec<_>>().join(" ")

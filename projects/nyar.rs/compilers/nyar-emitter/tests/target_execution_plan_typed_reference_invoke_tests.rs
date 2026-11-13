@@ -161,7 +161,7 @@ fn representation(program: &CanonicalProgram, invoke: InvokeLowering) -> Represe
 fn prepare(program: &CompiledProgram) -> nyar_emitter::Result<TargetExecutionPlan> {
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = Identifier::new(FRAGMENT);
-    TargetExecutionPlan::from_compiled_program(program, &fragment, TheoryBundle::default(), &roots)
+    TargetExecutionPlan::from_compiled_program(program, &fragment, TheoryBundle::default(), &roots).map_err(|error| error.to_string())
 }
 
 fn compiled(canonical: CanonicalProgram, invoke: InvokeLowering) -> CompiledProgram {

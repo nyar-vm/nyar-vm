@@ -359,7 +359,7 @@ fn lower_library(function: ExecutableFunction, layouts: AggregateLayoutPlan, fre
     plan.testing_aggregate_layouts(layouts);
     plan.testing_register_import(utf8_length_callee(), utf8_length_import());
     let instance = *plan.instances().first().expect("测试库导出实例");
-    plan.testing_wasm_export_names_mut().insert(instance, "romanToInt".to_string());
+    plan.testing_export_names_mut().insert(instance, "romanToInt".to_string());
     if freeze_abis {
         plan.testing_freeze_library_export_abis()?;
     }
@@ -443,14 +443,18 @@ fn wasm_library_export_handle_parameter_without_layout_does_not_synthesize_wrapp
     assert_eq!(export.index, func_import_count(&module), "导出必须仍指向内部函数本身");
 }
 
-/// 负向：物化配方必须与冻结库 ABI 载体合同交叉核对；plan 登记了导出名却没有补齐
-/// ABI 载体冻结说明合同缺失，必须在编码前结构化失败，禁止静默合成。
+/// 库导出 ABI 是 Wasm lane 的私有事实：公共计划不再预冻结物理载体，Wasm 在需要
+/// 导出 ABI 时按冻结签名现场派生；未预冻结本身不是错误，物化配方仍须交叉核对。
 #[test]
-fn wasm_library_export_without_frozen_abi_carrier_contract_fails_structured() {
-    let error =
-        lower_library(utf8_length_call_main(Some(UTF8_TEXT_LAYOUT_ID)), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()), false)
-            .expect_err("缺少冻结 ABI 载体合同的库导出物化必须结构化失败");
-    assert!(error.contains("缺少冻结 ABI 载体合同"), "错误必须指明缺失的 ABI 载体合同: {error}");
+fn wasm_library_export_derives_abi_carrier_without_prefreeze() {
+    let module = lower_library(utf8_length_call_main(Some(UTF8_TEXT_LAYOUT_ID)), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()), false)
+        .expect("Wasm lane 必须按需派生自己的导出 ABI 载体");
+    let imports = import_keys(&module);
+    assert!(
+        imports.contains(&("env".to_string(), "host_utf8_extract".to_string())),
+        "派生出的 i32 载体与 managed 形参槽必须触发宿主句柄物化: {imports:?}"
+    );
+    assert!(parse_export_section(&module).iter().any(|item| item.name == "romanToInt"), "公开导出名必须存在");
 }
 
 fn utf8_concat_callee() -> ItemInstanceId {
@@ -572,7 +576,7 @@ fn lower_library_concat(
     plan.testing_aggregate_layouts(layouts);
     plan.testing_register_import(utf8_concat_callee(), utf8_concat_import());
     let instance = *plan.instances().first().expect("测试库导出实例");
-    plan.testing_wasm_export_names_mut().insert(instance, "romanToInt".to_string());
+    plan.testing_export_names_mut().insert(instance, "romanToInt".to_string());
     if freeze_abis {
         plan.testing_freeze_library_export_abis()?;
     }

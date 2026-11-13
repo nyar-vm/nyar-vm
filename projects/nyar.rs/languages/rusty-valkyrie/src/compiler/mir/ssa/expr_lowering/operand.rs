@@ -368,7 +368,6 @@ impl MirBuilder {
                     });
                     return MirOperand::Constant(MirConstant::Unit);
                 };
-                let return_type = crate::compiler::mir::ssa::expr_helpers::refine_call_return_type(return_type, expected_type);
                 self.push_call_returning(callee, arguments, return_type)
             }
             HirExprKind::ArrayNew { element_type, length } => {

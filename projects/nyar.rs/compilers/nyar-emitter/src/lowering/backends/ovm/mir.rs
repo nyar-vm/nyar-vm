@@ -9,13 +9,14 @@ use crate::{
         ExecutableTerminator as MirTerminator, ExecutableValueRef as MirValueRef, NyarType,
     },
     contracts::{EffectKind, ValueOrigin},
+    lowering::backends::ovm::lir::{OdinLirInstruction, encode_odin_function},
 };
-use nyar::{ExternalImportLink, NamePath};
-use nyar_types::{AggregateLayout, ItemInstanceId, LayoutId, NominalInstanceId, VariantId};
-use odin_bytecode::{
+use acorn_odin::{
     IntrinsicOpcode, Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind,
     OdinLayout, OdinModuleData,
 };
+use nyar::{ExternalImportLink, NamePath};
+use nyar_types::{AggregateLayout, ItemInstanceId, LayoutId, NominalInstanceId, VariantId};
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
 use crate::{
@@ -147,23 +148,15 @@ pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperat
 
 struct BytecodeEmitter<'a> {
     constants: Vec<OdinConstant>,
-    code_bytes: Vec<u8>,
-    pending_jumps: Vec<(usize, MirBlockRef)>,
-    block_starts: BTreeMap<MirBlockRef, usize>,
+    /// 目标私有 LIR：降低期只记录指令与标签，编码在函数降低完成后一次完成。
+    instructions: Vec<OdinLirInstruction>,
     constants_base: i32,
     imports: &'a mut Vec<OdinImport>,
 }
 
 impl<'a> BytecodeEmitter<'a> {
     fn new(constants_base: i32, imports: &'a mut Vec<OdinImport>) -> Self {
-        Self {
-            constants: Vec::new(),
-            code_bytes: Vec::new(),
-            pending_jumps: Vec::new(),
-            block_starts: BTreeMap::new(),
-            constants_base,
-            imports,
-        }
+        Self { constants: Vec::new(), instructions: Vec::new(), constants_base, imports }
     }
 
     fn intern_string(&mut self, value: &str) -> i32 {
@@ -180,11 +173,15 @@ impl<'a> BytecodeEmitter<'a> {
     }
 
     fn emit_plain(&mut self, opcode: OdinHeadCode) {
-        odin_bytecode::emit_plain(&mut self.code_bytes, opcode);
+        self.instructions.push(OdinLirInstruction::Plain(opcode));
     }
 
     fn emit_imm1(&mut self, opcode: OdinHeadCode, operand: i32) {
-        odin_bytecode::emit_imm1(&mut self.code_bytes, opcode, operand);
+        self.instructions.push(OdinLirInstruction::Imm1(opcode, operand));
+    }
+
+    fn emit_imm2(&mut self, opcode: OdinHeadCode, first: i32, second: i32) {
+        self.instructions.push(OdinLirInstruction::Imm2(opcode, first, second));
     }
 
     fn ensure_host_import(&mut self, symbol: &str) -> i32 {
@@ -205,32 +202,21 @@ impl<'a> BytecodeEmitter<'a> {
     /// 按 imports 表下标调用宿主能力；operand1 = import index，operand2 = argc。
     fn emit_call_import(&mut self, symbol: &str, arg_count: i32) {
         let import_index = self.ensure_host_import(symbol);
-        odin_bytecode::emit_imm2(&mut self.code_bytes, OdinHeadCode::CallImport, import_index, arg_count);
+        self.emit_imm2(OdinHeadCode::CallImport, import_index, arg_count);
     }
 
     /// 按 [`IntrinsicOpcode`] 编码调用内置；operand1 = 指令编号，operand2 = argc。
     fn emit_call_intrinsic(&mut self, op: IntrinsicOpcode, arg_count: i32) {
-        odin_bytecode::emit_imm2(&mut self.code_bytes, OdinHeadCode::CallIntrinsic, op.raw(), arg_count);
+        self.emit_imm2(OdinHeadCode::CallIntrinsic, op.raw(), arg_count);
     }
 
-    fn emit_jump_placeholder(&mut self, opcode: OdinHeadCode, target: MirBlockRef) -> usize {
-        let position = self.code_bytes.len();
-        self.emit_imm1(opcode, 0);
-        self.pending_jumps.push((position, target));
-        position
+    /// 记录一次块跳转；位移由编码器按标签偏移回填。
+    fn emit_jump_to_block(&mut self, opcode: OdinHeadCode, target: MirBlockRef) {
+        self.instructions.push(OdinLirInstruction::Jump { opcode, target });
     }
 
-    fn patch_jump_to_block(&mut self, jump_position: usize, target: MirBlockRef) {
-        let target_pos = *self.block_starts.get(&target).expect("block start");
-        let offset = (target_pos as i32) - (jump_position as i32);
-        self.code_bytes[jump_position + 1..jump_position + 5].copy_from_slice(&offset.to_le_bytes());
-    }
-
-    fn patch_pending_jumps(&mut self) {
-        let pending = std::mem::take(&mut self.pending_jumps);
-        for (position, target) in pending {
-            self.patch_jump_to_block(position, target);
-        }
+    fn emit_block_label(&mut self, block: MirBlockRef) {
+        self.instructions.push(OdinLirInstruction::Label(block));
     }
 }
 
@@ -342,8 +328,10 @@ fn lower_fragment_mir_to_nyar_module_impl(
                 &mut layout_index_by_field_count,
             )?;
 
+            // 计划 → 目标私有 LIR → `.odin` 函数体编码器；编码器不读 MIR/计划。
+            let function_code = encode_odin_function(&emitter.instructions)?;
             module.constants.extend(emitter.constants);
-            module.code_bytes.extend_from_slice(&emitter.code_bytes);
+            module.code_bytes.extend_from_slice(&function_code);
 
             // 与 JVM/CLR 对齐：调用约定 arity 以入口块 SSA 形参为准；`param_types` 可能含已废弃的 ABI 槽。
             let arity =
@@ -374,7 +362,7 @@ fn lower_fragment_mir_to_nyar_module_impl(
         let export_names = nyar_export_name_map(submission);
         let exports = submission
             .backend_plan
-            .wasm_export_names()
+            .export_names()
             .keys()
             .filter_map(|instance| export_names.get(instance).map(|name| (*instance, name.clone())))
             .collect::<Vec<_>>();
@@ -673,7 +661,7 @@ fn nyar_should_export_operation(submission: &FragmentSubmission, operation: Item
 }
 
 fn nyar_mir_export_name(submission: &FragmentSubmission, operation: ItemInstanceId) -> String {
-    if let Some(public_name) = submission.backend_plan.wasm_export_names().get(&operation) {
+    if let Some(public_name) = submission.backend_plan.export_names().get(&operation) {
         return public_name.clone();
     }
     submission
@@ -683,7 +671,7 @@ fn nyar_mir_export_name(submission: &FragmentSubmission, operation: ItemInstance
         .unwrap_or_else(|| panic!("函数实例缺少 ABI 标签: {operation:?}"))
 }
 
-/// 导出面的实例 → 名称映射：公共导出名（`wasm_export_names`）保持原样；
+/// 导出面的实例 → 名称映射：公共导出名（`export_names`）保持原样；
 /// abi 派生名在同一导出面绑定多个实例时按实例下标消歧，导出表与入口决议共用同一映射。
 /// 集合来源是共享派生点 [`crate::lowering::shared::export_surface`]，内部 callee 不参与。
 fn nyar_export_name_map(submission: &FragmentSubmission) -> BTreeMap<ItemInstanceId, String> {
@@ -704,7 +692,7 @@ fn nyar_export_name_map(submission: &FragmentSubmission) -> BTreeMap<ItemInstanc
         }
         for operation in operations {
             // 公共导出名是 run-contract 的稳定表面，冲突组内只给 abi 派生名追加实例下标。
-            if plan.wasm_export_names().contains_key(&operation) {
+            if plan.export_names().contains_key(&operation) {
                 resolved.insert(operation, name.clone());
             }
             else {
@@ -750,7 +738,7 @@ fn lower_mir_function_to_bytecode(
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
     layout_index_by_field_count: &mut BTreeMap<i32, i32>,
 ) -> crate::Result<()> {
-    let ctx = ExecutableLoweringContext::new(submission);
+    let ctx = ExecutableLoweringContext::new_resolved(submission, crate::lowering::shared::physical_layout::LayoutPolicy::OVM)?;
     let slots = ExecutableSlotPlan::plan_nyar(mir_fn);
     let block_order = collect_reachable_blocks(mir_fn);
     let value_definitions = build_nyar_value_definitions(mir_fn, &slots);
@@ -779,12 +767,11 @@ fn lower_mir_function_to_bytecode(
         layout_index_by_field_count,
     };
     for block_id in block_order {
-        lowerer.emitter.block_starts.insert(block_id, lowerer.emitter.code_bytes.len());
+        lowerer.emitter.emit_block_label(block_id);
         if let Some(block) = mir_fn.blocks.get(block_id.0 as usize) {
             lowerer.emit_block(block)?;
         }
     }
-    lowerer.emitter.patch_pending_jumps();
     Ok(())
 }
 
@@ -1284,14 +1271,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             MirTerminator::Jump { target, arguments } => {
                 self.emit_block_argument_copies(*target, arguments)?;
-                self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *target);
+                self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *target);
             }
             MirTerminator::Branch { condition, then_target, else_target } => {
                 let condition_ty = NyarType::Boolean;
                 self.emit_operand_typed(condition, Some(&condition_ty))?;
-                self.emitter.emit_jump_placeholder(OdinHeadCode::JumpIfFalse, *else_target);
+                self.emitter.emit_jump_to_block(OdinHeadCode::JumpIfFalse, *else_target);
                 self.emit_block_argument_copies(*then_target, &[])?;
-                self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *then_target);
+                self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *then_target);
                 let _ = else_target;
             }
             MirTerminator::PerformEffect { effect, payload, resume_target } => {
@@ -1309,7 +1296,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         }
                         self.emitter.emit_plain(OdinHeadCode::Yield);
                         self.emit_block_argument_copies(*resume_target, &[])?;
-                        self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *resume_target);
+                        self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *resume_target);
                     }
                     EffectKind::Raise => {
                         // `raise expr`：将 payload 压栈后发射 `PerformEffect` opcode。
@@ -1339,7 +1326,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                             }
                             count => panic!("ovm `raise` resume 块只接受至多一个 resume 形参，实际 {count}: {}", self.mir_fn.symbol),
                         }
-                        self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *resume_target);
+                        self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *resume_target);
                     }
                     EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {
                         // future / async 相关 effect 暂未落地 VM opcode，保留 console_log 调试桩。
@@ -1348,7 +1335,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                             self.emitter.emit_call_import("console_log", 1);
                         }
                         self.emit_block_argument_copies(*resume_target, &[])?;
-                        self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *resume_target);
+                        self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *resume_target);
                     }
                 }
             }
@@ -1397,9 +1384,9 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.emit_operand(&MirOperand::Value(*state))?;
                     self.emitter.emit_const_i32(case_key);
                     self.emitter.emit_plain(OdinHeadCode::I32Eq);
-                    self.emitter.emit_jump_placeholder(OdinHeadCode::JumpIfTrue, *target);
+                    self.emitter.emit_jump_to_block(OdinHeadCode::JumpIfTrue, *target);
                 }
-                self.emitter.emit_jump_placeholder(OdinHeadCode::Jump, *default_target);
+                self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *default_target);
             }
             MirTerminator::Unreachable => {
                 // 不可达块不得物化为裸 `Return`：加载期 verifier 按 CFG 可达性把每条

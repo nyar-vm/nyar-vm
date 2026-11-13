@@ -375,7 +375,7 @@ const NYAR_ENVELOPE_SCHEMA: u32 = 1;
 fn artifact_envelope_entry(relative: &str) -> Result<serde_json::Value> {
     let extension = Path::new(relative).extension().and_then(|value| value.to_str()).unwrap_or_default().to_ascii_lowercase();
     let (kind, format, format_version) = match extension.as_str() {
-        "odin" => ("execution", "odin", Some(odin_bytecode::Odin_VERSION)),
+        "odin" => ("execution", "odin", Some(acorn_odin::Odin_VERSION)),
         "wasm" => ("execution", "wasm", None),
         "mjs" | "js" => ("host-module", "ecmascript", None),
         "nyar" => {

@@ -1,8 +1,12 @@
 //! 自旧单体 wasm mir lowerer 拆出。
+//!
+//! 本文件只把计划事实转换成 [`WasmBodyInstruction`]；不写字节。字节编码归
+//! `lir::encode_wasm_body`（01 §5.5）。
+
 #![allow(deprecated)]
 
 #[allow(deprecated)]
-use super::super::{cabi::CABI_HEAP_GLOBAL_INDEX, sections::encode_uleb128};
+use super::super::cabi::CABI_HEAP_GLOBAL_INDEX;
 #[allow(deprecated)]
 use super::*;
 
@@ -12,8 +16,7 @@ impl<'a> WasmMirLowerer<'a> {
         let align = align.max(1);
         let align_mask = (align - 1) as i32;
         // aligned = (heap + align - 1) & ~(align - 1)
-        WasmOpcode::GlobalGet.encode(&mut self.code);
-        encode_uleb128(CABI_HEAP_GLOBAL_INDEX, &mut self.code);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::GlobalGet, operand: CABI_HEAP_GLOBAL_INDEX });
         if align_mask != 0 {
             self.emit_i32_const(align_mask);
             self.emit_i32_add();
@@ -28,93 +31,94 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_i32_add();
         self.emit_local_tee(self.bump_end_local);
         self.emit_local_get(self.stack_ptr_local);
-        WasmOpcode::I32LtU.encode(&mut self.code); // i32.lt_u
-        WasmOpcode::If.encode(&mut self.code);
-        self.code.push(BLOCKTYPE_EMPTY);
-        encode_unreachable(&mut self.code); // unreachable
-        WasmOpcode::End.encode(&mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32LtU)); // i32.lt_u
+        self.emit_block_type(WasmOpcode::If);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
 
         // grow if needed
         self.emit_local_get(self.bump_end_local);
         self.emit_i32_const(65535);
         self.emit_i32_add();
         self.emit_i32_const(16);
-        WasmOpcode::I32ShrU.encode(&mut self.code); // i32.shr_u
-        encode_memory_size(&mut self.code);
-        WasmOpcode::I32Sub.encode(&mut self.code); // i32.sub
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32ShrU)); // i32.shr_u
+        self.code.push(WasmBodyInstruction::MemorySize);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Sub)); // i32.sub
         self.emit_local_tee(self.bump_pages_local);
         self.emit_i32_const(0);
-        WasmOpcode::I32GtS.encode(&mut self.code); // i32.gt_s
-        WasmOpcode::If.encode(&mut self.code);
-        self.code.push(BLOCKTYPE_EMPTY);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32GtS)); // i32.gt_s
+        self.emit_block_type(WasmOpcode::If);
         self.emit_local_get(self.bump_pages_local);
-        encode_memory_grow(&mut self.code);
+        self.code.push(WasmBodyInstruction::MemoryGrow);
         self.emit_i32_const(-1);
-        WasmOpcode::I32Eq.encode(&mut self.code); // i32.eq
-        WasmOpcode::If.encode(&mut self.code);
-        self.code.push(BLOCKTYPE_EMPTY);
-        encode_unreachable(&mut self.code);
-        WasmOpcode::End.encode(&mut self.code);
-        WasmOpcode::End.encode(&mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Eq)); // i32.eq
+        self.emit_block_type(WasmOpcode::If);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
 
         // zero-fill: memory.fill(aligned, 0, size)
         self.emit_local_get(self.stack_ptr_local);
         self.emit_i32_const(0);
         self.emit_i32_const(size as i32);
-        encode_memory_fill(&mut self.code);
+        self.code.push(WasmBodyInstruction::MemoryFill);
 
         // commit heap cursor
         self.emit_local_get(self.bump_end_local);
-        WasmOpcode::GlobalSet.encode(&mut self.code);
-        encode_uleb128(CABI_HEAP_GLOBAL_INDEX, &mut self.code);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::GlobalSet, operand: CABI_HEAP_GLOBAL_INDEX });
 
         // leave aligned pointer on stack
         self.emit_local_get(self.stack_ptr_local);
     }
 
     pub(super) fn emit_i32_const(&mut self, value: i32) {
-        encode_i32_const(value, &mut self.code);
+        self.code.push(WasmBodyInstruction::I32Const(value));
     }
 
     /// 发射 `ref.null anyref`：产?null anyref 引用值?
     pub(super) fn emit_ref_null_anyref(&mut self) {
-        encode_ref_null_anyref(&mut self.code);
+        self.code.push(WasmBodyInstruction::RefNullAnyref);
     }
 
     pub(super) fn emit_ref_null_extern(&mut self) {
-        encode_ref_null_externref(&mut self.code);
+        self.code.push(WasmBodyInstruction::RefNullExternref);
     }
 
     pub(super) fn emit_i64_const(&mut self, value: i64) {
-        encode_i64_const(value, &mut self.code);
+        self.code.push(WasmBodyInstruction::I64Const(value));
     }
 
     pub(super) fn emit_f64_const(&mut self, value: f64) {
-        encode_f64_const(value, &mut self.code);
+        self.code.push(WasmBodyInstruction::F64Const(value));
     }
 
     pub(super) fn emit_local_get(&mut self, local: u32) {
-        encode_local_get(local, &mut self.code);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: local });
     }
 
     pub(super) fn emit_local_set(&mut self, local: u32) {
-        encode_local_set(local, &mut self.code);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalSet, operand: local });
     }
 
     pub(super) fn emit_local_tee(&mut self, local: u32) {
-        encode_local_tee(local, &mut self.code);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalTee, operand: local });
     }
 
     pub(super) fn emit_i32_add(&mut self) {
-        encode_i32_add(&mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Add));
     }
 
     pub(super) fn emit_i32_and(&mut self) {
-        encode_i32_and(&mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32And));
     }
 
     pub(super) fn emit_memory_copy(&mut self) {
-        encode_memory_copy(&mut self.code);
+        self.code.push(WasmBodyInstruction::MemoryCopy);
+    }
+
+    /// 发射 `if <blocktype>`：块类型是显式 LIR 事实。
+    pub(super) fn emit_block_type(&mut self, opcode: WasmOpcode) {
+        self.code.push(WasmBodyInstruction::BlockType { opcode, block_type: BLOCKTYPE_EMPTY });
     }
 
     // ── wasm-gc 辅助方法 ──────────────────────────────────────────
@@ -162,7 +166,7 @@ impl<'a> WasmMirLowerer<'a> {
 
     /// 将栈上 anyref 转为 typed struct ref，供 `struct.get` / `struct.set` 使用。
     pub(super) fn emit_ref_cast_struct(&mut self, type_index: u32) {
-        encode_ref_cast_type_index(type_index, &mut self.code);
+        self.code.push(WasmBodyInstruction::RefCastTypeIndex(type_index));
     }
 
     /// 将栈?anyref 收窄为抽?arrayref，供 `array.len` 等不带类型索引的数组指令使用?
@@ -171,26 +175,26 @@ impl<'a> WasmMirLowerer<'a> {
     /// ?`array.len` 期望 arrayref。从 anyref local 读取后必?`ref.cast array`
     /// 收窄类型，否则触?`array.len expected type arrayref, found anyref` 验证错误?
     pub(super) fn emit_ref_cast_array(&mut self) {
-        encode_ref_cast_array(&mut self.code);
+        self.code.push(WasmBodyInstruction::RefCastArray);
     }
 
     pub(super) fn emit_ref_cast_array_type(&mut self, type_index: u32) {
-        encode_ref_cast_type_index(type_index, &mut self.code);
+        self.code.push(WasmBodyInstruction::RefCastTypeIndex(type_index));
     }
 
     /// 发射 `struct.new_default` <type_index>：分配并初始化所有字段为默认值?
     pub(super) fn emit_struct_new_default(&mut self, type_index: u32) {
-        encode_struct_new_default(type_index, &mut self.code);
+        self.code.push(WasmBodyInstruction::StructNewDefault(type_index));
     }
 
     /// 发射 `struct.get` <type_index> <field_index>：从结构体引用读取字段值?
     pub(super) fn emit_struct_get(&mut self, type_index: u32, field_index: u32) {
-        encode_struct_get(type_index, field_index, &mut self.code);
+        self.code.push(WasmBodyInstruction::StructGet { type_index, field_index });
     }
 
     /// 发射 `struct.set` <type_index> <field_index>；栈顺序 `[struct_ref, field_value]`（value 在栈顶）。
     pub(super) fn emit_struct_set(&mut self, type_index: u32, field_index: u32) {
-        encode_struct_set(type_index, field_index, &mut self.code);
+        self.code.push(WasmBodyInstruction::StructSet { type_index, field_index });
     }
 
     /// 发射 `array.new_default` <type_index>：分配指定长度的默认值数组?
@@ -200,33 +204,33 @@ impl<'a> WasmMirLowerer<'a> {
             !self.gc_array_type_indices.is_empty(),
             "heap array.new_default requires wasm-gc arraytype (mandatory GC; arraytype map empty)"
         );
-        encode_array_new_default(type_index, &mut self.code);
+        self.code.push(WasmBodyInstruction::ArrayNewDefault(type_index));
     }
 
     /// 发射 `array.new_fixed` <type_index> <count>：从栈上 count 个值构造定长数组?
     pub(super) fn emit_array_new_fixed(&mut self, type_index: u32, count: u32) {
         assert!(!self.gc_array_type_indices.is_empty(), "heap array.new_fixed requires wasm-gc arraytype (mandatory GC; arraytype map empty)");
-        encode_array_new_fixed(type_index, count, &mut self.code);
+        self.code.push(WasmBodyInstruction::ArrayNewFixed { type_index, count });
     }
 
     /// 发射 `array.get` <type_index>：读取数组指定索引的元素?
     /// 栈：[arrayref, i32_index] →?[value]?
     pub(super) fn emit_array_get(&mut self, type_index: u32) {
         assert!(!self.gc_array_type_indices.is_empty(), "heap array.get requires wasm-gc arraytype (mandatory GC; arraytype map empty)");
-        encode_array_get(type_index, &mut self.code);
+        self.code.push(WasmBodyInstruction::ArrayGet(type_index));
     }
 
     /// 发射 `array.set` <type_index>：写入数组指定索引的元素?
     /// 栈：[arrayref, i32_index, value] →?[]?
     pub(super) fn emit_array_set(&mut self, type_index: u32) {
         assert!(!self.gc_array_type_indices.is_empty(), "heap array.set requires wasm-gc arraytype (mandatory GC; arraytype map empty)");
-        encode_array_set(type_index, &mut self.code);
+        self.code.push(WasmBodyInstruction::ArraySet(type_index));
     }
 
     /// 发射 `array.len`：获取数组长度?
     /// 栈：[arrayref] →?[i32]?
     pub(super) fn emit_array_len(&mut self) {
         assert!(!self.gc_array_type_indices.is_empty(), "heap array.len requires wasm-gc arraytype (mandatory GC; arraytype map empty)");
-        encode_array_len(&mut self.code);
+        self.code.push(WasmBodyInstruction::ArrayLen);
     }
 }

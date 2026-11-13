@@ -3,7 +3,7 @@
 use std::{fs, path::Path};
 
 use crate::{EmitterError, Result};
-use odin_bytecode::{OdinModuleData, encode_module};
+use acorn_odin::{OdinModuleData, encode_module};
 
 /// Encode [`OdinModuleData`] and write it to `output_path`.
 pub fn emit_nyar_module(module: &OdinModuleData, output_path: &Path) -> Result<()> {

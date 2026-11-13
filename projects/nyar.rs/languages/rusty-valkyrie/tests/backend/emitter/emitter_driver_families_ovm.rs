@@ -7,7 +7,7 @@
 #![cfg(feature = "ovm-lane")]
 
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan, resolve_entry_symbols};
-use odin_bytecode::{Odin_VERSION, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData};
+use acorn_odin::{Odin_VERSION, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
 fn module() -> OdinModuleData {
@@ -76,7 +76,7 @@ fn decoded_codes(module: &OdinModuleData) -> Vec<OdinHeadCode> {
     let mut codes = Vec::new();
     let mut position = 0;
     while position < module.code_bytes.len() {
-        let instruction = odin_bytecode::decode_at(&module.code_bytes, position);
+        let instruction = acorn_odin::decode_at(&module.code_bytes, position);
         assert!(instruction.size > 0, "字节码必须可解码");
         codes.push(instruction.code);
         position += instruction.size as usize;
@@ -206,7 +206,7 @@ micro main() -> i64 {
     let mut position = 0;
     let mut call_import = None;
     while position < module.code_bytes.len() {
-        let instruction = odin_bytecode::decode_at(&module.code_bytes, position);
+        let instruction = acorn_odin::decode_at(&module.code_bytes, position);
         if instruction.code == OdinHeadCode::CallImport && instruction.operand1 == import as i32 {
             call_import = Some(instruction);
         }

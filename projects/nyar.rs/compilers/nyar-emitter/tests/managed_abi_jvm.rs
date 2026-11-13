@@ -62,7 +62,7 @@ fn identity_plan(symbol: &str, export_name: &str) -> FragmentSubmission {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("managed_abi_jvm").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), export_name.to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), export_name.to_string());
     FragmentSubmission::from_backend_plan(plan)
 }
 
@@ -137,7 +137,7 @@ fn different_export_names_produce_different_contract_digests() {
 fn export_without_lowered_method_is_rejected_structurally() {
     let mut submission = identity_plan("managed.abi.add", "add");
     let plan = std::sync::Arc::get_mut(&mut submission.backend_plan).expect("unique plan");
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(1).expect("second instance"), "missing".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(1).expect("second instance"), "missing".to_string());
 
     let error = match lower_fragment_to_jvm_managed_surface(&submission) {
         Ok(_) => panic!("missing export must not be silently skipped"),
@@ -160,7 +160,7 @@ fn unsigned_logical_entry_is_rejected_instead_of_signed_remap() {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("managed_abi_jvm").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "unsigned".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "unsigned".to_string());
     let submission = FragmentSubmission::from_backend_plan(plan);
 
     let error = match lower_fragment_to_jvm_managed_surface(&submission) {
@@ -177,7 +177,7 @@ fn unsupported_return_type_does_not_fabricate_entry() {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("managed_abi_jvm").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "aggregate".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "aggregate".to_string());
     let submission = FragmentSubmission::from_backend_plan(plan);
 
     let error = match lower_fragment_to_jvm_managed_surface(&submission) {

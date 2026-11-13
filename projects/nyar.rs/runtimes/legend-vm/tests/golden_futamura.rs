@@ -61,12 +61,38 @@ fn lua_pe_first_projection_arithmetic_matches_interpret_via_native_residual() {
 }
 
 #[test]
-fn lua_pe_first_projection_print_matches_interpret_via_native_residual() {
+fn lua_pe_print_residual_fails_closed_instead_of_dropping_effect() {
     let source = r#"
 local x = 1 + 2
 print(x)
 "#;
-    assert_native_pe_matches_interpret(source, |value| matches!(value, ResidualValue::Int(3)));
+    let runner = LegendVmRunner::new();
+    let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
+    assert!(residual.is_native_bound(), "残差仍应保留 Print 操作");
+    // 诊断解释可以对照语义；产品 lowering 必须失败闭合，不能执行后丢弃 effect。
+    let specialized = eval_native_residual(&residual).expect("diagnostic eval");
+    assert!(matches!(specialized, ResidualValue::Int(3)), "unexpected residual value: {specialized:?}");
+    let error = legend_vm::compiler::emit_native_pe(&residual, None).expect_err("Print 残差不得被编译期吞掉");
+    assert!(error.to_string().contains("Print"), "unexpected error: {error}");
+}
+
+#[test]
+fn lua_short_circuit_residual_preserves_operand_values() {
+    // Lua 的 `and`/`or` 返回操作数；残差不得像布尔表达式那样塌缩成 true/false。
+    let cases = [
+        ("return 7 or 9", ResidualValue::Int(7)),
+        ("return 0 or 9", ResidualValue::Int(0)),
+        ("return false or 9", ResidualValue::Int(9)),
+        ("return 7 and 9", ResidualValue::Int(9)),
+        ("return false and 9", ResidualValue::Bool(false)),
+        ("return nil and 9", ResidualValue::Nil),
+    ];
+    for (source, expected) in cases {
+        let runner = LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
+        let evaluated = eval_native_residual(&residual).expect("eval native residual");
+        assert_eq!(evaluated, expected, "source: {source}");
+    }
 }
 
 #[test]

@@ -13,6 +13,7 @@
 //! Node `.node` / Python `.pyd` 只是同一 ISA 上的宿主装载与 ABI 包装形态，不是独立
 //! 指令集；宿主调用属于导入合同，不属于算子编码。
 
+mod x64_lir;
 pub mod x86_64;
 
 use nyar::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget};

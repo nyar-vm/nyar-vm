@@ -150,21 +150,24 @@ pub(super) fn append_library_invoke_section(
         return Ok(());
     }
     let plan = &submission.backend_plan;
-    let ctx = crate::lowering::shared::executable::ExecutableLoweringContext::new(submission);
+    let ctx = crate::lowering::shared::executable::ExecutableLoweringContext::new_resolved(
+        submission,
+        crate::lowering::shared::physical_layout::LayoutPolicy::WASM32,
+    )?;
     let mut invoke_exports = serde_json::Map::new();
 
-    for (instance, public_name) in plan.wasm_export_names() {
+    for (instance, public_name) in plan.export_names() {
         let function = plan.get_function(instance).ok_or_else(|| format!("库导出 `{instance}` 缺少 Compiler 函数体"))?.function;
-        let abi = plan
-            .library_export_abi(instance)
-            .ok_or_else(|| format!("库导出 `{instance}`（公开名 `{public_name}`）没有冻结的 ABI 载体合同；backend 不得自行推导 carrier"))?;
+        let abi = super::wasm_library_export_abi(plan, instance).map_err(|reason| {
+            format!("库导出 `{instance}`（公开名 `{public_name}`）没有可用的 ABI 载体合同；backend 不得自行推导 carrier: {reason}")
+        })?;
 
         let instance_label = format!("{instance}");
         let (params_json, returns_schema) = schematize_function_abi(
             &instance_label,
             &function,
-            abi,
-            ctx.layouts,
+            &abi,
+            ctx.layouts.as_ref(),
             plan.aggregate_layout_by_nyar_type(),
             plan.sum_layout_by_nyar_type(),
         )?;
@@ -241,7 +244,7 @@ mod tests {
     use nyar_types::{NyarType, ValueOrigin};
 
     fn nyar(s: &str) -> NyarType {
-        NyarType::from_surface_primitive(s).expect("surface primitive")
+        crate::test_canonical_primitive(s)
     }
 
     // ---- ABI digest ----
@@ -432,7 +435,7 @@ mod tests {
         let name = nyar::QualifiedName::new(vec![nyar::Identifier::new("twoSum")]);
         let mut plan = TargetExecutionPlan::from_functions(std::collections::BTreeMap::from([(name, function)]));
         let instance = *plan.instances().first().expect("测试函数实例");
-        plan.testing_wasm_export_names_mut().insert(instance, "twoSum".to_string());
+        plan.testing_export_names_mut().insert(instance, "twoSum".to_string());
         plan.testing_freeze_library_export_abis().expect("冻结 ABI 必须成功");
         let abi = plan.library_export_abi(&instance).expect("导出实例必须有冻结 ABI");
         assert_eq!(abi.params, vec![AbiCarrier::Handle, AbiCarrier::I64]);

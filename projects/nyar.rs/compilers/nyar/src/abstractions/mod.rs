@@ -128,6 +128,9 @@ pub enum BackendInputKind {
 }
 
 /// 目标描述。
+///
+/// 这是产物层消费的粗粒度目标投影；规范四元组的 OS 规格与 ABI 必须保留在
+/// [`Self::specification`] / [`Self::abi`]，产物层不得再从 `arch` 反推它们。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BinaryTarget {
     /// 目标家族。
@@ -138,12 +141,38 @@ pub struct BinaryTarget {
     pub byte_order: ByteOrder,
     /// 容器口味。
     pub flavor: BinaryFlavor,
+    /// 规范化目标规格（OS / 宿主）；`None` 表示该后端声明未细化规格。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub specification: Option<CanonicalSpecification>,
+    /// 规范化目标 ABI；`None` 表示该后端声明未细化 ABI。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abi: Option<CanonicalAbi>,
 }
 
 impl BinaryTarget {
     /// 创建一个新的目标描述。
     pub fn new(family: TargetFamily, arch: BinaryArch, flavor: BinaryFlavor) -> Self {
-        Self { family, arch, byte_order: ByteOrder::LittleEndian, flavor }
+        Self {
+            family,
+            arch,
+            byte_order: ByteOrder::LittleEndian,
+            flavor,
+            specification: None,
+            abi: None,
+        }
+    }
+
+    /// 该后端声明是否覆盖请求目标。
+    ///
+    /// 家族 / 架构 / 字节序 / 口味必须一致；规格与 ABI 只有在后端显式声明时才
+    /// 参与约束，避免未细化声明的后端被请求目标的规范化字段误判为不匹配。
+    pub fn matches(&self, requested: &Self) -> bool {
+        self.family == requested.family
+            && self.arch == requested.arch
+            && self.byte_order == requested.byte_order
+            && self.flavor == requested.flavor
+            && self.specification.is_none_or(|specification| Some(specification) == requested.specification)
+            && self.abi.is_none_or(|abi| Some(abi) == requested.abi)
     }
 
     /// 创建一个通用 `CLR` 目标。
@@ -500,7 +529,15 @@ impl CanonicalTarget {
             TargetFamily::Clr | TargetFamily::Jvm | TargetFamily::Ovm => BinaryFlavor::ManagedClr,
             _ => BinaryFlavor::Native,
         };
-        BinaryTarget { family, arch, byte_order: ByteOrder::LittleEndian, flavor }
+        BinaryTarget {
+            family,
+            arch,
+            byte_order: ByteOrder::LittleEndian,
+            flavor,
+            // 规范四元组的 OS / ABI 必须贯穿到产物层，不能只留 arch。
+            specification: Some(self.specification),
+            abi: self.abi,
+        }
     }
 
     /// 返回标准化字符串。

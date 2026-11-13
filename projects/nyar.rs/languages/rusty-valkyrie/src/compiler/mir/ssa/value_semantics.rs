@@ -356,8 +356,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
     }
     // 第二遍：declaration_to_layout 完整后重解已登记布局的字段事实，把名义
     // 字段从裸 `Named` 提升为携带身份的 `Nominal`（与发射端 `lower_type` 同
-    // 口径），并按已登记布局重计名义字段的 extent。登记顺序不再影响字段
-    // 身份与偏移/尺寸/对齐；聚合自身尺寸随字段事实一并刷新。
+    // 口径）。登记顺序不再影响字段身份；字节 extent 不由语言层计算。
     for (hir_struct, storage) in &registered {
         let Some(item) = hir_struct.constructor_declaration
         else {
@@ -423,11 +422,13 @@ pub fn instantiate_fields(structure: &crate::compiler::mir::MirStruct, instance:
     )
 }
 
-/// 为具体泛型实例构造聚合布局并登记进计划。
+/// 为具体泛型实例构造聚合**语义布局**并登记进计划。
 ///
-/// 字段类型严格由已冻结声明 spelling + 实参生成平台形状，与 emitter `lower_type`
+/// 字段类型严格由已冻结声明 spelling + 实参生成，与 emitter `lower_type`
 /// 同口径；缺拼写、实参仍含开放形参、或声明与实例不匹配时返回 `None`（失败关闭）。
 /// 开放泛型声明本身仍由 [`compute_aggregate_layout_plan`] 跳过，不在此合成布局。
+///
+/// 物理偏移、字段宽度与对齐属于目标数据布局，语言层只写无目标占位。
 pub fn instance_layout_for_type(
     plan: &mut AggregateLayoutPlan,
     structure: &crate::compiler::mir::MirStruct,
@@ -439,18 +440,11 @@ pub fn instance_layout_for_type(
     }
     let field_types = instantiate_fields(structure, instance)?;
     let storage = if structure.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
-    let mut offset = 0u32;
-    let mut max_align = 1u32;
     let mut fields = Vec::with_capacity(field_types.len());
     for (declared, ty) in structure.fields.iter().zip(field_types.iter()) {
         let layout_ty = layout_field_type(ty, declaration_spellings, plan)?;
-        let (size, align) = layout_field_extent(&layout_ty, plan)?;
-        offset = align_offset(offset, align);
-        fields.push(FieldLayout { name: declared.name.clone(), ty: layout_ty, offset, size, align });
-        offset += size;
-        max_align = max_align.max(align);
+        fields.push(FieldLayout { name: declared.name.clone(), ty: layout_ty, offset: 0, size: 0, align: 1 });
     }
-    let size = align_offset(offset, max_align).max(if fields.is_empty() { max_align.max(1) } else { 0 });
     let id = next_layout_id(plan);
     plan.layouts.push(AggregateLayout {
         id,
@@ -458,8 +452,8 @@ pub fn instance_layout_for_type(
         namespace: structure.namespace.clone(),
         key: None,
         storage,
-        size,
-        align: max_align.max(1),
+        size: 0,
+        align: 1,
         fields,
     });
     Some(InstanceLayout { id, field_types })
@@ -546,28 +540,6 @@ fn layout_field_type(
     }
 }
 
-/// 字段字节大小与对齐：标量按宽度，名义字段按已登记布局的实际尺寸，其余按引用槽。
-///
-/// 名义值聚合是内联字节区：嵌套 `memory.copy` 的长度就是字段 extent，固定
-/// 引用槽宽度会截断大于槽的聚合。布局缺失失败闭合，禁止猜尺寸。
-fn layout_field_extent(ty: &nyar_types::NyarType, plan: &AggregateLayoutPlan) -> Option<(u32, u32)> {
-    match ty {
-        nyar_types::NyarType::Integer64 { .. } | nyar_types::NyarType::Integer128 { .. } | nyar_types::NyarType::Float64 => Some((8, 8)),
-        nyar_types::NyarType::Nominal { layout, .. } => plan.layouts.iter().find(|item| item.id == *layout).map(|item| (item.size, item.align)),
-        nyar_types::NyarType::Bottom
-        | nyar_types::NyarType::Unit
-        | nyar_types::NyarType::Boolean
-        | nyar_types::NyarType::Integer8 { .. }
-        | nyar_types::NyarType::Integer16 { .. }
-        | nyar_types::NyarType::Integer32 { .. }
-        | nyar_types::NyarType::Float32
-        | nyar_types::NyarType::Character
-        | nyar_types::NyarType::Utf8
-        | nyar_types::NyarType::Utf16 => Some((4, 4)),
-        _ => Some((8, 8)),
-    }
-}
-
 fn collect_module_structs<'a>(module: &'a HirModule, output: &mut Vec<&'a HirStruct>) {
     output.extend(module.structs.iter());
     for child in &module.submodules {
@@ -625,43 +597,39 @@ pub fn ensure_layout_for_type(plan: &mut AggregateLayoutPlan, ty: &ValkyrieType)
     Some(id)
 }
 
-/// Unite/Result/Option 运行时 `tag`/`payload` 载体布局，按 sum declaration ItemId 登记。
+/// Unite/Result/Option 的**声明身份**登记点。
 ///
-/// Matches CLR/Wasm GC convention: reference aggregate with `tag: i32` + opaque payload.
-/// Payload uses utf8 as a stand-in ABI carrier (reference-sized); typed Fine/Fail
-/// extraction goes through `SumPayloadGet`, not this field's declared type.
+/// 语言层只冻结「该 sum 声明拥有布局身份」这一语义事实，不发明任何物理载体：
+/// `tag` 宽度、payload 载体、对象字段与偏移全部属于目标表示，由各平台按自己的
+/// 数据布局决定。这里登记零字段、零尺寸的身份记录；需要物理布局的目标只能从
+/// 自己的 sum 表示计划取值，不得读取这里的占位值。
 /// `display_name` 仅诊断/调试；禁止用名称合并或反查布局。
 pub fn ensure_unite_tagged_layout(plan: &mut AggregateLayoutPlan, declaration: nyar_types::ItemId, display_name: &str) -> LayoutId {
     if let Some(id) = plan.declaration_to_layout.get(&declaration).copied() {
-        if plan.layouts.iter().find(|layout| layout.id == id).is_some_and(|layout| {
-            layout.fields.iter().any(|field| field.name == "tag") && layout.fields.iter().any(|field| field.name == "payload")
-        }) {
-            return id;
-        }
+        return id;
     }
-    let layout = build_aggregate_layout(
-        next_layout_id(plan),
-        display_name,
-        String::new(),
-        MirStorageKind::Reference,
-        vec![
-            FieldSpec { name: "tag".to_string(), ty: ValkyrieType::Integer32 { signed: true }, size: 4, align: 4 },
-            FieldSpec { name: "payload".to_string(), ty: ValkyrieType::Utf8, size: 8, align: 8 },
-        ],
-    );
-    let id = layout.id;
+    let id = next_layout_id(plan);
     plan.declaration_to_layout.insert(declaration, id);
-    plan.layouts.push(layout);
+    plan.layouts.push(AggregateLayout {
+        id,
+        name: display_name.to_string(),
+        namespace: String::new(),
+        key: None,
+        storage: MirStorageKind::Reference,
+        size: 0,
+        align: 1,
+        fields: Vec::new(),
+    });
     id
 }
 
-/// Ensure every unite and every non-generic sum declaration has a tagged
-/// aggregate layout for FieldGet / target ABI contracts.
+/// Ensure every unite and every non-generic sum declaration has a declaration-level
+/// layout identity for nominal field resolution.
 ///
 /// 非泛型 `enums`（如 `Ordering`）同样需要声明级布局身份：canonical 的
 /// `aggregate_layout_by_type` 只为已有布局的类型登记，缺项的枚举会退化成无身份
 /// `Named` 并被预发射门禁拒绝。泛型声明没有单一物理布局，仍按既有口径只为
-/// `is_unite` 保留声明级 tagged 布局。
+/// `is_unite` 保留声明级身份。
 pub fn ensure_unite_layouts_for_sums(plan: &mut AggregateLayoutPlan, sum_types: &[super::MirSumDeclaration]) {
     for sum in sum_types {
         // 非泛型 sum（含 `enums`）的声明有唯一物理布局；泛型声明只有 unite
@@ -680,21 +648,35 @@ pub fn ensure_unite_layouts_for_sums(plan: &mut AggregateLayoutPlan, sum_types: 
 
 pub fn layout_for_tuple(element_types: &[ValkyrieType], plan: &AggregateLayoutPlan) -> AggregateLayout {
     let mut layout =
-        build_aggregate_layout(next_layout_id(plan), "tuple", String::new(), MirStorageKind::Value, element_fields(element_types, plan));
+        build_semantic_layout(next_layout_id(plan), "tuple", String::new(), MirStorageKind::Value, element_fields(element_types));
     layout.key = synthetic_layout_key(&ValkyrieType::Tuple(element_types.to_vec()));
     layout
 }
 
 pub fn layout_for_fixed_array(element_type: &ValkyrieType, length: usize, plan: &AggregateLayoutPlan) -> AggregateLayout {
     let fields = (0..length)
-        .map(|index| {
-            let (size, align) = scalar_layout(element_type, plan);
-            FieldSpec { name: index.to_string(), ty: element_type.clone(), size, align }
-        })
+        .map(|index| FieldSpec { name: index.to_string(), ty: element_type.clone(), size: 0, align: 1 })
         .collect::<Vec<_>>();
-    let mut layout = build_aggregate_layout(next_layout_id(plan), "fixedarray", String::new(), MirStorageKind::Value, fields);
+    let mut layout =
+        build_semantic_layout(next_layout_id(plan), "fixedarray", String::new(), MirStorageKind::Value, fields);
     layout.key = synthetic_layout_key(&ValkyrieType::FixedArray { element: Box::new(element_type.clone()), length });
     layout
+}
+
+/// 由字段规格构造**语义布局**：只冻结字段名、类型与顺序。
+///
+/// `FieldSpec` 的字节字段仅服务显式测试夹具；生产路径一律写无目标占位，
+/// 物理 extent 由目标表示计划计算。
+fn build_semantic_layout(id: LayoutId, name: &str, namespace: String, storage: MirStorageKind, specs: Vec<FieldSpec>) -> AggregateLayout {
+    let fields = specs
+        .into_iter()
+        .map(|spec| {
+            let ty = concretize_type(&spec.ty)
+                .unwrap_or_else(|err| panic!("aggregate layout `{namespace}::{name}` field `{}` 无法严格 concretize: {err}", spec.name));
+            FieldLayout { name: spec.name, ty, offset: 0, size: 0, align: 1 }
+        })
+        .collect();
+    AggregateLayout { id, name: name.to_string(), namespace, key: None, storage, size: 0, align: 1, fields }
 }
 
 /// 递归应用 primitive 载体：结构容器内的 `Nominal{core primitive}` 同样映射到平台载体。
@@ -732,8 +714,13 @@ fn apply_primitive_carriers(ty: &ValkyrieType, carriers: &BTreeMap<nyar_types::I
 /// 数值短名（`i32`/`usize`/`byte` …）即使拼写与内建同名也不得经此桥，
 /// 数值载体只认规范身份；`usize`/`isize` 由 std 的指针宽度别名结算成定宽整数。
 pub(crate) fn encoding_spelling_carrier(spelling: &str) -> Option<nyar_types::NyarType> {
-    match nyar_types::NyarType::from_surface_primitive(spelling) {
-        Some(carrier @ (nyar_types::NyarType::Utf8 | nyar_types::NyarType::Utf16 | nyar_types::NyarType::Character)) => Some(carrier),
+    // 只认语言表面的文本/字符编码拼写；数值短名即使与内建同名也不得经此桥，
+    // 数值载体只认规范 `[primitive]` 身份。
+    let simple = spelling.rsplit([':', '.']).next().unwrap_or(spelling);
+    match simple {
+        "char" => Some(nyar_types::NyarType::Character),
+        "utf8" | "Utf8Text" => Some(nyar_types::NyarType::Utf8),
+        "utf16" | "Utf16Text" => Some(nyar_types::NyarType::Utf16),
         _ => None,
     }
 }
@@ -747,45 +734,34 @@ fn nominal_layout_base(plan: &AggregateLayoutPlan, declaration: nyar_types::Item
     }
 }
 
-/// 声明层聚合布局：字段先经 primitive 载体递归，再走与实例层同口径的
-/// [`layout_field_type`] 解析。
+/// 声明聚合成**语义布局**：字段身份、完整类型、声明顺序与存储类。
 ///
-/// 缺事实返回带字段位置与 concretize 类型名原因的结构化错误，由调用方产出
-/// 诊断；禁止按短名猜载体或尺寸（指针宽度别名缺声明即走此失败关闭）。
+/// 字段先经 primitive 载体递归，再走与实例层同口径的 [`layout_field_type`]
+/// 解析；缺事实返回带字段位置与 concretize 类型名原因的结构化错误，由调用方
+/// 产出诊断，禁止按短名猜载体。
+///
+/// 语言层不决定字节偏移、字段宽度或对齐：这些是目标数据布局事实，必须由各平台
+/// 按自己的表示计划计算。这里产出的 `offset/size/align` 只是无目标占位
+/// （0 / 0 / 1），任何后端都不得把它当作物理布局消费。
 fn layout_for_struct(
     hir_struct: &HirStruct,
     plan: &AggregateLayoutPlan,
     storage: MirStorageKind,
     facts: &LayoutFacts,
 ) -> Result<AggregateLayout, String> {
-    let mut offset = 0u32;
-    let mut max_align = 1u32;
     let mut fields = Vec::with_capacity(hir_struct.fields.len());
     for field in hir_struct.fields.iter().filter(|field| !is_type_level_marker_field(&field.ty, &facts.markers)) {
         // 核心 primitive 声明在 HIR 中冻结为 Nominal{ItemId}；布局必须回到平台载体。
         let mapped = apply_primitive_carriers(&field.ty, &facts.primitive_carriers);
-        // 可严格 concretize 的字段保持既有大小口径；名义字段走已冻结拼写路径，
-        // 与 canonical 实例层 `layout_field_type` 同口径，按平台形状计量。
-        let (ty, (size, align)) = match concretize_type(&mapped) {
-            Ok(concrete) => (concrete, scalar_layout(&mapped, plan)),
-            Err(error) => {
-                // 失败关闭：字段无法结算出平台载体时保留 concretize 的类型名原因，
-                // 并补上字段位置；不得回落到按短名猜尺寸。
-                let resolved = layout_field_type(&mapped, &facts.declaration_spellings, plan)
-                    .ok_or_else(|| format!("字段 `{}`: {error}", field.name.as_str()))?;
-                let extent = layout_field_extent(&resolved, plan)
-                    .ok_or_else(|| format!("字段 `{}` 解析为 `{resolved:?}` 但缺少已登记容量", field.name.as_str()))?;
-                (resolved, extent)
-            }
+        // 可严格 concretize 的字段保持既有语义形状；名义字段走已冻结拼写路径，
+        // 与 canonical 实例层 `layout_field_type` 同口径。任一环节缺事实即失败关闭。
+        let ty = match concretize_type(&mapped) {
+            Ok(concrete) => concrete,
+            Err(error) => layout_field_type(&mapped, &facts.declaration_spellings, plan)
+                .ok_or_else(|| format!("字段 `{}`: {error}", field.name.as_str()))?,
         };
-        offset = align_offset(offset, align);
-        fields.push(FieldLayout { name: field.name.to_string(), ty, offset, size, align });
-        offset += size;
-        max_align = max_align.max(align);
+        fields.push(FieldLayout { name: field.name.to_string(), ty, offset: 0, size: 0, align: 1 });
     }
-    // Empty aggregates would otherwise get size=0 and fail SMIR010; language-level
-    // empty structs still need a non-zero carrier for layout contracts.
-    let size = align_offset(offset, max_align).max(if fields.is_empty() { max_align.max(1) } else { 0 });
     let namespace = hir_struct.namespace.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(".");
     Ok(AggregateLayout {
         id: next_layout_id(plan),
@@ -793,8 +769,8 @@ fn layout_for_struct(
         namespace,
         key: None,
         storage,
-        size,
-        align: max_align.max(1),
+        size: 0,
+        align: 1,
         fields,
     })
 }
@@ -847,14 +823,11 @@ pub struct FieldSpec {
     pub align: u32,
 }
 
-fn element_fields(element_types: &[ValkyrieType], plan: &AggregateLayoutPlan) -> Vec<FieldSpec> {
+fn element_fields(element_types: &[ValkyrieType]) -> Vec<FieldSpec> {
     element_types
         .iter()
         .enumerate()
-        .map(|(index, ty)| {
-            let (size, align) = scalar_layout(ty, plan);
-            FieldSpec { name: index.to_string(), ty: ty.clone(), size, align }
-        })
+        .map(|(index, ty)| FieldSpec { name: index.to_string(), ty: ty.clone(), size: 0, align: 1 })
         .collect()
 }
 
@@ -877,45 +850,6 @@ pub fn build_aggregate_layout(id: LayoutId, name: &str, namespace: String, stora
     // empty structs still need a non-zero carrier for layout contracts.
     let size = align_offset(offset, max_align).max(if fields.is_empty() { max_align.max(1) } else { 0 });
     AggregateLayout { id, name: name.to_string(), namespace, key: None, storage, size, align: max_align.max(1), fields }
-}
-
-fn scalar_layout(ty: &ValkyrieType, plan: &AggregateLayoutPlan) -> (u32, u32) {
-    match ty {
-        ValkyrieType::Boolean | ValkyrieType::Character => (4, 4),
-        ValkyrieType::Integer8 { .. } | ValkyrieType::Integer16 { .. } | ValkyrieType::Integer32 { .. } | ValkyrieType::Float32 => (4, 4),
-        ValkyrieType::Integer64 { .. } | ValkyrieType::Float64 => (8, 8),
-        ValkyrieType::Nominal { declaration, .. } => plan
-            .declaration_to_layout
-            .get(declaration)
-            .and_then(|id| plan.layouts.iter().find(|layout| layout.id == *id))
-            .map(|layout| (layout.size, layout.align))
-            .unwrap_or((8, 8)),
-        ValkyrieType::Tuple(types) => inline_aggregate_size(&ValkyrieType::Tuple(types.clone()), plan),
-        ValkyrieType::FixedArray { element, length } => {
-            inline_aggregate_size(&ValkyrieType::FixedArray { element: element.clone(), length: *length }, plan)
-        }
-        _ => (8, 8),
-    }
-}
-
-fn inline_aggregate_size(ty: &ValkyrieType, plan: &AggregateLayoutPlan) -> (u32, u32) {
-    layout_id_for_type(ty, plan)
-        .and_then(|id| plan.layouts.iter().find(|layout| layout.id == id))
-        .map(|layout| (layout.size, layout.align))
-        .unwrap_or_else(|| {
-            let fields = match ty {
-                ValkyrieType::Tuple(types) => element_fields(types, plan),
-                ValkyrieType::FixedArray { element, length } => (0..*length)
-                    .map(|index| {
-                        let (size, align) = scalar_layout(element, plan);
-                        FieldSpec { name: index.to_string(), ty: element.as_ref().clone(), size, align }
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            };
-            let layout = build_aggregate_layout(0, "__tmp", String::new(), MirStorageKind::Value, fields);
-            (layout.size, layout.align)
-        })
 }
 
 fn align_offset(offset: u32, align: u32) -> u32 {

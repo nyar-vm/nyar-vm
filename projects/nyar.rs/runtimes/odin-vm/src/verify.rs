@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use odin_bytecode::{OBSOLETE_CALL_NATIVE, Odin_VERSION, OdinHeadCode, OdinImport, OdinInstruction, OdinModuleData, decode_at};
+use acorn_odin::{OBSOLETE_CALL_NATIVE, Odin_VERSION, OdinHeadCode, OdinImport, OdinInstruction, OdinModuleData, decode_at};
 
 use crate::{error::OdinRuntimeError, host::resolve_import};
 
@@ -159,8 +159,8 @@ pub fn verify_module(data: &OdinModuleData) -> Result<(), OdinRuntimeError> {
             return Err(OdinRuntimeError::ModuleLoad("empty or duplicate export identity".to_owned()));
         }
         let count = match export.kind {
-            odin_bytecode::OdinExportKind::Function => data.functions.len(),
-            odin_bytecode::OdinExportKind::Global => data.globals.len(),
+            acorn_odin::OdinExportKind::Function => data.functions.len(),
+            acorn_odin::OdinExportKind::Global => data.globals.len(),
         };
         if export.function_index < 0 || export.function_index as usize >= count {
             return Err(OdinRuntimeError::ModuleLoad(format!("export `{}` index out of range", export.symbol_name)));
@@ -249,7 +249,7 @@ fn verify_code_stream(data: &OdinModuleData) -> Result<(), OdinRuntimeError> {
     Ok(())
 }
 
-fn verify_function(data: &OdinModuleData, function_index: usize, function: &odin_bytecode::OdinFunction) -> Result<(), OdinRuntimeError> {
+fn verify_function(data: &OdinModuleData, function_index: usize, function: &acorn_odin::OdinFunction) -> Result<(), OdinRuntimeError> {
     if function.code_offset < 0 || function.code_length < 0 {
         return Err(OdinRuntimeError::ModuleLoad(format!("function[{function_index}] has negative code_offset or code_length")));
     }
@@ -566,7 +566,7 @@ fn pop_any_stack(
 fn push_const_kind(data: &OdinModuleData, instruction: OdinInstruction) -> StackKind {
     if instruction.operand1 >= 0 {
         match data.constants.get(instruction.operand1 as usize) {
-            Some(odin_bytecode::OdinConstant::Integer32(_)) | Some(odin_bytecode::OdinConstant::Boolean(_)) => {
+            Some(acorn_odin::OdinConstant::Integer32(_)) | Some(acorn_odin::OdinConstant::Boolean(_)) => {
                 return StackKind::I32;
             }
             _ => {}

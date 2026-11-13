@@ -79,7 +79,7 @@ fn source_groups() -> Vec<CompilerSourceGroup> {
 }
 
 /// 沿 Compiler 产出的目标私有计划降低到 `.odin`，不重放调用边。
-fn lower() -> Result<odin_bytecode::OdinModuleData, String> {
+fn lower() -> Result<acorn_odin::OdinModuleData, String> {
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(&source_groups(), &bindings(), &[], "native")
         .map_err(|error| error.to_string())?;
@@ -91,14 +91,14 @@ fn lower() -> Result<odin_bytecode::OdinModuleData, String> {
         .map_err(|error| error.to_string())
 }
 
-fn run_main(module: &odin_bytecode::OdinModuleData) -> Value {
+fn run_main(module: &acorn_odin::OdinModuleData) -> Value {
     let entry = module
         .exports
         .iter()
         .map(|export| export.symbol_name.clone())
         .find(|name| name.ends_with("main"))
         .unwrap_or_else(|| panic!("必须导出 main 入口: {:?}", module.exports));
-    let bytes = odin_bytecode::encode_module(module);
+    let bytes = acorn_odin::encode_module(module);
     let mut vm = odin_vm::OdinVm::new();
     let loaded = vm.load(&bytes).expect("编码后的模块必须可加载");
     vm.run(&loaded, &entry, Vec::new()).expect("main 必须在内置 OVM 运行时执行成功")
@@ -167,7 +167,7 @@ fn merge_source_groups() -> Vec<CompilerSourceGroup> {
     ]
 }
 
-fn lower_merge() -> Result<odin_bytecode::OdinModuleData, String> {
+fn lower_merge() -> Result<acorn_odin::OdinModuleData, String> {
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(&merge_source_groups(), &merge_bindings(), &[], "native")
         .map_err(|error| error.to_string())?;
@@ -179,14 +179,14 @@ fn lower_merge() -> Result<odin_bytecode::OdinModuleData, String> {
         .map_err(|error| error.to_string())
 }
 
-fn run_main_with_args(module: &odin_bytecode::OdinModuleData, args: Vec<Value>) -> Value {
+fn run_main_with_args(module: &acorn_odin::OdinModuleData, args: Vec<Value>) -> Value {
     let entry = module
         .exports
         .iter()
         .map(|export| export.symbol_name.clone())
         .find(|name| name.ends_with("main"))
         .unwrap_or_else(|| panic!("必须导出 main 入口: {:?}", module.exports));
-    let bytes = odin_bytecode::encode_module(module);
+    let bytes = acorn_odin::encode_module(module);
     let mut vm = odin_vm::OdinVm::new();
     let loaded = vm.load(&bytes).expect("编码后的模块必须可加载");
     vm.run(&loaded, &entry, args).expect("main 必须在内置 OVM 运行时执行成功")
@@ -247,7 +247,7 @@ fn compile_panic() -> Result<nyar_types::CompiledProgram, String> {
     ValkyrieCompiler::default().compile_source_groups_to_program(&panic_source_groups()).map_err(|error| error.to_string())
 }
 
-fn lower_panic() -> Result<odin_bytecode::OdinModuleData, String> {
+fn lower_panic() -> Result<acorn_odin::OdinModuleData, String> {
     let program = compile_panic()?;
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();

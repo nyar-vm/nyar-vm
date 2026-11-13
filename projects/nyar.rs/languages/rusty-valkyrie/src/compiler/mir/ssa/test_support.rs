@@ -33,7 +33,7 @@ impl TestMirBuilder {
         let mut inner = MirBuilder::new(
             AggregateLayoutPlan::default(),
             BTreeMap::new(),
-            BTreeMap::new(),
+            super::effect_lowering::EffectfulCallees::default(),
             super::CallableReturnTypes { by_symbol: BTreeMap::new(), by_instance: BTreeMap::new() },
             Vec::new(),
             None,

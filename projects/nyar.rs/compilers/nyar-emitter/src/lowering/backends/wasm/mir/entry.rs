@@ -15,7 +15,7 @@ use super::{
         },
     },
     HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, MirInstructionKind, MirOperand, StorageKind, TargetOperatorBinding,
-    Utf8HostHandleMaterializePlan, WASM_GC_EXTERNREF, WasmGcArrayOperation,
+    Utf8HostHandleMaterializePlan, VALTYPE_F32, WASM_GC_EXTERNREF, WasmGcArrayOperation, encode_f32_const, encode_f32_load,
     imports::{
         build_callee_import_index, build_callee_wasm_operator_index, build_string_literal_index, build_wasi_callee_import_index,
         collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index,
@@ -33,7 +33,6 @@ use super::{
         wasm_function_type_result_byte,
     },
     type_registry::{register_gc_array_types, register_gc_struct_types, register_gc_sum_types, wasm_array_element_type_key},
-    VALTYPE_F32, encode_f32_const, encode_f32_load,
 };
 use crate::{
     FragmentSubmission,
@@ -52,6 +51,7 @@ use acorn_wasm::{
     encode_struct_set, encode_unreachable,
 };
 
+use nyar::HostProjectionBoundary;
 use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, LayoutId};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
@@ -99,14 +99,17 @@ pub(crate) fn lower_fragment_mir_to_wasm_module(
     lower_fragment_mir_to_wasm_module_for(
         submission,
         export_name,
+        HostProjectionBoundary::WasmJsGlue,
         crate::nyar_backend_wasi::WasiPreview::Preview2,
         crate::nyar_backend_wasi::WasmPackageKind::Binary,
     )
 }
 
+/// 宿主模式只由显式 `host_boundary` 决定；`export_name` 只是符号，不参与运行环境推断。
 pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     submission: &FragmentSubmission,
     export_name: &str,
+    host_boundary: HostProjectionBoundary,
     wasi_preview: crate::nyar_backend_wasi::WasiPreview,
     wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
 ) -> crate::Result<(WasmBinaryModule, Vec<(String, String)>)> {
@@ -116,7 +119,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         let owner = if error.function.is_empty() { error.site.clone() } else { format!("{} at {}", error.function, error.site) };
         format!("WASM pre-emission verifier: {owner} 携带无身份名义类型 `{}`；declaration / `TypeId` 缺失时不得按短名解析存储类", error.ty)
     })?;
-    let wasi_mode = export_name == "_start";
+    let wasi_mode = matches!(host_boundary, HostProjectionBoundary::WasiComponent);
     let operations = submission.backend_plan.instances();
     // 字符串字面量属于被发射模块本身，与导出名是 `main` 还是库导出无关；
     // 只有常量载体（`const_utf8` / WASI 偏移）在两种宿主形态下不同。
@@ -143,7 +146,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 被降?`ref.null`，丢?`cli_get_*` 返回的句柄（自举 `exports.build` 会静默失败）?
     // WASI 轨同样以线性内?i32 偏移传字符串?
     let js_glue_utf8_as_anyref = false;
-    let ctx = ExecutableLoweringContext::new(submission);
+    let ctx = ExecutableLoweringContext::new_resolved(submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)?;
     let host_import_signatures = host_import_signature_index(submission);
     let mut module = WasmBinaryModule::new();
     // main_type ?type 段的?0 ?() -> i32，供 `build` 桩函数使用?
@@ -327,9 +330,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                     .collect::<crate::Result<Vec<u8>>>()?;
                 let return_type = match &signature.return_type {
                     NyarType::Unit | NyarType::Bottom => None,
-                    other => {
-                        Some(wasm_function_abi_value_type_for(&ctx, other, &gc_struct_type_indices, js_glue_utf8_as_anyref)?)
-                    }
+                    other => Some(wasm_function_abi_value_type_for(&ctx, other, &gc_struct_type_indices, js_glue_utf8_as_anyref)?),
                 };
                 let (environment_layout, environment_type) = match environment {
                     Some(MirOperand::Value(value)) => {
@@ -492,7 +493,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &utf8_host_handle_materialize,
         )?));
         mir_wasm_functions.push((wasm_index, full.clone()));
-        if let Some(public_name) = submission.backend_plan.wasm_export_names().get(instance) {
+        if let Some(public_name) = submission.backend_plan.export_names().get(instance) {
             exports.push((public_name.as_str(), WasmExternalKind::Func.as_u8(), wasm_index));
         }
         else if submission.backend_plan.entry_operation() == Some(*instance) {
@@ -522,9 +523,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 .find(|(candidate, _)| candidate == instance)
                 .map(|(_, mir_fn)| mir_fn)
                 .ok_or_else(|| format!("WASM 闭包 `{instance:?}` 的合成函数缺少 MIR 体"))?;
-            let environment_slot = plan.environment_type.as_ref().is_some_and(|environment_type| {
-                target_mir_fn.param_types.last() == Some(environment_type)
-            });
+            let environment_slot =
+                plan.environment_type.as_ref().is_some_and(|environment_type| target_mir_fn.param_types.last() == Some(environment_type));
             if target_params != expected_param_types || !environment_slot {
                 return Err(format!(
                     "WASM 闭包环境槽缺失或不匹配：lambda instance `{instance:?}`，target params={target_params:?}，expected={expected_param_types:?}"
@@ -694,11 +694,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 替换为 i32 句柄；体内先按配方物化形参，调用内部函数后再按配方把返回物化，
     // 导出重定向到 wrapper。未命中任一配方的实例不生成 wrapper。
     if !wasi_mode {
-        let wrapper_instances: BTreeSet<ItemInstanceId> = host_handle_to_managed_utf8
-            .keys()
-            .chain(managed_utf8_return_to_host_handle.keys())
-            .copied()
-            .collect();
+        let wrapper_instances: BTreeSet<ItemInstanceId> =
+            host_handle_to_managed_utf8.keys().chain(managed_utf8_return_to_host_handle.keys()).copied().collect();
         for instance in wrapper_instances {
             let empty_plans = Vec::new();
             let plans = host_handle_to_managed_utf8.get(&instance).unwrap_or(&empty_plans);
@@ -762,7 +759,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             code_bodies.push(wasm_function_body(wrapper_body));
             let public_name = submission
                 .backend_plan
-                .wasm_export_names()
+                .export_names()
                 .get(&instance)
                 .cloned()
                 .ok_or_else(|| format!("库导出 `{instance}` 物化配方缺少公开导出名"))?;
@@ -1005,7 +1002,7 @@ fn freeze_host_handle_to_managed_utf8_plans(
     host_import_signatures: &BTreeMap<(String, String), crate::BackendImport>,
 ) -> crate::Result<BTreeMap<ItemInstanceId, Vec<HostHandleToManagedUtf8Plan>>> {
     let mut plans_by_instance: BTreeMap<ItemInstanceId, Vec<HostHandleToManagedUtf8Plan>> = BTreeMap::new();
-    for (instance, public_name) in submission.backend_plan.wasm_export_names() {
+    for (instance, public_name) in submission.backend_plan.export_names() {
         let Some(view) = submission.backend_plan.get_function(instance)
         else {
             continue;
@@ -1028,8 +1025,10 @@ fn freeze_host_handle_to_managed_utf8_plans(
             else {
                 continue;
             };
-            let abi = submission.backend_plan.library_export_abi(instance).ok_or_else(|| {
-                format!("库导出 `{instance}`（export_name={public_name}）缺少冻结 ABI 载体合同，无法核对宿主句柄→managed 物化配方")
+            let abi = super::wasm_library_export_abi(&submission.backend_plan, instance).map_err(|reason| {
+                format!(
+                    "库导出 `{instance}`（export_name={public_name}）缺少可用的冻结 ABI 载体合同，无法核对宿主句柄→managed 物化配方: {reason}"
+                )
             })?;
             let Some(carrier) = abi.params.get(index)
             else {
@@ -1109,7 +1108,7 @@ fn freeze_managed_utf8_return_to_host_handle_plans(
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
 ) -> crate::Result<BTreeMap<ItemInstanceId, ManagedUtf8ToHostHandlePlan>> {
     let mut plans = BTreeMap::new();
-    for (instance, public_name) in submission.backend_plan.wasm_export_names() {
+    for (instance, public_name) in submission.backend_plan.export_names() {
         let Some(view) = submission.backend_plan.get_function(instance)
         else {
             continue;
@@ -1119,8 +1118,10 @@ fn freeze_managed_utf8_return_to_host_handle_plans(
             continue;
         }
         // 宿主字符串返回类型的冻结载体只能是 i32 句柄；载体不明或分叉即刻结构化失败。
-        let abi = submission.backend_plan.library_export_abi(instance).ok_or_else(|| {
-            format!("库导出 `{instance}`（export_name={public_name}）缺少冻结 ABI 载体合同，无法核对 managed→宿主句柄返回物化配方")
+        let abi = super::wasm_library_export_abi(&submission.backend_plan, instance).map_err(|reason| {
+            format!(
+                "库导出 `{instance}`（export_name={public_name}）缺少可用的冻结 ABI 载体合同，无法核对 managed→宿主句柄返回物化配方: {reason}"
+            )
         })?;
         if abi.returns != crate::target_execution_plan::AbiCarrier::I32 {
             return Err(format!(
@@ -1130,7 +1131,8 @@ fn freeze_managed_utf8_return_to_host_handle_plans(
             ));
         }
         // 未登记 gc struct 的返回槽本就是 i32 句柄，与冻结载体一致，无物化需求。
-        let Some(layout_id) = mir_fn.return_layout else {
+        let Some(layout_id) = mir_fn.return_layout
+        else {
             continue;
         };
         if gc_struct_type_indices.get(&layout_id).is_none() {
@@ -1189,19 +1191,17 @@ fn freeze_utf8_host_handle_materialize_plans(
                     // 聚合字段读与数组元素读同属宿主 i32 句柄载体：字段物理字节是 i32
                     // 时（`utf8`/`utf16` 已按同一编组合同落成句柄），结果 SSA 若带已登记
                     // gc struct layout 就必须在编码期物化，配方要在这里一并冻结。
-                    MirInstructionKind::TupleGet { layout_id, index, .. } => {
-                        ctx.layout_by_id(*layout_id)
-                            .and_then(|layout| layout.fields.get(*index as usize))
-                            .map(|field| wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref))
-                            .transpose()?
-                            .is_some_and(|byte| byte == VALTYPE_I32)
-                    }
-                    MirInstructionKind::FieldGet { field, .. } => {
-                        ctx.field_layout_by_id(*field)
-                            .map(|(_, field_layout, _)| wasm_gc_field_type_byte_for_glue(&field_layout.ty, js_glue_utf8_as_anyref))
-                            .transpose()?
-                            .is_some_and(|byte| byte == VALTYPE_I32)
-                    }
+                    MirInstructionKind::TupleGet { layout_id, index, .. } => ctx
+                        .layout_by_id(*layout_id)
+                        .and_then(|layout| layout.fields.get(*index as usize))
+                        .map(|field| wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref))
+                        .transpose()?
+                        .is_some_and(|byte| byte == VALTYPE_I32),
+                    MirInstructionKind::FieldGet { field, .. } => ctx
+                        .field_layout_by_id(*field)
+                        .map(|(_, field_layout, _)| wasm_gc_field_type_byte_for_glue(&field_layout.ty, js_glue_utf8_as_anyref))
+                        .transpose()?
+                        .is_some_and(|byte| byte == VALTYPE_I32),
                     MirInstructionKind::Call { callee: MirOperand::Item(callee), .. } => {
                         matches!(
                             callee_wasm_operator.get(callee),
@@ -1747,9 +1747,7 @@ fn emit_library_field_accessors<'name>(
     ) {
         match ty {
             NyarType::Array(element) => {
-                array_elements
-                    .entry(wasm_array_element_type_key(element))
-                    .or_insert_with(|| element.as_ref().clone());
+                array_elements.entry(wasm_array_element_type_key(element)).or_insert_with(|| element.as_ref().clone());
                 worklist.push(element.as_ref().clone());
             }
             NyarType::FixedArray { element, .. } | NyarType::Nullable(element) => {
@@ -1781,7 +1779,7 @@ fn emit_library_field_accessors<'name>(
     }
 
     let mut worklist: Vec<NyarType> = Vec::new();
-    for (instance, _) in submission.backend_plan.wasm_export_names() {
+    for (instance, _) in submission.backend_plan.export_names() {
         let Some(view) = submission.backend_plan.get_function(instance)
         else {
             continue;
@@ -1947,7 +1945,8 @@ fn emit_library_field_accessors<'name>(
     for (nominal, sum) in &reachable_sums {
         let sum_type_index = reachable_sum_type_indices[nominal];
         for variant in &sum.variants {
-            let Some(payload_ty) = &variant.payload_type else {
+            let Some(payload_ty) = &variant.payload_type
+            else {
                 continue;
             };
             let carrier = wasm_param_value_type_for(ctx, payload_ty, None, gc_struct_type_indices, js_glue_utf8_as_anyref)?;
@@ -1960,7 +1959,7 @@ fn emit_library_field_accessors<'name>(
                     return Err(format!(
                         "sum `{}` 变体 `{}` 的载荷载体 {other} 没有冻结的装箱配方，拒绝发射 payload accessor",
                         sum.name, variant.name
-                    ))
+                    ));
                 }
             };
             let name = super::abi_schema::sum_payload_accessor_export_name(sum, variant);

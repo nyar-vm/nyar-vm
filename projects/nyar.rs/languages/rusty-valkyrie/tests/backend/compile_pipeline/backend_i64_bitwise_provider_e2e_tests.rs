@@ -210,13 +210,13 @@ micro i64_shr(a: i64, b: i64): i64
 #[cfg(feature = "ovm-lane")]
 mod ovm {
     use super::*;
-    use odin_bytecode::{OdinExportKind, OdinHeadCode, OdinImportKind, encode_module};
+    use acorn_odin::{OdinExportKind, OdinHeadCode, OdinImportKind, encode_module};
     use odin_vm::{executor::Executor, module::LoadedModule, value::Value};
 
     fn lower_ovm(
         groups: &[CompilerSourceGroup],
         bindings: &[rusty_valkyrie::compiler::emitter::pipeline::CompilerHostProviderBinding],
-    ) -> Result<odin_bytecode::OdinModuleData, String> {
+    ) -> Result<acorn_odin::OdinModuleData, String> {
         let program = compile(groups, bindings)?;
         let plan = plan_for(&program)?;
         nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))

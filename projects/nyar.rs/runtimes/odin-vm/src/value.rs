@@ -8,14 +8,14 @@
 pub use nyar_gc::{CoroutineState, ObjectId, Value};
 
 /// Converts a constant-pool entry into a runtime value.
-pub fn value_from_constant(constant: &odin_bytecode::OdinConstant) -> Value {
+pub fn value_from_constant(constant: &acorn_odin::OdinConstant) -> Value {
     match constant {
-        odin_bytecode::OdinConstant::Null => Value::Null,
-        odin_bytecode::OdinConstant::Boolean(value) => Value::Bool(*value),
-        odin_bytecode::OdinConstant::Integer32(value) => Value::I32(*value),
-        odin_bytecode::OdinConstant::Integer64(value) => Value::I64(*value),
-        odin_bytecode::OdinConstant::Float64(value) => Value::F64(*value),
-        odin_bytecode::OdinConstant::String(value) => Value::String(value.clone()),
-        odin_bytecode::OdinConstant::BigInt(_) => Value::Null,
+        acorn_odin::OdinConstant::Null => Value::Null,
+        acorn_odin::OdinConstant::Boolean(value) => Value::Bool(*value),
+        acorn_odin::OdinConstant::Integer32(value) => Value::I32(*value),
+        acorn_odin::OdinConstant::Integer64(value) => Value::I64(*value),
+        acorn_odin::OdinConstant::Float64(value) => Value::F64(*value),
+        acorn_odin::OdinConstant::String(value) => Value::String(value.clone()),
+        acorn_odin::OdinConstant::BigInt(_) => Value::Null,
     }
 }

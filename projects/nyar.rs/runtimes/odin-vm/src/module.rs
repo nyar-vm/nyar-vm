@@ -1,6 +1,6 @@
 //! 已加载 `.odin` 模块：函数表、常量池、导入解析与全局槽。
 
-use odin_bytecode::{
+use acorn_odin::{
     OdinConstant, OdinExport, OdinFunction, OdinGlobal, OdinImport, OdinLayout, OdinModuleData, OdinWitnessDispatchEntry, decode_module,
 };
 
@@ -110,7 +110,7 @@ impl LoadedModule {
     pub fn export_index(&self, name: &str) -> Option<usize> {
         self.exports
             .iter()
-            .find(|export| export.kind == odin_bytecode::OdinExportKind::Function && export.symbol_name == name)
+            .find(|export| export.kind == acorn_odin::OdinExportKind::Function && export.symbol_name == name)
             .map(|export| export.function_index as usize)
     }
 
@@ -118,7 +118,7 @@ impl LoadedModule {
     pub fn export_global_index(&self, name: &str) -> Option<usize> {
         self.exports
             .iter()
-            .find(|export| export.kind == odin_bytecode::OdinExportKind::Global && export.symbol_name == name)
+            .find(|export| export.kind == acorn_odin::OdinExportKind::Global && export.symbol_name == name)
             .map(|export| export.function_index as usize)
     }
 }

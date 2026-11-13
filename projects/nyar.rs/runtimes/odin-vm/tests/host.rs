@@ -1,5 +1,5 @@
 use nyar_gc::ObjectHeap;
-use odin_bytecode::OdinImport;
+use acorn_odin::OdinImport;
 use odin_vm::{
     host::{HostOp, ResolvedImport, execute_host_op, parse_host_op, resolve_import},
     value::Value,
@@ -27,10 +27,10 @@ fn parses_i64_bitwise_host_ops() {
     assert_eq!(parse_host_op("i64_shl"), Some(HostOp::I64Shl));
     assert_eq!(parse_host_op("i64_shr"), Some(HostOp::I64Shr));
     // `i64_shr_u` 是逻辑右移（`u64` 的 `>>`），已登记；未登记的签名变体仍须在加载期拒绝。
-    let known = OdinImport { kind: odin_bytecode::OdinImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_shr_u".into() };
+    let known = OdinImport { kind: acorn_odin::OdinImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_shr_u".into() };
     assert_eq!(resolve_import(&known).expect("i64_shr_u 已登记"), ResolvedImport::Host(HostOp::I64ShrU));
     let unknown =
-        OdinImport { kind: odin_bytecode::OdinImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_shr_s".into() };
+        OdinImport { kind: acorn_odin::OdinImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_shr_s".into() };
     assert!(resolve_import(&unknown).is_err(), "未登记的位移符号必须在加载期拒绝，不得静默外部化");
 }
 
@@ -89,7 +89,7 @@ fn array_host_ops_round_trip_new_length_get_set() {
 
 #[test]
 fn unknown_array_symbol_stays_unresolved_at_load() {
-    let import = OdinImport { kind: odin_bytecode::OdinImportKind::Function, module_name: "nyar.host".into(), symbol_name: "array.foo".into() };
+    let import = OdinImport { kind: acorn_odin::OdinImportKind::Function, module_name: "nyar.host".into(), symbol_name: "array.foo".into() };
     assert!(resolve_import(&import).is_err(), "未登记的 `nyar.host` 符号必须在加载期拒绝，不得静默外部化");
 }
 
@@ -106,6 +106,6 @@ fn begin_and_end_phase_update_heap_strategy() {
 
 #[test]
 fn resolves_non_host_as_external() {
-    let import = OdinImport { kind: odin_bytecode::OdinImportKind::Function, module_name: "guest.mod".into(), symbol_name: "whatever".into() };
+    let import = OdinImport { kind: acorn_odin::OdinImportKind::Function, module_name: "guest.mod".into(), symbol_name: "whatever".into() };
     assert_eq!(resolve_import(&import).unwrap(), ResolvedImport::External);
 }

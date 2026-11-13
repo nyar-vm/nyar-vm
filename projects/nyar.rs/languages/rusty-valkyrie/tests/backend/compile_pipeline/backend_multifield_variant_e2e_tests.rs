@@ -155,7 +155,7 @@ fn run_ovm_main(program: &nyar_types::CompiledProgram) -> Value {
     let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
         .expect("ovm 模块必须完成降低");
     let entry = module.exports.iter().map(|export| export.symbol_name.clone()).find(|name| name.ends_with("main")).expect("必须导出 main 入口");
-    let bytes = odin_bytecode::encode_module(&module);
+    let bytes = acorn_odin::encode_module(&module);
     let mut vm = OdinVm::new();
     let loaded = vm.load(&bytes).expect("模块必须通过加载期校验");
     vm.run(&loaded, &entry, Vec::new()).expect("main 必须在 OVM 内真实执行成功")

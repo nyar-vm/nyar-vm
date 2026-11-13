@@ -50,12 +50,12 @@ pub(super) struct MirBuilder {
     pub(super) current_return_type: ValkyrieType,
     /// `MIR` lowering 过程中收集的编译期诊断。
     pub(super) diagnostics: Vec<MirDiagnostic>,
-    /// 可在 `catch` 调用点内联的效应函数（函数名 → 函数定义）。
+    /// 模块内效应函数的冻结身份集合。
     ///
-    /// 由 [`effect_lowering::collect_effectful_inline_targets`] 在 lowering 入口预先构造。
-    /// 仅包含含 `raise`、无 `return`、非递归的模块级函数。`lower_catch_expr` 在调用点
-    /// 检查被调用函数是否在此映射中，若是则内联其函数体以实现跨函数 `raise` 传播。
-    pub(super) effectful_inline_targets: BTreeMap<String, HirFunction>,
+    /// 由 [`effect_lowering::collect_effectful_callees`] 在 lowering 入口预先构造。
+    /// `catch` 调用点只按 `ItemInstanceId` / `ItemId` 读取函数体或判定效应义务，
+    /// 不接受名称索引或表面名回退。
+    pub(super) effectful_callees: super::effect_lowering::EffectfulCallees,
     /// HIR 冻结的 callable 返回类型；`Call` SSA 结果须与 MIR 定义签名一致。
     pub(super) callable_returns: CallableReturnTypes,
     /// 声明期冻结的成员分派表；模式比较与延迟要求共用。
@@ -115,7 +115,7 @@ impl MirBuilder {
     pub(super) fn new(
         aggregate_layouts: AggregateLayoutPlan,
         singleton_accessor_instances: BTreeMap<String, nyar_types::ItemInstanceId>,
-        effectful_inline_targets: BTreeMap<String, HirFunction>,
+        effectful_callees: super::effect_lowering::EffectfulCallees,
         callable_returns: CallableReturnTypes,
         member_dispatch: Vec<super::generic_call_instantiation::MirDispatchEntry>,
         impl_owner_type: Option<ValkyrieType>,
@@ -156,7 +156,7 @@ impl MirBuilder {
             control_flow: MirBuilderControlFlow::default(),
             current_return_type: ValkyrieType::Unit,
             diagnostics: Vec::new(),
-            effectful_inline_targets,
+            effectful_callees,
             callable_returns,
             member_dispatch,
             impl_owner_type,

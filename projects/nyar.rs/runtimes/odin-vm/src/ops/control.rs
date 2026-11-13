@@ -1,4 +1,4 @@
-use odin_bytecode::{IntrinsicOpcode, OdinHeadCode, OdinInstruction};
+use acorn_odin::{IntrinsicOpcode, OdinHeadCode, OdinInstruction};
 
 use crate::{
     array_runtime::{array_get, array_length, array_push, array_set},
@@ -93,7 +93,7 @@ pub fn execute_control(
             Ok(StepResult::Continue)
         }
         OdinHeadCode::CallIntrinsic => {
-            // 指令身份由 `odin_bytecode::IntrinsicOpcode`（OVM 私有格式合同）给出；
+            // 指令身份由 `acorn_odin::IntrinsicOpcode`（OVM 私有格式合同）给出；
             // 未知操作数 fail-closed，不得猜测或回落到语言 builtin 表。
             let intrinsic_index = instruction.operand1;
             let arg_count = instruction.operand2.max(0) as usize;

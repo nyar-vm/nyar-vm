@@ -1,5 +1,5 @@
 use nyar_jit::*;
-use odin_bytecode::{Odin_VERSION, OdinHeadCode};
+use acorn_odin::{Odin_VERSION, OdinHeadCode};
 
 fn request(code: Vec<u8>) -> JitCompileRequest {
     request_with_constants(code, Vec::new())

@@ -259,27 +259,36 @@ fn residualize_expr(
         }
         LuaExpr::Table { .. } | LuaExpr::Index { .. } | LuaExpr::Field { .. } => sink.unsupported("tables"),
         LuaExpr::Binary { op, left, right } => match op.as_str() {
+            // Lua 的 `and`/`or` 返回**操作数**，不是布尔值（`7 or 9 == 7`）。
+            // 残差必须保留左侧值：用临时槽保存并只在短路分支重新载入，
+            // 不得把结果塌缩成 `true`/`false`。
             "and" => {
+                let temp = unique_label("and_operand");
                 let false_l = unique_label("and_false");
                 let end_l = unique_label("and_end");
                 residualize_expr(left, sink, functions)?;
+                sink.store(&temp);
+                sink.load(&temp);
                 sink.jump_if_false(&false_l);
                 residualize_expr(right, sink, functions)?;
                 sink.jump(&end_l);
                 sink.label(&false_l);
-                sink.push_bool(false);
+                sink.load(&temp);
                 sink.label(&end_l);
                 Ok(())
             }
             "or" => {
+                let temp = unique_label("or_operand");
                 let true_l = unique_label("or_true");
                 let end_l = unique_label("or_end");
                 residualize_expr(left, sink, functions)?;
+                sink.store(&temp);
+                sink.load(&temp);
                 sink.jump_if_true(&true_l);
                 residualize_expr(right, sink, functions)?;
                 sink.jump(&end_l);
                 sink.label(&true_l);
-                sink.push_bool(true);
+                sink.load(&temp);
                 sink.label(&end_l);
                 Ok(())
             }

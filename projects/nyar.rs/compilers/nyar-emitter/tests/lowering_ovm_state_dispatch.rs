@@ -15,7 +15,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_nyar_module,
 };
 use nyar_types::NyarType;
-use odin_bytecode::{OdinConstant, OdinModuleData};
+use acorn_odin::{OdinConstant, OdinModuleData};
 
 fn state_integer32() -> NyarType {
     NyarType::Integer32 { signed: true }

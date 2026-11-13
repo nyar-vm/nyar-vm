@@ -18,7 +18,6 @@ fn main() {
         "../../compilers/nyar-runner/src",
         "../../compilers/nyar-types/src",
         "../../compilers/nyar-workspace/src",
-        "../../formats/odin-bytecode/src",
         "../../runtimes/odin-vm/src",
     ] {
         println!("cargo:rerun-if-changed={dir}");

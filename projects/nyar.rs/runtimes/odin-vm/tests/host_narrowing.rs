@@ -8,7 +8,7 @@
 //!
 //! 成功与失败都走真实 `CallImport` 路径，避免只测分派表。
 
-use odin_bytecode::{
+use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData, emit_imm1,
     emit_imm2, emit_plain, encode_module,
 };

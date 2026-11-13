@@ -226,7 +226,7 @@ pub(super) fn register_gc_sum_types(ctx: &ExecutableLoweringContext, type_indice
     // 函数体里没有任何 `Sum*` 指令；tag / payload accessor 的 `ref.cast` 必须
     // 指向同一份已注册类型，否则发射期无法闭合并只能失败。
     // 递归展开走目标中立的 `AbiStructure`，不在本模块复制类型形状推导。
-    for (instance, _) in exec.wasm_export_names() {
+    for (instance, _) in exec.export_names() {
         let Some(view) = exec.get_function(instance)
         else {
             continue;

@@ -8,7 +8,7 @@
 //!
 //! 类内部名与方法命名都是稳定规则：类内部名取模块名与片段 id 的
 //! [`crate::lowering::sanitize_symbol`] 结果；导出函数取计划冻结的
-//! `wasm_export_names`，其余可达函数取 ABI 名的
+//! `export_names`，其余可达函数取 ABI 名的
 //! [`crate::lowering::sanitize_jvm_method_symbol`] 结果，冲突时追加稳定序号。
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -140,14 +140,14 @@ pub(crate) struct JvmLoweredFragment {
 
 /// 将片段降低为单个 JVM `class`，并为每个导出入口生成 argv launcher。
 ///
-/// 只降低导出面（`wasm_export_names` / `exported_operations` / 入口操作）以及
+/// 只降低导出面（`export_names` / `exported_operations` / 入口操作）以及
 /// 从它们出发、经同片段静态调用可达的函数；其余函数不进入 class，避免为不可达
 /// 形状发明载体。
 pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<JvmLoweredFragment> {
     let plan = &submission.backend_plan;
     let operations = collect_jvm_operations(submission);
     if operations.is_empty() {
-        return Err("JVM 最小 lowering 没有可导出的可执行函数：片段既无 `wasm_export_names` 也无入口操作，拒绝凭空生成 class".to_string());
+        return Err("JVM 最小 lowering 没有可导出的可执行函数：片段既无 `export_names` 也无入口操作，拒绝凭空生成 class".to_string());
     }
 
     let mut used_names = BTreeMap::<String, ()>::new();
@@ -157,7 +157,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
         let view = plan.get_function(instance).ok_or_else(|| format!("JVM 最小 lowering：可达操作 `{instance:?}` 缺少函数体"))?;
         logical_signatures.insert(*instance, (view.function.param_types.clone(), view.function.return_type.clone()));
         let base = plan
-            .wasm_export_names()
+            .export_names()
             .get(instance)
             .cloned()
             .or_else(|| plan.abi_name_for_instance(*instance).map(|name| crate::lowering::sanitize_jvm_method_symbol(&name)))
@@ -189,7 +189,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
         class_file.methods.push(lower_function(submission, &internal_name, &view.function, &method, &method_plans, &operator_by_instance)?);
     }
 
-    let (launcher_classes, managed_abi) = build_managed_abi_surface(&class_file, plan.wasm_export_names(), &method_plans, &logical_signatures)?;
+    let (launcher_classes, managed_abi) = build_managed_abi_surface(&class_file, plan.export_names(), &method_plans, &logical_signatures)?;
     let mut companion_classes = build_layout_classes(plan.aggregate_layouts())?;
     companion_classes.extend(build_sum_classes(submission)?);
     companion_classes.extend(launcher_classes);
@@ -382,7 +382,7 @@ fn argument_parse_method_ref(descriptor: &JvmTypeDescriptor) -> Result<JvmMethod
 fn collect_jvm_operations(submission: &FragmentSubmission) -> Vec<ItemInstanceId> {
     let plan = &submission.backend_plan;
     let mut roots = BTreeSet::new();
-    roots.extend(plan.wasm_export_names().keys().copied());
+    roots.extend(plan.export_names().keys().copied());
     roots.extend(plan.exported_operations().iter().copied());
     if let Some(entry) = plan.entry_operation() {
         roots.insert(entry);
@@ -580,13 +580,13 @@ fn jvm_array_creation_instruction(element: &JvmTypeDescriptor) -> Result<JvmInst
         JvmTypeDescriptor::Byte => JvmInstruction::NewArray(8),
         JvmTypeDescriptor::Short => JvmInstruction::NewArray(9),
         JvmTypeDescriptor::Int => JvmInstruction::NewArray(10),
+        // JVM 原生支持 `long`/`float`/`double` 基本类型数组；不再为编码器缺能力
+        // 而改变语言数组的物理表示或分配行为。
+        JvmTypeDescriptor::Long => JvmInstruction::NewArray(11),
+        JvmTypeDescriptor::Float => JvmInstruction::NewArray(6),
+        JvmTypeDescriptor::Double => JvmInstruction::NewArray(7),
         JvmTypeDescriptor::Object(name) => JvmInstruction::ANewArray(name.clone()),
         JvmTypeDescriptor::Array(_) => JvmInstruction::ANewArray(element.to_string()),
-        JvmTypeDescriptor::Long | JvmTypeDescriptor::Float | JvmTypeDescriptor::Double => {
-            return Err(format!(
-                "JVM 最小 lowering：`{element}` 数组元素必须使用装箱引用数组，禁止生成无元素存取指令的原生数组"
-            ));
-        }
         JvmTypeDescriptor::Void => return Err("JVM 最小 lowering：`void` 不能作为数组元素载体".to_string()),
     })
 }
@@ -598,10 +598,10 @@ fn jvm_array_access_instructions(element: &JvmTypeDescriptor) -> Result<(JvmInst
         JvmTypeDescriptor::Char => (JvmInstruction::CALoad, JvmInstruction::CAStore),
         JvmTypeDescriptor::Short => (JvmInstruction::SALoad, JvmInstruction::SAStore),
         JvmTypeDescriptor::Int => (JvmInstruction::IALoad, JvmInstruction::IAStore),
+        JvmTypeDescriptor::Long => (JvmInstruction::LALoad, JvmInstruction::LAStore),
+        JvmTypeDescriptor::Float => (JvmInstruction::FALoad, JvmInstruction::FAStore),
+        JvmTypeDescriptor::Double => (JvmInstruction::DALoad, JvmInstruction::DAStore),
         JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_) => (JvmInstruction::AALoad, JvmInstruction::AAStore),
-        JvmTypeDescriptor::Long | JvmTypeDescriptor::Float | JvmTypeDescriptor::Double => {
-            return Err(format!("JVM 最小 lowering：`{element}` 数组元素缺少 `laload`/`faload`/`daload` 指令，必须先装箱"));
-        }
         JvmTypeDescriptor::Void => return Err("JVM 最小 lowering：`void` 不能作为数组元素载体".to_string()),
     })
 }
@@ -694,9 +694,9 @@ fn jvm_array_element_descriptor(layouts: &AggregateLayoutPlan, element: &NyarTyp
         // V 的 `char` 是 u32 码位载体；JVM `char` 只有 16 位，会把 U+10000 以上截断。
         // 物理载体固定为 32 位 int，UTF-16 code unit 转换只在显式编码边界发生。
         NyarType::Character => JvmTypeDescriptor::Int,
-        NyarType::Integer64 { .. } => JvmTypeDescriptor::Object("java/lang/Long".to_string()),
-        NyarType::Float32 => JvmTypeDescriptor::Object("java/lang/Float".to_string()),
-        NyarType::Float64 => JvmTypeDescriptor::Object("java/lang/Double".to_string()),
+        NyarType::Integer64 { .. } => JvmTypeDescriptor::Long,
+        NyarType::Float32 => JvmTypeDescriptor::Float,
+        NyarType::Float64 => JvmTypeDescriptor::Double,
         NyarType::Utf8 | NyarType::Utf16 => JvmTypeDescriptor::Object("java/lang/String".to_string()),
         // 名义布局按冻结身份取 companion 类名；值存储聚合没有单槽 JVM 载体。
         NyarType::Nominal { layout, spelling } => {
@@ -711,8 +711,13 @@ fn jvm_array_element_descriptor(layouts: &AggregateLayoutPlan, element: &NyarTyp
                 return Err(format!("JVM 最小 lowering 不支持值存储聚合 `{spelling}` 作为数组元素：缺少单槽 JVM 载体合同"));
             }
         }
-        // 泛型实例（`Option<char>` 等）：存储类由形状决定为引用，按擦除载体。
-        NyarType::Apply(..) => JvmTypeDescriptor::Object(JVM_REFERENCE_CARRIER.to_string()),
+        // 泛型实例必须携带 canonical 冻结的实例级布局；计划边界会把它结算成
+        // `Nominal`。走到这里的 `Apply` 说明实例表示未结算，禁止按引用擦除掩盖缺口。
+        NyarType::Apply(..) => {
+            return Err(format!(
+                "JVM 最小 lowering：泛型实例 `{element}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"
+            ));
+        }
         NyarType::Array(inner) | NyarType::FixedArray { element: inner, .. } => {
             JvmTypeDescriptor::array(jvm_array_element_descriptor(layouts, inner)?)
         }
@@ -766,9 +771,13 @@ pub(crate) fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) 
                 return Err(format!("JVM 最小 lowering：可空标量 `{ty}` 需要 sum 表示，不得静默装箱"));
             }
         }
-        // 泛型实例（`Option<char>` 等）：存储类由形状决定为引用，载体按
-        // [`JVM_REFERENCE_CARRIER`] 擦除；实例级布局仍在计划中按身份冻结。
-        NyarType::Apply(..) => JvmTypeDescriptor::Object(JVM_REFERENCE_CARRIER.to_string()),
+        // 泛型实例的实例表示必须在计划边界结算为携带布局身份的 `Nominal`；
+        // 缺少冻结布局身份即缺载体合同，禁止按引用擦除。
+        NyarType::Apply(..) => {
+            return Err(format!(
+                "JVM 最小 lowering：泛型实例 `{ty}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"
+            ));
+        }
         // 携带身份的名义类型：存储类按 `layout` 身份解析，引用/值存储都指向
         // companion 布局类。JVM 没有内联结构体，逐字段拷贝由 `AggregateCopy` 承担，
         // 它是唯一允许的复制路径；零字段值布局与 wasm 标量语义一致，维持结构化失败。
@@ -2062,6 +2071,18 @@ impl JvmMethodEmitter<'_> {
         self.emit_operand(array, Some(JvmSlotKind::Reference))?;
         self.emit_operand(index, Some(JvmSlotKind::Int))?;
         self.instructions.push(load);
+        // `baload` / `saload` 执行符号扩展；无符号 8/16 位元素必须显式零扩展，
+        // 否则 `255` / `65535` 会读成 `-1`。物理 descriptor 只决定存取指令，
+        // 逻辑元素的 signedness 仍来自语言类型。
+        let zero_extension_mask = match &element {
+            NyarType::Integer8 { signed: false } => Some(0xFF),
+            NyarType::Integer16 { signed: false } => Some(0xFFFF),
+            _ => None,
+        };
+        if let Some(mask) = zero_extension_mask {
+            self.instructions.push(JvmInstruction::IConst(mask));
+            self.instructions.push(JvmInstruction::IAnd);
+        }
         if matches!(element_descriptor, JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_))
             && target_kind != JvmSlotKind::Reference
         {

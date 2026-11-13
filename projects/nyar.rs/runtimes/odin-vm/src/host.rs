@@ -2,7 +2,7 @@
 
 use crate::error::OdinRuntimeError;
 use nyar_gc::{ObjectHeap, ObjectPayload};
-use odin_bytecode::OdinImport;
+use acorn_odin::OdinImport;
 
 use crate::{array_runtime, dom_runtime, output_runtime, random_runtime, text_runtime, time_runtime, value::Value};
 

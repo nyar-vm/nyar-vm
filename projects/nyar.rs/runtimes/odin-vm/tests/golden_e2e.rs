@@ -1,6 +1,6 @@
 //! End-to-end golden path: encode `.odin` → load → execute.
 
-use odin_bytecode::{
+use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinLayout, OdinModuleData, encode_module,
 };
 use odin_vm::{OdinVm, Value};

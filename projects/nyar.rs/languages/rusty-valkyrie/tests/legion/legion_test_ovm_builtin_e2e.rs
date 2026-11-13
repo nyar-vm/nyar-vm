@@ -317,7 +317,7 @@ fn ovm_unconditional_panic_is_a_runtime_failure() {
 
 #[test]
 fn ovm_runner_classifies_bytecode_completion_suspension_and_trap() {
-    use odin_bytecode::{
+    use acorn_odin::{
         Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1, emit_plain,
         encode_module,
     };

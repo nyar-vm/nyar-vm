@@ -1,6 +1,6 @@
 //! 第 4 层：console / time / random / math 宿主符号族。
 
-use odin_bytecode::{
+use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData, emit_imm1,
     emit_imm2, emit_plain, encode_module,
 };

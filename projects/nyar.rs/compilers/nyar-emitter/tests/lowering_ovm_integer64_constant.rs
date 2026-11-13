@@ -17,7 +17,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_nyar_module,
 };
 use nyar_types::{ImportIndex, InstructionId, ItemInstanceId, NyarType, ProvenanceId};
-use odin_bytecode::{OdinConstant, OdinImport, OdinModuleData};
+use acorn_odin::{OdinConstant, OdinImport, OdinModuleData};
 
 fn integer64() -> NyarType {
     NyarType::Integer64 { signed: true }

@@ -1,4 +1,4 @@
-use odin_bytecode::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
+use acorn_odin::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
 use odin_vm::{
     executor::{Executor, select_local_roots},
     jit::StackMapEntry,

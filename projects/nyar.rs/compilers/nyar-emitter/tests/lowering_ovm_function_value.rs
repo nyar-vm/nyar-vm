@@ -15,7 +15,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_nyar_module,
 };
 use nyar_types::{ItemInstanceId, NyarFunctionType, NyarType};
-use odin_bytecode::{OdinHeadCode, OdinInstruction, OdinModuleData, decode_at};
+use acorn_odin::{OdinHeadCode, OdinInstruction, OdinModuleData, decode_at};
 
 fn function_type() -> NyarType {
     NyarType::Function(Box::new(NyarFunctionType { params: Vec::new(), return_type: NyarType::Integer32 { signed: true } }))
@@ -140,14 +140,14 @@ fn ovm_function_value_lowers_to_closure_object_and_call_indirect() {
     let constant = instructions
         .iter()
         .filter(|instruction| instruction.code == OdinHeadCode::Constant)
-        .find(|instruction| module.constants.get(instruction.operand1 as usize) == Some(&odin_bytecode::OdinConstant::Integer32(0)))
+        .find(|instruction| module.constants.get(instruction.operand1 as usize) == Some(&acorn_odin::OdinConstant::Integer32(0)))
         .expect("LoadFunctionRef 必须把 callee 函数表下标写进闭包槽 0");
     assert_eq!(constant.code, OdinHeadCode::Constant);
     assert!(
         instructions
             .iter()
             .any(|instruction| instruction.code == OdinHeadCode::Constant
-                && module.constants.get(instruction.operand1 as usize) == Some(&odin_bytecode::OdinConstant::Null)),
+                && module.constants.get(instruction.operand1 as usize) == Some(&acorn_odin::OdinConstant::Null)),
         "无捕获闭包的环境槽必须显式写 null"
     );
 

@@ -35,7 +35,7 @@ Package name: `odin-vm`. Rust import path: `odin_vm`.
 ## Usage
 
 ```rust
-use odin_bytecode::encode_module;
+use acorn_odin::encode_module;
 use odin_vm::{Ovm, Value};
 
 let bytes = encode_module(&module_data);
@@ -50,5 +50,5 @@ code.
 ## Boundaries
 
 - Does **not** parse source code or lower HIR/MIR.
-- Does **not** own the on-disk bytecode format contract (see `odin-bytecode`).
+- Does **not** own the on-disk bytecode format contract (see `acorn-odin`).
 - Re-exports GC types for convenience but heap policy lives in `nyar-gc`.

@@ -40,7 +40,7 @@ impl ExecutionOutcome {
 /// NJ1 编译缓存键：`(module.version, module.name, function_index)`。
 type Nj1CacheKey = (u32, String, usize);
 
-pub(crate) fn validate_argument_count(function: &odin_bytecode::OdinFunction, actual: usize) -> Result<(), OdinRuntimeError> {
+pub(crate) fn validate_argument_count(function: &acorn_odin::OdinFunction, actual: usize) -> Result<(), OdinRuntimeError> {
     if usize::try_from(function.arity).ok() != Some(actual) {
         return Err(OdinRuntimeError::ModuleLoad(format!(
             "function `{}` argument count mismatch: expected {}, got {actual}",

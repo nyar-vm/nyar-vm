@@ -1,6 +1,6 @@
 //! 有限标量模式匹配 → NJ1 机器码 blob（无原生可执行页）。
 
-use odin_bytecode::{OdinHeadCode, decode_at};
+use acorn_odin::{OdinHeadCode, decode_at};
 
 use crate::{
     JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, baseline_scalar_assumptions, build_baseline_deopt_map,
@@ -598,14 +598,14 @@ fn match_select_cmp_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<
     }
 }
 
-fn const_i32(ins: &odin_bytecode::OdinInstruction, constant_i32: &[Option<i32>]) -> Option<i32> {
+fn const_i32(ins: &acorn_odin::OdinInstruction, constant_i32: &[Option<i32>]) -> Option<i32> {
     if ins.code != OdinHeadCode::Constant || ins.operand1 < 0 {
         return None;
     }
     constant_i32.get(ins.operand1 as usize).copied().flatten()
 }
 
-fn load_slot(ins: &odin_bytecode::OdinInstruction) -> Option<u16> {
+fn load_slot(ins: &acorn_odin::OdinInstruction) -> Option<u16> {
     match ins.code {
         OdinHeadCode::LoadLocal | OdinHeadCode::LoadArg if ins.operand1 >= 0 => Some(ins.operand1 as u16),
         _ => None,

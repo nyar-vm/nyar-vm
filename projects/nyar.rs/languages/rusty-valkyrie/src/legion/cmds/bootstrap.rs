@@ -10,6 +10,7 @@ use std::{
 };
 
 use crate::legion::cmds::run::{ExecutionManifest, select_artifact};
+use nyar_emitter::backend::clr::host_process::{configure_quiet_host_command, suppress_host_error_dialogs};
 
 /// `legion bootstrap` 的命令参数。
 #[derive(Debug, Clone)]
@@ -670,25 +671,21 @@ fn verify_jvm_cli_runtime(artifact_path: &Path) -> LegionResult<()> {
 
 /// 通过 `dotnet exec` 运行 CLR 产物。
 fn run_dotnet_cli(artifact: &str, args: &[&str], cwd: &Path) -> LegionResult<ExitStatus> {
-    let output = Command::new("dotnet")
-        .arg("exec")
-        .arg(artifact)
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .map_err(|e| LegionError::msg(format!("无法执行 dotnet: {e}")))?;
+    suppress_host_error_dialogs();
+    let mut command = Command::new("dotnet");
+    command.arg("exec").arg(artifact).args(args).current_dir(cwd);
+    configure_quiet_host_command(&mut command);
+    let output = command.output().map_err(|e| LegionError::msg(format!("无法执行 dotnet: {e}")))?;
     Ok(output.status)
 }
 
 /// 通过本机 `java -jar` 运行 JVM 产物。
 fn run_java_jar_cli(artifact: &str, args: &[&str], cwd: &Path) -> LegionResult<ExitStatus> {
-    let output = Command::new("java")
-        .arg("-jar")
-        .arg(artifact)
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .map_err(|e| LegionError::msg(format!("无法执行 java: {e}")))?;
+    suppress_host_error_dialogs();
+    let mut command = Command::new("java");
+    command.arg("-jar").arg(artifact).args(args).current_dir(cwd);
+    configure_quiet_host_command(&mut command);
+    let output = command.output().map_err(|e| LegionError::msg(format!("无法执行 java: {e}")))?;
     Ok(output.status)
 }
 
@@ -701,14 +698,17 @@ fn run_cli_program(program: &str, args: &[&str]) -> LegionResult<ExitStatus> {
 }
 
 fn compiler_command(seed: &Path) -> Command {
+    suppress_host_error_dialogs();
     if is_managed_jvm_artifact(seed) {
         let mut cmd = Command::new("java");
         cmd.arg("-jar").arg(seed);
+        configure_quiet_host_command(&mut cmd);
         cmd
     }
     else if is_managed_clr_artifact(seed) {
         let mut cmd = Command::new("dotnet");
         cmd.arg("exec").arg(seed);
+        configure_quiet_host_command(&mut cmd);
         cmd
     }
     else {

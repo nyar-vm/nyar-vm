@@ -241,13 +241,11 @@ pub(crate) fn lookup_member_dispatch(
     }
 }
 
+/// 分派主体匹配只认完整类型的结构统一。
+///
+/// 结构统一失败（例如 `Array<T>` 与 `Array<U>`、不同 binder 实例）时不得退回
+/// nominal 短名比较：那会丢掉元素/类型参数事实，让同名但不同实例的成员互相命中。
 fn dispatch_subject_matches(entry_target: &ValkyrieType, subject: &ValkyrieType) -> bool {
     let mut substitutions = BTreeMap::new();
-    if unify_generic_instantiation(entry_target, subject, &mut substitutions) {
-        return true;
-    }
-    match (nominal_type_name(entry_target), nominal_type_name(subject)) {
-        (Some(left), Some(right)) => left == right,
-        _ => false,
-    }
+    unify_generic_instantiation(entry_target, subject, &mut substitutions)
 }

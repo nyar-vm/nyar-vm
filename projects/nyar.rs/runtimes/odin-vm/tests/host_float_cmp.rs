@@ -8,7 +8,7 @@
 //!
 //! adaptor 侧尚未声明这些符号，V 侧暂不可达；本层只把 VM 侧能力做实。
 
-use odin_bytecode::{
+use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind, OdinModuleData, emit_imm1,
     emit_imm2, emit_plain, encode_module,
 };

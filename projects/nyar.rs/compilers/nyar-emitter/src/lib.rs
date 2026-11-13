@@ -18,7 +18,7 @@ mod target_execution_plan;
 pub mod target_operator;
 
 mod error;
-pub use error::{EmitterError, Result};
+pub use error::{EmitterError, FragmentLoweringError, Result, TargetPlanError};
 
 pub mod managed_abi;
 pub use managed_abi::{MANAGED_ABI_SCHEMA_VERSION, ManagedAbiContract, ManagedAbiEntry};
@@ -58,6 +58,36 @@ use crate::{
 
 pub(crate) use backend_plan_views::{FunctionView, SuspendMetadataView};
 pub use lowering::pattern_matching_contract::{PatternMatchingContractError, validate_pattern_matching_invariants};
+
+/// canonical 原语拼写的测试载体映射（仅单测使用）。
+///
+/// 生产路径的类型载体只来自 canonical 身份；测试需要一个与 canonical 词汇一致的
+/// 构造入口，集中在这里避免各测试模块各写一份名字表。语言表面拼写（`byte`、
+/// `Utf8Text` 等）刻意不在此支持。
+#[cfg(test)]
+pub(crate) fn test_canonical_primitive(spelling: &str) -> nyar_types::NyarType {
+    match spelling {
+        "bool" => nyar_types::NyarType::Boolean,
+        "i8" => nyar_types::NyarType::Integer8 { signed: true },
+        "u8" => nyar_types::NyarType::Integer8 { signed: false },
+        "i16" => nyar_types::NyarType::Integer16 { signed: true },
+        "u16" => nyar_types::NyarType::Integer16 { signed: false },
+        "i32" => nyar_types::NyarType::Integer32 { signed: true },
+        "u32" => nyar_types::NyarType::Integer32 { signed: false },
+        "i64" => nyar_types::NyarType::Integer64 { signed: true },
+        "u64" => nyar_types::NyarType::Integer64 { signed: false },
+        "i128" => nyar_types::NyarType::Integer128 { signed: true },
+        "u128" => nyar_types::NyarType::Integer128 { signed: false },
+        "f32" => nyar_types::NyarType::Float32,
+        "f64" => nyar_types::NyarType::Float64,
+        "char" => nyar_types::NyarType::Character,
+        "utf8" => nyar_types::NyarType::Utf8,
+        "utf16" => nyar_types::NyarType::Utf16,
+        "unit" => nyar_types::NyarType::Unit,
+        "void" => nyar_types::NyarType::Bottom,
+        other => panic!("测试只支持 canonical 原语拼写: {other}"),
+    }
+}
 pub use nyar::ArtifactPartition;
 
 /// Integration-test support wrappers for crate-internal lowering and compile flows.
@@ -72,7 +102,7 @@ pub mod testing {
     };
     use nyar_types::SingletonInstancePlan;
     #[cfg(feature = "ovm-lane")]
-    use odin_bytecode::OdinModuleData;
+    use acorn_odin::OdinModuleData;
 
     /// Target profile used by normalized physical-contract observations.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,7 +251,7 @@ pub mod testing {
 
     /// Re-export Nyar VM entry resolution for driver-family contract tests.
     #[cfg(feature = "ovm-lane")]
-    pub fn resolve_nyar_entry_symbols(module: &odin_bytecode::OdinModuleData, library_public_exports: &[String]) -> crate::Result<Vec<String>> {
+    pub fn resolve_nyar_entry_symbols(module: &acorn_odin::OdinModuleData, library_public_exports: &[String]) -> crate::Result<Vec<String>> {
         super::driver::families::ovm::resolve_entry_symbols(module, library_public_exports, false)
     }
 
@@ -559,10 +589,10 @@ impl FragmentSubmission {
 #[derive(Debug, Clone)]
 pub struct OvmBackendInput {
     /// Optional Nyar module payload to emit as `.odin`.
-    pub nyar_module: Option<odin_bytecode::OdinModuleData>,
+    pub nyar_module: Option<acorn_odin::OdinModuleData>,
     /// 库导出 ABI 合同（含稳定 digest）；无导出面时为 `None`。
     pub abi_contract: Option<OvmAbiContract>,
-    /// 库模式公开导出名（与 wasm `wasm_export_names` 对齐），用于 run-contract 入口。
+    /// 库模式公开导出名（与 wasm `export_names` 对齐），用于 run-contract 入口。
     pub library_public_exports: Vec<String>,
     /// Output directory.
     pub output_dir: PathBuf,
@@ -644,7 +674,8 @@ impl LoweredBackendInput {
                 output_dir.to_path_buf(),
                 host_flavor,
                 wasm_package_kind,
-            )?,
+            )
+            .map_err(|error| error.to_string())?,
             entry_artifact_name: submission
                 .backend_plan
                 .entry_operation()

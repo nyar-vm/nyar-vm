@@ -11,8 +11,8 @@ name = "odin_vm"
 path = "src/lib.rs"
 
 [dependencies]
-# 执行格式合同：`odin-bytecode`。不得依赖语言前端。
-odin-bytecode = { workspace = true }
+# 执行格式合同：`acorn-odin`。不得依赖语言前端。
+acorn-odin = { workspace = true }
 nyar-gc = { workspace = true }
 nyar-jit = { workspace = true }
 miette = { workspace = true }

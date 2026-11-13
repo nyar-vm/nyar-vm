@@ -1,4 +1,4 @@
-use odin_bytecode::{OdinFunction, OdinHeadCode, emit_imm1};
+use acorn_odin::{OdinFunction, OdinHeadCode, emit_imm1};
 use odin_vm::executable::build_executable_function;
 
 #[test]

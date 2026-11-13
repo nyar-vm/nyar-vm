@@ -353,7 +353,7 @@ fn f64_bits_without_ovm_provider_fail_closed() {
 #[cfg(feature = "ovm-lane")]
 mod ovm {
     use super::*;
-    use odin_bytecode::{OdinExportKind, encode_module};
+    use acorn_odin::{OdinExportKind, encode_module};
     use odin_vm::{executor::Executor, module::LoadedModule, value::Value};
 
     /// 与 `std.adaptor.ovm` 正式形制一致：位重解释走 `[ovm_operator]`，
@@ -374,7 +374,7 @@ micro f64_from_bits(bits: u64): f64
 micro f64_neg(value: f64): f64
 "#;
 
-    fn lower_ovm(statements: &str) -> Result<odin_bytecode::OdinModuleData, String> {
+    fn lower_ovm(statements: &str) -> Result<acorn_odin::OdinModuleData, String> {
         let program = compile_f64_with("u64", statements, OVM_PROVIDERS)?;
         let plan = plan_for(&program)?;
         nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
@@ -479,7 +479,7 @@ micro f64_from_bits(bits: u64): f64
 micro f64_to_bits(value: f64): u64
 "#;
 
-    fn lower_ovm_f32(statements: &str) -> Result<odin_bytecode::OdinModuleData, String> {
+    fn lower_ovm_f32(statements: &str) -> Result<acorn_odin::OdinModuleData, String> {
         let program = compile_f32_with(statements, OVM_F32_PROVIDERS)?;
         let plan = plan_for(&program)?;
         nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
@@ -563,7 +563,7 @@ micro f64_to_bits(value: f64): u64
         format!("    return __f64_to_bits(__f32_from_bits({bits}) as f64)")
     }
 
-    fn lower_ovm_f32_with_return(statements: &str, return_type: &str) -> Result<odin_bytecode::OdinModuleData, String> {
+    fn lower_ovm_f32_with_return(statements: &str, return_type: &str) -> Result<acorn_odin::OdinModuleData, String> {
         let program = ValkyrieCompiler::default()
             .compile_source_groups_to_program_with_host_bindings(
                 &f32_groups_with_return(statements, OVM_F32_PROVIDERS, return_type),

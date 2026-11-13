@@ -68,7 +68,7 @@ fn exported_plan(fixture: ExecutableFunction, name: &str) -> FragmentSubmission 
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("clr_container").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), name.to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), name.to_string());
     FragmentSubmission::from_backend_plan(plan)
 }
 
@@ -129,7 +129,7 @@ fn lowers_array_list_construction_length_and_index_with_typed_elements() {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("clr_container").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "main".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "main".to_string());
     plan.testing_register_nominal_layout(nominal, layout);
     plan.testing_register_field(field_items, 0, 0);
     plan.testing_register_field(field_length, 0, 1);

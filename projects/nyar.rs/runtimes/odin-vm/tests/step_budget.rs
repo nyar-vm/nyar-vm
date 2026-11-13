@@ -3,7 +3,7 @@
 //! 预算按"单次调用"计（覆盖该次 `run` 的整个调用树），超限时报
 //! `StepBudgetExceeded { function, ip, limit }`。
 
-use odin_bytecode::{
+use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1, emit_plain, encode_module,
 };
 use odin_vm::{Value, error::OdinRuntimeError, module::LoadedModule};

@@ -5,7 +5,7 @@
 //! Kept for JS/Python bytecode-pipe probes and temporary stack→`.odin` experiments.
 
 use nyar_analyzer::residual::ResidualSink;
-use odin_bytecode::OdinHeadCode;
+use acorn_odin::OdinHeadCode;
 
 use super::{GenerateModule, StackCompiler};
 

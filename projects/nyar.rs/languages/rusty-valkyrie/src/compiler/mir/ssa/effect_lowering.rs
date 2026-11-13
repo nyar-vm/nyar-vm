@@ -136,63 +136,84 @@ fn hir_block_contains_return(block: &HirBlock) -> bool {
     }) || block.expr.as_ref().is_some_and(|expr| hir_expr_contains_return(expr))
 }
 
-/// 判断 HIR 表达式树中是否调用了指定名称的函数（用于递归检测）。
+/// 效应函数的身份键。
 ///
+/// 已经完成单态化的实例只认 `ItemInstanceId`；声明模板才退回 `ItemId`。
+/// 表面名、限定名与参数个数都不构成调用选择依据。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum CallableKey {
+    /// 单态化实例身份。
+    Instance(nyar_types::ItemInstanceId),
+    /// 未实例化声明的身份。
+    Declaration(nyar_types::ItemId),
+}
+
+fn function_key(function: &HirFunction) -> Option<CallableKey> {
+    function.instance.map(CallableKey::Instance).or_else(|| function.declaration.map(CallableKey::Declaration))
+}
+
+fn resolved_call_key(resolved: &crate::compiler::types::hir::HirResolvedCall) -> Option<CallableKey> {
+    resolved.instance.map(CallableKey::Instance).or_else(|| resolved.declaration.map(CallableKey::Declaration))
+}
+
+/// 判断 HIR 表达式树中是否调用了指定身份的 callable（用于递归检测）。
+///
+/// 递归判定只消费 HIR 已冻结的调用身份；不再按表面名比较。
 /// 不下钻 `Lambda` / `AnonymousClass` 内部。
-fn hir_expr_calls_name(expr: &HirExpr, name: &str) -> bool {
+fn hir_expr_calls_callable(expr: &HirExpr, key: CallableKey) -> bool {
     match &expr.kind {
         HirExprKind::Call { callee, args, resolved, .. } => {
-            let callee_matches = resolved
-                .as_ref()
-                .map(|resolved| resolved.symbol.to_string() == name)
-                .unwrap_or_else(|| callee_name_matches(&callee.kind, name))
-                || callee_name_matches(&callee.kind, name);
-            callee_matches || hir_expr_calls_name(callee, name) || args.iter().any(|arg| hir_expr_calls_name(&arg.value, name))
+            let callee_matches = resolved.as_ref().and_then(resolved_call_key) == Some(key);
+            callee_matches || hir_expr_calls_callable(callee, key) || args.iter().any(|arg| hir_expr_calls_callable(&arg.value, key))
         }
         HirExprKind::Lambda { .. } | HirExprKind::AnonymousClass { .. } => false,
-        HirExprKind::Construct { args, .. } => args.iter().any(|expr| hir_expr_calls_name(expr, name)),
-        HirExprKind::FieldInit { value, .. } => hir_expr_calls_name(value, name),
-        HirExprKind::ArrayNew { length, .. } => hir_expr_calls_name(length, name),
+        HirExprKind::Construct { args, .. } => args.iter().any(|expr| hir_expr_calls_callable(expr, key)),
+        HirExprKind::FieldInit { value, .. } => hir_expr_calls_callable(value, key),
+        HirExprKind::ArrayNew { length, .. } => hir_expr_calls_callable(length, key),
         HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } | HirExprKind::CollectionInit { items, .. } => {
-            items.iter().any(|expr| hir_expr_calls_name(expr, name))
+            items.iter().any(|expr| hir_expr_calls_callable(expr, key))
         }
-        HirExprKind::FieldAccess { object, .. } => hir_expr_calls_name(object, name),
-        HirExprKind::StoreField { object, value, .. } => hir_expr_calls_name(object, name) || hir_expr_calls_name(value, name),
-        HirExprKind::GenericApply { callee, .. } => hir_expr_calls_name(callee, name),
-        HirExprKind::Cast { expr, .. } => hir_expr_calls_name(expr, name),
-        HirExprKind::Block(block) => hir_block_calls_name(block, name),
+        HirExprKind::FieldAccess { object, .. } => hir_expr_calls_callable(object, key),
+        HirExprKind::StoreField { object, value, .. } => hir_expr_calls_callable(object, key) || hir_expr_calls_callable(value, key),
+        HirExprKind::GenericApply { callee, .. } => hir_expr_calls_callable(callee, key),
+        HirExprKind::Cast { expr, .. } => hir_expr_calls_callable(expr, key),
+        HirExprKind::Block(block) => hir_block_calls_callable(block, key),
         HirExprKind::If { condition, then_branch, else_branch } => {
-            hir_expr_calls_name(condition, name)
-                || hir_block_calls_name(then_branch, name)
-                || else_branch.as_ref().is_some_and(|block| hir_block_calls_name(block, name))
+            hir_expr_calls_callable(condition, key)
+                || hir_block_calls_callable(then_branch, key)
+                || else_branch.as_ref().is_some_and(|block| hir_block_calls_callable(block, key))
         }
         HirExprKind::IfLet { scrutinee, then_branch, else_branch, .. } => {
-            hir_expr_calls_name(scrutinee, name)
-                || hir_block_calls_name(then_branch, name)
-                || else_branch.as_ref().is_some_and(|block| hir_block_calls_name(block, name))
+            hir_expr_calls_callable(scrutinee, key)
+                || hir_block_calls_callable(then_branch, key)
+                || else_branch.as_ref().is_some_and(|block| hir_block_calls_callable(block, key))
         }
         HirExprKind::Match { scrutinee, arms } | HirExprKind::Case { scrutinee, arms } => {
-            hir_expr_calls_name(scrutinee, name) || arms.iter().any(|arm| hir_expr_calls_name(&arm.body, name))
+            hir_expr_calls_callable(scrutinee, key) || arms.iter().any(|arm| hir_expr_calls_callable(&arm.body, key))
         }
         HirExprKind::Loop { iterator, condition, body, .. } => {
-            iterator.as_ref().is_some_and(|expr| hir_expr_calls_name(expr, name))
-                || condition.as_ref().is_some_and(|expr| hir_expr_calls_name(expr, name))
-                || hir_block_calls_name(body, name)
+            iterator.as_ref().is_some_and(|expr| hir_expr_calls_callable(expr, key))
+                || condition.as_ref().is_some_and(|expr| hir_expr_calls_callable(expr, key))
+                || hir_block_calls_callable(body, key)
         }
-        HirExprKind::Return(inner) => inner.as_ref().is_some_and(|expr| hir_expr_calls_name(expr, name)),
-        HirExprKind::Assign { value, .. } => hir_expr_calls_name(value, name),
-        HirExprKind::Break { expr, .. } => expr.as_ref().is_some_and(|expr| hir_expr_calls_name(expr, name)),
-        HirExprKind::Yield(inner) => inner.as_ref().is_some_and(|expr| hir_expr_calls_name(expr, name)),
+        HirExprKind::Return(inner) => inner.as_ref().is_some_and(|expr| hir_expr_calls_callable(expr, key)),
+        HirExprKind::Assign { value, .. } => hir_expr_calls_callable(value, key),
+        HirExprKind::Break { expr, .. } => expr.as_ref().is_some_and(|expr| hir_expr_calls_callable(expr, key)),
+        HirExprKind::Yield(inner) => inner.as_ref().is_some_and(|expr| hir_expr_calls_callable(expr, key)),
         HirExprKind::YieldFrom(inner) | HirExprKind::Await(inner) | HirExprKind::Awake(inner) | HirExprKind::BlockOn(inner) => {
-            hir_expr_calls_name(inner, name)
+            hir_expr_calls_callable(inner, key)
         }
-        HirExprKind::Raise(inner) | HirExprKind::Resume(inner) | HirExprKind::TryPropagate { inner, .. } => hir_expr_calls_name(inner, name),
-        HirExprKind::Catch { expr, arms } => hir_expr_calls_name(expr, name) || arms.iter().any(|arm| hir_expr_calls_name(&arm.body, name)),
-        HirExprKind::TryScope { body, .. } => hir_block_calls_name(body, name),
+        HirExprKind::Raise(inner) | HirExprKind::Resume(inner) | HirExprKind::TryPropagate { inner, .. } => {
+            hir_expr_calls_callable(inner, key)
+        }
+        HirExprKind::Catch { expr, arms } => {
+            hir_expr_calls_callable(expr, key) || arms.iter().any(|arm| hir_expr_calls_callable(&arm.body, key))
+        }
+        HirExprKind::TryScope { body, .. } => hir_block_calls_callable(body, key),
         HirExprKind::With { base, updates } => {
-            hir_expr_calls_name(base, name) || updates.iter().any(|(_, expr)| hir_expr_calls_name(expr, name))
+            hir_expr_calls_callable(base, key) || updates.iter().any(|(_, expr)| hir_expr_calls_callable(expr, key))
         }
-        HirExprKind::SuperCall { args, .. } => args.iter().any(|expr| hir_expr_calls_name(expr, name)),
+        HirExprKind::SuperCall { args, .. } => args.iter().any(|expr| hir_expr_calls_callable(expr, key)),
         HirExprKind::Literal(_)
         | HirExprKind::Variable(_)
         | HirExprKind::Path(_)
@@ -202,58 +223,70 @@ fn hir_expr_calls_name(expr: &HirExpr, name: &str) -> bool {
     }
 }
 
-/// 判断 HIR 块中是否调用了指定名称的函数。
-fn hir_block_calls_name(block: &HirBlock, name: &str) -> bool {
+/// 判断 HIR 块中是否调用了指定身份的 callable。
+fn hir_block_calls_callable(block: &HirBlock, key: CallableKey) -> bool {
     block.statements.iter().any(|statement| match &statement.kind {
-        HirStatementKind::Let { initializer, .. } => initializer.as_ref().is_some_and(|expr| hir_expr_calls_name(expr, name)),
-        HirStatementKind::Expr(expr) => hir_expr_calls_name(expr, name),
-    }) || block.expr.as_ref().is_some_and(|expr| hir_expr_calls_name(expr, name))
+        HirStatementKind::Let { initializer, .. } => initializer.as_ref().is_some_and(|expr| hir_expr_calls_callable(expr, key)),
+        HirStatementKind::Expr(expr) => hir_expr_calls_callable(expr, key),
+    }) || block.expr.as_ref().is_some_and(|expr| hir_expr_calls_callable(expr, key))
 }
 
-/// 从调用表达式中提取被调用函数的简单名（用于匹配内联候选）。
-fn extract_call_callee_name(expr: &HirExpr) -> Option<String> {
-    let HirExprKind::Call { callee, resolved, .. } = &expr.kind
-    else {
-        return None;
-    };
-    if let Some(resolved) = resolved {
-        return Some(resolved.symbol.to_string());
+/// 模块内效应函数的已冻结身份集合。
+///
+/// - `effectful` 是所有函数体真正含 `raise` 的 callable 身份；`catch` 调用点用它
+///   判定「该调用是否承担跨函数效应传播」，从而在无法建模时失败闭合，而不是退回普通调用。
+/// - `inlineable` 只保存当前可以按冻结实例内联的函数体；内联只是优化，不是调用语义。
+#[derive(Default)]
+pub(super) struct EffectfulCallees {
+    inlineable: BTreeMap<CallableKey, HirFunction>,
+    effectful: std::collections::BTreeSet<CallableKey>,
+}
+
+impl EffectfulCallees {
+    /// 调用合同指向的 callee 是否会在自身函数体中 `raise`。
+    pub(super) fn is_effectful(&self, resolved: &crate::compiler::types::hir::HirResolvedCall) -> bool {
+        resolved_call_key(resolved).is_some_and(|key| self.effectful.contains(&key))
     }
-    match &callee.kind {
-        HirExprKind::Path(path) => Some(path.to_string()),
-        HirExprKind::Variable(identifier) => Some(identifier.name.to_string()),
-        _ => None,
+
+    /// 按冻结 identity 读取可内联函数体；缺失即没有内联优化，不是调用失败。
+    pub(super) fn inline_target(&self, resolved: &crate::compiler::types::hir::HirResolvedCall) -> Option<&HirFunction> {
+        resolved_call_key(resolved).and_then(|key| self.inlineable.get(&key))
     }
 }
 
-/// 收集模块中可内联到 `catch` 调用点的效应函数。
+/// 收集模块中承担 `raise` 的函数身份，并冻结其中可内联的函数体。
 ///
 /// 一个函数可内联当且仅当：
 /// - 函数体包含 `raise`（否则无需内联，普通调用即可）；
 /// - 函数体不含 `return`（`return` 在内联后会错误地返回外层函数）；
-/// - 函数不直接递归（不含对自身的调用，避免无限展开）；
+/// - 函数不直接递归（不含对自身身份的调用，避免无限展开）；
 /// - 函数无泛型参数；
 /// - 函数非抽象。
-pub(super) fn collect_effectful_inline_targets(module: &HirModule) -> BTreeMap<String, HirFunction> {
-    let mut targets = BTreeMap::new();
+///
+/// 身份只由 `ItemInstanceId` / `ItemId` 决定，同名重载不会互相覆盖。
+pub(super) fn collect_effectful_callees(module: &HirModule) -> EffectfulCallees {
+    let mut inlineable = BTreeMap::new();
+    let mut effectful = std::collections::BTreeSet::new();
     for function in &module.functions {
-        if function.is_abstract || !function.generics.is_empty() {
+        let Some(key) = function_key(function) else {
             continue;
-        }
-        let name = function.name.to_string();
-        if hir_block_contains_return(&function.body) {
-            continue;
-        }
+        };
         if !hir_block_contains_raise(&function.body) {
             continue;
         }
-        let body_calls_self = hir_block_calls_name(&function.body, &name);
-        if body_calls_self {
+        effectful.insert(key);
+        if function.is_abstract || !function.generics.is_empty() {
             continue;
         }
-        targets.insert(name, function.clone());
+        if hir_block_contains_return(&function.body) {
+            continue;
+        }
+        if hir_block_calls_callable(&function.body, key) {
+            continue;
+        }
+        inlineable.insert(key, function.clone());
     }
-    targets
+    EffectfulCallees { inlineable, effectful }
 }
 
 impl MirBuilder {
@@ -601,7 +634,26 @@ impl MirBuilder {
 
         self.control_flow.push_handler(MirHandlerDispatchContext { arms: arms.to_vec(), exit: exit_block, exit_value: None });
 
-        let expr_result = self.try_inline_effectful_callee(expr).unwrap_or_else(|| self.lower_expr_to_operand(expr));
+        let expr_result = match self.try_inline_effectful_callee(expr) {
+            Some(result) => result,
+            None => {
+                // 跨函数 `raise` 传播尚未建模时，必须失败闭合：
+                // 普通调用不会把 callee 的 `raise` 带到当前 `catch` handler，
+                // 静默退回会生成结果错误的程序。
+                if let HirExprKind::Call { resolved: Some(resolved), .. } = &expr.kind {
+                    if self.effectful_callees.is_effectful(resolved) {
+                        self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnsupportedExpression {
+                            span: expr.span.clone(),
+                            kind: format!(
+                                "跨函数效应传播未建模：`{}` 含 `raise` 且不属于可内联的冻结实例",
+                                resolved.symbol
+                            ),
+                        });
+                    }
+                }
+                self.lower_expr_to_operand(expr)
+            }
+        };
         let handler_index = self.control_flow.handler_count() - 1;
         if self.terminator.is_none() {
             let ty = infer_builder_operand_type(&expr_result, &self.value_types);
@@ -621,20 +673,15 @@ impl MirBuilder {
 
     /// 尝试在 `catch` 调用点内联被调用的效应函数。
     ///
-    /// 当 `expr` 是对模块级效应函数（含 `raise`、无 `return`、非递归）的直接调用时，
-    /// 将其函数体内联到当前 `catch` 上下文中：先把实参 lower 为 operand 并绑定到形参名，
-    /// 再依次 lower 函数体的语句与尾表达式。这样函数体内部的 `raise` 会直接被当前
-    /// `catch` handler 捕获，从而实现跨函数 `raise` 传播。
-    ///
-    /// 返回 `Some(operand)` 表示成功内联并产生结果值；返回 `None` 表示 `expr` 不是
-    /// 可内联的效应函数调用，调用方应回退到普通 `lower_expr_to_operand`。
+    /// 内联只是优化：候选只能按 HIR 已冻结的 `ItemInstanceId` / `ItemId` 查找，
+    /// 不接受名称索引或表面名回退。找不到冻结实例就返回 `None`，由调用方决定
+    /// 普通调用是否仍能保持语义（不能时失败闭合）。
     fn try_inline_effectful_callee(&mut self, expr: &HirExpr) -> Option<MirOperand> {
-        let callee_name = extract_call_callee_name(expr)?;
-        let callee = self.effectful_inline_targets.get(&callee_name)?.clone();
-        let HirExprKind::Call { args, .. } = &expr.kind
+        let HirExprKind::Call { args, resolved: Some(resolved), .. } = &expr.kind
         else {
             return None;
         };
+        let callee = self.effectful_callees.inline_target(resolved)?.clone();
         if args.len() != callee.params.len() {
             return None;
         }

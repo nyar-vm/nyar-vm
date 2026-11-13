@@ -68,7 +68,7 @@ fn exported_plan(fixture: ExecutableFunction, name: &str) -> FragmentSubmission 
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("jvm_container").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), name.to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), name.to_string());
     FragmentSubmission::from_backend_plan(plan)
 }
 
@@ -90,7 +90,7 @@ fn array_list_layout() -> AggregateLayout {
 }
 
 #[test]
-fn lowers_array_list_construction_length_and_index_with_boxed_elements() {
+fn lowers_array_list_construction_length_and_index_with_primitive_elements() {
     let layout = array_list_layout();
     let field_items = FieldId::from_index(0).expect("items field id");
     let field_length = FieldId::from_index(1).expect("length field id");
@@ -129,7 +129,7 @@ fn lowers_array_list_construction_length_and_index_with_boxed_elements() {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("jvm_container").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "main".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "main".to_string());
     plan.testing_register_nominal_layout(nominal, layout);
     plan.testing_register_field(field_items, 0, 0);
     plan.testing_register_field(field_length, 0, 1);
@@ -137,7 +137,7 @@ fn lowers_array_list_construction_length_and_index_with_boxed_elements() {
     let (class_file, companions, _) = lower_fragment_to_jvm_managed_surface(&FragmentSubmission::from_backend_plan(plan)).expect("array list must lower");
     let layout_class = companions.iter().find(|class| class.internal_name == "nyar/layout/ArrayList$0").expect("layout companion class");
     assert_eq!(layout_class.fields.len(), 2, "{layout_class:?}");
-    assert_eq!(layout_class.fields[0].descriptor, JvmTypeDescriptor::array(JvmTypeDescriptor::Object("java/lang/Long".to_string())));
+    assert_eq!(layout_class.fields[0].descriptor, JvmTypeDescriptor::array(JvmTypeDescriptor::Long));
 
     let instructions = method_code(&class_file, "main");
     assert!(instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::New(name) if name == "nyar/layout/ArrayList$0")), "{instructions:?}");
@@ -151,13 +151,13 @@ fn lowers_array_list_construction_length_and_index_with_boxed_elements() {
         "{instructions:?}"
     );
     assert!(
-        instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::ANewArray(class) if class == "java/lang/Long")),
-        "`[i64]` must use `java/lang/Long[]`: {instructions:?}"
+        instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::NewArray(11))),
+        "`[i64]` must use primitive `long[]`: {instructions:?}"
     );
-    assert!(instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::AAStore)), "{instructions:?}");
+    assert!(instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::LAStore)), "{instructions:?}");
     assert!(
-        instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::InvokeStatic(reference) if reference.owner == "java/lang/Long" && reference.name == "valueOf")),
-        "`[i64]` elements must box through `Long.valueOf`: {instructions:?}"
+        !instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::InvokeStatic(reference) if reference.owner == "java/lang/Long" && reference.name == "valueOf")),
+        "`[i64]` elements must not box through `Long.valueOf`: {instructions:?}"
     );
     assert!(instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::ArrayLength)), "{instructions:?}");
 }

@@ -29,7 +29,7 @@ pub struct TargetExecutionPlan {
     required_capabilities: Vec<nyar::CapabilityTag>,
     theory_bundle: nyar::TheoryBundle,
     entry_operation: Option<ItemInstanceId>,
-    wasm_export_names: BTreeMap<ItemInstanceId, String>,
+    export_names: BTreeMap<ItemInstanceId, String>,
     external_import_links: BTreeMap<ItemInstanceId, nyar::ExternalImportLink>,
     external_call_edges: Vec<nyar_types::CanonicalExternalCallEdge>,
     internal_call_edges: Vec<nyar_types::CanonicalCallEdge>,
@@ -149,7 +149,7 @@ impl TargetExecutionPlan {
     /// 从 ABI 名称表构造测试用目标私有计划。
     ///
     /// 导出名尚未登记，因此库导出 ABI 载体合同也尚未冻结；测试在
-    /// [`Self::testing_wasm_export_names_mut`] 登记导出名后必须调用
+    /// [`Self::testing_export_names_mut`] 登记导出名后必须调用
     /// [`Self::testing_freeze_library_export_abis`] 补齐冻结，不能依赖后端猜测载体。
     #[doc(hidden)]
     pub fn from_functions(functions: BTreeMap<QualifiedName, ExecutableFunction>) -> Self {
@@ -174,10 +174,10 @@ impl TargetExecutionPlan {
         &mut self.functions
     }
 
-    /// 返回可写 wasm 导出名表（集成测试专用）。
+    /// 返回可写导出名表（集成测试专用）。
     #[doc(hidden)]
-    pub fn testing_wasm_export_names_mut(&mut self) -> &mut BTreeMap<ItemInstanceId, String> {
-        &mut self.wasm_export_names
+    pub fn testing_export_names_mut(&mut self) -> &mut BTreeMap<ItemInstanceId, String> {
+        &mut self.export_names
     }
 
     /// 返回可写导出实例表（集成测试专用）。
@@ -276,7 +276,28 @@ impl TargetExecutionPlan {
     }
 
     /// 从完整 `CompiledProgram` 生成闭包；任何无法无损投影的语义都失败。
+    ///
+    /// 公共边界返回结构化 [`TargetPlanError`]：片段/根身份缺失有独立变体，
+    /// 其余降层原因保留细节文本。
     pub fn from_compiled_program(
+        program: &CompiledProgram,
+        fragment_id: &nyar::Identifier,
+        theory_bundle: nyar::TheoryBundle,
+        roots: &[ItemInstanceId],
+    ) -> std::result::Result<Self, crate::TargetPlanError> {
+        let canonical = program.canonical();
+        if !canonical.linked.fragments.contains_key(fragment_id) {
+            return Err(crate::TargetPlanError::UnknownFragment { fragment: fragment_id.to_string() });
+        }
+        for root in roots {
+            if !canonical.mir.functions.contains_key(root) {
+                return Err(crate::TargetPlanError::UnknownRoot { instance: *root });
+            }
+        }
+        Self::build_plan(program, fragment_id, theory_bundle, roots).map_err(crate::TargetPlanError::from)
+    }
+
+    fn build_plan(
         program: &CompiledProgram,
         fragment_id: &nyar::Identifier,
         theory_bundle: nyar::TheoryBundle,
@@ -393,14 +414,14 @@ impl TargetExecutionPlan {
                 }
             }
         }
-        let mut plan = Self {
+        let plan = Self {
             module_name: canonical.linked.module_name.clone(),
             fragment_id: fragment.id.clone(),
             exported_operations: fragment.exported_operations.clone(),
             required_capabilities: fragment.required_capabilities.clone(),
             theory_bundle,
             entry_operation: fragment.entry_operation,
-            wasm_export_names: fragment.wasm_export_names.clone(),
+            export_names: fragment.export_names.clone(),
             external_import_links: fragment.external_imports.clone(),
             external_call_edges: fragment.external_call_edges.clone(),
             internal_call_edges: fragment.internal_call_edges.clone(),
@@ -425,7 +446,6 @@ impl TargetExecutionPlan {
                 PlannedTextRepresentation::Managed => ProgramTextRepresentation::Managed,
             }),
         };
-        plan.freeze_library_export_abis()?;
         Ok(plan)
     }
 
@@ -442,11 +462,11 @@ impl TargetExecutionPlan {
 
     /// 为所有已声明导出名的实例冻结参数/返回载体。
     ///
-    /// 聚合 helper 的 producer 也在 `wasm_export_names` 中，因此同样被冻结；缺少
+    /// 聚合 helper 的 producer 也在 `export_names` 中，因此同样被冻结；缺少
     /// 函数体或类型没有稳定载体时结构化失败。
     fn freeze_library_export_abis(&mut self) -> Result<()> {
         let mut abis = BTreeMap::new();
-        for (instance, export_name) in &self.wasm_export_names {
+        for (instance, export_name) in &self.export_names {
             let function = self
                 .functions
                 .get(instance)
@@ -489,9 +509,9 @@ impl TargetExecutionPlan {
         self.entry_operation
     }
 
-    /// 返回 wasm 导出名映射。
-    pub fn wasm_export_names(&self) -> &BTreeMap<ItemInstanceId, String> {
-        &self.wasm_export_names
+    /// 返回公开导出名映射。
+    pub fn export_names(&self) -> &BTreeMap<ItemInstanceId, String> {
+        &self.export_names
     }
 
     /// 返回外部导入链接映射。
@@ -714,6 +734,12 @@ fn freeze_target_operator(link: &ExternalImportLink) -> Option<TargetOperatorBin
         let resolved = crate::lowering::backends::clr::mir::freeze_clr_operator_binding(mnemonic);
         return Some(frozen_operator_binding(resolved));
     }
+    if let Some(mnemonic) = crate::lowering::shared::interop::x86_64_operator_target(link) {
+        // x86-64 配方表按 ISA 冻结编码；声明「native」而不声明 ISA 的绑定不在此列，
+        // 保持 `Unfrozen`，由 emit 结构化失败，禁止按宿主架构猜编码。
+        let resolved = crate::lowering::backends::native::x86_64::freeze_x86_64_operator_binding(mnemonic);
+        return Some(frozen_operator_binding(resolved));
+    }
     None
 }
 
@@ -740,6 +766,7 @@ fn validate_frozen_operator(
         .or_else(|| crate::lowering::shared::interop::ovm_operator_target(link))
         .or_else(|| crate::lowering::shared::interop::jvm_operator_target(link))
         .or_else(|| crate::lowering::shared::interop::clr_operator_target(link))
+        .or_else(|| crate::lowering::shared::interop::x86_64_operator_target(link))
         .unwrap_or("<unknown>");
     let function = symbol.unwrap_or("<unknown>");
     if parameter_types.len() != plan.arity {
@@ -1310,6 +1337,37 @@ fn type_contains_generic_deep(program: &CanonicalProgram, id: nyar_types::TypeId
     }
 }
 
+/// canonical 原语拼写的载体映射。
+///
+/// 只接受 canonical 原语词汇（`i8`/`u16`/`utf8`…），不接受语言表面拼写
+/// （`byte`/`sbyte`/`Utf8Text` 等）：那些必须在语言前端按 `[primitive]` 身份
+/// 结算，目标计划不得再按名字猜载体。`usize`/`isize`/`f128` 没有稳定宽度，
+/// 刻意缺席并失败闭合。
+fn canonical_primitive_carrier(spelling: &str) -> Option<NyarType> {
+    let simple = spelling.rsplit([':', '.']).next().unwrap_or(spelling);
+    Some(match simple {
+        "bool" => NyarType::Boolean,
+        "u8" => NyarType::Integer8 { signed: false },
+        "i8" => NyarType::Integer8 { signed: true },
+        "u16" => NyarType::Integer16 { signed: false },
+        "i16" => NyarType::Integer16 { signed: true },
+        "u32" => NyarType::Integer32 { signed: false },
+        "i32" => NyarType::Integer32 { signed: true },
+        "u64" => NyarType::Integer64 { signed: false },
+        "i64" => NyarType::Integer64 { signed: true },
+        "u128" => NyarType::Integer128 { signed: false },
+        "i128" => NyarType::Integer128 { signed: true },
+        "f32" => NyarType::Float32,
+        "f64" => NyarType::Float64,
+        "char" => NyarType::Character,
+        "utf8" => NyarType::Utf8,
+        "utf16" => NyarType::Utf16,
+        "unit" => NyarType::Unit,
+        "void" => NyarType::Bottom,
+        _ => return None,
+    })
+}
+
 fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<NyarType> {
     let kind = &program.linked.types.get(&id).ok_or_else(|| format!("canonical 类型事实缺失"))?.kind;
     match kind {
@@ -1346,10 +1404,33 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
         CanonicalTypeKind::Nullable(element) => Ok(NyarType::Nullable(Box::new(lower_type(program, *element)?))),
         CanonicalTypeKind::Nominal { declaration, arguments } => {
             if !arguments.is_empty() {
+                // 实例级布局已由 canonical 冻结时，泛型实例必须在计划边界结算为携带
+                // 布局身份的 `Nominal`：存储类、字段与载体由实例布局解析，后端不得把
+                // “看起来像引用”的泛型实例一律擦成引用。未冻结实例布局的泛型形状保持
+                // `Apply`（宿主句柄形态），由后端在值槽上按缺合同失败闭合。
+                if let Some(layout) = program.linked.aggregate_layout_by_type.get(&id).copied() {
+                    let spelling = program
+                        .linked
+                        .type_surface_spellings
+                        .get(&id)
+                        .or_else(|| program.linked.type_surface_spellings.get(declaration))
+                        .cloned()
+                        .unwrap_or_else(|| nyar_types::Identifier::new("Apply"));
+                    return Ok(NyarType::Nominal { layout, spelling });
+                }
                 return Ok(NyarType::Apply(
                     Box::new(lower_type(program, *declaration)?),
                     arguments.iter().map(|argument| lower_type(program, *argument)).collect::<Result<Vec<_>>>()?,
                 ));
+            }
+            // 文本载体身份只来自 canonical 冻结的编码身份，不按拼写（`Utf8Text` 等）
+            // 回查；折叠后的 `Utf8`/`Utf16` 是后续托管布局与宿主边界的共同键。
+            if let Some(encoding) = program.linked.text_encoding_types.get(&id).copied() {
+                return match encoding {
+                    CanonicalPrimitiveType::Utf8 => Ok(NyarType::Utf8),
+                    CanonicalPrimitiveType::Utf16 => Ok(NyarType::Utf16),
+                    other => Err(format!("文本载体 `TypeId` 登记了非文本编码身份: {other:?}")),
+                };
             }
             let spelling = program
                 .linked
@@ -1365,7 +1446,7 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
                 .or_else(|| program.linked.aggregate_layout_by_type.get(declaration))
                 .copied();
             if let Some(name) = spelling {
-                if let Some(primitive) = NyarType::from_surface_primitive(name.as_str()) {
+                if let Some(primitive) = canonical_primitive_carrier(name.as_str()) {
                     return Ok(primitive);
                 }
                 // 已冻结实例级布局的零实参 nominal 铸造为携带身份的 `Nominal`：
@@ -1792,6 +1873,51 @@ mod tests {
             jvm_plan.encoding,
             TargetOperatorEncoding::Jvm(crate::lowering::backends::jvm::JvmOperatorCode::LongCompareLessThanUnsigned)
         ));
+    }
+
+    /// `x86_64_operator(...)` 按 ISA 冻结编码：`long.*` 冻结为 x86-64 码，
+    /// 未实现的 `integer.*` 与未声明 ISA 的标签不得被猜成任何指令集。
+    #[test]
+    fn x86_64_operator_links_freeze_isa_encodings() {
+        use crate::lowering::backends::native::x86_64::X86_64OperatorCode;
+
+        let add = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("x86_64-operator")), vec!["long.add".to_string()]);
+        let Some(TargetOperatorBinding::Frozen(plan)) = freeze_target_operator(&add)
+        else {
+            panic!("`long.add` 必须冻结")
+        };
+        assert_eq!(plan.arity, 2);
+        assert_eq!(plan.operand_type, TargetOperandType::I64);
+        assert_eq!(plan.result_type, TargetOperandType::I64);
+        assert_eq!(plan.encoding, TargetOperatorEncoding::X86_64(X86_64OperatorCode::I64Add));
+
+        let compare =
+            nyar::ExternalImportLink::host(Some(nyar::Identifier::new("x86_64-operator")), vec!["long.compare_less_than".to_string()]);
+        let Some(TargetOperatorBinding::Frozen(plan)) = freeze_target_operator(&compare)
+        else {
+            panic!("`long.compare_less_than` 必须冻结")
+        };
+        assert_eq!(plan.result_type, TargetOperandType::I32);
+        assert_eq!(plan.encoding, TargetOperatorEncoding::X86_64(X86_64OperatorCode::I64CompareLessThan));
+
+        // 32 位整数算术：载体 `I32` → `I32`。
+        let integer = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("x86_64-operator")), vec!["integer.add".to_string()]);
+        let Some(TargetOperatorBinding::Frozen(plan)) = freeze_target_operator(&integer)
+        else {
+            panic!("`integer.add` 必须冻结")
+        };
+        assert_eq!(plan.operand_type, TargetOperandType::I32);
+        assert_eq!(plan.result_type, TargetOperandType::I32);
+        assert_eq!(plan.encoding, TargetOperatorEncoding::X86_64(X86_64OperatorCode::I32Add));
+
+        // 未实现的 provider（无符号除）：保持 `Unfrozen`，由 emit 结构化失败。
+        let unsupported =
+            nyar::ExternalImportLink::host(Some(nyar::Identifier::new("x86_64-operator")), vec!["integer.divide_unsigned".to_string()]);
+        assert_eq!(freeze_target_operator(&unsupported), Some(TargetOperatorBinding::Unfrozen));
+
+        // 只声明「native」不声明 ISA：不得冻结编码。
+        let native = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("native-operator")), vec!["long.add".to_string()]);
+        assert_eq!(freeze_target_operator(&native), None);
     }
 
     /// `u64`/`u32` 无符号除、余、逻辑右移的托管目标配方：

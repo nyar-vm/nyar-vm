@@ -6,6 +6,7 @@
 #![deny(missing_docs)]
 
 pub mod hosting;
+pub mod host_process;
 mod msil_text_writer;
 
 pub use crate::transitional::{
@@ -72,14 +73,8 @@ impl Default for ClrBinaryBackend {
     }
 }
 
-impl TargetCodeGenBackend for ClrBinaryBackend {
-    type Input = ClrBinaryBackendInput;
-
-    fn descriptor(&self) -> &BackendDescriptor {
-        &self.descriptor
-    }
-
-    fn validate(&self, input: &Self::Input) -> Result<()> {
+impl ClrBinaryBackend {
+    fn validate_artifact(&self, input: &ClrBinaryBackendInput) -> Result<()> {
         if input.module.global_methods.is_empty() {
             return Err("CLR 后端至少需要一个全局方法".to_owned());
         }
@@ -92,7 +87,7 @@ impl TargetCodeGenBackend for ClrBinaryBackend {
         Ok(())
     }
 
-    fn compile(&self, input: Self::Input, options: &CompilationOptions) -> Result<ArtifactSet> {
+    fn compile_artifact(&self, input: ClrBinaryBackendInput, options: &CompilationOptions) -> Result<ArtifactSet> {
         std::fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
         let image_kind = image_kind(&input);
         // 库镜像带了托管入口点时仍是 `.dll`；`dotnet exec <dll>` 依赖同目录的
@@ -111,7 +106,11 @@ impl TargetCodeGenBackend for ClrBinaryBackend {
             module_name: options.artifact_name.clone(),
             image_kind: pe_image_kind,
         });
-        let bytes = writer.write_module(&input.module).map_err(|error| format!("CLR PE 编码失败：{error}"))?;
+        // 程序集身份是镜像属性，只由产物名决定。降层期写入的模块名只是占位，
+        // 这里统一覆盖，避免 Assembly 表与 `PeWriterOptions` 出现两个不同身份。
+        let mut module = input.module;
+        module.assembly.name = options.artifact_name.clone();
+        let bytes = writer.write_module(&module).map_err(|error| format!("CLR PE 编码失败：{error}"))?;
         let relative = format!("{}.{}", options.artifact_name, image_kind.file_extension());
         let artifact_path = input.output_dir.join(&relative);
         std::fs::write(&artifact_path, bytes).map_err(|e| format!("写入 CLR 产物失败：{}: {e}", artifact_path.display()))?;
@@ -130,6 +129,23 @@ impl TargetCodeGenBackend for ClrBinaryBackend {
             lane: TargetLane::Clr,
         });
         Ok(artifacts)
+    }
+}
+
+impl TargetCodeGenBackend for ClrBinaryBackend {
+    type Input = ClrBinaryBackendInput;
+
+    fn descriptor(&self) -> &BackendDescriptor {
+        &self.descriptor
+    }
+
+    fn validate(&self, input: &Self::Input) -> nyar::backends::BackendResult<()> {
+        self.validate_artifact(input).map_err(|error| nyar::backends::BackendError::for_backend(&self.descriptor.name, error))
+    }
+
+    fn compile(&self, input: Self::Input, options: &CompilationOptions) -> nyar::backends::BackendResult<ArtifactSet> {
+        self.compile_artifact(input, options)
+            .map_err(|error| nyar::backends::BackendError::for_backend(&self.descriptor.name, error))
     }
 }
 

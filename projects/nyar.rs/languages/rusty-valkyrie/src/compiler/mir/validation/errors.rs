@@ -355,6 +355,7 @@ fn mir_diagnostic_args(row: DiagnosticRow, diagnostic: &MirDiagnostic) -> Diagno
             .with_arg("instance", DiagnosticArg::String(instance.to_string()))
             .with_arg("existing", DiagnosticArg::CallableShort(existing.clone()))
             .with_arg("incoming", DiagnosticArg::CallableShort(incoming.clone())),
+        MirDiagnostic::ControlFlowContractViolation { context } => row.with_arg("context", DiagnosticArg::String(context.clone())),
     }
 }
 
@@ -396,6 +397,9 @@ fn mir_diagnostic_message(diagnostic: &MirDiagnostic) -> String {
         ),
         MirDiagnostic::ConflictingCallableLabel { instance, existing, incoming } => {
             format!("MIR lowering callable identity `{instance}` maps to both `{existing}` and `{incoming}`")
+        }
+        MirDiagnostic::ControlFlowContractViolation { context } => {
+            format!("MIR lowering broke the structured CFG/SSA contract: {context}")
         }
     }
 }

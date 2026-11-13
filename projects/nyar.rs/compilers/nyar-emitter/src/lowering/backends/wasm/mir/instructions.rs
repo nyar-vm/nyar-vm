@@ -32,7 +32,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 else {
                     self.emit_operand(value)?;
-                    WasmOpcode::Drop.encode(&mut self.code);
+                    self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                 }
             }
             MirInstructionKind::Copy { source } => {
@@ -48,7 +48,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 else {
                     self.emit_operand(source)?;
-                    WasmOpcode::Drop.encode(&mut self.code);
+                    self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                 }
             }
             MirInstructionKind::Cast { source, ty } => {
@@ -156,7 +156,7 @@ impl<'a> WasmMirLowerer<'a> {
                         self.assign_output_local(output);
                     }
                     else {
-                        WasmOpcode::Drop.encode(&mut self.code);
+                        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                     }
                 }
                 else if let Some(object_local) = self.operand_address_local(object) {
@@ -180,7 +180,7 @@ impl<'a> WasmMirLowerer<'a> {
                         if !field_is_inline_aggregate {
                             self.emit_load_at_field(&field)?;
                         }
-                        WasmOpcode::Drop.encode(&mut self.code);
+                        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                     }
                 }
                 else if let Some(object_local) = self.operand_reference_local(object) {
@@ -194,7 +194,7 @@ impl<'a> WasmMirLowerer<'a> {
                         self.assign_output_local(output);
                     }
                     else {
-                        WasmOpcode::Drop.encode(&mut self.code);
+                        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                     }
                 }
                 else {
@@ -364,10 +364,7 @@ impl<'a> WasmMirLowerer<'a> {
                     // 不得静默返回成功把 dest 槽留在旧值上。
                     let Some(dest_local) = self.operand_reference_local(dest)
                     else {
-                        return Err(format!(
-                            "WASM AggregateCopy gc struct 分支缺少 dest 引用槽 in `{}`: dest={dest:?}",
-                            self.mir_fn.symbol
-                        ));
+                        return Err(format!("WASM AggregateCopy gc struct 分支缺少 dest 引用槽 in `{}`: dest={dest:?}", self.mir_fn.symbol));
                     };
                     let Some(source_local) = self.operand_reference_local(source)
                     else {
@@ -397,10 +394,7 @@ impl<'a> WasmMirLowerer<'a> {
                     // 缺 dest 地址槽是缺事实，发射前拒绝，不得静默返回成功。
                     let Some(dest_local) = self.operand_address_local(dest)
                     else {
-                        return Err(format!(
-                            "WASM AggregateCopy 零字段值布局缺少 dest 地址槽 in `{}`: dest={dest:?}",
-                            self.mir_fn.symbol
-                        ));
+                        return Err(format!("WASM AggregateCopy 零字段值布局缺少 dest 地址槽 in `{}`: dest={dest:?}", self.mir_fn.symbol));
                     };
                     self.emit_contract_operand(source, self.wasm_local_value_type(dest_local))?;
                     self.emit_local_set(dest_local);
@@ -470,7 +464,7 @@ impl<'a> WasmMirLowerer<'a> {
                         self.assign_output_local(output);
                     }
                     else {
-                        WasmOpcode::Drop.encode(&mut self.code);
+                        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                     }
                 }
                 else if let Some(object_local) = self.operand_address_local(object) {
@@ -504,7 +498,7 @@ impl<'a> WasmMirLowerer<'a> {
                         if !field_is_inline_aggregate {
                             self.emit_load_at_field(&field_layout)?;
                         }
-                        WasmOpcode::Drop.encode(&mut self.code);
+                        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                     }
                 }
                 else if let Some(object_local) = self.operand_reference_local(object) {
@@ -528,7 +522,7 @@ impl<'a> WasmMirLowerer<'a> {
                         self.assign_output_local(output);
                     }
                     else {
-                        WasmOpcode::Drop.encode(&mut self.code);
+                        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                     }
                 }
                 else {
@@ -599,7 +593,7 @@ impl<'a> WasmMirLowerer<'a> {
             }
             MirInstructionKind::NullIsNull { value } => {
                 self.emit_operand_coerced(value, WASM_GC_ANYREF)?;
-                WasmOpcode::RefIsNull.encode(&mut self.code);
+                self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::RefIsNull));
                 if let Some(output) = instruction_primary_result(instruction) {
                     self.store_scalar(output);
                 }
@@ -686,7 +680,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.assign_output_local(output);
                 }
                 else {
-                    WasmOpcode::Drop.encode(&mut self.code);
+                    self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                 }
             }
             MirInstructionKind::SumPayloadGet { nominal, variant, object } => {
@@ -710,12 +704,12 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_ref_cast_struct(type_index);
                 self.emit_struct_get(type_index, SUM_TAG_FIELD);
                 self.emit_i32_const(i32::try_from(tag).expect("sum tag 超出 i32"));
-                WasmOpcode::I32Eq.encode(&mut self.code);
+                self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Eq));
                 if let Some(output) = instruction_primary_result(instruction) {
                     self.store_scalar(output);
                 }
                 else {
-                    WasmOpcode::Drop.encode(&mut self.code);
+                    self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                 }
             }
             // fail-closed：未实现的指令必须在编码期结构化失败。把 `PatternMatch` 编成
@@ -778,19 +772,18 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_local_set(nested_source);
             let nested_dest = self.alloc_anyref_local();
             self.emit_local_get(nested_source);
-            WasmOpcode::RefIsNull.encode(&mut self.code);
-            WasmOpcode::If.encode(&mut self.code);
-            self.code.push(BLOCKTYPE_EMPTY);
+            self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::RefIsNull));
+            self.emit_block_type(WasmOpcode::If);
             self.emit_ref_null_anyref();
             self.emit_local_set(nested_dest);
-            WasmOpcode::Else.encode(&mut self.code);
+            self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Else));
             let nested_layout = self
                 .ctx
                 .layout_by_id(nested_layout_id)
                 .cloned()
                 .ok_or_else(|| format!("WASM AggregateCopy 嵌套值聚合 layout `{nested_layout_id:?}` 未登记 in `{}`", self.mir_fn.symbol))?;
             self.emit_gc_struct_value_copy(&nested_layout, nested_type_index, nested_source, nested_dest, depth + 1)?;
-            WasmOpcode::End.encode(&mut self.code);
+            self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
             self.emit_local_get(dest_local);
             self.emit_ref_cast_struct(type_index);
             self.emit_local_get(nested_dest);
@@ -867,8 +860,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 发射一步表示转换编码（见 [scalar_cast_steps] 的载体不变量）。
     fn emit_scalar_cast_step(&mut self, step: ScalarCastStep) {
         match step {
-            ScalarCastStep::Opcode(opcode) => opcode.encode(&mut self.code),
-            ScalarCastStep::Byte(byte) => numeric::emit_opcode(byte, &mut self.code),
+            ScalarCastStep::Opcode(opcode) => self.code.push(WasmBodyInstruction::Opcode(opcode)),
             ScalarCastStep::I32Const(value) => self.emit_i32_const(value),
         }
     }
@@ -886,46 +878,44 @@ const SUM_PAYLOAD_FIELD: u32 = 1;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ScalarCastStep {
     Opcode(WasmOpcode),
-    /// acorn_wasm（pin `e7ed84a`）尚未导出的标准 wasm opcode 字节，直接写码流。
-    Byte(u8),
     /// 压 `i32.const`，供紧随的 `i32.and` 掩码消费。
     I32Const(i32),
 }
 
-/// `i64.extend_i32_u` 的标准 opcode 字节。
-const WASM_I64_EXTEND_I32_U: u8 = 0xAD;
+/// `i64.extend_i32_u`。
+const WASM_I64_EXTEND_I32_U: WasmOpcode = WasmOpcode::I64ExtendI32U;
 /// `i32.extend8_s`。
-const WASM_I32_EXTEND8_S: u8 = 0xC0;
+const WASM_I32_EXTEND8_S: WasmOpcode = WasmOpcode::I32Extend8S;
 /// `i32.extend16_s`。
-const WASM_I32_EXTEND16_S: u8 = 0xC1;
+const WASM_I32_EXTEND16_S: WasmOpcode = WasmOpcode::I32Extend16S;
 /// `f64.convert_i32_s` / `f64.convert_i32_u`（32 位载体到 f64）。
-const WASM_F64_CONVERT_I32_S: u8 = 0xB7;
-const WASM_F64_CONVERT_I32_U: u8 = 0xB8;
+const WASM_F64_CONVERT_I32_S: WasmOpcode = WasmOpcode::F64ConvertI32S;
+const WASM_F64_CONVERT_I32_U: WasmOpcode = WasmOpcode::F64ConvertI32U;
 /// `f64.convert_i64_s` / `f64.convert_i64_u`（64 位载体到 f64）。
-const WASM_F64_CONVERT_I64_S: u8 = 0xB9;
-const WASM_F64_CONVERT_I64_U: u8 = 0xBA;
+const WASM_F64_CONVERT_I64_S: WasmOpcode = WasmOpcode::F64ConvertI64S;
+const WASM_F64_CONVERT_I64_U: WasmOpcode = WasmOpcode::F64ConvertI64U;
 /// `i32.trunc_f64_s` / `i32.trunc_f64_u`（f64 到 32 位载体）。
-const WASM_I32_TRUNC_F64_S: u8 = 0xAA;
-const WASM_I32_TRUNC_F64_U: u8 = 0xAB;
+const WASM_I32_TRUNC_F64_S: WasmOpcode = WasmOpcode::I32TruncF64S;
+const WASM_I32_TRUNC_F64_U: WasmOpcode = WasmOpcode::I32TruncF64U;
 /// `i64.trunc_f64_s` / `i64.trunc_f64_u`（f64 到 64 位载体）。
-const WASM_I64_TRUNC_F64_S: u8 = 0xB0;
-const WASM_I64_TRUNC_F64_U: u8 = 0xB1;
+const WASM_I64_TRUNC_F64_S: WasmOpcode = WasmOpcode::I64TruncF64S;
+const WASM_I64_TRUNC_F64_U: WasmOpcode = WasmOpcode::I64TruncF64U;
 /// `f32.convert_i32_s` / `f32.convert_i32_u`（32 位载体到 f32）。
-const WASM_F32_CONVERT_I32_S: u8 = 0xB2;
-const WASM_F32_CONVERT_I32_U: u8 = 0xB3;
+const WASM_F32_CONVERT_I32_S: WasmOpcode = WasmOpcode::F32ConvertI32S;
+const WASM_F32_CONVERT_I32_U: WasmOpcode = WasmOpcode::F32ConvertI32U;
 /// `f32.convert_i64_s` / `f32.convert_i64_u`（64 位载体到 f32）。
-const WASM_F32_CONVERT_I64_S: u8 = 0xB4;
-const WASM_F32_CONVERT_I64_U: u8 = 0xB5;
+const WASM_F32_CONVERT_I64_S: WasmOpcode = WasmOpcode::F32ConvertI64S;
+const WASM_F32_CONVERT_I64_U: WasmOpcode = WasmOpcode::F32ConvertI64U;
 /// `i32.trunc_f32_s` / `i32.trunc_f32_u`（f32 到 32 位载体）。
-const WASM_I32_TRUNC_F32_S: u8 = 0xA8;
-const WASM_I32_TRUNC_F32_U: u8 = 0xA9;
+const WASM_I32_TRUNC_F32_S: WasmOpcode = WasmOpcode::I32TruncF32S;
+const WASM_I32_TRUNC_F32_U: WasmOpcode = WasmOpcode::I32TruncF32U;
 /// `i64.trunc_f32_s` / `i64.trunc_f32_u`（f32 到 64 位载体）。
-const WASM_I64_TRUNC_F32_S: u8 = 0xAE;
-const WASM_I64_TRUNC_F32_U: u8 = 0xAF;
+const WASM_I64_TRUNC_F32_S: WasmOpcode = WasmOpcode::I64TruncF32S;
+const WASM_I64_TRUNC_F32_U: WasmOpcode = WasmOpcode::I64TruncF32U;
 /// `f32.demote_f64`（f64 → f32，单指令 RNE：溢出到 `inf`、下溢到 0/次正规）。
-const WASM_F32_DEMOTE_F64: u8 = 0xB6;
+const WASM_F32_DEMOTE_F64: WasmOpcode = WasmOpcode::F32DemoteF64;
 /// `f64.promote_f32`（f32 → f64，精确无损）。
-const WASM_F64_PROMOTE_F32: u8 = 0xBB;
+const WASM_F64_PROMOTE_F32: WasmOpcode = WasmOpcode::F64PromoteF32;
 
 /// 类型是否占据独立浮点载体（`f32` 与 `f64` 各自独立，不是宽窄槽）。
 ///
@@ -956,8 +946,8 @@ fn scalar_cast_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<
     }
     match (source, target) {
         // 浮点之间是显式单指令转换，不是载体恒等。
-        (NyarType::Float32, NyarType::Float64) => return Ok(vec![ScalarCastStep::Byte(WASM_F64_PROMOTE_F32)]),
-        (NyarType::Float64, NyarType::Float32) => return Ok(vec![ScalarCastStep::Byte(WASM_F32_DEMOTE_F64)]),
+        (NyarType::Float32, NyarType::Float64) => return Ok(vec![ScalarCastStep::Opcode(WASM_F64_PROMOTE_F32)]),
+        (NyarType::Float64, NyarType::Float32) => return Ok(vec![ScalarCastStep::Opcode(WASM_F32_DEMOTE_F64)]),
         _ => {}
     }
     if is_float_carrier(source) {
@@ -985,7 +975,7 @@ fn scalar_cast_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<
             ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)
         }
         else {
-            ScalarCastStep::Byte(WASM_I64_EXTEND_I32_U)
+            ScalarCastStep::Opcode(WASM_I64_EXTEND_I32_U)
         }),
         other => steps.extend(normalize_i32_carrier_to_integer(other).ok_or_else(|| unsupported_cast(source, target))?),
     }
@@ -999,9 +989,9 @@ fn normalize_i32_carrier_to_integer(target: &NyarType) -> Option<Vec<ScalarCastS
     Some(match target {
         NyarType::Integer32 { .. } | NyarType::Character => Vec::new(),
         NyarType::Integer8 { signed: false } => vec![ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
-        NyarType::Integer8 { signed: true } => vec![ScalarCastStep::Byte(WASM_I32_EXTEND8_S)],
+        NyarType::Integer8 { signed: true } => vec![ScalarCastStep::Opcode(WASM_I32_EXTEND8_S)],
         NyarType::Integer16 { signed: false } => vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
-        NyarType::Integer16 { signed: true } => vec![ScalarCastStep::Byte(WASM_I32_EXTEND16_S)],
+        NyarType::Integer16 { signed: true } => vec![ScalarCastStep::Opcode(WASM_I32_EXTEND16_S)],
         _ => return None,
     })
 }
@@ -1032,14 +1022,12 @@ fn integer_to_float_steps(source: &NyarType, target: &NyarType) -> crate::Result
                 WASM_F64_CONVERT_I64_U
             }
         }
-        NyarType::Integer8 { signed } | NyarType::Integer16 { signed } | NyarType::Integer32 { signed } => {
-            match (*signed, to_f32) {
-                (true, true) => WASM_F32_CONVERT_I32_S,
-                (true, false) => WASM_F64_CONVERT_I32_S,
-                (false, true) => WASM_F32_CONVERT_I32_U,
-                (false, false) => WASM_F64_CONVERT_I32_U,
-            }
-        }
+        NyarType::Integer8 { signed } | NyarType::Integer16 { signed } | NyarType::Integer32 { signed } => match (*signed, to_f32) {
+            (true, true) => WASM_F32_CONVERT_I32_S,
+            (true, false) => WASM_F64_CONVERT_I32_S,
+            (false, true) => WASM_F32_CONVERT_I32_U,
+            (false, false) => WASM_F64_CONVERT_I32_U,
+        },
         // Unicode 码点恒非负。
         NyarType::Character => {
             if to_f32 {
@@ -1051,7 +1039,7 @@ fn integer_to_float_steps(source: &NyarType, target: &NyarType) -> crate::Result
         }
         _ => return Err(unsupported_cast(source, target)),
     };
-    Ok(vec![ScalarCastStep::Byte(opcode)])
+    Ok(vec![ScalarCastStep::Opcode(opcode)])
 }
 
 /// 浮点到整数：wasm `trunc` 语义（向零截断），按源浮点载体选指令族。
@@ -1065,16 +1053,16 @@ fn float_to_integer_steps(source: &NyarType, target: &NyarType) -> crate::Result
         _ => return Err(unsupported_cast(source, target)),
     };
     match target {
-        NyarType::Integer64 { signed: true } => Ok(vec![ScalarCastStep::Byte(trunc_i64_s)]),
-        NyarType::Integer64 { signed: false } => Ok(vec![ScalarCastStep::Byte(trunc_i64_u)]),
+        NyarType::Integer64 { signed: true } => Ok(vec![ScalarCastStep::Opcode(trunc_i64_s)]),
+        NyarType::Integer64 { signed: false } => Ok(vec![ScalarCastStep::Opcode(trunc_i64_u)]),
         NyarType::Integer8 { signed } | NyarType::Integer16 { signed } | NyarType::Integer32 { signed } => {
             let trunc = if *signed { trunc_i32_s } else { trunc_i32_u };
-            let mut steps = vec![ScalarCastStep::Byte(trunc)];
+            let mut steps = vec![ScalarCastStep::Opcode(trunc)];
             steps.extend(normalize_i32_carrier_to_integer(target).expect("32 位整数族必须有规范化配方"));
             Ok(steps)
         }
         // 码点恒非负，`trunc_u` 之后就是 `Character` 的规范形态。
-        NyarType::Character => Ok(vec![ScalarCastStep::Byte(trunc_i32_u)]),
+        NyarType::Character => Ok(vec![ScalarCastStep::Opcode(trunc_i32_u)]),
         _ => Err(unsupported_cast(source, target)),
     }
 }
@@ -1106,7 +1094,7 @@ mod tests {
         let u32v = NyarType::Integer32 { signed: false };
         let i64s = NyarType::Integer64 { signed: true };
         assert_eq!(cast(i32s.clone(), i64s.clone()), vec![ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)]);
-        assert_eq!(cast(u32v, i64s.clone()), vec![ScalarCastStep::Byte(WASM_I64_EXTEND_I32_U)]);
+        assert_eq!(cast(u32v, i64s.clone()), vec![ScalarCastStep::Opcode(WASM_I64_EXTEND_I32_U)]);
         // 窄整数在 i32 载体上已是规范形态：宽化到 32 位不需要任何指令。
         assert_eq!(cast(NyarType::Integer8 { signed: false }, NyarType::Integer32 { signed: false }), Vec::new());
         assert_eq!(cast(NyarType::Integer16 { signed: true }, i32s), Vec::new());
@@ -1125,11 +1113,11 @@ mod tests {
         );
         assert_eq!(
             cast(NyarType::Integer32 { signed: true }, NyarType::Integer8 { signed: true }),
-            vec![ScalarCastStep::Byte(WASM_I32_EXTEND8_S)]
+            vec![ScalarCastStep::Opcode(WASM_I32_EXTEND8_S)]
         );
         assert_eq!(
             cast(NyarType::Integer64 { signed: false }, NyarType::Integer16 { signed: true }),
-            vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64), ScalarCastStep::Byte(WASM_I32_EXTEND16_S)]
+            vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64), ScalarCastStep::Opcode(WASM_I32_EXTEND16_S)]
         );
     }
 
@@ -1141,7 +1129,7 @@ mod tests {
             cast(NyarType::Character, NyarType::Integer16 { signed: false }),
             vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)]
         );
-        assert_eq!(cast(NyarType::Character, NyarType::Integer64 { signed: true }), vec![ScalarCastStep::Byte(WASM_I64_EXTEND_I32_U)]);
+        assert_eq!(cast(NyarType::Character, NyarType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_EXTEND_I32_U)]);
         assert_eq!(cast(NyarType::Integer16 { signed: false }, NyarType::Character), Vec::new());
         assert_eq!(cast(NyarType::Integer64 { signed: true }, NyarType::Character), vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64)]);
     }
@@ -1149,47 +1137,44 @@ mod tests {
     #[test]
     fn integer_to_float_picks_opcode_by_signedness_and_carrier() {
         // 64 位源：有符号与无符号必须选不同的 convert 指令。
-        assert_eq!(cast(NyarType::Integer64 { signed: true }, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I64_S)]);
-        assert_eq!(cast(NyarType::Integer64 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I64_U)]);
+        assert_eq!(cast(NyarType::Integer64 { signed: true }, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_S)]);
+        assert_eq!(cast(NyarType::Integer64 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_U)]);
         // 32 位载体同理。
-        assert_eq!(cast(NyarType::Integer32 { signed: true }, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I32_S)]);
-        assert_eq!(cast(NyarType::Integer32 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I32_U)]);
+        assert_eq!(cast(NyarType::Integer32 { signed: true }, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_S)]);
+        assert_eq!(cast(NyarType::Integer32 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
         // 窄无符号在 i32 载体上已是掩码后的非负值，无需再规范化。
-        assert_eq!(cast(NyarType::Integer8 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I32_U)]);
+        assert_eq!(cast(NyarType::Integer8 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
         // 码点恒非负。
-        assert_eq!(cast(NyarType::Character, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_CONVERT_I32_U)]);
+        assert_eq!(cast(NyarType::Character, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
     }
 
     #[test]
     fn float_to_integer_uses_trunc_then_target_normalization() {
-        assert_eq!(cast(NyarType::Float64, NyarType::Integer64 { signed: true }), vec![ScalarCastStep::Byte(WASM_I64_TRUNC_F64_S)]);
-        assert_eq!(cast(NyarType::Float64, NyarType::Integer64 { signed: false }), vec![ScalarCastStep::Byte(WASM_I64_TRUNC_F64_U)]);
-        assert_eq!(cast(NyarType::Float64, NyarType::Integer32 { signed: false }), vec![ScalarCastStep::Byte(WASM_I32_TRUNC_F64_U)]);
+        assert_eq!(cast(NyarType::Float64, NyarType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F64_S)]);
+        assert_eq!(cast(NyarType::Float64, NyarType::Integer64 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F64_U)]);
+        assert_eq!(cast(NyarType::Float64, NyarType::Integer32 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U)]);
         assert_eq!(
             cast(NyarType::Float64, NyarType::Integer8 { signed: false }),
-            vec![ScalarCastStep::Byte(WASM_I32_TRUNC_F64_U), ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And),]
+            vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U), ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And),]
         );
         assert_eq!(
             cast(NyarType::Float64, NyarType::Integer16 { signed: true }),
-            vec![ScalarCastStep::Byte(WASM_I32_TRUNC_F64_S), ScalarCastStep::Byte(WASM_I32_EXTEND16_S)]
+            vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_S), ScalarCastStep::Opcode(WASM_I32_EXTEND16_S)]
         );
-        assert_eq!(cast(NyarType::Float64, NyarType::Character), vec![ScalarCastStep::Byte(WASM_I32_TRUNC_F64_U)]);
+        assert_eq!(cast(NyarType::Float64, NyarType::Character), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U)]);
     }
 
     #[test]
     fn float32_casts_are_explicit_single_instruction_conversions() {
         // f32 ↔ f64 是显式单指令，绝不是「同载体恒等」或借 64 位槽。
-        assert_eq!(cast(NyarType::Float32, NyarType::Float64), vec![ScalarCastStep::Byte(WASM_F64_PROMOTE_F32)]);
-        assert_eq!(cast(NyarType::Float64, NyarType::Float32), vec![ScalarCastStep::Byte(WASM_F32_DEMOTE_F64)]);
+        assert_eq!(cast(NyarType::Float32, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_PROMOTE_F32)]);
+        assert_eq!(cast(NyarType::Float64, NyarType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_DEMOTE_F64)]);
         // 整数↔f32 直接用 f32.convert_* / trunc_f32_*，不先经 f64（避免 double rounding）。
-        assert_eq!(cast(NyarType::Integer32 { signed: true }, NyarType::Float32), vec![ScalarCastStep::Byte(WASM_F32_CONVERT_I32_S)]);
-        assert_eq!(
-            cast(NyarType::Integer64 { signed: false }, NyarType::Float32),
-            vec![ScalarCastStep::Byte(WASM_F32_CONVERT_I64_U)]
-        );
-        assert_eq!(cast(NyarType::Character, NyarType::Float32), vec![ScalarCastStep::Byte(WASM_F32_CONVERT_I32_U)]);
-        assert_eq!(cast(NyarType::Float32, NyarType::Integer64 { signed: true }), vec![ScalarCastStep::Byte(WASM_I64_TRUNC_F32_S)]);
-        assert_eq!(cast(NyarType::Float32, NyarType::Integer32 { signed: false }), vec![ScalarCastStep::Byte(WASM_I32_TRUNC_F32_U)]);
+        assert_eq!(cast(NyarType::Integer32 { signed: true }, NyarType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_S)]);
+        assert_eq!(cast(NyarType::Integer64 { signed: false }, NyarType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I64_U)]);
+        assert_eq!(cast(NyarType::Character, NyarType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_U)]);
+        assert_eq!(cast(NyarType::Float32, NyarType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F32_S)]);
+        assert_eq!(cast(NyarType::Float32, NyarType::Integer32 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F32_U)]);
     }
 
     /// 反例：`f32` 不得被当作 `f64` 或整数静默搬运（载体身份不可伪造）。

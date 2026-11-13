@@ -246,7 +246,7 @@ fn run_in_node(source: &str, entry: &str, script: &str) {
         .find(|function| function.display_symbol.contains(entry))
         .and_then(|function| function.instance)
         .expect("fixture 有入口函数实例");
-    plan.testing_wasm_export_names_mut().insert(instance, entry.to_owned());
+    plan.testing_export_names_mut().insert(instance, entry.to_owned());
     let submission = FragmentSubmission::from_backend_plan(plan);
     let (module, _) = nyar_emitter::lowering::backends::wasm::lower_fragment_to_wasm_module(&submission, HostProjectionBoundary::WasmJsGlue)
         .expect("fixture 必须编码为 wasm");

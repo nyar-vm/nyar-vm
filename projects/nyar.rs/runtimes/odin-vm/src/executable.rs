@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use odin_bytecode::{OdinFunction, OdinHeadCode, OdinInstruction, decode_at};
+use acorn_odin::{OdinFunction, OdinHeadCode, OdinInstruction, decode_at};
 
 use crate::error::OdinRuntimeError;
 

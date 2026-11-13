@@ -13,7 +13,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_nyar_module,
 };
 use nyar_types::NyarType;
-use odin_bytecode::{decode_at, OdinHeadCode, OdinInstruction, OdinModuleData};
+use acorn_odin::{decode_at, OdinHeadCode, OdinInstruction, OdinModuleData};
 
 fn fixed_array(length: usize) -> NyarType {
     NyarType::FixedArray { element: Box::new(NyarType::Integer64 { signed: true }), length }

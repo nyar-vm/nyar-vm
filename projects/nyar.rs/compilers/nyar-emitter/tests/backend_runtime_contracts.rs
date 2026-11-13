@@ -2,7 +2,7 @@ use nyar_emitter::transitional::binary::{
     elf::{NativeElfImage, NativeElfWriter, SharedElfImage, SharedElfWriter, SharedObjectExport},
     pe::{NativePeImage, NativePeWriter},
 };
-use odin_bytecode::{Odin_VERSION, OdinConstant, OdinFunction, OdinModuleData};
+use acorn_odin::{Odin_VERSION, OdinConstant, OdinFunction, OdinModuleData};
 
 use nyar::{
     abstractions::{BinaryArch, BinaryFlavor, BinaryTarget, TargetFamily},
@@ -190,7 +190,7 @@ fn node_extension_on_executable_image_is_rejected() {
         artifact_extension: Some(".node".to_string()),
     };
     let error = NativeBinaryBackend::new().compile(input, &native_options(BinaryArch::X64)).expect_err("可执行镜像 + `.node` 必须结构化拒绝");
-    assert!(error.contains("需要共享库镜像"), "{error}");
+    assert!(error.to_string().contains("需要共享库镜像"), "{error}");
 }
 
 /// 包装层不得把 AMD64 镜像写成其他架构的产物。
@@ -199,5 +199,5 @@ fn native_backend_rejects_target_arch_mismatch() {
     let output_dir = std::env::temp_dir().join(format!("nyar-native-arch-{}", std::process::id()));
     let input = NativeBinaryBackendInput { executable: minimal_pe(), output_dir, entry_symbol: "main".to_string(), artifact_extension: None };
     let error = NativeBinaryBackend::new().compile(input, &native_options(BinaryArch::Arm64)).expect_err("镜像架构与请求目标不一致必须拒绝");
-    assert!(error.contains("不一致"), "{error}");
+    assert!(error.to_string().contains("不一致"), "{error}");
 }

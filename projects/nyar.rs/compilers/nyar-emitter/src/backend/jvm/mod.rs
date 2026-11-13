@@ -66,14 +66,8 @@ impl Default for JvmBinaryBackend {
     }
 }
 
-impl TargetCodeGenBackend for JvmBinaryBackend {
-    type Input = JvmBinaryBackendInput;
-
-    fn descriptor(&self) -> &BackendDescriptor {
-        &self.descriptor
-    }
-
-    fn validate(&self, input: &Self::Input) -> Result<()> {
+impl JvmBinaryBackend {
+    fn validate_artifact(&self, input: &JvmBinaryBackendInput) -> Result<()> {
         if input.class_file.internal_name.trim().is_empty() {
             return Err(format!("JVM 后端需要有效的主类内部名"));
         }
@@ -83,11 +77,15 @@ impl TargetCodeGenBackend for JvmBinaryBackend {
         Ok(())
     }
 
-    fn compile(&self, input: Self::Input, options: &CompilationOptions) -> Result<ArtifactSet> {
+    fn compile_artifact(&self, input: JvmBinaryBackendInput, options: &CompilationOptions) -> Result<ArtifactSet> {
         std::fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
         let mut class_file = input.class_file;
-        ensure_java_launcher_entry(&mut class_file);
+        // 镜像入口属性只从冻结的入口事实派生：有 managed ABI 时由 launcher 类承担
+        // argv 编组，不再往模块类里合成忽略 argv 的 `main(String[])`。
+        if input.managed_abi.is_none() {
+            ensure_java_launcher_entry(&mut class_file);
+        }
 
         let class_bytes = class_file.to_bytes().map_err(|error| format!("JVM class 编码失败：{error}"))?;
 
@@ -112,7 +110,15 @@ impl TargetCodeGenBackend for JvmBinaryBackend {
 
         let jar_path = input.output_dir.join(format!("{}.jar", options.artifact_name));
         let mut package = JvmJarPackage::new(format!("{}.jar", options.artifact_name));
-        package.main_class = Some(internal_name_to_binary_name(&class_file.internal_name));
+        // `Main-Class` 是镜像属性，只能指向已冻结的入口载体：
+        // - 单个导出入口 → 该入口的 launcher 类（唯一能正确编组 argv 的入口）；
+        // - 多个导出入口 → 没有唯一默认入口，jar 作为库产物，不伪造 `Main-Class`；
+        // - 无导出入口 → 模块类（此时由 `ensure_java_launcher_entry` 提供零参包装）。
+        package.main_class = match &input.managed_abi {
+            Some(abi) if abi.entries.len() == 1 => Some(internal_name_to_binary_name(&abi.entries[0].launcher_class)),
+            Some(_) => None,
+            None => Some(internal_name_to_binary_name(&class_file.internal_name)),
+        };
         package.push_class(&class_file).map_err(|error| format!("JAR 打包失败：{error}"))?;
         for companion in &input.companion_classes {
             package.push_class(companion).map_err(|error| format!("JAR 打包 singleton 类失败：{error}"))?;
@@ -140,6 +146,23 @@ impl TargetCodeGenBackend for JvmBinaryBackend {
             });
         }
         Ok(artifacts)
+    }
+}
+
+impl TargetCodeGenBackend for JvmBinaryBackend {
+    type Input = JvmBinaryBackendInput;
+
+    fn descriptor(&self) -> &BackendDescriptor {
+        &self.descriptor
+    }
+
+    fn validate(&self, input: &Self::Input) -> nyar::backends::BackendResult<()> {
+        self.validate_artifact(input).map_err(|error| nyar::backends::BackendError::for_backend(&self.descriptor.name, error))
+    }
+
+    fn compile(&self, input: Self::Input, options: &CompilationOptions) -> nyar::backends::BackendResult<ArtifactSet> {
+        self.compile_artifact(input, options)
+            .map_err(|error| nyar::backends::BackendError::for_backend(&self.descriptor.name, error))
     }
 }
 

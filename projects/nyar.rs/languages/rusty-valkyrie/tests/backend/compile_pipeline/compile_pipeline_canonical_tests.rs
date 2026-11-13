@@ -59,7 +59,7 @@ fn canonical_export_surface_stays_declared_and_callees_stay_internal_edges() {
     assert!(!fragments.is_empty(), "测试程序具有片段");
     let export_fragment =
         fragments.iter().find(|fragment| fragment.exported_operations.contains(&answer)).expect("`[export]` 声明的符号必须在导出面");
-    assert_eq!(export_fragment.wasm_export_names.get(&answer), Some(&"answer".to_owned()), "`[export]` 冻结名必须与导出面同源");
+    assert_eq!(export_fragment.export_names.get(&answer), Some(&"answer".to_owned()), "`[export]` 冻结名必须与导出面同源");
     let entry_fragment =
         fragments.iter().find(|fragment| fragment.entry_operation == Some(main)).expect("程序入口必须由 `entry_operation` 单独登记");
     assert!(entry_fragment.exported_operations.contains(&main), "程序入口是声明导出面的一部分");

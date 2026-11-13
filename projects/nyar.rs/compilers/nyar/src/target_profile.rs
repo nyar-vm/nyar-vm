@@ -841,23 +841,8 @@ impl CanonicalTarget {
 
 impl From<CanonicalTarget> for BinaryTarget {
     fn from(value: CanonicalTarget) -> Self {
-        let family = match value.to_profile(None).backend_family {
-            TargetBackendFamily::Clr => TargetFamily::Clr,
-            TargetBackendFamily::Jvm => TargetFamily::Jvm,
-            TargetBackendFamily::Wasm => TargetFamily::Wasm,
-            TargetBackendFamily::Ovm => TargetFamily::Ovm,
-            _ => TargetFamily::Native,
-        };
-        let arch = match value.arch {
-            CanonicalArch::X86 => BinaryArch::X86,
-            CanonicalArch::AArch64 => BinaryArch::Arm64,
-            CanonicalArch::X86_64 | CanonicalArch::Native => BinaryArch::X64,
-            _ => BinaryArch::Any,
-        };
-        let flavor = match family {
-            TargetFamily::Clr | TargetFamily::Jvm | TargetFamily::Ovm => BinaryFlavor::ManagedClr,
-            _ => BinaryFlavor::Native,
-        };
-        BinaryTarget { family, arch, byte_order: ByteOrder::LittleEndian, flavor }
+        // 投影只有一份权威实现：Arch / 家族映射与 OS / ABI 保留必须同源，
+        // 避免这里再写一份会漂移的 arch 匹配表。
+        value.to_binary_target()
     }
 }

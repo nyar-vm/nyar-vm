@@ -24,7 +24,7 @@ pub(crate) fn canonical_fragments(
         // 否则带函数类型形参的内部辅助函数会被 OVM 当成库导出根，撞上
         // 「`Function` 不许过边界」而误报。
         let exported_operations = fragment.exported_operations.clone();
-        let wasm_export_names = fragment.wasm_export_names.clone();
+        let export_names = fragment.export_names.clone();
         for instance in &exported_operations {
             if !linked.item_instances.contains_key(instance) {
                 return Err(error(module, "CAN042", format!("片段 {} 的操作缺少 callable 合同", fragment.id)));
@@ -113,7 +113,7 @@ pub(crate) fn canonical_fragments(
                     external_imports,
                     external_call_edges,
                     internal_call_edges,
-                    wasm_export_names,
+                    export_names,
                 },
             )
             .is_some()

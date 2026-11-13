@@ -5,9 +5,44 @@ pub mod gpu;
 pub mod vm;
 
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 
-/// 后端/规划层操作错误（纯文本）。
-pub type BackendError = String;
+/// 后端产出/校验失败。
+///
+/// 后端名是结构化事实：调用方可以按后端分派，而不是解析错误文本。后端选择/
+/// 策略层的失败没有单一后端归属，`backend` 为 `None`。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendError {
+    /// 失败的后端名（`BackendDescriptor::name`）；`None` 表示后端选择/策略层。
+    pub backend: Option<String>,
+    /// 具体原因。
+    pub reason: String,
+}
+
+impl BackendError {
+    /// 构造带后端归属的错误。
+    pub fn for_backend(backend: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self { backend: Some(backend.into()), reason: reason.into() }
+    }
+}
+
+impl Display for BackendError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.backend {
+            Some(backend) => write!(f, "[{backend}] {}", self.reason),
+            None => f.write_str(&self.reason),
+        }
+    }
+}
+
+impl std::error::Error for BackendError {}
+
+impl From<String> for BackendError {
+    fn from(reason: String) -> Self {
+        Self { backend: None, reason }
+    }
+}
+
 /// 后端 `Result` 别名。
 pub type BackendResult<T> = std::result::Result<T, BackendError>;
 
@@ -131,7 +166,7 @@ impl BackendRegistry {
             })
             .filter(|registration| {
                 registration.capability.supported_targets.is_empty()
-                    || registration.capability.supported_targets.iter().any(|candidate| candidate == target)
+                    || registration.capability.supported_targets.iter().any(|candidate| candidate.matches(target))
             })
             .filter(|registration| {
                 registration.capability.required_capabilities.iter().all(|required| capabilities.iter().any(|provided| provided == required))
@@ -169,7 +204,7 @@ pub fn projection_family_for_backend(backend_family: TargetBackendFamily) -> Bac
         TargetBackendFamily::Native => Ok(FutamuraProjectionFamily::Native),
         TargetBackendFamily::Gpu => Ok(FutamuraProjectionFamily::Gpu),
         TargetBackendFamily::Ovm => Ok(FutamuraProjectionFamily::Ovm),
-        TargetBackendFamily::Unknown => Err("未解析的后端家族不能进入 projection 装配".to_owned()),
+        TargetBackendFamily::Unknown => Err(BackendError::from("未解析的后端家族不能进入 projection 装配".to_owned())),
     }
 }
 

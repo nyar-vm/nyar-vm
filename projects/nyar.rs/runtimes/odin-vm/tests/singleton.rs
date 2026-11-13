@@ -3,7 +3,7 @@
 //! 分配与字段访问走 `ObjectNew` / `FieldGet` / `FieldSet` + `layouts`，
 //! 不再经字符串宿主 `alloc_record` / `record_*`。
 
-use odin_bytecode::{
+use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinGlobal, OdinHeadCode, OdinLayout, OdinModuleData, emit_imm1,
     encode_module,
 };

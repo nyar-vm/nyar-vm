@@ -2,7 +2,7 @@
 
 use miette::{IntoDiagnostic, Result};
 use nyar_gc::{ObjectHeap, ObjectPayload};
-use odin_bytecode::{OvmAbiExport, OvmAbiType, OvmOptionBoxing, OvmTextRepresentation};
+use acorn_odin::{OvmAbiExport, OvmAbiType, OvmOptionBoxing, OvmTextRepresentation};
 use serde_json::Value as JsonValue;
 
 use crate::{array_runtime, error::OdinRuntimeError, text_runtime, value::Value};
@@ -513,7 +513,7 @@ fn byte_array(heap: &ObjectHeap, value: &Value) -> Result<Vec<u8>, OdinRuntimeEr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use odin_bytecode::OvmAbiParam;
+    use acorn_odin::OvmAbiParam;
 
     fn export(param: OvmAbiType, returns: OvmAbiType) -> OvmAbiExport {
         OvmAbiExport {
@@ -558,8 +558,8 @@ mod tests {
             tag_slot: 0,
             payload_slot: 1,
             variants: vec![
-                odin_bytecode::OvmAbiVariant { name: "None".to_string(), tag: 0, payload: None },
-                odin_bytecode::OvmAbiVariant { name: "Some".to_string(), tag: 1, payload: Some(Box::new(OvmAbiType::I32)) },
+                acorn_odin::OvmAbiVariant { name: "None".to_string(), tag: 0, payload: None },
+                acorn_odin::OvmAbiVariant { name: "Some".to_string(), tag: 1, payload: Some(Box::new(OvmAbiType::I32)) },
             ],
         };
         assert_eq!(roundtrip(&unite, "\"None\""), JsonValue::String("None".to_string()));

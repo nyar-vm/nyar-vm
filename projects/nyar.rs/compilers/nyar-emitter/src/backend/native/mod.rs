@@ -5,15 +5,11 @@ mod executable;
 
 use std::path::PathBuf;
 
-use crate::{
-    EmitterError, Result,
-    transitional::binary::{
-        coff::{CoffMachine, CoffObjectWriter, CoffSection, CoffSymbol, coff_object_from_sections},
-        pe::extract_pe_section,
-    },
-};
+use crate::{EmitterError, Result};
 use nyar::{
-    abstractions::{ArtifactFormat, BackendInputKind, BinaryArch, BinaryFlavor, BinaryTarget, TargetFamily},
+    abstractions::{
+        ArtifactFormat, BackendInputKind, BinaryArch, BinaryFlavor, BinaryTarget, CanonicalAbi, CanonicalSpecification, TargetFamily,
+    },
     backends::{BackendDescriptor, CompilationOptions, TargetCodeGenBackend},
     packaging::{ArtifactDescriptor, ArtifactSet, TargetLane},
 };
@@ -65,14 +61,8 @@ impl Default for NativeBinaryBackend {
     }
 }
 
-impl TargetCodeGenBackend for NativeBinaryBackend {
-    type Input = NativeBinaryBackendInput;
-
-    fn descriptor(&self) -> &BackendDescriptor {
-        &self.descriptor
-    }
-
-    fn validate(&self, input: &Self::Input) -> Result<()> {
+impl NativeBinaryBackend {
+    fn validate_artifact(&self, input: &NativeBinaryBackendInput) -> Result<()> {
         let facts = classify_native_image(&input.executable).map_err(|error| format!("Native 后端 executable 格式无效: {error}"))?;
         if let Some(extension) = input.artifact_extension.as_deref() {
             validate_artifact_extension(extension, facts.shared)?;
@@ -80,7 +70,7 @@ impl TargetCodeGenBackend for NativeBinaryBackend {
         Ok(())
     }
 
-    fn compile(&self, input: Self::Input, options: &CompilationOptions) -> Result<ArtifactSet> {
+    fn compile_artifact(&self, input: NativeBinaryBackendInput, options: &CompilationOptions) -> Result<ArtifactSet> {
         if options.target.family != TargetFamily::Native {
             return Err(format!("Native 后端只接受 `Native` 目标族，实际得到 {:?}", options.target.family));
         }
@@ -89,6 +79,9 @@ impl TargetCodeGenBackend for NativeBinaryBackend {
         if options.target.arch != facts.arch {
             return Err(format!("Native 后端镜像架构 {:?} 与请求目标架构 {:?} 不一致", facts.arch, options.target.arch));
         }
+        // OS 规格与 ABI 是规范四元组的一部分：声明了就必须与镜像容器一致，
+        // 不得只看 arch 让 PE 伪装成 Linux/GNU 产物。
+        validate_target_image(facts, &options.target)?;
         if let Some(extension) = input.artifact_extension.as_deref() {
             validate_artifact_extension(extension, facts.shared)?;
         }
@@ -99,6 +92,61 @@ impl TargetCodeGenBackend for NativeBinaryBackend {
             NativeExecutableKind::Pe => compile_pe(input, options, facts),
         }
     }
+}
+
+impl TargetCodeGenBackend for NativeBinaryBackend {
+    type Input = NativeBinaryBackendInput;
+
+    fn descriptor(&self) -> &BackendDescriptor {
+        &self.descriptor
+    }
+
+    fn validate(&self, input: &Self::Input) -> nyar::backends::BackendResult<()> {
+        self.validate_artifact(input).map_err(|error| nyar::backends::BackendError::for_backend(&self.descriptor.name, error))
+    }
+
+    fn compile(&self, input: Self::Input, options: &CompilationOptions) -> nyar::backends::BackendResult<ArtifactSet> {
+        self.compile_artifact(input, options)
+            .map_err(|error| nyar::backends::BackendError::for_backend(&self.descriptor.name, error))
+    }
+}
+
+/// 目标四元组的 OS 规格与 ABI 必须与实际镜像容器一致。
+///
+/// `None` 表示该后端声明未细化规格（粗粒度目标），此时只按镜像容器包装；
+/// 一旦声明，PE 只能对应 Windows/MSVC，ELF 只能对应 Linux/GNU 或 System V。
+fn validate_target_image(facts: NativeImageFacts, target: &BinaryTarget) -> Result<()> {
+    let is_pe = facts.kind == NativeExecutableKind::Pe;
+    let is_elf = matches!(facts.kind, NativeExecutableKind::Elf | NativeExecutableKind::ElfShared);
+    if let Some(specification) = target.specification {
+        let compatible = match specification {
+            CanonicalSpecification::Windows => is_pe,
+            CanonicalSpecification::Linux => is_elf,
+            CanonicalSpecification::MacOs | CanonicalSpecification::Android | CanonicalSpecification::Ios => false,
+            CanonicalSpecification::Unknown | CanonicalSpecification::Browser | CanonicalSpecification::Wasi => false,
+        };
+        if !compatible {
+            return Err(format!(
+                "Native 后端镜像容器 {:?} 与目标规格 {:?} 不一致：不得把镜像写成其他平台的产物",
+                facts.kind, specification
+            ));
+        }
+    }
+    if let Some(abi) = target.abi {
+        let compatible = match abi {
+            CanonicalAbi::Msvc => is_pe,
+            CanonicalAbi::Gnu | CanonicalAbi::SystemV => is_elf,
+            CanonicalAbi::Aapcs64 | CanonicalAbi::Managed | CanonicalAbi::Clr | CanonicalAbi::Jvm | CanonicalAbi::WebAssembly
+            | CanonicalAbi::Wasi | CanonicalAbi::WasiP3 => false,
+        };
+        if !compatible {
+            return Err(format!(
+                "Native 后端镜像容器 {:?} 与目标 ABI {:?} 不一致：不得把镜像写成其他 ABI 的产物",
+                facts.kind, abi
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// 宿主扩展名与镜像共享/可执行分类必须一致。
@@ -148,30 +196,9 @@ fn compile_pe(input: NativeBinaryBackendInput, options: &CompilationOptions, fac
         target: options.target.clone(),
         lane: TargetLane::Native,
     });
-    // COFF sidecar 只属于可执行镜像；共享库由宿主直接加载，不伪造目标文件载体。
-    if !facts.shared {
-        let object_path = input.output_dir.join(format!("{}.obj", options.artifact_name));
-        let object = coff_object_from_sections(
-            CoffMachine::Amd64,
-            vec![CoffSection {
-                name: ".text".to_string(),
-                data: extract_pe_section(&input.executable, b".text").unwrap_or_default(),
-                relocations: Vec::new(),
-                characteristics: 0x6000_0020,
-            }],
-            vec![CoffSymbol { name: input.entry_symbol.clone(), section_index: 1, value: 0, storage_class: 2 }],
-        );
-        let object_bytes = CoffObjectWriter::write(&object).map_err(|error| format!("`COFF` sidecar 编码失败：{error}"))?;
-        std::fs::write(&object_path, object_bytes).map_err(|e| format!("写入 `COFF` sidecar 失败：{}: {e}", object_path.display()))?;
-        artifacts.push(ArtifactDescriptor {
-            name: options.artifact_name.clone(),
-            path: object_path.file_name().and_then(|name| name.to_str()).ok_or_else(|| format!("COFF sidecar 文件名无效"))?.to_owned(),
-            kind: nyar::ArtifactKind::Object,
-            format: ArtifactFormat::Coff,
-            target: options.target.clone(),
-            lane: TargetLane::Native,
-        });
-    }
+    // 已链接镜像不携带原始 object 的完整节、符号与重定位事实。
+    // 这里不再从 `.text` 反抽伪造 `.obj`：真实 COFF 目标文件必须由 object
+    // emitter 产生节/符号/重定位后再链接，缺失时只发布镜像产物。
     Ok(artifacts)
 }
 

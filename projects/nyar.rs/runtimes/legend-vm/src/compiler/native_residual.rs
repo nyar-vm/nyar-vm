@@ -320,7 +320,18 @@ impl ResidualValue {
             ResidualValue::Int(value) => Some(*value),
             ResidualValue::Bool(true) => Some(1),
             ResidualValue::Bool(false) | ResidualValue::Nil => Some(0),
-            ResidualValue::String(_) => None,
+            // 与 guest 语义一致：字符串按数值解析，失败取 0；残差不再拒绝 guest
+            // 已定义的动态转换。
+            ResidualValue::String(value) => Some(value.parse().unwrap_or(0)),
+        }
+    }
+
+    fn as_f64(&self) -> f64 {
+        match self {
+            ResidualValue::Int(value) => *value as f64,
+            ResidualValue::Bool(true) => 1.0,
+            ResidualValue::Bool(false) | ResidualValue::Nil => 0.0,
+            ResidualValue::String(value) => value.parse().unwrap_or(0.0),
         }
     }
 
@@ -336,12 +347,26 @@ impl ResidualValue {
 }
 
 /// Interpret a native residual's `main` (semantic check without nyar-vm).
+///
+/// 该解释器是残差语义的**诊断/对照**工具，不是产品路径：编译期 lowering 只允许
+/// 在残差已证明无副作用时折叠常量，并且受步数预算约束，不能把原程序完整执行后
+/// 丢掉 effect。
 pub fn eval_native_residual(module: &NativeResidualModule) -> Result<ResidualValue, String> {
     let mut frames = Vec::new();
-    call_function(module, "main", Vec::new(), &mut frames)
+    let mut steps = 0usize;
+    call_function(module, "main", Vec::new(), &mut frames, &mut steps)
 }
 
-fn call_function(module: &NativeResidualModule, name: &str, args: Vec<ResidualValue>, frames: &mut Vec<()>) -> Result<ResidualValue, String> {
+/// 编译期常量折叠的执行步数上限；防止残差中的无限循环把编译器挂死。
+const MAX_EVAL_STEPS: usize = 1_000_000;
+
+fn call_function(
+    module: &NativeResidualModule,
+    name: &str,
+    args: Vec<ResidualValue>,
+    frames: &mut Vec<()>,
+    steps: &mut usize,
+) -> Result<ResidualValue, String> {
     if frames.len() > 64 {
         return Err("native residual call depth exceeded".into());
     }
@@ -357,6 +382,10 @@ fn call_function(module: &NativeResidualModule, name: &str, args: Vec<ResidualVa
     let result = loop {
         if pc >= function.ops.len() {
             break stack.pop().unwrap_or(ResidualValue::Nil);
+        }
+        *steps = steps.saturating_add(1);
+        if *steps > MAX_EVAL_STEPS {
+            return Err(format!("native residual evaluation exceeded {MAX_EVAL_STEPS} steps"));
         }
         match &function.ops[pc] {
             NativeResidualOp::PushI64(value) => stack.push(ResidualValue::Int(*value)),
@@ -433,7 +462,7 @@ fn call_function(module: &NativeResidualModule, name: &str, args: Vec<ResidualVa
                     args.push(stack.pop().unwrap_or(ResidualValue::Nil));
                 }
                 args.reverse();
-                let value = call_function(module, name, args, frames)?;
+                let value = call_function(module, name, args, frames, steps)?;
                 stack.push(value);
             }
             NativeResidualOp::Ret => {
@@ -470,16 +499,17 @@ fn bin_cmp(stack: &mut Vec<ResidualValue>, op: impl FnOnce(&ResidualValue, &Resi
     Ok(())
 }
 
-fn bin_num_cmp(stack: &mut Vec<ResidualValue>, op: impl FnOnce(i64, i64) -> bool) -> Result<(), String> {
-    let right = stack.pop().and_then(|value| value.as_int()).ok_or("numeric RHS")?;
-    let left = stack.pop().and_then(|value| value.as_int()).ok_or("numeric LHS")?;
-    stack.push(ResidualValue::Bool(op(left, right)));
+fn bin_num_cmp(stack: &mut Vec<ResidualValue>, op: impl FnOnce(f64, f64) -> bool) -> Result<(), String> {
+    let right = stack.pop().unwrap_or(ResidualValue::Nil);
+    let left = stack.pop().unwrap_or(ResidualValue::Nil);
+    stack.push(ResidualValue::Bool(op(left.as_f64(), right.as_f64())));
     Ok(())
 }
 
 fn display_value(value: &ResidualValue) -> String {
     match value {
-        ResidualValue::Nil => "nil".into(),
+        // guest 解释器把 null/nil 显示成空串；残差保持同一转换规则。
+        ResidualValue::Nil => String::new(),
         ResidualValue::Bool(value) => value.to_string(),
         ResidualValue::Int(value) => value.to_string(),
         ResidualValue::String(value) => value.clone(),
@@ -488,21 +518,41 @@ fn display_value(value: &ResidualValue) -> String {
 
 /// Lower a native residual to raw x64 bytes suitable for [`PeCompiler`].
 ///
-/// Subset: when `main` evaluates to an integer, emit `mov rax, imm` so the PE
-/// epilog exits with that code. Residuals the subset cannot represent fail
-/// closed: a non-integer result is an explicit "not implemented" error (an
-/// empty body would masquerade as a working exit-0 product), and an evaluation
-/// error propagates with its message. Residual ops remain the source of truth
-/// for future full codegen.
+/// 常量折叠只允许用于**已证明无副作用**的残差：任何 `Print` 或未知调用都会
+/// 失败闭合，不得先执行原程序再把结果替成 `mov rax, imm`，否则运行期 effect
+/// 会被编译器静默吞掉。纯度门通过后才在步数预算内折叠常量；非整数结果仍是
+/// 明确的 not-implemented 错误，空函数体不会伪装成可运行的 exit-0 产品。
 pub fn lower_native_residual_to_x64(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
     if !module.is_native_bound() {
         return Err("residual is not native-bound".into());
     }
+    ensure_effect_free_for_constant_folding(module)?;
     match eval_native_residual(module) {
         Ok(ResidualValue::Int(value)) => Ok(encode_mov_rax_imm64(value as u64)),
         Ok(other) => Err(format!("full x64 lowering is not implemented for non-integer residual results (got {other:?})")),
         Err(error) => Err(format!("native residual evaluation failed: {error}")),
     }
+}
+
+/// 残差纯度门：只允许无运行时副作用的常量折叠。
+fn ensure_effect_free_for_constant_folding(module: &NativeResidualModule) -> Result<(), String> {
+    for function in &module.functions {
+        for op in &function.ops {
+            match op {
+                NativeResidualOp::Print(_) => {
+                    return Err(format!(
+                        "residual function `{}` contains `Print`; effects must be preserved at runtime, not consumed by compile-time folding",
+                        function.name
+                    ))
+                }
+                NativeResidualOp::Call { name, .. } if module.function(name).is_none() => {
+                    return Err(format!("residual function `{}` calls unknown `{name}`", function.name))
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
 }
 
 fn encode_mov_rax_imm64(value: u64) -> Vec<u8> {
@@ -554,11 +604,19 @@ mod tests {
 
     #[test]
     fn evaluation_failure_propagates_instead_of_empty_body() {
-        // `main` calls a missing function → `eval_native_residual` errors.
+        // `main` calls a missing function → 纯度门明确拒绝未知调用。
         let mut module = residual_main(vec![NativeResidualOp::Call { name: "absent".into(), argc: 0 }, NativeResidualOp::Ret]);
         module.functions.push(NativeResidualFunction { name: "other".into(), parameters: Vec::new(), ops: vec![NativeResidualOp::PushI64(0), NativeResidualOp::Ret] });
         let error = lower_native_residual_to_x64(&module).expect_err("evaluation failure must not report success");
-        assert!(error.contains("evaluation failed"), "unexpected error: {error}");
+        assert!(error.contains("unknown"), "unexpected error: {error}");
         assert!(error.contains("absent"), "evaluation message must be carried: {error}");
+    }
+
+    #[test]
+    fn print_residual_fails_closed_instead_of_being_executed_at_compile_time() {
+        let module = residual_main(vec![NativeResidualOp::PushI64(7), NativeResidualOp::Print(1), NativeResidualOp::PushI64(9), NativeResidualOp::Ret]);
+        let error = lower_native_residual_to_x64(&module).expect_err("含 Print 的残差不得编译期折叠");
+        assert!(error.contains("Print"), "unexpected error: {error}");
+        assert!(error.contains("effects must be preserved at runtime"), "unexpected error: {error}");
     }
 }

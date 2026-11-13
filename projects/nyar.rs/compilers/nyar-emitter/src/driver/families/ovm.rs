@@ -5,7 +5,7 @@ use crate::{
     bundled_backend_capability_descriptor, nyar_backend_vm::emit_nyar_module,
 };
 use nyar::{ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane};
-use odin_bytecode::{OdinExportKind, OdinModuleData, decode_module};
+use acorn_odin::{OdinExportKind, OdinModuleData, decode_module};
 
 use super::BundledBackendCompiler;
 

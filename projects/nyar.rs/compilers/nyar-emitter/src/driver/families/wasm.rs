@@ -25,7 +25,7 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
             ));
         }
         let backend = WasmBinaryBackend::new();
-        backend.validate(&input)?;
+        backend.validate(&input).map_err(|error| error.to_string())?;
         let package_as_wasi_command = input.package_as_wasi_command;
         let wasi_preview = input.wasi_preview;
         // `artifact: library`：导出通过 glue 的 `callExport` 调用，不产生可执行
@@ -50,7 +50,7 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
         else {
             Vec::new()
         };
-        let artifacts = backend.compile(input, request.options)?;
+        let artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
         let run_contracts = if request.library_mode {
             Vec::new()
         }

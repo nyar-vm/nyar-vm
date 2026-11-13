@@ -22,7 +22,8 @@ pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> 
         }
     }
     let backend_plan =
-        TargetExecutionPlan::from_compiled_program(&payload.compiled_program, &partition.fragment, payload.theory_bundle, &roots)?;
+        TargetExecutionPlan::from_compiled_program(&payload.compiled_program, &partition.fragment, payload.theory_bundle, &roots)
+            .map_err(|error| format!("目标计划构建失败: {error}"))?;
 
     Ok(FragmentSubmission { backend_plan: std::sync::Arc::new(backend_plan) })
 }

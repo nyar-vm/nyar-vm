@@ -1,7 +1,10 @@
-use odin_bytecode::{Odin_VERSION, OdinModuleData};
+use acorn_odin::{Odin_VERSION, OdinModuleData};
 
 use super::sanitize_symbol;
 use crate::FragmentSubmission;
+
+/// OVM 目标私有 LIR 与 `.odin` 函数体编码器。
+pub(crate) mod lir;
 
 /// 只发射 Compiler 实例键控的目标私有计划，不重放调用边（集成测试专用）。
 #[doc(hidden)]
@@ -20,6 +23,14 @@ pub(crate) fn lower_fragment_to_nyar_module_with_abi(
         return super::ovm_mir::lower_fragment_mir_to_nyar_module_with_abi(submission);
     }
     Err(format!("Nyar VM backend requires Compiler-owned executable functions; edge-based semantic replay is not a valid input"))
+}
+
+/// 集成测试入口：与生产路径相同，派生 OVM 库导出 ABI 合同。
+#[doc(hidden)]
+pub fn lower_fragment_to_nyar_module_with_abi_for_testing(
+    submission: &FragmentSubmission,
+) -> crate::Result<(OdinModuleData, Option<crate::OvmAbiContract>)> {
+    lower_fragment_to_nyar_module_with_abi(submission)
 }
 
 /// 库模式公开导出名（run-contract 入口）；与模块内 `NyarExport.symbol_name` 一一对应（集成测试专用）。

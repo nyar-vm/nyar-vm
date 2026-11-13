@@ -32,9 +32,9 @@ fn array_of(element: NyarType) -> NyarType {
 }
 
 #[test]
-fn array_of_integer64_uses_boxed_long_carrier() {
+fn array_of_integer64_uses_primitive_long_carrier() {
     let descriptor = jvm_type_descriptor(&reference_layout_plan(), &array_of(NyarType::Integer64 { signed: true })).expect("i64 array");
-    assert_eq!(descriptor, JvmTypeDescriptor::array(JvmTypeDescriptor::Object("java/lang/Long".to_string())));
+    assert_eq!(descriptor, JvmTypeDescriptor::array(JvmTypeDescriptor::Long));
 }
 
 #[test]
@@ -43,10 +43,12 @@ fn array_of_integer8_uses_byte_carrier() {
     assert_eq!(descriptor, JvmTypeDescriptor::array(JvmTypeDescriptor::Byte));
 }
 
+/// V 的 `char` 是 u32 码位载体；JVM `char` 只有 16 位，会截断 U+10000 以上，
+/// 因此数组元素必须使用 32 位 `int` 槽。
 #[test]
-fn array_of_character_uses_char_carrier() {
+fn array_of_character_uses_32_bit_code_point_carrier() {
     let descriptor = jvm_type_descriptor(&reference_layout_plan(), &array_of(NyarType::Character)).expect("char array");
-    assert_eq!(descriptor, JvmTypeDescriptor::array(JvmTypeDescriptor::Char));
+    assert_eq!(descriptor, JvmTypeDescriptor::array(JvmTypeDescriptor::Int));
 }
 
 #[test]

@@ -10,12 +10,13 @@ use std::{collections::BTreeMap, process::Command};
 
 use nyar::{
     ExternalImportLink, Identifier, QualifiedName,
-    abstractions::{BinaryArch, CanonicalTarget},
+    abstractions::{BinaryArch, BinaryFlavor, BinaryTarget, CanonicalAbi, CanonicalSpecification, CanonicalTarget, TargetFamily},
+    backends::{CompilationOptions, TargetCodeGenBackend},
 };
 use nyar_emitter::{
     BackendImport, FragmentSubmission, TargetExecutionPlan,
     lowering::backends::native::x86_64::X86_64OperatorCode,
-    nyar_backend_native::{NativeExecutableKind, classify_native_image},
+    nyar_backend_native::{NativeBinaryBackend, NativeBinaryBackendInput, NativeExecutableKind, classify_native_image},
     target_operator::{TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
     testing::lower_fragment_to_native_image,
 };
@@ -88,21 +89,30 @@ fn integer(value: i64) -> Operand {
 }
 
 fn operator_plan(code: X86_64OperatorCode) -> TargetOperatorPlan {
-    let result_type = if code.is_comparison() { TargetOperandType::I32 } else { TargetOperandType::I64 };
     TargetOperatorPlan {
         arity: code.arity(),
-        operand_type: TargetOperandType::I64,
-        result_type,
+        operand_type: code.operand_type(),
+        result_type: code.result_type(),
         recipe: TargetOperatorRecipe::Operands,
         encoding: TargetOperatorEncoding::X86_64(code),
+    }
+}
+
+/// `TargetOperandType` → 声明签名里的 `NyarType`。
+fn carrier_type(operand: TargetOperandType) -> NyarType {
+    match operand {
+        TargetOperandType::I32 => INTEGER,
+        TargetOperandType::I64 => LONG,
+        TargetOperandType::F32 => NyarType::Float32,
+        TargetOperandType::F64 => NyarType::Float64,
     }
 }
 
 fn operator_import(code: X86_64OperatorCode, return_type: NyarType) -> BackendImport {
     BackendImport {
         index: ImportIndex::from_index(0).expect("import index"),
-        link: ExternalImportLink::host(Some(Identifier::new("native-operator")), vec![format!("{code:?}")]),
-        parameter_types: vec![LONG; code.arity()],
+        link: ExternalImportLink::host(Some(Identifier::new("x86_64-operator")), vec![format!("{code:?}")]),
+        parameter_types: vec![carrier_type(code.operand_type()); code.arity()],
         return_type,
         target_operator: Some(TargetOperatorBinding::Frozen(operator_plan(code))),
     }
@@ -244,6 +254,41 @@ fn branch_through_frozen_compare_runs_natively() {
     assert_eq!(run_exit_code("native-branch", &lowered.executable), 7, "choose(3, 4) = 3 + 4 的进程退出码");
 }
 
+/// 产物层必须保留并校验规范四元组的 OS / ABI：PE 不得被包装成 Linux/GNU 产物。
+#[test]
+fn native_backend_rejects_image_container_mismatching_target_os_or_abi() {
+    let main = function("main", NyarType::Unit, Vec::new());
+    let main_name = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), main)]));
+    plan.testing_module_name("native_lowering").testing_entry_operation(main_name);
+    let lowered = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect("unit 入口必须生成 PE");
+
+    let directory = tempfile::tempdir().expect("temp dir");
+    let backend = NativeBinaryBackend::new();
+    let mut options = CompilationOptions {
+        target: BinaryTarget::new(TargetFamily::Native, BinaryArch::X64, BinaryFlavor::Native),
+        artifact_name: "native-target-check".to_string(),
+        emit_debug_symbols: false,
+        optimize: false,
+    };
+    let input = || NativeBinaryBackendInput {
+        executable: lowered.executable.clone(),
+        output_dir: directory.path().to_path_buf(),
+        entry_symbol: "main".to_string(),
+        artifact_extension: None,
+    };
+
+    options.target.specification = Some(CanonicalSpecification::Windows);
+    options.target.abi = Some(CanonicalAbi::Msvc);
+    backend.compile(input(), &options).expect("Windows + MSVC 与 PE 一致");
+
+    options.target.specification = Some(CanonicalSpecification::Linux);
+    options.target.abi = Some(CanonicalAbi::Gnu);
+    let error = backend.compile(input(), &options).expect_err("PE 不得包装成 Linux/GNU 产物");
+    let text = error.to_string();
+    assert!(text.contains("与目标规格") || text.contains("与目标 ABI"), "{error}");
+}
+
 #[test]
 fn unit_return_exits_zero() {
     let main = function("main", NyarType::Unit, Vec::new());
@@ -303,7 +348,7 @@ fn non_native_operator_encoding_is_rejected() {
             operand_type: TargetOperandType::I64,
             result_type: TargetOperandType::I64,
             recipe: TargetOperatorRecipe::Operands,
-            encoding: TargetOperatorEncoding::Wasm(0x6A),
+            encoding: TargetOperatorEncoding::Wasm(acorn_wasm::WasmOpcode::I32Add),
         }),
         LONG,
     );
@@ -363,6 +408,41 @@ fn call_to_unknown_instance_is_rejected() {
 
     let error = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect_err("未知调用目标必须失败");
     assert!(error.contains("不在可达函数集"), "错误必须点名不可达调用目标: {error}");
+}
+
+/// `mul32(a: i32, b: i32) = a * b`，`main() -> i32 = mul32(6, 7)`：32 位算子真实运行。
+#[test]
+fn integer_operator_runs_natively() {
+    let mul = function("mul32", INTEGER, vec![INTEGER, INTEGER]);
+    let mut main = function("main", INTEGER, Vec::new());
+    main.value_types.insert(ValueRef(0), INTEGER);
+    main.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(0))) };
+
+    let main_name = QualifiedName::new(vec![Identifier::new("main")]);
+    let mul_name = QualifiedName::new(vec![Identifier::new("mul32")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), main), (mul_name, mul)]));
+    plan.testing_module_name("native_lowering").testing_entry_operation(main_name);
+
+    let mul_instance = instance_of(&plan, "mul32");
+    with_function_mut(&mut plan, "mul32", |function| {
+        function.value_types.insert(ValueRef(2), INTEGER);
+        function.blocks[0].instructions.push(call(
+            operator_instance(0),
+            vec![Operand::Value(ValueRef(0)), Operand::Value(ValueRef(1))],
+            vec![ValueRef(2)],
+        ));
+        function.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(2))) };
+    });
+    with_function_mut(&mut plan, "main", |function| {
+        function.blocks[0].instructions.push(call(mul_instance, vec![integer(6), integer(7)], vec![ValueRef(0)]));
+    });
+    plan.testing_register_import(operator_instance(0), operator_import(X86_64OperatorCode::I32Multiply, INTEGER));
+
+    let lowered = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect("i32 纵切必须生成 PE");
+    expect_pe(&lowered.executable);
+
+    #[cfg(windows)]
+    assert_eq!(run_exit_code("native-i32", &lowered.executable), 42, "6 * 7 的进程退出码");
 }
 
 /// 未闭合的规范目标四元组必须失败闭合，不得把 Windows `PE` 编码借给其他平台。

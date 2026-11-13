@@ -108,6 +108,14 @@ pub enum MirDiagnostic {
         /// 本次尝试登记的标签。
         incoming: String,
     },
+    /// 结构化 CFG/SSA 构造合同被破坏：边的 bindings 缺失或 arity 不一致。
+    ///
+    /// 这是 lowering 自身的结构性错误，必须失败闭合；不得用循环前初值、
+    /// 默认 `Unit` 或其它占位参数修补回边。
+    ControlFlowContractViolation {
+        /// 破坏合同的结构化描述。
+        context: String,
+    },
 }
 
 /// `SSA` 形式的 `MIR` 模块。

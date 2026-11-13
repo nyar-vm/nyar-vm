@@ -17,16 +17,7 @@
 // ── Local re-exports (子模块之间共用) ──────────────────────────────────────
 
 // 从 acorn_wasm re-export（calls.rs / control.rs / lowerer.rs 通过 super::* 消费）
-pub(super) use acorn_wasm::{
-    BLOCKTYPE_EMPTY, VALTYPE_ANYREF, VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, VALTYPE_REF_NULL, WasmExternalKind, WasmOpcode,
-    encode_array_copy, encode_array_get, encode_array_len, encode_array_new_default, encode_array_new_fixed, encode_array_set,
-    encode_block_empty, encode_br, encode_br_if, encode_call, encode_drop, encode_f64_const, encode_f64_load, encode_f64_store,
-    encode_global_get, encode_global_set, encode_i32_add, encode_i32_and, encode_i32_const, encode_i32_load, encode_i32_store,
-    encode_i64_const, encode_i64_load, encode_i64_store, encode_local_get, encode_local_set, encode_local_tee, encode_loop_empty,
-    encode_memarg, encode_memory_copy, encode_memory_fill, encode_memory_grow, encode_memory_size, encode_ref_cast_array,
-    encode_ref_cast_type_index, encode_ref_null_anyref, encode_ref_null_externref, encode_sleb128_i64, encode_struct_get,
-    encode_struct_new_default, encode_struct_set, encode_unreachable,
-};
+pub(super) use acorn_wasm::{BLOCKTYPE_EMPTY, VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
 
 // 从 crate::backend_plan_views re-export
 pub(super) use crate::backend_plan_views::{
@@ -40,47 +31,23 @@ pub(super) use crate::backend_plan_views::{
 /// `f32` 在 wasm 侧的唯一 valtype 常量（`0x7D`）；权威定义见 `wasm::gc::VALTYPE_F32`。
 pub(super) use crate::lowering::backends::wasm::gc::VALTYPE_F32;
 
-/// `f32.const`（opcode `0x43` + 4 字节小端位模式）。
-///
-/// `acorn_wasm` 未导出 f32 编码器，这里是唯一发射点。必须直接用 `f32::to_bits`
-/// 写 4 字节：不得经 f64 往返，否则 NaN payload 低 29 位与次正规位模式会被改写。
-pub(super) fn encode_f32_const(value: f32, code: &mut Vec<u8>) {
-    code.push(0x43);
-    code.extend_from_slice(&value.to_bits().to_le_bytes());
-}
-
-/// `f32.load`（opcode `0x2A`，4 字节字段，自然对齐 log2 = 2）。
-pub(super) fn encode_f32_load(align_log2: u32, offset: u32, code: &mut Vec<u8>) {
-    code.push(0x2A);
-    crate::lowering::backends::wasm::sections::encode_uleb128(align_log2, code);
-    crate::lowering::backends::wasm::sections::encode_uleb128(offset, code);
-}
-
-/// `f32.store`（opcode `0x38`，4 字节字段，自然对齐 log2 = 2）。
-pub(super) fn encode_f32_store(align_log2: u32, offset: u32, code: &mut Vec<u8>) {
-    code.push(0x38);
-    crate::lowering::backends::wasm::sections::encode_uleb128(align_log2, code);
-    crate::lowering::backends::wasm::sections::encode_uleb128(offset, code);
-}
+/// `f32` 的常量与 memarg 编码由 `acorn-wasm` 拥有；emitter 不再保留本地发射点。
+pub(super) use acorn_wasm::{encode_f32_const, encode_f32_load};
 
 pub(super) use super::super::executable::ExecutableLoweringContext;
 pub(super) use nyar_types::{LayoutId, NominalInstanceId, VariantId};
 
 // 从 crate 顶层模块 re-export
 pub(super) use crate::{
-    FragmentSubmission,
     contracts::{ArrayInitialization, instruction_primary_result},
-    nyar_backend_wasi::WasmBinaryModule,
-    target_operator::{
-        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
-        WasmGcArrayOperation, WasmGcArrayOperatorPlan,
-    },
+    target_operator::{TargetOperatorBinding, WasmGcArrayOperation, WasmGcArrayOperatorPlan},
 };
 
 // 从 wasm gc 模块 re-export
 pub(super) use super::gc::WASM_GC_ANYREF;
 
 // 从子模块 re-export（供兄弟子模块通过 super::* 消费）
+pub(super) use lir::{WasmBodyInstruction, encode_wasm_body};
 pub(super) use lowerer::{
     HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, Utf8HostHandleMaterializePlan, WASM_GC_EXTERNREF, WasmMirLowerer,
     array_element_type,
@@ -100,6 +67,7 @@ mod imports;
 mod instructions;
 mod intrinsics;
 mod library_invoke;
+mod lir;
 mod lowerer;
 pub(crate) mod numeric;
 mod operands;
@@ -110,3 +78,19 @@ mod type_registry;
 // ── Facade pub(crate) entrances (wasm 后端唯一对外入口) ──────────────────
 
 pub(crate) use entry::{augment_wasm_with_value_aggregate_metadata, lower_fragment_mir_to_wasm_module, lower_fragment_mir_to_wasm_module_for};
+
+/// Wasm 物理导出 ABI 的私有派生点。
+///
+/// 公共 [`crate::TargetExecutionPlan`] 只携带逻辑导出身份与签名，构造时不再
+/// 为任何目标预先冻结物理载体。Wasm lane 在需要导出 ABI 时按函数签名现场冻结；
+/// 缓存存在时只复用本 lane 已冻结的事实。其它 lane 不受 Wasm 载体资格约束。
+pub(super) fn wasm_library_export_abi(
+    plan: &crate::TargetExecutionPlan,
+    instance: &nyar_types::ItemInstanceId,
+) -> crate::Result<crate::LibraryExportAbi> {
+    if let Some(abi) = plan.library_export_abi(instance) {
+        return Ok(abi.clone());
+    }
+    let view = plan.get_function(instance).ok_or_else(|| format!("库导出 `{instance}` 缺少 Compiler 函数体，无法冻结 Wasm ABI 载体合同"))?;
+    crate::target_execution_plan::freeze_library_export_abi(&view.function)
+}

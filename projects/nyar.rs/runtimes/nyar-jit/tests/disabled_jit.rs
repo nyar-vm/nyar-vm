@@ -1,5 +1,5 @@
 use nyar_jit::{DisabledJit, JitCompileRequest, JitCompiler, JitError, JitFunctionSpec, StackMapJit};
-use odin_bytecode::Odin_VERSION;
+use acorn_odin::Odin_VERSION;
 
 #[test]
 fn disabled_jit_reports_unsupported() {

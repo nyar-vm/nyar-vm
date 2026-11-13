@@ -1,6 +1,6 @@
 //! Generate-time IR for Nyar bytecode emission.
 
-use odin_bytecode::OdinHeadCode;
+use acorn_odin::OdinHeadCode;
 
 /// One constant-pool entry (unified index space).
 #[derive(Debug, Clone, PartialEq)]

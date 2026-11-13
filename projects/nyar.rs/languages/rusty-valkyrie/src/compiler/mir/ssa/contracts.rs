@@ -259,7 +259,7 @@ pub(super) fn collect_semantic_fragments(
             reference_management_hint: None,
             entry_operation: None,
             rewrite_theory: RewriteTheory::default(),
-            wasm_export_names: BTreeMap::new(),
+            export_names: BTreeMap::new(),
         });
         if !fragment.exported_operations.contains(&instance) {
             fragment.exported_operations.push(instance);
@@ -268,7 +268,7 @@ pub(super) fn collect_semantic_fragments(
             fragment.entry_operation = Some(instance);
         }
         if let Some(export) = export {
-            fragment.wasm_export_names.insert(instance, export.exported_name.clone());
+            fragment.export_names.insert(instance, export.exported_name.clone());
         }
         // suspend 能力只由真正的挂起效果（yield/await/awake/block_on）决定。
         // 未捕获 `raise` 现在在 MIR 里直接终止为 `Unreachable`（目标后端落 trap），
@@ -284,7 +284,7 @@ pub(super) fn collect_semantic_fragments(
         add(function, exports, entries, &mut fragments);
     }
     // 声明体 / impl 成员与顶层函数共用同一条片段规则：成员上的 `[export]` 必须成为
-    // `exported_operations` 与 `wasm_export_names`，否则 Canonical 的链接根拿不到该实例。
+    // `exported_operations` 与 `export_names`，否则 Canonical 的链接根拿不到该实例。
     for item in &module.structs {
         for method in &item.methods {
             add(method, exports, entries, &mut fragments);
@@ -305,7 +305,7 @@ pub(super) fn collect_semantic_fragments(
                 reference_management_hint: None,
                 entry_operation: None,
                 rewrite_theory: RewriteTheory::default(),
-                wasm_export_names: BTreeMap::new(),
+                export_names: BTreeMap::new(),
             },
         );
     }

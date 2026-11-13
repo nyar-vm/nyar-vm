@@ -22,6 +22,27 @@ fn branch_binding_names(pre_bindings: &std::collections::BTreeMap<String, MirOpe
 }
 
 impl MirBuilder {
+    /// 目标块是否已经被任一终结符引用为后继（含 effect resume / state dispatch 边）。
+    ///
+    /// 用于取代按块标签前缀判断「死块」的旧启发式：块是否为发散构造留下的死端
+    /// 是结构事实，不是命名事实。
+    fn block_has_predecessor(&self, target: MirBlockRef) -> bool {
+        self.blocks.iter().any(|block| {
+            if block.id == target {
+                return false;
+            }
+            match &block.terminator {
+                MirTerminator::Jump { target: jump_target, .. } => *jump_target == target,
+                MirTerminator::Branch { then_target, else_target, .. } => *then_target == target || *else_target == target,
+                MirTerminator::PerformEffect { resume_target, .. } => *resume_target == target,
+                MirTerminator::StateDispatch { cases, default_target, .. } => {
+                    *default_target == target || cases.iter().any(|(_, case_target)| *case_target == target)
+                }
+                MirTerminator::Return { .. } | MirTerminator::YieldToRuntime { .. } | MirTerminator::Unreachable => false,
+            }
+        })
+    }
+
     /// `loop pat in coll` 的索引 lowering 必须先获得比较与自增的 callable 合同。
     ///
     /// 比较与自增都是普通接收者成员调用（`infix <` / `infix +`），
@@ -460,12 +481,8 @@ impl MirBuilder {
         }
 
         if self.terminator.is_none() {
-            if self.current_label.starts_with("after_") {
-                self.terminate(MirTerminator::Unreachable);
-            }
-            else {
-                self.terminate(MirTerminator::Jump { target: loop_header_id, arguments: Vec::new() });
-            }
+            // 首遍只是建立循环体形状；真正的回边在第二遍按当前 bindings 显式携带。
+            self.terminate(MirTerminator::Jump { target: loop_header_id, arguments: Vec::new() });
         }
         let first_pass_body_label = self.current_label.clone();
         self.flush_block(&first_pass_body_label);
@@ -656,38 +673,56 @@ impl MirBuilder {
         let loop_context = self.control_flow.pop_loop();
 
         if self.terminator.is_none() {
-            if self.current_label.starts_with("after_") {
-                self.terminate(MirTerminator::Unreachable);
+            // 当前块若仍是可达的循环体尾，回边必须显式携带每个循环携带变量的
+            // **当前** bindings；缺失即 failure，不再用循环前初值顶替。
+            // 若当前块本来就是发散构造留下的死块（无任何前驱），保持 Unreachable，
+            // 不按标签前缀裁决控制流。
+            if self.block_has_predecessor(self.current_block) {
+                let mut continue_args = Vec::with_capacity(carried_names.len());
+                let mut missing: Option<String> = None;
+                for name in &carried_names {
+                    match self.bindings.get(name).cloned() {
+                        Some(operand) => continue_args.push(operand),
+                        None => {
+                            missing = Some(name.clone());
+                            break;
+                        }
+                    }
+                }
+                if let Some(name) = missing {
+                    self.diagnostics.push(super::MirDiagnostic::ControlFlowContractViolation {
+                        context: format!("循环回边缺少循环携带绑定 `{name}`；禁止用循环前初值修补"),
+                    });
+                    self.terminate(MirTerminator::Unreachable);
+                }
+                else {
+                    self.terminate(MirTerminator::Jump { target: loop_header_id, arguments: continue_args });
+                }
             }
             else {
-                let continue_args: Vec<MirOperand> = carried_names
-                    .iter()
-                    .map(|name| {
-                        self.bindings
-                            .get(name)
-                            .cloned()
-                            .or_else(|| pre_loop_bindings.get(name).cloned())
-                            .expect("loop-carried binding must remain available at continue")
-                    })
-                    .collect();
-                self.terminate(MirTerminator::Jump { target: loop_header_id, arguments: continue_args });
+                self.terminate(MirTerminator::Unreachable);
             }
         }
         let second_pass_body_label = self.current_label.clone();
         self.flush_block(&second_pass_body_label);
         self.terminator = None;
 
-        // Final safety: every jump into the header must match parameter arity.
+        // 每条指向 header 的 Jump 边必须与 header 参数逐个对齐；这里只校验，
+        // 不再用循环前初值改写实参列表。
         let header_arity = self.blocks[loop_header_id.0 as usize].parameters.len();
-        for block in &mut self.blocks {
-            if let MirTerminator::Jump { target, arguments } = &mut block.terminator {
-                if *target == loop_header_id && arguments.len() != header_arity {
-                    *arguments = carried_names
-                        .iter()
-                        .map(|name| pre_loop_bindings.get(name).cloned().expect("loop-carried name must exist before the loop"))
-                        .collect();
-                }
+        let mismatched = self.blocks.iter().find_map(|block| match &block.terminator {
+            MirTerminator::Jump { target, arguments } if *target == loop_header_id && arguments.len() != header_arity => {
+                Some((block.id, arguments.len()))
             }
+            _ => None,
+        });
+        if let Some((block, actual)) = mismatched {
+            self.diagnostics.push(super::MirDiagnostic::ControlFlowContractViolation {
+                context: format!(
+                    "循环回边 block {} 携带 {actual} 个实参，但 header 声明 {header_arity} 个参数；边与 bindings 必须同源",
+                    block.0
+                ),
+            });
         }
 
         // break 出边已携带循环携带变量的当前值（lower_break_expr）；exit 侧必须建立同名

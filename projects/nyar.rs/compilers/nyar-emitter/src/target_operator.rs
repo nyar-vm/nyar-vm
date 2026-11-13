@@ -10,7 +10,7 @@
 //! [`TargetOperatorPlan`]。backend 只编码这里已冻结的配方，不得再从助记符字符串
 //! 推断 arity、操作数改写或结果类型，也不得为未冻结的绑定补默认指令。
 
-use odin_bytecode::OdinHeadCode;
+use acorn_odin::OdinHeadCode;
 
 /// 目标标量载体。
 ///
@@ -65,8 +65,8 @@ pub enum TargetOperatorRecipe {
 /// 已冻结的 operator 编码。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetOperatorEncoding {
-    /// WASM 单字节 opcode。
-    Wasm(u8),
+    /// WASM 标准叶子 opcode（由 `acorn-wasm` 拥有数值身份）。
+    Wasm(acorn_wasm::WasmOpcode),
     /// OVM 头码。
     Ovm(OdinHeadCode),
     /// JVM 冻结码（算术码单指令展开；比较码由 JVM backend 展开为指令序列）。

@@ -84,11 +84,13 @@ pub fn lower_fragment_to_wasm_module_for(
         }
     }
     if wasm_package_kind == WasmPackageKind::Library {
-        if submission.backend_plan.wasm_export_names().is_empty() {
+        if submission.backend_plan.export_names().is_empty() {
             return Err(format!("library wasm package requires at least one `[export]` symbol"));
         }
     }
-    let export_name = if let Some(name) = submission.backend_plan.wasm_export_names().values().next() {
+    // 导出名只是符号选择：声明的 `[export]` 名优先，否则用 boundary 入口名。
+    // 它不参与宿主模式推断——`wasi_mode` 只来自显式 `host_boundary`。
+    let export_name = if let Some(name) = submission.backend_plan.export_names().values().next() {
         name.as_str()
     }
     else {
@@ -97,7 +99,8 @@ pub fn lower_fragment_to_wasm_module_for(
         }
         boundary_entry_name
     };
-    let (mut module, imports) = mir::lower_fragment_mir_to_wasm_module_for(submission, export_name, wasi_preview, wasm_package_kind)?;
+    let (mut module, imports) =
+        mir::lower_fragment_mir_to_wasm_module_for(submission, export_name, host_boundary, wasi_preview, wasm_package_kind)?;
 
     prepend_nyar_custom_sections(&mut module, submission);
     super::singleton::append_singleton_metadata_sections(&mut module, submission);

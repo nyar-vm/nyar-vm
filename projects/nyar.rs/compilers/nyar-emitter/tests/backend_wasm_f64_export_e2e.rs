@@ -34,7 +34,7 @@ struct EmittedBridge {
 fn plan_for(function: ExecutableFunction) -> TargetExecutionPlan {
     let name = QualifiedName::new(vec![Identifier::new("echo")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(name, function)]));
-    plan.testing_wasm_export_names_mut().insert(nyar_types::ItemInstanceId::from_index(0).expect("实例身份"), "echo".to_string());
+    plan.testing_export_names_mut().insert(nyar_types::ItemInstanceId::from_index(0).expect("实例身份"), "echo".to_string());
     plan.testing_freeze_library_export_abis().expect("冻结库导出载体");
     plan
 }

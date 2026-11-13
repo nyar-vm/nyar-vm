@@ -92,14 +92,14 @@ pub(crate) struct ClrLoweredFragment {
 
 /// 将片段降低为单个 `MSIL` 模块，并为导出入口合成 argv 分发入口。
 ///
-/// 只降低导出面（`wasm_export_names` / `exported_operations` / 入口操作）以及
+/// 只降低导出面（`export_names` / `exported_operations` / 入口操作）以及
 /// 从它们出发、经同片段静态调用可达的函数；其余函数不进入模块，避免为不可达
 /// 形状发明载体。
 pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<ClrLoweredFragment> {
     let plan = &submission.backend_plan;
     let operations = collect_clr_operations(submission);
     if operations.is_empty() {
-        return Err("CLR 最小 lowering 没有可导出的可执行函数：片段既无 `wasm_export_names` 也无入口操作，拒绝凭空生成模块".to_string());
+        return Err("CLR 最小 lowering 没有可导出的可执行函数：片段既无 `export_names` 也无入口操作，拒绝凭空生成模块".to_string());
     }
 
     let mut used_names = BTreeMap::<String, ()>::new();
@@ -107,7 +107,7 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
     for (ordinal, instance) in operations.iter().enumerate() {
         let view = plan.get_function(instance).ok_or_else(|| format!("CLR 最小 lowering：可达操作 `{instance:?}` 缺少函数体"))?;
         let base = plan
-            .wasm_export_names()
+            .export_names()
             .get(instance)
             .cloned()
             .or_else(|| plan.abi_name_for_instance(*instance).map(|name| crate::lowering::sanitize_operation_symbol(&name)))
@@ -142,7 +142,7 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
         };
         let method = method_plans.get(instance).cloned().ok_or_else(|| format!("CLR 最小 lowering：可达操作 `{instance:?}` 缺少方法计划"))?;
         // 有导出面时 PE 入口由合成的 `managed_entry` 独占；单个导出方法不能再标入口。
-        let is_entry_point = entry_operation == Some(*instance) && plan.wasm_export_names().is_empty();
+        let is_entry_point = entry_operation == Some(*instance) && plan.export_names().is_empty();
         module.global_methods.push(lower_function(
             submission,
             &view.function,
@@ -153,7 +153,7 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
         )?);
     }
 
-    let managed_abi = build_managed_abi_surface(&mut module, plan.wasm_export_names(), &method_plans)?;
+    let managed_abi = build_managed_abi_surface(&mut module, plan.export_names(), &method_plans)?;
     Ok(ClrLoweredFragment { module, managed_abi })
 }
 
@@ -369,7 +369,7 @@ fn console_write_line_reference(managed_type: &str) -> Result<MsilMethodRef> {
 fn collect_clr_operations(submission: &FragmentSubmission) -> Vec<ItemInstanceId> {
     let plan = &submission.backend_plan;
     let mut roots = BTreeSet::new();
-    roots.extend(plan.wasm_export_names().keys().copied());
+    roots.extend(plan.export_names().keys().copied());
     roots.extend(plan.exported_operations().iter().copied());
     if let Some(entry) = plan.entry_operation() {
         roots.insert(entry);
@@ -619,7 +619,13 @@ fn msil_array_element_type(layouts: &AggregateLayoutPlan, element: &NyarType) ->
         NyarType::Float32 => MsilType::Float32,
         NyarType::Float64 => MsilType::Float64,
         NyarType::Utf8 | NyarType::Utf16 => MsilType::String,
-        NyarType::Apply(..) => MsilType::Object,
+        // 泛型实例必须携带 canonical 冻结的实例级布局；计划边界会把它结算成
+        // `Nominal`。走到这里的 `Apply` 说明实例表示未结算，禁止按引用擦除掩盖缺口。
+        NyarType::Apply(..) => {
+            return Err(format!(
+                "CLR 最小 lowering：泛型实例 `{element}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"
+            ));
+        }
         // 名义布局按冻结身份取类型定义名；值存储聚合没有单槽 CLR 载体。
         NyarType::Nominal { layout, spelling } => {
             let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
@@ -687,8 +693,13 @@ pub(crate) fn msil_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<
                 return Err(format!("CLR 最小 lowering：可空标量 `{ty}` 需要 sum 表示，不得静默装箱"));
             }
         }
-        // 泛型实例：存储类由形状决定为引用，载体擦除为 `object`。
-        NyarType::Apply(..) => MsilType::Object,
+        // 泛型实例的实例表示必须在计划边界结算为携带布局身份的 `Nominal`；
+        // 缺少冻结布局身份即缺载体合同，禁止按引用擦除。
+        NyarType::Apply(..) => {
+            return Err(format!(
+                "CLR 最小 lowering：泛型实例 `{ty}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"
+            ));
+        }
         // 携带身份的名义类型：存储类按 `layout` 身份解析，引用/值存储都指向
         // 布局类型定义。CLR 没有内联结构体，逐字段拷贝由 `AggregateCopy` 承担，
         // 它是唯一允许的复制路径；零字段值布局与 wasm 标量语义一致，维持结构化失败。

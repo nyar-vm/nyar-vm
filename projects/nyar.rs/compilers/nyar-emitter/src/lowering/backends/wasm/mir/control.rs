@@ -1,8 +1,10 @@
 //! Wasm CFG 调度只消费已验证的块、SSA 槽和返回合同。
 
-use super::{MirBlock, MirBlockRef, MirConstant, MirOperand, MirTerminator, MirValueRef, WasmMirLowerer, is_js_glue_host_string_type};
-use crate::lowering::backends::wasm::sections::encode_uleb128;
-use acorn_wasm::{BLOCKTYPE_EMPTY, VALTYPE_I32, WasmOpcode, encode_return, encode_unreachable};
+use super::{
+    MirBlock, MirBlockRef, MirConstant, MirOperand, MirTerminator, MirValueRef, WasmBodyInstruction, WasmMirLowerer,
+    is_js_glue_host_string_type,
+};
+use acorn_wasm::{VALTYPE_I32, WasmOpcode};
 
 impl<'a> WasmMirLowerer<'a> {
     pub(super) fn emit_function_body(&mut self) -> crate::Result<()> {
@@ -11,27 +13,23 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_i32_const(i32::try_from(entry_index).expect("WASM 入口块索引溢出"));
         self.emit_local_set(self.pc_local);
         let case_count = self.block_order.len();
-        WasmOpcode::Loop.encode(&mut self.code);
-        self.code.push(BLOCKTYPE_EMPTY);
+        self.emit_block_type(WasmOpcode::Loop);
         for _ in 0..case_count {
-            WasmOpcode::Block.encode(&mut self.code);
-            self.code.push(BLOCKTYPE_EMPTY);
+            self.emit_block_type(WasmOpcode::Block);
         }
         self.emit_local_get(self.pc_local);
-        WasmOpcode::BrTable.encode(&mut self.code);
-        encode_uleb128(u32::try_from(case_count).expect("WASM 块数量溢出"), &mut self.code);
-        for index in 0..case_count {
-            encode_uleb128(u32::try_from(index).expect("WASM 块索引溢出"), &mut self.code);
-        }
-        encode_uleb128(u32::try_from(case_count).expect("WASM 默认分支深度溢出"), &mut self.code);
-        WasmOpcode::End.encode(&mut self.code);
+        self.code.push(WasmBodyInstruction::BrTable {
+            depths: (0..case_count).map(|index| u32::try_from(index).expect("WASM 块索引溢出")).collect(),
+            default: u32::try_from(case_count).expect("WASM 默认分支深度溢出"),
+        });
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
         self.emit_cfg_case(0, case_count)?;
         for case_index in 1..case_count {
-            WasmOpcode::End.encode(&mut self.code);
+            self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
             self.emit_cfg_case(case_index, case_count)?;
         }
-        WasmOpcode::End.encode(&mut self.code);
-        encode_unreachable(&mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable));
         Ok(())
     }
 
@@ -60,7 +58,7 @@ impl<'a> WasmMirLowerer<'a> {
                     (None, None) => {}
                     _ => panic!("WASM 返回值与已确定签名不一致: {}", self.mir_fn.symbol),
                 }
-                encode_return(&mut self.code);
+                self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Return));
             }
             MirTerminator::Jump { target, arguments } => {
                 self.emit_jump_arguments(*target, arguments)?;
@@ -77,11 +75,11 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_i32_const(i32::try_from(self.block_index[then_target]).expect("WASM 分支目标溢出"));
                 self.emit_i32_const(i32::try_from(self.block_index[else_target]).expect("WASM 分支目标溢出"));
                 self.emit_contract_operand(condition, VALTYPE_I32)?;
-                WasmOpcode::Select.encode(&mut self.code);
+                self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Select));
                 self.emit_local_set(self.pc_local);
                 self.emit_br_depth(continue_depth);
             }
-            MirTerminator::Unreachable => encode_unreachable(&mut self.code),
+            MirTerminator::Unreachable => self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable)),
             // `Raise` 的 wasm 目标合同：payload 已由前置指令完成求值。Node 宿主声明了
             // `env::host_raise` 且 payload 是文本时，先把文本句柄交给宿主抛出结构化异常；
             // `unreachable` 只是永不返回的兜底。非文本 payload（结构化 effect 值）没有
@@ -89,7 +87,7 @@ impl<'a> WasmMirLowerer<'a> {
             // 仍保留在调度表中以保持块身份与验证器一致。
             MirTerminator::PerformEffect { effect: crate::contracts::EffectKind::Raise, payload, .. } => {
                 self.emit_host_raise(payload)?;
-                encode_unreachable(&mut self.code);
+                self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable));
             }
             other => panic!("WASM 不支持此终结符 {:?}: {}", std::mem::discriminant(other), self.mir_fn.symbol),
         }
@@ -168,7 +166,6 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     fn emit_br_depth(&mut self, depth: u32) {
-        WasmOpcode::Br.encode(&mut self.code);
-        encode_uleb128(depth, &mut self.code);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Br, operand: depth });
     }
 }

@@ -8,23 +8,36 @@ use nyar::NyarType;
 pub fn platform_type(ty: &NyarType) -> NyarType {
     ty.clone()
 }
+use std::borrow::Cow;
+
 use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, LayoutId, NominalInstanceId, TypeId};
 
 use crate::{
     FragmentSubmission,
     backend_plan_views::{ExecutableBlockRef, ExecutableFunction, ExecutableStorageKind, ExecutableTerminator},
     contracts::InstructionKind,
+    lowering::shared::physical_layout::{LayoutPolicy, resolve_physical_layouts},
 };
 
 /// Cross-backend lowering context attached to a fragment submission.
+///
+/// `layouts` 默认是语言语义布局（无目标物理 extent）。需要读取
+/// `offset/size/align` 的后端必须用 [`Self::new_resolved`] 按自己的
+/// [`LayoutPolicy`] 解析物理布局，禁止直接消费语言层占位值。
 pub struct ExecutableLoweringContext<'a> {
     pub submission: &'a FragmentSubmission,
-    pub layouts: &'a AggregateLayoutPlan,
+    pub layouts: Cow<'a, AggregateLayoutPlan>,
 }
 
 impl<'a> ExecutableLoweringContext<'a> {
     pub fn new(submission: &'a FragmentSubmission) -> Self {
-        Self { submission, layouts: submission.backend_plan.aggregate_layouts() }
+        Self { submission, layouts: Cow::Borrowed(submission.backend_plan.aggregate_layouts()) }
+    }
+
+    /// 按目标数据布局策略解析物理布局，供需要字节 offset/size/align 的 lane 使用。
+    pub fn new_resolved(submission: &'a FragmentSubmission, policy: LayoutPolicy) -> crate::Result<Self> {
+        let layouts = resolve_physical_layouts(submission.backend_plan.aggregate_layouts(), policy)?;
+        Ok(Self { submission, layouts: Cow::Owned(layouts) })
     }
 
     pub fn require_layout_id(layout_id: Option<LayoutId>, context: &str) -> LayoutId {

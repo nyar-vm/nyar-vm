@@ -104,7 +104,7 @@ fn lower_single_operator_call(code: JvmOperatorCode, result_type: TargetOperandT
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "add".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "add".to_string());
     plan.testing_register_import(operator, operator_import(operator_plan(code, TargetOperandType::I64, result_type)));
     let submission = FragmentSubmission::from_backend_plan(plan);
     lower_fragment_to_jvm_class(&submission).expect("frozen operator must lower")
@@ -124,7 +124,7 @@ fn lower_i32_operator_call(name: &str, code: JvmOperatorCode) -> JvmClassFile {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), name.to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), name.to_string());
     plan.testing_register_import(
         operator,
         BackendImport {
@@ -170,7 +170,7 @@ fn lower_operator_call_with_plan(name: &str, operator: TargetOperatorPlan) -> Jv
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), name.to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), name.to_string());
     plan.testing_register_import(instance, operator_import(operator));
     lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect("frozen operator must lower")
 }
@@ -207,7 +207,7 @@ fn managed_launcher_for(
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("jvm_unsigned_runtime").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), export.to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), export.to_string());
     plan.testing_register_import(
         instance,
         BackendImport {
@@ -318,7 +318,7 @@ fn comparison_operator_expansion_uses_unique_method_local_labels() {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "less".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "less".to_string());
     plan.testing_register_import(
         operator,
         operator_import(operator_plan(JvmOperatorCode::LongCompareLessThan, TargetOperandType::I64, TargetOperandType::I32)),
@@ -548,7 +548,7 @@ fn unsigned_operator_operand_type_mismatch_is_rejected_structurally() {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "divide".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "divide".to_string());
     plan.testing_register_import(
         operator,
         operator_import(operator_plan(JvmOperatorCode::LongDivideUnsigned, TargetOperandType::I64, TargetOperandType::I64)),
@@ -663,7 +663,7 @@ fn unfrozen_operator_binding_is_rejected_structurally() {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "add".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "add".to_string());
     let mut import = operator_import(operator_plan(JvmOperatorCode::LongAdd, TargetOperandType::I64, TargetOperandType::I64));
     import.target_operator = Some(TargetOperatorBinding::Unfrozen);
     plan.testing_register_import(operator, import);
@@ -696,7 +696,7 @@ fn conditional_branch_lowers_to_compare_and_jump() {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "branch".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "branch".to_string());
     let class_file = lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect("conditional branch must lower");
 
     let instructions = method_code(&class_file, "branch");
@@ -715,7 +715,7 @@ fn unsupported_instruction_is_rejected_structurally() {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "add".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "add".to_string());
 
     let error = lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect_err("Cast must fail");
     assert!(error.contains("尚不支持指令 `Cast`"), "{error}");
@@ -739,9 +739,10 @@ fn option_char_layout() -> AggregateLayout {
     }
 }
 
-/// 泛型实例 `Option<char>`：基身份携带已冻结布局，实参代入 `char`。
+/// 泛型实例 `Option<char>` 的结算形态：实例级布局（`LayoutId` 0）由计划注册表持有，
+/// 类型只携带布局身份；实参代入后不再保留未结算的 `Apply` 形状。
 fn option_char_type() -> NyarType {
-    NyarType::Apply(Box::new(NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") }), vec![NyarType::Character])
+    NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") }
 }
 
 /// 构造签名为 `(Option<char>, char) -> Option<char>` 的入口操作，返回第一个形参。
@@ -755,20 +756,20 @@ fn option_flow_plan(parameters: Vec<NyarType>, return_type: NyarType) -> Fragmen
     FragmentSubmission::from_backend_plan(plan)
 }
 
-/// 泛型实例 `Option<char>` 的 JVM 载体合同：引用存储形状擦除为对象引用，
-/// 形参 / 局部 / 返回槽按引用载体搬运，class 字节可编码并 roundtrip。
+/// 泛型实例 `Option<char>` 的 JVM 载体合同：实例布局结算为 companion 布局类，
+/// 形参 / 局部 / 返回槽按该引用载体搬运，class 字节可编码并 roundtrip。
 #[test]
-fn option_char_flow_lowers_with_erased_reference_carrier() {
+fn option_char_flow_lowers_with_settled_layout_carrier() {
     let option = option_char_type();
     let submission = option_flow_plan(vec![option.clone(), NyarType::Character], option.clone());
-    let class_file = lower_fragment_to_jvm_class(&submission).expect("Option<char> reference carrier must lower");
+    let class_file = lower_fragment_to_jvm_class(&submission).expect("Option<char> settled layout must lower");
 
     let method = class_file.methods.iter().find(|method| method.name == "main").expect("entry method");
     assert_eq!(
         method.descriptor,
         JvmMethodDescriptor::new(
-            vec![JvmTypeDescriptor::Object("java/lang/Object".to_string()), JvmTypeDescriptor::Int],
-            JvmTypeDescriptor::Object("java/lang/Object".to_string())
+            vec![JvmTypeDescriptor::Object("nyar/layout/Option$0".to_string()), JvmTypeDescriptor::Int],
+            JvmTypeDescriptor::Object("nyar/layout/Option$0".to_string())
         )
     );
     let instructions = method_code(&class_file, "main");
@@ -783,6 +784,21 @@ fn option_char_flow_lowers_with_erased_reference_carrier() {
     let mnemonics = decoded.iter().map(|instruction| instruction.mnemonic.as_str()).collect::<Vec<_>>();
     assert!(mnemonics.contains(&"aload_0") || mnemonics.contains(&"aload"), "decoded={mnemonics:?}");
     assert_eq!(mnemonics.last().copied(), Some("areturn"), "decoded={mnemonics:?}");
+}
+
+/// 未结算的泛型实例（`Apply` 没有实例级布局身份）必须结构化失败：
+/// 计划边界未结算即缺载体合同，JVM 不得按引用擦除掩盖缺口。
+#[test]
+fn unsettled_apply_generic_instance_is_rejected_structurally() {
+    let unsettled = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("Option"))), vec![NyarType::Character]);
+    let mut fixture = function("jvm.option_flow", unsettled.clone(), vec![unsettled.clone()]);
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(0))) };
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
+    plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
+
+    let error = lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect_err("unsettled Apply must fail");
+    assert!(error.contains("缺少实例级布局结算"), "{error}");
 }
 
 /// 携带身份的名义类型引用存储时同样走擦除引用载体（不经泛型实参形状）。

@@ -15,7 +15,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_nyar_module,
 };
 use nyar_types::NyarType;
-use odin_bytecode::{OdinHeadCode, OdinModuleData, decode_at};
+use acorn_odin::{OdinHeadCode, OdinModuleData, decode_at};
 
 /// `main() -> void`：入口块 `PerformEffect Raise`，resume 块带一个 `Bottom` 形参后 `return`。
 fn raising_function() -> ExecutableFunction {

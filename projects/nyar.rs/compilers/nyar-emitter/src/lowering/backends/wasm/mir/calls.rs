@@ -5,7 +5,7 @@
 //! **call encoding**, not a second MIR. Semantic MIR remains call-resolution
 //! authority; this module only maps already-resolved calls to Wasm opcodes.
 
-use super::{numeric, *};
+use super::*;
 use crate::{
     lowering::backends::wasm::cabi::CABI_HEAP_GLOBAL_INDEX,
     target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorRecipe},
@@ -139,7 +139,7 @@ impl<'a> WasmMirLowerer<'a> {
                 self.validate_output_slot_type(output, return_type)?;
                 self.assign_output_local(output);
             }
-            None if callee_return.is_some() => WasmOpcode::Drop.encode(&mut self.code),
+            None if callee_return.is_some() => self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop)),
             None => {}
         }
         Ok(())
@@ -197,8 +197,7 @@ impl<'a> WasmMirLowerer<'a> {
         if !is_js_glue_host_string_type(semantic_type) {
             return Err(format!(
                 "WASM ABI 载体失配 in `{}`: slot=i32 actual=anyref operand=%{} ({semantic_type:?}) 不属宿主字符串族，禁止按字符串配方转换",
-                self.mir_fn.symbol,
-                value.0
+                self.mir_fn.symbol, value.0
             ));
         }
         let Some(layout_id) = self.mir_fn.value_layouts.get(value).copied()
@@ -227,7 +226,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_set(len_local);
         // 动态 bump 分配（global 0 堆指针），增长逻辑与 `bump_allocate` 同构；
         // scratch local 在本次转换内闭合，不与其它发射交叠。
-        encode_global_get(CABI_HEAP_GLOBAL_INDEX, &mut self.code);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::GlobalGet, operand: CABI_HEAP_GLOBAL_INDEX });
         self.emit_local_set(self.stack_ptr_local);
         self.emit_local_get(self.stack_ptr_local);
         self.emit_local_get(len_local);
@@ -237,37 +236,35 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_i32_const(65535);
         self.emit_i32_add();
         self.emit_i32_const(16);
-        WasmOpcode::I32ShrU.encode(&mut self.code);
-        encode_memory_size(&mut self.code);
-        WasmOpcode::I32Sub.encode(&mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32ShrU));
+        self.code.push(WasmBodyInstruction::MemorySize);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Sub));
         self.emit_local_tee(self.bump_pages_local);
         self.emit_i32_const(0);
-        WasmOpcode::I32GtS.encode(&mut self.code);
-        WasmOpcode::If.encode(&mut self.code);
-        self.code.push(BLOCKTYPE_EMPTY);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32GtS));
+        self.emit_block_type(WasmOpcode::If);
         self.emit_local_get(self.bump_pages_local);
-        encode_memory_grow(&mut self.code);
+        self.code.push(WasmBodyInstruction::MemoryGrow);
         self.emit_i32_const(-1);
-        WasmOpcode::I32Eq.encode(&mut self.code);
-        WasmOpcode::If.encode(&mut self.code);
-        self.code.push(BLOCKTYPE_EMPTY);
-        encode_unreachable(&mut self.code);
-        WasmOpcode::End.encode(&mut self.code);
-        WasmOpcode::End.encode(&mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Eq));
+        self.emit_block_type(WasmOpcode::If);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
         // commit heap cursor：global.set 必须先收到 bump_end 新值（与 `bump_allocate` 一致），
         // 否则 V8 编译期即拒绝（not enough arguments on the stack for global.set）。
         self.emit_local_get(self.bump_end_local);
-        encode_global_set(CABI_HEAP_GLOBAL_INDEX, &mut self.code);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::GlobalSet, operand: CABI_HEAP_GLOBAL_INDEX });
         // 逐字节拷贝：array.get(u8→i32) → i32.store8
         let index_local = self.alloc_i32_local();
         self.emit_i32_const(0);
         self.emit_local_set(index_local);
-        encode_block_empty(&mut self.code);
-        encode_loop_empty(&mut self.code);
+        self.emit_block_type(WasmOpcode::Block);
+        self.emit_block_type(WasmOpcode::Loop);
         self.emit_local_get(index_local);
         self.emit_local_get(len_local);
-        WasmOpcode::I32GeU.encode(&mut self.code);
-        encode_br_if(1, &mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32GeU));
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::BrIf, operand: 1 });
         self.emit_local_get(self.stack_ptr_local);
         self.emit_local_get(index_local);
         self.emit_i32_add();
@@ -275,14 +272,14 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_ref_cast_array_type(recipe.bytes_array_type_index);
         self.emit_local_get(index_local);
         self.emit_array_get(recipe.bytes_array_type_index);
-        encode_memarg(WasmOpcode::I32Store8, 0, 0, &mut self.code);
+        self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::I32Store8, align: 0, offset: 0 });
         self.emit_local_get(index_local);
         self.emit_i32_const(1);
         self.emit_i32_add();
         self.emit_local_set(index_local);
-        encode_br(0, &mut self.code);
-        WasmOpcode::End.encode(&mut self.code);
-        WasmOpcode::End.encode(&mut self.code);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Br, operand: 0 });
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
         // 宿主登记：(ptr, len) → i32 handle
         self.emit_local_get(self.stack_ptr_local);
         self.emit_local_get(len_local);
@@ -391,12 +388,7 @@ impl<'a> WasmMirLowerer<'a> {
             .collect::<crate::Result<Vec<u8>>>()?;
         let return_type = match &signature.return_type {
             NyarType::Unit | NyarType::Bottom => None,
-            other => Some(wasm_function_abi_value_type_for(
-                self.ctx,
-                other,
-                self.gc_struct_type_indices,
-                self.js_glue_utf8_as_anyref,
-            )?),
+            other => Some(wasm_function_abi_value_type_for(self.ctx, other, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref)?),
         };
         let mut indirect_param_types = visible_param_types.clone();
         indirect_param_types.push(WASM_GC_ANYREF);
@@ -428,9 +420,7 @@ impl<'a> WasmMirLowerer<'a> {
             MirOperand::Value(value) => self.wasm_local_value_type(self.planned_value_local(*value)),
             MirOperand::Constant(constant) => match constant {
                 MirConstant::Utf8(_) => VALTYPE_I32,
-                MirConstant::Utf16(_) => {
-                    return Err(crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string())
-                }
+                MirConstant::Utf16(_) => return Err(crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string()),
                 MirConstant::Unit => WASM_GC_ANYREF,
                 // 可空空值是空引用，与 nullable 槽的 anyref 载体一致。
                 MirConstant::Null => WASM_GC_ANYREF,
@@ -572,10 +562,10 @@ impl<'a> WasmMirLowerer<'a> {
             TargetOperatorRecipe::Operands => self.emit_wasm_operator_operands(mnemonic, operand_type, arguments)?,
             TargetOperatorRecipe::Steps(steps) => self.emit_wasm_operator_recipe(mnemonic, operand_type, steps, arguments)?,
         }
-        numeric::emit_opcode(opcode, &mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(opcode));
         let result_type = wasm_stack_type(plan.result_type);
         match output {
-            None => WasmOpcode::Drop.encode(&mut self.code),
+            None => self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop)),
             Some(output) => {
                 self.validate_output_slot_type(output, result_type)?;
                 self.assign_output_local(output);
@@ -642,7 +632,7 @@ impl<'a> WasmMirLowerer<'a> {
         for step in steps {
             match step {
                 TargetOperandStep::Arguments => self.emit_wasm_operator_operands(mnemonic, expected, arguments)?,
-                TargetOperandStep::NarrowTopI64ToI32 => WasmOpcode::I32WrapI64.encode(&mut self.code),
+                TargetOperandStep::NarrowTopI64ToI32 => self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32WrapI64)),
                 TargetOperandStep::IntegerConstant { operand_type, value } => {
                     let carrier = wasm_stack_type(*operand_type);
                     if carrier != expected {
@@ -743,7 +733,12 @@ impl<'a> WasmMirLowerer<'a> {
     ///
     /// 顺序必须是：new →??reader 交给 write-via-stream →?write(writer) →?drop-writable →?drop future?
     /// ?write 再交 reader 会在 sync `stream.write` 上永久挂起?
-    fn try_emit_wasi_cli_write_via_stream(&mut self, arguments: &[MirOperand], import_index: u32, output: Option<MirValueRef>) -> crate::Result<bool> {
+    fn try_emit_wasi_cli_write_via_stream(
+        &mut self,
+        arguments: &[MirOperand],
+        import_index: u32,
+        output: Option<MirValueRef>,
+    ) -> crate::Result<bool> {
         if !self.wasi_mode || arguments.len() != 1 {
             return Ok(false);
         }
@@ -786,7 +781,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_set(handle);
 
         self.emit_local_get(handle);
-        encode_i32_load(2, 0, &mut self.code);
+        self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::I32Load, align: 2, offset: 0 });
         self.emit_local_set(len);
 
         self.emit_local_get(handle);
@@ -799,13 +794,12 @@ impl<'a> WasmMirLowerer<'a> {
 
         // reader = low32, writer = high32（与 wit-bindgen raw_stream_new 同构?
         self.emit_local_get(pair);
-        WasmOpcode::I32WrapI64.encode(&mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32WrapI64));
         self.emit_local_set(reader);
         self.emit_local_get(pair);
-        WasmOpcode::I64Const.encode(&mut self.code);
-        encode_sleb128_i64(32, &mut self.code);
-        WasmOpcode::I64ShrU.encode(&mut self.code);
-        WasmOpcode::I32WrapI64.encode(&mut self.code);
+        self.code.push(WasmBodyInstruction::I64Const(32));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I64ShrU));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32WrapI64));
         self.emit_local_set(writer);
 
         self.emit_local_get(reader);
@@ -816,7 +810,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_get(bytes_ptr);
         self.emit_local_get(len);
         self.emit_call(stream_write);
-        WasmOpcode::Drop.encode(&mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
 
         self.emit_local_get(writer);
         self.emit_call(stream_drop_w);

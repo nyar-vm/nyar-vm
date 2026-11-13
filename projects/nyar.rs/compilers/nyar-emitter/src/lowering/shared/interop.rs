@@ -163,6 +163,26 @@ pub(crate) fn clr_operator_target(link: &ExternalImportLink) -> Option<&str> {
     }
 }
 
+/// 源码 `[x86_64_operator("i64.add")]` 声明的 x86-64 目标 operator 助记符。
+///
+/// 注解按 **ISA** 声明，而不是按「native」：`native` 只是产物形态，`native` /
+/// `node` / `python` 最终都会展开成规范目标四元组，而算子编码由四元组的 `arch`
+/// 决定。计划层（[`crate::TargetExecutionPlan`]）不持有目标四元组，因此只有显式
+/// 声明 ISA 的绑定才能在此冻结编码；声明 `native` 而不声明 ISA 的绑定保持
+/// `Unfrozen`，由 emit 结构化失败，禁止按宿主架构猜编码。
+///
+/// 只接受 platform tag `x86_64-operator` 且 locator 恰好一段；其余形态返回 `None`。
+pub(crate) fn x86_64_operator_target(link: &ExternalImportLink) -> Option<&str> {
+    if !link.matches_boundary("host") || !link.matches_platform_tag("x86_64-operator") {
+        return None;
+    }
+
+    match link.locator_segments() {
+        [mnemonic] => Some(mnemonic.as_str()),
+        _ => None,
+    }
+}
+
 pub(crate) fn wasi_host_import_target(link: &ExternalImportLink) -> Option<WasiHostImportTarget<'_>> {
     if !link.matches_boundary("host") {
         return None;

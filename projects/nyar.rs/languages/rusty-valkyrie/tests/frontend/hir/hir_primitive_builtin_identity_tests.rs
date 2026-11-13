@@ -574,7 +574,6 @@ fn f128_name_fails_closed_instead_of_degrading_to_f64() {
         Ok(other) => panic!("`f128` 没有 carrier，不允许落到 {other:?}"),
         Err(_) => {}
     }
-    assert!(nyar_types::NyarType::from_surface_primitive("f128").is_none(), "`f128` 没有宿主绑定载体，只能失败关闭");
 }
 
 /// `any` / `null` 不进折表：它们是顶/空类型，不是宿主绑定标量。

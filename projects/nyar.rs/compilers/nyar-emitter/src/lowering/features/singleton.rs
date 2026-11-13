@@ -27,8 +27,8 @@ pub(crate) fn nyar_singleton_accessor_export_name(plan: &SingletonInstancePlan) 
     nyar_singleton_export_name(plan)
 }
 
-fn singleton_layout<'a>(submission: &'a FragmentSubmission, plan: &SingletonInstancePlan) -> Option<&'a AggregateLayout> {
-    submission.backend_plan.aggregate_layouts().layouts.iter().find(|layout| layout.name == plan.name && layout.namespace == plan.namespace)
+fn singleton_layout<'a>(layouts: &'a nyar_types::AggregateLayoutPlan, plan: &SingletonInstancePlan) -> Option<&'a AggregateLayout> {
+    layouts.layouts.iter().find(|layout| layout.name == plan.name && layout.namespace == plan.namespace)
 }
 
 /// Append singleton metadata sections for backends without dedicated singleton slots.
@@ -61,12 +61,23 @@ pub(crate) fn augment_wasm_with_singleton_accessors(
     }
 
     // 先完成全部布局校验，再改写模块；避免在拒绝时留下半成品 section。
+    // 语言 MIR 只提供语义布局；Wasm singleton 的分配尺寸按其目标数据布局解析。
+    let physical_layouts = crate::lowering::shared::physical_layout::resolve_physical_layouts(
+        submission.backend_plan.aggregate_layouts(),
+        crate::lowering::shared::physical_layout::LayoutPolicy::WASM32,
+    )
+    .map_err(|reason| SemanticMirContractError {
+        code: "SMIR010",
+        function: String::new(),
+        location: "singleton instance".to_string(),
+        detail: format!("Wasm singleton 物理布局解析失败: {reason}"),
+    })?;
     let allocations = submission
         .backend_plan
         .singleton_instances()
         .iter()
         .map(|plan| {
-            let layout = singleton_layout(submission, plan).ok_or_else(|| SemanticMirContractError {
+            let layout = singleton_layout(&physical_layouts, plan).ok_or_else(|| SemanticMirContractError {
                 code: "SMIR010",
                 function: plan.name.clone(),
                 location: "singleton instance".to_string(),

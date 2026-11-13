@@ -21,13 +21,16 @@ use crate::{
     contracts::{Constant, InstructionKind, Operand, Terminator},
     lowering::shared::executable::{collect_reachable_blocks, slots::ExecutableSlotPlan},
     nyar_backend_native::{NativeExecutableKind, classify_native_image},
-    target_operator::{TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorRecipe},
+    target_operator::{TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::binary::pe::{NativePeImage, NativePeWriter},
 };
 use nyar::abstractions::BinaryArch;
 use nyar_types::ItemInstanceId;
 
-use super::NativeLoweredFragment;
+use super::{
+    NativeLoweredFragment,
+    x64_lir::{X64Function, X64Instruction, X64Location, X64Reg, X64Value, encode_x64_function},
+};
 
 /// 已冻结的 x86-64 operator 编码。
 ///
@@ -68,6 +71,44 @@ pub enum X86_64OperatorCode {
     I64CompareGreaterThan,
     /// `cmp` + `setge`：64 位有符号大于等于比较，结果 0/1。
     I64CompareGreaterOrEqual,
+    /// `add eax, ecx`：32 位整数加法（结果零扩展到 64 位槽）。
+    I32Add,
+    /// `sub eax, ecx`：32 位整数减法。
+    I32Subtract,
+    /// `imul eax, ecx`：32 位整数乘法。
+    I32Multiply,
+    /// `neg eax`：32 位整数取负（一元）。
+    I32Negate,
+    /// `and eax, ecx`：32 位按位与。
+    I32BitAnd,
+    /// `or eax, ecx`：32 位按位或。
+    I32BitOr,
+    /// `xor eax, ecx`：32 位按位异或。
+    I32BitXor,
+    /// `shl eax, cl`：32 位左移（位移量按 5 位取模）。
+    I32ShiftLeft,
+    /// `sar eax, cl`：32 位算术右移（有符号）。
+    I32ShiftRight,
+    /// `cmp` + `sete`：32 位相等比较，结果 0/1。
+    I32CompareEqual,
+    /// `cmp` + `setne`：32 位不等比较，结果 0/1。
+    I32CompareNotEqual,
+    /// `cmp` + `setl`：32 位有符号小于比较，结果 0/1。
+    I32CompareLessThan,
+    /// `cmp` + `setle`：32 位有符号小于等于比较，结果 0/1。
+    I32CompareLessOrEqual,
+    /// `cmp` + `setg`：32 位有符号大于比较，结果 0/1。
+    I32CompareGreaterThan,
+    /// `cmp` + `setge`：32 位有符号大于等于比较，结果 0/1。
+    I32CompareGreaterOrEqual,
+    /// `shr rax, cl`：64 位逻辑右移（无符号）。
+    I64ShiftRightUnsigned,
+    /// `shr eax, cl`：32 位逻辑右移（无符号）。
+    I32ShiftRightUnsigned,
+    /// `cmp` + `setb`：64 位无符号小于比较，结果 0/1。
+    I64CompareLessThanUnsigned,
+    /// `cmp` + `setb`：32 位无符号小于比较，结果 0/1。
+    I32CompareLessThanUnsigned,
 }
 
 impl X86_64OperatorCode {
@@ -81,61 +122,51 @@ impl X86_64OperatorCode {
                 | Self::I64CompareLessOrEqual
                 | Self::I64CompareGreaterThan
                 | Self::I64CompareGreaterOrEqual
+                | Self::I32CompareEqual
+                | Self::I32CompareNotEqual
+                | Self::I32CompareLessThan
+                | Self::I32CompareLessOrEqual
+                | Self::I32CompareGreaterThan
+                | Self::I32CompareGreaterOrEqual
+                | Self::I64CompareLessThanUnsigned
+                | Self::I32CompareLessThanUnsigned
         )
+    }
+
+    /// 该编码的操作数载体。
+    pub fn operand_type(self) -> TargetOperandType {
+        match self {
+            Self::I32Add
+            | Self::I32Subtract
+            | Self::I32Multiply
+            | Self::I32Negate
+            | Self::I32BitAnd
+            | Self::I32BitOr
+            | Self::I32BitXor
+            | Self::I32ShiftLeft
+            | Self::I32ShiftRight
+            | Self::I32ShiftRightUnsigned
+            | Self::I32CompareEqual
+            | Self::I32CompareNotEqual
+            | Self::I32CompareLessThan
+            | Self::I32CompareLessOrEqual
+            | Self::I32CompareGreaterThan
+            | Self::I32CompareGreaterOrEqual
+            | Self::I32CompareLessThanUnsigned => TargetOperandType::I32,
+            _ => TargetOperandType::I64,
+        }
+    }
+
+    /// 该编码的结果载体：比较码固定 `I32`（bool），其余与操作数同宽。
+    pub fn result_type(self) -> TargetOperandType {
+        if self.is_comparison() { TargetOperandType::I32 } else { self.operand_type() }
     }
 
     /// 该编码冻结的实参个数（只有取负是一元）。
     pub fn arity(self) -> usize {
         match self {
-            Self::I64Negate => 1,
+            Self::I64Negate | Self::I32Negate => 1,
             _ => 2,
-        }
-    }
-}
-
-/// Win64 整数形参寄存器。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ParamRegister {
-    /// `rcx`：第 1 个形参。
-    Rcx,
-    /// `rdx`：第 2 个形参。
-    Rdx,
-    /// `r8`：第 3 个形参。
-    R8,
-    /// `r9`：第 4 个形参。
-    R9,
-}
-
-impl ParamRegister {
-    const ALL: [Self; 4] = [Self::Rcx, Self::Rdx, Self::R8, Self::R9];
-
-    /// 把该寄存器写入 `[rbp + disp32]` 的编码前缀（含 REX 与 ModRM）。
-    fn store_prefix(self) -> [u8; 3] {
-        match self {
-            Self::Rcx => [0x48, 0x89, 0x8D],
-            Self::Rdx => [0x48, 0x89, 0x95],
-            Self::R8 => [0x4C, 0x89, 0x85],
-            Self::R9 => [0x4C, 0x89, 0x8D],
-        }
-    }
-
-    /// 把该寄存器读入 `[rbp + disp32]` 的编码前缀。
-    fn load_prefix(self) -> [u8; 3] {
-        match self {
-            Self::Rcx => [0x48, 0x8B, 0x8D],
-            Self::Rdx => [0x48, 0x8B, 0x95],
-            Self::R8 => [0x4C, 0x8B, 0x85],
-            Self::R9 => [0x4C, 0x8B, 0x8D],
-        }
-    }
-
-    /// `mov reg, imm64` 的编码前缀。
-    fn mov_imm64_prefix(self) -> [u8; 2] {
-        match self {
-            Self::Rcx => [0x48, 0xB9],
-            Self::Rdx => [0x48, 0xBA],
-            Self::R8 => [0x49, 0xB8],
-            Self::R9 => [0x49, 0xB9],
         }
     }
 }
@@ -156,7 +187,7 @@ pub(crate) fn lower_x86_64_windows_pe(submission: &FragmentSubmission) -> Result
 
     let mut text = Vec::<u8>::new();
     let mut function_offsets = BTreeMap::<ItemInstanceId, usize>::new();
-    let mut call_fixups = Vec::<(usize, ItemInstanceId)>::new();
+    let mut relocations = Vec::<(usize, ItemInstanceId)>::new();
     let mut entry_offset = None;
 
     for instance in &reachable {
@@ -168,11 +199,12 @@ pub(crate) fn lower_x86_64_windows_pe(submission: &FragmentSubmission) -> Result
         if *instance == entry {
             entry_offset = Some(base);
         }
-        let function_code = emit_function(submission, &view.function, &reachable, base, &mut call_fixups)?;
-        text.extend_from_slice(&function_code);
+        // 计划 → 目标私有 LIR → 编码器：编码器不再读取 `ExecutableFunction`。
+        let function = lower_function_to_x64(submission, &view.function, &reachable)?;
+        encode_x64_function(&function, &mut text, &mut relocations)?;
     }
 
-    for (field_offset, callee) in call_fixups {
+    for (field_offset, callee) in relocations {
         let target = function_offsets
             .get(&callee)
             .copied()
@@ -233,7 +265,7 @@ fn validate_entry(function: &MirFunction) -> Result<()> {
 fn collect_native_functions(submission: &FragmentSubmission) -> Vec<ItemInstanceId> {
     let plan = &submission.backend_plan;
     let mut roots = BTreeSet::new();
-    roots.extend(plan.wasm_export_names().keys().copied());
+    roots.extend(plan.export_names().keys().copied());
     roots.extend(plan.exported_operations().iter().copied());
     if let Some(entry) = plan.entry_operation() {
         roots.insert(entry);
@@ -267,36 +299,14 @@ fn collect_native_functions(submission: &FragmentSubmission) -> Vec<ItemInstance
     ordered
 }
 
-fn emit_function(
-    submission: &FragmentSubmission,
-    function: &MirFunction,
-    reachable: &[ItemInstanceId],
-    base: usize,
-    call_fixups: &mut Vec<(usize, ItemInstanceId)>,
-) -> Result<Vec<u8>> {
+fn lower_function_to_x64(submission: &FragmentSubmission, function: &MirFunction, reachable: &[ItemInstanceId]) -> Result<X64Function> {
     let slots = ExecutableSlotPlan::plan_nyar(function);
     let local_bytes = slots.local_types.len().checked_mul(8).ok_or_else(|| "x86_64 最小 lowering：局部槽数量溢出".to_string())?;
     let frame_bytes = align16(local_bytes.checked_add(32).ok_or_else(|| "x86_64 最小 lowering：栈帧大小溢出".to_string())?)?;
     let frame_bytes = u32::try_from(frame_bytes).map_err(|_| "x86_64 最小 lowering：栈帧大小超出 `u32`".to_string())?;
 
-    let mut emitter = FunctionEmitter {
-        submission,
-        function,
-        slots,
-        reachable,
-        base,
-        call_fixups,
-        code: Vec::new(),
-        label_offsets: BTreeMap::new(),
-        jump_fixups: Vec::new(),
-    };
-
-    // 序言：`push rbp; mov rbp, rsp; sub rsp, frame`。
-    emitter.code.push(0x55);
-    emitter.code.extend_from_slice(&[0x48, 0x89, 0xE5]);
-    emitter.code.extend_from_slice(&[0x48, 0x81, 0xEC]);
-    emitter.code.extend_from_slice(&frame_bytes.to_le_bytes());
-    emitter.store_entry_parameters()?;
+    let mut lowerer = FunctionLowerer { submission, function, slots, reachable, instructions: Vec::new() };
+    lowerer.store_entry_parameters()?;
 
     let mut order = vec![function.entry];
     for block in collect_reachable_blocks(function) {
@@ -309,33 +319,30 @@ fn emit_function(
         else {
             return Err(format!("x86_64 最小 lowering：函数 `{}` 引用了不存在的块 {:?}", function.symbol, block_id));
         };
-        emitter.emit_block(block)?;
+        lowerer.lower_block(block)?;
     }
 
-    emitter.patch_jumps()?;
-    Ok(emitter.code)
+    Ok(X64Function { frame_bytes, instructions: lowerer.instructions })
 }
 
 fn align16(value: usize) -> Result<usize> {
     value.checked_add(15).map(|value| value & !15).ok_or_else(|| "x86_64 最小 lowering：栈帧对齐溢出".to_string())
 }
 
-/// 单函数发射器：所有标签与跳转位移都在本函数内闭合。
-struct FunctionEmitter<'a> {
+/// 单函数降低器：把计划事实转成 x86-64 LIR，不产生任何字节。
+struct FunctionLowerer<'a> {
     submission: &'a FragmentSubmission,
     function: &'a MirFunction,
     slots: ExecutableSlotPlan,
     reachable: &'a [ItemInstanceId],
-    /// 本函数在整段 `.text` 中的起始偏移，用于把 `call` 位移 fixup 记成绝对位置。
-    base: usize,
-    call_fixups: &'a mut Vec<(usize, ItemInstanceId)>,
-    code: Vec<u8>,
-    label_offsets: BTreeMap<MirBlockRef, usize>,
-    /// 待回填的相对跳转：`(rel32 字段偏移, 目标块)`。
-    jump_fixups: Vec<(usize, MirBlockRef)>,
+    instructions: Vec<X64Instruction>,
 }
 
-impl FunctionEmitter<'_> {
+impl FunctionLowerer<'_> {
+    fn push(&mut self, instruction: X64Instruction) {
+        self.instructions.push(instruction);
+    }
+
     fn store_entry_parameters(&mut self) -> Result<()> {
         let entry_block = self
             .function
@@ -350,12 +357,12 @@ impl FunctionEmitter<'_> {
                 self.function.param_types.len()
             ));
         }
-        if entry_block.parameters.len() > ParamRegister::ALL.len() {
+        if entry_block.parameters.len() > X64Reg::WIN64_ARGS.len() {
             return Err(format!(
                 "x86_64 最小 lowering：函数 `{}` 有 {} 个形参，超过 Win64 寄存器传参上限 {}（栈上传参未实现）",
                 self.function.symbol,
                 entry_block.parameters.len(),
-                ParamRegister::ALL.len()
+                X64Reg::WIN64_ARGS.len()
             ));
         }
         for (index, parameter) in entry_block.parameters.iter().enumerate() {
@@ -370,22 +377,21 @@ impl FunctionEmitter<'_> {
             {
                 return Err(format!("x86_64 最小 lowering：函数 `{}` 的形参类型 `{ty}` 没有 x86_64 标量载体", self.function.symbol));
             }
-            let register = ParamRegister::ALL[index];
-            self.code.extend_from_slice(&register.store_prefix());
-            self.code.extend_from_slice(&slot_disp(local).to_le_bytes());
+            let register = X64Reg::WIN64_ARGS[index];
+            self.push(X64Instruction::StoreFrame { slot: local, source: register });
         }
         Ok(())
     }
 
-    fn emit_block(&mut self, block: &MirBlock) -> Result<()> {
-        self.label_offsets.insert(block.id, self.code.len());
+    fn lower_block(&mut self, block: &MirBlock) -> Result<()> {
+        self.push(X64Instruction::Label(block.id));
         for instruction in &block.instructions {
-            self.emit_instruction(instruction)?;
+            self.lower_instruction(instruction)?;
         }
-        self.emit_terminator(&block.terminator)
+        self.lower_terminator(&block.terminator)
     }
 
-    fn emit_instruction(&mut self, instruction: &MirInstruction) -> Result<()> {
+    fn lower_instruction(&mut self, instruction: &MirInstruction) -> Result<()> {
         if instruction.results.len() > 1 {
             return Err(format!(
                 "x86_64 最小 lowering 不支持多结果指令（results={}）: function={}",
@@ -397,13 +403,13 @@ impl FunctionEmitter<'_> {
             InstructionKind::LoadConstant { constant, .. } => {
                 let local = self.require_output_local(instruction)?;
                 self.emit_constant_to_rax(constant)?;
-                self.store_rax(local);
+                self.push(X64Instruction::StoreFrame { slot: local, source: X64Reg::Rax });
                 Ok(())
             }
             InstructionKind::Copy { source } => {
                 let local = self.require_output_local(instruction)?;
                 self.emit_operand_to_rax(source)?;
-                self.store_rax(local);
+                self.push(X64Instruction::StoreFrame { slot: local, source: X64Reg::Rax });
                 Ok(())
             }
             InstructionKind::StoreVar { value, .. } => {
@@ -413,7 +419,7 @@ impl FunctionEmitter<'_> {
                 }
                 let local = self.require_output_local(instruction)?;
                 self.emit_operand_to_rax(value)?;
-                self.store_rax(local);
+                self.push(X64Instruction::StoreFrame { slot: local, source: X64Reg::Rax });
                 Ok(())
             }
             InstructionKind::Call { callee, arguments } => self.emit_call(instruction, callee, arguments),
@@ -421,7 +427,7 @@ impl FunctionEmitter<'_> {
         }
     }
 
-    fn emit_terminator(&mut self, terminator: &Terminator) -> Result<()> {
+    fn lower_terminator(&mut self, terminator: &Terminator) -> Result<()> {
         match terminator {
             Terminator::Return { value } => self.emit_return(value.as_ref()),
             Terminator::Jump { target, arguments } => self.emit_jump(*target, arguments),
@@ -436,15 +442,13 @@ impl FunctionEmitter<'_> {
                     return Err(format!("x86_64 最小 lowering 只支持无块参数的条件分支：function={}", self.function.symbol));
                 }
                 self.emit_operand_to_rax(condition)?;
-                // `test eax, eax`：只按低 32 位判定布尔载体。
-                self.code.extend_from_slice(&[0x85, 0xC0]);
-                self.emit_jump_to(*else_target, &[0x0F, 0x84]);
-                self.emit_jump_to(*then_target, &[0xE9]);
+                self.push(X64Instruction::JumpIfZero(*else_target));
+                self.push(X64Instruction::Jump(*then_target));
                 Ok(())
             }
             Terminator::Unreachable => {
                 // `ud2`：到达即故障，不伪造返回。
-                self.code.extend_from_slice(&[0x0F, 0x0B]);
+                self.push(X64Instruction::Trap);
                 Ok(())
             }
             other => Err(format!("x86_64 最小 lowering 尚不支持终结符 `{other:?}`: function={}", self.function.symbol)),
@@ -454,11 +458,13 @@ impl FunctionEmitter<'_> {
     fn emit_return(&mut self, value: Option<&Operand>) -> Result<()> {
         let returns_unit = matches!(self.function.return_type, NyarType::Unit | NyarType::Bottom);
         match (value, returns_unit) {
-            (None, true) => self.code.extend_from_slice(&[0x31, 0xC0]),
+            (None, true) => self.push(X64Instruction::Load { register: X64Reg::Rax, source: X64Value::Immediate(0) }),
             (None, false) => {
                 return Err(format!("x86_64 最小 lowering：非 void 函数 `{}` 缺少返回值", self.function.symbol));
             }
-            (Some(Operand::Constant(Constant::Unit)), true) => self.code.extend_from_slice(&[0x31, 0xC0]),
+            (Some(Operand::Constant(Constant::Unit)), true) => {
+                self.push(X64Instruction::Load { register: X64Reg::Rax, source: X64Value::Immediate(0) })
+            }
             (Some(Operand::Constant(Constant::Unit)), false) => {
                 return Err(format!("x86_64 最小 lowering：非 void 函数 `{}` 返回了 unit 常量", self.function.symbol));
             }
@@ -467,8 +473,8 @@ impl FunctionEmitter<'_> {
                 return Err(format!("x86_64 最小 lowering：函数 `{}` 返回了值但签名是 unit", self.function.symbol));
             }
         }
-        // 尾声内联：`mov rsp, rbp; pop rbp; ret`。
-        self.code.extend_from_slice(&[0x48, 0x89, 0xEC, 0x5D, 0xC3]);
+        // 尾声由编码器按 LIR `Return` 统一产生。
+        self.push(X64Instruction::Return);
         Ok(())
     }
 
@@ -487,12 +493,12 @@ impl FunctionEmitter<'_> {
                 arguments.len()
             ));
         }
-        if arguments.len() > ParamRegister::ALL.len() {
+        if arguments.len() > X64Reg::WIN64_ARGS.len() {
             return Err(format!(
                 "x86_64 最小 lowering：块 {:?} 的跳转实参 {} 个超过 x86_64 scratch 上限 {}（栈上传参未实现）: function={}",
                 target,
                 arguments.len(),
-                ParamRegister::ALL.len(),
+                X64Reg::WIN64_ARGS.len(),
                 self.function.symbol
             ));
         }
@@ -500,7 +506,7 @@ impl FunctionEmitter<'_> {
         // 这样源与目标槽重叠时也不会互相覆盖。
         for (index, argument) in arguments.iter().enumerate() {
             self.emit_operand_to_rax(argument)?;
-            self.code.extend_from_slice(&[0x48, 0x89, 0x44, 0x24, (index as u8) * 8]);
+            self.push(X64Instruction::StoreScratch { index: index as u8, source: X64Reg::Rax });
         }
         for index in (0..arguments.len()).rev() {
             let local = self
@@ -509,32 +515,10 @@ impl FunctionEmitter<'_> {
                 .get(&(target, index))
                 .copied()
                 .ok_or_else(|| format!("x86_64 最小 lowering：跳转目标块 {:?} 形参 {index} 缺少局部槽", target))?;
-            self.code.extend_from_slice(&[0x48, 0x8B, 0x44, 0x24, (index as u8) * 8]);
-            self.store_rax(local);
+            self.push(X64Instruction::Load { register: X64Reg::Rax, source: X64Value::Location(X64Location::Scratch(index as u8)) });
+            self.push(X64Instruction::StoreFrame { slot: local, source: X64Reg::Rax });
         }
-        self.emit_jump_to(target, &[0xE9]);
-        Ok(())
-    }
-
-    /// 记录一个相对跳转，位移在函数末尾统一回填。
-    fn emit_jump_to(&mut self, target: MirBlockRef, opcode: &[u8]) {
-        self.code.extend_from_slice(opcode);
-        let field = self.code.len();
-        self.code.extend_from_slice(&[0, 0, 0, 0]);
-        self.jump_fixups.push((field, target));
-    }
-
-    fn patch_jumps(&mut self) -> Result<()> {
-        for (field, target) in std::mem::take(&mut self.jump_fixups) {
-            let Some(target_offset) = self.label_offsets.get(&target).copied()
-            else {
-                return Err(format!("x86_64 最小 lowering：跳转目标块 {:?} 不在可达块集中: function={}", target, self.function.symbol));
-            };
-            let displacement = i64::try_from(target_offset).unwrap_or(i64::MAX) - (i64::try_from(field).unwrap_or(i64::MAX) + 4);
-            let displacement = i32::try_from(displacement)
-                .map_err(|_| format!("x86_64 最小 lowering：块跳转位移超出 `rel32`: function={}", self.function.symbol))?;
-            self.code[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
-        }
+        self.push(X64Instruction::Jump(target));
         Ok(())
     }
 
@@ -564,21 +548,18 @@ impl FunctionEmitter<'_> {
                 arguments.len()
             ));
         }
-        if arguments.len() > ParamRegister::ALL.len() {
+        if arguments.len() > X64Reg::WIN64_ARGS.len() {
             return Err(format!(
                 "x86_64 最小 lowering：调用 `{}` 传递 {} 个实参，超过 Win64 寄存器传参上限 {}（栈上传参未实现）",
                 callee_function.symbol,
                 arguments.len(),
-                ParamRegister::ALL.len()
+                X64Reg::WIN64_ARGS.len()
             ));
         }
-        for (argument, register) in arguments.iter().zip(ParamRegister::ALL) {
+        for (argument, register) in arguments.iter().zip(X64Reg::WIN64_ARGS) {
             self.emit_operand_to_register(argument, register)?;
         }
-        self.code.push(0xE8);
-        let field = self.base + self.code.len();
-        self.code.extend_from_slice(&[0, 0, 0, 0]);
-        self.call_fixups.push((field, *instance));
+        self.push(X64Instruction::Call(*instance));
 
         if matches!(callee_function.return_type, NyarType::Unit | NyarType::Bottom) {
             if self.output_local(instruction)?.is_some() {
@@ -590,7 +571,7 @@ impl FunctionEmitter<'_> {
             return Ok(());
         }
         let local = self.require_output_local(instruction)?;
-        self.store_rax(local);
+        self.push(X64Instruction::StoreFrame { slot: local, source: X64Reg::Rax });
         Ok(())
     }
 
@@ -640,13 +621,14 @@ impl FunctionEmitter<'_> {
                 self.function.symbol
             ));
         }
-        if plan.operand_type != TargetOperandType::I64 {
+        let expected_operand = code.operand_type();
+        if plan.operand_type != expected_operand {
             return Err(format!(
-                "x86_64 目标 operator `{instance:?}` 的 operand_type={:?} 与 x86_64 冻结码不符（只接受 I64）: function={}",
+                "x86_64 目标 operator `{instance:?}` 的 operand_type={:?} 与 x86_64 冻结码不符（期望 {expected_operand:?}）: function={}",
                 plan.operand_type, self.function.symbol
             ));
         }
-        let expected_result = if code.is_comparison() { TargetOperandType::I32 } else { TargetOperandType::I64 };
+        let expected_result = code.result_type();
         if plan.result_type != expected_result {
             return Err(format!(
                 "x86_64 目标 operator `{instance:?}` 的 result_type={:?} 与冻结码不符（期望 {expected_result:?}）: function={}",
@@ -656,50 +638,21 @@ impl FunctionEmitter<'_> {
         let local = self.require_output_local(instruction)?;
         self.emit_operand_to_rax(&arguments[0])?;
         if plan.arity == 2 {
-            self.emit_operand_to_rcx(&arguments[1])?;
+            self.emit_operand_to_register(&arguments[1], X64Reg::Rcx)?;
         }
-        self.emit_operator_code(code);
-        self.store_rax(local);
+        self.push(X64Instruction::Operator(code));
+        self.push(X64Instruction::StoreFrame { slot: local, source: X64Reg::Rax });
         Ok(())
-    }
-
-    fn emit_operator_code(&mut self, code: X86_64OperatorCode) {
-        match code {
-            X86_64OperatorCode::I64Add => self.code.extend_from_slice(&[0x48, 0x01, 0xC8]),
-            X86_64OperatorCode::I64Subtract => self.code.extend_from_slice(&[0x48, 0x29, 0xC8]),
-            X86_64OperatorCode::I64Multiply => self.code.extend_from_slice(&[0x48, 0x0F, 0xAF, 0xC1]),
-            X86_64OperatorCode::I64Negate => self.code.extend_from_slice(&[0x48, 0xF7, 0xD8]),
-            X86_64OperatorCode::I64BitAnd => self.code.extend_from_slice(&[0x48, 0x21, 0xC8]),
-            X86_64OperatorCode::I64BitOr => self.code.extend_from_slice(&[0x48, 0x09, 0xC8]),
-            X86_64OperatorCode::I64BitXor => self.code.extend_from_slice(&[0x48, 0x31, 0xC8]),
-            X86_64OperatorCode::I64ShiftLeft => self.code.extend_from_slice(&[0x48, 0xD3, 0xE0]),
-            X86_64OperatorCode::I64ShiftRight => self.code.extend_from_slice(&[0x48, 0xD3, 0xF8]),
-            X86_64OperatorCode::I64CompareEqual => self.emit_compare(0x94),
-            X86_64OperatorCode::I64CompareNotEqual => self.emit_compare(0x95),
-            X86_64OperatorCode::I64CompareLessThan => self.emit_compare(0x9C),
-            X86_64OperatorCode::I64CompareLessOrEqual => self.emit_compare(0x9E),
-            X86_64OperatorCode::I64CompareGreaterThan => self.emit_compare(0x9F),
-            X86_64OperatorCode::I64CompareGreaterOrEqual => self.emit_compare(0x9D),
-        }
-    }
-
-    /// `cmp rax, rcx` + `setcc al` + `movzx eax, al`：结果为 0/1 的 32 位载体。
-    fn emit_compare(&mut self, setcc: u8) {
-        self.code.extend_from_slice(&[0x48, 0x39, 0xC8]);
-        self.code.extend_from_slice(&[0x0F, setcc, 0xC0]);
-        self.code.extend_from_slice(&[0x0F, 0xB6, 0xC0]);
     }
 
     fn emit_constant_to_rax(&mut self, constant: &Constant) -> Result<()> {
         match constant {
             Constant::Int(value) => {
-                self.code.extend_from_slice(&[0x48, 0xB8]);
-                self.code.extend_from_slice(&value.to_le_bytes());
+                self.push(X64Instruction::Load { register: X64Reg::Rax, source: X64Value::Immediate(*value) });
                 Ok(())
             }
             Constant::Bool(value) => {
-                self.code.push(0xB8);
-                self.code.extend_from_slice(&u32::from(*value).to_le_bytes());
+                self.push(X64Instruction::Load { register: X64Reg::Rax, source: X64Value::Immediate(i64::from(*value)) });
                 Ok(())
             }
             other => Err(format!("x86_64 最小 lowering 尚不支持常量 `{other:?}`：缺少 x86_64 常量载体合同，function={}", self.function.symbol)),
@@ -710,8 +663,7 @@ impl FunctionEmitter<'_> {
         match operand {
             Operand::Value(value) => {
                 let local = self.value_local(*value)?;
-                self.code.extend_from_slice(&[0x48, 0x8B, 0x85]);
-                self.code.extend_from_slice(&slot_disp(local).to_le_bytes());
+                self.push(X64Instruction::Load { register: X64Reg::Rax, source: X64Value::Location(X64Location::Frame(local)) });
                 Ok(())
             }
             Operand::Constant(constant) => self.emit_constant_to_rax(constant),
@@ -722,26 +674,19 @@ impl FunctionEmitter<'_> {
         }
     }
 
-    fn emit_operand_to_rcx(&mut self, operand: &Operand) -> Result<()> {
-        self.emit_operand_to_register(operand, ParamRegister::Rcx)
-    }
-
-    fn emit_operand_to_register(&mut self, operand: &Operand, register: ParamRegister) -> Result<()> {
+    fn emit_operand_to_register(&mut self, operand: &Operand, register: X64Reg) -> Result<()> {
         match operand {
             Operand::Value(value) => {
                 let local = self.value_local(*value)?;
-                self.code.extend_from_slice(&register.load_prefix());
-                self.code.extend_from_slice(&slot_disp(local).to_le_bytes());
+                self.push(X64Instruction::Load { register, source: X64Value::Location(X64Location::Frame(local)) });
                 Ok(())
             }
             Operand::Constant(Constant::Int(value)) => {
-                self.code.extend_from_slice(&register.mov_imm64_prefix());
-                self.code.extend_from_slice(&value.to_le_bytes());
+                self.push(X64Instruction::Load { register, source: X64Value::Immediate(*value) });
                 Ok(())
             }
             Operand::Constant(Constant::Bool(value)) => {
-                self.code.extend_from_slice(&register.mov_imm64_prefix());
-                self.code.extend_from_slice(&u64::from(*value).to_le_bytes());
+                self.push(X64Instruction::Load { register, source: X64Value::Immediate(i64::from(*value)) });
                 Ok(())
             }
             Operand::Constant(constant) => Err(format!(
@@ -753,11 +698,6 @@ impl FunctionEmitter<'_> {
             }
             Operand::Symbol(path) => Err(format!("x86_64 最小 lowering 不支持符号操作数 `{path:?}`: function={}", self.function.symbol)),
         }
-    }
-
-    fn store_rax(&mut self, local: u16) {
-        self.code.extend_from_slice(&[0x48, 0x89, 0x85]);
-        self.code.extend_from_slice(&slot_disp(local).to_le_bytes());
     }
 
     fn output_local(&self, instruction: &MirInstruction) -> Result<Option<u16>> {
@@ -789,11 +729,6 @@ impl FunctionEmitter<'_> {
     }
 }
 
-/// 局部槽到 `rbp` 的负位移：`[rbp - 8 * (local + 1)]`。
-fn slot_disp(local: u16) -> i32 {
-    -8 * (i32::from(local) + 1)
-}
-
 /// 可作为 native 8 字节标量槽的类型。
 fn is_slot_type(ty: &NyarType) -> bool {
     matches!(
@@ -810,6 +745,60 @@ fn is_slot_type(ty: &NyarType) -> bool {
 /// 可直接作为进程退出码的返回类型。
 fn is_exit_code_type(ty: &NyarType) -> bool {
     matches!(ty, NyarType::Unit | NyarType::Bottom) || is_slot_type(ty)
+}
+
+/// 唯一 x86-64 operator 配方表。未知名字返回 `None`。
+///
+/// 与 JVM/CLR 使用同一组 provider 名（`integer.*` / `long.*`），便于 std 按目标替换
+/// 实现而不改调用点。未实现的 provider（无符号除/余、逻辑右移、浮点）返回 `None`，
+/// 计划落 `Unfrozen`，由 emit 结构化失败，不猜编码。
+pub(crate) fn freeze_x86_64_operator_binding(operator_name: &str) -> Option<TargetOperatorPlan> {
+    let freeze = |code: X86_64OperatorCode| TargetOperatorPlan {
+        arity: code.arity(),
+        operand_type: code.operand_type(),
+        result_type: code.result_type(),
+        recipe: TargetOperatorRecipe::Operands,
+        encoding: TargetOperatorEncoding::X86_64(code),
+    };
+    Some(freeze(match operator_name {
+        // 32 位整数算术/位/移位：`eax` 载体，结果零扩展到 64 位槽。
+        "integer.add" => X86_64OperatorCode::I32Add,
+        "integer.subtract" => X86_64OperatorCode::I32Subtract,
+        "integer.multiply" => X86_64OperatorCode::I32Multiply,
+        "integer.negate" => X86_64OperatorCode::I32Negate,
+        "integer.and" => X86_64OperatorCode::I32BitAnd,
+        "integer.or" => X86_64OperatorCode::I32BitOr,
+        "integer.xor" => X86_64OperatorCode::I32BitXor,
+        "integer.shift_left" => X86_64OperatorCode::I32ShiftLeft,
+        "integer.shift_right" => X86_64OperatorCode::I32ShiftRight,
+        "integer.shift_right_unsigned" => X86_64OperatorCode::I32ShiftRightUnsigned,
+        "integer.compare_equal" => X86_64OperatorCode::I32CompareEqual,
+        "integer.compare_not_equal" => X86_64OperatorCode::I32CompareNotEqual,
+        "integer.compare_less_than" => X86_64OperatorCode::I32CompareLessThan,
+        "integer.compare_less_or_equal" => X86_64OperatorCode::I32CompareLessOrEqual,
+        "integer.compare_greater_than" => X86_64OperatorCode::I32CompareGreaterThan,
+        "integer.compare_greater_or_equal" => X86_64OperatorCode::I32CompareGreaterOrEqual,
+        "integer.compare_less_than_unsigned" => X86_64OperatorCode::I32CompareLessThanUnsigned,
+        // 64 位整数算术/位/移位：`rax` 载体。
+        "long.add" => X86_64OperatorCode::I64Add,
+        "long.subtract" => X86_64OperatorCode::I64Subtract,
+        "long.multiply" => X86_64OperatorCode::I64Multiply,
+        "long.negate" => X86_64OperatorCode::I64Negate,
+        "long.and" => X86_64OperatorCode::I64BitAnd,
+        "long.or" => X86_64OperatorCode::I64BitOr,
+        "long.xor" => X86_64OperatorCode::I64BitXor,
+        "long.shift_left" => X86_64OperatorCode::I64ShiftLeft,
+        "long.shift_right" => X86_64OperatorCode::I64ShiftRight,
+        "long.shift_right_unsigned" => X86_64OperatorCode::I64ShiftRightUnsigned,
+        "long.compare_equal" => X86_64OperatorCode::I64CompareEqual,
+        "long.compare_not_equal" => X86_64OperatorCode::I64CompareNotEqual,
+        "long.compare_less_than" => X86_64OperatorCode::I64CompareLessThan,
+        "long.compare_less_or_equal" => X86_64OperatorCode::I64CompareLessOrEqual,
+        "long.compare_greater_than" => X86_64OperatorCode::I64CompareGreaterThan,
+        "long.compare_greater_or_equal" => X86_64OperatorCode::I64CompareGreaterOrEqual,
+        "long.compare_less_than_unsigned" => X86_64OperatorCode::I64CompareLessThanUnsigned,
+        _ => return None,
+    }))
 }
 
 /// 指令种类的稳定诊断名（不依赖 Debug 输出细节）。

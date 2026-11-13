@@ -1,6 +1,6 @@
 use odin_vm::{OdinVm, jit::JitError};
 
-use odin_bytecode::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
+use acorn_odin::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
 
 fn empty_module() -> odin_vm::module::LoadedModule {
     let mut code = Vec::new();
@@ -34,7 +34,7 @@ fn executor_default_jit_is_disabled() {
 
 #[test]
 fn stack_maps_available_without_jit_backend() {
-    use odin_bytecode::OdinHeadCode;
+    use acorn_odin::OdinHeadCode;
 
     let mut code = Vec::new();
     code.push(OdinHeadCode::ObjectNew as u8);
@@ -51,7 +51,7 @@ fn stack_maps_available_without_jit_backend() {
         code_bytes: code,
         globals: Vec::new(),
         init_function_indices: Vec::new(),
-        layouts: vec![odin_bytecode::OdinLayout { field_count: 0 }],
+        layouts: vec![acorn_odin::OdinLayout { field_count: 0 }],
     };
     let module = OdinVm::new().load(&encode_module(&data)).expect("load");
     let maps = OdinVm::new().stack_maps_for(&module, 0).expect("stack maps");

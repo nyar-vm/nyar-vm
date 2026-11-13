@@ -13,7 +13,10 @@ use std::{
 use nyar::{ExternalImportLink, Identifier, QualifiedName};
 use nyar_emitter::{
     BackendImport, FragmentSubmission, TargetExecutionPlan,
-    backend::clr::write_dotnet_runtime_config,
+    backend::clr::{
+        host_process::{configure_quiet_host_command, suppress_host_error_dialogs},
+        write_dotnet_runtime_config,
+    },
     nyar_backend_clr::{MsilModule, MsilOpcode},
     target_operator::{
         TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
@@ -116,7 +119,7 @@ fn lower_exported_operator(
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));
     plan.testing_module_name("clr_unsigned_runtime").testing_entry_operation(main);
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), export.to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), export.to_string());
     plan.testing_register_import(operator_instance, operator_import(mnemonic, parameter_types.clone(), result_type, operator));
     let (module, _) = lower_fragment_to_clr_managed_surface(&FragmentSubmission::from_backend_plan(plan)).expect("managed surface must lower");
     module
@@ -136,11 +139,13 @@ fn write_launcher(directory: &Path, artifact: &str, module: &MsilModule) {
 }
 
 fn run_clr(directory: &Path, artifact: &str, entry: &str, arguments: &[&str]) -> Output {
+    suppress_host_error_dialogs();
     let mut command = Command::new("dotnet");
     command.current_dir(directory).arg("exec").arg(format!("{artifact}.dll")).arg(entry);
     for argument in arguments {
         command.arg(argument);
     }
+    configure_quiet_host_command(&mut command);
     command.output().expect("dotnet exec")
 }
 
@@ -162,7 +167,11 @@ fn assert_traps(run: &Output, exception: &str, context: &str) {
 }
 
 fn dotnet_available() -> bool {
-    Command::new("dotnet").arg("--version").output().map(|output| output.status.success()).unwrap_or(false)
+    suppress_host_error_dialogs();
+    let mut command = Command::new("dotnet");
+    command.arg("--version");
+    configure_quiet_host_command(&mut command);
+    command.output().map(|output| output.status.success()).unwrap_or(false)
 }
 
 /// `i64.div.un`/`i64.rem.un` 的高位边界必须在 CLR 上按无符号语义真跑出结果。

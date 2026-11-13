@@ -12,7 +12,7 @@
 #![cfg(feature = "ovm-lane")]
 
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan};
-use odin_bytecode::encode_module;
+use acorn_odin::encode_module;
 use odin_vm::{OdinVm, Value, executor::Executor, module::LoadedModule};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 

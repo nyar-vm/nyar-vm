@@ -19,7 +19,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_nyar_module,
 };
 use nyar_types::{InstructionId, NyarType, ProvenanceId};
-use odin_bytecode::{OdinConstant, OdinHeadCode, OdinInstruction, OdinModuleData, decode_at};
+use acorn_odin::{OdinConstant, OdinHeadCode, OdinInstruction, OdinModuleData, decode_at};
 
 fn i8_(signed: bool) -> NyarType {
     NyarType::Integer8 { signed }

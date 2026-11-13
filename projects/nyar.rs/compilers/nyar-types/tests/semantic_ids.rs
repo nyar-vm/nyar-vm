@@ -55,7 +55,7 @@ fn branded_ids_are_distinct_types() {
     assert_eq!(ItemIdKind::NAME, "ItemId");
 }
 
-// 语言内建结构操作身份归 frontend 私有，OVM 指令编号归 `odin_bytecode::IntrinsicOpcode`；
+// 语言内建结构操作身份归 frontend 私有，OVM 指令编号归 `acorn_odin::IntrinsicOpcode`；
 // `nyar-types` 不再导出跨这两个所有者的 `IntrinsicId`。这里只验证属性身份仍是可扩展的。
 #[test]
 fn attribute_ids_are_extensible() {

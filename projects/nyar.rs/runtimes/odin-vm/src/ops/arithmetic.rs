@@ -1,4 +1,4 @@
-use odin_bytecode::{OdinHeadCode, OdinInstruction};
+use acorn_odin::{OdinHeadCode, OdinInstruction};
 
 use crate::{error::OdinRuntimeError, frame::Frame, ops::StepResult, stack::ValueStack, value::Value};
 

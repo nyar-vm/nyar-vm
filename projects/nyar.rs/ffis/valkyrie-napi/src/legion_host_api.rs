@@ -4,7 +4,7 @@ use std::{fs, path::Path, path::PathBuf};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use odin_bytecode::{OvmAbiSidecar, ovm_abi_sidecar_file};
+use acorn_odin::{OvmAbiSidecar, ovm_abi_sidecar_file};
 use odin_vm::{OdinVm, json_bridge};
 use rusty_valkyrie::legion::{
     CanonicalTarget,

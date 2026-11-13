@@ -86,7 +86,7 @@ fn emit_bridge(layouts: &[(NyarType, AggregateLayout)]) -> EmittedBridge {
     for (ty, layout) in layouts {
         plan.testing_register_type_layout(ty.clone(), layout.clone());
     }
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("实例身份"), "echo".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("实例身份"), "echo".to_string());
     plan.testing_freeze_library_export_abis().expect("冻结库导出载体");
     let submission = FragmentSubmission::from_backend_plan(plan);
     let (module, imports) =
@@ -105,7 +105,7 @@ fn emit_bridge(layouts: &[(NyarType, AggregateLayout)]) -> EmittedBridge {
 fn emit_plain(ty: NyarType) -> EmittedBridge {
     let name = QualifiedName::new(vec![Identifier::new("echo")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(name, identity_function(ty, None))]));
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("实例身份"), "echo".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("实例身份"), "echo".to_string());
     plan.testing_freeze_library_export_abis().expect("冻结库导出载体");
     let submission = FragmentSubmission::from_backend_plan(plan);
     let (module, imports) =

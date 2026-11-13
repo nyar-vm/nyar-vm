@@ -18,6 +18,9 @@ use crate::{
     nyar_backend_wasi::WasmPackageKind,
 };
 
+mod host_imports;
+pub(crate) use host_imports::{SYNTHETIC_NODE_IMPORT_FIELDS, glue_import_signature};
+
 /// `WASM + JS glue` 宿主绑定生成器。
 pub(crate) struct JsGlueBindingBuilder;
 

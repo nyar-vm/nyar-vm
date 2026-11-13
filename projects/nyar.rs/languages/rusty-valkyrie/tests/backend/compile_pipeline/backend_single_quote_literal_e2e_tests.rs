@@ -192,7 +192,7 @@ fn single_quote_literals_ovm_execute_end_to_end() {
     let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
         .expect("ovm 模块必须完成降低");
     let entry = module.exports.iter().map(|export| export.symbol_name.clone()).find(|name| name.ends_with("main")).expect("必须导出 main 入口");
-    let bytes = odin_bytecode::encode_module(&module);
+    let bytes = acorn_odin::encode_module(&module);
     let mut vm = OdinVm::new();
     let loaded = vm.load(&bytes).expect("编码后的模块必须可加载");
     let value = vm.run(&loaded, &entry, Vec::new()).expect("main 必须在内置 OVM 运行时执行成功");

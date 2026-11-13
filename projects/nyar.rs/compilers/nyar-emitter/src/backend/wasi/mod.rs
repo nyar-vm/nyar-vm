@@ -7,7 +7,10 @@
 
 #[doc(hidden)]
 pub mod component;
+mod host_imports;
 mod witness_dispatch;
+
+pub(crate) use host_imports::{expand_wasi_cli_stream_imports, wasi_import_signature};
 
 use std::{collections::BTreeSet, path::PathBuf};
 
@@ -100,14 +103,8 @@ impl Default for WasmBinaryBackend {
     }
 }
 
-impl TargetCodeGenBackend for WasmBinaryBackend {
-    type Input = WasmBinaryBackendInput;
-
-    fn descriptor(&self) -> &BackendDescriptor {
-        &self.descriptor
-    }
-
-    fn validate(&self, input: &Self::Input) -> Result<()> {
+impl WasmBinaryBackend {
+    fn validate_artifact(&self, input: &WasmBinaryBackendInput) -> Result<()> {
         match input.host_boundary {
             HostProjectionBoundary::WasmJsGlue | HostProjectionBoundary::WasiComponent => {}
             other => {
@@ -143,7 +140,7 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
         Ok(())
     }
 
-    fn compile(&self, input: Self::Input, options: &CompilationOptions) -> Result<ArtifactSet> {
+    fn compile_artifact(&self, input: WasmBinaryBackendInput, options: &CompilationOptions) -> Result<ArtifactSet> {
         std::fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
         let artifact_stem = canonical_wasm_artifact_stem(&options.artifact_name);
@@ -222,6 +219,23 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
         }
 
         Ok(artifacts)
+    }
+}
+
+impl TargetCodeGenBackend for WasmBinaryBackend {
+    type Input = WasmBinaryBackendInput;
+
+    fn descriptor(&self) -> &BackendDescriptor {
+        &self.descriptor
+    }
+
+    fn validate(&self, input: &Self::Input) -> nyar::backends::BackendResult<()> {
+        self.validate_artifact(input).map_err(|error| nyar::backends::BackendError::for_backend(&self.descriptor.name, error))
+    }
+
+    fn compile(&self, input: Self::Input, options: &CompilationOptions) -> nyar::backends::BackendResult<ArtifactSet> {
+        self.compile_artifact(input, options)
+            .map_err(|error| nyar::backends::BackendError::for_backend(&self.descriptor.name, error))
     }
 }
 

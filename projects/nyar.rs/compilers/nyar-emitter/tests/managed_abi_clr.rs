@@ -60,7 +60,7 @@ fn identity_plan(export_name: &str) -> FragmentSubmission {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main, identity_fixture("managed.abi.add", LONG))]));
     plan.testing_module_name("managed_abi_clr");
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), export_name.to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), export_name.to_string());
     FragmentSubmission::from_backend_plan(plan)
 }
 
@@ -160,7 +160,7 @@ fn unsupported_utf8_carrier_does_not_fabricate_entry() {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main, fixture)]));
     plan.testing_module_name("managed_abi_clr");
-    plan.testing_wasm_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "echo".to_string());
+    plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "echo".to_string());
     let submission = FragmentSubmission::from_backend_plan(plan);
 
     let error = match lower_fragment_to_clr_managed_surface(&submission) {

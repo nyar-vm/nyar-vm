@@ -230,7 +230,7 @@ pub fn link_reachable_dependency_mir_with_hir(
 ///
 /// 程序模块是全部入口组共同的链接根宿主。合并只按已冻结的合同身份进行：
 /// 同一实例的导出/入口必须完全一致；同一片段身份只允许 union；片段
-/// 入口 operation 或 wasm 导出名冲突必须失败，不能择一覆盖。
+/// 入口 operation 或导出名冲突必须失败，不能择一覆盖。
 #[doc(hidden)]
 pub fn merge_entry_group_surface(consumer: &mut MirModule, entry: &MirModule) -> Result<(), crate::compiler::syntax::oak::ParseError> {
     for contract in &entry.exports {
@@ -262,11 +262,11 @@ pub fn merge_entry_group_surface(consumer: &mut MirModule, entry: &MirModule) ->
                 existing.exported_operations.push(*operation);
             }
         }
-        for (instance, name) in &fragment.wasm_export_names {
-            if let Some(previous) = existing.wasm_export_names.insert(*instance, name.clone())
+        for (instance, name) in &fragment.export_names {
+            if let Some(previous) = existing.export_names.insert(*instance, name.clone())
                 && previous != *name
             {
-                return Err(ParseError::Invalid { message: format!("片段 `{}` 的 wasm 导出名冲突", fragment.id), span: None });
+                return Err(ParseError::Invalid { message: format!("片段 `{}` 的导出名冲突", fragment.id), span: None });
             }
         }
         match (existing.entry_operation, fragment.entry_operation) {

@@ -1,46 +1,32 @@
 //! Per-function MIR -> WASM bytecode lowerer.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use super::{
     super::{
         super::{
             executable::{ExecutableLoweringContext, collect_reachable_blocks},
-            interop::wasm_operator_target,
             pattern_matching_contract::validate_pattern_matching_invariants,
         },
-        cabi::CABI_HEAP_GLOBAL_INDEX,
         gc::WASM_GC_ANYREF,
-        sections::{decode_uleb128, encode_uleb128},
+        sections::encode_uleb128,
     },
-    NominalInstanceId, StorageKind,
+    NominalInstanceId, StorageKind, VALTYPE_F32, WasmBodyInstruction, encode_wasm_body,
     representation::{
-        is_js_glue_host_string_type, mir_storage_for_type, type_is_inline_aggregate, wasm_gc_field_type_byte_for_glue, wasm_param_types,
-        wasm_param_value_type, wasm_param_value_type_for,
+        is_js_glue_host_string_type, mir_storage_for_type, type_is_inline_aggregate, wasm_gc_field_type_byte_for_glue, wasm_param_value_type,
+        wasm_param_value_type_for,
     },
-    type_registry::wasm_array_element_type_key,
-    VALTYPE_F32, encode_f32_load, encode_f32_store,
 };
 use crate::{
     FragmentSubmission,
     backend_plan_views::{
-        ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant,
-        ExecutableDispatchKind as MirDispatchKind, ExecutableFunction as MirFunction, ExecutableInstruction as MirInstruction,
-        ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand, ExecutableReceiverPassingKind as ReceiverPassingKind,
-        ExecutableStorageKind as MirStorageKind, ExecutableTerminator as MirTerminator, ExecutableValueRef as MirValueRef, NyarType,
+        ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant, ExecutableFunction as MirFunction,
+        ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
+        ExecutableStorageKind as MirStorageKind, ExecutableValueRef as MirValueRef, NyarType,
     },
-    contracts::{ArrayInitialization, instruction_primary_result},
     target_operator::TargetOperatorBinding,
 };
-use acorn_wasm::{
-    BLOCKTYPE_EMPTY, VALTYPE_ANYREF, VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, VALTYPE_REF_NULL, WasmOpcode, encode_array_copy,
-    encode_array_get, encode_array_len, encode_array_new_default, encode_array_new_fixed, encode_array_set, encode_block_empty, encode_br,
-    encode_br_if, encode_call, encode_drop, encode_f64_const, encode_f64_load, encode_f64_store, encode_global_get, encode_global_set,
-    encode_i32_add, encode_i32_and, encode_i32_const, encode_i32_load, encode_i32_store, encode_i64_const, encode_i64_load, encode_i64_store,
-    encode_local_get, encode_local_set, encode_local_tee, encode_loop_empty, encode_memory_copy, encode_memory_fill, encode_memory_grow,
-    encode_memory_size, encode_ref_cast_array, encode_ref_cast_type_index, encode_ref_null_anyref, encode_ref_null_externref,
-    encode_struct_get, encode_struct_new_default, encode_struct_set, encode_unreachable,
-};
+use acorn_wasm::{VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
 use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, LayoutId};
 
 pub(in crate::lowering::backends::wasm) fn array_element_type(array_type: &NyarType) -> Option<&NyarType> {
@@ -144,7 +130,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
         // release 构建会继续 lowering 并可能把残差 `PatternMatch` 编成运行期 trap。
         return Err(format!("pattern matching contract violation in function `{}`: {error:?}", mir_fn.symbol));
     }
-    let ctx = ExecutableLoweringContext::new(submission);
+    let ctx = ExecutableLoweringContext::new_resolved(submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)?;
     let mut lowerer = WasmMirLowerer::new(
         &ctx,
         mir_fn,
@@ -192,7 +178,7 @@ pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
     pub(in crate::lowering::backends::wasm::mir) js_glue_utf8_as_anyref: bool,
     /// WASI 轨：字符串字面量作为 i32 偏移量传递，存入 data 段?
     pub(in crate::lowering::backends::wasm::mir) wasi_mode: bool,
-    pub(in crate::lowering::backends::wasm::mir) code: Vec<u8>,
+    pub(in crate::lowering::backends::wasm::mir) code: Vec<WasmBodyInstruction>,
     /// Scratch: aligned pointer returned by the global bump allocator.
     pub(in crate::lowering::backends::wasm::mir) stack_ptr_local: u32,
     /// Scratch: `new_end` after bump.
@@ -401,7 +387,7 @@ impl<'a> WasmMirLowerer<'a> {
             encode_uleb128(count, &mut body);
             body.extend_from_slice(&ty);
         }
-        body.extend_from_slice(&self.code);
+        body.extend_from_slice(&encode_wasm_body(&self.code));
         WasmOpcode::End.encode(&mut body);
         body
     }
@@ -574,8 +560,8 @@ impl<'a> WasmMirLowerer<'a> {
     /// 引用 local →?i32 布尔：`ref.is_null` ?`i32.eqz`?=非空, 0=null）?
     pub(super) fn emit_anyref_local_as_i32_bool(&mut self, local: u32) {
         self.emit_local_get(local);
-        WasmOpcode::RefIsNull.encode(&mut self.code);
-        WasmOpcode::I32Eqz.encode(&mut self.code);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::RefIsNull));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Eqz));
     }
 
     pub(super) fn emit_call_arguments(&mut self, arguments: &[MirOperand], param_types: &[u8]) -> crate::Result<()> {
@@ -647,15 +633,12 @@ impl<'a> WasmMirLowerer<'a> {
 
     /// Emits the WASM `call` instruction (opcode 0x10).
     pub(super) fn emit_call(&mut self, function_index: u32) {
-        WasmOpcode::Call.encode(&mut self.code);
-        encode_uleb128(function_index, &mut self.code);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Call, operand: function_index });
     }
 
     /// Emits the WASM `call_indirect` instruction (opcode 0x11).
     pub(super) fn emit_call_indirect(&mut self, type_index: u32, table_index: u32) {
-        WasmOpcode::CallIndirect.encode(&mut self.code);
-        encode_uleb128(type_index, &mut self.code);
-        encode_uleb128(table_index, &mut self.code);
+        self.code.push(WasmBodyInstruction::U32Pair { opcode: WasmOpcode::CallIndirect, first: type_index, second: table_index });
     }
 
     /// 该 layout 是否以 wasm-gc struct 承载（物理表示的唯一权威）。
@@ -688,10 +671,7 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_local_get(local);
                 Ok(())
             }
-            MirOperand::Constant(_) => Err(format!(
-                "WASM 常量操作数缺少目标槽 valtype，禁止按默认 i32 猜测: `{}`",
-                self.mir_fn.symbol
-            )),
+            MirOperand::Constant(_) => Err(format!("WASM 常量操作数缺少目标槽 valtype，禁止按默认 i32 猜测: `{}`", self.mir_fn.symbol)),
             MirOperand::Symbol(_) => Err(format!("WASM 值操作数缺少 SSA 身份: `{}`", self.mir_fn.symbol)),
             MirOperand::Item(_) => Err(format!("WASM callable identity cannot be used as a value operand: `{}`", self.mir_fn.symbol)),
         }
@@ -715,18 +695,12 @@ impl<'a> WasmMirLowerer<'a> {
                 VALTYPE_I32 => {
                     // i32 槽收到超出表示范围的字面量属计划不一致：禁止 `as i32` 截断。
                     let narrowed = i32::try_from(*value).map_err(|_| {
-                        format!(
-                            "WASM 整数常量 {value} 超出目标 i32 槽的表示范围（槽位已规划为 i32，禁止截断）: `{}`",
-                            self.mir_fn.symbol
-                        )
+                        format!("WASM 整数常量 {value} 超出目标 i32 槽的表示范围（槽位已规划为 i32，禁止截断）: `{}`", self.mir_fn.symbol)
                     })?;
                     self.emit_i32_const(narrowed);
                 }
                 other => {
-                    return Err(format!(
-                        "WASM 整数常量与已规划槽 valtype {other:#x} 不一致: `{}`",
-                        self.mir_fn.symbol
-                    ));
+                    return Err(format!("WASM 整数常量与已规划槽 valtype {other:#x} 不一致: `{}`", self.mir_fn.symbol));
                 }
             },
             MirConstant::Bool(value) => match slot_ty {
@@ -763,7 +737,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 // 未登记宿主载体的字面量不得伪造 `i32 0` 句柄；
                 // 预编码校验 `validate_string_literal_payloads` 已拒绝该形状。
-                encode_unreachable(&mut self.code);
+                self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable));
             }
             // Unit ADT=1（恰有一个值）；用 ref.null any 作 GC 占位，勿与 void(ADT=0) 混淆。
             MirConstant::Unit => {
@@ -780,11 +754,7 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_ref_null_anyref();
             }
             MirConstant::Utf16(_) => {
-                return Err(format!(
-                    "{}: `{}`",
-                    crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI,
-                    self.mir_fn.symbol
-                ));
+                return Err(format!("{}: `{}`", crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI, self.mir_fn.symbol));
             }
         }
         Ok(())
@@ -844,15 +814,12 @@ impl<'a> WasmMirLowerer<'a> {
             return Ok(());
         }
         match self.gc_struct_field_stack_type(field)? {
-            VALTYPE_F32 => encode_f32_store(2, 0, &mut self.code),
-            VALTYPE_F64 => encode_f64_store(3, 0, &mut self.code),
-            VALTYPE_I64 => encode_i64_store(3, 0, &mut self.code),
-            VALTYPE_I32 => encode_i32_store(2, 0, &mut self.code),
+            VALTYPE_F32 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::F32Store, align: 2, offset: 0 }),
+            VALTYPE_F64 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::F64Store, align: 3, offset: 0 }),
+            VALTYPE_I64 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::I64Store, align: 3, offset: 0 }),
+            VALTYPE_I32 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::I32Store, align: 2, offset: 0 }),
             other => {
-                return Err(format!(
-                    "WASM 线性内存字段槽不支持引用载体 {other}: `{}` (in `{}`)",
-                    field.name, self.mir_fn.symbol
-                ));
+                return Err(format!("WASM 线性内存字段槽不支持引用载体 {other}: `{}` (in `{}`)", field.name, self.mir_fn.symbol));
             }
         }
         Ok(())
@@ -860,15 +827,12 @@ impl<'a> WasmMirLowerer<'a> {
 
     pub(super) fn emit_load_at_field(&mut self, field: &FieldLayout) -> crate::Result<()> {
         match self.gc_struct_field_stack_type(field)? {
-            VALTYPE_F32 => encode_f32_load(2, 0, &mut self.code),
-            VALTYPE_F64 => encode_f64_load(3, 0, &mut self.code),
-            VALTYPE_I64 => encode_i64_load(3, 0, &mut self.code),
-            VALTYPE_I32 => encode_i32_load(2, 0, &mut self.code),
+            VALTYPE_F32 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::F32Load, align: 2, offset: 0 }),
+            VALTYPE_F64 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::F64Load, align: 3, offset: 0 }),
+            VALTYPE_I64 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::I64Load, align: 3, offset: 0 }),
+            VALTYPE_I32 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::I32Load, align: 2, offset: 0 }),
             other => {
-                return Err(format!(
-                    "WASM 线性内存字段槽不支持引用载体 {other}: `{}` (in `{}`)",
-                    field.name, self.mir_fn.symbol
-                ));
+                return Err(format!("WASM 线性内存字段槽不支持引用载体 {other}: `{}` (in `{}`)", field.name, self.mir_fn.symbol));
             }
         }
         Ok(())

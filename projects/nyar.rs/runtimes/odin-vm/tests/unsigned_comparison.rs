@@ -3,7 +3,7 @@
 //! 正向：同一对操作数 `-1` 与 `1`，无符号语义必须与有符号语义相反
 //! （`-1` 的位型 `0xFFFFFFFF` 不小于 `1`）；非负操作数上与有符号语义一致。
 //! 反向：未分配槽位（如 `0x4A`）必须在加载期被校验拒绝，不得进入解释循环。
-use odin_bytecode::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
+use acorn_odin::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
 use odin_vm::{executor::Executor, module::LoadedModule, *};
 
 fn comparison_bytes(head: u8, lhs: i32, rhs: i32) -> Vec<u8> {

@@ -40,10 +40,10 @@ fn plan_for(program: &nyar_types::CompiledProgram) -> Result<TargetExecutionPlan
 mod ovm {
     use super::*;
     use nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module;
-    use odin_bytecode::{OdinConstant, OdinExportKind, encode_module};
+    use acorn_odin::{OdinConstant, OdinExportKind, encode_module};
     use odin_vm::{executor::Executor, module::LoadedModule, value::Value};
 
-    fn lower_ovm(statements: &str) -> Result<odin_bytecode::OdinModuleData, String> {
+    fn lower_ovm(statements: &str) -> Result<acorn_odin::OdinModuleData, String> {
         let program = compile(statements)?;
         let plan = plan_for(&program)?;
         lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan)).map_err(|error| error.to_string())
