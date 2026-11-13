@@ -5,7 +5,7 @@ use nyar_emitter::transitional::binary::{
 use odin_bytecode::{OdinConstant, OdinFunction, OdinModuleData, Odin_VERSION};
 
 use nyar_emitter::{
-    nyar_backend_native::{NativeExecutableKind, classify_native_executable},
+    nyar_backend_native::{NativeExecutableError, NativeExecutableKind, classify_native_executable},
     nyar_backend_vm::emit_nyar_module,
     nyar_backend_wasi::{WasmTraitFatPointer, plan_witness_table_layout, resolve_witness_call},
 };
@@ -52,6 +52,31 @@ fn classifies_writer_outputs() {
     )
     .expect("so");
     assert_eq!(classify_native_executable(&shared).expect("so"), NativeExecutableKind::ElfShared);
+}
+
+/// 反例：镜像可被解析但机器类型不受支持时必须返回结构化错误，不得 panic。
+///
+/// 修复前 `classify_native_executable` 对「解析成功、架构不支持」的镜像调用
+/// `unwrap_err()`，把可诊断的拒绝变成进程 panic。
+#[test]
+fn parsed_but_unsupported_native_image_reports_structured_error() {
+    let mut pe = NativePeWriter::write_executable(&NativePeImage {
+        text: vec![0xC3],
+        rdata: Vec::new(),
+        idata: Vec::new(),
+        imports: Vec::new(),
+        entry_point: 0,
+    })
+    .expect("pe");
+    let pe_offset = u32::from_le_bytes(pe[0x3C..0x40].try_into().expect("e_lfanew")) as usize;
+    let machine_offset = pe_offset + 4;
+    // 保留 PE32+ 头，只把 machine 改成 i386：parse_pe64 成功但不属于 AMD64 支持集。
+    pe[machine_offset..machine_offset + 2].copy_from_slice(&0x014Cu16.to_le_bytes());
+    let error = classify_native_executable(&pe).expect_err("不受支持的机器类型必须拒绝");
+    assert!(
+        matches!(error, NativeExecutableError::ParsedButUnsupported),
+        "解析成功但架构不支持必须返回结构化错误，而不是 panic 或 Unrecognized: {error:?}"
+    );
 }
 
 #[test]

@@ -28,6 +28,8 @@ pub enum NativeExecutableKind {
 pub enum NativeExecutableError {
     /// 镜像过短。
     TooShort,
+    /// 镜像可解析为 `PE`/`ELF`，但机器类型或文件类型不受本后端支持。
+    ParsedButUnsupported,
     /// 既不是本后端支持的 `PE` 也不是 `ELF`。
     Unrecognized {
         /// `PE` 解析/约束失败原因。
@@ -41,6 +43,7 @@ impl fmt::Display for NativeExecutableError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::TooShort => write!(f, "native executable 过短"),
+            Self::ParsedButUnsupported => write!(f, "native executable 可解析但机器类型或文件类型不受支持"),
             Self::Unrecognized { pe, elf } => {
                 write!(f, "不是受支持的 native PE ({pe}) 或 ELF ({elf})")
             }
@@ -64,7 +67,12 @@ pub fn classify_native_executable(bytes: &[u8]) -> Result<NativeExecutableKind, 
     if is_supported_elf(bytes) {
         return Ok(NativeExecutableKind::Elf);
     }
-    Err(NativeExecutableError::Unrecognized { pe: parse_pe64(bytes).unwrap_err(), elf: parse_elf64(bytes).unwrap_err() })
+    match (parse_pe64(bytes), parse_elf64(bytes)) {
+        // 解析成功但架构/文件类型不在支持集内：这是受支持的「可解析」事实，
+        // 不是解析失败，必须返回结构化错误而不是对成功结果 `unwrap_err()` panic。
+        (Ok(_), _) | (_, Ok(_)) => Err(NativeExecutableError::ParsedButUnsupported),
+        (Err(pe), Err(elf)) => Err(NativeExecutableError::Unrecognized { pe, elf }),
+    }
 }
 
 fn is_supported_pe(bytes: &[u8]) -> bool {
