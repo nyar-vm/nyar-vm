@@ -4,8 +4,8 @@ use crate::{
     DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, OvmAbiSidecar, Result,
     bundled_backend_capability_descriptor, nyar_backend_vm::emit_nyar_module,
 };
-use nyar::{ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane};
 use acorn_odin::{OdinExportKind, OdinModuleData, decode_module};
+use nyar::{ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane};
 
 use super::BundledBackendCompiler;
 
@@ -38,7 +38,8 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
             emit_nyar_module(module, &odin_path)?;
             // sidecar 冻结产物**整体**哈希：布局表、常量池与代码段都参与 ABI 解释，
             // 挑字段计算迟早漏掉参与解释的内容。
-            let odin_bytes = fs::read(&odin_path).map_err(|error| format!("读取刚写出的 `.odin` 产物失败：{}: {error}", odin_path.display()))?;
+            let odin_bytes =
+                fs::read(&odin_path).map_err(|error| format!("读取刚写出的 `.odin` 产物失败：{}: {error}", odin_path.display()))?;
             artifacts.push(ArtifactDescriptor {
                 name: odin_name.clone(),
                 path: format!("{}.odin", request.artifact_name),
@@ -52,10 +53,8 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
             if request.library_mode {
                 // 库导出面必须携带冻结的 ABI 合同；缺失即失败闭合，绝不写出
                 // 无合同的导出索引让宿主按未校验的布局解释内存。
-                let contract = input
-                    .abi_contract
-                    .as_ref()
-                    .ok_or_else(|| "`artifact: library` 缺少 OVM ABI 合同；拒绝产出无合同的库导出面".to_string())?;
+                let contract =
+                    input.abi_contract.as_ref().ok_or_else(|| "`artifact: library` 缺少 OVM ABI 合同；拒绝产出无合同的库导出面".to_string())?;
                 library_exports = entries
                     .iter()
                     .map(|entry| DriverLibraryExport {
@@ -75,7 +74,7 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
             }
         }
 
-        Ok(DriverCompileReport { artifacts, entry_symbol, run_contracts, managed_abi: None, ovm_abi, library_exports })
+        Ok(DriverCompileReport { artifacts, entry_symbol, run_contracts, managed_abi: Vec::new(), ovm_abi, library_exports })
     }
 }
 

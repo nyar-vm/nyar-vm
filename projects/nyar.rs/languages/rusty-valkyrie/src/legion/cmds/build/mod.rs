@@ -253,7 +253,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
         Err(error) => return Err(compile_error_with_diagnostics(error, plan)),
     };
     write_compile_evidence(&plan.output_dir, &artifact.evidence)?;
-    if let Some(managed_abi) = &artifact.driver.managed_abi {
+    for managed_abi in &artifact.driver.managed_abi {
         write_managed_abi(&plan.output_dir, managed_abi)?;
     }
     for ovm_abi in &artifact.driver.ovm_abi {
@@ -329,9 +329,12 @@ pub(crate) fn compile_arch(plan: &BuildPlan) -> &'static str {
     crate::legion::workspace::planner::compile_arch_key(&plan.project.build_target.target)
 }
 
-/// 将 managed ABI 契约落盘为确定性 pretty JSON（字段顺序与入口排序由类型保证）。
+/// 将 managed ABI 合同落盘为确定性 pretty JSON。
+///
+/// 每个物理产物一份 sidecar，文件名由产物名唯一派生（`app.jar` →
+/// `app.jar.managed-abi.json`）；多分区构建不得互相覆盖。
 fn write_managed_abi(output_dir: &Path, contract: &nyar_emitter::ManagedAbiContract) -> LegionResult<()> {
-    let output_path = output_dir.join("managed-abi.json");
+    let output_path = output_dir.join(nyar_emitter::managed_abi_sidecar_file(&contract.artifact));
     let content = serde_json::to_string_pretty(contract)
         .map_err(|error| LegionError::msg(format!("序列化 managed ABI 契约失败 {}: {error}", output_path.display())))?;
     fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", output_dir.display())))?;

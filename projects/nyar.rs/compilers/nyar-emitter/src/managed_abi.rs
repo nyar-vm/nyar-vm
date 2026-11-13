@@ -13,6 +13,14 @@ use sha2::{Digest, Sha256};
 /// managed ABI 契约 schema 版本。
 pub const MANAGED_ABI_SCHEMA_VERSION: u32 = 1;
 
+/// managed ABI sidecar 文件名：每个物理产物一份，`app.jar` → `app.jar.managed-abi.json`。
+///
+/// 产物名缺失时保留兼容的 `managed-abi.json`，但多产物场景必须由驱动层先冻结
+/// `artifact`，否则文件名无法唯一归属。
+pub fn managed_abi_sidecar_file(artifact: &str) -> String {
+    if artifact.is_empty() { "managed-abi.json".to_string() } else { format!("{artifact}.managed-abi.json") }
+}
+
 /// managed 入口 ABI 契约。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManagedAbiContract {
@@ -102,4 +110,17 @@ pub struct ManagedAbiEntry {
     pub return_type: String,
     /// launcher 类内部名。
     pub launcher_class: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// sidecar 文件名必须由物理产物唯一派生，多分区不得互相覆盖。
+    #[test]
+    fn sidecar_file_is_derived_from_the_physical_artifact() {
+        assert_eq!(managed_abi_sidecar_file("app.jar"), "app.jar.managed-abi.json");
+        assert_eq!(managed_abi_sidecar_file("server.dll"), "server.dll.managed-abi.json");
+        assert_eq!(managed_abi_sidecar_file(""), "managed-abi.json");
+    }
 }

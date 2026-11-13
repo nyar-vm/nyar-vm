@@ -1,4 +1,7 @@
-use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result, bundled_backend_capability_descriptor, nyar_backend_clr::ClrBinaryBackend};
+use crate::{
+    DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result,
+    bundled_backend_capability_descriptor, nyar_backend_clr::ClrBinaryBackend,
+};
 use nyar::{
     BackendInputKind, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, TargetFamily, TargetLane,
     backends::TargetCodeGenBackend,
@@ -88,22 +91,32 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
             Vec::new()
         };
         let library_exports = if request.library_mode {
-            managed_abi.as_ref().map(|contract| {
-                contract
-                    .entries
-                    .iter()
-                    .map(|entry| DriverLibraryExport {
-                        logical_name: entry.logical_entry.clone(),
-                        physical_artifact: artifact_file.clone(),
-                        invocation: "dotnet".to_string(),
-                        abi_digest: contract.contract_digest.clone(),
-                    })
-                    .collect()
-            }).unwrap_or_default()
+            managed_abi
+                .as_ref()
+                .map(|contract| {
+                    contract
+                        .entries
+                        .iter()
+                        .map(|entry| DriverLibraryExport {
+                            logical_name: entry.logical_entry.clone(),
+                            physical_artifact: artifact_file.clone(),
+                            invocation: "dotnet".to_string(),
+                            abi_digest: contract.contract_digest.clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
         }
         else {
             Vec::new()
         };
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi, ovm_abi: Vec::new(), library_exports })
+        Ok(DriverCompileReport {
+            artifacts,
+            entry_symbol: None,
+            run_contracts,
+            managed_abi: managed_abi.into_iter().collect(),
+            ovm_abi: Vec::new(),
+            library_exports,
+        })
     }
 }

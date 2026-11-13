@@ -1,4 +1,7 @@
-use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result, bundled_backend_capability_descriptor, nyar_backend_wasi::WasmBinaryBackend};
+use crate::{
+    DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result,
+    bundled_backend_capability_descriptor, nyar_backend_wasi::WasmBinaryBackend,
+};
 use nyar::{HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, backends::TargetCodeGenBackend};
 
 use super::BundledBackendCompiler;
@@ -60,7 +63,7 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
                 boundary => vec![wasm_run_contract(request.artifact_name, boundary, wasi_preview)],
             }
         };
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi: None, ovm_abi: Vec::new(), library_exports })
+        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi: Vec::new(), ovm_abi: Vec::new(), library_exports })
     }
 }
 

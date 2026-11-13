@@ -21,7 +21,7 @@ mod error;
 pub use error::{EmitterError, FragmentLoweringError, Result, TargetPlanError};
 
 pub mod managed_abi;
-pub use managed_abi::{MANAGED_ABI_SCHEMA_VERSION, ManagedAbiContract, ManagedAbiEntry};
+pub use managed_abi::{MANAGED_ABI_SCHEMA_VERSION, ManagedAbiContract, ManagedAbiEntry, managed_abi_sidecar_file};
 pub use ovm_abi::{OVM_ABI_SCHEMA_VERSION, OVM_ABI_SIDECAR_SUFFIX, OvmAbiContract, OvmAbiSidecar, ovm_abi_sidecar_file};
 
 use std::{
@@ -763,8 +763,11 @@ pub struct DriverCompileReport {
     pub entry_symbol: Option<String>,
     /// 运行契约列表。
     pub run_contracts: Vec<DriverRunContract>,
-    /// 导出入口的 managed ABI 契约（若有）。
-    pub managed_abi: Option<ManagedAbiContract>,
+    /// 每个物理产物各自的 managed 入口 ABI 契约（JVM/CLR）。
+    ///
+    /// 多分区构建里每个分区拥有自己的产物与合同，由 `library_exports` 的
+    /// `physical_artifact`/`abi_digest` 显式关联；不得任取一份或无条件拼接。
+    pub managed_abi: Vec<ManagedAbiContract>,
     /// 每个物理产物各自的 OVM 库导出 sidecar（合同 + `.odin` 整体哈希）。
     ///
     /// 多分区构建里每个分区拥有自己的产物与合同，由 `library_exports` 的
