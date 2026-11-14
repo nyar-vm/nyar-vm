@@ -2,12 +2,12 @@
 
 use std::collections::BTreeSet;
 
-use nyar_types::{
-    CanonicalTypeKind, NominalValueSemantics, StageResult, ValueIdentity,
-    layout_choice::{AdtRepresentation, InvokeLowering, RepresentationPlan, SumRepresentation, SumVariantRepresentation, ValueRepresentation},
-};
+use nyar_types::{CanonicalTypeKind, NominalValueSemantics, StageResult, ValueIdentity};
 
-use crate::compiler::valkyrie_mir::{ValkyrieMirOperation, ValkyrieMirProgram, pipeline::RepresentationPlanStage};
+use crate::compiler::valkyrie_mir::{
+    AdtRepresentation, InvokeLowering, RepresentationPlan, ValueRepresentation, ValkyrieMirOperation, ValkyrieMirProgram,
+    pipeline::RepresentationPlanStage,
+};
 
 use super::diagnostics::fail_stage;
 
@@ -33,57 +33,8 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
         for nominal in program.linked.nominal_instances.keys() {
             plan.adt_reps.insert(*nominal, AdtRepresentation::TypedAggregate);
         }
-        for layout in &program.linked.sum_types {
-            if !program.linked.nominal_instances.contains_key(&layout.nominal) {
-                return fail_stage(
-                    nyar_types::CompileStage::RepresentationPlan,
-                    "PLAN003",
-                    &program.linked.module_name,
-                    format!("sum 布局引用未知 nominal identity: {:?}", layout.nominal),
-                );
-            }
-            let mut variants = std::collections::BTreeMap::new();
-            for variant in &layout.variants {
-                let Some(record) = program.linked.variants.get(&(layout.nominal, variant.id))
-                else {
-                    return fail_stage(
-                        nyar_types::CompileStage::RepresentationPlan,
-                        "PLAN004",
-                        &program.linked.module_name,
-                        format!("sum 布局引用未知 variant identity: {:?}/{:?}", layout.nominal, variant.id),
-                    );
-                };
-                let payload_type = record.payload_type;
-                if payload_type.is_some() != variant.payload_type.is_some() {
-                    return fail_stage(
-                        nyar_types::CompileStage::RepresentationPlan,
-                        "PLAN005",
-                        &program.linked.module_name,
-                        format!("sum variant payload 合同不一致: {:?}/{:?}", layout.nominal, variant.id),
-                    );
-                }
-                if variants.insert(variant.id, SumVariantRepresentation { id: variant.id, tag: variant.tag, payload_type }).is_some() {
-                    return fail_stage(
-                        nyar_types::CompileStage::RepresentationPlan,
-                        "PLAN006",
-                        &program.linked.module_name,
-                        format!("sum variant identity 重复: {:?}/{:?}", layout.nominal, variant.id),
-                    );
-                }
-            }
-            if plan
-                .sum_reps
-                .insert(layout.nominal, SumRepresentation { nominal: layout.nominal, tag_width: layout.tag_width, variants })
-                .is_some()
-            {
-                return fail_stage(
-                    nyar_types::CompileStage::RepresentationPlan,
-                    "PLAN007",
-                    &program.linked.module_name,
-                    format!("sum nominal identity 重复: {:?}", layout.nominal),
-                );
-            }
-        }
+        // sum 的 variant/payload 事实由链接程序唯一拥有；平台 tag 宽度与槽位
+        // 由各目标在适配器内决定，这里不复制也不提前选择。
         let nominal_semantics =
             program.linked.nominal_instances.values().map(|record| (record.ty, record.semantics)).collect::<std::collections::BTreeMap<_, _>>();
         let mut instruction_ids = BTreeSet::new();

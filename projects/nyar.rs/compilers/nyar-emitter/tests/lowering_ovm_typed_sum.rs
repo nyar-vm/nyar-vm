@@ -14,10 +14,8 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     testing::lower_fragment_to_nyar_module,
 };
-use nyar_types::{
-    layout_choice::{SumRepresentation, SumVariantRepresentation},
-    NyarType, NominalInstanceId, TypeId, VariantId,
-};
+use nyar_emitter::{SumRepresentation, SumVariantRepresentation};
+use nyar_types::{NyarType, NominalInstanceId, TypeId, VariantId};
 use acorn_odin::{decode_at, OdinConstant, OdinHeadCode, OdinInstruction, OdinModuleData};
 
 // 返回类型只起「非 unit」占位作用；文本 carrier 在 OVM 返回边界要求冻结的

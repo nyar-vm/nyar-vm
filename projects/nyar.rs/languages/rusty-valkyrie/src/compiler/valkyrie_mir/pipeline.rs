@@ -3,7 +3,8 @@
 //! 实现位于各前端 crate 与后端 crate；本模块只定义阶段合同与阶段顺序。
 
 use super::ValkyrieMirProgram;
-use nyar_types::{CompileStage, LinkedSemanticProgram, StageResult, semantic_ids::layout_choice::RepresentationPlan};
+use super::representation::RepresentationPlan;
+use nyar_types::{CompileStage, LinkedSemanticProgram, StageResult};
 
 /// Analysis / link stage: HIR elaboration consumed → linked program.
 pub trait LinkStage {

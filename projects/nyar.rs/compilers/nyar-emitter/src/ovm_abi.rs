@@ -903,7 +903,6 @@ mod tests {
                 nominal: nyar_types::NominalInstanceId::from_index(0).expect("nominal"),
                 name: "Maybe".to_string(),
                 is_unite: true,
-                tag_width: 32,
                 variants: vec![
                     nyar_types::SumVariantLayout {
                         id: nyar_types::VariantId::from_index(0).expect("variant"),

@@ -108,7 +108,9 @@ pub fn assemble_fragment(
         roots.push(entry);
     }
     let theory_bundle = fragment_view.theory_bundle.clone();
-    let backend_plan = target_plan::from_compiled_program(compiled_program, &partition.fragment, theory_bundle.clone(), &roots)
+    // tag 宽度是平台服务提供的事实；语言侧不再声明它。
+    let sum_tag_width = nyar_emitter::sum_tag_width(plan.target.to_profile(None).backend_family);
+    let backend_plan = target_plan::from_compiled_program(compiled_program, &partition.fragment, theory_bundle.clone(), &roots, sum_tag_width)
         .map_err(|error| format!("目标计划构建失败: {error}"))?;
 
     Ok(AssembledFragment {

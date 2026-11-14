@@ -17,11 +17,10 @@ use nyar_emitter::{
 use nyar_types::{
     CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, InstructionId, ItemId, ItemInstanceId, ItemInstanceRecord,
     LinkedSemanticProgram, MirValueId, NyarFunctionType, NyarType, TypeId, TypeRecord, ValueIdentity,
-    layout_choice::{InvokeLowering, RepresentationPlan, ValueRepresentation},
 };
 use rusty_valkyrie::compiler::emitter::pipeline::target_plan::from_compiled_program;
 use rusty_valkyrie::compiler::valkyrie_mir::{
-    CompiledValkyrieProgram, ValkyrieMir, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirFunction, ValkyrieMirInstruction,
+    CompiledValkyrieProgram, InvokeLowering, RepresentationPlan, ValueRepresentation, ValkyrieMir, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirFunction, ValkyrieMirInstruction,
     ValkyrieMirOperation, ValkyrieMirProgram, ValkyrieMirTerminator,
 };
 
@@ -146,7 +145,7 @@ fn production_submission(canonical: &ValkyrieMirProgram) -> FragmentSubmission {
     let program = CompiledValkyrieProgram::new(canonical.clone(), plan).expect("测试表示输入必须一致");
     let roots = program.mir_program().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = Identifier::new(FRAGMENT);
-    let executable = from_compiled_program(&program, &fragment, TheoryBundle::default(), &roots)
+    let executable = from_compiled_program(&program, &fragment, TheoryBundle::default(), &roots, 4)
         .expect("`TypedReference` 函数值调用必须成立目标私有调用合同");
     FragmentSubmission::from_backend_plan(executable)
 }

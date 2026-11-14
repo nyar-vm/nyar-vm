@@ -12,6 +12,7 @@
 
 mod operation;
 mod program;
+pub mod representation;
 mod text;
 mod validation;
 
@@ -23,5 +24,6 @@ pub use operation::{
     ValkyrieMirTerminator, ValkyrieMirWitness,
 };
 pub use program::{CompiledValkyrieProgram, CompiledValkyrieProgramError, ValkyrieMirProgram};
+pub use representation::{AdtRepresentation, InvokeLowering, RepresentationPlan, TextRepresentation, ValueRepresentation};
 pub use text::declared_text_representation;
 pub use validation::validate_named_residues;

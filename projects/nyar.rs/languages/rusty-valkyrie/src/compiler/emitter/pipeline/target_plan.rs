@@ -6,21 +6,20 @@
 use std::collections::BTreeMap;
 
 use nyar_emitter::{
-    BackendImport, ProgramTextRepresentation, TargetExecutionPlan, TargetPlanInput,
+    BackendImport, ProgramTextRepresentation, SumRepresentation, SumVariantRepresentation, TargetExecutionPlan, TargetPlanInput,
     backend_plan_views::ExecutableFunction,
     contracts::{Block, BlockRef, ValueRef},
 };
 use nyar_types::{
     CanonicalPrimitiveType, CanonicalTypeKind, Constant, Instruction, InstructionKind, ItemInstanceId, NyarFunctionType, NyarType, Operand,
     Terminator, Value, ValueOrigin,
-    layout_choice::{InvokeLowering, TextRepresentation as PlannedTextRepresentation, ValueRepresentation},
     semantic_ids::{MirValueId, NominalInstanceId, TypeId, VariantId},
 };
 
 use super::super::super::valkyrie_mir::{
-    CompiledValkyrieProgram, ValkyrieMir, ValkyrieMirArrayInitialization, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirConstant,
-    ValkyrieMirEffectKind, ValkyrieMirFunction, ValkyrieMirInstruction, ValkyrieMirOperand, ValkyrieMirOperation, ValkyrieMirProgram,
-    ValkyrieMirTerminator, ValkyrieMirWitness,
+    CompiledValkyrieProgram, InvokeLowering, TextRepresentation as PlannedTextRepresentation, ValueRepresentation, ValkyrieMir,
+    ValkyrieMirArrayInitialization, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirEffectKind, ValkyrieMirFunction,
+    ValkyrieMirInstruction, ValkyrieMirOperand, ValkyrieMirOperation, ValkyrieMirProgram, ValkyrieMirTerminator, ValkyrieMirWitness,
 };
 
 type Result<T> = std::result::Result<T, String>;
@@ -72,6 +71,7 @@ pub fn from_compiled_program(
     fragment_id: &nyar::Identifier,
     theory_bundle: nyar::TheoryBundle,
     roots: &[ItemInstanceId],
+    sum_tag_width: u32,
 ) -> std::result::Result<TargetExecutionPlan, TargetPlanError> {
     let canonical = program.mir_program();
     if !canonical.linked.fragments.contains_key(fragment_id) {
@@ -82,7 +82,7 @@ pub fn from_compiled_program(
             return Err(TargetPlanError::UnknownRoot { instance: *root });
         }
     }
-    build_plan(program, fragment_id, theory_bundle, roots).map_err(TargetPlanError::from)
+    build_plan(program, fragment_id, theory_bundle, roots, sum_tag_width).map_err(TargetPlanError::from)
 }
 
 fn build_plan(
@@ -90,6 +90,7 @@ fn build_plan(
     fragment_id: &nyar::Identifier,
     theory_bundle: nyar::TheoryBundle,
     roots: &[ItemInstanceId],
+    sum_tag_width: u32,
 ) -> Result<TargetExecutionPlan> {
     let canonical = program.mir_program();
     let fragment = canonical.linked.fragments.get(fragment_id).ok_or_else(|| format!("Canonical 片段 `{fragment_id}` 不存在"))?;
@@ -228,7 +229,7 @@ fn build_plan(
         functions,
         abi_names,
         imports,
-        sum_reps: program.representation().sum_reps.clone(),
+        sum_reps: platform_sum_representations(canonical, sum_tag_width)?,
         // 程序级文本表示模式只来自正式表示计划的显式事实（`RepresentationPlan`）；
         // 计划未声明时保持 `None`，后端按 managed 语义 fail-closed，禁止在这里
         // 按布局注册表是否含 `utf8` 反推模式。
@@ -260,12 +261,14 @@ fn lower_function(program: &CompiledValkyrieProgram, function: &ValkyrieMirFunct
     for block in function.blocks.values() {
         for instruction in &block.instructions {
             for (nominal, variant) in canonical_sum_operations(instruction) {
-                let Some(sum) = program.representation().sum_reps.get(&nominal)
+                // variant/payload 的唯一来源是链接程序；平台适配只负责把它们映射成
+                // 目标 tag 槽，不重新认定 variant 身份。
+                let Some(sum) = canonical.linked.sum_types.iter().find(|sum| sum.nominal == nominal)
                 else {
-                    return Err(format!("sum `{nominal:?}` 缺少 RepresentationPlan 布局合同"));
+                    return Err(format!("sum `{nominal:?}` 缺少链接期 variant 合同"));
                 };
-                if !sum.variants.contains_key(&variant) {
-                    return Err(format!("sum variant `{nominal:?}/{variant:?}` 缺少 RepresentationPlan 布局合同"));
+                if !sum.variants.iter().any(|known| known.id == variant) {
+                    return Err(format!("sum variant `{nominal:?}/{variant:?}` 缺少链接期 variant 合同"));
                 }
             }
             if let ValkyrieMirOperation::Invoke { callee, .. } = &instruction.operation {
@@ -395,6 +398,40 @@ fn canonical_sum_operations(instruction: &crate::compiler::valkyrie_mir::Valkyri
         | ValkyrieMirOperation::SumVariantIs { nominal, variant, .. } => vec![(nominal, variant)],
         _ => Vec::new(),
     }
+}
+
+/// 把链接期 sum/variant 事实映射成平台 sum 计划。
+///
+/// variant 身份与 payload 类型来自链接程序；tag 宽度由平台提供，
+/// 语言表示计划不再声明它。
+fn platform_sum_representations(
+    canonical: &ValkyrieMirProgram,
+    tag_width: u32,
+) -> Result<BTreeMap<NominalInstanceId, SumRepresentation>> {
+    let mut reps = BTreeMap::new();
+    for sum in &canonical.linked.sum_types {
+        if !canonical.linked.nominal_instances.contains_key(&sum.nominal) {
+            return Err(format!("sum 布局引用未知 nominal identity: {:?}", sum.nominal));
+        }
+        let mut variants = BTreeMap::new();
+        for variant in &sum.variants {
+            let Some(record) = canonical.linked.variants.get(&(sum.nominal, variant.id))
+            else {
+                return Err(format!("sum 布局引用未知 variant identity: {:?}/{:?}", sum.nominal, variant.id));
+            };
+            if record.payload_type.is_some() != variant.payload_type.is_some() {
+                return Err(format!("sum variant payload 合同不一致: {:?}/{:?}", sum.nominal, variant.id));
+            }
+            let entry = SumVariantRepresentation { id: variant.id, tag: variant.tag, payload_type: record.payload_type };
+            if variants.insert(variant.id, entry).is_some() {
+                return Err(format!("sum variant identity 重复: {:?}/{:?}", sum.nominal, variant.id));
+            }
+        }
+        if reps.insert(sum.nominal, SumRepresentation { nominal: sum.nominal, tag_width, variants }).is_some() {
+            return Err(format!("sum nominal identity 重复: {:?}", sum.nominal));
+        }
+    }
+    Ok(reps)
 }
 
 /// 在 target_execution_plan 边界把 trait Witness 分派降为具体 Item 调用。

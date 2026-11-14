@@ -119,8 +119,6 @@ pub struct SumTypeLayout {
     pub name: String,
     /// Whether this is a unite-style sum.
     pub is_unite: bool,
-    /// Tag width in bits/bytes as used by the backend plan.
-    pub tag_width: u32,
     /// Variant layouts.
     pub variants: Vec<SumVariantLayout>,
 }

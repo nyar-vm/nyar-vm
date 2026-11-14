@@ -685,7 +685,6 @@ pub(crate) fn register_sum_nominal_instances(
             nominal: sum.nominal,
             name: sum.name.clone(),
             is_unite: sum.is_unite,
-            tag_width: 4,
             variants: layout_variants,
         });
         by_type.insert(declaration, sum.nominal);
@@ -761,7 +760,6 @@ pub(crate) fn register_sum_nominal_instances(
                 nominal,
                 name: sum.name.clone(),
                 is_unite: sum.is_unite,
-                tag_width: 4,
                 variants: layout_variants,
             });
         }

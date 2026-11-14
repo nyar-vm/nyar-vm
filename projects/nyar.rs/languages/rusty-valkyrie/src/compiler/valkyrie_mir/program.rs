@@ -4,15 +4,12 @@
 //! Valkyrie MIR 与同一程序生成的表示计划一起交给后续阶段（语言 × 目标适配器）。
 
 use super::operation::{ValkyrieMir, ValkyrieMirCallee, ValkyrieMirError, ValkyrieMirOperation, ValkyrieMirWitness};
-use nyar_types::{
-    LinkedSemanticProgram,
-    semantic_ids::{
-        InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, ValueIdentity,
-        layout_choice::{RepresentationPlan, TextRepresentation},
-    },
-};
+use nyar_types::LinkedSemanticProgram;
+use nyar_types::semantic_ids::{InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, ValueIdentity};
 
-/// Top-level canonical success bundle after link + MIR validation.
+use super::representation::{RepresentationPlan, TextRepresentation};
+
+/// 链接与 MIR 验证后的 Valkyrie 语义成功载荷。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ValkyrieMirProgram {
     /// Linked semantic closure.
@@ -96,12 +93,12 @@ impl ValkyrieMirProgram {
 
 /// 编译处理阶段的唯一成功载荷。
 ///
-/// 该类型只允许把已验证的 Canonical Semantic MIR 与对应的稀疏表示计划
+/// 该类型只允许把已验证的 Valkyrie MIR 与对应的稀疏表示计划
 /// 一起交给后续阶段。它不包含 HIR、字符串 callable、旧 executable 或
 /// `FragmentSubmission` 字段；后端若需要这些信息，说明上游合同仍未闭合。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledValkyrieProgram {
-    canonical: ValkyrieMirProgram,
+    program: ValkyrieMirProgram,
     representation: RepresentationPlan,
 }
 
@@ -118,22 +115,7 @@ pub enum CompiledValkyrieProgramError {
         /// 多余的 ADT 表示名义实例。
         nominal: NominalInstanceId,
     },
-    /// 已链接的 sum nominal 缺少完整表示合同。
-    MissingSumRepresentation {
-        /// 缺少 sum 表示的名义实例。
-        nominal: NominalInstanceId,
-    },
-    /// 表示计划包含不属于该程序的 sum nominal。
-    ExtraSumRepresentation {
-        /// 多余的 sum 表示名义实例。
-        nominal: NominalInstanceId,
-    },
-    /// sum 表示合同缺少或多出 variant。
-    SumVariantRepresentationMismatch {
-        /// variant 表示不一致的名义实例。
-        nominal: NominalInstanceId,
-    },
-    /// Canonical Semantic MIR 尚未通过 M2 验证。
+    /// Valkyrie MIR 尚未通过 M2 验证。
     Canonical(ValkyrieMirError),
     /// 某个 Semantic MIR 值没有对应表示选择。
     MissingValueRepresentation {
@@ -179,10 +161,7 @@ impl std::fmt::Display for CompiledValkyrieProgramError {
         match self {
             Self::MissingAdtRepresentation { nominal } => write!(formatter, "MissingAdtRepresentation(nominal={nominal})"),
             Self::ExtraAdtRepresentation { nominal } => write!(formatter, "ExtraAdtRepresentation(nominal={nominal})"),
-            Self::MissingSumRepresentation { nominal } => write!(formatter, "MissingSumRepresentation(nominal={nominal})"),
-            Self::ExtraSumRepresentation { nominal } => write!(formatter, "ExtraSumRepresentation(nominal={nominal})"),
-            Self::SumVariantRepresentationMismatch { nominal } => write!(formatter, "SumVariantRepresentationMismatch(nominal={nominal})"),
-            Self::Canonical(_) => write!(formatter, "Canonical(unvalidated canonical MIR)"),
+            Self::Canonical(_) => write!(formatter, "ValkyrieMir(unvalidated Valkyrie MIR)"),
             Self::MissingValueRepresentation { function, value } => {
                 write!(formatter, "MissingValueRepresentation(function={function}, value={value})")
             }
@@ -211,45 +190,28 @@ fn text_representation_label(value: Option<TextRepresentation>) -> &'static str 
 
 impl CompiledValkyrieProgram {
     /// 只从完整 ValkyrieMirProgram 与同一程序生成的 RepresentationPlan 构造。
-    pub fn new(canonical: ValkyrieMirProgram, representation: RepresentationPlan) -> Result<Self, CompiledValkyrieProgramError> {
-        canonical.validate().map_err(CompiledValkyrieProgramError::Canonical)?;
-        let declared_text = super::text::declared_text_representation(&canonical);
+    pub fn new(program: ValkyrieMirProgram, representation: RepresentationPlan) -> Result<Self, CompiledValkyrieProgramError> {
+        program.validate().map_err(CompiledValkyrieProgramError::Canonical)?;
+        let declared_text = super::text::declared_text_representation(&program);
         if representation.text_representation != declared_text {
             return Err(CompiledValkyrieProgramError::TextRepresentationMismatch {
                 expected: declared_text,
                 actual: representation.text_representation,
             });
         }
-        for nominal in canonical.linked.nominal_instances.keys() {
+        for nominal in program.linked.nominal_instances.keys() {
             if !representation.adt_reps.contains_key(nominal) {
                 return Err(CompiledValkyrieProgramError::MissingAdtRepresentation { nominal: *nominal });
             }
         }
-        if let Some(nominal) = representation.adt_reps.keys().find(|nominal| !canonical.linked.nominal_instances.contains_key(nominal)) {
+        if let Some(nominal) = representation.adt_reps.keys().find(|nominal| !program.linked.nominal_instances.contains_key(nominal)) {
             return Err(CompiledValkyrieProgramError::ExtraAdtRepresentation { nominal: *nominal });
         }
-        let expected_sum_nominals = canonical.linked.sum_types.iter().map(|sum| sum.nominal).collect::<std::collections::BTreeSet<_>>();
-        for nominal in &expected_sum_nominals {
-            let Some(sum) = representation.sum_reps.get(nominal)
-            else {
-                return Err(CompiledValkyrieProgramError::MissingSumRepresentation { nominal: *nominal });
-            };
-            let expected_variants = canonical
-                .linked
-                .variants
-                .keys()
-                .filter_map(|(owner, variant)| (*owner == *nominal).then_some(*variant))
-                .collect::<std::collections::BTreeSet<_>>();
-            if sum.variants.keys().copied().collect::<std::collections::BTreeSet<_>>() != expected_variants {
-                return Err(CompiledValkyrieProgramError::SumVariantRepresentationMismatch { nominal: *nominal });
-            }
-        }
-        if let Some(nominal) = representation.sum_reps.keys().find(|nominal| !expected_sum_nominals.contains(nominal)) {
-            return Err(CompiledValkyrieProgramError::ExtraSumRepresentation { nominal: *nominal });
-        }
+        // sum 的 variant/payload 事实由 `LinkedSemanticProgram` 唯一拥有；表示计划
+        // 不再复制它们，也不提前决定平台 tag 宽度。
         let mut expected_values = std::collections::BTreeSet::new();
         let mut expected_invokes = std::collections::BTreeSet::new();
-        for function in canonical.mir.functions.values() {
+        for function in program.mir.functions.values() {
             for value in function.value_types.keys() {
                 let identity = ValueIdentity::new(function.instance, *value);
                 expected_values.insert(identity);
@@ -274,12 +236,12 @@ impl CompiledValkyrieProgram {
         if let Some(instruction) = representation.invoke_lowerings.keys().find(|instruction| !expected_invokes.contains(instruction)) {
             return Err(CompiledValkyrieProgramError::ExtraInvokeRepresentation { instruction: *instruction });
         }
-        Ok(Self { canonical, representation })
+        Ok(Self { program, representation })
     }
 
     /// 返回 Compiler 产生的已验证 Valkyrie MIR。
     pub fn mir_program(&self) -> &ValkyrieMirProgram {
-        &self.canonical
+        &self.program
     }
 
     /// 返回与 ValkyrieMirProgram 同步生成的表示计划。

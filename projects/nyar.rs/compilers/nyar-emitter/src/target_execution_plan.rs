@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::Result;
 use nyar::QualifiedName;
-use nyar_types::{ItemInstanceId, NyarType, layout_choice};
+use nyar_types::{ItemInstanceId, NyarType};
 
 use crate::{
     backend_plan_views::{ExecutableFunction, FunctionView, SuspendMetadataView},
@@ -51,7 +51,7 @@ pub struct TargetExecutionPlan {
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
     abi_names: BTreeMap<ItemInstanceId, QualifiedName>,
     imports: BTreeMap<ItemInstanceId, BackendImport>,
-    sum_reps: BTreeMap<nyar_types::NominalInstanceId, nyar_types::layout_choice::SumRepresentation>,
+    sum_reps: BTreeMap<nyar_types::NominalInstanceId, SumRepresentation>,
     /// 程序级文本表示模式；`None` 表示计划生产者尚未声明该事实，
     /// 后端按托管语义 fail-closed，绝不由布局注册表为空回落成 raw。
     program_text_representation: Option<ProgramTextRepresentation>,
@@ -81,6 +81,28 @@ pub enum ProgramTextRepresentation {
     Raw,
     /// 程序选择托管文本表示；没有逐值/逐槽载体事实的文本槽一律按 missing 拒收。
     Managed,
+}
+
+/// 平台 sum 表示计划：variant 身份由语言冻结，tag 宽度与槽位由平台决定。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SumRepresentation {
+    /// 完整的 sum 名义实例身份。
+    pub nominal: nyar_types::NominalInstanceId,
+    /// 本平台选择的 tag 宽度（字节），必须落在该 lane 的合同范围内。
+    pub tag_width: u32,
+    /// variant 身份到 tag/payload 合同的稀疏表。
+    pub variants: BTreeMap<nyar_types::VariantId, SumVariantRepresentation>,
+}
+
+/// 平台 sum variant 合同。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SumVariantRepresentation {
+    /// 语言稳定 variant 身份。
+    pub id: nyar_types::VariantId,
+    /// 平台 discriminant；不是语义身份。
+    pub tag: u32,
+    /// 已代入 payload 类型；无 payload 时为空。
+    pub payload_type: Option<nyar_types::TypeId>,
 }
 
 /// 语言 × 目标适配器准备完成的目标输入。
@@ -134,7 +156,7 @@ pub struct TargetPlanInput {
     /// 已声明导入。
     pub imports: BTreeMap<ItemInstanceId, BackendImport>,
     /// nominal sum → 表示合同。
-    pub sum_reps: BTreeMap<nyar_types::NominalInstanceId, layout_choice::SumRepresentation>,
+    pub sum_reps: BTreeMap<nyar_types::NominalInstanceId, SumRepresentation>,
     /// 程序级文本表示；`None` 表示生产者未声明该事实。
     pub program_text_representation: Option<ProgramTextRepresentation>,
 }
@@ -302,7 +324,7 @@ impl TargetExecutionPlan {
     pub fn testing_register_sum_representation(
         &mut self,
         nominal: nyar_types::NominalInstanceId,
-        sum: nyar_types::layout_choice::SumRepresentation,
+        sum: SumRepresentation,
     ) -> &mut Self {
         self.sum_reps.insert(nominal, sum);
         self
@@ -463,7 +485,7 @@ impl TargetExecutionPlan {
     }
 
     /// 返回 sum 类型表示合同映射。
-    pub fn sum_representations(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::layout_choice::SumRepresentation> {
+    pub fn sum_representations(&self) -> &BTreeMap<nyar_types::NominalInstanceId, SumRepresentation> {
         &self.sum_reps
     }
 }

@@ -35,7 +35,7 @@ pub use self::{
     semantic_ids::{
         AttributeId, AttributeRegistration, EffectEdgeId, EffectSiteId, EvidenceId, FieldId, GenericFunctionId, IdKind, ImportCapability,
         ImportIndex, InstructionId, ItemId, ItemInstanceId, MirValueDefinition, MirValueId, NominalInstanceId, ProvenanceId, SemanticId,
-        TypeId, TypeInstanceId, ValueIdentity, VariantId, builtin_attribute, layout_choice,
+        TypeId, TypeInstanceId, ValueIdentity, VariantId, builtin_attribute,
     },
     source::{Location, Position, SourceID, SourceSpan},
     symbols::{Identifier, NamePath, QualifiedName, SymbolIdentity},

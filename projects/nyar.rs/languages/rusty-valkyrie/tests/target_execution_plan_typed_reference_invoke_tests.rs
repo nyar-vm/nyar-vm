@@ -16,11 +16,10 @@ use nyar_emitter::{
 use nyar_types::{
     CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, InstructionId, ItemId, ItemInstanceId, ItemInstanceRecord,
     LinkedSemanticProgram, MirValueId, NyarType, TypeId, TypeRecord, ValueIdentity,
-    layout_choice::{InvokeLowering, RepresentationPlan, ValueRepresentation},
 };
 use rusty_valkyrie::compiler::emitter::pipeline::target_plan::from_compiled_program;
 use rusty_valkyrie::compiler::valkyrie_mir::{
-    CompiledValkyrieProgram, ValkyrieMir, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirFunction, ValkyrieMirInstruction,
+    CompiledValkyrieProgram, InvokeLowering, RepresentationPlan, ValueRepresentation, ValkyrieMir, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirFunction, ValkyrieMirInstruction,
     ValkyrieMirOperation, ValkyrieMirProgram, ValkyrieMirTerminator,
 };
 
@@ -165,7 +164,7 @@ fn representation(program: &ValkyrieMirProgram, invoke: InvokeLowering) -> Repre
 fn prepare(program: &CompiledValkyrieProgram) -> nyar_emitter::Result<TargetExecutionPlan> {
     let roots = program.mir_program().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = Identifier::new(FRAGMENT);
-    from_compiled_program(program, &fragment, TheoryBundle::default(), &roots).map_err(|error| error.to_string())
+    from_compiled_program(program, &fragment, TheoryBundle::default(), &roots, 4).map_err(|error| error.to_string())
 }
 
 fn compiled(canonical: ValkyrieMirProgram, invoke: InvokeLowering) -> CompiledValkyrieProgram {

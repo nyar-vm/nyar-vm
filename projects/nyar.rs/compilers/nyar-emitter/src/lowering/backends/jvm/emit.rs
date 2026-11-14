@@ -31,9 +31,9 @@ use crate::{
         JvmTypeDescriptor,
     },
 };
-use nyar_types::{
-    AggregateLayout, AggregateLayoutPlan, FieldId, ItemInstanceId, LayoutId, NominalInstanceId, VariantId, layout_choice::SumRepresentation,
-};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, ItemInstanceId, LayoutId, NominalInstanceId, VariantId};
+
+use crate::SumRepresentation;
 
 use super::JvmOperatorCode;
 use super::recipe::{JvmOperatorBinding, freeze_jvm_operator};

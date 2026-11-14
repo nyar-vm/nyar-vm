@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
-use nyar_types::{layout_choice::RepresentationPlan, semantic_ids::ItemInstanceId, EntryRecord, ExportRecord, *};
+use nyar_types::{semantic_ids::ItemInstanceId, EntryRecord, ExportRecord, *};
 
 use rusty_valkyrie::compiler::valkyrie_mir::{
-    CompiledValkyrieProgram, CompiledValkyrieProgramError, ValkyrieMir, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee,
-    ValkyrieMirConstant, ValkyrieMirEffectKind, ValkyrieMirError, ValkyrieMirFunction, ValkyrieMirInstruction, ValkyrieMirOperand,
-    ValkyrieMirOperation, ValkyrieMirProgram, ValkyrieMirTerminator, ValkyrieMirWitness, declared_text_representation,
-    pipeline, validate_named_residues,
+    AdtRepresentation, CompiledValkyrieProgram, CompiledValkyrieProgramError, InvokeLowering, RepresentationPlan, TextRepresentation,
+    ValueRepresentation, ValkyrieMir, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirEffectKind,
+    ValkyrieMirError, ValkyrieMirFunction, ValkyrieMirInstruction, ValkyrieMirOperand, ValkyrieMirOperation, ValkyrieMirProgram,
+    ValkyrieMirTerminator, ValkyrieMirWitness, declared_text_representation, pipeline, validate_named_residues,
 };
 
 #[test]
@@ -151,7 +151,6 @@ fn canonical_program_rejects_named_residue_in_sum_payload() {
         nominal: NominalInstanceId::from_index(0).unwrap(),
         name: "Option".into(),
         is_unite: true,
-        tag_width: 8,
         variants: vec![SumVariantLayout {
             id: VariantId::from_index(0).unwrap(),
             name: "Some".into(),
@@ -423,10 +422,10 @@ fn compiled_program_requires_exact_nominal_representation_coverage() {
     let nominal = NominalInstanceId::from_index(0).unwrap();
     let mut plan = RepresentationPlan::default();
     assert_eq!(CompiledValkyrieProgram::new(program.clone(), plan.clone()), Err(CompiledValkyrieProgramError::MissingAdtRepresentation { nominal }));
-    plan.adt_reps.insert(nominal, nyar_types::layout_choice::AdtRepresentation::TypedAggregate);
+    plan.adt_reps.insert(nominal, AdtRepresentation::TypedAggregate);
     CompiledValkyrieProgram::new(program.clone(), plan.clone()).expect("名义表示完整");
     let extra = NominalInstanceId::from_index(9).unwrap();
-    plan.adt_reps.insert(extra, nyar_types::layout_choice::AdtRepresentation::TypedAggregate);
+    plan.adt_reps.insert(extra, AdtRepresentation::TypedAggregate);
     assert_eq!(CompiledValkyrieProgram::new(program, plan), Err(CompiledValkyrieProgramError::ExtraAdtRepresentation { nominal: extra }));
 }
 
@@ -719,11 +718,11 @@ fn compiled_program_keeps_canonical_and_representation_as_one_success_value() {
     for value in [argument, result] {
         representation
             .value_reps
-            .insert(ValueIdentity::new(caller, value), nyar_types::semantic_ids::layout_choice::ValueRepresentation::Specialized);
+            .insert(ValueIdentity::new(caller, value), ValueRepresentation::Specialized);
     }
     representation
         .invoke_lowerings
-        .insert(InstructionId::from_index(0).unwrap(), nyar_types::semantic_ids::layout_choice::InvokeLowering::Direct);
+        .insert(InstructionId::from_index(0).unwrap(), InvokeLowering::Direct);
     let compiled = CompiledValkyrieProgram::new(program.clone(), representation.clone()).expect("完整处理载荷必须成功");
     assert_eq!(compiled.mir_program(), &program);
     assert_eq!(compiled.representation(), &representation);
@@ -736,19 +735,19 @@ fn compiled_program_rejects_representation_for_unknown_value() {
     let mut representation = RepresentationPlan::default();
     representation.value_reps.insert(
         ValueIdentity::new(caller, MirValueId::from_index(0).unwrap()),
-        nyar_types::semantic_ids::layout_choice::ValueRepresentation::Specialized,
+        ValueRepresentation::Specialized,
     );
     representation.value_reps.insert(
         ValueIdentity::new(caller, MirValueId::from_index(1).unwrap()),
-        nyar_types::semantic_ids::layout_choice::ValueRepresentation::Specialized,
+        ValueRepresentation::Specialized,
     );
     representation.value_reps.insert(
         ValueIdentity::new(caller, MirValueId::from_index(2).unwrap()),
-        nyar_types::semantic_ids::layout_choice::ValueRepresentation::Specialized,
+        ValueRepresentation::Specialized,
     );
     representation
         .invoke_lowerings
-        .insert(InstructionId::from_index(0).unwrap(), nyar_types::semantic_ids::layout_choice::InvokeLowering::Direct);
+        .insert(InstructionId::from_index(0).unwrap(), InvokeLowering::Direct);
     let error = CompiledValkyrieProgram::new(program, representation).expect_err("未知值不得进入后端");
     assert!(matches!(error, CompiledValkyrieProgramError::ExtraValueRepresentation { .. }));
 }
@@ -761,14 +760,14 @@ fn compiled_program_rejects_representation_for_unknown_instruction() {
     for value in [MirValueId::from_index(0).unwrap(), MirValueId::from_index(1).unwrap()] {
         representation
             .value_reps
-            .insert(ValueIdentity::new(caller, value), nyar_types::semantic_ids::layout_choice::ValueRepresentation::Specialized);
+            .insert(ValueIdentity::new(caller, value), ValueRepresentation::Specialized);
     }
     representation
         .invoke_lowerings
-        .insert(InstructionId::from_index(0).unwrap(), nyar_types::semantic_ids::layout_choice::InvokeLowering::Direct);
+        .insert(InstructionId::from_index(0).unwrap(), InvokeLowering::Direct);
     representation
         .invoke_lowerings
-        .insert(InstructionId::from_index(1).unwrap(), nyar_types::semantic_ids::layout_choice::InvokeLowering::Direct);
+        .insert(InstructionId::from_index(1).unwrap(), InvokeLowering::Direct);
     let error = CompiledValkyrieProgram::new(program, representation).expect_err("未知调用指令不得进入后端");
     assert!(matches!(error, CompiledValkyrieProgramError::ExtraInvokeRepresentation { .. }));
 }
@@ -901,20 +900,20 @@ fn stage_order_is_one_way() {
 }
 
 /// 按 canonical 事实补全除文本表示外的全部稀疏表示，供文本合同正反用例使用。
-fn complete_representation_plan(program: &ValkyrieMirProgram, text: Option<layout_choice::TextRepresentation>) -> RepresentationPlan {
+fn complete_representation_plan(program: &ValkyrieMirProgram, text: Option<TextRepresentation>) -> RepresentationPlan {
     let mut plan = RepresentationPlan::default();
     plan.text_representation = text;
     for nominal in program.linked.nominal_instances.keys() {
-        plan.adt_reps.insert(*nominal, layout_choice::AdtRepresentation::TypedAggregate);
+        plan.adt_reps.insert(*nominal, AdtRepresentation::TypedAggregate);
     }
     for function in program.mir.functions.values() {
         for value in function.value_types.keys() {
-            plan.value_reps.insert(ValueIdentity::new(function.instance, *value), layout_choice::ValueRepresentation::Specialized);
+            plan.value_reps.insert(ValueIdentity::new(function.instance, *value), ValueRepresentation::Specialized);
         }
         for block in function.blocks.values() {
             for instruction in &block.instructions {
                 if matches!(&instruction.operation, ValkyrieMirOperation::Invoke { .. }) {
-                    plan.invoke_lowerings.insert(instruction.id, layout_choice::InvokeLowering::Direct);
+                    plan.invoke_lowerings.insert(instruction.id, InvokeLowering::Direct);
                 }
             }
         }
@@ -928,11 +927,11 @@ fn compiled_program_rejects_text_representation_without_text_values() {
     let program = typed_call_program();
     assert_eq!(declared_text_representation(&program), None);
     CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, None)).expect("无文本值的程序必须接受 `None` 事实");
-    let error = CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Raw)))
+    let error = CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, Some(TextRepresentation::Raw)))
         .expect_err("无文本值却声明 raw 必须在构造期失败");
     assert_eq!(
         error,
-        CompiledValkyrieProgramError::TextRepresentationMismatch { expected: None, actual: Some(layout_choice::TextRepresentation::Raw) }
+        CompiledValkyrieProgramError::TextRepresentationMismatch { expected: None, actual: Some(TextRepresentation::Raw) }
     );
     assert_eq!(error.to_string(), "TextRepresentationMismatch(expected=none, actual=raw)");
 }
@@ -977,15 +976,15 @@ fn text_literal_program() -> ValkyrieMirProgram {
 fn compiled_program_requires_raw_for_text_literals_without_carrier() {
     let program = text_literal_program();
     program.validate().expect("文本字面量夹具必须是完整 canonical 程序");
-    assert_eq!(declared_text_representation(&program), Some(layout_choice::TextRepresentation::Raw));
-    CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Raw)))
+    assert_eq!(declared_text_representation(&program), Some(TextRepresentation::Raw));
+    CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, Some(TextRepresentation::Raw)))
         .expect("无载体的文本值必须接受 `Raw` 事实");
-    for actual in [None, Some(layout_choice::TextRepresentation::Managed)] {
+    for actual in [None, Some(TextRepresentation::Managed)] {
         let error = CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, actual))
             .expect_err("无载体的文本值不得缺声明或声明为托管");
         assert_eq!(
             error,
-            CompiledValkyrieProgramError::TextRepresentationMismatch { expected: Some(layout_choice::TextRepresentation::Raw), actual }
+            CompiledValkyrieProgramError::TextRepresentationMismatch { expected: Some(TextRepresentation::Raw), actual }
         );
     }
 }
@@ -1000,15 +999,15 @@ fn compiled_program_requires_managed_for_registered_text_carrier() {
         .types
         .insert(carrier, TypeRecord { declaration: carrier, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Utf8) });
     program.linked.text_encoding_types.insert(carrier, CanonicalPrimitiveType::Utf8);
-    assert_eq!(declared_text_representation(&program), Some(layout_choice::TextRepresentation::Managed));
-    CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Managed)))
+    assert_eq!(declared_text_representation(&program), Some(TextRepresentation::Managed));
+    CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, Some(TextRepresentation::Managed)))
         .expect("已登记载体的程序必须接受 `Managed` 事实");
-    for actual in [None, Some(layout_choice::TextRepresentation::Raw)] {
+    for actual in [None, Some(TextRepresentation::Raw)] {
         let error = CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, actual))
             .expect_err("已登记载体不得缺声明或声明为 raw");
         assert_eq!(
             error,
-            CompiledValkyrieProgramError::TextRepresentationMismatch { expected: Some(layout_choice::TextRepresentation::Managed), actual }
+            CompiledValkyrieProgramError::TextRepresentationMismatch { expected: Some(TextRepresentation::Managed), actual }
         );
     }
 }
