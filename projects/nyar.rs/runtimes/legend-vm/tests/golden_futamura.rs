@@ -898,13 +898,15 @@ mod python_extension_abi {
     #[test]
     fn python_extension_init_returns_a_module_object() {
         let (dir, library) = extension("return 42\n", "legend_probe_diag");
+        // `PyDLL` 调用期间保持 GIL（`CDLL` 会释放 GIL，`PyModule_New` 需要它）。
         let script = format!(
-            "import ctypes; lib=ctypes.CDLL('{}', mode=ctypes.RTLD_GLOBAL); lib.PyInit_legend_probe_diag.restype=ctypes.c_void_p; pointer=lib.PyInit_legend_probe_diag(); print('ptr', pointer); print('type', type(ctypes.cast(pointer, ctypes.py_object).value).__name__ if pointer else 'null')",
+            "import ctypes; lib=ctypes.PyDLL('{}', mode=ctypes.RTLD_GLOBAL); lib.PyInit_legend_probe_diag.restype=ctypes.c_void_p; pointer=lib.PyInit_legend_probe_diag(); print('ptr', pointer); print('type', type(ctypes.cast(pointer, ctypes.py_object).value).__name__ if pointer else 'null')",
             library.display()
         );
         let output = std::process::Command::new("python3").arg("-c").arg(&script).output().expect("spawn python3");
         let text = format!(
-            "stdout={} stderr={}",
+            "status={:?} stdout={} stderr={}",
+            output.status.code(),
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
