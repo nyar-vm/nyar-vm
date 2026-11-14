@@ -15,7 +15,9 @@ use std::rc::Rc;
 
 use miette::{Result, miette};
 use nyar_analyzer::residual::ResidualSink;
-use nyar_emitter::nyar_backend_native::{NativeTextInstruction, encode_native_text_function};
+use nyar_emitter::nyar_backend_native::{
+    NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, encode_native_text_function, encode_native_text_program,
+};
 
 use super::PeCompiler;
 
@@ -806,6 +808,320 @@ fn display_value(value: &ResidualValue) -> String {
     value.to_key()
 }
 
+/// 残差产品边界上的值类别（导出函数 ABI 以 `i64` 承载）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProductValueKind {
+    Int,
+    Bool,
+    Nil,
+}
+
+/// 把残差模块降低为多函数文本程序并写成 `PE` DLL（导出函数 ABI）。
+///
+/// 未知输入通过 Win64 整数形参进入（最多 4 个），残差函数按名导出。只支持
+/// 整数/布尔载体：字符串、对象、`print`、运行时解析调用与除法都显式失败闭合，
+/// 不在产品路径里静默吞掉语义。
+pub fn lower_native_residual_to_program(module: &NativeResidualModule) -> Result<NativeTextProgramImage, String> {
+    if !module.is_native_bound() {
+        return Err("residual is not native-bound".into());
+    }
+    let mut functions = Vec::with_capacity(module.functions.len());
+    for function in &module.functions {
+        functions.push(lower_residual_function(function)?);
+    }
+    encode_native_text_program(&functions)
+}
+
+/// 以导出函数 ABI 发射 `PE` DLL（宿主按 Win64 调用约定调用残差函数）。
+pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
+    let image = lower_native_residual_to_program(module)?;
+    PeCompiler.compile_library(image.text, image.symbols).map_err(|error| error.to_string())
+}
+
+struct ResidualFunctionLowering<'a> {
+    function: &'a NativeResidualFunction,
+    locals: HashMap<String, (u16, ProductValueKind)>,
+    labels: HashMap<String, u32>,
+    stack: Vec<(u16, ProductValueKind)>,
+    next_slot: u16,
+    next_label: u32,
+    instructions: Vec<NativeTextInstruction>,
+    /// 线性残差里的 `ret`/`jump` 之后是死代码；只允许标签重新开启可达区。
+    returned: bool,
+}
+
+impl<'a> ResidualFunctionLowering<'a> {
+    fn new(function: &'a NativeResidualFunction) -> Self {
+        Self {
+            function,
+            locals: HashMap::new(),
+            labels: HashMap::new(),
+            stack: Vec::new(),
+            next_slot: 0,
+            next_label: 0,
+            instructions: Vec::new(),
+            returned: false,
+        }
+    }
+
+    fn alloc_slot(&mut self) -> u16 {
+        let slot = self.next_slot;
+        self.next_slot = self.next_slot.saturating_add(1);
+        slot
+    }
+
+    fn label_id(&mut self, name: &str) -> u32 {
+        if let Some(id) = self.labels.get(name) {
+            return *id;
+        }
+        let id = self.next_label;
+        self.next_label += 1;
+        self.labels.insert(name.to_string(), id);
+        id
+    }
+
+    fn fresh_label(&mut self) -> u32 {
+        let id = self.next_label;
+        self.next_label += 1;
+        id
+    }
+
+    fn push_stack_value(&mut self, kind: ProductValueKind) -> u16 {
+        let slot = self.alloc_slot();
+        self.instructions.push(NativeTextInstruction::StoreSlot(slot));
+        self.stack.push((slot, kind));
+        slot
+    }
+
+    fn pop(&mut self) -> Result<(u16, ProductValueKind), String> {
+        self.stack.pop().ok_or_else(|| format!("residual function `{}` underflows the operand stack", self.function.name))
+    }
+
+    fn binary_numeric(&mut self, instruction: NativeTextInstruction, result: ProductValueKind) -> Result<(), String> {
+        let (right, right_kind) = self.pop()?;
+        let (left, left_kind) = self.pop()?;
+        if left_kind != ProductValueKind::Int || right_kind != ProductValueKind::Int {
+            return Err(format!(
+                "residual function `{}` uses `{instruction:?}` on non-integer operands at the product boundary",
+                self.function.name
+            ));
+        }
+        self.instructions.push(NativeTextInstruction::LoadSlot(left));
+        self.instructions.push(NativeTextInstruction::LoadSlotToRcx(right));
+        self.instructions.push(instruction);
+        self.push_stack_value(result);
+        Ok(())
+    }
+}
+
+fn lower_residual_function(function: &NativeResidualFunction) -> Result<NativeTextProgramFunction, String> {
+    if function.parameters.len() > 4 {
+        return Err(format!(
+            "residual function `{}` has {} parameters; the Win64 text ABI supports at most 4 integer inputs",
+            function.name,
+            function.parameters.len()
+        ));
+    }
+    let mut lowering = ResidualFunctionLowering::new(function);
+    for (index, parameter) in function.parameters.iter().enumerate() {
+        let slot = lowering.alloc_slot();
+        lowering.instructions.push(NativeTextInstruction::LoadParam { index: index as u8, slot });
+        lowering.locals.insert(parameter.clone(), (slot, ProductValueKind::Int));
+    }
+
+    for op in &function.ops {
+        // `ret`/`jump` 后的线性残差不可达；标签是唯一重新可达的入口。
+        if lowering.returned {
+            if matches!(op, NativeResidualOp::Label(_)) {
+                lowering.returned = false;
+            }
+            else {
+                continue;
+            }
+        }
+        match op {
+            NativeResidualOp::PushI64(value) => {
+                lowering.instructions.push(NativeTextInstruction::LoadI64(*value));
+                lowering.push_stack_value(ProductValueKind::Int);
+            }
+            NativeResidualOp::PushBool(value) => {
+                lowering.instructions.push(NativeTextInstruction::LoadI64(i64::from(*value)));
+                lowering.push_stack_value(ProductValueKind::Bool);
+            }
+            NativeResidualOp::PushNil => {
+                lowering.instructions.push(NativeTextInstruction::LoadI64(0));
+                lowering.push_stack_value(ProductValueKind::Nil);
+            }
+            NativeResidualOp::Load(name) => {
+                let (slot, kind) = *lowering.locals.get(name).ok_or_else(|| {
+                    format!("residual function `{}` loads unbound local `{name}` at the product boundary", function.name)
+                })?;
+                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
+                lowering.push_stack_value(kind);
+            }
+            NativeResidualOp::Store(name) => {
+                let (slot, kind) = lowering.pop()?;
+                let destination = lowering.alloc_slot();
+                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
+                lowering.instructions.push(NativeTextInstruction::StoreSlot(destination));
+                lowering.locals.insert(name.clone(), (destination, kind));
+            }
+            NativeResidualOp::Pop => {
+                lowering.pop()?;
+            }
+            NativeResidualOp::Add => lowering.binary_numeric(NativeTextInstruction::Add, ProductValueKind::Int)?,
+            NativeResidualOp::Sub => lowering.binary_numeric(NativeTextInstruction::Sub, ProductValueKind::Int)?,
+            NativeResidualOp::Mul => lowering.binary_numeric(NativeTextInstruction::Mul, ProductValueKind::Int)?,
+            NativeResidualOp::Eq | NativeResidualOp::Ne => {
+                let (right, right_kind) = lowering.pop()?;
+                let (left, left_kind) = lowering.pop()?;
+                // guest 的相等是结构化比较；不同载体不能按数值比较。
+                if left_kind != right_kind || left_kind == ProductValueKind::Nil {
+                    return Err(format!(
+                        "residual function `{}` compares values of different carriers at the product boundary",
+                        function.name
+                    ));
+                }
+                let instruction = if matches!(op, NativeResidualOp::Eq) {
+                    NativeTextInstruction::Eq
+                }
+                else {
+                    NativeTextInstruction::Ne
+                };
+                lowering.instructions.push(NativeTextInstruction::LoadSlot(left));
+                lowering.instructions.push(NativeTextInstruction::LoadSlotToRcx(right));
+                lowering.instructions.push(instruction);
+                lowering.push_stack_value(ProductValueKind::Bool);
+            }
+            NativeResidualOp::Lt | NativeResidualOp::Le | NativeResidualOp::Gt | NativeResidualOp::Ge => {
+                let (right, right_kind) = lowering.pop()?;
+                let (left, left_kind) = lowering.pop()?;
+                if matches!(left_kind, ProductValueKind::Nil) || matches!(right_kind, ProductValueKind::Nil) {
+                    return Err(format!(
+                        "residual function `{}` orders `nil` at the product boundary",
+                        function.name
+                    ));
+                }
+                let instruction = match op {
+                    NativeResidualOp::Lt => NativeTextInstruction::Lt,
+                    NativeResidualOp::Le => NativeTextInstruction::Le,
+                    NativeResidualOp::Gt => NativeTextInstruction::Gt,
+                    _ => NativeTextInstruction::Ge,
+                };
+                lowering.instructions.push(NativeTextInstruction::LoadSlot(left));
+                lowering.instructions.push(NativeTextInstruction::LoadSlotToRcx(right));
+                lowering.instructions.push(instruction);
+                lowering.push_stack_value(ProductValueKind::Bool);
+            }
+            NativeResidualOp::Not => {
+                let (slot, kind) = lowering.pop()?;
+                if kind != ProductValueKind::Bool {
+                    return Err(format!(
+                        "residual function `{}` applies logical `not` to a non-boolean at the product boundary",
+                        function.name
+                    ));
+                }
+                let zero = lowering.alloc_slot();
+                lowering.instructions.push(NativeTextInstruction::LoadI64(0));
+                lowering.instructions.push(NativeTextInstruction::StoreSlot(zero));
+                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
+                lowering.instructions.push(NativeTextInstruction::LoadSlotToRcx(zero));
+                lowering.instructions.push(NativeTextInstruction::Eq);
+                lowering.push_stack_value(ProductValueKind::Bool);
+            }
+            NativeResidualOp::Label(name) => {
+                let id = lowering.label_id(name);
+                lowering.instructions.push(NativeTextInstruction::Label(id));
+            }
+            NativeResidualOp::Jump(name) => {
+                let id = lowering.label_id(name);
+                lowering.instructions.push(NativeTextInstruction::Jump(id));
+                lowering.returned = true;
+            }
+            NativeResidualOp::JumpIfFalse(name) => {
+                let id = lowering.label_id(name);
+                let (slot, kind) = lowering.pop()?;
+                if kind != ProductValueKind::Bool {
+                    return Err(format!(
+                        "residual function `{}` branches on a non-boolean at the product boundary",
+                        function.name
+                    ));
+                }
+                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
+                lowering.instructions.push(NativeTextInstruction::JumpIfZero(id));
+            }
+            NativeResidualOp::JumpIfTrue(name) => {
+                let id = lowering.label_id(name);
+                let skip = lowering.fresh_label();
+                let (slot, kind) = lowering.pop()?;
+                if kind != ProductValueKind::Bool {
+                    return Err(format!(
+                        "residual function `{}` branches on a non-boolean at the product boundary",
+                        function.name
+                    ));
+                }
+                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
+                lowering.instructions.push(NativeTextInstruction::JumpIfZero(skip));
+                lowering.instructions.push(NativeTextInstruction::Jump(id));
+                lowering.instructions.push(NativeTextInstruction::Label(skip));
+            }
+            NativeResidualOp::Call { name, argc } => {
+                if *argc > 4 {
+                    return Err(format!(
+                        "residual function `{}` calls `{name}` with {argc} arguments; the Win64 text ABI supports at most 4",
+                        function.name
+                    ));
+                }
+                let mut arguments = Vec::with_capacity(*argc);
+                for _ in 0..*argc {
+                    arguments.push(lowering.pop()?.0);
+                }
+                for (index, slot) in arguments.iter().rev().enumerate() {
+                    lowering.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: *slot, index: index as u8 });
+                }
+                lowering.instructions.push(NativeTextInstruction::Call(name.clone()));
+                // 导出函数 ABI 以整数返回；布尔按 0/1 载体。
+                lowering.push_stack_value(ProductValueKind::Int);
+            }
+            NativeResidualOp::Ret => {
+                let (slot, kind) = lowering.pop()?;
+                if matches!(kind, ProductValueKind::Nil) {
+                    return Err(format!(
+                        "residual function `{}` returns `nil`; the product ABI carries integers",
+                        function.name
+                    ));
+                }
+                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
+                lowering.instructions.push(NativeTextInstruction::Return);
+                // `ret` 之后的线性残差不可达；保持栈形态确定。
+                lowering.stack.clear();
+                lowering.returned = true;
+            }
+            NativeResidualOp::PushString(_)
+            | NativeResidualOp::Print(_)
+            | NativeResidualOp::Concat
+            | NativeResidualOp::Div
+            | NativeResidualOp::Rem
+            | NativeResidualOp::Length
+            | NativeResidualOp::TableNew
+            | NativeResidualOp::TableArrayPush
+            | NativeResidualOp::TableRecordSet(_)
+            | NativeResidualOp::TableIndexSet
+            | NativeResidualOp::TableFieldSet(_)
+            | NativeResidualOp::TableFieldGet(_)
+            | NativeResidualOp::TableIndexGet
+            | NativeResidualOp::DynamicCall { .. } => {
+                return Err(format!(
+                    "residual function `{}` contains `{op:?}`, which the current Win64 text ABI cannot carry; failing closed instead of shrinking semantics",
+                    function.name
+                ));
+            }
+        }
+    }
+
+    Ok(NativeTextProgramFunction { name: function.name.clone(), slot_count: lowering.next_slot, instructions: lowering.instructions })
+}
+
 /// Lower a native residual to raw x64 bytes suitable for [`PeCompiler`].
 ///
 /// 常量折叠只允许用于**已证明无副作用**的残差：任何 `Print` 或未知调用都会
@@ -848,6 +1164,12 @@ fn ensure_effect_free_for_constant_folding(module: &NativeResidualModule) -> Res
     for function in &module.functions {
         for op in &function.ops {
             match op {
+                NativeResidualOp::PushString(text) => {
+                    return Err(format!(
+                        "residual function `{}` pushes string `{text}`; non-integer constant folding is not implemented",
+                        function.name
+                    ));
+                }
                 NativeResidualOp::Print(_) => {
                     return Err(format!(
                         "residual function `{}` contains `Print`; effects must be preserved at runtime, not consumed by compile-time folding",

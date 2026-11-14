@@ -14,7 +14,10 @@
 //! 指令集；宿主调用属于导入合同，不属于算子编码。
 
 mod x64_lir;
+mod x64_program;
 pub mod x86_64;
+
+pub use x64_program::encode_native_text_program;
 
 use nyar::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget};
 
@@ -35,12 +38,78 @@ pub struct NativeLoweredFragment {
 ///
 /// 这是语言/平台适配器复用 native 平台编码能力的公开入口：适配器保留自己的
 /// 语言语义与 residual，只把已决定的目标操作交给本 lane 的 LIR/编码器。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeTextInstruction {
     /// `mov rax, imm64`：整数值进入返回值寄存器。
     LoadI64(i64),
     /// 函数返回（含帧还原）；返回值已在 `rax`。
     Return,
+    /// 把 Win64 整数形参 `index` 存入帧槽 `slot`。
+    LoadParam {
+        /// 形参序号（0..=3，对应 rcx/rdx/r8/r9）。
+        index: u8,
+        /// 帧槽。
+        slot: u16,
+    },
+    /// `mov rax, [slot]`。
+    LoadSlot(u16),
+    /// `mov rcx, [slot]`（二元运算的右操作数）。
+    LoadSlotToRcx(u16),
+    /// 把帧槽 `slot` 装入 Win64 整数实参寄存器 `index`（调用前）。
+    LoadSlotToArg {
+        /// 帧槽。
+        slot: u16,
+        /// 实参序号（0..=3）。
+        index: u8,
+    },
+    /// `mov [slot], rax`。
+    StoreSlot(u16),
+    /// `rax = rax + rcx`。
+    Add,
+    /// `rax = rax - rcx`。
+    Sub,
+    /// `rax = rax * rcx`。
+    Mul,
+    /// `rax = (rax == rcx) as i64`。
+    Eq,
+    /// `rax = (rax != rcx) as i64`。
+    Ne,
+    /// `rax = (rax < rcx) as i64`（有符号）。
+    Lt,
+    /// `rax = (rax <= rcx) as i64`。
+    Le,
+    /// `rax = (rax > rcx) as i64`。
+    Gt,
+    /// `rax = (rax >= rcx) as i64`。
+    Ge,
+    /// 函数内标签（数值 id）。
+    Label(u32),
+    /// 无条件跳转。
+    Jump(u32),
+    /// `test rax, rax` 后为零跳转。
+    JumpIfZero(u32),
+    /// 调用同程序内命名函数（`rel32` 由程序编码器回填）。
+    Call(String),
+}
+
+/// 多函数文本程序中的一个函数。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeTextProgramFunction {
+    /// 函数名（导出符号与调用目标）。
+    pub name: String,
+    /// 帧槽数量（每槽 8 字节）。
+    pub slot_count: u16,
+    /// 目标 LIR。
+    pub instructions: Vec<NativeTextInstruction>,
+}
+
+/// 多函数文本程序编码结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeTextProgramImage {
+    /// `.text` 节字节。
+    pub text: Vec<u8>,
+    /// 导出符号及其在 `.text` 内的偏移。
+    pub symbols: Vec<(String, u32)>,
 }
 
 /// 已编码的原生文本函数。
@@ -64,6 +133,7 @@ pub fn encode_native_text_function(instructions: &[NativeTextInstruction]) -> Re
                 lowered.push(x64_lir::X64Instruction::Load { register: x64_lir::X64Reg::Rax, source: x64_lir::X64Value::Immediate(*value) });
             }
             NativeTextInstruction::Return => lowered.push(x64_lir::X64Instruction::Return),
+            other => return Err(format!("单函数文本编码器不支持该 LIR 指令，请使用 `encode_native_text_program`：{other:?}")),
         }
     }
     let function = x64_lir::X64Function { frame_bytes: 0, instructions: lowered };

@@ -14,7 +14,10 @@ use nyar::{
     packaging::{ArtifactDescriptor, ArtifactSet, TargetLane},
 };
 
-pub use crate::lowering::backends::native::{NativeTextFunction, NativeTextInstruction, encode_native_text_function};
+pub use crate::lowering::backends::native::{
+    NativeTextFunction, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, encode_native_text_function,
+    encode_native_text_program,
+};
 pub use executable::{NativeExecutableError, NativeExecutableKind, NativeImageFacts, classify_native_executable, classify_native_image};
 
 /// `Native` 后端输入。

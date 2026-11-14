@@ -14,7 +14,8 @@ pub use bytecode::NyarBytecodeCompiler;
 pub use generate::GenerateModule;
 pub use native_residual::{
     NativeResidualFunction, NativeResidualModule, NativeResidualOp, NativeResidualSink, NativeResidualTarget, ResidualValue, emit_native_pe,
-    eval_native_residual, eval_native_residual_with_inputs, lower_native_residual_to_x64, specialize_language,
+    emit_native_pe_library, eval_native_residual, eval_native_residual_with_inputs, lower_native_residual_to_program,
+    lower_native_residual_to_x64, specialize_language,
 };
 pub use pe::PeCompiler;
 pub use residual::StackResidualSink;

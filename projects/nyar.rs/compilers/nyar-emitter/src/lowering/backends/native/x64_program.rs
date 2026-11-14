@@ -1,0 +1,163 @@
+//! 多函数原生文本程序编码器（adapter-facing LIR → x64 文本 + 符号偏移）。
+//!
+//! 适配器（如 guest residual lowering）只表达槽/寄存器/跳转/命名调用；帧序言、
+//! 返回尾声、`rel32` 回填与符号布局全部由本模块负责，适配器不拼机器码。
+
+use std::collections::BTreeMap;
+
+use crate::Result;
+
+use super::{NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage};
+
+/// Win64 整数形参寄存器：rcx / rdx / r8 / r9 的 `mov [rbp-disp32], reg` 前缀。
+const ARG_STORE_PREFIX: [[u8; 3]; 4] = [[0x48, 0x89, 0x8D], [0x48, 0x89, 0x95], [0x4C, 0x89, 0x85], [0x4C, 0x89, 0x8D]];
+/// 同上的 `mov reg, [rbp-disp32]` 前缀。
+const ARG_LOAD_PREFIX: [[u8; 3]; 4] = [[0x48, 0x8B, 0x8D], [0x48, 0x8B, 0x95], [0x4C, 0x8B, 0x85], [0x4C, 0x8B, 0x8D]];
+/// `mov [rbp-disp32], rax`。
+const RAX_STORE: [u8; 3] = [0x48, 0x89, 0x85];
+/// `mov rax, [rbp-disp32]`。
+const RAX_LOAD: [u8; 3] = [0x48, 0x8B, 0x85];
+/// `mov rcx, [rbp-disp32]`。
+const RCX_LOAD: [u8; 3] = [0x48, 0x8B, 0x8D];
+
+fn align16(value: u32) -> u32 {
+    (value + 15) & !15
+}
+
+fn frame_disp(slot: u16) -> i32 {
+    -8 * (i32::from(slot) + 1)
+}
+
+fn emit_binary(text: &mut Vec<u8>, instruction: &NativeTextInstruction) -> bool {
+    match instruction {
+        NativeTextInstruction::Add => text.extend_from_slice(&[0x48, 0x01, 0xC8]),
+        NativeTextInstruction::Sub => text.extend_from_slice(&[0x48, 0x29, 0xC8]),
+        NativeTextInstruction::Mul => text.extend_from_slice(&[0x48, 0x0F, 0xAF, 0xC1]),
+        NativeTextInstruction::Eq => {
+            text.extend_from_slice(&[0x48, 0x39, 0xC8, 0x0F, 0x94, 0xC0, 0x0F, 0xB6, 0xC0]);
+        }
+        NativeTextInstruction::Ne => {
+            text.extend_from_slice(&[0x48, 0x39, 0xC8, 0x0F, 0x95, 0xC0, 0x0F, 0xB6, 0xC0]);
+        }
+        NativeTextInstruction::Lt => {
+            text.extend_from_slice(&[0x48, 0x39, 0xC8, 0x0F, 0x9C, 0xC0, 0x0F, 0xB6, 0xC0]);
+        }
+        NativeTextInstruction::Le => {
+            text.extend_from_slice(&[0x48, 0x39, 0xC8, 0x0F, 0x9E, 0xC0, 0x0F, 0xB6, 0xC0]);
+        }
+        NativeTextInstruction::Gt => {
+            text.extend_from_slice(&[0x48, 0x39, 0xC8, 0x0F, 0x9F, 0xC0, 0x0F, 0xB6, 0xC0]);
+        }
+        NativeTextInstruction::Ge => {
+            text.extend_from_slice(&[0x48, 0x39, 0xC8, 0x0F, 0x9D, 0xC0, 0x0F, 0xB6, 0xC0]);
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// 把多函数文本 LIR 编码为一段 `.text` 与导出符号偏移。
+pub fn encode_native_text_program(functions: &[NativeTextProgramFunction]) -> Result<NativeTextProgramImage> {
+    if functions.is_empty() {
+        return Err("native text program has no functions".to_string());
+    }
+    let mut text = Vec::new();
+    let mut symbols = Vec::with_capacity(functions.len());
+    // (rel32 字段位置, 被调用名)
+    let mut calls: Vec<(usize, String)> = Vec::new();
+    let mut symbol_offsets = BTreeMap::<String, u32>::new();
+
+    for function in functions {
+        if symbol_offsets.insert(function.name.clone(), text.len() as u32).is_some() {
+            return Err(format!("duplicate native text function `{}`", function.name));
+        }
+        symbols.push((function.name.clone(), text.len() as u32));
+
+        // 序言：`push rbp; mov rbp, rsp; sub rsp, frame`。
+        let frame = align16(u32::from(function.slot_count) * 8 + 32);
+        text.extend_from_slice(&[0x55, 0x48, 0x89, 0xE5, 0x48, 0x81, 0xEC]);
+        text.extend_from_slice(&frame.to_le_bytes());
+
+        let mut labels = BTreeMap::<u32, usize>::new();
+        let mut jumps: Vec<(usize, u32)> = Vec::new();
+        for instruction in &function.instructions {
+            match instruction {
+                NativeTextInstruction::LoadI64(value) => {
+                    text.extend_from_slice(&[0x48, 0xB8]);
+                    text.extend_from_slice(&value.to_le_bytes());
+                }
+                NativeTextInstruction::LoadParam { index, slot } => {
+                    let prefix = ARG_STORE_PREFIX
+                        .get(*index as usize)
+                        .ok_or_else(|| format!("Win64 文本 ABI 只支持 4 个整数形参（index={index}）"))?;
+                    text.extend_from_slice(prefix);
+                    text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
+                }
+                NativeTextInstruction::LoadSlot(slot) => {
+                    text.extend_from_slice(&RAX_LOAD);
+                    text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
+                }
+                NativeTextInstruction::LoadSlotToRcx(slot) => {
+                    text.extend_from_slice(&RCX_LOAD);
+                    text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
+                }
+                NativeTextInstruction::LoadSlotToArg { slot, index } => {
+                    let prefix = ARG_LOAD_PREFIX
+                        .get(*index as usize)
+                        .ok_or_else(|| format!("Win64 文本 ABI 只支持 4 个整数实参（index={index}）"))?;
+                    text.extend_from_slice(prefix);
+                    text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
+                }
+                NativeTextInstruction::StoreSlot(slot) => {
+                    text.extend_from_slice(&RAX_STORE);
+                    text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
+                }
+                NativeTextInstruction::Label(id) => {
+                    labels.insert(*id, text.len());
+                }
+                NativeTextInstruction::Jump(id) => {
+                    text.push(0xE9);
+                    jumps.push((text.len(), *id));
+                    text.extend_from_slice(&[0, 0, 0, 0]);
+                }
+                NativeTextInstruction::JumpIfZero(id) => {
+                    text.extend_from_slice(&[0x85, 0xC0, 0x0F, 0x84]);
+                    jumps.push((text.len(), *id));
+                    text.extend_from_slice(&[0, 0, 0, 0]);
+                }
+                NativeTextInstruction::Call(name) => {
+                    text.push(0xE8);
+                    calls.push((text.len(), name.clone()));
+                    text.extend_from_slice(&[0, 0, 0, 0]);
+                }
+                NativeTextInstruction::Return => {
+                    text.extend_from_slice(&[0x48, 0x89, 0xEC, 0x5D, 0xC3]);
+                }
+                binary if emit_binary(&mut text, binary) => {}
+                other => return Err(format!("native text program encoder 不支持该 LIR 指令：{other:?}")),
+            }
+        }
+        // 兜底尾声：函数体末尾也安全返回（显式 Return 之后不可达）。
+        text.extend_from_slice(&[0x48, 0x89, 0xEC, 0x5D, 0xC3]);
+
+        for (field, target) in jumps {
+            let target_offset = labels
+                .get(&target)
+                .copied()
+                .ok_or_else(|| format!("native text function `{}` 的跳转标签 {target} 未定义", function.name))?;
+            let displacement = target_offset as i64 - (field as i64 + 4);
+            let displacement =
+                i32::try_from(displacement).map_err(|_| format!("native text function `{}` 的跳转位移超出 rel32", function.name))?;
+            text[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
+        }
+    }
+
+    for (field, name) in calls {
+        let target = symbol_offsets.get(&name).copied().ok_or_else(|| format!("native text program 调用了未定义函数 `{name}`"))?;
+        let displacement = target as i64 - (field as i64 + 4);
+        let displacement = i32::try_from(displacement).map_err(|_| format!("native text 调用位移超出 rel32：`{name}`"))?;
+        text[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
+    }
+
+    Ok(NativeTextProgramImage { text, symbols })
+}

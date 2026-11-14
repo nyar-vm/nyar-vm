@@ -45,6 +45,8 @@ fn classifies_writer_outputs() {
         rdata: Vec::new(),
         idata: Vec::new(),
         imports: Vec::new(),
+        exports: Vec::new(),
+        is_dll: false,
         entry_point: 0,
     })
     .expect("pe");
@@ -72,6 +74,8 @@ fn parsed_but_unsupported_native_image_reports_structured_error() {
         rdata: Vec::new(),
         idata: Vec::new(),
         imports: Vec::new(),
+        exports: Vec::new(),
+        is_dll: false,
         entry_point: 0,
     })
     .expect("pe");
@@ -107,6 +111,8 @@ fn minimal_pe() -> Vec<u8> {
         rdata: Vec::new(),
         idata: Vec::new(),
         imports: Vec::new(),
+        exports: Vec::new(),
+        is_dll: false,
         entry_point: 0,
     })
     .expect("pe")
