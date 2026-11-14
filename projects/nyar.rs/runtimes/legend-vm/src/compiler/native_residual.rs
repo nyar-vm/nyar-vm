@@ -17,7 +17,7 @@ use miette::{Result, miette};
 use nyar_analyzer::residual::ResidualSink;
 use nyar_emitter::nyar_backend_native::{
     NativeAbi, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, encode_native_text_function,
-    encode_native_text_program_with_data, encode_native_text_program_with_imports,
+    encode_native_text_program_with_data, encode_native_text_program_with_dependencies, encode_native_text_program_with_imports,
 };
 
 use super::PeCompiler;
@@ -988,6 +988,14 @@ pub fn lower_native_residual_to_program(
         }
         _ => String::new(),
     };
+    // `ELF` 没有 IAT：宿主库以 `DT_NEEDED` 显式声明，避免依赖「碰巧在全局作用域」。
+    let native_dependencies: Vec<String> = match (&target, host) {
+        (
+            NativeProductTarget::Extension { os: NativeProductOs::Linux, library: Some(library), .. },
+            Some(NativeHostModule::Python),
+        ) => vec![library.clone()],
+        _ => Vec::new(),
+    };
     // 普通库的 effect 通道由宿主传入；扩展模块自己写 stdout。
     let sink_from_parameter = has_print && target.sink_from_parameter();
 
@@ -1108,7 +1116,14 @@ pub fn lower_native_residual_to_program(
         None => {}
     }
     // 调用约定与容器都由平台显式给出，编码器不提供默认 ABI。
-    encode_native_text_program_with_data(&functions, &imports, target.abi(), &data, &data_relocations)
+    encode_native_text_program_with_dependencies(
+        &functions,
+        &imports,
+        target.abi(),
+        &data,
+        &data_relocations,
+        &native_dependencies,
+    )
 }
 
 /// 扩展模块入口的共同前提：`main` 存在、无宿主输入、返回可暴露的整数/布尔。

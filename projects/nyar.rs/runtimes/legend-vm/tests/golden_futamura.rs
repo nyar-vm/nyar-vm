@@ -887,13 +887,36 @@ mod python_extension_abi {
 
     /// 把扩展写成 `<dir>/demo.so` 并返回目录（`sys.path` 插入点）。
     fn extension_dir(source: &str, tag: &str) -> std::path::PathBuf {
+        extension_dir_with_dependency(source, tag, None)
+    }
+
+    /// 同上，并可声明一个 `DT_NEEDED` 依赖（用于模块绑定验收）。
+    fn extension_dir_with_dependency(source: &str, tag: &str, dependency: Option<&str>) -> std::path::PathBuf {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
-        let bytes = emit_native_python_extension(&residual, NativeProductOs::Linux, None).expect("emit python extension");
+        let bytes = emit_native_python_extension(&residual, NativeProductOs::Linux, dependency).expect("emit python extension");
         let dir = std::env::temp_dir().join(format!("legend-python-{tag}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("create module dir");
         std::fs::write(dir.join(format!("{MODULE_NAME}.so")), bytes).expect("write extension");
         dir
+    }
+
+    fn python_command() -> std::process::Command {
+        for interpreter in ["python3", "python"] {
+            if std::process::Command::new(interpreter).arg("--version").output().is_ok() {
+                return std::process::Command::new(interpreter);
+            }
+        }
+        panic!("no CPython interpreter (`python3` / `python`) available");
+    }
+
+    /// 当前进程实际映射的 libpython `SONAME`（静态链接的 CPython 没有，返回 `None`）。
+    fn python_soname() -> Option<String> {
+        let script = "import re\nfor line in open('/proc/self/maps'):\n    m = re.search(r'/(libpython[^/\\s]+\\.so[^/\\s]*)', line)\n    if m:\n        print(m.group(1))\n        break";
+        let output = python_command().arg("-c").arg(script).output().expect("spawn python");
+        assert!(output.status.success(), "python failed: {}", String::from_utf8_lossy(&output.stderr));
+        let soname = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if soname.is_empty() { None } else { Some(soname) }
     }
 
     fn run_python(dir: &std::path::Path, body: &str) -> String {
@@ -952,6 +975,32 @@ mod python_extension_abi {
     fn python_method_returns_a_static_string() {
         let dir = extension_dir("function greet()\n  return \"hi\"\nend\nreturn 42\n", "string");
         assert_eq!(run_python(&dir, "print(demo.greet()); print(type(demo.greet()).__name__)"), "hi\nstr");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 模块绑定：`DT_NEEDED` 指向宿主真实 libpython 时，`import` 正常。
+    #[test]
+    fn python_extension_binds_the_host_library() {
+        let Some(soname) = python_soname()
+        else {
+            eprintln!("skip: CPython is statically linked, no libpython SONAME to bind");
+            return;
+        };
+        let dir = extension_dir_with_dependency("return 42\n", "binding", Some(&soname));
+        assert_eq!(run_python(&dir, "print(demo.value)"), "42", "声明真实 libpython 依赖后必须可导入（{soname}）");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 模块绑定：`DT_NEEDED` 指向不存在的库时，`import` 必须失败——证明依赖被
+    /// 装载器真实解析，而不是被忽略后靠全局符号「碰巧」工作。
+    #[test]
+    fn python_extension_fails_for_a_missing_declared_dependency() {
+        let dir = extension_dir_with_dependency("return 42\n", "missing-binding", Some("libnyar_missing_python.so.1"));
+        let script = format!("import sys\nsys.path.insert(0, r'{}')\nimport demo", dir.display());
+        let output = python_command().arg("-c").arg(&script).output().expect("spawn python");
+        assert!(!output.status.success(), "缺声明的依赖必须导入失败");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("libnyar_missing_python"), "错误必须指名缺失依赖: {stderr}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

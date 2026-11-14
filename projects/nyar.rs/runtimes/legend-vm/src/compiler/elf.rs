@@ -7,8 +7,8 @@
 //! forwards the encoded symbols, imports, call sites and data relocations.
 
 use acorn_pe::elf::{
-    SharedElfDataReference, SharedElfDataRelocation, SharedElfDataTarget, SharedElfImage, SharedElfImportCall, SharedElfWriter,
-    SharedObjectExport,
+    SharedElfDataReference, SharedElfDataRelocation, SharedElfDataTarget, SharedElfImage, SharedElfImportCall, SharedElfSpec,
+    SharedElfWriter, SharedObjectExport,
 };
 use miette::{Result, miette};
 use nyar_emitter::nyar_backend_native::{NativeDataTarget, NativeTextProgramImage};
@@ -44,14 +44,17 @@ impl ElfCompiler {
             .iter()
             .map(|(field, data_offset)| SharedElfDataReference { rel32_field: *field, data_offset: *data_offset })
             .collect();
-        SharedElfWriter::write_x86_64_with_imports(
-            &SharedElfImage { text: image.text.clone(), rodata: Vec::new(), data: image.data.clone(), bss: Vec::new() },
-            &exports,
-            &image.elf_imports,
-            &calls,
-            &data_relocations,
-            &data_references,
-        )
+        let elf_image = SharedElfImage { text: image.text.clone(), rodata: Vec::new(), data: image.data.clone(), bss: Vec::new() };
+        SharedElfWriter::write_x86_64_shared(&SharedElfSpec {
+            image: &elf_image,
+            exports: &exports,
+            imports: &image.elf_imports,
+            calls: &calls,
+            data_relocations: &data_relocations,
+            data_references: &data_references,
+            needed: &image.native_dependencies,
+            soname: None,
+        })
         .map_err(|error| miette!("ELF 共享库映像编码失败：{error}"))
     }
 }
