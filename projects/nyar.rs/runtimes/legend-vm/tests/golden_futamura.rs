@@ -906,6 +906,23 @@ mod python_extension_abi {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 方法表：宿主按 Python 调用 `demo.add(2, 3)`，实参经 `PyArg_ParseTuple` 解析。
+    #[test]
+    fn python_calls_residual_methods_with_parsed_arguments() {
+        let dir = extension_dir("function add(a, b)\n  return a + b\nend\nreturn 42\n", "methods");
+        assert_eq!(run_python(&dir, "print(demo.value)\nprint(demo.add(2, 3))"), "42\n5", "方法必须按 Python 调用约定返回整数");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 参数个数/类型不符必须由宿主抛出 `TypeError`，不能静默当成 0/-1。
+    #[test]
+    fn python_method_argument_errors_surface_as_host_exceptions() {
+        let dir = extension_dir("function add(a, b)\n  return a + b\nend\nreturn 42\n", "argerr");
+        let body = "for call in [lambda: demo.add(1), lambda: demo.add('x', 2)]:\n    try:\n        call()\n    except TypeError:\n        print('TypeError')";
+        assert_eq!(run_python(&dir, body), "TypeError\nTypeError", "宿主必须把解析失败暴露为异常");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn python_extension_rejects_non_integer_results() {
         let runner = legend_vm::LegendVmRunner::new();

@@ -908,11 +908,18 @@ pub fn lower_native_residual_to_program(
     // 导入面按目标冻结：Windows 的 effect 写入是 IAT 导入；Node 扩展要调用
     // Node-API 构造返回值；CPython 扩展要调用 `PyModule_Create2` 建立模块并
     // 用 `PyModule_AddIntConstant` 暴露残差值；Linux 的 effect 是 syscall，没有导入。
+    // CPython 方法包装只在其方法表非空时需要 `PyArg_ParseTuple` / `PyLong_FromLong`。
+    let python_has_methods = target == NativeProductTarget::Python && module.functions.iter().any(|function| function.name != "main");
     let imports: Vec<(String, String)> = match target {
         NativeProductTarget::Windows if has_print => vec![("kernel32".to_string(), "WriteFile".to_string())],
         NativeProductTarget::Node => vec![(String::new(), "napi_create_int32".to_string())],
         NativeProductTarget::Python => {
-            vec![(String::new(), "PyModule_Create2".to_string()), (String::new(), "PyModule_AddIntConstant".to_string())]
+            let mut symbols = vec![(String::new(), "PyModule_Create2".to_string()), (String::new(), "PyModule_AddIntConstant".to_string())];
+            if python_has_methods {
+                symbols.push((String::new(), "PyArg_ParseTuple".to_string()));
+                symbols.push((String::new(), "PyLong_FromLong".to_string()));
+            }
+            symbols
         }
         NativeProductTarget::Windows | NativeProductTarget::Linux => Vec::new(),
     };
@@ -960,10 +967,14 @@ pub fn lower_native_residual_to_program(
                     module.name
                 ));
             }
-            let (definition, relocations) = python_module_def(&module.name);
+            let methods = python_methods(module, &lowered)?;
+            let (definition, relocations, value_offset, format_offsets) = python_module_data(&module.name, &methods);
             data = definition;
             data_relocations = relocations;
-            functions.push(python_module_registration(&module.name));
+            for (method, format_offset) in methods.iter().zip(format_offsets) {
+                functions.push(python_method_wrapper(&method.name, method.parameters, format_offset));
+            }
+            functions.push(python_module_registration(&module.name, value_offset));
         }
         NativeProductTarget::Windows | NativeProductTarget::Linux => {}
     }
@@ -1012,24 +1023,168 @@ fn is_c_identifier(name: &str) -> bool {
 /// - `40`：`m_name`，`R_X86_64_RELATIVE` 指向紧随其后的模块名；
 /// - `48`：`m_doc = NULL`；
 /// - `56`：`m_size = -1`（单阶段初始化，无每模块状态）；
-/// - `64..104`：`m_methods`/`m_slots`/`m_traverse`/`m_clear`/`m_free = NULL`；
-/// - `104`：模块名（NUL 结尾），随后是暴露给宿主的常量名 `value`（NUL 结尾）。
+/// - `64`：`m_methods`，有方法时指向 NUL 结尾的 `PyMethodDef` 数组；
+/// - `72..104`：`m_slots`/`m_traverse`/`m_clear`/`m_free = NULL`；
+/// - `104`：模块名（NUL 结尾），随后是常量名 `value`、各方法名与
+///   `PyArg_ParseTuple` 格式串，最后是方法表。
 const PY_MODULE_DEF_BASE_LEN: u32 = 104;
 
-fn python_module_def(module_name: &str) -> (Vec<u8>, Vec<(u32, NativeDataTarget)>) {
-    let mut data = Vec::new();
-    data.extend_from_slice(&1i64.to_le_bytes()); // ob_refcnt
-    data.extend_from_slice(&[0u8; 32]); // ob_type / m_init / m_index / m_copy
-    data.extend_from_slice(&[0u8; 8]); // m_name（由重定位回填）
-    data.extend_from_slice(&[0u8; 8]); // m_doc
-    data.extend_from_slice(&(-1i64).to_le_bytes()); // m_size
-    data.extend_from_slice(&[0u8; 40]); // m_methods / m_slots / m_traverse / m_clear / m_free
-    debug_assert_eq!(data.len(), PY_MODULE_DEF_BASE_LEN as usize);
+/// `PyMethodDef` 每项 32 字节：`ml_name`、`ml_meth`、`ml_flags`、`ml_doc`。
+const PY_METHOD_DEF_LEN: u32 = 32;
+
+/// `METH_VARARGS`：方法以 `(self, args)` 调用，实参由 `PyArg_ParseTuple` 解析。
+const PY_METH_VARARGS: u32 = 0x0001;
+
+/// 方法最多 4 个整数形参：`PyArg_ParseTuple(args, format, out…)` 的两个固定实参
+/// 之外的 4 个整数寄存器都用于传出指针。
+const PY_METHOD_MAX_PARAMETERS: usize = 4;
+
+/// 一个可暴露给 CPython 的残差方法。
+struct PythonMethod {
+    /// 方法名（宿主可见名，同时是残差函数名）。
+    name: String,
+    /// 整数形参个数。
+    parameters: usize,
+}
+
+/// 收集可暴露方法：除 `main` 外的残差函数，必须是整数/布尔返回且形参不超过
+/// `PyArg_ParseTuple` 的寄存能力。不支持的形状显式失败，不悄悄丢方法。
+fn python_methods(
+    module: &NativeResidualModule,
+    lowered: &[(NativeTextProgramFunction, Option<ProductValueKind>)],
+) -> Result<Vec<PythonMethod>, String> {
+    let mut methods = Vec::new();
+    for (function, return_kind) in lowered {
+        if function.name == "main" {
+            continue;
+        }
+        match return_kind {
+            Some(ProductValueKind::Int | ProductValueKind::Bool) => {}
+            other => {
+                return Err(format!(
+                    "CPython 扩展方法 `{}` 的返回载体是 `{other:?}`：只有整数/布尔能经 `PyLong_FromLong` 暴露",
+                    function.name
+                ));
+            }
+        }
+        let parameters = module.function(&function.name).map(|function| function.parameters.len()).unwrap_or(0);
+        if parameters > PY_METHOD_MAX_PARAMETERS {
+            return Err(format!(
+                "CPython 扩展方法 `{}` 有 {parameters} 个形参；`PyArg_ParseTuple` 包装只闭合至多 {PY_METHOD_MAX_PARAMETERS} 个整数实参",
+                function.name
+            ));
+        }
+        methods.push(PythonMethod { name: function.name.clone(), parameters });
+    }
+    Ok(methods)
+}
+
+fn python_wrapper_name(method: &str) -> String {
+    format!("__nyar_py_wrap_{method}")
+}
+
+/// 构造 `.data`：模块定义、模块名、常量名、方法名/格式串与方法表。
+///
+/// 返回数据块、自相对重定位、常量名偏移与每个方法的格式串偏移（包装体需要）。
+fn python_module_data(
+    module_name: &str,
+    methods: &[PythonMethod],
+) -> (Vec<u8>, Vec<(u32, NativeDataTarget)>, u32, Vec<u32>) {
+    let mut data = vec![0u8; PY_MODULE_DEF_BASE_LEN as usize];
+    let mut relocations = Vec::new();
+    data[..8].copy_from_slice(&1i64.to_le_bytes()); // ob_refcnt = 1
+    data[56..64].copy_from_slice(&(-1i64).to_le_bytes()); // m_size = -1
+
     let name_offset = data.len() as u32;
-    data.extend_from_slice(module_name.as_bytes());
+    push_cstring(&mut data, module_name);
+    relocations.push((40, NativeDataTarget::Data(name_offset)));
+
+    let value_offset = data.len() as u32;
+    push_cstring(&mut data, "value");
+
+    let mut method_name_offsets = Vec::with_capacity(methods.len());
+    let mut format_offsets = Vec::with_capacity(methods.len());
+    for method in methods {
+        method_name_offsets.push(data.len() as u32);
+        push_cstring(&mut data, &method.name);
+        // `PyArg_ParseTuple` 的 `l` 是 C `long`（Linux x86-64 为 8 字节），与残差的
+        // `i64` 载体一一对应；`:<name>` 让宿主错误信息带上方法名。
+        let format = format!("{}:{}", "l".repeat(method.parameters), method.name);
+        format_offsets.push(data.len() as u32);
+        push_cstring(&mut data, &format);
+    }
+
+    if !methods.is_empty() {
+        let methods_offset = data.len() as u32;
+        // `m_methods` 指向 NUL 结尾的 `PyMethodDef` 数组；`PyModule_Create2` 会
+        // 在单阶段初始化时把方法表装进模块。
+        relocations.push((64, NativeDataTarget::Data(methods_offset)));
+        for (index, method) in methods.iter().enumerate() {
+            let entry = data.len() as u32;
+            data.extend_from_slice(&[0u8; PY_METHOD_DEF_LEN as usize]);
+            relocations.push((entry, NativeDataTarget::Data(method_name_offsets[index])));
+            relocations.push((entry + 8, NativeDataTarget::Function(python_wrapper_name(&method.name))));
+            data[entry as usize + 16..entry as usize + 20].copy_from_slice(&PY_METH_VARARGS.to_le_bytes());
+        }
+        data.extend_from_slice(&[0u8; PY_METHOD_DEF_LEN as usize]); // 空终止项
+    }
+
+    (data, relocations, value_offset, format_offsets)
+}
+
+fn push_cstring(data: &mut Vec<u8>, value: &str) {
+    data.extend_from_slice(value.as_bytes());
     data.push(0);
-    data.extend_from_slice(b"value\0");
-    (data, vec![(40, NativeDataTarget::Data(name_offset))])
+}
+
+/// `PyObject* wrapper(PyObject* self, PyObject* args)`：以 `PyArg_ParseTuple` 解析
+/// 整数实参并调用同名残差函数，结果经 `PyLong_FromLong` 变成 Python `int`。
+///
+/// `PyArg_ParseTuple` 返回 0 表示解析失败（类型/个数不符），此时宿主已经设置异常，
+/// 包装体原样返回 `NULL`，不伪造结果。布尔按 1/0 返回。
+fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32) -> NativeTextProgramFunction {
+    use NativeTextInstruction as Lir;
+    const ARGS_SLOT: u16 = 0;
+    const FORMAT_SLOT: u16 = 1;
+    const TEMP_SLOT: u16 = 2;
+    const FIRST_ARGUMENT_SLOT: u16 = 3;
+    const FAIL_LABEL: u32 = 0;
+    let argument_slot = |index: usize| FIRST_ARGUMENT_SLOT + index as u16;
+
+    let mut instructions = vec![
+        // 保存 `args`（self 不参与残差语义）。
+        Lir::LoadParam { index: 1, slot: ARGS_SLOT },
+        Lir::LoadSlotToArg { slot: ARGS_SLOT, index: 0 },
+        Lir::LoadDataAddress(format_offset),
+        Lir::StoreSlot(FORMAT_SLOT),
+        Lir::LoadSlotToArg { slot: FORMAT_SLOT, index: 1 },
+    ];
+    for index in 0..parameters {
+        // `PyArg_ParseTuple` 把第 index 个 `long` 写入该帧槽的地址。
+        instructions.push(Lir::LoadSlotAddress(argument_slot(index)));
+        instructions.push(Lir::StoreSlot(TEMP_SLOT));
+        instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: (2 + index) as u8 });
+    }
+    instructions.push(Lir::CallImport { module: String::new(), field: "PyArg_ParseTuple".to_string() });
+    // 返回 0 = 解析失败（异常已由宿主设置）。
+    instructions.push(Lir::JumpIfZero(FAIL_LABEL));
+    for index in 0..parameters {
+        instructions.push(Lir::LoadSlotToArg { slot: argument_slot(index), index: index as u8 });
+    }
+    instructions.push(Lir::Call(method.to_string()));
+    instructions.push(Lir::StoreSlot(TEMP_SLOT));
+    instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 0 });
+    instructions.push(Lir::CallImport { module: String::new(), field: "PyLong_FromLong".to_string() });
+    instructions.push(Lir::Return);
+    instructions.push(Lir::Label(FAIL_LABEL));
+    instructions.push(Lir::LoadI64(0));
+    instructions.push(Lir::Return);
+
+    NativeTextProgramFunction {
+        name: python_wrapper_name(method),
+        slot_count: FIRST_ARGUMENT_SLOT + parameters as u16,
+        instructions,
+    }
 }
 
 /// `PyInit_<module>` 入口：用 `PyModule_Create2` 建立单阶段模块，把残差 `main`
@@ -1038,10 +1193,8 @@ fn python_module_def(module_name: &str) -> (Vec<u8>, Vec<(u32, NativeDataTarget)
 /// `PyModule_AddIntConstant` 返回 `int`，因此模块指针必须在帧槽里保存，最后重新
 /// 装入 `rax`；入口返回的必须是模块对象，否则 CPython 的导入器报
 /// “did not return a valid extension module”。
-fn python_module_registration(module_name: &str) -> NativeTextProgramFunction {
+fn python_module_registration(module_name: &str, value_offset: u32) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
-    // 常量名紧跟 NUL 结尾的模块名。
-    let constant_name_offset = PY_MODULE_DEF_BASE_LEN + module_name.len() as u32 + 1;
     NativeTextProgramFunction {
         name: format!("PyInit_{module_name}"),
         slot_count: 5,
@@ -1060,7 +1213,7 @@ fn python_module_registration(module_name: &str) -> NativeTextProgramFunction {
             Lir::StoreSlot(3),
             // `PyModule_AddIntConstant(module, "value", value)`。
             Lir::LoadSlotToArg { slot: 2, index: 0 },
-            Lir::LoadDataAddress(constant_name_offset),
+            Lir::LoadDataAddress(value_offset),
             Lir::StoreSlot(4),
             Lir::LoadSlotToArg { slot: 4, index: 1 },
             Lir::LoadSlotToArg { slot: 3, index: 2 },
@@ -1888,5 +2041,68 @@ mod tests {
         module.name = "not-an-identifier".into();
         let error = lower_native_residual_to_program(&module, NativeProductTarget::Python).expect_err("非法模块名必须失败闭合");
         assert!(error.contains("C 标识符"), "unexpected error: {error}");
+    }
+
+    fn residual_with_method(method: NativeResidualFunction) -> NativeResidualModule {
+        let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
+        module.name = "demo".into();
+        module.functions.push(method);
+        module
+    }
+
+    /// 方法表：每个非 `main` 残差函数变成一个 `PyMethodDef`，`ml_meth` 指向
+    /// `PyArg_ParseTuple` 包装体，`ml_name` 指向数据段里 NUL 结尾的方法名。
+    #[test]
+    fn python_extension_builds_a_method_table() {
+        let module = residual_with_method(NativeResidualFunction {
+            name: "add".into(),
+            parameters: vec!["a".into(), "b".into()],
+            ops: vec![
+                NativeResidualOp::Load("a".into()),
+                NativeResidualOp::Load("b".into()),
+                NativeResidualOp::Add,
+                NativeResidualOp::Ret,
+            ],
+        });
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::Python).expect("lower python methods");
+        assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_py_wrap_add"), "必须生成方法包装体");
+        assert!(image.elf_imports.iter().any(|symbol| symbol == "PyArg_ParseTuple"), "方法实参必须经宿主解析");
+        assert!(image.elf_imports.iter().any(|symbol| symbol == "PyLong_FromLong"), "返回值必须包成 Python int");
+        // 方法名与格式串必须在数据段里以 NUL 结尾。
+        assert!(image.data.windows(4).any(|window| window == b"add\0"), "方法名必须进入数据段");
+        assert!(image.data.windows(6).any(|window| window == b"ll:add"), "格式串必须带方法名");
+        // 编码器必须把命名函数解析成 `.text` 偏移；容器不应看到 `Function`。
+        assert!(
+            image.data_relocations.iter().all(|(_, target)| matches!(target, NativeDataTarget::Text(_) | NativeDataTarget::Data(_))),
+            "命名函数重定位必须在编码阶段解析为节内偏移"
+        );
+        assert_eq!(image.data_relocations.len(), 4, "模块名、m_methods、方法名与 ml_meth 各一条重定位");
+        let bytes = emit_native_python_extension(&module).expect("emit python methods extension");
+        let haystack = String::from_utf8_lossy(&bytes);
+        assert!(haystack.contains("__nyar_py_wrap_add"));
+        assert!(haystack.contains("PyArg_ParseTuple"));
+    }
+
+    #[test]
+    fn python_methods_fail_closed_beyond_the_host_argument_window() {
+        let module = residual_with_method(NativeResidualFunction {
+            name: "many".into(),
+            parameters: vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()],
+            ops: vec![NativeResidualOp::Load("a".into()), NativeResidualOp::Ret],
+        });
+        let error = lower_native_residual_to_program(&module, NativeProductTarget::Python).expect_err("超出行参窗口必须失败闭合");
+        assert!(error.contains("PyArg_ParseTuple"), "unexpected error: {error}");
+        assert!(error.contains("many"), "错误必须指名方法: {error}");
+    }
+
+    #[test]
+    fn python_methods_fail_closed_for_string_results() {
+        let module = residual_with_method(NativeResidualFunction {
+            name: "label".into(),
+            parameters: Vec::new(),
+            ops: vec![NativeResidualOp::PushString("x".into()), NativeResidualOp::Ret],
+        });
+        let error = lower_native_residual_to_program(&module, NativeProductTarget::Python).expect_err("字符串结果必须失败闭合");
+        assert!(error.contains("label"), "unexpected error: {error}");
     }
 }

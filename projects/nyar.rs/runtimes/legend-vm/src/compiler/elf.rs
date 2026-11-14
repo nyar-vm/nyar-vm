@@ -27,14 +27,18 @@ impl ElfCompiler {
         let data_relocations: Vec<SharedElfDataRelocation> = image
             .data_relocations
             .iter()
-            .map(|(offset, target)| SharedElfDataRelocation {
-                offset: *offset,
-                target: match target {
+            .map(|(offset, target)| {
+                let target = match target {
                     NativeDataTarget::Text(offset) => SharedElfDataTarget::Text(*offset),
                     NativeDataTarget::Data(offset) => SharedElfDataTarget::Data(*offset),
-                },
+                    // 编码器在产出镜像时已把命名函数解析成 `.text` 偏移；容器不解析名字。
+                    NativeDataTarget::Function(name) => {
+                        return Err(miette!("数据段重定位仍引用未解析的函数 `{name}`：编码器必须先冻结布局"));
+                    }
+                };
+                Ok(SharedElfDataRelocation { offset: *offset, target })
             })
-            .collect();
+            .collect::<Result<_>>()?;
         let data_references: Vec<SharedElfDataReference> = image
             .data_references
             .iter()
