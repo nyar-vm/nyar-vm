@@ -988,35 +988,6 @@ pub fn lower_native_residual_to_program(
         }
         _ => String::new(),
     };
-    // 导入面：OS 决定 effect 原语与导入 DLL，模块类型决定宿主 API。
-    let mut imports: Vec<(String, String)> = Vec::new();
-    if has_print && target.os() == NativeProductOs::Windows {
-        imports.push(("kernel32".to_string(), "WriteFile".to_string()));
-        if host.is_some() {
-            // 扩展模块没有宿主传入的句柄：自己取 stdout 句柄。
-            imports.push(("kernel32".to_string(), "GetStdHandle".to_string()));
-        }
-    }
-    match host {
-        Some(NativeHostModule::Node) => {
-            imports.push((host_library.clone(), "napi_create_int64".to_string()));
-            imports.push((host_library.clone(), "napi_set_named_property".to_string()));
-            if has_methods {
-                for symbol in ["napi_create_function", "napi_get_cb_info", "napi_get_value_int64", "napi_throw_type_error"] {
-                    imports.push((host_library.clone(), symbol.to_string()));
-                }
-            }
-        }
-        Some(NativeHostModule::Python) => {
-            imports.push((host_library.clone(), "PyModule_Create2".to_string()));
-            imports.push((host_library.clone(), "PyModule_AddIntConstant".to_string()));
-            if has_methods {
-                imports.push((host_library.clone(), "PyArg_ParseTuple".to_string()));
-                imports.push((host_library.clone(), "PyLong_FromLong".to_string()));
-            }
-        }
-        None => {}
-    }
     // 普通库的 effect 通道由宿主传入；扩展模块自己写 stdout。
     let sink_from_parameter = has_print && target.sink_from_parameter();
 
@@ -1048,6 +1019,7 @@ pub fn lower_native_residual_to_program(
     // 目标的产物不需要可写数据。
     let mut data = Vec::new();
     let mut data_relocations: Vec<(u32, NativeDataTarget)> = Vec::new();
+    let mut string_methods = false;
     match host {
         Some(NativeHostModule::Node) => {
             require_extension_main("Node addon", module, &lowered)?;
@@ -1060,6 +1032,7 @@ pub fn lower_native_residual_to_program(
             )?;
             let (node_data, value_name_offset, method_name_offsets, error_message_offset) = node_module_data(&methods);
             data = node_data;
+            string_methods = methods.iter().any(|method| method.returns_string);
             for method in &methods {
                 functions.push(node_method_wrapper(method, error_message_offset, target.os(), &host_library));
             }
@@ -1083,10 +1056,52 @@ pub fn lower_native_residual_to_program(
             let (definition, relocations, value_offset, format_offsets) = python_module_data(&module.name, &methods);
             data = definition;
             data_relocations = relocations;
+            string_methods = methods.iter().any(|method| method.returns_string);
             for (method, format_offset) in methods.iter().zip(format_offsets) {
-                functions.push(python_method_wrapper(&method.name, method.parameters, format_offset, &host_library));
+                functions.push(python_method_wrapper(
+                    &method.name,
+                    method.parameters,
+                    format_offset,
+                    &host_library,
+                    method.returns_string,
+                ));
             }
             functions.push(python_module_registration(&module.name, value_offset, &host_library));
+        }
+        None => {}
+    }
+    // 导入面：OS 决定 effect 原语与导入 DLL，模块类型决定宿主 API。
+    let mut imports: Vec<(String, String)> = Vec::new();
+    if has_print && target.os() == NativeProductOs::Windows {
+        imports.push(("kernel32".to_string(), "WriteFile".to_string()));
+        if host.is_some() {
+            // 扩展模块没有宿主传入的句柄：自己取 stdout 句柄。
+            imports.push(("kernel32".to_string(), "GetStdHandle".to_string()));
+        }
+    }
+    match host {
+        Some(NativeHostModule::Node) => {
+            imports.push((host_library.clone(), "napi_create_int64".to_string()));
+            imports.push((host_library.clone(), "napi_set_named_property".to_string()));
+            if has_methods {
+                for symbol in ["napi_create_function", "napi_get_cb_info", "napi_get_value_int64", "napi_throw_type_error"] {
+                    imports.push((host_library.clone(), symbol.to_string()));
+                }
+            }
+            if string_methods {
+                imports.push((host_library.clone(), "napi_create_string_utf8".to_string()));
+            }
+        }
+        Some(NativeHostModule::Python) => {
+            imports.push((host_library.clone(), "PyModule_Create2".to_string()));
+            imports.push((host_library.clone(), "PyModule_AddIntConstant".to_string()));
+            if has_methods {
+                imports.push((host_library.clone(), "PyArg_ParseTuple".to_string()));
+                imports.push((host_library.clone(), "PyLong_FromLong".to_string()));
+            }
+            if string_methods {
+                imports.push((host_library.clone(), "PyUnicode_FromStringAndSize".to_string()));
+            }
         }
         None => {}
     }
@@ -1161,10 +1176,12 @@ struct ExtensionMethod {
     name: String,
     /// 整数形参个数。
     parameters: usize,
+    /// 返回值是否为静态字符串描述符（宿主侧转换为原生字符串）。
+    returns_string: bool,
 }
 
-/// 收集可暴露方法（语言无关策略）：除 `main` 外的残差函数，必须是整数/布尔返回且
-/// 形参不超过该宿主的参数窗口。不支持的形状显式失败，不悄悄丢方法。
+/// 收集可暴露方法（语言无关策略）：除 `main` 外的残差函数，返回整数/布尔或
+/// 静态字符串描述符，且形参不超过该宿主的参数窗口。不支持的形状显式失败。
 ///
 /// 各宿主只提供自己的 `host` 标签与 `window` 说明；可暴露集合的判定只有这一份。
 fn extension_methods(
@@ -1179,15 +1196,18 @@ fn extension_methods(
         if function.name == "main" {
             continue;
         }
-        match return_kind {
-            Some(ProductValueKind::Int | ProductValueKind::Bool) => {}
+        let returns_string = match return_kind {
+            Some(ProductValueKind::Int | ProductValueKind::Bool) => false,
+            // 静态字符串描述符由宿主侧转换（`PyUnicode_FromStringAndSize` /
+            // `napi_create_string_utf8`）；描述符属于镜像，不需要释放。
+            Some(ProductValueKind::Str(_)) => true,
             other => {
                 return Err(format!(
-                    "{host}方法 `{}` 的返回载体是 `{other:?}`：只有整数/布尔能暴露为宿主整数",
+                    "{host}方法 `{}` 的返回载体是 `{other:?}`：只支持整数/布尔或静态字符串",
                     function.name
                 ));
             }
-        }
+        };
         let parameters = module.function(&function.name).map(|function| function.parameters.len()).unwrap_or(0);
         if parameters > max_parameters {
             return Err(format!(
@@ -1195,7 +1215,7 @@ fn extension_methods(
                 function.name
             ));
         }
-        methods.push(ExtensionMethod { name: function.name.clone(), parameters });
+        methods.push(ExtensionMethod { name: function.name.clone(), parameters, returns_string });
     }
     Ok(methods)
 }
@@ -1263,7 +1283,13 @@ fn push_cstring(data: &mut Vec<u8>, value: &str) {
 ///
 /// `PyArg_ParseTuple` 返回 0 表示解析失败（类型/个数不符），此时宿主已经设置异常，
 /// 包装体原样返回 `NULL`，不伪造结果。布尔按 1/0 返回。
-fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32, dll: &str) -> NativeTextProgramFunction {
+fn python_method_wrapper(
+    method: &str,
+    parameters: usize,
+    format_offset: u32,
+    dll: &str,
+    returns_string: bool,
+) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     const ARGS_SLOT: u16 = 0;
     const FORMAT_SLOT: u16 = 1;
@@ -1271,6 +1297,9 @@ fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32, dl
     const FIRST_ARGUMENT_SLOT: u16 = 3;
     const FAIL_LABEL: u32 = 0;
     let argument_slot = |index: usize| FIRST_ARGUMENT_SLOT + index as u16;
+    let descriptor_slot = FIRST_ARGUMENT_SLOT + parameters as u16;
+    let pointer_slot = descriptor_slot + 1;
+    let length_slot = descriptor_slot + 2;
 
     let mut instructions = vec![
         // 保存 `args`（self 不参与残差语义）。
@@ -1293,17 +1322,36 @@ fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32, dl
         instructions.push(Lir::LoadSlotToArg { slot: argument_slot(index), index: index as u8 });
     }
     instructions.push(Lir::Call(method.to_string()));
-    instructions.push(Lir::StoreSlot(TEMP_SLOT));
-    instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 0 });
-    instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyLong_FromLong".to_string() });
-    instructions.push(Lir::Return);
+    if returns_string {
+        // 残差返回的是镜像内字符串描述符地址；宿主侧复制成 `str`，描述符本身
+        // 属于镜像、永不释放，因此不需要跨 CRT 的所有权转移。
+        instructions.extend([
+            Lir::StoreSlot(descriptor_slot),
+            Lir::LoadSlot(descriptor_slot),
+            Lir::AddRaxImmediate(8),
+            Lir::StoreSlot(pointer_slot),
+            Lir::LoadSlot(descriptor_slot),
+            Lir::LoadDescriptorLength,
+            Lir::StoreSlot(length_slot),
+            Lir::LoadSlotToArg { slot: pointer_slot, index: 0 },
+            Lir::LoadSlotToArg { slot: length_slot, index: 1 },
+            Lir::CallImport { module: dll.to_string(), field: "PyUnicode_FromStringAndSize".to_string() },
+            Lir::Return,
+        ]);
+    }
+    else {
+        instructions.push(Lir::StoreSlot(TEMP_SLOT));
+        instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 0 });
+        instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyLong_FromLong".to_string() });
+        instructions.push(Lir::Return);
+    }
     instructions.push(Lir::Label(FAIL_LABEL));
     instructions.push(Lir::LoadI64(0));
     instructions.push(Lir::Return);
 
     NativeTextProgramFunction {
         name: python_wrapper_name(method),
-        slot_count: FIRST_ARGUMENT_SLOT + parameters as u16,
+        slot_count: length_slot + 1,
         instructions,
     }
 }
@@ -1470,6 +1518,11 @@ fn node_method_wrapper(
     const ARGV_FIRST_SLOT: u16 = 5;
     const RESULT_SLOT: u16 = 11;
     const OUT_FIRST_SLOT: u16 = 12;
+    // 字符串返回的额外帧槽：`argv`/out 区最多到 17，以下从 18 起，互不重叠。
+    const DESCRIPTOR_SLOT: u16 = 18;
+    const POINTER_SLOT: u16 = 19;
+    const LENGTH_SLOT: u16 = 20;
+    const STRING_SLOT: u16 = 21;
     const FAIL_LABEL: u32 = 0;
     const CALLBACK_OK_LABEL: u32 = 1;
     let argv_slot = |index: usize| ARGV_FIRST_SLOT + NODE_METHOD_MAX_PARAMETERS as u16 - 1 - index as u16;
@@ -1535,20 +1588,46 @@ fn node_method_wrapper(
     for index in 0..parameters {
         instructions.push(Lir::LoadSlotToArg { slot: out_slot(index), index: index as u8 });
     }
+    instructions.push(Lir::Call(method.name.clone()));
+    if method.returns_string {
+        // 镜像内字符串描述符 → Node 字符串；描述符永不释放，无需所有权转移。
+        instructions.extend([
+            Lir::StoreSlot(DESCRIPTOR_SLOT),
+            Lir::LoadSlot(DESCRIPTOR_SLOT),
+            Lir::AddRaxImmediate(8),
+            Lir::StoreSlot(POINTER_SLOT),
+            Lir::LoadSlot(DESCRIPTOR_SLOT),
+            Lir::LoadDescriptorLength,
+            Lir::StoreSlot(LENGTH_SLOT),
+            // `napi_create_string_utf8(env, ptr, len, &out)`。
+            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+            Lir::LoadSlotToArg { slot: POINTER_SLOT, index: 1 },
+            Lir::LoadSlotToArg { slot: LENGTH_SLOT, index: 2 },
+            Lir::LoadSlotAddress(STRING_SLOT),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
+            Lir::CallImport { module: dll.to_string(), field: "napi_create_string_utf8".to_string() },
+            Lir::LoadSlot(STRING_SLOT),
+            Lir::Return,
+        ]);
+    }
+    else {
+        instructions.extend([
+            Lir::StoreSlot(RESULT_SLOT),
+            // `napi_create_int64(env, value, &result)`。
+            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+            Lir::LoadSlotToArg { slot: RESULT_SLOT, index: 1 },
+            Lir::LoadSlotAddress(RESULT_SLOT),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+            Lir::CallImport { module: dll.to_string(), field: "napi_create_int64".to_string() },
+            Lir::LoadSlot(RESULT_SLOT),
+            Lir::Return,
+        ]);
+    }
+    // `napi_throw_type_error(env, NULL, message)`。
     instructions.extend([
-        Lir::Call(method.name.clone()),
-        Lir::StoreSlot(RESULT_SLOT),
-        // `napi_create_int64(env, value, &result)`。
-        Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
-        Lir::LoadSlotToArg { slot: RESULT_SLOT, index: 1 },
-        Lir::LoadSlotAddress(RESULT_SLOT),
-        Lir::StoreSlot(TEMP_SLOT),
-        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-        Lir::CallImport { module: dll.to_string(), field: "napi_create_int64".to_string() },
-        Lir::LoadSlot(RESULT_SLOT),
-        Lir::Return,
         Lir::Label(FAIL_LABEL),
-        // `napi_throw_type_error(env, NULL, message)`。
         Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
         Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 1 },
         Lir::LoadDataAddress(error_message_offset),
@@ -1561,7 +1640,7 @@ fn node_method_wrapper(
 
     NativeTextProgramFunction {
         name: node_wrapper_name(&method.name),
-        slot_count: OUT_FIRST_SLOT + parameters as u16,
+        slot_count: STRING_SLOT + 1,
         instructions,
     }
 }
@@ -2474,15 +2553,26 @@ mod tests {
         assert!(error.contains("many"), "错误必须指名方法: {error}");
     }
 
+    /// 字符串返回的方法：镜像内描述符由宿主侧复制成原生字符串，不跨 CRT 释放。
     #[test]
-    fn python_methods_fail_closed_for_string_results() {
+    fn methods_can_return_static_strings() {
         let module = residual_with_method(NativeResidualFunction {
-            name: "label".into(),
+            name: "greet".into(),
             parameters: Vec::new(),
-            ops: vec![NativeResidualOp::PushString("x".into()), NativeResidualOp::Ret],
+            ops: vec![NativeResidualOp::PushString("hi".into()), NativeResidualOp::Ret],
         });
-        let error = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python)).expect_err("字符串结果必须失败闭合");
-        assert!(error.contains("label"), "unexpected error: {error}");
+        let image = lower_native_residual_to_program(
+            &module,
+            NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python),
+        )
+        .expect("字符串方法必须可暴露");
+        assert!(image.elf_imports.iter().any(|symbol| symbol == "PyUnicode_FromStringAndSize"));
+        let node = lower_native_residual_to_program(
+            &module,
+            NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Node),
+        )
+        .expect("Node 也必须支持字符串方法");
+        assert!(node.elf_imports.iter().any(|symbol| symbol == "napi_create_string_utf8"));
     }
 
     /// Windows 的 `PyArg_ParseTuple` 只剩 rdx/r8 两个寄存器给 out-指针，因此

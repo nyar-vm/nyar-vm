@@ -947,6 +947,14 @@ mod python_extension_abi {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 字符串返回：残差返回镜像内描述符，包装体复制成 Python `str`。
+    #[test]
+    fn python_method_returns_a_static_string() {
+        let dir = extension_dir("function greet()\n  return \"hi\"\nend\nreturn 42\n", "string");
+        assert_eq!(run_python(&dir, "print(demo.greet()); print(type(demo.greet()).__name__)"), "hi\nstr");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn python_extension_rejects_non_integer_results() {
         let runner = legend_vm::LegendVmRunner::new();
@@ -1000,12 +1008,21 @@ mod windows_extension_abi {
     fn windows_python_extension_imports_and_marshals_methods() {
         let dir = extension_dir("value");
         let runner = legend_vm::LegendVmRunner::new();
-        let residual =
-            runner.specialize_native("lua", "function add(a, b)\n  return a + b\nend\nreturn 42\n", MODULE_NAME).expect("specialize");
+        let residual = runner
+            .specialize_native(
+                "lua",
+                "function add(a, b)\n  return a + b\nend\nfunction greet()\n  return \"hi\"\nend\nreturn 42\n",
+                MODULE_NAME,
+            )
+            .expect("specialize");
         let library = python_library();
         let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
-        assert_eq!(run_python(&dir, "print(demo.value)\nprint(demo.add(2, 3))"), "42\n5", "`.pyd` 必须能被真实 CPython 导入");
+        assert_eq!(
+            run_python(&dir, "print(demo.value)\nprint(demo.add(2, 3))\nprint(demo.greet())"),
+            "42\n5\nhi",
+            "`.pyd` 必须能被真实 CPython 导入"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1025,16 +1042,21 @@ mod windows_extension_abi {
     fn windows_node_addon_exports_value_and_methods() {
         let dir = extension_dir("node");
         let runner = legend_vm::LegendVmRunner::new();
-        let residual =
-            runner.specialize_native("lua", "function add(a, b)\n  return a + b\nend\nreturn 42\n", MODULE_NAME).expect("specialize");
+        let residual = runner
+            .specialize_native(
+                "lua",
+                "function add(a, b)\n  return a + b\nend\nfunction greet()\n  return \"hi\"\nend\nreturn 42\n",
+                MODULE_NAME,
+            )
+            .expect("specialize");
         let bytes = emit_native_node_addon(&residual, NativeProductOs::Windows).expect("emit node dll");
         let path = dir.join("addon.node");
         std::fs::write(&path, bytes).expect("write .node");
         let script = format!(
-            "const m = require(String.raw`{}`); console.log(m.value); console.log(m.add(2, 3));",
+            "const m = require(String.raw`{}`); console.log(m.value); console.log(m.add(2, 3)); console.log(m.greet());",
             path.display()
         );
-        assert_eq!(run("node", &["-e", &script]), "42\n5", "`.node` 必须能被真实 Node 加载");
+        assert_eq!(run("node", &["-e", &script]), "42\n5\nhi", "`.node` 必须能被真实 Node 加载");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
