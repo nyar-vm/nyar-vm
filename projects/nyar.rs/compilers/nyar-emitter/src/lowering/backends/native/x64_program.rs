@@ -334,8 +334,6 @@ pub fn encode_native_text_program_with_imports(
             let len = u32::try_from(value.len()).map_err(|_| "native 静态字符串长度超出 u32".to_string())?;
             text.extend_from_slice(&len.to_le_bytes());
             text.extend_from_slice(value.as_bytes());
-            // 尾部 NUL 让 `LoadStringPtr` 同时可作宿主 C 字符串（长度字段仍不含它）。
-            text.push(0);
         }
         for (field, index, addend) in string_uses {
             let target = descriptor_offsets[index] as i64 + i64::from(addend);
