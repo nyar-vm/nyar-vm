@@ -38,6 +38,11 @@ pub struct JvmBinaryBackendInput {
     pub companion_classes: Vec<JvmClassFile>,
     /// 导出入口的 managed ABI 契约（若有）。
     pub managed_abi: Option<ManagedAbiContract>,
+    /// 程序入口（`[main]`）的 argv launcher 内部类名。
+    ///
+    /// 由 lowering 按计划的入口身份生成；驱动层据此产出 `java -cp ... <launcher>`
+    /// 运行契约，禁止扫描主类里是否恰好存在名为 `main` 的方法。
+    pub entry_launcher: Option<String>,
     /// 后端已冻结的运行契约；驱动层按契约原样上报。
     pub run_contracts: Vec<DriverRunContract>,
 }

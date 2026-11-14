@@ -36,8 +36,7 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
         if requirement.host_boundary != HostProjectionBoundary::Jvm {
             return Err(format!("`JVM` 后端输入宿主与规划需求不一致：requirement={:?}", requirement.host_boundary));
         }
-        let has_launcher_entry =
-            input.class_file.methods.iter().any(|method| method.name == "main" && method.descriptor.parameter_types.is_empty());
+        let entry_launcher = input.entry_launcher.clone();
         let provided_contracts = std::mem::take(&mut input.run_contracts);
         let mut managed_abi = input.managed_abi.take();
         if let Some(contract) = managed_abi.as_mut() {
@@ -75,12 +74,13 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
                 })
                 .collect()
         }
-        else if has_launcher_entry {
+        else if let Some(launcher) = &entry_launcher {
+            // 入口身份来自 lowering 冻结的计划；launcher 是明确的 argv 分发类。
             vec![DriverRunContract {
                 logical_entry: "main".to_string(),
                 physical_entry: format!("{}.jar", request.artifact_name),
                 invocation: "java".to_string(),
-                validate: format!("java -jar {}.jar", request.artifact_name),
+                validate: format!("java -cp {}.jar {}", request.artifact_name, launcher.replace('/', ".")),
             }]
         }
         else {

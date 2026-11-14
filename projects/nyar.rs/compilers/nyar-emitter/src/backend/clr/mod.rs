@@ -90,10 +90,10 @@ impl ClrBinaryBackend {
     fn compile_artifact(&self, input: ClrBinaryBackendInput, options: &CompilationOptions) -> Result<ArtifactSet> {
         std::fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
         let image_kind = image_kind(&input);
-        // 库镜像带了托管入口点时仍是 `.dll`；`dotnet exec <dll>` 依赖同目录的
-        // runtimeconfig 才能启动，因此在写产物时一并生成。
-        let library_with_entry_point =
-            image_kind == ClrImageKind::DynamicLibrary && input.module.global_methods.iter().any(|method| method.is_entry_point);
+        // 任何带托管入口点、将由 `dotnet` 启动的镜像（可执行 `.exe` 或带合成入口的
+        // `.dll`）都需要同目录的 runtimeconfig；框架依赖镜像缺它不是可选项。
+        let has_entry_point = input.module.global_methods.iter().any(|method| method.is_entry_point);
+        let library_with_entry_point = image_kind == ClrImageKind::DynamicLibrary && has_entry_point;
         let pe_image_kind = match image_kind {
             ClrImageKind::Executable => crate::transitional::binary::pe::ClrImageKind::Executable,
             // `acorn-pe` 只为 `Executable` flavor 写 CLI `EntryPointToken`；带合成入口的
@@ -115,7 +115,7 @@ impl ClrBinaryBackend {
         let artifact_path = input.output_dir.join(&relative);
         std::fs::write(&artifact_path, bytes).map_err(|e| format!("写入 CLR 产物失败：{}: {e}", artifact_path.display()))?;
 
-        if library_with_entry_point {
+        if has_entry_point {
             write_dotnet_runtime_config(&input.output_dir, &options.artifact_name)?;
         }
 

@@ -134,6 +134,10 @@ pub(crate) struct JvmLoweredFragment {
     pub companion_classes: Vec<JvmClassFile>,
     /// 导出入口 ABI 契约；没有可导出入口时为 `None`。
     pub managed_abi: Option<ManagedAbiContract>,
+    /// 程序入口（`[main]`）的 argv launcher 内部类名。
+    ///
+    /// 入口身份来自冻结的计划，而不是扫描主类里是否恰好有名为 `main` 的方法。
+    pub entry_launcher: Option<String>,
 }
 
 /// 将片段降低为单个 JVM `class`，并为每个导出入口生成 argv launcher。
@@ -187,7 +191,18 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
         class_file.methods.push(lower_function(submission, &internal_name, &view.function, &method, &method_plans, &operator_by_instance)?);
     }
 
-    let (launcher_classes, managed_abi) = build_managed_abi_surface(&class_file, plan.export_names(), &method_plans, &logical_signatures)?;
+    // 程序入口只由计划身份决定；入口名不参与「是否有 launcher」的判定。
+    let entry_binding = plan.entry_operation().and_then(|entry| {
+        if plan.export_names().contains_key(&entry) {
+            return None;
+        }
+        plan.abi_name_for_instance(entry).map(|name| {
+            let logical = name.parts().last().map(|part| part.as_str().to_string()).unwrap_or_else(|| "main".to_string());
+            (entry, logical)
+        })
+    });
+    let (launcher_classes, managed_abi, entry_launcher) =
+        build_managed_abi_surface(&class_file, plan.export_names(), &method_plans, &logical_signatures, entry_binding)?;
     let mut companion_classes = build_layout_classes(plan.aggregate_layouts())?;
     companion_classes.extend(build_sum_classes(submission)?);
     companion_classes.extend(launcher_classes);
@@ -200,7 +215,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
             ));
         }
     }
-    Ok(JvmLoweredFragment { class_file, companion_classes, managed_abi })
+    Ok(JvmLoweredFragment { class_file, companion_classes, managed_abi, entry_launcher })
 }
 
 /// 为每个导出入口生成 argv launcher，并汇总 managed ABI 契约。
@@ -212,7 +227,8 @@ fn build_managed_abi_surface(
     export_names: &BTreeMap<ItemInstanceId, String>,
     method_plans: &BTreeMap<ItemInstanceId, JvmMethodPlan>,
     logical_signatures: &BTreeMap<ItemInstanceId, (Vec<NyarType>, NyarType)>,
-) -> Result<(Vec<JvmClassFile>, Option<ManagedAbiContract>)> {
+    entry: Option<(ItemInstanceId, String)>,
+) -> Result<(Vec<JvmClassFile>, Option<ManagedAbiContract>, Option<String>)> {
     let mut entries = Vec::with_capacity(export_names.len());
     let mut companion_classes = Vec::with_capacity(export_names.len());
     let mut used_launcher_names = BTreeSet::new();
@@ -251,6 +267,33 @@ fn build_managed_abi_surface(
         });
         companion_classes.push(launcher);
     }
+    // 程序入口 launcher：入口身份冻结在计划里，不依赖方法名扫描。
+    //
+    // argv launcher 只在入口签名可被 `main(String[])` 表达时生成；引用形参等
+    // 无法从 argv 编组的入口仍按普通函数降低，但不伪造 launcher（包装能力
+    // 属于平台，不能替入口发明形参）。
+    let mut entry_launcher = None;
+    if let Some((instance, logical_entry)) = entry {
+        let method = method_plans
+            .get(&instance)
+            .ok_or_else(|| format!("JVM 程序入口 `{logical_entry}` 的实例 `{instance:?}` 没有已降低方法"))?;
+        let lowered = class_file
+            .methods
+            .iter()
+            .find(|candidate| candidate.name == method.name && candidate.descriptor == method.descriptor)
+            .ok_or_else(|| format!("JVM 程序入口 `{logical_entry}` 的方法 `{}` 不在主类中", method.name))?;
+        let argv_expressible = logical_signatures
+            .get(&instance)
+            .is_some_and(|(params, return_type)| params.iter().chain(std::iter::once(return_type)).all(|ty| managed_logical_type_name(ty).is_ok()));
+        if argv_expressible {
+            if lowered.access_flags & (JVM_ACC_PUBLIC | JVM_ACC_STATIC) != (JVM_ACC_PUBLIC | JVM_ACC_STATIC) {
+                return Err(format!("JVM 程序入口 `{logical_entry}` 的方法 `{}` 不是 `public static`，拒绝生成 launcher", method.name));
+            }
+            let launcher_class = managed_launcher_internal_name(&logical_entry, &mut used_launcher_names)?;
+            companion_classes.push(build_managed_launcher_class(&launcher_class, &class_file.internal_name, method)?);
+            entry_launcher = Some(launcher_class);
+        }
+    }
     let managed_abi = if entries.is_empty() {
         None
     }
@@ -258,7 +301,7 @@ fn build_managed_abi_surface(
         // 产物文件名由驱动层最终确定；这里先留空，桥接层负责补全并刷新摘要。
         Some(ManagedAbiContract::new("jvm", String::new(), entries))
     };
-    Ok((companion_classes, managed_abi))
+    Ok((companion_classes, managed_abi, entry_launcher))
 }
 
 /// managed ABI 的逻辑标量类型名：只来自冻结的 `NyarType` 签名，保留 signedness。

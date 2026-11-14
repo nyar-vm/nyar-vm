@@ -12,23 +12,26 @@ use std::process::Command;
 use tempfile::tempdir;
 
 use crate::support::{
-    compilation_options, demo_jvm_input, demo_wasm_input, demo_wasm_input_with_imports, demo_wasm_input_with_preview, jvm_requirement,
-    wasm_requirement,
+    compilation_options, demo_jvm_backend_input, demo_wasm_input, demo_wasm_input_with_imports, demo_wasm_input_with_preview,
+    jvm_requirement, wasm_requirement,
 };
+use nyar_emitter::LoweredBackendInput;
 
 #[test]
-#[ignore = "JVM bundled driver is frozen until Oak/Acorn MIR lowering lands"]
 fn creates_jvm_run_contract_via_bundled_compiler() {
     let output_dir = tempdir().expect("temp dir");
     let options = compilation_options(BinaryTarget::new(TargetFamily::Jvm, BinaryArch::Any, BinaryFlavor::ManagedClr), "demo");
-    let input = demo_jvm_input(output_dir.path());
+    let mut backend_input = demo_jvm_backend_input(output_dir.path());
+    // 程序入口 launcher 由 lowering 冻结为显式类名；驱动层不扫描方法名。
+    backend_input.entry_launcher = Some("nyar/invoke/main".to_string());
+    let input = nyar_emitter::LoweredBackendInput::jvm(backend_input);
     let report = compile_lowered_backend_input("demo", jvm_requirement(options.target.clone()), input, false, &options).expect("compile ok");
 
     let contract = report.run_contracts.into_iter().next().expect("missing run contract");
     assert_eq!(contract.physical_entry, "demo.jar");
     assert_eq!(contract.invocation, "java");
-    assert_eq!(contract.validate, "java -jar demo.jar");
-    assert!(contract.logical_entry.ends_with(".Main") || contract.logical_entry == "Main");
+    assert_eq!(contract.validate, "java -cp demo.jar nyar.invoke.main");
+    assert_eq!(contract.logical_entry, "main");
 }
 
 #[test]
@@ -148,7 +151,7 @@ fn rejects_unsupported_backend_requirement() {
     let output_dir = tempdir().expect("temp dir");
     let target = BinaryTarget::new(TargetFamily::Gpu, BinaryArch::X64, BinaryFlavor::Native);
     let options = compilation_options(target.clone(), "demo");
-    let input = demo_jvm_input(output_dir.path());
+    let input = LoweredBackendInput::jvm(demo_jvm_backend_input(output_dir.path()));
     let requirement = PartitionBackendRequirement {
         backend_name: "missing-backend".to_string(),
         interpreter: nyar::Identifier::new("missing"),

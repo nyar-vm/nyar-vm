@@ -172,6 +172,7 @@ fn build_driver_input(
                 emit_class_file: false,
                 companion_classes: lowered.companion_classes,
                 managed_abi: lowered.managed_abi,
+                entry_launcher: lowered.entry_launcher,
                 run_contracts: Vec::new(),
             }))
         }

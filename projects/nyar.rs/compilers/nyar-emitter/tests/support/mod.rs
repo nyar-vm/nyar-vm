@@ -197,6 +197,7 @@ pub fn demo_jvm_backend_input(output_dir: &Path) -> nyar_emitter::nyar_backend_j
         emit_class_file: true,
         companion_classes: Vec::new(),
         managed_abi: None,
+        entry_launcher: None,
         run_contracts: Vec::new(),
     }
 }
