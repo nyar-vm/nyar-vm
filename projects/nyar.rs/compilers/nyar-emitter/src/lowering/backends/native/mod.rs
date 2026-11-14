@@ -22,7 +22,10 @@ mod x64_lir;
 mod x64_program;
 pub mod x86_64;
 
-pub use x64_program::{encode_native_text_program, encode_native_text_program_with_data, encode_native_text_program_with_imports};
+pub use x64_program::{
+    encode_native_text_program, encode_native_text_program_with_data, encode_native_text_program_with_dependencies,
+    encode_native_text_program_with_imports,
+};
 
 use nyar::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget};
 
@@ -285,6 +288,8 @@ pub struct NativeTextProgramImage {
     pub data_relocations: Vec<(u32, NativeDataTarget)>,
     /// `.text` 内指向 `.data` 的 `rel32` 引用：`(字段偏移, 数据段偏移)`。
     pub data_references: Vec<(u32, u32)>,
+    /// 产物声明依赖的宿主库 `SONAME`（`ELF` 写成 `DT_NEEDED`；`PE` 走导入表，忽略）。
+    pub native_dependencies: Vec<String>,
 }
 
 /// 已编码的原生文本函数。

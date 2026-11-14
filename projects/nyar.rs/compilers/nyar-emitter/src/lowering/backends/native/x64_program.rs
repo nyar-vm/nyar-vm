@@ -122,6 +122,18 @@ pub fn encode_native_text_program_with_data(
     data: &[u8],
     data_relocations: &[(u32, NativeDataTarget)],
 ) -> Result<NativeTextProgramImage> {
+    encode_native_text_program_with_dependencies(functions, imports, abi, data, data_relocations, &[])
+}
+
+/// 同 [`encode_native_text_program_with_data`]，并声明产物依赖的宿主库 `SONAME`。
+pub fn encode_native_text_program_with_dependencies(
+    functions: &[NativeTextProgramFunction],
+    imports: &[(String, String)],
+    abi: NativeAbi,
+    data: &[u8],
+    data_relocations: &[(u32, NativeDataTarget)],
+    native_dependencies: &[String],
+) -> Result<NativeTextProgramImage> {
     if functions.is_empty() {
         return Err("native text program has no functions".to_string());
     }
@@ -473,5 +485,6 @@ pub fn encode_native_text_program_with_data(
         data: data.to_vec(),
         data_relocations: resolved_relocations,
         data_references,
+        native_dependencies: native_dependencies.to_vec(),
     })
 }
