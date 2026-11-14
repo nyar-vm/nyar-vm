@@ -75,12 +75,14 @@ pub(crate) mod numeric;
 mod operands;
 mod operator;
 mod representation;
+pub(crate) mod singleton;
 mod strings;
 mod type_registry;
 
 // ── Facade pub(crate) entrances (wasm 后端唯一对外入口) ──────────────────
 
 pub(crate) use entry::{augment_wasm_with_value_aggregate_metadata, lower_fragment_mir_to_wasm_module, lower_fragment_mir_to_wasm_module_for};
+pub(crate) use singleton::{append_singleton_metadata_sections, augment_wasm_with_singleton_accessors, singleton_metadata_line};
 
 /// Wasm 物理导出 ABI 的私有派生点。
 ///

@@ -104,8 +104,8 @@ pub fn lower_fragment_to_wasm_module_for(
         mir::lower_fragment_mir_to_wasm_module_for(submission, export_name, host_boundary, wasi_preview, wasm_package_kind)?;
 
     prepend_nyar_custom_sections(&mut module, submission);
-    super::singleton::append_singleton_metadata_sections(&mut module, submission);
-    super::singleton::augment_wasm_with_singleton_accessors(&mut module, submission)
+    mir::singleton::append_singleton_metadata_sections(&mut module, submission);
+    mir::singleton::augment_wasm_with_singleton_accessors(&mut module, submission)
         .map_err(|error| format!("singleton contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
     mir::augment_wasm_with_value_aggregate_metadata(&mut module, submission);
     Ok((module, imports))

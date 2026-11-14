@@ -94,18 +94,18 @@ pub(crate) fn testing_mir_lowering_context(submission: &FragmentSubmission) -> R
 pub(crate) const TESTING_WASM_GC_ANYREF: u8 = wasm::WASM_GC_ANYREF;
 
 pub(crate) fn testing_append_singleton_metadata_sections(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
-    features::singleton::append_singleton_metadata_sections(module, submission);
+    wasm::mir::singleton::append_singleton_metadata_sections(module, submission);
 }
 
 pub(crate) fn testing_augment_wasm_with_singleton_accessors(
     module: &mut WasmBinaryModule,
     submission: &FragmentSubmission,
 ) -> std::result::Result<(), features::semantic_mir_contract::SemanticMirContractError> {
-    features::singleton::augment_wasm_with_singleton_accessors(module, submission)
+    wasm::mir::singleton::augment_wasm_with_singleton_accessors(module, submission)
 }
 
 pub(crate) fn testing_singleton_metadata_line(plan: &nyar_types::SingletonInstancePlan) -> String {
-    features::singleton::singleton_metadata_line(plan)
+    wasm::mir::singleton::singleton_metadata_line(plan)
 }
 
 /// 将已完成语义装配的片段降低为驱动层目标输入（集成测试专用）。

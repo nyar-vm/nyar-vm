@@ -7,7 +7,7 @@ use crate::{
 use acorn_wasm::WasmOpcode;
 use nyar_types::SingletonInstancePlan;
 
-use super::semantic_mir_contract::SemanticMirContractError;
+use crate::lowering::features::semantic_mir_contract::SemanticMirContractError;
 use crate::{FragmentSubmission, lowering::backends::wasm};
 
 pub(crate) fn singleton_metadata_line(plan: &SingletonInstancePlan) -> String {
