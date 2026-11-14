@@ -41,6 +41,8 @@ pub enum NativeProductTarget {
     Linux,
     /// Linux `ELF` `.node`：SysV64，effect 通道固定 stdout（fd 1），导出 Node-API 注册函数。
     Node,
+    /// CPython 扩展 `.so`：SysV64，effect 通道固定 stdout（fd 1），导出 `PyInit_<name>`。
+    Python,
 }
 
 impl NativeProductTarget {
@@ -48,7 +50,7 @@ impl NativeProductTarget {
     fn abi(self) -> NativeAbi {
         match self {
             Self::Windows => NativeAbi::Win64,
-            Self::Linux | Self::Node => NativeAbi::SystemV64,
+            Self::Linux | Self::Node | Self::Python => NativeAbi::SystemV64,
         }
     }
 
@@ -61,7 +63,7 @@ impl NativeProductTarget {
     ///
     /// Node 扩展没有宿主传入的句柄：产物自己固定写 stdout（fd 1）。
     fn sink_from_parameter(self) -> bool {
-        !matches!(self, Self::Node)
+        !matches!(self, Self::Node | Self::Python)
     }
 
     /// 目标名称，用于结构化错误。
@@ -70,6 +72,7 @@ impl NativeProductTarget {
             Self::Windows => "Windows PE",
             Self::Linux => "Linux ELF",
             Self::Node => "Linux Node addon",
+            Self::Python => "CPython extension",
         }
     }
 }
@@ -895,6 +898,16 @@ pub fn lower_native_residual_to_program(
     module: &NativeResidualModule,
     target: NativeProductTarget,
 ) -> Result<NativeTextProgramImage, String> {
+    lower_native_residual_to_program_with_entry(module, target, None)
+}
+
+/// 同上；`python_module` 只对 [`NativeProductTarget::Python`] 生效，决定
+/// `PyInit_<name>` 导出名与模块名。
+fn lower_native_residual_to_program_with_entry(
+    module: &NativeResidualModule,
+    target: NativeProductTarget,
+    python_module: Option<&str>,
+) -> Result<NativeTextProgramImage, String> {
     if !module.is_native_bound() {
         return Err("residual is not native-bound".into());
     }
@@ -906,6 +919,9 @@ pub fn lower_native_residual_to_program(
     let imports: Vec<(String, String)> = match target {
         NativeProductTarget::Windows if has_print => vec![("kernel32".to_string(), "WriteFile".to_string())],
         NativeProductTarget::Node => vec![(String::new(), "napi_create_int32".to_string())],
+        NativeProductTarget::Python => {
+            vec![(String::new(), "PyModule_New".to_string()), (String::new(), "PyModule_AddIntConstant".to_string())]
+        }
         NativeProductTarget::Windows | NativeProductTarget::Linux => Vec::new(),
     };
     // Node 扩展的 effect 通道固定 stdout，不占宿主形参；其余目标由宿主传入句柄/fd。
@@ -935,25 +951,80 @@ pub fn lower_native_residual_to_program(
         }
     }
     let mut functions: Vec<NativeTextProgramFunction> = lowered.iter().map(|(function, _)| function.clone()).collect();
-    if target == NativeProductTarget::Node {
-        let main_return = lowered
-            .iter()
-            .find(|(function, _)| function.name == "main")
-            .and_then(|(_, kind)| kind.clone())
-            .ok_or_else(|| "Node addon residual has no `main` return value".to_string())?;
-        if !matches!(main_return, ProductValueKind::Int | ProductValueKind::Bool) {
-            return Err(format!(
-                "Node addon residual `main` returns `{main_return:?}`; only integer/boolean results can be exposed as a Node number"
-            ));
+    match target {
+        NativeProductTarget::Node => {
+            require_integer_main(module, &lowered, "Node addon")?;
+            functions.push(node_addon_registration());
         }
-        let main = module.function("main").ok_or_else(|| "Node addon residual has no `main`".to_string())?;
-        if !main.parameters.is_empty() {
-            return Err("Node addon residual `main` must not take parameters: the addon entry receives no guest inputs".to_string());
+        NativeProductTarget::Python => {
+            let name = python_module.ok_or_else(|| "CPython 扩展必须提供模块名（`PyInit_<name>`）".to_string())?;
+            if !is_c_module_name(name) {
+                return Err(format!("CPython 模块名 `{name}` 不是合法的 C 标识符"));
+            }
+            require_integer_main(module, &lowered, "CPython extension")?;
+            functions.push(python_module_init(name));
         }
-        functions.push(node_addon_registration());
+        NativeProductTarget::Windows | NativeProductTarget::Linux => {}
     }
     // 调用约定与容器都由平台显式给出，编码器不提供默认 ABI。
     encode_native_text_program_with_imports(&functions, &imports, target.abi())
+}
+
+/// 嵌入型产物（Node / Python）的入口只能暴露残差 `main` 的整数/布尔值。
+fn require_integer_main(
+    module: &NativeResidualModule,
+    lowered: &[(NativeTextProgramFunction, Option<ProductValueKind>)],
+    product: &str,
+) -> Result<(), String> {
+    let kind = lowered
+        .iter()
+        .find(|(function, _)| function.name == "main")
+        .and_then(|(_, kind)| kind.clone())
+        .ok_or_else(|| format!("{product} residual has no `main` return value"))?;
+    if !matches!(kind, ProductValueKind::Int | ProductValueKind::Bool) {
+        return Err(format!("{product} residual `main` returns `{kind:?}`; only integer/boolean results can be exposed"));
+    }
+    let main = module.function("main").ok_or_else(|| format!("{product} residual has no `main`"))?;
+    if !main.parameters.is_empty() {
+        return Err(format!("{product} residual `main` must not take parameters: the embedder entry receives no guest inputs"));
+    }
+    Ok(())
+}
+
+/// CPython 模块名必须是合法 C 标识符（`PyInit_<name>` 是导出符号）。
+fn is_c_module_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    match characters.next() {
+        Some(first) if first.is_ascii_alphabetic() || first == '_' => {}
+        _ => return false,
+    }
+    characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+}
+
+/// `PyInit_<name>()` 包装体：创建模块并把残差 `main` 的值写为 `value` 属性。
+fn python_module_init(module_name: &str) -> NativeTextProgramFunction {
+    use NativeTextInstruction as Lir;
+    NativeTextProgramFunction {
+        name: format!("PyInit_{module_name}"),
+        slot_count: 4,
+        instructions: vec![
+            Lir::Call("main".to_string()),
+            Lir::StoreSlot(3),
+            Lir::LoadStringPtr(module_name.to_string()),
+            Lir::StoreSlot(0),
+            Lir::LoadSlotToArg { slot: 0, index: 0 },
+            Lir::CallImport { module: String::new(), field: "PyModule_New".to_string() },
+            Lir::StoreSlot(1),
+            Lir::LoadSlotToArg { slot: 1, index: 0 },
+            Lir::LoadStringPtr("value".to_string()),
+            Lir::StoreSlot(2),
+            Lir::LoadSlotToArg { slot: 2, index: 1 },
+            Lir::LoadSlotToArg { slot: 3, index: 2 },
+            Lir::CallImport { module: String::new(), field: "PyModule_AddIntConstant".to_string() },
+            Lir::LoadSlot(1),
+            Lir::Return,
+        ],
+    }
 }
 
 /// `napi_register_module_v1(env, exports)` 包装体：把残差 `main` 的整数值包成
@@ -1000,6 +1071,16 @@ pub fn emit_native_elf_library(module: &NativeResidualModule) -> Result<Vec<u8>,
 /// 通过 `napi_create_int32` 包成 JS number 作为 `module.exports`。`print` 写 stdout。
 pub fn emit_native_node_addon(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
     let image = lower_native_residual_to_program(module, NativeProductTarget::Node)?;
+    super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
+}
+
+/// 发射 CPython 扩展 `.so`（x86-64 `ELF` + `PyInit_<module_name>`）。
+///
+/// 宿主 `import` 时由 CPython 调用模块初始化函数：`PyModule_New` 建模块，
+/// `PyModule_AddIntConstant` 把残差 `main` 的整数值写为 `value` 属性；`print`
+/// 写 stdout。导入符号按解释器全局符号作用域解析（与 Node-API 同一 GOT 合同）。
+pub fn emit_native_python_extension(module: &NativeResidualModule, module_name: &str) -> Result<Vec<u8>, String> {
+    let image = lower_native_residual_to_program_with_entry(module, NativeProductTarget::Python, Some(module_name))?;
     super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
 }
 
@@ -1122,7 +1203,7 @@ impl<'a> ResidualFunctionLowering<'a> {
                     field: "WriteFile".to_string(),
                 });
             }
-            NativeProductTarget::Linux | NativeProductTarget::Node => {
+            NativeProductTarget::Linux | NativeProductTarget::Node | NativeProductTarget::Python => {
                 self.instructions.push(NativeTextInstruction::SyscallWrite);
             }
         }
@@ -1717,6 +1798,28 @@ mod tests {
         let haystack = String::from_utf8_lossy(&bytes);
         assert!(haystack.contains("napi_register_module_v1"), "必须导出 Node-API 注册函数");
         assert!(haystack.contains("napi_create_int32"), "必须声明 N-API 动态导入");
+    }
+
+    /// CPython 扩展产物：`PyInit_<name>` 导出 + CPython 动态导入。
+    #[test]
+    fn python_extension_exposes_module_init_and_cpython_imports() {
+        use nyar_emitter::nyar_backend_native::{NativeExecutableKind, classify_native_image};
+
+        let module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
+        let bytes = emit_native_python_extension(&module, "demo").expect("emit python extension");
+        let facts = classify_native_image(&bytes).expect("extension must be a parseable image");
+        assert_eq!(facts.kind, NativeExecutableKind::ElfShared, "CPython 扩展是 ET_DYN");
+        let haystack = String::from_utf8_lossy(&bytes);
+        assert!(haystack.contains("PyInit_demo"), "必须导出 `PyInit_<module>`");
+        assert!(haystack.contains("PyModule_New"), "必须声明 `PyModule_New` 导入");
+        assert!(haystack.contains("PyModule_AddIntConstant"), "必须声明 `PyModule_AddIntConstant` 导入");
+    }
+
+    #[test]
+    fn python_extension_requires_a_c_module_name() {
+        let module = residual_main(vec![NativeResidualOp::PushI64(1), NativeResidualOp::Ret]);
+        let error = emit_native_python_extension(&module, "bad-name").expect_err("非法模块名必须失败");
+        assert!(error.contains("C 标识符"), "unexpected error: {error}");
     }
 
     /// Linux 的 `print` 用 `write(2)` 系统调用，不生成任何 PE 导入表。

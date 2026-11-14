@@ -166,6 +166,8 @@ pub enum NativeTextInstruction {
         field: String,
     },
     /// 把静态字符串的**字节指针**装入 `rax`（描述符 + 8）。
+    ///
+    /// 字节区尾部带 NUL，因此该指针可直接作为宿主 C 字符串（长度字段不含 NUL）。
     LoadStringPtr(String),
     /// 把静态字符串的**字节长度**装入 `rax`。
     LoadStringLen(String),

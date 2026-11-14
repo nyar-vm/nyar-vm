@@ -853,3 +853,63 @@ mod node_addon_abi {
         assert!(error.contains("Node"), "unexpected error: {error}");
     }
 }
+
+/// CPython 扩展 lane：`python3` 真实 `import` 产物并读取属性。
+#[cfg(target_os = "linux")]
+mod python_extension_abi {
+    use std::path::PathBuf;
+
+    use legend_vm::compiler::emit_native_python_extension;
+
+    fn extension(source: &str, name: &str) -> (PathBuf, PathBuf) {
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", source, "lua_py").expect("specialize");
+        let bytes = emit_native_python_extension(&residual, name).expect("emit python extension");
+        let dir = std::env::temp_dir().join(format!("legend-python-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let library = dir.join(format!("{name}.so"));
+        std::fs::write(&library, bytes).expect("write extension");
+        (dir, library)
+    }
+
+    fn run_python(dir: &std::path::Path, script: &str) -> String {
+        let output = std::process::Command::new("python3")
+            .arg("-c")
+            .arg(format!("import sys; sys.path.insert(0, '{}'); {script}", dir.display()))
+            .output()
+            .expect("spawn python3");
+        assert!(
+            output.status.success(),
+            "python3 failed: status={:?} stderr={}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim_end().to_string()
+    }
+
+    #[test]
+    fn python_imports_the_extension_and_reads_the_residual_value() {
+        let (dir, _library) = extension("return 42\n", "legend_probe");
+        assert_eq!(run_python(&dir, "import legend_probe; print(legend_probe.value)"), "42");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn python_extension_prints_through_stdout() {
+        let (dir, _library) = extension("print(\"hello\")\nprint(3)\nreturn 7\n", "legend_print");
+        assert_eq!(
+            run_python(&dir, "import legend_print; print(legend_print.value)"),
+            "hello\n3\n7",
+            "print 顺序与模块属性共用 stdout"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn python_extension_rejects_string_results() {
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", "return \"text\"\n", "lua_py").expect("specialize");
+        let error = emit_native_python_extension(&residual, "legend_bad").expect_err("字符串结果必须失败闭合");
+        assert!(error.contains("CPython"), "unexpected error: {error}");
+    }
+}
