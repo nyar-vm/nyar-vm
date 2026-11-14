@@ -14,7 +14,8 @@ fn runtime_contains_compose_mount_patch() {
     assert!(rt.contains("resolveCallExport"));
     assert!(rt.contains("decodeAsgardUi"));
     assert!(rt.contains("patchFromNative"));
-    assert!(rt.contains("\"Row\""));
+    assert!(rt.contains("when (node.widget)"), "intrinsic dispatch must use the widget identity, not the tag");
+    assert!(rt.contains("Row {"));
     assert!(rt.contains("evalLoopCount"));
     assert!(rt.contains("mutableStateMapOf"));
 }

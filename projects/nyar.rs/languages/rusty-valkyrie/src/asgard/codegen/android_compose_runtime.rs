@@ -35,6 +35,8 @@ data class AsgardAttr(val name: String, val isEvent: Boolean, val isProp: Boolea
 data class AsgardNode(
     val kind: Int,
     val tag: String = "",
+    // IntrinsicWidget wire 身份码；0 表示非 intrinsic 组件。宿主按身份分派，不再匹配 tag。
+    val widget: Int = 0,
     val attrs: List<AsgardAttr> = emptyList(),
     val children: List<AsgardNode> = emptyList(),
     val textParts: List<String> = emptyList(),
@@ -114,12 +116,13 @@ object AsgardComposeRuntime {
     @Composable
     private fun RenderNode(node: AsgardNode, state: Map<String, String>) {
         when (node.kind) {
-            1 -> when (node.tag) {
-                "Column" -> Column { node.children.forEach { RenderNode(it, state) } }
-                "Row" -> Row { node.children.forEach { RenderNode(it, state) } }
-                "Surface" -> Surface { node.children.forEach { RenderNode(it, state) } }
-                "Text" -> Text(resolveText(node.textParts, state))
-                "Button" -> {
+            1 -> when (node.widget) {
+                // 身份码来自 IntrinsicWidget::wire_tag（1 Column / 2 Box / 3 Row / 4 Text / 5 Button ...）。
+                1 -> Column { node.children.forEach { RenderNode(it, state) } }
+                2 -> Box { node.children.forEach { RenderNode(it, state) } }
+                3 -> Row { node.children.forEach { RenderNode(it, state) } }
+                4 -> Text(resolveText(node.textParts, state))
+                5 -> {
                     val label = node.children.firstOrNull()?.textParts?.joinToString("") ?: "Button"
                     val event = node.attrs.firstOrNull { it.isEvent }?.value ?: ""
                     Button(onClick = { if (event.isNotEmpty()) dispatchEvent(event) }) {
@@ -286,9 +289,10 @@ object AsgardComposeRuntime {
                 1 -> {
                     val tag = readString(bytes, cursor); cursor = tag.second
                     val nodeKind = bytes[cursor].toInt(); cursor++
+                    val widget = bytes[cursor].toInt(); cursor++
                     val attrs = readAttrs(bytes, cursor); cursor = attrs.second
                     val children = readIr(bytes, cursor); cursor = children.second
-                    out += AsgardNode(kind, tag.first, attrs.first, children.first)
+                    out += AsgardNode(kind, tag.first, widget, attrs.first, children.first)
                 }
                 2 -> {
                     val parts = readTextParts(bytes, cursor); cursor = parts.second

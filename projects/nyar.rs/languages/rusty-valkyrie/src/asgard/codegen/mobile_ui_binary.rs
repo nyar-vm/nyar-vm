@@ -34,12 +34,14 @@ pub fn embed_host_native_section(container: &mut Vec<u8>, native: &[u8]) {
 ///
 /// 该字节是**容器标签**而非 schema 版本号：读侧按它区分承载区段，
 /// 因此保留非零值；不保留「无版本字节」的旧负载兼容读取。
-pub const UI_BIN_VERSION_V2: u8 = 0x02;
+/// v3 在每个 element 节点携带 `IntrinsicWidget` 的 wire 身份码，宿主按身份
+/// 分派组件；v2 载荷缺少该字段，按旧版本拒绝并重建。
+pub const UI_BIN_VERSION_V3: u8 = 0x03;
 
 /// Decoded Asgard UI package (wire v0 baseline).
 #[derive(Debug, Clone)]
 pub struct DecodedUiPackage {
-    /// 负载中的容器标签字节（必须等于 [`UI_BIN_VERSION_V2`]）。
+    /// 负载中的容器标签字节（必须等于 [`UI_BIN_VERSION_V3`]）。
     pub version: u8,
     /// Decoded components.
     pub components: Vec<DecodedComponent>,
@@ -76,11 +78,11 @@ pub fn decode_mobile_ui_package(bytes: &[u8]) -> Result<DecodedUiPackage, Decode
         return Err(DecodeError::InvalidFormat("bad magic".into()));
     }
     let mut offset = UI_BIN_MAGIC.len();
-    if bytes.get(offset) != Some(&UI_BIN_VERSION_V2) {
+    if bytes.get(offset) != Some(&UI_BIN_VERSION_V3) {
         return Err(DecodeError::InvalidFormat("missing UI bin container tag".into()));
     }
     offset += 1;
-    let version = UI_BIN_VERSION_V2;
+    let version = UI_BIN_VERSION_V3;
     let component_count = read_u32(bytes, &mut offset)? as usize;
     let mut components = Vec::with_capacity(component_count);
     for _ in 0..component_count {
@@ -189,7 +191,6 @@ impl WireIrDecoder {
     }
 
     fn read_node(&mut self, bytes: &[u8], offset: &mut usize) -> Result<RenderNodeId, DecodeError> {
-        let id = RenderNodeId(self.module.nodes.len() as u32);
         let kind = bytes.get(*offset).copied().ok_or_else(|| DecodeError::InvalidFormat("EOF node kind".into()))?;
         *offset += 1;
         match kind {
@@ -201,6 +202,8 @@ impl WireIrDecoder {
                     _ => TemplateNodeKind::HostView,
                 };
                 *offset += 1;
+                let widget_tag = bytes.get(*offset).copied().ok_or_else(|| DecodeError::InvalidFormat("EOF widget identity".into()))?;
+                *offset += 1;
                 let attrs = read_attrs(self, bytes, offset)?;
                 let child_nodes = self.read_region(bytes, offset)?;
                 let children = self.alloc_region(child_nodes);
@@ -209,9 +212,16 @@ impl WireIrDecoder {
                 }
                 else {
                     let widget = if node_kind == TemplateNodeKind::Intrinsic {
-                        crate::asgard::awsl::render_ir::IntrinsicWidget::from_tag(&tag)
+                        Some(crate::asgard::awsl::render_ir::IntrinsicWidget::from_wire_tag(widget_tag).ok_or_else(|| {
+                            DecodeError::InvalidFormat(format!("unknown intrinsic widget identity {widget_tag}"))
+                        })?)
                     }
                     else {
+                        if widget_tag != 0 {
+                            return Err(DecodeError::InvalidFormat(format!(
+                                "non-intrinsic element `{tag}` carries widget identity {widget_tag}"
+                            )));
+                        }
                         None
                     };
                     RenderNode::Element(crate::asgard::awsl::render_ir::RenderElement { tag, kind: node_kind, widget, attrs, children, span: 0..0 })
@@ -249,7 +259,10 @@ impl WireIrDecoder {
             }
             other => return Err(DecodeError::InvalidFormat(format!("unknown node kind {other}"))),
         }
-        Ok(id)
+        // 子节点先于父节点写入节点表；父节点的稳定下标只能在递归读取子节点之后
+        // 取得。提前分配下标会把根/父引用指向第一个子节点。
+        let id = u32::try_from(self.module.nodes.len().saturating_sub(1)).expect("node index overflow");
+        Ok(RenderNodeId(id))
     }
 
     fn alloc_region(&mut self, nodes: Vec<RenderNodeId>) -> RenderRegionId {
@@ -337,7 +350,7 @@ fn read_text_segments(decoder: &mut WireIrDecoder, bytes: &[u8], offset: &mut us
 pub fn encode_mobile_ui_package(components: &[LoweredComponent]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(UI_BIN_MAGIC);
-    out.push(UI_BIN_VERSION_V2);
+    out.push(UI_BIN_VERSION_V3);
     out.extend_from_slice(&(components.len() as u32).to_le_bytes());
     for component in components {
         write_string(&mut out, &component.route_name);
@@ -465,6 +478,7 @@ fn write_node(out: &mut Vec<u8>, module: &RenderModule, node_id: RenderNodeId) {
             out.push(1);
             write_string(out, &element.tag);
             out.push(kind_tag(element.kind));
+            out.push(element.widget.map_or(0, |widget| widget.wire_tag()));
             write_attrs(out, module, &element.attrs);
             write_region(out, module, module.region(element.children).nodes.as_slice());
         }
@@ -472,6 +486,7 @@ fn write_node(out: &mut Vec<u8>, module: &RenderModule, node_id: RenderNodeId) {
             out.push(1);
             write_string(out, &component.tag);
             out.push(kind_tag(TemplateNodeKind::Component));
+            out.push(0);
             write_attrs(out, module, &component.attrs);
             write_region(out, module, module.region(component.children).nodes.as_slice());
         }

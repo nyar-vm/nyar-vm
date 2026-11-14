@@ -51,6 +51,8 @@ struct AsgardAttr {{
 struct AsgardNode {{
     let kind: UInt8
     var tag: String = ""
+    // IntrinsicWidget wire identity; 0 means a non-intrinsic component.
+    var widget: UInt8 = 0
     var attrs: [AsgardAttr] = []
     var children: [AsgardNode] = []
     var textParts: [String] = []
@@ -228,9 +230,10 @@ final class AsgardSwiftUiRuntime: ObservableObject {{
             case 1:
                 let tag = readString(bytes, cursor); cursor = tag.1
                 let _nodeKind = bytes[cursor]; cursor += 1
+                let widget = bytes[cursor]; cursor += 1
                 let attrs = readAttrs(bytes, cursor); cursor = attrs.1
                 let children = readIr(bytes, cursor); cursor = children.1
-                out.append(AsgardNode(kind: kind, tag: tag.0, attrs: attrs.0, children: children.0))
+                out.append(AsgardNode(kind: kind, tag: tag.0, widget: widget, attrs: attrs.0, children: children.0))
             case 2:
                 let parts = readTextParts(bytes, cursor); cursor = parts.1
                 out.append(AsgardNode(kind: kind, textParts: parts.0))
@@ -311,16 +314,23 @@ struct AsgardNodeView: View {{
     var body: some View {{
         switch node.kind {{
         case 1:
-            switch node.tag {{
-            case "Column":
+            switch node.widget {{
+            // IntrinsicWidget wire identity (1 Column / 3 Row / 4 Text / 5 Button ...).
+            case 1:
                 VStack(alignment: .leading) {{
                     ForEach(Array(node.children.enumerated()), id: \.offset) {{ _, child in
                         AsgardNodeView(node: child, reactive: reactive, onEvent: onEvent)
                     }}
                 }}
-            case "Text":
+            case 3:
+                HStack {{
+                    ForEach(Array(node.children.enumerated()), id: \.offset) {{ _, child in
+                        AsgardNodeView(node: child, reactive: reactive, onEvent: onEvent)
+                    }}
+                }}
+            case 4:
                 Text(resolveText(node.textParts))
-            case "Button":
+            case 5:
                 let label = node.children.first?.textParts.joined() ?? "Button"
                 let event = node.attrs.first(where: {{ $0.isEvent }})?.value ?? ""
                 Button(label) {{ if !event.isEmpty {{ onEvent(event) }} }}

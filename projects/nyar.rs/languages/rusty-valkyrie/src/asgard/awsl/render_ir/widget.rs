@@ -80,4 +80,46 @@ impl IntrinsicWidget {
             Self::RadioGroup => "radiogroup",
         }
     }
+
+    /// 序列化载荷里的稳定身份码。
+    ///
+    /// 宿主运行时按该码分派组件，不再对序列化的标签字符串做二次匹配。
+    /// 码值属于 wire 合同：已发布值不得复用或重排。
+    pub fn wire_tag(self) -> u8 {
+        match self {
+            Self::Column => 1,
+            Self::Box => 2,
+            Self::Row => 3,
+            Self::Text => 4,
+            Self::Button => 5,
+            Self::Input => 6,
+            Self::Flex => 7,
+            Self::Slot => 8,
+            Self::List => 9,
+            Self::Item => 10,
+            Self::Checkbox => 11,
+            Self::Radio => 12,
+            Self::RadioGroup => 13,
+        }
+    }
+
+    /// 按 wire 身份码还原组件身份；未知码返回 `None`。
+    pub fn from_wire_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            1 => Self::Column,
+            2 => Self::Box,
+            3 => Self::Row,
+            4 => Self::Text,
+            5 => Self::Button,
+            6 => Self::Input,
+            7 => Self::Flex,
+            8 => Self::Slot,
+            9 => Self::List,
+            10 => Self::Item,
+            11 => Self::Checkbox,
+            12 => Self::Radio,
+            13 => Self::RadioGroup,
+            _ => return None,
+        })
+    }
 }
