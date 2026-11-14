@@ -61,6 +61,11 @@ jobs:
           workspaces: projects/nyar.rs
       - name: Tests
         run: cargo test --workspace --lib
+      # Windows 宿主模块（`.pyd` / `.node`）必须在真实解释器上验收；`--lib` 不含集成
+      # 测试目标，因此在 windows runner 上补齐 legend-vm 的测试。
+      - name: Windows host modules
+        if: runner.os == 'Windows'
+        run: cargo test -p legend-vm --tests --no-fail-fast
 
   # 集成与模拟器夹具套件是独立门槛：它们覆盖真实 manifest → Compiler → 产物执行链路，
   # 必须与 build/test 同权，不再以 continue-on-error 掩盖失败。
