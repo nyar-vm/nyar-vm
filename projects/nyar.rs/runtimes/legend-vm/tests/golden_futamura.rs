@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use legend_vm::{
     LegacyValue, LegendVmRunner,
-    compiler::{CompileArtifact, ResidualValue, eval_native_residual, eval_native_residual_with_inputs},
+    compiler::{CompileArtifact, ResidualValue, eval_native_residual, eval_native_residual_with_inputs, eval_native_residual_with_trace},
 };
 use odin_vm::{OdinVm, Value};
 
@@ -230,6 +230,32 @@ fn lua_pe_free_variable_in_function_fails_closed() {
         .specialize_native("lua", "function f() return y end\nreturn f()\n", "lua_pe")
         .expect_err("函数内自由变量必须失败闭合");
     assert!(error.to_string().contains("free variable `y`"), "unexpected error: {error}");
+}
+
+/// 副作用顺序：解释器的 `print` 序列与残差运行时必须逐事件一致。
+#[test]
+fn lua_pe_effect_order_matches_interpret() {
+    let cases = [
+        "print(1)\nprint(2)\nreturn 3\n",
+        "if flag then print(\"yes\") else print(\"no\") end\nreturn 0\n",
+        "for i = 1, 3 do print(i) end\nreturn 0\n",
+        "function f(v) print(v) return v end\nprint(f(7))\nreturn 0\n",
+        "local t = { 1 }\nt[1] = 5\nprint(t[1])\nreturn t[1]\n",
+    ];
+    for source in cases {
+        let mut lua_env = HashMap::new();
+        lua_env.insert("flag".to_string(), rusty_lua::LuaValue::Bool(true));
+        let mut recorded = rusty_lua::RecordedEffects::default();
+        let interpreted = rusty_lua::evaluate_lua_source_with_effects(source, &mut lua_env, &mut recorded).expect("interpret");
+
+        let residual = LegendVmRunner::new().specialize_native("lua", source, "lua_pe").expect("specialize");
+        let mut inputs: HashMap<String, ResidualValue> = HashMap::new();
+        inputs.insert("flag".to_string(), ResidualValue::Bool(true));
+        let (specialized, trace) = eval_native_residual_with_trace(&residual, &inputs).expect("eval native residual");
+
+        assert_eq!(trace, recorded.prints, "source: {source}");
+        assert_eq!(specialized.to_key(), interpreted.to_string_value(), "source: {source}");
+    }
 }
 
 /// 动态对象：构造、字段/下标读写、长度与 guest builtin 都保留为残余操作，

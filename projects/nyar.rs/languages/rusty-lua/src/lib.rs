@@ -9,7 +9,10 @@ pub mod module;
 pub mod semantic_bridge;
 pub mod specialize;
 
-pub use interpret::{LuaValue, evaluate_lua_script, evaluate_lua_source};
+pub use interpret::{
+    LuaEffectSink, LuaValue, RecordedEffects, StdoutEffects, evaluate_lua_script, evaluate_lua_script_with_effects, evaluate_lua_source,
+    evaluate_lua_source_with_effects,
+};
 pub use module::LuaModule;
 pub use script::{LuaError, LuaScript};
 pub use semantic_bridge::LuaSemanticBridge;

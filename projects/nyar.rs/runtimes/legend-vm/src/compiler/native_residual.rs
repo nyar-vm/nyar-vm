@@ -511,12 +511,24 @@ pub fn eval_native_residual_with_inputs(
     module: &NativeResidualModule,
     inputs: &HashMap<String, ResidualValue>,
 ) -> Result<ResidualValue, String> {
+    eval_native_residual_with_trace(module, inputs).map(|(value, _)| value)
+}
+
+/// 以显式未知输入求值残差，并按发生顺序记录每次 `print` 的显示值。
+///
+/// 副作用顺序是 guest 语义的一部分：解释器与残差运行时必须产生同一序列。
+pub fn eval_native_residual_with_trace(
+    module: &NativeResidualModule,
+    inputs: &HashMap<String, ResidualValue>,
+) -> Result<(ResidualValue, Vec<Vec<String>>), String> {
     let main = module.function("main").ok_or_else(|| "native residual has no `main` function".to_string())?;
     let args: Vec<ResidualValue> =
         main.parameters.iter().map(|parameter| inputs.get(parameter).cloned().unwrap_or(ResidualValue::Nil)).collect();
     let mut frames = Vec::new();
     let mut steps = 0usize;
-    call_function(module, "main", args, &mut frames, &mut steps)
+    let mut effects = Vec::new();
+    let value = call_function(module, "main", args, &mut frames, &mut steps, &mut effects)?;
+    Ok((value, effects))
 }
 
 /// 编译期常量折叠的执行步数上限；防止残差中的无限循环把编译器挂死。
@@ -528,6 +540,7 @@ fn call_function(
     args: Vec<ResidualValue>,
     frames: &mut Vec<()>,
     steps: &mut usize,
+    effects: &mut Vec<Vec<String>>,
 ) -> Result<ResidualValue, String> {
     if frames.len() > 64 {
         return Err("native residual call depth exceeded".into());
@@ -605,6 +618,7 @@ fn call_function(
                     args.push(stack.pop().unwrap_or(ResidualValue::Nil));
                 }
                 args.reverse();
+                effects.push(args.iter().map(display_value).collect());
                 let text = args.iter().map(display_value).collect::<Vec<_>>().join("\t");
                 println!("{text}");
                 if let Some(last) = args.last() {
@@ -684,7 +698,7 @@ fn call_function(
                     args.push(stack.pop().unwrap_or(ResidualValue::Nil));
                 }
                 args.reverse();
-                stack.push(dynamic_call(module, name, args, frames, steps)?);
+                stack.push(dynamic_call(module, name, args, frames, steps, effects)?);
             }
             NativeResidualOp::Label(_) => {}
             NativeResidualOp::Jump(label) => {
@@ -711,7 +725,7 @@ fn call_function(
                     args.push(stack.pop().unwrap_or(ResidualValue::Nil));
                 }
                 args.reverse();
-                let value = call_function(module, name, args, frames, steps)?;
+                let value = call_function(module, name, args, frames, steps, effects)?;
                 stack.push(value);
             }
             NativeResidualOp::Ret => {
@@ -770,12 +784,14 @@ fn dynamic_call(
     args: Vec<ResidualValue>,
     frames: &mut Vec<()>,
     steps: &mut usize,
+    effects: &mut Vec<Vec<String>>,
 ) -> Result<ResidualValue, String> {
     if module.function(name).is_some() {
-        return call_function(module, name, args, frames, steps);
+        return call_function(module, name, args, frames, steps, effects);
     }
     match name {
         "print" => {
+            effects.push(args.iter().map(display_value).collect());
             let text = args.iter().map(display_value).collect::<Vec<_>>().join("\t");
             println!("{text}");
             Ok(args.last().cloned().unwrap_or(ResidualValue::Nil))

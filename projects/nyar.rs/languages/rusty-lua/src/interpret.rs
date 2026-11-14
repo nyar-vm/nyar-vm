@@ -166,20 +166,70 @@ struct LuaFunction {
     body: Vec<LuaStmt>,
 }
 
+/// Guest 可观察副作用的接收端（解释器与残差运行时共用同一语义顺序）。
+pub trait LuaEffectSink {
+    /// `print(...)` 一次调用；`values` 按实参从左到右排列。
+    fn print(&mut self, values: &[LuaValue]);
+}
+
+/// 默认副作用端：写到宿主标准输出。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct StdoutEffects;
+
+impl LuaEffectSink for StdoutEffects {
+    fn print(&mut self, values: &[LuaValue]) {
+        let text = values.iter().map(LuaValue::to_string_value).collect::<Vec<_>>().join("\t");
+        println!("{text}");
+    }
+}
+
+/// 记录型副作用端：按发生顺序保存每次 `print` 的显示值（差分测试用）。
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct RecordedEffects {
+    /// 每次 `print` 的实参显示值。
+    pub prints: Vec<Vec<String>>,
+}
+
+impl LuaEffectSink for RecordedEffects {
+    fn print(&mut self, values: &[LuaValue]) {
+        self.prints.push(values.iter().map(LuaValue::to_string_value).collect());
+    }
+}
+
 /// Evaluate Lua source and return the script result (or last expression).
 pub fn evaluate_lua_source(source: &str, env: &mut HashMap<String, LuaValue>) -> Result<LuaValue, LuaError> {
+    let mut effects = StdoutEffects;
+    evaluate_lua_source_with_effects(source, env, &mut effects)
+}
+
+/// 以显式副作用端求值源码；副作用按 guest 语义顺序交给 `effects`。
+pub fn evaluate_lua_source_with_effects(
+    source: &str,
+    env: &mut HashMap<String, LuaValue>,
+    effects: &mut dyn LuaEffectSink,
+) -> Result<LuaValue, LuaError> {
     let script = LuaScript::parse(source)?;
-    Ok(evaluate_lua_script(&script, env))
+    Ok(evaluate_lua_script_with_effects(&script, env, effects))
 }
 
 /// Evaluate a parsed Lua script.
 pub fn evaluate_lua_script(script: &LuaScript, env: &mut HashMap<String, LuaValue>) -> LuaValue {
+    let mut effects = StdoutEffects;
+    evaluate_lua_script_with_effects(script, env, &mut effects)
+}
+
+/// 以显式副作用端求值已解析脚本。
+pub fn evaluate_lua_script_with_effects(
+    script: &LuaScript,
+    env: &mut HashMap<String, LuaValue>,
+    effects: &mut dyn LuaEffectSink,
+) -> LuaValue {
     let mut locals = env.clone();
     let mut functions: HashMap<String, LuaFunction> = HashMap::new();
     let mut last = Flow::Value(LuaValue::Null);
 
     for stmt in &script.statements {
-        last = eval_stmt(stmt, &mut locals, &mut functions);
+        last = eval_stmt(stmt, &mut locals, &mut functions, effects);
         if let Flow::Return(value) = last {
             last = Flow::Value(value);
             break;
@@ -199,10 +249,15 @@ pub fn evaluate_lua_script(script: &LuaScript, env: &mut HashMap<String, LuaValu
     }
 }
 
-fn eval_stmt(stmt: &LuaStmt, env: &mut HashMap<String, LuaValue>, functions: &mut HashMap<String, LuaFunction>) -> Flow {
+fn eval_stmt(
+    stmt: &LuaStmt,
+    env: &mut HashMap<String, LuaValue>,
+    functions: &mut HashMap<String, LuaFunction>,
+    effects: &mut dyn LuaEffectSink,
+) -> Flow {
     match stmt {
         LuaStmt::LocalDecl { names, values } => {
-            let evaluated: Vec<LuaValue> = values.iter().map(|expr| eval_expr(expr, env, functions)).collect();
+            let evaluated: Vec<LuaValue> = values.iter().map(|expr| eval_expr(expr, env, functions, effects)).collect();
             for (index, name) in names.iter().enumerate() {
                 let value = evaluated.get(index).cloned().unwrap_or(LuaValue::Null);
                 env.insert(name.clone(), value);
@@ -210,23 +265,23 @@ fn eval_stmt(stmt: &LuaStmt, env: &mut HashMap<String, LuaValue>, functions: &mu
             Flow::Value(LuaValue::Null)
         }
         LuaStmt::Assign { targets, values } => {
-            let evaluated: Vec<LuaValue> = values.iter().map(|expr| eval_expr(expr, env, functions)).collect();
+            let evaluated: Vec<LuaValue> = values.iter().map(|expr| eval_expr(expr, env, functions, effects)).collect();
             let mut last = LuaValue::Null;
             for (index, target) in targets.iter().enumerate() {
                 let value = evaluated.get(index).cloned().unwrap_or(LuaValue::Null);
-                assign_lvalue(target, value.clone(), env, functions);
+                assign_lvalue(target, value.clone(), env, functions, effects);
                 last = value;
             }
             Flow::Value(last)
         }
         LuaStmt::If { condition, then_block, else_block } => {
-            let cond = eval_expr(condition, env, functions);
-            if cond.to_bool() { eval_block(then_block, env, functions) } else { eval_block(else_block, env, functions) }
+            let cond = eval_expr(condition, env, functions, effects);
+            if cond.to_bool() { eval_block(then_block, env, functions, effects) } else { eval_block(else_block, env, functions, effects) }
         }
         LuaStmt::While { condition, body } => {
             let mut last = Flow::Value(LuaValue::Null);
-            while eval_expr(condition, env, functions).to_bool() {
-                last = eval_block(body, env, functions);
+            while eval_expr(condition, env, functions, effects).to_bool() {
+                last = eval_block(body, env, functions, effects);
                 match &last {
                     Flow::Return(_) | Flow::Break => break,
                     Flow::Value(_) => {}
@@ -240,12 +295,12 @@ fn eval_stmt(stmt: &LuaStmt, env: &mut HashMap<String, LuaValue>, functions: &mu
         LuaStmt::Repeat { body, condition } => {
             let mut last = Flow::Value(LuaValue::Null);
             loop {
-                last = eval_block(body, env, functions);
+                last = eval_block(body, env, functions, effects);
                 match &last {
                     Flow::Return(_) | Flow::Break => break,
                     Flow::Value(_) => {}
                 }
-                if eval_expr(condition, env, functions).to_bool() {
+                if eval_expr(condition, env, functions, effects).to_bool() {
                     break;
                 }
             }
@@ -255,9 +310,9 @@ fn eval_stmt(stmt: &LuaStmt, env: &mut HashMap<String, LuaValue>, functions: &mu
             }
         }
         LuaStmt::ForNumeric { name, start, limit, step, body } => {
-            let mut current = eval_expr(start, env, functions).to_f64();
-            let limit_val = eval_expr(limit, env, functions).to_f64();
-            let step_val = step.as_ref().map(|expr| eval_expr(expr, env, functions).to_f64()).unwrap_or(1.0);
+            let mut current = eval_expr(start, env, functions, effects).to_f64();
+            let limit_val = eval_expr(limit, env, functions, effects).to_f64();
+            let step_val = step.as_ref().map(|expr| eval_expr(expr, env, functions, effects).to_f64()).unwrap_or(1.0);
             if step_val == 0.0 {
                 return Flow::Value(LuaValue::Null);
             }
@@ -268,7 +323,7 @@ fn eval_stmt(stmt: &LuaStmt, env: &mut HashMap<String, LuaValue>, functions: &mu
                     break;
                 }
                 env.insert(name.clone(), number_value(current));
-                last = eval_block(body, env, functions);
+                last = eval_block(body, env, functions, effects);
                 match &last {
                     Flow::Return(_) | Flow::Break => break,
                     Flow::Value(_) => {}
@@ -282,22 +337,27 @@ fn eval_stmt(stmt: &LuaStmt, env: &mut HashMap<String, LuaValue>, functions: &mu
         }
         LuaStmt::Break => Flow::Break,
         LuaStmt::Return(value) => {
-            let result = value.as_ref().map(|expr| eval_expr(expr, env, functions)).unwrap_or(LuaValue::Null);
+            let result = value.as_ref().map(|expr| eval_expr(expr, env, functions, effects)).unwrap_or(LuaValue::Null);
             Flow::Return(result)
         }
-        LuaStmt::ExprStmt(expr) => Flow::Value(eval_expr(expr, env, functions)),
+        LuaStmt::ExprStmt(expr) => Flow::Value(eval_expr(expr, env, functions, effects)),
         LuaStmt::FunctionDef { name, params, body } => {
             functions.insert(name.clone(), LuaFunction { params: params.clone(), body: body.clone() });
             Flow::Value(LuaValue::Null)
         }
-        LuaStmt::Block(statements) => eval_block(statements, env, functions),
+        LuaStmt::Block(statements) => eval_block(statements, env, functions, effects),
     }
 }
 
-fn eval_block(statements: &[LuaStmt], env: &mut HashMap<String, LuaValue>, functions: &mut HashMap<String, LuaFunction>) -> Flow {
+fn eval_block(
+    statements: &[LuaStmt],
+    env: &mut HashMap<String, LuaValue>,
+    functions: &mut HashMap<String, LuaFunction>,
+    effects: &mut dyn LuaEffectSink,
+) -> Flow {
     let mut last = Flow::Value(LuaValue::Null);
     for stmt in statements {
-        last = eval_stmt(stmt, env, functions);
+        last = eval_stmt(stmt, env, functions, effects);
         if matches!(last, Flow::Return(_) | Flow::Break) {
             break;
         }
@@ -305,19 +365,25 @@ fn eval_block(statements: &[LuaStmt], env: &mut HashMap<String, LuaValue>, funct
     last
 }
 
-fn assign_lvalue(target: &LuaLValue, value: LuaValue, env: &mut HashMap<String, LuaValue>, functions: &HashMap<String, LuaFunction>) {
+fn assign_lvalue(
+    target: &LuaLValue,
+    value: LuaValue,
+    env: &mut HashMap<String, LuaValue>,
+    functions: &HashMap<String, LuaFunction>,
+    effects: &mut dyn LuaEffectSink,
+) {
     match target {
         LuaLValue::Name(name) => {
             env.insert(name.clone(), value);
         }
         LuaLValue::Field { table, name } => {
-            if let LuaValue::Table(tbl) = eval_expr(table, env, functions) {
+            if let LuaValue::Table(tbl) = eval_expr(table, env, functions, effects) {
                 tbl.borrow_mut().map.insert(name.clone(), value);
             }
         }
         LuaLValue::Index { table, key } => {
-            let table_val = eval_expr(table, env, functions);
-            let key_val = eval_expr(key, env, functions);
+            let table_val = eval_expr(table, env, functions, effects);
+            let key_val = eval_expr(key, env, functions, effects);
             if let LuaValue::Table(tbl) = table_val {
                 tbl.borrow_mut().set(&key_val, value);
             }
@@ -325,7 +391,12 @@ fn assign_lvalue(target: &LuaLValue, value: LuaValue, env: &mut HashMap<String, 
     }
 }
 
-fn eval_expr(expr: &LuaExpr, env: &mut HashMap<String, LuaValue>, functions: &HashMap<String, LuaFunction>) -> LuaValue {
+fn eval_expr(
+    expr: &LuaExpr,
+    env: &mut HashMap<String, LuaValue>,
+    functions: &HashMap<String, LuaFunction>,
+    effects: &mut dyn LuaEffectSink,
+) -> LuaValue {
     match expr {
         LuaExpr::Number(value) => number_value(*value),
         LuaExpr::String(value) => LuaValue::String(value.clone()),
@@ -337,16 +408,16 @@ fn eval_expr(expr: &LuaExpr, env: &mut HashMap<String, LuaValue>, functions: &Ha
             for field in fields {
                 match field {
                     LuaTableField::Array(value) => {
-                        let value = eval_expr(value, env, functions);
+                        let value = eval_expr(value, env, functions, effects);
                         table.borrow_mut().array.push(value);
                     }
                     LuaTableField::Record { key, value } => {
-                        let value = eval_expr(value, env, functions);
+                        let value = eval_expr(value, env, functions, effects);
                         table.borrow_mut().map.insert(key.clone(), value);
                     }
                     LuaTableField::Indexed { key, value } => {
-                        let key = eval_expr(key, env, functions);
-                        let value = eval_expr(value, env, functions);
+                        let key = eval_expr(key, env, functions, effects);
+                        let value = eval_expr(value, env, functions, effects);
                         table.borrow_mut().set(&key, value);
                     }
                 }
@@ -354,8 +425,8 @@ fn eval_expr(expr: &LuaExpr, env: &mut HashMap<String, LuaValue>, functions: &Ha
             LuaValue::Table(table)
         }
         LuaExpr::Index { table, key } => {
-            let table_val = eval_expr(table, env, functions);
-            let key_val = eval_expr(key, env, functions);
+            let table_val = eval_expr(table, env, functions, effects);
+            let key_val = eval_expr(key, env, functions, effects);
             match table_val {
                 LuaValue::Table(tbl) => tbl.borrow().get(&key_val),
                 LuaValue::String(text) => {
@@ -371,7 +442,7 @@ fn eval_expr(expr: &LuaExpr, env: &mut HashMap<String, LuaValue>, functions: &Ha
             }
         }
         LuaExpr::Field { table, name } => {
-            let table_val = eval_expr(table, env, functions);
+            let table_val = eval_expr(table, env, functions, effects);
             match table_val {
                 LuaValue::Table(tbl) => tbl.borrow().map.get(name).cloned().unwrap_or(LuaValue::Null),
                 _ => LuaValue::Null,
@@ -379,16 +450,16 @@ fn eval_expr(expr: &LuaExpr, env: &mut HashMap<String, LuaValue>, functions: &Ha
         }
         LuaExpr::Binary { op, left, right } => match op.as_str() {
             "and" => {
-                let left_val = eval_expr(left, env, functions);
-                if !left_val.to_bool() { left_val } else { eval_expr(right, env, functions) }
+                let left_val = eval_expr(left, env, functions, effects);
+                if !left_val.to_bool() { left_val } else { eval_expr(right, env, functions, effects) }
             }
             "or" => {
-                let left_val = eval_expr(left, env, functions);
-                if left_val.to_bool() { left_val } else { eval_expr(right, env, functions) }
+                let left_val = eval_expr(left, env, functions, effects);
+                if left_val.to_bool() { left_val } else { eval_expr(right, env, functions, effects) }
             }
             _ => {
-                let left_val = eval_expr(left, env, functions);
-                let right_val = eval_expr(right, env, functions);
+                let left_val = eval_expr(left, env, functions, effects);
+                let right_val = eval_expr(right, env, functions, effects);
                 match op.as_str() {
                     "+" => add(&left_val, &right_val),
                     "-" => numeric_bin(&left_val, &right_val, |a, b| a - b),
@@ -410,7 +481,7 @@ fn eval_expr(expr: &LuaExpr, env: &mut HashMap<String, LuaValue>, functions: &Ha
             }
         },
         LuaExpr::Unary { op, operand } => {
-            let value = eval_expr(operand, env, functions);
+            let value = eval_expr(operand, env, functions, effects);
             match op.as_str() {
                 "not" => LuaValue::Bool(!value.to_bool()),
                 "-" => numeric_bin(&LuaValue::Int(0), &value, |a, b| a - b),
@@ -423,10 +494,9 @@ fn eval_expr(expr: &LuaExpr, env: &mut HashMap<String, LuaValue>, functions: &Ha
             }
         }
         LuaExpr::Call { name, args } => {
-            let evaluated: Vec<LuaValue> = args.iter().map(|arg| eval_expr(arg, env, functions)).collect();
+            let evaluated: Vec<LuaValue> = args.iter().map(|arg| eval_expr(arg, env, functions, effects)).collect();
             if name == "print" {
-                let text = evaluated.iter().map(LuaValue::to_string_value).collect::<Vec<_>>().join("\t");
-                println!("{text}");
+                effects.print(&evaluated);
                 return evaluated.last().cloned().unwrap_or(LuaValue::Null);
             }
             if name == "table_insert" {
@@ -443,7 +513,7 @@ fn eval_expr(expr: &LuaExpr, env: &mut HashMap<String, LuaValue>, functions: &Ha
                 for (index, param) in func.params.iter().enumerate() {
                     frame.insert(param.clone(), evaluated.get(index).cloned().unwrap_or(LuaValue::Null));
                 }
-                let result = eval_block(&func.body, &mut frame, &mut functions.clone());
+                let result = eval_block(&func.body, &mut frame, &mut functions.clone(), effects);
                 return match result {
                     Flow::Return(value) | Flow::Value(value) => value,
                     Flow::Break => LuaValue::Null,
