@@ -61,21 +61,5 @@ tempfile = { workspace = true }
 zip = { workspace = true }
 
 [[test]]
-name = "legion"
-path = "tests/legion/main.rs"
-
-[[test]]
-name = "asgard"
-path = "tests/asgard/main.rs"
-
-[[test]]
-name = "frontend"
-path = "tests/frontend/main.rs"
-
-[[test]]
-name = "backend"
-path = "tests/backend/main.rs"
-
-[[test]]
-name = "smir003"
-path = "tests/smir003_tests.rs"
+name = "smoke"
+path = "tests/smoke.rs"
