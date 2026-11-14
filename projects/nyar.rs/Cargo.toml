@@ -40,16 +40,16 @@ repository = "https://github.com/nyar-vm/nyar-vm"
 [workspace.dependencies]
 # Boost 库，已使用本地 `.cargo/config.toml` 覆盖
 boost-diagnostic = { git = "https://github.com/oovm/rust-boost", rev = "9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86", default-features = false, features = ["std", "serde"] }
-acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "cae416cfddb5b4e853e38e639b6543667518847e" }
-acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "cae416cfddb5b4e853e38e639b6543667518847e" }
-acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "cae416cfddb5b4e853e38e639b6543667518847e" }
-acorn-x64 = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "cae416cfddb5b4e853e38e639b6543667518847e" }
-acorn-aarch64 = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "cae416cfddb5b4e853e38e639b6543667518847e" }
-acorn-dex = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "cae416cfddb5b4e853e38e639b6543667518847e" }
-acorn-mach-o = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "cae416cfddb5b4e853e38e639b6543667518847e" }
-acorn-host = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "cae416cfddb5b4e853e38e639b6543667518847e" }
+acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "aa3c37f30b03e70f004d425a7eb251bf7075a358" }
+acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "aa3c37f30b03e70f004d425a7eb251bf7075a358" }
+acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "aa3c37f30b03e70f004d425a7eb251bf7075a358" }
+acorn-x64 = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "aa3c37f30b03e70f004d425a7eb251bf7075a358" }
+acorn-aarch64 = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "aa3c37f30b03e70f004d425a7eb251bf7075a358" }
+acorn-dex = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "aa3c37f30b03e70f004d425a7eb251bf7075a358" }
+acorn-mach-o = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "aa3c37f30b03e70f004d425a7eb251bf7075a358" }
+acorn-host = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "aa3c37f30b03e70f004d425a7eb251bf7075a358" }
 # `.odin` 字节码磁盘格式合同由 Acorn 格式适配器仓持有。
-acorn-odin = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "cae416cfddb5b4e853e38e639b6543667518847e" }
+acorn-odin = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "aa3c37f30b03e70f004d425a7eb251bf7075a358" }
 # Oak parser frontend (`examples/oak-voc` publishes crate `oak-awsl`). Bump `rev` with oak.rs releases.
 oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "fc94201d43926ac3f75b3a4f7dd10ac219d73f6e" }
 oak-testing = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "fc94201d43926ac3f75b3a4f7dd10ac219d73f6e" }
