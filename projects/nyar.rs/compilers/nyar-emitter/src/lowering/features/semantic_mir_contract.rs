@@ -110,7 +110,7 @@ fn resolve_layout_identity(submission: &FragmentSubmission, ty: &NyarType) -> Op
         return Some(*layout);
     }
     let index = submission.backend_plan.aggregate_layout_by_nyar_type();
-    if let Some(layout) = index.get(ty).or_else(|| index.get(&crate::target_execution_plan::contract_type_key(ty))).copied() {
+    if let Some(layout) = index.get(ty).or_else(|| index.get(&ty.contract_key())).copied() {
         return Some(layout);
     }
     // 泛型实例在 SSA 侧已结算成不带实参的 `Nominal { layout }`（实参身份在布局

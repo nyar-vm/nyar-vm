@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
 
 use nyar_types::{
-    CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallee, CanonicalConstant, CanonicalFunction,
-    CanonicalInstruction, CanonicalOperand, CanonicalOperation, CanonicalTerminator, CanonicalWitness, FieldId, FieldRecord, ItemInstanceId, MirValueId,
-    NominalInstanceId, StructuredDiagnosticSet, TypeId, VariantId, canonical_program::CanonicalEffectKind,
+    FieldId, FieldRecord, ItemInstanceId, MirValueId, NominalInstanceId, StructuredDiagnosticSet, TypeId, VariantId,
+};
+
+use crate::compiler::valkyrie_mir::{
+    ValkyrieMirArrayInitialization, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirEffectKind,
+    ValkyrieMirFunction, ValkyrieMirInstruction, ValkyrieMirOperand, ValkyrieMirOperation, ValkyrieMirTerminator, ValkyrieMirWitness,
 };
 
 use crate::compiler::{
@@ -24,7 +27,7 @@ pub(crate) fn lower_function(
     field_names: &BTreeMap<FieldId, String>,
     variant_records: &BTreeMap<(NominalInstanceId, VariantId), VariantRecordBinding>,
     next_instruction: &mut u32,
-) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
+) -> Result<ValkyrieMirFunction, StructuredDiagnosticSet> {
     let mut value_types = function
         .value_types
         .iter()
@@ -46,7 +49,7 @@ pub(crate) fn lower_function(
         .blocks
         .iter()
         .map(|block| {
-            let id = CanonicalBlockId(block.id.0);
+            let id = ValkyrieMirBlockId(block.id.0);
             let parameters = block
                 .parameters
                 .iter()
@@ -77,16 +80,16 @@ pub(crate) fn lower_function(
                 .into_iter()
                 .flatten()
                 .collect::<Vec<_>>();
-            Ok((id, CanonicalBlock { id, parameters, instructions, terminator: lower_terminator(&block.terminator)? }))
+            Ok((id, ValkyrieMirBlock { id, parameters, instructions, terminator: lower_terminator(&block.terminator)? }))
         })
         .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
-    Ok(CanonicalFunction {
+    Ok(ValkyrieMirFunction {
         instance,
         parameters,
         parameter_names,
         return_type: type_id(ids, &function.return_type)?,
         value_types,
-        entry: CanonicalBlockId(function.entry.0),
+        entry: ValkyrieMirBlockId(function.entry.0),
         blocks,
     })
 }
@@ -175,7 +178,7 @@ fn resolve_instance_field(
 ///
 /// 多字段变体的 `SumNew` 在 MIR 侧携带全部字段操作数；此处在 canonical 侧用
 /// 已登记记录 nominal + `field_by_owner` 合成一条 `StructNew`，记录值再作为
-/// `SumNew` 的唯一 payload。`CanonicalOperation` 形状保持不变。
+/// `SumNew` 的唯一 payload。`ValkyrieMirOperation` 形状保持不变。
 #[allow(clippy::too_many_arguments)]
 fn lower_instruction_set(
     instruction: &crate::compiler::mir::MirInstruction,
@@ -189,7 +192,7 @@ fn lower_instruction_set(
     next_instruction: &mut u32,
     next_value: &mut u32,
     value_types: &mut BTreeMap<MirValueId, TypeId>,
-) -> Result<Vec<CanonicalInstruction>, StructuredDiagnosticSet> {
+) -> Result<Vec<ValkyrieMirInstruction>, StructuredDiagnosticSet> {
     let next_instruction_id = |next: &mut u32| -> Result<nyar_types::InstructionId, StructuredDiagnosticSet> {
         let id = nyar_types::InstructionId::from_index(*next).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
         *next = (*next).checked_add(1).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
@@ -230,21 +233,21 @@ fn lower_instruction_set(
                 .collect::<Result<Vec<_>, StructuredDiagnosticSet>>()?;
             let sum_instruction = next_instruction_id(next_instruction)?;
             return Ok(vec![
-                CanonicalInstruction {
+                ValkyrieMirInstruction {
                     id: record_instruction,
                     results: vec![record_value],
-                    operation: CanonicalOperation::StructNew { nominal: binding.nominal, fields: record_fields },
+                    operation: ValkyrieMirOperation::StructNew { nominal: binding.nominal, fields: record_fields },
                 },
-                CanonicalInstruction {
+                ValkyrieMirInstruction {
                     id: sum_instruction,
                     results,
-                    operation: CanonicalOperation::SumNew { nominal: concrete, variant: *variant, payload: Some(record_value) },
+                    operation: ValkyrieMirOperation::SumNew { nominal: concrete, variant: *variant, payload: Some(record_value) },
                 },
             ]);
         }
     }
     let id = next_instruction_id(next_instruction)?;
-    Ok(vec![CanonicalInstruction {
+    Ok(vec![ValkyrieMirInstruction {
         id,
         results,
         operation: lower_operation(
@@ -269,69 +272,69 @@ fn lower_operation(
     fields: &BTreeMap<FieldId, FieldRecord>,
     field_by_owner: &BTreeMap<(NominalInstanceId, FieldId), FieldId>,
     field_names: &BTreeMap<FieldId, String>,
-) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
+) -> Result<ValkyrieMirOperation, StructuredDiagnosticSet> {
     let value = |operand: &MirOperand| match operand {
         MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")),
         _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")),
     };
     match operation {
-        MirOperation::Call { callee: MirOperand::Callable(identity), arguments } => Ok(CanonicalOperation::Invoke {
-            callee: CanonicalCallee::Item(*identity),
+        MirOperation::Call { callee: MirOperand::Callable(identity), arguments } => Ok(ValkyrieMirOperation::Invoke {
+            callee: ValkyrieMirCallee::Item(*identity),
             arguments: arguments.iter().map(value).collect::<Result<_, _>>()?,
         }),
-        MirOperation::Call { callee: MirOperand::Value(callee), arguments } => Ok(CanonicalOperation::Invoke {
-            callee: CanonicalCallee::Value(
+        MirOperation::Call { callee: MirOperand::Value(callee), arguments } => Ok(ValkyrieMirOperation::Invoke {
+            callee: ValkyrieMirCallee::Value(
                 MirValueId::from_index(callee.0).ok_or_else(|| error_without_module("CAN008", "函数值 callee identity 溢出"))?,
             ),
             arguments: arguments.iter().map(value).collect::<Result<_, _>>()?,
         }),
         // trait 方法槽 witness 在 canonical 保留稳定分派身份：self 类型已具体化时记下 TypeId，
         // 仍是开放泛型时保留 `None`。不得按名字猜实现，也不得退回 `Unit`。
-        MirOperation::Call { callee: MirOperand::Witness(witness), arguments } => Ok(CanonicalOperation::Invoke {
-            callee: CanonicalCallee::Witness(CanonicalWitness {
+        MirOperation::Call { callee: MirOperand::Witness(witness), arguments } => Ok(ValkyrieMirOperation::Invoke {
+            callee: ValkyrieMirCallee::Witness(ValkyrieMirWitness {
                 trait_declaration: witness.trait_declaration,
                 method_declaration: witness.method_declaration,
                 self_type: ids.get(&witness.self_type).copied(),
             }),
             arguments: arguments.iter().map(value).collect::<Result<_, _>>()?,
         }),
-        MirOperation::StoreVar { name, value: stored, ty } => Ok(CanonicalOperation::StoreVar {
+        MirOperation::StoreVar { name, value: stored, ty } => Ok(ValkyrieMirOperation::StoreVar {
             name: name.clone(),
             value: value(stored)?,
             ty: ty.as_ref().map(|ty| type_id(ids, ty)).transpose()?,
         }),
-        MirOperation::Copy { source } => Ok(CanonicalOperation::Copy { source: value(source)? }),
-        MirOperation::Cast { source, ty } => Ok(CanonicalOperation::Cast { source: value(source)?, ty: type_id(ids, ty)? }),
+        MirOperation::Copy { source } => Ok(ValkyrieMirOperation::Copy { source: value(source)? }),
+        MirOperation::Cast { source, ty } => Ok(ValkyrieMirOperation::Cast { source: value(source)?, ty: type_id(ids, ty)? }),
         MirOperation::AggregateCopy { source, dest } => {
-            Ok(CanonicalOperation::AggregateCopy { source: value(source)?, destination: value(dest)? })
+            Ok(ValkyrieMirOperation::AggregateCopy { source: value(source)?, destination: value(dest)? })
         }
-        MirOperation::LoadConstant { constant, .. } => Ok(CanonicalOperation::LoadConstant { constant: lower_constant(constant)? }),
+        MirOperation::LoadConstant { constant, .. } => Ok(ValkyrieMirOperation::LoadConstant { constant: lower_constant(constant)? }),
         // 函数作值 1:1 保留冻结实例身份；结果 Function TypeId 由 value_types 表统一登记。
-        MirOperation::LoadFunctionRef { instance, environment, captured } => Ok(CanonicalOperation::LoadFunctionRef {
+        MirOperation::LoadFunctionRef { instance, environment, captured } => Ok(ValkyrieMirOperation::LoadFunctionRef {
             instance: *instance,
-            environment: environment.as_ref().map(|environment| Ok(CanonicalOperand::Value(value(environment)?))).transpose()?,
+            environment: environment.as_ref().map(|environment| Ok(ValkyrieMirOperand::Value(value(environment)?))).transpose()?,
             captured: captured.clone(),
         }),
-        MirOperation::ArrayGet { array, index } => Ok(CanonicalOperation::ArrayGet { array: value(array)?, index: value(index)? }),
+        MirOperation::ArrayGet { array, index } => Ok(ValkyrieMirOperation::ArrayGet { array: value(array)?, index: value(index)? }),
         MirOperation::ArraySet { array, index, value: stored } => {
-            Ok(CanonicalOperation::ArraySet { array: value(array)?, index: value(index)?, value: value(stored)? })
+            Ok(ValkyrieMirOperation::ArraySet { array: value(array)?, index: value(index)?, value: value(stored)? })
         }
-        MirOperation::ArrayLength { array } => Ok(CanonicalOperation::ArrayLength { array: value(array)? }),
-        MirOperation::NullIsNull { value: operand } => Ok(CanonicalOperation::NullIsNull { value: value(operand)? }),
-        MirOperation::NullUnwrap { value: operand } => Ok(CanonicalOperation::NullUnwrap { value: value(operand)? }),
-        MirOperation::ArrayNew { array_type, length, initialization } => Ok(CanonicalOperation::ArrayNew {
+        MirOperation::ArrayLength { array } => Ok(ValkyrieMirOperation::ArrayLength { array: value(array)? }),
+        MirOperation::NullIsNull { value: operand } => Ok(ValkyrieMirOperation::NullIsNull { value: value(operand)? }),
+        MirOperation::NullUnwrap { value: operand } => Ok(ValkyrieMirOperation::NullUnwrap { value: value(operand)? }),
+        MirOperation::ArrayNew { array_type, length, initialization } => Ok(ValkyrieMirOperation::ArrayNew {
             array_type: type_id(ids, array_type)?,
             length: value(length)?,
             initialization: match initialization {
-                crate::compiler::mir::ArrayInitialization::Default => CanonicalArrayInitialization::Default,
-                crate::compiler::mir::ArrayInitialization::Fill(fill) => CanonicalArrayInitialization::Fill(value(fill)?),
+                crate::compiler::mir::ArrayInitialization::Default => ValkyrieMirArrayInitialization::Default,
+                crate::compiler::mir::ArrayInitialization::Fill(fill) => ValkyrieMirArrayInitialization::Fill(value(fill)?),
             },
         }),
-        MirOperation::ArrayFromElements { array_type, elements } => Ok(CanonicalOperation::ArrayFromElements {
+        MirOperation::ArrayFromElements { array_type, elements } => Ok(ValkyrieMirOperation::ArrayFromElements {
             array_type: type_id(ids, array_type)?,
             elements: elements.iter().map(value).collect::<Result<_, _>>()?,
         }),
-        MirOperation::TupleNew { fields } => Ok(CanonicalOperation::TupleNew {
+        MirOperation::TupleNew { fields } => Ok(ValkyrieMirOperation::TupleNew {
             element_types: match results.first().and_then(|result| value_types.get(result)) {
                 Some(ValkyrieType::Tuple(types)) => types.iter().map(|ty| type_id(ids, ty)).collect::<Result<_, _>>()?,
                 Some(ValkyrieType::LabeledTuple(tuple_fields)) => {
@@ -352,14 +355,14 @@ fn lower_operation(
             else {
                 return Err(error_without_module("CAN017", "元组读取对象缺少完整 Tuple / LabeledTuple 类型"));
             };
-            Ok(CanonicalOperation::TupleGet { object: value(object)?, tuple_type: type_id(ids, tuple_type)?, index: *index })
+            Ok(ValkyrieMirOperation::TupleGet { object: value(object)?, tuple_type: type_id(ids, tuple_type)?, index: *index })
         }
         MirOperation::SumNew { nominal, variant, payload_type, payloads, .. } => {
             let result_ty = results.first().and_then(|result| value_types.get(result));
             let concrete = resolve_sum_nominal(*nominal, result_ty, ids, nominal_by_type)?;
             let _ = payload_type;
             // 多字段变体的记录值由 `lower_instruction_set` 先行合成；到这里 payload 至多一个操作数。
-            Ok(CanonicalOperation::SumNew { nominal: concrete, variant: *variant, payload: payloads.first().map(value).transpose()? })
+            Ok(ValkyrieMirOperation::SumNew { nominal: concrete, variant: *variant, payload: payloads.first().map(value).transpose()? })
         }
         MirOperation::SumPayloadGet { nominal, variant, object, .. } => {
             let object_ty = match object {
@@ -367,7 +370,7 @@ fn lower_operation(
                 _ => None,
             };
             let concrete = resolve_sum_nominal(*nominal, object_ty, ids, nominal_by_type)?;
-            Ok(CanonicalOperation::SumPayloadGet { nominal: concrete, variant: *variant, object: value(object)? })
+            Ok(ValkyrieMirOperation::SumPayloadGet { nominal: concrete, variant: *variant, object: value(object)? })
         }
         MirOperation::SumVariantIs { nominal, variant, object, .. } => {
             let object_ty = match object {
@@ -375,7 +378,7 @@ fn lower_operation(
                 _ => None,
             };
             let concrete = resolve_sum_nominal(*nominal, object_ty, ids, nominal_by_type)?;
-            Ok(CanonicalOperation::SumVariantIs { nominal: concrete, variant: *variant, object: value(object)? })
+            Ok(ValkyrieMirOperation::SumVariantIs { nominal: concrete, variant: *variant, object: value(object)? })
         }
         MirOperation::StructNew { nominal: _declaration, fields: values } => {
             // MIR 构造指令携带声明 nominal；实例身份只能由结果静态类型决定。
@@ -391,7 +394,7 @@ fn lower_operation(
                     Ok((resolved, value(operand)?))
                 })
                 .collect::<Result<_, StructuredDiagnosticSet>>()?;
-            Ok(CanonicalOperation::StructNew { nominal: owner, fields })
+            Ok(ValkyrieMirOperation::StructNew { nominal: owner, fields })
         }
         MirOperation::FieldGet { object, field } => {
             let object_ty = match object {
@@ -403,7 +406,7 @@ fn lower_operation(
             if !fields.contains_key(&resolved) {
                 return Err(error_without_module("CAN027", format!("未解析字段 identity: {resolved:?}")));
             }
-            Ok(CanonicalOperation::FieldGet { object: value(object)?, field: resolved })
+            Ok(ValkyrieMirOperation::FieldGet { object: value(object)?, field: resolved })
         }
         MirOperation::FieldSet { object, field, value: stored } => {
             let object_ty = match object {
@@ -415,69 +418,69 @@ fn lower_operation(
             if !fields.contains_key(&resolved) {
                 return Err(error_without_module("CAN030", format!("未解析字段 identity: {resolved:?}")));
             }
-            Ok(CanonicalOperation::FieldSet { object: value(object)?, field: resolved, value: value(stored)? })
+            Ok(ValkyrieMirOperation::FieldSet { object: value(object)?, field: resolved, value: value(stored)? })
         }
         _ => Err(error_without_module("CAN009", format!("操作没有无损 canonical 形状: {operation:?}"))),
     }
 }
 
-fn lower_terminator(terminator: &MirTerminator) -> Result<CanonicalTerminator, StructuredDiagnosticSet> {
+fn lower_terminator(terminator: &MirTerminator) -> Result<ValkyrieMirTerminator, StructuredDiagnosticSet> {
     let value = |operand: &MirOperand| match operand {
         MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")),
         _ => Err(error_without_module("CAN010", "终结符操作数不是 SSA 值")),
     };
     match terminator {
-        MirTerminator::Return { value: Some(value_operand) } => Ok(CanonicalTerminator::Return { value: Some(value(value_operand)?) }),
-        MirTerminator::Return { value: None } => Ok(CanonicalTerminator::Return { value: None }),
-        MirTerminator::Jump { target, arguments } => Ok(CanonicalTerminator::Jump {
-            target: CanonicalBlockId(target.0),
+        MirTerminator::Return { value: Some(value_operand) } => Ok(ValkyrieMirTerminator::Return { value: Some(value(value_operand)?) }),
+        MirTerminator::Return { value: None } => Ok(ValkyrieMirTerminator::Return { value: None }),
+        MirTerminator::Jump { target, arguments } => Ok(ValkyrieMirTerminator::Jump {
+            target: ValkyrieMirBlockId(target.0),
             arguments: arguments.iter().map(value).collect::<Result<_, _>>()?,
         }),
-        MirTerminator::Branch { condition, then_target, else_target } => Ok(CanonicalTerminator::Branch {
+        MirTerminator::Branch { condition, then_target, else_target } => Ok(ValkyrieMirTerminator::Branch {
             condition: value(condition)?,
-            then_target: CanonicalBlockId(then_target.0),
-            else_target: CanonicalBlockId(else_target.0),
+            then_target: ValkyrieMirBlockId(then_target.0),
+            else_target: ValkyrieMirBlockId(else_target.0),
         }),
-        MirTerminator::PerformEffect { effect, payload, resume_target } => Ok(CanonicalTerminator::PerformEffect {
+        MirTerminator::PerformEffect { effect, payload, resume_target } => Ok(ValkyrieMirTerminator::PerformEffect {
             effect: lower_effect(*effect),
             payload: payload.as_ref().map(value).transpose()?,
-            resume_target: CanonicalBlockId(resume_target.0),
+            resume_target: ValkyrieMirBlockId(resume_target.0),
         }),
-        MirTerminator::StateDispatch { state, cases, default_target } => Ok(CanonicalTerminator::StateDispatch {
+        MirTerminator::StateDispatch { state, cases, default_target } => Ok(ValkyrieMirTerminator::StateDispatch {
             state: MirValueId::from_index(state.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?,
-            cases: cases.iter().map(|(state, target)| (*state, CanonicalBlockId(target.0))).collect(),
-            default_target: CanonicalBlockId(default_target.0),
+            cases: cases.iter().map(|(state, target)| (*state, ValkyrieMirBlockId(target.0))).collect(),
+            default_target: ValkyrieMirBlockId(default_target.0),
         }),
-        MirTerminator::YieldToRuntime { effect, payload, resume_state } => Ok(CanonicalTerminator::YieldToRuntime {
+        MirTerminator::YieldToRuntime { effect, payload, resume_state } => Ok(ValkyrieMirTerminator::YieldToRuntime {
             effect: lower_effect(*effect),
             payload: payload.as_ref().map(value).transpose()?,
             resume_state: *resume_state,
         }),
-        MirTerminator::Unreachable => Ok(CanonicalTerminator::Unreachable),
+        MirTerminator::Unreachable => Ok(ValkyrieMirTerminator::Unreachable),
     }
 }
 
-fn lower_effect(effect: crate::compiler::mir::MirEffectKind) -> CanonicalEffectKind {
+fn lower_effect(effect: crate::compiler::mir::MirEffectKind) -> ValkyrieMirEffectKind {
     use crate::compiler::mir::MirEffectKind;
     match effect {
-        MirEffectKind::Raise => CanonicalEffectKind::Raise,
-        MirEffectKind::Yield => CanonicalEffectKind::Yield,
-        MirEffectKind::DelegateYield => CanonicalEffectKind::DelegateYield,
-        MirEffectKind::Await => CanonicalEffectKind::Await,
-        MirEffectKind::AsyncSpawn => CanonicalEffectKind::AsyncSpawn,
-        MirEffectKind::AsyncBlock => CanonicalEffectKind::AsyncBlock,
+        MirEffectKind::Raise => ValkyrieMirEffectKind::Raise,
+        MirEffectKind::Yield => ValkyrieMirEffectKind::Yield,
+        MirEffectKind::DelegateYield => ValkyrieMirEffectKind::DelegateYield,
+        MirEffectKind::Await => ValkyrieMirEffectKind::Await,
+        MirEffectKind::AsyncSpawn => ValkyrieMirEffectKind::AsyncSpawn,
+        MirEffectKind::AsyncBlock => ValkyrieMirEffectKind::AsyncBlock,
     }
 }
 
-fn lower_constant(constant: &MirConstant) -> Result<CanonicalConstant, StructuredDiagnosticSet> {
+fn lower_constant(constant: &MirConstant) -> Result<ValkyrieMirConstant, StructuredDiagnosticSet> {
     match constant {
-        MirConstant::Int(value) => Ok(CanonicalConstant::Int(*value)),
-        MirConstant::Bool(value) => Ok(CanonicalConstant::Bool(*value)),
-        MirConstant::Utf8(value) => Ok(CanonicalConstant::Utf8(value.clone())),
-        MirConstant::Utf16(value) => Ok(CanonicalConstant::Utf16(value.clone())),
-        MirConstant::Unit => Ok(CanonicalConstant::Unit),
-        MirConstant::Null => Ok(CanonicalConstant::Null),
+        MirConstant::Int(value) => Ok(ValkyrieMirConstant::Int(*value)),
+        MirConstant::Bool(value) => Ok(ValkyrieMirConstant::Bool(*value)),
+        MirConstant::Utf8(value) => Ok(ValkyrieMirConstant::Utf8(value.clone())),
+        MirConstant::Utf16(value) => Ok(ValkyrieMirConstant::Utf16(value.clone())),
+        MirConstant::Unit => Ok(ValkyrieMirConstant::Unit),
+        MirConstant::Null => Ok(ValkyrieMirConstant::Null),
         // 位模式保真：`-0.0` 符号位与 NaN payload 不能在 canonical 边界被规范化。
-        MirConstant::Float64(value) => Ok(CanonicalConstant::Float64(value.0.to_bits())),
+        MirConstant::Float64(value) => Ok(ValkyrieMirConstant::Float64(value.0.to_bits())),
     }
 }

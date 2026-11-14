@@ -10,15 +10,19 @@ use std::collections::BTreeMap;
 
 use nyar::{Identifier, QualifiedName, TheoryBundle};
 use nyar_emitter::{
-    CompiledProgram, FragmentSubmission, TargetExecutionPlan,
+    FragmentSubmission, TargetExecutionPlan,
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     validate_submission,
 };
 use nyar_types::{
-    CanonicalBlock, CanonicalBlockId, CanonicalCallee, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalOperation,
-    CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind, InstructionId, ItemId,
-    ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NyarFunctionType, NyarType, TypeId, TypeRecord, ValueIdentity,
+    CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, InstructionId, ItemId, ItemInstanceId, ItemInstanceRecord,
+    LinkedSemanticProgram, MirValueId, NyarFunctionType, NyarType, TypeId, TypeRecord, ValueIdentity,
     layout_choice::{InvokeLowering, RepresentationPlan, ValueRepresentation},
+};
+use rusty_valkyrie::compiler::emitter::pipeline::target_plan::from_compiled_program;
+use rusty_valkyrie::compiler::valkyrie_mir::{
+    CompiledValkyrieProgram, ValkyrieMir, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirFunction, ValkyrieMirInstruction,
+    ValkyrieMirOperation, ValkyrieMirProgram, ValkyrieMirTerminator,
 };
 
 const FRAGMENT: &str = "smir_function_value_callee_fragment";
@@ -80,7 +84,7 @@ fn linked_base() -> LinkedSemanticProgram {
     linked
 }
 
-fn function_value_program() -> CanonicalProgram {
+fn function_value_program() -> ValkyrieMirProgram {
     let mut linked = linked_base();
     let caller = ItemInstanceId::from_index(0).unwrap();
     let function_type_id = TypeId::from_index(0).unwrap();
@@ -104,34 +108,34 @@ fn function_value_program() -> CanonicalProgram {
     let function_value = MirValueId::from_index(0).unwrap();
     let argument = MirValueId::from_index(1).unwrap();
     let result = MirValueId::from_index(2).unwrap();
-    let function = CanonicalFunction {
+    let function = ValkyrieMirFunction {
         instance: caller,
         parameters: vec![(function_value, function_type_id), (argument, value_type)],
         parameter_names: vec!["function_value".to_string(), "argument".to_string()],
         return_type: value_type,
         value_types: BTreeMap::from([(function_value, function_type_id), (argument, value_type), (result, value_type)]),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([(
-            CanonicalBlockId(0),
-            CanonicalBlock {
-                id: CanonicalBlockId(0),
+            ValkyrieMirBlockId(0),
+            ValkyrieMirBlock {
+                id: ValkyrieMirBlockId(0),
                 parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
+                instructions: vec![ValkyrieMirInstruction {
                     id: InstructionId::from_index(0).unwrap(),
                     results: vec![result],
-                    operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Value(function_value), arguments: vec![argument] },
+                    operation: ValkyrieMirOperation::Invoke { callee: ValkyrieMirCallee::Value(function_value), arguments: vec![argument] },
                 }],
-                terminator: CanonicalTerminator::Return { value: Some(result) },
+                terminator: ValkyrieMirTerminator::Return { value: Some(result) },
             },
         )]),
     };
-    CanonicalProgram {
+    ValkyrieMirProgram {
         linked,
-        mir: CanonicalSemanticMir { module_name: "smir-function-value".into(), functions: BTreeMap::from([(caller, function)]) },
+        mir: ValkyrieMir { module_name: "smir-function-value".into(), functions: BTreeMap::from([(caller, function)]) },
     }
 }
 
-fn production_submission(canonical: &CanonicalProgram) -> FragmentSubmission {
+fn production_submission(canonical: &ValkyrieMirProgram) -> FragmentSubmission {
     let mut plan = RepresentationPlan::default();
     for function in canonical.mir.functions.values() {
         for value in function.value_types.keys() {
@@ -139,10 +143,10 @@ fn production_submission(canonical: &CanonicalProgram) -> FragmentSubmission {
         }
     }
     plan.invoke_lowerings.insert(InstructionId::from_index(0).unwrap(), InvokeLowering::TypedReference);
-    let program = CompiledProgram::new(canonical.clone(), plan).expect("测试表示输入必须一致");
-    let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
+    let program = CompiledValkyrieProgram::new(canonical.clone(), plan).expect("测试表示输入必须一致");
+    let roots = program.mir_program().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = Identifier::new(FRAGMENT);
-    let executable = TargetExecutionPlan::from_compiled_program(&program, &fragment, TheoryBundle::default(), &roots)
+    let executable = from_compiled_program(&program, &fragment, TheoryBundle::default(), &roots)
         .expect("`TypedReference` 函数值调用必须成立目标私有调用合同");
     FragmentSubmission::from_backend_plan(executable)
 }

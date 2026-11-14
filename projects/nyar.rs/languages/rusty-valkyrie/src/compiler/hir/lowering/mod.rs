@@ -253,14 +253,14 @@ impl ValkyrieCompiler {
 
     /// 集成测试夹具：将单一源码降低为成功载荷。
     #[doc(hidden)]
-    pub fn compile_source_to_program(&self, source: &str) -> Result<nyar_types::CompiledProgram, HirError> {
+    pub fn compile_source_to_program(&self, source: &str) -> Result<crate::compiler::valkyrie_mir::CompiledValkyrieProgram, HirError> {
         let hir_module = self.compile_source(source)?;
         compiled_program_from_hir_module(hir_module)
     }
 
     /// 从完整依赖顺序的源码快照构建一个语义闭包。
     #[doc(hidden)]
-    pub fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, HirError> {
+    pub fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<crate::compiler::valkyrie_mir::CompiledValkyrieProgram, HirError> {
         self.compile_source_groups_to_program_with_host_bindings(groups, &[], &[], DEFAULT_COMPILE_ARCH)
     }
 
@@ -272,7 +272,7 @@ impl ValkyrieCompiler {
         host_bindings: &[crate::compiler::emitter::pipeline::CompilerHostProviderBinding],
         gated_out_host_providers: &[crate::compiler::emitter::pipeline::CompilerGatedOutHostProvider],
         arch: &str,
-    ) -> Result<nyar_types::CompiledProgram, HirError> {
+    ) -> Result<crate::compiler::valkyrie_mir::CompiledValkyrieProgram, HirError> {
         let groups = compose_source_input_groups(input)?;
         self.compile_source_groups_to_program_with_host_bindings(&groups, host_bindings, gated_out_host_providers, arch)
     }
@@ -288,7 +288,7 @@ impl ValkyrieCompiler {
         host_bindings: &[crate::compiler::emitter::pipeline::CompilerHostProviderBinding],
         gated_out_host_providers: &[crate::compiler::emitter::pipeline::CompilerGatedOutHostProvider],
         arch: &str,
-    ) -> Result<nyar_types::CompiledProgram, HirError> {
+    ) -> Result<crate::compiler::valkyrie_mir::CompiledValkyrieProgram, HirError> {
         let entry_indices = groups.iter().enumerate().filter(|(_, group)| group.is_entry).map(|(index, _)| index).collect::<Vec<_>>();
         let (mut hir_groups, gate) = self.resolve_source_groups_with_materialization_gate(groups, host_bindings, arch)?;
         let final_index = hir_groups

@@ -1,14 +1,13 @@
 //! 单向编译**分析**与**处理**流。
 //!
 //! ```text
-//! Analysis:   AST → HIR → Semantic MIR → Link → Validate (M2) → CanonicalProgram
-//! Processing: CanonicalProgram → RepresentationPlan → TargetExecutionPlan → Emit
+//! Analysis:   AST → HIR → Semantic MIR → Link → Validate (M2) → ValkyrieMirProgram
+//! Processing: ValkyrieMirProgram → RepresentationPlan → 目标适配器 → TargetExecutionPlan → Emit
 //! ```
 //!
-//! 本模块只负责编排。不得复活并行权威
+//! 本模块只负责 Valkyrie 侧编排。不得复活并行权威
 //! （旧前端计划、`FragmentSubmission` 体旁路、God Call 字段）。
-//! 依赖闭包完成后，由同一入口校验 Semantic MIR 并生产表示规划成功载荷。
-//! 目标 preparation 与旧装配成功链的替换尚未完成。
+//! 语义与表示成功载荷归 Valkyrie 自有 MIR；目标输入由语言 × 目标适配器准备。
 
 mod backend_bundle;
 mod canonical;
@@ -21,6 +20,7 @@ mod evidence;
 mod host_bindings;
 mod link;
 mod representation;
+pub mod target_plan;
 
 pub use backend_bundle::{
     CompilerArtifactReport, CompilerBuildBundle, compile_source_groups_to_artifacts, compile_source_groups_to_backend_bundle,
@@ -44,7 +44,7 @@ use nyar_types::CompileStage;
 /// Which half of the one-way stream a stage belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StreamHalf {
-    /// Produce / close semantic facts (through `CanonicalProgram`).
+    /// Produce / close semantic facts (through `ValkyrieMirProgram`).
     Analysis,
     /// Consume canonical facts into layout / private plan / artifacts.
     Processing,
@@ -60,7 +60,7 @@ pub fn stream_half(stage: CompileStage) -> StreamHalf {
     }
 }
 
-/// Documented analysis stage order (subset of [`nyar_types::pipeline::STAGE_ORDER`]).
+/// Documented analysis stage order (subset of [`crate::compiler::valkyrie_mir::pipeline::STAGE_ORDER`]).
 pub const ANALYSIS_STAGE_ORDER: &[CompileStage] =
     &[CompileStage::Ast, CompileStage::Hir, CompileStage::SemanticMir, CompileStage::LinkTime, CompileStage::ValidateMir];
 

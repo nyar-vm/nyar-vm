@@ -1,27 +1,28 @@
-//! Canonical Semantic MIR 结构与 M2 合同错误。
+//! Valkyrie MIR 结构与 M2 合同错误。
 //!
-//! 本模块拥有已解析、已类型化的 Semantic MIR：块、指令、操作、终结符与
-//! effect 类别，以及验证失败的确定性原因。这里不引入 AST 运算符类别。
+//! 本模块拥有 Valkyrie 已解析、已类型化的 MIR：块、指令、操作、终结符与
+//! effect 类别，以及验证失败的确定性原因。该表示归 Valkyrie 语言所有，
+//! 不是 Nyar 平台或其它语言的公共语义模型；这里不引入 AST 运算符类别。
 
-use crate::semantic_ids::{FieldId, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId, TypeId, VariantId};
+use nyar_types::semantic_ids::{FieldId, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId, TypeId, VariantId};
 use std::collections::BTreeMap;
 
 /// Semantic MIR 中的稳定基本块身份。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CanonicalBlockId(pub u32);
+pub struct ValkyrieMirBlockId(pub u32);
 
 /// Canonical Semantic MIR 的操作数。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CanonicalOperand {
+pub enum ValkyrieMirOperand {
     /// 已定义的 SSA 值。
     Value(MirValueId),
     /// 语言常量。
-    Constant(CanonicalConstant),
+    Constant(ValkyrieMirConstant),
 }
 
 /// 不依赖目标的语言常量。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CanonicalConstant {
+pub enum ValkyrieMirConstant {
     /// 有符号整数。
     Int(i64),
     /// IEEE-754 float64，以位模式保存。
@@ -44,11 +45,11 @@ pub enum CanonicalConstant {
 
 /// 已解析、已类型化的 Semantic MIR 操作。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CanonicalOperation {
+pub enum ValkyrieMirOperation {
     /// 普通调用；callee 是已链接项或已类型化函数值。
     Invoke {
         /// 已解析的调用目标。
-        callee: CanonicalCallee,
+        callee: ValkyrieMirCallee,
         /// 按签名顺序排列的实参 SSA 值。
         arguments: Vec<MirValueId>,
     },
@@ -83,7 +84,7 @@ pub enum CanonicalOperation {
     /// 加载语言常量。
     LoadConstant {
         /// 已类型化的常量载荷。
-        constant: CanonicalConstant,
+        constant: ValkyrieMirConstant,
     },
     /// 载入具名函数的实例身份作为一等值。
     ///
@@ -94,7 +95,7 @@ pub enum CanonicalOperation {
         /// 已冻结的 callable 实例身份。
         instance: ItemInstanceId,
         /// 闭包捕获环境的聚合值；无捕获 lambda 与具名函数引用均为 `None`。
-        environment: Option<CanonicalOperand>,
+        environment: Option<ValkyrieMirOperand>,
         /// 被捕获名清单，仅用于目标侧失败诊断。
         captured: Vec<String>,
     },
@@ -162,7 +163,7 @@ pub enum CanonicalOperation {
         /// 运行时长度 SSA 值。
         length: MirValueId,
         /// 元素初始化策略。
-        initialization: CanonicalArrayInitialization,
+        initialization: ValkyrieMirArrayInitialization,
     },
     /// 从完整元素序列构造数组。
     ArrayFromElements {
@@ -217,13 +218,13 @@ pub enum CanonicalOperation {
 
 /// 已完成类型检查的调用目标。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CanonicalCallee {
+pub enum ValkyrieMirCallee {
     /// 链接后的静态/实例 callable。
     Item(ItemInstanceId),
     /// 当前 SSA 中的函数值。
     Value(MirValueId),
     /// 尚未消去的 trait 方法槽分派义务。
-    Witness(CanonicalWitness),
+    Witness(ValkyrieMirWitness),
 }
 
 /// 未在 canonical 之前消去的 trait 方法槽分派义务。
@@ -232,7 +233,7 @@ pub enum CanonicalCallee {
 /// `self_type` 为 `None` 表示 self 仍是开放泛型（前端不做单态化）；表示层必须先按
 /// target 合同实例化或提供显式字典，不得按名字/短名猜测实现。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CanonicalWitness {
+pub struct ValkyrieMirWitness {
     /// trait 声明身份。
     pub trait_declaration: ItemId,
     /// trait 方法槽声明身份。
@@ -243,7 +244,7 @@ pub struct CanonicalWitness {
 
 /// 数组的语言初始化合同。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CanonicalArrayInitialization {
+pub enum ValkyrieMirArrayInitialization {
     /// 使用语言定义的元素默认值。
     Default,
     /// 使用已求值的 SSA 值填充所有元素。
@@ -252,18 +253,18 @@ pub enum CanonicalArrayInitialization {
 
 /// 带稳定指令身份的 Semantic MIR 指令。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CanonicalInstruction {
+pub struct ValkyrieMirInstruction {
     /// 优化和表示规划使用的稳定指令身份。
     pub id: InstructionId,
     /// 本指令定义的 SSA 值。
     pub results: Vec<MirValueId>,
     /// 已完成身份解析的操作。
-    pub operation: CanonicalOperation,
+    pub operation: ValkyrieMirOperation,
 }
 
 /// Semantic MIR 基本块终结符。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CanonicalTerminator {
+pub enum ValkyrieMirTerminator {
     /// 返回函数结果。
     Return {
         /// 返回值 SSA 值；`None` 表示 void 返回。
@@ -272,7 +273,7 @@ pub enum CanonicalTerminator {
     /// 带显式并行块参数的跳转。
     Jump {
         /// 目标基本块。
-        target: CanonicalBlockId,
+        target: ValkyrieMirBlockId,
         /// 传给目标块参数的 SSA 值。
         arguments: Vec<MirValueId>,
     },
@@ -281,32 +282,32 @@ pub enum CanonicalTerminator {
         /// 分支条件 SSA 值。
         condition: MirValueId,
         /// 条件为真时的目标块。
-        then_target: CanonicalBlockId,
+        then_target: ValkyrieMirBlockId,
         /// 条件为假时的目标块。
-        else_target: CanonicalBlockId,
+        else_target: ValkyrieMirBlockId,
     },
     /// 执行已解析 effect，并转移到恢复块。
     PerformEffect {
         /// effect 类别。
-        effect: CanonicalEffectKind,
+        effect: ValkyrieMirEffectKind,
         /// 可选的 effect 载荷。
         payload: Option<MirValueId>,
         /// effect 完成后的恢复块。
-        resume_target: CanonicalBlockId,
+        resume_target: ValkyrieMirBlockId,
     },
     /// 按已解析状态值分发到恢复块。
     StateDispatch {
         /// 分发用的整数状态 SSA 值。
         state: MirValueId,
         /// `(状态值, 目标块)` 映射表。
-        cases: Vec<(u32, CanonicalBlockId)>,
+        cases: Vec<(u32, ValkyrieMirBlockId)>,
         /// 无匹配状态时的默认目标块。
-        default_target: CanonicalBlockId,
+        default_target: ValkyrieMirBlockId,
     },
     /// 将 effect 控制权交还 runtime。
     YieldToRuntime {
         /// effect 类别。
-        effect: CanonicalEffectKind,
+        effect: ValkyrieMirEffectKind,
         /// 可选的 effect 载荷。
         payload: Option<MirValueId>,
         /// runtime 恢复时使用的状态编号。
@@ -318,7 +319,7 @@ pub enum CanonicalTerminator {
 
 /// Semantic MIR 中不依赖目标的 effect 类别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CanonicalEffectKind {
+pub enum ValkyrieMirEffectKind {
     /// `raise expr`。
     Raise,
     /// `yield expr`。
@@ -335,20 +336,20 @@ pub enum CanonicalEffectKind {
 
 /// 完整的 Semantic MIR 基本块。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CanonicalBlock {
+pub struct ValkyrieMirBlock {
     /// 稳定块身份。
-    pub id: CanonicalBlockId,
+    pub id: ValkyrieMirBlockId,
     /// 块参数及其类型。
     pub parameters: Vec<(MirValueId, TypeId)>,
     /// 按语义执行顺序排列的指令。
-    pub instructions: Vec<CanonicalInstruction>,
+    pub instructions: Vec<ValkyrieMirInstruction>,
     /// 控制流终点。
-    pub terminator: CanonicalTerminator,
+    pub terminator: ValkyrieMirTerminator,
 }
 
 /// One validated function body in Semantic MIR.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CanonicalFunction {
+pub struct ValkyrieMirFunction {
     /// 此函数对应的已实例化项。
     pub instance: ItemInstanceId,
     /// 入口参数的 SSA 值与类型身份。
@@ -360,23 +361,23 @@ pub struct CanonicalFunction {
     /// 函数内所有 SSA 值的稳定类型身份。
     pub value_types: BTreeMap<MirValueId, TypeId>,
     /// 函数入口块。
-    pub entry: CanonicalBlockId,
+    pub entry: ValkyrieMirBlockId,
     /// 完整 CFG；后端不得重建控制流或重新解析操作。
-    pub blocks: BTreeMap<CanonicalBlockId, CanonicalBlock>,
+    pub blocks: BTreeMap<ValkyrieMirBlockId, ValkyrieMirBlock>,
 }
 
 /// Validated Semantic MIR package owned by the success path (no embedded diagnostics).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CanonicalSemanticMir {
+pub struct ValkyrieMir {
     /// Owning linked program identity.
     pub module_name: String,
     /// 以稳定实例身份索引的完整函数合同。
-    pub functions: BTreeMap<ItemInstanceId, CanonicalFunction>,
+    pub functions: BTreeMap<ItemInstanceId, ValkyrieMirFunction>,
 }
 
 /// Canonical MIR 合同失败的确定性原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CanonicalMirError {
+pub enum ValkyrieMirError {
     /// 名义类型没有来自声明的值/引用语义。
     MissingNominalSemantics {
         /// 缺少语义的名义声明类型。
@@ -433,7 +434,7 @@ pub enum CanonicalMirError {
         /// 所在函数实例。
         function: ItemInstanceId,
         /// 所在基本块。
-        block: CanonicalBlockId,
+        block: ValkyrieMirBlockId,
     },
     /// 状态分发值不是整数类型。
     InvalidDispatchState {
@@ -447,7 +448,7 @@ pub enum CanonicalMirError {
         /// 所在函数实例。
         function: ItemInstanceId,
         /// 所在基本块。
-        block: CanonicalBlockId,
+        block: ValkyrieMirBlockId,
         /// 重复的状态值。
         state: u32,
     },
@@ -624,14 +625,14 @@ pub enum CanonicalMirError {
         /// 所在函数实例。
         function: ItemInstanceId,
         /// 未知的基本块身份。
-        block: CanonicalBlockId,
+        block: ValkyrieMirBlockId,
     },
     /// 跳转参数数量与目标块参数不一致。
     BlockParameterArityMismatch {
         /// 所在函数实例。
         function: ItemInstanceId,
         /// 参数数量不匹配的目标块。
-        block: CanonicalBlockId,
+        block: ValkyrieMirBlockId,
     },
     /// 块参数或指令结果重复定义 SSA 值。
     DuplicateBlockDefinition {
@@ -654,14 +655,14 @@ pub enum CanonicalMirError {
         /// 被非法使用的 SSA 值。
         value: MirValueId,
         /// 发生使用的基本块。
-        block: CanonicalBlockId,
+        block: ValkyrieMirBlockId,
     },
     /// 跳转实参与目标块参数类型不一致。
     BlockParameterTypeMismatch {
         /// 所在函数实例。
         function: ItemInstanceId,
         /// 目标基本块。
-        block: CanonicalBlockId,
+        block: ValkyrieMirBlockId,
         /// 类型不匹配的块参数 SSA 值。
         value: MirValueId,
     },

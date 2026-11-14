@@ -1,39 +1,39 @@
-//! CanonicalProgram 与编译处理阶段的唯一成功载荷。
+//! `ValkyrieMirProgram` 与编译处理阶段的唯一成功载荷。
 //!
-//! `CompiledProgram` 只允许把已验证的 Canonical Semantic MIR 与同一程序
-//! 生成的表示计划一起交给后续阶段。
+//! 该成功类型归 Valkyrie 所有；`CompiledValkyrieProgram` 只允许把已验证的
+//! Valkyrie MIR 与同一程序生成的表示计划一起交给后续阶段（语言 × 目标适配器）。
 
-use super::{
-    canonical_mir::{CanonicalCallee, CanonicalMirError, CanonicalOperation, CanonicalSemanticMir, CanonicalWitness},
-    linked_program::LinkedSemanticProgram,
-};
-use crate::semantic_ids::{
-    InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, ValueIdentity,
-    layout_choice::{RepresentationPlan, TextRepresentation},
+use super::operation::{ValkyrieMir, ValkyrieMirCallee, ValkyrieMirError, ValkyrieMirOperation, ValkyrieMirWitness};
+use nyar_types::{
+    LinkedSemanticProgram,
+    semantic_ids::{
+        InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, ValueIdentity,
+        layout_choice::{RepresentationPlan, TextRepresentation},
+    },
 };
 
 /// Top-level canonical success bundle after link + MIR validation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CanonicalProgram {
+pub struct ValkyrieMirProgram {
     /// Linked semantic closure.
     pub linked: LinkedSemanticProgram,
     /// Validated MIR (semantic only).
-    pub mir: CanonicalSemanticMir,
+    pub mir: ValkyrieMir,
 }
 
-impl CanonicalProgram {
+impl ValkyrieMirProgram {
     /// 在实例化固定点把具体 witness 分派消去为冻结的 `ItemInstanceId`。
     ///
     /// 消去只认已冻结事实：`(method_declaration, self_type)` 必须对应唯一个
     /// `linked.item_instances` 记录。开放 self、缺实现或多候选都返回结构化错误；
     /// 目标层不得再扫描语义实例库决定调用谁。消去后由现有 `Item` 校验路径执行
     /// 等价的完整调用签名验证。
-    pub fn resolve_witness_dispatch(&mut self) -> Result<(), CanonicalMirError> {
-        let mut dispatched: Vec<(CanonicalWitness, ItemInstanceId)> = Vec::new();
+    pub fn resolve_witness_dispatch(&mut self) -> Result<(), ValkyrieMirError> {
+        let mut dispatched: Vec<(ValkyrieMirWitness, ItemInstanceId)> = Vec::new();
         for function in self.mir.functions.values() {
             for block in function.blocks.values() {
                 for instruction in &block.instructions {
-                    if let CanonicalOperation::Invoke { callee: CanonicalCallee::Witness(witness), .. } = &instruction.operation
+                    if let ValkyrieMirOperation::Invoke { callee: ValkyrieMirCallee::Witness(witness), .. } = &instruction.operation
                         && !dispatched.iter().any(|(known, _)| known == witness)
                     {
                         let instance = self.resolve_witness_instance(witness)?;
@@ -48,11 +48,11 @@ impl CanonicalProgram {
         for function in self.mir.functions.values_mut() {
             for block in function.blocks.values_mut() {
                 for instruction in &mut block.instructions {
-                    if let CanonicalOperation::Invoke { callee, .. } = &mut instruction.operation
-                        && let CanonicalCallee::Witness(witness) = callee
+                    if let ValkyrieMirOperation::Invoke { callee, .. } = &mut instruction.operation
+                        && let ValkyrieMirCallee::Witness(witness) = callee
                         && let Some((_, instance)) = dispatched.iter().find(|(known, _)| known == witness)
                     {
-                        *callee = CanonicalCallee::Item(*instance);
+                        *callee = ValkyrieMirCallee::Item(*instance);
                     }
                 }
             }
@@ -60,8 +60,8 @@ impl CanonicalProgram {
         Ok(())
     }
 
-    fn resolve_witness_instance(&self, witness: &CanonicalWitness) -> Result<ItemInstanceId, CanonicalMirError> {
-        let unresolved = |candidates: usize| CanonicalMirError::UnresolvedWitnessDispatch {
+    fn resolve_witness_instance(&self, witness: &ValkyrieMirWitness) -> Result<ItemInstanceId, ValkyrieMirError> {
+        let unresolved = |candidates: usize| ValkyrieMirError::UnresolvedWitnessDispatch {
             trait_declaration: witness.trait_declaration,
             method_declaration: witness.method_declaration,
             self_type: witness.self_type,
@@ -88,8 +88,8 @@ impl CanonicalProgram {
     }
 
     /// 验证链接闭包与 Semantic MIR 后，才允许进入 processing half。
-    pub fn validate(&self) -> Result<(), CanonicalMirError> {
-        self.linked.validate_named_residues()?;
+    pub fn validate(&self) -> Result<(), ValkyrieMirError> {
+        super::validation::validate_named_residues(&self.linked)?;
         self.mir.validate(&self.linked)
     }
 }
@@ -100,14 +100,14 @@ impl CanonicalProgram {
 /// 一起交给后续阶段。它不包含 HIR、字符串 callable、旧 executable 或
 /// `FragmentSubmission` 字段；后端若需要这些信息，说明上游合同仍未闭合。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompiledProgram {
-    canonical: CanonicalProgram,
+pub struct CompiledValkyrieProgram {
+    canonical: ValkyrieMirProgram,
     representation: RepresentationPlan,
 }
 
-/// `CompiledProgram` 构造时发现的跨阶段合同错误。
+/// `CompiledValkyrieProgram` 构造时发现的跨阶段合同错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CompiledProgramError {
+pub enum CompiledValkyrieProgramError {
     /// 已链接的名义实例缺少表示选择。
     MissingAdtRepresentation {
         /// 缺少 ADT 表示的名义实例。
@@ -134,7 +134,7 @@ pub enum CompiledProgramError {
         nominal: NominalInstanceId,
     },
     /// Canonical Semantic MIR 尚未通过 M2 验证。
-    Canonical(CanonicalMirError),
+    Canonical(ValkyrieMirError),
     /// 某个 Semantic MIR 值没有对应表示选择。
     MissingValueRepresentation {
         /// 所在函数实例。
@@ -174,7 +174,7 @@ pub enum CompiledProgramError {
 /// 错误的渲染归错误自身所有：消费方只能拿到结构化字段的稳定文本，不得自己
 /// 枚举变体或转储 Debug 结构。`Canonical` 变体在表示规划先行验证下不可达，
 /// 只保留变体名，避免把另一类型的 Debug 结构漏进诊断。
-impl std::fmt::Display for CompiledProgramError {
+impl std::fmt::Display for CompiledValkyrieProgramError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MissingAdtRepresentation { nominal } => write!(formatter, "MissingAdtRepresentation(nominal={nominal})"),
@@ -209,30 +209,30 @@ fn text_representation_label(value: Option<TextRepresentation>) -> &'static str 
     }
 }
 
-impl CompiledProgram {
-    /// 只从完整 CanonicalProgram 与同一程序生成的 RepresentationPlan 构造。
-    pub fn new(canonical: CanonicalProgram, representation: RepresentationPlan) -> Result<Self, CompiledProgramError> {
-        canonical.validate().map_err(CompiledProgramError::Canonical)?;
-        let declared_text = super::declared_text_representation(&canonical);
+impl CompiledValkyrieProgram {
+    /// 只从完整 ValkyrieMirProgram 与同一程序生成的 RepresentationPlan 构造。
+    pub fn new(canonical: ValkyrieMirProgram, representation: RepresentationPlan) -> Result<Self, CompiledValkyrieProgramError> {
+        canonical.validate().map_err(CompiledValkyrieProgramError::Canonical)?;
+        let declared_text = super::text::declared_text_representation(&canonical);
         if representation.text_representation != declared_text {
-            return Err(CompiledProgramError::TextRepresentationMismatch {
+            return Err(CompiledValkyrieProgramError::TextRepresentationMismatch {
                 expected: declared_text,
                 actual: representation.text_representation,
             });
         }
         for nominal in canonical.linked.nominal_instances.keys() {
             if !representation.adt_reps.contains_key(nominal) {
-                return Err(CompiledProgramError::MissingAdtRepresentation { nominal: *nominal });
+                return Err(CompiledValkyrieProgramError::MissingAdtRepresentation { nominal: *nominal });
             }
         }
         if let Some(nominal) = representation.adt_reps.keys().find(|nominal| !canonical.linked.nominal_instances.contains_key(nominal)) {
-            return Err(CompiledProgramError::ExtraAdtRepresentation { nominal: *nominal });
+            return Err(CompiledValkyrieProgramError::ExtraAdtRepresentation { nominal: *nominal });
         }
         let expected_sum_nominals = canonical.linked.sum_types.iter().map(|sum| sum.nominal).collect::<std::collections::BTreeSet<_>>();
         for nominal in &expected_sum_nominals {
             let Some(sum) = representation.sum_reps.get(nominal)
             else {
-                return Err(CompiledProgramError::MissingSumRepresentation { nominal: *nominal });
+                return Err(CompiledValkyrieProgramError::MissingSumRepresentation { nominal: *nominal });
             };
             let expected_variants = canonical
                 .linked
@@ -241,11 +241,11 @@ impl CompiledProgram {
                 .filter_map(|(owner, variant)| (*owner == *nominal).then_some(*variant))
                 .collect::<std::collections::BTreeSet<_>>();
             if sum.variants.keys().copied().collect::<std::collections::BTreeSet<_>>() != expected_variants {
-                return Err(CompiledProgramError::SumVariantRepresentationMismatch { nominal: *nominal });
+                return Err(CompiledValkyrieProgramError::SumVariantRepresentationMismatch { nominal: *nominal });
             }
         }
         if let Some(nominal) = representation.sum_reps.keys().find(|nominal| !expected_sum_nominals.contains(nominal)) {
-            return Err(CompiledProgramError::ExtraSumRepresentation { nominal: *nominal });
+            return Err(CompiledValkyrieProgramError::ExtraSumRepresentation { nominal: *nominal });
         }
         let mut expected_values = std::collections::BTreeSet::new();
         let mut expected_invokes = std::collections::BTreeSet::new();
@@ -254,42 +254,42 @@ impl CompiledProgram {
                 let identity = ValueIdentity::new(function.instance, *value);
                 expected_values.insert(identity);
                 if !representation.value_reps.contains_key(&identity) {
-                    return Err(CompiledProgramError::MissingValueRepresentation { function: function.instance, value: *value });
+                    return Err(CompiledValkyrieProgramError::MissingValueRepresentation { function: function.instance, value: *value });
                 }
             }
             for block in function.blocks.values() {
                 for instruction in &block.instructions {
-                    if matches!(&instruction.operation, CanonicalOperation::Invoke { .. }) {
+                    if matches!(&instruction.operation, ValkyrieMirOperation::Invoke { .. }) {
                         expected_invokes.insert(instruction.id);
                         if !representation.invoke_lowerings.contains_key(&instruction.id) {
-                            return Err(CompiledProgramError::MissingInvokeRepresentation { instruction: instruction.id });
+                            return Err(CompiledValkyrieProgramError::MissingInvokeRepresentation { instruction: instruction.id });
                         }
                     }
                 }
             }
         }
         if let Some(identity) = representation.value_reps.keys().find(|identity| !expected_values.contains(identity)) {
-            return Err(CompiledProgramError::ExtraValueRepresentation { function: identity.function, value: identity.value });
+            return Err(CompiledValkyrieProgramError::ExtraValueRepresentation { function: identity.function, value: identity.value });
         }
         if let Some(instruction) = representation.invoke_lowerings.keys().find(|instruction| !expected_invokes.contains(instruction)) {
-            return Err(CompiledProgramError::ExtraInvokeRepresentation { instruction: *instruction });
+            return Err(CompiledValkyrieProgramError::ExtraInvokeRepresentation { instruction: *instruction });
         }
         Ok(Self { canonical, representation })
     }
 
-    /// 返回 Compiler 产生的 Canonical Semantic MIR。
-    pub fn canonical(&self) -> &CanonicalProgram {
+    /// 返回 Compiler 产生的已验证 Valkyrie MIR。
+    pub fn mir_program(&self) -> &ValkyrieMirProgram {
         &self.canonical
     }
 
-    /// 返回与 CanonicalProgram 同步生成的表示计划。
+    /// 返回与 ValkyrieMirProgram 同步生成的表示计划。
     pub fn representation(&self) -> &RepresentationPlan {
         &self.representation
     }
 
     /// 已链接导出、入口与函数实例的稳定表面摘要（不含字节码）。
     pub fn surface_digest(&self) -> String {
-        let canonical = self.canonical();
+        let canonical = self.mir_program();
         let mut parts = vec![canonical.mir.module_name.clone(), "surface-v1".to_string()];
         for (instance, export) in canonical.linked.exports.iter() {
             parts.push(format!("export:{}:{}", export.exported_name, instance.index()));
@@ -301,6 +301,6 @@ impl CompiledProgram {
             parts.push(format!("fn:{}", instance.index()));
         }
         let borrowed = parts.iter().map(String::as_str).collect::<Vec<_>>();
-        crate::digest::combined_content_hash(&borrowed)
+        nyar_types::combined_content_hash(&borrowed)
     }
 }

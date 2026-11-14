@@ -4,7 +4,7 @@ Target code services and artifact assembly for Wasm, CLR, JVM, OVM and native. T
 
 Each language-to-target adapter consumes its language IR or specialized residual program and produces target-owned plans/LIR. Target wrappers may implement explicit runtime services. Encoders must not parse source, infer missing language facts or require a common semantic MIR.
 
-Current `CompiledProgram`, canonical-bound lowering, common execution views and fragment summaries remain migration debt. They carry Valkyrie semantics and must be renamed/returned to Valkyrie or separated into target-owned representations. Neither a mandatory canonical entrance nor an optional `SharedSemanticSubset` is the architecture contract.
+Every entrance goes through `AdaptedFragmentInput`: a language-to-target adapter prepares `TargetExecutionPlan` (via `TargetPlanInput`) and submits it. There is no shared semantic MIR entrance and no `SharedSemanticSubset` capability; the semantic MIR now lives in the owning language crate. Cross-lane plan splitting and representation-ownership cleanup remain open work, tracked in the execution ledger.
 
 OVM emits `.odin` for OdinVM. Other targets do not transit OdinVM. Native machine/object/link/container services are distinct from Node-API `.node` and CPython `.pyd` / Python `.so` ABI construction. Compiler-host FFI bindings do not demonstrate guest extension support.
 

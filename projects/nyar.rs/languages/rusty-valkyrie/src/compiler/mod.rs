@@ -15,3 +15,4 @@ pub mod services;
 pub mod syntax;
 pub(crate) mod text_carrier;
 pub mod types;
+pub mod valkyrie_mir;

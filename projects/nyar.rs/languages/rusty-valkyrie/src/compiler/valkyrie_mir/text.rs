@@ -1,13 +1,16 @@
 //! 程序级文本值载体表示事实的唯一判定。
 //!
 //! 文本值空间只有两种正式来源：源程序在 `std.text` 下声明并登记了 canonical
-//! 文本载体（[`crate::canonical_program::LinkedSemanticProgram::text_encoding_types`]）时为托管对象；未登记
+//! 文本载体（[`crate::valkyrie_mir::LinkedSemanticProgram::text_encoding_types`]）时为托管对象；未登记
 //! 任何载体时，`utf8` / `utf16` 值就是宿主编码基元本身。判定只读这份声明与值类型
 //! 事实，不读布局注册表——布局缺失必须作为目标层的 missing 事实失败闭合，不能
 //! 反过来成为 raw 的依据。
 
-use super::{CanonicalConstant, CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalTypeKind};
-use crate::{TypeId, semantic_ids::layout_choice::TextRepresentation};
+use super::{ValkyrieMirConstant, ValkyrieMirOperation, ValkyrieMirProgram};
+use nyar_types::{
+    CanonicalPrimitiveType, CanonicalTypeKind, TypeId,
+    semantic_ids::layout_choice::TextRepresentation,
+};
 
 /// 由 canonical 声明与值类型事实判定程序级文本表示。
 ///
@@ -18,7 +21,7 @@ use crate::{TypeId, semantic_ids::layout_choice::TextRepresentation};
 /// - 程序没有任何文本值时为 `None`。
 ///
 /// 判定只读声明与值类型事实，不读布局表。
-pub fn declared_text_representation(canonical: &CanonicalProgram) -> Option<TextRepresentation> {
+pub fn declared_text_representation(canonical: &ValkyrieMirProgram) -> Option<TextRepresentation> {
     if !canonical.linked.text_encoding_types.is_empty() {
         return Some(TextRepresentation::Managed);
     }
@@ -31,7 +34,7 @@ pub fn declared_text_representation(canonical: &CanonicalProgram) -> Option<Text
                 block.instructions.iter().any(|instruction| {
                     matches!(
                         &instruction.operation,
-                        CanonicalOperation::LoadConstant { constant: CanonicalConstant::Utf8(_) | CanonicalConstant::Utf16(_) }
+                        ValkyrieMirOperation::LoadConstant { constant: ValkyrieMirConstant::Utf8(_) | ValkyrieMirConstant::Utf16(_) }
                     )
                 })
             })

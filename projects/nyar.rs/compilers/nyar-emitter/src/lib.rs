@@ -18,7 +18,7 @@ mod target_execution_plan;
 pub mod target_operator;
 
 mod error;
-pub use error::{EmitterError, FragmentLoweringError, Result, TargetPlanError};
+pub use error::{EmitterError, FragmentLoweringError, Result};
 
 pub mod managed_abi;
 pub use managed_abi::{MANAGED_ABI_SCHEMA_VERSION, ManagedAbiContract, ManagedAbiEntry, managed_abi_sidecar_file};
@@ -43,12 +43,9 @@ use nyar::{
     QualifiedName, ReferenceManagement, TargetBackendFamily, TargetFamily, TargetLane, TargetProfile, TheoryBundle,
     backends::CompilationOptions, packaging::ArtifactSet,
 };
-#[doc(hidden)]
-pub use nyar_types::CompiledProgram;
-use nyar_types::{AggregateLayoutPlan, FlagsLayout, SingletonInstancePlan};
 use std::collections::{BTreeMap, BTreeSet};
 #[doc(hidden)]
-pub use target_execution_plan::{BackendImport, ProgramTextRepresentation, TargetExecutionPlan};
+pub use target_execution_plan::{BackendImport, ProgramTextRepresentation, TargetExecutionPlan, TargetPlanInput};
 
 use crate::{
     backend_plan_views::ExecutableFunction,
@@ -88,7 +85,7 @@ pub(crate) fn test_canonical_primitive(spelling: &str) -> nyar_types::NyarType {
         other => panic!("测试只支持 canonical 原语拼写: {other}"),
     }
 }
-pub use assembly::{AdaptedFragmentInput, AssembledFragment, FragmentTargetInput, TargetInputRequest};
+pub use assembly::{AdaptedFragmentInput, AssembledFragment, TargetInputRequest};
 pub use nyar::ArtifactPartition;
 
 /// Integration-test support wrappers for crate-internal lowering and compile flows.
@@ -653,8 +650,10 @@ impl LoweredBackendInput {
         Self::new(DriverBackendInput::Ovm(input))
     }
 
-    /// 基于前端片段提交生成驱动层 backend 输入。
-    fn from_fragment_submission(
+    /// 语言→平台适配器提交已准备的目标计划，生成驱动层 backend 输入。
+    ///
+    /// 只有适配器持有的目标计划会进入编码；编排层不读取语言 MIR。
+    pub fn from_fragment_submission(
         submission: &FragmentSubmission,
         backend_family: TargetBackendFamily,
         host_boundary: HostProjectionBoundary,

@@ -63,3 +63,15 @@ zip = { workspace = true }
 [[test]]
 name = "smoke"
 path = "tests/smoke.rs"
+
+[[test]]
+name = "valkyrie_mir"
+path = "tests/valkyrie_mir.rs"
+
+[[test]]
+name = "target_plan_typed_reference"
+path = "tests/target_execution_plan_typed_reference_invoke_tests.rs"
+
+[[test]]
+name = "target_plan_function_value_callee"
+path = "tests/lowering_features_semantic_mir_function_value_callee_tests.rs"

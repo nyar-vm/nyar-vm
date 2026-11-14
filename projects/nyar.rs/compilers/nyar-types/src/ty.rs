@@ -132,6 +132,25 @@ impl NyarType {
     pub fn is_i64_width(&self) -> bool {
         matches!(self, NyarType::Integer64 { .. } | NyarType::Integer128 { .. })
     }
+
+    /// 抹掉诊断拼写、只保留布局/结构身份的合同键。
+    ///
+    /// 同一实例类型可能以携带不同拼写的形态出现（SSA 结算形态与布局计划的
+    /// 构造器形态）；合同比对必须用同一键，不能比较拼写文本。
+    pub fn contract_key(&self) -> NyarType {
+        match self {
+            NyarType::Nominal { layout, .. } => NyarType::Nominal { layout: *layout, spelling: crate::Identifier::new("") },
+            NyarType::Apply(base, arguments) => {
+                NyarType::Apply(Box::new(base.contract_key()), arguments.iter().map(NyarType::contract_key).collect())
+            }
+            NyarType::Array(element) => NyarType::Array(Box::new(element.contract_key())),
+            NyarType::FixedArray { element, length } => NyarType::FixedArray { element: Box::new(element.contract_key()), length: *length },
+            NyarType::Tuple(items) => NyarType::Tuple(items.iter().map(NyarType::contract_key).collect()),
+            NyarType::Nullable(element) => NyarType::Nullable(Box::new(element.contract_key())),
+            NyarType::Union(items) => NyarType::Union(items.iter().map(NyarType::contract_key).collect()),
+            other => other.clone(),
+        }
+    }
 }
 
 impl fmt::Display for NyarType {

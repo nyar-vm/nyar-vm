@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use nyar_types::{
-    CanonicalMirError, CanonicalOperation, CanonicalProgram, InstructionId, ItemId, ItemInstanceId, MirValueId, StructuredDiagnosticSet, TypeId,
-};
+use nyar_types::{InstructionId, ItemId, ItemInstanceId, MirValueId, StructuredDiagnosticSet, TypeId};
+
+use crate::compiler::valkyrie_mir::{ValkyrieMirError, ValkyrieMirOperation, ValkyrieMirProgram};
 
 use crate::compiler::{
     hir::type_lowering::primitive_surface_type,
@@ -52,12 +52,12 @@ pub(crate) fn error_without_module(code: &'static str, message: impl Into<String
 pub(crate) fn error(module: &MirModule, code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet {
     fail_stage::<()>(nyar_types::CompileStage::SemanticMir, code, &module.name, message).err().unwrap()
 }
-pub(crate) fn canonical_error(module: &MirModule, program: &CanonicalProgram, error: CanonicalMirError) -> StructuredDiagnosticSet {
+pub(crate) fn canonical_error(module: &MirModule, program: &ValkyrieMirProgram, error: ValkyrieMirError) -> StructuredDiagnosticSet {
     let detail = match &error {
-        CanonicalMirError::OperationResultTypeMismatch { function, instruction } => {
+        ValkyrieMirError::OperationResultTypeMismatch { function, instruction } => {
             format!("canonical MIR 校验失败: {error:?}{}", describe_operation_result_mismatch(module, program, *function, *instruction))
         }
-        CanonicalMirError::CallResultTypeMismatch { function, callee, value } => {
+        ValkyrieMirError::CallResultTypeMismatch { function, callee, value } => {
             format!("canonical MIR 校验失败: {error:?}{}", describe_call_result_mismatch(module, program, *function, *callee, *value))
         }
         _ => format!("canonical MIR 校验失败: {error:?}"),
@@ -67,7 +67,7 @@ pub(crate) fn canonical_error(module: &MirModule, program: &CanonicalProgram, er
 
 fn describe_call_result_mismatch(
     module: &MirModule,
-    program: &CanonicalProgram,
+    program: &ValkyrieMirProgram,
     function: ItemInstanceId,
     callee: ItemInstanceId,
     value: MirValueId,
@@ -96,7 +96,7 @@ fn describe_call_result_mismatch(
 
 fn describe_operation_result_mismatch(
     module: &MirModule,
-    program: &CanonicalProgram,
+    program: &ValkyrieMirProgram,
     function: ItemInstanceId,
     instruction: InstructionId,
 ) -> String {
@@ -123,7 +123,7 @@ fn describe_operation_result_mismatch(
             };
             let result_types: Vec<_> = instr.results.iter().map(describe).collect();
             let operand_hint = match &instr.operation {
-                CanonicalOperation::Copy { source } => format!(" source={}", describe(source)),
+                ValkyrieMirOperation::Copy { source } => format!(" source={}", describe(source)),
                 _ => String::new(),
             };
             return format!(" (function_symbol=`{symbol}` op={:?}{operand_hint} results=[{}])", instr.operation, result_types.join(", "));

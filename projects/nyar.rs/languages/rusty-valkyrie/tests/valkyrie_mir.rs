@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 
-use nyar_types::{
-    canonical_program::{CanonicalEffectKind, EntryRecord, ExportRecord},
-    layout_choice::RepresentationPlan,
-    semantic_ids::ItemInstanceId,
-    *,
+use nyar_types::{layout_choice::RepresentationPlan, semantic_ids::ItemInstanceId, EntryRecord, ExportRecord, *};
+
+use rusty_valkyrie::compiler::valkyrie_mir::{
+    CompiledValkyrieProgram, CompiledValkyrieProgramError, ValkyrieMir, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee,
+    ValkyrieMirConstant, ValkyrieMirEffectKind, ValkyrieMirError, ValkyrieMirFunction, ValkyrieMirInstruction, ValkyrieMirOperand,
+    ValkyrieMirOperation, ValkyrieMirProgram, ValkyrieMirTerminator, ValkyrieMirWitness, declared_text_representation,
+    pipeline, validate_named_residues,
 };
 
 #[test]
@@ -18,26 +20,26 @@ fn canonical_program_is_success_only() {
         .item_instances
         .insert(item, ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: Vec::new(), return_type: ty });
     let instance = ItemInstanceId::from_index(0).unwrap();
-    let function = CanonicalFunction {
+    let function = ValkyrieMirFunction {
         instance,
         parameters: Vec::new(),
         parameter_names: Vec::new(),
         return_type: ty,
         value_types: BTreeMap::new(),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([(
-            CanonicalBlockId(0),
-            CanonicalBlock {
-                id: CanonicalBlockId(0),
+            ValkyrieMirBlockId(0),
+            ValkyrieMirBlock {
+                id: ValkyrieMirBlockId(0),
                 parameters: Vec::new(),
                 instructions: Vec::new(),
-                terminator: CanonicalTerminator::Return { value: None },
+                terminator: ValkyrieMirTerminator::Return { value: None },
             },
         )]),
     };
     let mut functions = BTreeMap::new();
     functions.insert(instance, function);
-    let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "demo".into(), functions } };
+    let program = ValkyrieMirProgram { linked, mir: ValkyrieMir { module_name: "demo".into(), functions } };
     assert_eq!(program.mir.functions.len(), 1);
     program.mir.validate(&program.linked).expect("canonical MIR contract");
     program.validate().expect("canonical program contract");
@@ -53,31 +55,31 @@ fn canonical_mir_rejects_unknown_callee_before_planning() {
         .item_instances
         .insert(instance, ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: Vec::new(), return_type: ty });
     linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
-    let function = CanonicalFunction {
+    let function = ValkyrieMirFunction {
         instance,
         parameters: Vec::new(),
         parameter_names: Vec::new(),
         return_type: ty,
         value_types: BTreeMap::new(),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([(
-            CanonicalBlockId(0),
-            CanonicalBlock {
-                id: CanonicalBlockId(0),
+            ValkyrieMirBlockId(0),
+            ValkyrieMirBlock {
+                id: ValkyrieMirBlockId(0),
                 parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
+                instructions: vec![ValkyrieMirInstruction {
                     id: InstructionId::from_index(0).unwrap(),
                     results: Vec::new(),
-                    operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Item(unknown), arguments: Vec::new() },
+                    operation: ValkyrieMirOperation::Invoke { callee: ValkyrieMirCallee::Item(unknown), arguments: Vec::new() },
                 }],
-                terminator: CanonicalTerminator::Return { value: None },
+                terminator: ValkyrieMirTerminator::Return { value: None },
             },
         )]),
     };
     let mut functions = BTreeMap::new();
     functions.insert(instance, function);
-    let mir = CanonicalSemanticMir { module_name: "demo".into(), functions };
-    assert!(matches!(mir.validate(&linked), Err(CanonicalMirError::UnknownCallee { .. })));
+    let mir = ValkyrieMir { module_name: "demo".into(), functions };
+    assert!(matches!(mir.validate(&linked), Err(ValkyrieMirError::UnknownCallee { .. })));
 }
 
 #[test]
@@ -104,8 +106,8 @@ fn canonical_program_rejects_named_residue_shadowing_registered_layout() {
     linked.type_surface_spellings.insert(ty, Identifier::new("Endpoint"));
     linked.aggregate_layout_by_type.insert(ty, 0);
     linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(NyarType::Named(Identifier::new("Endpoint"))));
-    match linked.validate_named_residues() {
-        Err(CanonicalMirError::ShadowedNamedResidue { stage, function, owner, name }) => {
+    match validate_named_residues(&linked) {
+        Err(ValkyrieMirError::ShadowedNamedResidue { stage, function, owner, name }) => {
             assert_eq!(stage, "canonical::aggregate_layouts");
             assert!(function.contains("layout_for_struct"), "{function}");
             assert!(function.contains("instance_layout_for_type"), "{function}");
@@ -123,7 +125,7 @@ fn canonical_program_allows_named_spelling_without_registered_identity() {
     linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Generic { owner: ItemId::from_index(0).unwrap(), ordinal: 0 } });
     linked.type_surface_spellings.insert(ty, Identifier::new("T"));
     linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(NyarType::Named(Identifier::new("usize"))));
-    linked.validate_named_residues().expect("无冻结身份的名义拼写允许保留");
+    validate_named_residues(&linked).expect("无冻结身份的名义拼写允许保留");
 }
 
 #[test]
@@ -135,7 +137,7 @@ fn canonical_program_rejects_named_residue_shadowing_primitive_carrier() {
         .insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 64, signed: true }) });
     linked.type_surface_spellings.insert(ty, Identifier::new("std::primitive::i64"));
     linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(NyarType::Named(Identifier::new("i64"))));
-    assert!(matches!(linked.validate_named_residues(), Err(CanonicalMirError::ShadowedNamedResidue { .. })));
+    assert!(matches!(validate_named_residues(&linked), Err(ValkyrieMirError::ShadowedNamedResidue { .. })));
 }
 
 #[test]
@@ -157,8 +159,8 @@ fn canonical_program_rejects_named_residue_in_sum_payload() {
             payload_type: Some(NyarType::Named(Identifier::new("Endpoint"))),
         }],
     });
-    match linked.validate_named_residues() {
-        Err(CanonicalMirError::ShadowedNamedResidue { stage, function, owner, .. }) => {
+    match validate_named_residues(&linked) {
+        Err(ValkyrieMirError::ShadowedNamedResidue { stage, function, owner, .. }) => {
             assert_eq!(stage, "canonical::sum_layouts");
             assert!(function.contains("sum_payload_layout"), "{function}");
             assert!(owner.contains("Option") && owner.contains("Some"), "{owner}");
@@ -189,42 +191,42 @@ fn canonical_array_contract_checks_inputs_and_results_before_planning() {
         instance,
         ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: vec![array_type, integer], return_type: integer },
     );
-    let function = CanonicalFunction {
+    let function = ValkyrieMirFunction {
         instance,
         parameters: vec![(array, array_type), (index, integer)],
         parameter_names: vec!["array".to_string(), "index".to_string()],
         return_type: integer,
         value_types: BTreeMap::from([(array, array_type), (index, integer), (result, integer)]),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([(
-            CanonicalBlockId(0),
-            CanonicalBlock {
-                id: CanonicalBlockId(0),
+            ValkyrieMirBlockId(0),
+            ValkyrieMirBlock {
+                id: ValkyrieMirBlockId(0),
                 parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
+                instructions: vec![ValkyrieMirInstruction {
                     id: instruction,
                     results: vec![result],
-                    operation: CanonicalOperation::ArrayGet { array, index },
+                    operation: ValkyrieMirOperation::ArrayGet { array, index },
                 }],
-                terminator: CanonicalTerminator::Return { value: Some(result) },
+                terminator: ValkyrieMirTerminator::Return { value: Some(result) },
             },
         )]),
     };
-    let program = CanonicalProgram {
+    let program = ValkyrieMirProgram {
         linked,
-        mir: CanonicalSemanticMir { module_name: "array".into(), functions: BTreeMap::from([(instance, function)]) },
+        mir: ValkyrieMir { module_name: "array".into(), functions: BTreeMap::from([(instance, function)]) },
     };
     program.validate().expect("完整数组读取合同");
     let mut invalid = program.clone();
     invalid.mir.functions.get_mut(&instance).unwrap().value_types.insert(result, boolean);
-    assert_eq!(invalid.validate(), Err(CanonicalMirError::OperationResultTypeMismatch { function: instance, instruction }));
+    assert_eq!(invalid.validate(), Err(ValkyrieMirError::OperationResultTypeMismatch { function: instance, instruction }));
     let mut invalid = program.clone();
-    invalid.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].results.clear();
-    assert_eq!(invalid.validate(), Err(CanonicalMirError::OperationResultArityMismatch { function: instance, instruction }));
+    invalid.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&ValkyrieMirBlockId(0)).unwrap().instructions[0].results.clear();
+    assert_eq!(invalid.validate(), Err(ValkyrieMirError::OperationResultArityMismatch { function: instance, instruction }));
     let mut invalid = program;
-    invalid.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation =
-        CanonicalOperation::ArrayGet { array: index, index };
-    assert_eq!(invalid.validate(), Err(CanonicalMirError::OperationOperandTypeMismatch { function: instance, instruction, value: index }));
+    invalid.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&ValkyrieMirBlockId(0)).unwrap().instructions[0].operation =
+        ValkyrieMirOperation::ArrayGet { array: index, index };
+    assert_eq!(invalid.validate(), Err(ValkyrieMirError::OperationOperandTypeMismatch { function: instance, instruction, value: index }));
 }
 
 #[test]
@@ -238,39 +240,39 @@ fn canonical_effect_terminator_preserves_payload_and_resume_contract() {
     linked
         .item_instances
         .insert(instance, ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: vec![ty], return_type: ty });
-    let function = CanonicalFunction {
+    let function = ValkyrieMirFunction {
         instance,
         parameters: vec![(payload, ty)],
         parameter_names: vec!["payload".to_string()],
         return_type: ty,
         value_types: BTreeMap::from([(payload, ty), (resume_value, ty)]),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([
             (
-                CanonicalBlockId(0),
-                CanonicalBlock {
-                    id: CanonicalBlockId(0),
+                ValkyrieMirBlockId(0),
+                ValkyrieMirBlock {
+                    id: ValkyrieMirBlockId(0),
                     parameters: Vec::new(),
                     instructions: Vec::new(),
-                    terminator: CanonicalTerminator::PerformEffect {
-                        effect: CanonicalEffectKind::Raise,
+                    terminator: ValkyrieMirTerminator::PerformEffect {
+                        effect: ValkyrieMirEffectKind::Raise,
                         payload: Some(payload),
-                        resume_target: CanonicalBlockId(1),
+                        resume_target: ValkyrieMirBlockId(1),
                     },
                 },
             ),
             (
-                CanonicalBlockId(1),
-                CanonicalBlock {
-                    id: CanonicalBlockId(1),
+                ValkyrieMirBlockId(1),
+                ValkyrieMirBlock {
+                    id: ValkyrieMirBlockId(1),
                     parameters: vec![(resume_value, ty)],
                     instructions: Vec::new(),
-                    terminator: CanonicalTerminator::Return { value: None },
+                    terminator: ValkyrieMirTerminator::Return { value: None },
                 },
             ),
         ]),
     };
-    let program = CanonicalSemanticMir { module_name: "effect".into(), functions: BTreeMap::from([(instance, function)]) };
+    let program = ValkyrieMir { module_name: "effect".into(), functions: BTreeMap::from([(instance, function)]) };
     program.validate(&linked).expect("effect payload and resume block are complete");
 }
 
@@ -283,32 +285,32 @@ fn canonical_effect_terminator_rejects_missing_payload() {
     linked
         .item_instances
         .insert(instance, ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: Vec::new(), return_type: ty });
-    let function = CanonicalFunction {
+    let function = ValkyrieMirFunction {
         instance,
         parameters: Vec::new(),
         parameter_names: Vec::new(),
         return_type: ty,
         value_types: BTreeMap::new(),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([(
-            CanonicalBlockId(0),
-            CanonicalBlock {
-                id: CanonicalBlockId(0),
+            ValkyrieMirBlockId(0),
+            ValkyrieMirBlock {
+                id: ValkyrieMirBlockId(0),
                 parameters: Vec::new(),
                 instructions: Vec::new(),
-                terminator: CanonicalTerminator::PerformEffect {
-                    effect: CanonicalEffectKind::Raise,
+                terminator: ValkyrieMirTerminator::PerformEffect {
+                    effect: ValkyrieMirEffectKind::Raise,
                     payload: None,
-                    resume_target: CanonicalBlockId(0),
+                    resume_target: ValkyrieMirBlockId(0),
                 },
             },
         )]),
     };
-    let program = CanonicalSemanticMir { module_name: "effect".into(), functions: BTreeMap::from([(instance, function)]) };
-    assert!(matches!(program.validate(&linked), Err(CanonicalMirError::MissingEffectPayload { .. })));
+    let program = ValkyrieMir { module_name: "effect".into(), functions: BTreeMap::from([(instance, function)]) };
+    assert!(matches!(program.validate(&linked), Err(ValkyrieMirError::MissingEffectPayload { .. })));
 }
 
-fn typed_call_program() -> CanonicalProgram {
+fn typed_call_program() -> ValkyrieMirProgram {
     let caller = ItemInstanceId::from_index(0).unwrap();
     let callee = ItemInstanceId::from_index(1).unwrap();
     let ty = TypeId::from_index(0).unwrap();
@@ -322,36 +324,36 @@ fn typed_call_program() -> CanonicalProgram {
             ItemInstanceRecord { declaration: ItemId::from_index(instance.index()).unwrap(), parameter_types: vec![ty], return_type: ty },
         );
     }
-    let function = CanonicalFunction {
+    let function = ValkyrieMirFunction {
         instance: caller,
         parameters: vec![(argument, ty)],
         parameter_names: vec!["argument".to_string()],
         return_type: ty,
         value_types: BTreeMap::from([(argument, ty), (result, ty)]),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([(
-            CanonicalBlockId(0),
-            CanonicalBlock {
-                id: CanonicalBlockId(0),
+            ValkyrieMirBlockId(0),
+            ValkyrieMirBlock {
+                id: ValkyrieMirBlockId(0),
                 parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
+                instructions: vec![ValkyrieMirInstruction {
                     id: InstructionId::from_index(0).unwrap(),
                     results: vec![result],
-                    operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Item(callee), arguments: vec![argument] },
+                    operation: ValkyrieMirOperation::Invoke { callee: ValkyrieMirCallee::Item(callee), arguments: vec![argument] },
                 }],
-                terminator: CanonicalTerminator::Return { value: Some(result) },
+                terminator: ValkyrieMirTerminator::Return { value: Some(result) },
             },
         )]),
     };
-    CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "typed".into(), functions: BTreeMap::from([(caller, function)]) } }
+    ValkyrieMirProgram { linked, mir: ValkyrieMir { module_name: "typed".into(), functions: BTreeMap::from([(caller, function)]) } }
 }
 
-fn nominal_program() -> CanonicalProgram {
+fn nominal_program() -> ValkyrieMirProgram {
     let declaration = TypeId::from_index(0).unwrap();
     let field_type = TypeId::from_index(1).unwrap();
     let nominal = NominalInstanceId::from_index(0).unwrap();
     let field = FieldId::from_index(0).unwrap();
-    let mut program = CanonicalProgram { linked: LinkedSemanticProgram::default(), mir: CanonicalSemanticMir::default() };
+    let mut program = ValkyrieMirProgram { linked: LinkedSemanticProgram::default(), mir: ValkyrieMir::default() };
     program
         .linked
         .types
@@ -376,23 +378,23 @@ fn canonical_nominal_contract_validates_the_entire_field_closure() {
     let field = FieldId::from_index(0).unwrap();
     let mut invalid = program.clone();
     invalid.linked.nominal_instances.get_mut(&nominal).unwrap().fields.push(field);
-    assert_eq!(invalid.validate(), Err(CanonicalMirError::InvalidNominalField { nominal, field }));
+    assert_eq!(invalid.validate(), Err(ValkyrieMirError::InvalidNominalField { nominal, field }));
     let mut invalid = program.clone();
     invalid.linked.fields.get_mut(&field).unwrap().owner = NominalInstanceId::from_index(1).unwrap();
-    assert!(matches!(invalid.validate(), Err(CanonicalMirError::InvalidNominalField { .. })));
+    assert!(matches!(invalid.validate(), Err(ValkyrieMirError::InvalidNominalField { .. })));
     let mut invalid = program.clone();
     invalid.linked.fields.get_mut(&field).unwrap().ty = TypeId::from_index(9).unwrap();
-    assert_eq!(invalid.validate(), Err(CanonicalMirError::InvalidNominalField { nominal, field }));
+    assert_eq!(invalid.validate(), Err(ValkyrieMirError::InvalidNominalField { nominal, field }));
     let mut invalid = program.clone();
     invalid.linked.nominal_instances.get_mut(&nominal).unwrap().fields.clear();
-    assert_eq!(invalid.validate(), Err(CanonicalMirError::InvalidNominalField { nominal, field }));
+    assert_eq!(invalid.validate(), Err(ValkyrieMirError::InvalidNominalField { nominal, field }));
     let mut invalid = program.clone();
     invalid.linked.nominal_instances.clear();
     invalid.linked.fields.clear();
-    assert_eq!(invalid.validate(), Err(CanonicalMirError::MissingNominalSemantics { declaration: TypeId::from_index(0).unwrap() }));
+    assert_eq!(invalid.validate(), Err(ValkyrieMirError::MissingNominalSemantics { declaration: TypeId::from_index(0).unwrap() }));
     let mut invalid = program;
     invalid.linked.nominal_instances.get_mut(&nominal).unwrap().declaration = TypeId::from_index(1).unwrap();
-    assert!(matches!(invalid.validate(), Err(CanonicalMirError::InvalidNominalDeclaration { .. })));
+    assert!(matches!(invalid.validate(), Err(ValkyrieMirError::InvalidNominalDeclaration { .. })));
 }
 
 #[test]
@@ -412,7 +414,7 @@ fn canonical_nominal_instances_cannot_disagree_on_declaration_semantics() {
     program.linked.nominal_instances.insert(instance, other.clone());
     program.validate().expect("同一声明不同实例保持共同值语义");
     program.linked.nominal_instances.get_mut(&instance).unwrap().semantics = NominalValueSemantics::Value;
-    assert_eq!(program.validate(), Err(CanonicalMirError::ConflictingNominalSemantics { declaration: other.declaration }));
+    assert_eq!(program.validate(), Err(ValkyrieMirError::ConflictingNominalSemantics { declaration: other.declaration }));
 }
 
 #[test]
@@ -420,15 +422,15 @@ fn compiled_program_requires_exact_nominal_representation_coverage() {
     let program = nominal_program();
     let nominal = NominalInstanceId::from_index(0).unwrap();
     let mut plan = RepresentationPlan::default();
-    assert_eq!(CompiledProgram::new(program.clone(), plan.clone()), Err(CompiledProgramError::MissingAdtRepresentation { nominal }));
+    assert_eq!(CompiledValkyrieProgram::new(program.clone(), plan.clone()), Err(CompiledValkyrieProgramError::MissingAdtRepresentation { nominal }));
     plan.adt_reps.insert(nominal, nyar_types::layout_choice::AdtRepresentation::TypedAggregate);
-    CompiledProgram::new(program.clone(), plan.clone()).expect("名义表示完整");
+    CompiledValkyrieProgram::new(program.clone(), plan.clone()).expect("名义表示完整");
     let extra = NominalInstanceId::from_index(9).unwrap();
     plan.adt_reps.insert(extra, nyar_types::layout_choice::AdtRepresentation::TypedAggregate);
-    assert_eq!(CompiledProgram::new(program, plan), Err(CompiledProgramError::ExtraAdtRepresentation { nominal: extra }));
+    assert_eq!(CompiledValkyrieProgram::new(program, plan), Err(CompiledValkyrieProgramError::ExtraAdtRepresentation { nominal: extra }));
 }
 
-fn instantiated_nominal_operation_program(operation: CanonicalOperation, result_type: Option<TypeId>) -> CanonicalProgram {
+fn instantiated_nominal_operation_program(operation: ValkyrieMirOperation, result_type: Option<TypeId>) -> ValkyrieMirProgram {
     let mut program = nominal_program();
     let declaration = TypeId::from_index(0).unwrap();
     let boolean = TypeId::from_index(1).unwrap();
@@ -470,10 +472,10 @@ fn instantiated_nominal_operation_program(operation: CanonicalOperation, result_
     if let Some(ty) = result_type {
         value_types.insert(result, ty);
     }
-    let entry = CanonicalBlockId(0);
+    let entry = ValkyrieMirBlockId(0);
     program.mir.functions.insert(
         instance,
-        CanonicalFunction {
+        ValkyrieMirFunction {
             instance,
             parameters: vec![(object, first_type), (payload, boolean)],
             parameter_names: vec!["object".to_string(), "payload".to_string()],
@@ -482,15 +484,15 @@ fn instantiated_nominal_operation_program(operation: CanonicalOperation, result_
             entry,
             blocks: BTreeMap::from([(
                 entry,
-                CanonicalBlock {
+                ValkyrieMirBlock {
                     id: entry,
                     parameters: Vec::new(),
-                    instructions: vec![CanonicalInstruction {
+                    instructions: vec![ValkyrieMirInstruction {
                         id: InstructionId::from_index(0).unwrap(),
                         results: result_type.map(|_| vec![result]).unwrap_or_default(),
                         operation,
                     }],
-                    terminator: CanonicalTerminator::Return { value: Some(if result_type.is_some() { result } else { payload }) },
+                    terminator: ValkyrieMirTerminator::Return { value: Some(if result_type.is_some() { result } else { payload }) },
                 },
             )]),
         },
@@ -512,33 +514,33 @@ fn canonical_structure_operations_use_exact_instantiated_owner_types() {
     let first_type = TypeId::from_index(2).unwrap();
     let cases = [
         (
-            CanonicalOperation::StructNew { nominal: first, fields: vec![(first_field, payload)] },
-            CanonicalOperation::StructNew { nominal: second, fields: vec![(second_field, payload)] },
+            ValkyrieMirOperation::StructNew { nominal: first, fields: vec![(first_field, payload)] },
+            ValkyrieMirOperation::StructNew { nominal: second, fields: vec![(second_field, payload)] },
             Some(first_type),
         ),
         (
-            CanonicalOperation::FieldGet { object, field: first_field },
-            CanonicalOperation::FieldGet { object, field: second_field },
+            ValkyrieMirOperation::FieldGet { object, field: first_field },
+            ValkyrieMirOperation::FieldGet { object, field: second_field },
             Some(boolean),
         ),
         (
-            CanonicalOperation::FieldSet { object, field: first_field, value: payload },
-            CanonicalOperation::FieldSet { object, field: second_field, value: payload },
+            ValkyrieMirOperation::FieldSet { object, field: first_field, value: payload },
+            ValkyrieMirOperation::FieldSet { object, field: second_field, value: payload },
             None,
         ),
         (
-            CanonicalOperation::SumNew { nominal: first, variant: first_variant, payload: Some(payload) },
-            CanonicalOperation::SumNew { nominal: second, variant: second_variant, payload: Some(payload) },
+            ValkyrieMirOperation::SumNew { nominal: first, variant: first_variant, payload: Some(payload) },
+            ValkyrieMirOperation::SumNew { nominal: second, variant: second_variant, payload: Some(payload) },
             Some(first_type),
         ),
         (
-            CanonicalOperation::SumPayloadGet { nominal: first, variant: first_variant, object },
-            CanonicalOperation::SumPayloadGet { nominal: second, variant: second_variant, object },
+            ValkyrieMirOperation::SumPayloadGet { nominal: first, variant: first_variant, object },
+            ValkyrieMirOperation::SumPayloadGet { nominal: second, variant: second_variant, object },
             Some(boolean),
         ),
         (
-            CanonicalOperation::SumVariantIs { nominal: first, variant: first_variant, object },
-            CanonicalOperation::SumVariantIs { nominal: second, variant: second_variant, object },
+            ValkyrieMirOperation::SumVariantIs { nominal: first, variant: first_variant, object },
+            ValkyrieMirOperation::SumVariantIs { nominal: second, variant: second_variant, object },
             Some(boolean),
         ),
     ];
@@ -548,9 +550,9 @@ fn canonical_structure_operations_use_exact_instantiated_owner_types() {
         assert!(
             matches!(
                 error,
-                CanonicalMirError::FieldOwnerMismatch { .. }
-                    | CanonicalMirError::OperationResultTypeMismatch { .. }
-                    | CanonicalMirError::OperationOperandTypeMismatch { .. }
+                ValkyrieMirError::FieldOwnerMismatch { .. }
+                    | ValkyrieMirError::OperationResultTypeMismatch { .. }
+                    | ValkyrieMirError::OperationOperandTypeMismatch { .. }
             ),
             "{error:?}"
         );
@@ -565,7 +567,7 @@ fn canonical_sum_declaration_variant_has_independent_instance_payloads() {
     let object = MirValueId::from_index(0).unwrap();
     let boolean = TypeId::from_index(1).unwrap();
     let integer = TypeId::from_index(4).unwrap();
-    let operation = CanonicalOperation::SumPayloadGet { nominal: first, variant, object };
+    let operation = ValkyrieMirOperation::SumPayloadGet { nominal: first, variant, object };
     let mut program = instantiated_nominal_operation_program(operation, Some(boolean));
     program.linked.variants.remove(&(second, VariantId::from_index(1).unwrap()));
     program.linked.variants.insert((second, variant), VariantRecord { payload_type: Some(integer) });
@@ -573,9 +575,9 @@ fn canonical_sum_declaration_variant_has_independent_instance_payloads() {
     assert_eq!(program.linked.variants[&(first, variant)].payload_type, Some(boolean));
     assert_eq!(program.linked.variants[&(second, variant)].payload_type, Some(integer));
     let instance = ItemInstanceId::from_index(0).unwrap();
-    program.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation =
-        CanonicalOperation::SumVariantIs { nominal: second, variant, object };
-    assert!(matches!(program.validate(), Err(CanonicalMirError::OperationOperandTypeMismatch { .. })));
+    program.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&ValkyrieMirBlockId(0)).unwrap().instructions[0].operation =
+        ValkyrieMirOperation::SumVariantIs { nominal: second, variant, object };
+    assert!(matches!(program.validate(), Err(ValkyrieMirError::OperationOperandTypeMismatch { .. })));
 }
 
 #[test]
@@ -584,7 +586,7 @@ fn canonical_sum_registry_rejects_missing_owner_without_an_operation() {
     let nominal = NominalInstanceId::from_index(9).unwrap();
     let variant = VariantId::from_index(0).unwrap();
     program.linked.variants.insert((nominal, variant), VariantRecord { payload_type: None });
-    assert_eq!(program.validate(), Err(CanonicalMirError::InvalidVariantOwner { nominal, variant }));
+    assert_eq!(program.validate(), Err(ValkyrieMirError::InvalidVariantOwner { nominal, variant }));
 }
 
 #[test]
@@ -592,29 +594,29 @@ fn canonical_nominal_instance_coverage_precedes_operations() {
     let field = FieldId::from_index(0).unwrap();
     let boolean = TypeId::from_index(1).unwrap();
     let object = MirValueId::from_index(0).unwrap();
-    let program = instantiated_nominal_operation_program(CanonicalOperation::FieldGet { object, field }, Some(boolean));
+    let program = instantiated_nominal_operation_program(ValkyrieMirOperation::FieldGet { object, field }, Some(boolean));
     program.validate().expect("两个完整实例均有独立合同");
     let mut missing = program.clone();
     missing.linked.nominal_instances.remove(&NominalInstanceId::from_index(1).unwrap());
     missing.linked.fields.remove(&FieldId::from_index(1).unwrap());
     missing.linked.variants.remove(&(NominalInstanceId::from_index(1).unwrap(), VariantId::from_index(1).unwrap()));
-    assert_eq!(missing.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: TypeId::from_index(3).unwrap() }));
+    assert_eq!(missing.validate(), Err(ValkyrieMirError::MissingNominalInstance { ty: TypeId::from_index(3).unwrap() }));
 
     let declaration = TypeId::from_index(0).unwrap();
     let instance = ItemInstanceId::from_index(0).unwrap();
     let mut signature = program.clone();
     signature.linked.item_instances.get_mut(&instance).unwrap().parameter_types[0] = declaration;
-    assert_eq!(signature.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
+    assert_eq!(signature.validate(), Err(ValkyrieMirError::MissingNominalInstance { ty: declaration }));
     let mut value = program.clone();
     value.mir.functions.get_mut(&instance).unwrap().value_types.insert(object, declaration);
-    assert_eq!(value.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
+    assert_eq!(value.validate(), Err(ValkyrieMirError::MissingNominalInstance { ty: declaration }));
     let mut field_type = program.clone();
     field_type.linked.fields.get_mut(&field).unwrap().ty = declaration;
-    assert_eq!(field_type.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
+    assert_eq!(field_type.validate(), Err(ValkyrieMirError::MissingNominalInstance { ty: declaration }));
     let mut payload = program.clone();
     payload.linked.variants.get_mut(&(NominalInstanceId::from_index(0).unwrap(), VariantId::from_index(0).unwrap())).unwrap().payload_type =
         Some(declaration);
-    assert_eq!(payload.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
+    assert_eq!(payload.validate(), Err(ValkyrieMirError::MissingNominalInstance { ty: declaration }));
 
     let wrapper = TypeId::from_index(9).unwrap();
     let shapes = [
@@ -630,7 +632,7 @@ fn canonical_nominal_instance_coverage_precedes_operations() {
     for kind in shapes {
         let mut nested = program.clone();
         nested.linked.types.insert(wrapper, TypeRecord { declaration: wrapper, kind });
-        assert_eq!(nested.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
+        assert_eq!(nested.validate(), Err(ValkyrieMirError::MissingNominalInstance { ty: declaration }));
     }
 }
 
@@ -648,22 +650,22 @@ fn canonical_nominal_instance_type_is_required_and_unique() {
     let mut program = nominal_program();
     let unknown = TypeId::from_index(9).unwrap();
     program.linked.nominal_instances.get_mut(&nominal).unwrap().ty = unknown;
-    assert_eq!(program.validate(), Err(CanonicalMirError::InvalidNominalInstanceType { nominal, ty: unknown }));
+    assert_eq!(program.validate(), Err(ValkyrieMirError::InvalidNominalInstanceType { nominal, ty: unknown }));
     let mut program = nominal_program();
     program.linked.nominal_instances.insert(NominalInstanceId::from_index(1).unwrap(), program.linked.nominal_instances[&nominal].clone());
-    assert_eq!(program.validate(), Err(CanonicalMirError::DuplicateNominalInstanceType { ty: TypeId::from_index(0).unwrap() }));
+    assert_eq!(program.validate(), Err(ValkyrieMirError::DuplicateNominalInstanceType { ty: TypeId::from_index(0).unwrap() }));
 }
 
 #[test]
 fn canonical_call_requires_instantiated_signature() {
     let mut program = typed_call_program();
     program.validate().expect("完整实例化调用合同");
-    if let CanonicalOperation::Invoke { arguments, .. } =
-        &mut program.mir.functions.values_mut().next().unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation
+    if let ValkyrieMirOperation::Invoke { arguments, .. } =
+        &mut program.mir.functions.values_mut().next().unwrap().blocks.get_mut(&ValkyrieMirBlockId(0)).unwrap().instructions[0].operation
     {
         arguments.clear();
     }
-    assert!(matches!(program.validate(), Err(CanonicalMirError::CallArityMismatch { .. })));
+    assert!(matches!(program.validate(), Err(ValkyrieMirError::CallArityMismatch { .. })));
 }
 
 #[test]
@@ -675,14 +677,14 @@ fn canonical_surface_requires_a_body_for_each_export_and_entry() {
     program.linked.entries.insert(caller, EntryRecord);
     program.validate().expect("完整公开合同");
     program.linked.exports.insert(external, ExportRecord { exported_name: "external_answer".into() });
-    assert_eq!(program.validate(), Err(CanonicalMirError::MissingSurfaceBody { function: external }));
+    assert_eq!(program.validate(), Err(ValkyrieMirError::MissingSurfaceBody { function: external }));
     program.linked.exports.remove(&external);
     program.linked.entries.insert(external, EntryRecord);
-    assert_eq!(program.validate(), Err(CanonicalMirError::MissingSurfaceBody { function: external }));
+    assert_eq!(program.validate(), Err(ValkyrieMirError::MissingSurfaceBody { function: external }));
     program.linked.entries.remove(&external);
     let unknown = ItemInstanceId::from_index(9).unwrap();
     program.linked.entries.insert(unknown, EntryRecord);
-    assert_eq!(program.validate(), Err(CanonicalMirError::MissingSurfaceBody { function: unknown }));
+    assert_eq!(program.validate(), Err(ValkyrieMirError::MissingSurfaceBody { function: unknown }));
 }
 
 #[test]
@@ -697,14 +699,14 @@ fn canonical_surface_rejects_duplicate_public_names_but_allows_multiple_exports(
     program.linked.exports.insert(other, ExportRecord { exported_name: "second_answer".into() });
     program.validate().expect("多导出完整合同");
     program.linked.exports.get_mut(&other).unwrap().exported_name = "first_answer".into();
-    assert_eq!(program.validate(), Err(CanonicalMirError::DuplicateExportName { name: "first_answer".into() }));
+    assert_eq!(program.validate(), Err(ValkyrieMirError::DuplicateExportName { name: "first_answer".into() }));
 }
 
 #[test]
 fn compiled_program_requires_complete_representation_plan() {
     let program = typed_call_program();
-    let error = CompiledProgram::new(program, RepresentationPlan::default()).expect_err("缺少值表示必须在处理边界失败");
-    assert!(matches!(error, CompiledProgramError::MissingValueRepresentation { .. }));
+    let error = CompiledValkyrieProgram::new(program, RepresentationPlan::default()).expect_err("缺少值表示必须在处理边界失败");
+    assert!(matches!(error, CompiledValkyrieProgramError::MissingValueRepresentation { .. }));
 }
 
 #[test]
@@ -722,8 +724,8 @@ fn compiled_program_keeps_canonical_and_representation_as_one_success_value() {
     representation
         .invoke_lowerings
         .insert(InstructionId::from_index(0).unwrap(), nyar_types::semantic_ids::layout_choice::InvokeLowering::Direct);
-    let compiled = CompiledProgram::new(program.clone(), representation.clone()).expect("完整处理载荷必须成功");
-    assert_eq!(compiled.canonical(), &program);
+    let compiled = CompiledValkyrieProgram::new(program.clone(), representation.clone()).expect("完整处理载荷必须成功");
+    assert_eq!(compiled.mir_program(), &program);
     assert_eq!(compiled.representation(), &representation);
 }
 
@@ -747,8 +749,8 @@ fn compiled_program_rejects_representation_for_unknown_value() {
     representation
         .invoke_lowerings
         .insert(InstructionId::from_index(0).unwrap(), nyar_types::semantic_ids::layout_choice::InvokeLowering::Direct);
-    let error = CompiledProgram::new(program, representation).expect_err("未知值不得进入后端");
-    assert!(matches!(error, CompiledProgramError::ExtraValueRepresentation { .. }));
+    let error = CompiledValkyrieProgram::new(program, representation).expect_err("未知值不得进入后端");
+    assert!(matches!(error, CompiledValkyrieProgramError::ExtraValueRepresentation { .. }));
 }
 
 #[test]
@@ -767,8 +769,8 @@ fn compiled_program_rejects_representation_for_unknown_instruction() {
     representation
         .invoke_lowerings
         .insert(InstructionId::from_index(1).unwrap(), nyar_types::semantic_ids::layout_choice::InvokeLowering::Direct);
-    let error = CompiledProgram::new(program, representation).expect_err("未知调用指令不得进入后端");
-    assert!(matches!(error, CompiledProgramError::ExtraInvokeRepresentation { .. }));
+    let error = CompiledValkyrieProgram::new(program, representation).expect_err("未知调用指令不得进入后端");
+    assert!(matches!(error, CompiledValkyrieProgramError::ExtraInvokeRepresentation { .. }));
 }
 
 #[test]
@@ -777,31 +779,31 @@ fn canonical_call_rejects_argument_type_mismatch() {
     let other = TypeId::from_index(1).unwrap();
     program.linked.types.insert(other, TypeRecord { declaration: other, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool) });
     program.linked.item_instances.get_mut(&ItemInstanceId::from_index(1).unwrap()).unwrap().parameter_types[0] = other;
-    assert!(matches!(program.validate(), Err(CanonicalMirError::CallArgumentTypeMismatch { .. })));
+    assert!(matches!(program.validate(), Err(ValkyrieMirError::CallArgumentTypeMismatch { .. })));
 }
 
 #[test]
 fn canonical_call_rejects_missing_result_type() {
     let mut program = typed_call_program();
     program.mir.functions.values_mut().next().unwrap().value_types.remove(&MirValueId::from_index(1).unwrap());
-    assert!(matches!(program.validate(), Err(CanonicalMirError::CallResultTypeMismatch { .. })));
+    assert!(matches!(program.validate(), Err(ValkyrieMirError::CallResultTypeMismatch { .. })));
 }
 
 #[test]
 fn canonical_function_requires_declared_entry_signature() {
     let mut program = typed_call_program();
     program.mir.functions.values_mut().next().unwrap().parameters.clear();
-    assert!(matches!(program.validate(), Err(CanonicalMirError::FunctionSignatureMismatch { .. })));
+    assert!(matches!(program.validate(), Err(ValkyrieMirError::FunctionSignatureMismatch { .. })));
 }
 
 #[test]
 fn canonical_call_rejects_unlinked_signature_type() {
     let mut program = typed_call_program();
     program.linked.item_instances.get_mut(&ItemInstanceId::from_index(1).unwrap()).unwrap().return_type = TypeId::from_index(9).unwrap();
-    assert!(matches!(program.validate(), Err(CanonicalMirError::UnknownType { .. })));
+    assert!(matches!(program.validate(), Err(ValkyrieMirError::UnknownType { .. })));
 }
 
-fn typed_function_value_program() -> CanonicalProgram {
+fn typed_function_value_program() -> ValkyrieMirProgram {
     let caller = ItemInstanceId::from_index(0).unwrap();
     let function_type = TypeId::from_index(0).unwrap();
     let value_type = TypeId::from_index(1).unwrap();
@@ -825,30 +827,30 @@ fn typed_function_value_program() -> CanonicalProgram {
             return_type: value_type,
         },
     );
-    let function = CanonicalFunction {
+    let function = ValkyrieMirFunction {
         instance: caller,
         parameters: vec![(function_value, function_type), (argument, value_type)],
         parameter_names: vec!["function_value".to_string(), "argument".to_string()],
         return_type: value_type,
         value_types: BTreeMap::from([(function_value, function_type), (argument, value_type), (result, value_type)]),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([(
-            CanonicalBlockId(0),
-            CanonicalBlock {
-                id: CanonicalBlockId(0),
+            ValkyrieMirBlockId(0),
+            ValkyrieMirBlock {
+                id: ValkyrieMirBlockId(0),
                 parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
+                instructions: vec![ValkyrieMirInstruction {
                     id: InstructionId::from_index(0).unwrap(),
                     results: vec![result],
-                    operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Value(function_value), arguments: vec![argument] },
+                    operation: ValkyrieMirOperation::Invoke { callee: ValkyrieMirCallee::Value(function_value), arguments: vec![argument] },
                 }],
-                terminator: CanonicalTerminator::Return { value: Some(result) },
+                terminator: ValkyrieMirTerminator::Return { value: Some(result) },
             },
         )]),
     };
-    CanonicalProgram {
+    ValkyrieMirProgram {
         linked,
-        mir: CanonicalSemanticMir { module_name: "function-value".into(), functions: BTreeMap::from([(caller, function)]) },
+        mir: ValkyrieMir { module_name: "function-value".into(), functions: BTreeMap::from([(caller, function)]) },
     }
 }
 
@@ -865,19 +867,19 @@ fn canonical_function_value_call_rejects_scalar_callee() {
     function.value_types.insert(value, TypeId::from_index(1).unwrap());
     function.parameters[0].1 = TypeId::from_index(1).unwrap();
     program.linked.item_instances.get_mut(&ItemInstanceId::from_index(0).unwrap()).unwrap().parameter_types[0] = TypeId::from_index(1).unwrap();
-    assert!(matches!(program.validate(), Err(CanonicalMirError::ValueCalleeNotFunction { value: rejected, .. }) if rejected == value));
+    assert!(matches!(program.validate(), Err(ValkyrieMirError::ValueCalleeNotFunction { value: rejected, .. }) if rejected == value));
 }
 
 #[test]
 fn canonical_function_value_call_rejects_argument_contract() {
     let mut program = typed_function_value_program();
     let wrong = MirValueId::from_index(0).unwrap();
-    if let CanonicalOperation::Invoke { arguments, .. } =
-        &mut program.mir.functions.values_mut().next().unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation
+    if let ValkyrieMirOperation::Invoke { arguments, .. } =
+        &mut program.mir.functions.values_mut().next().unwrap().blocks.get_mut(&ValkyrieMirBlockId(0)).unwrap().instructions[0].operation
     {
         *arguments = vec![wrong, wrong];
     }
-    assert!(matches!(program.validate(), Err(CanonicalMirError::ValueCalleeArityMismatch { .. })));
+    assert!(matches!(program.validate(), Err(ValkyrieMirError::ValueCalleeArityMismatch { .. })));
 }
 
 #[test]
@@ -888,7 +890,7 @@ fn canonical_function_value_callee_is_an_ssa_use() {
     program.linked.item_instances.get_mut(&ItemInstanceId::from_index(0).unwrap()).unwrap().parameter_types =
         vec![TypeId::from_index(1).unwrap()];
     assert!(
-        matches!(program.validate(), Err(CanonicalMirError::UseBeforeDefinition { value, .. }) if value == MirValueId::from_index(0).unwrap())
+        matches!(program.validate(), Err(ValkyrieMirError::UseBeforeDefinition { value, .. }) if value == MirValueId::from_index(0).unwrap())
     );
 }
 
@@ -899,7 +901,7 @@ fn stage_order_is_one_way() {
 }
 
 /// 按 canonical 事实补全除文本表示外的全部稀疏表示，供文本合同正反用例使用。
-fn complete_representation_plan(program: &CanonicalProgram, text: Option<layout_choice::TextRepresentation>) -> RepresentationPlan {
+fn complete_representation_plan(program: &ValkyrieMirProgram, text: Option<layout_choice::TextRepresentation>) -> RepresentationPlan {
     let mut plan = RepresentationPlan::default();
     plan.text_representation = text;
     for nominal in program.linked.nominal_instances.keys() {
@@ -911,7 +913,7 @@ fn complete_representation_plan(program: &CanonicalProgram, text: Option<layout_
         }
         for block in function.blocks.values() {
             for instruction in &block.instructions {
-                if matches!(&instruction.operation, CanonicalOperation::Invoke { .. }) {
+                if matches!(&instruction.operation, ValkyrieMirOperation::Invoke { .. }) {
                     plan.invoke_lowerings.insert(instruction.id, layout_choice::InvokeLowering::Direct);
                 }
             }
@@ -925,18 +927,18 @@ fn complete_representation_plan(program: &CanonicalProgram, text: Option<layout_
 fn compiled_program_rejects_text_representation_without_text_values() {
     let program = typed_call_program();
     assert_eq!(declared_text_representation(&program), None);
-    CompiledProgram::new(program.clone(), complete_representation_plan(&program, None)).expect("无文本值的程序必须接受 `None` 事实");
-    let error = CompiledProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Raw)))
+    CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, None)).expect("无文本值的程序必须接受 `None` 事实");
+    let error = CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Raw)))
         .expect_err("无文本值却声明 raw 必须在构造期失败");
     assert_eq!(
         error,
-        CompiledProgramError::TextRepresentationMismatch { expected: None, actual: Some(layout_choice::TextRepresentation::Raw) }
+        CompiledValkyrieProgramError::TextRepresentationMismatch { expected: None, actual: Some(layout_choice::TextRepresentation::Raw) }
     );
     assert_eq!(error.to_string(), "TextRepresentationMismatch(expected=none, actual=raw)");
 }
 
 /// 只有文本字面量、没有载体声明的程序：`Raw` 是唯一合法事实，`None` / `Managed` 被拒。
-fn text_literal_program() -> CanonicalProgram {
+fn text_literal_program() -> ValkyrieMirProgram {
     let instance = ItemInstanceId::from_index(0).unwrap();
     let text = TypeId::from_index(0).unwrap();
     let literal = MirValueId::from_index(0).unwrap();
@@ -947,28 +949,28 @@ fn text_literal_program() -> CanonicalProgram {
         instance,
         ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: Vec::new(), return_type: text },
     );
-    let function = CanonicalFunction {
+    let function = ValkyrieMirFunction {
         instance,
         parameters: Vec::new(),
         parameter_names: Vec::new(),
         return_type: text,
         value_types: BTreeMap::from([(literal, text)]),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([(
-            CanonicalBlockId(0),
-            CanonicalBlock {
-                id: CanonicalBlockId(0),
+            ValkyrieMirBlockId(0),
+            ValkyrieMirBlock {
+                id: ValkyrieMirBlockId(0),
                 parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
+                instructions: vec![ValkyrieMirInstruction {
                     id: InstructionId::from_index(0).unwrap(),
                     results: vec![literal],
-                    operation: CanonicalOperation::LoadConstant { constant: CanonicalConstant::Utf8("abc".into()) },
+                    operation: ValkyrieMirOperation::LoadConstant { constant: ValkyrieMirConstant::Utf8("abc".into()) },
                 }],
-                terminator: CanonicalTerminator::Return { value: Some(literal) },
+                terminator: ValkyrieMirTerminator::Return { value: Some(literal) },
             },
         )]),
     };
-    CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "text".into(), functions: BTreeMap::from([(instance, function)]) } }
+    ValkyrieMirProgram { linked, mir: ValkyrieMir { module_name: "text".into(), functions: BTreeMap::from([(instance, function)]) } }
 }
 
 #[test]
@@ -976,14 +978,14 @@ fn compiled_program_requires_raw_for_text_literals_without_carrier() {
     let program = text_literal_program();
     program.validate().expect("文本字面量夹具必须是完整 canonical 程序");
     assert_eq!(declared_text_representation(&program), Some(layout_choice::TextRepresentation::Raw));
-    CompiledProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Raw)))
+    CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Raw)))
         .expect("无载体的文本值必须接受 `Raw` 事实");
     for actual in [None, Some(layout_choice::TextRepresentation::Managed)] {
-        let error = CompiledProgram::new(program.clone(), complete_representation_plan(&program, actual))
+        let error = CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, actual))
             .expect_err("无载体的文本值不得缺声明或声明为托管");
         assert_eq!(
             error,
-            CompiledProgramError::TextRepresentationMismatch { expected: Some(layout_choice::TextRepresentation::Raw), actual }
+            CompiledValkyrieProgramError::TextRepresentationMismatch { expected: Some(layout_choice::TextRepresentation::Raw), actual }
         );
     }
 }
@@ -992,21 +994,21 @@ fn compiled_program_requires_raw_for_text_literals_without_carrier() {
 #[test]
 fn compiled_program_requires_managed_for_registered_text_carrier() {
     let carrier = TypeId::from_index(0).unwrap();
-    let mut program = CanonicalProgram { linked: LinkedSemanticProgram::default(), mir: CanonicalSemanticMir::default() };
+    let mut program = ValkyrieMirProgram { linked: LinkedSemanticProgram::default(), mir: ValkyrieMir::default() };
     program
         .linked
         .types
         .insert(carrier, TypeRecord { declaration: carrier, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Utf8) });
     program.linked.text_encoding_types.insert(carrier, CanonicalPrimitiveType::Utf8);
     assert_eq!(declared_text_representation(&program), Some(layout_choice::TextRepresentation::Managed));
-    CompiledProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Managed)))
+    CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, Some(layout_choice::TextRepresentation::Managed)))
         .expect("已登记载体的程序必须接受 `Managed` 事实");
     for actual in [None, Some(layout_choice::TextRepresentation::Raw)] {
-        let error = CompiledProgram::new(program.clone(), complete_representation_plan(&program, actual))
+        let error = CompiledValkyrieProgram::new(program.clone(), complete_representation_plan(&program, actual))
             .expect_err("已登记载体不得缺声明或声明为 raw");
         assert_eq!(
             error,
-            CompiledProgramError::TextRepresentationMismatch { expected: Some(layout_choice::TextRepresentation::Managed), actual }
+            CompiledValkyrieProgramError::TextRepresentationMismatch { expected: Some(layout_choice::TextRepresentation::Managed), actual }
         );
     }
 }

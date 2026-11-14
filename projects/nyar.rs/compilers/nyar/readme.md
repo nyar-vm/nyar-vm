@@ -6,4 +6,4 @@ Object algebras and E-Graphs are optional tools with explicit interfaces and leg
 
 For dynamic languages, Futamura's first projection specializes a language interpreter with respect to a known program. Unknown operations remain in the residual program with explicit runtime requirements. Target lowering is a separate step, owned by Wasm, CLR, JVM, OVM or native adapters and code services.
 
-Current APIs still carry Valkyrie-specific `CanonicalProgram` and related executable contracts. Their presence is migration debt, not a universal or opt-in shared MIR design. Rename and return language semantics to Valkyrie rather than expanding these types for other languages. OdinVM is only the OVM runtime, not a required stage for other targets.
+Planning consumes `LinkedSemanticProgram` — neutral identity, fragment and capability facts submitted by a language frontend after its own semantic validation. Nyar owns no language MIR; do not reintroduce a canonical or opt-in shared semantic bus. OdinVM is only the OVM runtime, not a required stage for other targets.

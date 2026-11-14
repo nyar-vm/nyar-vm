@@ -3,14 +3,14 @@
 //! Rust seed 路径共用的最小类型与语义身份。
 
 pub use self::{
-    canonical_program::{
-        CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallEdge, CanonicalCallee, CanonicalConstant,
-        CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperand,
-        CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
-        CanonicalWitness, CompileResult, CompileStage, CompiledProgram, CompiledProgramError, DiagnosticArg, DiagnosticOwner,
-        DiagnosticOwnerClass, DiagnosticPhase, DiagnosticRecord, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan,
-        EvidenceRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord,
-        NominalValueSemantics, StageResult, StructuredDiagnosticSet, TypeRecord, VariantRecord, declared_text_representation, pipeline,
+    diagnostics::{
+        CompileResult, CompileStage, DiagnosticArg, DiagnosticOwner, DiagnosticOwnerClass, DiagnosticPhase, DiagnosticRecord, DiagnosticRow,
+        DiagnosticSeverity, DiagnosticSource, DiagnosticSpan, StageResult, StructuredDiagnosticSet,
+    },
+    linked::{
+        CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, EntryRecord,
+        EvidenceRecord, ExportRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord,
+        NominalValueSemantics, TypeRecord, VariantRecord,
     },
     compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath},
     contract_versions::{IDENTITY_SCHEMA_VERSION, LAYOUT_PLAN_VERSION, MIR_CONTRACT_VERSION, contract_version_fingerprint},
@@ -44,7 +44,10 @@ pub use self::{
 };
 pub use core_surface::{CoreFeature, CoreSurfaceManifest};
 
-pub mod canonical_program;
+/// 跨阶段结构化诊断合同（语言无关）。
+pub mod diagnostics;
+/// 链接完成的语义程序与稳定身份记录（中立事实，不含语言 IR）。
+pub mod linked;
 /// Compiler 输入与声明索引的中立数据结构（装配层与编译阶段之间的数据传输合同）。
 pub mod compiler_input;
 /// 产物 / cache 合同版本（identity / MIR / layout）。

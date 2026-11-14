@@ -78,4 +78,4 @@ flowchart LR
 
 Asgard 使用 Compiler 编译生成的 Valkyrie 逻辑，工程上下文由 Legion 提供。
 
-当前实现仍使用 `CanonicalProgram`、`CompiledProgram` 等名称及共享载荷。它们承载 Valkyrie 专用语义，必须改名并归还语言，不能成为其它前端的强制或可选共享 MIR。平台各自拥有计划、LIR 与运行时包装；适配器可以调用平台公开且经过验证的 builder/service，无需复制平台指令、编码或容器模型。
+Valkyrie 的已验证语义载荷归 `compiler::valkyrie_mir`（`ValkyrieMirProgram` / `CompiledValkyrieProgram`）；它不进入 Nyar 公共类型，也不能成为其它前端的强制或可选共享 MIR。平台各自拥有计划、LIR 与运行时包装；Valkyrie × 目标适配器（`emitter::pipeline::target_plan`）调用平台公开且经过验证的 builder/service，无需复制平台指令、编码或容器模型。

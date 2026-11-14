@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
 use nyar_types::{
-    CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, Identifier, ImportCapability, ImportIndex, ImportRecord,
-    ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord, QualifiedName, StructuredDiagnosticSet, TypeRecord,
-    canonical_program::{EntryRecord, ExportRecord},
+    CanonicalPrimitiveType, EntryRecord, ExportRecord, Identifier, ImportCapability, ImportIndex, ImportRecord, ItemInstanceRecord,
+    LinkedSemanticProgram, NominalInstanceRecord, QualifiedName, StructuredDiagnosticSet, TypeRecord,
 };
+
+use crate::compiler::valkyrie_mir::{ValkyrieMir, ValkyrieMirProgram};
 
 use crate::compiler::{mir::MirModule, types::hir::ValkyrieType};
 
@@ -21,11 +22,11 @@ use super::{
 
 /// 从已完成 HIR/Semantic MIR 合同的模块生成 canonical 成功值；集成测试夹具。
 #[doc(hidden)]
-pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<CanonicalProgram, StructuredDiagnosticSet> {
+pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<ValkyrieMirProgram, StructuredDiagnosticSet> {
     if !module.diagnostics.is_empty() {
         return Err(error(module, "CAN033", format!("Semantic MIR lowering 失败: {:?}", module.diagnostics)));
     }
-    // witness 分派由 canonical `CanonicalCallee::Witness` 承载稳定身份；
+    // witness 分派由 canonical `ValkyrieMirCallee::Witness` 承载稳定身份；
     // 具体 self 的消去与开放泛型的字典 ABI 由表示/目标层按合同决定。
     let mut type_values = collect_types(module)?;
     validate_callable_identities(module)?;
@@ -242,7 +243,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         })
         .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     linked.fragments = canonical_fragments(module, &linked, &functions, &module.semantic_fragments)?;
-    let mut program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
+    let mut program = ValkyrieMirProgram { linked, mir: ValkyrieMir { module_name: module.name.clone(), functions } };
     // 具体 witness 分派必须在实例化固定点消去为冻结实例身份；目标层不再扫描实例库。
     program.resolve_witness_dispatch().map_err(|error| canonical_error(module, &program, error))?;
     program.validate().map_err(|error| canonical_error(module, &program, error))?;

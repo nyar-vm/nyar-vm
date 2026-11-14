@@ -47,7 +47,7 @@ pub struct CompilerArtifactReport {
 /// Compiler 已完成语义分析、表示规划和分区装配的目标输入 bundle。
 #[doc(hidden)]
 pub struct CompilerBuildBundle {
-    compiled_program: nyar_types::CompiledProgram,
+    compiled_program: crate::compiler::valkyrie_mir::CompiledValkyrieProgram,
     artifact_plan: ArtifactPartitionPlan,
     wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
     test_entry_names: Vec<String>,

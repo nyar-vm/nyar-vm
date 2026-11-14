@@ -137,7 +137,7 @@ pub fn validate_source_groups(groups: &[CompilerSourceGroup]) -> Result<(), HirE
 
 /// 集成测试夹具：从 HIR 构造阶段载荷，不作为生产源码闭包入口。
 #[doc(hidden)]
-pub(crate) fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<nyar_types::CompiledProgram, HirError> {
+pub(crate) fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<crate::compiler::valkyrie_mir::CompiledValkyrieProgram, HirError> {
     let semantic_mir = crate::compiler::mir::MirLowerer::lower_module_semantic(&hir_module);
     let compiled_program = crate::compiler::emitter::pipeline::compile_linked_semantic_mir(&semantic_mir).map_err(pipeline_rejected)?;
     Ok(compiled_program)

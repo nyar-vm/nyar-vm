@@ -1,6 +1,6 @@
 //! `TypedReference` invoke lowering 的目标私有调用合同消费测试。
 //!
-//! 验收面：`CanonicalCallee::Value` 配 `InvokeLowering::TypedReference` 且 callee SSA
+//! 验收面：`ValkyrieMirCallee::Value` 配 `InvokeLowering::TypedReference` 且 callee SSA
 //! 携带 canonical 冻结的 Function 类型事实时，目标准备必须放行并降为
 //! `Call { callee: Operand::Value }`；其余组合（`Value` 配 `Direct`、`Item` 配
 //! `TypedReference`、`Item` 配 `TypedWitness`）仍失败闭合，`Item` 配 `Direct` 行为不变。
@@ -10,14 +10,18 @@ use std::collections::BTreeMap;
 
 use nyar::{Identifier, QualifiedName, TheoryBundle};
 use nyar_emitter::{
-    CompiledProgram, TargetExecutionPlan,
+    TargetExecutionPlan,
     contracts::{InstructionKind, Operand, ValueRef},
 };
 use nyar_types::{
-    CanonicalBlock, CanonicalBlockId, CanonicalCallee, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalOperation,
-    CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind, InstructionId, ItemId,
-    ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NyarType, TypeId, TypeRecord, ValueIdentity,
+    CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, InstructionId, ItemId, ItemInstanceId, ItemInstanceRecord,
+    LinkedSemanticProgram, MirValueId, NyarType, TypeId, TypeRecord, ValueIdentity,
     layout_choice::{InvokeLowering, RepresentationPlan, ValueRepresentation},
+};
+use rusty_valkyrie::compiler::emitter::pipeline::target_plan::from_compiled_program;
+use rusty_valkyrie::compiler::valkyrie_mir::{
+    CompiledValkyrieProgram, ValkyrieMir, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirFunction, ValkyrieMirInstruction,
+    ValkyrieMirOperation, ValkyrieMirProgram, ValkyrieMirTerminator,
 };
 
 const FRAGMENT: &str = "typed_reference_fragment";
@@ -37,7 +41,7 @@ fn linked_base() -> LinkedSemanticProgram {
 
 /// `apply(f: fn(i32) -> i32, x: i32) -> i32 { return f(x) }`：
 /// callee 是携带冻结 Function 类型事实的 SSA 值。
-fn function_value_program() -> CanonicalProgram {
+fn function_value_program() -> ValkyrieMirProgram {
     let mut linked = linked_base();
     let caller = ItemInstanceId::from_index(0).unwrap();
     let function_type = TypeId::from_index(0).unwrap();
@@ -58,36 +62,36 @@ fn function_value_program() -> CanonicalProgram {
     let function_value = MirValueId::from_index(0).unwrap();
     let argument = MirValueId::from_index(1).unwrap();
     let result = MirValueId::from_index(2).unwrap();
-    let function = CanonicalFunction {
+    let function = ValkyrieMirFunction {
         instance: caller,
         parameters: vec![(function_value, function_type), (argument, value_type)],
         parameter_names: vec!["function_value".to_string(), "argument".to_string()],
         return_type: value_type,
         value_types: BTreeMap::from([(function_value, function_type), (argument, value_type), (result, value_type)]),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([(
-            CanonicalBlockId(0),
-            CanonicalBlock {
-                id: CanonicalBlockId(0),
+            ValkyrieMirBlockId(0),
+            ValkyrieMirBlock {
+                id: ValkyrieMirBlockId(0),
                 parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
+                instructions: vec![ValkyrieMirInstruction {
                     id: InstructionId::from_index(0).unwrap(),
                     results: vec![result],
-                    operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Value(function_value), arguments: vec![argument] },
+                    operation: ValkyrieMirOperation::Invoke { callee: ValkyrieMirCallee::Value(function_value), arguments: vec![argument] },
                 }],
-                terminator: CanonicalTerminator::Return { value: Some(result) },
+                terminator: ValkyrieMirTerminator::Return { value: Some(result) },
             },
         )]),
     };
-    CanonicalProgram {
+    ValkyrieMirProgram {
         linked,
-        mir: CanonicalSemanticMir { module_name: "typed-reference".into(), functions: BTreeMap::from([(caller, function)]) },
+        mir: ValkyrieMir { module_name: "typed-reference".into(), functions: BTreeMap::from([(caller, function)]) },
     }
 }
 
 /// `call_identity(x: i32) -> i32 { return identity(x) }` + `identity(v: i32) -> i32`：
 /// callee 是已链接 Item 实例，用于既有 `Direct` 合同与错配拒绝的对照组。
-fn item_call_program() -> CanonicalProgram {
+fn item_call_program() -> ValkyrieMirProgram {
     let mut linked = linked_base();
     let caller = ItemInstanceId::from_index(0).unwrap();
     let identity = ItemInstanceId::from_index(1).unwrap();
@@ -99,55 +103,55 @@ fn item_call_program() -> CanonicalProgram {
     linked.callable_names.insert(identity, QualifiedName::new(vec![Identifier::new("identity")]));
     let argument = MirValueId::from_index(0).unwrap();
     let result = MirValueId::from_index(1).unwrap();
-    let caller_function = CanonicalFunction {
+    let caller_function = ValkyrieMirFunction {
         instance: caller,
         parameters: vec![(argument, value_type)],
         parameter_names: vec!["argument".to_string()],
         return_type: value_type,
         value_types: BTreeMap::from([(argument, value_type), (result, value_type)]),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([(
-            CanonicalBlockId(0),
-            CanonicalBlock {
-                id: CanonicalBlockId(0),
+            ValkyrieMirBlockId(0),
+            ValkyrieMirBlock {
+                id: ValkyrieMirBlockId(0),
                 parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
+                instructions: vec![ValkyrieMirInstruction {
                     id: InstructionId::from_index(0).unwrap(),
                     results: vec![result],
-                    operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Item(identity), arguments: vec![argument] },
+                    operation: ValkyrieMirOperation::Invoke { callee: ValkyrieMirCallee::Item(identity), arguments: vec![argument] },
                 }],
-                terminator: CanonicalTerminator::Return { value: Some(result) },
+                terminator: ValkyrieMirTerminator::Return { value: Some(result) },
             },
         )]),
     };
     let identity_value = MirValueId::from_index(0).unwrap();
-    let identity_function = CanonicalFunction {
+    let identity_function = ValkyrieMirFunction {
         instance: identity,
         parameters: vec![(identity_value, value_type)],
         parameter_names: vec!["value".to_string()],
         return_type: value_type,
         value_types: BTreeMap::from([(identity_value, value_type)]),
-        entry: CanonicalBlockId(0),
+        entry: ValkyrieMirBlockId(0),
         blocks: BTreeMap::from([(
-            CanonicalBlockId(0),
-            CanonicalBlock {
-                id: CanonicalBlockId(0),
+            ValkyrieMirBlockId(0),
+            ValkyrieMirBlock {
+                id: ValkyrieMirBlockId(0),
                 parameters: Vec::new(),
                 instructions: Vec::new(),
-                terminator: CanonicalTerminator::Return { value: Some(identity_value) },
+                terminator: ValkyrieMirTerminator::Return { value: Some(identity_value) },
             },
         )]),
     };
-    CanonicalProgram {
+    ValkyrieMirProgram {
         linked,
-        mir: CanonicalSemanticMir {
+        mir: ValkyrieMir {
             module_name: "typed-reference".into(),
             functions: BTreeMap::from([(caller, caller_function), (identity, identity_function)]),
         },
     }
 }
 
-fn representation(program: &CanonicalProgram, invoke: InvokeLowering) -> RepresentationPlan {
+fn representation(program: &ValkyrieMirProgram, invoke: InvokeLowering) -> RepresentationPlan {
     let mut plan = RepresentationPlan::default();
     for function in program.mir.functions.values() {
         for value in function.value_types.keys() {
@@ -158,15 +162,15 @@ fn representation(program: &CanonicalProgram, invoke: InvokeLowering) -> Represe
     plan
 }
 
-fn prepare(program: &CompiledProgram) -> nyar_emitter::Result<TargetExecutionPlan> {
-    let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
+fn prepare(program: &CompiledValkyrieProgram) -> nyar_emitter::Result<TargetExecutionPlan> {
+    let roots = program.mir_program().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = Identifier::new(FRAGMENT);
-    TargetExecutionPlan::from_compiled_program(program, &fragment, TheoryBundle::default(), &roots).map_err(|error| error.to_string())
+    from_compiled_program(program, &fragment, TheoryBundle::default(), &roots).map_err(|error| error.to_string())
 }
 
-fn compiled(canonical: CanonicalProgram, invoke: InvokeLowering) -> CompiledProgram {
+fn compiled(canonical: ValkyrieMirProgram, invoke: InvokeLowering) -> CompiledValkyrieProgram {
     let plan = representation(&canonical, invoke);
-    CompiledProgram::new(canonical, plan).expect("测试表示输入必须一致")
+    CompiledValkyrieProgram::new(canonical, plan).expect("测试表示输入必须一致")
 }
 
 fn find_call(plan: &TargetExecutionPlan, instance: &ItemInstanceId) -> (Operand, Vec<Operand>) {

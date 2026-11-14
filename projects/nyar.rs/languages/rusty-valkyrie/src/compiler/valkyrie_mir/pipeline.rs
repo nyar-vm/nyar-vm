@@ -2,8 +2,8 @@
 //!
 //! 实现位于各前端 crate 与后端 crate；本模块只定义阶段合同与阶段顺序。
 
-use super::{CanonicalProgram, CompileStage, LinkedSemanticProgram, StageResult};
-use crate::semantic_ids::layout_choice::RepresentationPlan;
+use super::ValkyrieMirProgram;
+use nyar_types::{CompileStage, LinkedSemanticProgram, StageResult, semantic_ids::layout_choice::RepresentationPlan};
 
 /// Analysis / link stage: HIR elaboration consumed → linked program.
 pub trait LinkStage {
@@ -14,13 +14,13 @@ pub trait LinkStage {
 /// M2 validation stage.
 pub trait ValidateMirStage {
     /// Validate linked program into canonical MIR success type.
-    fn validate(&self, linked: &LinkedSemanticProgram) -> StageResult<CanonicalProgram>;
+    fn validate(&self, linked: &LinkedSemanticProgram) -> StageResult<ValkyrieMirProgram>;
 }
 
 /// Representation planning stage (sparse side tables only).
 pub trait RepresentationPlanStage {
     /// Plan layouts without rewriting CFG or inventing semantics.
-    fn plan(&self, program: &CanonicalProgram) -> StageResult<RepresentationPlan>;
+    fn plan(&self, program: &ValkyrieMirProgram) -> StageResult<RepresentationPlan>;
 }
 
 /// Documented stage order for maintainers / agents.

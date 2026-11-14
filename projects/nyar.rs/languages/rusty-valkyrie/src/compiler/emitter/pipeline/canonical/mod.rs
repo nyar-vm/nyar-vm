@@ -1,4 +1,4 @@
-//! 将已完成语义解析的 MIR 生产为 CanonicalProgram。
+//! 将已完成语义解析的 MIR 生产为 ValkyrieMirProgram。
 
 mod errors;
 mod fragments;

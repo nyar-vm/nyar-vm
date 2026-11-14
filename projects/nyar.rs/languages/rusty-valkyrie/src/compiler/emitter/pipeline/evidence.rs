@@ -1,6 +1,8 @@
 //! Compiler 成功路径的可复现证据（digest / provenance）。
 
-use nyar_types::{CompiledProgram, combined_content_hash};
+use nyar_types::combined_content_hash;
+
+use crate::compiler::valkyrie_mir::CompiledValkyrieProgram;
 
 use crate::compiler::hir::lowering::{CompilerSourceGroup, GeneratedSourceGroup};
 
@@ -26,7 +28,7 @@ pub struct CompilerHostProviderBindingEvidence {
 pub struct CompilerCompileEvidence {
     /// Resolver 提交的语义源码闭包摘要。
     pub semantic_closure_hash: String,
-    /// 已验证 `CompiledProgram` 的导出 / 入口 / 函数表面摘要。
+    /// 已验证 `CompiledValkyrieProgram` 的导出 / 入口 / 函数表面摘要。
     pub canonical_surface_hash: String,
     /// Resolver 选定的 host provider 绑定摘要。
     pub host_provider_binding_hash: String,
@@ -45,7 +47,7 @@ impl CompilerCompileEvidence {
     pub fn from_success(
         groups: &[CompilerSourceGroup],
         arch: &str,
-        program: &CompiledProgram,
+        program: &CompiledValkyrieProgram,
         host_bindings: &[CompilerHostProviderBinding],
     ) -> Self {
         Self::from_success_with_generated(groups, &[], arch, program, host_bindings)
@@ -59,7 +61,7 @@ impl CompilerCompileEvidence {
         groups: &[CompilerSourceGroup],
         generated: &[GeneratedSourceGroup],
         arch: &str,
-        program: &CompiledProgram,
+        program: &CompiledValkyrieProgram,
         host_bindings: &[CompilerHostProviderBinding],
     ) -> Self {
         Self {

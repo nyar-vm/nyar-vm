@@ -19,3 +19,35 @@ fn minimal_entry_compiles() {
     let program = ValkyrieCompiler::default().compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], "wasm");
     assert!(program.is_ok(), "minimal entry must compile without a structured failure: {program:?}");
 }
+
+/// 端到端最小门：源码 → Valkyrie MIR → 语言 × 目标适配器 → Wasm 产物。
+///
+/// 该用例覆盖正式 `AdaptedFragmentInput` 接入路径，确保语义载荷归还语言后
+/// 仍能真实产出后端制品，而不是只通过手工构造计划的 lowering 测试。
+#[test]
+fn minimal_entry_emits_wasm_artifact() {
+    use nyar::ClrSuspendStrategy;
+    use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+    use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
+
+    let groups = vec![rusty_valkyrie::CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
+    let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
+    let context = CompilerBuildContext::new(
+        "wasm32",
+        nyar::CanonicalTarget::parse("node").expect("node target"),
+        ClrSuspendStrategy::from_runtime_async_flag(false),
+        WasmPackageKind::Binary,
+    );
+    let dir = tempfile::tempdir().expect("temp dir");
+    let report = compile_source_groups_to_artifacts(
+        &ValkyrieCompiler::default(),
+        &input,
+        &context,
+        dir.path(),
+        "smoke",
+        false,
+        false,
+    )
+    .expect("minimal source must produce a target artifact through the adapter");
+    assert!(!report.driver.artifacts.artifacts.is_empty(), "adapter path must emit at least one artifact");
+}

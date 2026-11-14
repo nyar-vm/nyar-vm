@@ -1,62 +1,11 @@
 # nyar-emitter
 
-Bundled backend driver for partitioned compiler output.
+Target code services and artifact assembly for Wasm, CLR, JVM, OVM and native. The driver routes validated partition requirements and target-specific inputs, then returns artifacts and execution contracts. Backend selection belongs to the shared selector rather than duplicated family algorithms.
 
-## Overview
+Each language-to-target adapter consumes its language IR or specialized residual program and produces target-owned plans/LIR. Target wrappers may implement explicit runtime services. Encoders must not parse source, infer missing language facts or require a common semantic MIR.
 
-`nyar-emitter` consumes completed `PartitionBackendRequirement` values and target-specific inputs, routes them to
-bundled family compilers, and returns `ArtifactSet` entries plus entry/run contracts for outer orchestrators and product CLIs.
+Every entrance goes through `AdaptedFragmentInput`: a language-to-target adapter prepares `TargetExecutionPlan` (via `TargetPlanInput`) and submits it. There is no shared semantic MIR entrance and no `SharedSemanticSubset` capability; the semantic MIR now lives in the owning language crate. Cross-lane plan splitting and representation-ownership cleanup remain open work, tracked in the execution ledger.
 
-Rustdoc for this crate is sourced from [`src/readme.md`](./src/readme.md) via `#![doc = include_str!("readme.md")]`. The
-sections below mirror that contract at the package level.
+OVM emits `.odin` for OdinVM. Other targets do not transit OdinVM. Native machine/object/link/container services are distinct from Node-API `.node` and CPython `.pyd` / Python `.so` ABI construction. Compiler-host FFI bindings do not demonstrate guest extension support.
 
-## Layering
-
-| Area                    | Role                                                             |
-|:------------------------|:-----------------------------------------------------------------|
-| `src/lib.rs`            | Stable public API, shared request/response models                |
-| `src/driver/*`          | Backend routing, partition orchestration, family registration    |
-| `src/driver/families/*` | One file per backend family (CLR, JVM, Wasm, native, ovm, …) |
-| `src/backend/*`         | Target backend bodies without driver selection logic             |
-| `src/artifacts/*`       | Sidecars and packaging helpers                                   |
-| `src/lowering/*`        | Fragment → driver input lowering                                 |
-
-Family compilers register as `BackendCandidate` instances; `nyar::BackendSelector` performs unified selection (the
-driver does not duplicate selection algorithms).
-
-## Family compilers
-
-- `driver/families/clr.rs` — CLR bundled chain
-- `driver/families/jvm.rs` — JVM artifacts and run contract
-- `driver/families/wasm.rs` — WASM / WASI artifacts
-- `driver/families/native.rs` — native object files
-- `driver/families/ovm.rs` — `.odin` sidecars and VM modules
-- `driver/partitioning.rs` — partition → family mapping and report merge
-- `artifacts/suspend_sidecar.rs` — suspend sidecar serialization
-
-## Single compile-flow contract (in progress)
-
-Production still carries transitional duplication: `TargetExecutionPlan` is generated from `CompiledProgram`, but outer
-layers may still supply `AssembledFragment` / `FragmentSubmission` summaries consumed by backends. Treating the private
-plan type as wired **does not** mean the single-owner contract is finished.
-
-The frontend entrance is `assembly::AssembledFragment`, whose `input` declares one of two capabilities:
-`SharedSemanticSubset` (opt-in reuse of the canonical chain, the current Valkyrie path) or `Adapted` (a language→platform
-adapter prepares the target input itself). The driver only checks partition identity and never interprets language
-semantics for the adapted path.
-
-- Do not merge `ArtifactPartitionPlan` with `RepresentationPlan` by name alone; remove fields that duplicate canonical
-  facts used as semantic authority during lowering.
-- Wasm lowering lives under `lowering/backends/wasm/mir/`; deleted unreachable copies are cleanup only, not proof of
-  zero side paths.
-- End-to-end validation must drive the compiler from source; hand-filled legacy fragments are not acceptance evidence.
-
-## Usage
-
-Product CLIs call `compile_with_bundled_backends` (and related driver APIs) after the frontend crate produces partitioned
-plans. See the `testing` module for integration-test wrappers.
-
-## Boundaries
-
-- Does not parse language-frontend source.
-- Does not run artifacts (see `nyar-runner` / `ovm`).
+Current family implementations and plan wiring do not establish complete language-to-target coverage. Validate from source through language semantics and target adaptation to an actual artifact and runtime result. Hand-filled fragments, encoded-image wrappers, exit-code folding and stubs are not equivalent evidence.

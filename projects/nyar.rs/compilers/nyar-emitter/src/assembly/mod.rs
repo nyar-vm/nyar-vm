@@ -2,26 +2,25 @@
 //!
 //! 编排层只统一分区身份、能力、来源与“目标输入准备”的位置；语言语义闭合在
 //! 语言自己的 MIR 中，平台承载闭合在各平台自己的计划与 LIR 中，二者经本模块
-//! 的适配边界相接。共享 SSA 语义子集只是**可选复用**的一种接入能力，不是
-//! 所有语言唯一允许的成功载荷。
+//! 的适配边界相接。这里不定义通用 operation 枚举，也不存在“共享语义子集”的
+//! 特殊成功载荷：所有语言都必须通过自己的适配器提交目标输入。
 
 use std::path::Path;
 
 use nyar::{ArtifactPartition, HostProjectionBoundary, TargetBackendFamily, TheoryBundle};
-use nyar_types::CompiledProgram;
 
-use crate::{FragmentSubmission, LoweredBackendInput, TargetExecutionPlan};
+use crate::{LoweredBackendInput, Result};
 
 /// 语言提交给编排层的一个分区装配结果。
 ///
-/// 携带的是分区身份与接入能力声明，不再强制携带完整公共 MIR。
+/// 携带的是分区身份、优化理论与适配器；编排层不读取语言语义。
 pub struct AssembledFragment {
     /// 编排层已经确认的分区身份。
     pub partition: ArtifactPartition,
     /// 该分区选定的优化理论。
     pub theory_bundle: TheoryBundle,
-    /// 语言声明的目标输入接入能力。
-    pub input: FragmentTargetInput,
+    /// 语言→平台适配器。
+    pub input: Box<dyn AdaptedFragmentInput>,
 }
 
 impl std::fmt::Debug for AssembledFragment {
@@ -29,29 +28,7 @@ impl std::fmt::Debug for AssembledFragment {
         f.debug_struct("AssembledFragment")
             .field("partition", &self.partition)
             .field("theory_bundle", &self.theory_bundle)
-            .field("capability", &self.input.capability_name())
             .finish()
-    }
-}
-
-/// 语言接入编排层的方式。
-///
-/// 这里刻意不定义通用 operation 枚举：共享子集变体只复用既有语义载荷；适配器
-/// 变体把目标输入的构造与降低完整留在语言/平台组合的适配器内。
-pub enum FragmentTargetInput {
-    /// 复用共享 SSA 语义子集（当前 Valkyrie 路径）。
-    SharedSemanticSubset(CompiledProgram),
-    /// 语言→平台适配器自带的目标输入。
-    Adapted(Box<dyn AdaptedFragmentInput>),
-}
-
-impl FragmentTargetInput {
-    /// 返回接入能力名，用于诊断与编排层核对。
-    pub fn capability_name(&self) -> &'static str {
-        match self {
-            Self::SharedSemanticSubset(_) => "shared-semantic-subset",
-            Self::Adapted(_) => "adapted-target-input",
-        }
     }
 }
 
@@ -80,57 +57,19 @@ pub trait AdaptedFragmentInput {
     fn partition(&self) -> &ArtifactPartition;
 
     /// 在目标能力内准备后端输入。
-    fn prepare(&self, request: &TargetInputRequest<'_>) -> crate::Result<LoweredBackendInput>;
+    fn prepare(&self, request: &TargetInputRequest<'_>) -> Result<LoweredBackendInput>;
 }
 
 /// 按声明能力把分区装配结果准备成驱动层输入。
 ///
-/// 共享子集仍走既有降低链；适配器路径只核对身份，不读取或改写其中的语义。
-pub(crate) fn prepare_assembled_fragment(payload: AssembledFragment, request: &TargetInputRequest<'_>) -> crate::Result<LoweredBackendInput> {
-    match payload.input {
-        FragmentTargetInput::SharedSemanticSubset(program) => {
-            let submission = fragment_submission_from_shared_subset(&program, &payload.partition, payload.theory_bundle)?;
-            LoweredBackendInput::from_fragment_submission(
-                &submission,
-                request.backend_family,
-                request.host_boundary,
-                request.output_dir,
-                request.host_flavor,
-                request.wasm_package_kind,
-            )
-        }
-        FragmentTargetInput::Adapted(adapter) => {
-            if adapter.partition() != &payload.partition {
-                return Err(format!(
-                    "适配器声明的分区 `{}` 与编排层分区 `{}` 不一致：拒绝用另一分区的目标输入冒充本分区产物",
-                    adapter.partition().name,
-                    payload.partition.name
-                ));
-            }
-            adapter.prepare(request)
-        }
+/// 编排层只核对分区身份；目标输入的构造与降低完整留在适配器内。
+pub(crate) fn prepare_assembled_fragment(payload: AssembledFragment, request: &TargetInputRequest<'_>) -> Result<LoweredBackendInput> {
+    if payload.input.partition() != &payload.partition {
+        return Err(format!(
+            "适配器声明的分区 `{}` 与编排层分区 `{}` 不一致：拒绝用另一分区的目标输入冒充本分区产物",
+            payload.input.partition().name,
+            payload.partition.name
+        ));
     }
-}
-
-/// 从共享语义子集生成后端提交视图。
-fn fragment_submission_from_shared_subset(
-    program: &CompiledProgram,
-    partition: &ArtifactPartition,
-    theory_bundle: TheoryBundle,
-) -> crate::Result<FragmentSubmission> {
-    let linked = &program.canonical().linked;
-    let fragment = linked.fragments.get(&partition.fragment).ok_or_else(|| format!("Canonical 片段 `{}` 不存在", partition.fragment))?;
-    if partition.exported_operations != fragment.exported_operations || partition.entry_operation != fragment.entry_operation {
-        return Err(format!("分区 `{}` 的根与 Canonical 片段不一致", partition.name));
-    }
-    let mut roots = partition.exported_operations.clone();
-    if let Some(entry) = partition.entry_operation {
-        if !roots.contains(&entry) {
-            roots.push(entry);
-        }
-    }
-    let backend_plan = TargetExecutionPlan::from_compiled_program(program, &partition.fragment, theory_bundle, &roots)
-        .map_err(|error| format!("目标计划构建失败: {error}"))?;
-
-    Ok(FragmentSubmission { backend_plan: std::sync::Arc::new(backend_plan) })
+    payload.input.prepare(request)
 }

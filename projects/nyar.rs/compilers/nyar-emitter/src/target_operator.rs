@@ -80,7 +80,7 @@ pub struct TargetOperatorPlan<E> {
 ///
 /// 载体事实只由类型身份决定，与本模块无关；各 lane 的冻结入口共用这一判定，
 /// 避免每个后端重复实现同一形状规则。
-pub(crate) fn operand_carrier(ty: &nyar_types::NyarType) -> Option<TargetOperandType> {
+pub fn operand_carrier(ty: &nyar_types::NyarType) -> Option<TargetOperandType> {
     match ty {
         nyar_types::NyarType::Integer32 { .. } => Some(TargetOperandType::I32),
         // `char`（u16 code unit）在这些 lane 的物理载体是 i32（ABI 层 `AbiCarrier::I32` 同构）；
@@ -188,4 +188,102 @@ pub struct WasmGcArrayOperatorPlan {
     pub arity: usize,
     /// 冻结的数组操作身份。
     pub operation: WasmGcArrayOperation,
+}
+
+#[cfg(test)]
+mod frozen_operator_tests {
+    use super::TargetOperandType;
+    use crate::lowering::backends::clr::mir::freeze_clr_operator_binding;
+    use crate::lowering::backends::jvm::JvmOperatorCode;
+    use crate::lowering::backends::jvm::recipe::freeze_jvm_operator_binding;
+    use crate::lowering::backends::native::x86_64::{X86_64OperatorCode, freeze_x86_64_operator_binding};
+    use crate::transitional::msil::MsilOpcode;
+
+    /// `u64` 无符号小于的托管目标配方：CLR 冻结为原生 `clt.un`，JVM 冻结为符号位
+    /// 翻转展开码；操作数载体 `I64`、结果槽 `I32`，与 `__u64_lt` 的声明签名一致。
+    #[test]
+    fn unsigned_u64_less_than_freezes_managed_operator_plans() {
+        let clr_plan = freeze_clr_operator_binding("i64.lt.un").expect("`i64.lt.un` 必须冻结");
+        assert_eq!(clr_plan.arity, 2);
+        assert_eq!(clr_plan.operand_type, TargetOperandType::I64);
+        assert_eq!(clr_plan.result_type, TargetOperandType::I32);
+        assert_eq!(clr_plan.encoding, MsilOpcode::CltUn);
+
+        let jvm_plan = freeze_jvm_operator_binding("long.compare_less_than_unsigned").expect("`long.compare_less_than_unsigned` 必须冻结");
+        assert_eq!(jvm_plan.arity, 2);
+        assert_eq!(jvm_plan.operand_type, TargetOperandType::I64);
+        assert_eq!(jvm_plan.result_type, TargetOperandType::I32);
+        assert_eq!(jvm_plan.encoding, JvmOperatorCode::LongCompareLessThanUnsigned);
+    }
+
+    /// `x86_64_operator(...)` 按 ISA 冻结编码：`long.*` 冻结为 x86-64 码，
+    /// 未实现的 `integer.*` 与未声明 ISA 的标签不得被猜成任何指令集。
+    #[test]
+    fn x86_64_operator_links_freeze_isa_encodings() {
+        let plan = freeze_x86_64_operator_binding("long.add").expect("`long.add` 必须冻结");
+        assert_eq!(plan.arity, 2);
+        assert_eq!(plan.operand_type, TargetOperandType::I64);
+        assert_eq!(plan.result_type, TargetOperandType::I64);
+        assert_eq!(plan.encoding, X86_64OperatorCode::I64Add);
+
+        let plan = freeze_x86_64_operator_binding("long.compare_less_than").expect("`long.compare_less_than` 必须冻结");
+        assert_eq!(plan.result_type, TargetOperandType::I32);
+        assert_eq!(plan.encoding, X86_64OperatorCode::I64CompareLessThan);
+
+        // 32 位整数算术：载体 `I32` → `I32`。
+        let plan = freeze_x86_64_operator_binding("integer.add").expect("`integer.add` 必须冻结");
+        assert_eq!(plan.operand_type, TargetOperandType::I32);
+        assert_eq!(plan.result_type, TargetOperandType::I32);
+        assert_eq!(plan.encoding, X86_64OperatorCode::I32Add);
+
+        // 未实现的 provider（无符号除）：表内无配方，emit 结构化失败。
+        assert!(freeze_x86_64_operator_binding("integer.divide_unsigned").is_none(), "未实现 provider 不得冻结");
+    }
+
+    /// `u64`/`u32` 无符号除、余、逻辑右移的托管目标配方：
+    /// CLR 冻结为原生 `div.un`/`rem.un`/`shr.un`；JVM 冻结为 `lushr`/`iushr` 或
+    /// `Integer/Long.divideUnsigned/remainderUnsigned` 静态调用。
+    #[test]
+    fn unsigned_div_rem_shift_freeze_managed_operator_plans() {
+        for (mnemonic, operand, result, opcode) in [
+            ("i32.div.un", TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::DivUn),
+            ("i32.rem.un", TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::RemUn),
+            ("i32.shr.un", TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::ShrUn),
+            ("i64.div.un", TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::DivUn),
+            ("i64.rem.un", TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::RemUn),
+            ("i64.shr.un", TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::ShrUn),
+        ] {
+            let plan = freeze_clr_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
+            assert_eq!(plan.arity, 2);
+            assert_eq!(plan.operand_type, operand);
+            assert_eq!(plan.result_type, result);
+            assert_eq!(plan.encoding, opcode, "`{mnemonic}` 编码");
+        }
+
+        for (mnemonic, operand, result, code) in [
+            ("integer.divide_unsigned", TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerDivideUnsigned),
+            ("integer.remainder_unsigned", TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerRemainderUnsigned),
+            ("long.divide_unsigned", TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongDivideUnsigned),
+            ("long.remainder_unsigned", TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongRemainderUnsigned),
+            ("long.shift_right_unsigned", TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongShiftRightUnsigned),
+        ] {
+            let plan = freeze_jvm_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
+            assert_eq!(plan.arity, 2);
+            assert_eq!(plan.operand_type, operand);
+            assert_eq!(plan.result_type, result);
+            assert_eq!(plan.encoding, code, "`{mnemonic}` 编码");
+        }
+    }
+
+    /// 反例：近似但未冻结的助记符必须保持 `Unfrozen`，由 emit 侧结构化失败，
+    /// 不得按名字前缀猜默认指令。
+    #[test]
+    fn near_miss_unsigned_mnemonics_stay_unfrozen() {
+        for mnemonic in ["i64.div_unsigned", "i64.shr.un.extra"] {
+            assert!(freeze_clr_operator_binding(mnemonic).is_none(), "`{mnemonic}` 不得冻结");
+        }
+        for mnemonic in ["long.div.un", "long.shift_right_unsigned.extra"] {
+            assert!(freeze_jvm_operator_binding(mnemonic).is_none(), "`{mnemonic}` 不得冻结");
+        }
+    }
 }

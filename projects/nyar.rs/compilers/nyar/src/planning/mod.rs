@@ -218,24 +218,20 @@ pub struct ArtifactPartitionPlan {
 }
 
 impl ArtifactPartitionPlan {
-    /// 从已验证的 Canonical 程序派生分区规划输入。
+    /// 从语言前端已验证并提交的中立链接事实派生分区规划输入。
     ///
-    /// 可执行入口与根直接保留 Canonical 身份；optimizer 名称视图只用于等式优化，
+    /// 编排层不解释语言语义，也不持有语言 MIR：语言前端必须先完成自己的语义
+    /// 验证，再把 `LinkedSemanticProgram` 身份/片段/能力事实交给这里。可执行入口
+    /// 与根直接保留已冻结的 callable 身份；optimizer 名称视图只用于等式优化，
     /// 不得从 HIR 或旧前端计划重新收集绑定事实。
-    pub fn from_canonical_program(
-        program: &nyar_types::CanonicalProgram,
+    pub fn from_linked_program(
+        linked: &nyar_types::LinkedSemanticProgram,
         target: CanonicalTarget,
         rewrite_theory: RewriteTheory,
         projection_policy: ProjectionPolicy,
         backend_registry: BackendRegistry,
         clr_suspend_strategy: crate::backends::clr::ClrSuspendStrategy,
     ) -> Result<Self, PlanningError> {
-        program.validate().map_err(|error| PlanningError::SemanticContract {
-            module: program.linked.module_name.clone(),
-            stage: nyar_types::CompileStage::RepresentationPlan,
-            detail: format!("{error:?}"),
-        })?;
-        let linked = &program.linked;
         let module_name = qualified_module_name(&linked.module_name);
         let (program_facts, semantic_fragments, object_algebraic_program) = canonical_optimizer_input(linked)?;
         Self::plan_from_optimizer_input(

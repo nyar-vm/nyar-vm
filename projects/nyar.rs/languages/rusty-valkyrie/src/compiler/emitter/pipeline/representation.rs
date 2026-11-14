@@ -1,34 +1,35 @@
-//! CanonicalProgram 到目标无关 RepresentationPlan 的唯一规划器。
+//! ValkyrieMirProgram 到目标无关 RepresentationPlan 的唯一规划器。
 
 use std::collections::BTreeSet;
 
 use nyar_types::{
-    CanonicalOperation, CanonicalProgram, CanonicalTypeKind, NominalValueSemantics, StageResult, ValueIdentity,
+    CanonicalTypeKind, NominalValueSemantics, StageResult, ValueIdentity,
     layout_choice::{AdtRepresentation, InvokeLowering, RepresentationPlan, SumRepresentation, SumVariantRepresentation, ValueRepresentation},
-    pipeline::RepresentationPlanStage,
 };
+
+use crate::compiler::valkyrie_mir::{ValkyrieMirOperation, ValkyrieMirProgram, pipeline::RepresentationPlanStage};
 
 use super::diagnostics::fail_stage;
 
-/// 只消费 CanonicalProgram 的目标无关表示规划器。
+/// 只消费 ValkyrieMirProgram 的目标无关表示规划器。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CanonicalRepresentationPlanner;
 
 impl RepresentationPlanStage for CanonicalRepresentationPlanner {
-    fn plan(&self, program: &CanonicalProgram) -> StageResult<RepresentationPlan> {
+    fn plan(&self, program: &ValkyrieMirProgram) -> StageResult<RepresentationPlan> {
         program.validate().map_err(|error| {
             fail_stage::<()>(
                 nyar_types::CompileStage::ValidateMir,
                 "PLAN001",
                 &program.linked.module_name,
-                format!("planner 收到未验证的 CanonicalProgram: {error:?}"),
+                format!("planner 收到未验证的 ValkyrieMirProgram: {error:?}"),
             )
             .err()
             .unwrap()
         })?;
 
         let mut plan = RepresentationPlan::default();
-        plan.text_representation = nyar_types::declared_text_representation(program);
+        plan.text_representation = crate::compiler::valkyrie_mir::declared_text_representation(program);
         for nominal in program.linked.nominal_instances.keys() {
             plan.adt_reps.insert(*nominal, AdtRepresentation::TypedAggregate);
         }
@@ -109,37 +110,37 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                         );
                     }
                     match &instruction.operation {
-                        CanonicalOperation::Invoke { callee, .. } => {
+                        ValkyrieMirOperation::Invoke { callee, .. } => {
                             let lowering = match callee {
-                                nyar_types::CanonicalCallee::Item(_) => InvokeLowering::Direct,
-                                nyar_types::CanonicalCallee::Value(_) => InvokeLowering::TypedReference,
+                                crate::compiler::valkyrie_mir::ValkyrieMirCallee::Item(_) => InvokeLowering::Direct,
+                                crate::compiler::valkyrie_mir::ValkyrieMirCallee::Value(_) => InvokeLowering::TypedReference,
                                 // witness 分派只登记类型化 witness 降低选择；具体 self 的消去
                                 // 与开放泛型的字典 ABI 留给目标合同，不在此选 adaptor。
-                                nyar_types::CanonicalCallee::Witness(_) => InvokeLowering::TypedWitness,
+                                crate::compiler::valkyrie_mir::ValkyrieMirCallee::Witness(_) => InvokeLowering::TypedWitness,
                             };
                             plan.invoke_lowerings.insert(instruction.id, lowering);
                         }
-                        CanonicalOperation::StructNew { .. }
-                        | CanonicalOperation::Copy { .. }
-                        | CanonicalOperation::Cast { .. }
-                        | CanonicalOperation::StoreVar { .. }
-                        | CanonicalOperation::AggregateCopy { .. }
-                        | CanonicalOperation::LoadConstant { .. }
-                        | CanonicalOperation::SumNew { .. }
-                        | CanonicalOperation::SumPayloadGet { .. }
-                        | CanonicalOperation::SumVariantIs { .. }
-                        | CanonicalOperation::FieldGet { .. }
-                        | CanonicalOperation::FieldSet { .. }
-                        | CanonicalOperation::ArrayGet { .. }
-                        | CanonicalOperation::ArrayNew { .. }
-                        | CanonicalOperation::ArrayFromElements { .. }
-                        | CanonicalOperation::ArraySet { .. }
-                        | CanonicalOperation::ArrayLength { .. }
-                        | CanonicalOperation::NullIsNull { .. }
-                        | CanonicalOperation::NullUnwrap { .. }
-                        | CanonicalOperation::LoadFunctionRef { .. }
-                        | CanonicalOperation::TupleNew { .. }
-                        | CanonicalOperation::TupleGet { .. } => {}
+                        ValkyrieMirOperation::StructNew { .. }
+                        | ValkyrieMirOperation::Copy { .. }
+                        | ValkyrieMirOperation::Cast { .. }
+                        | ValkyrieMirOperation::StoreVar { .. }
+                        | ValkyrieMirOperation::AggregateCopy { .. }
+                        | ValkyrieMirOperation::LoadConstant { .. }
+                        | ValkyrieMirOperation::SumNew { .. }
+                        | ValkyrieMirOperation::SumPayloadGet { .. }
+                        | ValkyrieMirOperation::SumVariantIs { .. }
+                        | ValkyrieMirOperation::FieldGet { .. }
+                        | ValkyrieMirOperation::FieldSet { .. }
+                        | ValkyrieMirOperation::ArrayGet { .. }
+                        | ValkyrieMirOperation::ArrayNew { .. }
+                        | ValkyrieMirOperation::ArrayFromElements { .. }
+                        | ValkyrieMirOperation::ArraySet { .. }
+                        | ValkyrieMirOperation::ArrayLength { .. }
+                        | ValkyrieMirOperation::NullIsNull { .. }
+                        | ValkyrieMirOperation::NullUnwrap { .. }
+                        | ValkyrieMirOperation::LoadFunctionRef { .. }
+                        | ValkyrieMirOperation::TupleNew { .. }
+                        | ValkyrieMirOperation::TupleGet { .. } => {}
                     }
                 }
             }

@@ -1,9 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_types::{
-    CanonicalCallEdge, CanonicalCallee, CanonicalConstant, CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction,
-    CanonicalOperation, Identifier, ItemInstanceId, LinkedSemanticProgram, StructuredDiagnosticSet,
+    CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, Identifier, ItemInstanceId, LinkedSemanticProgram,
+    StructuredDiagnosticSet,
 };
+
+use crate::compiler::valkyrie_mir::{ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirFunction, ValkyrieMirOperation};
 
 use nyar::SemanticFragment;
 
@@ -14,7 +16,7 @@ use super::errors::error;
 pub(crate) fn canonical_fragments(
     module: &MirModule,
     linked: &LinkedSemanticProgram,
-    functions: &BTreeMap<ItemInstanceId, CanonicalFunction>,
+    functions: &BTreeMap<ItemInstanceId, ValkyrieMirFunction>,
     fragments: &[SemanticFragment],
 ) -> Result<BTreeMap<Identifier, CanonicalFragment>, StructuredDiagnosticSet> {
     let mut result = BTreeMap::new();
@@ -66,7 +68,7 @@ pub(crate) fn canonical_fragments(
                 .values()
                 .flat_map(|block| &block.instructions)
                 .filter_map(|instruction| {
-                    if let CanonicalOperation::LoadConstant { constant: CanonicalConstant::Utf8(text) } = &instruction.operation {
+                    if let ValkyrieMirOperation::LoadConstant { constant: ValkyrieMirConstant::Utf8(text) } = &instruction.operation {
                         instruction.results.first().map(|value| (*value, text.clone()))
                     }
                     else {
@@ -75,7 +77,7 @@ pub(crate) fn canonical_fragments(
                 })
                 .collect::<BTreeMap<_, _>>();
             for instruction in function.blocks.values().flat_map(|block| &block.instructions) {
-                let CanonicalOperation::Invoke { callee: CanonicalCallee::Item(callee), arguments } = &instruction.operation
+                let ValkyrieMirOperation::Invoke { callee: ValkyrieMirCallee::Item(callee), arguments } = &instruction.operation
                 else {
                     continue;
                 };
