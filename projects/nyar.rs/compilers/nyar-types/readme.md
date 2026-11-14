@@ -1,42 +1,9 @@
 # nyar-types
 
-Shared foundational types for the Nyar platform.
+Neutral identity, linkage, capability, partition, provenance and artifact contracts for independently owned language and target implementations.
 
-## Overview
+The crate must not own a language AST/MIR, a universal executable representation, target encoding or interpreter state. Shared identity is not shared semantics.
 
-`nyar-types` holds cross-frontend, cross-analyzer, and cross-backend contracts that must stay stable without importing
-language compilers or runtimes. It is intentionally **not** a god-object IR crate.
+Current `canonical_program`, `executable` and related layout contracts still contain Valkyrie-specific semantics and cross-target assumptions. They are migration debt: rename and return Valkyrie program types to Valkyrie, then place target plans and LIR with their target owners. Do not advertise them as a universal or optional common MIR.
 
-## Major modules
-
-| Module                      | Purpose                                                                        |
-|:----------------------------|:-------------------------------------------------------------------------------|
-| `semantic_ids`              | Parameterized MIR identities (`TypeId`, `ItemId`, `OperatorId`, …)             |
-| `canonical_program`         | Canonical MIR/program pipeline types and staged compile results                |
-| `executable`                | **Backend-private** lowering view (`Instruction`, `Terminator`, suspend plans) |
-| `layout`                    | Aggregate / singleton / sum-type layout plans for codegen                      |
-| `neutral_contract`          | Auditable artifact contracts, evidence, provenance                             |
-| `external_import`           | Stable host import/call edge descriptions                                      |
-| `registries`                | Extensible attribute and operator registration                                 |
-| `ty` / `symbols` / `source` | Core type, naming, and source-span primitives                                  |
-| `witness_submission`        | Witness call edges and method slot submissions                                 |
-| `contract_versions`         | Identity / MIR / layout schema version fingerprints                            |
-
-## `CapabilityTag`
-
-Lightweight string tags attached to `ProgramFacts` and backend requirements so planners can gate lanes (`gpu.shader`,
-reference management, etc.).
-
-## Usage
-
-```rust
-use nyar_types::{CapabilityTag, ExternalImportLink, QualifiedName};
-
-let cap = CapabilityTag::new("reference.gc");
-```
-
-## Boundaries
-
-- Does **not** define language-level HIR / MIR / LIR branded to any specific frontend.
-- Does **not** embed PE/COFF/MSIL containers or VM interpreter state.
-- `executable` is a lowering view, not a public semantic bus across languages.
+Host import contracts must retain explicit identity, signatures, calling conventions and ownership. Backend-private representation must not become the semantic bus between languages and targets.

@@ -8,19 +8,13 @@ description: >-
 
 # nyar-vm 编译链
 
-## 流水线
+## 架构入口
 
-```text
-源码
-  → 前端（rusty-valkyrie / rusty-<lang>）：解析、名字解析、类型与语义闭合
-  → HIR → Semantic MIR (SSA) → CanonicalProgram → RepresentationPlan
-  → nyar-analyzer：ProgramFacts
-  → nyar：对象代数程序 → E-Graph 优化 → Futamura 投影计划 → ArtifactPartitionPlan
-  → 目标降低（target-specific LIR / backend input）
-  → nyar-emitter：validate → compile → OutputSpec → ArtifactSet
-```
+先读仓库 `documentation/architecture.md`。每种语言拥有 AST/IR/MIR、语义和解释器；语言到目标适配器产出目标拥有的计划与 LIR。Nyar 提供可选变换、分析、优化、部分求值、残余化、编排及中性合同，不要求通用 MIR。
 
-前端拥有语言语义；平台只做语言无关的规划、优化与装配。
+动态语言执行第一投影 `R_L,P = S(I_L, P)`，保留未知操作与运行时依赖。LegendVM 提供 guest/特化基底；OdinVM 只执行 OVM `.odin`。其他目标不经过 OdinVM。
+
+现有 canonical/executable 合同是 Valkyrie 归属迁移债务，不得推广成强制或可选共享语义子集。
 
 ## 归属
 
@@ -39,7 +33,7 @@ description: >-
 - 前端在进入平台前闭合语义；后端不得回补语言语义。
 - 不构造跨 target 的 god IR；各后端有自己的 lowering 与产物合同。
 - target-agnostic 层不得存放具体 host 的实现细节。
-- 调用必须在 HIR 阶段闭合；禁止在 MIR 层保留 deferred member 或后置泛型物化旁路。
+- Valkyrie 静态调用必须在自身 HIR 阶段闭合，禁止 deferred member 或后置泛型物化旁路。动态语言按自身语义保留动态操作，不套用该静态要求。
 - 错误类型全链保留原错误身份、参数与定位，禁止 `to_string()` 降级为纯文本。
 - 禁止规范外的魔法函数、名字表映射、硬编码特判；缺事实时修上游证据，不扩大匹配范围。
 - `rusty-valkyrie` 前端模块不得导入 `crate::{legion,asgard,workspace}`；包内不得新增第二个 `Cargo.toml`。
@@ -76,4 +70,3 @@ cargo fmt --all --check
 - 用类型转换、占位返回或临时 stub 让编译器过测试。
 - 修改公开错误类型时丢失结构化信息，只保留字符串。
 - 把测试放进 `src/` 的 `#[cfg(test)]`，或添加 `[[test]]` 配置。
-- 把 `documentation/` 里的旧 `nyar-aot` / `nyar-tools` 流程当成当前实现。

@@ -1,93 +1,9 @@
 # nyar
 
-Multi-language analysis, compilation, and execution backend platform for Nyar. Nyar provides the frontend SPI and the
-language-independent stages after a frontend has closed its own semantics; it is not the owner of any language's
-name resolution, type rules, generic substitution, or evidence selection.
+Nyar orchestrates reusable transformations, analysis, optimization, specialization, backend selection, partitioning and artifact assembly. Each language retains its own AST, IR/MIR, interpreter and semantic validation.
 
-## Overview
+Object algebras and E-Graphs are optional tools with explicit interfaces and legality supplied by their users. They are not a mandatory shared semantic pipeline. Neutral identity, import, link, partition and artifact contracts permit independent language-to-target adapters.
 
-`nyar` consumes neutral **`ProgramFacts`** from `nyar-analyzer` and object-algebraic input from `nyar-optimizer`, then
-produces **`ArtifactPartitionPlan`**, target lanes, backend selection, and packaging protocols. It unifies
-**orchestration**, not a single physical IR shared by every target.
+For dynamic languages, Futamura's first projection specializes a language interpreter with respect to a known program. Unknown operations remain in the residual program with explicit runtime requirements. Target lowering is a separate step, owned by Wasm, CLR, JVM, OVM or native adapters and code services.
 
-## Pipeline
-
-```text
-ProgramFacts
-  -> Object Algebraic Program
-  -> E-Graph Optimization Session
-  -> Futamura Projection Plan
-  -> ArtifactPartitionPlan
-  -> Target Lowering Lane
-  -> Target-specific LIR / Backend Input
-  -> validate()
-  -> compile()
-  -> OutputSpec
-  -> ArtifactSet
-```
-
-What is unified is how partitions reach the correct route and deliver artifacts—not one backend IR for CLR, JVM, GPU,
-and VM alike.
-
-## Upstream boundary
-
-Language semantics (`row`, `trait` / `imply`, `class` / `sealed class`, `unite`, `effect`, …) must close in the
-corresponding frontend before entering the language-independent Nyar stages:
-
-- Row method requirements become closed member facts in HIR, not downstream row witnesses.
-- Open dispatch stays explicit (`witness`, `effect-handler`); never disguised as static calls.
-- Nominal subtyping and `unite` exhaustiveness are upstream facts; backends must not re-infer them.
-- Routes that cannot support open witness or effect dispatch must fail before emit, not at encode time.
-
-## HIR / MIR / LIR roles
-
-### HIR
-
-- First semantic closure: resolve, type check, bind constraints, desugar surface syntax.
-- Calls are tagged: static, witness, or effect-handler dispatch.
-- Rows collapse to selected members; traits retain witness/evidence; effects retain handler bindings.
-- No monomorphization, partitioning, or target layout decisions here.
-
-### MIR (SSA)
-
-- Primary analysis IR: CFG, block parameters, explicit terminators and value deps.
-- Escape analysis, effect summaries, closed-world expansion, and target-dependent specialization where the target contract permits it.
-- Witness and effect operands remain explicit for analysis passes.
-
-### LIR
-
-- Not one shared type—a **family** after partitioning:
-    - CPU/VM → Nyar-style low-level IR
-    - CLR → ECMA-335-oriented (`ClrImage`, MSIL, PE)
-    - JVM → classfile model
-    - WASM → structured control flow + sections
-    - GPU → DXIL / SPIR-V / MSL directly
-
-`src/data_formats/*` holds target containers and low-level encodings, not a language-level LIR superset.
-
-## Crate layout
-
-| Path                 | Role                                                       |
-|:---------------------|:-----------------------------------------------------------|
-| `src/abstractions`   | `TargetFamily`, `BackendInputKind`, minimal backend traits |
-| `src/planning`       | Facts → `ArtifactPartitionPlan`                            |
-| `src/lanes`          | Partition → target-specific input                          |
-| `src/selection`      | Backend choice per lane/input                              |
-| `src/backends`       | Per-backend `validate()` / `compile()`                     |
-| `src/data_formats/*` | MSIL, PE, COFF, ClrImage, …                                |
-| `src/packaging`      | `OutputSpec`, `ArtifactSet`, sidecars                      |
-
-## GPU shader path
-
-- Unified protocol, not unified GPU physical IR.
-- Flow: `ShaderDecl → OA/ENode → E-graph → ArtifactPartitionPlan (Gpu) → SPIR-V/DXIL emit`.
-- NyarVM is a separate route—not a GPU compile hop.
-- Extend via fragment rewrite theories (`graphic` / `neural`) and lane-specific emitters; no unified GPU IR fallback.
-
-CI gate: `cargo test -p nyar --test gpu_fragment`. Frontend conformance suites live in their own language crates.
-
-## Boundaries
-
-- No single-language AST/HIR/MIR/LIR owned here.
-- No cross-language god IR.
-- Container models must not patch language semantics at encode time.
+Current APIs still carry Valkyrie-specific `CanonicalProgram` and related executable contracts. Their presence is migration debt, not a universal or opt-in shared MIR design. Rename and return language semantics to Valkyrie rather than expanding these types for other languages. OdinVM is only the OVM runtime, not a required stage for other targets.

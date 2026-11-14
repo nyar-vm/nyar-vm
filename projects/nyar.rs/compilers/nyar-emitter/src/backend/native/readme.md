@@ -1,10 +1,5 @@
-# `nyar-backend-native`
+# Native image backend
 
-`nyar-backend-native` 提供原生目标的最小后端实现；该冻结目标不消费 Semantic MIR，正式支持前必须接入完整
-TargetExecutionPlan。
+This module currently classifies an already encoded native image, checks architecture and container consistency, and wraps it as an artifact. It does not itself establish machine-code generation, object lowering or linking support.
 
-输入是已编码镜像字节：本后端只做镜像格式识别、目标架构校验与包装落盘，不承担 lowering。
-`classify_native_image` 区分可执行文件与共享库（PE DLL / ELF `ET_DYN`，x86-64 或 AArch64）；
-共享库扩展名（`.node` / `.pyd` / `.so` / `.dll` / `.dylib`）由
-`NativeBinaryBackendInput::artifact_extension` 指定，可执行镜像不得声明共享库扩展名，
-产物架构必须与请求目标一致。
+The native target architecture separates machine/object/link/container services from language-to-native adaptation and extension ABI layers. `.node` needs Node-API initialization and lifecycle. `.pyd` / Python `.so` needs CPython initialization, ownership and exception bridging. An accepted artifact extension alone proves none of these capabilities.

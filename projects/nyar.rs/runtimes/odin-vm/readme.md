@@ -1,6 +1,6 @@
 # odin-vm
 
-OVM bytecode virtual machine for `.odin` modules produced from the OVM backend's `nyar-ir`. This IR is specific to OVM and is not a universal IR for other backends.
+OVM bytecode virtual machine for verified `.odin` modules produced by the OVM target. Other targets do not transit OdinVM. Disk encoding belongs to `acorn-odin`; language semantics and interpreters belong to language crates.
 
 ## Overview
 

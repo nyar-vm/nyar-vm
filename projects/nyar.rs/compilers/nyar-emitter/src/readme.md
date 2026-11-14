@@ -1,54 +1,11 @@
 # nyar-emitter
 
-Bundled backend driver for partitioned compiler output.
+Target code services and artifact assembly for Wasm, CLR, JVM, OVM and native. The driver routes validated partition requirements and target-specific inputs, then returns artifacts and execution contracts. Backend selection belongs to the shared selector rather than duplicated family algorithms.
 
-## Overview
+Each language-to-target adapter consumes its language IR or specialized residual program and produces target-owned plans/LIR. Target wrappers may implement explicit runtime services. Encoders must not parse source, infer missing language facts or require a common semantic MIR.
 
-`nyar-emitter` consumes completed `PartitionBackendRequirement` values and target-specific inputs, routes them to
-bundled family compilers, and returns `ArtifactSet` entries plus entry/run contracts for outer orchestrators and product CLIs.
+Current `CompiledProgram`, canonical-bound lowering, common execution views and fragment summaries remain migration debt. They carry Valkyrie semantics and must be renamed/returned to Valkyrie or separated into target-owned representations. Neither a mandatory canonical entrance nor an optional `SharedSemanticSubset` is the architecture contract.
 
-## Layering
+OVM emits `.odin` for OdinVM. Other targets do not transit OdinVM. Native machine/object/link/container services are distinct from Node-API `.node` and CPython `.pyd` / Python `.so` ABI construction. Compiler-host FFI bindings do not demonstrate guest extension support.
 
-| Area                    | Role                                                             |
-|:------------------------|:-----------------------------------------------------------------|
-| `src/lib.rs`            | Stable public API, shared request/response models                |
-| `src/driver/*`          | Backend routing, partition orchestration, family registration    |
-| `src/driver/families/*` | One file per backend family (CLR, JVM, Wasm, native, ovm, …) |
-| `src/backend/*`         | Target backend bodies without driver selection logic             |
-| `src/artifacts/*`       | Sidecars and packaging helpers                                   |
-| `src/lowering/*`        | Fragment → driver input lowering                                 |
-
-Family compilers register as `BackendCandidate` instances; `nyar::BackendSelector` performs unified selection (driver
-does not duplicate selection algorithms).
-
-## Family compilers
-
-- `driver/families/clr.rs` — CLR bundled chain
-- `driver/families/jvm.rs` — JVM artifacts and run contract
-- `driver/families/wasm.rs` — WASM / WASI artifacts
-- `driver/families/native.rs` — native object files
-- `driver/families/ovm.rs` — `.odin` sidecars and VM modules
-- `driver/partitioning.rs` — partition → family mapping and report merge
-- `artifacts/suspend_sidecar.rs` — suspend sidecar serialization
-
-## Single compile-flow contract (in progress)
-
-Production still carries transitional duplication: `TargetExecutionPlan` is generated from `CompiledProgram`, but outer
-layers may still supply `AssembledFragment` / `FragmentSubmission` summaries consumed by backends. Treating the private
-plan type as wired **does not** mean the single-owner contract is finished.
-
-- Do not merge `ArtifactPartitionPlan` with `RepresentationPlan` by name alone; remove fields that duplicate canonical
-  facts used as semantic authority during lowering.
-- Wasm lowering lives under `lowering/backends/wasm/mir/`; deleted unreachable copies are cleanup only, not proof of
-  zero side paths.
-- End-to-end validation must drive the compiler from source; hand-filled legacy fragments are not acceptance evidence.
-
-## Usage
-
-Product CLIs call `compile_with_bundled_backends` (and related driver APIs) after `nyar-language` produces partitioned
-plans. See `testing` module for integration-test wrappers.
-
-## Boundaries
-
-- Does not parse language-frontend source.
-- Does not run artifacts (see `nyar-runner` / `ovm`).
+Current family implementations and plan wiring do not establish complete language-to-target coverage. Validate from source through language semantics and target adaptation to an actual artifact and runtime result. Hand-filled fragments, encoded-image wrappers, exit-code folding and stubs are not equivalent evidence.

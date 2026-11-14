@@ -1,21 +1,7 @@
-# nyar-optimizer (src)
+# nyar-optimizer
 
-Object-algebraic optimization skeleton for the Nyar platform (rustdoc source).
+Reusable object-algebraic transformations, equivalence rewriting, E-Graph sessions, extraction and specialization tools. Languages supply semantic operations and legality, targets supply relevant costs and representation constraints. Using these tools does not require a shared language MIR or one mandatory node enum.
 
-## Responsibilities
+Futamura's first projection specializes an interpreter with respect to a program: `R_L,P = S(I_L, P)`. Unknown input-dependent operations and their runtime dependencies remain in the residual program. Target-family selection and target lowering are distinct from interpreter specialization, even when current APIs use `futa_*` names for projection families.
 
-- Accept object-algebraic program boundaries after upstream semantic closure.
-- Maintain equivalence rewrite rules, E-Graph sessions, and extraction strategies.
-- Select `futa_*` projection families per target family instead of emitting one closed unified IR.
-
-## Current boundaries
-
-- Combination interfaces, rule theories, and projection edges are fixed first.
-- Object algebra is **not** collapsed into a single node enum.
-- Futamura projection is a target-family transform, not a pre-emit alias step.
-
-## Forbidden
-
-- Do not duplicate `nyar-analyzer::ProgramFacts` structures.
-- Do not merge all backends into one god IR.
-- Do not mislabel target-specific encoders as a unified backend representation.
+The current combination and projection interfaces are scaffolding. They do not prove complete interpreter specialization, Python/Lua support across targets, or second/third projection delivery. Concrete encoders belong to target code services, and language semantics remain in language crates.

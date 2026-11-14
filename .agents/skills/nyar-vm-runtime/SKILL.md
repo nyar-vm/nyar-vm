@@ -33,7 +33,8 @@ description: >-
 
 - guest 语言（Bash / Lua / PowerShell / Tcl / C）各自在 `languages/rusty-<lang>` 中拥有 AST、语义桥和解释器；`legend-vm` 只做注册、分发和薄适配。
 - 禁止在 `legend-vm` 内新增完整的语言 tree-walk，禁止引入共享的 `HostScript*` 抽象。
-- 产物路径是 `build --target native` → Futamura 第一投影 → `NativeResidualModule` → PE；`.nyar` / OdinVM 只用于探针，不是宿主脚本的产品路径。
+- 动态语言按第一投影特化解释器与程序并保留未知运行时依赖。当前有限 native residual/PE 接线不等于完整编译，也不禁止未来独立的 Wasm/CLR/JVM/OVM 目标适配。
+- OdinVM 仅执行 OVM `.odin`，不是所有目标的中间运行时。完整架构见仓库 `documentation/architecture.md`。
 - `tests/architecture_guards.rs`、`tests/golden_futamura.rs`、`tests/lang_<lang>.rs` 必须随改动保持通过。
 
 ## GC / JIT 合同

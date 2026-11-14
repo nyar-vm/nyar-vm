@@ -1,23 +1,7 @@
-# planning
+# Planning
 
-Neutral orchestration plans owned by `nyar`.
+Planning owns neutral identity, linkage, partition, capability and artifact requirements. Languages validate their own semantic programs and supply target adapters. A common language MIR is not an admission requirement.
 
-## Responsibilities
+Current canonical-bound entry points contain Valkyrie-specific contracts awaiting relocation. Do not generalize `CanonicalProgram`, fragments or operations into a cross-language semantic bus, including an optional shared subset.
 
-- Accept only validated `CanonicalProgram`; standalone frontend facts are not a success entry.
-- Combine targets, lanes, capabilities, and runtime requirements into `ArtifactPartitionPlan`.
-- Emit closed `PartitionBackendRequirement` values from partition plans for the selection layer.
-- Carry host boundaries and reference-object management strategy in partition plans so GC/RC policy does not leak into
-  backend families or launcher details.
-- Provide stable entry for backend selection, downstream lowering, and packaging.
-- Partition entry, operation roots, and fragment views use `ItemInstanceId`, consuming Canonical fragment contracts
-  directly.
-- Equational optimization name views carry no entry, import, or call edges; name equality must not rebind callable
-  roots.
-
-## Forbidden
-
-- No direct dependency on concrete frontend types.
-- No reinterpretation of language-level semantics.
-- No target container encoding responsibilities.
-- Do not treat equational name lists as function closures; assembly must reject identities inconsistent with Canonical.
+A target plan records decisions for its target. It must not guess absent language facts or duplicate another owner of semantic truth. Dynamic residual operations retain runtime requirements. Planning and target lowering do not replace interpreter specialization.

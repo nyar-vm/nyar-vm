@@ -14,8 +14,7 @@
 - **nyar-vm 运行时**（`projects/nyar.rs/runtimes`）：`odin-vm`（OdinVM）、`legend-vm`（LegendVM）、`nyar-gc`、`nyar-jit`。
 - **宿主与平台产物**（`projects/nyar.rs/ffis`、`projects/nyar.ts`）：`nyar-napi`、`nyar-wasm`、`valkyrie-napi` 与 npm 平台包。
 
-维护者文档在 [`documentation/`](./documentation)。该目录当前仍有历史遗留内容（`nyar-aot`、旧目录、旧流程），与源码冲突时一律以源码、测试和
-`Cargo.toml` 为准。 **不得删除该目录**，过时内容就地修正。
+维护者文档从 [架构合同](documentation/architecture.md) 开始。过期文档直接合并或删除，修复全部引用，不保留平行历史合同。源码现状与目标架构必须分别标明。
 
 ## 任务路由
 
@@ -54,7 +53,9 @@ Valkyrie 前端 ──不能依赖──> Legion / Asgard
 - Nyar 核心 crate 不得依赖 `rusty-valkyrie`、`legion`、`asgard`。
 - `odin-vm` 不得导入任何语言的 AST、解析器或编译流水线。
 - `legend-vm` 不得新增完整的语言 tree-walk；guest 的解析与解释留在 `rusty-<lang>` crate。
-- `nyar-types` 是跨前端/后端的中性合同与身份类型，不是共享的 god IR。
+- `nyar-types` 仅承载中性合同与身份。现有 canonical/executable 语言语义必须归还 Valkyrie，不得改成可选共享 MIR。
+- Nyar 只提供统一工具、编排及中性合同，各语言拥有 IR/MIR、解释器与语义，各目标拥有计划/LIR 和 runtime wrapper。
+- Python/Lua/动态 TypeScript 通过解释器特化保留未知运行时操作，不能以常量折叠或 stub 替代编译。
 - **[valkyrie.rs](https://github.com/valkyrie-language/valkyrie.rs) 是下游语料仓**（fixtures / golden / harness 黑盒），经 git 依赖消费 `nyar-vm` 的 CLI 与编译栈。**本仓不得引用、写入或假设 valkyrie.rs 路径**；语义与集成 Rust 测试只留在 `rusty-valkyrie/tests/`。
 
 ## 硬性约束
@@ -100,8 +101,7 @@ gitignore），不要提交。
 
 ## 文档分工
 
-- `readme.md` 面向用户，回答「nyar-vm 是什么」：先 OdinVM，再 OdinVM 核心特性，然后 LegendVM。保持 mermaid
-  架构图，静态与动态执行路径用同构的横向结构。AOT 是编译期概念（由 `nyar-emitter` 产出），不是运行时库。
+- `readme.md` 面向用户，简述 Nyar 工具、OdinVM 与 LegendVM，链接唯一架构合同，不复制维护手册。
 - **禁止**把给 agent 的阅读顺序、目录清单、构建/测试命令、维护者约束写进 `readme.md`。
 - 面向代理的常驻规则写本文件，专题流程写 `.agents/skills/<name>/SKILL.md`，维护者文档写 `documentation/`。
 - 不新增 `docs/`、roadmap、handoff 或历史进度文档；过期内容直接修正，不留归档副本。
@@ -126,8 +126,7 @@ gitignore），不要提交。
 
 - `languages/` 下只有 `rusty-valkyrie` 与 `rusty-{bash,c,lua,powershell,tcl}` 在 workspace `members` 中；其余 `rusty-*`
   目录不参与构建。
-- `documentation/` 的旧页面可能仍写 `nyar-aot`、`nyar-tools`、`ProjectChomsky` 或 `examples/rusty-*`；这些是历史内容，不代表当前代码。
-- `legend-vm` 的原生产物路径是 Futamura 特化 → `NativeResidualModule` → PE；`.nyar` / OdinVM 只作探针，不是宿主脚本产品路径。
+- `legend-vm` 当前只有有限 native residual 接线，不能把现状限制写成永久禁止 OVM/CLR/JVM/Wasm 适配的架构规则。
 - `odin-vm` 只消费 `acorn-odin`，不解析源码，也不拥有 `.odin` 的磁盘格式合同。
 - `projects/nyar.rs/.cargo/config.toml` 是本机文件，永远不要提交。
 - npm 平台包命名固定为 `@nyar/<包名>-<平台>`，不要加 `cli`、`gnu`、`musl` 等额外后缀。
