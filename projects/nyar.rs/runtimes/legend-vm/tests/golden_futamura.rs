@@ -832,16 +832,40 @@ mod node_addon_abi {
     #[test]
     fn node_requires_the_addon_and_reads_the_residual_value() {
         let path = addon("return 42\n", "value");
-        let script = format!("console.log(require('{}'))", path.display());
-        assert_eq!(run_node(&script), "42", "module.exports 必须是残差 main 的数值");
+        let script = format!("console.log(require('{}').value)", path.display());
+        assert_eq!(run_node(&script), "42", "`exports.value` 必须是残差 main 的数值");
         let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn node_addon_prints_through_stdout() {
         let path = addon("print(\"hello\")\nprint(3)\nreturn 7\n", "print");
-        let script = format!("console.log(require('{}'))", path.display());
-        assert_eq!(run_node(&script), "hello\n3\n7", "print 顺序与 module.exports 共用 stdout");
+        let script = format!("console.log(require('{}').value)", path.display());
+        assert_eq!(run_node(&script), "hello\n3\n7", "print 顺序与模块属性读取共用 stdout");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 方法表：`exports.add(2, 3)` 经 `napi_get_cb_info` 取实参并返回整数。
+    #[test]
+    fn node_calls_residual_methods_with_parsed_arguments() {
+        let path = addon("function add(a, b)\n  return a + b\nend\nreturn 42\n", "methods");
+        let script = format!("const m = require('{}'); console.log(m.value); console.log(m.add(2, 3))", path.display());
+        assert_eq!(run_node(&script), "42\n5", "Node 方法必须按回调约定返回整数");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 参数个数/类型不符必须抛 `TypeError`，不能静默成 0/-1。
+    #[test]
+    fn node_method_argument_errors_surface_as_host_exceptions() {
+        let path = addon("function add(a, b)\n  return a + b\nend\nreturn 42\n", "argerr");
+        let script = format!(
+            "const add = require('{}').add; \
+             for (const call of [() => add(1), () => add('x', 2)]) {{ \
+               try {{ call(); console.log('no-error'); }} catch (error) {{ console.log(error instanceof TypeError); }} \
+             }}",
+            path.display()
+        );
+        assert_eq!(run_node(&script), "true\ntrue", "宿主必须把回调实参错误暴露为 TypeError");
         let _ = std::fs::remove_file(&path);
     }
 

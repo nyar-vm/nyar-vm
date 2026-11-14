@@ -908,11 +908,26 @@ pub fn lower_native_residual_to_program(
     // 导入面按目标冻结：Windows 的 effect 写入是 IAT 导入；Node 扩展要调用
     // Node-API 构造返回值；CPython 扩展要调用 `PyModule_Create2` 建立模块并
     // 用 `PyModule_AddIntConstant` 暴露残差值；Linux 的 effect 是 syscall，没有导入。
-    // CPython 方法包装只在其方法表非空时需要 `PyArg_ParseTuple` / `PyLong_FromLong`。
+    // CPython / Node 方法包装只在方法表非空时需要各自的解析与装箱原语。
     let python_has_methods = target == NativeProductTarget::Python && module.functions.iter().any(|function| function.name != "main");
+    let node_has_methods = target == NativeProductTarget::Node && module.functions.iter().any(|function| function.name != "main");
     let imports: Vec<(String, String)> = match target {
         NativeProductTarget::Windows if has_print => vec![("kernel32".to_string(), "WriteFile".to_string())],
-        NativeProductTarget::Node => vec![(String::new(), "napi_create_int32".to_string())],
+        NativeProductTarget::Node => {
+            let mut symbols = vec![
+                (String::new(), "napi_create_int64".to_string()),
+                (String::new(), "napi_set_named_property".to_string()),
+            ];
+            if node_has_methods {
+                symbols.extend([
+                    (String::new(), "napi_create_function".to_string()),
+                    (String::new(), "napi_get_cb_info".to_string()),
+                    (String::new(), "napi_get_value_int64".to_string()),
+                    (String::new(), "napi_throw_type_error".to_string()),
+                ]);
+            }
+            symbols
+        }
         NativeProductTarget::Python => {
             let mut symbols = vec![(String::new(), "PyModule_Create2".to_string()), (String::new(), "PyModule_AddIntConstant".to_string())];
             if python_has_methods {
@@ -957,7 +972,19 @@ pub fn lower_native_residual_to_program(
     match target {
         NativeProductTarget::Node => {
             require_extension_main("Node addon", module, &lowered)?;
-            functions.push(node_addon_registration());
+            let methods = extension_methods(
+                module,
+                &lowered,
+                "Node 扩展",
+                "Node-API 回调的 `argv` 窗口最多解析 6 个整数实参",
+                NODE_METHOD_MAX_PARAMETERS,
+            )?;
+            let (node_data, value_name_offset, method_name_offsets, error_message_offset) = node_module_data(&methods);
+            data = node_data;
+            for method in &methods {
+                functions.push(node_method_wrapper(method, error_message_offset));
+            }
+            functions.push(node_addon_registration(&methods, value_name_offset, &method_name_offsets));
         }
         NativeProductTarget::Python => {
             require_extension_main("CPython extension", module, &lowered)?;
@@ -967,7 +994,13 @@ pub fn lower_native_residual_to_program(
                     module.name
                 ));
             }
-            let methods = python_methods(module, &lowered)?;
+            let methods = extension_methods(
+                module,
+                &lowered,
+                "CPython 扩展",
+                "`PyArg_ParseTuple` 包装最多闭合 4 个整数实参",
+                PY_METHOD_MAX_PARAMETERS,
+            )?;
             let (definition, relocations, value_offset, format_offsets) = python_module_data(&module.name, &methods);
             data = definition;
             data_relocations = relocations;
@@ -1039,20 +1072,29 @@ const PY_METH_VARARGS: u32 = 0x0001;
 /// 之外的 4 个整数寄存器都用于传出指针。
 const PY_METHOD_MAX_PARAMETERS: usize = 4;
 
-/// 一个可暴露给 CPython 的残差方法。
-struct PythonMethod {
+/// Node-API 回调最多 6 个整数形参：与 SysV64 的整数实参寄存器数一致，
+/// `napi_get_cb_info` 的 `argv` 数组按该容量预置。
+const NODE_METHOD_MAX_PARAMETERS: usize = 6;
+
+/// 一个可暴露给宿主扩展模块的方法。
+struct ExtensionMethod {
     /// 方法名（宿主可见名，同时是残差函数名）。
     name: String,
     /// 整数形参个数。
     parameters: usize,
 }
 
-/// 收集可暴露方法：除 `main` 外的残差函数，必须是整数/布尔返回且形参不超过
-/// `PyArg_ParseTuple` 的寄存能力。不支持的形状显式失败，不悄悄丢方法。
-fn python_methods(
+/// 收集可暴露方法（语言无关策略）：除 `main` 外的残差函数，必须是整数/布尔返回且
+/// 形参不超过该宿主的参数窗口。不支持的形状显式失败，不悄悄丢方法。
+///
+/// 各宿主只提供自己的 `host` 标签与 `window` 说明；可暴露集合的判定只有这一份。
+fn extension_methods(
     module: &NativeResidualModule,
     lowered: &[(NativeTextProgramFunction, Option<ProductValueKind>)],
-) -> Result<Vec<PythonMethod>, String> {
+    host: &str,
+    window: &str,
+    max_parameters: usize,
+) -> Result<Vec<ExtensionMethod>, String> {
     let mut methods = Vec::new();
     for (function, return_kind) in lowered {
         if function.name == "main" {
@@ -1062,19 +1104,19 @@ fn python_methods(
             Some(ProductValueKind::Int | ProductValueKind::Bool) => {}
             other => {
                 return Err(format!(
-                    "CPython 扩展方法 `{}` 的返回载体是 `{other:?}`：只有整数/布尔能经 `PyLong_FromLong` 暴露",
+                    "{host}方法 `{}` 的返回载体是 `{other:?}`：只有整数/布尔能暴露为宿主整数",
                     function.name
                 ));
             }
         }
         let parameters = module.function(&function.name).map(|function| function.parameters.len()).unwrap_or(0);
-        if parameters > PY_METHOD_MAX_PARAMETERS {
+        if parameters > max_parameters {
             return Err(format!(
-                "CPython 扩展方法 `{}` 有 {parameters} 个形参；`PyArg_ParseTuple` 包装只闭合至多 {PY_METHOD_MAX_PARAMETERS} 个整数实参",
+                "{host}方法 `{}` 有 {parameters} 个形参；{window}（上限 {max_parameters}）",
                 function.name
             ));
         }
-        methods.push(PythonMethod { name: function.name.clone(), parameters });
+        methods.push(ExtensionMethod { name: function.name.clone(), parameters });
     }
     Ok(methods)
 }
@@ -1088,7 +1130,7 @@ fn python_wrapper_name(method: &str) -> String {
 /// 返回数据块、自相对重定位、常量名偏移与每个方法的格式串偏移（包装体需要）。
 fn python_module_data(
     module_name: &str,
-    methods: &[PythonMethod],
+    methods: &[ExtensionMethod],
 ) -> (Vec<u8>, Vec<(u32, NativeDataTarget)>, u32, Vec<u32>) {
     let mut data = vec![0u8; PY_MODULE_DEF_BASE_LEN as usize];
     let mut relocations = Vec::new();
@@ -1224,26 +1266,199 @@ fn python_module_registration(module_name: &str, value_offset: u32) -> NativeTex
     }
 }
 
-/// `napi_register_module_v1(env, exports)` 包装体：把残差 `main` 的整数值包成
-/// Node number 并作为 `module.exports` 返回。
-fn node_addon_registration() -> NativeTextProgramFunction {
+/// `napi_register_module_v1(env, exports)` 入口：把残差 `main` 的整数值写成
+/// `exports.value`，并为每个残差函数注册同名回调，最后返回 `exports` 对象。
+///
+/// 与 CPython lane 共用同一产品面：宿主侧看到 `{ value, <residual functions> }`。
+fn node_addon_registration(
+    methods: &[ExtensionMethod],
+    value_name_offset: u32,
+    method_name_offsets: &[u32],
+) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
+    const ENV_SLOT: u16 = 0;
+    const EXPORTS_SLOT: u16 = 1;
+    const VALUE_SLOT: u16 = 2;
+    const TEMP_SLOT: u16 = 3;
+    const FUNCTION_SLOT: u16 = 4;
+    const ZERO_SLOT: u16 = 5;
+    const OUT_SLOT: u16 = 6;
+
+    let mut instructions = vec![
+        Lir::LoadParam { index: 0, slot: ENV_SLOT },
+        Lir::LoadParam { index: 1, slot: EXPORTS_SLOT },
+        Lir::LoadI64(0),
+        Lir::StoreSlot(ZERO_SLOT),
+        Lir::Call("main".to_string()),
+        Lir::StoreSlot(VALUE_SLOT),
+        // `napi_create_int64(env, value, &out)`。
+        Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+        Lir::LoadSlotToArg { slot: VALUE_SLOT, index: 1 },
+        Lir::LoadSlotAddress(OUT_SLOT),
+        Lir::StoreSlot(TEMP_SLOT),
+        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+        Lir::CallImport { module: String::new(), field: "napi_create_int64".to_string() },
+        // `napi_set_named_property(env, exports, "value", out)`。
+        Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+        Lir::LoadSlotToArg { slot: EXPORTS_SLOT, index: 1 },
+        Lir::LoadDataAddress(value_name_offset),
+        Lir::StoreSlot(TEMP_SLOT),
+        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+        Lir::LoadSlotToArg { slot: OUT_SLOT, index: 3 },
+        Lir::CallImport { module: String::new(), field: "napi_set_named_property".to_string() },
+    ];
+    for (method, name_offset) in methods.iter().zip(method_name_offsets) {
+        // `napi_create_function(env, name, len, wrapper, NULL, &fn)`。
+        instructions.extend([
+            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+            Lir::LoadDataAddress(*name_offset),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 1 },
+            Lir::LoadI64(method.name.len() as i64),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+            Lir::LoadFunctionAddress(node_wrapper_name(&method.name)),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
+            Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 4 },
+            Lir::LoadSlotAddress(FUNCTION_SLOT),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 5 },
+            Lir::CallImport { module: String::new(), field: "napi_create_function".to_string() },
+            // `napi_set_named_property(env, exports, name, fn)`。
+            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+            Lir::LoadSlotToArg { slot: EXPORTS_SLOT, index: 1 },
+            Lir::LoadDataAddress(*name_offset),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+            Lir::LoadSlotToArg { slot: FUNCTION_SLOT, index: 3 },
+            Lir::CallImport { module: String::new(), field: "napi_set_named_property".to_string() },
+        ]);
+    }
+    instructions.push(Lir::LoadSlot(EXPORTS_SLOT));
+    instructions.push(Lir::Return);
+
+    NativeTextProgramFunction { name: "napi_register_module_v1".to_string(), slot_count: 7, instructions }
+}
+
+fn node_wrapper_name(method: &str) -> String {
+    format!("__nyar_node_wrap_{method}")
+}
+
+/// Node-API 数据段：`value` 属性名、错误消息与各方法名（全部 NUL 结尾）。
+fn node_module_data(methods: &[ExtensionMethod]) -> (Vec<u8>, u32, Vec<u32>, u32) {
+    let mut data = Vec::new();
+    let value_name_offset = data.len() as u32;
+    push_cstring(&mut data, "value");
+    let error_message_offset = data.len() as u32;
+    push_cstring(&mut data, "expected integer arguments");
+    let mut method_name_offsets = Vec::with_capacity(methods.len());
+    for method in methods {
+        method_name_offsets.push(data.len() as u32);
+        push_cstring(&mut data, &method.name);
+    }
+    (data, value_name_offset, method_name_offsets, error_message_offset)
+}
+
+/// `napi_value wrapper(napi_env env, napi_callback_info info)`：把 Node 实参解析成
+/// `i64` 后调用同名残差函数，结果用 `napi_create_int64` 包成 JS number。
+///
+/// 参数个数不符或不是整数时抛 `TypeError` 并返回 `NULL`，不把错误静默成 0。
+fn node_method_wrapper(method: &ExtensionMethod, error_message_offset: u32) -> NativeTextProgramFunction {
+    use NativeTextInstruction as Lir;
+    const ENV_SLOT: u16 = 0;
+    const INFO_SLOT: u16 = 1;
+    const ARGC_SLOT: u16 = 2;
+    const ZERO_SLOT: u16 = 3;
+    const TEMP_SLOT: u16 = 4;
+    // `argv` 数组占用的帧槽；槽号递增对应地址递减，数组基址取最高槽号。
+    const ARGV_FIRST_SLOT: u16 = 5;
+    const RESULT_SLOT: u16 = 11;
+    const OUT_FIRST_SLOT: u16 = 12;
+    const FAIL_LABEL: u32 = 0;
+    const CALLBACK_OK_LABEL: u32 = 1;
+    let argv_slot = |index: usize| ARGV_FIRST_SLOT + NODE_METHOD_MAX_PARAMETERS as u16 - 1 - index as u16;
+    let out_slot = |index: usize| OUT_FIRST_SLOT + index as u16;
+    let continue_label = |index: usize| 2 + index as u32;
+    let parameters = method.parameters;
+
+    let mut instructions = vec![
+        Lir::LoadParam { index: 0, slot: ENV_SLOT },
+        Lir::LoadParam { index: 1, slot: INFO_SLOT },
+        // `argc` 是 in/out：传入 `argv` 容量，返回实际个数。
+        Lir::LoadI64(NODE_METHOD_MAX_PARAMETERS as i64),
+        Lir::StoreSlot(ARGC_SLOT),
+        Lir::LoadI64(0),
+        Lir::StoreSlot(ZERO_SLOT),
+        // `napi_get_cb_info(env, info, &argc, argv, NULL, NULL)`。
+        Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+        Lir::LoadSlotToArg { slot: INFO_SLOT, index: 1 },
+        Lir::LoadSlotAddress(ARGC_SLOT),
+        Lir::StoreSlot(TEMP_SLOT),
+        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+        Lir::LoadSlotAddress(ARGV_FIRST_SLOT + NODE_METHOD_MAX_PARAMETERS as u16 - 1),
+        Lir::StoreSlot(TEMP_SLOT),
+        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
+        Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 4 },
+        Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 5 },
+        Lir::CallImport { module: String::new(), field: "napi_get_cb_info".to_string() },
+        // `napi_get_cb_info` 返回 0 才是成功。
+        Lir::JumpIfZero(CALLBACK_OK_LABEL),
+        Lir::Jump(FAIL_LABEL),
+        Lir::Label(CALLBACK_OK_LABEL),
+        // 实际个数必须与方法形参一致。
+        Lir::LoadI64(parameters as i64),
+        Lir::StoreSlot(TEMP_SLOT),
+        Lir::LoadSlot(ARGC_SLOT),
+        Lir::LoadSlotToRcx(TEMP_SLOT),
+        Lir::Eq,
+        Lir::JumpIfZero(FAIL_LABEL),
+    ];
+    for index in 0..parameters {
+        // `napi_get_value_int64(env, argv[index], &out)`。
+        instructions.extend([
+            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+            Lir::LoadSlotToArg { slot: argv_slot(index), index: 1 },
+            Lir::LoadSlotAddress(out_slot(index)),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+            Lir::CallImport { module: String::new(), field: "napi_get_value_int64".to_string() },
+            Lir::JumpIfZero(continue_label(index)),
+            Lir::Jump(FAIL_LABEL),
+            Lir::Label(continue_label(index)),
+        ]);
+    }
+    for index in 0..parameters {
+        instructions.push(Lir::LoadSlotToArg { slot: out_slot(index), index: index as u8 });
+    }
+    instructions.extend([
+        Lir::Call(method.name.clone()),
+        Lir::StoreSlot(RESULT_SLOT),
+        // `napi_create_int64(env, value, &result)`。
+        Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+        Lir::LoadSlotToArg { slot: RESULT_SLOT, index: 1 },
+        Lir::LoadSlotAddress(RESULT_SLOT),
+        Lir::StoreSlot(TEMP_SLOT),
+        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+        Lir::CallImport { module: String::new(), field: "napi_create_int64".to_string() },
+        Lir::LoadSlot(RESULT_SLOT),
+        Lir::Return,
+        Lir::Label(FAIL_LABEL),
+        // `napi_throw_type_error(env, NULL, message)`。
+        Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+        Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 1 },
+        Lir::LoadDataAddress(error_message_offset),
+        Lir::StoreSlot(TEMP_SLOT),
+        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+        Lir::CallImport { module: String::new(), field: "napi_throw_type_error".to_string() },
+        Lir::LoadI64(0),
+        Lir::Return,
+    ]);
+
     NativeTextProgramFunction {
-        name: "napi_register_module_v1".to_string(),
-        slot_count: 4,
-        instructions: vec![
-            Lir::LoadParam { index: 0, slot: 0 },
-            Lir::Call("main".to_string()),
-            Lir::StoreSlot(1),
-            Lir::LoadSlotToArg { slot: 0, index: 0 },
-            Lir::LoadSlotToArg { slot: 1, index: 1 },
-            Lir::LoadSlotAddress(2),
-            Lir::StoreSlot(3),
-            Lir::LoadSlotToArg { slot: 3, index: 2 },
-            Lir::CallImport { module: String::new(), field: "napi_create_int32".to_string() },
-            Lir::LoadSlot(2),
-            Lir::Return,
-        ],
+        name: node_wrapper_name(&method.name),
+        slot_count: OUT_FIRST_SLOT + parameters as u16,
+        instructions,
     }
 }
 
@@ -1984,7 +2199,7 @@ mod tests {
         assert!(String::from_utf8_lossy(&bytes).contains("main"), "残差函数必须出现在动态符号表");
     }
 
-    /// Node 扩展产物：Node-API 注册导出 + `napi_create_int32` 动态导入。
+    /// Node 扩展产物：Node-API 注册导出 + 导出对象属性写入所需的动态导入。
     #[test]
     fn node_addon_exposes_registration_and_napi_import() {
         use nyar_emitter::nyar_backend_native::{NativeExecutableKind, classify_native_image};
@@ -1995,7 +2210,33 @@ mod tests {
         assert_eq!(facts.kind, NativeExecutableKind::ElfShared, "Node 扩展是 ET_DYN");
         let haystack = String::from_utf8_lossy(&bytes);
         assert!(haystack.contains("napi_register_module_v1"), "必须导出 Node-API 注册函数");
-        assert!(haystack.contains("napi_create_int32"), "必须声明 N-API 动态导入");
+        assert!(haystack.contains("napi_create_int64"), "残差 i64 必须按 `napi_create_int64` 装箱");
+        assert!(haystack.contains("napi_set_named_property"), "必须把 `value` 写成导出属性");
+        assert!(!haystack.contains("napi_create_function"), "没有方法时不得声明方法原语");
+    }
+
+    /// Node 方法表：`napi_create_function` 注册同名回调，回调经 `napi_get_cb_info`
+    /// 取实参、`napi_get_value_int64` 解析、`napi_create_int64` 装箱。
+    #[test]
+    fn node_addon_registers_a_method_table() {
+        let module = residual_with_method(NativeResidualFunction {
+            name: "add".into(),
+            parameters: vec!["a".into(), "b".into()],
+            ops: vec![
+                NativeResidualOp::Load("a".into()),
+                NativeResidualOp::Load("b".into()),
+                NativeResidualOp::Add,
+                NativeResidualOp::Ret,
+            ],
+        });
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::Node).expect("lower node methods");
+        assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_node_wrap_add"), "必须生成 Node 回调包装体");
+        for symbol in ["napi_create_function", "napi_get_cb_info", "napi_get_value_int64", "napi_throw_type_error"] {
+            assert!(image.elf_imports.iter().any(|import| import == symbol), "缺少方法原语导入 `{symbol}`");
+        }
+        assert!(image.data.windows(4).any(|window| window == b"add\0"), "方法名必须进入数据段");
+        let bytes = emit_native_node_addon(&module).expect("emit node methods addon");
+        assert!(String::from_utf8_lossy(&bytes).contains("__nyar_node_wrap_add"));
     }
 
     /// Linux 的 `print` 用 `write(2)` 系统调用，不生成任何 PE 导入表。
