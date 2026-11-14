@@ -397,10 +397,10 @@ fn lower_function_to_x64(
 ) -> Result<X64Function> {
     let slots = ExecutableSlotPlan::plan_nyar(function);
     let local_bytes = slots.local_types.len().checked_mul(8).ok_or_else(|| "x86_64 最小 lowering：局部槽数量溢出".to_string())?;
-    // 帧必须 16 字节对齐；Win64 还要在帧底预留 32 字节 shadow space。
+    // 帧必须 16 字节对齐；帧底按调用约定预留 shadow space / 块参数周转区。
     let frame_bytes = align16(
         local_bytes
-            .checked_add(abi.shadow_space() as usize)
+            .checked_add(abi.frame_reserve())
             .ok_or_else(|| "x86_64 最小 lowering：栈帧大小溢出".to_string())?,
     )?;
     let frame_bytes = u32::try_from(frame_bytes).map_err(|_| "x86_64 最小 lowering：栈帧大小超出 `u32`".to_string())?;

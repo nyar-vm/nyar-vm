@@ -58,6 +58,17 @@ impl NativeAbi {
         }
     }
 
+    /// 帧底必须为调用约定预留的字节数。
+    ///
+    /// Win64 的 32 字节 shadow space 同时充当块参数周转区；SysV64 没有 shadow
+    /// space，块参数周转需要独立空间（6 个寄存器实参 × 8 字节）。
+    pub(crate) fn frame_reserve(self) -> usize {
+        match self {
+            Self::Win64 => 32,
+            Self::SystemV64 => 6 * 8,
+        }
+    }
+
     /// 调用约定的稳定名称，用于结构化错误。
     pub(crate) fn name(self) -> &'static str {
         match self {
