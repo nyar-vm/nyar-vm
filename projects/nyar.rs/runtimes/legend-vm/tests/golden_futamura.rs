@@ -899,8 +899,9 @@ mod python_extension_abi {
     fn python_extension_init_returns_a_module_object() {
         let (dir, library) = extension("return 42\n", "legend_probe_diag");
         // `PyDLL` 调用期间保持 GIL（`CDLL` 会释放 GIL，`PyModule_New` 需要它）。
+        // 默认 `RTLD_LOCAL`，与 `import` 的装载模式一致；再尝试真实的 `import`。
         let script = format!(
-            "import ctypes; lib=ctypes.PyDLL('{}', mode=ctypes.RTLD_GLOBAL); lib.PyInit_legend_probe_diag.restype=ctypes.c_void_p; pointer=lib.PyInit_legend_probe_diag(); print('ptr', pointer); print('type', type(ctypes.cast(pointer, ctypes.py_object).value).__name__ if pointer else 'null')",
+            "import ctypes, sys, os; p='{0}'; lib=ctypes.PyDLL(p); lib.PyInit_legend_probe_diag.restype=ctypes.c_void_p; pointer=lib.PyInit_legend_probe_diag(); print('type', type(ctypes.cast(pointer, ctypes.py_object).value).__name__ if pointer else 'null'); sys.path.insert(0, os.path.dirname(p));\nimport legend_probe_diag\nprint('value', legend_probe_diag.value)",
             library.display()
         );
         let output = std::process::Command::new("python3").arg("-c").arg(&script).output().expect("spawn python3");
