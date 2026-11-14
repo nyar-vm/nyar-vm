@@ -217,12 +217,15 @@ pub struct NativeTextProgramFunction {
 ///
 /// 数据段起点由容器（页对齐）决定，适配器无法提前知道最终虚拟地址，所以目标按
 /// 「节 + 节内偏移」声明，由容器换算成自相对重定位的加数。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeDataTarget {
     /// `.text` 内偏移（例如导出函数地址）。
     Text(u32),
     /// `.data` 内偏移（例如模块名、常量名）。
     Data(u32),
+    /// 命名函数（例如方法表里的 `ml_meth`）：由编码器在布局完成后解析成符号偏移，
+    /// 适配器不需要预测函数在 `.text` 中的位置。
+    Function(String),
 }
 
 /// 多函数文本程序编码结果。

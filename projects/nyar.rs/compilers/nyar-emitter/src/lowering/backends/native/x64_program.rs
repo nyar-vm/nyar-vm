@@ -374,16 +374,30 @@ pub fn encode_native_text_program_with_data(
         }
     }
 
-    for (_, target) in data_relocations {
-        match target {
-            NativeDataTarget::Text(offset) if *offset as usize >= text.len() => {
-                return Err(format!("native 数据段指针目标 `.text` 偏移 {offset} 超出文本长度 {}", text.len()));
+    // 数据段指针目标在布局完成后解析：命名函数变成 `.text` 符号偏移，容器只看到
+    // 「节 + 节内偏移」，不依赖适配器预测布局。
+    let mut resolved_relocations = Vec::with_capacity(data_relocations.len());
+    for (offset, target) in data_relocations {
+        let resolved = match target {
+            NativeDataTarget::Text(offset) => {
+                if *offset as usize >= text.len() {
+                    return Err(format!("native 数据段指针目标 `.text` 偏移 {offset} 超出文本长度 {}", text.len()));
+                }
+                NativeDataTarget::Text(*offset)
             }
-            NativeDataTarget::Data(offset) if *offset as usize >= data.len() => {
-                return Err(format!("native 数据段指针目标 `.data` 偏移 {offset} 超出数据块长度 {}", data.len()));
+            NativeDataTarget::Data(offset) => {
+                if *offset as usize >= data.len() {
+                    return Err(format!("native 数据段指针目标 `.data` 偏移 {offset} 超出数据块长度 {}", data.len()));
+                }
+                NativeDataTarget::Data(*offset)
             }
-            _ => {}
-        }
+            NativeDataTarget::Function(name) => {
+                let target_offset =
+                    symbol_offsets.get(name).copied().ok_or_else(|| format!("native 数据段指针引用了未定义函数 `{name}`"))?;
+                NativeDataTarget::Text(target_offset)
+            }
+        };
+        resolved_relocations.push((*offset, resolved));
     }
 
     Ok(NativeTextProgramImage {
@@ -395,7 +409,7 @@ pub fn encode_native_text_program_with_data(
         elf_got_fixups,
         elf_imports: if abi == NativeAbi::SystemV64 { imports.iter().map(|(_, field)| field.clone()).collect() } else { Vec::new() },
         data: data.to_vec(),
-        data_relocations: data_relocations.to_vec(),
+        data_relocations: resolved_relocations,
         data_references,
     })
 }
