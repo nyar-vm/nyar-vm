@@ -894,6 +894,24 @@ mod python_extension_abi {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 诊断：直接经 `ctypes` 调用 `PyInit_<name>`，报告返回值类型。
+    #[test]
+    fn python_extension_init_returns_a_module_object() {
+        let (dir, library) = extension("return 42\n", "legend_probe_diag");
+        let script = format!(
+            "import ctypes; lib=ctypes.CDLL('{}', mode=ctypes.RTLD_GLOBAL); lib.PyInit_legend_probe_diag.restype=ctypes.c_void_p; pointer=lib.PyInit_legend_probe_diag(); print('ptr', pointer); print('type', type(ctypes.cast(pointer, ctypes.py_object).value).__name__ if pointer else 'null')",
+            library.display()
+        );
+        let output = std::process::Command::new("python3").arg("-c").arg(&script).output().expect("spawn python3");
+        let text = format!(
+            "stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(text.contains("type module"), "PyInit 必须返回 module 对象：{text}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn python_extension_prints_through_stdout() {
         let (dir, _library) = extension("print(\"hello\")\nprint(3)\nreturn 7\n", "legend_print");
