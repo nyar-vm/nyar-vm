@@ -154,11 +154,13 @@ pub enum NativeTextInstruction {
     /// `{ i32 self_relative_ptr; u32 len }` 紧跟字节。宿主按
     /// `descriptor + self_relative_ptr` 读取内容，所有权归镜像本身（只读、永不释放）。
     LoadString(String),
-    /// 通过 `.idata` 的 IAT 槽调用宿主导入函数（`call [rip+disp32]`）。
+    /// 通过宿主导入调用函数（`call [rip+disp32]`）。
     ///
-    /// 导入表与重定位由程序编码器/PE 写入器共同冻结，适配器只声明目标身份。
+    /// 编码按目标 ABI 冻结：Win64 走 `.idata` 的 IAT 槽并要求 `module` 为宿主模块名；
+    /// SysV64 走未定义动态符号 + 可写 GOT 槽（`R_X86_64_GLOB_DAT`），
+    /// **`module` 必须为空**——ELF 导入按装载进程的全局符号作用域解析，不按模块名装载。
     CallImport {
-        /// 宿主模块名（例如 `kernel32`）。
+        /// 宿主模块名（仅 Win64 使用）。
         module: String,
         /// 导入函数名。
         field: String,
@@ -216,8 +218,14 @@ pub struct NativeTextProgramImage {
     pub idata: Vec<u8>,
     /// 按 DLL 归组的导入描述。
     pub imports: Vec<acorn_pe::pe::NativeDllImport>,
-    /// `.text` 内的 `rel32` 修复项：`(字段偏移, `.idata` 内目标偏移)`。
+    /// `.text` 内的 `rel32` 修复项：`(字段偏移, `.idata` 内目标偏移)`（Win64）。
     pub text_rel32_fixups: Vec<(u32, u32)>,
+    /// `.text` 内的 GOT 间接调用修复项：`(字段偏移, 导入序号)`（SysV64）。
+    ///
+    /// 容器（`ELF` 写出器）放置可写 GOT 槽后，把 `call [rip+disp32]` 回填到槽地址。
+    pub elf_got_fixups: Vec<(u32, u32)>,
+    /// SysV64 的动态导入符号名，下标与 `elf_got_fixups` 的导入序号一致。
+    pub elf_imports: Vec<String>,
 }
 
 /// 已编码的原生文本函数。

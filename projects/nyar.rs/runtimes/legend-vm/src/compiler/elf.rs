@@ -5,7 +5,7 @@
 //! `dlopen` + `dlsym`. Container bytes and the dynamic table belong to the
 //! Acorn format owner; this module only forwards the encoded symbols.
 
-use acorn_pe::elf::{SharedElfImage, SharedElfWriter, SharedObjectExport};
+use acorn_pe::elf::{SharedElfImage, SharedElfImport, SharedElfWriter, SharedObjectExport};
 use miette::{Result, miette};
 use nyar_emitter::nyar_backend_native::NativeTextProgramImage;
 
@@ -18,9 +18,22 @@ impl ElfCompiler {
     pub fn compile_library(&self, image: &NativeTextProgramImage) -> Result<Vec<u8>> {
         let exports: Vec<SharedObjectExport> =
             image.symbols.iter().map(|(name, offset)| SharedObjectExport { name: name.clone(), text_offset: *offset }).collect();
-        SharedElfWriter::write_x86_64(
+        let imports: Vec<SharedElfImport> = image
+            .elf_got_fixups
+            .iter()
+            .map(|(field, index)| {
+                let symbol = image
+                    .elf_imports
+                    .get(*index as usize)
+                    .cloned()
+                    .ok_or_else(|| miette!("ELF 导入序号 {index} 超出声明的导入符号表"))?;
+                Ok(SharedElfImport { symbol, rel32_field: *field })
+            })
+            .collect::<Result<_>>()?;
+        SharedElfWriter::write_x86_64_with_imports(
             &SharedElfImage { text: image.text.clone(), rodata: Vec::new(), bss: Vec::new() },
             &exports,
+            &imports,
         )
         .map_err(|error| miette!("ELF 共享库映像编码失败：{error}"))
     }

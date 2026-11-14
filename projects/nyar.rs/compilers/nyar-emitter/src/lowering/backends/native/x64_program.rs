@@ -110,14 +110,19 @@ pub fn encode_native_text_program_with_imports(
     if functions.is_empty() {
         return Err("native text program has no functions".to_string());
     }
-    if abi != NativeAbi::Win64 && !imports.is_empty() {
-        return Err(format!(
-            "native 文本 ABI `{}` 尚无宿主导入编码：`.idata`/IAT 是 Win64 `PE` 合同，{} 个导入必须失败闭合",
-            abi.name(),
-            imports.len()
-        ));
+    // SysV64 的导入按全局符号解析，不存在模块装载概念：`module` 必须为空。
+    if abi != NativeAbi::Win64
+        && let Some((module, _)) = imports.iter().find(|(module, _)| !module.is_empty())
+    {
+        return Err(format!("native 文本 ABI `{}` 的宿主导入按全局符号解析，模块名必须为空（实际 `{module}`）", abi.name()));
     }
-    let table = acorn_pe::pe::build_native_import_table(imports).map_err(|error| format!("native 导入表构造失败：{error}"))?;
+    let table = if abi == NativeAbi::Win64 {
+        acorn_pe::pe::build_native_import_table(imports).map_err(|error| format!("native 导入表构造失败：{error}"))?
+    }
+    else {
+        // `PE` 专属导入表在 ELF 目标上不生成；GOT/未定义符号由 ELF 容器写出。
+        acorn_pe::pe::build_native_import_table(&[]).map_err(|error| format!("native 空导入表构造失败：{error}"))?
+    };
     let mut text = Vec::new();
     let mut symbols = Vec::with_capacity(functions.len());
     // (rel32 字段位置, 被调用名)
@@ -125,8 +130,10 @@ pub fn encode_native_text_program_with_imports(
     // 静态字符串池与 (lea disp32 字段位置, 字符串序号, 描述符内附加偏移)。
     let mut strings: Vec<String> = Vec::new();
     let mut string_uses: Vec<(usize, usize, u32)> = Vec::new();
-    // (call [rip+disp32] 的字段位置, IAT 槽在 .idata 内的偏移)
+    // (call [rip+disp32] 的字段位置, IAT 槽在 .idata 内的偏移) — Win64。
     let mut import_fixups: Vec<(u32, u32)> = Vec::new();
+    // (call [rip+disp32] 的字段位置, 导入序号) — SysV64 GOT 槽。
+    let mut elf_got_fixups: Vec<(u32, u32)> = Vec::new();
     let mut symbol_offsets = BTreeMap::<String, u32>::new();
 
     for function in functions {
@@ -266,20 +273,26 @@ pub fn encode_native_text_program_with_imports(
                     text.extend_from_slice(&[0xB8, 0x01, 0x00, 0x00, 0x00, 0x0F, 0x05]);
                 }
                 NativeTextInstruction::CallImport { module, field } => {
-                    if abi != NativeAbi::Win64 {
-                        return Err(format!(
-                            "{} 文本 ABI 没有宿主导入编码：`{module}!{field}` 只能经 Win64 IAT 调用",
-                            abi.name()
-                        ));
-                    }
-                    let slot = *table
-                        .slot_offsets
-                        .get(&(module.clone(), field.clone()))
-                        .ok_or_else(|| format!("native 导入 `{module}!{field}` 没有 IAT 槽"))?;
-                    // `call qword ptr [rip + disp32]`。
-                    text.extend_from_slice(&[0xFF, 0x15]);
-                    import_fixups.push((u32::try_from(text.len()).map_err(|_| "native 导入调用偏移超出 u32".to_string())?, slot));
+                    // `call qword ptr [rip + disp32]`：两种 ABI 的指令相同，修复去向不同。
+                    let field_offset = {
+                        text.extend_from_slice(&[0xFF, 0x15]);
+                        u32::try_from(text.len()).map_err(|_| "native 导入调用偏移超出 u32".to_string())?
+                    };
                     text.extend_from_slice(&[0, 0, 0, 0]);
+                    if abi == NativeAbi::Win64 {
+                        let slot = *table
+                            .slot_offsets
+                            .get(&(module.clone(), field.clone()))
+                            .ok_or_else(|| format!("native 导入 `{module}!{field}` 没有 IAT 槽"))?;
+                        import_fixups.push((field_offset, slot));
+                    }
+                    else {
+                        let index = imports
+                            .iter()
+                            .position(|(_, name)| name == field)
+                            .ok_or_else(|| format!("native 导入 `{field}` 没有声明的动态符号"))?;
+                        elf_got_fixups.push((field_offset, index as u32));
+                    }
                 }
                 NativeTextInstruction::Return => {
                     text.extend_from_slice(&[0x48, 0x89, 0xEC, 0x5D, 0xC3]);
@@ -336,5 +349,7 @@ pub fn encode_native_text_program_with_imports(
         idata: table.bytes,
         imports: table.imports,
         text_rel32_fixups: import_fixups,
+        elf_got_fixups,
+        elf_imports: if abi == NativeAbi::SystemV64 { imports.iter().map(|(_, field)| field.clone()).collect() } else { Vec::new() },
     })
 }

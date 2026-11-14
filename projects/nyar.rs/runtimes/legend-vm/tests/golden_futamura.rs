@@ -803,3 +803,53 @@ mod exported_elf_abi {
         }
     }
 }
+
+/// Node-API `.node` lane：Node 的 Node-API 装载器 `require()` 产物并取回残差值。
+#[cfg(target_os = "linux")]
+mod node_addon_abi {
+    use legend_vm::compiler::emit_native_node_addon;
+
+    fn addon(source: &str, tag: &str) -> std::path::PathBuf {
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", source, "lua_node").expect("specialize");
+        let bytes = emit_native_node_addon(&residual).expect("emit node addon");
+        let path = std::env::temp_dir().join(format!("legend-addon-{tag}-{}.node", std::process::id()));
+        std::fs::write(&path, bytes).expect("write addon");
+        path
+    }
+
+    fn run_node(script: &str) -> String {
+        let output = std::process::Command::new("node").arg("-e").arg(script).output().expect("spawn node");
+        assert!(
+            output.status.success(),
+            "node failed: status={:?} stderr={}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim_end().to_string()
+    }
+
+    #[test]
+    fn node_requires_the_addon_and_reads_the_residual_value() {
+        let path = addon("return 42\n", "value");
+        let script = format!("console.log(require('{}'))", path.display());
+        assert_eq!(run_node(&script), "42", "module.exports 必须是残差 main 的数值");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn node_addon_prints_through_stdout() {
+        let path = addon("print(\"hello\")\nprint(3)\nreturn 7\n", "print");
+        let script = format!("console.log(require('{}'))", path.display());
+        assert_eq!(run_node(&script), "hello\n3\n7", "print 顺序与 module.exports 共用 stdout");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn node_addon_rejects_non_integer_results() {
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", "return \"text\"\n", "lua_node").expect("specialize");
+        let error = emit_native_node_addon(&residual).expect_err("字符串结果必须失败闭合");
+        assert!(error.contains("Node"), "unexpected error: {error}");
+    }
+}

@@ -15,8 +15,8 @@ pub use bytecode::NyarBytecodeCompiler;
 pub use elf::ElfCompiler;
 pub use generate::GenerateModule;
 pub use native_residual::{
-    NativeProductPlatform, NativeResidualFunction, NativeResidualModule, NativeResidualOp, NativeResidualSink, NativeResidualTarget,
-    ResidualValue, emit_native_elf_library, emit_native_pe, emit_native_pe_library, eval_native_residual,
+    NativeProductTarget, NativeResidualFunction, NativeResidualModule, NativeResidualOp, NativeResidualSink, NativeResidualTarget,
+    ResidualValue, emit_native_elf_library, emit_native_node_addon, emit_native_pe, emit_native_pe_library, eval_native_residual,
     eval_native_residual_with_inputs, eval_native_residual_with_trace, lower_native_residual_to_program, lower_native_residual_to_x64,
     specialize_language,
 };

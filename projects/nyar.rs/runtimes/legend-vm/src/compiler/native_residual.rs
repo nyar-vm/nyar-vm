@@ -30,29 +30,47 @@ pub enum NativeResidualTarget {
     Native,
 }
 
-/// 原生产品 lane 的目标 OS：决定容器、调用约定与 effect 写入原语。
+/// 原生产品目标：决定容器、调用约定、宿主导入面与 effect 通道来源。
 ///
 /// 目标身份来自规范四元组，不从宿主 `cfg` 猜；产品入口必须显式选择。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NativeProductPlatform {
-    /// Windows `PE`：Win64 + `kernel32!WriteFile` 经 IAT。
+pub enum NativeProductTarget {
+    /// Windows `PE` DLL：Win64 + `kernel32!WriteFile` 经 IAT，effect 通道是隐藏首参（文件句柄）。
     Windows,
-    /// Linux `ELF`：SysV64 + `write(2)` 系统调用。
+    /// Linux `ELF` `.so`：SysV64 + `write(2)` 系统调用，effect 通道是隐藏首参（fd）。
     Linux,
+    /// Linux `ELF` `.node`：SysV64，effect 通道固定 stdout（fd 1），导出 Node-API 注册函数。
+    Node,
 }
 
-impl NativeProductPlatform {
+impl NativeProductTarget {
     /// 对应的文本 LIR 调用约定。
     fn abi(self) -> NativeAbi {
         match self {
             Self::Windows => NativeAbi::Win64,
-            Self::Linux => NativeAbi::SystemV64,
+            Self::Linux | Self::Node => NativeAbi::SystemV64,
         }
     }
 
-    /// 该平台是否用宿主导入（IAT）实现 effect 写入。
+    /// 该目标是否用宿主导入（IAT）实现 effect 写入。
     fn uses_host_imports(self) -> bool {
         matches!(self, Self::Windows)
+    }
+
+    /// effect 通道是否由宿主作为隐藏首个整数形参传入。
+    ///
+    /// Node 扩展没有宿主传入的句柄：产物自己固定写 stdout（fd 1）。
+    fn sink_from_parameter(self) -> bool {
+        !matches!(self, Self::Node)
+    }
+
+    /// 目标名称，用于结构化错误。
+    fn name(self) -> &'static str {
+        match self {
+            Self::Windows => "Windows PE",
+            Self::Linux => "Linux ELF",
+            Self::Node => "Linux Node addon",
+        }
     }
 }
 
@@ -875,7 +893,7 @@ enum ProductValueKind {
 /// 闭合，不在产品路径里静默吞掉语义。
 pub fn lower_native_residual_to_program(
     module: &NativeResidualModule,
-    platform: NativeProductPlatform,
+    target: NativeProductTarget,
 ) -> Result<NativeTextProgramImage, String> {
     if !module.is_native_bound() {
         return Err("residual is not native-bound".into());
@@ -883,16 +901,19 @@ pub fn lower_native_residual_to_program(
     // 产品级 effect：`print` 可出现在任意残差函数；含 effect 的模块给每个函数
     // 增加同一个隐藏的首个整数形参（宿主 effect 通道），调用时逐层传递。
     let has_print = module.functions.iter().any(|function| function.ops.iter().any(|op| matches!(op, NativeResidualOp::Print(_))));
-    let imports: Vec<(String, String)> = if has_print && platform.uses_host_imports() {
-        vec![("kernel32".to_string(), "WriteFile".to_string())]
-    }
-    else {
-        Vec::new()
+    // 导入面按目标冻结：Windows 的 effect 写入是 IAT 导入；Node 扩展要调用
+    // Node-API 构造返回值；Linux 的 effect 是 syscall，没有导入。
+    let imports: Vec<(String, String)> = match target {
+        NativeProductTarget::Windows if has_print => vec![("kernel32".to_string(), "WriteFile".to_string())],
+        NativeProductTarget::Node => vec![(String::new(), "napi_create_int32".to_string())],
+        NativeProductTarget::Windows | NativeProductTarget::Linux => Vec::new(),
     };
+    // Node 扩展的 effect 通道固定 stdout，不占宿主形参；其余目标由宿主传入句柄/fd。
+    let sink_from_parameter = has_print && target.sink_from_parameter();
 
     let mut lowered = Vec::with_capacity(module.functions.len());
     for function in &module.functions {
-        lowered.push(lower_residual_function(function, has_print, platform)?);
+        lowered.push(lower_residual_function(function, has_print, sink_from_parameter, target)?);
     }
     // 调用结果当前按整数载体传播；字符串返回值的残差函数不能作为调用目标，
     // 否则调用方会按错误载体继续使用 `rax`。
@@ -913,14 +934,54 @@ pub fn lower_native_residual_to_program(
             }
         }
     }
-    let functions: Vec<NativeTextProgramFunction> = lowered.into_iter().map(|(function, _)| function).collect();
+    let mut functions: Vec<NativeTextProgramFunction> = lowered.iter().map(|(function, _)| function.clone()).collect();
+    if target == NativeProductTarget::Node {
+        let main_return = lowered
+            .iter()
+            .find(|(function, _)| function.name == "main")
+            .and_then(|(_, kind)| kind.clone())
+            .ok_or_else(|| "Node addon residual has no `main` return value".to_string())?;
+        if !matches!(main_return, ProductValueKind::Int | ProductValueKind::Bool) {
+            return Err(format!(
+                "Node addon residual `main` returns `{main_return:?}`; only integer/boolean results can be exposed as a Node number"
+            ));
+        }
+        let main = module.function("main").ok_or_else(|| "Node addon residual has no `main`".to_string())?;
+        if !main.parameters.is_empty() {
+            return Err("Node addon residual `main` must not take parameters: the addon entry receives no guest inputs".to_string());
+        }
+        functions.push(node_addon_registration());
+    }
     // 调用约定与容器都由平台显式给出，编码器不提供默认 ABI。
-    encode_native_text_program_with_imports(&functions, &imports, platform.abi())
+    encode_native_text_program_with_imports(&functions, &imports, target.abi())
+}
+
+/// `napi_register_module_v1(env, exports)` 包装体：把残差 `main` 的整数值包成
+/// Node number 并作为 `module.exports` 返回。
+fn node_addon_registration() -> NativeTextProgramFunction {
+    use NativeTextInstruction as Lir;
+    NativeTextProgramFunction {
+        name: "napi_register_module_v1".to_string(),
+        slot_count: 4,
+        instructions: vec![
+            Lir::LoadParam { index: 0, slot: 0 },
+            Lir::Call("main".to_string()),
+            Lir::StoreSlot(1),
+            Lir::LoadSlotToArg { slot: 0, index: 0 },
+            Lir::LoadSlotToArg { slot: 1, index: 1 },
+            Lir::LoadSlotAddress(2),
+            Lir::StoreSlot(3),
+            Lir::LoadSlotToArg { slot: 3, index: 2 },
+            Lir::CallImport { module: String::new(), field: "napi_create_int32".to_string() },
+            Lir::LoadSlot(2),
+            Lir::Return,
+        ],
+    }
 }
 
 /// 以导出函数 ABI 发射 `PE` DLL（宿主按 Win64 调用约定调用残差函数）。
 pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductPlatform::Windows)?;
+    let image = lower_native_residual_to_program(module, NativeProductTarget::Windows)?;
     PeCompiler.compile_library(&image).map_err(|error| error.to_string())
 }
 
@@ -929,7 +990,16 @@ pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, 
 /// 与 `PE` DLL 对称：残差函数按名导出，未知输入走 SysV64 整数形参；含 `print`
 /// 的模块用隐藏的首个整数形参作为 fd，调用 `write(2)`。
 pub fn emit_native_elf_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductPlatform::Linux)?;
+    let image = lower_native_residual_to_program(module, NativeProductTarget::Linux)?;
+    super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
+}
+
+/// 发射 Node-API `.node` 扩展（x86-64 `ELF` 共享库 + `napi_register_module_v1`）。
+///
+/// 宿主 `require()` 时由 Node 的 Node-API 装载器调用注册函数；`main` 的整数值
+/// 通过 `napi_create_int32` 包成 JS number 作为 `module.exports`。`print` 写 stdout。
+pub fn emit_native_node_addon(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
+    let image = lower_native_residual_to_program(module, NativeProductTarget::Node)?;
     super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
 }
 
@@ -945,12 +1015,14 @@ struct ResidualFunctionLowering<'a> {
     returned: bool,
     /// `main` 的隐藏 effect 通道（第 1 个整数形参：Windows 文件句柄 / Linux fd）。
     effect_sink: Option<u16>,
+    /// effect 通道是否来自宿主形参（Node 扩展固定 stdout，不占用形参）。
+    sink_from_parameter: bool,
     /// 目标 OS：决定 effect 写入原语与导入面。
-    platform: NativeProductPlatform,
+    target: NativeProductTarget,
 }
 
 impl<'a> ResidualFunctionLowering<'a> {
-    fn new(function: &'a NativeResidualFunction, platform: NativeProductPlatform) -> Self {
+    fn new(function: &'a NativeResidualFunction, target: NativeProductTarget) -> Self {
         Self {
             function,
             locals: HashMap::new(),
@@ -961,7 +1033,8 @@ impl<'a> ResidualFunctionLowering<'a> {
             instructions: Vec::new(),
             returned: false,
             effect_sink: None,
-            platform,
+            sink_from_parameter: false,
+            target,
         }
     }
 
@@ -1037,8 +1110,8 @@ impl<'a> ResidualFunctionLowering<'a> {
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: handle, index: 0 });
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: pointer, index: 1 });
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: length, index: 2 });
-        match self.platform {
-            NativeProductPlatform::Windows => {
+        match self.target {
+            NativeProductTarget::Windows => {
                 self.instructions.push(NativeTextInstruction::LoadI64(0));
                 let written_out = self.alloc_slot();
                 self.instructions.push(NativeTextInstruction::StoreSlot(written_out));
@@ -1049,7 +1122,7 @@ impl<'a> ResidualFunctionLowering<'a> {
                     field: "WriteFile".to_string(),
                 });
             }
-            NativeProductPlatform::Linux => {
+            NativeProductTarget::Linux | NativeProductTarget::Node => {
                 self.instructions.push(NativeTextInstruction::SyscallWrite);
             }
         }
@@ -1175,27 +1248,37 @@ impl<'a> ResidualFunctionLowering<'a> {
 fn lower_residual_function(
     function: &NativeResidualFunction,
     with_effect_sink: bool,
-    platform: NativeProductPlatform,
+    sink_from_parameter: bool,
+    target: NativeProductTarget,
 ) -> Result<(NativeTextProgramFunction, Option<ProductValueKind>), String> {
-    // 该平台寄存器实参上限，减去隐藏 effect 通道占用。
-    let total = platform.abi().integer_argument_limit();
-    let available = total - usize::from(with_effect_sink);
+    // 该平台寄存器实参上限，减去隐藏 effect 通道占用（仅当通道来自宿主形参）。
+    let total = target.abi().integer_argument_limit();
+    let available = total - usize::from(sink_from_parameter);
     if function.parameters.len() > available {
         return Err(format!(
             "residual function `{}` has {} parameters; the {} text ABI supports at most {available} integer inputs{}",
             function.name,
             function.parameters.len(),
-            platform.abi().name(),
-            if with_effect_sink { " alongside the effect sink" } else { "" }
+            target.abi().name(),
+            if sink_from_parameter { " alongside the effect sink" } else { "" }
         ));
     }
-    let mut lowering = ResidualFunctionLowering::new(function, platform);
+    let mut lowering = ResidualFunctionLowering::new(function, target);
+    lowering.sink_from_parameter = sink_from_parameter;
     let mut return_kind: Option<ProductValueKind> = None;
-    let parameter_shift = if with_effect_sink {
+    let parameter_shift = if sink_from_parameter {
         let sink = lowering.alloc_slot();
         lowering.instructions.push(NativeTextInstruction::LoadParam { index: 0, slot: sink });
         lowering.effect_sink = Some(sink);
         1
+    }
+    else if with_effect_sink {
+        // Node 扩展：effect 通道固定 stdout，不占宿主形参。
+        let sink = lowering.alloc_slot();
+        lowering.instructions.push(NativeTextInstruction::LoadI64(1));
+        lowering.instructions.push(NativeTextInstruction::StoreSlot(sink));
+        lowering.effect_sink = Some(sink);
+        0
     }
     else {
         0
@@ -1359,13 +1442,14 @@ fn lower_residual_function(
                 lowering.instructions.push(NativeTextInstruction::Label(skip));
             }
             NativeResidualOp::Call { name, argc } => {
-                let sink = lowering.effect_sink;
-                let available = platform.abi().integer_argument_limit() - usize::from(sink.is_some());
+                // 只有来自宿主形参的 effect 通道会占用一个实参位置。
+                let sink = if lowering.sink_from_parameter { lowering.effect_sink } else { None };
+                let available = target.abi().integer_argument_limit() - usize::from(sink.is_some());
                 if *argc > available {
                     return Err(format!(
                         "residual function `{}` calls `{name}` with {argc} arguments; the {} text ABI supports at most {available}",
                         function.name,
-                        platform.abi().name()
+                        target.abi().name()
                     ));
                 }
                 let mut arguments = Vec::with_capacity(*argc);
@@ -1621,6 +1705,20 @@ mod tests {
         assert!(String::from_utf8_lossy(&bytes).contains("main"), "残差函数必须出现在动态符号表");
     }
 
+    /// Node 扩展产物：Node-API 注册导出 + `napi_create_int32` 动态导入。
+    #[test]
+    fn node_addon_exposes_registration_and_napi_import() {
+        use nyar_emitter::nyar_backend_native::{NativeExecutableKind, classify_native_image};
+
+        let module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
+        let bytes = emit_native_node_addon(&module).expect("emit node addon");
+        let facts = classify_native_image(&bytes).expect("addon must be a parseable image");
+        assert_eq!(facts.kind, NativeExecutableKind::ElfShared, "Node 扩展是 ET_DYN");
+        let haystack = String::from_utf8_lossy(&bytes);
+        assert!(haystack.contains("napi_register_module_v1"), "必须导出 Node-API 注册函数");
+        assert!(haystack.contains("napi_create_int32"), "必须声明 N-API 动态导入");
+    }
+
     /// Linux 的 `print` 用 `write(2)` 系统调用，不生成任何 PE 导入表。
     #[test]
     fn linux_print_uses_the_write_syscall_without_host_imports() {
@@ -1630,7 +1728,7 @@ mod tests {
             NativeResidualOp::PushI64(0),
             NativeResidualOp::Ret,
         ]);
-        let image = lower_native_residual_to_program(&module, NativeProductPlatform::Linux).expect("lower linux print residual");
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::Linux).expect("lower linux print residual");
         assert!(image.imports.is_empty(), "Linux 产品不得声明 PE 导入");
         assert!(image.idata.is_empty(), "Linux 产品不得生成 `.idata`");
         assert!(
