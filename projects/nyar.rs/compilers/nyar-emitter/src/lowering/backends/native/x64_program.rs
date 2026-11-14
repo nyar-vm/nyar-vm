@@ -262,6 +262,10 @@ pub fn encode_native_text_program_with_data(
                     text.extend_from_slice(&[0x48, 0xB8]);
                     text.extend_from_slice(&(len as u64).to_le_bytes());
                 }
+                NativeTextInstruction::LoadDescriptorLength => {
+                    // `mov eax, [rax + 4]`：读描述符里的 `u32` 长度（零扩展到 64 位）。
+                    text.extend_from_slice(&[0x8B, 0x40, 0x04]);
+                }
                 NativeTextInstruction::LoadDataAddress(offset) => {
                     if *offset as usize >= data.len() {
                         return Err(format!("native 数据段引用偏移 {offset} 超出数据块长度 {}", data.len()));

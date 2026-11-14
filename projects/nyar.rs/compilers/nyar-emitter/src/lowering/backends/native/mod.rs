@@ -169,6 +169,12 @@ pub enum NativeTextInstruction {
     LoadStringPtr(String),
     /// 把静态字符串的**字节长度**装入 `rax`。
     LoadStringLen(String),
+    /// 把 `rax` 指向的字符串描述符里的 UTF-8 长度装入 `rax`。
+    ///
+    /// 描述符布局为 `{ i32 self_relative_ptr; u32 len }`（见 [`Self::LoadString`]）：
+    /// 该指令读取 `[rax + 4]` 的 `u32` 长度，用于把运行时得到的描述符地址转成
+    /// 宿主字符串（`PyUnicode_FromStringAndSize` / `napi_create_string_utf8`）。
+    LoadDescriptorLength,
     /// 把镜像数据段内 `offset` 处的地址装入 `rax`（`lea rax, [rip+disp32]`）。
     ///
     /// 数据段内容属于适配器（例如 CPython `PyModuleDef`）；容器写出器把
