@@ -875,7 +875,7 @@ pub fn lower_native_residual_to_program(module: &NativeResidualModule) -> Result
 /// 以导出函数 ABI 发射 `PE` DLL（宿主按 Win64 调用约定调用残差函数）。
 pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
     let image = lower_native_residual_to_program(module)?;
-    PeCompiler.compile_library(image.text, image.symbols).map_err(|error| error.to_string())
+    PeCompiler.compile_library(&image).map_err(|error| error.to_string())
 }
 
 struct ResidualFunctionLowering<'a> {

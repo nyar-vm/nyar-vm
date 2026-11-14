@@ -56,11 +56,23 @@ fn emit_binary(text: &mut Vec<u8>, instruction: &NativeTextInstruction) -> bool 
     true
 }
 
-/// 把多函数文本 LIR 编码为一段 `.text` 与导出符号偏移。
+/// 把多函数文本 LIR 编码为一段 `.text` 与导出符号偏移（无宿主导入）。
 pub fn encode_native_text_program(functions: &[NativeTextProgramFunction]) -> Result<NativeTextProgramImage> {
+    encode_native_text_program_with_imports(functions, &[])
+}
+
+/// 把多函数文本 LIR 编码为 `.text`、导出符号与宿主导入表。
+///
+/// `imports` 按 `(module, field)` 声明；`.idata` 与 IAT 槽由 acorn 的导入表构造器
+/// 冻结，`CallImport` 的 `call [rip+disp32]` 由 PE 写入器在最终布局后回填。
+pub fn encode_native_text_program_with_imports(
+    functions: &[NativeTextProgramFunction],
+    imports: &[(String, String)],
+) -> Result<NativeTextProgramImage> {
     if functions.is_empty() {
         return Err("native text program has no functions".to_string());
     }
+    let table = acorn_pe::pe::build_native_import_table(imports).map_err(|error| format!("native 导入表构造失败：{error}"))?;
     let mut text = Vec::new();
     let mut symbols = Vec::with_capacity(functions.len());
     // (rel32 字段位置, 被调用名)
@@ -68,6 +80,8 @@ pub fn encode_native_text_program(functions: &[NativeTextProgramFunction]) -> Re
     // 静态字符串池与 (lea disp32 字段位置, 字符串序号)。
     let mut strings: Vec<String> = Vec::new();
     let mut string_uses: Vec<(usize, usize)> = Vec::new();
+    // (call [rip+disp32] 的字段位置, IAT 槽在 .idata 内的偏移)
+    let mut import_fixups: Vec<(u32, u32)> = Vec::new();
     let mut symbol_offsets = BTreeMap::<String, u32>::new();
 
     for function in functions {
@@ -146,6 +160,16 @@ pub fn encode_native_text_program(functions: &[NativeTextProgramFunction]) -> Re
                     string_uses.push((text.len(), index));
                     text.extend_from_slice(&[0, 0, 0, 0]);
                 }
+                NativeTextInstruction::CallImport { module, field } => {
+                    let slot = *table
+                        .slot_offsets
+                        .get(&(module.clone(), field.clone()))
+                        .ok_or_else(|| format!("native 导入 `{module}!{field}` 没有 IAT 槽"))?;
+                    // `call qword ptr [rip + disp32]`。
+                    text.extend_from_slice(&[0xFF, 0x15]);
+                    import_fixups.push((u32::try_from(text.len()).map_err(|_| "native 导入调用偏移超出 u32".to_string())?, slot));
+                    text.extend_from_slice(&[0, 0, 0, 0]);
+                }
                 NativeTextInstruction::Return => {
                     text.extend_from_slice(&[0x48, 0x89, 0xEC, 0x5D, 0xC3]);
                 }
@@ -195,5 +219,11 @@ pub fn encode_native_text_program(functions: &[NativeTextProgramFunction]) -> Re
         }
     }
 
-    Ok(NativeTextProgramImage { text, symbols })
+    Ok(NativeTextProgramImage {
+        text,
+        symbols,
+        idata: table.bytes,
+        imports: table.imports,
+        text_rel32_fixups: import_fixups,
+    })
 }

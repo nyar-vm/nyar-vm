@@ -8,6 +8,7 @@ use std::{fs, path::Path};
 
 use acorn_pe::pe::{NativeExport, NativePeImage, NativePeWriter};
 use miette::{IntoDiagnostic, Result, WrapErr};
+use nyar_emitter::nyar_backend_native::NativeTextProgramImage;
 
 /// `ret`，使入口以 `rax` 作为进程退出码返回。
 const RET: u8 = 0xC3;
@@ -51,23 +52,26 @@ impl PeCompiler {
             idata: Vec::new(),
             imports: Vec::new(),
             exports: Vec::new(),
+            text_rel32_fixups: Vec::new(),
             is_dll: false,
             entry_point: 0,
         })
         .map_err(|error| miette::miette!("PE 可执行映像编码失败：{error}"))
     }
 
-    /// 把已编码的文本与导出符号写成 `PE32+` DLL（导出函数 ABI 产物）。
+    /// 把已编码的文本、导出符号与宿主导入写成 `PE32+` DLL（导出函数 ABI 产物）。
     ///
-    /// 镜像没有入口点；宿主通过导出表按 Win64 调用约定调用残差函数。
-    pub fn compile_library(&self, text: Vec<u8>, symbols: Vec<(String, u32)>) -> Result<Vec<u8>> {
-        let exports = symbols.into_iter().map(|(name, offset)| NativeExport { name, offset }).collect();
+    /// 镜像没有入口点；宿主通过导出表按 Win64 调用约定调用残差函数，导入调用经
+    /// `.idata` 的 IAT 槽解析。
+    pub fn compile_library(&self, image: &NativeTextProgramImage) -> Result<Vec<u8>> {
+        let exports = image.symbols.iter().map(|(name, offset)| NativeExport { name: name.clone(), offset: *offset }).collect();
         NativePeWriter::write_executable(&NativePeImage {
-            text,
+            text: image.text.clone(),
             rdata: Vec::new(),
-            idata: Vec::new(),
-            imports: Vec::new(),
+            idata: image.idata.clone(),
+            imports: image.imports.clone(),
             exports,
+            text_rel32_fixups: image.text_rel32_fixups.clone(),
             is_dll: true,
             entry_point: 0,
         })

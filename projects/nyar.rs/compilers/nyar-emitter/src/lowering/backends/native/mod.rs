@@ -17,7 +17,7 @@ mod x64_lir;
 mod x64_program;
 pub mod x86_64;
 
-pub use x64_program::encode_native_text_program;
+pub use x64_program::{encode_native_text_program, encode_native_text_program_with_imports};
 
 use nyar::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget};
 
@@ -96,6 +96,15 @@ pub enum NativeTextInstruction {
     /// `{ i32 self_relative_ptr; u32 len }` 紧跟字节。宿主按
     /// `descriptor + self_relative_ptr` 读取内容，所有权归镜像本身（只读、永不释放）。
     LoadString(String),
+    /// 通过 `.idata` 的 IAT 槽调用宿主导入函数（`call [rip+disp32]`）。
+    ///
+    /// 导入表与重定位由程序编码器/PE 写入器共同冻结，适配器只声明目标身份。
+    CallImport {
+        /// 宿主模块名（例如 `kernel32`）。
+        module: String,
+        /// 导入函数名。
+        field: String,
+    },
 }
 
 /// 多函数文本程序中的一个函数。
@@ -116,6 +125,12 @@ pub struct NativeTextProgramImage {
     pub text: Vec<u8>,
     /// 导出符号及其在 `.text` 内的偏移。
     pub symbols: Vec<(String, u32)>,
+    /// `.idata` 字节（由宿主导入表构造，段内偏移尚未加 RVA）。
+    pub idata: Vec<u8>,
+    /// 按 DLL 归组的导入描述。
+    pub imports: Vec<acorn_pe::pe::NativeDllImport>,
+    /// `.text` 内的 `rel32` 修复项：`(字段偏移, `.idata` 内目标偏移)`。
+    pub text_rel32_fixups: Vec<(u32, u32)>,
 }
 
 /// 已编码的原生文本函数。

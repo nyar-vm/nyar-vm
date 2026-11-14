@@ -16,7 +16,7 @@ use nyar::{
 
 pub use crate::lowering::backends::native::{
     NativeTextFunction, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, encode_native_text_function,
-    encode_native_text_program,
+    encode_native_text_program, encode_native_text_program_with_imports,
 };
 pub use executable::{NativeExecutableError, NativeExecutableKind, NativeImageFacts, classify_native_executable, classify_native_image};
 

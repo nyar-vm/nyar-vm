@@ -224,7 +224,8 @@ pub(crate) fn lower_x86_64_windows_pe(submission: &FragmentSubmission) -> Result
         idata: Vec::new(),
         imports: Vec::new(),
         exports: Vec::new(),
-        is_dll: false,
+        text_rel32_fixups: Vec::new(),
+            is_dll: false,
         entry_point: entry_offset,
     })
     .map_err(|error| format!("x86_64 `PE` 编码失败：{error}"))?;
