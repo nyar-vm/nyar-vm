@@ -5,9 +5,14 @@
 //! 目标四元组 [`CanonicalTarget`]（`arch-vendor-os-abi`）决定——`native`、`node`、
 //! `python` 都必须先展开成四元组，再由本模块按架构分派到具体 ISA 后端。
 //!
-//! 当前只闭合 `x86_64-pc-windows-msvc`：x86-64 机器码 + `PE32+` 控制台可执行文件，
-//! 入口以 `rax` 返回进程退出码。其余四元组（`x86_64-unknown-linux-gnu` 的 ELF、
-//! aarch64、Mach-O 等）一律结构化失败，不借用其他平台的编码或容器。
+//! 当前闭合两个 x86-64 四元组：
+//!
+//! - `x86_64-pc-windows-msvc`：Win64 调用约定 + `PE32+` 控制台可执行文件；
+//! - `x86_64-unknown-linux-gnu`：SysV64 调用约定 + `ELF64 ET_EXEC` 可执行文件，
+//!   入口桩以 `exit(2)` 结束进程。
+//!
+//! 其余四元组（aarch64、Mach-O 等）一律结构化失败，不借用其他平台的编码或容器。
+//! 调用约定（[`NativeAbi`]）与容器一样由 `os`/`abi` 决定，编码器不提供默认 ABI。
 //!
 //! 算子编码同样按 ISA 冻结（[`x86_64::X86_64OperatorCode`]），不按「native」命名：
 //! Node `.node` / Python `.pyd` 只是同一 ISA 上的宿主装载与 ABI 包装形态，不是独立
@@ -23,10 +28,49 @@ use nyar::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, Ca
 
 use crate::{FragmentSubmission, Result};
 
+/// x86-64 的整数调用约定。
+///
+/// 调用约定由规范目标的 `os`/`abi` 决定，不能只按 `arch` 推断：同一个 `x86_64`
+/// 在 Windows/PE 上是 Win64，在 Linux/ELF 上是 SysV64。编码器与文本 LIR 都显式
+/// 携带本值，不提供「默认 ABI」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeAbi {
+    /// Win64（x86-64 Windows / `PE32+`）：`rcx`/`rdx`/`r8`/`r9`，调用点上方 32 字节 shadow space。
+    Win64,
+    /// SysV64（x86-64 Linux / `ELF64`）：`rdi`/`rsi`/`rdx`/`rcx`/`r8`/`r9`，无 shadow space。
+    SystemV64,
+}
+
+impl NativeAbi {
+    /// 调用前调用方必须预留的 shadow space 字节数（Win64 为 32，SysV 为 0）。
+    pub(crate) fn shadow_space(self) -> u32 {
+        match self {
+            Self::Win64 => 32,
+            Self::SystemV64 => 0,
+        }
+    }
+
+    /// 寄存器可承载的整数实参上限（超出必须走栈，本 lane 尚未实现栈传参）。
+    pub(crate) fn integer_argument_limit(self) -> usize {
+        match self {
+            Self::Win64 => 4,
+            Self::SystemV64 => 6,
+        }
+    }
+
+    /// 调用约定的稳定名称，用于结构化错误。
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Win64 => "Win64",
+            Self::SystemV64 => "SysV64",
+        }
+    }
+}
+
 /// 降低结果：完整原生镜像字节与入口位置事实。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeLoweredFragment {
-    /// 完整镜像字节（当前为 `PE32+`）。
+    /// 完整镜像字节（`PE32+` 或 `ELF64 ET_EXEC`，由规范目标决定）。
     pub executable: Vec<u8>,
     /// 入口点在文本节内的偏移。
     pub entry_offset: u32,
@@ -44,9 +88,12 @@ pub enum NativeTextInstruction {
     LoadI64(i64),
     /// 函数返回（含帧还原）；返回值已在 `rax`。
     Return,
-    /// 把 Win64 整数形参 `index` 存入帧槽 `slot`。
+    /// 把目标 ABI 的整数形参 `index` 存入帧槽 `slot`。
+    ///
+    /// 寄存器由 [`NativeAbi`] 决定：Win64 为 rcx/rdx/r8/r9，SysV64 为
+    /// rdi/rsi/rdx/rcx/r8/r9。
     LoadParam {
-        /// 形参序号（0..=3，对应 rcx/rdx/r8/r9）。
+        /// 形参序号（uint 序；超过该 ABI 的寄存器上限即失败）。
         index: u8,
         /// 帧槽。
         slot: u16,
@@ -55,11 +102,11 @@ pub enum NativeTextInstruction {
     LoadSlot(u16),
     /// `mov rcx, [slot]`（二元运算的右操作数）。
     LoadSlotToRcx(u16),
-    /// 把帧槽 `slot` 装入 Win64 整数实参寄存器 `index`（调用前）。
+    /// 把帧槽 `slot` 装入目标 ABI 的整数实参寄存器 `index`（调用前）。
     LoadSlotToArg {
         /// 帧槽。
         slot: u16,
-        /// 实参序号（0..=3）。
+        /// 实参序号（按 ABI 寄存器序；超过上限即失败）。
         index: u8,
     },
     /// `mov [slot], rax`。
@@ -111,7 +158,8 @@ pub enum NativeTextInstruction {
     LoadStringLen(String),
     /// 把 Win64 栈上第 `index` 个额外实参（`[rsp + 32 + 8*index]`）置零。
     ///
-    /// 用于第 5 个及以后的整数实参（前 4 个走 rcx/rdx/r8/r9）。
+    /// 用于第 5 个及以后的整数实参（前 4 个走 rcx/rdx/r8/r9）。这是 Win64
+    /// shadow space 专属合同；SysV64 文本 ABI 遇到该指令显式失败。
     ZeroStackArg(u8),
     /// `lea rax, [rbp - 8*(slot+1)]`：取帧槽地址（例如字节缓冲区起点）。
     LoadSlotAddress(u16),
@@ -198,6 +246,15 @@ pub(crate) fn lower_fragment_to_native_image(submission: &FragmentSubmission, ta
                 None | Some(CanonicalAbi::Msvc) | Some(CanonicalAbi::Gnu) => x86_64::lower_x86_64_windows_pe(submission),
                 Some(other) => Err(format!(
                     "Native 后端不支持 `x86_64` + `windows` + `{}` 的 ABI：只闭合 Win64 调用约定（target={}）",
+                    abi_name(other),
+                    target.as_canonical_str()
+                )),
+            },
+            // x86-64 Linux 只有 SysV64 调用约定 + ELF 容器；不借用 Win64 编码。
+            CanonicalSpecification::Linux => match target.abi {
+                None | Some(CanonicalAbi::Gnu) | Some(CanonicalAbi::SystemV) => x86_64::lower_x86_64_linux_elf(submission),
+                Some(other) => Err(format!(
+                    "Native 后端不支持 `x86_64` + `linux` + `{}` 的 ABI：只闭合 SysV64 调用约定（target={}）",
                     abi_name(other),
                     target.as_canonical_str()
                 )),

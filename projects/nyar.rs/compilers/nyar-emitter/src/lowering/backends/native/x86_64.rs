@@ -1,14 +1,19 @@
-//! x86-64 最小 MIR → 机器码降低与 Windows `PE32+` 写出。
+//! x86-64 最小 MIR → 机器码降低与 `PE32+` / `ELF64` 容器写出。
 //!
 //! 本文件是 **x86-64 ISA 后端**，由 [`super::lower_fragment_to_native_image`] 按
-//! 规范目标四元组（`x86_64-pc-windows-msvc`）分派进入；这里不判断「native」形态，
-//! 只实现该四元组确定的指令编码、Win64 调用约定与 `PE32+` 容器。
+//! 规范目标四元组分派进入；这里不判断「native」形态，只实现四元组确定的指令编码、
+//! 调用约定与容器：
+//!
+//! - `x86_64-pc-windows-msvc`：Win64 调用约定（`rcx/rdx/r8/r9` + 32 字节 shadow
+//!   space）与 `PE32+`；
+//! - `x86_64-unknown-linux-gnu`（及 `linux` + `systemv`）：SysV64 调用约定
+//!   （`rdi/rsi/rdx/rcx/r8/r9`、无 shadow space）与 `ELF64 ET_EXEC`，入口桩以
+//!   `exit(2)` 结束进程。
 //!
 //! 只消费计划已冻结的事实：整数/布尔常量、SSA 局部槽、冻结 x86-64 operator、
 //! 块标签与条件分支、同片段内部调用以及 `Return`。局部值统一占 8 字节栈槽
-//! （`[rbp - 8 * (local + 1)]`），调用按 Win64 ABI 走 `rcx/rdx/r8/r9` 与
-//! `call rel32`；栈帧序言后 `rsp` 保持 16 字节对齐，并在帧底预留 32 字节
-//! shadow space。未冻结或超出边界的形状一律结构化失败。
+//! （`[rbp - 8 * (local + 1)]`）；栈帧序言后 `rsp` 始终 16 字节对齐，Win64 额外
+//! 在帧底预留 32 字节 shadow space。未冻结或超出边界的形状一律结构化失败。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -27,8 +32,10 @@ use crate::{
 use nyar::abstractions::BinaryArch;
 use nyar_types::ItemInstanceId;
 
+use acorn_pe::elf::{NativeElfImage, NativeElfWriter};
+
 use super::{
-    NativeLoweredFragment,
+    NativeAbi, NativeLoweredFragment,
     x64_lir::{X64Function, X64Instruction, X64Location, X64Reg, X64Value, encode_x64_function},
 };
 
@@ -171,19 +178,58 @@ impl X86_64OperatorCode {
     }
 }
 
+/// 可执行文件容器：决定入口接收方式与最终字节格式。
+///
+/// 容器选择来自规范目标的 `os`，不由 `arch` 推断。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeContainer {
+    /// Windows `PE32+`：loader 通过 `call` 进入入口，`rax` 作为退出码。
+    Pe,
+    /// Linux `ELF64 ET_EXEC`：内核直接 `jmp` 到入口，过程末尾必须以 `exit(2)` 结束。
+    Elf,
+}
+
+impl NativeContainer {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Pe => "PE",
+            Self::Elf => "ELF",
+        }
+    }
+}
+
 /// 把 `x86_64-pc-windows-msvc` 片段降低为 `PE32+` 可执行文件。
 pub(crate) fn lower_x86_64_windows_pe(submission: &FragmentSubmission) -> Result<NativeLoweredFragment> {
+    lower_x86_64(submission, NativeAbi::Win64, NativeContainer::Pe)
+}
+
+/// 把 `x86_64-unknown-linux-gnu` 片段降低为 `ELF64 ET_EXEC` 可执行文件。
+pub(crate) fn lower_x86_64_linux_elf(submission: &FragmentSubmission) -> Result<NativeLoweredFragment> {
+    lower_x86_64(submission, NativeAbi::SystemV64, NativeContainer::Elf)
+}
+
+/// 共享的 x86-64 降低流程：计划事实 → 目标 LIR → 机器码 → 指定容器。
+///
+/// 调用约定与容器都由调用方按规范目标显式给出；本函数不按 `arch` 猜 `os`/`abi`。
+fn lower_x86_64(submission: &FragmentSubmission, abi: NativeAbi, container: NativeContainer) -> Result<NativeLoweredFragment> {
     let plan = &submission.backend_plan;
     let reachable = collect_native_functions(submission);
     if reachable.is_empty() {
-        return Err("x86_64 最小 lowering 没有可达函数：片段既无导出也无入口操作，拒绝凭空生成 PE".to_string());
+        return Err(format!(
+            "x86_64 最小 lowering 没有可达函数：片段既无导出也无入口操作，拒绝凭空生成 {}",
+            container.name()
+        ));
     }
 
-    let entry =
-        plan.entry_operation().ok_or_else(|| "x86_64 最小 lowering 缺少入口操作：PE 入口点必须来自计划冻结的 `entry_operation`".to_string())?;
+    let entry = plan.entry_operation().ok_or_else(|| {
+        format!(
+            "x86_64 最小 lowering 缺少入口操作：{} 入口点必须来自计划冻结的 `entry_operation`",
+            container.name()
+        )
+    })?;
     let entry_view =
-        plan.get_function(&entry).ok_or_else(|| format!("x86_64 最小 lowering：入口操作 `{entry:?}` 没有函数体，不能作为 PE 入口"))?;
-    validate_entry(&entry_view.function)?;
+        plan.get_function(&entry).ok_or_else(|| format!("x86_64 最小 lowering：入口操作 `{entry:?}` 没有函数体，不能作为 {} 入口", container.name()))?;
+    validate_entry(&entry_view.function, container)?;
 
     let mut text = Vec::<u8>::new();
     let mut function_offsets = BTreeMap::<ItemInstanceId, usize>::new();
@@ -200,7 +246,7 @@ pub(crate) fn lower_x86_64_windows_pe(submission: &FragmentSubmission) -> Result
             entry_offset = Some(base);
         }
         // 计划 → 目标私有 LIR → 编码器：编码器不再读取 `ExecutableFunction`。
-        let function = lower_function_to_x64(submission, &view.function, &reachable)?;
+        let function = lower_function_to_x64(submission, &view.function, &reachable, abi)?;
         encode_x64_function(&function, &mut text, &mut relocations)?;
     }
 
@@ -215,50 +261,91 @@ pub(crate) fn lower_x86_64_windows_pe(submission: &FragmentSubmission) -> Result
         text[field_offset..field_offset + 4].copy_from_slice(&displacement.to_le_bytes());
     }
 
-    let entry_offset = u32::try_from(entry_offset.ok_or_else(|| "x86_64 最小 lowering：入口函数没有生成代码".to_string())?)
-        .map_err(|_| "x86_64 最小 lowering：入口偏移超出 `u32`".to_string())?;
-    let text_len = text.len();
-    let executable = NativePeWriter::write_executable(&NativePeImage {
-        text,
-        rdata: Vec::new(),
-        idata: Vec::new(),
-        imports: Vec::new(),
-        exports: Vec::new(),
-        text_rel32_fixups: Vec::new(),
-            is_dll: false,
-        entry_point: entry_offset,
-    })
-    .map_err(|error| format!("x86_64 `PE` 编码失败：{error}"))?;
+    let entry_function = entry_offset.ok_or_else(|| "x86_64 最小 lowering：入口函数没有生成代码".to_string())?;
+    let (executable, entry_offset, text_len) = match container {
+        NativeContainer::Pe => {
+            let entry_offset = u32::try_from(entry_function).map_err(|_| "x86_64 最小 lowering：入口偏移超出 `u32`".to_string())?;
+            let text_len = text.len();
+            let executable = NativePeWriter::write_executable(&NativePeImage {
+                text,
+                rdata: Vec::new(),
+                idata: Vec::new(),
+                imports: Vec::new(),
+                exports: Vec::new(),
+                text_rel32_fixups: Vec::new(),
+                is_dll: false,
+                entry_point: entry_offset,
+            })
+            .map_err(|error| format!("x86_64 `PE` 编码失败：{error}"))?;
+            (executable, entry_offset, text_len)
+        }
+        NativeContainer::Elf => {
+            let (text, entry_point) = append_elf_entry_exit_stub(text, entry_function)?;
+            let text_len = text.len();
+            let executable = NativeElfWriter::write_executable(&NativeElfImage { text, rodata: Vec::new(), entry_point })
+                .map_err(|error| format!("x86_64 `ELF` 编码失败：{error}"))?;
+            (executable, entry_point, text_len)
+        }
+    };
 
-    // 自检：产物必须是 AMD64 可执行 PE，而不是任意字节或固定返回值镜像。
+    // 自检：产物必须是 AMD64 可执行镜像，且容器与规范目标一致。
     let facts = classify_native_image(&executable).map_err(|error| format!("x86_64 产物自检失败：{error}"))?;
-    if facts.kind != NativeExecutableKind::Pe || facts.arch != BinaryArch::X64 || facts.shared {
-        return Err(format!("x86_64 产物自检失败：期望 AMD64 可执行 PE，实际 {facts:?}"));
+    let (expected_kind, expected_arch) = match container {
+        NativeContainer::Pe => (NativeExecutableKind::Pe, BinaryArch::X64),
+        NativeContainer::Elf => (NativeExecutableKind::Elf, BinaryArch::X64),
+    };
+    if facts.kind != expected_kind || facts.arch != expected_arch || facts.shared {
+        return Err(format!(
+            "x86_64 产物自检失败：期望 AMD64 可执行 {}，实际 {facts:?}",
+            container.name()
+        ));
     }
 
     Ok(NativeLoweredFragment { executable, entry_offset, text_len })
 }
 
+/// 在 `.text` 末尾追加 ELF 进程入口桩，返回新文本与入口偏移。
+///
+/// 内核直接跳到 `e_entry`，因此入口不能像 PE 那样 `ret` 回 loader：桩先 `call`
+/// 语言入口函数，把 `rax`（i32 退出码）移到 `rdi`，再执行 `exit(2)` 系统调用。
+/// SysV64 要求调用点 `rsp` 16 字节对齐；进程入口正好满足，所以 `call` 后目标函数
+/// 看到的是标准 `rsp ≡ 8 (mod 16)`，与 Win64 loader 调用一致。
+fn append_elf_entry_exit_stub(mut text: Vec<u8>, entry_function: usize) -> Result<(Vec<u8>, u32)> {
+    let entry_point = u32::try_from(text.len()).map_err(|_| "x86_64 ELF 入口桩偏移超出 `u32`".to_string())?;
+    // `call rel32` 到语言入口函数。
+    text.push(0xE8);
+    let field = text.len();
+    let displacement = i64::try_from(entry_function).unwrap_or(i64::MAX) - (i64::try_from(field).unwrap_or(i64::MAX) + 4);
+    let displacement = i32::try_from(displacement).map_err(|_| "x86_64 ELF 入口桩调用位移超出 `rel32`".to_string())?;
+    text.extend_from_slice(&displacement.to_le_bytes());
+    // `mov rdi, rax`；`mov eax, 60`（SYS_exit）；`syscall`。
+    text.extend_from_slice(&[0x48, 0x89, 0xC7, 0xB8, 0x3C, 0x00, 0x00, 0x00, 0x0F, 0x05]);
+    Ok((text, entry_point))
+}
+
 /// 入口函数必须是空形参、返回整数/布尔/字符或 unit。
 ///
-/// Windows loader 调用入口时不提供有意义的形参，且以 `rax`（低 32 位）作为进程
-/// 退出码；因此入口只接受可直接作为退出码的标量返回。
-fn validate_entry(function: &MirFunction) -> Result<()> {
+/// 两个容器都以 `rax` 作为进程退出码（PE loader 读取返回值，ELF 入口桩把它传给
+/// `exit`）；loader 不提供有意义的形参，因此入口只接受可直接作为退出码的标量返回。
+fn validate_entry(function: &MirFunction, container: NativeContainer) -> Result<()> {
     let entry_block = function
         .blocks
         .get(function.entry.0 as usize)
         .ok_or_else(|| format!("x86_64 最小 lowering：入口函数 `{}` 缺少入口块", function.symbol))?;
     if !entry_block.parameters.is_empty() || !function.param_types.is_empty() {
         return Err(format!(
-            "x86_64 最小 lowering：PE 入口函数 `{}` 必须无参数（loader 不传递形参），实际 {} 个",
+            "x86_64 最小 lowering：{} 入口函数 `{}` 必须无参数（loader 不传递形参），实际 {} 个",
+            container.name(),
             function.symbol,
             function.param_types.len()
         ));
     }
     if !is_exit_code_type(&function.return_type) {
         return Err(format!(
-            "x86_64 最小 lowering：PE 入口函数 `{}` 的返回类型 `{}` 不能作为进程退出码（只接受整数/布尔/字符/unit）",
-            function.symbol, function.return_type
+            "x86_64 最小 lowering：{} 入口函数 `{}` 的返回类型 `{}` 不能作为进程退出码（只接受整数/布尔/字符/unit）",
+            container.name(),
+            function.symbol,
+            function.return_type
         ));
     }
     Ok(())
@@ -302,13 +389,23 @@ fn collect_native_functions(submission: &FragmentSubmission) -> Vec<ItemInstance
     ordered
 }
 
-fn lower_function_to_x64(submission: &FragmentSubmission, function: &MirFunction, reachable: &[ItemInstanceId]) -> Result<X64Function> {
+fn lower_function_to_x64(
+    submission: &FragmentSubmission,
+    function: &MirFunction,
+    reachable: &[ItemInstanceId],
+    abi: NativeAbi,
+) -> Result<X64Function> {
     let slots = ExecutableSlotPlan::plan_nyar(function);
     let local_bytes = slots.local_types.len().checked_mul(8).ok_or_else(|| "x86_64 最小 lowering：局部槽数量溢出".to_string())?;
-    let frame_bytes = align16(local_bytes.checked_add(32).ok_or_else(|| "x86_64 最小 lowering：栈帧大小溢出".to_string())?)?;
+    // 帧必须 16 字节对齐；Win64 还要在帧底预留 32 字节 shadow space。
+    let frame_bytes = align16(
+        local_bytes
+            .checked_add(abi.shadow_space() as usize)
+            .ok_or_else(|| "x86_64 最小 lowering：栈帧大小溢出".to_string())?,
+    )?;
     let frame_bytes = u32::try_from(frame_bytes).map_err(|_| "x86_64 最小 lowering：栈帧大小超出 `u32`".to_string())?;
 
-    let mut lowerer = FunctionLowerer { submission, function, slots, reachable, instructions: Vec::new() };
+    let mut lowerer = FunctionLowerer { submission, function, slots, reachable, abi, instructions: Vec::new() };
     lowerer.store_entry_parameters()?;
 
     let mut order = vec![function.entry];
@@ -338,6 +435,8 @@ struct FunctionLowerer<'a> {
     function: &'a MirFunction,
     slots: ExecutableSlotPlan,
     reachable: &'a [ItemInstanceId],
+    /// 由规范目标 `os`/`abi` 冻结的调用约定。
+    abi: NativeAbi,
     instructions: Vec<X64Instruction>,
 }
 
@@ -360,12 +459,14 @@ impl FunctionLowerer<'_> {
                 self.function.param_types.len()
             ));
         }
-        if entry_block.parameters.len() > X64Reg::WIN64_ARGS.len() {
+        let argument_registers = X64Reg::argument_registers(self.abi);
+        if entry_block.parameters.len() > argument_registers.len() {
             return Err(format!(
-                "x86_64 最小 lowering：函数 `{}` 有 {} 个形参，超过 Win64 寄存器传参上限 {}（栈上传参未实现）",
+                "x86_64 最小 lowering：函数 `{}` 有 {} 个形参，超过 {} 寄存器传参上限 {}（栈上传参未实现）",
                 self.function.symbol,
                 entry_block.parameters.len(),
-                X64Reg::WIN64_ARGS.len()
+                self.abi.name(),
+                argument_registers.len()
             ));
         }
         for (index, parameter) in entry_block.parameters.iter().enumerate() {
@@ -380,7 +481,7 @@ impl FunctionLowerer<'_> {
             {
                 return Err(format!("x86_64 最小 lowering：函数 `{}` 的形参类型 `{ty}` 没有 x86_64 标量载体", self.function.symbol));
             }
-            let register = X64Reg::WIN64_ARGS[index];
+            let register = argument_registers[index];
             self.push(X64Instruction::StoreFrame { slot: local, source: register });
         }
         Ok(())
@@ -496,12 +597,13 @@ impl FunctionLowerer<'_> {
                 arguments.len()
             ));
         }
-        if arguments.len() > X64Reg::WIN64_ARGS.len() {
+        if arguments.len() > self.abi.integer_argument_limit() {
             return Err(format!(
-                "x86_64 最小 lowering：块 {:?} 的跳转实参 {} 个超过 x86_64 scratch 上限 {}（栈上传参未实现）: function={}",
+                "x86_64 最小 lowering：块 {:?} 的跳转实参 {} 个超过 {} scratch 上限 {}（栈上传参未实现）: function={}",
                 target,
                 arguments.len(),
-                X64Reg::WIN64_ARGS.len(),
+                self.abi.name(),
+                self.abi.integer_argument_limit(),
                 self.function.symbol
             ));
         }
@@ -551,16 +653,18 @@ impl FunctionLowerer<'_> {
                 arguments.len()
             ));
         }
-        if arguments.len() > X64Reg::WIN64_ARGS.len() {
+        let argument_registers = X64Reg::argument_registers(self.abi);
+        if arguments.len() > argument_registers.len() {
             return Err(format!(
-                "x86_64 最小 lowering：调用 `{}` 传递 {} 个实参，超过 Win64 寄存器传参上限 {}（栈上传参未实现）",
+                "x86_64 最小 lowering：调用 `{}` 传递 {} 个实参，超过 {} 寄存器传参上限 {}（栈上传参未实现）",
                 callee_function.symbol,
                 arguments.len(),
-                X64Reg::WIN64_ARGS.len()
+                self.abi.name(),
+                argument_registers.len()
             ));
         }
-        for (argument, register) in arguments.iter().zip(X64Reg::WIN64_ARGS) {
-            self.emit_operand_to_register(argument, register)?;
+        for (argument, register) in arguments.iter().zip(argument_registers) {
+            self.emit_operand_to_register(argument, *register)?;
         }
         self.push(X64Instruction::Call(*instance));
 

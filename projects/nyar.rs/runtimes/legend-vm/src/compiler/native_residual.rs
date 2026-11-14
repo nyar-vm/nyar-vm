@@ -16,7 +16,7 @@ use std::rc::Rc;
 use miette::{Result, miette};
 use nyar_analyzer::residual::ResidualSink;
 use nyar_emitter::nyar_backend_native::{
-    NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, encode_native_text_function,
+    NativeAbi, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, encode_native_text_function,
     encode_native_text_program_with_imports,
 };
 
@@ -880,7 +880,9 @@ pub fn lower_native_residual_to_program(module: &NativeResidualModule) -> Result
         }
     }
     let functions: Vec<NativeTextProgramFunction> = lowered.into_iter().map(|(function, _)| function).collect();
-    encode_native_text_program_with_imports(&functions, &imports)
+    // 导出函数 ABI 当前只闭合 Win64（PE DLL）；Linux 产品 lane 尚未接入调用方，
+    // 因此这里显式给出 Win64，而不是依赖编码器的默认值。
+    encode_native_text_program_with_imports(&functions, &imports, NativeAbi::Win64)
 }
 
 /// 以导出函数 ABI 发射 `PE` DLL（宿主按 Win64 调用约定调用残差函数）。

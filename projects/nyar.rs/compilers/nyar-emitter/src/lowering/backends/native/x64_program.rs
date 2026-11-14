@@ -7,12 +7,35 @@ use std::collections::BTreeMap;
 
 use crate::Result;
 
-use super::{NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage};
+use super::{NativeAbi, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage};
 
-/// Win64 整数形参寄存器：rcx / rdx / r8 / r9 的 `mov [rbp-disp32], reg` 前缀。
-const ARG_STORE_PREFIX: [[u8; 3]; 4] = [[0x48, 0x89, 0x8D], [0x48, 0x89, 0x95], [0x4C, 0x89, 0x85], [0x4C, 0x89, 0x8D]];
-/// 同上的 `mov reg, [rbp-disp32]` 前缀。
-const ARG_LOAD_PREFIX: [[u8; 3]; 4] = [[0x48, 0x8B, 0x8D], [0x48, 0x8B, 0x95], [0x4C, 0x8B, 0x85], [0x4C, 0x8B, 0x8D]];
+/// Win64 整数形参寄存器 rcx / rdx / r8 / r9 的 `mov [rbp-disp32], reg` 前缀。
+const WIN64_ARG_STORE_PREFIX: [[u8; 3]; 4] = [[0x48, 0x89, 0x8D], [0x48, 0x89, 0x95], [0x4C, 0x89, 0x85], [0x4C, 0x89, 0x8D]];
+/// Win64 整数形参寄存器的 `mov reg, [rbp-disp32]` 前缀。
+const WIN64_ARG_LOAD_PREFIX: [[u8; 3]; 4] = [[0x48, 0x8B, 0x8D], [0x48, 0x8B, 0x95], [0x4C, 0x8B, 0x85], [0x4C, 0x8B, 0x8D]];
+/// SysV64 整数形参寄存器 rdi / rsi / rdx / rcx / r8 / r9 的 `mov [rbp-disp32], reg` 前缀。
+const SYSTEM_V_ARG_STORE_PREFIX: [[u8; 3]; 6] =
+    [[0x48, 0x89, 0xBD], [0x48, 0x89, 0xB5], [0x48, 0x89, 0x95], [0x48, 0x89, 0x8D], [0x4C, 0x89, 0x85], [0x4C, 0x89, 0x8D]];
+/// SysV64 整数形参寄存器的 `mov reg, [rbp-disp32]` 前缀。
+const SYSTEM_V_ARG_LOAD_PREFIX: [[u8; 3]; 6] =
+    [[0x48, 0x8B, 0xBD], [0x48, 0x8B, 0xB5], [0x48, 0x8B, 0x95], [0x48, 0x8B, 0x8D], [0x4C, 0x8B, 0x85], [0x4C, 0x8B, 0x8D]];
+
+/// 该调用约定的形参寄存器 `mov [rbp-disp32], reg` 前缀表。
+fn arg_store_prefixes(abi: NativeAbi) -> &'static [[u8; 3]] {
+    match abi {
+        NativeAbi::Win64 => &WIN64_ARG_STORE_PREFIX,
+        NativeAbi::SystemV64 => &SYSTEM_V_ARG_STORE_PREFIX,
+    }
+}
+
+/// 该调用约定的形参寄存器 `mov reg, [rbp-disp32]` 前缀表。
+fn arg_load_prefixes(abi: NativeAbi) -> &'static [[u8; 3]] {
+    match abi {
+        NativeAbi::Win64 => &WIN64_ARG_LOAD_PREFIX,
+        NativeAbi::SystemV64 => &SYSTEM_V_ARG_LOAD_PREFIX,
+    }
+}
+
 /// `mov [rbp-disp32], rax`。
 const RAX_STORE: [u8; 3] = [0x48, 0x89, 0x85];
 /// `mov rax, [rbp-disp32]`。
@@ -67,20 +90,32 @@ fn emit_binary(text: &mut Vec<u8>, instruction: &NativeTextInstruction) -> bool 
 }
 
 /// 把多函数文本 LIR 编码为一段 `.text` 与导出符号偏移（无宿主导入）。
-pub fn encode_native_text_program(functions: &[NativeTextProgramFunction]) -> Result<NativeTextProgramImage> {
-    encode_native_text_program_with_imports(functions, &[])
+///
+/// `abi` 必须来自规范目标四元组（`os` + `abi`），不提供默认值。
+pub fn encode_native_text_program(functions: &[NativeTextProgramFunction], abi: NativeAbi) -> Result<NativeTextProgramImage> {
+    encode_native_text_program_with_imports(functions, &[], abi)
 }
 
 /// 把多函数文本 LIR 编码为 `.text`、导出符号与宿主导入表。
 ///
 /// `imports` 按 `(module, field)` 声明；`.idata` 与 IAT 槽由 acorn 的导入表构造器
 /// 冻结，`CallImport` 的 `call [rip+disp32]` 由 PE 写入器在最终布局后回填。
+/// 宿主导入是 PE/IAT 专属合同，`ELF` 目标当前没有对应编码，必须显式拒绝而不是
+/// 生成一张无人解析的 `.idata`。
 pub fn encode_native_text_program_with_imports(
     functions: &[NativeTextProgramFunction],
     imports: &[(String, String)],
+    abi: NativeAbi,
 ) -> Result<NativeTextProgramImage> {
     if functions.is_empty() {
         return Err("native text program has no functions".to_string());
+    }
+    if abi != NativeAbi::Win64 && !imports.is_empty() {
+        return Err(format!(
+            "native 文本 ABI `{}` 尚无宿主导入编码：`.idata`/IAT 是 Win64 `PE` 合同，{} 个导入必须失败闭合",
+            abi.name(),
+            imports.len()
+        ));
     }
     let table = acorn_pe::pe::build_native_import_table(imports).map_err(|error| format!("native 导入表构造失败：{error}"))?;
     let mut text = Vec::new();
@@ -100,8 +135,9 @@ pub fn encode_native_text_program_with_imports(
         }
         symbols.push((function.name.clone(), text.len() as u32));
 
-        // 序言：`push rbp; mov rbp, rsp; sub rsp, frame`。
-        let frame = align16(u32::from(function.slot_count) * 8 + 32);
+        // 序言：`push rbp; mov rbp, rsp; sub rsp, frame`。Win64 额外预留 32 字节
+        // shadow space，SysV64 不需要；两者都保持 `rsp` 16 字节对齐。
+        let frame = align16(u32::from(function.slot_count) * 8 + abi.shadow_space());
         text.extend_from_slice(&[0x55, 0x48, 0x89, 0xE5, 0x48, 0x81, 0xEC]);
         text.extend_from_slice(&frame.to_le_bytes());
 
@@ -114,9 +150,13 @@ pub fn encode_native_text_program_with_imports(
                     text.extend_from_slice(&value.to_le_bytes());
                 }
                 NativeTextInstruction::LoadParam { index, slot } => {
-                    let prefix = ARG_STORE_PREFIX
-                        .get(*index as usize)
-                        .ok_or_else(|| format!("Win64 文本 ABI 只支持 4 个整数形参（index={index}）"))?;
+                    let prefix = arg_store_prefixes(abi).get(*index as usize).ok_or_else(|| {
+                        format!(
+                            "{} 文本 ABI 只支持 {} 个寄存器整数形参（index={index}；栈上传参未实现）",
+                            abi.name(),
+                            abi.integer_argument_limit()
+                        )
+                    })?;
                     text.extend_from_slice(prefix);
                     text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
                 }
@@ -129,9 +169,13 @@ pub fn encode_native_text_program_with_imports(
                     text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
                 }
                 NativeTextInstruction::LoadSlotToArg { slot, index } => {
-                    let prefix = ARG_LOAD_PREFIX
-                        .get(*index as usize)
-                        .ok_or_else(|| format!("Win64 文本 ABI 只支持 4 个整数实参（index={index}）"))?;
+                    let prefix = arg_load_prefixes(abi).get(*index as usize).ok_or_else(|| {
+                        format!(
+                            "{} 文本 ABI 只支持 {} 个寄存器整数实参（index={index}；栈上传参未实现）",
+                            abi.name(),
+                            abi.integer_argument_limit()
+                        )
+                    })?;
                     text.extend_from_slice(prefix);
                     text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
                 }
@@ -177,6 +221,11 @@ pub fn encode_native_text_program_with_imports(
                     text.extend_from_slice(&(len as u64).to_le_bytes());
                 }
                 NativeTextInstruction::ZeroStackArg(index) => {
+                    // 该指令清的是 Win64 shadow space 之后的第 5+ 个栈实参槽；
+                    // SysV64 的栈实参布局不同，本 lane 不借用 Win64 偏移。
+                    if abi != NativeAbi::Win64 {
+                        return Err(format!("{} 文本 ABI 不支持 `ZeroStackArg`：栈上传参是 Win64 shadow space 合同", abi.name()));
+                    }
                     let displacement = 32u8.checked_add(index.saturating_mul(8)).ok_or_else(|| "栈实参偏移超出 u8".to_string())?;
                     // `mov qword ptr [rsp + disp8], 0`。
                     text.extend_from_slice(&[0x48, 0xC7, 0x44, 0x24, displacement, 0, 0, 0, 0]);
@@ -207,6 +256,12 @@ pub fn encode_native_text_program_with_imports(
                 }
                 NativeTextInstruction::StoreByteAtRaxFromRdx => text.extend_from_slice(&[0x88, 0x10]),
                 NativeTextInstruction::CallImport { module, field } => {
+                    if abi != NativeAbi::Win64 {
+                        return Err(format!(
+                            "{} 文本 ABI 没有宿主导入编码：`{module}!{field}` 只能经 Win64 IAT 调用",
+                            abi.name()
+                        ));
+                    }
                     let slot = *table
                         .slot_offsets
                         .get(&(module.clone(), field.clone()))

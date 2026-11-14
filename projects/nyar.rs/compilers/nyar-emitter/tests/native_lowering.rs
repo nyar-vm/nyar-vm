@@ -187,6 +187,13 @@ fn expect_pe(executable: &[u8]) {
     assert!(!facts.shared, "必须是可执行镜像而不是共享库");
 }
 
+fn expect_elf(executable: &[u8]) {
+    let facts = classify_native_image(executable).expect("native 产物必须是可解析镜像");
+    assert_eq!(facts.kind, NativeExecutableKind::Elf, "必须是 ELF64 ET_EXEC");
+    assert_eq!(facts.arch, BinaryArch::X64, "必须是 AMD64 镜像");
+    assert!(!facts.shared, "必须是可执行镜像而不是共享库");
+}
+
 /// 在 Windows 上真实运行生成的 `.exe`，返回进程退出码。
 #[cfg(windows)]
 fn run_exit_code(name: &str, executable: &[u8]) -> i32 {
@@ -200,11 +207,75 @@ fn run_exit_code(name: &str, executable: &[u8]) -> i32 {
     code
 }
 
-/// `add(a, b) = a + b`（冻结 `I64Add`），`main() = add(40, 2)`。
+/// 在 Linux 上真实装载生成的 ELF，返回进程退出码。
+#[cfg(target_os = "linux")]
+fn run_elf_exit_code(name: &str, executable: &[u8]) -> i32 {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = std::env::temp_dir().join(format!("nyar-native-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("native temp dir");
+    let path = directory.join(name);
+    std::fs::write(&path, executable).expect("write native elf");
+    let mut permissions = std::fs::metadata(&path).expect("native elf metadata").permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&path, permissions).expect("chmod native elf");
+    let status = Command::new(&path).status().expect("load and run native elf");
+    let code = status.code().expect("native elf exit code");
+    let _ = std::fs::remove_dir_all(&directory);
+    code
+}
+
+/// Win64 纵切：`add` 计划必须生成 `PE32+` 并在 Windows 上退出 42。
 ///
 /// 覆盖：Win64 前两个形参寄存器、同片段 `call rel32`、冻结算子、`Return`。
 #[test]
 fn parameters_calls_and_frozen_operator_run_natively() {
+    let plan = add_fixture();
+    let lowered = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect("native 纵切必须生成 PE");
+    expect_pe(&lowered.executable);
+    assert!(lowered.text_len > 0, "`.text` 必须包含真实机器码");
+
+    #[cfg(windows)]
+    assert_eq!(run_exit_code("native-add", &lowered.executable), 42, "add(40, 2) 的进程退出码");
+}
+
+/// 同一份 `add` 计划在 `x86_64-unknown-linux-gnu` 上必须生成 SysV64 `ELF`。
+///
+/// 覆盖：SysV64 形参寄存器（rdi/rsi）、同片段 `call rel32`、冻结 I64 算子、
+/// ELF 入口桩的 `exit(2)`；Linux 宿主真实装载执行。
+#[test]
+fn parameters_calls_and_frozen_operator_run_on_linux_elf() {
+    let plan = add_fixture();
+    let linux = CanonicalTarget::parse("x86_64-unknown-linux-gnu").expect("linux quad");
+    let lowered = lower_fragment_to_native_image(&FragmentSubmission::from_backend_plan(plan), linux)
+        .expect("linux 纵切必须生成 ELF");
+    expect_elf(&lowered.executable);
+    assert!(lowered.text_len > 0, "`.text` 必须包含真实机器码与入口桩");
+
+    // SysV64：第 1/2 个形参必须来自 rdi/rsi，而不是 Win64 的 rcx/rdx。
+    assert!(
+        lowered.executable.windows(3).any(|window| window == [0x48, 0x89, 0xBD]),
+        "SysV 形参必须存 rdi"
+    );
+    assert!(
+        lowered.executable.windows(3).any(|window| window == [0x48, 0x89, 0xB5]),
+        "SysV 形参必须存 rsi"
+    );
+
+    // ELF 身份映射（offset 0 → 0x400000）：入口文件偏移 = e_entry - 装载基址，
+    // 入口处必须是 `call rel32; mov rdi, rax; mov eax, 60; syscall` 的退出桩。
+    let entry = u64::from_le_bytes(lowered.executable[24..32].try_into().expect("e_entry"));
+    let entry_offset = usize::try_from(entry - 0x400000).expect("entry offset");
+    let stub = &lowered.executable[entry_offset..];
+    assert_eq!(stub[0], 0xE8, "入口桩必须以 `call rel32` 调用语言入口");
+    assert_eq!(&stub[5..15], &[0x48, 0x89, 0xC7, 0xB8, 0x3C, 0x00, 0x00, 0x00, 0x0F, 0x05], "入口桩必须以 `exit(2)` 结束");
+
+    #[cfg(target_os = "linux")]
+    assert_eq!(run_elf_exit_code("nyar-native-elf-add", &lowered.executable), 42, "add(40, 2) 的进程退出码");
+}
+
+/// `add(a, b) = a + b`（冻结 `I64Add`），`main() = add(40, 2)`。
+fn add_fixture() -> TargetExecutionPlan {
     let add = function("add", LONG, vec![LONG, LONG]);
     let mut main = function("main", LONG, Vec::new());
     main.value_types.insert(ValueRef(0), LONG);
@@ -229,13 +300,7 @@ fn parameters_calls_and_frozen_operator_run_natively() {
         function.blocks[0].instructions.push(call(add_instance, vec![integer(40), integer(2)], vec![ValueRef(0)]));
     });
     plan.testing_register_import(operator_instance(0), operator_import(X86_64OperatorCode::I64Add, LONG));
-
-    let lowered = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect("native 纵切必须生成 PE");
-    expect_pe(&lowered.executable);
-    assert!(lowered.text_len > 0, "`.text` 必须包含真实机器码");
-
-    #[cfg(windows)]
-    assert_eq!(run_exit_code("native-add", &lowered.executable), 42, "add(40, 2) 的进程退出码");
+    plan
 }
 
 /// `choose(a, b) = if a < b { a + b } else { a - b }`，`main() = choose(3, 4)`。
@@ -474,7 +539,7 @@ fn integer_operator_runs_natively() {
     assert_eq!(run_exit_code("native-i32", &lowered.executable), 42, "6 * 7 的进程退出码");
 }
 
-/// 未闭合的规范目标四元组必须失败闭合，不得把 Windows `PE` 编码借给其他平台。
+/// 未闭合的规范目标四元组必须失败闭合，不得把 `PE`/`ELF` 编码借给其他平台。
 #[test]
 fn unclosed_canonical_targets_are_rejected() {
     let main = function("main", NyarType::Unit, Vec::new());
@@ -483,11 +548,30 @@ fn unclosed_canonical_targets_are_rejected() {
     plan.testing_module_name("native_lowering").testing_entry_operation(main_name);
     let submission = FragmentSubmission::from_backend_plan(plan);
 
-    let linux = CanonicalTarget::parse("x86_64-unknown-linux-gnu").expect("linux quad");
-    let error = lower_fragment_to_native_image(&submission, linux).expect_err("ELF 容器未实现必须失败");
+    let macos = CanonicalTarget::parse("x86_64-unknown-macos").expect("macos quad");
+    let error = lower_fragment_to_native_image(&submission, macos).expect_err("Mach-O 容器未实现必须失败");
     assert!(error.contains("容器实现"), "错误必须点名缺失的容器实现: {error}");
 
     let aarch64 = CanonicalTarget::parse("aarch64-unknown-linux-gnu").expect("aarch64 quad");
     let error = lower_fragment_to_native_image(&submission, aarch64).expect_err("aarch64 未实现必须失败");
     assert!(error.contains("尚未实现架构 `aarch64`"), "错误必须点名未实现的 ISA: {error}");
+}
+
+/// Linux 只闭合 SysV64：其他 ABI 不得借用 Win64 编码。
+#[test]
+fn linux_with_unsupported_abi_is_rejected() {
+    let main = function("main", NyarType::Unit, Vec::new());
+    let main_name = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), main)]));
+    plan.testing_module_name("native_lowering").testing_entry_operation(main_name);
+    let submission = FragmentSubmission::from_backend_plan(plan);
+
+    let msvc_linux = CanonicalTarget::new(
+        nyar::abstractions::CanonicalArch::X86_64,
+        nyar::abstractions::CanonicalVendor::Unknown,
+        CanonicalSpecification::Linux,
+        Some(CanonicalAbi::Msvc),
+    );
+    let error = lower_fragment_to_native_image(&submission, msvc_linux).expect_err("linux + msvc 必须失败");
+    assert!(error.contains("SysV64"), "错误必须点名只闭合的调用约定: {error}");
 }

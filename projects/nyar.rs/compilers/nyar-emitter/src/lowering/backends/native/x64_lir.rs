@@ -14,26 +14,40 @@ use std::collections::BTreeMap;
 use crate::{Result, backend_plan_views::ExecutableBlockRef as MirBlockRef};
 use nyar_types::ItemInstanceId;
 
-use super::x86_64::X86_64OperatorCode;
+use super::{NativeAbi, x86_64::X86_64OperatorCode};
 
 /// x86-64 通用寄存器（本 lane 目前只使用有固定编码职责的子集）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum X64Reg {
     /// `rax`：表达式结果 / 返回载体。
     Rax,
-    /// `rcx`：Win64 第 1 个形参与算子右操作数。
+    /// `rcx`：Win64 第 1 / SysV 第 4 个整数形参，也是算子右操作数。
     Rcx,
-    /// `rdx`：Win64 第 2 个形参。
+    /// `rdx`：Win64 第 2 / SysV 第 3 个整数形参。
     Rdx,
-    /// `r8`：Win64 第 3 个形参。
+    /// `r8`：Win64 第 3 / SysV 第 5 个整数形参。
     R8,
-    /// `r9`：Win64 第 4 个形参。
+    /// `r9`：Win64 第 4 / SysV 第 6 个整数形参。
     R9,
+    /// `rdi`：SysV 第 1 个整数形参。
+    Rdi,
+    /// `rsi`：SysV 第 2 个整数形参。
+    Rsi,
 }
 
 impl X64Reg {
     /// Win64 整数形参寄存器顺序。
     pub(super) const WIN64_ARGS: [Self; 4] = [Self::Rcx, Self::Rdx, Self::R8, Self::R9];
+    /// SysV64（x86-64 ELF）整数形参寄存器顺序。
+    pub(super) const SYSTEM_V_ARGS: [Self; 6] = [Self::Rdi, Self::Rsi, Self::Rdx, Self::Rcx, Self::R8, Self::R9];
+
+    /// 按调用约定返回整数形参/实参的寄存器顺序。
+    pub(super) fn argument_registers(abi: NativeAbi) -> &'static [Self] {
+        match abi {
+            NativeAbi::Win64 => &Self::WIN64_ARGS,
+            NativeAbi::SystemV64 => &Self::SYSTEM_V_ARGS,
+        }
+    }
 
     fn index(self) -> u8 {
         match self {
@@ -42,6 +56,8 @@ impl X64Reg {
             Self::Rdx => 2,
             Self::R8 => 8,
             Self::R9 => 9,
+            Self::Rdi => 7,
+            Self::Rsi => 6,
         }
     }
 
@@ -58,6 +74,8 @@ impl X64Reg {
             Self::Rdx => [0x48, 0x89, 0x95],
             Self::R8 => [0x4C, 0x89, 0x85],
             Self::R9 => [0x4C, 0x89, 0x8D],
+            Self::Rdi => [0x48, 0x89, 0xBD],
+            Self::Rsi => [0x48, 0x89, 0xB5],
         }
     }
 
@@ -69,6 +87,8 @@ impl X64Reg {
             Self::Rdx => [0x48, 0x8B, 0x95],
             Self::R8 => [0x4C, 0x8B, 0x85],
             Self::R9 => [0x4C, 0x8B, 0x8D],
+            Self::Rdi => [0x48, 0x8B, 0xBD],
+            Self::Rsi => [0x48, 0x8B, 0xB5],
         }
     }
 
@@ -80,6 +100,8 @@ impl X64Reg {
             Self::Rdx => [0x48, 0xBA],
             Self::R8 => [0x49, 0xB8],
             Self::R9 => [0x49, 0xB9],
+            Self::Rdi => [0x48, 0xBF],
+            Self::Rsi => [0x48, 0xBE],
         }
     }
 
