@@ -17,5 +17,5 @@ Target-neutral backend abstractions.
 ## Interface boundary
 
 - Future minimal protocol shape: `validate(TInput)` and `compile(TInput)`, not a new unified backend object.
-- `validate()` rejects wrong routes, unclosed witness/effect edges, and inputs that violate target constraints.
+- `validate()` rejects wrong routes, unresolved language obligations and missing runtime contracts, and inputs that violate target constraints.
 - `compile()` consumes only validated input and performs target-specific lowering, encoding, layout, and packaging.

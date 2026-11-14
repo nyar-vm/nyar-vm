@@ -1,25 +1,13 @@
-# lanes
+# Target lanes
 
-Target lanes after artifact partitioning.
+Each lane consumes explicit partition requirements plus the input produced by its language-to-target adapter. It owns its target plan/LIR and runtime requirements.
 
-## Responsibilities
+- Native uses machine/object/link/container services.
+- OVM uses its own instruction plan and `.odin` encoding for OdinVM.
+- CLR uses CLI types, MSIL and assemblies.
+- JVM uses class/method models and bytecode.
+- Wasm uses Wasm module and host contracts.
 
-- Consume each partition from `ArtifactPartitionPlan`.
-- Lower partition results to the backend input that route actually consumes.
-- Maintain “each route is responsible only for itself.”
+Native and OVM are separate lanes. Other targets do not transit OVM. Optional additional targets must define their own contracts and evidence rather than inherit support by sharing a name.
 
-## Per-lane lowering
-
-- **CPU / VM** lane may lower to `NyarIR` or an equivalent low-level form.
-- **CLR** lane lowers to `ClrImage`, metadata, `MSIL`, `PE`, and related inputs.
-- **JVM** lane lowers to `ClassFile`-style input.
-- **WASM** lane lowers to structured control flow and section models.
-- **GPU / Shader** lane lowers directly to target-specific models, not via a CPU-oriented compatibility shell.
-
-## Forbidden
-
-- No trait resolution.
-- No row member selection.
-- No nominal subtype decisions.
-- No effect handler selection.
-- Do not disguise open witness dispatch as ordinary static calls during lowering.
+Do not resolve language traits, rows, nominal types or handlers here. Explicit dynamic calls and effects belong to a validated language/runtime adaptation, and must not be disguised as closed static calls.

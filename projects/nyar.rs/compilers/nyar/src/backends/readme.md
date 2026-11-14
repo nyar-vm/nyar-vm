@@ -16,8 +16,7 @@ Target-specific backend implementations and minimal backend interfaces.
 - **WASM** backend accepts `WasmModule`-style input only.
 - **native** backend accepts native-lane low-level input only; it must not consume CLR/JVM/WASM container models
   directly.
-- If input still has unclosed witness edges, non-static effect dispatch, or unresolved row/nominal facts, `validate()`
-  must fail.
+- Reject unresolved language obligations. Explicit dynamic calls or effects are valid only when the adapter supplies a complete target runtime contract, not merely because dispatch is static.
 
 ## Relationship to HIR / MIR / LIR
 
