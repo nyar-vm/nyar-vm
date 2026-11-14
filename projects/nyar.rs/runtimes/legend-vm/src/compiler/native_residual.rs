@@ -30,50 +30,120 @@ pub enum NativeResidualTarget {
     Native,
 }
 
-/// 原生产品目标：决定容器、调用约定、宿主导入面与 effect 通道来源。
-///
-/// 目标身份来自规范四元组，不从宿主 `cfg` 猜；产品入口必须显式选择。
+/// 产物 OS：决定容器与调用约定，与「宿主扩展模块类型」正交。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NativeProductTarget {
-    /// Windows `PE` DLL：Win64 + `kernel32!WriteFile` 经 IAT，effect 通道是隐藏首参（文件句柄）。
+pub enum NativeProductOs {
+    /// `PE32+` + Win64。
     Windows,
-    /// Linux `ELF` `.so`：SysV64 + `write(2)` 系统调用，effect 通道是隐藏首参（fd）。
+    /// `ELF64 ET_DYN` + SysV64。
     Linux,
-    /// Linux `ELF` `.node`：SysV64，effect 通道固定 stdout（fd 1），导出 Node-API 注册函数。
-    Node,
-    /// Linux `ELF` 扩展模块：SysV64，effect 通道固定 stdout（fd 1），导出
-    /// `PyInit_<module>` 并以 `PyModuleDef` 建立单阶段扩展模块。
-    Python,
 }
 
-impl NativeProductTarget {
-    /// 对应的文本 LIR 调用约定。
+impl NativeProductOs {
+    /// 该 OS 的整数调用约定。
     fn abi(self) -> NativeAbi {
         match self {
             Self::Windows => NativeAbi::Win64,
-            Self::Linux | Self::Node | Self::Python => NativeAbi::SystemV64,
+            Self::Linux => NativeAbi::SystemV64,
         }
     }
 
-    /// 该目标是否用宿主导入（IAT）实现 effect 写入。
-    fn uses_host_imports(self) -> bool {
-        matches!(self, Self::Windows)
+    /// OS 名称，用于结构化错误。
+    fn name(self) -> &'static str {
+        match self {
+            Self::Windows => "Windows",
+            Self::Linux => "Linux",
+        }
+    }
+}
+
+/// 宿主扩展模块类型：决定入口符号、导入面与宿主边界包装。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeHostModule {
+    /// Node-API：`napi_register_module_v1` + `napi_*`。
+    Node,
+    /// CPython：`PyInit_<module>` + `PyModule_*` / `PyArg_ParseTuple`。
+    Python,
+}
+
+impl NativeHostModule {
+    /// 模块类型名称，用于结构化错误。
+    fn name(self) -> &'static str {
+        match self {
+            Self::Node => "Node-API",
+            Self::Python => "CPython",
+        }
+    }
+}
+
+/// 原生产物目标：OS 与宿主模块类型分开表达，不再用「Node/Python 等于 Linux」。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NativeProductTarget {
+    /// 普通共享库：宿主按导出函数 ABI 直接调用（`dlopen` / `LoadLibrary`）。
+    Library(NativeProductOs),
+    /// 宿主扩展模块：`os` 决定容器与调用约定，`module` 决定入口与导入面。
+    Extension {
+        /// 目标 OS。
+        os: NativeProductOs,
+        /// 宿主模块类型。
+        module: NativeHostModule,
+        /// Windows CPython 扩展的导入 DLL 名（版本相关，由构建环境提供）。
+        library: Option<String>,
+    },
+}
+
+impl NativeProductTarget {
+    /// 便捷构造：无双阶段/版本参数的扩展目标。
+    fn extension(os: NativeProductOs, module: NativeHostModule) -> Self {
+        Self::Extension { os, module, library: None }
+    }
+
+    /// 产物 OS。
+    fn os(&self) -> NativeProductOs {
+        match self {
+            Self::Library(os) | Self::Extension { os, .. } => *os,
+        }
+    }
+
+    /// 宿主模块类型（普通库为 `None`）。
+    fn host_module(&self) -> Option<NativeHostModule> {
+        match self {
+            Self::Library(_) => None,
+            Self::Extension { module, .. } => Some(*module),
+        }
+    }
+
+    /// 对应的文本 LIR 调用约定。
+    fn abi(&self) -> NativeAbi {
+        self.os().abi()
     }
 
     /// effect 通道是否由宿主作为隐藏首个整数形参传入。
     ///
-    /// Node / Python 扩展没有宿主传入的句柄：产物自己固定写 stdout（fd 1）。
-    fn sink_from_parameter(self) -> bool {
-        !matches!(self, Self::Node | Self::Python)
+    /// 普通库由宿主传句柄/fd；扩展模块自己写 stdout。
+    fn sink_from_parameter(&self) -> bool {
+        self.host_module().is_none()
     }
 
     /// 目标名称，用于结构化错误。
-    fn name(self) -> &'static str {
+    fn name(&self) -> String {
         match self {
-            Self::Windows => "Windows PE",
-            Self::Linux => "Linux ELF",
-            Self::Node => "Linux Node addon",
-            Self::Python => "Linux CPython extension",
+            Self::Library(os) => format!("{} shared library", os.name()),
+            Self::Extension { os, module, .. } => format!("{} {} extension", os.name(), module.name()),
+        }
+    }
+
+    /// 扩展方法允许的整数形参上限。
+    ///
+    /// 由宿主的固定实参占用与目标 ABI 的寄存器形参共同决定。
+    fn method_parameter_limit(&self) -> usize {
+        match self {
+            Self::Library(os) => os.abi().integer_argument_limit(),
+            Self::Extension { os, module: NativeHostModule::Node, .. } => os.abi().integer_argument_limit(),
+            // `PyArg_ParseTuple(args, fmt, &a…)` 占两个固定实参。
+            Self::Extension { os, module: NativeHostModule::Python, .. } => {
+                os.abi().integer_argument_limit().saturating_sub(2)
+            }
         }
     }
 }
@@ -905,45 +975,54 @@ pub fn lower_native_residual_to_program(
     // 产品级 effect：`print` 可出现在任意残差函数；含 effect 的模块给每个函数
     // 增加同一个隐藏的首个整数形参（宿主 effect 通道），调用时逐层传递。
     let has_print = module.functions.iter().any(|function| function.ops.iter().any(|op| matches!(op, NativeResidualOp::Print(_))));
-    // 导入面按目标冻结：Windows 的 effect 写入是 IAT 导入；Node 扩展要调用
-    // Node-API 构造返回值；CPython 扩展要调用 `PyModule_Create2` 建立模块并
-    // 用 `PyModule_AddIntConstant` 暴露残差值；Linux 的 effect 是 syscall，没有导入。
-    // CPython / Node 方法包装只在方法表非空时需要各自的解析与装箱原语。
-    let python_has_methods = target == NativeProductTarget::Python && module.functions.iter().any(|function| function.name != "main");
-    let node_has_methods = target == NativeProductTarget::Node && module.functions.iter().any(|function| function.name != "main");
-    let imports: Vec<(String, String)> = match target {
-        NativeProductTarget::Windows if has_print => vec![("kernel32".to_string(), "WriteFile".to_string())],
-        NativeProductTarget::Node => {
-            let mut symbols = vec![
-                (String::new(), "napi_create_int64".to_string()),
-                (String::new(), "napi_set_named_property".to_string()),
-            ];
-            if node_has_methods {
-                symbols.extend([
-                    (String::new(), "napi_create_function".to_string()),
-                    (String::new(), "napi_get_cb_info".to_string()),
-                    (String::new(), "napi_get_value_int64".to_string()),
-                    (String::new(), "napi_throw_type_error".to_string()),
-                ]);
-            }
-            symbols
+    let host = target.host_module();
+    let has_methods = host.is_some() && module.functions.iter().any(|function| function.name != "main");
+    // Windows 的 IAT 必须指明提供符号的宿主模块：Node 的符号由 `node.exe` 导出，
+    // CPython 的在版本化的 `pythonNNN.dll` 里（由构建环境提供，不能猜）。
+    let host_library = match (&target, host) {
+        (_, Some(NativeHostModule::Node)) if target.os() == NativeProductOs::Windows => "node.exe".to_string(),
+        (NativeProductTarget::Extension { os: NativeProductOs::Windows, library, .. }, Some(NativeHostModule::Python)) => {
+            library.clone().ok_or_else(|| {
+                "Windows CPython 扩展必须提供宿主导入 DLL 名（例如 `python312.dll`）：版本相关名不能由编译器猜".to_string()
+            })?
         }
-        NativeProductTarget::Python => {
-            let mut symbols = vec![(String::new(), "PyModule_Create2".to_string()), (String::new(), "PyModule_AddIntConstant".to_string())];
-            if python_has_methods {
-                symbols.push((String::new(), "PyArg_ParseTuple".to_string()));
-                symbols.push((String::new(), "PyLong_FromLong".to_string()));
-            }
-            symbols
-        }
-        NativeProductTarget::Windows | NativeProductTarget::Linux => Vec::new(),
+        _ => String::new(),
     };
-    // Node 扩展的 effect 通道固定 stdout，不占宿主形参；其余目标由宿主传入句柄/fd。
+    // 导入面：OS 决定 effect 原语与导入 DLL，模块类型决定宿主 API。
+    let mut imports: Vec<(String, String)> = Vec::new();
+    if has_print && target.os() == NativeProductOs::Windows {
+        imports.push(("kernel32".to_string(), "WriteFile".to_string()));
+        if host.is_some() {
+            // 扩展模块没有宿主传入的句柄：自己取 stdout 句柄。
+            imports.push(("kernel32".to_string(), "GetStdHandle".to_string()));
+        }
+    }
+    match host {
+        Some(NativeHostModule::Node) => {
+            imports.push((host_library.clone(), "napi_create_int64".to_string()));
+            imports.push((host_library.clone(), "napi_set_named_property".to_string()));
+            if has_methods {
+                for symbol in ["napi_create_function", "napi_get_cb_info", "napi_get_value_int64", "napi_throw_type_error"] {
+                    imports.push((host_library.clone(), symbol.to_string()));
+                }
+            }
+        }
+        Some(NativeHostModule::Python) => {
+            imports.push((host_library.clone(), "PyModule_Create2".to_string()));
+            imports.push((host_library.clone(), "PyModule_AddIntConstant".to_string()));
+            if has_methods {
+                imports.push((host_library.clone(), "PyArg_ParseTuple".to_string()));
+                imports.push((host_library.clone(), "PyLong_FromLong".to_string()));
+            }
+        }
+        None => {}
+    }
+    // 普通库的 effect 通道由宿主传入；扩展模块自己写 stdout。
     let sink_from_parameter = has_print && target.sink_from_parameter();
 
     let mut lowered = Vec::with_capacity(module.functions.len());
     for function in &module.functions {
-        lowered.push(lower_residual_function(function, has_print, sink_from_parameter, target)?);
+        lowered.push(lower_residual_function(function, has_print, sink_from_parameter, &target)?);
     }
     // 调用结果当前按整数载体传播；字符串返回值的残差函数不能作为调用目标，
     // 否则调用方会按错误载体继续使用 `rax`。
@@ -969,24 +1048,24 @@ pub fn lower_native_residual_to_program(
     // 目标的产物不需要可写数据。
     let mut data = Vec::new();
     let mut data_relocations: Vec<(u32, NativeDataTarget)> = Vec::new();
-    match target {
-        NativeProductTarget::Node => {
+    match host {
+        Some(NativeHostModule::Node) => {
             require_extension_main("Node addon", module, &lowered)?;
             let methods = extension_methods(
                 module,
                 &lowered,
                 "Node 扩展",
-                "Node-API 回调的 `argv` 窗口最多解析 6 个整数实参",
-                NODE_METHOD_MAX_PARAMETERS,
+                "Node-API 回调的 `argv` 窗口最多解析整数实参",
+                target.method_parameter_limit(),
             )?;
             let (node_data, value_name_offset, method_name_offsets, error_message_offset) = node_module_data(&methods);
             data = node_data;
             for method in &methods {
-                functions.push(node_method_wrapper(method, error_message_offset));
+                functions.push(node_method_wrapper(method, error_message_offset, target.os(), &host_library));
             }
-            functions.push(node_addon_registration(&methods, value_name_offset, &method_name_offsets));
+            functions.push(node_addon_registration(&methods, value_name_offset, &method_name_offsets, target.os(), &host_library));
         }
-        NativeProductTarget::Python => {
+        Some(NativeHostModule::Python) => {
             require_extension_main("CPython extension", module, &lowered)?;
             if !is_c_identifier(&module.name) {
                 return Err(format!(
@@ -998,18 +1077,18 @@ pub fn lower_native_residual_to_program(
                 module,
                 &lowered,
                 "CPython 扩展",
-                "`PyArg_ParseTuple` 包装最多闭合 4 个整数实参",
-                PY_METHOD_MAX_PARAMETERS,
+                "`PyArg_ParseTuple` 包装最多闭合整数实参",
+                target.method_parameter_limit(),
             )?;
             let (definition, relocations, value_offset, format_offsets) = python_module_data(&module.name, &methods);
             data = definition;
             data_relocations = relocations;
             for (method, format_offset) in methods.iter().zip(format_offsets) {
-                functions.push(python_method_wrapper(&method.name, method.parameters, format_offset));
+                functions.push(python_method_wrapper(&method.name, method.parameters, format_offset, &host_library));
             }
-            functions.push(python_module_registration(&module.name, value_offset));
+            functions.push(python_module_registration(&module.name, value_offset, &host_library));
         }
-        NativeProductTarget::Windows | NativeProductTarget::Linux => {}
+        None => {}
     }
     // 调用约定与容器都由平台显式给出，编码器不提供默认 ABI。
     encode_native_text_program_with_data(&functions, &imports, target.abi(), &data, &data_relocations)
@@ -1149,9 +1228,9 @@ fn python_module_data(
     for method in methods {
         method_name_offsets.push(data.len() as u32);
         push_cstring(&mut data, &method.name);
-        // `PyArg_ParseTuple` 的 `l` 是 C `long`（Linux x86-64 为 8 字节），与残差的
-        // `i64` 载体一一对应；`:<name>` 让宿主错误信息带上方法名。
-        let format = format!("{}:{}", "l".repeat(method.parameters), method.name);
+        // `PyArg_ParseTuple` 的 `n` 是 `Py_ssize_t`（两侧平台都是 8 字节有符号），
+        // 与残差的 `i64` 载体一一对应；`:<name>` 让宿主错误信息带上方法名。
+        let format = format!("{}:{}", "n".repeat(method.parameters), method.name);
         format_offsets.push(data.len() as u32);
         push_cstring(&mut data, &format);
     }
@@ -1184,7 +1263,7 @@ fn push_cstring(data: &mut Vec<u8>, value: &str) {
 ///
 /// `PyArg_ParseTuple` 返回 0 表示解析失败（类型/个数不符），此时宿主已经设置异常，
 /// 包装体原样返回 `NULL`，不伪造结果。布尔按 1/0 返回。
-fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32) -> NativeTextProgramFunction {
+fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32, dll: &str) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     const ARGS_SLOT: u16 = 0;
     const FORMAT_SLOT: u16 = 1;
@@ -1207,7 +1286,7 @@ fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32) ->
         instructions.push(Lir::StoreSlot(TEMP_SLOT));
         instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: (2 + index) as u8 });
     }
-    instructions.push(Lir::CallImport { module: String::new(), field: "PyArg_ParseTuple".to_string() });
+    instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyArg_ParseTuple".to_string() });
     // 返回 0 = 解析失败（异常已由宿主设置）。
     instructions.push(Lir::JumpIfZero(FAIL_LABEL));
     for index in 0..parameters {
@@ -1216,7 +1295,7 @@ fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32) ->
     instructions.push(Lir::Call(method.to_string()));
     instructions.push(Lir::StoreSlot(TEMP_SLOT));
     instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 0 });
-    instructions.push(Lir::CallImport { module: String::new(), field: "PyLong_FromLong".to_string() });
+    instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyLong_FromLong".to_string() });
     instructions.push(Lir::Return);
     instructions.push(Lir::Label(FAIL_LABEL));
     instructions.push(Lir::LoadI64(0));
@@ -1235,7 +1314,7 @@ fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32) ->
 /// `PyModule_AddIntConstant` 返回 `int`，因此模块指针必须在帧槽里保存，最后重新
 /// 装入 `rax`；入口返回的必须是模块对象，否则 CPython 的导入器报
 /// “did not return a valid extension module”。
-fn python_module_registration(module_name: &str, value_offset: u32) -> NativeTextProgramFunction {
+fn python_module_registration(module_name: &str, value_offset: u32, dll: &str) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     NativeTextProgramFunction {
         name: format!("PyInit_{module_name}"),
@@ -1248,7 +1327,7 @@ fn python_module_registration(module_name: &str, value_offset: u32) -> NativeTex
             Lir::StoreSlot(1),
             Lir::LoadSlotToArg { slot: 0, index: 0 },
             Lir::LoadSlotToArg { slot: 1, index: 1 },
-            Lir::CallImport { module: String::new(), field: "PyModule_Create2".to_string() },
+            Lir::CallImport { module: dll.to_string(), field: "PyModule_Create2".to_string() },
             Lir::StoreSlot(2),
             // 残差值来自无参 `main`。
             Lir::Call("main".to_string()),
@@ -1259,7 +1338,7 @@ fn python_module_registration(module_name: &str, value_offset: u32) -> NativeTex
             Lir::StoreSlot(4),
             Lir::LoadSlotToArg { slot: 4, index: 1 },
             Lir::LoadSlotToArg { slot: 3, index: 2 },
-            Lir::CallImport { module: String::new(), field: "PyModule_AddIntConstant".to_string() },
+            Lir::CallImport { module: dll.to_string(), field: "PyModule_AddIntConstant".to_string() },
             Lir::LoadSlot(2),
             Lir::Return,
         ],
@@ -1274,6 +1353,8 @@ fn node_addon_registration(
     methods: &[ExtensionMethod],
     value_name_offset: u32,
     method_name_offsets: &[u32],
+    os: NativeProductOs,
+    dll: &str,
 ) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     const ENV_SLOT: u16 = 0;
@@ -1297,7 +1378,7 @@ fn node_addon_registration(
         Lir::LoadSlotAddress(OUT_SLOT),
         Lir::StoreSlot(TEMP_SLOT),
         Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-        Lir::CallImport { module: String::new(), field: "napi_create_int64".to_string() },
+        Lir::CallImport { module: dll.to_string(), field: "napi_create_int64".to_string() },
         // `napi_set_named_property(env, exports, "value", out)`。
         Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
         Lir::LoadSlotToArg { slot: EXPORTS_SLOT, index: 1 },
@@ -1305,10 +1386,10 @@ fn node_addon_registration(
         Lir::StoreSlot(TEMP_SLOT),
         Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
         Lir::LoadSlotToArg { slot: OUT_SLOT, index: 3 },
-        Lir::CallImport { module: String::new(), field: "napi_set_named_property".to_string() },
+        Lir::CallImport { module: dll.to_string(), field: "napi_set_named_property".to_string() },
     ];
     for (method, name_offset) in methods.iter().zip(method_name_offsets) {
-        // `napi_create_function(env, name, len, wrapper, NULL, &fn)`。
+        // `napi_create_function(env, name, len, wrapper, data, &fn)`。
         instructions.extend([
             Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
             Lir::LoadDataAddress(*name_offset),
@@ -1320,11 +1401,20 @@ fn node_addon_registration(
             Lir::LoadFunctionAddress(node_wrapper_name(&method.name)),
             Lir::StoreSlot(TEMP_SLOT),
             Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
-            Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 4 },
-            Lir::LoadSlotAddress(FUNCTION_SLOT),
-            Lir::StoreSlot(TEMP_SLOT),
-            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 5 },
-            Lir::CallImport { module: String::new(), field: "napi_create_function".to_string() },
+        ]);
+        if os == NativeProductOs::Windows {
+            // 第 5、6 个实参走 Win64 栈：`data = NULL`、`result = &fn`。
+            instructions.push(Lir::ZeroStackArg(0));
+            instructions.push(Lir::StoreSlotAddressToStackArg { slot: FUNCTION_SLOT, index: 1 });
+        }
+        else {
+            instructions.push(Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 4 });
+            instructions.push(Lir::LoadSlotAddress(FUNCTION_SLOT));
+            instructions.push(Lir::StoreSlot(TEMP_SLOT));
+            instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 5 });
+        }
+        instructions.extend([
+            Lir::CallImport { module: dll.to_string(), field: "napi_create_function".to_string() },
             // `napi_set_named_property(env, exports, name, fn)`。
             Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
             Lir::LoadSlotToArg { slot: EXPORTS_SLOT, index: 1 },
@@ -1332,7 +1422,7 @@ fn node_addon_registration(
             Lir::StoreSlot(TEMP_SLOT),
             Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
             Lir::LoadSlotToArg { slot: FUNCTION_SLOT, index: 3 },
-            Lir::CallImport { module: String::new(), field: "napi_set_named_property".to_string() },
+            Lir::CallImport { module: dll.to_string(), field: "napi_set_named_property".to_string() },
         ]);
     }
     instructions.push(Lir::LoadSlot(EXPORTS_SLOT));
@@ -1364,7 +1454,12 @@ fn node_module_data(methods: &[ExtensionMethod]) -> (Vec<u8>, u32, Vec<u32>, u32
 /// `i64` 后调用同名残差函数，结果用 `napi_create_int64` 包成 JS number。
 ///
 /// 参数个数不符或不是整数时抛 `TypeError` 并返回 `NULL`，不把错误静默成 0。
-fn node_method_wrapper(method: &ExtensionMethod, error_message_offset: u32) -> NativeTextProgramFunction {
+fn node_method_wrapper(
+    method: &ExtensionMethod,
+    error_message_offset: u32,
+    os: NativeProductOs,
+    dll: &str,
+) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     const ENV_SLOT: u16 = 0;
     const INFO_SLOT: u16 = 1;
@@ -1399,9 +1494,18 @@ fn node_method_wrapper(method: &ExtensionMethod, error_message_offset: u32) -> N
         Lir::LoadSlotAddress(ARGV_FIRST_SLOT + NODE_METHOD_MAX_PARAMETERS as u16 - 1),
         Lir::StoreSlot(TEMP_SLOT),
         Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
-        Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 4 },
-        Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 5 },
-        Lir::CallImport { module: String::new(), field: "napi_get_cb_info".to_string() },
+    ];
+    // `napi_get_cb_info` 的第 5、6 个实参是 `this` 与 `data`，恒为 `NULL`。
+    if os == NativeProductOs::Windows {
+        instructions.push(Lir::ZeroStackArg(0));
+        instructions.push(Lir::ZeroStackArg(1));
+    }
+    else {
+        instructions.push(Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 4 });
+        instructions.push(Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 5 });
+    }
+    instructions.extend([
+        Lir::CallImport { module: dll.to_string(), field: "napi_get_cb_info".to_string() },
         // `napi_get_cb_info` 返回 0 才是成功。
         Lir::JumpIfZero(CALLBACK_OK_LABEL),
         Lir::Jump(FAIL_LABEL),
@@ -1413,7 +1517,7 @@ fn node_method_wrapper(method: &ExtensionMethod, error_message_offset: u32) -> N
         Lir::LoadSlotToRcx(TEMP_SLOT),
         Lir::Eq,
         Lir::JumpIfZero(FAIL_LABEL),
-    ];
+    ]);
     for index in 0..parameters {
         // `napi_get_value_int64(env, argv[index], &out)`。
         instructions.extend([
@@ -1422,7 +1526,7 @@ fn node_method_wrapper(method: &ExtensionMethod, error_message_offset: u32) -> N
             Lir::LoadSlotAddress(out_slot(index)),
             Lir::StoreSlot(TEMP_SLOT),
             Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-            Lir::CallImport { module: String::new(), field: "napi_get_value_int64".to_string() },
+            Lir::CallImport { module: dll.to_string(), field: "napi_get_value_int64".to_string() },
             Lir::JumpIfZero(continue_label(index)),
             Lir::Jump(FAIL_LABEL),
             Lir::Label(continue_label(index)),
@@ -1440,7 +1544,7 @@ fn node_method_wrapper(method: &ExtensionMethod, error_message_offset: u32) -> N
         Lir::LoadSlotAddress(RESULT_SLOT),
         Lir::StoreSlot(TEMP_SLOT),
         Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-        Lir::CallImport { module: String::new(), field: "napi_create_int64".to_string() },
+        Lir::CallImport { module: dll.to_string(), field: "napi_create_int64".to_string() },
         Lir::LoadSlot(RESULT_SLOT),
         Lir::Return,
         Lir::Label(FAIL_LABEL),
@@ -1450,7 +1554,7 @@ fn node_method_wrapper(method: &ExtensionMethod, error_message_offset: u32) -> N
         Lir::LoadDataAddress(error_message_offset),
         Lir::StoreSlot(TEMP_SLOT),
         Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-        Lir::CallImport { module: String::new(), field: "napi_throw_type_error".to_string() },
+        Lir::CallImport { module: dll.to_string(), field: "napi_throw_type_error".to_string() },
         Lir::LoadI64(0),
         Lir::Return,
     ]);
@@ -1464,7 +1568,7 @@ fn node_method_wrapper(method: &ExtensionMethod, error_message_offset: u32) -> N
 
 /// 以导出函数 ABI 发射 `PE` DLL（宿主按 Win64 调用约定调用残差函数）。
 pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductTarget::Windows)?;
+    let image = lower_native_residual_to_program(module, NativeProductTarget::Library(NativeProductOs::Windows))?;
     PeCompiler.compile_library(&image).map_err(|error| error.to_string())
 }
 
@@ -1473,28 +1577,46 @@ pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, 
 /// 与 `PE` DLL 对称：残差函数按名导出，未知输入走 SysV64 整数形参；含 `print`
 /// 的模块用隐藏的首个整数形参作为 fd，调用 `write(2)`。
 pub fn emit_native_elf_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductTarget::Linux)?;
+    let image = lower_native_residual_to_program(module, NativeProductTarget::Library(NativeProductOs::Linux))?;
     super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
 }
 
-/// 发射 Node-API `.node` 扩展（x86-64 `ELF` 共享库 + `napi_register_module_v1`）。
+/// 发射 Node-API 扩展（`.node` / `.dll`）。
 ///
 /// 宿主 `require()` 时由 Node 的 Node-API 装载器调用注册函数；`main` 的整数值
-/// 通过 `napi_create_int32` 包成 JS number 作为 `module.exports`。`print` 写 stdout。
-pub fn emit_native_node_addon(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductTarget::Node)?;
-    super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
+/// 通过 `napi_create_int64` 写成 `exports.value`，残差函数注册为同名回调。
+/// Linux 产物是 `ET_DYN`，Windows 产物是 `PE32+` DLL（`.data` + 基址重定位）。
+pub fn emit_native_node_addon(module: &NativeResidualModule, os: NativeProductOs) -> Result<Vec<u8>, String> {
+    let image = lower_native_residual_to_program(module, NativeProductTarget::extension(os, NativeHostModule::Node))?;
+    compile_extension_container(os, &image)
 }
 
-/// 发射 CPython 扩展模块（x86-64 `ELF` 共享库 + `PyInit_<module>`）。
+/// 发射 CPython 扩展模块（Linux `.so` / Windows `.pyd`）。
 ///
-/// 宿主 `import` 时由 CPython 的动态装载器调用 `PyInit_<module>`；入口用
-/// `PyModule_Create2` 建立单阶段模块（`PyModuleDef` 位于镜像 `.data`，模块名指针
-/// 由 `R_X86_64_RELATIVE` 重定位解析），把残差 `main` 的整数值以常量 `value`
-/// 暴露，并返回模块对象。`print` 写 stdout。
-pub fn emit_native_python_extension(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductTarget::Python)?;
-    super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
+/// 入口为 `PyInit_<module>`：用 `PyModule_Create2` 建立单阶段模块（`PyModuleDef`
+/// 位于镜像 `.data`），把 `main` 的整数值以常量 `value` 暴露，并把残差函数注册成
+/// 模块方法。Windows 的导入 DLL 名（例如 `python312.dll`）必须由调用方提供——
+/// 版本相关的名字不能由编译器猜。
+pub fn emit_native_python_extension(
+    module: &NativeResidualModule,
+    os: NativeProductOs,
+    python_library: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    let target = NativeProductTarget::Extension {
+        os,
+        module: NativeHostModule::Python,
+        library: python_library.map(str::to_string),
+    };
+    let image = lower_native_residual_to_program(module, target)?;
+    compile_extension_container(os, &image)
+}
+
+/// 按产物 OS 选择容器：Windows 写 `PE32+` DLL，Linux 写 `ET_DYN`。
+fn compile_extension_container(os: NativeProductOs, image: &NativeTextProgramImage) -> Result<Vec<u8>, String> {
+    match os {
+        NativeProductOs::Windows => PeCompiler.compile_library(image).map_err(|error| error.to_string()),
+        NativeProductOs::Linux => super::ElfCompiler.compile_library(image).map_err(|error| error.to_string()),
+    }
 }
 
 struct ResidualFunctionLowering<'a> {
@@ -1592,11 +1714,11 @@ impl<'a> ResidualFunctionLowering<'a> {
         self.write_bytes(pointer, length)
     }
 
-    /// 用 `(pointer, length)` 两个帧槽按目标 OS 的写入原语写 effect。
+    /// 用 `(pointer, length)` 两个帧槽按产物 OS 的写入原语写 effect。
     ///
-    /// 两个平台的通道都是隐藏的首个整数形参（Windows 文件句柄 / Linux fd）；
-    /// 差别只在写入编码：Windows 走 `kernel32!WriteFile`（IAT + shadow space），
-    /// Linux 走 `write(2)` 系统调用（rdi/rsi/rdx）。
+    /// Windows 走 `kernel32!WriteFile`（IAT + shadow space）；普通库的句柄来自宿主
+    /// 形参，扩展模块由 [`Self::effect_channel`] 经 `GetStdHandle` 取得。Linux 走
+    /// `write(2)` 系统调用（rdi/rsi/rdx）。
     fn write_bytes(&mut self, pointer: u16, length: u16) -> Result<(), String> {
         let handle = self.effect_sink.ok_or_else(|| {
             format!("residual function `{}` writes effects without an effect sink", self.function.name)
@@ -1604,22 +1726,50 @@ impl<'a> ResidualFunctionLowering<'a> {
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: handle, index: 0 });
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: pointer, index: 1 });
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: length, index: 2 });
-        match self.target {
-            NativeProductTarget::Windows => {
-                self.instructions.push(NativeTextInstruction::LoadI64(0));
-                let written_out = self.alloc_slot();
-                self.instructions.push(NativeTextInstruction::StoreSlot(written_out));
-                self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: written_out, index: 3 });
-                self.instructions.push(NativeTextInstruction::ZeroStackArg(0));
-                self.instructions.push(NativeTextInstruction::CallImport {
-                    module: "kernel32".to_string(),
-                    field: "WriteFile".to_string(),
-                });
-            }
-            NativeProductTarget::Linux | NativeProductTarget::Node | NativeProductTarget::Python => {
-                self.instructions.push(NativeTextInstruction::SyscallWrite);
-            }
+        if self.target.os() == NativeProductOs::Windows {
+            self.instructions.push(NativeTextInstruction::LoadI64(0));
+            let written_out = self.alloc_slot();
+            self.instructions.push(NativeTextInstruction::StoreSlot(written_out));
+            self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: written_out, index: 3 });
+            self.instructions.push(NativeTextInstruction::ZeroStackArg(0));
+            self.instructions.push(NativeTextInstruction::CallImport {
+                module: "kernel32".to_string(),
+                field: "WriteFile".to_string(),
+            });
         }
+        else {
+            self.instructions.push(NativeTextInstruction::SyscallWrite);
+        }
+        Ok(())
+    }
+
+    /// effect 通道的初始值：扩展模块固定 stdout，普通库由宿主形参传入。
+    ///
+    /// Windows 的 stdout 不是 fd 1：扩展模块经 `kernel32!GetStdHandle(-11)` 取句柄；
+    /// Linux 直接用 fd 1。
+    fn effect_channel(&mut self) -> Result<(), String> {
+        let slot = self.alloc_slot();
+        if self.target.sink_from_parameter() {
+            self.instructions.push(NativeTextInstruction::LoadParam { index: 0, slot });
+            self.effect_sink = Some(slot);
+            return Ok(());
+        }
+        if self.target.os() == NativeProductOs::Windows {
+            // `STD_OUTPUT_HANDLE = -11`。
+            self.instructions.push(NativeTextInstruction::LoadI64(-11));
+            let constant = self.alloc_slot();
+            self.instructions.push(NativeTextInstruction::StoreSlot(constant));
+            self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: constant, index: 0 });
+            self.instructions.push(NativeTextInstruction::CallImport {
+                module: "kernel32".to_string(),
+                field: "GetStdHandle".to_string(),
+            });
+        }
+        else {
+            self.instructions.push(NativeTextInstruction::LoadI64(1));
+        }
+        self.instructions.push(NativeTextInstruction::StoreSlot(slot));
+        self.effect_sink = Some(slot);
         Ok(())
     }
 
@@ -1743,7 +1893,7 @@ fn lower_residual_function(
     function: &NativeResidualFunction,
     with_effect_sink: bool,
     sink_from_parameter: bool,
-    target: NativeProductTarget,
+    target: &NativeProductTarget,
 ) -> Result<(NativeTextProgramFunction, Option<ProductValueKind>), String> {
     // 该平台寄存器实参上限，减去隐藏 effect 通道占用（仅当通道来自宿主形参）。
     let total = target.abi().integer_argument_limit();
@@ -1757,29 +1907,17 @@ fn lower_residual_function(
             if sink_from_parameter { " alongside the effect sink" } else { "" }
         ));
     }
-    let mut lowering = ResidualFunctionLowering::new(function, target);
+    let mut lowering = ResidualFunctionLowering::new(function, target.clone());
     lowering.sink_from_parameter = sink_from_parameter;
     let mut return_kind: Option<ProductValueKind> = None;
-    let parameter_shift = if sink_from_parameter {
-        let sink = lowering.alloc_slot();
-        lowering.instructions.push(NativeTextInstruction::LoadParam { index: 0, slot: sink });
-        lowering.effect_sink = Some(sink);
-        1
+    if with_effect_sink {
+        // 普通库从宿主形参取通道（占一个实参位）；扩展模块自己取 stdout。
+        lowering.effect_channel()?;
     }
-    else if with_effect_sink {
-        // Node 扩展：effect 通道固定 stdout，不占宿主形参。
-        let sink = lowering.alloc_slot();
-        lowering.instructions.push(NativeTextInstruction::LoadI64(1));
-        lowering.instructions.push(NativeTextInstruction::StoreSlot(sink));
-        lowering.effect_sink = Some(sink);
-        0
-    }
-    else {
-        0
-    };
+    let parameter_shift = u8::from(sink_from_parameter && with_effect_sink);
     for (index, parameter) in function.parameters.iter().enumerate() {
         let slot = lowering.alloc_slot();
-        lowering.instructions.push(NativeTextInstruction::LoadParam { index: (index + parameter_shift) as u8, slot });
+        lowering.instructions.push(NativeTextInstruction::LoadParam { index: index as u8 + parameter_shift, slot });
         lowering.locals.insert(parameter.clone(), (slot, ProductValueKind::Int));
     }
 
@@ -2205,7 +2343,7 @@ mod tests {
         use nyar_emitter::nyar_backend_native::{NativeExecutableKind, classify_native_image};
 
         let module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
-        let bytes = emit_native_node_addon(&module).expect("emit node addon");
+        let bytes = emit_native_node_addon(&module, NativeProductOs::Linux).expect("emit node addon");
         let facts = classify_native_image(&bytes).expect("addon must be a parseable image");
         assert_eq!(facts.kind, NativeExecutableKind::ElfShared, "Node 扩展是 ET_DYN");
         let haystack = String::from_utf8_lossy(&bytes);
@@ -2229,13 +2367,13 @@ mod tests {
                 NativeResidualOp::Ret,
             ],
         });
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::Node).expect("lower node methods");
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Node)).expect("lower node methods");
         assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_node_wrap_add"), "必须生成 Node 回调包装体");
         for symbol in ["napi_create_function", "napi_get_cb_info", "napi_get_value_int64", "napi_throw_type_error"] {
             assert!(image.elf_imports.iter().any(|import| import == symbol), "缺少方法原语导入 `{symbol}`");
         }
         assert!(image.data.windows(4).any(|window| window == b"add\0"), "方法名必须进入数据段");
-        let bytes = emit_native_node_addon(&module).expect("emit node methods addon");
+        let bytes = emit_native_node_addon(&module, NativeProductOs::Linux).expect("emit node methods addon");
         assert!(String::from_utf8_lossy(&bytes).contains("__nyar_node_wrap_add"));
     }
 
@@ -2248,7 +2386,7 @@ mod tests {
             NativeResidualOp::PushI64(0),
             NativeResidualOp::Ret,
         ]);
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::Linux).expect("lower linux print residual");
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::Library(NativeProductOs::Linux)).expect("lower linux print residual");
         assert!(image.imports.is_empty(), "Linux 产品不得声明 PE 导入");
         assert!(image.idata.is_empty(), "Linux 产品不得生成 `.idata`");
         assert!(
@@ -2263,14 +2401,14 @@ mod tests {
     fn python_extension_exposes_pyinit_and_module_def() {
         let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
         module.name = "demo".into();
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::Python).expect("lower python extension");
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python)).expect("lower python extension");
         assert!(image.symbols.iter().any(|(name, _)| name == "PyInit_demo"), "必须导出 `PyInit_demo`");
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyModule_Create2"), "必须导入 `PyModule_Create2`");
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyModule_AddIntConstant"), "必须导入 `PyModule_AddIntConstant`");
         assert!(!image.data.is_empty(), "`PyModuleDef` 必须位于镜像数据段");
         assert_eq!(image.data_relocations.len(), 1, "模块名指针必须走自相对重定位");
         assert!(image.data_references.iter().any(|(_, data_offset)| *data_offset == 0), "入口必须取 `PyModuleDef` 地址");
-        let bytes = emit_native_python_extension(&module).expect("emit python extension");
+        let bytes = emit_native_python_extension(&module, NativeProductOs::Linux, None).expect("emit python extension");
         let haystack = String::from_utf8_lossy(&bytes);
         assert!(haystack.contains("PyInit_demo"));
         assert!(haystack.contains("PyModule_Create2"));
@@ -2280,7 +2418,7 @@ mod tests {
     fn python_extension_rejects_invalid_module_names() {
         let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
         module.name = "not-an-identifier".into();
-        let error = lower_native_residual_to_program(&module, NativeProductTarget::Python).expect_err("非法模块名必须失败闭合");
+        let error = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python)).expect_err("非法模块名必须失败闭合");
         assert!(error.contains("C 标识符"), "unexpected error: {error}");
     }
 
@@ -2305,20 +2443,20 @@ mod tests {
                 NativeResidualOp::Ret,
             ],
         });
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::Python).expect("lower python methods");
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python)).expect("lower python methods");
         assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_py_wrap_add"), "必须生成方法包装体");
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyArg_ParseTuple"), "方法实参必须经宿主解析");
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyLong_FromLong"), "返回值必须包成 Python int");
         // 方法名与格式串必须在数据段里以 NUL 结尾。
         assert!(image.data.windows(4).any(|window| window == b"add\0"), "方法名必须进入数据段");
-        assert!(image.data.windows(6).any(|window| window == b"ll:add"), "格式串必须带方法名");
+        assert!(image.data.windows(6).any(|window| window == b"nn:add"), "格式串必须带方法名");
         // 编码器必须把命名函数解析成 `.text` 偏移；容器不应看到 `Function`。
         assert!(
             image.data_relocations.iter().all(|(_, target)| matches!(target, NativeDataTarget::Text(_) | NativeDataTarget::Data(_))),
             "命名函数重定位必须在编码阶段解析为节内偏移"
         );
         assert_eq!(image.data_relocations.len(), 4, "模块名、m_methods、方法名与 ml_meth 各一条重定位");
-        let bytes = emit_native_python_extension(&module).expect("emit python methods extension");
+        let bytes = emit_native_python_extension(&module, NativeProductOs::Linux, None).expect("emit python methods extension");
         let haystack = String::from_utf8_lossy(&bytes);
         assert!(haystack.contains("__nyar_py_wrap_add"));
         assert!(haystack.contains("PyArg_ParseTuple"));
@@ -2331,7 +2469,7 @@ mod tests {
             parameters: vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()],
             ops: vec![NativeResidualOp::Load("a".into()), NativeResidualOp::Ret],
         });
-        let error = lower_native_residual_to_program(&module, NativeProductTarget::Python).expect_err("超出行参窗口必须失败闭合");
+        let error = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python)).expect_err("超出行参窗口必须失败闭合");
         assert!(error.contains("PyArg_ParseTuple"), "unexpected error: {error}");
         assert!(error.contains("many"), "错误必须指名方法: {error}");
     }
@@ -2343,7 +2481,35 @@ mod tests {
             parameters: Vec::new(),
             ops: vec![NativeResidualOp::PushString("x".into()), NativeResidualOp::Ret],
         });
-        let error = lower_native_residual_to_program(&module, NativeProductTarget::Python).expect_err("字符串结果必须失败闭合");
+        let error = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python)).expect_err("字符串结果必须失败闭合");
         assert!(error.contains("label"), "unexpected error: {error}");
+    }
+
+    /// Windows 的 `PyArg_ParseTuple` 只剩 rdx/r8 两个寄存器给 out-指针，因此
+    /// CPython 方法在 Win64 上最多 2 个整数形参（Linux 为 4）。
+    #[test]
+    fn windows_python_method_window_is_two_parameters() {
+        let module = residual_with_method(NativeResidualFunction {
+            name: "three".into(),
+            parameters: vec!["a".into(), "b".into(), "c".into()],
+            ops: vec![NativeResidualOp::Load("a".into()), NativeResidualOp::Ret],
+        });
+        let windows = NativeProductTarget::Extension {
+            os: NativeProductOs::Windows,
+            module: NativeHostModule::Python,
+            library: Some("python312.dll".into()),
+        };
+        let error = lower_native_residual_to_program(&module, windows).expect_err("Win64 行参窗口更窄");
+        assert!(error.contains("three"), "unexpected error: {error}");
+        assert!(error.contains("上限 2"), "错误必须说明该 OS 的窗口: {error}");
+    }
+
+    #[test]
+    fn windows_python_extension_requires_the_host_library() {
+        let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
+        module.name = "demo".into();
+        let target = NativeProductTarget::extension(NativeProductOs::Windows, NativeHostModule::Python);
+        let error = lower_native_residual_to_program(&module, target).expect_err("缺 DLL 名必须失败闭合");
+        assert!(error.contains("python312.dll"), "unexpected error: {error}");
     }
 }

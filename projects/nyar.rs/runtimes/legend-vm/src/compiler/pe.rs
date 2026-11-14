@@ -6,9 +6,11 @@
 
 use std::{fs, path::Path};
 
-use acorn_pe::pe::{NativeExport, NativePeImage, NativePeWriter};
+use acorn_pe::pe::{
+    NativeDataRelocation, NativeDataSection, NativeDataTarget, NativeExport, NativePeImage, NativePeWriter,
+};
 use miette::{IntoDiagnostic, Result, WrapErr};
-use nyar_emitter::nyar_backend_native::NativeTextProgramImage;
+use nyar_emitter::nyar_backend_native::{NativeDataTarget as ImageDataTarget, NativeTextProgramImage};
 
 /// `ret`，使入口以 `rax` 作为进程退出码返回。
 const RET: u8 = 0xC3;
@@ -65,16 +67,34 @@ impl PeCompiler {
     /// `.idata` 的 IAT 槽解析。
     pub fn compile_library(&self, image: &NativeTextProgramImage) -> Result<Vec<u8>> {
         let exports = image.symbols.iter().map(|(name, offset)| NativeExport { name: name.clone(), offset: *offset }).collect();
-        NativePeWriter::write_executable(&NativePeImage {
-            text: image.text.clone(),
-            rdata: Vec::new(),
-            idata: image.idata.clone(),
-            imports: image.imports.clone(),
-            exports,
-            text_rel32_fixups: image.text_rel32_fixups.clone(),
-            is_dll: true,
-            entry_point: 0,
-        })
+        let relocations: Vec<NativeDataRelocation> = image
+            .data_relocations
+            .iter()
+            .map(|(offset, target)| {
+                let target = match target {
+                    ImageDataTarget::Text(offset) => NativeDataTarget::Text(*offset),
+                    ImageDataTarget::Data(offset) => NativeDataTarget::Data(*offset),
+                    ImageDataTarget::Function(name) => {
+                        return Err(miette::miette!("数据段重定位仍引用未解析的函数 `{name}`：编码器必须先冻结布局"));
+                    }
+                };
+                Ok(NativeDataRelocation { offset: *offset, target })
+            })
+            .collect::<Result<_>>()?;
+        let data = NativeDataSection { data: image.data.clone(), relocations, text_fixups: image.data_references.clone() };
+        NativePeWriter::write_executable_with_data(
+            &NativePeImage {
+                text: image.text.clone(),
+                rdata: Vec::new(),
+                idata: image.idata.clone(),
+                imports: image.imports.clone(),
+                exports,
+                text_rel32_fixups: image.text_rel32_fixups.clone(),
+                is_dll: true,
+                entry_point: 0,
+            },
+            &data,
+        )
         .map_err(|error| miette::miette!("PE 共享库映像编码失败：{error}"))
     }
 }

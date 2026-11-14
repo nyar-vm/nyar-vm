@@ -807,12 +807,12 @@ mod exported_elf_abi {
 /// Node-API `.node` lane：Node 的 Node-API 装载器 `require()` 产物并取回残差值。
 #[cfg(target_os = "linux")]
 mod node_addon_abi {
-    use legend_vm::compiler::emit_native_node_addon;
+    use legend_vm::compiler::{NativeProductOs, emit_native_node_addon};
 
     fn addon(source: &str, tag: &str) -> std::path::PathBuf {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", source, "lua_node").expect("specialize");
-        let bytes = emit_native_node_addon(&residual).expect("emit node addon");
+        let bytes = emit_native_node_addon(&residual, NativeProductOs::Linux).expect("emit node addon");
         let path = std::env::temp_dir().join(format!("legend-addon-{tag}-{}.node", std::process::id()));
         std::fs::write(&path, bytes).expect("write addon");
         path
@@ -873,7 +873,7 @@ mod node_addon_abi {
     fn node_addon_rejects_non_integer_results() {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "return \"text\"\n", "lua_node").expect("specialize");
-        let error = emit_native_node_addon(&residual).expect_err("字符串结果必须失败闭合");
+        let error = emit_native_node_addon(&residual, NativeProductOs::Linux).expect_err("字符串结果必须失败闭合");
         assert!(error.contains("Node"), "unexpected error: {error}");
     }
 }
@@ -881,7 +881,7 @@ mod node_addon_abi {
 /// CPython 扩展模块 lane：CPython 的导入器 `import` 产物并读取模块常量。
 #[cfg(target_os = "linux")]
 mod python_extension_abi {
-    use legend_vm::compiler::emit_native_python_extension;
+    use legend_vm::compiler::{NativeProductOs, emit_native_python_extension};
 
     const MODULE_NAME: &str = "demo";
 
@@ -889,7 +889,7 @@ mod python_extension_abi {
     fn extension_dir(source: &str, tag: &str) -> std::path::PathBuf {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
-        let bytes = emit_native_python_extension(&residual).expect("emit python extension");
+        let bytes = emit_native_python_extension(&residual, NativeProductOs::Linux, None).expect("emit python extension");
         let dir = std::env::temp_dir().join(format!("legend-python-{tag}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("create module dir");
         std::fs::write(dir.join(format!("{MODULE_NAME}.so")), bytes).expect("write extension");
@@ -951,7 +951,90 @@ mod python_extension_abi {
     fn python_extension_rejects_non_integer_results() {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "return \"text\"\n", MODULE_NAME).expect("specialize");
-        let error = emit_native_python_extension(&residual).expect_err("字符串结果必须失败闭合");
+        let error = emit_native_python_extension(&residual, NativeProductOs::Linux, None).expect_err("字符串结果必须失败闭合");
         assert!(error.contains("CPython"), "unexpected error: {error}");
+    }
+}
+
+/// Windows 宿主扩展 lane：`.pyd` / `.node` 都是带 `.data` 与基址重定位的 `PE32+` DLL。
+#[cfg(windows)]
+mod windows_extension_abi {
+    use legend_vm::compiler::{NativeProductOs, emit_native_node_addon, emit_native_python_extension};
+
+    const MODULE_NAME: &str = "demo";
+
+    fn extension_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("nyar-win-ext-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create module dir");
+        dir
+    }
+
+    /// 宿主 CPython 的导入 DLL 名（`python312.dll` 形态），版本由解释器自己给出。
+    fn python_library() -> String {
+        let output = std::process::Command::new("python")
+            .arg("-c")
+            .arg("import sys; print('python%d%d.dll' % sys.version_info[:2])")
+            .output()
+            .expect("spawn python");
+        assert!(output.status.success(), "python failed: {}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn run(command: &str, args: &[&str]) -> String {
+        let output = std::process::Command::new(command).args(args).output().unwrap_or_else(|error| panic!("spawn {command}: {error}"));
+        assert!(
+            output.status.success(),
+            "{command} failed: status={:?} stderr={}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n").trim_end().to_string()
+    }
+
+    fn run_python(dir: &std::path::Path, body: &str) -> String {
+        let script = format!("import sys\nsys.path.insert(0, r'{}')\nimport {MODULE_NAME}\n{body}", dir.display());
+        run("python", &["-c", &script])
+    }
+
+    #[test]
+    fn windows_python_extension_imports_and_marshals_methods() {
+        let dir = extension_dir("value");
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual =
+            runner.specialize_native("lua", "function add(a, b)\n  return a + b\nend\nreturn 42\n", MODULE_NAME).expect("specialize");
+        let library = python_library();
+        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
+        assert_eq!(run_python(&dir, "print(demo.value)\nprint(demo.add(2, 3))"), "42\n5", "`.pyd` 必须能被真实 CPython 导入");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn windows_python_extension_prints_through_the_std_handle() {
+        let dir = extension_dir("print");
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", "print(\"hello\")\nreturn 7\n", MODULE_NAME).expect("specialize");
+        let library = python_library();
+        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
+        assert_eq!(run_python(&dir, "print(demo.value)"), "hello\n7", "Windows effect 必须写入真实 stdout");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn windows_node_addon_exports_value_and_methods() {
+        let dir = extension_dir("node");
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual =
+            runner.specialize_native("lua", "function add(a, b)\n  return a + b\nend\nreturn 42\n", MODULE_NAME).expect("specialize");
+        let bytes = emit_native_node_addon(&residual, NativeProductOs::Windows).expect("emit node dll");
+        let path = dir.join("addon.node");
+        std::fs::write(&path, bytes).expect("write .node");
+        let script = format!(
+            "const m = require(String.raw`{}`); console.log(m.value); console.log(m.add(2, 3));",
+            path.display()
+        );
+        assert_eq!(run("node", &["-e", &script]), "42\n5", "`.node` 必须能被真实 Node 加载");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
