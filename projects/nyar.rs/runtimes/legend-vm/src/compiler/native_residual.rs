@@ -841,32 +841,24 @@ enum ProductValueKind {
 ///
 /// 产品载体：整数、布尔与**静态字符串描述符**（镜像内只读 `{rel_ptr,len}` + UTF-8，
 /// 由宿主读取、永不释放）。含 `print` 的模块额外声明一个隐藏的首个整数形参作为
-/// effect 通道（宿主提供的可写句柄），`print` 经 `kernel32!WriteFile` 按 guest
-/// 顺序写字节；字符串走静态描述符，整数走十进制格式化（负数带 `-`），布尔写
-/// `true`/`false`，`nil` 写空串。对象、运行时解析调用、除法、字符串比较/拼接
-/// 与字符串作为实参都显式失败闭合，不在产品路径里静默吞掉语义。
+/// effect 通道（宿主提供的可写句柄，作为**每个**残差函数的首个隐藏整数形参），
+/// `print` 经 `kernel32!WriteFile` 按 guest 顺序写字节；字符串走静态描述符，
+/// 整数走十进制格式化（负数带 `-`），布尔写 `true`/`false`，`nil` 写空串。
+/// 对象、运行时解析调用、除法、字符串比较/拼接与字符串作为实参都显式失败
+/// 闭合，不在产品路径里静默吞掉语义。
 pub fn lower_native_residual_to_program(module: &NativeResidualModule) -> Result<NativeTextProgramImage, String> {
     if !module.is_native_bound() {
         return Err("residual is not native-bound".into());
     }
-    // 产品级 effect：`print` 只允许出现在 `main`，并经宿主导入写字节。
+    // 产品级 effect：`print` 可出现在任意残差函数；含 effect 的模块给每个函数
+    // 增加同一个隐藏的首个整数形参（宿主 effect 通道），调用时逐层传递。
     let has_print = module.functions.iter().any(|function| function.ops.iter().any(|op| matches!(op, NativeResidualOp::Print(_))));
-    if has_print {
-        if let Some(function) = module.functions.iter().find(|function| {
-            function.name != "main" && function.ops.iter().any(|op| matches!(op, NativeResidualOp::Print(_)))
-        }) {
-            return Err(format!(
-                "residual function `{}` prints; effects are only implemented for `main` at the product boundary",
-                function.name
-            ));
-        }
-    }
     let imports: Vec<(String, String)> =
         if has_print { vec![("kernel32".to_string(), "WriteFile".to_string())] } else { Vec::new() };
 
     let mut lowered = Vec::with_capacity(module.functions.len());
     for function in &module.functions {
-        lowered.push(lower_residual_function(function, has_print && function.name == "main")?);
+        lowered.push(lower_residual_function(function, has_print)?);
     }
     // 调用结果当前按整数载体传播；字符串返回值的残差函数不能作为调用目标，
     // 否则调用方会按错误载体继续使用 `rax`。
@@ -1305,9 +1297,11 @@ fn lower_residual_function(
                 lowering.instructions.push(NativeTextInstruction::Label(skip));
             }
             NativeResidualOp::Call { name, argc } => {
-                if *argc > 4 {
+                let sink = lowering.effect_sink;
+                let available = if sink.is_some() { 3 } else { 4 };
+                if *argc > available {
                     return Err(format!(
-                        "residual function `{}` calls `{name}` with {argc} arguments; the Win64 text ABI supports at most 4",
+                        "residual function `{}` calls `{name}` with {argc} arguments; the Win64 text ABI supports at most {available}",
                         function.name
                     ));
                 }
@@ -1315,14 +1309,19 @@ fn lower_residual_function(
                 for _ in 0..*argc {
                     arguments.push(lowering.pop()?);
                 }
+                arguments.reverse();
                 if arguments.iter().any(|(_, kind)| matches!(kind, ProductValueKind::Str(_))) {
                     return Err(format!(
                         "residual function `{}` passes a string descriptor to `{name}`; string-valued calls are not implemented at the product boundary",
                         function.name
                     ));
                 }
-                for (index, (slot, _)) in arguments.iter().rev().enumerate() {
-                    lowering.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: *slot, index: index as u8 });
+                if let Some(sink) = sink {
+                    lowering.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: sink, index: 0 });
+                }
+                let shift = u8::from(sink.is_some());
+                for (index, (slot, _)) in arguments.iter().enumerate() {
+                    lowering.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: *slot, index: index as u8 + shift });
                 }
                 lowering.instructions.push(NativeTextInstruction::Call(name.clone()));
                 // 导出函数 ABI 以整数返回；布尔按 0/1 载体。
