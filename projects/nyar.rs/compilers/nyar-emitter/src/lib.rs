@@ -365,7 +365,17 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::StaticOnly,
         }),
-        TargetBackendFamily::Native => None,
+        TargetBackendFamily::Native => Some(BundledBackendCapabilityDescriptor {
+            backend_family,
+            backend_name: "native",
+            interpreter: "native.image",
+            lane: TargetLane::Native,
+            input_kind: Some(BackendInputKind::PeImage),
+            target_family: TargetFamily::Native,
+            supported_host_boundaries: NATIVE_HOST_BOUNDARIES,
+            reference_management: ReferenceManagement::PerceusRc,
+            backend_route: BackendRoute::StaticOnly,
+        }),
         TargetBackendFamily::Wasm => Some(BundledBackendCapabilityDescriptor {
             backend_family,
             backend_name: "wasm-binary",

@@ -31,8 +31,12 @@ fn clr_family_advertises_capability_and_driver_compiler() {
 }
 
 #[test]
-fn native_family_has_neither_capability_nor_lowering() {
-    assert!(bundled_backend_capability_descriptor(TargetBackendFamily::Native).is_none());
+fn native_family_exposes_capability_and_requires_adapter_prepared_input() {
+    let descriptor = bundled_backend_capability_descriptor(TargetBackendFamily::Native).expect("native lane must expose a capability descriptor");
+    assert_eq!(descriptor.backend_name, "native");
+    assert_eq!(descriptor.lane, nyar::TargetLane::Native);
+    // 原生镜像输入必须由语言 × 目标适配器在持有已解析目标四元组时准备；
+    // 通用片段路径没有 target 事实，拒绝凭空猜容器或补造产物。
     let result = lower_fragment_to_driver_input(
         &FragmentSubmission::default(),
         TargetBackendFamily::Native,
@@ -41,7 +45,7 @@ fn native_family_has_neither_capability_nor_lowering() {
         "",
         WasmPackageKind::Binary,
     );
-    let error = result.expect_err("native target must not have a formal lowering");
+    let error = result.expect_err("generic native lowering must refuse without a resolved target");
     assert!(error.to_string().contains("拒绝切换目标或补造产物"), "{error}");
 }
 

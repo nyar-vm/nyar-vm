@@ -48,6 +48,7 @@ pub fn plan_artifacts_from_compiled_program(
 struct ValkyrieTargetAdapter {
     partition: ArtifactPartition,
     plan: Arc<TargetExecutionPlan>,
+    target: CanonicalTarget,
 }
 
 impl AdaptedFragmentInput for ValkyrieTargetAdapter {
@@ -57,6 +58,23 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
 
     fn prepare(&self, request: &TargetInputRequest<'_>) -> nyar_emitter::Result<LoweredBackendInput> {
         let submission = FragmentSubmission::from_backend_plan((*self.plan).clone());
+        if request.backend_family == nyar::TargetBackendFamily::Native {
+            // 原生镜像由 native lane 的 LIR/编码服务产出；适配器只提交目标输入，
+            // 不自行拼接机器码或 PE/ELF 容器。
+            let lowered = nyar_emitter::testing::lower_fragment_to_native_image(&submission, self.target.clone())?;
+            let entry_symbol = self
+                .plan
+                .entry_operation()
+                .and_then(|instance| self.plan.abi_name_for_instance(instance))
+                .map(|name| name.to_string())
+                .unwrap_or_else(|| "main".to_string());
+            return Ok(LoweredBackendInput::native(nyar_emitter::nyar_backend_native::NativeBinaryBackendInput {
+                executable: lowered.executable,
+                output_dir: request.output_dir.to_path_buf(),
+                entry_symbol,
+                artifact_extension: None,
+            }));
+        }
         LoweredBackendInput::from_fragment_submission(
             &submission,
             request.backend_family,
@@ -116,6 +134,6 @@ pub fn assemble_fragment(
     Ok(AssembledFragment {
         partition: partition.clone(),
         theory_bundle,
-        input: Box::new(ValkyrieTargetAdapter { partition: partition.clone(), plan: Arc::new(backend_plan) }),
+        input: Box::new(ValkyrieTargetAdapter { partition: partition.clone(), plan: Arc::new(backend_plan), target: plan.target.clone() }),
     })
 }

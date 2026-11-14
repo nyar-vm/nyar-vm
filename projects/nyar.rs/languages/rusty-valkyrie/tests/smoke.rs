@@ -50,7 +50,10 @@ fn host_command(invocation: &str, artifact: &std::path::Path) -> std::process::C
 }
 
 /// 源码 → 适配器 → 目标产物 → 宿主执行的统一最小门。
-fn compile_and_run_on_host(target: &str, invocation: &str) {
+///
+/// `invocation` 为 `None` 时取该 lane 的第一条运行契约（原生镜像的入口就是
+/// 产物本身，没有外部解释器命令）。
+fn compile_and_run_on_host(target: &str, invocation: Option<&str>) {
     use nyar::ClrSuspendStrategy;
     use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
     use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
@@ -69,20 +72,31 @@ fn compile_and_run_on_host(target: &str, invocation: &str) {
         .unwrap_or_else(|error| panic!("`{target}` artifact must be produced through the adapter: {error}"));
     assert!(!report.driver.artifacts.artifacts.is_empty(), "`{target}` adapter path must emit at least one artifact");
 
-    let contract = report
-        .driver
-        .run_contracts
-        .iter()
-        .find(|contract| contract.invocation == invocation)
-        .unwrap_or_else(|| panic!("`{target}` must emit a `{invocation}` run contract, got {:?}", report.driver.run_contracts));
+    let contract = match invocation {
+        Some(invocation) => report
+            .driver
+            .run_contracts
+            .iter()
+            .find(|contract| contract.invocation == invocation)
+            .unwrap_or_else(|| panic!("`{target}` must emit a `{invocation}` run contract, got {:?}", report.driver.run_contracts)),
+        None => report
+            .driver
+            .run_contracts
+            .first()
+            .unwrap_or_else(|| panic!("`{target}` must emit a run contract")),
+    };
     // 运行契约的 `validate` 是该 lane 声明的宿主命令形状（`java -cp ... <launcher>`、
     // `dotnet exec <artifact>`）；测试按契约执行，不自行猜参数或入口名。
     let mut tokens = contract.validate.split_whitespace();
     let program = tokens.next().unwrap_or_else(|| panic!("`{target}` run contract has an empty validate command"));
-    let mut command = std::process::Command::new(program);
+    // 宿主工具（java/dotnet/node）按名字从 PATH 解析；原生镜像的入口是输出目录内
+    // 的产物本身，必须用绝对路径，不能依赖 PATH 或调用方 cwd。
+    let in_output_dir = dir.path().join(program);
+    let program_path = if in_output_dir.exists() { in_output_dir } else { std::path::PathBuf::from(program) };
+    let mut command = std::process::Command::new(&program_path);
     command.args(tokens);
     command.current_dir(dir.path());
-    let output = command.output().unwrap_or_else(|error| panic!("spawn `{program}`: {error}"));
+    let output = command.output().unwrap_or_else(|error| panic!("spawn `{}`: {error}", program_path.display()));
     assert!(
         output.status.success(),
         "`{target}` host run failed for `{}`: status={:?} stderr={}",
@@ -94,12 +108,17 @@ fn compile_and_run_on_host(target: &str, invocation: &str) {
 
 #[test]
 fn minimal_entry_runs_on_jvm() {
-    compile_and_run_on_host("jvm", "java");
+    compile_and_run_on_host("jvm", Some("java"));
 }
 
 #[test]
 fn minimal_entry_runs_on_clr() {
-    compile_and_run_on_host("clr", "dotnet");
+    compile_and_run_on_host("clr", Some("dotnet"));
+}
+
+#[test]
+fn minimal_entry_runs_on_native() {
+    compile_and_run_on_host("native", None);
 }
 
 #[test]
