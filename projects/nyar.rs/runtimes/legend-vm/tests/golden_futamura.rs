@@ -621,6 +621,19 @@ mod exported_elf_abi {
         fn dlopen(filename: *const i8, flag: i32) -> *mut core::ffi::c_void;
         fn dlsym(handle: *mut core::ffi::c_void, symbol: *const i8) -> *mut core::ffi::c_void;
         fn dlclose(handle: *mut core::ffi::c_void) -> i32;
+        fn dlerror() -> *const i8;
+    }
+
+    fn last_dl_error() -> String {
+        unsafe {
+            let message = dlerror();
+            if message.is_null() {
+                "no dlerror".to_string()
+            }
+            else {
+                std::ffi::CStr::from_ptr(message).to_string_lossy().into_owned()
+            }
+        }
     }
 
     struct Library {
@@ -642,7 +655,7 @@ mod exported_elf_abi {
         std::fs::write(&path, shared).expect("write residual .so");
         let name = CString::new(path.to_string_lossy().as_bytes()).expect("utf8 path");
         let module = unsafe { dlopen(name.as_ptr(), 2 /* RTLD_NOW */) };
-        assert!(!module.is_null(), "dlopen failed for {}", path.display());
+        assert!(!module.is_null(), "dlopen failed for {}: {} ({} bytes)", path.display(), last_dl_error(), shared.len());
         Library { module, path }
     }
 
