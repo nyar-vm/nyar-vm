@@ -90,6 +90,12 @@ pub enum NativeTextInstruction {
     JumpIfZero(u32),
     /// 调用同程序内命名函数（`rel32` 由程序编码器回填）。
     Call(String),
+    /// 把静态字符串的描述符地址装入 `rax`。
+    ///
+    /// 描述符与 UTF-8 字节由程序编码器内联在同一个 `.text` 里：
+    /// `{ i32 self_relative_ptr; u32 len }` 紧跟字节。宿主按
+    /// `descriptor + self_relative_ptr` 读取内容，所有权归镜像本身（只读、永不释放）。
+    LoadString(String),
 }
 
 /// 多函数文本程序中的一个函数。

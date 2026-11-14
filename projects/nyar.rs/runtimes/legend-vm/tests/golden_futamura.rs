@@ -471,13 +471,47 @@ mod exported_abi {
     }
 
     #[test]
+    fn exported_residual_returns_static_string_descriptors() {
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", "return \"hello\"\n", "lua_pe").expect("specialize");
+        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let library = load(&dll, "string");
+        let descriptor = call(library.module, "main", &[]);
+        assert_eq!(read_descriptor(descriptor), "hello");
+    }
+
+    #[test]
+    fn exported_residual_returns_string_from_branch() {
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual =
+            runner.specialize_native("lua", "if x > 0 then return \"pos\" else return \"neg\" end\n", "lua_pe").expect("specialize");
+        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let library = load(&dll, "string-branch");
+        assert_eq!(read_descriptor(call(library.module, "main", &[1])), "pos");
+        assert_eq!(read_descriptor(call(library.module, "main", &[-1])), "neg");
+    }
+
+    /// 宿主读取静态字符串描述符：`{ i32 self_relative_ptr; u32 len }` 紧跟字节。
+    fn read_descriptor(address: i64) -> String {
+        unsafe {
+            let base = address as usize;
+            let relative = core::ptr::read_unaligned(base as *const i32);
+            let len = core::ptr::read_unaligned((base + 4) as *const u32) as usize;
+            let pointer = (base as isize + relative as isize) as *const u8;
+            let bytes = core::slice::from_raw_parts(pointer, len);
+            String::from_utf8(bytes.to_vec()).expect("descriptor must hold UTF-8")
+        }
+    }
+
+    #[test]
     fn exported_residual_fails_closed_for_unsupported_effects_and_objects() {
         let runner = legend_vm::LegendVmRunner::new();
         for (source, needle) in [
             ("print(1)\nreturn 0\n", "Print"),
             ("local t = { 1 }\nreturn t[1]\n", "TableNew"),
             ("return x / y\n", "Div"),
-            ("return x .. \"s\"\n", "PushString"),
+            ("return x .. \"s\"\n", "Concat"),
+            ("return \"a\" == \"b\"\n", "byte-wise comparison"),
         ] {
             let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
             let error = emit_native_pe_library(&residual).expect_err("unsupported residual must fail closed");

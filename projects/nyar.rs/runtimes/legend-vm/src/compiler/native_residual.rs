@@ -830,21 +830,45 @@ enum ProductValueKind {
     Int,
     Bool,
     Nil,
+    /// 静态字符串描述符地址（`rax` 承载，镜像内只读字节）。
+    Str,
 }
 
 /// 把残差模块降低为多函数文本程序并写成 `PE` DLL（导出函数 ABI）。
 ///
-/// 未知输入通过 Win64 整数形参进入（最多 4 个），残差函数按名导出。只支持
-/// 整数/布尔载体：字符串、对象、`print`、运行时解析调用与除法都显式失败闭合，
-/// 不在产品路径里静默吞掉语义。
+/// 未知输入通过 Win64 整数形参进入（最多 4 个），残差函数按名导出。
+///
+/// 产品载体：整数、布尔与**静态字符串描述符**（镜像内只读 `{rel_ptr,len}` + UTF-8，
+/// 由宿主读取、永不释放）。对象、`print`、运行时解析调用、除法、字符串比较/拼接
+/// 与字符串作为实参都显式失败闭合，不在产品路径里静默吞掉语义。
 pub fn lower_native_residual_to_program(module: &NativeResidualModule) -> Result<NativeTextProgramImage, String> {
     if !module.is_native_bound() {
         return Err("residual is not native-bound".into());
     }
-    let mut functions = Vec::with_capacity(module.functions.len());
+    let mut lowered = Vec::with_capacity(module.functions.len());
     for function in &module.functions {
-        functions.push(lower_residual_function(function)?);
+        lowered.push(lower_residual_function(function)?);
     }
+    // 调用结果当前按整数载体传播；字符串返回值的残差函数不能作为调用目标，
+    // 否则调用方会按错误载体继续使用 `rax`。
+    let string_returners: Vec<&str> = lowered
+        .iter()
+        .filter(|(_, return_kind)| matches!(return_kind, Some(ProductValueKind::Str)))
+        .map(|(function, _)| function.name.as_str())
+        .collect();
+    for (function, _) in &lowered {
+        for op in &function.instructions {
+            if let NativeTextInstruction::Call(name) = op
+                && string_returners.contains(&name.as_str())
+            {
+                return Err(format!(
+                    "residual function `{}` calls `{name}` which returns a string descriptor; string-valued calls are not implemented at the product boundary",
+                    function.name
+                ));
+            }
+        }
+    }
+    let functions: Vec<NativeTextProgramFunction> = lowered.into_iter().map(|(function, _)| function).collect();
     encode_native_text_program(&functions)
 }
 
@@ -930,7 +954,7 @@ impl<'a> ResidualFunctionLowering<'a> {
     }
 }
 
-fn lower_residual_function(function: &NativeResidualFunction) -> Result<NativeTextProgramFunction, String> {
+fn lower_residual_function(function: &NativeResidualFunction) -> Result<(NativeTextProgramFunction, Option<ProductValueKind>), String> {
     if function.parameters.len() > 4 {
         return Err(format!(
             "residual function `{}` has {} parameters; the Win64 text ABI supports at most 4 integer inputs",
@@ -939,6 +963,7 @@ fn lower_residual_function(function: &NativeResidualFunction) -> Result<NativeTe
         ));
     }
     let mut lowering = ResidualFunctionLowering::new(function);
+    let mut return_kind: Option<ProductValueKind> = None;
     for (index, parameter) in function.parameters.iter().enumerate() {
         let slot = lowering.alloc_slot();
         lowering.instructions.push(NativeTextInstruction::LoadParam { index: index as u8, slot });
@@ -963,6 +988,10 @@ fn lower_residual_function(function: &NativeResidualFunction) -> Result<NativeTe
             NativeResidualOp::PushBool(value) => {
                 lowering.instructions.push(NativeTextInstruction::LoadI64(i64::from(*value)));
                 lowering.push_stack_value(ProductValueKind::Bool);
+            }
+            NativeResidualOp::PushString(text) => {
+                lowering.instructions.push(NativeTextInstruction::LoadString(text.clone()));
+                lowering.push_stack_value(ProductValueKind::Str);
             }
             NativeResidualOp::PushNil => {
                 lowering.instructions.push(NativeTextInstruction::LoadI64(0));
@@ -998,6 +1027,12 @@ fn lower_residual_function(function: &NativeResidualFunction) -> Result<NativeTe
                         function.name
                     ));
                 }
+                if left_kind == ProductValueKind::Str {
+                    return Err(format!(
+                        "residual function `{}` compares string values; byte-wise comparison is not implemented at the product boundary",
+                        function.name
+                    ));
+                }
                 let instruction = if matches!(op, NativeResidualOp::Eq) {
                     NativeTextInstruction::Eq
                 }
@@ -1015,6 +1050,12 @@ fn lower_residual_function(function: &NativeResidualFunction) -> Result<NativeTe
                 if matches!(left_kind, ProductValueKind::Nil) || matches!(right_kind, ProductValueKind::Nil) {
                     return Err(format!(
                         "residual function `{}` orders `nil` at the product boundary",
+                        function.name
+                    ));
+                }
+                if left_kind == ProductValueKind::Str || right_kind == ProductValueKind::Str {
+                    return Err(format!(
+                        "residual function `{}` orders strings; byte-wise ordering is not implemented at the product boundary",
                         function.name
                     ));
                 }
@@ -1090,9 +1131,15 @@ fn lower_residual_function(function: &NativeResidualFunction) -> Result<NativeTe
                 }
                 let mut arguments = Vec::with_capacity(*argc);
                 for _ in 0..*argc {
-                    arguments.push(lowering.pop()?.0);
+                    arguments.push(lowering.pop()?);
                 }
-                for (index, slot) in arguments.iter().rev().enumerate() {
+                if arguments.iter().any(|(_, kind)| *kind == ProductValueKind::Str) {
+                    return Err(format!(
+                        "residual function `{}` passes a string descriptor to `{name}`; string-valued calls are not implemented at the product boundary",
+                        function.name
+                    ));
+                }
+                for (index, (slot, _)) in arguments.iter().rev().enumerate() {
                     lowering.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: *slot, index: index as u8 });
                 }
                 lowering.instructions.push(NativeTextInstruction::Call(name.clone()));
@@ -1103,7 +1150,7 @@ fn lower_residual_function(function: &NativeResidualFunction) -> Result<NativeTe
                 let (slot, kind) = lowering.pop()?;
                 if matches!(kind, ProductValueKind::Nil) {
                     return Err(format!(
-                        "residual function `{}` returns `nil`; the product ABI carries integers",
+                        "residual function `{}` returns `nil`; the product ABI carries integers, booleans and static strings",
                         function.name
                     ));
                 }
@@ -1112,9 +1159,9 @@ fn lower_residual_function(function: &NativeResidualFunction) -> Result<NativeTe
                 // `ret` 之后的线性残差不可达；保持栈形态确定。
                 lowering.stack.clear();
                 lowering.returned = true;
+                return_kind = Some(kind);
             }
-            NativeResidualOp::PushString(_)
-            | NativeResidualOp::Print(_)
+            NativeResidualOp::Print(_)
             | NativeResidualOp::Concat
             | NativeResidualOp::Div
             | NativeResidualOp::Rem
@@ -1135,7 +1182,7 @@ fn lower_residual_function(function: &NativeResidualFunction) -> Result<NativeTe
         }
     }
 
-    Ok(NativeTextProgramFunction { name: function.name.clone(), slot_count: lowering.next_slot, instructions: lowering.instructions })
+    Ok((NativeTextProgramFunction { name: function.name.clone(), slot_count: lowering.next_slot, instructions: lowering.instructions }, return_kind))
 }
 
 /// Lower a native residual to raw x64 bytes suitable for [`PeCompiler`].

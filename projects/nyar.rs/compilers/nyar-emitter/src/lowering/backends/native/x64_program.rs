@@ -65,6 +65,9 @@ pub fn encode_native_text_program(functions: &[NativeTextProgramFunction]) -> Re
     let mut symbols = Vec::with_capacity(functions.len());
     // (rel32 字段位置, 被调用名)
     let mut calls: Vec<(usize, String)> = Vec::new();
+    // 静态字符串池与 (lea disp32 字段位置, 字符串序号)。
+    let mut strings: Vec<String> = Vec::new();
+    let mut string_uses: Vec<(usize, usize)> = Vec::new();
     let mut symbol_offsets = BTreeMap::<String, u32>::new();
 
     for function in functions {
@@ -130,6 +133,19 @@ pub fn encode_native_text_program(functions: &[NativeTextProgramFunction]) -> Re
                     calls.push((text.len(), name.clone()));
                     text.extend_from_slice(&[0, 0, 0, 0]);
                 }
+                NativeTextInstruction::LoadString(value) => {
+                    let index = match strings.iter().position(|existing| existing == value) {
+                        Some(index) => index,
+                        None => {
+                            strings.push(value.clone());
+                            strings.len() - 1
+                        }
+                    };
+                    // `lea rax, [rip + disp32]`，disp32 在数据区布局后回填。
+                    text.extend_from_slice(&[0x48, 0x8D, 0x05]);
+                    string_uses.push((text.len(), index));
+                    text.extend_from_slice(&[0, 0, 0, 0]);
+                }
                 NativeTextInstruction::Return => {
                     text.extend_from_slice(&[0x48, 0x89, 0xEC, 0x5D, 0xC3]);
                 }
@@ -157,6 +173,26 @@ pub fn encode_native_text_program(functions: &[NativeTextProgramFunction]) -> Re
         let displacement = target as i64 - (field as i64 + 4);
         let displacement = i32::try_from(displacement).map_err(|_| format!("native text 调用位移超出 rel32：`{name}`"))?;
         text[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
+    }
+
+    // 静态字符串：描述符 `{ i32 指向字节的相对偏移 = 8; u32 len }` 紧跟 UTF-8 字节，
+    // 全部内联在 `.text` 尾部。`lea rax, [rip+disp32]` 在布局确定后回填。
+    if !strings.is_empty() {
+        let mut descriptor_offsets = Vec::with_capacity(strings.len());
+        for value in &strings {
+            let descriptor_offset = text.len() as u32;
+            descriptor_offsets.push(descriptor_offset);
+            text.extend_from_slice(&8i32.to_le_bytes());
+            let len = u32::try_from(value.len()).map_err(|_| "native 静态字符串长度超出 u32".to_string())?;
+            text.extend_from_slice(&len.to_le_bytes());
+            text.extend_from_slice(value.as_bytes());
+        }
+        for (field, index) in string_uses {
+            let target = descriptor_offsets[index] as i64;
+            let displacement = target - (field as i64 + 4);
+            let displacement = i32::try_from(displacement).map_err(|_| "native 静态字符串地址位移超出 rel32".to_string())?;
+            text[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
+        }
     }
 
     Ok(NativeTextProgramImage { text, symbols })
