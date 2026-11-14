@@ -17,7 +17,10 @@ use std::{
 /// 2026-11-08 由 20 上调至 22：`tests/asgard/codegen/android_compose_pack.rs:35/43` 两处
 /// maintainer ignore 随 `src/asgard/codegen` 内嵌测试迁入 `tests/` 后才进入守卫统计，
 /// 不是新增 ignore；二者会写入 `vendor/android-compose/**`，默认门禁不可执行。
-const IGNORE_BASELINE: usize = 22;
+///
+/// 2026-11-14 由 22 下调至 21：Oak 修复单行模板片段后，`expands_fragment_arch_as_string_literal`
+/// 取消 `#[ignore]` 并进入默认门禁（06 条目 31 关闭）。
+const IGNORE_BASELINE: usize = 21;
 
 /// 属性文本前缀用片段拼接，避免守卫源自身命中扫描。
 const IGNORE_ATTRIBUTE_PREFIX: &str = concat!("#", "[ignore");

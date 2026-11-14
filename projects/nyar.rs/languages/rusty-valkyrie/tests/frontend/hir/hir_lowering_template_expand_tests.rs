@@ -167,7 +167,6 @@ return 1
 }
 
 #[test]
-#[ignore = "blocked: fragment-only 函数体在 `parse_source` 后丢失 micro（06 条目 31）"]
 fn expands_fragment_arch_as_string_literal() {
     let source = r#"micro main() -> i32 {
 <% arch %>
@@ -454,3 +453,4 @@ micro ping() -> i64
         other => panic!("unexpected error: {other:?}"),
     }
 }
+
