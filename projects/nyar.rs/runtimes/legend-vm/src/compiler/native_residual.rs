@@ -16,8 +16,8 @@ use std::rc::Rc;
 use miette::{Result, miette};
 use nyar_analyzer::residual::ResidualSink;
 use nyar_emitter::nyar_backend_native::{
-    NativeAbi, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, encode_native_text_function,
-    encode_native_text_program_with_imports,
+    NativeAbi, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, encode_native_text_function,
+    encode_native_text_program_with_data, encode_native_text_program_with_imports,
 };
 
 use super::PeCompiler;
@@ -41,6 +41,9 @@ pub enum NativeProductTarget {
     Linux,
     /// Linux `ELF` `.node`：SysV64，effect 通道固定 stdout（fd 1），导出 Node-API 注册函数。
     Node,
+    /// Linux `ELF` 扩展模块：SysV64，effect 通道固定 stdout（fd 1），导出
+    /// `PyInit_<module>` 并以 `PyModuleDef` 建立单阶段扩展模块。
+    Python,
 }
 
 impl NativeProductTarget {
@@ -48,7 +51,7 @@ impl NativeProductTarget {
     fn abi(self) -> NativeAbi {
         match self {
             Self::Windows => NativeAbi::Win64,
-            Self::Linux | Self::Node => NativeAbi::SystemV64,
+            Self::Linux | Self::Node | Self::Python => NativeAbi::SystemV64,
         }
     }
 
@@ -59,9 +62,9 @@ impl NativeProductTarget {
 
     /// effect 通道是否由宿主作为隐藏首个整数形参传入。
     ///
-    /// Node 扩展没有宿主传入的句柄：产物自己固定写 stdout（fd 1）。
+    /// Node / Python 扩展没有宿主传入的句柄：产物自己固定写 stdout（fd 1）。
     fn sink_from_parameter(self) -> bool {
-        !matches!(self, Self::Node)
+        !matches!(self, Self::Node | Self::Python)
     }
 
     /// 目标名称，用于结构化错误。
@@ -70,6 +73,7 @@ impl NativeProductTarget {
             Self::Windows => "Windows PE",
             Self::Linux => "Linux ELF",
             Self::Node => "Linux Node addon",
+            Self::Python => "Linux CPython extension",
         }
     }
 }
@@ -902,10 +906,14 @@ pub fn lower_native_residual_to_program(
     // 增加同一个隐藏的首个整数形参（宿主 effect 通道），调用时逐层传递。
     let has_print = module.functions.iter().any(|function| function.ops.iter().any(|op| matches!(op, NativeResidualOp::Print(_))));
     // 导入面按目标冻结：Windows 的 effect 写入是 IAT 导入；Node 扩展要调用
-    // Node-API 构造返回值；Linux 的 effect 是 syscall，没有导入。
+    // Node-API 构造返回值；CPython 扩展要调用 `PyModule_Create2` 建立模块并
+    // 用 `PyModule_AddIntConstant` 暴露残差值；Linux 的 effect 是 syscall，没有导入。
     let imports: Vec<(String, String)> = match target {
         NativeProductTarget::Windows if has_print => vec![("kernel32".to_string(), "WriteFile".to_string())],
         NativeProductTarget::Node => vec![(String::new(), "napi_create_int32".to_string())],
+        NativeProductTarget::Python => {
+            vec![(String::new(), "PyModule_Create2".to_string()), (String::new(), "PyModule_AddIntConstant".to_string())]
+        }
         NativeProductTarget::Windows | NativeProductTarget::Linux => Vec::new(),
     };
     // Node 扩展的 effect 通道固定 stdout，不占宿主形参；其余目标由宿主传入句柄/fd。
@@ -935,25 +943,132 @@ pub fn lower_native_residual_to_program(
         }
     }
     let mut functions: Vec<NativeTextProgramFunction> = lowered.iter().map(|(function, _)| function.clone()).collect();
-    if target == NativeProductTarget::Node {
-        let main_return = lowered
-            .iter()
-            .find(|(function, _)| function.name == "main")
-            .and_then(|(_, kind)| kind.clone())
-            .ok_or_else(|| "Node addon residual has no `main` return value".to_string())?;
-        if !matches!(main_return, ProductValueKind::Int | ProductValueKind::Bool) {
-            return Err(format!(
-                "Node addon residual `main` returns `{main_return:?}`; only integer/boolean results can be exposed as a Node number"
-            ));
+    // 数据段属于适配器：CPython 的 `PyModuleDef` 与符号名必须随镜像布局，其他
+    // 目标的产物不需要可写数据。
+    let mut data = Vec::new();
+    let mut data_relocations: Vec<(u32, NativeDataTarget)> = Vec::new();
+    match target {
+        NativeProductTarget::Node => {
+            require_extension_main("Node addon", module, &lowered)?;
+            functions.push(node_addon_registration());
         }
-        let main = module.function("main").ok_or_else(|| "Node addon residual has no `main`".to_string())?;
-        if !main.parameters.is_empty() {
-            return Err("Node addon residual `main` must not take parameters: the addon entry receives no guest inputs".to_string());
+        NativeProductTarget::Python => {
+            require_extension_main("CPython extension", module, &lowered)?;
+            if !is_c_identifier(&module.name) {
+                return Err(format!(
+                    "CPython 扩展模块名 `{}` 不是合法 C 标识符：`PyInit_<module>` 必须能在 C 中声明",
+                    module.name
+                ));
+            }
+            let (definition, relocations) = python_module_def(&module.name);
+            data = definition;
+            data_relocations = relocations;
+            functions.push(python_module_registration(&module.name));
         }
-        functions.push(node_addon_registration());
+        NativeProductTarget::Windows | NativeProductTarget::Linux => {}
     }
     // 调用约定与容器都由平台显式给出，编码器不提供默认 ABI。
-    encode_native_text_program_with_imports(&functions, &imports, target.abi())
+    encode_native_text_program_with_data(&functions, &imports, target.abi(), &data, &data_relocations)
+}
+
+/// 扩展模块入口的共同前提：`main` 存在、无宿主输入、返回可暴露的整数/布尔。
+fn require_extension_main(
+    target: &str,
+    module: &NativeResidualModule,
+    lowered: &[(NativeTextProgramFunction, Option<ProductValueKind>)],
+) -> Result<(), String> {
+    let main_return = lowered
+        .iter()
+        .find(|(function, _)| function.name == "main")
+        .and_then(|(_, kind)| kind.clone())
+        .ok_or_else(|| format!("{target} residual has no `main` return value"))?;
+    if !matches!(main_return, ProductValueKind::Int | ProductValueKind::Bool) {
+        return Err(format!(
+            "{target} residual `main` returns `{main_return:?}`; only integer/boolean results can be exposed to the host"
+        ));
+    }
+    let main = module.function("main").ok_or_else(|| format!("{target} residual has no `main`"))?;
+    if !main.parameters.is_empty() {
+        return Err(format!("{target} residual `main` must not take parameters: the extension entry receives no guest inputs"));
+    }
+    Ok(())
+}
+
+fn is_c_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) if first == '_' || first.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+/// CPython 单阶段模块定义（`PyModuleDef`）在 `.data` 中的镜像。
+///
+/// x86-64 布局（全部 8 字节字段）：
+///
+/// - `0..40`：`PyModuleDef_Base { ob_refcnt = 1, ob_type = NULL, m_init = NULL,
+///   m_index = 0, m_copy = NULL }`（即 `PyModuleDef_HEAD_INIT`）；
+/// - `40`：`m_name`，`R_X86_64_RELATIVE` 指向紧随其后的模块名；
+/// - `48`：`m_doc = NULL`；
+/// - `56`：`m_size = -1`（单阶段初始化，无每模块状态）；
+/// - `64..104`：`m_methods`/`m_slots`/`m_traverse`/`m_clear`/`m_free = NULL`；
+/// - `104`：模块名（NUL 结尾），随后是暴露给宿主的常量名 `value`（NUL 结尾）。
+const PY_MODULE_DEF_BASE_LEN: u32 = 104;
+
+fn python_module_def(module_name: &str) -> (Vec<u8>, Vec<(u32, NativeDataTarget)>) {
+    let mut data = Vec::new();
+    data.extend_from_slice(&1i64.to_le_bytes()); // ob_refcnt
+    data.extend_from_slice(&[0u8; 32]); // ob_type / m_init / m_index / m_copy
+    data.extend_from_slice(&[0u8; 8]); // m_name（由重定位回填）
+    data.extend_from_slice(&[0u8; 8]); // m_doc
+    data.extend_from_slice(&(-1i64).to_le_bytes()); // m_size
+    data.extend_from_slice(&[0u8; 40]); // m_methods / m_slots / m_traverse / m_clear / m_free
+    debug_assert_eq!(data.len(), PY_MODULE_DEF_BASE_LEN as usize);
+    let name_offset = data.len() as u32;
+    data.extend_from_slice(module_name.as_bytes());
+    data.push(0);
+    data.extend_from_slice(b"value\0");
+    (data, vec![(40, NativeDataTarget::Data(name_offset))])
+}
+
+/// `PyInit_<module>` 入口：用 `PyModule_Create2` 建立单阶段模块，把残差 `main`
+/// 的结果以常量 `value` 暴露，并返回模块对象本身。
+///
+/// `PyModule_AddIntConstant` 返回 `int`，因此模块指针必须在帧槽里保存，最后重新
+/// 装入 `rax`；入口返回的必须是模块对象，否则 CPython 的导入器报
+/// “did not return a valid extension module”。
+fn python_module_registration(module_name: &str) -> NativeTextProgramFunction {
+    use NativeTextInstruction as Lir;
+    // 常量名紧跟 NUL 结尾的模块名。
+    let constant_name_offset = PY_MODULE_DEF_BASE_LEN + module_name.len() as u32 + 1;
+    NativeTextProgramFunction {
+        name: format!("PyInit_{module_name}"),
+        slot_count: 5,
+        instructions: vec![
+            Lir::LoadDataAddress(0),
+            Lir::StoreSlot(0),
+            // `PyModule_Create2(&def, PYTHON_API_VERSION = 1013)`。
+            Lir::LoadI64(1013),
+            Lir::StoreSlot(1),
+            Lir::LoadSlotToArg { slot: 0, index: 0 },
+            Lir::LoadSlotToArg { slot: 1, index: 1 },
+            Lir::CallImport { module: String::new(), field: "PyModule_Create2".to_string() },
+            Lir::StoreSlot(2),
+            // 残差值来自无参 `main`。
+            Lir::Call("main".to_string()),
+            Lir::StoreSlot(3),
+            // `PyModule_AddIntConstant(module, "value", value)`。
+            Lir::LoadSlotToArg { slot: 2, index: 0 },
+            Lir::LoadDataAddress(constant_name_offset),
+            Lir::StoreSlot(4),
+            Lir::LoadSlotToArg { slot: 4, index: 1 },
+            Lir::LoadSlotToArg { slot: 3, index: 2 },
+            Lir::CallImport { module: String::new(), field: "PyModule_AddIntConstant".to_string() },
+            Lir::LoadSlot(2),
+            Lir::Return,
+        ],
+    }
 }
 
 /// `napi_register_module_v1(env, exports)` 包装体：把残差 `main` 的整数值包成
@@ -1000,6 +1115,17 @@ pub fn emit_native_elf_library(module: &NativeResidualModule) -> Result<Vec<u8>,
 /// 通过 `napi_create_int32` 包成 JS number 作为 `module.exports`。`print` 写 stdout。
 pub fn emit_native_node_addon(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
     let image = lower_native_residual_to_program(module, NativeProductTarget::Node)?;
+    super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
+}
+
+/// 发射 CPython 扩展模块（x86-64 `ELF` 共享库 + `PyInit_<module>`）。
+///
+/// 宿主 `import` 时由 CPython 的动态装载器调用 `PyInit_<module>`；入口用
+/// `PyModule_Create2` 建立单阶段模块（`PyModuleDef` 位于镜像 `.data`，模块名指针
+/// 由 `R_X86_64_RELATIVE` 重定位解析），把残差 `main` 的整数值以常量 `value`
+/// 暴露，并返回模块对象。`print` 写 stdout。
+pub fn emit_native_python_extension(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
+    let image = lower_native_residual_to_program(module, NativeProductTarget::Python)?;
     super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
 }
 
@@ -1122,7 +1248,7 @@ impl<'a> ResidualFunctionLowering<'a> {
                     field: "WriteFile".to_string(),
                 });
             }
-            NativeProductTarget::Linux | NativeProductTarget::Node => {
+            NativeProductTarget::Linux | NativeProductTarget::Node | NativeProductTarget::Python => {
                 self.instructions.push(NativeTextInstruction::SyscallWrite);
             }
         }
@@ -1735,5 +1861,32 @@ mod tests {
             image.text.windows(7).any(|window| window == [0xB8, 0x01, 0x00, 0x00, 0x00, 0x0F, 0x05]),
             "effect 写入必须是 `write(2)` 系统调用"
         );
+    }
+
+    /// CPython 扩展产物：`PyInit_<module>` 导出、两个 `PyModule_*` 动态导入与
+    /// `.data` 内的 `PyModuleDef`（含一个自相对名称指针）。
+    #[test]
+    fn python_extension_exposes_pyinit_and_module_def() {
+        let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
+        module.name = "demo".into();
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::Python).expect("lower python extension");
+        assert!(image.symbols.iter().any(|(name, _)| name == "PyInit_demo"), "必须导出 `PyInit_demo`");
+        assert!(image.elf_imports.iter().any(|symbol| symbol == "PyModule_Create2"), "必须导入 `PyModule_Create2`");
+        assert!(image.elf_imports.iter().any(|symbol| symbol == "PyModule_AddIntConstant"), "必须导入 `PyModule_AddIntConstant`");
+        assert!(!image.data.is_empty(), "`PyModuleDef` 必须位于镜像数据段");
+        assert_eq!(image.data_relocations.len(), 1, "模块名指针必须走自相对重定位");
+        assert!(image.data_references.iter().any(|(_, data_offset)| *data_offset == 0), "入口必须取 `PyModuleDef` 地址");
+        let bytes = emit_native_python_extension(&module).expect("emit python extension");
+        let haystack = String::from_utf8_lossy(&bytes);
+        assert!(haystack.contains("PyInit_demo"));
+        assert!(haystack.contains("PyModule_Create2"));
+    }
+
+    #[test]
+    fn python_extension_rejects_invalid_module_names() {
+        let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
+        module.name = "not-an-identifier".into();
+        let error = lower_native_residual_to_program(&module, NativeProductTarget::Python).expect_err("非法模块名必须失败闭合");
+        assert!(error.contains("C 标识符"), "unexpected error: {error}");
     }
 }

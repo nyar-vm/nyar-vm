@@ -853,3 +853,64 @@ mod node_addon_abi {
         assert!(error.contains("Node"), "unexpected error: {error}");
     }
 }
+
+/// CPython 扩展模块 lane：CPython 的导入器 `import` 产物并读取模块常量。
+#[cfg(target_os = "linux")]
+mod python_extension_abi {
+    use legend_vm::compiler::emit_native_python_extension;
+
+    const MODULE_NAME: &str = "demo";
+
+    /// 把扩展写成 `<dir>/demo.so` 并返回目录（`sys.path` 插入点）。
+    fn extension_dir(source: &str, tag: &str) -> std::path::PathBuf {
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
+        let bytes = emit_native_python_extension(&residual).expect("emit python extension");
+        let dir = std::env::temp_dir().join(format!("legend-python-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create module dir");
+        std::fs::write(dir.join(format!("{MODULE_NAME}.so")), bytes).expect("write extension");
+        dir
+    }
+
+    fn run_python(dir: &std::path::Path, body: &str) -> String {
+        let script = format!("import sys\nsys.path.insert(0, r'{}')\nimport {MODULE_NAME}\n{body}", dir.display());
+        for interpreter in ["python3", "python"] {
+            match std::process::Command::new(interpreter).arg("-c").arg(&script).output() {
+                Ok(output) => {
+                    assert!(
+                        output.status.success(),
+                        "{interpreter} import failed: status={:?} stderr={}",
+                        output.status.code(),
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    return String::from_utf8_lossy(&output.stdout).trim_end().to_string();
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => panic!("spawn {interpreter}: {error}"),
+            }
+        }
+        panic!("no CPython interpreter (`python3` / `python`) available");
+    }
+
+    #[test]
+    fn python_imports_the_extension_and_reads_the_residual_value() {
+        let dir = extension_dir("return 42\n", "value");
+        assert_eq!(run_python(&dir, "print(demo.value)"), "42", "模块常量必须是残差 main 的数值");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn python_extension_prints_during_import() {
+        let dir = extension_dir("print(\"hello\")\nreturn 7\n", "print");
+        assert_eq!(run_python(&dir, "print(demo.value)"), "hello\n7", "print 顺序与模块常量读取共享 stdout");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn python_extension_rejects_non_integer_results() {
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", "return \"text\"\n", MODULE_NAME).expect("specialize");
+        let error = emit_native_python_extension(&residual).expect_err("字符串结果必须失败闭合");
+        assert!(error.contains("CPython"), "unexpected error: {error}");
+    }
+}
