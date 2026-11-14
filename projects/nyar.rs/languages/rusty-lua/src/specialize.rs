@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use crate::script::{LuaExpr, LuaLValue, LuaScript, LuaStmt};
+use crate::script::{LuaExpr, LuaLValue, LuaScript, LuaStmt, LuaTableField};
 
 use nyar_analyzer::residual::ResidualSink;
 
@@ -257,6 +257,11 @@ fn residualize_stmt(
                     sink.push_nil();
                 }
                 residualize_assign(target, sink, functions)?;
+                // 对象写入把赋值值留在栈上（与解释器语句结果一致）；
+                // 语句块保持栈平衡，结果只作为后续 `__pe_last` 的显式来源。
+                if !matches!(target, LuaLValue::Name(_)) {
+                    sink.pop();
+                }
             }
             Ok(())
         }
@@ -374,14 +379,24 @@ fn residualize_stmt(
 fn residualize_assign(
     target: &LuaLValue,
     sink: &mut dyn ResidualSink,
-    _functions: &HashMap<String, (Vec<String>, Vec<LuaStmt>)>,
+    functions: &HashMap<String, (Vec<String>, Vec<LuaStmt>)>,
 ) -> Result<(), String> {
     match target {
         LuaLValue::Name(name) => {
             sink.store(name);
             Ok(())
         }
-        LuaLValue::Field { .. } | LuaLValue::Index { .. } => sink.unsupported("table assignment"),
+        // 目标容器表达式在赋值值之后求值（与解释器的求值顺序一致），
+        // 残差保留一次真实的动态属性写入，不在特化期折叠对象形状。
+        LuaLValue::Field { table, name } => {
+            residualize_expr(table, sink, functions)?;
+            sink.table_field_set(name)
+        }
+        LuaLValue::Index { table, key } => {
+            residualize_expr(table, sink, functions)?;
+            residualize_expr(key, sink, functions)?;
+            sink.table_index_set()
+        }
     }
 }
 
@@ -416,7 +431,38 @@ fn residualize_expr(
             sink.load(name);
             Ok(())
         }
-        LuaExpr::Table { .. } | LuaExpr::Index { .. } | LuaExpr::Field { .. } => sink.unsupported("tables"),
+        // 动态对象形状：构造与读写都作为残余对象操作保留，解释器的求值顺序
+        // （字段从左到右）在残差中保持；特化期不折叠对象内容。
+        LuaExpr::Table { fields } => {
+            sink.table_new()?;
+            for field in fields {
+                match field {
+                    LuaTableField::Array(value) => {
+                        residualize_expr(value, sink, functions)?;
+                        sink.table_array_push()?;
+                    }
+                    LuaTableField::Record { key, value } => {
+                        residualize_expr(value, sink, functions)?;
+                        sink.table_record_set(key)?;
+                    }
+                    LuaTableField::Indexed { key, value } => {
+                        residualize_expr(key, sink, functions)?;
+                        residualize_expr(value, sink, functions)?;
+                        sink.table_index_set()?;
+                    }
+                }
+            }
+            Ok(())
+        }
+        LuaExpr::Index { table, key } => {
+            residualize_expr(table, sink, functions)?;
+            residualize_expr(key, sink, functions)?;
+            sink.table_index_get()
+        }
+        LuaExpr::Field { table, name } => {
+            residualize_expr(table, sink, functions)?;
+            sink.table_field_get(name)
+        }
         LuaExpr::Binary { op, left, right } => match op.as_str() {
             // Lua 的 `and`/`or` 返回**操作数**，不是布尔值（`7 or 9 == 7`）。
             // 残差必须保留左侧值：用临时槽保存并只在短路分支重新载入，
@@ -487,7 +533,7 @@ fn residualize_expr(
                     sink.sub();
                     Ok(())
                 }
-                "#" => sink.unsupported("length operator"),
+                "#" => sink.length(),
                 other => sink.unsupported(&format!("unary op '{other}'")),
             }
         }
@@ -505,7 +551,9 @@ fn residualize_expr(
                 sink.call(name, args.len());
                 return Ok(());
             }
-            sink.unsupported(&format!("call to '{name}'"))
+            // 运行时解析的调用：保持为残余操作，解释器在运行期按语言绑定规则
+            // 解析（guest builtin / 全局函数 / 未定义 → nil）。
+            sink.dynamic_call(name, args.len())
         }
     }
 }

@@ -67,6 +67,45 @@ pub trait ResidualSink {
     fn call(&mut self, name: &str, argc: usize);
     /// 返回栈顶（栈空时接收端可推入 nil）。
     fn ret(&mut self);
+    /// 压入一个新的空表/对象（动态对象形状由语言运行时决定）。
+    fn table_new(&mut self) -> Result<(), String> {
+        self.unsupported("table constructor")
+    }
+    /// 栈顶是值、次顶是表：按数组部分追加（保持字段求值顺序）。
+    fn table_array_push(&mut self) -> Result<(), String> {
+        self.unsupported("table array field")
+    }
+    /// 栈顶是值、次顶是表：写入字符串键 `key`。
+    fn table_record_set(&mut self, key: &str) -> Result<(), String> {
+        self.unsupported(&format!("table record field `{key}`"))
+    }
+    /// 栈顶是键、次顶是值、再次是表：`table[key] = value`。
+    fn table_index_set(&mut self) -> Result<(), String> {
+        self.unsupported("table index assignment")
+    }
+    /// 栈顶是表、次顶是值：`table.name = value`。
+    fn table_field_set(&mut self, name: &str) -> Result<(), String> {
+        self.unsupported(&format!("table field assignment `{name}`"))
+    }
+    /// 栈顶是表：读取字段 `name`。
+    fn table_field_get(&mut self, name: &str) -> Result<(), String> {
+        self.unsupported(&format!("table field `{name}`"))
+    }
+    /// 栈顶是键、次顶是表：读取 `table[key]`。
+    fn table_index_get(&mut self) -> Result<(), String> {
+        self.unsupported("table index read")
+    }
+    /// 栈顶是值：取语言长度（表条目数 / 字符串长度）。
+    fn length(&mut self) -> Result<(), String> {
+        self.unsupported("length operator")
+    }
+    /// 以栈上的 `argc` 个实参执行**运行时解析**的调用。
+    ///
+    /// 未知调用必须作为残余操作保留，不能在特化期执行或丢弃；接收端在运行时
+    /// 按语言绑定规则解析目标。
+    fn dynamic_call(&mut self, name: &str, argc: usize) -> Result<(), String> {
+        self.unsupported(&format!("dynamic call `{name}/{argc}`"))
+    }
     /// 报告不支持的构造（特化中止）。
     fn unsupported(&mut self, what: &str) -> Result<(), String> {
         Err(format!("PE residualization unsupported: {what}"))

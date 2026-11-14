@@ -9,7 +9,9 @@
 //! lowering cannot honestly represent — evaluation failure or a non-integer
 //! result — is an explicit error, never a success-shaped empty body.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use miette::{Result, miette};
 use nyar_analyzer::residual::ResidualSink;
@@ -80,6 +82,29 @@ pub enum NativeResidualOp {
     JumpIfTrue(String),
     /// Call residual function.
     Call {
+        /// Callee name.
+        name: String,
+        /// Argument count.
+        argc: usize,
+    },
+    /// Push a fresh empty table/object.
+    TableNew,
+    /// Stack `[table, value]` → append to the array part, push the table.
+    TableArrayPush,
+    /// Stack `[table, value]` → set string key, push the table.
+    TableRecordSet(String),
+    /// Stack `[value, table, key]` → dynamic index write, push the assigned value.
+    TableIndexSet,
+    /// Stack `[value, table]` → dynamic field write, push the assigned value.
+    TableFieldSet(String),
+    /// Stack `[table]` → read a string field.
+    TableFieldGet(String),
+    /// Stack `[table, key]` → dynamic index read.
+    TableIndexGet,
+    /// Stack `[value]` → guest length (table entries / string chars).
+    Length,
+    /// Call resolved at runtime (guest builtin / global function / nil).
+    DynamicCall {
         /// Callee name.
         name: String,
         /// Argument count.
@@ -281,6 +306,51 @@ impl ResidualSink for NativeResidualSink {
     fn ret(&mut self) {
         self.push_op(NativeResidualOp::Ret);
     }
+
+    fn table_new(&mut self) -> std::result::Result<(), String> {
+        self.push_op(NativeResidualOp::TableNew);
+        Ok(())
+    }
+
+    fn table_array_push(&mut self) -> std::result::Result<(), String> {
+        self.push_op(NativeResidualOp::TableArrayPush);
+        Ok(())
+    }
+
+    fn table_record_set(&mut self, key: &str) -> std::result::Result<(), String> {
+        self.push_op(NativeResidualOp::TableRecordSet(key.to_string()));
+        Ok(())
+    }
+
+    fn table_index_set(&mut self) -> std::result::Result<(), String> {
+        self.push_op(NativeResidualOp::TableIndexSet);
+        Ok(())
+    }
+
+    fn table_field_set(&mut self, name: &str) -> std::result::Result<(), String> {
+        self.push_op(NativeResidualOp::TableFieldSet(name.to_string()));
+        Ok(())
+    }
+
+    fn table_field_get(&mut self, name: &str) -> std::result::Result<(), String> {
+        self.push_op(NativeResidualOp::TableFieldGet(name.to_string()));
+        Ok(())
+    }
+
+    fn table_index_get(&mut self) -> std::result::Result<(), String> {
+        self.push_op(NativeResidualOp::TableIndexGet);
+        Ok(())
+    }
+
+    fn length(&mut self) -> std::result::Result<(), String> {
+        self.push_op(NativeResidualOp::Length);
+        Ok(())
+    }
+
+    fn dynamic_call(&mut self, name: &str, argc: usize) -> std::result::Result<(), String> {
+        self.push_op(NativeResidualOp::DynamicCall { name: name.to_string(), argc });
+        Ok(())
+    }
 }
 
 /// Specialize `source` for `language` into a **native-bound** residual module.
@@ -298,6 +368,66 @@ pub fn specialize_language(language: &str, source: &str, module_name: &str) -> R
     }
 }
 
+/// Runtime table/object value of a guest residual (array part + string-keyed map).
+///
+/// 对象形状属于 guest 语言运行时；残差只保留 `TableNew` / 读写操作，不把静态
+/// 形状折叠进产物。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ResidualTable {
+    /// 1-based array part stored densely from index 1.
+    pub array: Vec<ResidualValue>,
+    /// String-keyed map part.
+    pub map: HashMap<String, ResidualValue>,
+}
+
+impl ResidualTable {
+    fn length(&self) -> i64 {
+        self.array.len() as i64
+    }
+
+    fn get(&self, key: &ResidualValue) -> ResidualValue {
+        if let Some(index) = residual_integer_key(key) {
+            return self.array.get((index - 1) as usize).cloned().unwrap_or(ResidualValue::Nil);
+        }
+        self.map.get(&key.to_key()).cloned().unwrap_or(ResidualValue::Nil)
+    }
+
+    fn set(&mut self, key: &ResidualValue, value: ResidualValue) {
+        if let Some(index) = residual_integer_key(key) {
+            let idx = (index - 1) as usize;
+            if matches!(value, ResidualValue::Nil) {
+                if idx < self.array.len() {
+                    self.array[idx] = ResidualValue::Nil;
+                    while self.array.last().map(|value| matches!(value, ResidualValue::Nil)).unwrap_or(false) {
+                        self.array.pop();
+                    }
+                }
+                return;
+            }
+            if idx >= self.array.len() {
+                self.array.resize(idx + 1, ResidualValue::Nil);
+            }
+            self.array[idx] = value;
+            return;
+        }
+        let map_key = key.to_key();
+        if matches!(value, ResidualValue::Nil) {
+            self.map.remove(&map_key);
+        }
+        else {
+            self.map.insert(map_key, value);
+        }
+    }
+}
+
+fn residual_integer_key(key: &ResidualValue) -> Option<i64> {
+    match key {
+        ResidualValue::Int(value) if *value >= 1 => Some(*value),
+        ResidualValue::Float(value) if value.fract() == 0.0 && *value >= 1.0 && value.is_finite() => Some(*value as i64),
+        _ => None,
+    }
+}
+
 /// Values used while interpreting a native residual (goldens / exit-code fold).
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResidualValue {
@@ -307,8 +437,12 @@ pub enum ResidualValue {
     Bool(bool),
     /// Integer.
     Int(i64),
+    /// Float（`/` 在非整数/零除时产生，与 guest 解释器一致）。
+    Float(f64),
     /// String.
     String(String),
+    /// Runtime table/object.
+    Table(Rc<RefCell<ResidualTable>>),
 }
 
 impl ResidualValue {
@@ -319,21 +453,30 @@ impl ResidualValue {
     fn as_int(&self) -> Option<i64> {
         match self {
             ResidualValue::Int(value) => Some(*value),
+            ResidualValue::Float(value) => Some(*value as i64),
             ResidualValue::Bool(true) => Some(1),
             ResidualValue::Bool(false) | ResidualValue::Nil => Some(0),
             // 与 guest 语义一致：字符串按数值解析，失败取 0；残差不再拒绝 guest
             // 已定义的动态转换。
             ResidualValue::String(value) => Some(value.parse().unwrap_or(0)),
+            // guest 解释器把表按 0 参与算术。
+            ResidualValue::Table(_) => Some(0),
         }
     }
 
     fn as_f64(&self) -> f64 {
         match self {
             ResidualValue::Int(value) => *value as f64,
+            ResidualValue::Float(value) => *value,
             ResidualValue::Bool(true) => 1.0,
             ResidualValue::Bool(false) | ResidualValue::Nil => 0.0,
             ResidualValue::String(value) => value.parse().unwrap_or(0.0),
+            ResidualValue::Table(_) => 0.0,
         }
+    }
+
+    fn is_integral(&self) -> bool {
+        matches!(self, ResidualValue::Int(_))
     }
 
     /// Stable string key for golden comparison.
@@ -342,7 +485,11 @@ impl ResidualValue {
             ResidualValue::Nil => String::new(),
             ResidualValue::Bool(value) => value.to_string(),
             ResidualValue::Int(value) => value.to_string(),
+            ResidualValue::Float(value) => {
+                if value.fract() == 0.0 && value.is_finite() { format!("{value:.0}") } else { value.to_string() }
+            }
             ResidualValue::String(value) => value.clone(),
+            ResidualValue::Table(table) => format!("table:#{}", table.borrow().length()),
         }
     }
 }
@@ -415,11 +562,26 @@ fn call_function(
             NativeResidualOp::Pop => {
                 stack.pop();
             }
-            NativeResidualOp::Add => bin_num(&mut stack, |a, b| a.wrapping_add(b))?,
-            NativeResidualOp::Sub => bin_num(&mut stack, |a, b| a.wrapping_sub(b))?,
-            NativeResidualOp::Mul => bin_num(&mut stack, |a, b| a.wrapping_mul(b))?,
-            NativeResidualOp::Div => bin_num(&mut stack, |a, b| if b == 0 { 0 } else { a / b })?,
-            NativeResidualOp::Rem => bin_num(&mut stack, |a, b| if b == 0 { 0 } else { a % b })?,
+            NativeResidualOp::Add => residual_add(&mut stack)?,
+            NativeResidualOp::Sub => bin_numeric(&mut stack, |a, b| a - b)?,
+            NativeResidualOp::Mul => bin_numeric(&mut stack, |a, b| a * b)?,
+            NativeResidualOp::Div => {
+                let right = stack.pop().unwrap_or(ResidualValue::Nil);
+                let left = stack.pop().unwrap_or(ResidualValue::Nil);
+                let divisor = right.as_f64();
+                if divisor == 0.0 {
+                    stack.push(ResidualValue::Float(f64::NAN));
+                }
+                else {
+                    stack.push(residual_numeric_result(left.as_f64() / divisor, &left, &right));
+                }
+            }
+            NativeResidualOp::Rem => {
+                let right = stack.pop().unwrap_or(ResidualValue::Nil);
+                let left = stack.pop().unwrap_or(ResidualValue::Nil);
+                let divisor = right.as_int().unwrap_or(0);
+                stack.push(ResidualValue::Int(if divisor == 0 { 0 } else { left.as_int().unwrap_or(0) % divisor }));
+            }
             NativeResidualOp::Eq => bin_cmp(&mut stack, |a, b| a == b)?,
             NativeResidualOp::Ne => bin_cmp(&mut stack, |a, b| a != b)?,
             NativeResidualOp::Lt => bin_num_cmp(&mut stack, |a, b| a < b)?,
@@ -449,6 +611,78 @@ fn call_function(
                 else {
                     stack.push(ResidualValue::Nil);
                 }
+            }
+            NativeResidualOp::TableNew => stack.push(ResidualValue::Table(Rc::new(RefCell::new(ResidualTable::default())))),
+            NativeResidualOp::TableArrayPush => {
+                let value = stack.pop().unwrap_or(ResidualValue::Nil);
+                let table = stack.pop().unwrap_or(ResidualValue::Nil);
+                if let ResidualValue::Table(table) = &table {
+                    table.borrow_mut().array.push(value);
+                }
+                stack.push(table);
+            }
+            NativeResidualOp::TableRecordSet(key) => {
+                let value = stack.pop().unwrap_or(ResidualValue::Nil);
+                let table = stack.pop().unwrap_or(ResidualValue::Nil);
+                if let ResidualValue::Table(table) = &table {
+                    table.borrow_mut().map.insert(key.clone(), value);
+                }
+                stack.push(table);
+            }
+            NativeResidualOp::TableIndexSet => {
+                let key = stack.pop().unwrap_or(ResidualValue::Nil);
+                let table = stack.pop().unwrap_or(ResidualValue::Nil);
+                let value = stack.pop().unwrap_or(ResidualValue::Nil);
+                if let ResidualValue::Table(table) = &table {
+                    table.borrow_mut().set(&key, value.clone());
+                }
+                stack.push(value);
+            }
+            NativeResidualOp::TableFieldSet(name) => {
+                let table = stack.pop().unwrap_or(ResidualValue::Nil);
+                let value = stack.pop().unwrap_or(ResidualValue::Nil);
+                if let ResidualValue::Table(table) = &table {
+                    table.borrow_mut().map.insert(name.clone(), value.clone());
+                }
+                stack.push(value);
+            }
+            NativeResidualOp::TableFieldGet(name) => {
+                let table = stack.pop().unwrap_or(ResidualValue::Nil);
+                let value = match &table {
+                    ResidualValue::Table(table) => table.borrow().map.get(name).cloned().unwrap_or(ResidualValue::Nil),
+                    _ => ResidualValue::Nil,
+                };
+                stack.push(value);
+            }
+            NativeResidualOp::TableIndexGet => {
+                let key = stack.pop().unwrap_or(ResidualValue::Nil);
+                let table = stack.pop().unwrap_or(ResidualValue::Nil);
+                let value = match &table {
+                    ResidualValue::Table(table) => table.borrow().get(&key),
+                    // guest 解释器允许对字符串做 1-based 字符索引。
+                    ResidualValue::String(text) => {
+                        residual_string_index(text, key.as_int().unwrap_or(0))
+                    }
+                    _ => ResidualValue::Nil,
+                };
+                stack.push(value);
+            }
+            NativeResidualOp::Length => {
+                let value = stack.pop().unwrap_or(ResidualValue::Nil);
+                let length = match &value {
+                    ResidualValue::Table(table) => table.borrow().length(),
+                    ResidualValue::String(text) => text.chars().count() as i64,
+                    other => other.to_key().len() as i64,
+                };
+                stack.push(ResidualValue::Int(length));
+            }
+            NativeResidualOp::DynamicCall { name, argc } => {
+                let mut args = Vec::with_capacity(*argc);
+                for _ in 0..*argc {
+                    args.push(stack.pop().unwrap_or(ResidualValue::Nil));
+                }
+                args.reverse();
+                stack.push(dynamic_call(module, name, args, frames, steps)?);
             }
             NativeResidualOp::Label(_) => {}
             NativeResidualOp::Jump(label) => {
@@ -498,11 +732,60 @@ fn build_labels(ops: &[NativeResidualOp]) -> HashMap<String, usize> {
     labels
 }
 
-fn bin_num(stack: &mut Vec<ResidualValue>, op: impl FnOnce(i64, i64) -> i64) -> Result<(), String> {
-    let right = stack.pop().and_then(|value| value.as_int()).ok_or("numeric RHS")?;
-    let left = stack.pop().and_then(|value| value.as_int()).ok_or("numeric LHS")?;
-    stack.push(ResidualValue::Int(op(left, right)));
+fn residual_add(stack: &mut Vec<ResidualValue>) -> Result<(), String> {
+    let right = stack.pop().unwrap_or(ResidualValue::Nil);
+    let left = stack.pop().unwrap_or(ResidualValue::Nil);
+    // guest 的 `+` 在两侧都是字符串时是拼接，其余走数值转换。
+    if let (ResidualValue::String(left), ResidualValue::String(right)) = (&left, &right) {
+        stack.push(ResidualValue::String(format!("{left}{right}")));
+        return Ok(());
+    }
+    stack.push(residual_numeric_result(left.as_f64() + right.as_f64(), &left, &right));
     Ok(())
+}
+
+fn bin_numeric(stack: &mut Vec<ResidualValue>, op: impl FnOnce(f64, f64) -> f64) -> Result<(), String> {
+    let right = stack.pop().unwrap_or(ResidualValue::Nil);
+    let left = stack.pop().unwrap_or(ResidualValue::Nil);
+    stack.push(residual_numeric_result(op(left.as_f64(), right.as_f64()), &left, &right));
+    Ok(())
+}
+
+fn residual_numeric_result(value: f64, left: &ResidualValue, right: &ResidualValue) -> ResidualValue {
+    if left.is_integral() && right.is_integral() { ResidualValue::Int(value as i64) } else { ResidualValue::Float(value) }
+}
+
+fn residual_string_index(text: &str, index: i64) -> ResidualValue {
+    if index >= 1 { text.chars().nth((index - 1) as usize).map(|ch| ResidualValue::String(ch.to_string())).unwrap_or(ResidualValue::Nil) }
+    else { ResidualValue::Nil }
+}
+
+/// 运行时解析的 guest 调用：已残差化函数、`print`、`table_insert`，其余按
+/// 未定义全局函数返回 nil（与解释器一致）。
+fn dynamic_call(
+    module: &NativeResidualModule,
+    name: &str,
+    args: Vec<ResidualValue>,
+    frames: &mut Vec<()>,
+    steps: &mut usize,
+) -> Result<ResidualValue, String> {
+    if module.function(name).is_some() {
+        return call_function(module, name, args, frames, steps);
+    }
+    match name {
+        "print" => {
+            let text = args.iter().map(display_value).collect::<Vec<_>>().join("\t");
+            println!("{text}");
+            Ok(args.last().cloned().unwrap_or(ResidualValue::Nil))
+        }
+        "table_insert" => {
+            if let (Some(ResidualValue::Table(table)), Some(value)) = (args.first(), args.get(1)) {
+                table.borrow_mut().array.push(value.clone());
+            }
+            Ok(ResidualValue::Nil)
+        }
+        _ => Ok(ResidualValue::Nil),
+    }
 }
 
 fn bin_cmp(stack: &mut Vec<ResidualValue>, op: impl FnOnce(&ResidualValue, &ResidualValue) -> bool) -> Result<(), String> {
@@ -520,13 +803,7 @@ fn bin_num_cmp(stack: &mut Vec<ResidualValue>, op: impl FnOnce(f64, f64) -> bool
 }
 
 fn display_value(value: &ResidualValue) -> String {
-    match value {
-        // guest 解释器把 null/nil 显示成空串；残差保持同一转换规则。
-        ResidualValue::Nil => String::new(),
-        ResidualValue::Bool(value) => value.to_string(),
-        ResidualValue::Int(value) => value.to_string(),
-        ResidualValue::String(value) => value.clone(),
-    }
+    value.to_key()
 }
 
 /// Lower a native residual to raw x64 bytes suitable for [`PeCompiler`].
@@ -579,6 +856,26 @@ fn ensure_effect_free_for_constant_folding(module: &NativeResidualModule) -> Res
                 }
                 NativeResidualOp::Call { name, .. } if module.function(name).is_none() => {
                     return Err(format!("residual function `{}` calls unknown `{name}`", function.name));
+                }
+                // 运行时对象与运行时解析的调用属于保留的动态操作：不能把程序在
+                // 编译期执行完再输出常量。
+                NativeResidualOp::DynamicCall { name, .. } => {
+                    return Err(format!(
+                        "residual function `{}` contains runtime-resolved call `{name}`; dynamic calls must stay in the product",
+                        function.name
+                    ));
+                }
+                NativeResidualOp::TableNew
+                | NativeResidualOp::TableArrayPush
+                | NativeResidualOp::TableRecordSet(_)
+                | NativeResidualOp::TableIndexSet
+                | NativeResidualOp::TableFieldSet(_)
+                | NativeResidualOp::TableFieldGet(_)
+                | NativeResidualOp::TableIndexGet => {
+                    return Err(format!(
+                        "residual function `{}` builds or reads runtime objects; object shape must be preserved at runtime",
+                        function.name
+                    ));
                 }
                 _ => {}
             }

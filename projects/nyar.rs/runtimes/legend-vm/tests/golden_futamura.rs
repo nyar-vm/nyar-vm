@@ -194,7 +194,8 @@ fn lua_pe_unknown_input_type_mismatch_matches_interpret() {
     assert_unknown_input_matches_interpret(
         source,
         &[("x", LegacyValue::String("abc".to_string())), ("y", LegacyValue::Int(5))],
-        |value| matches!(value, ResidualValue::Int(5)),
+        // 字符串无法解析为数值时按 guest 规则取 0；结果可能是 Float(5)，键仍是 "5"。
+        |value| value.to_key() == "5",
     );
 }
 
@@ -231,6 +232,55 @@ fn lua_pe_free_variable_in_function_fails_closed() {
     assert!(error.to_string().contains("free variable `y`"), "unexpected error: {error}");
 }
 
+/// 动态对象：构造、字段/下标读写、长度与 guest builtin 都保留为残余操作，
+/// 残差结果与解释器一致。
+#[test]
+fn lua_pe_tables_match_interpret() {
+    let cases = [
+        ("local t = { 1, 2, name = \"x\" }\nt[2] = 5\nt.extra = 9\nreturn t[1] + t[2] + t.extra\n", "15"),
+        ("local t = { }\nt[1] = 4\nt[3] = 6\nreturn #t\n", "3"),
+        ("local t = { 1, 2, 3 }\nt[3] = nil\nreturn #t\n", "2"),
+        ("local t = { a = 1 }\nreturn t.a\n", "1"),
+        ("local s = \"abc\"\nreturn s[2]\n", "b"),
+        ("local t = {}\ntable_insert(t, 7)\ntable_insert(t, 8)\nreturn t[1] + t[2]\n", "15"),
+    ];
+    for (source, expected) in cases {
+        assert_residual_matches_interpret(source, expected);
+    }
+}
+
+/// 未定义的运行时调用保留为残余操作，运行期按 guest 规则解析为 `nil`。
+#[test]
+fn lua_pe_resolves_unknown_call_at_runtime() {
+    assert_residual_matches_interpret("return missing(1)\n", "");
+}
+
+/// 未知输入作为动态下标键进入残余对象读取。
+#[test]
+fn lua_pe_unknown_input_as_table_key_matches_interpret() {
+    let source = "local t = { 10, 20, 30 }\nreturn t[k]\n";
+    assert_unknown_input_matches_interpret(source, &[("k", LegacyValue::Int(2))], |value| value.to_key() == "20");
+}
+
+/// 对象残差没有编译期常量可折叠：PE 产品路径必须显式失败。
+#[test]
+fn lua_pe_table_residual_fails_closed_for_pe_product() {
+    let runner = LegendVmRunner::new();
+    let residual = runner.specialize_native("lua", "local t = { 1 }\nreturn t[1]\n", "lua_pe").expect("specialize");
+    let error = legend_vm::compiler::emit_native_pe(&residual, None).expect_err("对象残差不得编译期折叠成产品");
+    assert!(error.to_string().contains("runtime objects"), "unexpected error: {error}");
+}
+
+fn assert_residual_matches_interpret(source: &str, expected: &str) {
+    let runner = LegendVmRunner::new();
+    let mut env = HashMap::new();
+    let interpreted = runner.run("lua", source, &mut env).expect("interpret");
+    let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize → native");
+    let specialized = eval_native_residual(&residual).expect("eval native residual");
+    assert_eq!(specialized.to_key(), legacy_key(&interpreted), "residual={specialized:?} interpret={interpreted:?}");
+    assert_eq!(specialized.to_key(), expected, "source: {source}; residual={specialized:?}");
+}
+
 fn assert_unknown_input_matches_interpret(
     source: &str,
     inputs: &[(&str, LegacyValue)],
@@ -263,6 +313,11 @@ fn residual_input(value: &LegacyValue) -> ResidualValue {
     }
 }
 
+/// 解释器结果经 `LegacyValue` 适配层返回；`Null` 的宿主显示是 `null`，
+/// 而残差的 `Nil` 与 guest `nil` 同为空串——差分比较统一到 guest 语义。
 fn legacy_key(value: &LegacyValue) -> String {
-    value.to_string_value()
+    match value {
+        LegacyValue::Null => String::new(),
+        other => other.to_string_value(),
+    }
 }
