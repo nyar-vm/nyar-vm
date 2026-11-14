@@ -121,6 +121,37 @@ fn minimal_entry_runs_on_native() {
     compile_and_run_on_host("native", None);
 }
 
+/// OVM 用仓库内 OdinVM 真实装载并执行 `.odin`，不依赖外部 `odin` 工具链。
+#[test]
+fn minimal_entry_runs_on_ovm() {
+    use nyar::ClrSuspendStrategy;
+    use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+    use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
+
+    let groups = vec![rusty_valkyrie::CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
+    let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
+    let context = CompilerBuildContext::new(
+        "ovm",
+        nyar::CanonicalTarget::parse("ovm").expect("ovm target"),
+        ClrSuspendStrategy::from_runtime_async_flag(false),
+        WasmPackageKind::Binary,
+    );
+    let dir = tempfile::tempdir().expect("temp dir");
+    let report = compile_source_groups_to_artifacts(&ValkyrieCompiler::default(), &input, &context, dir.path(), "smoke", false, false)
+        .expect("minimal source must produce an OVM artifact through the adapter");
+    let contract = report
+        .driver
+        .run_contracts
+        .iter()
+        .find(|contract| contract.invocation == "ovm")
+        .expect("ovm target must emit an `ovm` run contract");
+    let bytes = std::fs::read(dir.path().join(&contract.physical_entry)).expect("read .odin artifact");
+    let mut vm = odin_vm::OdinVm::new();
+    let loaded = vm.load(&bytes).expect("OdinVM must load the emitted module");
+    vm.run(&loaded, &contract.logical_entry, Vec::new())
+        .unwrap_or_else(|error| panic!("OdinVM run `{}` failed: {error}", contract.logical_entry));
+}
+
 #[test]
 fn minimal_entry_emits_wasm_artifact() {
     use nyar::ClrSuspendStrategy;
