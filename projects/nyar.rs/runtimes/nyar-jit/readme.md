@@ -1,6 +1,6 @@
 # nyar-jit
 
-Optional just-in-time compiler for Nyar bytecode.
+Optional JIT services for the verified OVM execution contracts used by OdinVM. These contracts are target-owned, not a universal Nyar bytecode or an intermediate required by other targets.
 
 ## Overview
 
@@ -29,8 +29,7 @@ use odin_vm::Executor;
 let mut ex = Executor::with_jit(Box::new(BaselineScalarJit::new()));
 ```
 
-Product code typically configures JIT through `NyarVm` / executor setup rather than calling machine-code encoders
-directly.
+Product code configures JIT through OdinVM executor setup rather than calling machine-code encoders directly. Other targets define their own execution and acceleration contracts.
 
 ## Boundaries
 

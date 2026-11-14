@@ -1,6 +1,6 @@
 # nyar-gc
 
-Managed object heap and garbage collector for the Nyar bytecode runtime.
+Language-neutral managed heap and garbage collector used by OdinVM through explicit allocation, layout, root and write-barrier contracts. This crate does not define a shared Nyar bytecode or a mandatory runtime for other targets.
 
 ## Overview
 
@@ -39,4 +39,4 @@ let mut gc = GarbageCollector::new();
 ## Boundaries
 
 - Does not load `.odin` files or decode bytecode.
-- Does not define language type systems or witness tables (those live in compilers / `nyar-types`).
+- Does not define language type systems or witness tables. Their semantics belong to the corresponding language, while target runtime adapters supply explicit heap layout and ownership contracts.
