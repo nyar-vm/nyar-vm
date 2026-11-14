@@ -1066,7 +1066,8 @@ pub fn lower_native_residual_to_program(
                     method.returns_string,
                 ));
             }
-            functions.push(python_module_registration(&module.name, value_offset, &host_library));
+            functions.push(python_module_exec(value_offset, &host_library));
+            functions.push(python_module_registration(&module.name, &host_library));
         }
         None => {}
     }
@@ -1093,7 +1094,8 @@ pub fn lower_native_residual_to_program(
             }
         }
         Some(NativeHostModule::Python) => {
-            imports.push((host_library.clone(), "PyModule_Create2".to_string()));
+            // 多阶段初始化：宿主负责创建模块，扩展只提供已初始化的定义与执行钩子。
+            imports.push((host_library.clone(), "PyModuleDef_Init".to_string()));
             imports.push((host_library.clone(), "PyModule_AddIntConstant".to_string()));
             if has_methods {
                 imports.push((host_library.clone(), "PyArg_ParseTuple".to_string()));
@@ -1224,7 +1226,11 @@ fn python_wrapper_name(method: &str) -> String {
     format!("__nyar_py_wrap_{method}")
 }
 
-/// 构造 `.data`：模块定义、模块名、常量名、方法名/格式串与方法表。
+/// 构造 `.data`：多阶段模块定义、模块名、常量名、方法名/格式串、方法表与
+/// `PyModuleDef_Slot` 表（`Py_mod_exec`）。
+///
+/// 多阶段初始化由宿主创建模块并按槽位执行：`PyInit_<module>` 只返回定义地址，
+/// 模块实例与每解释器状态由 CPython 管理（`m_size = 0`）。
 ///
 /// 返回数据块、自相对重定位、常量名偏移与每个方法的格式串偏移（包装体需要）。
 fn python_module_data(
@@ -1234,7 +1240,7 @@ fn python_module_data(
     let mut data = vec![0u8; PY_MODULE_DEF_BASE_LEN as usize];
     let mut relocations = Vec::new();
     data[..8].copy_from_slice(&1i64.to_le_bytes()); // ob_refcnt = 1
-    data[56..64].copy_from_slice(&(-1i64).to_le_bytes()); // m_size = -1
+    // `m_size = 0`：多阶段初始化，不申请每模块状态。
 
     let name_offset = data.len() as u32;
     push_cstring(&mut data, module_name);
@@ -1257,8 +1263,8 @@ fn python_module_data(
 
     if !methods.is_empty() {
         let methods_offset = data.len() as u32;
-        // `m_methods` 指向 NUL 结尾的 `PyMethodDef` 数组；`PyModule_Create2` 会
-        // 在单阶段初始化时把方法表装进模块。
+        // `m_methods` 指向 NUL 结尾的 `PyMethodDef` 数组；多阶段执行时由
+        // `_PyModule_ExecDef` 在槽位执行前安装。
         relocations.push((64, NativeDataTarget::Data(methods_offset)));
         for (index, method) in methods.iter().enumerate() {
             let entry = data.len() as u32;
@@ -1270,7 +1276,28 @@ fn python_module_data(
         data.extend_from_slice(&[0u8; PY_METHOD_DEF_LEN as usize]); // 空终止项
     }
 
+    // `PyModuleDef_Slot { int slot; void *value; }`（16 字节，含 4 字节对齐填充）：
+    // `Py_mod_exec`（2）→ `__nyar_py_exec`，然后 `{0, NULL}` 终止。
+    let slots_offset = data.len() as u32;
+    push_module_slot(&mut data, PY_MOD_EXEC);
+    push_module_slot(&mut data, 0);
+    relocations.push((72, NativeDataTarget::Data(slots_offset)));
+    relocations.push((slots_offset + 8, NativeDataTarget::Function(PYTHON_EXEC_NAME.to_string())));
+
     (data, relocations, value_offset, format_offsets)
+}
+
+/// `Py_mod_exec` 槽位编号（`{0, NULL}` 是终止项，合法槽位从 1 起）。
+const PY_MOD_EXEC: i32 = 2;
+
+/// 多阶段执行钩子的符号名（`PyInit_` 之外的第二入口）。
+const PYTHON_EXEC_NAME: &str = "__nyar_py_exec";
+
+/// 追加一个 `PyModuleDef_Slot`（`slot` + 4 字节填充 + `value` 指针槽）。
+fn push_module_slot(data: &mut Vec<u8>, slot: i32) {
+    data.extend_from_slice(&slot.to_le_bytes());
+    data.extend_from_slice(&[0u8; 4]);
+    data.extend_from_slice(&[0u8; 8]);
 }
 
 fn push_cstring(data: &mut Vec<u8>, value: &str) {
@@ -1356,38 +1383,63 @@ fn python_method_wrapper(
     }
 }
 
-/// `PyInit_<module>` 入口：用 `PyModule_Create2` 建立单阶段模块，把残差 `main`
-/// 的结果以常量 `value` 暴露，并返回模块对象本身。
+/// `PyInit_<module>` 入口：多阶段初始化返回经 `PyModuleDef_Init` 初始化的定义地址。
 ///
-/// `PyModule_AddIntConstant` 返回 `int`，因此模块指针必须在帧槽里保存，最后重新
-/// 装入 `rax`；入口返回的必须是模块对象，否则 CPython 的导入器报
-/// “did not return a valid extension module”。
-fn python_module_registration(module_name: &str, value_offset: u32, dll: &str) -> NativeTextProgramFunction {
+/// CPython 的导入器用 `PyObject_TypeCheck(m, &PyModuleDef_Type)` 判定多阶段模块，
+/// 因此定义必须先由 `PyModuleDef_Init` 设置 `ob_type`；随后宿主调用
+/// `PyModule_FromDefAndSpec2` 创建模块并执行 `Py_mod_exec` 槽位。
+fn python_module_registration(module_name: &str, dll: &str) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     NativeTextProgramFunction {
         name: format!("PyInit_{module_name}"),
-        slot_count: 5,
+        slot_count: 1,
         instructions: vec![
             Lir::LoadDataAddress(0),
             Lir::StoreSlot(0),
-            // `PyModule_Create2(&def, PYTHON_API_VERSION = 1013)`。
-            Lir::LoadI64(1013),
-            Lir::StoreSlot(1),
             Lir::LoadSlotToArg { slot: 0, index: 0 },
-            Lir::LoadSlotToArg { slot: 1, index: 1 },
-            Lir::CallImport { module: dll.to_string(), field: "PyModule_Create2".to_string() },
-            Lir::StoreSlot(2),
-            // 残差值来自无参 `main`。
+            Lir::CallImport { module: dll.to_string(), field: "PyModuleDef_Init".to_string() },
+            Lir::Return,
+        ],
+    }
+}
+
+/// `int __nyar_py_exec(PyObject* module)`：`Py_mod_exec` 槽位的执行体。
+///
+/// 模块实例由宿主创建；这里安装残差 `main` 的结果常量 `value`（方法表由
+/// `_PyModule_ExecDef` 依据 `m_methods` 先行安装）。成功返回 0，失败返回 -1，
+/// 不吞掉宿主错误。
+fn python_module_exec(value_offset: u32, dll: &str) -> NativeTextProgramFunction {
+    use NativeTextInstruction as Lir;
+    const MODULE_SLOT: u16 = 0;
+    const VALUE_SLOT: u16 = 1;
+    const RESULT_SLOT: u16 = 2;
+    const ZERO_SLOT: u16 = 3;
+    const TEMP_SLOT: u16 = 4;
+    NativeTextProgramFunction {
+        name: PYTHON_EXEC_NAME.to_string(),
+        slot_count: 5,
+        instructions: vec![
+            Lir::LoadParam { index: 0, slot: MODULE_SLOT },
             Lir::Call("main".to_string()),
-            Lir::StoreSlot(3),
+            Lir::StoreSlot(VALUE_SLOT),
+            Lir::LoadI64(0),
+            Lir::StoreSlot(ZERO_SLOT),
             // `PyModule_AddIntConstant(module, "value", value)`。
-            Lir::LoadSlotToArg { slot: 2, index: 0 },
+            Lir::LoadSlotToArg { slot: MODULE_SLOT, index: 0 },
             Lir::LoadDataAddress(value_offset),
-            Lir::StoreSlot(4),
-            Lir::LoadSlotToArg { slot: 4, index: 1 },
-            Lir::LoadSlotToArg { slot: 3, index: 2 },
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 1 },
+            Lir::LoadSlotToArg { slot: VALUE_SLOT, index: 2 },
             Lir::CallImport { module: dll.to_string(), field: "PyModule_AddIntConstant".to_string() },
-            Lir::LoadSlot(2),
+            Lir::StoreSlot(RESULT_SLOT),
+            Lir::LoadSlot(RESULT_SLOT),
+            Lir::LoadSlotToRcx(ZERO_SLOT),
+            Lir::Eq,
+            Lir::JumpIfZero(1),
+            Lir::LoadI64(0),
+            Lir::Return,
+            Lir::Label(1),
+            Lir::LoadI64(-1),
             Lir::Return,
         ],
     }
@@ -1672,10 +1724,9 @@ pub fn emit_native_node_addon(module: &NativeResidualModule, os: NativeProductOs
 
 /// 发射 CPython 扩展模块（Linux `.so` / Windows `.pyd`）。
 ///
-/// 入口为 `PyInit_<module>`：用 `PyModule_Create2` 建立单阶段模块（`PyModuleDef`
-/// 位于镜像 `.data`），把 `main` 的整数值以常量 `value` 暴露，并把残差函数注册成
-/// 模块方法。Windows 的导入 DLL 名（例如 `python312.dll`）必须由调用方提供——
-/// 版本相关的名字不能由编译器猜。
+/// 入口为 `PyInit_<module>`：返回多阶段 `PyModuleDef`（`m_slots` 指向
+/// `Py_mod_exec`），模块由宿主创建，`value` 在 exec 阶段安装。Windows 的导入
+/// DLL 名（例如 `python312.dll`）必须由调用方提供——版本相关的名字不能由编译器猜。
 pub fn emit_native_python_extension(
     module: &NativeResidualModule,
     os: NativeProductOs,
@@ -2474,23 +2525,28 @@ mod tests {
         );
     }
 
-    /// CPython 扩展产物：`PyInit_<module>` 导出、两个 `PyModule_*` 动态导入与
-    /// `.data` 内的 `PyModuleDef`（含一个自相对名称指针）。
+    /// CPython 扩展产物：多阶段 `PyModuleDef`（`Py_mod_exec` 槽位）与
+    /// `PyInit_<module>` / `__nyar_py_exec` 两个入口。
     #[test]
     fn python_extension_exposes_pyinit_and_module_def() {
         let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
         module.name = "demo".into();
         let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python)).expect("lower python extension");
         assert!(image.symbols.iter().any(|(name, _)| name == "PyInit_demo"), "必须导出 `PyInit_demo`");
-        assert!(image.elf_imports.iter().any(|symbol| symbol == "PyModule_Create2"), "必须导入 `PyModule_Create2`");
+        assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_py_exec"), "必须导出多阶段执行钩子");
+        assert!(
+            !image.elf_imports.iter().any(|symbol| symbol == "PyModule_Create2"),
+            "多阶段初始化不调用 `PyModule_Create2`：模块由宿主创建"
+        );
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyModule_AddIntConstant"), "必须导入 `PyModule_AddIntConstant`");
         assert!(!image.data.is_empty(), "`PyModuleDef` 必须位于镜像数据段");
-        assert_eq!(image.data_relocations.len(), 1, "模块名指针必须走自相对重定位");
+        // 模块名、`m_slots` 与槽位函数指针各一条自相对重定位。
+        assert_eq!(image.data_relocations.len(), 3, "模块名 / m_slots / 槽位函数指针");
         assert!(image.data_references.iter().any(|(_, data_offset)| *data_offset == 0), "入口必须取 `PyModuleDef` 地址");
         let bytes = emit_native_python_extension(&module, NativeProductOs::Linux, None).expect("emit python extension");
         let haystack = String::from_utf8_lossy(&bytes);
         assert!(haystack.contains("PyInit_demo"));
-        assert!(haystack.contains("PyModule_Create2"));
+        assert!(haystack.contains("__nyar_py_exec"));
     }
 
     #[test]
@@ -2534,7 +2590,7 @@ mod tests {
             image.data_relocations.iter().all(|(_, target)| matches!(target, NativeDataTarget::Text(_) | NativeDataTarget::Data(_))),
             "命名函数重定位必须在编码阶段解析为节内偏移"
         );
-        assert_eq!(image.data_relocations.len(), 4, "模块名、m_methods、方法名与 ml_meth 各一条重定位");
+        assert_eq!(image.data_relocations.len(), 6, "模块名 / m_methods / 方法名 / ml_meth / m_slots / 槽位函数指针");
         let bytes = emit_native_python_extension(&module, NativeProductOs::Linux, None).expect("emit python methods extension");
         let haystack = String::from_utf8_lossy(&bytes);
         assert!(haystack.contains("__nyar_py_wrap_add"));
