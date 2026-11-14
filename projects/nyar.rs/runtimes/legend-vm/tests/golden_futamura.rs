@@ -605,3 +605,188 @@ mod exported_abi {
         assert_eq!(evaluate(&residual, &["x"]), 2);
     }
 }
+
+/// 导出函数 ABI：Linux 残差产品是 x86-64 `ELF` `.so`，宿主 `dlopen`/`dlsym`，
+/// 未知输入按 SysV64 整数形参传入，`print` 经 `write(2)` 写到隐藏的首个 fd 形参。
+#[cfg(target_os = "linux")]
+mod exported_elf_abi {
+    use std::collections::HashMap;
+    use std::ffi::CString;
+    use std::os::unix::io::AsRawFd;
+    use std::path::PathBuf;
+
+    use legend_vm::compiler::{ResidualValue, emit_native_elf_library, eval_native_residual_with_inputs};
+
+    unsafe extern "C" {
+        fn dlopen(filename: *const i8, flag: i32) -> *mut core::ffi::c_void;
+        fn dlsym(handle: *mut core::ffi::c_void, symbol: *const i8) -> *mut core::ffi::c_void;
+        fn dlclose(handle: *mut core::ffi::c_void) -> i32;
+    }
+
+    struct Library {
+        module: *mut core::ffi::c_void,
+        path: PathBuf,
+    }
+
+    impl Drop for Library {
+        fn drop(&mut self) {
+            unsafe {
+                dlclose(self.module);
+            }
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    fn load(shared: &[u8], tag: &str) -> Library {
+        let path = std::env::temp_dir().join(format!("legend-residual-{tag}-{}.so", std::process::id()));
+        std::fs::write(&path, shared).expect("write residual .so");
+        let name = CString::new(path.to_string_lossy().as_bytes()).expect("utf8 path");
+        let module = unsafe { dlopen(name.as_ptr(), 2 /* RTLD_NOW */) };
+        assert!(!module.is_null(), "dlopen failed for {}", path.display());
+        Library { module, path }
+    }
+
+    fn symbol(module: *mut core::ffi::c_void, name: &str) -> *mut core::ffi::c_void {
+        let name = CString::new(name).expect("symbol name");
+        let symbol = unsafe { dlsym(module, name.as_ptr()) };
+        assert!(!symbol.is_null(), "exported symbol `{name:?}` missing");
+        symbol
+    }
+
+    fn call(module: *mut core::ffi::c_void, name: &str, arguments: &[i64]) -> i64 {
+        let symbol = symbol(module, name);
+        unsafe {
+            match arguments {
+                [] => {
+                    let function: extern "C" fn() -> i64 = std::mem::transmute(symbol);
+                    function()
+                }
+                [a] => {
+                    let function: extern "C" fn(i64) -> i64 = std::mem::transmute(symbol);
+                    function(*a)
+                }
+                [a, b] => {
+                    let function: extern "C" fn(i64, i64) -> i64 = std::mem::transmute(symbol);
+                    function(*a, *b)
+                }
+                [a, b, c] => {
+                    let function: extern "C" fn(i64, i64, i64) -> i64 = std::mem::transmute(symbol);
+                    function(*a, *b, *c)
+                }
+                [a, b, c, d] => {
+                    let function: extern "C" fn(i64, i64, i64, i64) -> i64 = std::mem::transmute(symbol);
+                    function(*a, *b, *c, *d)
+                }
+                [a, b, c, d, e] => {
+                    let function: extern "C" fn(i64, i64, i64, i64, i64) -> i64 = std::mem::transmute(symbol);
+                    function(*a, *b, *c, *d, *e)
+                }
+                _ => panic!("the SysV64 text ABI supports at most 6 integer inputs"),
+            }
+        }
+    }
+
+    fn assert_exported_matches_evaluator(source: &str, cases: &[(&[i64], &[(&str, i64)])], tag: &str) {
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", source, "lua_elf").expect("specialize");
+        let shared = emit_native_elf_library(&residual).expect("emit residual .so");
+        let library = load(&shared, tag);
+        for (arguments, inputs) in cases {
+            let inputs: HashMap<String, ResidualValue> =
+                inputs.iter().map(|(name, value)| ((*name).to_string(), ResidualValue::Int(*value))).collect();
+            let expected = match eval_native_residual_with_inputs(&residual, &inputs).expect("eval residual") {
+                ResidualValue::Int(value) => value,
+                other => panic!("expected integer residual result, got {other:?}"),
+            };
+            assert_eq!(call(library.module, "main", arguments), expected, "source: {source}; args: {arguments:?}");
+        }
+    }
+
+    #[test]
+    fn exported_residual_runs_unknown_inputs_from_host() {
+        assert_exported_matches_evaluator(
+            "return x + y\n",
+            &[(&[3, 4], &[("x", 3), ("y", 4)]), (&[10, -2], &[("x", 10), ("y", -2)]), (&[-5, 20], &[("x", -5), ("y", 20)])],
+            "elf-add",
+        );
+    }
+
+    #[test]
+    fn exported_residual_branches_and_calls_on_linux() {
+        assert_exported_matches_evaluator(
+            "if x > 5 then\n  return x * 2\nelse\n  return x + 1\nend\n",
+            &[(&[7], &[("x", 7)]), (&[2], &[("x", 2)])],
+            "elf-branch",
+        );
+        assert_exported_matches_evaluator(
+            "function add(a, b)\n  return a + b\nend\nreturn add(x, y)\n",
+            &[(&[4, 6], &[("x", 4), ("y", 6)])],
+            "elf-call",
+        );
+    }
+
+    #[test]
+    fn exported_residual_returns_static_string_descriptors() {
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", "if x > 0 then return \"pos\" else return \"neg\" end\n", "lua_elf")
+            .expect("specialize");
+        let shared = emit_native_elf_library(&residual).expect("emit residual .so");
+        let library = load(&shared, "elf-string");
+        assert_eq!(read_descriptor(call(library.module, "main", &[1])), "pos");
+        assert_eq!(read_descriptor(call(library.module, "main", &[-1])), "neg");
+    }
+
+    /// 宿主读取静态字符串描述符：`{ i32 self_relative_ptr; u32 len }` 紧跟字节。
+    fn read_descriptor(address: i64) -> String {
+        unsafe {
+            let base = address as usize;
+            let relative = core::ptr::read_unaligned(base as *const i32);
+            let len = core::ptr::read_unaligned((base + 4) as *const u32) as usize;
+            let pointer = (base as isize + relative as isize) as *const u8;
+            let bytes = core::slice::from_raw_parts(pointer, len);
+            String::from_utf8(bytes.to_vec()).expect("descriptor must hold UTF-8")
+        }
+    }
+
+    #[test]
+    fn exported_residual_prints_through_the_write_syscall() {
+        let dir = std::env::temp_dir().join(format!("legend-residual-elf-print-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("out.txt");
+        let runner = legend_vm::LegendVmRunner::new();
+
+        for (source, expected) in [
+            ("print(\"a\")\nprint(\"b\")\nreturn 0\n", "a\nb\n"),
+            ("print(\"a\", \"b\")\nreturn 0\n", "a\tb\n"),
+            ("print(42)\nprint(-7, true, false)\nprint()\nprint(nil)\nreturn 0\n", "42\n-7\ttrue\tfalse\n\n\n"),
+            (
+                "function add(a, b)\n  return a + b\nend\nfunction show(v)\n  print(v)\n  return v\nend\nprint(add(2, 3))\nshow(9)\nreturn 0\n",
+                "5\n9\n",
+            ),
+        ] {
+            let residual = runner.specialize_native("lua", source, "lua_elf").expect("specialize");
+            let shared = emit_native_elf_library(&residual).expect("emit residual .so");
+            let library = load(&shared, "elf-print");
+            {
+                let file = std::fs::File::create(&path).expect("create capture file");
+                let fd = file.as_raw_fd() as i64;
+                let _ = call(library.module, "main", &[fd]);
+            }
+            let observed = std::fs::read_to_string(&path).expect("read captured effects");
+            assert_eq!(observed, expected, "source: {source}");
+        }
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn exported_residual_fails_closed_for_unsupported_shapes_on_linux() {
+        let runner = legend_vm::LegendVmRunner::new();
+        for (source, needle) in [("local t = { 1 }\nreturn t[1]\n", "TableNew"), ("return x / y\n", "Div")] {
+            let residual = runner.specialize_native("lua", source, "lua_elf").expect("specialize");
+            let error = emit_native_elf_library(&residual).expect_err("unsupported residual must fail closed");
+            assert!(error.contains(needle), "source: {source}; unexpected error: {error}");
+        }
+    }
+}

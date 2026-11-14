@@ -255,6 +255,16 @@ pub fn encode_native_text_program_with_imports(
                     text.extend_from_slice(&value.to_le_bytes());
                 }
                 NativeTextInstruction::StoreByteAtRaxFromRdx => text.extend_from_slice(&[0x88, 0x10]),
+                NativeTextInstruction::SyscallWrite => {
+                    if abi != NativeAbi::SystemV64 {
+                        return Err(format!(
+                            "{} 文本 ABI 没有 `write` syscall 合同：effect 写入必须走宿主导入",
+                            abi.name()
+                        ));
+                    }
+                    // `mov eax, 1`（SYS_write）；`syscall`。实参已在 rdi/rsi/rdx。
+                    text.extend_from_slice(&[0xB8, 0x01, 0x00, 0x00, 0x00, 0x0F, 0x05]);
+                }
                 NativeTextInstruction::CallImport { module, field } => {
                     if abi != NativeAbi::Win64 {
                         return Err(format!(

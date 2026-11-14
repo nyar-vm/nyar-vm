@@ -22,12 +22,38 @@ use nyar_emitter::nyar_backend_native::{
 
 use super::PeCompiler;
 
-/// Target lane for host-script PE residuals (product path).
+/// Target lane for host-script native residuals (product path).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NativeResidualTarget {
-    /// Windows PE / x64 native frames (legend-vm endpoint).
+    /// x86-64 native frames (legend-vm endpoint).
     #[default]
     Native,
+}
+
+/// 原生产品 lane 的目标 OS：决定容器、调用约定与 effect 写入原语。
+///
+/// 目标身份来自规范四元组，不从宿主 `cfg` 猜；产品入口必须显式选择。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeProductPlatform {
+    /// Windows `PE`：Win64 + `kernel32!WriteFile` 经 IAT。
+    Windows,
+    /// Linux `ELF`：SysV64 + `write(2)` 系统调用。
+    Linux,
+}
+
+impl NativeProductPlatform {
+    /// 对应的文本 LIR 调用约定。
+    fn abi(self) -> NativeAbi {
+        match self {
+            Self::Windows => NativeAbi::Win64,
+            Self::Linux => NativeAbi::SystemV64,
+        }
+    }
+
+    /// 该平台是否用宿主导入（IAT）实现 effect 写入。
+    fn uses_host_imports(self) -> bool {
+        matches!(self, Self::Windows)
+    }
 }
 
 /// One residual operation (language-neutral; mirrors [`ResidualSink`]).
@@ -835,30 +861,38 @@ enum ProductValueKind {
     Str(String),
 }
 
-/// 把残差模块降低为多函数文本程序并写成 `PE` DLL（导出函数 ABI）。
+/// 把残差模块降低为多函数文本程序（导出函数 ABI），平台显式给出。
 ///
-/// 未知输入通过 Win64 整数形参进入（最多 4 个），残差函数按名导出。
+/// 未知输入通过该平台的整数形参进入（Win64 4 个 / SysV64 6 个），残差函数按名导出。
 ///
 /// 产品载体：整数、布尔与**静态字符串描述符**（镜像内只读 `{rel_ptr,len}` + UTF-8，
 /// 由宿主读取、永不释放）。含 `print` 的模块额外声明一个隐藏的首个整数形参作为
-/// effect 通道（宿主提供的可写句柄，作为**每个**残差函数的首个隐藏整数形参），
-/// `print` 经 `kernel32!WriteFile` 按 guest 顺序写字节；字符串走静态描述符，
+/// effect 通道（宿主提供的可写句柄/fd，作为**每个**残差函数的首个隐藏整数形参），
+/// `print` 按目标 OS 的写入原语输出：Windows 经 `kernel32!WriteFile`（IAT），
+/// Linux 经 `write(2)` 系统调用；两者都保持 guest 顺序。字符串走静态描述符，
 /// 整数走十进制格式化（负数带 `-`），布尔写 `true`/`false`，`nil` 写空串。
 /// 对象、运行时解析调用、除法、字符串比较/拼接与字符串作为实参都显式失败
 /// 闭合，不在产品路径里静默吞掉语义。
-pub fn lower_native_residual_to_program(module: &NativeResidualModule) -> Result<NativeTextProgramImage, String> {
+pub fn lower_native_residual_to_program(
+    module: &NativeResidualModule,
+    platform: NativeProductPlatform,
+) -> Result<NativeTextProgramImage, String> {
     if !module.is_native_bound() {
         return Err("residual is not native-bound".into());
     }
     // 产品级 effect：`print` 可出现在任意残差函数；含 effect 的模块给每个函数
     // 增加同一个隐藏的首个整数形参（宿主 effect 通道），调用时逐层传递。
     let has_print = module.functions.iter().any(|function| function.ops.iter().any(|op| matches!(op, NativeResidualOp::Print(_))));
-    let imports: Vec<(String, String)> =
-        if has_print { vec![("kernel32".to_string(), "WriteFile".to_string())] } else { Vec::new() };
+    let imports: Vec<(String, String)> = if has_print && platform.uses_host_imports() {
+        vec![("kernel32".to_string(), "WriteFile".to_string())]
+    }
+    else {
+        Vec::new()
+    };
 
     let mut lowered = Vec::with_capacity(module.functions.len());
     for function in &module.functions {
-        lowered.push(lower_residual_function(function, has_print)?);
+        lowered.push(lower_residual_function(function, has_print, platform)?);
     }
     // 调用结果当前按整数载体传播；字符串返回值的残差函数不能作为调用目标，
     // 否则调用方会按错误载体继续使用 `rax`。
@@ -880,15 +914,23 @@ pub fn lower_native_residual_to_program(module: &NativeResidualModule) -> Result
         }
     }
     let functions: Vec<NativeTextProgramFunction> = lowered.into_iter().map(|(function, _)| function).collect();
-    // 导出函数 ABI 当前只闭合 Win64（PE DLL）；Linux 产品 lane 尚未接入调用方，
-    // 因此这里显式给出 Win64，而不是依赖编码器的默认值。
-    encode_native_text_program_with_imports(&functions, &imports, NativeAbi::Win64)
+    // 调用约定与容器都由平台显式给出，编码器不提供默认 ABI。
+    encode_native_text_program_with_imports(&functions, &imports, platform.abi())
 }
 
 /// 以导出函数 ABI 发射 `PE` DLL（宿主按 Win64 调用约定调用残差函数）。
 pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module)?;
+    let image = lower_native_residual_to_program(module, NativeProductPlatform::Windows)?;
     PeCompiler.compile_library(&image).map_err(|error| error.to_string())
+}
+
+/// 以导出函数 ABI 发射 x86-64 `ELF` 共享库 `.so`（宿主 `dlopen` + `dlsym`）。
+///
+/// 与 `PE` DLL 对称：残差函数按名导出，未知输入走 SysV64 整数形参；含 `print`
+/// 的模块用隐藏的首个整数形参作为 fd，调用 `write(2)`。
+pub fn emit_native_elf_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
+    let image = lower_native_residual_to_program(module, NativeProductPlatform::Linux)?;
+    super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
 }
 
 struct ResidualFunctionLowering<'a> {
@@ -901,12 +943,14 @@ struct ResidualFunctionLowering<'a> {
     instructions: Vec<NativeTextInstruction>,
     /// 线性残差里的 `ret`/`jump` 之后是死代码；只允许标签重新开启可达区。
     returned: bool,
-    /// `main` 的隐藏 effect 通道（Win64 第 1 个整数形参）。
+    /// `main` 的隐藏 effect 通道（第 1 个整数形参：Windows 文件句柄 / Linux fd）。
     effect_sink: Option<u16>,
+    /// 目标 OS：决定 effect 写入原语与导入面。
+    platform: NativeProductPlatform,
 }
 
 impl<'a> ResidualFunctionLowering<'a> {
-    fn new(function: &'a NativeResidualFunction) -> Self {
+    fn new(function: &'a NativeResidualFunction, platform: NativeProductPlatform) -> Self {
         Self {
             function,
             locals: HashMap::new(),
@@ -917,6 +961,7 @@ impl<'a> ResidualFunctionLowering<'a> {
             instructions: Vec::new(),
             returned: false,
             effect_sink: None,
+            platform,
         }
     }
 
@@ -980,7 +1025,11 @@ impl<'a> ResidualFunctionLowering<'a> {
         self.write_bytes(pointer, length)
     }
 
-    /// 用 `(pointer, length)` 两个帧槽调用宿主 effect 写入。
+    /// 用 `(pointer, length)` 两个帧槽按目标 OS 的写入原语写 effect。
+    ///
+    /// 两个平台的通道都是隐藏的首个整数形参（Windows 文件句柄 / Linux fd）；
+    /// 差别只在写入编码：Windows 走 `kernel32!WriteFile`（IAT + shadow space），
+    /// Linux 走 `write(2)` 系统调用（rdi/rsi/rdx）。
     fn write_bytes(&mut self, pointer: u16, length: u16) -> Result<(), String> {
         let handle = self.effect_sink.ok_or_else(|| {
             format!("residual function `{}` writes effects without an effect sink", self.function.name)
@@ -988,15 +1037,22 @@ impl<'a> ResidualFunctionLowering<'a> {
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: handle, index: 0 });
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: pointer, index: 1 });
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: length, index: 2 });
-        self.instructions.push(NativeTextInstruction::LoadI64(0));
-        let written_out = self.alloc_slot();
-        self.instructions.push(NativeTextInstruction::StoreSlot(written_out));
-        self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: written_out, index: 3 });
-        self.instructions.push(NativeTextInstruction::ZeroStackArg(0));
-        self.instructions.push(NativeTextInstruction::CallImport {
-            module: "kernel32".to_string(),
-            field: "WriteFile".to_string(),
-        });
+        match self.platform {
+            NativeProductPlatform::Windows => {
+                self.instructions.push(NativeTextInstruction::LoadI64(0));
+                let written_out = self.alloc_slot();
+                self.instructions.push(NativeTextInstruction::StoreSlot(written_out));
+                self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: written_out, index: 3 });
+                self.instructions.push(NativeTextInstruction::ZeroStackArg(0));
+                self.instructions.push(NativeTextInstruction::CallImport {
+                    module: "kernel32".to_string(),
+                    field: "WriteFile".to_string(),
+                });
+            }
+            NativeProductPlatform::Linux => {
+                self.instructions.push(NativeTextInstruction::SyscallWrite);
+            }
+        }
         Ok(())
     }
 
@@ -1119,17 +1175,21 @@ impl<'a> ResidualFunctionLowering<'a> {
 fn lower_residual_function(
     function: &NativeResidualFunction,
     with_effect_sink: bool,
+    platform: NativeProductPlatform,
 ) -> Result<(NativeTextProgramFunction, Option<ProductValueKind>), String> {
-    let available = if with_effect_sink { 3 } else { 4 };
+    // 该平台寄存器实参上限，减去隐藏 effect 通道占用。
+    let total = platform.abi().integer_argument_limit();
+    let available = total - usize::from(with_effect_sink);
     if function.parameters.len() > available {
         return Err(format!(
-            "residual function `{}` has {} parameters; the Win64 text ABI supports at most {available} integer inputs{}",
+            "residual function `{}` has {} parameters; the {} text ABI supports at most {available} integer inputs{}",
             function.name,
             function.parameters.len(),
+            platform.abi().name(),
             if with_effect_sink { " alongside the effect sink" } else { "" }
         ));
     }
-    let mut lowering = ResidualFunctionLowering::new(function);
+    let mut lowering = ResidualFunctionLowering::new(function, platform);
     let mut return_kind: Option<ProductValueKind> = None;
     let parameter_shift = if with_effect_sink {
         let sink = lowering.alloc_slot();
@@ -1300,11 +1360,12 @@ fn lower_residual_function(
             }
             NativeResidualOp::Call { name, argc } => {
                 let sink = lowering.effect_sink;
-                let available = if sink.is_some() { 3 } else { 4 };
+                let available = platform.abi().integer_argument_limit() - usize::from(sink.is_some());
                 if *argc > available {
                     return Err(format!(
-                        "residual function `{}` calls `{name}` with {argc} arguments; the Win64 text ABI supports at most {available}",
-                        function.name
+                        "residual function `{}` calls `{name}` with {argc} arguments; the {} text ABI supports at most {available}",
+                        function.name,
+                        platform.abi().name()
                     ));
                 }
                 let mut arguments = Vec::with_capacity(*argc);
@@ -1544,5 +1605,37 @@ mod tests {
         let error = lower_native_residual_to_x64(&module).expect_err("含 Print 的残差不得编译期折叠");
         assert!(error.contains("Print"), "unexpected error: {error}");
         assert!(error.contains("effects must be preserved at runtime"), "unexpected error: {error}");
+    }
+
+    /// Linux 产品 lane 产出 `ET_DYN` 共享库并按名导出残差函数。
+    #[test]
+    fn linux_product_emits_a_shared_object_with_exports() {
+        use nyar_emitter::nyar_backend_native::{NativeExecutableKind, classify_native_image};
+
+        let module = residual_main(vec![NativeResidualOp::PushI64(7), NativeResidualOp::Ret]);
+        let bytes = emit_native_elf_library(&module).expect("emit linux residual .so");
+        let facts = classify_native_image(&bytes).expect("product must be a parseable image");
+        assert_eq!(facts.kind, NativeExecutableKind::ElfShared, "必须是 ET_DYN 而不是 ET_EXEC");
+        assert!(facts.shared, "共享库身份");
+        assert_eq!(format!("{:?}", facts.arch), "X64", "必须是 AMD64 共享库");
+        assert!(String::from_utf8_lossy(&bytes).contains("main"), "残差函数必须出现在动态符号表");
+    }
+
+    /// Linux 的 `print` 用 `write(2)` 系统调用，不生成任何 PE 导入表。
+    #[test]
+    fn linux_print_uses_the_write_syscall_without_host_imports() {
+        let module = residual_main(vec![
+            NativeResidualOp::PushString("a".into()),
+            NativeResidualOp::Print(1),
+            NativeResidualOp::PushI64(0),
+            NativeResidualOp::Ret,
+        ]);
+        let image = lower_native_residual_to_program(&module, NativeProductPlatform::Linux).expect("lower linux print residual");
+        assert!(image.imports.is_empty(), "Linux 产品不得声明 PE 导入");
+        assert!(image.idata.is_empty(), "Linux 产品不得生成 `.idata`");
+        assert!(
+            image.text.windows(7).any(|window| window == [0xB8, 0x01, 0x00, 0x00, 0x00, 0x0F, 0x05]),
+            "effect 写入必须是 `write(2)` 系统调用"
+        );
     }
 }

@@ -43,7 +43,7 @@ pub enum NativeAbi {
 
 impl NativeAbi {
     /// 调用前调用方必须预留的 shadow space 字节数（Win64 为 32，SysV 为 0）。
-    pub(crate) fn shadow_space(self) -> u32 {
+    pub fn shadow_space(self) -> u32 {
         match self {
             Self::Win64 => 32,
             Self::SystemV64 => 0,
@@ -51,7 +51,7 @@ impl NativeAbi {
     }
 
     /// 寄存器可承载的整数实参上限（超出必须走栈，本 lane 尚未实现栈传参）。
-    pub(crate) fn integer_argument_limit(self) -> usize {
+    pub fn integer_argument_limit(self) -> usize {
         match self {
             Self::Win64 => 4,
             Self::SystemV64 => 6,
@@ -62,7 +62,7 @@ impl NativeAbi {
     ///
     /// Win64 的 32 字节 shadow space 同时充当块参数周转区；SysV64 没有 shadow
     /// space，块参数周转需要独立空间（6 个寄存器实参 × 8 字节）。
-    pub(crate) fn frame_reserve(self) -> usize {
+    pub fn frame_reserve(self) -> usize {
         match self {
             Self::Win64 => 32,
             Self::SystemV64 => 6 * 8,
@@ -70,7 +70,7 @@ impl NativeAbi {
     }
 
     /// 调用约定的稳定名称，用于结构化错误。
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Win64 => "Win64",
             Self::SystemV64 => "SysV64",
@@ -167,6 +167,12 @@ pub enum NativeTextInstruction {
     LoadStringPtr(String),
     /// 把静态字符串的**字节长度**装入 `rax`。
     LoadStringLen(String),
+    /// 以目标 OS 的 `write` 原语写 `(fd, ptr, len)` 到宿主 effect 通道。
+    ///
+    /// SysV64/Linux 编码为 `write(2)` 系统调用，实参按调用约定位于
+    /// `rdi`/`rsi`/`rdx`；Win64 没有对应的 syscall 合同，遇到该指令显式失败，
+    /// Windows 的 effect 写入必须走 `CallImport` 的 IAT。
+    SyscallWrite,
     /// 把 Win64 栈上第 `index` 个额外实参（`[rsp + 32 + 8*index]`）置零。
     ///
     /// 用于第 5 个及以后的整数实参（前 4 个走 rcx/rdx/r8/r9）。这是 Win64
