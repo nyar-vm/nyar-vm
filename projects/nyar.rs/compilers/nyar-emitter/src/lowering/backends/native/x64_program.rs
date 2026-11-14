@@ -151,6 +151,8 @@ pub fn encode_native_text_program_with_data(
     let mut elf_got_fixups: Vec<(u32, u32)> = Vec::new();
     // (lea disp32 的字段位置, `.data` 内偏移) — 由容器在布局确定后回填。
     let mut data_references: Vec<(u32, u32)> = Vec::new();
+    // (lea disp32 的字段位置, 目标函数名) — 编码器在文本布局完成后解析。
+    let mut function_addresses: Vec<(usize, String)> = Vec::new();
     for (offset, _) in data_relocations {
         if *offset as usize + 8 > data.len() {
             return Err(format!("native 数据段重定位偏移 {offset} 超出数据块长度 {}", data.len()));
@@ -258,6 +260,12 @@ pub fn encode_native_text_program_with_data(
                     data_references.push((u32::try_from(text.len()).map_err(|_| "native 数据引用偏移超出 u32".to_string())?, *offset));
                     text.extend_from_slice(&[0, 0, 0, 0]);
                 }
+                NativeTextInstruction::LoadFunctionAddress(name) => {
+                    // `lea rax, [rip + disp32]`；目标在同一个 `.text`，布局完成后解析。
+                    text.extend_from_slice(&[0x48, 0x8D, 0x05]);
+                    function_addresses.push((text.len(), name.clone()));
+                    text.extend_from_slice(&[0, 0, 0, 0]);
+                }
                 NativeTextInstruction::ZeroStackArg(index) => {
                     // 该指令清的是 Win64 shadow space 之后的第 5+ 个栈实参槽；
                     // SysV64 的栈实参布局不同，本 lane 不借用 Win64 偏移。
@@ -351,6 +359,13 @@ pub fn encode_native_text_program_with_data(
         let target = symbol_offsets.get(&name).copied().ok_or_else(|| format!("native text program 调用了未定义函数 `{name}`"))?;
         let displacement = target as i64 - (field as i64 + 4);
         let displacement = i32::try_from(displacement).map_err(|_| format!("native text 调用位移超出 rel32：`{name}`"))?;
+        text[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
+    }
+
+    for (field, name) in function_addresses {
+        let target = symbol_offsets.get(&name).copied().ok_or_else(|| format!("native 函数地址引用了未定义函数 `{name}`"))?;
+        let displacement = target as i64 - (field as i64 + 4);
+        let displacement = i32::try_from(displacement).map_err(|_| format!("native 函数地址位移超出 rel32：`{name}`"))?;
         text[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
     }
 

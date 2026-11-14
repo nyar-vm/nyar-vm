@@ -175,6 +175,12 @@ pub enum NativeTextInstruction {
     /// `.text` 内的 `disp32` 回填到 `.data` 目标，并在数据段布局确定后应用
     /// 自相对重定位。`offset` 超出数据段即失败闭合。
     LoadDataAddress(u32),
+    /// 把同程序内命名函数的地址装入 `rax`（`lea rax, [rip+disp32]`）。
+    ///
+    /// 用于把函数指针作为值传给宿主（例如 Node-API `napi_create_function` 的
+    /// 回调）。目标与本指令同处 `.text`，编码器在布局完成后直接解析，不需要
+    /// 容器参与。
+    LoadFunctionAddress(String),
     /// 以目标 OS 的 `write` 原语写 `(fd, ptr, len)` 到宿主 effect 通道。
     ///
     /// SysV64/Linux 编码为 `write(2)` 系统调用，实参按调用约定位于
