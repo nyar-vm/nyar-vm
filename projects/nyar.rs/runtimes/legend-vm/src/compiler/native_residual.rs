@@ -1008,13 +1008,14 @@ fn python_module_init(module_name: &str) -> NativeTextProgramFunction {
         name: format!("PyInit_{module_name}"),
         slot_count: 4,
         instructions: vec![
-            Lir::Call("main".to_string()),
-            Lir::StoreSlot(3),
+            // 先建模块，再求残差值：模块对象必须在返回前保持有效引用。
             Lir::LoadStringPtr(module_name.to_string()),
             Lir::StoreSlot(0),
             Lir::LoadSlotToArg { slot: 0, index: 0 },
             Lir::CallImport { module: String::new(), field: "PyModule_New".to_string() },
             Lir::StoreSlot(1),
+            Lir::Call("main".to_string()),
+            Lir::StoreSlot(3),
             Lir::LoadSlotToArg { slot: 1, index: 0 },
             Lir::LoadStringPtr("value".to_string()),
             Lir::StoreSlot(2),
