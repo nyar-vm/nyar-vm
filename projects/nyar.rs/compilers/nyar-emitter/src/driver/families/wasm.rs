@@ -85,11 +85,15 @@ fn wasm_run_contract(
                 crate::nyar_backend_wasi::WasiPreview::Preview3 => " -S p3",
                 crate::nyar_backend_wasi::WasiPreview::Preview2 => "",
             };
+            // 运行契约只包含“在宿主上跑起来”所必需的选项：`-W gc` 是 wasm-gc
+            // 语义前提，`-W max-memory-size` 是产品内存上限。`wmemcheck` 是
+            // 诊断开关（stock wasmtime 默认未编译该特性），不能进入默认运行路径，
+            // 否则声明的契约在标准宿主上直接失败。
             DriverRunContract {
                 logical_entry: "_start".to_string(),
                 physical_entry: format!("{}.wasi", physical_name),
                 invocation: "wasmtime".to_string(),
-                validate: format!("wasmtime run -W gc -W wmemcheck -W max-memory-size=16777216{p3_flag} {}.wasi", physical_name),
+                validate: format!("wasmtime run -W gc -W max-memory-size=16777216{p3_flag} {}.wasi", physical_name),
             }
         }
         other => unreachable!("unexpected wasm host boundary: {:?}", other),

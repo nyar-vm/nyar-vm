@@ -31,8 +31,6 @@ fn exposes_runtime_family_defaults_for_all_builtin_families() {
             "-W".to_string(),
             "gc".to_string(),
             "-W".to_string(),
-            "wmemcheck".to_string(),
-            "-W".to_string(),
             "max-memory-size=16777216".to_string(),
             "{artifact}".to_string(),
         ]

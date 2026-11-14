@@ -131,6 +131,18 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         // 导出名不是 `main` 就失去 `callee_import_index` 注册路径。
         collect_wasm_host_imports(submission, !string_literals.is_empty())
     };
+    // WASI 宿主负责提供进程 argv：入口声明 `[utf8]`（字符串数组）形参时，
+    // 入口包装体必须从 `wasi:cli/environment#get-arguments` 取值。该导入属于
+    // 宿主边界本身，不由用户源码显式声明——否则 argv 形参永远只会拿到空数组。
+    if wasi_mode && wasi_entry_declares_argv(submission) {
+        let key = (
+            crate::nyar_backend_wasi::wasi_versioned_import_module_for("wasi:cli/environment", wasi_preview),
+            "get-arguments".to_string(),
+        );
+        if !host_imports.contains(&key) {
+            host_imports.push(key);
+        }
+    }
     // `import_count` 在 managed→host 句柄转换导入按需合成之后再取（见下方冻结步）。
     let callee_import_index = if wasi_mode {
         build_wasi_callee_import_index(submission, &host_imports, wasi_preview)
@@ -1517,6 +1529,23 @@ pub(super) fn emit_wasi_entry_default_arg(ty: &NyarType, gc_array_type_indices: 
 
 /// Out-pointer slot in the reserved `[0, WASI_STRING_DATA_OFFSET)` region for `get-arguments`.
 pub(super) const WASI_GET_ARGUMENTS_OUT_PTR: i32 = 16;
+
+/// 入口是否以字符串数组（`[utf8]`）形参接收进程 argv。
+///
+/// 该判定与入口包装体构建 argv 的条件一致；它决定 `get-arguments` 是否作为
+/// 宿主边界导入被加入模块，而不是要求用户源码显式声明该导入。
+fn wasi_entry_declares_argv(submission: &FragmentSubmission) -> bool {
+    submission
+        .backend_plan
+        .entry_operation()
+        .and_then(|instance| submission.backend_plan.get_function(&instance))
+        .is_some_and(|view| {
+            view.function.param_types.iter().any(|ty| match ty {
+                NyarType::Array(element) | NyarType::FixedArray { element, .. } => is_js_glue_host_string_type(element.as_ref()),
+                _ => false,
+            })
+        })
+}
 
 /// Build guest `[utf8]` argv from `wasi:cli/environment#get-arguments` (cabi out-pointer).
 ///

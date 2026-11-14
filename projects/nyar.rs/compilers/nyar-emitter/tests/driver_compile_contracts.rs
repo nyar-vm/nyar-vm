@@ -65,7 +65,7 @@ fn creates_node_and_wasi_run_contracts_via_bundled_compiler() {
     let wasi_contract = wasi_report.run_contracts.into_iter().next().expect("missing wasi contract");
     assert_eq!(wasi_contract.logical_entry, "_start");
     assert_eq!(wasi_contract.physical_entry, "demo_wasi.wasi");
-    assert_eq!(wasi_contract.validate, "wasmtime run -W gc -W wmemcheck -W max-memory-size=16777216 demo_wasi.wasi");
+    assert_eq!(wasi_contract.validate, "wasmtime run -W gc -W max-memory-size=16777216 demo_wasi.wasi");
 
     let component_path = output_dir.path().join("demo_wasi.wasi");
     let wit_dump = Command::new("wasm-tools")

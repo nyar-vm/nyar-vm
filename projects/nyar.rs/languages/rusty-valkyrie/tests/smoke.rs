@@ -121,6 +121,63 @@ fn minimal_entry_runs_on_native() {
     compile_and_run_on_host("native", None);
 }
 
+/// WASI lane 真实装载：源码 → `.wasi` component → `wasmtime run`。
+///
+/// 入口声明 `[utf8]` argv 形参，迫使入口包装体走
+/// `wasi:cli/environment#get-arguments` 的 canonical ABI 合成路径，而不是
+/// 用空数组或缺省值绕过：宿主必须把真实实参 lift 进 guest 线性内存，再由
+/// 包装体构建 GC 数组。夹具没有 std 包（数组下标/`length` 都是 std 单例），
+/// 因此这里只断言派生路径被真实执行，数值比较交给下游 harness。
+#[test]
+fn minimal_entry_runs_on_wasi_with_real_argv() {
+    use nyar::ClrSuspendStrategy;
+    use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+    use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
+
+    let source = "[main]\nmicro main(args: [utf8]) {\n}\n";
+    let groups = vec![rusty_valkyrie::CompilerSourceGroup::single_source("smoke", "smoke", source).as_entry()];
+    let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
+    let context = CompilerBuildContext::new(
+        "wasi",
+        nyar::CanonicalTarget::parse("wasi").expect("wasi target"),
+        ClrSuspendStrategy::from_runtime_async_flag(false),
+        WasmPackageKind::Binary,
+    );
+    let dir = tempfile::tempdir().expect("temp dir");
+    let report = compile_source_groups_to_artifacts(&ValkyrieCompiler::default(), &input, &context, dir.path(), "smoke", false, false)
+        .expect("argv entry must produce a WASI component through the adapter");
+    let contract = report
+        .driver
+        .run_contracts
+        .iter()
+        .find(|contract| contract.invocation == "wasmtime")
+        .unwrap_or_else(|| panic!("wasi target must emit a wasmtime run contract, got {:?}", report.driver.run_contracts));
+
+    // 组件必须真的导入 argv 接口，否则入口包装体只是拿到默认空数组。
+    let component_path = dir.path().join(&contract.physical_entry);
+    let wit_dump = std::process::Command::new("wasm-tools")
+        .args(["component", "wit", component_path.to_string_lossy().as_ref()])
+        .output()
+        .expect("spawn wasm-tools component wit");
+    assert!(wit_dump.status.success(), "stderr={}", String::from_utf8_lossy(&wit_dump.stderr));
+    let wit_text = String::from_utf8(wit_dump.stdout).expect("utf8 component wit");
+    assert!(wit_text.contains("wasi:cli/environment"), "component must import `wasi:cli/environment`, wit={wit_text}");
+    assert!(wit_text.contains("get-arguments"), "component must import `get-arguments`, wit={wit_text}");
+
+    let mut tokens = contract.validate.split_whitespace();
+    let program = tokens.next().expect("wasmtime run contract has an empty validate command");
+    let mut command = std::process::Command::new(program);
+    command.args(tokens).arg("smoke-argv-probe").current_dir(dir.path());
+    let output = command.output().unwrap_or_else(|error| panic!("spawn `{program}`: {error}"));
+    assert!(
+        output.status.success(),
+        "`wasi` host run failed for `{}`: status={:?} stderr={}",
+        contract.physical_entry,
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// OVM 用仓库内 OdinVM 真实装载并执行 `.odin`，不依赖外部 `odin` 工具链。
 #[test]
 fn minimal_entry_runs_on_ovm() {

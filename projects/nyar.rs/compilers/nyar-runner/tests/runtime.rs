@@ -28,8 +28,6 @@ fn wasi_defaults_to_component_command_mode() {
             "-W".to_string(),
             "gc".to_string(),
             "-W".to_string(),
-            "wmemcheck".to_string(),
-            "-W".to_string(),
             "max-memory-size=16777216".to_string(),
             "{artifact}".to_string(),
         ]
@@ -43,8 +41,6 @@ fn wasi_defaults_to_component_command_mode() {
             "run".to_string(),
             "-W".to_string(),
             "gc".to_string(),
-            "-W".to_string(),
-            "wmemcheck".to_string(),
             "-W".to_string(),
             "max-memory-size=16777216".to_string(),
             "{artifact}".to_string(),

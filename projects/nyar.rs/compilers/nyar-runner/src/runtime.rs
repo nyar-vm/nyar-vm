@@ -71,13 +71,13 @@ impl RuntimeFamily {
             Self::Node => RuntimeTemplate { family: Self::Node, command: "node".to_string(), args: vec!["{artifact}".to_string()] },
             Self::Windows => RuntimeTemplate { family: Self::Windows, command: "{artifact}".to_string(), args: Vec::new() },
             Self::Wasi => {
-                // Component-model command: wasmtime run with GC + linear-memory hardening.
+                // Component-model command: wasmtime run with GC + linear-memory cap.
+                // `wmemcheck` 是诊断开关，stock wasmtime 未编译该特性，不能进入
+                // 默认运行模板。
                 let mut args = vec![
                     "run".to_string(),
                     "-W".to_string(),
                     "gc".to_string(),
-                    "-W".to_string(),
-                    "wmemcheck".to_string(),
                     "-W".to_string(),
                     "max-memory-size=16777216".to_string(),
                     "{artifact}".to_string(),
