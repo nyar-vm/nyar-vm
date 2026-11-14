@@ -167,8 +167,19 @@ pub fn encode_native_text_program_with_data(
         symbols.push((function.name.clone(), text.len() as u32));
 
         // 序言：`push rbp; mov rbp, rsp; sub rsp, frame`。Win64 额外预留 32 字节
-        // shadow space，SysV64 不需要；两者都保持 `rsp` 16 字节对齐。
-        let frame = align16(u32::from(function.slot_count) * 8 + abi.shadow_space());
+        // shadow space 与栈实参空间；两者都保持 `rsp` 16 字节对齐。
+        let stack_arguments = function
+            .instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                NativeTextInstruction::ZeroStackArg(index)
+                | NativeTextInstruction::StoreSlotToStackArg { index, .. }
+                | NativeTextInstruction::StoreSlotAddressToStackArg { index, .. } => Some(u32::from(*index) + 1),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        let frame = align16(u32::from(function.slot_count) * 8 + abi.shadow_space() + stack_arguments * 8);
         text.extend_from_slice(&[0x55, 0x48, 0x89, 0xE5, 0x48, 0x81, 0xEC]);
         text.extend_from_slice(&frame.to_le_bytes());
 
@@ -275,6 +286,38 @@ pub fn encode_native_text_program_with_data(
                     let displacement = 32u8.checked_add(index.saturating_mul(8)).ok_or_else(|| "栈实参偏移超出 u8".to_string())?;
                     // `mov qword ptr [rsp + disp8], 0`。
                     text.extend_from_slice(&[0x48, 0xC7, 0x44, 0x24, displacement, 0, 0, 0, 0]);
+                }
+                NativeTextInstruction::StoreSlotToStackArg { slot, index } => {
+                    if abi != NativeAbi::Win64 {
+                        return Err(format!(
+                            "{} 文本 ABI 不支持 `StoreSlotToStackArg`：栈传参是 Win64 shadow space 合同",
+                            abi.name()
+                        ));
+                    }
+                    // `mov rax, [rbp - 8*(slot+1)]`，再 `mov [rsp + 32 + 8*index], rax`。
+                    text.extend_from_slice(&RAX_LOAD);
+                    text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
+                    text.extend_from_slice(&[0x48, 0x89, 0x84, 0x24]);
+                    let offset = 32u32
+                        .checked_add(u32::from(*index) * 8)
+                        .ok_or_else(|| "栈实参偏移超出 u32".to_string())?;
+                    text.extend_from_slice(&offset.to_le_bytes());
+                }
+                NativeTextInstruction::StoreSlotAddressToStackArg { slot, index } => {
+                    if abi != NativeAbi::Win64 {
+                        return Err(format!(
+                            "{} 文本 ABI 不支持 `StoreSlotAddressToStackArg`：栈传参是 Win64 shadow space 合同",
+                            abi.name()
+                        ));
+                    }
+                    // `lea rax, [rbp - 8*(slot+1)]`，再 `mov [rsp + 32 + 8*index], rax`。
+                    text.extend_from_slice(&[0x48, 0x8D, 0x85]);
+                    text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
+                    text.extend_from_slice(&[0x48, 0x89, 0x84, 0x24]);
+                    let offset = 32u32
+                        .checked_add(u32::from(*index) * 8)
+                        .ok_or_else(|| "栈实参偏移超出 u32".to_string())?;
+                    text.extend_from_slice(&offset.to_le_bytes());
                 }
                 NativeTextInstruction::LoadSlotAddress(slot) => {
                     // `lea rax, [rbp + disp32]`。

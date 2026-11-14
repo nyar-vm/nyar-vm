@@ -192,6 +192,26 @@ pub enum NativeTextInstruction {
     /// 用于第 5 个及以后的整数实参（前 4 个走 rcx/rdx/r8/r9）。这是 Win64
     /// shadow space 专属合同；SysV64 文本 ABI 遇到该指令显式失败。
     ZeroStackArg(u8),
+    /// 把帧槽 `slot` 的值写入 Win64 栈上第 `index` 个额外实参（`[rsp + 32 + 8*index]`）。
+    ///
+    /// 与 [`Self::ZeroStackArg`] 同属 Win64 栈传参合同；SysV64 显式失败。
+    /// 编码器按这些指令自动为函数预留栈实参空间。
+    StoreSlotToStackArg {
+        /// 帧槽。
+        slot: u16,
+        /// 栈实参序号（从第 5 个实参起）。
+        index: u8,
+    },
+    /// 把帧槽 `slot` 的**地址**写入 Win64 栈上第 `index` 个额外实参。
+    ///
+    /// 宿主的 out-参数（例如 `napi_create_function` 的 `napi_value* result`）
+    /// 需要指针而不仅是值。SysV64 显式失败。
+    StoreSlotAddressToStackArg {
+        /// 帧槽。
+        slot: u16,
+        /// 栈实参序号（从第 5 个实参起）。
+        index: u8,
+    },
     /// `lea rax, [rbp - 8*(slot+1)]`：取帧槽地址（例如字节缓冲区起点）。
     LoadSlotAddress(u16),
     /// `add rax, imm32`。
