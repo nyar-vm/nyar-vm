@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use crate::Result;
 
-use super::{NativeAbi, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage};
+use super::{NativeAbi, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage};
 
 /// Win64 整数形参寄存器 rcx / rdx / r8 / r9 的 `mov [rbp-disp32], reg` 前缀。
 const WIN64_ARG_STORE_PREFIX: [[u8; 3]; 4] = [[0x48, 0x89, 0x8D], [0x48, 0x89, 0x95], [0x4C, 0x89, 0x85], [0x4C, 0x89, 0x8D]];
@@ -107,6 +107,21 @@ pub fn encode_native_text_program_with_imports(
     imports: &[(String, String)],
     abi: NativeAbi,
 ) -> Result<NativeTextProgramImage> {
+    encode_native_text_program_with_data(functions, imports, abi, &[], &[])
+}
+
+/// 把多函数文本 LIR 编码为 `.text` + `.data`、导出符号与宿主导入表。
+///
+/// `data` 与 `data_relocations` 属于适配器：容器把数据段按 `p_vaddr == 文件偏移`
+/// 布局，`LoadDataAddress` 产生的 `.text → .data` 引用由容器回填。数据段只对
+/// 共享库容器（`ET_DYN`）有意义，可执行镜像不得携带数据段。
+pub fn encode_native_text_program_with_data(
+    functions: &[NativeTextProgramFunction],
+    imports: &[(String, String)],
+    abi: NativeAbi,
+    data: &[u8],
+    data_relocations: &[(u32, NativeDataTarget)],
+) -> Result<NativeTextProgramImage> {
     if functions.is_empty() {
         return Err("native text program has no functions".to_string());
     }
@@ -134,6 +149,13 @@ pub fn encode_native_text_program_with_imports(
     let mut import_fixups: Vec<(u32, u32)> = Vec::new();
     // (call [rip+disp32] 的字段位置, 导入序号) — SysV64 GOT 槽。
     let mut elf_got_fixups: Vec<(u32, u32)> = Vec::new();
+    // (lea disp32 的字段位置, `.data` 内偏移) — 由容器在布局确定后回填。
+    let mut data_references: Vec<(u32, u32)> = Vec::new();
+    for (offset, _) in data_relocations {
+        if *offset as usize + 8 > data.len() {
+            return Err(format!("native 数据段重定位偏移 {offset} 超出数据块长度 {}", data.len()));
+        }
+    }
     let mut symbol_offsets = BTreeMap::<String, u32>::new();
 
     for function in functions {
@@ -226,6 +248,15 @@ pub fn encode_native_text_program_with_imports(
                     let len = i64::try_from(value.len()).map_err(|_| "native 静态字符串长度超出 i64".to_string())?;
                     text.extend_from_slice(&[0x48, 0xB8]);
                     text.extend_from_slice(&(len as u64).to_le_bytes());
+                }
+                NativeTextInstruction::LoadDataAddress(offset) => {
+                    if *offset as usize >= data.len() {
+                        return Err(format!("native 数据段引用偏移 {offset} 超出数据块长度 {}", data.len()));
+                    }
+                    // `lea rax, [rip + disp32]`； `.data` 布局由容器冻结后回填。
+                    text.extend_from_slice(&[0x48, 0x8D, 0x05]);
+                    data_references.push((u32::try_from(text.len()).map_err(|_| "native 数据引用偏移超出 u32".to_string())?, *offset));
+                    text.extend_from_slice(&[0, 0, 0, 0]);
                 }
                 NativeTextInstruction::ZeroStackArg(index) => {
                     // 该指令清的是 Win64 shadow space 之后的第 5+ 个栈实参槽；
@@ -343,6 +374,18 @@ pub fn encode_native_text_program_with_imports(
         }
     }
 
+    for (_, target) in data_relocations {
+        match target {
+            NativeDataTarget::Text(offset) if *offset as usize >= text.len() => {
+                return Err(format!("native 数据段指针目标 `.text` 偏移 {offset} 超出文本长度 {}", text.len()));
+            }
+            NativeDataTarget::Data(offset) if *offset as usize >= data.len() => {
+                return Err(format!("native 数据段指针目标 `.data` 偏移 {offset} 超出数据块长度 {}", data.len()));
+            }
+            _ => {}
+        }
+    }
+
     Ok(NativeTextProgramImage {
         text,
         symbols,
@@ -351,5 +394,8 @@ pub fn encode_native_text_program_with_imports(
         text_rel32_fixups: import_fixups,
         elf_got_fixups,
         elf_imports: if abi == NativeAbi::SystemV64 { imports.iter().map(|(_, field)| field.clone()).collect() } else { Vec::new() },
+        data: data.to_vec(),
+        data_relocations: data_relocations.to_vec(),
+        data_references,
     })
 }

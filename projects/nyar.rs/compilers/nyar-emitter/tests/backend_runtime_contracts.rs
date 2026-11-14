@@ -57,7 +57,7 @@ fn classifies_writer_outputs() {
     assert_eq!(classify_native_executable(&elf).expect("elf"), NativeExecutableKind::Elf);
 
     let shared = SharedElfWriter::write_aarch64(
-        &SharedElfImage { text: vec![0xC0, 0x03, 0x5F, 0xD6], rodata: Vec::new(), bss: Vec::new() },
+        &SharedElfImage { text: vec![0xC0, 0x03, 0x5F, 0xD6], rodata: Vec::new(), data: Vec::new(), bss: Vec::new() },
         &[SharedObjectExport { name: "asgard_invoke_export".into(), text_offset: 0 }],
     )
     .expect("so");
@@ -138,7 +138,7 @@ fn native_options(arch: BinaryArch) -> CompilationOptions {
 #[test]
 fn x86_64_shared_elf_is_recognized_as_shared_library() {
     let shared = SharedElfWriter::write_aarch64(
-        &SharedElfImage { text: vec![0xC0, 0x03, 0x5F, 0xD6], rodata: Vec::new(), bss: Vec::new() },
+        &SharedElfImage { text: vec![0xC0, 0x03, 0x5F, 0xD6], rodata: Vec::new(), data: Vec::new(), bss: Vec::new() },
         &[SharedObjectExport { name: "probe_export".into(), text_offset: 0 }],
     )
     .expect("so");

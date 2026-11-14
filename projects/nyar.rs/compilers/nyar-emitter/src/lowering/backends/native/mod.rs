@@ -22,7 +22,7 @@ mod x64_lir;
 mod x64_program;
 pub mod x86_64;
 
-pub use x64_program::{encode_native_text_program, encode_native_text_program_with_imports};
+pub use x64_program::{encode_native_text_program, encode_native_text_program_with_data, encode_native_text_program_with_imports};
 
 use nyar::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget};
 
@@ -169,6 +169,12 @@ pub enum NativeTextInstruction {
     LoadStringPtr(String),
     /// 把静态字符串的**字节长度**装入 `rax`。
     LoadStringLen(String),
+    /// 把镜像数据段内 `offset` 处的地址装入 `rax`（`lea rax, [rip+disp32]`）。
+    ///
+    /// 数据段内容属于适配器（例如 CPython `PyModuleDef`）；容器写出器把
+    /// `.text` 内的 `disp32` 回填到 `.data` 目标，并在数据段布局确定后应用
+    /// 自相对重定位。`offset` 超出数据段即失败闭合。
+    LoadDataAddress(u32),
     /// 以目标 OS 的 `write` 原语写 `(fd, ptr, len)` 到宿主 effect 通道。
     ///
     /// SysV64/Linux 编码为 `write(2)` 系统调用，实参按调用约定位于
@@ -207,6 +213,18 @@ pub struct NativeTextProgramFunction {
     pub instructions: Vec<NativeTextInstruction>,
 }
 
+/// 数据段自相对指针的目标。
+///
+/// 数据段起点由容器（页对齐）决定，适配器无法提前知道最终虚拟地址，所以目标按
+/// 「节 + 节内偏移」声明，由容器换算成自相对重定位的加数。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeDataTarget {
+    /// `.text` 内偏移（例如导出函数地址）。
+    Text(u32),
+    /// `.data` 内偏移（例如模块名、常量名）。
+    Data(u32),
+}
+
 /// 多函数文本程序编码结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeTextProgramImage {
@@ -226,6 +244,12 @@ pub struct NativeTextProgramImage {
     pub elf_got_fixups: Vec<(u32, u32)>,
     /// SysV64 的动态导入符号名，下标与 `elf_got_fixups` 的导入序号一致。
     pub elf_imports: Vec<String>,
+    /// `.data` 节内容（可读写、文件内初始化；容器保证 `p_vaddr == 文件偏移`）。
+    pub data: Vec<u8>,
+    /// `.data` 内的自相对指针重定位：`(数据段偏移, 目标节与偏移)`。
+    pub data_relocations: Vec<(u32, NativeDataTarget)>,
+    /// `.text` 内指向 `.data` 的 `rel32` 引用：`(字段偏移, 数据段偏移)`。
+    pub data_references: Vec<(u32, u32)>,
 }
 
 /// 已编码的原生文本函数。
