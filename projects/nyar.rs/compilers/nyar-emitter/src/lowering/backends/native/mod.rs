@@ -105,6 +105,14 @@ pub enum NativeTextInstruction {
         /// 导入函数名。
         field: String,
     },
+    /// 把静态字符串的**字节指针**装入 `rax`（描述符 + 8）。
+    LoadStringPtr(String),
+    /// 把静态字符串的**字节长度**装入 `rax`。
+    LoadStringLen(String),
+    /// 把 Win64 栈上第 `index` 个额外实参（`[rsp + 32 + 8*index]`）置零。
+    ///
+    /// 用于第 5 个及以后的整数实参（前 4 个走 rcx/rdx/r8/r9）。
+    ZeroStackArg(u8),
 }
 
 /// 多函数文本程序中的一个函数。

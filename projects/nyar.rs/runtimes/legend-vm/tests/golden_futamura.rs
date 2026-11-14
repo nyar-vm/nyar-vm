@@ -504,10 +504,43 @@ mod exported_abi {
     }
 
     #[test]
+    fn exported_residual_prints_strings_through_the_effect_sink() {
+        let dir = std::env::temp_dir().join(format!("legend-residual-print-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("out.txt");
+
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", "print(\"a\")\nprint(\"b\")\nreturn 0\n", "lua_pe").expect("specialize");
+        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let library = load(&dll, "print");
+        {
+            let file = std::fs::File::create(&path).expect("create capture file");
+            let handle = std::os::windows::io::AsRawHandle::as_raw_handle(&file) as i64;
+            let _ = call(library.module, "main", &[handle]);
+        }
+        let observed = std::fs::read_to_string(&path).expect("read captured effects");
+        assert_eq!(observed, "a\nb\n", "print order must reach the host sink");
+
+        let residual = runner.specialize_native("lua", "print(\"a\", \"b\")\nreturn 0\n", "lua_pe").expect("specialize");
+        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let library = load(&dll, "print-tab");
+        {
+            let file = std::fs::File::create(&path).expect("create capture file");
+            let handle = std::os::windows::io::AsRawHandle::as_raw_handle(&file) as i64;
+            let _ = call(library.module, "main", &[handle]);
+        }
+        let observed = std::fs::read_to_string(&path).expect("read captured effects");
+        assert_eq!(observed, "a\tb\n", "guest separates print arguments with tabs");
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
     fn exported_residual_fails_closed_for_unsupported_effects_and_objects() {
         let runner = legend_vm::LegendVmRunner::new();
         for (source, needle) in [
-            ("print(1)\nreturn 0\n", "Print"),
+            ("print(1)\nreturn 0\n", "non-static-string"),
             ("local t = { 1 }\nreturn t[1]\n", "TableNew"),
             ("return x / y\n", "Div"),
             ("return x .. \"s\"\n", "Concat"),

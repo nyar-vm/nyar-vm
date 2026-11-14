@@ -28,6 +28,16 @@ fn frame_disp(slot: u16) -> i32 {
     -8 * (i32::from(slot) + 1)
 }
 
+fn intern_string(strings: &mut Vec<String>, value: &str) -> usize {
+    match strings.iter().position(|existing| existing == value) {
+        Some(index) => index,
+        None => {
+            strings.push(value.to_string());
+            strings.len() - 1
+        }
+    }
+}
+
 fn emit_binary(text: &mut Vec<u8>, instruction: &NativeTextInstruction) -> bool {
     match instruction {
         NativeTextInstruction::Add => text.extend_from_slice(&[0x48, 0x01, 0xC8]),
@@ -77,9 +87,9 @@ pub fn encode_native_text_program_with_imports(
     let mut symbols = Vec::with_capacity(functions.len());
     // (rel32 字段位置, 被调用名)
     let mut calls: Vec<(usize, String)> = Vec::new();
-    // 静态字符串池与 (lea disp32 字段位置, 字符串序号)。
+    // 静态字符串池与 (lea disp32 字段位置, 字符串序号, 描述符内附加偏移)。
     let mut strings: Vec<String> = Vec::new();
-    let mut string_uses: Vec<(usize, usize)> = Vec::new();
+    let mut string_uses: Vec<(usize, usize, u32)> = Vec::new();
     // (call [rip+disp32] 的字段位置, IAT 槽在 .idata 内的偏移)
     let mut import_fixups: Vec<(u32, u32)> = Vec::new();
     let mut symbol_offsets = BTreeMap::<String, u32>::new();
@@ -148,17 +158,28 @@ pub fn encode_native_text_program_with_imports(
                     text.extend_from_slice(&[0, 0, 0, 0]);
                 }
                 NativeTextInstruction::LoadString(value) => {
-                    let index = match strings.iter().position(|existing| existing == value) {
-                        Some(index) => index,
-                        None => {
-                            strings.push(value.clone());
-                            strings.len() - 1
-                        }
-                    };
+                    let index = intern_string(&mut strings, value);
                     // `lea rax, [rip + disp32]`，disp32 在数据区布局后回填。
                     text.extend_from_slice(&[0x48, 0x8D, 0x05]);
-                    string_uses.push((text.len(), index));
+                    string_uses.push((text.len(), index, 0));
                     text.extend_from_slice(&[0, 0, 0, 0]);
+                }
+                NativeTextInstruction::LoadStringPtr(value) => {
+                    let index = intern_string(&mut strings, value);
+                    // 指向描述符之后的字节区。
+                    text.extend_from_slice(&[0x48, 0x8D, 0x05]);
+                    string_uses.push((text.len(), index, 8));
+                    text.extend_from_slice(&[0, 0, 0, 0]);
+                }
+                NativeTextInstruction::LoadStringLen(value) => {
+                    let len = i64::try_from(value.len()).map_err(|_| "native 静态字符串长度超出 i64".to_string())?;
+                    text.extend_from_slice(&[0x48, 0xB8]);
+                    text.extend_from_slice(&(len as u64).to_le_bytes());
+                }
+                NativeTextInstruction::ZeroStackArg(index) => {
+                    let displacement = 32u8.checked_add(index.saturating_mul(8)).ok_or_else(|| "栈实参偏移超出 u8".to_string())?;
+                    // `mov qword ptr [rsp + disp8], 0`。
+                    text.extend_from_slice(&[0x48, 0xC7, 0x44, 0x24, displacement, 0, 0, 0, 0]);
                 }
                 NativeTextInstruction::CallImport { module, field } => {
                     let slot = *table
@@ -211,8 +232,8 @@ pub fn encode_native_text_program_with_imports(
             text.extend_from_slice(&len.to_le_bytes());
             text.extend_from_slice(value.as_bytes());
         }
-        for (field, index) in string_uses {
-            let target = descriptor_offsets[index] as i64;
+        for (field, index, addend) in string_uses {
+            let target = descriptor_offsets[index] as i64 + i64::from(addend);
             let displacement = target - (field as i64 + 4);
             let displacement = i32::try_from(displacement).map_err(|_| "native 静态字符串地址位移超出 rel32".to_string())?;
             text[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
