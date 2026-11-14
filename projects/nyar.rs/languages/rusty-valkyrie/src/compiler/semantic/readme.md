@@ -40,6 +40,6 @@ flowchart TB
 
 ## 边界
 
-- **不** 实现 Nyar 表示或 ABI 具体化（那是 `emitter::frontend_contract` 一类适配）。
+- **不** 实现目标表示或 ABI 具体化（由 `emitter::frontend_contract` 一类 Valkyrie×目标适配器选择策略，并调用平台代码服务）。
 - **不** 编排整次编译（`driver`）。
 - 错误由本层事实生产者定义种类；统一关联与呈现见 `compiler/diagnostics`。

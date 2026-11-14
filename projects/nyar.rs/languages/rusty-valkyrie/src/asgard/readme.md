@@ -19,4 +19,6 @@ flowchart LR
 
 配置发现（C1）与严格模型（C2）已落地（`config_discovery` / `config_model`），求值器未闭合前不读取配置内容。`host` 描述宿主能力，`platform_contract` 检查产物结构，`deploy` 和 `publish` 提供部署与发布操作。
 
-Asgard 使用 Compiler 分析 Valkyrie 源码，通过 Legion 的工程设施定位依赖。平台 UI 和宿主胶水在 `asgard/codegen` 中生成，语言产物的 Nyar 适配在 `compiler/emitter` 中完成。操作错误使用 `AsgardError` 表达。
+Asgard 使用 Compiler 分析 Valkyrie 源码，通过 Legion 的工程设施定位依赖。平台 UI 和宿主胶水在 `asgard/codegen` 中生成，语言产物的 Valkyrie×目标适配在 `compiler/emitter` 中完成。操作错误使用 `AsgardError` 表达。
+
+RenderIR 是 Asgard 自己的 UI 产品表示，不是 Nyar 的公共语义 IR。AWSL、Voa、产品组件与部署概念不得进入 Nyar 核心或标准库；平台代码服务只提供中性能力。上述目录说明表达现有组织，不代表每种 UI 平台或语言目标组合均已完成，具体能力须由真实交付物验收。

@@ -1,6 +1,6 @@
 # compiler / emitter
 
-**Nyar 合同适配与编译后半段编排**：从 Semantic MIR / link 结果到 `CanonicalProgram`、表示规划、以及交给 `nyar-emitter` 的 artifact bundle。
+**Valkyrie×目标适配与编译后半段编排**：消费本语言 Semantic MIR / link 结果，选择显式表示策略和运行时包装，调用平台代码服务并组织 artifact bundle。语言语义留在 Valkyrie，平台计划、LIR、指令、编码与容器归相应平台所有。
 
 命名 **emitter** 是为了与 workspace 包 `nyar-emitter` 一致；此处 **不是** Asgard 里的 UI `codegen`（Vue/小程序壳生成），后者在 `asgard/codegen`。
 
@@ -11,7 +11,7 @@
 | `pipeline` | 分析/处理流编排：`compile_source_groups_to_*`、阶段证据、host binding |
 | `assembly` | 片段装配与产出面计数 |
 | `backend_contract` | 目标互操作与导入面合同 |
-| `frontend_contract` | MIR 类型具体化等 **语言→Nyar 输入** 适配（非 Oak AST） |
+| `frontend_contract` | MIR 类型具体化等 **Valkyrie→目标** 适配（非 Oak AST） |
 
 ## 阶段划分（概念）
 
@@ -21,15 +21,17 @@ flowchart LR
     A1[AST/HIR/MIR/Link/Validate]
   end
   subgraph processing["处理半链"]
-    P1[RepresentationPlan]
-    P2[TargetExecutionPlan]
-    P3[Emit]
+    P1[Valkyrie 表示与运行时策略]
+    P2[平台 builder / service]
+    P3[平台计划 / LIR / Emit]
   end
   analysis --> processing
   processing --> NYAR[nyar-emitter]
 ```
 
-`pipeline` 文档中的 `StreamHalf`（Analysis vs Processing）与此对应：本目录 **消费** 已闭合的语义事实，**不** 向上补类型或绑定。
+`pipeline` 文档中的 `StreamHalf`（Analysis vs Processing）与此对应：本目录 **消费** 已闭合的 Valkyrie 语义事实，**不** 向上补类型或绑定。平台可以向适配器暴露受验证的 LIR builder/service；API 中出现平台 LIR 并非越界，重新定义平台指令或绕过平台验证才是越界。
+
+当前 `CanonicalProgram`、`CompiledProgram` 和共用 `TargetExecutionPlan` 等接口尚未全部满足上述边界。Valkyrie 专用载荷必须改名并归还语言，目标计划按平台拆分，不保留共享语义子集作为架构入口。
 
 ## 依赖方向
 

@@ -1,6 +1,6 @@
 # Compiler
 
-`compiler` 是 Valkyrie 的语言编译器。它消费 Oak 产生的语法树和源位置，将声明、类型、调用、控制流与 evidence 组织成可验证的 Semantic MIR，再向 `nyar-emitter` 提供目标相关的编译输入。
+`compiler` 是 Valkyrie 的语言编译器。它消费 Oak 产生的语法树和源位置，将声明、类型、调用、控制流与 evidence 组织成可验证的 Semantic MIR，再经 Valkyrie×目标适配器，向各平台代码服务提供目标拥有的编译输入。Nyar 只提供统一工具与中性编排合同，不拥有 Valkyrie 的语义程序。
 
 ## 端到端数据流
 
@@ -53,7 +53,7 @@ flowchart TB
 | `hir` | 已解析 HIR 模型、lowering 和验证 |
 | `mir` | Semantic MIR、SSA、lowering 和验证 |
 | `optimization` | HIR/MIR 语义保持变换 |
-| `emitter` | CanonicalProgram、表示规划和 Nyar 适配 |
+| `emitter` | Valkyrie 语义载荷、语言×目标适配和产物编排 |
 | `driver` | 阶段验证编排与输入修订接口 |
 | `services` | 格式化注册、lint 和高亮 |
 | `diagnostics` | 公共诊断类型出口 |
@@ -72,8 +72,10 @@ flowchart LR
   nyar[nyar / nyar-emitter]
 
   legion -->|"CompilerSourceInput、闭包、host binding"| compiler
-  compiler -->|"CanonicalProgram、ExecutionPlan"| nyar
+  compiler -->|"目标适配输入 / 中性产物合同"| nyar
   asgard[asgard] -->|"完整语义编译 + UI 管线"| compiler
 ```
 
 Asgard 使用 Compiler 编译生成的 Valkyrie 逻辑，工程上下文由 Legion 提供。
+
+当前实现仍使用 `CanonicalProgram`、`CompiledProgram` 等名称及共享载荷。它们承载 Valkyrie 专用语义，必须改名并归还语言，不能成为其它前端的强制或可选共享 MIR。平台各自拥有计划、LIR 与运行时包装；适配器可以调用平台公开且经过验证的 builder/service，无需复制平台指令、编码或容器模型。

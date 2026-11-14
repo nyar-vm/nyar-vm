@@ -15,7 +15,7 @@ flowchart TB
   source --> asgard
   legion --> compiler
   asgard --> compiler
-  compiler --> emitter
+  compiler -->|Valkyrie × 目标适配| emitter
   legion --> utilities
   asgard --> utilities
 ```
@@ -28,6 +28,8 @@ flowchart TB
 | [`legion/`](legion/readme.md) | 工程清单、依赖解析、源码快照、构建计划、缓存、测试和产物管理 |
 | [`asgard/`](asgard/readme.md) | AWSL/Voa 解析、RenderIR、平台代码生成、打包和部署 |
 | [`utilities/`](utilities/readme.md) | 诊断投影、报告格式化和无领域语义的文本服务 |
+
+语言编译器拥有 Valkyrie AST 接入、HIR/MIR 与语义。Nyar 提供可复用工具与中性编排，各平台拥有计划、LIR 和运行时包装。适配器可以使用平台公开的受验证 builder/service，不自行复制指令与容器模型。当前 canonical 专用载荷仍在迁移，不能因位于 Nyar crate 就被视为跨语言合同。
 
 ## 对外入口
 

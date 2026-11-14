@@ -1,6 +1,6 @@
 # compiler / mir
 
-**Semantic MIR**：带语义与 effect 信息的中间表示，是语言侧最后一层可验证 IR，再交给 `emitter` 做 Nyar 合同适配。
+**Semantic MIR**：带语义与 effect 信息的中间表示，由 Valkyrie 自己定义与验证，再交给 `emitter` 做语言×目标适配。它不承诺适用于其它语言，也不成为 Nyar 通用 MIR。
 
 ## 职责
 
@@ -14,16 +14,17 @@
 flowchart LR
   hir[HirModule]
   mir[MirModule / SSA]
-  canon[CanonicalProgram]
-  emit[nyar-emitter]
+  adapter[Valkyrie × 目标适配器]
+  emit[平台计划 / LIR / 代码服务]
 
   hir --> mir
-  mir --> canon
-  canon --> emit
+  mir --> adapter
+  adapter --> emit
 ```
 
 - MIR **不** 编码目标指令或寄存器分配；那是 Nyar 后端与目标 lowering 的所有权。
-- 布局与单例计划等 **语言仍关心** 的事实可在 MIR 层计算，通过 `emitter` 写入 canonical 载荷。
+- 单例语义、类型身份和聚合成员等语言事实由 Valkyrie 生产；物理布局由目标策略及平台合同确定，不在下游按名称猜测。
+- 当前 canonical 载荷承载本语言语义，必须改名并归还 Valkyrie。适配器可使用平台受验证 builder/service 构造平台计划或 LIR，MIR 自身不复制这些模型。
 
 ## 优化
 

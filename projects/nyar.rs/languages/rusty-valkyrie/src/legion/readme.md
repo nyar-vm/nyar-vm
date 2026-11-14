@@ -24,7 +24,7 @@ flowchart TB
 
 ## 类型与产品关系
 
-`legion` 使用 `CanonicalTarget`、发布格式和 Runner 等 Nyar 类型组织工程请求与产物。
+当前 `legion` 使用 `CanonicalTarget`、发布格式和 Runner 等 Nyar 类型组织工程请求与产物。这是目标选择及产物编排，不表示所有语言共享 Canonical MIR，也不使 OdinVM 成为所有目标的中间层。Legion 不拥有语言 IR 或平台 LIR，不通过工程配置补齐缺失语言语义。
 
 ## 与其它模块
 
